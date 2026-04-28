@@ -34,6 +34,8 @@ SUPPORTED_ACTIONS = {
     "zucai-report",
     "jczq-mixed-report",
     "daily-content-pack",
+    "wechat-article-pack",
+    "wechat-draft-push",
     "seedance-submit",
     "seedance-poll",
     "content",
@@ -345,6 +347,39 @@ def build_command(request: RouterRequest) -> list[str]:
             "--format",
             "json",
         ]
+    if action == "wechat-article-pack":
+        command = [
+            *base,
+            "wechat-article-pack",
+            "--report-file",
+            options.report_file,
+            "--output-dir",
+            options.output_dir,
+            "--thumb-media-id",
+            options.thumb_media_id,
+        ]
+        if options.author:
+            command.extend(["--author", options.author])
+        if options.source_url:
+            command.extend(["--source-url", options.source_url])
+        command.extend(["--format", "json"])
+        return command
+    if action == "wechat-draft-push":
+        command = [
+            *base,
+            "wechat-draft-push",
+            "--pack-dir",
+            options.pack_dir,
+            "--app-id",
+            options.app_id,
+            "--app-secret",
+            options.app_secret,
+        ]
+        command.append("--dry-run" if options.dry_run else "--no-dry-run")
+        if options.confirm_draft:
+            command.append("--confirm")
+        command.extend(["--format", "json"])
+        return command
     if action == "eval":
         return [*base, "eval-run", "--dataset", options.dataset, "--format", "json"]
     if action == "review":
@@ -591,6 +626,21 @@ def _build_parser() -> argparse.ArgumentParser:
     content.add_argument("--llm-mode", choices=["openclaw", "deterministic"], default="openclaw")
     content.add_argument("--openclaw-model", default="nyu-openai-chat/gpt-5.5")
 
+    wechat_article = subparsers.add_parser("wechat-article-pack")
+    wechat_article.add_argument("--report-file", required=True)
+    wechat_article.add_argument("--output-dir", default=".nutmeg-data/wechat")
+    wechat_article.add_argument("--thumb-media-id", default="DRY_RUN_COVER_MEDIA_ID")
+    wechat_article.add_argument("--author")
+    wechat_article.add_argument("--source-url")
+
+    wechat_draft = subparsers.add_parser("wechat-draft-push")
+    wechat_draft.add_argument("--pack-dir", required=True)
+    wechat_draft.add_argument("--app-id", required=True)
+    wechat_draft.add_argument("--app-secret", required=True)
+    wechat_draft.add_argument("--dry-run", dest="dry_run", action="store_true", default=True)
+    wechat_draft.add_argument("--no-dry-run", dest="dry_run", action="store_false")
+    wechat_draft.add_argument("--confirm-draft", action="store_true")
+
     eval_parser = subparsers.add_parser("eval")
     eval_parser.add_argument("--dataset", default="starter")
     _add_simple_json_action(subparsers, "review")
@@ -670,6 +720,12 @@ def _validate_options(options: argparse.Namespace) -> None:
         "match_id",
         "task_key",
         "ratio_key",
+        "thumb_media_id",
+        "author",
+        "source_url",
+        "pack_dir",
+        "app_id",
+        "app_secret",
     ]:
         if hasattr(options, attr) and getattr(options, attr) is not None:
             _validate_text(attr, getattr(options, attr), maximum=500)
@@ -696,6 +752,8 @@ def _validate_options(options: argparse.Namespace) -> None:
         and not options.confirm_dispatch
     ):
         raise RouterError("`jczq-mixed-report --dispatch-telegram` requires --confirm-dispatch.")
+    if options.action == "wechat-draft-push" and not options.dry_run and not options.confirm_draft:
+        raise RouterError("`wechat-draft-push --no-dry-run` requires --confirm-draft.")
     if options.action == "seedance-submit" and not options.confirm_submit:
         raise RouterError("`seedance-submit` requires --confirm-submit.")
     if options.action in {"seedance-submit", "seedance-poll"}:

@@ -285,3 +285,80 @@ def test_router_builds_seedance_poll_run_dir_command() -> None:
         "--format",
         "json",
     ]
+
+
+def test_router_builds_wechat_article_pack_command() -> None:
+    router = _load_router()
+
+    request = router.parse_request(
+        [
+            "wechat-article-pack",
+            "--report-file",
+            ".nutmeg-data/jczq/report.json",
+            "--output-dir",
+            ".nutmeg-data/wechat/2026-04-28",
+            "--thumb-media-id",
+            "cover-media",
+        ]
+    )
+
+    assert router.build_command(request) == [
+        "uv",
+        "run",
+        "nutmeg",
+        "wechat-article-pack",
+        "--report-file",
+        ".nutmeg-data/jczq/report.json",
+        "--output-dir",
+        ".nutmeg-data/wechat/2026-04-28",
+        "--thumb-media-id",
+        "cover-media",
+        "--format",
+        "json",
+    ]
+
+
+def test_router_builds_wechat_draft_push_command_and_requires_confirmation() -> None:
+    router = _load_router()
+
+    request = router.parse_request(
+        [
+            "wechat-draft-push",
+            "--pack-dir",
+            ".nutmeg-data/wechat/2026-04-28",
+            "--app-id",
+            "app-id",
+            "--app-secret",
+            "secret",
+            "--dry-run",
+        ]
+    )
+    assert router.build_command(request) == [
+        "uv",
+        "run",
+        "nutmeg",
+        "wechat-draft-push",
+        "--pack-dir",
+        ".nutmeg-data/wechat/2026-04-28",
+        "--app-id",
+        "app-id",
+        "--app-secret",
+        "secret",
+        "--dry-run",
+        "--format",
+        "json",
+    ]
+
+    with pytest.raises(router.RouterError, match="--confirm-draft"):
+        router.parse_request(
+            [
+                "wechat-draft-push",
+                "--pack-dir",
+                ".nutmeg-data/wechat/2026-04-28",
+                "--app-id",
+                "app-id",
+                "--app-secret",
+                "secret",
+                "--no-dry-run",
+            ]
+        )
