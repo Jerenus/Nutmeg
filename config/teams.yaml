@@ -1,0 +1,79 @@
+aliases:
+  man-city: Manchester City
+  manchester-city: Manchester City
+  man-utd: Manchester United
+  manchester-united: Manchester United
+  real: Real Madrid
+  real-madrid: Real Madrid
+  barca: Barcelona
+  fc-barcelona: Barcelona
+  arsenal-fc: Arsenal
+  spurs: Tottenham Hotspur
+  tottenham: Tottenham Hotspur
+teams:
+  Arsenal:
+    aliases:
+      - arsenal-fc
+    home_base_query: Emirates Stadium, London, England
+    home_country: England
+    sources:
+      fbref: Arsenal
+      understat: Arsenal
+      transfermarkt: Arsenal Football Club
+  Tottenham Hotspur:
+    aliases:
+      - spurs
+      - tottenham
+    home_base_query: Tottenham Hotspur Stadium, London, England
+    home_country: England
+    sources:
+      fbref: Tottenham Hotspur
+      understat: Tottenham
+      transfermarkt: Tottenham Hotspur Football Club
+  Manchester City:
+    aliases:
+      - man-city
+      - manchester-city
+    home_base_query: Etihad Stadium, Manchester, England
+    home_country: England
+    sources:
+      fbref: Manchester City
+      understat: Manchester City
+      transfermarkt: Manchester City Football Club
+  Liverpool:
+    home_base_query: Anfield, Liverpool, England
+    home_country: England
+    sources:
+      fbref: Liverpool
+      understat: Liverpool
+      transfermarkt: Liverpool FC
+  Manchester United:
+    aliases:
+      - man-utd
+      - manchester-united
+    home_base_query: Old Trafford, Manchester, England
+    home_country: England
+    sources:
+      fbref: Manchester United
+      understat: Manchester United
+      transfermarkt: Manchester United Football Club
+  Real Madrid:
+    aliases:
+      - real
+      - real-madrid
+    home_base_query: Santiago Bernabeu, Madrid, Spain
+    home_country: Spain
+    sources:
+      fbref: Real Madrid
+      understat: Real Madrid
+      transfermarkt: Real Madrid CF
+  Barcelona:
+    aliases:
+      - barca
+      - fc-barcelona
+    home_base_query: Estadi Olimpic Lluis Companys, Barcelona, Spain
+    home_country: Spain
+    sources:
+      fbref: Barcelona
+      understat: Barcelona
+      transfermarkt: FC Barcelona

@@ -1,0 +1,346 @@
+openapi: 3.1.0
+info:
+  title: Nutmeg AI-Native Betting Client Contract
+  version: 0.1.0
+  description: Internal HTTP contract for the browser/PWA client. The same payloads must be reachable through JSON CLI commands.
+paths:
+  /client:
+    get:
+      summary: Render the daily betting-analysis feed
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, default: owner }
+        - name: league
+          in: query
+          required: false
+          schema: { type: string, default: epl }
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, default: 3, minimum: 0, maximum: 14 }
+      responses:
+        '200':
+          description: HTML daily feed with ranked match opportunity cards
+  /client/api/feed:
+    get:
+      summary: Return ranked match opportunities for the daily feed
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, default: owner }
+        - name: league
+          in: query
+          required: false
+          schema: { type: string, default: epl }
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, default: 3, minimum: 0, maximum: 14 }
+        - name: demo
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Ranked daily feed payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyFeed'
+  /client/matches/{fixture_id}:
+    get:
+      summary: Render one match workspace
+      parameters:
+        - name: fixture_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, default: owner }
+      responses:
+        '200':
+          description: HTML match workspace
+        '404':
+          description: Fixture not found or unavailable
+  /client/api/matches/{fixture_id}:
+    get:
+      summary: Return one match workspace payload
+      parameters:
+        - name: fixture_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, default: owner }
+      responses:
+        '200':
+          description: Match workspace payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchWorkspace'
+        '404':
+          description: Fixture not found or unavailable
+  /client/api/matches/{fixture_id}/questions:
+    post:
+      summary: Ask a grounded follow-up question about a match
+      parameters:
+        - name: fixture_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, question]
+              properties:
+                user_id: { type: string }
+                question: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Grounded answer or truthful refusal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationalAnswer'
+  /client/api/watchlist:
+    post:
+      summary: Save a match, league, team, market, or player target
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WatchlistItemInput'
+      responses:
+        '200':
+          description: Saved or updated watchlist item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchlistItem'
+  /client/api/alerts:
+    get:
+      summary: List grouped material-change alerts for a user
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Alert list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [alerts]
+                properties:
+                  alerts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Alert'
+  /client/api/predictions:
+    post:
+      summary: Record a user prediction or simulated pick from the client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PredictionInput'
+      responses:
+        '200':
+          description: Recorded prediction
+  /client/api/status:
+    get:
+      summary: Return client data-health and provider freshness status
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, default: owner }
+      responses:
+        '200':
+          description: Data health payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientStatus'
+  /client/manifest.webmanifest:
+    get:
+      summary: Return the PWA manifest
+      responses:
+        '200':
+          description: Web app manifest
+components:
+  schemas:
+    DailyFeed:
+      type: object
+      required: [user_id, league, generated_at, opportunities, health, responsible_use]
+      properties:
+        user_id: { type: string }
+        league: { type: string }
+        generated_at: { type: string, format: date-time }
+        opportunities:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchOpportunity'
+        health:
+          $ref: '#/components/schemas/FreshnessLedger'
+        responsible_use: { type: string }
+    MatchOpportunity:
+      type: object
+      required: [fixture_id, league, home_team, away_team, actionability, freshness, suggested_action]
+      properties:
+        fixture_id: { type: string }
+        league: { type: string }
+        home_team: { type: string }
+        away_team: { type: string }
+        kickoff_at: { type: string, format: date-time }
+        status: { type: string }
+        rank: { type: integer }
+        score: { type: number }
+        actionability:
+          type: string
+          enum: [value, lean, watch, avoid, no-bet]
+        confidence: { type: string }
+        edge_status: { type: string }
+        reasons:
+          type: array
+          items: { type: string }
+        freshness:
+          $ref: '#/components/schemas/FreshnessLedger'
+        suggested_action: { type: string }
+    MatchWorkspace:
+      type: object
+      required: [fixture_id, actionability, judgment, evidence, freshness, caveats, responsible_use]
+      properties:
+        fixture_id: { type: string }
+        actionability:
+          type: string
+          enum: [value, lean, watch, avoid, no-bet]
+        judgment: { type: object }
+        value: { type: object }
+        market: { type: object }
+        tactics: { type: object }
+        players: { type: object }
+        information: { type: object }
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceItem'
+        freshness:
+          $ref: '#/components/schemas/FreshnessLedger'
+        caveats:
+          type: array
+          items: { type: string }
+        audit_id: { type: string }
+        responsible_use: { type: string }
+    EvidenceItem:
+      type: object
+      required: [kind, source_name, summary, staleness]
+      properties:
+        evidence_id: { type: string }
+        kind: { type: string }
+        source_name: { type: string }
+        source_url: { type: string }
+        published_at: { type: string, format: date-time }
+        retrieved_at: { type: string, format: date-time }
+        summary: { type: string }
+        staleness:
+          type: string
+          enum: [fresh, stale, unavailable, conflicting]
+    FreshnessLedger:
+      type: object
+      required: [health, blocking_reasons]
+      properties:
+        fixture_updated_at: { type: string, format: date-time }
+        odds_updated_at: { type: string, format: date-time }
+        team_player_updated_at: { type: string, format: date-time }
+        tactical_updated_at: { type: string, format: date-time }
+        information_updated_at: { type: string, format: date-time }
+        analysis_generated_at: { type: string, format: date-time }
+        health:
+          type: string
+          enum: [healthy, stale, partial, failing]
+        blocking_reasons:
+          type: array
+          items: { type: string }
+    ConversationalAnswer:
+      type: object
+      required: [answer, confidence, evidence, refused]
+      properties:
+        answer: { type: string }
+        confidence: { type: string }
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceItem'
+        refused: { type: boolean }
+        refusal_reason: { type: string }
+    WatchlistItemInput:
+      type: object
+      required: [user_id, target_type, target_id]
+      properties:
+        user_id: { type: string }
+        target_type:
+          type: string
+          enum: [fixture, league, team, market, player]
+        target_id: { type: string }
+        alert_preferences:
+          type: array
+          items: { type: string }
+    WatchlistItem:
+      allOf:
+        - $ref: '#/components/schemas/WatchlistItemInput'
+        - type: object
+          required: [watchlist_id, created_at]
+          properties:
+            watchlist_id: { type: string }
+            created_at: { type: string, format: date-time }
+    Alert:
+      type: object
+      required: [alert_id, user_id, fixture_id, change_type, after_summary, severity, created_at]
+      properties:
+        alert_id: { type: string }
+        user_id: { type: string }
+        fixture_id: { type: string }
+        change_type: { type: string }
+        before_summary: { type: string }
+        after_summary: { type: string }
+        actionability_before: { type: string }
+        actionability_after: { type: string }
+        severity: { type: string }
+        group_key: { type: string }
+        created_at: { type: string, format: date-time }
+        read_at: { type: string, format: date-time }
+    PredictionInput:
+      type: object
+      required: [user_id, fixture_id, pick]
+      properties:
+        user_id: { type: string }
+        fixture_id: { type: string }
+        pick: { type: string }
+        confidence: { type: string }
+        source_audit_id: { type: string }
+        client_notes: { type: string }
+    ClientStatus:
+      type: object
+      required: [user_id, health, providers, entitlements]
+      properties:
+        user_id: { type: string }
+        health:
+          $ref: '#/components/schemas/FreshnessLedger'
+        providers: { type: object }
+        entitlements: { type: object }

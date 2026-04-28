@@ -1,0 +1,15 @@
+[
+  {"id":"e1","fixture_id":"epl-001","period":1,"minute":2,"second":10,"type":{"name":"Pass"},"team":{"name":"Arsenal"},"player":{"name":"Arsenal 6"},"location":[34,42],"pass":{"recipient":{"name":"Arsenal 8"},"end_location":[48,39]}},
+  {"id":"e2","fixture_id":"epl-001","period":1,"minute":2,"second":14,"type":{"name":"Pass"},"team":{"name":"Arsenal"},"player":{"name":"Arsenal 8"},"location":[48,39],"pass":{"recipient":{"name":"Arsenal 10"},"end_location":[66,36]}},
+  {"id":"e3","fixture_id":"epl-001","period":1,"minute":2,"second":19,"type":{"name":"Carry"},"team":{"name":"Arsenal"},"player":{"name":"Arsenal 10"},"location":[66,36],"carry":{"end_location":[82,34]}},
+  {"id":"e4","fixture_id":"epl-001","period":1,"minute":2,"second":23,"type":{"name":"Pass"},"team":{"name":"Arsenal"},"player":{"name":"Arsenal 10"},"location":[82,34],"pass":{"recipient":{"name":"Arsenal 9"},"end_location":[101,32]}},
+  {"id":"e5","fixture_id":"epl-001","period":1,"minute":2,"second":27,"type":{"name":"Shot"},"team":{"name":"Arsenal"},"player":{"name":"Arsenal 9"},"location":[104,32],"shot":{"statsbomb_xg":0.22,"outcome":{"name":"Saved"}}},
+  {"id":"e6","fixture_id":"epl-001","period":1,"minute":8,"second":3,"type":{"name":"Pass"},"team":{"name":"Tottenham Hotspur"},"player":{"name":"Spurs 4"},"location":[28,40],"pass":{"recipient":{"name":"Spurs 6"},"end_location":[43,43]}},
+  {"id":"e7","fixture_id":"epl-001","period":1,"minute":8,"second":8,"type":{"name":"Pass"},"team":{"name":"Tottenham Hotspur"},"player":{"name":"Spurs 6"},"location":[43,43],"pass":{"recipient":{"name":"Spurs 11"},"end_location":[68,50]}},
+  {"id":"e8","fixture_id":"epl-001","period":1,"minute":8,"second":14,"type":{"name":"Pass"},"team":{"name":"Tottenham Hotspur"},"player":{"name":"Spurs 11"},"location":[68,50],"pass":{"recipient":{"name":"Spurs 9"},"end_location":[94,47],"outcome":{"name":"Incomplete"}}},
+  {"id":"e9","fixture_id":"epl-001","period":1,"minute":12,"second":5,"type":{"name":"Interception"},"team":{"name":"Arsenal"},"player":{"name":"Arsenal 6"},"location":[58,44],"interception":{"outcome":{"name":"Won"}}},
+  {"id":"e10","fixture_id":"epl-001","period":1,"minute":16,"second":30,"type":{"name":"Duel"},"team":{"name":"Tottenham Hotspur"},"player":{"name":"Spurs 6"},"location":[52,38],"duel":{"outcome":{"name":"Won"}}},
+  {"id":"e11","fixture_id":"epl-001","period":1,"minute":20,"second":44,"type":{"name":"Pass"},"team":{"name":"Arsenal"},"player":{"name":"Arsenal 8"},"location":[55,52],"pass":{"recipient":{"name":"Arsenal 7"},"end_location":[74,58]}},
+  {"id":"e12","fixture_id":"epl-001","period":1,"minute":20,"second":49,"type":{"name":"Carry"},"team":{"name":"Arsenal"},"player":{"name":"Arsenal 7"},"location":[74,58],"carry":{"end_location":[93,55]}},
+  {"id":"e13","fixture_id":"epl-001","period":1,"minute":20,"second":53,"type":{"name":"Shot"},"team":{"name":"Arsenal"},"player":{"name":"Arsenal 7"},"location":[98,54],"shot":{"statsbomb_xg":0.11,"outcome":{"name":"Goal"}}}
+]

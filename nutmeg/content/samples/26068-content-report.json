@@ -1,0 +1,499 @@
+{
+  "issue": {
+    "issue_id": "26068",
+    "game_type": "sfc14",
+    "sale_start": "2026-04-22 20:00",
+    "sale_stop": "2026-04-26 20:30",
+    "draw_date": "2026-04-27",
+    "sources": [
+      {
+        "label": "体彩中心赛程公告",
+        "url": "https://m.sporttery.cn/mctzc/zcgg/20260421/10053233.html"
+      },
+      {
+        "label": "竞彩网26068期看点",
+        "url": "https://www.sporttery.cn/ctzc/zjdp/20260424/10053302.html"
+      }
+    ],
+    "matches": [
+      {
+        "match_no": 1,
+        "competition": "英足总杯",
+        "home_team": "切尔西",
+        "away_team": "利兹联",
+        "match_date": "2026-04-26",
+        "notes": [
+          "切尔西换帅且近况低迷，杯赛90分钟平局风险高。"
+        ],
+        "risk_flags": [
+          "manager_change",
+          "cup_semifinal",
+          "injuries"
+        ]
+      },
+      {
+        "match_no": 2,
+        "competition": "德甲",
+        "home_team": "斯图加特",
+        "away_team": "云达不来梅",
+        "match_date": "2026-04-26",
+        "notes": [
+          "主队争欧冠席位，但近期防线波动。"
+        ],
+        "risk_flags": [
+          "defensive_form"
+        ]
+      },
+      {
+        "match_no": 3,
+        "competition": "德甲",
+        "home_team": "多特蒙德",
+        "away_team": "弗赖堡",
+        "match_date": "2026-04-26",
+        "notes": [
+          "弗赖堡连续双赛，体能劣势。"
+        ],
+        "risk_flags": [
+          "fixture_congestion"
+        ]
+      },
+      {
+        "match_no": 4,
+        "competition": "意甲",
+        "home_team": "热那亚",
+        "away_team": "科莫",
+        "match_date": "2026-04-26",
+        "notes": [
+          "市场偏客，但科莫连败。"
+        ],
+        "risk_flags": [
+          "away_favorite",
+          "draw_risk"
+        ]
+      },
+      {
+        "match_no": 5,
+        "competition": "意甲",
+        "home_team": "都灵",
+        "away_team": "国际米兰",
+        "match_date": "2026-04-27",
+        "notes": [
+          "国米优势明显，都灵主场强势，劳塔罗伤情需防。"
+        ],
+        "risk_flags": [
+          "away_banker",
+          "home_form",
+          "injury"
+        ]
+      },
+      {
+        "match_no": 6,
+        "competition": "意甲",
+        "home_team": "AC米兰",
+        "away_team": "尤文图斯",
+        "match_date": "2026-04-27",
+        "notes": [
+          "强强对话，平局权重高。"
+        ],
+        "risk_flags": [
+          "balanced_odds",
+          "big_match"
+        ]
+      },
+      {
+        "match_no": 7,
+        "competition": "西甲",
+        "home_team": "皇家奥维耶多",
+        "away_team": "埃尔切",
+        "match_date": "2026-04-26",
+        "notes": [
+          "主队不败倾向但让步浅。"
+        ],
+        "risk_flags": [
+          "shallow_handicap"
+        ]
+      },
+      {
+        "match_no": 8,
+        "competition": "西甲",
+        "home_team": "奥萨苏纳",
+        "away_team": "塞维利亚",
+        "match_date": "2026-04-27",
+        "notes": [
+          "主胜方向但需防平。"
+        ],
+        "risk_flags": [
+          "draw_risk",
+          "shallow_handicap"
+        ]
+      },
+      {
+        "match_no": 9,
+        "competition": "西甲",
+        "home_team": "比利亚雷亚尔",
+        "away_team": "维戈塞尔塔",
+        "match_date": "2026-04-27",
+        "notes": [
+          "主胜主线，半球盘主队指数偏高。"
+        ],
+        "risk_flags": [
+          "draw_risk",
+          "home_index_high"
+        ]
+      },
+      {
+        "match_no": 10,
+        "competition": "法甲",
+        "home_team": "洛里昂",
+        "away_team": "斯特拉斯堡",
+        "match_date": "2026-04-26",
+        "notes": [
+          "17:00数据主队方向转强。"
+        ],
+        "risk_flags": [
+          "odds_shift",
+          "draw_risk"
+        ]
+      },
+      {
+        "match_no": 11,
+        "competition": "法甲",
+        "home_team": "勒阿弗尔",
+        "away_team": "梅斯",
+        "match_date": "2026-04-26",
+        "notes": [
+          "保级乱局，平局需要保留。"
+        ],
+        "risk_flags": [
+          "relegation_pressure",
+          "draw_risk"
+        ]
+      },
+      {
+        "match_no": 12,
+        "competition": "法甲",
+        "home_team": "巴黎FC",
+        "away_team": "里尔",
+        "match_date": "2026-04-26",
+        "notes": [
+          "里尔客胜主线，但巴黎FC主场反弹。"
+        ],
+        "risk_flags": [
+          "away_favorite",
+          "draw_risk"
+        ]
+      },
+      {
+        "match_no": 13,
+        "competition": "法甲",
+        "home_team": "雷恩",
+        "away_team": "南特",
+        "match_date": "2026-04-26",
+        "notes": [
+          "雷恩三连胜，南特低胜率。"
+        ],
+        "risk_flags": [
+          "banker"
+        ]
+      },
+      {
+        "match_no": 14,
+        "competition": "法甲",
+        "home_team": "马赛",
+        "away_team": "尼斯",
+        "match_date": "2026-04-27",
+        "notes": [
+          "马赛冲欧战意强，尼斯走势不足。"
+        ],
+        "risk_flags": [
+          "banker"
+        ]
+      }
+    ]
+  },
+  "generated_at": "2026-04-26T10:11:41+00:00",
+  "recommendations": [
+    {
+      "match_no": 1,
+      "pick": "31",
+      "primary": "3",
+      "confidence": 0.52,
+      "risk_tier": "volatile",
+      "rationale": "切尔西换帅、伤停与杯赛平局风险叠加，主胜不能当硬胆。",
+      "odds_average": {
+        "3": 1.98,
+        "1": 3.52,
+        "0": 3.58
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 2,
+      "pick": "3",
+      "primary": "3",
+      "confidence": 0.64,
+      "risk_tier": "lean",
+      "rationale": "斯图加特主胜可博胆，大单防平。",
+      "odds_average": {
+        "3": 1.54,
+        "1": 4.38,
+        "0": 5.31
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 3,
+      "pick": "3",
+      "primary": "3",
+      "confidence": 0.74,
+      "risk_tier": "banker",
+      "rationale": "多特主胜均赔压低，弗赖堡连续双赛。",
+      "odds_average": {
+        "3": 1.4,
+        "1": 4.91,
+        "0": 7.0
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 4,
+      "pick": "10",
+      "primary": "0",
+      "confidence": 0.55,
+      "risk_tier": "cover",
+      "rationale": "科莫客胜主线但连败，平局保护。",
+      "odds_average": {
+        "3": 4.62,
+        "1": 3.67,
+        "0": 1.73
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 5,
+      "pick": "10",
+      "primary": "0",
+      "confidence": 0.66,
+      "risk_tier": "cover",
+      "rationale": "国米客胜主线，但都灵主场与国米消耗要求防平。",
+      "odds_average": {
+        "3": 7.38,
+        "1": 4.95,
+        "0": 1.38
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 6,
+      "pick": "10",
+      "primary": "1",
+      "confidence": 0.49,
+      "risk_tier": "volatile",
+      "rationale": "米兰尤文均赔接近，平局权重最高。",
+      "odds_average": {
+        "3": 2.76,
+        "1": 3.1,
+        "0": 2.64
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 7,
+      "pick": "31",
+      "primary": "3",
+      "confidence": 0.53,
+      "risk_tier": "cover",
+      "rationale": "奥维耶多主队不败，主胜需搭防平。",
+      "odds_average": {
+        "3": 2.3,
+        "1": 3.34,
+        "0": 3.03
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 8,
+      "pick": "31",
+      "primary": "3",
+      "confidence": 0.57,
+      "risk_tier": "cover",
+      "rationale": "奥萨苏纳主胜主线，半球盘防平。",
+      "odds_average": {
+        "3": 1.94,
+        "1": 3.38,
+        "0": 4.02
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 9,
+      "pick": "31",
+      "primary": "3",
+      "confidence": 0.58,
+      "risk_tier": "cover",
+      "rationale": "比利亚主胜主线，平局优先于客胜冷门。",
+      "odds_average": {
+        "3": 1.9,
+        "1": 3.42,
+        "0": 3.83
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 10,
+      "pick": "31",
+      "primary": "3",
+      "confidence": 0.56,
+      "risk_tier": "cover",
+      "rationale": "洛里昂17:00方向转强，修正为主队不败。",
+      "odds_average": {
+        "3": 1.9,
+        "1": 3.69,
+        "0": 3.7
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 11,
+      "pick": "31",
+      "primary": "3",
+      "confidence": 0.6,
+      "risk_tier": "cover",
+      "rationale": "勒阿弗尔赔率支持，但保级乱局防平。",
+      "odds_average": {
+        "3": 1.56,
+        "1": 4.08,
+        "0": 5.19
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 12,
+      "pick": "10",
+      "primary": "0",
+      "confidence": 0.57,
+      "risk_tier": "cover",
+      "rationale": "里尔客胜主线，巴黎FC主场状态带来平局风险。",
+      "odds_average": {
+        "3": 4.21,
+        "1": 3.69,
+        "0": 1.81
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 13,
+      "pick": "3",
+      "primary": "3",
+      "confidence": 0.72,
+      "risk_tier": "banker",
+      "rationale": "雷恩状态和盘口同向，主胜可做胆。",
+      "odds_average": {
+        "3": 1.46,
+        "1": 4.48,
+        "0": 6.5
+      },
+      "override_applied": true,
+      "warnings": []
+    },
+    {
+      "match_no": 14,
+      "pick": "3",
+      "primary": "3",
+      "confidence": 0.72,
+      "risk_tier": "banker",
+      "rationale": "马赛战意与状态更清晰，是本期胆材之一。",
+      "odds_average": {
+        "3": 1.56,
+        "1": 4.34,
+        "0": 5.25
+      },
+      "override_applied": true,
+      "warnings": []
+    }
+  ],
+  "plans": [
+    {
+      "name": "均衡主推",
+      "plan_type": "full14",
+      "code": "31 3 3 10 10 10 31 31 31 31 31 10 3 3",
+      "stake_count": 1024,
+      "cost_yuan": 2048,
+      "selected_matches": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "note": "主推14场容错版本。"
+    },
+    {
+      "name": "任九稳妥",
+      "plan_type": "renjiu",
+      "code": "- 3 3 10 10 - - 31 31 - 31 - 3 3",
+      "stake_count": 32,
+      "cost_yuan": 64,
+      "selected_matches": [
+        2,
+        3,
+        4,
+        5,
+        8,
+        9,
+        11,
+        13,
+        14
+      ],
+      "note": "剔除高分歧场，保留更清晰的9场。"
+    }
+  ],
+  "artifacts": {
+    "markdown_path": null,
+    "pdf_path": null,
+    "report_json_path": null
+  },
+  "dispatch": {
+    "status": "skipped",
+    "caption": null,
+    "document_path": null,
+    "chat_ids": [],
+    "error": null
+  },
+  "warnings": [],
+  "sources": [
+    {
+      "label": "体彩中心赛程公告",
+      "url": "https://m.sporttery.cn/mctzc/zcgg/20260421/10053233.html"
+    },
+    {
+      "label": "竞彩网26068期看点",
+      "url": "https://www.sporttery.cn/ctzc/zjdp/20260424/10053302.html"
+    },
+    {
+      "label": "新浪欧洲四大机构17:00",
+      "url": "https://sports.sina.com.cn/l/2026-04-23/doc-inhvnnxa8632639.shtml"
+    }
+  ]
+}

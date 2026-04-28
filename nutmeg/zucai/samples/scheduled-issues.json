@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "issue_id": "26068",
+      "enabled": true,
+      "active_dates": ["2026-04-26"],
+      "issue_file": "26068-issue.json",
+      "odds_file": "26068-odds.json",
+      "overrides_file": "26068-overrides.json",
+      "notes": "Bundled no-network scheduled-delivery smoke sample."
+    }
+  ]
+}

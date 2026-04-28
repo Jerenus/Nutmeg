@@ -1,0 +1,101 @@
+# Implementation Plan: Zucai Scheduled Delivery v0
+
+**Branch**: `042-zucai-scheduled-delivery-v0` | **Date**: 2026-04-26 | **Spec**: `.specify/specs/042-zucai-scheduled-delivery-v0/spec.md`  
+**Input**: Feature specification from `.specify/specs/042-zucai-scheduled-delivery-v0/spec.md`
+
+## Summary
+
+Add a quiet daily automation wrapper around the verified Zucai 14-match workflow. The new `zucai-auto-run` command reads a local issue registry, decides whether the requested date has an active issue, generates slot-specific PDF reports for `afternoon` and `revision`, dispatches through the existing Nutmeg Telegram document sender when explicitly enabled, records run attempts, skips duplicates, and ships launchd templates for 16:00 and 18:30.
+
+## Technical Context
+
+**Language/Version**: Python 3.12 baseline  
+**Primary Dependencies**: Existing Typer CLI, dataclass domain models, `ZucaiWorkflowService`, `TelegramBotClient`, ReportLab already added in 041  
+**Storage**: Local JSON registry and local JSON run record under `.nutmeg-data/zucai` by default  
+**Testing**: pytest service/CLI tests, router tests if OpenClaw action changes, `bash scripts/verify.sh`  
+**Target Platform**: macOS local operator workflow with optional launchd templates; CLI remains portable  
+**Project Type**: Modular Python CLI/service monolith  
+**Performance Goals**: Scheduled check without active issue completes in under 1 second; active sample PDF generation completes within current Zucai report performance envelope  
+**Constraints**: No web scraping in v0, no bet placement, no sportsbook integration, no guaranteed-profit language, no outbound Telegram unless explicit flags/config are present  
+**Scale/Scope**: One active traditional足彩 issue per run date, two slots, local operator use
+
+## Constitution Check
+
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+
+- **Spec-First Delivery**: PASS. Feature is governed by `.specify/specs/042-zucai-scheduled-delivery-v0/spec.md` and a Superpowers design doc.
+- **CLI-First, Bot-Ready Interfaces**: PASS. `zucai-auto-run` is the primary surface; Telegram dispatch reuses the service layer and existing bot client.
+- **Shared Facts, Isolated User State**: PASS. Registry/run records are operator-local facts; no multi-user state is introduced.
+- **Evidence-Backed Reliability**: PASS. Tasks require TDD and fresh focused/full verification.
+- **Phase-1 Simplicity, Phase-3 Readiness**: PASS. Local registry preserves a seam for future official source parsers and durable storage.
+
+## Project Structure
+
+### Documentation (this feature)
+
+```text
+.specify/specs/042-zucai-scheduled-delivery-v0/
+├── spec.md
+├── plan.md
+├── research.md
+├── data-model.md
+├── quickstart.md
+├── contracts/
+│   ├── registry.schema.json
+│   ├── run-record.schema.json
+│   └── cli-contract.md
+├── tasks.md
+└── verification.md
+```
+
+### Source Code (repository root)
+
+```text
+nutmeg/
+├── domain/
+│   └── zucai_schedule.py          # Scheduled slot, registry entry, run result models
+├── services/
+│   └── zucai_schedule.py          # Registry loading, active-issue selection, duplicate prevention, scheduled run orchestration
+├── interfaces/
+│   └── cli.py                     # zucai-auto-run command and service builder
+└── zucai/
+    └── samples/
+        └── scheduled-issues.json  # No-network registry sample for 26068
+
+scripts/
+└── launchd/
+    ├── com.nutmeg.zucai.afternoon.plist
+    └── com.nutmeg.zucai.revision.plist
+
+tests/
+├── test_zucai_schedule_service.py
+└── test_cli.py                    # Extended with zucai-auto-run CLI contracts
+
+docs/architecture/
+└── zucai-scheduled-delivery.md
+```
+
+**Structure Decision**: Add a separate `zucai_schedule` domain/service instead of growing `nutmeg.services.zucai`; the scheduler owns run discovery, duplicate prevention, and local launch semantics while `ZucaiWorkflowService` remains the canonical report generator.
+
+## Phase 0: Research Output
+
+Research decisions are recorded in `.specify/specs/042-zucai-scheduled-delivery-v0/research.md`.
+
+## Phase 1: Design and Contracts Output
+
+- Data model: `.specify/specs/042-zucai-scheduled-delivery-v0/data-model.md`
+- Registry/run/CLI contracts: `.specify/specs/042-zucai-scheduled-delivery-v0/contracts/`
+- Quickstart: `.specify/specs/042-zucai-scheduled-delivery-v0/quickstart.md`
+- Agent context: `AGENTS.md` points to this plan.
+
+## Post-Design Constitution Check
+
+- **Spec-First Delivery**: PASS. Spec, plan, research, model, contracts, quickstart, tasks, and verification live together.
+- **CLI-First, Bot-Ready Interfaces**: PASS. CLI JSON output is the scheduler and bot contract.
+- **Shared Facts, Isolated User State**: PASS. Run records are local operator records without user secrets.
+- **Evidence-Backed Reliability**: PASS. RED/GREEN tests and full verification are explicit tasks.
+- **Phase-1 Simplicity, Phase-3 Readiness**: PASS. Local JSON registry can later be generated by a parser without altering scheduler semantics.
+
+## Complexity Tracking
+
+No constitution violations require justification.

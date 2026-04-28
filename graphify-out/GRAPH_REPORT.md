@@ -1,0 +1,208 @@
+# Nutmeg Code Graph Report
+
+Generated from local Python AST imports. Re-run with `make graph` after structural changes.
+
+## Summary
+
+- Modules: 104
+- Internal dependency edges: 159
+- Scope: `nutmeg/**/*.py` only; no network or provider calls.
+
+## Package Communities
+
+- `nutmeg`: 1 modules
+- `nutmeg.agents`: 10 modules
+- `nutmeg.config`: 4 modules
+- `nutmeg.content`: 1 modules
+- `nutmeg.core`: 4 modules
+- `nutmeg.data`: 7 modules
+- `nutmeg.domain`: 21 modules
+- `nutmeg.event_data`: 1 modules
+- `nutmeg.information`: 1 modules
+- `nutmeg.interfaces`: 8 modules
+- `nutmeg.models`: 6 modules
+- `nutmeg.observability`: 2 modules
+- `nutmeg.process`: 3 modules
+- `nutmeg.services`: 24 modules
+- `nutmeg.storage`: 10 modules
+- `nutmeg.zucai`: 1 modules
+
+## High-Degree Modules
+
+- `nutmeg.interfaces.cli`: degree 45 (in 1, out 44)
+- `nutmeg.domain.fixtures`: degree 13 (in 13, out 0)
+- `nutmeg.core.repositories`: degree 9 (in 6, out 3)
+- `nutmeg.services.snapshot`: degree 9 (in 1, out 8)
+- `nutmeg.data.soccerdata_client`: degree 8 (in 3, out 5)
+- `nutmeg.config.catalog`: degree 7 (in 7, out 0)
+- `nutmeg.config.settings`: degree 7 (in 7, out 0)
+- `nutmeg.data.open_meteo`: degree 7 (in 2, out 5)
+- `nutmeg.data.transfermarkt`: degree 7 (in 3, out 4)
+- `nutmeg.domain.odds`: degree 7 (in 6, out 1)
+- `nutmeg.domain.snapshot`: degree 7 (in 6, out 1)
+- `nutmeg.services.value`: degree 7 (in 1, out 6)
+- `nutmeg.storage.duckdb_utils`: degree 7 (in 7, out 0)
+- `nutmeg.storage.reference_repository`: degree 7 (in 4, out 3)
+- `nutmeg.data.api_football`: degree 6 (in 3, out 3)
+
+## Dependency Edges
+
+- `nutmeg.agents.llm_provider` -> `nutmeg.config.settings`
+- `nutmeg.agents.llm_provider` -> `nutmeg.domain.analysis`
+- `nutmeg.agents.workflow` -> `nutmeg.domain.analysis`
+- `nutmeg.agents.workflow` -> `nutmeg.services.analysis`
+- `nutmeg.core.identity` -> `nutmeg.core.quota`
+- `nutmeg.core.repositories` -> `nutmeg.domain.fixtures`
+- `nutmeg.core.repositories` -> `nutmeg.domain.odds`
+- `nutmeg.core.repositories` -> `nutmeg.domain.sync`
+- `nutmeg.data.api_football` -> `nutmeg.domain.fixtures`
+- `nutmeg.data.api_football` -> `nutmeg.domain.odds`
+- `nutmeg.data.api_football` -> `nutmeg.domain.snapshot`
+- `nutmeg.data.open_meteo` -> `nutmeg.config.catalog`
+- `nutmeg.data.open_meteo` -> `nutmeg.config.team_catalog`
+- `nutmeg.data.open_meteo` -> `nutmeg.domain.fixtures`
+- `nutmeg.data.open_meteo` -> `nutmeg.domain.snapshot`
+- `nutmeg.data.open_meteo` -> `nutmeg.storage.reference_repository`
+- `nutmeg.data.soccerdata_client` -> `nutmeg.config.catalog`
+- `nutmeg.data.soccerdata_client` -> `nutmeg.config.team_catalog`
+- `nutmeg.data.soccerdata_client` -> `nutmeg.domain.fixtures`
+- `nutmeg.data.soccerdata_client` -> `nutmeg.domain.snapshot`
+- `nutmeg.data.soccerdata_client` -> `nutmeg.storage.duckdb_utils`
+- `nutmeg.data.the_odds_api` -> `nutmeg.config.catalog`
+- `nutmeg.data.the_odds_api` -> `nutmeg.core.repositories`
+- `nutmeg.data.the_odds_api` -> `nutmeg.domain.odds`
+- `nutmeg.data.transfermarkt` -> `nutmeg.config.catalog`
+- `nutmeg.data.transfermarkt` -> `nutmeg.config.team_catalog`
+- `nutmeg.data.transfermarkt` -> `nutmeg.domain.snapshot`
+- `nutmeg.data.transfermarkt` -> `nutmeg.storage.duckdb_utils`
+- `nutmeg.domain.analysis` -> `nutmeg.agents.router`
+- `nutmeg.domain.analysis` -> `nutmeg.domain.fixtures`
+- `nutmeg.domain.odds` -> `nutmeg.domain.fixtures`
+- `nutmeg.domain.operations` -> `nutmeg.domain.value`
+- `nutmeg.domain.snapshot` -> `nutmeg.domain.fixtures`
+- `nutmeg.domain.tactics` -> `nutmeg.domain.fixtures`
+- `nutmeg.domain.zucai_schedule` -> `nutmeg.domain.zucai`
+- `nutmeg.domain.zucai_source` -> `nutmeg.domain.zucai`
+- `nutmeg.interfaces.bot` -> `nutmeg.interfaces.bot.adapter`
+- `nutmeg.interfaces.bot` -> `nutmeg.interfaces.bot.telegram`
+- `nutmeg.interfaces.bot.adapter` -> `nutmeg.interfaces.cli`
+- `nutmeg.interfaces.bot.telegram` -> `nutmeg.interfaces.bot.adapter`
+- `nutmeg.interfaces.cli` -> `nutmeg.agents.llm_provider`
+- `nutmeg.interfaces.cli` -> `nutmeg.agents.router`
+- `nutmeg.interfaces.cli` -> `nutmeg.agents.workflow`
+- `nutmeg.interfaces.cli` -> `nutmeg.config.settings`
+- `nutmeg.interfaces.cli` -> `nutmeg.data.api_football`
+- `nutmeg.interfaces.cli` -> `nutmeg.data.open_meteo`
+- `nutmeg.interfaces.cli` -> `nutmeg.data.soccerdata_client`
+- `nutmeg.interfaces.cli` -> `nutmeg.data.the_odds_api`
+- `nutmeg.interfaces.cli` -> `nutmeg.data.transfermarkt`
+- `nutmeg.interfaces.cli` -> `nutmeg.interfaces.bot`
+- `nutmeg.interfaces.cli` -> `nutmeg.interfaces.client_web`
+- `nutmeg.interfaces.cli` -> `nutmeg.observability.langsmith`
+- `nutmeg.interfaces.cli` -> `nutmeg.process.harness`
+- `nutmeg.interfaces.cli` -> `nutmeg.process.superpowers`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.analysis`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.client`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.content`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.daily_content`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.evals`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.event_data`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.fixtures`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.information`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.jczq`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.materialization`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.odds`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.operations`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.players`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.popularity`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.seedance`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.snapshot`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.sync`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.tactics`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.value`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.zucai`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.zucai_odds_source`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.zucai_schedule`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.zucai_source`
+- `nutmeg.interfaces.cli` -> `nutmeg.storage.bootstrap`
+- `nutmeg.interfaces.cli` -> `nutmeg.storage.client_state_repository`
+- `nutmeg.interfaces.cli` -> `nutmeg.storage.fixture_repository`
+- `nutmeg.interfaces.cli` -> `nutmeg.storage.odds_repository`
+- `nutmeg.interfaces.cli` -> `nutmeg.storage.prediction_repository`
+- `nutmeg.interfaces.cli` -> `nutmeg.storage.reference_repository`
+- `nutmeg.interfaces.cli` -> `nutmeg.storage.sync_run_repository`
+- `nutmeg.interfaces.client_web` -> `nutmeg.services.client`
+- `nutmeg.observability.langsmith` -> `nutmeg.config.settings`
+- `nutmeg.services.analysis` -> `nutmeg.agents.router`
+- `nutmeg.services.analysis` -> `nutmeg.domain.analysis`
+- `nutmeg.services.client` -> `nutmeg.domain.client`
+- `nutmeg.services.client` -> `nutmeg.domain.fixtures`
+- `nutmeg.services.content` -> `nutmeg.domain.content`
+- `nutmeg.services.daily_content` -> `nutmeg.domain.daily_content`
+- `nutmeg.services.daily_content` -> `nutmeg.services.content`
+- `nutmeg.services.evals` -> `nutmeg.domain.evals`
+- `nutmeg.services.event_data` -> `nutmeg.domain.event_data`
+- `nutmeg.services.fixtures` -> `nutmeg.core.repositories`
+- `nutmeg.services.fixtures` -> `nutmeg.domain.fixtures`
+- `nutmeg.services.information` -> `nutmeg.domain.information`
+- `nutmeg.services.jczq` -> `nutmeg.domain.jczq`
+- `nutmeg.services.materialization` -> `nutmeg.data.soccerdata_client`
+- `nutmeg.services.materialization` -> `nutmeg.data.transfermarkt`
+- `nutmeg.services.odds` -> `nutmeg.core.repositories`
+- `nutmeg.services.odds` -> `nutmeg.domain.odds`
+- `nutmeg.services.odds` -> `nutmeg.models.betting`
+- `nutmeg.services.operations` -> `nutmeg.domain.operations`
+- `nutmeg.services.operations` -> `nutmeg.services.popularity`
+- `nutmeg.services.players` -> `nutmeg.config.catalog`
+- `nutmeg.services.players` -> `nutmeg.config.team_catalog`
+- `nutmeg.services.players` -> `nutmeg.domain.players`
+- `nutmeg.services.players` -> `nutmeg.storage.duckdb_utils`
+- `nutmeg.services.players` -> `nutmeg.storage.reference_repository`
+- `nutmeg.services.popularity` -> `nutmeg.domain.fixtures`
+- `nutmeg.services.seedance` -> `nutmeg.domain.daily_content`
+- `nutmeg.services.snapshot` -> `nutmeg.config.catalog`
+- `nutmeg.services.snapshot` -> `nutmeg.core.repositories`
+- `nutmeg.services.snapshot` -> `nutmeg.data.api_football`
+- `nutmeg.services.snapshot` -> `nutmeg.data.open_meteo`
+- `nutmeg.services.snapshot` -> `nutmeg.data.soccerdata_client`
+- `nutmeg.services.snapshot` -> `nutmeg.data.transfermarkt`
+- `nutmeg.services.snapshot` -> `nutmeg.domain.snapshot`
+- `nutmeg.services.snapshot` -> `nutmeg.storage.reference_repository`
+- `nutmeg.services.sync` -> `nutmeg.config.catalog`
+- `nutmeg.services.sync` -> `nutmeg.core.repositories`
+- `nutmeg.services.sync` -> `nutmeg.data.api_football`
+- `nutmeg.services.sync` -> `nutmeg.domain.sync`
+- `nutmeg.services.tactics` -> `nutmeg.domain.tactics`
+- `nutmeg.services.value` -> `nutmeg.core.repositories`
+- `nutmeg.services.value` -> `nutmeg.domain.fixtures`
+- `nutmeg.services.value` -> `nutmeg.domain.odds`
+- `nutmeg.services.value` -> `nutmeg.domain.value`
+- `nutmeg.services.value` -> `nutmeg.models.betting`
+- `nutmeg.services.value` -> `nutmeg.models.dixon_coles`
+- `nutmeg.services.zucai` -> `nutmeg.domain.zucai`
+- `nutmeg.services.zucai_odds_source` -> `nutmeg.domain.zucai_odds_source`
+- `nutmeg.services.zucai_odds_source` -> `nutmeg.services.zucai_source`
+- `nutmeg.services.zucai_schedule` -> `nutmeg.domain.zucai`
+- `nutmeg.services.zucai_schedule` -> `nutmeg.domain.zucai_schedule`
+- `nutmeg.services.zucai_schedule` -> `nutmeg.services.zucai`
+- `nutmeg.services.zucai_source` -> `nutmeg.domain.zucai`
+- `nutmeg.services.zucai_source` -> `nutmeg.domain.zucai_source`
+- `nutmeg.storage.bootstrap` -> `nutmeg.config.settings`
+- `nutmeg.storage.bootstrap` -> `nutmeg.storage.duckdb_utils`
+- `nutmeg.storage.bootstrap` -> `nutmeg.storage.state_models`
+- `nutmeg.storage.client_state_repository` -> `nutmeg.domain.client`
+- `nutmeg.storage.fixture_repository` -> `nutmeg.config.settings`
+- `nutmeg.storage.fixture_repository` -> `nutmeg.domain.fixtures`
+- `nutmeg.storage.fixture_repository` -> `nutmeg.storage.duckdb_utils`
+- `nutmeg.storage.odds_repository` -> `nutmeg.config.settings`
+- `nutmeg.storage.odds_repository` -> `nutmeg.data.the_odds_api`
+- `nutmeg.storage.odds_repository` -> `nutmeg.domain.odds`
+- `nutmeg.storage.odds_repository` -> `nutmeg.storage.duckdb_utils`
+- `nutmeg.storage.prediction_repository` -> `nutmeg.domain.evals`
+- `nutmeg.storage.prediction_repository` -> `nutmeg.models.scoring`
+- `nutmeg.storage.prediction_repository` -> `nutmeg.storage.state_models`
+- `nutmeg.storage.reference_repository` -> `nutmeg.config.settings`
+- `nutmeg.storage.reference_repository` -> `nutmeg.domain.snapshot`
+- `nutmeg.storage.reference_repository` -> `nutmeg.storage.duckdb_utils`
+- `nutmeg.storage.sync_run_repository` -> `nutmeg.domain.sync`
+- `nutmeg.storage.sync_run_repository` -> `nutmeg.storage.state_models`

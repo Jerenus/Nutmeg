@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nutmeg Zucai Odds Sync Result v0",
+  "type": "object",
+  "required": ["generated_at", "issue_id", "slot", "captured_at", "parsed_count", "odds_path", "registry_path", "warnings"],
+  "properties": {
+    "generated_at": {"type": "string"},
+    "issue_id": {"type": "string"},
+    "slot": {"type": "string", "enum": ["afternoon", "revision"]},
+    "captured_at": {"type": "string"},
+    "source_label": {"type": "string"},
+    "source_url": {"type": ["string", "null"]},
+    "source_path": {"type": ["string", "null"]},
+    "parsed_count": {"type": "integer"},
+    "odds_path": {"type": "string"},
+    "registry_path": {"type": "string"},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  }
+}

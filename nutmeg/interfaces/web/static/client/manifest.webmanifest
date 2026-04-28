@@ -1,0 +1,8 @@
+{
+  "name": "Nutmeg AI Client",
+  "short_name": "Nutmeg",
+  "start_url": "/client",
+  "display": "standalone",
+  "background_color": "#f7f1e3",
+  "theme_color": "#0f6b4f"
+}

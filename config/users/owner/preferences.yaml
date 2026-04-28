@@ -1,0 +1,10 @@
+language: en
+decision_style: assertive
+risk_profile: medium
+tracked_teams:
+  - Arsenal
+  - Real Madrid
+tracked_leagues:
+  - epl
+  - laliga
+  - ucl

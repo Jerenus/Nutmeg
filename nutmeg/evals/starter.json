@@ -1,0 +1,26 @@
+{
+  "name": "starter",
+  "cases": [
+    {
+      "id": "odds-value-board-structure",
+      "category": "odds",
+      "query": "Should I back the home favorite?",
+      "expected_keywords": ["判断", "置信度"],
+      "output_text": "判断：市场和模型存在可解释差异，但需要确认阵容。置信度：中。"
+    },
+    {
+      "id": "tactics-caveat-structure",
+      "category": "tactics",
+      "query": "Explain the pressing risk.",
+      "expected_keywords": ["pressing", "counter"],
+      "output_text": "The pressing plan can pin the opponent, but counter attacks remain the main caveat."
+    },
+    {
+      "id": "synthesis-four-part-output",
+      "category": "synthesis",
+      "query": "Give me a concise pre-match brief.",
+      "expected_keywords": ["judgment", "confidence"],
+      "output_text": "judgment: lean home. reasons: model and squad context agree. confidence: medium."
+    }
+  ]
+}

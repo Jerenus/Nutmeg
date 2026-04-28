@@ -1,0 +1,23 @@
+start - 查看 Nutmeg 项目专用使用方式
+help - 查看 Nutmeg 项目可用命令
+status - 检查 Nutmeg 项目服务状态
+demo - 写入本地 EPL demo 数据
+fixtures - 查看近期赛程
+sync - 同步真实赛程，需要确认
+popular - 查看热门比赛
+today - 查看今日/近期简报候选
+snapshot - 查看赛前多源快照
+odds - 查看赔率和 fair probability
+brief - 生成比赛操作员简报
+analyze - 生成底层分析诊断
+value - 查看模型 vs 市场价值榜
+player - 查看球员画像
+visuals - 生成战术 SVG 图
+daily - 运行每日操作流
+eval - 运行本地评估集
+review - 查看预测回顾和 Brier Score
+record - 记录赛前预测，需要确认
+outcome - 更新预测赛果，需要确认
+zucai - 生成传统足彩14场报告
+jczq - 生成竞彩足球4关高赔PDF报告
+content - 生成足彩分享文案审核包

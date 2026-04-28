@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="manifest" href="/client/manifest.webmanifest">
+    <link rel="stylesheet" href="/static/client/app.css">
+    <title>{{ title or "Nutmeg" }}</title>
+  </head>
+  <body>
+    {% block content %}{% endblock %}
+    <script src="/static/client/app.js"></script>
+  </body>
+</html>

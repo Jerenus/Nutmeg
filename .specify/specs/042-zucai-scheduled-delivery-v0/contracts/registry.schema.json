@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nutmeg Zucai Scheduled Issue Registry v0",
+  "type": "object",
+  "required": ["entries"],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["issue_id", "issue_file"],
+        "properties": {
+          "issue_id": {"type": "string"},
+          "enabled": {"type": "boolean", "default": true},
+          "active_dates": {"type": "array", "items": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"}},
+          "issue_file": {"type": "string"},
+          "odds_file": {"type": "string"},
+          "overrides_file": {"type": "string"},
+          "revision_odds_file": {"type": "string"},
+          "revision_overrides_file": {"type": "string"},
+          "notes": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nutmeg Zucai Odds Snapshot v0",
+  "type": "object",
+  "required": ["issue_id", "matches"],
+  "properties": {
+    "issue_id": {"type": "string"},
+    "captured_at": {"type": ["string", "null"]},
+    "sources": {"type": "array"},
+    "matches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["match_no"],
+        "properties": {
+          "match_no": {"type": "integer", "minimum": 1, "maximum": 14},
+          "home": {"type": "number", "exclusiveMinimum": 0},
+          "draw": {"type": "number", "exclusiveMinimum": 0},
+          "away": {"type": "number", "exclusiveMinimum": 0}
+        }
+      }
+    }
+  }
+}

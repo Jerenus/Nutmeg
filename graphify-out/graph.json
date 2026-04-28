@@ -1,0 +1,1438 @@
+{
+  "communities": [
+    {
+      "module_count": 1,
+      "package": "nutmeg"
+    },
+    {
+      "module_count": 10,
+      "package": "nutmeg.agents"
+    },
+    {
+      "module_count": 4,
+      "package": "nutmeg.config"
+    },
+    {
+      "module_count": 1,
+      "package": "nutmeg.content"
+    },
+    {
+      "module_count": 4,
+      "package": "nutmeg.core"
+    },
+    {
+      "module_count": 7,
+      "package": "nutmeg.data"
+    },
+    {
+      "module_count": 21,
+      "package": "nutmeg.domain"
+    },
+    {
+      "module_count": 1,
+      "package": "nutmeg.event_data"
+    },
+    {
+      "module_count": 1,
+      "package": "nutmeg.information"
+    },
+    {
+      "module_count": 8,
+      "package": "nutmeg.interfaces"
+    },
+    {
+      "module_count": 6,
+      "package": "nutmeg.models"
+    },
+    {
+      "module_count": 2,
+      "package": "nutmeg.observability"
+    },
+    {
+      "module_count": 3,
+      "package": "nutmeg.process"
+    },
+    {
+      "module_count": 24,
+      "package": "nutmeg.services"
+    },
+    {
+      "module_count": 10,
+      "package": "nutmeg.storage"
+    },
+    {
+      "module_count": 1,
+      "package": "nutmeg.zucai"
+    }
+  ],
+  "edge_count": 159,
+  "edges": [
+    {
+      "source": "nutmeg.agents.llm_provider",
+      "target": "nutmeg.config.settings"
+    },
+    {
+      "source": "nutmeg.agents.llm_provider",
+      "target": "nutmeg.domain.analysis"
+    },
+    {
+      "source": "nutmeg.agents.workflow",
+      "target": "nutmeg.domain.analysis"
+    },
+    {
+      "source": "nutmeg.agents.workflow",
+      "target": "nutmeg.services.analysis"
+    },
+    {
+      "source": "nutmeg.core.identity",
+      "target": "nutmeg.core.quota"
+    },
+    {
+      "source": "nutmeg.core.repositories",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.core.repositories",
+      "target": "nutmeg.domain.odds"
+    },
+    {
+      "source": "nutmeg.core.repositories",
+      "target": "nutmeg.domain.sync"
+    },
+    {
+      "source": "nutmeg.data.api_football",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.data.api_football",
+      "target": "nutmeg.domain.odds"
+    },
+    {
+      "source": "nutmeg.data.api_football",
+      "target": "nutmeg.domain.snapshot"
+    },
+    {
+      "source": "nutmeg.data.open_meteo",
+      "target": "nutmeg.config.catalog"
+    },
+    {
+      "source": "nutmeg.data.open_meteo",
+      "target": "nutmeg.config.team_catalog"
+    },
+    {
+      "source": "nutmeg.data.open_meteo",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.data.open_meteo",
+      "target": "nutmeg.domain.snapshot"
+    },
+    {
+      "source": "nutmeg.data.open_meteo",
+      "target": "nutmeg.storage.reference_repository"
+    },
+    {
+      "source": "nutmeg.data.soccerdata_client",
+      "target": "nutmeg.config.catalog"
+    },
+    {
+      "source": "nutmeg.data.soccerdata_client",
+      "target": "nutmeg.config.team_catalog"
+    },
+    {
+      "source": "nutmeg.data.soccerdata_client",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.data.soccerdata_client",
+      "target": "nutmeg.domain.snapshot"
+    },
+    {
+      "source": "nutmeg.data.soccerdata_client",
+      "target": "nutmeg.storage.duckdb_utils"
+    },
+    {
+      "source": "nutmeg.data.the_odds_api",
+      "target": "nutmeg.config.catalog"
+    },
+    {
+      "source": "nutmeg.data.the_odds_api",
+      "target": "nutmeg.core.repositories"
+    },
+    {
+      "source": "nutmeg.data.the_odds_api",
+      "target": "nutmeg.domain.odds"
+    },
+    {
+      "source": "nutmeg.data.transfermarkt",
+      "target": "nutmeg.config.catalog"
+    },
+    {
+      "source": "nutmeg.data.transfermarkt",
+      "target": "nutmeg.config.team_catalog"
+    },
+    {
+      "source": "nutmeg.data.transfermarkt",
+      "target": "nutmeg.domain.snapshot"
+    },
+    {
+      "source": "nutmeg.data.transfermarkt",
+      "target": "nutmeg.storage.duckdb_utils"
+    },
+    {
+      "source": "nutmeg.domain.analysis",
+      "target": "nutmeg.agents.router"
+    },
+    {
+      "source": "nutmeg.domain.analysis",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.domain.odds",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.domain.operations",
+      "target": "nutmeg.domain.value"
+    },
+    {
+      "source": "nutmeg.domain.snapshot",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.domain.tactics",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.domain.zucai_schedule",
+      "target": "nutmeg.domain.zucai"
+    },
+    {
+      "source": "nutmeg.domain.zucai_source",
+      "target": "nutmeg.domain.zucai"
+    },
+    {
+      "source": "nutmeg.interfaces.bot",
+      "target": "nutmeg.interfaces.bot.adapter"
+    },
+    {
+      "source": "nutmeg.interfaces.bot",
+      "target": "nutmeg.interfaces.bot.telegram"
+    },
+    {
+      "source": "nutmeg.interfaces.bot.adapter",
+      "target": "nutmeg.interfaces.cli"
+    },
+    {
+      "source": "nutmeg.interfaces.bot.telegram",
+      "target": "nutmeg.interfaces.bot.adapter"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.agents.llm_provider"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.agents.router"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.agents.workflow"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.config.settings"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.data.api_football"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.data.open_meteo"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.data.soccerdata_client"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.data.the_odds_api"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.data.transfermarkt"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.interfaces.bot"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.interfaces.client_web"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.observability.langsmith"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.process.harness"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.process.superpowers"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.analysis"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.client"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.content"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.daily_content"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.evals"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.event_data"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.fixtures"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.information"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.jczq"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.materialization"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.odds"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.operations"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.players"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.popularity"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.seedance"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.snapshot"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.sync"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.tactics"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.value"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.zucai"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.zucai_odds_source"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.zucai_schedule"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.zucai_source"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.storage.bootstrap"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.storage.client_state_repository"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.storage.fixture_repository"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.storage.odds_repository"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.storage.prediction_repository"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.storage.reference_repository"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.storage.sync_run_repository"
+    },
+    {
+      "source": "nutmeg.interfaces.client_web",
+      "target": "nutmeg.services.client"
+    },
+    {
+      "source": "nutmeg.observability.langsmith",
+      "target": "nutmeg.config.settings"
+    },
+    {
+      "source": "nutmeg.services.analysis",
+      "target": "nutmeg.agents.router"
+    },
+    {
+      "source": "nutmeg.services.analysis",
+      "target": "nutmeg.domain.analysis"
+    },
+    {
+      "source": "nutmeg.services.client",
+      "target": "nutmeg.domain.client"
+    },
+    {
+      "source": "nutmeg.services.client",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.services.content",
+      "target": "nutmeg.domain.content"
+    },
+    {
+      "source": "nutmeg.services.daily_content",
+      "target": "nutmeg.domain.daily_content"
+    },
+    {
+      "source": "nutmeg.services.daily_content",
+      "target": "nutmeg.services.content"
+    },
+    {
+      "source": "nutmeg.services.evals",
+      "target": "nutmeg.domain.evals"
+    },
+    {
+      "source": "nutmeg.services.event_data",
+      "target": "nutmeg.domain.event_data"
+    },
+    {
+      "source": "nutmeg.services.fixtures",
+      "target": "nutmeg.core.repositories"
+    },
+    {
+      "source": "nutmeg.services.fixtures",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.services.information",
+      "target": "nutmeg.domain.information"
+    },
+    {
+      "source": "nutmeg.services.jczq",
+      "target": "nutmeg.domain.jczq"
+    },
+    {
+      "source": "nutmeg.services.materialization",
+      "target": "nutmeg.data.soccerdata_client"
+    },
+    {
+      "source": "nutmeg.services.materialization",
+      "target": "nutmeg.data.transfermarkt"
+    },
+    {
+      "source": "nutmeg.services.odds",
+      "target": "nutmeg.core.repositories"
+    },
+    {
+      "source": "nutmeg.services.odds",
+      "target": "nutmeg.domain.odds"
+    },
+    {
+      "source": "nutmeg.services.odds",
+      "target": "nutmeg.models.betting"
+    },
+    {
+      "source": "nutmeg.services.operations",
+      "target": "nutmeg.domain.operations"
+    },
+    {
+      "source": "nutmeg.services.operations",
+      "target": "nutmeg.services.popularity"
+    },
+    {
+      "source": "nutmeg.services.players",
+      "target": "nutmeg.config.catalog"
+    },
+    {
+      "source": "nutmeg.services.players",
+      "target": "nutmeg.config.team_catalog"
+    },
+    {
+      "source": "nutmeg.services.players",
+      "target": "nutmeg.domain.players"
+    },
+    {
+      "source": "nutmeg.services.players",
+      "target": "nutmeg.storage.duckdb_utils"
+    },
+    {
+      "source": "nutmeg.services.players",
+      "target": "nutmeg.storage.reference_repository"
+    },
+    {
+      "source": "nutmeg.services.popularity",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.services.seedance",
+      "target": "nutmeg.domain.daily_content"
+    },
+    {
+      "source": "nutmeg.services.snapshot",
+      "target": "nutmeg.config.catalog"
+    },
+    {
+      "source": "nutmeg.services.snapshot",
+      "target": "nutmeg.core.repositories"
+    },
+    {
+      "source": "nutmeg.services.snapshot",
+      "target": "nutmeg.data.api_football"
+    },
+    {
+      "source": "nutmeg.services.snapshot",
+      "target": "nutmeg.data.open_meteo"
+    },
+    {
+      "source": "nutmeg.services.snapshot",
+      "target": "nutmeg.data.soccerdata_client"
+    },
+    {
+      "source": "nutmeg.services.snapshot",
+      "target": "nutmeg.data.transfermarkt"
+    },
+    {
+      "source": "nutmeg.services.snapshot",
+      "target": "nutmeg.domain.snapshot"
+    },
+    {
+      "source": "nutmeg.services.snapshot",
+      "target": "nutmeg.storage.reference_repository"
+    },
+    {
+      "source": "nutmeg.services.sync",
+      "target": "nutmeg.config.catalog"
+    },
+    {
+      "source": "nutmeg.services.sync",
+      "target": "nutmeg.core.repositories"
+    },
+    {
+      "source": "nutmeg.services.sync",
+      "target": "nutmeg.data.api_football"
+    },
+    {
+      "source": "nutmeg.services.sync",
+      "target": "nutmeg.domain.sync"
+    },
+    {
+      "source": "nutmeg.services.tactics",
+      "target": "nutmeg.domain.tactics"
+    },
+    {
+      "source": "nutmeg.services.value",
+      "target": "nutmeg.core.repositories"
+    },
+    {
+      "source": "nutmeg.services.value",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.services.value",
+      "target": "nutmeg.domain.odds"
+    },
+    {
+      "source": "nutmeg.services.value",
+      "target": "nutmeg.domain.value"
+    },
+    {
+      "source": "nutmeg.services.value",
+      "target": "nutmeg.models.betting"
+    },
+    {
+      "source": "nutmeg.services.value",
+      "target": "nutmeg.models.dixon_coles"
+    },
+    {
+      "source": "nutmeg.services.zucai",
+      "target": "nutmeg.domain.zucai"
+    },
+    {
+      "source": "nutmeg.services.zucai_odds_source",
+      "target": "nutmeg.domain.zucai_odds_source"
+    },
+    {
+      "source": "nutmeg.services.zucai_odds_source",
+      "target": "nutmeg.services.zucai_source"
+    },
+    {
+      "source": "nutmeg.services.zucai_schedule",
+      "target": "nutmeg.domain.zucai"
+    },
+    {
+      "source": "nutmeg.services.zucai_schedule",
+      "target": "nutmeg.domain.zucai_schedule"
+    },
+    {
+      "source": "nutmeg.services.zucai_schedule",
+      "target": "nutmeg.services.zucai"
+    },
+    {
+      "source": "nutmeg.services.zucai_source",
+      "target": "nutmeg.domain.zucai"
+    },
+    {
+      "source": "nutmeg.services.zucai_source",
+      "target": "nutmeg.domain.zucai_source"
+    },
+    {
+      "source": "nutmeg.storage.bootstrap",
+      "target": "nutmeg.config.settings"
+    },
+    {
+      "source": "nutmeg.storage.bootstrap",
+      "target": "nutmeg.storage.duckdb_utils"
+    },
+    {
+      "source": "nutmeg.storage.bootstrap",
+      "target": "nutmeg.storage.state_models"
+    },
+    {
+      "source": "nutmeg.storage.client_state_repository",
+      "target": "nutmeg.domain.client"
+    },
+    {
+      "source": "nutmeg.storage.fixture_repository",
+      "target": "nutmeg.config.settings"
+    },
+    {
+      "source": "nutmeg.storage.fixture_repository",
+      "target": "nutmeg.domain.fixtures"
+    },
+    {
+      "source": "nutmeg.storage.fixture_repository",
+      "target": "nutmeg.storage.duckdb_utils"
+    },
+    {
+      "source": "nutmeg.storage.odds_repository",
+      "target": "nutmeg.config.settings"
+    },
+    {
+      "source": "nutmeg.storage.odds_repository",
+      "target": "nutmeg.data.the_odds_api"
+    },
+    {
+      "source": "nutmeg.storage.odds_repository",
+      "target": "nutmeg.domain.odds"
+    },
+    {
+      "source": "nutmeg.storage.odds_repository",
+      "target": "nutmeg.storage.duckdb_utils"
+    },
+    {
+      "source": "nutmeg.storage.prediction_repository",
+      "target": "nutmeg.domain.evals"
+    },
+    {
+      "source": "nutmeg.storage.prediction_repository",
+      "target": "nutmeg.models.scoring"
+    },
+    {
+      "source": "nutmeg.storage.prediction_repository",
+      "target": "nutmeg.storage.state_models"
+    },
+    {
+      "source": "nutmeg.storage.reference_repository",
+      "target": "nutmeg.config.settings"
+    },
+    {
+      "source": "nutmeg.storage.reference_repository",
+      "target": "nutmeg.domain.snapshot"
+    },
+    {
+      "source": "nutmeg.storage.reference_repository",
+      "target": "nutmeg.storage.duckdb_utils"
+    },
+    {
+      "source": "nutmeg.storage.sync_run_repository",
+      "target": "nutmeg.domain.sync"
+    },
+    {
+      "source": "nutmeg.storage.sync_run_repository",
+      "target": "nutmeg.storage.state_models"
+    }
+  ],
+  "module_count": 104,
+  "modules": [
+    {
+      "in_degree": 0,
+      "name": "nutmeg",
+      "out_degree": 0,
+      "package": "nutmeg",
+      "path": "nutmeg/__init__.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.agents",
+      "out_degree": 0,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/__init__.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.agents.llm_provider",
+      "out_degree": 2,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/llm_provider.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.agents.prompts",
+      "out_degree": 0,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/prompts/__init__.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.agents.prompts.base",
+      "out_degree": 0,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/prompts/base.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.agents.prompts.odds",
+      "out_degree": 0,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/prompts/odds.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.agents.prompts.player",
+      "out_degree": 0,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/prompts/player.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.agents.prompts.synthesis",
+      "out_degree": 0,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/prompts/synthesis.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.agents.prompts.tactics",
+      "out_degree": 0,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/prompts/tactics.py"
+    },
+    {
+      "in_degree": 3,
+      "name": "nutmeg.agents.router",
+      "out_degree": 0,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/router.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.agents.workflow",
+      "out_degree": 2,
+      "package": "nutmeg.agents",
+      "path": "nutmeg/agents/workflow.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.config",
+      "out_degree": 0,
+      "package": "nutmeg.config",
+      "path": "nutmeg/config/__init__.py"
+    },
+    {
+      "in_degree": 7,
+      "name": "nutmeg.config.catalog",
+      "out_degree": 0,
+      "package": "nutmeg.config",
+      "path": "nutmeg/config/catalog.py"
+    },
+    {
+      "in_degree": 7,
+      "name": "nutmeg.config.settings",
+      "out_degree": 0,
+      "package": "nutmeg.config",
+      "path": "nutmeg/config/settings.py"
+    },
+    {
+      "in_degree": 4,
+      "name": "nutmeg.config.team_catalog",
+      "out_degree": 0,
+      "package": "nutmeg.config",
+      "path": "nutmeg/config/team_catalog.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.content",
+      "out_degree": 0,
+      "package": "nutmeg.content",
+      "path": "nutmeg/content/__init__.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.core",
+      "out_degree": 0,
+      "package": "nutmeg.core",
+      "path": "nutmeg/core/__init__.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.core.identity",
+      "out_degree": 1,
+      "package": "nutmeg.core",
+      "path": "nutmeg/core/identity.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.core.quota",
+      "out_degree": 0,
+      "package": "nutmeg.core",
+      "path": "nutmeg/core/quota.py"
+    },
+    {
+      "in_degree": 6,
+      "name": "nutmeg.core.repositories",
+      "out_degree": 3,
+      "package": "nutmeg.core",
+      "path": "nutmeg/core/repositories.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.data",
+      "out_degree": 0,
+      "package": "nutmeg.data",
+      "path": "nutmeg/data/__init__.py"
+    },
+    {
+      "in_degree": 3,
+      "name": "nutmeg.data.api_football",
+      "out_degree": 3,
+      "package": "nutmeg.data",
+      "path": "nutmeg/data/api_football.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.data.open_meteo",
+      "out_degree": 5,
+      "package": "nutmeg.data",
+      "path": "nutmeg/data/open_meteo.py"
+    },
+    {
+      "in_degree": 3,
+      "name": "nutmeg.data.soccerdata_client",
+      "out_degree": 5,
+      "package": "nutmeg.data",
+      "path": "nutmeg/data/soccerdata_client.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.data.statsbomb_open",
+      "out_degree": 0,
+      "package": "nutmeg.data",
+      "path": "nutmeg/data/statsbomb_open.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.data.the_odds_api",
+      "out_degree": 3,
+      "package": "nutmeg.data",
+      "path": "nutmeg/data/the_odds_api.py"
+    },
+    {
+      "in_degree": 3,
+      "name": "nutmeg.data.transfermarkt",
+      "out_degree": 4,
+      "package": "nutmeg.data",
+      "path": "nutmeg/data/transfermarkt.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.domain",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/__init__.py"
+    },
+    {
+      "in_degree": 3,
+      "name": "nutmeg.domain.analysis",
+      "out_degree": 2,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/analysis.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.domain.client",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/client.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.content",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/content.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.domain.daily_content",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/daily_content.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.domain.evals",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/evals.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.event_data",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/event_data.py"
+    },
+    {
+      "in_degree": 13,
+      "name": "nutmeg.domain.fixtures",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/fixtures.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.information",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/information.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.jczq",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/jczq.py"
+    },
+    {
+      "in_degree": 6,
+      "name": "nutmeg.domain.odds",
+      "out_degree": 1,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/odds.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.operations",
+      "out_degree": 1,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/operations.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.players",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/players.py"
+    },
+    {
+      "in_degree": 6,
+      "name": "nutmeg.domain.snapshot",
+      "out_degree": 1,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/snapshot.py"
+    },
+    {
+      "in_degree": 3,
+      "name": "nutmeg.domain.sync",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/sync.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.tactics",
+      "out_degree": 1,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/tactics.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.domain.value",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/value.py"
+    },
+    {
+      "in_degree": 5,
+      "name": "nutmeg.domain.zucai",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/zucai.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.zucai_odds_source",
+      "out_degree": 0,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/zucai_odds_source.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.zucai_schedule",
+      "out_degree": 1,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/zucai_schedule.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.domain.zucai_source",
+      "out_degree": 1,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/zucai_source.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.event_data",
+      "out_degree": 0,
+      "package": "nutmeg.event_data",
+      "path": "nutmeg/event_data/__init__.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.information",
+      "out_degree": 0,
+      "package": "nutmeg.information",
+      "path": "nutmeg/information/__init__.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.interfaces",
+      "out_degree": 0,
+      "package": "nutmeg.interfaces",
+      "path": "nutmeg/interfaces/__init__.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.interfaces.bot",
+      "out_degree": 2,
+      "package": "nutmeg.interfaces",
+      "path": "nutmeg/interfaces/bot/__init__.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.interfaces.bot.adapter",
+      "out_degree": 1,
+      "package": "nutmeg.interfaces",
+      "path": "nutmeg/interfaces/bot/adapter.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.interfaces.bot.telegram",
+      "out_degree": 1,
+      "package": "nutmeg.interfaces",
+      "path": "nutmeg/interfaces/bot/telegram.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.interfaces.cli",
+      "out_degree": 44,
+      "package": "nutmeg.interfaces",
+      "path": "nutmeg/interfaces/cli.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.interfaces.client_web",
+      "out_degree": 1,
+      "package": "nutmeg.interfaces",
+      "path": "nutmeg/interfaces/client_web.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.interfaces.web",
+      "out_degree": 0,
+      "package": "nutmeg.interfaces",
+      "path": "nutmeg/interfaces/web/__init__.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.interfaces.web.templates",
+      "out_degree": 0,
+      "package": "nutmeg.interfaces",
+      "path": "nutmeg/interfaces/web/templates/__init__.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.models",
+      "out_degree": 0,
+      "package": "nutmeg.models",
+      "path": "nutmeg/models/__init__.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.models.betting",
+      "out_degree": 0,
+      "package": "nutmeg.models",
+      "path": "nutmeg/models/betting.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.models.dixon_coles",
+      "out_degree": 0,
+      "package": "nutmeg.models",
+      "path": "nutmeg/models/dixon_coles.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.models.scoring",
+      "out_degree": 0,
+      "package": "nutmeg.models",
+      "path": "nutmeg/models/scoring.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.models.vaep",
+      "out_degree": 0,
+      "package": "nutmeg.models",
+      "path": "nutmeg/models/vaep.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.models.xg",
+      "out_degree": 0,
+      "package": "nutmeg.models",
+      "path": "nutmeg/models/xg.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.observability",
+      "out_degree": 0,
+      "package": "nutmeg.observability",
+      "path": "nutmeg/observability/__init__.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.observability.langsmith",
+      "out_degree": 1,
+      "package": "nutmeg.observability",
+      "path": "nutmeg/observability/langsmith.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.process",
+      "out_degree": 0,
+      "package": "nutmeg.process",
+      "path": "nutmeg/process/__init__.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.process.harness",
+      "out_degree": 0,
+      "package": "nutmeg.process",
+      "path": "nutmeg/process/harness.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.process.superpowers",
+      "out_degree": 0,
+      "package": "nutmeg.process",
+      "path": "nutmeg/process/superpowers.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.services",
+      "out_degree": 0,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/__init__.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.services.analysis",
+      "out_degree": 2,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/analysis.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.services.client",
+      "out_degree": 2,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/client.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.services.content",
+      "out_degree": 1,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/content.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.daily_content",
+      "out_degree": 2,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/daily_content.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.evals",
+      "out_degree": 1,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/evals.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.event_data",
+      "out_degree": 1,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/event_data.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.fixtures",
+      "out_degree": 2,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/fixtures.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.information",
+      "out_degree": 1,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/information.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.jczq",
+      "out_degree": 1,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/jczq.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.materialization",
+      "out_degree": 2,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/materialization.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.odds",
+      "out_degree": 3,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/odds.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.operations",
+      "out_degree": 2,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/operations.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.players",
+      "out_degree": 5,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/players.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.services.popularity",
+      "out_degree": 1,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/popularity.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.seedance",
+      "out_degree": 1,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/seedance.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.snapshot",
+      "out_degree": 8,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/snapshot.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.sync",
+      "out_degree": 4,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/sync.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.tactics",
+      "out_degree": 1,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/tactics.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.value",
+      "out_degree": 6,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/value.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.services.zucai",
+      "out_degree": 1,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/zucai.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.zucai_odds_source",
+      "out_degree": 2,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/zucai_odds_source.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.zucai_schedule",
+      "out_degree": 3,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/zucai_schedule.py"
+    },
+    {
+      "in_degree": 2,
+      "name": "nutmeg.services.zucai_source",
+      "out_degree": 2,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/zucai_source.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.storage",
+      "out_degree": 0,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/__init__.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.storage.bootstrap",
+      "out_degree": 3,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/bootstrap.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.storage.client_state_repository",
+      "out_degree": 1,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/client_state_repository.py"
+    },
+    {
+      "in_degree": 7,
+      "name": "nutmeg.storage.duckdb_utils",
+      "out_degree": 0,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/duckdb_utils.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.storage.fixture_repository",
+      "out_degree": 3,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/fixture_repository.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.storage.odds_repository",
+      "out_degree": 4,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/odds_repository.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.storage.prediction_repository",
+      "out_degree": 3,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/prediction_repository.py"
+    },
+    {
+      "in_degree": 4,
+      "name": "nutmeg.storage.reference_repository",
+      "out_degree": 3,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/reference_repository.py"
+    },
+    {
+      "in_degree": 3,
+      "name": "nutmeg.storage.state_models",
+      "out_degree": 0,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/state_models.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.storage.sync_run_repository",
+      "out_degree": 2,
+      "package": "nutmeg.storage",
+      "path": "nutmeg/storage/sync_run_repository.py"
+    },
+    {
+      "in_degree": 0,
+      "name": "nutmeg.zucai",
+      "out_degree": 0,
+      "package": "nutmeg.zucai",
+      "path": "nutmeg/zucai/__init__.py"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nutmeg Zucai Scheduled Run Records v0",
+  "type": "object",
+  "required": ["records"],
+  "properties": {
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["run_date", "slot", "issue_id", "status", "generated_at"],
+        "properties": {
+          "run_date": {"type": "string"},
+          "slot": {"type": "string", "enum": ["afternoon", "revision"]},
+          "issue_id": {"type": "string"},
+          "status": {"type": "string"},
+          "generated_at": {"type": "string"},
+          "report_json_path": {"type": ["string", "null"]},
+          "markdown_path": {"type": ["string", "null"]},
+          "pdf_path": {"type": ["string", "null"]},
+          "dispatch_status": {"type": ["string", "null"]},
+          "warnings": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

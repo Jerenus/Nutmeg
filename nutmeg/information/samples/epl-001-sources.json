@@ -1,0 +1,25 @@
+{
+  "cache_ttl_seconds": 900,
+  "timeout_seconds": 3,
+  "max_bytes": 262144,
+  "sources": [
+    {
+      "source_name": "Bundled local sample",
+      "kind": "local_json",
+      "path": "nutmeg/information/samples/epl-001-information.json",
+      "reliability": "credible",
+      "fixture_ids": ["epl-001"],
+      "teams": ["Arsenal", "Tottenham Hotspur"],
+      "tags": ["team_news"]
+    },
+    {
+      "source_name": "Example trusted club RSS",
+      "kind": "remote_rss",
+      "enabled": false,
+      "url": "https://example.test/club-feed.xml",
+      "reliability": "official",
+      "teams": ["Arsenal"],
+      "tags": ["official", "team_news"]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+players:
+  Arsenal:
+    Gabriel Magalhaes:
+      aliases:
+        - Gabriel
+        - Gabriel Magalhães
+      position_group: Defender
+    Jurrien Timber:
+      aliases:
+        - Jurriën Timber
+      position_group: Defender
+    Martin Odegaard:
+      aliases:
+        - Martin Ødegaard
+      position_group: Midfielder
+  Tottenham Hotspur:
+    Son Heung-min:
+      aliases:
+        - Heung-Min Son
+      position_group: Attack

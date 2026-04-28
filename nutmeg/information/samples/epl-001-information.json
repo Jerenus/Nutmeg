@@ -1,0 +1,66 @@
+{
+  "source_name": "Nutmeg Local Desk",
+  "source_type": "json",
+  "items": [
+    {
+      "item_id": "arsenal-fullback-training",
+      "source_name": "Arsenal official",
+      "title": "Arsenal fullback returns to training before derby",
+      "summary": "Arsenal report that their starting fullback has returned to full training before the Tottenham match.",
+      "url": "https://example.test/arsenal-fullback-training",
+      "published_at": "2026-04-26T08:30:00+00:00",
+      "reliability": "official",
+      "fixture_ids": ["epl-001"],
+      "teams": ["Arsenal"],
+      "tags": ["injury", "team_news"]
+    },
+    {
+      "item_id": "spurs-lineup-note",
+      "source_name": "North London Beat",
+      "title": "Tottenham may rotate midfield after short rest",
+      "summary": "A credible local report says Tottenham are considering a midfield rotation after a congested schedule.",
+      "url": "https://example.test/spurs-midfield-rotation",
+      "published_at": "2026-04-26T07:45:00+00:00",
+      "reliability": "credible",
+      "fixture_ids": ["epl-001"],
+      "teams": ["Tottenham Hotspur"],
+      "tags": ["lineup", "team_news"]
+    },
+    {
+      "item_id": "derby-rumor",
+      "source_name": "Supporter Wire",
+      "title": "Rumor of late Arsenal winger fitness test",
+      "summary": "An unconfirmed supporter report claims an Arsenal winger faces a late fitness test.",
+      "url": "https://example.test/arsenal-winger-rumor",
+      "published_at": "2026-04-26T09:05:00+00:00",
+      "reliability": "rumor",
+      "fixture_ids": ["epl-001"],
+      "teams": ["Arsenal"],
+      "tags": ["injury", "rumor"]
+    },
+    {
+      "item_id": "duplicate-rumor",
+      "source_name": "Supporter Wire",
+      "title": "Rumor of late Arsenal winger fitness test",
+      "summary": "Duplicate copy of the same unconfirmed winger note.",
+      "url": "https://example.test/arsenal-winger-rumor",
+      "published_at": "2026-04-26T09:10:00+00:00",
+      "reliability": "rumor",
+      "fixture_ids": ["epl-001"],
+      "teams": ["Arsenal"],
+      "tags": ["injury", "rumor"]
+    },
+    {
+      "item_id": "other-match",
+      "source_name": "Other Source",
+      "title": "Liverpool unrelated update",
+      "summary": "This should not match epl-001.",
+      "url": "https://example.test/liverpool-update",
+      "published_at": "2026-04-26T08:00:00+00:00",
+      "reliability": "credible",
+      "fixture_ids": ["epl-999"],
+      "teams": ["Liverpool"],
+      "tags": ["team_news"]
+    }
+  ]
+}

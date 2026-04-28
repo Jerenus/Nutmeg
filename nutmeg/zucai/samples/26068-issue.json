@@ -1,0 +1,27 @@
+{
+  "issue_id": "26068",
+  "game_type": "sfc14",
+  "sale_start": "2026-04-22 20:00",
+  "sale_stop": "2026-04-26 20:30",
+  "draw_date": "2026-04-27",
+  "sources": [
+    {"label": "体彩中心赛程公告", "url": "https://m.sporttery.cn/mctzc/zcgg/20260421/10053233.html"},
+    {"label": "竞彩网26068期看点", "url": "https://www.sporttery.cn/ctzc/zjdp/20260424/10053302.html"}
+  ],
+  "matches": [
+    {"match_no": 1, "competition": "英足总杯", "home_team": "切尔西", "away_team": "利兹联", "match_date": "2026-04-26", "risk_flags": ["manager_change", "cup_semifinal", "injuries"], "notes": ["切尔西换帅且近况低迷，杯赛90分钟平局风险高。"]},
+    {"match_no": 2, "competition": "德甲", "home_team": "斯图加特", "away_team": "云达不来梅", "match_date": "2026-04-26", "risk_flags": ["defensive_form"], "notes": ["主队争欧冠席位，但近期防线波动。"]},
+    {"match_no": 3, "competition": "德甲", "home_team": "多特蒙德", "away_team": "弗赖堡", "match_date": "2026-04-26", "risk_flags": ["fixture_congestion"], "notes": ["弗赖堡连续双赛，体能劣势。"]},
+    {"match_no": 4, "competition": "意甲", "home_team": "热那亚", "away_team": "科莫", "match_date": "2026-04-26", "risk_flags": ["away_favorite", "draw_risk"], "notes": ["市场偏客，但科莫连败。"]},
+    {"match_no": 5, "competition": "意甲", "home_team": "都灵", "away_team": "国际米兰", "match_date": "2026-04-27", "risk_flags": ["away_banker", "home_form", "injury"], "notes": ["国米优势明显，都灵主场强势，劳塔罗伤情需防。"]},
+    {"match_no": 6, "competition": "意甲", "home_team": "AC米兰", "away_team": "尤文图斯", "match_date": "2026-04-27", "risk_flags": ["balanced_odds", "big_match"], "notes": ["强强对话，平局权重高。"]},
+    {"match_no": 7, "competition": "西甲", "home_team": "皇家奥维耶多", "away_team": "埃尔切", "match_date": "2026-04-26", "risk_flags": ["shallow_handicap"], "notes": ["主队不败倾向但让步浅。"]},
+    {"match_no": 8, "competition": "西甲", "home_team": "奥萨苏纳", "away_team": "塞维利亚", "match_date": "2026-04-27", "risk_flags": ["draw_risk", "shallow_handicap"], "notes": ["主胜方向但需防平。"]},
+    {"match_no": 9, "competition": "西甲", "home_team": "比利亚雷亚尔", "away_team": "维戈塞尔塔", "match_date": "2026-04-27", "risk_flags": ["draw_risk", "home_index_high"], "notes": ["主胜主线，半球盘主队指数偏高。"]},
+    {"match_no": 10, "competition": "法甲", "home_team": "洛里昂", "away_team": "斯特拉斯堡", "match_date": "2026-04-26", "risk_flags": ["odds_shift", "draw_risk"], "notes": ["17:00数据主队方向转强。"]},
+    {"match_no": 11, "competition": "法甲", "home_team": "勒阿弗尔", "away_team": "梅斯", "match_date": "2026-04-26", "risk_flags": ["relegation_pressure", "draw_risk"], "notes": ["保级乱局，平局需要保留。"]},
+    {"match_no": 12, "competition": "法甲", "home_team": "巴黎FC", "away_team": "里尔", "match_date": "2026-04-26", "risk_flags": ["away_favorite", "draw_risk"], "notes": ["里尔客胜主线，但巴黎FC主场反弹。"]},
+    {"match_no": 13, "competition": "法甲", "home_team": "雷恩", "away_team": "南特", "match_date": "2026-04-26", "risk_flags": ["banker"], "notes": ["雷恩三连胜，南特低胜率。"]},
+    {"match_no": 14, "competition": "法甲", "home_team": "马赛", "away_team": "尼斯", "match_date": "2026-04-27", "risk_flags": ["banker"], "notes": ["马赛冲欧战意强，尼斯走势不足。"]}
+  ]
+}

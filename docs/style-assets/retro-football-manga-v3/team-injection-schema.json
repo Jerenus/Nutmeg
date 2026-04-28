@@ -1,0 +1,57 @@
+{
+  "schema_version": "retro-football-manga-v3-team-injection-1",
+  "description": "Match-specific fictional team and character injection for the global Retro Football Manga v3 style.",
+  "match_context": {
+    "real_match_id": "string",
+    "competition": "string",
+    "kickoff_time": "string",
+    "analysis_theme": "string",
+    "public_disclaimer_required": true
+  },
+  "teams": [
+    {
+      "slot": "team_a",
+      "real_team_reference": "string",
+      "fictional_display_name": "string",
+      "city_or_identity_inspiration": "string",
+      "kit_colors": ["string"],
+      "abstract_symbol": "string",
+      "tactical_identity": "string",
+      "forbidden_visuals": ["real crest", "official sponsor", "real player likeness"]
+    },
+    {
+      "slot": "team_b",
+      "real_team_reference": "string",
+      "fictional_display_name": "string",
+      "city_or_identity_inspiration": "string",
+      "kit_colors": ["string"],
+      "abstract_symbol": "string",
+      "tactical_identity": "string",
+      "forbidden_visuals": ["real crest", "official sponsor", "real player likeness"]
+    }
+  ],
+  "characters": [
+    {
+      "id": "string",
+      "team_slot": "team_a|team_b",
+      "number": "string",
+      "role_archetype": "string",
+      "visual_anchors": {
+        "hair": "string",
+        "face": "string",
+        "build": "string",
+        "kit_detail": "string"
+      },
+      "personality": "string",
+      "signature_move": "string",
+      "do_not_change": ["number", "hair", "kit color", "role"]
+    }
+  ],
+  "episode_variables": {
+    "segment_count": 6,
+    "primary_conflict": "string",
+    "key_risks": ["string"],
+    "viewing_question": "string",
+    "simulated_highlight_type": "press|counter|set_piece|save|shot|transition"
+  }
+}

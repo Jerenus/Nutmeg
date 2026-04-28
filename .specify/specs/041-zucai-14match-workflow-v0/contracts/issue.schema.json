@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nutmeg Zucai Issue Snapshot v0",
+  "type": "object",
+  "required": ["issue_id", "matches"],
+  "properties": {
+    "issue_id": {"type": "string"},
+    "game_type": {"const": "sfc14"},
+    "sale_start": {"type": ["string", "null"]},
+    "sale_stop": {"type": ["string", "null"]},
+    "draw_date": {"type": ["string", "null"]},
+    "sources": {"type": "array"},
+    "matches": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": {"type": "object"}
+    }
+  }
+}

@@ -1,0 +1,65 @@
+leagues:
+  - code: epl
+    name: Premier League
+    country: England
+    group: domestic
+    api_football_id: 39
+    season_start_month: 7
+    soccerdata_fbref: ENG-Premier League
+    soccerdata_understat: ENG-Premier League
+    transfermarkt_competition_id: GB1
+    the_odds_api_sport_key: soccer_epl
+  - code: laliga
+    name: La Liga
+    country: Spain
+    group: domestic
+    api_football_id: 140
+    season_start_month: 7
+    soccerdata_fbref: ESP-La Liga
+    soccerdata_understat: ESP-La Liga
+    transfermarkt_competition_id: ES1
+    the_odds_api_sport_key: soccer_spain_la_liga
+  - code: serie-a
+    name: Serie A
+    country: Italy
+    group: domestic
+    api_football_id: 135
+    season_start_month: 7
+    soccerdata_fbref: ITA-Serie A
+    soccerdata_understat: ITA-Serie A
+    transfermarkt_competition_id: IT1
+    the_odds_api_sport_key: soccer_italy_serie_a
+  - code: bundesliga
+    name: Bundesliga
+    country: Germany
+    group: domestic
+    api_football_id: 78
+    season_start_month: 7
+    soccerdata_fbref: GER-Bundesliga
+    soccerdata_understat: GER-Bundesliga
+    transfermarkt_competition_id: L1
+    the_odds_api_sport_key: soccer_germany_bundesliga
+  - code: ligue-1
+    name: Ligue 1
+    country: France
+    group: domestic
+    api_football_id: 61
+    season_start_month: 7
+    soccerdata_fbref: FRA-Ligue 1
+    soccerdata_understat: FRA-Ligue 1
+    transfermarkt_competition_id: FR1
+    the_odds_api_sport_key: soccer_france_ligue_one
+  - code: ucl
+    name: UEFA Champions League
+    country: Europe
+    group: continental
+    api_football_id: 2
+    season_start_month: 7
+    the_odds_api_sport_key: soccer_uefa_champs_league
+  - code: uel
+    name: UEFA Europa League
+    country: Europe
+    group: continental
+    api_football_id: 3
+    season_start_month: 7
+    the_odds_api_sport_key: soccer_uefa_europa_league

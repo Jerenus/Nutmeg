@@ -1,0 +1,187 @@
+{
+  "lastUpdateTime": "2026-04-26 18:33:24",
+  "matchInfoList": [
+    {
+      "businessDate": "2026-04-26",
+      "subMatchList": [
+        {
+          "matchNumStr": "周日020",
+          "matchDate": "2026-04-27",
+          "matchTime": "00:00:00",
+          "leagueAbbName": "意甲",
+          "homeTeamAbbName": "都灵",
+          "awayTeamAbbName": "国际米兰",
+          "matchStatus": "Selling",
+          "poolList": [
+            {
+              "poolCode": "HAFU",
+              "poolStatus": "Selling",
+              "single": 1,
+              "allUp": 1
+            }
+          ],
+          "hafu": {
+            "da": "3.70",
+            "updateDate": "2026-04-26",
+            "updateTime": "17:51:47"
+          }
+        },
+        {
+          "matchNumStr": "周日023",
+          "matchDate": "2026-04-27",
+          "matchTime": "01:00:00",
+          "leagueAbbName": "葡超",
+          "homeTeamAbbName": "阿马多拉",
+          "awayTeamAbbName": "波尔图",
+          "matchStatus": "Selling",
+          "poolList": [
+            {
+              "poolCode": "CRS",
+              "poolStatus": "Selling",
+              "single": 1,
+              "allUp": 1
+            }
+          ],
+          "crs": {
+            "s00s02": "5.00",
+            "updateDate": "2026-04-24",
+            "updateTime": "09:58:44"
+          }
+        },
+        {
+          "matchNumStr": "周日025",
+          "matchDate": "2026-04-27",
+          "matchTime": "02:45:00",
+          "leagueAbbName": "意甲",
+          "homeTeamAbbName": "AC米兰",
+          "awayTeamAbbName": "尤文图斯",
+          "matchStatus": "Selling",
+          "poolList": [
+            {
+              "poolCode": "CRS",
+              "poolStatus": "Selling",
+              "single": 1,
+              "allUp": 1
+            }
+          ],
+          "crs": {
+            "s01s01": "5.80",
+            "updateDate": "2026-04-26",
+            "updateTime": "15:22:44"
+          }
+        },
+        {
+          "matchNumStr": "周日028",
+          "matchDate": "2026-04-27",
+          "matchTime": "03:30:00",
+          "leagueAbbName": "葡超",
+          "homeTeamAbbName": "阿维SAD",
+          "awayTeamAbbName": "里斯本",
+          "matchStatus": "Selling",
+          "poolList": [
+            {
+              "poolCode": "HHAD",
+              "poolStatus": "Selling",
+              "single": 1,
+              "allUp": 1
+            }
+          ],
+          "hhad": {
+            "d": "4.10",
+            "goalLine": "+2",
+            "updateDate": "2026-04-26",
+            "updateTime": "16:48:06"
+          }
+        },
+        {
+          "matchNumStr": "周日012",
+          "matchDate": "2026-04-26",
+          "matchTime": "21:30:00",
+          "leagueAbbName": "德甲",
+          "homeTeamAbbName": "斯图加特",
+          "awayTeamAbbName": "不来梅",
+          "matchStatus": "Selling",
+          "poolList": [
+            {
+              "poolCode": "TTG",
+              "poolStatus": "Selling",
+              "single": 1,
+              "allUp": 1
+            }
+          ],
+          "ttg": {
+            "s4": "4.10",
+            "updateDate": "2026-04-26",
+            "updateTime": "15:42:14"
+          }
+        },
+        {
+          "matchNumStr": "周日019",
+          "matchDate": "2026-04-26",
+          "matchTime": "23:30:00",
+          "leagueAbbName": "德甲",
+          "homeTeamAbbName": "多特蒙德",
+          "awayTeamAbbName": "弗赖堡",
+          "matchStatus": "Selling",
+          "poolList": [
+            {
+              "poolCode": "TTG",
+              "poolStatus": "Selling",
+              "single": 1,
+              "allUp": 1
+            }
+          ],
+          "ttg": {
+            "s4": "4.25",
+            "updateDate": "2026-04-26",
+            "updateTime": "18:33:24"
+          }
+        },
+        {
+          "matchNumStr": "周日024",
+          "matchDate": "2026-04-27",
+          "matchTime": "01:15:00",
+          "leagueAbbName": "挪超",
+          "homeTeamAbbName": "利勒斯特",
+          "awayTeamAbbName": "博德闪耀",
+          "matchStatus": "Selling",
+          "poolList": [
+            {
+              "poolCode": "TTG",
+              "poolStatus": "Selling",
+              "single": 1,
+              "allUp": 1
+            }
+          ],
+          "ttg": {
+            "s5": "5.90",
+            "updateDate": "2026-04-26",
+            "updateTime": "17:47:58"
+          }
+        },
+        {
+          "matchNumStr": "周日029",
+          "matchDate": "2026-04-27",
+          "matchTime": "07:00:00",
+          "leagueAbbName": "美职",
+          "homeTeamAbbName": "洛城银河",
+          "awayTeamAbbName": "盐湖城",
+          "matchStatus": "Selling",
+          "poolList": [
+            {
+              "poolCode": "HAFU",
+              "poolStatus": "Selling",
+              "single": 1,
+              "allUp": 1
+            }
+          ],
+          "hafu": {
+            "dd": "6.25",
+            "updateDate": "2026-04-25",
+            "updateTime": "09:37:59"
+          }
+        }
+      ]
+    }
+  ]
+}

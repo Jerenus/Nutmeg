@@ -1,0 +1,21 @@
+{
+  "issue_id": "26068",
+  "captured_at": "2026-04-26 17:00 CST",
+  "sources": [{"label": "新浪欧洲四大机构17:00", "url": "https://sports.sina.com.cn/l/2026-04-23/doc-inhvnnxa8632639.shtml"}],
+  "matches": [
+    {"match_no": 1, "home": 1.98, "draw": 3.52, "away": 3.58},
+    {"match_no": 2, "home": 1.54, "draw": 4.38, "away": 5.31},
+    {"match_no": 3, "home": 1.40, "draw": 4.91, "away": 7.00},
+    {"match_no": 4, "home": 4.62, "draw": 3.67, "away": 1.73},
+    {"match_no": 5, "home": 7.38, "draw": 4.95, "away": 1.38},
+    {"match_no": 6, "home": 2.76, "draw": 3.10, "away": 2.64},
+    {"match_no": 7, "home": 2.30, "draw": 3.34, "away": 3.03},
+    {"match_no": 8, "home": 1.94, "draw": 3.38, "away": 4.02},
+    {"match_no": 9, "home": 1.90, "draw": 3.42, "away": 3.83},
+    {"match_no": 10, "home": 1.90, "draw": 3.69, "away": 3.70},
+    {"match_no": 11, "home": 1.56, "draw": 4.08, "away": 5.19},
+    {"match_no": 12, "home": 4.21, "draw": 3.69, "away": 1.81},
+    {"match_no": 13, "home": 1.46, "draw": 4.48, "away": 6.50},
+    {"match_no": 14, "home": 1.56, "draw": 4.34, "away": 5.25}
+  ]
+}

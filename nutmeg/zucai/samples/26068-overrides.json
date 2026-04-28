@@ -1,0 +1,23 @@
+{
+  "issue_id": "26068",
+  "matches": [
+    {"match_no": 1, "pick": "31", "primary": "3", "risk_tier": "volatile", "confidence": 0.52, "rationale": "切尔西换帅、伤停与杯赛平局风险叠加，主胜不能当硬胆。"},
+    {"match_no": 2, "pick": "3", "primary": "3", "risk_tier": "lean", "confidence": 0.64, "rationale": "斯图加特主胜可博胆，大单防平。"},
+    {"match_no": 3, "pick": "3", "primary": "3", "risk_tier": "banker", "confidence": 0.74, "rationale": "多特主胜均赔压低，弗赖堡连续双赛。"},
+    {"match_no": 4, "pick": "10", "primary": "0", "risk_tier": "cover", "confidence": 0.55, "rationale": "科莫客胜主线但连败，平局保护。"},
+    {"match_no": 5, "pick": "10", "primary": "0", "risk_tier": "cover", "confidence": 0.66, "rationale": "国米客胜主线，但都灵主场与国米消耗要求防平。"},
+    {"match_no": 6, "pick": "10", "primary": "1", "risk_tier": "volatile", "confidence": 0.49, "rationale": "米兰尤文均赔接近，平局权重最高。"},
+    {"match_no": 7, "pick": "31", "primary": "3", "risk_tier": "cover", "confidence": 0.53, "rationale": "奥维耶多主队不败，主胜需搭防平。"},
+    {"match_no": 8, "pick": "31", "primary": "3", "risk_tier": "cover", "confidence": 0.57, "rationale": "奥萨苏纳主胜主线，半球盘防平。"},
+    {"match_no": 9, "pick": "31", "primary": "3", "risk_tier": "cover", "confidence": 0.58, "rationale": "比利亚主胜主线，平局优先于客胜冷门。"},
+    {"match_no": 10, "pick": "31", "primary": "3", "risk_tier": "cover", "confidence": 0.56, "rationale": "洛里昂17:00方向转强，修正为主队不败。"},
+    {"match_no": 11, "pick": "31", "primary": "3", "risk_tier": "cover", "confidence": 0.60, "rationale": "勒阿弗尔赔率支持，但保级乱局防平。"},
+    {"match_no": 12, "pick": "10", "primary": "0", "risk_tier": "cover", "confidence": 0.57, "rationale": "里尔客胜主线，巴黎FC主场状态带来平局风险。"},
+    {"match_no": 13, "pick": "3", "primary": "3", "risk_tier": "banker", "confidence": 0.72, "rationale": "雷恩状态和盘口同向，主胜可做胆。"},
+    {"match_no": 14, "pick": "3", "primary": "3", "risk_tier": "banker", "confidence": 0.72, "rationale": "马赛战意与状态更清晰，是本期胆材之一。"}
+  ],
+  "plans": [
+    {"name": "均衡主推", "plan_type": "full14", "code": "31 3 3 10 10 10 31 31 31 31 31 10 3 3", "note": "主推14场容错版本。"},
+    {"name": "任九稳妥", "plan_type": "renjiu", "code": "- 3 3 10 10 - - 31 31 - 31 - 3 3", "note": "剔除高分歧场，保留更清晰的9场。"}
+  ]
+}

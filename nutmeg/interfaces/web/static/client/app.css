@@ -1,0 +1,258 @@
+:root {
+  --nutmeg-bg: #f7f1e3;
+  --nutmeg-ink: #251810;
+  --nutmeg-card: #fffaf0;
+  --nutmeg-accent: #0f6b4f;
+  --nutmeg-alert: #b24125;
+  --nutmeg-line: rgba(37, 24, 16, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--nutmeg-ink);
+  background:
+    radial-gradient(circle at top left, rgba(15, 107, 79, 0.18), transparent 30rem),
+    linear-gradient(135deg, #f7f1e3 0%, #efe0bc 52%, #f9f4e8 100%);
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.client-shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0;
+}
+
+.hero-panel,
+.match-card {
+  border: 1px solid var(--nutmeg-line);
+  background: color-mix(in srgb, var(--nutmeg-card) 92%, white 8%);
+  box-shadow: 0 24px 60px rgba(37, 24, 16, 0.12);
+}
+
+.hero-panel {
+  border-radius: 32px;
+  padding: clamp(24px, 4vw, 48px);
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  color: var(--nutmeg-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0.15em 0;
+  font-size: clamp(2.4rem, 7vw, 5.4rem);
+  letter-spacing: -0.07em;
+}
+
+.responsible-use {
+  max-width: 720px;
+  line-height: 1.7;
+}
+
+.opportunity-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.alert-strip {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 18px;
+  border: 1px solid rgba(178, 65, 37, 0.28);
+  border-radius: 24px;
+  background: rgba(255, 250, 240, 0.72);
+}
+
+.alert-strip h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.alert-strip article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.alert-strip small,
+.alert-list {
+  color: rgba(37, 24, 16, 0.62);
+}
+
+.match-card {
+  border-radius: 24px;
+  padding: 20px;
+}
+
+.match-card[data-actionability="value"] {
+  border-color: rgba(15, 107, 79, 0.55);
+}
+
+.card-rank {
+  color: var(--nutmeg-accent);
+  font-weight: 700;
+}
+
+.match-card h2 {
+  margin: 8px 0;
+  font-size: 1.35rem;
+}
+
+.meta,
+.freshness {
+  color: rgba(37, 24, 16, 0.68);
+  font-size: 0.92rem;
+}
+
+.decision {
+  color: var(--nutmeg-accent);
+  font-weight: 700;
+}
+
+.caveats {
+  padding-left: 1.2rem;
+  color: var(--nutmeg-alert);
+}
+
+.information-panel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--nutmeg-line);
+}
+
+.information-list {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.information-list li {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(15, 107, 79, 0.18);
+  border-radius: 16px;
+  background: rgba(15, 107, 79, 0.06);
+}
+
+.information-list span {
+  color: rgba(37, 24, 16, 0.68);
+  font-size: 0.9rem;
+}
+
+.reliability-label {
+  width: max-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(178, 65, 37, 0.12);
+  color: var(--nutmeg-alert) !important;
+  font-weight: 700;
+}
+
+.information-warnings {
+  margin-bottom: 0;
+}
+
+.client-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--nutmeg-line);
+}
+
+.client-form fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.client-form legend,
+.client-form label {
+  font-size: 0.9rem;
+}
+
+.client-form legend {
+  width: 100%;
+  color: rgba(37, 24, 16, 0.7);
+  font-weight: 700;
+}
+
+.client-form button,
+.client-form select,
+.client-form textarea {
+  width: 100%;
+  border: 1px solid var(--nutmeg-line);
+  border-radius: 14px;
+  font: inherit;
+}
+
+.client-form button {
+  cursor: pointer;
+  background: var(--nutmeg-accent);
+  color: white;
+  padding: 11px 14px;
+  font-weight: 700;
+}
+
+.client-form select,
+.client-form textarea {
+  background: rgba(255, 250, 240, 0.82);
+  color: var(--nutmeg-ink);
+  padding: 10px 12px;
+}
+
+.alert-note {
+  color: rgba(37, 24, 16, 0.72);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.discipline-card {
+  border-color: rgba(178, 65, 37, 0.32);
+}
+
+.alert-list {
+  padding-left: 1.1rem;
+  line-height: 1.6;
+}
+
+.empty-state {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 820px) {
+  .client-shell {
+    width: min(100% - 20px, 680px);
+    padding: 20px 0;
+  }
+
+  .hero-panel {
+    border-radius: 24px;
+  }
+
+  .opportunity-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .alert-strip article {
+    grid-template-columns: 1fr;
+  }
+}

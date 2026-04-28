@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nutmeg Zucai Analyst Overrides v0",
+  "type": "object",
+  "properties": {
+    "issue_id": {"type": "string"},
+    "matches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["match_no", "pick"],
+        "properties": {
+          "match_no": {"type": "integer", "minimum": 1, "maximum": 14},
+          "pick": {"type": "string"},
+          "primary": {"type": "string"},
+          "risk_tier": {"type": "string"},
+          "confidence": {"type": "number"},
+          "rationale": {"type": "string"}
+        }
+      }
+    }
+  }
+}
