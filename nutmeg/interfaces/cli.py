@@ -22,6 +22,13 @@ from nutmeg.data.open_meteo import OpenMeteoClient
 from nutmeg.data.soccerdata_client import SoccerDataClient, SoccerDataError
 from nutmeg.data.the_odds_api import TheOddsApiClient, TheOddsApiError
 from nutmeg.data.transfermarkt import TransfermarktDataset
+from nutmeg.domain.content import ComplianceAssessment, ComplianceChecklistItem
+from nutmeg.domain.wechat import (
+    WeChatArticlePack,
+    WeChatArticleSelection,
+    WeChatArtifacts,
+    WeChatDraftPayload,
+)
 from nutmeg.interfaces.bot import (
     BotAdapter,
     TelegramBotClient,
@@ -67,6 +74,11 @@ from nutmeg.services.snapshot import FixtureNotFoundError, FixtureSnapshotServic
 from nutmeg.services.sync import FixtureSyncService
 from nutmeg.services.tactics import TacticalVisualService
 from nutmeg.services.value import ValueBoardService
+from nutmeg.services.wechat_publisher import (
+    WeChatDraftError,
+    WeChatPublisherService,
+    WeChatPublisherValidationError,
+)
 from nutmeg.services.zucai import ZucaiValidationError, ZucaiWorkflowService
 from nutmeg.services.zucai_odds_source import (
     ZucaiOddsSourceValidationError,
@@ -139,6 +151,13 @@ CONTENT_LIMIT_OPTION = typer.Option(3, "--limit")
 CONTENT_OUTPUT_DIR_OPTION = typer.Option(Path(".nutmeg-data/content"), "--output-dir")
 CONTENT_LLM_MODE_OPTION = typer.Option("openclaw", "--llm-mode")
 CONTENT_OPENCLAW_MODEL_OPTION = typer.Option("nyu-openai-chat/gpt-5.5", "--openclaw-model")
+WECHAT_OUTPUT_DIR_OPTION = typer.Option(Path(".nutmeg-data/wechat"), "--output-dir")
+WECHAT_THUMB_MEDIA_ID_OPTION = typer.Option("DRY_RUN_COVER_MEDIA_ID", "--thumb-media-id")
+WECHAT_AUTHOR_OPTION = typer.Option("Nutmeg", "--author")
+WECHAT_SOURCE_URL_OPTION = typer.Option(None, "--source-url")
+WECHAT_PACK_DIR_OPTION = typer.Option(..., "--pack-dir")
+WECHAT_APP_ID_OPTION = typer.Option(None, "--app-id")
+WECHAT_APP_SECRET_OPTION = typer.Option(None, "--app-secret")
 DAILY_CONTENT_DATE_OPTION = typer.Option("today", "--date")
 DAILY_CONTENT_PROVIDER_OPTION = typer.Option("live", "--provider")
 DAILY_CONTENT_OUTPUT_DIR_OPTION = typer.Option(Path(".nutmeg-data/daily-content"), "--output-dir")
@@ -546,6 +565,84 @@ def build_content_publisher_service(
     else:
         raise ContentValidationError("llm-mode must be `openclaw` or `deterministic`.")
     return ContentPublisherService(llm_provider=provider)
+
+
+def build_wechat_publisher_service() -> WeChatPublisherService:
+    return WeChatPublisherService()
+
+
+def _load_wechat_pack(pack_dir: Path) -> WeChatArticlePack:
+    draft_payload_file = pack_dir / "draft-payload.json"
+    compliance_file = pack_dir / "compliance.json"
+    selections_file = pack_dir / "selected-matches.json"
+    article_md_file = pack_dir / "article.md"
+    article_html_file = pack_dir / "article.html"
+    if not draft_payload_file.exists():
+        raise WeChatPublisherValidationError(f"draft payload not found: {draft_payload_file}")
+    draft_data = json.loads(draft_payload_file.read_text(encoding="utf-8"))
+    article = draft_data["articles"][0]
+    compliance_data = json.loads(compliance_file.read_text(encoding="utf-8"))
+    selections_data = json.loads(selections_file.read_text(encoding="utf-8"))
+    checklist = [
+        ComplianceChecklistItem(
+            question=str(item.get("question") or ""),
+            status=str(item.get("status") or ""),
+            evidence=str(item.get("evidence") or ""),
+        )
+        for item in compliance_data.get("checklist") or []
+    ]
+    compliance = ComplianceAssessment(
+        risk_level=str(compliance_data.get("risk_level") or "BLOCKED"),
+        risk_reasons=[str(item) for item in compliance_data.get("risk_reasons") or []],
+        checklist=checklist,
+        publish_recommendation=str(compliance_data.get("publish_recommendation") or "skip"),
+    )
+    selections = [
+        WeChatArticleSelection(
+            match_no=str(item.get("match_no") or ""),
+            match_date=str(item.get("match_date") or ""),
+            match_time=str(item.get("match_time") or ""),
+            league=str(item.get("league") or ""),
+            home_team=str(item.get("home_team") or ""),
+            away_team=str(item.get("away_team") or ""),
+            score=float(item.get("score") or 0),
+            selection_reason=str(item.get("selection_reason") or ""),
+            observed_picks=[str(value) for value in item.get("observed_picks") or []],
+            risk_notes=[str(value) for value in item.get("risk_notes") or []],
+        )
+        for item in selections_data
+    ]
+    payload = WeChatDraftPayload(
+        title=str(article.get("title") or ""),
+        author=str(article.get("author") or ""),
+        digest=str(article.get("digest") or ""),
+        content_html=str(article.get("content") or ""),
+        thumb_media_id=str(article.get("thumb_media_id") or ""),
+        source_url=article.get("content_source_url"),
+        need_open_comment=int(article.get("need_open_comment") or 0),
+        only_fans_can_comment=int(article.get("only_fans_can_comment") or 0),
+    )
+    return WeChatArticlePack(
+        generated_at="",
+        source_report_path="",
+        title=payload.title,
+        digest=payload.digest,
+        author=payload.author,
+        article_markdown=article_md_file.read_text(encoding="utf-8"),
+        article_html=article_html_file.read_text(encoding="utf-8"),
+        selections=selections,
+        compliance=compliance,
+        draft_payload=payload,
+        artifacts=WeChatArtifacts(
+            article_markdown_path=str(article_md_file),
+            article_html_path=str(article_html_file),
+            draft_payload_path=str(draft_payload_file),
+            compliance_path=str(compliance_file),
+            selected_matches_path=str(selections_file),
+            cover_prompt_path=str(pack_dir / "cover-prompt.txt"),
+            publish_checklist_path=str(pack_dir / "publish-checklist.md"),
+        ),
+    )
 
 
 def build_daily_content_service(*, provider: str = "live") -> DailyContentService:
@@ -1659,6 +1756,72 @@ def content_pack(
         )
         for warning in pack.warnings:
             console.print(f"   warning: {warning}")
+
+
+@app.command("wechat-article-pack")
+def wechat_article_pack(
+    report_file: Path = CONTENT_REPORT_FILE_OPTION,
+    output_dir: Path = WECHAT_OUTPUT_DIR_OPTION,
+    thumb_media_id: str = WECHAT_THUMB_MEDIA_ID_OPTION,
+    author: str = WECHAT_AUTHOR_OPTION,
+    source_url: str | None = WECHAT_SOURCE_URL_OPTION,
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    try:
+        pack = build_wechat_publisher_service().generate_article_pack(
+            report_file=report_file,
+            output_dir=output_dir,
+            thumb_media_id=thumb_media_id,
+            author=author,
+            source_url=source_url,
+        )
+    except WeChatPublisherValidationError as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+    payload = pack.to_dict()
+    if format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    console.print(
+        f"wechat-article-pack selections={len(pack.selections)} "
+        f"risk={pack.compliance.risk_level} "
+        f"recommendation={pack.compliance.publish_recommendation}"
+    )
+    console.print(f"markdown={pack.artifacts.article_markdown_path}")
+    console.print(f"html={pack.artifacts.article_html_path}")
+    console.print(f"draft_payload={pack.artifacts.draft_payload_path}")
+
+
+@app.command("wechat-draft-push")
+def wechat_draft_push(
+    pack_dir: Path = WECHAT_PACK_DIR_OPTION,
+    app_id: str | None = WECHAT_APP_ID_OPTION,
+    app_secret: str | None = WECHAT_APP_SECRET_OPTION,
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run"),
+    confirm: bool = typer.Option(False, "--confirm"),
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    try:
+        if not dry_run and not confirm:
+            raise WeChatPublisherValidationError(
+                "wechat-draft-push --no-dry-run requires --confirm."
+            )
+        pack = _load_wechat_pack(pack_dir)
+        result = build_wechat_publisher_service().push_draft(
+            pack=pack,
+            app_id=app_id or "dry-run-app-id",
+            app_secret=app_secret or "dry-run-secret",
+            dry_run=dry_run,
+            output_dir=pack_dir,
+        )
+    except (WeChatPublisherValidationError, WeChatDraftError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+    payload = result.to_dict()
+    if format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    console.print(f"wechat-draft-push status={result.status} media_id={result.media_id}")
 
 
 @app.command("daily-content-pack")

@@ -3566,6 +3566,121 @@ def test_content_pack_command_rejects_missing_report(tmp_path) -> None:
     assert "report file not found" in result.stdout
 
 
+def _write_cli_jczq_report(tmp_path: Path) -> Path:
+    report = {
+        "generated_at": "2026-04-26T10:00:00+00:00",
+        "official_last_update": "2026-04-26 18:33:24",
+        "source_page": "https://www.sporttery.cn/jc/jsq/zqspf/",
+        "source_api": "sample://jczq",
+        "combinations": [
+            {
+                "name": "组合A",
+                "risk": "高赔进取型",
+                "total_odds": 439.93,
+                "two_yuan_return": 879.86,
+                "legs": [
+                    {
+                        "match_no": "周日025",
+                        "match_date": "2026-04-27",
+                        "match_time": "02:45:00",
+                        "league": "意甲",
+                        "home_team": "AC米兰",
+                        "away_team": "尤文图斯",
+                        "play": "比分",
+                        "pick": "1:1",
+                        "odds": 5.80,
+                        "logic": "强强对话，赔率结构接近。",
+                    },
+                    {
+                        "match_no": "周日019",
+                        "match_date": "2026-04-26",
+                        "match_time": "23:30:00",
+                        "league": "德甲",
+                        "home_team": "多特蒙德",
+                        "away_team": "弗赖堡",
+                        "play": "总进球数",
+                        "pick": "4球",
+                        "odds": 4.25,
+                        "logic": "双方节奏开放，进球变量多。",
+                    },
+                ],
+            }
+        ],
+    }
+    report_file = tmp_path / "jczq-report.json"
+    report_file.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    return report_file
+
+
+def test_wechat_article_pack_command_generates_artifacts(tmp_path) -> None:
+    report_file = _write_cli_jczq_report(tmp_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "wechat-article-pack",
+            "--report-file",
+            str(report_file),
+            "--output-dir",
+            str(tmp_path / "wechat"),
+            "--thumb-media-id",
+            "cover-media",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["title"].startswith("今晚两场焦点战")
+    assert len(payload["selections"]) == 2
+    assert payload["compliance"]["risk_level"] == "MEDIUM"
+    assert Path(payload["artifacts"]["article_markdown_path"]).exists()
+    assert Path(payload["artifacts"]["draft_payload_path"]).exists()
+
+
+def test_wechat_draft_push_command_dry_run_reads_pack_dir(tmp_path) -> None:
+    report_file = _write_cli_jczq_report(tmp_path)
+    pack_dir = tmp_path / "wechat"
+    first = runner.invoke(
+        app,
+        [
+            "wechat-article-pack",
+            "--report-file",
+            str(report_file),
+            "--output-dir",
+            str(pack_dir),
+            "--thumb-media-id",
+            "cover-media",
+            "--format",
+            "json",
+        ],
+    )
+    assert first.exit_code == 0
+
+    result = runner.invoke(
+        app,
+        [
+            "wechat-draft-push",
+            "--pack-dir",
+            str(pack_dir),
+            "--app-id",
+            "app-id",
+            "--app-secret",
+            "secret",
+            "--dry-run",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "dry_run"
+    assert payload["dry_run"] is True
+    assert (pack_dir / "draft-result.json").exists()
+
+
 
 def test_zucai_odds_sync_command_updates_registry(tmp_path) -> None:
     registry_file = tmp_path / "issues.json"
