@@ -5,7 +5,9 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
+
+import httpx
 
 from nutmeg.domain.content import ComplianceAssessment
 from nutmeg.domain.wechat import (
@@ -13,9 +15,12 @@ from nutmeg.domain.wechat import (
     WeChatArticleSelection,
     WeChatArtifacts,
     WeChatDraftPayload,
+    WeChatDraftResult,
 )
 from nutmeg.services.content import LONG_FORM_DISCLAIMER, ContentComplianceChecker
 
+WECHAT_TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token"
+WECHAT_DRAFT_ADD_URL = "https://api.weixin.qq.com/cgi-bin/draft/add"
 DEFAULT_WECHAT_AUTHOR = "Nutmeg"
 DEFAULT_WECHAT_TITLE = "今晚两场焦点战：公开赔率背后的五个变量"
 DEFAULT_WECHAT_DIGEST = "从公开赛程、官方赔率变化和比赛变量出发，拆解两场焦点战的主要观察点与风险。"
@@ -23,6 +28,16 @@ DEFAULT_WECHAT_DIGEST = "从公开赛程、官方赔率变化和比赛变量出�
 
 class WeChatPublisherValidationError(ValueError):
     pass
+
+
+class WeChatDraftError(RuntimeError):
+    pass
+
+
+class WeChatHttpClient(Protocol):
+    def get(self, url: str, **kwargs: Any) -> Any: ...
+
+    def post(self, url: str, **kwargs: Any) -> Any: ...
 
 
 class WeChatPublisherService:
@@ -234,6 +249,94 @@ class WeChatPublisherService:
             selected_matches_path=str(selected_matches),
             cover_prompt_path=str(cover_prompt),
             publish_checklist_path=str(checklist),
+        )
+
+    def push_draft(
+        self,
+        *,
+        pack: WeChatArticlePack,
+        app_id: str,
+        app_secret: str,
+        http_client: WeChatHttpClient | None = None,
+        dry_run: bool = True,
+        timeout_seconds: float = 20.0,
+        output_dir: Path | str | None = None,
+    ) -> WeChatDraftResult:
+        if pack.compliance.risk_level in {"HIGH", "BLOCKED"}:
+            raise WeChatPublisherValidationError(
+                f"WeChat draft push blocked for risk level {pack.compliance.risk_level}."
+            )
+        if not app_id.strip() or not app_secret.strip():
+            raise WeChatPublisherValidationError("WeChat app id and app secret are required.")
+        if dry_run:
+            result = WeChatDraftResult(status="dry_run", dry_run=True)
+            self._write_draft_result_if_requested(result, output_dir=output_dir)
+            return result
+        client = http_client or httpx.Client(timeout=timeout_seconds)
+        token = self._fetch_access_token(client, app_id=app_id, app_secret=app_secret)
+        response = client.post(
+            WECHAT_DRAFT_ADD_URL,
+            params={"access_token": token},
+            json=pack.draft_payload.to_dict(),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        errcode = int(payload.get("errcode") or 0)
+        if errcode != 0:
+            result = WeChatDraftResult(
+                status="error",
+                error_code=errcode,
+                error_message=str(payload.get("errmsg") or "WeChat draft API error"),
+                dry_run=False,
+            )
+            self._write_draft_result_if_requested(result, output_dir=output_dir)
+            raise WeChatDraftError(f"WeChat draft API error {errcode}: {result.error_message}")
+        result = WeChatDraftResult(
+            status="created",
+            media_id=str(payload.get("media_id") or ""),
+            created_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
+            dry_run=False,
+        )
+        self._write_draft_result_if_requested(result, output_dir=output_dir)
+        return result
+
+    def _fetch_access_token(
+        self,
+        client: WeChatHttpClient,
+        *,
+        app_id: str,
+        app_secret: str,
+    ) -> str:
+        response = client.get(
+            WECHAT_TOKEN_URL,
+            params={
+                "grant_type": "client_credential",
+                "appid": app_id,
+                "secret": app_secret,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        token = payload.get("access_token")
+        if isinstance(token, str) and token:
+            return token
+        errcode = payload.get("errcode")
+        errmsg = payload.get("errmsg") or "missing access_token"
+        raise WeChatDraftError(f"WeChat access token error {errcode}: {errmsg}")
+
+    def _write_draft_result_if_requested(
+        self,
+        result: WeChatDraftResult,
+        *,
+        output_dir: Path | str | None,
+    ) -> None:
+        if output_dir is None:
+            return
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        (output_path / "draft-result.json").write_text(
+            json.dumps(result.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
         )
 
     def render_cover_prompt(self, pack: WeChatArticlePack) -> str:

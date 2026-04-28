@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 from nutmeg.domain.content import ComplianceAssessment, ComplianceChecklistItem
@@ -189,4 +190,115 @@ def test_wechat_article_pack_rejects_report_without_two_matches(tmp_path: Path) 
             report_file=report_file,
             output_dir=tmp_path / "wechat",
             thumb_media_id="cover-media",
+        )
+
+
+class FakeResponse:
+    def __init__(self, payload: dict, *, status_code: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status_code
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("boom", request=None, response=None)
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class FakeHttpClient:
+    def __init__(self) -> None:
+        self.get_calls = []
+        self.post_calls = []
+
+    def get(self, url: str, **kwargs):
+        self.get_calls.append((url, kwargs))
+        return FakeResponse({"access_token": "token-123", "expires_in": 7200})
+
+    def post(self, url: str, **kwargs):
+        self.post_calls.append((url, kwargs))
+        return FakeResponse({"errcode": 0, "errmsg": "ok", "media_id": "draft-media-123"})
+
+
+def test_wechat_draft_push_dry_run_does_not_call_http(tmp_path: Path) -> None:
+    report_file = _write_report(tmp_path)
+    service = WeChatPublisherService()
+    pack = service.generate_article_pack(
+        report_file=report_file,
+        output_dir=tmp_path / "wechat",
+        thumb_media_id="cover-media",
+    )
+    fake_http = FakeHttpClient()
+
+    result = service.push_draft(
+        pack=pack,
+        app_id="app-id",
+        app_secret="secret",
+        http_client=fake_http,
+        dry_run=True,
+    )
+
+    assert result.status == "dry_run"
+    assert result.media_id is None
+    assert fake_http.get_calls == []
+    assert fake_http.post_calls == []
+
+
+def test_wechat_draft_push_posts_payload_when_confirmed(tmp_path: Path) -> None:
+    report_file = _write_report(tmp_path)
+    service = WeChatPublisherService()
+    pack = service.generate_article_pack(
+        report_file=report_file,
+        output_dir=tmp_path / "wechat",
+        thumb_media_id="cover-media",
+    )
+    fake_http = FakeHttpClient()
+
+    result = service.push_draft(
+        pack=pack,
+        app_id="app-id",
+        app_secret="secret",
+        http_client=fake_http,
+        dry_run=False,
+    )
+
+    assert result.status == "created"
+    assert result.media_id == "draft-media-123"
+    assert fake_http.get_calls[0][1]["params"]["appid"] == "app-id"
+    assert fake_http.post_calls[0][1]["json"]["articles"][0]["thumb_media_id"] == "cover-media"
+
+
+def test_wechat_draft_push_blocks_high_risk_pack(tmp_path: Path) -> None:
+    report_file = _write_report(tmp_path)
+    service = WeChatPublisherService()
+    pack = service.generate_article_pack(
+        report_file=report_file,
+        output_dir=tmp_path / "wechat",
+        thumb_media_id="cover-media",
+    )
+    blocked = pack.__class__(
+        generated_at=pack.generated_at,
+        source_report_path=pack.source_report_path,
+        title="稳胆必中方案",
+        digest=pack.digest,
+        author=pack.author,
+        article_markdown=pack.article_markdown + "\n稳胆必中，直接买主胜。\n",
+        article_html=pack.article_html,
+        selections=pack.selections,
+        compliance=service._assess_article(
+            title="稳胆必中方案",
+            digest=pack.digest,
+            markdown=pack.article_markdown + "\n稳胆必中，直接买主胜。\n",
+        ),
+        draft_payload=pack.draft_payload,
+        artifacts=pack.artifacts,
+    )
+
+    with pytest.raises(WeChatPublisherValidationError, match="risk level BLOCKED"):
+        service.push_draft(
+            pack=blocked,
+            app_id="app-id",
+            app_secret="secret",
+            http_client=FakeHttpClient(),
+            dry_run=False,
         )
