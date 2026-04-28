@@ -77,3 +77,11 @@ The workflow writes review artifacts first and never submits video jobs by itsel
 The default animation profile is `retro-football-manga-v3.1`. Its production factors are part of the manifest, not just design notes: first-two-second hook, vertical readability, fixed series packaging, character continuity, refined cel-animation craft, Douyin/Xiaohongshu output split, and compliance constraints. The canonical style assets live in `docs/style-assets/retro-football-manga-v3.1/`, and each run writes per-match `production-factors.json` so reviewers can verify which factors influenced the generated prompts.
 
 Real video generation moves through `seedance-submit --confirm` and `seedance-poll`, keeping external paid actions outside the content generation step. Submission defaults to vertical tasks only; horizontal prompts remain available for later compilation. `seedance-poll --download --concat` can download completed MP4 segments and attempt local ffmpeg concatenation into a final vertical video per match.
+
+## WeChat Draft Publisher Extension
+
+`wechat-article-pack` turns a JCZQ mixed-report JSON artifact into a WeChat official-account article package. The public article uses a restrained two-match data-analysis format: each focus match gets five variables, and the combination section discusses only risk overlap.
+
+`wechat-draft-push` can create a WeChat draft from the local package, but it requires explicit confirmation for real network use. v1 never calls the WeChat publish endpoint; final publish stays in the WeChat backend after human review.
+
+The extension writes `.nutmeg-data/wechat/<date>/article.md`, `article.html`, `draft-payload.json`, `compliance.json`, `selected-matches.json`, `cover-prompt.txt`, and `publish-checklist.md`. Only LOW and MEDIUM compliance results may be pushed to draft; HIGH and BLOCKED packs remain local artifacts.
