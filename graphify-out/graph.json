@@ -25,7 +25,7 @@
       "package": "nutmeg.data"
     },
     {
-      "module_count": 21,
+      "module_count": 22,
       "package": "nutmeg.domain"
     },
     {
@@ -53,7 +53,7 @@
       "package": "nutmeg.process"
     },
     {
-      "module_count": 24,
+      "module_count": 27,
       "package": "nutmeg.services"
     },
     {
@@ -65,7 +65,7 @@
       "package": "nutmeg.zucai"
     }
   ],
-  "edge_count": 159,
+  "edge_count": 170,
   "edges": [
     {
       "source": "nutmeg.agents.llm_provider",
@@ -204,6 +204,10 @@
       "target": "nutmeg.domain.fixtures"
     },
     {
+      "source": "nutmeg.domain.wechat",
+      "target": "nutmeg.domain.content"
+    },
+    {
       "source": "nutmeg.domain.zucai_schedule",
       "target": "nutmeg.domain.zucai"
     },
@@ -262,6 +266,14 @@
     {
       "source": "nutmeg.interfaces.cli",
       "target": "nutmeg.data.transfermarkt"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.domain.content"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.domain.wechat"
     },
     {
       "source": "nutmeg.interfaces.cli",
@@ -341,6 +353,10 @@
     },
     {
       "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.remotion"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
       "target": "nutmeg.services.seedance"
     },
     {
@@ -358,6 +374,10 @@
     {
       "source": "nutmeg.interfaces.cli",
       "target": "nutmeg.services.value"
+    },
+    {
+      "source": "nutmeg.interfaces.cli",
+      "target": "nutmeg.services.wechat_publisher"
     },
     {
       "source": "nutmeg.interfaces.cli",
@@ -438,6 +458,10 @@
     {
       "source": "nutmeg.services.daily_content",
       "target": "nutmeg.services.content"
+    },
+    {
+      "source": "nutmeg.services.daily_content",
+      "target": "nutmeg.services.video_production"
     },
     {
       "source": "nutmeg.services.evals",
@@ -596,6 +620,26 @@
       "target": "nutmeg.models.dixon_coles"
     },
     {
+      "source": "nutmeg.services.video_production",
+      "target": "nutmeg.domain.daily_content"
+    },
+    {
+      "source": "nutmeg.services.video_production",
+      "target": "nutmeg.services.content"
+    },
+    {
+      "source": "nutmeg.services.wechat_publisher",
+      "target": "nutmeg.domain.content"
+    },
+    {
+      "source": "nutmeg.services.wechat_publisher",
+      "target": "nutmeg.domain.wechat"
+    },
+    {
+      "source": "nutmeg.services.wechat_publisher",
+      "target": "nutmeg.services.content"
+    },
+    {
       "source": "nutmeg.services.zucai",
       "target": "nutmeg.domain.zucai"
     },
@@ -704,7 +748,7 @@
       "target": "nutmeg.storage.state_models"
     }
   ],
-  "module_count": 104,
+  "module_count": 108,
   "modules": [
     {
       "in_degree": 0,
@@ -917,14 +961,14 @@
       "path": "nutmeg/domain/client.py"
     },
     {
-      "in_degree": 1,
+      "in_degree": 4,
       "name": "nutmeg.domain.content",
       "out_degree": 0,
       "package": "nutmeg.domain",
       "path": "nutmeg/domain/content.py"
     },
     {
-      "in_degree": 2,
+      "in_degree": 3,
       "name": "nutmeg.domain.daily_content",
       "out_degree": 0,
       "package": "nutmeg.domain",
@@ -1015,6 +1059,13 @@
       "path": "nutmeg/domain/value.py"
     },
     {
+      "in_degree": 2,
+      "name": "nutmeg.domain.wechat",
+      "out_degree": 1,
+      "package": "nutmeg.domain",
+      "path": "nutmeg/domain/wechat.py"
+    },
+    {
       "in_degree": 5,
       "name": "nutmeg.domain.zucai",
       "out_degree": 0,
@@ -1087,7 +1138,7 @@
     {
       "in_degree": 1,
       "name": "nutmeg.interfaces.cli",
-      "out_degree": 44,
+      "out_degree": 48,
       "package": "nutmeg.interfaces",
       "path": "nutmeg/interfaces/cli.py"
     },
@@ -1211,7 +1262,7 @@
       "path": "nutmeg/services/client.py"
     },
     {
-      "in_degree": 2,
+      "in_degree": 4,
       "name": "nutmeg.services.content",
       "out_degree": 1,
       "package": "nutmeg.services",
@@ -1220,7 +1271,7 @@
     {
       "in_degree": 1,
       "name": "nutmeg.services.daily_content",
-      "out_degree": 2,
+      "out_degree": 3,
       "package": "nutmeg.services",
       "path": "nutmeg/services/daily_content.py"
     },
@@ -1296,6 +1347,13 @@
     },
     {
       "in_degree": 1,
+      "name": "nutmeg.services.remotion",
+      "out_degree": 0,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/remotion.py"
+    },
+    {
+      "in_degree": 1,
       "name": "nutmeg.services.seedance",
       "out_degree": 1,
       "package": "nutmeg.services",
@@ -1328,6 +1386,20 @@
       "out_degree": 6,
       "package": "nutmeg.services",
       "path": "nutmeg/services/value.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.video_production",
+      "out_degree": 2,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/video_production.py"
+    },
+    {
+      "in_degree": 1,
+      "name": "nutmeg.services.wechat_publisher",
+      "out_degree": 3,
+      "package": "nutmeg.services",
+      "path": "nutmeg/services/wechat_publisher.py"
     },
     {
       "in_degree": 2,

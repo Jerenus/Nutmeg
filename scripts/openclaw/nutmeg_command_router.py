@@ -34,6 +34,7 @@ SUPPORTED_ACTIONS = {
     "zucai-report",
     "jczq-mixed-report",
     "daily-content-pack",
+    "video-production-packet",
     "wechat-article-pack",
     "wechat-draft-push",
     "seedance-submit",
@@ -293,6 +294,19 @@ def build_command(request: RouterRequest) -> list[str]:
             command.append("--pdf")
         command.extend(["--format", "json"])
         return command
+    if action == "video-production-packet":
+        return [
+            *base,
+            "video-production-packet",
+            "--date",
+            options.date,
+            "--provider",
+            options.provider,
+            "--output-dir",
+            options.output_dir,
+            "--format",
+            "json",
+        ]
     if action == "seedance-submit":
         command = [
             *base,
@@ -597,6 +611,11 @@ def _build_parser() -> argparse.ArgumentParser:
     daily_content.add_argument("--provider", choices=["live", "sample"], default="live")
     daily_content.add_argument("--output-dir", default=".nutmeg-data/daily-content")
     daily_content.add_argument("--pdf", action="store_true")
+
+    video_packet = subparsers.add_parser("video-production-packet")
+    video_packet.add_argument("--date", default="today")
+    video_packet.add_argument("--provider", choices=["live", "sample"], default="live")
+    video_packet.add_argument("--output-dir", default=".nutmeg-data/daily-content")
 
     seedance_submit = subparsers.add_parser("seedance-submit")
     seedance_submit.add_argument("--manifest")

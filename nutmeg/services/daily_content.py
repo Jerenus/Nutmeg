@@ -27,12 +27,15 @@ from nutmeg.domain.daily_content import (
     VideoStoryboard,
 )
 from nutmeg.services.content import SHORT_VIDEO_DISCLAIMER, ContentComplianceChecker
+from nutmeg.services.video_production import VideoProductionService
 
 STYLE_PROFILE_ID = "retro-football-manga-v3.1"
 SEEDANCE_MODEL = "doubao-seedance-2-0-260128"
 PRODUCTION_FACTORS = {
-    "platform_retention": "前2秒强钩子：开场必须有大脸、足球、比分板悬念或可读中文标题。",
-    "vertical_readability": "9:16优先：大脸、大球、大字，单屏只放1-3个战术关键词。",
+    "platform_retention": "前2秒强钩子：开场必须有大脸、足球、比分板悬念或后期标题区。",
+    "vertical_readability": (
+        "9:16优先：Seedance只生成无字画面，标题、字幕、战术关键词由本地后期统一叠加。"
+    ),
     "series_packaging": (
         "固定栏目包装：漫画封面、战术笔记本、模拟回放、复古比分板、结尾悬念卡每日复用。"
     ),
@@ -46,7 +49,8 @@ PRODUCTION_FACTORS = {
 QUALITY_GATES = {
     "visual_craft": "精修赛璐璐动画：干净稳定线稿、非草稿、非粗糙涂鸦、非现代3D。",
     "continuity": "角色比例、队色、号码、发型和镜头语言在整场短片内一致。",
-    "platform_fit": "首帧有悬念，字幕可读，竖屏中心主体清晰。",
+    "platform_fit": "首帧有悬念，竖屏中心主体清晰，并预留本地字幕/战术卡安全区。",
+    "generated_text_policy": "Seedance原片不得出现可读文字、字幕、比分数字、队名文字或乱码字。",
     "football_relevance": "每个镜头都服务于压迫、反击、定位球、体能或第一粒进球等变量。",
     "safety": "无真实俱乐部标识、真人相似脸、赌博视觉、赔率平台或结果承诺。",
 }
@@ -64,14 +68,38 @@ V31_CONTINUITY_PROMPT = (
     "镜头必须像连续动画片段，不像互不相关的海报。"
 )
 V31_PLATFORM_PROMPT = (
-    "短视频生产影响因子：前2秒强钩子，固定栏目包装，竖屏大脸大球大字，"
-    "1-3个可读中文关键词，适合抖音完播和小红书封面/图文拆卡。"
+    "短视频生产影响因子：前2秒强钩子，固定栏目包装，竖屏大脸大球大动作，"
+    "顶部和底部预留本地后期标题、字幕、战术卡安全区；Seedance原片保持无字。"
+)
+V31_NO_TEXT_PROMPT = (
+    "不要在画面中生成任何文字、字幕、标题、队名、球衣字母、数字比分、对话框或UI字；"
+    "no readable text, no captions, no letters, no numbers, no logos with text, no garbled text."
 )
 V31_NEGATIVE_PROMPT = (
     "不要真实队徽、真实球员脸、官方赞助、官方球衣、命名漫画动画游戏IP、"
     "粗糙草稿、低细节卡通、现代3D、写实转播、电竞海报光、投注单、赔率平台、"
-    "金钱、赌博动作、确定赛果。"
+    "金钱、赌博动作、确定赛果、任何中文字、英文字母、数字、乱码字。"
 )
+POSTPRODUCTION_PROFILE = {
+    "seedance_text_policy": {
+        "mode": "no_text_in_generated_video",
+        "reason": "视频模型直接渲染中文容易出现乱码，所有文字统一在本地后期叠加。",
+    },
+    "voiceover": {
+        "strategy": "continuous_master",
+        "preferred_provider": "cosyvoice",
+        "fallback_provider": "macos_say",
+        "rule": "整条口播生成连续音轨，不按10秒槽位留空。",
+    },
+    "overlays": {
+        "rendering": "local_postproduction",
+        "layers": ["series_header", "tactical_card", "bottom_subtitles", "responsible_use_line"],
+    },
+    "background_music": {
+        "policy": "add_in_platform",
+        "reason": "本地母版不内置BGM，发布到抖音后用平台曲库选音乐。",
+    },
+}
 MAJOR_LEAGUES = {
     "英超",
     "意甲",
@@ -97,9 +125,11 @@ class DailyContentService:
         *,
         jczq_provider: DailyContentProvider,
         compliance_checker: ContentComplianceChecker | None = None,
+        video_production_service: VideoProductionService | None = None,
     ) -> None:
         self._jczq_provider = jczq_provider
         self._compliance_checker = compliance_checker or ContentComplianceChecker()
+        self._video_production_service = video_production_service or VideoProductionService()
 
     def build_run(
         self,
@@ -243,6 +273,25 @@ class DailyContentService:
             (match_dir / "production-factors.json").write_text(
                 json.dumps(_production_factor_payload(), ensure_ascii=False, indent=2),
                 encoding="utf-8",
+            )
+            (match_dir / "postproduction-plan.json").write_text(
+                json.dumps(_postproduction_plan_payload(match), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            packet = self._video_production_service.build_production_packet(
+                match_id=match.match_id,
+                match_no=match.match_no,
+                competition=match.competition,
+                home_team=match.home_team,
+                away_team=match.away_team,
+                focus_level=match.focus_level,
+                internal_analysis=match.internal_analysis,
+                public_script=match.public_script,
+                run_dir=run_dir,
+            )
+            self._video_production_service.write_production_artifacts(
+                packet,
+                match_dir=match_dir / "production-v2",
             )
 
     def render_seedance_manifest(self, run: DailyContentRun) -> dict[str, Any]:
@@ -485,6 +534,29 @@ def _production_factor_payload() -> dict[str, Any]:
         "production_factors": PRODUCTION_FACTORS,
         "quality_gates": QUALITY_GATES,
         "platform_outputs": PLATFORM_OUTPUTS,
+        "postproduction": POSTPRODUCTION_PROFILE,
+    }
+
+
+def _postproduction_plan_payload(match: MatchContentPack) -> dict[str, Any]:
+    return {
+        "match_id": match.match_id,
+        "match_no": match.match_no,
+        "style_profile": match.storyboard.style_profile_id,
+        **POSTPRODUCTION_PROFILE,
+        "voiceover_script": match.public_script.voiceover_text,
+        "segments": [
+            {
+                "segment_no": segment.segment_no,
+                "duration_seconds": segment.duration_seconds,
+                "narration": segment.narration,
+                "local_overlay_text": segment.subtitle_text,
+                "local_tactical_card": segment.tactical_overlay,
+                "subtitle_source": "public_script_voiceover",
+                "seedance_video_role": "background_animation_only_no_text",
+            }
+            for segment in match.storyboard.segments
+        ],
     }
 
 
@@ -570,9 +642,9 @@ def _storyboard(
         (
             "2秒钩子",
             f"旧电视雪花闪一下，复古漫画封面展开，{home}与{away}的虚构少年队"
-            "在球员通道对峙，正中央大字抛出本场悬念。",
+            "在球员通道对峙，用眼神冲突和足球旋转抛出本场悬念，预留后期标题区。",
             "大脸眼神特写切到足球旋转，再快速拉到漫画封面。",
-            "悬念标题、赛事名、两队虚构色块。",
+            "本地后期标题卡：悬念标题、赛事名、两队虚构色块。",
         ),
         (
             "主队武器",
@@ -589,7 +661,7 @@ def _storyboard(
         (
             "战术笔记本",
             "战术笔记本翻页，手绘球场、压迫圈、反击箭头和体能提示依次浮现。",
-            "俯视战术板变形为真实草皮，保持字幕大而少。",
+            "俯视战术板变形为真实草皮，画面下方预留字幕安全区。",
             "只显示2-3个变量：第一球、转换、定位球。",
         ),
         (
@@ -601,7 +673,7 @@ def _storyboard(
         (
             "复古比分板",
             "老式复古比分板亮起，但不填最终比分，只留下下一集式悬念问题。",
-            "比分板闪烁后切到漫画章节完结卡，字幕提醒理性看球。",
+            "比分板闪烁后切到漫画章节完结卡，预留理性看球后期字幕区。",
             "关键问题 + 免责声明。",
         ),
     ]
@@ -628,7 +700,7 @@ def _storyboard(
             "比分板收束",
             "复古比分板和漫画章节卡收尾，只给观看问题，不给确定赛果。",
             "旧电视闪烁、纸张颗粒、章节完结卡定格。",
-            "理性看球免责声明。",
+            "本地后期免责声明。",
         ),
     ]
     beats = focus_beats if segment_count == 6 else standard_beats
@@ -668,7 +740,8 @@ def _v31_seedance_prompt(
         f"{V31_MASTER_STYLE_PROMPT} {V31_CONTINUITY_PROMPT} {V31_PLATFORM_PROMPT} "
         f"本集将{home}和{away}抽象成原创虚构少年足球队，只借用城市气质、颜色灵感和战术身份，"
         f"不复刻真实队徽、赞助商或官方球衣。画面：{visual} 镜头：{camera} "
-        f"战术浮层：{overlay} 竖屏安全构图，中文标题清晰可读。"
+        "所有标题、战术卡、字幕和免责声明都将在本地后期叠加，Seedance只生成无字背景动画。"
+        f"{V31_NO_TEXT_PROMPT} 竖屏安全构图，主体避开顶部和底部后期文字安全区。"
         f"负向限制：{V31_NEGATIVE_PROMPT}"
     )
 
@@ -695,7 +768,7 @@ def _seedance_spec(
         duration=segment.duration_seconds,
         seed=seed,
         camera_fixed=False,
-        watermark=True,
+        watermark=False,
         generate_audio=False,
         safety_identifier="nutmeg-owner-local",
     )

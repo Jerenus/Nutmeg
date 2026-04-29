@@ -3794,6 +3794,59 @@ def test_daily_content_pack_command_generates_review_artifacts(tmp_path) -> None
     assert Path(payload["artifacts"]["seedance_manifest_path"]).exists()
 
 
+def test_video_production_packet_command_writes_artifacts(tmp_path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "video-production-packet",
+            "--date",
+            "2026-04-26",
+            "--provider",
+            "sample",
+            "--output-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["matches"] >= 1
+    assert Path(payload["run_dir"]).exists()
+    assert payload["production_profile"] == "cinematic-sports-anime-broadcast-v1"
+
+
+def test_video_render_command_invokes_remotion_service(tmp_path, monkeypatch) -> None:
+    props = tmp_path / "remotion-timeline.json"
+    props.write_text("{}", encoding="utf-8")
+    output = tmp_path / "final.mp4"
+
+    class FakeRemotionService:
+        def render(self, *, props_path, output_path):
+            output_path.write_bytes(b"mp4")
+            return type(
+                "Result",
+                (),
+                {"to_dict": lambda self: {"output_path": str(output_path), "returncode": 0}},
+            )()
+
+    monkeypatch.setattr(
+        "nutmeg.interfaces.cli.build_remotion_render_service",
+        lambda: FakeRemotionService(),
+        raising=False,
+    )
+
+    result = runner.invoke(
+        app,
+        ["video-render", "--props", str(props), "--output", str(output), "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["output_path"] == str(output)
+
+
 def test_seedance_submit_command_refuses_without_confirm(tmp_path) -> None:
     manifest = tmp_path / "seedance-manifest.json"
     manifest.write_text(json.dumps({"tasks": []}), encoding="utf-8")

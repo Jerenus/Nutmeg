@@ -1,0 +1,34 @@
+{
+  "compositionId": "FootballExplainerV2",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+  "durationSeconds": 60,
+  "selectedHook": "表面看是主场优势，其实关键是压迫会不会断档。",
+  "mainContradiction": "巴黎压迫持续性 vs 拜仁支点回撤后的肋部冲刺。",
+  "voiceoverScript": "这场表面看是主场优势，其实真正决定比赛的是压迫会不会断档。以上只是赛前数据观察，不构成任何投注建议，理性看球。",
+  "tacticalBeats": [
+    {
+      "beat_id": "variable-1",
+      "start_seconds": 8,
+      "end_seconds": 25,
+      "title": "锁边压迫",
+      "explanation": "巴黎三人压迫把出球赶到边线。",
+      "home_shape": ["LW", "ST", "RW"],
+      "away_shape": ["CB", "DM", "FB"],
+      "arrows": [{"from": [38, 42], "to": [68, 20], "kind": "press"}]
+    },
+    {
+      "beat_id": "variable-2",
+      "start_seconds": 25,
+      "end_seconds": 40,
+      "title": "支点回撤",
+      "explanation": "拜仁支点回撤后，肋部冲刺会攻击身后空间。",
+      "home_shape": ["CM", "FB"],
+      "away_shape": ["ST", "RW"],
+      "arrows": [{"from": [50, 50], "to": [78, 34], "kind": "run"}]
+    }
+  ],
+  "directorShots": [],
+  "moodShots": []
+}
