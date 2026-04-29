@@ -3193,3 +3193,17 @@ def inspiration_write_cmd(
     note = _build_inspiration_parser().parse(text, date=iso)
     store.write_parsed(date=iso, tags=note.parsed_tags, raw_text=note.raw_text, parse_method=note.parse_method, timestamp=datetime.now(tz=timezone.utc).isoformat())
     typer.echo(f"saved {iso} via {note.parse_method}")
+
+@app.command(name="inspiration-show")
+def inspiration_show_cmd(date: str = typer.Argument(..., help="YYYYMMDD")) -> None:
+    import os
+
+    from nutmeg.services.psychology.inspiration import InspirationStore
+
+    base = Path(os.environ.get("NUTMEG_INSPIRATION_DIR", ".nutmeg-data/inspiration"))
+    iso = _normalize_date(date)
+    note = InspirationStore(base_dir=base).read(date=iso)
+    if note is None:
+        typer.echo(f"no inspiration recorded for {iso}")
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps({"date": note.date, "raw_text": note.raw_text, "parsed_tags": {"lean": note.parsed_tags.lean, "conviction": note.parsed_tags.conviction, "focus": note.parsed_tags.focus, "force_psychology": note.parsed_tags.force_psychology, "force_data": note.parsed_tags.force_data}, "parse_method": note.parse_method}, ensure_ascii=False, indent=2))

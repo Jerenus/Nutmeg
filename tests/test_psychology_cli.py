@@ -29,3 +29,13 @@ def test_inspiration_write_creates_files(tmp_path: Path, monkeypatch) -> None:
     parsed = json.loads((tmp_path / "2026-04-29" / "parsed.json").read_text(encoding="utf-8"))
     assert parsed["parsed_tags"]["lean"] == "psychology"
     assert "tournament_stage" in parsed["parsed_tags"]["focus"]
+
+
+def test_inspiration_show_prints_parsed(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("NUTMEG_INSPIRATION_DIR", str(tmp_path))
+    monkeypatch.setenv("NUTMEG_PSYCHOLOGY_PARSER_FAKE_MODE", "1")
+    runner = CliRunner()
+    runner.invoke(app, ["inspiration-write", "--date", "20260429", "--text", "反着来"])
+    result = runner.invoke(app, ["inspiration-show", "20260429"])
+    assert result.exit_code == 0
+    assert "psychology" in result.output
