@@ -167,3 +167,116 @@ class DailyContentRun:
             "artifacts": self.artifacts.to_dict(),
             "warnings": self.warnings,
         }
+
+
+@dataclass(slots=True, frozen=True)
+class HookCandidate:
+    hook_type: str
+    text: str
+    rationale: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class TacticalBeat:
+    beat_id: str
+    start_seconds: float
+    end_seconds: float
+    title: str
+    explanation: str
+    home_shape: list[str]
+    away_shape: list[str]
+    arrows: list[dict[str, Any]]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class DirectorShot:
+    shot_id: str
+    visual_owner: str
+    start_seconds: float
+    end_seconds: float
+    purpose: str
+    description: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class MoodShotSpec:
+    task_key: str
+    prompt: str
+    duration: int
+    placement_start_seconds: float
+    placement_end_seconds: float
+    quality_constraints: list[str]
+    provider: str = "volcengine-ark"
+    model: str = "doubao-seedance-2-0-260128"
+    ratio: str = "9:16"
+    resolution: str = "720p"
+    status: str = "draft"
+    provider_task_id: str | None = None
+    output_video_url: str | None = None
+    local_video_path: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class RemotionTimelineSpec:
+    composition_id: str
+    fps: int
+    width: int
+    height: int
+    duration_seconds: float
+    props_path: str
+    output_path: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class QualityGateResult:
+    gate: str
+    status: str
+    detail: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class ProductionPacketV2:
+    match_id: str
+    style_profile: str
+    hook_candidates: list[HookCandidate]
+    selected_hook: str
+    main_contradiction: str
+    voiceover_script: str
+    tactical_beats: list[TacticalBeat]
+    director_shots: list[DirectorShot]
+    mood_shots: list[MoodShotSpec]
+    remotion_timeline: RemotionTimelineSpec
+    quality_gates: list[QualityGateResult]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "match_id": self.match_id,
+            "style_profile": self.style_profile,
+            "hook_candidates": [hook.to_dict() for hook in self.hook_candidates],
+            "selected_hook": self.selected_hook,
+            "main_contradiction": self.main_contradiction,
+            "voiceover_script": self.voiceover_script,
+            "tactical_beats": [beat.to_dict() for beat in self.tactical_beats],
+            "director_shots": [shot.to_dict() for shot in self.director_shots],
+            "mood_shots": [shot.to_dict() for shot in self.mood_shots],
+            "remotion_timeline": self.remotion_timeline.to_dict(),
+            "quality_gates": [gate.to_dict() for gate in self.quality_gates],
+        }

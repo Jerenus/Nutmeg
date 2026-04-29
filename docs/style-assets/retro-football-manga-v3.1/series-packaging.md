@@ -8,7 +8,7 @@ Use these modules every day so the output feels like one continuing series.
 
 - Duration: first 1-2 seconds.
 - Visual: large face, spinning ball, scoreboard suspense, or comic-cover clash.
-- Text: one short Chinese question.
+- Text: one short Chinese question rendered locally in postproduction; do not ask Seedance to draw text.
 - Rule: if the first frame is not understandable as a thumbnail, regenerate.
 
 ### Manga Cover / Tunnel Standoff
@@ -20,6 +20,7 @@ Use these modules every day so the output feels like one continuing series.
 ### Weapon Card
 
 - One team, one strength, one keyword.
+- Keyword is a local overlay, not generated inside the Seedance clip.
 - Use face/boots/ball close-up before tactical arrows.
 
 ### Counterweapon Card
@@ -41,8 +42,15 @@ Use these modules every day so the output feels like one continuing series.
 ### Retro Scoreboard Close
 
 - The ending identity mark.
-- Do not show final score certainty.
-- Show a viewing question and the responsible-use subtitle.
+- Do not show final score certainty or readable scoreboard numbers in Seedance raw video.
+- Show a viewing question and the responsible-use subtitle through local postproduction overlays.
+
+## Postproduction Rule
+
+- Seedance produces clean no-text animation plates.
+- Local postproduction owns series header, tactical cards, subtitles, and disclaimers.
+- TTS is generated as one continuous Chinese narration master, then muxed with the clean video.
+- Background music is selected in the publishing platform, not baked into the local master.
 
 ## Series Memory
 

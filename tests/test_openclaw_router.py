@@ -247,6 +247,37 @@ def test_router_builds_daily_content_pack_command() -> None:
     ]
 
 
+def test_router_builds_video_production_packet_command() -> None:
+    router = _load_router()
+
+    request = router.parse_request(
+        [
+            "video-production-packet",
+            "--date",
+            "2026-04-26",
+            "--provider",
+            "sample",
+            "--output-dir",
+            ".nutmeg-data/daily-content",
+        ]
+    )
+
+    assert router.build_command(request) == [
+        "uv",
+        "run",
+        "nutmeg",
+        "video-production-packet",
+        "--date",
+        "2026-04-26",
+        "--provider",
+        "sample",
+        "--output-dir",
+        ".nutmeg-data/daily-content",
+        "--format",
+        "json",
+    ]
+
+
 def test_router_requires_confirmation_for_seedance_submit() -> None:
     router = _load_router()
 

@@ -8,7 +8,7 @@
 4. Fictional team injection.
 5. Character injection.
 6. Scene action.
-7. Camera and overlay instructions.
+7. Camera instructions and local-postproduction overlay notes.
 8. Negative prompt.
 
 ## Master Style Prompt
@@ -21,7 +21,7 @@
 
 ## Platform Production Factors
 
-前2秒强钩子，固定栏目包装，竖屏大脸大球大字，1-3个可读中文关键词，适合抖音完播和小红书封面/图文拆卡。
+前2秒强钩子，固定栏目包装，竖屏大脸大球大动作，顶部和底部预留本地后期标题、字幕、战术卡安全区；Seedance 原片保持无字。
 
 ## Fictional Team Injection Template
 
@@ -37,8 +37,8 @@ Key player B1: `{player_b1_label}`, number `{player_b1_number}`, `{player_b1_pos
 
 ## Segment Prompt Template
 
-`{master_style}` `{continuity}` `{platform_factors}` `{team_injection}` `{character_injection}` Scene `{segment_no}`: `{segment_title}`. `{scene_action}` Camera: `{camera_direction}`. Overlay text: `{overlay_text}`. Negative prompt: `{negative_prompt}`
+`{master_style}` `{continuity}` `{platform_factors}` `{team_injection}` `{character_injection}` Scene `{segment_no}`: `{segment_title}`. `{scene_action}` Camera: `{camera_direction}`. All title cards, tactical text, subtitles, and disclaimers will be rendered locally in postproduction; Seedance should generate background animation only. No readable text, no captions, no letters, no numbers, no garbled text. Negative prompt: `{negative_prompt}`
 
 ## Negative Prompt
 
-不要真实队徽、真实球员脸、官方赞助、官方球衣、命名漫画动画游戏IP、粗糙草稿、低细节卡通、现代3D、写实转播、电竞海报光、投注单、赔率平台、金钱、赌博动作、确定赛果。
+不要真实队徽、真实球员脸、官方赞助、官方球衣、命名漫画动画游戏IP、粗糙草稿、低细节卡通、现代3D、写实转播、电竞海报光、投注单、赔率平台、金钱、赌博动作、确定赛果、任何中文字、英文字母、数字、乱码字。

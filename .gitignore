@@ -4,6 +4,7 @@
 !.env.example
 .python-version
 .venv/
+node_modules/
 .pytest_cache/
 .ruff_cache/
 __pycache__/

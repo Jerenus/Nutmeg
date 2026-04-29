@@ -4,8 +4,8 @@ Generated from local Python AST imports. Re-run with `make graph` after structur
 
 ## Summary
 
-- Modules: 104
-- Internal dependency edges: 159
+- Modules: 108
+- Internal dependency edges: 170
 - Scope: `nutmeg/**/*.py` only; no network or provider calls.
 
 ## Package Communities
@@ -16,20 +16,20 @@ Generated from local Python AST imports. Re-run with `make graph` after structur
 - `nutmeg.content`: 1 modules
 - `nutmeg.core`: 4 modules
 - `nutmeg.data`: 7 modules
-- `nutmeg.domain`: 21 modules
+- `nutmeg.domain`: 22 modules
 - `nutmeg.event_data`: 1 modules
 - `nutmeg.information`: 1 modules
 - `nutmeg.interfaces`: 8 modules
 - `nutmeg.models`: 6 modules
 - `nutmeg.observability`: 2 modules
 - `nutmeg.process`: 3 modules
-- `nutmeg.services`: 24 modules
+- `nutmeg.services`: 27 modules
 - `nutmeg.storage`: 10 modules
 - `nutmeg.zucai`: 1 modules
 
 ## High-Degree Modules
 
-- `nutmeg.interfaces.cli`: degree 45 (in 1, out 44)
+- `nutmeg.interfaces.cli`: degree 49 (in 1, out 48)
 - `nutmeg.domain.fixtures`: degree 13 (in 13, out 0)
 - `nutmeg.core.repositories`: degree 9 (in 6, out 3)
 - `nutmeg.services.snapshot`: degree 9 (in 1, out 8)
@@ -81,6 +81,7 @@ Generated from local Python AST imports. Re-run with `make graph` after structur
 - `nutmeg.domain.operations` -> `nutmeg.domain.value`
 - `nutmeg.domain.snapshot` -> `nutmeg.domain.fixtures`
 - `nutmeg.domain.tactics` -> `nutmeg.domain.fixtures`
+- `nutmeg.domain.wechat` -> `nutmeg.domain.content`
 - `nutmeg.domain.zucai_schedule` -> `nutmeg.domain.zucai`
 - `nutmeg.domain.zucai_source` -> `nutmeg.domain.zucai`
 - `nutmeg.interfaces.bot` -> `nutmeg.interfaces.bot.adapter`
@@ -96,6 +97,8 @@ Generated from local Python AST imports. Re-run with `make graph` after structur
 - `nutmeg.interfaces.cli` -> `nutmeg.data.soccerdata_client`
 - `nutmeg.interfaces.cli` -> `nutmeg.data.the_odds_api`
 - `nutmeg.interfaces.cli` -> `nutmeg.data.transfermarkt`
+- `nutmeg.interfaces.cli` -> `nutmeg.domain.content`
+- `nutmeg.interfaces.cli` -> `nutmeg.domain.wechat`
 - `nutmeg.interfaces.cli` -> `nutmeg.interfaces.bot`
 - `nutmeg.interfaces.cli` -> `nutmeg.interfaces.client_web`
 - `nutmeg.interfaces.cli` -> `nutmeg.observability.langsmith`
@@ -115,11 +118,13 @@ Generated from local Python AST imports. Re-run with `make graph` after structur
 - `nutmeg.interfaces.cli` -> `nutmeg.services.operations`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.players`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.popularity`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.remotion`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.seedance`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.snapshot`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.sync`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.tactics`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.value`
+- `nutmeg.interfaces.cli` -> `nutmeg.services.wechat_publisher`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.zucai`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.zucai_odds_source`
 - `nutmeg.interfaces.cli` -> `nutmeg.services.zucai_schedule`
@@ -140,6 +145,7 @@ Generated from local Python AST imports. Re-run with `make graph` after structur
 - `nutmeg.services.content` -> `nutmeg.domain.content`
 - `nutmeg.services.daily_content` -> `nutmeg.domain.daily_content`
 - `nutmeg.services.daily_content` -> `nutmeg.services.content`
+- `nutmeg.services.daily_content` -> `nutmeg.services.video_production`
 - `nutmeg.services.evals` -> `nutmeg.domain.evals`
 - `nutmeg.services.event_data` -> `nutmeg.domain.event_data`
 - `nutmeg.services.fixtures` -> `nutmeg.core.repositories`
@@ -179,6 +185,11 @@ Generated from local Python AST imports. Re-run with `make graph` after structur
 - `nutmeg.services.value` -> `nutmeg.domain.value`
 - `nutmeg.services.value` -> `nutmeg.models.betting`
 - `nutmeg.services.value` -> `nutmeg.models.dixon_coles`
+- `nutmeg.services.video_production` -> `nutmeg.domain.daily_content`
+- `nutmeg.services.video_production` -> `nutmeg.services.content`
+- `nutmeg.services.wechat_publisher` -> `nutmeg.domain.content`
+- `nutmeg.services.wechat_publisher` -> `nutmeg.domain.wechat`
+- `nutmeg.services.wechat_publisher` -> `nutmeg.services.content`
 - `nutmeg.services.zucai` -> `nutmeg.domain.zucai`
 - `nutmeg.services.zucai_odds_source` -> `nutmeg.domain.zucai_odds_source`
 - `nutmeg.services.zucai_odds_source` -> `nutmeg.services.zucai_source`

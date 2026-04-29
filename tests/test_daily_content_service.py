@@ -221,3 +221,87 @@ def test_daily_content_v31_production_factors_drive_manifest_and_prompts(tmp_pat
     )
     factors = json.loads((match_dir / "production-factors.json").read_text(encoding="utf-8"))
     assert factors["style_profile"] == "retro-football-manga-v3.1"
+
+
+def test_daily_content_seedance_prompts_forbid_generated_text(tmp_path) -> None:
+    from nutmeg.services.daily_content import DailyContentService
+
+    service = DailyContentService(jczq_provider=SampleJczqCalculatorProvider())
+
+    run = service.build_run(run_date="2026-04-26", output_dir=tmp_path, provider_label="sample")
+
+    assert run.artifacts.seedance_manifest_path is not None
+    manifest = json.loads(Path(run.artifacts.seedance_manifest_path).read_text(encoding="utf-8"))
+    prompt = manifest["tasks"][0]["content"][0]["text"]
+
+    assert "不要在画面中生成任何文字" in prompt
+    assert "no readable text" in prompt.lower()
+    assert "中文标题清晰可读" not in prompt
+    assert "可读中文关键词" not in prompt
+    assert "正中央大字" not in prompt
+    assert "战术浮层：" not in prompt
+
+
+def test_daily_content_seedance_tasks_disable_provider_watermark(tmp_path) -> None:
+    from nutmeg.services.daily_content import DailyContentService
+
+    service = DailyContentService(jczq_provider=SampleJczqCalculatorProvider())
+
+    run = service.build_run(run_date="2026-04-26", output_dir=tmp_path, provider_label="sample")
+
+    assert run.artifacts.seedance_manifest_path is not None
+    manifest = json.loads(Path(run.artifacts.seedance_manifest_path).read_text(encoding="utf-8"))
+
+    assert manifest["tasks"]
+    assert all(task["watermark"] is False for task in manifest["tasks"])
+
+
+def test_daily_content_writes_postproduction_plan_for_local_text_and_continuous_tts(
+    tmp_path,
+) -> None:
+    from nutmeg.services.daily_content import DailyContentService
+
+    service = DailyContentService(jczq_provider=SampleJczqCalculatorProvider())
+
+    run = service.build_run(run_date="2026-04-26", output_dir=tmp_path, provider_label="sample")
+
+    assert run.artifacts.run_dir is not None
+    first = run.matches[0]
+    match_dir = (
+        Path(run.artifacts.run_dir)
+        / "matches"
+        / first.match_id.replace("/", "-").replace(" ", "_")
+    )
+    plan = json.loads((match_dir / "postproduction-plan.json").read_text(encoding="utf-8"))
+
+    assert plan["seedance_text_policy"]["mode"] == "no_text_in_generated_video"
+    assert plan["voiceover"]["strategy"] == "continuous_master"
+    assert plan["voiceover"]["preferred_provider"] == "cosyvoice"
+    assert plan["overlays"]["rendering"] == "local_postproduction"
+    assert plan["background_music"]["policy"] == "add_in_platform"
+    assert plan["segments"][0]["local_overlay_text"] == first.storyboard.segments[0].subtitle_text
+    assert plan["segments"][0]["narration"] == first.storyboard.segments[0].narration
+
+
+def test_daily_content_writes_video_production_v2_artifacts(tmp_path) -> None:
+    from nutmeg.services.daily_content import DailyContentService
+
+    service = DailyContentService(jczq_provider=SampleJczqCalculatorProvider())
+
+    run = service.build_run(run_date="2026-04-26", output_dir=tmp_path, provider_label="sample")
+
+    assert run.artifacts.run_dir is not None
+    first = run.matches[0]
+    match_dir = (
+        Path(run.artifacts.run_dir)
+        / "matches"
+        / first.match_id.replace("/", "-").replace(" ", "_")
+    )
+    production_dir = match_dir / "production-v2"
+
+    assert (production_dir / "content-brief.json").exists()
+    assert (production_dir / "director-shotlist.json").exists()
+    assert (production_dir / "seedance-mood-manifest.json").exists()
+    assert (production_dir / "remotion-timeline.json").exists()
+    timeline = json.loads((production_dir / "remotion-timeline.json").read_text(encoding="utf-8"))
+    assert timeline["compositionId"] == "FootballExplainerV2"
