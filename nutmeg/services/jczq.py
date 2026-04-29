@@ -315,6 +315,28 @@ class JczqMixedReportService:
                     "",
                 ]
             )
+            psychology_dual = report.psychology_reports.get(combo.name) if report.psychology_reports else None
+            if psychology_dual:
+                lines.extend(["", "### 三栏诊断板", "", "| 比赛 | 数据 | 心理 | 冲突 | 最终 | 信心 |", "|---|---|---|---|---|---|"])
+                for row in psychology_dual.dashboard_rows:
+                    lines.append(f"| {row.fixture_id} | {row.data_pick} | {row.psych_pick or '—'} | {'✓' if row.conflict else '·'} | {row.final_pick} | {row.conviction:.2f} |")
+                lines.extend(["", "### 数据驱动方案", ""])
+                for leg in psychology_dual.data_scheme.legs:
+                    lines.append(f"- {leg.fixture_id}: {leg.market} → {leg.outcome} @ {leg.odds:.2f}")
+                lines.extend(["", "### 心理博弈方案", ""])
+                for leg in psychology_dual.psychology_scheme.legs:
+                    lines.append(f"- {leg.fixture_id}: {leg.market} → {leg.outcome} @ {leg.odds:.2f}")
+                lines.extend(["", "### 当日决策", ""])
+                for leg in psychology_dual.final_scheme.legs:
+                    lines.append(f"- {leg.fixture_id}: {leg.market} → {leg.outcome} @ {leg.odds:.2f} (来源: {leg.provenance})")
+                lines.append(f"- 信心: {psychology_dual.final_scheme.confidence}")
+                lines.append(f"- guardrail: {psychology_dual.guardrail.guardrail_state}")
+                if psychology_dual.guardrail.rejected:
+                    lines.append("- 拒绝的反转候选:")
+                    for cand, reason in psychology_dual.guardrail.rejected:
+                        lines.append(f"  - {cand.fixture_id} {cand.from_outcome}→{cand.to_outcome}: {reason}")
+                if psychology_dual.inspiration:
+                    lines.append(f"- 灵感笔记: lean={psychology_dual.inspiration.parsed_tags.lean}, focus={psychology_dual.inspiration.parsed_tags.focus}")
         lines.append("风险提示：4关高赔命中率天然较低，请勿追损或加倍。")
         return "\n".join(lines)
 
