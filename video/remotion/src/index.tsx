@@ -14,6 +14,20 @@ const defaultProps = {
   voiceoverScript: '这场表面看是主场优势，其实真正决定比赛的是压迫会不会断档。',
   tacticalBeats: [],
   moodShots: [],
+  narrativeSegments: [
+    {
+      segment_id: 'hook',
+      start_seconds: 0,
+      end_seconds: 60,
+      scene_type: 'hook',
+      voiceover_text: '这场表面看是主场优势，其实真正决定比赛的是压迫会不会断档。',
+      subtitle_text: '真正决定比赛的是压迫会不会断档。',
+      screen_card_text: '先看隐藏变量',
+      visual_intent: '默认预览段落。',
+      tactical_focus: '压迫',
+      transition_to_next: '结束。',
+    },
+  ],
 };
 
 export const RemotionRoot: React.FC = () => (

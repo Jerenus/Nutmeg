@@ -29,6 +29,19 @@ export const MoodShotSchema = z.object({
   status: z.string().optional(),
 });
 
+export const NarrativeSegmentSchema = z.object({
+  segment_id: z.string(),
+  start_seconds: z.number(),
+  end_seconds: z.number(),
+  scene_type: z.string(),
+  voiceover_text: z.string(),
+  subtitle_text: z.string(),
+  screen_card_text: z.string(),
+  visual_intent: z.string(),
+  tactical_focus: z.string(),
+  transition_to_next: z.string(),
+});
+
 export const TimelineSchema = z.object({
   compositionId: z.string(),
   fps: z.number(),
@@ -40,6 +53,7 @@ export const TimelineSchema = z.object({
   voiceoverScript: z.string(),
   tacticalBeats: z.array(TacticalBeatSchema),
   moodShots: z.array(MoodShotSchema),
+  narrativeSegments: z.array(NarrativeSegmentSchema),
 });
 
 export type TimelineProps = z.infer<typeof TimelineSchema>;

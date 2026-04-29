@@ -39,6 +39,24 @@ def test_mood_shot_layer_uses_static_file_for_local_assets() -> None:
     assert "staticFile(src)" in component
 
 
+def test_remotion_schema_accepts_narrative_segments() -> None:
+    schema = Path("video/remotion/src/schema.ts").read_text(encoding="utf-8")
+
+    assert "NarrativeSegmentSchema" in schema
+    assert "narrativeSegments: z.array(NarrativeSegmentSchema)" in schema
+    assert "screen_card_text: z.string()" in schema
+    assert "subtitle_text: z.string()" in schema
+
+
+def test_remotion_root_renders_text_from_narrative_segments() -> None:
+    root = Path("video/remotion/src/Root.tsx").read_text(encoding="utf-8")
+
+    assert "props.narrativeSegments" in root
+    assert "screen_card_text" in root
+    assert "subtitle_text" in root
+    assert "重点看开局节奏、临场首发和第一粒进球。" not in root
+
+
 def test_remotion_render_service_builds_local_render_command(tmp_path) -> None:
     from nutmeg.services.remotion import RemotionRenderService
 
