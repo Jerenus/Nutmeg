@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
@@ -57,6 +58,18 @@ class JczqCalculatorProvider(Protocol):
 
 class JczqDocumentSender(Protocol):
     def send_document(self, *, chat_id: int, document_path: Path, caption: str): ...
+
+
+@dataclass(slots=True, frozen=True)
+class PsychologyJczqMixedReport(JczqMixedReport):
+    psychology_reports: dict[str, "DualSchemeReport"] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["psychology_reports"] = {
+            name: asdict(report) for name, report in self.psychology_reports.items()
+        }
+        return data
 
 
 class SportteryJczqCalculatorProvider:
@@ -249,7 +262,7 @@ class JczqMixedReportService:
                 )
             combinations = updated_combinations
         generated_at = datetime.now(UTC).replace(microsecond=0).isoformat()
-        report = JczqMixedReport(
+        report = self._build_report_model(
             generated_at=generated_at,
             official_last_update=value.get("lastUpdateTime"),
             source_page=self._provider.source_page,
@@ -326,9 +339,8 @@ class JczqMixedReportService:
                     "",
                 ]
             )
-            psychology_dual = (
-                report.psychology_reports.get(combo.name) if report.psychology_reports else None
-            )
+            psychology_reports = getattr(report, "psychology_reports", {})
+            psychology_dual = psychology_reports.get(combo.name) if psychology_reports else None
             if psychology_dual:
                 lines.extend(
                     [
@@ -587,7 +599,7 @@ class JczqMixedReportService:
         artifacts: JczqReportArtifacts | None = None,
         dispatch: JczqReportDispatch | None = None,
     ) -> JczqMixedReport:
-        return JczqMixedReport(
+        return self._build_report_model(
             generated_at=report.generated_at,
             official_last_update=report.official_last_update,
             source_page=report.source_page,
@@ -596,8 +608,38 @@ class JczqMixedReportService:
             artifacts=artifacts or report.artifacts,
             dispatch=dispatch or report.dispatch,
             warnings=report.warnings,
-            psychology_reports=report.psychology_reports,
+            psychology_reports=getattr(report, "psychology_reports", {}),
         )
+
+    def _build_report_model(
+        self,
+        *,
+        generated_at: str,
+        official_last_update: str | None,
+        source_page: str,
+        source_api: str,
+        combinations: list[JczqReportCombination],
+        artifacts: JczqReportArtifacts | None = None,
+        dispatch: JczqReportDispatch | None = None,
+        warnings: list[str] | None = None,
+        psychology_reports: dict[str, "DualSchemeReport"] | None = None,
+    ) -> JczqMixedReport:
+        common = {
+            "generated_at": generated_at,
+            "official_last_update": official_last_update,
+            "source_page": source_page,
+            "source_api": source_api,
+            "combinations": combinations,
+            "artifacts": artifacts or JczqReportArtifacts(),
+            "dispatch": dispatch or JczqReportDispatch(),
+            "warnings": warnings or [],
+        }
+        if psychology_reports:
+            return PsychologyJczqMixedReport(
+                **common,
+                psychology_reports=psychology_reports,
+            )
+        return JczqMixedReport(**common)
 
 
 def _flatten_matches(value: dict[str, Any]) -> dict[str, dict[str, Any]]:

@@ -89,3 +89,17 @@ def test_dual_scheme_report_holds_all_layers() -> None:
     )
     assert report.dashboard_rows[0].conflict is True
     assert report.final_scheme.legs[0].provenance == "psychology"
+
+
+def test_psychology_package_reexports_public_entrypoints() -> None:
+    from nutmeg.services.psychology import (  # noqa: PLC0415
+        DataLeg,
+        PsychologyEngine,
+        Reconciliator,
+        SignalReading,
+    )
+
+    assert PsychologyEngine.__name__ == "PsychologyEngine"
+    assert Reconciliator.__name__ == "Reconciliator"
+    assert DataLeg.__name__ == "DataLeg"
+    assert SignalReading.__name__ == "SignalReading"

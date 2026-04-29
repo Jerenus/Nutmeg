@@ -30,9 +30,27 @@ class PortkeyLLMCompleter:
 
     def complete(self, *, system: str, user: str) -> str:
         try:
-            text = self.portkey_provider._complete_raw(system=system, user=user)  # type: ignore[attr-defined]
+            response = self.portkey_provider._client.post(  # type: ignore[attr-defined]
+                "/chat/completions",
+                headers={
+                    "authorization": f"Bearer {self.portkey_provider._api_key}",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": self.portkey_provider._model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    "temperature": 0.2,
+                },
+            )
+            response.raise_for_status()
+            text = self.portkey_provider._extract_text(response.json())
         except AttributeError as exc:
-            raise LLMCompletionError("Portkey provider lacks _complete_raw") from exc
+            raise LLMCompletionError("Portkey provider lacks raw completion internals") from exc
         except Exception as exc:  # noqa: BLE001 - normalize provider exceptions
             raise LLMCompletionError(str(exc)) from exc
+        if not text:
+            raise LLMCompletionError("Portkey provider returned no text")
         return str(text)
