@@ -1,7 +1,7 @@
 # Psychology & Game-Theory Layer — Design Spec
 
 **Date**: 2026-04-29
-**Status**: Design / Pre-implementation
+**Status**: **SEALED v1.0 — 2026-04-29** (locked for implementation; changes require a follow-up spec)
 **Owner**: jz71
 **Related**:
 - `nutmeg/services/value.py` (existing data-driven layer)
