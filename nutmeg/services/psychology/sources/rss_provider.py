@@ -36,11 +36,13 @@ class RssProvider:
                 continue
             for entry in payload.get("entries") or []:
                 if _matches(entry, query):
-                    merged.append({
-                        "title": entry.get("title", ""),
-                        "link": entry.get("link", ""),
-                        "summary": entry.get("summary", ""),
-                        "feed": feed_url,
-                    })
+                    merged.append(
+                        {
+                            "title": entry.get("title", ""),
+                            "link": entry.get("link", ""),
+                            "summary": entry.get("summary", ""),
+                            "feed": feed_url,
+                        }
+                    )
         self.cache.put(date=date, key=cache_key, payload=merged)
         return merged

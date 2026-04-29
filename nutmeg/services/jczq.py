@@ -230,12 +230,23 @@ class JczqMixedReportService:
                     }
                     for leg in combo.legs
                 ]
-                ctx = SignalContext(date=datetime.now(UTC).date().isoformat(), fixtures=fixtures, snapshots={}, odds={})
+                ctx = SignalContext(
+                    date=datetime.now(UTC).date().isoformat(),
+                    fixtures=fixtures,
+                    snapshots={},
+                    odds={},
+                )
                 data_picks = {leg.fixture_id: {leg.market: leg.outcome} for leg in data_scheme.legs}
                 verdicts = self._psychology_engine.evaluate(ctx=ctx, data_picks=data_picks)
-                dual = self._reconciliator.reconcile(data_scheme=data_scheme, psychology_verdicts=verdicts, inspiration=self._psychology_inspiration)
+                dual = self._reconciliator.reconcile(
+                    data_scheme=data_scheme,
+                    psychology_verdicts=verdicts,
+                    inspiration=self._psychology_inspiration,
+                )
                 psychology_reports[combo.name] = dual
-                updated_combinations.append(apply_final_scheme_to_combination(combo, dual.final_scheme))
+                updated_combinations.append(
+                    apply_final_scheme_to_combination(combo, dual.final_scheme)
+                )
             combinations = updated_combinations
         generated_at = datetime.now(UTC).replace(microsecond=0).isoformat()
         report = JczqMixedReport(
@@ -315,28 +326,52 @@ class JczqMixedReportService:
                     "",
                 ]
             )
-            psychology_dual = report.psychology_reports.get(combo.name) if report.psychology_reports else None
+            psychology_dual = (
+                report.psychology_reports.get(combo.name) if report.psychology_reports else None
+            )
             if psychology_dual:
-                lines.extend(["", "### 三栏诊断板", "", "| 比赛 | 数据 | 心理 | 冲突 | 最终 | 信心 |", "|---|---|---|---|---|---|"])
+                lines.extend(
+                    [
+                        "",
+                        "### 三栏诊断板",
+                        "",
+                        "| 比赛 | 数据 | 心理 | 冲突 | 最终 | 信心 |",
+                        "|---|---|---|---|---|---|",
+                    ]
+                )
                 for row in psychology_dual.dashboard_rows:
-                    lines.append(f"| {row.fixture_id} | {row.data_pick} | {row.psych_pick or '—'} | {'✓' if row.conflict else '·'} | {row.final_pick} | {row.conviction:.2f} |")
+                    conflict = "✓" if row.conflict else "·"
+                    lines.append(
+                        f"| {row.fixture_id} | {row.data_pick} | {row.psych_pick or '—'} | "
+                        f"{conflict} | {row.final_pick} | {row.conviction:.2f} |"
+                    )
                 lines.extend(["", "### 数据驱动方案", ""])
                 for leg in psychology_dual.data_scheme.legs:
-                    lines.append(f"- {leg.fixture_id}: {leg.market} → {leg.outcome} @ {leg.odds:.2f}")
+                    lines.append(
+                        f"- {leg.fixture_id}: {leg.market} → {leg.outcome} @ {leg.odds:.2f}"
+                    )
                 lines.extend(["", "### 心理博弈方案", ""])
                 for leg in psychology_dual.psychology_scheme.legs:
-                    lines.append(f"- {leg.fixture_id}: {leg.market} → {leg.outcome} @ {leg.odds:.2f}")
+                    lines.append(
+                        f"- {leg.fixture_id}: {leg.market} → {leg.outcome} @ {leg.odds:.2f}"
+                    )
                 lines.extend(["", "### 当日决策", ""])
                 for leg in psychology_dual.final_scheme.legs:
-                    lines.append(f"- {leg.fixture_id}: {leg.market} → {leg.outcome} @ {leg.odds:.2f} (来源: {leg.provenance})")
+                    lines.append(
+                        f"- {leg.fixture_id}: {leg.market} → {leg.outcome} @ {leg.odds:.2f} "
+                        f"(来源: {leg.provenance})"
+                    )
                 lines.append(f"- 信心: {psychology_dual.final_scheme.confidence}")
                 lines.append(f"- guardrail: {psychology_dual.guardrail.guardrail_state}")
                 if psychology_dual.guardrail.rejected:
                     lines.append("- 拒绝的反转候选:")
                     for cand, reason in psychology_dual.guardrail.rejected:
-                        lines.append(f"  - {cand.fixture_id} {cand.from_outcome}→{cand.to_outcome}: {reason}")
+                        lines.append(
+                            f"  - {cand.fixture_id} {cand.from_outcome}→{cand.to_outcome}: {reason}"
+                        )
                 if psychology_dual.inspiration:
-                    lines.append(f"- 灵感笔记: lean={psychology_dual.inspiration.parsed_tags.lean}, focus={psychology_dual.inspiration.parsed_tags.focus}")
+                    tags = psychology_dual.inspiration.parsed_tags
+                    lines.append(f"- 灵感笔记: lean={tags.lean}, focus={tags.focus}")
         lines.append("风险提示：4关高赔命中率天然较低，请勿追损或加倍。")
         return "\n".join(lines)
 
@@ -400,14 +435,16 @@ class JczqMixedReportService:
         for combo in report.combinations:
             story.append(Paragraph(_esc(combo.name), h2))
             story.append(Paragraph(_esc(combo.risk), body))
-            data = [[
-                Paragraph("场次", cell),
-                Paragraph("赛事/对阵", cell),
-                Paragraph("玩法", cell),
-                Paragraph("选择", cell),
-                Paragraph("赔率", cell),
-                Paragraph("逻辑", cell),
-            ]]
+            data = [
+                [
+                    Paragraph("场次", cell),
+                    Paragraph("赛事/对阵", cell),
+                    Paragraph("玩法", cell),
+                    Paragraph("选择", cell),
+                    Paragraph("赔率", cell),
+                    Paragraph("逻辑", cell),
+                ]
+            ]
             for leg in combo.legs:
                 data.append(
                     [

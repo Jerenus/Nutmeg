@@ -9,7 +9,9 @@ from nutmeg.services.psychology.signals.base import SignalContext
 from nutmeg.services.psychology.sources.rss_provider import RssProvider
 
 STORY_KEYWORDS = ["复仇", "首秀", "末战", "回归", "重逢", "里程碑"]
-SYSTEM_PROMPT = 'Return JSON with story_present, team_advantaged home|away|none, conviction, story_summary.'
+SYSTEM_PROMPT = (
+    "Return JSON with story_present, team_advantaged home|away|none, conviction, story_summary."
+)
 
 
 @dataclass(slots=True)
@@ -29,7 +31,8 @@ class PersonalNarrativeSignal:
             for kw in STORY_KEYWORDS:
                 items += self.rss.fetch(date=ctx.date, query=kw) or []
             if not items:
-                out.append(self._abstain(fixture_id, "no RSS items")); continue
+                out.append(self._abstain(fixture_id, "no RSS items"))
+                continue
             headlines = "\n".join(f"- {it.get('title', '')}" for it in items[:30])
             user = f"Home: {home}\nAway: {away}\nHeadlines:\n{headlines}"
             try:
@@ -39,11 +42,24 @@ class PersonalNarrativeSignal:
                 conviction = float(payload.get("conviction", 0.0))
                 summary = str(payload.get("story_summary", ""))
             except (LLMCompletionError, ValueError, TypeError, json.JSONDecodeError):
-                out.append(self._abstain(fixture_id, "llm parse failed")); continue
+                out.append(self._abstain(fixture_id, "llm parse failed"))
+                continue
             if not story_present or team not in {"home", "away"}:
-                out.append(self._abstain(fixture_id, "no actionable story")); continue
+                out.append(self._abstain(fixture_id, "no actionable story"))
+                continue
             outcome = "home_win" if team == "home" else "away_win"
-            out.append(SignalReading(self.name, fixture_id, "HHAD", outcome, max(0.0, min(conviction, 0.7)), [summary] if summary else ["personal narrative present"], [str(it.get("link") or "") for it in items[:5]], None))
+            out.append(
+                SignalReading(
+                    self.name,
+                    fixture_id,
+                    "HHAD",
+                    outcome,
+                    max(0.0, min(conviction, 0.7)),
+                    [summary] if summary else ["personal narrative present"],
+                    [str(it.get("link") or "") for it in items[:5]],
+                    None,
+                )
+            )
         return out
 
     def _abstain(self, fixture_id: str, reason: str) -> SignalReading:

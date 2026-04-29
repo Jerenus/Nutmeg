@@ -16,7 +16,13 @@ def _leg_id(idx: int) -> str:
 
 
 def combination_to_data_scheme(combination: Any) -> Scheme:
-    return Scheme(name=str(combination.name), legs=[DataLeg(_leg_id(idx), _fixture_id(leg), str(leg.play), str(leg.pick), float(leg.odds)) for idx, leg in enumerate(combination.legs)])
+    return Scheme(
+        name=str(combination.name),
+        legs=[
+            DataLeg(_leg_id(idx), _fixture_id(leg), str(leg.play), str(leg.pick), float(leg.odds))
+            for idx, leg in enumerate(combination.legs)
+        ],
+    )
 
 
 def apply_final_scheme_to_combination(combination: Any, final: FinalScheme) -> Any:
@@ -40,6 +46,11 @@ def apply_final_scheme_to_combination(combination: Any, final: FinalScheme) -> A
         product = 1.0
         for leg in new_legs:
             product *= float(leg.odds)
-        return replace(updated, legs=new_legs, total_odds=round(product, 2), two_yuan_return=round(product * 2, 2))
+        return replace(
+            updated,
+            legs=new_legs,
+            total_odds=round(product, 2),
+            two_yuan_return=round(product * 2, 2),
+        )
     updated.legs = new_legs
     return updated

@@ -20,7 +20,7 @@ FOCUS_TABLE = {
 }
 FORCE_PSY_KW = ("今天必须", "强制心理", "心理强制")
 FORCE_DATA_KW = ("强制数据", "数据强制")
-SYSTEM_PROMPT = 'Extract inspiration JSON tags.'
+SYSTEM_PROMPT = "Extract inspiration JSON tags."
 
 
 @dataclass(slots=True)
@@ -31,7 +31,13 @@ class InspirationParser:
         timestamp = datetime.now(tz=timezone.utc).isoformat()
         try:
             payload = json.loads(self.llm.complete(system=SYSTEM_PROMPT, user=text))
-            tags = InspirationTags(str(payload.get("lean", "neutral")), str(payload.get("conviction", "medium")), list(payload.get("focus") or []), bool(payload.get("force_psychology", False)), bool(payload.get("force_data", False)))  # type: ignore[arg-type]
+            tags = InspirationTags(
+                str(payload.get("lean", "neutral")),
+                str(payload.get("conviction", "medium")),
+                list(payload.get("focus") or []),
+                bool(payload.get("force_psychology", False)),
+                bool(payload.get("force_data", False)),
+            )  # type: ignore[arg-type]
             return InspirationNote(date, text, tags, "llm", timestamp)
         except (LLMCompletionError, ValueError, TypeError, json.JSONDecodeError):
             return InspirationNote(date, text, self._regex_parse(text), "regex_fallback", timestamp)
@@ -48,7 +54,13 @@ class InspirationParser:
         elif any(k in text for k in CONVICTION_LOW_KW):
             conviction = "low"
         focus = [provider for provider, kws in FOCUS_TABLE.items() if any(k in text for k in kws)]
-        return InspirationTags(lean=lean, conviction=conviction, focus=focus, force_psychology=any(k in text for k in FORCE_PSY_KW), force_data=any(k in text for k in FORCE_DATA_KW))  # type: ignore[arg-type]
+        return InspirationTags(
+            lean=lean,
+            conviction=conviction,
+            focus=focus,
+            force_psychology=any(k in text for k in FORCE_PSY_KW),
+            force_data=any(k in text for k in FORCE_DATA_KW),
+        )  # type: ignore[arg-type]
 
 
 @dataclass(slots=True)
@@ -64,10 +76,24 @@ class InspirationStore:
         path.write_text(text, encoding="utf-8")
         return path
 
-    def write_parsed(self, *, date: str, tags: InspirationTags, raw_text: str, parse_method: str, timestamp: str) -> Path:
+    def write_parsed(
+        self, *, date: str, tags: InspirationTags, raw_text: str, parse_method: str, timestamp: str
+    ) -> Path:
         path = self._dir(date) / "parsed.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"date": date, "raw_text": raw_text, "parsed_tags": {"lean": tags.lean, "conviction": tags.conviction, "focus": tags.focus, "force_psychology": tags.force_psychology, "force_data": tags.force_data}, "parse_method": parse_method, "timestamp": timestamp}
+        payload = {
+            "date": date,
+            "raw_text": raw_text,
+            "parsed_tags": {
+                "lean": tags.lean,
+                "conviction": tags.conviction,
+                "focus": tags.focus,
+                "force_psychology": tags.force_psychology,
+                "force_data": tags.force_data,
+            },
+            "parse_method": parse_method,
+            "timestamp": timestamp,
+        }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return path
 
@@ -77,4 +103,16 @@ class InspirationStore:
             return None
         data = json.loads(path.read_text(encoding="utf-8"))
         t = data["parsed_tags"]
-        return InspirationNote(data["date"], data["raw_text"], InspirationTags(t["lean"], t["conviction"], list(t["focus"]), bool(t["force_psychology"]), bool(t["force_data"])), data["parse_method"], data["timestamp"])
+        return InspirationNote(
+            data["date"],
+            data["raw_text"],
+            InspirationTags(
+                t["lean"],
+                t["conviction"],
+                list(t["focus"]),
+                bool(t["force_psychology"]),
+                bool(t["force_data"]),
+            ),
+            data["parse_method"],
+            data["timestamp"],
+        )

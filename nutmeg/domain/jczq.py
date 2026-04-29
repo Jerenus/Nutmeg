@@ -112,5 +112,7 @@ class JczqMixedReport:
             "artifacts": self.artifacts.to_dict(),
             "dispatch": self.dispatch.to_dict(),
             "warnings": self.warnings,
-            "psychology_reports": {name: asdict(report) for name, report in self.psychology_reports.items()},
+            "psychology_reports": {
+                name: asdict(report) for name, report in self.psychology_reports.items()
+            },
         }

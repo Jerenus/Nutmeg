@@ -1639,8 +1639,7 @@ def zucai_odds_sync(
         typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
         return
     console.print(
-        f"zucai-odds-sync issue={result.issue_id} slot={result.slot} "
-        f"rows={result.parsed_count}"
+        f"zucai-odds-sync issue={result.issue_id} slot={result.slot} rows={result.parsed_count}"
     )
     console.print(f"odds={result.odds_path}")
     console.print(f"registry={result.registry_path}")
@@ -1715,8 +1714,7 @@ def jczq_mixed_report(
     console.print(f"dispatch={report.dispatch.status}")
     for combo in report.combinations:
         console.print(
-            f" - {combo.name}: odds={combo.total_odds:.2f} "
-            f"2元={combo.two_yuan_return:.2f}"
+            f" - {combo.name}: odds={combo.total_odds:.2f} 2元={combo.two_yuan_return:.2f}"
         )
 
 
@@ -1857,8 +1855,7 @@ def daily_content_pack(
         return
 
     console.print(
-        f"daily-content-pack date={run.run_date} matches={len(run.matches)} "
-        f"scope={run.scope}"
+        f"daily-content-pack date={run.run_date} matches={len(run.matches)} scope={run.scope}"
     )
     console.print(f"markdown={run.artifacts.markdown_path}")
     if run.artifacts.pdf_path:
@@ -3128,10 +3125,21 @@ def classify_query(query: str) -> None:
 if __name__ == "__main__":
     app()
 
+
+PSYCHOLOGY_FIXTURE_FILE_OPTION = typer.Option(
+    ..., "--fixture-file", help="JSON file with a single fixture dict"
+)
+PSYCHOLOGY_RULES_ONLY_OPTION = typer.Option(
+    False, "--rules-only", help="Skip LLM-backed signals; only run tournament_stage"
+)
+INSPIRATION_DATE_OPTION = typer.Option(..., "--date", help="YYYYMMDD")
+INSPIRATION_TEXT_OPTION = typer.Option(None, "--text", help="If omitted, $EDITOR is opened")
+
+
 @app.command(name="psychology-inspect")
 def psychology_inspect_cmd(
-    fixture_file: Path = typer.Option(..., "--fixture-file", help="JSON file with a single fixture dict"),
-    rules_only: bool = typer.Option(False, "--rules-only", help="Skip LLM-backed signals; only run tournament_stage"),
+    fixture_file: Path = PSYCHOLOGY_FIXTURE_FILE_OPTION,
+    rules_only: bool = PSYCHOLOGY_RULES_ONLY_OPTION,
 ) -> None:
     """Dump SignalReadings for a single fixture from each enabled provider."""
     from nutmeg.services.psychology.engine import PsychologyEngine
@@ -3144,13 +3152,29 @@ def psychology_inspect_cmd(
     if not rules_only:
         pass
     engine = PsychologyEngine(providers=providers)
-    [verdict] = engine.evaluate(ctx=SignalContext(date="manual", fixtures=[fixture], snapshots={}, odds={}), data_picks={fixture_id: {}})
+    [verdict] = engine.evaluate(
+        ctx=SignalContext(date="manual", fixtures=[fixture], snapshots={}, odds={}),
+        data_picks={fixture_id: {}},
+    )
     payload = {
         "fixture_id": fixture_id,
         "lean_direction": verdict.lean_direction,
         "conviction": verdict.conviction,
-        "market_views": {market: {"outcome": view.outcome, "conviction": view.conviction} for market, view in verdict.market_views.items()},
-        "readings": [{"provider": r.provider, "market": r.market, "outcome_view": r.outcome_view, "conviction": r.conviction, "evidence": r.evidence, "abstain_reason": r.abstain_reason} for r in verdict.contributing_readings],
+        "market_views": {
+            market: {"outcome": view.outcome, "conviction": view.conviction}
+            for market, view in verdict.market_views.items()
+        },
+        "readings": [
+            {
+                "provider": r.provider,
+                "market": r.market,
+                "outcome_view": r.outcome_view,
+                "conviction": r.conviction,
+                "evidence": r.evidence,
+                "abstain_reason": r.abstain_reason,
+            }
+            for r in verdict.contributing_readings
+        ],
     }
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
@@ -3179,8 +3203,8 @@ def _normalize_date(yyyymmdd: str) -> str:
 
 @app.command(name="inspiration-write")
 def inspiration_write_cmd(
-    date: str = typer.Option(..., "--date", help="YYYYMMDD"),
-    text: str | None = typer.Option(None, "--text", help="If omitted, $EDITOR is opened"),
+    date: str = INSPIRATION_DATE_OPTION,
+    text: str | None = INSPIRATION_TEXT_OPTION,
 ) -> None:
     import os
     from datetime import datetime, timezone
@@ -3200,8 +3224,15 @@ def inspiration_write_cmd(
     store = InspirationStore(base_dir=base)
     store.write_raw(date=iso, text=text)
     note = _build_inspiration_parser().parse(text, date=iso)
-    store.write_parsed(date=iso, tags=note.parsed_tags, raw_text=note.raw_text, parse_method=note.parse_method, timestamp=datetime.now(tz=timezone.utc).isoformat())
+    store.write_parsed(
+        date=iso,
+        tags=note.parsed_tags,
+        raw_text=note.raw_text,
+        parse_method=note.parse_method,
+        timestamp=datetime.now(tz=timezone.utc).isoformat(),
+    )
     typer.echo(f"saved {iso} via {note.parse_method}")
+
 
 @app.command(name="inspiration-show")
 def inspiration_show_cmd(date: str = typer.Argument(..., help="YYYYMMDD")) -> None:
@@ -3215,4 +3246,21 @@ def inspiration_show_cmd(date: str = typer.Argument(..., help="YYYYMMDD")) -> No
     if note is None:
         typer.echo(f"no inspiration recorded for {iso}")
         raise typer.Exit(code=1)
-    typer.echo(json.dumps({"date": note.date, "raw_text": note.raw_text, "parsed_tags": {"lean": note.parsed_tags.lean, "conviction": note.parsed_tags.conviction, "focus": note.parsed_tags.focus, "force_psychology": note.parsed_tags.force_psychology, "force_data": note.parsed_tags.force_data}, "parse_method": note.parse_method}, ensure_ascii=False, indent=2))
+    typer.echo(
+        json.dumps(
+            {
+                "date": note.date,
+                "raw_text": note.raw_text,
+                "parsed_tags": {
+                    "lean": note.parsed_tags.lean,
+                    "conviction": note.parsed_tags.conviction,
+                    "focus": note.parsed_tags.focus,
+                    "force_psychology": note.parsed_tags.force_psychology,
+                    "force_data": note.parsed_tags.force_data,
+                },
+                "parse_method": note.parse_method,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )

@@ -35,6 +35,8 @@ class NewsCache:
         path = self._path(date=date, key=key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps({"stored_at": self.now().isoformat(), "payload": payload}, ensure_ascii=False),
+            json.dumps(
+                {"stored_at": self.now().isoformat(), "payload": payload}, ensure_ascii=False
+            ),
             encoding="utf-8",
         )
