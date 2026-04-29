@@ -8,6 +8,8 @@ from nutmeg.domain.daily_content import (
     HookCandidate,
     InternalAnalysis,
     MoodShotSpec,
+    NarrativeSegment,
+    NarrativeTimeline,
     ProductionPacketV2,
     PublicScript,
     QualityGateResult,
@@ -17,7 +19,51 @@ from nutmeg.domain.daily_content import (
 from nutmeg.services.video_production import VideoProductionService
 
 
+def test_narrative_timeline_serializes_locked_voice_subtitle_and_visuals() -> None:
+    timeline = NarrativeTimeline(
+        duration_seconds=60,
+        segments=[
+            NarrativeSegment(
+                segment_id="hook",
+                start_seconds=0,
+                end_seconds=6,
+                scene_type="hook",
+                voiceover_text="表面看是主场优势，其实先看压迫。",
+                subtitle_text="表面看是主场优势，其实先看压迫。",
+                screen_card_text="先看压迫",
+                visual_intent="用开场情绪镜头建立隐藏变量。",
+                tactical_focus="开局压迫",
+                transition_to_next="从隐藏变量进入第一观察点。",
+            )
+        ],
+    )
+
+    payload = timeline.to_dict()
+
+    assert payload["duration_seconds"] == 60
+    assert payload["segments"][0]["segment_id"] == "hook"
+    assert payload["segments"][0]["subtitle_text"] in payload["segments"][0]["voiceover_text"]
+    assert payload["segments"][0]["screen_card_text"] == "先看压迫"
+
+
 def test_production_packet_v2_serializes_nested_video_plan() -> None:
+    narrative_timeline = NarrativeTimeline(
+        duration_seconds=60,
+        segments=[
+            NarrativeSegment(
+                segment_id="hook",
+                start_seconds=0,
+                end_seconds=6,
+                scene_type="hook",
+                voiceover_text="这场表面看是主场优势，其实真正决定比赛的是压迫会不会断档。",
+                subtitle_text="真正决定比赛的是压迫会不会断档。",
+                screen_card_text="关键不是主场",
+                visual_intent="开场把观众注意力锁到主矛盾。",
+                tactical_focus="压迫断档",
+                transition_to_next="进入第一变量解释。",
+            )
+        ],
+    )
     packet = ProductionPacketV2(
         match_id="周二004",
         style_profile="cinematic-sports-anime-broadcast-v1",
@@ -75,6 +121,7 @@ def test_production_packet_v2_serializes_nested_video_plan() -> None:
         quality_gates=[
             QualityGateResult(gate="hook", status="pass", detail="3秒内明确主矛盾。")
         ],
+        narrative_timeline=narrative_timeline,
     )
 
     payload = packet.to_dict()
@@ -87,6 +134,7 @@ def test_production_packet_v2_serializes_nested_video_plan() -> None:
         "no_logo",
         "no_number",
     ]
+    assert payload["narrative_timeline"]["segments"][0]["screen_card_text"] == "关键不是主场"
     assert payload["remotion_timeline"]["composition_id"] == "FootballExplainerV2"
 
 
@@ -207,6 +255,16 @@ def test_video_production_service_writes_v2_artifacts(tmp_path) -> None:
     assert timeline["compositionId"] == "FootballExplainerV2"
     assert timeline["durationSeconds"] == 60
     assert len(timeline["tacticalBeats"]) == 2
+    assert len(timeline["narrativeSegments"]) == 6
+    assert timeline["voiceoverScript"] == "".join(
+        segment["voiceover_text"] for segment in timeline["narrativeSegments"]
+    )
+    assert timeline["narrativeSegments"][0]["scene_type"] == "hook"
+    assert timeline["narrativeSegments"][0]["subtitle_text"] in timeline["voiceoverScript"]
+    narrative_path = Path(paths["narrative_timeline_path"])
+    assert narrative_path.exists()
+    narrative = json.loads(narrative_path.read_text(encoding="utf-8"))
+    assert narrative["segments"][3]["scene_type"] == "counter"
     mood = json.loads(Path(paths["seedance_mood_manifest_path"]).read_text(encoding="utf-8"))
     assert len(mood["tasks"]) == 3
     assert all("no readable text" in task["content"][0]["text"].lower() for task in mood["tasks"])

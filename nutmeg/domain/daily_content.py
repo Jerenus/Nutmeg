@@ -195,6 +195,38 @@ class TacticalBeat:
 
 
 @dataclass(slots=True, frozen=True)
+class NarrativeSegment:
+    segment_id: str
+    start_seconds: float
+    end_seconds: float
+    scene_type: str
+    voiceover_text: str
+    subtitle_text: str
+    screen_card_text: str
+    visual_intent: str
+    tactical_focus: str
+    transition_to_next: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class NarrativeTimeline:
+    duration_seconds: float
+    segments: list[NarrativeSegment]
+
+    def voiceover_text(self) -> str:
+        return "".join(segment.voiceover_text for segment in self.segments)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "duration_seconds": self.duration_seconds,
+            "segments": [segment.to_dict() for segment in self.segments],
+        }
+
+
+@dataclass(slots=True, frozen=True)
 class DirectorShot:
     shot_id: str
     visual_owner: str
@@ -263,6 +295,7 @@ class ProductionPacketV2:
     tactical_beats: list[TacticalBeat]
     director_shots: list[DirectorShot]
     mood_shots: list[MoodShotSpec]
+    narrative_timeline: NarrativeTimeline
     remotion_timeline: RemotionTimelineSpec
     quality_gates: list[QualityGateResult]
 
@@ -277,6 +310,7 @@ class ProductionPacketV2:
             "tactical_beats": [beat.to_dict() for beat in self.tactical_beats],
             "director_shots": [shot.to_dict() for shot in self.director_shots],
             "mood_shots": [shot.to_dict() for shot in self.mood_shots],
+            "narrative_timeline": self.narrative_timeline.to_dict(),
             "remotion_timeline": self.remotion_timeline.to_dict(),
             "quality_gates": [gate.to_dict() for gate in self.quality_gates],
         }

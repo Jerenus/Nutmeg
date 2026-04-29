@@ -10,6 +10,8 @@ from nutmeg.domain.daily_content import (
     HookCandidate,
     InternalAnalysis,
     MoodShotSpec,
+    NarrativeSegment,
+    NarrativeTimeline,
     ProductionPacketV2,
     PublicScript,
     QualityGateResult,
@@ -92,6 +94,13 @@ class VideoProductionService:
             public_script=public_script,
         )
         tactical_beats = _tactical_beats(internal_analysis)
+        narrative_timeline = _narrative_timeline(
+            competition=competition,
+            home_team=home_team,
+            away_team=away_team,
+            selected_hook=brain.selected_hook,
+            internal_analysis=internal_analysis,
+        )
         director_shots = _director_shots()
         mood_shots = _mood_shots(match_no=match_no, home_team=home_team, away_team=away_team)
         timeline = RemotionTimelineSpec(
@@ -109,10 +118,11 @@ class VideoProductionService:
             hook_candidates=brain.hook_candidates,
             selected_hook=brain.selected_hook,
             main_contradiction=brain.main_contradiction,
-            voiceover_script=brain.voiceover_script,
+            voiceover_script=_sanitize_public_script(narrative_timeline.voiceover_text()),
             tactical_beats=tactical_beats,
             director_shots=director_shots,
             mood_shots=mood_shots,
+            narrative_timeline=narrative_timeline,
             remotion_timeline=timeline,
             quality_gates=[
                 QualityGateResult("content", "review", "Packet created for editorial review.")
@@ -131,6 +141,7 @@ class VideoProductionService:
             "director_shotlist_path": match_dir / "director-shotlist.json",
             "seedance_mood_manifest_path": match_dir / "seedance-mood-manifest.json",
             "remotion_timeline_path": match_dir / "remotion-timeline.json",
+            "narrative_timeline_path": match_dir / "narrative-timeline.json",
             "quality_report_path": match_dir / "quality-report.json",
         }
         _write_json(paths["content_brief_path"], packet.to_dict())
@@ -142,6 +153,7 @@ class VideoProductionService:
         )
         _write_json(paths["seedance_mood_manifest_path"], _seedance_mood_manifest(packet))
         _write_json(paths["remotion_timeline_path"], _remotion_props(packet))
+        _write_json(paths["narrative_timeline_path"], packet.narrative_timeline.to_dict())
         _write_json(
             paths["quality_report_path"],
             {"gates": [gate.to_dict() for gate in packet.quality_gates]},
@@ -301,6 +313,110 @@ def _tactical_beats(analysis: InternalAnalysis) -> list[TacticalBeat]:
     ]
 
 
+def _narrative_timeline(
+    *,
+    competition: str,
+    home_team: str,
+    away_team: str,
+    selected_hook: str,
+    internal_analysis: InternalAnalysis,
+) -> NarrativeTimeline:
+    first, second = _core_variables(internal_analysis)
+    risks = internal_analysis.key_risks[:2] or ["临场首发", "第一粒进球"]
+    first_risk = risks[0]
+    second_risk = risks[-1]
+    segments = [
+        NarrativeSegment(
+            segment_id="hook",
+            start_seconds=0,
+            end_seconds=6,
+            scene_type="hook",
+            voiceover_text=selected_hook,
+            subtitle_text=selected_hook,
+            screen_card_text="先别急着看强弱",
+            visual_intent="用开场情绪镜头把观众注意力锁到隐藏变量。",
+            tactical_focus=first,
+            transition_to_next="把反常识开头落到第一观察点。",
+        ),
+        NarrativeSegment(
+            segment_id="variable",
+            start_seconds=6,
+            end_seconds=16,
+            scene_type="tactical_map",
+            voiceover_text=(
+                f"这场{competition}不要急着给结论，真正的第一变量，是{home_team}"
+                f"前十五分钟能不能把比赛压到{away_team}半场。"
+            ),
+            subtitle_text=f"第一变量：{home_team}前15分钟能不能压到前场。",
+            screen_card_text=f"第一变量：{first}",
+            visual_intent="战术图展示主队压迫线和前场落点。",
+            tactical_focus=first,
+            transition_to_next="解释这个变量为什么会改变出球质量。",
+        ),
+        NarrativeSegment(
+            segment_id="why",
+            start_seconds=16,
+            end_seconds=28,
+            scene_type="tactical_map",
+            voiceover_text=(
+                f"如果{first}成立，{away_team}的第一脚出球会被迫提前，"
+                "二点球和边路失误就会变多。"
+            ),
+            subtitle_text=f"压迫成立，{away_team}第一脚出球会被迫提前。",
+            screen_card_text="第一脚出球会变急",
+            visual_intent="战术图突出第一脚出球、二点球和边路压力。",
+            tactical_focus="第一脚出球",
+            transition_to_next="从压迫收益切到客队反制路径。",
+        ),
+        NarrativeSegment(
+            segment_id="counter",
+            start_seconds=28,
+            end_seconds=40,
+            scene_type="counter",
+            voiceover_text=(
+                f"反过来，只要{away_team}能把第一脚传出来，{home_team}"
+                "身后的空间会立刻变成反击通道。"
+            ),
+            subtitle_text=f"{away_team}传出第一脚，身后空间就是反击通道。",
+            screen_card_text=f"反制点：{second}",
+            visual_intent="用反击箭头展示客队穿过第一层压迫后的纵深。",
+            tactical_focus=second,
+            transition_to_next="把战术反制落到临场观察信号。",
+        ),
+        NarrativeSegment(
+            segment_id="risk",
+            start_seconds=40,
+            end_seconds=52,
+            scene_type="risk",
+            voiceover_text=(
+                f"临场再看两个风险：{first_risk}，以及{second_risk}。"
+                "早进球会把原本的节奏判断全部改写。"
+            ),
+            subtitle_text=f"临场重点看：{first_risk}和{second_risk}。",
+            screen_card_text="临场风险会改写节奏",
+            visual_intent="情绪镜头表现冲刺、回追和节奏突变。",
+            tactical_focus=f"{first_risk} / {second_risk}",
+            transition_to_next="收束成观众应该带走的单一判断框架。",
+        ),
+        NarrativeSegment(
+            segment_id="closing",
+            start_seconds=52,
+            end_seconds=60,
+            scene_type="closing",
+            voiceover_text=(
+                "所以这场最值得盯的，不是最终比分，而是谁先把比赛带进自己的节奏。"
+                f"{SHORT_VIDEO_DISCLAIMER}"
+            ),
+            subtitle_text="重点不是比分，而是谁先掌控节奏。",
+            screen_card_text="谁先掌控节奏？",
+            visual_intent="收尾镜头给出最终观察框架，不制造投注暗示。",
+            tactical_focus="节奏归属",
+            transition_to_next="结束。",
+        ),
+    ]
+    return NarrativeTimeline(duration_seconds=60, segments=segments)
+
+
 def _director_shots() -> list[DirectorShot]:
     return [
         DirectorShot("hook-mood", "seedance", 0, 8, "opening_hook", "电影感眼神、球鞋或足球特写。"),
@@ -390,6 +506,9 @@ def _remotion_props(packet: ProductionPacketV2) -> dict[str, Any]:
         "tacticalBeats": [beat.to_dict() for beat in packet.tactical_beats],
         "directorShots": [shot.to_dict() for shot in packet.director_shots],
         "moodShots": [shot.to_dict() for shot in packet.mood_shots],
+        "narrativeSegments": [
+            segment.to_dict() for segment in packet.narrative_timeline.segments
+        ],
     }
 
 
