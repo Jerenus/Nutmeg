@@ -5,6 +5,7 @@
 .python-version
 .venv/
 node_modules/
+video/remotion/public/mood-shots/
 .pytest_cache/
 .ruff_cache/
 __pycache__/

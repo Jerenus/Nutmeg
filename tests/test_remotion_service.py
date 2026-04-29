@@ -30,6 +30,15 @@ def test_remotion_workspace_contains_tactical_components() -> None:
     assert (root / "Disclaimer.tsx").exists()
 
 
+def test_mood_shot_layer_uses_static_file_for_local_assets() -> None:
+    component = Path("video/remotion/src/components/MoodShotLayer.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert "staticFile" in component
+    assert "staticFile(src)" in component
+
+
 def test_remotion_render_service_builds_local_render_command(tmp_path) -> None:
     from nutmeg.services.remotion import RemotionRenderService
 
