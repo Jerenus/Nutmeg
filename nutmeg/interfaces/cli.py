@@ -3156,10 +3156,19 @@ def psychology_inspect_cmd(
 
 
 def _build_inspiration_parser():
-    from nutmeg.services.psychology.inspiration import InspirationParser
-    from nutmeg.services.psychology.llm import FakeLLMCompleter
+    import os
 
-    return InspirationParser(llm=FakeLLMCompleter(responses=[]))
+    from nutmeg.agents.llm_provider import build_synthesis_provider
+    from nutmeg.config.settings import get_settings
+    from nutmeg.services.psychology.inspiration import InspirationParser
+    from nutmeg.services.psychology.llm import FakeLLMCompleter, PortkeyLLMCompleter
+
+    if os.getenv("NUTMEG_PSYCHOLOGY_PARSER_FAKE_MODE") == "1":
+        return InspirationParser(llm=FakeLLMCompleter(responses=[]))
+    provider = build_synthesis_provider(get_settings())
+    if provider is None:
+        return InspirationParser(llm=FakeLLMCompleter(responses=[]))
+    return InspirationParser(llm=PortkeyLLMCompleter(portkey_provider=provider))
 
 
 def _normalize_date(yyyymmdd: str) -> str:

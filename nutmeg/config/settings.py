@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class AppSettings(BaseSettings):
@@ -54,6 +55,23 @@ class AppSettings(BaseSettings):
     telegram_api_base_url: str = 'https://api.telegram.org'
     telegram_bot_token: str | None = None
     telegram_allowed_chat_ids: str | None = None
+    psychology_layer_enabled: bool = False
+    psychology_conviction_threshold: float = 0.7
+    psychology_provider_enabled: Annotated[list[str], NoDecode] = Field(default_factory=lambda: [
+        'tournament_stage',
+        'contrarian_narrative',
+        'reflexive_tactic',
+        'personal_narrative',
+    ])
+    psychology_news_cache_dir: str = '.nutmeg-data/cache/news'
+    psychology_rss_feeds: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
+    @field_validator('psychology_provider_enabled', 'psychology_rss_feeds', mode='before')
+    @classmethod
+    def _csv_to_list(cls, value):
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(',') if item.strip()]
+        return value
 
     @property
     def project_root(self) -> Path:

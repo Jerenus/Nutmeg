@@ -132,6 +132,33 @@ class PortkeySynthesisProvider:
         if self._owns_client:
             self._client.close()
 
+    def _complete_raw(self, *, system: str, user: str) -> str:
+        response = self._client.post(
+            '/chat/completions',
+            headers={
+                'authorization': f'Bearer {self._api_key}',
+                'content-type': 'application/json',
+            },
+            json={
+                'model': self._model,
+                'messages': [
+                    {'role': 'system', 'content': system},
+                    {'role': 'user', 'content': user},
+                ],
+                'temperature': 0.2,
+            },
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise PortkeySynthesisError(
+                f'Portkey synthesis request failed ({response.status_code}).'
+            ) from exc
+        text = self._extract_text(response.json())
+        if not text:
+            raise PortkeySynthesisError('Portkey did not return synthesis text.')
+        return text
+
     def synthesize(self, analysis: FixtureAnalysisResult) -> str:
         response = self._client.post(
             '/chat/completions',
