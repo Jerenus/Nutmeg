@@ -3153,3 +3153,43 @@ def psychology_inspect_cmd(
         "readings": [{"provider": r.provider, "market": r.market, "outcome_view": r.outcome_view, "conviction": r.conviction, "evidence": r.evidence, "abstain_reason": r.abstain_reason} for r in verdict.contributing_readings],
     }
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def _build_inspiration_parser():
+    from nutmeg.services.psychology.inspiration import InspirationParser
+    from nutmeg.services.psychology.llm import FakeLLMCompleter
+
+    return InspirationParser(llm=FakeLLMCompleter(responses=[]))
+
+
+def _normalize_date(yyyymmdd: str) -> str:
+    if len(yyyymmdd) == 10 and yyyymmdd[4] == "-":
+        return yyyymmdd
+    return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:]}"
+
+
+@app.command(name="inspiration-write")
+def inspiration_write_cmd(
+    date: str = typer.Option(..., "--date", help="YYYYMMDD"),
+    text: str | None = typer.Option(None, "--text", help="If omitted, $EDITOR is opened"),
+) -> None:
+    import os
+    from datetime import datetime, timezone
+
+    from nutmeg.services.psychology.inspiration import InspirationStore
+
+    base = Path(os.environ.get("NUTMEG_INSPIRATION_DIR", ".nutmeg-data/inspiration"))
+    iso = _normalize_date(date)
+    if text is None:
+        editor = os.environ.get("EDITOR", "nano")
+        tmpfile = base / iso / "raw.md"
+        tmpfile.parent.mkdir(parents=True, exist_ok=True)
+        if not tmpfile.exists():
+            tmpfile.write_text("", encoding="utf-8")
+        os.system(f"{editor} {tmpfile!s}")
+        text = tmpfile.read_text(encoding="utf-8")
+    store = InspirationStore(base_dir=base)
+    store.write_raw(date=iso, text=text)
+    note = _build_inspiration_parser().parse(text, date=iso)
+    store.write_parsed(date=iso, tags=note.parsed_tags, raw_text=note.raw_text, parse_method=note.parse_method, timestamp=datetime.now(tz=timezone.utc).isoformat())
+    typer.echo(f"saved {iso} via {note.parse_method}")

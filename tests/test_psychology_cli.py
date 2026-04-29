@@ -16,3 +16,16 @@ def test_psychology_inspect_outputs_json(tmp_path: Path, monkeypatch) -> None:
     payload = json.loads(result.output)
     assert payload["fixture_id"] == "f1"
     assert "tournament_stage" in {r["provider"] for r in payload["readings"]}
+
+
+def test_inspiration_write_creates_files(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("NUTMEG_INSPIRATION_DIR", str(tmp_path))
+    monkeypatch.setenv("NUTMEG_PSYCHOLOGY_PARSER_FAKE_MODE", "1")
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspiration-write", "--date", "20260429", "--text", "今晚反着来，淘汰赛"])
+    assert result.exit_code == 0, result.output
+    raw = (tmp_path / "2026-04-29" / "raw.md").read_text(encoding="utf-8")
+    assert "反着来" in raw
+    parsed = json.loads((tmp_path / "2026-04-29" / "parsed.json").read_text(encoding="utf-8"))
+    assert parsed["parsed_tags"]["lean"] == "psychology"
+    assert "tournament_stage" in parsed["parsed_tags"]["focus"]
