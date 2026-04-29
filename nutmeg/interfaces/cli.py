@@ -3127,3 +3127,29 @@ def classify_query(query: str) -> None:
 
 if __name__ == "__main__":
     app()
+
+@app.command(name="psychology-inspect")
+def psychology_inspect_cmd(
+    fixture_file: Path = typer.Option(..., "--fixture-file", help="JSON file with a single fixture dict"),
+    rules_only: bool = typer.Option(False, "--rules-only", help="Skip LLM-backed signals; only run tournament_stage"),
+) -> None:
+    """Dump SignalReadings for a single fixture from each enabled provider."""
+    from nutmeg.services.psychology.engine import PsychologyEngine
+    from nutmeg.services.psychology.signals.base import SignalContext
+    from nutmeg.services.psychology.signals.tournament_stage import TournamentStageSignal
+
+    fixture = json.loads(fixture_file.read_text(encoding="utf-8"))
+    fixture_id = str(fixture.get("id"))
+    providers: list = [TournamentStageSignal()]
+    if not rules_only:
+        pass
+    engine = PsychologyEngine(providers=providers)
+    [verdict] = engine.evaluate(ctx=SignalContext(date="manual", fixtures=[fixture], snapshots={}, odds={}), data_picks={fixture_id: {}})
+    payload = {
+        "fixture_id": fixture_id,
+        "lean_direction": verdict.lean_direction,
+        "conviction": verdict.conviction,
+        "market_views": {market: {"outcome": view.outcome, "conviction": view.conviction} for market, view in verdict.market_views.items()},
+        "readings": [{"provider": r.provider, "market": r.market, "outcome_view": r.outcome_view, "conviction": r.conviction, "evidence": r.evidence, "abstain_reason": r.abstain_reason} for r in verdict.contributing_readings],
+    }
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
