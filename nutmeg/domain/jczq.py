@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -100,6 +100,7 @@ class JczqMixedReport:
     artifacts: JczqReportArtifacts = field(default_factory=JczqReportArtifacts)
     dispatch: JczqReportDispatch = field(default_factory=JczqReportDispatch)
     warnings: list[str] = field(default_factory=list)
+    psychology_reports: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -111,4 +112,5 @@ class JczqMixedReport:
             "artifacts": self.artifacts.to_dict(),
             "dispatch": self.dispatch.to_dict(),
             "warnings": self.warnings,
+            "psychology_reports": {name: asdict(report) for name, report in self.psychology_reports.items()},
         }

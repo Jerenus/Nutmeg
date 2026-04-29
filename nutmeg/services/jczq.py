@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 from reportlab.lib import colors
@@ -23,6 +23,11 @@ from nutmeg.domain.jczq import (
     JczqReportDispatch,
     JczqReportLeg,
 )
+
+if TYPE_CHECKING:
+    from nutmeg.services.psychology.engine import PsychologyEngine
+    from nutmeg.services.psychology.reconciliator import Reconciliator
+    from nutmeg.services.psychology.schemas import DualSchemeReport, InspirationNote
 
 SPORTTERY_JCZQ_PAGE = "https://www.sporttery.cn/jc/jsq/zqspf/"
 SPORTTERY_JCZQ_API = (
@@ -184,10 +189,16 @@ class JczqMixedReportService:
         provider: JczqCalculatorProvider | None = None,
         telegram_sender: JczqDocumentSender | None = None,
         telegram_chat_ids: list[int] | None = None,
+        psychology_engine: "PsychologyEngine | None" = None,
+        reconciliator: "Reconciliator | None" = None,
+        psychology_inspiration: "InspirationNote | None" = None,
     ) -> None:
         self._provider = provider or SportteryJczqCalculatorProvider()
         self._telegram_sender = telegram_sender
         self._telegram_chat_ids = telegram_chat_ids or []
+        self._psychology_engine = psychology_engine
+        self._reconciliator = reconciliator
+        self._psychology_inspiration = psychology_inspiration
 
     def build_report(
         self,
@@ -199,6 +210,33 @@ class JczqMixedReportService:
     ) -> JczqMixedReport:
         value = self._provider.fetch()
         combinations = self._build_combinations(value)
+        psychology_reports: dict[str, "DualSchemeReport"] = {}
+        if self._psychology_engine and self._reconciliator:
+            from nutmeg.services.psychology.jczq_adapter import (
+                apply_final_scheme_to_combination,
+                combination_to_data_scheme,
+            )
+            from nutmeg.services.psychology.signals.base import SignalContext
+
+            updated_combinations = []
+            for combo in combinations:
+                data_scheme = combination_to_data_scheme(combo)
+                fixtures = [
+                    {
+                        "id": f"{leg.match_no}:{leg.home_team}:{leg.away_team}",
+                        "home_team_name": leg.home_team,
+                        "away_team_name": leg.away_team,
+                        "competition_code": leg.league,
+                    }
+                    for leg in combo.legs
+                ]
+                ctx = SignalContext(date=datetime.now(UTC).date().isoformat(), fixtures=fixtures, snapshots={}, odds={})
+                data_picks = {leg.fixture_id: {leg.market: leg.outcome} for leg in data_scheme.legs}
+                verdicts = self._psychology_engine.evaluate(ctx=ctx, data_picks=data_picks)
+                dual = self._reconciliator.reconcile(data_scheme=data_scheme, psychology_verdicts=verdicts, inspiration=self._psychology_inspiration)
+                psychology_reports[combo.name] = dual
+                updated_combinations.append(apply_final_scheme_to_combination(combo, dual.final_scheme))
+            combinations = updated_combinations
         generated_at = datetime.now(UTC).replace(microsecond=0).isoformat()
         report = JczqMixedReport(
             generated_at=generated_at,
@@ -206,6 +244,7 @@ class JczqMixedReportService:
             source_page=self._provider.source_page,
             source_api=self._provider.source_api,
             combinations=combinations,
+            psychology_reports=psychology_reports,
         )
         if output_dir is not None:
             artifacts = self.write_artifacts(
@@ -498,6 +537,7 @@ class JczqMixedReportService:
             artifacts=artifacts or report.artifacts,
             dispatch=dispatch or report.dispatch,
             warnings=report.warnings,
+            psychology_reports=report.psychology_reports,
         )
 
 

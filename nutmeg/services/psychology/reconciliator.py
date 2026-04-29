@@ -18,7 +18,7 @@ class Reconciliator:
         provider_origin = provider_origin or {}
         for leg in data_scheme.legs:
             verdict = verdict_by_fixture.get(leg.fixture_id)
-            if verdict and (view := verdict.market_views.get(leg.market)) and view.outcome != leg.outcome and view.conviction > 0:
+            if verdict and (view := (verdict.market_views.get(leg.market) or verdict.market_views.get("HHAD"))) and view.outcome != leg.outcome and view.conviction > 0:
                 psych_legs.append(DataLeg(leg.leg_id, leg.fixture_id, leg.market, view.outcome, leg.odds))
                 candidates.append(OverrideCandidate(leg.leg_id, leg.fixture_id, leg.market, leg.outcome, view.outcome, view.conviction, [], provider_origin.get(f"{leg.fixture_id}::{leg.market}", "psychology")))
             else:
@@ -67,7 +67,8 @@ class Reconciliator:
         dashboard: list[DashboardRow] = []
         for leg in data_scheme.legs:
             verdict = verdict_by_fixture.get(leg.fixture_id)
-            psych_pick = verdict.market_views.get(leg.market).outcome if verdict and leg.market in verdict.market_views else None
+            psych_view = (verdict.market_views.get(leg.market) or verdict.market_views.get("HHAD")) if verdict else None
+            psych_pick = psych_view.outcome if psych_view else None
             final_outcome = next(final_leg.outcome for final_leg in final_legs if final_leg.leg_id == leg.leg_id)
             dashboard.append(DashboardRow(leg.fixture_id, leg.outcome, psych_pick, psych_pick is not None and psych_pick != leg.outcome, final_outcome, verdict.conviction if verdict else 0.0))
         return DualSchemeReport(data_scheme, psych_scheme, FinalScheme(final_legs, confidence, notes), dashboard, inspiration, GuardrailDecision(list(budget_pass), rejected, {"budget": f"{len(budget_pass)}/{self.budget_guard.max_reversals}", "conviction_gate": f"{self.conviction_gate.threshold:.2f}", "kill_switch": "warming_up"}))
