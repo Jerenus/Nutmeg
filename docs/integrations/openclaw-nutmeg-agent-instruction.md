@@ -50,7 +50,8 @@ python3 scripts/openclaw/nutmeg_command_router.py <action> [options]
 - User asks for visuals -> run `visuals --fixture-id <id>`.
 - User asks for daily run -> run `daily --league epl --days 3`, adding `--briefs` only if requested.
 - User asks for 足彩14场/胜负彩 issue report -> run `zucai-report --issue-id <issue> --pdf`; only add `--dispatch-telegram --confirm-dispatch` when explicitly requested.
-- User asks for 竞彩足球4关高赔/混合投注/PDF报告 -> run `jczq-mixed-report --provider live --pdf`; only add `--dispatch-telegram --confirm-dispatch` when explicitly requested.
+- User asks for 竞彩足球每日分析/今日竞彩方案/高赔率灵感票/规避热门盘口, including natural-language follow-ups, -> run `jczq-daily-advisor --provider live --date today`; include the full user correction as `--revision-text` when present; only add `--dispatch-telegram --confirm-dispatch` when explicitly requested.
+- User specifically asks for 竞彩足球PDF报告 -> run `jczq-mixed-report --provider live --pdf`; only add `--dispatch-telegram --confirm-dispatch` when explicitly requested.
 - User asks for 足彩分享文案/内容包 -> if a Zucai `report_json_path` is known, run `content --report-file <path> --limit 3`; otherwise first run `zucai-report --issue-id <issue> --pdf`, then run `content` with the returned `payload.artifacts.report_json_path`.
 
 ## Safety Gates

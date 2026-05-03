@@ -112,6 +112,7 @@ class ZucaiScheduledDeliveryService:
                 dispatch_telegram=dispatch_telegram,
                 dry_run=dry_run,
                 dispatch_caption=caption,
+                record_final=True,
             )
             status = report.dispatch.status if dispatch_telegram else "generated"
             run_warnings = [*warnings, *report.warnings]

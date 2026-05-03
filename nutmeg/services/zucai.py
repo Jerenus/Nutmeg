@@ -50,7 +50,18 @@ RISKY_FLAGS = {
     "shallow_handicap",
     "home_form",
     "fixture_congestion",
+    "information_bias",
+    "narrative_trap",
 }
+BIAS_METADATA_FIELDS = {
+    "public_pick",
+    "value_pick",
+    "narrative_bias",
+    "information_bias",
+}
+HARD_STRENGTH_FAV_ODDS = 1.45
+MAX_VALUE_COUNTER_ODDS = 4.80
+MAX_VALUE_COUNTER_RATIO = 2.60
 
 
 class ZucaiWorkflowService:
@@ -60,10 +71,12 @@ class ZucaiWorkflowService:
         telegram_sender: ZucaiDocumentSender | None = None,
         telegram_chat_ids: list[int] | None = None,
         sample_dir: Path | None = None,
+        betting_repository: Any | None = None,
     ) -> None:
         self._telegram_sender = telegram_sender
         self._telegram_chat_ids = telegram_chat_ids or []
         self._sample_dir = sample_dir or Path(__file__).parents[1] / "zucai" / "samples"
+        self._betting_repository = betting_repository
 
     def build_report(
         self,
@@ -77,6 +90,7 @@ class ZucaiWorkflowService:
         dispatch_telegram: bool = False,
         dry_run: bool = True,
         dispatch_caption: str | None = None,
+        record_final: bool = False,
     ) -> ZucaiReport:
         resolved_issue_file = self._resolve_file(issue_file, issue_id, "issue")
         resolved_issue_id = issue_id or self._issue_id_from_path(resolved_issue_file)
@@ -141,6 +155,8 @@ class ZucaiWorkflowService:
                     json.dumps(report.to_dict(), ensure_ascii=False, indent=2, default=str),
                     encoding="utf-8",
                 )
+        if record_final and self._betting_repository is not None:
+            self._betting_repository.record_zucai_report(report)
         return report
 
     def load_issue(self, issue_file: Path | str) -> ZucaiIssue:
@@ -376,7 +392,11 @@ class ZucaiWorkflowService:
         doc.build(story)
 
     def grade_report(
-        self, *, report_file: Path | str, outcomes_file: Path | str
+        self,
+        *,
+        report_file: Path | str,
+        outcomes_file: Path | str,
+        record_db: bool = False,
     ) -> ZucaiGradeReport:
         report_payload = _read_json(Path(report_file))
         outcome_payload = _read_json(Path(outcomes_file))
@@ -430,12 +450,19 @@ class ZucaiWorkflowService:
                     covered=covered,
                 )
             )
-        return ZucaiGradeReport(
+        grade = ZucaiGradeReport(
             issue_id=issue_id,
             match_results=match_results,
             plan_results=plan_results,
             warnings=warnings,
         )
+        if record_db and self._betting_repository is not None:
+            self._betting_repository.record_zucai_grade(
+                report_payload,
+                grade,
+                review_date=datetime.now(UTC).date().isoformat(),
+            )
+        return grade
 
     def _build_recommendations(
         self,
@@ -451,28 +478,85 @@ class ZucaiWorkflowService:
             rec = self._baseline_recommendation(match, odds)
             override = overrides.get(match.match_no)
             if override is not None:
-                pick = normalize_pick(str(override.get("pick") or ""))
-                if not pick:
+                raw_pick = str(override.get("pick") or "").strip()
+                if raw_pick:
+                    pick = normalize_pick(raw_pick)
+                else:
+                    pick = ""
+                if raw_pick and not pick:
                     warnings.append(
                         f"invalid override pick for match {match.match_no}: {override.get('pick')}"
                     )
-                else:
+                elif pick:
                     primary = str(override.get("primary") or pick[0])
                     if primary not in pick:
                         primary = pick[0]
+                    rationale = str(override.get("rationale") or rec.rationale)
+                    rec_warnings = rec.warnings
+                    if _has_bias_metadata(override):
+                        narrative = str(
+                            override.get("narrative_bias")
+                            or override.get("information_bias")
+                            or ""
+                        ).strip()
+                        if narrative and "信息理解偏差" not in rationale:
+                            rationale = f"{rationale} 信息理解偏差：{narrative}"
+                        rec_warnings = [*rec_warnings, "information_bias_check"]
                     rec = ZucaiRecommendation(
                         match_no=match.match_no,
                         pick=pick,
                         primary=primary,
                         confidence=float(override.get("confidence") or rec.confidence),
                         risk_tier=str(override.get("risk_tier") or rec.risk_tier),
-                        rationale=str(override.get("rationale") or rec.rationale),
+                        rationale=rationale,
                         odds_average=rec.odds_average,
                         override_applied=True,
-                        warnings=rec.warnings,
+                        warnings=rec_warnings,
                     )
+                elif _has_bias_metadata(override):
+                    rec = self._apply_information_bias_adjustment(rec, override)
+                else:
+                    warnings.append(f"override for match {match.match_no} missing pick")
             recs.append(rec)
         return recs
+
+    def _apply_information_bias_adjustment(
+        self, rec: ZucaiRecommendation, override: dict[str, Any]
+    ) -> ZucaiRecommendation:
+        odds_average = rec.odds_average
+        if odds_average is None:
+            return rec
+        fav_odds = odds_average[rec.primary]
+        if fav_odds <= HARD_STRENGTH_FAV_ODDS:
+            return rec
+        value_pick = normalize_pick(str(override.get("value_pick") or ""))
+        public_pick = normalize_pick(str(override.get("public_pick") or rec.primary))
+        if not value_pick:
+            return rec
+        value_odds = min((odds_average[pick] for pick in value_pick), default=999.0)
+        if value_odds > MAX_VALUE_COUNTER_ODDS and value_odds / fav_odds > MAX_VALUE_COUNTER_RATIO:
+            return rec
+        adjusted_pick = normalize_pick(f"{rec.pick}{public_pick}{value_pick}")
+        if not adjusted_pick or adjusted_pick == rec.pick:
+            return rec
+        narrative = str(
+            override.get("narrative_bias") or override.get("information_bias") or "大众合理方向过热"
+        ).strip()
+        rationale = (
+            f"信息理解偏差检查：{narrative}；大众方向{public_pick or rec.primary}可能被叙事放大，"
+            f"加入价值方向{value_pick}，避免把“合理信息”直接当作真实赛果结论。原始判断：{rec.rationale}"
+        )
+        return ZucaiRecommendation(
+            match_no=rec.match_no,
+            pick=adjusted_pick,
+            primary=rec.primary,
+            confidence=min(rec.confidence, 0.53),
+            risk_tier="bias_adjusted",
+            rationale=rationale,
+            odds_average=rec.odds_average,
+            override_applied=True,
+            warnings=[*rec.warnings, "information_bias_check"],
+        )
 
     def _baseline_recommendation(
         self, match: ZucaiMatch, odds: ZucaiOdds | None
@@ -671,6 +755,10 @@ def normalize_pick(raw: str) -> str:
     if any(ch not in VALID_CODES for ch in raw.strip()):
         return ""
     return "".join(ch for ch in order if ch in seen)
+
+
+def _has_bias_metadata(payload: dict[str, Any]) -> bool:
+    return any(str(payload.get(field) or "").strip() for field in BIAS_METADATA_FIELDS)
 
 
 def _read_json(path: Path) -> dict[str, Any]:

@@ -399,3 +399,11 @@ Complete Sprint 1 richer pre-match snapshot plus the first odds snapshot / fair 
 - Hardened `OpenClawContentLlmProvider` command resolution: boolean-like OpenClaw env values are ignored, namespaced/real CLI values still work, and CLI-not-found warnings now include the attempted path for future diagnosis.
 - Verified `OPENCLAW_CLI=1` router smoke returns `llm_status=generated`; verified `nutmegbot` `/content nutmeg/content/samples/26068-content-report.json` returns generated content with no fallback and writes `.nutmeg-data/content/content-pack-26068-20260426T105446+0000.{json,md}`.
 - Verification: focused content/router suite passed with 19 tests; `uv run ruff check .` passed; `python3 -m compileall nutmeg scripts/openclaw` passed; `bash scripts/verify.sh` passed with 327 tests; OpenClaw Telegram account `nutmeg` reports running/connected/probe_ok for `@jerenusNutmeg_bot`.
+
+## 2026-05-01 - jczq-daily-advisor-v0
+
+- Added a dynamic `jczq-daily-advisor` workflow that scans current Sporttery sellable JCZQ matches and mixed pools without hard-coded match numbers.
+- Generated repeatable Chinese daily reports with main, high-odds inspiration, contrarian, and extreme small-stake plans using HAD/HHAD/TTG/CRS/HAFU odds multiplication.
+- Added saved daily context and revision handling so `/jczq revise <想法>` can recalculate from the existing slate without refetching.
+- Wired CLI, BotAdapter `/jczq` commands, OpenClaw router action, docs, and a 12:00 launchd template; installed the LaunchAgent at `~/Library/LaunchAgents/com.nutmeg.jczq.daily-noon.plist`.
+- Verification: focused JCZQ daily/Bot/CLI/router suites passed, Bot natural-language竞彩 revision routing works, live Sporttery smoke returned today’s five-match slate, ruff and compileall passed, and `bash scripts/verify.sh` passed with 463 tests.

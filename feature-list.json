@@ -1,266 +1,272 @@
 [
-  {
-    "id": "foundation-spec-governance",
-    "category": "foundation",
-    "description": "Spec Kit and Superpowers Bridge are installed and readable from the repository.",
-    "passes": true
-  },
-  {
-    "id": "foundation-doctor-command",
-    "category": "foundation",
-    "description": "The doctor command reports storage, provider, harness, and workflow readiness in text and JSON modes.",
-    "passes": true
-  },
-  {
-    "id": "fixtures-sync-api-football",
-    "category": "sprint-0",
-    "description": "The repository can sync upcoming fixtures from API-Football for the configured leagues into shared storage.",
-    "passes": true
-  },
-  {
-    "id": "fixtures-list-from-shared-cache",
-    "category": "sprint-0",
-    "description": "The fixtures command reads upcoming fixtures from the shared cache and still supports a demo fallback.",
-    "passes": true
-  },
-  {
-    "id": "duckdb-shared-fixture-cache",
-    "category": "sprint-0",
-    "description": "DuckDB is initialized as the shared objective-data cache for fixtures.",
-    "passes": true
-  },
-  {
-    "id": "sqlite-sync-run-metadata",
-    "category": "sprint-0",
-    "description": "SQLite stores mutable sync-run metadata and the latest run can be inspected in doctor output.",
-    "passes": true
-  },
-  {
-    "id": "langsmith-cli-tracing",
-    "category": "sprint-0",
-    "description": "CLI operations can emit LangSmith traces when enabled and configured.",
-    "passes": true
-  },
-  {
-    "id": "fixture-snapshot-soccerdata",
-    "category": "sprint-1",
-    "description": "The repository can load a cached fixture and build a structured snapshot with FBref season metrics plus Understat recent-form and shot-summary data.",
-    "passes": true
-  },
-  {
-    "id": "fixture-snapshot-prematch-context",
-    "category": "sprint-1",
-    "description": "The snapshot now includes market value, injuries, and confirmed-or-probable lineups with explicit source attribution.",
-    "passes": true
-  },
-  {
-    "id": "reference-data-player-identity",
-    "category": "sprint-1",
-    "description": "Shared DuckDB reference data can reconcile provider player aliases and persist venue/weather cache support.",
-    "passes": true
-  },
-  {
-    "id": "reference-data-materialization-cache",
-    "category": "sprint-1",
-    "description": "A local-first materialization layer exists for Transfermarkt and soccerdata inputs used by the fixture snapshot.",
-    "passes": true
-  },
-  {
-    "id": "fixture-snapshot-richer-context",
-    "category": "sprint-1",
-    "description": "The fixture snapshot now renders environment, deeper availability, and matchup/trend context with truthful unavailable markers.",
-    "passes": true
-  },
-  {
-    "id": "odds-snapshot-fair-probability",
-    "category": "sprint-1",
-    "description": "The repository can build a fixture-linked odds snapshot with canonical markets, fair probabilities, and historical market drift summaries.",
-    "passes": true
-  },
-  {
-    "id": "odds-secondary-provider-reconciliation",
-    "category": "sprint-1",
-    "description": "The odds path can reconcile a cached fixture into a The Odds API event, cache that link, and normalize the secondary provider behind the same contract.",
-    "passes": true
-  },
-  {
-    "id": "long-running-agent-harness-artifacts",
-    "category": "process",
-    "description": "The repository contains init, progress, and feature-list artifacts for long-running agent continuity.",
-    "passes": true
-  },
-  {
-    "id": "ci-lint-and-tests",
-    "category": "process",
-    "description": "Continuous integration runs lint and tests for the Sprint 0 foundation.",
-    "passes": true
-  },
-  {
-    "id": "analysis-judgment-v0",
-    "category": "sprint-2",
-    "description": "The repository can synthesize fixture snapshot and odds snapshot context into a four-part pre-match judgment through a dedicated CLI workflow.",
-    "passes": true
-  },
-  {
-    "id": "graph-refresh-assets",
-    "category": "process",
-    "description": "The repository can generate local graph-native architecture assets with make graph and graphify-out/GRAPH_REPORT.md.",
-    "passes": true
-  },
-  {
-    "id": "provider-health-persistence",
-    "category": "sprint-1",
-    "description": "The Odds API provider health metrics persist in DuckDB and agent-status can report them without network calls.",
-    "passes": true
-  },
-  {
-    "id": "operator-match-brief",
-    "category": "sprint-2",
-    "description": "The CLI can produce a single operator-facing pre-match brief that packages agent status, deterministic judgment, evidence, caveats, and optional generated synthesis.",
-    "passes": true
-  },
-  {
-    "id": "im-bot-adapter-dry-run",
-    "category": "sprint-2",
-    "description": "A no-network IM bot adapter can parse /brief messages, reuse the match brief workflow, and run through nutmeg bot-dry-run.",
-    "passes": true
-  },
-  {
-    "id": "today-briefs-local-candidates",
-    "category": "sprint-2",
-    "description": "The CLI can list today/local fixture candidates and optionally fan out match briefs without manually entering fixture ids.",
-    "passes": true
-  },
-  {
-    "id": "telegram-bot-transport",
-    "category": "sprint-2",
-    "description": "A Telegram Bot API transport can poll one update batch, owner-gate chat ids, and route allowed messages through the existing bot adapter.",
-    "passes": true
-  },
-  {
-    "id": "telegram-bot-daemon",
-    "category": "sprint-2",
-    "description": "Telegram bot can run a controlled polling daemon loop with offset tracking, owner gating, graceful interruption, and aggregate summaries.",
-    "passes": true
-  },
-  {
-    "id": "popular-matches-ranking",
-    "category": "sprint-2",
-    "description": "The CLI can rank local/demo fixture candidates by deterministic popularity, explain scores, and reuse the ranking inside today-briefs.",
-    "passes": true
-  },
-  {
-    "id": "bot-llm-fallback-gpt-5-5",
-    "category": "sprint-2",
-    "description": "BotAdapter can answer /start/help deterministically and optionally route unsupported or failed bot messages through an OpenAI Responses API GPT-5.5 fallback without leaking secrets.",
-    "passes": true
-  },
-  {
-    "id": "telegram-offset-persistence",
-    "category": "sprint-2",
-    "description": "Telegram polling stores next_offset locally and resumes from it by default, eliminating manual offset tracking across restarts.",
-    "passes": true
-  },
-  {
-    "id": "value-board-v0",
-    "category": "sprint-3",
-    "description": "The CLI can rank model-vs-market match-winner value candidates with baseline Poisson/Dixon-Coles-lite probabilities, fair-probability edge, and quarter-Kelly sizing.",
-    "passes": true
-  },
-  {
-    "id": "player-profile-v0",
-    "category": "sprint-4",
-    "description": "The CLI can build a local-first player profile with identity, Transfermarkt market data, cached season metrics, availability status, and similar-player scoring.",
-    "passes": true
-  },
-  {
-    "id": "eval-and-review-loop",
-    "category": "sprint-6",
-    "description": "The repository can run local eval datasets and record/review match-winner predictions with Brier Score calibration.",
-    "passes": true
-  },
-  {
-    "id": "daily-operator-schedule",
-    "category": "sprint-6",
-    "description": "The CLI can run a safe daily operator cycle over optional fixture sync, popular matches, value board, optional briefs, and explicit Telegram dispatch.",
-    "passes": true
-  },
-  {
-    "id": "tactical-visuals-v0",
-    "category": "sprint-2",
-    "description": "The CLI can generate deterministic local SVG shot-map, lineup-network, and xG-trend artifacts from fixture snapshot context while labeling proxy/missing sections truthfully.",
-    "passes": true
-  },
-  {
-    "id": "event-data-tactical-models-v0",
-    "category": "sprint-2",
-    "description": "The CLI can load local StatsBomb-like event data, build pass-network, xT-lite, and VAEP-lite tactical reports, and emit deterministic SVG artifacts without network calls.",
-    "passes": true
-  },
-  {
-    "id": "news-information-provider-v0",
-    "category": "client-application",
-    "description": "Nutmeg can build local-first source-attributed fixture information digests from JSON/RSS files, expose them through fixture-information, and render reliability-labeled updates in the AI-native match workspace.",
-    "passes": true
-  },
-  {
-    "id": "live-information-provider-v0",
-    "category": "client-application",
-    "description": "Nutmeg can use explicit information source manifests with opt-in HTTP/RSS/JSON fetching, local cache reads, stale fallback warnings, and client-match manifest overrides without scraping or default network calls.",
-    "passes": true
-  },
-  {
-    "id": "ai-native-betting-client",
-    "category": "client-application",
-    "description": "Nutmeg exposes a Chinese-first Web/PWA client plus JSON CLI parity for daily betting-analysis triage, match workspaces, grounded follow-up, subscription-ready user isolation, alerts, and calibration records.",
-    "passes": true
-  },
-  {
-    "id": "zucai-14match-workflow-v0",
-    "category": "operator-interface",
-    "description": "Nutmeg can generate reusable traditional足彩14场 issue reports from structured snapshots, render Markdown/PDF artifacts, dry-run or send Telegram documents, and grade settled outcomes.",
-    "passes": true
-  },
-  {
-    "id": "zucai-scheduled-delivery-v0",
-    "category": "operator-interface",
-    "description": "Nutmeg can run quiet scheduled traditional足彩 checks for 16:00 first reports and 18:30 revision reports, generate slot-specific PDF artifacts, prevent duplicate sends, and dispatch through Nutmeg Bot when explicitly enabled.",
-    "passes": true
-  },
-  {
-    "id": "zucai-source-parser-v0",
-    "category": "operator-interface",
-    "description": "Nutmeg can parse official-like traditional足彩 schedule notices into 14-match issue snapshots, update the scheduled issue registry, preserve operator odds/override paths, and safely reject URL fetches unless explicitly enabled.",
-    "passes": true
-  },
-  {
-    "id": "zucai-odds-source-v0",
-    "category": "operator-interface",
-    "description": "Nutmeg can parse local/trusted Zucai odds tables into 14-match odds snapshots, update afternoon/revision registry odds fields, preserve existing issue/override paths, and safely reject URL fetches unless explicitly enabled.",
-    "passes": true
-  },
-  {
-    "id": "content-publisher-v0",
-    "category": "content-operations",
-    "description": "Nutmeg can turn existing Zucai report JSON into OpenClaw-generated, compliance-gated sports-analysis content review packs with titles, short-video scripts, long articles, checklists, and JSON/Markdown artifacts.",
-    "passes": true
-  },
-  {
-    "id": "openclaw-telegram-bridge",
-    "category": "operator-interface",
-    "description": "OpenClaw can operate Nutmeg from Telegram through a complete command manual, short agent instruction, BotFather command list, and safe serialized CLI router.",
-    "passes": true
-  },
-  {
-    "id": "jczq-mixed-parlay-report-v0",
-    "category": "operator-interface",
-    "description": "Nutmeg can generate two official-odds竞彩足球 4-leg high-odds mixed-parlay reports, render JSON/Markdown/PDF artifacts, and expose the workflow through the safe OpenClaw router with Telegram dispatch gates.",
-    "passes": true
-  },
-  {
-    "id": "daily-match-video-content-v0",
-    "category": "content-operations",
-    "description": "Nutmeg can generate review-first per-match daily竞彩足球 content packages with internal analysis, public-safe 60-second scripts, storyboards, Seedance 2.0 prompt manifests, and confirmation-gated video task submission/polling.",
-    "passes": true
-  }
+    {
+        "id": "foundation-spec-governance",
+        "category": "foundation",
+        "description": "Spec Kit and Superpowers Bridge are installed and readable from the repository.",
+        "passes": true
+    },
+    {
+        "id": "foundation-doctor-command",
+        "category": "foundation",
+        "description": "The doctor command reports storage, provider, harness, and workflow readiness in text and JSON modes.",
+        "passes": true
+    },
+    {
+        "id": "fixtures-sync-api-football",
+        "category": "sprint-0",
+        "description": "The repository can sync upcoming fixtures from API-Football for the configured leagues into shared storage.",
+        "passes": true
+    },
+    {
+        "id": "fixtures-list-from-shared-cache",
+        "category": "sprint-0",
+        "description": "The fixtures command reads upcoming fixtures from the shared cache and still supports a demo fallback.",
+        "passes": true
+    },
+    {
+        "id": "duckdb-shared-fixture-cache",
+        "category": "sprint-0",
+        "description": "DuckDB is initialized as the shared objective-data cache for fixtures.",
+        "passes": true
+    },
+    {
+        "id": "sqlite-sync-run-metadata",
+        "category": "sprint-0",
+        "description": "SQLite stores mutable sync-run metadata and the latest run can be inspected in doctor output.",
+        "passes": true
+    },
+    {
+        "id": "langsmith-cli-tracing",
+        "category": "sprint-0",
+        "description": "CLI operations can emit LangSmith traces when enabled and configured.",
+        "passes": true
+    },
+    {
+        "id": "fixture-snapshot-soccerdata",
+        "category": "sprint-1",
+        "description": "The repository can load a cached fixture and build a structured snapshot with FBref season metrics plus Understat recent-form and shot-summary data.",
+        "passes": true
+    },
+    {
+        "id": "fixture-snapshot-prematch-context",
+        "category": "sprint-1",
+        "description": "The snapshot now includes market value, injuries, and confirmed-or-probable lineups with explicit source attribution.",
+        "passes": true
+    },
+    {
+        "id": "reference-data-player-identity",
+        "category": "sprint-1",
+        "description": "Shared DuckDB reference data can reconcile provider player aliases and persist venue/weather cache support.",
+        "passes": true
+    },
+    {
+        "id": "reference-data-materialization-cache",
+        "category": "sprint-1",
+        "description": "A local-first materialization layer exists for Transfermarkt and soccerdata inputs used by the fixture snapshot.",
+        "passes": true
+    },
+    {
+        "id": "fixture-snapshot-richer-context",
+        "category": "sprint-1",
+        "description": "The fixture snapshot now renders environment, deeper availability, and matchup/trend context with truthful unavailable markers.",
+        "passes": true
+    },
+    {
+        "id": "odds-snapshot-fair-probability",
+        "category": "sprint-1",
+        "description": "The repository can build a fixture-linked odds snapshot with canonical markets, fair probabilities, and historical market drift summaries.",
+        "passes": true
+    },
+    {
+        "id": "odds-secondary-provider-reconciliation",
+        "category": "sprint-1",
+        "description": "The odds path can reconcile a cached fixture into a The Odds API event, cache that link, and normalize the secondary provider behind the same contract.",
+        "passes": true
+    },
+    {
+        "id": "long-running-agent-harness-artifacts",
+        "category": "process",
+        "description": "The repository contains init, progress, and feature-list artifacts for long-running agent continuity.",
+        "passes": true
+    },
+    {
+        "id": "ci-lint-and-tests",
+        "category": "process",
+        "description": "Continuous integration runs lint and tests for the Sprint 0 foundation.",
+        "passes": true
+    },
+    {
+        "id": "analysis-judgment-v0",
+        "category": "sprint-2",
+        "description": "The repository can synthesize fixture snapshot and odds snapshot context into a four-part pre-match judgment through a dedicated CLI workflow.",
+        "passes": true
+    },
+    {
+        "id": "graph-refresh-assets",
+        "category": "process",
+        "description": "The repository can generate local graph-native architecture assets with make graph and graphify-out/GRAPH_REPORT.md.",
+        "passes": true
+    },
+    {
+        "id": "provider-health-persistence",
+        "category": "sprint-1",
+        "description": "The Odds API provider health metrics persist in DuckDB and agent-status can report them without network calls.",
+        "passes": true
+    },
+    {
+        "id": "operator-match-brief",
+        "category": "sprint-2",
+        "description": "The CLI can produce a single operator-facing pre-match brief that packages agent status, deterministic judgment, evidence, caveats, and optional generated synthesis.",
+        "passes": true
+    },
+    {
+        "id": "im-bot-adapter-dry-run",
+        "category": "sprint-2",
+        "description": "A no-network IM bot adapter can parse /brief messages, reuse the match brief workflow, and run through nutmeg bot-dry-run.",
+        "passes": true
+    },
+    {
+        "id": "today-briefs-local-candidates",
+        "category": "sprint-2",
+        "description": "The CLI can list today/local fixture candidates and optionally fan out match briefs without manually entering fixture ids.",
+        "passes": true
+    },
+    {
+        "id": "telegram-bot-transport",
+        "category": "sprint-2",
+        "description": "A Telegram Bot API transport can poll one update batch, owner-gate chat ids, and route allowed messages through the existing bot adapter.",
+        "passes": true
+    },
+    {
+        "id": "telegram-bot-daemon",
+        "category": "sprint-2",
+        "description": "Telegram bot can run a controlled polling daemon loop with offset tracking, owner gating, graceful interruption, and aggregate summaries.",
+        "passes": true
+    },
+    {
+        "id": "popular-matches-ranking",
+        "category": "sprint-2",
+        "description": "The CLI can rank local/demo fixture candidates by deterministic popularity, explain scores, and reuse the ranking inside today-briefs.",
+        "passes": true
+    },
+    {
+        "id": "bot-llm-fallback-gpt-5-5",
+        "category": "sprint-2",
+        "description": "BotAdapter can answer /start/help deterministically and optionally route unsupported or failed bot messages through an OpenAI Responses API GPT-5.5 fallback without leaking secrets.",
+        "passes": true
+    },
+    {
+        "id": "telegram-offset-persistence",
+        "category": "sprint-2",
+        "description": "Telegram polling stores next_offset locally and resumes from it by default, eliminating manual offset tracking across restarts.",
+        "passes": true
+    },
+    {
+        "id": "value-board-v0",
+        "category": "sprint-3",
+        "description": "The CLI can rank model-vs-market match-winner value candidates with baseline Poisson/Dixon-Coles-lite probabilities, fair-probability edge, and quarter-Kelly sizing.",
+        "passes": true
+    },
+    {
+        "id": "player-profile-v0",
+        "category": "sprint-4",
+        "description": "The CLI can build a local-first player profile with identity, Transfermarkt market data, cached season metrics, availability status, and similar-player scoring.",
+        "passes": true
+    },
+    {
+        "id": "eval-and-review-loop",
+        "category": "sprint-6",
+        "description": "The repository can run local eval datasets and record/review match-winner predictions with Brier Score calibration.",
+        "passes": true
+    },
+    {
+        "id": "daily-operator-schedule",
+        "category": "sprint-6",
+        "description": "The CLI can run a safe daily operator cycle over optional fixture sync, popular matches, value board, optional briefs, and explicit Telegram dispatch.",
+        "passes": true
+    },
+    {
+        "id": "tactical-visuals-v0",
+        "category": "sprint-2",
+        "description": "The CLI can generate deterministic local SVG shot-map, lineup-network, and xG-trend artifacts from fixture snapshot context while labeling proxy/missing sections truthfully.",
+        "passes": true
+    },
+    {
+        "id": "event-data-tactical-models-v0",
+        "category": "sprint-2",
+        "description": "The CLI can load local StatsBomb-like event data, build pass-network, xT-lite, and VAEP-lite tactical reports, and emit deterministic SVG artifacts without network calls.",
+        "passes": true
+    },
+    {
+        "id": "news-information-provider-v0",
+        "category": "client-application",
+        "description": "Nutmeg can build local-first source-attributed fixture information digests from JSON/RSS files, expose them through fixture-information, and render reliability-labeled updates in the AI-native match workspace.",
+        "passes": true
+    },
+    {
+        "id": "live-information-provider-v0",
+        "category": "client-application",
+        "description": "Nutmeg can use explicit information source manifests with opt-in HTTP/RSS/JSON fetching, local cache reads, stale fallback warnings, and client-match manifest overrides without scraping or default network calls.",
+        "passes": true
+    },
+    {
+        "id": "ai-native-betting-client",
+        "category": "client-application",
+        "description": "Nutmeg exposes a Chinese-first Web/PWA client plus JSON CLI parity for daily betting-analysis triage, match workspaces, grounded follow-up, subscription-ready user isolation, alerts, and calibration records.",
+        "passes": true
+    },
+    {
+        "id": "zucai-14match-workflow-v0",
+        "category": "operator-interface",
+        "description": "Nutmeg can generate reusable traditional足彩14场 issue reports from structured snapshots, render Markdown/PDF artifacts, dry-run or send Telegram documents, and grade settled outcomes.",
+        "passes": true
+    },
+    {
+        "id": "zucai-scheduled-delivery-v0",
+        "category": "operator-interface",
+        "description": "Nutmeg can run quiet scheduled traditional足彩 checks for 16:00 first reports and 18:30 revision reports, generate slot-specific PDF artifacts, prevent duplicate sends, and dispatch through Nutmeg Bot when explicitly enabled.",
+        "passes": true
+    },
+    {
+        "id": "zucai-source-parser-v0",
+        "category": "operator-interface",
+        "description": "Nutmeg can parse official-like traditional足彩 schedule notices into 14-match issue snapshots, update the scheduled issue registry, preserve operator odds/override paths, and safely reject URL fetches unless explicitly enabled.",
+        "passes": true
+    },
+    {
+        "id": "zucai-odds-source-v0",
+        "category": "operator-interface",
+        "description": "Nutmeg can parse local/trusted Zucai odds tables into 14-match odds snapshots, update afternoon/revision registry odds fields, preserve existing issue/override paths, and safely reject URL fetches unless explicitly enabled.",
+        "passes": true
+    },
+    {
+        "id": "content-publisher-v0",
+        "category": "content-operations",
+        "description": "Nutmeg can turn existing Zucai report JSON into OpenClaw-generated, compliance-gated sports-analysis content review packs with titles, short-video scripts, long articles, checklists, and JSON/Markdown artifacts.",
+        "passes": true
+    },
+    {
+        "id": "openclaw-telegram-bridge",
+        "category": "operator-interface",
+        "description": "OpenClaw can operate Nutmeg from Telegram through a complete command manual, short agent instruction, BotFather command list, and safe serialized CLI router.",
+        "passes": true
+    },
+    {
+        "id": "jczq-mixed-parlay-report-v0",
+        "category": "operator-interface",
+        "description": "Nutmeg can generate two official-odds竞彩足球 4-leg high-odds mixed-parlay reports, render JSON/Markdown/PDF artifacts, and expose the workflow through the safe OpenClaw router with Telegram dispatch gates.",
+        "passes": true
+    },
+    {
+        "id": "daily-match-video-content-v0",
+        "category": "content-operations",
+        "description": "Nutmeg can generate review-first per-match daily竞彩足球 content packages with internal analysis, public-safe 60-second scripts, storyboards, Seedance 2.0 prompt manifests, and confirmation-gated video task submission/polling.",
+        "passes": true
+    },
+    {
+        "id": "jczq-daily-advisor-v0",
+        "category": "football-betting-analysis",
+        "description": "Daily dynamic JCZQ advisor scans sellable mixed pools, generates main/high-odds/contrarian plans, supports bot revisions, and can send a noon Telegram report.",
+        "passes": true
+    }
 ]

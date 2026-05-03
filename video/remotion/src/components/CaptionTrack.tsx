@@ -1,13 +1,14 @@
 import React from 'react';
+import {douyinSafeLayout} from '../safeLayout';
 
 export const CaptionTrack: React.FC<{text: string}> = ({text}) => (
   <div
     style={{
       position: 'absolute',
-      left: 64,
-      right: 64,
-      bottom: 120,
-      fontSize: 42,
+      left: douyinSafeLayout.left,
+      right: douyinSafeLayout.rightReserve,
+      bottom: douyinSafeLayout.captionBottom,
+      fontSize: douyinSafeLayout.captionFontSize,
       lineHeight: 1.25,
       fontWeight: 800,
       color: 'white',

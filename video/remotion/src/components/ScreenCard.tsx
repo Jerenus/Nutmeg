@@ -1,5 +1,6 @@
 import React from 'react';
 import {interpolate, useCurrentFrame} from 'remotion';
+import {douyinSafeLayout} from '../safeLayout';
 import {palette} from '../styles';
 
 export const ScreenCard: React.FC<{text: string; eyebrow?: string}> = ({text, eyebrow}) => {
@@ -10,9 +11,9 @@ export const ScreenCard: React.FC<{text: string; eyebrow?: string}> = ({text, ey
     <div
       style={{
         position: 'absolute',
-        left: 64,
-        right: 64,
-        top: 86,
+        left: douyinSafeLayout.left,
+        right: douyinSafeLayout.rightReserve,
+        top: douyinSafeLayout.screenCardTop,
         padding: '30px 34px',
         borderRadius: 30,
         background: 'linear-gradient(135deg, rgba(7,17,31,0.88), rgba(16,59,82,0.7))',

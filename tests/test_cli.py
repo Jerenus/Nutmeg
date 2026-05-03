@@ -3361,7 +3361,6 @@ def test_zucai_grade_command_returns_plan_coverage(tmp_path) -> None:
     assert any(plan["covered"] for plan in payload["plan_results"])
 
 
-
 def test_zucai_auto_run_command_skips_no_issue(tmp_path) -> None:
     registry_file = tmp_path / "registry.json"
     registry_file.write_text(json.dumps({"entries": []}), encoding="utf-8")
@@ -3461,7 +3460,6 @@ def test_zucai_auto_run_command_duplicate_and_force(tmp_path, monkeypatch) -> No
     assert json.loads(forced.stdout)["status"] == "dry_run"
     records = json.loads((tmp_path / "records.json").read_text(encoding="utf-8"))["records"]
     assert len(records) == 2
-
 
 
 def test_zucai_source_sync_command_generates_registry(tmp_path) -> None:
@@ -3681,7 +3679,6 @@ def test_wechat_draft_push_command_dry_run_reads_pack_dir(tmp_path) -> None:
     assert (pack_dir / "draft-result.json").exists()
 
 
-
 def test_zucai_odds_sync_command_updates_registry(tmp_path) -> None:
     registry_file = tmp_path / "issues.json"
     registry_file.write_text(
@@ -3768,6 +3765,118 @@ def test_jczq_mixed_report_command_generates_pdf_artifacts(tmp_path) -> None:
     assert payload["combinations"][0]["total_odds"] == 439.93
     assert payload["artifacts"]["pdf_path"].endswith(".pdf")
     assert Path(payload["artifacts"]["pdf_path"]).read_bytes().startswith(b"%PDF")
+
+
+def test_jczq_daily_review_command_dispatches_postmortem(monkeypatch, tmp_path) -> None:
+    from nutmeg.interfaces import cli as cli_module
+
+    class StubReviewService:
+        def build_review(
+            self,
+            *,
+            run_date: str | None,
+            output_dir: Path,
+            dispatch_telegram: bool,
+            dry_run: bool,
+        ):
+            assert run_date == "yesterday"
+            assert output_dir == tmp_path
+            assert dispatch_telegram is True
+            assert dry_run is False
+            return {
+                "run_date": "2026-05-01",
+                "message": "【Nutmeg｜2026-05-01 竞彩足球赛后复盘】",
+                "dispatch": {"status": "sent"},
+                "artifacts": {"markdown_path": str(tmp_path / "daily/2026-05-01/review.md")},
+            }
+
+    monkeypatch.setattr(cli_module, "build_jczq_daily_review_service", lambda: StubReviewService())
+
+    result = runner.invoke(
+        app,
+        [
+            "jczq-daily-review",
+            "--date",
+            "yesterday",
+            "--output-dir",
+            str(tmp_path),
+            "--dispatch-telegram",
+            "--no-dry-run",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["run_date"] == "2026-05-01"
+    assert payload["dispatch"]["status"] == "sent"
+
+
+def test_jczq_daily_advisor_command_generates_dynamic_report(tmp_path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "jczq-daily-advisor",
+            "--provider",
+            "sample",
+            "--date",
+            "2026-04-26",
+            "--output-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["run_date"] == "2026-04-26"
+    assert payload["matches"]
+    assert {plan["kind"] for plan in payload["plans"]} >= {"main", "inspiration"}
+    assert payload["artifacts"]["context_path"].endswith("context.json")
+    assert Path(payload["artifacts"]["context_path"]).exists()
+
+
+def test_jczq_daily_advisor_command_revises_saved_context(tmp_path) -> None:
+    first = runner.invoke(
+        app,
+        [
+            "jczq-daily-advisor",
+            "--provider",
+            "sample",
+            "--date",
+            "2026-04-26",
+            "--output-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+    )
+    revised = runner.invoke(
+        app,
+        [
+            "jczq-daily-advisor",
+            "--provider",
+            "sample",
+            "--date",
+            "2026-04-26",
+            "--output-dir",
+            str(tmp_path),
+            "--revision-text",
+            "不要比分，提高到100倍",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert first.exit_code == 0
+    assert revised.exit_code == 0
+    payload = json.loads(revised.stdout)
+    assert payload["revision"]["version"] == 2
+    assert payload["revision"]["instruction"] == "不要比分，提高到100倍"
+    inspiration = next(plan for plan in payload["plans"] if plan["kind"] == "inspiration")
+    assert all(leg["pool"] != "crs" for leg in inspiration["legs"])
 
 
 def test_daily_content_pack_command_generates_review_artifacts(tmp_path) -> None:

@@ -60,6 +60,12 @@ from nutmeg.services.jczq import (
     SampleJczqCalculatorProvider,
     SportteryJczqCalculatorProvider,
 )
+from nutmeg.services.jczq_daily import (
+    JczqDailyAdvisorError,
+    JczqDailyAdvisorService,
+    build_jczq_daily_provider,
+)
+from nutmeg.services.jczq_review import JczqDailyReviewService
 from nutmeg.services.materialization import MaterializationService
 from nutmeg.services.odds import OddsFixtureNotFoundError, OddsSnapshotService
 from nutmeg.services.operations import DailyOperatorService
@@ -96,6 +102,7 @@ from nutmeg.storage.bootstrap import (
     create_state_schema,
     ensure_storage_paths,
 )
+from nutmeg.storage.betting_plan_repository import DuckDbBettingPlanRepository
 from nutmeg.storage.client_state_repository import SqlAlchemyClientStateRepository
 from nutmeg.storage.fixture_repository import DuckDbFixtureRepository
 from nutmeg.storage.odds_repository import (
@@ -172,6 +179,7 @@ VIDEO_RENDER_OUTPUT_OPTION = typer.Option(..., "--output")
 ZUCAI_ODDS_SOURCE_LABEL_OPTION = typer.Option("Zucai odds source", "--source-label")
 JCZQ_OUTPUT_DIR_OPTION = typer.Option(Path(".nutmeg-data/jczq"), "--output-dir")
 JCZQ_PROVIDER_OPTION = typer.Option("live", "--provider")
+JCZQ_DAILY_DATE_OPTION = typer.Option("today", "--date")
 
 
 def _build_state_session() -> Session:
@@ -504,6 +512,7 @@ def build_event_tactical_model_service() -> EventTacticalModelService:
 def build_zucai_workflow_service() -> ZucaiWorkflowService:
     settings = get_settings()
     ensure_storage_paths(settings)
+    create_analytics_schema(settings)
     telegram_sender = None
     if settings.telegram_bot_token:
         telegram_sender = TelegramBotClient(
@@ -515,6 +524,7 @@ def build_zucai_workflow_service() -> ZucaiWorkflowService:
         telegram_chat_ids=sorted(
             parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
         ),
+        betting_repository=DuckDbBettingPlanRepository(settings),
     )
 
 
@@ -553,6 +563,84 @@ def build_jczq_mixed_report_service(*, provider: str = "live") -> JczqMixedRepor
             parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
         ),
     )
+
+
+def build_jczq_daily_advisor_service(*, provider: str = "live") -> JczqDailyAdvisorService:
+    settings = get_settings()
+    ensure_storage_paths(settings)
+    create_analytics_schema(settings)
+    telegram_sender = None
+    if settings.telegram_bot_token:
+        telegram_sender = TelegramBotClient(
+            token=settings.telegram_bot_token,
+            base_url=settings.telegram_api_base_url,
+        )
+    return JczqDailyAdvisorService(
+        provider=build_jczq_daily_provider(provider),
+        telegram_sender=telegram_sender,
+        telegram_chat_ids=sorted(
+            parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
+        ),
+        betting_repository=DuckDbBettingPlanRepository(settings),
+    )
+
+
+def build_jczq_daily_review_service() -> JczqDailyReviewService:
+    settings = get_settings()
+    ensure_storage_paths(settings)
+    create_analytics_schema(settings)
+    telegram_sender = None
+    if settings.telegram_bot_token:
+        telegram_sender = TelegramBotClient(
+            token=settings.telegram_bot_token,
+            base_url=settings.telegram_api_base_url,
+        )
+    return JczqDailyReviewService(
+        telegram_sender=telegram_sender,
+        telegram_chat_ids=sorted(
+            parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
+        ),
+        betting_repository=DuckDbBettingPlanRepository(settings),
+    )
+
+
+class JczqDailyBotWorkflow:
+    def __init__(
+        self,
+        *,
+        service: JczqDailyAdvisorService,
+        output_dir: Path = Path(".nutmeg-data/jczq"),
+    ) -> None:
+        self._service = service
+        self._output_dir = output_dir
+
+    def run(self, *, action: str, instruction: str | None = None) -> dict[str, object]:
+        try:
+            if action == "revise":
+                report = self._service.revise(
+                    run_date="today",
+                    output_dir=self._output_dir,
+                    instruction=instruction or "",
+                    record_final=True,
+                )
+            else:
+                report = self._service.build_report(
+                    run_date="today",
+                    output_dir=self._output_dir,
+                    record_final=True,
+                )
+        except (JczqDailyAdvisorError, JczqProviderError, JczqSelectionError) as exc:
+            return {
+                "status": "failed",
+                "text": str(exc),
+                "payload": {"status": "failed", "error": str(exc)},
+                "error": str(exc),
+            }
+        return {
+            "status": "succeeded",
+            "text": self._service.render_message(report),
+            "payload": report.to_dict(),
+        }
 
 
 def build_content_publisher_service(
@@ -1467,6 +1555,7 @@ def zucai_report(
     overrides_file: Path | None = ZUCAI_OVERRIDES_FILE_OPTION,
     output_dir: Path = ZUCAI_OUTPUT_DIR_OPTION,
     pdf: bool = typer.Option(False, "--pdf"),
+    record_final: bool = typer.Option(True, "--record-final/--no-record-final"),
     dispatch_telegram: bool = typer.Option(False, "--dispatch-telegram"),
     dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run"),
     format: str = typer.Option("text", "--format", help="text or json"),
@@ -1482,6 +1571,7 @@ def zucai_report(
             render_pdf=pdf or dispatch_telegram,
             dispatch_telegram=dispatch_telegram,
             dry_run=dry_run,
+            record_final=record_final,
         )
     except ZucaiValidationError as exc:
         console.print(str(exc))
@@ -1651,11 +1741,16 @@ def zucai_odds_sync(
 def zucai_grade(
     report_file: Path = ZUCAI_REPORT_FILE_OPTION,
     outcomes_file: Path = ZUCAI_OUTCOMES_FILE_OPTION,
+    record_db: bool = typer.Option(True, "--record-db/--no-record-db"),
     format: str = typer.Option("text", "--format", help="text or json"),
 ) -> None:
     service = build_zucai_workflow_service()
     try:
-        grade = service.grade_report(report_file=report_file, outcomes_file=outcomes_file)
+        grade = service.grade_report(
+            report_file=report_file,
+            outcomes_file=outcomes_file,
+            record_db=record_db,
+        )
     except ZucaiValidationError as exc:
         console.print(str(exc))
         raise typer.Exit(code=2) from exc
@@ -1716,6 +1811,71 @@ def jczq_mixed_report(
         console.print(
             f" - {combo.name}: odds={combo.total_odds:.2f} 2元={combo.two_yuan_return:.2f}"
         )
+
+
+@app.command("jczq-daily-advisor")
+def jczq_daily_advisor(
+    provider: str = JCZQ_PROVIDER_OPTION,
+    run_date: str = JCZQ_DAILY_DATE_OPTION,
+    output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    revision_text: str | None = typer.Option(None, "--revision-text"),
+    record_final: bool = typer.Option(True, "--record-final/--no-record-final"),
+    dispatch_telegram: bool = typer.Option(False, "--dispatch-telegram"),
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run"),
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    try:
+        service = build_jczq_daily_advisor_service(provider=provider)
+        if revision_text:
+            report = service.revise(
+                run_date=run_date,
+                output_dir=output_dir,
+                instruction=revision_text,
+                dispatch_telegram=dispatch_telegram,
+                dry_run=dry_run,
+                record_final=record_final,
+            )
+        else:
+            report = service.build_report(
+                run_date=run_date,
+                output_dir=output_dir,
+                dispatch_telegram=dispatch_telegram,
+                dry_run=dry_run,
+                record_final=record_final,
+            )
+    except (JczqDailyAdvisorError, JczqProviderError, JczqSelectionError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+
+    payload = report.to_dict()
+    if format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+
+    console.print(service.render_message(report))
+
+
+@app.command("jczq-daily-review")
+def jczq_daily_review(
+    run_date: str = typer.Option("yesterday", "--date"),
+    output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    dispatch_telegram: bool = typer.Option(False, "--dispatch-telegram"),
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run"),
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    service = build_jczq_daily_review_service()
+    report = service.build_review(
+        run_date=run_date,
+        output_dir=output_dir,
+        dispatch_telegram=dispatch_telegram,
+        dry_run=dry_run,
+    )
+
+    if format == "json":
+        typer.echo(json.dumps(report, indent=2, sort_keys=True, default=str))
+        return
+
+    console.print(str(report.get("message") or ""))
 
 
 @app.command("content-pack")
@@ -2906,6 +3066,9 @@ def bot_dry_run(
             workflow=workflow,
             payload_builder=build_match_brief_payload,
             fallback_provider=build_bot_fallback_provider(settings),
+            jczq_workflow=JczqDailyBotWorkflow(
+                service=build_jczq_daily_advisor_service(provider="live")
+            ),
         )
         response = adapter.handle_message(message)
     finally:
@@ -2965,6 +3128,9 @@ def build_telegram_bot_runner(settings) -> TelegramBotRunner:
             workflow=workflow,
             payload_builder=build_match_brief_payload,
             fallback_provider=build_bot_fallback_provider(settings),
+            jczq_workflow=JczqDailyBotWorkflow(
+                service=build_jczq_daily_advisor_service(provider="live")
+            ),
         ),
         allowed_chat_ids=allowed_chat_ids,
     )

@@ -284,3 +284,111 @@ def create_analytics_schema(settings: AppSettings) -> None:
             )
             '''
         )
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS betting_plan_runs (
+                run_id VARCHAR PRIMARY KEY,
+                run_date VARCHAR NOT NULL,
+                game_type VARCHAR NOT NULL,
+                source VARCHAR NOT NULL,
+                strategy_version VARCHAR NOT NULL,
+                finalized_at TIMESTAMP NOT NULL,
+                artifact_path VARCHAR,
+                notes VARCHAR,
+                payload_json VARCHAR
+            )
+            '''
+        )
+        connection.execute(
+            'CREATE INDEX IF NOT EXISTS idx_betting_plan_runs_lookup '
+            'ON betting_plan_runs (game_type, run_date, finalized_at)'
+        )
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS betting_plans (
+                plan_id VARCHAR PRIMARY KEY,
+                run_id VARCHAR NOT NULL,
+                plan_index INTEGER NOT NULL,
+                name VARCHAR NOT NULL,
+                role VARCHAR NOT NULL,
+                strategy_kind VARCHAR NOT NULL,
+                target_odds_band VARCHAR,
+                total_odds DOUBLE,
+                stake_yuan DOUBLE,
+                expected_return_yuan DOUBLE,
+                risk_tier VARCHAR,
+                notes VARCHAR
+            )
+            '''
+        )
+        connection.execute(
+            'CREATE INDEX IF NOT EXISTS idx_betting_plans_run '
+            'ON betting_plans (run_id, plan_index)'
+        )
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS betting_plan_legs (
+                plan_id VARCHAR NOT NULL,
+                leg_index INTEGER NOT NULL,
+                match_no VARCHAR NOT NULL,
+                league VARCHAR,
+                home_team VARCHAR,
+                away_team VARCHAR,
+                pool VARCHAR,
+                play VARCHAR,
+                pick VARCHAR,
+                odds DOUBLE,
+                goal_line VARCHAR,
+                logic VARCHAR,
+                odds_update VARCHAR
+            )
+            '''
+        )
+        connection.execute(
+            'CREATE INDEX IF NOT EXISTS idx_betting_plan_legs_plan '
+            'ON betting_plan_legs (plan_id, leg_index)'
+        )
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS betting_plan_reviews (
+                review_id VARCHAR PRIMARY KEY,
+                plan_id VARCHAR NOT NULL,
+                review_date VARCHAR NOT NULL,
+                hit_count INTEGER NOT NULL,
+                leg_count INTEGER NOT NULL,
+                all_hit BOOLEAN NOT NULL,
+                settled_odds DOUBLE,
+                original_return_yuan DOUBLE,
+                oracle_same_play_odds DOUBLE,
+                oracle_return_yuan DOUBLE,
+                miss_reason VARCHAR,
+                created_at TIMESTAMP NOT NULL
+            )
+            '''
+        )
+        connection.execute(
+            'CREATE INDEX IF NOT EXISTS idx_betting_plan_reviews_plan '
+            'ON betting_plan_reviews (plan_id, review_date)'
+        )
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS betting_leg_reviews (
+                review_id VARCHAR NOT NULL,
+                plan_id VARCHAR NOT NULL,
+                leg_index INTEGER NOT NULL,
+                match_no VARCHAR NOT NULL,
+                pool VARCHAR,
+                pick VARCHAR,
+                actual_pick VARCHAR,
+                hit BOOLEAN,
+                original_odds DOUBLE,
+                actual_odds DOUBLE,
+                score VARCHAR,
+                half_score VARCHAR
+            )
+            '''
+        )
+        connection.execute(
+            'CREATE INDEX IF NOT EXISTS idx_betting_leg_reviews_review '
+            'ON betting_leg_reviews (review_id, leg_index)'
+        )

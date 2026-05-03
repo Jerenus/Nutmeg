@@ -498,7 +498,8 @@ Only write predictions when the user explicitly gives all fields.
 - "战术图" -> `visuals --fixture-id <id>`.
 - "Saka 怎么样？" -> if team is clear, `player`; otherwise ask for team.
 - "同步一下" -> ask for confirmation before `sync --confirm-live`.
-- "竞彩足球4关高赔" / "混合投注PDF" -> run `jczq-mixed-report --provider live --pdf`; dispatch only with explicit confirmation.
+- "竞彩足球每日分析" / "今天竞彩方案" / "高赔率灵感票" -> run `jczq-daily-advisor --provider live --date today`; if the user gives a natural-language correction such as "不要比分，提高到100倍", pass it as `--revision-text`; dispatch only with explicit confirmation.
+- "竞彩足球4关高赔PDF" / "混合投注PDF" -> run `jczq-mixed-report --provider live --pdf`; dispatch only with explicit confirmation.
 - "生成足彩分享文案" / "今天足彩内容" -> if a `report_json_path` is known, run `content --report-file <path> --limit 3`; otherwise run `zucai-report --issue-id <issue> --pdf` first and then run `content` with the returned report path.
 
 ## Telegram Formatting Rules
@@ -552,13 +553,25 @@ python3 scripts/openclaw/nutmeg_command_router.py zucai-report --issue-id 26068 
 
 Use this for traditional Chinese Sports Lottery `胜负彩14场/任选9场` issue reports. The command reads Nutmeg's structured issue/odds/override snapshots, generates `3/1/0` recommendations and plans, writes Markdown/PDF artifacts, and can attach the PDF through Telegram only with explicit dispatch confirmation. Do not describe it as guaranteed betting advice.
 
+## JCZQ Daily Advisor
+
+Use this for the repeatable daily竞彩足球 analysis path, high-odds inspiration tickets, contrarian public-heat avoidance, and user-driven revisions.
+
+```bash
+python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider live --date today
+python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider live --date today --revision-text "不要比分，提高到100倍"
+python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider live --date today --dispatch-telegram --confirm-dispatch
+```
+
+The command dynamically scans sellable HAD/HHAD/TTG/CRS/HAFU pools, writes `.nutmeg-data/jczq/daily/<date>/context.json`, and returns the final main plan plus high-odds inspiration/contrarian/extreme plans. Explain that it is small-stake entertainment analysis only, not guaranteed betting advice.
+
 ## JCZQ Mixed Parlay Report
 
-Use this when the user asks for today's竞彩足球4关高赔混合投注组合 or asks to send a PDF through Nutmeg bot.
+Use this legacy artifact workflow when the user specifically asks for a PDF report.
 
 ```bash
 python3 scripts/openclaw/nutmeg_command_router.py jczq-mixed-report --provider live --pdf
 python3 scripts/openclaw/nutmeg_command_router.py jczq-mixed-report --provider live --pdf --dispatch-telegram --confirm-dispatch
 ```
 
-The command returns JSON with two combinations and artifact paths. Explain that it is small-stake entertainment analysis only, not guaranteed betting advice. Real Telegram dispatch requires explicit user confirmation and `--confirm-dispatch`.
+The command returns JSON with combinations and artifact paths. Real Telegram dispatch requires explicit user confirmation and `--confirm-dispatch`.

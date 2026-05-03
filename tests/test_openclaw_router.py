@@ -214,6 +214,44 @@ def test_router_builds_jczq_mixed_report_command_and_requires_dispatch_confirmat
         router.parse_request(["jczq-mixed-report", "--dispatch-telegram"])
 
 
+def test_router_builds_jczq_daily_advisor_command_and_requires_dispatch_confirmation() -> None:
+    router = _load_router()
+
+    request = router.parse_request(
+        [
+            "jczq-daily-advisor",
+            "--provider",
+            "sample",
+            "--date",
+            "2026-05-01",
+            "--output-dir",
+            ".nutmeg-data/jczq",
+            "--dispatch-telegram",
+            "--confirm-dispatch",
+        ]
+    )
+
+    assert router.build_command(request) == [
+        "uv",
+        "run",
+        "nutmeg",
+        "jczq-daily-advisor",
+        "--provider",
+        "sample",
+        "--date",
+        "2026-05-01",
+        "--output-dir",
+        ".nutmeg-data/jczq",
+        "--dispatch-telegram",
+        "--no-dry-run",
+        "--format",
+        "json",
+    ]
+
+    with pytest.raises(router.RouterError, match="--confirm-dispatch"):
+        router.parse_request(["jczq-daily-advisor", "--dispatch-telegram"])
+
+
 def test_router_builds_daily_content_pack_command() -> None:
     router = _load_router()
 

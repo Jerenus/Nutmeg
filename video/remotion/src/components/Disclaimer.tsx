@@ -1,13 +1,14 @@
 import React from 'react';
+import {douyinSafeLayout} from '../safeLayout';
 
 export const Disclaimer: React.FC = () => (
   <div
     style={{
       position: 'absolute',
-      left: 64,
-      right: 64,
-      bottom: 64,
-      fontSize: 28,
+      left: douyinSafeLayout.left,
+      right: douyinSafeLayout.rightReserve,
+      bottom: douyinSafeLayout.disclaimerBottom,
+      fontSize: douyinSafeLayout.disclaimerFontSize,
       color: 'rgba(255,255,255,0.78)',
     }}
   >

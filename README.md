@@ -366,15 +366,18 @@ Live provider acceptance is explicit and fails fast without required keys:
 NUTMEG_API_FOOTBALL_KEY=... bash scripts/acceptance.sh --live --league epl --past-days 7
 ```
 
-## JCZQ Mixed Parlay Report
+## JCZQ Mixed Parlay Report and Daily Advisor
 
 ```bash
 uv run nutmeg jczq-mixed-report --provider live --pdf --format json
-uv run nutmeg jczq-mixed-report --provider sample --output-dir .nutmeg-data/jczq-smoke --pdf --format json
-python3 scripts/openclaw/nutmeg_command_router.py jczq-mixed-report --provider live --pdf
+uv run nutmeg jczq-daily-advisor --provider live --date today --format json
+uv run nutmeg jczq-daily-advisor --provider live --date today --revision-text "不要比分，提高到100倍" --format json
+uv run nutmeg jczq-daily-advisor --provider live --date today --dispatch-telegram --no-dry-run --format json
+python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider live --date today
+python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider live --date today --dispatch-telegram --confirm-dispatch
 ```
 
-`jczq-mixed-report` generates two 4-leg high-odds竞彩足球 mixed-parlay reports from Sporttery calculator-style odds, writes JSON/Markdown/PDF artifacts, and can dispatch the PDF only through explicit Telegram confirmation gates. It is analysis assistance only: no bet placement, no sportsbook connection, and no guaranteed-profit claims.
+`jczq-mixed-report` keeps the older PDF artifact workflow. `jczq-daily-advisor` is the repeatable daily workflow: it dynamically scans the current sellable竞彩足球 slate, builds mixed-pool candidates across 胜平负/让球胜平负/总进球/比分/半全场, outputs a final main plan plus high-odds inspiration and contrarian plans, saves context for bot revisions, can route `/jczq` and natural-language竞彩 follow-ups, and can send the text report through Nutmeg bot. It is analysis assistance only: no bet placement, no sportsbook connection, and no guaranteed-profit claims.
 
 ## Daily Match Video Content
 

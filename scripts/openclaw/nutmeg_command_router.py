@@ -33,6 +33,7 @@ SUPPORTED_ACTIONS = {
     "daily",
     "zucai-report",
     "jczq-mixed-report",
+    "jczq-daily-advisor",
     "daily-content-pack",
     "video-production-packet",
     "wechat-article-pack",
@@ -275,6 +276,23 @@ def build_command(request: RouterRequest) -> list[str]:
         ]
         if options.pdf:
             command.append("--pdf")
+        if options.dispatch_telegram:
+            command.extend(["--dispatch-telegram", "--no-dry-run"])
+        command.extend(["--format", "json"])
+        return command
+    if action == "jczq-daily-advisor":
+        command = [
+            *base,
+            "jczq-daily-advisor",
+            "--provider",
+            options.provider,
+            "--date",
+            options.date,
+            "--output-dir",
+            options.output_dir,
+        ]
+        if options.revision_text:
+            command.extend(["--revision-text", options.revision_text])
         if options.dispatch_telegram:
             command.extend(["--dispatch-telegram", "--no-dry-run"])
         command.extend(["--format", "json"])
@@ -606,6 +624,14 @@ def _build_parser() -> argparse.ArgumentParser:
     jczq.add_argument("--dispatch-telegram", action="store_true")
     jczq.add_argument("--confirm-dispatch", action="store_true")
 
+    jczq_daily = subparsers.add_parser("jczq-daily-advisor")
+    jczq_daily.add_argument("--provider", choices=["live", "sample"], default="live")
+    jczq_daily.add_argument("--date", default="today")
+    jczq_daily.add_argument("--output-dir", default=".nutmeg-data/jczq")
+    jczq_daily.add_argument("--revision-text")
+    jczq_daily.add_argument("--dispatch-telegram", action="store_true")
+    jczq_daily.add_argument("--confirm-dispatch", action="store_true")
+
     daily_content = subparsers.add_parser("daily-content-pack")
     daily_content.add_argument("--date", default="today")
     daily_content.add_argument("--provider", choices=["live", "sample"], default="live")
@@ -734,6 +760,7 @@ def _validate_options(options: argparse.Namespace) -> None:
         "overrides_file",
         "provider",
         "date",
+        "revision_text",
         "manifest",
         "run_dir",
         "match_id",
@@ -771,6 +798,12 @@ def _validate_options(options: argparse.Namespace) -> None:
         and not options.confirm_dispatch
     ):
         raise RouterError("`jczq-mixed-report --dispatch-telegram` requires --confirm-dispatch.")
+    if (
+        options.action == "jczq-daily-advisor"
+        and options.dispatch_telegram
+        and not options.confirm_dispatch
+    ):
+        raise RouterError("`jczq-daily-advisor --dispatch-telegram` requires --confirm-dispatch.")
     if options.action == "wechat-draft-push" and not options.dry_run and not options.confirm_draft:
         raise RouterError("`wechat-draft-push --no-dry-run` requires --confirm-draft.")
     if options.action == "seedance-submit" and not options.confirm_submit:

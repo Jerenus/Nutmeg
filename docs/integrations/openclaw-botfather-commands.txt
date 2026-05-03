@@ -19,5 +19,5 @@ review - 查看预测回顾和 Brier Score
 record - 记录赛前预测，需要确认
 outcome - 更新预测赛果，需要确认
 zucai - 生成传统足彩14场报告
-jczq - 生成竞彩足球4关高赔PDF报告
+jczq - 生成竞彩足球每日顾问和高赔灵感票
 content - 生成足彩分享文案审核包

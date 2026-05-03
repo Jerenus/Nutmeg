@@ -107,3 +107,29 @@ def test_remotion_render_service_uses_runner_and_requires_output(tmp_path) -> No
 
     assert result.output_path == str(output)
     assert output.read_bytes() == b"mp4"
+
+
+def test_remotion_douyin_safe_layout_keeps_text_out_of_app_chrome() -> None:
+    safe_layout = Path("video/remotion/src/safeLayout.ts")
+    caption = Path("video/remotion/src/components/CaptionTrack.tsx").read_text(
+        encoding="utf-8"
+    )
+    screen_card = Path("video/remotion/src/components/ScreenCard.tsx").read_text(
+        encoding="utf-8"
+    )
+    disclaimer = Path("video/remotion/src/components/Disclaimer.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert safe_layout.exists()
+    source = safe_layout.read_text(encoding="utf-8")
+    assert "captionBottom: 560" in source
+    assert "disclaimerBottom: 500" in source
+    assert "rightReserve: 220" in source
+    assert "screenCardTop: 150" in source
+    assert "left: douyinSafeLayout.left" in caption
+    assert "right: douyinSafeLayout.rightReserve" in caption
+    assert "bottom: douyinSafeLayout.captionBottom" in caption
+    assert "top: douyinSafeLayout.screenCardTop" in screen_card
+    assert "right: douyinSafeLayout.rightReserve" in screen_card
+    assert "bottom: douyinSafeLayout.disclaimerBottom" in disclaimer
