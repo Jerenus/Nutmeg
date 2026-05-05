@@ -473,12 +473,20 @@ def execute_request(
             timeout=request.options.timeout,
         )
     payload = _parse_json_payload(completed.stdout)
+    reply_text = render_reply_text(
+        action=request.action,
+        ok=completed.returncode == 0,
+        payload=payload,
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+    )
     return {
         "ok": completed.returncode == 0,
         "action": request.action,
         "command": command,
         "returncode": completed.returncode,
         "payload": payload,
+        "reply_text": reply_text,
         "stdout": "" if payload is not None else completed.stdout.strip(),
         "stderr": completed.stderr.strip(),
     }
@@ -498,6 +506,9 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(envelope, ensure_ascii=False, indent=2))
             return 0
         envelope = execute_request(request)
+        if request.options.reply_text:
+            print(envelope["reply_text"])
+            return 0 if envelope["ok"] else int(envelope["returncode"] or 1)
         print(json.dumps(envelope, ensure_ascii=False, indent=2, default=str))
         return 0 if envelope["ok"] else int(envelope["returncode"] or 1)
     except RouterError as exc:
@@ -528,6 +539,11 @@ def _build_parser() -> argparse.ArgumentParser:
         description="OpenClaw-safe router for Nutmeg CLI commands.",
     )
     parser.add_argument("--print-command", action="store_true")
+    parser.add_argument(
+        "--reply-text",
+        action="store_true",
+        help="Print the same deterministic reply text that Telegram should send.",
+    )
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     subparsers = parser.add_subparsers(dest="action")
 
@@ -719,7 +735,7 @@ def _extract_action(argv: list[str]) -> str | None:
         if item == "--timeout":
             skip_next = True
             continue
-        if item in {"--print-command", "-h", "--help"}:
+        if item in {"--print-command", "--reply-text", "-h", "--help"}:
             continue
         if item.startswith("-"):
             continue
@@ -874,6 +890,273 @@ def _validate_text(name: str, value: str, *, maximum: int) -> None:
         raise RouterError(f"{name} is too long; max {maximum} characters.")
     if any(char in value for char in ["\x00", "\r", "\n"]):
         raise RouterError(f"{name} cannot contain control characters.")
+
+
+def render_reply_text(
+    *,
+    action: str,
+    ok: bool,
+    payload: Any,
+    stdout: str,
+    stderr: str,
+) -> str:
+    if not ok:
+        error = (stderr or stdout).strip() or "Nutmeg command failed without details."
+        return f"`{action}` 执行失败：\n{_truncate(error, 1600)}"
+    if not isinstance(payload, dict):
+        text = stdout.strip()
+        if text:
+            return _truncate(text, 3500)
+        return f"`{action}` 执行完成，但没有返回结构化 payload。"
+
+    if action == "status":
+        return _render_status(payload)
+    if action == "popular":
+        return _render_popular(payload)
+    if action == "jczq-daily-advisor":
+        return _render_jczq_daily(payload)
+    if action == "jczq-mixed-report":
+        return _render_jczq_mixed(payload)
+    if action == "content":
+        return _render_content(payload)
+    if action == "zucai-report":
+        return _render_zucai(payload)
+
+    return _render_generic_success(action, payload)
+
+
+def _render_status(payload: dict[str, Any]) -> str:
+    agent = payload.get("agent") or {}
+    odds = payload.get("odds_provider") or {}
+    bot = payload.get("bot_fallback") or {}
+    synthesis = payload.get("synthesis") or {}
+    odds_state = "已配置" if odds.get("configured") else "未配置"
+    odds_health = "有 health 指标" if odds.get("health_metrics_available") else "暂无 health 指标"
+    bot_state = "已启用" if bot.get("enabled") else "未启用"
+    synthesis_state = "已启用" if synthesis.get("enabled") else "未启用"
+    bot_model = f"{bot.get('provider', 'unknown')} / {bot.get('model', 'unknown')}"
+    synthesis_model = (
+        f"{synthesis.get('provider', 'unknown')} / {synthesis.get('model', 'unknown')}"
+    )
+    return "\n".join(
+        [
+            "系统状态：",
+            "",
+            f"- 执行器：{agent.get('executor', 'unknown')}",
+            f"- LangGraph：{'可用' if agent.get('langgraph_available') else '不可用'}",
+            f"- 赔率数据源：{odds.get('name', 'unknown')}，{odds_state}",
+            f"- 赔率健康检查：{odds_health}",
+            f"- Bot fallback：{bot_state}，模型配置为 `{bot_model}`",
+            f"- Synthesis：{synthesis_state}，模型配置为 `{synthesis_model}`",
+            "",
+            "当前可用 Nutmeg 命令示例：",
+            "- `/popular epl 3`",
+            "- `/today epl 3`",
+            "- `/brief <fixture_id> 这场比赛怎么看？`",
+            "- `/value epl 3`",
+            "- `/jczq`",
+            "- `/zucai 26068`",
+        ]
+    )
+
+
+def _render_popular(payload: dict[str, Any]) -> str:
+    items = payload.get("items") or []
+    league = payload.get("league", "epl")
+    days = payload.get("days", 3)
+    if not items:
+        reason = payload.get("empty_reason") or "当前没有可展示的热门比赛。"
+        return f"`/popular {league} {days}` 暂无结果：{reason}"
+    lines = [f"热门比赛（{league}，未来 {days} 天）：", ""]
+    for item in items:
+        popularity = item.get("popularity") or {}
+        fixture_id = item.get("fixture_id")
+        home = item.get("home_team")
+        away = item.get("away_team")
+        kickoff = item.get("kickoff_at")
+        score = popularity.get("score", "-")
+        tier = popularity.get("tier", "-")
+        lines.append(
+            f"{item.get('rank', '-')}. {home} vs {away}"
+            f"｜fixture_id `{fixture_id}`｜{kickoff}｜热度 {score}/{tier}"
+        )
+        if fixture_id:
+            lines.append(f"   下一步：`/brief {fixture_id} 这场比赛怎么看？`")
+    return "\n".join(lines)
+
+
+def _render_jczq_daily(payload: dict[str, Any]) -> str:
+    lines = [
+        f"竞彩足球每日方案（{payload.get('run_date', 'today')}）",
+        "",
+        f"- 官方数据更新时间：{payload.get('official_last_update') or 'unknown'}",
+    ]
+    revision = payload.get("revision") or {}
+    if revision.get("instruction"):
+        lines.append(f"- 修正要求：{revision['instruction']}")
+    summary = payload.get("summary")
+    if summary:
+        lines.extend(["", "策略摘要：", _truncate(str(summary), 900)])
+
+    warnings = payload.get("warnings") or []
+    if warnings:
+        lines.extend(["", "数据限制/警告："])
+        lines.extend(f"- {warning}" for warning in warnings)
+
+    plans = payload.get("plans") or []
+    if plans:
+        lines.extend(["", "方案："])
+        for plan in plans:
+            plan_name = plan.get("name", "未命名方案")
+            plan_desc = plan.get("description", "")
+            plan_odds = plan.get("total_odds", "-")
+            lines.append(
+                f"- {plan_name}｜{plan_desc}｜总赔率 {plan_odds}"
+            )
+            for leg in (plan.get("legs") or [])[:6]:
+                lines.append(
+                    "  "
+                    f"{leg.get('match_no', '-')}"
+                    f"｜{leg.get('league', '-')}"
+                    f"｜{leg.get('home_team', '-')} vs {leg.get('away_team', '-')}"
+                    f"｜{leg.get('play', '-')}"
+                    f"｜{leg.get('pick', '-')}"
+                    f" @ {leg.get('odds', '-')}"
+                )
+            if plan.get("risk_note"):
+                lines.append(f"  风险：{plan['risk_note']}")
+    else:
+        lines.extend(["", "今日没有生成可执行方案。"])
+
+    artifacts = payload.get("artifacts") or {}
+    if artifacts:
+        lines.extend(["", "产物："])
+        for key, value in artifacts.items():
+            lines.append(f"- {key}: `{value}`")
+    return "\n".join(lines)
+
+
+def _render_jczq_mixed(payload: dict[str, Any]) -> str:
+    lines = [
+        "竞彩足球4关高赔PDF报告已生成。",
+        "",
+        f"- 官方数据更新时间：{payload.get('official_last_update') or 'unknown'}",
+    ]
+    artifacts = payload.get("artifacts") or {}
+    for label, key in [
+        ("PDF", "pdf_path"),
+        ("Markdown", "markdown_path"),
+        ("JSON", "report_json_path"),
+    ]:
+        if artifacts.get(key):
+            lines.append(f"- {label}：`{artifacts[key]}`")
+    dispatch = payload.get("dispatch") or {}
+    if dispatch:
+        lines.append(f"- 发送状态：{dispatch.get('status', 'unknown')}")
+
+    combinations = payload.get("combinations") or []
+    if combinations:
+        lines.extend(["", "组合："])
+        for combo in combinations:
+            combo_name = combo.get("name", "未命名组合")
+            combo_odds = combo.get("total_odds", "-")
+            combo_return = combo.get("two_yuan_return", "-")
+            lines.append(
+                f"{combo_name}｜总赔率 {combo_odds}｜2元理论回报 {combo_return}"
+            )
+            if combo.get("risk"):
+                lines.append(f"风险：{combo['risk']}")
+            for leg in combo.get("legs") or []:
+                lines.append(
+                    "- "
+                    f"{leg.get('match_no', '-')}"
+                    f"｜{leg.get('league', '-')}"
+                    f"｜{leg.get('home_team', '-')} vs {leg.get('away_team', '-')}"
+                    f"｜{leg.get('play', '-')}"
+                    f"｜{leg.get('pick', '-')}"
+                    f" @ {leg.get('odds', '-')}"
+                )
+            lines.append("")
+
+    warnings = payload.get("warnings") or []
+    if warnings:
+        lines.extend(["警告：", *[f"- {warning}" for warning in warnings]])
+    return "\n".join(line for line in lines if line is not None).rstrip()
+
+
+def _render_content(payload: dict[str, Any]) -> str:
+    artifacts = payload.get("artifacts") or {}
+    packs = payload.get("packs") or []
+    lines = [
+        "已生成足彩分享文案审核包（仅生成审核包，不会自动发布）。",
+        "",
+    ]
+    if artifacts.get("json_path"):
+        lines.append(f"- JSON：`{artifacts['json_path']}`")
+    if artifacts.get("markdown_path"):
+        lines.append(f"- Markdown：`{artifacts['markdown_path']}`")
+    if payload.get("llm_provider"):
+        lines.append(f"- 生成方式：{payload['llm_provider']}")
+
+    if packs:
+        first = packs[0]
+        lines.extend(
+            [
+                "",
+                "首个内容包：",
+                f"- 比赛：{first.get('match_name', '-')}",
+                f"- 风险等级：{first.get('risk_level', '-')}",
+                f"- 发布建议：{first.get('publish_recommendation', '-')}",
+                "",
+                "标题：",
+            ]
+        )
+        lines.extend(f"- {title}" for title in (first.get("titles") or [])[:5])
+        if first.get("short_video_script"):
+            lines.extend(["", "可复制短文案：", str(first["short_video_script"])])
+    return "\n".join(lines).rstrip()
+
+
+def _render_zucai(payload: dict[str, Any]) -> str:
+    artifacts = payload.get("artifacts") or {}
+    lines = [f"传统足彩报告已生成：issue `{payload.get('issue_id', '-')}`"]
+    for key, value in artifacts.items():
+        lines.append(f"- {key}: `{value}`")
+    recommendations = payload.get("recommendations") or []
+    if recommendations:
+        lines.append("")
+        lines.append("重点建议：")
+        for item in recommendations[:5]:
+            home = item.get("home_team", "-")
+            away = item.get("away_team", "-")
+            pick = item.get("pick", "-")
+            lines.append(
+                f"- {item.get('match_no', '-')}. {home} vs {away}｜{pick}"
+            )
+    return "\n".join(lines)
+
+
+def _render_generic_success(action: str, payload: dict[str, Any]) -> str:
+    artifacts = payload.get("artifacts") if isinstance(payload.get("artifacts"), dict) else {}
+    summary = payload.get("summary")
+    lines = [f"`{action}` 执行完成。"]
+    if summary:
+        lines.extend(["", _truncate(str(summary), 1200)])
+    if artifacts:
+        lines.extend(["", "产物："])
+        for key, value in artifacts.items():
+            lines.append(f"- {key}: `{value}`")
+    warnings = payload.get("warnings") or []
+    if warnings:
+        lines.extend(["", "警告："])
+        lines.extend(f"- {warning}" for warning in warnings)
+    return "\n".join(lines)
+
+
+def _truncate(value: str, maximum: int) -> str:
+    if len(value) <= maximum:
+        return value
+    return value[: maximum - 1].rstrip() + "…"
 
 
 def _parse_json_payload(stdout: str) -> Any | None:

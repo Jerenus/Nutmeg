@@ -96,13 +96,13 @@ from nutmeg.services.zucai_schedule import (
     ZucaiScheduleValidationError,
 )
 from nutmeg.services.zucai_source import ZucaiSourceSyncService, ZucaiSourceValidationError
+from nutmeg.storage.betting_plan_repository import DuckDbBettingPlanRepository
 from nutmeg.storage.bootstrap import (
     build_state_engine,
     create_analytics_schema,
     create_state_schema,
     ensure_storage_paths,
 )
-from nutmeg.storage.betting_plan_repository import DuckDbBettingPlanRepository
 from nutmeg.storage.client_state_repository import SqlAlchemyClientStateRepository
 from nutmeg.storage.fixture_repository import DuckDbFixtureRepository
 from nutmeg.storage.odds_repository import (

@@ -76,7 +76,105 @@ class FakeResultProvider:
         }
 
 
+class FakeIterationResultProvider:
+    source_page = "fake://okooo-iteration-results"
+
+    def fetch_results(self, run_date: str):
+        assert run_date == "2026-05-01"
+        return {
+            "周五001": {
+                "score": "1:1",
+                "half_score": "1:1",
+                "had": "平",
+                "had_odds": "4.90",
+                "hhad": "让负",
+                "hhad_odds": "2.95",
+                "ttg": "2球",
+                "ttg_odds": "3.20",
+                "hafu": "平/平",
+                "hafu_odds": "6.20",
+                "crs": "1:1",
+                "crs_odds": "9.00",
+            },
+            "周五003": {
+                "score": "1:1",
+                "half_score": "0:0",
+                "had": "平",
+                "had_odds": "2.77",
+                "hhad": "让胜",
+                "hhad_odds": "1.41",
+                "ttg": "2球",
+                "ttg_odds": "3.00",
+                "hafu": "平/平",
+                "hafu_odds": "3.95",
+                "crs": "1:1",
+                "crs_odds": "5.35",
+            },
+            "周五004": {
+                "score": "1:1",
+                "half_score": "0:0",
+                "had": "平",
+                "had_odds": "4.70",
+                "hhad": "让负",
+                "hhad_odds": "3.00",
+                "ttg": "2球",
+                "ttg_odds": "3.40",
+                "hafu": "平/平",
+                "hafu_odds": "7.00",
+                "crs": "1:1",
+                "crs_odds": "8.50",
+            },
+            "周五005": {
+                "score": "1:1",
+                "half_score": "0:0",
+                "had": "平",
+                "had_odds": "3.35",
+                "hhad": "让负",
+                "hhad_odds": "1.75",
+                "ttg": "2球",
+                "ttg_odds": "3.55",
+                "hafu": "平/平",
+                "hafu_odds": "5.25",
+                "crs": "1:1",
+                "crs_odds": "6.75",
+            },
+        }
+
+
+def _seed_user_revision_hafu_pattern(tmp_path: Path) -> None:
+    """Activate user_revision_hafu_draw_away so 周五003 hafu 平/负 enters main.
+
+    Without this seed the new EV-driven scorer prefers 平/平 over 平/负 when
+    they sit in the same hafu pool — that is the desired post-fix behavior.
+    The test exercises the user-revision path that explicitly promotes 平/负
+    after enough positive reinforcement.
+    """
+
+    memory_dir = tmp_path / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    (memory_dir / "strategy-memory.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sample_count": 0,
+                "patterns": {
+                    "user_revision_hafu_draw_away": {
+                        "label": "用户修正-半全场平/负",
+                        "hits": 2,
+                        "misses": 0,
+                    }
+                },
+                "insights": [],
+                "recent_inspirations": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_daily_review_grades_saved_context_and_highlights_strategy_lessons(tmp_path: Path) -> None:
+    _seed_user_revision_hafu_pattern(tmp_path)
     JczqDailyAdvisorService(provider=FakeProvider()).build_report(
         run_date="2026-05-01", output_dir=tmp_path
     )
@@ -104,6 +202,7 @@ def test_daily_review_grades_saved_context_and_highlights_strategy_lessons(tmp_p
 
 
 def test_daily_review_updates_strategy_memory(tmp_path: Path) -> None:
+    _seed_user_revision_hafu_pattern(tmp_path)
     JczqDailyAdvisorService(provider=FakeProvider()).build_report(
         run_date="2026-05-01", output_dir=tmp_path
     )
@@ -167,3 +266,29 @@ def test_daily_review_records_db_backtest_with_oracle_odds(tmp_path: Path) -> No
         item["oracle_same_play_odds"] > 0 for item in report["betting_db"]["plan_reviews"]
     )
     assert "同玩法正确赔率" in report["message"]
+
+
+def test_daily_review_writes_executable_decision_policy(tmp_path: Path) -> None:
+    JczqDailyAdvisorService(provider=FakeProvider()).build_report(
+        run_date="2026-05-01", output_dir=tmp_path
+    )
+
+    report = JczqDailyReviewService(
+        result_provider=FakeIterationResultProvider(),
+    ).build_review(run_date="2026-05-01", output_dir=tmp_path)
+
+    memory_path = tmp_path / "memory" / "strategy-memory.json"
+    memory = json.loads(memory_path.read_text(encoding="utf-8"))
+    policy = memory["decision_policy"]
+
+    assert policy["rules"]["stable_base"]["active"] is True
+    assert policy["rules"]["stable_base"]["action"] == "downgrade_low_price_bankers"
+    assert policy["rules"]["total_goals"]["active"] is True
+    assert "2球" in policy["rules"]["total_goals"]["preferred_picks"]
+    assert policy["rules"]["hafu"]["active"] is True
+    assert policy["rules"]["reuse_guard"]["active"] is True
+    assert "周五001" in policy["rules"]["reuse_guard"]["match_nos"]
+    assert any("强胆低赔" in note for note in policy["notes"])
+    assert any("2球" in note for note in policy["notes"])
+    assert report["strategy_memory"]["decision_policy"]["rules"]["hafu"]["active"] is True
+    assert "策略迭代规则" in report["message"]

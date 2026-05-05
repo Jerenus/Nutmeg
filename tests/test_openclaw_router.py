@@ -121,7 +121,18 @@ def test_router_execute_returns_json_envelope(monkeypatch, tmp_path) -> None:
     assert envelope["ok"] is True
     assert envelope["action"] == "popular"
     assert envelope["payload"]["items"][0]["fixture_id"] == "epl-001"
+    assert "reply_text" in envelope
+    assert "epl-001" in envelope["reply_text"]
     assert envelope["stdout"] == ""
+
+
+def test_router_reply_text_flag_is_global_before_action() -> None:
+    router = _load_router()
+
+    request = router.parse_request(["--reply-text", "status"])
+
+    assert request.options.reply_text is True
+    assert request.action == "status"
 
 
 def test_router_builds_zucai_report_command_and_requires_dispatch_confirmation() -> None:
@@ -250,6 +261,48 @@ def test_router_builds_jczq_daily_advisor_command_and_requires_dispatch_confirma
 
     with pytest.raises(router.RouterError, match="--confirm-dispatch"):
         router.parse_request(["jczq-daily-advisor", "--dispatch-telegram"])
+
+
+def test_router_renders_jczq_daily_advisor_reply_text() -> None:
+    router = _load_router()
+
+    text = router.render_reply_text(
+        action="jczq-daily-advisor",
+        ok=True,
+        payload={
+            "run_date": "2026-05-02",
+            "official_last_update": "2026-05-02 15:08:23",
+            "summary": "主线保留，机会票小注。",
+            "plans": [
+                {
+                    "name": "最终主方案",
+                    "description": "主线方案",
+                    "total_odds": 99.07,
+                    "legs": [
+                        {
+                            "match_no": "周六014",
+                            "league": "德甲",
+                            "home_team": "法兰克福",
+                            "away_team": "汉堡",
+                            "play": "让球胜平负",
+                            "pick": "让负",
+                            "odds": 2.09,
+                        }
+                    ],
+                    "risk_note": "副仓小注。",
+                }
+            ],
+            "artifacts": {"markdown_path": ".nutmeg-data/jczq/daily/report.md"},
+            "warnings": [],
+        },
+        stdout="",
+        stderr="",
+    )
+
+    assert "竞彩足球每日方案（2026-05-02）" in text
+    assert "最终主方案" in text
+    assert "周六014" in text
+    assert ".nutmeg-data/jczq/daily/report.md" in text
 
 
 def test_router_builds_daily_content_pack_command() -> None:

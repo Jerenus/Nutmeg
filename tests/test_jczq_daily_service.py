@@ -372,6 +372,73 @@ def test_daily_advisor_reads_strategy_memory_and_promotes_learned_inspiration(
     assert "半全场平/负" in report.summary
 
 
+def test_daily_advisor_applies_executable_decision_policy(tmp_path: Path) -> None:
+    memory_dir = tmp_path / "memory"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "strategy-memory.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sample_count": 4,
+                "patterns": {},
+                "insights": [],
+                "recent_inspirations": [],
+                "decision_policy": {
+                    "version": 1,
+                    "last_review_date": "2026-05-03",
+                    "rules": {
+                        "stable_base": {
+                            "active": True,
+                            "action": "downgrade_low_price_bankers",
+                        },
+                        "total_goals": {
+                            "active": True,
+                            "action": "promote_total_goals_two_ball",
+                            "preferred_picks": ["2球", "1球", "0球"],
+                        },
+                        "hafu": {
+                            "active": True,
+                            "action": "downgrade_half_full_non_extreme",
+                        },
+                        "reuse_guard": {
+                            "active": True,
+                            "action": "avoid_reusing_missed_match_story",
+                        },
+                    },
+                    "notes": [
+                        "强胆低赔近期失真，底仓必须降权并寻找让球/总进球支撑。",
+                        "2球结果近期集中，分歧盘优先检查总进球2球和小比分路径。",
+                        "半全场近期命中差，非极限票降权，优先改用总进球/让球。",
+                        "同场错误剧本复用风险升高，单场不要拖累多张串。",
+                    ],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = JczqDailyAdvisorService(provider=FakeProvider()).build_report(
+        run_date="2026-05-01", output_dir=tmp_path
+    )
+
+    stable = next(plan for plan in report.plans if plan.kind == "stable_base")
+    assert all(
+        not (leg.match_no in {"周五001", "周五004"} and leg.pool == "had" and leg.pick == "胜")
+        for leg in stable.legs
+    )
+    non_extreme_legs = [
+        leg for plan in report.plans if plan.kind != "extreme" for leg in plan.legs
+    ]
+    assert any(leg.pool == "ttg" and leg.pick == "2球" for leg in non_extreme_legs)
+    assert all(leg.pool != "hafu" for leg in non_extreme_legs)
+    exact_stories = [(leg.match_no, leg.pool, leg.pick) for leg in non_extreme_legs]
+    assert len(exact_stories) == len(set(exact_stories))
+    assert "策略迭代执行" in report.summary
+    assert "2球" in report.summary
+    assert "半全场" in report.summary
+
+
 def test_daily_advisor_dispatches_text_to_telegram_and_records_status(tmp_path: Path) -> None:
     sender = FakeSender()
     report = JczqDailyAdvisorService(

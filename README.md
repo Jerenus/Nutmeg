@@ -150,11 +150,14 @@ OpenClaw Telegram integration:
 
 ```bash
 python3 scripts/openclaw/nutmeg_command_router.py status
+python3 scripts/openclaw/nutmeg_command_router.py --reply-text status
 python3 scripts/openclaw/nutmeg_command_router.py --print-command popular --league epl --days 3
 python3 scripts/openclaw/nutmeg_command_router.py popular --league epl --days 3
 ```
 
 Use OpenClaw as the Telegram entrypoint and Nutmeg as the execution engine.
+Router responses include deterministic `reply_text`; Telegram should send that
+field verbatim, and terminal users can pass `--reply-text` to see the same text.
 The OpenClaw-facing command contract is documented in
 `docs/integrations/openclaw-telegram-command-manual.md`; the short agent
 instruction is in `docs/integrations/openclaw-nutmeg-agent-instruction.md`.

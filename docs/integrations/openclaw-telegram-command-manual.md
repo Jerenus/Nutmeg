@@ -50,7 +50,7 @@ questions, do not run bootstrap, and do not present non-Nutmeg capabilities:
 /visuals <fixture_id> 生成战术图
 /daily epl 3 生成每日运营摘要
 /zucai 26068 生成传统足彩14场报告
-/jczq 生成竞彩足球4关高赔PDF报告
+/jczq 生成竞彩足球每日方案
 /content <report_json_path> 生成足彩分享文案审核包
 /review 查看预测复盘
 
@@ -62,10 +62,10 @@ questions, do not run bootstrap, and do not present non-Nutmeg capabilities:
 ```text
 Telegram message
   -> OpenClaw intent routing
-  -> scripts/openclaw/nutmeg_command_router.py
+  -> scripts/openclaw/nutmeg_command_router.py --reply-text
   -> uv run nutmeg <allowed command>
-  -> JSON envelope
-  -> concise Chinese Telegram reply
+  -> deterministic terminal text
+  -> send that text verbatim
 ```
 
 Run every command from the Nutmeg project root:
@@ -77,8 +77,18 @@ cd /Users/jz71/Projects/Nutmeg
 Use the router, not free-form shell:
 
 ```bash
-python3 scripts/openclaw/nutmeg_command_router.py <action> [options]
+python3 scripts/openclaw/nutmeg_command_router.py --reply-text <action> [options]
 ```
+
+Terminal/Telegram consistency rule:
+
+```bash
+python3 scripts/openclaw/nutmeg_command_router.py --reply-text <action> [options]
+```
+
+The `--reply-text` output is the exact text the Telegram operator should send,
+without re-ranking, rewriting, or filling facts from conversation memory. JSON
+mode is for explicit diagnostics/raw payload requests only.
 
 Dry-run a route without executing Nutmeg:
 
@@ -133,8 +143,8 @@ The router returns JSON:
 }
 ```
 
-OpenClaw should summarize `payload` in Chinese. Do not paste large raw JSON into
-Telegram unless the user explicitly asks for diagnostics.
+OpenClaw should use `--reply-text` and send the output verbatim. Do not paste
+large raw JSON into Telegram unless the user explicitly asks for diagnostics.
 
 ## Safety Policy
 
@@ -498,8 +508,8 @@ Only write predictions when the user explicitly gives all fields.
 - "战术图" -> `visuals --fixture-id <id>`.
 - "Saka 怎么样？" -> if team is clear, `player`; otherwise ask for team.
 - "同步一下" -> ask for confirmation before `sync --confirm-live`.
-- "竞彩足球每日分析" / "今天竞彩方案" / "高赔率灵感票" -> run `jczq-daily-advisor --provider live --date today`; if the user gives a natural-language correction such as "不要比分，提高到100倍", pass it as `--revision-text`; dispatch only with explicit confirmation.
-- "竞彩足球4关高赔PDF" / "混合投注PDF" -> run `jczq-mixed-report --provider live --pdf`; dispatch only with explicit confirmation.
+- `/jczq` / "竞彩足球每日分析" / "今天竞彩方案" / "高赔率灵感票" -> run `jczq-daily-advisor --provider live --date today`; if the user gives a natural-language correction such as "不要比分，提高到100倍", pass it as `--revision-text`; dispatch only with explicit confirmation.
+- "竞彩足球4关高赔PDF" / "混合投注PDF" / `/jczqpdf` -> run `jczq-mixed-report --provider live --pdf`; dispatch only with explicit confirmation.
 - "生成足彩分享文案" / "今天足彩内容" -> if a `report_json_path` is known, run `content --report-file <path> --limit 3`; otherwise run `zucai-report --issue-id <issue> --pdf` first and then run `content` with the returned report path.
 
 ## Telegram Formatting Rules

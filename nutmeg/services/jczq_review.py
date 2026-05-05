@@ -11,7 +11,14 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from nutmeg.services.jczq_daily import JczqTextSender, _report_from_dict
-from nutmeg.services.jczq_strategy_memory import update_strategy_memory
+from nutmeg.services.jczq_review_explainer import (
+    Completer,
+    explain_missed_plans,
+)
+from nutmeg.services.jczq_strategy_memory import (
+    render_decision_policy_notes,
+    update_strategy_memory,
+)
 
 
 class JczqResultProvider(Protocol):
@@ -71,11 +78,13 @@ class JczqDailyReviewService:
         telegram_sender: JczqTextSender | None = None,
         telegram_chat_ids: list[int] | None = None,
         betting_repository: Any | None = None,
+        explanation_completer: Completer | None = None,
     ) -> None:
         self._result_provider = result_provider or OkoooJczqResultProvider()
         self._telegram_sender = telegram_sender
         self._telegram_chat_ids = telegram_chat_ids or []
         self._betting_repository = betting_repository
+        self._explanation_completer = explanation_completer
 
     def build_review(
         self,
@@ -137,6 +146,11 @@ class JczqDailyReviewService:
             strategy_memory=strategy_memory,
             betting_db=betting_db,
         )
+        explanations = explain_missed_plans(
+            plan_reviews=betting_db.get("plan_reviews") or [],
+            results=results,
+            completer=self._explanation_completer,
+        )
         report = {
             "run_date": resolved_date,
             "generated_at": _now_iso(),
@@ -147,7 +161,22 @@ class JczqDailyReviewService:
             "strategy_memory": {
                 "path": str(out / "memory" / "strategy-memory.json"),
                 "insights": strategy_memory.get("insights") or [],
+                "decision_policy": strategy_memory.get("decision_policy") or {},
+                "pattern_buckets_count": len(strategy_memory.get("pattern_buckets") or {}),
+                "oracle_learnings_count": len(strategy_memory.get("oracle_learnings") or []),
             },
+            "explanations": [
+                {
+                    "plan_kind": item.plan_kind,
+                    "plan_name": item.plan_name,
+                    "miss_reason": item.miss_reason,
+                    "killer_legs": list(item.killer_legs),
+                    "oracle_pick_diffs": list(item.oracle_pick_diffs),
+                    "extracted_rules": list(item.extracted_rules),
+                    "narrative": item.narrative,
+                }
+                for item in explanations
+            ],
             "betting_db": betting_db,
             "message": message,
             "artifacts": {},
@@ -237,7 +266,8 @@ class JczqDailyReviewService:
         ]
         for match in comfort_matches:
             actual = (results.get(match.get("match_no") or "") or {}).get("had")
-            if actual in {"平", "负"}:
+            favorite = _favorite_from_hot_direction(str(match.get("hot_direction") or ""))
+            if favorite in {"胜", "负"} and actual in {"胜", "平", "负"} and actual != favorite:
                 lines.append(
                     f"- {match['match_no']}舒服盘风险兑现：实际{actual}，后续必须防平防冷，"
                     "不能让同一热门假设拖累多张串。"
@@ -250,6 +280,10 @@ class JczqDailyReviewService:
             if insights:
                 lines.extend(["", "策略记忆已更新："])
                 lines.extend(f"- {item}" for item in insights[:3])
+            policy_notes = render_decision_policy_notes(strategy_memory)
+            if policy_notes:
+                lines.extend(["", "策略迭代规则："])
+                lines.extend(f"- {item}" for item in policy_notes)
         return "\n".join(lines)
 
     def _write_artifacts(self, report: dict[str, Any], output_dir: Path) -> dict[str, Any]:
@@ -395,6 +429,16 @@ def _parse_pool_result_and_odds(pool: str, value: str) -> tuple[str, float | Non
         if len(parts) == 2:
             return f"{label.get(parts[0], parts[0])}/{label.get(parts[1], parts[1])}", odds
     return token, odds
+
+
+def _favorite_from_hot_direction(value: str) -> str | None:
+    if "主胜" in value:
+        return "胜"
+    if "客胜" in value:
+        return "负"
+    if "平局" in value:
+        return "平"
+    return None
 
 
 def _weekday_prefix(value: str) -> str:
