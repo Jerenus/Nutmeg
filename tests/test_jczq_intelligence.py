@@ -1,0 +1,175 @@
+"""Unit tests for the JCZQ analytics core."""
+
+from __future__ import annotations
+
+from nutmeg.domain.jczq_daily import JczqDailyLeg, JczqDailyMatch
+from nutmeg.services.jczq_intelligence import (
+    LeaguePriorBaseline,
+    bucket_matches,
+    compute_analytics,
+    evaluate_leg,
+    select_top_legs,
+)
+
+
+def _leg(match_no: str, league: str, pool: str, pick: str, odds: float) -> JczqDailyLeg:
+    return JczqDailyLeg(
+        match_no=match_no,
+        league=league,
+        home_team="H",
+        away_team="A",
+        pool=pool,
+        play="play",
+        pick=pick,
+        odds=odds,
+        logic="",
+        goal_line="",
+        odds_update="",
+    )
+
+
+def _match(match_no: str, league: str, candidates: list[JczqDailyLeg]) -> JczqDailyMatch:
+    return JczqDailyMatch(
+        match_no=match_no,
+        match_date="2026-05-03",
+        match_time="22:00:00",
+        league=league,
+        home_team="H",
+        away_team="A",
+        status="Selling",
+        hot_direction="主胜低赔(1.10)",
+        role="强胆场",
+        confidence_note="胜平负方向可做胆，但让胜不能自动视为稳胆。",
+        candidates=candidates,
+    )
+
+
+def _strong_match() -> JczqDailyMatch:
+    return _match(
+        "周日020",
+        "意甲",
+        [
+            _leg("周日020", "意甲", "had", "胜", 1.12),
+            _leg("周日020", "意甲", "had", "平", 6.70),
+            _leg("周日020", "意甲", "had", "负", 18.00),
+            _leg("周日020", "意甲", "hhad", "让胜", 2.30),
+            _leg("周日020", "意甲", "hhad", "让平", 3.55),
+            _leg("周日020", "意甲", "hhad", "让负", 2.50),
+            _leg("周日020", "意甲", "hafu", "负/平", 28.00),
+        ],
+    )
+
+
+def _comfort_match() -> JczqDailyMatch:
+    return _match(
+        "周日005",
+        "德乙",
+        [
+            _leg("周日005", "德乙", "had", "胜", 1.92),
+            _leg("周日005", "德乙", "had", "平", 3.75),
+            _leg("周日005", "德乙", "had", "负", 4.10),
+            _leg("周日005", "德乙", "hafu", "平/平", 5.30),
+        ],
+    )
+
+
+def _chaos_match() -> JczqDailyMatch:
+    return _match(
+        "周日015",
+        "英超",
+        [
+            _leg("周日015", "英超", "had", "胜", 2.09),
+            _leg("周日015", "英超", "had", "平", 3.35),
+            _leg("周日015", "英超", "had", "负", 3.50),
+        ],
+    )
+
+
+def test_compute_analytics_classifies_strong_comfort_chaos_buckets() -> None:
+    matches = [_strong_match(), _comfort_match(), _chaos_match()]
+    analytics = compute_analytics(matches, baseline=LeaguePriorBaseline())
+
+    assert set(analytics.keys()) == {"周日020", "周日005", "周日015"}
+    assert analytics["周日020"].is_strong_banker is True
+    assert analytics["周日020"].is_comfort_risk is False
+    assert analytics["周日005"].is_comfort_risk is True
+    assert analytics["周日005"].is_strong_banker is False
+    assert analytics["周日015"].is_strong_banker is False
+    assert 0.97 <= sum(analytics["周日020"].implied_probs.values()) <= 1.03
+    assert analytics["周日020"].vig_pct > 0.0
+
+
+def test_bucket_matches_routes_each_archetype_to_relevant_buckets() -> None:
+    matches = [_strong_match(), _comfort_match(), _chaos_match()]
+    analytics = compute_analytics(matches)
+    buckets = bucket_matches(matches, analytics)
+
+    assert any(m.match_no == "周日020" for m in buckets["strong"])
+    assert any(m.match_no == "周日005" for m in buckets["draw"])
+    # Strong + upset_candidate or comfort match could also seed upset bucket;
+    # the key invariant is that we don't return an empty cluster set.
+    assert sum(len(v) for v in buckets.values()) >= 3
+
+
+def test_evaluate_leg_weights_inspiration_intent_toward_high_ev_pool_diversity() -> None:
+    matches = [_strong_match()]
+    analytics = compute_analytics(matches)
+    ana = analytics["周日020"]
+
+    leg_had_平 = next(
+        leg for leg in matches[0].candidates if leg.pool == "had" and leg.pick == "平"
+    )
+    leg_hhad_让负 = next(
+        leg for leg in matches[0].candidates if leg.pool == "hhad" and leg.pick == "让负"
+    )
+
+    score_inspiration = evaluate_leg(leg_had_平, analytics=ana, intent="inspiration").score
+    score_main = evaluate_leg(leg_had_平, analytics=ana, intent="main").score
+    upset_score = evaluate_leg(leg_hhad_让负, analytics=ana, intent="upset").score
+
+    # 平 in a strong-banker upset has positive EV gap → both intents should score it
+    assert score_inspiration > 0
+    assert score_main > 0
+    assert upset_score > 0
+
+
+def test_select_top_legs_respects_pool_filter_and_avoid_set() -> None:
+    matches = [_strong_match(), _comfort_match(), _chaos_match()]
+    analytics = compute_analytics(matches)
+
+    picks = select_top_legs(
+        matches,
+        analytics,
+        intent="inspiration",
+        k=2,
+        pool_filter={"had"},
+        avoid_match_nos={"周日020"},
+        enforce_pool_diversity=False,
+    )
+
+    assert len(picks) == 2
+    assert all(ev.leg.pool == "had" for ev in picks)
+    assert all(ev.leg.match_no != "周日020" for ev in picks)
+
+
+def test_select_top_legs_blends_optional_bias_function() -> None:
+    matches = [_strong_match(), _comfort_match()]
+    analytics = compute_analytics(matches)
+
+    def bias(leg: JczqDailyLeg, _ana) -> float:
+        # Force comfort-match draws above everything else
+        return 5.0 if leg.match_no == "周日005" and leg.pick == "平" else 0.0
+
+    picks = select_top_legs(
+        matches,
+        analytics,
+        intent="contrarian",
+        k=1,
+        pool_filter={"had"},
+        bias_fn=bias,
+        enforce_pool_diversity=False,
+    )
+
+    assert picks
+    assert picks[0].leg.match_no == "周日005"
+    assert picks[0].leg.pick == "平"

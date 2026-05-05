@@ -18,11 +18,43 @@ from nutmeg.services.jczq import (
     SampleJczqCalculatorProvider,
     SportteryJczqCalculatorProvider,
 )
+from nutmeg.services.jczq_baseline import build_default_providers
+from nutmeg.services.jczq_drift import (
+    OddsDriftStore,
+    drift_provider_from_signals,
+)
+from nutmeg.services.jczq_intelligence import (
+    BaselineProvider,
+    DriftProvider,
+    LeaguePriorBaseline,
+    MatchAnalytics,
+    PopularityProvider,
+    compute_analytics,
+    compute_poisson_edges,
+    poisson_edge_index,
+    select_top_legs,
+)
 from nutmeg.services.jczq_strategy_memory import (
+    compute_league_ttg_volatility,
+    decision_policy_rule,
+    decision_policy_rule_active,
     load_strategy_memory,
     memory_pattern_positive,
+    oracle_learning_for,
+    pattern_bucket_ev,
+    recently_burned_teams,
+    render_decision_policy_notes,
     render_strategy_memory_notes,
 )
+
+# Rule B: any had leg priced at or below this is too thin to anchor a banker.
+HAD_BANKER_FLOOR = 1.40
+# Rule A: a leg with at least this much Poisson edge triggers the poisson_solo ticket.
+POISSON_SOLO_EDGE_THRESHOLD = 0.15
+# Rule A: legs with edge ≤ this are flagged in the report as model-opposed.
+POISSON_STRONG_OPPOSE_THRESHOLD = -0.20
+# Rule F: bias subtracted from a leg's score when its team is on the burned list.
+BURNED_TEAM_BIAS = -0.5
 
 
 class JczqTextSender(Protocol):
@@ -71,11 +103,29 @@ class JczqDailyAdvisorService:
         telegram_sender: JczqTextSender | None = None,
         telegram_chat_ids: list[int] | None = None,
         betting_repository: Any | None = None,
+        baseline_provider: BaselineProvider | None = None,
+        popularity_provider: PopularityProvider | None = None,
+        drift_provider: DriftProvider | None = None,
+        drift_store: OddsDriftStore | None = None,
+        persist_drift_snapshot: bool = False,
     ) -> None:
         self._provider = provider or SportteryJczqCalculatorProvider()
         self._telegram_sender = telegram_sender
         self._telegram_chat_ids = telegram_chat_ids or []
         self._betting_repository = betting_repository
+        self._baseline_provider = baseline_provider or LeaguePriorBaseline()
+        self._popularity_provider = popularity_provider
+        self._drift_provider = drift_provider
+        self._drift_store = drift_store
+        self._persist_drift_snapshot = persist_drift_snapshot
+        # Lazy-construct popularity adapter so unit tests with a stub baseline
+        # don't pay the import/construction cost.
+        if self._popularity_provider is None:
+            try:
+                _, popularity_adapter = build_default_providers()
+                self._popularity_provider = popularity_adapter
+            except Exception:  # pragma: no cover - defensive: missing optional deps
+                self._popularity_provider = None
 
     def build_report(
         self,
@@ -95,8 +145,24 @@ class JczqDailyAdvisorService:
         else:
             warnings = []
         strategy_memory = load_strategy_memory(Path(output_dir)) if output_dir is not None else {}
+        drift_provider = self._resolve_drift_provider(
+            run_date=resolved_date,
+            payload=value,
+            output_dir=output_dir,
+        )
+        league_volatility = compute_league_ttg_volatility(strategy_memory)
+        analytics = compute_analytics(
+            matches,
+            baseline=self._baseline_provider,
+            popularity=self._popularity_provider,
+            drift=drift_provider,
+            league_volatility=league_volatility,
+        )
         plans = self._build_plans(
-            matches, instruction=revision_instruction, strategy_memory=strategy_memory
+            matches,
+            instruction=revision_instruction,
+            strategy_memory=strategy_memory,
+            analytics=analytics,
         )
         summary = self._summary(
             plans,
@@ -162,8 +228,17 @@ class JczqDailyAdvisorService:
             )
         else:
             strategy_memory = load_strategy_memory(Path(output_dir))
+            analytics = compute_analytics(
+                base_report.matches,
+                baseline=self._baseline_provider,
+                popularity=self._popularity_provider,
+                drift=self._drift_provider,
+            )
             plans = self._build_plans(
-                base_report.matches, instruction=instruction, strategy_memory=strategy_memory
+                base_report.matches,
+                instruction=instruction,
+                strategy_memory=strategy_memory,
+                analytics=analytics,
             )
             report = replace(
                 base_report,
@@ -316,9 +391,26 @@ class JczqDailyAdvisorService:
         *,
         instruction: str | None,
         strategy_memory: dict[str, Any] | None = None,
+        analytics: dict[str, MatchAnalytics] | None = None,
     ) -> list[JczqDailyPlan]:
         if not matches:
             return []
+        memory = strategy_memory or {}
+        analytics = analytics if analytics is not None else compute_analytics(
+            matches,
+            baseline=self._baseline_provider,
+            league_volatility=compute_league_ttg_volatility(memory),
+        )
+        burned_teams = recently_burned_teams(memory)
+        memory_bias = _build_memory_bias(memory, burned_teams=burned_teams)
+        self._active_bias_fn = memory_bias  # consumed by _search_plan helpers
+        # Rule A: precompute Poisson edge index so poisson_solo + report rendering share it.
+        poisson_rows = compute_poisson_edges(matches)
+        self._active_poisson_index = poisson_edge_index(poisson_rows)
+        self._active_analytics = analytics
+        self._active_coinflip_match_nos = {
+            mn for mn, ana in analytics.items() if ana.is_three_way_coinflip
+        }
         no_score = bool(
             instruction and any(word in instruction for word in ["不要比分", "不比分", "不要 比分"])
         )
@@ -330,15 +422,40 @@ class JczqDailyAdvisorService:
             "main",
             "用胜平负低赔方向保生命力，把高赔点留给半全场/平局。",
             [
-                _select_leg(matches, used_match_nos, pool="had", max_odds=1.9, target=1.35),
+                # Rule B: had bankers must be > 1.40 (>=1.41) to avoid 1.24/1.34-style chalk dumps.
+                _select_leg(
+                    matches,
+                    used_match_nos,
+                    pool="had",
+                    min_odds=HAD_BANKER_FLOOR + 0.01,
+                    max_odds=1.9,
+                    target=1.55,
+                    skip_match_nos=self._active_coinflip_match_nos,
+                ),
                 _select_leg(matches, used_match_nos, pool="hafu", min_odds=3.5, target=4.2),
-                _select_leg(matches, used_match_nos, pool="had", max_odds=1.9, target=1.35),
-                _select_leg(matches, used_match_nos, pool="had", min_odds=3.0, target=3.4),
+                _select_leg(
+                    matches,
+                    used_match_nos,
+                    pool="had",
+                    min_odds=HAD_BANKER_FLOOR + 0.01,
+                    max_odds=1.9,
+                    target=1.55,
+                    skip_match_nos=self._active_coinflip_match_nos,
+                ),
+                _select_leg(
+                    matches,
+                    used_match_nos,
+                    pool="had",
+                    min_odds=3.0,
+                    target=3.4,
+                    skip_match_nos=self._active_coinflip_match_nos,
+                ),
             ],
-            "主方案仍依赖一到两个高波动平局/半全场点。",
+            "主方案仍依赖一到两个高波动平局/半全场点；Rule B 已禁用 ≤1.40 强胆。",
         )
         inspiration = self._search_plan(
             matches,
+            analytics=analytics,
             name="高赔率灵感票",
             kind="inspiration",
             description="跨胜平负、让球、总进球、半全场和比分做乘法杠杆，优先保留可解释剧本。",
@@ -348,6 +465,7 @@ class JczqDailyAdvisorService:
         )
         contrarian = self._search_plan(
             matches,
+            analytics=analytics,
             name="反大众盘口票",
             kind="contrarian",
             description="规避低赔热门胜负，优先选择总进球、半全场、平局和让球卡盘路径。",
@@ -359,6 +477,7 @@ class JczqDailyAdvisorService:
         false_signal = self._build_false_signal_plan(matches)
         extreme = self._search_plan(
             matches,
+            analytics=analytics,
             name="极限小注票",
             kind="extreme",
             description="用比分和半全场追求极高赔率，仅适合极小注娱乐。",
@@ -367,14 +486,30 @@ class JczqDailyAdvisorService:
             no_score=False,
             extreme=True,
         )
+        draw_cluster = self._build_draw_cluster_plan(matches, analytics=analytics)
+        upset_cluster = self._build_upset_cluster_plan(matches, analytics=analytics)
+        poisson_solo = self._build_poisson_solo_plan(matches, poisson_rows=poisson_rows)
         plans = [
             plan
-            for plan in [stable_base, main, inspiration, contrarian, false_signal, extreme]
+            for plan in [
+                stable_base,
+                main,
+                poisson_solo,
+                inspiration,
+                contrarian,
+                false_signal,
+                extreme,
+                draw_cluster,
+                upset_cluster,
+            ]
             if plan.legs
         ]
         plans = self._apply_revision_overrides(plans, matches, instruction=instruction)
         plans = self._apply_memory_overrides(plans, matches, strategy_memory=strategy_memory or {})
-        return self._apply_comfort_risk_protection(plans, matches)
+        plans = self._apply_decision_policy(plans, matches, strategy_memory=strategy_memory or {})
+        plans = self._apply_comfort_risk_protection(plans, matches)
+        plans = self._apply_portfolio_decorrelation(plans, matches, analytics=analytics)
+        return plans
 
     def _build_false_signal_plan(self, matches: list[JczqDailyMatch]) -> JczqDailyPlan:
         legs: list[JczqDailyLeg | None] = []
@@ -434,25 +569,34 @@ class JczqDailyAdvisorService:
         selected: list[JczqDailyLeg] = []
         used_match_nos: set[str] = set()
         candidates: list[tuple[float, JczqDailyLeg]] = []
+        coinflip_match_nos = getattr(self, "_active_coinflip_match_nos", set())
         for match in matches:
             if _is_comfort_risk(match):
-                # Comfortable favorites can appear in the base only through a protected low-odds cover.
+                # Comfortable favorites can appear only through a protected low-odds cover.
                 cover = _comfort_resistance_leg(match)
-                if cover is not None and cover.odds <= 2.05:
+                if cover is not None and cover.odds <= 2.05 and cover.goal_line:
                     candidates.append((0.15 + abs(cover.odds - 1.75), cover))
+                continue
+            if match.match_no in coinflip_match_nos:
+                # Rule E: coin-flip 3-way matches are not safe banker territory.
                 continue
             favorite = _favorite_had_with_odds(match)
             if favorite is not None:
                 pick, odds = favorite
-                if odds <= 1.65:
+                # Rule B: had legs at or below HAD_BANKER_FLOOR are too thin to anchor.
+                if HAD_BANKER_FLOOR < odds <= 1.65:
                     leg = _find_leg(match, pool="had", pick=pick)
                     if leg is not None:
                         role_bonus = -0.25 if match.role == "强胆场" else 0.0
-                        candidates.append((role_bonus + abs(leg.odds - 1.45), leg))
+                        candidates.append((role_bonus + abs(leg.odds - 1.55), leg))
             hhad_lows = [
                 leg
                 for leg in match.candidates
-                if leg.pool == "hhad" and leg.pick in {"让胜", "让负"} and leg.odds <= 1.85
+                # Rule D: hhad legs require an explicit handicap line.
+                if leg.pool == "hhad"
+                and leg.pick in {"让胜", "让负"}
+                and leg.odds <= 1.85
+                and leg.goal_line
             ]
             if hhad_lows:
                 leg = min(hhad_lows, key=lambda item: abs(item.odds - 1.7))
@@ -525,6 +669,188 @@ class JczqDailyAdvisorService:
                 reason="历史记忆升权：半全场平/负近期有效，已进入主方案。",
             )
             break
+        return updated
+
+    def _apply_decision_policy(
+        self,
+        plans: list[JczqDailyPlan],
+        matches: list[JczqDailyMatch],
+        *,
+        strategy_memory: dict[str, Any],
+    ) -> list[JczqDailyPlan]:
+        updated = list(plans)
+        if decision_policy_rule_active(strategy_memory, "stable_base"):
+            updated = [
+                self._downgrade_stable_base_by_policy(plan, matches=matches) for plan in updated
+            ]
+        preferred_ttg = _decision_policy_preferred_ttg(strategy_memory)
+        if decision_policy_rule_active(strategy_memory, "hafu"):
+            updated = [
+                self._replace_hafu_by_policy(plan, matches=matches, preferred_ttg=preferred_ttg)
+                for plan in updated
+            ]
+        if decision_policy_rule_active(strategy_memory, "total_goals"):
+            updated = self._ensure_total_goals_policy_leg(
+                updated, matches=matches, preferred_ttg=preferred_ttg
+            )
+        if decision_policy_rule_active(strategy_memory, "reuse_guard"):
+            updated = self._limit_duplicate_policy_stories(
+                updated,
+                matches=matches,
+                avoid_hafu=decision_policy_rule_active(strategy_memory, "hafu"),
+            )
+        return updated
+
+    def _downgrade_stable_base_by_policy(
+        self, plan: JczqDailyPlan, *, matches: list[JczqDailyMatch]
+    ) -> JczqDailyPlan:
+        if plan.kind != "stable_base":
+            return plan
+        match_by_no = {match.match_no: match for match in matches}
+        legs = []
+        for leg in plan.legs:
+            match = match_by_no.get(leg.match_no)
+            is_cold_strong_banker = (
+                match is not None
+                and match.role == "强胆场"
+                and leg.pool == "had"
+                and leg.pick in {"胜", "负"}
+                and leg.odds <= 1.65
+            )
+            # Rule B: also strip any had leg priced at or below the banker floor.
+            is_thin_had_banker = leg.pool == "had" and leg.odds <= HAD_BANKER_FLOOR
+            if not is_cold_strong_banker and not is_thin_had_banker:
+                legs.append(leg)
+        if len(legs) == len(plan.legs):
+            return plan
+        if not legs:
+            replacement = _low_volatility_policy_leg(matches)
+            if replacement is not None:
+                legs.append(
+                    replace(
+                        replacement,
+                        logic=f"策略迭代：强胆低赔降权后保留低波动替代。{replacement.logic}",
+                    )
+                )
+        return self._make_plan(
+            plan.name,
+            plan.kind,
+            plan.description,
+            legs,
+            "策略迭代：强胆低赔近期失真，底仓已降权。",
+        )
+
+    def _replace_hafu_by_policy(
+        self,
+        plan: JczqDailyPlan,
+        *,
+        matches: list[JczqDailyMatch],
+        preferred_ttg: list[str],
+    ) -> JczqDailyPlan:
+        if plan.kind == "extreme" or not any(leg.pool == "hafu" for leg in plan.legs):
+            return plan
+        match_by_no = {match.match_no: match for match in matches}
+        changed = False
+        legs: list[JczqDailyLeg] = []
+        for leg in plan.legs:
+            if leg.pool != "hafu":
+                legs.append(leg)
+                continue
+            replacement = _preferred_total_goals_leg(match_by_no.get(leg.match_no), preferred_ttg)
+            if replacement is None:
+                replacement = _policy_hhad_fallback(match_by_no.get(leg.match_no))
+            if replacement is None:
+                legs.append(leg)
+                continue
+            legs.append(
+                replace(
+                    replacement,
+                    logic=f"策略迭代：半全场近期降权，改用总进球/让球表达。{replacement.logic}",
+                )
+            )
+            changed = True
+        if not changed:
+            return plan
+        return self._make_plan(
+            plan.name,
+            plan.kind,
+            plan.description,
+            legs,
+            "策略迭代：半全场非极限票降权。",
+        )
+
+    def _ensure_total_goals_policy_leg(
+        self,
+        plans: list[JczqDailyPlan],
+        *,
+        matches: list[JczqDailyMatch],
+        preferred_ttg: list[str],
+    ) -> list[JczqDailyPlan]:
+        if any(
+            leg.pool == "ttg" and leg.pick in set(preferred_ttg)
+            for plan in plans
+            if plan.kind != "extreme"
+            for leg in plan.legs
+        ):
+            return plans
+        preferred = _best_total_goals_policy_leg(matches, preferred_ttg)
+        if preferred is None:
+            return plans
+        return self._inject_leg(
+            plans,
+            target_kind="contrarian",
+            leg=replace(
+                preferred,
+                logic=f"策略迭代：2球/小比分近期升权，进入反大众组合。{preferred.logic}",
+            ),
+            reason="策略迭代：2球/小比分近期升权。",
+        )
+
+    def _limit_duplicate_policy_stories(
+        self,
+        plans: list[JczqDailyPlan],
+        *,
+        matches: list[JczqDailyMatch],
+        avoid_hafu: bool,
+    ) -> list[JczqDailyPlan]:
+        match_by_no = {match.match_no: match for match in matches}
+        seen: set[tuple[str, str, str]] = set()
+        updated: list[JczqDailyPlan] = []
+        for plan in plans:
+            if plan.kind == "extreme":
+                updated.append(plan)
+                continue
+            changed = False
+            legs: list[JczqDailyLeg] = []
+            for leg in plan.legs:
+                key = (leg.match_no, leg.pool, leg.pick)
+                if key in seen:
+                    replacement = _duplicate_story_replacement(
+                        match_by_no.get(leg.match_no),
+                        seen=seen,
+                        avoid_hafu=avoid_hafu,
+                    )
+                    if replacement is not None:
+                        leg = replace(
+                            replacement,
+                            logic=f"策略迭代：避免同场同玩法重复拖累多张串。{replacement.logic}",
+                        )
+                        key = (leg.match_no, leg.pool, leg.pick)
+                        changed = True
+                legs.append(leg)
+                seen.add(key)
+            if changed:
+                updated.append(
+                    self._make_plan(
+                        plan.name,
+                        plan.kind,
+                        plan.description,
+                        legs,
+                        "策略迭代：已限制同场同玩法重复。",
+                    )
+                )
+            else:
+                updated.append(plan)
         return updated
 
     def _apply_comfort_risk_protection(
@@ -624,6 +950,7 @@ class JczqDailyAdvisorService:
         self,
         matches: list[JczqDailyMatch],
         *,
+        analytics: dict[str, MatchAnalytics],
         name: str,
         kind: str,
         description: str,
@@ -633,71 +960,84 @@ class JczqDailyAdvisorService:
         contrarian: bool = False,
         extreme: bool = False,
     ) -> JczqDailyPlan:
-        selected: list[JczqDailyLeg] = []
-        used_pools: set[str] = set()
-        pool_sequence = ["ttg", "hafu", "hhad", "had"]
-        for idx, match in enumerate(matches[:4]):
-            candidates = [leg for leg in match.candidates if not (no_score and leg.pool == "crs")]
-            desired_pool = (
-                pool_sequence[idx % len(pool_sequence)] if kind == "inspiration" else None
+        intent = "inspiration"
+        if extreme:
+            intent = "extreme"
+        elif contrarian:
+            intent = "contrarian"
+
+        if kind == "inspiration":
+            selected = self._select_inspiration_legs(
+                matches, analytics, no_score=no_score, k=4
             )
-            if desired_pool:
-                preferred = [
-                    leg for leg in candidates if leg.pool == desired_pool and 1.75 <= leg.odds <= 8
-                ]
-            elif extreme:
-                preferred = [
-                    leg for leg in candidates if leg.pool in {"crs", "hafu"} and leg.odds >= 4
-                ]
+        else:
+            pool_filter: set[str] | None = None
+            if extreme:
+                pool_filter = {"crs", "hafu"}
             elif contrarian:
-                preferred = [
-                    leg
-                    for leg in candidates
-                    if leg.pool in {"ttg", "hafu", "hhad", "had"} and leg.odds >= 3
-                ]
-            else:
-                preferred = [
-                    leg
-                    for leg in candidates
-                    if leg.pool in {"ttg", "hafu", "hhad", "had", "crs"} and 1.75 <= leg.odds <= 8
-                ]
+                pool_filter = {"ttg", "hafu", "hhad", "had"}
+            odds_min = 4.0 if extreme else (3.0 if contrarian else 1.75)
+            odds_max = 999.0 if extreme else 8.0
+            evaluations = select_top_legs(
+                matches,
+                analytics,
+                intent=intent,
+                k=4,
+                pool_filter=pool_filter,
+                odds_min=odds_min,
+                odds_max=odds_max,
+                enforce_pool_diversity=not extreme,
+                bias_fn=getattr(self, "_active_bias_fn", None),
+                skip_coinflip_had=True,
+                require_hhad_handicap=True,
+            )
             if no_score:
-                preferred = [leg for leg in preferred if leg.pool != "crs"]
-            if not preferred:
-                preferred = candidates
-            if not preferred:
-                continue
-
-            def score(leg: JczqDailyLeg) -> tuple[float, float]:
-                pool_bonus = 0.35 if leg.pool not in used_pools else 0
-                contrarian_bonus = 0.5 if leg.pool in {"ttg", "hafu"} else 0
-                extreme_bonus = 0.7 if extreme and leg.pool == "crs" else 0
-                return (
-                    min(leg.odds, 8) + pool_bonus + contrarian_bonus + extreme_bonus,
-                    -abs(leg.odds - 4.5),
-                )
-
-            choice = max(preferred, key=score)
-            selected.append(choice)
-            used_pools.add(choice.pool)
+                evaluations = [ev for ev in evaluations if ev.leg.pool != "crs"]
+            selected = [ev.leg for ev in evaluations[:4]]
         plan = self._make_plan(
             name, kind, description, selected, "高赔票核心风险来自精确进球/半全场/平局落点。"
         )
-        if plan.total_odds < target_min and not no_score:
+        if plan.total_odds < target_min and not no_score and selected:
             boosted = []
-            for match in matches[:4]:
+            existing_match_nos = {leg.match_no for leg in selected}
+            for leg in selected:
+                match = next((m for m in matches if m.match_no == leg.match_no), None)
+                if match is None:
+                    boosted.append(leg)
+                    continue
                 pool_candidates = [
-                    leg for leg in match.candidates if leg.pool in {"crs", "hafu"} and leg.odds >= 4
+                    item
+                    for item in match.candidates
+                    if item.pool in {"crs", "hafu"} and item.odds >= 4
                 ]
+                if no_score:
+                    pool_candidates = [item for item in pool_candidates if item.pool != "crs"]
                 boosted.append(
-                    max(pool_candidates or match.candidates, key=lambda leg: min(leg.odds, 10))
+                    max(pool_candidates or match.candidates, key=lambda item: min(item.odds, 10))
                 )
+            # Backfill if fewer than 4 legs (e.g., very small fixture set).
+            if len(boosted) < 4:
+                fillers = select_top_legs(
+                    matches,
+                    analytics,
+                    intent=intent,
+                    k=4,
+                    avoid_match_nos=existing_match_nos,
+                    enforce_pool_diversity=False,
+                    bias_fn=getattr(self, "_active_bias_fn", None),
+                )
+                for ev in fillers:
+                    if len(boosted) >= 4:
+                        break
+                    if ev.leg.match_no in {item.match_no for item in boosted}:
+                        continue
+                    boosted.append(ev.leg)
             plan = self._make_plan(
                 name, kind, description, boosted, "赔率已提高，但命中波动显著增加。"
             )
         if plan.total_odds > target_max and kind != "extreme":
             softened = []
-            for leg in selected:
+            for leg in plan.legs:
                 alternatives = [
                     candidate
                     for match in matches
@@ -709,6 +1049,393 @@ class JczqDailyAdvisorService:
                 name, kind, description, softened, "已控制赔率上限，但仍属于高波动组合。"
             )
         return plan
+
+    def _select_inspiration_legs(
+        self,
+        matches: list[JczqDailyMatch],
+        analytics: dict[str, MatchAnalytics],
+        *,
+        no_score: bool,
+        k: int,
+    ) -> list[JczqDailyLeg]:
+        """Pick one leg per pool from the highest-EV match for that pool.
+
+        Preserves the historic "inspiration spans 4 distinct pools" guarantee
+        while letting the search consider the full match list (no more
+        `matches[:4]` truncation).
+        """
+
+        pool_order = ["had", "hhad", "ttg", "hafu"]
+        if not no_score:
+            pool_order.append("crs")
+        used_match_nos: set[str] = set()
+        legs: list[JczqDailyLeg] = []
+        for pool in pool_order:
+            if len(legs) >= k:
+                break
+            evaluations = select_top_legs(
+                matches,
+                analytics,
+                intent="inspiration",
+                k=20,
+                pool_filter={pool},
+                odds_min=1.75,
+                odds_max=8.0,
+                avoid_match_nos=used_match_nos,
+                enforce_pool_diversity=False,
+                bias_fn=getattr(self, "_active_bias_fn", None),
+                skip_coinflip_had=True,
+                require_hhad_handicap=True,
+            )
+            for ev in evaluations:
+                if ev.leg.match_no in used_match_nos:
+                    continue
+                legs.append(ev.leg)
+                used_match_nos.add(ev.leg.match_no)
+                break
+        if len(legs) < k:
+            fillers = select_top_legs(
+                matches,
+                analytics,
+                intent="inspiration",
+                k=20,
+                avoid_match_nos=used_match_nos,
+                enforce_pool_diversity=False,
+                bias_fn=getattr(self, "_active_bias_fn", None),
+            )
+            for ev in fillers:
+                if len(legs) >= k:
+                    break
+                if ev.leg.match_no in used_match_nos:
+                    continue
+                if no_score and ev.leg.pool == "crs":
+                    continue
+                legs.append(ev.leg)
+                used_match_nos.add(ev.leg.match_no)
+        return legs[:k]
+
+    def _build_draw_cluster_plan(
+        self,
+        matches: list[JczqDailyMatch],
+        *,
+        analytics: dict[str, MatchAnalytics],
+    ) -> JczqDailyPlan:
+        """Dedicated draw-only ticket activated when comfort-risk count ≥ 3.
+
+        Each leg is a 平 (had) or 平/平 (hafu) pick on a comfort-risk match,
+        ranked by draw-friendliness EV gap. Threshold prevents this from firing
+        in tiny fixture sets (e.g., the 4-match unit test fixture).
+        """
+
+        comfort_matches = [
+            match
+            for match in matches
+            if (analytics.get(match.match_no) and analytics[match.match_no].is_comfort_risk)
+        ]
+        if len(comfort_matches) < 3:
+            return self._make_plan(
+                "防平簇A",
+                "draw_cluster",
+                "舒服盘 ≥ 3 场时启用：一张专攻平局的独立票。",
+                [],
+                "防平簇仅在舒服盘集群足够厚时出场。",
+            )
+        evaluations = select_top_legs(
+            comfort_matches,
+            analytics,
+            intent="draw",
+            k=4,
+            pool_filter={"had", "hafu"},
+            odds_min=2.4,
+            odds_max=8.0,
+            enforce_pool_diversity=False,
+            bias_fn=getattr(self, "_active_bias_fn", None),
+            skip_coinflip_had=True,
+            require_hhad_handicap=True,
+        )
+        legs: list[JczqDailyLeg] = []
+        seen_matches: set[str] = set()
+        for ev in evaluations:
+            leg = ev.leg
+            if leg.match_no in seen_matches:
+                continue
+            if leg.pool == "had" and leg.pick != "平":
+                continue
+            if leg.pool == "hafu" and leg.pick != "平/平":
+                continue
+            legs.append(replace(leg, logic=f"防平簇：{leg.logic} EV gap {ev.ev_gap:+.2f}"))
+            seen_matches.add(leg.match_no)
+            if len(legs) >= 4:
+                break
+        return self._make_plan(
+            "防平簇A",
+            "draw_cluster",
+            "舒服盘集群专属：用平局/平半全场吃掉热门塌房。",
+            legs,
+            "防平簇与主方案完全解耦，不再让 main 一边防一边输。",
+        )
+
+    def _build_upset_cluster_plan(
+        self,
+        matches: list[JczqDailyMatch],
+        *,
+        analytics: dict[str, MatchAnalytics],
+    ) -> JczqDailyPlan:
+        """Dedicated upset ticket activated when strong-banker count ≥ 3."""
+
+        strong_matches = [
+            match
+            for match in matches
+            if (analytics.get(match.match_no) and analytics[match.match_no].is_strong_banker)
+        ]
+        if len(strong_matches) < 3:
+            return self._make_plan(
+                "冷门簇A",
+                "upset_cluster",
+                "强胆 ≥ 3 场时启用：专攻让球反向/客胜/平局塌房。",
+                [],
+                "冷门簇仅在低赔强胆集群足够厚时出场。",
+            )
+        evaluations = select_top_legs(
+            strong_matches,
+            analytics,
+            intent="upset",
+            k=4,
+            pool_filter={"hhad", "had"},
+            odds_min=2.0,
+            odds_max=12.0,
+            enforce_pool_diversity=False,
+            bias_fn=getattr(self, "_active_bias_fn", None),
+            skip_coinflip_had=True,
+            require_hhad_handicap=True,
+        )
+        legs: list[JczqDailyLeg] = []
+        seen_matches: set[str] = set()
+        for ev in evaluations:
+            leg = ev.leg
+            if leg.match_no in seen_matches:
+                continue
+            ana = analytics.get(leg.match_no)
+            if ana is None:
+                continue
+            if leg.pool == "had" and leg.pick == ana.favorite_outcome:
+                continue
+            if leg.pool == "hhad" and leg.pick == "让胜" and ana.favorite_outcome == "胜":
+                continue
+            if leg.pool == "hhad" and leg.pick == "让负" and ana.favorite_outcome == "负":
+                continue
+            legs.append(replace(leg, logic=f"冷门簇：{leg.logic} EV gap {ev.ev_gap:+.2f}"))
+            seen_matches.add(leg.match_no)
+            if len(legs) >= 4:
+                break
+        return self._make_plan(
+            "冷门簇A",
+            "upset_cluster",
+            "强胆集群专属：用让球反向/客胜/平局博低赔翻车。",
+            legs,
+            "冷门簇承担反人性风险，不会污染主方案的稳定性。",
+        )
+
+    def _build_poisson_solo_plan(
+        self,
+        matches: list[JczqDailyMatch],
+        *,
+        poisson_rows: list,
+    ) -> JczqDailyPlan:
+        """Rule A: dedicated single-/double-leg ticket built around the strongest
+        Poisson +EV legs. No had ≤ 1.40 dilution. Only fires when at least one
+        leg crosses POISSON_SOLO_EDGE_THRESHOLD.
+        """
+
+        eligible = [row for row in poisson_rows if row.edge >= POISSON_SOLO_EDGE_THRESHOLD]
+        if not eligible:
+            return self._make_plan(
+                "Poisson 单核灵感票",
+                "poisson_solo",
+                "Rule A: 至少 1 条腿 Poisson edge ≥ +15% 时启用，单/双腿杠杆。",
+                [],
+                "Poisson 单核仅在模型有强信号时出场。",
+            )
+        match_index: dict[str, JczqDailyMatch] = {match.match_no: match for match in matches}
+        legs: list[JczqDailyLeg] = []
+        seen_matches: set[str] = set()
+        for row in eligible:
+            if len(legs) >= 2:
+                break
+            if row.match_no in seen_matches:
+                continue
+            match = match_index.get(row.match_no)
+            if match is None:
+                continue
+            leg = _find_leg(match, pool=row.pool, pick=row.pick)
+            if leg is None:
+                continue
+            # Rule B / Rule A composition: never mix had ≤ 1.40 in here.
+            if leg.pool == "had" and leg.odds <= HAD_BANKER_FLOOR:
+                continue
+            legs.append(
+                replace(
+                    leg,
+                    logic=(
+                        f"Poisson 单核：edge {row.edge:+.1%}（公允 {row.fair_odd}）"
+                        f"，模型主动支持。"
+                    ),
+                )
+            )
+            seen_matches.add(row.match_no)
+        return self._make_plan(
+            "Poisson 单核灵感票",
+            "poisson_solo",
+            "Rule A: 模型 +EV 强信号腿独立出票，避免被低赔强胆稀释。",
+            legs,
+            "Poisson 单核小注娱乐：腿少杠杆高，赔率波动大。",
+        )
+
+    def _apply_portfolio_decorrelation(
+        self,
+        plans: list[JczqDailyPlan],
+        matches: list[JczqDailyMatch],
+        *,
+        analytics: dict[str, MatchAnalytics],
+    ) -> list[JczqDailyPlan]:
+        """Across opportunity tickets, ensure no match appears in more than one.
+
+        Stable_base / main / false_signal / draw_cluster / upset_cluster are
+        exempt — the constraint targets `inspiration`, `contrarian`, `extreme`
+        which previously shared the same first-4 matches.
+        """
+
+        opportunity_kinds = ("inspiration", "contrarian", "extreme")
+        seen_match_nos: dict[str, str] = {}
+        updated: list[JczqDailyPlan] = []
+        for plan in plans:
+            if plan.kind not in opportunity_kinds or not plan.legs:
+                updated.append(plan)
+                continue
+            new_legs: list[JczqDailyLeg] = []
+            taken: set[str] = {leg.match_no for leg in plan.legs}
+            for leg in plan.legs:
+                conflict = seen_match_nos.get(leg.match_no)
+                if conflict is None or conflict == plan.kind:
+                    new_legs.append(leg)
+                    seen_match_nos[leg.match_no] = plan.kind
+                    continue
+                replacement = self._find_decorrelation_swap(
+                    matches=matches,
+                    analytics=analytics,
+                    plan_kind=plan.kind,
+                    avoid=seen_match_nos.keys() | taken,
+                    pool_hint=leg.pool,
+                )
+                if replacement is None:
+                    new_legs.append(leg)
+                    continue
+                new_legs.append(replace(replacement, logic=f"组合去相关：{replacement.logic}"))
+                seen_match_nos[replacement.match_no] = plan.kind
+                taken.add(replacement.match_no)
+            updated.append(
+                self._make_plan(
+                    plan.name,
+                    plan.kind,
+                    plan.description,
+                    new_legs,
+                    "组合去相关已应用：跨 opportunity 票同场最多复用 1 次。",
+                )
+            )
+        return updated
+
+    def _find_decorrelation_swap(
+        self,
+        *,
+        matches: list[JczqDailyMatch],
+        analytics: dict[str, MatchAnalytics],
+        plan_kind: str,
+        avoid: Any,
+        pool_hint: str | None,
+    ) -> JczqDailyLeg | None:
+        intent_map = {
+            "inspiration": "inspiration",
+            "contrarian": "contrarian",
+            "extreme": "extreme",
+        }
+        intent = intent_map.get(plan_kind, "inspiration")
+        bias_fn = getattr(self, "_active_bias_fn", None)
+        avoid_set = set(avoid)
+
+        # Tier 1: same pool as the conflicting leg (preserve plan composition).
+        if pool_hint:
+            evaluations = select_top_legs(
+                matches,
+                analytics,
+                intent=intent,
+                k=30,
+                pool_filter={pool_hint},
+                odds_min=1.3,
+                odds_max=999.0,
+                avoid_match_nos=avoid_set,
+                enforce_pool_diversity=False,
+                bias_fn=bias_fn,
+                skip_coinflip_had=True,
+                require_hhad_handicap=True,
+            )
+            for ev in evaluations:
+                if ev.leg.match_no not in avoid_set:
+                    return ev.leg
+
+        # Tier 2: drop the pool restriction; any pool of the same intent works.
+        evaluations = select_top_legs(
+            matches,
+            analytics,
+            intent=intent,
+            k=30,
+            odds_min=1.3,
+            odds_max=999.0,
+            avoid_match_nos=avoid_set,
+            enforce_pool_diversity=False,
+            bias_fn=bias_fn,
+            skip_coinflip_had=True,
+            require_hhad_handicap=True,
+        )
+        for ev in evaluations:
+            if ev.leg.match_no not in avoid_set:
+                return ev.leg
+
+        # Tier 3: any leg from any unused match — last-resort backstop so the
+        # decorrelation pass never surfaces a duplicate when alternatives exist.
+        for match in matches:
+            if match.match_no in avoid_set:
+                continue
+            if not match.candidates:
+                continue
+            return match.candidates[0]
+        return None
+
+    def _resolve_drift_provider(
+        self,
+        *,
+        run_date: str,
+        payload: dict[str, Any],
+        output_dir: Path | str | None,
+    ) -> DriftProvider | None:
+        """Persist the latest snapshot when configured and expose drift signals."""
+
+        if self._drift_provider is not None:
+            return self._drift_provider
+        store = self._drift_store
+        if store is None and output_dir is not None and self._persist_drift_snapshot:
+            store = OddsDriftStore(Path(output_dir))
+        if store is None:
+            return None
+        if self._persist_drift_snapshot:
+            try:
+                store.persist(run_date=run_date, payload=payload)
+            except Exception:  # pragma: no cover - filesystem edge cases
+                pass
+        signals = store.compute_drift(run_date)
+        if not signals:
+            return None
+        signal_index = drift_provider_from_signals(signals)
+        return _DictDriftProvider(signal_index)
 
     def _make_plan(
         self,
@@ -755,9 +1482,24 @@ class JczqDailyAdvisorService:
                 f" 最终主方案约{main.total_odds:.2f}倍，"
                 f"高赔率灵感票约{inspiration.total_odds:.2f}倍。"
             )
+        poisson_solo = next((plan for plan in plans if plan.kind == "poisson_solo"), None)
+        draw_cluster = next((plan for plan in plans if plan.kind == "draw_cluster"), None)
+        upset_cluster = next((plan for plan in plans if plan.kind == "upset_cluster"), None)
+        if poisson_solo and poisson_solo.legs:
+            text += (
+                f" Poisson 单核约{poisson_solo.total_odds:.2f}倍"
+                f"（{len(poisson_solo.legs)} 腿，模型 +EV ≥15%）。"
+            )
+        if draw_cluster and draw_cluster.legs:
+            text += f" 防平簇约{draw_cluster.total_odds:.2f}倍（独立于 main）。"
+        if upset_cluster and upset_cluster.legs:
+            text += f" 冷门簇约{upset_cluster.total_odds:.2f}倍（强胆塌房专用）。"
         memory_notes = render_strategy_memory_notes(strategy_memory or {})
         if memory_notes:
             text += " 历史记忆提示：" + "；".join(memory_notes) + "。"
+        policy_notes = render_decision_policy_notes(strategy_memory or {})
+        if policy_notes:
+            text += " 策略迭代执行：" + "；".join(policy_notes) + "。"
         if revision_instruction:
             text += f" 已按你的修正想法重算：{revision_instruction}。"
         return text
@@ -999,10 +1741,12 @@ def _select_leg(
     min_odds: float = 0,
     max_odds: float = 99,
     target: float,
+    skip_match_nos: set[str] | None = None,
 ) -> JczqDailyLeg | None:
     candidates: list[JczqDailyLeg] = []
+    skip = skip_match_nos or set()
     for match in matches:
-        if match.match_no in used_match_nos:
+        if match.match_no in used_match_nos or match.match_no in skip:
             continue
         candidates.extend(
             leg for leg in match.candidates if leg.pool == pool and min_odds <= leg.odds <= max_odds
@@ -1033,6 +1777,86 @@ def _best_false_signal_leg(
     choice = min(candidates, key=lambda leg: abs(leg.odds - target))
     used_match_nos.add(choice.match_no)
     return choice
+
+
+def _decision_policy_preferred_ttg(strategy_memory: dict[str, Any]) -> list[str]:
+    rule = decision_policy_rule(strategy_memory, "total_goals")
+    preferred = [str(item) for item in rule.get("preferred_picks") or [] if str(item).strip()]
+    return preferred or ["2球"]
+
+
+def _low_volatility_policy_leg(matches: list[JczqDailyMatch]) -> JczqDailyLeg | None:
+    candidates = [
+        leg
+        for match in matches
+        if match.role != "强胆场"
+        for leg in match.candidates
+        if leg.pool in {"had", "hhad"} and leg.odds <= 2.05
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda leg: abs(leg.odds - 1.8))
+
+
+def _preferred_total_goals_leg(
+    match: JczqDailyMatch | None, preferred_ttg: list[str]
+) -> JczqDailyLeg | None:
+    if match is None:
+        return None
+    for pick in preferred_ttg:
+        leg = _find_leg(match, pool="ttg", pick=pick)
+        if leg is not None:
+            return leg
+    return None
+
+
+def _policy_hhad_fallback(match: JczqDailyMatch | None) -> JczqDailyLeg | None:
+    if match is None:
+        return None
+    candidates = [
+        leg
+        for leg in match.candidates
+        if leg.pool == "hhad" and leg.pick in {"让胜", "让平", "让负"} and 1.65 <= leg.odds <= 4.2
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda leg: abs(leg.odds - 3.0))
+
+
+def _best_total_goals_policy_leg(
+    matches: list[JczqDailyMatch], preferred_ttg: list[str]
+) -> JczqDailyLeg | None:
+    candidates = [
+        leg
+        for match in matches
+        for pick in preferred_ttg
+        for leg in [_find_leg(match, pool="ttg", pick=pick)]
+        if leg is not None
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda leg: (preferred_ttg.index(leg.pick), abs(leg.odds - 3.5)))
+
+
+def _duplicate_story_replacement(
+    match: JczqDailyMatch | None,
+    *,
+    seen: set[tuple[str, str, str]],
+    avoid_hafu: bool,
+) -> JczqDailyLeg | None:
+    if match is None:
+        return None
+    pool_rank = {"ttg": 0, "hhad": 1, "had": 2}
+    candidates = [
+        leg
+        for leg in match.candidates
+        if leg.pool in pool_rank
+        and not (avoid_hafu and leg.pool == "hafu")
+        and (leg.match_no, leg.pool, leg.pick) not in seen
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda leg: (pool_rank[leg.pool], abs(leg.odds - 3.2)))
 
 
 def _favorite_cover_leg(match: JczqDailyMatch) -> JczqDailyLeg | None:
@@ -1129,3 +1953,66 @@ def _least_protective_leg_index(legs: list[JczqDailyLeg]) -> int:
         if leg.pool == "had" and leg.odds <= 2.05:
             return index
     return min(range(len(legs)), key=lambda index: legs[index].odds)
+
+
+def _build_memory_bias(
+    strategy_memory: dict[str, Any], *, burned_teams: set[str] | None = None
+):
+    """Construct a `bias_fn` for `select_top_legs` that folds memory hints in.
+
+    Three signals are blended:
+      - pattern_bucket EV (league × role × pool) decayed historical performance
+      - oracle_learnings: matches in the same league/pool that historically had
+        a different winning pick than what we tend to pick give a small bonus
+        when the candidate matches the recently-victorious side.
+      - burned_teams (Rule F): teams from the previous review's burned-match
+        list get a static -bias when they reappear today.
+    """
+
+    burned_teams = burned_teams or set()
+    if not strategy_memory and not burned_teams:
+        return None
+    has_buckets = bool(strategy_memory.get("pattern_buckets"))
+    has_oracle = bool(strategy_memory.get("oracle_learnings"))
+    if not (has_buckets or has_oracle or burned_teams):
+        return None
+
+    def bias_fn(leg: JczqDailyLeg, analytics: MatchAnalytics | None) -> float:
+        bias = 0.0
+        league = leg.league or (analytics.league if analytics else "")
+        role = ""
+        if analytics is not None:
+            if analytics.is_strong_banker:
+                role = "强胆场"
+            elif analytics.is_comfort_risk:
+                role = "舒服盘"
+            elif analytics.is_chaos:
+                role = "均衡分歧场"
+            else:
+                role = "谨慎博弈场"
+        if has_buckets:
+            ev = pattern_bucket_ev(strategy_memory, league, role, leg.pool)
+            # Soft scale: clamp to [-0.6, +0.6] so memory cannot dominate analytics.
+            bias += max(-0.6, min(0.6, ev * 0.05))
+        if has_oracle:
+            for entry in oracle_learning_for(strategy_memory, league, leg.pool):
+                if str(entry.get("winning_pick") or "") == leg.pick:
+                    bias += 0.15
+                    break
+        if burned_teams and (leg.home_team in burned_teams or leg.away_team in burned_teams):
+            bias += BURNED_TEAM_BIAS
+        return bias
+
+    return bias_fn
+
+
+class _DictDriftProvider:
+    """Adapts a `{match_no: {(pool, pick): delta}}` dict to DriftProvider."""
+
+    __slots__ = ("_index",)
+
+    def __init__(self, index: dict[str, dict[tuple[str, str], float]]) -> None:
+        self._index = index
+
+    def get(self, match_no: str) -> dict[tuple[str, str], float]:
+        return dict(self._index.get(match_no, {}))
