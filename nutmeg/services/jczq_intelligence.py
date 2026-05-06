@@ -107,6 +107,19 @@ COINFLIP_IMPLIED_SPREAD_THRESHOLD = 0.10
 # high-volatility — generator avoids low-side ttg picks (≤ 2球) there.
 HIGH_VOLATILITY_TTG_MEDIAN = 2.7
 
+# Rule J: extreme-ticket crs picks must clear at least this Poisson edge floor.
+# 4-day backtest: crs hit 1/14 (7.1%); rejected legs were all edge ≤ -20%.
+CRS_POISSON_EDGE_FLOOR = -0.10
+
+# Rule I-1: high-odds had legs (≥ this odds) require Poisson edge ≥ 0.05 to be
+# usable as a leverage leg (4-day backtest: had ≥ 5.0 hit 0/1).
+HIGH_ODDS_HAD_THRESHOLD = 5.0
+HIGH_ODDS_HAD_REQUIRED_EDGE = 0.05
+
+# Rule I-2: contrarian intent must reject any leg the Poisson model strongly
+# opposes (5/05's contrarian ttg 4球 had edge -22.5%).
+CONTRARIAN_POISSON_REJECT_BELOW = -0.15
+
 
 def compute_analytics(
     matches: Iterable[JczqDailyMatch],
@@ -446,12 +459,25 @@ def select_top_legs(
     bias_fn: "callable[[JczqDailyLeg, MatchAnalytics | None], float] | None" = None,
     skip_coinflip_had: bool = False,
     require_hhad_handicap: bool = False,
+    poisson_edge_index: dict[tuple[str, str, str], float] | None = None,
+    pool_min_edge: dict[str, float] | None = None,
+    high_odds_had_min_edge: tuple[float, float] | None = None,
+    reject_poisson_edge_below: float | None = None,
 ) -> list[LegEvaluation]:
     """Pick top-k legs across all matches by intent-specific score.
 
     `bias_fn` is an optional callable that returns an additive score bias for
     each candidate; the daily generator uses it to fold strategy-memory hints
     (pattern_buckets, oracle_learnings) into the ranking.
+
+    Rule I/J Poisson gates (only applied to pools the model can price; hhad
+    falls through):
+      - `pool_min_edge`: per-pool floor (Rule J for crs).
+      - `high_odds_had_min_edge`: `(odds_threshold, edge_min)` — had legs at
+        or above the odds threshold are dropped unless their Poisson edge
+        meets `edge_min` (Rule I-1).
+      - `reject_poisson_edge_below`: drop any priced leg below this edge
+        (Rule I-2 contrarian floor).
     """
 
     avoid_match_nos = set(avoid_match_nos or set())
@@ -479,6 +505,28 @@ def select_top_legs(
             # 让胜/让平/让负 label semantics depend on the line.
             if require_hhad_handicap and leg.pool == "hhad" and not leg.goal_line:
                 continue
+            # Rules I-1 / I-2 / J: Poisson-supported floors. Only apply when an
+            # edge index is supplied. hhad has no Poisson coverage so it
+            # bypasses these checks entirely.
+            if poisson_edge_index is not None and leg.pool != "hhad":
+                edge = poisson_edge_index.get((leg.match_no, leg.pool, leg.pick))
+                if pool_min_edge and leg.pool in pool_min_edge:
+                    threshold = pool_min_edge[leg.pool]
+                    if edge is None or edge < threshold:
+                        continue
+                if (
+                    high_odds_had_min_edge is not None
+                    and leg.pool == "had"
+                    and leg.odds >= high_odds_had_min_edge[0]
+                ):
+                    if edge is None or edge < high_odds_had_min_edge[1]:
+                        continue
+                if (
+                    reject_poisson_edge_below is not None
+                    and edge is not None
+                    and edge < reject_poisson_edge_below
+                ):
+                    continue
             evaluation = evaluate_leg(leg, analytics=ana, intent=intent, used_pools=set())
             if bias_fn is not None:
                 bias = bias_fn(leg, ana)

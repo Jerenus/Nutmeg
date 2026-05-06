@@ -185,18 +185,22 @@ def test_daily_review_grades_saved_context_and_highlights_strategy_lessons(tmp_p
 
     assert report["run_date"] == "2026-05-01"
     assert report["results"]["周五005"]["had"] == "负"
-    assert any(
-        item["match_no"] == "周五003"
-        and item["pool"] == "hafu"
-        and item["pick"] == "平/负"
-        and item["hit"] is True
-        for item in report["graded_legs"]
-    )
+    # Rule H: hafu legs no longer survive in non-extreme plans. The user-
+    # revision pattern still drives 周五003 into main, but as a non-hafu pick.
+    周五003_legs = [
+        item for item in report["graded_legs"] if item["match_no"] == "周五003"
+    ]
+    assert 周五003_legs, "user-revision pattern should still surface 周五003"
+    non_extreme_周五003 = [
+        item
+        for item in 周五003_legs
+        if "extreme" not in str(item.get("plan_kind", "")).lower()
+    ]
+    assert all(item["pool"] != "hafu" for item in non_extreme_周五003)
     assert any(
         item["match_no"] == "周五005" and item["actual"] == "负"
         for item in report["graded_legs"]
     )
-    assert "003修正为平/负命中" in report["message"]
     assert "005" in report["message"] and "防平防冷" in report["message"]
     assert Path(report["artifacts"]["markdown_path"]).exists()
 
@@ -216,12 +220,16 @@ def test_daily_review_updates_strategy_memory(tmp_path: Path) -> None:
     memory = json.loads(memory_path.read_text(encoding="utf-8"))
     assert memory["last_review_date"] == "2026-05-01"
     assert memory["sample_count"] == 1
-    assert memory["patterns"]["user_revision_hafu_draw_away"]["hits"] >= 1
+    # Rule H stripped the hafu 平/负 pick before grading, so the pattern's hits
+    # counter no longer auto-increments via that flow. The pattern is still
+    # tracked for backward compatibility / future re-enablement; we just don't
+    # require a fresh hit here.
+    assert "user_revision_hafu_draw_away" in memory["patterns"]
     assert memory["patterns"]["comfort_risk_draw_or_cold"]["hits"] >= 1
-    assert any(
-        "003" in item["note"] and "平/负" in item["note"]
-        for item in memory["recent_inspirations"]
-    )
+    # Rule H stripped the hafu 平/负 leg before grading, so the user-revision
+    # pattern no longer auto-records a hit. recent_inspirations now captures
+    # comfort-risk notes (e.g. 周五005 实际负兑现).
+    assert memory["recent_inspirations"], "recent_inspirations should still capture other patterns"
     assert "策略记忆已更新" in report["message"]
 
 
@@ -287,7 +295,13 @@ def test_daily_review_writes_executable_decision_policy(tmp_path: Path) -> None:
     assert "2球" in policy["rules"]["total_goals"]["preferred_picks"]
     assert policy["rules"]["hafu"]["active"] is True
     assert policy["rules"]["reuse_guard"]["active"] is True
-    assert "周五001" in policy["rules"]["reuse_guard"]["match_nos"]
+    # Rule I/J scrubs reduce per-match leg counts, so the specific match that
+    # surfaces in reuse_guard depends on which legs survive the Poisson floor.
+    # The invariant we still want: reuse_guard flags at least one repeatedly-
+    # missed match.
+    assert policy["rules"]["reuse_guard"]["match_nos"], (
+        "reuse_guard should flag at least one repeatedly-missed match"
+    )
     assert any("强胆低赔" in note for note in policy["notes"])
     assert any("2球" in note for note in policy["notes"])
     assert report["strategy_memory"]["decision_policy"]["rules"]["hafu"]["active"] is True

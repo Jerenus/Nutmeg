@@ -28,6 +28,7 @@ from nutmeg.services.jczq_intelligence import (
     LeaguePriorBaseline,
     compute_analytics,
     compute_poisson_edges,
+    poisson_edge_index,
 )
 from nutmeg.services.jczq_strategy_memory import (
     compute_league_ttg_volatility,
@@ -431,6 +432,186 @@ def test_replay_2026_05_04_inspires_full_4_of_4_inspiration(tmp_path: Path) -> N
     # Top Poisson edge on 5/04 was 周一007 0:0 (+21.6%) — must appear in poisson_solo.
     top_legs = {(leg.match_no, leg.pool, leg.pick) for leg in poisson_solo.legs}
     assert ("周一007", "crs", "0:0") in top_legs
+
+
+# ---------------------------------------------------------------- Rule H ---
+# H: hafu legs are non-extreme tickets' worst pool (4-day backtest 0/9 = 0%).
+#    Generator must keep hafu only inside the extreme ticket.
+
+
+def _hafu_attractive(num: str, league: str = "意甲") -> dict:
+    """Match exposing multiple hafu picks at attractive prices.
+
+    Without Rule H the generator was happy to pull these into main/inspiration/
+    contrarian/false_signal as the 'high-leverage' leg. They never paid off.
+    """
+    return _match(
+        num,
+        league,
+        f"H-{num}",
+        f"A-{num}",
+        _pool(h="2.10", d="3.30", a="3.50"),
+        _pool(h="2.30", d="3.20", a="2.80", goalLine="0"),
+        _pool(s2="3.50", s3="3.80"),
+        _pool(
+            hh="3.20",
+            hd="6.20",
+            ha="9.40",
+            dh="4.20",
+            dd="5.30",
+            da="6.50",
+            ah="9.50",
+            ad="6.10",
+            aa="3.40",
+        ),
+        _pool(s01s00="7.50", s01s01="6.40", s00s00="14.00", s02s01="11.50"),
+    )
+
+
+def test_rule_h_hafu_legs_only_appear_in_extreme(tmp_path: Path) -> None:
+    matches = [_hafu_attractive(f"周一00{i}") for i in range(1, 6)]
+    report = JczqDailyAdvisorService(provider=FakeProvider(matches)).build_report(
+        run_date="2026-05-05", output_dir=tmp_path
+    )
+    for plan in report.plans:
+        if plan.kind == "extreme":
+            continue
+        for leg in plan.legs:
+            assert leg.pool != "hafu", (
+                f"Rule H violation: plan={plan.kind} leg={leg.match_no} "
+                f"hafu pick {leg.pick} must not appear outside extreme"
+            )
+
+
+# ---------------------------------------------------------------- Rule J ---
+# J: crs hit-rate 1/14 across 4-day backtest. Extreme picks must be supported by
+#    the Poisson model (edge ≥ -10%).
+
+CRS_POISSON_EDGE_FLOOR = -0.10
+
+
+def test_rule_j_extreme_crs_legs_meet_poisson_edge_floor(tmp_path: Path) -> None:
+    matches = [_normal(f"周一00{i}") for i in range(1, 6)]
+    report = JczqDailyAdvisorService(provider=FakeProvider(matches)).build_report(
+        run_date="2026-05-05", output_dir=tmp_path
+    )
+    extreme = next(plan for plan in report.plans if plan.kind == "extreme")
+    edges = poisson_edge_index(compute_poisson_edges(report.matches))
+    crs_legs = [leg for leg in extreme.legs if leg.pool == "crs"]
+    # The fixture is rich enough to expect at least one crs leg in extreme.
+    assert crs_legs, "extreme should still produce crs legs (Rule J filters, not deletes)"
+    for leg in crs_legs:
+        edge = edges.get((leg.match_no, "crs", leg.pick))
+        assert edge is not None, (
+            f"Rule J pre-condition: crs leg {leg.match_no} {leg.pick} "
+            "must be priced by Poisson model"
+        )
+        assert edge >= CRS_POISSON_EDGE_FLOOR, (
+            f"Rule J violation: extreme picked crs {leg.match_no} {leg.pick}@{leg.odds} "
+            f"with Poisson edge {edge:+.1%} (floor {CRS_POISSON_EDGE_FLOOR:+.0%})"
+        )
+
+
+# ---------------------------------------------------------------- Rule I ---
+# I-1: high-odds had legs (≥ 5.0) hit only 0/1 across 4 days; require Poisson
+#      EV ≥ +5% to qualify as a leverage leg.
+# I-2: contrarian intent must reject any leg the Poisson model strongly opposes
+#      (edge ≤ -15%) — 5/05's contrarian had 'ttg 4球' at -22.5% edge.
+
+HIGH_ODDS_HAD_FLOOR = 5.0
+HIGH_ODDS_HAD_REQUIRED_EDGE = 0.05
+CONTRARIAN_POISSON_REJECT_BELOW = -0.15
+
+
+def _high_odds_had_trap(num: str, league: str = "意甲") -> dict:
+    """Match where the away pick is priced at 5.30 — typical 'inspirational' trap.
+
+    Poisson with home_lambda ~ 1.6 and away_lambda ~ 0.9 prices away under 5.30
+    (negative edge). Rule I should keep this leg out of inspiration.
+    """
+    return _match(
+        num,
+        league,
+        f"H-{num}",
+        f"A-{num}",
+        _pool(h="1.55", d="3.80", a="5.30"),
+        _pool(h="2.10", d="3.30", a="2.80", goalLine="-1"),
+        _pool(s2="3.40", s3="3.80"),
+        _pool(hh="3.20", dh="4.20", dd="5.30"),
+        _pool(s01s00="7.50", s01s01="6.40", s00s00="14.00"),
+    )
+
+
+def test_rule_i_inspiration_rejects_high_odds_had_without_poisson_ev(
+    tmp_path: Path,
+) -> None:
+    matches = [_high_odds_had_trap(f"周一00{i}") for i in range(1, 6)]
+    report = JczqDailyAdvisorService(provider=FakeProvider(matches)).build_report(
+        run_date="2026-05-05", output_dir=tmp_path
+    )
+    inspiration = next(plan for plan in report.plans if plan.kind == "inspiration")
+    edges = poisson_edge_index(compute_poisson_edges(report.matches))
+    for leg in inspiration.legs:
+        if leg.pool != "had" or leg.odds < HIGH_ODDS_HAD_FLOOR:
+            continue
+        edge = edges.get((leg.match_no, "had", leg.pick))
+        assert edge is not None and edge >= HIGH_ODDS_HAD_REQUIRED_EDGE, (
+            f"Rule I-1 violation: inspiration high-odds had {leg.match_no} "
+            f"{leg.pick}@{leg.odds} selected with Poisson edge {edge!r}"
+        )
+
+
+def test_rule_i_select_top_legs_rejects_legs_below_poisson_edge_floor() -> None:
+    """select_top_legs must accept a `reject_poisson_edge_below` filter.
+
+    This is the mechanism contrarian uses (and the report/replay path can rely
+    on) to skip legs the Poisson model strongly opposes — even if they score
+    well under the heuristic intent rules.
+    """
+
+    from nutmeg.services.jczq_intelligence import select_top_legs
+
+    matches = [_contrarian_ttg_trap("周一001"), _normal("周一002")]
+    service = JczqDailyAdvisorService(provider=FakeProvider(matches))
+    report = service.build_report(run_date="2026-05-05")
+    analytics = compute_analytics(report.matches, baseline=LeaguePriorBaseline())
+    edges = poisson_edge_index(compute_poisson_edges(report.matches))
+
+    # Plant a synthetic strongly-opposed edge for an existing leg so the test
+    # is independent of the Poisson grid's exact output.
+    forced_edges = dict(edges)
+    forced_edges[("周一001", "ttg", "4球")] = -0.30
+
+    legs = select_top_legs(
+        report.matches,
+        analytics,
+        intent="contrarian",
+        k=10,
+        pool_filter={"ttg"},
+        odds_min=3.0,
+        odds_max=8.0,
+        poisson_edge_index=forced_edges,
+        reject_poisson_edge_below=CONTRARIAN_POISSON_REJECT_BELOW,
+    )
+    assert all(
+        not (ev.leg.match_no == "周一001" and ev.leg.pool == "ttg" and ev.leg.pick == "4球")
+        for ev in legs
+    ), "Rule I-2 violation: select_top_legs returned a leg below the Poisson edge floor"
+
+
+def _contrarian_ttg_trap(num: str, league: str = "意甲") -> dict:
+    """ttg 4球 priced at 5.00 — used by Rule I-2 unit test fixture."""
+    return _match(
+        num,
+        league,
+        f"H-{num}",
+        f"A-{num}",
+        _pool(h="1.55", d="3.80", a="5.30"),
+        _pool(h="2.10", d="3.30", a="2.80", goalLine="-1"),
+        _pool(s2="3.40", s3="3.80", s4="5.00", s5="9.00"),
+        _pool(hh="3.20", dh="4.20", dd="5.30"),
+        _pool(s01s00="7.50", s00s00="14.00"),
+    )
 
 
 _ = COINFLIP_VIG_THRESHOLD  # silence ruff when threshold consts move

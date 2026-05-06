@@ -24,6 +24,10 @@ from nutmeg.services.jczq_drift import (
     drift_provider_from_signals,
 )
 from nutmeg.services.jczq_intelligence import (
+    CONTRARIAN_POISSON_REJECT_BELOW,
+    CRS_POISSON_EDGE_FLOOR,
+    HIGH_ODDS_HAD_REQUIRED_EDGE,
+    HIGH_ODDS_HAD_THRESHOLD,
     BaselineProvider,
     DriftProvider,
     LeaguePriorBaseline,
@@ -55,6 +59,10 @@ POISSON_SOLO_EDGE_THRESHOLD = 0.15
 POISSON_STRONG_OPPOSE_THRESHOLD = -0.20
 # Rule F: bias subtracted from a leg's score when its team is on the burned list.
 BURNED_TEAM_BIAS = -0.5
+# Rule H: hafu legs hit 0/9 across the 4-day backtest spanning every non-extreme
+# plan kind. They are blocked from main / inspiration / contrarian / false_signal
+# at the source and stripped post-hoc by `_apply_rule_h_hafu_block`.
+RULE_H_NON_EXTREME_HAFU_BLOCKED = True
 
 
 class JczqTextSender(Protocol):
@@ -432,7 +440,26 @@ class JczqDailyAdvisorService:
                     target=1.55,
                     skip_match_nos=self._active_coinflip_match_nos,
                 ),
-                _select_leg(matches, used_match_nos, pool="hafu", min_odds=3.5, target=4.2),
+                # Rule H: hafu pool blocked from main; substitute a mid-priced
+                # ttg leg, falling back to a hhad cover with handicap.
+                (
+                    _select_leg(
+                        matches,
+                        used_match_nos,
+                        pool="ttg",
+                        min_odds=3.4,
+                        max_odds=6.0,
+                        target=4.0,
+                    )
+                    or _select_leg(
+                        matches,
+                        used_match_nos,
+                        pool="hhad",
+                        min_odds=2.5,
+                        max_odds=4.5,
+                        target=3.2,
+                    )
+                ),
                 _select_leg(
                     matches,
                     used_match_nos,
@@ -506,10 +533,143 @@ class JczqDailyAdvisorService:
         ]
         plans = self._apply_revision_overrides(plans, matches, instruction=instruction)
         plans = self._apply_memory_overrides(plans, matches, strategy_memory=strategy_memory or {})
+        # Rule H/I run before decision_policy so dedup runs against scrubbed
+        # plans; they also run again at the end to catch any post-hoc
+        # injection from comfort/decorrelation/policy steps.
+        plans = self._apply_rule_h_hafu_block(plans, matches)
+        plans = self._apply_rule_i_poisson_scrub(plans, matches)
         plans = self._apply_decision_policy(plans, matches, strategy_memory=strategy_memory or {})
         plans = self._apply_comfort_risk_protection(plans, matches)
         plans = self._apply_portfolio_decorrelation(plans, matches, analytics=analytics)
+        plans = self._apply_rule_h_hafu_block(plans, matches)
+        plans = self._apply_rule_i_poisson_scrub(plans, matches)
         return plans
+
+    def _apply_rule_i_poisson_scrub(
+        self,
+        plans: list[JczqDailyPlan],
+        matches: list[JczqDailyMatch],
+    ) -> list[JczqDailyPlan]:
+        """Rule I/J safety net: post-hoc overrides (revision, memory,
+        decision_policy, comfort_risk_protection, decorrelation) can
+        re-introduce legs the Poisson model rejects. Apply per-plan
+        thresholds:
+
+        - contrarian:               -0.15 (Rule I-2 model-opposed)
+        - main / inspiration / false_signal: -0.20 (strongly opposed —
+          matches POISSON_STRONG_OPPOSE_THRESHOLD)
+        - extreme:                  -0.10 on crs only (Rule J floor)
+
+        stable_base / cluster plans are heuristic-driven and not in scope.
+        """
+
+        poisson_idx = getattr(self, "_active_poisson_index", None)
+        if poisson_idx is None:
+            return plans
+        kind_thresholds: dict[str, float] = {
+            "contrarian": CONTRARIAN_POISSON_REJECT_BELOW,
+            "main": POISSON_STRONG_OPPOSE_THRESHOLD,
+            "inspiration": POISSON_STRONG_OPPOSE_THRESHOLD,
+            "false_signal": POISSON_STRONG_OPPOSE_THRESHOLD,
+            # extreme uses CRS_POISSON_EDGE_FLOOR but only on crs pool.
+            "extreme": CRS_POISSON_EDGE_FLOOR,
+        }
+        match_by_no = {match.match_no: match for match in matches}
+        cleaned: list[JczqDailyPlan] = []
+        for plan in plans:
+            threshold = kind_thresholds.get(plan.kind)
+            if threshold is None or not plan.legs:
+                cleaned.append(plan)
+                continue
+            kept: list[JczqDailyLeg] = []
+            replaced = False
+            for leg in plan.legs:
+                if leg.pool == "hhad":
+                    kept.append(leg)
+                    continue
+                # Rule J only governs crs in extreme — non-crs legs in extreme
+                # (none should exist post Rule H, but defensive) bypass.
+                if plan.kind == "extreme" and leg.pool != "crs":
+                    kept.append(leg)
+                    continue
+                edge = poisson_idx.get((leg.match_no, leg.pool, leg.pick))
+                if edge is None or edge >= threshold:
+                    kept.append(leg)
+                    continue
+                if plan.kind == "extreme":
+                    # Drop the rejected crs leg; let the plan run with fewer
+                    # legs rather than swap to an unrelated outcome.
+                    replaced = True
+                    continue
+                replacement = _rule_i2_contrarian_replacement(
+                    match_by_no.get(leg.match_no), poisson_idx, min_edge=threshold
+                )
+                if replacement is not None:
+                    kept.append(
+                        replace(
+                            replacement,
+                            logic=(
+                                f"Rule I：原 {leg.pool} {leg.pick} edge {edge:+.1%}"
+                                f" 被模型强反对，替换为 {replacement.pool}。{replacement.logic}"
+                            ),
+                        )
+                    )
+                    replaced = True
+            if not replaced and len(kept) == len(plan.legs):
+                cleaned.append(plan)
+                continue
+            note = plan.risk_note + (
+                f" | Rule I/J：已剥离 Poisson edge ≤ {threshold:+.0%} 的腿。"
+            )
+            cleaned.append(
+                self._make_plan(plan.name, plan.kind, plan.description, kept, note)
+            )
+        return cleaned
+
+    def _apply_rule_h_hafu_block(
+        self,
+        plans: list[JczqDailyPlan],
+        matches: list[JczqDailyMatch],
+    ) -> list[JczqDailyPlan]:
+        """Rule H: hafu hit 0/9 across the 4-day backtest. Strip any hafu leg
+        that survived earlier passes (revision/memory overrides) from non-
+        extreme plans, replacing with a ttg or hhad equivalent when possible.
+        """
+
+        match_by_no = {match.match_no: match for match in matches}
+        cleaned: list[JczqDailyPlan] = []
+        for plan in plans:
+            if plan.kind == "extreme" or not any(leg.pool == "hafu" for leg in plan.legs):
+                cleaned.append(plan)
+                continue
+            new_legs: list[JczqDailyLeg] = []
+            for leg in plan.legs:
+                if leg.pool != "hafu":
+                    new_legs.append(leg)
+                    continue
+                replacement = _rule_h_hafu_replacement(match_by_no.get(leg.match_no))
+                if replacement is None:
+                    # No safe non-hafu replacement; drop the leg entirely.
+                    continue
+                new_legs.append(
+                    replace(
+                        replacement,
+                        logic=(
+                            "Rule H：半全场 0/9 命中率永久下架，"
+                            f"已替换为 {replacement.pool}。{replacement.logic}"
+                        ),
+                    )
+                )
+            cleaned.append(
+                self._make_plan(
+                    plan.name,
+                    plan.kind,
+                    plan.description,
+                    new_legs,
+                    "Rule H：半全场已从非极限票剥离。",
+                )
+            )
+        return cleaned
 
     def _build_false_signal_plan(self, matches: list[JczqDailyMatch]) -> JczqDailyPlan:
         legs: list[JczqDailyLeg | None] = []
@@ -815,11 +975,21 @@ class JczqDailyAdvisorService:
     ) -> list[JczqDailyPlan]:
         match_by_no = {match.match_no: match for match in matches}
         seen: set[tuple[str, str, str]] = set()
+        poisson_idx = getattr(self, "_active_poisson_index", None)
+        # Rule I: when fixing duplicates, never bring in a Poisson-rejected
+        # leg. Use the same per-plan thresholds as `_apply_rule_i2_*_scrub`.
+        kind_min_edge = {
+            "contrarian": CONTRARIAN_POISSON_REJECT_BELOW,
+            "main": POISSON_STRONG_OPPOSE_THRESHOLD,
+            "inspiration": POISSON_STRONG_OPPOSE_THRESHOLD,
+            "false_signal": POISSON_STRONG_OPPOSE_THRESHOLD,
+        }
         updated: list[JczqDailyPlan] = []
         for plan in plans:
             if plan.kind == "extreme":
                 updated.append(plan)
                 continue
+            min_edge = kind_min_edge.get(plan.kind)
             changed = False
             legs: list[JczqDailyLeg] = []
             for leg in plan.legs:
@@ -829,6 +999,8 @@ class JczqDailyAdvisorService:
                         match_by_no.get(leg.match_no),
                         seen=seen,
                         avoid_hafu=avoid_hafu,
+                        poisson_edge_index=poisson_idx,
+                        min_poisson_edge=min_edge,
                     )
                     if replacement is not None:
                         leg = replace(
@@ -859,9 +1031,8 @@ class JczqDailyAdvisorService:
         protected = list(plans)
         for match in [item for item in matches if _is_comfort_risk(item)]:
             favorite = _favorite_had_pick(match)
-            draw_leg = _find_leg(match, pool="had", pick="平") or _find_leg(
-                match, pool="hafu", pick="平/平"
-            )
+            # Rule H: never substitute had 平 with hafu 平/平 — hafu locked to extreme only.
+            draw_leg = _find_leg(match, pool="had", pick="平")
             cold_pick = "负" if favorite == "胜" else "胜" if favorite == "负" else "平"
             cold_leg = _find_leg(match, pool="had", pick=cold_pick)
             if favorite:
@@ -973,11 +1144,24 @@ class JczqDailyAdvisorService:
         else:
             pool_filter: set[str] | None = None
             if extreme:
-                pool_filter = {"crs", "hafu"}
+                # Rule H: hafu blocked from non-extreme — and Rule J keeps crs as
+                # the only extreme pool (Poisson edge floor enforced below).
+                pool_filter = {"crs"}
             elif contrarian:
-                pool_filter = {"ttg", "hafu", "hhad", "had"}
+                # Rule H: hafu blocked from contrarian.
+                pool_filter = {"ttg", "hhad", "had"}
             odds_min = 4.0 if extreme else (3.0 if contrarian else 1.75)
             odds_max = 999.0 if extreme else 8.0
+            poisson_idx = getattr(self, "_active_poisson_index", None)
+            pool_min_edge: dict[str, float] | None = None
+            high_odds_had_min: tuple[float, float] | None = None
+            reject_below: float | None = None
+            if extreme:
+                # Rule J: crs picks must clear Poisson edge floor.
+                pool_min_edge = {"crs": CRS_POISSON_EDGE_FLOOR}
+            if contrarian:
+                # Rule I-2: drop legs the Poisson model strongly opposes.
+                reject_below = CONTRARIAN_POISSON_REJECT_BELOW
             evaluations = select_top_legs(
                 matches,
                 analytics,
@@ -990,6 +1174,10 @@ class JczqDailyAdvisorService:
                 bias_fn=getattr(self, "_active_bias_fn", None),
                 skip_coinflip_had=True,
                 require_hhad_handicap=True,
+                poisson_edge_index=poisson_idx,
+                pool_min_edge=pool_min_edge,
+                high_odds_had_min_edge=high_odds_had_min,
+                reject_poisson_edge_below=reject_below,
             )
             if no_score:
                 evaluations = [ev for ev in evaluations if ev.leg.pool != "crs"]
@@ -1005,15 +1193,35 @@ class JczqDailyAdvisorService:
                 if match is None:
                     boosted.append(leg)
                     continue
+                # Rule H: hafu blocked from non-extreme boost candidates.
+                allow_hafu = extreme
                 pool_candidates = [
                     item
                     for item in match.candidates
-                    if item.pool in {"crs", "hafu"} and item.odds >= 4
+                    if (
+                        item.pool == "crs"
+                        or (allow_hafu and item.pool == "hafu")
+                    )
+                    and item.odds >= 4
                 ]
+                # Rule J: when boosting extreme, only keep Poisson-supported crs.
+                if extreme and poisson_idx is not None:
+                    pool_candidates = [
+                        item
+                        for item in pool_candidates
+                        if item.pool != "crs"
+                        or (
+                            poisson_idx.get((item.match_no, "crs", item.pick), -1.0)
+                            >= CRS_POISSON_EDGE_FLOOR
+                        )
+                    ]
                 if no_score:
                     pool_candidates = [item for item in pool_candidates if item.pool != "crs"]
+                if not pool_candidates:
+                    boosted.append(leg)
+                    continue
                 boosted.append(
-                    max(pool_candidates or match.candidates, key=lambda item: min(item.odds, 10))
+                    max(pool_candidates, key=lambda item: min(item.odds, 10))
                 )
             # Backfill if fewer than 4 legs (e.g., very small fixture set).
             if len(boosted) < 4:
@@ -1065,11 +1273,17 @@ class JczqDailyAdvisorService:
         `matches[:4]` truncation).
         """
 
-        pool_order = ["had", "hhad", "ttg", "hafu"]
+        # Rule H: hafu dropped from inspiration pool order.
+        pool_order = ["had", "hhad", "ttg"]
         if not no_score:
             pool_order.append("crs")
         used_match_nos: set[str] = set()
         legs: list[JczqDailyLeg] = []
+        poisson_idx = getattr(self, "_active_poisson_index", None)
+        # Rule I-1: high-odds had legs (≥ 5.0) need Poisson EV ≥ +5%.
+        high_odds_had_min = (HIGH_ODDS_HAD_THRESHOLD, HIGH_ODDS_HAD_REQUIRED_EDGE)
+        # Rule J: inspiration's optional crs slot must clear the same floor.
+        pool_min_edge = {"crs": CRS_POISSON_EDGE_FLOOR}
         for pool in pool_order:
             if len(legs) >= k:
                 break
@@ -1086,6 +1300,9 @@ class JczqDailyAdvisorService:
                 bias_fn=getattr(self, "_active_bias_fn", None),
                 skip_coinflip_had=True,
                 require_hhad_handicap=True,
+                poisson_edge_index=poisson_idx,
+                pool_min_edge=pool_min_edge,
+                high_odds_had_min_edge=high_odds_had_min,
             )
             for ev in evaluations:
                 if ev.leg.match_no in used_match_nos:
@@ -1102,6 +1319,9 @@ class JczqDailyAdvisorService:
                 avoid_match_nos=used_match_nos,
                 enforce_pool_diversity=False,
                 bias_fn=getattr(self, "_active_bias_fn", None),
+                poisson_edge_index=poisson_idx,
+                pool_min_edge=pool_min_edge,
+                high_odds_had_min_edge=high_odds_had_min,
             )
             for ev in fillers:
                 if len(legs) >= k:
@@ -1109,6 +1329,9 @@ class JczqDailyAdvisorService:
                 if ev.leg.match_no in used_match_nos:
                     continue
                 if no_score and ev.leg.pool == "crs":
+                    continue
+                # Rule H: hafu blocked from inspiration even in fallback path.
+                if ev.leg.pool == "hafu":
                     continue
                 legs.append(ev.leg)
                 used_match_nos.add(ev.leg.match_no)
@@ -1122,9 +1345,10 @@ class JczqDailyAdvisorService:
     ) -> JczqDailyPlan:
         """Dedicated draw-only ticket activated when comfort-risk count ≥ 3.
 
-        Each leg is a 平 (had) or 平/平 (hafu) pick on a comfort-risk match,
-        ranked by draw-friendliness EV gap. Threshold prevents this from firing
-        in tiny fixture sets (e.g., the 4-match unit test fixture).
+        Each leg is a 平 (had) pick on a comfort-risk match, ranked by
+        draw-friendliness EV gap. Threshold prevents this from firing in tiny
+        fixture sets (e.g., the 4-match unit test fixture). Rule H: hafu 平/平
+        is no longer eligible — non-extreme plans are hafu-blocked.
         """
 
         comfort_matches = [
@@ -1145,7 +1369,7 @@ class JczqDailyAdvisorService:
             analytics,
             intent="draw",
             k=4,
-            pool_filter={"had", "hafu"},
+            pool_filter={"had"},  # Rule H: hafu blocked from draw_cluster.
             odds_min=2.4,
             odds_max=8.0,
             enforce_pool_diversity=False,
@@ -1160,8 +1384,6 @@ class JczqDailyAdvisorService:
             if leg.match_no in seen_matches:
                 continue
             if leg.pool == "had" and leg.pick != "平":
-                continue
-            if leg.pool == "hafu" and leg.pick != "平/平":
                 continue
             legs.append(replace(leg, logic=f"防平簇：{leg.logic} EV gap {ev.ev_gap:+.2f}"))
             seen_matches.add(leg.match_no)
@@ -1843,6 +2065,8 @@ def _duplicate_story_replacement(
     *,
     seen: set[tuple[str, str, str]],
     avoid_hafu: bool,
+    poisson_edge_index: dict[tuple[str, str, str], float] | None = None,
+    min_poisson_edge: float | None = None,
 ) -> JczqDailyLeg | None:
     if match is None:
         return None
@@ -1854,6 +2078,16 @@ def _duplicate_story_replacement(
         and not (avoid_hafu and leg.pool == "hafu")
         and (leg.match_no, leg.pool, leg.pick) not in seen
     ]
+    if poisson_edge_index is not None and min_poisson_edge is not None:
+        # Rule I-2: drop replacement candidates the Poisson model strongly
+        # opposes (hhad has no Poisson coverage so it bypasses).
+        candidates = [
+            leg
+            for leg in candidates
+            if leg.pool == "hhad"
+            or poisson_edge_index.get((leg.match_no, leg.pool, leg.pick), 0.0)
+            >= min_poisson_edge
+        ]
     if not candidates:
         return None
     return min(candidates, key=lambda leg: (pool_rank[leg.pool], abs(leg.odds - 3.2)))
@@ -1886,13 +2120,11 @@ def _comfort_resistance_leg(match: JczqDailyMatch) -> JczqDailyLeg | None:
 
 
 def _tactical_process_leg(match: JczqDailyMatch) -> JczqDailyLeg | None:
+    # Rule H: hafu blocked from non-extreme; tactical fallback is ttg only.
     preferred = [
         leg
         for leg in match.candidates
-        if (
-            (leg.pool == "hafu" and leg.pick in {"平/胜", "平/负"})
-            or (leg.pool == "ttg" and leg.pick in {"3球", "4球", "5球"})
-        )
+        if leg.pool == "ttg" and leg.pick in {"3球", "4球", "5球"}
         and 3.4 <= leg.odds <= 6.5
     ]
     if not preferred:
@@ -1902,6 +2134,70 @@ def _tactical_process_leg(match: JczqDailyMatch) -> JczqDailyLeg | None:
 
 def _is_comfort_risk(match: JczqDailyMatch) -> bool:
     return "舒服盘" in match.confidence_note
+
+
+def _rule_i2_contrarian_replacement(
+    match: JczqDailyMatch | None,
+    poisson_edge_index: dict[tuple[str, str, str], float],
+    *,
+    min_edge: float = CONTRARIAN_POISSON_REJECT_BELOW,
+) -> JczqDailyLeg | None:
+    """Pick a leg the Poisson model doesn't reject (Rule I scrub helper).
+
+    Preference: ttg picks meeting `min_edge`, then hhad cover (Poisson-blind,
+    safe by default).
+    """
+
+    if match is None:
+        return None
+    safe_ttg = [
+        leg
+        for leg in match.candidates
+        if leg.pool == "ttg"
+        and 3.0 <= leg.odds <= 8.0
+        and poisson_edge_index.get((leg.match_no, "ttg", leg.pick), -1.0) >= min_edge
+    ]
+    if safe_ttg:
+        return min(safe_ttg, key=lambda leg: abs(leg.odds - 3.5))
+    hhad_options = [
+        leg
+        for leg in match.candidates
+        if leg.pool == "hhad"
+        and leg.goal_line
+        and 2.0 <= leg.odds <= 5.0
+    ]
+    if hhad_options:
+        return min(hhad_options, key=lambda leg: abs(leg.odds - 3.0))
+    return None
+
+
+def _rule_h_hafu_replacement(match: JczqDailyMatch | None) -> JczqDailyLeg | None:
+    """Pick a ttg or hhad leg that can stand in for a hafu pick (Rule H).
+
+    Preference order: ttg 2球/3球 (mid-priced), then hhad cover with handicap,
+    then any ttg leg in the 3-6 odds band.
+    """
+
+    if match is None:
+        return None
+    for pick in ("2球", "3球", "1球"):
+        leg = _find_leg(match, pool="ttg", pick=pick)
+        if leg is not None and 1.6 <= leg.odds <= 6.5:
+            return leg
+    hhad_options = [
+        leg
+        for leg in match.candidates
+        if leg.pool == "hhad"
+        and leg.pick in {"让胜", "让平", "让负"}
+        and leg.goal_line
+        and 1.8 <= leg.odds <= 4.5
+    ]
+    if hhad_options:
+        return min(hhad_options, key=lambda leg: abs(leg.odds - 3.0))
+    ttg_any = [leg for leg in match.candidates if leg.pool == "ttg" and 2.5 <= leg.odds <= 6.0]
+    if ttg_any:
+        return min(ttg_any, key=lambda leg: abs(leg.odds - 4.0))
+    return None
 
 
 def _favorite_had_pick(match: JczqDailyMatch) -> str | None:

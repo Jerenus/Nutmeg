@@ -74,7 +74,7 @@ allocation now because it carries the strongest signal-to-noise ratio.
 
 Always mark which ticket the agent itself would back hardest, and why.
 
-### Hard rules (Rules A-F encoded in the generator since 2026-05-05)
+### Hard rules (Rules A-J encoded in the generator since 2026-05-05/06)
 
 1. **Rule A — Poisson +EV ≥ +15% becomes its own ticket.** When brief
    Section 4 has any leg edge ≥ +15%, the generator auto-emits a
@@ -99,9 +99,21 @@ Always mark which ticket the agent itself would back hardest, and why.
 7. **Drop any leg that Poisson strongly opposes** (edge ≤ -20%). The
    generator already filters them, but verify in brief Section 5 before
    publishing.
-8. **No hafu legs in tickets A-D.** `decision_policy.hafu.action =
-   downgrade_half_full_non_extreme` is active. Hafu only allowed in E.
-9. **Fail loud if data gaps exist.** If brief Section 1 has 0 matches,
+8. **Rule H — hafu legs locked to the extreme ticket.** 4-day backtest hit
+   0/9 across every non-extreme plan kind. The generator strips hafu from
+   stable_base / main / inspiration / contrarian / false_signal / draw_cluster
+   and replaces with the equivalent ttg or hhad pick. Only `extreme` keeps
+   hafu candidates.
+9. **Rule I-1 — high-odds had legs need Poisson EV.** had legs with odds
+   ≥ 5.0 are dropped from `inspiration` unless their Poisson edge ≥ +5%.
+   Catches "傻冷" leverage attempts that the heuristic scorer used to favor.
+10. **Rule I-2 — contrarian rejects strongly-opposed legs.** Any priced
+    leg (had/ttg/crs/hafu) with Poisson edge ≤ -15% is excluded from
+    `contrarian`. Caught 5/05's `周二003 ttg 4球@5.8` (-22.5% edge) trap.
+11. **Rule J — extreme crs needs Poisson support.** crs picks must clear
+    edge ≥ -10%. Backtest crs hit 1/14 (7.1%); the surviving picks are now
+    aligned with the joint Poisson scoreline distribution.
+12. **Fail loud if data gaps exist.** If brief Section 1 has 0 matches,
    `_resolve_drift_provider` errored, or all matches show role "未知",
    report the failure and stop instead of guessing.
 10. **Cluster threshold respect.** `draw_cluster` only fires when comfort
@@ -154,10 +166,13 @@ review history accumulates, the smarter the picks.
 - Strategy memory: `nutmeg/services/jczq_strategy_memory.py` (v2 schema)
 - Brief script: `scripts/jczq_daily_brief.py`
 - Replay tool: `scripts/replay_jczq_with_new_generator.py`
-- Test coverage: 521 tests across `tests/test_jczq_*.py` (Rules A-F regression
+- Test coverage: 525 tests across `tests/test_jczq_*.py` (Rules A-J regression
   in `tests/test_jczq_daily_iteration_rules.py`)
 - Rule constants live at the top of `nutmeg/services/jczq_daily.py`
   (`HAD_BANKER_FLOOR`, `POISSON_SOLO_EDGE_THRESHOLD`,
-  `POISSON_STRONG_OPPOSE_THRESHOLD`, `BURNED_TEAM_BIAS`) and
+  `POISSON_STRONG_OPPOSE_THRESHOLD`, `BURNED_TEAM_BIAS`,
+  `RULE_H_NON_EXTREME_HAFU_BLOCKED`) and
   `nutmeg/services/jczq_intelligence.py` (`COINFLIP_VIG_THRESHOLD`,
-  `COINFLIP_IMPLIED_SPREAD_THRESHOLD`, `HIGH_VOLATILITY_TTG_MEDIAN`).
+  `COINFLIP_IMPLIED_SPREAD_THRESHOLD`, `HIGH_VOLATILITY_TTG_MEDIAN`,
+  `CRS_POISSON_EDGE_FLOOR`, `HIGH_ODDS_HAD_THRESHOLD`,
+  `HIGH_ODDS_HAD_REQUIRED_EDGE`, `CONTRARIAN_POISSON_REJECT_BELOW`).

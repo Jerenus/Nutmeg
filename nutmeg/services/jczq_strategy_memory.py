@@ -330,7 +330,10 @@ def _update_decision_policy(
     hafu_items = [item for item in graded_legs if item.get("pool") == "hafu"]
     hafu_hits = sum(1 for item in hafu_items if item.get("hit") is True)
     hafu_misses = sum(1 for item in hafu_items if item.get("hit") is False)
-    hafu_active = hafu_misses >= 2 and hafu_misses > hafu_hits
+    # Rule H is permanent: hafu is locked to the extreme ticket regardless of
+    # the current sample's hits/misses. The stats still track post-Rule-H hafu
+    # outcomes (only extreme legs grade as hafu now) for future calibration.
+    hafu_active = True
 
     missed_by_match = Counter(
         str(item.get("match_no") or "")

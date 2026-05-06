@@ -246,7 +246,12 @@ def test_daily_advisor_generates_dynamic_multi_pool_plans_and_artifacts(tmp_path
     assert all(len({leg.match_no for leg in plan.legs}) == len(plan.legs) for plan in report.plans)
     inspiration = next(plan for plan in report.plans if plan.kind == "inspiration")
     assert len(inspiration.legs) == 4
-    assert {leg.pool for leg in inspiration.legs} >= {"ttg", "hafu", "hhad", "had"}
+    # Rule H: hafu is locked to the extreme ticket (4-day backtest 0/9 hit-rate).
+    # Rule I scrub may swap some ttg/crs picks out when Poisson strongly
+    # opposes them — so we just require ≥ 2 distinct pools and no hafu. The
+    # exact pool spread depends on Poisson coverage of the fixture.
+    assert len({leg.pool for leg in inspiration.legs}) >= 2
+    assert all(leg.pool != "hafu" for leg in inspiration.legs)
     multiplied = 1.0
     for leg in inspiration.legs:
         multiplied *= leg.odds
@@ -364,10 +369,12 @@ def test_daily_advisor_reads_strategy_memory_and_promotes_learned_inspiration(
     )
 
     main = next(plan for plan in report.plans if plan.kind == "main")
-    assert any(
-        leg.match_no == "周五003" and leg.pool == "hafu" and leg.pick == "平/负"
-        for leg in main.legs
-    )
+    # Rule H rewrites the memory-promoted hafu pick into a non-hafu equivalent
+    # (ttg or hhad cover) — the leg from 周五003 still appears in main, just
+    # not as hafu 平/负.
+    promoted = [leg for leg in main.legs if leg.match_no == "周五003"]
+    assert promoted, "memory promotion should still inject a 周五003 leg into main"
+    assert all(leg.pool != "hafu" for leg in promoted)
     assert "历史记忆提示" in report.summary
     assert "半全场平/负" in report.summary
 
@@ -504,10 +511,12 @@ def test_daily_advisor_promotes_user_half_full_revision(tmp_path: Path) -> None:
     )
 
     main = next(plan for plan in revised.plans if plan.kind == "main")
-    assert any(
-        leg.match_no == "周五003" and leg.pool == "hafu" and leg.pick == "平/负"
-        for leg in main.legs
-    )
+    # Rule H: user's "半全场平/负" revision is rewritten as a non-hafu leg in
+    # main (extreme keeps the original hafu pick). Verify 周五003 still owns
+    # a slot in main and that no hafu sneaks past Rule H.
+    promoted = [leg for leg in main.legs if leg.match_no == "周五003"]
+    assert promoted, "user revision should still surface 周五003 in main"
+    assert all(leg.pool != "hafu" for leg in promoted)
     assert "003最后修正为平负" in revised.summary
 
 

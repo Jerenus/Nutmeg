@@ -115,8 +115,9 @@ def test_draw_cluster_fires_when_comfort_risk_count_meets_threshold(tmp_path: Pa
 
     draw = next((plan for plan in report.plans if plan.kind == "draw_cluster"), None)
     assert draw is not None and len(draw.legs) >= 3
-    assert all(leg.pick in {"平", "平/平"} for leg in draw.legs)
-    # main must NOT contain 平/平 from these matches anymore
+    # Rule H: draw_cluster is non-extreme so hafu 平/平 is no longer eligible —
+    # only had 平 picks remain.
+    assert all(leg.pool == "had" and leg.pick == "平" for leg in draw.legs)
     main = next(plan for plan in report.plans if plan.kind == "main")
     main_match_nos = {leg.match_no for leg in main.legs}
     cluster_match_nos = {leg.match_no for leg in draw.legs}
