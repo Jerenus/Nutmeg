@@ -28,6 +28,11 @@ from nutmeg.services.jczq_daily import (
     JczqDailyAdvisorService,
     _report_from_dict,
 )
+from nutmeg.services.jczq_diagnostics import (
+    compute_kelly_advice,
+    compute_match_concentration,
+    compute_narrative_matrix,
+)
 from nutmeg.services.jczq_intelligence import (
     LeaguePriorBaseline,
     PoissonEdgeEntry,
@@ -38,6 +43,20 @@ from nutmeg.services.jczq_strategy_memory import (
     compute_league_ttg_volatility,
     load_strategy_memory,
 )
+
+# Default stake allocation per AGENTS.md SOP (25/30/20/15/10 for A/B/C/D/E).
+# Used by the brief's concentration / Kelly diagnostics so the human gets a
+# meaningful exposure read at glance time. Override in CLI later if needed.
+DEFAULT_STAKES = {
+    "stable_base": 25.0,
+    "main": 30.0,
+    "poisson_solo": 20.0,
+    "inspiration": 15.0,
+    "contrarian": 15.0,
+    "extreme": 10.0,
+}
+DEFAULT_BUDGET = 100.0
+RULE_BLOCKED_EDGE_FLOOR = 0.01  # surface hafu/blocked legs above +1% edge
 
 POISSON_EDGE_THRESHOLD = 0.05  # surface legs with ≥ +5% Poisson edge
 
@@ -191,6 +210,91 @@ def _emit_markdown(
             for w in strong_warnings:
                 out.append(f"- {w}")
         out.append("")
+
+    # 5b. Rule-blocked +EV 候选（参考用，揭示 Rule H 等规则可能 over-fit）
+    blocked_positive = [
+        r for r in poisson_rows
+        if r.pool == "hafu" and r.edge >= RULE_BLOCKED_EDGE_FLOOR
+    ]
+    if blocked_positive:
+        out.append("## 5b. 规则误伤的 +EV 候选（仅供参考，不动）")
+        out.append("")
+        out.append("| 标的 | 池 | 选项 | 市场 | edge | 拦截规则 |")
+        out.append("|---|---|---|---|---|---|")
+        for row in blocked_positive[:6]:
+            out.append(
+                f"| {row.match_no} | {row.pool} | {row.pick} | {row.market_odd:.2f} | "
+                f"{row.edge:+.1%} | Rule H（hafu 锁 extreme） |"
+            )
+        out.append("")
+        out.append("*Rule H 是 4 天 0/9 样本制定的；累积 30 天后建议重审是否过严*")
+        out.append("")
+
+    # 7. 票面健康度（Diagnostics）— 叙事多样性 + 集中度 + Kelly 建议
+    out.append("## 7. 票面健康度（Diagnostics）")
+    out.append("")
+    matrix = compute_narrative_matrix(plans)
+    if matrix["narratives"]:
+        out.append("### 7a. 叙事多样性")
+        out.append("")
+        out.append("| 票 | 主导叙事 | 副标签 | 解释 |")
+        out.append("|---|---|---|---|")
+        for nt in matrix["narratives"]:
+            tags = "/".join(nt.secondary_tags) if nt.secondary_tags else "—"
+            out.append(f"| {nt.plan_kind} | {nt.primary_narrative} | {tags} | {nt.reasoning} |")
+        out.append("")
+        out.append(f"叙事多样性指数 = **{matrix['diversity_score']:.0%}**")
+        if matrix["warning"]:
+            out.append(f"- {matrix['warning']}")
+        out.append("")
+
+    concentration = compute_match_concentration(
+        plans, stakes=DEFAULT_STAKES, total_budget=DEFAULT_BUDGET
+    )
+    risky = [c for c in concentration if c.warning]
+    if risky:
+        out.append("### 7b. 跨票场次集中度")
+        out.append("")
+        out.append("| 场 | 出现票数 | 涉及票 | 总注金 | 占比 | 警告 |")
+        out.append("|---|---:|---|---:|---:|---|")
+        for c in risky:
+            kinds = "/".join(c.plan_kinds)
+            out.append(
+                f"| {c.match_no} | {c.ticket_count} | {kinds} | "
+                f"{c.total_stake:.0f} 元 | {c.budget_pct:.0%} | {c.warning} |"
+            )
+        out.append("")
+        out.append("*集中度 > 40% 警示单点失败连锁风险；> 50% 强烈建议拆分叙事*")
+        out.append("")
+
+    # Kelly suggestion for the single-leg poisson_solo
+    solo_plan = next(
+        (p for p in plans if p.kind == "poisson_solo" and len(p.legs) == 1),
+        None,
+    )
+    if solo_plan is not None:
+        kelly = compute_kelly_advice(
+            solo_plan,
+            current_stake=DEFAULT_STAKES.get("poisson_solo", 20.0),
+            bankroll=DEFAULT_BUDGET,
+            poisson_edge_index=poisson_index,
+        )
+        if kelly:
+            out.append("### 7c. Poisson 单核 Kelly 建议")
+            out.append("")
+            out.append(
+                f"- 当前注金（默认 {kelly.current_stake_yuan:.0f} 元）"
+                f" vs Half-Kelly 建议 {kelly.half_kelly_yuan:.2f} 元"
+                f"（凯利分数 {kelly.kelly_fraction:.2%}，edge {kelly.edge:+.1%}）"
+            )
+            if kelly.warning:
+                out.append(f"- {kelly.warning}")
+            out.append("")
+            out.append(
+                "*Half-Kelly 是娱乐预算的保守建议；超 2x 的注金等于"
+                "用更高方差换更快的 EV 兑现速度*"
+            )
+            out.append("")
 
     # 6. 给 Claude 的指令模板
     out.append("## 6. 投递给 Claude 的指令模板")

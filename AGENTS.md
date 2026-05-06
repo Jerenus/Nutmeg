@@ -21,9 +21,10 @@ follow the SOP below — do not ask them to run scripts manually.
 
 ### Execution order
 
-The agent (you) handles all three steps; the user only types one trigger
-phrase. Do not stop after Step 1 to ask permission — keep going to Step 3
-unless the brief reveals a fatal data gap.
+The agent (you) handles the daily brief, workspace update, and ticket output;
+the user only types one trigger phrase. Do not stop after Step 1 to ask
+permission — keep going through the workspace write and ticket output unless
+the brief reveals a fatal data gap.
 
 #### Step 1: Generate the daily brief
 
@@ -51,6 +52,95 @@ Brief contents (the script emits ~95 lines of structured Markdown):
 #### Step 2: Read the brief yourself
 
 Use the Read tool on the brief.md path. Do not ask the user to paste it.
+
+The brief now includes machine-checked sections you must consume before
+forming opinions:
+
+- **Section 5b — 规则误伤的 +EV 候选**: surfaces hafu/blocked legs whose
+  Poisson edge crosses the watch threshold. Flag in your analysis if a hafu
+  +EV pick exists; never override Rule H without ≥30 days of data.
+- **Section 7a — 叙事多样性矩阵**: per-plan dominant narrative tag +
+  diversity index. If `warning` is non-null (≥3 plans share a narrative),
+  call this out explicitly in the analysis — that's exactly the
+  single-signal failure pattern 5/06 hit.
+- **Section 7b — 跨票场次集中度**: any match with budget exposure > 40% is
+  flagged. Do not push that match further (e.g. don't string the单核 with
+  it) without explicit human approval.
+- **Section 7c — Poisson 单核 Kelly 建议**: shows current vs Half-Kelly.
+  If `over_kelly_multiple > 2`, mention this in your "最看好" section so
+  the human knows they're already重仓 the alpha.
+
+#### Step 2.4: Data verification discipline (MANDATORY — 5/06 嘴算 bug 教训)
+
+Any claim about Poisson edge / EV / hit-rate / leg correlation must come
+from one of:
+
+1. The brief's Section 4 (+EV legs) or Section 5 (rejected legs).
+2. A direct call to `compute_poisson_edges` — example one-liner:
+   ```python
+   from nutmeg.services.jczq_intelligence import compute_poisson_edges, poisson_edge_index
+   idx = poisson_edge_index(compute_poisson_edges(matches))
+   idx[("周三007", "ttg", "4球")]  # → exact edge
+   ```
+3. The diagnostic helpers in `nutmeg.services.jczq_diagnostics`:
+   `compute_kelly_advice`, `compute_match_concentration`,
+   `find_safe_second_legs`.
+
+**Never嘴算 ("按 1.52 主胜推算 home_λ ≈ 1.7 → ttg 4球 概率 ~14% → ...")**.
+On 2026-05-06 Claude嘴算 ttg 4球 edge ≈ -40%; the actual edge was -16.4%
+— the推算 was off by 24pp and led to a wrong "强烈反对" recommendation.
+
+For串关 / 2串1 / second-leg suggestions, **always** run:
+```bash
+uv run python scripts/jczq_suggest_second_leg.py --date today --auto --top 8
+```
+This auto-loads the current `final-plan.json` and flags reverse-cover legs
+(e.g. `001 主胜` when main pushes `001 平`) deterministically.
+
+#### Step 2.5: Update the debate workspace
+
+Every daily plan run must also update the local debate workspace so GPT,
+Claude, and the human operator can compare independent judgments from the same
+frozen input.
+
+Initialize the workspace:
+
+```bash
+uv run nutmeg jczq-debate-init \
+  --date today --output-dir .nutmeg-data/jczq --format json
+```
+
+Then read:
+
+```text
+.nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/debate/shared-brief.md
+```
+
+If you are acting as GPT/Codex, write your complete independent analysis to:
+
+```text
+.nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/debate/gpt-analysis.md
+```
+
+Use the template already in that file. Do not only answer in chat; the file is
+the durable record used for review. If the user provides Claude's analysis,
+save it to:
+
+```text
+.nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/debate/claude-analysis.md
+```
+
+When both `gpt-analysis.md` and `claude-analysis.md` contain substantive
+analysis, run:
+
+```bash
+uv run nutmeg jczq-debate-compare \
+  --date today --output-dir .nutmeg-data/jczq --format json
+```
+
+This writes `disagreements.md`. Do **not** overwrite `human-notes.md`,
+`final-plan.md`, or `final-plan.json` unless the user explicitly asks to
+finalize after human review.
 
 #### Step 3: Output 5-6 tickets in this exact format
 
