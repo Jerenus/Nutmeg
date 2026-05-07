@@ -8,6 +8,9 @@ from nutmeg.domain.video_worker import (
     DEFAULT_MPT_TERMS,
     MoneyPrinterTurboRequest,
     MoneyPrinterTurboTaskPacket,
+    MoneyPrinterTurboTaskState,
+    VideoWorkerPollResult,
+    VideoWorkerSubmissionResult,
 )
 from nutmeg.services.content import SHORT_VIDEO_DISCLAIMER, ContentComplianceChecker
 from nutmeg.services.moneyprinterturbo import MoneyPrinterTurboClient
@@ -81,6 +84,198 @@ class VideoWorkerService:
             "status_path": str(status_path),
             "tasks": len(manifest_tasks),
         }
+
+    def submit_run(
+        self,
+        *,
+        run_dir: Path | str,
+        confirm: bool,
+        match_id: str | None = None,
+    ) -> VideoWorkerSubmissionResult:
+        if not confirm:
+            raise VideoWorkerValidationError(
+                "MoneyPrinterTurbo video generation requires explicit --confirm."
+            )
+        client = self._require_client()
+        root = Path(run_dir)
+        manifest = _load_manifest(root)
+        submitted = skipped = blocked = failed = 0
+        task_rows: list[dict[str, Any]] = []
+        for row in manifest.get("tasks") or []:
+            if match_id and row.get("match_id") != match_id:
+                skipped += 1
+                continue
+            task_path = Path(str(row["task_path"]))
+            packet = MoneyPrinterTurboTaskPacket.from_dict(_read_json(task_path))
+            if packet.status.startswith("blocked"):
+                blocked += 1
+                task_rows.append(_task_status_row(packet))
+                continue
+            if packet.task_id:
+                skipped += 1
+                task_rows.append(_task_status_row(packet))
+                continue
+            try:
+                response = client.create_video(packet.request.to_payload())
+            except Exception as exc:
+                error = str(exc)
+                failed += 1
+                failed_packet = _replace_packet(
+                    packet,
+                    status="failed_submit",
+                    error=error,
+                )
+                _write_json(task_path, failed_packet.to_dict())
+                _write_json(
+                    task_path.parent / "submit-result.json",
+                    {"status": "failed", "error": error},
+                )
+                task_rows.append(_task_status_row(failed_packet))
+                continue
+            submitted += 1
+            task_id = str(response["task_id"])
+            submitted_packet = _replace_packet(
+                packet,
+                status="submitted",
+                task_id=task_id,
+                error=None,
+            )
+            _write_json(task_path, submitted_packet.to_dict())
+            _write_json(task_path.parent / "submit-result.json", response)
+            task_rows.append(_task_status_row(submitted_packet))
+
+        status_path = root / "moneyprinterturbo-status.json"
+        _write_json(status_path, {"run_id": manifest.get("run_id"), "tasks": task_rows})
+        return VideoWorkerSubmissionResult(
+            manifest_path=str(root / "moneyprinterturbo-manifest.json"),
+            submitted=submitted,
+            skipped=skipped,
+            blocked=blocked,
+            failed=failed,
+            tasks=task_rows,
+        )
+
+    def poll_run(
+        self,
+        *,
+        run_dir: Path | str,
+        download: bool = False,
+        match_id: str | None = None,
+    ) -> VideoWorkerPollResult:
+        client = self._require_client()
+        root = Path(run_dir)
+        manifest = _load_manifest(root)
+        succeeded = running = failed = blocked = downloaded = 0
+        task_rows: list[dict[str, Any]] = []
+        for row in manifest.get("tasks") or []:
+            if match_id and row.get("match_id") != match_id:
+                continue
+            task_path = Path(str(row["task_path"]))
+            packet = MoneyPrinterTurboTaskPacket.from_dict(_read_json(task_path))
+            if packet.status.startswith("blocked"):
+                blocked += 1
+                task_rows.append(_task_status_row(packet))
+                continue
+            if not packet.task_id:
+                running += 1
+                task_rows.append(
+                    {
+                        "match_id": packet.match_id,
+                        "status": "not_submitted",
+                        "task_id": None,
+                    }
+                )
+                continue
+            try:
+                payload = client.query_task(packet.task_id)
+                state = MoneyPrinterTurboTaskState.from_worker_payload(
+                    match_id=packet.match_id,
+                    task_id=packet.task_id,
+                    payload=payload,
+                )
+                if download and state.status == "succeeded":
+                    local_paths = self._download_state_videos(
+                        client=client,
+                        state=state,
+                        mpt_dir=task_path.parent,
+                    )
+                    state = MoneyPrinterTurboTaskState(
+                        match_id=state.match_id,
+                        task_id=state.task_id,
+                        status=state.status,
+                        worker_state=state.worker_state,
+                        progress=state.progress,
+                        video_urls=state.video_urls,
+                        combined_video_urls=state.combined_video_urls,
+                        local_video_paths=local_paths,
+                        raw=state.raw,
+                        error=state.error,
+                    )
+                    downloaded += len(local_paths)
+            except Exception as exc:
+                state = MoneyPrinterTurboTaskState(
+                    match_id=packet.match_id,
+                    task_id=packet.task_id,
+                    status="failed",
+                    worker_state=None,
+                    progress=None,
+                    video_urls=[],
+                    combined_video_urls=[],
+                    raw={},
+                    error=str(exc),
+                )
+            if state.status == "succeeded":
+                succeeded += 1
+            elif state.status == "failed":
+                failed += 1
+            else:
+                running += 1
+            _write_json(task_path.parent / "status.json", state.to_dict())
+            _write_json(
+                task_path.parent / "quality-report.json",
+                _quality_report_for_state(packet=packet, state=state),
+            )
+            task_rows.append(state.to_dict())
+
+        status_path = root / "moneyprinterturbo-status.json"
+        _write_json(status_path, {"run_id": manifest.get("run_id"), "tasks": task_rows})
+        return VideoWorkerPollResult(
+            status_path=str(status_path),
+            succeeded=succeeded,
+            running=running,
+            failed=failed,
+            blocked=blocked,
+            downloaded=downloaded,
+            tasks=task_rows,
+        )
+
+    def _download_state_videos(
+        self,
+        *,
+        client: MoneyPrinterTurboClient,
+        state: MoneyPrinterTurboTaskState,
+        mpt_dir: Path,
+    ) -> list[str]:
+        videos_dir = mpt_dir / "videos"
+        local_paths: list[str] = []
+        for index, url in enumerate(state.video_urls, start=1):
+            path = client.download_video(
+                url,
+                output_path=videos_dir / f"final-{index}.mp4",
+            )
+            local_paths.append(str(path))
+        for index, url in enumerate(state.combined_video_urls, start=1):
+            path = client.download_video(
+                url,
+                output_path=videos_dir / f"combined-{index}.mp4",
+            )
+            local_paths.append(str(path))
+        return local_paths
+
+    def _require_client(self) -> MoneyPrinterTurboClient:
+        if self._client is None:
+            self._client = MoneyPrinterTurboClient()
+        return self._client
 
     def _build_match_packet(
         self,
@@ -195,3 +390,95 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_manifest(root: Path) -> dict[str, Any]:
+    manifest_path = root / "moneyprinterturbo-manifest.json"
+    if not manifest_path.exists():
+        raise VideoWorkerValidationError(
+            "MoneyPrinterTurbo manifest not found: "
+            f"{manifest_path}. Run `nutmeg video-mpt-packet` first."
+        )
+    manifest = _read_json(manifest_path)
+    if not isinstance(manifest.get("tasks"), list):
+        raise VideoWorkerValidationError("MoneyPrinterTurbo manifest missing tasks list.")
+    return manifest
+
+
+def _replace_packet(
+    packet: MoneyPrinterTurboTaskPacket,
+    *,
+    status: str,
+    task_id: str | None = None,
+    error: str | None = None,
+) -> MoneyPrinterTurboTaskPacket:
+    return MoneyPrinterTurboTaskPacket(
+        run_id=packet.run_id,
+        run_date=packet.run_date,
+        match_id=packet.match_id,
+        match_no=packet.match_no,
+        title=packet.title,
+        script=packet.script,
+        request=packet.request,
+        source_paths=packet.source_paths,
+        compliance=packet.compliance,
+        status=status,
+        task_id=task_id if task_id is not None else packet.task_id,
+        error=error,
+    )
+
+
+def _task_status_row(packet: MoneyPrinterTurboTaskPacket) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "match_id": packet.match_id,
+        "status": packet.status,
+        "task_id": packet.task_id,
+    }
+    if packet.error:
+        row["error"] = packet.error
+    return row
+
+
+def _quality_report_for_state(
+    *,
+    packet: MoneyPrinterTurboTaskPacket,
+    state: MoneyPrinterTurboTaskState,
+) -> dict[str, Any]:
+    has_remote_video = bool(state.video_urls or state.combined_video_urls)
+    has_local_video = bool(state.local_video_paths)
+    gates = [
+        {
+            "gate": "worker_contract",
+            "status": "pass" if state.task_id else "fail",
+            "detail": f"task_id={state.task_id}",
+        },
+        {
+            "gate": "download_integrity",
+            "status": (
+                "pass"
+                if has_local_video
+                else "review"
+                if has_remote_video
+                else "pending"
+            ),
+            "detail": (
+                ";".join(state.local_video_paths)
+                if has_local_video
+                else "No downloaded video yet."
+            ),
+        },
+        {
+            "gate": "artifact_lineage",
+            "status": "pass",
+            "detail": (
+                f"run_id={packet.run_id}; match_id={packet.match_id}; "
+                f"task_id={state.task_id}"
+            ),
+        },
+    ]
+    if state.error:
+        gates.append({"gate": "worker_error", "status": "fail", "detail": state.error})
+    return {
+        "status": "pass" if has_local_video and not state.error else "review",
+        "gates": gates,
+    }
