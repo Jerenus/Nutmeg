@@ -67,6 +67,12 @@ from nutmeg.services.jczq_daily import (
 )
 from nutmeg.services.jczq_review import JczqDailyReviewService
 from nutmeg.services.materialization import MaterializationService
+from nutmeg.services.moneyprinterturbo import (
+    MoneyPrinterTurboClient,
+    MoneyPrinterTurboConfig,
+    MoneyPrinterTurboProviderError,
+    MoneyPrinterTurboValidationError,
+)
 from nutmeg.services.odds import OddsFixtureNotFoundError, OddsSnapshotService
 from nutmeg.services.operations import DailyOperatorService
 from nutmeg.services.players import PlayerProfileService
@@ -81,6 +87,7 @@ from nutmeg.services.snapshot import FixtureNotFoundError, FixtureSnapshotServic
 from nutmeg.services.sync import FixtureSyncService
 from nutmeg.services.tactics import TacticalVisualService
 from nutmeg.services.value import ValueBoardService
+from nutmeg.services.video_worker import VideoWorkerService, VideoWorkerValidationError
 from nutmeg.services.wechat_publisher import (
     WeChatDraftError,
     WeChatPublisherService,
@@ -174,6 +181,8 @@ SEEDANCE_RUN_DIR_OPTION = typer.Option(None, "--run-dir")
 SEEDANCE_OUTPUT_DIR_OPTION = typer.Option(None, "--output-dir")
 SEEDANCE_RATIO_KEY_OPTION = typer.Option("vertical", "--ratio-key")
 SEEDANCE_MAX_CONCURRENCY_OPTION = typer.Option(2, "--max-concurrency")
+VIDEO_MPT_RUN_DIR_OPTION = typer.Option(..., "--run-dir")
+VIDEO_MPT_MATCH_ID_OPTION = typer.Option(None, "--match-id")
 VIDEO_RENDER_PROPS_OPTION = typer.Option(..., "--props")
 VIDEO_RENDER_OUTPUT_OPTION = typer.Option(..., "--output")
 ZUCAI_ODDS_SOURCE_LABEL_OPTION = typer.Option("Zucai odds source", "--source-label")
@@ -755,6 +764,14 @@ def build_seedance_service() -> SeedanceService:
 
 def build_remotion_render_service() -> RemotionRenderService:
     return RemotionRenderService()
+
+
+def build_moneyprinterturbo_client() -> MoneyPrinterTurboClient:
+    return MoneyPrinterTurboClient(config=MoneyPrinterTurboConfig.from_env())
+
+
+def build_video_worker_service() -> VideoWorkerService:
+    return VideoWorkerService(client=build_moneyprinterturbo_client())
 
 
 def build_fixture_information_service() -> FixtureInformationService:
@@ -2054,6 +2071,119 @@ def video_production_packet(
         return
     console.print(
         f"video-production-packet matches={payload['matches']} run_dir={payload['run_dir']}"
+    )
+
+
+
+@app.command("video-mpt-packet")
+def video_mpt_packet(
+    date: str = DAILY_CONTENT_DATE_OPTION,
+    provider: str = DAILY_CONTENT_PROVIDER_OPTION,
+    output_dir: Path = DAILY_CONTENT_OUTPUT_DIR_OPTION,
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    try:
+        daily_service = build_daily_content_service(provider=provider)
+        run = daily_service.build_run(
+            run_date=_resolve_daily_content_date(date),
+            output_dir=output_dir,
+            provider_label=provider,
+            render_pdf=False,
+        )
+        payload = build_video_worker_service().build_packets_for_run(
+            run_dir=Path(str(run.artifacts.run_dir)),
+            run_id=run.run_id,
+            run_date=run.run_date,
+        )
+    except (
+        ContentValidationError,
+        JczqProviderError,
+        JczqSelectionError,
+        VideoWorkerValidationError,
+    ) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+    if format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    console.print(f"video-mpt-packet tasks={payload['tasks']} manifest={payload['manifest_path']}")
+
+
+@app.command("video-mpt-submit")
+def video_mpt_submit(
+    run_dir: Path = VIDEO_MPT_RUN_DIR_OPTION,
+    confirm: bool = typer.Option(False, "--confirm"),
+    match_id: str | None = VIDEO_MPT_MATCH_ID_OPTION,
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    try:
+        result = build_video_worker_service().submit_run(
+            run_dir=run_dir,
+            confirm=confirm,
+            match_id=match_id,
+        )
+    except (
+        VideoWorkerValidationError,
+        MoneyPrinterTurboValidationError,
+        MoneyPrinterTurboProviderError,
+    ) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+    payload = result.to_dict()
+    if format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    console.print(
+        "video-mpt-submit "
+        f"submitted={payload['submitted']} skipped={payload['skipped']} "
+        f"blocked={payload['blocked']} failed={payload['failed']}"
+    )
+
+
+@app.command("video-mpt-poll")
+def video_mpt_poll(
+    run_dir: Path = VIDEO_MPT_RUN_DIR_OPTION,
+    download: bool = typer.Option(False, "--download"),
+    match_id: str | None = VIDEO_MPT_MATCH_ID_OPTION,
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    try:
+        result = build_video_worker_service().poll_run(
+            run_dir=run_dir,
+            download=download,
+            match_id=match_id,
+        )
+    except (
+        VideoWorkerValidationError,
+        MoneyPrinterTurboValidationError,
+        MoneyPrinterTurboProviderError,
+    ) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+    payload = result.to_dict()
+    if format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    console.print(
+        "video-mpt-poll "
+        f"succeeded={payload['succeeded']} running={payload['running']} "
+        f"failed={payload['failed']} blocked={payload['blocked']} "
+        f"downloaded={payload['downloaded']}"
+    )
+
+
+@app.command("video-mpt-health")
+def video_mpt_health(
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    payload = build_moneyprinterturbo_client().health()
+    if format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    status = "reachable" if payload.get("reachable") else "unreachable"
+    console.print(
+        "video-mpt-health "
+        f"{status} base_url={payload.get('base_url')} api_prefix={payload.get('api_prefix')}"
     )
 
 

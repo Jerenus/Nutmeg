@@ -3926,6 +3926,182 @@ def test_video_production_packet_command_writes_artifacts(tmp_path) -> None:
     assert payload["production_profile"] == "cinematic-sports-anime-broadcast-v1"
 
 
+
+def test_video_mpt_packet_command_writes_worker_manifest(tmp_path, monkeypatch) -> None:
+    from nutmeg.interfaces import cli as cli_module
+
+    run_dir = tmp_path / "20260507" / "run-120000"
+
+    class FakeRun:
+        run_id = "daily-content-20260507-120000"
+        run_date = "2026-05-07"
+
+        matches = [object()]
+
+        def __init__(self) -> None:
+            self.artifacts = type("Artifacts", (), {"run_dir": str(run_dir)})()
+
+        def to_dict(self):
+            return {
+                "run_id": self.run_id,
+                "run_date": self.run_date,
+                "artifacts": {"run_dir": str(run_dir)},
+            }
+
+    class FakeDailyContentService:
+        def build_run(self, **kwargs):
+            run_dir.mkdir(parents=True)
+            return FakeRun()
+
+    class FakeVideoWorkerService:
+        def build_packets_for_run(self, **kwargs):
+            assert kwargs["run_dir"] == run_dir
+            assert kwargs["run_id"] == "daily-content-20260507-120000"
+            assert kwargs["run_date"] == "2026-05-07"
+            return {
+                "manifest_path": str(run_dir / "moneyprinterturbo-manifest.json"),
+                "status_path": str(run_dir / "moneyprinterturbo-status.json"),
+                "tasks": 1,
+            }
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_daily_content_service",
+        lambda provider="live": FakeDailyContentService(),
+    )
+    monkeypatch.setattr(cli_module, "build_video_worker_service", lambda: FakeVideoWorkerService())
+
+    result = runner.invoke(
+        app,
+        [
+            "video-mpt-packet",
+            "--date",
+            "2026-05-07",
+            "--provider",
+            "sample",
+            "--output-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 0, result.stdout
+    assert payload["tasks"] == 1
+    assert payload["manifest_path"].endswith("moneyprinterturbo-manifest.json")
+
+
+def test_video_mpt_submit_command_refuses_without_confirm(tmp_path, monkeypatch) -> None:
+    from nutmeg.interfaces import cli as cli_module
+    from nutmeg.services.video_worker import VideoWorkerValidationError
+
+    class FakeVideoWorkerService:
+        def submit_run(self, **kwargs):
+            raise VideoWorkerValidationError(
+                "MoneyPrinterTurbo video generation requires explicit --confirm."
+            )
+
+    monkeypatch.setattr(cli_module, "build_video_worker_service", lambda: FakeVideoWorkerService())
+
+    result = runner.invoke(
+        app,
+        ["video-mpt-submit", "--run-dir", str(tmp_path), "--format", "json"],
+    )
+
+    assert result.exit_code == 2
+    assert "--confirm" in result.stdout
+
+
+def test_video_mpt_submit_command_returns_json(tmp_path, monkeypatch) -> None:
+    from nutmeg.domain.video_worker import VideoWorkerSubmissionResult
+    from nutmeg.interfaces import cli as cli_module
+
+    class FakeVideoWorkerService:
+        def submit_run(self, **kwargs):
+            assert kwargs["run_dir"] == tmp_path
+            assert kwargs["confirm"] is True
+            assert kwargs["match_id"] == "周四001"
+            return VideoWorkerSubmissionResult(
+                manifest_path=str(tmp_path / "moneyprinterturbo-manifest.json"),
+                submitted=1,
+                skipped=0,
+                blocked=0,
+                failed=0,
+                tasks=[{"match_id": "周四001", "task_id": "mpt-1", "status": "submitted"}],
+            )
+
+    monkeypatch.setattr(cli_module, "build_video_worker_service", lambda: FakeVideoWorkerService())
+
+    result = runner.invoke(
+        app,
+        [
+            "video-mpt-submit",
+            "--run-dir",
+            str(tmp_path),
+            "--confirm",
+            "--match-id",
+            "周四001",
+            "--format",
+            "json",
+        ],
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 0, result.stdout
+    assert payload["submitted"] == 1
+    assert payload["tasks"][0]["task_id"] == "mpt-1"
+
+
+def test_video_mpt_poll_command_returns_json(tmp_path, monkeypatch) -> None:
+    from nutmeg.domain.video_worker import VideoWorkerPollResult
+    from nutmeg.interfaces import cli as cli_module
+
+    class FakeVideoWorkerService:
+        def poll_run(self, **kwargs):
+            assert kwargs["run_dir"] == tmp_path
+            assert kwargs["download"] is True
+            assert kwargs["match_id"] is None
+            return VideoWorkerPollResult(
+                status_path=str(tmp_path / "moneyprinterturbo-status.json"),
+                succeeded=1,
+                running=0,
+                failed=0,
+                blocked=0,
+                downloaded=2,
+                tasks=[{"match_id": "周四001", "status": "succeeded"}],
+            )
+
+    monkeypatch.setattr(cli_module, "build_video_worker_service", lambda: FakeVideoWorkerService())
+
+    result = runner.invoke(
+        app,
+        ["video-mpt-poll", "--run-dir", str(tmp_path), "--download", "--format", "json"],
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 0, result.stdout
+    assert payload["succeeded"] == 1
+    assert payload["downloaded"] == 2
+
+
+def test_video_mpt_health_command_returns_json(monkeypatch) -> None:
+    from nutmeg.interfaces import cli as cli_module
+
+    class FakeMptClient:
+        def health(self):
+            return {"reachable": True, "base_url": "http://localhost:8080", "api_prefix": "/api/v1"}
+
+    monkeypatch.setattr(cli_module, "build_moneyprinterturbo_client", lambda: FakeMptClient())
+
+    result = runner.invoke(app, ["video-mpt-health", "--format", "json"])
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 0, result.stdout
+    assert payload["reachable"] is True
+    assert payload["base_url"] == "http://localhost:8080"
+
+
 def test_video_render_command_invokes_remotion_service(tmp_path, monkeypatch) -> None:
     props = tmp_path / "remotion-timeline.json"
     props.write_text("{}", encoding="utf-8")
