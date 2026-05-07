@@ -221,10 +221,184 @@ def test_rule_a_poisson_solo_fires_when_strong_edge_present(tmp_path: Path) -> N
         return
     assert poisson_solo is not None and poisson_solo.legs
     assert len(poisson_solo.legs) <= 2
-    # Rule B composition guard: no had ≤ 1.40 legs allowed inside poisson_solo.
+    # Rule B composition guard: no had ≤ HAD_BANKER_FLOOR legs allowed inside poisson_solo.
     for leg in poisson_solo.legs:
         if leg.pool == "had":
             assert leg.odds > HAD_BANKER_FLOOR
+
+
+def test_rule_a_v2_never_combines_same_match_legs_in_solo_ticket() -> None:
+    """Rule A v2 v3 (5/07 redesign after 国家体彩 rule reminder).
+
+    国家体彩混合过关规则禁止同一场次不同玩法在同一张过关票里相乘。所以即便
+    同场有 crs 高 edge + ttg 中 edge 双信号，也只能挑一条入票，另一条不能作为
+    支撑腿写进同一张票（可在 brief 第 5b 节作为分析证据展示）。
+
+    https://www.sport.gov.cn/n20001280/n20745751/n20767297/c21177108/content.html
+    """
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周一001",
+            match_date="2026-05-05",
+            match_time="21:00:00",
+            league="日职",
+            home_team="H",
+            away_team="A",
+            status="Selling",
+            hot_direction="主胜低赔(2.00)",
+            role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周一001", league="日职", home_team="H", away_team="A",
+                    pool="crs", play="比分", pick="0:0", odds=11.0, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周一001", league="日职", home_team="H", away_team="A",
+                    pool="ttg", play="总进球", pick="1球", odds=4.45, logic="",
+                ),
+            ],
+        )
+    ]
+    crs_row = PoissonEdgeEntry(
+        match_no="周一001", home="H", away="A", league="日职",
+        pool="crs", pick="0:0", market_odd=11.0, fair_odd=9.0,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.07,  # +22%
+    )
+    ttg_row = PoissonEdgeEntry(
+        match_no="周一001", home="H", away="A", league="日职",
+        pool="ttg", pick="1球", market_odd=4.45, fair_odd=4.0,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.02,  # +17%, also strong
+    )
+    plan = service._build_poisson_solo_plan(matches, poisson_rows=[crs_row, ttg_row])
+    # Both legs are eligible (>= +15% edge), but they're from the same match
+    # → only one may enter the ticket. The top edge (crs +22%) wins; ttg is dropped.
+    assert len(plan.legs) == 1, (
+        "Rule A v2 v3 must NEVER produce same-match different-pool combos "
+        "(国家体彩混合过关规则)"
+    )
+    assert plan.legs[0].pool == "crs"
+    assert plan.legs[0].pick == "0:0"
+
+
+def test_rule_a_v2_cross_match_support_extends_to_two_legs() -> None:
+    """When a cross-match +EV row (>= +5%) exists, Rule A v2 extends the
+    primary-edge solo to a 2-leg cross-match combo.
+    """
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周一001", match_date="2026-05-05", match_time="21:00:00",
+            league="日职", home_team="H1", away_team="A1", status="Selling",
+            hot_direction="主胜低赔(2.00)", role="均衡分歧场", confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周一001", league="日职", home_team="H1", away_team="A1",
+                    pool="crs", play="比分", pick="0:0", odds=11.0, logic="",
+                ),
+            ],
+        ),
+        JczqDailyMatch(
+            match_no="周一002", match_date="2026-05-05", match_time="21:00:00",
+            league="意甲", home_team="H2", away_team="A2", status="Selling",
+            hot_direction="主胜低赔(1.80)", role="均衡分歧场", confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周一002", league="意甲", home_team="H2", away_team="A2",
+                    pool="ttg", play="总进球", pick="1球", odds=4.20, logic="",
+                ),
+            ],
+        ),
+    ]
+    primary = PoissonEdgeEntry(
+        match_no="周一001", home="H1", away="A1", league="日职",
+        pool="crs", pick="0:0", market_odd=11.0, fair_odd=9.0,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.07,  # +22%
+    )
+    cross_support = PoissonEdgeEntry(
+        match_no="周一002", home="H2", away="A2", league="意甲",
+        pool="ttg", pick="1球", market_odd=4.20, fair_odd=4.0,
+        edge=POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE + 0.03,  # +8%, below +15% but ≥ +5%
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[primary, cross_support]
+    )
+    assert len(plan.legs) == 2
+    match_nos = {leg.match_no for leg in plan.legs}
+    assert match_nos == {"周一001", "周一002"}, "must be cross-match"
+
+
+def test_rule_o_same_match_pool_violation_detector() -> None:
+    """check_same_match_pool_legality flags any plan that mixes same-match
+    different-pool legs (国家体彩 illegal parlay structure).
+    """
+    from nutmeg.domain.jczq_daily import JczqDailyPlan
+    from nutmeg.services.jczq_diagnostics import (
+        SameMatchPoolViolation,
+        check_same_match_pool_legality,
+    )
+
+    legal_plan = JczqDailyPlan(
+        name="A",
+        kind="stable_base",
+        description="legal",
+        legs=[
+            JczqDailyLeg(
+                match_no="周一001", league="意甲", home_team="H1", away_team="A1",
+                pool="had", play="胜平负", pick="胜", odds=1.65, logic="",
+            ),
+            JczqDailyLeg(
+                match_no="周一002", league="意甲", home_team="H2", away_team="A2",
+                pool="had", play="胜平负", pick="胜", odds=1.70, logic="",
+            ),
+        ],
+        total_odds=2.81,
+        two_yuan_return=5.62,
+        risk_note="",
+    )
+    illegal_plan = JczqDailyPlan(
+        name="C",
+        kind="poisson_solo",
+        description="illegal — same-match ttg+crs",
+        legs=[
+            JczqDailyLeg(
+                match_no="周一001", league="意甲", home_team="H1", away_team="A1",
+                pool="ttg", play="总进球", pick="1球", odds=4.20, logic="",
+            ),
+            JczqDailyLeg(
+                match_no="周一001", league="意甲", home_team="H1", away_team="A1",
+                pool="crs", play="比分", pick="0:0", odds=11.0, logic="",
+            ),
+        ],
+        total_odds=46.20,
+        two_yuan_return=92.40,
+        risk_note="",
+    )
+
+    violations = check_same_match_pool_legality([legal_plan, illegal_plan])
+    assert len(violations) == 1
+    v = violations[0]
+    assert isinstance(v, SameMatchPoolViolation)
+    assert v.plan_kind == "poisson_solo"
+    assert v.match_no == "周一001"
+    assert set(v.pools) == {"ttg", "crs"}
+    assert v.severity == "blocking"
 
 
 # ---------------------------------------------------------------- Rule C ---

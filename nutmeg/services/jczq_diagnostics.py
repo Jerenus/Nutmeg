@@ -430,3 +430,62 @@ def find_safe_second_legs(
         -c.joint_hit_rate,
     ))
     return out
+
+
+# ----------------------------------------------- Rule O: legality validator
+#
+# 国家体彩规则：同一比赛场次不同玩法不可混合过关。
+# 来源：国家体育总局《竞彩"自由过关"上线了！轻松投注更出彩》
+# https://www.sport.gov.cn/n20001280/n20745751/n20767297/c21177108/content.html
+#
+# Detector returns one violation per offending plan; brief Section 7 and the
+# debate compare step both call this so any structurally-illegal ticket gets
+# flagged before the user can place it.
+
+
+@dataclass(frozen=True, slots=True)
+class SameMatchPoolViolation:
+    plan_kind: str
+    plan_name: str
+    match_no: str
+    pools: tuple[str, ...]  # e.g. ("ttg", "hhad")
+    picks: tuple[str, ...]  # parallel to pools
+    severity: str  # "blocking" — these tickets cannot legally be placed.
+
+
+def check_same_match_pool_legality(
+    plans: Iterable[JczqDailyPlan],
+) -> list[SameMatchPoolViolation]:
+    """Detect plans that combine same-match different-pool legs in one ticket.
+
+    Per 国家体彩 mixed-parlay rules a single ticket may NOT multiply legs from
+    the same match across different pools (had/hhad/ttg/hafu/crs). Stacking two
+    same-pool legs from the same match is also illegal in 单关 mode and pointless
+    in mixed mode (only one outcome can win), so we treat any same-match
+    repetition inside a plan as a blocking violation.
+
+    Returns one violation per offending (plan, match) pair. An empty list means
+    every plan is structurally legal.
+    """
+
+    violations: list[SameMatchPoolViolation] = []
+    for plan in plans:
+        if not plan.legs:
+            continue
+        by_match: dict[str, list] = {}
+        for leg in plan.legs:
+            by_match.setdefault(leg.match_no, []).append(leg)
+        for match_no, legs in by_match.items():
+            if len(legs) <= 1:
+                continue
+            violations.append(
+                SameMatchPoolViolation(
+                    plan_kind=plan.kind,
+                    plan_name=plan.name,
+                    match_no=match_no,
+                    pools=tuple(leg.pool for leg in legs),
+                    picks=tuple(leg.pick for leg in legs),
+                    severity="blocking",
+                )
+            )
+    return violations

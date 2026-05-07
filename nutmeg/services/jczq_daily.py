@@ -51,10 +51,24 @@ from nutmeg.services.jczq_strategy_memory import (
     render_strategy_memory_notes,
 )
 
-# Rule B: any had leg priced at or below this is too thin to anchor a banker.
-HAD_BANKER_FLOOR = 1.40
+# Rule B (5/07 iteration): had legs priced at or below this floor are too thin to anchor.
+# Bumped 1.40 → 1.50 after 5/06 review: stable_base stats 5 hits / 6 misses (n=11);
+# 5/06 specific: 拜仁 had 胜 @ 1.52 in stable_base MISS (1:1). Razor-thin 1.40-1.50
+# bankers consistently underperform; 1.50-1.60 still allowed but flagged in soft rules.
+HAD_BANKER_FLOOR = 1.50
 # Rule A: a leg with at least this much Poisson edge triggers the poisson_solo ticket.
 POISSON_SOLO_EDGE_THRESHOLD = 0.15
+# Rule O (5/07 iteration after sport.gov.cn rule reminder): same-match different-pool
+# legs may NOT be combined into one parlay ticket per 国家体育总局《竞彩自由过关》rule.
+# Source: https://www.sport.gov.cn/n20001280/n20745751/n20767297/c21177108/content.html
+# This invalidated the original Rule A v2 design ("crs requires same-match support") —
+# the support pairing forced ttg+crs same-match combos that the official rule forbids.
+# Rule A v2 (5/07 redesign): crs single-leg is allowed solo at edge ≥ +15% (~10% hit
+# rate is acceptable for 25 yuan small-bet entertainment). To pair, must use a
+# DIFFERENT-MATCH +EV row (≥ +5%) — never same-match. Same-match support is now
+# advisory analysis only, surfaced in brief Section 5b but never multiplied in a
+# ticket leg.
+POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE = 0.05
 # Rule A: legs with edge ≤ this are flagged in the report as model-opposed.
 POISSON_STRONG_OPPOSE_THRESHOLD = -0.20
 # Rule F: bias subtracted from a leg's score when its team is on the burned list.
@@ -1464,51 +1478,99 @@ class JczqDailyAdvisorService:
         *,
         poisson_rows: list,
     ) -> JczqDailyPlan:
-        """Rule A: dedicated single-/double-leg ticket built around the strongest
-        Poisson +EV legs. No had ≤ 1.40 dilution. Only fires when at least one
-        leg crosses POISSON_SOLO_EDGE_THRESHOLD.
+        """Rule A v2 (5/07 redesign after sport.gov.cn rule reminder).
+
+        Original Rule A v2 ("crs requires same-match support pairing") was scrapped
+        because 国家体彩 forbids same-match different-pool combinations in one parlay.
+
+        Current behavior:
+          - eligible = rows with edge >= POISSON_SOLO_EDGE_THRESHOLD (default +15%)
+          - Pick top eligible rows (sorted by edge), at most 2 legs, all from
+            DIFFERENT matches. Pool type doesn't matter — crs solo is fine since
+            +15% edge translates to acceptable EV even at ~10% hit rate.
+          - Optionally extend to a 2nd leg using a CROSS-MATCH +EV row at edge
+            >= POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE (default +5%).
+          - Same-match support rows are surfaced in brief Section 5b as analysis
+            evidence ONLY — never combined into the ticket's legs.
+
+        See `nutmeg.services.jczq_diagnostics.check_same_match_pool_legality`
+        which post-validates plans against this rule.
         """
 
-        eligible = [row for row in poisson_rows if row.edge >= POISSON_SOLO_EDGE_THRESHOLD]
+        eligible = [
+            row for row in poisson_rows if row.edge >= POISSON_SOLO_EDGE_THRESHOLD
+        ]
         if not eligible:
             return self._make_plan(
                 "Poisson 单核灵感票",
                 "poisson_solo",
-                "Rule A: 至少 1 条腿 Poisson edge ≥ +15% 时启用，单/双腿杠杆。",
+                "Rule A v2: 至少 1 条腿 Poisson edge ≥ +15% 时启用；跨场组合，不同场不同玩法。",
                 [],
                 "Poisson 单核仅在模型有强信号时出场。",
             )
-        match_index: dict[str, JczqDailyMatch] = {match.match_no: match for match in matches}
+        match_index: dict[str, JczqDailyMatch] = {
+            match.match_no: match for match in matches
+        }
+
+        def _is_thin_had_banker(leg: JczqDailyLeg) -> bool:
+            return leg.pool == "had" and leg.odds <= HAD_BANKER_FLOOR
+
+        def _build_leg(row, match: JczqDailyMatch) -> JczqDailyLeg | None:
+            leg = _find_leg(match, pool=row.pool, pick=row.pick)
+            if leg is None:
+                return None
+            if _is_thin_had_banker(leg):
+                return None
+            return replace(
+                leg,
+                logic=(
+                    f"Poisson 单核：edge {row.edge:+.1%}"
+                    f"（公允 {row.fair_odd}），模型主动支持。"
+                ),
+            )
+
         legs: list[JczqDailyLeg] = []
         seen_matches: set[str] = set()
+
+        # Pass 1: take top eligible rows from distinct matches (max 2).
         for row in eligible:
             if len(legs) >= 2:
                 break
             if row.match_no in seen_matches:
-                continue
+                continue  # Rule O: never combine two legs from the same match.
             match = match_index.get(row.match_no)
             if match is None:
                 continue
-            leg = _find_leg(match, pool=row.pool, pick=row.pick)
-            if leg is None:
+            built = _build_leg(row, match)
+            if built is None:
                 continue
-            # Rule B / Rule A composition: never mix had ≤ 1.40 in here.
-            if leg.pool == "had" and leg.odds <= HAD_BANKER_FLOOR:
-                continue
-            legs.append(
-                replace(
-                    leg,
-                    logic=(
-                        f"Poisson 单核：edge {row.edge:+.1%}（公允 {row.fair_odd}）"
-                        f"，模型主动支持。"
-                    ),
-                )
-            )
+            legs.append(built)
             seen_matches.add(row.match_no)
+
+        # Pass 2: fill 2nd slot from cross-match +EV rows at >=
+        # POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE if Pass 1 produced only 1 leg.
+        if len(legs) == 1:
+            cross_support = [
+                row
+                for row in poisson_rows
+                if row.match_no not in seen_matches
+                and row.edge >= POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE
+            ]
+            for row in cross_support:
+                match = match_index.get(row.match_no)
+                if match is None:
+                    continue
+                built = _build_leg(row, match)
+                if built is None:
+                    continue
+                legs.append(built)
+                seen_matches.add(row.match_no)
+                break
+
         return self._make_plan(
             "Poisson 单核灵感票",
             "poisson_solo",
-            "Rule A: 模型 +EV 强信号腿独立出票，避免被低赔强胆稀释。",
+            "Rule A v2: 跨场 +EV 腿组合（同场不同玩法不可混合过关，国家体彩规则）。",
             legs,
             "Poisson 单核小注娱乐：腿少杠杆高，赔率波动大。",
         )
