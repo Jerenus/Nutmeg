@@ -195,14 +195,74 @@ def fair_odds(model: FittedModel, *, pool: str, pick: str) -> float | None:
     return round(1.0 / prob, 3)
 
 
+# R7 (5/08): hhad pricing — Poisson grid + handicap adjustment.
+# goal_line semantics from the home perspective: -1 = home gives 1 goal,
+# +1 = home receives 1 goal. Half-goal lines eliminate the tie outcome.
+
+
+def _compute_hhad_probs(
+    grid: ScoreGrid,
+    *,
+    goal_line: float,
+) -> dict[str, float]:
+    """Probabilities for 让胜 / 让平 / 让负 given handicap.
+
+    Integer goal_line yields 让胜 / 让平 / 让负 probabilities. Half-goal
+    lines (e.g., -0.5, +1.5) collapse 让平 to zero — no way for the
+    adjusted score to tie.
+    """
+
+    integer_line = goal_line == int(goal_line)
+    let_win = let_tie = let_loss = 0.0
+    for (h, a), prob in grid.grid.items():
+        adj_diff = (h + goal_line) - a
+        if adj_diff > 0:
+            let_win += prob
+        elif integer_line and adj_diff == 0:
+            let_tie += prob
+        else:
+            let_loss += prob
+    if integer_line:
+        return {"让胜": let_win, "让平": let_tie, "让负": let_loss}
+    return {"让胜": let_win, "让负": let_loss}
+
+
+def fair_odds_hhad(
+    model: FittedModel,
+    *,
+    pick: str,
+    goal_line: float,
+    max_goals: int = DEFAULT_MAX_GOALS,
+) -> float | None:
+    """Fair odds for an hhad pick given a handicap goal_line.
+
+    Reconstructs the score grid from the fitted lambdas and aggregates
+    the handicap-adjusted outcome probabilities. Returns None when the
+    pick is not produced for the given line (e.g., 让平 with a half line).
+    """
+
+    grid = build_score_grid(model.home_lambda, model.away_lambda, max_goals=max_goals)
+    probs = _compute_hhad_probs(grid, goal_line=goal_line)
+    prob = probs.get(pick)
+    if prob is None or prob <= 0:
+        return None
+    return round(1.0 / prob, 3)
+
+
 def edge_vs_market(
     model: FittedModel,
     *,
     pool: str,
     pick: str,
     market_odd: float,
+    goal_line: float | None = None,
 ) -> float | None:
-    fair = fair_odds(model, pool=pool, pick=pick)
+    if pool == "hhad":
+        if goal_line is None:
+            return None
+        fair = fair_odds_hhad(model, pick=pick, goal_line=goal_line)
+    else:
+        fair = fair_odds(model, pool=pool, pick=pick)
     if fair is None or market_odd <= 0:
         return None
     return round(market_odd / fair - 1.0, 4)

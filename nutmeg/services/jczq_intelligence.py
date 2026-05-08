@@ -623,8 +623,9 @@ class PoissonEdgeEntry:
     edge: float
 
 
-# pools the Poisson model can fairly price (hhad excluded — needs handicap-aware grid).
-POISSON_PRICED_POOLS = ("had", "ttg", "hafu", "crs")
+# pools the Poisson model can fairly price. hhad joined the set on
+# 2026-05-08 (R7) once the handicap-aware grid landed in jczq_poisson.
+POISSON_PRICED_POOLS = ("had", "ttg", "hafu", "crs", "hhad")
 
 
 def compute_poisson_edges(
@@ -652,7 +653,24 @@ def compute_poisson_edges(
         for leg in match.candidates:
             if leg.pool not in POISSON_PRICED_POOLS:
                 continue
-            edge = edge_vs_market(fit, pool=leg.pool, pick=leg.pick, market_odd=leg.odds)
+            # R7: hhad needs a goal_line to price the handicap-adjusted grid.
+            # Skip legs whose goal_line is missing or unparseable (Rule D
+            # already rejects these from select_top_legs anyway).
+            goal_line: float | None = None
+            if leg.pool == "hhad":
+                if not leg.goal_line:
+                    continue
+                try:
+                    goal_line = float(leg.goal_line)
+                except ValueError:
+                    continue
+            edge = edge_vs_market(
+                fit,
+                pool=leg.pool,
+                pick=leg.pick,
+                market_odd=leg.odds,
+                goal_line=goal_line,
+            )
             if edge is None:
                 continue
             fair = leg.odds / (1 + edge) if edge > -1 else 0.0
