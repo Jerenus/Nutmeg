@@ -349,6 +349,7 @@ def _grade_legs(
                     "plan_kind": plan.get("kind"),
                     "plan_name": plan.get("name"),
                     "match_no": leg.get("match_no"),
+                    "league": leg.get("league"),
                     "home_team": leg.get("home_team"),
                     "away_team": leg.get("away_team"),
                     "pool": leg.get("pool"),

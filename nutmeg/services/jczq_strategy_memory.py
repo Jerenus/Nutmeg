@@ -14,6 +14,17 @@ MEMORY_RELATIVE_PATH = Path("memory") / "strategy-memory.json"
 PATTERN_BUCKET_EV_DECAY = 0.85
 PATTERN_BUCKET_RECENT_LIMIT = 30
 
+# R1 (5/08): Poisson lambda calibration loop.
+# A (league × pool) bucket showing systematic under-pricing of goals
+# (avg goal_residual ≥ this threshold, sample_count ≥ this floor) gets
+# its recommended min_edge raised — generator should then refuse low-
+# edge crs/ttg picks in that league until the model recalibrates.
+POISSON_RESIDUAL_BIAS_THRESHOLD = 0.5
+POISSON_RESIDUAL_MIN_SAMPLES = 3
+POISSON_RESIDUAL_RECENT_LIMIT = 200
+POISSON_DEFAULT_CRS_MIN_EDGE = 0.15
+POISSON_RAISED_CRS_MIN_EDGE = 0.25
+
 
 def strategy_memory_path(output_dir: Path | str) -> Path:
     return Path(output_dir) / MEMORY_RELATIVE_PATH
@@ -70,6 +81,7 @@ def update_strategy_memory(
         graded_legs=graded_legs,
     )
     _update_oracle_learnings(memory, run_date=run_date, context=context, results=results)
+    _update_poisson_residuals(memory, run_date=run_date, graded_legs=graded_legs)
     _update_decision_policy(
         memory,
         run_date=run_date,
@@ -114,8 +126,17 @@ def render_strategy_memory_notes(memory: dict[str, Any], *, limit: int = 2) -> l
 
 
 def render_decision_policy_notes(memory: dict[str, Any], *, limit: int = 6) -> list[str]:
+    operator = memory.get("operator_strategy") or {}
     policy = memory.get("decision_policy") or {}
-    notes = [str(item) for item in policy.get("notes") or [] if str(item).strip()]
+    notes: list[str] = []
+    seen: set[str] = set()
+    for source_notes in (operator.get("notes") or [], policy.get("notes") or []):
+        for source in source_notes:
+            note = str(source).strip()
+            if not note or note in seen:
+                continue
+            notes.append(note)
+            seen.add(note)
     return notes[:limit]
 
 
@@ -177,6 +198,107 @@ def compute_league_ttg_volatility(
             else (ordered[mid - 1] + ordered[mid]) / 2
         )
         out[league] = float(median)
+    return out
+
+
+def _update_poisson_residuals(
+    memory: dict[str, Any],
+    *,
+    run_date: str,
+    graded_legs: list[dict[str, Any]],
+) -> None:
+    """R1 calibration: append per-leg goal residuals to the rolling
+    `poisson_residuals` list. Only legs with both `expected_goals` and
+    `realized_goals` populated by R8 enrichment are kept; others are
+    silently skipped (hhad has no Poisson price; pre-game cancellations
+    have no realized goals).
+    """
+
+    samples: list[dict[str, Any]] = list(memory.get("poisson_residuals") or [])
+    seen = {
+        (str(s.get("date")), str(s.get("match_no")), str(s.get("pool")))
+        for s in samples
+    }
+    for leg in graded_legs:
+        pool = str(leg.get("pool") or "")
+        if pool == "hhad" or not pool:
+            continue
+        match_no = str(leg.get("match_no") or "")
+        if not match_no:
+            continue
+        key = (run_date, match_no, pool)
+        if key in seen:
+            continue
+        if leg.get("expected_goals") is None or leg.get("realized_goals") is None:
+            continue
+        residual = leg.get("goal_residual")
+        if residual is None:
+            continue
+        samples.append({
+            "date": run_date,
+            "match_no": match_no,
+            "league": str(leg.get("league") or ""),
+            "pool": pool,
+            "pick": str(leg.get("pick") or ""),
+            "expected_goals": leg.get("expected_goals"),
+            "realized_goals": leg.get("realized_goals"),
+            "goal_residual": residual,
+            "hit": leg.get("hit"),
+        })
+        seen.add(key)
+    memory["poisson_residuals"] = samples[-POISSON_RESIDUAL_RECENT_LIMIT:]
+
+
+def compute_poisson_lambda_signals(
+    memory: dict[str, Any],
+    *,
+    pool: str = "crs",
+    min_samples: int = POISSON_RESIDUAL_MIN_SAMPLES,
+    bias_threshold: float = POISSON_RESIDUAL_BIAS_THRESHOLD,
+) -> dict[str, dict[str, Any]]:
+    """Per-league calibration signals derived from `poisson_residuals`.
+
+    Returns `{league: {sample_count, avg_goal_residual, hit_rate,
+    recommended_crs_min_edge}}` for leagues with enough samples in the
+    given pool. Leagues with positive average residual (model under-prices
+    goals) get a raised recommended floor; otherwise the default applies.
+    """
+
+    samples = memory.get("poisson_residuals") or []
+    by_league: dict[str, list[dict[str, Any]]] = {}
+    for entry in samples:
+        if str(entry.get("pool") or "") != pool:
+            continue
+        league = str(entry.get("league") or "")
+        if not league:
+            continue
+        by_league.setdefault(league, []).append(entry)
+
+    out: dict[str, dict[str, Any]] = {}
+    for league, entries in by_league.items():
+        if len(entries) < min_samples:
+            continue
+        residuals = [
+            float(e.get("goal_residual") or 0.0)
+            for e in entries
+            if e.get("goal_residual") is not None
+        ]
+        if not residuals:
+            continue
+        avg_residual = sum(residuals) / len(residuals)
+        hits = sum(1 for e in entries if e.get("hit") is True)
+        hit_rate = hits / len(entries) if entries else 0.0
+        recommended = (
+            POISSON_RAISED_CRS_MIN_EDGE
+            if avg_residual >= bias_threshold
+            else POISSON_DEFAULT_CRS_MIN_EDGE
+        )
+        out[league] = {
+            "sample_count": len(entries),
+            "avg_goal_residual": round(avg_residual, 3),
+            "hit_rate": round(hit_rate, 3),
+            "recommended_crs_min_edge": recommended,
+        }
     return out
 
 

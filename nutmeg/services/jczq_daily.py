@@ -44,6 +44,7 @@ from nutmeg.services.jczq_intelligence import (
 )
 from nutmeg.services.jczq_strategy_memory import (
     compute_league_ttg_volatility,
+    compute_poisson_lambda_signals,
     decision_policy_rule,
     decision_policy_rule_active,
     load_strategy_memory,
@@ -538,7 +539,13 @@ class JczqDailyAdvisorService:
         )
         draw_cluster = self._build_draw_cluster_plan(matches, analytics=analytics)
         upset_cluster = self._build_upset_cluster_plan(matches, analytics=analytics)
-        poisson_solo = self._build_poisson_solo_plan(matches, poisson_rows=poisson_rows)
+        # R1 (5/08): per-league Poisson threshold from rolling residuals.
+        poisson_lambda_signals = compute_poisson_lambda_signals(memory)
+        poisson_solo = self._build_poisson_solo_plan(
+            matches,
+            poisson_rows=poisson_rows,
+            league_min_edge=poisson_lambda_signals,
+        )
         plans = [
             plan
             for plan in [
@@ -1559,6 +1566,7 @@ class JczqDailyAdvisorService:
         matches: list[JczqDailyMatch],
         *,
         poisson_rows: list,
+        league_min_edge: dict[str, dict[str, Any]] | None = None,
     ) -> JczqDailyPlan:
         """Rule A v2 (5/07 redesign after sport.gov.cn rule reminder).
 
@@ -1579,8 +1587,23 @@ class JczqDailyAdvisorService:
         which post-validates plans against this rule.
         """
 
+        # R1: per-league dynamic threshold for crs picks. Default is
+        # POISSON_SOLO_EDGE_THRESHOLD (+15%); leagues flagged for systematic
+        # under-pricing of goals get the raised floor (e.g., +25%).
+        signals = league_min_edge or {}
+
+        def _row_threshold(row) -> float:
+            base = POISSON_SOLO_EDGE_THRESHOLD
+            if row.pool != "crs":
+                return base
+            sig = signals.get(row.league)
+            if not sig:
+                return base
+            recommended = float(sig.get("recommended_crs_min_edge") or base)
+            return max(base, recommended)
+
         eligible = [
-            row for row in poisson_rows if row.edge >= POISSON_SOLO_EDGE_THRESHOLD
+            row for row in poisson_rows if row.edge >= _row_threshold(row)
         ]
         if not eligible:
             return self._make_plan(
