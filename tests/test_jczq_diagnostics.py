@@ -14,6 +14,7 @@ from nutmeg.services.jczq_diagnostics import (
     MatchConcentration,
     SecondLegCandidate,
     TicketNarrative,
+    apply_rule_l_concentration_cap,
     classify_ticket_narrative,
     compute_kelly_advice,
     compute_match_concentration,
@@ -157,6 +158,95 @@ def test_concentration_no_warning_below_threshold() -> None:
     stakes = {"stable_base": 25.0, "poisson_solo": 25.0}
     out = compute_match_concentration([p_a, p_c], stakes=stakes, total_budget=100.0)
     assert all(item.warning is None for item in out)
+
+
+# --------------------------------------------------------- Rule L hard cap (R3)
+
+
+def test_rule_l_cap_drops_match_from_lowest_priority_plans_when_overexposed() -> None:
+    """5/07 002 was in 5 plans (A/B/C/D/E). Rule L hard cap (R3) trims that
+    down to ≤3 by dropping the leg from the lowest-priority plans first.
+    Priority (most-protected → most-droppable):
+      stable_base > poisson_solo > main > inspiration > contrarian
+      > draw_cluster > upset_cluster > false_signal > extreme
+    """
+    p_a = _plan("stable_base", _leg("002", "had", "胜", 1.62), _leg("003", "had", "胜", 1.58))
+    p_b = _plan("main", _leg("002", "ttg", "2球", 3.30), _leg("003", "ttg", "2球", 3.30),
+                _leg("006", "ttg", "1球", 4.00), _leg("005", "had", "平", 4.00))
+    p_c = _plan("poisson_solo", _leg("002", "crs", "0:0", 12.0), _leg("005", "crs", "0:0", 13.0))
+    p_d = _plan("contrarian", _leg("002", "ttg", "1球", 4.50), _leg("001", "had", "平", 5.80),
+                _leg("006", "hhad", "让平", 3.15, goal_line="+1"))
+    p_e = _plan("extreme", _leg("002", "crs", "0:0", 12.0), _leg("003", "crs", "0:0", 12.5),
+                _leg("006", "crs", "0:0", 9.25))
+
+    capped = apply_rule_l_concentration_cap([p_a, p_b, p_c, p_d, p_e], max_per_match=3)
+
+    plans_with_002 = [p for p in capped if any(leg.match_no == "002" for leg in p.legs)]
+    assert len(plans_with_002) <= 3, (
+        f"002 still in {len(plans_with_002)} plans after R3 enforcement"
+    )
+    by_kind = {p.kind: p for p in capped}
+    assert any(leg.match_no == "002" for leg in by_kind["stable_base"].legs)
+    assert any(leg.match_no == "002" for leg in by_kind["poisson_solo"].legs)
+    assert any(leg.match_no == "002" for leg in by_kind["main"].legs)
+    assert not any(leg.match_no == "002" for leg in by_kind["extreme"].legs)
+    assert not any(leg.match_no == "002" for leg in by_kind["contrarian"].legs)
+
+
+def test_rule_l_cap_recomputes_total_odds_after_dropping_leg() -> None:
+    """When a leg is dropped, the parlay's total_odds and two_yuan_return
+    must be recomputed to match the surviving legs.
+    Fixture must satisfy R3's feasibility gate: ≥ max_per_match + 2 unique
+    matches and demand < supply.
+    """
+    over = _plan("extreme",
+                 _leg("002", "crs", "0:0", 12.0),
+                 _leg("003", "crs", "0:0", 12.5),
+                 _leg("006", "crs", "0:0", 9.25))
+    keeper_a = _plan("stable_base",
+                     _leg("002", "had", "胜", 1.62),
+                     _leg("007", "had", "胜", 1.55))
+    keeper_b = _plan("main",
+                     _leg("002", "ttg", "2球", 3.3),
+                     _leg("008", "ttg", "1球", 4.0))
+    keeper_c = _plan("poisson_solo", _leg("002", "crs", "0:0", 12.0))
+    keeper_d = _plan("contrarian",
+                     _leg("002", "ttg", "1球", 4.5),
+                     _leg("009", "had", "平", 5.0))
+
+    capped = apply_rule_l_concentration_cap(
+        [keeper_a, keeper_b, keeper_c, keeper_d, over], max_per_match=3
+    )
+    new_extreme = next(p for p in capped if p.kind == "extreme")
+    assert all(leg.match_no != "002" for leg in new_extreme.legs)
+    raw_product = 12.5 * 9.25
+    assert new_extreme.total_odds == round(raw_product, 2)
+    assert new_extreme.two_yuan_return == round(raw_product * 2, 2)
+
+
+def test_rule_l_cap_preserves_plan_kinds_when_no_safe_trim_available() -> None:
+    """When every plan touching the over-exposed match would drop below its
+    minimum leg count if trimmed, R3 must not kill those plans — plan
+    diversity wins over strict cap enforcement. The violation is accepted."""
+    p_a = _plan("stable_base", _leg("002", "had", "胜", 1.62))
+    p_b = _plan("main", _leg("002", "ttg", "2球", 3.3), _leg("005", "had", "胜", 1.4))
+    p_c = _plan("poisson_solo", _leg("002", "crs", "0:0", 12.0))
+    p_e = _plan("extreme", _leg("002", "crs", "0:0", 12.0))  # 1 leg < min 2
+
+    capped = apply_rule_l_concentration_cap(
+        [p_a, p_b, p_c, p_e], max_per_match=2
+    )
+    kinds = {p.kind for p in capped}
+    assert kinds == {"stable_base", "main", "poisson_solo", "extreme"}
+
+
+def test_rule_l_cap_no_op_when_already_compliant() -> None:
+    p_a = _plan("stable_base", _leg("002", "had", "胜", 1.62), _leg("003", "had", "胜", 1.58))
+    p_b = _plan("main", _leg("002", "ttg", "2球", 3.3), _leg("005", "had", "平", 4.0))
+    capped = apply_rule_l_concentration_cap([p_a, p_b], max_per_match=3)
+    assert len(capped) == 2
+    assert capped[0].legs == p_a.legs
+    assert capped[1].legs == p_b.legs
 
 
 # --------------------------------------------------------- kelly advice

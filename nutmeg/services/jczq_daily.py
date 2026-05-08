@@ -19,6 +19,9 @@ from nutmeg.services.jczq import (
     SportteryJczqCalculatorProvider,
 )
 from nutmeg.services.jczq_baseline import build_default_providers
+from nutmeg.services.jczq_diagnostics import (
+    apply_rule_l_concentration_cap,
+)
 from nutmeg.services.jczq_drift import (
     OddsDriftStore,
     drift_provider_from_signals,
@@ -555,6 +558,10 @@ class JczqDailyAdvisorService:
         plans = self._apply_decision_policy(plans, matches, strategy_memory=strategy_memory or {})
         plans = self._apply_comfort_risk_protection(plans, matches)
         plans = self._apply_portfolio_decorrelation(plans, matches, analytics=analytics)
+        # Rule L hard cap (R3, 5/08): no match may appear in more than 3 plans.
+        # Drops the over-exposed leg from the lowest-priority plan(s); see
+        # nutmeg.services.jczq_diagnostics.RULE_L_PLAN_PRIORITY.
+        plans = apply_rule_l_concentration_cap(plans)
         plans = self._apply_rule_h_hafu_block(plans, matches)
         plans = self._apply_rule_i_poisson_scrub(plans, matches)
         return plans

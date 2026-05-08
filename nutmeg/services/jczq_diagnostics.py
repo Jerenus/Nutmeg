@@ -17,10 +17,10 @@ miss them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
-from nutmeg.domain.jczq_daily import JczqDailyMatch, JczqDailyPlan
+from nutmeg.domain.jczq_daily import JczqDailyLeg, JczqDailyMatch, JczqDailyPlan
 
 
 # ---------------------------------------------------------- narrative tagging
@@ -224,6 +224,121 @@ def compute_match_concentration(
             warning=warning,
         ))
     return sorted(out, key=lambda item: -item.budget_pct)
+
+
+# Rule L hard cap (R3, 5/08 落库): plans listed earlier are most-protected;
+# plans listed later are most-droppable when a match is over-exposed.
+RULE_L_PLAN_PRIORITY: tuple[str, ...] = (
+    "stable_base",
+    "poisson_solo",
+    "main",
+    "inspiration",
+    "contrarian",
+    "draw_cluster",
+    "upset_cluster",
+    "false_signal",
+    "extreme",
+)
+RULE_L_DEFAULT_MAX_PER_MATCH = 3
+# Per-kind floor: parlay tickets need ≥2 legs to be meaningful as parlays;
+# singleton tickets (poisson_solo, stable_base) survive with 1 leg.
+RULE_L_PLAN_MIN_LEGS: dict[str, int] = {
+    "stable_base": 1,
+    "poisson_solo": 1,
+    "main": 2,
+    "inspiration": 2,
+    "contrarian": 2,
+    "false_signal": 2,
+    "extreme": 2,
+    "draw_cluster": 1,
+    "upset_cluster": 1,
+}
+
+
+def apply_rule_l_concentration_cap(
+    plans: Iterable[JczqDailyPlan],
+    *,
+    max_per_match: int = RULE_L_DEFAULT_MAX_PER_MATCH,
+    priority: tuple[str, ...] = RULE_L_PLAN_PRIORITY,
+    plan_min_legs: dict[str, int] | None = None,
+) -> list[JczqDailyPlan]:
+    """Drop the over-exposed match's leg from the lowest-priority plan(s)
+    until each match appears in at most `max_per_match` plans.
+
+    Trims preserve plan structure: a parlay kind (main/inspiration/etc.)
+    will not be reduced below its 2-leg minimum, and a singleton kind
+    (poisson_solo/stable_base) will not be reduced below 1 leg. When no
+    plan in the violator group can be safely trimmed, the violation is
+    accepted as-is rather than killing a plan kind.
+
+    Reasoning (5/07 incident): 周四005 was in 5 of 5 tickets and 周四002
+    was in 4 of 5; the auto-generator's portfolio decorrelation only
+    covered (inspiration/contrarian/extreme), letting stable_base/main/
+    poisson_solo stack on top. R3 enforces a soft hard cap across all
+    kinds — preferring leg trims, never plan removal.
+    """
+
+    plans_list = list(plans)
+    priority_idx: dict[str, int] = {kind: i for i, kind in enumerate(priority)}
+    floor = dict(plan_min_legs or RULE_L_PLAN_MIN_LEGS)
+
+    # Feasibility gate: skip R3 when the day's match pool is too small to
+    # redistribute concentration without killing plan diversity. A typical
+    # JCZQ day has 5+ sellable matches; below that the cap is structurally
+    # impossible to satisfy with 6-9 plans.
+    unique_matches = {leg.match_no for plan in plans_list for leg in plan.legs}
+    if len(unique_matches) <= max_per_match + 1:
+        return plans_list
+    # Secondary feasibility: total demand (per-plan min-leg floor) must be
+    # strictly less than supply (unique matches × cap). Without slack,
+    # every match must already sit at cap and trimming is pointless.
+    demand = sum(floor.get(plan.kind, 1) for plan in plans_list if plan.legs)
+    supply = len(unique_matches) * max_per_match
+    if demand >= supply:
+        return plans_list
+
+    while True:
+        match_to_plan_idxs: dict[str, list[int]] = {}
+        for i, plan in enumerate(plans_list):
+            for match_no in {leg.match_no for leg in plan.legs}:
+                match_to_plan_idxs.setdefault(match_no, []).append(i)
+
+        violator: tuple[str, list[int]] | None = None
+        for match_no, plan_idxs in match_to_plan_idxs.items():
+            if len(plan_idxs) > max_per_match:
+                violator = (match_no, plan_idxs)
+                break
+        if violator is None:
+            break
+
+        match_no, plan_idxs = violator
+        plan_idxs_sorted = sorted(
+            plan_idxs,
+            key=lambda i: priority_idx.get(plans_list[i].kind, 1_000),
+        )
+        trimmed = False
+        for target_idx in reversed(plan_idxs_sorted):
+            target = plans_list[target_idx]
+            new_legs: list[JczqDailyLeg] = [
+                leg for leg in target.legs if leg.match_no != match_no
+            ]
+            min_legs = floor.get(target.kind, 1)
+            if len(new_legs) < min_legs:
+                continue
+            new_total = 1.0
+            for leg in new_legs:
+                new_total *= leg.odds
+            plans_list[target_idx] = replace(
+                target,
+                legs=new_legs,
+                total_odds=round(new_total, 2),
+                two_yuan_return=round(new_total * 2, 2),
+            )
+            trimmed = True
+            break
+        if not trimmed:
+            break
+    return plans_list
 
 
 # ---------------------------------------------------------- Kelly advice
