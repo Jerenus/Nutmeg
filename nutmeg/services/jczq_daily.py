@@ -21,6 +21,7 @@ from nutmeg.services.jczq import (
 from nutmeg.services.jczq_baseline import build_default_providers
 from nutmeg.services.jczq_diagnostics import (
     apply_rule_l_concentration_cap,
+    apply_rule_n_late_kickoff_cap,
     enforce_main_plan_pool_diversity,
 )
 from nutmeg.services.jczq_drift import (
@@ -575,6 +576,13 @@ class JczqDailyAdvisorService:
         # Drops the over-exposed leg from the lowest-priority plan(s); see
         # nutmeg.services.jczq_diagnostics.RULE_L_PLAN_PRIORITY.
         plans = apply_rule_l_concentration_cap(plans)
+        # Rule N (R4, 5/08): cap main/inspiration to ≤1 late-kickoff leg
+        # (Beijing time hour ∈ [6, 12)). 5/07 周四006 (08:30 Beijing) sat
+        # in 3 plans and was 'unknown' at the next-day review window.
+        late_match_nos = {
+            mn for mn, ana in analytics.items() if ana.is_late_kickoff
+        }
+        plans = apply_rule_n_late_kickoff_cap(plans, late_match_nos=late_match_nos)
         # Rule R6 (5/08): rebalance main plan when any single pool > 60% of
         # legs. 5/07 main was 3 ttg + 1 had (75% ttg) → entire ticket lost
         # to the high-goals result.

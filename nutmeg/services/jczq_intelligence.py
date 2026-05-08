@@ -95,6 +95,7 @@ class MatchAnalytics:
     is_upset_candidate: bool
     is_three_way_coinflip: bool = False
     is_high_volatility_league: bool = False
+    is_late_kickoff: bool = False
     drift: dict[tuple[str, str], float] = field(default_factory=dict)
 
 
@@ -124,6 +125,28 @@ HIGH_VOL_LEAGUE_OVERRIDE: frozenset[str] = frozenset({
     "巴甲",
     "阿甲",
 })
+
+# Rule N (R4, 5/08): late-kickoff matches (Beijing time hour ∈ [6, 12))
+# carry settlement-delay risk — South American afternoon kickoffs in CONMEBOL
+# competitions land 06:00-09:00 Beijing morning, often still pending at the
+# next-day 08:00 launchd review window. 5/07 周四006 麦独立 vs 弗拉门戈
+# (08:30 Beijing) was the canonical case. Generator caps main/inspiration
+# exposure to ≤1 such leg per ticket.
+LATE_KICKOFF_HOUR_START_BEIJING = 6
+LATE_KICKOFF_HOUR_END_BEIJING = 12  # exclusive
+
+
+def _is_late_kickoff(match_time: str) -> bool:
+    """Parse 'HH:MM:SS' Beijing time → True if hour ∈ [start, end). Defensive
+    against missing or malformed values; returns False on parse failure."""
+    if not match_time:
+        return False
+    try:
+        hour = int(match_time.split(":")[0])
+    except (ValueError, IndexError):
+        return False
+    return LATE_KICKOFF_HOUR_START_BEIJING <= hour < LATE_KICKOFF_HOUR_END_BEIJING
+
 
 # Rule J: extreme-ticket crs picks must clear at least this Poisson edge floor.
 # 4-day backtest: crs hit 1/14 (7.1%); rejected legs were all edge ≤ -20%.
@@ -234,6 +257,7 @@ def compute_analytics(
             is_upset_candidate=is_upset,
             is_three_way_coinflip=is_three_way_coinflip,
             is_high_volatility_league=is_high_volatility_league,
+            is_late_kickoff=_is_late_kickoff(match.match_time),
             drift=dict(drift_entries),
         )
     return out

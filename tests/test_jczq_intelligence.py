@@ -232,3 +232,48 @@ def test_rule_r2_override_does_not_clobber_oracle_signal_for_other_leagues() -> 
     ])
     analytics = compute_analytics([j1], league_volatility={"日职": 3.0})
     assert analytics["周日010"].is_high_volatility_league is True
+
+
+# ---------------------------------------------------- Rule R4 (5/08) late_kickoff
+
+
+def _late_match(match_no: str, hhmmss: str) -> JczqDailyMatch:
+    """Build a match whose start time is `hhmmss` (Beijing). Used to
+    exercise the late-kickoff flag."""
+    return JczqDailyMatch(
+        match_no=match_no,
+        match_date="2026-05-08",
+        match_time=hhmmss,
+        league="解放者杯",
+        home_team="H",
+        away_team="A",
+        status="Selling",
+        hot_direction="主胜低赔(1.50)",
+        role="均衡分歧场",
+        confidence_note="",
+        candidates=[
+            _leg(match_no, "解放者杯", "had", "胜", 1.50),
+            _leg(match_no, "解放者杯", "had", "平", 3.80),
+            _leg(match_no, "解放者杯", "had", "负", 6.50),
+        ],
+    )
+
+
+def test_rule_r4_late_kickoff_flag_set_for_morning_beijing_kickoffs() -> None:
+    """5/07 周四006 麦独立 vs 弗拉门戈 kicked off 08:30 Beijing — its result
+    was still 'unknown' when the next-day review ran 10:00 Beijing. R4
+    flags such matches so generator can cap exposure to one leg per
+    main/inspiration ticket."""
+
+    early_dawn = _late_match("周一001", "06:00:00")  # late
+    morning = _late_match("周一002", "08:30:00")  # late
+    afternoon = _late_match("周一003", "15:00:00")  # not late
+    evening = _late_match("周一004", "21:00:00")  # not late
+    midnight = _late_match("周一005", "02:00:00")  # not late (settles ~04:00)
+
+    analytics = compute_analytics([early_dawn, morning, afternoon, evening, midnight])
+    assert analytics["周一001"].is_late_kickoff is True
+    assert analytics["周一002"].is_late_kickoff is True
+    assert analytics["周一003"].is_late_kickoff is False
+    assert analytics["周一004"].is_late_kickoff is False
+    assert analytics["周一005"].is_late_kickoff is False

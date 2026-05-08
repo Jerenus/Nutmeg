@@ -341,6 +341,67 @@ def apply_rule_l_concentration_cap(
     return plans_list
 
 
+# Rule N (R4, 5/08): late-kickoff matches (Beijing time ≥06:00) carry
+# settlement-delay risk — South American late-evening games etc. R4 caps
+# main/inspiration exposure to ≤1 such leg per ticket so a single delayed
+# result doesn't pin multiple plans.
+RULE_N_DEFAULT_MAX_PER_PLAN = 1
+RULE_N_AFFECTED_KINDS: tuple[str, ...] = ("main", "inspiration")
+
+
+def apply_rule_n_late_kickoff_cap(
+    plans: Iterable[JczqDailyPlan],
+    *,
+    late_match_nos: set[str],
+    max_per_plan: int = RULE_N_DEFAULT_MAX_PER_PLAN,
+    affected_kinds: tuple[str, ...] = RULE_N_AFFECTED_KINDS,
+    plan_min_legs: dict[str, int] | None = None,
+) -> list[JczqDailyPlan]:
+    """For each plan in `affected_kinds` carrying > max_per_plan late-
+    kickoff legs (matches in `late_match_nos`), drop excess late legs
+    starting from lowest odds (cheapest leverage drop). Skips trims that
+    would drop the plan below its kind's min_legs floor.
+
+    Plans outside affected_kinds (stable_base / poisson_solo / extreme /
+    cluster plans) are intentionally exempt — they're either alpha-driven
+    singletons or accept the late-kickoff cost as part of their thesis.
+
+    Reasoning: 5/07 周四006 (08:30 Beijing) was still 'unknown' at the
+    next-day 08:00 launchd review; B/D/E all carried 006 legs and any
+    main/inspiration ticket pinned on it could not settle in time.
+    """
+
+    plans_list = list(plans)
+    if not late_match_nos:
+        return plans_list
+    floor = dict(plan_min_legs or RULE_L_PLAN_MIN_LEGS)
+
+    for idx, plan in enumerate(plans_list):
+        if plan.kind not in affected_kinds or not plan.legs:
+            continue
+        late_legs = [leg for leg in plan.legs if leg.match_no in late_match_nos]
+        if len(late_legs) <= max_per_plan:
+            continue
+        # Drop lowest-odds late legs first — the cheapest leverage drop.
+        # Keep enough late legs to satisfy max_per_plan, drop the rest.
+        late_legs_sorted_to_drop = sorted(late_legs, key=lambda leg: leg.odds)[: len(late_legs) - max_per_plan]
+        drop_set = {id(leg) for leg in late_legs_sorted_to_drop}
+        new_legs = [leg for leg in plan.legs if id(leg) not in drop_set]
+        min_legs = floor.get(plan.kind, 1)
+        if len(new_legs) < min_legs:
+            continue  # would break the plan; accept violation
+        new_total = 1.0
+        for leg in new_legs:
+            new_total *= leg.odds
+        plans_list[idx] = replace(
+            plan,
+            legs=new_legs,
+            total_odds=round(new_total, 2),
+            two_yuan_return=round(new_total * 2, 2),
+        )
+    return plans_list
+
+
 # Rule R6 (5/08 落库): main plan must not have any single pool exceeding
 # this fraction of its legs. 5/07 main was 3 ttg + 1 had (75% ttg) → entire
 # ticket lost when 002 ttg=4 (true result was 4 goals not 2). R6 forces

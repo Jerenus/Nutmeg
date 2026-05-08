@@ -15,6 +15,7 @@ from nutmeg.services.jczq_diagnostics import (
     SecondLegCandidate,
     TicketNarrative,
     apply_rule_l_concentration_cap,
+    apply_rule_n_late_kickoff_cap,
     classify_ticket_narrative,
     compute_kelly_advice,
     compute_match_concentration,
@@ -302,6 +303,74 @@ def test_rule_r6_no_op_for_non_main_plan() -> None:
         p_extreme, swap_candidates=[_leg("004", "ttg", "2球", 3.3)]
     )
     assert out.legs == p_extreme.legs
+
+
+# --------------------------------------------------------- Rule R4 late_kickoff
+
+
+def test_rule_n_late_kickoff_cap_drops_excess_legs_from_main() -> None:
+    """5/07: 周四006 (08:30 Beijing) was 'unknown' at next-day review and
+    sat in main + D + E. R4 caps main/inspiration to ≤1 late-kickoff leg
+    per ticket so a single delayed result doesn't pin multiple plans."""
+    # main has 2 late-kickoff legs (周四005, 周四006) — must shed one.
+    p_main = _plan(
+        "main",
+        _leg("周四005", "ttg", "1球", 4.0),
+        _leg("周四006", "ttg", "1球", 4.5),
+        _leg("周四002", "ttg", "2球", 3.3),
+        _leg("周四003", "had", "胜", 1.65),
+    )
+    # inspiration with single late leg — within cap, untouched.
+    p_insp = _plan(
+        "inspiration",
+        _leg("周四005", "crs", "1:0", 6.0),
+        _leg("周四001", "had", "胜", 2.5),
+    )
+    capped = apply_rule_n_late_kickoff_cap(
+        [p_main, p_insp], late_match_nos={"周四005", "周四006"}
+    )
+    new_main = next(p for p in capped if p.kind == "main")
+    new_insp = next(p for p in capped if p.kind == "inspiration")
+    main_late_count = sum(
+        1 for leg in new_main.legs if leg.match_no in {"周四005", "周四006"}
+    )
+    assert main_late_count <= 1
+    # inspiration keeps its single late leg
+    assert new_insp.legs == p_insp.legs
+
+
+def test_rule_n_late_kickoff_cap_skips_non_targeted_kinds() -> None:
+    """stable_base / poisson_solo / extreme are not capped — they
+    intentionally use whatever match has the highest signal."""
+    p_solo = _plan(
+        "poisson_solo",
+        _leg("周四005", "crs", "0:0", 13.0),
+        _leg("周四006", "ttg", "1球", 4.0),
+    )
+    p_extreme = _plan(
+        "extreme",
+        _leg("周四005", "crs", "0:0", 13.0),
+        _leg("周四006", "crs", "0:0", 9.25),
+        _leg("周四002", "crs", "0:0", 12.0),
+    )
+    capped = apply_rule_n_late_kickoff_cap(
+        [p_solo, p_extreme], late_match_nos={"周四005", "周四006"}
+    )
+    # Both untouched — only main/inspiration are affected by R4.
+    assert capped[0].legs == p_solo.legs
+    assert capped[1].legs == p_extreme.legs
+
+
+def test_rule_n_late_kickoff_cap_preserves_plan_min_legs() -> None:
+    """If trimming would drop the plan below min_legs (main floor = 2),
+    skip the trim and accept the violation rather than break the plan."""
+    p_main = _plan(
+        "main",
+        _leg("周四005", "ttg", "1球", 4.0),
+        _leg("周四006", "ttg", "1球", 4.5),
+    )  # only 2 legs, both late — trim would leave 1, below main's min=2
+    capped = apply_rule_n_late_kickoff_cap([p_main], late_match_nos={"周四005", "周四006"})
+    assert capped[0].legs == p_main.legs
 
 
 def test_rule_r6_no_op_when_swap_candidates_all_share_same_match_no() -> None:
