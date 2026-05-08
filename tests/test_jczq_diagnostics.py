@@ -19,6 +19,7 @@ from nutmeg.services.jczq_diagnostics import (
     compute_kelly_advice,
     compute_match_concentration,
     compute_narrative_matrix,
+    enforce_main_plan_pool_diversity,
     find_safe_second_legs,
 )
 
@@ -247,6 +248,78 @@ def test_rule_l_cap_no_op_when_already_compliant() -> None:
     assert len(capped) == 2
     assert capped[0].legs == p_a.legs
     assert capped[1].legs == p_b.legs
+
+
+# --------------------------------------------------------- Rule R6 main diversity
+
+
+def test_rule_r6_main_swaps_overrepresented_pool_when_above_threshold() -> None:
+    """5/07 main was 3 ttg + 1 had平 (75% ttg) → all-low-goals narrative.
+    R6 swaps 1 ttg leg for a different-pool candidate to break concentration."""
+    p_main = _plan(
+        "main",
+        _leg("003", "ttg", "2球", 3.3),
+        _leg("006", "ttg", "1球", 4.0),
+        _leg("002", "ttg", "2球", 3.3),
+        _leg("005", "had", "平", 4.0),
+    )
+    swap_candidates = [
+        _leg("004", "hhad", "让胜", 2.5, goal_line="-1"),
+        _leg("007", "had", "胜", 1.6),
+    ]
+    out = enforce_main_plan_pool_diversity(p_main, swap_candidates=swap_candidates)
+    pool_counts = {p: sum(1 for leg in out.legs if leg.pool == p) for p in {"ttg", "had", "hhad"}}
+    assert pool_counts["ttg"] <= 2, f"ttg should be ≤2/4 after R6 swap, got {pool_counts}"
+    assert any(leg.match_no == "004" and leg.pool == "hhad" for leg in out.legs)
+    expected_product = 1.0
+    for leg in out.legs:
+        expected_product *= leg.odds
+    assert out.total_odds == round(expected_product, 2)
+
+
+def test_rule_r6_no_op_when_pool_ratio_within_threshold() -> None:
+    p_main = _plan(
+        "main",
+        _leg("003", "ttg", "2球", 3.3),
+        _leg("006", "ttg", "1球", 4.0),
+        _leg("002", "had", "胜", 1.6),
+        _leg("005", "hhad", "让胜", 2.5, goal_line="-1"),
+    )  # 2 ttg + 1 had + 1 hhad → 50% max
+    out = enforce_main_plan_pool_diversity(
+        p_main, swap_candidates=[_leg("004", "had", "胜", 1.7)]
+    )
+    assert out.legs == p_main.legs
+
+
+def test_rule_r6_no_op_for_non_main_plan() -> None:
+    p_extreme = _plan(
+        "extreme",
+        _leg("003", "crs", "0:0", 12.5),
+        _leg("002", "crs", "0:0", 12.0),
+        _leg("006", "crs", "0:0", 9.25),
+    )  # 100% crs but kind != main
+    out = enforce_main_plan_pool_diversity(
+        p_extreme, swap_candidates=[_leg("004", "ttg", "2球", 3.3)]
+    )
+    assert out.legs == p_extreme.legs
+
+
+def test_rule_r6_no_op_when_swap_candidates_all_share_same_match_no() -> None:
+    """If candidate's match is already in the plan, skipping it preserves
+    Rule O (no same-match different-pool inside one ticket)."""
+    p_main = _plan(
+        "main",
+        _leg("003", "ttg", "2球", 3.3),
+        _leg("006", "ttg", "1球", 4.0),
+        _leg("002", "ttg", "2球", 3.3),
+        _leg("005", "had", "平", 4.0),
+    )
+    swap_candidates = [
+        _leg("003", "hhad", "让胜", 2.5, goal_line="-1"),
+        _leg("002", "had", "胜", 1.6),
+    ]
+    out = enforce_main_plan_pool_diversity(p_main, swap_candidates=swap_candidates)
+    assert out.legs == p_main.legs
 
 
 # --------------------------------------------------------- kelly advice

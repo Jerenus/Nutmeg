@@ -341,6 +341,83 @@ def apply_rule_l_concentration_cap(
     return plans_list
 
 
+# Rule R6 (5/08 落库): main plan must not have any single pool exceeding
+# this fraction of its legs. 5/07 main was 3 ttg + 1 had (75% ttg) → entire
+# ticket lost when 002 ttg=4 (true result was 4 goals not 2). R6 forces
+# pool diversity so a single narrative failure doesn't kill main.
+RULE_R6_MAIN_MAX_POOL_RATIO = 0.6
+
+
+def enforce_main_plan_pool_diversity(
+    plan: JczqDailyPlan,
+    *,
+    swap_candidates: Iterable[JczqDailyLeg],
+    max_pool_ratio: float = RULE_R6_MAIN_MAX_POOL_RATIO,
+) -> JczqDailyPlan:
+    """Rebalance a main plan when a non-had pool dominates ≥ max_pool_ratio
+    of legs.
+
+    The original main design intentionally anchors on had legs (75% had +
+    25% ttg/hhad is by-design). R6 fires only when the strategy_memory
+    `total_goals` rule (or similar overrides) has pushed main into a
+    non-had-dominated narrative — exactly the 5/07 incident: 3 ttg + 1 had
+    平 (75% ttg) → entire ticket lost when the games went high-goals.
+
+    Drops one leg of the over-represented non-had pool (lowest-odds — the
+    cheapest leverage point) and replaces with the highest-priority swap
+    candidate from a DIFFERENT pool whose match is not already in the
+    plan (preserves Rule O: no same-match different-pool combos in one
+    parlay per 国家体彩 mixed-parlay rules).
+
+    No-ops when:
+      - plan.kind != "main"
+      - plan has < 3 legs (concentration math meaningless)
+      - dominant pool is "had" (main anchor by design)
+      - max pool ratio already within threshold
+      - no eligible swap candidate (different pool AND new match)
+    """
+
+    if plan.kind != "main" or len(plan.legs) < 3:
+        return plan
+    pool_counts: dict[str, int] = {}
+    for leg in plan.legs:
+        pool_counts[leg.pool] = pool_counts.get(leg.pool, 0) + 1
+    dominant_pool, dominant_count = max(pool_counts.items(), key=lambda item: item[1])
+    if dominant_pool == "had":
+        return plan
+    ratio = dominant_count / len(plan.legs)
+    if ratio <= max_pool_ratio:
+        return plan
+
+    used_match_nos = {leg.match_no for leg in plan.legs}
+    chosen_swap: JczqDailyLeg | None = None
+    for cand in swap_candidates:
+        if cand.match_no in used_match_nos:
+            continue
+        if cand.pool == dominant_pool:
+            continue
+        chosen_swap = cand
+        break
+    if chosen_swap is None:
+        return plan
+
+    # Drop the lowest-odds leg of the dominant pool — that's the cheapest
+    # leverage drop, preserving the highest-EV picks of the same narrative.
+    dominant_legs = [leg for leg in plan.legs if leg.pool == dominant_pool]
+    drop_leg = min(dominant_legs, key=lambda leg: leg.odds)
+    new_legs = [leg for leg in plan.legs if leg is not drop_leg]
+    new_legs.append(chosen_swap)
+    new_total = 1.0
+    for leg in new_legs:
+        new_total *= leg.odds
+    return replace(
+        plan,
+        legs=new_legs,
+        total_odds=round(new_total, 2),
+        two_yuan_return=round(new_total * 2, 2),
+    )
+
+
 # ---------------------------------------------------------- Kelly advice
 
 

@@ -21,6 +21,7 @@ from nutmeg.services.jczq import (
 from nutmeg.services.jczq_baseline import build_default_providers
 from nutmeg.services.jczq_diagnostics import (
     apply_rule_l_concentration_cap,
+    enforce_main_plan_pool_diversity,
 )
 from nutmeg.services.jczq_drift import (
     OddsDriftStore,
@@ -567,8 +568,77 @@ class JczqDailyAdvisorService:
         # Drops the over-exposed leg from the lowest-priority plan(s); see
         # nutmeg.services.jczq_diagnostics.RULE_L_PLAN_PRIORITY.
         plans = apply_rule_l_concentration_cap(plans)
+        # Rule R6 (5/08): rebalance main plan when any single pool > 60% of
+        # legs. 5/07 main was 3 ttg + 1 had (75% ttg) → entire ticket lost
+        # to the high-goals result.
+        plans = self._apply_rule_r6_main_diversity(plans, matches, analytics=analytics)
         plans = self._apply_rule_h_hafu_block(plans, matches)
         plans = self._apply_rule_i_poisson_scrub(plans, matches)
+        return plans
+
+    def _apply_rule_r6_main_diversity(
+        self,
+        plans: list[JczqDailyPlan],
+        matches: list[JczqDailyMatch],
+        *,
+        analytics: dict[str, MatchAnalytics],
+    ) -> list[JczqDailyPlan]:
+        """Run enforce_main_plan_pool_diversity on the main plan with
+        swap candidates pulled via select_top_legs from un-used matches."""
+        main_idx = next(
+            (i for i, plan in enumerate(plans) if plan.kind == "main" and plan.legs),
+            None,
+        )
+        if main_idx is None:
+            return plans
+        main = plans[main_idx]
+        used_match_nos = {leg.match_no for leg in main.legs}
+        pool_counts: dict[str, int] = {}
+        for leg in main.legs:
+            pool_counts[leg.pool] = pool_counts.get(leg.pool, 0) + 1
+        if not pool_counts:
+            return plans
+        dominant_pool = max(pool_counts.items(), key=lambda item: item[1])[0]
+        bias_fn = getattr(self, "_active_bias_fn", None)
+        candidate_pools = {"had", "hhad", "ttg"} - {dominant_pool}
+        evaluations = select_top_legs(
+            matches,
+            analytics,
+            intent="main",
+            k=10,
+            pool_filter=candidate_pools,
+            odds_min=HAD_BANKER_FLOOR + 0.01,
+            odds_max=8.0,
+            avoid_match_nos=used_match_nos,
+            enforce_pool_diversity=False,
+            bias_fn=bias_fn,
+            skip_coinflip_had=True,
+            require_hhad_handicap=True,
+        )
+        # Exclude any (match, pool, pick) already used in any plan so R6
+        # doesn't re-introduce a duplicate story that the rest of the
+        # pipeline (decorrelation, decision_policy) already deduped.
+        used_stories: set[tuple[str, str, str]] = {
+            (leg.match_no, leg.pool, leg.pick)
+            for plan in plans
+            for leg in plan.legs
+        }
+        swap_candidates = [
+            ev.leg
+            for ev in evaluations
+            if (ev.leg.match_no, ev.leg.pool, ev.leg.pick) not in used_stories
+        ]
+        new_main = enforce_main_plan_pool_diversity(main, swap_candidates=swap_candidates)
+        if new_main is main:
+            return plans
+        plans = list(plans)
+        plans[main_idx] = self._make_plan(
+            main.name,
+            main.kind,
+            main.description,
+            list(new_main.legs),
+            (main.risk_note + " Rule R6：主方案池多样性已应用。").strip(),
+        )
         return plans
 
     def _apply_rule_i_poisson_scrub(
