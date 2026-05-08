@@ -107,6 +107,24 @@ COINFLIP_IMPLIED_SPREAD_THRESHOLD = 0.10
 # high-volatility — generator avoids low-side ttg picks (≤ 2球) there.
 HIGH_VOLATILITY_TTG_MEDIAN = 2.7
 
+# Rule R2 (5/08 落库): bootstrap high-volatility leagues for known high-goal-
+# variance competitions. These trigger hi-vol behavior even before we
+# accumulate enough oracle samples to compute a stable rolling median.
+# Evidence from 5/07 review: 4 of 5 sold matches were 欧罗巴 / 解放者杯 / 沙职
+# and averaged ≥ 3 goals; Rule C's sample-based path failed because
+# `min_samples=4` had not been satisfied. Override fires regardless.
+HIGH_VOL_LEAGUE_OVERRIDE: frozenset[str] = frozenset({
+    "欧冠",
+    "欧罗巴",
+    "欧联",
+    "解放者杯",
+    "南美杯",
+    "美职",
+    "沙职",
+    "巴甲",
+    "阿甲",
+})
+
 # Rule J: extreme-ticket crs picks must clear at least this Poisson edge floor.
 # 4-day backtest: crs hit 1/14 (7.1%); rejected legs were all edge ≤ -20%.
 CRS_POISSON_EDGE_FLOOR = -0.10
@@ -189,8 +207,9 @@ def compute_analytics(
             and implied_spread < COINFLIP_IMPLIED_SPREAD_THRESHOLD
         )
         # Rule C: high-volatility league flagged from rolling oracle ttg median.
-        is_high_volatility_league = False
-        if league_volatility is not None:
+        # Rule R2: known-hi-vol leagues fire even without samples (bootstrap).
+        is_high_volatility_league = match.league in HIGH_VOL_LEAGUE_OVERRIDE
+        if not is_high_volatility_league and league_volatility is not None:
             median = league_volatility.get(match.league)
             if median is not None and median >= HIGH_VOLATILITY_TTG_MEDIAN:
                 is_high_volatility_league = True

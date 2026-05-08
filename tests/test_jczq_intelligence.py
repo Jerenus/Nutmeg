@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from nutmeg.domain.jczq_daily import JczqDailyLeg, JczqDailyMatch
 from nutmeg.services.jczq_intelligence import (
+    HIGH_VOL_LEAGUE_OVERRIDE,
     LeaguePriorBaseline,
     bucket_matches,
     compute_analytics,
@@ -173,3 +174,61 @@ def test_select_top_legs_blends_optional_bias_function() -> None:
     assert picks
     assert picks[0].leg.match_no == "周日005"
     assert picks[0].leg.pick == "平"
+
+
+# ---------------------------------------------------- Rule R2 (5/08) ---
+
+
+def test_rule_r2_known_high_volatility_leagues_flagged_without_samples() -> None:
+    """Bootstrap leagues hardcoded as hi-vol fire the flag even when the
+    rolling oracle volatility map is empty (or omits that league).
+
+    Evidence: 5/07 had 4 of 5 matches in 欧罗巴 / 解放者杯 / 沙职 with avg
+    goals ≥ 3; Rule C failed because oracle samples were too sparse to
+    compute a stable per-league median. R2 adds the known-hi-vol override.
+    """
+
+    europa = _match("周四002", "欧罗巴", [
+        _leg("周四002", "欧罗巴", "had", "胜", 1.62),
+        _leg("周四002", "欧罗巴", "had", "平", 4.00),
+        _leg("周四002", "欧罗巴", "had", "负", 5.30),
+    ])
+    libertadores = _match("周四005", "解放者杯", [
+        _leg("周四005", "解放者杯", "had", "胜", 1.37),
+        _leg("周四005", "解放者杯", "had", "平", 4.50),
+        _leg("周四005", "解放者杯", "had", "负", 7.00),
+    ])
+    sa_pro = _match("周四001", "沙职", [
+        _leg("周四001", "沙职", "had", "胜", 8.00),
+        _leg("周四001", "沙职", "had", "平", 5.50),
+        _leg("周四001", "沙职", "had", "负", 1.20),
+    ])
+    eredivisie = _match("周四010", "荷甲", [
+        _leg("周四010", "荷甲", "had", "胜", 1.80),
+        _leg("周四010", "荷甲", "had", "平", 3.60),
+        _leg("周四010", "荷甲", "had", "负", 4.20),
+    ])
+    matches = [europa, libertadores, sa_pro, eredivisie]
+    analytics = compute_analytics(matches)
+
+    assert analytics["周四002"].is_high_volatility_league is True
+    assert analytics["周四005"].is_high_volatility_league is True
+    assert analytics["周四001"].is_high_volatility_league is True
+    assert analytics["周四010"].is_high_volatility_league is False
+    # The constant itself should be a non-empty frozenset for callers to inspect.
+    assert "欧罗巴" in HIGH_VOL_LEAGUE_OVERRIDE
+    assert "解放者杯" in HIGH_VOL_LEAGUE_OVERRIDE
+    assert "沙职" in HIGH_VOL_LEAGUE_OVERRIDE
+
+
+def test_rule_r2_override_does_not_clobber_oracle_signal_for_other_leagues() -> None:
+    """When a non-override league has a high-vol oracle median, the existing
+    Rule C path still fires."""
+
+    j1 = _match("周日010", "日职", [
+        _leg("周日010", "日职", "had", "胜", 1.92),
+        _leg("周日010", "日职", "had", "平", 3.30),
+        _leg("周日010", "日职", "had", "负", 4.50),
+    ])
+    analytics = compute_analytics([j1], league_volatility={"日职": 3.0})
+    assert analytics["周日010"].is_high_volatility_league is True
