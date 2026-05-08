@@ -55,6 +55,11 @@ def update_strategy_memory(
     reviewed_dates = set(str(item) for item in memory.get("reviewed_dates") or [])
     if run_date in reviewed_dates:
         memory["updated_at"] = _now_iso()
+        # R1 calibration: also backfill poisson_residuals on re-runs so that
+        # newer R8-enriched graded_legs land in memory even when the date was
+        # first reviewed before R8/R1 existed. The function dedups by
+        # (date, match_no, pool) so repeat calls are idempotent.
+        _update_poisson_residuals(memory, run_date=run_date, graded_legs=graded_legs)
         _update_decision_policy(
             memory,
             run_date=run_date,
