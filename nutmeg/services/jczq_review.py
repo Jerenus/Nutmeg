@@ -124,6 +124,11 @@ class JczqDailyReviewService:
         results = self._result_provider.fetch_results(resolved_date)
         context_payload = context.to_dict()
         graded_legs = _grade_legs(context_payload["plans"], results)
+        graded_legs = enrich_graded_legs(
+            graded_legs,
+            matches=context_payload.get("matches") or [],
+            results=results,
+        )
         plan_summaries = _summarize_plans(context_payload["plans"], graded_legs)
         betting_db = self._record_betting_review(
             context_payload,
@@ -356,6 +361,136 @@ def _grade_legs(
                 }
             )
     return graded
+
+
+# R8 (5/08 落库): narrative tagging mirrors jczq_diagnostics.classify_leg
+# semantics so per-leg narrative ROI becomes computable across days.
+_HIGH_GOAL_PICKS: frozenset[str] = frozenset({"3球", "4球", "5球", "6球", "7+球"})
+_LOW_GOAL_PICKS: frozenset[str] = frozenset({"0球", "1球", "2球"})
+
+
+def _classify_leg_narrative(pool: str, pick: str) -> str:
+    """Map a (pool, pick) to a coarse narrative bucket for ROI analysis."""
+
+    if pool == "crs":
+        return "score_picks"
+    if pool == "hafu":
+        return "hafu"
+    if pool == "ttg":
+        if pick in _LOW_GOAL_PICKS:
+            return "low_goals"
+        if pick in _HIGH_GOAL_PICKS:
+            return "high_goals"
+        return "other"
+    if pool in {"had", "hhad"}:
+        if pick in {"平", "让平"}:
+            return "draw"
+        if pick in {"负", "让负"}:
+            return "cold_reverse"
+        if pick in {"胜", "让胜"}:
+            return "chalk_favorite"
+    return "other"
+
+
+def _realized_goals_from_score(score: str | None) -> int | None:
+    """Parse '2:1' / '0:0' → 3 / 0; return None on parse failure."""
+
+    if not score:
+        return None
+    try:
+        home, away = score.split(":")
+        return int(home.strip()) + int(away.strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+def _fit_poisson_for_match(
+    match: dict[str, Any],
+):
+    """Fit Poisson lambdas from a context match's had odds. Returns None
+    when had pool is incomplete (rare, but happens for pre-sale matches).
+    """
+
+    from nutmeg.services.jczq_poisson import fit_lambdas_from_market
+
+    candidates = match.get("candidates") or []
+    had = {
+        leg["pick"]: float(leg["odds"])
+        for leg in candidates
+        if leg.get("pool") == "had" and leg.get("odds")
+    }
+    if not all(pick in had for pick in ("胜", "平", "负")):
+        return None
+    try:
+        return fit_lambdas_from_market(
+            had["胜"], had["平"], had["负"], max_lambda=3.5, step=0.1
+        )
+    except Exception:  # pragma: no cover - defensive against degenerate odds
+        return None
+
+
+def enrich_graded_legs(
+    graded_legs: list[dict[str, Any]],
+    *,
+    matches: list[dict[str, Any]],
+    results: dict[str, dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Annotate each graded leg with R8 fields:
+
+    - `narrative_tag`: coarse bucket (low_goals / draw / chalk_favorite / ...)
+    - `expected_edge`: Poisson model edge at the time of generation,
+      recomputed from context's had odds. None for hhad (no Poisson price).
+    - `expected_goals`: home_lambda + away_lambda from the Poisson fit.
+    - `realized_goals`: total goals scored from results['score'] when known.
+    - `goal_residual`: realized - expected (positive = model under-priced
+      goals; this is the signal R1's λ-calibration loop consumes).
+
+    Pure function: no I/O. Returns a new list; input is not mutated.
+    """
+
+    from nutmeg.services.jczq_poisson import edge_vs_market
+
+    match_index = {str(m.get("match_no") or ""): m for m in matches}
+    fit_cache: dict[str, Any] = {}
+
+    out: list[dict[str, Any]] = []
+    for leg in graded_legs:
+        match_no = str(leg.get("match_no") or "")
+        pool = str(leg.get("pool") or "")
+        pick = str(leg.get("pick") or "")
+        odds_value = leg.get("odds")
+        try:
+            odds = float(odds_value) if odds_value is not None else None
+        except (TypeError, ValueError):
+            odds = None
+
+        match = match_index.get(match_no)
+        if match_no not in fit_cache:
+            fit_cache[match_no] = _fit_poisson_for_match(match) if match else None
+        fit = fit_cache[match_no]
+
+        expected_edge: float | None = None
+        if fit is not None and odds is not None and pool != "hhad":
+            expected_edge = edge_vs_market(fit, pool=pool, pick=pick, market_odd=odds)
+
+        expected_goals: float | None = None
+        if fit is not None:
+            expected_goals = round(float(fit.home_lambda) + float(fit.away_lambda), 2)
+
+        realized_goals = _realized_goals_from_score((results.get(match_no) or {}).get("score"))
+
+        goal_residual: float | None = None
+        if expected_goals is not None and realized_goals is not None:
+            goal_residual = round(realized_goals - expected_goals, 2)
+
+        enriched = dict(leg)
+        enriched["narrative_tag"] = _classify_leg_narrative(pool, pick)
+        enriched["expected_edge"] = expected_edge
+        enriched["expected_goals"] = expected_goals
+        enriched["realized_goals"] = realized_goals
+        enriched["goal_residual"] = goal_residual
+        out.append(enriched)
+    return out
 
 
 def _summarize_plans(

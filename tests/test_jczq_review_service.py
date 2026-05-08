@@ -276,6 +276,52 @@ def test_daily_review_records_db_backtest_with_oracle_odds(tmp_path: Path) -> No
     assert "同玩法正确赔率" in report["message"]
 
 
+def test_daily_review_enriches_graded_legs_with_poisson_and_narrative_fields(
+    tmp_path: Path,
+) -> None:
+    """R8 (5/08 落库): graded_legs must carry expected_edge, narrative_tag,
+    expected_goals, realized_goals, goal_residual so R1's λ-calibration
+    feedback loop can distinguish 'modeled correctly but unlucky' from
+    'model under-priced goals systematically'.
+    """
+    JczqDailyAdvisorService(provider=FakeProvider()).build_report(
+        run_date="2026-05-01", output_dir=tmp_path
+    )
+
+    report = JczqDailyReviewService(result_provider=FakeResultProvider()).build_review(
+        run_date="2026-05-01", output_dir=tmp_path
+    )
+
+    legs = report["graded_legs"]
+    assert legs, "review must produce graded legs"
+    for leg in legs:
+        assert "narrative_tag" in leg
+        assert leg["narrative_tag"] in {
+            "chalk_favorite",
+            "cold_reverse",
+            "draw",
+            "low_goals",
+            "high_goals",
+            "score_picks",
+            "hafu",
+            "other",
+        }
+        # Poisson coverage is best-effort: hhad has no model price, and a
+        # league/match without enough info also returns None. The keys
+        # must be present even if the values are None.
+        assert "expected_edge" in leg
+        assert "expected_goals" in leg
+        assert "realized_goals" in leg
+        assert "goal_residual" in leg
+    # At least one leg from a Poisson-priced pool should have a real edge.
+    priced_with_edge = [
+        leg
+        for leg in legs
+        if leg["pool"] in {"had", "ttg", "crs", "hafu"} and leg["expected_edge"] is not None
+    ]
+    assert priced_with_edge, "at least one Poisson-priced leg must have expected_edge"
+
+
 def test_daily_review_writes_executable_decision_policy(tmp_path: Path) -> None:
     JczqDailyAdvisorService(provider=FakeProvider()).build_report(
         run_date="2026-05-01", output_dir=tmp_path
