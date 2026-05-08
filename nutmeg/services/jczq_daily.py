@@ -74,6 +74,11 @@ POISSON_SOLO_EDGE_THRESHOLD = 0.15
 POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE = 0.05
 # Rule A: legs with edge ≤ this are flagged in the report as model-opposed.
 POISSON_STRONG_OPPOSE_THRESHOLD = -0.20
+# Rule A v3 (R5, 5/08): cross-match crs×crs combos have ~0.6% joint hit
+# probability (each ~8% individually). 5/07 C ticket (005 0:0 × 002 0:0)
+# was billed as alpha but the joint was a longshot. Cap poisson_solo at
+# at most 1 crs leg total — the other slot must come from ttg/had/hhad.
+POISSON_SOLO_MAX_CRS_LEGS = 1
 # Rule F: bias subtracted from a leg's score when its team is on the burned list.
 BURNED_TEAM_BIAS = -0.5
 # Rule H: hafu legs hit 0/9 across the 4-day backtest spanning every non-extreme
@@ -1538,13 +1543,20 @@ class JczqDailyAdvisorService:
 
         legs: list[JczqDailyLeg] = []
         seen_matches: set[str] = set()
+        crs_count = 0
 
         # Pass 1: take top eligible rows from distinct matches (max 2).
+        # Rule A v3 (R5): cap crs legs at POISSON_SOLO_MAX_CRS_LEGS — a 2nd
+        # crs leg from a different match has joint hit rate ~0.6% which is
+        # not "alpha" regardless of individual edge. Skip extra crs rows
+        # and let Pass 2 fill the slot from a different pool's +EV row.
         for row in eligible:
             if len(legs) >= 2:
                 break
             if row.match_no in seen_matches:
                 continue  # Rule O: never combine two legs from the same match.
+            if row.pool == "crs" and crs_count >= POISSON_SOLO_MAX_CRS_LEGS:
+                continue
             match = match_index.get(row.match_no)
             if match is None:
                 continue
@@ -1553,9 +1565,12 @@ class JczqDailyAdvisorService:
                 continue
             legs.append(built)
             seen_matches.add(row.match_no)
+            if row.pool == "crs":
+                crs_count += 1
 
         # Pass 2: fill 2nd slot from cross-match +EV rows at >=
-        # POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE if Pass 1 produced only 1 leg.
+        # POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE if Pass 1 produced only 1
+        # leg. Same R5 cap on crs applies here.
         if len(legs) == 1:
             cross_support = [
                 row
@@ -1564,6 +1579,8 @@ class JczqDailyAdvisorService:
                 and row.edge >= POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE
             ]
             for row in cross_support:
+                if row.pool == "crs" and crs_count >= POISSON_SOLO_MAX_CRS_LEGS:
+                    continue
                 match = match_index.get(row.match_no)
                 if match is None:
                     continue
@@ -1572,6 +1589,8 @@ class JczqDailyAdvisorService:
                     continue
                 legs.append(built)
                 seen_matches.add(row.match_no)
+                if row.pool == "crs":
+                    crs_count += 1
                 break
 
         return self._make_plan(

@@ -344,6 +344,77 @@ def test_rule_a_v2_cross_match_support_extends_to_two_legs() -> None:
     assert match_nos == {"周一001", "周一002"}, "must be cross-match"
 
 
+def test_rule_a_v3_at_most_one_crs_leg_per_poisson_solo_ticket() -> None:
+    """Rule A v3 (5/08 落库): cross-match crs×crs combos have ~0.6% joint
+    hit rate (each ~8%) — that's a longshot, not alpha. R5 caps poisson_solo
+    at 1 crs leg total. The other slot must come from ttg/had/hhad.
+
+    5/07 incident: C ticket was 005 0:0 × 002 0:0 (both +20%-30% edges)
+    → 0/2. The compound was billed as "alpha" but joint odds put it ~0.6%
+    hit, not "model-priced".
+    """
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周四005", match_date="2026-05-07", match_time="08:30:00",
+            league="解放者杯", home_team="H1", away_team="A1", status="Selling",
+            hot_direction="主胜低赔(1.37)", role="均衡分歧场", confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周四005", league="解放者杯", home_team="H1", away_team="A1",
+                    pool="crs", play="比分", pick="0:0", odds=13.0, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四005", league="解放者杯", home_team="H1", away_team="A1",
+                    pool="ttg", play="总进球", pick="1球", odds=4.80, logic="",
+                ),
+            ],
+        ),
+        JczqDailyMatch(
+            match_no="周四002", match_date="2026-05-07", match_time="03:00:00",
+            league="欧罗巴", home_team="H2", away_team="A2", status="Selling",
+            hot_direction="主胜低赔(1.62)", role="均衡分歧场", confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周四002", league="欧罗巴", home_team="H2", away_team="A2",
+                    pool="crs", play="比分", pick="0:0", odds=12.0, logic="",
+                ),
+            ],
+        ),
+    ]
+    crs_005 = PoissonEdgeEntry(
+        match_no="周四005", home="H1", away="A1", league="解放者杯",
+        pool="crs", pick="0:0", market_odd=13.0, fair_odd=9.97,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.15,  # +30%
+    )
+    crs_002 = PoissonEdgeEntry(
+        match_no="周四002", home="H2", away="A2", league="欧罗巴",
+        pool="crs", pick="0:0", market_odd=12.0, fair_odd=9.97,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.05,  # +20%
+    )
+    ttg_005 = PoissonEdgeEntry(
+        match_no="周四005", home="H1", away="A1", league="解放者杯",
+        pool="ttg", pick="1球", market_odd=4.80, fair_odd=4.34,
+        edge=POISSON_SOLO_EDGE_THRESHOLD - 0.05,  # +10%, below +15% solo but ≥ +5% cross
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[crs_005, crs_002, ttg_005]
+    )
+    crs_legs = [leg for leg in plan.legs if leg.pool == "crs"]
+    assert len(crs_legs) <= 1, (
+        f"Rule A v3 violated: {len(crs_legs)} crs legs in poisson_solo "
+        f"(joint hit ~0.6% for 2 crs legs)"
+    )
+
+
 def test_rule_o_same_match_pool_violation_detector() -> None:
     """check_same_match_pool_legality flags any plan that mixes same-match
     different-pool legs (国家体彩 illegal parlay structure).
