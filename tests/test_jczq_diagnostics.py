@@ -15,6 +15,7 @@ from nutmeg.services.jczq_diagnostics import (
     SecondLegCandidate,
     TicketNarrative,
     apply_rule_l_concentration_cap,
+    apply_rule_l_story_cap,
     apply_rule_n_late_kickoff_cap,
     classify_ticket_narrative,
     compute_kelly_advice,
@@ -247,6 +248,92 @@ def test_rule_l_cap_no_op_when_already_compliant() -> None:
     p_b = _plan("main", _leg("002", "ttg", "2球", 3.3), _leg("005", "had", "平", 4.0))
     capped = apply_rule_l_concentration_cap([p_a, p_b], max_per_match=3)
     assert len(capped) == 2
+    assert capped[0].legs == p_a.legs
+    assert capped[1].legs == p_b.legs
+
+
+# --------------------------------------------------------- Rule R3.1 story cap
+
+
+def test_rule_l_story_cap_drops_repeated_pick_from_lowest_priority_plan() -> None:
+    """5/08 incident: 008 ttg 1球 was in B + C + E (3 plans). When 008 went
+    5 goals, all three plans lost the same leg. R3.1 caps a (match, pool,
+    pick) story at 2 plans by default — drops the 3rd from the lowest-
+    priority plan. R3 (match-level) cap stays compatible."""
+    p_b = _plan(
+        "main",
+        _leg("008", "ttg", "1球", 9.5),
+        _leg("005", "had", "胜", 1.73),
+        _leg("002", "had", "平", 3.35),
+        _leg("011", "hhad", "让平", 3.5, goal_line="+1"),
+    )
+    p_c = _plan(
+        "poisson_solo",
+        _leg("009", "crs", "0:0", 11.0),
+        _leg("008", "ttg", "1球", 9.5),  # same story as B
+    )
+    p_e = _plan(
+        "extreme",
+        _leg("009", "crs", "0:0", 11.0),
+        _leg("008", "ttg", "1球", 9.5),  # 3rd repeat of 008 ttg 1球
+        _leg("011", "hhad", "让平", 3.5, goal_line="+1"),
+        _leg("006", "ttg", "1球", 5.9),
+    )
+    capped = apply_rule_l_story_cap([p_b, p_c, p_e], max_per_story=2)
+    by_kind = {p.kind: p for p in capped}
+    # The 008 ttg 1球 story should now appear in ≤2 plans (B + C kept;
+    # E's 008 leg trimmed because extreme is the lowest priority).
+    appearances = sum(
+        1 for p in capped if any(
+            leg.match_no == "008" and leg.pool == "ttg" and leg.pick == "1球"
+            for leg in p.legs
+        )
+    )
+    assert appearances <= 2
+    # main and poisson_solo (most-protected) keep their 008 leg
+    assert any(
+        leg.match_no == "008" and leg.pool == "ttg" for leg in by_kind["main"].legs
+    )
+    assert any(
+        leg.match_no == "008" and leg.pool == "ttg" for leg in by_kind["poisson_solo"].legs
+    )
+    # extreme's 008 leg dropped (still has 3 other legs, above min_legs=2)
+    assert not any(
+        leg.match_no == "008" and leg.pool == "ttg" for leg in by_kind["extreme"].legs
+    )
+
+
+def test_rule_l_story_cap_distinct_picks_in_same_match_not_collapsed() -> None:
+    """A story is (match_no, pool, pick) — different picks in the same
+    match are different stories. 002 had 平 vs 002 ttg 1球 are independent
+    even though both are on 002."""
+    p_b = _plan("main", _leg("002", "had", "平", 3.35))
+    p_c = _plan("poisson_solo", _leg("002", "ttg", "1球", 5.8))
+    p_d = _plan("contrarian", _leg("002", "crs", "0:0", 16.0))
+    capped = apply_rule_l_story_cap([p_b, p_c, p_d], max_per_story=2)
+    # 002 appears in 3 plans but as 3 distinct stories → no trim
+    assert len(capped[0].legs) == 1
+    assert len(capped[1].legs) == 1
+    assert len(capped[2].legs) == 1
+
+
+def test_rule_l_story_cap_preserves_plan_min_legs() -> None:
+    """If trimming would drop a parlay below its min_legs floor, skip it."""
+    p_a = _plan("main", _leg("008", "ttg", "1球", 9.5), _leg("009", "crs", "0:0", 11.0))
+    p_b = _plan("inspiration", _leg("008", "ttg", "1球", 9.5), _leg("011", "hhad", "让平", 3.5))
+    # Both already at min_legs=2; adding a 3rd repeater that would force a trim.
+    p_c = _plan("contrarian", _leg("008", "ttg", "1球", 9.5), _leg("006", "ttg", "1球", 5.9))
+    capped = apply_rule_l_story_cap([p_a, p_b, p_c], max_per_story=2)
+    # Lowest-priority plan in this set is contrarian; trimming its 008 leg
+    # would drop it to 1 leg (below min=2). Skip and accept violation.
+    assert len(capped[2].legs) == 2
+
+
+def test_rule_l_story_cap_no_op_when_already_compliant() -> None:
+    p_a = _plan("main", _leg("008", "ttg", "1球", 9.5), _leg("005", "had", "胜", 1.73))
+    p_b = _plan("contrarian", _leg("008", "ttg", "1球", 9.5), _leg("006", "ttg", "1球", 5.9))
+    # 008 ttg 1球 in 2 plans — exactly at cap=2.
+    capped = apply_rule_l_story_cap([p_a, p_b], max_per_story=2)
     assert capped[0].legs == p_a.legs
     assert capped[1].legs == p_b.legs
 

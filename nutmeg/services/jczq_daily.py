@@ -21,6 +21,7 @@ from nutmeg.services.jczq import (
 from nutmeg.services.jczq_baseline import build_default_providers
 from nutmeg.services.jczq_diagnostics import (
     apply_rule_l_concentration_cap,
+    apply_rule_l_story_cap,
     apply_rule_n_late_kickoff_cap,
     enforce_main_plan_pool_diversity,
 )
@@ -576,6 +577,10 @@ class JczqDailyAdvisorService:
         # Drops the over-exposed leg from the lowest-priority plan(s); see
         # nutmeg.services.jczq_diagnostics.RULE_L_PLAN_PRIORITY.
         plans = apply_rule_l_concentration_cap(plans)
+        # R3.1 (5/09): cap (match, pool, pick) story at 2 plans. 5/08 had
+        # 008 ttg 1球 in B + C + E and 011 hhad 让平 in B + D + E — when
+        # those signals failed, three plans lost the same leg.
+        plans = apply_rule_l_story_cap(plans)
         # Rule N (R4, 5/08): cap main/inspiration to ≤1 late-kickoff leg
         # (Beijing time hour ∈ [6, 12)). 5/07 周四006 (08:30 Beijing) sat
         # in 3 plans and was 'unknown' at the next-day review window.

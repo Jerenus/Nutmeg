@@ -240,6 +240,13 @@ RULE_L_PLAN_PRIORITY: tuple[str, ...] = (
     "extreme",
 )
 RULE_L_DEFAULT_MAX_PER_MATCH = 3
+# R3.1 (5/09): same-direction story cap. (match_no, pool, pick) triple
+# must not appear in more than this many plans. 5/08 incident: 008 ttg 1球
+# in B + C + E (3 plans) and 011 hhad 让平 in B + D + E (3 plans) — when
+# 008 went 5 goals and 011 didn't draw, three plans lost the same leg
+# pair simultaneously. Match-level R3 cap=3 was satisfied but story-level
+# concentration killed the portfolio. R3.1 caps the story at 2 plans.
+RULE_L_DEFAULT_MAX_PER_STORY = 2
 # Per-kind floor: parlay tickets need ≥2 legs to be meaningful as parlays;
 # singleton tickets (poisson_solo, stable_base) survive with 1 leg.
 RULE_L_PLAN_MIN_LEGS: dict[str, int] = {
@@ -321,6 +328,88 @@ def apply_rule_l_concentration_cap(
             target = plans_list[target_idx]
             new_legs: list[JczqDailyLeg] = [
                 leg for leg in target.legs if leg.match_no != match_no
+            ]
+            min_legs = floor.get(target.kind, 1)
+            if len(new_legs) < min_legs:
+                continue
+            new_total = 1.0
+            for leg in new_legs:
+                new_total *= leg.odds
+            plans_list[target_idx] = replace(
+                target,
+                legs=new_legs,
+                total_odds=round(new_total, 2),
+                two_yuan_return=round(new_total * 2, 2),
+            )
+            trimmed = True
+            break
+        if not trimmed:
+            break
+    return plans_list
+
+
+def apply_rule_l_story_cap(
+    plans: Iterable[JczqDailyPlan],
+    *,
+    max_per_story: int = RULE_L_DEFAULT_MAX_PER_STORY,
+    priority: tuple[str, ...] = RULE_L_PLAN_PRIORITY,
+    plan_min_legs: dict[str, int] | None = None,
+) -> list[JczqDailyPlan]:
+    """R3.1 — drop a (match_no, pool, pick) story from the lowest-priority
+    plan(s) when it appears in more than `max_per_story` plans.
+
+    Distinct from R3 (apply_rule_l_concentration_cap), which counts at the
+    match level. R3.1 lets the same match contribute via different pools
+    or picks (independent stories) but blocks the same triple from
+    multiplying across many tickets — that pattern is the classical
+    single-signal failure chain (5/08 008 ttg 1球 in 3 plans → 008 went
+    5 goals → all 3 plans down a leg).
+
+    Same trim semantics as R3: drop the leg from the highest priority-
+    index plan first; skip if it would push the plan below its min_legs
+    floor.
+    """
+
+    plans_list = list(plans)
+    priority_idx: dict[str, int] = {kind: i for i, kind in enumerate(priority)}
+    floor = dict(plan_min_legs or RULE_L_PLAN_MIN_LEGS)
+
+    while True:
+        story_to_plan_idxs: dict[tuple[str, str, str], list[int]] = {}
+        for i, plan in enumerate(plans_list):
+            seen_in_plan: set[tuple[str, str, str]] = set()
+            for leg in plan.legs:
+                key = (leg.match_no, leg.pool, leg.pick)
+                if key in seen_in_plan:
+                    continue
+                seen_in_plan.add(key)
+                story_to_plan_idxs.setdefault(key, []).append(i)
+
+        violator: tuple[tuple[str, str, str], list[int]] | None = None
+        for story, plan_idxs in story_to_plan_idxs.items():
+            if len(plan_idxs) > max_per_story:
+                violator = (story, plan_idxs)
+                break
+        if violator is None:
+            break
+
+        story, plan_idxs = violator
+        match_no, pool, pick = story
+        plan_idxs_sorted = sorted(
+            plan_idxs,
+            key=lambda i: priority_idx.get(plans_list[i].kind, 1_000),
+        )
+        trimmed = False
+        for target_idx in reversed(plan_idxs_sorted):
+            target = plans_list[target_idx]
+            new_legs: list[JczqDailyLeg] = [
+                leg
+                for leg in target.legs
+                if not (
+                    leg.match_no == match_no
+                    and leg.pool == pool
+                    and leg.pick == pick
+                )
             ]
             min_legs = floor.get(target.kind, 1)
             if len(new_legs) < min_legs:
