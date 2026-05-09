@@ -32,6 +32,7 @@ from nutmeg.services.jczq_drift import (
 from nutmeg.services.jczq_intelligence import (
     CONTRARIAN_POISSON_REJECT_BELOW,
     CRS_POISSON_EDGE_FLOOR,
+    HHAD_POISSON_REJECT_BELOW,
     HIGH_ODDS_HAD_REQUIRED_EDGE,
     HIGH_ODDS_HAD_THRESHOLD,
     BaselineProvider,
@@ -1294,6 +1295,8 @@ class JczqDailyAdvisorService:
                 pool_min_edge=pool_min_edge,
                 high_odds_had_min_edge=high_odds_had_min,
                 reject_poisson_edge_below=reject_below,
+                # R7.1: drop hhad legs the Poisson model strongly opposes
+                hhad_min_edge=HHAD_POISSON_REJECT_BELOW,
             )
             if no_score:
                 evaluations = [ev for ev in evaluations if ev.leg.pool != "crs"]

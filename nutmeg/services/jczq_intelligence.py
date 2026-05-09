@@ -161,6 +161,15 @@ HIGH_ODDS_HAD_REQUIRED_EDGE = 0.05
 # opposes (5/05's contrarian ttg 4球 had edge -22.5%).
 CONTRARIAN_POISSON_REJECT_BELOW = -0.15
 
+# Rule R7.1 (5/09): hhad legs the Poisson model strongly opposes are
+# filtered from select_top_legs. 5/08 incident: 011 hhad 让平 (+1) had
+# edge ~-16% but appeared in B/D/E because hhad bypassed all Poisson
+# gates. -10% is tighter than the -15% contrarian floor because hhad
+# market efficiency is higher (5/08 brief Section 4 had 0 hhad +EV
+# rows; 36 hhad rows ranged -7% to -22%). Anything below -10% on hhad
+# is "not normal vig", it is model-strongly-opposed.
+HHAD_POISSON_REJECT_BELOW = -0.10
+
 
 def compute_analytics(
     matches: Iterable[JczqDailyMatch],
@@ -506,6 +515,7 @@ def select_top_legs(
     pool_min_edge: dict[str, float] | None = None,
     high_odds_had_min_edge: tuple[float, float] | None = None,
     reject_poisson_edge_below: float | None = None,
+    hhad_min_edge: float | None = None,
 ) -> list[LegEvaluation]:
     """Pick top-k legs across all matches by intent-specific score.
 
@@ -514,13 +524,15 @@ def select_top_legs(
     (pattern_buckets, oracle_learnings) into the ranking.
 
     Rule I/J Poisson gates (only applied to pools the model can price; hhad
-    falls through):
+    is gated separately by `hhad_min_edge`):
       - `pool_min_edge`: per-pool floor (Rule J for crs).
       - `high_odds_had_min_edge`: `(odds_threshold, edge_min)` — had legs at
         or above the odds threshold are dropped unless their Poisson edge
         meets `edge_min` (Rule I-1).
-      - `reject_poisson_edge_below`: drop any priced leg below this edge
-        (Rule I-2 contrarian floor).
+      - `reject_poisson_edge_below`: drop any priced non-hhad leg below
+        this edge (Rule I-2 contrarian floor).
+      - `hhad_min_edge`: when set, drop any hhad leg whose Poisson edge
+        falls below this floor (R7.1, default unset for backward compat).
     """
 
     avoid_match_nos = set(avoid_match_nos or set())
@@ -548,28 +560,34 @@ def select_top_legs(
             # 让胜/让平/让负 label semantics depend on the line.
             if require_hhad_handicap and leg.pool == "hhad" and not leg.goal_line:
                 continue
-            # Rules I-1 / I-2 / J: Poisson-supported floors. Only apply when an
-            # edge index is supplied. hhad has no Poisson coverage so it
-            # bypasses these checks entirely.
-            if poisson_edge_index is not None and leg.pool != "hhad":
+            # Rules I-1 / I-2 / J / R7.1: Poisson-supported floors.
+            # Non-hhad pools go through pool_min_edge / I-1 / I-2 gates.
+            # hhad pool is gated only by R7.1 hhad_min_edge (when set);
+            # without it, hhad bypasses Poisson filtering entirely.
+            if poisson_edge_index is not None:
                 edge = poisson_edge_index.get((leg.match_no, leg.pool, leg.pick))
-                if pool_min_edge and leg.pool in pool_min_edge:
-                    threshold = pool_min_edge[leg.pool]
-                    if edge is None or edge < threshold:
+                if leg.pool == "hhad":
+                    if hhad_min_edge is not None:
+                        if edge is None or edge < hhad_min_edge:
+                            continue
+                else:
+                    if pool_min_edge and leg.pool in pool_min_edge:
+                        threshold = pool_min_edge[leg.pool]
+                        if edge is None or edge < threshold:
+                            continue
+                    if (
+                        high_odds_had_min_edge is not None
+                        and leg.pool == "had"
+                        and leg.odds >= high_odds_had_min_edge[0]
+                    ):
+                        if edge is None or edge < high_odds_had_min_edge[1]:
+                            continue
+                    if (
+                        reject_poisson_edge_below is not None
+                        and edge is not None
+                        and edge < reject_poisson_edge_below
+                    ):
                         continue
-                if (
-                    high_odds_had_min_edge is not None
-                    and leg.pool == "had"
-                    and leg.odds >= high_odds_had_min_edge[0]
-                ):
-                    if edge is None or edge < high_odds_had_min_edge[1]:
-                        continue
-                if (
-                    reject_poisson_edge_below is not None
-                    and edge is not None
-                    and edge < reject_poisson_edge_below
-                ):
-                    continue
             evaluation = evaluate_leg(leg, analytics=ana, intent=intent, used_pools=set())
             if bias_fn is not None:
                 bias = bias_fn(leg, ana)

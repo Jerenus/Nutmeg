@@ -259,6 +259,134 @@ def _late_match(match_no: str, hhmmss: str) -> JczqDailyMatch:
     )
 
 
+# ---------------------------------------------------- Rule R7.1 (5/09) hhad filter
+
+
+def test_rule_r71_select_top_legs_filters_hhad_with_strongly_negative_poisson_edge() -> None:
+    """5/08 incident: 011 hhad 让平 (+1) had Poisson edge ~-16% — model
+    strongly opposed — yet appeared in B/D/E because select_top_legs
+    bypassed all Poisson gates for hhad. R7.1 adds an explicit
+    hhad_min_edge parameter; setting it to -0.10 drops hhad legs below
+    that threshold."""
+
+    from nutmeg.services.jczq_intelligence import select_top_legs
+
+    # Synthetic: two matches with hhad legs, one strongly model-opposed.
+    bad_hhad_match = JczqDailyMatch(
+        match_no="周五011",
+        match_date="2026-05-08",
+        match_time="22:00:00",
+        league="英冠",
+        home_team="赫尔城",
+        away_team="米尔沃尔",
+        status="Selling",
+        hot_direction="客胜低赔(2.30)",
+        role="均衡分歧场",
+        confidence_note="",
+        candidates=[
+            _leg("周五011", "英冠", "had", "胜", 3.20),
+            _leg("周五011", "英冠", "had", "平", 3.05),
+            _leg("周五011", "英冠", "had", "负", 2.30),
+            JczqDailyLeg(
+                match_no="周五011", league="英冠", home_team="赫尔城", away_team="米尔沃尔",
+                pool="hhad", play="让球胜平负", pick="让平", odds=3.50,
+                logic="", goal_line="+1", odds_update="",
+            ),
+        ],
+    )
+    ok_hhad_match = JczqDailyMatch(
+        match_no="周五012",
+        match_date="2026-05-08",
+        match_time="23:00:00",
+        league="西甲",
+        home_team="莱万特",
+        away_team="奥萨苏纳",
+        status="Selling",
+        hot_direction="主胜低赔(2.27)",
+        role="均衡分歧场",
+        confidence_note="",
+        candidates=[
+            _leg("周五012", "西甲", "had", "胜", 2.27),
+            _leg("周五012", "西甲", "had", "平", 3.20),
+            _leg("周五012", "西甲", "had", "负", 3.30),
+            JczqDailyLeg(
+                match_no="周五012", league="西甲", home_team="莱万特", away_team="奥萨苏纳",
+                pool="hhad", play="让球胜平负", pick="让平", odds=3.45,
+                logic="", goal_line="-1", odds_update="",
+            ),
+        ],
+    )
+    matches = [bad_hhad_match, ok_hhad_match]
+    analytics = compute_analytics(matches)
+    # Manually craft the Poisson edge index: 011 让平 strongly opposed,
+    # 012 让平 mildly negative (within tolerance).
+    edge_index = {
+        ("周五011", "hhad", "让平"): -0.16,  # below -0.10 threshold → drop
+        ("周五012", "hhad", "让平"): -0.05,  # within tolerance → keep
+    }
+    picks = select_top_legs(
+        matches,
+        analytics,
+        intent="contrarian",
+        k=4,
+        pool_filter={"hhad"},
+        enforce_pool_diversity=False,
+        poisson_edge_index=edge_index,
+        hhad_min_edge=-0.10,
+    )
+    pick_match_nos = {ev.leg.match_no for ev in picks}
+    assert "周五012" in pick_match_nos
+    assert "周五011" not in pick_match_nos, (
+        "R7.1 should filter 011 让平 (edge -16% < -10% threshold)"
+    )
+
+
+def test_rule_r71_select_top_legs_default_keeps_hhad_unfiltered_when_min_edge_unset() -> None:
+    """Backward compatibility: callers that don't pass hhad_min_edge
+    preserve the pre-R7.1 behavior (hhad bypasses Poisson gates)."""
+
+    from nutmeg.services.jczq_intelligence import select_top_legs
+
+    bad_hhad_match = JczqDailyMatch(
+        match_no="周五011",
+        match_date="2026-05-08",
+        match_time="22:00:00",
+        league="英冠",
+        home_team="赫尔城",
+        away_team="米尔沃尔",
+        status="Selling",
+        hot_direction="客胜低赔(2.30)",
+        role="均衡分歧场",
+        confidence_note="",
+        candidates=[
+            _leg("周五011", "英冠", "had", "胜", 3.20),
+            _leg("周五011", "英冠", "had", "平", 3.05),
+            _leg("周五011", "英冠", "had", "负", 2.30),
+            JczqDailyLeg(
+                match_no="周五011", league="英冠", home_team="赫尔城", away_team="米尔沃尔",
+                pool="hhad", play="让球胜平负", pick="让平", odds=3.50,
+                logic="", goal_line="+1", odds_update="",
+            ),
+        ],
+    )
+    matches = [bad_hhad_match]
+    analytics = compute_analytics(matches)
+    edge_index = {("周五011", "hhad", "让平"): -0.16}
+    picks = select_top_legs(
+        matches,
+        analytics,
+        intent="contrarian",
+        k=2,
+        pool_filter={"hhad"},
+        enforce_pool_diversity=False,
+        poisson_edge_index=edge_index,
+        # hhad_min_edge intentionally omitted
+    )
+    assert any(ev.leg.match_no == "周五011" for ev in picks), (
+        "Without hhad_min_edge, 011 should still appear (backward compat)"
+    )
+
+
 def test_rule_r4_late_kickoff_flag_set_for_morning_beijing_kickoffs() -> None:
     """5/07 周四006 麦独立 vs 弗拉门戈 kicked off 08:30 Beijing — its result
     was still 'unknown' when the next-day review ran 10:00 Beijing. R4
