@@ -170,6 +170,18 @@ CONTRARIAN_POISSON_REJECT_BELOW = -0.15
 # is "not normal vig", it is model-strongly-opposed.
 HHAD_POISSON_REJECT_BELOW = -0.10
 
+# R19 (5/11): hhad 让平 picks need a tighter Poisson floor than other hhad
+# picks. 5/11 周一007 was bucket-tagged draw_friendly (from implied vs
+# 联赛先验) which made brief Section 1 invite contrarian hhad 让平 @4.10 —
+# but the Poisson model independently priced let-draw at -6.6% edge (market
+# 7% over fair). draw_friendly bucket and Poisson hhad verdict are two
+# independent signals; when they contradict, the bucket label loses. R7.1
+# floor (-10%) only catches model-strongly-opposed; the -10% to -5% zone
+# is "draw_friendly contradiction" territory and must be filtered too —
+# but only for hhad 让平 picks specifically, since other hhad picks don't
+# carry the draw_friendly bucket assumption.
+HHAD_DRAW_MIN_EDGE = -0.05
+
 
 def compute_analytics(
     matches: Iterable[JczqDailyMatch],
@@ -516,6 +528,7 @@ def select_top_legs(
     high_odds_had_min_edge: tuple[float, float] | None = None,
     reject_poisson_edge_below: float | None = None,
     hhad_min_edge: float | None = None,
+    hhad_draw_min_edge: float | None = None,
 ) -> list[LegEvaluation]:
     """Pick top-k legs across all matches by intent-specific score.
 
@@ -560,6 +573,33 @@ def select_top_legs(
             # 让胜/让平/让负 label semantics depend on the line.
             if require_hhad_handicap and leg.pool == "hhad" and not leg.goal_line:
                 continue
+            # R10 (5/10): in hi-vol leagues, ttg ≤ 2球 is a systematic trap
+            # for main/contrarian tickets — Rule C only deprioritized via -0.5
+            # score; 5/09 周六026 美职 ttg 2球 still made it into main and lost
+            # (actual 6 球). Hard-reject here so the leg never enters the pool.
+            if (
+                intent in {"main", "contrarian"}
+                and leg.pool == "ttg"
+                and leg.pick in {"0球", "1球", "2球"}
+                and ana is not None
+                and ana.is_high_volatility_league
+            ):
+                continue
+            # R15 (5/10): contrarian must not deep-bet a strong-banker's
+            # favorite direction. 5/09 周六029 莱切-尤文 had 1.32 → contrarian
+            # picked hhad 让胜 @ 2.8 = "favor wins by 2+ goals" — that's
+            # extending the favorite, not opposing it. The Rule D (SOP) intent
+            # is "反舒服盘 / coinflip / draw_friendly", never "leverage the
+            # chalk into a deeper-cover handicap leg".
+            if (
+                intent == "contrarian"
+                and ana is not None
+                and ana.is_strong_banker
+                and leg.pool == "hhad"
+                and leg.pick == "让胜"
+                and leg.odds <= 3.0
+            ):
+                continue
             # Rules I-1 / I-2 / J / R7.1: Poisson-supported floors.
             # Non-hhad pools go through pool_min_edge / I-1 / I-2 gates.
             # hhad pool is gated only by R7.1 hhad_min_edge (when set);
@@ -569,6 +609,16 @@ def select_top_legs(
                 if leg.pool == "hhad":
                     if hhad_min_edge is not None:
                         if edge is None or edge < hhad_min_edge:
+                            continue
+                    # R19 (5/11): tighter floor for hhad 让平 picks; the
+                    # draw_friendly bucket label and Poisson hhad verdict
+                    # must agree. Applied only when hhad_draw_min_edge is
+                    # set (contrarian/main intent).
+                    if (
+                        hhad_draw_min_edge is not None
+                        and leg.pick == "让平"
+                    ):
+                        if edge is None or edge < hhad_draw_min_edge:
                             continue
                 else:
                     if pool_min_edge and leg.pool in pool_min_edge:
@@ -639,6 +689,12 @@ class PoissonEdgeEntry:
     market_odd: float
     fair_odd: float
     edge: float
+    # R13 (5/10): home_lambda + away_lambda from the Poisson fit. Lets
+    # downstream rules detect "model says expected_goals is 3.2 but selecting
+    # ttg 1球 anyway" — that's not alpha, it's a noisy single-bin pick that
+    # rarely hits even at the model-correct probability. Defaults to 0.0
+    # for backward compat with synthetic PoissonEdgeEntry fixtures.
+    expected_goals: float = 0.0
 
 
 # pools the Poisson model can fairly price. hhad joined the set on
@@ -703,6 +759,7 @@ def compute_poisson_edges(
                     market_odd=leg.odds,
                     fair_odd=round(fair, 2),
                     edge=edge,
+                    expected_goals=round(fit.home_lambda + fit.away_lambda, 2),
                 )
             )
     rows.sort(key=lambda row: row.edge, reverse=True)

@@ -861,3 +861,703 @@ def _contrarian_ttg_trap(num: str, league: str = "意甲") -> dict:
 
 _ = COINFLIP_VIG_THRESHOLD  # silence ruff when threshold consts move
 _ = COINFLIP_IMPLIED_SPREAD_THRESHOLD
+
+
+# --------------------------------------------------- R13 (5/10 落库) ---
+
+
+def test_r13_poisson_solo_rejects_ttg_low_when_expected_goals_high() -> None:
+    """R13: poisson_solo ttg picks {0球, 1球, 2球} require model expected_goals
+    < 2.7. 5/09 周六016 斯图加特 vs 勒沃 fit gave expected_goals = 3.2; ttg 1球
+    edge was +30.4% but the leg lost (actual 4 球). Human debate (Claude vs GPT)
+    caught this and replaced 016 ttg 1球 with 019 ttg 1球 (expected_goals=2.0)
+    → C 票中 74.80x. R13 makes the generator do this automatically.
+    """
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+        POISSON_SOLO_TTG_LOW_GOAL_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周六016", match_date="2026-05-09", match_time="22:30:00",
+            league="德甲", home_team="斯图加特", away_team="勒沃库森",
+            status="Selling", hot_direction="主胜低赔(2.13)", role="开放节奏场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周六016", league="德甲", home_team="斯图加特",
+                    away_team="勒沃库森", pool="ttg", play="总进球",
+                    pick="1球", odds=10.0, logic="",
+                ),
+            ],
+        ),
+        JczqDailyMatch(
+            match_no="周六007", match_date="2026-05-09", match_time="22:00:00",
+            league="英冠", home_team="米堡", away_team="南安普敦",
+            status="Selling", hot_direction="主胜低赔(2.08)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周六007", league="英冠", home_team="米堡",
+                    away_team="南安普敦", pool="crs", play="比分",
+                    pick="0:0", odds=11.0, logic="",
+                ),
+            ],
+        ),
+    ]
+    high_goal_ttg = PoissonEdgeEntry(
+        match_no="周六016", home="斯图加特", away="勒沃库森", league="德甲",
+        pool="ttg", pick="1球", market_odd=10.0, fair_odd=7.67,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.15,  # +30% — would normally pass
+        expected_goals=POISSON_SOLO_TTG_LOW_GOAL_THRESHOLD + 0.5,  # 3.2
+    )
+    safe_crs = PoissonEdgeEntry(
+        match_no="周六007", home="米堡", away="南安普敦", league="英冠",
+        pool="crs", pick="0:0", market_odd=11.0, fair_odd=8.17,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.20,  # +35%
+        expected_goals=2.1,
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[high_goal_ttg, safe_crs]
+    )
+    # The ttg 1球 leg with expected_goals=3.2 must be filtered out by R13.
+    assert all(
+        not (leg.match_no == "周六016" and leg.pool == "ttg" and leg.pick == "1球")
+        for leg in plan.legs
+    ), "R13: poisson_solo must reject ttg 1球 when expected_goals ≥ 2.7"
+
+
+def test_r15_contrarian_rejects_deep_bet_on_strong_banker() -> None:
+    """R15 (5/10): contrarian must not pick hhad 让胜 ≤ 3.0 in a strong-banker
+    match. 5/09 周六029 莱切-尤文 had 1.32 → contrarian picked hhad 让胜 @ 2.8
+    (尤文 wins by 2+) and lost (实际让平). That leg is leveraged-favorite, not
+    contrarian — Rule D says "反舒服盘 / coinflip / draw_friendly".
+    """
+    from nutmeg.services.jczq_intelligence import (
+        MatchAnalytics,
+        select_top_legs,
+    )
+
+    matches = [
+        JczqDailyMatch(
+            match_no="周六029", match_date="2026-05-09", match_time="22:30:00",
+            league="意甲", home_team="莱切", away_team="尤文",
+            status="Selling", hot_direction="客胜低赔(1.32)", role="强胆场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周六029", league="意甲", home_team="莱切",
+                    away_team="尤文", pool="hhad", play="让球胜平负",
+                    pick="让胜", odds=2.80, logic="", goal_line="+1",
+                ),
+                JczqDailyLeg(
+                    match_no="周六029", league="意甲", home_team="莱切",
+                    away_team="尤文", pool="had", play="胜平负",
+                    pick="平", odds=5.50, logic="",
+                ),
+            ],
+        ),
+    ]
+    analytics = {
+        "周六029": MatchAnalytics(
+            match_no="周六029",
+            league="意甲",
+            favorite_outcome="负",
+            favorite_odds=1.32,
+            favorite_implied=0.67,
+            implied_probs={"胜": 0.12, "平": 0.21, "负": 0.67},
+            vig_pct=0.13,
+            dispersion=0.55,
+            popularity_score=5,
+            popularity_tier="h",
+            baseline_probs={"胜": 0.45, "平": 0.27, "负": 0.28},
+            ev_gaps={"had": {"胜": -0.33, "平": -0.06, "负": 0.39}},
+            is_strong_banker=True,
+            is_comfort_risk=False,
+            is_chaos=False,
+            is_draw_friendly=False,
+            is_upset_candidate=False,
+        ),
+    }
+    legs = select_top_legs(
+        matches, analytics, intent="contrarian", k=10,
+        pool_filter={"hhad", "had"},
+        odds_min=1.0, odds_max=10.0,
+        require_hhad_handicap=True,
+    )
+    assert all(
+        not (
+            ev.leg.match_no == "周六029"
+            and ev.leg.pool == "hhad"
+            and ev.leg.pick == "让胜"
+        )
+        for ev in legs
+    ), "R15 violated: contrarian deep-bet hhad 让胜 leaked through strong-banker filter"
+
+
+def test_r9_extreme_drops_weak_crs_when_no_strong_anchor(tmp_path: Path) -> None:
+    """R9 (5/10): extreme ticket with ≥ 2 crs legs requires the strongest to
+    clear +25% edge AND any extra to clear +15%. 5/09 周六010 0:0 (edge +7%)
+    × 周六007 0:0 (edge +35%) — the +7% leg was just above Rule J's -10% floor
+    but well below alpha. The weaker leg should drop, leaving a single 007 crs.
+    """
+    from nutmeg.services.jczq_daily import (
+        EXTREME_CRS_MULTI_LEG_MIN_EDGE,
+        EXTREME_CRS_MULTI_LEG_PEAK_EDGE,
+    )
+
+    matches = [_strong_chalk(f"周一00{i}") for i in range(1, 6)]
+    service = JczqDailyAdvisorService(provider=FakeProvider(matches))
+    report = service.build_report(run_date="2026-05-05", output_dir=tmp_path)
+    extreme = next((plan for plan in report.plans if plan.kind == "extreme"), None)
+    if extreme is None or not extreme.legs:
+        return
+    edges = poisson_edge_index(compute_poisson_edges(report.matches))
+    crs_legs = [leg for leg in extreme.legs if leg.pool == "crs"]
+    if len(crs_legs) < 2:
+        return  # R9 only constrains ≥ 2 crs legs
+    crs_edge_values = [
+        edges.get((leg.match_no, "crs", leg.pick))
+        for leg in crs_legs
+    ]
+    crs_edge_values = [e for e in crs_edge_values if e is not None]
+    if not crs_edge_values:
+        return
+    peak = max(crs_edge_values)
+    assert peak >= EXTREME_CRS_MULTI_LEG_PEAK_EDGE, (
+        f"R9 violated: extreme has ≥ 2 crs legs but peak edge {peak:+.1%} "
+        f"is below {EXTREME_CRS_MULTI_LEG_PEAK_EDGE:+.0%}"
+    )
+    for edge in crs_edge_values:
+        assert edge >= EXTREME_CRS_MULTI_LEG_MIN_EDGE, (
+            f"R9 violated: extreme crs leg edge {edge:+.1%} below "
+            f"{EXTREME_CRS_MULTI_LEG_MIN_EDGE:+.0%}"
+        )
+
+
+def test_r11_draw_cluster_filters_legs_below_poisson_edge_floor(tmp_path: Path) -> None:
+    """R11 (5/10): draw_cluster had 平 legs must clear edge ≥ -8%. 5/09 had
+    9 comfort-risk matches → cluster picked 4 had 平 legs all at -10% to
+    -13% edge → 0/4. Floor trims to 2-3 legs on dry days.
+    """
+    from nutmeg.services.jczq_daily import DRAW_CLUSTER_EDGE_FLOOR
+
+    matches = [_normal(f"周一00{i}") for i in range(1, 8)]
+    service = JczqDailyAdvisorService(provider=FakeProvider(matches))
+    report = service.build_report(run_date="2026-05-05", output_dir=tmp_path)
+    draw_cluster = next(
+        (plan for plan in report.plans if plan.kind == "draw_cluster"), None
+    )
+    if draw_cluster is None or not draw_cluster.legs:
+        return
+    edges = poisson_edge_index(compute_poisson_edges(report.matches))
+    for leg in draw_cluster.legs:
+        edge = edges.get((leg.match_no, leg.pool, leg.pick))
+        if edge is None:
+            continue
+        assert edge >= DRAW_CLUSTER_EDGE_FLOOR, (
+            f"R11 violated: draw_cluster {leg.pool}/{leg.pick}@{leg.odds} "
+            f"edge {edge:+.1%} (floor {DRAW_CLUSTER_EDGE_FLOOR:+.0%})"
+        )
+
+
+def test_r12_false_signal_rejects_priced_legs_below_edge_floor(tmp_path: Path) -> None:
+    """R12 (5/10): false_signal ttg/crs/hafu legs must clear edge ≥ -10%.
+    5/09 周六024 ttg 4球 made false_signal at -19% edge → lost. The model-
+    opposed leg is noise, not contrarian narrative.
+    """
+    from nutmeg.services.jczq_daily import (
+        FALSE_SIGNAL_PRICED_EDGE_FLOOR,
+    )
+
+    matches = [_normal(f"周一00{i}") for i in range(1, 6)]
+    service = JczqDailyAdvisorService(provider=FakeProvider(matches))
+    report = service.build_report(run_date="2026-05-05", output_dir=tmp_path)
+    false_signal = next(
+        (plan for plan in report.plans if plan.kind == "false_signal"), None
+    )
+    if false_signal is None or not false_signal.legs:
+        return  # plan is empty; nothing to assert
+    edges = poisson_edge_index(compute_poisson_edges(report.matches))
+    for leg in false_signal.legs:
+        if leg.pool not in {"ttg", "crs", "hafu"}:
+            continue
+        edge = edges.get((leg.match_no, leg.pool, leg.pick))
+        if edge is None:
+            continue
+        assert edge >= FALSE_SIGNAL_PRICED_EDGE_FLOOR, (
+            f"R12 violated: false_signal {leg.pool}/{leg.pick}@{leg.odds} "
+            f"with edge {edge:+.1%} (floor {FALSE_SIGNAL_PRICED_EDGE_FLOOR:+.0%})"
+        )
+
+
+def test_r10_hi_vol_main_hard_rejects_ttg_low_picks() -> None:
+    """R10 (5/10): hi-vol leagues (incl. R2 override: 美职/沙职/欧战…) hard-
+    reject ttg 0/1/2球 in main/contrarian. Rule C only soft-penalized -0.5;
+    5/09 周六026 美职 ttg 2球 still made main and lost (actual 6球, resid +2.8).
+    """
+    from nutmeg.services.jczq_intelligence import (
+        MatchAnalytics,
+        select_top_legs,
+    )
+
+    matches = [
+        JczqDailyMatch(
+            match_no="周六026", match_date="2026-05-09", match_time="08:00:00",
+            league="美职", home_team="多伦多", away_team="迈国际",
+            status="Selling", hot_direction="客胜低赔(1.62)", role="开放节奏场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周六026", league="美职", home_team="多伦多",
+                    away_team="迈国际", pool="ttg", play="总进球",
+                    pick="2球", odds=4.35, logic="",
+                ),
+                # Provide a non-ttg fallback so select_top_legs has something
+                # to return (else fixture is empty under R10 hard-filter).
+                JczqDailyLeg(
+                    match_no="周六026", league="美职", home_team="多伦多",
+                    away_team="迈国际", pool="had", play="胜平负",
+                    pick="负", odds=1.62, logic="",
+                ),
+            ],
+        ),
+    ]
+    analytics = {
+        "周六026": MatchAnalytics(
+            match_no="周六026",
+            league="美职",
+            favorite_outcome="负",
+            favorite_odds=1.62,
+            favorite_implied=0.55,
+            implied_probs={"胜": 0.23, "平": 0.22, "负": 0.55},
+            vig_pct=0.13,
+            dispersion=0.13,
+            popularity_score=0,
+            popularity_tier="m",
+            baseline_probs={"胜": 0.50, "平": 0.23, "负": 0.27},
+            ev_gaps={"had": {"胜": -0.27, "平": -0.01, "负": 0.28}},
+            is_strong_banker=False,
+            is_comfort_risk=False,
+            is_chaos=True,
+            is_draw_friendly=False,
+            is_upset_candidate=False,
+            is_three_way_coinflip=False,
+            is_high_volatility_league=True,
+        ),
+    }
+    legs = select_top_legs(
+        matches, analytics, intent="main", k=10, pool_filter={"ttg", "had"},
+        odds_min=1.0, odds_max=10.0,
+    )
+    bad = [
+        ev for ev in legs
+        if ev.leg.pool == "ttg" and ev.leg.pick in {"0球", "1球", "2球"}
+    ]
+    assert not bad, (
+        f"R10 violated: hi-vol ttg≤2球 leaked into main: "
+        f"{[(ev.leg.match_no, ev.leg.pick) for ev in bad]}"
+    )
+
+
+def test_r13_allows_ttg_low_when_expected_goals_below_threshold() -> None:
+    """Sanity: R13 must NOT block ttg 1球 when the model agrees expected_goals
+    is low (e.g., 2.0). 5/09 周六019 富勒姆 vs 伯恩 (expected_goals=2.0) — the
+    leg that won. R13 fires only when the model disagrees with the pick.
+    """
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周六019", match_date="2026-05-09", match_time="22:00:00",
+            league="英超", home_team="富勒姆", away_team="伯恩茅斯",
+            status="Selling", hot_direction="客胜低赔(2.22)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周六019", league="英超", home_team="富勒姆",
+                    away_team="伯恩茅斯", pool="ttg", play="总进球",
+                    pick="1球", odds=6.80, logic="",
+                ),
+            ],
+        ),
+    ]
+    safe_ttg = PoissonEdgeEntry(
+        match_no="周六019", home="富勒姆", away="伯恩茅斯", league="英超",
+        pool="ttg", pick="1球", market_odd=6.80, fair_odd=5.51,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.08,  # +23%
+        expected_goals=2.0,  # below 2.7 → R13 allows
+    )
+    plan = service._build_poisson_solo_plan(matches, poisson_rows=[safe_ttg])
+    assert len(plan.legs) == 1
+    assert plan.legs[0].match_no == "周六019"
+    assert plan.legs[0].pool == "ttg"
+
+
+# ---------------------------------------------------------------- R17 ---
+# 2026-05-11 C 票 2 腿 (007 crs 0:0 expected_goals=1.9 + 001 ttg 1球
+# expected_goals=2.5) 全押 "low_goals" 叙事 → 全输。R13 只过滤 expected_goals
+# ≥ 2.7，R17 给 poisson_solo 加叙事同质性保护：两条腿都是 low_goals 时，任一
+# 条 expected_goals ≥ 2.3 就把更弱的那条砍掉。
+
+
+def test_r17_poisson_solo_two_low_goals_legs_collapse_to_highest_edge() -> None:
+    """R17 (5/11): when poisson_solo selects 2 legs and BOTH are low_goals
+    narrative (crs 0:0/0:1/1:0 or ttg 0/1/2球), AND any leg has
+    expected_goals ≥ POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER (2.3), collapse
+    to 1 leg keeping the highest Poisson edge. 5/11 C 票 007 0:0 (+72% edge,
+    λ=1.9) + 001 ttg1 (+21% edge, λ=2.5) — R17 keeps 007 because its edge
+    is stronger; both legs lost on 5/11 but the principle (preserve highest
+    model conviction) is validated by 5/04 where 007 0:0 +21.6% edge was
+    the winner.
+    """
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE,
+        POISSON_SOLO_EDGE_THRESHOLD,
+        POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周一007", match_date="2026-05-11", match_time="22:30:00",
+            league="西甲", home_team="巴列卡诺", away_team="赫罗纳",
+            status="Selling", hot_direction="均衡(2.30)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周一007", league="西甲", home_team="巴列卡诺",
+                    away_team="赫罗纳", pool="crs", play="比分",
+                    pick="0:0", odds=11.50, logic="",
+                ),
+            ],
+        ),
+        JczqDailyMatch(
+            match_no="周一001", match_date="2026-05-11", match_time="22:30:00",
+            league="沙职", home_team="新未来SC", away_team="利雅青年",
+            status="Selling", hot_direction="主胜低赔(2.30)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周一001", league="沙职", home_team="新未来SC",
+                    away_team="利雅青年", pool="ttg", play="总进球",
+                    pick="1球", odds=5.90, logic="",
+                ),
+            ],
+        ),
+    ]
+    high_edge_crs = PoissonEdgeEntry(
+        match_no="周一007", home="巴列卡诺", away="赫罗纳", league="西甲",
+        pool="crs", pick="0:0", market_odd=11.50, fair_odd=6.69,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.57,  # +72% (top edge of the day)
+        expected_goals=1.9,
+    )
+    weaker_ttg = PoissonEdgeEntry(
+        match_no="周一001", home="新未来SC", away="利雅青年", league="沙职",
+        pool="ttg", pick="1球", market_odd=5.90, fair_odd=4.87,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.06,  # +21%
+        expected_goals=POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER + 0.2,  # 2.5
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[high_edge_crs, weaker_ttg]
+    )
+    assert len(plan.legs) == 1, (
+        "R17: when both legs are low_goals narrative and any has expected_goals "
+        f"≥ {POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER}, ticket downgrades to 1 leg"
+    )
+    # Keep the highest-edge leg (007 +72% > 001 +21%).
+    assert plan.legs[0].match_no == "周一007", (
+        "R17 must keep the leg with the highest Poisson edge (+72%), not +21%"
+    )
+
+
+def test_r17_allows_two_low_goals_legs_when_both_lambdas_low() -> None:
+    """Sanity: R17 doesn't fire when both legs have expected_goals
+    below the trigger (e.g. 1.7, 1.8). Pure cross-match low-goals alpha."""
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周二001", match_date="2026-05-12", match_time="22:00:00",
+            league="意丙", home_team="HA", away_team="AA",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二001", league="意丙", home_team="HA",
+                    away_team="AA", pool="crs", play="比分", pick="0:0",
+                    odds=12.0, logic="",
+                ),
+            ],
+        ),
+        JczqDailyMatch(
+            match_no="周二002", match_date="2026-05-12", match_time="22:00:00",
+            league="阿乙", home_team="HB", away_team="AB",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二002", league="阿乙", home_team="HB",
+                    away_team="AB", pool="ttg", play="总进球", pick="1球",
+                    odds=4.50, logic="",
+                ),
+            ],
+        ),
+    ]
+    a = PoissonEdgeEntry(
+        match_no="周二001", home="HA", away="AA", league="意丙",
+        pool="crs", pick="0:0", market_odd=12.0, fair_odd=8.0,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.20, expected_goals=1.7,
+    )
+    b = PoissonEdgeEntry(
+        match_no="周二002", home="HB", away="AB", league="阿乙",
+        pool="ttg", pick="1球", market_odd=4.50, fair_odd=3.75,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.05, expected_goals=1.8,
+    )
+    plan = service._build_poisson_solo_plan(matches, poisson_rows=[a, b])
+    # Both should survive (no R17 trigger; R5 cap is 1 crs but 2 different pools).
+    assert len(plan.legs) == 2
+
+
+# ---------------------------------------------------------------- R18 ---
+# 2026-05-11 E 票 3 腿全 crs low_goals (001 0:0 + 007 0:1 + 009 0:0) → 1/3
+# 命中。R9 看 edge 强度，但忽略叙事同质性。R18: extreme ≥ 2 crs low_goals 腿
+# 时，只保留 edge 最强的那条；让出空间给非 low_goals 替代叙事。
+
+
+def test_r18_extreme_caps_low_goals_crs_to_single_leg(tmp_path: Path) -> None:
+    """R18 (5/11): extreme ticket may have at most 1 crs leg in
+    EXTREME_CRS_LOW_PICKS ({0:0, 0:1, 1:0}). 5/11 E 票 3 腿全 0:0/0:1 same
+    macro narrative → 1/3 hit. Drop extras beyond the strongest by edge.
+
+    Uses _strong_chalk synthetic fixtures: their crs 0:0 edges line up high
+    enough that R9 alone doesn't trim them. After R18 trims homogeneous
+    low_goals, no more than 1 crs leg in {0:0, 0:1, 1:0} remains.
+    """
+    from nutmeg.services.jczq_daily import EXTREME_CRS_LOW_PICKS
+
+    matches = [_strong_chalk(f"周一00{i}") for i in range(1, 6)]
+    service = JczqDailyAdvisorService(provider=FakeProvider(matches))
+    report = service.build_report(run_date="2026-05-05", output_dir=tmp_path)
+    extreme = next((plan for plan in report.plans if plan.kind == "extreme"), None)
+    if extreme is None or not extreme.legs:
+        return
+    low_goals_crs = [
+        leg
+        for leg in extreme.legs
+        if leg.pool == "crs" and leg.pick in EXTREME_CRS_LOW_PICKS
+    ]
+    assert len(low_goals_crs) <= 1, (
+        f"R18 violated: extreme has {len(low_goals_crs)} crs low_goals legs "
+        f"({[(leg.match_no, leg.pick) for leg in low_goals_crs]})"
+    )
+
+
+# ---------------------------------------------------------------- R19 ---
+# 2026-05-11 D 票 007 hhad 让平 @4.10 → 实际 让负。brief Section 1 把 007 标
+# draw_friendly（implied vs 联赛先验），但实测 Poisson hhad 让平 edge = -6.6%
+# (R7 fair_odds_hhad)。draw_friendly 桶和 Poisson verdict 是两套独立信号；
+# R7.1 hhad floor (-10%) 漏掉了 -10% < edge < -5% 的"市场比模型贵"hhad 让平腿。
+
+
+def test_r19_contrarian_rejects_hhad_draw_when_poisson_edge_below_floor() -> None:
+    """R19 (5/11): in contrarian/main intent, hhad 让平 legs need a Poisson
+    edge ≥ HHAD_DRAW_MIN_EDGE (-0.05). Tighter than HHAD_POISSON_REJECT_BELOW
+    (-0.10) which catches the model-strongly-opposed; R19 catches the
+    "draw_friendly bucket vs Poisson contradiction" zone.
+    """
+    from nutmeg.services.jczq_intelligence import (
+        HHAD_DRAW_MIN_EDGE,
+        HHAD_POISSON_REJECT_BELOW,
+        MatchAnalytics,
+        select_top_legs,
+    )
+
+    # Two candidates: 007 hhad 让平 edge=-6.6% (passes R7.1 -10%, fails R19 -5%)
+    # and a clean hhad 让负 edge=-3% (passes everything).
+    matches = [
+        JczqDailyMatch(
+            match_no="周一007", match_date="2026-05-11", match_time="22:30:00",
+            league="西甲", home_team="巴列卡诺", away_team="赫罗纳",
+            status="Selling", hot_direction="均衡(2.30)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周一007", league="西甲", home_team="巴列卡诺",
+                    away_team="赫罗纳", pool="hhad", play="让球胜平负",
+                    pick="让平", odds=4.10, logic="", goal_line="0",
+                ),
+                JczqDailyLeg(
+                    match_no="周一007", league="西甲", home_team="巴列卡诺",
+                    away_team="赫罗纳", pool="hhad", play="让球胜平负",
+                    pick="让负", odds=2.80, logic="", goal_line="0",
+                ),
+            ],
+        ),
+    ]
+    analytics = {
+        "周一007": MatchAnalytics(
+            match_no="周一007", league="西甲", favorite_outcome="胜",
+            favorite_odds=2.30, favorite_implied=0.43,
+            implied_probs={"胜": 0.43, "平": 0.27, "负": 0.30},
+            vig_pct=0.12, dispersion=0.50, popularity_score=2,
+            popularity_tier="m",
+            baseline_probs={"胜": 0.40, "平": 0.25, "负": 0.35},
+            ev_gaps={"had": {"胜": -0.05, "平": 0.08, "负": -0.05}},
+            is_strong_banker=False, is_comfort_risk=False, is_chaos=False,
+            is_draw_friendly=True, is_upset_candidate=False,
+            is_three_way_coinflip=False, is_high_volatility_league=False,
+        ),
+    }
+    # Synthetic poisson edge index: 007 hhad 让平 -6.6%, 让负 -3.0%.
+    poisson_idx = {
+        ("周一007", "hhad", "让平"): -0.066,
+        ("周一007", "hhad", "让负"): -0.030,
+    }
+    assert HHAD_POISSON_REJECT_BELOW <= -0.066 < HHAD_DRAW_MIN_EDGE, (
+        "fixture sanity: -6.6% should sit between R7.1 floor and R19 floor"
+    )
+    legs = select_top_legs(
+        matches, analytics, intent="contrarian", k=10,
+        pool_filter={"hhad"}, odds_min=1.0, odds_max=10.0,
+        require_hhad_handicap=True,
+        poisson_edge_index=poisson_idx,
+        hhad_min_edge=HHAD_POISSON_REJECT_BELOW,
+        hhad_draw_min_edge=HHAD_DRAW_MIN_EDGE,
+    )
+    pick_set = {(ev.leg.pool, ev.leg.pick) for ev in legs}
+    assert ("hhad", "让平") not in pick_set, (
+        f"R19 violated: contrarian kept hhad 让平 with edge -6.6% "
+        f"(R19 floor {HHAD_DRAW_MIN_EDGE})"
+    )
+    # 让负 -3% should still be allowed.
+    assert ("hhad", "让负") in pick_set
+
+
+# ---------------------------------------------------------------- R20 ---
+# 2026-05-11 A 票 005 had 胜 @1.60 (expected_edge -10.56%) + 006 had 胜 @1.60
+# (-10.01%) 全错。Rule B 只禁 ≤1.50 低赔，但 1.50-1.70 区间的 chalk_favorite +
+# Poisson 显著负 edge (≤ -10%) 同样不应该当底仓胆 — 市场已经把水分榨干。
+
+
+def test_r20_stable_base_rejects_had_favorite_when_poisson_strongly_opposes() -> None:
+    """R20 (5/11): stable_base had legs need Poisson expected_edge ≥
+    STABLE_BASE_HAD_MIN_POISSON_EDGE (-0.10). 5/11 005 had 胜 @1.60 edge
+    -10.56% and 006 had 胜 @1.60 edge -10.01% both made it into A and both
+    lost. Rule B (1.50 floor) is necessary but not sufficient; R20 adds the
+    Poisson-supported quality gate.
+    """
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        STABLE_BASE_HAD_MIN_POISSON_EDGE,
+    )
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    # Synthetic match where home is 1.60 favorite (passes Rule B) but Poisson
+    # disagrees by ≥ -10%.
+    matches = [
+        JczqDailyMatch(
+            match_no="周一005", match_date="2026-05-11", match_time="22:30:00",
+            league="英超", home_team="热刺", away_team="利兹联",
+            status="Selling", hot_direction="主胜低赔(1.60)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周一005", league="英超", home_team="热刺",
+                    away_team="利兹联", pool="had", play="胜平负",
+                    pick="胜", odds=1.60, logic="",
+                ),
+            ],
+        ),
+        # 003-style fallback with positive (or neutral) edge so stable_base
+        # has something to anchor on.
+        JczqDailyMatch(
+            match_no="周一003", match_date="2026-05-11", match_time="22:30:00",
+            league="沙超", home_team="布赖合作", away_team="吉达国民",
+            status="Selling", hot_direction="客胜低赔(1.62)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周一003", league="沙超", home_team="布赖合作",
+                    away_team="吉达国民", pool="had", play="胜平负",
+                    pick="负", odds=1.62, logic="",
+                ),
+            ],
+        ),
+    ]
+    # Synthetic Poisson index: 005 had 胜 edge -10.5% (must be rejected by
+    # R20 since -0.105 < -0.10 floor). 003 had 负 -3% (passes).
+    poisson_idx = {
+        ("周一005", "had", "胜"): -0.105,
+        ("周一003", "had", "负"): -0.030,
+    }
+    service._active_poisson_index = poisson_idx
+    service._active_coinflip_match_nos = set()
+    assert STABLE_BASE_HAD_MIN_POISSON_EDGE == -0.10
+    plan = service._build_stable_base_plan(matches)
+    bad = [
+        leg for leg in plan.legs
+        if leg.match_no == "周一005" and leg.pool == "had"
+    ]
+    assert bad == [], (
+        f"R20 violated: stable_base kept 005 had 胜 with Poisson edge -10.5% "
+        f"(floor {STABLE_BASE_HAD_MIN_POISSON_EDGE})"
+    )
+    # The other -3% leg should remain available.
+    assert any(
+        leg.match_no == "周一003" and leg.pool == "had"
+        for leg in plan.legs
+    ), "R20 must allow 003 had 负 at edge -3%"
+
+
+def test_r20_allows_had_favorite_when_poisson_edge_above_floor() -> None:
+    """Sanity for R20: a had 胜 @1.60 with Poisson edge -8% (above -10% floor)
+    must still be eligible. Avoids R20 over-blocking neutral-EV chalk."""
+    from nutmeg.services.jczq_daily import JczqDailyAdvisorService as _Svc
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周一009", match_date="2026-05-11", match_time="22:30:00",
+            league="葡超", home_team="阿马多拉", away_team="法马利康",
+            status="Selling", hot_direction="客胜低赔(1.62)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周一009", league="葡超", home_team="阿马多拉",
+                    away_team="法马利康", pool="had", play="胜平负",
+                    pick="负", odds=1.62, logic="",
+                ),
+            ],
+        ),
+    ]
+    poisson_idx = {("周一009", "had", "负"): -0.075}
+    service._active_poisson_index = poisson_idx
+    service._active_coinflip_match_nos = set()
+    plan = service._build_stable_base_plan(matches)
+    assert any(
+        leg.match_no == "周一009" and leg.pool == "had"
+        for leg in plan.legs
+    ), "R20 must allow chalk with Poisson edge -7.5% (above -10% floor)"

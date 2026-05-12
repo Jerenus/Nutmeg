@@ -32,6 +32,7 @@ from nutmeg.services.jczq_drift import (
 from nutmeg.services.jczq_intelligence import (
     CONTRARIAN_POISSON_REJECT_BELOW,
     CRS_POISSON_EDGE_FLOOR,
+    HHAD_DRAW_MIN_EDGE,
     HHAD_POISSON_REJECT_BELOW,
     HIGH_ODDS_HAD_REQUIRED_EDGE,
     HIGH_ODDS_HAD_THRESHOLD,
@@ -64,6 +65,14 @@ from nutmeg.services.jczq_strategy_memory import (
 # 5/06 specific: 拜仁 had 胜 @ 1.52 in stable_base MISS (1:1). Razor-thin 1.40-1.50
 # bankers consistently underperform; 1.50-1.60 still allowed but flagged in soft rules.
 HAD_BANKER_FLOOR = 1.50
+# R20 (5/11): stable_base had favorites need a Poisson quality gate on top
+# of Rule B's odds floor. 5/11 A 票 had 005 had 胜 @1.60 (Poisson edge
+# -10.56%) + 006 had 胜 @1.60 (edge -10.01%) — both passed Rule B (odds >
+# 1.50) but lost. -10% Poisson edge on a had favorite means the market has
+# already priced beyond model-fair (vig + over-confidence); the "stable
+# base" premise is broken. Floor matches Rule J / R12 (-10%) so the system
+# uses one consistent "strongly opposed" threshold across pools.
+STABLE_BASE_HAD_MIN_POISSON_EDGE = -0.10
 # Rule A: a leg with at least this much Poisson edge triggers the poisson_solo ticket.
 POISSON_SOLO_EDGE_THRESHOLD = 0.15
 # Rule O (5/07 iteration after sport.gov.cn rule reminder): same-match different-pool
@@ -84,6 +93,61 @@ POISSON_STRONG_OPPOSE_THRESHOLD = -0.20
 # was billed as alpha but the joint was a longshot. Cap poisson_solo at
 # at most 1 crs leg total — the other slot must come from ttg/had/hhad.
 POISSON_SOLO_MAX_CRS_LEGS = 1
+# R13 (5/10): poisson_solo ttg-low picks must agree with model expected_goals.
+# 5/09 incident — 周六016 斯图加特 vs 勒沃 fit gave expected_goals = 3.2; the
+# model still produced ttg 1球 with edge +30.4% and that leg made it into the
+# ticket; actual 4 goals → C ticket lost a leg. The +30% edge is real (ttg 1球
+# fair prob ≈ 0.13 vs implied 0.10) but at expected_goals ≥ 2.7 the single-bin
+# 0/1/2-球 prediction has ~10-13% hit rate; the variance dominates the EV.
+# Human debate auditor (5/09) caught this and replaced the leg with 周六019
+# expected_goals=2.0 → ttg 1球 hit. Hard-filter at the row eligibility stage.
+POISSON_SOLO_TTG_LOW_GOAL_THRESHOLD = 2.7
+POISSON_SOLO_TTG_LOW_PICKS = ("0球", "1球", "2球")
+# Used by R17 (low_goals narrative test) and EXTREME_CRS_LOW_PICKS / R18.
+# Picks below have <= 1 total goal — single-bin and narratively the same
+# "low scoring evening" bet.
+POISSON_SOLO_CRS_LOW_PICKS = ("0:0", "0:1", "1:0")
+# R17 (5/11): when poisson_solo selects 2 legs and BOTH are "low_goals"
+# narrative (crs 0:0/0:1/1:0 OR ttg 0/1/2球), AND any leg has expected_goals
+# ≥ POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER (2.3), drop the higher-λ leg and
+# keep only the more consistent one. Prevents narrative concentration in
+# C tickets — 5/11 C 票 007 crs 0:0 (λ=1.9, R13/R16 ok individually) +
+# 001 ttg 1球 (λ=2.5) — both individually allowed but the joint failure
+# mode is "any goal-fest blows up both legs at once".
+POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER = 2.3
+# R12 (5/10): false_signal ttg/crs/hafu legs must clear this Poisson edge floor.
+# false_signal's premise is "the market over-weighted external narrative; the
+# real-strength delta still holds". That premise is for had/hhad. Pools the
+# Poisson model can directly price (ttg/crs/hafu) should not be actively
+# contradicted by the model. 5/09 周六024 ttg 4球 had edge -19% — the model
+# said "no" loudly and the leg lost (actual 1 球). Floor at -10%: anything
+# more model-opposed than that is noise, not contrarian narrative.
+FALSE_SIGNAL_PRICED_EDGE_FLOOR = -0.10
+# R11 (5/10): draw_cluster legs (had 平 in comfort-risk matches) must clear
+# this Poisson edge floor. The cluster fires when comfort-risk matches ≥ 3,
+# but on 5/09 all 4 picked legs sat between -10% and -13% edge → 0/4. The
+# joint EV at 4 × -10% legs is ~3.6 / 1 = 36% per-leg success rate; below
+# random. Floor at -8% trades coverage for quality — the cluster shrinks to
+# 2-3 legs on dry days rather than betting the spread on negative-EV draws.
+DRAW_CLUSTER_EDGE_FLOOR = -0.08
+# R9 (5/10): extreme cross-match crs combos must clear quality bars. 5/07 had
+# 005 0:0 × 002 0:0 both at +20%-30% edge → joint ~0.6% → 0/2. 5/09 had 010
+# 0:0 (edge +7%) × 007 0:0 (edge +35%) — the +7% leg dragged the joint down
+# while 007 was the real alpha. Rule J (CRS_POISSON_EDGE_FLOOR = -0.10) only
+# blocks model-actively-opposed crs; it doesn't separate "alpha" from "tepid".
+# R9 raises the floor for any 2nd+ crs leg in the same ticket: must be ≥ +15%
+# AND the ticket's strongest crs must be ≥ +25%. When the bar fails, the
+# weaker crs leg is dropped (extreme falls back to a single crs).
+EXTREME_CRS_MULTI_LEG_PEAK_EDGE = 0.25
+EXTREME_CRS_MULTI_LEG_MIN_EDGE = 0.15
+# R18 (5/11): extreme ticket may have at most 1 crs leg in
+# EXTREME_CRS_LOW_PICKS (the "low_goals" macro narrative). 5/11 E 票 was
+# 001 crs 0:0 × 007 crs 0:1 × 009 crs 0:0 — all three at +20%+ edge, all
+# passed R9 (peak +47.8% ≥ 25%, extras +24.5% / +20.3% ≥ 15%) — but the
+# joint depends on "all 3 leagues hit ≤1 goal in the same evening" which is
+# one narrative bet packaged as three. Keep the strongest by edge; drop
+# extras so the ticket forces narrative diversity at the leg level.
+EXTREME_CRS_LOW_PICKS = ("0:0", "0:1", "1:0")
 # Rule F: bias subtracted from a leg's score when its team is on the burned list.
 BURNED_TEAM_BIAS = -0.5
 # Rule H: hafu legs hit 0/9 across the 4-day backtest spanning every non-extreme
@@ -683,6 +747,7 @@ class JczqDailyAdvisorService:
         poisson_idx = getattr(self, "_active_poisson_index", None)
         if poisson_idx is None:
             return plans
+        analytics_idx = getattr(self, "_active_analytics", None) or {}
         kind_thresholds: dict[str, float] = {
             "contrarian": CONTRARIAN_POISSON_REJECT_BELOW,
             "main": POISSON_STRONG_OPPOSE_THRESHOLD,
@@ -718,8 +783,16 @@ class JczqDailyAdvisorService:
                     # legs rather than swap to an unrelated outcome.
                     replaced = True
                     continue
+                ana_for_match = analytics_idx.get(leg.match_no)
                 replacement = _rule_i2_contrarian_replacement(
-                    match_by_no.get(leg.match_no), poisson_idx, min_edge=threshold
+                    match_by_no.get(leg.match_no),
+                    poisson_idx,
+                    min_edge=threshold,
+                    is_strong_banker=(
+                        plan.kind == "contrarian"
+                        and ana_for_match is not None
+                        and ana_for_match.is_strong_banker
+                    ),
                 )
                 if replacement is not None:
                     kept.append(
@@ -792,13 +865,29 @@ class JczqDailyAdvisorService:
         legs: list[JczqDailyLeg | None] = []
         used_match_nos: set[str] = set()
 
+        # R12 (5/10): false_signal ttg/crs/hafu legs must clear the
+        # FALSE_SIGNAL_PRICED_EDGE_FLOOR; the model-priced pools should not be
+        # actively contradicted. 5/09 周六024 ttg 4球 had edge -19% and still
+        # entered false_signal → lost (actual 1球). The model-opposed leg is
+        # not "false signal", it's noise. had / hhad legs bypass this floor —
+        # the plan's premise (反热门/胜负叙事拥挤) lives there.
+        poisson_idx = getattr(self, "_active_poisson_index", None)
+
+        def _r12_passes(leg: JczqDailyLeg | None) -> bool:
+            if leg is None or poisson_idx is None:
+                return leg is not None
+            if leg.pool not in {"ttg", "crs", "hafu"}:
+                return True
+            edge = poisson_idx.get((leg.match_no, leg.pool, leg.pick))
+            return edge is None or edge >= FALSE_SIGNAL_PRICED_EDGE_FLOOR
+
         strong_cover = _best_false_signal_leg(
             matches,
             used_match_nos,
             selector=_favorite_cover_leg,
             target=2.4,
         )
-        if strong_cover is not None:
+        if strong_cover is not None and _r12_passes(strong_cover):
             legs.append(
                 replace(strong_cover, logic="外部不利叙事可能被资金放大，真实实力差仍支持打穿。")
             )
@@ -809,7 +898,7 @@ class JczqDailyAdvisorService:
             selector=_comfort_resistance_leg,
             target=2.2,
         )
-        if comfort_resistance is not None:
+        if comfort_resistance is not None and _r12_passes(comfort_resistance):
             legs.append(
                 replace(comfort_resistance, logic="热门方向过于顺滑，改用让球保护规避大热陷阱。")
             )
@@ -820,7 +909,7 @@ class JczqDailyAdvisorService:
             selector=_tactical_process_leg,
             target=4.2,
         )
-        if tactical is not None:
+        if tactical is not None and _r12_passes(tactical):
             legs.append(replace(tactical, logic="胜负叙事拥挤时，改用节奏/过程标的表达判断。"))
 
         second_cover = _best_false_signal_leg(
@@ -829,7 +918,7 @@ class JczqDailyAdvisorService:
             selector=_favorite_cover_leg,
             target=2.4,
         )
-        if second_cover is not None:
+        if second_cover is not None and _r12_passes(second_cover):
             legs.append(
                 replace(second_cover, logic="不机械反热门，强弱差明确时继续保留打穿表达。")
             )
@@ -847,6 +936,20 @@ class JczqDailyAdvisorService:
         used_match_nos: set[str] = set()
         candidates: list[tuple[float, JczqDailyLeg]] = []
         coinflip_match_nos = getattr(self, "_active_coinflip_match_nos", set())
+        poisson_idx = getattr(self, "_active_poisson_index", None)
+
+        def _r20_passes(leg: JczqDailyLeg) -> bool:
+            """R20 (5/11): stable_base had legs must clear Poisson edge ≥
+            STABLE_BASE_HAD_MIN_POISSON_EDGE. Only applies to had pool —
+            hhad uses Rule D's goal_line gate + R7.1's hhad floor; comfort
+            cover legs handled by their own resistance logic."""
+            if leg.pool != "had" or poisson_idx is None:
+                return True
+            edge = poisson_idx.get((leg.match_no, "had", leg.pick))
+            if edge is None:
+                return True  # no model coverage — fall back to Rule B alone
+            return edge >= STABLE_BASE_HAD_MIN_POISSON_EDGE
+
         for match in matches:
             if _is_comfort_risk(match):
                 # Comfortable favorites can appear only through a protected low-odds cover.
@@ -863,7 +966,7 @@ class JczqDailyAdvisorService:
                 # Rule B: had legs at or below HAD_BANKER_FLOOR are too thin to anchor.
                 if HAD_BANKER_FLOOR < odds <= 1.65:
                     leg = _find_leg(match, pool="had", pick=pick)
-                    if leg is not None:
+                    if leg is not None and _r20_passes(leg):
                         role_bonus = -0.25 if match.role == "强胆场" else 0.0
                         candidates.append((role_bonus + abs(leg.odds - 1.55), leg))
             hhad_lows = [
@@ -1297,10 +1400,62 @@ class JczqDailyAdvisorService:
                 reject_poisson_edge_below=reject_below,
                 # R7.1: drop hhad legs the Poisson model strongly opposes
                 hhad_min_edge=HHAD_POISSON_REJECT_BELOW,
+                # R19 (5/11): tighter floor for hhad 让平 in main/contrarian.
+                # See HHAD_DRAW_MIN_EDGE comment for the draw_friendly bucket
+                # vs Poisson verdict contradiction story.
+                hhad_draw_min_edge=HHAD_DRAW_MIN_EDGE,
             )
             if no_score:
                 evaluations = [ev for ev in evaluations if ev.leg.pool != "crs"]
             selected = [ev.leg for ev in evaluations[:4]]
+            # R9 (5/10): extreme tickets with ≥ 2 crs legs need a strong-anchor
+            # gate. Strongest must be ≥ +25%; any extra crs leg ≥ +15%.
+            # Otherwise the weakest crs is dropped — single-crs extreme is OK.
+            if extreme and poisson_idx is not None and selected:
+                crs_edges: list[tuple[float, JczqDailyLeg]] = []
+                for leg in selected:
+                    if leg.pool == "crs":
+                        edge = poisson_idx.get((leg.match_no, "crs", leg.pick))
+                        if edge is None:
+                            continue
+                        crs_edges.append((edge, leg))
+                if len(crs_edges) >= 2:
+                    crs_edges.sort(key=lambda item: item[0], reverse=True)
+                    peak = crs_edges[0][0]
+                    weak_legs: list[JczqDailyLeg] = []
+                    if peak < EXTREME_CRS_MULTI_LEG_PEAK_EDGE:
+                        # No leg clears +25%: drop every crs but the strongest.
+                        weak_legs = [leg for _, leg in crs_edges[1:]]
+                    else:
+                        weak_legs = [
+                            leg
+                            for edge, leg in crs_edges[1:]
+                            if edge < EXTREME_CRS_MULTI_LEG_MIN_EDGE
+                        ]
+                    if weak_legs:
+                        weak_ids = {id(leg) for leg in weak_legs}
+                        selected = [leg for leg in selected if id(leg) not in weak_ids]
+            # R18 (5/11): cap "low_goals" crs narrative legs (0:0/0:1/1:0)
+            # at 1 per extreme ticket. R9 controls edge strength but allows
+            # narrative concentration; R18 enforces narrative diversity.
+            # Keep the strongest by edge; drop the rest. When poisson_idx
+            # has no entry for a leg, treat it as edge=0 (so legs without
+            # model coverage fall to the bottom of the keep-priority).
+            if extreme and selected:
+                low_goals_crs: list[tuple[float, JczqDailyLeg]] = []
+                for leg in selected:
+                    if leg.pool != "crs" or leg.pick not in EXTREME_CRS_LOW_PICKS:
+                        continue
+                    edge = -1.0
+                    if poisson_idx is not None:
+                        edge = poisson_idx.get(
+                            (leg.match_no, "crs", leg.pick), -1.0
+                        )
+                    low_goals_crs.append((edge, leg))
+                if len(low_goals_crs) >= 2:
+                    low_goals_crs.sort(key=lambda item: item[0], reverse=True)
+                    drop_ids = {id(leg) for _, leg in low_goals_crs[1:]}
+                    selected = [leg for leg in selected if id(leg) not in drop_ids]
         plan = self._make_plan(
             name, kind, description, selected, "高赔票核心风险来自精确进球/半全场/平局落点。"
         )
@@ -1498,12 +1653,20 @@ class JczqDailyAdvisorService:
         )
         legs: list[JczqDailyLeg] = []
         seen_matches: set[str] = set()
+        # R11 (5/10): apply Poisson edge floor to the had 平 picks. 5/09 4
+        # legs all sat at -10% to -13% edge → 0/4. Floor trims to 2-3 legs
+        # on dry days rather than spraying negative-EV draws.
+        poisson_idx = getattr(self, "_active_poisson_index", None)
         for ev in evaluations:
             leg = ev.leg
             if leg.match_no in seen_matches:
                 continue
             if leg.pool == "had" and leg.pick != "平":
                 continue
+            if poisson_idx is not None:
+                edge = poisson_idx.get((leg.match_no, leg.pool, leg.pick))
+                if edge is not None and edge < DRAW_CLUSTER_EDGE_FLOOR:
+                    continue
             legs.append(replace(leg, logic=f"防平簇：{leg.logic} EV gap {ev.ev_gap:+.2f}"))
             seen_matches.add(leg.match_no)
             if len(legs) >= 4:
@@ -1618,8 +1781,28 @@ class JczqDailyAdvisorService:
             recommended = float(sig.get("recommended_crs_min_edge") or base)
             return max(base, recommended)
 
+        def _r13_consistent(row) -> bool:
+            """R13: ttg low-goal picks must agree with the model's expected
+            goals. expected_goals defaults to 0 on synthetic fixtures; treat 0
+            as "unknown" and skip the gate so legacy tests stay green."""
+            if row.pool != "ttg" or row.pick not in POISSON_SOLO_TTG_LOW_PICKS:
+                return True
+            if row.expected_goals <= 0:
+                return True
+            return row.expected_goals < POISSON_SOLO_TTG_LOW_GOAL_THRESHOLD
+
+        def _is_low_goals_narrative(leg: JczqDailyLeg) -> bool:
+            """R17 helper: ttg 0/1/2球 or crs 0:0/0:1/1:0."""
+            if leg.pool == "ttg" and leg.pick in POISSON_SOLO_TTG_LOW_PICKS:
+                return True
+            if leg.pool == "crs" and leg.pick in POISSON_SOLO_CRS_LOW_PICKS:
+                return True
+            return False
+
         eligible = [
-            row for row in poisson_rows if row.edge >= _row_threshold(row)
+            row
+            for row in poisson_rows
+            if row.edge >= _row_threshold(row) and _r13_consistent(row)
         ]
         if not eligible:
             return self._make_plan(
@@ -1686,6 +1869,7 @@ class JczqDailyAdvisorService:
                 for row in poisson_rows
                 if row.match_no not in seen_matches
                 and row.edge >= POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE
+                and _r13_consistent(row)
             ]
             for row in cross_support:
                 if row.pool == "crs" and crs_count >= POISSON_SOLO_MAX_CRS_LEGS:
@@ -1702,6 +1886,30 @@ class JczqDailyAdvisorService:
                     crs_count += 1
                 break
 
+        # R17 (5/11): when both selected legs are low_goals narrative AND
+        # any leg's expected_goals ≥ POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER,
+        # collapse to a single leg — keep the highest-edge leg, drop the
+        # other. Prevents same-macro-narrative concentration where one
+        # high-scoring evening kills both legs (5/11 C 票 007 0:0 + 001
+        # ttg 1球 joint ≈ 3% hit). Keeping the highest-edge leg preserves
+        # the strongest model conviction; the 5/04 regression confirms
+        # this is also the leg most likely to be the actual winner
+        # (007 0:0 +21.6% edge was the day's actual hit).
+        if len(legs) == 2 and all(_is_low_goals_narrative(leg) for leg in legs):
+            row_by_key = {
+                (row.match_no, row.pool, row.pick): row for row in poisson_rows
+            }
+            legs_with_meta: list[tuple[float, float, JczqDailyLeg]] = []
+            for leg in legs:
+                row = row_by_key.get((leg.match_no, leg.pool, leg.pick))
+                lam = float(getattr(row, "expected_goals", 0.0) or 0.0) if row else 0.0
+                edge = float(getattr(row, "edge", 0.0) or 0.0) if row else 0.0
+                legs_with_meta.append((lam, edge, leg))
+            max_lambda = max(lam for lam, _, _ in legs_with_meta)
+            if max_lambda >= POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER:
+                # Keep the highest-edge leg.
+                legs_with_meta.sort(key=lambda item: item[1], reverse=True)
+                legs = [legs_with_meta[0][2]]
         return self._make_plan(
             "Poisson 单核灵感票",
             "poisson_solo",
@@ -2338,11 +2546,16 @@ def _rule_i2_contrarian_replacement(
     poisson_edge_index: dict[tuple[str, str, str], float],
     *,
     min_edge: float = CONTRARIAN_POISSON_REJECT_BELOW,
+    is_strong_banker: bool = False,
 ) -> JczqDailyLeg | None:
     """Pick a leg the Poisson model doesn't reject (Rule I scrub helper).
 
     Preference: ttg picks meeting `min_edge`, then hhad cover (Poisson-blind,
     safe by default).
+
+    R15 (5/10): when the source match is a strong-banker, exclude hhad 让胜
+    odds ≤ 3.0 from the hhad fallback set — those are leveraged-favorite
+    legs, not contrarian. 5/09 周六029 莱切-尤文 was the canonical case.
     """
 
     if match is None:
@@ -2362,6 +2575,11 @@ def _rule_i2_contrarian_replacement(
         if leg.pool == "hhad"
         and leg.goal_line
         and 2.0 <= leg.odds <= 5.0
+        and not (
+            is_strong_banker
+            and leg.pick == "让胜"
+            and leg.odds <= 3.0
+        )
     ]
     if hhad_options:
         return min(hhad_options, key=lambda leg: abs(leg.odds - 3.0))

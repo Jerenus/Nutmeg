@@ -203,6 +203,25 @@ Always mark which ticket the agent itself would back hardest, and why.
 11. **Rule J — extreme crs needs Poisson support.** crs picks must clear
     edge ≥ -10%. Backtest crs hit 1/14 (7.1%); the surviving picks are now
     aligned with the joint Poisson scoreline distribution.
+12. **R17 — poisson_solo collapses on low_goals narrative concentration.**
+    When the 2 chosen legs are BOTH "low_goals" picks (ttg 0/1/2球 or crs
+    0:0/0:1/1:0) AND any leg's expected_goals ≥ 2.3, the ticket drops to
+    a single leg (keeping the highest-edge one). 5/11 C 票 007 0:0 (λ=1.9)
+    × 001 ttg 1球 (λ=2.5) failure case: joint hit ≈3% even at +EV.
+13. **R18 — extreme cap at 1 low_goals crs leg.** At most one crs pick in
+    {0:0, 0:1, 1:0} per extreme ticket; extras dropped by lowest edge.
+    5/11 E 票 001 0:0 × 007 0:1 × 009 0:0 (all "low scoring" macro bet
+    packaged as 3 legs).
+14. **R19 — contrarian/main hhad 让平 needs Poisson agreement.** hhad 让平
+    legs need Poisson edge ≥ -5% (tighter than R7.1's -10% hhad floor).
+    Catches the "draw_friendly bucket vs Poisson verdict contradiction"
+    zone (5/11 007 hhad 让平 @4.10 was bucket-tagged draw_friendly but
+    Poisson said -6.6%).
+15. **R20 — stable_base had favorites need Poisson edge ≥ -10%.** Rule B
+    (1.50 odds floor) is necessary but not sufficient; 1.50-1.70 chalk
+    favorites with Poisson edge ≤ -10% also lose ("market priced beyond
+    fair"). 5/11 005 had 胜 @1.60 (-10.56%) + 006 had 胜 @1.60 (-10.01%)
+    both made A and both lost.
 12. **Fail loud if data gaps exist.** If brief Section 1 has 0 matches,
    `_resolve_drift_provider` errored, or all matches show role "未知",
    report the failure and stop instead of guessing.
@@ -256,13 +275,16 @@ review history accumulates, the smarter the picks.
 - Strategy memory: `nutmeg/services/jczq_strategy_memory.py` (v2 schema)
 - Brief script: `scripts/jczq_daily_brief.py`
 - Replay tool: `scripts/replay_jczq_with_new_generator.py`
-- Test coverage: 525 tests across `tests/test_jczq_*.py` (Rules A-J regression
-  in `tests/test_jczq_daily_iteration_rules.py`)
+- Test coverage: 633 tests across `tests/test_jczq_*.py` (Rules A-J + R1-R20
+  regression in `tests/test_jczq_daily_iteration_rules.py`)
 - Rule constants live at the top of `nutmeg/services/jczq_daily.py`
-  (`HAD_BANKER_FLOOR`, `POISSON_SOLO_EDGE_THRESHOLD`,
+  (`HAD_BANKER_FLOOR`, `STABLE_BASE_HAD_MIN_POISSON_EDGE` (R20),
+  `POISSON_SOLO_EDGE_THRESHOLD`, `POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER`
+  (R17), `POISSON_SOLO_CRS_LOW_PICKS`, `EXTREME_CRS_LOW_PICKS` (R18),
   `POISSON_STRONG_OPPOSE_THRESHOLD`, `BURNED_TEAM_BIAS`,
   `RULE_H_NON_EXTREME_HAFU_BLOCKED`) and
   `nutmeg/services/jczq_intelligence.py` (`COINFLIP_VIG_THRESHOLD`,
   `COINFLIP_IMPLIED_SPREAD_THRESHOLD`, `HIGH_VOLATILITY_TTG_MEDIAN`,
   `CRS_POISSON_EDGE_FLOOR`, `HIGH_ODDS_HAD_THRESHOLD`,
-  `HIGH_ODDS_HAD_REQUIRED_EDGE`, `CONTRARIAN_POISSON_REJECT_BELOW`).
+  `HIGH_ODDS_HAD_REQUIRED_EDGE`, `CONTRARIAN_POISSON_REJECT_BELOW`,
+  `HHAD_POISSON_REJECT_BELOW`, `HHAD_DRAW_MIN_EDGE` (R19)).
