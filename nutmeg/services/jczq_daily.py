@@ -73,6 +73,13 @@ HAD_BANKER_FLOOR = 1.50
 # base" premise is broken. Floor matches Rule J / R12 (-10%) so the system
 # uses one consistent "strongly opposed" threshold across pools.
 STABLE_BASE_HAD_MIN_POISSON_EDGE = -0.10
+# R21 (5/12): extend R20 floor from stable_base to main. 5/12 main 票 had
+# 三腿全 ≤ -10% Poisson edge → 1/3 命中：003 had 胜 -10.46% MISS, 004 had
+# 平 -10.94% HIT (lucky), 006 had 平 -10.64% MISS. Same -10% floor logic
+# as R20 (consistent threshold w/ Rule J / R12). Applied at _select_leg
+# time so main slot collapses to None if no eligible candidate — _make_plan
+# tolerates None legs and the plan simply shrinks.
+MAIN_HAD_MIN_POISSON_EDGE = -0.10
 # Rule A: a leg with at least this much Poisson edge triggers the poisson_solo ticket.
 POISSON_SOLO_EDGE_THRESHOLD = 0.15
 # Rule O (5/07 iteration after sport.gov.cn rule reminder): same-match different-pool
@@ -522,6 +529,7 @@ class JczqDailyAdvisorService:
             "用胜平负低赔方向保生命力，把高赔点留给半全场/平局。",
             [
                 # Rule B: had bankers must be > 1.40 (>=1.41) to avoid 1.24/1.34-style chalk dumps.
+                # R21: had picks below MAIN_HAD_MIN_POISSON_EDGE are filtered.
                 _select_leg(
                     matches,
                     used_match_nos,
@@ -530,6 +538,8 @@ class JczqDailyAdvisorService:
                     max_odds=1.9,
                     target=1.55,
                     skip_match_nos=self._active_coinflip_match_nos,
+                    poisson_idx=self._active_poisson_index,
+                    min_poisson_edge=MAIN_HAD_MIN_POISSON_EDGE,
                 ),
                 # Rule H: hafu pool blocked from main; substitute a mid-priced
                 # ttg leg, falling back to a hhad cover with handicap.
@@ -559,7 +569,13 @@ class JczqDailyAdvisorService:
                     max_odds=1.9,
                     target=1.55,
                     skip_match_nos=self._active_coinflip_match_nos,
+                    poisson_idx=self._active_poisson_index,
+                    min_poisson_edge=MAIN_HAD_MIN_POISSON_EDGE,
                 ),
+                # R21: high-odds had slot (3.0+) also subject to the floor.
+                # 5/12 003 had 胜 was 1.67 (covered by slot 1) — slot 4
+                # historically picks had 平 / 客胜 picks that often sit at
+                # -10% edge too.
                 _select_leg(
                     matches,
                     used_match_nos,
@@ -567,6 +583,8 @@ class JczqDailyAdvisorService:
                     min_odds=3.0,
                     target=3.4,
                     skip_match_nos=self._active_coinflip_match_nos,
+                    poisson_idx=self._active_poisson_index,
+                    min_poisson_edge=MAIN_HAD_MIN_POISSON_EDGE,
                 ),
             ],
             "主方案仍依赖一到两个高波动平局/半全场点；Rule B 已禁用 ≤1.40 强胆。",
@@ -2369,15 +2387,25 @@ def _select_leg(
     max_odds: float = 99,
     target: float,
     skip_match_nos: set[str] | None = None,
+    poisson_idx: dict[tuple[str, str, str], float] | None = None,
+    min_poisson_edge: float | None = None,
 ) -> JczqDailyLeg | None:
     candidates: list[JczqDailyLeg] = []
     skip = skip_match_nos or set()
     for match in matches:
         if match.match_no in used_match_nos or match.match_no in skip:
             continue
-        candidates.extend(
-            leg for leg in match.candidates if leg.pool == pool and min_odds <= leg.odds <= max_odds
-        )
+        for leg in match.candidates:
+            if leg.pool != pool or not (min_odds <= leg.odds <= max_odds):
+                continue
+            # R21 hook: when caller passes min_poisson_edge + poisson_idx,
+            # legs the model strongly opposes are filtered out. If the model
+            # doesn't price this (match, pool, pick) tuple, fall through.
+            if min_poisson_edge is not None and poisson_idx is not None:
+                edge = poisson_idx.get((leg.match_no, leg.pool, leg.pick))
+                if edge is not None and edge < min_poisson_edge:
+                    continue
+            candidates.append(leg)
     if not candidates:
         return None
     choice = min(candidates, key=lambda leg: abs(leg.odds - target))

@@ -1561,3 +1561,160 @@ def test_r20_allows_had_favorite_when_poisson_edge_above_floor() -> None:
         leg.match_no == "周一009" and leg.pool == "had"
         for leg in plan.legs
     ), "R20 must allow chalk with Poisson edge -7.5% (above -10% floor)"
+
+
+# ---------------------------------------------------------------- R21 ---
+# 2026-05-12 main 票三腿 had 全部 Poisson edge ≤ -10% — 003 had 胜 -10.46%
+# MISS, 004 had 平 -10.94% HIT (lucky), 006 had 平 -10.64% MISS = 1/3 命中。
+# R20 在 stable_base 已经验证 -10% floor 有效，R21 把同一阈值扩展到 main。
+# R21 落在 _select_leg 的可选参数 (poisson_idx + min_poisson_edge) 上，main
+# 票的 3 个 had slot 全部启用。
+
+
+def test_r21_select_leg_filters_had_when_poisson_edge_below_floor() -> None:
+    """R21 (5/12): _select_leg respects min_poisson_edge filter for had pool.
+    5/12 main 周二006 had 平 @3.15 expected_edge -10.64% should be filtered
+    when the caller passes MAIN_HAD_MIN_POISSON_EDGE = -0.10.
+    """
+    from nutmeg.services.jczq_daily import (
+        MAIN_HAD_MIN_POISSON_EDGE,
+        _select_leg,
+    )
+
+    matches = [
+        JczqDailyMatch(
+            match_no="周二006", match_date="2026-05-12", match_time="03:00:00",
+            league="法甲", home_team="圣旺红星", away_team="罗德兹",
+            status="Selling", hot_direction="主胜中赔(2.20)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二006", league="法甲", home_team="圣旺红星",
+                    away_team="罗德兹", pool="had", play="胜平负",
+                    pick="平", odds=3.15, logic="",
+                ),
+            ],
+        ),
+    ]
+    poisson_idx = {("周二006", "had", "平"): -0.1064}
+    assert MAIN_HAD_MIN_POISSON_EDGE == -0.10
+    # Without R21 (no edge filter) the leg is selected.
+    used: set[str] = set()
+    leg = _select_leg(
+        matches, used,
+        pool="had", min_odds=3.0, target=3.4,
+    )
+    assert leg is not None and leg.match_no == "周二006", (
+        "fixture sanity: had 平 @3.15 must be selectable without the R21 filter"
+    )
+    # With R21 (edge -10.64% < -10% floor) the leg is rejected → returns None.
+    used2: set[str] = set()
+    leg2 = _select_leg(
+        matches, used2,
+        pool="had", min_odds=3.0, target=3.4,
+        poisson_idx=poisson_idx,
+        min_poisson_edge=MAIN_HAD_MIN_POISSON_EDGE,
+    )
+    assert leg2 is None, (
+        f"R21 violated: had 平 with edge -10.64% should be filtered "
+        f"(floor {MAIN_HAD_MIN_POISSON_EDGE}); got {leg2}"
+    )
+
+
+def test_r21_select_leg_allows_had_when_poisson_edge_above_floor() -> None:
+    """Sanity for R21: a had 平 with Poisson edge -8% (above -10% floor)
+    must still be selectable. Avoids R21 over-blocking neutral-EV picks.
+    """
+    from nutmeg.services.jczq_daily import (
+        MAIN_HAD_MIN_POISSON_EDGE,
+        _select_leg,
+    )
+
+    matches = [
+        JczqDailyMatch(
+            match_no="周二006", match_date="2026-05-12", match_time="03:00:00",
+            league="法甲", home_team="圣旺红星", away_team="罗德兹",
+            status="Selling", hot_direction="均衡", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二006", league="法甲", home_team="圣旺红星",
+                    away_team="罗德兹", pool="had", play="胜平负",
+                    pick="平", odds=3.15, logic="",
+                ),
+            ],
+        ),
+    ]
+    poisson_idx = {("周二006", "had", "平"): -0.080}
+    used: set[str] = set()
+    leg = _select_leg(
+        matches, used,
+        pool="had", min_odds=3.0, target=3.4,
+        poisson_idx=poisson_idx,
+        min_poisson_edge=MAIN_HAD_MIN_POISSON_EDGE,
+    )
+    assert leg is not None and leg.match_no == "周二006", (
+        "R21 must allow had 平 at edge -8% (above -10% floor)"
+    )
+
+
+def test_r21_main_construction_passes_poisson_edge_filter_to_select_leg() -> None:
+    """Wiring test: the main plan must build its had slots with R21's filter
+    in place. We replace _select_leg with a spy that records each kwarg call
+    so we can prove main's three had slots all receive
+    (poisson_idx, min_poisson_edge=MAIN_HAD_MIN_POISSON_EDGE).
+    """
+    import nutmeg.services.jczq_daily as daily_mod
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        MAIN_HAD_MIN_POISSON_EDGE,
+    )
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周二003", match_date="2026-05-12", match_time="03:00:00",
+            league="西甲", home_team="塞尔塔", away_team="莱万特",
+            status="Selling", hot_direction="主胜热(1.67)", role="强胆场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二003", league="西甲", home_team="塞尔塔",
+                    away_team="莱万特", pool="had", play="胜平负",
+                    pick="胜", odds=1.67, logic="",
+                ),
+            ],
+        ),
+    ]
+    calls: list[dict[str, object]] = []
+    original = daily_mod._select_leg
+
+    def _spy(*args: object, **kwargs: object):
+        calls.append(dict(kwargs))
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    daily_mod._select_leg = _spy  # type: ignore[assignment]
+    try:
+        service._build_plans(matches, instruction=None)
+    finally:
+        daily_mod._select_leg = original  # type: ignore[assignment]
+
+    had_calls = [c for c in calls if c.get("pool") == "had"]
+    main_had_calls = [
+        c for c in had_calls
+        if c.get("min_poisson_edge") is not None
+    ]
+    assert MAIN_HAD_MIN_POISSON_EDGE == -0.10
+    assert len(main_had_calls) >= 3, (
+        f"R21 wiring missing: expected ≥3 had _select_leg calls with "
+        f"min_poisson_edge passed; got {len(main_had_calls)}"
+    )
+    for c in main_had_calls:
+        assert c["min_poisson_edge"] == MAIN_HAD_MIN_POISSON_EDGE, (
+            f"R21 wiring broken: min_poisson_edge={c['min_poisson_edge']} "
+            f"!= {MAIN_HAD_MIN_POISSON_EDGE}"
+        )
+        assert c.get("poisson_idx") is not None, (
+            "R21 wiring broken: had slot called without poisson_idx"
+        )
