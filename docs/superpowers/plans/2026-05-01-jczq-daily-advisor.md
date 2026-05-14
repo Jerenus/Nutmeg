@@ -17,7 +17,7 @@
 - Modify `nutmeg/interfaces/cli.py`: add `jczq-daily-advisor` command and service builder using existing Telegram settings.
 - Modify `nutmeg/interfaces/bot/adapter.py`: parse `/jczq`, `/jczq final`, and `/jczq revise <text>` and call an injectable daily-advisor workflow.
 - Modify `scripts/openclaw/nutmeg_command_router.py`: allowlisted `jczq-daily-advisor` action with dispatch confirmation gate.
-- Create `scripts/launchd/com.nutmeg.jczq.daily-noon.plist`: scheduled 12:00 Asia/Shanghai local run.
+- No noon launchd template is shipped now; the previous 12:00 report schedule was retired pending a redesigned workflow.
 - Create `docs/architecture/jczq-daily-advisor.md`: usage, bot commands, schedule install notes, and risk boundary.
 - Add tests in `tests/test_jczq_daily_service.py`, `tests/test_cli.py`, `tests/test_bot_adapter.py`, and `tests/test_openclaw_router.py`.
 

@@ -3307,6 +3307,37 @@ def test_zucai_report_command_generates_json_artifacts_and_dry_run_dispatch(
     assert Path(payload["artifacts"]["pdf_path"]).read_bytes().startswith(b"%PDF")
 
 
+
+def test_zucai_renjiu_daily_command_generates_three_tiers(tmp_path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "zucai-renjiu-daily",
+            "--date",
+            "2026-04-26",
+            "--issue-file",
+            "nutmeg/zucai/samples/26068-issue.json",
+            "--odds-file",
+            "nutmeg/zucai/samples/26068-odds.json",
+            "--output-dir",
+            str(tmp_path),
+            "--pdf",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["recommended_ticket_id"] == "main"
+    assert [ticket["ticket_id"] for ticket in payload["tickets"]] == [
+        "conservative",
+        "main",
+        "aggressive",
+    ]
+    assert payload["artifacts"]["pdf_path"].endswith("analysis.pdf")
+    assert Path(payload["artifacts"]["pdf_path"]).read_bytes().startswith(b"%PDF")
+
 def test_zucai_report_command_rejects_invalid_issue(tmp_path) -> None:
     issue_file = tmp_path / "bad-issue.json"
     issue_file.write_text(
@@ -3926,7 +3957,6 @@ def test_video_production_packet_command_writes_artifacts(tmp_path) -> None:
     assert payload["production_profile"] == "cinematic-sports-anime-broadcast-v1"
 
 
-
 def test_video_mpt_packet_command_writes_worker_manifest(tmp_path, monkeypatch) -> None:
     from nutmeg.interfaces import cli as cli_module
 
@@ -4187,3 +4217,115 @@ def test_seedance_poll_command_accepts_run_dir_and_concat(tmp_path, monkeypatch)
     assert calls[0]["manifest_path"] is None
     assert calls[0]["concat"] is True
     assert calls[0]["ratio_key"] == "vertical"
+
+
+def test_jczq_debate_init_command_creates_workspace(tmp_path) -> None:
+    run_dir = tmp_path / "daily" / "2026-05-06"
+    run_dir.mkdir(parents=True)
+    (run_dir / "brief.md").write_text("# brief\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "jczq-debate-init",
+            "--date",
+            "2026-05-06",
+            "--output-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["run_date"] == "2026-05-06"
+    assert Path(payload["artifacts"]["shared_brief_path"]).exists()
+    assert Path(payload["artifacts"]["gpt_analysis_path"]).exists()
+
+
+def test_jczq_debate_compare_command_returns_conflicts(tmp_path) -> None:
+    run_dir = tmp_path / "daily" / "2026-05-06"
+    debate_dir = run_dir / "debate"
+    debate_dir.mkdir(parents=True)
+    (debate_dir / "gpt-analysis.md").write_text(
+        "`周三003比分0:0@11 × 周三007胜@1.53`",
+        encoding="utf-8",
+    )
+    (debate_dir / "claude-analysis.md").write_text(
+        "`周三003比分0:0@11 × 周三007平@3.9`",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "jczq-debate-compare",
+            "--date",
+            "2026-05-06",
+            "--output-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert "周三003比分0:0" in payload["consensus_legs"]
+    assert payload["conflict_matches"] == ["周三007"]
+    assert (debate_dir / "disagreements.md").exists()
+
+
+def test_jczq_debate_finalize_command_writes_final_plan(tmp_path) -> None:
+    run_dir = tmp_path / "daily" / "2026-05-06"
+    debate_dir = run_dir / "debate"
+    debate_dir.mkdir(parents=True)
+    (debate_dir / "human-notes.md").write_text("## 最终票\n`周三003比分0:0@11`", encoding="utf-8")
+    (debate_dir / "disagreements.md").write_text("## 共同认可\n- 周三003比分0:0", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "jczq-debate-finalize",
+            "--date",
+            "2026-05-06",
+            "--output-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "finalized"
+    assert Path(payload["final_plan_path"]).exists()
+
+
+def test_jczq_web_command_starts_localhost_app(monkeypatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_run(app_object, *, host: str, port: int) -> None:
+        calls.append({"app": app_object, "host": host, "port": port})
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
+
+    result = runner.invoke(
+        app,
+        [
+            "jczq-web",
+            "--output-dir",
+            str(tmp_path),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8765",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls
+    assert calls[0]["host"] == "127.0.0.1"
+    assert calls[0]["port"] == 8765
+    assert calls[0]["app"].title == "Nutmeg JCZQ Cockpit"

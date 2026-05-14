@@ -1,0 +1,30 @@
+{% extends "jczq/layout.html" %}
+{% block content %}
+<main class="shell">
+  <section class="hero">
+    <p class="eyebrow">Daily decision lifecycle</p>
+    <h1>JCZQ Cockpit</h1>
+    <p>本地个人工作台：Brief → Debate → Plan Builder → Final Plan → Review。</p>
+  </section>
+  <section class="card">
+    <h2>工作区</h2>
+    {% if dashboard.days %}
+    <table>
+      <thead><tr><th>日期</th><th>状态</th><th>当前版本</th><th>入口</th></tr></thead>
+      <tbody>
+      {% for day in dashboard.days %}
+      <tr>
+        <td>{{ day.run_date }}</td>
+        <td>{{ day.status }}</td>
+        <td>{{ day.current_version or "-" }}</td>
+        <td><a href="/jczq/daily/{{ day.run_date }}">打开</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>暂无 Web 创建的工作区。第一版不自动导入历史 artifacts。</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

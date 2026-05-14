@@ -40,7 +40,14 @@ from nutmeg.services.jczq_intelligence import (
     compute_poisson_edges,
 )
 from nutmeg.services.jczq_strategy_memory import (
+    DAILY_CONCENTRATION_DECAY,
+    DAILY_CONCENTRATION_TRIGGER_COUNT,
+    compute_daily_concentration_bias,
+    compute_daily_low_goals_concentration,
+    compute_empirical_decay_map,
+    compute_league_residual_bias,
     compute_league_ttg_volatility,
+    get_dixon_coles_rho,
     load_strategy_memory,
 )
 
@@ -79,6 +86,8 @@ def _emit_markdown(
     summary: str,
     official_last_update: str | None,
     league_volatility: dict[str, float],
+    daily_low_goals_count: int = 0,
+    daily_concentration_active: bool = False,
 ) -> str:
     out: list[str] = []
     out.append(f"# JCZQ 每日 Brief — {run_date}")
@@ -170,6 +179,17 @@ def _emit_markdown(
     # 4. Poisson +EV 腿
     out.append(f"## 4. Poisson 模型指出的 +EV 腿（edge ≥ +{POISSON_EDGE_THRESHOLD * 100:.0f}%）")
     out.append("")
+    # F3 (5/14): daily alpha concentration warning — when ≥3 distinct matches
+    # show ≥+15% alpha all in low_goals direction, edges already include the
+    # additional ×0.9 decay; surface a banner so humans see the meta-rule.
+    if daily_concentration_active:
+        out.append(
+            f"> 🟦 **F3 模型偏差日警告**：今日 {daily_low_goals_count} 场 ≥+15% "
+            "alpha 全部低进球叙事，alpha edge 已应用额外 ×"
+            f"{DAILY_CONCENTRATION_DECAY:.2f} 衰减。当 Poisson 模型对全场预测系统性偏低，"
+            "下方表格 edge 已是衰减后值。"
+        )
+        out.append("")
     positive = [row for row in poisson_rows if row.edge >= POISSON_EDGE_THRESHOLD]
     if positive:
         out.append("| 标的 | 池 | 选项 | 市场 | 公允 | edge | 对阵 |")
@@ -383,7 +403,23 @@ def main() -> None:
         official = report.official_last_update
         summary = report.summary
 
-    poisson_rows = compute_poisson_edges(report.matches)
+    # F2 (5/14) + R25 (5/13) + F3 (5/14): apply 三层 bias 让 brief Section 4
+    # 与 generator ticket selection 一致。F3 needs raw rows to detect daily
+    # concentration, so 2-pass: raw → detect F3 → final with all biases.
+    league_residual_bias = compute_league_residual_bias(memory)
+    empirical_decay_map = compute_empirical_decay_map(memory)
+    # F1 (5/14): Dixon-Coles rho from memory (default 0.0 = F1 disabled)
+    dc_rho = get_dixon_coles_rho(memory)
+    raw_poisson_rows = compute_poisson_edges(report.matches, dc_rho=dc_rho)
+    daily_concentration_bias = compute_daily_concentration_bias(raw_poisson_rows)
+    daily_low_goals_count = compute_daily_low_goals_concentration(raw_poisson_rows)
+    poisson_rows = compute_poisson_edges(
+        report.matches,
+        league_residual_bias=league_residual_bias,
+        empirical_decay_map=empirical_decay_map,
+        daily_concentration_bias=daily_concentration_bias,
+        dc_rho=dc_rho,
+    )
     poisson_index = {(row.match_no, row.pool, row.pick): row.edge for row in poisson_rows}
 
     md = _emit_markdown(
@@ -396,6 +432,8 @@ def main() -> None:
         summary=summary,
         official_last_update=official,
         league_volatility=league_vol,
+        daily_low_goals_count=daily_low_goals_count,
+        daily_concentration_active=bool(daily_concentration_bias),
     )
 
     if args.write:

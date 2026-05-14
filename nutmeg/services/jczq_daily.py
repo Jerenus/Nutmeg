@@ -47,10 +47,15 @@ from nutmeg.services.jczq_intelligence import (
     select_top_legs,
 )
 from nutmeg.services.jczq_strategy_memory import (
+    compute_daily_concentration_bias,
+    compute_empirical_decay_map,
+    compute_league_residual_bias,
     compute_league_ttg_volatility,
     compute_poisson_lambda_signals,
     decision_policy_rule,
     decision_policy_rule_active,
+    detect_poisson_solo_cooling_off,
+    get_dixon_coles_rho,
     load_strategy_memory,
     memory_pattern_positive,
     oracle_learning_for,
@@ -82,6 +87,14 @@ STABLE_BASE_HAD_MIN_POISSON_EDGE = -0.10
 MAIN_HAD_MIN_POISSON_EDGE = -0.10
 # Rule A: a leg with at least this much Poisson edge triggers the poisson_solo ticket.
 POISSON_SOLO_EDGE_THRESHOLD = 0.15
+# R23 (5/13): aggregate 10-day evidence shows crs 0:0 alpha hits 1/16 = 6.25%
+# vs implied 8-15%. Single biggest miss-rate bucket; raise the poisson_solo
+# floor for crs 0:0 specifically from +15% to +25%. Other crs picks (0:1, 1:0)
+# and ttg/had/hhad/hafu still use POISSON_SOLO_EDGE_THRESHOLD. 5/13 005 crs
+# 0:0 +40.4% would still pass; 5/12 006 crs 0:0 +16.3% would not. R23 stacks
+# on top of R1 league signals (which can raise the floor further) — both are
+# upward-only, so the effective floor is the max.
+POISSON_SOLO_CRS_ZERO_ZERO_MIN_EDGE = 0.25
 # Rule O (5/07 iteration after sport.gov.cn rule reminder): same-match different-pool
 # legs may NOT be combined into one parlay ticket per 国家体育总局《竞彩自由过关》rule.
 # Source: https://www.sport.gov.cn/n20001280/n20745751/n20767297/c21177108/content.html
@@ -122,6 +135,19 @@ POISSON_SOLO_CRS_LOW_PICKS = ("0:0", "0:1", "1:0")
 # 001 ttg 1球 (λ=2.5) — both individually allowed but the joint failure
 # mode is "any goal-fest blows up both legs at once".
 POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER = 2.3
+# R24 (5/13): when last 3 poisson_solo plans all missed (5/11 + 5/12 + 5/13
+# accumulated 70 元 alpha 0 中), the next poisson_solo is hard-capped to a
+# single leg regardless of how many +EV rows qualify. Cooling-off matches
+# real-world position sizing: when a model goes cold for 3 days straight,
+# don't double down. Detection lives in jczq_strategy_memory; the cap is
+# applied at the end of `_build_poisson_solo_plan` after R17 has run.
+POISSON_SOLO_COOLING_OFF_LOOKBACK = 3
+# F4 (5/14): when same-match alpha candidates include both ttg and crs,
+# prefer ttg (more robust 0/1/2/3+ buckets) over crs (9-way fine split)
+# unless crs edge dominates by F4_DOMINANCE_THRESHOLD. Rule O already forbids
+# same-match different-pool combos in one ticket; F4 is the policy for
+# *which* alpha to surface when multiple are available for the same match.
+F4_DOMINANCE_THRESHOLD = 0.10
 # R12 (5/10): false_signal ttg/crs/hafu legs must clear this Poisson edge floor.
 # false_signal's premise is "the market over-weighted external narrative; the
 # real-strength delta still holds". That premise is for had/hhad. Pools the
@@ -169,6 +195,56 @@ class JczqTextSender(Protocol):
 
 class JczqDailyAdvisorError(ValueError):
     pass
+
+
+def select_preferred_alpha_per_match(
+    rows: "list[Any]",
+    *,
+    dominance_threshold: float = F4_DOMINANCE_THRESHOLD,
+) -> "list[Any]":
+    """F4 (5/14): collapse same-match alpha candidates to one preferred row.
+
+    For each match present in `rows`:
+      - If only one row → keep as-is.
+      - If multiple rows but only one pool type → keep highest-edge row.
+      - If both ttg and crs present → prefer ttg unless `crs.edge - ttg.edge
+        >= dominance_threshold` (default +0.10), in which case crs wins.
+      - Other pools (had/hhad/hafu) follow highest-edge fallback.
+
+    Returns rows sorted by edge descending (preserves caller's expectation
+    of ranked alpha list).
+    """
+
+    by_match: dict[str, list[Any]] = {}
+    for row in rows:
+        match_no = str(getattr(row, "match_no", "") or "")
+        if not match_no:
+            continue
+        by_match.setdefault(match_no, []).append(row)
+
+    selected: list[Any] = []
+    for _, match_rows in by_match.items():
+        if len(match_rows) == 1:
+            selected.append(match_rows[0])
+            continue
+        ttg_rows = [r for r in match_rows if getattr(r, "pool", "") == "ttg"]
+        crs_rows = [r for r in match_rows if getattr(r, "pool", "") == "crs"]
+        if ttg_rows and crs_rows:
+            best_ttg = max(ttg_rows, key=lambda r: float(getattr(r, "edge", 0.0)))
+            best_crs = max(crs_rows, key=lambda r: float(getattr(r, "edge", 0.0)))
+            if best_crs.edge - best_ttg.edge >= dominance_threshold:
+                selected.append(best_crs)
+            else:
+                selected.append(best_ttg)
+        elif ttg_rows:
+            selected.append(max(ttg_rows, key=lambda r: float(getattr(r, "edge", 0.0))))
+        elif crs_rows:
+            selected.append(max(crs_rows, key=lambda r: float(getattr(r, "edge", 0.0))))
+        else:
+            selected.append(max(match_rows, key=lambda r: float(getattr(r, "edge", 0.0))))
+
+    selected.sort(key=lambda r: float(getattr(r, "edge", 0.0)), reverse=True)
+    return selected
 
 
 HAD_LABELS = {"h": "胜", "d": "平", "a": "负"}
@@ -511,7 +587,28 @@ class JczqDailyAdvisorService:
         memory_bias = _build_memory_bias(memory, burned_teams=burned_teams)
         self._active_bias_fn = memory_bias  # consumed by _search_plan helpers
         # Rule A: precompute Poisson edge index so poisson_solo + report rendering share it.
-        poisson_rows = compute_poisson_edges(matches)
+        # R25 (5/13): apply per-league residual bias for ttg/crs leg edges (法甲
+        # 7-sample under-estimate triggers -0.10). Bias is empty when no
+        # league qualifies; the call is safe with empty bias.
+        # F2 (5/14): apply per-(pool, pick) empirical decay multiplier — corrects
+        # systematic over-pricing on picks like crs 0:0 (实测 1/16 vs implied 10%).
+        # F3 (5/14): daily alpha concentration warning — when ≥3 distinct matches
+        # show ≥+15% alpha all in low_goals direction, apply additional ×0.9
+        # decay. F3 detects on RAW alpha (pre-bias), so we need a 2-pass call:
+        # first compute raw rows for F3 detection, then re-compute with all biases.
+        league_residual_bias = compute_league_residual_bias(memory)
+        empirical_decay_map = compute_empirical_decay_map(memory)
+        # F1 (5/14): Dixon-Coles tau parameter from memory (default 0.0 disabled)
+        dc_rho = get_dixon_coles_rho(memory)
+        raw_poisson_rows = compute_poisson_edges(matches, dc_rho=dc_rho)
+        daily_concentration_bias = compute_daily_concentration_bias(raw_poisson_rows)
+        poisson_rows = compute_poisson_edges(
+            matches,
+            league_residual_bias=league_residual_bias,
+            empirical_decay_map=empirical_decay_map,
+            daily_concentration_bias=daily_concentration_bias,
+            dc_rho=dc_rho,
+        )
         self._active_poisson_index = poisson_edge_index(poisson_rows)
         self._active_analytics = analytics
         self._active_coinflip_match_nos = {
@@ -630,6 +727,8 @@ class JczqDailyAdvisorService:
             matches,
             poisson_rows=poisson_rows,
             league_min_edge=poisson_lambda_signals,
+            analytics=analytics,
+            cooling_off=detect_poisson_solo_cooling_off(memory),
         )
         plans = [
             plan
@@ -1764,6 +1863,8 @@ class JczqDailyAdvisorService:
         *,
         poisson_rows: list,
         league_min_edge: dict[str, dict[str, Any]] | None = None,
+        analytics: dict[str, "MatchAnalytics"] | None = None,
+        cooling_off: bool = False,
     ) -> JczqDailyPlan:
         """Rule A v2 (5/07 redesign after sport.gov.cn rule reminder).
 
@@ -1791,6 +1892,11 @@ class JczqDailyAdvisorService:
 
         def _row_threshold(row) -> float:
             base = POISSON_SOLO_EDGE_THRESHOLD
+            # R23 (5/13): crs 0:0 floor raised to +25% globally based on 10-day
+            # 1/16 = 6.25% hit rate. Applied before R1 per-league signals so
+            # the league signal can raise it further but never lower it.
+            if row.pool == "crs" and row.pick == "0:0":
+                base = max(base, POISSON_SOLO_CRS_ZERO_ZERO_MIN_EDGE)
             if row.pool != "crs":
                 return base
             sig = signals.get(row.league)
@@ -1817,11 +1923,34 @@ class JczqDailyAdvisorService:
                 return True
             return False
 
+        # R22 (5/13): hi-vol 联赛 crs 低进球三花 (0:0/0:1/1:0) hard reject from
+        # poisson_solo. 10-day aggregate: crs low-goals alpha hits 1/24 = 4.2%
+        # (vs implied 25-40%); 5/13 D 票 004 (西甲 hi-vol+coinflip) 0:0 +28.6%
+        # alpha 实际 2:0. league hi-vol 标志由 compute_analytics 计算 (override
+        # 联赛 + ttg-volatility 信号)。`analytics` 为 None 时（合成测试）跳过
+        # — 仅在生产路径 (build_report 注入) 触发。
+        ana_map = analytics or {}
+
+        def _r22_hi_vol_crs_blocked(row) -> bool:
+            if row.pool != "crs" or row.pick not in POISSON_SOLO_CRS_LOW_PICKS:
+                return False
+            ana = ana_map.get(row.match_no)
+            return ana is not None and ana.is_high_volatility_league
+
         eligible = [
             row
             for row in poisson_rows
-            if row.edge >= _row_threshold(row) and _r13_consistent(row)
+            if row.edge >= _row_threshold(row)
+            and _r13_consistent(row)
+            and not _r22_hi_vol_crs_blocked(row)
         ]
+        # F4 (5/14): same-match alpha preference — collapse multiple alpha
+        # candidates per match to one row using ttg-over-crs preference
+        # (unless crs edge dominates by F4_DOMINANCE_THRESHOLD). Reduces
+        # narrative concentration when same-match alpha appears in multiple
+        # pools (e.g., 5/14 004 had both crs 0:0 +36% and ttg 1球 +20%).
+        if eligible:
+            eligible = select_preferred_alpha_per_match(eligible)
         if not eligible:
             return self._make_plan(
                 "Poisson 单核灵感票",
@@ -1888,6 +2017,7 @@ class JczqDailyAdvisorService:
                 if row.match_no not in seen_matches
                 and row.edge >= POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE
                 and _r13_consistent(row)
+                and not _r22_hi_vol_crs_blocked(row)
             ]
             for row in cross_support:
                 if row.pool == "crs" and crs_count >= POISSON_SOLO_MAX_CRS_LEGS:
@@ -1928,10 +2058,26 @@ class JczqDailyAdvisorService:
                 # Keep the highest-edge leg.
                 legs_with_meta.sort(key=lambda item: item[1], reverse=True)
                 legs = [legs_with_meta[0][2]]
+        # R24 (5/13): cooling-off cap — last 3 poisson_solo plans all missed.
+        # Hard-cap to 1 leg (keep highest-edge leg) regardless of R17 outcome.
+        # No-op when cooling_off=False or already ≤ 1 leg.
+        description_extra = ""
+        if cooling_off and len(legs) >= 2:
+            row_by_key = {
+                (row.match_no, row.pool, row.pick): row for row in poisson_rows
+            }
+            legs_with_edge: list[tuple[float, JczqDailyLeg]] = []
+            for leg in legs:
+                row = row_by_key.get((leg.match_no, leg.pool, leg.pick))
+                edge = float(getattr(row, "edge", 0.0) or 0.0) if row else 0.0
+                legs_with_edge.append((edge, leg))
+            legs_with_edge.sort(key=lambda item: item[0], reverse=True)
+            legs = [legs_with_edge[0][1]]
+            description_extra = "（R24 cooling-off：最近 3 天 poisson_solo 连失，本轮限 1 腿）"
         return self._make_plan(
             "Poisson 单核灵感票",
             "poisson_solo",
-            "Rule A v2: 跨场 +EV 腿组合（同场不同玩法不可混合过关，国家体彩规则）。",
+            f"Rule A v2: 跨场 +EV 腿组合（同场不同玩法不可混合过关，国家体彩规则）。{description_extra}",
             legs,
             "Poisson 单核小注娱乐：腿少杠杆高，赔率波动大。",
         )

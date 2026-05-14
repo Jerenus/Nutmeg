@@ -222,6 +222,64 @@ Always mark which ticket the agent itself would back hardest, and why.
     favorites with Poisson edge ≤ -10% also lose ("market priced beyond
     fair"). 5/11 005 had 胜 @1.60 (-10.56%) + 006 had 胜 @1.60 (-10.01%)
     both made A and both lost.
+16. **R21 — main had legs need Poisson edge ≥ -10%.** Same threshold as R20,
+    extended to main ticket; 5/12 main had three -10% had legs landed via
+    luck (1/3 hit). Applied at `_select_leg` so main slot collapses to None
+    if no eligible candidate.
+17. **R22 — hi-vol crs low_goals hard reject.** Crs picks {0:0, 0:1, 1:0}
+    in hi-vol leagues (HIGH_VOL_LEAGUE_OVERRIDE or league_volatility ≥ 2.7)
+    are blocked from `poisson_solo`; hi-vol+coinflip 双标场 also blocked
+    from `select_top_legs` (extreme/inspiration/contrarian/false_signal).
+    5/13 D 票 004 (西甲 hi-vol+coinflip) Codex-driven 0:0 alpha lost 15 元.
+18. **R23 — crs 0:0 needs Poisson edge ≥ +25% to enter poisson_solo.**
+    10-day aggregate hit rate 1/16 = 6.25% (vs implied 8-15%). Other crs
+    picks (0:1/1:0) and ttg/had/hhad/hafu still use the +15% default.
+    5/13 005 crs 0:0 +40.4% would still pass; 5/12 006 crs 0:0 +16.3% no.
+19. **R24 — Poisson 单核 cooling-off.** When the last 3 poisson_solo plans
+    all missed (per `recent_plan_results` in strategy memory), the next
+    poisson_solo is hard-capped to 1 leg regardless of how many +EV rows
+    qualify. 5/11+5/12+5/13 cumulative 70 元 alpha 0 中. Plan description
+    surfaces the cooling-off note for transparency.
+20. **R25 — Per-league ttg/crs Poisson residual bias.** When a league has
+    ≥ 5 ttg/crs `poisson_residuals` samples with average goal_residual > 0
+    (model systematically under-prices goals), all subsequent ttg/crs
+    Poisson edges in that league get a -0.10 shift. 5/13 法甲 (7 samples,
+    all-miss across 5/10/5/12/5/13) was the canonical trigger.
+21. **F2 — Empirical alpha decay (model-layer).** Per-(pool, pick) decay
+    factor multiplied into Poisson edge. 10-day aggregate hit rate vs
+    baseline implied probability: actual ≥ baseline × 0.95 → no decay;
+    else `decay = max(0.5, actual/baseline)`. Baseline table: crs 0:0/1:0
+    = 10%, crs 0:1 = 8%, ttg 0球 = 10%, ttg 1球 = 22%. 5/14 first day:
+    crs 0:0 实测 1/16 = 6.25% → decay 0.625; +36.1% alpha → +22.6% raw,
+    then R25 stacks → +12.6% effective. F2 + R25 联合让 5/14 C 票 (poisson_solo)
+    整张消失（alpha 全部衰减到 < +15% / +25% 阈值）。
+22. **F3 — Daily alpha concentration warning (meta-rule).** Detects on RAW
+    alpha (pre-bias): when ≥ DAILY_CONCENTRATION_TRIGGER_COUNT (3) distinct
+    matches show ≥ DAILY_CONCENTRATION_ALPHA_THRESHOLD (+15%) alpha all in
+    LOW_GOALS_PICKS direction (crs 0:0/0:1/1:0 + ttg 0球/1球), apply
+    DAILY_CONCENTRATION_DECAY (0.9) multiplier to all matching legs ON TOP
+    of F2. Implementation requires 2-pass `compute_poisson_edges` call:
+    raw → detect F3 → final with all biases. Brief renders 🟦 banner above
+    Section 4 when triggered. 5/14 first day: 3 distinct low_goals matches
+    (004/001/003) trigger; final stack 004 crs 0:0 +14.7%, 001 +10.5%, all
+    < poisson_solo +15% threshold.
+23. **F1 — Dixon-Coles low-score correction (model-layer, opt-in).** Adds
+    `_dixon_coles_tau(h, a, lam_h, lam_a, rho)` correction to (0,0)/(0,1)/
+    (1,0)/(1,1) entries in `build_score_grid`. `dc_rho > 0` deflates 0:0/1:1
+    (JCZQ use case where 0:0 over-priced); `dc_rho < 0` inflates them
+    (textbook D-C for European football); `dc_rho = 0.0` (default) = F1
+    disabled. Read from `strategy_memory["dixon_coles_rho"]` via
+    `get_dixon_coles_rho(memory)`; propagated through `fit_lambdas_from_market`
+    / `fair_odds_hhad` / `edge_vs_market` / `compute_poisson_edges`. Grid
+    renormalized after tau correction. 5/14 ships disabled — operator opts
+    in after backtest validates rho value.
+24. **F4 — ttg-over-crs same-match alpha preference (strategy-layer).** When
+    same-match has both ttg and crs alpha candidates, `select_preferred_alpha_per_match`
+    prefers ttg unless `crs.edge - ttg.edge >= F4_DOMINANCE_THRESHOLD (+0.10)`.
+    Applied in `_build_poisson_solo_plan` after R22/R23/R13 filtering. Reduces
+    crs 9-way fine-split exposure in favor of ttg's coarser-but-more-stable
+    0/1/2/3+ buckets. Compatible with Rule O (one leg per match per ticket);
+    F4 is the policy for *which* alpha row surfaces.
 12. **Fail loud if data gaps exist.** If brief Section 1 has 0 matches,
    `_resolve_drift_provider` errored, or all matches show role "未知",
    report the failure and stop instead of guessing.
@@ -275,14 +333,26 @@ review history accumulates, the smarter the picks.
 - Strategy memory: `nutmeg/services/jczq_strategy_memory.py` (v2 schema)
 - Brief script: `scripts/jczq_daily_brief.py`
 - Replay tool: `scripts/replay_jczq_with_new_generator.py`
-- Test coverage: 633 tests across `tests/test_jczq_*.py` (Rules A-J + R1-R20
-  regression in `tests/test_jczq_daily_iteration_rules.py`)
+- Test coverage: 672 tests across `tests/test_jczq_*.py` (Rules A-J + R1-R25 + F1-F4
+  regression in `tests/test_jczq_daily_iteration_rules.py` + `tests/test_jczq_poisson.py`)
 - Rule constants live at the top of `nutmeg/services/jczq_daily.py`
   (`HAD_BANKER_FLOOR`, `STABLE_BASE_HAD_MIN_POISSON_EDGE` (R20),
-  `POISSON_SOLO_EDGE_THRESHOLD`, `POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER`
-  (R17), `POISSON_SOLO_CRS_LOW_PICKS`, `EXTREME_CRS_LOW_PICKS` (R18),
+  `MAIN_HAD_MIN_POISSON_EDGE` (R21), `POISSON_SOLO_EDGE_THRESHOLD`,
+  `POISSON_SOLO_CRS_ZERO_ZERO_MIN_EDGE` (R23),
+  `POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER` (R17),
+  `POISSON_SOLO_COOLING_OFF_LOOKBACK` (R24),
+  `POISSON_SOLO_CRS_LOW_PICKS`, `EXTREME_CRS_LOW_PICKS` (R18),
   `POISSON_STRONG_OPPOSE_THRESHOLD`, `BURNED_TEAM_BIAS`,
-  `RULE_H_NON_EXTREME_HAFU_BLOCKED`) and
+  `RULE_H_NON_EXTREME_HAFU_BLOCKED`)
+  and `nutmeg/services/jczq_strategy_memory.py`
+  (`POISSON_LEAGUE_BIAS_MIN_SAMPLES`, `POISSON_LEAGUE_BIAS_DELTA` (R25),
+  `RECENT_PLAN_RESULTS_LIMIT` (R24),
+  `EMPIRICAL_DECAY_BASELINES`, `EMPIRICAL_DECAY_MIN_SAMPLES`,
+  `EMPIRICAL_DECAY_FLOOR`, `EMPIRICAL_DECAY_TOLERANCE` (F2),
+  `DAILY_CONCENTRATION_ALPHA_THRESHOLD`, `DAILY_CONCENTRATION_TRIGGER_COUNT`,
+  `DAILY_CONCENTRATION_DECAY`, `LOW_GOALS_PICKS` (F3),
+  `DIXON_COLES_RHO_KEY`, `DIXON_COLES_RHO_DEFAULT` (F1))
+  and `nutmeg/services/jczq_daily.py` (`F4_DOMINANCE_THRESHOLD` (F4)) and
   `nutmeg/services/jczq_intelligence.py` (`COINFLIP_VIG_THRESHOLD`,
   `COINFLIP_IMPLIED_SPREAD_THRESHOLD`, `HIGH_VOLATILITY_TTG_MEDIAN`,
   `CRS_POISSON_EDGE_FLOOR`, `HIGH_ODDS_HAD_THRESHOLD`,

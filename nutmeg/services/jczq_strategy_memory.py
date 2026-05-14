@@ -24,6 +24,64 @@ POISSON_RESIDUAL_MIN_SAMPLES = 3
 POISSON_RESIDUAL_RECENT_LIMIT = 200
 POISSON_DEFAULT_CRS_MIN_EDGE = 0.15
 POISSON_RAISED_CRS_MIN_EDGE = 0.25
+# R24 (5/13): cooling-off detection — if last 3 poisson_solo plans all missed,
+# the generator caps the next plan to 1 leg. The list below is rolling and
+# capped at RECENT_PLAN_RESULTS_LIMIT entries per kind.
+POISSON_SOLO_COOLING_OFF_LOOKBACK = 3
+RECENT_PLAN_RESULTS_LIMIT = 60
+# R25 (5/13): per-league ttg/crs Poisson residual bias. When a league has at
+# least POISSON_LEAGUE_BIAS_MIN_SAMPLES priced ttg/crs entries with average
+# goal residual > 0 (model systematically under-prices goals), apply a
+# negative shift POISSON_LEAGUE_BIAS_DELTA to all ttg/crs Poisson edges in
+# that league. 5/13: 法甲 had 7 ttg/crs samples, all missed across 5/10
+# 5/12 5/13. Subtract -0.10 from edges to compensate for the model's λ
+# under-estimate. Bias only applies to pools whose hit-rate depends directly
+# on goal totals (ttg/crs); had/hhad/hafu unaffected.
+POISSON_LEAGUE_BIAS_MIN_SAMPLES = 5
+POISSON_LEAGUE_BIAS_DELTA = -0.10
+# F2 (5/14): empirical alpha decay — for picks where Poisson model systematically
+# over-prices the probability (e.g., crs 0:0 实测 6.25% vs implied ~10%), apply
+# a multiplicative decay to the Poisson edge so the alpha tickets get correctly
+# downweighted instead of relying on hard threshold rules (R23 +25%) alone.
+#
+# Baseline implied probabilities below come from typical Sporttery market prices
+# for each pick category (1/odds, vig-adjusted). When empirical hit rate falls
+# below the baseline, decay = max(floor, actual / baseline).
+EMPIRICAL_DECAY_BASELINES: dict[tuple[str, str], float] = {
+    ("crs", "0:0"): 0.10,   # ~10x odds → 10% implied
+    ("crs", "0:1"): 0.08,
+    ("crs", "1:0"): 0.10,
+    ("ttg", "0球"): 0.10,
+    ("ttg", "1球"): 0.22,
+}
+EMPIRICAL_DECAY_MIN_SAMPLES = 5
+EMPIRICAL_DECAY_FLOOR = 0.5
+EMPIRICAL_DECAY_TOLERANCE = 0.95  # actual >= baseline * tolerance → no decay
+# F3 (5/14): daily alpha concentration warning — when a single day's brief shows
+# ≥ DAILY_CONCENTRATION_TRIGGER_COUNT distinct matches with strong alpha
+# (≥ DAILY_CONCENTRATION_ALPHA_THRESHOLD) all in the same direction (currently
+# only low_goals direction tracked), apply DAILY_CONCENTRATION_DECAY multiplier
+# to all alpha edges in that direction. This is a *meta-rule* on top of F2's
+# per-(pool,pick) static decay — F3 catches day-specific model bias (e.g.,
+# 5/14: 4 ≥+15% alpha all in low_goals direction signals overall under-pricing
+# of goals system-wide that day).
+DAILY_CONCENTRATION_ALPHA_THRESHOLD = 0.15
+DAILY_CONCENTRATION_TRIGGER_COUNT = 3
+DAILY_CONCENTRATION_DECAY = 0.9
+LOW_GOALS_PICKS: frozenset[tuple[str, str]] = frozenset({
+    ("crs", "0:0"),
+    ("crs", "0:1"),
+    ("crs", "1:0"),
+    ("ttg", "0球"),
+    ("ttg", "1球"),
+})
+# F1 (5/14): Dixon-Coles tau correction parameter, read from memory key
+# `dixon_coles_rho`. Default 0.0 = F1 disabled (independent Poisson). Operator
+# can manually set this in strategy-memory.json based on backtest:
+#   - 0.05 ~ 0.10: deflate 0:0 (JCZQ case where 实测命中率 < implied)
+#   - -0.05 ~ -0.10: inflate 0:0 (textbook D-C for European football)
+DIXON_COLES_RHO_KEY = "dixon_coles_rho"
+DIXON_COLES_RHO_DEFAULT = 0.0
 
 
 def strategy_memory_path(output_dir: Path | str) -> Path:
@@ -50,6 +108,7 @@ def update_strategy_memory(
     context: dict[str, Any],
     results: dict[str, dict[str, str]],
     graded_legs: list[dict[str, Any]],
+    plan_summaries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     memory = _normalize_memory(load_strategy_memory(output_dir))
     reviewed_dates = set(str(item) for item in memory.get("reviewed_dates") or [])
@@ -60,6 +119,9 @@ def update_strategy_memory(
         # first reviewed before R8/R1 existed. The function dedups by
         # (date, match_no, pool) so repeat calls are idempotent.
         _update_poisson_residuals(memory, run_date=run_date, graded_legs=graded_legs)
+        _update_recent_plan_results(
+            memory, run_date=run_date, plan_summaries=plan_summaries or []
+        )
         _update_decision_policy(
             memory,
             run_date=run_date,
@@ -87,6 +149,9 @@ def update_strategy_memory(
     )
     _update_oracle_learnings(memory, run_date=run_date, context=context, results=results)
     _update_poisson_residuals(memory, run_date=run_date, graded_legs=graded_legs)
+    _update_recent_plan_results(
+        memory, run_date=run_date, plan_summaries=plan_summaries or []
+    )
     _update_decision_policy(
         memory,
         run_date=run_date,
@@ -254,6 +319,47 @@ def _update_poisson_residuals(
     memory["poisson_residuals"] = samples[-POISSON_RESIDUAL_RECENT_LIMIT:]
 
 
+def _update_recent_plan_results(
+    memory: dict[str, Any],
+    *,
+    run_date: str,
+    plan_summaries: list[dict[str, Any]],
+) -> None:
+    """R24 (5/13): persist per-(date,kind) plan miss/hit so the daily generator
+    can detect cooling-off streaks. Stores rolling history capped at
+    RECENT_PLAN_RESULTS_LIMIT entries; idempotent on (date, kind) re-runs.
+    """
+
+    if not plan_summaries:
+        return
+    existing: list[dict[str, Any]] = list(memory.get("recent_plan_results") or [])
+    seen = {(str(s.get("date")), str(s.get("kind"))) for s in existing}
+    for summary in plan_summaries:
+        kind = str(summary.get("kind") or "")
+        if not kind:
+            continue
+        key = (run_date, kind)
+        if key in seen:
+            # Replace existing entry so re-runs reflect latest grading.
+            existing = [
+                s for s in existing
+                if not (str(s.get("date")) == run_date and str(s.get("kind")) == kind)
+            ]
+            seen.discard(key)
+        existing.append({
+            "date": run_date,
+            "kind": kind,
+            "name": str(summary.get("name") or ""),
+            "hits": int(summary.get("hits") or 0),
+            "total": int(summary.get("total") or 0),
+            "all_hit": bool(summary.get("all_hit")),
+        })
+        seen.add(key)
+    # Sort chronologically; newest at the end.
+    existing.sort(key=lambda item: (str(item.get("date")), str(item.get("kind"))))
+    memory["recent_plan_results"] = existing[-RECENT_PLAN_RESULTS_LIMIT:]
+
+
 def compute_poisson_lambda_signals(
     memory: dict[str, Any],
     *,
@@ -305,6 +411,218 @@ def compute_poisson_lambda_signals(
             "recommended_crs_min_edge": recommended,
         }
     return out
+
+
+def detect_poisson_solo_cooling_off(
+    memory: dict[str, Any],
+    *,
+    lookback: int = POISSON_SOLO_COOLING_OFF_LOOKBACK,
+) -> bool:
+    """R24: True when the last `lookback` poisson_solo plan summaries all
+    missed. Returns False if fewer than `lookback` samples are recorded —
+    requiring a real streak of misses, not just one bad day.
+    """
+
+    results = memory.get("recent_plan_results") or []
+    poisson_only = [
+        item
+        for item in results
+        if str(item.get("kind") or "") == "poisson_solo"
+    ]
+    if len(poisson_only) < lookback:
+        return False
+    recent = poisson_only[-lookback:]
+    return all(item.get("all_hit") is False for item in recent)
+
+
+def compute_league_residual_bias(
+    memory: dict[str, Any],
+    *,
+    pools: tuple[str, ...] = ("ttg", "crs"),
+    min_samples: int = POISSON_LEAGUE_BIAS_MIN_SAMPLES,
+    delta: float = POISSON_LEAGUE_BIAS_DELTA,
+) -> dict[str, float]:
+    """R25: per-league negative edge shift for systematic goal under-estimate.
+
+    A league qualifies when its ttg/crs Poisson residuals show:
+      - sample_count >= min_samples
+      - average goal_residual > 0 (actual goals consistently above expected)
+
+    Returns `{league: delta}` (delta is negative); an empty dict means no
+    league currently qualifies. Generator should apply the shift to ttg/crs
+    Poisson edges only — had/hhad/hafu have their own pricing.
+    """
+
+    samples = memory.get("poisson_residuals") or []
+    by_league: dict[str, list[float]] = {}
+    for entry in samples:
+        if str(entry.get("pool") or "") not in pools:
+            continue
+        league = str(entry.get("league") or "")
+        if not league:
+            continue
+        residual = entry.get("goal_residual")
+        if residual is None:
+            continue
+        by_league.setdefault(league, []).append(float(residual))
+
+    out: dict[str, float] = {}
+    for league, residuals in by_league.items():
+        if len(residuals) < min_samples:
+            continue
+        avg = sum(residuals) / len(residuals)
+        if avg > 0:
+            out[league] = delta
+    return out
+
+
+def compute_empirical_alpha_decay(
+    memory: dict[str, Any],
+    *,
+    pool: str,
+    pick: str,
+    min_samples: int = EMPIRICAL_DECAY_MIN_SAMPLES,
+    baselines: dict[tuple[str, str], float] | None = None,
+    floor: float = EMPIRICAL_DECAY_FLOOR,
+    tolerance: float = EMPIRICAL_DECAY_TOLERANCE,
+) -> float:
+    """F2 (5/14): empirical decay factor for Poisson edge on (pool, pick).
+
+    Returns a value in [floor, 1.0]. 1.0 means no decay (model not biased).
+    Lower values mean alpha edge should be multiplied by this factor.
+
+    Algorithm:
+      - if (pool, pick) not in baselines → return 1.0 (unknown picks don't decay)
+      - if samples < min_samples → return 1.0 (insufficient evidence)
+      - actual_rate = sum(hit) / count
+      - if actual_rate >= baseline * tolerance → return 1.0 (model not biased)
+      - else decay = max(floor, actual_rate / baseline)
+
+    The baseline table represents typical Sporttery market implied probabilities
+    for each pick. When realized hit rate falls materially below baseline, the
+    Poisson model is systematically over-pricing that pick — F2 corrects this
+    via multiplicative decay on the alpha edge.
+    """
+
+    table = baselines if baselines is not None else EMPIRICAL_DECAY_BASELINES
+    if (pool, pick) not in table:
+        return 1.0
+    baseline = table[(pool, pick)]
+
+    samples = [
+        s for s in (memory.get("poisson_residuals") or [])
+        if str(s.get("pool") or "") == pool and str(s.get("pick") or "") == pick
+    ]
+    if len(samples) < min_samples:
+        return 1.0
+
+    hits = sum(1 for s in samples if s.get("hit") is True)
+    actual_rate = hits / len(samples)
+
+    if actual_rate >= baseline * tolerance:
+        return 1.0
+    return max(floor, actual_rate / baseline)
+
+
+def compute_empirical_decay_map(
+    memory: dict[str, Any],
+    *,
+    min_samples: int = EMPIRICAL_DECAY_MIN_SAMPLES,
+    baselines: dict[tuple[str, str], float] | None = None,
+) -> dict[tuple[str, str], float]:
+    """F2: build (pool, pick) → decay factor map for all baseline-tracked picks.
+
+    Returns only entries where decay < 1.0 (actually decaying); callers should
+    treat missing entries as decay = 1.0 (no shift). Useful as a single argument
+    to `compute_poisson_edges(empirical_decay_map=...)`.
+    """
+
+    table = baselines if baselines is not None else EMPIRICAL_DECAY_BASELINES
+    out: dict[tuple[str, str], float] = {}
+    for (pool, pick) in table:
+        decay = compute_empirical_alpha_decay(
+            memory,
+            pool=pool,
+            pick=pick,
+            min_samples=min_samples,
+            baselines=table,
+        )
+        if decay < 1.0:
+            out[(pool, pick)] = decay
+    return out
+
+
+def get_dixon_coles_rho(memory: dict[str, Any]) -> float:
+    """F1 (5/14): read Dixon-Coles tau parameter from strategy memory.
+
+    Default 0.0 means F1 is disabled (no D-C correction; identical to
+    pre-F1 independent-Poisson behavior). Operator may manually edit the
+    `dixon_coles_rho` key in strategy-memory.json based on backtest:
+      - 0.05 ~ 0.10: deflate 0:0/1:1 (when historical implied > realized,
+        JCZQ case across 5/01-5/14: crs 0:0 1/16 = 6.25% vs implied ~10%)
+      - -0.05 ~ -0.10: inflate 0:0/1:1 (textbook D-C for European football)
+    """
+
+    raw = memory.get(DIXON_COLES_RHO_KEY)
+    if raw is None:
+        return DIXON_COLES_RHO_DEFAULT
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return DIXON_COLES_RHO_DEFAULT
+
+
+def compute_daily_low_goals_concentration(
+    poisson_rows: "Iterable[Any]",
+    *,
+    alpha_threshold: float = DAILY_CONCENTRATION_ALPHA_THRESHOLD,
+) -> int:
+    """F3: count distinct matches with ≥ alpha_threshold low_goals alpha.
+
+    Same match with multiple low_goals legs counted once. Used to detect
+    days where Poisson model has system-wide bias toward predicting low
+    scoring across the entire slate.
+    """
+
+    matches_with_strong_low_alpha: set[str] = set()
+    for row in poisson_rows:
+        try:
+            edge = float(getattr(row, "edge", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if edge < alpha_threshold:
+            continue
+        pool = str(getattr(row, "pool", "") or "")
+        pick = str(getattr(row, "pick", "") or "")
+        if (pool, pick) not in LOW_GOALS_PICKS:
+            continue
+        match_no = str(getattr(row, "match_no", "") or "")
+        if match_no:
+            matches_with_strong_low_alpha.add(match_no)
+    return len(matches_with_strong_low_alpha)
+
+
+def compute_daily_concentration_bias(
+    poisson_rows: "Iterable[Any]",
+    *,
+    alpha_threshold: float = DAILY_CONCENTRATION_ALPHA_THRESHOLD,
+    trigger_count: int = DAILY_CONCENTRATION_TRIGGER_COUNT,
+    decay: float = DAILY_CONCENTRATION_DECAY,
+) -> dict[tuple[str, str], float]:
+    """F3: build {(pool, pick): decay} bias map when daily low_goals
+    concentration exceeds trigger threshold.
+
+    Returns empty dict when no concentration detected → no F3 application.
+    The Poisson edge computation layer multiplies matching legs by `decay`
+    (typically 0.9 = -10% additional shrinkage on top of F2 static decay).
+    """
+
+    count = compute_daily_low_goals_concentration(
+        poisson_rows, alpha_threshold=alpha_threshold
+    )
+    if count < trigger_count:
+        return {}
+    return {pp: decay for pp in LOW_GOALS_PICKS}
 
 
 def recently_burned_teams(

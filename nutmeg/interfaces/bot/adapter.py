@@ -34,6 +34,14 @@ def parse_bot_message(text: str) -> BotCommand:
         )
 
     command_name = parts[0].removeprefix("/").casefold()
+    if command_name in {"renjiu", "任选9", "任九"}:
+        return BotCommand(
+            name="renjiu",
+            fixture_id="",
+            query="today",
+            raw_text=raw_text,
+        )
+
     if command_name == "jczq":
         if len(parts) == 1:
             return BotCommand(
@@ -85,11 +93,13 @@ class BotAdapter:
         payload_builder=None,
         fallback_provider=None,
         jczq_workflow=None,
+        renjiu_workflow=None,
     ) -> None:
         self._workflow = workflow
         self._payload_builder = payload_builder or _default_payload_builder
         self._fallback_provider = fallback_provider
         self._jczq_workflow = jczq_workflow
+        self._renjiu_workflow = renjiu_workflow
 
     def handle_message(self, text: str) -> BotResponse:
         if _is_help_message(text):
@@ -102,6 +112,9 @@ class BotAdapter:
         try:
             command = parse_bot_message(text)
         except UnsupportedBotCommandError as exc:
+            renjiu_command = _parse_renjiu_natural_language(text)
+            if renjiu_command is not None:
+                return self._handle_renjiu(renjiu_command)
             jczq_command = _parse_jczq_natural_language(text)
             if jczq_command is not None:
                 return self._handle_jczq(jczq_command)
@@ -116,6 +129,8 @@ class BotAdapter:
 
         if command.name == "jczq":
             return self._handle_jczq(command)
+        if command.name == "renjiu":
+            return self._handle_renjiu(command)
 
         result = self._workflow.run(fixture_id=command.fixture_id, query=command.query)
         payload = self._payload_builder(result)
@@ -142,6 +157,24 @@ class BotAdapter:
         status = str(result.get("status") or "succeeded")
         payload = dict(result.get("payload") or {})
         payload.setdefault("mode", "jczq_daily")
+        text = str(result.get("text") or "")
+        error = str(result.get("error") or "") or None
+        return BotResponse(status=status, text=text, payload=payload, error=error)
+
+
+    def _handle_renjiu(self, command: BotCommand) -> BotResponse:
+        if self._renjiu_workflow is None:
+            error = "Zucai Renjiu daily workflow is not configured for this bot."
+            return BotResponse(
+                status="failed",
+                text=error,
+                payload={"status": "failed", "mode": "zucai_renjiu_daily", "error": error},
+                error=error,
+            )
+        result = self._renjiu_workflow.run()
+        status = str(result.get("status") or "succeeded")
+        payload = dict(result.get("payload") or {})
+        payload.setdefault("mode", "zucai_renjiu_daily")
         text = str(result.get("text") or "")
         error = str(result.get("error") or "") or None
         return BotResponse(status=status, text=text, payload=payload, error=error)
@@ -211,6 +244,35 @@ def _default_payload_builder(result) -> dict[str, Any]:
 def _is_help_message(text: str) -> bool:
     normalized = text.strip().casefold()
     return normalized in {"/start", "start", "/help", "help"}
+
+
+def _parse_renjiu_natural_language(text: str) -> BotCommand | None:
+    raw_text = text.strip()
+    normalized = raw_text.casefold()
+    if not _looks_like_renjiu_message(normalized):
+        return None
+    return BotCommand(
+        name="renjiu",
+        fixture_id="",
+        query="today",
+        raw_text=raw_text,
+    )
+
+
+def _looks_like_renjiu_message(normalized: str) -> bool:
+    return any(
+        keyword in normalized
+        for keyword in [
+            "任九",
+            "任选9",
+            "14选9",
+            "14场选9",
+            "renjiu",
+            "9-pick",
+            "zucai 9",
+            "传统足彩任九",
+        ]
+    )
 
 
 def _parse_jczq_natural_language(text: str) -> BotCommand | None:
@@ -288,6 +350,7 @@ def _help_text() -> str:
             "Nutmeg bot is online.",
             "Use `/brief <fixture_id> <query>` for a match brief.",
             "Use `/jczq` for today’s dynamic竞彩足球 plan, `/jczq revise <想法>` to recalc.",
+            "Use `今天任九方案` or `/renjiu` for today's three-tier 任选9 plan.",
             "Find candidates locally with `popular-matches --league epl --days 3`.",
             "For ranked daily candidates use `today-briefs --sort popularity`.",
             "This bot replies only when `telegram-bot-run` is running locally.",

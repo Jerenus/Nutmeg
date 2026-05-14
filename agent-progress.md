@@ -405,5 +405,5 @@ Complete Sprint 1 richer pre-match snapshot plus the first odds snapshot / fair 
 - Added a dynamic `jczq-daily-advisor` workflow that scans current Sporttery sellable JCZQ matches and mixed pools without hard-coded match numbers.
 - Generated repeatable Chinese daily reports with main, high-odds inspiration, contrarian, and extreme small-stake plans using HAD/HHAD/TTG/CRS/HAFU odds multiplication.
 - Added saved daily context and revision handling so `/jczq revise <想法>` can recalculate from the existing slate without refetching.
-- Wired CLI, BotAdapter `/jczq` commands, OpenClaw router action, docs, and a 12:00 launchd template; installed the LaunchAgent at `~/Library/LaunchAgents/com.nutmeg.jczq.daily-noon.plist`.
+- Wired CLI, BotAdapter `/jczq` commands, OpenClaw router action, docs, and an initial 12:00 launchd template. The noon LaunchAgent/template was retired on 2026-05-07 pending a redesigned workflow.
 - Verification: focused JCZQ daily/Bot/CLI/router suites passed, Bot natural-language竞彩 revision routing works, live Sporttery smoke returned today’s five-match slate, ruff and compileall passed, and `bash scripts/verify.sh` passed with 463 tests.

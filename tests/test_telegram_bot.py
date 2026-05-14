@@ -268,3 +268,30 @@ def test_telegram_client_sends_document_without_leaking_token_in_path_body(tmp_p
     assert call["data"] == {"chat_id": 1234, "caption": "Zucai report"}
     assert "telegram-secret" not in str(call["data"])
     assert call["files"]["document"][0] == "report.pdf"
+
+
+def test_bot_handles_renjiu_natural_language() -> None:
+    from nutmeg.interfaces.bot.adapter import BotAdapter
+
+    class StubRenjiuWorkflow:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def run(self):
+            self.calls += 1
+            return {
+                "status": "succeeded",
+                "text": "任九第26074期三档方案已生成。\n主推：10 31 - 0 - 31 - 3 31 10 - 3 - 31（64注/128元）",
+                "payload": {"mode": "zucai_renjiu_daily", "recommended_ticket_id": "main"},
+            }
+
+    workflow = StubRenjiuWorkflow()
+    adapter = BotAdapter(workflow=None, renjiu_workflow=workflow)
+
+    for message in ["今天任九方案", "做今天的14选9", "today's renjiu plan"]:
+        response = adapter.handle_message(message)
+        assert response.status == "succeeded"
+        assert "任九第26074期" in response.text
+        assert response.payload["mode"] == "zucai_renjiu_daily"
+
+    assert workflow.calls == 3

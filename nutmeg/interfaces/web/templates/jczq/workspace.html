@@ -1,0 +1,86 @@
+{% extends "jczq/layout.html" %}
+{% block content %}
+<main class="shell workspace">
+  <section class="hero compact">
+    <p class="eyebrow">{{ workspace.day.run_date }}</p>
+    <h1>每日工作区</h1>
+    <p>status={{ workspace.day.status }} · current_version={{ workspace.day.current_version or "-" }}</p>
+    <p class="paths">final-plan.md: {{ workspace.artifacts.final_plan }}</p>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <h2>Brief</h2>
+      <form method="post" action="/jczq/daily/{{ workspace.day.run_date }}/brief">
+        <textarea name="brief_text" rows="5" placeholder="粘贴 brief.md 或由服务写入"></textarea>
+        <button type="submit">保存 Brief</button>
+      </form>
+      <h3>比赛</h3>
+      <ul>
+        {% for match in workspace.matches %}
+        <li><strong>{{ match.match_no }}</strong> {{ match.league }} · {{ match.home_team }} vs {{ match.away_team }} · {{ match.role }} {% if match.flags.coinflip %}<span class="warn">coinflip</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      <h3>Poisson / Candidate Legs</h3>
+      <ul>
+        {% for leg in workspace.candidate_legs %}
+        <li>{{ leg.match_no }} {{ leg.play }} {{ leg.pick }} @ {{ "%.2f"|format(leg.odds) }} · edge={{ leg.poisson_edge }}</li>
+        {% endfor %}
+      </ul>
+    </article>
+
+    <article class="card">
+      <h2>Debate Room</h2>
+      <form method="post" action="/jczq/daily/{{ workspace.day.run_date }}/debate/init"><button type="submit">初始化 Debate</button></form>
+      <form method="post" action="/jczq/daily/{{ workspace.day.run_date }}/analysis/gpt">
+        <label>GPT Analysis</label>
+        <textarea name="content" rows="4">{{ workspace.analyses.get('gpt', {}).get('content', '') }}</textarea>
+        <button type="submit">保存 GPT</button>
+      </form>
+      <form method="post" action="/jczq/daily/{{ workspace.day.run_date }}/analysis/claude">
+        <label>Claude Analysis</label>
+        <textarea name="content" rows="4">{{ workspace.analyses.get('claude', {}).get('content', '') }}</textarea>
+        <button type="submit">保存 Claude</button>
+      </form>
+      <form method="post" action="/jczq/daily/{{ workspace.day.run_date }}/debate/compare"><button type="submit">运行 Compare</button></form>
+    </article>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <h2>Plan Builder</h2>
+      <p>结构化票据通过 `/tickets/draft` JSON API 保存；页面展示版本和校验结果。</p>
+      {% for version in workspace.versions %}
+      <div class="version-row">
+        <strong>v{{ version.version }}</strong> {{ version.status }} · source={{ version.source }} · best={{ version.best_pick or '-' }}
+        <form method="post" action="/jczq/daily/{{ workspace.day.run_date }}/tickets/{{ version.version }}/finalize"><button type="submit">定稿</button></form>
+      </div>
+      {% else %}
+      <p>暂无 ticket version。</p>
+      {% endfor %}
+      {% if workspace.findings %}
+      <h3>Validation</h3>
+      <ul>
+        {% for finding in workspace.findings %}
+        <li class="{{ finding.severity }}">{{ finding.severity }} · {{ finding.code }} · {{ finding.message }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </article>
+
+    <article class="card">
+      <h2>Review Lab</h2>
+      <p>reviewed 状态会显示在工作区顶部；结构化 review 通过 `/reviews` JSON API 保存。</p>
+      {% if workspace.reviews %}
+      <ul>
+        {% for review in workspace.reviews %}
+        <li>{{ review.ticket_id }} · {{ review.status }} · return={{ review.actual_return }} · {{ review.notes }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p>暂无 review。</p>
+      {% endif %}
+    </article>
+  </section>
+</main>
+{% endblock %}

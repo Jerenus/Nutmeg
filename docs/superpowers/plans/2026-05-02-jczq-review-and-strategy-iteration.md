@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.12, Typer CLI, httpx/BeautifulSoup-style HTML parsing if already available, existing TelegramBotClient, pytest.
 
+**Status 2026-05-05:** Service, CLI, schedule, and strategy-risk pass are present in current branch; this handoff verified them with focused tests.
+
 ---
 
 ### Task 1: Strategy Risk Pass
@@ -16,10 +18,10 @@
 - Modify: `nutmeg/services/jczq_daily.py`
 - Test: `tests/test_jczq_daily_service.py`
 
-- [ ] Add a failing test that a cautious favorite around 1.75-2.05 is not reused as an unchecked core leg across plans, and that draw/cold protection appears in final plans.
-- [ ] Run the focused test and confirm it fails on current behavior.
-- [ ] Implement `unchecked_popular` tagging and plan post-processing in `JczqDailyAdvisorService`.
-- [ ] Re-run focused test and existing JCZQ daily tests.
+- [x] Add a failing test that a cautious favorite around 1.75-2.05 is not reused as an unchecked core leg across plans, and that draw/cold protection appears in final plans.
+- [x] Run the focused test and confirm it fails on current behavior.
+- [x] Implement `unchecked_popular` tagging and plan post-processing in `JczqDailyAdvisorService`.
+- [x] Re-run focused test and existing JCZQ daily tests.
 
 ### Task 2: Daily Review Service
 
@@ -28,10 +30,10 @@
 - Create/modify: `nutmeg/domain/jczq_review.py` if domain models are clearer than dictionaries
 - Modify: `tests/test_jczq_daily_service.py` or create `tests/test_jczq_review_service.py`
 
-- [ ] Add a failing test with a fake result provider and saved context for 2026-05-01.
-- [ ] Verify report grades legs including 003 平/负 success and highlights missed 005 suspicion/protection.
-- [ ] Implement result provider parsing, grading, rendering, artifact writing, and Telegram text dispatch.
-- [ ] Re-run review service tests.
+- [x] Add a failing test with a fake result provider and saved context for 2026-05-01.
+- [x] Verify report grades legs including 003 平/负 success and highlights missed 005 suspicion/protection.
+- [x] Implement result provider parsing, grading, rendering, artifact writing, and Telegram text dispatch.
+- [x] Re-run review service tests.
 
 ### Task 3: CLI And Schedule
 
@@ -40,16 +42,16 @@
 - Create: `scripts/launchd/com.nutmeg.jczq.daily-review-8am.plist`
 - Test: `tests/test_cli.py`
 
-- [ ] Add a failing CLI test for `jczq-daily-review --date yesterday --dispatch-telegram --no-dry-run` wiring.
-- [ ] Add a failing test that launchd template runs at hour 8 minute 0 and uses real dispatch.
-- [ ] Implement CLI builder, options, JSON output, and launchd plist.
-- [ ] Re-run CLI and schedule tests.
+- [x] Add a failing CLI test for `jczq-daily-review --date yesterday --dispatch-telegram --no-dry-run` wiring.
+- [x] Add a failing test that launchd template runs at hour 8 minute 0 and uses real dispatch.
+- [x] Implement CLI builder, options, JSON output, and launchd plist.
+- [x] Re-run CLI and schedule tests.
 
 ### Task 4: Verification
 
 **Files:**
 - No production changes expected.
 
-- [ ] Run `uv run pytest tests/test_jczq_daily_service.py tests/test_cli.py -q` or narrower equivalent if full CLI test is slow.
-- [ ] Run `python3 -m compileall nutmeg`.
-- [ ] Summarize changed files, strategy behavior, and any residual limits.
+- [x] Run `uv run pytest tests/test_jczq_daily_service.py tests/test_cli.py -q` or narrower equivalent if full CLI test is slow.
+- [x] Run `python3 -m compileall nutmeg`.
+- [x] Summarize changed files, strategy behavior, and any residual limits.

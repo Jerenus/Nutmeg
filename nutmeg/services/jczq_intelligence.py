@@ -585,6 +585,19 @@ def select_top_legs(
                 and ana.is_high_volatility_league
             ):
                 continue
+            # R22 (5/13): in hi-vol + coinflip 双标场，crs 0:0/0:1/1:0 一律拒。
+            # 5/13 D 票 004 (西甲 hi-vol+coinflip) Codex 主张兑现 +28.6% alpha
+            # → 实际 2:0 → 多输 15 元. 10-day aggregate: crs 低进球三花 alpha
+            # 1/24 = 4.2% (远低于 implied 25-40%). 双标场风险叠加，无论 intent
+            # (extreme/inspiration/contrarian/false_signal) 都不应承担该 leg。
+            if (
+                leg.pool == "crs"
+                and leg.pick in {"0:0", "0:1", "1:0"}
+                and ana is not None
+                and ana.is_high_volatility_league
+                and ana.is_three_way_coinflip
+            ):
+                continue
             # R15 (5/10): contrarian must not deep-bet a strong-banker's
             # favorite direction. 5/09 周六029 莱切-尤文 had 1.32 → contrarian
             # picked hhad 让胜 @ 2.8 = "favor wins by 2+ goals" — that's
@@ -704,15 +717,42 @@ POISSON_PRICED_POOLS = ("had", "ttg", "hafu", "crs", "hhad")
 
 def compute_poisson_edges(
     matches: Iterable[JczqDailyMatch],
+    *,
+    league_residual_bias: dict[str, float] | None = None,
+    empirical_decay_map: dict[tuple[str, str], float] | None = None,
+    daily_concentration_bias: dict[tuple[str, str], float] | None = None,
+    dc_rho: float = 0.0,
 ) -> list[PoissonEdgeEntry]:
     """Per-leg Poisson fair-odds vs market odds.
 
     Self-contained so the daily generator can call it without depending on
     the brief script. Returns a list sorted by descending edge.
+
+    R25 (5/13): `league_residual_bias` is an optional `{league: delta}` map
+    where `delta` (typically negative) is added to each ttg/crs leg's edge
+    in that league to compensate for systematic Poisson λ under-estimate.
+    Bias only applies to ttg/crs (goal-total pools); had/hhad/hafu use
+    their own pricing and are unaffected.
+
+    F2 (5/14): `empirical_decay_map` is an optional `{(pool, pick): factor}`
+    map (factor ∈ [0, 1]) that multiplies the Poisson edge for matching
+    legs. Used for picks where 10+ day historical data shows Poisson
+    over-prices the probability (e.g., crs 0:0 actual 6.25% vs implied 10%).
+    Decay applies AFTER `league_residual_bias` shift.
+
+    F3 (5/14): `daily_concentration_bias` is the same shape as F2 but
+    applies ON TOP of F2. F3 is computed dynamically per-day when ≥3
+    distinct matches show strong (≥+15%) alpha in the same direction
+    (currently only low_goals tracked). Application order: edge =
+    (raw + R25_bias) × F2_decay × F3_decay.
     """
 
     from nutmeg.services.jczq_poisson import edge_vs_market, fit_lambdas_from_market
 
+    bias_map = league_residual_bias or {}
+    biased_pools = {"ttg", "crs"}
+    decay_map = empirical_decay_map or {}
+    daily_bias = daily_concentration_bias or {}
     rows: list[PoissonEdgeEntry] = []
     for match in matches:
         had = {leg.pick: leg.odds for leg in match.candidates if leg.pool == "had"}
@@ -720,7 +760,8 @@ def compute_poisson_edges(
             continue
         try:
             fit = fit_lambdas_from_market(
-                had["胜"], had["平"], had["负"], max_lambda=3.5, step=0.1
+                had["胜"], had["平"], had["负"],
+                max_lambda=3.5, step=0.1, dc_rho=dc_rho,
             )
         except Exception:
             continue
@@ -744,9 +785,21 @@ def compute_poisson_edges(
                 pick=leg.pick,
                 market_odd=leg.odds,
                 goal_line=goal_line,
+                dc_rho=dc_rho,
             )
             if edge is None:
                 continue
+            # R25 (5/13): subtract per-league residual bias for ttg/crs legs.
+            if leg.pool in biased_pools and match.league in bias_map:
+                edge = edge + bias_map[match.league]
+            # F2 (5/14): apply per-(pool, pick) empirical decay multiplier.
+            decay_factor = decay_map.get((leg.pool, leg.pick))
+            if decay_factor is not None:
+                edge = edge * decay_factor
+            # F3 (5/14): apply daily concentration bias on top of F2.
+            f3_decay = daily_bias.get((leg.pool, leg.pick))
+            if f3_decay is not None:
+                edge = edge * f3_decay
             fair = leg.odds / (1 + edge) if edge > -1 else 0.0
             rows.append(
                 PoissonEdgeEntry(

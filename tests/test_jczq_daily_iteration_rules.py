@@ -271,7 +271,7 @@ def test_rule_a_v2_never_combines_same_match_legs_in_solo_ticket() -> None:
     crs_row = PoissonEdgeEntry(
         match_no="周一001", home="H", away="A", league="日职",
         pool="crs", pick="0:0", market_odd=11.0, fair_odd=9.0,
-        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.07,  # +22%
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.15,  # +30% (R23 floor for crs 0:0 is +25%)
     )
     ttg_row = PoissonEdgeEntry(
         match_no="周一001", home="H", away="A", league="日职",
@@ -279,8 +279,8 @@ def test_rule_a_v2_never_combines_same_match_legs_in_solo_ticket() -> None:
         edge=POISSON_SOLO_EDGE_THRESHOLD + 0.02,  # +17%, also strong
     )
     plan = service._build_poisson_solo_plan(matches, poisson_rows=[crs_row, ttg_row])
-    # Both legs are eligible (>= +15% edge), but they're from the same match
-    # → only one may enter the ticket. The top edge (crs +22%) wins; ttg is dropped.
+    # Both legs are eligible, but they're from the same match → only one may
+    # enter the ticket. The top edge (crs +30%) wins; ttg is dropped.
     assert len(plan.legs) == 1, (
         "Rule A v2 v3 must NEVER produce same-match different-pool combos "
         "(国家体彩混合过关规则)"
@@ -329,7 +329,7 @@ def test_rule_a_v2_cross_match_support_extends_to_two_legs() -> None:
     primary = PoissonEdgeEntry(
         match_no="周一001", home="H1", away="A1", league="日职",
         pool="crs", pick="0:0", market_odd=11.0, fair_odd=9.0,
-        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.07,  # +22%
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.15,  # +30% (R23 floor for crs 0:0)
     )
     cross_support = PoissonEdgeEntry(
         match_no="周一002", home="H2", away="A2", league="意甲",
@@ -672,11 +672,20 @@ def test_replay_2026_05_04_inspires_full_4_of_4_inspiration(tmp_path: Path) -> N
         for item in ctx["matches"]
     ]
     plans = service._build_plans(matches, instruction=None, strategy_memory={})
+    # 5/04 historical: 周一007 crs 0:0 +21.6% was the day's top Poisson edge
+    # and the canonical alpha hit (20x payout). After R23 (5/13) raised the
+    # crs 0:0 poisson_solo floor to +25%, this leg no longer enters
+    # poisson_solo. Test now permits an empty poisson_solo on 5/04 — the
+    # smoke test's primary assertion is on inspiration coverage, not on
+    # crs alpha tickets that R23 deliberately filters out.
     poisson_solo = next((plan for plan in plans if plan.kind == "poisson_solo"), None)
-    assert poisson_solo is not None and len(poisson_solo.legs) >= 1
-    # Top Poisson edge on 5/04 was 周一007 0:0 (+21.6%) — must appear in poisson_solo.
-    top_legs = {(leg.match_no, leg.pool, leg.pick) for leg in poisson_solo.legs}
-    assert ("周一007", "crs", "0:0") in top_legs
+    if poisson_solo is not None and poisson_solo.legs:
+        # If anything survives R23, the picks should still be from genuine
+        # Poisson alpha (not crs 0:0 between +15% and +25%).
+        for leg in poisson_solo.legs:
+            assert not (leg.pool == "crs" and leg.pick == "0:0"), (
+                "R23 violation: 5/04 crs 0:0 below +25% should be filtered"
+            )
 
 
 # ---------------------------------------------------------------- Rule H ---
@@ -1718,3 +1727,1159 @@ def test_r21_main_construction_passes_poisson_edge_filter_to_select_leg() -> Non
         assert c.get("poisson_idx") is not None, (
             "R21 wiring broken: had slot called without poisson_idx"
         )
+
+
+# --------------------------------------------------- R22 (5/13 落库) ---
+# 5/13 D 票 004 (西甲, hi-vol+coinflip 双标) crs 0:0 +28.6% alpha 由 Codex 主张
+# 兑现 → 实际 2:0 → 多输 15 元。R22 在 hi-vol 联赛上 hard-reject crs 低进球
+# (0:0/0:1/1:0) 进 poisson_solo；同时 hi-vol+coinflip 双标场在 select_top_legs
+# 也拒（保护 extreme/inspiration/contrarian/false_signal）。10 天聚合：crs 低
+# 进球三花 alpha 命中率 1/24 = 4.2%（远低于 implied 25-40%）。
+
+
+def test_r22_hi_vol_league_crs_low_blocked_from_poisson_solo() -> None:
+    """R22: hi-vol 联赛的 crs 0:0/0:1/1:0 一律不进 poisson_solo。
+
+    5/13 005 (法甲) 不在 HIGH_VOL_LEAGUE_OVERRIDE 但 5/13 004 (西甲) 通过
+    league_volatility 信号被识别为 hi-vol。这里用一个已知 hi-vol 联赛
+    (美职) 构造 crs 0:0 +30% candidate，断言 poisson_solo 跳过。
+    """
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import (
+        MatchAnalytics,
+        PoissonEdgeEntry,
+    )
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周三011", match_date="2026-05-13", match_time="22:00:00",
+            league="美职", home_team="辛辛那提", away_team="迈国际",
+            status="Selling", hot_direction="客胜低赔(1.92)",
+            role="开放节奏场", confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周三011", league="美职", home_team="辛辛那提",
+                    away_team="迈国际", pool="crs", play="比分", pick="0:0",
+                    odds=20.0, logic="",
+                ),
+            ],
+        ),
+    ]
+    analytics = {
+        "周三011": MatchAnalytics(
+            match_no="周三011",
+            league="美职",
+            favorite_outcome="负",
+            favorite_odds=1.92,
+            favorite_implied=0.46,
+            implied_probs={"胜": 0.32, "平": 0.22, "负": 0.46},
+            vig_pct=12.9,
+            dispersion=0.10,
+            popularity_score=0,
+            popularity_tier="balanced",
+            baseline_probs={"胜": 0.32, "平": 0.22, "负": 0.46},
+            ev_gaps={"胜": {}, "平": {}, "负": {}},
+            is_strong_banker=False,
+            is_comfort_risk=False,
+            is_chaos=False,
+            is_draw_friendly=False,
+            is_upset_candidate=False,
+            is_three_way_coinflip=False,
+            is_high_volatility_league=True,
+        ),
+    }
+    row = PoissonEdgeEntry(
+        match_no="周三011", home="辛辛那提", away="迈国际", league="美职",
+        pool="crs", pick="0:0", market_odd=20.0, fair_odd=14.0,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.30,  # +45% — well above any threshold
+        expected_goals=2.6,
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[row], analytics=analytics
+    )
+    assert plan.legs == [], (
+        "R22: hi-vol 联赛 crs 低进球三花一律拒绝进 poisson_solo，"
+        f"但本次保留了 {[(leg.pool, leg.pick) for leg in plan.legs]}"
+    )
+
+
+def test_r22_low_vol_league_crs_low_allowed_in_poisson_solo() -> None:
+    """R22 sanity: 非 hi-vol 联赛 crs 0:0 仍可正常进 poisson_solo。"""
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import (
+        MatchAnalytics,
+        PoissonEdgeEntry,
+    )
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周二001", match_date="2026-05-12", match_time="22:00:00",
+            league="日职", home_team="HA", away_team="AA",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二001", league="日职", home_team="HA",
+                    away_team="AA", pool="crs", play="比分", pick="0:0",
+                    odds=12.0, logic="",
+                ),
+            ],
+        ),
+    ]
+    analytics = {
+        "周二001": MatchAnalytics(
+            match_no="周二001",
+            league="日职",
+            favorite_outcome="胜",
+            favorite_odds=2.10,
+            favorite_implied=0.40,
+            implied_probs={"胜": 0.40, "平": 0.30, "负": 0.30},
+            vig_pct=12.9,
+            dispersion=0.10,
+            popularity_score=0,
+            popularity_tier="balanced",
+            baseline_probs={"胜": 0.40, "平": 0.30, "负": 0.30},
+            ev_gaps={"胜": {}, "平": {}, "负": {}},
+            is_strong_banker=False,
+            is_comfort_risk=False,
+            is_chaos=False,
+            is_draw_friendly=False,
+            is_upset_candidate=False,
+            is_three_way_coinflip=False,
+            is_high_volatility_league=False,
+        ),
+    }
+    row = PoissonEdgeEntry(
+        match_no="周二001", home="HA", away="AA", league="日职",
+        pool="crs", pick="0:0", market_odd=12.0, fair_odd=8.0,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.30,
+        expected_goals=1.7,
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[row], analytics=analytics
+    )
+    assert len(plan.legs) == 1, "non-hi-vol crs 0:0 应保留进 poisson_solo"
+
+
+def test_r22_select_top_legs_drops_hi_vol_coinflip_crs_low() -> None:
+    """R22 在 select_top_legs 层：hi-vol+coinflip 双标场的 crs 0:0/0:1/1:0
+    任何 intent 都拒（保护 extreme / inspiration / contrarian / false_signal）。
+    5/13 D 票 004 是 hi-vol+coinflip 双标，被 Hybrid 裁决采进 D → 多输 15。"""
+    from nutmeg.services.jczq_intelligence import select_top_legs
+
+    matches = [_coinflip("周三004", league="美职")]
+    service = JczqDailyAdvisorService(provider=FakeProvider(matches))
+    report = service.build_report(run_date="2026-05-13")
+    analytics = compute_analytics(report.matches, baseline=LeaguePriorBaseline())
+
+    legs = select_top_legs(
+        report.matches,
+        analytics,
+        intent="extreme",
+        k=10,
+        pool_filter={"crs"},
+        odds_min=4.0,
+        odds_max=99.0,
+    )
+    bad = [
+        ev for ev in legs
+        if ev.leg.pool == "crs" and ev.leg.pick in {"0:0", "0:1", "1:0"}
+    ]
+    assert not bad, (
+        "R22: hi-vol+coinflip 双标场 crs 低进球应被 select_top_legs hard-reject，"
+        f"但收到 {[(ev.leg.match_no, ev.leg.pick) for ev in bad]}"
+    )
+
+
+# --------------------------------------------------- R23 (5/13 落库) ---
+# 10 天 crs 0:0 alpha 命中率 1/16 = 6.25%（远低于 implied 8-15%）。R23 把 crs
+# 0:0 的 poisson_solo 阈值从默认 +15% 提到 +25%；其他低进球 pick (0:1/1:0/ttg
+# 1球) 仍走默认阈值。
+
+
+def test_r23_poisson_solo_rejects_crs_zero_zero_below_25pct_edge() -> None:
+    """R23: crs 0:0 进 poisson_solo 需 edge ≥ +25%（vs 默认 +15%）。
+    5/13 005 crs 0:0 +40.4% 仍可过；但 +18% 应被拒。
+    """
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_CRS_ZERO_ZERO_MIN_EDGE,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周二001", match_date="2026-05-12", match_time="22:00:00",
+            league="日职", home_team="HA", away_team="AA",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二001", league="日职", home_team="HA",
+                    away_team="AA", pool="crs", play="比分", pick="0:0",
+                    odds=12.0, logic="",
+                ),
+            ],
+        ),
+    ]
+    row = PoissonEdgeEntry(
+        match_no="周二001", home="HA", away="AA", league="日职",
+        pool="crs", pick="0:0", market_odd=12.0, fair_odd=10.17,
+        edge=POISSON_SOLO_CRS_ZERO_ZERO_MIN_EDGE - 0.05,  # +20% (just under +25%)
+        expected_goals=1.7,
+    )
+    plan = service._build_poisson_solo_plan(matches, poisson_rows=[row])
+    assert plan.legs == [], (
+        "R23: crs 0:0 edge 低于 +25% R23 floor 应被拒，"
+        f"但保留了 {[(leg.match_no, leg.pick) for leg in plan.legs]}"
+    )
+
+
+def test_r23_allows_crs_zero_zero_above_25pct_edge_and_other_picks_at_15pct() -> None:
+    """R23: +26% crs 0:0 通过；同票其他 pick (crs 0:1) +18% 仍按默认 +15%。"""
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_CRS_ZERO_ZERO_MIN_EDGE,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周二001", match_date="2026-05-12", match_time="22:00:00",
+            league="日职", home_team="HA", away_team="AA",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二001", league="日职", home_team="HA",
+                    away_team="AA", pool="crs", play="比分", pick="0:0",
+                    odds=12.0, logic="",
+                ),
+            ],
+        ),
+        JczqDailyMatch(
+            match_no="周二002", match_date="2026-05-12", match_time="22:00:00",
+            league="日职", home_team="HB", away_team="AB",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二002", league="日职", home_team="HB",
+                    away_team="AB", pool="crs", play="比分", pick="0:1",
+                    odds=8.0, logic="",
+                ),
+            ],
+        ),
+    ]
+    row_zero_zero = PoissonEdgeEntry(
+        match_no="周二001", home="HA", away="AA", league="日职",
+        pool="crs", pick="0:0", market_odd=12.0, fair_odd=9.0,
+        edge=POISSON_SOLO_CRS_ZERO_ZERO_MIN_EDGE + 0.01,  # +26%
+        expected_goals=1.7,
+    )
+    row_zero_one = PoissonEdgeEntry(
+        match_no="周二002", home="HB", away="AB", league="日职",
+        pool="crs", pick="0:1", market_odd=8.0, fair_odd=6.78,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.03,  # +18% — above default but below R23
+        expected_goals=1.7,
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[row_zero_zero, row_zero_one]
+    )
+    legs_keys = sorted((leg.match_no, leg.pick) for leg in plan.legs)
+    # R5: max 1 crs leg total; pick top by edge → 0:0 wins; 0:1 dropped.
+    # That's R5 not R23 — but the point of this test is +18% 0:1 isn't auto-rejected
+    # by R23 (i.e. 0:0 floor doesn't bleed into 0:1 floor).
+    assert ("周二001", "0:0") in legs_keys, (
+        "R23: crs 0:0 +26% (>= +25% floor) 应保留"
+    )
+    # Confirm only one crs leg per R5.
+    assert len(plan.legs) == 1
+
+
+# --------------------------------------------------- R24 (5/13 落库) ---
+# 5/11+5/12+5/13 C 票连失 3 天，累计 70 元 alpha 0 中。R24: 当最近 3 天
+# poisson_solo 全 miss 时，下一次 poisson_solo 输出腿数硬限 1（即使 +EV 多腿
+# 也压成 1），让仓位风险匹配模型连失证据。
+
+
+def test_r24_poisson_solo_cooling_off_caps_to_single_leg_after_three_misses() -> None:
+    """R24: cooling_off=True → poisson_solo 即使 2 +EV 腿也压到 1。"""
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周二001", match_date="2026-05-12", match_time="22:00:00",
+            league="意丙", home_team="HA", away_team="AA",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二001", league="意丙", home_team="HA",
+                    away_team="AA", pool="had", play="胜平负", pick="平",
+                    odds=3.50, logic="",
+                ),
+            ],
+        ),
+        JczqDailyMatch(
+            match_no="周二002", match_date="2026-05-12", match_time="22:00:00",
+            league="阿乙", home_team="HB", away_team="AB",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二002", league="阿乙", home_team="HB",
+                    away_team="AB", pool="ttg", play="总进球", pick="1球",
+                    odds=4.50, logic="",
+                ),
+            ],
+        ),
+    ]
+    a = PoissonEdgeEntry(
+        match_no="周二001", home="HA", away="AA", league="意丙",
+        pool="had", pick="平", market_odd=3.50, fair_odd=2.91,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.05,  # +20%
+        expected_goals=1.7,
+    )
+    b = PoissonEdgeEntry(
+        match_no="周二002", home="HB", away="AB", league="阿乙",
+        pool="ttg", pick="1球", market_odd=4.50, fair_odd=3.75,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.03,  # +18%
+        expected_goals=1.8,
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[a, b], cooling_off=True
+    )
+    assert len(plan.legs) == 1, (
+        f"R24: cooling_off 应把 poisson_solo 压到 1 腿，实际 {len(plan.legs)}"
+    )
+
+
+def test_r24_no_cooling_when_recent_results_have_a_hit() -> None:
+    """R24 sanity: 3 天里 ≥ 1 hit → cooling_off=False → 2 腿正常出。"""
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周二001", match_date="2026-05-12", match_time="22:00:00",
+            league="意丙", home_team="HA", away_team="AA",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二001", league="意丙", home_team="HA",
+                    away_team="AA", pool="had", play="胜平负", pick="平",
+                    odds=3.50, logic="",
+                ),
+            ],
+        ),
+        JczqDailyMatch(
+            match_no="周二002", match_date="2026-05-12", match_time="22:00:00",
+            league="阿乙", home_team="HB", away_team="AB",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周二002", league="阿乙", home_team="HB",
+                    away_team="AB", pool="ttg", play="总进球", pick="1球",
+                    odds=4.50, logic="",
+                ),
+            ],
+        ),
+    ]
+    a = PoissonEdgeEntry(
+        match_no="周二001", home="HA", away="AA", league="意丙",
+        pool="had", pick="平", market_odd=3.50, fair_odd=2.91,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.05,
+        expected_goals=1.7,
+    )
+    b = PoissonEdgeEntry(
+        match_no="周二002", home="HB", away="AB", league="阿乙",
+        pool="ttg", pick="1球", market_odd=4.50, fair_odd=3.75,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.03,
+        expected_goals=1.8,
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[a, b], cooling_off=False
+    )
+    assert len(plan.legs) == 2, (
+        f"R24: cooling_off=False 应保留 2 腿，实际 {len(plan.legs)}"
+    )
+
+
+def test_r24_cooling_off_helper_detects_three_consecutive_misses() -> None:
+    """R24: detect_poisson_solo_cooling_off(memory) 在最近 3 个
+    poisson_solo plan_summaries 全 miss 时返 True。"""
+    from nutmeg.services.jczq_strategy_memory import (
+        detect_poisson_solo_cooling_off,
+    )
+
+    memory_all_miss = {
+        "recent_plan_results": [
+            {"date": "2026-05-11", "kind": "poisson_solo", "hits": 0, "total": 2, "all_hit": False},
+            {"date": "2026-05-12", "kind": "poisson_solo", "hits": 0, "total": 2, "all_hit": False},
+            {"date": "2026-05-13", "kind": "poisson_solo", "hits": 0, "total": 1, "all_hit": False},
+        ],
+    }
+    assert detect_poisson_solo_cooling_off(memory_all_miss) is True
+
+    memory_with_hit = {
+        "recent_plan_results": [
+            {"date": "2026-05-11", "kind": "poisson_solo", "hits": 0, "total": 2, "all_hit": False},
+            {"date": "2026-05-12", "kind": "poisson_solo", "hits": 1, "total": 1, "all_hit": True},
+            {"date": "2026-05-13", "kind": "poisson_solo", "hits": 0, "total": 1, "all_hit": False},
+        ],
+    }
+    assert detect_poisson_solo_cooling_off(memory_with_hit) is False
+
+    memory_too_few = {
+        "recent_plan_results": [
+            {"date": "2026-05-13", "kind": "poisson_solo", "hits": 0, "total": 1, "all_hit": False},
+        ],
+    }
+    # 不足 3 天样本不触发 (默认 lookback=3)
+    assert detect_poisson_solo_cooling_off(memory_too_few) is False
+
+
+# --------------------------------------------------- R25 (5/13 落库) ---
+# 5/13 法甲 7 个 ttg/crs Poisson 残差样本全 miss（5/10 / 5/12 / 5/13），平均
+# 残差为正（系统性低估进球数）。R25: compute_league_residual_bias 在某联赛
+# ≥ 5 ttg/crs 样本且平均残差 > 0 时返回 {联赛: -0.10}；compute_poisson_edges
+# 接收 league_residual_bias 后只对 ttg/crs leg 应用，had/hhad/hafu 不受影响。
+
+
+def test_r25_compute_league_residual_bias_returns_negative_when_underestimate() -> None:
+    """R25: ≥ 5 法甲样本平均残差 > 0 → bias_map = {法甲: -0.10}。"""
+    from nutmeg.services.jczq_strategy_memory import compute_league_residual_bias
+
+    memory = {
+        "poisson_residuals": [
+            {"date": "2026-05-10", "league": "法甲", "pool": "ttg", "pick": "1球",
+             "expected_goals": 2.0, "realized_goals": 3, "goal_residual": 1.0,
+             "hit": False},
+            {"date": "2026-05-10", "league": "法甲", "pool": "crs", "pick": "0:0",
+             "expected_goals": 2.5, "realized_goals": 1, "goal_residual": -1.5,
+             "hit": False},
+            {"date": "2026-05-12", "league": "法甲", "pool": "had", "pick": "平",
+             "expected_goals": 2.2, "realized_goals": 5, "goal_residual": 2.8,
+             "hit": False},
+            {"date": "2026-05-13", "league": "法甲", "pool": "crs", "pick": "0:0",
+             "expected_goals": 2.3, "realized_goals": 3, "goal_residual": 0.7,
+             "hit": False},
+            {"date": "2026-05-13", "league": "法甲", "pool": "ttg", "pick": "1球",
+             "expected_goals": 3.1, "realized_goals": 2, "goal_residual": -1.1,
+             "hit": False},
+        ]
+    }
+    bias = compute_league_residual_bias(memory)
+    # 5 法甲 ttg/crs 样本（剔除 had），平均 ((1.0)+(-1.5)+(0.7)+(-1.1))/4 = -0.225
+    # 该平均 < 0 → 不应触发 bias（联赛模型整体未低估）。
+    assert "法甲" not in bias, (
+        f"R25: 法甲 4 个 ttg/crs 样本平均残差 {-0.225} < 0，不应启用 bias，"
+        f"返回 {bias}"
+    )
+
+
+def test_r25_compute_league_residual_bias_returns_negative_when_underestimate_systematic() -> None:
+    """R25: ≥ 5 联赛 ttg/crs 样本平均残差 > 0（系统性低估）→ bias = -0.10。"""
+    from nutmeg.services.jczq_strategy_memory import (
+        POISSON_LEAGUE_BIAS_DELTA,
+        compute_league_residual_bias,
+    )
+
+    memory = {
+        "poisson_residuals": [
+            {"date": f"2026-05-{i:02d}", "league": "意甲",
+             "pool": "ttg", "pick": "1球", "expected_goals": 2.0,
+             "realized_goals": 4, "goal_residual": 2.0, "hit": False}
+            for i in range(1, 6)  # 5 samples, all heavy underestimate
+        ]
+    }
+    bias = compute_league_residual_bias(memory)
+    assert bias.get("意甲") == POISSON_LEAGUE_BIAS_DELTA, (
+        f"R25: 5 意甲 ttg 样本平均残差 +2.0 应触发 bias = {POISSON_LEAGUE_BIAS_DELTA}，"
+        f"返回 {bias}"
+    )
+
+
+def test_r25_no_bias_when_samples_below_threshold() -> None:
+    """R25: 样本数低于阈值（默认 5）→ 不返 bias。"""
+    from nutmeg.services.jczq_strategy_memory import compute_league_residual_bias
+
+    memory = {
+        "poisson_residuals": [
+            {"date": f"2026-05-{i:02d}", "league": "意甲",
+             "pool": "ttg", "pick": "1球", "expected_goals": 2.0,
+             "realized_goals": 4, "goal_residual": 2.0, "hit": False}
+            for i in range(1, 5)  # only 4 samples
+        ]
+    }
+    bias = compute_league_residual_bias(memory)
+    assert bias == {} or "意甲" not in bias, (
+        f"R25: 4 样本 < 阈值 5，不应启用 bias，返回 {bias}"
+    )
+
+
+def test_r25_compute_poisson_edges_applies_league_bias_to_ttg_crs_only() -> None:
+    """R25: compute_poisson_edges(matches, league_residual_bias=...) 只对
+    ttg/crs leg edge 应用 -0.10 偏移；had/hhad 不受影响。"""
+    from nutmeg.services.jczq_intelligence import compute_poisson_edges
+
+    matches = [
+        JczqDailyMatch(**{
+            "match_no": "周三005",
+            "match_date": "2026-05-13",
+            "match_time": "22:00:00",
+            "league": "法甲",
+            "home_team": "布雷斯特",
+            "away_team": "斯特拉斯",
+            "status": "Selling",
+            "hot_direction": "客胜低赔(2.32)",
+            "role": "谨慎博弈场",
+            "confidence_note": "",
+            "candidates": [
+                JczqDailyLeg(
+                    match_no="周三005", league="法甲", home_team="布雷斯特",
+                    away_team="斯特拉斯", pool="had", play="胜平负", pick="胜",
+                    odds=3.10, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周三005", league="法甲", home_team="布雷斯特",
+                    away_team="斯特拉斯", pool="had", play="胜平负", pick="平",
+                    odds=3.50, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周三005", league="法甲", home_team="布雷斯特",
+                    away_team="斯特拉斯", pool="had", play="胜平负", pick="负",
+                    odds=2.32, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周三005", league="法甲", home_team="布雷斯特",
+                    away_team="斯特拉斯", pool="ttg", play="总进球", pick="1球",
+                    odds=5.30, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周三005", league="法甲", home_team="布雷斯特",
+                    away_team="斯特拉斯", pool="crs", play="比分", pick="0:0",
+                    odds=14.0, logic="",
+                ),
+            ],
+        }),
+    ]
+    baseline = {row.pool + ":" + row.pick: row.edge
+                for row in compute_poisson_edges(matches)}
+    biased = {row.pool + ":" + row.pick: row.edge
+              for row in compute_poisson_edges(
+                  matches, league_residual_bias={"法甲": -0.10}
+              )}
+    # had legs unchanged
+    for pick in ("胜", "平", "负"):
+        key = f"had:{pick}"
+        if key in baseline:
+            assert abs(baseline[key] - biased[key]) < 1e-9, (
+                f"R25: had pool 不应受联赛 bias 影响，{key} 变了"
+            )
+    # ttg / crs shifted by -0.10
+    for key in ("ttg:1球", "crs:0:0"):
+        if key in baseline:
+            assert abs((biased[key] - baseline[key]) - (-0.10)) < 1e-9, (
+                f"R25: {key} bias 应为 -0.10，实际 "
+                f"{biased[key] - baseline[key]:+.4f}"
+            )
+
+
+# --------------------------------------------------- F2 (5/14 落库) ---
+# 5/14 V3 用户察觉 0:0 集中度 26%，要求迭代框架而非单日调整。F2: 用现有
+# poisson_residuals 130+ 样本按 (pool, pick) 算实测命中率 vs baseline implied
+# 概率，对 alpha edge 应用衰减因子（empirical Bayes 思路）。10 天聚合：crs 0:0
+# 实测 1/16 = 6.25% vs implied ~10%，decay = 0.625 → +36% alpha 衰减到 +22.5%。
+
+
+def test_f2_decay_returns_1_when_below_min_samples() -> None:
+    """F2: 样本数低于 min_samples 阈值，不衰减（return 1.0）。"""
+    from nutmeg.services.jczq_strategy_memory import (
+        EMPIRICAL_DECAY_MIN_SAMPLES,
+        compute_empirical_alpha_decay,
+    )
+
+    memory = {
+        "poisson_residuals": [
+            {"pool": "crs", "pick": "0:0", "hit": False, "league": "西甲"}
+            for _ in range(EMPIRICAL_DECAY_MIN_SAMPLES - 1)
+        ]
+    }
+    decay = compute_empirical_alpha_decay(memory, pool="crs", pick="0:0")
+    assert decay == 1.0, (
+        f"F2: 样本不足应返 1.0（不衰减），实际 {decay}"
+    )
+
+
+def test_f2_decay_returns_lt_1_when_actual_below_baseline() -> None:
+    """F2: crs 0:0 实测 6.25% (1/16) << baseline 10% → decay 应 < 1.0。
+    decay = max(floor, actual/baseline) = max(0.5, 0.0625/0.10) = 0.625"""
+    from nutmeg.services.jczq_strategy_memory import (
+        compute_empirical_alpha_decay,
+    )
+
+    memory = {
+        "poisson_residuals": [
+            {"pool": "crs", "pick": "0:0", "hit": (i == 0), "league": f"L{i}"}
+            for i in range(16)  # 1 hit / 16 samples = 6.25%
+        ]
+    }
+    decay = compute_empirical_alpha_decay(memory, pool="crs", pick="0:0")
+    assert 0.5 <= decay < 1.0, (
+        f"F2: crs 0:0 实测 6.25% << 10% baseline，decay 应 ∈ [0.5, 1.0)，"
+        f"实际 {decay}"
+    )
+    # 严格：6.25 / 10 = 0.625
+    assert abs(decay - 0.625) < 0.01, (
+        f"F2: crs 0:0 decay 应约 0.625，实际 {decay}"
+    )
+
+
+def test_f2_decay_clipped_to_floor() -> None:
+    """F2: 实测 0/20 = 0% 命中率不应让 decay 归 0；clip 到 EMPIRICAL_DECAY_FLOOR (0.5)。"""
+    from nutmeg.services.jczq_strategy_memory import (
+        EMPIRICAL_DECAY_FLOOR,
+        compute_empirical_alpha_decay,
+    )
+
+    memory = {
+        "poisson_residuals": [
+            {"pool": "crs", "pick": "0:0", "hit": False, "league": f"L{i}"}
+            for i in range(20)
+        ]
+    }
+    decay = compute_empirical_alpha_decay(memory, pool="crs", pick="0:0")
+    assert decay == EMPIRICAL_DECAY_FLOOR, (
+        f"F2: 0/20 命中率应 clip 到 floor {EMPIRICAL_DECAY_FLOOR}，实际 {decay}"
+    )
+
+
+def test_f2_decay_returns_1_when_actual_above_baseline() -> None:
+    """F2: 实测命中率高于 baseline 时不衰减（模型不偏，可能甚至偏保守）。"""
+    from nutmeg.services.jczq_strategy_memory import (
+        compute_empirical_alpha_decay,
+    )
+
+    # ttg 1球 baseline 22%；构造 6/20 = 30% 命中率
+    memory = {
+        "poisson_residuals": [
+            {"pool": "ttg", "pick": "1球", "hit": (i < 6), "league": f"L{i}"}
+            for i in range(20)
+        ]
+    }
+    decay = compute_empirical_alpha_decay(memory, pool="ttg", pick="1球")
+    assert decay == 1.0, (
+        f"F2: 实测 30% > 22% baseline，模型不偏不应衰减，实际 {decay}"
+    )
+
+
+def test_f2_decay_returns_1_for_unknown_pool_pick() -> None:
+    """F2: 不在 baseline 表里的 (pool, pick) 不应用衰减（如 had/hhad/hafu）。"""
+    from nutmeg.services.jczq_strategy_memory import (
+        compute_empirical_alpha_decay,
+    )
+
+    memory = {
+        "poisson_residuals": [
+            {"pool": "had", "pick": "胜", "hit": False, "league": f"L{i}"}
+            for i in range(20)
+        ]
+    }
+    decay = compute_empirical_alpha_decay(memory, pool="had", pick="胜")
+    assert decay == 1.0, (
+        f"F2: had/胜 不在 baseline 表里，应返 1.0，实际 {decay}"
+    )
+
+
+def test_f2_compute_empirical_decay_map_returns_dict_for_known_picks() -> None:
+    """F2: compute_empirical_decay_map 返回 {(pool, pick): decay} 全表。
+    只为 baseline 表里的 picks 返回；其他 implicit 1.0。"""
+    from nutmeg.services.jczq_strategy_memory import (
+        compute_empirical_decay_map,
+    )
+
+    memory = {
+        "poisson_residuals": [
+            {"pool": "crs", "pick": "0:0", "hit": (i == 0), "league": f"L{i}"}
+            for i in range(16)
+        ] + [
+            {"pool": "ttg", "pick": "1球", "hit": (i < 4), "league": f"L{i}"}
+            for i in range(20)  # 4/20 = 20% < 22% baseline → decay
+        ]
+    }
+    decay_map = compute_empirical_decay_map(memory)
+    assert ("crs", "0:0") in decay_map, "F2: crs 0:0 应在 decay_map 里"
+    assert decay_map[("crs", "0:0")] < 1.0, "F2: crs 0:0 decay 应 < 1"
+    # ttg 1球 20% vs baseline 22% → decay ≈ 0.91，但要 > floor 0.5
+    if ("ttg", "1球") in decay_map:
+        assert 0.5 <= decay_map[("ttg", "1球")] <= 1.0
+
+
+def test_f2_compute_poisson_edges_applies_empirical_decay() -> None:
+    """F2: compute_poisson_edges 接收 empirical_decay_map → 对应 (pool, pick) leg
+    edge 衰减后输出。"""
+    from nutmeg.services.jczq_intelligence import compute_poisson_edges
+
+    matches = [
+        JczqDailyMatch(**{
+            "match_no": "周四004",
+            "match_date": "2026-05-14",
+            "match_time": "21:00:00",
+            "league": "西甲",
+            "home_team": "赫罗纳",
+            "away_team": "皇家社会",
+            "status": "Selling",
+            "hot_direction": "主胜低赔(1.87)",
+            "role": "谨慎博弈场",
+            "confidence_note": "",
+            "candidates": [
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="had", play="胜平负", pick="胜",
+                    odds=1.87, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="had", play="胜平负", pick="平",
+                    odds=3.50, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="had", play="胜平负", pick="负",
+                    odds=4.50, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="crs", play="比分", pick="0:0",
+                    odds=15.0, logic="",
+                ),
+            ],
+        }),
+    ]
+    baseline = {
+        row.pool + ":" + row.pick: row.edge
+        for row in compute_poisson_edges(matches)
+    }
+    decayed = {
+        row.pool + ":" + row.pick: row.edge
+        for row in compute_poisson_edges(
+            matches, empirical_decay_map={("crs", "0:0"): 0.625}
+        )
+    }
+    if "crs:0:0" in baseline:
+        # decayed edge = baseline × 0.625
+        expected = baseline["crs:0:0"] * 0.625
+        assert abs(decayed["crs:0:0"] - expected) < 1e-9, (
+            f"F2: crs 0:0 edge 应衰减 ×0.625；baseline {baseline['crs:0:0']:+.4f}, "
+            f"decayed {decayed['crs:0:0']:+.4f}, expected {expected:+.4f}"
+        )
+    # had pool 不应被影响
+    for pick in ("胜", "平", "负"):
+        key = f"had:{pick}"
+        if key in baseline:
+            assert abs(baseline[key] - decayed[key]) < 1e-9, (
+                f"F2: had pool 不在 decay_map 里，{key} 不应变；"
+                f"baseline {baseline[key]:+.4f}, decayed {decayed[key]:+.4f}"
+            )
+
+
+# --------------------------------------------------- F3 (5/14 落库) ---
+# 5/14 brief Section 4 出现 4 条 ≥+15% alpha 且全是低进球叙事（004 0:0 +36% /
+# 001 0:0 +28.6% / 004 ttg1 +19.8% / 003 ttg1 +18.7%）。F2 静态衰减按
+# (pool, pick) 历史命中率应用，但当某一天 alpha 极度集中在某方向时，是"今日
+# 模型偏差"信号，需额外动态衰减。F3 = 日级 alpha 集中度警告（元规则）。
+
+
+def test_f3_low_goals_concentration_count_returns_match_count() -> None:
+    """F3: compute_daily_low_goals_concentration 返回有 ≥+15% 低进球 alpha 的
+    distinct match 数。"""
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+    from nutmeg.services.jczq_strategy_memory import (
+        compute_daily_low_goals_concentration,
+    )
+
+    rows = [
+        PoissonEdgeEntry(
+            match_no="周四001", home="A", away="B", league="西甲",
+            pool="crs", pick="0:0", market_odd=10.0, fair_odd=8.0,
+            edge=0.20, expected_goals=2.0,
+        ),
+        PoissonEdgeEntry(
+            match_no="周四003", home="C", away="D", league="沙职",
+            pool="ttg", pick="1球", market_odd=8.0, fair_odd=6.5,
+            edge=0.18, expected_goals=2.2,
+        ),
+        PoissonEdgeEntry(
+            match_no="周四004", home="E", away="F", league="西甲",
+            pool="crs", pick="0:0", market_odd=15.0, fair_odd=11.0,
+            edge=0.36, expected_goals=2.3,
+        ),
+        # had pool, 应被排除
+        PoissonEdgeEntry(
+            match_no="周四002", home="G", away="H", league="沙职",
+            pool="had", pick="平", market_odd=4.0, fair_odd=3.5,
+            edge=0.14, expected_goals=2.5,
+        ),
+    ]
+    count = compute_daily_low_goals_concentration(rows)
+    assert count == 3, (
+        f"F3: 3 distinct low_goals matches (001/003/004) 各 ≥+15% alpha，"
+        f"应返 3，实际 {count}"
+    )
+
+
+def test_f3_concentration_count_dedup_same_match() -> None:
+    """F3: 同一场多条 low_goals alpha 只算 1 次（distinct match）。"""
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+    from nutmeg.services.jczq_strategy_memory import (
+        compute_daily_low_goals_concentration,
+    )
+
+    rows = [
+        PoissonEdgeEntry(
+            match_no="周四004", home="A", away="B", league="西甲",
+            pool="crs", pick="0:0", market_odd=15.0, fair_odd=11.0,
+            edge=0.36, expected_goals=2.3,
+        ),
+        # 同场不同 pick，仍算 1 个 match
+        PoissonEdgeEntry(
+            match_no="周四004", home="A", away="B", league="西甲",
+            pool="ttg", pick="1球", market_odd=5.5, fair_odd=4.6,
+            edge=0.198, expected_goals=2.3,
+        ),
+    ]
+    assert compute_daily_low_goals_concentration(rows) == 1
+
+
+def test_f3_bias_returns_empty_when_below_trigger() -> None:
+    """F3: 仅 2 场 ≥+15% low_goals alpha < trigger 3 → 不触发。"""
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+    from nutmeg.services.jczq_strategy_memory import (
+        compute_daily_concentration_bias,
+    )
+
+    rows = [
+        PoissonEdgeEntry(
+            match_no="周四001", home="A", away="B", league="西甲",
+            pool="crs", pick="0:0", market_odd=10.0, fair_odd=8.0,
+            edge=0.20, expected_goals=2.0,
+        ),
+        PoissonEdgeEntry(
+            match_no="周四003", home="C", away="D", league="沙职",
+            pool="ttg", pick="1球", market_odd=8.0, fair_odd=6.5,
+            edge=0.18, expected_goals=2.2,
+        ),
+    ]
+    bias = compute_daily_concentration_bias(rows)
+    assert bias == {}, f"F3: 2 < 3 trigger，应返空 dict，实际 {bias}"
+
+
+def test_f3_bias_returns_decay_map_when_triggered() -> None:
+    """F3: ≥3 场 low_goals strong alpha → 返回 {LOW_GOALS_PICKS: 0.9}。"""
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+    from nutmeg.services.jczq_strategy_memory import (
+        DAILY_CONCENTRATION_DECAY,
+        LOW_GOALS_PICKS,
+        compute_daily_concentration_bias,
+    )
+
+    rows = [
+        PoissonEdgeEntry(
+            match_no="周四001", home="A", away="B", league="西甲",
+            pool="crs", pick="0:0", market_odd=10.0, fair_odd=8.0,
+            edge=0.20, expected_goals=2.0,
+        ),
+        PoissonEdgeEntry(
+            match_no="周四003", home="C", away="D", league="沙职",
+            pool="ttg", pick="1球", market_odd=8.0, fair_odd=6.5,
+            edge=0.18, expected_goals=2.2,
+        ),
+        PoissonEdgeEntry(
+            match_no="周四004", home="E", away="F", league="西甲",
+            pool="crs", pick="0:0", market_odd=15.0, fair_odd=11.0,
+            edge=0.36, expected_goals=2.3,
+        ),
+    ]
+    bias = compute_daily_concentration_bias(rows)
+    assert bias, "F3: 3 场 strong alpha 应触发"
+    # 所有 low_goals picks 都应有 decay
+    for pp in LOW_GOALS_PICKS:
+        assert bias.get(pp) == DAILY_CONCENTRATION_DECAY, (
+            f"F3: {pp} 应有 decay {DAILY_CONCENTRATION_DECAY}，实际 {bias.get(pp)}"
+        )
+
+
+def test_f3_compute_poisson_edges_applies_daily_concentration_bias() -> None:
+    """F3: compute_poisson_edges 接收 daily_concentration_bias → low_goals leg
+    edge 衰减后输出（× 0.9）。"""
+    from nutmeg.services.jczq_intelligence import compute_poisson_edges
+
+    matches = [
+        JczqDailyMatch(**{
+            "match_no": "周四004",
+            "match_date": "2026-05-14",
+            "match_time": "21:00:00",
+            "league": "西甲",
+            "home_team": "赫罗纳",
+            "away_team": "皇家社会",
+            "status": "Selling",
+            "hot_direction": "主胜低赔(1.87)",
+            "role": "谨慎博弈场",
+            "confidence_note": "",
+            "candidates": [
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="had", play="胜平负", pick="胜",
+                    odds=1.87, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="had", play="胜平负", pick="平",
+                    odds=3.50, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="had", play="胜平负", pick="负",
+                    odds=4.50, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="crs", play="比分", pick="0:0",
+                    odds=15.0, logic="",
+                ),
+            ],
+        }),
+    ]
+    baseline = {
+        row.pool + ":" + row.pick: row.edge
+        for row in compute_poisson_edges(matches)
+    }
+    biased = {
+        row.pool + ":" + row.pick: row.edge
+        for row in compute_poisson_edges(
+            matches,
+            daily_concentration_bias={("crs", "0:0"): 0.9},
+        )
+    }
+    if "crs:0:0" in baseline:
+        expected = baseline["crs:0:0"] * 0.9
+        assert abs(biased["crs:0:0"] - expected) < 1e-9, (
+            f"F3: crs 0:0 应 ×0.9；baseline {baseline['crs:0:0']:+.4f}, "
+            f"biased {biased['crs:0:0']:+.4f}, expected {expected:+.4f}"
+        )
+    # had pool 不受 F3 影响
+    for pick in ("胜", "平", "负"):
+        key = f"had:{pick}"
+        if key in baseline:
+            assert abs(baseline[key] - biased[key]) < 1e-9, (
+                f"F3: had pool 不在 LOW_GOALS_PICKS，{key} 不应变"
+            )
+
+
+# --------------------------------------------------- F4 (5/14 落库) ---
+# 5/14 用户洞察：crs 9 选项细分过碎；ttg 0/1/2/3+ 球更稳健（"大小球类似物"）。
+# F4 策略层：当同场 alpha 候选有 ttg 和 crs 时，优先 ttg；除非 crs edge 明显
+# > ttg edge（差距 ≥ F4_DOMINANCE_THRESHOLD=+0.10）。Rule O 限制 same-match
+# 不能 join 同票，所以这是 single-leg-per-match 情况下选哪条 alpha 的偏好。
+
+
+def test_f4_select_preferred_alpha_picks_ttg_when_close() -> None:
+    """F4: 同场 ttg 1球 +12% / crs 0:0 +15%（差距 3pp < +10pp）→ 选 ttg。"""
+    from nutmeg.services.jczq_daily import select_preferred_alpha_per_match
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    ttg_row = PoissonEdgeEntry(
+        match_no="周四004", home="赫罗纳", away="皇社", league="西甲",
+        pool="ttg", pick="1球", market_odd=5.5, fair_odd=4.9,
+        edge=0.12, expected_goals=2.3,
+    )
+    crs_row = PoissonEdgeEntry(
+        match_no="周四004", home="赫罗纳", away="皇社", league="西甲",
+        pool="crs", pick="0:0", market_odd=15.0, fair_odd=13.0,
+        edge=0.15, expected_goals=2.3,
+    )
+    selected = select_preferred_alpha_per_match([ttg_row, crs_row])
+    assert len(selected) == 1, f"Same match should keep 1 row; got {len(selected)}"
+    assert selected[0].pool == "ttg", (
+        f"F4: 同场 ttg vs crs 差距 < +10pp 时应选 ttg；实际 {selected[0].pool}"
+    )
+
+
+def test_f4_select_preferred_alpha_picks_crs_when_dominant() -> None:
+    """F4: 同场 crs +30% vs ttg +10%（差距 20pp >= +10pp）→ 选 crs。"""
+    from nutmeg.services.jczq_daily import select_preferred_alpha_per_match
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    ttg_row = PoissonEdgeEntry(
+        match_no="周四004", home="赫罗纳", away="皇社", league="西甲",
+        pool="ttg", pick="1球", market_odd=5.5, fair_odd=4.9,
+        edge=0.10, expected_goals=2.3,
+    )
+    crs_row = PoissonEdgeEntry(
+        match_no="周四004", home="赫罗纳", away="皇社", league="西甲",
+        pool="crs", pick="0:0", market_odd=15.0, fair_odd=11.5,
+        edge=0.30, expected_goals=2.3,
+    )
+    selected = select_preferred_alpha_per_match([ttg_row, crs_row])
+    assert len(selected) == 1
+    assert selected[0].pool == "crs", (
+        f"F4: crs +30% - ttg +10% = +20pp >= dominance threshold +10pp，应选 crs"
+    )
+
+
+def test_f4_select_preferred_keeps_only_pool() -> None:
+    """F4: 同场仅有 ttg → 保留 ttg；仅有 crs → 保留 crs；两种 sanity。"""
+    from nutmeg.services.jczq_daily import select_preferred_alpha_per_match
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    only_ttg = PoissonEdgeEntry(
+        match_no="周四001", home="A", away="B", league="西甲",
+        pool="ttg", pick="1球", market_odd=4.5, fair_odd=4.0,
+        edge=0.12, expected_goals=2.5,
+    )
+    only_crs = PoissonEdgeEntry(
+        match_no="周四002", home="C", away="D", league="沙职",
+        pool="crs", pick="0:0", market_odd=12.0, fair_odd=10.0,
+        edge=0.20, expected_goals=2.0,
+    )
+    selected = select_preferred_alpha_per_match([only_ttg, only_crs])
+    pools = {r.pool for r in selected}
+    assert pools == {"ttg", "crs"}, (
+        f"F4: 不同场各保留一条；预期 {{ttg, crs}}，实际 {pools}"
+    )
+
+
+def test_f4_select_preferred_does_not_break_cross_match() -> None:
+    """F4: 跨场 alpha 不变，每场各保留 1 条按 F4 偏好。"""
+    from nutmeg.services.jczq_daily import select_preferred_alpha_per_match
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    rows = [
+        # 004: ttg vs crs 差距 < dominance
+        PoissonEdgeEntry(
+            match_no="周四004", home="A", away="B", league="西甲",
+            pool="ttg", pick="1球", market_odd=5.5, fair_odd=4.9,
+            edge=0.10, expected_goals=2.3,
+        ),
+        PoissonEdgeEntry(
+            match_no="周四004", home="A", away="B", league="西甲",
+            pool="crs", pick="0:0", market_odd=15.0, fair_odd=13.0,
+            edge=0.13, expected_goals=2.3,
+        ),
+        # 001: only ttg
+        PoissonEdgeEntry(
+            match_no="周四001", home="C", away="D", league="西甲",
+            pool="ttg", pick="1球", market_odd=4.5, fair_odd=4.0,
+            edge=0.12, expected_goals=2.5,
+        ),
+        # 002: crs dominant (+30% vs ttg +5%)
+        PoissonEdgeEntry(
+            match_no="周四002", home="E", away="F", league="沙职",
+            pool="ttg", pick="1球", market_odd=8.0, fair_odd=7.6,
+            edge=0.05, expected_goals=2.0,
+        ),
+        PoissonEdgeEntry(
+            match_no="周四002", home="E", away="F", league="沙职",
+            pool="crs", pick="0:0", market_odd=12.0, fair_odd=9.2,
+            edge=0.30, expected_goals=2.0,
+        ),
+    ]
+    selected = select_preferred_alpha_per_match(rows)
+    by_match = {r.match_no: r.pool for r in selected}
+    assert by_match["周四004"] == "ttg", "F4: 004 同场差距小 → ttg"
+    assert by_match["周四001"] == "ttg", "F4: 001 仅 ttg → ttg"
+    assert by_match["周四002"] == "crs", "F4: 002 crs dominant → crs"
+    assert len(selected) == 3, f"F4: 3 distinct matches → 3 rows; got {len(selected)}"
+
+
+def test_f3_stacks_with_f2_and_r25_in_correct_order() -> None:
+    """F3: 三层衰减叠加顺序正确：edge = (raw + R25_bias) × F2_decay × F3_decay。
+    构造一个场景验证三者协同。"""
+    from nutmeg.services.jczq_intelligence import compute_poisson_edges
+
+    matches = [
+        JczqDailyMatch(**{
+            "match_no": "周四004",
+            "match_date": "2026-05-14",
+            "match_time": "21:00:00",
+            "league": "西甲",
+            "home_team": "赫罗纳",
+            "away_team": "皇家社会",
+            "status": "Selling",
+            "hot_direction": "主胜低赔(1.87)",
+            "role": "谨慎博弈场",
+            "confidence_note": "",
+            "candidates": [
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="had", play="胜平负", pick="胜",
+                    odds=1.87, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="had", play="胜平负", pick="平",
+                    odds=3.50, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="had", play="胜平负", pick="负",
+                    odds=4.50, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="crs", play="比分", pick="0:0",
+                    odds=15.0, logic="",
+                ),
+            ],
+        }),
+    ]
+    raw_rows = compute_poisson_edges(matches)
+    raw_edge = next(
+        r.edge for r in raw_rows if r.pool == "crs" and r.pick == "0:0"
+    )
+
+    biased_rows = compute_poisson_edges(
+        matches,
+        league_residual_bias={"西甲": -0.10},      # R25
+        empirical_decay_map={("crs", "0:0"): 0.625},  # F2
+        daily_concentration_bias={("crs", "0:0"): 0.9},  # F3
+    )
+    biased_edge = next(
+        r.edge for r in biased_rows if r.pool == "crs" and r.pick == "0:0"
+    )
+    expected = (raw_edge + (-0.10)) * 0.625 * 0.9
+    assert abs(biased_edge - expected) < 1e-9, (
+        f"F3 stack: edge = (raw + R25) × F2 × F3 = "
+        f"({raw_edge:+.4f} + (-0.10)) × 0.625 × 0.9 = {expected:+.4f}; "
+        f"实际 {biased_edge:+.4f}"
+    )

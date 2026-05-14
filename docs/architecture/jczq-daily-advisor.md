@@ -51,15 +51,14 @@ Natural-language竞彩 follow-ups also route to the same safe workflow, for exam
 
 The bot replies with the rendered report text. Revisions are persisted under `.nutmeg-data/jczq/daily/<date>/context.json` and increment the revision version.
 
-## Noon Schedule
+## Scheduling
 
-`scripts/launchd/com.nutmeg.jczq.daily-noon.plist` runs at local 12:00 and calls:
+The daily noon LaunchAgent has been retired. Generate JCZQ reports manually or
+install a new schedule only after its rules, Telegram destination, and review
+workflow are redefined.
 
-```bash
-uv run nutmeg jczq-daily-advisor --provider live --date today --output-dir .nutmeg-data/jczq --dispatch-telegram --no-dry-run --format json
-```
-
-Install only after verifying Telegram credentials and allowed chat ids. The job sends analysis text; it never places bets or connects to sportsbook accounts.
+The workflow sends analysis text only; it never places bets or connects to
+sportsbook accounts.
 
 ## Safety Boundary
 

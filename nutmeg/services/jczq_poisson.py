@@ -33,6 +33,37 @@ def _poisson_pmf(k: int, lam: float) -> float:
     return math.exp(-lam) * (lam**k) / math.factorial(k)
 
 
+def _dixon_coles_tau(
+    h: int, a: int, lam_h: float, lam_a: float, rho: float
+) -> float:
+    """F1 (5/14): Dixon-Coles 1997 low-score correction multiplier.
+
+    Modifies independent-Poisson grid only at (0,0) / (0,1) / (1,0) / (1,1).
+
+    rho > 0 → tau(0,0) < 1 (deflate 0:0); use when historical data shows
+              Poisson over-prices low scoring (JCZQ case: crs 0:0 实测
+              1/16 vs implied 8-15%).
+    rho < 0 → tau(0,0) > 1 (inflate 0:0); textbook D-C default for
+              European football where 0:0 is under-predicted.
+    rho = 0 → tau = 1 everywhere (backward-compatible no-op).
+
+    Result is clamped to [0, +inf) so multiplied probability never goes
+    negative (extreme rho values can otherwise push tau < 0).
+    """
+
+    if rho == 0.0:
+        return 1.0
+    if h == 0 and a == 0:
+        return max(0.0, 1.0 - lam_h * lam_a * rho)
+    if h == 0 and a == 1:
+        return max(0.0, 1.0 + lam_h * rho)
+    if h == 1 and a == 0:
+        return max(0.0, 1.0 + lam_a * rho)
+    if h == 1 and a == 1:
+        return max(0.0, 1.0 - rho)
+    return 1.0
+
+
 @dataclass(frozen=True, slots=True)
 class ScoreGrid:
     home_lambda: float
@@ -45,11 +76,30 @@ def build_score_grid(
     away_lambda: float,
     *,
     max_goals: int = DEFAULT_MAX_GOALS,
+    dc_rho: float = 0.0,
 ) -> ScoreGrid:
+    """Build joint score probability grid via independent Poisson + optional
+    Dixon-Coles tau correction.
+
+    F1 (5/14): when `dc_rho != 0`, applies _dixon_coles_tau multiplier to
+    (0,0) / (0,1) / (1,0) / (1,1) entries, then renormalizes the grid so
+    total probability mass stays ~1.0. dc_rho=0.0 (default) preserves the
+    pre-F1 independent-Poisson behavior for backward compatibility.
+    """
+
     grid: dict[tuple[int, int], float] = {}
     for h in range(max_goals + 1):
         for a in range(max_goals + 1):
-            grid[(h, a)] = _poisson_pmf(h, home_lambda) * _poisson_pmf(a, away_lambda)
+            base = _poisson_pmf(h, home_lambda) * _poisson_pmf(a, away_lambda)
+            if dc_rho != 0.0:
+                base = base * _dixon_coles_tau(h, a, home_lambda, away_lambda, dc_rho)
+            grid[(h, a)] = base
+    if dc_rho != 0.0:
+        # Renormalize so the probability mass sums back to ~1.0 (the tau
+        # correction does not preserve total mass).
+        total = sum(grid.values())
+        if total > 0:
+            grid = {k: v / total for k, v in grid.items()}
     return ScoreGrid(home_lambda=home_lambda, away_lambda=away_lambda, grid=grid)
 
 
@@ -157,8 +207,14 @@ def fit_lambdas_from_market(
     *,
     max_lambda: float = 4.0,
     step: float = 0.1,
+    dc_rho: float = 0.0,
 ) -> FittedModel:
-    """Find (home_lambda, away_lambda) minimizing squared distance to had probs."""
+    """Find (home_lambda, away_lambda) minimizing squared distance to had probs.
+
+    F1 (5/14): `dc_rho` propagates Dixon-Coles tau correction into the score
+    grid used during fitting (and the fitted_probs returned). Default 0.0
+    keeps backward compatibility (no correction).
+    """
 
     target = _vig_normalize(home_odd, draw_odd, away_odd)
     market = {"胜": target[0], "平": target[1], "负": target[2]}
@@ -170,7 +226,9 @@ def fit_lambdas_from_market(
         value += step
     for hl in lambdas:
         for al in lambdas:
-            grid = build_score_grid(hl, al, max_goals=DEFAULT_MAX_GOALS)
+            grid = build_score_grid(
+                hl, al, max_goals=DEFAULT_MAX_GOALS, dc_rho=dc_rho
+            )
             probs = derive_market_probs(grid)
             err = sum(
                 (probs["had"][outcome] - market[outcome]) ** 2 for outcome in ("胜", "平", "负")
@@ -233,15 +291,21 @@ def fair_odds_hhad(
     pick: str,
     goal_line: float,
     max_goals: int = DEFAULT_MAX_GOALS,
+    dc_rho: float = 0.0,
 ) -> float | None:
     """Fair odds for an hhad pick given a handicap goal_line.
 
     Reconstructs the score grid from the fitted lambdas and aggregates
     the handicap-adjusted outcome probabilities. Returns None when the
     pick is not produced for the given line (e.g., 让平 with a half line).
+
+    F1 (5/14): `dc_rho` propagates the Dixon-Coles tau correction; default
+    0.0 keeps backward compatibility.
     """
 
-    grid = build_score_grid(model.home_lambda, model.away_lambda, max_goals=max_goals)
+    grid = build_score_grid(
+        model.home_lambda, model.away_lambda, max_goals=max_goals, dc_rho=dc_rho,
+    )
     probs = _compute_hhad_probs(grid, goal_line=goal_line)
     prob = probs.get(pick)
     if prob is None or prob <= 0:
@@ -256,11 +320,14 @@ def edge_vs_market(
     pick: str,
     market_odd: float,
     goal_line: float | None = None,
+    dc_rho: float = 0.0,
 ) -> float | None:
     if pool == "hhad":
         if goal_line is None:
             return None
-        fair = fair_odds_hhad(model, pick=pick, goal_line=goal_line)
+        fair = fair_odds_hhad(
+            model, pick=pick, goal_line=goal_line, dc_rho=dc_rho,
+        )
     else:
         fair = fair_odds(model, pool=pool, pick=pick)
     if fair is None or market_odd <= 0:

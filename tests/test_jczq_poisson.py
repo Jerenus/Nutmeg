@@ -110,3 +110,111 @@ def test_edge_vs_market_handles_hhad_with_goal_line() -> None:
         fitted, pool="hhad", pick="让胜", market_odd=fair * 1.10
     )
     assert edge_without_line is None
+
+
+# ----------------------------------------- F1 Dixon-Coles (5/14 落库) ---
+# Independent Poisson over-prices low-score lines (实证 crs 0:0 命中率 1/16
+# vs implied 8-15%). F1 introduces Dixon-Coles 1997 tau correction parameter
+# `dc_rho` to build_score_grid. rho > 0 deflates 0:0/1:1, inflates 0:1/1:0
+# (use when historical data shows 0:0 over-represented in implied — JCZQ case).
+# rho < 0 is the textbook D-C default for European football data.
+# rho = 0 (default): no correction, backward compat with all existing code.
+
+
+def test_f1_dixon_coles_tau_returns_1_when_rho_zero() -> None:
+    """F1: dc_rho=0.0 keeps independent-Poisson behavior (backward compat)."""
+    from nutmeg.services.jczq_poisson import _dixon_coles_tau
+
+    for h in range(3):
+        for a in range(3):
+            assert _dixon_coles_tau(h, a, 1.5, 1.2, 0.0) == 1.0
+
+
+def test_f1_dixon_coles_tau_inflates_zero_zero_when_rho_negative() -> None:
+    """F1: rho < 0 (D-C textbook default) → tau(0,0) > 1, tau(0,1) < 1.
+    Used when independent Poisson under-predicts 0:0 (typical European football)."""
+    from nutmeg.services.jczq_poisson import _dixon_coles_tau
+
+    rho = -0.05
+    lam_h, lam_a = 1.5, 1.2
+    tau_00 = _dixon_coles_tau(0, 0, lam_h, lam_a, rho)
+    tau_01 = _dixon_coles_tau(0, 1, lam_h, lam_a, rho)
+    tau_10 = _dixon_coles_tau(1, 0, lam_h, lam_a, rho)
+    tau_11 = _dixon_coles_tau(1, 1, lam_h, lam_a, rho)
+    assert tau_00 > 1.0, f"rho<0: tau(0,0) 应 > 1，实际 {tau_00}"
+    assert tau_01 < 1.0, f"rho<0: tau(0,1) 应 < 1，实际 {tau_01}"
+    assert tau_10 < 1.0, f"rho<0: tau(1,0) 应 < 1，实际 {tau_10}"
+    assert tau_11 > 1.0, f"rho<0: tau(1,1) 应 > 1，实际 {tau_11}"
+
+
+def test_f1_dixon_coles_tau_deflates_zero_zero_when_rho_positive() -> None:
+    """F1: rho > 0 (JCZQ inverted use case) → tau(0,0) < 1.
+    Used when 10-day data shows 0:0 over-represented in implied vs realized."""
+    from nutmeg.services.jczq_poisson import _dixon_coles_tau
+
+    rho = 0.05
+    lam_h, lam_a = 1.5, 1.2
+    tau_00 = _dixon_coles_tau(0, 0, lam_h, lam_a, rho)
+    tau_11 = _dixon_coles_tau(1, 1, lam_h, lam_a, rho)
+    assert tau_00 < 1.0, f"rho>0: tau(0,0) 应 < 1（deflate），实际 {tau_00}"
+    assert tau_11 < 1.0, f"rho>0: tau(1,1) 应 < 1，实际 {tau_11}"
+
+
+def test_f1_dixon_coles_tau_unchanged_for_high_scores() -> None:
+    """F1: tau only modifies (0,0)/(0,1)/(1,0)/(1,1); high scores unchanged."""
+    from nutmeg.services.jczq_poisson import _dixon_coles_tau
+
+    rho = -0.10
+    for (h, a) in [(2, 0), (2, 1), (3, 0), (2, 2), (3, 3)]:
+        assert _dixon_coles_tau(h, a, 1.5, 1.2, rho) == 1.0, (
+            f"F1: tau({h},{a}) 应 = 1.0（不在校正区），实际 "
+            f"{_dixon_coles_tau(h, a, 1.5, 1.2, rho)}"
+        )
+
+
+def test_f1_build_score_grid_with_dc_correction_changes_zero_zero() -> None:
+    """F1: build_score_grid(dc_rho=-0.05) changes 0:0 entry vs dc_rho=0."""
+    from nutmeg.services.jczq_poisson import build_score_grid
+
+    base = build_score_grid(1.5, 1.2, max_goals=4, dc_rho=0.0)
+    corrected = build_score_grid(1.5, 1.2, max_goals=4, dc_rho=-0.05)
+    p00_base = base.grid[(0, 0)]
+    p00_corrected = corrected.grid[(0, 0)]
+    assert p00_corrected != p00_base, (
+        f"F1: dc_rho=-0.05 应改变 P(0:0)；base={p00_base:.4f}, "
+        f"corrected={p00_corrected:.4f}"
+    )
+    # Higher score (e.g., 2:1) should NOT be directly tau-modified, but renorm
+    # may move it slightly; the proportional change should be small.
+    p21_base = base.grid[(2, 1)]
+    p21_corrected = corrected.grid[(2, 1)]
+    # Renorm shifts at most ~few percent
+    assert abs(p21_corrected - p21_base) / max(p21_base, 1e-9) < 0.05, (
+        f"F1: dc_rho changes high-score (2:1) only via renorm; "
+        f"abs delta {abs(p21_corrected - p21_base):.5f}"
+    )
+
+
+def test_f1_build_score_grid_renormalizes_to_unit_mass() -> None:
+    """F1: after tau correction, grid still sums to ~1.0 (renormalization)."""
+    from nutmeg.services.jczq_poisson import build_score_grid
+
+    for rho in (-0.10, -0.05, 0.0, 0.05, 0.10):
+        grid = build_score_grid(1.5, 1.2, max_goals=6, dc_rho=rho)
+        total = sum(grid.grid.values())
+        assert 0.99 <= total <= 1.01, (
+            f"F1 rho={rho}: grid 应归一化，实际 sum={total:.4f}"
+        )
+
+
+def test_f1_fit_lambdas_accepts_dc_rho_kwarg() -> None:
+    """F1: fit_lambdas_from_market accepts dc_rho and propagates to grid."""
+    from nutmeg.services.jczq_poisson import fit_lambdas_from_market
+
+    fitted_default = fit_lambdas_from_market(1.55, 4.00, 6.50, max_lambda=3.0, step=0.2)
+    fitted_dc = fit_lambdas_from_market(
+        1.55, 4.00, 6.50, max_lambda=3.0, step=0.2, dc_rho=-0.05
+    )
+    # Both should fit; lambdas may differ slightly due to corrected score grid
+    assert fitted_default.home_lambda > 0
+    assert fitted_dc.home_lambda > 0

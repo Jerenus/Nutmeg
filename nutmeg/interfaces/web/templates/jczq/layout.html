@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/jczq/app.css">
+    <title>{{ title or "JCZQ Cockpit" }}</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/jczq">Nutmeg JCZQ Cockpit</a>
+      <span>local-first · SQLite + artifacts</span>
+    </header>
+    {% block content %}{% endblock %}
+  </body>
+</html>

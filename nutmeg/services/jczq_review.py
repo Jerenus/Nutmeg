@@ -141,6 +141,7 @@ class JczqDailyReviewService:
             context=context_payload,
             results=results,
             graded_legs=graded_legs,
+            plan_summaries=plan_summaries,
         )
         message = self._render_message(
             run_date=resolved_date,

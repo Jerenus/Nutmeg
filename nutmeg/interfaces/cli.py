@@ -65,6 +65,10 @@ from nutmeg.services.jczq_daily import (
     JczqDailyAdvisorService,
     build_jczq_daily_provider,
 )
+from nutmeg.services.jczq_debate import (
+    JczqDebateWorkspaceError,
+    JczqDebateWorkspaceService,
+)
 from nutmeg.services.jczq_review import JczqDailyReviewService
 from nutmeg.services.materialization import MaterializationService
 from nutmeg.services.moneyprinterturbo import (
@@ -94,6 +98,11 @@ from nutmeg.services.wechat_publisher import (
     WeChatPublisherValidationError,
 )
 from nutmeg.services.zucai import ZucaiValidationError, ZucaiWorkflowService
+from nutmeg.services.zucai_renjiu_daily import (
+    ZucaiRenjiuBotWorkflow,
+    ZucaiRenjiuDailyService,
+    ZucaiRenjiuValidationError,
+)
 from nutmeg.services.zucai_odds_source import (
     ZucaiOddsSourceValidationError,
     ZucaiOddsSyncService,
@@ -541,6 +550,23 @@ def build_zucai_scheduled_delivery_service() -> ZucaiScheduledDeliveryService:
     return ZucaiScheduledDeliveryService(workflow_service=build_zucai_workflow_service())
 
 
+def build_zucai_renjiu_daily_service() -> ZucaiRenjiuDailyService:
+    settings = get_settings()
+    ensure_storage_paths(settings)
+    telegram_sender = None
+    if settings.telegram_bot_token:
+        telegram_sender = TelegramBotClient(
+            token=settings.telegram_bot_token,
+            base_url=settings.telegram_api_base_url,
+        )
+    return ZucaiRenjiuDailyService(
+        telegram_sender=telegram_sender,
+        telegram_chat_ids=sorted(
+            parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
+        ),
+    )
+
+
 def build_zucai_source_sync_service() -> ZucaiSourceSyncService:
     return ZucaiSourceSyncService()
 
@@ -611,6 +637,10 @@ def build_jczq_daily_review_service() -> JczqDailyReviewService:
         ),
         betting_repository=DuckDbBettingPlanRepository(settings),
     )
+
+
+def build_jczq_debate_workspace_service() -> JczqDebateWorkspaceService:
+    return JczqDebateWorkspaceService()
 
 
 class JczqDailyBotWorkflow:
@@ -1614,6 +1644,53 @@ def zucai_report(
         )
 
 
+@app.command("zucai-renjiu-daily")
+def zucai_renjiu_daily(
+    run_date: str = typer.Option("today", "--date"),
+    issue_id: str | None = ZUCAI_ISSUE_ID_OPTION,
+    issue_file: Path | None = ZUCAI_ISSUE_FILE_OPTION,
+    odds_file: Path | None = ZUCAI_ODDS_FILE_OPTION,
+    output_dir: Path = ZUCAI_OUTPUT_DIR_OPTION,
+    pdf: bool = typer.Option(False, "--pdf"),
+    dispatch_telegram: bool = typer.Option(False, "--dispatch-telegram"),
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run"),
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    service = build_zucai_renjiu_daily_service()
+    try:
+        report = service.build_report(
+            run_date=run_date,
+            issue_id=issue_id,
+            issue_file=issue_file,
+            odds_file=odds_file,
+            output_dir=output_dir,
+            render_pdf=pdf or dispatch_telegram,
+            dispatch_telegram=dispatch_telegram,
+            dry_run=dry_run,
+        )
+    except ZucaiRenjiuValidationError as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+
+    payload = report.to_dict()
+    if format == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+
+    recommended = next(
+        ticket for ticket in report.tickets if ticket.ticket_id == report.recommended_ticket_id
+    )
+    console.print(
+        f"zucai-renjiu-daily issue={report.issue_id} recommended={recommended.name} "
+        f"cost={recommended.cost_yuan} dispatch={report.dispatch.status}"
+    )
+    console.print(f"markdown={report.artifacts.markdown_path}")
+    if report.artifacts.pdf_path:
+        console.print(f"pdf={report.artifacts.pdf_path}")
+    for ticket in report.tickets:
+        console.print(f" - {ticket.name}: {ticket.code} ({ticket.stake_count}注/{ticket.cost_yuan}元)")
+
+
 @app.command("zucai-auto-run")
 def zucai_auto_run(
     run_date: str = typer.Option("today", "--date"),
@@ -1895,6 +1972,62 @@ def jczq_daily_review(
     console.print(str(report.get("message") or ""))
 
 
+@app.command("jczq-debate-init")
+def jczq_debate_init(
+    run_date: str = typer.Option("today", "--date"),
+    output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    service = build_jczq_debate_workspace_service()
+    try:
+        result = service.initialize_workspace(run_date=run_date, output_dir=output_dir)
+    except JczqDebateWorkspaceError as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+
+    if format == "json":
+        typer.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
+        return
+    console.print(f"jczq-debate-init date={result['run_date']}")
+    console.print(f"debate_dir={result['debate_dir']}")
+    for path in result.get("artifacts", {}).values():
+        console.print(f"- {path}")
+
+
+@app.command("jczq-debate-compare")
+def jczq_debate_compare(
+    run_date: str = typer.Option("today", "--date"),
+    output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    service = build_jczq_debate_workspace_service()
+    result = service.compare_workspace(run_date=run_date, output_dir=output_dir)
+
+    if format == "json":
+        typer.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
+        return
+    console.print(f"jczq-debate-compare date={result['run_date']}")
+    console.print(f"consensus={len(result['consensus_legs'])}")
+    console.print(f"conflicts={', '.join(result['conflict_matches']) or '-'}")
+    console.print(f"disagreements={result['artifacts']['disagreements_path']}")
+
+
+@app.command("jczq-debate-finalize")
+def jczq_debate_finalize(
+    run_date: str = typer.Option("today", "--date"),
+    output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    service = build_jczq_debate_workspace_service()
+    result = service.finalize_workspace(run_date=run_date, output_dir=output_dir)
+
+    if format == "json":
+        typer.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
+        return
+    console.print(f"jczq-debate-finalize date={result['run_date']}")
+    console.print(f"final_plan={result['final_plan_path']}")
+
+
 @app.command("content-pack")
 def content_pack(
     report_file: Path = CONTENT_REPORT_FILE_OPTION,
@@ -2072,7 +2205,6 @@ def video_production_packet(
     console.print(
         f"video-production-packet matches={payload['matches']} run_dir={payload['run_dir']}"
     )
-
 
 
 @app.command("video-mpt-packet")
@@ -3030,6 +3162,24 @@ def client_web(
     uvicorn.run(create_client_app(service=service), host=host, port=port)
 
 
+@app.command("jczq-web")
+def jczq_web(
+    output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8765, "--port"),
+) -> None:
+    import uvicorn
+
+    from nutmeg.interfaces.jczq_web import create_jczq_web_app
+    from nutmeg.services.jczq_web import JczqWebCockpitService
+    from nutmeg.storage.jczq_web_repository import JczqWebRepository
+
+    repository = JczqWebRepository(Path(output_dir) / "jczq-web.sqlite3")
+    repository.initialize()
+    service = JczqWebCockpitService(output_dir=output_dir, repository=repository)
+    uvicorn.run(create_jczq_web_app(service=service), host=host, port=port)
+
+
 def build_match_brief_payload(result) -> dict[str, object]:
     analysis = result.analysis
     if result.status != "succeeded" or analysis is None:
@@ -3199,6 +3349,10 @@ def bot_dry_run(
             jczq_workflow=JczqDailyBotWorkflow(
                 service=build_jczq_daily_advisor_service(provider="live")
             ),
+            renjiu_workflow=ZucaiRenjiuBotWorkflow(
+                service=build_zucai_renjiu_daily_service(),
+                dry_run=True,
+            ),
         )
         response = adapter.handle_message(message)
     finally:
@@ -3260,6 +3414,10 @@ def build_telegram_bot_runner(settings) -> TelegramBotRunner:
             fallback_provider=build_bot_fallback_provider(settings),
             jczq_workflow=JczqDailyBotWorkflow(
                 service=build_jczq_daily_advisor_service(provider="live")
+            ),
+            renjiu_workflow=ZucaiRenjiuBotWorkflow(
+                service=build_zucai_renjiu_daily_service(),
+                dry_run=False,
             ),
         ),
         allowed_chat_ids=allowed_chat_ids,
