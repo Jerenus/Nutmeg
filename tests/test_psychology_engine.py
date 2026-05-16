@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from nutmeg.services.psychology.engine import PsychologyEngine
+from nutmeg.services.psychology.engine import PsychologyEngine, SignalContext
 from nutmeg.services.psychology.schemas import SignalReading
-from nutmeg.services.psychology.signals.base import SignalContext
 
 
 def _reading(

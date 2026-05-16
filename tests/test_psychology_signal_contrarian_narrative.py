@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from nutmeg.services.psychology.llm import FakeLLMCompleter
-from nutmeg.services.psychology.signals.base import SignalContext
-from nutmeg.services.psychology.signals.contrarian_narrative import ContrarianNarrativeSignal
+from nutmeg.services.psychology.engine import ContrarianNarrativeSignal, SignalContext
+from nutmeg.services.psychology.io import FakeLLMCompleter
 
 
 def _fixture() -> dict:

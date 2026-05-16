@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from nutmeg.services.psychology.signals.base import SignalContext
-from nutmeg.services.psychology.signals.tournament_stage import TournamentStageSignal
+from nutmeg.services.psychology.engine import SignalContext, TournamentStageSignal
 
 
 def _ctx(fixtures: list[dict]) -> SignalContext:

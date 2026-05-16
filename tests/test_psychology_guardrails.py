@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nutmeg.services.psychology.guardrails import BudgetGuard, ConvictionGate
+from nutmeg.services.psychology.engine import BudgetGuard, ConvictionGate
 from nutmeg.services.psychology.schemas import OverrideCandidate
 
 

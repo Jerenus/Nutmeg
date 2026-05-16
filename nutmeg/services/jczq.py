@@ -26,8 +26,7 @@ from nutmeg.domain.jczq import (
 )
 
 if TYPE_CHECKING:
-    from nutmeg.services.psychology.engine import PsychologyEngine
-    from nutmeg.services.psychology.reconciliator import Reconciliator
+    from nutmeg.services.psychology.engine import PsychologyEngine, Reconciliator
     from nutmeg.services.psychology.schemas import DualSchemeReport, InspirationNote
 
 SPORTTERY_JCZQ_PAGE = "https://www.sporttery.cn/jc/jsq/zqspf/"
@@ -225,11 +224,11 @@ class JczqMixedReportService:
         combinations = self._build_combinations(value)
         psychology_reports: dict[str, "DualSchemeReport"] = {}
         if self._psychology_engine and self._reconciliator:
-            from nutmeg.services.psychology.jczq_adapter import (
+            from nutmeg.services.psychology.engine import (
+                SignalContext,
                 apply_final_scheme_to_combination,
                 combination_to_data_scheme,
             )
-            from nutmeg.services.psychology.signals.base import SignalContext
 
             updated_combinations = []
             for combo in combinations:

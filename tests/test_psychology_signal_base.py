@@ -4,12 +4,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from nutmeg.services.psychology.schemas import SignalReading
-from nutmeg.services.psychology.signals.base import (
+from nutmeg.services.psychology.engine import (
     SignalContext,
     SignalProvider,
     SignalProviderError,
 )
+from nutmeg.services.psychology.schemas import SignalReading
 
 
 def test_signal_provider_is_protocol() -> None:

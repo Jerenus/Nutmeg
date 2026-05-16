@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from nutmeg.services.psychology.sources.news_cache import NewsCache
-from nutmeg.services.psychology.sources.zhilio_provider import ZhilioProvider
+from nutmeg.services.psychology.io import NewsCache, ZhilioProvider
 
 
 def test_search_news_uses_callable(tmp_path: Path) -> None:

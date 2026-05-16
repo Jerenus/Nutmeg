@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nutmeg.services.psychology.llm import FakeLLMCompleter, LLMCompleter, LLMCompletionError
+from nutmeg.services.psychology.io import FakeLLMCompleter, LLMCompleter, LLMCompletionError
 
 
 def test_fake_completer_returns_canned_response() -> None:
@@ -36,7 +36,7 @@ def test_protocol_is_satisfied_by_callable_wrapper() -> None:
 def test_portkey_completer_uses_existing_provider_client_without_raw_method() -> None:
     from types import SimpleNamespace
 
-    from nutmeg.services.psychology.llm import PortkeyLLMCompleter
+    from nutmeg.services.psychology.io import PortkeyLLMCompleter
 
     class Response:
         def raise_for_status(self) -> None:

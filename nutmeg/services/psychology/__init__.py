@@ -1,7 +1,6 @@
 """Psychology & game-theory layer (v1 - JCZQ-first integration)."""
 
-from nutmeg.services.psychology.engine import PsychologyEngine
-from nutmeg.services.psychology.reconciliator import Reconciliator
+from nutmeg.services.psychology.engine import PsychologyEngine, Reconciliator
 from nutmeg.services.psychology.schemas import (
     DashboardRow,
     DataLeg,

@@ -3204,9 +3204,11 @@ def psychology_inspect_cmd(
     rules_only: bool = PSYCHOLOGY_RULES_ONLY_OPTION,
 ) -> None:
     """Dump SignalReadings for a single fixture from each enabled provider."""
-    from nutmeg.services.psychology.engine import PsychologyEngine
-    from nutmeg.services.psychology.signals.base import SignalContext
-    from nutmeg.services.psychology.signals.tournament_stage import TournamentStageSignal
+    from nutmeg.services.psychology.engine import (
+        PsychologyEngine,
+        SignalContext,
+        TournamentStageSignal,
+    )
 
     fixture = json.loads(fixture_file.read_text(encoding="utf-8"))
     fixture_id = str(fixture.get("id"))
@@ -3246,8 +3248,11 @@ def _build_inspiration_parser():
 
     from nutmeg.agents.llm_provider import build_synthesis_provider
     from nutmeg.config.settings import get_settings
-    from nutmeg.services.psychology.inspiration import InspirationParser
-    from nutmeg.services.psychology.llm import FakeLLMCompleter, PortkeyLLMCompleter
+    from nutmeg.services.psychology.io import (
+        FakeLLMCompleter,
+        InspirationParser,
+        PortkeyLLMCompleter,
+    )
 
     if os.getenv("NUTMEG_PSYCHOLOGY_PARSER_FAKE_MODE") == "1":
         return InspirationParser(llm=FakeLLMCompleter(responses=[]))
@@ -3271,7 +3276,7 @@ def inspiration_write_cmd(
     import os
     from datetime import datetime, timezone
 
-    from nutmeg.services.psychology.inspiration import InspirationStore
+    from nutmeg.services.psychology.io import InspirationStore
 
     base = Path(os.environ.get("NUTMEG_INSPIRATION_DIR", ".nutmeg-data/inspiration"))
     iso = _normalize_date(date)
@@ -3300,7 +3305,7 @@ def inspiration_write_cmd(
 def inspiration_show_cmd(date: str = typer.Argument(..., help="YYYYMMDD")) -> None:
     import os
 
-    from nutmeg.services.psychology.inspiration import InspirationStore
+    from nutmeg.services.psychology.io import InspirationStore
 
     base = Path(os.environ.get("NUTMEG_INSPIRATION_DIR", ".nutmeg-data/inspiration"))
     iso = _normalize_date(date)

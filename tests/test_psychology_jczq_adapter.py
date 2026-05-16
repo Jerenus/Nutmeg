@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nutmeg.services.psychology.jczq_adapter import (
+from nutmeg.services.psychology.engine import (
     apply_final_scheme_to_combination,
     combination_to_data_scheme,
 )

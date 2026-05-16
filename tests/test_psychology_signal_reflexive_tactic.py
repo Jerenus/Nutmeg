@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from nutmeg.services.psychology.llm import FakeLLMCompleter
-from nutmeg.services.psychology.signals.base import SignalContext
-from nutmeg.services.psychology.signals.reflexive_tactic import ReflexiveTacticSignal
+from nutmeg.services.psychology.engine import ReflexiveTacticSignal, SignalContext
+from nutmeg.services.psychology.io import FakeLLMCompleter
 
 
 def test_emits_reading_when_snapshot_present() -> None:

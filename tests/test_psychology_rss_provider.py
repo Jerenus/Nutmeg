@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from nutmeg.services.psychology.sources.news_cache import NewsCache
-from nutmeg.services.psychology.sources.rss_provider import RssProvider
+from nutmeg.services.psychology.io import NewsCache, RssProvider
 
 
 def test_fetches_each_feed_and_merges(tmp_path: Path) -> None:

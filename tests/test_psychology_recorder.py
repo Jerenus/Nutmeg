@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from nutmeg.services.psychology.calibration.recorder import Recorder
+from nutmeg.services.psychology.io import Recorder
 from nutmeg.services.psychology.schemas import (
     DashboardRow,
     DataLeg,

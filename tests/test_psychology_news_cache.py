@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from nutmeg.services.psychology.sources.news_cache import NewsCache
+from nutmeg.services.psychology.io import NewsCache
 
 
 def test_cache_miss_returns_none(tmp_path: Path) -> None:

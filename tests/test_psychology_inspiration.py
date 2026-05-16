@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nutmeg.services.psychology.inspiration import InspirationParser, InspirationStore
-from nutmeg.services.psychology.llm import FakeLLMCompleter
+from nutmeg.services.psychology.io import FakeLLMCompleter, InspirationParser, InspirationStore
 from nutmeg.services.psychology.schemas import InspirationTags
 
 
