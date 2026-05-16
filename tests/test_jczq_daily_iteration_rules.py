@@ -1,7 +1,7 @@
 """Regression for Rules A-F added to JCZQ daily generator.
 
 Rules under test:
-- A: poisson_solo ticket appears when at least one Poisson edge ≥ +15%
+- A: poisson_solo leg selection (Poisson edge ≥ +15%); ticket retired by R28
 - B: had legs ≤ 1.40 are banned from stable_base / main / poisson_solo
 - C: high-volatility league flag downgrades low-side ttg picks
 - D: hhad legs without an explicit handicap line are excluded
@@ -202,29 +202,11 @@ def test_rule_b_main_uses_higher_priced_had_when_floor_filter_kicks_in(
 # ---------------------------------------------------------------- Rule A ---
 
 
-def test_rule_a_poisson_solo_fires_when_strong_edge_present(tmp_path: Path) -> None:
-    # _strong_chalk has crs 0:0 @ 33.00 and ttg 1球 @ 9.75; with 1.24 home favorite,
-    # Poisson typically prices the underdog scorelines materially below market — at
-    # least one leg should clear +15% edge.
-    matches = [_strong_chalk("周一001")] + [_normal(f"周一00{i}") for i in range(2, 5)]
-    report = JczqDailyAdvisorService(provider=FakeProvider(matches)).build_report(
-        run_date="2026-05-05", output_dir=tmp_path
-    )
-    poisson_solo = next(
-        (plan for plan in report.plans if plan.kind == "poisson_solo"), None
-    )
-    edges = compute_poisson_edges(report.matches)
-    high = [row for row in edges if row.edge >= 0.15]
-    if not high:
-        # If the synthetic fixture didn't produce a high-edge leg, the plan must be empty.
-        assert poisson_solo is None or poisson_solo.legs == []
-        return
-    assert poisson_solo is not None and poisson_solo.legs
-    assert len(poisson_solo.legs) <= 2
-    # Rule B composition guard: no had ≤ HAD_BANKER_FLOOR legs allowed inside poisson_solo.
-    for leg in poisson_solo.legs:
-        if leg.pool == "had":
-            assert leg.odds > HAD_BANKER_FLOOR
+# NOTE: poisson_solo as a generator-emitted ticket was retired by R28 (5/16).
+# Its build-report-level behavior is covered by
+# test_r28_poisson_solo_retired_never_appears_in_report. The tests below still
+# exercise `_build_poisson_solo_plan` directly — that function is kept (behind
+# RULE_R28_RETIRE_POISSON_SOLO) so a future re-review can revive the ticket.
 
 
 def test_rule_a_v2_never_combines_same_match_legs_in_solo_ticket() -> None:
@@ -279,19 +261,24 @@ def test_rule_a_v2_never_combines_same_match_legs_in_solo_ticket() -> None:
         edge=POISSON_SOLO_EDGE_THRESHOLD + 0.02,  # +17%, also strong
     )
     plan = service._build_poisson_solo_plan(matches, poisson_rows=[crs_row, ttg_row])
-    # Both legs are eligible, but they're from the same match → only one may
-    # enter the ticket. The top edge (crs +30%) wins; ttg is dropped.
+    # Rule O: only one leg may enter the ticket (no same-match combos).
+    # R26 (5/15): crs is filtered out of poisson_solo entirely, so ttg wins
+    # even though crs has higher raw edge — and that's the right outcome:
+    # crs alpha is 1/30 historical (3.3%), ttg has higher reliability.
     assert len(plan.legs) == 1, (
         "Rule A v2 v3 must NEVER produce same-match different-pool combos "
         "(国家体彩混合过关规则)"
     )
-    assert plan.legs[0].pool == "crs"
-    assert plan.legs[0].pick == "0:0"
+    assert plan.legs[0].pool == "ttg", "R26 routes crs alpha out of poisson_solo"
+    assert plan.legs[0].pick == "1球"
 
 
 def test_rule_a_v2_cross_match_support_extends_to_two_legs() -> None:
     """When a cross-match +EV row (>= +5%) exists, Rule A v2 extends the
     primary-edge solo to a 2-leg cross-match combo.
+
+    R26 (5/15) drops crs from poisson_solo eligibility; both legs now come
+    from non-crs pools (ttg / had / hhad).
     """
     from nutmeg.services.jczq_daily import (
         JczqDailyAdvisorService as _Svc,
@@ -310,7 +297,7 @@ def test_rule_a_v2_cross_match_support_extends_to_two_legs() -> None:
             candidates=[
                 JczqDailyLeg(
                     match_no="周一001", league="日职", home_team="H1", away_team="A1",
-                    pool="crs", play="比分", pick="0:0", odds=11.0, logic="",
+                    pool="ttg", play="总进球", pick="2球", odds=3.80, logic="",
                 ),
             ],
         ),
@@ -328,8 +315,8 @@ def test_rule_a_v2_cross_match_support_extends_to_two_legs() -> None:
     ]
     primary = PoissonEdgeEntry(
         match_no="周一001", home="H1", away="A1", league="日职",
-        pool="crs", pick="0:0", market_odd=11.0, fair_odd=9.0,
-        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.15,  # +30% (R23 floor for crs 0:0)
+        pool="ttg", pick="2球", market_odd=3.80, fair_odd=2.90,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.15,  # +30%, primary alpha
     )
     cross_support = PoissonEdgeEntry(
         match_no="周一002", home="H2", away="A2", league="意甲",
@@ -1868,7 +1855,12 @@ def test_r22_low_vol_league_crs_low_allowed_in_poisson_solo() -> None:
     plan = service._build_poisson_solo_plan(
         matches, poisson_rows=[row], analytics=analytics
     )
-    assert len(plan.legs) == 1, "non-hi-vol crs 0:0 应保留进 poisson_solo"
+    # R26 (5/15) supersedes R22 for poisson_solo: crs pool is dropped from
+    # poisson_solo across the board (1/30 historical leg-hit). What used to
+    # be "non-hi-vol crs 0:0 still allowed" is now "no crs allowed in
+    # poisson_solo, period". R22 (hi-vol crs block) remains the controlling
+    # rule for inspiration/extreme paths where crs is still admissible.
+    assert len(plan.legs) == 0, "R26: crs pool fully blocked from poisson_solo"
 
 
 def test_r22_select_top_legs_drops_hi_vol_coinflip_crs_low() -> None:
@@ -2001,15 +1993,11 @@ def test_r23_allows_crs_zero_zero_above_25pct_edge_and_other_picks_at_15pct() ->
     plan = service._build_poisson_solo_plan(
         matches, poisson_rows=[row_zero_zero, row_zero_one]
     )
-    legs_keys = sorted((leg.match_no, leg.pick) for leg in plan.legs)
-    # R5: max 1 crs leg total; pick top by edge → 0:0 wins; 0:1 dropped.
-    # That's R5 not R23 — but the point of this test is +18% 0:1 isn't auto-rejected
-    # by R23 (i.e. 0:0 floor doesn't bleed into 0:1 floor).
-    assert ("周二001", "0:0") in legs_keys, (
-        "R23: crs 0:0 +26% (>= +25% floor) 应保留"
-    )
-    # Confirm only one crs leg per R5.
-    assert len(plan.legs) == 1
+    # R26 (5/15) supersedes R23 for poisson_solo: crs is no longer eligible
+    # regardless of edge or pick. R23's threshold still gates crs admission to
+    # other surfaces (inspiration/extreme paths via select_top_legs), but
+    # poisson_solo never sees crs again.
+    assert plan.legs == [], "R26 fully blocks crs from poisson_solo"
 
 
 # --------------------------------------------------- R24 (5/13 落库) ---
@@ -2883,3 +2871,262 @@ def test_f3_stacks_with_f2_and_r25_in_correct_order() -> None:
         f"({raw_edge:+.4f} + (-0.10)) × 0.625 × 0.9 = {expected:+.4f}; "
         f"实际 {biased_edge:+.4f}"
     )
+
+
+# --------------------------------------------------- R26 (5/15 落库) ---
+# 5/01-5/14 历史 crs leg-hit 1/30 = 3.3% (poisson_solo crs 1/9, inspiration 0/7,
+# extreme 3/29 leg-hit). 0/27 含 crs 的票整票命中。R23 (+25% 0:0 floor) 没救
+# 5/14 004 crs 0:0 (adjusted edge +36.1% λ=2.4 实际 1:1). R26 把整个 crs 池
+# 从 poisson_solo 移除 —— ttg/had/hhad alpha 才进单核灵感票。crs 仍可由
+# inspiration/extreme 通过 select_top_legs 选入。
+
+
+def test_r26_crs_blocked_from_poisson_solo_even_with_strong_edge() -> None:
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周四004", match_date="2026-05-14", match_time="22:00:00",
+            league="西甲", home_team="赫罗纳", away_team="皇家社会",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="crs", play="比分", pick="0:0",
+                    odds=15.0, logic="",
+                ),
+            ],
+        ),
+    ]
+    row = PoissonEdgeEntry(
+        match_no="周四004", home="赫罗纳", away="皇家社会", league="西甲",
+        pool="crs", pick="0:0", market_odd=15.0, fair_odd=11.0,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.21,  # +36% — 5/14 实际案例 adjusted
+        expected_goals=2.4,
+    )
+    plan = service._build_poisson_solo_plan(matches, poisson_rows=[row])
+    assert plan.legs == [], (
+        "R26: crs 0:0 +36% adjusted edge 仍然被拒进 poisson_solo "
+        "(5/14 004 实际 1:1 验证 crs alpha 结构性失真)"
+    )
+
+
+def test_r26_ttg_alpha_replaces_crs_in_same_match() -> None:
+    """Same-match ttg alpha edges out crs (R26 + Rule O combined)."""
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+        POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周四004", match_date="2026-05-14", match_time="22:00:00",
+            league="西甲", home_team="赫罗纳", away_team="皇家社会",
+            status="Selling", hot_direction="均衡(2.40)", role="均衡分歧场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="crs", play="比分", pick="0:0",
+                    odds=15.0, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四004", league="西甲", home_team="赫罗纳",
+                    away_team="皇家社会", pool="ttg", play="总进球", pick="1球",
+                    odds=4.45, logic="",
+                ),
+            ],
+        ),
+    ]
+    crs_row = PoissonEdgeEntry(
+        match_no="周四004", home="赫罗纳", away="皇家社会", league="西甲",
+        pool="crs", pick="0:0", market_odd=15.0, fair_odd=11.0,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.21,  # +36%, but R26 blocks
+        expected_goals=2.4,
+    )
+    ttg_row = PoissonEdgeEntry(
+        match_no="周四004", home="赫罗纳", away="皇家社会", league="西甲",
+        pool="ttg", pick="1球", market_odd=4.45, fair_odd=4.0,
+        edge=POISSON_SOLO_EDGE_THRESHOLD + 0.02,  # +17%
+        expected_goals=2.4,
+    )
+    plan = service._build_poisson_solo_plan(
+        matches, poisson_rows=[crs_row, ttg_row]
+    )
+    assert len(plan.legs) == 1
+    assert plan.legs[0].pool == "ttg"
+    assert plan.legs[0].pick == "1球"
+
+
+# --------------------------------------------------- R27 (5/15 落库) ---
+# Rule H 升级：5/01-5/14 hafu 全口径 0/18 leg-hit + 0/18 含-hafu-票整票命中。
+# 原来 hafu 锁在 extreme 当娱乐高赔仍允许，但 extreme 内 hafu 8 个样本 0 命中
+# (5/14 003 hafu 胜/胜 @13x 实际 2:0 经典翻车)。R27 让 hafu 在所有票（含 extreme）
+# 全面剥离；extreme 直接 drop 不替换（保留高赔但删 hafu 腿）。
+
+
+def test_r27_hafu_stripped_from_extreme_without_replacement() -> None:
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
+    )
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    match = JczqDailyMatch(
+        match_no="周四003", match_date="2026-05-14", match_time="22:00:00",
+        league="沙职", home_team="胡巴卡德", away_team="拉斯决心",
+        status="Selling", hot_direction="主胜低赔(1.12)", role="强胆场",
+        confidence_note="",
+        candidates=[
+            JczqDailyLeg(
+                match_no="周四003", league="沙职", home_team="胡巴卡德",
+                away_team="拉斯决心", pool="hafu", play="半全场", pick="平/平",
+                odds=13.0, logic="",
+            ),
+            JczqDailyLeg(
+                match_no="周四003", league="沙职", home_team="胡巴卡德",
+                away_team="拉斯决心", pool="ttg", play="总进球", pick="2球",
+                odds=4.50, logic="",
+            ),
+        ],
+    )
+    crs_leg = JczqDailyLeg(
+        match_no="周四005", league="西甲", home_team="皇马",
+        away_team="奥维耶多", pool="crs", play="比分", pick="2:0",
+        odds=7.25, logic="",
+    )
+    hafu_leg = JczqDailyLeg(
+        match_no="周四003", league="沙职", home_team="胡巴卡德",
+        away_team="拉斯决心", pool="hafu", play="半全场", pick="平/平",
+        odds=13.0, logic="",
+    )
+    extreme_plan = service._make_plan(
+        "极限小注票",
+        "extreme",
+        "高赔率小注",
+        [crs_leg, hafu_leg],
+        "",
+    )
+    cleaned = service._apply_rule_h_hafu_block([extreme_plan], [match])
+    assert len(cleaned) == 1
+    cleaned_plan = cleaned[0]
+    pools = [leg.pool for leg in cleaned_plan.legs]
+    assert "hafu" not in pools, "R27: hafu 必须从 extreme 也剥离"
+    assert "crs" in pools, "R27: 非 hafu 腿应保留"
+    assert len(cleaned_plan.legs) == 1, (
+        "R27: extreme 不替换 hafu 腿；ticket 缩短"
+    )
+    assert "R27" in cleaned_plan.risk_note or "0/18" in cleaned_plan.risk_note
+
+
+def test_r27_hafu_not_introduced_into_extreme_at_search_stage() -> None:
+    """Even when `extreme=True`, `_search_plan` should not pick hafu legs
+    because allow_hafu is hard-coded to False under R27."""
+    from nutmeg.services.jczq_daily import JczqDailyAdvisorService as _Svc
+
+    service = _Svc.__new__(_Svc)
+    service.__init__()  # type: ignore[misc]
+    matches = [
+        JczqDailyMatch(
+            match_no="周四003", match_date="2026-05-14", match_time="22:00:00",
+            league="沙职", home_team="胡巴卡德", away_team="拉斯决心",
+            status="Selling", hot_direction="主胜低赔(1.12)", role="强胆场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周四003", league="沙职", home_team="胡巴卡德",
+                    away_team="拉斯决心", pool="hafu", play="半全场",
+                    pick="平/平", odds=13.0, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四003", league="沙职", home_team="胡巴卡德",
+                    away_team="拉斯决心", pool="crs", play="比分", pick="2:0",
+                    odds=7.25, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四003", league="沙职", home_team="胡巴卡德",
+                    away_team="拉斯决心", pool="had", play="胜平负", pick="胜",
+                    odds=1.12, logic="",
+                ),
+            ],
+        ),
+        JczqDailyMatch(
+            match_no="周四005", match_date="2026-05-14", match_time="22:00:00",
+            league="西甲", home_team="皇马", away_team="奥维耶多",
+            status="Selling", hot_direction="主胜低赔(1.17)", role="强胆场",
+            confidence_note="",
+            candidates=[
+                JczqDailyLeg(
+                    match_no="周四005", league="西甲", home_team="皇马",
+                    away_team="奥维耶多", pool="crs", play="比分", pick="2:0",
+                    odds=7.25, logic="",
+                ),
+                JczqDailyLeg(
+                    match_no="周四005", league="西甲", home_team="皇马",
+                    away_team="奥维耶多", pool="had", play="胜平负", pick="胜",
+                    odds=1.17, logic="",
+                ),
+            ],
+        ),
+    ]
+    extreme_plan = service._search_plan(
+        matches,
+        analytics={},
+        name="极限小注票",
+        kind="extreme",
+        description="",
+        target_min=300,
+        target_max=5000,
+        no_score=False,
+        extreme=True,
+    )
+    pools = [leg.pool for leg in extreme_plan.legs]
+    assert "hafu" not in pools, "R27: extreme builder 不应再选 hafu"
+
+
+# ---------------------------------------------------------------- R28 ---
+
+
+def test_r28_poisson_solo_retired_never_appears_in_report() -> None:
+    """R28 (5/16): the poisson_solo ticket is retired.
+
+    Even when a strong Poisson edge (≥ +15% — the historical trigger
+    condition) is present, the generator must not emit a poisson_solo plan.
+
+    Backtest 5/01-5/15: poisson_solo whole-ticket hit 1/11 days, leg-hit
+    2/16 (12.5%), realized -47.7% over 11 days. "Single highest-edge leg,
+    solo" structurally selects the model's most over-concentrated low-goal
+    bin (ttg 1球 / crs 0:0); R17/R18/R22/R23/R24/R26 patches did not fix it.
+    """
+    matches = [_strong_chalk("周一001")] + [_normal(f"周一00{i}") for i in range(2, 5)]
+    report = JczqDailyAdvisorService(provider=FakeProvider(matches)).build_report(
+        run_date="2026-05-05"
+    )
+    # Sanity: the fixture still carries a ≥ +15% Poisson edge — the exact
+    # condition that used to fire poisson_solo — so the absence below is
+    # R28 retiring the ticket, not a missing signal.
+    edges = compute_poisson_edges(report.matches)
+    assert any(row.edge >= 0.15 for row in edges), (
+        "fixture must still carry a poisson_solo-grade edge for this test to mean anything"
+    )
+    assert all(plan.kind != "poisson_solo" for plan in report.plans), (
+        "R28: poisson_solo ticket is retired and must not appear in generator output"
+    )
+
+
+def test_r28_retirement_flag_is_enabled() -> None:
+    """R28 flag guards the retirement so a future ≥30-day re-review can
+    revive poisson_solo by flipping a single constant (see R26/R27 pattern)."""
+    from nutmeg.services.jczq_daily import RULE_R28_RETIRE_POISSON_SOLO
+
+    assert RULE_R28_RETIRE_POISSON_SOLO is True

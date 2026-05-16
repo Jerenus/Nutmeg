@@ -74,7 +74,7 @@
 模型偏差日"标记，所有该方向 alpha edge -10%（动态）。
 
 **实现**：
-- `scripts/jczq_daily_brief.py` 新增 Section 4 后的"alpha 方向多样性检查"：
+- `nutmeg/services/jczq_brief.py`（CLI `nutmeg jczq-daily-brief`）新增 Section 4 后的"alpha 方向多样性检查"：
   ```python
   def check_alpha_direction_concentration(rows: list[PoissonEdgeEntry]) -> dict:
       """{direction: count}; direction ∈ {low_goals, high_goals, draw, ...}"""

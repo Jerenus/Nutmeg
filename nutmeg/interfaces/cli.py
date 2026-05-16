@@ -2028,6 +2028,151 @@ def jczq_debate_finalize(
     console.print(f"final_plan={result['final_plan_path']}")
 
 
+@app.command("jczq-daily-brief")
+def jczq_daily_brief(
+    run_date: str | None = typer.Option(None, "--date", help="目标日期 YYYY-MM-DD，默认今天 live"),
+    replay_date: str | None = typer.Option(None, "--replay", help="从已存 context.json 回放"),
+    output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    write: Path | None = typer.Option(None, "--write", help="写入文件（默认 stdout）"),
+) -> None:
+    from nutmeg.services.jczq_brief import build_brief, write_or_print_brief
+
+    try:
+        markdown = build_brief(
+            run_date=run_date,
+            replay_date=replay_date,
+            output_dir=output_dir,
+            service_builder=build_jczq_daily_advisor_service,
+        )
+    except FileNotFoundError as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+
+    write_or_print_brief(markdown, write)
+
+
+@app.command("jczq-second-leg")
+def jczq_second_leg(
+    run_date: str = typer.Option(..., "--date", help="目标日期 YYYY-MM-DD"),
+    output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    solo: str | None = typer.Option(
+        None,
+        "--solo",
+        help="单核腿 '<match_no> <pool> <pick>'，例如 '周三003 crs 0:0'",
+    ),
+    auto: bool = typer.Option(False, "--auto", help="从 final-plan.json 自动读取单核腿"),
+    top: int = typer.Option(8, "--top", help="输出前 N 个候选"),
+) -> None:
+    from nutmeg.services.jczq_second_leg import parse_solo, suggest_second_legs
+
+    if not auto and not solo:
+        console.print("必须提供 --solo 或 --auto")
+        raise typer.Exit(code=2)
+
+    try:
+        solo_tuple = parse_solo(solo) if (solo and not auto) else None
+        rendered = suggest_second_legs(
+            run_date=run_date,
+            output_dir=output_dir,
+            solo=solo_tuple,
+            auto=auto,
+            top=top,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+
+    typer.echo(rendered)
+
+
+@app.command("jczq-final-plan-pdf")
+def jczq_final_plan_pdf(
+    run_date: str = typer.Option("today", "--date", help="目标日期 YYYY-MM-DD 或 today"),
+    output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    dispatch: bool = typer.Option(False, "--dispatch", help="渲染后通过 Telegram bot 推送"),
+    telegram_token: str | None = typer.Option(
+        None, "--telegram-token", help="覆盖 NUTMEG_TELEGRAM_BOT_TOKEN"
+    ),
+    telegram_chat_ids: str | None = typer.Option(
+        None,
+        "--telegram-chat-ids",
+        help="覆盖 NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS，逗号分隔",
+    ),
+) -> None:
+    from datetime import date as _date_cls
+
+    from nutmeg.services.jczq_final_plan_pdf import render_and_dispatch
+
+    resolved_date = _date_cls.today().isoformat() if run_date == "today" else run_date
+    chat_ids = (
+        [int(x.strip()) for x in telegram_chat_ids.split(",") if x.strip()]
+        if telegram_chat_ids
+        else None
+    )
+
+    try:
+        result = render_and_dispatch(
+            run_date=resolved_date,
+            output_dir=output_dir,
+            dispatch=dispatch,
+            telegram_token=telegram_token,
+            telegram_chat_ids=chat_ids,
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+
+    console.print(f"Wrote PDF: {result.pdf_path} ({result.pdf_bytes} bytes)")
+    if result.skipped_dispatch_reason:
+        console.print(f"(skipped dispatch: {result.skipped_dispatch_reason})")
+        return
+    for chat_id in result.dispatched_chat_ids:
+        console.print(f"Dispatched PDF to chat_id={chat_id}")
+
+
+@app.command("jczq-replay")
+def jczq_replay(
+    run_date: str = typer.Option("2026-05-03", "--date", help="回放的目标日期"),
+    input_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
+    format: str = typer.Option("text", "--format", help="text or json"),
+) -> None:
+    from nutmeg.services.jczq_replay import replay_with_new_generator
+
+    try:
+        result = replay_with_new_generator(run_date=run_date, input_dir=input_dir)
+    except FileNotFoundError as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+
+    if format == "json":
+        typer.echo(
+            json.dumps(
+                {
+                    "run_date": result.run_date,
+                    "match_count": result.match_count,
+                    "legs": [
+                        {
+                            "plan": r.plan,
+                            "match_no": r.match_no,
+                            "pool": r.pool,
+                            "pick": r.pick,
+                            "odds": r.odds,
+                            "actual": r.actual,
+                            "hit": r.hit,
+                        }
+                        for r in result.leg_rows
+                    ],
+                },
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+        )
+        return
+
+    typer.echo(result.rendered_text)
+
+
 @app.command("content-pack")
 def content_pack(
     report_file: Path = CONTENT_REPORT_FILE_OPTION,

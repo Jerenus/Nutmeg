@@ -1,17 +1,13 @@
-"""Replay an existing daily context.json through the upgraded generator.
+"""Replay an existing daily ``context.json`` through the upgraded JCZQ generator.
 
-Reconstructs a Sporttery-shaped payload from the legs already parsed into
-`context.json`, runs the new analytics + cluster + decorrelation pipeline
-against it, and prints the resulting plans for inspection. Then loads the
-matching review.json and reports per-leg hit/miss + the would-have-been
-return for any newly-emitted plan.
+CLI 包装见 ``nutmeg.interfaces.cli.jczq_replay``。
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -99,8 +95,28 @@ class ReplayProvider:
         return self._payload
 
 
-def grade_legs(plans, results: dict[str, dict[str, str]]):
-    rows = []
+@dataclass(slots=True)
+class ReplayLegResult:
+    plan: str
+    match_no: str
+    pool: str
+    pick: str
+    odds: float
+    actual: str | None
+    hit: bool
+
+
+@dataclass(slots=True)
+class ReplayResult:
+    run_date: str
+    match_count: int
+    leg_rows: list[ReplayLegResult] = field(default_factory=list)
+    rendered_text: str = ""
+
+
+def _grade_lines(plans, results: dict[str, dict[str, str]]) -> tuple[list[ReplayLegResult], list[str]]:
+    rows: list[ReplayLegResult] = []
+    lines: list[str] = []
     for plan in plans:
         if not plan.legs:
             continue
@@ -113,58 +129,61 @@ def grade_legs(plans, results: dict[str, dict[str, str]]):
                 hit_count += 1
             odds_product *= leg.odds
             rows.append(
-                {
-                    "plan": plan.kind,
-                    "match_no": leg.match_no,
-                    "pool": leg.pool,
-                    "pick": leg.pick,
-                    "odds": leg.odds,
-                    "actual": actual,
-                    "hit": hit,
-                }
+                ReplayLegResult(
+                    plan=plan.kind,
+                    match_no=leg.match_no,
+                    pool=leg.pool,
+                    pick=leg.pick,
+                    odds=leg.odds,
+                    actual=actual,
+                    hit=hit,
+                )
             )
-        print(
+        lines.append(
             f"  {plan.kind:<14} {plan.name:<10} {hit_count}/{len(plan.legs)} 命中"
-            f"  总赔率 {odds_product:.2f}  整票{'命中' if hit_count == len(plan.legs) else '未中'}"
+            f"  总赔率 {odds_product:.2f}  整票"
+            f"{'命中' if hit_count == len(plan.legs) else '未中'}"
         )
-    return rows
+    return rows, lines
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--date", default="2026-05-03")
-    parser.add_argument(
-        "--input-dir", default="/Users/jz71/Projects/Nutmeg/.nutmeg-data/jczq"
-    )
-    args = parser.parse_args()
-
-    daily_dir = Path(args.input_dir) / "daily" / args.date
+def replay_with_new_generator(
+    *,
+    run_date: str,
+    input_dir: Path,
+) -> ReplayResult:
+    daily_dir = Path(input_dir) / "daily" / run_date
     context = json.loads((daily_dir / "context.json").read_text(encoding="utf-8"))
     review_payload = json.loads((daily_dir / "review.json").read_text(encoding="utf-8"))
     results = review_payload.get("results") or {}
 
     payload = reconstruct_payload(context)
-    print(
-        f"\n=== Replay {args.date}: {len(payload['matchInfoList'][0]['subMatchList'])} matches ==="
-    )
+    sub_count = len(payload["matchInfoList"][0]["subMatchList"])
 
     service = JczqDailyAdvisorService(provider=ReplayProvider(payload))
-    report = service.build_report(run_date=args.date)
-    print("\n--- Plans (new generator) ---")
-    grade_legs(report.plans, results)
+    report = service.build_report(run_date=run_date)
 
-    print("\n--- New plans only ---")
+    out: list[str] = []
+    out.append(f"\n=== Replay {run_date}: {sub_count} matches ===")
+    out.append("\n--- Plans (new generator) ---")
+    rows, plan_lines = _grade_lines(report.plans, results)
+    out.extend(plan_lines)
+
+    out.append("\n--- New plans only ---")
     for plan in report.plans:
         if plan.kind not in {"draw_cluster", "upset_cluster"} or not plan.legs:
             continue
-        print(f"\n{plan.kind} ({plan.name}):")
+        out.append(f"\n{plan.kind} ({plan.name}):")
         for leg in plan.legs:
             actual = (results.get(leg.match_no) or {}).get(leg.pool)
-            hit = "✅" if actual == leg.pick else "❌"
-            print(
-                f"  {leg.match_no} {leg.pool} {leg.pick}@{leg.odds} → {actual} {hit}"
+            hit_mark = "✅" if actual == leg.pick else "❌"
+            out.append(
+                f"  {leg.match_no} {leg.pool} {leg.pick}@{leg.odds} → {actual} {hit_mark}"
             )
 
-
-if __name__ == "__main__":
-    main()
+    return ReplayResult(
+        run_date=run_date,
+        match_count=sub_count,
+        leg_rows=rows,
+        rendered_text="\n".join(out),
+    )

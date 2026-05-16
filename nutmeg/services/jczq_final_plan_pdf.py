@@ -1,48 +1,41 @@
-"""One-shot: render today's debate final-plan.json to PDF and dispatch via Nutmeg Telegram bot.
+"""Render the daily debate ``final-plan.json`` into a PDF + (optionally) push via Telegram.
 
-Usage:
-    uv run python scripts/jczq_final_plan_pdf_dispatch.py --date 2026-05-11
+CLI 包装见 ``nutmeg.interfaces.cli.jczq_final_plan_pdf``。
 """
+
 from __future__ import annotations
 
-import argparse
 import json
 import os
-from datetime import date as date_cls
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from nutmeg.interfaces.bot.telegram import TelegramBotClient
-
-
-def _xml(text: str) -> str:
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-
 
 _CJK_FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Songti.ttc",
     "/System/Library/Fonts/STHeiti Light.ttc",
     "/System/Library/Fonts/PingFang.ttc",
 ]
+
+
+def _xml(text: Any) -> str:
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
 
 def _register_cjk_font() -> None:
@@ -56,7 +49,9 @@ def _register_cjk_font() -> None:
         except Exception as exc:  # noqa: BLE001
             last_err = exc
             continue
-    raise RuntimeError(f"No CJK font found from candidates: {_CJK_FONT_CANDIDATES}; last error: {last_err}")
+    raise RuntimeError(
+        f"No CJK font found from candidates: {_CJK_FONT_CANDIDATES}; last error: {last_err}"
+    )
 
 
 def render_pdf(plan: dict, pdf_path: Path) -> None:
@@ -86,18 +81,8 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
         fontSize=9,
         leading=13,
     )
-    small = ParagraphStyle(
-        "Small",
-        parent=body,
-        fontSize=8,
-        leading=11,
-    )
-    leg = ParagraphStyle(
-        "Leg",
-        parent=small,
-        fontSize=8.5,
-        leading=12,
-    )
+    small = ParagraphStyle("Small", parent=body, fontSize=8, leading=11)
+    leg = ParagraphStyle("Leg", parent=small, fontSize=8.5, leading=12)
 
     story: list = []
     story.append(Paragraph(_xml(f"JCZQ Final Plan — {plan['run_date']}"), title))
@@ -184,7 +169,6 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
     story.append(summary_table)
     story.append(Spacer(1, 10))
 
-    # Detailed tickets
     story.append(Paragraph("5 张票腿位明细", h2))
     for t in plan["tickets"]:
         favorite_mark = " ⭐" if t.get("favorite") else ""
@@ -217,7 +201,6 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
             story.append(Paragraph(_xml("最看好理由：" + t["favorite_reason"]), small))
         story.append(Spacer(1, 6))
 
-    # Excluded
     if plan.get("excluded_matches"):
         story.append(Paragraph("整场不入票的场次", h2))
         for ex in plan["excluded_matches"]:
@@ -226,7 +209,6 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
             )
         story.append(Spacer(1, 6))
 
-    # Concentration
     audit = plan.get("concentration_audit", {})
     shared = audit.get("shared_matches", [])
     if shared:
@@ -235,7 +217,8 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
             story.append(
                 Paragraph(
                     _xml(
-                        f"• {s['match_no']}：{len(s['tickets'])} 票 ({'/'.join(s['tickets'])})、暴露 {s['stake_at_risk']} 元 — "
+                        f"• {s['match_no']}：{len(s['tickets'])} 票 "
+                        f"({'/'.join(s['tickets'])})、暴露 {s['stake_at_risk']} 元 — "
                         f"{s.get('narrative_diversification', '')}"
                     ),
                     small,
@@ -243,7 +226,6 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
             )
         story.append(Spacer(1, 4))
 
-    # Rule check status
     rule_lines = [
         f"Rule O 同票同场不同 pool 违规：{audit.get('rule_o_violations', '?')}",
         f"Rule B had ≤ 1.50 违规：{audit.get('rule_b_floor_violations', '?')}",
@@ -266,51 +248,88 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
     doc.build(story)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--date", default="today")
-    parser.add_argument("--dispatch", action="store_true", help="actually send via telegram")
-    args = parser.parse_args()
+@dataclass(slots=True)
+class FinalPlanPdfResult:
+    pdf_path: Path
+    pdf_bytes: int
+    dispatched_chat_ids: list[int]
+    skipped_dispatch_reason: str | None = None
 
-    run_date = (
-        date_cls.today().isoformat() if args.date == "today" else args.date
-    )
-    base = Path(".nutmeg-data/jczq/daily") / run_date
+
+def _build_caption(plan: dict) -> str:
+    favorite = next((t for t in plan["tickets"] if t.get("favorite")), None)
+    cap_lines = [
+        f"JCZQ Final Plan — {plan['run_date']}",
+        f"5 张票 / 预算 {plan['budget_total']} 元 / 已知部分 EV "
+        f"{plan['portfolio_metrics']['total_expected_value_known']:+.2f} 元",
+    ]
+    if favorite:
+        cap_lines.append(
+            f"最看好：{favorite['id']} {favorite['name']} {favorite['stake']} 元 / "
+            f"{favorite['total_odds']}x"
+        )
+    return "\n".join(cap_lines)
+
+
+def render_and_dispatch(
+    *,
+    run_date: str,
+    output_dir: Path = Path(".nutmeg-data/jczq"),
+    dispatch: bool = False,
+    telegram_token: str | None = None,
+    telegram_chat_ids: list[int] | None = None,
+) -> FinalPlanPdfResult:
+    """Render the PDF; optionally push to Telegram chats.
+
+    ``telegram_token`` / ``telegram_chat_ids`` default to env vars
+    ``NUTMEG_TELEGRAM_BOT_TOKEN`` / ``NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS`` (comma
+    separated) so existing automations keep working.
+    """
+
+    base = Path(output_dir) / "daily" / run_date
     plan_json = base / "debate" / "final-plan.json"
     pdf_out = base / f"final-value-plan-{run_date.replace('-', '')}.pdf"
 
     plan = json.loads(plan_json.read_text())
     render_pdf(plan, pdf_out)
-    print(f"Wrote PDF: {pdf_out} ({pdf_out.stat().st_size} bytes)")
+    pdf_bytes = pdf_out.stat().st_size
 
-    if not args.dispatch:
-        print("(--dispatch not set; not sending to telegram)")
-        return
+    if not dispatch:
+        return FinalPlanPdfResult(
+            pdf_path=pdf_out,
+            pdf_bytes=pdf_bytes,
+            dispatched_chat_ids=[],
+            skipped_dispatch_reason="dispatch flag not set",
+        )
 
-    token = os.environ.get("NUTMEG_TELEGRAM_BOT_TOKEN")
-    chat_ids = os.environ.get("NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS")
-    if not token or not chat_ids:
-        raise SystemExit("Missing NUTMEG_TELEGRAM_BOT_TOKEN / NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS")
+    token = telegram_token or os.environ.get("NUTMEG_TELEGRAM_BOT_TOKEN")
+    chat_ids_raw = (
+        telegram_chat_ids
+        if telegram_chat_ids is not None
+        else os.environ.get("NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS")
+    )
+    if not token or not chat_ids_raw:
+        raise RuntimeError(
+            "Missing telegram credentials: provide --telegram-token/--telegram-chat-ids or "
+            "set NUTMEG_TELEGRAM_BOT_TOKEN / NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS"
+        )
+
+    if isinstance(chat_ids_raw, str):
+        parsed_ids = [int(p.strip()) for p in chat_ids_raw.split(",") if p.strip()]
+    else:
+        parsed_ids = list(chat_ids_raw)
 
     client = TelegramBotClient(token=token)
-    favorite = next((t for t in plan["tickets"] if t.get("favorite")), None)
-    cap_lines = [
-        f"JCZQ Final Plan — {plan['run_date']}",
-        f"5 张票 / 预算 {plan['budget_total']} 元 / 已知部分 EV {plan['portfolio_metrics']['total_expected_value_known']:+.2f} 元",
-    ]
-    if favorite:
-        cap_lines.append(
-            f"最看好：{favorite['id']} {favorite['name']} {favorite['stake']} 元 / {favorite['total_odds']}x"
-        )
-    caption = "\n".join(cap_lines)
-
-    for chat_id_str in chat_ids.split(","):
-        chat_id = int(chat_id_str.strip())
+    caption = _build_caption(plan)
+    sent: list[int] = []
+    for chat_id in parsed_ids:
         if not chat_id:
             continue
         client.send_document(chat_id=chat_id, document_path=pdf_out, caption=caption)
-        print(f"Dispatched PDF to chat_id={chat_id}")
+        sent.append(chat_id)
 
-
-if __name__ == "__main__":
-    main()
+    return FinalPlanPdfResult(
+        pdf_path=pdf_out,
+        pdf_bytes=pdf_bytes,
+        dispatched_chat_ids=sent,
+    )

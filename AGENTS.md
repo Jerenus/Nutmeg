@@ -29,7 +29,7 @@ the brief reveals a fatal data gap.
 #### Step 1: Generate the daily brief
 
 ```bash
-uv run python scripts/jczq_daily_brief.py \
+uv run nutmeg jczq-daily-brief \
   --write .nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/brief.md
 ```
 
@@ -92,7 +92,7 @@ On 2026-05-06 Claude嘴算 ttg 4球 edge ≈ -40%; the actual edge was -16.4%
 
 For串关 / 2串1 / second-leg suggestions, **always** run:
 ```bash
-uv run python scripts/jczq_suggest_second_leg.py --date today --auto --top 8
+uv run nutmeg jczq-second-leg --date today --auto --top 8
 ```
 This auto-loads the current `final-plan.json` and flags reverse-cover legs
 (e.g. `001 主胜` when main pushes `001 平`) deterministically.
@@ -142,34 +142,39 @@ This writes `disagreements.md`. Do **not** overwrite `human-notes.md`,
 `final-plan.md`, or `final-plan.json` unless the user explicitly asks to
 finalize after human review.
 
-#### Step 3: Output 5-6 tickets in this exact format
+#### Step 3: Output 4-5 tickets in this exact format
 
 Tickets, ordered safest → wildest. All numeric odds come from the brief
 or the generator output — never invent odds.
 
 - **A 稳健底仓 (~2-4x)** — 2-3 had/hhad legs priced **strictly above 1.40**
-  (Rule B). No 1.24/1.34 chalk dumps as bankers anymore.
+  (Rule B). No 1.24/1.34 chalk dumps as bankers anymore. hhad 让球 covers
+  have anchored every winning day 5/13-5/15 — prefer them over straight had.
 - **B 主方案 (~30-150x)** — mix of mid-priced had legs (>1.40), 让球 covers,
-  and ttg medium-line picks. Avoid hafu (decision_policy rule). Skip any
-  match flagged ⚠coinflip from had pool (Rule E).
-- **C Poisson 单核灵感票 (~50-300x)** — Rule A ticket: 1-2 legs straight
-  from brief Section 4 with edge ≥ +15%. Do **not** dilute with chalk legs.
+  and ttg medium-line picks. Avoid hafu (R27). Skip any match flagged
+  ⚠coinflip from had pool (Rule E).
 - **D 反大众盘口 (~80-200x)** — total goals + 让平 across draw_friendly /
   contrarian matches.
 - **E 极限娱乐 (~1000-100000x)** — score-line lottery, tiny stake.
 
+> **C Poisson 单核灵感票 retired (R28, 5/16).** The standalone "highest model
+> edge, solo" ticket went 1/11 days / leg-hit 12.5% / realized -47.7% over
+> 5/01-5/15. Do **not** reconstruct it. Model alpha (brief Section 4 edge
+> ≥ +15%) is analysis evidence only — route it into B/D legs, never a票.
+
 Stake allocation against a 100¥ entertainment budget:
-**25 / 30 / 20 / 15 / 10** (A/B/C/D/E). The Poisson 单核 line gets a real
-allocation now because it carries the strongest signal-to-noise ratio.
+**35 / 35 / 20 / 10** (A/B/D/E). A carries the biggest anchor allocation —
+its hhad 让球 base has hit 3 days running.
 
 Always mark which ticket the agent itself would back hardest, and why.
 
 ### Hard rules (Rules A-J encoded in the generator since 2026-05-05/06)
 
-1. **Rule A — Poisson +EV ≥ +15% becomes its own ticket.** When brief
-   Section 4 has any leg edge ≥ +15%, the generator auto-emits a
-   `poisson_solo` plan (1-2 legs, no chalk dilution). Treat this as the
-   "model has high conviction" signal — never bury it inside a 4-leg combo.
+1. **Rule A — Poisson +EV ≥ +15% (poisson_solo ticket RETIRED by R28).**
+   Brief Section 4 still lists every leg with edge ≥ +15% as analysis
+   evidence. The generator no longer emits a standalone `poisson_solo`
+   ticket — R28 (5/16) retired it after 1/11-day / 12.5%-leg / -47.7%
+   realized performance. Route model alpha into B/D legs instead.
 2. **Rule B — had ≤ 1.40 banned from stable_base / main / poisson_solo.**
    Strong-favorite chalk has empirically been a chalk-dump trap; require
    `odds > 1.40` for any banker-style leg.
@@ -280,6 +285,34 @@ Always mark which ticket the agent itself would back hardest, and why.
     crs 9-way fine-split exposure in favor of ttg's coarser-but-more-stable
     0/1/2/3+ buckets. Compatible with Rule O (one leg per match per ticket);
     F4 is the policy for *which* alpha row surfaces.
+25. **R26 — crs pool blocked from poisson_solo (5/15).** 5/01-5/14 aggregate:
+    crs leg-hit 1/30 (3.3%); 0:0 1/17, 1:0 0/6, 0:1 0/2. Even after R23 (+25%
+    0:0 floor) the 5/14 case (004 crs 0:0 adjusted edge +36.1% λ=2.4) passed
+    and missed (实际 1:1). Poisson 在 score-grid 单点上 systematically miscalibrated.
+    poisson_solo 仅接受 ttg/had/hhad alpha；crs 仍可由 inspiration/extreme 通过
+    `select_top_legs` 选用，其中 R22 (hi-vol)、R23 (+25% 0:0 floor) 仍生效。
+    Implementation: `_build_poisson_solo_plan` eligibility filter excludes
+    `pool == "crs"` when `RULE_R26_DROP_CRS_FROM_POISSON_SOLO = True`.
+26. **R27 — hafu pool fully blocked (5/15).** Rule H 升级版。5/01-5/14: hafu
+    legs 0/18 across all plan kinds (incl. 0/8 in extreme); every ticket
+    containing any hafu leg failed integer-hit (0/18). Original Rule H
+    quarantined hafu to extreme as "entertainment lottery still allowed" —
+    data shows the carve-out is dead weight. `_apply_rule_h_hafu_block`
+    now strips hafu unconditionally; non-extreme replaces with ttg/hhad,
+    extreme drops the leg without replacement (ticket odds shrink but no
+    bad legs). `_search_plan` hard-codes `allow_hafu = False` so the extreme
+    path no longer emits hafu at all. 5/14 replay validation: extreme 03 crs
+    2:0 × 05 crs 2:0 整票命中 52.56x (vs 老版含 003 hafu 平/平 0/1).
+27. **R28 — poisson_solo ticket retired (5/16).** 5/01-5/15 aggregate:
+    whole-ticket hit 1/11 days, leg-hit 2/16 (12.5%), realized -47.7% over
+    the 11-day window. The ticket bets the single highest-Poisson-edge leg —
+    but "highest model edge" is structurally the most over-concentrated bin
+    on the score grid (always ttg 1球 or crs 0:0): adverse selection against
+    the model's own worst-calibrated output. R17/R18/R22/R23/R24/R26 patched
+    symptoms; the structure stayed -EV. `_build_poisson_solo_plan` is still
+    invoked (keeps cooling-off + edge index warm, retains unit tests) but the
+    plan is dropped from output when `RULE_R28_RETIRE_POISSON_SOLO = True`.
+    Parallels R27 (hafu retired). A ≥30-day re-review may revive it.
 12. **Fail loud if data gaps exist.** If brief Section 1 has 0 matches,
    `_resolve_drift_provider` errored, or all matches show role "未知",
    report the failure and stop instead of guessing.
@@ -331,9 +364,11 @@ review history accumulates, the smarter the picks.
   baseline / poisson / review_explainer)
 - Generator service: `nutmeg/services/jczq_daily.py`
 - Strategy memory: `nutmeg/services/jczq_strategy_memory.py` (v2 schema)
-- Brief script: `scripts/jczq_daily_brief.py`
-- Replay tool: `scripts/replay_jczq_with_new_generator.py`
-- Test coverage: 672 tests across `tests/test_jczq_*.py` (Rules A-J + R1-R25 + F1-F4
+- Brief command: `nutmeg jczq-daily-brief` (module `nutmeg/services/jczq_brief.py`)
+- Replay command: `nutmeg jczq-replay` (module `nutmeg/services/jczq_replay.py`)
+- Second-leg helper: `nutmeg jczq-second-leg` (module `nutmeg/services/jczq_second_leg.py`)
+- Final-plan PDF dispatcher: `nutmeg jczq-final-plan-pdf` (module `nutmeg/services/jczq_final_plan_pdf.py`)
+- Test coverage: 676 tests across `tests/test_jczq_*.py` (Rules A-J + R1-R27 + F1-F4
   regression in `tests/test_jczq_daily_iteration_rules.py` + `tests/test_jczq_poisson.py`)
 - Rule constants live at the top of `nutmeg/services/jczq_daily.py`
   (`HAD_BANKER_FLOOR`, `STABLE_BASE_HAD_MIN_POISSON_EDGE` (R20),

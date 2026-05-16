@@ -1,33 +1,20 @@
-"""One-shot 每日 brief：把今天我会手动跑的所有分析步骤打包成一个命令。
+"""每日 JCZQ brief 生成（人审 + LLM 决策上下文）。
 
-跑一次输出包含：
-  1. 全天可售场次 + 角色 / 热门方向 / hhad 让球数 / 三方匀盘 / 高波动联赛
-  2. compute_analytics() 的 vig / implied / EV gap 全表
-  3. Poisson 拟合后的 +EV 腿（按 edge 排序）
-  4. 角色桶分布（强胆 / 舒服盘 / draw_friendly / coinflip 计数）
-  5. JczqDailyAdvisorService 自动生成的全部票（含 Rule A poisson_solo）
-  6. 跟 Poisson edge 对照后，每张自动票里被模型强烈反对的腿
-
-输出是结构化 Markdown，可以直接贴给 Claude 让它做投资建议，也可以人肉读。
-
-用法:
-    uv run python scripts/jczq_daily_brief.py                        # 今天 live
-    uv run python scripts/jczq_daily_brief.py --date 2026-05-04      # 指定日期 live
-    uv run python scripts/jczq_daily_brief.py --replay 2026-05-03    # 用已存的 context.json 回放
+把 brief 渲染逻辑从 ``scripts/jczq_daily_brief.py`` 搬过来，让它能被 CLI / 测试
+/其他服务直接调用。CLI 包装见 ``nutmeg.interfaces.cli.jczq_daily_brief``。
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
+from typing import Protocol
+from zoneinfo import ZoneInfo
 
 from nutmeg.domain.jczq_daily import JczqDailyMatch
-from nutmeg.services.jczq_daily import (
-    JczqDailyAdvisorService,
-    _report_from_dict,
-)
+from nutmeg.services.jczq_daily import JczqDailyAdvisorService, _report_from_dict
 from nutmeg.services.jczq_diagnostics import (
     compute_kelly_advice,
     compute_match_concentration,
@@ -41,7 +28,6 @@ from nutmeg.services.jczq_intelligence import (
 )
 from nutmeg.services.jczq_strategy_memory import (
     DAILY_CONCENTRATION_DECAY,
-    DAILY_CONCENTRATION_TRIGGER_COUNT,
     compute_daily_concentration_bias,
     compute_daily_low_goals_concentration,
     compute_empirical_decay_map,
@@ -51,9 +37,6 @@ from nutmeg.services.jczq_strategy_memory import (
     load_strategy_memory,
 )
 
-# Default stake allocation per AGENTS.md SOP (25/30/20/15/10 for A/B/C/D/E).
-# Used by the brief's concentration / Kelly diagnostics so the human gets a
-# meaningful exposure read at glance time. Override in CLI later if needed.
 DEFAULT_STAKES = {
     "stable_base": 25.0,
     "main": 30.0,
@@ -63,9 +46,12 @@ DEFAULT_STAKES = {
     "extreme": 10.0,
 }
 DEFAULT_BUDGET = 100.0
-RULE_BLOCKED_EDGE_FLOOR = 0.01  # surface hafu/blocked legs above +1% edge
+RULE_BLOCKED_EDGE_FLOOR = 0.01
+POISSON_EDGE_THRESHOLD = 0.05
 
-POISSON_EDGE_THRESHOLD = 0.05  # surface legs with ≥ +5% Poisson edge
+
+def today_iso() -> str:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
 def _hhad_goal_line(match: JczqDailyMatch) -> str:
@@ -96,7 +82,6 @@ def _emit_markdown(
     out.append(f"全天可售场次：{len(matches)}")
     out.append("")
 
-    # 1. 盘面热度（含 Rule D 让球线 / Rule E coinflip / Rule C 高波动联赛）
     out.append("## 1. 盘面热度扫描")
     out.append("")
     out.append(
@@ -124,7 +109,6 @@ def _emit_markdown(
         )
     out.append("")
 
-    # 2. EV gap 表（HAD pool）
     out.append("## 2. HAD 池 implied probability 与联赛先验 gap")
     out.append("")
     out.append("| 编号 | P(胜) | P(平) | P(负) | gap(胜) | gap(平) | gap(负) | vig |")
@@ -143,7 +127,6 @@ def _emit_markdown(
         )
     out.append("")
 
-    # 3. 桶分布
     strong_count = sum(1 for a in analytics.values() if a.is_strong_banker)
     comfort_count = sum(1 for a in analytics.values() if a.is_comfort_risk)
     draw_count = sum(1 for a in analytics.values() if a.is_draw_friendly)
@@ -176,12 +159,8 @@ def _emit_markdown(
             out.append(f"  - 命中联赛：{rendered}")
     out.append("")
 
-    # 4. Poisson +EV 腿
     out.append(f"## 4. Poisson 模型指出的 +EV 腿（edge ≥ +{POISSON_EDGE_THRESHOLD * 100:.0f}%）")
     out.append("")
-    # F3 (5/14): daily alpha concentration warning — when ≥3 distinct matches
-    # show ≥+15% alpha all in low_goals direction, edges already include the
-    # additional ×0.9 decay; surface a banner so humans see the meta-rule.
     if daily_concentration_active:
         out.append(
             f"> 🟦 **F3 模型偏差日警告**：今日 {daily_low_goals_count} 场 ≥+15% "
@@ -204,7 +183,6 @@ def _emit_markdown(
         out.append("（今天无 ≥ +5% edge 的腿）")
     out.append("")
 
-    # 5. 系统自动生成的票
     out.append("## 5. 系统自动票（generator 输出）")
     out.append("")
     out.append(summary)
@@ -217,7 +195,6 @@ def _emit_markdown(
         )
         out.append(f"**{plan.name}（{plan.kind}）{plan.total_odds:.2f} 倍**")
         out.append(f"`{legs_text}`")
-        # 区分"vig-only 负"（-8~-15%，标准抽水）与"Poisson 主动反对"（≤ -20%）
         strong_warnings = []
         for leg in plan.legs:
             edge = poisson_index.get((leg.match_no, leg.pool, leg.pick))
@@ -231,7 +208,6 @@ def _emit_markdown(
                 out.append(f"- {w}")
         out.append("")
 
-    # 5b. Rule-blocked +EV 候选（参考用，揭示 Rule H 等规则可能 over-fit）
     blocked_positive = [
         r for r in poisson_rows
         if r.pool == "hafu" and r.edge >= RULE_BLOCKED_EDGE_FLOOR
@@ -250,7 +226,6 @@ def _emit_markdown(
         out.append("*Rule H 是 4 天 0/9 样本制定的；累积 30 天后建议重审是否过严*")
         out.append("")
 
-    # 7. 票面健康度（Diagnostics）— 叙事多样性 + 集中度 + Kelly 建议
     out.append("## 7. 票面健康度（Diagnostics）")
     out.append("")
     matrix = compute_narrative_matrix(plans)
@@ -287,7 +262,6 @@ def _emit_markdown(
         out.append("*集中度 > 40% 警示单点失败连锁风险；> 50% 强烈建议拆分叙事*")
         out.append("")
 
-    # Kelly suggestion for the single-leg poisson_solo
     solo_plan = next(
         (p for p in plans if p.kind == "poisson_solo" and len(p.legs) == 1),
         None,
@@ -316,19 +290,18 @@ def _emit_markdown(
             )
             out.append("")
 
-    # 6. 给 Claude 的指令模板
     out.append("## 6. 投递给 Claude 的指令模板")
     out.append("")
     out.append("把以上 1-5 节复制贴给 Claude，附加这句话即可触发跟今天一致的决策流程：")
     out.append("")
     out.append("> 用 Nutmeg 改造版的 jczq 系统对今天进行投资建议（Rule A-J 已落库）：")
-    out.append("> 1. 跟 Poisson +EV 腿走，第 4 节里 edge ≥ +15% 的腿优先做 Poisson 单核票；")
-    out.append("> 2. 出 5-6 张票：稳健底仓 / 主方案 / Poisson 单核 / 反大众 / 极限娱乐；")
+    out.append("> 1. 第 4 节 edge ≥ +15% 的腿是分析证据，分配进主方案/反大众的腿（R28：Poisson 单核票已退役，不要重建 C 票）；")
+    out.append("> 2. 出 4-5 张票：稳健底仓 / 主方案 / 反大众 / 极限娱乐；")
     out.append("> 3. 主方案禁用 had ≤ 1.40 的强胆托底（Rule B），改用让球/总进球支撑；")
     out.append("> 4. 标 ⚠coinflip 的场次不要用 had 平/胜/负 做杠杆（Rule E），允许 hhad/ttg/crs；")
-    out.append("> 5. 标 ⚠hi-vol 联赛的场次不要选 ttg ≤ 2 球（Rule C），优先 3+球或半全场；")
+    out.append("> 5. 标 ⚠hi-vol 联赛的场次不要选 ttg ≤ 2 球（Rule C），优先 3+球；")
     out.append("> 6. 标⚠让球线为空的 hhad 腿一律不要（Rule D）；")
-    out.append("> 7. **半全场只在极限娱乐票出现**（Rule H：4 天回测 0/9 命中）；")
+    out.append("> 7. **半全场 hafu 全面下架**（R27：0/18 命中，含 extreme 票）；")
     out.append("> 8. 高赔率灵感票里**赔率 ≥ 5.0 的 had 腿必须 Poisson edge ≥ +5%**（Rule I-1）；")
     out.append("> 9. 反大众票**不选 Poisson edge ≤ -15% 的腿**（Rule I-2）；")
     out.append("> 10. 极限娱乐的 crs 腿**必须 Poisson edge ≥ -10%**，否则改选模型支持的小比分（Rule J）；")
@@ -337,32 +310,32 @@ def _emit_markdown(
     return "\n".join(out)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--date", default=None, help="目标日期 (YYYY-MM-DD)，默认今天 live")
-    parser.add_argument("--replay", default=None, help="从已存 context.json 回放，传日期")
-    parser.add_argument(
-        "--output-dir",
-        default="/Users/jz71/Projects/Nutmeg/.nutmeg-data/jczq",
-        help="JCZQ 数据根目录",
-    )
-    parser.add_argument(
-        "--write",
-        default=None,
-        help="把 brief markdown 写到指定路径（默认 stdout）",
-    )
-    args = parser.parse_args()
+class ServiceBuilder(Protocol):
+    def __call__(self, *, provider: str = ...) -> JczqDailyAdvisorService: ...
 
-    output_dir = Path(args.output_dir)
-    if args.replay:
-        run_date = args.replay
-        ctx_path = output_dir / "daily" / run_date / "context.json"
+
+def build_brief(
+    *,
+    run_date: str | None = None,
+    replay_date: str | None = None,
+    output_dir: Path,
+    service_builder: ServiceBuilder | None = None,
+) -> str:
+    """Compute the daily brief markdown.
+
+    Either pass ``replay_date`` (use stored ``context.json``) or ``run_date``
+    (live fetch via ``service_builder``). ``service_builder`` must return a
+    fully configured ``JczqDailyAdvisorService``; CLI passes the existing
+    ``build_jczq_daily_advisor_service`` here to avoid a circular import.
+    """
+
+    output_dir = Path(output_dir)
+    if replay_date:
+        ctx_path = output_dir / "daily" / replay_date / "context.json"
         if not ctx_path.exists():
-            print(f"context.json not found: {ctx_path}", file=sys.stderr)
-            sys.exit(2)
+            raise FileNotFoundError(f"context.json not found: {ctx_path}")
         ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
         report = _report_from_dict(ctx)
-        # Re-generate plans from current code so report.plans 是新版
         service = JczqDailyAdvisorService.__new__(JczqDailyAdvisorService)
         service.__init__()  # type: ignore[misc]
         memory = load_strategy_memory(output_dir)
@@ -380,13 +353,14 @@ def main() -> None:
         )
         official = report.official_last_update
         summary = service._summary(plans, revision_instruction=None, strategy_memory=memory)
+        active_run_date = replay_date
     else:
-        from nutmeg.interfaces.cli import build_jczq_daily_advisor_service
-
-        service = build_jczq_daily_advisor_service(provider="live")
-        run_date = args.date or _today_iso()
+        if service_builder is None:
+            raise ValueError("service_builder is required for live mode")
+        service = service_builder(provider="live")
+        active_run_date = run_date or today_iso()
         report = service.build_report(
-            run_date=run_date,
+            run_date=active_run_date,
             output_dir=output_dir,
             dispatch_telegram=False,
             dry_run=True,
@@ -403,12 +377,8 @@ def main() -> None:
         official = report.official_last_update
         summary = report.summary
 
-    # F2 (5/14) + R25 (5/13) + F3 (5/14): apply 三层 bias 让 brief Section 4
-    # 与 generator ticket selection 一致。F3 needs raw rows to detect daily
-    # concentration, so 2-pass: raw → detect F3 → final with all biases.
     league_residual_bias = compute_league_residual_bias(memory)
     empirical_decay_map = compute_empirical_decay_map(memory)
-    # F1 (5/14): Dixon-Coles rho from memory (default 0.0 = F1 disabled)
     dc_rho = get_dixon_coles_rho(memory)
     raw_poisson_rows = compute_poisson_edges(report.matches, dc_rho=dc_rho)
     daily_concentration_bias = compute_daily_concentration_bias(raw_poisson_rows)
@@ -422,8 +392,8 @@ def main() -> None:
     )
     poisson_index = {(row.match_no, row.pool, row.pick): row.edge for row in poisson_rows}
 
-    md = _emit_markdown(
-        run_date=run_date,
+    return _emit_markdown(
+        run_date=active_run_date,
         matches=report.matches,
         analytics=analytics,
         plans=plans,
@@ -436,19 +406,11 @@ def main() -> None:
         daily_concentration_active=bool(daily_concentration_bias),
     )
 
-    if args.write:
-        Path(args.write).write_text(md, encoding="utf-8")
-        print(f"Wrote brief: {args.write}", file=sys.stderr)
-    else:
-        print(md)
 
-
-def _today_iso() -> str:
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
-    return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
-
-
-if __name__ == "__main__":
-    main()
+def write_or_print_brief(markdown: str, write_path: Path | None) -> None:
+    if write_path is None:
+        print(markdown)
+        return
+    write_path = Path(write_path)
+    write_path.write_text(markdown, encoding="utf-8")
+    print(f"Wrote brief: {write_path}", file=sys.stderr)

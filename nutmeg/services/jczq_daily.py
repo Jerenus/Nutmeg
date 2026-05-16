@@ -187,6 +187,37 @@ BURNED_TEAM_BIAS = -0.5
 # plan kind. They are blocked from main / inspiration / contrarian / false_signal
 # at the source and stripped post-hoc by `_apply_rule_h_hafu_block`.
 RULE_H_NON_EXTREME_HAFU_BLOCKED = True
+# R27 (5/15): Rule H upgraded — hafu now drops from EXTREME too. 5/01-5/14
+# aggregate: hafu legs 0/18 across all plan kinds (incl. 0/8 in extreme); every
+# ticket that contained any hafu leg failed the integer-hit screen (0/18).
+# The original carve-out ("hafu still allowed in extreme entertainment lottery")
+# is dead weight per the data. `_apply_rule_h_hafu_block` now strips hafu
+# unconditionally; extreme drops the hafu leg without replacement so total
+# ticket odds stay representative of an entertainment longshot.
+RULE_R27_HAFU_FULLY_BLOCKED = True
+# R26 (5/15): crs is no longer eligible for poisson_solo. 5/01-5/14 aggregate:
+# crs alpha 30 picks → 1 leg-hit (3.3%); 0:0 alone is 1/17 (5.9%); 1:0 0/6,
+# 0:1 0/2, 0:2 0/4. Even after R23 raised the 0:0 floor to +25%, 5/14 004
+# (λ=2.4, adjusted edge +36.1%) still passed and missed. The model produces an
+# "edge" but the joint hit rate is below market-implied across every sub-bucket
+# — Poisson on score-grid cells under-models real-world goal-time clustering
+# and team scoring rhythm. poisson_solo now restricts eligibility to
+# ttg / had / hhad pools. crs remains available in extreme/inspiration where
+# diversified narrative absorbs the per-leg miss rate.
+RULE_R26_DROP_CRS_FROM_POISSON_SOLO = True
+# R28 (5/16): the poisson_solo ticket is retired. 5/01-5/15 aggregate:
+# whole-ticket hit 1/11 days, leg-hit 2/16 (12.5%), realized -47.7% over the
+# 11-day window (staked 11 units, returned 5.75). The ticket selects the
+# single highest-Poisson-edge leg — but "highest model edge" is structurally
+# the most over-concentrated bin on the score grid (always ttg 1球 or crs 0:0),
+# i.e. adverse selection against the model's own worst-calibrated output. Six
+# patches (R17 narrative collapse, R18 crs diversity, R22 hi-vol crs, R23 0:0
+# floor, R24 cooling-off, R26 crs-out) treated symptoms; the structure stays
+# -EV. Parallels R27 (hafu retired) / R26 (crs out of solo). `_build_poisson_solo_plan`
+# is still invoked so cooling-off + the Poisson edge index stay warm and the
+# function keeps its unit-test coverage — but the plan is dropped from output.
+# A ≥30-day re-review can revive it by flipping this flag to False.
+RULE_R28_RETIRE_POISSON_SOLO = True
 
 
 class JczqTextSender(Protocol):
@@ -744,6 +775,10 @@ class JczqDailyAdvisorService:
                 upset_cluster,
             ]
             if plan.legs
+            # R28 (5/16): poisson_solo ticket retired — see
+            # RULE_R28_RETIRE_POISSON_SOLO. The plan is still built above
+            # (keeps cooling-off + edge index warm) but excluded from output.
+            and not (RULE_R28_RETIRE_POISSON_SOLO and plan.kind == "poisson_solo")
         ]
         plans = self._apply_revision_overrides(plans, matches, instruction=instruction)
         plans = self._apply_memory_overrides(plans, matches, strategy_memory=strategy_memory or {})
@@ -938,21 +973,27 @@ class JczqDailyAdvisorService:
         plans: list[JczqDailyPlan],
         matches: list[JczqDailyMatch],
     ) -> list[JczqDailyPlan]:
-        """Rule H: hafu hit 0/9 across the 4-day backtest. Strip any hafu leg
-        that survived earlier passes (revision/memory overrides) from non-
-        extreme plans, replacing with a ttg or hhad equivalent when possible.
+        """Rule H (+ R27): hafu hit 0/18 across all plan kinds (5/01-5/14).
+        Strip any hafu leg from every plan. For non-extreme plans, substitute
+        a ttg or hhad equivalent when possible (preserve ticket structure).
+        For extreme plans (R27), drop the leg without replacement — extreme
+        ticket odds may shrink but the hafu pool is dead weight per the data.
         """
 
         match_by_no = {match.match_no: match for match in matches}
         cleaned: list[JczqDailyPlan] = []
         for plan in plans:
-            if plan.kind == "extreme" or not any(leg.pool == "hafu" for leg in plan.legs):
+            if not any(leg.pool == "hafu" for leg in plan.legs):
                 cleaned.append(plan)
                 continue
+            is_extreme = plan.kind == "extreme"
             new_legs: list[JczqDailyLeg] = []
             for leg in plan.legs:
                 if leg.pool != "hafu":
                     new_legs.append(leg)
+                    continue
+                # R27 (5/15): extreme drops hafu without replacement.
+                if is_extreme:
                     continue
                 replacement = _rule_h_hafu_replacement(match_by_no.get(leg.match_no))
                 if replacement is None:
@@ -967,13 +1008,18 @@ class JczqDailyAdvisorService:
                         ),
                     )
                 )
+            risk_note = (
+                "R27：半全场 0/18 命中率全面下架（含极限票）。"
+                if is_extreme
+                else "Rule H：半全场已从非极限票剥离。"
+            )
             cleaned.append(
                 self._make_plan(
                     plan.name,
                     plan.kind,
                     plan.description,
                     new_legs,
-                    "Rule H：半全场已从非极限票剥离。",
+                    risk_note,
                 )
             )
         return cleaned
@@ -1244,14 +1290,19 @@ class JczqDailyAdvisorService:
         matches: list[JczqDailyMatch],
         preferred_ttg: list[str],
     ) -> JczqDailyPlan:
-        if plan.kind == "extreme" or not any(leg.pool == "hafu" for leg in plan.legs):
+        if not any(leg.pool == "hafu" for leg in plan.legs):
             return plan
         match_by_no = {match.match_no: match for match in matches}
         changed = False
         legs: list[JczqDailyLeg] = []
+        is_extreme = plan.kind == "extreme"
         for leg in plan.legs:
             if leg.pool != "hafu":
                 legs.append(leg)
+                continue
+            # R27 (5/15): extreme drops hafu without replacement.
+            if is_extreme:
+                changed = True
                 continue
             replacement = _preferred_total_goals_leg(match_by_no.get(leg.match_no), preferred_ttg)
             if replacement is None:
@@ -1268,12 +1319,17 @@ class JczqDailyAdvisorService:
             changed = True
         if not changed:
             return plan
+        risk_note = (
+            "R27：半全场 0/18 命中率全面下架（含极限票）。"
+            if is_extreme
+            else "策略迭代：半全场非极限票降权。"
+        )
         return self._make_plan(
             plan.name,
             plan.kind,
             plan.description,
             legs,
-            "策略迭代：半全场非极限票降权。",
+            risk_note,
         )
 
     def _ensure_total_goals_policy_leg(
@@ -1584,8 +1640,10 @@ class JczqDailyAdvisorService:
                 if match is None:
                     boosted.append(leg)
                     continue
-                # Rule H: hafu blocked from non-extreme boost candidates.
-                allow_hafu = extreme
+                # Rule H (+ R27 5/15): hafu blocked everywhere — including
+                # extreme — since 0/18 historical hit rate makes the carve-out
+                # dead weight.
+                allow_hafu = False
                 pool_candidates = [
                     item
                     for item in match.candidates
@@ -1943,6 +2001,10 @@ class JczqDailyAdvisorService:
             if row.edge >= _row_threshold(row)
             and _r13_consistent(row)
             and not _r22_hi_vol_crs_blocked(row)
+            # R26 (5/15): crs pool blocked from poisson_solo (1/30 historical
+            # leg-hit). Other pools (ttg/had/hhad) still eligible; crs alpha
+            # routes to inspiration/extreme via _search_plan.
+            and (not RULE_R26_DROP_CRS_FROM_POISSON_SOLO or row.pool != "crs")
         ]
         # F4 (5/14): same-match alpha preference — collapse multiple alpha
         # candidates per match to one row using ttg-over-crs preference
