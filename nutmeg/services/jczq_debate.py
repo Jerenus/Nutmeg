@@ -119,7 +119,8 @@ class JczqDebateWorkspaceService:
         output_dir: Path | str = ".nutmeg-data/jczq",
     ) -> dict[str, Any]:
         resolved_date = _normalize_run_date(run_date)
-        debate_dir = Path(output_dir) / "daily" / resolved_date / "debate"
+        run_dir = Path(output_dir) / "daily" / resolved_date
+        debate_dir = run_dir / "debate"
         artifacts = _artifact_paths(debate_dir)
         human_notes = _read_optional(artifacts["human_notes_path"])
         disagreements = _read_optional(artifacts["disagreements_path"])
@@ -129,24 +130,53 @@ class JczqDebateWorkspaceService:
             disagreements=disagreements,
             artifacts=artifacts,
         )
+        artifacts["final_plan_path"].write_text(final_markdown, encoding="utf-8")
+
+        # If the human authored a final-plan-input.json ticket skeleton, build
+        # the PDF-ready structured final-plan.json by enriching legs from the
+        # day's brief context.json. Otherwise fall back to the thin-metadata
+        # stub (the workflow keeps running; the PDF just can't render yet).
+        structured = _maybe_build_structured_plan(
+            run_date=resolved_date,
+            run_dir=run_dir,
+            skeleton_path=artifacts["final_plan_input_path"],
+        )
+        if structured is not None:
+            artifacts["final_plan_json_path"].write_text(
+                json.dumps(structured, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        else:
+            stub = {
+                "run_date": resolved_date,
+                "status": "finalized",
+                "debate_dir": str(debate_dir),
+                "human_notes_path": str(artifacts["human_notes_path"]),
+                "final_plan_path": str(artifacts["final_plan_path"]),
+                "artifacts": _string_artifacts(artifacts),
+            }
+            artifacts["final_plan_json_path"].write_text(
+                json.dumps(stub, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
         payload = {
             "run_date": resolved_date,
             "status": "finalized",
             "debate_dir": str(debate_dir),
             "human_notes_path": str(artifacts["human_notes_path"]),
             "final_plan_path": str(artifacts["final_plan_path"]),
+            "structured_plan": structured is not None,
             "artifacts": _string_artifacts(artifacts),
         }
-        artifacts["final_plan_path"].write_text(final_markdown, encoding="utf-8")
-        artifacts["final_plan_json_path"].write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
         _update_decision_log(
             artifacts["decision_log_path"],
             status="finalized",
             event="finalized",
-            extra={"final_plan_path": str(artifacts["final_plan_path"])},
+            extra={
+                "final_plan_path": str(artifacts["final_plan_path"]),
+                "structured_plan": structured is not None,
+            },
         )
         return payload
 
@@ -159,9 +189,41 @@ def _artifact_paths(debate_dir: Path) -> dict[str, Path]:
         "human_notes_path": debate_dir / "human-notes.md",
         "disagreements_path": debate_dir / "disagreements.md",
         "final_plan_path": debate_dir / "final-plan.md",
+        "final_plan_input_path": debate_dir / "final-plan-input.json",
         "final_plan_json_path": debate_dir / "final-plan.json",
         "decision_log_path": debate_dir / "decision-log.json",
     }
+
+
+def _maybe_build_structured_plan(
+    *,
+    run_date: str,
+    run_dir: Path,
+    skeleton_path: Path,
+) -> dict[str, Any] | None:
+    """Build the PDF-ready structured final-plan from a skeleton, if present.
+
+    Returns ``None`` (caller falls back to the thin-metadata stub) when no
+    ``final-plan-input.json`` skeleton was authored or the day's
+    ``context.json`` is missing — finalize must never hard-fail just because
+    the human hasn't filled the skeleton yet.
+    """
+
+    if not skeleton_path.exists():
+        return None
+    context_path = run_dir / "context.json"
+    if not context_path.exists():
+        return None
+
+    # Imported lazily so the debate service has no hard dependency on the
+    # PDF/builder stack when only init/compare are exercised.
+    from nutmeg.services.jczq_final_plan_builder import build_structured_final_plan
+
+    return build_structured_final_plan(
+        run_date=run_date,
+        context_path=context_path,
+        skeleton_path=skeleton_path,
+    )
 
 
 def _analysis_template(model_name: str, run_date: str) -> str:

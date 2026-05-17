@@ -159,3 +159,140 @@ def test_debate_finalize_writes_final_plan_from_human_notes(tmp_path: Path) -> N
     assert "周三003比分0:0@11.0" in final_plan
     assert final_json["run_date"] == "2026-05-06"
     assert final_json["human_notes_path"].endswith("human-notes.md")
+    # No final-plan-input.json skeleton → thin-metadata fallback, and the
+    # result must say so explicitly so the caller knows the PDF can't render.
+    assert result["structured_plan"] is False
+
+
+def _write_brief_context(daily_dir: Path) -> None:
+    """A minimal context.json so the finalize builder can enrich legs."""
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    context = {
+        "run_date": "2026-05-17",
+        "matches": [
+            {
+                "match_no": "周日028",
+                "match_date": "2026-05-17",
+                "match_time": "21:00:00",
+                "league": "意甲",
+                "home_team": "萨索洛",
+                "away_team": "莱切",
+                "status": "Selling",
+                "hot_direction": "主胜",
+                "role": "favorite",
+                "confidence_note": "",
+                "candidates": [
+                    {
+                        "match_no": "周日028",
+                        "league": "意甲",
+                        "home_team": "萨索洛",
+                        "away_team": "莱切",
+                        "pool": "had",
+                        "play": "胜平负",
+                        "pick": "胜",
+                        "odds": 2.68,
+                        "goal_line": "",
+                        "logic": "主场 favorite",
+                    }
+                ],
+            }
+        ],
+    }
+    (daily_dir / "context.json").write_text(
+        json.dumps(context, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_debate_finalize_builds_structured_plan_from_skeleton(tmp_path: Path) -> None:
+    """When a final-plan-input.json skeleton is present, finalize must produce
+    the PDF-ready structured final-plan.json — not the thin metadata stub."""
+
+    service = JczqDebateWorkspaceService()
+    service.initialize_workspace(
+        run_date="2026-05-17", output_dir=tmp_path, brief_text="# brief\n",
+    )
+    daily_dir = tmp_path / "daily" / "2026-05-17"
+    _write_brief_context(daily_dir)
+    debate_dir = daily_dir / "debate"
+    (debate_dir / "final-plan-input.json").write_text(
+        json.dumps(
+            {
+                "budget_total": 100,
+                "config_variant": "fcom500-conflict-engine",
+                "favorite_ticket_id": "A",
+                "tickets": [
+                    {
+                        "id": "A",
+                        "name": "主推",
+                        "kind": "anchor",
+                        "stake": 100,
+                        "legs": [
+                            {"match_no": "周日028", "pool": "had", "pick": "胜"}
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = service.finalize_workspace(run_date="2026-05-17", output_dir=tmp_path)
+
+    final_json = json.loads((debate_dir / "final-plan.json").read_text(encoding="utf-8"))
+    assert result["structured_plan"] is True
+    assert result["status"] == "finalized"
+    # Structured schema fields the PDF renderer consumes.
+    assert final_json["run_date"] == "2026-05-17"
+    assert final_json["budget_total"] == 100
+    assert final_json["config_variant"] == "fcom500-conflict-engine"
+    assert final_json["tickets"][0]["id"] == "A"
+    assert final_json["tickets"][0]["total_odds"] == 2.68
+    leg = final_json["tickets"][0]["legs"][0]
+    assert leg["home"] == "萨索洛"
+    assert leg["away"] == "莱切"
+    assert "concentration_audit" in final_json
+
+
+def test_debate_finalize_structured_plan_renders_via_pdf(tmp_path: Path) -> None:
+    """The structured plan finalize produces must be directly consumable by
+    the final-plan PDF renderer with no hand-editing."""
+    from nutmeg.services.jczq_final_plan_pdf import _build_story
+
+    service = JczqDebateWorkspaceService()
+    service.initialize_workspace(
+        run_date="2026-05-17", output_dir=tmp_path, brief_text="# brief\n",
+    )
+    daily_dir = tmp_path / "daily" / "2026-05-17"
+    _write_brief_context(daily_dir)
+    debate_dir = daily_dir / "debate"
+    (debate_dir / "final-plan-input.json").write_text(
+        json.dumps(
+            {
+                "budget_total": 100,
+                "favorite_ticket_id": "A",
+                "tickets": [
+                    {
+                        "id": "A",
+                        "name": "主推",
+                        "kind": "anchor",
+                        "stake": 100,
+                        "hit_probability": 0.28,
+                        "expected_value": 42.2,
+                        "legs": [
+                            {"match_no": "周日028", "pool": "had", "pick": "胜"}
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    service.finalize_workspace(run_date="2026-05-17", output_dir=tmp_path)
+    plan = json.loads((debate_dir / "final-plan.json").read_text(encoding="utf-8"))
+
+    # Must not raise — the renderer accesses many required schema keys.
+    story = _build_story(plan)
+    assert story

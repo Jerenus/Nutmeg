@@ -170,6 +170,17 @@ def jczq_debate_finalize(
         return
     _cli.console.print(f"jczq-debate-finalize date={result['run_date']}")
     _cli.console.print(f"final_plan={result['final_plan_path']}")
+    if result.get("structured_plan"):
+        _cli.console.print(
+            f"final_plan_json={result['artifacts']['final_plan_json_path']} "
+            "(PDF-ready · jczq-final-plan-pdf can render)"
+        )
+    else:
+        _cli.console.print(
+            "final_plan_json=thin metadata only — author "
+            f"{result['artifacts']['final_plan_input_path']} "
+            "(ticket skeleton) then re-run finalize for a PDF-ready plan"
+        )
 
 
 @_cli.app.command("jczq-daily-brief")
