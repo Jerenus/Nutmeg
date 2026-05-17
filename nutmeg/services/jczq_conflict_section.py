@@ -6,7 +6,7 @@ Phase 3b piece 3。把价值引擎冲突点（``JczqValueReport``）渲染成 br
 
 冲突点是主驱动：永远来自价值引擎（模型 vs 国际市场赔率）。psychology 信号与情报
 是可选的补充输入（按 ``match_no`` 索引）；某场缺这两类时只渲染冲突点。某场未对齐
-API-Football 时如实标注覆盖缺口，绝不补空信号。
+国际赔率（500.com / API-Football）时如实标注覆盖缺口，绝不补空信号。
 """
 
 from __future__ import annotations
@@ -56,8 +56,8 @@ def render_conflict_section(
         return "\n".join(out)
 
     out.append(
-        f"覆盖率：{report.aligned_count}/{len(report.matches)} 场已对齐 "
-        f"API-Football（{report.coverage_pct:.0%}）。"
+        f"覆盖率：{report.aligned_count}/{len(report.matches)} 场已对齐"
+        f"国际赔率（{report.coverage_pct:.0%}）。"
     )
     out.append("")
 
