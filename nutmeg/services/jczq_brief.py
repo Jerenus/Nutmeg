@@ -22,6 +22,10 @@ from nutmeg.services.jczq_diagnostics import (
     compute_match_concentration,
     compute_narrative_matrix,
 )
+from nutmeg.services.jczq_parlay_constructor import (
+    ParlayConstructor,
+    render_parlay_section,
+)
 from nutmeg.services.jczq_value_bridge import JczqValueReport
 from nutmeg.services.jczq_intelligence import (
     LeaguePriorBaseline,
@@ -301,6 +305,10 @@ def _emit_markdown(
     # 流程知道该槽位存在。
     if value_report is not None:
         out.append(render_conflict_section(value_report))
+        # 串关构造器（Phase 3 piece 4）：把冲突腿组装成 2/3/4串1 候选，
+        # 守 Rule O 同场合法性 + 集中度上限，供 debate 权衡。
+        parlay_candidates = ParlayConstructor().build(value_report)
+        out.append(render_parlay_section(parlay_candidates))
     else:
         out.append("## 赔率冲突点")
         out.append("")

@@ -212,3 +212,34 @@ def test_parlays_tagged_by_tier_and_sorted_by_edge() -> None:
     # parlays are ordered by average leg edge descending
     avg_edges = [p.average_edge for p in parlays]
     assert avg_edges == sorted(avg_edges, reverse=True)
+
+
+# --- render_parlay_section (Phase 3 piece 4) --------------------------------
+
+
+def test_render_parlay_section_lists_candidates() -> None:
+    from nutmeg.services.jczq_parlay_constructor import render_parlay_section
+
+    report = JczqValueReport(
+        matches=[
+            _entry("周六001", [_candidate(edge=0.20)]),
+            _entry("周六002", [_candidate(edge=0.17)]),
+        ]
+    )
+    candidates = ParlayConstructor().build(report)
+
+    text = render_parlay_section(candidates)
+
+    assert "串关候选" in text
+    assert "2串1" in text
+    assert "周六001" in text and "周六002" in text
+
+
+def test_render_parlay_section_handles_no_candidates() -> None:
+    from nutmeg.services.jczq_parlay_constructor import render_parlay_section
+
+    text = render_parlay_section([])
+
+    # The section header stays so debate knows the slot exists.
+    assert "串关候选" in text
+    assert "无法构造串关" in text

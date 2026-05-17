@@ -239,3 +239,45 @@ class ParlayConstructor:
             combined_odds=round(combined, 6),
             average_edge=round(avg_edge, 6),
         )
+
+
+# 渲染中文档名。
+_TIER_LABEL: dict[str, str] = {"high": "高", "medium": "中", "low": "低"}
+
+
+def render_parlay_section(
+    candidates: list[ParlayCandidate], *, top: int = 8
+) -> str:
+    """把串关候选渲染成 brief 的一节，供 debate 工作流挑选。
+
+    候选已按 average_edge 降序排好；只渲染前 ``top`` 个，避免组合爆炸刷屏。
+    无候选（对齐冲突腿不足 2 条）时渲染一行说明，不省略该节。
+    """
+
+    out: list[str] = []
+    out.append("### 串关候选（价值引擎冲突腿）")
+    out.append("")
+    out.append(
+        "> 由冲突腿按信心档（高/中/低）组合，守 Rule O 同场合法性 + 集中度上限。"
+        "整串信心取最低腿的档（木桶效应）；供 debate 权衡，非自动出票。"
+    )
+    out.append("")
+
+    if not candidates:
+        out.append("（对齐冲突腿不足 2 条，无法构造串关）")
+        out.append("")
+        return "\n".join(out)
+
+    out.append("| 玩法 | 信心档 | 腿 | 合计赔率 | 平均 edge |")
+    out.append("|---|---|---|---|---|")
+    for cand in candidates[:top]:
+        legs_text = " × ".join(
+            f"{leg.match_no}{leg.pick}@{leg.odds:g}" for leg in cand.legs
+        )
+        out.append(
+            f"| {cand.kind} | {_TIER_LABEL.get(cand.tier, cand.tier)} | "
+            f"{legs_text} | {cand.combined_odds:.2f} | "
+            f"**{cand.average_edge:+.0%}** |"
+        )
+    out.append("")
+    return "\n".join(out)
