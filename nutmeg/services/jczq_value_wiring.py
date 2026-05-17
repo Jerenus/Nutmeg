@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
+from nutmeg.config.catalog import league_code_by_api_football_id
 from nutmeg.config.settings import AppSettings
 from nutmeg.data.api_football import ApiFootballClient
 from nutmeg.services.jczq_match_align import (
@@ -73,9 +74,6 @@ def build_jczq_value_bridge(
 
     try:
         league_aliases = load_league_aliases()
-        league_code_by_id = {
-            league_id: code for code, league_id in league_aliases.items()
-        }
         client = ApiFootballClient(
             base_url=settings.api_football_base_url,
             api_key=key,
@@ -83,7 +81,9 @@ def build_jczq_value_bridge(
         fixture_provider = ApiFootballFixtureProvider(
             client=client,
             season=season_for_date(run_date),
-            league_code_by_id=league_code_by_id,
+            # 用目录正式 code（epl/serie-a/...）标注 fixture，使模型 snapshot 的
+            # get_league() 能解析；用中文联赛名会触发 'Unknown league code'。
+            league_code_by_id=league_code_by_api_football_id(),
         )
         aligner = MatchAligner(
             fixture_provider=fixture_provider,

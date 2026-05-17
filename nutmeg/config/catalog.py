@@ -47,6 +47,21 @@ def load_league_catalog(config_path: str = 'config/leagues.yaml') -> dict[str, L
     return catalog
 
 
+@lru_cache(maxsize=1)
+def league_code_by_api_football_id() -> dict[int, str]:
+    """API-Football ``league_id`` → catalog league ``code``.
+
+    The match aligner labels API-Football fixtures with this code so the
+    model snapshot's ``get_league()`` resolves them. Without it a fixture
+    carries a non-catalog label (e.g. the Chinese league name) and
+    ``FixtureSnapshotService`` raises ``Unknown league code``.
+    """
+    return {
+        league.api_football_id: code
+        for code, league in load_league_catalog().items()
+    }
+
+
 def select_leagues(codes: list[str] | None = None) -> list[LeagueConfig]:
     catalog = load_league_catalog()
     if not codes:
