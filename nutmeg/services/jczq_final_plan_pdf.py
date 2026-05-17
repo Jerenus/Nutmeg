@@ -55,6 +55,19 @@ def _register_cjk_font() -> None:
 
 
 def render_pdf(plan: dict, pdf_path: Path) -> None:
+    story = _build_story(plan)
+    doc = SimpleDocTemplate(
+        str(pdf_path),
+        pagesize=A4,
+        leftMargin=15 * mm,
+        rightMargin=15 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm,
+    )
+    doc.build(story)
+
+
+def _build_story(plan: dict) -> list:
     _register_cjk_font()
     styles = getSampleStyleSheet()
     title = ParagraphStyle(
@@ -89,7 +102,7 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
     story.append(
         Paragraph(
             _xml(
-                f"预算 {plan['budget_total']} 元 / 5 张票 / 规则环境："
+                f"预算 {plan['budget_total']} 元 / {len(plan['tickets'])} 张票 / 规则环境："
                 + ", ".join(plan.get("rule_environment", []))
             ),
             body,
@@ -169,7 +182,7 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
     story.append(summary_table)
     story.append(Spacer(1, 10))
 
-    story.append(Paragraph("5 张票腿位明细", h2))
+    story.append(Paragraph(f"{len(plan['tickets'])} 张票腿位明细", h2))
     for t in plan["tickets"]:
         favorite_mark = " ⭐" if t.get("favorite") else ""
         story.append(
@@ -237,15 +250,7 @@ def render_pdf(plan: dict, pdf_path: Path) -> None:
     for ln in rule_lines:
         story.append(Paragraph(_xml(f"• {ln}"), small))
 
-    doc = SimpleDocTemplate(
-        str(pdf_path),
-        pagesize=A4,
-        leftMargin=15 * mm,
-        rightMargin=15 * mm,
-        topMargin=15 * mm,
-        bottomMargin=15 * mm,
-    )
-    doc.build(story)
+    return story
 
 
 @dataclass(slots=True)
@@ -260,7 +265,7 @@ def _build_caption(plan: dict) -> str:
     favorite = next((t for t in plan["tickets"] if t.get("favorite")), None)
     cap_lines = [
         f"JCZQ Final Plan — {plan['run_date']}",
-        f"5 张票 / 预算 {plan['budget_total']} 元 / 已知部分 EV "
+        f"{len(plan['tickets'])} 张票 / 预算 {plan['budget_total']} 元 / 已知部分 EV "
         f"{plan['portfolio_metrics']['total_expected_value_known']:+.2f} 元",
     ]
     if favorite:
