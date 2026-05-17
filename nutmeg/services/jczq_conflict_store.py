@@ -14,11 +14,48 @@ file is treated as an empty store — the daily flow must never crash on it.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from nutmeg.data.european_odds import CrossCheckSignal
 
-__all__ = ["ConflictStore"]
+__all__ = ["ConflictStore", "StakePhase", "resolve_stake_phase"]
+
+
+@dataclass(frozen=True, slots=True)
+class StakePhase:
+    """A rung on the evidence-scaled stake ladder.
+
+    ``max_pct_per_signal`` is the cap on per-signal stake as a fraction of
+    the daily budget. ``KILL`` (0.0) means stop betting the engine and
+    re-audit the thesis.
+    """
+
+    name: str  # OBSERVE / SMALL / NORMAL / KILL
+    max_pct_per_signal: float
+    note: str
+
+
+def resolve_stake_phase(*, graded_count: int, rolling_roi: float) -> StakePhase:
+    """Map accumulated evidence → a stake phase.
+
+    The engine's edge is unproven until it has a live track record, so
+    stakes stay tiny until the conflict store accumulates enough graded
+    signals at a positive ROI:
+
+    - ``KILL``   — ≥25 graded and rolling ROI < 0.95 (takes precedence).
+    - ``NORMAL`` — ≥40 graded and rolling ROI > 1.05 → 30%/signal.
+    - ``SMALL``  — ≥15 graded and rolling ROI > 1.0  → 10%/signal.
+    - ``OBSERVE``— otherwise → 2%/signal (paper / token stakes).
+    """
+
+    if graded_count >= 25 and rolling_roi < 0.95:
+        return StakePhase("KILL", 0.0, "暂停 — 滚动 ROI < 0.95，复审 thesis")
+    if graded_count >= 40 and rolling_roi > 1.05:
+        return StakePhase("NORMAL", 0.30, "冲突腿可作主仓")
+    if graded_count >= 15 and rolling_roi > 1.0:
+        return StakePhase("SMALL", 0.10, "小注 5-10% 日预算")
+    return StakePhase("OBSERVE", 0.02, "观察期 — 纸面或 ≤2%/信号")
 
 
 class ConflictStore:
@@ -109,3 +146,28 @@ class ConflictStore:
             changed = True
         if changed:
             self._save(rows)
+
+    def phase(self) -> StakePhase:
+        """Resolve the current stake phase from graded rows.
+
+        ``rolling_roi`` is the mean ``realized_return`` over graded rows
+        (rows with ``hit`` set); it defaults to ``1.0`` when nothing is
+        graded yet so an empty store sits at ``OBSERVE`` rather than
+        tripping ``KILL``.
+        """
+
+        graded = [
+            row
+            for row in self.load()
+            if row.get("hit") is not None and row.get("realized_return") is not None
+        ]
+        graded_count = len(graded)
+        if graded_count == 0:
+            rolling_roi = 1.0
+        else:
+            rolling_roi = sum(
+                float(row["realized_return"]) for row in graded
+            ) / graded_count
+        return resolve_stake_phase(
+            graded_count=graded_count, rolling_roi=rolling_roi
+        )
