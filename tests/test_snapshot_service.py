@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from nutmeg.config.team_catalog import load_team_catalog
+from nutmeg.data.api_football import ApiFootballError
 from nutmeg.data.soccerdata_client import SoccerDataClient, SoccerDataError
 from nutmeg.domain.fixtures import Fixture, sample_fixtures
 from nutmeg.domain.snapshot import (
@@ -1073,6 +1074,125 @@ def test_fixture_snapshot_service_builds_environment_availability_and_matchup_co
             source='soccerdata',
         ),
     )
+
+
+def test_fixture_snapshot_service_degrades_to_soccerdata_when_api_football_unavailable(
+    caplog,
+) -> None:
+    from nutmeg.models.dixon_coles import expected_goals_from_snapshot
+
+    fixture = sample_fixtures('epl')[0]
+    bundle = SoccerDataFixtureBundle(
+        league_code='epl',
+        season=fixture.season,
+        home=TeamEnrichment(
+            canonical_name='Arsenal',
+            source_names={'fbref': 'Arsenal', 'understat': 'Arsenal'},
+            season_metrics=None,
+            recent_form=TeamRecentForm(
+                matches=5,
+                wins=3,
+                draws=1,
+                losses=1,
+                points=10,
+                expected_points=9.0,
+                goals_for=9.0,
+                goals_against=4.0,
+                xg_for=8.4,
+                xg_against=4.7,
+            ),
+            shot_summary=TeamShotSummary(
+                shots=50,
+                goals=8,
+                total_xg=7.9,
+                open_play_shots=38,
+            ),
+            market_value=None,
+            injuries=[],
+            lineup=None,
+        ),
+        away=TeamEnrichment(
+            canonical_name='Tottenham Hotspur',
+            source_names={'fbref': 'Tottenham Hotspur', 'understat': 'Tottenham'},
+            season_metrics=None,
+            recent_form=TeamRecentForm(
+                matches=5,
+                wins=2,
+                draws=1,
+                losses=2,
+                points=7,
+                expected_points=7.2,
+                goals_for=7.0,
+                goals_against=6.0,
+                xg_for=7.1,
+                xg_against=6.4,
+            ),
+            shot_summary=TeamShotSummary(
+                shots=46,
+                goals=7,
+                total_xg=6.8,
+                open_play_shots=31,
+            ),
+            market_value=None,
+            injuries=[],
+            lineup=None,
+        ),
+    )
+
+    class QuotaExhaustedApiFootballClient:
+        """Every API-Football call raises, simulating an exhausted daily quota."""
+
+        def fetch_fixture_injuries(self, fixture_id: str):
+            raise ApiFootballError('API-Football rate limit exceeded (HTTP 429).')
+
+        def fetch_fixture_lineups(self, fixture_id: str):
+            raise ApiFootballError('API-Football rate limit exceeded (HTTP 429).')
+
+        def fetch_team_sidelined(self, *args, **kwargs):
+            raise ApiFootballError('API-Football rate limit exceeded (HTTP 429).')
+
+        def fetch_team_statistics(self, *args, **kwargs):
+            raise ApiFootballError('API-Football rate limit exceeded (HTTP 429).')
+
+        def fetch_head_to_head(self, *args, **kwargs):
+            raise ApiFootballError('API-Football rate limit exceeded (HTTP 429).')
+
+    service = FixtureSnapshotService(
+        fixture_repository=FakeFixtureRepository(fixture),
+        soccerdata_client=FakeSoccerDataClient(bundle),
+        transfermarkt_dataset=FakeTransfermarktDataset(
+            market_values={},
+            probable_lineups={},
+        ),
+        api_context_client=QuotaExhaustedApiFootballClient(),
+        reference_repository=FakeReferenceRepository(),
+        weather_client=FakeWeatherClient(),
+    )
+
+    with caplog.at_level('WARNING', logger='nutmeg.services.snapshot'):
+        snapshot = service.build_snapshot('epl-001')
+
+    # degradation is recorded as a warning rather than silently swallowed.
+    assert any(
+        'API-Football unavailable' in record.message
+        for record in caplog.records
+    )
+
+    # soccerdata-sourced matchup trends remain populated despite API-Football failure.
+    assert snapshot.matchup is not None
+    assert snapshot.matchup.home_trend is not None
+    assert snapshot.matchup.home_trend.source == 'soccerdata'
+    assert snapshot.matchup.away_trend is not None
+    assert snapshot.matchup.away_trend.source == 'soccerdata'
+    # API-Football-sourced enrichment degrades to empty rather than aborting.
+    assert snapshot.matchup.head_to_head is None
+    assert snapshot.matchup.home_split is None
+    assert snapshot.matchup.away_split is None
+    assert snapshot.home.injuries == []
+    assert snapshot.away.injuries == []
+    # the model side still prices from the soccerdata matchup trends.
+    expected_goals = expected_goals_from_snapshot(snapshot)
+    assert expected_goals.source == 'recent-xg-matchup'
 
 
 def _fbref_standard_team_stats() -> pd.DataFrame:

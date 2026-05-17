@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from nutmeg.config.catalog import get_league
 from nutmeg.core.repositories import FixtureRepository
-from nutmeg.data.api_football import ApiFootballClient
+from nutmeg.data.api_football import ApiFootballClient, ApiFootballError
 from nutmeg.data.open_meteo import OpenMeteoClient
 from nutmeg.data.soccerdata_client import SoccerDataClient
 from nutmeg.data.transfermarkt import TransfermarktDataset
@@ -22,6 +23,8 @@ from nutmeg.domain.snapshot import (
     snapshot_timestamp,
 )
 from nutmeg.storage.reference_repository import DuckDbReferenceRepository
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class FixtureNotFoundError(LookupError):
@@ -62,12 +65,25 @@ class FixtureSnapshotService:
             recent_matches=recent_matches,
         )
         if live_context:
-            injuries_by_team = self._api_context_client.fetch_fixture_injuries(
-                fixture.fixture_id
-            )
-            confirmed_lineups = self._api_context_client.fetch_fixture_lineups(
-                fixture.fixture_id
-            )
+            # API-Football enrichment degrades to empty when the provider is
+            # unavailable (e.g. exhausted daily quota); soccerdata-sourced data
+            # below is unaffected so the model side can still price the fixture.
+            try:
+                injuries_by_team = self._api_context_client.fetch_fixture_injuries(
+                    fixture.fixture_id
+                )
+                confirmed_lineups = self._api_context_client.fetch_fixture_lineups(
+                    fixture.fixture_id
+                )
+            except ApiFootballError as exc:
+                _LOGGER.warning(
+                    'API-Football unavailable for fixture %s; degrading to '
+                    'soccerdata-only enrichment (no injuries/lineups): %s',
+                    fixture.fixture_id,
+                    exc,
+                )
+                injuries_by_team = {}
+                confirmed_lineups = {}
             weather = self._weather_client.get_fixture_weather(fixture)
         else:
             injuries_by_team = {}
@@ -252,11 +268,20 @@ class FixtureSnapshotService:
         fetcher = getattr(self._api_context_client, 'fetch_team_sidelined', None)
         if not callable(fetcher):
             return []
-        records = fetcher(
-            team_id,
-            season,
-            as_of_date=as_of_date,
-        )
+        try:
+            records = fetcher(
+                team_id,
+                season,
+                as_of_date=as_of_date,
+            )
+        except ApiFootballError as exc:
+            _LOGGER.warning(
+                'API-Football unavailable for team %s sidelined records; '
+                'degrading to empty: %s',
+                team_id,
+                exc,
+            )
+            return []
         return list(records or [])
 
     def _build_availability_context(
@@ -474,30 +499,44 @@ class FixtureSnapshotService:
         )
         home_split = None
         away_split = None
-        if callable(statistics_fetcher):
-            if fixture.home_team_id is not None:
-                home_split = statistics_fetcher(
-                    team_id=fixture.home_team_id,
-                    league_id=fixture.provider_league_id,
-                    season=fixture.season,
-                )
-            if fixture.away_team_id is not None:
-                away_split = statistics_fetcher(
-                    team_id=fixture.away_team_id,
-                    league_id=fixture.provider_league_id,
-                    season=fixture.season,
-                )
         head_to_head = None
-        if (
-            callable(head_to_head_fetcher)
-            and fixture.home_team_id is not None
-            and fixture.away_team_id is not None
-        ):
-            head_to_head = head_to_head_fetcher(
-                home_team_id=fixture.home_team_id,
-                away_team_id=fixture.away_team_id,
-                last=5,
+        # API-Football splits/head-to-head degrade to None when the provider is
+        # unavailable; the soccerdata-sourced home_trend/away_trend below remain
+        # populated so expected_goals_from_snapshot can still price the fixture.
+        try:
+            if callable(statistics_fetcher):
+                if fixture.home_team_id is not None:
+                    home_split = statistics_fetcher(
+                        team_id=fixture.home_team_id,
+                        league_id=fixture.provider_league_id,
+                        season=fixture.season,
+                    )
+                if fixture.away_team_id is not None:
+                    away_split = statistics_fetcher(
+                        team_id=fixture.away_team_id,
+                        league_id=fixture.provider_league_id,
+                        season=fixture.season,
+                    )
+            if (
+                callable(head_to_head_fetcher)
+                and fixture.home_team_id is not None
+                and fixture.away_team_id is not None
+            ):
+                head_to_head = head_to_head_fetcher(
+                    home_team_id=fixture.home_team_id,
+                    away_team_id=fixture.away_team_id,
+                    last=5,
+                )
+        except ApiFootballError as exc:
+            _LOGGER.warning(
+                'API-Football unavailable for fixture %s matchup context; '
+                'degrading splits/head-to-head to None: %s',
+                fixture.fixture_id,
+                exc,
             )
+            home_split = None
+            away_split = None
+            head_to_head = None
         return MatchupTrendContext(
             head_to_head=head_to_head,
             home_split=home_split,
