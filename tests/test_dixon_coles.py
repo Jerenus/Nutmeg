@@ -87,8 +87,10 @@ def test_dixon_coles_lite_probabilities_sum_to_one_and_favor_stronger_side() -> 
 def test_expected_goals_from_snapshot_uses_recent_xg_matchup() -> None:
     expected_goals = expected_goals_from_snapshot(_snapshot())
 
-    assert expected_goals.home == 1.9
-    assert expected_goals.away == 0.9
+    # raw matchup home 1.9 / away 0.9, then home-advantage 1.18 applied:
+    # home 1.9 * 1.18 = 2.24, away 0.9 / 1.18 = 0.76
+    assert expected_goals.home == 2.24
+    assert expected_goals.away == 0.76
     assert expected_goals.source == 'recent-xg-matchup'
 
 
@@ -170,4 +172,62 @@ def test_price_markets_match_winner_matches_legacy_price() -> None:
     assert markets.match_winner == legacy.as_dict()
     assert markets.model_name == legacy.model_name
     assert markets.expected_goals_source == expected_goals.source
+
+
+def _snapshot_with_trends(
+    *,
+    home_xg_for: float,
+    home_xg_against: float,
+    away_xg_for: float,
+    away_xg_against: float,
+) -> FixtureSnapshot:
+    base = _snapshot()
+    return FixtureSnapshot(
+        fixture=base.fixture,
+        home=base.home,
+        away=base.away,
+        deferred_sections=[],
+        generated_at=base.generated_at,
+        matchup=MatchupTrendContext(
+            head_to_head=None,
+            home_split=None,
+            away_split=None,
+            home_trend=TeamTrendSummary(
+                sample_size=38,
+                goals_for_per_match=home_xg_for,
+                xg_for_per_match=home_xg_for,
+                goals_against_per_match=home_xg_against,
+                xg_against_per_match=home_xg_against,
+                set_piece_shot_share=None,
+                source='test',
+            ),
+            away_trend=TeamTrendSummary(
+                sample_size=38,
+                goals_for_per_match=away_xg_for,
+                xg_for_per_match=away_xg_for,
+                goals_against_per_match=away_xg_against,
+                xg_against_per_match=away_xg_against,
+                set_piece_shot_share=None,
+                source='test',
+            ),
+        ),
+    )
+
+
+def test_expected_goals_from_snapshot_applies_home_advantage() -> None:
+    # Two teams with identical trend numbers: any home/away split in expected
+    # goals must come purely from the home-advantage multiplier.
+    snapshot = _snapshot_with_trends(
+        home_xg_for=1.5,
+        home_xg_against=1.5,
+        away_xg_for=1.5,
+        away_xg_against=1.5,
+    )
+
+    expected_goals = expected_goals_from_snapshot(snapshot)
+
+    assert expected_goals.home > expected_goals.away
+    # raw matchup is 1.5 for both sides; 1.5 * 1.18 = 1.77, 1.5 / 1.18 = 1.27
+    assert expected_goals.home == 1.77
+    assert expected_goals.away == 1.27
 

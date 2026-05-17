@@ -12,6 +12,13 @@ _MAX_TOTAL_GOALS_BUCKET = 7
 # A negative line gives the home side a deficit (e.g. -1 = home must win by 2+).
 _HANDICAP_LINES: tuple[int, ...] = (-2, -1, 0, 1, 2)
 
+# Home-advantage multiplier for expected goals: the home side's goal
+# expectation is scaled up and the away side's down by the same factor.
+# ~1.18 reflects the roughly 55/45 home/away goal split in major European
+# leagues, kept slightly conservative. A named constant so it is easy to
+# re-tune from backtests.
+_HOME_ADVANTAGE = 1.18
+
 
 @dataclass(slots=True, frozen=True)
 class ExpectedGoals:
@@ -252,8 +259,8 @@ def expected_goals_from_snapshot(snapshot) -> ExpectedGoals:
             and home_defense is not None
         ):
             return ExpectedGoals(
-                home=round((home_attack + away_defense) / 2, 2),
-                away=round((away_attack + home_defense) / 2, 2),
+                home=round((home_attack + away_defense) / 2 * _HOME_ADVANTAGE, 2),
+                away=round((away_attack + home_defense) / 2 / _HOME_ADVANTAGE, 2),
                 source='recent-xg-matchup',
             )
 
