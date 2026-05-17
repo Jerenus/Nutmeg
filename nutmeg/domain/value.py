@@ -20,6 +20,10 @@ class ValueCandidate:
     quarter_kelly_fraction: float
     rating: str
     model_name: str
+    # Which market this candidate belongs to (match_winner / total_goals /
+    # correct_score / handicap_home_*). Defaults to match_winner for backward
+    # compatibility with callers built before the multi-market value engine.
+    market_key: str = 'match_winner'
     source_notes: list[str] = field(default_factory=list)
 
 

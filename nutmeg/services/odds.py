@@ -27,15 +27,54 @@ SUPPORTED_HANDICAP_LINES: tuple[str, ...] = (
     '2.5',
 )
 
-EXPECTED_MARKETS: dict[str, tuple[str, tuple[str, ...], str | None]] = {
+# Integer European handicap lines applied to the home tally, shared with the
+# Dixon-Coles pricing model. A negative line is a home deficit.
+SUPPORTED_GOAL_HANDICAP_LINES: tuple[int, ...] = (-2, -1, 0, 1, 2)
+
+# Total-goals exact buckets: 0..6 plus a 7+ residual tail.
+MAX_TOTAL_GOALS_BUCKET: int = 7
+
+
+def _goal_handicap_suffix(line: int) -> str:
+    if line == 0:
+        return '0'
+    return f"{'minus' if line < 0 else 'plus'}_{abs(line)}"
+
+
+def _goal_handicap_line_label(line: int) -> str:
+    if line == 0:
+        return '0'
+    return f'{line:+d}'
+
+
+TOTAL_GOALS_OUTCOMES: tuple[str, ...] = tuple(
+    f'total_{count}' for count in range(MAX_TOTAL_GOALS_BUCKET)
+) + (f'total_{MAX_TOTAL_GOALS_BUCKET}_plus',)
+
+# A market whose `expected_outcomes` is DYNAMIC_OUTCOMES has an open-ended
+# outcome set (e.g. correct score). Consensus is computed over whatever the
+# provider supplies; the market is `available` whenever any outcome is priced.
+DYNAMIC_OUTCOMES: tuple[str, ...] = ()
+
+EXPECTED_MARKETS: dict[str, tuple[str, tuple[str, ...] | None, str | None]] = {
     'match_winner': ('Match Winner', ('home', 'draw', 'away'), None),
     'btts': ('Both Teams Score', ('yes', 'no'), None),
     'totals_1_5': ('Goals Over/Under', ('over', 'under'), '1.5'),
     'totals_2_5': ('Goals Over/Under', ('over', 'under'), '2.5'),
     'totals_3_5': ('Goals Over/Under', ('over', 'under'), '3.5'),
+    'total_goals': ('Exact Goals Number', TOTAL_GOALS_OUTCOMES, None),
+    'correct_score': ('Exact Score', None, None),
     **{
         f"asian_handicap_{line.replace('.', '_')}": ('Asian Handicap', ('home', 'away'), line)
         for line in SUPPORTED_HANDICAP_LINES
+    },
+    **{
+        f'handicap_home_{_goal_handicap_suffix(line)}': (
+            'Handicap Result',
+            ('home', 'draw', 'away'),
+            _goal_handicap_line_label(line),
+        )
+        for line in SUPPORTED_GOAL_HANDICAP_LINES
     },
 }
 
@@ -110,10 +149,24 @@ class OddsSnapshotService:
 
         outcomes = [self._with_price_summary(outcome) for outcome in provider_market.outcomes]
         outcome_by_key = {outcome.outcome_key: outcome for outcome in outcomes}
-        complete = all(
-            outcome_key in outcome_by_key and outcome_by_key[outcome_key].bookmaker_quotes
-            for outcome_key in expected_outcomes
-        )
+
+        # A `None` expected-outcomes set means the market is open-ended (e.g.
+        # correct score): use whatever the provider priced, in provider order.
+        if expected_outcomes is None:
+            resolved_outcomes: tuple[str, ...] = tuple(
+                outcome.outcome_key
+                for outcome in outcomes
+                if outcome.bookmaker_quotes
+            )
+            complete = bool(resolved_outcomes)
+        else:
+            resolved_outcomes = expected_outcomes
+            complete = all(
+                outcome_key in outcome_by_key
+                and outcome_by_key[outcome_key].bookmaker_quotes
+                for outcome_key in expected_outcomes
+            )
+
         if not complete:
             return MarketOddsSnapshot(
                 market_key=provider_market.market_key,
@@ -124,14 +177,14 @@ class OddsSnapshotService:
                 outcomes=outcomes,
             )
 
-        consensus = self._consensus_probabilities(expected_outcomes, outcome_by_key)
+        consensus = self._consensus_probabilities(resolved_outcomes, outcome_by_key)
         enriched = [
             replace(
                 outcome_by_key[outcome_key],
                 fair_probability=consensus[outcome_key],
                 fair_odds=fair_odds(consensus[outcome_key]),
             )
-            for outcome_key in expected_outcomes
+            for outcome_key in resolved_outcomes
         ]
         return MarketOddsSnapshot(
             market_key=provider_market.market_key,

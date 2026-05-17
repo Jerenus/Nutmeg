@@ -137,6 +137,88 @@ def _odds(fixture: Fixture, *, market_status: str = 'available') -> OddsSnapshot
     )
 
 
+def _market(
+    market_key: str,
+    market_name: str,
+    outcomes: list[OutcomeOddsSnapshot],
+    *,
+    status: str = 'available',
+    line: str | None = None,
+) -> MarketOddsSnapshot:
+    return MarketOddsSnapshot(
+        market_key=market_key,
+        market_name=market_name,
+        status=status,
+        line=line,
+        source_market_ids=[],
+        outcomes=outcomes,
+    )
+
+
+def _priced_outcome(
+    outcome_key: str,
+    outcome_name: str,
+    *,
+    fair_probability: float,
+    best_odds: float,
+) -> OutcomeOddsSnapshot:
+    return OutcomeOddsSnapshot(
+        outcome_key=outcome_key,
+        outcome_name=outcome_name,
+        bookmaker_quotes=[],
+        best_odds=best_odds,
+        average_odds=round(best_odds * 0.97, 3),
+        fair_probability=fair_probability,
+        fair_odds=round(1.0 / fair_probability, 3),
+        bookmaker_count=2,
+    )
+
+
+def _multi_market_odds(fixture: Fixture) -> OddsSnapshot:
+    """An odds snapshot covering all four Phase 3a markets.
+
+    Each non-match-winner market deliberately under-prices one model-favoured
+    outcome so the value engine surfaces an edge there.
+    """
+    base = _odds(fixture)
+    markets = dict(base.markets)
+    markets['total_goals'] = _market(
+        'total_goals',
+        'Exact Goals Number',
+        [
+            _priced_outcome('total_0', '0', fair_probability=0.30, best_odds=3.6),
+            _priced_outcome('total_1', '1', fair_probability=0.25, best_odds=4.2),
+            _priced_outcome('total_2', '2', fair_probability=0.15, best_odds=7.5),
+            _priced_outcome('total_3', '3', fair_probability=0.12, best_odds=9.0),
+            _priced_outcome('total_4', '4', fair_probability=0.08, best_odds=13.0),
+            _priced_outcome('total_5', '5', fair_probability=0.05, best_odds=20.0),
+            _priced_outcome('total_6', '6', fair_probability=0.03, best_odds=34.0),
+            _priced_outcome('total_7_plus', '7+', fair_probability=0.02, best_odds=50.0),
+        ],
+    )
+    markets['correct_score'] = _market(
+        'correct_score',
+        'Exact Score',
+        [
+            _priced_outcome('score_1_0', '1:0', fair_probability=0.05, best_odds=22.0),
+            _priced_outcome('score_2_0', '2:0', fair_probability=0.05, best_odds=22.0),
+            _priced_outcome('score_2_1', '2:1', fair_probability=0.05, best_odds=22.0),
+            _priced_outcome('score_0_0', '0:0', fair_probability=0.85, best_odds=1.15),
+        ],
+    )
+    markets['handicap_home_minus_1'] = _market(
+        'handicap_home_minus_1',
+        'Handicap Result',
+        [
+            _priced_outcome('home', 'Home', fair_probability=0.25, best_odds=4.5),
+            _priced_outcome('draw', 'Draw', fair_probability=0.40, best_odds=2.6),
+            _priced_outcome('away', 'Away', fair_probability=0.35, best_odds=3.0),
+        ],
+        line='-1',
+    )
+    return replace(base, markets=markets)
+
+
 class FakeFixtureRepository:
     def __init__(self, fixtures: list[Fixture]) -> None:
         self._fixtures = fixtures
@@ -208,6 +290,110 @@ def test_value_board_skips_fixture_without_available_match_winner_market() -> No
     assert board.candidates == []
     assert board.skipped[0].fixture_id == fixture.fixture_id
     assert 'match_winner' in board.skipped[0].reason
+
+
+def test_value_board_match_winner_candidate_carries_market_key() -> None:
+    fixture = _fixture()
+    service = ValueBoardService(
+        fixture_repository=FakeFixtureRepository([fixture]),
+        snapshot_service=FakeSnapshotService({fixture.fixture_id: _snapshot(fixture)}),
+        odds_service=FakeOddsService({fixture.fixture_id: _odds(fixture)}),
+    )
+
+    board = service.build_board(league='epl', days=3, limit=5, min_edge=0.03)
+
+    assert board.candidates
+    home = next(c for c in board.candidates if c.outcome_key == 'home')
+    assert home.market_key == 'match_winner'
+
+
+def test_value_board_evaluates_total_goals_market() -> None:
+    fixture = _fixture()
+    service = ValueBoardService(
+        fixture_repository=FakeFixtureRepository([fixture]),
+        snapshot_service=FakeSnapshotService({fixture.fixture_id: _snapshot(fixture)}),
+        odds_service=FakeOddsService({fixture.fixture_id: _multi_market_odds(fixture)}),
+    )
+
+    board = service.build_board(league='epl', days=3, limit=50, min_edge=0.03)
+
+    total_goals = [c for c in board.candidates if c.market_key == 'total_goals']
+    assert total_goals, 'expected at least one total_goals value candidate'
+    for candidate in total_goals:
+        assert candidate.outcome_key.startswith('total_')
+        assert candidate.edge >= 0.03
+        assert candidate.expected_value > 0
+        assert candidate.quarter_kelly_fraction > 0
+
+
+def test_value_board_evaluates_correct_score_market() -> None:
+    fixture = _fixture()
+    service = ValueBoardService(
+        fixture_repository=FakeFixtureRepository([fixture]),
+        snapshot_service=FakeSnapshotService({fixture.fixture_id: _snapshot(fixture)}),
+        odds_service=FakeOddsService({fixture.fixture_id: _multi_market_odds(fixture)}),
+    )
+
+    board = service.build_board(league='epl', days=3, limit=50, min_edge=0.03)
+
+    correct_score = [c for c in board.candidates if c.market_key == 'correct_score']
+    assert correct_score, 'expected at least one correct_score value candidate'
+    for candidate in correct_score:
+        assert candidate.outcome_key.startswith('score_')
+        assert candidate.edge >= 0.03
+
+
+def test_value_board_evaluates_handicap_market() -> None:
+    fixture = _fixture()
+    service = ValueBoardService(
+        fixture_repository=FakeFixtureRepository([fixture]),
+        snapshot_service=FakeSnapshotService({fixture.fixture_id: _snapshot(fixture)}),
+        odds_service=FakeOddsService({fixture.fixture_id: _multi_market_odds(fixture)}),
+    )
+
+    board = service.build_board(league='epl', days=3, limit=50, min_edge=0.03)
+
+    handicap = [c for c in board.candidates if c.market_key == 'handicap_home_minus_1']
+    assert handicap, 'expected at least one handicap value candidate'
+    for candidate in handicap:
+        assert candidate.outcome_key in {'home', 'draw', 'away'}
+        assert candidate.edge >= 0.03
+
+
+def test_value_board_still_skips_when_match_winner_market_unavailable() -> None:
+    fixture = _fixture()
+    odds = _multi_market_odds(fixture)
+    markets = dict(odds.markets)
+    markets['match_winner'] = _market(
+        'match_winner', 'Match Winner', [], status='unavailable'
+    )
+    odds = replace(odds, markets=markets)
+    service = ValueBoardService(
+        fixture_repository=FakeFixtureRepository([fixture]),
+        snapshot_service=FakeSnapshotService({fixture.fixture_id: _snapshot(fixture)}),
+        odds_service=FakeOddsService({fixture.fixture_id: odds}),
+    )
+
+    board = service.build_board(league='epl', days=3, limit=50, min_edge=0.03)
+
+    assert board.candidates == []
+    assert board.skipped[0].fixture_id == fixture.fixture_id
+    assert 'match_winner' in board.skipped[0].reason
+
+
+def test_value_board_tolerates_missing_secondary_markets() -> None:
+    # Only match_winner is priced; the other markets are simply absent.
+    fixture = _fixture()
+    service = ValueBoardService(
+        fixture_repository=FakeFixtureRepository([fixture]),
+        snapshot_service=FakeSnapshotService({fixture.fixture_id: _snapshot(fixture)}),
+        odds_service=FakeOddsService({fixture.fixture_id: _odds(fixture)}),
+    )
+
+    board = service.build_board(league='epl', days=3, limit=50, min_edge=0.03)
+
+    assert board.skipped == []
+    assert {c.market_key for c in board.candidates} == {'match_winner'}
 
 
 def test_value_board_ignores_demo_cache_when_real_fixtures_exist() -> None:

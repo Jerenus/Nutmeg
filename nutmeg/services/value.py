@@ -8,7 +8,11 @@ from nutmeg.domain.fixtures import Fixture
 from nutmeg.domain.odds import MarketOddsSnapshot, OddsSnapshot
 from nutmeg.domain.value import SkippedValueFixture, ValueBoard, ValueCandidate
 from nutmeg.models.betting import quarter_kelly_fraction
-from nutmeg.models.dixon_coles import DixonColesLiteModel, expected_goals_from_snapshot
+from nutmeg.models.dixon_coles import (
+    DixonColesLiteModel,
+    MarketProbabilities,
+    expected_goals_from_snapshot,
+)
 
 
 class SnapshotService(Protocol):
@@ -84,15 +88,64 @@ class ValueBoardService:
         min_edge: float,
     ) -> list[ValueCandidate]:
         snapshot = self._snapshot_service.build_snapshot(fixture.fixture_id, recent_matches=5)
-        model_probabilities = self._pricing_model.price(expected_goals_from_snapshot(snapshot))
+        model_markets = self._pricing_model.price_markets(
+            expected_goals_from_snapshot(snapshot)
+        )
         odds = self._odds_service.build_snapshot(fixture.fixture_id, persist_history=False)
-        market = odds.markets.get('match_winner')
-        if market is None or market.status != 'available':
+
+        # match_winner is the mandatory anchor: without it the fixture cannot be
+        # priced against the market and is skipped entirely.
+        match_winner = odds.markets.get('match_winner')
+        if match_winner is None or match_winner.status != 'available':
             raise ValueError('match_winner market is unavailable')
 
+        candidates: list[ValueCandidate] = []
+        for market_key, model_probabilities in self._market_probabilities(model_markets):
+            market = odds.markets.get(market_key)
+            if market is None or market.status != 'available':
+                # Secondary markets degrade gracefully — only match_winner is
+                # mandatory, and that has already been checked above.
+                continue
+            candidates.extend(
+                self._market_candidates(
+                    fixture=fixture,
+                    odds=odds,
+                    market=market,
+                    model_probabilities=model_probabilities,
+                    model_name=model_markets.model_name,
+                    model_source=model_markets.expected_goals_source,
+                    min_edge=min_edge,
+                )
+            )
+        return candidates
+
+    def _market_probabilities(
+        self,
+        model_markets: MarketProbabilities,
+    ) -> list[tuple[str, dict[str, float]]]:
+        """Flatten the model's market probabilities into (market_key, probs) pairs."""
+        markets: list[tuple[str, dict[str, float]]] = [
+            ('match_winner', model_markets.match_winner),
+            ('total_goals', model_markets.total_goals),
+            ('correct_score', model_markets.correct_score),
+        ]
+        markets.extend(model_markets.handicap.items())
+        return markets
+
+    def _market_candidates(
+        self,
+        *,
+        fixture: Fixture,
+        odds: OddsSnapshot,
+        market: MarketOddsSnapshot,
+        model_probabilities: dict[str, float],
+        model_name: str,
+        model_source: str,
+        min_edge: float,
+    ) -> list[ValueCandidate]:
         outcome_by_key = {outcome.outcome_key: outcome for outcome in market.outcomes}
         candidates: list[ValueCandidate] = []
-        for outcome_key, model_probability in model_probabilities.as_dict().items():
+        for outcome_key, model_probability in model_probabilities.items():
             outcome = outcome_by_key.get(outcome_key)
             if (
                 outcome is None
@@ -103,6 +156,10 @@ class ValueBoardService:
             edge = round(model_probability - outcome.fair_probability, 6)
             expected_value = round((model_probability * outcome.best_odds) - 1, 6)
             if edge < min_edge or expected_value <= 0:
+                continue
+            if not 0 < model_probability < 1:
+                # quarter_kelly_fraction requires a strict probability;
+                # degenerate buckets cannot be staked.
                 continue
             kelly = round(
                 quarter_kelly_fraction(
@@ -126,8 +183,8 @@ class ValueBoardService:
                     best_odds=outcome.best_odds,
                     expected_value=expected_value,
                     quarter_kelly_fraction=kelly,
-                    model_name=model_probabilities.model_name,
-                    model_source=model_probabilities.expected_goals_source,
+                    model_name=model_name,
+                    model_source=model_source,
                 )
             )
         return candidates
@@ -164,6 +221,7 @@ class ValueBoardService:
             quarter_kelly_fraction=quarter_kelly_fraction,
             rating=_value_rating(edge, quarter_kelly_fraction),
             model_name=model_name,
+            market_key=market.market_key,
             source_notes=[
                 f'model={model_source}',
                 f'odds={odds.provider.name}',

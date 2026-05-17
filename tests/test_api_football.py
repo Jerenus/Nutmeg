@@ -495,6 +495,109 @@ def test_fetch_fixture_odds_accepts_supported_market_id_even_if_name_varies() ->
     ]
 
 
+def test_fetch_fixture_odds_normalizes_total_goals_correct_score_and_handicap() -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            json={
+                'errors': [],
+                'response': [
+                    {
+                        'update': '2026-04-24T06:16:30+00:00',
+                        'bookmakers': [
+                            {
+                                'id': 1,
+                                'name': '10Bet',
+                                'bets': [
+                                    {
+                                        'id': 38,
+                                        'name': 'Exact Goals Number',
+                                        'values': [
+                                            {'value': '0', 'odd': '11.0'},
+                                            {'value': '1', 'odd': '5.5'},
+                                            {'value': '2', 'odd': '3.8'},
+                                            {'value': '3', 'odd': '4.0'},
+                                            {'value': '4', 'odd': '6.5'},
+                                            {'value': '5', 'odd': '12.0'},
+                                            {'value': '6', 'odd': '26.0'},
+                                            {'value': '7+', 'odd': '34.0'},
+                                        ],
+                                    },
+                                    {
+                                        'id': 92,
+                                        'name': 'Exact Score',
+                                        'values': [
+                                            {'value': '1:0', 'odd': '7.5'},
+                                            {'value': '0:1', 'odd': '10.0'},
+                                            {'value': '2:1', 'odd': '9.0'},
+                                        ],
+                                    },
+                                    {
+                                        'id': 9,
+                                        'name': 'Handicap Result',
+                                        'values': [
+                                            {'value': 'Home -1', 'odd': '2.50'},
+                                            {'value': 'Draw -1', 'odd': '3.60'},
+                                            {'value': 'Away -1', 'odd': '2.70'},
+                                            {'value': 'Home +1', 'odd': '1.30'},
+                                            {'value': 'Draw +1', 'odd': '5.50'},
+                                            {'value': 'Away +1', 'odd': '9.00'},
+                                        ],
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+    )
+    client = httpx.Client(base_url='https://example.test', transport=transport)
+    api_client = ApiFootballClient(
+        base_url='https://example.test',
+        api_key='demo-key',
+        client=client,
+    )
+
+    snapshot = api_client.fetch_fixture_odds(fixture_id='1234')
+
+    total_goals = snapshot.markets['total_goals']
+    assert total_goals.status == 'available'
+    assert [outcome.outcome_key for outcome in total_goals.outcomes] == [
+        'total_0',
+        'total_1',
+        'total_2',
+        'total_3',
+        'total_4',
+        'total_5',
+        'total_6',
+        'total_7_plus',
+    ]
+
+    correct_score = snapshot.markets['correct_score']
+    assert correct_score.status == 'available'
+    assert {outcome.outcome_key for outcome in correct_score.outcomes} == {
+        'score_1_0',
+        'score_0_1',
+        'score_2_1',
+    }
+
+    handicap = snapshot.markets['handicap_home_minus_1']
+    assert handicap.line == '-1'
+    assert [outcome.outcome_key for outcome in handicap.outcomes] == [
+        'home',
+        'draw',
+        'away',
+    ]
+    handicap_plus = snapshot.markets['handicap_home_plus_1']
+    assert handicap_plus.line == '+1'
+    assert [outcome.outcome_key for outcome in handicap_plus.outcomes] == [
+        'home',
+        'draw',
+        'away',
+    ]
+
+
 def test_fetch_team_sidelined_aggregates_active_player_records_from_squad() -> None:
     seen_requests: list[tuple[str, dict[str, str]]] = []
 

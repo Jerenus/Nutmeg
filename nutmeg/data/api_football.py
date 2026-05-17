@@ -87,15 +87,55 @@ SUPPORTED_HANDICAP_LINES: tuple[str, ...] = (
     '2.5',
 )
 
+def _goal_handicap_suffix(line: int) -> str:
+    if line == 0:
+        return '0'
+    return f"{'minus' if line < 0 else 'plus'}_{abs(line)}"
+
+
+def total_goals_outcome_keys() -> tuple[str, ...]:
+    """Exact total-goals bucket keys: total_0..total_6 plus a 7+ tail."""
+    return tuple(
+        f'total_{count}' for count in range(MAX_TOTAL_GOALS_BUCKET)
+    ) + (f'total_{MAX_TOTAL_GOALS_BUCKET}_plus',)
+
+
+def _correct_score_sort_key(outcome_key: str) -> tuple[int, int]:
+    parts = outcome_key.removeprefix('score_').split('_')
+    try:
+        return (int(parts[0]), int(parts[1]))
+    except (IndexError, ValueError):
+        return (99, 99)
+
+
+def _goal_handicap_line_label(line: int) -> str:
+    if line == 0:
+        return '0'
+    return f'{line:+d}'
+
+
+# Integer European handicap lines (applied to the home tally), shared with the
+# Dixon-Coles pricing model. A negative line is a home deficit.
+SUPPORTED_GOAL_HANDICAP_LINES: tuple[int, ...] = (-2, -1, 0, 1, 2)
+
+# Total-goals exact buckets: 0..6 plus a 7+ residual tail.
+MAX_TOTAL_GOALS_BUCKET: int = 7
+
 SUPPORTED_ODDS_MARKETS: dict[str, tuple[int, str]] = {
     'match_winner': (1, 'Match Winner'),
     'totals_1_5': (5, 'Goals Over/Under'),
     'totals_2_5': (5, 'Goals Over/Under'),
     'totals_3_5': (5, 'Goals Over/Under'),
     'btts': (8, 'Both Teams Score'),
+    'total_goals': (38, 'Exact Goals Number'),
+    'correct_score': (92, 'Exact Score'),
     **{
         f"asian_handicap_{line.replace('.', '_')}": (13, 'Asian Handicap')
         for line in SUPPORTED_HANDICAP_LINES
+    },
+    **{
+        f'handicap_home_{_goal_handicap_suffix(line)}': (9, 'Handicap Result')
+        for line in SUPPORTED_GOAL_HANDICAP_LINES
     },
 }
 
@@ -360,7 +400,7 @@ class ApiFootballClient:
                                 entry['outcomes'][outcome_key]['bookmaker_quotes']
                             ),
                         )
-                        for outcome_key in self._market_outcome_order(market_key)
+                        for outcome_key in self._ordered_outcome_keys(market_key, entry)
                         if outcome_key in entry['outcomes']
                     ],
                 )
@@ -618,6 +658,27 @@ class ApiFootballClient:
         )
         if totals_selection is not None:
             return totals_selection
+        total_goals_selection = self._normalize_total_goals_selection(
+            bet_id=bet_id,
+            bet_name=bet_name,
+            selection=selection,
+        )
+        if total_goals_selection is not None:
+            return total_goals_selection
+        correct_score_selection = self._normalize_correct_score_selection(
+            bet_id=bet_id,
+            bet_name=bet_name,
+            selection=selection,
+        )
+        if correct_score_selection is not None:
+            return correct_score_selection
+        goal_handicap_selection = self._normalize_goal_handicap_selection(
+            bet_id=bet_id,
+            bet_name=bet_name,
+            selection=selection,
+        )
+        if goal_handicap_selection is not None:
+            return goal_handicap_selection
         asian_selection = self._normalize_asian_handicap_selection(
             bet_id=bet_id,
             bet_name=bet_name,
@@ -634,9 +695,23 @@ class ApiFootballClient:
             return ('yes', 'no')
         if market_key in {'totals_1_5', 'totals_2_5', 'totals_3_5'}:
             return ('over', 'under')
+        if market_key == 'total_goals':
+            return total_goals_outcome_keys()
+        if market_key.startswith('handicap_home_'):
+            return ('home', 'draw', 'away')
         if market_key.startswith('asian_handicap_'):
             return ('home', 'away')
         return ()
+
+    def _ordered_outcome_keys(
+        self,
+        market_key: str,
+        entry: dict[str, Any],
+    ) -> tuple[str, ...]:
+        # Correct score has an open-ended outcome set; emit it in score order.
+        if market_key == 'correct_score':
+            return tuple(sorted(entry['outcomes'], key=_correct_score_sort_key))
+        return self._market_outcome_order(market_key)
 
     def _matches_supported_odds_market(
         self,
@@ -700,3 +775,85 @@ class ApiFootballClient:
         if numeric.is_integer():
             return f'{numeric:.1f}'
         return f'{numeric:.2f}'.rstrip('0')
+
+    def _normalize_total_goals_selection(
+        self,
+        *,
+        bet_id: int | None,
+        bet_name: str,
+        selection: str,
+    ) -> tuple[str, str, str, str | None] | None:
+        if not self._matches_supported_odds_market(bet_id, bet_name, 'total_goals'):
+            return None
+        raw = selection.strip().casefold()
+        # Tail bucket variants: '7+', '7 or more', 'more 6.5'.
+        if raw.endswith('+') or 'more' in raw or 'over' in raw:
+            digits = ''.join(ch for ch in raw if ch.isdigit())
+            if digits and int(digits) >= MAX_TOTAL_GOALS_BUCKET - 1:
+                key = f'total_{MAX_TOTAL_GOALS_BUCKET}_plus'
+                return ('total_goals', key, f'{MAX_TOTAL_GOALS_BUCKET}+', None)
+            return None
+        if not raw.isdigit():
+            return None
+        goals = int(raw)
+        if goals < 0:
+            return None
+        if goals >= MAX_TOTAL_GOALS_BUCKET:
+            key = f'total_{MAX_TOTAL_GOALS_BUCKET}_plus'
+            return ('total_goals', key, f'{MAX_TOTAL_GOALS_BUCKET}+', None)
+        return ('total_goals', f'total_{goals}', str(goals), None)
+
+    def _normalize_correct_score_selection(
+        self,
+        *,
+        bet_id: int | None,
+        bet_name: str,
+        selection: str,
+    ) -> tuple[str, str, str, str | None] | None:
+        if not self._matches_supported_odds_market(bet_id, bet_name, 'correct_score'):
+            return None
+        raw = selection.strip().replace(' ', '')
+        separator = ':' if ':' in raw else ('-' if '-' in raw else None)
+        if separator is None:
+            return None
+        home_part, _, away_part = raw.partition(separator)
+        if not (home_part.isdigit() and away_part.isdigit()):
+            return None
+        home_goals = int(home_part)
+        away_goals = int(away_part)
+        return (
+            'correct_score',
+            f'score_{home_goals}_{away_goals}',
+            f'{home_goals}:{away_goals}',
+            None,
+        )
+
+    def _normalize_goal_handicap_selection(
+        self,
+        *,
+        bet_id: int | None,
+        bet_name: str,
+        selection: str,
+    ) -> tuple[str, str, str, str | None] | None:
+        if not (bet_id == 9 or bet_name == 'Handicap Result'):
+            return None
+        parts = selection.strip().split()
+        if len(parts) != 2:
+            return None
+        side, raw_line = parts
+        outcome = {'home': 'home', 'draw': 'draw', 'away': 'away'}.get(side.casefold())
+        if outcome is None:
+            return None
+        try:
+            line = int(float(raw_line))
+        except ValueError:
+            return None
+        if line not in SUPPORTED_GOAL_HANDICAP_LINES:
+            return None
+        market_key = f'handicap_home_{_goal_handicap_suffix(line)}'
+        return (
+            market_key,
+            outcome,
+            outcome.capitalize(),
+            _goal_handicap_line_label(line),
+        )

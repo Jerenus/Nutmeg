@@ -400,6 +400,173 @@ def test_odds_snapshot_service_marks_missing_provider_markets_as_unavailable() -
     assert snapshot.markets['totals_3_5'].status == 'unavailable'
     assert snapshot.markets['asian_handicap_0_5'].status == 'unavailable'
     assert snapshot.markets['asian_handicap_2_0'].status == 'unavailable'
+    # Phase 3a markets are registered even when the provider supplies nothing.
+    assert snapshot.markets['total_goals'].status == 'unavailable'
+    assert snapshot.markets['correct_score'].status == 'unavailable'
+    assert snapshot.markets['handicap_home_minus_1'].status == 'unavailable'
+    assert snapshot.markets['handicap_home_0'].status == 'unavailable'
+    assert snapshot.markets['handicap_home_plus_1'].status == 'unavailable'
+
+
+def _outcome(outcome_key: str, outcome_name: str, *prices: float):
+    from nutmeg.domain.odds import BookmakerQuote, OutcomeOddsSnapshot
+
+    return OutcomeOddsSnapshot(
+        outcome_key=outcome_key,
+        outcome_name=outcome_name,
+        bookmaker_quotes=[
+            BookmakerQuote(
+                bookmaker_id=index + 1,
+                bookmaker_name=f'book-{index + 1}',
+                market_id=999,
+                market_name='phase3a',
+                selection_value=outcome_key,
+                decimal_odds=price,
+                source='api-football',
+            )
+            for index, price in enumerate(prices)
+        ],
+    )
+
+
+class Phase3aOddsClient:
+    """Provider feed exposing total_goals / correct_score / handicap markets."""
+
+    def fetch_fixture_odds(self, fixture_id: str):
+        from nutmeg.domain.odds import MarketOddsSnapshot, OddsProviderSnapshotFeed
+
+        assert fixture_id == '1234'
+        return OddsProviderSnapshotFeed(
+            provider='api-football',
+            updated_at=datetime(2026, 4, 24, 6, 16, 30, tzinfo=UTC),
+            bookmaker_count=2,
+            markets={
+                'total_goals': MarketOddsSnapshot(
+                    market_key='total_goals',
+                    market_name='Exact Goals Number',
+                    status='available',
+                    line=None,
+                    source_market_ids=[38],
+                    outcomes=[
+                        _outcome('total_0', '0', 11.0, 12.0),
+                        _outcome('total_1', '1', 5.5, 5.4),
+                        _outcome('total_2', '2', 3.8, 3.9),
+                        _outcome('total_3', '3', 4.0, 4.1),
+                        _outcome('total_4', '4', 6.5, 6.4),
+                        _outcome('total_5', '5', 12.0, 11.5),
+                        _outcome('total_6', '6', 26.0, 25.0),
+                        _outcome('total_7_plus', '7+', 34.0, 33.0),
+                    ],
+                ),
+                'correct_score': MarketOddsSnapshot(
+                    market_key='correct_score',
+                    market_name='Exact Score',
+                    status='available',
+                    line=None,
+                    source_market_ids=[92],
+                    outcomes=[
+                        _outcome('score_1_0', '1:0', 7.5, 7.6),
+                        _outcome('score_0_1', '0:1', 10.0, 10.5),
+                        _outcome('score_1_1', '1:1', 6.5, 6.4),
+                        _outcome('score_2_1', '2:1', 9.0, 9.1),
+                    ],
+                ),
+                'handicap_home_minus_1': MarketOddsSnapshot(
+                    market_key='handicap_home_minus_1',
+                    market_name='Handicap Result',
+                    status='available',
+                    line='-1',
+                    source_market_ids=[9],
+                    outcomes=[
+                        _outcome('home', 'Home', 2.50, 2.55),
+                        _outcome('draw', 'Draw', 3.60, 3.55),
+                        _outcome('away', 'Away', 2.70, 2.65),
+                    ],
+                ),
+            },
+        )
+
+
+def test_odds_snapshot_service_builds_total_goals_fair_probabilities() -> None:
+    from nutmeg.services.odds import OddsSnapshotService
+
+    service = OddsSnapshotService(
+        fixture_repository=FakeFixtureRepository(_fixture()),
+        odds_client=Phase3aOddsClient(),
+    )
+
+    snapshot = service.build_snapshot('1234')
+
+    total_goals = snapshot.markets['total_goals']
+    assert total_goals.status == 'available'
+    assert [outcome.outcome_key for outcome in total_goals.outcomes] == [
+        'total_0',
+        'total_1',
+        'total_2',
+        'total_3',
+        'total_4',
+        'total_5',
+        'total_6',
+        'total_7_plus',
+    ]
+    assert all(outcome.fair_probability is not None for outcome in total_goals.outcomes)
+    assert (
+        round(sum(outcome.fair_probability or 0.0 for outcome in total_goals.outcomes), 6)
+        == 1.0
+    )
+
+
+def test_odds_snapshot_service_builds_correct_score_fair_probabilities() -> None:
+    from nutmeg.services.odds import OddsSnapshotService
+
+    service = OddsSnapshotService(
+        fixture_repository=FakeFixtureRepository(_fixture()),
+        odds_client=Phase3aOddsClient(),
+    )
+
+    snapshot = service.build_snapshot('1234')
+
+    correct_score = snapshot.markets['correct_score']
+    assert correct_score.status == 'available'
+    assert {outcome.outcome_key for outcome in correct_score.outcomes} == {
+        'score_1_0',
+        'score_0_1',
+        'score_1_1',
+        'score_2_1',
+    }
+    assert all(
+        outcome.fair_probability is not None for outcome in correct_score.outcomes
+    )
+    assert (
+        round(sum(outcome.fair_probability or 0.0 for outcome in correct_score.outcomes), 6)
+        == 1.0
+    )
+
+
+def test_odds_snapshot_service_builds_handicap_fair_probabilities() -> None:
+    from nutmeg.services.odds import OddsSnapshotService
+
+    service = OddsSnapshotService(
+        fixture_repository=FakeFixtureRepository(_fixture()),
+        odds_client=Phase3aOddsClient(),
+    )
+
+    snapshot = service.build_snapshot('1234')
+
+    handicap = snapshot.markets['handicap_home_minus_1']
+    assert handicap.status == 'available'
+    assert handicap.line == '-1'
+    assert [outcome.outcome_key for outcome in handicap.outcomes] == [
+        'home',
+        'draw',
+        'away',
+    ]
+    assert (
+        round(sum(outcome.fair_probability or 0.0 for outcome in handicap.outcomes), 6)
+        == 1.0
+    )
+    # A handicap line the provider does not quote stays unavailable.
+    assert snapshot.markets['handicap_home_plus_2'].status == 'unavailable'
 
 
 def test_odds_snapshot_service_raises_for_unknown_fixture() -> None:
