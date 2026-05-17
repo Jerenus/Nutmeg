@@ -663,21 +663,14 @@ def _rationale(primary: str, suggested: str, labels: list[str]) -> str:
 
 
 def _conflict_verdict(signal: dict[str, Any] | None) -> str:
-    """Render a per-match had conflict signal as a short annotation string.
+    """The had conflict signal's verdict string, or "" when there is no signal.
 
-    Returns "" when there is no signal — callers then render no annotation.
+    The verdict is composed by ``ZucaiValueBridge`` (the signal's source of
+    truth); callers that get "" render no annotation for that match.
     """
     if not signal:
         return ""
-    verdict = str(signal.get("verdict") or "").strip()
-    if verdict:
-        return verdict
-    pick = str(signal.get("pick") or "")
-    label = {"3": "主胜", "1": "平", "0": "客胜"}.get(pick, pick)
-    edge = signal.get("edge")
-    if isinstance(edge, (int, float)):
-        return f"模型：{label} +{edge:.0%} edge"
-    return f"模型：{label}"
+    return str(signal.get("verdict") or "").strip()
 
 
 def _ticket_by_id(report: RenjiuDailyReport, ticket_id: str) -> RenjiuTicket:
