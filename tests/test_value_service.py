@@ -222,11 +222,16 @@ def _multi_market_odds(fixture: Fixture) -> OddsSnapshot:
 class FakeFixtureRepository:
     def __init__(self, fixtures: list[Fixture]) -> None:
         self._fixtures = fixtures
+        self.upserted: list[Fixture] = []
 
     def list_upcoming(self, league: str, days: int) -> list[Fixture]:
         assert league == 'epl'
         assert days == 3
         return self._fixtures
+
+    def upsert_many(self, fixtures: list[Fixture]) -> int:
+        self.upserted.extend(fixtures)
+        return len(fixtures)
 
 
 class FakeSnapshotService:
@@ -438,6 +443,24 @@ def test_build_board_for_fixtures_evaluates_supplied_fixtures() -> None:
     assert board.candidates
     assert board.candidates[0].fixture_id == '1379305'
     assert board.candidates[0].edge >= 0.03
+
+
+def test_build_board_for_fixtures_persists_supplied_fixtures_to_repository() -> None:
+    # The repo-backed odds/snapshot services resolve fixtures by id. Callers
+    # like JczqValueBridge align JCZQ matches to live API-Football fixtures
+    # that were never synced into the repo — build_board_for_fixtures must
+    # persist them first or the downstream get_fixture lookup fails.
+    fixture = _fixture('1379305')
+    repo = FakeFixtureRepository([])  # fixture is NOT pre-synced
+    service = ValueBoardService(
+        fixture_repository=repo,
+        snapshot_service=FakeSnapshotService({fixture.fixture_id: _snapshot(fixture)}),
+        odds_service=FakeOddsService({fixture.fixture_id: _odds(fixture)}),
+    )
+
+    service.build_board_for_fixtures([fixture], min_edge=0.03)
+
+    assert repo.upserted == [fixture]
 
 
 def test_build_board_for_fixtures_empty_input_returns_empty_board() -> None:

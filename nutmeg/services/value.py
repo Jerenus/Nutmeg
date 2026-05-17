@@ -77,6 +77,14 @@ class ValueBoardService:
         handling are identical to ``build_board``.
         """
 
+        # The repo-backed odds/snapshot services resolve fixtures by id. A
+        # bridge caller (JczqValueBridge) aligns JCZQ matches to live
+        # API-Football fixtures that were never synced into the repo — persist
+        # them first so the downstream get_fixture lookup succeeds. Guarded so
+        # the explicit-fixture-list path still works with no repository.
+        if self._fixture_repository is not None and fixtures:
+            self._fixture_repository.upsert_many(list(fixtures))
+
         return self._board_from_fixtures(
             fixtures,
             league=league,
