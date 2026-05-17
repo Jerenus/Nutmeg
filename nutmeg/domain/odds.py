@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Protocol, runtime_checkable
 
 from nutmeg.domain.fixtures import Fixture
 
@@ -45,6 +46,21 @@ class OddsProviderSnapshotFeed:
     updated_at: datetime | None
     bookmaker_count: int
     markets: dict[str, MarketOddsSnapshot]
+
+
+@runtime_checkable
+class OddsProvider(Protocol):
+    """Unified surface for an odds-fetch client.
+
+    Both ``ApiFootballClient`` and ``TheOddsApiClient`` conform structurally.
+    Call sites (``OddsSnapshotService``, ``build_odds_provider_client``) depend
+    on this protocol rather than a concrete class so the configured provider
+    (``config.settings.odds_provider``) can be swapped freely.
+    """
+
+    def fetch_fixture_odds(self, fixture_id: str) -> OddsProviderSnapshotFeed:
+        """Return the normalized market feed for a single cached fixture."""
+        ...
 
 
 @dataclass(slots=True, frozen=True)
