@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +39,8 @@ from nutmeg.services.jczq_strategy_memory import (
     get_dixon_coles_rho,
     load_strategy_memory,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_STAKES = {
     "stable_base": 25.0,
@@ -331,6 +334,17 @@ class ServiceBuilder(Protocol):
     def __call__(self, *, provider: str = ...) -> JczqDailyAdvisorService: ...
 
 
+class ValueBridge(Protocol):
+    """Anything that turns the day's JCZQ matches into a ``JczqValueReport``.
+
+    Production passes a ``JczqValueBridge``; tests inject a fake. ``build_brief``
+    owns the day's matches, so it calls ``evaluate_day`` itself rather than
+    receiving a pre-computed report.
+    """
+
+    def evaluate_day(self, matches: list[JczqDailyMatch]) -> JczqValueReport: ...
+
+
 def build_brief(
     *,
     run_date: str | None = None,
@@ -338,6 +352,7 @@ def build_brief(
     output_dir: Path,
     service_builder: ServiceBuilder | None = None,
     value_report: JczqValueReport | None = None,
+    value_bridge: ValueBridge | None = None,
 ) -> str:
     """Compute the daily brief markdown.
 
@@ -346,9 +361,16 @@ def build_brief(
     fully configured ``JczqDailyAdvisorService``; CLI passes the existing
     ``build_jczq_daily_advisor_service`` here to avoid a circular import.
 
-    ``value_report`` (optional) is a ``JczqValueBridge.evaluate_day`` result;
-    when supplied the 赔率冲突点 section renders the value-engine conflict
-    points, otherwise a placeholder marks the unwired slot.
+    The 赔率冲突点 section is fed either way:
+
+    - ``value_report`` — a pre-computed ``JczqValueBridge.evaluate_day`` result.
+    - ``value_bridge`` — a bridge that ``build_brief`` invokes over the day's
+      JCZQ matches (the CLI path: the matches are only known once the report
+      is built). Any exception raised by the bridge is swallowed so the brief
+      always renders — graceful degradation to the placeholder.
+
+    With neither, a placeholder marks the unwired slot. ``value_report`` takes
+    precedence over ``value_bridge`` when both are supplied.
     """
 
     output_dir = Path(output_dir)
@@ -413,6 +435,16 @@ def build_brief(
         dc_rho=dc_rho,
     )
     poisson_index = {(row.match_no, row.pool, row.pick): row.edge for row in poisson_rows}
+
+    # value_report wins when supplied; otherwise run the bridge over the day's
+    # matches. Any bridge failure (no API key, API down, alignment empty)
+    # degrades to the placeholder — the brief must always render.
+    if value_report is None and value_bridge is not None:
+        try:
+            value_report = value_bridge.evaluate_day(report.matches)
+        except Exception:  # noqa: BLE001 — degrade, never crash the brief
+            logger.warning("value bridge failed; rendering 赔率冲突点 placeholder", exc_info=True)
+            value_report = None
 
     return _emit_markdown(
         run_date=active_run_date,
