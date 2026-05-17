@@ -452,5 +452,118 @@ def test_stage5_conflict_store_grades_against_results_into_rolling_roi(
     assert phase.max_pct_per_signal > 0.02
 
 
+# --- stage 5: 500.com 数据源端到端 ------------------------------------------
+
+
+def test_stage5_fcom500_bridge_prices_jczq_matches_without_api_football(
+    tmp_path: Path,
+) -> None:
+    """End-to-end through the 500.com odds source.
+
+    Fcom500ValueBridge collects market odds from recorded 500.com pages,
+    aligns each JCZQ match by its 竞彩 number — NO MatchAligner, NO alias
+    table, NO API-Football call — and the real ValueBoardService prices the
+    Dixon-Coles model against those odds into a JczqValueReport.
+    """
+    import httpx
+
+    from nutmeg.data.fcom500 import (
+        Fcom500Client,
+        Fcom500OddsProvider,
+        Fcom500ValueBridge,
+    )
+    from nutmeg.domain.jczq_daily import JczqDailyMatch
+
+    fixture_dir = Path(__file__).parent / "fixtures" / "fcom500"
+
+    def _bytes(name: str) -> bytes:
+        text = (fixture_dir / name).read_text(encoding="utf-8")
+        return text.encode("gb2312", errors="ignore")
+
+    routes = {"/jczq/": _bytes("jczq-list.html")}
+    for fid in ("1366371", "1373152"):
+        for kind in ("ouzhi", "yazhi", "jqs", "bifen"):
+            routes[f"/fenxi/{kind}-{fid}.shtml"] = _bytes(f"{kind}-{fid}.html")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = routes.get(request.url.path)
+        if body is None:
+            return httpx.Response(404, content=b"not found")
+        return httpx.Response(200, content=body)
+
+    provider = Fcom500OddsProvider(
+        client=Fcom500Client(transport=httpx.MockTransport(handler))
+    )
+
+    # The model side still uses a SnapshotService (soccerdata in production);
+    # here the in-memory snapshot double stands in, carrying a trend that
+    # makes Dixon-Coles favour the home side — a real edge to surface.
+    collected = provider.collect("2026-05-17")
+    snapshots = {
+        entry.fixture.fixture_id: _snapshot(entry.fixture)
+        for entry in collected.values()
+    }
+
+    def value_service_factory() -> ValueBoardService:
+        return ValueBoardService(
+            fixture_repository=None,  # type: ignore[arg-type]
+            snapshot_service=FakeSnapshotService(snapshots),
+            odds_service=None,  # type: ignore[arg-type] — bridge swaps the 500.com source in
+        )
+
+    bridge = Fcom500ValueBridge(
+        provider=provider,
+        run_date="2026-05-17",
+        value_service_factory=value_service_factory,
+    )
+
+    matches = [
+        JczqDailyMatch(
+            match_no="周日001",
+            match_date="2026-05-17",
+            match_time="14:00",
+            league="日职",
+            home_team="大阪樱花",
+            away_team="名古屋鲸八",
+            status="Selling",
+            hot_direction="",
+            role="",
+            confidence_note="",
+        ),
+        JczqDailyMatch(
+            match_no="周日002",
+            match_date="2026-05-17",
+            match_time="15:40",
+            league="韩职",
+            home_team="全北现代",
+            away_team="金泉尚武",
+            status="Selling",
+            hot_direction="",
+            role="",
+            confidence_note="",
+        ),
+    ]
+
+    report = bridge.evaluate_day(matches)
+
+    # Both JCZQ matches align purely on the 竞彩 number — 100% coverage, no
+    # alias table involved.
+    assert report.aligned_count == 2
+    assert {m.match_no for m in report.matches} == {"周日001", "周日002"}
+    aligned = {m.match_no: m for m in report.matches}
+    assert aligned["周日001"].fixture_id == "fcom500:周日001"
+    assert aligned["周日002"].fixture_id == "fcom500:周日002"
+
+    # The conflict engine priced the model against 500.com 欧赔 — any surfaced
+    # conflict is a real +edge, +EV model-vs-market gap on a true market.
+    for entry in report.matches:
+        for c in entry.conflicts:
+            assert c.edge >= 0.03
+            assert c.expected_value > 0
+            assert 0 < c.model_probability < 1
+            assert 0 < c.market_probability < 1
+            assert c.model_probability > c.market_probability
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

@@ -287,3 +287,126 @@ def test_provider_returns_empty_when_list_fetch_fails() -> None:
 
     # The 竞彩 list itself 404s → empty result, no crash.
     assert provider.collect("2026-05-17") == {}
+
+
+# ---------------------------------------------------------------------------
+# Task A8 — wire into the conflict engine
+# ---------------------------------------------------------------------------
+
+
+def test_fcom500_odds_service_serves_collected_snapshots() -> None:
+    """The OddsService seam: a collected snapshot is served by fixture id,
+    keyed fcom500:周日NNN — the conflict engine consumes it unchanged."""
+    from nutmeg.data.fcom500 import Fcom500OddsService
+
+    client = Fcom500Client(transport=_mock_transport(_provider_routes()))
+    collected = Fcom500OddsProvider(client=client).collect("2026-05-17")
+    odds_service = Fcom500OddsService(collected)
+
+    snapshot = odds_service.build_snapshot("fcom500:周日001", persist_history=False)
+
+    assert snapshot.fixture.fixture_id == "fcom500:周日001"
+    assert "match_winner" in snapshot.markets
+
+
+def test_fcom500_value_bridge_keys_conflicts_by_jczq_number() -> None:
+    """The 500.com bridge: evaluate_day produces a JczqValueReport keyed by
+    竞彩 number with NO MatchAligner / API-Football call."""
+    from nutmeg.data.fcom500 import Fcom500ValueBridge
+    from nutmeg.domain.jczq_daily import JczqDailyMatch
+    from nutmeg.services.value import ValueBoardService
+    from tests.test_value_service import FakeSnapshotService, _snapshot
+
+    client = Fcom500Client(transport=_mock_transport(_provider_routes()))
+    provider = Fcom500OddsProvider(client=client)
+    collected = provider.collect("2026-05-17")
+
+    # The model side keeps using a snapshot service (soccerdata in production);
+    # here a fake snapshot per collected fixture stands in for it.
+    snapshots = {
+        f"fcom500:{no}": _snapshot(entry.fixture)
+        for no, entry in collected.items()
+    }
+
+    def value_service_factory() -> ValueBoardService:
+        return ValueBoardService(
+            fixture_repository=None,  # type: ignore[arg-type]
+            snapshot_service=FakeSnapshotService(snapshots),
+            odds_service=None,  # type: ignore[arg-type] — replaced per collect
+        )
+
+    bridge = Fcom500ValueBridge(
+        provider=provider,
+        run_date="2026-05-17",
+        value_service_factory=value_service_factory,
+    )
+
+    matches = [
+        JczqDailyMatch(
+            match_no="周日001",
+            match_date="2026-05-17",
+            match_time="14:00",
+            league="日职",
+            home_team="大阪樱花",
+            away_team="名古屋鲸八",
+            status="Selling",
+            hot_direction="",
+            role="",
+            confidence_note="",
+        ),
+    ]
+
+    report = bridge.evaluate_day(matches)
+
+    # One match in, one entry out, keyed by the 竞彩 number — aligned without
+    # any alias table or API-Football fixture lookup.
+    assert len(report.matches) == 1
+    entry = report.matches[0]
+    assert entry.match_no == "周日001"
+    assert entry.aligned is True
+    assert entry.fixture_id == "fcom500:周日001"
+
+
+def test_fcom500_value_bridge_marks_unmatched_jczq_match() -> None:
+    """A JCZQ match absent from the 500.com collection degrades honestly."""
+    from nutmeg.data.fcom500 import Fcom500ValueBridge
+    from nutmeg.domain.jczq_daily import JczqDailyMatch
+    from nutmeg.services.value import ValueBoardService
+    from tests.test_value_service import FakeSnapshotService
+
+    client = Fcom500Client(transport=_mock_transport({"/jczq/": _fixture_bytes("jczq-list.html")}))
+    provider = Fcom500OddsProvider(client=client)
+
+    def value_service_factory() -> ValueBoardService:
+        return ValueBoardService(
+            fixture_repository=None,  # type: ignore[arg-type]
+            snapshot_service=FakeSnapshotService({}),
+            odds_service=None,  # type: ignore[arg-type]
+        )
+
+    bridge = Fcom500ValueBridge(
+        provider=provider,
+        run_date="2026-05-17",
+        value_service_factory=value_service_factory,
+    )
+
+    matches = [
+        JczqDailyMatch(
+            match_no="周三999",
+            match_date="2026-05-17",
+            match_time="14:00",
+            league="未知",
+            home_team="X",
+            away_team="Y",
+            status="Selling",
+            hot_direction="",
+            role="",
+            confidence_note="",
+        ),
+    ]
+
+    report = bridge.evaluate_day(matches)
+
+    assert len(report.matches) == 1
+    assert report.matches[0].aligned is False
+    assert report.matches[0].coverage_note is not None

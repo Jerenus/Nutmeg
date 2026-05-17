@@ -40,3 +40,21 @@ def test_build_bridge_returns_none_for_blank_api_key() -> None:
     bridge = build_jczq_value_bridge(settings=settings, run_date="2026-05-17")
 
     assert bridge is None
+
+
+def test_build_bridge_uses_fcom500_when_enabled() -> None:
+    """With ``use_fcom500=True`` the bridge is the 500.com path — quota-free,
+    keyed by 竞彩 number, with NO API-Football key required."""
+    from nutmeg.data.fcom500 import Fcom500ValueBridge
+
+    # No API-Football key at all — the 500.com path must not need one.
+    settings = AppSettings(api_football_key=None)
+
+    bridge = build_jczq_value_bridge(
+        settings=settings,
+        run_date="2026-05-17",
+        value_service_factory=lambda: object(),  # type: ignore[arg-type,return-value]
+        use_fcom500=True,
+    )
+
+    assert isinstance(bridge, Fcom500ValueBridge)

@@ -14,7 +14,7 @@ misconfigured value engine.
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from nutmeg.config.catalog import league_code_by_api_football_id
 from nutmeg.config.settings import AppSettings
@@ -26,6 +26,9 @@ from nutmeg.services.jczq_match_align import (
 )
 from nutmeg.services.jczq_value_bridge import JczqValueBridge
 from nutmeg.services.value import ValueBoardService
+
+if TYPE_CHECKING:
+    from nutmeg.data.fcom500 import Fcom500ValueBridge
 
 logger = logging.getLogger(__name__)
 
@@ -50,15 +53,31 @@ def build_jczq_value_bridge(
     settings: AppSettings,
     run_date: str,
     value_service_factory: Callable[[], ValueBoardService] | None = None,
-) -> JczqValueBridge | None:
-    """Assemble a live ``JczqValueBridge``, or ``None`` for graceful degradation.
+    use_fcom500: bool = False,
+) -> "JczqValueBridge | Fcom500ValueBridge | None":
+    """Assemble a live conflict-engine bridge, or ``None`` (graceful degradation).
 
     ``value_service_factory`` defers the (DB-backed) ``ValueBoardService``
-    construction so it is only built when a key is actually present; the CLI
-    passes ``build_value_board_service``-style factory. When the API-Football
-    key is missing/blank — or anything in the assembly fails — ``None`` is
-    returned and the brief degrades to its placeholder.
+    construction so it is only built when a bridge is actually assembled; the
+    CLI passes a ``build_value_board_service``-style factory.
+
+    Two odds sources:
+
+    - ``use_fcom500=True`` → the 500.com path. Market odds come from
+      ``Fcom500OddsProvider`` keyed by the 竞彩 number — quota-free,
+      ~100% coverage, **no API-Football key needed and no alias-table
+      alignment**. This is the preferred path.
+    - otherwise → the API-Football path (kept as fallback). Needs
+      ``NUTMEG_API_FOOTBALL_KEY``; when it is missing/blank — or anything in
+      the assembly fails — ``None`` is returned and the brief degrades to its
+      placeholder.
     """
+
+    if use_fcom500:
+        return _build_fcom500_bridge(
+            run_date=run_date,
+            value_service_factory=value_service_factory,
+        )
 
     key = (settings.api_football_key or "").strip()
     if not key:
@@ -93,4 +112,38 @@ def build_jczq_value_bridge(
         return JczqValueBridge(aligner=aligner, value_service=value_service)
     except Exception:  # noqa: BLE001 — degrade, never crash the daily flow
         logger.warning("value bridge assembly failed — degrading", exc_info=True)
+        return None
+
+
+def _build_fcom500_bridge(
+    *,
+    run_date: str,
+    value_service_factory: Callable[[], ValueBoardService] | None,
+) -> "Fcom500ValueBridge | None":
+    """Assemble the 500.com-backed conflict-engine bridge.
+
+    The 500.com path needs no API-Football key and no alias table — odds come
+    from ``Fcom500OddsProvider`` keyed by the 竞彩 number. Any failure
+    constructing the dependency graph degrades to ``None`` (the brief then
+    renders its 赔率冲突点 placeholder) — the daily flow never crashes.
+    """
+
+    if value_service_factory is None:
+        logger.warning("no value_service_factory supplied — 500.com bridge disabled")
+        return None
+    try:
+        from nutmeg.data.fcom500 import (
+            Fcom500Client,
+            Fcom500OddsProvider,
+            Fcom500ValueBridge,
+        )
+
+        provider = Fcom500OddsProvider(client=Fcom500Client())
+        return Fcom500ValueBridge(
+            provider=provider,
+            run_date=run_date,
+            value_service_factory=value_service_factory,
+        )
+    except Exception:  # noqa: BLE001 — degrade, never crash the daily flow
+        logger.warning("500.com value bridge assembly failed — degrading", exc_info=True)
         return None

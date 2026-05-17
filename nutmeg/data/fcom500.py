@@ -28,8 +28,8 @@ from nutmeg.domain.fixtures import Fixture, FixtureStatus
 from nutmeg.domain.odds import (
     BookmakerQuote,
     MarketOddsSnapshot,
-    OddsSnapshot,
     OddsProviderSnapshot,
+    OddsSnapshot,
     OutcomeOddsSnapshot,
 )
 
@@ -45,6 +45,8 @@ __all__ = [
     "Fcom500Client",
     "Fcom500JczqMatch",
     "Fcom500OddsProvider",
+    "Fcom500OddsService",
+    "Fcom500ValueBridge",
     "MarketOdds",
     "parse_correct_score",
     "parse_european_1x2",
@@ -688,3 +690,130 @@ class Fcom500OddsProvider:
         except Exception:  # noqa: BLE001 — a parse failure degrades that market
             logger.warning("fcom500: parse failed for %s — market degraded", url)
             return None
+
+
+# ---------------------------------------------------------------------------
+# Task A8 — conflict-engine wiring
+# ---------------------------------------------------------------------------
+
+
+class Fcom500OddsService:
+    """An ``OddsService``-shaped view over collected 500.com snapshots.
+
+    ``ValueBoardService`` resolves a fixture's market odds through
+    ``odds_service.build_snapshot(fixture_id)``. This serves the per-match
+    ``OddsSnapshot`` assembled by ``Fcom500OddsProvider`` — keyed by the
+    synthetic ``fcom500:周日NNN`` fixture id — so the conflict engine consumes
+    500.com odds with no code change.
+    """
+
+    def __init__(self, collected: dict[str, "Fcom500MatchOdds"]) -> None:
+        self._by_fixture_id: dict[str, OddsSnapshot] = {
+            entry.fixture.fixture_id: entry.odds for entry in collected.values()
+        }
+
+    def build_snapshot(
+        self, fixture_id: str, *, persist_history: bool = True
+    ) -> OddsSnapshot:
+        snapshot = self._by_fixture_id.get(fixture_id)
+        if snapshot is None:
+            raise ValueError(f"no 500.com odds for fixture {fixture_id}")
+        return snapshot
+
+
+class Fcom500ValueBridge:
+    """The 500.com-backed conflict-engine bridge.
+
+    A drop-in for ``JczqValueBridge`` (same ``evaluate_day`` →
+    ``JczqValueReport`` contract) that sources market odds from 500.com keyed
+    by the 竞彩 number — **no ``MatchAligner``, no alias table, no
+    API-Football call**. The model side still calls a ``SnapshotService``
+    (soccerdata, quota-free); only the odds source is swapped.
+
+    Graceful degradation is the contract: a JCZQ match absent from the
+    500.com collection is honestly marked unaligned, never papered over.
+    """
+
+    def __init__(
+        self,
+        *,
+        provider: Fcom500OddsProvider,
+        run_date: str,
+        value_service_factory,
+        min_edge: float = 0.03,
+    ) -> None:
+        self._provider = provider
+        self._run_date = run_date
+        self._value_service_factory = value_service_factory
+        self._min_edge = min_edge
+
+    def evaluate_day(self, matches):
+        """Collect 500.com odds, price every covered JCZQ match, group the
+        conflicts by 竞彩 number into a ``JczqValueReport``."""
+
+        # Deferred imports keep the data layer free of a load-time dependency
+        # on the services layer (and avoid an import cycle).
+        from nutmeg.services.jczq_value_bridge import (
+            JczqMatchConflicts,
+            JczqValueReport,
+        )
+
+        collected = self._provider.collect(self._run_date)
+        value_service = self._value_service_factory()
+        # Swap in the 500.com odds source: the conflict engine resolves a
+        # fixture's market odds through odds_service.build_snapshot(fixture_id).
+        value_service._odds_service = Fcom500OddsService(collected)  # noqa: SLF001
+
+        fixtures = [entry.fixture for entry in collected.values()]
+        conflicts_by_fixture: dict[str, list] = {}
+        if fixtures:
+            board = value_service.build_board_for_fixtures(
+                fixtures,
+                min_edge=self._min_edge,
+                league="jczq-fcom500",
+            )
+            for candidate in board.candidates:
+                conflicts_by_fixture.setdefault(
+                    candidate.fixture_id, []
+                ).append(candidate)
+            for group in conflicts_by_fixture.values():
+                group.sort(key=lambda c: (-c.edge, -c.quarter_kelly_fraction))
+
+        entries: list[JczqMatchConflicts] = []
+        for match in matches:
+            entry = collected.get(match.match_no)
+            if entry is None:
+                entries.append(
+                    JczqMatchConflicts(
+                        match_no=match.match_no,
+                        league=match.league,
+                        home_team=match.home_team,
+                        away_team=match.away_team,
+                        aligned=False,
+                        coverage_note=(
+                            "无 500.com 数据：该竞彩编号不在当天 500.com 列表中"
+                        ),
+                    )
+                )
+                continue
+            conflicts = conflicts_by_fixture.get(entry.fixture.fixture_id, [])
+            coverage_note = None
+            if not conflicts:
+                coverage_note = (
+                    "已对齐 500.com，但无 +edge 冲突点"
+                    "（赔率市场缺失或模型无优势）"
+                )
+            entries.append(
+                JczqMatchConflicts(
+                    match_no=match.match_no,
+                    league=match.league,
+                    home_team=match.home_team,
+                    away_team=match.away_team,
+                    aligned=True,
+                    fixture_id=entry.fixture.fixture_id,
+                    orientation_swapped=False,
+                    conflicts=conflicts,
+                    coverage_note=coverage_note,
+                )
+            )
+        return JczqValueReport(matches=entries)
