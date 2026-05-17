@@ -1,7 +1,7 @@
 # Nutmeg 整合设计 — 收敛为中国体彩投注助手
 
 - **日期**：2026-05-17
-- **状态**：设计已定（用户拍板三项决策），进入分期执行
+- **状态**：✅ 全部 4 期完成（Phase 1 清理 / 2 精简 / 3 接线 / 4 收尾），主干 `e4efdeb` 测试全绿（711 passed）
 - **目标**：把当前庞杂项目（~60% 投注 + ~40% 无关）收敛为一个聚焦的**中国体彩投注助手**。
 
 ---
@@ -70,16 +70,16 @@ Telegram 推送 → 次日 jczq-daily-review 回测 → 冲突信号 store
 
 ### Phase 3 — 接线（核心价值）
 - **3a ✅ 完成**：扩展 value 引擎到 4 玩法（胜平负 + 总进球 + 比分 + 让球），模型 + odds 解析 + 引擎 + 测试全绿。提交 `e876ae2` / `3471e51`。**半全场排除**（需半场模型 + R27 历史 0/18，用户决定不做）。
-- **3b**：`ValueBoardService` 接入 JCZQ 每日流程 —— brief 新增"冲突点"节，**并列呈现** value 冲突点 + psychology 信号 + 情报（补充 A 多方因素）；**串关构造器**把冲突腿按信心组装成 2/3/4串1，守 Rule O 同场合法性 + 集中度上限（补充 B）。
+- **3b ✅ 完成**：`ValueBoardService` 接入 JCZQ 每日流程 —— brief 新增"冲突点"节，**并列呈现** value 冲突点 + psychology 信号 + 情报（补充 A 多方因素）；**串关构造器**把冲突腿按信心组装成 2/3/4串1，守 Rule O 同场合法性 + 集中度上限（补充 B）。
 - **3c ✅ 完成**：接入 Zucai 流程。`ZucaiValueBridge`（`zucai_value_bridge.py`）复用 JCZQ 的 `MatchAligner` + 别名表，把一期足彩 14 场对齐到 API-Football fixture，跑 `ValueBoardService.build_board_for_fixtures`，为每场抽出一条逐场 1X2（had）冲突信号（模型最看好且有 +edge 的 `match_winner` 结果 → 体彩 3/1/0 + 短注解）。`ZucaiRenjiuDailyService.build_report` 接受可选 `value_bridge`，把信号挂到 `RenjiuMatchAnalysis.conflict_signal`，在 markdown/PDF 逐场判断里渲染「冲突引擎：模型：平 +6% edge」注解列。**精简**：既有 `_double_pick` / `_uncertainty_score` 选号算法不改写，冲突信号只是供人工/debate 额外权衡的一列。`zucai_value_wiring.build_zucai_value_bridge` 从 settings 组装生产桥；CLI `zucai-renjiu-daily` + `ZucaiRenjiuBotWorkflow` 接线。优雅降级：无 key / 桥崩 / 未对齐 → 无注解、报告照常出、记 warning、不崩。
-- **3d 自我验证（补充 C）**：冲突信号 store（`.nutmeg-data/jczq/memory/conflict-signals.json`）+ OBSERVE/SMALL/NORMAL/KILL 注金阶梯；引擎未攒够 ROI>1 样本前只能小注/纸面；次日 `jczq-daily-review` grade 冲突腿写回 store。
-- **3e**：odds 客户端（api_football / the_odds_api）归一到单一 `OddsProvider` 协议。
+- **3d ✅ 完成 — 自我验证（补充 C）**：冲突信号 store（`.nutmeg-data/jczq/memory/conflict-signals.json`）+ OBSERVE/SMALL/NORMAL/KILL 注金阶梯；引擎未攒够 ROI>1 样本前只能小注/纸面；次日 `jczq-daily-review` grade 冲突腿写回 store。
+- **3e ✅ 完成**：odds 客户端归一 —— `OddsProvider` 协议落在 `nutmeg/domain/odds.py`，`api_football` / `the_odds_api` 两客户端**本已隐式满足**该协议，工作是把 `services/odds.py` 里重复的非正式协议收敛为单一 `@runtime_checkable` 定义、调用点改依赖它。`european_odds.py` 是 `cross_check_signals` 引擎、非 fetch 客户端，不在范围内。
 
-### Phase 4 — 收尾
-- `cli.py`（命令按子系统拆分为 typer 子命令组）。
-- **端到端验收测试（补充 E）**：跑一遍完整每日流程（数据 → 冲突点 → 串关 → brief 渲染 → 注金阶梯），断言关键产出。
-- 文档收敛：保留 `Nutmeg-DESIGN-v0.3.md` + `AGENTS.md` + 本设计 + jczq 决策框架；其余清理。
-- 提交此前遗留的 `jczq_final_plan_pdf.py` "5张票"修复。
+### Phase 4 — 收尾 ✅完成
+- **CLI 重组 ✅**：`cli.py`（3408 行）拆为 `nutmeg/interfaces/cli/` 包，按子系统分模块（jczq / zucai / odds / psychology / telegram / operations / core / client + `__init__.py` 持 `app` 与共享件、re-export）。**用户决策：非破坏式重组** —— 57 个命令全部保留原名（`nutmeg jczq-daily-brief` 等照旧），**不**拆 typer 子命令组（设计原稿写的是子命令组，但那会改掉每天在用的命令名，用户选择只重组文件内部）。`test_cli.py` 零改动。提交 `e4efdeb`。
+- **端到端验收测试（补充 E）✅**：`tests/test_daily_pipeline_acceptance.py`，8 个测试串起完整每日流程（数据→冲突点→串关→brief 渲染→注金阶梯），逐级断言真实接线后的服务组合；网络边界用既有内存 fake。无集成 bug —— 每级输出干净对接下一级。提交 `d0fc2f9`。
+- **文档收敛 ✅**：删 34 个死文档（视频/内容/wechat/漫画/抖音子系统的 specs+plans、作废的 odds-conflict-engine spec+plan、`docs/style-assets/` 漫画套件、`video-production-v2.md`、`content-publisher` 架构笔记）。**偏差说明**：未按字面"只留 4 份文档"执行 —— 记录活投注代码的设计文档（jczq / zucai / value / psychology 的 specs+plans、投注架构笔记、ADR）全部保留，删除活代码的设计依据会丢失真实历史。specs 25→17、plans 19→11。提交 `8b3e37b`。
+- **`jczq_final_plan_pdf.py` "5张票"修复 ✅**：3 处硬编码 → `len(plan['tickets'])`，适配 R28 退役 C 票后的动态 4-5 张票；顺带抽出可测的 `_build_story`。提交 `c042fb4`。
 
 ## 5. 风险与原则
 
