@@ -3626,6 +3626,36 @@ def test_jczq_debate_finalize_command_writes_final_plan(tmp_path) -> None:
     assert Path(payload["final_plan_path"]).exists()
 
 
+def test_jczq_daily_brief_degrades_gracefully_without_api_key(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # No NUTMEG_API_FOOTBALL_KEY → the value bridge is None → the brief still
+    # renders end-to-end with the 赔率冲突点 placeholder, exit 0.
+    from nutmeg.services.jczq_daily import JczqDailyAdvisorService
+
+    from tests.test_jczq_daily_service import FakeProvider
+
+    monkeypatch.setenv("NUTMEG_API_FOOTBALL_KEY", "")
+    JczqDailyAdvisorService(provider=FakeProvider()).build_report(
+        run_date="2026-05-01", output_dir=tmp_path
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "jczq-daily-brief",
+            "--replay",
+            "2026-05-01",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "## 赔率冲突点" in result.stdout
+    assert "价值引擎未接线" in result.stdout
+
+
 def test_jczq_web_command_starts_localhost_app(monkeypatch, tmp_path: Path) -> None:
     calls: list[dict[str, object]] = []
 

@@ -122,6 +122,21 @@ class ConflictStore:
             )
         self._save(rows)
 
+    def drop_date(self, date: str) -> int:
+        """Remove every row for ``date``; return how many were dropped.
+
+        Lets a caller make per-date recording idempotent — drop the date's
+        rows, then ``record`` afresh — so re-running the daily brief never
+        double-records the same conflict signals.
+        """
+
+        rows = self.load()
+        kept = [row for row in rows if row.get("date") != date]
+        dropped = len(rows) - len(kept)
+        if dropped:
+            self._save(kept)
+        return dropped
+
     def grade(self, date: str, *, results: dict[str, str]) -> None:
         """Grade ``date``'s ungraded rows against ``results``.
 

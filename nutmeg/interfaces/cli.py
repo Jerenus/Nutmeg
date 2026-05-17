@@ -167,6 +167,8 @@ JCZQ_OUTPUT_DIR_OPTION = typer.Option(Path(".nutmeg-data/jczq"), "--output-dir")
 JCZQ_PROVIDER_OPTION = typer.Option("live", "--provider")
 JCZQ_DAILY_DATE_OPTION = typer.Option("today", "--date")
 
+logger = logging.getLogger(__name__)
+
 
 def _build_state_session() -> Session:
     settings = get_settings()
@@ -1874,6 +1876,26 @@ def jczq_debate_finalize(
     console.print(f"final_plan={result['final_plan_path']}")
 
 
+def _build_jczq_value_bridge_for_brief(brief_date: str):
+    """Assemble the live value bridge for the daily brief, or None.
+
+    Wraps ``build_jczq_value_bridge`` with a ``ValueBoardService`` factory; any
+    failure degrades to ``None`` so ``jczq-daily-brief`` always renders.
+    """
+    from nutmeg.services.jczq_value_wiring import build_jczq_value_bridge
+
+    try:
+        settings = get_settings()
+        return build_jczq_value_bridge(
+            settings=settings,
+            run_date=brief_date,
+            value_service_factory=lambda: build_value_board_service()[0],
+        )
+    except Exception:  # noqa: BLE001 — degrade, never crash the brief
+        logger.warning("value bridge wiring failed — degrading", exc_info=True)
+        return None
+
+
 @app.command("jczq-daily-brief")
 def jczq_daily_brief(
     run_date: str | None = typer.Option(None, "--date", help="目标日期 YYYY-MM-DD，默认今天 live"),
@@ -1881,7 +1903,14 @@ def jczq_daily_brief(
     output_dir: Path = JCZQ_OUTPUT_DIR_OPTION,
     write: Path | None = typer.Option(None, "--write", help="写入文件（默认 stdout）"),
 ) -> None:
-    from nutmeg.services.jczq_brief import build_brief, write_or_print_brief
+    from nutmeg.services.jczq_brief import build_brief, today_iso, write_or_print_brief
+    from nutmeg.services.jczq_conflict_bridge import record_conflict_signals
+
+    # Wire the value/conflict engine: align the day's JCZQ matches to
+    # API-Football, run ValueBoardService, render the real 赔率冲突点 section.
+    # No key / API down / empty alignment → bridge is None → placeholder.
+    brief_date = replay_date or run_date or today_iso()
+    value_bridge = _build_jczq_value_bridge_for_brief(brief_date)
 
     try:
         markdown = build_brief(
@@ -1889,10 +1918,25 @@ def jczq_daily_brief(
             replay_date=replay_date,
             output_dir=output_dir,
             service_builder=build_jczq_daily_advisor_service,
+            value_bridge=value_bridge,
         )
     except FileNotFoundError as exc:
         console.print(str(exc))
         raise typer.Exit(code=2) from exc
+
+    # Self-validation loop: persist the day's conflict signals so next-day
+    # jczq-daily-review grades them and the stake ladder accrues a track record.
+    if value_bridge is not None:
+        try:
+            recorded = record_conflict_signals(
+                value_bridge=value_bridge,
+                run_date=brief_date,
+                output_dir=output_dir,
+            )
+            if recorded:
+                console.print(f"recorded {recorded} conflict signal(s)", style="dim")
+        except Exception:  # noqa: BLE001 — store failure must not break the brief
+            logger.warning("conflict-signal recording failed", exc_info=True)
 
     write_or_print_brief(markdown, write)
 

@@ -116,6 +116,26 @@ def test_load_handles_corrupt_file(tmp_path: Path) -> None:
     assert len(store.load()) == 1
 
 
+def test_drop_date_removes_only_that_dates_rows(tmp_path: Path) -> None:
+    store = ConflictStore(tmp_path / "conflict-signals.json")
+    store.record("2026-05-16", [_sig("周六001")], sporttery_odds={"周六001": 3.10})
+    store.record("2026-05-17", [_sig("周日002")], sporttery_odds={"周日002": 2.00})
+
+    dropped = store.drop_date("2026-05-16")
+
+    assert dropped == 1
+    rows = store.load()
+    assert [row["date"] for row in rows] == ["2026-05-17"]
+
+
+def test_drop_date_is_a_noop_for_an_unknown_date(tmp_path: Path) -> None:
+    store = ConflictStore(tmp_path / "conflict-signals.json")
+    store.record("2026-05-17", [_sig("周日002")], sporttery_odds={"周日002": 2.00})
+
+    assert store.drop_date("2026-01-01") == 0
+    assert len(store.load()) == 1
+
+
 # --- stake ladder -----------------------------------------------------------
 
 
