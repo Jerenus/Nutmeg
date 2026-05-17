@@ -16,6 +16,10 @@ class RenjiuMatchAnalysis:
     uncertainty_score: float
     risk_labels: list[str] = field(default_factory=list)
     rationale: str = ""
+    # Phase 3c: per-match 1X2 (had) conflict signal from the value engine,
+    # serialised from ZucaiHadSignal.to_dict(). None when the match could not
+    # be aligned / has no +edge had outcome — the report still renders.
+    conflict_signal: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

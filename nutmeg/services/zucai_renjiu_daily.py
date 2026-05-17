@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from html import escape
@@ -26,6 +27,9 @@ from nutmeg.domain.zucai_renjiu import (
     RenjiuTicket,
 )
 from nutmeg.services.zucai import ZucaiWorkflowService
+from nutmeg.services.zucai_value_bridge import ZucaiValueReport
+
+logger = logging.getLogger(__name__)
 
 
 class ZucaiRenjiuValidationError(ValueError):
@@ -34,6 +38,17 @@ class ZucaiRenjiuValidationError(ValueError):
 
 class RenjiuDocumentSender(Protocol):
     def send_document(self, *, chat_id: int, document_path: Path, caption: str): ...
+
+
+class RenjiuValueBridge(Protocol):
+    """Anything that turns a Zucai issue into a per-match had conflict report.
+
+    The production ``ZucaiValueBridge`` satisfies this; tests inject a stub so
+    no network is touched. Wiring is optional — a missing/failing bridge just
+    means the report renders without conflict annotations.
+    """
+
+    def evaluate_issue(self, issue) -> ZucaiValueReport: ...
 
 
 PICK_ORDER = "310"
@@ -68,6 +83,7 @@ class ZucaiRenjiuDailyService:
         render_pdf: bool = False,
         dispatch_telegram: bool = False,
         dry_run: bool = True,
+        value_bridge: RenjiuValueBridge | None = None,
     ) -> RenjiuDailyReport:
         resolved_date = _normalize_date(run_date)
         resolved_issue_file, resolved_odds_file = self._resolve_inputs(
@@ -79,7 +95,9 @@ class ZucaiRenjiuDailyService:
         )
         issue = self._load_issue(resolved_issue_file)
         odds_by_match, odds_payload = self._load_odds(resolved_odds_file)
-        analyses = self._analyze_matches(issue, odds_by_match)
+        warnings: list[str] = []
+        conflict_signals = self._evaluate_conflicts(issue, value_bridge, warnings)
+        analyses = self._analyze_matches(issue, odds_by_match, conflict_signals)
         least_confident = [item.match_no for item in sorted(
             analyses, key=lambda item: item.uncertainty_score, reverse=True
         )[:5]]
@@ -99,7 +117,7 @@ class ZucaiRenjiuDailyService:
             artifacts=RenjiuArtifacts(),
             dispatch=RenjiuDispatch(status="skipped"),
             sources=sources,
-            warnings=[],
+            warnings=warnings,
         )
         artifacts = self._write_artifacts(
             report,
@@ -175,11 +193,39 @@ class ZucaiRenjiuDailyService:
             raise ZucaiRenjiuValidationError("Zucai odds must contain exactly 14 matches.")
         return odds_by_match, payload
 
+    def _evaluate_conflicts(
+        self,
+        issue: ZucaiIssue,
+        value_bridge: RenjiuValueBridge | None,
+        warnings: list[str],
+    ) -> dict[int, dict[str, Any]]:
+        """Run the value bridge → {match_no: had-signal dict}.
+
+        Graceful degradation is the contract: no bridge wired, or any failure
+        evaluating it, yields an empty mapping — the report still renders, just
+        without conflict annotations. The existing pick algorithm is untouched.
+        """
+        if value_bridge is None:
+            return {}
+        try:
+            value_report = value_bridge.evaluate_issue(issue)
+        except Exception as exc:  # noqa: BLE001 — degrade, never crash the report
+            logger.warning("zucai value bridge failed — degrading: %s", exc)
+            warnings.append(f"冲突引擎不可用，逐场注解已跳过：{exc}")
+            return {}
+        signals: dict[int, dict[str, Any]] = {}
+        for entry in value_report.matches:
+            if entry.had_signal is not None:
+                signals[entry.match_no] = entry.had_signal.to_dict()
+        return signals
+
     def _analyze_matches(
         self,
         issue: ZucaiIssue,
         odds_by_match: dict[int, ZucaiOdds],
+        conflict_signals: dict[int, dict[str, Any]] | None = None,
     ) -> list[RenjiuMatchAnalysis]:
+        conflict_signals = conflict_signals or {}
         analyses: list[RenjiuMatchAnalysis] = []
         for match in issue.matches:
             odds = odds_by_match.get(match.match_no)
@@ -202,6 +248,7 @@ class ZucaiRenjiuDailyService:
                     uncertainty_score=score,
                     risk_labels=labels,
                     rationale=rationale,
+                    conflict_signal=conflict_signals.get(match.match_no),
                 )
             )
         return analyses
@@ -359,6 +406,15 @@ class ZucaiRenjiuDailyService:
                 f"赔率3/1/0={item.odds['3']:.2f}/{item.odds['1']:.2f}/{item.odds['0']:.2f} "
                 f"主选={item.primary_pick} 建议覆盖={item.suggested_pick} 风险={','.join(item.risk_labels) or '常规'}"
             )
+            verdict = _conflict_verdict(item.conflict_signal)
+            if verdict:
+                lines.append(f"    - 冲突引擎：{verdict}")
+        if any(item.conflict_signal for item in report.match_analysis):
+            lines.append("")
+            lines.append(
+                "> 「冲突引擎」是 Dixon-Coles 模型 vs 国际市场赔率的逐场 1X2 对照，"
+                "供人工/debate 额外权衡，不改变上方三档方案的选号。"
+            )
         return "\n".join(lines) + "\n"
 
     def render_pdf(self, report: RenjiuDailyReport, *, pdf_path: Path) -> None:
@@ -395,7 +451,11 @@ class ZucaiRenjiuDailyService:
             ])
         story.append(_table(ticket_rows, [22 * mm, 55 * mm, 24 * mm, 22 * mm, 55 * mm]))
         story.append(para("逐场判断", h2))
-        rows = [[para("场", cell), para("对阵", cell), para("赔率3/1/0", cell), para("主选", cell), para("覆盖", cell), para("风险", cell)]]
+        rows = [[
+            para("场", cell), para("对阵", cell), para("赔率3/1/0", cell),
+            para("主选", cell), para("覆盖", cell), para("风险", cell),
+            para("冲突引擎", cell),
+        ]]
         for item in report.match_analysis:
             rows.append([
                 para(item.match_no, cell),
@@ -404,8 +464,9 @@ class ZucaiRenjiuDailyService:
                 para(item.primary_pick, cell),
                 para(item.suggested_pick, cell),
                 para(",".join(item.risk_labels) or "常规", cell),
+                para(_conflict_verdict(item.conflict_signal) or "—", cell),
             ])
-        story.append(_table(rows, [9 * mm, 47 * mm, 29 * mm, 13 * mm, 15 * mm, 65 * mm]))
+        story.append(_table(rows, [8 * mm, 38 * mm, 24 * mm, 11 * mm, 12 * mm, 38 * mm, 53 * mm]))
         SimpleDocTemplate(
             str(pdf_path),
             pagesize=A4,
@@ -467,19 +528,31 @@ class ZucaiRenjiuBotWorkflow:
         output_dir: Path = Path(".nutmeg-data/zucai"),
         dispatch_telegram: bool = True,
         dry_run: bool = False,
+        value_bridge_factory: Any | None = None,
     ) -> None:
         self._service = service
         self._output_dir = output_dir
         self._dispatch_telegram = dispatch_telegram
         self._dry_run = dry_run
+        # Optional callable(run_date) -> RenjiuValueBridge | None. The bot path
+        # stays graceful: a missing factory or a None result just means the
+        # dispatched report carries no per-match conflict annotations.
+        self._value_bridge_factory = value_bridge_factory
 
     def run(self) -> dict[str, Any]:
         try:
+            value_bridge = None
+            if self._value_bridge_factory is not None:
+                try:
+                    value_bridge = self._value_bridge_factory("today")
+                except Exception as exc:  # noqa: BLE001 — degrade, never crash
+                    logger.warning("renjiu bot value bridge factory failed: %s", exc)
             report = self._service.build_report(
                 run_date="today",
                 output_dir=self._output_dir,
                 dispatch_telegram=self._dispatch_telegram,
                 dry_run=self._dry_run,
+                value_bridge=value_bridge,
             )
         except ZucaiRenjiuValidationError as exc:
             return {
@@ -587,6 +660,24 @@ def _rationale(primary: str, suggested: str, labels: list[str]) -> str:
     if suggested != primary:
         return f"主方向{primary}，但{label_text}，建议覆盖{suggested}。"
     return f"主方向{primary}，风险标签：{label_text}。"
+
+
+def _conflict_verdict(signal: dict[str, Any] | None) -> str:
+    """Render a per-match had conflict signal as a short annotation string.
+
+    Returns "" when there is no signal — callers then render no annotation.
+    """
+    if not signal:
+        return ""
+    verdict = str(signal.get("verdict") or "").strip()
+    if verdict:
+        return verdict
+    pick = str(signal.get("pick") or "")
+    label = {"3": "主胜", "1": "平", "0": "客胜"}.get(pick, pick)
+    edge = signal.get("edge")
+    if isinstance(edge, (int, float)):
+        return f"模型：{label} +{edge:.0%} edge"
+    return f"模型：{label}"
 
 
 def _ticket_by_id(report: RenjiuDailyReport, ticket_id: str) -> RenjiuTicket:

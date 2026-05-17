@@ -1492,6 +1492,26 @@ def zucai_report(
         )
 
 
+def _build_zucai_value_bridge_for_daily(run_date: str):
+    """Assemble the live value bridge for the Zucai daily report, or None.
+
+    Wraps ``build_zucai_value_bridge`` with a ``ValueBoardService`` factory; any
+    failure degrades to ``None`` so ``zucai-renjiu-daily`` always renders.
+    """
+    from nutmeg.services.zucai_value_wiring import build_zucai_value_bridge
+
+    try:
+        settings = get_settings()
+        return build_zucai_value_bridge(
+            settings=settings,
+            run_date=run_date,
+            value_service_factory=lambda: build_value_board_service()[0],
+        )
+    except Exception:  # noqa: BLE001 — degrade, never crash the daily report
+        logger.warning("zucai value bridge wiring failed — degrading", exc_info=True)
+        return None
+
+
 @app.command("zucai-renjiu-daily")
 def zucai_renjiu_daily(
     run_date: str = typer.Option("today", "--date"),
@@ -1505,6 +1525,7 @@ def zucai_renjiu_daily(
     format: str = typer.Option("text", "--format", help="text or json"),
 ) -> None:
     service = build_zucai_renjiu_daily_service()
+    value_bridge = _build_zucai_value_bridge_for_daily(run_date)
     try:
         report = service.build_report(
             run_date=run_date,
@@ -1515,6 +1536,7 @@ def zucai_renjiu_daily(
             render_pdf=pdf or dispatch_telegram,
             dispatch_telegram=dispatch_telegram,
             dry_run=dry_run,
+            value_bridge=value_bridge,
         )
     except ZucaiRenjiuValidationError as exc:
         console.print(str(exc))
@@ -3004,6 +3026,7 @@ def bot_dry_run(
             renjiu_workflow=ZucaiRenjiuBotWorkflow(
                 service=build_zucai_renjiu_daily_service(),
                 dry_run=True,
+                value_bridge_factory=_build_zucai_value_bridge_for_daily,
             ),
         )
         response = adapter.handle_message(message)
@@ -3070,6 +3093,7 @@ def build_telegram_bot_runner(settings) -> TelegramBotRunner:
             renjiu_workflow=ZucaiRenjiuBotWorkflow(
                 service=build_zucai_renjiu_daily_service(),
                 dry_run=False,
+                value_bridge_factory=_build_zucai_value_bridge_for_daily,
             ),
         ),
         allowed_chat_ids=allowed_chat_ids,
