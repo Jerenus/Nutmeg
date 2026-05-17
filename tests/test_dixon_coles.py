@@ -7,6 +7,7 @@ from nutmeg.domain.snapshot import (
     FixtureSnapshot,
     MatchupTrendContext,
     TeamEnrichment,
+    TeamSeasonMetrics,
     TeamTrendSummary,
 )
 from nutmeg.models.dixon_coles import (
@@ -230,4 +231,44 @@ def test_expected_goals_from_snapshot_applies_home_advantage() -> None:
     # raw matchup is 1.5 for both sides; 1.5 * 1.18 = 1.77, 1.5 / 1.18 = 1.27
     assert expected_goals.home == 1.77
     assert expected_goals.away == 1.27
+
+
+def _team_with_season(name: str, *, goals: float, matches: float) -> TeamEnrichment:
+    return TeamEnrichment(
+        canonical_name=name,
+        source_names={},
+        season_metrics=TeamSeasonMetrics(
+            matches=matches,
+            goals=goals,
+            shots=None,
+            shots_on_target=None,
+            xg=None,
+            non_penalty_xg=None,
+        ),
+        recent_form=None,
+        shot_summary=None,
+        market_value=None,
+        injuries=[],
+        lineup=None,
+    )
+
+
+def test_expected_goals_from_snapshot_season_fallback_applies_home_advantage() -> None:
+    # matchup=None forces the season-xg-per-match fallback branch.
+    base = _snapshot()
+    snapshot = FixtureSnapshot(
+        fixture=base.fixture,
+        home=_team_with_season('Arsenal', goals=36.0, matches=36.0),  # 1.0 / match
+        away=_team_with_season('Tottenham Hotspur', goals=18.0, matches=36.0),  # 0.5 / match
+        deferred_sections=[],
+        generated_at=base.generated_at,
+        matchup=None,
+    )
+
+    expected_goals = expected_goals_from_snapshot(snapshot)
+
+    assert expected_goals.source == 'season-xg-per-match'
+    # home 1.0 * 1.18 = 1.18, away 0.5 / 1.18 = 0.4237 -> 0.42
+    assert expected_goals.home == 1.18
+    assert expected_goals.away == 0.42
 

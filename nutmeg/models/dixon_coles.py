@@ -268,8 +268,8 @@ def expected_goals_from_snapshot(snapshot) -> ExpectedGoals:
     away_season = _season_xg_per_match(snapshot.away)
     if home_season is not None and away_season is not None:
         return ExpectedGoals(
-            home=round(home_season * 1.08, 2),
-            away=round(away_season * 0.92, 2),
+            home=round(home_season * _HOME_ADVANTAGE, 2),
+            away=round(away_season / _HOME_ADVANTAGE, 2),
             source='season-xg-per-match',
         )
 
