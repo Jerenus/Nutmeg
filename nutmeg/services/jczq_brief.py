@@ -14,12 +14,14 @@ from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from nutmeg.domain.jczq_daily import JczqDailyMatch
+from nutmeg.services.jczq_conflict_section import render_conflict_section
 from nutmeg.services.jczq_daily import JczqDailyAdvisorService, _report_from_dict
 from nutmeg.services.jczq_diagnostics import (
     compute_kelly_advice,
     compute_match_concentration,
     compute_narrative_matrix,
 )
+from nutmeg.services.jczq_value_bridge import JczqValueReport
 from nutmeg.services.jczq_intelligence import (
     LeaguePriorBaseline,
     PoissonEdgeEntry,
@@ -74,6 +76,7 @@ def _emit_markdown(
     league_volatility: dict[str, float],
     daily_low_goals_count: int = 0,
     daily_concentration_active: bool = False,
+    value_report: JczqValueReport | None = None,
 ) -> str:
     out: list[str] = []
     out.append(f"# JCZQ 每日 Brief — {run_date}")
@@ -290,6 +293,20 @@ def _emit_markdown(
             )
             out.append("")
 
+    # 赔率冲突点节（Phase 3b）：价值引擎冲突点 + 心理信号 + 情报并列呈现。
+    # value_report 为 None 时（引擎尚未接线本次运行）渲染占位说明，让 debate
+    # 流程知道该槽位存在。
+    if value_report is not None:
+        out.append(render_conflict_section(value_report))
+    else:
+        out.append("## 赔率冲突点")
+        out.append("")
+        out.append(
+            "> 价值引擎未接线本次运行（无 API-Football 对齐数据）。"
+            "接线后此节呈现：模型 vs 国际市场赔率的 edge 冲突点 + 心理信号 + 情报。"
+        )
+        out.append("")
+
     out.append("## 6. 投递给 Claude 的指令模板")
     out.append("")
     out.append("把以上 1-5 节复制贴给 Claude，附加这句话即可触发跟今天一致的决策流程：")
@@ -320,6 +337,7 @@ def build_brief(
     replay_date: str | None = None,
     output_dir: Path,
     service_builder: ServiceBuilder | None = None,
+    value_report: JczqValueReport | None = None,
 ) -> str:
     """Compute the daily brief markdown.
 
@@ -327,6 +345,10 @@ def build_brief(
     (live fetch via ``service_builder``). ``service_builder`` must return a
     fully configured ``JczqDailyAdvisorService``; CLI passes the existing
     ``build_jczq_daily_advisor_service`` here to avoid a circular import.
+
+    ``value_report`` (optional) is a ``JczqValueBridge.evaluate_day`` result;
+    when supplied the 赔率冲突点 section renders the value-engine conflict
+    points, otherwise a placeholder marks the unwired slot.
     """
 
     output_dir = Path(output_dir)
@@ -404,6 +426,7 @@ def build_brief(
         league_volatility=league_vol,
         daily_low_goals_count=daily_low_goals_count,
         daily_concentration_active=bool(daily_concentration_bias),
+        value_report=value_report,
     )
 
 
