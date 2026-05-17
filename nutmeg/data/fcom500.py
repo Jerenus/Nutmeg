@@ -201,12 +201,20 @@ class MarketOdds:
 
 def _devig(odds: dict[str, float]) -> dict[str, float]:
     """Normalize 1/odds to sum 1 — the same fair-probability convention as
-    ``OutcomeOddsSnapshot.fair_probability`` elsewhere in the codebase."""
+    ``OutcomeOddsSnapshot.fair_probability`` elsewhere in the codebase.
+
+    The 6-dp rounding delta is absorbed into the largest bucket so the result
+    sums to exactly 1.0 (mirrors ``dixon_coles._normalize_bucket_map``)."""
     inverse = {k: 1.0 / v for k, v in odds.items() if v and v > 0}
     total = sum(inverse.values())
     if total <= 0:
         return {}
-    return {k: round(v / total, 6) for k, v in inverse.items()}
+    fair = {k: round(v / total, 6) for k, v in inverse.items()}
+    delta = round(1.0 - sum(fair.values()), 6)
+    if delta:
+        strongest = max(fair, key=fair.get)
+        fair[strongest] = round(fair[strongest] + delta, 6)
+    return fair
 
 
 # ---------------------------------------------------------------------------
@@ -215,14 +223,31 @@ def _devig(odds: dict[str, float]) -> dict[str, float]:
 
 # A bookmaker row in the ouzhi/yazhi/daxiao datatb table.
 _RE_DATATB = re.compile(r'id="datatb"')
-_RE_BOOK_ROW = re.compile(
-    r'<tr class="tr[12]"[^>]*id="(\d+)"[^>]*>(.*?)(?=<tr class="tr[12]"|</table>)',
-    re.S,
-)
+# A bookmaker row opens with <tr class="tr1|tr2" ... id="N" ...>; its body runs
+# to the next such opener (rows carry nested <table> so a naive </table> bound
+# truncates them). The ``id`` attribute order varies across pages (欧赔 puts it
+# right after class, 亚盘/大小 put it after xls="row") — the pattern tolerates
+# intervening attributes. The split keeps each opener with its following body.
+_RE_BOOK_ROW_SPLIT = re.compile(r'(?=<tr class="tr[12]"[^>]*\bid="\d+")')
+_RE_BOOK_ROW_ID = re.compile(r'^<tr class="tr[12]"[^>]*\bid="(\d+)"')
 _RE_PL_TABLE = re.compile(r'<table[^>]*class="pl_table_data".*?</table>', re.S)
 _RE_ODDS_CELL = re.compile(r"<td[^>]*>\s*([\d.]+)\s*</td>")
+# A <td> with its full attribute string + inner content. Used for the
+# 亚盘/大小 tables whose odds cells carry trailing ↑↓ arrows and whose middle
+# cell is the line (identified by a ``ref`` attribute).
+_RE_TD = re.compile(r"<td([^>]*)>(.*?)</td>", re.S)
+_RE_LEADING_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+_RE_TAG = re.compile(r"<[^>]+>")
 # 竞彩官方 row is id=1 — the 体彩 feed, excluded from independent signals.
 _SPORTTERY_ROW_ID = "1"
+
+
+def _leading_number(text: str) -> float | None:
+    """Parse the leading decimal of a cell, tolerating trailing ↑↓ arrows /
+    markup (e.g. ``0.950↓`` → ``0.95``)."""
+    stripped = _RE_TAG.sub("", text).strip()
+    m = _RE_LEADING_NUMBER.match(stripped)
+    return float(m.group(0)) if m else None
 
 
 def _book_rows(html: str) -> list[tuple[str, str]]:
@@ -230,7 +255,12 @@ def _book_rows(html: str) -> list[tuple[str, str]]:
     start = _RE_DATATB.search(html)
     if not start:
         return []
-    return _RE_BOOK_ROW.findall(html[start.start():])
+    rows: list[tuple[str, str]] = []
+    for block in _RE_BOOK_ROW_SPLIT.split(html[start.start():]):
+        id_m = _RE_BOOK_ROW_ID.match(block)
+        if id_m:
+            rows.append((id_m.group(1), block))
+    return rows
 
 
 def parse_european_1x2(html: str) -> MarketOdds | None:
@@ -280,8 +310,38 @@ def parse_european_1x2(html: str) -> MarketOdds | None:
 # Task A5 — 让球 / 亚盘 (Asian handicap)
 # ---------------------------------------------------------------------------
 
-_RE_REF_LINE = re.compile(r'ref="(-?[\d.]+)"')
-_RE_LINE_TEXT = re.compile(r'ref="-?[\d.]+"[^>]*>([^<]+)</td>')
+_RE_REF_ATTR = re.compile(r'\bref="(-?[\d.]+)"')
+
+
+def _parse_line_table(table_html: str) -> tuple[float, float, float, str] | None:
+    """Parse a 亚盘/大小 inner table: ``[up_odds, <ref line>, down_odds]``.
+
+    Returns ``(up, down, line_value, line_text)`` or ``None`` when the cells
+    cannot be read. The middle cell is the line — identified by its ``ref``
+    attribute — the outer two are the odds (which carry ↑↓ arrows).
+    """
+
+    tds = _RE_TD.findall(table_html)
+    up: float | None = None
+    down: float | None = None
+    line_value: float | None = None
+    line_text = ""
+    for attrs, content in tds:
+        ref = _RE_REF_ATTR.search(attrs)
+        if ref is not None:
+            line_value = float(ref.group(1))
+            line_text = _RE_TAG.sub("", content).strip()
+            continue
+        number = _leading_number(content)
+        if number is None:
+            continue
+        if up is None:
+            up = number
+        elif down is None:
+            down = number
+    if up is None or down is None or line_value is None:
+        return None
+    return up, down, line_value, line_text
 
 
 def parse_handicap(html: str) -> MarketOdds | None:
@@ -304,18 +364,17 @@ def parse_handicap(html: str) -> MarketOdds | None:
         first_table = _RE_PL_TABLE.search(body)
         if not first_table:
             continue
-        table_html = first_table.group(0)
-        cells = _RE_ODDS_CELL.findall(table_html)
-        ref = _RE_REF_LINE.search(table_html)
-        if len(cells) < 2 or ref is None:
+        parsed = _parse_line_table(first_table.group(0))
+        if parsed is None:
             continue
-        up.append(float(cells[0]))
-        down.append(float(cells[1]))
-        lines.append(float(ref.group(1)))
-        if line_text is None:
-            text_m = _RE_LINE_TEXT.search(table_html)
-            if text_m:
-                line_text = text_m.group(1).strip()
+        up_odds, down_odds, line_value, text = parsed
+        if up_odds <= 0 or down_odds <= 0:
+            continue
+        up.append(up_odds)
+        down.append(down_odds)
+        lines.append(line_value)
+        if line_text is None and text:
+            line_text = text
 
     if not up:
         return None
