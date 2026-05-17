@@ -71,7 +71,7 @@ Telegram 推送 → 次日 jczq-daily-review 回测 → 冲突信号 store
 ### Phase 3 — 接线（核心价值）
 - **3a ✅ 完成**：扩展 value 引擎到 4 玩法（胜平负 + 总进球 + 比分 + 让球），模型 + odds 解析 + 引擎 + 测试全绿。提交 `e876ae2` / `3471e51`。**半全场排除**（需半场模型 + R27 历史 0/18，用户决定不做）。
 - **3b**：`ValueBoardService` 接入 JCZQ 每日流程 —— brief 新增"冲突点"节，**并列呈现** value 冲突点 + psychology 信号 + 情报（补充 A 多方因素）；**串关构造器**把冲突腿按信心组装成 2/3/4串1，守 Rule O 同场合法性 + 集中度上限（补充 B）。
-- **3c**：接入 Zucai 流程（先核实"per-match 冲突法"是否适配足彩彩池格式；不适配则如实标注）。
+- **3c**：接入 Zucai 流程。✅ **已核实可行**——Zucai 任九/胜负彩本就是逐场 1X2（`zucai_renjiu_daily.py` 的 `_uncertainty_score` / `_double_pick` 按每场赔率选 3/1/0），冲突引擎的逐场 had 冲突信号正好喂进每场选号 + 双选决策；3b 的 `MatchAligner` 可复用。下游不同（14 场彩池填号，非 2/3/4串1），但 conflict-signal 输入接口一致。
 - **3d 自我验证（补充 C）**：冲突信号 store（`.nutmeg-data/jczq/memory/conflict-signals.json`）+ OBSERVE/SMALL/NORMAL/KILL 注金阶梯；引擎未攒够 ROI>1 样本前只能小注/纸面；次日 `jczq-daily-review` grade 冲突腿写回 store。
 - **3e**：odds 客户端（api_football / the_odds_api）归一到单一 `OddsProvider` 协议。
 
