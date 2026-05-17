@@ -22,6 +22,7 @@ from nutmeg.data.open_meteo import OpenMeteoClient
 from nutmeg.data.soccerdata_client import SoccerDataClient, SoccerDataError
 from nutmeg.data.the_odds_api import TheOddsApiClient, TheOddsApiError
 from nutmeg.data.transfermarkt import TransfermarktDataset
+from nutmeg.domain.odds import OddsProvider
 from nutmeg.interfaces.bot import (
     BotAdapter,
     TelegramBotClient,
@@ -251,7 +252,13 @@ def build_odds_provider_client(
     *,
     fixture_repository=None,
     event_repository=None,
-):
+) -> OddsProvider:
+    """Return the configured odds-fetch client as an ``OddsProvider``.
+
+    Selection is driven by ``settings.odds_provider`` ('api-football' |
+    'the-odds-api'); both branches yield a structural ``OddsProvider`` so call
+    sites depend on the protocol, not the concrete client class.
+    """
     provider = settings.odds_provider.strip().casefold()
     if provider == "api-football":
         return ApiFootballClient(

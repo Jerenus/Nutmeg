@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Protocol
 
 from nutmeg.core.repositories import FixtureRepository, OddsHistoryRepository
 from nutmeg.domain.odds import (
     HistoricalMarketSummary,
     MarketOddsSnapshot,
+    OddsProvider,
     OddsProviderSnapshot,
-    OddsProviderSnapshotFeed,
     OddsSnapshot,
     OutcomeOddsSnapshot,
 )
@@ -83,17 +82,12 @@ class OddsFixtureNotFoundError(LookupError):
     pass
 
 
-class OddsProviderClient(Protocol):
-    def fetch_fixture_odds(self, fixture_id: str) -> OddsProviderSnapshotFeed:
-        ...
-
-
 class OddsSnapshotService:
     def __init__(
         self,
         *,
         fixture_repository: FixtureRepository,
-        odds_client: OddsProviderClient,
+        odds_client: OddsProvider,
         odds_history_repository: OddsHistoryRepository | None = None,
     ) -> None:
         self._fixture_repository = fixture_repository
