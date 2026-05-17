@@ -18,11 +18,12 @@ def _jczq_match(
     home: str = "阿森纳",
     away: str = "热刺",
     match_date: str = "2026-05-17",
+    match_time: str = "22:00",
 ) -> JczqDailyMatch:
     return JczqDailyMatch(
         match_no=match_no,
         match_date=match_date,
-        match_time="22:00",
+        match_time=match_time,
         league=league,
         home_team=home,
         away_team=away,
@@ -90,6 +91,24 @@ def test_aligns_jczq_match_to_api_football_fixture() -> None:
     assert result.fixture is fixture
     assert result.match_no == "周六001"
     assert result.reason is None
+    assert provider.calls == [(39, "2026-05-17")]
+
+
+def test_late_night_match_queried_by_utc_date_not_beijing_date() -> None:
+    """A JCZQ '周日' match kicking off 00:00 Beijing on 2026-05-18 actually
+    plays at 2026-05-17 16:00 UTC — API-Football files it under 2026-05-17.
+    Aligning by the raw Beijing match_date queries the wrong day and misses.
+    """
+    fixture = _af_fixture()
+    provider = _FakeFixtureProvider({(39, "2026-05-17"): [fixture]})
+    aligner = MatchAligner(fixture_provider=provider)
+
+    result = aligner.align(
+        _jczq_match(match_date="2026-05-18", match_time="00:00:00")
+    )
+
+    assert result.matched is True
+    assert result.fixture_id == "1379305"
     assert provider.calls == [(39, "2026-05-17")]
 
 

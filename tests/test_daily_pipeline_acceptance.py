@@ -79,7 +79,9 @@ def _jczq_match_payload(num: str, home: str, away: str) -> dict:
     return {
         "matchNumStr": num,
         "matchDate": MATCH_DATE,
-        "matchTime": "03:00:00",
+        # 22:00 北京 == 14:00 UTC 同日（与下面 _af_fixture 的 kickoff_at 一致）；
+        # MATCH_DATE 既是体彩日期也是 API-Football 的 UTC 归档日。
+        "matchTime": "22:00:00",
         "leagueAbbName": "英超",
         "homeTeamAbbName": home,
         "awayTeamAbbName": away,

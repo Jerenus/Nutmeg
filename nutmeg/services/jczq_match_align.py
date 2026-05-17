@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from importlib import resources
 from typing import Protocol
 
@@ -63,6 +64,25 @@ def load_team_aliases() -> dict[str, dict[str, str]]:
 
 def _normalize(name: str) -> str:
     return "".join((name or "").split()).casefold()
+
+
+# 体彩 JCZQ 标的时间是北京时间（UTC+8，中国无夏令时，固定偏移）。
+_BEIJING_UTC_OFFSET_HOURS = 8
+
+
+def _utc_query_date(match_date: str, match_time: str) -> str:
+    """把 JCZQ 的北京时间 ``match_date``+``match_time`` 换算成 API-Football 归档用的
+    UTC 日历日。
+
+    API-Football 按 UTC 给 fixture 归档；体彩"周日"票里有大量北京 00:00-07:59 开球
+    的深夜场，其 UTC 日历日是前一天——直接按北京 ``match_date`` 查会差一天、查空。
+    ``match_time`` 缺失或无法解析时退回原 ``match_date``。
+    """
+    try:
+        beijing = datetime.fromisoformat(f"{match_date}T{(match_time or '').strip()}")
+    except ValueError:
+        return match_date
+    return (beijing - timedelta(hours=_BEIJING_UTC_OFFSET_HOURS)).date().isoformat()
 
 
 @dataclass(slots=True, frozen=True)
@@ -133,10 +153,15 @@ class MatchAligner:
             logger.info("align skip %s: %s", match.match_no, reason)
             return self._unmatched(match, reason)
 
-        fixtures = self._fixtures_for(league_id, match.match_date)
+        # match_time 是可选的鸭子类型字段（JczqDailyMatch 有；足彩 _AlignableMatch
+        # 适配器无开球时间）——缺失时 _utc_query_date 自动退回原 match_date。
+        query_date = _utc_query_date(
+            match.match_date, getattr(match, "match_time", "")
+        )
+        fixtures = self._fixtures_for(league_id, query_date)
         if not fixtures:
             reason = (
-                f"API-Football 当日（{match.match_date}）联赛 {league_id} 无 fixture"
+                f"API-Football 当日（{query_date} UTC）联赛 {league_id} 无 fixture"
             )
             logger.info("align skip %s: %s", match.match_no, reason)
             return self._unmatched(match, reason)
