@@ -19,3 +19,4 @@ build/
 .superpowers/
 .specify/extensions/.cache/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
