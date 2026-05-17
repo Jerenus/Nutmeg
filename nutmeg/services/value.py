@@ -15,6 +15,14 @@ from nutmeg.models.dixon_coles import (
 )
 
 
+# Team-strength estimation window. A season-spanning window de-noises the
+# expected-goals inputs — a 5-match window is dominated by streak noise and
+# made the model fade the market favorite. 38 covers the longest European
+# league season; the snapshot service truncates gracefully to whatever
+# history is available.
+_STRENGTH_WINDOW_MATCHES = 38
+
+
 class SnapshotService(Protocol):
     def build_snapshot(self, fixture_id: str, *, recent_matches: int = 5):
         ...
@@ -140,7 +148,9 @@ class ValueBoardService:
         *,
         min_edge: float,
     ) -> list[ValueCandidate]:
-        snapshot = self._snapshot_service.build_snapshot(fixture.fixture_id, recent_matches=5)
+        snapshot = self._snapshot_service.build_snapshot(
+            fixture.fixture_id, recent_matches=_STRENGTH_WINDOW_MATCHES
+        )
         model_markets = self._pricing_model.price_markets(
             expected_goals_from_snapshot(snapshot)
         )

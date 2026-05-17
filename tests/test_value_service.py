@@ -16,7 +16,7 @@ from nutmeg.domain.snapshot import (
     TeamEnrichment,
     TeamTrendSummary,
 )
-from nutmeg.services.value import ValueBoardService
+from nutmeg.services.value import _STRENGTH_WINDOW_MATCHES, ValueBoardService
 
 
 def _fixture(fixture_id: str = 'fx-1') -> Fixture:
@@ -240,7 +240,7 @@ class FakeSnapshotService:
         self.requested_fixture_ids: list[str] = []
 
     def build_snapshot(self, fixture_id: str, *, recent_matches: int = 5) -> FixtureSnapshot:
-        assert recent_matches == 5
+        assert recent_matches == _STRENGTH_WINDOW_MATCHES
         self.requested_fixture_ids.append(fixture_id)
         return self._snapshots[fixture_id]
 
@@ -491,3 +491,28 @@ def test_build_board_for_fixtures_keeps_every_candidate() -> None:
     # build_board with limit=1 truncates; build_board_for_fixtures must not.
     assert len(full.candidates) >= len(capped.candidates)
     assert len(full.candidates) > 1
+
+
+def test_evaluate_fixture_requests_season_window_snapshot() -> None:
+    # Team strength must be estimated over a season-spanning window, not the
+    # last 5 matches (5 matches is streak noise — see the calibration spec).
+    from nutmeg.services.value import _STRENGTH_WINDOW_MATCHES
+
+    fixture = _fixture('1379305')
+    recorded: dict[str, int] = {}
+
+    class _RecordingSnapshotService:
+        def build_snapshot(self, fixture_id: str, *, recent_matches: int = 5):
+            recorded['recent_matches'] = recent_matches
+            return _snapshot(fixture)
+
+    service = ValueBoardService(
+        fixture_repository=None,  # type: ignore[arg-type]
+        snapshot_service=_RecordingSnapshotService(),
+        odds_service=FakeOddsService({fixture.fixture_id: _odds(fixture)}),
+    )
+
+    service.build_board_for_fixtures([fixture], min_edge=0.03)
+
+    assert recorded['recent_matches'] == _STRENGTH_WINDOW_MATCHES
+    assert _STRENGTH_WINDOW_MATCHES >= 34
