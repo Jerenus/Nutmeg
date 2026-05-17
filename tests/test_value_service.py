@@ -417,3 +417,54 @@ def test_value_board_ignores_demo_cache_when_real_fixtures_exist() -> None:
     assert snapshot_service.requested_fixture_ids == ['1379305']
     assert odds_service.requested_fixture_ids == ['1379305']
     assert all(item.fixture_id != 'epl-002' for item in board.skipped)
+
+
+# --- build_board_for_fixtures (Phase 3 piece 1) -----------------------------
+
+
+def test_build_board_for_fixtures_evaluates_supplied_fixtures() -> None:
+    # The bridge entry point: evaluate an explicit list of fixtures without a
+    # league/days repository query.
+    fixture = _fixture('1379305')
+    service = ValueBoardService(
+        # No repository needed — fixtures are passed directly.
+        fixture_repository=None,  # type: ignore[arg-type]
+        snapshot_service=FakeSnapshotService({fixture.fixture_id: _snapshot(fixture)}),
+        odds_service=FakeOddsService({fixture.fixture_id: _odds(fixture)}),
+    )
+
+    board = service.build_board_for_fixtures([fixture], min_edge=0.03)
+
+    assert board.candidates
+    assert board.candidates[0].fixture_id == '1379305'
+    assert board.candidates[0].edge >= 0.03
+
+
+def test_build_board_for_fixtures_empty_input_returns_empty_board() -> None:
+    service = ValueBoardService(
+        fixture_repository=None,  # type: ignore[arg-type]
+        snapshot_service=FakeSnapshotService({}),
+        odds_service=FakeOddsService({}),
+    )
+
+    board = service.build_board_for_fixtures([], min_edge=0.03)
+
+    assert board.candidates == []
+    assert board.skipped == []
+
+
+def test_build_board_for_fixtures_keeps_every_candidate() -> None:
+    # No top-N truncation: a bridge consumer needs all conflicts per fixture.
+    fixture = _fixture('1379305')
+    service = ValueBoardService(
+        fixture_repository=FakeFixtureRepository([fixture]),
+        snapshot_service=FakeSnapshotService({fixture.fixture_id: _snapshot(fixture)}),
+        odds_service=FakeOddsService({fixture.fixture_id: _multi_market_odds(fixture)}),
+    )
+
+    full = service.build_board_for_fixtures([fixture], min_edge=0.03)
+    capped = service.build_board(league='epl', days=3, limit=1, min_edge=0.03)
+
+    # build_board with limit=1 truncates; build_board_for_fixtures must not.
+    assert len(full.candidates) >= len(capped.candidates)
+    assert len(full.candidates) > 1

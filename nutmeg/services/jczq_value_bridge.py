@@ -60,36 +60,6 @@ class JczqValueReport:
         return []
 
 
-class _FixedFixtureRepository:
-    """A FixtureRepository shim returning exactly the supplied fixtures.
-
-    ``ValueBoardService.build_board`` is the public, well-tested entry point but
-    it is keyed by league+days. The bridge wants to evaluate a specific set of
-    aligned fixtures, so it feeds them through this shim and lets build_board do
-    the snapshot/odds/pricing exactly as it does in production.
-    """
-
-    def __init__(self, fixtures: list[Fixture]) -> None:
-        self._fixtures = fixtures
-
-    def list_upcoming(self, league: str, days: int) -> list[Fixture]:
-        del league, days
-        return list(self._fixtures)
-
-    def get_fixture(self, fixture_id: str) -> Fixture | None:
-        for fixture in self._fixtures:
-            if fixture.fixture_id == fixture_id:
-                return fixture
-        return None
-
-    def get_latest_finished_for_team_before(self, **_kwargs) -> Fixture | None:
-        return None
-
-    def upsert_many(self, fixtures: list[Fixture]) -> int:
-        del fixtures
-        return 0
-
-
 class JczqValueBridge:
     def __init__(
         self,
@@ -158,19 +128,14 @@ class JczqValueBridge:
     ) -> dict[str, list[ValueCandidate]]:
         if not fixtures:
             return {}
-        # Swap in a fixed-list repository so build_board evaluates exactly the
-        # aligned fixtures; limit is generous so no candidate is dropped.
-        original_repo = self._value_service._fixture_repository
-        self._value_service._fixture_repository = _FixedFixtureRepository(fixtures)
-        try:
-            board = self._value_service.build_board(
-                league="jczq-bridge",
-                days=3,
-                limit=len(fixtures) * 64,
-                min_edge=self._min_edge,
-            )
-        finally:
-            self._value_service._fixture_repository = original_repo
+        # build_board_for_fixtures is the public bridge entry point: it prices
+        # exactly the aligned fixtures and keeps every candidate (no top-N
+        # truncation), so no conflict is dropped before grouping.
+        board = self._value_service.build_board_for_fixtures(
+            fixtures,
+            min_edge=self._min_edge,
+            league="jczq-bridge",
+        )
 
         grouped: dict[str, list[ValueCandidate]] = {}
         for candidate in board.candidates:

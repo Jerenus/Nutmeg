@@ -47,12 +47,55 @@ class ValueBoardService:
         limit: int = 10,
         min_edge: float = 0.03,
     ) -> ValueBoard:
-        candidates: list[ValueCandidate] = []
-        skipped: list[SkippedValueFixture] = []
         fixtures = self._fixture_repository.list_upcoming(league=league, days=days)
         real_fixtures = [fixture for fixture in fixtures if fixture.source != 'demo']
         if real_fixtures:
             fixtures = real_fixtures
+        return self._board_from_fixtures(
+            fixtures,
+            league=league,
+            days=days,
+            limit=limit,
+            min_edge=min_edge,
+        )
+
+    def build_board_for_fixtures(
+        self,
+        fixtures: list[Fixture],
+        *,
+        min_edge: float = 0.03,
+        league: str = 'fixtures',
+        days: int = 0,
+    ) -> ValueBoard:
+        """Evaluate an explicit list of fixtures (model vs odds → edge/EV/Kelly).
+
+        The public bridge entry point: callers that already hold the exact
+        fixtures to price (e.g. ``JczqValueBridge`` after aligning JCZQ matches
+        to API-Football) skip the league/days repository query entirely. Every
+        produced candidate is kept — no top-N truncation — so a per-fixture
+        conflict consumer sees the full set. Ranking and per-fixture skip
+        handling are identical to ``build_board``.
+        """
+
+        return self._board_from_fixtures(
+            fixtures,
+            league=league,
+            days=days,
+            limit=None,
+            min_edge=min_edge,
+        )
+
+    def _board_from_fixtures(
+        self,
+        fixtures: list[Fixture],
+        *,
+        league: str,
+        days: int,
+        limit: int | None,
+        min_edge: float,
+    ) -> ValueBoard:
+        candidates: list[ValueCandidate] = []
+        skipped: list[SkippedValueFixture] = []
         for fixture in fixtures:
             try:
                 candidates.extend(
@@ -72,7 +115,9 @@ class ValueBoardService:
                 candidate.kickoff_at,
                 candidate.fixture_id,
             ),
-        )[:limit]
+        )
+        if limit is not None:
+            ranked = ranked[:limit]
         return ValueBoard(
             league=league,
             days=days,
