@@ -101,3 +101,15 @@ Telegram 推送 → 次日 jczq-daily-review 回测 → 冲突信号 store
 - Phase 3 后：每日方案的候选来自冲突点引擎（模型 vs 国际赔率）→ 串关构造器 → debate；注金由 OBSERVE/SMALL/NORMAL/KILL 阶梯按累积 ROI 自动分档（引擎未验证前不重注）。
 - 端到端验收测试通过：完整每日流程可跑、关键产出被断言。
 - 最终：一个能维护、聚焦、**自我验证**的体彩投注助手——edge 未经实绩验证前注金受限，回测回路持续校准。
+
+## 7. 收尾发现 — 冲突引擎实时通路 + 模型失准（2026-05-17）
+
+整合 4 期完成后，首次在真实每日数据上跑冲突引擎，暴露并修复了 3 个真 bug（验收测试此前一直绿，是因为它用 fake 数据 fake 掉了这三处线上断裂的接缝——"测试绿"曾给虚假信心）：
+
+- `a18ba97` —— `MatchAligner` 按北京日历日查 API-Football，深夜场（北京 00:00-07:59 开球）UTC 日期是前一天 → 全查空。改 `_utc_query_date` 按 UTC 日历日查。覆盖率 6→20/34。
+- `76d7ca2` —— `build_board_for_fixtures` 拿到的实时对齐 fixture 从未落本地库，repo-backed 的 odds/snapshot 服务 `get_fixture` 全失败。改为定价前 `upsert_many` 落库。odds 市场侧打通。
+- `55f4713` —— value-bridge 接线用中文联赛名当 `Fixture.league_code`，模型 snapshot 的 `get_league()` 抛 `Unknown league code`。改用 `catalog.league_code_by_api_football_id()`。模型侧打通。
+
+**未决头号问题 —— Dixon-Coles 模型失准**：通路打通后，模型预期进球被压平（实测 热那亚 1.18 ≈ AC米兰 1.16，实力悬殊场当五五开），导致冲突引擎在 14 场里 13 场都"看好市场冷门"——这是同一个模型 bug，不是 13 个 edge。**冲突引擎产出的 edge / 串关候选在模型校准前不可驱动真金方案**，只能 OBSERVE/纸面。
+
+**下一期（独立一期）= 模型校准**：让 Dixon-Coles 的球队实力输入能真正区分强弱队（更长战绩窗口 / 主场优势项 / 强弱先验）。这是比"接线"更核心的一块——冲突引擎的前提是"模型可信"。
