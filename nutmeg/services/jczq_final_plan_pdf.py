@@ -128,17 +128,19 @@ def _build_story(plan: dict) -> list:
     metrics = plan.get("portfolio_metrics", {})
     cmp_ = metrics.get("comparison", {})
     story.append(Paragraph("Portfolio 摘要", h2))
-    story.append(
-        Paragraph(
-            _xml(
-                f"总注金 {metrics.get('total_stake', '?')} 元 ｜ 已知部分 EV {metrics.get('total_expected_value_known', '?')} 元 ｜ "
-                f"SOP 默认版 EV {cmp_.get('sop_default_variant_ev', '?')} ｜ "
-                f"实验折中版 EV {cmp_.get('experimental_blended_variant_ev', '?')} ｜ "
-                f"差 +{cmp_.get('ev_uplift_vs_sop', '?')} 元"
-            ),
-            small,
-        )
+    summary_line = (
+        f"总注金 {metrics.get('total_stake', '?')} 元 ｜ "
+        f"已知部分 EV {metrics.get('total_expected_value_known', '?')} 元"
     )
+    # The SOP/experimental comparison only applies to the legacy generator's
+    # multi-variant plans; conflict-engine plans omit it rather than show '?'.
+    if cmp_:
+        summary_line += (
+            f" ｜ SOP 默认版 EV {cmp_.get('sop_default_variant_ev', '?')} ｜ "
+            f"实验折中版 EV {cmp_.get('experimental_blended_variant_ev', '?')} ｜ "
+            f"差 +{cmp_.get('ev_uplift_vs_sop', '?')} 元"
+        )
+    story.append(Paragraph(_xml(summary_line), small))
     story.append(Spacer(1, 6))
 
     summary_rows = [
@@ -239,16 +241,29 @@ def _build_story(plan: dict) -> list:
             )
         story.append(Spacer(1, 4))
 
+    # Only render rule lines whose key is actually present in the audit —
+    # legacy Poisson-generator rules (B/R9/R10/R13) don't apply to a
+    # conflict-engine plan and would otherwise render as a confusing '?'.
+    rule_labels = (
+        ("rule_o_violations", "Rule O 同票同场不同 pool 违规"),
+        ("rule_b_floor_violations", "Rule B had ≤ 1.50 违规"),
+        ("rule_r9_extreme_crs_quality_gate", "Rule R9 extreme crs 跨场质量门"),
+        (
+            "rule_r10_hivol_ttg_low_in_main_violations",
+            "Rule R10 hi-vol ttg ≤ 2 球 in main/contrarian",
+        ),
+        (
+            "rule_r13_poisson_solo_expected_goals_consistency",
+            "Rule R13 poisson_solo expected_goals 一致性",
+        ),
+    )
     rule_lines = [
-        f"Rule O 同票同场不同 pool 违规：{audit.get('rule_o_violations', '?')}",
-        f"Rule B had ≤ 1.50 违规：{audit.get('rule_b_floor_violations', '?')}",
-        f"Rule R9 extreme crs 跨场质量门：{audit.get('rule_r9_extreme_crs_quality_gate', '?')}",
-        f"Rule R10 hi-vol ttg ≤ 2 球 in main/contrarian：{audit.get('rule_r10_hivol_ttg_low_in_main_violations', '?')}",
-        f"Rule R13 poisson_solo expected_goals 一致性：{audit.get('rule_r13_poisson_solo_expected_goals_consistency', '?')}",
+        f"{label}：{audit[key]}" for key, label in rule_labels if key in audit
     ]
-    story.append(Paragraph("Rule 校验", h2))
-    for ln in rule_lines:
-        story.append(Paragraph(_xml(f"• {ln}"), small))
+    if rule_lines:
+        story.append(Paragraph("Rule 校验", h2))
+        for ln in rule_lines:
+            story.append(Paragraph(_xml(f"• {ln}"), small))
 
     return story
 

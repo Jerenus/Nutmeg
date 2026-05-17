@@ -83,3 +83,24 @@ def test_render_pdf_with_non_five_tickets_succeeds(tmp_path) -> None:
     render_pdf(_plan(3), pdf_path)
     assert pdf_path.exists()
     assert pdf_path.stat().st_size > 0
+
+
+def test_build_story_omits_inapplicable_legacy_fields() -> None:
+    # A conflict-engine plan has no SOP/experimental comparison and none of the
+    # legacy Poisson rules — those must be omitted, not rendered as '?'.
+    plan = _plan(3)
+    plan["portfolio_metrics"]["comparison"] = {}
+    plan["concentration_audit"] = {"shared_matches": [], "rule_o_violations": 0}
+
+    text = _story_text(_build_story(plan))
+
+    assert "Rule O" in text  # the one applicable rule still shows
+    assert "SOP 默认版" not in text
+    assert "Rule R13" not in text
+    assert "Rule B had" not in text
+
+
+def test_build_story_keeps_legacy_fields_when_present() -> None:
+    # The legacy generator's plans still render their comparison + rule lines.
+    text = _story_text(_build_story(_plan(3)))
+    assert "SOP 默认版" in text
