@@ -34,15 +34,18 @@
         │
         ▼
 冲突点检测引擎 = ValueBoardService（模型概率 vs 市场公允概率 → edge → EV → Kelly）
-        │            ＋ psychology 信号（精简版，反直觉/叙事）
+        │            ＋ psychology 信号 + 情报（阵容/伤停）—— 多方因素并列呈现 [补充 A]
         ▼
-候选组合（2/3/4串1，跨 胜平负/让球/总进球/比分/半全场 五玩法）
-        │
+串关构造器：冲突腿按信心 → 2/3/4串1，守 Rule O 同场合法性 + 集中度上限 [补充 B]
+        │            玩法：胜平负 / 让球 / 总进球 / 比分（半全场已排除）
         ▼
 debate 工作流（Claude 草案 → Codex review → 人工裁决）→ 最终方案
         │
         ▼
-Telegram 推送 + 次日 jczq-daily-review 回测 → 策略记忆
+Telegram 推送 → 次日 jczq-daily-review 回测 → 冲突信号 store
+        │
+        ▼
+注金阶梯 OBSERVE→SMALL→NORMAL→KILL（按累积 ROI 自动分档）[补充 C]
 ```
 
 **两套投注子系统的关系**：JCZQ / Zucai 各自是"产品+工作流外壳"；Value/Odds 引擎是**共享的分析底座**——`ValueBoardService` 当冲突点来源，接入两者的每日流程。
@@ -66,12 +69,15 @@ Telegram 推送 + 次日 jczq-daily-review 回测 → 策略记忆
 - 三个 odds 客户端（api_football / the_odds_api / european_odds）归一到单一 `OddsProvider` 协议。
 
 ### Phase 3 — 接线（核心价值）
-- `ValueBoardService` 接入 JCZQ + Zucai 每日流程，作为冲突点候选来源。
-- 扩展 `ValueBoardService` 从单一 `match_winner` 到五玩法（让球/总进球/比分/半全场）。
-- 冲突点 → 候选 2/3/4串1 → debate → 最终方案。
+- **3a ✅ 完成**：扩展 value 引擎到 4 玩法（胜平负 + 总进球 + 比分 + 让球），模型 + odds 解析 + 引擎 + 测试全绿。提交 `e876ae2` / `3471e51`。**半全场排除**（需半场模型 + R27 历史 0/18，用户决定不做）。
+- **3b**：`ValueBoardService` 接入 JCZQ 每日流程 —— brief 新增"冲突点"节，**并列呈现** value 冲突点 + psychology 信号 + 情报（补充 A 多方因素）；**串关构造器**把冲突腿按信心组装成 2/3/4串1，守 Rule O 同场合法性 + 集中度上限（补充 B）。
+- **3c**：接入 Zucai 流程（先核实"per-match 冲突法"是否适配足彩彩池格式；不适配则如实标注）。
+- **3d 自我验证（补充 C）**：冲突信号 store（`.nutmeg-data/jczq/memory/conflict-signals.json`）+ OBSERVE/SMALL/NORMAL/KILL 注金阶梯；引擎未攒够 ROI>1 样本前只能小注/纸面；次日 `jczq-daily-review` grade 冲突腿写回 store。
+- **3e**：odds 客户端（api_football / the_odds_api）归一到单一 `OddsProvider` 协议。
 
 ### Phase 4 — 收尾
-- `cli.py`（47 命令）按子系统拆分为 typer 子命令组。
+- `cli.py`（命令按子系统拆分为 typer 子命令组）。
+- **端到端验收测试（补充 E）**：跑一遍完整每日流程（数据 → 冲突点 → 串关 → brief 渲染 → 注金阶梯），断言关键产出。
 - 文档收敛：保留 `Nutmeg-DESIGN-v0.3.md` + `AGENTS.md` + 本设计 + jczq 决策框架；其余清理。
 - 提交此前遗留的 `jczq_final_plan_pdf.py` "5张票"修复。
 
@@ -85,5 +91,6 @@ Telegram 推送 + 次日 jczq-daily-review 回测 → 策略记忆
 ## 6. 成功标准
 
 - Phase 1 后：主干只剩投注相关代码（JCZQ + Zucai + Value/Odds + psychology + core），测试全绿，仓库体积显著下降。
-- Phase 3 后：每日方案的候选来自冲突点引擎（模型 vs 国际赔率），经 debate + 回测闭环。
-- 最终：一个能维护、聚焦、自我验证的体彩投注助手。
+- Phase 3 后：每日方案的候选来自冲突点引擎（模型 vs 国际赔率）→ 串关构造器 → debate；注金由 OBSERVE/SMALL/NORMAL/KILL 阶梯按累积 ROI 自动分档（引擎未验证前不重注）。
+- 端到端验收测试通过：完整每日流程可跑、关键产出被断言。
+- 最终：一个能维护、聚焦、**自我验证**的体彩投注助手——edge 未经实绩验证前注金受限，回测回路持续校准。
