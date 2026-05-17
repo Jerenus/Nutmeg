@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from nutmeg.services.jczq_conflict_store import ConflictStore
 from nutmeg.services.jczq_daily import JczqTextSender, _report_from_dict
 from nutmeg.services.jczq_review_explainer import (
     Completer,
@@ -122,6 +123,13 @@ class JczqDailyReviewService:
 
         context = _report_from_dict(json.loads(context_path.read_text(encoding="utf-8")))
         results = self._result_provider.fetch_results(resolved_date)
+        # Self-validation: grade the day's conflict-engine signals so the
+        # stake ladder accumulates a live ROI track record.
+        grade_conflict_store(
+            ConflictStore(out / "memory" / "conflict-signals.json"),
+            run_date=resolved_date,
+            results=results,
+        )
         context_payload = context.to_dict()
         graded_legs = _grade_legs(context_payload["plans"], results)
         graded_legs = enrich_graded_legs(
@@ -363,6 +371,30 @@ def _grade_legs(
                 }
             )
     return graded
+
+
+def grade_conflict_store(
+    store: ConflictStore,
+    *,
+    run_date: str,
+    results: dict[str, dict[str, str]],
+) -> None:
+    """Grade ``run_date``'s conflict signals against the daily results.
+
+    ``results`` is the review's per-match per-pool winner map
+    (``{match_no: {pool: winning_pick, ...}}``) — the same shape returned
+    by ``JczqResultProvider.fetch_results``. The conflict engine's v1
+    signals are had-pool only, so each match's winning pick is taken from
+    its ``had`` entry; matches missing a ``had`` result are skipped, which
+    leaves their signals ungraded for a later pass.
+    """
+
+    had_winners: dict[str, str] = {}
+    for match_no, pools in (results or {}).items():
+        winner = (pools or {}).get("had")
+        if winner:
+            had_winners[match_no] = winner
+    store.grade(run_date, results=had_winners)
 
 
 # R8 (5/08 落库): narrative tagging mirrors jczq_diagnostics.classify_leg

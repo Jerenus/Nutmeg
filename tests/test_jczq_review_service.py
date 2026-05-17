@@ -352,3 +352,66 @@ def test_daily_review_writes_executable_decision_policy(tmp_path: Path) -> None:
     assert any("2球" in note for note in policy["notes"])
     assert report["strategy_memory"]["decision_policy"]["rules"]["hafu"]["active"] is True
     assert "策略迭代规则" in report["message"]
+
+
+# --- conflict-store grading -------------------------------------------------
+
+
+def test_grade_conflict_store_maps_per_pool_winners(tmp_path: Path) -> None:
+    from nutmeg.data.european_odds import CrossCheckSignal
+    from nutmeg.services.jczq_conflict_store import ConflictStore
+    from nutmeg.services.jczq_review import grade_conflict_store
+
+    store = ConflictStore(tmp_path / "conflict-signals.json")
+    store.record(
+        "2026-05-15",
+        [
+            CrossCheckSignal("周五001", "had", "负", 0.30, 0.40, 0.05, 0.04),
+            CrossCheckSignal("周五003", "had", "胜", 0.30, 0.40, 0.05, 0.04),
+        ],
+        sporttery_odds={"周五001": 3.10, "周五003": 2.40},
+    )
+
+    grade_conflict_store(
+        store,
+        run_date="2026-05-15",
+        results={
+            "周五001": {"had": "负", "ttg": "2球"},
+            "周五003": {"had": "负", "ttg": "3球"},
+        },
+    )
+
+    rows = store.load()
+    by_match = {row["match_no"]: row for row in rows}
+    assert by_match["周五001"]["hit"] is True
+    assert abs(by_match["周五001"]["realized_return"] - 3.10) < 1e-9
+    assert by_match["周五003"]["hit"] is False
+    assert by_match["周五003"]["realized_return"] == 0.0
+
+
+def test_daily_review_grades_conflict_signal_store(tmp_path: Path) -> None:
+    from nutmeg.data.european_odds import CrossCheckSignal
+    from nutmeg.services.jczq_conflict_store import ConflictStore
+
+    JczqDailyAdvisorService(provider=FakeProvider()).build_report(
+        run_date="2026-05-01", output_dir=tmp_path
+    )
+
+    # Seed a conflict signal as if the engine had emitted it on the run date.
+    store_path = tmp_path / "memory" / "conflict-signals.json"
+    store = ConflictStore(store_path)
+    store.record(
+        "2026-05-01",
+        [CrossCheckSignal("周五005", "had", "负", 0.30, 0.42, 0.06, 0.05)],
+        sporttery_odds={"周五005": 3.45},
+    )
+    assert store.load()[0]["hit"] is None
+
+    JczqDailyReviewService(result_provider=FakeResultProvider()).build_review(
+        run_date="2026-05-01", output_dir=tmp_path
+    )
+
+    # FakeResultProvider has 周五005 had == "负" → the signal is graded a hit.
+    graded = ConflictStore(store_path).load()[0]
+    assert graded["hit"] is True
+    assert abs(graded["realized_return"] - 3.45) < 1e-9
