@@ -4,12 +4,15 @@ A quota-free market-odds source for the JCZQ conflict engine. Fetches and
 parses 500.com pages (static HTML, gb2312-encoded) into per-JCZQ-match
 ``Fixture`` + ``OddsSnapshot`` objects, keyed by the 竞彩 number (周日NNN).
 
-Recon contract: ``docs/superpowers/notes/fcom500-page-structure.md``. Two of
-the four conflict markets are cleanly covered as 体彩-independent signals —
-``match_winner`` (欧赔) is fully clean, ``total_goals`` (进球指数) is carried
-as a flagged ``independent=False`` weak signal, ``handicap`` (亚盘) is carried
-but does not key-match the model, ``correct_score`` is JS-rendered and not
-collected. See the structure note §4 verdict.
+Recon contract: ``docs/superpowers/notes/fcom500-page-structure.md``. The
+conflict engine focuses on 胜平负 only — the ``OddsSnapshot`` it consumes
+carries ONLY ``match_winner`` (欧赔, a clean 体彩-independent signal). The
+``total_goals`` (进球指数) and ``handicap`` (亚盘) parsers remain in the module
+(tested, harmless) but are deliberately NOT fed to the conflict engine:
+``total_goals`` is 体彩-derived (circular vs the 体彩 line the engine compares
+against) and ``handicap`` is a 2-way 亚盘 that does not key-match the model's
+3-way buckets. ``correct_score`` is JS-rendered and not collected. See the
+structure note §4 verdict.
 
 **Graceful degradation is the contract.** Any page fetch/parse failure
 degrades that match/market — it never crashes the daily flow.
@@ -48,6 +51,7 @@ __all__ = [
     "Fcom500OddsService",
     "Fcom500ValueBridge",
     "MarketOdds",
+    "build_model_identity",
     "parse_correct_score",
     "parse_european_1x2",
     "parse_handicap",
@@ -474,18 +478,6 @@ def _ouzhi_url(fid: str) -> str:
     return f"https://odds.500.com/fenxi/ouzhi-{fid}.shtml"
 
 
-def _yazhi_url(fid: str) -> str:
-    return f"https://odds.500.com/fenxi/yazhi-{fid}.shtml"
-
-
-def _jqs_url(fid: str) -> str:
-    return f"https://odds.500.com/fenxi/jqs-{fid}.shtml"
-
-
-def _bifen_url(fid: str) -> str:
-    return f"https://odds.500.com/fenxi/bifen-{fid}.shtml"
-
-
 _JCZQ_LIST_URL = "https://trade.500.com/jczq/"
 
 
@@ -554,6 +546,121 @@ def _parse_kickoff(kickoff: str, run_date: str) -> datetime:
         return datetime.now(UTC).replace(microsecond=0)
 
 
+def _model_season_for(run_date: str) -> int:
+    """Map a JCZQ run date to the API-Football / soccerdata season year.
+
+    European-league seasons span two calendar years; the catalog labels a
+    season by its starting year. A fixture from July onward belongs to the
+    season starting that year; a January–June fixture to the one that started
+    the previous year. Mirrors ``jczq_value_wiring.season_for_date`` — kept
+    inline so the data layer carries no services-layer import.
+    """
+    year, month, _day = (int(part) for part in run_date.split("-"))
+    return year if month >= 7 else year - 1
+
+
+def build_model_identity(match, run_date: str) -> Fixture | None:
+    """Build a JCZQ match's **model-side** ``Fixture`` — English team names + a
+    catalog league code — keyed by the 竞彩-synthetic ``fcom500:周日NNN`` id.
+
+    The 500.com collector's synthetic ``Fixture`` carries **Chinese** team
+    names and a Chinese league string; the model side
+    (``FixtureSnapshotService`` → soccerdata, ``get_league()``) needs English
+    team names and a catalog league code. This builds that identity the way
+    ``MatchAligner`` does:
+
+    - Chinese team names → English via ``load_team_aliases()`` keyed by the
+      JCZQ league.
+    - JCZQ league → ``load_league_aliases()`` → API-Football id →
+      ``league_code_by_api_football_id()`` → catalog code.
+
+    The ``fixture_id`` stays ``fcom500:周日NNN`` so ``Fcom500OddsService`` still
+    keys the odds snapshot correctly.
+
+    **Honest degradation:** a match whose league or either team is not in the
+    alias tables → ``None`` (no model identity), never a crash. 500.com-path
+    model coverage therefore equals alias-table coverage — expected and
+    correct.
+    """
+    # Deferred imports keep the data layer free of a load-time dependency on
+    # the services layer (and avoid an import cycle).
+    from nutmeg.config.catalog import league_code_by_api_football_id
+    from nutmeg.services.jczq_match_align import (
+        load_league_aliases,
+        load_team_aliases,
+    )
+
+    league = getattr(match, "league", "")
+    api_football_id = load_league_aliases().get(league)
+    if api_football_id is None:
+        logger.info(
+            "fcom500: match %s league '%s' not in jczq_league_aliases — "
+            "no model identity",
+            getattr(match, "match_no", "?"),
+            league,
+        )
+        return None
+    league_code = league_code_by_api_football_id().get(api_football_id)
+    if league_code is None:
+        logger.info(
+            "fcom500: match %s league '%s' (api id %s) has no catalog code — "
+            "no model identity",
+            getattr(match, "match_no", "?"),
+            league,
+            api_football_id,
+        )
+        return None
+
+    team_table = load_team_aliases().get(league, {})
+    home_en = _lookup_team_alias(team_table, getattr(match, "home_team", ""))
+    away_en = _lookup_team_alias(team_table, getattr(match, "away_team", ""))
+    missing = [
+        zh
+        for zh, en in (
+            (getattr(match, "home_team", ""), home_en),
+            (getattr(match, "away_team", ""), away_en),
+        )
+        if en is None
+    ]
+    if missing:
+        logger.info(
+            "fcom500: match %s teams %s not in jczq_team_aliases['%s'] — "
+            "no model identity",
+            getattr(match, "match_no", "?"),
+            missing,
+            league,
+        )
+        return None
+
+    assert home_en is not None and away_en is not None
+    return Fixture(
+        fixture_id=f"fcom500:{match.match_no}",
+        league_code=league_code,
+        provider_league_id=api_football_id,
+        season=_model_season_for(run_date),
+        kickoff_at=_parse_kickoff(getattr(match, "match_time", ""), run_date),
+        home_team_id=None,
+        away_team_id=None,
+        home_team=home_en,
+        away_team=away_en,
+        source="fcom500",
+        status=FixtureStatus.SCHEDULED,
+    )
+
+
+def _lookup_team_alias(team_table: dict[str, str], chinese_name: str) -> str | None:
+    """Resolve a Chinese team name to its English alias, tolerating the
+    whitespace variants 体彩 team names sometimes carry. Mirrors
+    ``MatchAligner._lookup_team``."""
+    if chinese_name in team_table:
+        return team_table[chinese_name]
+    normalized = "".join((chinese_name or "").split()).casefold()
+    for zh, en in team_table.items():
+        if "".join(zh.split()).casefold() == normalized:
+            return en
+    return None
+
+
 @dataclass(slots=True)
 class Fcom500MatchOdds:
     """A JCZQ match's synthetic fixture + assembled odds snapshot."""
@@ -596,6 +703,13 @@ class Fcom500OddsProvider:
     def _collect_match(
         self, match: Fcom500JczqMatch, run_date: str
     ) -> Fcom500MatchOdds | None:
+        # 胜平负聚焦：the conflict engine focuses on match_winner only. The
+        # OddsSnapshot fed to it carries ONLY the 欧赔-sourced match_winner
+        # market — total_goals (体彩-derived, independent=False — circular vs the
+        # 体彩 line the engine compares against) and handicap (2-way 亚盘, does
+        # not key-match the model's 3-way buckets) are deliberately dropped.
+        # Their parsers stay in the module (tested, harmless) but never feed
+        # the conflict engine.
         markets: dict[str, MarketOddsSnapshot] = {}
         notes: list[str] = []
 
@@ -610,39 +724,6 @@ class Fcom500OddsProvider:
             )
         else:
             notes.append("欧赔缺失：无 match_winner 市场")
-
-        # total_goals — 体彩-derived (independent=False), flagged weak signal.
-        total = self._safe_parse(_jqs_url(match.fid), parse_total_goals)
-        if total is not None:
-            markets["total_goals"] = _market_snapshot(
-                market_key="total_goals",
-                market_name="总进球 (进球指数，体彩派生)",
-                parsed=total,
-                source="fcom500:jqs",
-            )
-            notes.append("总进球为体彩派生赔率，模型 vs 体彩弱信号")
-
-        # handicap — independent 亚盘 odds, but 2-way shape (carried, unmatched).
-        handicap = self._safe_parse(_yazhi_url(match.fid), parse_handicap)
-        if handicap is not None:
-            markets["handicap"] = _market_snapshot(
-                market_key="handicap",
-                market_name="让球 (亚盘)",
-                parsed=handicap,
-                source="fcom500:yazhi",
-            )
-
-        # correct_score — JS-rendered, not collectable from static HTML.
-        score = self._safe_parse(_bifen_url(match.fid), parse_correct_score)
-        if score is not None:  # pragma: no cover — always None per §4
-            markets["correct_score"] = _market_snapshot(
-                market_key="correct_score",
-                market_name="比分",
-                parsed=score,
-                source="fcom500:bifen",
-            )
-        else:
-            notes.append("比分赔率 JS 渲染，静态页不可解析，不采集")
 
         fixture = Fixture(
             fixture_id=f"fcom500:{match.match_no}",
@@ -749,7 +830,17 @@ class Fcom500ValueBridge:
 
     def evaluate_day(self, matches):
         """Collect 500.com odds, price every covered JCZQ match, group the
-        conflicts by 竞彩 number into a ``JczqValueReport``."""
+        conflicts by 竞彩 number into a ``JczqValueReport``.
+
+        The 竞彩 number joins the JCZQ match to its 500.com odds. The **model
+        side** needs a separate identity — English team names + a catalog
+        league code — built by ``build_model_identity`` (Chinese→English via
+        the alias tables). The model-identity fixture keeps the
+        ``fcom500:周日NNN`` id, so ``Fcom500OddsService`` still resolves the
+        500.com odds for it. A match with 500.com odds but no model identity
+        (its league/teams are not in the alias tables) is honestly marked
+        aligned-but-no-conflict — never crashed on.
+        """
 
         # Deferred imports keep the data layer free of a load-time dependency
         # on the services layer (and avoid an import cycle).
@@ -764,11 +855,21 @@ class Fcom500ValueBridge:
         # fixture's market odds through odds_service.build_snapshot(fixture_id).
         value_service._odds_service = Fcom500OddsService(collected)  # noqa: SLF001
 
-        fixtures = [entry.fixture for entry in collected.values()]
+        # Build each covered JCZQ match's model-side identity. Only fixtures
+        # with a resolvable English-name identity reach the pricing engine —
+        # the rest degrade honestly (model coverage = alias-table coverage).
+        model_fixtures: dict[str, Fixture] = {}
+        for match in matches:
+            if match.match_no not in collected:
+                continue
+            identity = build_model_identity(match, self._run_date)
+            if identity is not None:
+                model_fixtures[match.match_no] = identity
+
         conflicts_by_fixture: dict[str, list] = {}
-        if fixtures:
+        if model_fixtures:
             board = value_service.build_board_for_fixtures(
-                fixtures,
+                list(model_fixtures.values()),
                 min_edge=self._min_edge,
                 league="jczq-fcom500",
             )
@@ -796,7 +897,28 @@ class Fcom500ValueBridge:
                     )
                 )
                 continue
-            conflicts = conflicts_by_fixture.get(entry.fixture.fixture_id, [])
+            fixture_id = entry.fixture.fixture_id
+            if match.match_no not in model_fixtures:
+                # 500.com odds present, but no model-side identity — the
+                # league or a team is absent from the alias tables.
+                entries.append(
+                    JczqMatchConflicts(
+                        match_no=match.match_no,
+                        league=match.league,
+                        home_team=match.home_team,
+                        away_team=match.away_team,
+                        aligned=True,
+                        fixture_id=fixture_id,
+                        orientation_swapped=False,
+                        conflicts=[],
+                        coverage_note=(
+                            "已对齐 500.com 赔率，但模型侧无身份"
+                            "（联赛/球队未收录于别名表）— 无冲突点"
+                        ),
+                    )
+                )
+                continue
+            conflicts = conflicts_by_fixture.get(fixture_id, [])
             coverage_note = None
             if not conflicts:
                 coverage_note = (
@@ -810,7 +932,7 @@ class Fcom500ValueBridge:
                     home_team=match.home_team,
                     away_team=match.away_team,
                     aligned=True,
-                    fixture_id=entry.fixture.fixture_id,
+                    fixture_id=fixture_id,
                     orientation_swapped=False,
                     conflicts=conflicts,
                     coverage_note=coverage_note,

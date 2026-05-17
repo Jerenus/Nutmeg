@@ -237,16 +237,18 @@ def test_provider_collects_per_match_fixture_and_odds() -> None:
     assert entry.fixture.fixture_id == "fcom500:周日001"
     assert entry.fixture.home_team == "大阪樱花"
     assert entry.fixture.source == "fcom500"
-    # OddsSnapshot covers the cleanly available markets.
+    # The conflict engine focuses on 胜平负 only — the OddsSnapshot carries
+    # ONLY the match_winner market.
     markets = entry.odds.markets
-    assert "match_winner" in markets
+    assert set(markets) == {"match_winner"}
     assert markets["match_winner"].status == "available"
     mw = {o.outcome_key: o for o in markets["match_winner"].outcomes}
     assert set(mw) == {"home", "draw", "away"}
     assert all(o.fair_probability is not None for o in mw.values())
-    # total_goals carried (体彩-derived) and handicap carried.
-    assert "total_goals" in markets
-    assert "handicap" in markets
+    # total_goals (体彩-derived, circular) and handicap (2-way 亚盘, no
+    # key-match) are dropped from the conflict-engine snapshot.
+    assert "total_goals" not in markets
+    assert "handicap" not in markets
     # correct_score is JS-rendered → never collected (§4 verdict).
     assert "correct_score" not in markets
 
@@ -309,28 +311,88 @@ def test_fcom500_odds_service_serves_collected_snapshots() -> None:
     assert "match_winner" in snapshot.markets
 
 
+# 周日005 (热那亚 vs AC米兰, 意甲) is fully covered by the alias tables. The
+# recorded list page carries it; route its 欧赔 page to the recorded ouzhi
+# table so the conflict engine has a match_winner market to price.
+_FCOM500_005_FID = "1199712"
+
+
+def _alias_covered_routes() -> dict[str, bytes]:
+    """List page + a 欧赔 page for 周日005 (an alias-covered 意甲 match)."""
+    return {
+        "/jczq/": _fixture_bytes("jczq-list.html"),
+        f"/fenxi/ouzhi-{_FCOM500_005_FID}.shtml": _fixture_bytes(
+            "ouzhi-1366371.html"
+        ),
+    }
+
+
+def _genoa_milan_match():
+    """The JCZQ 周日005 match — Chinese names, as the daily report carries it."""
+    from nutmeg.domain.jczq_daily import JczqDailyMatch
+
+    return JczqDailyMatch(
+        match_no="周日005",
+        match_date="2026-05-17",
+        match_time="02:45",
+        league="意甲",
+        home_team="热那亚",
+        away_team="AC米兰",
+        status="Selling",
+        hot_direction="",
+        role="",
+        confidence_note="",
+    )
+
+
 def test_fcom500_value_bridge_keys_conflicts_by_jczq_number() -> None:
     """The 500.com bridge: evaluate_day produces a JczqValueReport keyed by
-    竞彩 number with NO MatchAligner / API-Football call."""
+    竞彩 number with NO MatchAligner / API-Football call.
+
+    De-masked: the snapshot fake is keyed by fixture id and the fixture
+    repository captures what the bridge upserts — so the model-side identity
+    translation (Chinese→English + catalog league code) is exercised, not
+    bypassed. The real ``FixtureSnapshotService`` re-fetches the fixture from
+    the repo by id and reads its team names / league code; this test asserts
+    the bridge upserts an English-identity fixture for it to consume.
+    """
     from nutmeg.data.fcom500 import Fcom500ValueBridge
-    from nutmeg.domain.jczq_daily import JczqDailyMatch
     from nutmeg.services.value import ValueBoardService
-    from tests.test_value_service import FakeSnapshotService, _snapshot
+    from tests.test_value_service import (
+        FakeFixtureRepository,
+        FakeSnapshotService,
+        _snapshot,
+    )
 
-    client = Fcom500Client(transport=_mock_transport(_provider_routes()))
+    client = Fcom500Client(transport=_mock_transport(_alias_covered_routes()))
     provider = Fcom500OddsProvider(client=client)
-    collected = provider.collect("2026-05-17")
 
-    # The model side keeps using a snapshot service (soccerdata in production);
-    # here a fake snapshot per collected fixture stands in for it.
-    snapshots = {
-        f"fcom500:{no}": _snapshot(entry.fixture)
-        for no, entry in collected.items()
-    }
+    repo = FakeFixtureRepository([])
+
+    # The snapshot fake is keyed by fixture id: the bridge must build a
+    # model-side fixture under fcom500:周日005 for the snapshot to resolve.
+    from datetime import UTC, datetime
+
+    from nutmeg.domain.fixtures import Fixture, FixtureStatus
+
+    model_fixture = Fixture(
+        fixture_id="fcom500:周日005",
+        league_code="serie-a",
+        provider_league_id=135,
+        season=2025,
+        kickoff_at=datetime(2026, 5, 17, 2, 45, tzinfo=UTC),
+        home_team_id=None,
+        away_team_id=None,
+        home_team="Genoa",
+        away_team="AC Milan",
+        source="fcom500",
+        status=FixtureStatus.SCHEDULED,
+    )
+    snapshots = {"fcom500:周日005": _snapshot(model_fixture)}
 
     def value_service_factory() -> ValueBoardService:
         return ValueBoardService(
-            fixture_repository=None,  # type: ignore[arg-type]
+            fixture_repository=repo,
             snapshot_service=FakeSnapshotService(snapshots),
             odds_service=None,  # type: ignore[arg-type] — replaced per collect
         )
@@ -341,6 +403,52 @@ def test_fcom500_value_bridge_keys_conflicts_by_jczq_number() -> None:
         value_service_factory=value_service_factory,
     )
 
+    report = bridge.evaluate_day([_genoa_milan_match()])
+
+    # One match in, one entry out, keyed by the 竞彩 number.
+    assert len(report.matches) == 1
+    entry = report.matches[0]
+    assert entry.match_no == "周日005"
+    assert entry.aligned is True
+    assert entry.fixture_id == "fcom500:周日005"
+    # The bridge upserted a MODEL-side fixture: English team names + a catalog
+    # league code — not the Chinese 500.com synthetic identity. This is the
+    # identity the real FixtureSnapshotService re-fetches and reads.
+    assert len(repo.upserted) == 1
+    upserted = repo.upserted[0]
+    assert upserted.fixture_id == "fcom500:周日005"
+    assert upserted.home_team == "Genoa"
+    assert upserted.away_team == "AC Milan"
+    assert upserted.league_code == "serie-a"
+
+
+def test_fcom500_value_bridge_aligns_without_model_identity() -> None:
+    """A JCZQ match with 500.com odds but no alias coverage degrades honestly:
+    aligned to the 500.com odds, but no model identity → no conflicts, with a
+    coverage note (never a crash, never a fabricated conflict)."""
+    from nutmeg.data.fcom500 import Fcom500ValueBridge
+    from nutmeg.domain.jczq_daily import JczqDailyMatch
+    from nutmeg.services.value import ValueBoardService
+    from tests.test_value_service import FakeFixtureRepository, FakeSnapshotService
+
+    client = Fcom500Client(transport=_mock_transport(_provider_routes()))
+    provider = Fcom500OddsProvider(client=client)
+
+    def value_service_factory() -> ValueBoardService:
+        return ValueBoardService(
+            fixture_repository=FakeFixtureRepository([]),
+            snapshot_service=FakeSnapshotService({}),
+            odds_service=None,  # type: ignore[arg-type]
+        )
+
+    bridge = Fcom500ValueBridge(
+        provider=provider,
+        run_date="2026-05-17",
+        value_service_factory=value_service_factory,
+    )
+
+    # 周日001 is 日职 — recorded by 500.com but absent from the team-alias
+    # tables, so the model side has no identity for it.
     matches = [
         JczqDailyMatch(
             match_no="周日001",
@@ -358,13 +466,95 @@ def test_fcom500_value_bridge_keys_conflicts_by_jczq_number() -> None:
 
     report = bridge.evaluate_day(matches)
 
-    # One match in, one entry out, keyed by the 竞彩 number — aligned without
-    # any alias table or API-Football fixture lookup.
     assert len(report.matches) == 1
     entry = report.matches[0]
     assert entry.match_no == "周日001"
+    # Aligned to 500.com odds, but honestly no conflicts and a coverage note.
     assert entry.aligned is True
-    assert entry.fixture_id == "fcom500:周日001"
+    assert entry.conflicts == []
+    assert entry.coverage_note is not None
+    assert "别名表" in entry.coverage_note
+
+
+# ---------------------------------------------------------------------------
+# Task 1 — model-side identity (Chinese → English + catalog league code)
+# ---------------------------------------------------------------------------
+
+
+def _jczq_match(
+    *,
+    match_no: str,
+    league: str,
+    home_team: str,
+    away_team: str,
+):
+    from nutmeg.domain.jczq_daily import JczqDailyMatch
+
+    return JczqDailyMatch(
+        match_no=match_no,
+        match_date="2026-05-17",
+        match_time="14:00",
+        league=league,
+        home_team=home_team,
+        away_team=away_team,
+        status="Selling",
+        hot_direction="",
+        role="",
+        confidence_note="",
+    )
+
+
+def test_model_identity_translates_chinese_teams_and_league() -> None:
+    """A JCZQ match in an alias-covered league yields a model-side Fixture with
+    English team names + a catalog league code, keeping fcom500:周日NNN as id."""
+    from nutmeg.data.fcom500 import build_model_identity
+
+    match = _jczq_match(
+        match_no="周日010",
+        league="英超",
+        home_team="曼联",
+        away_team="纽卡斯尔",
+    )
+
+    fixture = build_model_identity(match, run_date="2026-05-17")
+
+    assert fixture is not None
+    # Chinese → English via load_team_aliases()['英超'].
+    assert fixture.home_team == "Manchester United"
+    assert fixture.away_team == "Newcastle"
+    # League → catalog code so FixtureSnapshotService.get_league() resolves.
+    assert fixture.league_code == "epl"
+    # The id stays the 竞彩-keyed synthetic id so Fcom500OddsService matches.
+    assert fixture.fixture_id == "fcom500:周日010"
+
+
+def test_model_identity_degrades_when_league_not_in_alias_table() -> None:
+    """A league absent from the alias tables → no model identity (None),
+    never a crash. 500.com-path model coverage = alias-table coverage."""
+    from nutmeg.data.fcom500 import build_model_identity
+
+    match = _jczq_match(
+        match_no="周日001",
+        league="日职",  # 日职 has no team-alias table
+        home_team="大阪樱花",
+        away_team="名古屋鲸八",
+    )
+
+    assert build_model_identity(match, run_date="2026-05-17") is None
+
+
+def test_model_identity_degrades_when_team_not_in_alias_table() -> None:
+    """A team missing from its league's alias table → no model identity."""
+    from nutmeg.data.fcom500 import build_model_identity
+
+    match = _jczq_match(
+        match_no="周日011",
+        league="英超",
+        home_team="曼联",
+        away_team="不存在的球队",
+    )
+
+    assert build_model_identity(match, run_date="2026-05-17") is None
 
 
 def test_fcom500_value_bridge_marks_unmatched_jczq_match() -> None:

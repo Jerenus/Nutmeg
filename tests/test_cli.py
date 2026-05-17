@@ -3629,13 +3629,22 @@ def test_jczq_debate_finalize_command_writes_final_plan(tmp_path) -> None:
 def test_jczq_daily_brief_degrades_gracefully_without_api_key(
     monkeypatch, tmp_path: Path
 ) -> None:
-    # No NUTMEG_API_FOOTBALL_KEY → the value bridge is None → the brief still
-    # renders end-to-end with the 赔率冲突点 placeholder, exit 0.
+    # The brief defaults to the 500.com odds source — quota-free, no
+    # NUTMEG_API_FOOTBALL_KEY needed. When the 500.com collector cannot reach
+    # the site (offline test env, simulated here by an empty collection) the
+    # bridge degrades honestly: every match is marked "无 500.com 数据" and the
+    # brief still renders the 赔率冲突点 section end-to-end, exit 0.
+    from nutmeg.data import fcom500 as fcom500_module
     from nutmeg.services.jczq_daily import JczqDailyAdvisorService
-
     from tests.test_jczq_daily_service import FakeProvider
 
     monkeypatch.setenv("NUTMEG_API_FOOTBALL_KEY", "")
+    # Never touch the live 500.com site: simulate an unreachable collector.
+    monkeypatch.setattr(
+        fcom500_module.Fcom500OddsProvider,
+        "collect",
+        lambda self, run_date: {},
+    )
     JczqDailyAdvisorService(provider=FakeProvider()).build_report(
         run_date="2026-05-01", output_dir=tmp_path
     )
@@ -3652,8 +3661,33 @@ def test_jczq_daily_brief_degrades_gracefully_without_api_key(
     )
 
     assert result.exit_code == 0
+    # The 赔率冲突点 section renders from the (degraded) value engine — not the
+    # unwired placeholder, since the 500.com path needs no API key.
     assert "## 赔率冲突点" in result.stdout
-    assert "价值引擎未接线" in result.stdout
+    assert "无 500.com 数据" in result.stdout
+
+
+def test_brief_value_bridge_defaults_to_fcom500(monkeypatch) -> None:
+    """The daily brief's value bridge defaults to the 500.com odds source —
+    ``_build_jczq_value_bridge_for_brief`` passes ``use_fcom500=True`` so the
+    conflict engine runs quota-free with no API-Football key."""
+    import nutmeg.interfaces.cli as cli_module
+    from nutmeg.services import jczq_value_wiring
+
+    captured: dict[str, object] = {}
+
+    def fake_build(*, settings, run_date, value_service_factory, use_fcom500=False):
+        captured["use_fcom500"] = use_fcom500
+        captured["run_date"] = run_date
+        return "bridge-sentinel"
+
+    monkeypatch.setattr(jczq_value_wiring, "build_jczq_value_bridge", fake_build)
+
+    bridge = cli_module._build_jczq_value_bridge_for_brief("2026-05-17")
+
+    assert bridge == "bridge-sentinel"
+    assert captured["use_fcom500"] is True
+    assert captured["run_date"] == "2026-05-17"
 
 
 def test_jczq_web_command_starts_localhost_app(monkeypatch, tmp_path: Path) -> None:

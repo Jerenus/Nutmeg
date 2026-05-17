@@ -743,6 +743,9 @@ def _build_jczq_value_bridge_for_brief(brief_date: str):
 
     Wraps ``build_jczq_value_bridge`` with a ``ValueBoardService`` factory; any
     failure degrades to ``None`` so ``jczq-daily-brief`` always renders.
+
+    Defaults to the 500.com odds source (``use_fcom500=True``): market odds are
+    keyed by the 竞彩 number, quota-free, and need no API-Football key.
     """
     from nutmeg.services.jczq_value_wiring import build_jczq_value_bridge
 
@@ -752,6 +755,7 @@ def _build_jczq_value_bridge_for_brief(brief_date: str):
             settings=settings,
             run_date=brief_date,
             value_service_factory=lambda: build_value_board_service()[0],
+            use_fcom500=True,
         )
     except Exception:  # noqa: BLE001 — degrade, never crash the brief
         logger.warning("value bridge wiring failed — degrading", exc_info=True)
