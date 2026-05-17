@@ -519,9 +519,11 @@ def test_model_identity_translates_chinese_teams_and_league() -> None:
     fixture = build_model_identity(match, run_date="2026-05-17")
 
     assert fixture is not None
-    # Chinese → English via load_team_aliases()['英超'].
+    # Chinese → English via load_team_aliases()['英超']. The English value is
+    # the soccerdata(understat) name so the model side resolves it (understat
+    # uses "Newcastle United", not the bare "Newcastle").
     assert fixture.home_team == "Manchester United"
-    assert fixture.away_team == "Newcastle"
+    assert fixture.away_team == "Newcastle United"
     # League → catalog code so FixtureSnapshotService.get_league() resolves.
     assert fixture.league_code == "epl"
     # The id stays the 竞彩-keyed synthetic id so Fcom500OddsService matches.

@@ -67,6 +67,58 @@ def test_load_aliases_seed_values() -> None:
     assert teams["西甲"]["皇马"] == "Real Madrid"
 
 
+def test_conflict_engine_leagues_cover_current_season_teams() -> None:
+    """The 5 conflict-engine leagues must carry full 2025-26 team coverage so
+    the 500.com model side (build_model_identity → soccerdata) resolves every
+    fixture. Each team's English value is the soccerdata(understat) name —
+    verified live to resolve. A handful of key newly-added 体彩-abbreviation
+    keys and name-corrected values are spot-asserted here."""
+    teams = load_team_aliases()
+
+    # 英超 — 体彩 abbreviations + understat-correct names.
+    assert teams["英超"]["布伦特"] == "Brentford"
+    assert teams["英超"]["西汉姆联"] == "West Ham"
+    assert teams["英超"]["诺丁汉"] == "Nottingham Forest"
+    assert teams["英超"]["纽卡斯尔"] == "Newcastle United"
+    assert teams["英超"]["狼队"] == "Wolverhampton Wanderers"
+
+    # 西甲 — 巴伦西亚/比利亚雷 abbreviations; 奥维耶多 → Real Oviedo.
+    assert teams["西甲"]["巴伦西亚"] == "Valencia"
+    assert teams["西甲"]["比利亚雷"] == "Villarreal"
+    assert teams["西甲"]["奥维耶多"] == "Real Oviedo"
+
+    # 意甲 — understat names: Roma / Verona / Parma Calcio 1913.
+    assert teams["意甲"]["罗马"] == "Roma"
+    assert teams["意甲"]["维罗纳"] == "Verona"
+    assert teams["意甲"]["帕尔马"] == "Parma Calcio 1913"
+
+    # 法甲 — 巴黎圣曼/斯特拉斯 abbreviations; 布雷斯特 → Brest.
+    assert teams["法甲"]["巴黎圣曼"] == "Paris Saint Germain"
+    assert teams["法甲"]["斯特拉斯"] == "Strasbourg"
+    assert teams["法甲"]["布雷斯特"] == "Brest"
+
+    # 德甲 — understat names: Bayern Munich / Wolfsburg / Mainz 05 / FC Cologne.
+    assert teams["德甲"]["拜仁慕尼黑"] == "Bayern Munich"
+    assert teams["德甲"]["沃夫斯堡"] == "Wolfsburg"
+    assert teams["德甲"]["美因茨"] == "Mainz 05"
+    assert teams["德甲"]["莱红牛"] == "RasenBallsport Leipzig"
+    assert teams["德甲"]["科隆"] == "FC Cologne"
+
+    # Each conflict-engine league carries a full 20-team (or 18 for 法甲/德甲)
+    # current-season roster — every team has exactly one English value.
+    for league, expected in (
+        ("英超", 20),
+        ("西甲", 20),
+        ("意甲", 20),
+        ("法甲", 18),
+        ("德甲", 18),
+    ):
+        distinct_english = set(teams[league].values())
+        assert len(distinct_english) == expected, (
+            f"{league}: {len(distinct_english)} distinct teams, expected {expected}"
+        )
+
+
 class _FakeFixtureProvider:
     """Records (league_id, date) calls; returns canned fixtures, no network."""
 
