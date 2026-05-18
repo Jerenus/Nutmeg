@@ -25,6 +25,7 @@ probability. It is never labelled "胜率 / 信心".
 
 from __future__ import annotations
 
+import itertools
 import statistics
 from dataclasses import dataclass, field
 
@@ -348,3 +349,154 @@ def chaos_band(chaos: int) -> str:
     if chaos <= 66:
         return "中等"
     return "混乱"
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — combination generation + 稳健底仓 (spec §4, §5)
+# ---------------------------------------------------------------------------
+
+# How many ranked tickets the bold output carries — documented default.
+BOLD_TICKET_COUNT: int = 5
+# The anchor ticket's leg count cap — a short 2-3 leg 稳健底仓 (spec §5).
+ANCHOR_MAX_LEGS: int = 3
+
+
+@dataclass(slots=True, frozen=True)
+class BoldTicket:
+    """A parlay ticket — a set of distinct-match legs + its combined odds.
+
+    There is NO win-probability / EV field — the engine has no probabilities
+    (spec §5). ``avg_boldness`` is a heuristic salience average, labelled
+    "大胆分" in every renderer, NEVER "胜率 / 信心".
+    """
+
+    id: str
+    kind: str
+    legs: list[BoldLeg]
+    fold: int
+    total_odds: float
+    avg_boldness: float
+    note: str = ""
+
+
+def _ticket_total_odds(legs: list[BoldLeg]) -> float:
+    """Product of the legs' 体彩 odds — the parlay's combined decimal odds."""
+    product = 1.0
+    for leg in legs:
+        product *= leg.tc_odds
+    return product
+
+
+def _ticket_avg_boldness(legs: list[BoldLeg]) -> float:
+    """Mean boldness across a ticket's legs — a salience average, not a rate."""
+    return sum(leg.boldness for leg in legs) / len(legs) if legs else 0.0
+
+
+def _fold_weights(chaos: int) -> dict[int, int]:
+    """How many tickets of each fold to keep, biased by the day chaos value.
+
+    Calm days lean to short 3-folds; chaotic days lean to wild 4/5-folds —
+    the §3.5 jitter rule, made concrete. Always returns a non-empty plan.
+    """
+    if chaos < 34:
+        return {3: 3, 4: 1, 5: 1}
+    if chaos <= 66:
+        return {3: 2, 4: 2, 5: 1}
+    return {3: 1, 4: 2, 5: 2}
+
+
+def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
+    """Assemble creative 3/4/5-fold parlays from the candidate ``legs``.
+
+    Each ticket's legs are distinct matches (Rule O — distinct ``match_no``,
+    and every pick is 胜平负 so distinct matches is a legal parlay). Tickets
+    rank by ``total_odds * avg_boldness`` (long odds × bold legs = the most
+    "fun"); the returned fold mix is biased by ``chaos`` (§3.5). Fewer than 3
+    candidate legs → no 3-fold is possible → an empty list (never a crash).
+    """
+    if len(legs) < 3:
+        return []
+
+    fold_plan = _fold_weights(chaos)
+    selected: list[BoldTicket] = []
+    for fold in (3, 4, 5):
+        want = fold_plan.get(fold, 0)
+        if want <= 0 or fold > len(legs):
+            continue
+        combos: list[tuple[float, list[BoldLeg]]] = []
+        for combo in itertools.combinations(legs, fold):
+            combo_legs = list(combo)
+            total = _ticket_total_odds(combo_legs)
+            avg = _ticket_avg_boldness(combo_legs)
+            combos.append((total * avg, combo_legs))
+        combos.sort(key=lambda item: item[0], reverse=True)
+        for _rank_score, combo_legs in combos[:want]:
+            selected.append(combo_legs)  # type: ignore[arg-type]
+
+    tickets: list[BoldTicket] = []
+    for index, combo_legs in enumerate(
+        sorted(
+            selected,
+            key=lambda lg: _ticket_total_odds(lg) * _ticket_avg_boldness(lg),
+            reverse=True,
+        ),
+        start=1,
+    ):
+        tickets.append(
+            BoldTicket(
+                id=f"大胆票{index}",
+                kind="大胆票",
+                legs=combo_legs,
+                fold=len(combo_legs),
+                total_odds=round(_ticket_total_odds(combo_legs), 4),
+                avg_boldness=round(_ticket_avg_boldness(combo_legs), 4),
+                note="娱乐串 · 大胆分越高仅代表盘面越「有戏可挖」，不是命中概率",
+            )
+        )
+    return tickets
+
+
+def anchor_ticket(matches: list[BoldMatch]) -> BoldTicket:
+    """Build the 稳健底仓 — a short 2-3 leg parlay on the strongest 体彩 hot
+    favorites (lowest-odds outcome per match).
+
+    It is the hedge ballast for the bold tickets — NOT a "safe" bet, NOT
+    +EV: the ``note`` says so honestly. High implied-hit-rate favorites still
+    sit inside the same ~13% 竞彩 cut.
+    """
+    rated: list[tuple[float, BoldMatch, str]] = []
+    for match in matches:
+        usable = {o: v for o in OUTCOMES if (v := match.tc_odds.get(o)) and v > 0}
+        if not usable:
+            continue
+        favorite = min(usable, key=lambda o: usable[o])
+        rated.append((usable[favorite], match, favorite))
+    rated.sort(key=lambda item: item[0])
+
+    fold = min(ANCHOR_MAX_LEGS, len(rated))
+    legs: list[BoldLeg] = []
+    for fav_odds, match, favorite in rated[:fold]:
+        legs.append(
+            BoldLeg(
+                match_no=match.match_no,
+                league=match.league,
+                home=match.home,
+                away=match.away,
+                pick=favorite,
+                tc_odds=fav_odds,
+                boldness=0.0,
+                reason=f"{OUTCOME_LABELS[favorite]}向 · 体彩最强热门（最低赔）",
+            )
+        )
+    return BoldTicket(
+        id="稳健底仓",
+        kind="稳健底仓",
+        legs=legs,
+        fold=len(legs),
+        total_odds=round(_ticket_total_odds(legs), 4) if legs else 0.0,
+        avg_boldness=0.0,
+        note=(
+            "高命中倾向 ≠ 长期赚钱 — 它同样在 13% 抽水内，"
+            "是大胆票的对冲压舱，不是「安全」、也不是赚钱腿"
+        ),
+    )

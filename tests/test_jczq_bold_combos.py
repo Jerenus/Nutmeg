@@ -16,6 +16,9 @@ from nutmeg.services.jczq_bold_combos import (
     POOL_MIN,
     BoldLeg,
     BoldMatch,
+    BoldTicket,
+    anchor_ticket,
+    bold_combos,
     bold_leg,
     boldness,
     chaos_band,
@@ -287,3 +290,90 @@ def test_chaos_band_labels() -> None:
     assert chaos_band(5) == "平静"
     assert chaos_band(50) == "中等"
     assert chaos_band(90) == "混乱"
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — combination generation + 稳健底仓
+# ---------------------------------------------------------------------------
+
+
+def _legs(count: int) -> list[BoldLeg]:
+    """A pool of ``count`` distinct-match bold legs with varied odds."""
+    return [
+        BoldLeg(
+            match_no=f"周日{i:03d}",
+            league="测试联赛",
+            home=f"主{i}",
+            away=f"客{i}",
+            pick="away",
+            tc_odds=2.0 + 0.5 * i,
+            boldness=0.3 + 0.05 * i,
+            reason="负向 · 主导信号「反直觉冷门」",
+        )
+        for i in range(1, count + 1)
+    ]
+
+
+def test_bold_combos_generates_3_4_5_fold_tickets() -> None:
+    tickets = bold_combos(_legs(6), chaos=50)
+
+    assert tickets
+    for ticket in tickets:
+        assert isinstance(ticket, BoldTicket)
+        assert ticket.fold in (3, 4, 5)
+        assert len(ticket.legs) == ticket.fold
+
+
+def test_bold_combos_legs_are_distinct_matches_rule_o() -> None:
+    for ticket in bold_combos(_legs(6), chaos=50):
+        match_nos = [leg.match_no for leg in ticket.legs]
+        assert len(match_nos) == len(set(match_nos))
+
+
+def test_bold_combos_total_odds_is_product_of_leg_odds() -> None:
+    for ticket in bold_combos(_legs(6), chaos=50):
+        product = 1.0
+        for leg in ticket.legs:
+            product *= leg.tc_odds
+        assert math.isclose(ticket.total_odds, product, rel_tol=1e-9)
+
+
+def test_bold_combos_ranked_by_total_odds_times_avg_boldness() -> None:
+    tickets = bold_combos(_legs(6), chaos=50)
+    scores = [t.total_odds * t.avg_boldness for t in tickets]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_bold_combos_high_chaos_biases_toward_longer_tickets() -> None:
+    calm = bold_combos(_legs(7), chaos=5)
+    wild = bold_combos(_legs(7), chaos=95)
+
+    calm_avg_fold = sum(t.fold for t in calm) / len(calm)
+    wild_avg_fold = sum(t.fold for t in wild) / len(wild)
+    assert wild_avg_fold > calm_avg_fold
+
+
+def test_bold_combos_empty_when_too_few_legs() -> None:
+    assert bold_combos(_legs(2), chaos=50) == []
+
+
+def test_anchor_ticket_picks_lowest_odds_favorites() -> None:
+    matches = [
+        _match(match_no="周日001", tc_odds={"home": 1.30, "draw": 4.5, "away": 8.0}),
+        _match(match_no="周日002", tc_odds={"home": 1.45, "draw": 4.0, "away": 6.5}),
+        _match(match_no="周日003", tc_odds={"home": 2.80, "draw": 3.1, "away": 2.5}),
+        _match(match_no="周日004", tc_odds={"home": 1.60, "draw": 3.8, "away": 5.0}),
+    ]
+
+    anchor = anchor_ticket(matches)
+
+    assert isinstance(anchor, BoldTicket)
+    assert anchor.fold in (2, 3)
+    # It anchors on the matches whose 体彩 favorite has the LOWEST odds.
+    picked = {leg.match_no for leg in anchor.legs}
+    assert "周日001" in picked  # 1.30 favorite
+    assert "周日002" in picked  # 1.45 favorite
+    assert "周日003" not in picked  # weakest favorite — excluded
+    # Each anchor leg picks that match's 体彩 favorite (lowest-odds outcome).
+    for leg in anchor.legs:
+        assert leg.pick == "home"
