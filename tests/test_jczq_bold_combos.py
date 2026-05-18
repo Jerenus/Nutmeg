@@ -781,3 +781,42 @@ def test_bold_leg_for_market_returns_none_without_market_odds() -> None:
     )
     assert bold_leg_for_market(match, "crs") is None    # no crs odds
     assert bold_leg_for_market(match, "had") is not None
+
+
+# ---------------------------------------------------------------------------
+# Multi-market extension — Task 8: cross-market pool + Rule-O combos
+# ---------------------------------------------------------------------------
+
+
+def test_candidate_legs_spans_markets() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldMatch, candidate_legs
+
+    match = BoldMatch(
+        match_no="周一001", league="芬超", home="A", away="B",
+        tc_odds={"home": 2.0, "draw": 3.2, "away": 3.5},
+        hhad_odds={"home": 2.5, "draw": 3.3, "away": 2.6}, hhad_line=-1.0,
+        ttg_odds={f"total_{k}": 4.0 for k in range(8)},
+        crs_odds={"s01s00": 6.0, "s00s00": 9.0, "s03s02": 41.0},
+    )
+    legs = candidate_legs([match])
+    # one match, four markets → up to MAX_LEGS_PER_MATCH legs kept.
+    assert {lg.market for lg in legs} <= {"had", "hhad", "ttg", "crs"}
+    assert len(legs) <= 2                       # MAX_LEGS_PER_MATCH cap
+    assert all(lg.match_no == "周一001" for lg in legs)
+
+
+def test_bold_combos_enforces_one_leg_per_match() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldLeg, bold_combos
+
+    # Two legs share 周一001 (had + crs); a legal 3-fold cannot use both.
+    legs = [
+        BoldLeg("周一001", "L", "A", "B", "home", 3.0, 0.5, "x", market="had", pick_label="胜"),
+        BoldLeg("周一001", "L", "A", "B", "s01s00", 7.0, 0.6, "x", market="crs", pick_label="1:0"),
+        BoldLeg("周一002", "L", "C", "D", "away", 3.5, 0.5, "x", market="had", pick_label="负"),
+        BoldLeg("周一003", "L", "E", "F", "draw", 3.2, 0.5, "x", market="had", pick_label="平"),
+    ]
+    tickets = bold_combos(legs, chaos=10)
+    assert tickets
+    for ticket in tickets:
+        match_nos = [lg.match_no for lg in ticket.legs]
+        assert len(match_nos) == len(set(match_nos))      # Rule O — distinct matches

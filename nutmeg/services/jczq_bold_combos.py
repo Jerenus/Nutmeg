@@ -586,6 +586,26 @@ def bold_leg_for_market(match: BoldMatch, market: str) -> BoldLeg | None:
     )
 
 
+def candidate_legs(matches: list[BoldMatch]) -> list[BoldLeg]:
+    """Build the cross-market candidate-leg pool.
+
+    For each match, one bold leg per market it has 体彩 odds for; only the
+    ``MAX_LEGS_PER_MATCH`` boldest are kept per match so the Rule-O combo
+    generator always has cross-match options. The list is sorted by boldness.
+    """
+    legs: list[BoldLeg] = []
+    for match in matches:
+        per_match = [
+            leg
+            for market in MARKETS
+            if (leg := bold_leg_for_market(match, market)) is not None
+        ]
+        per_match.sort(key=lambda lg: lg.boldness, reverse=True)
+        legs.extend(per_match[:MAX_LEGS_PER_MATCH])
+    legs.sort(key=lambda lg: lg.boldness, reverse=True)
+    return legs
+
+
 # ---------------------------------------------------------------------------
 # Task 4 — day-level chaos value (spec §3.5)
 # ---------------------------------------------------------------------------
@@ -596,6 +616,9 @@ CHAOS_SCALE: float = 50.0
 # The candidate-pool size bounds — documented defaults (spec / plan §4).
 POOL_MIN: int = 4
 POOL_MAX: int = 10
+# A match may put at most this many legs (its boldest markets) into the
+# candidate pool — keeps cross-match options for the Rule-O combo generator.
+MAX_LEGS_PER_MATCH: int = 2
 
 
 def _match_uncertainty(match: BoldMatch) -> float:
@@ -720,6 +743,10 @@ def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
         combos: list[tuple[float, list[BoldLeg]]] = []
         for combo in itertools.combinations(legs, fold):
             combo_legs = list(combo)
+            # Rule O — one leg per match (distinct match_no makes the parlay
+            # legal regardless of which markets the legs come from).
+            if len({lg.match_no for lg in combo_legs}) != fold:
+                continue
             total = _ticket_total_odds(combo_legs)
             avg = _ticket_avg_boldness(combo_legs)
             combos.append((total * avg, combo_legs))
