@@ -26,6 +26,7 @@ probability. It is never labelled "胜率 / 信心".
 from __future__ import annotations
 
 import statistics
+from dataclasses import dataclass, field
 
 # The single outcome vocabulary used everywhere in this module — the 胜平负
 # (1X2) market, the only market where 体彩 odds and 欧赔 both exist cleanly.
@@ -141,3 +142,150 @@ def heat_score(match_tags: set[str], vig: float) -> float:
     tag_hits = sum(1 for tag in match_tags if tag in HEAT_TAGS)
     raw = tag_hits * HEAT_TAG + (vig - 0.12) * HEAT_VIG_GAIN
     return _clip01(raw)
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — boldness composition + bold-leg selection
+# ---------------------------------------------------------------------------
+
+# Signal weights — documented defaults, all equal (0.2). Tunable knobs: raising
+# WEIGHT_CONTRARIAN biases the engine toward colder, wilder legs.
+WEIGHT_CONFLICT: float = 0.2
+WEIGHT_CONTRARIAN: float = 0.2
+WEIGHT_DRIFT: float = 0.2
+WEIGHT_DISPERSION: float = 0.2
+WEIGHT_HEAT: float = 0.2
+
+# Human-readable Chinese labels for each signal — used in the 大胆理由 string.
+_SIGNAL_LABELS: dict[str, str] = {
+    "conflict": "盘口冲突",
+    "contrarian": "反直觉冷门",
+    "drift": "欧赔漂移",
+    "dispersion": "博彩离散",
+    "heat": "盘面热度",
+}
+
+# Outcome → Chinese 胜平负 label.
+OUTCOME_LABELS: dict[str, str] = {"home": "胜", "draw": "平", "away": "负"}
+
+
+@dataclass(slots=True, frozen=True)
+class BoldMatch:
+    """One match's board inputs for the bold engine — 体彩 odds + 欧赔 only.
+
+    NO predictive-model fields (no xG / form / H2H) — that would smuggle the
+    retired model back in (spec §3, §8). ``euro_odds`` / ``euro_opening`` /
+    ``per_book_odds`` are empty dicts when 欧赔 is unavailable; the conflict /
+    drift / dispersion signals then degrade to 0 (heat + contrarian still work).
+    """
+
+    match_no: str
+    league: str
+    home: str
+    away: str
+    tc_odds: dict[str, float]
+    euro_odds: dict[str, float] = field(default_factory=dict)
+    euro_opening: dict[str, float] = field(default_factory=dict)
+    per_book_odds: dict[str, list[float]] = field(default_factory=dict)
+    tags: set[str] = field(default_factory=set)
+    vig: float = 0.12
+
+
+@dataclass(slots=True, frozen=True)
+class BoldLeg:
+    """One bold 1X2 pick for one match — the unit a parlay is built from.
+
+    ``boldness`` is a heuristic salience score, NOT a probability. ``reason``
+    is a human-readable Chinese string naming the dominant board signal.
+    """
+
+    match_no: str
+    league: str
+    home: str
+    away: str
+    pick: str
+    tc_odds: float
+    boldness: float
+    reason: str
+
+
+def _fair_from_odds(odds: dict[str, float]) -> dict[str, float]:
+    """De-vig decimal odds to fair probabilities summing to ~1.
+
+    Returns an empty dict when ``odds`` is empty/unusable — callers treat that
+    as "signal unavailable" (graceful degradation)."""
+    inverse = {
+        o: 1.0 / odds[o]
+        for o in OUTCOMES
+        if odds.get(o) and odds[o] > 0
+    }
+    total = sum(inverse.values())
+    if total <= 0:
+        return {}
+    return {o: v / total for o, v in inverse.items()}
+
+
+def boldness(match: BoldMatch) -> dict[str, float]:
+    """Compose the five board signals into a per-outcome boldness score.
+
+    ``WEIGHT_CONFLICT*conflict + WEIGHT_CONTRARIAN*contrarian +
+    WEIGHT_DRIFT*drift + WEIGHT_DISPERSION*dispersion + WEIGHT_HEAT*heat`` —
+    the heat term is the per-match scalar added uniformly to every outcome.
+    """
+    tc_fair = _fair_from_odds(match.tc_odds)
+    euro_fair = _fair_from_odds(match.euro_odds)
+
+    conflict = conflict_score(tc_fair, euro_fair)
+    contrarian = contrarian_score(tc_fair)
+    drift = drift_score(match.euro_opening, match.euro_odds)
+    dispersion = dispersion_score(match.per_book_odds)
+    heat = heat_score(match.tags, match.vig)
+
+    return {
+        o: (
+            WEIGHT_CONFLICT * conflict[o]
+            + WEIGHT_CONTRARIAN * contrarian[o]
+            + WEIGHT_DRIFT * drift[o]
+            + WEIGHT_DISPERSION * dispersion[o]
+            + WEIGHT_HEAT * heat
+        )
+        for o in OUTCOMES
+    }
+
+
+def _dominant_signal(match: BoldMatch, pick: str) -> str:
+    """Return the Chinese label of the signal contributing most to ``pick``."""
+    tc_fair = _fair_from_odds(match.tc_odds)
+    euro_fair = _fair_from_odds(match.euro_odds)
+    contributions = {
+        "conflict": WEIGHT_CONFLICT * conflict_score(tc_fair, euro_fair)[pick],
+        "contrarian": WEIGHT_CONTRARIAN * contrarian_score(tc_fair)[pick],
+        "drift": WEIGHT_DRIFT * drift_score(match.euro_opening, match.euro_odds)[pick],
+        "dispersion": WEIGHT_DISPERSION * dispersion_score(match.per_book_odds)[pick],
+        "heat": WEIGHT_HEAT * heat_score(match.tags, match.vig),
+    }
+    top = max(contributions, key=lambda k: contributions[k])
+    return _SIGNAL_LABELS[top]
+
+
+def bold_leg(match: BoldMatch) -> BoldLeg:
+    """Pick the highest-boldness outcome for ``match`` as its bold leg.
+
+    The ``reason`` names the dominant board signal — a human-readable hook for
+    the entertainment narrative, never a claim of advantage.
+    """
+    scores = boldness(match)
+    pick = max(OUTCOMES, key=lambda o: scores[o])
+    signal = _dominant_signal(match, pick)
+    outcome_label = OUTCOME_LABELS[pick]
+    reason = f"{outcome_label}向 · 主导信号「{signal}」"
+    return BoldLeg(
+        match_no=match.match_no,
+        league=match.league,
+        home=match.home,
+        away=match.away,
+        pick=pick,
+        tc_odds=match.tc_odds.get(pick, 0.0),
+        boldness=scores[pick],
+        reason=reason,
+    )

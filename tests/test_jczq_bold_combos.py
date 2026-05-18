@@ -12,12 +12,41 @@ import math
 
 from nutmeg.services.jczq_bold_combos import (
     OUTCOMES,
+    BoldLeg,
+    BoldMatch,
+    bold_leg,
+    boldness,
     conflict_score,
     contrarian_score,
     dispersion_score,
     drift_score,
     heat_score,
 )
+
+
+def _match(
+    *,
+    match_no: str = "周日001",
+    tc_odds: dict[str, float] | None = None,
+    euro_odds: dict[str, float] | None = None,
+    euro_opening: dict[str, float] | None = None,
+    per_book_odds: dict[str, list[float]] | None = None,
+    tags: set[str] | None = None,
+    vig: float = 0.13,
+) -> BoldMatch:
+    """A synthetic ``BoldMatch`` with sensible defaults for signal tests."""
+    return BoldMatch(
+        match_no=match_no,
+        league="测试联赛",
+        home="主队",
+        away="客队",
+        tc_odds=tc_odds or {"home": 2.0, "draw": 3.3, "away": 3.5},
+        euro_odds=euro_odds or {},
+        euro_opening=euro_opening or {},
+        per_book_odds=per_book_odds or {},
+        tags=tags or set(),
+        vig=vig,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -120,3 +149,75 @@ def test_heat_score_combines_tags_and_vig() -> None:
 def test_heat_score_ignores_unknown_tags_and_clips() -> None:
     score = heat_score({"not-a-real-tag"}, vig=0.0)
     assert 0.0 <= score <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — boldness composition + bold-leg selection
+# ---------------------------------------------------------------------------
+
+
+def test_boldness_combines_five_signals_per_outcome() -> None:
+    match = _match()
+
+    score = boldness(match)
+
+    assert set(score) == {"home", "draw", "away"}
+    assert all(isinstance(v, float) for v in score.values())
+
+
+def test_boldness_rewards_a_contrarian_well_conflicted_outcome() -> None:
+    """An away pick that is contrarian (体彩 home favorite) AND where 欧赔
+    strongly disagrees should out-score the bland 体彩 favorite."""
+    match = _match(
+        tc_odds={"home": 1.7, "draw": 3.6, "away": 5.0},
+        euro_odds={"home": 3.0, "draw": 3.4, "away": 2.3},
+    )
+
+    score = boldness(match)
+
+    assert score["away"] > score["home"]
+
+
+def test_bold_leg_picks_the_top_boldness_outcome_with_reason() -> None:
+    match = _match(
+        match_no="周日007",
+        tc_odds={"home": 1.6, "draw": 3.8, "away": 6.0},
+        euro_odds={"home": 3.2, "draw": 3.3, "away": 2.2},
+    )
+
+    leg = bold_leg(match)
+
+    assert isinstance(leg, BoldLeg)
+    assert leg.match_no == "周日007"
+    assert leg.pick == "away"
+    assert leg.tc_odds == 6.0  # the 体彩 odds for the chosen pick
+    assert leg.boldness > 0.0
+    assert isinstance(leg.reason, str) and leg.reason  # human-readable reason
+    # The reason names the dominant board signal driving this pick.
+    assert "主导信号" in leg.reason
+
+
+def test_bold_leg_reason_names_the_largest_signal_contribution() -> None:
+    """The 大胆理由 names whichever signal contributes most to the chosen pick.
+
+    Construct a match where 欧赔 exactly mirrors 体彩 (conflict = 0) and 欧赔
+    did not move (drift = 0) and books agree (dispersion = 0): then contrarian
+    is the only non-heat signal, so the reason must name 反直觉冷门."""
+    match = _match(
+        match_no="周日011",
+        tc_odds={"home": 1.6, "draw": 3.8, "away": 6.0},
+        euro_odds={"home": 1.6, "draw": 3.8, "away": 6.0},
+        euro_opening={"home": 1.6, "draw": 3.8, "away": 6.0},
+        per_book_odds={
+            "home": [1.6, 1.6],
+            "draw": [3.8, 3.8],
+            "away": [6.0, 6.0],
+        },
+        tags=set(),
+        vig=0.12,
+    )
+
+    leg = bold_leg(match)
+
+    assert leg.pick == "away"  # the coldest non-favorite — contrarian-driven
+    assert "反直觉冷门" in leg.reason
