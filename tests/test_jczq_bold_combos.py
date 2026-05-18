@@ -820,3 +820,80 @@ def test_bold_combos_enforces_one_leg_per_match() -> None:
     for ticket in tickets:
         match_nos = [lg.match_no for lg in ticket.legs]
         assert len(match_nos) == len(set(match_nos))      # Rule O — distinct matches
+
+
+# ---------------------------------------------------------------------------
+# Multi-market extension — Task 9: Sporttery loader + snapshot + engine
+# ---------------------------------------------------------------------------
+
+
+def _sporttery_value() -> dict:
+    """A minimal Sporttery getMatchCalculatorV1 'value' dict — 2 matches."""
+    def match(no: str, home: str) -> dict:
+        return {
+            "matchNumStr": no, "businessDate": "2026-05-18",
+            "matchStatus": "Selling", "leagueAbbName": "芬超",
+            "homeTeamAbbName": home, "awayTeamAbbName": "客",
+            "had": {"h": "2.00", "d": "3.20", "a": "3.50"},
+            "hhad": {"h": "3.10", "d": "3.30", "a": "2.10", "goalLine": "-1"},
+            "ttg": {f"s{k}": str(4.0 + k) for k in range(8)},
+            "crs": {"s01s00": "6.50", "s01s00f": "0", "s00s00": "9.00",
+                    "s02s01": "7.50", "s1sh": "80.0"},
+        }
+    return {"matchInfoList": [
+        {"businessDate": "2026-05-18",
+         "subMatchList": [match("周一001", "拉赫蒂"), match("周一002", "佐加顿斯")]}
+    ]}
+
+
+def test_bold_matches_from_sporttery_loads_all_markets() -> None:
+    from nutmeg.services.jczq_bold_combos import bold_matches_from_sporttery
+
+    matches = bold_matches_from_sporttery(
+        _sporttery_value(), run_date="2026-05-18", bold_odds={}
+    )
+    assert len(matches) == 2
+    m = matches[0]
+    assert m.tc_odds == {"home": 2.0, "draw": 3.2, "away": 3.5}
+    assert m.hhad_odds == {"home": 3.1, "draw": 3.3, "away": 2.1}
+    assert m.hhad_line == -1.0
+    assert m.ttg_odds["total_0"] == 4.0 and m.ttg_odds["total_7"] == 11.0
+    # crs: the ...f flag key is excluded; exact + 其他 keys kept.
+    assert "s01s00f" not in m.crs_odds
+    assert m.crs_odds["s02s01"] == 7.5 and m.crs_odds["s1sh"] == 80.0
+
+
+def test_snapshot_round_trip(tmp_path) -> None:
+    from nutmeg.services.jczq_bold_combos import (
+        load_sporttery_snapshot,
+        persist_sporttery_snapshot,
+    )
+
+    persist_sporttery_snapshot("2026-05-18", tmp_path, _sporttery_value())
+    loaded = load_sporttery_snapshot("2026-05-18", tmp_path)
+    assert loaded is not None
+    assert loaded["matchInfoList"][0]["subMatchList"][0]["matchNumStr"] == "周一001"
+    assert load_sporttery_snapshot("2025-01-01", tmp_path) is None   # absent → None
+
+
+def test_engine_generate_produces_cross_market_legs() -> None:
+    from nutmeg.services.jczq_bold_combos import (
+        BoldComboEngine,
+        bold_matches_from_sporttery,
+    )
+
+    matches = bold_matches_from_sporttery(
+        _sporttery_value(), run_date="2026-05-18", bold_odds={}
+    )
+    # widen to 3 matches so a 3-fold is possible
+    matches = matches + [matches[0].__class__(
+        match_no="周一003", league="芬超", home="X", away="Y",
+        tc_odds={"home": 2.1, "draw": 3.1, "away": 3.4},
+        crs_odds={"s01s00": 6.0, "s00s00": 9.0, "s03s02": 41.0},
+    )]
+    plan = BoldComboEngine().generate("2026-05-18", matches)
+    rendered_markets = {
+        lg.market for t in plan.tickets for lg in t.legs
+    }
+    assert rendered_markets                       # at least one market present
+    assert plan.label.startswith("🎲")

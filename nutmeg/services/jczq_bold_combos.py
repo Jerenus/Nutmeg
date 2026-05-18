@@ -26,6 +26,7 @@ probability. It is never labelled "胜率 / 信心".
 from __future__ import annotations
 
 import itertools
+import re
 import statistics
 from dataclasses import dataclass, field
 
@@ -60,6 +61,9 @@ MARKET_SIGNALS: dict[str, tuple[str, ...]] = {
 MARKET_LABELS: dict[str, str] = {
     "had": "胜平负", "hhad": "让球", "ttg": "总进球", "crs": "比分",
 }
+
+# A raw Sporttery crs odds key — exact scoreline sHHsAA or an 其他 bucket s1sX.
+_RE_CRS_KEY = re.compile(r"^s\d{2}s\d{2}$|^s1s[hda]$")
 
 # --- Named-constant signal gains (documented defaults — tunables) ----------
 # Drift: an implied-probability move of ~0.10 (a sizeable shift) maps to ~0.6.
@@ -807,6 +811,8 @@ def anchor_ticket(matches: list[BoldMatch]) -> BoldTicket:
                 tc_odds=fav_odds,
                 boldness=0.0,
                 reason=f"{OUTCOME_LABELS[favorite]}向 · 体彩最强热门（最低赔）",
+                market="had",
+                pick_label=OUTCOME_LABELS[favorite],
             )
         )
     return BoldTicket(
@@ -849,6 +855,33 @@ class BoldComboPlan:
     label: str = HARD_LABEL
 
 
+def _match_diverse_pool(legs: list[BoldLeg], pool_n: int) -> list[BoldLeg]:
+    """Take ``pool_n`` legs from a boldness-sorted cross-market ``legs`` list,
+    seeding each distinct match's boldest leg first.
+
+    A flat top-N slice of a cross-market pool can be dominated by a handful of
+    matches (each contributing ``MAX_LEGS_PER_MATCH`` legs), starving the
+    Rule-O combo generator of distinct matches. Seeding one leg per match keeps
+    a 3/4/5-fold reachable; remaining slots then go to the next-boldest legs.
+    """
+    seeded: list[BoldLeg] = []
+    seen: set[str] = set()
+    for leg in legs:                            # legs already boldness-sorted
+        if leg.match_no not in seen:
+            seeded.append(leg)
+            seen.add(leg.match_no)
+    chosen = seeded[:pool_n]
+    if len(chosen) < pool_n:
+        chosen_ids = {id(leg) for leg in chosen}
+        for leg in legs:
+            if len(chosen) >= pool_n:
+                break
+            if id(leg) not in chosen_ids:
+                chosen.append(leg)
+    chosen.sort(key=lambda lg: lg.boldness, reverse=True)
+    return chosen
+
+
 class BoldComboEngine:
     """Orchestrates the bold-combo pipeline (Tasks 2-5) into a ``BoldComboPlan``.
 
@@ -858,19 +891,17 @@ class BoldComboEngine:
     """
 
     def generate(self, run_date: str, matches: list[BoldMatch]) -> BoldComboPlan:
-        """Build the day's plan from the supplied 体彩+欧赔 ``matches``."""
+        """Build the day's plan from the supplied 体彩+国际 ``matches``."""
         chaos = day_chaos(matches)
         band = chaos_band(chaos)
 
-        # One bold leg per match, ranked by boldness; the chaos value sizes the
-        # candidate pool N (chaotic days draw from a bigger, wilder pool).
-        legs = sorted(
-            (bold_leg(m) for m in matches),
-            key=lambda lg: lg.boldness,
-            reverse=True,
-        )
+        legs = candidate_legs(matches)          # cross-market, boldness-sorted
         pool_n = chaos_pool_size(chaos)
-        candidate_pool = legs[:pool_n]
+        # A cross-market pool can stack multiple legs of the same match at the
+        # top; the Rule-O combo generator needs distinct matches, so seed the
+        # pool with each match's boldest leg first, then fill the remaining
+        # slots with the next-boldest legs overall.
+        candidate_pool = _match_diverse_pool(legs, pool_n)
 
         tickets = bold_combos(candidate_pool, chaos)
         anchor = anchor_ticket(matches)
@@ -885,10 +916,12 @@ class BoldComboEngine:
 
 
 def _render_leg(leg: BoldLeg) -> str:
-    """One bold leg as a markdown bullet: 编号 / 选项 / 体彩赔率 / 大胆理由."""
+    """One bold leg as a markdown bullet: 编号 / 市场 / 选项 / 体彩赔率 / 理由."""
+    label = leg.pick_label or OUTCOME_LABELS.get(leg.pick, leg.pick)
+    market = MARKET_LABELS.get(leg.market, leg.market)
     return (
-        f"  - {leg.match_no} {leg.home} vs {leg.away} ｜ "
-        f"选 **{OUTCOME_LABELS[leg.pick]}** @ {leg.tc_odds:.2f} ｜ {leg.reason}"
+        f"  - {leg.match_no} {leg.home} vs {leg.away} ｜ [{market}] "
+        f"选 **{label}** @ {leg.tc_odds:.2f} ｜ {leg.reason}"
     )
 
 
@@ -1042,6 +1075,149 @@ def euro_from_fcom500(collected: dict) -> dict[str, dict]:
         odds = {o.outcome_key: o.average_odds for o in market.outcomes}
         euro[match_no] = {"odds": odds}
     return euro
+
+
+def _f(value: object) -> float | None:
+    """Parse a Sporttery odds string to float; ``None`` when unusable.
+
+    Odds are always positive, so a non-positive parse is treated as unusable.
+    """
+    result = _signed_float(value)
+    return result if result is not None and result > 0 else None
+
+
+def _signed_float(value: object) -> float | None:
+    """Parse a Sporttery numeric string to float, keeping its sign.
+
+    Unlike ``_f`` this accepts negatives — the 让球 ``goalLine`` is legitimately
+    negative when the home side gives goals (e.g. ``"-1"``). ``None`` when the
+    value cannot be parsed at all (an absent / non-numeric field).
+    """
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _had_from_pool(pool: dict) -> dict[str, float]:
+    """Sporttery had/hhad pool ``{h,d,a}`` → ``{home,draw,away}`` odds."""
+    out: dict[str, float] = {}
+    for src, dst in (("h", "home"), ("d", "draw"), ("a", "away")):
+        value = _f(pool.get(src))
+        if value is not None:
+            out[dst] = value
+    return out
+
+
+def _ttg_from_pool(pool: dict) -> dict[str, float]:
+    """Sporttery ttg pool ``{s0..s7}`` → ``{total_0..total_7}`` odds."""
+    out: dict[str, float] = {}
+    for k in range(8):
+        value = _f(pool.get(f"s{k}"))
+        if value is not None:
+            out[f"total_{k}"] = value
+    return out
+
+
+def _crs_from_pool(pool: dict) -> dict[str, float]:
+    """Sporttery crs pool → ``{raw_key: odds}`` — the ``...f`` flag keys and any
+    metadata keys (``goalLine`` …) are excluded; only ``sHHsAA`` / ``s1sX``."""
+    out: dict[str, float] = {}
+    for key, raw in pool.items():
+        if not (_RE_CRS_KEY.match(key)):
+            continue
+        value = _f(raw)
+        if value is not None:
+            out[key] = value
+    return out
+
+
+def _strong_favorite_tags(had_odds: dict[str, float]) -> set[str]:
+    """A 强胆场 heat tag when the 体彩 had favorite is priced ≤ 1.35."""
+    usable = [v for v in had_odds.values() if v and v > 0]
+    return {"强胆场"} if usable and min(usable) <= 1.35 else set()
+
+
+def bold_matches_from_sporttery(
+    value: dict, *, run_date: str, bold_odds: dict[str, dict]
+) -> list[BoldMatch]:
+    """Build ``BoldMatch`` objects from a Sporttery ``getMatchCalculatorV1``
+    response + the ``collect_bold_odds`` result.
+
+    ``value`` is the API ``value`` dict (``matchInfoList`` → ``subMatchList``);
+    only ``Selling`` matches whose ``businessDate`` equals ``run_date`` are
+    kept. ``bold_odds`` maps 竞彩号 → ``{"match_winner": MarketOdds,
+    "over_under": MarketOdds}`` — a match absent from it gets empty 国际 fields
+    and its 欧赔/大小球 signals degrade to 0. A match with no usable had odds is
+    skipped (never a crash).
+    """
+    matches: list[BoldMatch] = []
+    for day in value.get("matchInfoList") or []:
+        for raw in day.get("subMatchList") or []:
+            if str(raw.get("matchStatus") or "").casefold() != "selling":
+                continue
+            business_date = str(raw.get("businessDate") or day.get("businessDate") or "")
+            if run_date and business_date and business_date != run_date:
+                continue
+            had_odds = _had_from_pool(raw.get("had") or {})
+            if len(had_odds) < 3:
+                continue
+            hhad_pool = raw.get("hhad") or {}
+            match_no = str(raw.get("matchNumStr") or "")
+            euro = (bold_odds.get(match_no) or {}).get("match_winner")
+            over_under = (bold_odds.get(match_no) or {}).get("over_under")
+            matches.append(
+                BoldMatch(
+                    match_no=match_no,
+                    league=str(raw.get("leagueAbbName") or ""),
+                    home=str(raw.get("homeTeamAbbName") or ""),
+                    away=str(raw.get("awayTeamAbbName") or ""),
+                    tc_odds=had_odds,
+                    euro_odds=dict(euro.odds) if euro else {},
+                    euro_opening=dict(euro.opening_odds) if euro else {},
+                    per_book_odds=(
+                        {k: list(v) for k, v in euro.per_book_odds.items()}
+                        if euro else {}
+                    ),
+                    tags=_strong_favorite_tags(had_odds),
+                    vig=_tc_vig(had_odds),
+                    hhad_odds=_had_from_pool(hhad_pool),
+                    hhad_line=_signed_float(hhad_pool.get("goalLineValue"))
+                    or _signed_float(hhad_pool.get("goalLine")) or 0.0,
+                    ttg_odds=_ttg_from_pool(raw.get("ttg") or {}),
+                    crs_odds=_crs_from_pool(raw.get("crs") or {}),
+                    ou_odds=dict(over_under.odds) if over_under else {},
+                    ou_line=float(over_under.line)
+                    if over_under and over_under.line else 0.0,
+                    ou_per_book=(
+                        {k: list(v) for k, v in over_under.per_book_odds.items()}
+                        if over_under else {}
+                    ),
+                )
+            )
+    return matches
+
+
+def persist_sporttery_snapshot(run_date: str, output_dir, value: dict) -> None:
+    """Write the Sporttery response to ``<output_dir>/daily/<run_date>/
+    sporttery_markets.json`` so ``--replay`` is reproducible."""
+    import json
+    from pathlib import Path
+
+    path = Path(output_dir) / "daily" / run_date / "sporttery_markets.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+
+
+def load_sporttery_snapshot(run_date: str, output_dir) -> dict | None:
+    """Read a persisted Sporttery snapshot; ``None`` when absent."""
+    import json
+    from pathlib import Path
+
+    path = Path(output_dir) / "daily" / run_date / "sporttery_markets.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def replay_bold_combos(run_date: str, output_dir) -> str:
