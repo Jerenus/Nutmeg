@@ -500,3 +500,129 @@ def anchor_ticket(matches: list[BoldMatch]) -> BoldTicket:
             "是大胆票的对冲压舱，不是「安全」、也不是赚钱腿"
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — engine assembly + welded honest label (spec §0, §5, §7)
+# ---------------------------------------------------------------------------
+
+# The welded honest label. EXACT text — asserted by a test (spec §7). The
+# "−" is U+2212 (a real minus sign). This string is the first thing in every
+# output (stdout / file / PDF / bot) — it must never be edited away.
+HARD_LABEL: str = "🎲 娱乐性质 · 非 edge · 长期约 −13% 抽水期望 · 仅用娱乐预算下注"
+
+
+@dataclass(slots=True, frozen=True)
+class BoldComboPlan:
+    """The day's full bold-combo output — anchor + bold tickets + chaos value.
+
+    ``label`` is always ``HARD_LABEL``. There is NO win-probability / EV field
+    anywhere in this plan or its tickets — the engine has no probabilities.
+    """
+
+    run_date: str
+    day_chaos: int
+    chaos_band: str
+    anchor: BoldTicket
+    tickets: list[BoldTicket]
+    label: str = HARD_LABEL
+
+
+class BoldComboEngine:
+    """Orchestrates the bold-combo pipeline (Tasks 2-5) into a ``BoldComboPlan``.
+
+    per-match boldness → one bold leg per match → day chaos value → a
+    chaos-sized candidate pool of the top-N bold legs → ranked 3/4/5-fold bold
+    tickets + a 稳健底仓 anchor. No predictive model is touched.
+    """
+
+    def generate(self, run_date: str, matches: list[BoldMatch]) -> BoldComboPlan:
+        """Build the day's plan from the supplied 体彩+欧赔 ``matches``."""
+        chaos = day_chaos(matches)
+        band = chaos_band(chaos)
+
+        # One bold leg per match, ranked by boldness; the chaos value sizes the
+        # candidate pool N (chaotic days draw from a bigger, wilder pool).
+        legs = sorted(
+            (bold_leg(m) for m in matches),
+            key=lambda lg: lg.boldness,
+            reverse=True,
+        )
+        pool_n = chaos_pool_size(chaos)
+        candidate_pool = legs[:pool_n]
+
+        tickets = bold_combos(candidate_pool, chaos)
+        anchor = anchor_ticket(matches)
+
+        return BoldComboPlan(
+            run_date=run_date,
+            day_chaos=chaos,
+            chaos_band=band,
+            anchor=anchor,
+            tickets=tickets,
+        )
+
+
+def _render_leg(leg: BoldLeg) -> str:
+    """One bold leg as a markdown bullet: 编号 / 选项 / 体彩赔率 / 大胆理由."""
+    return (
+        f"  - {leg.match_no} {leg.home} vs {leg.away} ｜ "
+        f"选 **{OUTCOME_LABELS[leg.pick]}** @ {leg.tc_odds:.2f} ｜ {leg.reason}"
+    )
+
+
+def _render_ticket(ticket: BoldTicket) -> list[str]:
+    """One ticket as markdown lines — odds + 大胆分, never a probability/EV."""
+    lines = [
+        f"### {ticket.id}（{ticket.fold}串1 · 合计赔率 {ticket.total_odds:.2f}"
+    ]
+    if ticket.kind == "大胆票":
+        lines[0] += f" · 平均大胆分 {ticket.avg_boldness:.3f}）"
+    else:
+        lines[0] += "）"
+    for leg in ticket.legs:
+        lines.append(_render_leg(leg))
+    if ticket.note:
+        lines.append(f"  > {ticket.note}")
+    return lines
+
+
+def render_bold_plan(plan: BoldComboPlan) -> str:
+    """Render a ``BoldComboPlan`` to honest-labelled markdown.
+
+    The output STARTS with ``HARD_LABEL`` and the day chaos line — welded at
+    the top of every output (spec §5). It carries NO advantage wording
+    (胜率 / edge / +EV / 正期望 / 推荐下注 / 重仓) and NO probability/EV column:
+    the boldness number is labelled "大胆分" only.
+    """
+    lines: list[str] = [HARD_LABEL, ""]
+    lines.append(
+        f"**当天大盘面混乱值：{plan.day_chaos}/100（{plan.chaos_band}）** "
+        f"· {plan.run_date}"
+    )
+    lines.append(
+        "> 混乱值越高 = 盘面越吵、组合越长越野；它只是娱乐抖动旋钮，不是优势信号。"
+    )
+    lines.append("")
+
+    lines.append("## 稳健底仓（对冲压舱）")
+    if plan.anchor.legs:
+        lines.extend(_render_ticket(plan.anchor))
+    else:
+        lines.append("  - （当天无可用 体彩 赔率，底仓略过）")
+    lines.append("")
+
+    lines.append("## 大胆票")
+    if plan.tickets:
+        for ticket in plan.tickets:
+            lines.extend(_render_ticket(ticket))
+            lines.append("")
+    else:
+        lines.append("  - （候选腿不足 3 条，今天不出大胆串）")
+        lines.append("")
+
+    lines.append(
+        "_「大胆分」是盘面启发式显著性分，不是命中概率；本引擎不预测胜负、"
+        "长期为负，仅供娱乐。注金请只用娱乐预算的小额。_"
+    )
+    return "\n".join(lines)

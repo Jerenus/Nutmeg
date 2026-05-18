@@ -11,9 +11,12 @@ from __future__ import annotations
 import math
 
 from nutmeg.services.jczq_bold_combos import (
+    HARD_LABEL,
     OUTCOMES,
     POOL_MAX,
     POOL_MIN,
+    BoldComboEngine,
+    BoldComboPlan,
     BoldLeg,
     BoldMatch,
     BoldTicket,
@@ -29,6 +32,7 @@ from nutmeg.services.jczq_bold_combos import (
     dispersion_score,
     drift_score,
     heat_score,
+    render_bold_plan,
 )
 
 
@@ -377,3 +381,116 @@ def test_anchor_ticket_picks_lowest_odds_favorites() -> None:
     # Each anchor leg picks that match's 体彩 favorite (lowest-odds outcome).
     for leg in anchor.legs:
         assert leg.pick == "home"
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — engine assembly + welded honest label (spec §7 acceptance)
+# ---------------------------------------------------------------------------
+
+# Spec §7: every output must contain NONE of these advantage words.
+_BANNED_WORDS = ("胜率", "edge", "+EV", "正期望", "推荐下注", "重仓")
+
+
+def _engine_day() -> list[BoldMatch]:
+    """A spread of synthetic 体彩 matches — some calm, some wild — for engine
+    integration tests. Distinct match numbers (Rule O)."""
+    return [
+        _wild_match("周日001"),
+        _wild_match("周日002"),
+        _calm_match("周日003"),
+        _match(
+            match_no="周日004",
+            tc_odds={"home": 1.35, "draw": 4.5, "away": 8.0},
+            euro_odds={"home": 1.30, "draw": 5.0, "away": 9.0},
+            euro_opening={"home": 1.40, "draw": 4.6, "away": 8.0},
+            per_book_odds={
+                "home": [1.25, 1.30, 1.40],
+                "draw": [4.5, 5.0, 5.5],
+                "away": [8.0, 9.0, 10.0],
+            },
+            tags={"强胆场"},
+        ),
+        _match(
+            match_no="周日005",
+            tc_odds={"home": 2.6, "draw": 3.1, "away": 2.7},
+            euro_odds={"home": 2.2, "draw": 3.3, "away": 3.2},
+            euro_opening={"home": 2.5, "draw": 3.2, "away": 2.9},
+            per_book_odds={
+                "home": [2.0, 2.2, 2.5],
+                "draw": [3.1, 3.3, 3.5],
+                "away": [2.9, 3.2, 3.6],
+            },
+            tags={"coinflip", "hi-vol"},
+        ),
+        _match(
+            match_no="周日006",
+            tc_odds={"home": 4.0, "draw": 3.4, "away": 1.85},
+            euro_odds={"home": 5.0, "draw": 3.6, "away": 1.7},
+            euro_opening={"home": 4.2, "draw": 3.5, "away": 1.9},
+            per_book_odds={
+                "home": [4.0, 5.0, 6.0],
+                "draw": [3.4, 3.6, 3.8],
+                "away": [1.6, 1.7, 1.8],
+            },
+            tags={"舒服盘"},
+        ),
+    ]
+
+
+def test_hard_label_is_the_exact_welded_text() -> None:
+    assert HARD_LABEL == (
+        "🎲 娱乐性质 · 非 edge · 长期约 −13% 抽水期望 · 仅用娱乐预算下注"
+    )
+
+
+def test_engine_generate_returns_a_bold_combo_plan() -> None:
+    plan = BoldComboEngine().generate("2026-05-18", _engine_day())
+
+    assert isinstance(plan, BoldComboPlan)
+    assert plan.run_date == "2026-05-18"
+    assert plan.label == HARD_LABEL
+    assert 0 <= plan.day_chaos <= 100
+    assert plan.chaos_band in ("平静", "中等", "混乱")
+    assert plan.anchor.kind == "稳健底仓"
+    assert "高命中" in plan.anchor.note
+    assert plan.tickets
+    for ticket in plan.tickets:
+        assert ticket.fold in (3, 4, 5)
+
+
+def test_engine_generate_empty_day_does_not_crash() -> None:
+    plan = BoldComboEngine().generate("2026-05-18", [])
+    assert plan.label == HARD_LABEL
+    assert plan.tickets == []
+
+
+def test_render_bold_plan_welds_label_at_the_top() -> None:
+    plan = BoldComboEngine().generate("2026-05-18", _engine_day())
+
+    rendered = render_bold_plan(plan)
+
+    assert rendered.startswith(HARD_LABEL)
+    # The day chaos line appears near the top.
+    head = "\n".join(rendered.splitlines()[:4])
+    assert "大盘面混乱值" in head
+
+
+def test_render_bold_plan_contains_no_advantage_wording() -> None:
+    plan = BoldComboEngine().generate("2026-05-18", _engine_day())
+
+    rendered = render_bold_plan(plan)
+
+    for word in _BANNED_WORDS:
+        # The 🎲 label itself legitimately contains the negation "非 edge";
+        # strip the label line before scanning the body for banned words.
+        body = rendered[len(HARD_LABEL):]
+        assert word not in body, f"advantage word leaked into output: {word}"
+    # The boldness number is labelled 大胆分 — never 胜率/信心.
+    assert "大胆分" in rendered
+
+
+def test_render_bold_plan_shows_no_probability_or_ev_columns() -> None:
+    plan = BoldComboEngine().generate("2026-05-18", _engine_day())
+    rendered = render_bold_plan(plan)
+    assert "信心" not in rendered
+    assert "EV" not in rendered
