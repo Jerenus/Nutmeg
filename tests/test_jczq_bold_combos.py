@@ -8,7 +8,9 @@ label + the no-advantage-wording acceptance assertions (spec §7).
 
 from __future__ import annotations
 
+import ast
 import math
+from pathlib import Path
 
 from nutmeg.services.jczq_bold_combos import (
     HARD_LABEL,
@@ -587,3 +589,36 @@ def test_bold_matches_from_context_merges_euro_odds() -> None:
     assert matches[0].euro_odds == {"home": 1.9, "draw": 3.4, "away": 3.8}
     assert matches[0].euro_opening == {"home": 2.1, "draw": 3.3, "away": 3.5}
     assert matches[0].per_book_odds["home"] == [1.8, 1.9, 2.0]
+
+
+# ---------------------------------------------------------------------------
+# Acceptance — the engine imports NO predictive model (spec §7)
+# ---------------------------------------------------------------------------
+
+
+def test_engine_module_imports_no_predictive_model() -> None:
+    """The bold-combo engine consumes only 体彩 odds + 欧赔 — it must NOT
+    import the retired predictive model (``dixon_coles`` / ``ValueBoardService``
+    / anything under ``nutmeg.models``). Asserted by parsing every import
+    statement in the module's AST (spec §7)."""
+    source = (
+        Path(__file__).parents[1]
+        / "nutmeg"
+        / "services"
+        / "jczq_bold_combos.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    imported: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            imported.append(module)
+            imported.extend(f"{module}.{a.name}" for a in node.names)
+
+    banned = ("dixon_coles", "ValueBoardService", "nutmeg.models")
+    for token in banned:
+        leaks = [name for name in imported if token in name]
+        assert not leaks, f"engine imports a predictive model: {leaks}"
