@@ -626,3 +626,133 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
         "长期为负，仅供娱乐。注金请只用娱乐预算的小额。_"
     )
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Task 7 — context.json → BoldMatch loader (体彩 odds + optional 欧赔)
+# ---------------------------------------------------------------------------
+
+# 体彩 had 选项 → the engine's OUTCOMES vocabulary.
+_HAD_PICK_TO_OUTCOME: dict[str, str] = {"胜": "home", "平": "draw", "负": "away"}
+
+# A context.json match's ``role`` string → the heat tag it reads as.
+_ROLE_TO_TAG: dict[str, str] = {"强胆场": "强胆场"}
+
+
+def _had_odds(candidates: list[dict]) -> dict[str, float]:
+    """Pull the 胜平负 (had) decimal odds out of a context.json match's
+    ``candidates`` list. Returns an empty dict when the had pool is absent."""
+    odds: dict[str, float] = {}
+    for cand in candidates:
+        if cand.get("pool") != "had":
+            continue
+        outcome = _HAD_PICK_TO_OUTCOME.get(str(cand.get("pick", "")))
+        value = cand.get("odds")
+        if outcome and isinstance(value, int | float) and value > 1.0:
+            odds[outcome] = float(value)
+    return odds
+
+
+def _tc_vig(odds: dict[str, float]) -> float:
+    """The 体彩 over-round (vig) of a 胜平负 line — ``sum(1/odds) - 1``."""
+    if len(odds) < 3:
+        return 0.12
+    return sum(1.0 / v for v in odds.values()) - 1.0
+
+
+def _match_tags(role: str) -> set[str]:
+    """Map a context.json ``role`` to the engine's heat tags."""
+    tag = _ROLE_TO_TAG.get(role.strip())
+    return {tag} if tag else set()
+
+
+def bold_matches_from_context(
+    context: dict, *, euro_by_match_no: dict[str, dict]
+) -> list[BoldMatch]:
+    """Build ``BoldMatch`` objects from a daily ``context.json`` + optional 欧赔.
+
+    Each context match must carry a 胜平负 (``had``) pool — that is the only
+    market the engine scores. ``euro_by_match_no`` maps 竞彩号 →
+    ``{"odds": .., "opening": .., "per_book": ..}`` (the 欧赔 collected from
+    500.com); a match absent from it simply gets empty 欧赔 fields, and its
+    conflict/drift/dispersion signals degrade to 0 — heat + contrarian still
+    work. A match with no usable ``had`` odds is skipped (never a crash).
+    """
+    matches: list[BoldMatch] = []
+    for raw in context.get("matches") or []:
+        tc_odds = _had_odds(raw.get("candidates") or [])
+        if len(tc_odds) < 3:
+            continue
+        euro = euro_by_match_no.get(str(raw.get("match_no", "")), {})
+        matches.append(
+            BoldMatch(
+                match_no=str(raw.get("match_no", "")),
+                league=str(raw.get("league", "")),
+                home=str(raw.get("home_team", "")),
+                away=str(raw.get("away_team", "")),
+                tc_odds=tc_odds,
+                euro_odds=dict(euro.get("odds") or {}),
+                euro_opening=dict(euro.get("opening") or {}),
+                per_book_odds={
+                    k: list(v) for k, v in (euro.get("per_book") or {}).items()
+                },
+                tags=_match_tags(str(raw.get("role", ""))),
+                vig=_tc_vig(tc_odds),
+            )
+        )
+    return matches
+
+
+def euro_from_fcom500(collected: dict) -> dict[str, dict]:
+    """Reshape a ``Fcom500OddsProvider.collect()`` result into the
+    ``euro_by_match_no`` mapping ``bold_matches_from_context`` expects.
+
+    Only the 胜平负 (``match_winner``) market is used — its parsed
+    ``MarketOdds`` carries ``opening_odds`` + ``per_book_odds`` (Task 1).
+    A match whose 欧赔 page failed to parse simply has no entry — graceful
+    degradation. This reads the 500.com domain objects but imports NO
+    predictive model.
+    """
+    euro: dict[str, dict] = {}
+    for match_no, entry in collected.items():
+        market = entry.odds.markets.get("match_winner")
+        if market is None:
+            continue
+        odds = {o.outcome_key: o.average_odds for o in market.outcomes}
+        euro[match_no] = {"odds": odds}
+    return euro
+
+
+def replay_bold_combos(run_date: str, output_dir) -> str:
+    """Replay a stored ``context.json`` through the bold-combo engine.
+
+    Reads ``<output_dir>/daily/<run_date>/context.json`` for the 体彩 odds,
+    attempts to enrich it with 500.com 欧赔 (degrading silently to 体彩-only on
+    any failure), runs ``BoldComboEngine`` and returns the honest-labelled
+    markdown. Raises ``FileNotFoundError`` when the context file is absent.
+    """
+    import json
+    import logging
+    from pathlib import Path
+
+    logger = logging.getLogger(__name__)
+    ctx_path = Path(output_dir) / "daily" / run_date / "context.json"
+    if not ctx_path.exists():
+        raise FileNotFoundError(f"context.json not found: {ctx_path}")
+    context = json.loads(ctx_path.read_text(encoding="utf-8"))
+
+    euro_by_match_no: dict[str, dict] = {}
+    try:
+        from nutmeg.data.fcom500 import Fcom500Client, Fcom500OddsProvider
+
+        with Fcom500Client() as client:
+            collected = Fcom500OddsProvider(client=client).collect(run_date)
+        euro_by_match_no = euro_from_fcom500(collected)
+    except Exception:  # noqa: BLE001 — 欧赔 is optional; degrade to 体彩-only
+        logger.warning("bold-combos: 欧赔 enrichment failed — 体彩-only", exc_info=True)
+
+    matches = bold_matches_from_context(
+        context, euro_by_match_no=euro_by_match_no
+    )
+    plan = BoldComboEngine().generate(run_date, matches)
+    return render_bold_plan(plan)

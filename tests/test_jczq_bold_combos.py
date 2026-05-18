@@ -494,3 +494,96 @@ def test_render_bold_plan_shows_no_probability_or_ev_columns() -> None:
     rendered = render_bold_plan(plan)
     assert "信心" not in rendered
     assert "EV" not in rendered
+
+
+# ---------------------------------------------------------------------------
+# Task 7 — context.json → BoldMatch loader
+# ---------------------------------------------------------------------------
+
+
+def test_bold_matches_from_context_reads_tc_odds_and_tags() -> None:
+    from nutmeg.services.jczq_bold_combos import bold_matches_from_context
+
+    context = {
+        "matches": [
+            {
+                "match_no": "周日001",
+                "league": "日职",
+                "home_team": "主队",
+                "away_team": "客队",
+                "role": "强胆场",
+                "candidates": [
+                    {"pool": "had", "pick": "胜", "odds": 1.8},
+                    {"pool": "had", "pick": "平", "odds": 3.4},
+                    {"pool": "had", "pick": "负", "odds": 4.2},
+                    {"pool": "hhad", "pick": "让胜", "odds": 6.6},
+                ],
+            }
+        ]
+    }
+
+    matches = bold_matches_from_context(context, euro_by_match_no={})
+
+    assert len(matches) == 1
+    match = matches[0]
+    assert match.match_no == "周日001"
+    assert match.tc_odds == {"home": 1.8, "draw": 3.4, "away": 4.2}
+    assert "强胆场" in match.tags  # role mapped to a heat tag
+    # No 欧赔 supplied → euro fields empty → graceful degradation downstream.
+    assert match.euro_odds == {}
+    assert match.per_book_odds == {}
+
+
+def test_bold_matches_from_context_skips_matches_without_had_pool() -> None:
+    from nutmeg.services.jczq_bold_combos import bold_matches_from_context
+
+    context = {
+        "matches": [
+            {
+                "match_no": "周日002",
+                "league": "日职",
+                "home_team": "主",
+                "away_team": "客",
+                "candidates": [{"pool": "hhad", "pick": "让胜", "odds": 2.0}],
+            }
+        ]
+    }
+
+    assert bold_matches_from_context(context, euro_by_match_no={}) == []
+
+
+def test_bold_matches_from_context_merges_euro_odds() -> None:
+    from nutmeg.services.jczq_bold_combos import bold_matches_from_context
+
+    context = {
+        "matches": [
+            {
+                "match_no": "周日003",
+                "league": "英超",
+                "home_team": "主",
+                "away_team": "客",
+                "candidates": [
+                    {"pool": "had", "pick": "胜", "odds": 2.0},
+                    {"pool": "had", "pick": "平", "odds": 3.3},
+                    {"pool": "had", "pick": "负", "odds": 3.5},
+                ],
+            }
+        ]
+    }
+    euro = {
+        "周日003": {
+            "odds": {"home": 1.9, "draw": 3.4, "away": 3.8},
+            "opening": {"home": 2.1, "draw": 3.3, "away": 3.5},
+            "per_book": {
+                "home": [1.8, 1.9, 2.0],
+                "draw": [3.3, 3.4, 3.5],
+                "away": [3.6, 3.8, 4.0],
+            },
+        }
+    }
+
+    matches = bold_matches_from_context(context, euro_by_match_no=euro)
+
+    assert matches[0].euro_odds == {"home": 1.9, "draw": 3.4, "away": 3.8}
+    assert matches[0].euro_opening == {"home": 2.1, "draw": 3.3, "away": 3.5}
+    assert matches[0].per_book_odds["home"] == [1.8, 1.9, 2.0]

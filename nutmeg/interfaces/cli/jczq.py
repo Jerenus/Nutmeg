@@ -367,6 +367,41 @@ def jczq_replay(
     _cli.typer.echo(result.rendered_text)
 
 
+@_cli.app.command("jczq-bold-combos")
+def jczq_bold_combos(
+    run_date: str | None = _cli.typer.Option(
+        None, "--date", help="目标日期 YYYY-MM-DD（live，默认今天）"
+    ),
+    replay_date: str | None = _cli.typer.Option(
+        None, "--replay", help="从已存 context.json 回放"
+    ),
+    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
+    write: _cli.Path | None = JCZQ_DAILY_BRIEF_WRITE_OPTION,
+) -> None:
+    """娱乐性质的竞彩串关组合生成器 — 非 edge、长期负期望。
+
+    从盘面冲突 / 反直觉 / 热度信号挑「大胆腿」，拼 3/4/5 串 1。每个输出顶部
+    焊死 🎲 娱乐硬标签。不预测胜负、不号称优势。
+    """
+    from datetime import date as _date_cls
+
+    from nutmeg.services.jczq_bold_combos import replay_bold_combos
+
+    target_date = replay_date or run_date or _date_cls.today().isoformat()
+    try:
+        rendered = replay_bold_combos(run_date=target_date, output_dir=output_dir)
+    except FileNotFoundError as exc:
+        _cli.console.print(str(exc))
+        raise _cli.typer.Exit(code=2) from exc
+
+    if write is not None:
+        write.parent.mkdir(parents=True, exist_ok=True)
+        write.write_text(rendered, encoding="utf-8")
+        _cli.console.print(f"Wrote bold-combo plan: {write}")
+        return
+    _cli.typer.echo(rendered)
+
+
 @_cli.app.command("jczq-web")
 def jczq_web(
     output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,

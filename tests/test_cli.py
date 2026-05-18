@@ -3728,6 +3728,48 @@ def test_brief_value_bridge_defaults_to_fcom500(monkeypatch) -> None:
     assert captured["run_date"] == "2026-05-17"
 
 
+def test_jczq_bold_combos_replay_renders_honest_label(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """`jczq-bold-combos --replay <date>` replays a stored context.json through
+    the entertainment-purpose bold-combo engine: exit 0 and the welded 🎲
+    honest label is present (spec §7)."""
+    from nutmeg.data import fcom500 as fcom500_module
+    from nutmeg.services.jczq_bold_combos import HARD_LABEL
+    from nutmeg.services.jczq_daily import JczqDailyAdvisorService
+    from tests.test_jczq_daily_service import FakeProvider
+
+    # Never touch the live 500.com site — simulate an unreachable collector so
+    # the engine runs on 体彩 odds alone (graceful 欧赔 degradation).
+    monkeypatch.setattr(
+        fcom500_module.Fcom500OddsProvider,
+        "collect",
+        lambda self, run_date: {},
+    )
+    JczqDailyAdvisorService(provider=FakeProvider()).build_report(
+        run_date="2026-05-01", output_dir=tmp_path
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "jczq-bold-combos",
+            "--replay",
+            "2026-05-01",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert HARD_LABEL in result.stdout
+    assert "大盘面混乱值" in result.stdout
+    # No advantage wording leaked into the rendered CLI output.
+    body = result.stdout[result.stdout.index(HARD_LABEL) + len(HARD_LABEL):]
+    for word in ("胜率", "+EV", "正期望", "推荐下注", "重仓"):
+        assert word not in body
+
+
 def test_jczq_web_command_starts_localhost_app(monkeypatch, tmp_path: Path) -> None:
     calls: list[dict[str, object]] = []
 
