@@ -33,6 +33,25 @@ from dataclasses import dataclass, field
 # (1X2) market, the only market where 体彩 odds and 欧赔 both exist cleanly.
 OUTCOMES: tuple[str, str, str] = ("home", "draw", "away")
 
+# --- Multi-market vocabulary (spec: bold-combo multi-market extension) ------
+# The four 体彩 markets the engine scores.
+MARKETS: tuple[str, ...] = ("had", "hhad", "ttg", "crs")
+
+# Per market, the signals that are ACTIVE. The rest contribute 0 and take no
+# weight (per-market weight normalization, spec §3 跨市场可比性). had has all
+# five; hhad/crs have three; ttg has four (dispersion from the 大小球 books).
+MARKET_SIGNALS: dict[str, tuple[str, ...]] = {
+    "had": ("conflict", "contrarian", "drift", "dispersion", "heat"),
+    "hhad": ("conflict", "contrarian", "heat"),
+    "ttg": ("conflict", "contrarian", "dispersion", "heat"),
+    "crs": ("conflict", "contrarian", "heat"),
+}
+
+# Human-readable market labels for the renderer.
+MARKET_LABELS: dict[str, str] = {
+    "had": "胜平负", "hhad": "让球", "ttg": "总进球", "crs": "比分",
+}
+
 # --- Named-constant signal gains (documented defaults — tunables) ----------
 # Drift: an implied-probability move of ~0.10 (a sizeable shift) maps to ~0.6.
 DRIFT_GAIN: float = 6.0
@@ -190,14 +209,24 @@ class BoldMatch:
     per_book_odds: dict[str, list[float]] = field(default_factory=dict)
     tags: set[str] = field(default_factory=set)
     vig: float = 0.12
+    # --- multi-market 体彩 odds (default empty → engine scores 胜平负 only) ---
+    hhad_odds: dict[str, float] = field(default_factory=dict)   # home/draw/away
+    hhad_line: float = 0.0                                       # home handicap, goals
+    ttg_odds: dict[str, float] = field(default_factory=dict)     # total_0..total_7
+    crs_odds: dict[str, float] = field(default_factory=dict)     # raw sHHsAA / s1sX keys
+    ou_odds: dict[str, float] = field(default_factory=dict)      # 国际大小球 over/under
+    ou_line: float = 0.0
+    ou_per_book: dict[str, list[float]] = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)
 class BoldLeg:
-    """One bold 1X2 pick for one match — the unit a parlay is built from.
+    """One bold pick for one match in one market — the unit a parlay is built from.
 
-    ``boldness`` is a heuristic salience score, NOT a probability. ``reason``
-    is a human-readable Chinese string naming the dominant board signal.
+    ``boldness`` is a heuristic salience score, NOT a probability. ``market`` is
+    one of ``MARKETS``; ``pick`` is the internal outcome key; ``pick_label`` is
+    the display string (胜 / 让平 / 3球 / 2:1). ``reason`` names the dominant
+    board signal.
     """
 
     match_no: str
@@ -208,6 +237,8 @@ class BoldLeg:
     tc_odds: float
     boldness: float
     reason: str
+    market: str = "had"
+    pick_label: str = ""
 
 
 def _fair_from_odds(odds: dict[str, float]) -> dict[str, float]:

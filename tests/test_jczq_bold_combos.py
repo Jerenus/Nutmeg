@@ -622,3 +622,57 @@ def test_engine_module_imports_no_predictive_model() -> None:
     for token in banned:
         leaks = [name for name in imported if token in name]
         assert not leaks, f"engine imports a predictive model: {leaks}"
+
+
+# ---------------------------------------------------------------------------
+# Multi-market extension — Task 5: market vocabulary + dataclass fields
+# ---------------------------------------------------------------------------
+
+
+def test_market_vocabulary_constants() -> None:
+    from nutmeg.services.jczq_bold_combos import (
+        MARKET_LABELS,
+        MARKET_SIGNALS,
+        MARKETS,
+    )
+
+    assert MARKETS == ("had", "hhad", "ttg", "crs")
+    # had has all five signals; hhad/crs three; ttg four (大小球 dispersion).
+    assert set(MARKET_SIGNALS["had"]) == {
+        "conflict", "contrarian", "drift", "dispersion", "heat",
+    }
+    assert set(MARKET_SIGNALS["hhad"]) == {"conflict", "contrarian", "heat"}
+    assert set(MARKET_SIGNALS["ttg"]) == {
+        "conflict", "contrarian", "dispersion", "heat",
+    }
+    assert set(MARKET_SIGNALS["crs"]) == {"conflict", "contrarian", "heat"}
+    assert MARKET_LABELS == {
+        "had": "胜平负", "hhad": "让球", "ttg": "总进球", "crs": "比分",
+    }
+
+
+def test_bold_match_multi_market_fields_default_empty() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldMatch
+
+    # A v1-style had-only BoldMatch — multi-market fields default empty.
+    match = BoldMatch(
+        match_no="周一001", league="芬超", home="A", away="B",
+        tc_odds={"home": 2.0, "draw": 3.2, "away": 3.5},
+    )
+    assert match.hhad_odds == {}
+    assert match.ttg_odds == {}
+    assert match.crs_odds == {}
+    assert match.ou_odds == {}
+    assert match.hhad_line == 0.0
+
+
+def test_bold_leg_carries_market_and_label() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldLeg
+
+    leg = BoldLeg(
+        match_no="周一001", league="芬超", home="A", away="B",
+        market="crs", pick="2:1", pick_label="2:1",
+        tc_odds=7.5, boldness=0.4, reason="x",
+    )
+    assert leg.market == "crs"
+    assert leg.pick_label == "2:1"
