@@ -203,9 +203,8 @@ def test_parse_handicap_returns_none_on_empty_page() -> None:
 def test_parse_over_under_reads_international_daxiao() -> None:
     from nutmeg.data.fcom500 import parse_over_under
 
-    html = (_FIXTURE_DIR / "daxiao-1366371.html").read_text(
-        encoding="gb2312", errors="ignore"
-    )
+    # Recorded fixtures are stored UTF-8 (see the rest of this file).
+    html = (_FIXTURE_DIR / "daxiao-1366371.html").read_text(encoding="utf-8")
     market = parse_over_under(html)
 
     assert market is not None
@@ -247,6 +246,35 @@ def test_parse_correct_score_is_none_js_rendered() -> None:
     # The 比分 page's odds are JS-loaded — the static pub_table is header-only.
     html = (_FIXTURE_DIR / "bifen-1366371.html").read_text(encoding="utf-8")
     assert parse_correct_score(html) is None
+
+
+def test_collect_bold_odds_returns_raw_market_odds() -> None:
+    from nutmeg.data.fcom500 import MarketOdds, collect_bold_odds
+
+    # Recorded fixtures are stored UTF-8 (see _fixture_bytes / the rest of
+    # this file) — read them UTF-8, not the live-site gb2312 encoding.
+    list_html = (_FIXTURE_DIR / "jczq-list.html").read_text(encoding="utf-8")
+    ouzhi = (_FIXTURE_DIR / "ouzhi-1366371.html").read_text(encoding="utf-8")
+    daxiao = (_FIXTURE_DIR / "daxiao-1366371.html").read_text(encoding="utf-8")
+
+    class FakeClient:
+        def get(self, url: str) -> str:
+            if "trade.500.com/jczq" in url:
+                return list_html
+            if "ouzhi-1366371" in url:
+                return ouzhi
+            if "daxiao-1366371" in url:
+                return daxiao
+            raise RuntimeError(f"unexpected fetch: {url}")
+
+    result = collect_bold_odds(FakeClient())
+
+    # 周日001 (fid 1366371) has both pages → both raw markets, with per-book odds.
+    entry = result["周日001"]
+    assert isinstance(entry["match_winner"], MarketOdds)
+    assert isinstance(entry["over_under"], MarketOdds)
+    assert entry["match_winner"].per_book_odds["home"]      # opening/per-book kept
+    assert entry["over_under"].per_book_odds["over"]
 
 
 # ---------------------------------------------------------------------------

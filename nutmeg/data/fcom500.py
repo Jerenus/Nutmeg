@@ -52,6 +52,7 @@ __all__ = [
     "Fcom500ValueBridge",
     "MarketOdds",
     "build_model_identity",
+    "collect_bold_odds",
     "parse_correct_score",
     "parse_european_1x2",
     "parse_handicap",
@@ -464,6 +465,48 @@ def parse_over_under(html: str) -> MarketOdds | None:
         bookmaker_count=len(over),
         per_book_odds={"over": over, "under": under},
     )
+
+
+def _safe_parse_page(client: Fcom500Client, url: str, parser) -> MarketOdds | None:
+    """Fetch + parse one analysis page, degrading to ``None`` on any error."""
+    try:
+        html = client.get(url)
+    except Exception:  # noqa: BLE001 — a missing page degrades that market
+        logger.warning("fcom500: fetch failed for %s — market degraded", url)
+        return None
+    try:
+        return parser(html)
+    except Exception:  # noqa: BLE001 — a parse failure degrades that market
+        logger.warning("fcom500: parse failed for %s — market degraded", url)
+        return None
+
+
+def collect_bold_odds(client: Fcom500Client) -> dict[str, dict[str, MarketOdds]]:
+    """Collect the bold engine's 国际 odds as raw ``MarketOdds`` per match.
+
+    Returns ``{match_no: {"match_winner": MarketOdds, "over_under": MarketOdds}}``.
+    Unlike ``Fcom500OddsProvider`` (which maps to domain ``MarketOddsSnapshot``
+    and drops opening/per-book odds), this keeps the raw ``MarketOdds`` so the
+    bold engine's drift + dispersion signals have their inputs. Any page
+    fetch/parse failure degrades that match/market — never crashes.
+    """
+    try:
+        list_html = client.get(_JCZQ_LIST_URL)
+    except Exception:  # noqa: BLE001 — degrade, never crash
+        logger.warning("fcom500: 竞彩 list fetch failed — no bold odds", exc_info=True)
+        return {}
+    result: dict[str, dict[str, MarketOdds]] = {}
+    for match in parse_jczq_list(list_html):
+        entry: dict[str, MarketOdds] = {}
+        euro = _safe_parse_page(client, _ouzhi_url(match.fid), parse_european_1x2)
+        if euro is not None:
+            entry["match_winner"] = euro
+        over_under = _safe_parse_page(client, _daxiao_url(match.fid), parse_over_under)
+        if over_under is not None:
+            entry["over_under"] = over_under
+        if entry:
+            result[match.match_no] = entry
+    return result
 
 
 # ---------------------------------------------------------------------------
