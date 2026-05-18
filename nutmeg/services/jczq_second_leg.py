@@ -1,4 +1,4 @@
-"""2 串 1 候选搜索（Poisson 单核腿 + 主单的安全 hedge 候选）。
+"""2 串 1 候选搜索（核心腿 + 主单的安全 hedge 候选）。
 
 CLI 包装见 ``nutmeg.interfaces.cli.jczq_second_leg``。
 """
@@ -108,11 +108,32 @@ def solo_from_final(final_plan_json: Path) -> tuple[str, str, str] | None:
     if not final_plan_json.exists():
         return None
     payload = json.loads(final_plan_json.read_text(encoding="utf-8"))
+    top_level = _leg_tuple(payload.get("solo_leg"))
+    if top_level is not None:
+        return top_level
+
+    tickets = payload.get("tickets", [])
+    favorite_ticket_id = payload.get("favorite_ticket_id")
+    for ticket in tickets:
+        if ticket.get("id") == favorite_ticket_id or ticket.get("favorite") is True:
+            legs = ticket.get("legs", [])
+            if legs:
+                return _leg_tuple(legs[0])
+
     for ticket in payload.get("tickets", []):
-        if ticket.get("kind") == "poisson_solo" and len(ticket.get("legs", [])) == 1:
-            leg = ticket["legs"][0]
-            return leg["match_no"], leg["pool"], leg["pick"]
+        legs = ticket.get("legs", [])
+        if len(legs) == 1:
+            return _leg_tuple(legs[0])
     return None
+
+
+def _leg_tuple(raw: object) -> tuple[str, str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return str(raw["match_no"]), str(raw["pool"]), str(raw["pick"])
+    except KeyError:
+        return None
 
 
 def render_table(
@@ -124,7 +145,7 @@ def render_table(
     top: int,
 ) -> str:
     out: list[str] = []
-    out.append(f"\n=== 2 串 1 候选 — 单核 {solo[0]} {solo[1]} {solo[2]} ===")
+    out.append(f"\n=== 2 串 1 候选 — 核心腿 {solo[0]} {solo[1]} {solo[2]} ===")
     out.append(f"主单已加载 {len(main_plans)} 张票（来源：{final_plan_path}）")
     out.append("")
     out.append(
@@ -181,7 +202,7 @@ def suggest_second_legs(
     if auto:
         resolved_solo = solo_from_final(final_plan_path)
         if resolved_solo is None:
-            raise ValueError("--auto 失败：final-plan.json 里找不到 poisson_solo 票")
+            raise ValueError("--auto 失败：final-plan.json 里找不到可用核心腿")
     elif solo is not None:
         resolved_solo = solo
     else:

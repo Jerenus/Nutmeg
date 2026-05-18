@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 MEMORY_VERSION = 2

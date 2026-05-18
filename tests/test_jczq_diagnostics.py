@@ -11,8 +11,6 @@ from __future__ import annotations
 from nutmeg.domain.jczq_daily import JczqDailyLeg, JczqDailyMatch, JczqDailyPlan
 from nutmeg.services.jczq_diagnostics import (
     KellyAdvice,
-    MatchConcentration,
-    SecondLegCandidate,
     TicketNarrative,
     apply_rule_l_concentration_cap,
     apply_rule_l_story_cap,

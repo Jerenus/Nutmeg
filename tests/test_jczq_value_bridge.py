@@ -139,6 +139,44 @@ def test_bridge_conflicts_sorted_by_edge_descending() -> None:
     assert edges == sorted(edges, reverse=True)
 
 
+def test_bridge_remaps_match_winner_conflicts_when_orientation_swapped() -> None:
+    # API-Football lists Tottenham as home, but JCZQ lists Arsenal as home.
+    # A model edge on API "home" therefore means JCZQ "away"/负.
+    fixture = _af_fixture(home="Tottenham", away="Arsenal")
+    match = _jczq_match(home="阿森纳", away="热刺")
+    bridge = _bridge_with(matches=[match], fixtures=[fixture])
+
+    report = bridge.evaluate_day([match])
+
+    entry = report.matches[0]
+    assert entry.orientation_swapped is True
+    had_conflict = next(c for c in entry.conflicts if c.market_key == "match_winner")
+    assert had_conflict.outcome_key == "away"
+    assert had_conflict.outcome_name == "Away"
+    assert had_conflict.home_team == "阿森纳"
+    assert had_conflict.away_team == "热刺"
+
+
+def test_bridge_remaps_handicap_and_score_conflicts_when_orientation_swapped() -> None:
+    fixture = _af_fixture(home="Tottenham", away="Arsenal")
+    match = _jczq_match(home="阿森纳", away="热刺")
+    bridge = _bridge_with(matches=[match], fixtures=[fixture])
+
+    report = bridge.evaluate_day([match])
+
+    entry = report.matches[0]
+    hhad_conflict = next(
+        c for c in entry.conflicts if c.market_key.startswith("handicap_home_")
+    )
+    assert hhad_conflict.market_key == "handicap_home_plus_1"
+    assert hhad_conflict.outcome_key == "away"
+    assert hhad_conflict.outcome_name == "Away"
+
+    score_conflict = next(c for c in entry.conflicts if c.outcome_key == "score_0_2")
+    assert score_conflict.market_key == "correct_score"
+    assert score_conflict.outcome_name == "0:2"
+
+
 def test_bridge_handles_multiple_matches_some_unaligned() -> None:
     fixture = _af_fixture()
     matches = [

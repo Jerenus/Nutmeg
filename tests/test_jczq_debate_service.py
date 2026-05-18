@@ -29,6 +29,9 @@ def test_debate_workspace_init_creates_shared_brief_and_model_templates(tmp_path
     assert "## 盘面总判断" in (debate_dir / "claude-analysis.md").read_text(
         encoding="utf-8"
     )
+    assert "### C Poisson" not in (debate_dir / "gpt-analysis.md").read_text(
+        encoding="utf-8"
+    )
     assert "人工裁决" in (debate_dir / "human-notes.md").read_text(encoding="utf-8")
     log = json.loads((debate_dir / "decision-log.json").read_text(encoding="utf-8"))
     assert log["status"] == "initialized"

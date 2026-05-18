@@ -71,6 +71,15 @@ def test_build_caption_reflects_actual_ticket_count() -> None:
     assert "5 张票" not in caption
 
 
+def test_build_caption_handles_unknown_portfolio_ev() -> None:
+    plan = _plan(3)
+    plan["portfolio_metrics"].pop("total_expected_value_known")
+
+    caption = _build_caption(plan)
+
+    assert "已知部分 EV 未知" in caption
+
+
 def test_build_story_header_reflects_actual_ticket_count() -> None:
     text = _story_text(_build_story(_plan(4)))
     assert "4 张票" in text
@@ -98,6 +107,19 @@ def test_build_story_omits_inapplicable_legacy_fields() -> None:
     assert "SOP 默认版" not in text
     assert "Rule R13" not in text
     assert "Rule B had" not in text
+
+
+def test_build_story_handles_unknown_ticket_ev_fields() -> None:
+    plan = _plan(2)
+    plan["portfolio_metrics"].pop("total_expected_value_known")
+    for ticket in plan["tickets"]:
+        ticket.pop("hit_probability")
+        ticket.pop("expected_value")
+
+    text = _story_text(_build_story(plan))
+
+    assert "已知部分 EV 未知" in text
+    assert "未知" in text
 
 
 def test_build_story_keeps_legacy_fields_when_present() -> None:

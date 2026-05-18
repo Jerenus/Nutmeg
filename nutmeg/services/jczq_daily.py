@@ -2139,7 +2139,8 @@ class JczqDailyAdvisorService:
         return self._make_plan(
             "Poisson 单核灵感票",
             "poisson_solo",
-            f"Rule A v2: 跨场 +EV 腿组合（同场不同玩法不可混合过关，国家体彩规则）。{description_extra}",
+            "Rule A v2: 跨场 +EV 腿组合（同场不同玩法不可混合过关，"
+            f"国家体彩规则）。{description_extra}",
             legs,
             "Poisson 单核小注娱乐：腿少杠杆高，赔率波动大。",
         )

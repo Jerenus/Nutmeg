@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from datetime import date
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -3565,6 +3566,43 @@ def test_jczq_debate_init_command_creates_workspace(tmp_path) -> None:
     assert payload["run_date"] == "2026-05-06"
     assert Path(payload["artifacts"]["shared_brief_path"]).exists()
     assert Path(payload["artifacts"]["gpt_analysis_path"]).exists()
+
+
+def test_jczq_mixed_report_live_is_retired_with_daily_workflow_guidance() -> None:
+    result = runner.invoke(app, ["jczq-mixed-report", "--provider", "live", "--format", "json"])
+
+    assert result.exit_code == 2
+    assert "retired" in result.stdout
+    assert "jczq-daily-brief" in result.stdout
+
+
+def test_jczq_second_leg_date_today_resolves_to_calendar_date(monkeypatch, tmp_path) -> None:
+    import nutmeg.services.jczq_second_leg as second_leg
+
+    seen: dict[str, object] = {}
+
+    def fake_suggest_second_legs(**kwargs):
+        seen.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(second_leg, "suggest_second_legs", fake_suggest_second_legs)
+
+    result = runner.invoke(
+        app,
+        [
+            "jczq-second-leg",
+            "--date",
+            "today",
+            "--output-dir",
+            str(tmp_path),
+            "--auto",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert seen["run_date"] == date.today().isoformat()
+    assert seen["output_dir"] == tmp_path
+    assert "ok" in result.stdout
 
 
 def test_jczq_debate_compare_command_returns_conflicts(tmp_path) -> None:

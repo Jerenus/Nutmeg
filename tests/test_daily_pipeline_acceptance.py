@@ -48,7 +48,6 @@ from tests.test_value_service import (
     _snapshot,
 )
 
-
 # --- the day's data --------------------------------------------------------
 #
 # A JCZQ day of three 英超 matches. 英超 (→ league_id 39) and these team names

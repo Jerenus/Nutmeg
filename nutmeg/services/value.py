@@ -14,7 +14,6 @@ from nutmeg.models.dixon_coles import (
     expected_goals_from_snapshot,
 )
 
-
 # Team-strength estimation window. A season-spanning window de-noises the
 # expected-goals inputs — a 5-match window is dominated by streak noise and
 # made the model fade the market favorite. 38 covers the longest European

@@ -18,7 +18,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from nutmeg.domain.zucai import ZucaiIssue, ZucaiMatch, ZucaiOdds
+from nutmeg.domain.zucai import ZucaiIssue, ZucaiOdds
 from nutmeg.domain.zucai_renjiu import (
     RenjiuArtifacts,
     RenjiuDailyReport,
@@ -230,7 +230,9 @@ class ZucaiRenjiuDailyService:
         for match in issue.matches:
             odds = odds_by_match.get(match.match_no)
             if odds is None or odds.to_code_dict() is None:
-                raise ZucaiRenjiuValidationError(f"missing complete odds for match {match.match_no}")
+                raise ZucaiRenjiuValidationError(
+                    f"missing complete odds for match {match.match_no}"
+                )
             code_odds = odds.to_code_dict() or {}
             primary = min(code_odds, key=lambda code: code_odds[code])
             suggested = _double_pick(code_odds)
@@ -404,7 +406,8 @@ class ZucaiRenjiuDailyService:
             lines.append(
                 f"- {item.match_no}. {item.home_team} vs {item.away_team} "
                 f"赔率3/1/0={item.odds['3']:.2f}/{item.odds['1']:.2f}/{item.odds['0']:.2f} "
-                f"主选={item.primary_pick} 建议覆盖={item.suggested_pick} 风险={','.join(item.risk_labels) or '常规'}"
+                f"主选={item.primary_pick} 建议覆盖={item.suggested_pick} "
+                f"风险={','.join(item.risk_labels) or '常规'}"
             )
             verdict = _conflict_verdict(item.conflict_signal)
             if verdict:
@@ -420,10 +423,36 @@ class ZucaiRenjiuDailyService:
     def render_pdf(self, report: RenjiuDailyReport, *, pdf_path: Path) -> None:
         pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
         styles = getSampleStyleSheet()
-        body = ParagraphStyle("RenjiuBody", parent=styles["Normal"], fontName="STSong-Light", fontSize=8.2, leading=10.5)
-        title = ParagraphStyle("RenjiuTitle", parent=body, fontSize=16, leading=20, alignment=TA_CENTER, textColor=colors.HexColor("#4c3018"))
-        h2 = ParagraphStyle("RenjiuH2", parent=body, fontSize=11.5, leading=14, textColor=colors.HexColor("#7a3f12"), spaceBefore=4 * mm)
-        small = ParagraphStyle("RenjiuSmall", parent=body, fontSize=7, leading=9, textColor=colors.HexColor("#555555"))
+        body = ParagraphStyle(
+            "RenjiuBody",
+            parent=styles["Normal"],
+            fontName="STSong-Light",
+            fontSize=8.2,
+            leading=10.5,
+        )
+        title = ParagraphStyle(
+            "RenjiuTitle",
+            parent=body,
+            fontSize=16,
+            leading=20,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#4c3018"),
+        )
+        h2 = ParagraphStyle(
+            "RenjiuH2",
+            parent=body,
+            fontSize=11.5,
+            leading=14,
+            textColor=colors.HexColor("#7a3f12"),
+            spaceBefore=4 * mm,
+        )
+        small = ParagraphStyle(
+            "RenjiuSmall",
+            parent=body,
+            fontSize=7,
+            leading=9,
+            textColor=colors.HexColor("#555555"),
+        )
         cell = ParagraphStyle("RenjiuCell", parent=body, fontSize=6.7, leading=8.4)
 
         def para(value: object, style=body) -> Paragraph:
@@ -432,23 +461,36 @@ class ZucaiRenjiuDailyService:
         story = [
             para(f"Nutmeg 任九日报 — 第{report.issue_id}期", title),
             para(
-                f"日期：{report.run_date}；停售：{report.sale_stop or '未知'}；赔率：{report.odds_captured_at or '未知'}",
+                f"日期：{report.run_date}；停售：{report.sale_stop or '未知'}；"
+                f"赔率：{report.odds_captured_at or '未知'}",
                 small,
             ),
             para("娱乐型分析，不保证命中，不构成投注指令。", small),
             Spacer(1, 2 * mm),
             para("三档方案", h2),
         ]
-        ticket_rows = [[para("票", cell), para("投注串", cell), para("金额", cell), para("剔除", cell), para("说明", cell)]]
+        ticket_rows = [
+            [
+                para("票", cell),
+                para("投注串", cell),
+                para("金额", cell),
+                para("剔除", cell),
+                para("说明", cell),
+            ]
+        ]
         for ticket in report.tickets:
-            name = ticket.name + ("（推荐）" if ticket.ticket_id == report.recommended_ticket_id else "")
-            ticket_rows.append([
-                para(name, cell),
-                para(ticket.code, cell),
-                para(f"{ticket.stake_count}注/{ticket.cost_yuan}元", cell),
-                para(",".join(str(no) for no in ticket.omitted_matches), cell),
-                para(ticket.note, cell),
-            ])
+            name = ticket.name + (
+                "（推荐）" if ticket.ticket_id == report.recommended_ticket_id else ""
+            )
+            ticket_rows.append(
+                [
+                    para(name, cell),
+                    para(ticket.code, cell),
+                    para(f"{ticket.stake_count}注/{ticket.cost_yuan}元", cell),
+                    para(",".join(str(no) for no in ticket.omitted_matches), cell),
+                    para(ticket.note, cell),
+                ]
+            )
         story.append(_table(ticket_rows, [22 * mm, 55 * mm, 24 * mm, 22 * mm, 55 * mm]))
         story.append(para("逐场判断", h2))
         rows = [[

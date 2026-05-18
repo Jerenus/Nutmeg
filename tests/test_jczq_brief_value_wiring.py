@@ -16,7 +16,6 @@ from nutmeg.domain.value import ValueCandidate
 from nutmeg.services.jczq_brief import build_brief
 from nutmeg.services.jczq_daily import JczqDailyAdvisorService
 from nutmeg.services.jczq_value_bridge import JczqMatchConflicts, JczqValueReport
-
 from tests.test_jczq_daily_service import FakeProvider
 
 

@@ -22,16 +22,15 @@ from nutmeg.services.jczq_diagnostics import (
     compute_match_concentration,
     compute_narrative_matrix,
 )
-from nutmeg.services.jczq_parlay_constructor import (
-    ParlayConstructor,
-    render_parlay_section,
-)
-from nutmeg.services.jczq_value_bridge import JczqValueReport
 from nutmeg.services.jczq_intelligence import (
     LeaguePriorBaseline,
     PoissonEdgeEntry,
     compute_analytics,
     compute_poisson_edges,
+)
+from nutmeg.services.jczq_parlay_constructor import (
+    ParlayConstructor,
+    render_parlay_section,
 )
 from nutmeg.services.jczq_strategy_memory import (
     DAILY_CONCENTRATION_DECAY,
@@ -43,6 +42,7 @@ from nutmeg.services.jczq_strategy_memory import (
     get_dixon_coles_rho,
     load_strategy_memory,
 )
+from nutmeg.services.jczq_value_bridge import JczqValueReport
 
 logger = logging.getLogger(__name__)
 
@@ -323,7 +323,10 @@ def _emit_markdown(
     out.append("把以上 1-5 节复制贴给 Claude，附加这句话即可触发跟今天一致的决策流程：")
     out.append("")
     out.append("> 用 Nutmeg 改造版的 jczq 系统对今天进行投资建议（Rule A-J 已落库）：")
-    out.append("> 1. 第 4 节 edge ≥ +15% 的腿是分析证据，分配进主方案/反大众的腿（R28：Poisson 单核票已退役，不要重建 C 票）；")
+    out.append(
+        "> 1. 第 4 节 edge ≥ +15% 的腿是分析证据，分配进主方案/反大众的腿"
+        "（R28：Poisson 单核票已退役，不要重建 C 票）；"
+    )
     out.append("> 2. 出 4-5 张票：稳健底仓 / 主方案 / 反大众 / 极限娱乐；")
     out.append("> 3. 主方案禁用 had ≤ 1.40 的强胆托底（Rule B），改用让球/总进球支撑；")
     out.append("> 4. 标 ⚠coinflip 的场次不要用 had 平/胜/负 做杠杆（Rule E），允许 hhad/ttg/crs；")
@@ -332,7 +335,10 @@ def _emit_markdown(
     out.append("> 7. **半全场 hafu 全面下架**（R27：0/18 命中，含 extreme 票）；")
     out.append("> 8. 高赔率灵感票里**赔率 ≥ 5.0 的 had 腿必须 Poisson edge ≥ +5%**（Rule I-1）；")
     out.append("> 9. 反大众票**不选 Poisson edge ≤ -15% 的腿**（Rule I-2）；")
-    out.append("> 10. 极限娱乐的 crs 腿**必须 Poisson edge ≥ -10%**，否则改选模型支持的小比分（Rule J）；")
+    out.append(
+        "> 10. 极限娱乐的 crs 腿**必须 Poisson edge ≥ -10%**，"
+        "否则改选模型支持的小比分（Rule J）；"
+    )
     out.append("> 11. 给注金分配（小注娱乐预算 100 元假设）+ 标注最看好那张。")
     out.append("")
     return "\n".join(out)

@@ -34,13 +34,6 @@ SUPPORTED_ACTIONS = {
     "zucai-report",
     "jczq-mixed-report",
     "jczq-daily-advisor",
-    "daily-content-pack",
-    "video-production-packet",
-    "wechat-article-pack",
-    "wechat-draft-push",
-    "seedance-submit",
-    "seedance-poll",
-    "content",
     "eval",
     "review",
     "prediction-record",
@@ -297,121 +290,6 @@ def build_command(request: RouterRequest) -> list[str]:
             command.extend(["--dispatch-telegram", "--no-dry-run"])
         command.extend(["--format", "json"])
         return command
-    if action == "daily-content-pack":
-        command = [
-            *base,
-            "daily-content-pack",
-            "--date",
-            options.date,
-            "--provider",
-            options.provider,
-            "--output-dir",
-            options.output_dir,
-        ]
-        if options.pdf:
-            command.append("--pdf")
-        command.extend(["--format", "json"])
-        return command
-    if action == "video-production-packet":
-        return [
-            *base,
-            "video-production-packet",
-            "--date",
-            options.date,
-            "--provider",
-            options.provider,
-            "--output-dir",
-            options.output_dir,
-            "--format",
-            "json",
-        ]
-    if action == "seedance-submit":
-        command = [
-            *base,
-            "seedance-submit",
-        ]
-        if options.manifest:
-            command.extend(["--manifest", options.manifest])
-        if options.run_dir:
-            command.extend(["--run-dir", options.run_dir])
-        if options.match_id:
-            command.extend(["--match-id", options.match_id])
-        if options.task_key:
-            command.extend(["--task-key", options.task_key])
-        command.extend(["--ratio-key", options.ratio_key])
-        command.extend(["--max-concurrency", str(options.max_concurrency)])
-        if options.confirm_submit:
-            command.append("--confirm")
-        command.extend(["--format", "json"])
-        return command
-    if action == "seedance-poll":
-        command = [
-            *base,
-            "seedance-poll",
-        ]
-        if options.manifest:
-            command.extend(["--manifest", options.manifest])
-        if options.run_dir:
-            command.extend(["--run-dir", options.run_dir])
-        if options.download:
-            command.append("--download")
-        if options.concat:
-            command.append("--concat")
-        command.extend(["--ratio-key", options.ratio_key])
-        if options.output_dir:
-            command.extend(["--output-dir", options.output_dir])
-        command.extend(["--format", "json"])
-        return command
-    if action == "content":
-        return [
-            *base,
-            "content-pack",
-            "--report-file",
-            options.report_file,
-            "--limit",
-            str(options.limit),
-            "--output-dir",
-            options.output_dir,
-            "--llm-mode",
-            options.llm_mode,
-            "--openclaw-model",
-            options.openclaw_model,
-            "--format",
-            "json",
-        ]
-    if action == "wechat-article-pack":
-        command = [
-            *base,
-            "wechat-article-pack",
-            "--report-file",
-            options.report_file,
-            "--output-dir",
-            options.output_dir,
-            "--thumb-media-id",
-            options.thumb_media_id,
-        ]
-        if options.author:
-            command.extend(["--author", options.author])
-        if options.source_url:
-            command.extend(["--source-url", options.source_url])
-        command.extend(["--format", "json"])
-        return command
-    if action == "wechat-draft-push":
-        command = [
-            *base,
-            "wechat-draft-push",
-            "--pack-dir",
-            options.pack_dir,
-            "--app-id",
-            options.app_id,
-            "--app-secret",
-            options.app_secret,
-        ]
-        command.append("--dry-run" if options.dry_run else "--no-dry-run")
-        if options.confirm_draft:
-            command.append("--confirm")
-        command.extend(["--format", "json"])
-        return command
     if action == "eval":
         return [*base, "eval-run", "--dataset", options.dataset, "--format", "json"]
     if action == "review":
@@ -634,7 +512,7 @@ def _build_parser() -> argparse.ArgumentParser:
     zucai.add_argument("--confirm-dispatch", action="store_true")
 
     jczq = subparsers.add_parser("jczq-mixed-report")
-    jczq.add_argument("--provider", choices=["live", "sample"], default="live")
+    jczq.add_argument("--provider", choices=["live", "sample"], default="sample")
     jczq.add_argument("--output-dir", default=".nutmeg-data/jczq")
     jczq.add_argument("--pdf", action="store_true")
     jczq.add_argument("--dispatch-telegram", action="store_true")
@@ -647,60 +525,6 @@ def _build_parser() -> argparse.ArgumentParser:
     jczq_daily.add_argument("--revision-text")
     jczq_daily.add_argument("--dispatch-telegram", action="store_true")
     jczq_daily.add_argument("--confirm-dispatch", action="store_true")
-
-    daily_content = subparsers.add_parser("daily-content-pack")
-    daily_content.add_argument("--date", default="today")
-    daily_content.add_argument("--provider", choices=["live", "sample"], default="live")
-    daily_content.add_argument("--output-dir", default=".nutmeg-data/daily-content")
-    daily_content.add_argument("--pdf", action="store_true")
-
-    video_packet = subparsers.add_parser("video-production-packet")
-    video_packet.add_argument("--date", default="today")
-    video_packet.add_argument("--provider", choices=["live", "sample"], default="live")
-    video_packet.add_argument("--output-dir", default=".nutmeg-data/daily-content")
-
-    seedance_submit = subparsers.add_parser("seedance-submit")
-    seedance_submit.add_argument("--manifest")
-    seedance_submit.add_argument("--run-dir")
-    seedance_submit.add_argument("--match-id")
-    seedance_submit.add_argument("--task-key")
-    seedance_submit.add_argument(
-        "--ratio-key", choices=["vertical", "horizontal", "all"], default="vertical"
-    )
-    seedance_submit.add_argument("--max-concurrency", type=int, default=2)
-    seedance_submit.add_argument("--confirm-submit", action="store_true")
-
-    seedance_poll = subparsers.add_parser("seedance-poll")
-    seedance_poll.add_argument("--manifest")
-    seedance_poll.add_argument("--run-dir")
-    seedance_poll.add_argument("--download", action="store_true")
-    seedance_poll.add_argument("--concat", action="store_true")
-    seedance_poll.add_argument(
-        "--ratio-key", choices=["vertical", "horizontal", "all"], default="vertical"
-    )
-    seedance_poll.add_argument("--output-dir")
-
-    content = subparsers.add_parser("content")
-    content.add_argument("--report-file", required=True)
-    content.add_argument("--limit", type=int, default=3)
-    content.add_argument("--output-dir", default=".nutmeg-data/content")
-    content.add_argument("--llm-mode", choices=["openclaw", "deterministic"], default="openclaw")
-    content.add_argument("--openclaw-model", default="nyu-openai-chat/gpt-5.5")
-
-    wechat_article = subparsers.add_parser("wechat-article-pack")
-    wechat_article.add_argument("--report-file", required=True)
-    wechat_article.add_argument("--output-dir", default=".nutmeg-data/wechat")
-    wechat_article.add_argument("--thumb-media-id", default="DRY_RUN_COVER_MEDIA_ID")
-    wechat_article.add_argument("--author")
-    wechat_article.add_argument("--source-url")
-
-    wechat_draft = subparsers.add_parser("wechat-draft-push")
-    wechat_draft.add_argument("--pack-dir", required=True)
-    wechat_draft.add_argument("--app-id", required=True)
-    wechat_draft.add_argument("--app-secret", required=True)
-    wechat_draft.add_argument("--dry-run", dest="dry_run", action="store_true", default=True)
-    wechat_draft.add_argument("--no-dry-run", dest="dry_run", action="store_false")
-    wechat_draft.add_argument("--confirm-draft", action="store_true")
 
     eval_parser = subparsers.add_parser("eval")
     eval_parser.add_argument("--dataset", default="starter")
@@ -777,17 +601,6 @@ def _validate_options(options: argparse.Namespace) -> None:
         "provider",
         "date",
         "revision_text",
-        "manifest",
-        "run_dir",
-        "match_id",
-        "task_key",
-        "ratio_key",
-        "thumb_media_id",
-        "author",
-        "source_url",
-        "pack_dir",
-        "app_id",
-        "app_secret",
     ]:
         if hasattr(options, attr) and getattr(options, attr) is not None:
             _validate_text(attr, getattr(options, attr), maximum=500)
@@ -814,21 +627,16 @@ def _validate_options(options: argparse.Namespace) -> None:
         and not options.confirm_dispatch
     ):
         raise RouterError("`jczq-mixed-report --dispatch-telegram` requires --confirm-dispatch.")
+    if options.action == "jczq-mixed-report" and options.provider == "live":
+        raise RouterError(
+            "`jczq-mixed-report --provider live` is retired; use jczq-daily-brief."
+        )
     if (
         options.action == "jczq-daily-advisor"
         and options.dispatch_telegram
         and not options.confirm_dispatch
     ):
         raise RouterError("`jczq-daily-advisor --dispatch-telegram` requires --confirm-dispatch.")
-    if options.action == "wechat-draft-push" and not options.dry_run and not options.confirm_draft:
-        raise RouterError("`wechat-draft-push --no-dry-run` requires --confirm-draft.")
-    if options.action == "seedance-submit" and not options.confirm_submit:
-        raise RouterError("`seedance-submit` requires --confirm-submit.")
-    if options.action in {"seedance-submit", "seedance-poll"}:
-        if not options.manifest and not options.run_dir:
-            raise RouterError(f"`{options.action}` requires --manifest or --run-dir.")
-    if hasattr(options, "max_concurrency"):
-        _validate_int_range("max-concurrency", options.max_concurrency, minimum=1, maximum=10)
     if options.action in {"prediction-record", "prediction-outcome"} and not options.confirm_write:
         raise RouterError(f"`{options.action}` requires --confirm-write.")
 
@@ -917,8 +725,6 @@ def render_reply_text(
         return _render_jczq_daily(payload)
     if action == "jczq-mixed-report":
         return _render_jczq_mixed(payload)
-    if action == "content":
-        return _render_content(payload)
     if action == "zucai-report":
         return _render_zucai(payload)
 
@@ -1082,39 +888,6 @@ def _render_jczq_mixed(payload: dict[str, Any]) -> str:
     if warnings:
         lines.extend(["警告：", *[f"- {warning}" for warning in warnings]])
     return "\n".join(line for line in lines if line is not None).rstrip()
-
-
-def _render_content(payload: dict[str, Any]) -> str:
-    artifacts = payload.get("artifacts") or {}
-    packs = payload.get("packs") or []
-    lines = [
-        "已生成足彩分享文案审核包（仅生成审核包，不会自动发布）。",
-        "",
-    ]
-    if artifacts.get("json_path"):
-        lines.append(f"- JSON：`{artifacts['json_path']}`")
-    if artifacts.get("markdown_path"):
-        lines.append(f"- Markdown：`{artifacts['markdown_path']}`")
-    if payload.get("llm_provider"):
-        lines.append(f"- 生成方式：{payload['llm_provider']}")
-
-    if packs:
-        first = packs[0]
-        lines.extend(
-            [
-                "",
-                "首个内容包：",
-                f"- 比赛：{first.get('match_name', '-')}",
-                f"- 风险等级：{first.get('risk_level', '-')}",
-                f"- 发布建议：{first.get('publish_recommendation', '-')}",
-                "",
-                "标题：",
-            ]
-        )
-        lines.extend(f"- {title}" for title in (first.get("titles") or [])[:5])
-        if first.get("short_video_script"):
-            lines.extend(["", "可复制短文案：", str(first["short_video_script"])])
-    return "\n".join(lines).rstrip()
 
 
 def _render_zucai(payload: dict[str, Any]) -> str:

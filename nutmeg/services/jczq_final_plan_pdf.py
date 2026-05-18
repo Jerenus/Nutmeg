@@ -130,7 +130,7 @@ def _build_story(plan: dict) -> list:
     story.append(Paragraph("Portfolio 摘要", h2))
     summary_line = (
         f"总注金 {metrics.get('total_stake', '?')} 元 ｜ "
-        f"已知部分 EV {metrics.get('total_expected_value_known', '?')} 元"
+        f"已知部分 EV {_format_amount(metrics.get('total_expected_value_known'))}"
     )
     # The SOP/experimental comparison only applies to the legacy generator's
     # multi-variant plans; conflict-engine plans omit it rather than show '?'.
@@ -162,8 +162,8 @@ def _build_story(plan: dict) -> list:
                 Paragraph(_xml(f"{t['stake']} 元"), small),
                 Paragraph(_xml(f"{t['total_odds']}x"), small),
                 Paragraph(_xml(f"{t['theoretical_payout']:.0f}"), small),
-                Paragraph(_xml(f"{t['hit_probability']*100:.2f}%"), small),
-                Paragraph(_xml(f"{t['expected_value']:+.2f}"), small),
+                Paragraph(_xml(_format_probability(t.get("hit_probability"))), small),
+                Paragraph(_xml(_format_signed_number(t.get("expected_value"))), small),
                 Paragraph(_xml(t.get("variant_note") or t.get("favorite_reason") or ""), small),
             ]
         )
@@ -278,10 +278,11 @@ class FinalPlanPdfResult:
 
 def _build_caption(plan: dict) -> str:
     favorite = next((t for t in plan["tickets"] if t.get("favorite")), None)
+    metrics = plan.get("portfolio_metrics", {})
     cap_lines = [
         f"JCZQ Final Plan — {plan['run_date']}",
         f"{len(plan['tickets'])} 张票 / 预算 {plan['budget_total']} 元 / 已知部分 EV "
-        f"{plan['portfolio_metrics']['total_expected_value_known']:+.2f} 元",
+        f"{_format_signed_amount(metrics.get('total_expected_value_known'))}",
     ]
     if favorite:
         cap_lines.append(
@@ -289,6 +290,34 @@ def _build_caption(plan: dict) -> str:
             f"{favorite['total_odds']}x"
         )
     return "\n".join(cap_lines)
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _format_amount(value: Any) -> str:
+    if not _is_number(value):
+        return "未知"
+    return f"{float(value):.2f} 元"
+
+
+def _format_signed_amount(value: Any) -> str:
+    if not _is_number(value):
+        return "未知"
+    return f"{float(value):+.2f} 元"
+
+
+def _format_probability(value: Any) -> str:
+    if not _is_number(value):
+        return "未知"
+    return f"{float(value) * 100:.2f}%"
+
+
+def _format_signed_number(value: Any) -> str:
+    if not _is_number(value):
+        return "未知"
+    return f"{float(value):+.2f}"
 
 
 def render_and_dispatch(

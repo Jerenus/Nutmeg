@@ -12,7 +12,7 @@ Phase 3b piece 4。``JczqValueBridge`` 产出每场 JCZQ 比赛的冲突点（``
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from itertools import combinations
 
 from nutmeg.domain.jczq_daily import JczqDailyLeg, JczqDailyPlan

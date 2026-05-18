@@ -281,7 +281,10 @@ def test_bot_handles_renjiu_natural_language() -> None:
             self.calls += 1
             return {
                 "status": "succeeded",
-                "text": "任九第26074期三档方案已生成。\n主推：10 31 - 0 - 31 - 3 31 10 - 3 - 31（64注/128元）",
+                "text": (
+                    "任九第26074期三档方案已生成。\n"
+                    "主推：10 31 - 0 - 31 - 3 31 10 - 3 - 31（64注/128元）"
+                ),
                 "payload": {"mode": "zucai_renjiu_daily", "recommended_ticket_id": "main"},
             }
 

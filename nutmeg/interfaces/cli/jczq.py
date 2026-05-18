@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import nutmeg.interfaces.cli as _cli
 
+JCZQ_DAILY_BRIEF_WRITE_OPTION = _cli.typer.Option(
+    None, "--write", help="写入文件（默认 stdout）"
+)
+
 
 @_cli.app.command("jczq-mixed-report")
 def jczq_mixed_report(
@@ -20,6 +24,14 @@ def jczq_mixed_report(
     dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run"),
     format: str = _cli.typer.Option("text", "--format", help="text or json"),
 ) -> None:
+    if provider.strip().casefold() == "live":
+        _cli.console.print(
+            "jczq-mixed-report live mode is retired. Use "
+            "`nutmeg jczq-daily-brief --write .nutmeg-data/jczq/daily/$(date +%F)/brief.md`, "
+            "then `nutmeg jczq-debate-init` / `nutmeg jczq-debate-finalize` / "
+            "`nutmeg jczq-final-plan-pdf` for the current daily workflow."
+        )
+        raise _cli.typer.Exit(code=2)
     try:
         service = _cli.build_jczq_mixed_report_service(provider=provider)
         report = service.build_report(
@@ -190,7 +202,7 @@ def jczq_daily_brief(
     ),
     replay_date: str | None = _cli.typer.Option(None, "--replay", help="从已存 context.json 回放"),
     output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
-    write: _cli.Path | None = _cli.typer.Option(None, "--write", help="写入文件（默认 stdout）"),
+    write: _cli.Path | None = JCZQ_DAILY_BRIEF_WRITE_OPTION,
 ) -> None:
     from nutmeg.services.jczq_brief import build_brief, today_iso, write_or_print_brief
     from nutmeg.services.jczq_conflict_bridge import record_conflict_signals
@@ -242,16 +254,19 @@ def jczq_second_leg(
     auto: bool = _cli.typer.Option(False, "--auto", help="从 final-plan.json 自动读取单核腿"),
     top: int = _cli.typer.Option(8, "--top", help="输出前 N 个候选"),
 ) -> None:
+    from datetime import date as _date_cls
+
     from nutmeg.services.jczq_second_leg import parse_solo, suggest_second_legs
 
     if not auto and not solo:
         _cli.console.print("必须提供 --solo 或 --auto")
         raise _cli.typer.Exit(code=2)
 
+    resolved_date = _date_cls.today().isoformat() if run_date == "today" else run_date
     try:
         solo_tuple = parse_solo(solo) if (solo and not auto) else None
         rendered = suggest_second_legs(
-            run_date=run_date,
+            run_date=resolved_date,
             output_dir=output_dir,
             solo=solo_tuple,
             auto=auto,

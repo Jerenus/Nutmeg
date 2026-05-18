@@ -11,7 +11,7 @@ API-Football 数据的比赛带 ``coverage_note`` 如实标注，绝不补空信
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from nutmeg.domain.fixtures import Fixture
 from nutmeg.domain.jczq_daily import JczqDailyMatch
@@ -101,7 +101,11 @@ class JczqValueBridge:
                 )
                 continue
 
-            conflicts = conflicts_by_fixture.get(alignment.fixture_id, [])
+            conflicts = _normalize_conflicts_for_jczq(
+                match=match,
+                conflicts=conflicts_by_fixture.get(alignment.fixture_id, []),
+                orientation_swapped=alignment.orientation_swapped,
+            )
             coverage_note = None
             if not conflicts:
                 coverage_note = (
@@ -144,3 +148,72 @@ class JczqValueBridge:
         for candidates in grouped.values():
             candidates.sort(key=lambda c: (-c.edge, -c.quarter_kelly_fraction))
         return grouped
+
+
+def _normalize_conflicts_for_jczq(
+    *,
+    match: JczqDailyMatch,
+    conflicts: list[ValueCandidate],
+    orientation_swapped: bool,
+) -> list[ValueCandidate]:
+    """Return value candidates expressed in JCZQ's home/away orientation."""
+
+    normalized: list[ValueCandidate] = []
+    for candidate in conflicts:
+        market_key = candidate.market_key
+        outcome_key = candidate.outcome_key
+        outcome_name = candidate.outcome_name
+        if orientation_swapped:
+            if market_key == "match_winner":
+                outcome_key, outcome_name = _swap_home_away_outcome(
+                    outcome_key, outcome_name
+                )
+            elif market_key.startswith("handicap_home_"):
+                market_key = _swap_handicap_home_market(market_key)
+                outcome_key, outcome_name = _swap_home_away_outcome(
+                    outcome_key, outcome_name
+                )
+            elif market_key == "correct_score":
+                outcome_key, outcome_name = _swap_score_outcome(
+                    outcome_key, outcome_name
+                )
+        normalized.append(
+            replace(
+                candidate,
+                home_team=match.home_team,
+                away_team=match.away_team,
+                market_key=market_key,
+                outcome_key=outcome_key,
+                outcome_name=outcome_name,
+            )
+        )
+    return normalized
+
+
+def _swap_home_away_outcome(outcome_key: str, outcome_name: str) -> tuple[str, str]:
+    outcome_key = {"home": "away", "away": "home"}.get(outcome_key, outcome_key)
+    outcome_name = {"home": "Home", "draw": "Draw", "away": "Away"}.get(
+        outcome_key, outcome_name
+    )
+    return outcome_key, outcome_name
+
+
+def _swap_handicap_home_market(market_key: str) -> str:
+    prefix = "handicap_home_"
+    suffix = market_key.removeprefix(prefix)
+    if suffix.startswith("minus_"):
+        return f"{prefix}plus_{suffix.removeprefix('minus_')}"
+    if suffix.startswith("plus_"):
+        return f"{prefix}minus_{suffix.removeprefix('plus_')}"
+    return market_key
+
+
+def _swap_score_outcome(outcome_key: str, outcome_name: str) -> tuple[str, str]:
+    prefix = "score_"
+    if not outcome_key.startswith(prefix):
+        return outcome_key, outcome_name
+    parts = outcome_key.removeprefix(prefix).split("_")
+    if len(parts) != 2:
+        return outcome_key, outcome_name
+    home_goals, away_goals = parts
+    return f"{prefix}{away_goals}_{home_goals}", f"{away_goals}:{home_goals}"

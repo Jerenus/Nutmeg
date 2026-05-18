@@ -786,7 +786,8 @@ def _build_zucai_reviews(
 
 def _zucai_plans_as_generic(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issue_matches = {
-        int(match.get("match_no")): match for match in (payload.get("issue", {}).get("matches") or [])
+        int(match.get("match_no")): match
+        for match in (payload.get("issue", {}).get("matches") or [])
     }
     plans = []
     for plan in payload.get("plans") or []:

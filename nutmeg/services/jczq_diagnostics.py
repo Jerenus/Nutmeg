@@ -22,7 +22,6 @@ from typing import Iterable
 
 from nutmeg.domain.jczq_daily import JczqDailyLeg, JczqDailyMatch, JczqDailyPlan
 
-
 # ---------------------------------------------------------- narrative tagging
 
 
@@ -473,7 +472,9 @@ def apply_rule_n_late_kickoff_cap(
             continue
         # Drop lowest-odds late legs first — the cheapest leverage drop.
         # Keep enough late legs to satisfy max_per_plan, drop the rest.
-        late_legs_sorted_to_drop = sorted(late_legs, key=lambda leg: leg.odds)[: len(late_legs) - max_per_plan]
+        late_legs_sorted_to_drop = sorted(late_legs, key=lambda leg: leg.odds)[
+            : len(late_legs) - max_per_plan
+        ]
         drop_set = {id(leg) for leg in late_legs_sorted_to_drop}
         new_legs = [leg for leg in plan.legs if id(leg) not in drop_set]
         min_legs = floor.get(plan.kind, 1)

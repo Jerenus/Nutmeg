@@ -114,7 +114,9 @@ class ReplayResult:
     rendered_text: str = ""
 
 
-def _grade_lines(plans, results: dict[str, dict[str, str]]) -> tuple[list[ReplayLegResult], list[str]]:
+def _grade_lines(
+    plans, results: dict[str, dict[str, str]]
+) -> tuple[list[ReplayLegResult], list[str]]:
     rows: list[ReplayLegResult] = []
     lines: list[str] = []
     for plan in plans:

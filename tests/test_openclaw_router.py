@@ -48,6 +48,75 @@ def test_router_rejects_unknown_actions() -> None:
         router.parse_request(["shell", "rm", "-rf", "/"])
 
 
+@pytest.mark.parametrize(
+    "action",
+    [
+        "content",
+        "daily-content-pack",
+        "video-production-packet",
+        "wechat-article-pack",
+        "wechat-draft-push",
+        "seedance-submit",
+        "seedance-poll",
+    ],
+)
+def test_router_rejects_retired_non_betting_actions(action: str) -> None:
+    router = _load_router()
+
+    with pytest.raises(router.RouterError, match="Unsupported action"):
+        router.parse_request([action])
+
+
+def test_router_builds_only_existing_nutmeg_commands() -> None:
+    router = _load_router()
+    help_result = subprocess.run(
+        ["uv", "run", "nutmeg", "--help"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    help_text = help_result.stdout
+    requests = [
+        router.parse_request(["doctor"]),
+        router.parse_request(["status"]),
+        router.parse_request(["telegram-status"]),
+        router.parse_request(["fixtures", "--league", "epl", "--demo"]),
+        router.parse_request(["popular", "--league", "epl"]),
+        router.parse_request(["today", "--league", "epl"]),
+        router.parse_request(["snapshot", "--fixture-id", "epl-001"]),
+        router.parse_request(["odds", "--fixture-id", "epl-001"]),
+        router.parse_request(["brief", "--fixture-id", "epl-001", "--query", "q"]),
+        router.parse_request(["analyze", "--fixture-id", "epl-001", "--query", "q"]),
+        router.parse_request(["value", "--league", "epl"]),
+        router.parse_request(
+            [
+                "player",
+                "--league",
+                "epl",
+                "--season",
+                "2025",
+                "--team",
+                "Arsenal",
+                "--player",
+                "Saka",
+            ]
+        ),
+        router.parse_request(["visuals", "--fixture-id", "epl-001"]),
+        router.parse_request(["daily", "--league", "epl"]),
+        router.parse_request(["zucai-report", "--issue-id", "26068"]),
+        router.parse_request(["jczq-mixed-report", "--provider", "sample"]),
+        router.parse_request(["jczq-daily-advisor", "--provider", "sample"]),
+        router.parse_request(["eval"]),
+        router.parse_request(["review"]),
+    ]
+
+    for request in requests:
+        command = router.build_command(request)
+        assert command[:3] == ["uv", "run", "nutmeg"]
+        assert command[3] in help_text
+
+
 def test_router_requires_confirmation_for_live_sync() -> None:
     router = _load_router()
 
@@ -156,44 +225,6 @@ def test_router_builds_zucai_report_command_and_requires_dispatch_confirmation()
     with pytest.raises(router.RouterError, match="--confirm-dispatch"):
         router.parse_request(["zucai-report", "--issue-id", "26068", "--dispatch-telegram"])
 
-
-def test_router_builds_content_pack_command() -> None:
-    router = _load_router()
-
-    request = router.parse_request(
-        [
-            "content",
-            "--report-file",
-            ".nutmeg-data/zucai/zucai-26068-report.json",
-            "--limit",
-            "2",
-            "--output-dir",
-            ".nutmeg-data/content",
-            "--llm-mode",
-            "deterministic",
-        ]
-    )
-
-    assert router.build_command(request) == [
-        "uv",
-        "run",
-        "nutmeg",
-        "content-pack",
-        "--report-file",
-        ".nutmeg-data/zucai/zucai-26068-report.json",
-        "--limit",
-        "2",
-        "--output-dir",
-        ".nutmeg-data/content",
-        "--llm-mode",
-        "deterministic",
-        "--openclaw-model",
-        "nyu-openai-chat/gpt-5.5",
-        "--format",
-        "json",
-    ]
-
-
 def test_router_builds_jczq_mixed_report_command_and_requires_dispatch_confirmation() -> None:
     router = _load_router()
 
@@ -223,6 +254,27 @@ def test_router_builds_jczq_mixed_report_command_and_requires_dispatch_confirmat
 
     with pytest.raises(router.RouterError, match="--confirm-dispatch"):
         router.parse_request(["jczq-mixed-report", "--dispatch-telegram"])
+
+
+def test_router_keeps_jczq_mixed_report_sample_only_after_live_retirement() -> None:
+    router = _load_router()
+
+    request = router.parse_request(["jczq-mixed-report"])
+    assert router.build_command(request) == [
+        "uv",
+        "run",
+        "nutmeg",
+        "jczq-mixed-report",
+        "--provider",
+        "sample",
+        "--output-dir",
+        ".nutmeg-data/jczq",
+        "--format",
+        "json",
+    ]
+
+    with pytest.raises(router.RouterError, match="retired"):
+        router.parse_request(["jczq-mixed-report", "--provider", "live"])
 
 
 def test_router_builds_jczq_daily_advisor_command_and_requires_dispatch_confirmation() -> None:
@@ -303,184 +355,3 @@ def test_router_renders_jczq_daily_advisor_reply_text() -> None:
     assert "最终主方案" in text
     assert "周六014" in text
     assert ".nutmeg-data/jczq/daily/report.md" in text
-
-
-def test_router_builds_daily_content_pack_command() -> None:
-    router = _load_router()
-
-    request = router.parse_request(
-        [
-            "daily-content-pack",
-            "--date",
-            "2026-04-26",
-            "--provider",
-            "sample",
-            "--output-dir",
-            ".nutmeg-data/daily-content",
-            "--pdf",
-        ]
-    )
-
-    assert router.build_command(request) == [
-        "uv",
-        "run",
-        "nutmeg",
-        "daily-content-pack",
-        "--date",
-        "2026-04-26",
-        "--provider",
-        "sample",
-        "--output-dir",
-        ".nutmeg-data/daily-content",
-        "--pdf",
-        "--format",
-        "json",
-    ]
-
-
-def test_router_builds_video_production_packet_command() -> None:
-    router = _load_router()
-
-    request = router.parse_request(
-        [
-            "video-production-packet",
-            "--date",
-            "2026-04-26",
-            "--provider",
-            "sample",
-            "--output-dir",
-            ".nutmeg-data/daily-content",
-        ]
-    )
-
-    assert router.build_command(request) == [
-        "uv",
-        "run",
-        "nutmeg",
-        "video-production-packet",
-        "--date",
-        "2026-04-26",
-        "--provider",
-        "sample",
-        "--output-dir",
-        ".nutmeg-data/daily-content",
-        "--format",
-        "json",
-    ]
-
-
-def test_router_requires_confirmation_for_seedance_submit() -> None:
-    router = _load_router()
-
-    with pytest.raises(router.RouterError, match="--confirm-submit"):
-        router.parse_request(
-            ["seedance-submit", "--manifest", ".nutmeg-data/run/seedance-manifest.json"]
-        )
-
-
-def test_router_builds_seedance_poll_run_dir_command() -> None:
-    router = _load_router()
-
-    request = router.parse_request(
-        [
-            "seedance-poll",
-            "--run-dir",
-            ".nutmeg-data/daily-content/20260426/run-120000",
-            "--download",
-            "--concat",
-            "--ratio-key",
-            "vertical",
-        ]
-    )
-
-    assert router.build_command(request) == [
-        "uv",
-        "run",
-        "nutmeg",
-        "seedance-poll",
-        "--run-dir",
-        ".nutmeg-data/daily-content/20260426/run-120000",
-        "--download",
-        "--concat",
-        "--ratio-key",
-        "vertical",
-        "--format",
-        "json",
-    ]
-
-
-def test_router_builds_wechat_article_pack_command() -> None:
-    router = _load_router()
-
-    request = router.parse_request(
-        [
-            "wechat-article-pack",
-            "--report-file",
-            ".nutmeg-data/jczq/report.json",
-            "--output-dir",
-            ".nutmeg-data/wechat/2026-04-28",
-            "--thumb-media-id",
-            "cover-media",
-        ]
-    )
-
-    assert router.build_command(request) == [
-        "uv",
-        "run",
-        "nutmeg",
-        "wechat-article-pack",
-        "--report-file",
-        ".nutmeg-data/jczq/report.json",
-        "--output-dir",
-        ".nutmeg-data/wechat/2026-04-28",
-        "--thumb-media-id",
-        "cover-media",
-        "--format",
-        "json",
-    ]
-
-
-def test_router_builds_wechat_draft_push_command_and_requires_confirmation() -> None:
-    router = _load_router()
-
-    request = router.parse_request(
-        [
-            "wechat-draft-push",
-            "--pack-dir",
-            ".nutmeg-data/wechat/2026-04-28",
-            "--app-id",
-            "app-id",
-            "--app-secret",
-            "secret",
-            "--dry-run",
-        ]
-    )
-    assert router.build_command(request) == [
-        "uv",
-        "run",
-        "nutmeg",
-        "wechat-draft-push",
-        "--pack-dir",
-        ".nutmeg-data/wechat/2026-04-28",
-        "--app-id",
-        "app-id",
-        "--app-secret",
-        "secret",
-        "--dry-run",
-        "--format",
-        "json",
-    ]
-
-    with pytest.raises(router.RouterError, match="--confirm-draft"):
-        router.parse_request(
-            [
-                "wechat-draft-push",
-                "--pack-dir",
-                ".nutmeg-data/wechat/2026-04-28",
-                "--app-id",
-                "app-id",
-                "--app-secret",
-                "secret",
-                "--no-dry-run",
-            ]
-        )

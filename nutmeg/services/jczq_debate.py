@@ -237,15 +237,15 @@ def _analysis_template(model_name: str, run_date: str) -> str:
 
 ## Poisson信号是否采纳
 
+> R28：Poisson 单核 C 票已退役；只把第 4 节 +EV 信号作为 B/D 腿证据，不单独重建 C 票。
+
 ## 与系统自动票的不同意见
 
-## A-E投注方案
+## A/B/D/E投注方案
 
 ### A 稳健底仓
 
 ### B 主方案
-
-### C Poisson 单核
 
 ### D 反大众
 

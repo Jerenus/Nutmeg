@@ -252,22 +252,6 @@ updates the scheduled registry. The `afternoon` slot writes `odds_file`; the
 odds without overwriting the 16:00 evidence. URL mode is refused unless
 `--live-fetch` is explicitly provided.
 
-Content publisher review packs:
-
-```bash
-uv run nutmeg content-pack --report-file nutmeg/content/samples/26068-content-report.json --limit 1 --output-dir .nutmeg-data/content-smoke --llm-mode deterministic --format json
-uv run nutmeg content-pack --report-file .nutmeg-data/zucai/zucai-26068-report.json --limit 3 --output-dir .nutmeg-data/content --llm-mode openclaw --openclaw-model nyu-openai-chat/gpt-5.5 --format json
-```
-
-`content-pack` turns an existing Zucai report JSON into platform-ready review
-artifacts: five safe title candidates, a Douyin-style 60 second oral script, a
-WeChat/Zhihu long article, key observations, uncertainty factors, and a
-compliance checklist. Live generation uses OpenClaw's model interface; the local
-compliance gate still classifies every pack as `LOW`, `MEDIUM`, `HIGH`, or
-`BLOCKED` and maps that to `publish`, `review`, or `skip`. v0 writes JSON and
-Markdown only; it does not auto-post to external platforms.
-
-
 `zucai-source-sync` parses an official-like traditional足彩 schedule notice into
 valid `*-issue.json` snapshots and updates the registry consumed by
 `zucai-auto-run`. Local files are the default. `--source-url` is refused unless
@@ -369,28 +353,22 @@ Live provider acceptance is explicit and fails fast without required keys:
 NUTMEG_API_FOOTBALL_KEY=... bash scripts/acceptance.sh --live --league epl --past-days 7
 ```
 
-## JCZQ Mixed Parlay Report and Daily Advisor
+## JCZQ Daily Brief, Debate, and Final Plan
 
 ```bash
-uv run nutmeg jczq-mixed-report --provider live --pdf --format json
-uv run nutmeg jczq-daily-advisor --provider live --date today --format json
-uv run nutmeg jczq-daily-advisor --provider live --date today --revision-text "不要比分，提高到100倍" --format json
-uv run nutmeg jczq-daily-advisor --provider live --date today --dispatch-telegram --no-dry-run --format json
-python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider live --date today
-python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider live --date today --dispatch-telegram --confirm-dispatch
+uv run nutmeg jczq-daily-brief --write .nutmeg-data/jczq/daily/$(date +%F)/brief.md
+uv run nutmeg jczq-debate-init --date today --output-dir .nutmeg-data/jczq --format json
+uv run nutmeg jczq-second-leg --date today --auto --top 8
+uv run nutmeg jczq-debate-finalize --date today --output-dir .nutmeg-data/jczq --format json
+uv run nutmeg jczq-final-plan-pdf --date today --output-dir .nutmeg-data/jczq
+python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider live --date today --print-command
 ```
 
-`jczq-mixed-report` keeps the older PDF artifact workflow. `jczq-daily-advisor` is the repeatable daily workflow: it dynamically scans the current sellable竞彩足球 slate, builds mixed-pool candidates across 胜平负/让球胜平负/总进球/比分/半全场, outputs a final main plan plus high-odds inspiration and contrarian plans, saves context for bot revisions, can route `/jczq` and natural-language竞彩 follow-ups, and can send the text report through Nutmeg bot. It is analysis assistance only: no bet placement, no sportsbook connection, and no guaranteed-profit claims.
-
-## Daily Match Video Content
-
-```bash
-uv run nutmeg daily-content-pack --date today --provider live --pdf --format json
-uv run nutmeg daily-content-pack --date 2026-04-26 --provider sample --output-dir .nutmeg-data/daily-content-smoke --pdf --format json
-uv run nutmeg seedance-submit --run-dir .nutmeg-data/daily-content/YYYYMMDD/run-HHMMSS --ratio-key vertical --confirm --format json
-uv run nutmeg seedance-poll --run-dir .nutmeg-data/daily-content/YYYYMMDD/run-HHMMSS --download --concat --ratio-key vertical --format json
-```
-
-`daily-content-pack` creates a review-first package for every sellable热门竞彩足球 match in the slate: internal analysis, public-safe 60-second script, original hot-blooded football anime plus tactical-data manga storyboard, vertical Seedance 2.0 prompts, horizontal backup prompts, JSON/Markdown/PDF artifacts, per-match artifact folders, `seedance-manifest.json`, and `seedance-status.json`. It does not submit video jobs.
-
-`seedance-submit` is confirmation-gated because real Seedance generation is an external paid action. It requires `--confirm`, defaults to `--ratio-key vertical` so horizontal backup prompts are not accidentally generated, then stores provider task IDs back into the manifest and status file. `seedance-poll` updates provider statuses, can download successful MP4 segment URLs before they expire, and can attempt local ffmpeg concatenation with `--concat`. Public scripts are compliance-checked; blocked betting/profit/private-group language is excluded from video manifests.
+The current JCZQ workflow is the brief → debate workspace → human finalization
+→ PDF path. `jczq-mixed-report --provider live` is retired and exits with
+guidance to this workflow; `--provider sample` remains only for historical
+smoke tests. The OpenClaw router intentionally exposes only supported betting
+assistant actions and rejects retired non-betting content/video/WeChat/Seedance
+actions instead of fabricating commands. Nutmeg remains analysis assistance
+only: no bet placement, no sportsbook connection, and no guaranteed-profit
+claims.

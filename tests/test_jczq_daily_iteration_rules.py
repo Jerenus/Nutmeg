@@ -219,8 +219,10 @@ def test_rule_a_v2_never_combines_same_match_legs_in_solo_ticket() -> None:
     https://www.sport.gov.cn/n20001280/n20745751/n20767297/c21177108/content.html
     """
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -281,9 +283,11 @@ def test_rule_a_v2_cross_match_support_extends_to_two_legs() -> None:
     from non-crs pools (ttg / had / hhad).
     """
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -341,9 +345,10 @@ def test_rule_a_v3_at_most_one_crs_leg_per_poisson_solo_ticket() -> None:
     hit, not "model-priced".
     """
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
-        POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -870,9 +875,11 @@ def test_r13_poisson_solo_rejects_ttg_low_when_expected_goals_high() -> None:
     → C 票中 74.80x. R13 makes the generator do this automatically.
     """
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
         POISSON_SOLO_TTG_LOW_GOAL_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -1167,8 +1174,10 @@ def test_r13_allows_ttg_low_when_expected_goals_below_threshold() -> None:
     leg that won. R13 fires only when the model disagrees with the pick.
     """
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -1219,10 +1228,11 @@ def test_r17_poisson_solo_two_low_goals_legs_collapse_to_highest_edge() -> None:
     the winner.
     """
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
-        POISSON_SOLO_CROSS_MATCH_SUPPORT_EDGE,
         POISSON_SOLO_EDGE_THRESHOLD,
         POISSON_SOLO_LOW_GOALS_LAMBDA_TRIGGER,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -1285,8 +1295,10 @@ def test_r17_allows_two_low_goals_legs_when_both_lambdas_low() -> None:
     """Sanity: R17 doesn't fire when both legs have expected_goals
     below the trigger (e.g. 1.7, 1.8). Pure cross-match low-goals alpha."""
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -1464,8 +1476,10 @@ def test_r20_stable_base_rejects_had_favorite_when_poisson_strongly_opposes() ->
     Poisson-supported quality gate.
     """
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         STABLE_BASE_HAD_MIN_POISSON_EDGE,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
 
     service = _Svc.__new__(_Svc)
@@ -1662,8 +1676,10 @@ def test_r21_main_construction_passes_poisson_edge_filter_to_select_leg() -> Non
     """
     import nutmeg.services.jczq_daily as daily_mod
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         MAIN_HAD_MIN_POISSON_EDGE,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
 
     service = _Svc.__new__(_Svc)
@@ -1732,8 +1748,10 @@ def test_r22_hi_vol_league_crs_low_blocked_from_poisson_solo() -> None:
     (美职) 构造 crs 0:0 +30% candidate，断言 poisson_solo 跳过。
     """
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import (
         MatchAnalytics,
@@ -1798,8 +1816,10 @@ def test_r22_hi_vol_league_crs_low_blocked_from_poisson_solo() -> None:
 def test_r22_low_vol_league_crs_low_allowed_in_poisson_solo() -> None:
     """R22 sanity: 非 hi-vol 联赛 crs 0:0 仍可正常进 poisson_solo。"""
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import (
         MatchAnalytics,
@@ -1904,8 +1924,10 @@ def test_r23_poisson_solo_rejects_crs_zero_zero_below_25pct_edge() -> None:
     5/13 005 crs 0:0 +40.4% 仍可过；但 +18% 应被拒。
     """
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_CRS_ZERO_ZERO_MIN_EDGE,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -1942,9 +1964,11 @@ def test_r23_poisson_solo_rejects_crs_zero_zero_below_25pct_edge() -> None:
 def test_r23_allows_crs_zero_zero_above_25pct_edge_and_other_picks_at_15pct() -> None:
     """R23: +26% crs 0:0 通过；同票其他 pick (crs 0:1) +18% 仍按默认 +15%。"""
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_CRS_ZERO_ZERO_MIN_EDGE,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -2009,8 +2033,10 @@ def test_r23_allows_crs_zero_zero_above_25pct_edge_and_other_picks_at_15pct() ->
 def test_r24_poisson_solo_cooling_off_caps_to_single_leg_after_three_misses() -> None:
     """R24: cooling_off=True → poisson_solo 即使 2 +EV 腿也压到 1。"""
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -2067,8 +2093,10 @@ def test_r24_poisson_solo_cooling_off_caps_to_single_leg_after_three_misses() ->
 def test_r24_no_cooling_when_recent_results_have_a_hit() -> None:
     """R24 sanity: 3 天里 ≥ 1 hit → cooling_off=False → 2 腿正常出。"""
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -2741,7 +2769,7 @@ def test_f4_select_preferred_alpha_picks_crs_when_dominant() -> None:
     selected = select_preferred_alpha_per_match([ttg_row, crs_row])
     assert len(selected) == 1
     assert selected[0].pool == "crs", (
-        f"F4: crs +30% - ttg +10% = +20pp >= dominance threshold +10pp，应选 crs"
+        "F4: crs +30% - ttg +10% = +20pp >= dominance threshold +10pp，应选 crs"
     )
 
 
@@ -2883,8 +2911,10 @@ def test_f3_stacks_with_f2_and_r25_in_correct_order() -> None:
 
 def test_r26_crs_blocked_from_poisson_solo_even_with_strong_edge() -> None:
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 
@@ -2921,8 +2951,10 @@ def test_r26_crs_blocked_from_poisson_solo_even_with_strong_edge() -> None:
 def test_r26_ttg_alpha_replaces_crs_in_same_match() -> None:
     """Same-match ttg alpha edges out crs (R26 + Rule O combined)."""
     from nutmeg.services.jczq_daily import (
-        JczqDailyAdvisorService as _Svc,
         POISSON_SOLO_EDGE_THRESHOLD,
+    )
+    from nutmeg.services.jczq_daily import (
+        JczqDailyAdvisorService as _Svc,
     )
     from nutmeg.services.jczq_intelligence import PoissonEdgeEntry
 

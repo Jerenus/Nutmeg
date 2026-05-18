@@ -202,7 +202,6 @@ def test_record_conflict_signals_reads_matches_from_context(tmp_path: Path) -> N
     # When matches are not passed, they come from the run date's context.json
     # (written by build_brief). This is the live CLI path.
     from nutmeg.services.jczq_daily import JczqDailyAdvisorService
-
     from tests.test_jczq_daily_service import FakeProvider
 
     JczqDailyAdvisorService(provider=FakeProvider()).build_report(
