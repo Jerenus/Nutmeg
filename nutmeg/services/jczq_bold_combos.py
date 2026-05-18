@@ -399,6 +399,194 @@ def bold_leg(match: BoldMatch) -> BoldLeg:
 
 
 # ---------------------------------------------------------------------------
+# Multi-market — per-market boldness composition + per-market bold leg
+# ---------------------------------------------------------------------------
+
+# Weight lookup by signal name — for per-market normalization.
+_SIGNAL_WEIGHTS: dict[str, float] = {
+    "conflict": WEIGHT_CONFLICT,
+    "contrarian": WEIGHT_CONTRARIAN,
+    "drift": WEIGHT_DRIFT,
+    "dispersion": WEIGHT_DISPERSION,
+    "heat": WEIGHT_HEAT,
+}
+
+# crs pick label "H:A" from a raw sHHsAA key, and the 其他 buckets.
+_CRS_OTHER_LABELS: dict[str, str] = {"s1sh": "胜其他", "s1sd": "平其他", "s1sa": "负其他"}
+# ttg pick label from a total_K key.
+_TTG_LABELS: dict[str, str] = {f"total_{k}": f"{k}球" for k in range(7)}
+_TTG_LABELS["total_7"] = "7+球"
+# hhad pick label.
+_HHAD_LABELS: dict[str, str] = {"home": "让胜", "draw": "让平", "away": "让负"}
+
+
+def _crs_pick_label(key: str) -> str:
+    """Display label for a raw crs key: ``s02s01`` → ``2:1``, ``s1sh`` → 胜其他."""
+    if key in _CRS_OTHER_LABELS:
+        return _CRS_OTHER_LABELS[key]
+    return f"{int(key[1:3])}:{int(key[4:6])}"
+
+
+def _market_outcomes(match: BoldMatch, market: str) -> dict[str, float]:
+    """The 体彩 decimal odds for ``market`` — keyed by that market's outcome keys.
+
+    had/hhad → home/draw/away; ttg → total_0..total_7; crs → raw sHHsAA / s1sX
+    keys (the ``...f`` flag keys are already excluded by the loader)."""
+    if market == "had":
+        return match.tc_odds
+    if market == "hhad":
+        return match.hhad_odds
+    if market == "ttg":
+        return match.ttg_odds
+    return match.crs_odds
+
+
+def _generic_contrarian(fair: dict[str, float], keys: list[str]) -> dict[str, float]:
+    """Contrarian/长尾 score for an arbitrary keyspace — ``1 - fair`` for every
+    non-favorite outcome, ``0.0`` for the 体彩 favorite (argmax of ``fair``)."""
+    if not fair:
+        return {k: 0.0 for k in keys}
+    favorite = max(keys, key=lambda k: fair.get(k, 0.0))
+    return {
+        k: 0.0 if k == favorite else _clip01(1.0 - fair.get(k, 0.0)) for k in keys
+    }
+
+
+def _crs_internal_conflict(match: BoldMatch) -> dict[str, float]:
+    """crs market's own internal conflict — each scoreline inherits the larger
+    of its had-bucket and ttg-bucket internal conflict (spec §3).
+    """
+    keys = list(match.crs_odds)
+    if not keys:
+        return {}
+    had_conflict = internal_conflict(match, "had")
+    ttg_conflict = internal_conflict(match, "ttg")
+    result: dict[str, float] = {}
+    for key in keys:
+        if key in _CRS_OTHER_LABELS:           # 其他 bucket — had sign only
+            had_key = {"s1sh": "home", "s1sd": "draw", "s1sa": "away"}[key]
+            result[key] = had_conflict.get(had_key, 0.0)
+            continue
+        home_goals, away_goals = int(key[1:3]), int(key[4:6])
+        had_key = (
+            "home" if home_goals > away_goals
+            else "draw" if home_goals == away_goals
+            else "away"
+        )
+        ttg_key = f"total_{min(home_goals + away_goals, 7)}"
+        result[key] = max(
+            had_conflict.get(had_key, 0.0), ttg_conflict.get(ttg_key, 0.0)
+        )
+    return result
+
+
+def _market_signal_scores(
+    match: BoldMatch, market: str
+) -> tuple[dict[str, dict[str, float]], float]:
+    """Return ``(per_outcome_signals, heat)`` for ``market``.
+
+    ``per_outcome_signals`` maps signal name → {outcome_key: score}; ``heat`` is
+    the per-match scalar. Only the signals active for ``market`` are populated.
+    """
+    outcomes = _market_outcomes(match, market)
+    keys = list(outcomes)
+    fair = _devig_map(outcomes)
+    active = MARKET_SIGNALS[market]
+    signals: dict[str, dict[str, float]] = {}
+
+    if "conflict" in active:
+        if market == "had":
+            signals["conflict"] = conflict_score(fair, _fair_from_odds(match.euro_odds))
+        elif market == "crs":
+            signals["conflict"] = _crs_internal_conflict(match)
+        elif market == "ttg":
+            internal = internal_conflict(match, "ttg")
+            external = external_conflict_ttg(match)
+            signals["conflict"] = {
+                o: _clip01(internal.get(o, 0.0) + external) for o in keys
+            }
+        else:  # hhad
+            signals["conflict"] = internal_conflict(match, "hhad")
+    if "contrarian" in active:
+        signals["contrarian"] = _generic_contrarian(fair, keys)
+    if "drift" in active:
+        signals["drift"] = drift_score(match.euro_opening, match.euro_odds)
+    if "dispersion" in active:
+        if market == "had":
+            signals["dispersion"] = dispersion_score(match.per_book_odds)
+        else:  # ttg — dispersion from the 国际大小球 books, one scalar
+            ou_disp = dispersion_score(match.ou_per_book)
+            scalar = max(ou_disp.values(), default=0.0)
+            signals["dispersion"] = {o: scalar for o in keys}
+    heat = heat_score(match.tags, match.vig)
+    return signals, heat
+
+
+def market_boldness(match: BoldMatch, market: str) -> dict[str, float]:
+    """Per-outcome boldness for one ``market`` — the active signals composed
+    with per-market weight normalization (spec §3 跨市场可比性).
+
+    The active-signal weights are renormalized to sum 1, so had (5 signals) and
+    crs (3 signals) produce same-scale scores and the candidate pool is not
+    structurally dominated by had.
+    """
+    signals, heat = _market_signal_scores(match, market)
+    keys = list(_market_outcomes(match, market))
+    active = MARKET_SIGNALS[market]
+    weight_total = sum(_SIGNAL_WEIGHTS[s] for s in active)
+    if weight_total <= 0 or not keys:
+        return {k: 0.0 for k in keys}
+    scores: dict[str, float] = {}
+    for key in keys:
+        total = 0.0
+        for signal in active:
+            weight = _SIGNAL_WEIGHTS[signal] / weight_total
+            value = heat if signal == "heat" else signals.get(signal, {}).get(key, 0.0)
+            total += weight * value
+        scores[key] = total
+    return scores
+
+
+def _market_pick_label(market: str, key: str) -> str:
+    """Display label for an outcome ``key`` in ``market``."""
+    if market == "crs":
+        return _crs_pick_label(key)
+    if market == "ttg":
+        return _TTG_LABELS.get(key, key)
+    if market == "hhad":
+        return _HHAD_LABELS.get(key, key)
+    return OUTCOME_LABELS.get(key, key)
+
+
+def bold_leg_for_market(match: BoldMatch, market: str) -> BoldLeg | None:
+    """Pick the boldest outcome for ``match`` in one ``market``.
+
+    Returns ``None`` when the match has no 体彩 odds for that market (graceful
+    degradation — that market simply contributes no leg).
+    """
+    outcomes = _market_outcomes(match, market)
+    usable = {k: v for k, v in outcomes.items() if v and v > 1.0}
+    if not usable:
+        return None
+    scores = market_boldness(match, market)
+    pick = max(usable, key=lambda k: scores.get(k, 0.0))
+    label = _market_pick_label(market, pick)
+    reason = f"{MARKET_LABELS[market]} · {label} · 大胆腿"
+    return BoldLeg(
+        match_no=match.match_no,
+        league=match.league,
+        home=match.home,
+        away=match.away,
+        pick=pick,
+        tc_odds=usable[pick],
+        boldness=scores.get(pick, 0.0),
+        reason=reason,
+        market=market,
+        pick_label=label,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Task 4 — day-level chaos value (spec §3.5)
 # ---------------------------------------------------------------------------
 

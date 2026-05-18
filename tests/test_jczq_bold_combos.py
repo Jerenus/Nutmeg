@@ -732,3 +732,52 @@ def test_external_conflict_ttg_zero_without_overunder() -> None:
         ttg_odds={f"total_{k}": 5.0 for k in range(8)},
     )
     assert external_conflict_ttg(match) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Multi-market extension — Task 7: per-market boldness + bold leg
+# ---------------------------------------------------------------------------
+
+
+def test_market_boldness_weights_normalize_per_market() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldMatch, market_boldness
+
+    # hhad has 3 active signals; with the heat term maxed and others 0 the
+    # normalized heat weight is 1/3, so a heat of 1.0 → boldness 1/3.
+    match = BoldMatch(
+        match_no="周一001", league="芬超", home="A", away="B",
+        tc_odds={"home": 2.0, "draw": 3.2, "away": 3.5},
+        hhad_odds={"home": 2.5, "draw": 3.3, "away": 2.6}, hhad_line=-1.0,
+        tags={"强胆场", "舒服盘", "coinflip", "draw_friendly"}, vig=0.20,
+    )
+    scores = market_boldness(match, "hhad")
+    # heat clips to 1.0 (4 tags × 0.25); normalized hhad weight for heat = 1/3.
+    assert all(abs(v - 1 / 3) < 0.34 for v in scores.values())
+    assert set(scores) == {"home", "draw", "away"}
+
+
+def test_bold_leg_for_market_picks_market_argmax() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldMatch, bold_leg_for_market
+
+    # A 比分 leg — the coldest scoreline (longest odds) is the boldest pick.
+    match = BoldMatch(
+        match_no="周一001", league="芬超", home="拉赫蒂", away="瓦萨",
+        tc_odds={"home": 2.0, "draw": 3.2, "away": 3.5},
+        crs_odds={"s01s00": 6.0, "s00s00": 9.0, "s03s02": 41.0},
+    )
+    leg = bold_leg_for_market(match, "crs")
+    assert leg is not None
+    assert leg.market == "crs"
+    assert leg.pick_label == "3:2"          # the coldest scoreline
+    assert leg.tc_odds == 41.0
+
+
+def test_bold_leg_for_market_returns_none_without_market_odds() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldMatch, bold_leg_for_market
+
+    match = BoldMatch(
+        match_no="周一001", league="芬超", home="A", away="B",
+        tc_odds={"home": 2.0, "draw": 3.2, "away": 3.5},
+    )
+    assert bold_leg_for_market(match, "crs") is None    # no crs odds
+    assert bold_leg_for_market(match, "had") is not None
