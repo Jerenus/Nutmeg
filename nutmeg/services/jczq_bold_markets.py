@@ -77,3 +77,66 @@ def aggregate_crs_to_had(
     for outcome, prob in other.items():
         had[outcome] += prob
     return had
+
+
+def _renormalize(dist: dict[str, float]) -> dict[str, float]:
+    """Scale a distribution to sum 1; an all-zero distribution is returned as-is."""
+    total = sum(dist.values())
+    if total <= 0:
+        return dist
+    return {k: v / total for k, v in dist.items()}
+
+
+def aggregate_crs_to_ttg(exact: dict[tuple[int, int], float]) -> dict[str, float]:
+    """Aggregate exact crs scorelines into 总进球 buckets total_0..total_7.
+
+    Each scoreline contributes to bucket ``home+away`` (capped at total_7 = 7+).
+    The 其他 buckets carry no definite total → excluded; the result is then
+    re-normalized over the exact mass (spec §3: crs→ttg 聚合近似).
+    """
+    ttg = {bucket: 0.0 for bucket in TTG_BUCKETS}
+    for (home_goals, away_goals), prob in exact.items():
+        total = min(home_goals + away_goals, 7)
+        ttg[f"total_{total}"] += prob
+    return _renormalize(ttg)
+
+
+def aggregate_crs_to_hhad(
+    exact: dict[tuple[int, int], float], line: float
+) -> dict[str, float]:
+    """Aggregate exact crs scorelines into 让球胜平负 probabilities at ``line``.
+
+    ``line`` is the home handicap in goals (negative when home gives goals, e.g.
+    ``-1.0``). A scoreline covers 让胜 when ``home + line > away``, 让平 when
+    equal, 让负 when less. 其他 buckets excluded; re-normalized over exact mass.
+    """
+    hhad = {"home": 0.0, "draw": 0.0, "away": 0.0}
+    for (home_goals, away_goals), prob in exact.items():
+        adjusted = home_goals + line
+        if adjusted > away_goals:
+            hhad["home"] += prob
+        elif adjusted == away_goals:
+            hhad["draw"] += prob
+        else:
+            hhad["away"] += prob
+    return _renormalize(hhad)
+
+
+def aggregate_ttg_to_over_under(
+    ttg_fair: dict[str, float], line: float
+) -> dict[str, float]:
+    """Collapse a 总进球 distribution onto an over/under ``line``.
+
+    ``ttg_fair`` maps total_0..total_7 → probability. A bucket's goal count
+    above ``line`` is 大球, otherwise 小球 (total_7 counts as 7). Used to compare
+    the 体彩 总进球 board against the international 大小球 board (spec §3 外部冲突).
+    """
+    over = 0.0
+    under = 0.0
+    for bucket, prob in ttg_fair.items():
+        count = int(bucket.removeprefix("total_"))
+        if count > line:
+            over += prob
+        else:
+            under += prob
+    return {"over": over, "under": under}
