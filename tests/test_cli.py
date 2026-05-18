@@ -3770,6 +3770,45 @@ def test_jczq_bold_combos_replay_renders_honest_label(
         assert word not in body
 
 
+def test_jczq_bold_combos_replay_renders_multi_market(tmp_path, monkeypatch) -> None:
+    """A --replay run off a persisted Sporttery snapshot renders the welded
+    label and contains no advantage wording."""
+    import json
+
+    from nutmeg.services.jczq_bold_combos import HARD_LABEL
+
+    # persist a 3-match snapshot so the engine can build a 3-fold
+    def m(no: str, home: str) -> dict:
+        return {
+            "matchNumStr": no, "businessDate": "2026-05-18",
+            "matchStatus": "Selling", "leagueAbbName": "芬超",
+            "homeTeamAbbName": home, "awayTeamAbbName": "客",
+            "had": {"h": "2.00", "d": "3.20", "a": "3.50"},
+            "hhad": {"h": "3.10", "d": "3.30", "a": "2.10", "goalLine": "-1"},
+            "ttg": {f"s{k}": str(4.0 + k) for k in range(8)},
+            "crs": {"s01s00": "6.50", "s00s00": "9.00", "s03s02": "41.0"},
+        }
+    snap_dir = tmp_path / "daily" / "2026-05-18"
+    snap_dir.mkdir(parents=True)
+    (snap_dir / "sporttery_markets.json").write_text(
+        json.dumps({"matchInfoList": [{"businessDate": "2026-05-18",
+            "subMatchList": [m("周一001", "A"), m("周一002", "B"), m("周一003", "C")]}]}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, [
+        "jczq-bold-combos", "--replay", "2026-05-18",
+        "--output-dir", str(tmp_path),
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith(HARD_LABEL)
+    for banned in ("胜率", "edge", "+EV", "正期望", "推荐下注", "重仓"):
+        # the label's own legitimate "非 edge" negation is on the first line
+        body = "\n".join(result.output.splitlines()[1:])
+        assert banned not in body, f"banned word leaked: {banned}"
+
+
 def test_jczq_web_command_starts_localhost_app(monkeypatch, tmp_path: Path) -> None:
     calls: list[dict[str, object]] = []
 

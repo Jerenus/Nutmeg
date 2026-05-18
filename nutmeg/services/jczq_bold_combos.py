@@ -1253,3 +1253,53 @@ def replay_bold_combos(run_date: str, output_dir) -> str:
     )
     plan = BoldComboEngine().generate(run_date, matches)
     return render_bold_plan(plan)
+
+
+def run_bold_combos_multimarket(
+    run_date: str,
+    output_dir,
+    *,
+    replay: bool,
+) -> str:
+    """Run the multi-market bold engine for ``run_date``.
+
+    ``replay=True``: read the persisted Sporttery snapshot (degrade to the v1
+    context.json had-only path when absent). ``replay=False``: fetch the
+    Sporttery full market live, persist the snapshot, enrich with 500.com 国际
+    odds. Returns the honest-labelled markdown.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    value: dict | None = None
+    if replay:
+        value = load_sporttery_snapshot(run_date, output_dir)
+        if value is None:
+            logger.warning(
+                "bold-combos: no snapshot for %s — falling back to v1 context.json",
+                run_date,
+            )
+            return replay_bold_combos(run_date, output_dir)
+    else:
+        from nutmeg.services.jczq import SportteryJczqCalculatorProvider
+
+        fetched = SportteryJczqCalculatorProvider().fetch()
+        value = fetched.get("value") if "value" in fetched else fetched
+        persist_sporttery_snapshot(run_date, output_dir, value)
+
+    bold_odds: dict[str, dict] = {}
+    if not replay:
+        try:
+            from nutmeg.data.fcom500 import Fcom500Client, collect_bold_odds
+
+            with Fcom500Client() as client:
+                bold_odds = collect_bold_odds(client)
+        except Exception:  # noqa: BLE001 — 国际 odds optional; degrade
+            logger.warning("bold-combos: 国际 odds enrichment failed", exc_info=True)
+
+    matches = bold_matches_from_sporttery(
+        value or {}, run_date=run_date, bold_odds=bold_odds
+    )
+    plan = BoldComboEngine().generate(run_date, matches)
+    return render_bold_plan(plan)

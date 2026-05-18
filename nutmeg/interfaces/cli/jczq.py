@@ -385,11 +385,13 @@ def jczq_bold_combos(
     """
     from datetime import date as _date_cls
 
-    from nutmeg.services.jczq_bold_combos import replay_bold_combos
+    from nutmeg.services.jczq_bold_combos import run_bold_combos_multimarket
 
     target_date = replay_date or run_date or _date_cls.today().isoformat()
     try:
-        rendered = replay_bold_combos(run_date=target_date, output_dir=output_dir)
+        rendered = run_bold_combos_multimarket(
+            target_date, output_dir, replay=replay_date is not None
+        )
     except FileNotFoundError as exc:
         _cli.console.print(str(exc))
         raise _cli.typer.Exit(code=2) from exc
