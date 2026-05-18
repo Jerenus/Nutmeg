@@ -897,3 +897,80 @@ def test_engine_generate_produces_cross_market_legs() -> None:
     }
     assert rendered_markets                       # at least one market present
     assert plan.label.startswith("🎲")
+
+
+# ---------------------------------------------------------------------------
+# spec §10 — payout cap awareness + per-ticket market mix
+# ---------------------------------------------------------------------------
+
+
+def _combo_leg(match_no: str, market: str, odds: float, boldness: float = 0.4):
+    """A bare BoldLeg for combination-generation tests."""
+    from nutmeg.services.jczq_bold_combos import BoldLeg
+
+    return BoldLeg(
+        match_no=match_no, league="L", home="H", away="A",
+        pick="x", tc_odds=odds, boldness=boldness, reason="r",
+        market=market, pick_label="x",
+    )
+
+
+def test_effective_odds_caps_at_jczq_payout_limit() -> None:
+    from nutmeg.services.jczq_bold_combos import (
+        JCZQ_PAYOUT_CAP_YUAN,
+        REFERENCE_STAKE_YUAN,
+        _effective_odds,
+    )
+
+    cap = JCZQ_PAYOUT_CAP_YUAN / REFERENCE_STAKE_YUAN
+    assert _effective_odds(1000.0) == 1000.0          # under cap — unchanged
+    assert _effective_odds(cap * 9) == cap            # over cap — capped
+
+
+def test_bold_combos_caps_legs_per_market_when_pool_is_multimarket() -> None:
+    from collections import Counter
+
+    from nutmeg.services.jczq_bold_combos import (
+        MAX_LEGS_PER_MARKET_PER_TICKET,
+        bold_combos,
+    )
+
+    # pool spans had + crs → the per-market cap is enforced; no ticket may be
+    # three had legs.
+    legs = [
+        _combo_leg("周一001", "had", 3.0), _combo_leg("周一002", "had", 3.2),
+        _combo_leg("周一003", "had", 3.4), _combo_leg("周一004", "crs", 8.0),
+        _combo_leg("周一005", "crs", 9.0),
+    ]
+    tickets = bold_combos(legs, chaos=10)
+    assert tickets
+    for ticket in tickets:
+        counts = Counter(lg.market for lg in ticket.legs)
+        assert max(counts.values()) <= MAX_LEGS_PER_MARKET_PER_TICKET
+
+
+def test_bold_combos_skips_market_cap_for_single_market_pool() -> None:
+    from nutmeg.services.jczq_bold_combos import bold_combos
+
+    # had-only pool (v1 behavior) → the cap must NOT fire, or no ticket exists.
+    legs = [
+        _combo_leg("周一001", "had", 3.0), _combo_leg("周一002", "had", 3.2),
+        _combo_leg("周一003", "had", 3.4),
+    ]
+    tickets = bold_combos(legs, chaos=10)
+    assert tickets                                    # 3-had ticket still produced
+    assert tickets[0].fold == 3
+
+
+def test_bold_combos_flags_over_cap_ticket_honestly() -> None:
+    from nutmeg.services.jczq_bold_combos import bold_combos
+
+    # three had legs at 200× each → 8,000,000× combined → over the 250万× cap.
+    legs = [
+        _combo_leg("周一001", "had", 200.0), _combo_leg("周一002", "had", 200.0),
+        _combo_leg("周一003", "had", 200.0),
+    ]
+    tickets = bold_combos(legs, chaos=10)
+    assert tickets
+    assert "封顶" in tickets[0].note                   # honest cap annotation
+    assert tickets[0].total_odds == 8_000_000.0       # real product NOT truncated

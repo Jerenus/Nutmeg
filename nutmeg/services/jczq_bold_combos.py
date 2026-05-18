@@ -28,6 +28,7 @@ from __future__ import annotations
 import itertools
 import re
 import statistics
+from collections import Counter
 from dataclasses import dataclass, field
 
 from nutmeg.services.jczq_bold_markets import (
@@ -681,6 +682,28 @@ BOLD_TICKET_COUNT: int = 5
 # The anchor ticket's leg count cap — a short 2-3 leg 稳健底仓 (spec §5).
 ANCHOR_MAX_LEGS: int = 3
 
+# 竞彩 single-ticket (一张彩票) payout cap — 返奖封顶, 500 万元 (spec §10.1,
+# user-confirmed; a named, tunable constant).
+JCZQ_PAYOUT_CAP_YUAN: float = 5_000_000.0
+# Reference stake — 竞彩 base is 2 元/注; payout = stake × total_odds. Combined
+# odds beyond JCZQ_PAYOUT_CAP_YUAN / REFERENCE_STAKE_YUAN pay nothing extra.
+REFERENCE_STAKE_YUAN: float = 2.0
+# A bold ticket may use at most this many legs from one market (spec §10.2) —
+# forces cross-market mix. Enforced ONLY when the candidate pool spans ≥2
+# markets (a single-market day would otherwise have every ticket filtered out).
+MAX_LEGS_PER_MARKET_PER_TICKET: int = 2
+
+
+def _effective_odds(total_odds: float) -> float:
+    """Combined odds capped at the 竞彩 payout limit (spec §10.1).
+
+    Real combined odds beyond ``JCZQ_PAYOUT_CAP_YUAN / REFERENCE_STAKE_YUAN``
+    pay nothing extra — the engine ranks combos by this capped value so it
+    stops chasing un-collectable million-fold parlays. The ticket's stored
+    ``total_odds`` keeps the true (uncapped) product; only ranking uses this.
+    """
+    return min(total_odds, JCZQ_PAYOUT_CAP_YUAN / REFERENCE_STAKE_YUAN)
+
 
 @dataclass(slots=True, frozen=True)
 class BoldTicket:
@@ -726,17 +749,45 @@ def _fold_weights(chaos: int) -> dict[int, int]:
     return {3: 1, 4: 2, 5: 2}
 
 
-def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
-    """Assemble creative 3/4/5-fold parlays from the candidate ``legs``.
+def _ticket_rank_score(legs: list[BoldLeg]) -> float:
+    """A ticket's ranking score — ``effective_odds × avg_boldness`` (spec §10.1).
 
-    Each ticket's legs are distinct matches (Rule O — distinct ``match_no``,
-    and every pick is 胜平负 so distinct matches is a legal parlay). Tickets
-    rank by ``total_odds * avg_boldness`` (long odds × bold legs = the most
-    "fun"); the returned fold mix is biased by ``chaos`` (§3.5). Fewer than 3
+    Uses ``_effective_odds`` (capped at the 竞彩 payout limit) so combos beyond
+    the cap do not out-rank a collectable combo on un-payable odds alone.
+    """
+    return _effective_odds(_ticket_total_odds(legs)) * _ticket_avg_boldness(legs)
+
+
+def _over_cap_note(total_odds: float) -> str:
+    """Honest cap annotation when a ticket's payout exceeds the 竞彩 limit, else ''."""
+    cap_odds = JCZQ_PAYOUT_CAP_YUAN / REFERENCE_STAKE_YUAN
+    if total_odds <= cap_odds:
+        return ""
+    payout = total_odds * REFERENCE_STAKE_YUAN
+    return (
+        f" · ⚠️本票 {REFERENCE_STAKE_YUAN:g} 元理论赔付 {payout:,.0f} 元，"
+        f"超竞彩 {JCZQ_PAYOUT_CAP_YUAN:,.0f} 元单票封顶 — 实际只兑至 "
+        f"{JCZQ_PAYOUT_CAP_YUAN:,.0f} 元"
+    )
+
+
+def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
+    """Assemble creative cross-market 3/4/5-fold parlays from the candidate ``legs``.
+
+    Each ticket's legs are distinct matches (Rule O). When the candidate pool
+    spans ≥2 markets a ticket may use at most ``MAX_LEGS_PER_MARKET_PER_TICKET``
+    legs from any one market (spec §10.2 — forces cross-market mix; skipped on a
+    single-market pool so v1 had-only days still produce tickets). Tickets rank
+    by ``effective_odds × avg_boldness`` (spec §10.1 — odds capped at the 竞彩
+    payout limit). The fold mix is biased by ``chaos`` (§3.5). Fewer than 3
     candidate legs → no 3-fold is possible → an empty list (never a crash).
     """
     if len(legs) < 3:
         return []
+
+    # The per-ticket market cap only makes sense — and is only safe — when the
+    # pool actually has ≥2 markets to mix (spec §10.2).
+    enforce_market_cap = len({lg.market for lg in legs}) >= 2
 
     fold_plan = _fold_weights(chaos)
     selected: list[BoldTicket] = []
@@ -751,31 +802,33 @@ def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
             # legal regardless of which markets the legs come from).
             if len({lg.match_no for lg in combo_legs}) != fold:
                 continue
-            total = _ticket_total_odds(combo_legs)
-            avg = _ticket_avg_boldness(combo_legs)
-            combos.append((total * avg, combo_legs))
+            # spec §10.2 — no single market may dominate a ticket.
+            if enforce_market_cap:
+                market_counts = Counter(lg.market for lg in combo_legs)
+                if max(market_counts.values()) > MAX_LEGS_PER_MARKET_PER_TICKET:
+                    continue
+            combos.append((_ticket_rank_score(combo_legs), combo_legs))
         combos.sort(key=lambda item: item[0], reverse=True)
         for _rank_score, combo_legs in combos[:want]:
             selected.append(combo_legs)  # type: ignore[arg-type]
 
     tickets: list[BoldTicket] = []
     for index, combo_legs in enumerate(
-        sorted(
-            selected,
-            key=lambda lg: _ticket_total_odds(lg) * _ticket_avg_boldness(lg),
-            reverse=True,
-        ),
+        sorted(selected, key=_ticket_rank_score, reverse=True),  # type: ignore[arg-type]
         start=1,
     ):
+        total_odds = _ticket_total_odds(combo_legs)
+        note = "娱乐串 · 大胆分越高仅代表盘面越「有戏可挖」，不是命中概率"
+        note += _over_cap_note(total_odds)
         tickets.append(
             BoldTicket(
                 id=f"大胆票{index}",
                 kind="大胆票",
                 legs=combo_legs,
                 fold=len(combo_legs),
-                total_odds=round(_ticket_total_odds(combo_legs), 4),
+                total_odds=round(total_odds, 4),
                 avg_boldness=round(_ticket_avg_boldness(combo_legs), 4),
-                note="娱乐串 · 大胆分越高仅代表盘面越「有戏可挖」，不是命中概率",
+                note=note,
             )
         )
     return tickets
