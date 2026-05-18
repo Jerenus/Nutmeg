@@ -936,31 +936,75 @@ class BoldComboPlan:
     label: str = HARD_LABEL
 
 
-def _match_diverse_pool(legs: list[BoldLeg], pool_n: int) -> list[BoldLeg]:
-    """Take ``pool_n`` legs from a boldness-sorted cross-market ``legs`` list,
-    seeding each distinct match's boldest leg first.
+# A market may fill at most this fraction of the candidate pool (spec §12) —
+# guarantees the pool spans ≥2 markets when ≥2 markets exist, so the §10.2
+# per-ticket market cap actually engages.
+MARKET_POOL_SHARE: float = 0.5
 
-    A flat top-N slice of a cross-market pool can be dominated by a handful of
-    matches (each contributing ``MAX_LEGS_PER_MATCH`` legs), starving the
-    Rule-O combo generator of distinct matches. Seeding one leg per match keeps
-    a 3/4/5-fold reachable; remaining slots then go to the next-boldest legs.
+
+def _balanced_pool(matches: list[BoldMatch], pool_n: int) -> list[BoldLeg]:
+    """Build a match- AND market-balanced candidate pool of up to ``pool_n`` legs.
+
+    比分 legs structurally dominate boldness (cold scorelines score ~1.0 on the
+    contrarian/long-tail signal), so a plain boldness pool fills with 比分 and
+    defeats the §10.2 per-ticket market cap. This builder caps any one market at
+    ``pool_n * MARKET_POOL_SHARE`` slots: pass 1 seeds one leg per match (its
+    boldest leg whose market is not yet full — match coverage + market
+    coverage), pass 2 fills remaining slots by global boldness (still
+    market-capped). A genuinely single-market day degrades to a single-market
+    pool via the pass-1 fallback and §10.2 simply does not engage. The result
+    is boldness-sorted.
     """
-    seeded: list[BoldLeg] = []
-    seen: set[str] = set()
-    for leg in legs:                            # legs already boldness-sorted
-        if leg.match_no not in seen:
-            seeded.append(leg)
-            seen.add(leg.match_no)
-    chosen = seeded[:pool_n]
-    if len(chosen) < pool_n:
-        chosen_ids = {id(leg) for leg in chosen}
-        for leg in legs:
-            if len(chosen) >= pool_n:
+    per_match: list[list[BoldLeg]] = []
+    for match in matches:
+        legs = sorted(
+            (
+                leg
+                for market in MARKETS
+                if (leg := bold_leg_for_market(match, market)) is not None
+            ),
+            key=lambda lg: lg.boldness,
+            reverse=True,
+        )
+        if legs:
+            per_match.append(legs)
+    if not per_match:
+        return []
+
+    # boldest matches first — they get first pick of the scarce market slots.
+    per_match.sort(key=lambda legs: legs[0].boldness, reverse=True)
+    market_cap = max(1, int(pool_n * MARKET_POOL_SHARE))
+    pool: list[BoldLeg] = []
+    market_count: Counter[str] = Counter()
+
+    # pass 1 — one leg per match, preferring a market that is not yet full.
+    for legs in per_match:
+        if len(pool) >= pool_n:
+            break
+        choice = next(
+            (lg for lg in legs if market_count[lg.market] < market_cap),
+            legs[0],
+        )
+        pool.append(choice)
+        market_count[choice.market] += 1
+
+    # pass 2 — fill remaining slots with the next-boldest legs, market-capped.
+    if len(pool) < pool_n:
+        used = {id(lg) for lg in pool}
+        rest = sorted(
+            (lg for legs in per_match for lg in legs if id(lg) not in used),
+            key=lambda lg: lg.boldness,
+            reverse=True,
+        )
+        for leg in rest:
+            if len(pool) >= pool_n:
                 break
-            if id(leg) not in chosen_ids:
-                chosen.append(leg)
-    chosen.sort(key=lambda lg: lg.boldness, reverse=True)
-    return chosen
+            if market_count[leg.market] < market_cap:
+                pool.append(leg)
+                market_count[leg.market] += 1
+
+    pool.sort(key=lambda lg: lg.boldness, reverse=True)
+    return pool
 
 
 class BoldComboEngine:
@@ -976,13 +1020,11 @@ class BoldComboEngine:
         chaos = day_chaos(matches)
         band = chaos_band(chaos)
 
-        legs = candidate_legs(matches)          # cross-market, boldness-sorted
         pool_n = chaos_pool_size(chaos)
-        # A cross-market pool can stack multiple legs of the same match at the
-        # top; the Rule-O combo generator needs distinct matches, so seed the
-        # pool with each match's boldest leg first, then fill the remaining
-        # slots with the next-boldest legs overall.
-        candidate_pool = _match_diverse_pool(legs, pool_n)
+        # spec §12 — a market-balanced pool: caps any one market at half the
+        # slots so 比分 cannot fill the pool and defeat the §10.2 per-ticket
+        # market cap. Also seeds one leg per match for Rule-O reachability.
+        candidate_pool = _balanced_pool(matches, pool_n)
 
         tickets = bold_combos(candidate_pool, chaos)
         anchor = anchor_ticket(matches)

@@ -1074,3 +1074,49 @@ def test_render_bold_plan_notes_idle_budget_is_a_choice() -> None:
     plan = BoldComboEngine().generate("2026-05-18", [])
     out = render_bold_plan(plan)
     assert "一张都不买" in out
+
+
+# ---------------------------------------------------------------------------
+# spec §12 — market-balanced candidate pool (defeats 比分 dominance)
+# ---------------------------------------------------------------------------
+
+
+def test_engine_tickets_mix_markets_despite_比分_dominance() -> None:
+    """比分 legs dominate boldness, but the market-balanced pool keeps ≥2
+    markets so every bold ticket mixes markets — no all-比分 ticket (spec §12)."""
+    from nutmeg.services.jczq_bold_combos import BoldComboEngine, BoldMatch
+
+    # four matches, each with 胜平负 + 比分 odds; the cold 比分 scorelines win
+    # boldness, so a plain pool would be all 比分.
+    matches = [
+        BoldMatch(
+            match_no=f"周一{i:03d}", league="L", home="H", away="A",
+            tc_odds={"home": 2.0, "draw": 3.3, "away": 3.6},
+            crs_odds={"s01s00": 6.0, "s00s00": 9.0, "s03s02": 41.0, "s02s05": 200.0},
+        )
+        for i in range(1, 5)
+    ]
+    plan = BoldComboEngine().generate("2026-05-18", matches)
+
+    assert plan.tickets
+    for ticket in plan.tickets:
+        markets = {lg.market for lg in ticket.legs}
+        assert len(markets) >= 2, f"all-one-market ticket: {sorted(markets)}"
+
+
+def test_balanced_pool_caps_one_market_below_pool_size() -> None:
+    """No single market may fill the whole pool when ≥2 markets exist (spec §12)."""
+    from nutmeg.services.jczq_bold_combos import BoldMatch, _balanced_pool
+
+    matches = [
+        BoldMatch(
+            match_no=f"周一{i:03d}", league="L", home="H", away="A",
+            tc_odds={"home": 2.0, "draw": 3.3, "away": 3.6},
+            crs_odds={"s01s00": 6.0, "s00s00": 9.0, "s03s02": 41.0},
+        )
+        for i in range(1, 5)
+    ]
+    pool = _balanced_pool(matches, pool_n=4)
+
+    assert len(pool) == 4
+    assert len({lg.market for lg in pool}) >= 2        # not a single-market pool
