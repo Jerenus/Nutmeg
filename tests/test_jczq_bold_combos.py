@@ -676,3 +676,59 @@ def test_bold_leg_carries_market_and_label() -> None:
     )
     assert leg.market == "crs"
     assert leg.pick_label == "2:1"
+
+
+# ---------------------------------------------------------------------------
+# Multi-market extension — Task 6: internal + external conflict signals
+# ---------------------------------------------------------------------------
+
+
+def test_internal_conflict_had_flags_crs_vs_had_disagreement() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldMatch, internal_conflict
+
+    # 体彩 had board: home favorite (~0.5). 体彩 crs board: equal exact mass on
+    # 1:0 / 0:0 / 0:1 → aggregates to home 1/3. The board contradicts itself.
+    match = BoldMatch(
+        match_no="周一001", league="芬超", home="A", away="B",
+        tc_odds={"home": 1.9, "draw": 3.4, "away": 4.5},
+        crs_odds={"s01s00": 3.0, "s00s00": 3.0, "s00s01": 3.0},
+    )
+    conflict = internal_conflict(match, "had")
+    assert conflict["home"] > 0.05          # direct ~0.5 vs derived ~0.33
+    assert set(conflict) == {"home", "draw", "away"}
+
+
+def test_internal_conflict_is_zero_without_crs() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldMatch, internal_conflict
+
+    match = BoldMatch(
+        match_no="周一001", league="芬超", home="A", away="B",
+        tc_odds={"home": 2.0, "draw": 3.2, "away": 3.5},
+    )
+    assert internal_conflict(match, "had") == {"home": 0.0, "draw": 0.0, "away": 0.0}
+
+
+def test_external_conflict_ttg_compares_体彩_vs_国际大小球() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldMatch, external_conflict_ttg
+
+    # 体彩 ttg leans under (total_1 cheap); 国际大小球 leans over → a real gap.
+    match = BoldMatch(
+        match_no="周一001", league="芬超", home="A", away="B",
+        tc_odds={"home": 2.0, "draw": 3.2, "away": 3.5},
+        ttg_odds={f"total_{k}": v for k, v in {
+            0: 9.0, 1: 2.0, 2: 3.0, 3: 6.0, 4: 12.0, 5: 25.0, 6: 50.0, 7: 90.0,
+        }.items()},
+        ou_odds={"over": 1.6, "under": 2.4}, ou_line=2.5,
+    )
+    assert external_conflict_ttg(match) > 0.05
+
+
+def test_external_conflict_ttg_zero_without_overunder() -> None:
+    from nutmeg.services.jczq_bold_combos import BoldMatch, external_conflict_ttg
+
+    match = BoldMatch(
+        match_no="周一001", league="芬超", home="A", away="B",
+        tc_odds={"home": 2.0, "draw": 3.2, "away": 3.5},
+        ttg_odds={f"total_{k}": 5.0 for k in range(8)},
+    )
+    assert external_conflict_ttg(match) == 0.0

@@ -29,6 +29,15 @@ import itertools
 import statistics
 from dataclasses import dataclass, field
 
+from nutmeg.services.jczq_bold_markets import (
+    TTG_BUCKETS,
+    aggregate_crs_to_had,
+    aggregate_crs_to_hhad,
+    aggregate_crs_to_ttg,
+    aggregate_ttg_to_over_under,
+    crs_scoreline_distribution,
+)
+
 # The single outcome vocabulary used everywhere in this module — the 胜平负
 # (1X2) market, the only market where 体彩 odds and 欧赔 both exist cleanly.
 OUTCOMES: tuple[str, str, str] = ("home", "draw", "away")
@@ -164,6 +173,68 @@ def heat_score(match_tags: set[str], vig: float) -> float:
     return _clip01(raw)
 
 
+def _devig_map(odds: dict[str, float]) -> dict[str, float]:
+    """De-vig an arbitrary-keyed odds map to fair probabilities summing to ~1.
+
+    Generalizes ``_fair_from_odds`` (which is hard-coded to ``OUTCOMES``) to the
+    总进球 / 让球 keyspaces. Empty / unusable input → empty dict.
+    """
+    inverse = {k: 1.0 / v for k, v in odds.items() if v and v > 0}
+    total = sum(inverse.values())
+    if total <= 0:
+        return {}
+    return {k: v / total for k, v in inverse.items()}
+
+
+def internal_conflict(match: BoldMatch, market: str) -> dict[str, float]:
+    """Per-outcome 盘口内部一致性冲突 for ``market`` — the 体彩 board's direct
+    quote vs the value derived by aggregating its own crs board.
+
+    ``market`` ∈ {"had", "hhad", "ttg"}. Returns ``{outcome_key: conflict}``,
+    each ``abs(direct_fair - crs_derived_fair)`` clipped to [0, 1]. No crs board,
+    or no direct quote → all-zero (graceful degradation). The crs market's own
+    internal conflict is handled separately in ``_crs_internal_conflict``.
+    """
+    exact, other = crs_scoreline_distribution(match.crs_odds)
+    if not exact and not other:
+        outcomes = TTG_BUCKETS if market == "ttg" else OUTCOMES
+        return {o: 0.0 for o in outcomes}
+    if market == "had":
+        derived = aggregate_crs_to_had(exact, other)
+        direct = _fair_from_odds(match.had_odds_or_tc())
+        keys = OUTCOMES
+    elif market == "hhad":
+        derived = aggregate_crs_to_hhad(exact, match.hhad_line)
+        direct = _fair_from_odds(match.hhad_odds)
+        keys = OUTCOMES
+    elif market == "ttg":
+        derived = aggregate_crs_to_ttg(exact)
+        direct = _devig_map(match.ttg_odds)
+        keys = TTG_BUCKETS
+    else:  # pragma: no cover - defensive
+        return {}
+    if not direct:
+        return {o: 0.0 for o in keys}
+    return {
+        o: _clip01(abs(direct.get(o, 0.0) - derived.get(o, 0.0))) for o in keys
+    }
+
+
+def external_conflict_ttg(match: BoldMatch) -> float:
+    """Scalar 外部冲突 for 总进球 — the 体彩 总进球 board collapsed onto the 大小球
+    line vs the international 大小球 board.
+
+    Returns ``abs(体彩 P(over) - 国际 P(over))`` clipped to [0, 1]. No 体彩 ttg
+    board, or no 国际大小球 → 0.0 (graceful degradation).
+    """
+    tc_ttg = _devig_map(match.ttg_odds)
+    ou_fair = _devig_map(match.ou_odds)
+    if not tc_ttg or not ou_fair or not match.ou_line:
+        return 0.0
+    tc_over_under = aggregate_ttg_to_over_under(tc_ttg, match.ou_line)
+    return _clip01(abs(tc_over_under.get("over", 0.0) - ou_fair.get("over", 0.0)))
+
+
 # ---------------------------------------------------------------------------
 # Task 3 — boldness composition + bold-leg selection
 # ---------------------------------------------------------------------------
@@ -217,6 +288,10 @@ class BoldMatch:
     ou_odds: dict[str, float] = field(default_factory=dict)      # 国际大小球 over/under
     ou_line: float = 0.0
     ou_per_book: dict[str, list[float]] = field(default_factory=dict)
+
+    def had_odds_or_tc(self) -> dict[str, float]:
+        """The 胜平负 体彩 odds — ``tc_odds`` IS the had market (v1 naming kept)."""
+        return self.tc_odds
 
 
 @dataclass(slots=True, frozen=True)
