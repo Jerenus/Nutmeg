@@ -56,6 +56,7 @@ __all__ = [
     "parse_european_1x2",
     "parse_handicap",
     "parse_jczq_list",
+    "parse_over_under",
     "parse_total_goals",
 ]
 
@@ -418,6 +419,53 @@ def parse_handicap(html: str) -> MarketOdds | None:
     )
 
 
+def parse_over_under(html: str) -> MarketOdds | None:
+    """Parse the 大小球 (daxiao) page into average international over/under odds.
+
+    Same datatb shape as 亚盘: each international bookmaker row's first
+    ``pl_table_data`` is ``[over_odds, <td ref>line</td>, under_odds]``. Excludes
+    the 竞彩官方 (体彩) row — the result is a true 体彩-independent signal.
+    ``line`` is the median over/under line (magnitude — the ``ref`` is signed).
+    ``per_book_odds`` carries each book's over/under for the dispersion signal.
+    Returns ``None`` when no international row parses.
+    """
+    over: list[float] = []
+    under: list[float] = []
+    lines: list[float] = []
+    for row_id, body in _book_rows(html):
+        if row_id == _SPORTTERY_ROW_ID:
+            continue
+        first_table = _RE_PL_TABLE.search(body)
+        if not first_table:
+            continue
+        parsed = _parse_line_table(first_table.group(0))
+        if parsed is None:
+            continue
+        over_odds, under_odds, line_value, _text = parsed
+        if over_odds <= 0 or under_odds <= 0:
+            continue
+        over.append(over_odds)
+        under.append(under_odds)
+        lines.append(abs(line_value))
+
+    if not over:
+        return None
+    odds = {
+        "over": round(sum(over) / len(over), 4),
+        "under": round(sum(under) / len(under), 4),
+    }
+    lines.sort()
+    median_line = lines[len(lines) // 2]
+    return MarketOdds(
+        odds=odds,
+        fair_probability=_devig(odds),
+        independent=True,
+        line=f"{median_line:g}",
+        bookmaker_count=len(over),
+        per_book_odds={"over": over, "under": under},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Task A6 — 总进球 (进球指数) + 比分
 # ---------------------------------------------------------------------------
@@ -492,6 +540,10 @@ def parse_correct_score(html: str) -> MarketOdds | None:
 
 def _ouzhi_url(fid: str) -> str:
     return f"https://odds.500.com/fenxi/ouzhi-{fid}.shtml"
+
+
+def _daxiao_url(fid: str) -> str:
+    return f"https://odds.500.com/fenxi/daxiao-{fid}.shtml"
 
 
 _JCZQ_LIST_URL = "https://trade.500.com/jczq/"

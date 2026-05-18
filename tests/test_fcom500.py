@@ -200,6 +200,26 @@ def test_parse_handicap_returns_none_on_empty_page() -> None:
     assert parse_handicap("<html><body>nothing</body></html>") is None
 
 
+def test_parse_over_under_reads_international_daxiao() -> None:
+    from nutmeg.data.fcom500 import parse_over_under
+
+    html = (_FIXTURE_DIR / "daxiao-1366371.html").read_text(
+        encoding="gb2312", errors="ignore"
+    )
+    market = parse_over_under(html)
+
+    assert market is not None
+    assert market.independent is True
+    assert market.odds["over"] > 0 and market.odds["under"] > 0
+    # line is the median over/under line, a positive numeric string.
+    assert float(market.line) > 0
+    # fair probabilities de-vig to ~1 over the 2-way market.
+    assert abs(sum(market.fair_probability.values()) - 1.0) < 1e-6
+    # per-book odds feed the dispersion signal — one entry per international book.
+    assert len(market.per_book_odds["over"]) == market.bookmaker_count
+    assert market.bookmaker_count >= 2
+
+
 # ---------------------------------------------------------------------------
 # Task A6 — parse 总进球 + 比分
 # ---------------------------------------------------------------------------
