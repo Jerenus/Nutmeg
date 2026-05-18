@@ -692,6 +692,13 @@ REFERENCE_STAKE_YUAN: float = 2.0
 # forces cross-market mix. Enforced ONLY when the candidate pool spans ≥2
 # markets (a single-market day would otherwise have every ticket filtered out).
 MAX_LEGS_PER_MARKET_PER_TICKET: int = 2
+# Diversity penalty for cross-ticket concentration (spec §11.2) — a combo's
+# rank score is divided by ``1 + CONCENTRATION_PENALTY × (reuse count)`` so
+# ticket selection spreads across matches when the pool allows.
+CONCENTRATION_PENALTY: float = 0.35
+# A match appearing in more than this fraction of the bold tickets triggers the
+# 🟦 cross-ticket concentration warning in the renderer (spec §11.2).
+CONCENTRATION_WARN_FRACTION: float = 0.6
 
 
 def _effective_odds(total_odds: float) -> float:
@@ -790,7 +797,10 @@ def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
     enforce_market_cap = len({lg.market for lg in legs}) >= 2
 
     fold_plan = _fold_weights(chaos)
-    selected: list[BoldTicket] = []
+    # spec §11.2 — running count of how many chosen tickets each match is in,
+    # shared across all folds so 3/4/5-folds diversify against each other.
+    appearance: Counter[str] = Counter()
+    selected: list[list[BoldLeg]] = []
     for fold in (3, 4, 5):
         want = fold_plan.get(fold, 0)
         if want <= 0 or fold > len(legs):
@@ -808,13 +818,31 @@ def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
                 if max(market_counts.values()) > MAX_LEGS_PER_MARKET_PER_TICKET:
                     continue
             combos.append((_ticket_rank_score(combo_legs), combo_legs))
-        combos.sort(key=lambda item: item[0], reverse=True)
-        for _rank_score, combo_legs in combos[:want]:
-            selected.append(combo_legs)  # type: ignore[arg-type]
+        # spec §11.2 — diversity-penalized greedy: a combo's rank score is
+        # divided by a penalty growing with how often its matches already
+        # appear in chosen tickets, so the ticket set spreads across matches.
+        # On a thin pool every candidate is penalized alike → degrades to plain
+        # rank order (thin days still produce tickets).
+        for _ in range(want):
+            if not combos:
+                break
+            pick = max(
+                range(len(combos)),
+                key=lambda i: combos[i][0]
+                / (
+                    1.0
+                    + CONCENTRATION_PENALTY
+                    * sum(appearance[lg.match_no] for lg in combos[i][1])
+                ),
+            )
+            _score, combo_legs = combos.pop(pick)
+            selected.append(combo_legs)
+            for leg in combo_legs:
+                appearance[leg.match_no] += 1
 
     tickets: list[BoldTicket] = []
     for index, combo_legs in enumerate(
-        sorted(selected, key=_ticket_rank_score, reverse=True),  # type: ignore[arg-type]
+        sorted(selected, key=_ticket_rank_score, reverse=True),
         start=1,
     ):
         total_odds = _ticket_total_odds(combo_legs)
@@ -994,6 +1022,36 @@ def _render_ticket(ticket: BoldTicket) -> list[str]:
     return lines
 
 
+def _concentration_warning(tickets: list[BoldTicket]) -> str:
+    """A 🟦 note when one match dominates the bold tickets (spec §11.2).
+
+    Returns '' unless ≥2 tickets exist and some match appears in more than
+    ``CONCENTRATION_WARN_FRACTION`` of them — surfaced honestly so the user
+    sees the tickets are NOT really diversified (they win/lose together).
+    """
+    if len(tickets) < 2:
+        return ""
+    appearance: Counter[str] = Counter()
+    for ticket in tickets:
+        for match_no in {lg.match_no for lg in ticket.legs}:
+            appearance[match_no] += 1
+    hot = [
+        (m, c)
+        for m, c in appearance.items()
+        if c > CONCENTRATION_WARN_FRACTION * len(tickets)
+    ]
+    if not hot:
+        return ""
+    names = "、".join(
+        f"{m}（{c}/{len(tickets)} 张）"
+        for m, c in sorted(hot, key=lambda item: -item[1])
+    )
+    return (
+        f"🟦 集中度提示：{names} 出现在多数大胆票里 —— "
+        "这些票会一起赢一起输，并非真正分散风险。"
+    )
+
+
 def render_bold_plan(plan: BoldComboPlan) -> str:
     """Render a ``BoldComboPlan`` to honest-labelled markdown.
 
@@ -1010,6 +1068,9 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
     lines.append(
         "> 混乱值越高 = 盘面越吵、组合越长越野；它只是娱乐抖动旋钮，不是优势信号。"
     )
+    concentration = _concentration_warning(plan.tickets)
+    if concentration:
+        lines.append(concentration)
     lines.append("")
 
     lines.append("## 稳健底仓（对冲压舱）")
@@ -1031,6 +1092,10 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
     lines.append(
         "_「大胆分」是盘面启发式显著性分，不是命中概率；本引擎不预测胜负、"
         "长期为负，仅供娱乐。注金请只用娱乐预算的小额。_"
+    )
+    lines.append(
+        "_注金提示：上面多张票相互独立 ≠ 风险分散 —— 它们常共享同几场、"
+        "会一起赢一起输。你完全可以只挑一张、或一张都不买。_"
     )
     return "\n".join(lines)
 

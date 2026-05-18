@@ -1021,3 +1021,56 @@ def test_bold_matches_from_sporttery_skips_match_with_no_markets() -> None:
     assert bold_matches_from_sporttery(
         value, run_date="2026-05-18", bold_odds={}
     ) == []
+
+
+def test_bold_combos_diversifies_tickets_across_matches() -> None:
+    """Diversity-penalized selection spreads tickets across matches (spec §11.2)
+    — with 6 equal-score legs the 3-fold tickets together cover every match,
+    instead of reusing the same lead matches."""
+    from nutmeg.services.jczq_bold_combos import bold_combos
+
+    legs = [_combo_leg(f"周一{i:03d}", "had", 3.0, boldness=0.5) for i in range(1, 7)]
+    tickets = bold_combos(legs, chaos=10)             # chaos<34 → 3 three-folds
+    three_folds = [t for t in tickets if t.fold == 3]
+    assert len(three_folds) >= 2
+    covered = {lg.match_no for t in three_folds for lg in t.legs}
+    assert len(covered) == 6                          # spread across all matches
+
+
+def test_render_bold_plan_warns_on_cross_ticket_concentration() -> None:
+    """A match in most bold tickets triggers the honest 🟦 concentration note."""
+    from nutmeg.services.jczq_bold_combos import (
+        BoldComboPlan,
+        BoldTicket,
+        anchor_ticket,
+        render_bold_plan,
+    )
+
+    def ticket(idx: int, partner: str) -> BoldTicket:
+        return BoldTicket(
+            id=f"大胆票{idx}", kind="大胆票",
+            legs=[
+                _combo_leg("周一001", "had", 3.0),
+                _combo_leg(partner, "had", 3.0),
+                _combo_leg(f"周一9{idx:02d}", "had", 3.0),
+            ],
+            fold=3, total_odds=27.0, avg_boldness=0.4, note="n",
+        )
+
+    plan = BoldComboPlan(
+        run_date="2026-05-18", day_chaos=10, chaos_band="平静",
+        anchor=anchor_ticket([]),
+        tickets=[ticket(1, "周一002"), ticket(2, "周一003"), ticket(3, "周一004")],
+    )
+    out = render_bold_plan(plan)
+    assert "集中度提示" in out
+    assert "周一001" in out                            # the over-shared match named
+
+
+def test_render_bold_plan_notes_idle_budget_is_a_choice() -> None:
+    """The footer honestly says multiple tickets ≠ diversification (spec §11.2)."""
+    from nutmeg.services.jczq_bold_combos import BoldComboEngine, render_bold_plan
+
+    plan = BoldComboEngine().generate("2026-05-18", [])
+    out = render_bold_plan(plan)
+    assert "一张都不买" in out
