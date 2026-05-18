@@ -150,6 +150,27 @@ def test_parse_european_1x2_second_match() -> None:
     assert abs(sum(market.fair_probability.values()) - 1.0) < 1e-6
 
 
+def test_parse_european_1x2_exposes_opening_and_per_book_odds() -> None:
+    """The drift signal needs the opening row; the dispersion signal needs the
+    per-bookmaker live spread — both must be exposed by ``parse_european_1x2``."""
+    html = (_FIXTURE_DIR / "ouzhi-1366371.html").read_text(encoding="utf-8")
+
+    market = parse_european_1x2(html)
+
+    assert market is not None
+    # Opening odds: the international-book average of the OPENING row.
+    assert set(market.opening_odds) == {"home", "draw", "away"}
+    assert all(o > 1.0 for o in market.opening_odds.values())
+    # The market moved between opening and live — they are not identical.
+    assert market.opening_odds != market.odds
+    # Per-book live odds: one list per outcome, one entry per international book.
+    assert set(market.per_book_odds) == {"home", "draw", "away"}
+    assert len(market.per_book_odds["home"]) == market.bookmaker_count
+    assert len(market.per_book_odds["draw"]) == market.bookmaker_count
+    assert len(market.per_book_odds["away"]) == market.bookmaker_count
+    assert all(o > 1.0 for o in market.per_book_odds["home"])
+
+
 def test_parse_european_1x2_returns_none_on_empty_page() -> None:
     assert parse_european_1x2("<html><body>no table</body></html>") is None
 

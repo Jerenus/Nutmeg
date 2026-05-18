@@ -203,6 +203,8 @@ class MarketOdds:
     independent: bool
     line: str | None = None
     bookmaker_count: int = 0
+    opening_odds: dict[str, float] = field(default_factory=dict)
+    per_book_odds: dict[str, list[float]] = field(default_factory=dict)
 
 
 def _devig(odds: dict[str, float]) -> dict[str, float]:
@@ -280,6 +282,9 @@ def parse_european_1x2(html: str) -> MarketOdds | None:
     home: list[float] = []
     draw: list[float] = []
     away: list[float] = []
+    open_home: list[float] = []
+    open_draw: list[float] = []
+    open_away: list[float] = []
     for row_id, body in _book_rows(html):
         if row_id == _SPORTTERY_ROW_ID:
             continue
@@ -290,12 +295,16 @@ def parse_european_1x2(html: str) -> MarketOdds | None:
         # Two <tr>: opening (first 3) + live (last 3). Use the live odds.
         if len(cells) < 6:
             continue
+        opening = [float(c) for c in cells[0:3]]
         live = [float(c) for c in cells[3:6]]
-        if any(o <= 1.0 for o in live):
+        if any(o <= 1.0 for o in live) or any(o <= 1.0 for o in opening):
             continue
         home.append(live[0])
         draw.append(live[1])
         away.append(live[2])
+        open_home.append(opening[0])
+        open_draw.append(opening[1])
+        open_away.append(opening[2])
 
     if not home:
         return None
@@ -304,11 +313,18 @@ def parse_european_1x2(html: str) -> MarketOdds | None:
         "draw": round(sum(draw) / len(draw), 4),
         "away": round(sum(away) / len(away), 4),
     }
+    opening_odds = {
+        "home": round(sum(open_home) / len(open_home), 4),
+        "draw": round(sum(open_draw) / len(open_draw), 4),
+        "away": round(sum(open_away) / len(open_away), 4),
+    }
     return MarketOdds(
         odds=odds,
         fair_probability=_devig(odds),
         independent=True,
         bookmaker_count=len(home),
+        opening_odds=opening_odds,
+        per_book_odds={"home": home, "draw": draw, "away": away},
     )
 
 
