@@ -574,7 +574,14 @@ def bold_leg_for_market(match: BoldMatch, market: str) -> BoldLeg | None:
     if not usable:
         return None
     scores = market_boldness(match, market)
-    pick = max(usable, key=lambda k: scores.get(k, 0.0))
+    # spec §13 — pick the boldest leg whose 体彩 odds sit in the realistic
+    # underdog range (a clear cold pick, not a freak scoreline). Only when NO
+    # outcome is realistic does it fall back to all usable outcomes.
+    realistic = {
+        k: v for k, v in usable.items() if LEG_ODDS_MIN <= v <= LEG_ODDS_MAX
+    }
+    pick_pool = realistic or usable
+    pick = max(pick_pool, key=lambda k: scores.get(k, 0.0))
     label = _market_pick_label(market, pick)
     reason = f"{MARKET_LABELS[market]} · {label} · 大胆腿"
     return BoldLeg(
@@ -700,6 +707,15 @@ CONCENTRATION_PENALTY: float = 0.35
 # 🟦 cross-ticket concentration warning in the renderer (spec §11.2).
 CONCENTRATION_WARN_FRACTION: float = 0.6
 
+# spec §13 — bold tickets target a realistic combined-odds band rather than the
+# maximum. The band is for a 3-fold; longer parlays scale it geometrically.
+TARGET_ODDS_3FOLD_LOW: float = 80.0
+TARGET_ODDS_3FOLD_HIGH: float = 400.0
+# A bold leg's 体彩 odds are kept in this realistic underdog range — a clear
+# cold pick, not a freak scoreline (spec §13).
+LEG_ODDS_MIN: float = 3.0
+LEG_ODDS_MAX: float = 9.0
+
 
 def _effective_odds(total_odds: float) -> float:
     """Combined odds capped at the 竞彩 payout limit (spec §10.1).
@@ -756,13 +772,36 @@ def _fold_weights(chaos: int) -> dict[int, int]:
     return {3: 1, 4: 2, 5: 2}
 
 
-def _ticket_rank_score(legs: list[BoldLeg]) -> float:
-    """A ticket's ranking score — ``effective_odds × avg_boldness`` (spec §10.1).
+def _band_fit(total_odds: float, fold: int) -> float:
+    """How well a ticket's combined odds fits the realistic target band (spec §13).
 
-    Uses ``_effective_odds`` (capped at the 竞彩 payout limit) so combos beyond
-    the cap do not out-rank a collectable combo on un-payable odds alone.
+    The 80-400× band for a 3-fold scales geometrically with ``fold`` (so per-leg
+    odds stay realistic — a longer parlay is naturally higher). Returns 1.0
+    inside the band and a ratio-based decay outside, so a moonshot combo ranks
+    far below a realistic one.
     """
-    return _effective_odds(_ticket_total_odds(legs)) * _ticket_avg_boldness(legs)
+    exponent = fold / 3.0
+    low = TARGET_ODDS_3FOLD_LOW**exponent
+    high = TARGET_ODDS_3FOLD_HIGH**exponent
+    if total_odds <= 0:
+        return 0.0
+    if total_odds < low:
+        return total_odds / low
+    if total_odds > high:
+        return high / total_odds
+    return 1.0
+
+
+def _ticket_rank_score(legs: list[BoldLeg]) -> float:
+    """A ticket's ranking score — ``band_fit × avg_boldness`` (spec §13).
+
+    Ranks combos by how well they fit the realistic target odds band, NOT by
+    raw odds — so the engine assembles bold-but-plausible parlays instead of
+    chasing un-collectable million-fold moonshots.
+    """
+    return _band_fit(
+        _ticket_total_odds(legs), len(legs)
+    ) * _ticket_avg_boldness(legs)
 
 
 def _over_cap_note(total_odds: float) -> str:

@@ -344,9 +344,13 @@ def test_bold_combos_total_odds_is_product_of_leg_odds() -> None:
         assert math.isclose(ticket.total_odds, product, rel_tol=1e-9)
 
 
-def test_bold_combos_ranked_by_total_odds_times_avg_boldness() -> None:
+def test_bold_combos_ranked_by_band_fit_times_avg_boldness() -> None:
+    """Tickets are ordered by band-fit × 大胆分 — realistic-odds combos rank
+    first, not raw-odds moonshots (spec §13)."""
+    from nutmeg.services.jczq_bold_combos import _ticket_rank_score
+
     tickets = bold_combos(_legs(6), chaos=50)
-    scores = [t.total_odds * t.avg_boldness for t in tickets]
+    scores = [_ticket_rank_score(t.legs) for t in tickets]
     assert scores == sorted(scores, reverse=True)
 
 
@@ -756,20 +760,22 @@ def test_market_boldness_weights_normalize_per_market() -> None:
     assert set(scores) == {"home", "draw", "away"}
 
 
-def test_bold_leg_for_market_picks_market_argmax() -> None:
+def test_bold_leg_for_market_populates_leg_fields() -> None:
+    """bold_leg_for_market returns a leg with the right market, display label,
+    and 体彩 odds consistent with the chosen outcome."""
     from nutmeg.services.jczq_bold_combos import BoldMatch, bold_leg_for_market
 
-    # A 比分 leg — the coldest scoreline (longest odds) is the boldest pick.
+    # all crs outcomes are inside the realistic odds range (spec §13).
     match = BoldMatch(
         match_no="周一001", league="芬超", home="拉赫蒂", away="瓦萨",
         tc_odds={"home": 2.0, "draw": 3.2, "away": 3.5},
-        crs_odds={"s01s00": 6.0, "s00s00": 9.0, "s03s02": 41.0},
+        crs_odds={"s01s00": 6.0, "s00s00": 9.0, "s02s01": 7.5},
     )
     leg = bold_leg_for_market(match, "crs")
     assert leg is not None
     assert leg.market == "crs"
-    assert leg.pick_label == "3:2"          # the coldest scoreline
-    assert leg.tc_odds == 41.0
+    assert leg.pick_label in {"1:0", "0:0", "2:1"}
+    assert leg.tc_odds == match.crs_odds[leg.pick]   # odds match the picked key
 
 
 def test_bold_leg_for_market_returns_none_without_market_odds() -> None:
@@ -1120,3 +1126,70 @@ def test_balanced_pool_caps_one_market_below_pool_size() -> None:
 
     assert len(pool) == 4
     assert len({lg.market for lg in pool}) >= 2        # not a single-market pool
+
+
+# ---------------------------------------------------------------------------
+# spec §13 — realistic target odds band
+# ---------------------------------------------------------------------------
+
+
+def test_band_fit_peaks_inside_target_band() -> None:
+    """_band_fit is 1.0 inside the realistic band, decays outside (spec §13)."""
+    from nutmeg.services.jczq_bold_combos import _band_fit
+
+    assert _band_fit(200.0, 3) == 1.0                  # inside 80-400×
+    assert _band_fit(40.0, 3) < 1.0                    # below the band
+    assert _band_fit(8000.0, 3) < 0.1                  # moonshot — crushed
+    # the band scales up with fold — 3000× fits a 5-fold but not a 3-fold.
+    assert _band_fit(3000.0, 5) > _band_fit(3000.0, 3)
+
+
+def test_bold_leg_for_market_prefers_realistic_odds_range() -> None:
+    """bold_leg_for_market picks a leg inside the realistic odds range, not the
+    coldest freak scoreline (spec §13)."""
+    from nutmeg.services.jczq_bold_combos import (
+        LEG_ODDS_MAX,
+        LEG_ODDS_MIN,
+        BoldMatch,
+        bold_leg_for_market,
+    )
+
+    match = BoldMatch(
+        match_no="周一001", league="L", home="H", away="A",
+        tc_odds={"home": 2.0, "draw": 3.3, "away": 3.6},
+        crs_odds={"s01s00": 6.0, "s00s00": 9.0, "s00s05": 800.0},
+    )
+    leg = bold_leg_for_market(match, "crs")
+
+    assert leg is not None
+    assert LEG_ODDS_MIN <= leg.tc_odds <= LEG_ODDS_MAX  # not the 800× freak
+
+
+def test_engine_bold_tickets_land_in_realistic_odds_band() -> None:
+    """Bold 3-fold tickets target ~80-400× — realistic, not million-fold
+    moonshots (spec §13)."""
+    from nutmeg.services.jczq_bold_combos import BoldComboEngine, BoldMatch
+
+    matches = [
+        BoldMatch(
+            match_no=f"周一{i:03d}", league="L", home="H", away="A",
+            tc_odds={"home": 2.0, "draw": 3.5, "away": 4.0},
+            ttg_odds={
+                "total_0": 30.0, "total_1": 5.0, "total_2": 3.3,
+                "total_3": 4.0, "total_4": 6.5, "total_5": 12.0,
+                "total_6": 25.0, "total_7": 40.0,
+            },
+            crs_odds={
+                "s01s00": 6.0, "s00s00": 9.0, "s02s01": 7.5,
+                "s03s02": 41.0, "s00s05": 800.0,
+            },
+        )
+        for i in range(1, 5)
+    ]
+    plan = BoldComboEngine().generate("2026-05-18", matches)
+
+    assert plan.tickets
+    three_folds = [t for t in plan.tickets if t.fold == 3]
+    assert three_folds
+    for ticket in three_folds:
+        assert ticket.total_odds < 2000, f"moonshot 3-fold: {ticket.total_odds}"
