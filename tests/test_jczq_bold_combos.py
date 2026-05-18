@@ -974,3 +974,50 @@ def test_bold_combos_flags_over_cap_ticket_honestly() -> None:
     assert tickets
     assert "封顶" in tickets[0].note                   # honest cap annotation
     assert tickets[0].total_odds == 8_000_000.0       # real product NOT truncated
+
+
+# ---------------------------------------------------------------------------
+# spec §11 — no-胜平负 matches load; cross-ticket concentration
+# ---------------------------------------------------------------------------
+
+
+def test_bold_matches_from_sporttery_keeps_match_without_胜平负() -> None:
+    """A 让球/总进球/比分 board with no 胜平负 (体彩 hasn't opened had yet) must
+    still load — the multi-market engine scores those markets without 胜平负
+    (spec §11.1)."""
+    from nutmeg.services.jczq_bold_combos import bold_matches_from_sporttery
+
+    value = {"matchInfoList": [{"businessDate": "2026-05-18", "subMatchList": [{
+        "matchNumStr": "周一004", "businessDate": "2026-05-18",
+        "matchStatus": "Selling", "leagueAbbName": "英超",
+        "homeTeamAbbName": "阿森纳", "awayTeamAbbName": "伯恩利",
+        "had": {},                                          # 胜平负 not opened
+        "hhad": {"h": "2.62", "d": "4.30", "a": "1.94", "goalLine": "-2"},
+        "ttg": {f"s{k}": str(5.0 + k) for k in range(8)},
+        "crs": {"s02s00": "5.75", "s03s00": "4.90", "s1sh": "5.75"},
+    }]}]}
+
+    matches = bold_matches_from_sporttery(value, run_date="2026-05-18", bold_odds={})
+
+    assert len(matches) == 1
+    m = matches[0]
+    assert m.match_no == "周一004"
+    assert m.tc_odds == {}                                  # no 胜平负 leg possible
+    assert m.hhad_odds == {"home": 2.62, "draw": 4.30, "away": 1.94}
+    assert m.ttg_odds and m.crs_odds                        # other markets loaded
+
+
+def test_bold_matches_from_sporttery_skips_match_with_no_markets() -> None:
+    """A match with every pool empty is still skipped (spec §11.1)."""
+    from nutmeg.services.jczq_bold_combos import bold_matches_from_sporttery
+
+    value = {"matchInfoList": [{"businessDate": "2026-05-18", "subMatchList": [{
+        "matchNumStr": "周一009", "businessDate": "2026-05-18",
+        "matchStatus": "Selling", "leagueAbbName": "x",
+        "homeTeamAbbName": "A", "awayTeamAbbName": "B",
+        "had": {}, "hhad": {}, "ttg": {}, "crs": {},
+    }]}]}
+
+    assert bold_matches_from_sporttery(
+        value, run_date="2026-05-18", bold_odds={}
+    ) == []

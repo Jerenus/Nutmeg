@@ -1201,8 +1201,9 @@ def bold_matches_from_sporttery(
     only ``Selling`` matches whose ``businessDate`` equals ``run_date`` are
     kept. ``bold_odds`` maps 竞彩号 → ``{"match_winner": MarketOdds,
     "over_under": MarketOdds}`` — a match absent from it gets empty 国际 fields
-    and its 欧赔/大小球 signals degrade to 0. A match with no usable had odds is
-    skipped (never a crash).
+    and its 欧赔/大小球 signals degrade to 0. A match is loaded when ANY of its
+    four markets has usable odds (spec §11.1 — 让球/总进球/比分 do not need
+    胜平负); a match with every pool empty is skipped (never a crash).
     """
     matches: list[BoldMatch] = []
     for day in value.get("matchInfoList") or []:
@@ -1212,10 +1213,18 @@ def bold_matches_from_sporttery(
             business_date = str(raw.get("businessDate") or day.get("businessDate") or "")
             if run_date and business_date and business_date != run_date:
                 continue
-            had_odds = _had_from_pool(raw.get("had") or {})
-            if len(had_odds) < 3:
-                continue
             hhad_pool = raw.get("hhad") or {}
+            had_odds = _had_from_pool(raw.get("had") or {})
+            hhad_odds = _had_from_pool(hhad_pool)
+            ttg_odds = _ttg_from_pool(raw.get("ttg") or {})
+            crs_odds = _crs_from_pool(raw.get("crs") or {})
+            # spec §11.1 — load the match if ANY market has usable odds. had
+            # missing → no 胜平负 leg, no anchor slot (anchor is had-only and
+            # skips it), but 让球/总进球/比分 legs are produced as normal.
+            if not (
+                len(had_odds) >= 3 or len(hhad_odds) >= 3 or ttg_odds or crs_odds
+            ):
+                continue
             match_no = str(raw.get("matchNumStr") or "")
             euro = (bold_odds.get(match_no) or {}).get("match_winner")
             over_under = (bold_odds.get(match_no) or {}).get("over_under")
@@ -1234,11 +1243,11 @@ def bold_matches_from_sporttery(
                     ),
                     tags=_strong_favorite_tags(had_odds),
                     vig=_tc_vig(had_odds),
-                    hhad_odds=_had_from_pool(hhad_pool),
+                    hhad_odds=hhad_odds,
                     hhad_line=_signed_float(hhad_pool.get("goalLineValue"))
                     or _signed_float(hhad_pool.get("goalLine")) or 0.0,
-                    ttg_odds=_ttg_from_pool(raw.get("ttg") or {}),
-                    crs_odds=_crs_from_pool(raw.get("crs") or {}),
+                    ttg_odds=ttg_odds,
+                    crs_odds=crs_odds,
                     ou_odds=dict(over_under.odds) if over_under else {},
                     ou_line=float(over_under.line)
                     if over_under and over_under.line else 0.0,
