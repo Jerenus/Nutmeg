@@ -12,12 +12,17 @@ import math
 
 from nutmeg.services.jczq_bold_combos import (
     OUTCOMES,
+    POOL_MAX,
+    POOL_MIN,
     BoldLeg,
     BoldMatch,
     bold_leg,
     boldness,
+    chaos_band,
+    chaos_pool_size,
     conflict_score,
     contrarian_score,
+    day_chaos,
     dispersion_score,
     drift_score,
     heat_score,
@@ -221,3 +226,64 @@ def test_bold_leg_reason_names_the_largest_signal_contribution() -> None:
 
     assert leg.pick == "away"  # the coldest non-favorite — contrarian-driven
     assert "反直觉冷门" in leg.reason
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — day-level chaos value
+# ---------------------------------------------------------------------------
+
+
+def _calm_match(match_no: str) -> BoldMatch:
+    """A match with no conflict and books in lockstep — low uncertainty."""
+    odds = {"home": 2.0, "draw": 3.3, "away": 3.5}
+    return _match(
+        match_no=match_no,
+        tc_odds=odds,
+        euro_odds=odds,
+        euro_opening=odds,
+        per_book_odds={o: [odds[o], odds[o], odds[o]] for o in OUTCOMES},
+    )
+
+
+def _wild_match(match_no: str) -> BoldMatch:
+    """A match with a huge 体彩-vs-欧赔 gap and widely-spread books."""
+    return _match(
+        match_no=match_no,
+        tc_odds={"home": 2.0, "draw": 3.3, "away": 3.5},
+        euro_odds={"home": 6.0, "draw": 4.0, "away": 1.4},
+        euro_opening={"home": 6.0, "draw": 4.0, "away": 1.4},
+        per_book_odds={
+            "home": [3.0, 6.0, 12.0],
+            "draw": [2.5, 4.0, 7.0],
+            "away": [1.2, 1.4, 1.9],
+        },
+    )
+
+
+def test_day_chaos_low_for_calm_matches() -> None:
+    matches = [_calm_match(f"周日{i:03d}") for i in range(1, 6)]
+    assert day_chaos(matches) <= 5
+
+
+def test_day_chaos_high_for_wild_matches() -> None:
+    matches = [_wild_match(f"周日{i:03d}") for i in range(1, 6)]
+    assert day_chaos(matches) >= 60
+
+
+def test_day_chaos_clamped_to_0_100() -> None:
+    assert 0 <= day_chaos([_calm_match("周日001")]) <= 100
+    assert 0 <= day_chaos([_wild_match("周日001")]) <= 100
+    assert day_chaos([]) == 0
+
+
+def test_chaos_pool_size_maps_chaos_to_candidate_pool() -> None:
+    assert chaos_pool_size(0) == POOL_MIN
+    assert chaos_pool_size(100) == POOL_MAX
+    mid = chaos_pool_size(50)
+    assert POOL_MIN <= mid <= POOL_MAX
+
+
+def test_chaos_band_labels() -> None:
+    assert chaos_band(5) == "平静"
+    assert chaos_band(50) == "中等"
+    assert chaos_band(90) == "混乱"

@@ -289,3 +289,62 @@ def bold_leg(match: BoldMatch) -> BoldLeg:
         boldness=scores[pick],
         reason=reason,
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — day-level chaos value (spec §3.5)
+# ---------------------------------------------------------------------------
+
+# CHAOS_SCALE maps a per-match uncertainty (mean dispersion + mean conflict,
+# roughly [0, 2]) onto the 0-100 chaos scale. Documented default.
+CHAOS_SCALE: float = 50.0
+# The candidate-pool size bounds — documented defaults (spec / plan §4).
+POOL_MIN: int = 4
+POOL_MAX: int = 10
+
+
+def _match_uncertainty(match: BoldMatch) -> float:
+    """One match's uncertainty: ``mean(dispersion) + mean(conflict)`` over the
+    three outcomes — the §3.5 building block of the day chaos value."""
+    tc_fair = _fair_from_odds(match.tc_odds)
+    euro_fair = _fair_from_odds(match.euro_odds)
+    conflict = conflict_score(tc_fair, euro_fair)
+    dispersion = dispersion_score(match.per_book_odds)
+    mean_conflict = sum(conflict.values()) / len(OUTCOMES)
+    mean_dispersion = sum(dispersion.values()) / len(OUTCOMES)
+    return mean_conflict + mean_dispersion
+
+
+def day_chaos(matches: list[BoldMatch]) -> int:
+    """Aggregate the day's matches into a single 0-100 大盘面混乱值.
+
+    Per match → an uncertainty (``_match_uncertainty``); the day value is the
+    *median* uncertainty scaled by ``CHAOS_SCALE``, rounded and clamped to
+    [0, 100]. The median (not the mean) keeps one freak match from dominating.
+    An empty day → 0 (calm), never a crash.
+    """
+    if not matches:
+        return 0
+    uncertainties = sorted(_match_uncertainty(m) for m in matches)
+    median = statistics.median(uncertainties)
+    return max(0, min(100, round(median * CHAOS_SCALE)))
+
+
+def chaos_pool_size(chaos: int) -> int:
+    """Map the day chaos value to the candidate-pool size ``N``.
+
+    Linear from ``POOL_MIN`` at chaos 0 to ``POOL_MAX`` at chaos 100 — a calm
+    day picks from a small, restrained pool; a chaotic day from a big, wild one.
+    """
+    chaos = max(0, min(100, chaos))
+    span = POOL_MAX - POOL_MIN
+    return POOL_MIN + round(span * chaos / 100)
+
+
+def chaos_band(chaos: int) -> str:
+    """Label the day chaos value: 平静 (< 34) / 中等 (34-66) / 混乱 (> 66)."""
+    if chaos < 34:
+        return "平静"
+    if chaos <= 66:
+        return "中等"
+    return "混乱"
