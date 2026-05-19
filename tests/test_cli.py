@@ -3855,6 +3855,47 @@ def test_jczq_bold_combos_dispatch_telegram_defaults_to_dry_run(tmp_path) -> Non
     assert "Telegram dispatch: dry_run" in result.output
 
 
+def test_jczq_bold_review_replays_grades_and_renders(tmp_path, monkeypatch) -> None:
+    """`jczq-bold-review` replays the §14 snapshot, grades it against (faked)
+    okooo results and renders the honest 🎲-labelled backtest (spec §16)."""
+    import json
+
+    from nutmeg.services import jczq_review as review_module
+    from nutmeg.services.jczq_bold_combos import HARD_LABEL
+
+    def m(no: str) -> dict:
+        return {
+            "matchNumStr": no, "businessDate": "2026-05-18",
+            "matchStatus": "Selling", "leagueAbbName": "芬超",
+            "homeTeamAbbName": "主", "awayTeamAbbName": "客",
+            "had": {"h": "2.00", "d": "3.20", "a": "3.50"},
+            "ttg": {f"s{k}": str(4.0 + k) for k in range(8)},
+            "crs": {"s01s00": "6.50", "s00s00": "9.00", "s03s02": "41.0"},
+        }
+    snap_dir = tmp_path / "daily" / "2026-05-18"
+    snap_dir.mkdir(parents=True)
+    (snap_dir / "sporttery_markets.json").write_text(
+        json.dumps({"matchInfoList": [{"businessDate": "2026-05-18",
+            "subMatchList": [m("周一001"), m("周一002"), m("周一003")]}]}),
+        encoding="utf-8",
+    )
+    # never touch the live okooo site — fake the result provider
+    monkeypatch.setattr(
+        review_module.OkoooJczqResultProvider, "fetch_results",
+        lambda self, run_date: {"周一001": {"had": "胜", "score": "1:0"}},
+    )
+
+    result = runner.invoke(app, [
+        "jczq-bold-review", "--date", "2026-05-18",
+        "--output-dir", str(tmp_path),
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert HARD_LABEL in result.output
+    assert "票面回测" in result.output and "累计趋势" in result.output
+    assert (snap_dir / "bold-review.md").exists()
+
+
 def test_jczq_web_command_starts_localhost_app(monkeypatch, tmp_path: Path) -> None:
     calls: list[dict[str, object]] = []
 

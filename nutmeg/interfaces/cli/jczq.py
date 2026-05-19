@@ -387,8 +387,9 @@ def _resolve_jczq_date(value: str | None) -> str:
     return value
 
 
-def _dispatch_bold_combos(rendered: str, *, dry_run: bool) -> str:
-    """Push the bold-combo plan to the configured Telegram chats.
+def _dispatch_jczq_telegram(rendered: str, *, dry_run: bool) -> str:
+    """Push a rendered JCZQ message (bold plan or bold review) to the configured
+    Telegram chats.
 
     Mirrors the advisor/review dispatch seam — dry-run by default, the welded
     🎲 honest label rides along untouched at the top of the message. Returns a
@@ -458,11 +459,41 @@ def jczq_bold_combos(
         _cli.console.print(f"Wrote bold-combo plan: {write}")
 
     if dispatch_telegram:
-        status = _dispatch_bold_combos(rendered, dry_run=dry_run)
+        status = _dispatch_jczq_telegram(rendered, dry_run=dry_run)
         _cli.console.print(f"Telegram dispatch: {status}")
 
     if write is None and not dispatch_telegram:
         _cli.typer.echo(rendered)
+
+
+@_cli.app.command("jczq-bold-review")
+def jczq_bold_review(
+    run_date: str | None = _cli.typer.Option(
+        None, "--date", help="复盘日期 YYYY-MM-DD / today / yesterday（默认昨天）"
+    ),
+    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
+    dispatch_telegram: bool = _cli.typer.Option(
+        False, "--dispatch-telegram", help="把复盘推送到 Telegram"
+    ),
+    dry_run: bool = _cli.typer.Option(
+        True, "--dry-run/--no-dry-run", help="dry-run 时不实际推送（默认开）"
+    ),
+) -> None:
+    """bold 大胆票的次日赛后复盘 — 用 §14 快照复现票面、对 okooo 赛果定级。
+
+    赛后对照，只报命中 / 未中 + 累计趋势，不预测、不号称优势。每日 launchd
+    自动流走这条（com.nutmeg.jczq.bold-review-8am）。
+    """
+    from nutmeg.services.jczq_bold_review import run_bold_review
+
+    target_date = _resolve_jczq_date(run_date or "yesterday")
+    review = run_bold_review(target_date, output_dir)
+
+    if dispatch_telegram:
+        status = _dispatch_jczq_telegram(review.message, dry_run=dry_run)
+        _cli.console.print(f"Telegram dispatch: {status}")
+    else:
+        _cli.typer.echo(review.message)
 
 
 @_cli.app.command("jczq-web")
