@@ -145,3 +145,35 @@ v1 大胆引擎只做胜平负。薄盘日（如 2026-05-18 只有 3 场）→ 3
 - **单腿赔率区间**：`LEG_ODDS_MIN = 3.0`、`LEG_ODDS_MAX = 9.0`。`bold_leg_for_market` 在该区间内挑最大胆的腿（腿是「明确冷门」不是「freak 怪球」）；某场该区间内无可选时退回全体最大胆腿（兜底，真实数据极少触发——每场总进球 2/3/4 球都在区间内）。
 - **组合排序**：`_ticket_rank_score` 从「有效赔率 × 大胆分」改为「`_band_fit(总赔率, fold)` × 大胆分」。`_band_fit` 在目标带内为 1.0、带外按比率衰减 —— moonshot 组合的排序分被打到极低，选不进票面。
 - §10 的返奖封顶诚实标注**保留**作兜底；目标带在 80–400×，正常不再触发。`bold_leg`（v1 胜平负-only 函数）不受影响。
+
+## 14. 后续修订 V（欧赔快照可复现，2026-05-19）
+
+2026-05-18 复盘把 bold 引擎首次回放（`uv run nutmeg jczq-bold-combos --replay 2026-05-18`）暴露一处隐性失真：输出的**大盘面混乱值 0/100**，conflict / drift / dispersion 三个信号全为 0 —— 而当天 brief 明确显示 500.com 欧赔 4/4 场对齐 100%。根因在 `run_bold_combos_multimarket`：国际 odds（`collect_bold_odds`）只在 `replay=False` 分支抓取，且**从不持久化**。`replay=True` 时 `bold_odds` 恒为 `{}` → 5 个信号只剩 heat + contrarian 2 个 → 回放出来的方案是「跛脚引擎」的方案。**每一次回测 / 复盘都在用一个残缺引擎**，回测结论本身不可信。
+
+**修正**：国际 odds 与 Sporttery 完整盘一样落日级快照。
+
+- **live 跑**（`replay=False`）：`collect_bold_odds` 成功后，`persist_bold_odds_snapshot` 把结果写 `daily/<date>/bold_odds.json`。每个 `MarketOdds`（`nutmeg.data.fcom500`，纯 dataclass、无预测模型）经 `dataclasses.asdict` 序列化为纯 dict —— odds / fair_probability / independent / line / bookmaker_count / opening_odds / per_book_odds 全是 JSON 原生类型。
+- **replay 跑**（`replay=True`）：`load_bold_odds_snapshot` 读回快照、用 `MarketOdds(**d)` 重建对象填进 `bold_odds`；再交给 `bold_matches_from_sporttery` 走原有富集路径。
+- **快照缺失**（5/18 及更早的日期从未存过）→ `load_bold_odds_snapshot` 返回 `{}`，优雅降级体彩-only，与现状一致、绝不崩。5/19 起的 live 跑会带快照，回放从此完整复现。
+- `MarketOdds` 是 `nutmeg.data.fcom500` 既有 dataclass，引擎已在 `euro_from_fcom500` / `replay_bold_combos` import 它 —— 不新增对预测模型的依赖，§7 三条硬约束不动。
+
+验收：`MarketOdds` → dict → `MarketOdds` 往返相等；replay 读到快照后 conflict 信号非 0（混乱值不再恒 0）；快照缺失返回 `{}` 不崩；TDD，全量 `pytest` 绿。
+
+## 15. 后续修订 VI（主题剧本票，2026-05-19）
+
+2026-05-18 回测暴露：5 张大胆票实为**同几条腿的排列**（4 张共用 002 比分 1:2 + 001 比分 2:1），让球腿系统性全是「让平」，票面毫无性格。根因：薄盘日候选腿少，`bold_combos` 的多样性惩罚贪心退化为原排序 → 每张票都奔同一批最高分腿。bold 引擎卖的是「想象力」，5 张同质票把想象力清零。
+
+**修正**：把「大胆票 1-5」从「排序分 top-N」改为**一票一主题**，每张票一个剧本原型 + 一句剧本叙事。
+
+- **5 个主题原型**（按腿构成事后归类，描述性、不改选腿、不与 §10.2 跨市场上限冲突）：
+  - **平局收割** —— 平局向腿（胜平负平 / 让球让平 / 比分平局）占多数
+  - **冷门比分梦** —— 比分腿占多数
+  - **黑马让球** —— 让球腿占多数
+  - **进球狂欢** —— 总进球腿占多数
+  - **全市场混搭** —— 跨市场无单一主导（含胜平负主导的兜底情形）
+  - 归类优先级：平局向多数 → 平局收割；否则单一市场过半 → 该市场主题；否则 → 全市场混搭。
+- **一票一主题选取**：`bold_combos` 把 3/4/5 串的全部合法组合（守 Rule O + §10.2）汇成一池，逐个归类；再按主题固定顺序，每个主题取该主题内排序分（`_band_fit × 大胆分`）最高的一张，仍用集中度惩罚做同分摊派。某主题当天无组合 → 跳过（薄盘日**诚实地少出几张**，不硬凑 5 张雷同票）。一票一主题天然低重合 —— 平局收割票与进球狂欢票几乎不可能共腿。
+- **chaos 的角色**：仍由 `chaos_pool_size` 驱动候选池大小（「娱乐抖动旋钮」照转）；组合长度不再由 `_fold_weights` 硬性配额决定，而是随主题自然浮现 —— §3.5 的「混乱→更长更野」改由主题多样性表达。
+- **剧本叙事**：每张票渲染时票头带主题名（`### 大胆票1 · 冷门比分梦（…）`），票下加一行 `> 剧本：…`。叙事是纯娱乐 flavour，**不含任何优势措辞**（沿用 banned 词表 胜率 / edge / +EV / 正期望 / 推荐下注 / 重仓 断言）。
+
+验收：主题归类对 fixture 确定；同一主题不重复出票、不同票主题各异；渲染含主题名 + 剧本行；输出无 banned 词（§7 沿用）；薄盘日组合不足时少于 5 张不崩；TDD，全量 `pytest` 绿。
