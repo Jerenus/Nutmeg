@@ -148,6 +148,12 @@ Use `--max-polls` for local/cron validation; omit it only when running a supervi
 
 OpenClaw Telegram integration:
 
+`nutmegbot` is now configured as a project-level Codex entrypoint for this repo.
+Telegram/OpenClaw messages should be treated like tasks sent to Codex from
+`/Users/jz71/Projects/Nutmeg`, not like a router-only command surface. The
+legacy router is still available as a deterministic helper for football command
+output:
+
 ```bash
 python3 scripts/openclaw/nutmeg_command_router.py status
 python3 scripts/openclaw/nutmeg_command_router.py --reply-text status
@@ -155,21 +161,17 @@ python3 scripts/openclaw/nutmeg_command_router.py --print-command popular --leag
 python3 scripts/openclaw/nutmeg_command_router.py popular --league epl --days 3
 ```
 
-Use OpenClaw as the Telegram entrypoint and Nutmeg as the execution engine.
-Router responses include deterministic `reply_text`; Telegram should send that
-field verbatim, and terminal users can pass `--reply-text` to see the same text.
-The OpenClaw-facing command contract is documented in
-`docs/integrations/openclaw-telegram-command-manual.md`; the short agent
-instruction is in `docs/integrations/openclaw-nutmeg-agent-instruction.md`.
+Use OpenClaw as the Telegram entrypoint and Nutmeg/Codex as the execution
+engine. The OpenClaw-facing project-mode instruction is documented in
+`docs/integrations/openclaw-nutmeg-agent-instruction.md`; the legacy router
+command reference remains in `docs/integrations/openclaw-telegram-command-manual.md`.
 The configured OpenClaw objects are Telegram account `nutmeg`, agent
 `nutmegbot`, and binding `telegram:nutmeg`.
 OpenClaw's global default model is `nyu-openai-chat/gpt-5.5` with
 `nyu-openai/gpt-5.4` as fallback, so default-inheriting OpenClaw agents use the
 same GPT-5.5 compatibility path as `nutmegbot`.
-`nutmegbot` should point at the dedicated workspace
-`/Users/jz71/.openclaw/workspaces/nutmeg`; do not point it at a shared
-OpenClaw workspace containing `BOOTSTRAP.md`, or `/start` can enter identity
-setup instead of the Nutmeg command menu.
+`nutmegbot` should point directly at this project root:
+`/Users/jz71/Projects/Nutmeg`.
 If OpenClaw owns a Telegram bot token, do not run `telegram-bot-run` with the
 same token at the same time.
 
@@ -367,8 +369,8 @@ python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider 
 The current JCZQ workflow is the brief → debate workspace → human finalization
 → PDF path. `jczq-mixed-report --provider live` is retired and exits with
 guidance to this workflow; `--provider sample` remains only for historical
-smoke tests. The OpenClaw router intentionally exposes only supported betting
-assistant actions and rejects retired non-betting content/video/WeChat/Seedance
-actions instead of fabricating commands. Nutmeg remains analysis assistance
-only: no bet placement, no sportsbook connection, and no guaranteed-profit
-claims.
+smoke tests. The legacy OpenClaw router intentionally exposes only supported
+betting assistant actions and rejects retired non-betting content/video/WeChat/
+Seedance actions instead of fabricating commands. Project-level `nutmegbot`
+may still work freely on the codebase. Nutmeg remains analysis assistance only:
+no bet placement, no sportsbook connection, and no guaranteed-profit claims.

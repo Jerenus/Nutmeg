@@ -4,6 +4,22 @@ shell commands, and other important information, read the current plan:
 `.specify/specs/046-jczq-mixed-parlay-report-v0/plan.md`
 <!-- SPECKIT END -->
 
+## OpenClaw / Nutmeg Project Codex Mode
+
+When this repository is reached through OpenClaw `nutmegbot`, treat the bot as a
+project-level Codex entrypoint opened at `/Users/jz71/Projects/Nutmeg`.
+
+- `nutmegbot` is no longer limited to the legacy Telegram safe router.
+- It may read and edit project files, run tests/builds, call `uv run nutmeg ...`,
+  use `scripts/openclaw/nutmeg_command_router.py`, and inspect project state.
+- For implementation, debugging, review, refactor, verification, or multi-step
+  analysis, it should behave like Codex in this repo root and can delegate to
+  the fixed local Codex CLI when invoked from OpenClaw.
+- The router remains a deterministic helper for Telegram-friendly football
+  command output; it is not the boundary for project work.
+- Do not leak secrets. Ask once before public dispatch, real betting/funds
+  actions, large destructive deletes, or irreversible system-level operations.
+
 ## JCZQ Daily Decision SOP
 
 This project ships a complete daily-betting analysis pipeline for Chinese Sports

@@ -1,94 +1,73 @@
 # Nutmeg Bot / OpenClaw Telegram 使用手册
 
-This file is the command contract an OpenClaw Telegram agent should use to
-operate Nutmeg. Nutmeg is the football-analysis execution engine; OpenClaw is
-the conversational Telegram operator.
+This document now describes the legacy deterministic router command reference.
+`nutmegbot` itself is configured as a project-level Codex entrypoint for
+`/Users/jz71/Projects/Nutmeg`, not as a router-only Telegram operator.
 
-## Bot Scope
+## Current Bot Scope
 
-Nutmeg Bot 是本项目的专用操作入口，只支持 `/Users/jz71/Projects/Nutmeg`
-内已经实现、已通过路由器允许的足球分析功能调用，以及与这些功能直接相关
-的使用说明、排错和服务状态说明。
+Nutmeg Bot through OpenClaw is Nutmeg Project Codex:
 
-必须遵守：
+- Telegram/OpenClaw messages are treated like tasks sent to Codex from
+  `/Users/jz71/Projects/Nutmeg`.
+- The bot may perform project development, debugging, review, tests, docs,
+  data-pipeline work, and football-analysis workflows.
+- The legacy router remains available when deterministic Telegram-friendly
+  football command output is useful, but it is not the boundary for the bot.
+- Do not fabricate football facts, odds, injuries, lineups, model probabilities,
+  or value calls. Use Nutmeg data, the project CLI, the router, or named sources.
+- Do not leak `.env`, API keys, Telegram tokens, OpenClaw credentials, or other
+  secrets.
+- Ask once before public dispatch, real Telegram broadcast, real betting/funds
+  action, large destructive deletes, or irreversible system-level operations.
 
-- 只回答 Nutmeg 项目功能、足球分析工作流、赛程/赔率/快照/简报/价值榜/
-  球员画像/战术图/预测复盘相关问题。
-- 所有事实型足球数据必须来自 Nutmeg router payload，不能凭 LLM 记忆编造。
-- 不作为通用聊天机器人、通用搜索代理、通用代码助手、系统管理助手或个人助理。
-- 不执行非 Nutmeg 项目的 shell、文件、浏览器、邮件、社交媒体、下载、安装、
-  系统配置等操作。
-- 用户提出项目外请求时，用中文简短拒绝，并引导回 Nutmeg 可用命令。
-- 如果用户请求“帮我修 Nutmeg 项目/解释 Nutmeg 命令/检查 Nutmeg 状态”，可以支持；
-  如果请求超出 Nutmeg 项目边界，必须拒绝。
-
-推荐拒绝模板：
-
-```text
-我只能支持 Nutmeg 项目内的足球分析功能调用和相关服务说明，不能处理这个项目外请求。
-你可以让我执行：/popular epl 3、/brief <fixture_id> 这场比赛怎么看？、/value epl 3、/zucai 26068、/content <report_json_path>、/status。
-```
-
-## Fixed Startup Reply
-
-For `/start` or `/help`, return this Chinese menu directly. Do not ask identity
-questions, do not run bootstrap, and do not present non-Nutmeg capabilities:
+For the active project-mode agent instruction, use:
 
 ```text
-我是 Nutmeg ⚽，本项目专用的足球分析操作员。
-我只支持 Nutmeg 项目内的功能调用和相关服务说明，不处理通用聊天或项目外任务。
-
-可用命令：
-/status 查看系统状态
-/popular epl 3 查询热门比赛
-/today epl 3 查询今日/近期候选比赛
-/brief <fixture_id> 这场比赛怎么看？ 生成比赛简报
-/snapshot <fixture_id> 查看赛前快照
-/odds <fixture_id> 查看赔率快照
-/value epl 3 查看价值盘
-/player epl 2025 <team> <player> 查看球员画像
-/visuals <fixture_id> 生成战术图
-/daily epl 3 生成每日运营摘要
-/zucai 26068 生成传统足彩14场报告
-/jczq 生成竞彩足球每日方案
-/content <report_json_path> 生成足彩分享文案审核包
-/review 查看预测复盘
-
-也可以直接问：今天有哪些热门比赛？
+docs/integrations/openclaw-nutmeg-agent-instruction.md
 ```
+
+## Startup Reply
+
+For `/start`, `/help`, or `帮助`, the current `nutmegbot` should not present the
+old router-only menu. It should say, in Chinese, that it is Nutmeg Project Codex
+and can handle project development, CLI/data tasks, tests, docs, debugging, and
+football-analysis workflows from the repo root.
 
 ## Operating Model
 
+Current project-mode path:
+
 ```text
 Telegram message
-  -> OpenClaw intent routing
-  -> scripts/openclaw/nutmeg_command_router.py --reply-text
-  -> uv run nutmeg <allowed command>
-  -> deterministic terminal text
-  -> send that text verbatim
+  -> OpenClaw routing (`telegram:nutmeg -> nutmegbot`)
+  -> Nutmeg Project Codex in /Users/jz71/Projects/Nutmeg
+  -> optional fixed Codex CLI delegation
+  -> optional Nutmeg CLI/router/tool execution
+  -> concise Chinese result
 ```
 
-Run every command from the Nutmeg project root:
+Default Codex CLI delegation for project work:
+
+```bash
+/Users/jz71/.nvm/versions/node/v22.22.1/bin/codex exec -C /Users/jz71/Projects/Nutmeg --dangerously-bypass-approvals-and-sandbox "<complete task>"
+```
+
+Run project commands from the Nutmeg project root:
 
 ```bash
 cd /Users/jz71/Projects/Nutmeg
 ```
 
-Use the router, not free-form shell:
+Legacy deterministic router helper:
 
 ```bash
 python3 scripts/openclaw/nutmeg_command_router.py --reply-text <action> [options]
 ```
 
-Terminal/Telegram consistency rule:
-
-```bash
-python3 scripts/openclaw/nutmeg_command_router.py --reply-text <action> [options]
-```
-
-The `--reply-text` output is the exact text the Telegram operator should send,
-without re-ranking, rewriting, or filling facts from conversation memory. JSON
-mode is for explicit diagnostics/raw payload requests only.
+The `--reply-text` output is still useful when the desired result is a stable
+Telegram-ready Nutmeg football command response. JSON mode remains available for
+explicit diagnostics/raw payload requests.
 
 Dry-run a route without executing Nutmeg:
 
@@ -106,30 +85,23 @@ Configured OpenClaw objects:
 - Telegram account: `nutmeg`
 - Agent: `nutmegbot`
 - Binding: `telegram:nutmeg -> nutmegbot`
+- Workspace: `/Users/jz71/Projects/Nutmeg`
 - Model: `nyu-openai-chat/gpt-5.5` with fallback `nyu-openai/gpt-5.4`
-- Dedicated agent workspace: `/Users/jz71/.openclaw/workspaces/nutmeg`
-- Workspace instruction pointer: `/Users/jz71/.openclaw/workspaces/nutmeg/NUTMEG-TELEGRAM.md`
-- Shared fallback pointer: `/Users/jz71/.openclaw/workspace/NUTMEG-TELEGRAM.md`
+- Preferred Codex CLI: `/Users/jz71/.nvm/versions/node/v22.22.1/bin/codex`
 - Token storage: `/Users/jz71/.openclaw/credentials/telegram-nutmeg-token`
 
 Use the `nyu-openai-chat/gpt-5.5` provider for this bot. Direct
 `nyu-openai/gpt-5.5` over the OpenAI Responses path can answer plain text, but
-fails on tool-result continuation because the provider returns non-persisted
-`store=false` response items. The Chat Completions compatibility provider keeps
-router-backed tool calls stable.
-
-The `nutmegbot` agent must not use a workspace containing `BOOTSTRAP.md`;
-otherwise `/start` can be hijacked by OpenClaw bootstrap setup prompts.
-
-The Telegram BotFather command menu has been set from
-`docs/integrations/openclaw-botfather-commands.txt`.
+has historically failed on tool-result continuation because the provider returns
+non-persisted `store=false` response items. The Chat Completions compatibility
+provider keeps tool calls stable.
 
 Do not run `uv run nutmeg telegram-bot-run` with the same bot token while
 OpenClaw owns this `nutmeg` account.
 
 ## Response Envelope
 
-The router returns JSON:
+The legacy router returns JSON:
 
 ```json
 {
@@ -143,21 +115,25 @@ The router returns JSON:
 }
 ```
 
-OpenClaw should use `--reply-text` and send the output verbatim. Do not paste
-large raw JSON into Telegram unless the user explicitly asks for diagnostics.
+For router-backed Telegram responses, OpenClaw may use `--reply-text` and send
+or summarize the output. Do not paste large raw JSON into Telegram unless the
+user explicitly asks for diagnostics.
 
 ## Safety Policy
 
-- Never run arbitrary shell commands for Nutmeg operations.
-- Never edit `.env` or reveal tokens from Telegram.
-- Live provider sync requires `--confirm-live`.
-- Reference refresh requires `--confirm-write`.
-- Prediction writes require `--confirm-write`.
-- Real Telegram dispatch requires `--confirm-dispatch`.
-- Content generation produces review artifacts only; it never publishes externally.
-- Default to read-only / dry-run commands.
-- If a command returns `ok=false`, report the error and suggest the next safe
-  command; do not invent data.
+- Project work is not router-only; shell/project edits are allowed in the repo.
+- Never reveal secrets from `.env`, credentials files, Telegram token files, or
+  OpenClaw state.
+- Live provider sync requires explicit intent; public dispatch requires explicit
+  confirmation.
+- Prediction writes, final-plan writes, and report artifacts are allowed when
+  the user asks for that workflow.
+- Content generation produces review artifacts only unless the user explicitly
+  asks for dispatch/publication and confirms it.
+- Nutmeg remains analysis assistance only: no bet placement, no sportsbook
+  connection, and no guaranteed-profit claims.
+- If a router command returns `ok=false`, report the error and suggest the next
+  useful command; do not invent data.
 
 ## Supported Actions
 
