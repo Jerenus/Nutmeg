@@ -1428,6 +1428,58 @@ def load_sporttery_snapshot(run_date: str, output_dir) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def persist_bold_odds_snapshot(run_date: str, output_dir, bold_odds: dict) -> None:
+    """Write the ``collect_bold_odds`` result to ``<output_dir>/daily/<run_date>/
+    bold_odds.json`` so ``--replay`` reproduces the 国际-odds-enriched engine
+    (spec §14).
+
+    Without this, ``--replay`` never re-fetches 国际 odds and degrades to
+    体彩-only — the conflict / drift / dispersion signals collapse to 0 and the
+    day chaos value falsely reads 0. ``bold_odds`` maps 竞彩号 →
+    ``{market_name: MarketOdds}``; each ``MarketOdds`` is a plain fcom500
+    dataclass (no predictive model) serialized via ``dataclasses.asdict``.
+    """
+    import dataclasses
+    import json
+    from pathlib import Path
+
+    payload = {
+        match_no: {
+            market: dataclasses.asdict(odds) for market, odds in markets.items()
+        }
+        for match_no, markets in bold_odds.items()
+    }
+    path = Path(output_dir) / "daily" / run_date / "bold_odds.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def load_bold_odds_snapshot(run_date: str, output_dir) -> dict:
+    """Read a persisted 国际-odds snapshot back into the ``bold_odds`` shape
+    ``bold_matches_from_sporttery`` expects — ``{竞彩号: {market: MarketOdds}}``.
+
+    Absent snapshot → ``{}`` — pre-§14 dates (and any day the live 国际 fetch
+    failed) degrade to 体彩-only exactly as before, never a crash. Rebuilds real
+    ``MarketOdds`` objects (a plain fcom500 dataclass — imports NO predictive
+    model).
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(output_dir) / "daily" / run_date / "bold_odds.json"
+    if not path.exists():
+        return {}
+    from nutmeg.data.fcom500 import MarketOdds
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        match_no: {
+            market: MarketOdds(**fields) for market, fields in markets.items()
+        }
+        for match_no, markets in raw.items()
+    }
+
+
 def replay_bold_combos(run_date: str, output_dir) -> str:
     """Replay a stored ``context.json`` through the bold-combo engine.
 
@@ -1496,8 +1548,13 @@ def run_bold_combos_multimarket(
         value = fetched.get("value") if "value" in fetched else fetched
         persist_sporttery_snapshot(run_date, output_dir, value)
 
+    # spec §14 — 国际 odds are snapshotted alongside the Sporttery markets so
+    # --replay reproduces the full-signal engine instead of degrading to
+    # 体彩-only (the silent chaos=0 bug a 2026-05-18 replay exposed).
     bold_odds: dict[str, dict] = {}
-    if not replay:
+    if replay:
+        bold_odds = load_bold_odds_snapshot(run_date, output_dir)
+    else:
         try:
             from nutmeg.data.fcom500 import Fcom500Client, collect_bold_odds
 
@@ -1505,6 +1562,8 @@ def run_bold_combos_multimarket(
                 bold_odds = collect_bold_odds(client)
         except Exception:  # noqa: BLE001 — 国际 odds optional; degrade
             logger.warning("bold-combos: 国际 odds enrichment failed", exc_info=True)
+        if bold_odds:
+            persist_bold_odds_snapshot(run_date, output_dir, bold_odds)
 
     matches = bold_matches_from_sporttery(
         value or {}, run_date=run_date, bold_odds=bold_odds

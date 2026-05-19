@@ -1193,3 +1193,74 @@ def test_engine_bold_tickets_land_in_realistic_odds_band() -> None:
     assert three_folds
     for ticket in three_folds:
         assert ticket.total_odds < 2000, f"moonshot 3-fold: {ticket.total_odds}"
+
+
+# ---------------------------------------------------------------------------
+# spec §14 — 欧赔 snapshot makes --replay reproducible
+# ---------------------------------------------------------------------------
+
+
+def test_bold_odds_snapshot_round_trip(tmp_path) -> None:
+    """A collect_bold_odds result survives persist → load unchanged (spec §14)."""
+    from nutmeg.data.fcom500 import MarketOdds
+    from nutmeg.services.jczq_bold_combos import (
+        load_bold_odds_snapshot,
+        persist_bold_odds_snapshot,
+    )
+
+    bold_odds = {
+        "周一001": {
+            "match_winner": MarketOdds(
+                odds={"home": 2.1, "draw": 3.3, "away": 3.5},
+                fair_probability={"home": 0.45, "draw": 0.30, "away": 0.25},
+                independent=True,
+                bookmaker_count=29,
+                opening_odds={"home": 2.0, "draw": 3.4, "away": 3.6},
+                per_book_odds={"home": [2.1, 2.05], "draw": [3.3], "away": [3.5]},
+            ),
+            "over_under": MarketOdds(
+                odds={"over": 1.9, "under": 1.95}, fair_probability={},
+                independent=True, line="2.5",
+            ),
+        }
+    }
+    persist_bold_odds_snapshot("2026-05-18", tmp_path, bold_odds)
+    loaded = load_bold_odds_snapshot("2026-05-18", tmp_path)
+    assert loaded == bold_odds                       # round-trips exactly
+
+
+def test_load_bold_odds_snapshot_absent_returns_empty(tmp_path) -> None:
+    """A date with no 国际-odds snapshot degrades to 体彩-only, never crashes
+    (spec §14)."""
+    from nutmeg.services.jczq_bold_combos import load_bold_odds_snapshot
+
+    assert load_bold_odds_snapshot("2025-01-01", tmp_path) == {}
+
+
+def test_replay_snapshot_feeds_欧赔_into_matches(tmp_path) -> None:
+    """The §14 fix: a snapshotted 国际 欧赔 reaches BoldMatch.euro_odds on
+    replay — replay is no longer silently 体彩-only (chaos=0)."""
+    from nutmeg.data.fcom500 import MarketOdds
+    from nutmeg.services.jczq_bold_combos import (
+        bold_matches_from_sporttery,
+        load_bold_odds_snapshot,
+        persist_bold_odds_snapshot,
+    )
+
+    bold_odds = {
+        "周一001": {"match_winner": MarketOdds(
+            odds={"home": 5.0, "draw": 4.0, "away": 1.6},
+            fair_probability={}, independent=True,
+        )},
+    }
+    persist_bold_odds_snapshot("2026-05-18", tmp_path, bold_odds)
+    loaded = load_bold_odds_snapshot("2026-05-18", tmp_path)
+
+    matches = bold_matches_from_sporttery(
+        _sporttery_value(), run_date="2026-05-18", bold_odds=loaded
+    )
+    m001 = next(m for m in matches if m.match_no == "周一001")
+    assert m001.euro_odds == {"home": 5.0, "draw": 4.0, "away": 1.6}
+    # a match absent from the snapshot still degrades gracefully to 体彩-only.
+    m002 = next(m for m in matches if m.match_no == "周一002")
+    assert m002.euro_odds == {}
