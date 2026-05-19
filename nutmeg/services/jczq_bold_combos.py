@@ -759,19 +759,6 @@ def _ticket_avg_boldness(legs: list[BoldLeg]) -> float:
     return sum(leg.boldness for leg in legs) / len(legs) if legs else 0.0
 
 
-def _fold_weights(chaos: int) -> dict[int, int]:
-    """How many tickets of each fold to keep, biased by the day chaos value.
-
-    Calm days lean to short 3-folds; chaotic days lean to wild 4/5-folds —
-    the §3.5 jitter rule, made concrete. Always returns a non-empty plan.
-    """
-    if chaos < 34:
-        return {3: 3, 4: 1, 5: 1}
-    if chaos <= 66:
-        return {3: 2, 4: 2, 5: 1}
-    return {3: 1, 4: 2, 5: 2}
-
-
 def _band_fit(total_odds: float, fold: int) -> float:
     """How well a ticket's combined odds fits the realistic target band (spec §13).
 
@@ -817,17 +804,94 @@ def _over_cap_note(total_odds: float) -> str:
     )
 
 
+# spec §15 — bold-ticket 剧本 (storyline) archetypes. Descriptive, post-hoc
+# classification of a ticket by its leg composition — it labels what the ticket
+# already is, NEVER changes leg selection, so it cannot conflict with §10.2.
+THEME_DRAW: str = "平局收割"
+THEME_SCORE: str = "冷门比分梦"
+THEME_HANDICAP: str = "黑马让球"
+THEME_GOALS: str = "进球狂欢"
+THEME_MIXED: str = "全市场混搭"
+
+# Fixed selection order — Phase A picks one ticket per theme in this order.
+THEME_ORDER: tuple[str, ...] = (
+    THEME_DRAW, THEME_SCORE, THEME_HANDICAP, THEME_GOALS, THEME_MIXED,
+)
+
+# A market holding the majority of a ticket's legs → that market's theme. had
+# has no theme of its own — a had-majority ticket falls through to 全市场混搭.
+_MARKET_THEME: dict[str, str] = {
+    "crs": THEME_SCORE, "hhad": THEME_HANDICAP, "ttg": THEME_GOALS,
+}
+
+# One-line 剧本 narrative per theme — pure entertainment flavour. Contains NO
+# advantage wording (胜率 / edge / +EV / 正期望 / 推荐下注 / 重仓) — §7 asserts it.
+_THEME_SCRIPTS: dict[str, str] = {
+    THEME_DRAW: "赌多场打平 / 让平 —— 大众最不敢站的方向，冷热都收在这一张。",
+    THEME_SCORE: "押的是几个具体比分画面 —— 盘面给的不是结果，是想象。",
+    THEME_HANDICAP: "全靠让球盘撬动 —— 让分线才是体彩对强弱的真实态度。",
+    THEME_GOALS: "赌进球数往两端走 —— 闷平和大爆发都收在这一张。",
+    THEME_MIXED: "四个市场混着打 —— 盘面最吵、想象力最大的一张。",
+}
+
+
+def _is_draw_lean(leg: BoldLeg) -> bool:
+    """True when a leg backs a draw-flavoured outcome — 胜平负平 / 让球让平 /
+    比分平局 (an equal scoreline or the 平其他 ``s1sd`` bucket)."""
+    if leg.market in ("had", "hhad"):
+        return leg.pick == "draw"
+    if leg.market == "crs":
+        if leg.pick == "s1sd":
+            return True
+        key = leg.pick
+        if len(key) == 6 and key[0] == "s" and key[3] == "s":
+            return key[1:3] == key[4:6]
+    return False
+
+
+def ticket_theme(legs: list[BoldLeg]) -> tuple[str, str]:
+    """Classify a bold ticket into a 剧本 archetype + its narrative line (spec §15).
+
+    Descriptive, post-hoc — labels what the ticket already is, never changes
+    leg selection. Priority: a draw-leaning majority → 平局收割; else a single
+    market holding the majority of legs → that market's theme; else 全市场混搭.
+    Empty legs → ``("", "")`` so the renderer simply omits the theme.
+    """
+    if not legs:
+        return ("", "")
+    fold = len(legs)
+    draw_legs = sum(1 for lg in legs if _is_draw_lean(lg))
+    if draw_legs * 2 > fold:
+        theme = THEME_DRAW
+    else:
+        counts = Counter(lg.market for lg in legs)
+        top_market, top_count = counts.most_common(1)[0]
+        if top_count * 2 > fold and top_market in _MARKET_THEME:
+            theme = _MARKET_THEME[top_market]
+        else:
+            theme = THEME_MIXED
+    return (theme, _THEME_SCRIPTS[theme])
+
+
 def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
     """Assemble creative cross-market 3/4/5-fold parlays from the candidate ``legs``.
 
     Each ticket's legs are distinct matches (Rule O). When the candidate pool
     spans ≥2 markets a ticket may use at most ``MAX_LEGS_PER_MARKET_PER_TICKET``
     legs from any one market (spec §10.2 — forces cross-market mix; skipped on a
-    single-market pool so v1 had-only days still produce tickets). Tickets rank
-    by ``effective_odds × avg_boldness`` (spec §10.1 — odds capped at the 竞彩
-    payout limit). The fold mix is biased by ``chaos`` (§3.5). Fewer than 3
-    candidate legs → no 3-fold is possible → an empty list (never a crash).
+    single-market pool so v1 had-only days still produce tickets).
+
+    Ticket *selection* is theme-driven (spec §15): every legal combo is scored
+    by ``band_fit × avg_boldness`` (spec §13) and classified into a 剧本 theme.
+    **Phase A** picks the best-ranked combo of each theme, so the bold tickets
+    carry distinct characters instead of being the same legs permuted.
+    **Phase B** fills toward ``BOLD_TICKET_COUNT`` with the next-best DISTINCT
+    combos (diversity-penalized — single-market days have one theme, so Phase B
+    does the spreading). A thin pool simply yields fewer tickets. ``chaos``
+    already sized the candidate pool upstream (``chaos_pool_size``) and is not
+    re-used here. Fewer than 3 candidate legs → an empty list (never a crash).
     """
+    _ = chaos  # the pool was already chaos-sized; selection is theme-driven
     if len(legs) < 3:
         return []
 
@@ -835,16 +899,11 @@ def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
     # pool actually has ≥2 markets to mix (spec §10.2).
     enforce_market_cap = len({lg.market for lg in legs}) >= 2
 
-    fold_plan = _fold_weights(chaos)
-    # spec §11.2 — running count of how many chosen tickets each match is in,
-    # shared across all folds so 3/4/5-folds diversify against each other.
-    appearance: Counter[str] = Counter()
-    selected: list[list[BoldLeg]] = []
+    # Every legal 3/4/5-fold combo, scored by band-fit × boldness (spec §13).
+    scored: list[tuple[float, list[BoldLeg]]] = []
     for fold in (3, 4, 5):
-        want = fold_plan.get(fold, 0)
-        if want <= 0 or fold > len(legs):
+        if fold > len(legs):
             continue
-        combos: list[tuple[float, list[BoldLeg]]] = []
         for combo in itertools.combinations(legs, fold):
             combo_legs = list(combo)
             # Rule O — one leg per match (distinct match_no makes the parlay
@@ -856,28 +915,48 @@ def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
                 market_counts = Counter(lg.market for lg in combo_legs)
                 if max(market_counts.values()) > MAX_LEGS_PER_MARKET_PER_TICKET:
                     continue
-            combos.append((_ticket_rank_score(combo_legs), combo_legs))
-        # spec §11.2 — diversity-penalized greedy: a combo's rank score is
-        # divided by a penalty growing with how often its matches already
-        # appear in chosen tickets, so the ticket set spreads across matches.
-        # On a thin pool every candidate is penalized alike → degrades to plain
-        # rank order (thin days still produce tickets).
-        for _ in range(want):
-            if not combos:
-                break
-            pick = max(
-                range(len(combos)),
-                key=lambda i: combos[i][0]
-                / (
-                    1.0
-                    + CONCENTRATION_PENALTY
-                    * sum(appearance[lg.match_no] for lg in combos[i][1])
-                ),
-            )
-            _score, combo_legs = combos.pop(pick)
-            selected.append(combo_legs)
-            for leg in combo_legs:
-                appearance[leg.match_no] += 1
+            scored.append((_ticket_rank_score(combo_legs), combo_legs))
+    if not scored:
+        return []
+
+    # spec §11.2 — running count of how many chosen tickets each match is in,
+    # so both selection phases spread the ticket set across matches.
+    appearance: Counter[str] = Counter()
+
+    def _penalized(index: int) -> float:
+        score, combo_legs = scored[index]
+        reuse = sum(appearance[lg.match_no] for lg in combo_legs)
+        return score / (1.0 + CONCENTRATION_PENALTY * reuse)
+
+    used: set[int] = set()
+    selected: list[list[BoldLeg]] = []
+
+    def _take(index: int) -> None:
+        used.add(index)
+        combo_legs = scored[index][1]
+        selected.append(combo_legs)
+        for leg in combo_legs:
+            appearance[leg.match_no] += 1
+
+    # spec §15 Phase A — one ticket per theme, in fixed order; each theme picks
+    # its best-ranked combo (concentration-penalized for same-score tie-breaks).
+    by_theme: dict[str, list[int]] = {}
+    for index, (_score, combo_legs) in enumerate(scored):
+        theme, _script = ticket_theme(combo_legs)
+        by_theme.setdefault(theme, []).append(index)
+    for theme in THEME_ORDER:
+        candidates = [i for i in by_theme.get(theme, []) if i not in used]
+        if candidates:
+            _take(max(candidates, key=_penalized))
+
+    # spec §15 Phase B — fill toward BOLD_TICKET_COUNT with the next-best
+    # DISTINCT combos. A single-market day has one theme → Phase B does the
+    # diversifying; a genuinely thin pool just runs out → fewer tickets.
+    while len(selected) < BOLD_TICKET_COUNT:
+        candidates = [i for i in range(len(scored)) if i not in used]
+        if not candidates:
+            break
+        _take(max(candidates, key=_penalized))
 
     tickets: list[BoldTicket] = []
     for index, combo_legs in enumerate(
@@ -1088,16 +1167,26 @@ def _render_leg(leg: BoldLeg) -> str:
 
 
 def _render_ticket(ticket: BoldTicket) -> list[str]:
-    """One ticket as markdown lines — odds + 大胆分, never a probability/EV."""
-    lines = [
-        f"### {ticket.id}（{ticket.fold}串1 · 合计赔率 {ticket.total_odds:.2f}"
-    ]
+    """One ticket as markdown lines — odds + 大胆分, never a probability/EV.
+
+    A 大胆票 carries its 剧本 archetype in the header and a one-line 剧本
+    narrative below the legs (spec §15)."""
+    header = f"### {ticket.id}"
+    script = ""
     if ticket.kind == "大胆票":
-        lines[0] += f" · 平均大胆分 {ticket.avg_boldness:.3f}）"
+        theme, script = ticket_theme(ticket.legs)
+        if theme:
+            header += f" · {theme}"
+    header += f"（{ticket.fold}串1 · 合计赔率 {ticket.total_odds:.2f}"
+    if ticket.kind == "大胆票":
+        header += f" · 平均大胆分 {ticket.avg_boldness:.3f}）"
     else:
-        lines[0] += "）"
+        header += "）"
+    lines = [header]
     for leg in ticket.legs:
         lines.append(_render_leg(leg))
+    if script:
+        lines.append(f"  > 剧本：{script}")
     if ticket.note:
         lines.append(f"  > {ticket.note}")
     return lines

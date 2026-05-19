@@ -354,15 +354,6 @@ def test_bold_combos_ranked_by_band_fit_times_avg_boldness() -> None:
     assert scores == sorted(scores, reverse=True)
 
 
-def test_bold_combos_high_chaos_biases_toward_longer_tickets() -> None:
-    calm = bold_combos(_legs(7), chaos=5)
-    wild = bold_combos(_legs(7), chaos=95)
-
-    calm_avg_fold = sum(t.fold for t in calm) / len(calm)
-    wild_avg_fold = sum(t.fold for t in wild) / len(wild)
-    assert wild_avg_fold > calm_avg_fold
-
-
 def test_bold_combos_empty_when_too_few_legs() -> None:
     assert bold_combos(_legs(2), chaos=50) == []
 
@@ -1264,3 +1255,126 @@ def test_replay_snapshot_feeds_欧赔_into_matches(tmp_path) -> None:
     # a match absent from the snapshot still degrades gracefully to 体彩-only.
     m002 = next(m for m in matches if m.match_no == "周一002")
     assert m002.euro_odds == {}
+
+
+# ---------------------------------------------------------------------------
+# spec §15 — themed 剧本 tickets
+# ---------------------------------------------------------------------------
+
+
+def _themed_leg(match_no: str, market: str, pick: str, odds: float = 5.0):
+    """A BoldLeg with an explicit pick — for theme-classification tests."""
+    from nutmeg.services.jczq_bold_combos import BoldLeg
+
+    return BoldLeg(
+        match_no=match_no, league="L", home="H", away="A",
+        pick=pick, tc_odds=odds, boldness=0.4, reason="r",
+        market=market, pick_label=pick,
+    )
+
+
+def test_ticket_theme_draw_majority() -> None:
+    """A ticket whose majority legs back a draw outcome → 平局收割 (spec §15)."""
+    from nutmeg.services.jczq_bold_combos import ticket_theme
+
+    legs = [
+        _themed_leg("周一001", "had", "draw"),
+        _themed_leg("周一002", "hhad", "draw"),
+        _themed_leg("周一003", "crs", "s02s00"),       # 2:0 — not a draw
+    ]
+    theme, script = ticket_theme(legs)
+    assert theme == "平局收割"
+    assert script                                      # carries a 剧本 line
+
+
+def test_ticket_theme_market_majorities() -> None:
+    """A single market holding the majority → that market's theme (spec §15)."""
+    from nutmeg.services.jczq_bold_combos import ticket_theme
+
+    score = [
+        _themed_leg("周一001", "crs", "s02s01"),
+        _themed_leg("周一002", "crs", "s03s00"),
+        _themed_leg("周一003", "ttg", "total_4"),
+    ]
+    assert ticket_theme(score)[0] == "冷门比分梦"
+
+    handicap = [
+        _themed_leg("周一001", "hhad", "home"),
+        _themed_leg("周一002", "hhad", "away"),
+        _themed_leg("周一003", "ttg", "total_3"),
+    ]
+    assert ticket_theme(handicap)[0] == "黑马让球"
+
+    goals = [
+        _themed_leg("周一001", "ttg", "total_4"),
+        _themed_leg("周一002", "ttg", "total_1"),
+        _themed_leg("周一003", "crs", "s02s01"),
+    ]
+    assert ticket_theme(goals)[0] == "进球狂欢"
+
+
+def test_ticket_theme_no_majority_is_mixed() -> None:
+    """One leg per market, no draw majority → 全市场混搭 (spec §15)."""
+    from nutmeg.services.jczq_bold_combos import ticket_theme
+
+    legs = [
+        _themed_leg("周一001", "had", "home"),
+        _themed_leg("周一002", "hhad", "away"),
+        _themed_leg("周一003", "crs", "s02s01"),
+    ]
+    assert ticket_theme(legs)[0] == "全市场混搭"
+    assert ticket_theme([]) == ("", "")                # empty → renderer omits it
+
+
+def test_bold_tickets_carry_distinct_themes() -> None:
+    """bold_combos picks one ticket per 剧本 theme — distinct characters, not
+    the same legs permuted (spec §15)."""
+    from nutmeg.services.jczq_bold_combos import bold_combos, ticket_theme
+
+    # a 6-leg pool spanning markets: crs / hhad / ttg, all non-draw picks.
+    legs = [
+        _themed_leg("周一001", "crs", "s02s01", 6.0),
+        _themed_leg("周一002", "crs", "s03s01", 7.0),
+        _themed_leg("周一003", "hhad", "home", 5.0),
+        _themed_leg("周一004", "hhad", "away", 4.5),
+        _themed_leg("周一005", "ttg", "total_4", 5.5),
+        _themed_leg("周一006", "ttg", "total_1", 5.0),
+    ]
+    tickets = bold_combos(legs, chaos=10)
+
+    assert tickets
+    themes = {ticket_theme(t.legs)[0] for t in tickets}
+    assert len(themes) >= 2, f"all tickets share one theme: {themes}"
+
+
+def test_render_bold_plan_shows_theme_and_剧本() -> None:
+    """A rendered bold ticket carries its 剧本 theme in the header and a 剧本
+    narrative line below the legs (spec §15). Banned-word coverage stays with
+    test_render_bold_plan_contains_no_advantage_wording, which now also scans
+    the 剧本 lines."""
+    from nutmeg.services.jczq_bold_combos import (
+        BoldComboEngine,
+        BoldMatch,
+        render_bold_plan,
+    )
+
+    matches = [
+        BoldMatch(
+            match_no=f"周一{i:03d}", league="L", home="H", away="A",
+            tc_odds={"home": 2.0, "draw": 3.4, "away": 3.8},
+            hhad_odds={"home": 3.0, "draw": 3.3, "away": 2.2}, hhad_line=-1.0,
+            ttg_odds={
+                f"total_{k}": v for k, v in enumerate(
+                    [26.0, 5.0, 3.3, 3.6, 6.0, 12.0, 25.0, 40.0]
+                )
+            },
+            crs_odds={"s01s00": 6.0, "s00s00": 9.0, "s02s01": 7.5, "s03s02": 41.0},
+        )
+        for i in range(1, 6)
+    ]
+    out = render_bold_plan(BoldComboEngine().generate("2026-05-18", matches))
+
+    assert "剧本：" in out                              # narrative line present
+    assert any(t in out for t in (
+        "平局收割", "冷门比分梦", "黑马让球", "进球狂欢", "全市场混搭",
+    ))
