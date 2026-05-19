@@ -3809,6 +3809,52 @@ def test_jczq_bold_combos_replay_renders_multi_market(tmp_path, monkeypatch) -> 
         assert banned not in body, f"banned word leaked: {banned}"
 
 
+def test_resolve_jczq_date_resolves_today_yesterday_keywords() -> None:
+    """jczq-bold-combos --date today/yesterday resolve to ISO dates; an explicit
+    date passes through. Without this the literal string 'today' reached the
+    engine and the snapshot landed in a daily/today/ directory."""
+    from datetime import date
+
+    from nutmeg.interfaces.cli.jczq import _resolve_jczq_date
+
+    assert _resolve_jczq_date("2026-05-18") == "2026-05-18"     # passthrough
+    today = _resolve_jczq_date("today")
+    yesterday = _resolve_jczq_date("yesterday")
+    assert date.fromisoformat(today) > date.fromisoformat(yesterday)
+    assert _resolve_jczq_date(None) == today                    # None → today
+
+
+def test_jczq_bold_combos_dispatch_telegram_defaults_to_dry_run(tmp_path) -> None:
+    """`--dispatch-telegram` is dry-run by default — the daily-bold launchd job
+    explicitly adds `--no-dry-run` for the real send."""
+    import json
+
+    snap_dir = tmp_path / "daily" / "2026-05-18"
+    snap_dir.mkdir(parents=True)
+    (snap_dir / "sporttery_markets.json").write_text(
+        json.dumps({"matchInfoList": [{"businessDate": "2026-05-18", "subMatchList": [
+            {
+                "matchNumStr": no, "businessDate": "2026-05-18",
+                "matchStatus": "Selling", "leagueAbbName": "芬超",
+                "homeTeamAbbName": "主", "awayTeamAbbName": "客",
+                "had": {"h": "2.00", "d": "3.20", "a": "3.50"},
+                "ttg": {f"s{k}": str(4.0 + k) for k in range(8)},
+                "crs": {"s01s00": "6.50", "s00s00": "9.00", "s03s02": "41.0"},
+            }
+            for no in ("周一001", "周一002", "周一003")
+        ]}]}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, [
+        "jczq-bold-combos", "--replay", "2026-05-18",
+        "--output-dir", str(tmp_path), "--dispatch-telegram",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert "Telegram dispatch: dry_run" in result.output
+
+
 def test_jczq_web_command_starts_localhost_app(monkeypatch, tmp_path: Path) -> None:
     calls: list[dict[str, object]] = []
 

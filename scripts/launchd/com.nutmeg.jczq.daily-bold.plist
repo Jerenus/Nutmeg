@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nutmeg.jczq.daily-bold</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; /opt/homebrew/bin/uv run nutmeg jczq-bold-combos --date today --output-dir .nutmeg-data/jczq --write .nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/bold-combos.md --dispatch-telegram --no-dry-run</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>12</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/jczq-daily-bold.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/jczq-daily-bold.err.log</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/jz71/Projects/Nutmeg</string>
+</dict>
+</plist>

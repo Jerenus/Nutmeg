@@ -367,6 +367,55 @@ def jczq_replay(
     _cli.typer.echo(result.rendered_text)
 
 
+def _resolve_jczq_date(value: str | None) -> str:
+    """Resolve a ``--date`` / ``--replay`` value to an ISO date.
+
+    ``None`` / ``"today"`` → today, ``"yesterday"`` → yesterday (both in the
+    JCZQ timezone, Asia/Shanghai — consistent with the review pipeline); an
+    explicit ``YYYY-MM-DD`` passes through unchanged. Without this the literal
+    string ``"today"`` reaches the engine as the run date and the Sporttery
+    ``businessDate`` filter matches nothing (and the snapshot lands in a
+    ``daily/today/`` directory)."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    if value is None or value == "today":
+        return today.isoformat()
+    if value == "yesterday":
+        return (today - timedelta(days=1)).isoformat()
+    return value
+
+
+def _dispatch_bold_combos(rendered: str, *, dry_run: bool) -> str:
+    """Push the bold-combo plan to the configured Telegram chats.
+
+    Mirrors the advisor/review dispatch seam — dry-run by default, the welded
+    🎲 honest label rides along untouched at the top of the message. Returns a
+    short honest status string (never raises into the CLI)."""
+    from nutmeg.services.jczq_review import _telegram_chunks
+
+    settings = _cli.get_settings()
+    chat_ids = sorted(
+        _cli.parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
+    )
+    if dry_run:
+        return f"dry_run · chat_ids={chat_ids}"
+    if not settings.telegram_bot_token or not chat_ids:
+        return "skipped · telegram 未配置"
+    sender = _cli.TelegramBotClient(
+        token=settings.telegram_bot_token,
+        base_url=settings.telegram_api_base_url,
+    )
+    try:
+        for chat_id in chat_ids:
+            for chunk in _telegram_chunks(rendered):
+                sender.send_message(chat_id=chat_id, text=chunk)
+    except Exception as exc:  # noqa: BLE001 — network seam; report, never crash
+        return f"failed · {exc}"
+    return f"sent · chat_ids={chat_ids}"
+
+
 @_cli.app.command("jczq-bold-combos")
 def jczq_bold_combos(
     run_date: str | None = _cli.typer.Option(
@@ -377,17 +426,24 @@ def jczq_bold_combos(
     ),
     output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
     write: _cli.Path | None = JCZQ_DAILY_BRIEF_WRITE_OPTION,
+    dispatch_telegram: bool = _cli.typer.Option(
+        False, "--dispatch-telegram", help="把方案推送到 Telegram"
+    ),
+    dry_run: bool = _cli.typer.Option(
+        True, "--dry-run/--no-dry-run", help="dry-run 时不实际推送（默认开）"
+    ),
 ) -> None:
     """娱乐性质的竞彩串关组合生成器 — 非 edge、长期负期望。
 
     从盘面冲突 / 反直觉 / 热度信号挑「大胆腿」，拼 3/4/5 串 1。每个输出顶部
     焊死 🎲 娱乐硬标签。不预测胜负、不号称优势。
-    """
-    from datetime import date as _date_cls
 
+    ``--dispatch-telegram --no-dry-run`` 把方案推到 Telegram —— 每日 launchd
+    自动流走这条（com.nutmeg.jczq.daily-bold）。
+    """
     from nutmeg.services.jczq_bold_combos import run_bold_combos_multimarket
 
-    target_date = replay_date or run_date or _date_cls.today().isoformat()
+    target_date = _resolve_jczq_date(replay_date or run_date)
     try:
         rendered = run_bold_combos_multimarket(
             target_date, output_dir, replay=replay_date is not None
@@ -400,8 +456,13 @@ def jczq_bold_combos(
         write.parent.mkdir(parents=True, exist_ok=True)
         write.write_text(rendered, encoding="utf-8")
         _cli.console.print(f"Wrote bold-combo plan: {write}")
-        return
-    _cli.typer.echo(rendered)
+
+    if dispatch_telegram:
+        status = _dispatch_bold_combos(rendered, dry_run=dry_run)
+        _cli.console.print(f"Telegram dispatch: {status}")
+
+    if write is None and not dispatch_telegram:
+        _cli.typer.echo(rendered)
 
 
 @_cli.app.command("jczq-web")
