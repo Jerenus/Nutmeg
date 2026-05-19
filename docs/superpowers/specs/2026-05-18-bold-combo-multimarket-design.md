@@ -177,3 +177,37 @@ v1 大胆引擎只做胜平负。薄盘日（如 2026-05-18 只有 3 场）→ 3
 - **剧本叙事**：每张票渲染时票头带主题名（`### 大胆票1 · 冷门比分梦（…）`），票下加一行 `> 剧本：…`。叙事是纯娱乐 flavour，**不含任何优势措辞**（沿用 banned 词表 胜率 / edge / +EV / 正期望 / 推荐下注 / 重仓 断言）。
 
 验收：主题归类对 fixture 确定；同一主题不重复出票、不同票主题各异；渲染含主题名 + 剧本行；输出无 banned 词（§7 沿用）；薄盘日组合不足时少于 5 张不崩；TDD，全量 `pytest` 绿。
+
+## 16. bold 大胆票自动复盘（2026-05-19）
+
+每日 launchd 切到 bold 引擎后（commit `71cbd3d`），老 `jczq-daily-review`（定级
+advisor 录进 betting DB 的 plan）失去数据来源 —— bold 引擎 edge-free、刻意不录
+betting DB。bold 需要自己的次日赛后对照。
+
+**`jczq-bold-review`** —— bold 大胆票的自动复盘：
+
+- **复现票面**：用 §14 的快照（`sporttery_markets.json` + `bold_odds.json`）
+  `load → bold_matches_from_sporttery → BoldComboEngine().generate()` 重建当天
+  `BoldComboPlan`（§14 已保证 replay 完整复现，复盘的就是当天派发的票）。无快照
+  → 当天 bold 引擎没跑 → 诚实报「无快照、跳过」，不崩。
+- **赛果**：复用 `jczq_review.OkoooJczqResultProvider.fetch_results`（okooo 开奖页，
+  每池 had/hhad/ttg/crs 的中奖项 + 赔率）。
+- **定级**：每条腿 `actual = results[match_no][market]`，`hit = actual ==
+  leg.pick_label`（`pick_label` 就是人读形：胜 / 让平 / 2球 / 2:1，与 okooo 中奖项
+  同形）。无赛果的腿 → 待定 `hit=None`，**不计入命中率分母**。整票命中 = 全腿命中。
+  crs「其他」桶（胜/平/负其他）按精确串比对、可能少计 —— 已知近似，注明。
+- **报告**：🎲 焊死硬标签开头 + 赛果 + 每张票命中（底仓 + 大胆票）+ 本期小结 +
+  主题对照 + **累计趋势**。累计来自 append-only `bold-review-history.json`（每日一条
+  记录，重跑同日幂等替换）—— 让「冷门比分梦 14 天 0/14」这类结构性信号自己浮现。
+  措辞只用「命中 / 未中 / 整票命中」等事实词，**不报胜率、不含 §7 banned 词、不号称
+  优势** —— 它是赛后对照，不是收益结论。
+- **不喂引擎**：复盘只产报告 + 历史日志，**不回写任何 decision_policy / 不调引擎权重**
+  —— bold 引擎无规则跑步机，复盘是给人看的，不是自动调参。
+- **CLI** `jczq-bold-review --date yesterday [--dispatch-telegram]
+  [--no-dry-run]`；**launchd** `com.nutmeg.jczq.bold-review-8am` 每天 8:00，
+  **取代**老 `com.nutmeg.jczq.daily-review-8am`（老 job 卸载、plist 留档可恢复）。
+- 新模块 `nutmeg/services/jczq_bold_review.py` —— 不在 §7 引擎硬约束内，可 import
+  赛果 provider + bold 引擎；引擎模块 `jczq_bold_combos.py` 本身不受影响。
+
+验收：定级对 fixture 确定；待定腿不污染命中率分母；累计 append 幂等（重跑同日替换）；
+报告含 🎲 标签、无 banned 词；无快照不崩；TDD，全量 `pytest` 绿。
