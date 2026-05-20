@@ -13,6 +13,8 @@ import math
 from pathlib import Path
 
 from nutmeg.services.jczq_bold_combos import (
+    ANCHOR_GAP_THRESHOLD,
+    EQUIV_INDEPENDENT_LOW_THRESHOLD,
     HARD_LABEL,
     OUTCOMES,
     POOL_MAX,
@@ -33,6 +35,7 @@ from nutmeg.services.jczq_bold_combos import (
     day_chaos,
     dispersion_score,
     drift_score,
+    equivalent_independent_tickets,
     heat_score,
     render_bold_plan,
 )
@@ -45,6 +48,7 @@ def _match(
     euro_odds: dict[str, float] | None = None,
     euro_opening: dict[str, float] | None = None,
     per_book_odds: dict[str, list[float]] | None = None,
+    euro_fair_prob: dict[str, float] | None = None,
     tags: set[str] | None = None,
     vig: float = 0.13,
 ) -> BoldMatch:
@@ -58,6 +62,7 @@ def _match(
         euro_odds=euro_odds or {},
         euro_opening=euro_opening or {},
         per_book_odds=per_book_odds or {},
+        euro_fair_prob=euro_fair_prob or {},
         tags=tags or set(),
         vig=vig,
     )
@@ -378,6 +383,283 @@ def test_anchor_ticket_picks_lowest_odds_favorites() -> None:
     # Each anchor leg picks that match's 体彩 favorite (lowest-odds outcome).
     for leg in anchor.legs:
         assert leg.pick == "home"
+
+
+# ---------------------------------------------------------------------------
+# spec §17.1 — 体彩 vs 欧赔 implied-gap guard on the anchor (5/19 review)
+# ---------------------------------------------------------------------------
+
+
+def test_anchor_gap_threshold_constant() -> None:
+    """spec §17.1 — the wall is +8pp."""
+    assert ANCHOR_GAP_THRESHOLD == 0.08
+
+
+def test_anchor_rejects_leg_when_tc_overprices_vs_euro_fair_prob() -> None:
+    """spec §17.1 — 体彩 implied − 欧赔 公平 ≥ 8pp → leg dropped from anchor.
+
+    周三010 fixture: tc home @1.17 (implied 85.5%) vs 欧赔 fair 71.5% → gap
+    +14.0pp. The leg must NOT enter the anchor; a calmer fixture (gap < 8pp)
+    in the same day still anchors normally.
+    """
+    matches = [
+        # gap = 1/1.17 − 0.715 = 0.140 → REJECT
+        _match(
+            match_no="周三010",
+            tc_odds={"home": 1.17, "draw": 5.00, "away": 9.42},
+            euro_fair_prob={"home": 0.715, "draw": 0.186, "away": 0.099},
+        ),
+        # gap = 1/1.41 − 0.661 = 0.048 → KEEP
+        _match(
+            match_no="周三009",
+            tc_odds={"home": 1.41, "draw": 4.18, "away": 7.99},
+            euro_fair_prob={"home": 0.661, "draw": 0.222, "away": 0.116},
+        ),
+    ]
+    anchor = anchor_ticket(matches)
+    picked = {leg.match_no for leg in anchor.legs}
+    assert "周三010" not in picked, "≥ 8pp gap leg must be dropped (§17.1)"
+    assert "周三009" in picked, "gap < 8pp leg must still anchor (§17.1)"
+
+
+def test_anchor_drops_all_three_overpriced_legs_5_20_live_case() -> None:
+    """spec §17.1 — 5/20 live: all 3 anchor candidates trigger the guard;
+    anchor should end up empty (degraded honestly, never crash)."""
+    matches = [
+        _match(
+            match_no="周三002",
+            tc_odds={"home": 9.97, "draw": 6.68, "away": 1.17},
+            euro_fair_prob={"home": 0.093, "draw": 0.139, "away": 0.767},
+        ),
+        _match(
+            match_no="周三005",
+            tc_odds={"home": 1.25, "draw": 5.04, "away": 6.49},
+            euro_fair_prob={"home": 0.672, "draw": 0.184, "away": 0.143},
+        ),
+        _match(
+            match_no="周三010",
+            tc_odds={"home": 1.17, "draw": 5.00, "away": 9.42},
+            euro_fair_prob={"home": 0.715, "draw": 0.186, "away": 0.099},
+        ),
+    ]
+    anchor = anchor_ticket(matches)
+    assert anchor.legs == []
+    assert anchor.fold == 0
+    assert anchor.kind == "稳健底仓"
+
+
+def test_anchor_at_threshold_boundary_is_rejected() -> None:
+    """spec §17.1 — ≥ 0.08 triggers, so == 0.08 is rejected (inclusive)."""
+    matches = [
+        _match(
+            match_no="周日001",
+            tc_odds={"home": 1.25, "draw": 4.5, "away": 8.0},
+            # 1/1.25 = 0.80, fair 0.72 → gap exactly 0.08 → REJECT
+            euro_fair_prob={"home": 0.72, "draw": 0.18, "away": 0.10},
+        ),
+        _match(
+            match_no="周日002",
+            tc_odds={"home": 1.50, "draw": 4.0, "away": 6.0},
+            # 1/1.50 = 0.667, fair 0.60 → gap 0.067 → KEEP
+            euro_fair_prob={"home": 0.60, "draw": 0.25, "away": 0.15},
+        ),
+    ]
+    anchor = anchor_ticket(matches)
+    picked = {leg.match_no for leg in anchor.legs}
+    assert "周日001" not in picked
+    assert "周日002" in picked
+
+
+def test_anchor_graceful_degrade_without_euro_fair_prob() -> None:
+    """spec §17.1 — no 欧赔 snapshot → empty euro_fair_prob → guard skipped,
+    anchor falls back to the v1 lowest-odds-favorite behaviour. Snapshot
+    missing must never crash or empty the anchor."""
+    matches = [
+        _match(
+            match_no="周日001",
+            tc_odds={"home": 1.17, "draw": 5.0, "away": 9.5},
+            euro_fair_prob={},  # no 欧赔 data
+        ),
+        _match(
+            match_no="周日002",
+            tc_odds={"home": 1.30, "draw": 4.5, "away": 8.0},
+            euro_fair_prob={},
+        ),
+    ]
+    anchor = anchor_ticket(matches)
+    assert len(anchor.legs) == 2  # both anchored, v1 behaviour preserved
+
+
+def test_anchor_guard_only_checks_favored_outcome() -> None:
+    """spec §17.1 — gap is computed only for the favorite pick, not the
+    whole match. A match with a benign favorite gap is kept even if other
+    outcomes have wild gaps."""
+    matches = [
+        _match(
+            match_no="周日001",
+            # favorite = away @1.60 → implied 0.625, fair 0.60 → gap 0.025 KEEP
+            # even though home gap (= 1/3.5 − 0.10 = 0.186) is wild.
+            tc_odds={"home": 3.50, "draw": 4.0, "away": 1.60},
+            euro_fair_prob={"home": 0.10, "draw": 0.30, "away": 0.60},
+        ),
+    ]
+    anchor = anchor_ticket(matches)
+    assert len(anchor.legs) == 1
+    assert anchor.legs[0].pick == "away"
+
+
+# ---------------------------------------------------------------------------
+# spec §17.4 — 等效独立票数 — exposes "5 tickets ≠ 5 independent bets"
+# ---------------------------------------------------------------------------
+
+
+def _ticket(*, match_nos: tuple[str, ...]) -> BoldTicket:
+    """Build a minimal BoldTicket with the given match numbers (one leg each)."""
+    legs = [
+        BoldLeg(
+            match_no=mn,
+            league="L",
+            home="H",
+            away="A",
+            pick="home",
+            tc_odds=3.0,
+            boldness=0.4,
+            reason="test",
+            market="had",
+            pick_label="胜",
+        )
+        for mn in match_nos
+    ]
+    return BoldTicket(
+        id="大胆票X",
+        kind="大胆票",
+        legs=legs,
+        fold=len(legs),
+        total_odds=3.0 ** len(legs),
+        avg_boldness=0.4,
+        note="",
+    )
+
+
+def test_equivalent_independent_tickets_low_threshold_constant() -> None:
+    """spec §17.4 — < 1.5 triggers the chaos-line suffix."""
+    assert EQUIV_INDEPENDENT_LOW_THRESHOLD == 1.5
+
+
+def test_equivalent_independent_tickets_5_19_case_is_1_25() -> None:
+    """spec §17.4 — 5/19 day: 5 tickets, 16 legs, 4 unique matches.
+    equiv = 4 / (16/5) = 1.25."""
+    tickets = [
+        _ticket(match_nos=("M1", "M2", "M3")),
+        _ticket(match_nos=("M1", "M2", "M4")),
+        _ticket(match_nos=("M1", "M3", "M4")),
+        _ticket(match_nos=("M1", "M2", "M3", "M4")),
+        _ticket(match_nos=("M2", "M3", "M4")),
+    ]
+    eq = equivalent_independent_tickets(tickets)
+    assert math.isclose(eq, 1.25, abs_tol=1e-9)
+
+
+def test_equivalent_independent_tickets_perfectly_diversified_is_one_per_ticket() -> None:
+    """Fully disjoint tickets → equiv == ticket count."""
+    tickets = [
+        _ticket(match_nos=("M1", "M2", "M3")),
+        _ticket(match_nos=("M4", "M5", "M6")),
+        _ticket(match_nos=("M7", "M8", "M9")),
+    ]
+    # 9 unique / (9/3 mean) = 9 / 3 = 3.0
+    eq = equivalent_independent_tickets(tickets)
+    assert math.isclose(eq, 3.0, abs_tol=1e-9)
+
+
+def test_equivalent_independent_tickets_zero_when_empty() -> None:
+    """No tickets → 0.0 (renderer skips the line)."""
+    assert equivalent_independent_tickets([]) == 0.0
+
+
+def test_render_includes_equiv_independent_line() -> None:
+    """spec §17.4 — render emits a 🟦 equiv-independent line below the
+    concentration warning; phrasing has no banned words."""
+    matches = [
+        _match(match_no="周日001", tc_odds={"home": 1.30, "draw": 4.5, "away": 8.0}),
+    ]
+    tickets = [
+        _ticket(match_nos=("周日001", "周日002", "周日003")),
+        _ticket(match_nos=("周日001", "周日002", "周日004")),
+        _ticket(match_nos=("周日001", "周日003", "周日004")),
+        _ticket(match_nos=("周日001", "周日002", "周日003", "周日004")),
+        _ticket(match_nos=("周日002", "周日003", "周日004")),
+    ]
+    plan = BoldComboPlan(
+        run_date="2026-05-19",
+        day_chaos=7,
+        chaos_band="平静",
+        anchor=anchor_ticket(matches),
+        tickets=tickets,
+        label=HARD_LABEL,
+    )
+    out = render_bold_plan(plan)
+    assert "🟦 等效独立票数" in out
+    assert "1.25" in out
+    # 🎲 label legitimately contains "非 edge" — strip it before scanning.
+    body = out[len(HARD_LABEL):]
+    for word in _BANNED_WORDS:
+        assert word not in body, f"advantage word leaked: {word}"
+
+
+def test_render_skips_equiv_independent_line_when_no_tickets() -> None:
+    plan = BoldComboPlan(
+        run_date="2026-05-19",
+        day_chaos=10,
+        chaos_band="平静",
+        anchor=anchor_ticket([]),
+        tickets=[],
+        label=HARD_LABEL,
+    )
+    out = render_bold_plan(plan)
+    assert "等效独立票数" not in out
+
+
+def test_chaos_line_adds_suffix_when_equiv_independent_below_1_5() -> None:
+    """spec §17.4 — equiv < 1.5 → append '（高度共享场次）' to the chaos line."""
+    tickets = [
+        _ticket(match_nos=("M1", "M2", "M3")),
+        _ticket(match_nos=("M1", "M2", "M4")),
+        _ticket(match_nos=("M1", "M3", "M4")),
+        _ticket(match_nos=("M1", "M2", "M3", "M4")),
+        _ticket(match_nos=("M2", "M3", "M4")),
+    ]
+    plan = BoldComboPlan(
+        run_date="2026-05-19",
+        day_chaos=7,
+        chaos_band="平静",
+        anchor=anchor_ticket([]),
+        tickets=tickets,
+        label=HARD_LABEL,
+    )
+    out = render_bold_plan(plan)
+    chaos_line = next(ln for ln in out.splitlines() if "混乱值" in ln)
+    assert "高度共享场次" in chaos_line
+
+
+def test_chaos_line_no_suffix_when_equiv_independent_above_1_5() -> None:
+    """Fully diversified → chaos line stays clean (no suffix)."""
+    tickets = [
+        _ticket(match_nos=("M1", "M2", "M3")),
+        _ticket(match_nos=("M4", "M5", "M6")),
+        _ticket(match_nos=("M7", "M8", "M9")),
+    ]
+    plan = BoldComboPlan(
+        run_date="2026-05-19",
+        day_chaos=7,
+        chaos_band="平静",
+        anchor=anchor_ticket([]),
+        tickets=tickets,
+        label=HARD_LABEL,
+    )
+    out = render_bold_plan(plan)
+    chaos_line = next(ln for ln in out.splitlines() if "混乱值" in ln)
+    assert "高度共享场次" not in chaos_line
 
 
 # ---------------------------------------------------------------------------

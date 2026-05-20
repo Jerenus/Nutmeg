@@ -283,6 +283,10 @@ class BoldMatch:
     euro_odds: dict[str, float] = field(default_factory=dict)
     euro_opening: dict[str, float] = field(default_factory=dict)
     per_book_odds: dict[str, list[float]] = field(default_factory=dict)
+    # De-vigged 国际 fair probabilities for the 胜平负 market (home/draw/away).
+    # Empty when the 欧赔 snapshot is missing → §17.1 gap guard degrades
+    # gracefully (anchor falls back to v1 lowest-odds-favorite behaviour).
+    euro_fair_prob: dict[str, float] = field(default_factory=dict)
     tags: set[str] = field(default_factory=set)
     vig: float = 0.12
     # --- multi-market 体彩 odds (default empty → engine scores 胜平负 only) ---
@@ -706,6 +710,16 @@ CONCENTRATION_PENALTY: float = 0.35
 # A match appearing in more than this fraction of the bold tickets triggers the
 # 🟦 cross-ticket concentration warning in the renderer (spec §11.2).
 CONCENTRATION_WARN_FRACTION: float = 0.6
+# spec §17.1 — 体彩 implied probability minus 欧赔 fair probability ≥ this
+# threshold (8pp) drops the leg from the anchor's 稳健底仓. The wall says
+# "the 国内 pool has priced this leg ≥ 8pp more bullish than the de-vigged
+# international market" — a structural slow-bleed signal, not an edge claim.
+# 5/19 backtest case: 周三010 favorite implied 0.855 vs 欧赔 fair 0.715 → 0.140.
+ANCHOR_GAP_THRESHOLD: float = 0.08
+# spec §17.4 — equivalent-independent-ticket count below this floor appends
+# the （高度共享场次） suffix to the chaos line, so the user reads "5 tickets
+# but actually ≈ N independent bets" and can pick fewer.
+EQUIV_INDEPENDENT_LOW_THRESHOLD: float = 1.5
 
 # spec §13 — bold tickets target a realistic combined-odds band rather than the
 # maximum. The band is for a 3-fold; longer parlays scale it geometrically.
@@ -987,6 +1001,12 @@ def anchor_ticket(matches: list[BoldMatch]) -> BoldTicket:
     It is the hedge ballast for the bold tickets — NOT a "safe" bet, NOT
     +EV: the ``note`` says so honestly. High implied-hit-rate favorites still
     sit inside the same ~13% 竞彩 cut.
+
+    spec §17.1 — for each candidate favorite, if the 体彩 implied probability
+    exceeds the de-vigged 欧赔 fair probability by ≥ ``ANCHOR_GAP_THRESHOLD``,
+    drop the leg (国内 pool priced it more bullish than the international
+    market). When ``euro_fair_prob`` is empty (no snapshot) the guard skips
+    and v1 lowest-odds-favorite behaviour is preserved — never a crash.
     """
     rated: list[tuple[float, BoldMatch, str]] = []
     for match in matches:
@@ -994,7 +1014,15 @@ def anchor_ticket(matches: list[BoldMatch]) -> BoldTicket:
         if not usable:
             continue
         favorite = min(usable, key=lambda o: usable[o])
-        rated.append((usable[favorite], match, favorite))
+        fav_odds = usable[favorite]
+        # §17.1 体彩-vs-欧赔 implied gap guard — applied only when 欧赔 fair
+        # probability is available for this favorite outcome.
+        fair = match.euro_fair_prob.get(favorite)
+        if fair is not None and fair > 0.0:
+            gap = (1.0 / fav_odds) - fair
+            if gap >= ANCHOR_GAP_THRESHOLD:
+                continue
+        rated.append((fav_odds, match, favorite))
     rated.sort(key=lambda item: item[0])
 
     fold = min(ANCHOR_MAX_LEGS, len(rated))
@@ -1192,6 +1220,26 @@ def _render_ticket(ticket: BoldTicket) -> list[str]:
     return lines
 
 
+def equivalent_independent_tickets(tickets: list[BoldTicket]) -> float:
+    """spec §17.4 — exposes the "5 tickets ≠ 5 independent bets" illusion.
+
+    Equals ``unique_match_count / mean_legs_per_ticket``. With fully disjoint
+    tickets it returns the ticket count (true independence); with heavy
+    shared matches it collapses toward 1 — the tickets win/lose together.
+    Returns 0.0 for an empty list (renderer then skips the line).
+
+    5/19 case: 5 tickets × 16 legs / 4 unique matches → 4 / (16/5) = 1.25.
+    """
+    if not tickets:
+        return 0.0
+    unique_matches = {leg.match_no for ticket in tickets for leg in ticket.legs}
+    total_legs = sum(len(ticket.legs) for ticket in tickets)
+    if total_legs == 0:
+        return 0.0
+    mean_legs = total_legs / len(tickets)
+    return len(unique_matches) / mean_legs
+
+
 def _concentration_warning(tickets: list[BoldTicket]) -> str:
     """A 🟦 note when one match dominates the bold tickets (spec §11.2).
 
@@ -1230,10 +1278,17 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
     (胜率 / edge / +EV / 正期望 / 推荐下注 / 重仓) and NO probability/EV column:
     the boldness number is labelled "大胆分" only.
     """
+    equiv_independent = equivalent_independent_tickets(plan.tickets)
+    # §17.4 — append （高度共享场次） when tickets are highly correlated.
+    chaos_suffix = (
+        "（高度共享场次）"
+        if 0.0 < equiv_independent < EQUIV_INDEPENDENT_LOW_THRESHOLD
+        else ""
+    )
     lines: list[str] = [HARD_LABEL, ""]
     lines.append(
         f"**当天大盘面混乱值：{plan.day_chaos}/100（{plan.chaos_band}）** "
-        f"· {plan.run_date}"
+        f"· {plan.run_date}{chaos_suffix}"
     )
     lines.append(
         "> 混乱值越高 = 盘面越吵、组合越长越野；它只是娱乐抖动旋钮，不是优势信号。"
@@ -1241,6 +1296,13 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
     concentration = _concentration_warning(plan.tickets)
     if concentration:
         lines.append(concentration)
+    if equiv_independent > 0.0:
+        # §17.4 — fact-only line: unique_match_count / mean_legs_per_ticket.
+        # Phrasing carries no advantage wording (banned-word check in tests).
+        lines.append(
+            f"🟦 等效独立票数 ≈ {equiv_independent:.2f} 张 —— "
+            "这些票实际共享场次，分散是错觉。"
+        )
     lines.append("")
 
     lines.append("## 稳健底仓（对冲压舱）")
@@ -1476,6 +1538,7 @@ def bold_matches_from_sporttery(
                         {k: list(v) for k, v in euro.per_book_odds.items()}
                         if euro else {}
                     ),
+                    euro_fair_prob=dict(euro.fair_probability) if euro else {},
                     tags=_strong_favorite_tags(had_odds),
                     vig=_tc_vig(had_odds),
                     hhad_odds=hhad_odds,
