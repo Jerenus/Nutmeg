@@ -1220,6 +1220,46 @@ def _render_ticket(ticket: BoldTicket) -> list[str]:
     return lines
 
 
+def degenerate_pool_notice(tickets: list[BoldTicket]) -> str:
+    """spec §18 — when every match in the bold pool contributes exactly one
+    distinct leg, the "5 themed tickets" output is mathematically the
+    enumeration ``C(U_m, k)`` of all ≥k-leg subsets of the U_m-match pool.
+    Theme grouping (§15) and diversity penalty (§11.2) degrade to
+    ``itertools.combinations`` — the 5 tickets are permutations, not choices.
+
+    Returns a one-line notice when degenerate (≥2 tickets, every match
+    contributing one distinct leg), empty string otherwise. The notice is
+    fact-only (counts + folds + combinatorial totals); banned-word safe.
+    """
+    import math
+
+    if len(tickets) < 2:
+        return ""
+    unique_matches = {leg.match_no for ticket in tickets for leg in ticket.legs}
+    unique_legs = {
+        (leg.match_no, leg.market, leg.pick_label)
+        for ticket in tickets
+        for leg in ticket.legs
+    }
+    if len(unique_legs) != len(unique_matches) or not unique_matches:
+        return ""
+    folds_used = sorted({ticket.fold for ticket in tickets if ticket.fold > 0})
+    if not folds_used:
+        return ""
+    u_m = len(unique_matches)
+    enumeration_total = sum(math.comb(u_m, k) for k in folds_used)
+    comb_terms = "+".join(f"C({u_m},{k})" for k in folds_used)
+    n_tickets = len(tickets)
+    if n_tickets == enumeration_total:
+        coverage = f"共 {enumeration_total} 种"
+    else:
+        coverage = f"共 {n_tickets}/{enumeration_total} 种"
+    return (
+        f"⚠️ 腿池退化：{u_m} 场池 × 单腿，{n_tickets} 张大胆票 = "
+        f"{comb_terms} 枚举（{coverage}）—— 主题剧本只是排列，不是选择。"
+    )
+
+
 def equivalent_independent_tickets(tickets: list[BoldTicket]) -> float:
     """spec §17.4 — exposes the "5 tickets ≠ 5 independent bets" illusion.
 
@@ -1303,6 +1343,10 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
             f"🟦 等效独立票数 ≈ {equiv_independent:.2f} 张 —— "
             "这些票实际共享场次，分散是错觉。"
         )
+    # §18 — degenerate pool: 5 themed tickets are really C(N,k) enumeration.
+    pool_notice = degenerate_pool_notice(plan.tickets)
+    if pool_notice:
+        lines.append(pool_notice)
     lines.append("")
 
     lines.append("## 稳健底仓（对冲压舱）")

@@ -33,6 +33,7 @@ from nutmeg.services.jczq_bold_combos import (
     conflict_score,
     contrarian_score,
     day_chaos,
+    degenerate_pool_notice,
     dispersion_score,
     drift_score,
     equivalent_independent_tickets,
@@ -660,6 +661,173 @@ def test_chaos_line_no_suffix_when_equiv_independent_above_1_5() -> None:
     out = render_bold_plan(plan)
     chaos_line = next(ln for ln in out.splitlines() if "混乱值" in ln)
     assert "高度共享场次" not in chaos_line
+
+
+# ---------------------------------------------------------------------------
+# spec §18 — degenerate-pool notice — 5/20 review (single-leg-per-match
+# bold pool → "5 themed tickets" are really C(N,k) enumeration)
+# ---------------------------------------------------------------------------
+
+
+def _typed_leg(
+    *, match_no: str, market: str = "had", pick_label: str = "胜",
+) -> BoldLeg:
+    """Build a BoldLeg with explicit (match_no, market, pick_label) — the
+    triple §18 uses to count distinct legs in the bold pool."""
+    return BoldLeg(
+        match_no=match_no,
+        league="L",
+        home="H",
+        away="A",
+        pick="home",
+        tc_odds=3.0,
+        boldness=0.4,
+        reason="test",
+        market=market,
+        pick_label=pick_label,
+    )
+
+
+def _typed_ticket(legs: list[BoldLeg]) -> BoldTicket:
+    """A BoldTicket from explicit legs (so a match can contribute >1 distinct leg)."""
+    return BoldTicket(
+        id="大胆票X",
+        kind="大胆票",
+        legs=legs,
+        fold=len(legs),
+        total_odds=3.0 ** len(legs),
+        avg_boldness=0.4,
+        note="",
+    )
+
+
+def test_degenerate_pool_notice_5_20_case_full_enumeration() -> None:
+    """spec §18 — 5/20 live: 4-match pool × 1 leg/match, 5 tickets =
+    C(4,3) + C(4,4) = 5 — the full enumeration of all ≥3-leg combinations
+    of the 4-match pool. Notice should fire with match count + folds."""
+    L = {
+        m: _typed_leg(match_no=m, market="crs", pick_label="1:1")
+        for m in ("M1", "M2", "M3", "M4")
+    }
+    tickets = [
+        _typed_ticket([L["M1"], L["M2"], L["M3"]]),
+        _typed_ticket([L["M1"], L["M2"], L["M4"]]),
+        _typed_ticket([L["M1"], L["M3"], L["M4"]]),
+        _typed_ticket([L["M2"], L["M3"], L["M4"]]),
+        _typed_ticket([L["M1"], L["M2"], L["M3"], L["M4"]]),
+    ]
+    notice = degenerate_pool_notice(tickets)
+    assert notice != ""
+    assert "腿池退化" in notice
+    assert "4 场池" in notice
+    assert "5 张" in notice
+    assert "C(4,3)" in notice and "C(4,4)" in notice
+    assert "共 5 种" in notice  # full enumeration
+
+
+def test_degenerate_pool_notice_partial_enumeration() -> None:
+    """spec §18 — same 4-match × 1-leg pool, only 3 tickets out of 5 possible
+    → notice still fires, marked as partial '3/5'."""
+    L = {
+        m: _typed_leg(match_no=m, market="crs", pick_label="1:0")
+        for m in ("M1", "M2", "M3", "M4")
+    }
+    tickets = [
+        _typed_ticket([L["M1"], L["M2"], L["M3"]]),
+        _typed_ticket([L["M1"], L["M2"], L["M4"]]),
+        _typed_ticket([L["M1"], L["M2"], L["M3"], L["M4"]]),
+    ]
+    notice = degenerate_pool_notice(tickets)
+    assert notice != ""
+    assert "腿池退化" in notice
+    assert "3 张" in notice
+    assert "3/5" in notice  # partial enumeration
+
+
+def test_degenerate_pool_notice_does_not_fire_when_match_has_multiple_legs() -> None:
+    """spec §18 — a match contributing 2 distinct legs (different market/pick)
+    means the pool is NOT degenerate; theme grouping is doing real work."""
+    legs_by_id = {
+        "M1_a": _typed_leg(match_no="M1", market="crs", pick_label="1:1"),
+        "M1_b": _typed_leg(match_no="M1", market="had", pick_label="平"),
+        "M2": _typed_leg(match_no="M2", market="hhad", pick_label="让平"),
+        "M3": _typed_leg(match_no="M3", market="crs", pick_label="0:0"),
+        "M4": _typed_leg(match_no="M4", market="ttg", pick_label="2球"),
+    }
+    tickets = [
+        _typed_ticket([legs_by_id["M1_a"], legs_by_id["M2"], legs_by_id["M3"]]),
+        _typed_ticket([legs_by_id["M1_b"], legs_by_id["M2"], legs_by_id["M4"]]),
+        _typed_ticket([legs_by_id["M1_a"], legs_by_id["M3"], legs_by_id["M4"]]),
+    ]
+    notice = degenerate_pool_notice(tickets)
+    assert notice == ""
+
+
+def test_degenerate_pool_notice_does_not_fire_on_single_ticket() -> None:
+    """spec §18 — needs ≥ 2 tickets to talk about enumeration."""
+    L = _typed_leg(match_no="M1")
+    tickets = [_typed_ticket([L])]
+    assert degenerate_pool_notice(tickets) == ""
+
+
+def test_degenerate_pool_notice_does_not_fire_on_empty() -> None:
+    assert degenerate_pool_notice([]) == ""
+
+
+def test_render_includes_degenerate_pool_notice_below_equiv_independent_line() -> None:
+    """spec §18 — the notice is rendered immediately below the §17.4
+    equivalent-independent line; phrasing carries no banned words."""
+    L = {
+        m: _typed_leg(match_no=m, market="crs", pick_label="1:1")
+        for m in ("M1", "M2", "M3", "M4")
+    }
+    tickets = [
+        _typed_ticket([L["M1"], L["M2"], L["M3"]]),
+        _typed_ticket([L["M1"], L["M2"], L["M4"]]),
+        _typed_ticket([L["M1"], L["M3"], L["M4"]]),
+        _typed_ticket([L["M2"], L["M3"], L["M4"]]),
+        _typed_ticket([L["M1"], L["M2"], L["M3"], L["M4"]]),
+    ]
+    plan = BoldComboPlan(
+        run_date="2026-05-20",
+        day_chaos=8,
+        chaos_band="平静",
+        anchor=anchor_ticket([]),
+        tickets=tickets,
+        label=HARD_LABEL,
+    )
+    out = render_bold_plan(plan)
+    lines = out.splitlines()
+    equiv_idx = next(i for i, ln in enumerate(lines) if "等效独立票数" in ln)
+    notice_idx = next(i for i, ln in enumerate(lines) if "腿池退化" in ln)
+    assert notice_idx == equiv_idx + 1, "退化标签必须紧跟在等效独立票数行下方"
+    body = out[len(HARD_LABEL):]
+    for word in _BANNED_WORDS:
+        assert word not in body, f"advantage word leaked: {word}"
+
+
+def test_render_skips_degenerate_pool_notice_when_pool_is_rich() -> None:
+    """Non-degenerate pool → no notice rendered."""
+    legs_by_id = {
+        "M1_a": _typed_leg(match_no="M1", market="crs", pick_label="1:1"),
+        "M1_b": _typed_leg(match_no="M1", market="had", pick_label="平"),
+        "M2": _typed_leg(match_no="M2", market="hhad", pick_label="让平"),
+        "M3": _typed_leg(match_no="M3", market="crs", pick_label="0:0"),
+    }
+    tickets = [
+        _typed_ticket([legs_by_id["M1_a"], legs_by_id["M2"], legs_by_id["M3"]]),
+        _typed_ticket([legs_by_id["M1_b"], legs_by_id["M2"], legs_by_id["M3"]]),
+    ]
+    plan = BoldComboPlan(
+        run_date="2026-05-20",
+        day_chaos=8,
+        chaos_band="平静",
+        anchor=anchor_ticket([]),
+        tickets=tickets,
+        label=HARD_LABEL,
+    )
+    out = render_bold_plan(plan)
+    assert "腿池退化" not in out
 
 
 # ---------------------------------------------------------------------------
