@@ -721,6 +721,25 @@ ANCHOR_GAP_THRESHOLD: float = 0.08
 # but actually ≈ N independent bets" and can pick fewer.
 EQUIV_INDEPENDENT_LOW_THRESHOLD: float = 1.5
 
+# spec §20 — verdict boundaries for the day pool's heaviest-favorite tilt: the
+# median of per-match minimum had odds. ≤ 大热门日 means "every match's
+# favorite is heavily priced" — bold's cold-longshot picks are then betting
+# against the pool's own consensus, which §22 surfaces.
+HEAVY_FAVORITE_DAY_MAX: float = 1.80
+BALANCED_DAY_MAX: float = 2.50
+
+# spec §21 — theme resonance thresholds. The max picked-leg-match's 体彩
+# implied probability for the theme's direction must reach the threshold or
+# the engine is picking cold longshots, not riding consensus. Below threshold
+# fires a 主题失谐 fact-only notice — descriptive, not prescriptive.
+THEME_DRAW_RESONANCE: float = 0.30          # max draw implied across picked draw-lean legs
+THEME_HIGH_GOALS_RESONANCE: float = 0.45    # max P(ttg≥3) across picked ttg legs
+
+# spec §22 — descriptive flip-reading hint trigger: heavy-favorite-day
+# consensus + low chaos + ≥1 theme dissonant → render a creative aid at
+# the bottom that names the consensus direction. Strictly observational.
+FLIP_READING_CHAOS_MAX: int = 20
+
 # spec §13 — bold tickets target a realistic combined-odds band rather than the
 # maximum. The band is for a 3-fold; longer parlays scale it geometrically.
 TARGET_ODDS_3FOLD_LOW: float = 80.0
@@ -1067,11 +1086,42 @@ HARD_LABEL: str = "🎲 娱乐性质 · 非 edge · 长期约 −13% 抽水期�
 
 
 @dataclass(slots=True, frozen=True)
+class MatchSignals:
+    """spec §20-§22 — per-match implied signals harvested from the 体彩 board.
+
+    All fields default to 0.0; a market that isn't quoted contributes 0 and
+    downstream helpers treat 0.0 as "signal unavailable" and skip. No
+    predictive-model fields here — purely de-vigged 体彩 implied probabilities.
+    """
+
+    min_had_odds: float = 0.0           # min decimal odds across had outcomes
+    draw_implied: float = 0.0           # 1/had[draw] — 体彩-implied draw prob
+    high_goals_implied: float = 0.0     # de-vigged Σ ttg buckets ≥ 3 goals
+    underdog_let_implied: float = 0.0   # de-vigged hhad[draw]+hhad[away]
+
+
+@dataclass(slots=True, frozen=True)
+class PoolSignals:
+    """spec §20-§22 — day pool aggregate signals computed once at generate time.
+
+    Empty ``by_match`` (legacy callers or no matches) → every derived render
+    helper returns ``""`` / ``[]`` so the plan still renders cleanly.
+    """
+
+    by_match: dict[str, MatchSignals] = field(default_factory=dict)
+    match_count: int = 0
+
+
+@dataclass(slots=True, frozen=True)
 class BoldComboPlan:
     """The day's full bold-combo output — anchor + bold tickets + chaos value.
 
     ``label`` is always ``HARD_LABEL``. There is NO win-probability / EV field
     anywhere in this plan or its tickets — the engine has no probabilities.
+    ``pool_signals`` carries the per-match implied signals (§20-§22) so the
+    renderer can expose pool-vs-theme honesty without re-loading 体彩 boards.
+    Legacy callers that construct the plan without ``pool_signals`` get an
+    empty default; render helpers degrade silently.
     """
 
     run_date: str
@@ -1080,6 +1130,7 @@ class BoldComboPlan:
     anchor: BoldTicket
     tickets: list[BoldTicket]
     label: str = HARD_LABEL
+    pool_signals: PoolSignals = field(default_factory=PoolSignals)
 
 
 # A market may fill at most this fraction of the candidate pool (spec §12) —
@@ -1174,6 +1225,7 @@ class BoldComboEngine:
 
         tickets = bold_combos(candidate_pool, chaos)
         anchor = anchor_ticket(matches)
+        pool_signals = compute_pool_signals(matches)
 
         return BoldComboPlan(
             run_date=run_date,
@@ -1181,6 +1233,7 @@ class BoldComboEngine:
             chaos_band=band,
             anchor=anchor,
             tickets=tickets,
+            pool_signals=pool_signals,
         )
 
 
@@ -1280,6 +1333,245 @@ def equivalent_independent_tickets(tickets: list[BoldTicket]) -> float:
     return len(unique_matches) / mean_legs
 
 
+def _ttg_bucket_goals(key: str) -> int:
+    """Parse the integer goal count from a ``total_k`` ttg-bucket key.
+
+    ``total_7`` is the ≥7 over-bucket; callers using a goal-count threshold
+    treat ≥7 the same as 7. Unknown keys → -1 (skipped by callers).
+    """
+    if not key.startswith("total_"):
+        return -1
+    try:
+        return int(key.removeprefix("total_"))
+    except ValueError:
+        return -1
+
+
+def compute_pool_signals(matches: list[BoldMatch]) -> PoolSignals:
+    """spec §20-§22 — per-match implied signals harvested from 体彩 boards.
+
+    For each match: min had odds (§20 consensus tilt), draw 体彩-implied prob
+    (§21 平局收割 resonance), de-vigged P(ttg≥3) from the ttg board (§21
+    进球狂欢 resonance), de-vigged hhad[draw]+hhad[away] (the underdog-let
+    direction). Markets that aren't quoted contribute 0.0 — downstream
+    helpers treat 0.0 as "signal unavailable" and skip.
+    """
+    by_match: dict[str, MatchSignals] = {}
+    for match in matches:
+        usable_had = [v for v in match.tc_odds.values() if v and v > 0]
+        min_had = min(usable_had) if usable_had else 0.0
+        draw_o = match.tc_odds.get("draw")
+        draw_imp = 1.0 / draw_o if draw_o and draw_o > 0 else 0.0
+        ttg_fair = _devig_map(match.ttg_odds)
+        high_goals = sum(
+            v for key, v in ttg_fair.items() if _ttg_bucket_goals(key) >= 3
+        )
+        hhad_fair = _devig_map(match.hhad_odds)
+        underdog_let = hhad_fair.get("draw", 0.0) + hhad_fair.get("away", 0.0)
+        by_match[match.match_no] = MatchSignals(
+            min_had_odds=min_had,
+            draw_implied=draw_imp,
+            high_goals_implied=high_goals,
+            underdog_let_implied=underdog_let,
+        )
+    return PoolSignals(by_match=by_match, match_count=len(matches))
+
+
+def pool_consensus(pool_signals: PoolSignals) -> str:
+    """spec §20 — one-line summary of the day pool's heaviest-favorite tilt.
+
+    Median of each match's minimum had odds → 大热门日 (≤
+    ``HEAVY_FAVORITE_DAY_MAX``), 平衡日 (≤ ``BALANCED_DAY_MAX``), 上盘日
+    otherwise. Empty pool / no had odds → ``""`` (renderer omits the line).
+    Fact-only phrasing; no advantage wording.
+    """
+    odds = sorted(
+        ms.min_had_odds for ms in pool_signals.by_match.values()
+        if ms.min_had_odds > 0
+    )
+    if not odds:
+        return ""
+    median = statistics.median(odds)
+    if median <= HEAVY_FAVORITE_DAY_MAX:
+        verdict = "大热门日"
+    elif median <= BALANCED_DAY_MAX:
+        verdict = "平衡日"
+    else:
+        verdict = "上盘日"
+    return (
+        f"🟦 盘面共识：{len(odds)} 场池最低 had 中位赔 = {median:.2f} —— {verdict}。"
+    )
+
+
+def _bold_pick_direction(leg: BoldLeg) -> str:
+    """Reduce a bold leg to ``home``/``draw``/``away``/``''``.
+
+    had/hhad: the pick key is already a directional outcome. crs: parse the
+    scoreline (sHHsAA) or 其他 buckets (s1sh/s1sd/s1sa). ttg: total-goals is
+    orthogonal to the H/D/A axis — returns ``''`` so it never registers as a
+    direction conflict. Unknown crs keys → ``''`` (skipped by callers).
+    """
+    if leg.market in ("had", "hhad"):
+        if leg.pick in ("home", "draw", "away"):
+            return leg.pick
+        return ""
+    if leg.market == "crs":
+        key = leg.pick
+        if key == "s1sh":
+            return "home"
+        if key == "s1sd":
+            return "draw"
+        if key == "s1sa":
+            return "away"
+        if len(key) == 6 and key[0] == "s" and key[3] == "s":
+            try:
+                h, a = int(key[1:3]), int(key[4:6])
+            except ValueError:
+                return ""
+            if h > a:
+                return "home"
+            if h < a:
+                return "away"
+            return "draw"
+    return ""
+
+
+def same_match_contradictions(plan: BoldComboPlan) -> list[str]:
+    """spec §19 — flag anchor ↔ bold same-match directional conflict.
+
+    Anchor is had-only (hold one of home/draw/away per leg). Bold legs are
+    multi-market: had/hhad/crs reduce to a directional vote, ttg is orthogonal
+    (never a conflict). When the same ``match_no`` appears in BOTH anchor and
+    ≥1 bold ticket with opposing directions, surface a fact-only ⚠️ line per
+    conflicting (market, pick) pair (de-duped — multiple tickets sharing the
+    same bold leg produce one notice). No banned words.
+
+    5/20 case: anchor 003 胜 vs bold tickets' 003 比分 1:1 → 同场反向 fires.
+    """
+    if not plan.anchor.legs or not plan.tickets:
+        return []
+    anchor_by_match: dict[str, BoldLeg] = {
+        leg.match_no: leg for leg in plan.anchor.legs
+    }
+    notices: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    for ticket in plan.tickets:
+        for leg in ticket.legs:
+            anchor_leg = anchor_by_match.get(leg.match_no)
+            if anchor_leg is None:
+                continue
+            bold_dir = _bold_pick_direction(leg)
+            if not bold_dir:
+                continue
+            anchor_dir = _bold_pick_direction(anchor_leg)
+            if not anchor_dir or anchor_dir == bold_dir:
+                continue
+            key = (leg.match_no, leg.market, leg.pick_label)
+            if key in seen:
+                continue
+            seen.add(key)
+            market = MARKET_LABELS.get(leg.market, leg.market)
+            notices.append(
+                f"⚠️ 同场反向：{leg.match_no} {leg.home} vs {leg.away} — "
+                f"底仓 [{anchor_leg.pick_label}] @{anchor_leg.tc_odds:.2f}，"
+                f"大胆票 [{market} {leg.pick_label}] @{leg.tc_odds:.2f}，方向相反。"
+            )
+    return notices
+
+
+def theme_dissonance_notices(
+    tickets: list[BoldTicket], pool_signals: PoolSignals
+) -> list[str]:
+    """spec §21 — flag bold themes that the pool itself doesn't support.
+
+    For each theme used by the bold tickets, check the picked-leg matches
+    against a theme-specific resonance threshold on the pool's 体彩-implied
+    direction. Currently covers the two themes most prone to reaching for
+    cold longshots:
+
+    - 平局收割: max draw_implied across draw-lean picked-leg matches
+      ≥ THEME_DRAW_RESONANCE → resonant. Below → fact-only ⚠️ notice.
+    - 进球狂欢: max high_goals_implied across ttg picked-leg matches
+      ≥ THEME_HIGH_GOALS_RESONANCE → resonant. Below → notice.
+
+    冷门比分梦 / 黑马让球 / 全市场混搭 — descriptive, always treated as
+    resonant (the first two ARE the cold/contrarian themes by definition;
+    the last is the cross-market mixed bucket). spec §17.3 30-leg meta-rule
+    is unaffected: this notice is per-day pool reading, not theme weighting.
+    """
+    if not tickets or not pool_signals.by_match:
+        return []
+    themes_in_use = {ticket_theme(t.legs)[0] for t in tickets}
+    notices: list[str] = []
+
+    if THEME_DRAW in themes_in_use:
+        draw_match_nos = {
+            lg.match_no
+            for t in tickets for lg in t.legs
+            if _is_draw_lean(lg)
+        }
+        max_draw = max(
+            (pool_signals.by_match[m].draw_implied
+             for m in draw_match_nos
+             if m in pool_signals.by_match),
+            default=0.0,
+        )
+        if 0.0 < max_draw < THEME_DRAW_RESONANCE:
+            notices.append(
+                f"⚠️ 主题失谐：「{THEME_DRAW}」今晚池内最高 draw 隐含 "
+                f"{max_draw * 100:.0f}%，没有一场把平局定得偏强"
+                f"（≥{int(THEME_DRAW_RESONANCE * 100)}%）—— 主题=反盘面挑冷。"
+            )
+
+    if THEME_GOALS in themes_in_use:
+        ttg_match_nos = {
+            lg.match_no
+            for t in tickets for lg in t.legs
+            if lg.market == "ttg"
+        }
+        max_high = max(
+            (pool_signals.by_match[m].high_goals_implied
+             for m in ttg_match_nos
+             if m in pool_signals.by_match),
+            default=0.0,
+        )
+        if 0.0 < max_high < THEME_HIGH_GOALS_RESONANCE:
+            notices.append(
+                f"⚠️ 主题失谐：「{THEME_GOALS}」今晚池内最高「≥3 球」隐含 "
+                f"{max_high * 100:.0f}%，没有一场把高进球定得偏强"
+                f"（≥{int(THEME_HIGH_GOALS_RESONANCE * 100)}%）—— 主题=反盘面挑冷。"
+            )
+    return notices
+
+
+def flip_reading_hint(plan: BoldComboPlan) -> str:
+    """spec §22 — descriptive flip-reading hint at the bottom of the plan.
+
+    Trigger: bold tickets exist + day chaos ≤ FLIP_READING_CHAOS_MAX + pool
+    consensus is 大热门日 + ≥1 theme in use is dissonant (§21). Then the
+    engine is structurally picking against the pool's own consensus — surface
+    the consensus direction so the user can read the bold tickets in context.
+
+    Strictly observational. No buy/sell directive; no 推荐 / +EV / edge wording.
+    """
+    if not plan.tickets or not plan.pool_signals.by_match:
+        return ""
+    if plan.day_chaos > FLIP_READING_CHAOS_MAX:
+        return ""
+    consensus = pool_consensus(plan.pool_signals)
+    if "大热门日" not in consensus:
+        return ""
+    dissonance = theme_dissonance_notices(plan.tickets, plan.pool_signals)
+    if not dissonance:
+        return ""
+    themes_in_use = sorted({ticket_theme(t.legs)[0] for t in plan.tickets} - {""})
+    theme_str = "/".join(themes_in_use) if themes_in_use else "—"
+    return (
+        f"🎨 翻面读法：盘面共识=大热门日 + 大盘混乱值 {plan.day_chaos}/100 + 主题"
+        f"「{theme_str}」失谐 —— 顺着读 = 热门兑现 / 高进球。纯观察、不替你切换。"
+    )
+
+
 def _concentration_warning(tickets: list[BoldTicket]) -> str:
     """A 🟦 note when one match dominates the bold tickets (spec §11.2).
 
@@ -1333,6 +1625,11 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
     lines.append(
         "> 混乱值越高 = 盘面越吵、组合越长越野；它只是娱乐抖动旋钮，不是优势信号。"
     )
+    # §20 — pool-consensus tilt: a fact-only line on the day's heaviest-favorite
+    # median had odds. Empty when the pool has no had odds (legacy / replay).
+    consensus_line = pool_consensus(plan.pool_signals)
+    if consensus_line:
+        lines.append(consensus_line)
     concentration = _concentration_warning(plan.tickets)
     if concentration:
         lines.append(concentration)
@@ -1347,6 +1644,10 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
     pool_notice = degenerate_pool_notice(plan.tickets)
     if pool_notice:
         lines.append(pool_notice)
+    # §19 — anchor ↔ bold same-match directional conflicts (one line each).
+    lines.extend(same_match_contradictions(plan))
+    # §21 — bold-theme pick vs pool consensus on the theme's direction.
+    lines.extend(theme_dissonance_notices(plan.tickets, plan.pool_signals))
     lines.append("")
 
     lines.append("## 稳健底仓（对冲压舱）")
@@ -1373,6 +1674,11 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
         "_注金提示：上面多张票相互独立 ≠ 风险分散 —— 它们常共享同几场、"
         "会一起赢一起输。你完全可以只挑一张、或一张都不买。_"
     )
+    # §22 — flip-reading creative aid at the bottom (descriptive, not advice).
+    # Only fires when the engine's tickets are reading against pool consensus.
+    flip = flip_reading_hint(plan)
+    if flip:
+        lines.append(flip)
     return "\n".join(lines)
 
 

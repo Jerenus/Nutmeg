@@ -14,22 +14,30 @@ from pathlib import Path
 
 from nutmeg.services.jczq_bold_combos import (
     ANCHOR_GAP_THRESHOLD,
+    BALANCED_DAY_MAX,
     EQUIV_INDEPENDENT_LOW_THRESHOLD,
+    FLIP_READING_CHAOS_MAX,
     HARD_LABEL,
+    HEAVY_FAVORITE_DAY_MAX,
     OUTCOMES,
     POOL_MAX,
     POOL_MIN,
+    THEME_DRAW_RESONANCE,
+    THEME_HIGH_GOALS_RESONANCE,
     BoldComboEngine,
     BoldComboPlan,
     BoldLeg,
     BoldMatch,
     BoldTicket,
+    MatchSignals,
+    PoolSignals,
     anchor_ticket,
     bold_combos,
     bold_leg,
     boldness,
     chaos_band,
     chaos_pool_size,
+    compute_pool_signals,
     conflict_score,
     contrarian_score,
     day_chaos,
@@ -37,8 +45,12 @@ from nutmeg.services.jczq_bold_combos import (
     dispersion_score,
     drift_score,
     equivalent_independent_tickets,
+    flip_reading_hint,
     heat_score,
+    pool_consensus,
     render_bold_plan,
+    same_match_contradictions,
+    theme_dissonance_notices,
 )
 
 
@@ -1828,3 +1840,520 @@ def test_render_bold_plan_shows_theme_and_剧本() -> None:
     assert any(t in out for t in (
         "平局收割", "冷门比分梦", "黑马让球", "进球狂欢", "全市场混搭",
     ))
+
+
+# ---------------------------------------------------------------------------
+# spec §19 — 同场反向公示 — anchor leg vs same-match bold leg directional
+# conflict (5/20 review)
+# ---------------------------------------------------------------------------
+
+
+def _anchor_leg(match_no: str, pick: str, pick_label: str, tc_odds: float) -> BoldLeg:
+    """A had-only anchor leg (the only kind anchor_ticket emits)."""
+    return BoldLeg(
+        match_no=match_no, league="L", home="H", away="A",
+        pick=pick, tc_odds=tc_odds, boldness=0.0,
+        reason=f"{pick_label}向 · 体彩最强热门（最低赔）",
+        market="had", pick_label=pick_label,
+    )
+
+
+def _anchor(legs: list[BoldLeg]) -> BoldTicket:
+    return BoldTicket(
+        id="稳健底仓", kind="稳健底仓", legs=legs,
+        fold=len(legs), total_odds=3.0, avg_boldness=0.0, note="",
+    )
+
+
+def _plan(
+    *, anchor: BoldTicket, tickets: list[BoldTicket],
+    pool_signals: PoolSignals | None = None,
+    day_chaos: int = 8,
+) -> BoldComboPlan:
+    return BoldComboPlan(
+        run_date="2026-05-20",
+        day_chaos=day_chaos,
+        chaos_band="平静",
+        anchor=anchor,
+        tickets=tickets,
+        label=HARD_LABEL,
+        pool_signals=pool_signals if pool_signals is not None else PoolSignals(),
+    )
+
+
+def test_same_match_contradictions_5_20_case_anchor_home_vs_bold_draw() -> None:
+    """spec §19 — anchor picks 003 胜 (home) while bold ticket holds 003
+    比分 1:1 (draw direction). Engine is reading 003 in two opposing ways —
+    surface a fact-only ⚠️ notice."""
+    anchor = _anchor([_anchor_leg("周三003", "home", "胜", 1.34)])
+    bold_leg_1_1 = BoldLeg(
+        match_no="周三003", league="L", home="库奥皮奥", away="雅罗",
+        pick="s01s01", tc_odds=9.0, boldness=0.39,
+        reason="比分 · 1:1 · 大胆腿",
+        market="crs", pick_label="1:1",
+    )
+    bold_ticket = BoldTicket(
+        id="大胆票1", kind="大胆票",
+        legs=[bold_leg_1_1], fold=1, total_odds=9.0,
+        avg_boldness=0.39, note="",
+    )
+    plan = _plan(anchor=anchor, tickets=[bold_ticket])
+    notices = same_match_contradictions(plan)
+    assert len(notices) == 1
+    notice = notices[0]
+    assert "同场反向" in notice
+    assert "周三003" in notice
+    assert "[胜]" in notice and "1.34" in notice
+    assert "比分 1:1" in notice and "9.00" in notice
+    assert "方向相反" in notice
+
+
+def test_same_match_contradictions_silent_when_directions_agree() -> None:
+    """Anchor 胜 + bold crs 2:1 both vote home → no conflict."""
+    anchor = _anchor([_anchor_leg("周三003", "home", "胜", 1.34)])
+    bold = BoldLeg(
+        match_no="周三003", league="L", home="H", away="A",
+        pick="s02s01", tc_odds=7.0, boldness=0.3,
+        reason="比分", market="crs", pick_label="2:1",
+    )
+    ticket = BoldTicket(
+        id="大胆票1", kind="大胆票", legs=[bold],
+        fold=1, total_odds=7.0, avg_boldness=0.3, note="",
+    )
+    plan = _plan(anchor=anchor, tickets=[ticket])
+    assert same_match_contradictions(plan) == []
+
+
+def test_same_match_contradictions_ignores_ttg_orthogonal_leg() -> None:
+    """A bold ttg leg has no H/D/A direction → never a conflict (orthogonal)."""
+    anchor = _anchor([_anchor_leg("周三003", "home", "胜", 1.34)])
+    bold = BoldLeg(
+        match_no="周三003", league="L", home="H", away="A",
+        pick="total_4", tc_odds=5.0, boldness=0.3,
+        reason="总进球", market="ttg", pick_label="4球",
+    )
+    ticket = BoldTicket(
+        id="大胆票1", kind="大胆票", legs=[bold],
+        fold=1, total_odds=5.0, avg_boldness=0.3, note="",
+    )
+    plan = _plan(anchor=anchor, tickets=[ticket])
+    assert same_match_contradictions(plan) == []
+
+
+def test_same_match_contradictions_dedups_repeated_bold_leg_across_tickets() -> None:
+    """Same (match, market, pick_label) shared by multiple tickets → one notice."""
+    anchor = _anchor([_anchor_leg("周三003", "home", "胜", 1.34)])
+    bold = BoldLeg(
+        match_no="周三003", league="L", home="H", away="A",
+        pick="s01s01", tc_odds=9.0, boldness=0.39,
+        reason="比分", market="crs", pick_label="1:1",
+    )
+    other = BoldLeg(
+        match_no="M2", league="L", home="H", away="A",
+        pick="draw", tc_odds=3.6, boldness=0.3,
+        reason="让球", market="hhad", pick_label="让平",
+    )
+    tickets = [
+        BoldTicket(id="大胆票1", kind="大胆票", legs=[bold, other],
+                   fold=2, total_odds=32.4, avg_boldness=0.34, note=""),
+        BoldTicket(id="大胆票2", kind="大胆票", legs=[bold],
+                   fold=1, total_odds=9.0, avg_boldness=0.39, note=""),
+    ]
+    plan = _plan(anchor=anchor, tickets=tickets)
+    notices = same_match_contradictions(plan)
+    assert len(notices) == 1
+    assert "周三003" in notices[0]
+
+
+def test_same_match_contradictions_silent_when_anchor_empty() -> None:
+    bold = BoldLeg(
+        match_no="周三003", league="L", home="H", away="A",
+        pick="s01s01", tc_odds=9.0, boldness=0.39,
+        reason="比分", market="crs", pick_label="1:1",
+    )
+    ticket = BoldTicket(
+        id="大胆票1", kind="大胆票", legs=[bold],
+        fold=1, total_odds=9.0, avg_boldness=0.39, note="",
+    )
+    plan = _plan(anchor=_anchor([]), tickets=[ticket])
+    assert same_match_contradictions(plan) == []
+
+
+def test_render_includes_same_match_contradiction_notice() -> None:
+    """Render injects §19 lines between §18 degenerate-notice (if any) and
+    the empty separator before 稳健底仓; phrasing has no banned words."""
+    anchor = _anchor([_anchor_leg("周三003", "home", "胜", 1.34)])
+    bold = BoldLeg(
+        match_no="周三003", league="L", home="库奥皮奥", away="雅罗",
+        pick="s01s01", tc_odds=9.0, boldness=0.39,
+        reason="比分", market="crs", pick_label="1:1",
+    )
+    ticket = BoldTicket(
+        id="大胆票1", kind="大胆票", legs=[bold],
+        fold=1, total_odds=9.0, avg_boldness=0.39, note="",
+    )
+    plan = _plan(anchor=anchor, tickets=[ticket])
+    out = render_bold_plan(plan)
+    assert "⚠️ 同场反向" in out
+    assert "周三003" in out
+    body = out[len(HARD_LABEL):]
+    for word in _BANNED_WORDS:
+        assert word not in body, f"advantage word leaked: {word}"
+
+
+# ---------------------------------------------------------------------------
+# spec §20 — 盘面共识一行 — day pool's heaviest-favorite tilt
+# ---------------------------------------------------------------------------
+
+
+def _signals(by_match: dict[str, MatchSignals]) -> PoolSignals:
+    return PoolSignals(by_match=by_match, match_count=len(by_match))
+
+
+def test_pool_consensus_heavy_favorite_day_at_or_below_1_80() -> None:
+    """spec §20 — median min had ≤ HEAVY_FAVORITE_DAY_MAX → 大热门日."""
+    signals = _signals({
+        "周三001": MatchSignals(min_had_odds=1.94),
+        "周三002": MatchSignals(min_had_odds=1.15),
+        "周三003": MatchSignals(min_had_odds=1.34),
+        "周三004": MatchSignals(min_had_odds=1.82),
+        "周三005": MatchSignals(min_had_odds=1.25),
+        "周三006": MatchSignals(min_had_odds=1.35),
+        "周三007": MatchSignals(min_had_odds=1.67),
+        "周三008": MatchSignals(min_had_odds=1.53),
+        "周三009": MatchSignals(min_had_odds=1.35),
+        "周三010": MatchSignals(min_had_odds=1.17),
+        "周三011": MatchSignals(min_had_odds=2.05),
+        "周三012": MatchSignals(min_had_odds=2.32),
+    })
+    line = pool_consensus(signals)
+    assert "🟦 盘面共识" in line
+    assert "12 场池" in line
+    assert "大热门日" in line
+
+
+def test_pool_consensus_balanced_day_between_thresholds() -> None:
+    signals = _signals({
+        "M1": MatchSignals(min_had_odds=1.95),
+        "M2": MatchSignals(min_had_odds=2.05),
+        "M3": MatchSignals(min_had_odds=2.30),
+    })
+    # median 2.05 → 1.80 < 2.05 ≤ 2.50 → 平衡日
+    line = pool_consensus(signals)
+    assert "平衡日" in line
+
+
+def test_pool_consensus_upset_day_above_2_50() -> None:
+    signals = _signals({
+        "M1": MatchSignals(min_had_odds=2.55),
+        "M2": MatchSignals(min_had_odds=2.80),
+        "M3": MatchSignals(min_had_odds=3.30),
+    })
+    line = pool_consensus(signals)
+    assert "上盘日" in line
+
+
+def test_pool_consensus_empty_when_no_had_odds() -> None:
+    """Empty by_match → renderer omits the line."""
+    assert pool_consensus(PoolSignals()) == ""
+    # by_match with all-zero min had odds also reads as no signal:
+    signals = _signals({"M1": MatchSignals(min_had_odds=0.0)})
+    assert pool_consensus(signals) == ""
+
+
+def test_pool_consensus_thresholds_are_named_constants() -> None:
+    """spec §20 — boundaries are documented constants, not magic literals."""
+    assert HEAVY_FAVORITE_DAY_MAX == 1.80
+    assert BALANCED_DAY_MAX == 2.50
+
+
+def test_render_injects_pool_consensus_after_caveat_line() -> None:
+    """The 盘面共识 line sits directly after the 混乱值越高 caveat."""
+    signals = _signals({
+        "M1": MatchSignals(min_had_odds=1.50),
+        "M2": MatchSignals(min_had_odds=1.40),
+        "M3": MatchSignals(min_had_odds=1.30),
+    })
+    plan = _plan(anchor=_anchor([]), tickets=[], pool_signals=signals)
+    out = render_bold_plan(plan)
+    lines = out.splitlines()
+    caveat_idx = next(i for i, ln in enumerate(lines) if "混乱值越高" in ln)
+    consensus_idx = next(i for i, ln in enumerate(lines) if "盘面共识" in ln)
+    assert consensus_idx == caveat_idx + 1
+    body = out[len(HARD_LABEL):]
+    for word in _BANNED_WORDS:
+        assert word not in body, f"advantage word leaked: {word}"
+
+
+# ---------------------------------------------------------------------------
+# spec §21 — 主题失谐 — theme picks vs pool consensus on theme direction
+# ---------------------------------------------------------------------------
+
+
+def _draw_bold_leg(match_no: str, *, pick_label: str = "1:1") -> BoldLeg:
+    """A draw-lean bold leg — crs 1:1 by default (h==a is the draw-lean test)."""
+    return BoldLeg(
+        match_no=match_no, league="L", home="H", away="A",
+        pick="s01s01", tc_odds=9.0, boldness=0.39,
+        reason="比分 · 1:1 · 大胆腿",
+        market="crs", pick_label=pick_label,
+    )
+
+
+def _draw_ticket(match_nos: tuple[str, ...]) -> BoldTicket:
+    """A draw-majority ticket → classifies as 平局收割."""
+    legs = [_draw_bold_leg(mn) for mn in match_nos]
+    return BoldTicket(
+        id="大胆票X", kind="大胆票", legs=legs,
+        fold=len(legs), total_odds=9.0 ** len(legs),
+        avg_boldness=0.39, note="",
+    )
+
+
+def test_theme_dissonance_5_20_case_draw_max_under_30pct() -> None:
+    """spec §21 — 5/20 picked-leg draw implied: 003=0.235, 005=0.190, 006=0.208;
+    max=0.235 < 0.30 → 平局收割 dissonant."""
+    signals = _signals({
+        "周三003": MatchSignals(draw_implied=0.235),
+        "周三005": MatchSignals(draw_implied=0.190),
+        "周三006": MatchSignals(draw_implied=0.208),
+    })
+    tickets = [_draw_ticket(("周三003", "周三005", "周三006"))]
+    notices = theme_dissonance_notices(tickets, signals)
+    assert len(notices) == 1
+    assert "⚠️ 主题失谐" in notices[0]
+    assert "平局收割" in notices[0]
+    # 0.235 * 100 = 23.5 → :.0f banker-rounds to 24 (nearest-even).
+    assert "24%" in notices[0]
+    assert "反盘面挑冷" in notices[0]
+
+
+def test_theme_dissonance_silent_when_a_picked_match_is_draw_competitive() -> None:
+    """A single picked-leg match with draw implied ≥ 0.30 → theme resonant."""
+    signals = _signals({
+        "周三003": MatchSignals(draw_implied=0.235),
+        "周三011": MatchSignals(draw_implied=0.303),    # competitive draw
+        "周三006": MatchSignals(draw_implied=0.208),
+    })
+    tickets = [_draw_ticket(("周三003", "周三011", "周三006"))]
+    assert theme_dissonance_notices(tickets, signals) == []
+
+
+def test_theme_dissonance_high_goals_under_threshold() -> None:
+    """进球狂欢 → max picked-leg ttg-≥3 implied must be ≥ 0.45."""
+    signals = _signals({
+        "M1": MatchSignals(high_goals_implied=0.30),
+        "M2": MatchSignals(high_goals_implied=0.35),
+    })
+    legs = [
+        BoldLeg(
+            match_no=mn, league="L", home="H", away="A",
+            pick="total_4", tc_odds=5.0, boldness=0.3,
+            reason="总进球", market="ttg", pick_label="4球",
+        )
+        for mn in ("M1", "M2")
+    ]
+    ticket = BoldTicket(
+        id="大胆票X", kind="大胆票", legs=legs,
+        fold=2, total_odds=25.0, avg_boldness=0.3, note="",
+    )
+    notices = theme_dissonance_notices([ticket], signals)
+    # ticket_theme: 2/2 legs are ttg market → 进球狂欢 theme
+    assert len(notices) == 1
+    assert "进球狂欢" in notices[0]
+    assert "35%" in notices[0]
+
+
+def test_theme_dissonance_silent_when_no_pool_signals() -> None:
+    """Legacy callers / empty replay → empty list, never crash."""
+    tickets = [_draw_ticket(("M1", "M2"))]
+    assert theme_dissonance_notices(tickets, PoolSignals()) == []
+
+
+def test_theme_dissonance_silent_when_no_tickets() -> None:
+    signals = _signals({"M1": MatchSignals(draw_implied=0.10)})
+    assert theme_dissonance_notices([], signals) == []
+
+
+def test_theme_dissonance_thresholds_are_named_constants() -> None:
+    assert THEME_DRAW_RESONANCE == 0.30
+    assert THEME_HIGH_GOALS_RESONANCE == 0.45
+
+
+# ---------------------------------------------------------------------------
+# spec §22 — 翻面读法 — descriptive flip-reading hint at the bottom
+# ---------------------------------------------------------------------------
+
+
+def test_flip_reading_hint_fires_on_5_20_pattern() -> None:
+    """spec §22 — heavy-favorite-day + low chaos + theme dissonant → render
+    the descriptive flip-reading hint at the bottom."""
+    signals = _signals({
+        "周三003": MatchSignals(min_had_odds=1.34, draw_implied=0.235),
+        "周三005": MatchSignals(min_had_odds=1.25, draw_implied=0.190),
+        "周三006": MatchSignals(min_had_odds=1.35, draw_implied=0.208),
+    })
+    tickets = [_draw_ticket(("周三003", "周三005", "周三006"))]
+    plan = _plan(
+        anchor=_anchor([]), tickets=tickets,
+        pool_signals=signals, day_chaos=8,
+    )
+    hint = flip_reading_hint(plan)
+    assert "🎨 翻面读法" in hint
+    assert "大热门日" in hint
+    assert "平局收割" in hint
+    assert "纯观察" in hint
+
+
+def test_flip_reading_hint_silent_when_chaos_is_high() -> None:
+    """Chaos > FLIP_READING_CHAOS_MAX → hint suppressed (not a calm day)."""
+    signals = _signals({
+        "M1": MatchSignals(min_had_odds=1.30, draw_implied=0.20),
+        "M2": MatchSignals(min_had_odds=1.40, draw_implied=0.18),
+    })
+    tickets = [_draw_ticket(("M1", "M2"))]
+    plan = _plan(
+        anchor=_anchor([]), tickets=tickets,
+        pool_signals=signals,
+        day_chaos=FLIP_READING_CHAOS_MAX + 1,
+    )
+    assert flip_reading_hint(plan) == ""
+
+
+def test_flip_reading_hint_silent_when_pool_is_not_heavy_favorite_day() -> None:
+    """A balanced or upset day → consensus tilt isn't 大热门日 → no hint."""
+    signals = _signals({
+        "M1": MatchSignals(min_had_odds=2.20, draw_implied=0.20),
+        "M2": MatchSignals(min_had_odds=2.40, draw_implied=0.18),
+        "M3": MatchSignals(min_had_odds=2.60, draw_implied=0.17),
+    })
+    tickets = [_draw_ticket(("M1", "M2", "M3"))]
+    plan = _plan(
+        anchor=_anchor([]), tickets=tickets,
+        pool_signals=signals, day_chaos=8,
+    )
+    assert flip_reading_hint(plan) == ""
+
+
+def test_flip_reading_hint_silent_when_themes_resonate() -> None:
+    """Heavy-favorite-day + a draw-competitive picked match → theme resonant
+    → flip-hint suppressed."""
+    signals = _signals({
+        "M1": MatchSignals(min_had_odds=1.30, draw_implied=0.20),
+        "M2": MatchSignals(min_had_odds=1.40, draw_implied=0.18),
+        "M3": MatchSignals(min_had_odds=1.50, draw_implied=0.33),  # competitive
+    })
+    tickets = [_draw_ticket(("M1", "M2", "M3"))]
+    plan = _plan(
+        anchor=_anchor([]), tickets=tickets,
+        pool_signals=signals, day_chaos=8,
+    )
+    assert flip_reading_hint(plan) == ""
+
+
+def test_render_injects_flip_reading_hint_at_bottom() -> None:
+    """The hint is appended after the closing 注金提示 line — strictly
+    descriptive, banned-word safe."""
+    signals = _signals({
+        "周三003": MatchSignals(min_had_odds=1.34, draw_implied=0.235),
+        "周三005": MatchSignals(min_had_odds=1.25, draw_implied=0.190),
+        "周三006": MatchSignals(min_had_odds=1.35, draw_implied=0.208),
+    })
+    tickets = [_draw_ticket(("周三003", "周三005", "周三006"))]
+    plan = _plan(
+        anchor=_anchor([]), tickets=tickets,
+        pool_signals=signals, day_chaos=8,
+    )
+    out = render_bold_plan(plan)
+    lines = out.splitlines()
+    closing_idx = next(i for i, ln in enumerate(lines) if "注金提示" in ln)
+    flip_idx = next(i for i, ln in enumerate(lines) if "翻面读法" in ln)
+    assert flip_idx > closing_idx
+    body = out[len(HARD_LABEL):]
+    for word in _BANNED_WORDS:
+        assert word not in body, f"advantage word leaked: {word}"
+
+
+# ---------------------------------------------------------------------------
+# compute_pool_signals — pure-function harvest from BoldMatch list
+# ---------------------------------------------------------------------------
+
+
+def test_compute_pool_signals_extracts_min_had_and_draw_implied() -> None:
+    """A match with had {1.34, 4.25, 6.75} → min=1.34, draw_implied=1/4.25."""
+    match = _match(
+        match_no="M1", tc_odds={"home": 1.34, "draw": 4.25, "away": 6.75},
+    )
+    signals = compute_pool_signals([match])
+    assert signals.match_count == 1
+    ms = signals.by_match["M1"]
+    assert math.isclose(ms.min_had_odds, 1.34, abs_tol=1e-9)
+    assert math.isclose(ms.draw_implied, 1.0 / 4.25, abs_tol=1e-9)
+
+
+def test_compute_pool_signals_degrades_gracefully_with_no_ttg_or_hhad() -> None:
+    """Markets that aren't quoted → 0.0 (signal unavailable, never crash)."""
+    match = _match(
+        match_no="M1", tc_odds={"home": 2.0, "draw": 3.4, "away": 3.8},
+    )
+    ms = compute_pool_signals([match]).by_match["M1"]
+    assert ms.high_goals_implied == 0.0
+    assert ms.underdog_let_implied == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Integration — 5/20 replay scenario surfaces all four §19-§22 notices
+# ---------------------------------------------------------------------------
+
+
+def test_render_5_20_replay_surfaces_all_four_new_notices() -> None:
+    """End-to-end: anchor + draw-only bold tickets + heavy-favorite pool
+    signals + low chaos → render shows §19 同场反向, §20 大热门日, §21 主题失谐,
+    §22 翻面读法. Banned-word safe across the entire body."""
+    signals = _signals({
+        "周三001": MatchSignals(min_had_odds=1.94),
+        "周三002": MatchSignals(min_had_odds=1.15),
+        "周三003": MatchSignals(min_had_odds=1.34, draw_implied=0.235),
+        "周三005": MatchSignals(min_had_odds=1.25, draw_implied=0.190),
+        "周三006": MatchSignals(min_had_odds=1.35, draw_implied=0.208),
+    })
+    anchor = _anchor([
+        _anchor_leg("周三003", "home", "胜", 1.34),
+        _anchor_leg("周三001", "away", "负", 1.94),
+    ])
+    bold_003 = BoldLeg(
+        match_no="周三003", league="L", home="库奥皮奥", away="雅罗",
+        pick="s01s01", tc_odds=9.0, boldness=0.39,
+        reason="比分 · 1:1 · 大胆腿",
+        market="crs", pick_label="1:1",
+    )
+    bold_005 = BoldLeg(
+        match_no="周三005", league="L", home="利勒斯特", away="克里斯蒂",
+        pick="draw", tc_odds=3.75, boldness=0.37,
+        reason="让球 · 让平 · 大胆腿",
+        market="hhad", pick_label="让平",
+    )
+    bold_006 = BoldLeg(
+        match_no="周三006", league="L", home="赛哈海湾", away="吉达国民",
+        pick="draw", tc_odds=3.63, boldness=0.39,
+        reason="让球 · 让平 · 大胆腿",
+        market="hhad", pick_label="让平",
+    )
+    ticket = BoldTicket(
+        id="大胆票1", kind="大胆票",
+        legs=[bold_003, bold_005, bold_006],
+        fold=3, total_odds=9.0 * 3.75 * 3.63,
+        avg_boldness=0.38, note="",
+    )
+    plan = _plan(
+        anchor=anchor, tickets=[ticket],
+        pool_signals=signals, day_chaos=8,
+    )
+    out = render_bold_plan(plan)
+    assert "🟦 盘面共识" in out and "大热门日" in out          # §20
+    assert "⚠️ 同场反向" in out and "周三003" in out           # §19
+    assert "⚠️ 主题失谐" in out and "平局收割" in out          # §21
+    assert "🎨 翻面读法" in out                                # §22
+    body = out[len(HARD_LABEL):]
+    for word in _BANNED_WORDS:
+        assert word not in body, f"advantage word leaked: {word}"
