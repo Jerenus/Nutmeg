@@ -211,7 +211,7 @@ class TieredPlan:
 - 全 None → `None`（顶部公示"今日无可用方案"）
 
 **决策硬编码、不算法化** — codex 5/25 的"若只玩一张选 A"是常识不是 EV
-计算。重仓首选**只标 A 或 B**，绝不标 D/E（防误导）。
+计算。首推一张**只标 A 或 B**，绝不标 D/E（防误导）。
 
 ### §3.5 strategy 失败容错
 
@@ -279,14 +279,14 @@ gap_pp 等。
 
 **v2 新增顶部行（按顺序）**：
 1. **金额合计行**（顶部第一行，在 HARD_LABEL 下）：
-   `💰 今日方案 · 总建议金额 ¥{stake_total}（multiplier={x}×） · 重仓首选 = {recommended_single or "—"}`
+   `💰 今日方案 · 总建议金额 ¥{stake_total}（multiplier={x}×） · 首推一张 = {recommended_single or "—"}`
 
 ### §5.2 每张票渲染
 
 ```markdown
 ### {code} {name}（{folds}串1 · 合计赔率 {odds:.2f} · ¥{stake} · {confidence_tag}）
 {以下行 if recommended_single == code:}
-> 重仓首选（若只玩一张选这张）
+> 首推一张（若只玩一张选这张）
 
 - {match_no} {home} vs {away} ｜ [{market_label}] **{pick_label}** @ {tc_odds:.2f}
   > 场理由：{why_match}
@@ -322,7 +322,7 @@ _注金提示：上面多张票相互独立 ≠ 风险分散 —— 它们常共
 外加 v2 新增脚注（仅在 recommended_single 非空时）：
 
 ```markdown
-_重仓首选标记只是引擎依据档位优先级给出的常识建议，不是命中概率断言。_
+_首推一张标记只是引擎依据档位优先级给出的常识建议，不是命中概率断言。_
 ```
 
 ---
@@ -422,7 +422,7 @@ append-only，schema 同上 record 数组。
 - T20: A 存在 → "A"
 - T21: A=None B 存在 → "B"
 - T22: A=None B=None → None
-- T23: 渲染顶部金额行包含 "重仓首选 = A"
+- T23: 渲染顶部金额行包含 "首推一张 = A"
 
 #### LegReason
 - T24-T28: 每个 strategy fixture → leg.structured_reason 四段全填 / 模板

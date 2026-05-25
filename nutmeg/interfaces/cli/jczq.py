@@ -496,6 +496,107 @@ def jczq_bold_review(
         _cli.typer.echo(review.message)
 
 
+@_cli.app.command("jczq-tiered")
+def jczq_tiered(
+    run_date: str | None = _cli.typer.Option(
+        None, "--date", help="目标日期 YYYY-MM-DD（live，默认今天）"
+    ),
+    replay_date: str | None = _cli.typer.Option(
+        None, "--replay", help="从已存快照回放"
+    ),
+    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
+    stake_multiplier: float = _cli.typer.Option(
+        1.0, "--stake-multiplier", help="金额缩放（1.0=¥35/35/20/10）"
+    ),
+    write: _cli.Path | None = JCZQ_DAILY_BRIEF_WRITE_OPTION,
+    dispatch_telegram: bool = _cli.typer.Option(
+        False, "--dispatch-telegram", help="把方案推到 Telegram"
+    ),
+    dry_run: bool = _cli.typer.Option(
+        True, "--dry-run/--no-dry-run", help="dry-run 时不推送"
+    ),
+) -> None:
+    """codex-style v2 — 4 档 A/B/D/E 风险分层方案（spec 2026-05-25）.
+
+    替代 bold-combos v1。每日 launchd 自动流走这条
+    (com.nutmeg.jczq.daily-tiered)。
+    """
+    import logging
+
+    from nutmeg.services.jczq_bold_combos import (
+        bold_matches_from_sporttery,
+        load_bold_odds_snapshot,
+        load_sporttery_snapshot,
+        persist_bold_odds_snapshot,
+        persist_sporttery_snapshot,
+    )
+    from nutmeg.services.jczq_tiered import (
+        render_tiered_plan,
+        select_tiered_plan,
+    )
+    from nutmeg.services.jczq_tiered_review import (
+        load_cross_version_history_dict,
+    )
+
+    logger = logging.getLogger(__name__)
+    target_date = _resolve_jczq_date(replay_date or run_date)
+    replay = replay_date is not None
+
+    value: dict | None = None
+    bold_odds: dict[str, dict] = {}
+    if replay:
+        value = load_sporttery_snapshot(target_date, output_dir)
+        if value is None:
+            _cli.console.print(f"no snapshot for {target_date}")
+            raise _cli.typer.Exit(code=2)
+        bold_odds = load_bold_odds_snapshot(target_date, output_dir)
+    else:
+        from nutmeg.services.jczq import SportteryJczqCalculatorProvider
+
+        fetched = SportteryJczqCalculatorProvider().fetch()
+        value = fetched.get("value") if "value" in fetched else fetched
+        persist_sporttery_snapshot(target_date, output_dir, value)
+        try:
+            from nutmeg.data.fcom500 import Fcom500Client, collect_bold_odds
+
+            with Fcom500Client() as client:
+                bold_odds = collect_bold_odds(client)
+        except Exception:  # noqa: BLE001 — 国际 odds optional; degrade
+            logger.warning(
+                "jczq-tiered: 国际 odds enrichment failed", exc_info=True
+            )
+        if bold_odds:
+            persist_bold_odds_snapshot(target_date, output_dir, bold_odds)
+
+    matches = bold_matches_from_sporttery(
+        value or {}, run_date=target_date, bold_odds=bold_odds
+    )
+    history = load_cross_version_history_dict(output_dir)
+    plan = select_tiered_plan(
+        matches,
+        history=history,
+        multiplier=stake_multiplier,
+        run_date=target_date,
+    )
+    rendered = render_tiered_plan(plan)
+
+    daily_dir = output_dir / "daily" / target_date
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    (daily_dir / "tiered-plan.md").write_text(rendered, encoding="utf-8")
+
+    if write is not None:
+        write.parent.mkdir(parents=True, exist_ok=True)
+        write.write_text(rendered, encoding="utf-8")
+        _cli.console.print(f"Wrote tiered plan: {write}")
+
+    if dispatch_telegram:
+        status = _dispatch_jczq_telegram(rendered, dry_run=dry_run)
+        _cli.console.print(f"Telegram dispatch: {status}")
+
+    if write is None and not dispatch_telegram:
+        _cli.typer.echo(rendered)
+
+
 @_cli.app.command("jczq-web")
 def jczq_web(
     output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
