@@ -376,6 +376,144 @@ def test_bold_combos_empty_when_too_few_legs() -> None:
     assert bold_combos(_legs(2), chaos=50) == []
 
 
+# ---------------------------------------------------------------------------
+# spec §24 — theme soft-retirement (the 17.3 meta-rule's second half)
+# ---------------------------------------------------------------------------
+
+
+def test_min_theme_legs_for_retirement_is_30() -> None:
+    """spec §17.3/§24 — the 30-leg threshold is a named constant, not magic."""
+    from nutmeg.services.jczq_bold_combos import MIN_THEME_LEGS_FOR_RETIREMENT
+    assert MIN_THEME_LEGS_FOR_RETIREMENT == 30
+
+
+def test_retired_themes_from_history_5_24_case_triggers() -> None:
+    """spec §24 — 5/24 cumulative state: 平局收割 = 23 tickets / 0 hits /
+    69 graded legs → past 30-leg gate with zero hits → returns {'平局收割'}."""
+    from nutmeg.services.jczq_bold_combos import retired_themes_from_history
+
+    by_theme = {
+        "平局收割": {"tickets": 23, "ticket_hits": 0, "legs": 69, "leg_hits": 11},
+    }
+    assert retired_themes_from_history(by_theme) == frozenset({"平局收割"})
+
+
+def test_retired_themes_below_threshold_keeps_theme() -> None:
+    """spec §24 — fewer than 30 graded legs → not retired even at 0 hits.
+    5/20 state: 平局收割 9 tickets × 3 = 27 graded legs, still under 30."""
+    from nutmeg.services.jczq_bold_combos import retired_themes_from_history
+
+    by_theme = {
+        "平局收割": {"tickets": 9, "ticket_hits": 0, "legs": 27, "leg_hits": 5},
+    }
+    assert retired_themes_from_history(by_theme) == frozenset()
+
+
+def test_retired_themes_one_hit_above_threshold_keeps_theme() -> None:
+    """spec §24 — strict zero-ticket-hits gate. ticket_hits > 0 keeps the theme
+    even past 30 legs (gives the theme room to recover — user prefers '在困难
+    中找落足点' over wholesale theme deletion)."""
+    from nutmeg.services.jczq_bold_combos import retired_themes_from_history
+
+    by_theme = {
+        "平局收割": {"tickets": 35, "ticket_hits": 1, "legs": 100, "leg_hits": 12},
+    }
+    assert retired_themes_from_history(by_theme) == frozenset()
+
+
+def test_retired_themes_handles_legacy_slot_without_legs_key() -> None:
+    """spec §24 — legacy by_theme slot (no ``legs`` field) defaults to 0 legs →
+    never retired. Forces explicit history backfill before retirement can fire."""
+    from nutmeg.services.jczq_bold_combos import retired_themes_from_history
+
+    by_theme = {"平局收割": {"tickets": 23, "ticket_hits": 0}}
+    assert retired_themes_from_history(by_theme) == frozenset()
+
+
+def test_retired_themes_multiple_themes_in_one_pass() -> None:
+    """spec §24 — multiple themes can be retired in the same accumulator pass."""
+    from nutmeg.services.jczq_bold_combos import retired_themes_from_history
+
+    by_theme = {
+        "平局收割": {"tickets": 23, "ticket_hits": 0, "legs": 69, "leg_hits": 4},
+        "冷门比分梦": {"tickets": 12, "ticket_hits": 0, "legs": 36, "leg_hits": 2},
+        "全市场混搭": {"tickets": 5, "ticket_hits": 0, "legs": 15, "leg_hits": 1},
+    }
+    assert retired_themes_from_history(by_theme) == frozenset(
+        {"平局收割", "冷门比分梦"}
+    )
+
+
+def test_bold_combos_retired_themes_default_empty_keeps_backcompat() -> None:
+    """spec §24 — calling bold_combos without retired_themes (or with an empty
+    set) yields identical tickets to the pre-§24 behavior."""
+    legs = _legs(6)
+    pre = bold_combos(legs, chaos=50)
+    post = bold_combos(legs, chaos=50, retired_themes=frozenset())
+    assert [(t.fold, [lg.match_no for lg in t.legs]) for t in pre] == [
+        (t.fold, [lg.match_no for lg in t.legs]) for t in post
+    ]
+
+
+def test_bold_combos_phase_a_skips_retired_theme(monkeypatch) -> None:
+    """spec §24 — passing retired_themes={'平局收割'} drops the Phase A
+    guaranteed slot for that theme.
+
+    Phase B may still pick draw-majority combos on score+penalty alone
+    (§24 by design: Phase B unchanged). To isolate the Phase A skip
+    cleanly, we monkeypatch ``BOLD_TICKET_COUNT`` to 2 so Phase B's
+    while-loop never fires for the baseline (Phase A's 2 themes already
+    fill the budget); the only thing the retired set can change is
+    whether Phase A reserved a draw slot.
+
+    Pool: 2 draw legs + 5 higher-boldness non-draw legs → only 2 themes
+    present (平局收割 + 全市场混搭). Baseline → Phase A picks 1 of each =
+    2 tickets, one is 平局收割. Retired → Phase A picks only 全市场混搭
+    = 1 ticket, plus Phase B fills 1 more (best score+penalty = a
+    non-draw combo). Result: 平局收割 count drops 1 → 0.
+    """
+    from nutmeg.services import jczq_bold_combos as bc_mod
+    from nutmeg.services.jczq_bold_combos import ticket_theme
+
+    monkeypatch.setattr(bc_mod, "BOLD_TICKET_COUNT", 2)
+
+    draw_legs = [
+        BoldLeg(
+            match_no=f"周日{i:03d}", league="L", home=f"H{i}", away=f"A{i}",
+            pick="draw", tc_odds=3.5, boldness=0.30 + 0.02 * i,
+            reason="r", market="had", pick_label="平",
+        )
+        for i in range(1, 3)
+    ]
+    away_legs = [
+        BoldLeg(
+            match_no=f"周日{i + 2:03d}", league="L", home=f"H{i + 2}",
+            away=f"A{i + 2}",
+            pick="away", tc_odds=2.5, boldness=0.55 + 0.02 * i,
+            reason="r", market="had", pick_label="负",
+        )
+        for i in range(1, 6)
+    ]
+    legs = draw_legs + away_legs
+
+    plain = bold_combos(legs, chaos=50)
+    plain_themes = [ticket_theme(t.legs)[0] for t in plain]
+    assert plain_themes.count("平局收割") == 1, (
+        f"baseline: Phase A should reserve a 平局收割 slot, got {plain_themes}"
+    )
+
+    retired = bold_combos(
+        legs, chaos=50, retired_themes=frozenset({"平局收割"})
+    )
+    retired_themes_out = [ticket_theme(t.legs)[0] for t in retired]
+    assert "平局收割" not in retired_themes_out, (
+        f"retired={{'平局收割'}}: no Phase A slot, "
+        f"got {retired_themes_out}"
+    )
+    # Phase B fills the saved seat — ticket budget preserved.
+    assert len(retired) == len(plain)
+
+
 def test_anchor_ticket_picks_lowest_odds_favorites() -> None:
     matches = [
         _match(match_no="周日001", tc_odds={"home": 1.30, "draw": 4.5, "away": 8.0}),
@@ -816,6 +954,110 @@ def test_render_includes_degenerate_pool_notice_below_equiv_independent_line() -
     body = out[len(HARD_LABEL):]
     for word in _BANNED_WORDS:
         assert word not in body, f"advantage word leaked: {word}"
+
+
+def test_retired_themes_with_stats_returns_sorted_records() -> None:
+    """spec §24 — retired_themes_with_stats turns a cumulative by_theme dict
+    into a tuple of RetiredTheme records, sorted by ticket count desc so the
+    biggest underperformer shows first."""
+    from nutmeg.services.jczq_bold_combos import (
+        RetiredTheme,
+        retired_themes_with_stats,
+    )
+
+    by_theme = {
+        "平局收割": {"tickets": 23, "ticket_hits": 0, "legs": 69, "leg_hits": 11},
+        "冷门比分梦": {"tickets": 12, "ticket_hits": 0, "legs": 36, "leg_hits": 2},
+        "全市场混搭": {"tickets": 5, "ticket_hits": 0, "legs": 15, "leg_hits": 1},
+    }
+    out = retired_themes_with_stats(by_theme)
+    assert out == (
+        RetiredTheme(theme="平局收割", tickets=23, ticket_hits=0,
+                     legs=69, leg_hits=11),
+        RetiredTheme(theme="冷门比分梦", tickets=12, ticket_hits=0,
+                     legs=36, leg_hits=2),
+    )
+
+
+def test_retired_themes_with_stats_empty_when_no_history() -> None:
+    """spec §24 — empty/missing history → empty tuple, never a crash."""
+    from nutmeg.services.jczq_bold_combos import retired_themes_with_stats
+
+    assert retired_themes_with_stats({}) == ()
+    assert retired_themes_with_stats(None) == ()
+
+
+def test_render_includes_retirement_notice_below_theme_dissonance() -> None:
+    """spec §24 — when ``plan.retired_themes`` is non-empty, render one
+    notice line per retired theme. Position: between §21 dissonance notices
+    and the blank line before ``## 稳健底仓``. Phrasing carries no banned
+    words."""
+    from nutmeg.services.jczq_bold_combos import RetiredTheme
+
+    plan = BoldComboPlan(
+        run_date="2026-05-25",
+        day_chaos=8,
+        chaos_band="平静",
+        anchor=anchor_ticket([]),
+        tickets=[],
+        label=HARD_LABEL,
+        retired_themes=(
+            RetiredTheme(theme="平局收割", tickets=23, ticket_hits=0,
+                         legs=69, leg_hits=11),
+        ),
+    )
+    out = render_bold_plan(plan)
+    assert "主题汰留" in out
+    assert "平局收割" in out
+    assert "0/23 张" in out
+    assert "69 腿" in out
+    assert "30 门槛" in out
+    assert "Phase A" in out
+    body = out[len(HARD_LABEL):]
+    for word in _BANNED_WORDS:
+        assert word not in body, f"advantage word leaked: {word}"
+
+
+def test_render_skips_retirement_notice_when_no_themes_retired() -> None:
+    """spec §24 — empty ``retired_themes`` → no line rendered (no
+    clean-day pollution)."""
+    plan = BoldComboPlan(
+        run_date="2026-05-25",
+        day_chaos=8,
+        chaos_band="平静",
+        anchor=anchor_ticket([]),
+        tickets=[],
+        label=HARD_LABEL,
+        retired_themes=(),
+    )
+    assert "主题汰留" not in render_bold_plan(plan)
+
+
+def test_render_retirement_notice_emits_one_line_per_retired_theme() -> None:
+    """spec §24 — multiple retired themes → one line each, in input order."""
+    from nutmeg.services.jczq_bold_combos import RetiredTheme
+
+    plan = BoldComboPlan(
+        run_date="2026-05-25",
+        day_chaos=8,
+        chaos_band="平静",
+        anchor=anchor_ticket([]),
+        tickets=[],
+        label=HARD_LABEL,
+        retired_themes=(
+            RetiredTheme(theme="平局收割", tickets=23, ticket_hits=0,
+                         legs=69, leg_hits=11),
+            RetiredTheme(theme="冷门比分梦", tickets=12, ticket_hits=0,
+                         legs=36, leg_hits=2),
+        ),
+    )
+    notice_lines = [
+        ln for ln in render_bold_plan(plan).splitlines()
+        if "主题汰留" in ln
+    ]
+    assert len(notice_lines) == 2
+    assert "平局收割" in notice_lines[0]
+    assert "冷门比分梦" in notice_lines[1]
 
 
 def test_render_skips_degenerate_pool_notice_when_pool_is_rich() -> None:

@@ -175,12 +175,21 @@ def _day_record(
     bold: list[GradedTicket],
 ) -> dict:
     """One day's compact review record — the unit appended to the history."""
+    # spec §24 — each theme slot tracks accumulated graded legs + leg hits so
+    # the 30-leg retirement threshold reads off a real number. Pending legs
+    # (hit is None) are excluded from ``legs`` so a 跨日 leg can't bump a theme
+    # past the threshold before it actually settles.
     by_theme: dict[str, dict[str, int]] = {}
     for gt in bold:
-        slot = by_theme.setdefault(gt.theme, {"tickets": 0, "ticket_hits": 0})
+        slot = by_theme.setdefault(
+            gt.theme,
+            {"tickets": 0, "ticket_hits": 0, "legs": 0, "leg_hits": 0},
+        )
         slot["tickets"] += 1
         if gt.all_hit:
             slot["ticket_hits"] += 1
+        slot["legs"] += gt.graded
+        slot["leg_hits"] += gt.hits
     return {
         "date": run_date,
         "chaos": chaos,
@@ -238,9 +247,17 @@ def _cumulative(history: list[dict]) -> dict:
         leg_hits += int(bold.get("leg_hits", 0))
         leg_total += int(bold.get("leg_graded", 0))
         for theme, slot in (rec.get("by_theme") or {}).items():
-            agg = by_theme.setdefault(theme, {"tickets": 0, "ticket_hits": 0})
+            agg = by_theme.setdefault(
+                theme,
+                {"tickets": 0, "ticket_hits": 0, "legs": 0, "leg_hits": 0},
+            )
             agg["tickets"] += int(slot.get("tickets", 0))
             agg["ticket_hits"] += int(slot.get("ticket_hits", 0))
+            # spec §24 — legacy days have no legs/leg_hits → default 0 keeps
+            # old histories loading and accumulates the 30-leg gate honestly
+            # only over days that started recording it.
+            agg["legs"] += int(slot.get("legs", 0))
+            agg["leg_hits"] += int(slot.get("leg_hits", 0))
     return {
         "days": len(history),
         "first_date": history[0]["date"] if history else "",

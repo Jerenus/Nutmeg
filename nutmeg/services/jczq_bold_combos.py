@@ -851,6 +851,83 @@ THEME_ORDER: tuple[str, ...] = (
     THEME_DRAW, THEME_SCORE, THEME_HANDICAP, THEME_GOALS, THEME_MIXED,
 )
 
+# spec §17.3 / §24 — the 30-leg gate. by_theme accumulation below this number
+# of GRADED legs blocks any retirement/weighting decision (§17.3 first half).
+# At or above this number AND ticket_hits == 0, the theme is soft-retired:
+# Phase A skips it; Phase B still considers its combos (§24 second half).
+MIN_THEME_LEGS_FOR_RETIREMENT: int = 30
+
+
+@dataclass(slots=True, frozen=True)
+class RetiredTheme:
+    """spec §24 — one cumulative-history snapshot of a soft-retired theme.
+
+    Captured at plan-build time so the renderer can print the exact 0/{tickets}
+    + leg-count it acted on, even after the next day's history mutates the
+    underlying file. ``ticket_hits`` is structurally 0 (retirement requires it).
+    """
+
+    theme: str
+    tickets: int
+    ticket_hits: int
+    legs: int
+    leg_hits: int
+
+
+def retired_themes_from_history(
+    by_theme: dict[str, dict[str, int]] | None,
+) -> frozenset[str]:
+    """spec §24 — themes past the 30-leg gate with zero whole-ticket hits.
+
+    ``by_theme`` is the cumulative slot dict from
+    ``bold-review-history.json`` (``_cumulative(...)['by_theme']``). A theme is
+    retired ⟺ ``legs >= MIN_THEME_LEGS_FOR_RETIREMENT`` AND ``ticket_hits == 0``.
+
+    The strict ``ticket_hits == 0`` gate is deliberate: ``ticket_hits > 0``
+    keeps the theme in rotation even past 30 legs — the engine is entertainment
+    and the user prefers "在困难中找落足点" over wholesale theme deletion.
+
+    Legacy slots without the ``legs`` field default to 0 (never trigger), so
+    retirement only fires after history.json is backfilled / new days accrue.
+    """
+    if not by_theme:
+        return frozenset()
+    retired = {
+        theme
+        for theme, slot in by_theme.items()
+        if int(slot.get("legs", 0)) >= MIN_THEME_LEGS_FOR_RETIREMENT
+        and int(slot.get("ticket_hits", 0)) == 0
+    }
+    return frozenset(retired)
+
+
+def retired_themes_with_stats(
+    by_theme: dict[str, dict[str, int]] | None,
+) -> tuple[RetiredTheme, ...]:
+    """spec §24 — the renderer view of ``retired_themes_from_history``.
+
+    Same gate (≥30 graded legs, 0 ticket_hits), but emits a snapshot tuple of
+    ``RetiredTheme`` records sorted by ticket count desc — the biggest 0%
+    underperformer shows first in the rendered notice. Empty/missing input →
+    empty tuple, never a crash.
+    """
+    if not by_theme:
+        return ()
+    retired = [
+        RetiredTheme(
+            theme=theme,
+            tickets=int(slot.get("tickets", 0)),
+            ticket_hits=int(slot.get("ticket_hits", 0)),
+            legs=int(slot.get("legs", 0)),
+            leg_hits=int(slot.get("leg_hits", 0)),
+        )
+        for theme, slot in by_theme.items()
+        if int(slot.get("legs", 0)) >= MIN_THEME_LEGS_FOR_RETIREMENT
+        and int(slot.get("ticket_hits", 0)) == 0
+    ]
+    retired.sort(key=lambda r: r.tickets, reverse=True)
+    return tuple(retired)
+
 # A market holding the majority of a ticket's legs → that market's theme. had
 # has no theme of its own — a had-majority ticket falls through to 全市场混搭.
 _MARKET_THEME: dict[str, str] = {
@@ -906,7 +983,12 @@ def ticket_theme(legs: list[BoldLeg]) -> tuple[str, str]:
     return (theme, _THEME_SCRIPTS[theme])
 
 
-def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
+def bold_combos(
+    legs: list[BoldLeg],
+    chaos: int,
+    *,
+    retired_themes: frozenset[str] = frozenset(),
+) -> list[BoldTicket]:
     """Assemble creative cross-market 3/4/5-fold parlays from the candidate ``legs``.
 
     Each ticket's legs are distinct matches (Rule O). When the candidate pool
@@ -923,6 +1005,11 @@ def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
     does the spreading). A thin pool simply yields fewer tickets. ``chaos``
     already sized the candidate pool upstream (``chaos_pool_size``) and is not
     re-used here. Fewer than 3 candidate legs → an empty list (never a crash).
+
+    spec §24 — ``retired_themes`` drops the Phase A guaranteed slot for any
+    theme that hit the 30-leg gate with zero ticket hits. Phase B still
+    considers retired-theme combos (they compete on score+penalty); the change
+    is purely the loss of the saved seat. Default is empty → pre-§24 behaviour.
     """
     _ = chaos  # the pool was already chaos-sized; selection is theme-driven
     if len(legs) < 3:
@@ -978,6 +1065,10 @@ def bold_combos(legs: list[BoldLeg], chaos: int) -> list[BoldTicket]:
         theme, _script = ticket_theme(combo_legs)
         by_theme.setdefault(theme, []).append(index)
     for theme in THEME_ORDER:
+        # spec §24 — soft-retired themes lose their Phase A saved seat. The
+        # combos remain in ``scored`` and Phase B can still pick them on merit.
+        if theme in retired_themes:
+            continue
         candidates = [i for i in by_theme.get(theme, []) if i not in used]
         if candidates:
             _take(max(candidates, key=_penalized))
@@ -1131,6 +1222,9 @@ class BoldComboPlan:
     tickets: list[BoldTicket]
     label: str = HARD_LABEL
     pool_signals: PoolSignals = field(default_factory=PoolSignals)
+    # spec §24 — themes past the 30-leg gate at 0 ticket_hits; captured at
+    # plan-build time so the renderer prints the exact 0/N + leg count.
+    retired_themes: tuple[RetiredTheme, ...] = ()
 
 
 # A market may fill at most this fraction of the candidate pool (spec §12) —
@@ -1212,8 +1306,21 @@ class BoldComboEngine:
     tickets + a 稳健底仓 anchor. No predictive model is touched.
     """
 
-    def generate(self, run_date: str, matches: list[BoldMatch]) -> BoldComboPlan:
-        """Build the day's plan from the supplied 体彩+国际 ``matches``."""
+    def generate(
+        self,
+        run_date: str,
+        matches: list[BoldMatch],
+        *,
+        retired_themes: tuple[RetiredTheme, ...] = (),
+    ) -> BoldComboPlan:
+        """Build the day's plan from the supplied 体彩+国际 ``matches``.
+
+        spec §24 — ``retired_themes`` (from the cumulative review history) is
+        passed through to ``bold_combos`` so Phase A skips the retired theme's
+        saved seat, and rendered as a fact-only notice at the top of the plan.
+        Default empty tuple keeps the pre-§24 behavior — tests + replays that
+        construct an engine without history continue to work.
+        """
         chaos = day_chaos(matches)
         band = chaos_band(chaos)
 
@@ -1223,7 +1330,10 @@ class BoldComboEngine:
         # market cap. Also seeds one leg per match for Rule-O reachability.
         candidate_pool = _balanced_pool(matches, pool_n)
 
-        tickets = bold_combos(candidate_pool, chaos)
+        retired_set = frozenset(rt.theme for rt in retired_themes)
+        tickets = bold_combos(
+            candidate_pool, chaos, retired_themes=retired_set
+        )
         anchor = anchor_ticket(matches)
         pool_signals = compute_pool_signals(matches)
 
@@ -1234,6 +1344,7 @@ class BoldComboEngine:
             anchor=anchor,
             tickets=tickets,
             pool_signals=pool_signals,
+            retired_themes=retired_themes,
         )
 
 
@@ -1602,6 +1713,23 @@ def _concentration_warning(tickets: list[BoldTicket]) -> str:
     )
 
 
+def _retirement_notice_lines(
+    retired: tuple[RetiredTheme, ...],
+) -> list[str]:
+    """spec §24 — fact-only retirement notice; one line per retired theme.
+
+    Phrasing uses only counted nouns (累计 / 张 / 腿 / 门槛 / 跳过保送); none
+    of the §7 banned advantage words. Empty input → empty list (no clean-day
+    pollution).
+    """
+    return [
+        f"⚠️ 主题汰留：「{rt.theme}」累计 {rt.ticket_hits}/{rt.tickets} 张"
+        f"（{rt.legs} 腿 ≥ {MIN_THEME_LEGS_FOR_RETIREMENT} 门槛）"
+        f"今晚 Phase A 跳过保送。"
+        for rt in retired
+    ]
+
+
 def render_bold_plan(plan: BoldComboPlan) -> str:
     """Render a ``BoldComboPlan`` to honest-labelled markdown.
 
@@ -1648,6 +1776,9 @@ def render_bold_plan(plan: BoldComboPlan) -> str:
     lines.extend(same_match_contradictions(plan))
     # §21 — bold-theme pick vs pool consensus on the theme's direction.
     lines.extend(theme_dissonance_notices(plan.tickets, plan.pool_signals))
+    # §24 — soft-retired themes (30-leg gate met, 0 ticket hits): one fact
+    # line per theme, between §21 dissonance and the blank-line separator.
+    lines.extend(_retirement_notice_lines(plan.retired_themes))
     lines.append("")
 
     lines.append("## 稳健底仓（对冲压舱）")
@@ -2070,5 +2201,23 @@ def run_bold_combos_multimarket(
     matches = bold_matches_from_sporttery(
         value or {}, run_date=run_date, bold_odds=bold_odds
     )
-    plan = BoldComboEngine().generate(run_date, matches)
+    # spec §24 — read the cumulative review history; themes past the 30-leg
+    # gate at 0 ticket hits lose their Phase A saved seat and surface a fact
+    # line at the top of the rendered plan. Missing/empty/corrupt history →
+    # empty tuple, never a crash.
+    retired = _load_retired_themes(output_dir)
+    plan = BoldComboEngine().generate(run_date, matches, retired_themes=retired)
     return render_bold_plan(plan)
+
+
+def _load_retired_themes(output_dir) -> tuple[RetiredTheme, ...]:
+    """spec §24 — read bold-review-history.json and return the themes past
+    the 30-leg gate with 0 ticket_hits. Lazy-imports from the review module
+    to avoid a circular dependency. Missing file / parse error / no themes
+    past the gate → empty tuple.
+    """
+    from nutmeg.services.jczq_bold_review import _cumulative, _load_history
+
+    history = _load_history(output_dir)
+    cumulative = _cumulative(history)
+    return retired_themes_with_stats(cumulative.get("by_theme") or {})

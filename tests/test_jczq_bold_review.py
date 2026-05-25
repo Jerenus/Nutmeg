@@ -12,6 +12,7 @@ from nutmeg.services.jczq_bold_combos import (
 )
 from nutmeg.services.jczq_bold_review import (
     _cumulative,
+    _day_record,
     build_bold_review,
     grade_leg,
     grade_ticket,
@@ -114,7 +115,10 @@ def test_cumulative_accumulates_history() -> None:
     assert cum["anchor"] == {"hits": 1, "total": 2}
     assert cum["bold_tickets"] == {"hits": 1, "total": 10}
     assert cum["bold_legs"] == {"hits": 10, "total": 31}
-    assert cum["by_theme"]["冷门比分梦"] == {"tickets": 3, "ticket_hits": 1}
+    # spec §24 — legacy schema (no per-theme legs/leg_hits) defaults to 0
+    assert cum["by_theme"]["冷门比分梦"] == {
+        "tickets": 3, "ticket_hits": 1, "legs": 0, "leg_hits": 0,
+    }
 
 
 def test_build_bold_review_no_snapshot_skips(tmp_path) -> None:
@@ -180,6 +184,104 @@ def test_bold_review_message_has_no_advantage_wording(tmp_path) -> None:
     body = review.message[len(HARD_LABEL):]
     for word in ("胜率", "edge", "+EV", "正期望", "推荐下注", "重仓"):
         assert word not in body, f"advantage word leaked: {word}"
+
+
+def test_day_record_by_theme_aggregates_legs_and_leg_hits() -> None:
+    """spec §24 — _day_record's by_theme slot tracks accumulated graded legs +
+    leg hits per theme, so §24 retirement can read a real 30-leg threshold.
+
+    Two 平局收割 tickets (a 3-leg full-hit and a 3-leg 1/3 hit) → theme slot
+    must report ``legs=6`` (all 6 legs graded), ``leg_hits=4`` (3+1), and
+    ``ticket_hits=1`` (only the full-hit ticket counts). Pending legs (no
+    actual) are excluded from ``legs`` denominator."""
+    from nutmeg.services.jczq_bold_review import GradedLeg, GradedTicket
+
+    def _gl(mn, market, pick, hit):
+        return GradedLeg(
+            match_no=mn, market=market, pick_label=pick,
+            tc_odds=4.0, actual=pick if hit else "其它", hit=hit,
+        )
+
+    def _gt(tid, theme, legs, all_hit, pending):
+        graded = sum(1 for lg in legs if lg.hit is not None)
+        hits = sum(1 for lg in legs if lg.hit is True)
+        return GradedTicket(
+            ticket_id=tid, kind="大胆票", theme=theme, fold=len(legs),
+            total_odds=20.0, legs=legs, hits=hits, graded=graded,
+            all_hit=all_hit, pending=pending,
+        )
+
+    bold = [
+        _gt("大胆票1", "平局收割",
+            [_gl("M1", "had", "平", True),
+             _gl("M2", "hhad", "让平", True),
+             _gl("M3", "had", "平", True)],
+            all_hit=True, pending=False),
+        _gt("大胆票2", "平局收割",
+            [_gl("M4", "had", "平", True),
+             _gl("M5", "hhad", "让平", False),
+             _gl("M6", "had", "平", False)],
+            all_hit=False, pending=False),
+    ]
+    rec = _day_record("2026-05-25", chaos=8, anchor=None, bold=bold)
+
+    slot = rec["by_theme"]["平局收割"]
+    assert slot["tickets"] == 2
+    assert slot["ticket_hits"] == 1
+    assert slot["legs"] == 6
+    assert slot["leg_hits"] == 4
+
+
+def test_day_record_by_theme_excludes_pending_legs_from_legs_count() -> None:
+    """spec §24 — a leg with ``hit is None`` (待定 — match has no result yet)
+    must NOT increment the theme's ``legs`` denominator. Otherwise a pending
+    跨日 leg would push the theme over the 30-leg threshold prematurely."""
+    from nutmeg.services.jczq_bold_review import GradedLeg, GradedTicket
+
+    legs = [
+        GradedLeg(match_no="M1", market="had", pick_label="平",
+                  tc_odds=4.0, actual="平", hit=True),
+        GradedLeg(match_no="M2", market="had", pick_label="平",
+                  tc_odds=4.0, actual=None, hit=None),  # 待定
+    ]
+    bold = [GradedTicket(
+        ticket_id="大胆票1", kind="大胆票", theme="平局收割", fold=2,
+        total_odds=20.0, legs=legs, hits=1, graded=1,
+        all_hit=False, pending=True,
+    )]
+    rec = _day_record("2026-05-25", chaos=8, anchor=None, bold=bold)
+
+    slot = rec["by_theme"]["平局收割"]
+    assert slot["legs"] == 1, "待定 leg must not count toward graded denominator"
+    assert slot["leg_hits"] == 1
+    assert slot["tickets"] == 1
+    assert slot["ticket_hits"] == 0  # pending ticket is not a ticket_hit
+
+
+def test_cumulative_aggregates_theme_legs_and_handles_legacy_records() -> None:
+    """spec §24 — _cumulative sums theme-level legs/leg_hits; legacy day records
+    (no legs/leg_hits keys) accumulate as 0 so old history keeps loading."""
+    history = [
+        # New-schema day
+        {"date": "2026-05-25", "chaos": 8,
+         "anchor": None,
+         "bold": {"tickets": 2, "ticket_hits": 1, "ticket_graded": 2,
+                  "leg_hits": 4, "leg_graded": 6},
+         "by_theme": {"平局收割":
+                      {"tickets": 2, "ticket_hits": 1, "legs": 6, "leg_hits": 4}}},
+        # Legacy day — old schema without legs/leg_hits per theme
+        {"date": "2026-05-24", "chaos": 8,
+         "anchor": None,
+         "bold": {"tickets": 5, "ticket_hits": 0, "ticket_graded": 5,
+                  "leg_hits": 0, "leg_graded": 16},
+         "by_theme": {"平局收割": {"tickets": 5, "ticket_hits": 0}}},
+    ]
+    cum = _cumulative(history)
+    slot = cum["by_theme"]["平局收割"]
+    assert slot["tickets"] == 7
+    assert slot["ticket_hits"] == 1
+    assert slot["legs"] == 6  # legacy day contributes 0 legs
+    assert slot["leg_hits"] == 4
 
 
 def test_run_bold_review_writes_artifacts(tmp_path) -> None:
