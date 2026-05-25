@@ -597,6 +597,35 @@ def jczq_tiered(
         _cli.typer.echo(rendered)
 
 
+@_cli.app.command("jczq-tiered-review")
+def jczq_tiered_review(
+    run_date: str | None = _cli.typer.Option(
+        None, "--date", help="复盘日期 YYYY-MM-DD / today / yesterday（默认昨天）"
+    ),
+    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
+    dispatch_telegram: bool = _cli.typer.Option(
+        False, "--dispatch-telegram", help="把复盘推到 Telegram"
+    ),
+    dry_run: bool = _cli.typer.Option(
+        True, "--dry-run/--no-dry-run", help="dry-run 时不推送"
+    ),
+) -> None:
+    """v2 tiered-plan 次日复盘 — 4 档独立 grading + 累计趋势 + 跨版本 §24.
+
+    每日 launchd 自动流走这条 (com.nutmeg.jczq.tiered-review-8am)。
+    """
+    from nutmeg.services.jczq_tiered_review import run_tiered_review
+
+    target_date = _resolve_jczq_date(run_date or "yesterday")
+    review = run_tiered_review(target_date, output_dir)
+
+    if dispatch_telegram:
+        status = _dispatch_jczq_telegram(review.message, dry_run=dry_run)
+        _cli.console.print(f"Telegram dispatch: {status}")
+    else:
+        _cli.typer.echo(review.message)
+
+
 @_cli.app.command("jczq-web")
 def jczq_web(
     output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,

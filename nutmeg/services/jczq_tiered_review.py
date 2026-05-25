@@ -7,11 +7,27 @@ independently against okooo results, appends to history. Cross-version §24:
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from nutmeg.services.jczq_bold_combos import (
+    HARD_LABEL,
+    MARKET_LABELS,
+    BoldLeg,
     RetiredTheme,
+    bold_matches_from_sporttery,
+    load_bold_odds_snapshot,
+    load_sporttery_snapshot,
     retired_themes_with_stats,
+    ticket_theme,
+)
+from nutmeg.services.jczq_bold_review import grade_leg
+from nutmeg.services.jczq_tiered import (
+    Tier,
+    TieredPlan,
+    render_tiered_plan,
+    select_tiered_plan,
 )
 
 
@@ -80,3 +96,418 @@ def load_cross_version_history_dict(output_dir) -> dict:
         _cumulative_by_theme(v2_hist, "by_theme"),
     )
     return {"by_theme": merged}
+
+
+# ---------------------------------------------------------------------------
+# Daily review — spec §6: replay + grade + render + history append
+# ---------------------------------------------------------------------------
+
+
+_TIER_NAMES: dict[str, str] = {
+    "A": "稳健底仓", "B": "主方案", "D": "反大众", "E": "极限娱乐",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class GradedTierLeg:
+    match_no: str
+    market: str
+    pick_label: str
+    tc_odds: float
+    actual: Optional[str]
+    hit: Optional[bool]
+
+
+@dataclass(frozen=True, slots=True)
+class GradedTier:
+    """One tier graded against okooo results."""
+    code: str
+    name: str
+    fold: int
+    total_odds: float
+    stake: int
+    legs: list[GradedTierLeg]
+    hits: int
+    graded: int
+    all_hit: bool
+    pending: bool
+    theme: str
+    stake_returned: Optional[int]   # None when pending
+
+
+@dataclass(frozen=True, slots=True)
+class TieredReviewResult:
+    run_date: str
+    status: str
+    day_chaos: int
+    multiplier: float
+    recommended_single: Optional[str]
+    tiers: list[Optional[GradedTier]]
+    results: dict[str, dict[str, str]]
+    message: str
+    day_record: dict = field(default_factory=dict)
+    cumulative: dict = field(default_factory=dict)
+
+
+def replay_tiered_plan(run_date: str, output_dir) -> Optional[TieredPlan]:
+    """spec §6 — re-run select_tiered_plan from yesterday's snapshots."""
+    value = load_sporttery_snapshot(run_date, output_dir)
+    if value is None:
+        return None
+    bold_odds = load_bold_odds_snapshot(run_date, output_dir)
+    matches = bold_matches_from_sporttery(
+        value, run_date=run_date, bold_odds=bold_odds
+    )
+    history = load_cross_version_history_dict(output_dir)
+    return select_tiered_plan(
+        matches, history=history, multiplier=1.0, run_date=run_date
+    )
+
+
+def grade_tier(tier: Tier, results: dict[str, dict[str, str]]) -> GradedTier:
+    """Grade one Tier's legs against okooo results. Pending if any leg
+    has no result yet (跨日 / 未出)."""
+    bold_legs: list[BoldLeg] = [tl.leg for tl in tier.legs]
+    graded_legs = [grade_leg(lg, results) for lg in bold_legs]
+    legs = [
+        GradedTierLeg(
+            match_no=gl.match_no, market=gl.market,
+            pick_label=gl.pick_label, tc_odds=gl.tc_odds,
+            actual=gl.actual, hit=gl.hit,
+        )
+        for gl in graded_legs
+    ]
+    hits = sum(1 for lg in legs if lg.hit is True)
+    graded = sum(1 for lg in legs if lg.hit is not None)
+    pending = any(lg.hit is None for lg in legs)
+    all_hit = bool(legs) and all(lg.hit is True for lg in legs)
+    theme = ticket_theme(bold_legs)[0] if bold_legs else ""
+    stake_returned: Optional[int]
+    if pending:
+        stake_returned = None
+    elif all_hit:
+        stake_returned = round(tier.stake_yuan * tier.total_odds)
+    else:
+        stake_returned = 0
+    return GradedTier(
+        code=tier.profile.code, name=tier.profile.name,
+        fold=len(legs), total_odds=tier.total_odds,
+        stake=tier.stake_yuan, legs=legs,
+        hits=hits, graded=graded,
+        all_hit=all_hit, pending=pending,
+        theme=theme, stake_returned=stake_returned,
+    )
+
+
+def _day_record(
+    run_date: str, plan: TieredPlan, graded: list[Optional[GradedTier]]
+) -> dict:
+    """Build the persistable day record. by_theme aggregated like v1 §24."""
+    by_theme: dict[str, dict[str, int]] = {}
+    by_tier: dict[str, dict[str, int]] = {}
+    for gt in graded:
+        if gt is None:
+            continue
+        # by_theme — spec §24-compatible
+        slot = by_theme.setdefault(
+            gt.theme,
+            {"tickets": 0, "ticket_hits": 0, "legs": 0, "leg_hits": 0},
+        )
+        slot["tickets"] += 1
+        if gt.all_hit:
+            slot["ticket_hits"] += 1
+        slot["legs"] += gt.graded
+        slot["leg_hits"] += gt.hits
+        # by_tier — v2's new per-tier accumulator
+        tslot = by_tier.setdefault(
+            gt.code,
+            {
+                "tickets": 0, "ticket_hits": 0,
+                "legs": 0, "leg_hits": 0,
+                "stake_total": 0, "stake_returned": 0,
+            },
+        )
+        tslot["tickets"] += 1
+        if gt.all_hit:
+            tslot["ticket_hits"] += 1
+        tslot["legs"] += gt.graded
+        tslot["leg_hits"] += gt.hits
+        if not gt.pending:
+            tslot["stake_total"] += gt.stake
+            tslot["stake_returned"] += int(gt.stake_returned or 0)
+    return {
+        "date": run_date,
+        "chaos": plan.day_chaos,
+        "multiplier": plan.multiplier,
+        "recommended_single": plan.recommended_single,
+        "by_theme": by_theme,
+        "by_tier": by_tier,
+    }
+
+
+def _append_history(output_dir, day_record: dict) -> list[dict]:
+    path = Path(output_dir) / "tiered-plan-history.json"
+    history = [
+        rec for rec in _load_history(path)
+        if rec.get("date") != day_record["date"]
+    ]
+    history.append(day_record)
+    history.sort(key=lambda r: r.get("date") or "")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return history
+
+
+def _cumulative(history: list[dict]) -> dict:
+    """Sum across history records for the trend block."""
+    tier_agg: dict[str, dict[str, int]] = {}
+    theme_agg: dict[str, dict[str, int]] = {}
+    for rec in history:
+        for code, slot in (rec.get("by_tier") or {}).items():
+            a = tier_agg.setdefault(
+                code,
+                {
+                    "tickets": 0, "ticket_hits": 0,
+                    "legs": 0, "leg_hits": 0,
+                    "stake_total": 0, "stake_returned": 0,
+                },
+            )
+            for k in (
+                "tickets", "ticket_hits", "legs", "leg_hits",
+                "stake_total", "stake_returned",
+            ):
+                a[k] += int(slot.get(k, 0))
+        for theme, slot in (rec.get("by_theme") or {}).items():
+            a = theme_agg.setdefault(
+                theme,
+                {"tickets": 0, "ticket_hits": 0, "legs": 0, "leg_hits": 0},
+            )
+            for k in ("tickets", "ticket_hits", "legs", "leg_hits"):
+                a[k] += int(slot.get(k, 0))
+    return {
+        "days": len(history),
+        "first_date": history[0]["date"] if history else "",
+        "last_date": history[-1]["date"] if history else "",
+        "by_tier": tier_agg,
+        "by_theme": theme_agg,
+    }
+
+
+def _mark(hit: Optional[bool]) -> str:
+    return {True: "✅", False: "✗", None: "待定"}[hit]
+
+
+def _render_graded_tier(gt: GradedTier) -> list[str]:
+    """A graded tier block — header + per-leg result."""
+    verdict = (
+        "待定" if gt.pending
+        else ("整票命中 ✅" if gt.all_hit else "整票未中")
+    )
+    header = (
+        f"### {gt.code} {gt.name}（{gt.fold}串1 @{gt.total_odds:.2f} · ¥{gt.stake}）："
+        f"命中 {gt.hits}/{len(gt.legs)} · {verdict}"
+    )
+    if not gt.pending:
+        ret = gt.stake_returned or 0
+        net = ret - gt.stake
+        sign = "+" if net >= 0 else ""
+        header += f" · 实际回款 ¥{ret}（净 {sign}¥{net}）"
+    lines = [header]
+    for lg in gt.legs:
+        market = MARKET_LABELS.get(lg.market, lg.market)
+        actual = lg.actual or "未出"
+        lines.append(
+            f"    {lg.match_no} {market} {lg.pick_label} "
+            f"→ 实际 {actual} {_mark(lg.hit)}"
+        )
+    return lines
+
+
+def _render_no_snapshot(run_date: str) -> str:
+    return "\n".join([
+        HARD_LABEL,
+        "",
+        f"【Nutmeg｜{run_date} tiered-plan 复盘】",
+        f"无 {run_date} 的盘口快照 —— 当天 v2 引擎未跑，跳过复盘。",
+    ])
+
+
+def render_tiered_review(
+    run_date: str,
+    plan: TieredPlan,
+    graded: list[Optional[GradedTier]],
+    cumulative: dict,
+) -> str:
+    """spec §6 — render the v2 next-day backtest report. Welded 🎲 label,
+    factual hit/miss only, no advantage wording."""
+    lines: list[str] = [HARD_LABEL, ""]
+    lines.append(f"【Nutmeg｜{run_date} tiered-plan v2 复盘】")
+    lines.append("赛后对照，非收益结论；娱乐工具长期为负、仅供参考。")
+    lines.append("")
+
+    lines.append("## 票面回测")
+    code_order = ["A", "B", "D", "E"]
+    has_any = False
+    for tier_obj, code in zip(plan.tiers, code_order, strict=True):
+        gt = next(
+            (g for g in graded if g is not None and g.code == code), None
+        )
+        if gt is None and tier_obj is None:
+            lines.append(f"### {code} {_TIER_NAMES[code]}：当日无票")
+            continue
+        if gt is not None:
+            lines.extend(_render_graded_tier(gt))
+            has_any = True
+    if not has_any:
+        lines.append("- （当天 4 档全为空）")
+    lines.append("")
+
+    lines.append("## 本期小结")
+    ticket_hits = sum(
+        1 for g in graded if g is not None and g.all_hit
+    )
+    ticket_total = sum(
+        1 for g in graded if g is not None and not g.pending
+    )
+    leg_hits = sum(g.hits for g in graded if g is not None)
+    leg_total = sum(g.graded for g in graded if g is not None)
+    stake_total = sum(
+        g.stake for g in graded if g is not None and not g.pending
+    )
+    stake_returned = sum(
+        int(g.stake_returned or 0)
+        for g in graded if g is not None and not g.pending
+    )
+    net = stake_returned - stake_total
+    sign = "+" if net >= 0 else ""
+    lines.append(
+        f"- 整票 {ticket_hits}/{ticket_total} 命中 · 腿 {leg_hits}/{leg_total}"
+    )
+    lines.append(
+        f"- 当日预算 ¥{stake_total} · 回款 ¥{stake_returned} · 净 {sign}¥{net}"
+    )
+    lines.append("")
+
+    lines.append("## 累计趋势")
+    days = cumulative.get("days", 0)
+    span = (
+        f"（{days} 天，{cumulative.get('first_date')}~{cumulative.get('last_date')}）"
+        if days else ""
+    )
+    lines.append(f"最近累计{span}：")
+    tier_cum = cumulative.get("by_tier", {})
+    for code in code_order:
+        slot = tier_cum.get(code)
+        if not slot:
+            continue
+        cum_stake_total = slot.get("stake_total", 0)
+        cum_stake_returned = slot.get("stake_returned", 0)
+        cum_net = cum_stake_returned - cum_stake_total
+        cum_sign = "+" if cum_net >= 0 else ""
+        lines.append(
+            f"- {code} {_TIER_NAMES[code]}: "
+            f"整票 {slot.get('ticket_hits', 0)}/{slot.get('tickets', 0)} · "
+            f"腿 {slot.get('leg_hits', 0)}/{slot.get('legs', 0)} · "
+            f"预算 ¥{cum_stake_total} 净 {cum_sign}¥{cum_net}"
+        )
+    lines.append("")
+    lines.append(
+        "_本复盘只做赛后对照，不预测、不号称优势；娱乐工具长期为负期望，仅供参考。_"
+    )
+    return "\n".join(lines)
+
+
+def build_tiered_review(
+    run_date: str, output_dir, *, result_provider=None
+) -> TieredReviewResult:
+    """Replay, grade, render, and append history for a tiered plan.
+
+    ``result_provider`` defaults to ``OkoooJczqResultProvider`` (production),
+    overridable for tests."""
+    plan = replay_tiered_plan(run_date, output_dir)
+    if plan is None:
+        return TieredReviewResult(
+            run_date=run_date,
+            status="no_snapshot",
+            day_chaos=0, multiplier=1.0,
+            recommended_single=None,
+            tiers=[None, None, None, None],
+            results={},
+            message=_render_no_snapshot(run_date),
+        )
+
+    if result_provider is None:
+        from nutmeg.services.jczq_review import OkoooJczqResultProvider
+        result_provider = OkoooJczqResultProvider()
+    results = result_provider.fetch_results(run_date)
+
+    graded: list[Optional[GradedTier]] = []
+    for tier in plan.tiers:
+        graded.append(grade_tier(tier, results) if tier is not None else None)
+
+    day_record = _day_record(run_date, plan, graded)
+    history = _append_history(output_dir, day_record)
+    cumulative = _cumulative(history)
+    message = render_tiered_review(run_date, plan, graded, cumulative)
+
+    return TieredReviewResult(
+        run_date=run_date,
+        status="reviewed",
+        day_chaos=plan.day_chaos,
+        multiplier=plan.multiplier,
+        recommended_single=plan.recommended_single,
+        tiers=graded,
+        results=results,
+        message=message,
+        day_record=day_record,
+        cumulative=cumulative,
+    )
+
+
+def run_tiered_review(
+    run_date: str, output_dir, *, result_provider=None
+) -> TieredReviewResult:
+    """Build the review + persist md/json to ``daily/<date>/``."""
+    review = build_tiered_review(
+        run_date, output_dir, result_provider=result_provider
+    )
+    daily_dir = Path(output_dir) / "daily" / run_date
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    (daily_dir / "tiered-plan-review.md").write_text(
+        review.message, encoding="utf-8"
+    )
+    payload = {
+        "run_date": review.run_date,
+        "status": review.status,
+        "day_chaos": review.day_chaos,
+        "multiplier": review.multiplier,
+        "recommended_single": review.recommended_single,
+        "tiers": [
+            None if g is None else {
+                "code": g.code, "name": g.name, "fold": g.fold,
+                "total_odds": g.total_odds, "stake": g.stake,
+                "theme": g.theme,
+                "legs": [
+                    {
+                        "match_no": lg.match_no, "market": lg.market,
+                        "pick_label": lg.pick_label, "tc_odds": lg.tc_odds,
+                        "actual": lg.actual, "hit": lg.hit,
+                    } for lg in g.legs
+                ],
+                "hits": g.hits, "graded": g.graded,
+                "all_hit": g.all_hit, "pending": g.pending,
+                "stake_returned": g.stake_returned,
+            }
+            for g in review.tiers
+        ],
+        "results": review.results,
+        "day_record": review.day_record,
+        "cumulative": review.cumulative,
+        "message": review.message,
+    }
+    (daily_dir / "tiered-plan-review.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return review

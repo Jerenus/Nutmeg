@@ -58,3 +58,108 @@ def test_load_cross_version_history_dict_merges_both(tmp_path) -> None:
 def test_load_cross_version_missing_files_returns_empty(tmp_path) -> None:
     assert load_cross_version_retired_themes(tmp_path) == ()
     assert load_cross_version_history_dict(tmp_path) == {"by_theme": {}}
+
+
+# ---------------------------------------------------------------------------
+# Daily review — spec §6
+# ---------------------------------------------------------------------------
+
+
+from nutmeg.services.jczq_bold_combos import HARD_LABEL, persist_sporttery_snapshot
+from nutmeg.services.jczq_tiered_review import (
+    build_tiered_review,
+    run_tiered_review,
+)
+
+
+class _FakeResults:
+    def __init__(self, results: dict) -> None:
+        self._results = results
+
+    def fetch_results(self, run_date: str) -> dict:
+        return self._results
+
+
+def _persist_snapshot(tmp_path, run_date: str = "2026-05-26") -> None:
+    """Stage a 3-match Sporttery snapshot for replay."""
+
+    def m(no: str, home: str) -> dict:
+        return {
+            "matchNumStr": no, "businessDate": run_date,
+            "matchStatus": "Selling",
+            "leagueAbbName": "测", "homeTeamAbbName": home,
+            "awayTeamAbbName": "客",
+            "had": {"h": "1.50", "d": "3.20", "a": "5.50"},
+            "hhad": {"h": "1.84", "d": "3.30", "a": "3.50",
+                     "goalLine": "-1"},
+            "ttg": {f"s{k}": str(4.0 + k) for k in range(8)},
+            "crs": {"s01s00": "6.50", "s00s00": "9.00",
+                    "s02s01": "7.50"},
+        }
+
+    persist_sporttery_snapshot(run_date, tmp_path, {"matchInfoList": [
+        {"businessDate": run_date, "subMatchList": [
+            m("周二001", "A"), m("周二002", "B"), m("周二003", "C")]}]})
+
+
+def test_build_tiered_review_no_snapshot_skips(tmp_path) -> None:
+    review = build_tiered_review(
+        "2099-01-01", tmp_path,
+        result_provider=_FakeResults({}),
+    )
+    assert review.status == "no_snapshot"
+    assert review.message.startswith(HARD_LABEL)
+    assert "跳过复盘" in review.message
+
+
+def test_build_tiered_review_grades_and_renders(tmp_path) -> None:
+    _persist_snapshot(tmp_path)
+    results = {
+        "周二001": {"had": "胜", "hhad": "让胜", "ttg": "2球",
+                    "crs": "1:0", "score": "1:0"},
+        "周二002": {"had": "胜", "hhad": "让胜", "ttg": "2球",
+                    "crs": "1:0", "score": "1:0"},
+        "周二003": {"had": "胜", "hhad": "让胜", "ttg": "2球",
+                    "crs": "1:0", "score": "1:0"},
+    }
+    review = build_tiered_review(
+        "2026-05-26", tmp_path, result_provider=_FakeResults(results)
+    )
+    assert review.status == "reviewed"
+    assert review.message.startswith(HARD_LABEL)
+    assert "## 票面回测" in review.message
+    assert "## 累计趋势" in review.message
+
+
+def test_run_tiered_review_writes_artifacts(tmp_path) -> None:
+    _persist_snapshot(tmp_path)
+    run_tiered_review(
+        "2026-05-26", tmp_path,
+        result_provider=_FakeResults({"周二001": {"had": "胜"}}),
+    )
+    run_dir = tmp_path / "daily" / "2026-05-26"
+    assert (run_dir / "tiered-plan-review.md").exists()
+    assert (run_dir / "tiered-plan-review.json").exists()
+
+
+def test_build_tiered_review_history_idempotent(tmp_path) -> None:
+    _persist_snapshot(tmp_path)
+    provider = _FakeResults({"周二001": {"had": "胜"}})
+    build_tiered_review("2026-05-26", tmp_path, result_provider=provider)
+    build_tiered_review("2026-05-26", tmp_path, result_provider=provider)
+    hist = json.loads(
+        (tmp_path / "tiered-plan-history.json").read_text(encoding="utf-8")
+    )
+    assert len(hist) == 1
+    assert hist[0]["date"] == "2026-05-26"
+
+
+def test_tiered_review_no_banned_words(tmp_path) -> None:
+    _persist_snapshot(tmp_path)
+    review = build_tiered_review(
+        "2026-05-26", tmp_path,
+        result_provider=_FakeResults({"周二001": {"had": "胜"}}),
+    )
+    body = review.message[len(HARD_LABEL):]
+    for word in ("胜率", "edge", "+EV", "正期望", "推荐下注", "重仓"):
+        assert word not in body, f"banned word leaked: {word}"
