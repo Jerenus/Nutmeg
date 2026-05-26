@@ -57,7 +57,10 @@ def test_load_cross_version_history_dict_merges_both(tmp_path) -> None:
 
 def test_load_cross_version_missing_files_returns_empty(tmp_path) -> None:
     assert load_cross_version_retired_themes(tmp_path) == ()
-    assert load_cross_version_history_dict(tmp_path) == {"by_theme": {}}
+    # v2.1 §25.3 — history dict now also carries "records" for hhad health
+    assert load_cross_version_history_dict(tmp_path) == {
+        "by_theme": {}, "records": [],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +71,7 @@ def test_load_cross_version_missing_files_returns_empty(tmp_path) -> None:
 from nutmeg.services.jczq_bold_combos import HARD_LABEL, persist_sporttery_snapshot
 from nutmeg.services.jczq_tiered_review import (
     build_tiered_review,
+    replay_tiered_plan,
     run_tiered_review,
 )
 
@@ -152,6 +156,29 @@ def test_build_tiered_review_history_idempotent(tmp_path) -> None:
     )
     assert len(hist) == 1
     assert hist[0]["date"] == "2026-05-26"
+
+
+def test_replay_tiered_plan_ignores_same_day_history(tmp_path) -> None:
+    _persist_snapshot(tmp_path)
+    same_day_history = [{
+        "date": "2026-05-26",
+        "by_theme": {
+            "平局收割": {
+                "tickets": 23, "ticket_hits": 0,
+                "legs": 63, "leg_hits": 11,
+            },
+        },
+        "by_hhad_actual": {"让胜": 30},
+    }]
+    (tmp_path / "tiered-plan-history.json").write_text(
+        json.dumps(same_day_history), encoding="utf-8"
+    )
+
+    plan = replay_tiered_plan("2026-05-26", tmp_path)
+
+    assert plan is not None
+    assert plan.retired_themes == ()
+    assert plan.hhad_health["total_legs"] == 0
 
 
 def test_tiered_review_no_banned_words(tmp_path) -> None:

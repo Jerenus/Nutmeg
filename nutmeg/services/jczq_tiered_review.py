@@ -57,6 +57,15 @@ def _load_history(path: Path) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
+def _history_before(history: list[dict], before_date: Optional[str]) -> list[dict]:
+    if not before_date:
+        return history
+    return [
+        rec for rec in history
+        if (rec.get("date") or "") < before_date
+    ]
+
+
 def _cumulative_by_theme(history: list[dict], key: str) -> dict[str, dict]:
     """Walk history records, sum by_theme slots from the given key."""
     agg: dict[str, dict[str, int]] = {}
@@ -71,31 +80,50 @@ def _cumulative_by_theme(history: list[dict], key: str) -> dict[str, dict]:
     return agg
 
 
-def load_cross_version_retired_themes(output_dir) -> tuple[RetiredTheme, ...]:
+def load_cross_version_retired_themes(
+    output_dir, *, before_date: Optional[str] = None
+) -> tuple[RetiredTheme, ...]:
     """spec §6.3 — read v1 ``bold-review-history.json`` + v2
     ``tiered-plan-history.json`` histories, sum by_theme, return the
     retired-themes set passed to the new engine. Missing files / parse
     errors / no themes past the 30-leg gate → empty tuple."""
     output = Path(output_dir)
-    v1_hist = _load_history(output / "bold-review-history.json")
-    v2_hist = _load_history(output / "tiered-plan-history.json")
+    v1_hist = _history_before(
+        _load_history(output / "bold-review-history.json"), before_date
+    )
+    v2_hist = _history_before(
+        _load_history(output / "tiered-plan-history.json"), before_date
+    )
     v1_by_theme = _cumulative_by_theme(v1_hist, "by_theme")
     v2_by_theme = _cumulative_by_theme(v2_hist, "by_theme")
     merged = _merge_cross_version_by_theme(v1_by_theme, v2_by_theme)
     return retired_themes_with_stats(merged)
 
 
-def load_cross_version_history_dict(output_dir) -> dict:
+def load_cross_version_history_dict(
+    output_dir, *, before_date: Optional[str] = None
+) -> dict:
     """Convenience for the CLI: returns the dict shape expected by
-    ``select_tiered_plan(history=…)``."""
+    ``select_tiered_plan(history=…)``.
+
+    Includes ``records`` (raw v2 records, sorted by date) so the orchestrator
+    can compute spec §25.3 rolling hhad market health.
+    """
     output = Path(output_dir)
-    v1_hist = _load_history(output / "bold-review-history.json")
-    v2_hist = _load_history(output / "tiered-plan-history.json")
+    v1_hist = _history_before(
+        _load_history(output / "bold-review-history.json"), before_date
+    )
+    v2_hist = _history_before(
+        _load_history(output / "tiered-plan-history.json"), before_date
+    )
     merged = _merge_cross_version_by_theme(
         _cumulative_by_theme(v1_hist, "by_theme"),
         _cumulative_by_theme(v2_hist, "by_theme"),
     )
-    return {"by_theme": merged}
+    return {
+        "by_theme": merged,
+        "records": sorted(v2_hist, key=lambda r: r.get("date") or ""),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +186,7 @@ def replay_tiered_plan(run_date: str, output_dir) -> Optional[TieredPlan]:
     matches = bold_matches_from_sporttery(
         value, run_date=run_date, bold_odds=bold_odds
     )
-    history = load_cross_version_history_dict(output_dir)
+    history = load_cross_version_history_dict(output_dir, before_date=run_date)
     return select_tiered_plan(
         matches, history=history, multiplier=1.0, run_date=run_date
     )
@@ -202,9 +230,17 @@ def grade_tier(tier: Tier, results: dict[str, dict[str, str]]) -> GradedTier:
 def _day_record(
     run_date: str, plan: TieredPlan, graded: list[Optional[GradedTier]]
 ) -> dict:
-    """Build the persistable day record. by_theme aggregated like v1 §24."""
+    """Build the persistable day record. by_theme aggregated like v1 §24.
+
+    spec §25.3 — also accumulates ``by_hhad_actual`` (counts of actual
+    let-球 direction across all graded hhad legs) for rolling 14-day
+    market-health gating.
+    """
     by_theme: dict[str, dict[str, int]] = {}
     by_tier: dict[str, dict[str, int]] = {}
+    by_hhad_actual: dict[str, int] = {}  # spec §25.3
+    # Dedupe at (match_no, market) level — same match in two tiers counts once.
+    seen_hhad: set[str] = set()
     for gt in graded:
         if gt is None:
             continue
@@ -235,6 +271,14 @@ def _day_record(
         if not gt.pending:
             tslot["stake_total"] += gt.stake
             tslot["stake_returned"] += int(gt.stake_returned or 0)
+        # spec §25.3 — count actual hhad direction once per match
+        for lg in gt.legs:
+            if lg.market != "hhad" or not lg.actual:
+                continue
+            if lg.match_no in seen_hhad:
+                continue
+            seen_hhad.add(lg.match_no)
+            by_hhad_actual[lg.actual] = by_hhad_actual.get(lg.actual, 0) + 1
     return {
         "date": run_date,
         "chaos": plan.day_chaos,
@@ -242,6 +286,7 @@ def _day_record(
         "recommended_single": plan.recommended_single,
         "by_theme": by_theme,
         "by_tier": by_tier,
+        "by_hhad_actual": by_hhad_actual,
     }
 
 

@@ -96,6 +96,9 @@ class PlanContext:
     retired_themes: frozenset[str] = frozenset()
     history_by_tier: dict[str, dict] = field(default_factory=dict)
     multiplier: float = 1.0
+    # spec §25.3 — rolling hhad market health (output of
+    # ``recent_hhad_market_health``); empty dict = disabled / no gating.
+    hhad_health: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +113,8 @@ class TieredPlan:
     retired_themes: tuple[RetiredTheme, ...] = ()
     pool_signals: PoolSignals = field(default_factory=PoolSignals)
     multiplier: float = 1.0
+    # spec §25.3 — rolling hhad health snapshot for the brief top-line.
+    hhad_health: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +241,66 @@ def _percentile_filter(
 
 HHAD_COVER_THRESHOLD: float = 1.50
 
+# spec §25.1 — A 真稳健化阈值
+ANCHOR_REQUIRE_HOT_THRESHOLD: float = 1.65
+A_3FOLD_TOTAL_ODDS_HARD_CAP: float = 5.5
+A_2FOLD_TOTAL_ODDS_HARD_CAP: float = 4.0
+
+# spec §25.3 — hhad 健康度门控
+HHAD_HEALTH_WINDOW_DAYS: int = 14
+HHAD_HEALTH_MIN_LEGS: int = 30
+HHAD_HEALTH_DOMINANCE_RATE: float = 0.55
+_HHAD_DIRECTIONS: tuple[str, ...] = ("让胜", "让平", "让负")
+
+
+def recent_hhad_market_health(
+    records: list[dict],
+    *,
+    window_days: int = HHAD_HEALTH_WINDOW_DAYS,
+    min_legs: int = HHAD_HEALTH_MIN_LEGS,
+    dominance_rate: float = HHAD_HEALTH_DOMINANCE_RATE,
+) -> dict:
+    """spec §25.3 — compute hhad direction hit-rates over the most recent
+    ``window_days`` review records and decide which D/E picks to block.
+
+    Returns a dict with keys:
+      - ``enabled`` (bool): True iff total legs ≥ ``min_legs``
+      - ``totals`` (dict[str, int]): per-direction leg counts (incl. zero)
+      - ``rates`` (dict[str, float]): per-direction fractions (sum to 1.0)
+      - ``total_legs`` (int)
+      - ``blocked_picks`` (frozenset[str]): pick labels D/E must reject
+      - ``dominant`` (str | ""): direction crossing ``dominance_rate``
+    """
+    totals: dict[str, int] = {d: 0 for d in _HHAD_DIRECTIONS}
+    recent = sorted(records, key=lambda r: r.get("date") or "", reverse=True)
+    recent = recent[:window_days]
+    for rec in recent:
+        for direction, count in (rec.get("by_hhad_actual") or {}).items():
+            if direction in totals:
+                totals[direction] += int(count)
+    total_legs = sum(totals.values())
+    if total_legs < min_legs:
+        return {
+            "enabled": False, "totals": totals, "rates": {},
+            "total_legs": total_legs, "blocked_picks": frozenset(),
+            "dominant": "",
+        }
+    rates = {d: totals[d] / total_legs for d in _HHAD_DIRECTIONS}
+    dominant = ""
+    blocked: frozenset[str] = frozenset()
+    for direction in _HHAD_DIRECTIONS:
+        if rates[direction] >= dominance_rate:
+            dominant = direction
+            blocked = frozenset(
+                d for d in _HHAD_DIRECTIONS if d != direction
+            )
+            break
+    return {
+        "enabled": True, "totals": totals, "rates": rates,
+        "total_legs": total_legs, "blocked_picks": blocked,
+        "dominant": dominant,
+    }
+
 # hhad direction key → 让球 pick label. With negative goalLine (e.g. -1, home
 # favoured), "home" means home covers the handicap; "away" means away wins
 # straight up or covers in the underdog direction. The cover pick that
@@ -359,15 +424,34 @@ def pick_anchor_tier(
         candidates.append(had_leg)
         alt_info[match.match_no] = ("", 0.0)
 
+    # spec §25.1 — A 真稳健化前置门槛：池中必须存在 ≥1 条 had ≤ 1.65 的"真热门"
+    has_real_favourite = any(
+        lg.market == "had" and lg.tc_odds <= ANCHOR_REQUIRE_HOT_THRESHOLD
+        for lg in candidates
+    ) or any(
+        # hhad cover 触发时原 had 一定 ≤ 1.50，也算真热门池
+        info[0] == "had" and info[1] <= HHAD_COVER_THRESHOLD
+        for info in alt_info.values()
+    )
+    if not has_real_favourite:
+        return None
+
     candidates.sort(key=lambda lg: lg.tc_odds)
 
     for fold in range(profile.fold_range[1], profile.fold_range[0] - 1, -1):
         if len(candidates) < fold:
             continue
+        # spec §25.1 — per-fold 总赔率硬上限
+        per_fold_cap = (
+            A_3FOLD_TOTAL_ODDS_HARD_CAP if fold == 3
+            else A_2FOLD_TOTAL_ODDS_HARD_CAP if fold == 2
+            else profile.total_odds_band[1]
+        )
         for combo in itertools.combinations(candidates[: fold + 2], fold):
             combo_list = list(combo)
             total = _ticket_total_odds(combo_list)
-            lo, hi = profile.total_odds_band
+            lo, _hi_profile = profile.total_odds_band
+            hi = min(_hi_profile, per_fold_cap)
             if lo <= total <= hi:
                 tiered = [
                     TieredLeg(
@@ -480,12 +564,36 @@ def pick_contra_tier(
     excluded: frozenset[str],
     ctx: PlanContext,
     matches: list[BoldMatch],
+    b_hhad_picks: Optional[dict[str, str]] = None,
 ) -> Optional[Tier]:
     """spec §3.3 — D 反大众. Exclude A∪B matches; SKIP combos in retired
     themes. Combines top-boldness structural legs (hhad/ttg) with at most
-    ``profile.max_crs_legs`` crs legs to satisfy the crs cap upfront."""
+    ``profile.max_crs_legs`` crs legs to satisfy the crs cap upfront.
+
+    spec §25.2.b — ``b_hhad_picks`` maps ``match_no -> pick`` for any hhad
+    legs B already picked; D filters out *same-match hhad-reverse* picks
+    (would be "B let X, D let Y on same match" = double-direction punt).
+    """
     _ = matches
     candidates = [lg for lg in pool if lg.match_no not in excluded]
+    # spec §25.2.b — drop hhad legs that reverse B's hhad pick on same match.
+    if b_hhad_picks:
+        candidates = [
+            lg for lg in candidates
+            if not (
+                lg.market == "hhad"
+                and lg.match_no in b_hhad_picks
+                and b_hhad_picks[lg.match_no] != lg.pick
+            )
+        ]
+    # spec §25.3 — hhad health gating: reject hhad legs whose pick_label is
+    # in blocked_picks (dominant direction's complement).
+    blocked: frozenset[str] = ctx.hhad_health.get("blocked_picks") or frozenset()
+    if blocked:
+        candidates = [
+            lg for lg in candidates
+            if not (lg.market == "hhad" and lg.pick_label in blocked)
+        ]
     # Split by market so we can pick the right mix.
     structural = sorted(
         (lg for lg in candidates if lg.market in ("hhad", "ttg", "had")),
@@ -562,16 +670,27 @@ def pick_lottery_tier(
     ctx: PlanContext,
     matches: list[BoldMatch],
 ) -> Optional[Tier]:
-    """spec §3.3 — E 极限娱乐. Ignore excluded; honour ``max_crs_legs``
-    cap upfront by splitting structural vs crs and combining."""
-    _ = excluded
+    """spec §3.3 / §25.2.a — E 极限娱乐.
+
+    Now honours ``excluded`` (spec §25.2.a) so it no longer shares legs with
+    A/B/D. If remaining candidate pool can't satisfy fold_range, returns
+    None (¥10 → ¥0; Q2a).
+    """
     _ = matches
+    available = [lg for lg in pool if lg.match_no not in excluded]
+    # spec §25.3 — hhad health gating applies to E too (long-tail lottery).
+    blocked: frozenset[str] = ctx.hhad_health.get("blocked_picks") or frozenset()
+    if blocked:
+        available = [
+            lg for lg in available
+            if not (lg.market == "hhad" and lg.pick_label in blocked)
+        ]
     structural = sorted(
-        (lg for lg in pool if lg.market in ("hhad", "ttg", "had")),
+        (lg for lg in available if lg.market in ("hhad", "ttg", "had")),
         key=lambda lg: lg.tc_odds, reverse=True,  # prefer high-odds tails
     )
     crs_legs = sorted(
-        (lg for lg in pool if lg.market == "crs"),
+        (lg for lg in available if lg.market == "crs"),
         key=lambda lg: lg.tc_odds, reverse=True,
     )
 
@@ -638,24 +757,42 @@ def select_tiered_plan(
     pool_signals = compute_pool_signals(matches)
     retired_stats = retired_themes_with_stats(history.get("by_theme") or {})
     retired_set = frozenset(rt.theme for rt in retired_stats)
+    # spec §25.3 — compute rolling 14d hhad market health from v2 records.
+    hhad_health = recent_hhad_market_health(history.get("records") or [])
     ctx = PlanContext(
         pool_signals=pool_signals,
         retired_themes=retired_set,
         history_by_tier=history.get("by_tier_cumulative") or {},
         multiplier=multiplier,
+        hhad_health=hhad_health,
     )
 
     a = pick_anchor_tier(DEFAULT_TIER_A, pool, frozenset(), ctx, matches)
     a_excluded = a.match_nos if a else frozenset()
     b = pick_main_tier(DEFAULT_TIER_B, pool, a_excluded, ctx, matches)
     b_excluded = b.match_nos if b else frozenset()
-    d = pick_contra_tier(
-        DEFAULT_TIER_D, pool, a_excluded | b_excluded, ctx, matches
+    # spec §25.2.b — collect B's hhad picks for D's same-match-reverse check
+    b_hhad_picks: dict[str, str] = (
+        {tl.leg.match_no: tl.leg.pick for tl in b.legs if tl.leg.market == "hhad"}
+        if b else {}
     )
-    e = pick_lottery_tier(DEFAULT_TIER_E, pool, frozenset(), ctx, matches)
+    d = pick_contra_tier(
+        DEFAULT_TIER_D, pool, a_excluded | b_excluded, ctx, matches,
+        b_hhad_picks=b_hhad_picks,
+    )
+    d_excluded = d.match_nos if d else frozenset()
+    # spec §25.2.a — E now honours excluded = A ∪ B ∪ D
+    e = pick_lottery_tier(
+        DEFAULT_TIER_E, pool,
+        a_excluded | b_excluded | d_excluded,
+        ctx, matches,
+    )
 
+    # spec §25.1 — A → D → B → None 降级链
     if a is not None:
         recommended = "A"
+    elif d is not None:
+        recommended = "D"
     elif b is not None:
         recommended = "B"
     else:
@@ -670,6 +807,7 @@ def select_tiered_plan(
         retired_themes=retired_stats,
         pool_signals=pool_signals,
         multiplier=multiplier,
+        hhad_health=hhad_health,
     )
 
 
@@ -698,6 +836,38 @@ def render_tiered_plan(plan: TieredPlan) -> str:
         lines.append(
             f"⚠️ 主题汰留：「{rt.theme}」累计 {rt.ticket_hits}/{rt.tickets} 张"
             f"（{rt.legs} 腿 ≥ 30 门槛）今晚 Phase A 跳过保送。"
+        )
+
+    # spec §25.3 — hhad market health top-line
+    h = plan.hhad_health or {}
+    if h:
+        if h.get("enabled"):
+            r = h.get("rates", {})
+            dom = h.get("dominant") or ""
+            blocked = ", ".join(sorted(h.get("blocked_picks") or [])) or "无"
+            lines.append(
+                "📊 hhad 健康度 14d："
+                f"让胜 {r.get('让胜', 0):.1%} / 让平 {r.get('让平', 0):.1%} / "
+                f"让负 {r.get('让负', 0):.1%}（{h.get('total_legs', 0)} 腿） — "
+                + (f"D/E 已剔除 {blocked} pick" if dom else "无方向超 55%，D/E contrarian 正常开")
+            )
+        else:
+            lines.append(
+                f"📊 hhad 健康度样本不足（{h.get('total_legs', 0)}<30 腿），"
+                "D/E contrarian 正常开"
+            )
+
+    # spec §25.1 — A 不出时的明确公示
+    a_tier = plan.tiers[0] if plan.tiers else None
+    if a_tier is None:
+        lines.append(
+            "⚠️ A 档因无 ≤1.65 真热门、或总赔率超 5.5 上限，今晚不出。"
+        )
+    # spec §25.2.a — E 不出时的明确公示
+    e_tier = plan.tiers[3] if len(plan.tiers) > 3 else None
+    if e_tier is None:
+        lines.append(
+            "⚠️ E 档因跨档去重后剩余腿 < 4，今晚不出。"
         )
     lines.append("")
 
@@ -748,7 +918,12 @@ def _render_tier_block(
     )
     out = [header]
     if recommended == p.code:
-        out.append("> 首推一张（若只玩一张选这张）")
+        if p.code == "A":
+            out.append("> 首推一张（若只玩一张选这张）")
+        else:
+            out.append(
+                f"> 首推一张（A 档不出，本档为今晚最高优先级娱乐票）"
+            )
     for tl in tier.legs:
         lg = tl.leg
         market_label = MARKET_LABELS.get(lg.market, lg.market)

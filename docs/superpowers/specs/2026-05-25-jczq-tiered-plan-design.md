@@ -487,3 +487,112 @@ append-only，schema 同上 record 数组。
 - 每张票每条腿至少 3 行 narrative（why_match / why_market / why_pick）
 - 全量 `pytest` 绿；新增 ~40 测试全过
 - launchd 2 周稳定运行无 crash
+
+---
+
+## §25 v2.1 — 5/25 复盘后增量（2026-05-26 落地）
+
+### §25.0 背景
+5/25 v2 首日 4 张全输（0/4 票、2/14 腿、−¥100）。诊断（见 memory
+[[jczq_5_26_v2_1_landed]]）：
+
+1. A 档"压舱"假象：008/009/002 had 全 1.76+，无 ≤1.50 触发 hhad cover；
+   3 串 6.86× ≈ 大胆票
+2. BDE 高度耦合：`pick_lottery_tier` 显式 `_ = excluded` 让 E 与 BD 同场
+   同向押注；B/D 之间又无"同场反向 hhad 禁止"
+3. D "反大众"=押让球反面 / 无 contrarian 有效性门控；今天大众站对 6/9，
+   contrarian 反咬
+
+§25 三条规则全部为公示 + 选腿硬约束，**不**改信号层、**不**改 §17/§18-§24
+任何既有条款（与之并存）。
+
+---
+
+### §25.1 方向 1 · A 档真稳健化
+
+**触发条件 + 行为**：
+- `pick_anchor_tier` 候选池中**必须**存在至少 1 条 `had ≤ ANCHOR_REQUIRE_HOT_THRESHOLD`（默认 **1.65**）
+  的"真热门"场次（不需要这条腿必须被选中，只是池子里要有，证明今晚有真信号）
+- 若 A 三串总赔率 > **5.5**，自动降级到 2 串组合（在 fold_range 内允许 2-3）
+- 同时新增上限：A 2 串总赔率必须 ≤ **4.0**；3 串总赔率必须 ≤ **5.5**
+- 若上述两条任一不满足 → `pick_anchor_tier` 返回 `None`，**A 档不出**
+
+**首推降级**（Q1a）：A 不出时 `recommended_single` 优先级链
+**A → D → B → None**（注意 D 提到 B 前，因为 D 的 contrarian 启发式比 B 的纯
+boldness 主方案更有"为什么选这场"的逻辑骨架；同时 D 也跟着方向 3 的门控）
+
+**渲染文案**：
+- A 不出时 brief 顶部加一行：`⚠️ A 档因无 ≤1.65 真热门、或总赔率超 5.5 上限，今晚不出`
+- 首推改成 D 时：`> 首推一张（A 档不出，本档为今晚最高优先级娱乐票）`
+
+**默认常量**：
+```
+ANCHOR_REQUIRE_HOT_THRESHOLD = 1.65
+A_3FOLD_TOTAL_ODDS_HARD_CAP   = 5.5
+A_2FOLD_TOTAL_ODDS_HARD_CAP   = 4.0
+```
+
+---
+
+### §25.2 方向 2 · BDE 跨档去重升级
+
+**§25.2.a · E 不再忽略 excluded**
+- `pick_lottery_tier(...)` 删除 `_ = excluded`，改为 `excluded = a∪b∪d_match_nos`
+- 候选池过滤同 B/D
+- 若过滤后腿数 < `fold_range[0]`（即 4）→ E 返回 `None`，¥10 转 ¥0（Q2a）
+
+**§25.2.b · B↔D 同场反向 hhad 禁止**
+- 在 D `pick_contra_tier` 选 hhad 腿时，**额外**约束：
+  - 若该场已在 B 选 hhad 让 X，则 D 不可选同场 hhad 让 Y（Y ≠ X）
+  - 这条约束**不**适用 had/ttg/crs/其它市场（仅约束 hhad 同场反向）
+- 实现：传入 `b_hhad_picks: dict[match_no, pick_label]`，在 D 候选过滤阶段剔除
+
+**§25.2.c · 渲染文案**
+- E 不出时 brief 加：`⚠️ E 档因跨档去重后剩余腿 < 4，今晚不出`
+- D 因 §25.2.b 跳过某腿时 debug 日志记录（不写到用户面）
+
+---
+
+### §25.3 方向 3 · hhad 健康度门控
+
+**滚动窗口 + 累计读取**：
+- 读最近 **14 天** review 历史中所有"已 graded、市场=hhad"腿
+- 按 `actual` 方向聚合：`让胜 hit_rate / 让平 hit_rate / 让负 hit_rate`
+- 样本量阈值：**总 hhad 腿数 ≥ 30** 才启用门控；否则 disabled-state（contrarian 正常开）
+
+**门控规则**：
+- 若 `让胜 hit_rate ≥ 55%` → D / E 候选池**剔除** pick∈{让平, 让负} 的所有 hhad 腿
+- 若 `让负 hit_rate ≥ 55%` → D / E 候选池**剔除** pick∈{让平, 让胜} 的所有 hhad 腿
+- 若 `让平 hit_rate ≥ 55%` → D / E 候选池**剔除** pick∈{让胜, 让负} 的所有 hhad 腿
+- 三者都 < 55% → 不剔除（contrarian 正常开）
+
+**B 不受门控影响**（B 是 boldness 主方案，不是 contrarian；门控仅约束"反大众"
+和"长尾娱乐"两档）
+
+**渲染文案**（顶部摘要）：
+- 启用时：`📊 hhad 健康度 14d：让胜 X.X% / 让平 Y.Y% / 让负 Z.Z%（N 腿）— D/E 已剔除 W 条反向腿`
+- 未启用：`📊 hhad 健康度样本不足（N<30 腿），D/E contrarian 正常开`
+
+**累计数据来源**：
+- 复用 `cumulative.by_tier` / `tiered-plan-history.json` 的 graded leg 数据
+- 新增 reader：`recent_hhad_market_health(history, days=14)` → dict
+
+---
+
+### §25.4 验收标准
+
+- 5/25 数据重跑：
+  - A 档**不出**（008/009/002 had 全 ≥1.76 > 1.65；2/3 串总赔率均 > 上限）
+  - `recommended_single = "D"`（B 因 §25.2.b 检查仍能出；D 排在 B 前是 §25.1 强制顺序）
+  - E 档**不出**（BDE 互斥后剩余场次不足 4）
+  - 整票数 4 → ≤ 2（B + D）
+  - 当日"建议总注金"从 ¥100 → ¥(B 35 + D 20) = ¥55，多出 ¥45 公示为"今晚不下"
+- 5/24 数据重跑：v2.1 仍能给出至少 1 档非空
+- 全量 `pytest` 绿；新增 ≥15 测试覆盖三条规则
+
+### §25.5 不在 v2.1 范围内
+- 不改信号层 / 5 信号 / boldness / chaos
+- 不动 §17-§24 任何既有条款
+- 不引入 Poisson / 模型层
+- 不改 launchd 频率（仍 12:00 出方案、次日 08:00 复盘）
+- 不动 stake_multiplier 行为

@@ -189,10 +189,11 @@ def test_confidence_tag_for_code() -> None:
 
 
 def test_pick_anchor_tier_picks_lowest_odds_favourites() -> None:
+    # v2.1 §25.1 — at least one ≤1.65 favourite must exist in pool
     matches = [
-        _anchor_match("M1", 1.70),
-        _anchor_match("M2", 1.85),
-        _anchor_match("M3", 1.95),
+        _anchor_match("M1", 1.60),
+        _anchor_match("M2", 1.65),
+        _anchor_match("M3", 1.70),
     ]
     pool = v2_candidate_pool(matches)
     ctx = PlanContext(pool_signals=compute_pool_signals(matches))
@@ -200,14 +201,20 @@ def test_pick_anchor_tier_picks_lowest_odds_favourites() -> None:
     assert tier is not None
     assert 2 <= len(tier.legs) <= 3
     assert 2.5 <= tier.total_odds <= 8.0
+    # v2.1 §25.1 — per-fold cap: 3-fold ≤ 5.5, 2-fold ≤ 4.0
+    if len(tier.legs) == 3:
+        assert tier.total_odds <= 5.5
+    elif len(tier.legs) == 2:
+        assert tier.total_odds <= 4.0
     assert tier.confidence_tag == "⭐⭐⭐⭐"
 
 
 def test_pick_anchor_tier_hhad_cover_for_super_favourite() -> None:
+    # v2.1 §25.1 — 3-fold cap 5.5: 1.90 * 1.65 * 1.70 = 5.33 ≤ 5.5
     matches = [
         _anchor_match("M1", 1.40, hhad_home_odds=1.90),
-        _anchor_match("M2", 1.70),
-        _anchor_match("M3", 1.85),
+        _anchor_match("M2", 1.65),
+        _anchor_match("M3", 1.70),
     ]
     pool = v2_candidate_pool(matches)
     ctx = PlanContext(pool_signals=compute_pool_signals(matches))
@@ -226,7 +233,7 @@ def test_pick_anchor_tier_empty_returns_none() -> None:
 
 
 def test_pick_anchor_tier_leg_reason_filled() -> None:
-    matches = [_anchor_match(f"M{i}", 1.70 + 0.05 * i) for i in range(1, 4)]
+    matches = [_anchor_match(f"M{i}", 1.55 + 0.05 * i) for i in range(1, 4)]
     pool = v2_candidate_pool(matches)
     ctx = PlanContext(pool_signals=compute_pool_signals(matches))
     tier = pick_anchor_tier(DEFAULT_TIER_A, pool, frozenset(), ctx, matches)
@@ -292,15 +299,17 @@ def test_pick_contra_tier_skips_retired_themes() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_pick_lottery_tier_ignores_excluded() -> None:
-    matches = [_anchor_match(f"M{i}", 2.5 + 0.4 * i) for i in range(1, 8)]
+def test_pick_lottery_tier_honours_excluded() -> None:
+    """spec §25.2.a — E now excludes A∪B∪D matches."""
+    matches = [_anchor_match(f"M{i}", 2.5 + 0.4 * i) for i in range(1, 9)]
     pool = v2_candidate_pool(matches)
     ctx = PlanContext(pool_signals=compute_pool_signals(matches))
-    excluded = frozenset({"M1"})
+    excluded = frozenset({"M1", "M2"})
     tier = pick_lottery_tier(DEFAULT_TIER_E, pool, excluded, ctx, matches)
     if tier is not None:
         assert tier.confidence_tag == "⭐"
-        assert 800.0 <= tier.total_odds <= 5000.0
+        for tl in tier.legs:
+            assert tl.leg.match_no not in excluded
 
 
 def test_pick_lottery_tier_crs_cap() -> None:
@@ -319,12 +328,13 @@ def test_pick_lottery_tier_crs_cap() -> None:
 
 
 def test_select_tiered_plan_recommends_a_when_present() -> None:
-    matches = [_anchor_match(f"M{i}", 1.70 + 0.05 * i) for i in range(1, 10)]
+    matches = [_anchor_match(f"M{i}", 1.50 + 0.05 * i) for i in range(1, 10)]
     plan = select_tiered_plan(matches, history={}, multiplier=1.0)
     if plan.tiers[0] is not None:
         assert plan.recommended_single == "A"
     else:
-        assert plan.recommended_single in (None, "B")
+        # v2.1 §25.1 — A→D→B→None fallback chain
+        assert plan.recommended_single in (None, "D", "B")
 
 
 def test_select_tiered_plan_4_tier_slots() -> None:
@@ -382,14 +392,18 @@ def test_render_includes_hard_label_and_stake_summary() -> None:
 
 
 def test_render_marks_recommended_single() -> None:
-    matches = [_anchor_match(f"M{i}", 1.70 + 0.05 * i) for i in range(1, 6)]
+    matches = [_anchor_match(f"M{i}", 1.50 + 0.05 * i) for i in range(1, 6)]
     plan = select_tiered_plan(
         matches, history={}, multiplier=1.0, run_date="2026-05-25"
     )
     out = render_tiered_plan(plan)
     if plan.recommended_single is not None:
         assert f"首推一张 = {plan.recommended_single}" in out
-        assert "若只玩一张选这张" in out
+        # v2.1 §25.1 — render differs for A vs D-fallback
+        if plan.recommended_single == "A":
+            assert "若只玩一张选这张" in out
+        else:
+            assert "A 档不出" in out
 
 
 def test_render_has_no_banned_words() -> None:
@@ -434,3 +448,310 @@ def test_render_missing_tier_shows_honest_message() -> None:
     out = render_tiered_plan(plan)
     assert "稳健底仓" in out
     assert "候选不足" in out or "今日无可用方案" in out
+
+
+# ---------------------------------------------------------------------------
+# T10 — spec §25.1 · A 真稳健化
+# ---------------------------------------------------------------------------
+
+
+def test_anchor_requires_real_favourite_under_1_65() -> None:
+    """spec §25.1 — pool with no had ≤ 1.65 should yield A=None."""
+    matches = [
+        _anchor_match("M1", 1.70),
+        _anchor_match("M2", 1.85),
+        _anchor_match("M3", 1.95),
+    ]
+    pool = v2_candidate_pool(matches)
+    ctx = PlanContext(pool_signals=compute_pool_signals(matches))
+    tier = pick_anchor_tier(DEFAULT_TIER_A, pool, frozenset(), ctx, matches)
+    assert tier is None
+
+
+def test_anchor_real_favourite_at_threshold_passes() -> None:
+    """spec §25.1 — exactly 1.65 satisfies the pre-check."""
+    matches = [
+        _anchor_match("M1", 1.65),
+        _anchor_match("M2", 1.85),
+        _anchor_match("M3", 1.95),
+    ]
+    pool = v2_candidate_pool(matches)
+    ctx = PlanContext(pool_signals=compute_pool_signals(matches))
+    tier = pick_anchor_tier(DEFAULT_TIER_A, pool, frozenset(), ctx, matches)
+    assert tier is not None
+
+
+def test_anchor_3fold_total_odds_above_5_5_drops_to_2fold() -> None:
+    """spec §25.1 — 3-fold > 5.5 → engine returns 2-fold under 4.0."""
+    # Lowest favourite 1.55 satisfies real-fav check. 3-fold 1.55*1.85*1.95 = 5.59 > 5.5
+    # → A reduces to 2-fold (1.55 * 1.85 = 2.87 ≤ 4.0).
+    matches = [
+        _anchor_match("M1", 1.55),
+        _anchor_match("M2", 1.85),
+        _anchor_match("M3", 1.95),
+    ]
+    pool = v2_candidate_pool(matches)
+    ctx = PlanContext(pool_signals=compute_pool_signals(matches))
+    tier = pick_anchor_tier(DEFAULT_TIER_A, pool, frozenset(), ctx, matches)
+    assert tier is not None
+    assert len(tier.legs) == 2
+    assert tier.total_odds <= 4.0
+
+
+def test_anchor_2fold_total_odds_above_4_0_returns_none() -> None:
+    """spec §25.1 — even 2-fold > 4.0 → A=None."""
+    # 1.55 + 2.80 favourite → 2-fold 1.55 * 2.80 = 4.34 > 4.0
+    # But _favourite_had_leg picks min odds per match — so M2's favourite is
+    # whichever outcome has min odds. Use only one real-fav so 2-fold forced.
+    matches = [
+        _anchor_match("M1", 1.55),
+        _anchor_match("M2", 2.80),
+    ]
+    pool = v2_candidate_pool(matches)
+    ctx = PlanContext(pool_signals=compute_pool_signals(matches))
+    tier = pick_anchor_tier(DEFAULT_TIER_A, pool, frozenset(), ctx, matches)
+    assert tier is None
+
+
+def test_recommend_single_falls_back_to_d_when_a_missing() -> None:
+    """spec §25.1 — A→D→B→None: D should be recommended when A is None."""
+    # No favourite ≤ 1.65 → A=None. Mix of mid-range odds gives D a chance.
+    matches = [_anchor_match(f"M{i}", 2.0 + 0.3 * i) for i in range(1, 10)]
+    plan = select_tiered_plan(matches, history={}, multiplier=1.0)
+    assert plan.tiers[0] is None
+    if plan.tiers[2] is not None:
+        assert plan.recommended_single == "D"
+
+
+# ---------------------------------------------------------------------------
+# T11 — spec §25.2 · BDE 跨档去重
+# ---------------------------------------------------------------------------
+
+
+def test_pick_lottery_tier_filters_excluded_matches() -> None:
+    """spec §25.2.a — E excludes A∪B∪D match_nos."""
+    matches = [_anchor_match(f"M{i}", 2.5 + 0.4 * i) for i in range(1, 10)]
+    pool = v2_candidate_pool(matches)
+    ctx = PlanContext(pool_signals=compute_pool_signals(matches))
+    excluded = frozenset({"M1", "M2", "M3"})
+    tier = pick_lottery_tier(DEFAULT_TIER_E, pool, excluded, ctx, matches)
+    if tier is not None:
+        for tl in tier.legs:
+            assert tl.leg.match_no not in excluded
+
+
+def test_pick_lottery_tier_returns_none_when_pool_insufficient() -> None:
+    """spec §25.2.a + Q2a — E returns None when fewer than 4 legs left."""
+    matches = [_anchor_match(f"M{i}", 2.5 + 0.4 * i) for i in range(1, 5)]
+    pool = v2_candidate_pool(matches)
+    ctx = PlanContext(pool_signals=compute_pool_signals(matches))
+    # Exclude 3 of 4 matches → only 1 left, can't make a 4-fold E ticket.
+    excluded = frozenset({"M1", "M2", "M3"})
+    tier = pick_lottery_tier(DEFAULT_TIER_E, pool, excluded, ctx, matches)
+    assert tier is None
+
+
+def test_pick_contra_tier_filters_b_same_match_reverse_hhad() -> None:
+    """spec §25.2.b — D rejects hhad legs that reverse B's same-match pick."""
+    matches = [_anchor_match(f"M{i}", 2.0 + 0.3 * i) for i in range(1, 10)]
+    pool = v2_candidate_pool(matches)
+    ctx = PlanContext(pool_signals=compute_pool_signals(matches))
+    # Pretend B chose hhad['home'] on M1; D must not pick hhad['draw' / 'away']
+    # on M1.
+    b_hhad = {"M1": "home"}
+    tier = pick_contra_tier(
+        DEFAULT_TIER_D, pool, frozenset(), ctx, matches,
+        b_hhad_picks=b_hhad,
+    )
+    if tier is not None:
+        for tl in tier.legs:
+            if tl.leg.match_no == "M1" and tl.leg.market == "hhad":
+                assert tl.leg.pick == "home", (
+                    "D must not reverse B's hhad pick on the same match"
+                )
+
+
+def test_select_tiered_plan_bde_disjoint_match_nos() -> None:
+    """spec §25.2.a — full plan: B/D/E must not share match_nos."""
+    matches = [_anchor_match(f"M{i}", 2.0 + 0.3 * i) for i in range(1, 12)]
+    plan = select_tiered_plan(matches, history={}, multiplier=1.0)
+    b, d, e = plan.tiers[1], plan.tiers[2], plan.tiers[3]
+    if b is not None and d is not None:
+        assert b.match_nos.isdisjoint(d.match_nos)
+    if b is not None and e is not None:
+        assert b.match_nos.isdisjoint(e.match_nos)
+    if d is not None and e is not None:
+        assert d.match_nos.isdisjoint(e.match_nos)
+
+
+# ---------------------------------------------------------------------------
+# T12 — spec §25.3 · hhad 健康度门控
+# ---------------------------------------------------------------------------
+
+
+def test_hhad_health_insufficient_sample_disabled() -> None:
+    """spec §25.3 — total < 30 hhad legs → disabled, no blocked picks."""
+    from nutmeg.services.jczq_tiered import recent_hhad_market_health
+    records = [
+        {"date": "2026-05-25", "by_hhad_actual": {"让胜": 5, "让平": 2}},
+        {"date": "2026-05-24", "by_hhad_actual": {"让负": 3}},
+    ]
+    health = recent_hhad_market_health(records)
+    assert health["enabled"] is False
+    assert health["blocked_picks"] == frozenset()
+
+
+def test_hhad_health_let_win_dominance_blocks_other_picks() -> None:
+    """spec §25.3 — 让胜 ≥ 55% → block {让平, 让负}."""
+    from nutmeg.services.jczq_tiered import recent_hhad_market_health
+    records = [
+        {"date": f"2026-05-{d:02d}", "by_hhad_actual": {"让胜": 6, "让平": 2, "让负": 2}}
+        for d in range(11, 15)
+    ]
+    # 40 legs total, 让胜 60%
+    health = recent_hhad_market_health(records)
+    assert health["enabled"] is True
+    assert health["dominant"] == "让胜"
+    assert health["blocked_picks"] == frozenset({"让平", "让负"})
+
+
+def test_hhad_health_balanced_no_blocking() -> None:
+    """spec §25.3 — no direction crosses 55% → no blocking."""
+    from nutmeg.services.jczq_tiered import recent_hhad_market_health
+    records = [
+        {"date": f"2026-05-{d:02d}", "by_hhad_actual": {"让胜": 4, "让平": 3, "让负": 3}}
+        for d in range(11, 15)
+    ]
+    # 40 legs, 让胜 40%, 让平 30%, 让负 30% → no dominance
+    health = recent_hhad_market_health(records)
+    assert health["enabled"] is True
+    assert health["dominant"] == ""
+    assert health["blocked_picks"] == frozenset()
+
+
+def test_hhad_health_window_caps_at_14_days() -> None:
+    """spec §25.3 — only the most recent 14 review records contribute."""
+    from nutmeg.services.jczq_tiered import recent_hhad_market_health
+    # 30 days of records — the oldest 16 should be ignored.
+    records = [
+        {"date": f"2026-04-{d:02d}", "by_hhad_actual": {"让平": 100}}
+        for d in range(1, 17)  # 16 old days, 让平-heavy (should be ignored)
+    ] + [
+        {"date": f"2026-05-{d:02d}", "by_hhad_actual": {"让胜": 6, "让平": 2, "让负": 2}}
+        for d in range(11, 25)  # 14 recent days, 让胜 60% dominant
+    ]
+    health = recent_hhad_market_health(records)
+    # 14 days * 10 legs = 140 total; 让胜 = 6*14 = 84 → 60% > 55%
+    assert health["total_legs"] == 14 * 10
+    assert health["dominant"] == "让胜"
+
+
+def test_pick_contra_tier_health_filters_hhad_picks() -> None:
+    """spec §25.3 — D drops hhad legs whose pick_label is in blocked_picks."""
+    from nutmeg.services.jczq_tiered import _HHAD_PICK_LABEL
+    matches = [_anchor_match(f"M{i}", 2.0 + 0.3 * i) for i in range(1, 10)]
+    pool = v2_candidate_pool(matches)
+    blocked = frozenset({"让平", "让负"})
+    ctx = PlanContext(
+        pool_signals=compute_pool_signals(matches),
+        hhad_health={"blocked_picks": blocked, "enabled": True},
+    )
+    tier = pick_contra_tier(DEFAULT_TIER_D, pool, frozenset(), ctx, matches)
+    if tier is not None:
+        for tl in tier.legs:
+            if tl.leg.market == "hhad":
+                assert tl.leg.pick_label not in blocked
+
+
+def test_pick_lottery_tier_health_filters_hhad_picks() -> None:
+    """spec §25.3 — E also drops hhad legs in blocked_picks."""
+    matches = [_anchor_match(f"M{i}", 2.0 + 0.4 * i) for i in range(1, 10)]
+    pool = v2_candidate_pool(matches)
+    blocked = frozenset({"让胜", "让平"})
+    ctx = PlanContext(
+        pool_signals=compute_pool_signals(matches),
+        hhad_health={"blocked_picks": blocked, "enabled": True},
+    )
+    tier = pick_lottery_tier(DEFAULT_TIER_E, pool, frozenset(), ctx, matches)
+    if tier is not None:
+        for tl in tier.legs:
+            if tl.leg.market == "hhad":
+                assert tl.leg.pick_label not in blocked
+
+
+def test_pick_main_tier_not_affected_by_hhad_health() -> None:
+    """spec §25.3 — B (主方案) is NOT gated by hhad health."""
+    matches = [_anchor_match(f"M{i}", 2.0 + 0.3 * i) for i in range(1, 12)]
+    pool = v2_candidate_pool(matches)
+    blocked = frozenset({"让平", "让负"})
+    # Run B both with and without blocked picks — same outcome.
+    ctx_no_block = PlanContext(pool_signals=compute_pool_signals(matches))
+    ctx_block = PlanContext(
+        pool_signals=compute_pool_signals(matches),
+        hhad_health={"blocked_picks": blocked, "enabled": True},
+    )
+    b_no = pick_main_tier(DEFAULT_TIER_B, pool, frozenset(), ctx_no_block, matches)
+    b_yes = pick_main_tier(DEFAULT_TIER_B, pool, frozenset(), ctx_block, matches)
+    if b_no is not None and b_yes is not None:
+        assert b_no.match_nos == b_yes.match_nos
+
+
+# ---------------------------------------------------------------------------
+# T13 — spec §25 · render integration
+# ---------------------------------------------------------------------------
+
+
+def test_render_shows_hhad_health_top_line_enabled() -> None:
+    """spec §25.3 — when enabled, render emits the health top-line."""
+    plan = TieredPlan(
+        run_date="2026-05-25", day_chaos=8, chaos_band="平静",
+        tiers=[None, None, None, None],
+        recommended_single=None,
+        hhad_health={
+            "enabled": True, "total_legs": 40,
+            "rates": {"让胜": 0.6, "让平": 0.2, "让负": 0.2},
+            "blocked_picks": frozenset({"让平", "让负"}),
+            "dominant": "让胜",
+        },
+    )
+    out = render_tiered_plan(plan)
+    assert "hhad 健康度 14d" in out
+    assert "让胜 60.0%" in out
+
+
+def test_render_shows_hhad_health_disabled_line() -> None:
+    """spec §25.3 — insufficient sample emits the "正常开" notice."""
+    plan = TieredPlan(
+        run_date="2026-05-25", day_chaos=8, chaos_band="平静",
+        tiers=[None, None, None, None],
+        recommended_single=None,
+        hhad_health={
+            "enabled": False, "total_legs": 12,
+            "rates": {}, "blocked_picks": frozenset(), "dominant": "",
+        },
+    )
+    out = render_tiered_plan(plan)
+    assert "样本不足" in out
+    assert "contrarian 正常开" in out
+
+
+def test_render_warns_when_a_tier_missing() -> None:
+    """spec §25.1 — A=None triggers the explicit warning line."""
+    plan = TieredPlan(
+        run_date="2026-05-25", day_chaos=8, chaos_band="平静",
+        tiers=[None, None, None, None],
+        recommended_single=None,
+    )
+    out = render_tiered_plan(plan)
+    assert "A 档因无 ≤1.65 真热门、或总赔率超 5.5 上限，今晚不出" in out
+
+
+def test_render_warns_when_e_tier_missing() -> None:
+    """spec §25.2.a — E=None triggers the cross-tier-dedup warning."""
+    plan = TieredPlan(
+        run_date="2026-05-25", day_chaos=8, chaos_band="平静",
+        tiers=[None, None, None, None],
+        recommended_single=None,
+    )
+    out = render_tiered_plan(plan)
+    assert "E 档因跨档去重后剩余腿 < 4，今晚不出" in out
