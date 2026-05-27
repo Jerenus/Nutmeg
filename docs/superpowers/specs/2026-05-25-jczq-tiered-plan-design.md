@@ -596,3 +596,144 @@ A_2FOLD_TOTAL_ODDS_HARD_CAP   = 4.0
 - 不引入 Poisson / 模型层
 - 不改 launchd 频率（仍 12:00 出方案、次日 08:00 复盘）
 - 不动 stake_multiplier 行为
+
+---
+
+## §26 v2.2 — 5/26 复盘后增量（2026-05-27 落地）
+
+### §26.0 背景
+
+5/26 是 v2.1 首日正式生产。派发：A 2 串 @3.31 ¥35 + B 3 串 @59.42 ¥35
+（全 hhad）+ D/E 不出。截至 5/27 复盘已知：001 ✅（A 第 1 腿）/ 002 让负 ❌
+（B 第 2 腿坐实，B ¥35 输）/ 004 ✅（B 第 1 腿）；007 / 005 / 006 待 okooo
+刷新。
+
+诊断（见 memory [[jczq-5-25-retro-debate]] + [[2026-05-26]]）：
+
+1. **B 又是全 hhad** — 5/25 retro 分歧 4 已经诊断「B 应允许 ttg 中线腿混搭」，
+   §25 没动 B → 5/26 重复犯（5/25 B 87.55× 全 hhad → 5/26 B 59.42× 全 hhad）
+2. **005 弗拉门戈 had None 仍进 B 候选池** — A 因 has_real_favourite 把
+   它过滤，但 v2_candidate_pool 没有同等"是否真有这个市场"的源头过滤。
+   这是 v1 generator 退役同源的"未开盘场误报"
+3. **D 在 calm 日若退化成 over-leveraged contrarian 仍会被首推** — 5/25 retro
+   分歧 5 的 D 4 串 177.27× 即此例；5/26 没出 D 没触发，但仍是潜在风险
+
+§26 五条规则保持 §25 风格：公示 + 选腿硬约束 / 渲染层，**不**改信号层、
+**不**改 §17-§25 任何既有条款（与之并存）。
+
+---
+
+### §26.1 方向 1 · v2_candidate_pool had 可用性过滤
+
+**触发条件 + 行为**：
+
+- `v2_candidate_pool` 入口先过滤：`match.tc_odds` 中无任何 `v > 1.0` → 整场剔除
+- 该过滤**只**影响 B/D/E 的候选池（A 走 `matches` 直链，已有 has_real_favourite）
+- 渲染时不公示（透明降级，和 §17 gap-guard 风格一致）
+
+**默认常量**：无（硬约束）
+
+**实现**：`_match_has_usable_had(match) → bool` 复用 `bold_leg_for_market`
+内部判据 `v and v > 1.0`。
+
+---
+
+### §26.2 方向 2 · pick_main_tier · ttg 必含 + hhad 集中度
+
+**§26.2.a · sort key 升级**
+
+`pick_main_tier` 候选排序：`ttg < hhad < had < 其它`（数字越小越靠前）。
+让 `candidates[: fold + 4]` 搜索窗口在 ttg 存在时一定看到 ttg 腿。
+
+**§26.2.b · B 强制 ≥1 ttg 腿**
+
+候选池里**存在**至少 1 条 ttg → B 的每个组合必须包含 ≥1 条 ttg 腿。
+ttg 候选**不存在** → 约束 disabled（graceful degrade，A 池里若全是 had/hhad
+仍能出 B）。
+
+**§26.2.c · B/D ≤2 hhad legs 硬上限**
+
+`MAIN_MAX_HHAD_LEGS = 2`、`CONTRA_MAX_HHAD_LEGS = 2`。3 串 B / 3-4 串 D
+都不允许全 hhad；至少有 1 条非 hhad 腿（B 通常是 ttg, D 可能是 had/ttg/crs）。
+
+**§26.2.d · B 候选池排除 hhad odds ≥ 5**
+
+`MAIN_HHAD_HIGH_ODDS_CUTOFF = 5.0` — 主方案不该被 hhad 超长尾腿托高赔率。
+仅作用于 B，D 不动（D 是娱乐档可接受高赔率 hhad）。
+
+**默认常量**：
+```
+MAIN_MAX_HHAD_LEGS         = 2
+CONTRA_MAX_HHAD_LEGS       = 2
+MAIN_HHAD_HIGH_ODDS_CUTOFF = 5.0
+```
+
+---
+
+### §26.3 方向 3 · 首推 D 安全网（calm 日 over-leveraged 不首推）
+
+**触发条件 + 行为**：
+
+A=None 且 D 存在 + 大盘面 `chaos < SINGLE_RECOMMEND_CALM_CHAOS_MAX`（默认 20）：
+
+- D 票 fold > `D_SINGLE_RECOMMEND_MAX_FOLD_CALM`（默认 3）→ D 不首推
+- D 总赔率 > `D_SINGLE_RECOMMEND_MAX_ODDS_CALM`（默认 180）→ D 不首推
+- D 全 hhad（hhad_count == len(legs)）→ D 不首推
+- 其余情况（B 存在）→ 不再继续降级到 B；`recommended_single = None`，公示"今晚不首推"
+
+**渲染文案**：D 仍正常渲染为娱乐票，但顶部"首推一张 = —"。
+
+**默认常量**：
+```
+SINGLE_RECOMMEND_CALM_CHAOS_MAX     = 20
+D_SINGLE_RECOMMEND_MAX_FOLD_CALM    = 3
+D_SINGLE_RECOMMEND_MAX_ODDS_CALM    = 180.0
+```
+
+---
+
+### §26.4 方向 4 · review 从派发 markdown 还原
+
+**问题**：复盘要打的是"昨晚实际派发的票"，但 `replay_tiered_plan` 默认会从
+当日 sporttery snapshot + 当前最新规则**重跑**。规则一迭代，replay 结果就
+和实际派发不一致 → 复盘把"今天的规则"硬套到"昨天的数据"上，等于自证清白。
+
+**行为**：
+
+- `replay_tiered_plan(run_date, output_dir)` 优先读 `daily/<date>/tiered-plan.md`
+- 解析出 4 档票面 + 首推标记 + multiplier + chaos → 还原 `TieredPlan` 对象
+- 若 markdown 不存在或解析失败 → fallback 原 replay 通路（首日 / 历史数据无 dispatch 记录的情况）
+- review schema 不变（grading 仍走原 `grade_leg`）
+
+**实现**：`_load_saved_markdown_plan(run_date, output_dir)` 用 regex 解析
+4 档表头、腿行、顶部 chaos+multiplier+首推；构造 BoldLeg / TieredLeg / Tier。
+
+---
+
+### §26.5 方向 5 · v1 generator 退役标记
+
+- `jczq-daily-advisor` + `jczq-daily-review` 顶部打 `⚠️ DEPRECATED` banner
+- banner 引用 5/25 retro 分歧 2（005 弗拉门戈 v1 仍出票）+ 指向 `jczq-tiered`
+- **不**删代码、**不**动测试、**不**改 launchd（launchd 早已切到 tiered）
+- 后续若 14 天观察 jczq-tiered 稳定 → §27 可考虑完全移除 v1
+
+---
+
+### §26.6 验收标准
+
+- 5/26 数据重跑（用旧 markdown 还原）：
+  - review 结果 = 实际派发票（A 2串 @3.31 / B 3串 @59.42 / D-E 不出）
+  - 累计 `by_hhad_actual` 正确填充（5/26 已观察到 让平+1、让负+1）
+- 全量 `pytest` 绿；新增 ≥3 测试覆盖 §26.1 + §26.2.a/b
+- 用 5/26 当天 BoldMatch 数据跑 select_tiered_plan（5/27 live 数据）：
+  - had None 场不出现在 B/D/E 腿中
+  - B 若出且 ttg 池非空 → B 含 ≥1 ttg 腿
+- `jczq-daily-advisor --dry-run` 顶部打出 deprecated banner（人工肉眼验证）
+
+### §26.7 不在 v2.2 范围内
+
+- 不动 §25.4 候选「hhad 让球反面通道」（仍按 5/25 retro 说的"等 10+ 天追踪"）
+- 不删 v1 generator 代码（仅打 banner）
+- 不动信号层 / boldness / chaos
+- 不改 launchd 频率
+- 不引入"每天 shadow 看一下假如允许 hhad 反面通道 A 会选什么"的追踪（next iteration backlog）

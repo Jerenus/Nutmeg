@@ -36,7 +36,6 @@ from nutmeg.services.jczq_bold_combos import (
     ticket_theme,
 )
 
-
 # ---------------------------------------------------------------------------
 # Dataclasses — spec §3-§4
 # ---------------------------------------------------------------------------
@@ -125,13 +124,25 @@ V2_MAX_LEGS_PER_MATCH: int = 2
 V2_MARKET_POOL_SHARE: float = 0.5
 
 
+def _match_has_usable_had(match: BoldMatch) -> bool:
+    """spec §26.1 — a match without usable 胜平负 odds is unopened/cancelled
+    and must not contribute legs to B/D/E pools (5/26 005 弗拉门戈 leaked into
+    B via its hhad leg because the per-market check passed even though had
+    was None). Mirrors ``bold_leg_for_market`` usability criterion."""
+    return any(v and v > 1.0 for v in match.tc_odds.values())
+
+
 def v2_candidate_pool(matches: list[BoldMatch]) -> list[BoldLeg]:
     """spec §2.2 — widened candidate pool. Each match contributes its top
     ``V2_MAX_LEGS_PER_MATCH`` legs across distinct markets, ranked by
     boldness. A single market may take at most ``V2_MARKET_POOL_SHARE`` of
     the final pool slots (sole-market days degrade gracefully). chaos no
     longer controls pool size — tiers handle their own fold/odds bands.
+
+    spec §26.1 — matches with no usable 胜平负 odds (unopened/cancelled)
+    are rejected at the pool source so B/D/E can never pick them.
     """
+    matches = [m for m in matches if _match_has_usable_had(m)]
     per_match: list[list[BoldLeg]] = []
     for match in matches:
         legs = sorted(
@@ -222,6 +233,25 @@ def _ticket_total_odds(legs: list[BoldLeg]) -> float:
     return odds
 
 
+def _hhad_count(legs: list[BoldLeg]) -> int:
+    return sum(1 for lg in legs if lg.market == "hhad")
+
+
+def _max_hhad_legs(profile: TierProfile) -> Optional[int]:
+    if profile.code == "B":
+        return MAIN_MAX_HHAD_LEGS
+    if profile.code == "D":
+        return CONTRA_MAX_HHAD_LEGS
+    return None
+
+
+def _violates_hhad_concentration(
+    profile: TierProfile, legs: list[BoldLeg]
+) -> bool:
+    cap = _max_hhad_legs(profile)
+    return cap is not None and _hhad_count(legs) > cap
+
+
 def _percentile_filter(
     pool: list[BoldLeg], lo: float, hi: float
 ) -> list[BoldLeg]:
@@ -245,6 +275,18 @@ HHAD_COVER_THRESHOLD: float = 1.50
 ANCHOR_REQUIRE_HOT_THRESHOLD: float = 1.65
 A_3FOLD_TOTAL_ODDS_HARD_CAP: float = 5.5
 A_2FOLD_TOTAL_ODDS_HARD_CAP: float = 4.0
+
+# 2026-05-26 review gate — prevent B/D from collapsing into the same all-hhad
+# longshot structure that missed on 2026-05-25.
+MAIN_HHAD_HIGH_ODDS_CUTOFF: float = 5.0
+MAIN_MAX_HHAD_LEGS: int = 2
+CONTRA_MAX_HHAD_LEGS: int = 2
+
+# Calm-day single-ticket recommendation gate. D may still render as an
+# entertainment ticket, but not as "首推" when it is too leveraged.
+SINGLE_RECOMMEND_CALM_CHAOS_MAX: int = 20
+D_SINGLE_RECOMMEND_MAX_ODDS_CALM: float = 180.0
+D_SINGLE_RECOMMEND_MAX_FOLD_CALM: int = 3
 
 # spec §25.3 — hhad 健康度门控
 HHAD_HEALTH_WINDOW_DAYS: int = 14
@@ -504,15 +546,27 @@ def pick_main_tier(
     candidates = [lg for lg in pool if lg.match_no not in excluded]
     if profile.max_crs_legs == 0:
         candidates = [lg for lg in candidates if lg.market != "crs"]
-    # Prefer structural picks (hhad/ttg), then highest boldness.
+    candidates = [
+        lg for lg in candidates
+        if not (
+            lg.market == "hhad"
+            and lg.tc_odds >= MAIN_HHAD_HIGH_ODDS_CUTOFF
+        )
+    ]
+    # spec §26.2 — ttg ranks above hhad above had in the sort key so that the
+    # ``candidates[: fold + 4]`` search window always surfaces ttg legs when
+    # they exist (root-cause of 5/25→5/26 all-hhad B regressions).
     candidates.sort(
         key=lambda lg: (
-            0 if lg.market in ("hhad", "ttg") else 1,
+            0 if lg.market == "ttg"
+            else (1 if lg.market == "hhad" else 2),
             -lg.boldness,
         )
     )
     if not candidates:
         return None
+
+    ttg_in_pool = any(lg.market == "ttg" for lg in candidates)
 
     for fold in range(profile.fold_range[1], profile.fold_range[0] - 1, -1):
         if len(candidates) < fold:
@@ -525,6 +579,15 @@ def pick_main_tier(
                 continue
             crs_count = sum(1 for lg in combo_list if lg.market == "crs")
             if crs_count > profile.max_crs_legs:
+                continue
+            if _violates_hhad_concentration(profile, combo_list):
+                continue
+            # spec §26.2 — B must include ≥1 ttg leg whenever ttg candidates
+            # exist (ttg unavailable → constraint disabled, graceful degrade).
+            if (
+                ttg_in_pool
+                and not any(lg.market == "ttg" for lg in combo_list)
+            ):
                 continue
             total = _ticket_total_odds(combo_list)
             lo, hi = profile.total_odds_band
@@ -613,7 +676,6 @@ def pick_contra_tier(
             if crs_n > len(crs_legs):
                 continue
             struct_cands = structural[: structural_n + 4]
-            crs_cands = crs_legs[: crs_n + 4] if crs_n > 0 else [None]
             for struct_combo in itertools.combinations(
                 struct_cands, structural_n
             ):
@@ -624,6 +686,8 @@ def pick_contra_tier(
                 for crs_combo in crs_iter:
                     combo_list = list(struct_combo) + list(crs_combo)
                     if len({lg.match_no for lg in combo_list}) != fold:
+                        continue
+                    if _violates_hhad_concentration(profile, combo_list):
                         continue
                     if ticket_theme(combo_list)[0] in ctx.retired_themes:
                         continue
@@ -741,6 +805,35 @@ def pick_lottery_tier(
 # ---------------------------------------------------------------------------
 
 
+def _too_risky_as_single(tier: Tier, chaos: int) -> bool:
+    if tier.profile.code != "D" or chaos >= SINGLE_RECOMMEND_CALM_CHAOS_MAX:
+        return False
+    if len(tier.legs) > D_SINGLE_RECOMMEND_MAX_FOLD_CALM:
+        return True
+    if tier.total_odds > D_SINGLE_RECOMMEND_MAX_ODDS_CALM:
+        return True
+    return _hhad_count([tl.leg for tl in tier.legs]) == len(tier.legs)
+
+
+def recommended_single_for_tiers(
+    *,
+    a: Optional[Tier],
+    b: Optional[Tier],
+    d: Optional[Tier],
+    chaos: int,
+) -> Optional[str]:
+    """Choose the single ticket marker without promoting leveraged D tickets."""
+    if a is not None:
+        return "A"
+    if d is not None:
+        if _too_risky_as_single(d, chaos):
+            return None
+        return "D"
+    if b is not None:
+        return "B"
+    return None
+
+
 def select_tiered_plan(
     matches: list[BoldMatch],
     *,
@@ -788,15 +881,9 @@ def select_tiered_plan(
         ctx, matches,
     )
 
-    # spec §25.1 — A → D → B → None 降级链
-    if a is not None:
-        recommended = "A"
-    elif d is not None:
-        recommended = "D"
-    elif b is not None:
-        recommended = "B"
-    else:
-        recommended = None
+    # spec §25.1 + 2026-05-26 review gate: A → D → B, but calm-day D only
+    # receives "首推" when it is not an over-leveraged entertainment ticket.
+    recommended = recommended_single_for_tiers(a=a, b=b, d=d, chaos=chaos)
 
     return TieredPlan(
         run_date=run_date,
@@ -922,7 +1009,7 @@ def _render_tier_block(
             out.append("> 首推一张（若只玩一张选这张）")
         else:
             out.append(
-                f"> 首推一张（A 档不出，本档为今晚最高优先级娱乐票）"
+                "> 首推一张（A 档不出，本档为今晚最高优先级娱乐票）"
             )
     for tl in tier.legs:
         lg = tl.leg

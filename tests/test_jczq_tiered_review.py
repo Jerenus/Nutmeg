@@ -3,29 +3,46 @@ from __future__ import annotations
 
 import json
 
+from nutmeg.services.jczq_bold_combos import HARD_LABEL, persist_sporttery_snapshot
 from nutmeg.services.jczq_tiered_review import (
     _merge_cross_version_by_theme,
+    build_tiered_review,
     load_cross_version_history_dict,
     load_cross_version_retired_themes,
+    replay_tiered_plan,
+    run_tiered_review,
 )
 
 
 def test_merge_cross_version_by_theme_sums_counts() -> None:
-    v1 = {"平局收割": {"tickets": 23, "ticket_hits": 0,
-                       "legs": 63, "leg_hits": 11}}
-    v2 = {"平局收割": {"tickets": 5, "ticket_hits": 0,
-                       "legs": 15, "leg_hits": 3}}
+    v1 = {
+        "平局收割": {
+            "tickets": 23, "ticket_hits": 0,
+            "legs": 63, "leg_hits": 11,
+        }
+    }
+    v2 = {
+        "平局收割": {
+            "tickets": 5, "ticket_hits": 0,
+            "legs": 15, "leg_hits": 3,
+        }
+    }
     merged = _merge_cross_version_by_theme(v1, v2)
     assert merged["平局收割"]["tickets"] == 28
     assert merged["平局收割"]["legs"] == 78
 
 
 def test_load_cross_version_retired_reads_v1_only(tmp_path) -> None:
-    v1_hist = [{"date": "2026-05-25", "chaos": 8,
-                "anchor": None, "bold": {},
-                "by_theme": {"平局收割":
-                             {"tickets": 23, "ticket_hits": 0,
-                              "legs": 63, "leg_hits": 11}}}]
+    v1_hist = [{
+        "date": "2026-05-25", "chaos": 8,
+        "anchor": None, "bold": {},
+        "by_theme": {
+            "平局收割": {
+                "tickets": 23, "ticket_hits": 0,
+                "legs": 63, "leg_hits": 11,
+            }
+        },
+    }]
     (tmp_path / "bold-review-history.json").write_text(
         json.dumps(v1_hist), encoding="utf-8"
     )
@@ -34,15 +51,25 @@ def test_load_cross_version_retired_reads_v1_only(tmp_path) -> None:
 
 
 def test_load_cross_version_history_dict_merges_both(tmp_path) -> None:
-    v1_hist = [{"date": "2026-05-25", "chaos": 8,
-                "anchor": None, "bold": {},
-                "by_theme": {"平局收割":
-                             {"tickets": 23, "ticket_hits": 0,
-                              "legs": 63, "leg_hits": 11}}}]
-    v2_hist = [{"date": "2026-05-26", "chaos": 5,
-                "by_theme": {"平局收割":
-                             {"tickets": 1, "ticket_hits": 0,
-                              "legs": 3, "leg_hits": 1}}}]
+    v1_hist = [{
+        "date": "2026-05-25", "chaos": 8,
+        "anchor": None, "bold": {},
+        "by_theme": {
+            "平局收割": {
+                "tickets": 23, "ticket_hits": 0,
+                "legs": 63, "leg_hits": 11,
+            }
+        },
+    }]
+    v2_hist = [{
+        "date": "2026-05-26", "chaos": 5,
+        "by_theme": {
+            "平局收割": {
+                "tickets": 1, "ticket_hits": 0,
+                "legs": 3, "leg_hits": 1,
+            }
+        },
+    }]
     (tmp_path / "bold-review-history.json").write_text(
         json.dumps(v1_hist), encoding="utf-8"
     )
@@ -61,19 +88,6 @@ def test_load_cross_version_missing_files_returns_empty(tmp_path) -> None:
     assert load_cross_version_history_dict(tmp_path) == {
         "by_theme": {}, "records": [],
     }
-
-
-# ---------------------------------------------------------------------------
-# Daily review — spec §6
-# ---------------------------------------------------------------------------
-
-
-from nutmeg.services.jczq_bold_combos import HARD_LABEL, persist_sporttery_snapshot
-from nutmeg.services.jczq_tiered_review import (
-    build_tiered_review,
-    replay_tiered_plan,
-    run_tiered_review,
-)
 
 
 class _FakeResults:
@@ -179,6 +193,47 @@ def test_replay_tiered_plan_ignores_same_day_history(tmp_path) -> None:
     assert plan is not None
     assert plan.retired_themes == ()
     assert plan.hhad_health["total_legs"] == 0
+
+
+def test_build_tiered_review_grades_saved_markdown_plan(tmp_path) -> None:
+    _persist_snapshot(tmp_path)
+    run_dir = tmp_path / "daily" / "2026-05-26"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "tiered-plan.md").write_text(
+        "\n".join([
+            HARD_LABEL,
+            "",
+            "💰 今日方案 · 总建议金额 ¥35（multiplier=1.00×）· 首推一张 = A",
+            "**当天大盘面混乱值：8/100（平静）** · 2026-05-26",
+            "",
+            "### A 稳健底仓（2串1 · 合计赔率 2.25 · ¥35 · ⭐⭐⭐⭐）",
+            "- 周二001 A vs 客 ｜ [胜平负] **胜** @ 1.50",
+            "- 周二002 B vs 客 ｜ [胜平负] **胜** @ 1.50",
+            "",
+            "### B 主方案",
+            "> 今日 B 档：候选不足或赔率档命不中。",
+            "",
+            "### D 反大众",
+            "> 今日 D 档：候选不足或赔率档命不中。",
+            "",
+            "### E 极限娱乐",
+            "> 今日 E 档：候选不足或赔率档命不中。",
+        ]),
+        encoding="utf-8",
+    )
+    results = {
+        "周二001": {"had": "胜"},
+        "周二002": {"had": "胜"},
+    }
+
+    review = build_tiered_review(
+        "2026-05-26", tmp_path, result_provider=_FakeResults(results)
+    )
+
+    assert review.tiers[0] is not None
+    assert review.tiers[0].fold == 2
+    assert review.tiers[0].all_hit is True
+    assert review.tiers[1:] == [None, None, None]
 
 
 def test_tiered_review_no_banned_words(tmp_path) -> None:

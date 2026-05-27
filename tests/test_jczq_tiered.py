@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from nutmeg.services.jczq_bold_combos import (
     HARD_LABEL,
+    BoldLeg,
     BoldMatch,
     PoolSignals,
     compute_pool_signals,
@@ -15,17 +16,19 @@ from nutmeg.services.jczq_tiered import (
     DEFAULT_TIER_E,
     LegReason,
     PlanContext,
+    Tier,
+    TieredLeg,
     TieredPlan,
     confidence_tag_for_code,
     pick_anchor_tier,
     pick_contra_tier,
     pick_lottery_tier,
     pick_main_tier,
+    recommended_single_for_tiers,
     render_tiered_plan,
     select_tiered_plan,
     v2_candidate_pool,
 )
-
 
 _BANNED = ("胜率", "edge", "+EV", "正期望", "推荐下注", "重仓")
 
@@ -74,6 +77,42 @@ def _anchor_match(no: str, home_odds: float, hhad_home_odds: float = 2.0) -> Bol
         tc_odds={"home": home_odds, "draw": 3.5, "away": 5.0},
         hhad_odds={"home": hhad_home_odds, "draw": 3.5, "away": 2.0},
         hhad_line=-1.0,
+    )
+
+
+def _leg(
+    match_no: str,
+    market: str,
+    pick_label: str,
+    odds: float,
+    boldness: float,
+) -> BoldLeg:
+    pick = {
+        "胜": "home", "平": "draw", "负": "away",
+        "让胜": "home", "让平": "draw", "让负": "away",
+        "1球": "total_1", "2球": "total_2",
+    }.get(pick_label, pick_label)
+    return BoldLeg(
+        match_no=match_no,
+        league="L",
+        home=f"H{match_no}",
+        away=f"A{match_no}",
+        pick=pick,
+        tc_odds=odds,
+        boldness=boldness,
+        reason=f"{market} {pick_label}",
+        market=market,
+        pick_label=pick_label,
+    )
+
+
+def _tier(code_profile, legs: list[BoldLeg], total_odds: float) -> Tier:
+    return Tier(
+        profile=code_profile,
+        legs=[TieredLeg(lg, LegReason("", "", "")) for lg in legs],
+        total_odds=total_odds,
+        stake_yuan=code_profile.base_stake_yuan,
+        confidence_tag=confidence_tag_for_code(code_profile.code),
     )
 
 
@@ -139,6 +178,26 @@ def test_v2_candidate_pool_single_market_no_trim() -> None:
     pool = v2_candidate_pool(matches)
     assert all(lg.market == "had" for lg in pool)
     assert len(pool) == 6
+
+
+def test_v2_candidate_pool_drops_matches_without_usable_had() -> None:
+    """spec §26.1 — 005 弗拉门戈 had None 5/26 leaked into B; reject at source.
+
+    Matches whose 胜平负 odds are empty or all-None are unopened/cancelled and
+    must not contribute legs to B/D/E (A already filters via has_real_favourite).
+    """
+    good = _match("G1")
+    no_had_empty = _match("X1", tc_odds={})
+    no_had_invalid = _match(
+        "X2", tc_odds={"home": 0.0, "draw": 0.0, "away": 0.0}
+    )
+
+    pool = v2_candidate_pool([good, no_had_empty, no_had_invalid])
+
+    match_nos = {lg.match_no for lg in pool}
+    assert "G1" in match_nos
+    assert "X1" not in match_nos
+    assert "X2" not in match_nos
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +324,67 @@ def test_pick_main_tier_returns_none_when_no_candidates() -> None:
     assert pick_main_tier(DEFAULT_TIER_B, [], frozenset(), ctx, []) is None
 
 
+def test_pick_main_tier_caps_hhad_and_rejects_5x_hhad() -> None:
+    """B must not become yesterday's all-hhad high-odds ticket."""
+    pool = [
+        _leg("M1", "hhad", "让胜", 5.15, 0.90),
+        _leg("M2", "hhad", "让负", 5.00, 0.85),
+        _leg("M3", "hhad", "让平", 3.40, 0.80),
+        _leg("M4", "ttg", "2球", 4.10, 0.75),
+        _leg("M5", "had", "平", 3.00, 0.70),
+    ]
+    ctx = PlanContext(pool_signals=PoolSignals())
+
+    tier = pick_main_tier(DEFAULT_TIER_B, pool, frozenset(), ctx, [])
+
+    assert tier is not None
+    assert sum(1 for tl in tier.legs if tl.leg.market == "hhad") <= 2
+    assert all(
+        not (tl.leg.market == "hhad" and tl.leg.tc_odds >= 5.0)
+        for tl in tier.legs
+    )
+
+
+def test_pick_main_tier_requires_ttg_when_ttg_available() -> None:
+    """spec §26.2 — root-cause of 5/25→5/26 all-hhad B: enforce ≥1 ttg in B
+    when ttg legs exist in the pool. Mirrors 5/25 retro disagreement #4."""
+    pool = [
+        _leg("M1", "hhad", "让胜", 4.10, 0.92),
+        _leg("M2", "hhad", "让负", 3.85, 0.90),
+        _leg("M3", "hhad", "让平", 3.45, 0.88),
+        _leg("M4", "hhad", "让平", 3.20, 0.86),
+        _leg("M5", "ttg", "2球", 3.10, 0.70),
+        _leg("M6", "had", "平", 3.40, 0.65),
+    ]
+    ctx = PlanContext(pool_signals=PoolSignals())
+
+    tier = pick_main_tier(DEFAULT_TIER_B, pool, frozenset(), ctx, [])
+
+    assert tier is not None
+    assert any(tl.leg.market == "ttg" for tl in tier.legs), (
+        f"B must include ≥1 ttg leg when ttg in pool, got "
+        f"{[(tl.leg.market, tl.leg.pick_label) for tl in tier.legs]}"
+    )
+
+
+def test_pick_main_tier_allows_all_hhad_when_no_ttg_in_pool() -> None:
+    """spec §26.2 — graceful degradation: if ttg unavailable, B may still
+    fall back to hhad/had-only (the constraint only fires when ttg exists)."""
+    pool = [
+        _leg("M1", "hhad", "让胜", 4.10, 0.92),
+        _leg("M2", "hhad", "让负", 3.85, 0.90),
+        _leg("M3", "had", "平", 3.40, 0.85),
+        _leg("M4", "had", "平", 3.20, 0.80),
+    ]
+    ctx = PlanContext(pool_signals=PoolSignals())
+
+    tier = pick_main_tier(DEFAULT_TIER_B, pool, frozenset(), ctx, [])
+
+    if tier is not None:
+        # No ttg in pool → constraint disabled; B can choose hhad+had combos.
+        assert all(tl.leg.market in ("hhad", "had") for tl in tier.legs)
+
+
 # ---------------------------------------------------------------------------
 # T6 — pick_contra_tier + retired-theme skip
 # ---------------------------------------------------------------------------
@@ -292,6 +412,24 @@ def test_pick_contra_tier_skips_retired_themes() -> None:
     if tier is not None:
         legs_only = [tl.leg for tl in tier.legs]
         assert ticket_theme(legs_only)[0] != "平局收割"
+
+
+def test_pick_contra_tier_caps_hhad_concentration() -> None:
+    """D may use hhad, but not as an all-hhad parlay."""
+    pool = [
+        _leg("M1", "hhad", "让负", 5.10, 0.90),
+        _leg("M2", "hhad", "让胜", 4.30, 0.85),
+        _leg("M3", "hhad", "让平", 3.75, 0.80),
+        _leg("M4", "hhad", "让平", 3.55, 0.75),
+        _leg("M5", "ttg", "2球", 4.00, 0.70),
+        _leg("M6", "had", "平", 3.50, 0.65),
+    ]
+    ctx = PlanContext(pool_signals=PoolSignals())
+
+    tier = pick_contra_tier(DEFAULT_TIER_D, pool, frozenset(), ctx, [])
+
+    assert tier is not None
+    assert sum(1 for tl in tier.legs if tl.leg.market == "hhad") <= 2
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +661,23 @@ def test_recommend_single_falls_back_to_d_when_a_missing() -> None:
         assert plan.recommended_single == "D"
 
 
+def test_recommended_single_none_for_calm_high_risk_d() -> None:
+    risky_d = _tier(
+        DEFAULT_TIER_D,
+        [
+            _leg("M1", "hhad", "让负", 5.10, 0.90),
+            _leg("M2", "hhad", "让胜", 4.30, 0.85),
+            _leg("M3", "ttg", "2球", 4.00, 0.70),
+            _leg("M4", "had", "平", 3.50, 0.65),
+        ],
+        total_odds=291.94,
+    )
+
+    assert recommended_single_for_tiers(
+        a=None, b=None, d=risky_d, chaos=8
+    ) is None
+
+
 # ---------------------------------------------------------------------------
 # T11 — spec §25.2 · BDE 跨档去重
 # ---------------------------------------------------------------------------
@@ -648,7 +803,6 @@ def test_hhad_health_window_caps_at_14_days() -> None:
 
 def test_pick_contra_tier_health_filters_hhad_picks() -> None:
     """spec §25.3 — D drops hhad legs whose pick_label is in blocked_picks."""
-    from nutmeg.services.jczq_tiered import _HHAD_PICK_LABEL
     matches = [_anchor_match(f"M{i}", 2.0 + 0.3 * i) for i in range(1, 10)]
     pool = v2_candidate_pool(matches)
     blocked = frozenset({"让平", "让负"})

@@ -63,6 +63,14 @@ def jczq_mixed_report(
         )
 
 
+_V1_DEPRECATION_BANNER = (
+    "⚠️  jczq-daily-advisor (v1 Poisson generator) is DEPRECATED as of 2026-05-27.\n"
+    "    5/25 retro showed v1 still ships tickets on no-open matches (e.g. 005 弗拉门戈).\n"
+    "    Use `nutmeg jczq-tiered` for the daily 4-tier A/B/D/E plan and\n"
+    "    `nutmeg jczq-tiered-review` for the next-morning grading.\n"
+)
+
+
 @_cli.app.command("jczq-daily-advisor")
 def jczq_daily_advisor(
     provider: str = _cli.JCZQ_PROVIDER_OPTION,
@@ -74,6 +82,7 @@ def jczq_daily_advisor(
     dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run"),
     format: str = _cli.typer.Option("text", "--format", help="text or json"),
 ) -> None:
+    _cli.console.print(_V1_DEPRECATION_BANNER)
     try:
         service = _cli.build_jczq_daily_advisor_service(provider=provider)
         if revision_text:
@@ -113,6 +122,7 @@ def jczq_daily_review(
     dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run"),
     format: str = _cli.typer.Option("text", "--format", help="text or json"),
 ) -> None:
+    _cli.console.print(_V1_DEPRECATION_BANNER)
     service = _cli.build_jczq_daily_review_service()
     report = service.build_review(
         run_date=run_date,
@@ -582,7 +592,11 @@ def jczq_tiered(
 
     daily_dir = output_dir / "daily" / target_date
     daily_dir.mkdir(parents=True, exist_ok=True)
-    (daily_dir / "tiered-plan.md").write_text(rendered, encoding="utf-8")
+    # spec §26.4 — replay must never overwrite the originally dispatched plan;
+    # next-day review depends on the saved markdown to grade exactly what
+    # was shown to the operator, not what newer rules would produce.
+    if not replay:
+        (daily_dir / "tiered-plan.md").write_text(rendered, encoding="utf-8")
 
     if write is not None:
         write.parent.mkdir(parents=True, exist_ok=True)

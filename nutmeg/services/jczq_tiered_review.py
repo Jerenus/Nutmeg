@@ -7,6 +7,7 @@ independently against okooo results, appends to history. Cross-version §24:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -24,9 +25,16 @@ from nutmeg.services.jczq_bold_combos import (
 )
 from nutmeg.services.jczq_bold_review import grade_leg
 from nutmeg.services.jczq_tiered import (
+    DEFAULT_TIER_A,
+    DEFAULT_TIER_B,
+    DEFAULT_TIER_D,
+    DEFAULT_TIER_E,
+    LegReason,
     Tier,
+    TieredLeg,
     TieredPlan,
-    render_tiered_plan,
+    TierProfile,
+    confidence_tag_for_code,
     select_tiered_plan,
 )
 
@@ -134,6 +142,133 @@ def load_cross_version_history_dict(
 _TIER_NAMES: dict[str, str] = {
     "A": "稳健底仓", "B": "主方案", "D": "反大众", "E": "极限娱乐",
 }
+_TIER_PROFILES: dict[str, TierProfile] = {
+    "A": DEFAULT_TIER_A,
+    "B": DEFAULT_TIER_B,
+    "D": DEFAULT_TIER_D,
+    "E": DEFAULT_TIER_E,
+}
+_MARKET_CODES: dict[str, str] = {v: k for k, v in MARKET_LABELS.items()}
+_HAD_PICK_CODES: dict[str, str] = {"胜": "home", "平": "draw", "负": "away"}
+_HHAD_PICK_CODES: dict[str, str] = {
+    "让胜": "home", "让平": "draw", "让负": "away",
+}
+_TIER_HEADER_RE = re.compile(
+    r"^### (?P<code>[ABDE]) (?P<name>[^（\n]+)"
+    r"(?:（(?P<fold>\d+)串1 · 合计赔率 (?P<odds>[0-9.]+) · "
+    r"¥(?P<stake>\d+) · (?P<stars>[^）]+)）)?"
+)
+_TIER_LEG_RE = re.compile(
+    r"^- (?P<match_no>\S+) (?P<home>.+?) vs (?P<away>.+?) ｜ "
+    r"\[(?P<market>[^\]]+)\] \*\*(?P<pick>.+?)\*\* @ (?P<odds>[0-9.]+)"
+)
+_TIER_TOPLINE_RE = re.compile(
+    r"multiplier=(?P<multiplier>[0-9.]+)×.*首推一张 = (?P<rec>\S+)"
+)
+_TIER_CHAOS_RE = re.compile(
+    r"混乱值：(?P<chaos>\d+)/100（(?P<band>[^）]+)）.*(?P<date>\d{4}-\d{2}-\d{2})"
+)
+
+
+def _pick_code(market: str, pick_label: str) -> str:
+    if market == "had":
+        return _HAD_PICK_CODES.get(pick_label, pick_label)
+    if market == "hhad":
+        return _HHAD_PICK_CODES.get(pick_label, pick_label)
+    if market == "ttg" and pick_label.endswith("球"):
+        return f"total_{pick_label[:-1]}"
+    if market == "crs" and ":" in pick_label:
+        home, away = pick_label.split(":", 1)
+        if home.isdigit() and away.isdigit():
+            return f"s{int(home):02d}s{int(away):02d}"
+    return pick_label
+
+
+def _load_saved_markdown_plan(run_date: str, output_dir) -> Optional[TieredPlan]:
+    """Load the dispatched tiered-plan markdown when no JSON snapshot exists.
+
+    Review must grade the exact ticket shown to the operator, not a replay under
+    newer selection rules.
+    """
+    path = Path(output_dir) / "daily" / run_date / "tiered-plan.md"
+    if not path.exists():
+        return None
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    if "tiered-plan" not in path.name:
+        return None
+
+    multiplier = 1.0
+    recommended_single: Optional[str] = None
+    day_chaos = 0
+    band = ""
+    for line in lines:
+        if match := _TIER_TOPLINE_RE.search(line):
+            multiplier = float(match.group("multiplier"))
+            rec = match.group("rec")
+            recommended_single = None if rec == "—" else rec
+        if match := _TIER_CHAOS_RE.search(line):
+            day_chaos = int(match.group("chaos"))
+            band = match.group("band")
+
+    tier_map: dict[str, Optional[Tier]] = {code: None for code in _TIER_NAMES}
+    current: Optional[dict] = None
+    for line in lines:
+        if header := _TIER_HEADER_RE.match(line):
+            code = header.group("code")
+            current = {
+                "code": code,
+                "total_odds": (
+                    float(header.group("odds"))
+                    if header.group("odds") is not None else None
+                ),
+                "stake": (
+                    int(header.group("stake"))
+                    if header.group("stake") is not None else None
+                ),
+                "legs": [],
+            }
+            if current["total_odds"] is not None:
+                profile = _TIER_PROFILES[code]
+                tier_map[code] = Tier(
+                    profile=profile,
+                    legs=current["legs"],
+                    total_odds=current["total_odds"],
+                    stake_yuan=current["stake"] or profile.base_stake_yuan,
+                    confidence_tag=confidence_tag_for_code(code),
+                )
+            continue
+        if current is None or current["total_odds"] is None:
+            continue
+        if leg_match := _TIER_LEG_RE.match(line):
+            market = _MARKET_CODES.get(leg_match.group("market"))
+            if market is None:
+                continue
+            pick_label = leg_match.group("pick")
+            leg = BoldLeg(
+                match_no=leg_match.group("match_no"),
+                league="",
+                home=leg_match.group("home"),
+                away=leg_match.group("away"),
+                pick=_pick_code(market, pick_label),
+                tc_odds=float(leg_match.group("odds")),
+                boldness=0.0,
+                reason="",
+                market=market,
+                pick_label=pick_label,
+            )
+            current["legs"].append(
+                TieredLeg(leg=leg, reason=LegReason("", "", ""))
+            )
+
+    return TieredPlan(
+        run_date=run_date,
+        day_chaos=day_chaos,
+        chaos_band=band,
+        tiers=[tier_map[code] for code in ("A", "B", "D", "E")],
+        recommended_single=recommended_single,
+        multiplier=multiplier,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +314,8 @@ class TieredReviewResult:
 
 def replay_tiered_plan(run_date: str, output_dir) -> Optional[TieredPlan]:
     """spec §6 — re-run select_tiered_plan from yesterday's snapshots."""
+    if saved_plan := _load_saved_markdown_plan(run_date, output_dir):
+        return saved_plan
     value = load_sporttery_snapshot(run_date, output_dir)
     if value is None:
         return None
