@@ -15,6 +15,8 @@ project-level Codex entrypoint opened at `/Users/jz71/Projects/Nutmeg`.
 - For implementation, debugging, review, refactor, verification, or multi-step
   analysis, it should behave like Codex in this repo root and can delegate to
   the fixed local Codex CLI when invoked from OpenClaw.
+- The OpenClaw `coding-agent` skill is enabled for background worker delegation;
+  default project execution still uses the fixed NVM Codex CLI.
 - The router remains a deterministic helper for Telegram-friendly football
   command output; it is not the boundary for project work.
 - Do not leak secrets. Ask once before public dispatch, real betting/funds

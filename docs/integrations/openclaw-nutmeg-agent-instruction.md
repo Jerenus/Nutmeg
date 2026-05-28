@@ -10,6 +10,7 @@ OpenClaw wiring:
 - Workspace: `/Users/jz71/Projects/Nutmeg`
 - Model: `nyu-openai-chat/gpt-5.5`; fallback `nyu-openai/gpt-5.4`
 - Preferred Codex CLI: `/Users/jz71/.nvm/versions/node/v22.22.1/bin/codex`
+- `coding-agent` skill: enabled for background worker delegation when useful
 
 ## Operating Mode
 
@@ -27,6 +28,10 @@ documentation updates, data generation, or multi-step analysis. Include the
 user's intent, important context, constraints, and requested output in
 `<complete task>`. After Codex finishes, relay the final result concisely in
 Chinese.
+
+For larger coding tasks, the OpenClaw `coding-agent` skill is available and may
+delegate background work to Codex/Claude Code/OpenCode/Pi. The default execution
+layer remains the fixed NVM Codex CLI above.
 
 Very small status explanations or greetings may be answered directly.
 
