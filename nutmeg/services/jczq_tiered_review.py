@@ -268,6 +268,9 @@ def _load_saved_markdown_plan(run_date: str, output_dir) -> Optional[TieredPlan]
         tiers=[tier_map[code] for code in ("A", "B", "D", "E")],
         recommended_single=recommended_single,
         multiplier=multiplier,
+        # spec §27.4 — saved markdown was dispatched under an unknown prior
+        # engine version; tag as "v2.x" rather than today's running version.
+        version="v2.x",
     )
 
 
@@ -310,6 +313,27 @@ class TieredReviewResult:
     message: str
     day_record: dict = field(default_factory=dict)
     cumulative: dict = field(default_factory=dict)
+
+
+def _try_load_match_hhad_lines(
+    run_date: str, output_dir
+) -> Optional[dict[str, float]]:
+    """spec §27.6 — best-effort hhad goal_line lookup from the snapshot.
+
+    Returns ``None`` when the snapshot is missing (eg historical backfills);
+    callers should degrade by skipping the let-neg-one shadow field.
+    """
+    value = load_sporttery_snapshot(run_date, output_dir)
+    if value is None:
+        return None
+    try:
+        bold_odds = load_bold_odds_snapshot(run_date, output_dir)
+        matches = bold_matches_from_sporttery(
+            value, run_date=run_date, bold_odds=bold_odds,
+        )
+    except Exception:  # noqa: BLE001 — shadow field is non-load-bearing
+        return None
+    return {m.match_no: float(m.hhad_line or 0.0) for m in matches}
 
 
 def replay_tiered_plan(run_date: str, output_dir) -> Optional[TieredPlan]:
@@ -365,19 +389,33 @@ def grade_tier(tier: Tier, results: dict[str, dict[str, str]]) -> GradedTier:
 
 
 def _day_record(
-    run_date: str, plan: TieredPlan, graded: list[Optional[GradedTier]]
+    run_date: str,
+    plan: TieredPlan,
+    graded: list[Optional[GradedTier]],
+    *,
+    match_hhad_lines: Optional[dict[str, float]] = None,
 ) -> dict:
     """Build the persistable day record. by_theme aggregated like v1 §24.
 
     spec §25.3 — also accumulates ``by_hhad_actual`` (counts of actual
     let-球 direction across all graded hhad legs) for rolling 14-day
     market-health gating.
+
+    spec §27.4 — record ``version`` from ``plan.version`` so cumulative
+    trends can be partitioned by engine version.
+
+    spec §27.6 — when ``match_hhad_lines`` (mapping ``match_no → hhad_line``)
+    is provided, accumulate ``by_hhad_actual_let_neg_one`` (counts of actual
+    hhad direction restricted to matches with goal_line == -1.0) as a shadow
+    field for 14-day analysis of "main fav minimal-win" patterns.
     """
     by_theme: dict[str, dict[str, int]] = {}
     by_tier: dict[str, dict[str, int]] = {}
     by_hhad_actual: dict[str, int] = {}  # spec §25.3
+    by_hhad_actual_let_neg_one: dict[str, int] = {}  # spec §27.6 shadow
     # Dedupe at (match_no, market) level — same match in two tiers counts once.
     seen_hhad: set[str] = set()
+    seen_let_neg_one: set[str] = set()
     for gt in graded:
         if gt is None:
             continue
@@ -412,19 +450,32 @@ def _day_record(
         for lg in gt.legs:
             if lg.market != "hhad" or not lg.actual:
                 continue
-            if lg.match_no in seen_hhad:
-                continue
-            seen_hhad.add(lg.match_no)
-            by_hhad_actual[lg.actual] = by_hhad_actual.get(lg.actual, 0) + 1
-    return {
+            if lg.match_no not in seen_hhad:
+                seen_hhad.add(lg.match_no)
+                by_hhad_actual[lg.actual] = by_hhad_actual.get(lg.actual, 0) + 1
+            # spec §27.6 — partition by goal_line == -1.0
+            if (
+                match_hhad_lines is not None
+                and lg.match_no not in seen_let_neg_one
+                and match_hhad_lines.get(lg.match_no) == -1.0
+            ):
+                seen_let_neg_one.add(lg.match_no)
+                by_hhad_actual_let_neg_one[lg.actual] = (
+                    by_hhad_actual_let_neg_one.get(lg.actual, 0) + 1
+                )
+    record = {
         "date": run_date,
         "chaos": plan.day_chaos,
         "multiplier": plan.multiplier,
         "recommended_single": plan.recommended_single,
+        "version": getattr(plan, "version", "v2.x"),  # spec §27.4
         "by_theme": by_theme,
         "by_tier": by_tier,
         "by_hhad_actual": by_hhad_actual,
     }
+    if match_hhad_lines is not None:
+        record["by_hhad_actual_let_neg_one"] = by_hhad_actual_let_neg_one
+    return record
 
 
 def _append_history(output_dir, day_record: dict) -> list[dict]:
@@ -443,12 +494,28 @@ def _append_history(output_dir, day_record: dict) -> list[dict]:
 
 
 def _cumulative(history: list[dict]) -> dict:
-    """Sum across history records for the trend block."""
+    """Sum across history records for the trend block.
+
+    spec §27.4 — also computes per-version per-tier aggregates so the
+    cumulative trend can be partitioned when multiple engine versions appear
+    in history (v2/v2.1/v2.2/v2.3 ran on consecutive days during 5/25-5/28).
+    """
     tier_agg: dict[str, dict[str, int]] = {}
     theme_agg: dict[str, dict[str, int]] = {}
+    by_version: dict[str, dict[str, dict[str, int]]] = {}  # spec §27.4
     for rec in history:
+        version = rec.get("version") or "v2.x"
+        version_slot = by_version.setdefault(version, {})
         for code, slot in (rec.get("by_tier") or {}).items():
             a = tier_agg.setdefault(
+                code,
+                {
+                    "tickets": 0, "ticket_hits": 0,
+                    "legs": 0, "leg_hits": 0,
+                    "stake_total": 0, "stake_returned": 0,
+                },
+            )
+            v_tier = version_slot.setdefault(
                 code,
                 {
                     "tickets": 0, "ticket_hits": 0,
@@ -461,6 +528,7 @@ def _cumulative(history: list[dict]) -> dict:
                 "stake_total", "stake_returned",
             ):
                 a[k] += int(slot.get(k, 0))
+                v_tier[k] += int(slot.get(k, 0))
         for theme, slot in (rec.get("by_theme") or {}).items():
             a = theme_agg.setdefault(
                 theme,
@@ -474,6 +542,7 @@ def _cumulative(history: list[dict]) -> dict:
         "last_date": history[-1]["date"] if history else "",
         "by_tier": tier_agg,
         "by_theme": theme_agg,
+        "by_version": by_version,
     }
 
 
@@ -594,6 +663,29 @@ def render_tiered_review(
             f"腿 {slot.get('leg_hits', 0)}/{slot.get('legs', 0)} · "
             f"预算 ¥{cum_stake_total} 净 {cum_sign}¥{cum_net}"
         )
+    # spec §27.4 — by_version breakdown when ≥2 engine versions present in history
+    by_version = cumulative.get("by_version", {})
+    if len(by_version) >= 2:
+        lines.append("")
+        lines.append("按引擎版本分组：")
+        for ver in sorted(by_version):
+            v_tiers = by_version[ver]
+            parts = []
+            for code in code_order:
+                slot = v_tiers.get(code)
+                if not slot:
+                    continue
+                v_stake = slot.get("stake_total", 0)
+                v_ret = slot.get("stake_returned", 0)
+                v_net = v_ret - v_stake
+                v_sign = "+" if v_net >= 0 else ""
+                parts.append(
+                    f"{code} {slot.get('ticket_hits', 0)}/{slot.get('tickets', 0)}票 "
+                    f"{slot.get('leg_hits', 0)}/{slot.get('legs', 0)}腿 "
+                    f"净 {v_sign}¥{v_net}"
+                )
+            if parts:
+                lines.append(f"- {ver}: {' · '.join(parts)}")
     lines.append("")
     lines.append(
         "_本复盘只做赛后对照，不预测、不号称优势；娱乐工具长期为负期望，仅供参考。_"
@@ -629,7 +721,13 @@ def build_tiered_review(
     for tier in plan.tiers:
         graded.append(grade_tier(tier, results) if tier is not None else None)
 
-    day_record = _day_record(run_date, plan, graded)
+    # spec §27.6 — best-effort lookup of hhad goal_line per match from the
+    # original sporttery snapshot (None when snapshot missing, eg historical
+    # backfills without raw data).
+    match_hhad_lines = _try_load_match_hhad_lines(run_date, output_dir)
+    day_record = _day_record(
+        run_date, plan, graded, match_hhad_lines=match_hhad_lines,
+    )
     history = _append_history(output_dir, day_record)
     cumulative = _cumulative(history)
     message = render_tiered_review(run_date, plan, graded, cumulative)

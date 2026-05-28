@@ -385,6 +385,43 @@ def test_pick_main_tier_allows_all_hhad_when_no_ttg_in_pool() -> None:
         assert all(tl.leg.market in ("hhad", "had") for tl in tier.legs)
 
 
+def test_pick_main_tier_prefers_strong_fav_reverse_hhad() -> None:
+    """spec §27.2 — when a match has had ≤1.50 (strong fav), B prefers the
+    reverse-handicap hhad pick (让负 for home favs) over 让平 / 让胜.
+    Mirrors 5/27 003 (had 1.30) where 让负@2.93 ✅ vs 让平@3.30 ✗.
+    """
+    strong_fav_home = _match(
+        "M1",
+        tc_odds={"home": 1.30, "draw": 4.80, "away": 9.50},
+        hhad_odds={"home": 2.93, "draw": 3.30, "away": 2.10},
+        hhad_line=-1.0,
+    )
+    # filler matches so other tiers can pick from a non-strong-fav pool.
+    fillers = [
+        _match(
+            f"F{i}",
+            tc_odds={"home": 2.6, "draw": 3.2, "away": 2.9},
+            hhad_odds={"home": 2.5, "draw": 3.3, "away": 2.4},
+            hhad_line=-1.0,
+            ttg_odds={f"total_{k}": 3.5 + 0.5 * k for k in range(8)},
+        )
+        for i in range(1, 5)
+    ]
+    matches = [strong_fav_home] + fillers
+    pool = v2_candidate_pool(matches)
+    ctx = PlanContext(pool_signals=compute_pool_signals(matches))
+
+    tier = pick_main_tier(DEFAULT_TIER_B, pool, frozenset(), ctx, matches)
+
+    # If M1's hhad leg lands in the combo, it MUST be 让负 (not 让平).
+    if tier is not None:
+        for tl in tier.legs:
+            if tl.leg.match_no == "M1" and tl.leg.market == "hhad":
+                assert tl.leg.pick_label == "让负", (
+                    f"strong-fav home should pick 让负, got {tl.leg.pick_label}"
+                )
+
+
 # ---------------------------------------------------------------------------
 # T6 — pick_contra_tier + retired-theme skip
 # ---------------------------------------------------------------------------
@@ -412,6 +449,61 @@ def test_pick_contra_tier_skips_retired_themes() -> None:
     if tier is not None:
         legs_only = [tl.leg for tl in tier.legs]
         assert ticket_theme(legs_only)[0] != "平局收割"
+
+
+def test_pick_contra_tier_filters_low_poisson_edge_legs() -> None:
+    """spec §27.1 — D candidates with direct Poisson edge ≤ -0.15 are
+    dropped. Mirrors 5/27 002 让胜 (edge -22%) wrongly selected by v2.2 D."""
+    pool = [
+        _leg("M1", "hhad", "让胜", 3.65, 0.95),  # spike edge to be filtered
+        _leg("M2", "hhad", "让胜", 4.30, 0.85),
+        _leg("M3", "hhad", "让平", 3.75, 0.80),
+        _leg("M4", "ttg", "2球", 4.00, 0.70),
+        _leg("M5", "had", "平", 3.50, 0.65),
+    ]
+    ctx = PlanContext(pool_signals=PoolSignals())
+    # Only M1 hhad 让胜 is below the floor.
+    edge_index = {("M1", "hhad", "让胜"): -0.22}
+
+    tier = pick_contra_tier(
+        DEFAULT_TIER_D, pool, frozenset(), ctx, [],
+        poisson_edge_index=edge_index,
+    )
+
+    if tier is not None:
+        for tl in tier.legs:
+            assert not (
+                tl.leg.match_no == "M1"
+                and tl.leg.market == "hhad"
+                and tl.leg.pick_label == "让胜"
+            ), "leg with edge -22% must be filtered"
+
+
+def test_pick_contra_tier_no_filter_when_edge_index_none() -> None:
+    """spec §27.1 — back-compat: None index = no filter (v2.2 behaviour)."""
+    pool = [
+        _leg("M1", "hhad", "让胜", 3.65, 0.95),
+        _leg("M2", "hhad", "让胜", 4.30, 0.85),
+        _leg("M3", "hhad", "让平", 3.75, 0.80),
+        _leg("M4", "ttg", "2球", 4.00, 0.70),
+        _leg("M5", "had", "平", 3.50, 0.65),
+    ]
+    ctx = PlanContext(pool_signals=PoolSignals())
+
+    tier_with_none = pick_contra_tier(
+        DEFAULT_TIER_D, pool, frozenset(), ctx, [],
+        poisson_edge_index=None,
+    )
+    tier_no_arg = pick_contra_tier(
+        DEFAULT_TIER_D, pool, frozenset(), ctx, [],
+    )
+
+    if tier_with_none is None:
+        assert tier_no_arg is None
+    else:
+        assert tier_no_arg is not None
+        assert [tl.leg.match_no for tl in tier_with_none.legs] == \
+            [tl.leg.match_no for tl in tier_no_arg.legs]
 
 
 def test_pick_contra_tier_caps_hhad_concentration() -> None:
@@ -586,6 +678,79 @@ def test_render_missing_tier_shows_honest_message() -> None:
     out = render_tiered_plan(plan)
     assert "稳健底仓" in out
     assert "候选不足" in out or "今日无可用方案" in out
+
+
+def test_render_warns_when_ttg_pool_empty_and_b_fired() -> None:
+    """spec §27.3 — if ttg pool was empty but B still fired, render a
+    degradation warning at the top so the operator sees the structural risk."""
+    b_legs = [
+        _leg("M1", "hhad", "让胜", 3.75, 0.85),
+        _leg("M2", "hhad", "让平", 3.30, 0.82),
+        _leg("M3", "had", "负", 5.40, 0.70),
+    ]
+    b_tier = _tier(DEFAULT_TIER_B, b_legs, total_odds=66.83)
+    plan = TieredPlan(
+        run_date="2026-05-27", day_chaos=9, chaos_band="平静",
+        tiers=[None, b_tier, None, None],
+        recommended_single="B",
+        ttg_pool_empty=True,
+    )
+
+    out = render_tiered_plan(plan)
+
+    assert "ttg 池空" in out and "B 已退化" in out, (
+        f"ttg-empty + B fired should render §27.3 warning, got:\n{out}"
+    )
+
+
+def test_render_no_ttg_warning_when_b_empty() -> None:
+    """spec §27.3 — no warning when B did not fire (the risk only exists if
+    B actually got picked from a degraded pool)."""
+    plan = TieredPlan(
+        run_date="2026-05-27", day_chaos=9, chaos_band="平静",
+        tiers=[None, None, None, None],
+        recommended_single=None,
+        ttg_pool_empty=True,
+    )
+
+    out = render_tiered_plan(plan)
+
+    assert "B 已退化" not in out
+
+
+# ---------------------------------------------------------------------------
+# T9b — §27.1 compute_d_poisson_edge_index
+# ---------------------------------------------------------------------------
+
+
+def test_compute_d_poisson_edge_index_returns_dict_per_match() -> None:
+    """spec §27.1 — the index helper produces (match_no, market, pick_label)
+    keys for matches with complete had odds; the values are floats (edges)."""
+    from nutmeg.services.jczq_tiered import compute_d_poisson_edge_index
+
+    matches = [_anchor_match(f"M{i}", 1.50 + 0.1 * i) for i in range(1, 4)]
+
+    idx = compute_d_poisson_edge_index(matches)
+
+    assert idx, "expected non-empty index for matches with had odds"
+    for (match_no, market, pick_label), edge in idx.items():
+        assert market in {"had", "hhad", "ttg", "crs"}
+        assert isinstance(edge, float)
+        # Sanity: edges should be reasonable (-1, +inf) range, typically -0.5..+0.5
+        assert -1.0 < edge < 5.0, (
+            f"edge out of plausible range for {match_no}/{market}/{pick_label}: {edge}"
+        )
+
+
+def test_compute_d_poisson_edge_index_skips_matches_without_had() -> None:
+    """spec §27.1 — matches with no usable had odds yield no entries."""
+    from nutmeg.services.jczq_tiered import compute_d_poisson_edge_index
+
+    no_had = _match("X1", tc_odds={})
+
+    idx = compute_d_poisson_edge_index([no_had])
+
+    assert idx == {}
 
 
 # ---------------------------------------------------------------------------

@@ -114,6 +114,12 @@ class TieredPlan:
     multiplier: float = 1.0
     # spec §25.3 — rolling hhad health snapshot for the brief top-line.
     hhad_health: dict = field(default_factory=dict)
+    # spec §27.3 — true iff the v2 candidate pool contained no ttg legs;
+    # render adds a warning when this is true AND tier B fires anyway
+    # (B will have degraded to hhad/had-only).
+    ttg_pool_empty: bool = False
+    # spec §27.4 — version tag for review history grouping.
+    version: str = "v2.3"
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +138,42 @@ def _match_has_usable_had(match: BoldMatch) -> bool:
     return any(v and v > 1.0 for v in match.tc_odds.values())
 
 
+_HHAD_REVERSE_PICK_KEY: dict[str, str] = {
+    "让胜": "home", "让负": "away", "让平": "draw",
+}
+
+
+def _override_strong_fav_hhad_leg(
+    match: BoldMatch, hhad_leg: BoldLeg, reverse_label: str,
+) -> BoldLeg:
+    """spec §27.2 — when a strong-fav match's boldest hhad leg is 让平 (the
+    "favourite covers the handicap with a draw after adjustment") replace it
+    with the reverse-handicap pick (让负 for home favs, 让胜 for away favs).
+    Keeps the rest of the leg metadata intact; falls back to the original
+    leg when the reverse pick's odds are not available.
+    """
+    if hhad_leg.pick_label == reverse_label:
+        return hhad_leg
+    reverse_key = _HHAD_REVERSE_PICK_KEY.get(reverse_label)
+    if reverse_key is None:
+        return hhad_leg
+    reverse_odds = (match.hhad_odds or {}).get(reverse_key)
+    if not reverse_odds or reverse_odds <= 1.0:
+        return hhad_leg
+    return BoldLeg(
+        match_no=hhad_leg.match_no,
+        league=hhad_leg.league,
+        home=hhad_leg.home,
+        away=hhad_leg.away,
+        pick=reverse_key,
+        tc_odds=reverse_odds,
+        boldness=hhad_leg.boldness,  # keep boldness so ranking is comparable
+        reason=f"让球盘 · {reverse_label} · 强胆反向 cover (§27.2)",
+        market="hhad",
+        pick_label=reverse_label,
+    )
+
+
 def v2_candidate_pool(matches: list[BoldMatch]) -> list[BoldLeg]:
     """spec §2.2 — widened candidate pool. Each match contributes its top
     ``V2_MAX_LEGS_PER_MATCH`` legs across distinct markets, ranked by
@@ -141,18 +183,33 @@ def v2_candidate_pool(matches: list[BoldMatch]) -> list[BoldLeg]:
 
     spec §26.1 — matches with no usable 胜平负 odds (unopened/cancelled)
     are rejected at the pool source so B/D/E can never pick them.
+
+    spec §27.2 — strong-fav matches (had ≤ ``STRONG_FAV_HAD_THRESHOLD``)
+    have their hhad leg overridden to the reverse-handicap pick. The default
+    ``bold_leg_for_market`` returns the boldest pick (typically 让平 for
+    -1 handicaps) but the structurally meaningful cover for a real favourite
+    is 让负 / 让胜.
     """
     matches = [m for m in matches if _match_has_usable_had(m)]
+    reverse_picks = _strong_fav_reverse_hhad(matches)
     per_match: list[list[BoldLeg]] = []
     for match in matches:
+        raw_legs = [
+            leg for market in MARKETS
+            if (leg := bold_leg_for_market(match, market)) is not None
+        ]
+        # spec §27.2 — substitute hhad leg for strong-fav matches.
+        reverse_label = reverse_picks.get(match.match_no)
+        if reverse_label is not None:
+            raw_legs = [
+                (
+                    _override_strong_fav_hhad_leg(match, lg, reverse_label)
+                    if lg.market == "hhad" else lg
+                )
+                for lg in raw_legs
+            ]
         legs = sorted(
-            (
-                leg
-                for market in MARKETS
-                if (leg := bold_leg_for_market(match, market)) is not None
-            ),
-            key=lambda lg: lg.boldness,
-            reverse=True,
+            raw_legs, key=lambda lg: lg.boldness, reverse=True,
         )
         if not legs:
             continue
@@ -293,6 +350,17 @@ HHAD_HEALTH_WINDOW_DAYS: int = 14
 HHAD_HEALTH_MIN_LEGS: int = 30
 HHAD_HEALTH_DOMINANCE_RATE: float = 0.55
 _HHAD_DIRECTIONS: tuple[str, ...] = ("让胜", "让平", "让负")
+
+# spec §27.1 — direct Poisson edge floor for D-tier legs. The 5/27 case:
+# 002 让胜 had a -22% direct Poisson edge yet still landed in v2.2 D; this
+# floor rejects legs whose edge sinks below the floor. Index is built once
+# per day at the CLI layer and threaded through select_tiered_plan.
+D_LEG_EDGE_HARD_FLOOR: float = -0.15
+
+# spec §27.2 — when a match's had min ≤ ANCHOR_HHAD_COVER_THRESHOLD it is a
+# "real favourite" and its hhad reverse-handicap pick (让负 for home favs,
+# 让胜 for away favs) is the structural cover (5/27 003 让负 命中 / 让平 错).
+STRONG_FAV_HAD_THRESHOLD: float = 1.50
 
 
 def recent_hhad_market_health(
@@ -532,6 +600,37 @@ def _build_main_reason(leg: BoldLeg) -> LegReason:
     )
 
 
+def _strong_fav_reverse_hhad(
+    matches: list[BoldMatch],
+) -> dict[str, str]:
+    """spec §27.2 — for each match where had min ≤ STRONG_FAV_HAD_THRESHOLD,
+    name the hhad pick_label that is the structural reverse-handicap cover.
+    Maps ``match_no -> "让负"|"让胜"``; matches without a strong favourite
+    are omitted.
+
+    Reasoning: had ≤1.50 = a real favourite at heavy odds-on. Picking the
+    boldest hhad (= 让平 in practice) is just betting on the favourite to win
+    by ≤ goal_line, which v2.2 boldness sort prefers. The structurally
+    interesting reverse is 让负 (home favs) / 让胜 (away favs) = "favourite
+    fails to cover" — 5/27 003 had 1.30 主胜 → 让负@2.93 ✅ 命中.
+    """
+    out: dict[str, str] = {}
+    for match in matches:
+        had = match.tc_odds or {}
+        odds = [(k, v) for k, v in had.items() if v and v > 1.0]
+        if len(odds) < 2:
+            continue
+        min_key, min_o = min(odds, key=lambda kv: kv[1])
+        if min_o > STRONG_FAV_HAD_THRESHOLD:
+            continue
+        if min_key == "home":
+            out[match.match_no] = "让负"
+        elif min_key == "away":
+            out[match.match_no] = "让胜"
+        # 平 favourite (rare) — no canonical reverse, skip
+    return out
+
+
 def pick_main_tier(
     profile: TierProfile,
     pool: list[BoldLeg],
@@ -541,8 +640,13 @@ def pick_main_tier(
 ) -> Optional[Tier]:
     """spec §3.3 — B 主方案. Excludes A's matches; drops legs that violate
     crs cap upfront; prefers hhad/ttg structural legs; tries fold sizes
-    until one combo lands in the odds band."""
-    _ = matches
+    until one combo lands in the odds band.
+
+    spec §27.2 — when a candidate's match has a strong favourite (had ≤
+    ``STRONG_FAV_HAD_THRESHOLD``), the reverse-handicap hhad pick gets sort
+    priority over 让平 / other directions (5/27 003 case).
+    """
+    reverse_picks = _strong_fav_reverse_hhad(matches)
     candidates = [lg for lg in pool if lg.match_no not in excluded]
     if profile.max_crs_legs == 0:
         candidates = [lg for lg in candidates if lg.market != "crs"]
@@ -553,13 +657,23 @@ def pick_main_tier(
             and lg.tc_odds >= MAIN_HHAD_HIGH_ODDS_CUTOFF
         )
     ]
+
+    def _is_strong_fav_reverse(lg: BoldLeg) -> bool:
+        return (
+            lg.market == "hhad"
+            and reverse_picks.get(lg.match_no) == lg.pick_label
+        )
+
     # spec §26.2 — ttg ranks above hhad above had in the sort key so that the
     # ``candidates[: fold + 4]`` search window always surfaces ttg legs when
     # they exist (root-cause of 5/25→5/26 all-hhad B regressions).
+    # spec §27.2 — within hhad, strong-fav reverse legs come first (5/27 003
+    # 让负 was the right cover for 1.30 主胜, not 让平).
     candidates.sort(
         key=lambda lg: (
             0 if lg.market == "ttg"
             else (1 if lg.market == "hhad" else 2),
+            0 if _is_strong_fav_reverse(lg) else 1,
             -lg.boldness,
         )
     )
@@ -628,6 +742,7 @@ def pick_contra_tier(
     ctx: PlanContext,
     matches: list[BoldMatch],
     b_hhad_picks: Optional[dict[str, str]] = None,
+    poisson_edge_index: Optional[dict[tuple[str, str, str], float]] = None,
 ) -> Optional[Tier]:
     """spec §3.3 — D 反大众. Exclude A∪B matches; SKIP combos in retired
     themes. Combines top-boldness structural legs (hhad/ttg) with at most
@@ -636,6 +751,11 @@ def pick_contra_tier(
     spec §25.2.b — ``b_hhad_picks`` maps ``match_no -> pick`` for any hhad
     legs B already picked; D filters out *same-match hhad-reverse* picks
     (would be "B let X, D let Y on same match" = double-direction punt).
+
+    spec §27.1 — ``poisson_edge_index`` (match_no, market, pick_label) → edge
+    is a direct Poisson edge lookup; legs whose edge ≤ ``D_LEG_EDGE_HARD_FLOOR``
+    (default -0.15) are dropped (5/27 002 让胜 edge=-22% was the trigger).
+    Missing entries default to 0.0 (no filter — degrade gracefully).
     """
     _ = matches
     candidates = [lg for lg in pool if lg.match_no not in excluded]
@@ -656,6 +776,14 @@ def pick_contra_tier(
         candidates = [
             lg for lg in candidates
             if not (lg.market == "hhad" and lg.pick_label in blocked)
+        ]
+    # spec §27.1 — direct Poisson edge floor on D candidates.
+    if poisson_edge_index:
+        candidates = [
+            lg for lg in candidates
+            if poisson_edge_index.get(
+                (lg.match_no, lg.market, lg.pick_label), 0.0
+            ) > D_LEG_EDGE_HARD_FLOOR
         ]
     # Split by market so we can pick the right mix.
     structural = sorted(
@@ -834,16 +962,109 @@ def recommended_single_for_tiers(
     return None
 
 
+def compute_d_poisson_edge_index(
+    matches: list[BoldMatch],
+    *,
+    dc_rho: float = 0.0,
+) -> dict[tuple[str, str, str], float]:
+    """spec §27.1 — direct (raw, no R25/F2/F3 biases) Poisson edges keyed by
+    ``(match_no, market, pick_label)`` for D-tier filtering. Returns ``{}``
+    when no match has a complete had market. CLI layer calls this once per
+    day and threads the dict through ``select_tiered_plan``.
+
+    The intent is the GPT-style "direct check" that flagged 5/27 002 让胜 at
+    -22%; the index is consulted by ``pick_contra_tier`` to drop legs below
+    ``D_LEG_EDGE_HARD_FLOOR``.
+    """
+    from nutmeg.services.jczq_poisson import edge_vs_market, fit_lambdas_from_market
+
+    index: dict[tuple[str, str, str], float] = {}
+    for match in matches:
+        had = match.tc_odds or {}
+        home_o = had.get("home")
+        draw_o = had.get("draw")
+        away_o = had.get("away")
+        if not (home_o and draw_o and away_o):
+            continue
+        try:
+            fit = fit_lambdas_from_market(
+                home_o, draw_o, away_o,
+                max_lambda=3.5, step=0.1, dc_rho=dc_rho,
+            )
+        except Exception:  # noqa: BLE001 — degrade silently
+            continue
+
+        # had
+        for key, label in (("home", "胜"), ("draw", "平"), ("away", "负")):
+            o = had.get(key)
+            if not o or o <= 1.0:
+                continue
+            edge = edge_vs_market(
+                fit, pool="had", pick=label, market_odd=o, dc_rho=dc_rho,
+            )
+            if edge is not None:
+                index[(match.match_no, "had", label)] = edge
+        # hhad
+        for key, label in (("home", "让胜"), ("draw", "让平"), ("away", "让负")):
+            o = (match.hhad_odds or {}).get(key)
+            if not o or o <= 1.0:
+                continue
+            edge = edge_vs_market(
+                fit, pool="hhad", pick=label, market_odd=o,
+                goal_line=match.hhad_line, dc_rho=dc_rho,
+            )
+            if edge is not None:
+                index[(match.match_no, "hhad", label)] = edge
+        # ttg
+        for k, o in (match.ttg_odds or {}).items():
+            if not o or o <= 1.0:
+                continue
+            try:
+                n = int(k.replace("total_", ""))
+            except ValueError:
+                continue
+            label = f"{n}球"
+            edge = edge_vs_market(
+                fit, pool="ttg", pick=label, market_odd=o, dc_rho=dc_rho,
+            )
+            if edge is not None:
+                index[(match.match_no, "ttg", label)] = edge
+        # crs (only valid sHHsAA keys)
+        for k, o in (match.crs_odds or {}).items():
+            if not o or o <= 1.0:
+                continue
+            if not (k.startswith("s") and len(k) >= 6):
+                continue
+            try:
+                h = int(k[1:3])
+                a = int(k[4:6])
+            except (ValueError, IndexError):
+                continue
+            label = f"{h}:{a}"
+            edge = edge_vs_market(
+                fit, pool="crs", pick=label, market_odd=o, dc_rho=dc_rho,
+            )
+            if edge is not None:
+                index[(match.match_no, "crs", label)] = edge
+    return index
+
+
 def select_tiered_plan(
     matches: list[BoldMatch],
     *,
     history: dict,
     multiplier: float = 1.0,
     run_date: str = "",
+    poisson_edge_index: Optional[dict[tuple[str, str, str], float]] = None,
 ) -> TieredPlan:
     """spec §3 — full v2 plan. Build pool, run 4 strategies with cross-tier
     exclusion, decide recommended_single. ``history`` is the merged
-    cumulative by_theme dict (spec §6.3 cross-version reader)."""
+    cumulative by_theme dict (spec §6.3 cross-version reader).
+
+    spec §27.1 — ``poisson_edge_index`` (optional) lets the D filter drop
+    legs whose direct Poisson edge sinks below ``D_LEG_EDGE_HARD_FLOOR``.
+    ``None`` keeps v2.2 behaviour unchanged (back-compat for tests).
+    """
     chaos = day_chaos(matches)
     band = chaos_band(chaos)
     pool = v2_candidate_pool(matches)
@@ -872,6 +1093,7 @@ def select_tiered_plan(
     d = pick_contra_tier(
         DEFAULT_TIER_D, pool, a_excluded | b_excluded, ctx, matches,
         b_hhad_picks=b_hhad_picks,
+        poisson_edge_index=poisson_edge_index,
     )
     d_excluded = d.match_nos if d else frozenset()
     # spec §25.2.a — E now honours excluded = A ∪ B ∪ D
@@ -885,6 +1107,8 @@ def select_tiered_plan(
     # receives "首推" when it is not an over-leveraged entertainment ticket.
     recommended = recommended_single_for_tiers(a=a, b=b, d=d, chaos=chaos)
 
+    ttg_pool_empty = not any(lg.market == "ttg" for lg in pool)
+
     return TieredPlan(
         run_date=run_date,
         day_chaos=chaos,
@@ -895,6 +1119,7 @@ def select_tiered_plan(
         pool_signals=pool_signals,
         multiplier=multiplier,
         hhad_health=hhad_health,
+        ttg_pool_empty=ttg_pool_empty,
     )
 
 
@@ -955,6 +1180,12 @@ def render_tiered_plan(plan: TieredPlan) -> str:
     if e_tier is None:
         lines.append(
             "⚠️ E 档因跨档去重后剩余腿 < 4，今晚不出。"
+        )
+    # spec §27.3 — ttg 池空、但 B 仍出票时的退化警示
+    b_tier = plan.tiers[1] if len(plan.tiers) > 1 else None
+    if plan.ttg_pool_empty and b_tier is not None:
+        lines.append(
+            "⚠️ ttg 池空，B 已退化为 hhad+had 混搭（无中线腿稀释让球反向）。"
         )
     lines.append("")
 

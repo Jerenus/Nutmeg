@@ -160,6 +160,58 @@ def test_run_tiered_review_writes_artifacts(tmp_path) -> None:
     assert (run_dir / "tiered-plan-review.json").exists()
 
 
+def test_day_record_includes_version_field(tmp_path) -> None:
+    """spec §27.4 — every day record carries a version tag for grouping."""
+    _persist_snapshot(tmp_path)
+    review = build_tiered_review(
+        "2026-05-26", tmp_path,
+        result_provider=_FakeResults({"周二001": {"had": "胜"}}),
+    )
+
+    history = json.loads(
+        (tmp_path / "tiered-plan-history.json").read_text(encoding="utf-8")
+    )
+    assert history, "history should contain at least one record"
+    assert all("version" in rec for rec in history), (
+        f"every record needs a version, got: {[r.get('version') for r in history]}"
+    )
+
+
+def test_day_record_includes_let_neg_one_shadow_when_snapshot_present(
+    tmp_path,
+) -> None:
+    """spec §27.6 — let-neg-one shadow field populated when snapshot exists
+    and a graded hhad leg has goal_line == -1.0 (the snapshot in this test
+    sets goalLine='-1' for every match)."""
+    _persist_snapshot(tmp_path)
+    results = {
+        "周二001": {
+            "had": "胜", "hhad": "让平", "ttg": "1球",
+            "crs": "1:0", "score": "1:0",
+        },
+        "周二002": {
+            "had": "胜", "hhad": "让平", "ttg": "1球",
+            "crs": "1:0", "score": "1:0",
+        },
+        "周二003": {
+            "had": "胜", "hhad": "让胜", "ttg": "2球",
+            "crs": "2:0", "score": "2:0",
+        },
+    }
+    build_tiered_review(
+        "2026-05-26", tmp_path, result_provider=_FakeResults(results),
+    )
+
+    history = json.loads(
+        (tmp_path / "tiered-plan-history.json").read_text(encoding="utf-8")
+    )
+    rec = history[0]
+    # by_hhad_actual_let_neg_one is the shadow field — schema-level presence test
+    assert "by_hhad_actual_let_neg_one" in rec, (
+        "spec §27.6 field missing from day record when snapshot was available"
+    )
+
+
 def test_build_tiered_review_history_idempotent(tmp_path) -> None:
     _persist_snapshot(tmp_path)
     provider = _FakeResults({"周二001": {"had": "胜"}})

@@ -541,6 +541,7 @@ def jczq_tiered(
         persist_sporttery_snapshot,
     )
     from nutmeg.services.jczq_tiered import (
+        compute_d_poisson_edge_index,
         render_tiered_plan,
         select_tiered_plan,
     )
@@ -582,11 +583,14 @@ def jczq_tiered(
         value or {}, run_date=target_date, bold_odds=bold_odds
     )
     history = load_cross_version_history_dict(output_dir)
+    # spec §27.1 — compute direct Poisson edges once per day for D filtering.
+    poisson_edge_index = compute_d_poisson_edge_index(matches)
     plan = select_tiered_plan(
         matches,
         history=history,
         multiplier=stake_multiplier,
         run_date=target_date,
+        poisson_edge_index=poisson_edge_index,
     )
     rendered = render_tiered_plan(plan)
 

@@ -737,3 +737,131 @@ D_SINGLE_RECOMMEND_MAX_ODDS_CALM    = 180.0
 - 不动信号层 / boldness / chaos
 - 不改 launchd 频率
 - 不引入"每天 shadow 看一下假如允许 hhad 反面通道 A 会选什么"的追踪（next iteration backlog）
+
+---
+
+## §27 v2.3 — 5/27 复盘后增量（2026-05-28 落地）
+
+### §27.0 背景
+
+5/27 是 v2.2 落地后首个完整 loop 复盘。三个版本全军覆没：
+
+- **v2.2 自动票（launchd 12:00 派发）**：B 3 串 @71.40 全 hhad+had / D 3 串 @129.03。
+  已结算 3 场，**腿 0/3 命中**、B+D 两张整票已死。
+- **Claude finalize**（debate 立场）：B 3 串 @18.62 / D 3 串 @62.77。已结算 1/2 graded
+  腿命中（003 让负 ✅），B 也已死，D 全待定。
+- **GPT 立场**：A 2 串 @3.19 全 hhad 让负预启用 §25.4 → 0/2 全错；B/D 待定、E 已死。
+
+诊断（见 [[2026-05-28]] / [[jczq-5-25-retro-debate]]）：
+
+1. **v2.2 D 选了 002 让胜（GPT direct Poisson edge = -22%）** — D 候选层完全没有
+   Poisson edge 检查；contrarian 选腿本来就容易选低 edge 腿
+2. **003 强胆主胜 1.30，v2.2 B 选 hhad 让平@3.30（boldness 0.35）而非让负@2.93** —
+   按 boldness 排序选了更"大胆"的让平；但 0:1 客胜 → 让负命中。Claude finalize 选的是
+   让负（命中）
+3. **ttg 池空时 B 退化到 had 5.40 单点冷腿** — 5/27 没有 ttg 候选，v2.2 §26.2 ttg-min
+   约束自动 disabled 优雅降级。退化的 B 是结构性隐患
+4. **review 累计混算了 v2/v2.1/v2.2 三个版本的腿命中率** — 迭代分析时混淆基线
+5. **001/002 都是 1:0 → hhad 让平**：让球 -1 + 主队最小胜的 hhad 标准结果，
+   三个版本都没押让平。需要 14d 追踪才能判断是否结构性
+
+§27 五条规则：硬证据驱动 + 渲染层补足 + 数据卫生 + shadow 追踪，**不**改 §17-§26
+任何既有条款（与之并存）。
+
+---
+
+### §27.1 方向 1 · D 候选直 Poisson edge 硬过滤
+
+**触发条件 + 行为**：
+
+- 新常量 `D_LEG_EDGE_HARD_FLOOR = -0.15`
+- 新公开函数 `compute_d_poisson_edge_index(matches, dc_rho=0.0)` 返回 dict
+  `(match_no, market, pick_label) -> edge`
+- `select_tiered_plan(..., poisson_edge_index=...)` 新增可选参数，None 时维持
+  v2.2 行为（向后兼容）
+- `pick_contra_tier(..., poisson_edge_index=...)` 在候选过滤阶段剔除 edge ≤
+  `D_LEG_EDGE_HARD_FLOOR` 的腿
+- 实现策略：**raw** Poisson edge（不带 R25/F2/F3 偏差），mirror GPT 的 direct check
+- CLI 层（`nutmeg jczq-tiered`）在 fetch matches 后调用一次，传入 select_tiered_plan
+
+**默认常量**：
+```
+D_LEG_EDGE_HARD_FLOOR = -0.15
+```
+
+---
+
+### §27.2 方向 2 · 强胆场 hhad 让球反方向优先
+
+**触发条件 + 行为**：
+
+- 新常量 `STRONG_FAV_HAD_THRESHOLD = 1.50`
+- 新内部函数 `_strong_fav_reverse_hhad(matches)` 返回 dict
+  `match_no -> "让负"|"让胜"` for strong-fav 场（main fav 是主队 → 让负反向；
+  main fav 是客队 → 让胜反向；平局 fav 罕见跳过）
+- `pick_main_tier` sort key 升级：在 §26.2 排序的基础上，hhad 候选里
+  "强胆场反方向 pick" 优先级 > 其它 hhad pick
+- 不动 D 档（D 是 contrarian、思路本就反向）
+
+**5/27 验证**：003 had 1.30 主胜场 → 反向 = 让负。v2.2 自动 B 选了 hhad 让平（错），
+Claude finalize 选了 hhad 让负（命中）。§27.2 落地后 v2.2 自动 B 在 003 上会自动
+选让负。
+
+---
+
+### §27.3 方向 3 · ttg 池空 + B 出票时的渲染层警示
+
+**触发条件 + 行为**：
+
+- `TieredPlan` 新增字段 `ttg_pool_empty: bool` (default False)
+- `select_tiered_plan` 计算 `ttg_pool_empty = not any(lg.market == "ttg" for lg in pool)`
+- `render_tiered_plan` 在顶部公示区加：当 `ttg_pool_empty AND b_tier is not None` →
+  `⚠️ ttg 池空，B 已退化为 hhad+had 混搭（无中线腿稀释让球反向）`
+- 不动选腿逻辑、不动 §26.2 ttg-min 约束 disabled 的优雅降级行为
+
+---
+
+### §27.4 方向 4 · review 累计 by_version 分组
+
+**触发条件 + 行为**：
+
+- `TieredPlan` 新增字段 `version: str` (default "v2.3")
+- `_load_saved_markdown_plan` 把 version 设为 "v2.x"（派发时引擎版本未知）
+- `_day_record` 把 `plan.version` 写入 day record
+- `_cumulative` 新增 `by_version` 字段：`{version: {tier_code: {tickets, leg_hits, ...}}}`
+- `render_tiered_review` 当 history 含 ≥2 个版本时，加"按引擎版本分组"块
+- 老 history 记录缺 version → 自动归到 "v2.x"（degrade gracefully）
+
+---
+
+### §27.5 方向 5 · 让 -1 盘面 hhad 让平 shadow 字段
+
+**触发条件 + 行为**（仅累计、不用于决策）：
+
+- `_day_record` 新增字段 `by_hhad_actual_let_neg_one: dict[str, int]`，counts
+  actual hhad direction restricted to graded legs whose match has `hhad_line == -1.0`
+- 数据来源：`_try_load_match_hhad_lines(run_date, output_dir)` 从 sporttery
+  snapshot 复用 `bold_matches_from_sporttery` 拿 hhad_line 映射
+- 当 snapshot 缺失（历史回填）→ 跳过 shadow 字段（不写到 day record）
+- 14 天后人工分析：让 -1 盘面下 hhad 让平 实际命中率 → 决定是否启用"让 -1 让平
+  通道" backlog
+
+---
+
+### §27.6 验收标准
+
+- 5/26 数据 markdown 还原后复盘：B 仍展示原 3 串 @59.42 hhad（不被新规则改写）
+- 5/27 数据 replay（v2.3 规则）：D 候选层会拒掉 002 让胜（edge -22%），B 在 003
+  上会选让负而非让平
+- 全量 `pytest` 绿；新增 ≥6 测试覆盖 §27.1 + §27.2 + §27.3 + §27.6
+- `nutmeg jczq-tiered` live 跑 5/28 盘面验证：D 票面不再含 edge < -15% 的腿
+- review markdown 展示 by_version 块（已含 v2.x + v2.3 ≥2 个版本时）
+
+### §27.7 不在 v2.3 范围内
+
+- 不动 §25.4 候选「hhad 让球反面通道」（仍守"等 10+ 天追踪"纪律；GPT 5/27 A 失手
+  也支撑了这个纪律）
+- 不动信号层 / boldness / chaos
+- 不引入 Poisson 主信号回归（§27.1 只是把 Poisson edge 作过滤层，不是当选腿主信号）
+- 不改 launchd 频率
+- 不删 v1 generator（v2.2 §26.5 已加 banner）
