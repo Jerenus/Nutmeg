@@ -348,10 +348,9 @@ def _grade_legs(
     graded: list[dict[str, Any]] = []
     for plan in plans:
         for leg in plan.get("legs") or []:
-            actual = (results.get(leg.get("match_no") or "") or {}).get(leg.get("pool") or "")
-            actual_odds = (results.get(leg.get("match_no") or "") or {}).get(
-                f"{leg.get('pool')}_odds"
-            )
+            result_row = results.get(leg.get("match_no") or "") or {}
+            actual = result_row.get(leg.get("pool") or "") or None
+            actual_odds = result_row.get(f"{leg.get('pool')}_odds") or None
             hit = actual == leg.get("pick") if actual is not None else None
             graded.append(
                 {

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.services.jczq_daily import JczqDailyAdvisorService
-from nutmeg.services.jczq_review import JczqDailyReviewService
+from nutmeg.services.jczq_review import JczqDailyReviewService, _grade_legs, _summarize_plans
 from nutmeg.storage.betting_plan_repository import DuckDbBettingPlanRepository
 from nutmeg.storage.bootstrap import create_analytics_schema
 from tests.test_jczq_daily_service import FakeProvider, FakeSender
@@ -139,6 +139,32 @@ class FakeIterationResultProvider:
                 "crs_odds": "6.75",
             },
         }
+
+
+def test_grade_legs_treats_blank_result_as_pending() -> None:
+    plans = [
+        {
+            "kind": "stable_base",
+            "name": "稳健底仓A",
+            "total_odds": 1.91,
+            "legs": [
+                {
+                    "match_no": "周二007",
+                    "pool": "had",
+                    "pick": "胜",
+                    "odds": 1.91,
+                }
+            ],
+        }
+    ]
+
+    graded = _grade_legs(plans, {"周二007": {"had": ""}})
+    summary = _summarize_plans(plans, graded)[0]
+
+    assert graded[0]["actual"] is None
+    assert graded[0]["hit"] is None
+    assert summary["pending"] == 1
+    assert summary["misses"] == 0
 
 
 def _seed_user_revision_hafu_pattern(tmp_path: Path) -> None:
