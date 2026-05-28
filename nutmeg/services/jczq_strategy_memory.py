@@ -39,6 +39,16 @@ RECENT_PLAN_RESULTS_LIMIT = 60
 # on goal totals (ttg/crs); had/hhad/hafu unaffected.
 POISSON_LEAGUE_BIAS_MIN_SAMPLES = 5
 POISSON_LEAGUE_BIAS_DELTA = -0.10
+# §28.1 (5/28): R25 双向化 — leagues whose ttg/crs residual is *negative*
+# (actual goals < model expectation by ≥ NEG_THRESHOLD) get a positive bias
+# applied to ttg/crs Poisson edges. Northern-Europe leagues (挪超 -0.31 / 芬超
+# -0.96 / over 5+ samples each) consistently under-shoot Poisson goal totals
+# — the engine should compensate by boosting low-goal alpha edges, not just
+# leave them at raw value. Smaller magnitude than the negative-side delta
+# (+0.05 vs -0.10) because over-shoot detection is the more-established
+# direction (法甲 5/13 case) while under-shoot is freshly observed.
+POISSON_LEAGUE_BIAS_NEG_THRESHOLD = -0.30
+POISSON_LEAGUE_BIAS_NEG_DELTA = +0.05
 # F2 (5/14): empirical alpha decay — for picks where Poisson model systematically
 # over-prices the probability (e.g., crs 0:0 实测 6.25% vs implied ~10%), apply
 # a multiplicative decay to the Poisson edge so the alpha tickets get correctly
@@ -441,16 +451,25 @@ def compute_league_residual_bias(
     pools: tuple[str, ...] = ("ttg", "crs"),
     min_samples: int = POISSON_LEAGUE_BIAS_MIN_SAMPLES,
     delta: float = POISSON_LEAGUE_BIAS_DELTA,
+    neg_threshold: float = POISSON_LEAGUE_BIAS_NEG_THRESHOLD,
+    neg_delta: float = POISSON_LEAGUE_BIAS_NEG_DELTA,
 ) -> dict[str, float]:
-    """R25: per-league negative edge shift for systematic goal under-estimate.
+    """R25 (+§28.1 bidirectional): per-league ttg/crs Poisson edge shift.
 
-    A league qualifies when its ttg/crs Poisson residuals show:
+    A league qualifies for a *negative* shift (suppress over-priced low-goal
+    alpha) when residuals show:
       - sample_count >= min_samples
-      - average goal_residual > 0 (actual goals consistently above expected)
+      - average goal_residual > 0 (model under-prices goals; actual > expected)
 
-    Returns `{league: delta}` (delta is negative); an empty dict means no
-    league currently qualifies. Generator should apply the shift to ttg/crs
-    Poisson edges only — had/hhad/hafu have their own pricing.
+    A league qualifies for a *positive* shift (boost legitimate low-goal alpha)
+    when residuals show:
+      - sample_count >= min_samples
+      - average goal_residual <= neg_threshold (model over-prices goals;
+        actual << expected — observed first on 挪超/芬超 5/28)
+
+    Returns `{league: delta}` (negative or positive depending on direction).
+    Generator applies the shift to ttg/crs Poisson edges only — had/hhad/hafu
+    have their own pricing.
     """
 
     samples = memory.get("poisson_residuals") or []
@@ -473,6 +492,8 @@ def compute_league_residual_bias(
         avg = sum(residuals) / len(residuals)
         if avg > 0:
             out[league] = delta
+        elif avg <= neg_threshold:
+            out[league] = neg_delta
     return out
 
 

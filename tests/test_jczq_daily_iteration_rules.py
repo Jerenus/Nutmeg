@@ -2245,6 +2245,50 @@ def test_r25_compute_league_residual_bias_returns_negative_when_underestimate_sy
     )
 
 
+def test_r25_neg_bias_when_residual_below_threshold_systematic() -> None:
+    """§28.1: ≥5 联赛 ttg/crs 样本平均残差 ≤ -0.30 → bias = +0.05（反向校准）。
+
+    挪超/芬超等"模型高估进球"联赛的真实场景：实际进球 < Poisson 预测 →
+    低球 alpha 应被加强，不是衰减。"""
+    from nutmeg.services.jczq_strategy_memory import (
+        POISSON_LEAGUE_BIAS_NEG_DELTA,
+        compute_league_residual_bias,
+    )
+
+    memory = {
+        "poisson_residuals": [
+            {"date": f"2026-05-{i:02d}", "league": "芬超",
+             "pool": "ttg", "pick": "3球", "expected_goals": 3.0,
+             "realized_goals": 1, "goal_residual": -1.0, "hit": False}
+            for i in range(1, 6)  # 5 samples, avg -1.0
+        ]
+    }
+    bias = compute_league_residual_bias(memory)
+    assert bias.get("芬超") == POISSON_LEAGUE_BIAS_NEG_DELTA, (
+        f"§28.1: 芬超 5 个 ttg 样本平均残差 -1.0 ≤ -0.30 应触发 "
+        f"bias = +{POISSON_LEAGUE_BIAS_NEG_DELTA}，返回 {bias}"
+    )
+
+
+def test_r25_no_bias_when_residual_between_zero_and_neg_threshold() -> None:
+    """§28.1: avg residual ∈ (-0.30, 0] → 不触发（中性区间，避免噪声驱动 bias）。"""
+    from nutmeg.services.jczq_strategy_memory import compute_league_residual_bias
+
+    memory = {
+        "poisson_residuals": [
+            {"date": f"2026-05-{i:02d}", "league": "德甲",
+             "pool": "ttg", "pick": "2球", "expected_goals": 2.5,
+             "realized_goals": 2, "goal_residual": -0.20, "hit": False}
+            for i in range(1, 6)  # avg -0.20 (between threshold and 0)
+        ]
+    }
+    bias = compute_league_residual_bias(memory)
+    assert "德甲" not in bias, (
+        f"§28.1: 德甲 5 个样本平均残差 -0.20 在中性区间，不应触发 bias，"
+        f"返回 {bias}"
+    )
+
+
 def test_r25_no_bias_when_samples_below_threshold() -> None:
     """R25: 样本数低于阈值（默认 5）→ 不返 bias。"""
     from nutmeg.services.jczq_strategy_memory import compute_league_residual_bias

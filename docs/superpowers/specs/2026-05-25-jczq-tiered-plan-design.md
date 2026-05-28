@@ -865,3 +865,66 @@ Claude finalize 选了 hhad 让负（命中）。§27.2 落地后 v2.2 自动 B 
 - 不引入 Poisson 主信号回归（§27.1 只是把 Poisson edge 作过滤层，不是当选腿主信号）
 - 不改 launchd 频率
 - 不删 v1 generator（v2.2 §26.5 已加 banner）
+
+---
+
+## §28 v2.4 — R25 双向化（2026-05-28 落地）
+
+### §28.0 背景
+
+5/27 复盘后用户提出对瑞超/挪超/芬超做联赛级校准。调研发现的反直觉数据
+（`.nutmeg-data/jczq/memory/strategy-memory.json` 200 条 Poisson residuals）：
+
+| 联赛 | ttg n | ttg avg residual | 解释 |
+|---|---|---|---|
+| 瑞超 | 4 | +0.40 | 实际进球 > 预期（符合"北欧高进球"直觉，待 5 样本） |
+| 挪超 | 8 | **-0.31** | 实际进球 < 预期（模型**高估**进球） |
+| 芬超 | 5 | **-0.96** | 实际进球远低于预期（严重高估） |
+
+诊断：大众认知"北欧高进球"已经被 Poisson 模型**过度 calibrate** —— 从 had odds
+反推 lambda 时把"北欧高进球先验"放进去，导致预测进球数本身偏高、实际反而偏低。
+
+**R25 原版的盲点**：单向（只触发 `avg > 0 → -0.10` 衰减低球 alpha）。挪超 n=8
+avg=-0.31、芬超 n=5 avg=-0.96 都达到样本门槛但触发不了任何 bias —— 模型高估
+进球的联赛缺补偿机制。
+
+### §28.1 R25 双向化
+
+**触发条件 + 行为**：
+
+- 保留原 R25 单向逻辑：`avg residual > 0 AND n ≥ 5 → delta = -0.10`（衰减低球
+  alpha for 模型低估进球的联赛）
+- 新增反向：`avg residual ≤ POISSON_LEAGUE_BIAS_NEG_THRESHOLD AND n ≥ 5 → delta
+  = +POISSON_LEAGUE_BIAS_NEG_DELTA`（加强低球 alpha for 模型高估进球的联赛）
+- 中性区间 `avg ∈ (-0.30, 0]` 不触发任何 bias（避免噪声驱动）
+- 仅作用 ttg/crs 池；had/hhad/hafu 不受影响（同 R25 原版）
+
+**默认常量**：
+```
+POISSON_LEAGUE_BIAS_MIN_SAMPLES = 5    # 原值
+POISSON_LEAGUE_BIAS_DELTA       = -0.10 # 原值（model under-prices goals）
+POISSON_LEAGUE_BIAS_NEG_THRESHOLD = -0.30  # 新增
+POISSON_LEAGUE_BIAS_NEG_DELTA   = +0.05    # 新增（更温和，因新方向证据较弱）
+```
+
+**5/28 实测触发结果**（200 条 residual 样本上）：
+- 负 delta（衰减低球）：解放者杯 / 意甲 / 德甲 / 西甲 / **瑞超**
+- 正 delta（加强低球）：**芬超 / 挪超** + 惊喜两项 **日职 / 法甲**
+
+**法甲反转的意义**：5/13 R25 当时是 `-0.10`（low估进球），数据更新后转为 `+0.05`
+（高估进球）—— 验证了 R25 设计为 **rolling** 而非一次性的优势。
+
+### §28.2 验收标准
+
+- 现有 R25 单向测试（≥4 条）继续绿
+- 新增 ≥2 测试覆盖反向触发 + 中性区间不触发
+- 真实 strategy-memory.json 数据上跑出至少 1 个反向 delta 联赛（实际跑出 4 个）
+- compute_poisson_edges 调用方（jczq_brief / jczq_daily）无需改动 — 双向 delta
+  天然兼容现有 `edge = edge + bias_map[league]` 加法语义
+
+### §28.3 不在 v2.4 范围内
+
+- 不动 had/hhad/hafu 联赛级偏差（独立 v2.5 backlog）
+- 不加 hardcoded 联赛 prior（纯数据驱动，瑞超 n=4 等 1 个样本就会自动触发）
+- 不引入 league-pair 交互（pool×league 的更细粒度 bias）
+- 不动 hi-vol 联赛清单（HIGH_VOL_LEAGUE_OVERRIDE）
