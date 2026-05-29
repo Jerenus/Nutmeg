@@ -928,3 +928,81 @@ POISSON_LEAGUE_BIAS_NEG_DELTA   = +0.05    # 新增（更温和，因新方向�
 - 不加 hardcoded 联赛 prior（纯数据驱动，瑞超 n=4 等 1 个样本就会自动触发）
 - 不引入 league-pair 交互（pool×league 的更细粒度 bias）
 - 不动 hi-vol 联赛清单（HIGH_VOL_LEAGUE_OVERRIDE）
+
+---
+
+## §29 v2.5 — A 档 gap-guard「欧赔同认热门」豁免（2026-05-29 落地）
+
+### §29.0 背景
+
+5/28 是一个**满盘热门兑现日**：5 场全是主胜热门，已赛 4 场全部主胜
+（001 1:0 / 002 2:0 / 003 2:0 / 004 4:1，005 强胆主胜待定）。但 tiered 引擎
+**A/B/D 三档全空票**，只出了 E 极限娱乐（反着打黑马让球）2/4。引擎在全年
+对底仓最友好的一天，反而只出了反热门的娱乐票。
+
+诊断（`.nutmeg-data/jczq/daily/2026-05-28` 真实盘面重放，见
+[[jczq_5_29_v2_5_landed]]）—— **§17.1 anchor gap-guard 把 5 场里 4 场真热门
+误杀**：
+
+| 场 | 体彩主胜 | 体彩 implied | 欧赔 fair | gap (体彩−欧赔) | gap-guard | 赛果 |
+|---|---|---|---|---|---|---|
+| 001 | 1.51 | 0.662 | 0.570 | **+0.092** | ❌ 误杀 | 1:0 主胜 ✅ |
+| 002 | 2.10 | 0.476 | 0.399 | +0.077 | 保留 | 2:0 主胜 ✅ |
+| 003 | 1.52 | 0.658 | 0.572 | **+0.086** | ❌ 误杀 | 2:0 主胜 ✅ |
+| 004 | 1.13 | 0.885 | 0.750 | +0.135 | ❌ 误杀 | 4:1 主胜 ✅ |
+| 005 | 1.27 | 0.787 | 0.654 | +0.133 | ❌ 误杀 | 强胆待定 |
+
+被误杀的 4 场**全部主胜兑现**。A 档候选只剩 002 一条 → 无法组 2-3 串 →
+A=None；B/D 池只有 hhad+crs（had 全被挤出、ttg 池空）→ 也空。
+
+**问题本质**：`_favourite_had_leg` 的 §17.1 gap-guard 在
+`体彩 implied − 欧赔 fair ≥ ANCHOR_GAP_THRESHOLD (0.08)` 时丢热门，本意是抓
+"体彩凭空造热门、欧赔不认"的**分歧盘**。但对**短赔真热门**，体彩在短赔上的
+抽水 + 主队溢价天然就 >8pp —— 这是结构性 margin，不是分歧。结果 gap-guard
+把 A 档赖以生存的真热门系统性清空。gap-guard 对中赔（1.7-2.5）"公众造的假
+热门"仍有效，但对短赔 sharp-confirmed 热门是误杀。
+
+### §29.1 A 档 gap-guard 欧赔同认热门豁免
+
+**触发条件 + 行为**：
+
+- 在 `_favourite_had_leg` 的 gap-guard 命中分支里加豁免：当
+  `gap ≥ ANCHOR_GAP_THRESHOLD` 时，若**欧赔也认这是明确热门**
+  （`fair ≥ EURO_CONFIRM_FAVOURITE_PROB`，默认 0.55，即欧赔 ≤ ~1.82）**且**
+  体彩溢价不离谱（`gap < EURO_CONFIRM_MAX_GAP`，默认 0.20）→ **保留腿**
+  （sharp-confirmed，gap 是短赔 margin 非分歧）
+- 否则维持原 §17.1 行为：丢腿
+- 仅作用 A 档 had 腿（`_favourite_had_leg` 只被 `pick_anchor_tier` 调用）；
+  B/D/E 走 `v2_candidate_pool` 不受影响
+- 欧赔快照缺失（`fair` 为 None / 0.0）→ 整体跳过 gap-guard（同 §17.1 既有
+  行为，不变）
+
+**默认常量**：
+```
+EURO_CONFIRM_FAVOURITE_PROB = 0.55   # 欧赔认热门概率门槛
+EURO_CONFIRM_MAX_GAP        = 0.20   # 体彩溢价上限（超过仍视为陷阱）
+```
+
+**gap-guard 三类行为（落地后）**：
+- 中赔热门（fair < 0.55）+ gap ≥ 0.08 → **仍丢**（公众造假热门，§17.1 原意）
+- 任意热门 + gap ≥ 0.20 → **仍丢**（体彩真造大陷阱）
+- sharp-confirmed 短赔热门（fair ≥ 0.55 且 gap ∈ [0.08, 0.20)）→ **保留**（新）
+
+### §29.2 验收标准
+
+- 5/28 数据重放（live 规则）：A 档恢复出票 = 3 串主胜
+  `001胜@1.51 × 003胜@1.52 × 002胜@2.10` @4.82（落 [2.5, 5.5] cap）；
+  首推 = A；B/D/E 仍 None（满盘热门日不出反热门票，正确）
+- 三条 gap-guard 行为各有测试覆盖（保留 sharp-confirmed / 仍丢中赔假热门 /
+  仍丢离谱溢价 / 无欧赔跳过）
+- 全量 `pytest` 绿；新增 ≥5 测试
+
+### §29.3 不在 v2.5 范围内
+
+- 不动 B/D/E 的 `v2_candidate_pool` 路径（had 被挤出是 boldness 排序结果，
+  满盘热门日 B/D 不出反热门票本身合理）
+- 不动 §17.1 ANCHOR_GAP_THRESHOLD (0.08) 本身、不动中赔区间行为
+- 不动 A 档 §25.1 per-fold cap (4.0/5.5) 与 has_real_favourite 门槛
+- 不动 hhad cover swap（短赔 ≤1.50 仍走 §3.3 让球 cover；004/005 不在最低 3
+  腿组合里，未受影响）
+- 不动信号层 / boldness / chaos

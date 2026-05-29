@@ -333,6 +333,16 @@ ANCHOR_REQUIRE_HOT_THRESHOLD: float = 1.65
 A_3FOLD_TOTAL_ODDS_HARD_CAP: float = 5.5
 A_2FOLD_TOTAL_ODDS_HARD_CAP: float = 4.0
 
+# spec §29.1 — A 档 gap-guard「欧赔同认热门」豁免。§17.1 的 anchor gap-guard
+# 在体彩 implied − 欧赔 fair ≥ ANCHOR_GAP_THRESHOLD (0.08) 时丢掉热门，本意是
+# 抓"体彩凭空造热门、欧赔不认"的分歧盘。但短赔真热门上，体彩的抽水 + 主队
+# 溢价天然 >8pp（结构性 margin，非分歧）—— 5/28 把 4/5 场真热门误杀（001/003/
+# 004/005 赛果全主胜兑现），A 档在最友好的满盘热门日反而空票。豁免条件：欧赔
+# 也认这是明确热门（fair ≥ EURO_CONFIRM_FAVOURITE_PROB）且体彩溢价不离谱
+# （gap < EURO_CONFIRM_MAX_GAP，防体彩真造大陷阱）。仅作用 A 档 had 腿。
+EURO_CONFIRM_FAVOURITE_PROB: float = 0.55
+EURO_CONFIRM_MAX_GAP: float = 0.20
+
 # 2026-05-26 review gate — prevent B/D from collapsing into the same all-hhad
 # longshot structure that missed on 2026-05-25.
 MAIN_HHAD_HIGH_ODDS_CUTOFF: float = 5.0
@@ -438,7 +448,17 @@ def _favourite_had_leg(match: BoldMatch) -> Optional[tuple[BoldLeg, str]]:
     if fair is not None and fair > 0.0:
         gap = (1.0 / fav_odds) - fair
         if gap >= ANCHOR_GAP_THRESHOLD:
-            return None
+            # spec §29.1 — sharp-confirmation exemption: when the European
+            # market also rates this a clear favourite (fair ≥ threshold) and
+            # the 体彩 premium is not absurd (gap < ceiling), the gap is
+            # structural margin on a short price, not a public-invented
+            # mirage — keep the leg so A can anchor genuine chalk days.
+            sharp_confirmed = (
+                fair >= EURO_CONFIRM_FAVOURITE_PROB
+                and gap < EURO_CONFIRM_MAX_GAP
+            )
+            if not sharp_confirmed:
+                return None
     leg = BoldLeg(
         match_no=match.match_no, league=match.league,
         home=match.home, away=match.away,
