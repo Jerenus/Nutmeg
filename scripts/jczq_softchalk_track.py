@@ -38,6 +38,8 @@ DEFAULT_OUT = ".nutmeg-data/jczq/softchalk-track.json"
 
 SOFT_LO = 1.50   # exclusive lower (≤1.50 = 硬热)
 SOFT_HI = 2.10   # inclusive upper (>2.10 = coinflip/开放)
+GAP_DRAW_MIN = 3.8  # §31 archetype: 平赔 ≥ 此值=市场认可的真实力差
+GAP_UND_MIN = 3.8   # §31 archetype: 冷赔 ≥ 此值=市场认可的真实力差
 MIN_SAMPLES = 30  # §30 纪律：样本够了才下结论
 
 
@@ -110,15 +112,36 @@ def build_samples(daily_dir: str) -> list[dict]:
             reverse_odds = und_odds if reverse_side == und_side else draw_o
             hit = (actual == reverse_side)
             ret = (reverse_odds - 1.0) if hit else -1.0
+            # §31 archetype（赔率结构代理，非真实力评估，仅读盘参考）：
+            # genuine_gap 实力差硬：平赔+冷赔都高→市场认可大实力差，正路含金高
+            # money_soft 资金假热：平/冷赔偏低→中游互拼被做热，正路脆、易平
+            archetype = ("genuine_gap"
+                         if draw_o >= GAP_DRAW_MIN and und_odds >= GAP_UND_MIN
+                         else "money_soft")
             rows.append({
                 "date": date, "match_no": mno,
                 "fav_side": fav_side, "fav_odds": round(fav_odds, 2),
                 "reverse_side": reverse_side, "reverse_odds": round(reverse_odds, 2),
                 "actual": actual, "hit": hit, "unit_return": round(ret, 3),
-                # 对照：若跟随正路热门的结果
+                "archetype": archetype,
                 "fav_hit": (actual == fav_side),
             })
     return rows
+
+
+def by_archetype(rows: list[dict]) -> dict:
+    """§31 读盘参考：按 archetype 看软热正路兑现率/平率（非 ROI 裁决）。"""
+    out: dict = {}
+    for r in rows:
+        a = r.get("archetype", "?")
+        d = out.setdefault(a, {"n": 0, "fav_hits": 0, "draws": 0})
+        d["n"] += 1
+        d["fav_hits"] += int(r["fav_hit"])
+        d["draws"] += int(r["actual"] == "平")
+    for d in out.values():
+        d["fav_hit_rate"] = round(d["fav_hits"] / d["n"], 3) if d["n"] else 0.0
+        d["draw_rate"] = round(d["draws"] / d["n"], 3) if d["n"] else 0.0
+    return out
 
 
 def summarize(rows: list[dict]) -> dict:
@@ -137,6 +160,7 @@ def summarize(rows: list[dict]) -> dict:
         "reverse_roi_per_unit": round(rev_roi, 3),
         "favourite_hit_rate": round(fav_hits / n, 3),
         "favourite_roi_per_unit": round(fav_roi, 3),
+        "by_archetype": by_archetype(rows),
         "verdict": ("样本不足(<%d)，仅积累、勿决策" % MIN_SAMPLES) if n < MIN_SAMPLES
                    else ("软热反面有正回报溢价" if rev_roi > 0 and rev_roi > fav_roi
                          else "软热反面未显出优势"),
