@@ -1,5 +1,16 @@
 # JCZQ Daily 决策框架
 
+> ## ⚠️ LEGACY — 退役 Poisson generator 的设计文档（2026-06-04 标记，spec §33）
+>
+> **本文档描述的是已退役的 Poisson generator 引擎**（R1-R28 / A-J / F1-F4，由
+> `jczq-daily-advisor` / `jczq-daily-brief` / `jczq-mixed-report` 产出）。
+>
+> **live 引擎是 `jczq-tiered`，选腿规则见 `docs/superpowers/specs/2026-05-25-jczq-tiered-plan-design.md` §25-§31。**
+> **每日决策唯一入口是 `nutmeg jczq-today`**（spec §32，内含钉死指令）。
+>
+> 本文档**仅作历史参考**——R1-R28 那套规则 live 引擎一概不用。背景见
+> `docs/jczq-decision-chain-critique.md`。请勿据本文档做每日决策或让 agent 套用 Rule A-J。
+
 ## 关于本文档
 
 > Nutmeg 项目内部技术文档。描述了基于 Poisson 模型的中国体彩竞彩足球

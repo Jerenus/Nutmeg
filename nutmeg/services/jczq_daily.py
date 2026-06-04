@@ -1,3 +1,11 @@
+"""⚠️ DEPRECATED（退役 Poisson generator · 2026-06-04 标记 · spec §33）。
+
+本模块是 v1 generator 引擎（R1-R28 / A-J 选腿逻辑的家）。**live 引擎是 jczq_tiered，
+每日决策唯一入口是 `nutmeg jczq-today`（spec §32）。** 本模块仅供退役命令
+（jczq-daily-advisor / -brief / -review / -replay）与历史参考；勿用于每日决策。
+背景见 docs/jczq-decision-chain-critique.md。
+"""
+
 from __future__ import annotations
 
 import json

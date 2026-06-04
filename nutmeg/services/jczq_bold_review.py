@@ -496,7 +496,7 @@ def run_bold_review(
     artifacts under ``daily/<run_date>/``. Telegram dispatch is the CLI's job.
     """
     if result_provider is None:
-        from nutmeg.services.jczq_review import OkoooJczqResultProvider
+        from nutmeg.services.jczq_results import OkoooJczqResultProvider
 
         result_provider = OkoooJczqResultProvider()
 

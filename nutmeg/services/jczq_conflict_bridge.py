@@ -21,9 +21,8 @@ import logging
 from pathlib import Path
 
 from nutmeg.data.european_odds import CrossCheckSignal
-from nutmeg.domain.jczq_daily import JczqDailyMatch
+from nutmeg.domain.jczq_daily import JczqDailyMatch, matches_from_context
 from nutmeg.services.jczq_conflict_store import ConflictStore
-from nutmeg.services.jczq_daily import _report_from_dict
 from nutmeg.services.jczq_value_bridge import JczqValueReport
 
 logger = logging.getLogger(__name__)
@@ -86,7 +85,7 @@ def _matches_from_context(output_dir: Path, run_date: str) -> list[JczqDailyMatc
         ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
         return []
-    return list(_report_from_dict(ctx).matches)
+    return matches_from_context(ctx)
 
 
 def record_conflict_signals(

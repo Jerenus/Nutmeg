@@ -64,10 +64,11 @@ def jczq_mixed_report(
 
 
 _V1_DEPRECATION_BANNER = (
-    "⚠️  jczq-daily-advisor (v1 Poisson generator) is DEPRECATED as of 2026-05-27.\n"
-    "    5/25 retro showed v1 still ships tickets on no-open matches (e.g. 005 弗拉门戈).\n"
-    "    Use `nutmeg jczq-tiered` for the daily 4-tier A/B/D/E plan and\n"
-    "    `nutmeg jczq-tiered-review` for the next-morning grading.\n"
+    "⚠️  v1 Poisson generator (jczq-daily-advisor / -brief / -mixed-report) is "
+    "DEPRECATED.\n"
+    "    每日决策唯一入口 = `nutmeg jczq-today`（spec §32，单一决策包 + 钉死指令）。\n"
+    "    底层 live 引擎是 jczq-tiered；次晨复盘用 jczq-tiered-review。\n"
+    "    本命令仅作历史参考，勿用于每日决策（背景见 docs/jczq-decision-chain-critique.md）。\n"
 )
 
 
@@ -606,6 +607,119 @@ def jczq_tiered(
         write.parent.mkdir(parents=True, exist_ok=True)
         write.write_text(rendered, encoding="utf-8")
         _cli.console.print(f"Wrote tiered plan: {write}")
+
+    if dispatch_telegram:
+        status = _dispatch_jczq_telegram(rendered, dry_run=dry_run)
+        _cli.console.print(f"Telegram dispatch: {status}")
+
+    if write is None and not dispatch_telegram:
+        _cli.typer.echo(rendered)
+
+
+@_cli.app.command("jczq-today")
+def jczq_today(
+    run_date: str | None = _cli.typer.Option(
+        None, "--date", help="目标日期 YYYY-MM-DD（live，默认今天）"
+    ),
+    replay_date: str | None = _cli.typer.Option(
+        None, "--replay", help="从已存快照回放"
+    ),
+    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
+    stake_multiplier: float = _cli.typer.Option(
+        1.0, "--stake-multiplier", help="金额缩放（1.0=¥35/35/20/10）"
+    ),
+    write: _cli.Path | None = JCZQ_DAILY_BRIEF_WRITE_OPTION,
+    dispatch_telegram: bool = _cli.typer.Option(
+        False, "--dispatch-telegram", help="把决策包推到 Telegram"
+    ),
+    dry_run: bool = _cli.typer.Option(
+        True, "--dry-run/--no-dry-run", help="dry-run 时不推送"
+    ),
+) -> None:
+    """spec §32 — 单一决策入口：tiered 票面 + 盘面底座 + 有界裁量问题。
+
+    这是 agent（GPT/Claude）跑每日 jczq 任务**唯一**该跑的命令——决策包内含钉死
+    指令，把无界即兴压成有界提问。不重造票面（§A 复用 jczq-tiered 引擎）。
+    """
+    import logging
+
+    from nutmeg.services.jczq_bold_combos import (
+        bold_matches_from_sporttery,
+        load_bold_odds_snapshot,
+        load_sporttery_snapshot,
+        persist_bold_odds_snapshot,
+        persist_sporttery_snapshot,
+    )
+    from nutmeg.services.jczq_tiered import (
+        compute_d_poisson_edge_index,
+        render_tiered_plan,
+        select_tiered_plan,
+    )
+    from nutmeg.services.jczq_tiered_review import (
+        load_cross_version_history_dict,
+    )
+    from nutmeg.services.jczq_today import render_today_packet
+
+    logger = logging.getLogger(__name__)
+    target_date = _resolve_jczq_date(replay_date or run_date)
+    replay = replay_date is not None
+
+    value: dict | None = None
+    bold_odds: dict[str, dict] = {}
+    if replay:
+        value = load_sporttery_snapshot(target_date, output_dir)
+        if value is None:
+            _cli.console.print(f"no snapshot for {target_date}")
+            raise _cli.typer.Exit(code=2)
+        bold_odds = load_bold_odds_snapshot(target_date, output_dir)
+    else:
+        from nutmeg.services.jczq import SportteryJczqCalculatorProvider
+
+        fetched = SportteryJczqCalculatorProvider().fetch()
+        value = fetched.get("value") if "value" in fetched else fetched
+        persist_sporttery_snapshot(target_date, output_dir, value)
+        try:
+            from nutmeg.data.fcom500 import Fcom500Client, collect_bold_odds
+
+            with Fcom500Client() as client:
+                bold_odds = collect_bold_odds(client)
+        except Exception:  # noqa: BLE001 — 国际 odds optional; degrade
+            logger.warning(
+                "jczq-today: 国际 odds enrichment failed", exc_info=True
+            )
+        if bold_odds:
+            persist_bold_odds_snapshot(target_date, output_dir, bold_odds)
+
+    matches = bold_matches_from_sporttery(
+        value or {}, run_date=target_date, bold_odds=bold_odds
+    )
+    history = load_cross_version_history_dict(output_dir)
+    poisson_edge_index = compute_d_poisson_edge_index(matches)
+    plan = select_tiered_plan(
+        matches,
+        history=history,
+        multiplier=stake_multiplier,
+        run_date=target_date,
+        poisson_edge_index=poisson_edge_index,
+    )
+    rendered = render_today_packet(plan, matches, poisson_edge_index)
+
+    daily_dir = output_dir / "daily" / target_date
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    # spec §26.4 / §32.1 — replay must never overwrite the dispatched packet.
+    if not replay:
+        (daily_dir / "today-packet.md").write_text(rendered, encoding="utf-8")
+        # spec §32.1 — also persist tiered-plan.md so jczq-tiered-review grades
+        # exactly the §A plan that was dispatched (§26.4). Lets jczq-today be the
+        # sole daily launchd job while next-morning review keeps working unchanged.
+        (daily_dir / "tiered-plan.md").write_text(
+            render_tiered_plan(plan), encoding="utf-8"
+        )
+
+    if write is not None:
+        write.parent.mkdir(parents=True, exist_ok=True)
+        write.write_text(rendered, encoding="utf-8")
+        _cli.console.print(f"Wrote decision packet: {write}")
 
     if dispatch_telegram:
         status = _dispatch_jczq_telegram(rendered, dry_run=dry_run)

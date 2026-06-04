@@ -116,3 +116,45 @@ class JczqDailyAdvisorReport:
             "dispatch": self.dispatch,
             "warnings": self.warnings,
         }
+
+
+# --- dict → domain 解析器（spec §33：从退役 services.jczq_daily 剥离） -----------
+# 仅 ``jczq_conflict_bridge`` 仍需从 context.json 还原 matches；保留在 domain 层，
+# 与类型同居，不依赖任何退役 generator 代码。
+
+
+def leg_from_dict(payload: dict[str, Any]) -> JczqDailyLeg:
+    return JczqDailyLeg(
+        match_no=str(payload.get("match_no") or ""),
+        league=str(payload.get("league") or ""),
+        home_team=str(payload.get("home_team") or ""),
+        away_team=str(payload.get("away_team") or ""),
+        pool=str(payload.get("pool") or ""),
+        play=str(payload.get("play") or ""),
+        pick=str(payload.get("pick") or ""),
+        odds=float(payload.get("odds") or 0),
+        logic=str(payload.get("logic") or ""),
+        goal_line=str(payload.get("goal_line") or ""),
+        odds_update=str(payload.get("odds_update") or ""),
+    )
+
+
+def match_from_dict(payload: dict[str, Any]) -> JczqDailyMatch:
+    return JczqDailyMatch(
+        match_no=str(payload.get("match_no") or ""),
+        match_date=str(payload.get("match_date") or ""),
+        match_time=str(payload.get("match_time") or ""),
+        league=str(payload.get("league") or ""),
+        home_team=str(payload.get("home_team") or ""),
+        away_team=str(payload.get("away_team") or ""),
+        status=str(payload.get("status") or ""),
+        hot_direction=str(payload.get("hot_direction") or ""),
+        role=str(payload.get("role") or ""),
+        confidence_note=str(payload.get("confidence_note") or ""),
+        candidates=[leg_from_dict(item) for item in payload.get("candidates") or []],
+    )
+
+
+def matches_from_context(payload: dict[str, Any]) -> list[JczqDailyMatch]:
+    """Reconstruct the day's matches from a stored ``context.json`` dict."""
+    return [match_from_dict(item) for item in payload.get("matches") or []]

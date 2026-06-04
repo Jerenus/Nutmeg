@@ -713,7 +713,7 @@ def build_tiered_review(
         )
 
     if result_provider is None:
-        from nutmeg.services.jczq_review import OkoooJczqResultProvider
+        from nutmeg.services.jczq_results import OkoooJczqResultProvider
         result_provider = OkoooJczqResultProvider()
     results = result_provider.fetch_results(run_date)
 

@@ -1,7 +1,12 @@
-"""每日 JCZQ brief 生成（人审 + LLM 决策上下文）。
+"""⚠️ DEPRECATED（退役 generator brief · 2026-06-04 标记 · spec §33）。
 
-把 brief 渲染逻辑从 ``scripts/jczq_daily_brief.py`` 搬过来，让它能被 CLI / 测试
-/其他服务直接调用。CLI 包装见 ``nutmeg.interfaces.cli.jczq_daily_brief``。
+每日 JCZQ brief 生成（人审 + LLM 决策上下文）——**建在 v1 generator 上**（§5 渲染
+generator 死票、§4 Poisson 带 R25/F2/F3 偏差、§6 用退役 Rule A-J 指令）。这正是
+GPT/Claude 在死路径上即兴的旧源头。
+
+**每日决策唯一入口已改为 `nutmeg jczq-today`（spec §32）**：单一决策包 = tiered 引擎
+票面 + raw Poisson +EV + 有界裁量问题 + 钉死指令。本 brief 仅供历史参考 / debate 旧流程，
+勿用于每日决策。背景见 docs/jczq-decision-chain-critique.md。
 """
 
 from __future__ import annotations

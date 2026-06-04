@@ -1181,3 +1181,66 @@ ROI 评判）：
   信号（欧赔是独立 sharp 基准），提示这场正路可能被资金灌水，值得多想反面。
 - **§28 R25 联赛进球偏差**：特定联赛进球高/低估，读 ttg/比分剧本时的 context。
 - 每个都进 softchalk-track 式的**读盘参考表**（查分布、找剧本），不做 ROI 裁决。
+
+## §32 单一决策入口 `jczq-today` —— agent 编排层系统化（2026-06-04 落地）
+
+> 背景见 `docs/jczq-decision-chain-critique.md`。根因：用户工作流是"让 agent（GPT/Claude）
+> 跑 jczq 分析组合任务"，但**没有钉死的确定性入口**——每个 agent 自行即兴挑命令/引擎/Poisson，
+> 导致 GPT 与 Claude 路径分叉（"每次跳出系统、隔离决策"）。§32 用一个入口 + 一份共读指令根治。
+
+### §32.0 目标函数按档分配（定性，驱动文案）
+- **A 稳健底仓** = 唯一可能有结构 edge 的桶，只追 §29 gap + §28 R25 两个假设；证不出就是低方差锚。
+- **B/D/E** = **明确零 edge、纯方差塑形/娱乐**。**停止给 B/D/E 套任何"正 EV/edge"叙事**
+  （§31.5 已定调：−13% 抽水里正 EV 无意义）。Poisson 地板（§27.1）保留**只作"别买明显被
+  dominated 的腿"的卫生过滤**，不作 edge 主张。
+- **整套 brief/packet** = 决策卫生 + 盘面阅读记录；过程价值 > 单日输赢。
+
+### §32.1 命令
+`nutmeg jczq-today [--date|--replay] [--stake-multiplier] [--write] [--dispatch-telegram]`
+内部复用 `jczq-tiered` 的抓盘→`select_tiered_plan`，再产出**决策包**（不重造票面）。
+落盘 `daily/<date>/today-packet.md`，**并同时写 `tiered-plan.md`**（=§A 的 `render_tiered_plan`），
+让 `jczq-tiered-review` 次晨能 grade 派发原样（§26.4），从而 jczq-today 可作唯一每日 launchd 任务。
+replay 不覆盖（守 §26.4）。
+
+**launchd 整合（2026-06-04）**：每日只留 `com.nutmeg.jczq.daily-today`（12:00 跑 jczq-today），
+复盘留 `tiered-review-8am`；卸载 daily-bold / daily-tiered / daily-review-8am / bold-review-8am。
+
+### §32.2 决策包结构（`render_today_packet`）
+1. **钉死指令头**（给任何 agent）：① 这是今天唯一决策源，别在退役 generator/旧 brief/各 spec
+   间即兴；② §A 是引擎已定票面，照单或整张不买，**勿改腿**；③ 只在 §C 裁量问题上动判断，按
+   schema 作答；④ 你与别的 agent 在某 q_id 答案不同 = 该场高不确定 → **减注/剔除**，非二选一赌运气。
+2. **§A 引擎票面**：原样嵌入 `render_tiered_plan(plan)`。
+3. **§B 盘面底座（引擎口径，无 generator 偏差）**：
+   - B1 热度分层表（引擎原生分类，见 §32.3）。
+   - B2 Poisson +EV 列表：来自 `compute_d_poisson_edge_index`（raw，无 R25/F2/F3），edge ≥ +5%。
+4. **§C 裁量问题 + 作答 schema**：见 §32.4。无触发则显式写"今日无裁量问题，照 §A 执行"。
+
+### §32.3 引擎原生热度分类（`classify_heat`，不碰 generator analytics）
+对每场取最低主胜/客胜 had（favourite）：
+- `≤ 1.50` → **硬热(短赔)**（仅赔率口径；§31.1 完整硬热还需欧赔 fair≥0.55+逻辑，packet 标"短赔"诚实降级）
+- `1.55–2.10` → **软热**
+- favourite `> 2.10` 且三方接近 → **coinflip**
+- 其余 → **普通**
+
+### §32.4 裁量问题派生（`derive_judgment_questions(plan, matches)` — 确定性、有界）
+只枚举引擎触发的真裁量点，**不让 agent 重审全盘**：
+- **Q_A_EMPTY**：`tiers[0] is None` → "今晚无稳健底仓(A=None,原因…)；接受空底仓 / 有理由强做一注？"（default=接受）
+- **Q_ALL_EMPTY**：所有 tier 为 None → "今日盘面无任一档；空仓？"（default=空仓）
+- **Q_B_DEGRADED**：`ttg_pool_empty and tiers[1] is not None` → "B 退化为 hhad/had 混搭；仍出 B？"（default=仍出）
+- **Q_SOFTHOT_<match>**：每场 favourite∈[1.55,2.10] **且出现在已出票的某档** → "<对阵> 软热@<odds>，引擎默认<pick>；§31.2 这场剧本：平 / 冷 / 还是有独立理由仍站正路？"（default=引擎默认 pick）
+作答 schema：`| q_id | 你的决定 | confidence(1-5) | 一行理由 |`
+
+### §32.5 共读指令（§33 收尾时落地，本节先建命令）
+`CLAUDE.md` + `AGENTS.md` 加同一段："被要求跑 jczq 每日分析组合时，只跑 `nutmeg jczq-today`，
+把输出当决策；不要即兴；只在 §C 按 schema 作答。"
+
+### §32.6 不在范围（本次）
+- 不动 A/B/D/E 选腿逻辑、不动 boldness/chaos、不动 §1-§31 任何选腿规则。
+- 不删退役 generator（§33 大裁剪再做归档）；本次只新增入口，不破坏现有命令。
+- 决策包是**渲染层 + 派生层**，纯确定性，无 LLM 调用。
+
+### §32.7 验收
+- `derive_judgment_questions` 单测覆盖：A 空 / 全空 / B 退化 / 软热腿出现在票中才问 / 软热不在票中不问。
+- `classify_heat` 单测覆盖四档边界（1.50 / 1.55 / 2.10）。
+- `render_today_packet` 结构测试：含指令头、§A 嵌入、§B Poisson 列表（有/无 +EV 两路）、§C schema；无裁量问题时显式公示。
+- CLI `jczq-today` 冒烟：replay 一个已存快照能出包、落盘 today-packet.md、replay 不覆盖。

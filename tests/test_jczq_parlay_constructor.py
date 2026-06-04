@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from nutmeg.domain.value import ValueCandidate
-from nutmeg.services.jczq_diagnostics import check_same_match_pool_legality
+from nutmeg.services.jczq_legality import check_same_match_pool_legality
 from nutmeg.services.jczq_parlay_constructor import (
     ParlayConstructor,
     confidence_tier,
