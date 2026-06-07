@@ -1244,3 +1244,33 @@ replay 不覆盖（守 §26.4）。
 - `classify_heat` 单测覆盖四档边界（1.50 / 1.55 / 2.10）。
 - `render_today_packet` 结构测试：含指令头、§A 嵌入、§B Poisson 列表（有/无 +EV 两路）、§C schema；无裁量问题时显式公示。
 - CLI `jczq-today` 冒烟：replay 一个已存快照能出包、落盘 today-packet.md、replay 不覆盖。
+
+## §34 反面引擎 —— 补足大胆度/多样性（2026-06-07 落地）
+
+> 背景：用户质疑"系统缺多样性与大胆度、不稳定场给不出犀利反面"。06-06 实证：鹿岛vs神户
+> pick'em，旧系统/Claude 选了"平"，实际**神户客场 5-0**——该站的犀利反面（神户客胜 @2.92）
+> 被系统结构性错过。根因（决策链 critique §4/§5）：A 档"热门焊死"(had≤1.65)，pick'em 混战
+> 不够格进 A 直接撤退；唯一反面档 D 被 loss-churn 阉割且只能当零 edge 小注 → 反面读永远升不了正格。
+
+### §34.0 定位
+**非 edge、非概率断言**（−13% 抽水无正期望），是**读盘视角**：系统性挑出"该站反面"的不稳定场、
+允许高信心当一等候选，而不是跳过或降格成彩票。`nutmeg/services/jczq_contrarian.py`。
+
+### §34.1 `compute_contrarian_reads(matches)` — 三个可计算结构信号（不嘴算）
+热门 = 主/客胜里 had 更低者。
+- **euro_inflated（最强·触发器）**：体彩 de-vig implied(热门) − 欧赔 fair(热门) ≥ `EURO_FADE_GAP=0.05`
+  → 欧赔(独立 sharp)不认、体彩灌水 → 站反面（§29 gap 反向用法）。
+- **pickem（触发器）**：|implied(主)−implied(客)| < `PICKEM_SPREAD=0.12` → 真混战、热门光环虚。
+- **soft_fav（仅信心加成·不触发）**：热门 had ∈ [1.55,2.10]（§31）。单独不触发——否则几乎每个
+  中等主队热门都被标反面，糊成 monochrome 噪声（06-06 demo 实测教训）。
+- 反面落点：有欧赔→取非热门里 euro−体彩 value 最高边；否则 pickem→冷门胜。
+- 信心：euro_inflated×2 + pickem + soft_fav → 强反(≥3)/中反(2)/弱反(1)；按信心+灌水幅度排序。
+
+### §34.2 并进决策包
+`render_contrarian_section` 渲染「§D 反面视角」，`render_today_packet` 在 §C 后追加。每个
+jczq-today 决策包现在都带 §D。06-06 回放：§D 唯一喊出「周六201 站客胜」= 神户 5-0 实际命中。
+
+### §34.3 不在范围 / 验收
+不改 A/B/D/E 选腿、不声称 edge、soft_fav 不当触发器。纯确定性、无 LLM、无 I/O。
+11 测试 `tests/test_jczq_contrarian.py`：pickem/euro_inflated 触发、soft_fav 单独不触发、
+信心分级、排序、渲染、神户 pick'em 命中。

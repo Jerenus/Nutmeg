@@ -13,6 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from nutmeg.services.jczq_bold_combos import BoldMatch
+from nutmeg.services.jczq_contrarian import (
+    compute_contrarian_reads,
+    render_contrarian_section,
+)
 from nutmeg.services.jczq_tiered import TieredPlan, render_tiered_plan
 
 # spec §32.3 — 引擎原生热度分层阈值（favourite = 最低主胜/客胜 had）。
@@ -225,14 +229,19 @@ def render_today_packet(
     questions = derive_judgment_questions(plan, matches)
     if not questions:
         lines.append("今日无裁量问题，照 §A 执行（或整张不买）。")
-        return "\n".join(lines)
-    for q in questions:
-        lines.append(f"- **{q.q_id}**：{q.prompt}（引擎默认：{q.default}）")
+    else:
+        for q in questions:
+            lines.append(f"- **{q.q_id}**：{q.prompt}（引擎默认：{q.default}）")
+        lines.append("")
+        lines.append("### 作答 schema")
+        lines.append("")
+        lines.append("| q_id | 你的决定 | confidence(1-5) | 一行理由 |")
+        lines.append("|---|---|---|---|")
+        for q in questions:
+            lines.append(f"| {q.q_id} |  |  |  |")
     lines.append("")
-    lines.append("### 作答 schema")
-    lines.append("")
-    lines.append("| q_id | 你的决定 | confidence(1-5) | 一行理由 |")
-    lines.append("|---|---|---|---|")
-    for q in questions:
-        lines.append(f"| {q.q_id} |  |  |  |")
+
+    # spec §34 — 反面视角：A 档"热门焊死"会撤退的不稳定场，逆向读盘补足大胆度/多样性。
+    lines.append(render_contrarian_section(compute_contrarian_reads(matches)))
+
     return "\n".join(lines)

@@ -729,6 +729,59 @@ def jczq_today(
         _cli.typer.echo(rendered)
 
 
+@_cli.app.command("jczq-contrarian")
+def jczq_contrarian(
+    run_date: str | None = _cli.typer.Option(
+        None, "--date", help="目标日期 YYYY-MM-DD（live，默认今天）"
+    ),
+    replay_date: str | None = _cli.typer.Option(
+        None, "--replay", help="从已存快照回放"
+    ),
+    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
+) -> None:
+    """spec §34 — 反面视角：挑出今晚不稳定场的犀利逆向读盘（站反面 + 信心 + 依据）。
+
+    专打 tiered A 档"热门焊死"会撤退的 pick'em/灌水场。非 edge、读盘视角。
+    带欧赔（live 抓 fcom500）时 euro_inflated 信号最强；replay 老快照可能无欧赔。
+    """
+    from nutmeg.services.jczq_bold_combos import (
+        bold_matches_from_sporttery,
+        load_bold_odds_snapshot,
+        load_sporttery_snapshot,
+    )
+    from nutmeg.services.jczq_contrarian import (
+        compute_contrarian_reads,
+        render_contrarian_section,
+    )
+
+    target_date = _resolve_jczq_date(replay_date or run_date)
+    bold_odds: dict[str, dict] = {}
+    if replay_date is not None:
+        value = load_sporttery_snapshot(target_date, output_dir)
+        if value is None:
+            _cli.console.print(f"no snapshot for {target_date}")
+            raise _cli.typer.Exit(code=2)
+        bold_odds = load_bold_odds_snapshot(target_date, output_dir)
+    else:
+        from nutmeg.services.jczq import SportteryJczqCalculatorProvider
+
+        fetched = SportteryJczqCalculatorProvider().fetch()
+        value = fetched.get("value") if "value" in fetched else fetched
+        try:
+            from nutmeg.data.fcom500 import Fcom500Client, collect_bold_odds
+
+            with Fcom500Client() as client:
+                bold_odds = collect_bold_odds(client)
+        except Exception:  # noqa: BLE001 — 欧赔可选；无则仅结构信号
+            bold_odds = {}
+
+    matches = bold_matches_from_sporttery(
+        value or {}, run_date=target_date, bold_odds=bold_odds
+    )
+    reads = compute_contrarian_reads(matches)
+    _cli.typer.echo(render_contrarian_section(reads))
+
+
 @_cli.app.command("jczq-tiered-review")
 def jczq_tiered_review(
     run_date: str | None = _cli.typer.Option(
