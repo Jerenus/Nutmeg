@@ -1274,3 +1274,28 @@ jczq-today 决策包现在都带 §D。06-06 回放：§D 唯一喊出「周六2
 不改 A/B/D/E 选腿、不声称 edge、soft_fav 不当触发器。纯确定性、无 LLM、无 I/O。
 11 测试 `tests/test_jczq_contrarian.py`：pickem/euro_inflated 触发、soft_fav 单独不触发、
 信心分级、排序、渲染、神户 pick'em 命中。
+
+## §35 机会雷达底座 —— 多视角持续增强（2026-06-07 落地）
+
+> 背景：用户要"持续增强决策系统的多元化与创造力、挖不被注意的机会、作为未来决策的底座"。
+> 关键洞察：系统**已经在算却没用上**的信号还有好几类（drift/dispersion/大小球价值）；缺的不是
+> 再加规则，是一个**可插拔的"读盘透镜"底座**——每个透镜从不同角度扫盘喊一类机会。
+
+### §35.0 底座结构（`nutmeg/services/jczq_opportunity.py`）
+- 统一 `Opportunity`(lens/match/pick/confidence/reason) + 透镜协议 `(matches)->list[Opportunity]`。
+- `LENSES` 注册表：**加未来透镜 = 追加一行 (名, 函数)**，不动调用点。这就是"持续增强多样性"的扩展点。
+- `scan_opportunities` 跑全部透镜分组排序；`render_opportunity_radar` 渲染「§D 机会雷达」。
+
+### §35.1 已落地透镜
+- **反面**（§34 适配）：pickem / euro_inflated 找被高估热门、站反面。
+- **异动**（新）：欧赔 opening→live de-vig 移动 ≥ `STEAM_MIN=0.04`（sharp money 流向）；
+  叠加体彩 lag（欧赔 live − 体彩 implied ≥ `LAG_MIN=0.04` = 体彩没跟上 = 价值窗口）。强/中/弱。
+
+### §35.2 跨透镜共振
+同一场被 ≥2 透镜指向**同一边** → 🔆 头条标"今晚最值得注意"。多视角独立同意 = 信号最强。
+
+### §35.3 并进决策包 + 验收
+`render_today_packet` §D 改用 `render_opportunity_radar(scan_opportunities(matches))`
+（替代单一反面段）。05-30 回放渲染反面 6 条；合成 demo 反面+异动共振头条触发。
+后续可挂透镜（不在本次）：分歧盘 dispersion / 大小球价值 ttg-vs-欧赔 / 平局价值 / R25 联赛偏差。
+10 测试 `tests/test_jczq_opportunity.py`。非 edge/非概率、纯确定性、无 LLM、无 I/O。

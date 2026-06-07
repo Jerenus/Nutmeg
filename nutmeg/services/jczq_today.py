@@ -13,9 +13,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from nutmeg.services.jczq_bold_combos import BoldMatch
-from nutmeg.services.jczq_contrarian import (
-    compute_contrarian_reads,
-    render_contrarian_section,
+from nutmeg.services.jczq_opportunity import (
+    render_opportunity_radar,
+    scan_opportunities,
 )
 from nutmeg.services.jczq_tiered import TieredPlan, render_tiered_plan
 
@@ -241,7 +241,8 @@ def render_today_packet(
             lines.append(f"| {q.q_id} |  |  |  |")
     lines.append("")
 
-    # spec §34 — 反面视角：A 档"热门焊死"会撤退的不稳定场，逆向读盘补足大胆度/多样性。
-    lines.append(render_contrarian_section(compute_contrarian_reads(matches)))
+    # spec §35 — 机会雷达：多视角透镜（反面/异动/…）扫盘，补足大胆度/多样性，
+    # 挖 A 档热门结构外不被注意的机会。底座可插拔，加透镜不动此处。
+    lines.append(render_opportunity_radar(scan_opportunities(matches)))
 
     return "\n".join(lines)

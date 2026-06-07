@@ -1,0 +1,168 @@
+"""spec §35 — 机会雷达底座：可插拔"读盘透镜"注册表。
+
+背景：用户要求"持续增强决策系统的多元化与创造力，挖掘不被注意的机会，作为未来决策的底座"。
+现状问题：系统只从**单一视角**（热门结构 + 反面）看盘，而机会是**多视角**的——同一盘面换
+个透镜就看见别人没看见的东西，且系统**已经在算却没用上**的信号还有好几类（drift/dispersion/
+大小球价值）。
+
+本模块是**底座**，不是又一条规则：定义统一的 `Opportunity` + 透镜协议，每个透镜扫一遍盘、
+喊出一类机会；决策包聚合呈现成「§D 机会雷达」。**加未来透镜 = 注册一个函数**，这就是
+"持续增强多样性"的可扩展结构。
+
+定位同 §34：**非 edge、非概率**，读盘视角——把多角度的机会摆上台面、可上信心，而不是
+只会盯热门。纯确定性、无 LLM、无 I/O。
+
+已落地透镜：
+- **反面**（§34）：pickem / euro_inflated 找被高估的热门、站反面。
+- **异动**（§35）：欧赔 opening→live 的 steam（sharp money 流向）+ 体彩 lag（没跟上=价值窗口）。
+后续可挂：分歧盘（dispersion）、大小球价值（ttg vs 欧赔大小球）、平局价值、联赛进球偏差…
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable
+
+from nutmeg.services.jczq_bold_combos import OUTCOMES, BoldMatch, _fair_from_odds
+from nutmeg.services.jczq_contrarian import compute_contrarian_reads
+
+_LABEL: dict[str, str] = {"home": "主胜", "draw": "平", "away": "客胜"}
+
+# --- 异动透镜阈值（spec §35.2） ---
+STEAM_MIN: float = 0.04       # 欧赔 implied 朝某边移动 ≥ 此 → 算 steam
+STEAM_STRONG: float = 0.07    # 强 steam
+LAG_MIN: float = 0.04         # 欧赔 live − 体彩 implied ≥ 此 → 体彩没跟上=价值窗口
+
+
+@dataclass(frozen=True, slots=True)
+class Opportunity:
+    """一个透镜在一场比赛上喊出的机会。"""
+
+    lens: str          # 透镜名（反面 / 异动 / …）
+    match_no: str
+    home: str
+    away: str
+    pick: str          # 指向的方向标签（主胜/平/客胜）
+    confidence: str    # 强 / 中 / 弱
+    reason: str
+
+
+# ---------------------------------------------------------------------------
+# 透镜 1：反面（§34 适配）
+# ---------------------------------------------------------------------------
+
+
+def contrarian_lens(matches: list[BoldMatch]) -> list[Opportunity]:
+    out: list[Opportunity] = []
+    for r in compute_contrarian_reads(matches):
+        conf = {"强反": "强", "中反": "中", "弱反": "弱"}.get(r.confidence, "弱")
+        out.append(
+            Opportunity(
+                lens="反面", match_no=r.match_no, home=r.home, away=r.away,
+                pick=r.fade_to, confidence=conf,
+                reason=f"反{r.fade_from} · " + "；".join(r.reasons[:2]),
+            )
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 透镜 2：异动（steam + 体彩 lag）—— spec §35.2
+# ---------------------------------------------------------------------------
+
+
+def drift_lens(matches: list[BoldMatch]) -> list[Opportunity]:
+    out: list[Opportunity] = []
+    for m in matches:
+        op = _fair_from_odds(m.euro_opening or {})
+        lv = _fair_from_odds(m.euro_odds or {})
+        if not op or not lv:
+            continue
+        move = {o: lv[o] - op[o] for o in OUTCOMES}
+        side = max(OUTCOMES, key=lambda o: move[o])
+        if move[side] < STEAM_MIN:
+            continue
+        tc = _fair_from_odds(m.tc_odds or {})
+        lag = (lv[side] - tc[side]) if tc else 0.0
+        strong_steam = move[side] >= STEAM_STRONG
+        has_lag = lag >= LAG_MIN
+        conf = "强" if (strong_steam and has_lag) else "中" if (strong_steam or has_lag) else "弱"
+        reason = (
+            f"欧赔开盘→现在朝{_LABEL[side]}移动 +{move[side]:.0%}（sharp money 流向）"
+        )
+        if has_lag:
+            reason += f"；体彩没跟上(欧赔{lv[side]:.0%}>体彩{tc[side]:.0%})=价值窗口"
+        out.append(
+            Opportunity(
+                lens="异动", match_no=m.match_no, home=m.home, away=m.away,
+                pick=_LABEL[side], confidence=conf, reason=reason,
+            )
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 注册表 + 扫描 + 渲染
+# ---------------------------------------------------------------------------
+
+# 加未来透镜 = 在这里追加一行 (名称, 函数)。这就是"持续增强多样性"的扩展点。
+LENSES: list[tuple[str, Callable[[list[BoldMatch]], list[Opportunity]]]] = [
+    ("反面", contrarian_lens),
+    ("异动", drift_lens),
+]
+
+_CONF_ORDER: dict[str, int] = {"强": 0, "中": 1, "弱": 2}
+
+
+def scan_opportunities(matches: list[BoldMatch]) -> dict[str, list[Opportunity]]:
+    """spec §35.1 — 跑全部透镜，按透镜名分组（每组按信心排序）。"""
+    by_lens: dict[str, list[Opportunity]] = {}
+    for name, fn in LENSES:
+        ops = fn(matches)
+        ops.sort(key=lambda o: _CONF_ORDER.get(o.confidence, 2))
+        by_lens[name] = ops
+    return by_lens
+
+
+def render_opportunity_radar(by_lens: dict[str, list[Opportunity]]) -> str:
+    """spec §35.3 — 渲染「§D 机会雷达」多视角段，并进 jczq-today 决策包。"""
+    lines = ["## D. 机会雷达（多视角 · 挖不被注意的机会）", ""]
+    total = sum(len(v) for v in by_lens.values())
+    if total == 0:
+        lines.append("今晚雷达无信号（无反面 / 异动机会）。照 §A 即可。")
+        return "\n".join(lines)
+    lines.append(
+        "> 每个透镜从不同角度扫盘（热门结构外的机会）。**非 edge、读盘视角**——"
+        "把多角度机会摆上台、可上信心，不只盯热门。"
+    )
+    for name, _fn in LENSES:
+        ops = by_lens.get(name) or []
+        if not ops:
+            continue
+        lines.append("")
+        lines.append(f"### {name}（{len(ops)}）")
+        lines.append("| 场次 | 指向 | 信心 | 依据 |")
+        lines.append("|---|---|---|---|")
+        for o in ops:
+            lines.append(
+                f"| {o.match_no} {o.home} vs {o.away} | **{o.pick}** | {o.confidence} | {o.reason} |"
+            )
+    # 跨透镜共振：同一场被 ≥2 个透镜指向同一边 → 最值得注意
+    by_match: dict[str, list[Opportunity]] = {}
+    for ops in by_lens.values():
+        for o in ops:
+            by_match.setdefault(o.match_no, []).append(o)
+    resonance = [
+        ops for ops in by_match.values()
+        if len(ops) >= 2 and len({o.pick for o in ops}) == 1
+    ]
+    if resonance:
+        lines.append("")
+        for ops in resonance:
+            o = ops[0]
+            lenses = "+".join(x.lens for x in ops)
+            lines.append(
+                f"> 🔆 多视角共振：**{o.match_no} {o.home} vs {o.away} → {o.pick}**"
+                f"（{lenses} 同时指向）——今晚最值得注意。"
+            )
+    return "\n".join(lines)
