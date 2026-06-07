@@ -1288,8 +1288,10 @@ jczq-today 决策包现在都带 §D。06-06 回放：§D 唯一喊出「周六2
 
 ### §35.1 已落地透镜
 - **反面**（§34 适配）：pickem / euro_inflated 找被高估热门、站反面。
-- **异动**（新）：欧赔 opening→live de-vig 移动 ≥ `STEAM_MIN=0.04`（sharp money 流向）；
-  叠加体彩 lag（欧赔 live − 体彩 implied ≥ `LAG_MIN=0.04` = 体彩没跟上 = 价值窗口）。强/中/弱。
+- **异动**：欧赔 opening→live de-vig 移动 ≥ `STEAM_MIN=0.04`（sharp money 流向）；叠加体彩
+  lag（欧赔 live − 体彩 implied ≥ `LAG_MIN=0.04` = 体彩没跟上 = 价值窗口）。强/中/弱。
+- **大小球**（§35.4，全新进球维度）：体彩 ttg 聚合到欧赔大小球线比 P(over)，
+  |欧赔−体彩| ≥ `TOTALS_MIN=0.06` → 价值在大球/小球（与胜平负正交，最大化多样性）。
 
 ### §35.2 跨透镜共振
 同一场被 ≥2 透镜指向**同一边** → 🔆 头条标"今晚最值得注意"。多视角独立同意 = 信号最强。
@@ -1297,5 +1299,9 @@ jczq-today 决策包现在都带 §D。06-06 回放：§D 唯一喊出「周六2
 ### §35.3 并进决策包 + 验收
 `render_today_packet` §D 改用 `render_opportunity_radar(scan_opportunities(matches))`
 （替代单一反面段）。05-30 回放渲染反面 6 条；合成 demo 反面+异动共振头条触发。
-后续可挂透镜（不在本次）：分歧盘 dispersion / 大小球价值 ttg-vs-欧赔 / 平局价值 / R25 联赛偏差。
-10 测试 `tests/test_jczq_opportunity.py`。非 edge/非概率、纯确定性、无 LLM、无 I/O。
+后续可挂透镜：分歧盘 dispersion / 平局价值 / R25 联赛偏差 —— 各注册一行。
+14 测试 `tests/test_jczq_opportunity.py`。非 edge/非概率、纯确定性、无 LLM、无 I/O。
+
+### §35.4 launchd 全迁移（2026-06-07）
+自动化彻底切到新系统：unload daily-bold/daily-tiered/daily-review-8am/bold-review-8am，
+留 `daily-today`（12:00 jczq-today）+ `tiered-review-8am`。老命令(jczq-daily-*/bold-*)仅手动可跑。

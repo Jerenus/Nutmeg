@@ -23,7 +23,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from nutmeg.services.jczq_bold_combos import OUTCOMES, BoldMatch, _fair_from_odds
+from nutmeg.services.jczq_bold_combos import (
+    OUTCOMES,
+    BoldMatch,
+    _devig_map,
+    _fair_from_odds,
+    aggregate_ttg_to_over_under,
+)
 from nutmeg.services.jczq_contrarian import compute_contrarian_reads
 
 _LABEL: dict[str, str] = {"home": "主胜", "draw": "平", "away": "客胜"}
@@ -32,6 +38,10 @@ _LABEL: dict[str, str] = {"home": "主胜", "draw": "平", "away": "客胜"}
 STEAM_MIN: float = 0.04       # 欧赔 implied 朝某边移动 ≥ 此 → 算 steam
 STEAM_STRONG: float = 0.07    # 强 steam
 LAG_MIN: float = 0.04         # 欧赔 live − 体彩 implied ≥ 此 → 体彩没跟上=价值窗口
+
+# --- 大小球价值透镜阈值（spec §35.4） ---
+TOTALS_MIN: float = 0.06      # |欧赔 P(over) − 体彩 P(over)| ≥ 此 → 算错价
+TOTALS_STRONG: float = 0.10   # 强错价
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +112,43 @@ def drift_lens(matches: list[BoldMatch]) -> list[Opportunity]:
 
 
 # ---------------------------------------------------------------------------
+# 透镜 3：大小球价值（体彩 ttg vs 欧赔大小球错价）—— spec §35.4
+# ---------------------------------------------------------------------------
+
+
+def totals_lens(matches: list[BoldMatch]) -> list[Opportunity]:
+    """全新进球维度：把体彩 ttg 聚合到欧赔的大小球线，比 P(over)。欧赔比体彩更看好
+    over → 价值在大球；反之小球。与胜平负维度正交，最大化雷达多样性。"""
+    out: list[Opportunity] = []
+    for m in matches:
+        tc_ttg = _devig_map(m.ttg_odds or {})
+        ou_fair = _devig_map(m.ou_odds or {})
+        if not tc_ttg or not ou_fair or not m.ou_line:
+            continue
+        tc_ou = aggregate_ttg_to_over_under(tc_ttg, m.ou_line)
+        tc_over = tc_ou.get("over")
+        eu_over = ou_fair.get("over")
+        if tc_over is None or eu_over is None:
+            continue
+        diff = eu_over - tc_over  # 欧赔 P(over) − 体彩 P(over)
+        if abs(diff) < TOTALS_MIN:
+            continue
+        side = "大球" if diff > 0 else "小球"
+        conf = "强" if abs(diff) >= TOTALS_STRONG else "中"
+        reason = (
+            f"欧赔大小球 vs 体彩 ttg 错价（线 {m.ou_line:g}）："
+            f"欧赔 P(over)={eu_over:.0%} vs 体彩 {tc_over:.0%} → 价值在 {side}"
+        )
+        out.append(
+            Opportunity(
+                lens="大小球", match_no=m.match_no, home=m.home, away=m.away,
+                pick=side, confidence=conf, reason=reason,
+            )
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 注册表 + 扫描 + 渲染
 # ---------------------------------------------------------------------------
 
@@ -109,6 +156,7 @@ def drift_lens(matches: list[BoldMatch]) -> list[Opportunity]:
 LENSES: list[tuple[str, Callable[[list[BoldMatch]], list[Opportunity]]]] = [
     ("反面", contrarian_lens),
     ("异动", drift_lens),
+    ("大小球", totals_lens),
 ]
 
 _CONF_ORDER: dict[str, int] = {"强": 0, "中": 1, "弱": 2}
