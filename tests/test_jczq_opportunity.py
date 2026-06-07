@@ -6,6 +6,7 @@ from nutmeg.services.jczq_opportunity import (
     Opportunity,
     contrarian_lens,
     draw_value_lens,
+    dispersion_lens,
     drift_lens,
     render_opportunity_radar,
     scan_opportunities,
@@ -14,11 +15,11 @@ from nutmeg.services.jczq_opportunity import (
 
 
 def _match(no, *, tc, euro=None, opening=None, ttg=None, ou=None, ou_line=0.0,
-           efp=None, h="H", a="A") -> BoldMatch:
+           efp=None, pbo=None, h="H", a="A") -> BoldMatch:
     return BoldMatch(
         match_no=no, league="J", home=h, away=a, tc_odds=tc,
         euro_odds=euro or {}, euro_opening=opening or {},
-        euro_fair_prob=efp or {},
+        euro_fair_prob=efp or {}, per_book_odds=pbo or {},
         ttg_odds=ttg or {}, ou_odds=ou or {}, ou_line=ou_line,
     )
 
@@ -144,11 +145,49 @@ def test_draw_value_lens_no_euro_degrades() -> None:
     assert draw_value_lens([m]) == []
 
 
+_PBO_WIDE = {"home": [1.6, 1.8, 2.0, 2.2, 2.4, 2.6],
+             "draw": [3.2, 3.3, 3.4, 3.5], "away": [3.0, 3.2, 3.4, 3.6]}
+_PBO_TIGHT = {"home": [1.90, 1.91, 1.92, 1.89],
+              "draw": [3.30, 3.31, 3.29], "away": [3.80, 3.81, 3.79]}
+
+
+def _disp_match(no, pbo):
+    return _match(no, tc={"home": 2.0, "draw": 3.3, "away": 3.5}, pbo=pbo)
+
+
+def test_dispersion_lens_flags_only_standout() -> None:
+    # 一场明显比全场软 → 只标它（相对，非绝对）
+    board = [_disp_match("a", _PBO_TIGHT), _disp_match("b", _PBO_TIGHT),
+             _disp_match("c", _PBO_WIDE)]
+    ops = dispersion_lens(board)
+    assert len(ops) == 1
+    assert ops[0].match_no == "c"
+    assert ops[0].lens == "分歧" and "谨慎" in ops[0].pick
+
+
+def test_dispersion_lens_uniform_high_none_standout() -> None:
+    # 全场一样软 → 没有谁冒头 → 不标（反 monochrome 噪声的关键修正）
+    board = [_disp_match("a", _PBO_WIDE), _disp_match("b", _PBO_WIDE),
+             _disp_match("c", _PBO_WIDE)]
+    assert dispersion_lens(board) == []
+
+
+def test_dispersion_lens_caps_at_top_n() -> None:
+    # 多场冒头也最多标 2（封顶，不糊一片）
+    board = ([_disp_match(f"t{i}", _PBO_TIGHT) for i in range(4)]
+             + [_disp_match(f"w{i}", _PBO_WIDE) for i in range(3)])
+    assert len(dispersion_lens(board)) == 2
+
+
+def test_dispersion_lens_no_per_book_degrades() -> None:
+    assert dispersion_lens([_disp_match("g", {})]) == []
+
+
 def test_scan_groups_by_lens() -> None:
     by_lens = scan_opportunities([
         _match("201", tc={"home": 2.11, "draw": 3.2, "away": 2.92})
     ])
-    assert set(by_lens.keys()) == {"反面", "异动", "大小球", "平局"}
+    assert set(by_lens.keys()) == {"反面", "异动", "大小球", "平局", "分歧"}
     assert len(by_lens["反面"]) == 1
 
 
@@ -183,5 +222,5 @@ def test_lens_is_pluggable_registry() -> None:
     # 底座契约：LENSES 是 (名, 函数) 列表，加透镜=追加一行
     from nutmeg.services.jczq_opportunity import LENSES
     names = [n for n, _ in LENSES]
-    assert {"反面", "异动", "大小球", "平局"} <= set(names)
+    assert {"反面", "异动", "大小球", "平局", "分歧"} <= set(names)
     assert all(callable(fn) for _, fn in LENSES)
