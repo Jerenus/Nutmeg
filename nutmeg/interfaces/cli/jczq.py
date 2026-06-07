@@ -729,8 +729,8 @@ def jczq_today(
         _cli.typer.echo(rendered)
 
 
-@_cli.app.command("jczq-contrarian")
-def jczq_contrarian(
+@_cli.app.command("jczq-radar")
+def jczq_radar(
     run_date: str | None = _cli.typer.Option(
         None, "--date", help="目标日期 YYYY-MM-DD（live，默认今天）"
     ),
@@ -739,19 +739,20 @@ def jczq_contrarian(
     ),
     output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
 ) -> None:
-    """spec §34 — 反面视角：挑出今晚不稳定场的犀利逆向读盘（站反面 + 信心 + 依据）。
+    """spec §35 — 机会雷达：多视角透镜扫盘（反面/异动/大小球/平局/分歧）。
 
-    专打 tiered A 档"热门焊死"会撤退的 pick'em/灌水场。非 edge、读盘视角。
-    带欧赔（live 抓 fcom500）时 euro_inflated 信号最强；replay 老快照可能无欧赔。
+    挑出 tiered A 档"热门焊死"会撤退的机会：pick'em/灌水站反面、欧赔 steam、
+    大小球错价、平局价值、高分歧软盘。非 edge、读盘视角。与 jczq-today 的 §D 同源。
+    带欧赔（live 抓 fcom500）时信号最全；replay 老快照可能无欧赔。
     """
     from nutmeg.services.jczq_bold_combos import (
         bold_matches_from_sporttery,
         load_bold_odds_snapshot,
         load_sporttery_snapshot,
     )
-    from nutmeg.services.jczq_contrarian import (
-        compute_contrarian_reads,
-        render_contrarian_section,
+    from nutmeg.services.jczq_opportunity import (
+        render_opportunity_radar,
+        scan_opportunities,
     )
 
     target_date = _resolve_jczq_date(replay_date or run_date)
@@ -778,8 +779,7 @@ def jczq_contrarian(
     matches = bold_matches_from_sporttery(
         value or {}, run_date=target_date, bold_odds=bold_odds
     )
-    reads = compute_contrarian_reads(matches)
-    _cli.typer.echo(render_contrarian_section(reads))
+    _cli.typer.echo(render_opportunity_radar(scan_opportunities(matches)))
 
 
 @_cli.app.command("jczq-tiered-review")
