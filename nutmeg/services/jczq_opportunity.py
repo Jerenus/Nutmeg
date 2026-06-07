@@ -43,6 +43,10 @@ LAG_MIN: float = 0.04         # 欧赔 live − 体彩 implied ≥ 此 → 体�
 TOTALS_MIN: float = 0.06      # |欧赔 P(over) − 体彩 P(over)| ≥ 此 → 算错价
 TOTALS_STRONG: float = 0.10   # 强错价
 
+# --- 平局价值透镜阈值（spec §35.5） ---
+DRAW_VALUE_MIN: float = 0.05  # 欧赔 P(平) − 体彩 P(平) ≥ 此 → 体彩低估平局
+DRAW_VALUE_STRONG: float = 0.08
+
 
 @dataclass(frozen=True, slots=True)
 class Opportunity:
@@ -149,6 +153,37 @@ def totals_lens(matches: list[BoldMatch]) -> list[Opportunity]:
 
 
 # ---------------------------------------------------------------------------
+# 透镜 4：平局价值（公众不爱押平 → 体彩系统性低估平局）—— spec §35.5
+# ---------------------------------------------------------------------------
+
+
+def draw_value_lens(matches: list[BoldMatch]) -> list[Opportunity]:
+    """散户天然回避押平，体彩(散户驱动)系统性低估平局；欧赔(sharp)不会。比 P(平)：
+    欧赔 − 体彩 ≥ 阈值 → 平局被低估。与反面不同——专扫平局、即使热门不虚也能发现平价值。"""
+    out: list[Opportunity] = []
+    for m in matches:
+        tc = _fair_from_odds(m.tc_odds or {})
+        euro = m.euro_fair_prob or {}
+        if not tc or not all(euro.get(o) for o in OUTCOMES):
+            continue
+        gap = euro["draw"] - tc["draw"]
+        if gap < DRAW_VALUE_MIN:
+            continue
+        conf = "强" if gap >= DRAW_VALUE_STRONG else "中"
+        reason = (
+            f"欧赔(sharp)看平 {euro['draw']:.0%} > 体彩 {tc['draw']:.0%}"
+            f"（+{gap:.0%}）——公众不爱押平、体彩低估平局"
+        )
+        out.append(
+            Opportunity(
+                lens="平局", match_no=m.match_no, home=m.home, away=m.away,
+                pick="平", confidence=conf, reason=reason,
+            )
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 注册表 + 扫描 + 渲染
 # ---------------------------------------------------------------------------
 
@@ -157,6 +192,7 @@ LENSES: list[tuple[str, Callable[[list[BoldMatch]], list[Opportunity]]]] = [
     ("反面", contrarian_lens),
     ("异动", drift_lens),
     ("大小球", totals_lens),
+    ("平局", draw_value_lens),
 ]
 
 _CONF_ORDER: dict[str, int] = {"强": 0, "中": 1, "弱": 2}

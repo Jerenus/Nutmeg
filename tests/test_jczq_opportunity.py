@@ -5,6 +5,7 @@ from nutmeg.services.jczq_bold_combos import BoldMatch
 from nutmeg.services.jczq_opportunity import (
     Opportunity,
     contrarian_lens,
+    draw_value_lens,
     drift_lens,
     render_opportunity_radar,
     scan_opportunities,
@@ -13,10 +14,11 @@ from nutmeg.services.jczq_opportunity import (
 
 
 def _match(no, *, tc, euro=None, opening=None, ttg=None, ou=None, ou_line=0.0,
-           h="H", a="A") -> BoldMatch:
+           efp=None, h="H", a="A") -> BoldMatch:
     return BoldMatch(
         match_no=no, league="J", home=h, away=a, tc_odds=tc,
         euro_odds=euro or {}, euro_opening=opening or {},
+        euro_fair_prob=efp or {},
         ttg_odds=ttg or {}, ou_odds=ou or {}, ou_line=ou_line,
     )
 
@@ -119,11 +121,34 @@ def test_totals_lens_no_ou_degrades() -> None:
     assert totals_lens([m]) == []
 
 
+def test_draw_value_lens_flags_underpriced_draw() -> None:
+    # 体彩 P(平)≈0.29；欧赔(sharp) P(平)=0.38 → 体彩低估平 +9pp → 平局价值、强
+    m = _match("d", tc={"home": 1.8, "draw": 3.2, "away": 4.5},
+               efp={"home": 0.48, "draw": 0.38, "away": 0.14})
+    ops = draw_value_lens([m])
+    assert len(ops) == 1
+    assert ops[0].lens == "平局"
+    assert ops[0].pick == "平"
+    assert ops[0].confidence == "强"
+
+
+def test_draw_value_lens_agreement_no_signal() -> None:
+    # 欧赔 P(平)=0.30 ≈ 体彩 0.29 → 无低估
+    m = _match("d", tc={"home": 1.8, "draw": 3.2, "away": 4.5},
+               efp={"home": 0.56, "draw": 0.30, "away": 0.14})
+    assert draw_value_lens([m]) == []
+
+
+def test_draw_value_lens_no_euro_degrades() -> None:
+    m = _match("d", tc={"home": 1.8, "draw": 3.2, "away": 4.5})
+    assert draw_value_lens([m]) == []
+
+
 def test_scan_groups_by_lens() -> None:
     by_lens = scan_opportunities([
         _match("201", tc={"home": 2.11, "draw": 3.2, "away": 2.92})
     ])
-    assert set(by_lens.keys()) == {"反面", "异动", "大小球"}
+    assert set(by_lens.keys()) == {"反面", "异动", "大小球", "平局"}
     assert len(by_lens["反面"]) == 1
 
 
@@ -158,5 +183,5 @@ def test_lens_is_pluggable_registry() -> None:
     # 底座契约：LENSES 是 (名, 函数) 列表，加透镜=追加一行
     from nutmeg.services.jczq_opportunity import LENSES
     names = [n for n, _ in LENSES]
-    assert {"反面", "异动", "大小球"} <= set(names)
+    assert {"反面", "异动", "大小球", "平局"} <= set(names)
     assert all(callable(fn) for _, fn in LENSES)
