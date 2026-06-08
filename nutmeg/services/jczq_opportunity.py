@@ -30,7 +30,6 @@ from nutmeg.services.jczq_bold_combos import (
     _devig_map,
     _fair_from_odds,
     aggregate_ttg_to_over_under,
-    dispersion_score,
 )
 from nutmeg.services.jczq_contrarian import compute_contrarian_reads
 
@@ -50,12 +49,13 @@ DRAW_VALUE_MIN: float = 0.05  # 欧赔 P(平) − 体彩 P(平) ≥ 此 → 体�
 DRAW_VALUE_STRONG: float = 0.08
 
 # --- 分歧盘透镜阈值（spec §35.6）—— 注意：这是"谨慎"信号、非下注方向 ---
-# 反思教训（05-30：绝对阈值标了 11/15 = 噪声）：改用**相对 + 封顶**——只标今晚
-# 明显高于全场中位数、且最软的前 2 场，而不是"任何超过绝对线的场"。
-DISPERSION_FLOOR: float = 0.13       # 绝对地板（再相对也得真高）
+# 反思教训 1（05-30：绝对阈值标了 11/15 = 噪声）：改相对 + 封顶。
+# 反思教训 2（06-07：绝对离散在哥伦比亚 1.15 报 71% = 算法假象，赔率越短被放大越多）：
+#   改用**只看热门那一路 implied 的变异系数(CV)**——尺度无关，量"书商对热门定价软不软"。
+DISPERSION_CV_FLOOR: float = 0.06    # 热门路 CV 地板（再相对也得真软）
 DISPERSION_REL_FACTOR: float = 1.30  # 须 ≥ 全场中位数 ×此（明显冒头）
 DISPERSION_TOP_N: int = 2            # 最多标今晚最软的 2 场
-DISPERSION_STRONG: float = 0.20
+DISPERSION_CV_STRONG: float = 0.12
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,31 +200,44 @@ def draw_value_lens(matches: list[BoldMatch]) -> list[Opportunity]:
 # ---------------------------------------------------------------------------
 
 
+def _favourite_side_cv(m: BoldMatch) -> float | None:
+    """热门那一路（主/客 had 更低者）implied 的变异系数（尺度无关）。<3 家书商 → None。"""
+    home_o, away_o = m.tc_odds.get("home"), m.tc_odds.get("away")
+    if not home_o or not away_o:
+        return None
+    side = "home" if home_o <= away_o else "away"
+    books = [x for x in (m.per_book_odds.get(side) or []) if x and x > 0]
+    if len(books) < 3:
+        return None
+    implied = [1.0 / x for x in books]
+    mean = statistics.mean(implied)
+    return statistics.pstdev(implied) / mean if mean > 0 else None
+
+
 def dispersion_lens(matches: list[BoldMatch]) -> list[Opportunity]:
     scored: list[tuple[BoldMatch, float]] = []
     for m in matches:
-        disp = dispersion_score(m.per_book_odds or {})
-        vals = [disp[o] for o in OUTCOMES if disp.get(o)]
-        if vals:
-            scored.append((m, sum(vals) / len(vals)))
+        cv = _favourite_side_cv(m)
+        if cv is not None:
+            scored.append((m, cv))
     if not scored:
         return []
-    median = statistics.median(d for _m, d in scored)
-    bar = max(DISPERSION_FLOOR, median * DISPERSION_REL_FACTOR)
+    median = statistics.median(c for _m, c in scored)
+    bar = max(DISPERSION_CV_FLOOR, median * DISPERSION_REL_FACTOR)
     standout = sorted(
         (sm for sm in scored if sm[1] >= bar), key=lambda sm: sm[1], reverse=True
     )[:DISPERSION_TOP_N]
     out: list[Opportunity] = []
-    for m, mean_disp in standout:
-        conf = "强" if mean_disp >= DISPERSION_STRONG else "中"
+    for m, cv in standout:
+        conf = "强" if cv >= DISPERSION_CV_STRONG else "中"
         reason = (
-            f"~29 家国际书商赔率分歧最大（均 {mean_disp:.0%}，今晚中位数 {median:.0%}）"
-            "——盘面软、定价不可信，这场别把热门当稳腿/别重注"
+            f"~29 家书商对热门定价分歧最大（变异系数 {cv:.0%}，今晚中位 {median:.0%}）"
+            "——这个热门价软、别当稳腿/别重注"
         )
         out.append(
             Opportunity(
                 lens="分歧", match_no=m.match_no, home=m.home, away=m.away,
-                pick="谨慎·高方差", confidence=conf, reason=reason,
+                pick="谨慎·热门价软", confidence=conf, reason=reason,
             )
         )
     return out
