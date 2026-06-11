@@ -17,6 +17,7 @@ dependencies = [
   "jinja2>=3.1,<4",
   "langsmith>=0.4,<1",
   "pandas>=3.0.2",
+  "matplotlib>=3.9,<4",
   "pydantic-settings>=2.8,<3",
   "PyYAML>=6.0,<7",
   "reportlab>=4,<5",
