@@ -197,6 +197,38 @@ class ApiFootballClient:
             quota=quota,
         )
 
+    def fetch_fixtures_by_date(
+        self,
+        day: date,
+        *,
+        timezone: str = 'UTC',
+    ) -> FixtureBatch:
+        """All fixtures on a single calendar day, across every league.
+
+        Mirrors the API-Football tester's ``GET /fixtures?date=YYYY-MM-DD`` —
+        one request returns the whole day's board (clubs + national teams)
+        regardless of league. The JCZQ daily flow uses this to align the 体彩
+        国际赛/世界杯 board (national-team friendlies) against API-Football
+        without needing a per-league id alias for each tournament. A malformed
+        fixture row is skipped rather than crashing the batch.
+        """
+        if not self._api_key:
+            raise ApiFootballError('NUTMEG_API_FOOTBALL_KEY is not configured.')
+
+        payload, quota = self._request_payload(
+            '/fixtures',
+            params={'date': day.isoformat(), 'timezone': timezone},
+        )
+        fixtures: list[Fixture] = []
+        for item in payload.get('response', []):
+            league = item.get('league') or {}
+            league_code = str(league.get('name') or league.get('id') or 'api-football')
+            try:
+                fixtures.append(self._normalize_fixture(item, league_code))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return FixtureBatch(fixtures=fixtures, requests_made=1, quota=quota)
+
     def _normalize_fixture(
         self,
         payload: dict[str, Any],

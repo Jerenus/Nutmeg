@@ -678,14 +678,30 @@ def jczq_today(
         fetched = SportteryJczqCalculatorProvider().fetch()
         value = fetched.get("value") if "value" in fetched else fetched
         persist_sporttery_snapshot(target_date, output_dir, value)
+        # 国际 odds：API-Football 主源（12 家博彩、可靠），500.com 仅补 API-Football
+        # 没盖到的场/盘口（友谊赛深夜场、它无大小球等）。只换数据源槽位，不动选腿。
+        from nutmeg.services.jczq_apifootball_odds import (
+            collect_bold_odds_apifootball_live,
+            merge_bold_odds,
+        )
+
+        try:
+            bold_odds = collect_bold_odds_apifootball_live(
+                value, run_date=target_date
+            )
+        except Exception:  # noqa: BLE001 — 国际 odds optional; degrade
+            logger.warning(
+                "jczq-today: API-Football 国际 odds 失败", exc_info=True
+            )
         try:
             from nutmeg.data.fcom500 import Fcom500Client, collect_bold_odds
 
             with Fcom500Client() as client:
-                bold_odds = collect_bold_odds(client)
-        except Exception:  # noqa: BLE001 — 国际 odds optional; degrade
+                fcom_odds = collect_bold_odds(client)
+            bold_odds = merge_bold_odds(bold_odds, fcom_odds)
+        except Exception:  # noqa: BLE001 — 500.com 备源 optional; degrade
             logger.warning(
-                "jczq-today: 国际 odds enrichment failed", exc_info=True
+                "jczq-today: 500.com 备源 enrichment failed", exc_info=True
             )
         if bold_odds:
             persist_bold_odds_snapshot(target_date, output_dir, bold_odds)
