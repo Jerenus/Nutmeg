@@ -36,11 +36,18 @@ WAF 拦截：先返回只含 `vtoolsConfig` 的空壳（`errorCode=0` 但无 `ma
   3 个 `<p class="betbtn" data-value="3|1|0" data-sp="X.XX">`；`data-value` 3/1/0 →
   home/draw/away。
 - `hhad_sp: dict[str, float]` — 让球胜平负 sp 价。来源：`data-type="spf"` 同构三键。
-- `hhad_line: float` — 让球线（如 -1）。属性位置以仓内保存的真实 HTML 样本为准在
-  实现时定位（spf 块邻近标签/属性）；定位不到 → 0.0 并 log warning，不崩。
+- `hhad_line: float` — 让球线，直接读 `<tr>` 的 `data-rangqiu` 属性（实测
+  周四001/002 均为 `-1`）；缺失/非数 → 0.0，不崩。
+- `business_date: str` — 销售日，直接读 `data-processdate`（= sporttery
+  `businessDate`，实测 2026-06-11；开赛日 `data-matchdate` 是 06-12，两者不同）。
+- `match_date: str` / `match_time: str` — 开赛日期时间，直接读含年份的
+  `data-matchdate` / `data-matchtime`。
+- `is_selling: bool` — `data-isend="0"` 视为在售。
 
-解析失败的行照旧跳过（graceful degradation）。`kickoff` 字段已有
-（`td-endtime` title，形如 `06-12 03:00截止`，去"截止"尾缀）。
+实现注记（2026-06-11 真实 HTML 验证）：`<tr class="bet-tb-tr">` 自带
+`data-homesxname/awaysxname/matchdate/matchtime/rangqiu/processdate/matchnum/
+simpleleague/isend` 全套干净属性——解析全部走属性、不碰内层标签结构（除 data-sp
+三键）。解析失败的行照旧跳过（graceful degradation）。
 
 ### 2. 合成器 — `fcom500.py` 新函数 `sporttery_value_from_jczq_board(matches, run_date)`
 
@@ -65,12 +72,11 @@ WAF 拦截：先返回只含 `vtoolsConfig` 的空壳（`errorCode=0` 但无 `ma
 }
 ```
 
-- `businessDate`：由竞彩号 `周X` 前缀映射到 ≥ `run_date` 的最近对应日（`run_date`
-  当天是周四 → 周四=run_date、周五=+1 天 … 周三=+6 天）。
-- `matchDate/matchTime`：截止时间 `MM-DD HH:MM` + 年份按 run_date 推断（跨年：若
-  MM-DD 早于 run_date 超过半年则进位下一年）。已知局限：截止≈开赛，凌晨 08:00 边界
-  场的 UTC 日推断可能差一天，影响仅 API-Football fixture 对齐（该场欧赔信号缺席，
-  不崩）——记录、不处理。
+- `businessDate`：直接用 `data-processdate`（无需周X映射推断）；按其分组产出
+  `matchInfoList` 天组。
+- `matchDate/matchTime`：直接用含年份的 `data-matchdate` / `data-matchtime`
+  （真实开赛时间，无需截止时间/年份推断，UTC 日对齐无边界问题）。
+- `matchStatus`：`is_selling=True`（`data-isend="0"`）→ `"Selling"`，否则跳过。
 - 池缺失语义：某场 had/hhad 任一池解析不到 → 该池键值缺省（`_had_from_pool` 产出
   不足 3 项时引擎按既有规则处理）；两池全缺 → 该场被引擎 §11.1 跳过。
 - 顶层 `nutmegSource` 标记随快照落盘，复盘时可见当天数据来源。
@@ -107,7 +113,7 @@ had/hhad 池）`）。
    让球线、截止时间、坏行跳过、无 data-sp 行降级为空 dict。
 2. **合成**：shape 与 `_had_from_pool` / `_board_matches` round-trip（合成 value 喂
    `bold_matches_from_sporttery` 能产出 BoldMatch，had/hhad 数值一致、ttg/crs 为空）；
-   周X→businessDate 映射（含跨周）；年份推断（含跨年）。
+   businessDate 分组（多销售日混排）；停售场（`data-isend≠"0"`）被排除。
 3. **回退触发**：主源抛错 → 走备源；主源返回空壳 → 走备源；备源也 0 场 → 抛主源错误。
 4. **守卫**：空覆盖非空被拒；首次写入放行；非空覆盖非空放行。
 
@@ -117,7 +123,6 @@ had/hhad 池）`）。
   出假空盘（与 6/11 教训对齐）。
 - 备源日无 ttg/crs：D 档 Poisson edge 过滤（§27）等依赖盘面赔率的规则在缺池处
   自然失效为"不生成该类腿"，属设计内诚实降级。
-- 让球线属性定位是实现期待办项；失败路径（0.0 + warning）已定义。
 
 ## 关联
 
