@@ -104,6 +104,23 @@ def champion_trend_png(
     return _to_png(fig)
 
 
+def judge_trend_png(
+    *, dates: list[str], judge_rates: list[float], baseline_rates: list[float]
+) -> bytes:
+    """记分牌累计命中率折线 — 评判员 vs 闭眼跟热门基线。"""
+    prop = _cjk_prop()
+    fig, ax = plt.subplots(figsize=(5.5, 2.6))
+    ax.plot(dates, [v * 100 for v in judge_rates], marker="o", markersize=3,
+            linewidth=1.8, color=ACCENT, label="评判员")
+    ax.plot(dates, [v * 100 for v in baseline_rates], marker="s", markersize=3,
+            linewidth=1.2, color="#999999", linestyle="--", label="跟市场热门")
+    ax.set_ylabel("累计判定命中率 %", fontproperties=prop, fontsize=8)
+    ax.legend(prop=prop, fontsize=8)
+    ax.tick_params(labelsize=7)
+    ax.spines[["top", "right"]].set_visible(False)
+    return _to_png(fig)
+
+
 def group_table_png(t: Tournament, results: list[WcResult]) -> bytes:
     """各组积分表(小组赛阶段)— 真实赛果算积分,未赛为 0。"""
     import random

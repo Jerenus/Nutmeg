@@ -16,6 +16,8 @@ from nutmeg.services.jczq_judgment_answers import (
     load_judgment_answers,
 )
 
+from .judge_ledger import LEDGER_FILENAME, LedgerSummary, ledger_summary, load_ledger
+from .predictions import Predictions, load_predictions
 from .sim import SimOutput, load_sim
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,10 @@ class DailyReport:
     sim_history: list[SimOutput] = field(default_factory=list)
     review: dict | None = None     # 昨日 tiered-plan-review.json
     calibration_note: str | None = None
+    predictions: "Predictions | None" = None
+    ledger_summary: "LedgerSummary | None" = None
+    ledger_yesterday: list[dict] = field(default_factory=list)
+    ledger_entries: list[dict] = field(default_factory=list)
 
 
 def build_daily_report(run_date: str, output_dir: Path) -> DailyReport:
@@ -118,6 +124,11 @@ def build_daily_report(run_date: str, output_dir: Path) -> DailyReport:
 
     note = calibration_alert(load_entries(wc_dir / "calibration-log.jsonl"))
 
+    predictions = load_predictions(daily)
+    ledger_entries = load_ledger(wc_dir / LEDGER_FILENAME)
+    summary = ledger_summary(ledger_entries) if ledger_entries else None
+    ledger_yesterday = [e for e in ledger_entries if e.get("date") == prev_day]
+
     signals = _signals_from(packet_md, sim, sim_prev)
     stage = _stage_label_for(run_date)
     return DailyReport(
@@ -126,6 +137,8 @@ def build_daily_report(run_date: str, output_dir: Path) -> DailyReport:
         answers=load_judgment_answers(daily), sim=sim, sim_prev=sim_prev,
         sim_history=[s for s in history if s], review=review,
         calibration_note=note,
+        predictions=predictions, ledger_summary=summary,
+        ledger_yesterday=ledger_yesterday, ledger_entries=ledger_entries,
     )
 
 

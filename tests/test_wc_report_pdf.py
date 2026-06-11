@@ -42,3 +42,26 @@ def test_render_review_pdf(tmp_path: Path) -> None:
     r.review = {"by_version": {}, "total_stake": 100, "total_return": 0}
     render_review_pdf(r, out)
     assert out.exists() and out.read_bytes()[:5] == b"%PDF-"
+
+
+def test_daily_pdf_renders_judge_section(tmp_path) -> None:
+    from nutmeg.services.worldcup.predictions import JudgePick, Predictions
+
+    r = _report(with_sim=True)
+    r.predictions = Predictions(
+        date="2026-06-12", judge="claude",
+        picks=[JudgePick(fixture="墨西哥 vs 南非", judgment="home",
+                         score="2-1", reason="主场+边路爆点", confidence=4,
+                         upset_flag=True, baseline_pick="home")],
+        champion_pick={"team": "Argentina", "reason": "板凳深度"},
+        opinion_ticket=None)
+    out = tmp_path / "with-judge.pdf"
+    render_daily_pdf(r, out)
+    assert out.exists() and out.read_bytes()[:5] == b"%PDF-"
+
+
+def test_daily_pdf_absent_judge_still_renders(tmp_path) -> None:
+    r = _report(with_sim=True)   # _report 不设 predictions → None
+    out = tmp_path / "absent.pdf"
+    render_daily_pdf(r, out)
+    assert out.exists() and out.read_bytes()[:5] == b"%PDF-"

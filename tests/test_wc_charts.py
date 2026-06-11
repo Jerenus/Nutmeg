@@ -42,3 +42,14 @@ def test_trend_png_with_history() -> None:
 
 def test_group_table_png() -> None:
     assert group_table_png(_t(), results=[])[:4] == b"\x89PNG"
+
+
+def test_judge_trend_png() -> None:
+    from nutmeg.services.worldcup.charts import judge_trend_png
+
+    png = judge_trend_png(
+        dates=["06-12", "06-13", "06-14"],
+        judge_rates=[0.5, 0.6, 0.55],
+        baseline_rates=[0.5, 0.5, 0.52],
+    )
+    assert png[:4] == b"\x89PNG"

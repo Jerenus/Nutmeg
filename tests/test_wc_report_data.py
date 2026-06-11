@@ -53,3 +53,32 @@ def test_signals_from_counts_only_b1_rows() -> None:
     sig = _signals_from(packet, None, None)
     assert sig["n_matches"] == 2
     assert sig["hard_hot"] == 1
+
+
+def test_build_daily_report_loads_predictions_and_ledger(tmp_path) -> None:
+    import json
+
+    from nutmeg.services.worldcup.report_data import build_daily_report
+
+    daily = tmp_path / "daily" / "2026-06-12"
+    daily.mkdir(parents=True)
+    (daily / "predictions.json").write_text(json.dumps({
+        "date": "2026-06-12", "judge": "claude",
+        "picks": [{"fixture": "A vs B", "judgment": "home", "score": "2-1",
+                   "reason": "r", "confidence": 4}],
+        "champion_pick": {"team": "Argentina", "reason": "x"},
+        "opinion_ticket": None, "written_at": "t",
+    }, ensure_ascii=False), encoding="utf-8")
+    wc = tmp_path / "wc2026"
+    wc.mkdir()
+    (wc / "judge-ledger.jsonl").write_text(json.dumps({
+        "date": "2026-06-11", "kind": "pick", "match_id": "M01",
+        "judgment_hit": True, "score_hit": False, "baseline_hit": True,
+        "upset_flag": False, "upset_hit": False, "pending": False,
+    }) + "\n", encoding="utf-8")
+    report = build_daily_report("2026-06-12", tmp_path)
+    assert report.predictions is not None
+    assert report.predictions.picks[0].judgment == "home"
+    assert report.ledger_summary is not None
+    assert report.ledger_summary.n_picks == 1
+    assert len(report.ledger_yesterday) == 1
