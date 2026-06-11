@@ -229,3 +229,47 @@ def test_synth_roundtrip_into_bold_matches() -> None:
     assert m1.hhad_odds == {"home": 2.00, "draw": 3.25, "away": 3.11}
     assert m1.hhad_line == -1.0
     assert m1.ttg_odds == {} and m1.crs_odds == {}
+
+
+# ---------------------------------------------------------------------------
+# 快照防覆盖守卫（6/11 数据丢失 bug）
+# ---------------------------------------------------------------------------
+
+_NONEMPTY = {
+    "matchInfoList": [
+        {"businessDate": "2026-06-11", "subMatchList": [{"matchNumStr": "周四001"}]}
+    ]
+}
+_EMPTY = {"vtoolsConfig": {"offLineSaleStatus": 1}}
+
+
+def _read_snapshot(tmp_path):
+    import json
+
+    path = tmp_path / "daily" / "2026-06-11" / "sporttery_markets.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_guard_refuses_empty_over_nonempty(tmp_path) -> None:
+    jczq_bold_combos.persist_sporttery_snapshot("2026-06-11", tmp_path, _NONEMPTY)
+    jczq_bold_combos.persist_sporttery_snapshot("2026-06-11", tmp_path, _EMPTY)
+    assert _read_snapshot(tmp_path) == _NONEMPTY  # 完好快照未被降级响应冲掉
+
+
+def test_guard_allows_first_write_even_empty(tmp_path) -> None:
+    jczq_bold_combos.persist_sporttery_snapshot("2026-06-11", tmp_path, _EMPTY)
+    assert _read_snapshot(tmp_path) == _EMPTY
+
+
+def test_guard_allows_nonempty_over_anything(tmp_path) -> None:
+    jczq_bold_combos.persist_sporttery_snapshot("2026-06-11", tmp_path, _EMPTY)
+    jczq_bold_combos.persist_sporttery_snapshot("2026-06-11", tmp_path, _NONEMPTY)
+    assert _read_snapshot(tmp_path) == _NONEMPTY
+
+
+def test_guard_survives_corrupt_existing_snapshot(tmp_path) -> None:
+    path = tmp_path / "daily" / "2026-06-11" / "sporttery_markets.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("not-json", encoding="utf-8")
+    jczq_bold_combos.persist_sporttery_snapshot("2026-06-11", tmp_path, _EMPTY)
+    assert _read_snapshot(tmp_path) == _EMPTY  # 坏快照可被覆盖、不崩

@@ -2084,11 +2084,29 @@ def fetch_sporttery_value_with_fallback() -> tuple[dict, str]:
 
 def persist_sporttery_snapshot(run_date: str, output_dir, value: dict) -> None:
     """Write the Sporttery response to ``<output_dir>/daily/<run_date>/
-    sporttery_markets.json`` so ``--replay`` is reproducible."""
+    sporttery_markets.json`` so ``--replay`` is reproducible.
+
+    守卫（spec 2026-06-11）：新 ``value`` 无非空 ``matchInfoList`` 且磁盘已有
+    含非空 ``matchInfoList`` 的快照 → 拒绝覆盖。修 2026-06-11 数据丢失 bug——
+    WAF 降级空壳把当天 12:00 的完好 20 场快照冲掉（与 v2.2 修过的 ``--replay``
+    覆盖派发文件 bug 同族）。
+    """
     import json
+    import logging
     from pathlib import Path
 
     path = Path(output_dir) / "daily" / run_date / "sporttery_markets.json"
+    if not value.get("matchInfoList") and path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            existing = {}
+        if isinstance(existing, dict) and existing.get("matchInfoList"):
+            logging.getLogger(__name__).warning(
+                "sporttery snapshot guard: 拒绝用空盘响应覆盖 %s 的非空快照",
+                run_date,
+            )
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
 
