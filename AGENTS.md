@@ -58,7 +58,12 @@ project-level Codex entrypoint opened at `/Users/jz71/Projects/Nutmeg`.
    a. 把作答写入 `.nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/judgment-answers.json`，
       schema：`{date, answers: [{q_id, decision, confidence(1-5), reason}],
       agents, final_note, answered_at}`；多 agent 分歧场次标 `divergent: true`。
-   b. 跑 `uv run nutmeg jczq-report --date today --dispatch-telegram --no-dry-run`
+   b. 以评判员身份写 `.nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/predictions.json`
+      （schema 见 judge spec §1）：当日**每场**世界杯比赛给明确判定+比分+看球
+      逻辑理由+信心 1-5；**要敢偏离市场，理由写球不写概率**；当日信心最高
+      （≥4）的在售场次出评判员票（单关 ¥15，与引擎注金永不合账）；冠军 pick
+      明确到一支队，换 pick 要写理由。
+   c. 跑 `uv run nutmeg jczq-report --date today --dispatch-telegram --no-dry-run`
       推送当日 PDF 世界杯日报。**这是「完成决策」的收尾动作，不可省。**
    窗口外此条自动失效（jczq-report 会提示无世界杯赛事）。
 

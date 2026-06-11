@@ -950,6 +950,16 @@ def jczq_report(
         _cli.console.print(f"{filename} 已存在,跳过(--if-missing)")
         return
 
+    # judge spec §2.1 — 渲染前对账最近 3 天判定(幂等,pending 自动补结)
+    try:
+        from nutmeg.services.worldcup.judge_ledger import reconcile_recent
+
+        reconcile_recent(output_dir, today=target_date)
+    except Exception:  # noqa: BLE001 — 记分失败不阻塞报告(spec §5)
+        import logging
+
+        logging.getLogger(__name__).warning("judge ledger 对账失败", exc_info=True)
+
     report = build_daily_report(target_date, output_dir)
     if review_pdf:
         render_review_pdf(report, pdf_path)
