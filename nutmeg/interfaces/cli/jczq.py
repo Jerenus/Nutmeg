@@ -909,3 +909,71 @@ def jczq_web(
     repository.initialize()
     service = JczqWebCockpitService(output_dir=output_dir, repository=repository)
     uvicorn.run(create_jczq_web_app(service=service), host=host, port=port)
+
+
+@_cli.app.command("jczq-report")
+def jczq_report(
+    run_date: str | None = _cli.typer.Option(
+        None, "--date", help="目标日期 YYYY-MM-DD(默认今天)"
+    ),
+    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
+    if_missing: bool = _cli.typer.Option(
+        False, "--if-missing", help="当日 PDF 已存在则跳过(20:00 兜底任务用)"
+    ),
+    review_pdf: bool = _cli.typer.Option(
+        False, "--review-pdf", help="只渲染迷你战报(08:00 复盘任务用)"
+    ),
+    dispatch_telegram: bool = _cli.typer.Option(
+        False, "--dispatch-telegram", help="把 PDF 推到 Telegram"
+    ),
+    dry_run: bool = _cli.typer.Option(
+        True, "--dry-run/--no-dry-run", help="dry-run 时不推送"
+    ),
+) -> None:
+    """worldcup spec §5 — 世界杯 PDF 日报:决策完成后的收尾渲染,绝不重新决策。
+
+    全部从落盘文件合成(决策包/裁量答案/sim/复盘);缺哪节标注哪节。
+    """
+    import os
+
+    from nutmeg.services.worldcup.report_data import build_daily_report
+    from nutmeg.services.worldcup.report_pdf import (
+        render_daily_pdf,
+        render_review_pdf,
+    )
+
+    target_date = _resolve_jczq_date(run_date)
+    daily_dir = output_dir / "daily" / target_date
+    filename = "wc-review-report.pdf" if review_pdf else "wc-daily-report.pdf"
+    pdf_path = daily_dir / filename
+    if if_missing and pdf_path.exists():
+        _cli.console.print(f"{filename} 已存在,跳过(--if-missing)")
+        return
+
+    report = build_daily_report(target_date, output_dir)
+    if review_pdf:
+        render_review_pdf(report, pdf_path)
+    else:
+        render_daily_pdf(report, pdf_path)
+    _cli.console.print(f"Wrote PDF: {pdf_path}")
+
+    if dispatch_telegram and not dry_run:
+        from nutmeg.interfaces.bot.telegram import TelegramBotClient
+
+        token = os.environ.get("NUTMEG_TELEGRAM_BOT_TOKEN")
+        chat_raw = os.environ.get("NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS", "")
+        if not token or not chat_raw:
+            _cli.console.print("Telegram 凭据缺失,跳过推送")
+            raise _cli.typer.Exit(code=1)
+        caption = (
+            f"🏆 世界杯日报 · {target_date} · {report.stage_label}"
+            + ("(裁量未作答,兜底版)" if report.answers is None and not review_pdf
+               else "")
+        )
+        client = TelegramBotClient(token=token)
+        for chat_id in (int(c) for c in chat_raw.split(",") if c.strip()):
+            client.send_document(chat_id=chat_id, document_path=pdf_path,
+                                 caption=caption)
+        _cli.console.print("Telegram dispatch: sent")
+    elif dispatch_telegram:
+        _cli.console.print("Telegram dispatch: dry-run skipped")
