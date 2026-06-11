@@ -54,6 +54,13 @@ project-level Codex entrypoint opened at `/Users/jz71/Projects/Nutmeg`.
    confidence 1-5 / 一行理由）。§C 之外的一切都已被引擎定死。
 5. **跨 agent 一致性约定**：你与别的 agent（GPT↔Claude）在某 q_id 答案不同 = 该场
    高不确定 → 建议减注或剔除，**不是**二选一赌运气。
+6. **（世界杯窗口 2026-06-11 ~ 07-19）答完 §C 后必须收尾**：
+   a. 把作答写入 `.nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/judgment-answers.json`，
+      schema：`{date, answers: [{q_id, decision, confidence(1-5), reason}],
+      agents, final_note, answered_at}`；多 agent 分歧场次标 `divergent: true`。
+   b. 跑 `uv run nutmeg jczq-report --date today --dispatch-telegram --no-dry-run`
+      推送当日 PDF 世界杯日报。**这是「完成决策」的收尾动作，不可省。**
+   窗口外此条自动失效（jczq-report 会提示无世界杯赛事）。
 
 ### 档位定性（spec §32.0，作答 §C 时据此）
 
