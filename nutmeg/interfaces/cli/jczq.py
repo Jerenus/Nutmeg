@@ -618,6 +618,31 @@ def jczq_tiered(
         _cli.typer.echo(rendered)
 
 
+def _match_nos(value: dict | None) -> set[str]:
+    """体彩快照里的场次编号集合。
+
+    真实结构（对齐 ``bold_matches_from_sporttery`` 的解析口径）：
+    ``matchInfoList``（按日分组）→ ``subMatchList`` → ``matchNumStr``。
+    """
+    if not value:
+        return set()
+    return {
+        str(raw.get("matchNumStr", ""))
+        for day in value.get("matchInfoList") or []
+        for raw in day.get("subMatchList") or []
+    } - {""}
+
+
+def _board_changed(old: dict | None, new: dict | None) -> bool:
+    """场次集合变化才算变(worldcup spec §6.1)— 赔率微动不触发重出包。
+
+    旧快照缺失（``None``）一律视为有变化：当天首次刷新必须出包。
+    """
+    if old is None:
+        return True
+    return _match_nos(old) != _match_nos(new)
+
+
 @_cli.app.command("jczq-today")
 def jczq_today(
     run_date: str | None = _cli.typer.Option(
@@ -636,6 +661,10 @@ def jczq_today(
     ),
     dry_run: bool = _cli.typer.Option(
         True, "--dry-run/--no-dry-run", help="dry-run 时不推送"
+    ),
+    refresh_check: bool = _cli.typer.Option(
+        False, "--refresh-check",
+        help="盘面刷新检查:场次集合无变化则静默退出,变化才重出包(18:00 任务用)",
     ),
 ) -> None:
     """spec §32 — 单一决策入口：tiered 票面 + 盘面底座 + 有界裁量问题。
@@ -681,6 +710,16 @@ def jczq_today(
             _cli.console.print(
                 "⚠️ sporttery 主源不可用，已回退 500.com 备源（仅 had/hhad 池）"
             )
+        # worldcup spec §6.1 — 18:00 盘面刷新检查：场次集合无变化 → 静默退出，
+        # 不重出包、不覆盖当天已派发快照；有变化才继续走完整出包流程。
+        # 放在 persist 之前：fetch 对空壳响应已 raise（绝不静默假空盘），到这里
+        # value 必非空，与 persist_sporttery_snapshot 的防覆盖守卫互不冲突。
+        if refresh_check:
+            old_value = load_sporttery_snapshot(target_date, output_dir)
+            if not _board_changed(old_value, value):
+                _cli.console.print("refresh-check: 盘面无变化,静默退出")
+                return
+            _cli.console.print("refresh-check: 盘面有更新,重出决策包")
         persist_sporttery_snapshot(target_date, output_dir, value)
         # 国际 odds：API-Football 主源（12 家博彩、可靠），500.com 仅补 API-Football
         # 没盖到的场/盘口（友谊赛深夜场、它无大小球等）。只换数据源槽位，不动选腿。
@@ -761,7 +800,11 @@ def jczq_today(
         _cli.console.print(f"Wrote decision packet: {write}")
 
     if dispatch_telegram:
-        status = _dispatch_jczq_telegram(rendered, dry_run=dry_run)
+        payload = rendered
+        if refresh_check:
+            # worldcup spec §6.1 — 刷新出的包显式声明取代中午版本。
+            payload = "⚠️ 盘面有更新(18:00 刷新)——以本包为准\n\n" + payload
+        status = _dispatch_jczq_telegram(payload, dry_run=dry_run)
         _cli.console.print(f"Telegram dispatch: {status}")
 
     if write is None and not dispatch_telegram:
