@@ -221,6 +221,60 @@ def parse_jczq_list(html: str) -> list[Fcom500JczqMatch]:
     return matches
 
 
+def sporttery_value_from_jczq_board(
+    matches: list[Fcom500JczqMatch],
+) -> dict:
+    """500.com 竞彩列表 → sporttery ``getMatchCalculatorV1`` 同形 ``value`` dict。
+
+    体彩备源（spec 2026-06-11）：sporttery webapi 被 WAF 拦截/降级时，由
+    trade.500.com 的体彩 sp 价合成引擎可直接消费的 value——下游
+    （``bold_matches_from_sporttery`` / ``_board_matches`` / 快照 / --replay）
+    零感知。只有 had/hhad 两池（trade 列表页所带）；ttg/crs 缺省，引擎
+    spec §11.1 原生支持缺池。停售/缺 businessDate/两池全缺的场被排除——
+    绝不猜测。顶层 ``nutmegSource`` 标记数据来源，引擎忽略、复盘可见。
+    """
+    by_date: dict[str, list[dict]] = {}
+    for m in matches:
+        if not m.is_selling:
+            continue
+        if not (m.business_date and m.match_date):
+            continue
+        sub: dict[str, object] = {
+            "matchStatus": "Selling",
+            "matchNumStr": m.match_no,
+            "businessDate": m.business_date,
+            "homeTeamAbbName": m.home_team,
+            "awayTeamAbbName": m.away_team,
+            "leagueAbbName": m.league_short,
+            "matchDate": m.match_date,
+            "matchTime": m.match_time,
+        }
+        if len(m.had_sp) == 3:
+            sub["had"] = {
+                "h": m.had_sp["home"],
+                "d": m.had_sp["draw"],
+                "a": m.had_sp["away"],
+            }
+        if len(m.hhad_sp) == 3:
+            sub["hhad"] = {
+                "h": m.hhad_sp["home"],
+                "d": m.hhad_sp["draw"],
+                "a": m.hhad_sp["away"],
+                # sporttery 原样格式：负带号、正不带号（"-1" / "1"）
+                "goalLineValue": f"{m.hhad_line:g}",
+            }
+        if "had" not in sub and "hhad" not in sub:
+            continue
+        by_date.setdefault(m.business_date, []).append(sub)
+    return {
+        "nutmegSource": "fcom500-fallback",
+        "matchInfoList": [
+            {"businessDate": business_date, "subMatchList": subs}
+            for business_date, subs in sorted(by_date.items())
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Shared market value type + de-vig helper
 # ---------------------------------------------------------------------------
