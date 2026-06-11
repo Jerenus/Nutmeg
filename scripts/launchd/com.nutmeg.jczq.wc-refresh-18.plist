@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nutmeg.jczq.wc-refresh-18</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; /opt/homebrew/bin/uv run nutmeg jczq-today --refresh-check --output-dir .nutmeg-data/jczq --write .nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/today-packet.md --dispatch-telegram --no-dry-run</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>18</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/jczq-wc-refresh-18.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/jczq-wc-refresh-18.err.log</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/jz71/Projects/Nutmeg</string>
+</dict>
+</plist>
