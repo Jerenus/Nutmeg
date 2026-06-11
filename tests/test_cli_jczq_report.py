@@ -84,11 +84,12 @@ def test_jczq_report_reconciles_recent_predictions(tmp_path: Path) -> None:
     """跑 jczq-report 前自动对账最近判定 → ledger 落盘。"""
     import json
 
-    _seed_minimal_day(tmp_path)
-    prev = tmp_path / "daily" / "2026-06-11"
+    # 判定日须在评判员层上线日(LEDGER_START_DATE=2026-06-12)之后才入账
+    _seed_minimal_day(tmp_path, day="2026-06-13")
+    prev = tmp_path / "daily" / "2026-06-12"
     prev.mkdir(parents=True)
     (prev / "predictions.json").write_text(json.dumps({
-        "date": "2026-06-11", "judge": "claude",
+        "date": "2026-06-12", "judge": "claude",
         "picks": [{"fixture": "A vs B", "match_id": "M01", "judgment": "home",
                    "score": "2-1", "reason": "r", "confidence": 4}],
         "champion_pick": {"team": "Argentina", "reason": "x"},
@@ -99,7 +100,7 @@ def test_jczq_report_reconciles_recent_predictions(tmp_path: Path) -> None:
          "outcome_90": "home", "goals_h_90": 2, "goals_a_90": 1,
          "advanced": None}]), encoding="utf-8")
     result = runner.invoke(app, [
-        "jczq-report", "--date", "2026-06-12", "--output-dir", str(tmp_path)])
+        "jczq-report", "--date", "2026-06-13", "--output-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
     ledger = (tmp_path / "wc2026" / "judge-ledger.jsonl").read_text(
         encoding="utf-8")

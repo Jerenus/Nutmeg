@@ -16,6 +16,8 @@ from .results import WcResult
 logger = logging.getLogger(__name__)
 
 LEDGER_FILENAME = "judge-ledger.jsonl"
+# 评判员层上线日(judge spec §2)——此前的日子不存在评判员,不计缺席。
+LEDGER_START_DATE = "2026-06-12"
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +159,8 @@ def reconcile_recent(output_dir: Path, *, today: str, days_back: int = 3) -> int
         return 0
     for back in range(1, days_back + 1):
         d = (anchor - timedelta(days=back)).isoformat()
+        if d < LEDGER_START_DATE:
+            continue  # 评判员层诞生之前的日子不算缺席
         pred = load_predictions(output_dir / "daily" / d)
         if pred is None:
             existing_dates = {e.get("date") for e in load_ledger(ledger_path)}

@@ -109,3 +109,17 @@ def test_summary_rates_and_absent() -> None:
     assert s.upset_precision == 0.0
     assert s.ticket_pnl == -15.0
     assert s.absent_days == 1 and s.pending == 1
+
+
+def test_reconcile_recent_skips_pre_launch_days(tmp_path: Path) -> None:
+    """评判员层上线(2026-06-12)之前的日子不计缺席。"""
+    from nutmeg.services.worldcup.judge_ledger import reconcile_recent
+
+    for d in ("2026-06-10", "2026-06-11", "2026-06-12"):
+        (tmp_path / "daily" / d).mkdir(parents=True)
+    (tmp_path / "wc2026").mkdir()
+    (tmp_path / "wc2026" / "results.json").write_text("[]", encoding="utf-8")
+    reconcile_recent(tmp_path, today="2026-06-13")
+    entries = load_ledger(tmp_path / "wc2026" / "judge-ledger.jsonl")
+    absents = [e for e in entries if e.get("kind") == "absent"]
+    assert [e["date"] for e in absents] == ["2026-06-12"]
