@@ -536,6 +536,7 @@ def jczq_tiered(
 
     from nutmeg.services.jczq_bold_combos import (
         bold_matches_from_sporttery,
+        fetch_sporttery_value_with_fallback,
         load_bold_odds_snapshot,
         load_sporttery_snapshot,
         persist_bold_odds_snapshot,
@@ -563,10 +564,11 @@ def jczq_tiered(
             raise _cli.typer.Exit(code=2)
         bold_odds = load_bold_odds_snapshot(target_date, output_dir)
     else:
-        from nutmeg.services.jczq import SportteryJczqCalculatorProvider
-
-        fetched = SportteryJczqCalculatorProvider().fetch()
-        value = fetched.get("value") if "value" in fetched else fetched
+        value, board_source = fetch_sporttery_value_with_fallback()
+        if board_source != "sporttery":
+            _cli.console.print(
+                "⚠️ sporttery 主源不可用，已回退 500.com 备源（仅 had/hhad 池）"
+            )
         persist_sporttery_snapshot(target_date, output_dir, value)
         try:
             from nutmeg.data.fcom500 import Fcom500Client, collect_bold_odds
@@ -645,6 +647,7 @@ def jczq_today(
 
     from nutmeg.services.jczq_bold_combos import (
         bold_matches_from_sporttery,
+        fetch_sporttery_value_with_fallback,
         load_bold_odds_snapshot,
         load_sporttery_snapshot,
         persist_bold_odds_snapshot,
@@ -673,10 +676,11 @@ def jczq_today(
             raise _cli.typer.Exit(code=2)
         bold_odds = load_bold_odds_snapshot(target_date, output_dir)
     else:
-        from nutmeg.services.jczq import SportteryJczqCalculatorProvider
-
-        fetched = SportteryJczqCalculatorProvider().fetch()
-        value = fetched.get("value") if "value" in fetched else fetched
+        value, board_source = fetch_sporttery_value_with_fallback()
+        if board_source != "sporttery":
+            _cli.console.print(
+                "⚠️ sporttery 主源不可用，已回退 500.com 备源（仅 had/hhad 池）"
+            )
         persist_sporttery_snapshot(target_date, output_dir, value)
         # 国际 odds：API-Football 主源（12 家博彩、可靠），500.com 仅补 API-Football
         # 没盖到的场/盘口（友谊赛深夜场、它无大小球等）。只换数据源槽位，不动选腿。
