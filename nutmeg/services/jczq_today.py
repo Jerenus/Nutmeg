@@ -163,6 +163,8 @@ def render_today_packet(
     poisson_edge_index: dict[tuple[str, str, str], float],
     *,
     poisson_floor: float = DEFAULT_POISSON_FLOOR,
+    wc_section: str | None = None,
+    extra_questions: list[JudgmentQuestion] | None = None,
 ) -> str:
     """spec §32.2 — 组装决策包：指令头 + §A 票面 + §B 底座 + §C 裁量问题。"""
     lines: list[str] = []
@@ -226,7 +228,7 @@ def render_today_packet(
 
     lines.append("## C. 裁量问题（其余一切已被引擎定死）")
     lines.append("")
-    questions = derive_judgment_questions(plan, matches)
+    questions = derive_judgment_questions(plan, matches) + list(extra_questions or [])
     if not questions:
         lines.append("今日无裁量问题，照 §A 执行（或整张不买）。")
     else:
@@ -244,5 +246,10 @@ def render_today_packet(
     # spec §35 — 机会雷达：多视角透镜（反面/异动/…）扫盘，补足大胆度/多样性，
     # 挖 A 档热门结构外不被注意的机会。底座可插拔，加透镜不动此处。
     lines.append(render_opportunity_radar(scan_opportunities(matches)))
+
+    # spec(worldcup)§4 — 世界杯窗口内由 CLI 注入 §E；窗口外 None，包与现状逐字节一致。
+    if wc_section:
+        lines.append("")
+        lines.append(wc_section)
 
     return "\n".join(lines)
