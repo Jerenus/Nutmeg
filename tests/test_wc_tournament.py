@@ -1,6 +1,7 @@
 """worldcup 子包 — 门控与赛制规则测试。"""
 from __future__ import annotations
 
+import random
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,10 @@ import pytest
 from nutmeg.services.worldcup import is_wc_active
 from nutmeg.services.worldcup.tournament import (
     Tournament,
+    allocate_best_thirds,
     load_tournament,
+    rank_group,
+    rank_thirds,
     validate_tournament,
 )
 
@@ -63,6 +67,46 @@ def test_validate_catches_unknown_team_and_slot() -> None:
     errors = validate_tournament(Tournament.from_dict(raw))
     assert any("Atlantis" in e for e in errors)
     assert any("1Z" in e for e in errors)
+
+
+# match_goals: {(home, away): (gh, ga)}
+
+
+def test_rank_group_points_then_gd_then_gf() -> None:
+    goals = {
+        ("A1", "A2"): (2, 0), ("A1", "A3"): (1, 1), ("A1", "A4"): (0, 1),
+        ("A2", "A3"): (3, 0), ("A2", "A4"): (2, 2), ("A3", "A4"): (0, 0),
+    }
+    order = rank_group(["A1", "A2", "A3", "A4"], goals, random.Random(1))
+    # A4: 5分(1胜2平)/ A2: 4分 gd+1 gf5 / A1: 4分 gd+1 gf3(同 gd,gf 分高下)/ A3: 2分
+    assert order == ["A4", "A2", "A1", "A3"]
+
+
+def test_rank_group_h2h_breaks_full_tie() -> None:
+    # B1/B2 同 6 分同 gd+2 同 gf4 全平;B2 赢了 B1 的 h2h → B2 在前。
+    # 故意让 h2h 胜者(B2)在输入序里靠后:稳定排序会错排 B1 在前,只有 h2h 子表能纠正。
+    goals = {
+        ("B1", "B2"): (1, 2), ("B1", "B3"): (2, 0), ("B1", "B4"): (1, 0),
+        ("B2", "B3"): (0, 1), ("B2", "B4"): (2, 0),
+        ("B3", "B4"): (1, 1),
+    }
+    order = rank_group(["B1", "B2", "B3", "B4"], goals, random.Random(1))
+    assert order.index("B2") < order.index("B1")
+
+
+def test_rank_thirds_orders_by_points_gd_gf() -> None:
+    thirds = [("A", "tA", 4, 1, 5), ("B", "tB", 6, 0, 2), ("C", "tC", 4, 2, 3)]
+    ranked = rank_thirds(thirds, random.Random(1))
+    assert [g for g, *_ in ranked] == ["B", "C", "A"]
+
+
+def test_allocate_best_thirds_respects_allowed_groups() -> None:
+    ranked = [("B", "tB", 6, 0, 2), ("C", "tC", 4, 2, 3), ("A", "tA", 4, 1, 5)]
+    slots = {"S1": "AB", "S2": "BC", "S3": "ABC"}
+    alloc = allocate_best_thirds(ranked, slots)
+    assert set(alloc.values()) == {"tA", "tB", "tC"}
+    assert alloc["S1"] in {"tA", "tB"}
+    assert alloc["S2"] in {"tB", "tC"}
 
 
 def test_load_tournament_real_file_validates() -> None:
