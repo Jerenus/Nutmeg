@@ -722,7 +722,26 @@ def jczq_today(
         run_date=target_date,
         poisson_edge_index=poisson_edge_index,
     )
-    rendered = render_today_packet(plan, matches, poisson_edge_index)
+    # 世界杯专题层(worldcup spec §1):窗口外 layer=None,包与现状逐字节一致。
+    wc_section: str | None = None
+    wc_extra_questions: list = []
+    try:
+        from nutmeg.services.worldcup import run_worldcup_layer
+
+        layer = run_worldcup_layer(
+            run_date=target_date, matches=matches,
+            output_dir=output_dir, replay=replay,
+        )
+        if layer is not None:
+            wc_section = layer.section_md
+            wc_extra_questions = layer.extra_questions
+    except Exception:  # noqa: BLE001 — 专题层 optional; degrade
+        logger.warning("jczq-today: 世界杯层失败,§E 缺席", exc_info=True)
+
+    rendered = render_today_packet(
+        plan, matches, poisson_edge_index,
+        wc_section=wc_section, extra_questions=wc_extra_questions,
+    )
 
     daily_dir = output_dir / "daily" / target_date
     daily_dir.mkdir(parents=True, exist_ok=True)

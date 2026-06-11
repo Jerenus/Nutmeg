@@ -1,6 +1,8 @@
 """§E 世界杯节渲染 + 淘汰赛裁量问题 + 决策包接缝。"""
 from __future__ import annotations
 
+from pathlib import Path
+
 from nutmeg.services.jczq_bold_combos import BoldMatch
 from nutmeg.services.jczq_today import JudgmentQuestion
 from nutmeg.services.worldcup.packet_section import (
@@ -9,7 +11,6 @@ from nutmeg.services.worldcup.packet_section import (
 )
 from nutmeg.services.worldcup.sim import SimOutput
 from nutmeg.services.worldcup.tournament import Tournament
-
 from tests.test_wc_tournament import _mini_tournament_dict
 
 
@@ -78,3 +79,27 @@ def test_render_today_packet_accepts_wc_extension() -> None:
                              extra_questions=extra)
     assert "## E. 世界杯赛事预测" in md
     assert "Q_WC_KNOCKOUT_X" in md
+
+
+def test_run_worldcup_layer_inactive_returns_none(tmp_path: Path) -> None:
+    from nutmeg.services.worldcup import run_worldcup_layer
+
+    out = run_worldcup_layer(run_date="2026-05-01", matches=[],
+                             output_dir=tmp_path, replay=True)
+    assert out is None
+
+
+def test_run_worldcup_layer_replay_renders_from_disk(tmp_path: Path) -> None:
+    """replay 不发网络请求:落好 sim 文件后能渲染出 §E。"""
+    from nutmeg.services.worldcup import run_worldcup_layer
+    from nutmeg.services.worldcup.sim import save_sim
+
+    sim = SimOutput(run_date="2026-06-12", seed=1, n_sims=10, probs={
+        "Mexico": dict.fromkeys(
+            ("qualify", "r32", "r16", "qf", "sf", "final", "champion"), 0.5)
+    })
+    save_sim(tmp_path / "wc2026" / "sim-2026-06-12.json", sim)
+    out = run_worldcup_layer(run_date="2026-06-12", matches=[],
+                             output_dir=tmp_path, replay=True)
+    assert out is not None
+    assert "## E. 世界杯赛事预测" in out.section_md
