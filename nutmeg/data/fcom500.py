@@ -133,6 +133,14 @@ class Fcom500JczqMatch:
     league: str
     league_short: str
     kickoff: str
+    # 体彩备源扩展（spec 2026-06-11）：tr data 属性 + data-sp 官方价
+    had_sp: dict[str, float] = field(default_factory=dict)
+    hhad_sp: dict[str, float] = field(default_factory=dict)
+    hhad_line: float = 0.0
+    business_date: str = ""
+    match_date: str = ""
+    match_time: str = ""
+    is_selling: bool = False
 
 
 # Each match is a <tr ... data-matchid="N" data-matchnum="周日NNN" ...>.
@@ -144,6 +152,15 @@ _RE_LEAGUE = re.compile(
     r'liansai\.500\.com/zuqiu-\d+/"[^>]*title="([^"]+)"[^>]*>([^<]+)<'
 )
 _RE_KICKOFF = re.compile(r'td-endtime"[^>]*title="([^"]+)"')
+_RE_SP = re.compile(
+    r'data-type="(nspf|spf)"\s+data-value="(\d)"\s+data-sp="([\d.]+)"'
+)
+_SP_OUTCOME = {"3": "home", "1": "draw", "0": "away"}
+_RE_RANGQIU = re.compile(r'data-rangqiu="(-?\d+(?:\.\d+)?)"')
+_RE_PROCESSDATE = re.compile(r'data-processdate="(\d{4}-\d{2}-\d{2})"')
+_RE_MATCHDATE = re.compile(r'data-matchdate="(\d{4}-\d{2}-\d{2})"')
+_RE_MATCHTIME = re.compile(r'data-matchtime="(\d{2}:\d{2})"')
+_RE_ISEND = re.compile(r'data-isend="(\d+)"')
 
 
 def parse_jczq_list(html: str) -> list[Fcom500JczqMatch]:
@@ -170,6 +187,18 @@ def parse_jczq_list(html: str) -> list[Fcom500JczqMatch]:
             continue
         league_m = _RE_LEAGUE.search(block)
         kickoff_m = _RE_KICKOFF.search(block)
+        had_sp: dict[str, float] = {}
+        hhad_sp: dict[str, float] = {}
+        for market, value_key, sp in _RE_SP.findall(block):
+            outcome = _SP_OUTCOME.get(value_key)
+            if outcome is None:
+                continue
+            (had_sp if market == "nspf" else hhad_sp)[outcome] = float(sp)
+        rangqiu_m = _RE_RANGQIU.search(block)
+        processdate_m = _RE_PROCESSDATE.search(block)
+        matchdate_m = _RE_MATCHDATE.search(block)
+        matchtime_m = _RE_MATCHTIME.search(block)
+        isend_m = _RE_ISEND.search(block)
         seen.add(match_no)
         matches.append(
             Fcom500JczqMatch(
@@ -180,6 +209,13 @@ def parse_jczq_list(html: str) -> list[Fcom500JczqMatch]:
                 league=league_m.group(1) if league_m else "",
                 league_short=league_m.group(2) if league_m else "",
                 kickoff=(kickoff_m.group(1) if kickoff_m else "").replace("截止", ""),
+                had_sp=had_sp,
+                hhad_sp=hhad_sp,
+                hhad_line=float(rangqiu_m.group(1)) if rangqiu_m else 0.0,
+                business_date=processdate_m.group(1) if processdate_m else "",
+                match_date=matchdate_m.group(1) if matchdate_m else "",
+                match_time=matchtime_m.group(1) if matchtime_m else "",
+                is_selling=bool(isend_m and isend_m.group(1) == "0"),
             )
         )
     return matches
