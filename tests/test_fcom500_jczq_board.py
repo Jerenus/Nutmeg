@@ -125,6 +125,97 @@ def test_synth_skips_match_with_no_pools_and_empty_input() -> None:
     assert sporttery_value_from_jczq_board([])["matchInfoList"] == []
 
 
+import pytest  # noqa: E402
+
+from nutmeg.services import jczq_bold_combos  # noqa: E402
+from nutmeg.services.jczq import JczqProviderError  # noqa: E402
+
+
+class _StubProvider:
+    """SportteryJczqCalculatorProvider 替身：按构造参数返回/抛错。"""
+
+    def __init__(self, *, value=None, error: Exception | None = None):
+        self._value = value
+        self._error = error
+
+    def fetch(self) -> dict:
+        if self._error is not None:
+            raise self._error
+        return self._value
+
+
+class _StubFcomClient:
+    """Fcom500Client 替身：get() 永远返回 2026-06-11 fixture HTML。"""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get(self, url: str) -> str:
+        return _board_html()
+
+
+def _patch_fallback_deps(monkeypatch, *, provider, fcom_client=_StubFcomClient):
+    monkeypatch.setattr(
+        "nutmeg.services.jczq.SportteryJczqCalculatorProvider",
+        lambda: provider,
+    )
+    monkeypatch.setattr("nutmeg.data.fcom500.Fcom500Client", fcom_client)
+
+
+# ---------------------------------------------------------------------------
+# 回退 helper
+# ---------------------------------------------------------------------------
+
+
+def test_fallback_passthrough_when_primary_healthy(monkeypatch) -> None:
+    healthy = {"matchInfoList": [{"businessDate": "2026-06-11", "subMatchList": []}]}
+    _patch_fallback_deps(monkeypatch, provider=_StubProvider(value=healthy))
+    value, source = jczq_bold_combos.fetch_sporttery_value_with_fallback()
+    assert source == "sporttery"
+    assert value == healthy
+
+
+def test_fallback_on_provider_error(monkeypatch) -> None:
+    _patch_fallback_deps(
+        monkeypatch, provider=_StubProvider(error=JczqProviderError("403"))
+    )
+    value, source = jczq_bold_combos.fetch_sporttery_value_with_fallback()
+    assert source == "fcom500-fallback"
+    nums = [
+        s["matchNumStr"]
+        for day in value["matchInfoList"]
+        for s in day["subMatchList"]
+    ]
+    assert nums == ["周四001", "周四002"]
+
+
+def test_fallback_on_degraded_empty_value(monkeypatch) -> None:
+    # 6/11 形态：errorCode=0 但只有 vtoolsConfig、无 matchInfoList
+    _patch_fallback_deps(
+        monkeypatch, provider=_StubProvider(value={"vtoolsConfig": {}})
+    )
+    value, source = jczq_bold_combos.fetch_sporttery_value_with_fallback()
+    assert source == "fcom500-fallback"
+    assert value["nutmegSource"] == "fcom500-fallback"
+
+
+def test_fallback_failure_reraises_primary_error(monkeypatch) -> None:
+    class _DeadFcomClient(_StubFcomClient):
+        def get(self, url: str) -> str:
+            raise RuntimeError("market degraded")
+
+    _patch_fallback_deps(
+        monkeypatch,
+        provider=_StubProvider(error=JczqProviderError("403 primary")),
+        fcom_client=_DeadFcomClient,
+    )
+    with pytest.raises(JczqProviderError, match="403 primary"):
+        jczq_bold_combos.fetch_sporttery_value_with_fallback()
+
+
 def test_synth_roundtrip_into_bold_matches() -> None:
     # 合成 value 直接喂引擎入口 → BoldMatch，had/hhad 数值一致、ttg/crs 缺省为空
     matches = bold_matches_from_sporttery(

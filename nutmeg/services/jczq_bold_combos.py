@@ -2039,6 +2039,49 @@ def bold_matches_from_sporttery(
     return matches
 
 
+def fetch_sporttery_value_with_fallback() -> tuple[dict, str]:
+    """体彩盘面抓取：sporttery 主源 → trade.500.com 备源（spec 2026-06-11）。
+
+    返回 ``(value, source)``；``source`` ∈ {"sporttery", "fcom500-fallback"}。
+    回退触发两种情形：主源抛 ``JczqProviderError``（403/网络/errorCode≠0），或
+    返回的 value 无非空 ``matchInfoList``（2026-06-11 WAF 降级空壳形态）。备源
+    只有 had/hhad 两池。备源也失败/解析 0 场 → 原样抛出主源错误——绝不静默
+    出假空盘。
+    """
+    import logging
+
+    import nutmeg.services.jczq as jczq_service
+
+    logger = logging.getLogger(__name__)
+    primary_error: Exception
+    try:
+        fetched = jczq_service.SportteryJczqCalculatorProvider().fetch()
+        value = fetched.get("value") if "value" in fetched else fetched
+        if value.get("matchInfoList"):
+            return value, "sporttery"
+        primary_error = jczq_service.JczqProviderError(
+            "Sporttery returned no matchInfoList (degraded/WAF response)"
+        )
+        logger.warning("sporttery 主源返回空壳（无 matchInfoList），尝试 500.com 备源")
+    except jczq_service.JczqProviderError as exc:
+        primary_error = exc
+        logger.warning("sporttery 主源失败（%s），尝试 500.com 备源", exc)
+
+    try:
+        import nutmeg.data.fcom500 as fcom500
+
+        with fcom500.Fcom500Client() as client:
+            html = client.get("https://trade.500.com/jczq/")
+        board = fcom500.parse_jczq_list(html)
+        value = fcom500.sporttery_value_from_jczq_board(board)
+        if value.get("matchInfoList"):
+            return value, "fcom500-fallback"
+        logger.warning("500.com 备源解析 0 场在售比赛")
+    except Exception:  # noqa: BLE001 — 备源失败不掩盖主源错误
+        logger.warning("500.com 备源也失败", exc_info=True)
+    raise primary_error
+
+
 def persist_sporttery_snapshot(run_date: str, output_dir, value: dict) -> None:
     """Write the Sporttery response to ``<output_dir>/daily/<run_date>/
     sporttery_markets.json`` so ``--replay`` is reproducible."""
