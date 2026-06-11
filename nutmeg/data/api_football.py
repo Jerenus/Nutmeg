@@ -258,6 +258,8 @@ class ApiFootballClient:
             referee=fixture.get('referee'),
             home_goals=goals.get('home'),
             away_goals=goals.get('away'),
+            penalty_home=(payload.get('score', {}).get('penalty') or {}).get('home'),
+            penalty_away=(payload.get('score', {}).get('penalty') or {}).get('away'),
         )
 
     def fetch_fixture_injuries(self, fixture_id: str) -> dict[int, list[InjuryStatus]]:

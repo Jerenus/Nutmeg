@@ -42,6 +42,8 @@ class Fixture:
     referee: str | None = None
     home_goals: int | None = None
     away_goals: int | None = None
+    penalty_home: int | None = None
+    penalty_away: int | None = None
 
 
 def sample_fixtures(league_code: str) -> list[Fixture]:
