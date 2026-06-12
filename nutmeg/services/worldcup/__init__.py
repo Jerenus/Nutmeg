@@ -94,6 +94,7 @@ def _live_update_and_simulate(
 
     from .calibration import CalibrationEntry, append_entries, brier
     from .ratings import (
+        apply_injury_adjustments,
         expected_lambdas,
         load_ratings,
         load_seed,
@@ -116,6 +117,11 @@ def _live_update_and_simulate(
             api_key=settings.api_football_key,
         )
         fixtures_fetcher = lambda d: owned_client.fetch_fixtures_by_date(d).fixtures  # noqa: E731
+        if injuries_fetcher is None:
+            # spec §3.2:今天 UTC 的 WC 场次 → 每队伤病人数(默认装配,同一 client)。
+            injuries_fetcher = lambda d: _default_injury_counts(  # noqa: E731
+                owned_client, tournament, d
+            )
 
     results_path = wc_dir / "results.json"
     existing = load_results(results_path)
@@ -124,6 +130,7 @@ def _live_update_and_simulate(
     try:
         for back in (2, 1):  # 北京时差:UTC 昨天+前天覆盖"昨夜今晨"
             fixtures.extend(fixtures_fetcher(today - timedelta(days=back)))
+        injuries = _injury_counts(today, injuries_fetcher)
     finally:
         if owned_client is not None:
             owned_client.close()
@@ -161,13 +168,7 @@ def _live_update_and_simulate(
         append_entries(wc_dir / "calibration-log.jsonl", cal_entries)
 
     anchors = _anchors_from_matches(tournament, matches)
-    injuries = _injury_counts(matches, tournament, injuries_fetcher)
-    if injuries:
-        from .ratings import injury_adjusted
-
-        ratings = {
-            t: injury_adjusted(r, n_out=injuries.get(t, 0)) for t, r in ratings.items()
-        }
+    ratings = apply_injury_adjustments(ratings, injuries)
     sim = simulate_tournament(tournament, merged, ratings, anchors,
                               run_date=run_date)
     save_sim(wc_dir / f"sim-{run_date}.json", sim)
@@ -203,15 +204,33 @@ def _anchors_from_matches(tournament, matches) -> dict:
     return anchors
 
 
-def _injury_counts(matches, tournament, injuries_fetcher) -> dict[str, int]:
+def _injury_counts(day: date, injuries_fetcher) -> dict[str, int]:
     """当日参赛队伤病人数;fetcher 缺省/失败 → 空(spec §3.2 静默跳过)。"""
     if injuries_fetcher is None:
         return {}
     try:
-        return dict(injuries_fetcher([m for m in matches]))
+        return dict(injuries_fetcher(day))
     except Exception:  # noqa: BLE001
         logger.warning("worldcup: injuries 获取失败,跳过折减", exc_info=True)
         return {}
+
+
+def _default_injury_counts(client, tournament, day: date) -> dict[str, int]:
+    """今天 UTC 的世界杯场次 → {英文队名: 伤病人数}(spec §3.2)。
+
+    +1 次 /fixtures 调用拿当日盘;只对双方都是 48 队的场次拉 /injuries
+    (配额可控)。异常向上抛,由 _injury_counts 统一记日志降级为 {}。
+    """
+    counts: dict[str, int] = {}
+    for fx in client.fetch_fixtures_by_date(day).fixtures:
+        if fx.home_team not in tournament.teams or fx.away_team not in tournament.teams:
+            continue
+        id_to_name = {fx.home_team_id: fx.home_team, fx.away_team_id: fx.away_team}
+        for team_id, records in client.fetch_fixture_injuries(fx.fixture_id).items():
+            name = id_to_name.get(team_id)
+            if name is not None:
+                counts[name] = len(records)
+    return counts
 
 
 def _todays_rows(tournament, matches, sim) -> list[dict]:

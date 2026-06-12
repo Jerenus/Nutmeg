@@ -59,6 +59,15 @@ def injury_adjusted(rating: TeamRating, *, n_out: int) -> TeamRating:
     return TeamRating(atk=rating.atk * INJURY_FACTOR, dfn=rating.dfn * INJURY_FACTOR)
 
 
+def apply_injury_adjustments(
+    ratings: dict[str, TeamRating], counts: dict[str, int]
+) -> dict[str, TeamRating]:
+    """当日伤病人数 → 临时折减后的评级副本(spec §3.2,本场有效不写回)。"""
+    if not counts:
+        return ratings
+    return {t: injury_adjusted(r, n_out=counts.get(t, 0)) for t, r in ratings.items()}
+
+
 def load_seed() -> dict[str, TeamRating]:
     text = (
         resources.files("nutmeg.data")
