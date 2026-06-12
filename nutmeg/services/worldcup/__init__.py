@@ -102,7 +102,7 @@ def _live_update_and_simulate(
         update_after_match,
     )
     from .results import ingest_results, load_results, save_results
-    from .sim import save_sim, simulate_tournament
+    from .sim import load_sim, save_sim, simulate_tournament
 
     owned_client = None
     if fixtures_fetcher is None:
@@ -137,6 +137,20 @@ def _live_update_and_simulate(
     merged = ingest_results(fixtures, tournament, existing=existing)
     new_results = merged[len(existing):]
 
+    # 市场锚定回读(spec §3.5):赛果日 sim 落盘的 anchor_probs 次日在此取回,
+    # 补全模型 Brier vs 市场 Brier 对比;无当日 sim / 该场未锚定 → None(只记 λ 残差)。
+    match_dates = {m.match_id: m.date_utc for m in tournament.matches}
+    anchor_cache: dict[str, dict[str, dict[str, float]]] = {}
+
+    def _market_anchor(match_id: str) -> dict[str, float] | None:
+        day = match_dates.get(match_id)
+        if day is None:
+            return None
+        if day not in anchor_cache:
+            stored = load_sim(wc_dir / f"sim-{day}.json")
+            anchor_cache[day] = stored.anchor_probs if stored is not None else {}
+        return anchor_cache[day].get(match_id)
+
     ratings = load_ratings(wc_dir / "ratings.json") or load_seed()
     cal_entries = []
     for r in new_results:
@@ -155,10 +169,14 @@ def _live_update_and_simulate(
         # 只有 FT 场次 90 分钟进球可知,才能进 λ 残差校准;AET/PEN 只更新不入账。
         if r.status == "FT":
             model_p = _wdl_from_lambdas(lam_h, lam_a)
+            market_p = _market_anchor(r.match_id)
             cal_entries.append(CalibrationEntry(
-                date=run_date, match_id=r.match_id, model_p=model_p, market_p=None,
+                date=run_date, match_id=r.match_id, model_p=model_p,
+                market_p=market_p,
                 outcome=r.outcome_90, brier_model=brier(model_p, r.outcome_90),
-                brier_market=None, lambda_pred_total=lam_h + lam_a,
+                brier_market=(brier(market_p, r.outcome_90)
+                              if market_p is not None else None),
+                lambda_pred_total=lam_h + lam_a,
                 goals_actual=(gh + ga),
             ))
     if new_results:

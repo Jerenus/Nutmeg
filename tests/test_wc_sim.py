@@ -1,17 +1,20 @@
 """worldcup.sim — 确定性蒙特卡洛(spec §3.4)。"""
 from __future__ import annotations
 
+import json
 import random
 import time
+from pathlib import Path
 
 from nutmeg.services.worldcup.ratings import TeamRating
 from nutmeg.services.worldcup.sim import (
+    load_sim,
     sample_match,
+    save_sim,
     seed_for,
     simulate_tournament,
 )
 from nutmeg.services.worldcup.tournament import Tournament
-
 from tests.test_wc_tournament import _mini_tournament_dict
 
 
@@ -83,6 +86,49 @@ def test_played_matches_are_respected() -> None:
                                   n_sims=1500)
     assert (boosted.probs["Jordan"]["qualify"]
             > base.probs["Jordan"]["qualify"] + 0.1)
+
+
+# ---------- anchor_probs 落盘回读(spec §3.5 市场 Brier 完整对比的前置) ----------
+
+
+ANCHOR_M01 = {"home": 0.5, "draw": 0.3, "away": 0.2}
+
+
+def test_simulate_records_anchor_probs_for_anchored_matches() -> None:
+    t = _full_group_tournament()
+    anchors = {frozenset(("Mexico", "Poland")): dict(ANCHOR_M01)}
+    out = simulate_tournament(t, [], RATINGS, anchors,
+                              run_date="2026-06-12", n_sims=50)
+    assert out.anchored == ["M01"]
+    assert out.anchor_probs == {"M01": ANCHOR_M01}  # 概率本体与输入一致
+    # 未锚定场次不出现
+    assert "M02" not in out.anchor_probs
+
+
+def test_sim_save_load_roundtrip_preserves_anchor_probs(tmp_path: Path) -> None:
+    t = _full_group_tournament()
+    anchors = {frozenset(("Mexico", "Poland")): dict(ANCHOR_M01)}
+    out = simulate_tournament(t, [], RATINGS, anchors,
+                              run_date="2026-06-12", n_sims=50)
+    p = tmp_path / "sim-2026-06-12.json"
+    save_sim(p, out)
+    loaded = load_sim(p)
+    assert loaded is not None
+    assert loaded.anchor_probs == {"M01": ANCHOR_M01}
+    assert loaded.probs == out.probs
+
+
+def test_load_sim_tolerates_old_format_without_anchor_probs(tmp_path: Path) -> None:
+    """红线:.nutmeg-data 里 6/11 的真实 sim 文件没有 anchor_probs 键,必须能读。"""
+    p = tmp_path / "sim-2026-06-11.json"
+    p.write_text(json.dumps({
+        "run_date": "2026-06-11", "seed": 1, "n_sims": 10,
+        "probs": {"Mexico": {"champion": 0.5}}, "anchored": ["M01"],
+    }), encoding="utf-8")
+    loaded = load_sim(p)
+    assert loaded is not None
+    assert loaded.anchor_probs == {}
+    assert loaded.anchored == ["M01"]
 
 
 def test_simulation_speed_budget() -> None:

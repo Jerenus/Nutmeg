@@ -30,6 +30,9 @@ class SimOutput:
     n_sims: int
     probs: dict[str, dict[str, float]]
     anchored: list[str] = field(default_factory=list)
+    # match_id → de-vig {home,draw,away};带默认值保证旧 sim 文件 load_sim 兼容。
+    # 次日校准入账回读它补 market_p/brier_market(spec §3.5 完整对比)。
+    anchor_probs: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 def seed_for(run_date: str) -> int:
@@ -175,12 +178,14 @@ def simulate_tournament(
     probs = {
         t: {k: c[k] / n_sims for k in STAGE_KEYS} for t, c in counters.items()
     }
-    anchored = sorted(
-        m.match_id for m in group_matches
+    anchor_probs = {
+        m.match_id: dict(anchors[frozenset((m.home, m.away))])
+        for m in group_matches
         if frozenset((m.home, m.away)) in anchors
-    )
+    }
     return SimOutput(run_date=run_date, seed=seed, n_sims=n_sims,
-                     probs=probs, anchored=anchored)
+                     probs=probs, anchored=sorted(anchor_probs),
+                     anchor_probs=anchor_probs)
 
 
 def _group_row(
