@@ -67,6 +67,22 @@ project-level Codex entrypoint opened at `/Users/jz71/Projects/Nutmeg`.
       推送当日 PDF 世界杯日报。**这是「完成决策」的收尾动作，不可省。**
    窗口外此条自动失效（jczq-report 会提示无世界杯赛事）。
 
+7. **评判员深研层（默认）—— `docs/jczq-mixed-bet-judge-process.md`**：世界杯窗口内、或用户要
+   "深度分析 / 混合投注组合 / 高赔组合 / X 串 Y 方案 / 审核我的方案"时，§6(b) 自动展开成这套
+   **七阶段深研流程**（引擎 §A 仍勿改腿；深研只在判读/组合层）：
+   ① 盘口底座（`SportteryJczqCalculatorProvider` 取 had/hhad/crs/ttg/hafu + `bold_odds.json` 去水 fair，WAF-aware）
+   → ② 逐场派 `jczq-match-analyst` agent（web 深研：实力/战术/**状态/战意**/玩法判断，每场并行）
+   → ③ 实力排序 + 五玩法判断（**换玩法逆转**）→ ④ 失败教训过滤 + 人性/盘口心理
+   → ⑤ 组合（脚本算赔率×命中×期望，命中优先、留对冲）→ ⑥ 对抗验证（挖弱腿、诚实纠错不 flip-flop）
+   → ⑦ 手机 PDF（reportlab+NutmegCJK 112mm）经 `TelegramBotClient.send_document` 推送。
+   **思考驱动（最重要）**：整条链路由**主循环最新 Claude 实时推理**（反复挑战→挖最弱腿取证→诚实纠错→重判），
+   **不是跑一遍固定脚本**；脚本/工具/agent 只做"取现有数据 + 采集外部信息 + 确定性算术(禁嘴算)"三件支撑，
+   **判断永不烤进脚本**；派出的 `jczq-match-analyst` 也用 opus（judgment-heavy 不降智）。
+   **核心原则**：状态≠战意（常方向相反，分开判）；让球平是实证最准高赔玩法、胜平负押冷门是 0/23 死亡陷阱；
+   每腿押"模态"不押"隔壁"；空仓永远合法、高赔=高方差小额。
+   **失败教训（硬数据）**：大胆/高赔串整票 0/38 全输、腿命中 14%；让球 15%>比分 6%>胜平负冷门 0；
+   "3 条冷腿堆 100x+"必死。
+
 ### 档位定性（spec §32.0，作答 §C 时据此）
 
 - **A 稳健底仓** = 唯一可能有结构 edge 的桶（只追 §29 体彩−欧赔 gap + §28 R25 联赛偏差）。
