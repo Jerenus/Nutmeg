@@ -34,6 +34,16 @@ SPORTTERY_JCZQ_API = (
     "https://webapi.sporttery.cn/gateway/uniform/football/getMatchCalculatorV1.qry"
     "?channel=c&poolCode=had,hhad,ttg,crs,hafu"
 )
+# 体彩 WAF 拦非浏览器 UA（2026-07-04 起 "Nutmeg/0.2" 稳定 403）；整套头须像浏览器
+SPORTTERY_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Origin": "https://www.sporttery.cn",
+}
 
 
 class JczqReportError(ValueError):
@@ -82,7 +92,7 @@ class SportteryJczqCalculatorProvider:
         try:
             response = httpx.get(
                 self.source_api,
-                headers={"Referer": self.source_page, "User-Agent": "Nutmeg/0.2"},
+                headers={"Referer": self.source_page, **SPORTTERY_BROWSER_HEADERS},
                 timeout=self._timeout_seconds,
             )
             response.raise_for_status()
