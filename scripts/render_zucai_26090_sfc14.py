@@ -64,10 +64,10 @@ story.append(t)
 story.append(Spacer(1, 4))
 
 rj = J["renjiu"]
-card = [[Paragraph("任九·选9丢5（主推） · 64注 ¥128 · 九场联合命中≈6.4%（程序算）", WHITE)],
- [Paragraph("<b>保留9场</b>：1(1/0) · 2(0)胆 · 3(3/1) · 5(0/1) · 7(3)胆 · 9(3/1) · 11(3)胆 · 12(0/1) · 13(0/1)", BODY)],
- [Paragraph("<b>丢弃5场（平局/硬币雷区）</b>：4 墨英(海拔硬币) · 6 美比(35/28/37硬币) · 8 瑞哥(判读=平 vs 市场热门=哥,方向冲突即丢) · 10 哥德堡AIK(主场0胜的假热门) · 14 赫根佐加(38/26/36硬币)", BODY)],
- [Paragraph("三胆说明：2法国(80%,全期唯一真胆) · 7阿根廷(70%,接受~20%拖平暴露——埃及刚验证拖点球剧本,这是全票最大单点风险) · 11卡尔马(62%,软胆,主场堡垒vs客场9场不胜)。预算减半可把11改双(3/1)去掉7的胆位→128注¥256反而升,故降预算正解=把3或9改单选。", SMALL)]]
+card = [[Paragraph("【终版】任九·选9丢5 · 96注 ¥192 · 九场联合命中≈9.1%（程序算）", WHITE)],
+ [Paragraph("<b>保留9场</b>：1(1/0) · 2(0)胆 · 3(3/1) · 5(0/1) · 7(3)胆 · 9(3/1) · 11(3)胆 · 12(0/1) · <b>13(3/1/0全包)</b>", BODY)],
+ [Paragraph("<b>丢弃5场（平局/硬币雷区）</b>：4 墨英(海拔硬币) · 6 美比(35/28/37硬币) · 8 瑞哥(判读=平 vs 市场热门=哥,方向冲突即丢) · 10 哥德堡AIK(主场0胜的假热门) · 14 赫根佐加(底座方向存疑,市场实favor佐加顿斯)", BODY)],
+ [Paragraph("瑞超专项修订：13 从(0/1)升三全包——格局组判盖斯43%客胜有水分(它的强是主场限定:主场只失2球/客场1-1-3) vs 单场组判Hansen停赛压死BP主胜,两组方向分歧→按纪律用钱包保护(+¥64买断唯一分歧腿)。三胆：2法国(80%真胆) · 7阿根廷(70%,接受~20%拖平暴露) · 11卡尔马(62%,专项后信心升4:热身两场2-0+零流失 vs 底层倒数第1+客场3-16)。", SMALL)]]
 ct = Table(card, colWidths=[100*mm])
 ct.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), colors.HexColor("#0b3d2e")),
  ("BACKGROUND", (0, 1), (0, -1), colors.HexColor("#f4faf7")), ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#0b3d2e")),
@@ -75,10 +75,13 @@ ct.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), colors.HexColor("#0b3d2e"
 story.append(ct)
 story.append(Spacer(1, 4))
 
-story.append(Paragraph("14场单式·评判员纯判读票（¥2 彩票）", H2))
+story.append(Paragraph("14场方案（彩票层，二选一）", H2))
 s14 = J["single14"]
-story.append(Paragraph("　".join(f"{n}:<b>{p}</b>" for n, p in s14.items()), BODY))
-story.append(Paragraph("纯判读表达（含 1判平/4判墨西哥/8判平/10判AIK 四个反市场点），全中概率约十万分之0.2，只作一等奖叙事彩票，别加倍。", SMALL))
+story.append(Paragraph("<b>A. ¥2 单式·评判员纯判读票</b>：" + "　".join(f"{n}:<b>{p}</b>" for n, p in s14.items()), BODY))
+story.append(Paragraph("纯判读表达（含 1判平/4判墨西哥/8判平/10判AIK 四个反市场点），全中约十万分之0.26，一等奖叙事，别加倍。", SMALL))
+fp = J.get("final_plans", {}).get("sfc14_optional", {})
+if fp:
+    story.append(Paragraph("<b>B. ¥128 优化复式（64注,联合≈0.10%）</b>：双选放覆盖增益最大的6场——4(0/1) 6(0/1) 8(0/1) 9(3/1) 13(0/1) 14(3/1)；单选 1(0) 2(0) 3(3) 5(0) 7(3) 10(3) 11(3) 12(0)。仍是彩票性质，预算充裕才上；两者不叠加。", BODY))
 story.append(Spacer(1, 4))
 
 story.append(Paragraph("五场硬币局为什么丢（深研结论速记）", H2))
@@ -103,10 +106,10 @@ ids = [int(x) for x in os.environ.get("NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS", "").sp
 if token and ids:
     from nutmeg.interfaces.bot.telegram import TelegramBotClient
     c = TelegramBotClient(token=token)
-    cap = ("⚽ 胜负彩26090 · 14场深研判定（今晚停售）\n"
-           "主推任九选9丢5：64注¥128，三胆=法国/阿根廷/卡尔马，双选=加摩1|0·巴挪3|1·葡西0|1·维京杰尔3|1·埃哈0|1·BP盖斯0|1\n"
-           "丢5场硬币雷区：墨英(海拔)/美比/瑞哥(判读与市场冲突)/哥德堡AIK(假热门)/赫根佐加\n"
-           "另附¥2十四场单式纯判读票。九场联合命中≈6.4%（程序算），小额娱乐，空仓合法。")
+    cap = ("⚽【终版】胜负彩26090 · 瑞超专项修订后（今晚停售）\n"
+           "主力任九：96注¥192，三胆=法国/阿根廷/卡尔马(专项后升信心4)，13 BP盖斯升三全包(两组分歧腿用钱包保护)，联合命中≈9.1%\n"
+           "14场彩票层二选一：¥2单式纯判读票 或 ¥128优化复式(64注,≈0.10%)\n"
+           "瑞超专项要点：主客分裂极端化禁用通用主场加成；哈马比换帅Rydström首秀；夏窗7/8后才开=本轮阵容零扰动。小额娱乐，空仓合法。")
     for cid in ids:
         c.send_document(chat_id=cid, document_path=out, caption=cap)
         print(f"sent {cid}")
