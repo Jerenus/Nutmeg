@@ -16,6 +16,16 @@ _ZUCAI_DIR_OPTION = _cli.typer.Option(
     Path(".nutmeg-data/zucai"), "--zucai-dir", help="zucai 源快照目录")
 
 
+@_cli.app.command("decision-fetch")
+def decision_fetch(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+) -> None:
+    """决策本体 · 数据自取:体彩盘口 + API-Football 国际欧赔 → 当日快照。"""
+    from nutmeg.decision.fetch import fetch_day
+    _cli.typer.echo(fetch_day(run_date, output_dir))
+
+
 @_cli.app.command("decision-sense")
 def decision_sense(
     run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
