@@ -14,6 +14,10 @@ _OUTPUT_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data/jczq"), "--output-dir"
 _READS_FILE_OPTION = _cli.typer.Option(..., "--reads-file", help="Read JSON 数组文件")
 _ZUCAI_DIR_OPTION = _cli.typer.Option(
     Path(".nutmeg-data/zucai"), "--zucai-dir", help="zucai 源快照目录")
+_ZUCAI_SCHEDULE_SOURCE_FILE_OPTION = _cli.typer.Option(
+    None, "--schedule-source-file", help="赛程源文件(离线;省略则需 --live-fetch)")
+_ZUCAI_ODDS_SOURCE_FILE_OPTION = _cli.typer.Option(
+    None, "--odds-source-file", help="赔率源文件(离线;省略则需 --live-fetch)")
 
 
 @_cli.app.command("decision-fetch")
@@ -24,6 +28,30 @@ def decision_fetch(
     """决策本体 · 数据自取:体彩盘口 + API-Football 国际欧赔 → 当日快照。"""
     from nutmeg.decision.fetch import fetch_day
     _cli.typer.echo(fetch_day(run_date, output_dir))
+
+
+@_cli.app.command("decision-fetch-zucai")
+def decision_fetch_zucai(
+    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26091"),
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+    slot: str = _cli.typer.Option("afternoon", "--slot", help="afternoon 或 revision"),
+    live_fetch: bool = _cli.typer.Option(False, "--live-fetch"),
+    schedule_source_url: str | None = _cli.typer.Option(None, "--schedule-source-url"),
+    schedule_source_file: Path | None = _ZUCAI_SCHEDULE_SOURCE_FILE_OPTION,
+    odds_source_url: str | None = _cli.typer.Option(None, "--odds-source-url"),
+    odds_source_file: Path | None = _ZUCAI_ODDS_SOURCE_FILE_OPTION,
+    run_date: str | None = _cli.typer.Option(None, "--run-date"),
+    captured_at: str | None = _cli.typer.Option(None, "--captured-at"),
+) -> None:
+    """决策本体 · 传统足彩数据自取:赛程 + 赔率 → <issue>-issue.json + <issue>-odds*.json。"""
+    from nutmeg.decision.fetch import fetch_zucai
+    _cli.typer.echo(fetch_zucai(
+        issue, zucai_dir, slot=slot, live_fetch=live_fetch,
+        schedule_source_url=schedule_source_url,
+        schedule_source_file=schedule_source_file,
+        odds_source_url=odds_source_url, odds_source_file=odds_source_file,
+        run_date=run_date, captured_at=captured_at,
+    ))
 
 
 @_cli.app.command("decision-sense")

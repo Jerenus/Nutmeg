@@ -84,3 +84,93 @@ def fetch_day(
         f"decision-fetch {run_date}: 体彩 {n_matches} 场({source}) "
         f"+ 欧赔 {len(bold_odds)} 场"
     )
+
+
+# ---------------------------------------------------------------------------
+# 传统足彩(胜负彩/任九)数据自取 — 复用保留的 zucai_source/zucai_odds_source 同步服务
+# (M2 决策:这两模块归运营保留,阶段三不删)。落 <issue>-issue.json + <issue>-odds*.json
+# 到 sense_zucai 的 _default_loader 读取的同一 zucai_dir,字节兼容。
+# ---------------------------------------------------------------------------
+
+
+def _default_zucai_sync():
+    """生产默认:传统足彩赛程同步服务(写 <issue>-issue.json)。"""
+    from nutmeg.services.zucai_source import ZucaiSourceSyncService
+    return ZucaiSourceSyncService()
+
+
+def _default_zucai_odds_sync():
+    """生产默认:传统足彩赔率同步服务(写 <issue>-odds*.json)。"""
+    from nutmeg.services.zucai_odds_source import ZucaiOddsSyncService
+    return ZucaiOddsSyncService()
+
+
+def fetch_zucai(
+    issue: str,
+    zucai_dir,
+    *,
+    sync=None,
+    odds_sync=None,
+    registry_file=None,
+    slot: str = "afternoon",
+    live_fetch: bool = False,
+    schedule_source_url: str | None = None,
+    schedule_source_file=None,
+    odds_source_url: str | None = None,
+    odds_source_file=None,
+    run_date: str | None = None,
+    captured_at: str | None = None,
+) -> str:
+    """抓一期传统足彩赛程 + 赔率,落到 sense_zucai 读取的同一目录。返回一行摘要。
+
+    ``sync``/``odds_sync`` 默认用保留模块真同步服务(``ZucaiSourceSyncService`` /
+    ``ZucaiOddsSyncService``),测试注入替身不打网。二者各需一个 source(file 或
+    url+live_fetch);赛程与赔率来自不同源,故分开配置。落盘:
+    ``<zucai_dir>/<issue>-issue.json`` + ``<zucai_dir>/<issue>-odds*.json``
+    (slot=afternoon→``-odds.json``,revision→``-odds-revision.json``)。
+
+    赛程(主)失败按同步服务自身校验抛出;赔率(次)失败仅降级(不写赔率、不崩),
+    与 decision-fetch 国际欧赔降级同一哲学——单缺赔率不该拖垮整条日循环。
+    """
+    from pathlib import Path
+
+    if sync is None:
+        sync = _default_zucai_sync()
+    if odds_sync is None:
+        odds_sync = _default_zucai_odds_sync()
+    if registry_file is None:
+        registry_file = Path(zucai_dir) / "issues.json"
+
+    sched_result = sync.sync(
+        source_file=schedule_source_file,
+        source_url=schedule_source_url,
+        live_fetch=live_fetch,
+        run_date=run_date,
+        output_dir=zucai_dir,
+        registry_file=registry_file,
+    )
+    n_issues = getattr(sched_result, "parsed_count", 0)
+
+    n_odds = 0
+    try:
+        odds_result = odds_sync.sync(
+            source_file=odds_source_file,
+            source_url=odds_source_url,
+            live_fetch=live_fetch,
+            issue_id=issue,
+            slot=slot,
+            captured_at=captured_at,
+            output_dir=zucai_dir,
+            registry_file=registry_file,
+        )
+        n_odds = getattr(odds_result, "parsed_count", 0)
+    except Exception:  # noqa: BLE001 — 赔率槽 optional;降级不崩(同 decision-fetch 欧赔)
+        logger.warning(
+            "decision-fetch-zucai %s: 赔率同步失败(slot=%s),仅落赛程", issue, slot,
+            exc_info=True,
+        )
+
+    return (
+        f"decision-fetch-zucai {issue}: 期表 {n_issues} 期 "
+        f"+ 赔率 {n_odds} 行(slot={slot})"
+    )
