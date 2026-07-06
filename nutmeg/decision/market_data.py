@@ -16,7 +16,13 @@ from nutmeg.services.jczq_market_kernel import (
     _ttg_from_pool,
 )
 
-__all__ = ["OUTCOMES", "devig", "fair_1x2", "snapshots_from_sporttery"]
+__all__ = [
+    "OUTCOMES",
+    "devig",
+    "euro_snapshot_from_bold_odds",
+    "fair_1x2",
+    "snapshots_from_sporttery",
+]
 
 
 def devig(odds: dict[str, float]) -> dict[str, float]:
@@ -88,4 +94,31 @@ def snapshots_from_sporttery(
                 fair=fair, raw_odds=raw_odds,
                 lines={"hhad_line": hhad_line},
             ))
+    return snaps
+
+
+def euro_snapshot_from_bold_odds(
+    bold_odds: dict, *, run_date: str, taken_at: str, kind: str, source: str,
+) -> list:
+    """欧赔 bold_odds（{竞彩号: {market: MarketOdds}}）→ MarketSnapshot 列表。
+
+    只取 match_winner 的去水 fair_probability（欧赔已去水，是最 sharp 三路估计），
+    作为 had 市场的 fair。空 fair 的场跳过。不产 tags/信号字段（净化不变）。
+    收盘快照(kind=closing)与读时锚(kind=read_time)共用本构造器。
+    """
+    from nutmeg.decision.ontology import MarketSnapshot
+
+    snaps: list = []
+    for match_no, markets in bold_odds.items():
+        mw = markets.get("match_winner")
+        fair = dict(getattr(mw, "fair_probability", {}) or {}) if mw else {}
+        if not fair or abs(sum(fair.values())) < 1e-9:
+            continue
+        snaps.append(MarketSnapshot(
+            snapshot_id=_snapshot_id(match_no, taken_at, kind),
+            match_id=f"M-{run_date}-{match_no}",
+            taken_at=taken_at, kind=kind, source=source,
+            fair={"had": fair}, raw_odds={},
+            lines={},
+        ))
     return snaps
