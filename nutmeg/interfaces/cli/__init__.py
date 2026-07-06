@@ -1130,6 +1130,7 @@ def _normalize_date(yyyymmdd: str) -> str:
 # E402 is expected: registration must run after the namespace is built.
 from nutmeg.interfaces.cli import client as client  # noqa: E402
 from nutmeg.interfaces.cli import core as core  # noqa: E402
+from nutmeg.interfaces.cli import decision as decision  # noqa: E402
 from nutmeg.interfaces.cli import jczq as jczq  # noqa: E402
 from nutmeg.interfaces.cli import odds as odds  # noqa: E402
 from nutmeg.interfaces.cli import operations as operations  # noqa: E402
