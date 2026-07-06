@@ -63,6 +63,18 @@ class DecisionStore:
         for obj in objs:
             self.upsert(obj)
 
+    def remove(self, cls, obj_id: str) -> bool:
+        """按 id 删一条。删了返回 True,不存在返回 False。"""
+        objs = self.load(cls)
+        kept = [o for o in objs if o.id != obj_id]
+        if len(kept) == len(objs):
+            return False
+        path = self._path(cls)
+        with path.open("w", encoding="utf-8") as fh:
+            for o in kept:
+                fh.write(json.dumps(o.to_dict(), ensure_ascii=False) + "\n")
+        return True
+
     # --- 血缘查询(spec §2) ---
     def reads_for_factor(self, factor_id: str) -> list:
         from nutmeg.decision.ontology import Read

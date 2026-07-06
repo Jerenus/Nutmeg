@@ -22,6 +22,12 @@ def ingest_reads(payloads: list[dict], *, store, factors: list) -> list[str]:
         if errs:
             errors.append(f"{read.read_id}: {'; '.join(errs)}")
             continue
+        # 真判读取代同场的市场基线 shadow(顺序无关的去重守卫):一场只留一条 Read。
+        if not read.shadow:
+            for existing in store.load(Read):
+                if (existing.match_id == read.match_id and existing.shadow
+                        and existing.read_id != read.read_id):
+                    store.remove(Read, existing.read_id)
         store.upsert(read)
     return errors
 

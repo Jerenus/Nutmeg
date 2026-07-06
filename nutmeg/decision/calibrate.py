@@ -100,3 +100,43 @@ def render_panel(verdicts: list) -> str:
         clv = "—" if v.clv_hit_rate is None else f"{v.clv_hit_rate:.0%}"
         lines.append(f"| {v.factor_id} | {v.n_reads} | {bd} | {clv} | {v.recommendation} |")
     return "\n".join(lines)
+
+
+def participation_precision(store) -> dict:
+    """参与精度(spec §5)——判读的核心检验:divergent Read 是否跑赢 shadow 基线。
+
+    divergent = 非 shadow 且有因子的 Read;baseline = shadow Read。按各自已结
+    Settlement 的 CLV 命中率(clv_pp>0)与平均 brier_delta 对比。
+    返回 {divergent: {n, clv_hit_rate, avg_brier_delta}, shadow: {n, ...}}。
+    无样本的键值为 None。
+    """
+    from nutmeg.decision.ontology import Read, Settlement
+    from nutmeg.decision.scoring import brier
+
+    reads = {r.read_id: r for r in store.load(Read)}
+    setts = {s.ref_id: s for s in store.load(Settlement)
+             if s.ref_type == "read" and s.brier is not None
+             and s.outcome_90 is not None}
+
+    def _bucket(is_divergent: bool) -> dict:
+        clv_hits = clv_n = 0
+        deltas: list[float] = []
+        for rid, read in reads.items():
+            divergent = (not read.shadow) and bool(read.factors)
+            if divergent != is_divergent:
+                continue
+            st = setts.get(rid)
+            if st is None:
+                continue
+            deltas.append(st.brier - brier(read.prior, st.outcome_90)
+                          if read.prior else 0.0)
+            if st.clv_pp is not None:
+                clv_n += 1
+                clv_hits += 1 if st.clv_pp > 0 else 0
+        return {
+            "n": len(deltas),
+            "clv_hit_rate": (clv_hits / clv_n) if clv_n else None,
+            "avg_brier_delta": (sum(deltas) / len(deltas)) if deltas else None,
+        }
+
+    return {"divergent": _bucket(True), "shadow": _bucket(False)}
