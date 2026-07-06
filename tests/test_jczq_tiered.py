@@ -1,7 +1,7 @@
 """Tests for jczq_tiered — spec 2026-05-25 v2 A/B/D/E plan."""
 from __future__ import annotations
 
-from nutmeg.services.jczq_bold_combos import (
+from nutmeg.services.jczq_market_kernel import (
     HARD_LABEL,
     BoldLeg,
     BoldMatch,

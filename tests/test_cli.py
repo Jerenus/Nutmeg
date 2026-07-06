@@ -3576,35 +3576,6 @@ def test_jczq_mixed_report_live_is_retired_with_daily_workflow_guidance() -> Non
     assert "jczq-daily-brief" in result.stdout
 
 
-def test_jczq_second_leg_date_today_resolves_to_calendar_date(monkeypatch, tmp_path) -> None:
-    import nutmeg.services.jczq_second_leg as second_leg
-
-    seen: dict[str, object] = {}
-
-    def fake_suggest_second_legs(**kwargs):
-        seen.update(kwargs)
-        return "ok"
-
-    monkeypatch.setattr(second_leg, "suggest_second_legs", fake_suggest_second_legs)
-
-    result = runner.invoke(
-        app,
-        [
-            "jczq-second-leg",
-            "--date",
-            "today",
-            "--output-dir",
-            str(tmp_path),
-            "--auto",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert seen["run_date"] == date.today().isoformat()
-    assert seen["output_dir"] == tmp_path
-    assert "ok" in result.stdout
-
-
 def test_jczq_debate_compare_command_returns_conflicts(tmp_path) -> None:
     run_dir = tmp_path / "daily" / "2026-05-06"
     debate_dir = run_dir / "debate"
@@ -3728,92 +3699,10 @@ def test_brief_value_bridge_defaults_to_fcom500(monkeypatch) -> None:
     assert captured["run_date"] == "2026-05-17"
 
 
-def test_jczq_bold_combos_replay_renders_honest_label(
-    monkeypatch, tmp_path: Path
-) -> None:
-    """`jczq-bold-combos --replay <date>` replays a stored context.json through
-    the entertainment-purpose bold-combo engine: exit 0 and the welded 🎲
-    honest label is present (spec §7)."""
-    from nutmeg.data import fcom500 as fcom500_module
-    from nutmeg.services.jczq_bold_combos import HARD_LABEL
-    from nutmeg.services.jczq_daily import JczqDailyAdvisorService
-    from tests.test_jczq_daily_service import FakeProvider
-
-    # Never touch the live 500.com site — simulate an unreachable collector so
-    # the engine runs on 体彩 odds alone (graceful 欧赔 degradation).
-    monkeypatch.setattr(
-        fcom500_module.Fcom500OddsProvider,
-        "collect",
-        lambda self, run_date: {},
-    )
-    JczqDailyAdvisorService(provider=FakeProvider()).build_report(
-        run_date="2026-05-01", output_dir=tmp_path
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "jczq-bold-combos",
-            "--replay",
-            "2026-05-01",
-            "--output-dir",
-            str(tmp_path),
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert HARD_LABEL in result.stdout
-    assert "大盘面混乱值" in result.stdout
-    # No advantage wording leaked into the rendered CLI output.
-    body = result.stdout[result.stdout.index(HARD_LABEL) + len(HARD_LABEL):]
-    for word in ("胜率", "+EV", "正期望", "推荐下注", "重仓"):
-        assert word not in body
-
-
-def test_jczq_bold_combos_replay_renders_multi_market(tmp_path, monkeypatch) -> None:
-    """A --replay run off a persisted Sporttery snapshot renders the welded
-    label and contains no advantage wording."""
-    import json
-
-    from nutmeg.services.jczq_bold_combos import HARD_LABEL
-
-    # persist a 3-match snapshot so the engine can build a 3-fold
-    def m(no: str, home: str) -> dict:
-        return {
-            "matchNumStr": no, "businessDate": "2026-05-18",
-            "matchStatus": "Selling", "leagueAbbName": "芬超",
-            "homeTeamAbbName": home, "awayTeamAbbName": "客",
-            "had": {"h": "2.00", "d": "3.20", "a": "3.50"},
-            "hhad": {"h": "3.10", "d": "3.30", "a": "2.10", "goalLine": "-1"},
-            "ttg": {f"s{k}": str(4.0 + k) for k in range(8)},
-            "crs": {"s01s00": "6.50", "s00s00": "9.00", "s03s02": "41.0"},
-        }
-    snap_dir = tmp_path / "daily" / "2026-05-18"
-    snap_dir.mkdir(parents=True)
-    (snap_dir / "sporttery_markets.json").write_text(
-        json.dumps({"matchInfoList": [{"businessDate": "2026-05-18",
-            "subMatchList": [m("周一001", "A"), m("周一002", "B"), m("周一003", "C")]}]}),
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(app, [
-        "jczq-bold-combos", "--replay", "2026-05-18",
-        "--output-dir", str(tmp_path),
-    ])
-
-    assert result.exit_code == 0, result.output
-    assert result.output.startswith(HARD_LABEL)
-    for banned in ("胜率", "edge", "+EV", "正期望", "推荐下注", "重仓"):
-        # the label's own legitimate "非 edge" negation is on the first line
-        body = "\n".join(result.output.splitlines()[1:])
-        assert banned not in body, f"banned word leaked: {banned}"
-
-
 def test_resolve_jczq_date_resolves_today_yesterday_keywords() -> None:
     """jczq-bold-combos --date today/yesterday resolve to ISO dates; an explicit
     date passes through. Without this the literal string 'today' reached the
     engine and the snapshot landed in a daily/today/ directory."""
-    from datetime import date
 
     from nutmeg.interfaces.cli.jczq import _resolve_jczq_date
 
@@ -3822,78 +3711,6 @@ def test_resolve_jczq_date_resolves_today_yesterday_keywords() -> None:
     yesterday = _resolve_jczq_date("yesterday")
     assert date.fromisoformat(today) > date.fromisoformat(yesterday)
     assert _resolve_jczq_date(None) == today                    # None → today
-
-
-def test_jczq_bold_combos_dispatch_telegram_defaults_to_dry_run(tmp_path) -> None:
-    """`--dispatch-telegram` is dry-run by default — the daily-bold launchd job
-    explicitly adds `--no-dry-run` for the real send."""
-    import json
-
-    snap_dir = tmp_path / "daily" / "2026-05-18"
-    snap_dir.mkdir(parents=True)
-    (snap_dir / "sporttery_markets.json").write_text(
-        json.dumps({"matchInfoList": [{"businessDate": "2026-05-18", "subMatchList": [
-            {
-                "matchNumStr": no, "businessDate": "2026-05-18",
-                "matchStatus": "Selling", "leagueAbbName": "芬超",
-                "homeTeamAbbName": "主", "awayTeamAbbName": "客",
-                "had": {"h": "2.00", "d": "3.20", "a": "3.50"},
-                "ttg": {f"s{k}": str(4.0 + k) for k in range(8)},
-                "crs": {"s01s00": "6.50", "s00s00": "9.00", "s03s02": "41.0"},
-            }
-            for no in ("周一001", "周一002", "周一003")
-        ]}]}),
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(app, [
-        "jczq-bold-combos", "--replay", "2026-05-18",
-        "--output-dir", str(tmp_path), "--dispatch-telegram",
-    ])
-
-    assert result.exit_code == 0, result.output
-    assert "Telegram dispatch: dry_run" in result.output
-
-
-def test_jczq_bold_review_replays_grades_and_renders(tmp_path, monkeypatch) -> None:
-    """`jczq-bold-review` replays the §14 snapshot, grades it against (faked)
-    okooo results and renders the honest 🎲-labelled backtest (spec §16)."""
-    import json
-
-    from nutmeg.services import jczq_review as review_module
-    from nutmeg.services.jczq_bold_combos import HARD_LABEL
-
-    def m(no: str) -> dict:
-        return {
-            "matchNumStr": no, "businessDate": "2026-05-18",
-            "matchStatus": "Selling", "leagueAbbName": "芬超",
-            "homeTeamAbbName": "主", "awayTeamAbbName": "客",
-            "had": {"h": "2.00", "d": "3.20", "a": "3.50"},
-            "ttg": {f"s{k}": str(4.0 + k) for k in range(8)},
-            "crs": {"s01s00": "6.50", "s00s00": "9.00", "s03s02": "41.0"},
-        }
-    snap_dir = tmp_path / "daily" / "2026-05-18"
-    snap_dir.mkdir(parents=True)
-    (snap_dir / "sporttery_markets.json").write_text(
-        json.dumps({"matchInfoList": [{"businessDate": "2026-05-18",
-            "subMatchList": [m("周一001"), m("周一002"), m("周一003")]}]}),
-        encoding="utf-8",
-    )
-    # never touch the live okooo site — fake the result provider
-    monkeypatch.setattr(
-        review_module.OkoooJczqResultProvider, "fetch_results",
-        lambda self, run_date: {"周一001": {"had": "胜", "score": "1:0"}},
-    )
-
-    result = runner.invoke(app, [
-        "jczq-bold-review", "--date", "2026-05-18",
-        "--output-dir", str(tmp_path),
-    ])
-
-    assert result.exit_code == 0, result.output
-    assert HARD_LABEL in result.output
-    assert "票面回测" in result.output and "累计趋势" in result.output
-    assert (snap_dir / "bold-review.md").exists()
 
 
 def test_jczq_web_command_starts_localhost_app(monkeypatch, tmp_path: Path) -> None:

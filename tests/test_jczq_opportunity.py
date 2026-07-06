@@ -1,7 +1,7 @@
 """Tests for jczq_opportunity — spec §35 机会雷达底座."""
 from __future__ import annotations
 
-from nutmeg.services.jczq_bold_combos import BoldMatch
+from nutmeg.services.jczq_market_kernel import BoldMatch
 from nutmeg.services.jczq_opportunity import (
     contrarian_lens,
     dispersion_lens,

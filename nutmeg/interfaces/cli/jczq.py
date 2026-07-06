@@ -253,43 +253,6 @@ def jczq_daily_brief(
     write_or_print_brief(markdown, write)
 
 
-@_cli.app.command("jczq-second-leg")
-def jczq_second_leg(
-    run_date: str = _cli.typer.Option(..., "--date", help="目标日期 YYYY-MM-DD"),
-    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
-    solo: str | None = _cli.typer.Option(
-        None,
-        "--solo",
-        help="单核腿 '<match_no> <pool> <pick>'，例如 '周三003 crs 0:0'",
-    ),
-    auto: bool = _cli.typer.Option(False, "--auto", help="从 final-plan.json 自动读取单核腿"),
-    top: int = _cli.typer.Option(8, "--top", help="输出前 N 个候选"),
-) -> None:
-    from datetime import date as _date_cls
-
-    from nutmeg.services.jczq_second_leg import parse_solo, suggest_second_legs
-
-    if not auto and not solo:
-        _cli.console.print("必须提供 --solo 或 --auto")
-        raise _cli.typer.Exit(code=2)
-
-    resolved_date = _date_cls.today().isoformat() if run_date == "today" else run_date
-    try:
-        solo_tuple = parse_solo(solo) if (solo and not auto) else None
-        rendered = suggest_second_legs(
-            run_date=resolved_date,
-            output_dir=output_dir,
-            solo=solo_tuple,
-            auto=auto,
-            top=top,
-        )
-    except (FileNotFoundError, ValueError) as exc:
-        _cli.console.print(str(exc))
-        raise _cli.typer.Exit(code=2) from exc
-
-    _cli.typer.echo(rendered)
-
-
 @_cli.app.command("jczq-final-plan-pdf")
 def jczq_final_plan_pdf(
     run_date: str = _cli.typer.Option("today", "--date", help="目标日期 YYYY-MM-DD 或 today"),
@@ -428,85 +391,6 @@ def _dispatch_jczq_telegram(rendered: str, *, dry_run: bool) -> str:
     return f"sent · chat_ids={chat_ids}"
 
 
-@_cli.app.command("jczq-bold-combos")
-def jczq_bold_combos(
-    run_date: str | None = _cli.typer.Option(
-        None, "--date", help="目标日期 YYYY-MM-DD（live，默认今天）"
-    ),
-    replay_date: str | None = _cli.typer.Option(
-        None, "--replay", help="从已存 context.json 回放"
-    ),
-    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
-    write: _cli.Path | None = JCZQ_DAILY_BRIEF_WRITE_OPTION,
-    dispatch_telegram: bool = _cli.typer.Option(
-        False, "--dispatch-telegram", help="把方案推送到 Telegram"
-    ),
-    dry_run: bool = _cli.typer.Option(
-        True, "--dry-run/--no-dry-run", help="dry-run 时不实际推送（默认开）"
-    ),
-) -> None:
-    """娱乐性质的竞彩串关组合生成器 — 非 edge、长期负期望。
-
-    从盘面冲突 / 反直觉 / 热度信号挑「大胆腿」，拼 3/4/5 串 1。每个输出顶部
-    焊死 🎲 娱乐硬标签。不预测胜负、不号称优势。
-
-    ``--dispatch-telegram --no-dry-run`` 把方案推到 Telegram —— 每日 launchd
-    自动流走这条（com.nutmeg.jczq.daily-bold）。
-    """
-    from nutmeg.services.jczq_bold_combos import run_bold_combos_multimarket
-
-    target_date = _resolve_jczq_date(replay_date or run_date)
-    try:
-        rendered = run_bold_combos_multimarket(
-            target_date, output_dir, replay=replay_date is not None
-        )
-    except FileNotFoundError as exc:
-        _cli.console.print(str(exc))
-        raise _cli.typer.Exit(code=2) from exc
-
-    if write is not None:
-        write.parent.mkdir(parents=True, exist_ok=True)
-        write.write_text(rendered, encoding="utf-8")
-        _cli.console.print(f"Wrote bold-combo plan: {write}")
-
-    if dispatch_telegram:
-        status = _dispatch_jczq_telegram(rendered, dry_run=dry_run)
-        _cli.console.print(f"Telegram dispatch: {status}")
-
-    if write is None and not dispatch_telegram:
-        _cli.typer.echo(rendered)
-
-
-@_cli.app.command("jczq-bold-review")
-def jczq_bold_review(
-    run_date: str | None = _cli.typer.Option(
-        None, "--date", help="复盘日期 YYYY-MM-DD / today / yesterday（默认昨天）"
-    ),
-    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
-    dispatch_telegram: bool = _cli.typer.Option(
-        False, "--dispatch-telegram", help="把复盘推送到 Telegram"
-    ),
-    dry_run: bool = _cli.typer.Option(
-        True, "--dry-run/--no-dry-run", help="dry-run 时不实际推送（默认开）"
-    ),
-) -> None:
-    """bold 大胆票的次日赛后复盘 — 用 §14 快照复现票面、对 okooo 赛果定级。
-
-    赛后对照，只报命中 / 未中 + 累计趋势，不预测、不号称优势。每日 launchd
-    自动流走这条（com.nutmeg.jczq.bold-review-8am）。
-    """
-    from nutmeg.services.jczq_bold_review import run_bold_review
-
-    target_date = _resolve_jczq_date(run_date or "yesterday")
-    review = run_bold_review(target_date, output_dir)
-
-    if dispatch_telegram:
-        status = _dispatch_jczq_telegram(review.message, dry_run=dry_run)
-        _cli.console.print(f"Telegram dispatch: {status}")
-    else:
-        _cli.typer.echo(review.message)
-
-
 @_cli.app.command("jczq-tiered")
 def jczq_tiered(
     run_date: str | None = _cli.typer.Option(
@@ -534,7 +418,7 @@ def jczq_tiered(
     """
     import logging
 
-    from nutmeg.services.jczq_bold_combos import (
+    from nutmeg.services.jczq_market_kernel import (
         bold_matches_from_sporttery,
         fetch_sporttery_value_with_fallback,
         load_bold_odds_snapshot,
@@ -674,7 +558,7 @@ def jczq_today(
     """
     import logging
 
-    from nutmeg.services.jczq_bold_combos import (
+    from nutmeg.services.jczq_market_kernel import (
         bold_matches_from_sporttery,
         fetch_sporttery_value_with_fallback,
         load_bold_odds_snapshot,
@@ -827,7 +711,7 @@ def jczq_radar(
     大小球错价、平局价值、高分歧软盘。非 edge、读盘视角。与 jczq-today 的 §D 同源。
     带欧赔（live 抓 fcom500）时信号最全；replay 老快照可能无欧赔。
     """
-    from nutmeg.services.jczq_bold_combos import (
+    from nutmeg.services.jczq_market_kernel import (
         bold_matches_from_sporttery,
         load_bold_odds_snapshot,
         load_sporttery_snapshot,

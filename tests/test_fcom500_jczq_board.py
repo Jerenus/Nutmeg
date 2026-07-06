@@ -62,7 +62,7 @@ def test_parse_missing_sp_degrades_to_empty_dict() -> None:
 
 
 from nutmeg.data.fcom500 import Fcom500JczqMatch, sporttery_value_from_jczq_board  # noqa: E402
-from nutmeg.services.jczq_bold_combos import bold_matches_from_sporttery  # noqa: E402
+from nutmeg.services.jczq_market_kernel import bold_matches_from_sporttery  # noqa: E402
 
 
 def _synth_value() -> dict:
@@ -127,7 +127,7 @@ def test_synth_skips_match_with_no_pools_and_empty_input() -> None:
 
 import pytest  # noqa: E402
 
-from nutmeg.services import jczq_bold_combos  # noqa: E402
+from nutmeg.services import jczq_market_kernel as jczq_bold_combos  # noqa: E402
 from nutmeg.services.jczq import JczqProviderError  # noqa: E402
 
 

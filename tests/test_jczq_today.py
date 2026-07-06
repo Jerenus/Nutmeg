@@ -1,7 +1,7 @@
 """Tests for jczq_today — spec §32 单一决策入口决策包。"""
 from __future__ import annotations
 
-from nutmeg.services.jczq_bold_combos import BoldLeg, BoldMatch
+from nutmeg.services.jczq_market_kernel import BoldLeg, BoldMatch
 from nutmeg.services.jczq_tiered import (
     DEFAULT_TIER_A,
     DEFAULT_TIER_B,

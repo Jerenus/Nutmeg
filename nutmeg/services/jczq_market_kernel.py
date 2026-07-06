@@ -978,3 +978,107 @@ def grade_leg(leg: BoldLeg, results: dict[str, dict[str, str]]) -> GradedLeg:
         actual=actual,
         hit=hit,
     )
+
+# ---------------------------------------------------------------------------
+# 盘口快照 I/O(2026-07-06 从 jczq_bold_combos 补入 kernel — 活 CLl 命令
+# jczq-today/jczq-tiered/jczq-radar 懒加载依赖,R1 抽取时漏了 CLI 面)。
+# ---------------------------------------------------------------------------
+
+def fetch_sporttery_value_with_fallback() -> tuple[dict, str]:
+    """体彩盘面抓取：sporttery 主源 → trade.500.com 备源（spec 2026-06-11）。
+
+    返回 ``(value, source)``；``source`` ∈ {"sporttery", "fcom500-fallback"}。
+    回退触发两种情形：主源抛 ``JczqProviderError``（403/网络/errorCode≠0），或
+    返回的 value 无非空 ``matchInfoList``（2026-06-11 WAF 降级空壳形态）。备源
+    只有 had/hhad 两池。备源也失败/解析 0 场 → 原样抛出主源错误——绝不静默
+    出假空盘。
+    """
+    import logging
+
+    import nutmeg.services.jczq as jczq_service
+
+    logger = logging.getLogger(__name__)
+    primary_error: Exception
+    try:
+        fetched = jczq_service.SportteryJczqCalculatorProvider().fetch()
+        value = fetched.get("value") if "value" in fetched else fetched
+        if value.get("matchInfoList"):
+            return value, "sporttery"
+        primary_error = jczq_service.JczqProviderError(
+            "Sporttery returned no matchInfoList (degraded/WAF response)"
+        )
+        logger.warning("sporttery 主源返回空壳（无 matchInfoList），尝试 500.com 备源")
+    except jczq_service.JczqProviderError as exc:
+        primary_error = exc
+        logger.warning("sporttery 主源失败（%s），尝试 500.com 备源", exc)
+
+    try:
+        import nutmeg.data.fcom500 as fcom500
+
+        with fcom500.Fcom500Client() as client:
+            html = client.get("https://trade.500.com/jczq/")
+        board = fcom500.parse_jczq_list(html)
+        value = fcom500.sporttery_value_from_jczq_board(board)
+        if value.get("matchInfoList"):
+            return value, "fcom500-fallback"
+        logger.warning("500.com 备源解析 0 场在售比赛")
+    except Exception:  # noqa: BLE001 — 备源失败不掩盖主源错误
+        logger.warning("500.com 备源也失败", exc_info=True)
+    raise primary_error
+
+
+def persist_sporttery_snapshot(run_date: str, output_dir, value: dict) -> None:
+    """Write the Sporttery response to ``<output_dir>/daily/<run_date>/
+    sporttery_markets.json`` so ``--replay`` is reproducible.
+
+    守卫（spec 2026-06-11）：新 ``value`` 无非空 ``matchInfoList`` 且磁盘已有
+    含非空 ``matchInfoList`` 的快照 → 拒绝覆盖。修 2026-06-11 数据丢失 bug——
+    WAF 降级空壳把当天 12:00 的完好 20 场快照冲掉（与 v2.2 修过的 ``--replay``
+    覆盖派发文件 bug 同族）。
+    """
+    import json
+    import logging
+    from pathlib import Path
+
+    path = Path(output_dir) / "daily" / run_date / "sporttery_markets.json"
+    if not value.get("matchInfoList") and path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            existing = {}
+        if isinstance(existing, dict) and existing.get("matchInfoList"):
+            logging.getLogger(__name__).warning(
+                "sporttery snapshot guard: 拒绝用空盘响应覆盖 %s 的非空快照",
+                run_date,
+            )
+            return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+
+
+def persist_bold_odds_snapshot(run_date: str, output_dir, bold_odds: dict) -> None:
+    """Write the ``collect_bold_odds`` result to ``<output_dir>/daily/<run_date>/
+    bold_odds.json`` so ``--replay`` reproduces the 国际-odds-enriched engine
+    (spec §14).
+
+    Without this, ``--replay`` never re-fetches 国际 odds and degrades to
+    体彩-only — the conflict / drift / dispersion signals collapse to 0 and the
+    day chaos value falsely reads 0. ``bold_odds`` maps 竞彩号 →
+    ``{market_name: MarketOdds}``; each ``MarketOdds`` is a plain fcom500
+    dataclass (no predictive model) serialized via ``dataclasses.asdict``.
+    """
+    import dataclasses
+    import json
+    from pathlib import Path
+
+    payload = {
+        match_no: {
+            market: dataclasses.asdict(odds) for market, odds in markets.items()
+        }
+        for match_no, markets in bold_odds.items()
+    }
+    path = Path(output_dir) / "daily" / run_date / "bold_odds.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+

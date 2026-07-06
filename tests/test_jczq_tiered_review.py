@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from nutmeg.services.jczq_bold_combos import HARD_LABEL, persist_sporttery_snapshot
+from nutmeg.services.jczq_market_kernel import HARD_LABEL, persist_sporttery_snapshot
 from nutmeg.services.jczq_tiered_review import (
     _merge_cross_version_by_theme,
     build_tiered_review,

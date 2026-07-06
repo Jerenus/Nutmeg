@@ -1,11 +1,11 @@
 """Tests for jczq_contrarian — spec §34 反面引擎。"""
 from __future__ import annotations
 
-from nutmeg.services.jczq_bold_combos import BoldMatch
 from nutmeg.services.jczq_contrarian import (
     compute_contrarian_reads,
     render_contrarian_section,
 )
+from nutmeg.services.jczq_market_kernel import BoldMatch
 
 
 def _match(no, *, home, draw, away, euro=None, h="H", a="A") -> BoldMatch:

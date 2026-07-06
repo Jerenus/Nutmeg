@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nutmeg.services.jczq_bold_combos import BoldMatch
+from nutmeg.services.jczq_market_kernel import BoldMatch
 from nutmeg.services.jczq_today import JudgmentQuestion
 from nutmeg.services.worldcup.packet_section import (
     render_wc_section,
