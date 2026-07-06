@@ -35,9 +35,13 @@ def fair_1x2(had_odds: dict[str, float]) -> dict[str, float]:
     return _fair_from_odds(had_odds)
 
 
-def _snapshot_id(match_no: str, taken_at: str, kind: str) -> str:
-    """确定性 id:同场同时刻同 kind 只产一条(store 幂等靠它)。"""
-    return f"S-{kind}-{match_no}-{taken_at}"
+def _snapshot_id(match_no: str, taken_at: str, kind: str, source: str) -> str:
+    """确定性 id:同场同时刻同 kind 同 source 只产一条(store 幂等靠它)。
+
+    source 入 id 是必需的:同一场同一时刻的体彩(sporttery)与欧赔(apifootball)
+    读时快照 kind 都是 read_time,不带 source 会撞 id 互相覆盖。
+    """
+    return f"S-{kind}-{source}-{match_no}-{taken_at}"
 
 
 def snapshots_from_sporttery(
@@ -88,7 +92,7 @@ def snapshots_from_sporttery(
                 or _signed_float(hhad_pool.get("goalLine")) or 0.0
             )
             snaps.append(MarketSnapshot(
-                snapshot_id=_snapshot_id(match_no, taken_at, kind),
+                snapshot_id=_snapshot_id(match_no, taken_at, kind, source),
                 match_id=f"M-{run_date}-{match_no}",
                 taken_at=taken_at, kind=kind, source=source,
                 fair=fair, raw_odds=raw_odds,
@@ -115,7 +119,7 @@ def euro_snapshot_from_bold_odds(
         if not fair or abs(sum(fair.values())) < 1e-9:
             continue
         snaps.append(MarketSnapshot(
-            snapshot_id=_snapshot_id(match_no, taken_at, kind),
+            snapshot_id=_snapshot_id(match_no, taken_at, kind, source),
             match_id=f"M-{run_date}-{match_no}",
             taken_at=taken_at, kind=kind, source=source,
             fair={"had": fair}, raw_odds={},

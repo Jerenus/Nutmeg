@@ -40,3 +40,44 @@ def _match_for_snapshot(snapshot, value: dict, run_date: str) -> Match:
         home=home, away=away, competition="",
         channel_refs={"jczq_match_no": match_no},
     )
+
+
+def _load_euro_bold_odds(run_date: str, output_dir) -> dict:
+    """读时欧赔 bold_odds（现 SOP 已抓的 bold_odds.json，含去水 fair_probability）。
+    缺文件/坏结构 → {}（优雅降级，只落体彩快照）。"""
+    from nutmeg.services.jczq_market_kernel import load_bold_odds_snapshot
+    try:
+        return load_bold_odds_snapshot(run_date, output_dir) or {}
+    except Exception:  # noqa: BLE001 — 欧赔缺不阻塞体彩落库
+        return {}
+
+
+def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
+    """一天的读时感知：体彩快照(下注用) + 欧赔快照(先验锚+CLV) 一并落库。
+
+    体彩从 sporttery_markets.json；欧赔从 bold_odds.json（现 SOP 已抓）。
+    返回入库场数（以体彩为准）。M1 用已存快照 replay，不新增打网。
+    """
+    from nutmeg.decision.market_data import (
+        euro_snapshot_from_bold_odds,
+        snapshots_from_sporttery,
+    )
+    from nutmeg.services.jczq_market_kernel import load_sporttery_snapshot
+
+    value = load_sporttery_snapshot(run_date, output_dir)
+    if value is None:
+        return 0
+    tc_snaps = snapshots_from_sporttery(
+        value, run_date=run_date, taken_at=taken_at,
+        source="sporttery", kind="read_time",
+    )
+    for s in tc_snaps:
+        store.upsert(_match_for_snapshot(s, value, run_date))
+        store.upsert(s)
+    bold = _load_euro_bold_odds(run_date, output_dir)
+    for s in euro_snapshot_from_bold_odds(
+        bold, run_date=run_date, taken_at=taken_at,
+        kind="read_time", source="apifootball",
+    ):
+        store.upsert(s)
+    return len(tc_snaps)
