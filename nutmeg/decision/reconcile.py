@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 from nutmeg.decision.ontology import Settlement
 from nutmeg.decision.scoring import brier, clv_pp
 
@@ -53,3 +55,49 @@ def settle_ticket_leg(*, market: str, pick: str, line: float | None,
         adj = margin + line
         return "home" if adj > 0 else "away" if adj < 0 else "draw"
     return None
+
+
+_HAD_OUTCOME = {"胜": "home", "平": "draw", "负": "away"}
+
+
+def _result_outcome(result: dict) -> tuple[str | None, str | None, int | None, int | None]:
+    """okooo 赛果行 → (outcome_90, score, goals_h, goals_a)。缺 → (None,...)。"""
+    had = _HAD_OUTCOME.get(result.get("had", ""))
+    score = result.get("score") or None
+    gh = ga = None
+    if score:
+        try:
+            gh, ga = (int(x) for x in score.replace("：", ":").split(":"))
+        except ValueError:
+            gh = ga = None
+        if had is None and gh is not None:
+            had = "home" if gh > ga else "away" if gh < ga else "draw"
+    return had, score, gh, ga
+
+
+def settle_day(store, *, run_date: str, results: dict, settled_at: str) -> int:
+    """当日所有 Read → Settlement(Brier+CLV)落库。幂等(upsert-by-id)。返回结算的 Read 数。
+
+    赛果按 okooo 口径 {竞彩号: {score, had}};收盘欧赔快照(kind=closing)供 CLV。
+    match_id 形如 M-<date>-<竞彩号>,回捞竞彩号取赛果。
+    """
+    from nutmeg.decision.ontology import MarketSnapshot, Read
+
+    prefix = f"M-{run_date}-"
+    # 收盘欧赔快照按 match_id 索引(只认 kind=closing;供 settle_read 算 CLV)
+    closing_by_match = {
+        s.match_id: s for s in store.load(MarketSnapshot) if s.kind == "closing"
+    }
+    n = 0
+    for read in store.load(Read):
+        if not read.match_id.startswith(prefix):
+            continue
+        match_no = read.match_id[len(prefix):]
+        outcome, score, _gh, _ga = _result_outcome(results.get(match_no, {}))
+        closing = closing_by_match.get(read.match_id)
+        s = settle_read(read, outcome_90=outcome, score=score, closing=closing)
+        s = replace(s, settlement_id=f"SET-read-{read.read_id}",
+                    settled_at=settled_at)
+        store.upsert(s)
+        n += 1
+    return n
