@@ -38,7 +38,7 @@ def test_m1_full_clv_loop(tmp_path, monkeypatch):
 
     # 手造一个签位激励偏平的 Read(锚欧赔 fair)
     ingest_reads([{
-        "read_id": "R-092", "match_id": "M-2026-07-08-周日092", "snapshot_id": "S-x",
+        "read_id": "R-092", "match_id": "M-2026-07-08-墨-英", "snapshot_id": "S-x",
         "made_at": "2026-07-08T15:00:00+08:00", "judge": "claude", "market": "had",
         "prior": {"home": 0.42, "draw": 0.28, "away": 0.30},
         "belief": {"home": 0.36, "draw": 0.34, "away": 0.30},

@@ -104,28 +104,24 @@ def settle_reads_for_matches(store, *, outcomes: dict, settled_at: str) -> int:
 
 
 def settle_day(store, *, run_date: str, results: dict, settled_at: str) -> int:
-    """当日所有 Read → Settlement(Brier+CLV)落库。幂等(upsert-by-id)。返回结算的 Read 数。
+    """当日竞彩 Read → Settlement(Brier+CLV)落库。返回结算数。
 
-    赛果按 okooo 口径 {竞彩号: {score, had}};收盘欧赔快照(kind=closing)供 CLV。
-    match_id 形如 M-<date>-<竞彩号>,回捞竞彩号取赛果。
+    赛果按 okooo 口径 {竞彩号: {score, had}}。canonical 迁移后 match_id 不含竞彩号,
+    改经 Match.channel_refs.jczq_match_no 映射到 canonical,再走通用 settle_reads_for_matches
+    (与 zucai 统一;2026-07-06 canonical 修)。
     """
-    from nutmeg.decision.ontology import MarketSnapshot, Read
+    from nutmeg.decision.ontology import Match
 
-    prefix = f"M-{run_date}-"
-    # 收盘欧赔快照按 match_id 索引(只认 kind=closing;供 settle_read 算 CLV)
-    closing_by_match = {
-        s.match_id: s for s in store.load(MarketSnapshot) if s.kind == "closing"
-    }
-    n = 0
-    for read in store.load(Read):
-        if not read.match_id.startswith(prefix):
-            continue
-        match_no = read.match_id[len(prefix):]
-        outcome, score, _gh, _ga = _result_outcome(results.get(match_no, {}))
-        closing = closing_by_match.get(read.match_id)
-        s = settle_read(read, outcome_90=outcome, score=score, closing=closing)
-        s = replace(s, settlement_id=f"SET-read-{read.read_id}",
-                    settled_at=settled_at)
-        store.upsert(s)
-        n += 1
-    return n
+    # 竞彩号 → canonical match_id(经 Match.channel_refs)
+    no_to_canonical: dict[str, str] = {}
+    for m in store.load(Match):
+        no = m.channel_refs.get("jczq_match_no")
+        if no:
+            no_to_canonical[no] = m.match_id
+    outcomes: dict = {}
+    for no, result in results.items():
+        canonical = no_to_canonical.get(no)
+        if canonical:
+            outcome, score, _gh, _ga = _result_outcome(result)
+            outcomes[canonical] = (outcome, score)
+    return settle_reads_for_matches(store, outcomes=outcomes, settled_at=settled_at)

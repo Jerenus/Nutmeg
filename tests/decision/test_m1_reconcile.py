@@ -1,9 +1,13 @@
-from nutmeg.decision.ontology import MarketSnapshot, Read, Settlement
+from nutmeg.decision.ontology import MarketSnapshot, Match, Read, Settlement
 from nutmeg.decision.reconcile import settle_day
 from nutmeg.decision.store import DecisionStore
 
 
 def _seed(store, *, with_closing):
+    # canonical 迁移后 settle_day 经 Match.channel_refs.jczq_match_no 映射赛果竞彩号。
+    store.upsert(Match(match_id="M-2026-07-08-周日092", kickoff_at="t",
+                       home="墨", away="英",
+                       channel_refs={"jczq_match_no": "周日092"}))
     store.upsert(Read(read_id="R-1", match_id="M-2026-07-08-周日092",
                       snapshot_id="S-r", made_at="t", judge="claude", market="had",
                       prior={"home": 0.42, "draw": 0.28, "away": 0.30},
@@ -40,12 +44,12 @@ def test_settle_day_clv_null_without_closing(tmp_path):
     assert s.brier is not None and s.clv_pp is None        # 无收盘→CLV null
 
 
-def test_settle_day_pending_when_no_result(tmp_path):
+def test_settle_day_skips_when_no_result(tmp_path):
     store = DecisionStore(tmp_path)
     _seed(store, with_closing=True)
-    settle_day(store, run_date="2026-07-08", results={}, settled_at="t")
-    s = store.settlement_for("read", "R-1")
-    assert s.brier is None and s.outcome_90 is None        # 赛果缺→pending
+    n = settle_day(store, run_date="2026-07-08", results={}, settled_at="t")
+    # 统一 skip-no-result(防共享库跨通道 clobber):无赛果→不产 Settlement
+    assert n == 0 and store.settlement_for("read", "R-1") is None
 
 
 def test_settle_day_idempotent(tmp_path):
