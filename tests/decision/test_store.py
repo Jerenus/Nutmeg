@@ -1,5 +1,5 @@
 # tests/decision/test_store.py
-from nutmeg.decision.ontology import Match, Read
+from nutmeg.decision.ontology import Match, Read, Settlement
 from nutmeg.decision.store import DecisionStore
 
 
@@ -44,3 +44,27 @@ def test_corrupt_line_skipped(tmp_path):
         '{bad\n{"match_id":"M-1","kickoff_at":"t","home":"A","away":"B"}\n'
     )
     assert len(store.load(Match)) == 1
+
+
+def test_lineage_reads_for_factor(tmp_path):
+    store = DecisionStore(tmp_path)
+    store.upsert(Read(read_id="R-1", match_id="M-1", snapshot_id="S-1",
+                      made_at="t", judge="claude", market="had",
+                      prior={"home": 0.5, "draw": 0.3, "away": 0.2},
+                      belief={"home": 0.4, "draw": 0.4, "away": 0.2},
+                      factors=[{"factor_id": "seeding_incentive"}]))
+    store.upsert(Read(read_id="R-2", match_id="M-2", snapshot_id="S-2",
+                      made_at="t", judge="claude", market="had",
+                      prior={"home": 0.5, "draw": 0.3, "away": 0.2},
+                      belief={"home": 0.5, "draw": 0.3, "away": 0.2},
+                      shadow=True))
+    hits = store.reads_for_factor("seeding_incentive")
+    assert [r.read_id for r in hits] == ["R-1"]
+
+
+def test_lineage_settlement_for_ref(tmp_path):
+    store = DecisionStore(tmp_path)
+    store.upsert(Settlement(settlement_id="SET-1", ref_type="read", ref_id="R-1",
+                            settled_at="t"))
+    assert store.settlement_for("read", "R-1").settlement_id == "SET-1"
+    assert store.settlement_for("read", "R-9") is None
