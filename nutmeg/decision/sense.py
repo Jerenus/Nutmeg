@@ -71,6 +71,7 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
         value, run_date=run_date, taken_at=taken_at,
         source="sporttery", kind="read_time",
     )
+    today_match_ids = {s.match_id for s in tc_snaps}
     for s in tc_snaps:
         store.upsert(_match_for_snapshot(s, value, run_date))
         store.upsert(s)
@@ -79,5 +80,8 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
         bold, run_date=run_date, taken_at=taken_at,
         kind="read_time", source="apifootball",
     ):
-        store.upsert(s)
+        # 只落今天体彩盘在售场的欧赔锚——bold_odds 常含次日场(跨日竞彩号),
+        # 否则会给非今日场产孤儿欧赔快照→被 backfill_shadows 误补 shadow。
+        if s.match_id in today_match_ids:
+            store.upsert(s)
     return len(tc_snaps)
