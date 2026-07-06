@@ -12,6 +12,7 @@ import nutmeg.interfaces.cli as _cli
 # JCZQ_OUTPUT_DIR_OPTION 惯例);行为与内联默认完全一致。
 _OUTPUT_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data/jczq"), "--output-dir")
 _READS_FILE_OPTION = _cli.typer.Option(..., "--reads-file", help="Read JSON 数组文件")
+_LEGS_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="投注腿 JSON 数组文件")
 _ZUCAI_DIR_OPTION = _cli.typer.Option(
     Path(".nutmeg-data/zucai"), "--zucai-dir", help="zucai 源快照目录")
 _ZUCAI_SCHEDULE_SOURCE_FILE_OPTION = _cli.typer.Option(
@@ -98,9 +99,18 @@ def decision_capture_closing(
 
 
 @_cli.app.command("decision-express")
-def decision_express() -> None:
-    """决策本体 · 动词三:Reads → Ticket(M1 接入)。"""
-    _cli.typer.echo("decision-express: M0 骨架 — 组合枚举/预算闸见 nutmeg.decision.express")
+def decision_express(
+    legs_file: Path = _LEGS_FILE_OPTION,
+    channel: str = _cli.typer.Option("jczq", "--channel", help="jczq | shengfucai | renjiu"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    made_at: str = _cli.typer.Option(..., "--made-at", help="ISO 时刻"),
+) -> None:
+    """决策本体 · 动词三:已声明投注腿 → Ticket(¥400 框架预算/串关算术)。
+
+    legs = 主循环 Claude 判读产物(结构化 JSON 数组);express 只做确定性算术,不判玩法。
+    """
+    from nutmeg.decision.express import run_express
+    _cli.typer.echo(run_express(legs_file, channel, output_dir, made_at))
 
 
 @_cli.app.command("decision-reconcile")
