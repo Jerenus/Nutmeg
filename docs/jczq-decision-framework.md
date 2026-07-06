@@ -10,6 +10,10 @@
 >
 > 本文档**仅作历史参考**——R1-R28 那套规则 live 引擎一概不用。背景见
 > `docs/jczq-decision-chain-critique.md`。请勿据本文档做每日决策或让 agent 套用 Rule A-J。
+>
+> 🪦 **已排入删除计划**：本文 + 其描述的退役 generator 代码簇（`jczq_daily` /
+> `jczq_brief` / `jczq_review` 等）将在世界杯窗口结束（2026-07-19）后整簇归档。
+> 时序与安全依据见 **`docs/jczq-refactor-roadmap.md`**（Tier D2/D3）。
 
 ## 关于本文档
 
