@@ -58,3 +58,13 @@ def test_settle_day_idempotent(tmp_path):
     settle_day(store, run_date="2026-07-08", results=_results(), settled_at="t")
     settle_day(store, run_date="2026-07-08", results=_results(), settled_at="t")
     assert len([s for s in store.load(Settlement) if s.ref_id == "R-1"]) == 1
+
+
+def test_settle_day_skips_unfinished_matches(tmp_path):
+    """okooo 返回未终局行(had 空)→ settle_day 不产 pending 结算,诚实计数 0。"""
+    store = DecisionStore(tmp_path)
+    _seed(store, with_closing=True)
+    # okooo 有该场行但无 had/score(比赛未终局)
+    n = settle_day(store, run_date="2026-07-08",
+                   results={"周日092": {"score": "", "had": ""}}, settled_at="t")
+    assert n == 0 and store.settlement_for("read", "R-1") is None

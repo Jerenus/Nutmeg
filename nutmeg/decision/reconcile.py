@@ -121,7 +121,8 @@ def settle_day(store, *, run_date: str, results: dict, settled_at: str) -> int:
     outcomes: dict = {}
     for no, result in results.items():
         canonical = no_to_canonical.get(no)
-        if canonical:
-            outcome, score, _gh, _ga = _result_outcome(result)
+        outcome, score, _gh, _ga = _result_outcome(result)
+        # 只喂有真实结果的场——未终局(outcome None)不产 pending 结算(诚实计数+不占位)。
+        if canonical and outcome is not None:
             outcomes[canonical] = (outcome, score)
     return settle_reads_for_matches(store, outcomes=outcomes, settled_at=settled_at)
