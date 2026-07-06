@@ -23,7 +23,7 @@ def sense_from_snapshot(run_date: str, *, output_dir, taken_at: str,
     )
     for s in snaps:
         # 从 value 里回捞队名建 Match(snapshot 已带 match_id)
-        store.upsert(_match_for_snapshot(s, value, run_date))
+        upsert_match_merged(store, _match_for_snapshot(s, value, run_date))
         store.upsert(s)
     return len(snaps)
 
@@ -43,6 +43,18 @@ def _match_for_snapshot(snapshot, value: dict, run_date: str) -> Match:
         home=home, away=away, competition="",
         channel_refs={"jczq_match_no": match_no},
     )
+
+
+def upsert_match_merged(store, match) -> None:
+    """落 Match 前合并 channel_refs——同一 canonical 比赛被第二通道 sense 时,
+    不覆盖对方通道号(spec §2 一场多通道)。"""
+    from dataclasses import replace
+
+    existing = store.get(Match, match.match_id)
+    if existing is not None:
+        merged = {**existing.channel_refs, **match.channel_refs}
+        match = replace(match, channel_refs=merged)
+    store.upsert(match)
 
 
 def _load_euro_bold_odds(run_date: str, output_dir) -> dict:
@@ -87,7 +99,7 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
                 h, a, run_date
             )
     for s in tc_snaps:
-        store.upsert(_match_for_snapshot(s, value, run_date))
+        upsert_match_merged(store, _match_for_snapshot(s, value, run_date))
         store.upsert(s)
     bold = _load_euro_bold_odds(run_date, output_dir)
     for s in euro_snapshot_from_bold_odds(

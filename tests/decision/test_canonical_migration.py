@@ -1,7 +1,7 @@
 import json
 
 from nutmeg.decision.ontology import MarketSnapshot, Match
-from nutmeg.decision.sense import sense_day
+from nutmeg.decision.sense import sense_day, upsert_match_merged
 from nutmeg.decision.store import DecisionStore
 
 _BOARD = {"matchInfoList": [{"businessDate": "2026-07-06", "subMatchList": [{
@@ -23,3 +23,18 @@ def test_jczq_sense_uses_canonical_id_and_channel_ref(tmp_path, monkeypatch):
     assert m.channel_refs.get("jczq_match_no") == "周一093"     # 竞彩号进 ref
     s = store.load(MarketSnapshot)[0]
     assert s.match_id == "M-2026-07-06-葡萄牙-西班牙"           # snapshot 同 canonical
+
+
+def test_channel_refs_merge_across_channels(tmp_path):
+    store = DecisionStore(tmp_path / "decision")
+    mid = "M-2026-07-06-阿根廷-埃及"
+    # 竞彩先落
+    upsert_match_merged(store, Match(match_id=mid, kickoff_at="t", home="阿根廷",
+                                     away="埃及", channel_refs={"jczq_match_no": "周二095"}))
+    # zucai 后落同一场
+    upsert_match_merged(store, Match(
+        match_id=mid, kickoff_at="t", home="阿根廷", away="埃及",
+        channel_refs={"zucai": {"issue": "26091", "index": 3}}))
+    m = store.get(Match, mid)
+    assert m.channel_refs.get("jczq_match_no") == "周二095"       # 竞彩 ref 未丢
+    assert m.channel_refs.get("zucai") == {"issue": "26091", "index": 3}  # zucai ref 已加
