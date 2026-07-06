@@ -113,6 +113,21 @@ def decision_express(
     _cli.typer.echo(run_express(legs_file, channel, output_dir, made_at))
 
 
+@_cli.app.command("decision-report")
+def decision_report(
+    date: str = _cli.typer.Option(..., "--date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    dispatch_telegram: bool = _cli.typer.Option(False, "--dispatch-telegram",
+                                                help="渲染后通过 Telegram 推送 PDF"),
+    dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run",
+                                      help="dry-run 时不真推送"),
+) -> None:
+    """决策本体 · 清洁版 PDF 日报(判读/偏移/CLV + Ticket + 双轴校准)+ Telegram 推送。"""
+    from nutmeg.decision.report import run_report
+    _cli.typer.echo(run_report(date, output_dir, dispatch_telegram=dispatch_telegram,
+                               dry_run=dry_run))
+
+
 @_cli.app.command("decision-reconcile")
 def decision_reconcile(
     run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
