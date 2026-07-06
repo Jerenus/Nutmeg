@@ -1,0 +1,16 @@
+# 本地交付质量门（repo 无 remote，CI 只是备而不用——这里才是真正的守门人）
+# 安装: uv run pre-commit install
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check (staged files)
+        entry: uv run ruff check --force-exclude
+        language: system
+        types: [python]
+      - id: pytest-touched-wc
+        name: pytest (worldcup/jczq fast subset when touched)
+        entry: bash -c 'uv run pytest tests/test_wc_judge_ledger.py tests/test_wc_predictions.py tests/test_wc_results.py tests/test_jczq_tiered_review.py -q'
+        language: system
+        files: ^nutmeg/services/(worldcup/|jczq_tiered)
+        pass_filenames: false
