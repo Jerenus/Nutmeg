@@ -163,6 +163,56 @@ def decision_reconcile_zucai(
     _cli.typer.echo(run_reconcile_zucai(issue, output_dir, settled_at, zucai_dir))
 
 
+_ISSUE_OPTION = _cli.typer.Option(None, "--issue", help="传统足彩期号(带则纳入 zucai)")
+
+
+@_cli.app.command("decision-am")
+def decision_am(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    issue: str | None = _ISSUE_OPTION,
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+) -> None:
+    """决策本体 · 日循环早段:fetch(+可选 zucai)→ sense(+可选 zucai)→ backfill。
+
+    编排不含判读——只数据入库+市场基线;主循环 Claude 在 am 与 close 之间人工插 decision-read。
+    """
+    from nutmeg.decision.verbs import run_decision_am
+    _cli.typer.echo(run_decision_am(run_date, output_dir, zucai_dir=zucai_dir, issue=issue))
+
+
+@_cli.app.command("decision-close")
+def decision_close(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    dispatch_telegram: bool = _cli.typer.Option(False, "--dispatch-telegram"),
+    dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run"),
+) -> None:
+    """决策本体 · 日循环收盘段:capture-closing → express → report。
+
+    express legs 来自主循环 Claude 判读(daily/<date>/legs.json,无则空票)。
+    """
+    from nutmeg.decision.verbs import run_decision_close
+    _cli.typer.echo(run_decision_close(
+        run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run))
+
+
+@_cli.app.command("decision-settle")
+def decision_settle(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    dispatch_telegram: bool = _cli.typer.Option(False, "--dispatch-telegram"),
+    dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run"),
+    issue: str | None = _ISSUE_OPTION,
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+) -> None:
+    """决策本体 · 日循环结算段:reconcile(+可选 zucai)→ calibrate → report(复盘)。"""
+    from nutmeg.decision.verbs import run_decision_settle
+    _cli.typer.echo(run_decision_settle(
+        run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run,
+        issue=issue, zucai_dir=zucai_dir))
+
+
 @_cli.app.command("decision-calibrate")
 def decision_calibrate(
     output_dir: Path = _OUTPUT_DIR_OPTION,
