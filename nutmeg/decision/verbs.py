@@ -18,6 +18,16 @@ def run_sense(run_date: str, output_dir: Path, taken_at: str) -> str:
     return f"decision-sense {run_date}: 入库 {n} 场 Match+体彩/欧赔 Snapshot"
 
 
+def run_backfill(run_date: str, output_dir: Path, made_at: str) -> str:
+    # 判读收尾:未判场补市场基线 shadow(belief=prior)。顺序纪律:须在 decision-read 之后。
+    from nutmeg.decision.read_ingest import backfill_shadows
+    from nutmeg.decision.store import DecisionStore
+
+    store = DecisionStore(Path(output_dir) / "decision")
+    n = backfill_shadows(store, run_date=run_date, made_at=made_at)
+    return f"decision-backfill {run_date}: 补 {n} 条市场基线 shadow"
+
+
 def run_read_ingest(reads_file: Path, output_dir: Path) -> str:
     import json
 

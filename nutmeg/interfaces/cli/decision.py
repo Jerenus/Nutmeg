@@ -35,6 +35,17 @@ def decision_read(
     _cli.typer.echo(run_read_ingest(reads_file, output_dir))
 
 
+@_cli.app.command("decision-backfill")
+def decision_backfill(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    made_at: str = _cli.typer.Option(..., "--made-at", help="ISO 时刻"),
+) -> None:
+    """决策本体 · 判读收尾:未判场补市场基线 shadow(须在 decision-read 之后)。"""
+    from nutmeg.decision.verbs import run_backfill
+    _cli.typer.echo(run_backfill(run_date, output_dir, made_at))
+
+
 @_cli.app.command("decision-capture-closing")
 def decision_capture_closing(
     run_date: str = _cli.typer.Option(..., "--run-date"),
