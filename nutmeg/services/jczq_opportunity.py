@@ -290,7 +290,8 @@ def render_opportunity_radar(by_lens: dict[str, list[Opportunity]]) -> str:
         lines.append("|---|---|---|---|")
         for o in ops:
             lines.append(
-                f"| {o.match_no} {o.home} vs {o.away} | **{o.pick}** | {o.confidence} | {o.reason} |"
+                f"| {o.match_no} {o.home} vs {o.away} | **{o.pick}** "
+                f"| {o.confidence} | {o.reason} |"
             )
     # 跨透镜共振：同一场被 ≥2 个透镜指向同一边 → 最值得注意
     by_match: dict[str, list[Opportunity]] = {}

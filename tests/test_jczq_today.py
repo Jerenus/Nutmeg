@@ -2,12 +2,6 @@
 from __future__ import annotations
 
 from nutmeg.services.jczq_bold_combos import BoldLeg, BoldMatch
-from nutmeg.services.jczq_today import (
-    JudgmentQuestion,
-    classify_heat,
-    derive_judgment_questions,
-    render_today_packet,
-)
 from nutmeg.services.jczq_tiered import (
     DEFAULT_TIER_A,
     DEFAULT_TIER_B,
@@ -17,7 +11,11 @@ from nutmeg.services.jczq_tiered import (
     TieredPlan,
     confidence_tag_for_code,
 )
-
+from nutmeg.services.jczq_today import (
+    classify_heat,
+    derive_judgment_questions,
+    render_today_packet,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures

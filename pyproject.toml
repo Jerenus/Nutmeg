@@ -51,6 +51,13 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# worktrees/.agents = 本地快照;scripts = 研究一次性脚本存档——都不作质量门
+extend-exclude = [".claude/worktrees", ".agents", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+]

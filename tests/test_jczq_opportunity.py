@@ -3,10 +3,9 @@ from __future__ import annotations
 
 from nutmeg.services.jczq_bold_combos import BoldMatch
 from nutmeg.services.jczq_opportunity import (
-    Opportunity,
     contrarian_lens,
-    draw_value_lens,
     dispersion_lens,
+    draw_value_lens,
     drift_lens,
     render_opportunity_radar,
     scan_opportunities,

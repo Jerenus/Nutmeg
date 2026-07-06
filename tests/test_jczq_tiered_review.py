@@ -163,7 +163,7 @@ def test_run_tiered_review_writes_artifacts(tmp_path) -> None:
 def test_day_record_includes_version_field(tmp_path) -> None:
     """spec §27.4 — every day record carries a version tag for grouping."""
     _persist_snapshot(tmp_path)
-    review = build_tiered_review(
+    build_tiered_review(
         "2026-05-26", tmp_path,
         result_provider=_FakeResults({"周二001": {"had": "胜"}}),
     )

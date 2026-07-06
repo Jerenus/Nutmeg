@@ -10,7 +10,7 @@ absurd (gap < EURO_CONFIRM_MAX_GAP).
 """
 from __future__ import annotations
 
-from nutmeg.services.jczq_bold_combos import BoldMatch
+from nutmeg.services.jczq_bold_combos import BoldMatch, PoolSignals
 from nutmeg.services.jczq_tiered import (
     DEFAULT_TIER_A,
     EURO_CONFIRM_FAVOURITE_PROB,
@@ -19,7 +19,6 @@ from nutmeg.services.jczq_tiered import (
     _favourite_had_leg,
     pick_anchor_tier,
 )
-from nutmeg.services.jczq_bold_combos import PoolSignals
 
 
 def _match(

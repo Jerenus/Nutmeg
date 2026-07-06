@@ -893,6 +893,41 @@ def jczq_tiered_review(
         _cli.typer.echo(review.message)
 
 
+@_cli.app.command("jczq-judge-reconcile")
+def jczq_judge_reconcile(
+    since: str = _cli.typer.Option(
+        "2026-06-12", "--since", help="重对账起始日(默认评判员层上线日)"
+    ),
+    until: str | None = _cli.typer.Option(
+        None, "--until", help="重对账截止日(默认昨天)"
+    ),
+    output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,
+) -> None:
+    """评判员 ledger 全量重对账(维护命令,幂等)。
+
+    日常路径不需要它——jczq-report 每次渲染前自动对账最近 3 天 + 补扫全部
+    pending。这条只在修复历史 bug / 手工核账时用。
+    """
+    from nutmeg.services.worldcup.judge_ledger import (
+        LEDGER_FILENAME,
+        ledger_summary,
+        load_ledger,
+        reconcile_range,
+    )
+
+    target_until = _resolve_jczq_date(until or "yesterday")
+    n = reconcile_range(output_dir, since=since, until=target_until)
+    entries = load_ledger(output_dir / "wc2026" / LEDGER_FILENAME)
+    s = ledger_summary(entries)
+    _cli.console.print(
+        f"重写 {n} 条 [{since} → {target_until}] · "
+        f"picks={s.n_picks} 判定率={s.judgment_rate and f'{s.judgment_rate:.1%}'} "
+        f"比分率={s.score_rate and f'{s.score_rate:.1%}'} · "
+        f"票 {s.ticket_n} 张 pnl={s.ticket_pnl:+.1f} · "
+        f"absent={s.absent_days} pending={s.pending}"
+    )
+
+
 @_cli.app.command("jczq-web")
 def jczq_web(
     output_dir: _cli.Path = _cli.JCZQ_OUTPUT_DIR_OPTION,

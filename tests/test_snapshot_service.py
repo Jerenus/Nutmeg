@@ -316,7 +316,7 @@ def test_soccerdata_client_normalizes_fixture_enrichment() -> None:
     )
 
     bundle = client.fetch_fixture_enrichment(
-        fixture=sample_fixtures('epl')[0],
+        fixture=sample_fixtures('epl', season=2025)[0],
         recent_matches=2,
     )
 
@@ -352,7 +352,7 @@ def test_soccerdata_client_normalizes_fixture_enrichment() -> None:
 
 def test_soccerdata_client_rejects_unsupported_leagues() -> None:
     fixture = replace(
-        sample_fixtures('epl')[0],
+        sample_fixtures('epl', season=2025)[0],
         fixture_id='ucl-001',
         league_code='ucl',
         season=2025,
@@ -383,7 +383,7 @@ def test_soccerdata_client_returns_null_for_missing_fbref_xg_columns() -> None:
     )
 
     bundle = client.fetch_fixture_enrichment(
-        fixture=sample_fixtures('epl')[0],
+        fixture=sample_fixtures('epl', season=2025)[0],
         recent_matches=2,
     )
 
@@ -393,7 +393,7 @@ def test_soccerdata_client_returns_null_for_missing_fbref_xg_columns() -> None:
 
 
 def test_fixture_snapshot_service_builds_snapshot_with_confirmed_lineups() -> None:
-    fixture = sample_fixtures('epl')[0]
+    fixture = sample_fixtures('epl', season=2025)[0]
     bundle = SoccerDataFixtureBundle(
         league_code='epl',
         season=fixture.season,
@@ -542,7 +542,7 @@ def test_fixture_snapshot_service_builds_snapshot_with_confirmed_lineups() -> No
 
 
 def test_fixture_snapshot_service_local_context_skips_live_context_clients() -> None:
-    fixture = sample_fixtures('epl')[0]
+    fixture = sample_fixtures('epl', season=2025)[0]
     bundle = SoccerDataFixtureBundle(
         league_code='epl',
         season=fixture.season,
@@ -593,7 +593,7 @@ def test_fixture_snapshot_service_local_context_skips_live_context_clients() -> 
 
 
 def test_fixture_snapshot_service_falls_back_to_probable_lineups() -> None:
-    fixture = sample_fixtures('epl')[0]
+    fixture = sample_fixtures('epl', season=2025)[0]
     bundle = SoccerDataFixtureBundle(
         league_code='epl',
         season=fixture.season,
@@ -671,7 +671,7 @@ def test_fixture_snapshot_service_falls_back_to_probable_lineups() -> None:
 
 
 def test_fixture_snapshot_service_excludes_probable_lineup_by_canonical_identity() -> None:
-    fixture = sample_fixtures('epl')[0]
+    fixture = sample_fixtures('epl', season=2025)[0]
     bundle = SoccerDataFixtureBundle(
         league_code='epl',
         season=fixture.season,
@@ -754,7 +754,7 @@ def test_fixture_snapshot_service_raises_when_fixture_is_missing() -> None:
 
 def test_fixture_snapshot_service_computes_rest_days_from_historical_fixture_cache() -> None:
     fixture = replace(
-        sample_fixtures('epl')[0],
+        sample_fixtures('epl', season=2025)[0],
         provider_league_id=39,
         kickoff_at=datetime(2026, 4, 25, 14, tzinfo=UTC),
         home_team_id=42,
@@ -820,7 +820,7 @@ def test_fixture_snapshot_service_computes_rest_days_from_historical_fixture_cac
 
 def test_fixture_snapshot_service_builds_environment_availability_and_matchup_context() -> None:
     fixture = replace(
-        sample_fixtures('epl')[0],
+        sample_fixtures('epl', season=2025)[0],
         provider_league_id=39,
         kickoff_at=datetime(2026, 4, 25, 14, tzinfo=UTC),
         round_name='Regular Season - 34',
@@ -1081,7 +1081,7 @@ def test_fixture_snapshot_service_degrades_to_soccerdata_when_api_football_unava
 ) -> None:
     from nutmeg.models.dixon_coles import expected_goals_from_snapshot
 
-    fixture = sample_fixtures('epl')[0]
+    fixture = sample_fixtures('epl', season=2025)[0]
     bundle = SoccerDataFixtureBundle(
         league_code='epl',
         season=fixture.season,

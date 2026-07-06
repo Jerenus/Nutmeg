@@ -127,9 +127,26 @@ def _live_update_and_simulate(
     existing = load_results(results_path)
     fixtures = []
     today = date.fromisoformat(run_date)
+    fetch_days = {today - timedelta(days=back) for back in (2, 1)}
+    # 2026-07-06 漏结回扫:某日任务失败 → 该日赛果此前永久丢失(捷克两场群赛
+    # 就这么漏的)。已过期但 results.json 还没有的场次,把比赛日一并补抓(幂等,
+    # ingest 按 match_id 去重;上限 14 天防失控)。
+    known_ids = {r.match_id for r in existing}
+    for m in tournament.matches:
+        try:
+            m_day = date.fromisoformat(m.date_utc)
+        except (TypeError, ValueError):
+            continue
+        if (
+            m.match_id not in known_ids
+            and m_day < today
+            and (today - m_day).days <= 14
+        ):
+            fetch_days.add(m_day)
+            fetch_days.add(m_day + timedelta(days=1))  # 北京跨日
     try:
-        for back in (2, 1):  # 北京时差:UTC 昨天+前天覆盖"昨夜今晨"
-            fixtures.extend(fixtures_fetcher(today - timedelta(days=back)))
+        for fetch_day in sorted(fetch_days):
+            fixtures.extend(fixtures_fetcher(fetch_day))
         injuries = _injury_counts(today, injuries_fetcher)
     finally:
         if owned_client is not None:

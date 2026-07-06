@@ -30,6 +30,30 @@ def _outcome(gh: int, ga: int) -> str:
     return "home" if gh > ga else "away" if gh < ga else "draw"
 
 
+# API-Football 中途改队名(2026-06 实测 "Czech Republic" → "Czechia"),
+# 映射方向严格是【API 别名 → tournament 种子拼写】,VALUE 必须是合法种子名
+# (2026-07-06 code-review 抓到 USA/Türkiye/South Korea 三条写反 = 死条目,
+# 恰好救不了它们本要修的漏结;种子实为 USA/Türkiye/South Korea)。仍绝不模糊匹配。
+_API_NAME_FIXES = {
+    "Czechia": "Czech Republic",
+    "Turkey": "Türkiye",
+    "Korea Republic": "South Korea",
+    "United States": "USA",
+    "Cabo Verde": "Cape Verde Islands",
+    "Cape Verde": "Cape Verde Islands",
+}
+
+
+def _canonical(name: str, teams: set[str] | frozenset[str]) -> str:
+    """夹具队名 → tournament 种子拼写;失配原样返回。"""
+    if name in teams:
+        return name
+    fixed = _API_NAME_FIXES.get(name)
+    if fixed is not None and fixed in teams:
+        return fixed
+    return name
+
+
 def ingest_results(
     fixtures: list[Fixture], tournament: Tournament, *, existing: list[WcResult]
 ) -> list[WcResult]:
@@ -48,12 +72,15 @@ def ingest_results(
             ko_by_date.setdefault(m.date_utc, []).append(m)
 
     out = list(existing)
+    teams = set(tournament.teams)
     for fx in fixtures:
         if fx.status is not FixtureStatus.FINISHED:
             continue
-        if fx.home_team not in tournament.teams or fx.away_team not in tournament.teams:
+        home = _canonical(fx.home_team, teams)
+        away = _canonical(fx.away_team, teams)
+        if home not in teams or away not in teams:
             continue
-        pair = frozenset((fx.home_team, fx.away_team))
+        pair = frozenset((home, away))
         match_id = by_pair.get(pair)
         if match_id is None:
             day = fx.kickoff_at.date().isoformat()
@@ -68,19 +95,18 @@ def ingest_results(
             continue
         gh, ga = fx.home_goals or 0, fx.away_goals or 0
         if fx.status_short == "FT":
-            rec = WcResult(match_id, fx.home_team, fx.away_team, "FT",
+            rec = WcResult(match_id, home, away, "FT",
                            _outcome(gh, ga), gh, ga,
                            None if not knockout.get(match_id) else
-                           (fx.home_team if gh > ga else fx.away_team if ga > gh
-                            else None))
+                           (home if gh > ga else away if ga > gh else None))
         elif fx.status_short == "AET":
-            adv = fx.home_team if gh > ga else fx.away_team
-            rec = WcResult(match_id, fx.home_team, fx.away_team, "AET",
+            adv = home if gh > ga else away
+            rec = WcResult(match_id, home, away, "AET",
                            "draw", None, None, adv)
         elif fx.status_short == "PEN":
             ph, pa = fx.penalty_home or 0, fx.penalty_away or 0
-            adv = fx.home_team if ph > pa else fx.away_team
-            rec = WcResult(match_id, fx.home_team, fx.away_team, "PEN",
+            adv = home if ph > pa else away
+            rec = WcResult(match_id, home, away, "PEN",
                            "draw", None, None, adv)
         else:
             continue

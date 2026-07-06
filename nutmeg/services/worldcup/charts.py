@@ -138,7 +138,7 @@ def group_table_png(t: Tournament, results: list[WcResult]) -> bytes:
     # 避免 flatiter 被 zip 消耗后尾部清理切片错位。
     flat = list(axes.flat) if n_groups > 1 else [axes]
     rng = random.Random(0)  # 仅排序稳定用,真实表不靠抽签
-    for ax, (g, members) in zip(flat, sorted(t.groups.items())):
+    for ax, (g, members) in zip(flat, sorted(t.groups.items()), strict=False):
         order = rank_group(members, goals, rng)
         rows_data = _table_rows(members, goals)
         cell = [[_zh(t, team, prop), str(rows_data[team][0])] for team in order]

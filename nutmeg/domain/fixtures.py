@@ -46,9 +46,12 @@ class Fixture:
     penalty_away: int | None = None
 
 
-def sample_fixtures(league_code: str) -> list[Fixture]:
+def sample_fixtures(league_code: str, *, season: int | None = None) -> list[Fixture]:
+    # season 缺省按墙钟推(7月翻转);测试必须显式传 season——2026-07-01 翻转曾让
+    # 依赖缺省值的断言全体过期(test_snapshot_service 6 例)。
     now = datetime.now(UTC).replace(microsecond=0)
-    season = now.year if now.month >= 7 else now.year - 1
+    if season is None:
+        season = now.year if now.month >= 7 else now.year - 1
     return [
         Fixture(
             fixture_id=f'{league_code}-001',

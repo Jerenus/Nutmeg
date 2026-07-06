@@ -4,9 +4,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from nutmeg.domain.fixtures import Fixture, FixtureStatus
-from nutmeg.services.worldcup.results import WcResult, ingest_results
+from nutmeg.services.worldcup.results import ingest_results
 from nutmeg.services.worldcup.tournament import Tournament
-
 from tests.test_wc_tournament import _mini_tournament_dict
 
 
@@ -60,3 +59,18 @@ def test_ingest_is_idempotent_and_ignores_unknown() -> None:
         _tournament(), existing=existing,
     )
     assert len(again) == 1
+
+
+def test_canonical_maps_api_alternate_spelling_to_seed() -> None:
+    """2026-07-06 code-review 修复:_API_NAME_FIXES 方向必须【API 别名→种子】。
+    早先 USA/Türkiye 写反成死条目,恰好救不了它们本要修的漏结。"""
+    from nutmeg.services.worldcup.results import _canonical
+
+    teams = {"USA", "Türkiye", "South Korea", "Czech Republic", "Cape Verde Islands"}
+    assert _canonical("United States", teams) == "USA"
+    assert _canonical("Turkey", teams) == "Türkiye"
+    assert _canonical("Korea Republic", teams) == "South Korea"
+    assert _canonical("Czechia", teams) == "Czech Republic"
+    assert _canonical("Cabo Verde", teams) == "Cape Verde Islands"
+    assert _canonical("USA", teams) == "USA"          # 已是种子 → 原样
+    assert _canonical("Neverland", teams) == "Neverland"  # 未知 → 原样(交给上层丢弃)

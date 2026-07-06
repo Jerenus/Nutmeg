@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from nutmeg.data.fcom500 import MarketOdds
 from nutmeg.domain.fixtures import Fixture, FixtureStatus
 from nutmeg.domain.odds import (
     BookmakerQuote,
@@ -21,7 +22,6 @@ from nutmeg.services.jczq_apifootball_odds import (
     load_national_team_aliases,
     merge_bold_odds,
 )
-from nutmeg.data.fcom500 import MarketOdds
 
 
 def _fixture(fid: str, home: str, away: str, kickoff: str) -> Fixture:

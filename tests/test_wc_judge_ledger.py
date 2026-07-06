@@ -111,6 +111,125 @@ def test_summary_rates_and_absent() -> None:
     assert s.absent_days == 1 and s.pending == 1
 
 
+def test_reconcile_matches_by_fixture_pair_when_match_id_missing() -> None:
+    """2026-07-06 根因修复:agent 写的 predictions 从不带 match_id,
+    此前全部永久 pending;现按 fixture 队名对(经别名表)兜底匹配。"""
+    aliases = {"甲队": "A", "乙队": "B"}
+    pred = _pred([
+        JudgePick(fixture="甲队 vs 乙队", judgment="home", score="1-0",
+                  reason="r", confidence=4, match_no="周五001"),
+    ])
+    entries = reconcile_day(pred, RESULTS, team_aliases=aliases)
+    assert entries[0]["pending"] is False
+    assert entries[0]["judgment_hit"] is True
+
+
+def test_reconcile_fixture_pair_prefers_latest_in_knockout_window() -> None:
+    """同 pair 双遇(小组+淘汰):判定日在小组窗口后 → 取最近一次赛果。"""
+    results = [
+        WcResult("M10", "A", "B", "FT", "home", 2, 0, None),   # 小组赛
+        WcResult("M60", "A", "B", "FT", "away", 0, 1, "B"),    # 淘汰赛
+    ]
+    aliases = {"甲队": "A", "乙队": "B"}
+    ko_pred = Predictions(
+        date="2026-07-03", judge="claude",
+        picks=[JudgePick(fixture="甲队 vs 乙队", judgment="away", score="0-1",
+                         reason="r", confidence=4)],
+        champion_pick={"team": "X"}, opinion_ticket=None,
+    )
+    entries = reconcile_day(ko_pred, results, team_aliases=aliases)
+    assert entries[0]["judgment_hit"] is True   # 命中的是 M60 的 away
+
+
+def test_hhad_ticket_graded_with_line() -> None:
+    """2026-07-06 修复:hhad 票此前按胜平负口径误评(英格兰 -1 恰胜1球=让平,
+    旧代码会误记为赢)。"""
+    results = [WcResult("M20", "A", "B", "FT", "home", 2, 1, None)]
+    pred = _pred(
+        [_pick("M20", "home", match_no="周三080")],
+        ticket=OpinionTicket("周三080", "hhad", "home", odds=1.64, line=-1),
+    )
+    t = [e for e in reconcile_day(pred, results) if e["kind"] == "ticket"][0]
+    assert t["ticket_outcome"] == "draw"        # 净胜1 - 1 = 0 → 让平
+    assert t["pnl_yuan"] == -15.0               # 让胜票输
+
+
+def test_hhad_ticket_line_from_market_snapshot_lookup() -> None:
+    results = [WcResult("M21", "A", "B", "FT", "home", 3, 0, None)]
+    pred = _pred(
+        [_pick("M21", "home", match_no="周二078")],
+        ticket=OpinionTicket("周二078", "hhad", "home", odds=1.60),  # line 未存
+    )
+    t = [e for e in reconcile_day(pred, results, hhad_lines={"周二078": -1.0})
+         if e["kind"] == "ticket"][0]
+    assert t["line"] == -1.0
+    assert t["ticket_outcome"] == "home" and t["pnl_yuan"] == 9.0
+
+
+def test_hhad_ticket_aet_draw_margin_zero() -> None:
+    """AET/PEN 90' 必为平 → margin 0,无需精确比分即可评 hhad。"""
+    results = [WcResult("M22", "A", "B", "AET", "draw", None, None, "A")]
+    pred = _pred(
+        [_pick("M22", "draw", match_no="周五087")],
+        ticket=OpinionTicket("周五087", "hhad", "away", odds=2.62, line=-2),
+    )
+    t = [e for e in reconcile_day(pred, results) if e["kind"] == "ticket"][0]
+    assert t["ticket_outcome"] == "away"        # 0 + (-2) < 0 → 让负
+    assert abs(t["pnl_yuan"] - 15 * 1.62) < 1e-9
+
+
+def test_unrecognized_ticket_pick_stays_pending_not_loss() -> None:
+    """2026-07-06 code-review:pick 标签无法识别时必须 pending,绝不静默记 −stake。"""
+    results = [WcResult("M30", "A", "B", "FT", "home", 2, 0, None)]
+    pred = _pred(
+        [_pick("M30", "home", match_no="周三080")],
+        ticket=OpinionTicket("周三080", "hhad", "受让平未知档", odds=1.9, line=-1),
+    )
+    t = [e for e in reconcile_day(pred, results) if e["kind"] == "ticket"][0]
+    assert t["pending"] is True
+    assert "pnl_yuan" not in t
+
+
+def test_hhad_ticket_without_line_stays_pending() -> None:
+    results = [WcResult("M23", "A", "B", "FT", "home", 2, 0, None)]
+    pred = _pred(
+        [_pick("M23", "home", match_no="周六090")],
+        ticket=OpinionTicket("周六090", "hhad", "draw", odds=3.5),
+    )
+    t = [e for e in reconcile_day(pred, results) if e["kind"] == "ticket"][0]
+    assert t["pending"] is True
+
+
+def test_reconcile_recent_sweeps_old_pending(tmp_path: Path) -> None:
+    """窗口(3天)外仍 pending 的历史日期,赛果就绪后自动补结。"""
+    import json as _json
+
+    from nutmeg.services.worldcup.judge_ledger import reconcile_recent
+    from nutmeg.services.worldcup.results import save_results
+
+    old = "2026-06-20"
+    daily = tmp_path / "daily" / old
+    daily.mkdir(parents=True)
+    (daily / "predictions.json").write_text(_json.dumps({
+        "date": old, "judge": "claude",
+        "picks": [{"fixture": "f", "match_no": "周六001", "match_id": "M01",
+                   "judgment": "home", "score": "1-0", "reason": "r",
+                   "confidence": 4}],
+        "champion_pick": {"team": "X"}, "opinion_ticket": None,
+        "written_at": old,
+    }, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "wc2026").mkdir()
+    save_results(tmp_path / "wc2026" / "results.json", [])
+    reconcile_recent(tmp_path, today="2026-06-21")   # 赛果未到 → pending
+    assert load_ledger(tmp_path / "wc2026" / "judge-ledger.jsonl")[0]["pending"]
+
+    save_results(tmp_path / "wc2026" / "results.json", RESULTS)
+    reconcile_recent(tmp_path, today="2026-07-06")   # 窗口早已滑过 → 补扫救回
+    entries = load_ledger(tmp_path / "wc2026" / "judge-ledger.jsonl")
+    by_date = [e for e in entries if e.get("date") == old and e["kind"] == "pick"]
+    assert by_date[0]["pending"] is False and by_date[0]["judgment_hit"] is True
+
+
 def test_reconcile_recent_skips_pre_launch_days(tmp_path: Path) -> None:
     """评判员层上线(2026-06-12)之前的日子不计缺席。"""
     from nutmeg.services.worldcup.judge_ledger import reconcile_recent

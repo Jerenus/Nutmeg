@@ -8,7 +8,6 @@ from nutmeg.services.worldcup.charts import (
 )
 from nutmeg.services.worldcup.sim import SimOutput
 from nutmeg.services.worldcup.tournament import Tournament
-
 from tests.test_wc_tournament import _mini_tournament_dict
 
 KEYS = ("qualify", "r32", "r16", "qf", "sf", "final", "champion")

@@ -69,3 +69,55 @@ def test_corrupt_returns_none(tmp_path: Path) -> None:
     daily.mkdir()
     (daily / "predictions.json").write_text("{broken", encoding="utf-8")
     assert load_predictions(daily) is None
+
+
+def test_string_champion_pick_coerced(tmp_path: Path) -> None:
+    """2026-07-06 容错:字符串 champion_pick 此前让整日判定作废(误记 absent)。"""
+    payload = json.loads(json.dumps(VALID))
+    payload["champion_pick"] = "阿根廷(蒙特卡洛22.2%居首)"
+    got = load_predictions(_write(tmp_path, payload))
+    assert got is not None
+    assert got.champion_pick["team"] == "阿根廷(蒙特卡洛22.2%居首)"
+
+
+def test_string_opinion_ticket_dropped_but_day_survives(tmp_path: Path) -> None:
+    payload = json.loads(json.dumps(VALID))
+    payload["opinion_ticket"] = "周日073 南非受让+1 @2.19, 单关¥15"
+    got = load_predictions(_write(tmp_path, payload))
+    assert got is not None and got.opinion_ticket is None
+    assert got.picks[0].judgment == "home"
+
+
+def test_ticket_market_suffix_and_label_pick_coerced(tmp_path: Path) -> None:
+    """「hhad+2」→ market=hhad + line=2;「让平（法国恰净胜2）」→ draw。"""
+    payload = json.loads(json.dumps(VALID))
+    payload["opinion_ticket"] = {
+        "match_no": "周六090", "market": "hhad+2",
+        "pick": "让平（法国恰净胜2）", "odds": 3.5, "stake_yuan": 15,
+    }
+    got = load_predictions(_write(tmp_path, payload))
+    t = got.opinion_ticket
+    assert t.market == "hhad" and t.line == 2.0 and t.pick == "draw"
+
+
+def test_ticket_market_case_insensitive(tmp_path: Path) -> None:
+    """2026-07-06 code-review:agent 偶写大写 HHAD,不该退化成 ungradeable。"""
+    payload = json.loads(json.dumps(VALID))
+    payload["opinion_ticket"] = {
+        "match_no": "周三080", "market": "HHAD-1",
+        "pick": "让胜", "odds": 1.64, "stake_yuan": 15,
+    }
+    got = load_predictions(_write(tmp_path, payload))
+    t = got.opinion_ticket
+    assert t.market == "hhad" and t.line == -1.0 and t.pick == "home"
+
+
+def test_ticket_explicit_line_wins_over_market_suffix(tmp_path: Path) -> None:
+    payload = json.loads(json.dumps(VALID))
+    payload["opinion_ticket"] = {
+        "match_no": "周日073", "market": "hhad", "line": 1,
+        "pick": "home", "odds": 2.19, "stake_yuan": 15,
+    }
+    got = load_predictions(_write(tmp_path, payload))
+    assert got.opinion_ticket.line == 1.0
+    assert got.opinion_ticket.pick == "home"

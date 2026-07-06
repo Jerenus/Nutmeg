@@ -197,7 +197,7 @@ def test_soccerdata_client_reads_local_materialized_cache_without_live_backend(t
     )
 
     bundle = client.fetch_fixture_enrichment(
-        fixture=sample_fixtures('epl')[0],
+        fixture=sample_fixtures('epl', season=2025)[0],
         recent_matches=2,
     )
 

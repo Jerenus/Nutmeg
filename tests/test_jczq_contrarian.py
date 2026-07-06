@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from nutmeg.services.jczq_bold_combos import BoldMatch
 from nutmeg.services.jczq_contrarian import (
-    ContrarianRead,
     compute_contrarian_reads,
     render_contrarian_section,
 )
@@ -24,7 +23,9 @@ def _match(no, *, home, draw, away, euro=None, h="H", a="A") -> BoldMatch:
 
 def test_pickem_flags_and_fades_to_underdog() -> None:
     # 鹿岛 2.11 / 神户 2.92 — 主客接近 pick'em，热门=主，反面=客胜
-    reads = compute_contrarian_reads([_match("201", home=2.11, draw=3.2, away=2.92, h="鹿岛", a="神户")])
+    reads = compute_contrarian_reads(
+        [_match("201", home=2.11, draw=3.2, away=2.92, h="鹿岛", a="神户")]
+    )
     assert len(reads) == 1
     r = reads[0]
     assert "pickem" in r.flags
