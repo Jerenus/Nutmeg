@@ -75,6 +75,34 @@ def _result_outcome(result: dict) -> tuple[str | None, str | None, int | None, i
     return had, score, gh, ga
 
 
+def settle_reads_for_matches(store, *, outcomes: dict, settled_at: str) -> int:
+    """通用结算:outcomes={match_id: (outcome_90, score)}。对每个**有结果**的 Read 产
+    Settlement(Brier+CLV,复用 settle_read + 收盘快照)。canonical 身份→竞彩/zucai 通用。
+
+    只结算 match_id 命中 outcomes 的 Read;无结果的 Read 跳过(不 clobber 其既有/pending
+    结算)——canonical 混库(竞彩+zucai 同一 store)下按通道各自喂 outcomes 才安全。
+    返回结算的 Read 数。幂等(upsert-by-id)。
+    """
+    from nutmeg.decision.ontology import MarketSnapshot, Read
+
+    closing_by_match = {
+        s.match_id: s for s in store.load(MarketSnapshot) if s.kind == "closing"
+    }
+    n = 0
+    for read in store.load(Read):
+        oc = outcomes.get(read.match_id)
+        if oc is None:
+            continue
+        outcome, score = oc
+        s = settle_read(read, outcome_90=outcome, score=score,
+                        closing=closing_by_match.get(read.match_id))
+        s = replace(s, settlement_id=f"SET-read-{read.read_id}",
+                    settled_at=settled_at)
+        store.upsert(s)
+        n += 1
+    return n
+
+
 def settle_day(store, *, run_date: str, results: dict, settled_at: str) -> int:
     """当日所有 Read → Settlement(Brier+CLV)落库。幂等(upsert-by-id)。返回结算的 Read 数。
 

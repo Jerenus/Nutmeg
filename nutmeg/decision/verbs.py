@@ -75,6 +75,82 @@ def run_reconcile(run_date: str, output_dir: Path, settled_at: str) -> str:
     return f"decision-reconcile {run_date}: 结算 {n} 条 Read"
 
 
+def run_sense_zucai(issue: str, output_dir: Path, taken_at: str,
+                    zucai_dir: Path) -> str:
+    """传统足彩感知:zucai 14场+赔率 → 同一信念层 Match+Snapshot(canonical)。
+
+    决策 store 在 output_dir/decision(与竞彩共库,canonical 去重);
+    zucai 源快照(<issue>-issue.json/<issue>-odds*.json)在 zucai_dir。
+    """
+    from nutmeg.decision.sense_zucai import sense_zucai
+    from nutmeg.decision.store import DecisionStore
+
+    store = DecisionStore(Path(output_dir) / "decision")
+    try:
+        n = sense_zucai(issue, output_dir=zucai_dir, taken_at=taken_at, store=store)
+    except FileNotFoundError as exc:  # 源快照缺 → 不崩,报清晰
+        return f"decision-sense-zucai {issue}: 源快照缺失 — {exc}"
+    return f"decision-sense-zucai {issue}: 入库 {n} 场 zucai Match+Snapshot"
+
+
+_ZUCAI_CODE = {"3": "home", "1": "draw", "0": "away"}
+
+
+def _zucai_outcomes(issue: str, zucai_dir: Path) -> dict:
+    """读 {issue}-issue.json(队名/日期)+ {issue}-outcomes.json(results:{no:code})
+    → {canonical_match_id: (outcome_90, score)}。code 3=主胜/1=平/0=客胜
+    (zucai.py VALID_CODES);zucai 赛果无比分 → score=None。缺文件抛 FileNotFoundError。"""
+    import json
+
+    from nutmeg.decision.identity import canonical_match_id
+
+    base = Path(zucai_dir)
+    issue_path = base / f"{issue}-issue.json"
+    outcomes_path = base / f"{issue}-outcomes.json"
+    if not issue_path.exists():
+        raise FileNotFoundError(f"zucai issue 快照缺失: {issue_path}")
+    if not outcomes_path.exists():
+        raise FileNotFoundError(f"zucai 赛果快照缺失: {outcomes_path}")
+
+    issue_data = json.loads(issue_path.read_text(encoding="utf-8"))
+    canon_by_no: dict[int, str] = {}
+    for row in issue_data.get("matches") or []:
+        no = row.get("match_no")
+        date = row.get("match_date")
+        if no is None or not date:
+            continue
+        canon_by_no[int(no)] = canonical_match_id(
+            str(row.get("home_team") or ""), str(row.get("away_team") or ""), str(date))
+
+    results = json.loads(outcomes_path.read_text(encoding="utf-8")).get("results") or {}
+    outcomes: dict = {}
+    for k, code in results.items():
+        outcome = _ZUCAI_CODE.get(str(code))
+        canonical = canon_by_no.get(int(k))
+        if outcome and canonical:
+            outcomes[canonical] = (outcome, None)
+    return outcomes
+
+
+def run_reconcile_zucai(issue: str, output_dir: Path, settled_at: str,
+                        zucai_dir: Path, outcomes: dict | None = None) -> str:
+    """传统足彩结算:zucai 1X2 赛果(3/1/0)→ Settlement(Brier+CLV,canonical 通用)。
+
+    outcomes 可注入(测试/自定义);默认从 zucai_dir 的赛果+期号快照读。
+    """
+    from nutmeg.decision.reconcile import settle_reads_for_matches
+    from nutmeg.decision.store import DecisionStore
+
+    store = DecisionStore(Path(output_dir) / "decision")
+    if outcomes is None:
+        try:
+            outcomes = _zucai_outcomes(issue, zucai_dir)
+        except FileNotFoundError:  # 赛果未出 → 全跳过(不 clobber)
+            outcomes = {}
+    n = settle_reads_for_matches(store, outcomes=outcomes, settled_at=settled_at)
+    return f"decision-reconcile-zucai {issue}: 结算 {n} 条 Read"
+
+
 def run_calibrate_panel(output_dir: Path, as_of: str) -> str:
     from nutmeg.decision.calibrate import (
         apply_verdicts,

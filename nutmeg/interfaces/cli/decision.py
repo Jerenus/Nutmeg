@@ -12,6 +12,8 @@ import nutmeg.interfaces.cli as _cli
 # JCZQ_OUTPUT_DIR_OPTION 惯例);行为与内联默认完全一致。
 _OUTPUT_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data/jczq"), "--output-dir")
 _READS_FILE_OPTION = _cli.typer.Option(..., "--reads-file", help="Read JSON 数组文件")
+_ZUCAI_DIR_OPTION = _cli.typer.Option(
+    Path(".nutmeg-data/zucai"), "--zucai-dir", help="zucai 源快照目录")
 
 
 @_cli.app.command("decision-sense")
@@ -72,6 +74,30 @@ def decision_reconcile(
     """决策本体 · 动词四:赛果+收盘 → Settlement(Brier+CLV)落库。"""
     from nutmeg.decision.verbs import run_reconcile
     _cli.typer.echo(run_reconcile(run_date, output_dir, settled_at))
+
+
+@_cli.app.command("decision-sense-zucai")
+def decision_sense_zucai(
+    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26091"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+    taken_at: str = _cli.typer.Option(..., "--taken-at", help="ISO 时刻"),
+) -> None:
+    """决策本体 · 传统足彩感知:zucai 14场+赔率 → 同一信念层 Match+Snapshot。"""
+    from nutmeg.decision.verbs import run_sense_zucai
+    _cli.typer.echo(run_sense_zucai(issue, output_dir, taken_at, zucai_dir))
+
+
+@_cli.app.command("decision-reconcile-zucai")
+def decision_reconcile_zucai(
+    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26091"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+    settled_at: str = _cli.typer.Option(..., "--settled-at", help="ISO 结算时刻"),
+) -> None:
+    """决策本体 · 传统足彩结算:zucai 1X2 赛果 → Settlement(canonical 通用)。"""
+    from nutmeg.decision.verbs import run_reconcile_zucai
+    _cli.typer.echo(run_reconcile_zucai(issue, output_dir, settled_at, zucai_dir))
 
 
 @_cli.app.command("decision-calibrate")
