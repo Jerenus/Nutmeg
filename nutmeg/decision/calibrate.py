@@ -50,3 +50,53 @@ def enforce_active_cap(factors, verdicts) -> list[str]:
     ranked = sorted(active, key=lambda f: clv_by_id.get(f.factor_id, 0.0))
     n_retire = len(active) - ACTIVE_CAP
     return [f.factor_id for f in ranked[:n_retire]]
+
+
+def run_calibrate(store, *, as_of: str) -> list:
+    """聚合所有已结 Settlement → 每因子 FactorVerdict,落库并返回。
+
+    每 Read 的 (brier_delta, clv_hit) 由其 Settlement + prior/belief 得出:
+    - clv_hit = 1 if settlement.clv_pp > 0 else 0（clv_pp is None → 该条不计入 CLV）。
+    - brier_delta = settlement.brier − brier(prior, outcome);outcome 由 settlement.outcome_90。
+      settlement.brier is None(pending)→ 该条不计入。
+    """
+    from nutmeg.decision.ontology import Read, Settlement
+    from nutmeg.decision.scoring import brier
+
+    reads = {r.read_id: r for r in store.load(Read)}
+    per_factor: dict[str, list[dict]] = {}
+    for st in store.load(Settlement):
+        if st.ref_type != "read" or st.brier is None or st.outcome_90 is None:
+            continue
+        read = reads.get(st.ref_id)
+        if read is None or read.shadow or not read.factors:
+            continue
+        prior_brier = brier(read.prior, st.outcome_90)
+        entry = {
+            "brier_delta": st.brier - prior_brier,
+            "clv_hit": 1 if (st.clv_pp is not None and st.clv_pp > 0) else 0,
+        }
+        for f in read.factors:
+            fid = f.get("factor_id")
+            if fid:
+                per_factor.setdefault(fid, []).append(entry)
+
+    verdicts = [factor_verdict(fid, entries, as_of=as_of)
+                for fid, entries in sorted(per_factor.items())]
+    for v in verdicts:
+        store.upsert(v)
+    return verdicts
+
+
+def render_panel(verdicts: list) -> str:
+    """校准面板 markdown——逐因子双轴 + 建议。参与精度/曲线留 M1.5 扩展。"""
+    lines = [
+        "# 决策校准面板", "",
+        "| 因子 | n | Brier Δ | CLV 命中 | 建议 |",
+        "|---|---|---|---|---|",
+    ]
+    for v in verdicts:
+        bd = "—" if v.brier_delta_vs_prior is None else f"{v.brier_delta_vs_prior:+.3f}"
+        clv = "—" if v.clv_hit_rate is None else f"{v.clv_hit_rate:.0%}"
+        lines.append(f"| {v.factor_id} | {v.n_reads} | {bd} | {clv} | {v.recommendation} |")
+    return "\n".join(lines)
