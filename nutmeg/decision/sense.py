@@ -5,6 +5,7 @@ live 抓取(fetch_sporttery_value_with_fallback + 500.com 备源)在 M1 编排�
 """
 from __future__ import annotations
 
+from nutmeg.decision.identity import canonical_match_id
 from nutmeg.decision.market_data import snapshots_from_sporttery
 from nutmeg.decision.ontology import Match
 from nutmeg.services.jczq_market_kernel import load_sporttery_snapshot
@@ -28,13 +29,15 @@ def sense_from_snapshot(run_date: str, *, output_dir, taken_at: str,
 
 
 def _match_for_snapshot(snapshot, value: dict, run_date: str) -> Match:
-    match_no = snapshot.match_id.rsplit("-", 1)[-1]
-    home = away = ""
+    """按 canonical 反查队名/竞彩号(snapshot.match_id 现为 canonical)。"""
+    home = away = match_no = ""
     for day in value.get("matchInfoList") or []:
         for raw in day.get("subMatchList") or []:
-            if str(raw.get("matchNumStr") or "") == match_no:
-                home = str(raw.get("homeTeamAbbName") or "")
-                away = str(raw.get("awayTeamAbbName") or "")
+            h = str(raw.get("homeTeamAbbName") or "")
+            a = str(raw.get("awayTeamAbbName") or "")
+            if canonical_match_id(h, a, run_date) == snapshot.match_id:
+                home, away = h, a
+                match_no = str(raw.get("matchNumStr") or "")
     return Match(
         match_id=snapshot.match_id, kickoff_at=snapshot.taken_at,
         home=home, away=away, competition="",
@@ -58,6 +61,8 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
     体彩从 sporttery_markets.json；欧赔从 bold_odds.json（现 SOP 已抓）。
     返回入库场数（以体彩为准）。M1 用已存快照 replay，不新增打网。
     """
+    from dataclasses import replace
+
     from nutmeg.decision.market_data import (
         euro_snapshot_from_bold_odds,
         snapshots_from_sporttery,
@@ -72,6 +77,15 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
         source="sporttery", kind="read_time",
     )
     today_match_ids = {s.match_id for s in tc_snaps}
+    # 体彩盘的 竞彩号→canonical 映射(欧赔快照按此对齐到 canonical 身份)
+    no_to_canonical: dict[str, str] = {}
+    for day in value.get("matchInfoList") or []:
+        for raw in day.get("subMatchList") or []:
+            h = str(raw.get("homeTeamAbbName") or "")
+            a = str(raw.get("awayTeamAbbName") or "")
+            no_to_canonical[str(raw.get("matchNumStr") or "")] = canonical_match_id(
+                h, a, run_date
+            )
     for s in tc_snaps:
         store.upsert(_match_for_snapshot(s, value, run_date))
         store.upsert(s)
@@ -80,8 +94,11 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
         bold, run_date=run_date, taken_at=taken_at,
         kind="read_time", source="apifootball",
     ):
+        # 欧赔快照仍产竞彩号 match_id(队名不在 bold_odds),此处改写为 canonical。
         # 只落今天体彩盘在售场的欧赔锚——bold_odds 常含次日场(跨日竞彩号),
         # 否则会给非今日场产孤儿欧赔快照→被 backfill_shadows 误补 shadow。
-        if s.match_id in today_match_ids:
-            store.upsert(s)
+        no = s.match_id.rsplit("-", 1)[-1]
+        canonical = no_to_canonical.get(no)
+        if canonical and canonical in today_match_ids:
+            store.upsert(replace(s, match_id=canonical))
     return len(tc_snaps)

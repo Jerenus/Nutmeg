@@ -6,6 +6,7 @@ M2 删旧 kernel 时把 A.1 基元物理搬入本文件。**结构性禁止**引
 """
 from __future__ import annotations
 
+from nutmeg.decision.identity import canonical_match_id
 from nutmeg.services.jczq_market_kernel import (
     OUTCOMES,
     _crs_from_pool,
@@ -66,6 +67,8 @@ def snapshots_from_sporttery(
             if run_date and business_date and business_date != run_date:
                 continue
             match_no = str(raw.get("matchNumStr") or "")
+            home = str(raw.get("homeTeamAbbName") or "")
+            away = str(raw.get("awayTeamAbbName") or "")
             hhad_pool = raw.get("hhad") or {}
             had_odds = _had_from_pool(raw.get("had") or {})
             hhad_odds = _had_from_pool(hhad_pool)
@@ -93,7 +96,7 @@ def snapshots_from_sporttery(
             )
             snaps.append(MarketSnapshot(
                 snapshot_id=_snapshot_id(match_no, taken_at, kind, source),
-                match_id=f"M-{run_date}-{match_no}",
+                match_id=canonical_match_id(home, away, run_date),
                 taken_at=taken_at, kind=kind, source=source,
                 fair=fair, raw_odds=raw_odds,
                 lines={"hhad_line": hhad_line},

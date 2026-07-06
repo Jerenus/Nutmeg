@@ -69,4 +69,5 @@ def test_sense_day_skips_euro_for_matches_not_in_today_board(tmp_path, monkeypat
     store = DecisionStore(tmp_path / "decision")
     sense_day("2026-07-08", output_dir=tmp_path, taken_at="t", store=store)
     euro = [s for s in store.load(MarketSnapshot) if s.source == "apifootball"]
-    assert len(euro) == 1 and euro[0].match_id.endswith("周日092")   # 099 被过滤
+    # 099 被过滤;092 的欧赔锚已对齐到 canonical 身份
+    assert len(euro) == 1 and euro[0].match_id == "M-2026-07-08-墨西哥-英格兰"
