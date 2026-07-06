@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from nutmeg.services.jczq_bold_combos import BoldMatch
+from nutmeg.services.jczq_market_kernel import BoldMatch
 from nutmeg.services.jczq_opportunity import (
     render_opportunity_radar,
     scan_opportunities,

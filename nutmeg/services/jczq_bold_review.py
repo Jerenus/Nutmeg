@@ -24,32 +24,17 @@ from nutmeg.services.jczq_bold_combos import (
     THEME_ORDER,
     BoldComboEngine,
     BoldComboPlan,
-    BoldLeg,
     BoldTicket,
     bold_matches_from_sporttery,
     load_bold_odds_snapshot,
     load_sporttery_snapshot,
     ticket_theme,
 )
+from nutmeg.services.jczq_market_kernel import GradedLeg, grade_leg
 
 # The four 体彩 markets okooo reports per match — keyed exactly as the engine's
 # ``BoldLeg.market``, so a leg grades against ``results[match_no][leg.market]``.
 _REVIEW_MARKETS: tuple[str, ...] = ("had", "hhad", "ttg", "crs")
-
-
-@dataclass(slots=True, frozen=True)
-class GradedLeg:
-    """One bold leg graded against the actual result.
-
-    ``hit`` is ``None`` when the match has no result yet (待定) — a pending leg
-    never counts toward a hit rate's denominator (spec §16)."""
-
-    match_no: str
-    market: str
-    pick_label: str
-    tc_odds: float
-    actual: str | None
-    hit: bool | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -104,23 +89,6 @@ def replay_bold_plan(run_date: str, output_dir) -> BoldComboPlan | None:
         value, run_date=run_date, bold_odds=bold_odds
     )
     return BoldComboEngine().generate(run_date, matches)
-
-
-def grade_leg(leg: BoldLeg, results: dict[str, dict[str, str]]) -> GradedLeg:
-    """Grade one leg — ``hit`` is ``actual == leg.pick_label`` (pick_label is the
-    human form: 胜 / 让平 / 2球 / 2:1, matching okooo's winning-option string).
-
-    No result for that match+market → ``actual=None``, ``hit=None`` (待定)."""
-    actual = (results.get(leg.match_no) or {}).get(leg.market) or None
-    hit = None if actual is None else (actual == leg.pick_label)
-    return GradedLeg(
-        match_no=leg.match_no,
-        market=leg.market,
-        pick_label=leg.pick_label,
-        tc_odds=leg.tc_odds,
-        actual=actual,
-        hit=hit,
-    )
 
 
 def grade_ticket(

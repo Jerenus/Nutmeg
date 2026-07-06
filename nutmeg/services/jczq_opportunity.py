@@ -24,14 +24,14 @@ import statistics
 from dataclasses import dataclass
 from typing import Callable
 
-from nutmeg.services.jczq_bold_combos import (
+from nutmeg.services.jczq_contrarian import compute_contrarian_reads
+from nutmeg.services.jczq_market_kernel import (
     OUTCOMES,
     BoldMatch,
     _devig_map,
     _fair_from_odds,
     aggregate_ttg_to_over_under,
 )
-from nutmeg.services.jczq_contrarian import compute_contrarian_reads
 
 _LABEL: dict[str, str] = {"home": "主胜", "draw": "平", "away": "客胜"}
 

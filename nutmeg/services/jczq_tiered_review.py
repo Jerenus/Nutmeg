@@ -12,18 +12,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from nutmeg.services.jczq_bold_combos import (
+from nutmeg.services.jczq_market_kernel import (
     HARD_LABEL,
     MARKET_LABELS,
     BoldLeg,
     RetiredTheme,
     bold_matches_from_sporttery,
+    grade_leg,
     load_bold_odds_snapshot,
     load_sporttery_snapshot,
     retired_themes_with_stats,
     ticket_theme,
 )
-from nutmeg.services.jczq_bold_review import grade_leg
 from nutmeg.services.jczq_tiered import (
     DEFAULT_TIER_A,
     DEFAULT_TIER_B,

@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Optional
 
-from nutmeg.services.jczq_bold_combos import (
+from nutmeg.services.jczq_market_kernel import (
     ANCHOR_GAP_THRESHOLD,
     HARD_LABEL,
     MARKET_LABELS,

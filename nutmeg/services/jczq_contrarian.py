@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from nutmeg.services.jczq_bold_combos import OUTCOMES, BoldMatch, _fair_from_odds
+from nutmeg.services.jczq_market_kernel import OUTCOMES, BoldMatch, _fair_from_odds
 
 # --- 阈值（spec §34.1） ---------------------------------------------------------
 PICKEM_SPREAD: float = 0.12       # |implied(主) − implied(客)| < 此 → pick'em 混战

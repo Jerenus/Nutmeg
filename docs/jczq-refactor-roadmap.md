@@ -68,14 +68,16 @@
    `jczq_final_plan_*` / `jczq_web` 不在 jczq-today 闭包内但**是活的**（走别的 CLI/脚本
    入口），别误删。
 
-### Tier R1 — 承重墙内核抽取（真重构，非删除）
-8. **从 `bold_combos` 抽出共享内核** → 新模块 `nutmeg/services/jczq_market_kernel.py`：
-   `BoldLeg` / `BoldMatch` / `PoolSignals` / `RetiredTheme` + 常量 + 纯函数
-   （`ticket_theme` / `chaos_band` / `compute_pool_signals` / `day_chaos` /
-   `bold_leg_for_market` / `retired_themes_with_stats`）。
-   活引擎与 bold_combos 都从 kernel import。抽走后 `bold_combos` 剩下的 v1 组合
-   generator 归入 Tier D 删除。**这一步是整个重构的关键支点**：内核独立后，活岛
-   彻底脱离 v1 地基。
+### Tier R1 — 承重墙内核抽取（真重构，非删除）✅ 2026-07-06 已完成
+8. **从 `bold_combos` 抽出共享内核** → 新模块 `nutmeg/services/jczq_market_kernel.py`（943 行）：
+   75 个符号 = `BoldLeg` / `BoldMatch` / `PoolSignals` / `RetiredTheme` / `GradedLeg` +
+   常量 + 盘口解析/去水/信号打分纯函数（`ticket_theme` / `chaos_band` /
+   `compute_pool_signals` / `day_chaos` / `bold_leg_for_market` / `grade_leg` …）。
+   机械提取（脚本保留原始文本/顺序，行为不变）；`bold_combos` 2284→1583 行，反向 import 内核。
+   **成果**：3 个活入口 `jczq_today` / `jczq_tiered` / `jczq_tiered_review` 传递闭包
+   **全部脱离** bold_combos(v1 generator) + bold_review。双重安全网验证：1204 测试全绿 +
+   `jczq-today` / `jczq-tiered-review` 端到端 replay 产出与抽取前逐字一致。
+   → `bold_combos` 剩下的 v1 组合 generator 现在只被 CLI + 退役 bold_review 引用，归入 Tier D 删除。
 
 ---
 
