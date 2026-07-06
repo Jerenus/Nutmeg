@@ -51,22 +51,32 @@
    "决策路径不一致"根因）。→ **已在 Phase 0 加 tombstone 指向本路线图。**
 3. **一次性 retro 脚本**：`scripts/wc_retro_2026062*.py` 系列（对应上面的 launchd）。
 
-### Tier D2 — 需先摘 CLI 接线，再删（低风险，一次一个）
-4. **`jczq_brief`（490 行）** + CLI `jczq-daily-brief` 命令（已挂 DEPRECATED banner）。
-5. **`jczq_debate`（589 行）** + `interfaces/cli/__init__` 与 `jczq_web` 里的引用。
-6. **`jczq_review`（647 行）** —— v1 generator 复盘，okooo provider 早已剥离到
-   `jczq_results`（现役共享件），剩下的是死选腿逻辑。
-   摘除步骤：CLI 命令删 → 跑测试 → 删模块 → 删对应测试。
+### Tier D2 — bold 引擎 ✅ 2026-07-06 已删除
+- 停 3 个退役 launchd（daily-bold / bold-review-8am / daily-review-8am，plist 已备份）。
+- 删 `jczq_bold_combos`(1583) + `jczq_bold_review` + `jczq_second_leg` + 3 测试 + 3 CLI 命令。
+- 补全 R1：活 CLI 懒加载的快照 I/O（fetch/persist sporttery + bold_odds）补进 kernel。
+- 1051 测试全绿 + jczq-today replay 逐字一致。
 
-### Tier D3 — 退役孤岛整簇归档（中风险，需一次跑通全套测试）
-7. **`jczq_daily`（2974 行）+ 其 14-importer 簇**中确认退役的部分
-   （`jczq_parlay_constructor` / `jczq_baseline` / `jczq_second_leg` /
-   `jczq_match_align` / `jczq_value_bridge` / `jczq_conflict_*`）。
-   → 先用 §6 闭包脚本对**所有 CLI 命令**（不只 jczq-today）重算活集，确认每个模块
-   真的无活入口可达，再整簇移入 `nutmeg/services/_archive/` 或删除。
-   ⚠️ 注意假阳性：`jczq_apifootball_odds` / `jczq_judgment_answers` /
-   `jczq_final_plan_*` / `jczq_web` 不在 jczq-today 闭包内但**是活的**（走别的 CLI/脚本
-   入口），别误删。
+### Tier D3 — ⚠️ 前提被证伪：jczq_daily 簇不是可删退役码，是活工具底座
+> **2026-07-06 删除执行中的实测发现（推翻本路线图初判）**：用 AST 逐命令 + 逐 CLI 文件
+> 追接线后确认——所谓"退役簇"的核心**深植在 LIVE 客户端/分析工具里，不是孤岛**：
+>
+> | 模块 | 被谁钉住（活） |
+> | --- | --- |
+> | `popularity` | client-service / daily-operator / popular-matches 命令 |
+> | `jczq_daily`(2974) | `build_telegram_bot_runner` → 每日 advisor 服务（telegram-bot 活命令） |
+> | `jczq_conflict_*` / `jczq_intelligence` | `build_match_brief_payload` → match-brief / analyze-match 命令 |
+> | `jczq_debate` | `jczq_web`（web 驾驶舱活功能）+ cli builder |
+> | `jczq_review` | cli `build_jczq_daily_review_service` |
+> | `jczq_final_plan_pdf` | `worldcup/report_pdf`（世界杯日报，活） |
+>
+> **结论**：删这些不是"清死代码"，是**删活功能**（telegram 日报 advisor / match-brief /
+> analyze / web 驾驶舱 / 世界杯 PDF 字体）——那是**产品决策，不是重构**。
+>
+> **要真正删掉 jczq_daily 簇，前置条件是先决定"退役这些客户端/分析/telegram 功能"**，
+> 或投入一次专门的解耦（把 telegram-bot / match-brief 从 jczq_daily provider 抽出、
+> 把 worldcup PDF 字体助手从 final_plan_pdf 抽出）。两者都需用户拍板 + 独立一轮工作。
+> **在没有这个决策前，Tier D3 不执行**——诚实优先于"删干净"的观感。
 
 ### Tier R1 — 承重墙内核抽取（真重构，非删除）✅ 2026-07-06 已完成
 8. **从 `bold_combos` 抽出共享内核** → 新模块 `nutmeg/services/jczq_market_kernel.py`（943 行）：
