@@ -8,13 +8,14 @@ from pathlib import Path
 
 
 def run_sense(run_date: str, output_dir: Path, taken_at: str) -> str:
-    from nutmeg.decision.sense import sense_from_snapshot
+    # M1:用 sense_day(体彩+欧赔读时快照),欧赔是 CLV 先验锚——非 M0 的体彩-only。
+    from nutmeg.decision.sense import sense_day
     from nutmeg.decision.store import DecisionStore
 
     store = DecisionStore(Path(output_dir) / "decision")
-    n = sense_from_snapshot(run_date, output_dir=output_dir,
-                            taken_at=taken_at, store=store)
-    return f"decision-sense {run_date}: 入库 {n} 场 Match+Snapshot"
+    n = sense_day(run_date, output_dir=output_dir,
+                  taken_at=taken_at, store=store)
+    return f"decision-sense {run_date}: 入库 {n} 场 Match+体彩/欧赔 Snapshot"
 
 
 def run_read_ingest(reads_file: Path, output_dir: Path) -> str:
