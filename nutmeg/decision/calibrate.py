@@ -140,3 +140,57 @@ def participation_precision(store) -> dict:
         }
 
     return {"divergent": _bucket(True), "shadow": _bucket(False)}
+
+
+def seed_factors_if_empty(store) -> int:
+    """store 无 Factor 时,把种子词典落库(幂等)。返回落库数。"""
+    from nutmeg.decision.factors import load_seed_factors
+    from nutmeg.decision.ontology import Factor
+
+    if store.load(Factor):
+        return 0
+    seed = load_seed_factors()
+    store.upsert_many(seed)
+    return len(seed)
+
+
+def apply_verdicts(store, verdicts) -> dict:
+    """把 FactorVerdict 的判决真正执行成 Factor 状态转换 + 持久化(反积累免疫落地)。
+
+    转换规则(spec §5):recommendation=retire → retired;keep 且 n≥30 且当前 probation
+    → active(转正);watch/n<30 → 维持。之后 enforce_active_cap:active 超 12 退休最弱。
+    返回 {promoted:[...], retired:[...]}。判断永不在此——只应用 calibrate 已算好的判决。
+    """
+    from dataclasses import replace
+
+    from nutmeg.decision.calibrate import enforce_active_cap
+    from nutmeg.decision.factors import ACTIVE_CAP  # noqa: F401 (供上限语义)
+    from nutmeg.decision.ontology import Factor
+
+    seed_factors_if_empty(store)
+    factors = {f.factor_id: f for f in store.load(Factor)}
+    vmap = {v.factor_id: v for v in verdicts}
+    promoted: list[str] = []
+    retired: list[str] = []
+
+    for fid, v in vmap.items():
+        f = factors.get(fid)
+        if f is None or f.status == "retired":
+            continue
+        if v.recommendation == "retire":
+            factors[fid] = replace(f, status="retired",
+                                   retire_reason=f"双轴平庸(n={v.n_reads})")
+            retired.append(fid)
+        elif v.recommendation == "keep" and v.n_reads >= 30 and f.status == "probation":
+            factors[fid] = replace(f, status="active")
+            promoted.append(fid)
+
+    # 词典上限:active 超 12 退休最弱 CLV
+    for fid in enforce_active_cap(list(factors.values()), verdicts):
+        factors[fid] = replace(factors[fid], status="retired",
+                               retire_reason="词典上限(超12退最弱)")
+        if fid not in retired:
+            retired.append(fid)
+
+    store.upsert_many(list(factors.values()))
+    return {"promoted": promoted, "retired": retired}

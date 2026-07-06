@@ -76,12 +76,21 @@ def run_reconcile(run_date: str, output_dir: Path, settled_at: str) -> str:
 
 
 def run_calibrate_panel(output_dir: Path, as_of: str) -> str:
-    from nutmeg.decision.calibrate import render_panel, run_calibrate
+    from nutmeg.decision.calibrate import (
+        apply_verdicts,
+        render_panel,
+        run_calibrate,
+    )
     from nutmeg.decision.store import DecisionStore
 
     store = DecisionStore(Path(output_dir) / "decision")
     verdicts = run_calibrate(store, as_of=as_of)
+    # 反积累免疫落地:把判决执行成 Factor 状态转换(转正/退休)+ 持久化。
+    changes = apply_verdicts(store, verdicts)
     panel = render_panel(verdicts)
     out = Path(output_dir) / "decision" / f"calibration-panel-{as_of}.md"
     out.write_text(panel, encoding="utf-8")
-    return f"decision-calibrate: {len(verdicts)} 因子判决 → {out}"
+    msg = f"decision-calibrate: {len(verdicts)} 因子判决 → {out}"
+    if changes["promoted"] or changes["retired"]:
+        msg += (f" | 转正 {changes['promoted']} 退休 {changes['retired']}")
+    return msg
