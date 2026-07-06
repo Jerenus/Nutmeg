@@ -57,3 +57,127 @@ class MarketSnapshot:
     @classmethod
     def from_dict(cls, payload: dict) -> "MarketSnapshot":
         return _from_dict(cls, payload)
+
+
+@dataclass(frozen=True, slots=True)
+class Read:
+    read_id: str
+    match_id: str
+    snapshot_id: str
+    made_at: str
+    judge: str
+    market: str
+    prior: dict[str, float]
+    belief: dict[str, float]
+    factors: list[dict] = field(default_factory=list)
+    scenarios: list[dict] = field(default_factory=list)
+    falsifier: str = ""
+    confidence: int = 3
+    shadow: bool = False
+    note: str = ""
+
+    @property
+    def id(self) -> str:
+        return self.read_id
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> "Read":
+        return _from_dict(cls, payload)
+
+
+@dataclass(frozen=True, slots=True)
+class Factor:
+    factor_id: str
+    name_zh: str
+    definition: str
+    born_at: str
+    born_from: str
+    status: str = "probation"           # probation | active | retired
+    retire_reason: str = ""
+
+    @property
+    def id(self) -> str:
+        return self.factor_id
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> "Factor":
+        return _from_dict(cls, payload)
+
+
+@dataclass(frozen=True, slots=True)
+class Ticket:
+    ticket_id: str
+    channel: str                        # jczq | shengfucai | renjiu
+    made_at: str
+    legs: list[dict]
+    structure: str                      # single | parlay | fushi
+    stake_yuan: int
+    computed_hit_prob: float | None = None
+    tag: str = ""
+    budget_bucket: str = ""
+
+    @property
+    def id(self) -> str:
+        return self.ticket_id
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> "Ticket":
+        return _from_dict(cls, payload)
+
+
+@dataclass(frozen=True, slots=True)
+class Settlement:
+    settlement_id: str
+    ref_type: str                       # read | ticket
+    ref_id: str
+    settled_at: str
+    outcome_90: str | None = None
+    score: str | None = None
+    closing_snapshot_id: str | None = None
+    brier: float | None = None
+    clv_pp: float | None = None
+    hit: bool | None = None
+    pnl_yuan: float | None = None
+
+    @property
+    def id(self) -> str:
+        return self.settlement_id
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> "Settlement":
+        return _from_dict(cls, payload)
+
+
+@dataclass(frozen=True, slots=True)
+class FactorVerdict:
+    factor_id: str
+    as_of: str
+    n_reads: int
+    brier_delta_vs_prior: float | None
+    clv_hit_rate: float | None
+    direction_hit_rate: float | None
+    recommendation: str                 # keep | watch | retire
+    next_review_at: str = ""
+
+    @property
+    def id(self) -> str:
+        return self.factor_id
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> "FactorVerdict":
+        return _from_dict(cls, payload)
