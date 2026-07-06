@@ -1,0 +1,20 @@
+[
+  {"factor_id": "seeding_incentive", "name_zh": "签位激励",
+   "definition": "MD3/淘汰赛前高名次碰强签→赢反而更糟,平/小负成双方最优",
+   "born_at": "2026-06-27", "born_from": "071 阿vs奥 实证,信心4"},
+  {"factor_id": "bunker_profile", "name_zh": "铁桶压缩净胜",
+   "definition": "强弱悬殊+弱队铁桶画像→净胜被压缩,让球档需重算3路",
+   "born_at": "2026-07-03", "born_from": "087 让球双选对冲实证"},
+  {"factor_id": "lineup_news_gap", "name_zh": "阵容情报时间差",
+   "definition": "实名伤停/轮换与市场定价存在时间差=可用信息",
+   "born_at": "2026-07-04", "born_from": "拉赫蒂回血2主力 fade 唯一命中"},
+  {"factor_id": "league_bias", "name_zh": "极端联赛画像",
+   "definition": "极端主客分裂/xG背离联赛禁用通用主场加成",
+   "born_at": "2026-07-05", "born_from": "瑞超联赛画像 allsvenskan-2026"},
+  {"factor_id": "market_line_error", "name_zh": "3路口径错觉",
+   "definition": "体彩让球是3路非亚盘,整数盘热门胜1球落让平档,亚盘直觉高估~28pp",
+   "born_at": "2026-07-06", "born_from": "hhad-3way-vs-asian-handicap 教训"},
+  {"factor_id": "fatigue_discount", "name_zh": "疲劳折扣(反向登记)",
+   "definition": "疲劳≠变弱只推迟破门,破门后崩的是追赶方;试用其否定式",
+   "born_at": "2026-07-04", "born_from": "7/04 摩洛哥120min后0:3血洗 证伪方向"}
+]
