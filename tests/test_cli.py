@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import date
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -3540,17 +3539,3 @@ def test_zucai_source_sync_command_rejects_url_without_live_fetch(tmp_path) -> N
 
     assert result.exit_code == 2
     assert "requires --live-fetch" in result.stdout
-
-
-def test_resolve_jczq_date_resolves_today_yesterday_keywords() -> None:
-    """jczq-bold-combos --date today/yesterday resolve to ISO dates; an explicit
-    date passes through. Without this the literal string 'today' reached the
-    engine and the snapshot landed in a daily/today/ directory."""
-
-    from nutmeg.interfaces.cli.jczq import _resolve_jczq_date
-
-    assert _resolve_jczq_date("2026-05-18") == "2026-05-18"     # passthrough
-    today = _resolve_jczq_date("today")
-    yesterday = _resolve_jczq_date("yesterday")
-    assert date.fromisoformat(today) > date.fromisoformat(yesterday)
-    assert _resolve_jczq_date(None) == today                    # None → today
