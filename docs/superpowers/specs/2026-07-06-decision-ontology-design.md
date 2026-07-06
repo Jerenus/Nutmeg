@@ -236,11 +236,16 @@ WAF 降级不覆盖快照（6/11）｜字符串 schema 不丢整日（6/28）｜
 救回（7/06）｜未识别标签 pending 不误判输（7/06 review）｜改名映射方向【API→种子】
 （7/06 review）｜凌晨场 D+2 补结（7/06）｜缺数据=null 绝不伪造。
 
-## §12 开放问题（实现计划中决断）
+## §12 开放问题（M1 实现时已决断，2026-07-06）
 
-1. 收盘快照的兜底：okooo SP 缺失时是否用 API-Football 最后刷新价（倾向：是，标 source）。
-2. GPT 第二评委（跨 agent 分歧纪律）在 Read.judge 维度的接入时机（倾向：M1 后）。
-3. 历史 judge-ledger 迁移的字段映射细则。
+1. **收盘快照源** → **改为欧赔 fair，非 okooo SP**。实测 okooo 结果只给获胜方单腿 SP
+   （无法构成三路分布），而欧赔 `bold_odds.json` 已带全三路去水 `fair_probability`、且是
+   真正会动的 sharp 线。closing = 近开赛 `collect_bold_odds_apifootball_live` 欧赔 fair
+   （source=apifootball，kind=closing）；缺则 CLV=null。**连带精化**：Read 先验锚 = 欧赔
+   读时 fair（有则优先），否则体彩 fair——CLV 两端都用欧赔才自洽。见 M1 计划 Task 1/2/5。
+2. **GPT 第二评委** → 延到 M1.5+（M1 只建预测度量核心，用户 2026-07-06 定）。
+3. **历史 judge-ledger 迁移** → M1 计划 Task 8：只迁方向判定+命中（供因子历史/方向命中率），
+   历史无欧赔先验/收盘 → brier_delta/clv 标 null（绝不伪造）。
 
 ---
 
