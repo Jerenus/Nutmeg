@@ -32,8 +32,6 @@ SUPPORTED_ACTIONS = {
     "player",
     "daily",
     "zucai-report",
-    "jczq-mixed-report",
-    "jczq-daily-advisor",
     "eval",
     "review",
     "prediction-record",
@@ -254,38 +252,6 @@ def build_command(request: RouterRequest) -> list[str]:
             command.extend(["--overrides-file", options.overrides_file])
         if options.pdf:
             command.append("--pdf")
-        if options.dispatch_telegram:
-            command.extend(["--dispatch-telegram", "--no-dry-run"])
-        command.extend(["--format", "json"])
-        return command
-    if action == "jczq-mixed-report":
-        command = [
-            *base,
-            "jczq-mixed-report",
-            "--provider",
-            options.provider,
-            "--output-dir",
-            options.output_dir,
-        ]
-        if options.pdf:
-            command.append("--pdf")
-        if options.dispatch_telegram:
-            command.extend(["--dispatch-telegram", "--no-dry-run"])
-        command.extend(["--format", "json"])
-        return command
-    if action == "jczq-daily-advisor":
-        command = [
-            *base,
-            "jczq-daily-advisor",
-            "--provider",
-            options.provider,
-            "--date",
-            options.date,
-            "--output-dir",
-            options.output_dir,
-        ]
-        if options.revision_text:
-            command.extend(["--revision-text", options.revision_text])
         if options.dispatch_telegram:
             command.extend(["--dispatch-telegram", "--no-dry-run"])
         command.extend(["--format", "json"])
@@ -511,21 +477,6 @@ def _build_parser() -> argparse.ArgumentParser:
     zucai.add_argument("--dispatch-telegram", action="store_true")
     zucai.add_argument("--confirm-dispatch", action="store_true")
 
-    jczq = subparsers.add_parser("jczq-mixed-report")
-    jczq.add_argument("--provider", choices=["live", "sample"], default="sample")
-    jczq.add_argument("--output-dir", default=".nutmeg-data/jczq")
-    jczq.add_argument("--pdf", action="store_true")
-    jczq.add_argument("--dispatch-telegram", action="store_true")
-    jczq.add_argument("--confirm-dispatch", action="store_true")
-
-    jczq_daily = subparsers.add_parser("jczq-daily-advisor")
-    jczq_daily.add_argument("--provider", choices=["live", "sample"], default="live")
-    jczq_daily.add_argument("--date", default="today")
-    jczq_daily.add_argument("--output-dir", default=".nutmeg-data/jczq")
-    jczq_daily.add_argument("--revision-text")
-    jczq_daily.add_argument("--dispatch-telegram", action="store_true")
-    jczq_daily.add_argument("--confirm-dispatch", action="store_true")
-
     eval_parser = subparsers.add_parser("eval")
     eval_parser.add_argument("--dataset", default="starter")
     _add_simple_json_action(subparsers, "review")
@@ -621,22 +572,6 @@ def _validate_options(options: argparse.Namespace) -> None:
         and not options.confirm_dispatch
     ):
         raise RouterError("`zucai-report --dispatch-telegram` requires --confirm-dispatch.")
-    if (
-        options.action == "jczq-mixed-report"
-        and options.dispatch_telegram
-        and not options.confirm_dispatch
-    ):
-        raise RouterError("`jczq-mixed-report --dispatch-telegram` requires --confirm-dispatch.")
-    if options.action == "jczq-mixed-report" and options.provider == "live":
-        raise RouterError(
-            "`jczq-mixed-report --provider live` is retired; use jczq-daily-brief."
-        )
-    if (
-        options.action == "jczq-daily-advisor"
-        and options.dispatch_telegram
-        and not options.confirm_dispatch
-    ):
-        raise RouterError("`jczq-daily-advisor --dispatch-telegram` requires --confirm-dispatch.")
     if options.action in {"prediction-record", "prediction-outcome"} and not options.confirm_write:
         raise RouterError(f"`{options.action}` requires --confirm-write.")
 
@@ -721,10 +656,6 @@ def render_reply_text(
         return _render_status(payload)
     if action == "popular":
         return _render_popular(payload)
-    if action == "jczq-daily-advisor":
-        return _render_jczq_daily(payload)
-    if action == "jczq-mixed-report":
-        return _render_jczq_mixed(payload)
     if action == "zucai-report":
         return _render_zucai(payload)
 
@@ -760,7 +691,6 @@ def _render_status(payload: dict[str, Any]) -> str:
             "- `/today epl 3`",
             "- `/brief <fixture_id> 这场比赛怎么看？`",
             "- `/value epl 3`",
-            "- `/jczq`",
             "- `/zucai 26068`",
         ]
     )
@@ -789,105 +719,6 @@ def _render_popular(payload: dict[str, Any]) -> str:
         if fixture_id:
             lines.append(f"   下一步：`/brief {fixture_id} 这场比赛怎么看？`")
     return "\n".join(lines)
-
-
-def _render_jczq_daily(payload: dict[str, Any]) -> str:
-    lines = [
-        f"竞彩足球每日方案（{payload.get('run_date', 'today')}）",
-        "",
-        f"- 官方数据更新时间：{payload.get('official_last_update') or 'unknown'}",
-    ]
-    revision = payload.get("revision") or {}
-    if revision.get("instruction"):
-        lines.append(f"- 修正要求：{revision['instruction']}")
-    summary = payload.get("summary")
-    if summary:
-        lines.extend(["", "策略摘要：", _truncate(str(summary), 900)])
-
-    warnings = payload.get("warnings") or []
-    if warnings:
-        lines.extend(["", "数据限制/警告："])
-        lines.extend(f"- {warning}" for warning in warnings)
-
-    plans = payload.get("plans") or []
-    if plans:
-        lines.extend(["", "方案："])
-        for plan in plans:
-            plan_name = plan.get("name", "未命名方案")
-            plan_desc = plan.get("description", "")
-            plan_odds = plan.get("total_odds", "-")
-            lines.append(
-                f"- {plan_name}｜{plan_desc}｜总赔率 {plan_odds}"
-            )
-            for leg in (plan.get("legs") or [])[:6]:
-                lines.append(
-                    "  "
-                    f"{leg.get('match_no', '-')}"
-                    f"｜{leg.get('league', '-')}"
-                    f"｜{leg.get('home_team', '-')} vs {leg.get('away_team', '-')}"
-                    f"｜{leg.get('play', '-')}"
-                    f"｜{leg.get('pick', '-')}"
-                    f" @ {leg.get('odds', '-')}"
-                )
-            if plan.get("risk_note"):
-                lines.append(f"  风险：{plan['risk_note']}")
-    else:
-        lines.extend(["", "今日没有生成可执行方案。"])
-
-    artifacts = payload.get("artifacts") or {}
-    if artifacts:
-        lines.extend(["", "产物："])
-        for key, value in artifacts.items():
-            lines.append(f"- {key}: `{value}`")
-    return "\n".join(lines)
-
-
-def _render_jczq_mixed(payload: dict[str, Any]) -> str:
-    lines = [
-        "竞彩足球4关高赔PDF报告已生成。",
-        "",
-        f"- 官方数据更新时间：{payload.get('official_last_update') or 'unknown'}",
-    ]
-    artifacts = payload.get("artifacts") or {}
-    for label, key in [
-        ("PDF", "pdf_path"),
-        ("Markdown", "markdown_path"),
-        ("JSON", "report_json_path"),
-    ]:
-        if artifacts.get(key):
-            lines.append(f"- {label}：`{artifacts[key]}`")
-    dispatch = payload.get("dispatch") or {}
-    if dispatch:
-        lines.append(f"- 发送状态：{dispatch.get('status', 'unknown')}")
-
-    combinations = payload.get("combinations") or []
-    if combinations:
-        lines.extend(["", "组合："])
-        for combo in combinations:
-            combo_name = combo.get("name", "未命名组合")
-            combo_odds = combo.get("total_odds", "-")
-            combo_return = combo.get("two_yuan_return", "-")
-            lines.append(
-                f"{combo_name}｜总赔率 {combo_odds}｜2元理论回报 {combo_return}"
-            )
-            if combo.get("risk"):
-                lines.append(f"风险：{combo['risk']}")
-            for leg in combo.get("legs") or []:
-                lines.append(
-                    "- "
-                    f"{leg.get('match_no', '-')}"
-                    f"｜{leg.get('league', '-')}"
-                    f"｜{leg.get('home_team', '-')} vs {leg.get('away_team', '-')}"
-                    f"｜{leg.get('play', '-')}"
-                    f"｜{leg.get('pick', '-')}"
-                    f" @ {leg.get('odds', '-')}"
-                )
-            lines.append("")
-
-    warnings = payload.get("warnings") or []
-    if warnings:
-        lines.extend(["警告：", *[f"- {warning}" for warning in warnings]])
-    return "\n".join(line for line in lines if line is not None).rstrip()
 
 
 def _render_zucai(payload: dict[str, Any]) -> str:

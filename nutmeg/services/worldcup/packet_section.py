@@ -4,13 +4,30 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from nutmeg.services.jczq_market_kernel import BoldMatch
-from nutmeg.services.jczq_today import JudgmentQuestion
 
 from .sim import SimOutput
 from .tournament import Tournament
 
 TOP_N = 10
+
+
+@dataclass
+class JudgmentQuestion:
+    """spec §32.4 — 一个引擎触发的真裁量点（不让 agent 重审全盘）。
+
+    Home for the shared 裁量问题 schema after the v1/v2 jczq analysis engine
+    (`jczq_today`) was retired in the M2 cutover; the世界杯 §E layer is the sole
+    surviving consumer.
+    """
+
+    q_id: str
+    kind: str  # ALL_EMPTY / A_EMPTY / B_DEGRADED / SOFTHOT / WC_KNOCKOUT
+    prompt: str
+    default: str
+    match_no: str = ""
 
 
 def _zh(t: Tournament, team: str) -> str:

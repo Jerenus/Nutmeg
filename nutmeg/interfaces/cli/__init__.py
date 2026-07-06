@@ -55,23 +55,6 @@ from nutmeg.services.evals import EvalDatasetNotFoundError, EvalService
 from nutmeg.services.event_data import EventTacticalModelService
 from nutmeg.services.fixtures import FixtureService
 from nutmeg.services.information import FixtureInformationService, LiveInformationProvider
-from nutmeg.services.jczq import (
-    JczqMixedReportService,
-    JczqProviderError,
-    JczqSelectionError,
-    SampleJczqCalculatorProvider,
-    SportteryJczqCalculatorProvider,
-)
-from nutmeg.services.jczq_daily import (
-    JczqDailyAdvisorError,
-    JczqDailyAdvisorService,
-    build_jczq_daily_provider,
-)
-from nutmeg.services.jczq_debate import (
-    JczqDebateWorkspaceError,
-    JczqDebateWorkspaceService,
-)
-from nutmeg.services.jczq_review import JczqDailyReviewService
 from nutmeg.services.materialization import MaterializationService
 from nutmeg.services.odds import OddsFixtureNotFoundError, OddsSnapshotService
 from nutmeg.services.operations import DailyOperatorService
@@ -567,113 +550,6 @@ def build_zucai_odds_sync_service() -> ZucaiOddsSyncService:
     return ZucaiOddsSyncService()
 
 
-def build_jczq_mixed_report_service(*, provider: str = "live") -> JczqMixedReportService:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    provider_key = provider.strip().casefold()
-    if provider_key == "live":
-        calculator_provider = SportteryJczqCalculatorProvider()
-    elif provider_key == "sample":
-        calculator_provider = SampleJczqCalculatorProvider()
-    else:
-        raise JczqSelectionError("provider must be `live` or `sample`.")
-    telegram_sender = None
-    if settings.telegram_bot_token:
-        telegram_sender = TelegramBotClient(
-            token=settings.telegram_bot_token,
-            base_url=settings.telegram_api_base_url,
-        )
-    return JczqMixedReportService(
-        provider=calculator_provider,
-        telegram_sender=telegram_sender,
-        telegram_chat_ids=sorted(
-            parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
-        ),
-    )
-
-
-def build_jczq_daily_advisor_service(*, provider: str = "live") -> JczqDailyAdvisorService:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    telegram_sender = None
-    if settings.telegram_bot_token:
-        telegram_sender = TelegramBotClient(
-            token=settings.telegram_bot_token,
-            base_url=settings.telegram_api_base_url,
-        )
-    return JczqDailyAdvisorService(
-        provider=build_jczq_daily_provider(provider),
-        telegram_sender=telegram_sender,
-        telegram_chat_ids=sorted(
-            parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
-        ),
-        betting_repository=DuckDbBettingPlanRepository(settings),
-    )
-
-
-def build_jczq_daily_review_service() -> JczqDailyReviewService:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    telegram_sender = None
-    if settings.telegram_bot_token:
-        telegram_sender = TelegramBotClient(
-            token=settings.telegram_bot_token,
-            base_url=settings.telegram_api_base_url,
-        )
-    return JczqDailyReviewService(
-        telegram_sender=telegram_sender,
-        telegram_chat_ids=sorted(
-            parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
-        ),
-        betting_repository=DuckDbBettingPlanRepository(settings),
-    )
-
-
-def build_jczq_debate_workspace_service() -> JczqDebateWorkspaceService:
-    return JczqDebateWorkspaceService()
-
-
-class JczqDailyBotWorkflow:
-    def __init__(
-        self,
-        *,
-        service: JczqDailyAdvisorService,
-        output_dir: Path = Path(".nutmeg-data/jczq"),
-    ) -> None:
-        self._service = service
-        self._output_dir = output_dir
-
-    def run(self, *, action: str, instruction: str | None = None) -> dict[str, object]:
-        try:
-            if action == "revise":
-                report = self._service.revise(
-                    run_date="today",
-                    output_dir=self._output_dir,
-                    instruction=instruction or "",
-                    record_final=True,
-                )
-            else:
-                report = self._service.build_report(
-                    run_date="today",
-                    output_dir=self._output_dir,
-                    record_final=True,
-                )
-        except (JczqDailyAdvisorError, JczqProviderError, JczqSelectionError) as exc:
-            return {
-                "status": "failed",
-                "text": str(exc),
-                "payload": {"status": "failed", "error": str(exc)},
-                "error": str(exc),
-            }
-        return {
-            "status": "succeeded",
-            "text": self._service.render_message(report),
-            "payload": report.to_dict(),
-        }
-
-
 def build_fixture_information_service() -> FixtureInformationService:
     return FixtureInformationService()
 
@@ -735,30 +611,6 @@ def _build_zucai_value_bridge_for_daily(run_date: str):
         )
     except Exception:  # noqa: BLE001 — degrade, never crash the daily report
         logger.warning("zucai value bridge wiring failed — degrading", exc_info=True)
-        return None
-
-
-def _build_jczq_value_bridge_for_brief(brief_date: str):
-    """Assemble the live value bridge for the daily brief, or None.
-
-    Wraps ``build_jczq_value_bridge`` with a ``ValueBoardService`` factory; any
-    failure degrades to ``None`` so ``jczq-daily-brief`` always renders.
-
-    Defaults to the 500.com odds source (``use_fcom500=True``): market odds are
-    keyed by the 竞彩 number, quota-free, and need no API-Football key.
-    """
-    from nutmeg.services.jczq_value_wiring import build_jczq_value_bridge
-
-    try:
-        settings = get_settings()
-        return build_jczq_value_bridge(
-            settings=settings,
-            run_date=brief_date,
-            value_service_factory=lambda: build_value_board_service()[0],
-            use_fcom500=True,
-        )
-    except Exception:  # noqa: BLE001 — degrade, never crash the brief
-        logger.warning("value bridge wiring failed — degrading", exc_info=True)
         return None
 
 
@@ -1036,9 +888,9 @@ def build_telegram_bot_runner(settings) -> TelegramBotRunner:
             workflow=workflow,
             payload_builder=build_match_brief_payload,
             fallback_provider=build_bot_fallback_provider(settings),
-            jczq_workflow=JczqDailyBotWorkflow(
-                service=build_jczq_daily_advisor_service(provider="live")
-            ),
+            # M2 cutover: the v1 Poisson daily advisor (jczq_daily) was retired,
+            # so the bot no longer wires a jczq_workflow — BotAdapter degrades
+            # `/jczq` to a "not configured" reply. renjiu handling stays.
             renjiu_workflow=ZucaiRenjiuBotWorkflow(
                 service=build_zucai_renjiu_daily_service(),
                 dry_run=False,

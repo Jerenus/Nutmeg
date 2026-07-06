@@ -4,8 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from nutmeg.services.jczq_market_kernel import BoldMatch
-from nutmeg.services.jczq_today import JudgmentQuestion
 from nutmeg.services.worldcup.packet_section import (
+    JudgmentQuestion,
     render_wc_section,
     wc_judgment_questions,
 )

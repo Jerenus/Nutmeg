@@ -529,9 +529,8 @@ def bot_dry_run(
             workflow=workflow,
             payload_builder=_cli.build_match_brief_payload,
             fallback_provider=_cli.build_bot_fallback_provider(settings),
-            jczq_workflow=_cli.JczqDailyBotWorkflow(
-                service=_cli.build_jczq_daily_advisor_service(provider="live")
-            ),
+            # M2 cutover: v1 Poisson daily advisor (jczq_daily) retired — no
+            # jczq_workflow wired; BotAdapter degrades `/jczq` gracefully.
             renjiu_workflow=_cli.ZucaiRenjiuBotWorkflow(
                 service=_cli.build_zucai_renjiu_daily_service(),
                 dry_run=True,
