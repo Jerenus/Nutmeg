@@ -140,4 +140,35 @@ def create_decision_app(*, store: DecisionStore, output_dir) -> FastAPI:
         cursor = evs[-1]["seq"] if evs else since
         return {"events": evs, "cursor": cursor}
 
+    @app.get("/objects")
+    def objects_page(request: Request):
+        from nutmeg.decision.ontology import (
+            Factor,
+            FactorVerdict,
+            League,
+            Read,
+            Settlement,
+            Team,
+            Ticket,
+        )
+        counts = {c.__name__: len(store.load(c)) for c in
+                  (Match, MarketSnapshot, Read, Factor, Ticket,
+                   Settlement, FactorVerdict, Team, League)}
+        return templates.TemplateResponse(
+            request, "decision/objects.html", {"title": "对象浏览器", "counts": counts})
+
+    @app.get("/calibration")
+    def calibration_page(request: Request):
+        from nutmeg.decision.ontology import FactorVerdict
+        return templates.TemplateResponse(
+            request, "decision/calibration.html",
+            {"title": "校准台", "verdicts": [v.to_dict() for v in store.load(FactorVerdict)]})
+
+    @app.get("/ledger")
+    def ledger_page(request: Request):
+        from nutmeg.decision.ontology import Settlement
+        return templates.TemplateResponse(
+            request, "decision/ledger.html",
+            {"title": "账本", "settlements": [s.to_dict() for s in store.load(Settlement)]})
+
     return app

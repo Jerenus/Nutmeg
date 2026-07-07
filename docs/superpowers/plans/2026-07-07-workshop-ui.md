@@ -725,7 +725,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/interfaces/web/static/decision/app.css`, `app.js`
 - Test: `tests/test_decision_web.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/test_decision_web.py` 末尾追加：
 
@@ -749,12 +749,12 @@ def test_附属页_all_render(tmp_path):
         assert r.status_code == 200 and marker in r.text
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_decision_web.py -v`
 Expected: 2 个新测试 FAIL（占位模板无"今日议程"；/objects 等 404）
 
-- [ ] **Step 3: 填充 workbench.html（三栏 + 追问线程，样式对照 docs/design/nutmeg-workshop.html）**
+- [x] **Step 3: 填充 workbench.html（三栏 + 追问线程，样式对照 docs/design/nutmeg-workshop.html）**
 
 `nutmeg/interfaces/web/templates/decision/workbench.html` 整体替换为三栏结构（顶栏 + 注意力流/舞台/裁决列 + 追问线程）。用 `state.events` 分组渲染注意力流、`state.matches`/`state.snapshots` 渲染舞台。关键锚点标记（供测试与 app.js）：
 
@@ -800,7 +800,7 @@ Expected: 2 个新测试 FAIL（占位模板无"今日议程"；/objects 等 404
 - `#send` → `POST /thread {date,obj_id,text}`，清空输入，等下一轮 poll 拉回 agent_reply。
 - 卡片按钮 → `POST /action/approve-read|reject-read|confirm-legs`，成功后移除卡、刷新 `#vcount` 与 `#budget`；400 时卡翻"被拒"态显示 `errors`（与 CLI 逐字一致）。
 
-- [ ] **Step 3b: 附属三页 + 路由**
+- [x] **Step 3b: 附属三页 + 路由**
 
 新建 `objects.html`/`calibration.html`/`ledger.html`（extends layout，各含标题"对象浏览器"/"校准台"/"账本" + 对应只读渲染：对象浏览器列九对象类型可点血缘、校准台读 `store.load(FactorVerdict)` 表、账本读 `store.load(Settlement)` 按日汇总 pnl）。
 
@@ -832,12 +832,12 @@ Expected: 2 个新测试 FAIL（占位模板无"今日议程"；/objects 等 404
             {"title": "账本", "settlements": [s.to_dict() for s in store.load(Settlement)]})
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_decision_web.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run suite + commit**
+- [x] **Step 5: Run suite + commit**
 
 ```bash
 uv run pytest -q

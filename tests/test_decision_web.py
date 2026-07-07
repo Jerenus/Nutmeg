@@ -124,3 +124,22 @@ def test_events_endpoint_returns_new_since(tmp_path):
     data = r.json()
     assert [e["kind"] for e in data["events"]] == ["agent_reply"]
     assert data["cursor"] == 2
+
+
+def test_workbench_renders_three_columns_and_thread(tmp_path):
+    client, out, date = _app(tmp_path)
+    from nutmeg.decision.workbench import append_event
+    append_event(out, date, {"kind": "attention", "id": "A1", "group": "草稿待审",
+                             "match": "哈马比 vs 卡尔马"})
+    html = client.get(f"/?date={date}").text
+    assert "今日议程" in html and "待裁决" in html and "追问线程" in html
+    assert "哈马比 vs 卡尔马" in html          # attention 事件渲染进左栏
+
+
+def test_附属页_all_render(tmp_path):
+    client, out, date = _app(tmp_path)
+    for path, marker in [("/objects", "对象浏览器"),
+                         ("/calibration", "校准台"),
+                         ("/ledger", "账本")]:
+        r = client.get(path)
+        assert r.status_code == 200 and marker in r.text

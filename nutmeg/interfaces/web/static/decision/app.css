@@ -1,1 +1,228 @@
-/* Workshop UI — Task 6 填充 */
+/* Workshop UI — 判读工作台 (视觉移植自 docs/design/nutmeg-workshop.html)
+   宋体=判断层 · 无衬线=界面 · 等宽=机器数据 · 朱砂仅亮在"待裁决"。 */
+
+:root{
+  --canvas:#E9EDE7; --paper:#F5F7F3; --card:#FDFEFC; --sink:#EEF2EC;
+  --ink:#1B2620; --sub:#5C6B63; --faint:#8A968D;
+  --pine:#1F5C46; --pine-2:#2C7357; --pine-soft:#E3EDE7;
+  --cinnabar:#B23A2C; --cinnabar-soft:#F6E7E3; --cinnabar-ink:#8F2C20;
+  --gold:#8A6F2F; --gold-soft:#F0EAD9;
+  --line:#D7DFD6; --line-2:#C6D0C4;
+  --mono-bg:#EDF1EA;
+}
+@media (prefers-color-scheme:dark){:root{
+  --canvas:#0B120E; --paper:#0F1613; --card:#161F1A; --sink:#111A15;
+  --ink:#DEE6DE; --sub:#93A398; --faint:#6A7A70;
+  --pine:#5BBA93; --pine-2:#6FCBA4; --pine-soft:#17281F;
+  --cinnabar:#E0705A; --cinnabar-soft:#361D18; --cinnabar-ink:#F0A08C;
+  --gold:#C9A85C; --gold-soft:#2A2415;
+  --line:#25322B; --line-2:#314138;
+  --mono-bg:#18211C;
+}}
+:root[data-theme="dark"]{
+  --canvas:#0B120E; --paper:#0F1613; --card:#161F1A; --sink:#111A15;
+  --ink:#DEE6DE; --sub:#93A398; --faint:#6A7A70;
+  --pine:#5BBA93; --pine-2:#6FCBA4; --pine-soft:#17281F;
+  --cinnabar:#E0705A; --cinnabar-soft:#361D18; --cinnabar-ink:#F0A08C;
+  --gold:#C9A85C; --gold-soft:#2A2415;
+  --line:#25322B; --line-2:#314138; --mono-bg:#18211C;
+}
+:root[data-theme="light"]{
+  --canvas:#E9EDE7; --paper:#F5F7F3; --card:#FDFEFC; --sink:#EEF2EC;
+  --ink:#1B2620; --sub:#5C6B63; --faint:#8A968D;
+  --pine:#1F5C46; --pine-2:#2C7357; --pine-soft:#E3EDE7;
+  --cinnabar:#B23A2C; --cinnabar-soft:#F6E7E3; --cinnabar-ink:#8F2C20;
+  --gold:#8A6F2F; --gold-soft:#F0EAD9;
+  --line:#D7DFD6; --line-2:#C6D0C4; --mono-bg:#EDF1EA;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; padding:0; background:var(--canvas); color:var(--ink);
+  font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+.serif{font-family:"Songti SC","Noto Serif SC","STSong",Georgia,serif}
+.mono{font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace; font-variant-numeric:tabular-nums}
+
+/* ============ TOP BAR ============ */
+.topbar{display:flex; align-items:center; gap:18px; padding:10px 18px; background:var(--card); border-bottom:1px solid var(--line)}
+.brand{font-weight:700; font-size:14px; white-space:nowrap}
+.brand .mk{color:var(--pine)}
+.datenav{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--sub)}
+.datenav .d{color:var(--ink); font-weight:600}
+.datenav b{font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums}
+.arw{color:var(--faint); cursor:default}
+.lights{display:flex; align-items:center; gap:14px; margin-left:4px; font-size:11.5px}
+.lite{display:flex; align-items:center; gap:5px; color:var(--sub); font-family:ui-monospace,Menlo,monospace}
+.lite .b{width:8px;height:8px;border-radius:50%}
+.lite.done .b{background:var(--pine)} .lite.done{color:var(--pine)}
+.lite.pend .b{background:transparent; border:1.5px solid var(--sub)}
+.lite.idle .b{background:var(--line-2)}
+.spacer{flex:1}
+.budget{display:flex; align-items:center; gap:9px; font-size:12px; color:var(--sub)}
+.budget .bar{width:96px; height:7px; border-radius:99px; background:var(--sink); overflow:hidden; border:1px solid var(--line)}
+.budget .fill{height:100%; width:0%; background:var(--pine)}
+.budget .amt{font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums; color:var(--ink); font-weight:600}
+.sse{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--pine);font-family:ui-monospace,Menlo,monospace}
+.sse .b{width:7px;height:7px;border-radius:50%;background:var(--pine)}
+.sse.stale{color:var(--faint)} .sse.stale .b{background:var(--line-2)}
+.theme-toggle{border:1px solid var(--line-2); background:var(--card); color:var(--sub); border-radius:7px; padding:4px 10px; font-size:12px; cursor:pointer; font-family:inherit}
+.theme-toggle:hover{color:var(--ink); border-color:var(--pine)}
+
+/* ============ 3-COL BODY ============ */
+.wbbody{display:grid; grid-template-columns:262px 1fr 328px; min-height:calc(100vh - 190px)}
+.col{padding:16px 16px 20px; overflow:auto}
+.col.flow{border-right:1px solid var(--line); background:var(--paper)}
+.col.verdict{border-left:1px solid var(--line); background:var(--sink)}
+.coltitle{display:flex;align-items:center;justify-content:space-between; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:14px}
+.coltitle .cnt{font-family:ui-monospace,Menlo,monospace; color:var(--sub)}
+.empty{font-size:12.5px; color:var(--sub); border:1px dashed var(--line-2); border-radius:9px; padding:14px; text-align:center}
+
+/* ---- attention flow ---- */
+.fgroup{margin-bottom:18px}
+.fglabel{display:flex;align-items:center;gap:7px; font-size:12px; color:var(--sub); margin-bottom:8px; font-weight:600}
+.fglabel .pip{width:7px;height:7px;border-radius:2px}
+.fglabel .k{margin-left:auto; font-family:ui-monospace,Menlo,monospace; color:var(--faint); font-weight:400}
+.fitem{background:var(--card); border:1px solid var(--line); border-radius:9px; padding:9px 11px; margin-bottom:7px; cursor:pointer; position:relative}
+.fitem.sel{border-color:var(--cinnabar); box-shadow:inset 3px 0 0 var(--cinnabar)}
+.fitem.hot{border-left:3px solid var(--cinnabar)}
+.fitem .m{font-size:13px; font-weight:600; letter-spacing:-.01em}
+.fitem .why{font-size:11.5px; color:var(--sub); margin-top:2px; display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+.tagmini{font-family:ui-monospace,Menlo,monospace; font-size:10.5px; padding:1px 6px; border-radius:4px; background:var(--pine-soft); color:var(--pine-2); font-variant-numeric:tabular-nums}
+.tagmini.cin{background:var(--cinnabar-soft); color:var(--cinnabar); font-weight:600}
+.tagmini.gold{background:var(--gold-soft); color:var(--gold)}
+.fitem.shadow{background:transparent; border-style:dashed; color:var(--sub); text-align:center; font-size:12px; padding:11px}
+.fitem.shadow .m{font-weight:500; color:var(--sub)}
+
+/* ---- center stage ---- */
+.crumb{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--sub); margin-bottom:16px; flex-wrap:wrap}
+.crumb .h{font-family:"Songti SC",serif; font-size:19px; font-weight:900; color:var(--ink); letter-spacing:.01em}
+.crumb .sep{color:var(--line-2)}
+.crumb .meta{font-family:ui-monospace,Menlo,monospace; font-size:12px}
+.vblock{background:var(--card); border:1px solid var(--line); border-radius:11px; padding:14px 16px; margin-bottom:12px}
+.vbhead{display:flex; align-items:center; gap:8px; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:11px}
+.vbhead .tick{font-family:ui-monospace,Menlo,monospace; letter-spacing:0; text-transform:none; margin-left:auto; color:var(--sub)}
+.vbhead.ent{color:var(--gold)}
+.vbhead.ent::before{content:"◆"; color:var(--gold)}
+
+/* 3-way market bar */
+.way{display:flex; height:34px; border-radius:7px; overflow:hidden; border:1px solid var(--line); font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums}
+.way .seg{display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff; font-size:11px; line-height:1.15}
+.way .seg small{opacity:.85; font-size:9.5px}
+.way .home{background:var(--pine)} .way .draw{background:var(--pine-2); opacity:.72} .way .away{background:#9AA79E}
+:root[data-theme="dark"] .way .away{background:#4A5852}
+.wlabels{display:flex; justify-content:space-between; font-size:10.5px; color:var(--faint); margin-top:5px; font-family:ui-monospace,Menlo,monospace}
+
+/* league profile */
+.profile-line{font-size:12.5px; color:var(--sub); line-height:1.55}
+.profile-line b{color:var(--ink); font-weight:600}
+.evi{display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--gold); font-family:ui-monospace,Menlo,monospace; margin-top:6px}
+
+/* DC matrix mini */
+.dc{display:grid; grid-template-columns:repeat(5,1fr); gap:3px; max-width:210px}
+.dc .cell{aspect-ratio:1; border-radius:3px; background:var(--pine-soft); display:flex;align-items:center;justify-content:center; font-family:ui-monospace,Menlo,monospace; font-size:9px; color:var(--sub)}
+.dc .cell.m1{background:var(--pine); color:#fff; font-weight:600}
+.dc .cell.m2{background:var(--pine-2); color:#fff}
+.dc .cell.m3{background:var(--pine-2); opacity:.55; color:#fff}
+
+/* ---- SIGNATURE: deviation readout ---- */
+.dev{margin-top:2px}
+.devrow{display:grid; grid-template-columns:52px 1fr; align-items:center; gap:10px; margin-bottom:7px}
+.devrow .lab{font-size:11px; color:var(--sub); text-align:right; font-family:"Songti SC",serif; font-weight:700}
+.devrow .lab.prior{color:var(--faint); font-family:ui-monospace,Menlo,monospace; font-weight:400}
+.track{display:flex; height:26px; border-radius:6px; overflow:hidden; border:1px solid var(--line); font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums; font-size:10.5px}
+.track .s{display:flex;align-items:center;justify-content:center;color:#fff}
+.track .s.h{background:var(--pine)} .track .s.d{background:var(--pine-2);opacity:.7} .track .s.a{background:#9AA79E}
+.track.belief .s.d{background:var(--cinnabar); opacity:1}
+.delta{display:flex; align-items:center; gap:8px; margin-top:9px; padding-top:10px; border-top:1px dashed var(--line)}
+.delta .amt{font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums; font-weight:700; color:var(--cinnabar); font-size:15px}
+.delta .via{font-size:12px; color:var(--sub)}
+.delta .fac{font-family:ui-monospace,Menlo,monospace; font-size:11.5px; padding:2px 8px; border-radius:5px; background:var(--gold-soft); color:var(--gold); font-weight:600}
+
+/* ============ VERDICT CARDS (朱砂只在此亮) ============ */
+.vcount{color:var(--cinnabar)!important}
+.acard{background:var(--card); border:1px solid var(--line); border-radius:11px; padding:0; margin-bottom:12px; overflow:hidden; position:relative}
+.acard::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--cinnabar)}
+@media (prefers-reduced-motion:no-preference){
+  .acard::before{animation:breathe 2.6s ease-in-out infinite}
+  @keyframes breathe{0%,100%{opacity:.45} 50%{opacity:1}}
+}
+.acard.pine::before{background:var(--pine)}
+.acard.rejected{opacity:.85}
+.acard.rejected::before{background:var(--faint); animation:none}
+.acard .inner{padding:13px 15px 14px 16px}
+.actype{display:flex; align-items:center; gap:7px; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--cinnabar); font-weight:700; margin-bottom:9px}
+.actype .kind{margin-left:auto; color:var(--faint); letter-spacing:0; text-transform:none; font-family:ui-monospace,Menlo,monospace}
+.acmatch{font-size:14px; font-weight:600; margin-bottom:2px}
+.acmarket{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--sub); margin-bottom:11px}
+.mini-dev{margin:10px 0}
+.mini-track{display:flex;height:20px;border-radius:5px;overflow:hidden;border:1px solid var(--line);font-family:ui-monospace,Menlo,monospace;font-size:9.5px}
+.mini-track .s{display:flex;align-items:center;justify-content:center;color:#fff}
+.mini-track .h{background:var(--pine)}.mini-track .d{background:var(--pine-2);opacity:.7}.mini-track .a{background:#9AA79E}
+.mini-track.bel .d{background:var(--cinnabar);opacity:1}
+.acmeta{font-size:12px; color:var(--sub); line-height:1.6; margin:10px 0}
+.acmeta .row{display:flex; gap:8px; padding:3px 0}
+.acmeta .row .l{color:var(--faint); flex:0 0 46px; font-size:11px}
+.acmeta .row .v{color:var(--ink)}
+.acmeta .fchip{font-family:ui-monospace,Menlo,monospace; font-size:11px; background:var(--gold-soft); color:var(--gold); padding:1px 7px; border-radius:4px; font-weight:600}
+.acmeta a{color:var(--gold); text-decoration:none; border-bottom:1px dotted var(--gold)}
+.conf{display:inline-flex; gap:3px; align-items:center}
+.conf b{width:7px;height:7px;border-radius:50%;background:var(--line-2)}
+.conf b.on{background:var(--pine)}
+.gate{font-size:10.5px; color:var(--faint); font-family:ui-monospace,Menlo,monospace; margin-top:8px; padding-top:9px; border-top:1px solid var(--line)}
+.reason{font-size:11.5px; color:var(--cinnabar); margin-top:8px; padding-top:9px; border-top:1px solid var(--cinnabar-soft); line-height:1.5}
+.acbtns{display:flex; gap:8px; margin-top:12px}
+.btn{flex:1; border:1px solid var(--line-2); background:var(--card); color:var(--sub); border-radius:8px; padding:8px 0; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; text-align:center; appearance:none}
+.btn:hover{border-color:var(--sub); color:var(--ink)}
+.btn.primary{background:var(--cinnabar); border-color:var(--cinnabar); color:#fff}
+.btn.primary:hover{background:var(--cinnabar-ink); border-color:var(--cinnabar-ink); color:#fff}
+.btn.pine{background:var(--pine); border-color:var(--pine); color:#fff}
+.btn.pine:hover{background:var(--pine-2);border-color:var(--pine-2)}
+.legline{font-size:11.5px; color:var(--sub); margin:8px 0 3px; display:flex; justify-content:space-between; font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums}
+.emptypos{margin-top:16px; text-align:center; border:1px dashed var(--line-2); border-radius:9px; padding:11px; font-size:12.5px; color:var(--sub); cursor:default}
+.emptypos:hover{border-color:var(--pine); color:var(--pine)}
+
+/* ============ ANCHORED THREAD ============ */
+.thread{border-top:1px solid var(--line); background:var(--paper); padding:12px 18px 14px}
+.thhead{display:flex; align-items:center; gap:8px; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:10px}
+.thhead .ico{font-family:"Songti SC",serif; font-weight:900; color:var(--cinnabar); font-size:15px; letter-spacing:0}
+.thhead .anchor{color:var(--cinnabar); letter-spacing:0; text-transform:none; font-weight:600}
+.turns{display:flex; flex-direction:column; gap:8px; margin-bottom:11px}
+.turn{display:flex; gap:9px; align-items:flex-start; font-size:12.5px; line-height:1.5}
+.turn .who{flex:0 0 auto; width:20px; height:20px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-family:"Songti SC",serif; font-weight:900; font-size:12px; margin-top:1px}
+.turn.you .who{background:var(--sink); color:var(--sub)}
+.turn.ai .who{background:var(--cinnabar-soft); color:var(--cinnabar)}
+.turn .txt{color:var(--ink)}
+.turn .txt .rev{display:inline-flex; align-items:center; gap:4px; font-family:ui-monospace,Menlo,monospace; font-size:10.5px; color:var(--cinnabar); background:var(--cinnabar-soft); padding:1px 7px; border-radius:5px; margin-left:6px; font-weight:600}
+.turn .txt .fchip2{font-family:ui-monospace,Menlo,monospace; font-size:11px; background:var(--gold-soft); color:var(--gold); padding:0 6px; border-radius:4px; font-weight:600}
+.askbar{display:flex; gap:9px; align-items:center}
+.askbar .field{flex:1; border:1px solid var(--line-2); background:var(--card); border-radius:9px; padding:9px 12px; font-size:12.5px; color:var(--ink); font-family:inherit; appearance:none}
+.askbar .field::placeholder{color:var(--faint)}
+.askbar .field:focus{outline:none; border-color:var(--pine)}
+.askbar .send{border:1px solid var(--pine); background:var(--card); color:var(--pine); border-radius:9px; padding:9px 15px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; appearance:none}
+.askbar .send:hover{background:var(--pine); color:#fff}
+
+/* ============ ATTACHED READ-ONLY PAGES ============ */
+.page{max-width:900px; margin:0 auto; padding:28px 22px 60px}
+.page h1{font-family:"Songti SC",serif; font-weight:900; font-size:24px; margin:0 0 6px}
+.page .lede{color:var(--sub); font-size:13px; margin:0 0 22px}
+.page .nav{display:flex; gap:14px; font-size:13px; margin:0 0 24px}
+.page .nav a{color:var(--pine); text-decoration:none}
+.page .nav a:hover{text-decoration:underline}
+.otable{width:100%; border-collapse:collapse; font-size:13px}
+.otable th{text-align:left; color:var(--faint); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.1em; padding:8px 10px; border-bottom:1px solid var(--line-2)}
+.otable td{padding:9px 10px; border-bottom:1px solid var(--line); color:var(--ink)}
+.otable td.num{font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums}
+.otable tr:hover td{background:var(--paper)}
+.objgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px}
+.objcard{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px}
+.objcard .n{font-size:13px; font-weight:600}
+.objcard .c{font-family:ui-monospace,Menlo,monospace; font-size:20px; color:var(--pine); font-weight:700; margin-top:4px}
+
+/* ============ MOBILE TABS (Task 7 加媒体查询显隐) ============ */
+.mtabs{display:none; background:var(--sink); border-bottom:1px solid var(--line)}
+.mtab{flex:1; text-align:center; padding:9px 0; font-size:12px; color:var(--sub); border:none; border-bottom:2px solid transparent; background:transparent; font-family:inherit; cursor:pointer}
+.mtab.on{color:var(--cinnabar); border-bottom-color:var(--cinnabar); font-weight:700; background:var(--card)}
+.mtab .b{display:inline-block; min-width:15px; font-family:ui-monospace,Menlo,monospace; font-size:10px; background:var(--cinnabar); color:#fff; border-radius:99px; padding:0 4px; margin-left:3px; vertical-align:1px}
+.mtab .b:empty{display:none}

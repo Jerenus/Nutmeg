@@ -1,0 +1,29 @@
+{% extends "decision/layout.html" %}
+{% block body %}
+<div class="page">
+  <h1 class="serif">账本</h1>
+  <p class="lede">结算流水（Settlement）——每笔的 Brier / CLV / 命中 / 盈亏，¥400/期长期成本追踪。</p>
+  <nav class="nav"><a href="/">← 判读工作台</a><a href="/objects">对象浏览器</a><a href="/calibration">校准台</a></nav>
+  {% if settlements %}
+  <table class="otable">
+    <thead><tr><th>结算</th><th>ref</th><th>结算时刻</th><th>比分</th><th>Brier</th><th>CLV(pp)</th><th>命中</th><th>盈亏(¥)</th></tr></thead>
+    <tbody>
+    {% for s in settlements %}
+      <tr>
+        <td>{{ s.settlement_id }}</td>
+        <td>{{ s.ref_type }}:{{ s.ref_id }}</td>
+        <td class="num">{{ s.settled_at }}</td>
+        <td class="num">{{ s.score or "—" }}</td>
+        <td class="num">{{ "%.3f"|format(s.brier) if s.brier is not none else "—" }}</td>
+        <td class="num">{{ "%+.1f"|format(s.clv_pp) if s.clv_pp is not none else "—" }}</td>
+        <td class="num">{{ "✓" if s.hit else ("✗" if s.hit is not none else "—") }}</td>
+        <td class="num">{{ "%+.0f"|format(s.pnl_yuan) if s.pnl_yuan is not none else "—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">账本尚空——decision-settle 次日结算后入账。</p>
+  {% endif %}
+</div>
+{% endblock %}

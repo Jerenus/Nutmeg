@@ -1,6 +1,60 @@
 {% extends "decision/layout.html" %}
 {% block body %}
-<main class="wb"><h1>判读工作台</h1>
-<div id="wb-data" data-date="{{ state.date }}">{{ state.matches|length }} 场在售</div>
-</main>
+<div class="topbar" data-date="{{ state.date }}">
+  <div class="brand"><span class="mk">▸</span> 判读工作台</div>
+  <div class="datenav"><span class="arw">◀</span><span class="d mono">{{ state.date }}</span><span class="arw">▶</span></div>
+  <div class="lights">
+    <span class="lite done"><span class="b"></span>am</span>
+    <span class="lite pend"><span class="b"></span>close</span>
+    <span class="lite idle"><span class="b"></span>settle</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="budget"><span>预算</span><span class="bar"><span class="fill" id="budget-fill"></span></span><span class="amt" id="budget">¥0/400</span></div>
+  <div class="sse" id="sse"><span class="b"></span>实时</div>
+  <button class="theme-toggle" onclick="var r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'">切换主题</button>
+</div>
+
+<nav class="mtabs" role="tablist">
+  <button class="mtab on" data-col="flow">议程</button>
+  <button class="mtab" data-col="stage">舞台</button>
+  <button class="mtab" data-col="verdict">裁决 <span class="b" id="mv-badge"></span></button>
+</nav>
+
+<div class="wbbody">
+  <!-- LEFT: attention flow -->
+  <section class="col flow active">
+    <div class="coltitle">今日议程 · agent 排序 <span class="cnt" id="flow-count">{{ state.events | selectattr("kind", "equalto", "attention") | list | length }}</span></div>
+    <div id="flow">
+    {% for e in state.events if e.kind == "attention" %}
+      <article class="fitem" data-obj="{{ e.id }}">
+        <div class="m">{{ e.match }}</div>
+        <div class="why">{% if e.group %}<span class="tagmini">{{ e.group }}</span>{% endif %}{{ e.note }}</div>
+      </article>
+    {% else %}
+      <p class="empty">今日 agent 尚未开工——在终端说「今天的方案」。</p>
+    {% endfor %}
+    </div>
+  </section>
+
+  <!-- CENTER: stage -->
+  <section class="col stage" id="stage">
+    <div class="crumb">选择议程项查看盘口 / 画像 / 读数器</div>
+  </section>
+
+  <!-- RIGHT: verdict -->
+  <section class="col verdict">
+    <div class="coltitle">待裁决 <span class="cnt vcount" id="vcount">0</span></div>
+    <div id="verdict"></div>
+    <div class="emptypos">空仓：今天不打 · 空仓永远合法</div>
+  </section>
+</div>
+
+<div class="thread" id="thread">
+  <div class="thhead"><span class="ico">追</span>追问线程 · <span class="anchor" id="thread-anchor">未选中判断</span></div>
+  <div class="turns" id="turns"></div>
+  <div class="askbar">
+    <input class="field" id="ask" placeholder="继续追问，或让它去查战意…" autocomplete="off">
+    <button class="send" id="send">发送</button>
+  </div>
+</div>
 {% endblock %}

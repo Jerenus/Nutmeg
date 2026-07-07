@@ -1,0 +1,13 @@
+{% extends "decision/layout.html" %}
+{% block body %}
+<div class="page">
+  <h1 class="serif">对象浏览器</h1>
+  <p class="lede">决策本体九对象持久层——每类的当前留存计数（点击血缘留待 v2）。</p>
+  <nav class="nav"><a href="/">← 判读工作台</a><a href="/calibration">校准台</a><a href="/ledger">账本</a></nav>
+  <div class="objgrid">
+    {% for name, n in counts.items() %}
+    <div class="objcard"><div class="n">{{ name }}</div><div class="c">{{ n }}</div></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
