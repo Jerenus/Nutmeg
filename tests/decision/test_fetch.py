@@ -12,11 +12,11 @@ from typer.testing import CliRunner
 
 from nutmeg.data.fcom500 import MarketOdds
 from nutmeg.decision.fetch import fetch_day, fetch_zucai
-from nutmeg.interfaces.cli import app
-from nutmeg.services.jczq_market_kernel import (
+from nutmeg.decision.market_data import (
     load_bold_odds_snapshot,
     load_sporttery_snapshot,
 )
+from nutmeg.interfaces.cli import app
 
 runner = CliRunner()
 

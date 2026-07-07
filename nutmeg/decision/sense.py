@@ -8,9 +8,11 @@ from __future__ import annotations
 import logging
 
 from nutmeg.decision.identity import canonical_match_id
-from nutmeg.decision.market_data import snapshots_from_sporttery
+from nutmeg.decision.market_data import (
+    load_sporttery_snapshot,
+    snapshots_from_sporttery,
+)
 from nutmeg.decision.ontology import Match
-from nutmeg.services.jczq_market_kernel import load_sporttery_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +104,7 @@ def upsert_match_merged(store, match) -> None:
 def _load_euro_bold_odds(run_date: str, output_dir) -> dict:
     """读时欧赔 bold_odds（现 SOP 已抓的 bold_odds.json，含去水 fair_probability）。
     缺文件/坏结构 → {}（优雅降级，只落体彩快照）。"""
-    from nutmeg.services.jczq_market_kernel import load_bold_odds_snapshot
+    from nutmeg.decision.market_data import load_bold_odds_snapshot
     try:
         return load_bold_odds_snapshot(run_date, output_dir) or {}
     except Exception:  # noqa: BLE001 — 欧赔缺不阻塞体彩落库
@@ -121,7 +123,6 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
         euro_snapshot_from_bold_odds,
         snapshots_from_sporttery,
     )
-    from nutmeg.services.jczq_market_kernel import load_sporttery_snapshot
 
     value = load_sporttery_snapshot(run_date, output_dir)
     if value is None:

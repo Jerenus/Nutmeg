@@ -8,8 +8,10 @@ from __future__ import annotations
 from dataclasses import replace
 
 from nutmeg.decision.identity import canonical_match_id
-from nutmeg.decision.market_data import euro_snapshot_from_bold_odds
-from nutmeg.services.jczq_market_kernel import load_sporttery_snapshot
+from nutmeg.decision.market_data import (
+    euro_snapshot_from_bold_odds,
+    load_sporttery_snapshot,
+)
 
 
 def _no_to_canonical(value: dict, run_date: str) -> dict[str, str]:

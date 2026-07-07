@@ -3,7 +3,7 @@
 新 sense 是回放已存快照;抓取现埋在退役中的 jczq-today。这里抽一条薄命令,只复用
 **保留模块**的两个 fetch 基元,把当日盘口/欧赔落到 sense_day 读取的同一路径:
 
-  - 体彩盘口 ``fetch_sporttery_value_with_fallback``(jczq_market_kernel)
+  - 体彩盘口 ``fetch_sporttery_value_with_fallback``(decision.market_data)
     → ``<output_dir>/daily/<run_date>/sporttery_markets.json``
   - 国际欧赔 ``collect_bold_odds_apifootball``(经生产入口 ``*_live`` 装配真 client)
     → ``<output_dir>/daily/<run_date>/bold_odds.json``
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def _default_sporttery_fetcher() -> tuple[dict, str]:
     """生产默认:体彩盘面(sporttery 主源 → 500.com 备源)。返回 ``(value, source)``。"""
-    from nutmeg.services.jczq_market_kernel import (
+    from nutmeg.decision.market_data import (
         fetch_sporttery_value_with_fallback,
     )
     return fetch_sporttery_value_with_fallback()
@@ -52,7 +52,7 @@ def fetch_day(
     → ``{竞彩号: {market: MarketOdds}}``。二者默认用保留模块真 fetcher,测试/replay
     注入替身。国际欧赔抓取异常仅降级(不写 bold_odds),体彩快照照落。
     """
-    from nutmeg.services.jczq_market_kernel import (
+    from nutmeg.decision.market_data import (
         persist_bold_odds_snapshot,
         persist_sporttery_snapshot,
     )
