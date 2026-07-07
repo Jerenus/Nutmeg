@@ -773,7 +773,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/decision/sense_zucai.py:99-122`（sense_zucai）
 - Test: `tests/decision/test_zucai_sense.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/decision/test_zucai_sense.py` 末尾追加：
 
@@ -802,12 +802,12 @@ def test_sense_zucai_fills_competition_and_resolved_ids(tmp_path):
     assert m.competition_id == "swe-allsvenskan"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/decision/test_zucai_sense.py -v`
 Expected: 新测试 FAIL（`m.competition == ""`）
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `nutmeg/decision/sense_zucai.py` — `sense_zucai` 的落库循环改为：
 
@@ -860,12 +860,12 @@ def sense_zucai(issue: str, *, output_dir, taken_at: str, store, loader=None) ->
     return len(snaps)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/decision/test_zucai_sense.py tests/decision/test_zucai_e2e.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run decision suite + commit**
+- [x] **Step 5: Run decision suite + commit**
 
 ```bash
 uv run pytest -q tests/decision/

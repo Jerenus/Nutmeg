@@ -98,10 +98,19 @@ def _default_loader(issue: str, output_dir):
 
 def sense_zucai(issue: str, *, output_dir, taken_at: str, store, loader=None) -> int:
     """一期传统足彩 14 场 → Match(canonical,merge refs)+Snapshot 入库。返回入库场数。"""
+    import logging
+
+    from nutmeg.decision.entities import (
+        load_league_alias_table,
+        load_team_alias_table,
+        resolve_league,
+        resolve_team,
+    )
     from nutmeg.decision.identity import canonical_match_id
     from nutmeg.decision.ontology import Match
     from nutmeg.decision.sense import upsert_match_merged
 
+    logger = logging.getLogger(__name__)
     loader = loader or _default_loader
     matches, odds, dates = loader(issue, output_dir)
     snaps = zucai_snapshots(matches, odds, issue=issue, dates=dates,
@@ -111,12 +120,25 @@ def sense_zucai(issue: str, *, output_dir, taken_at: str, store, loader=None) ->
         for m in matches if m.match_no in dates
     }
     by_no = {m.match_no: m for m in matches}
+    team_table = load_team_alias_table()
+    league_table = load_league_alias_table()
+    misses: set[str] = set()
     for s in snaps:
         no = canonical_to_no.get(s.match_id)
         m = by_no.get(no)
+        home_id = resolve_team(m.home_team, team_table)
+        away_id = resolve_team(m.away_team, team_table)
+        for name, rid in ((m.home_team, home_id), (m.away_team, away_id)):
+            if name and rid is None:
+                misses.add(name)
         upsert_match_merged(store, Match(
             match_id=s.match_id, kickoff_at=taken_at, home=m.home_team,
-            away=m.away_team, competition="",
-            channel_refs={"zucai": {"issue": issue, "index": no}}))
+            away=m.away_team, competition=m.competition,
+            channel_refs={"zucai": {"issue": issue, "index": no}},
+            home_team_id=home_id, away_team_id=away_id,
+            competition_id=resolve_league(m.competition, league_table)))
         store.upsert(s)
+    if misses:
+        logger.info("sense-zucai resolve 未命中别名表(照常入库,*_id=null): %s",
+                    "、".join(sorted(misses)))
     return len(snaps)

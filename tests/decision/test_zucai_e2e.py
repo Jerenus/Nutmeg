@@ -28,6 +28,7 @@ class _ZM:
         self.match_no = no
         self.home_team = h
         self.away_team = a
+        self.competition = ""          # 对齐真 ZucaiMatch 接口(sense_zucai 现读该字段)
 
 
 def _zucai_loader(issue, output_dir):

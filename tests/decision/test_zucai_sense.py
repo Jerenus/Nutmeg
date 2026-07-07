@@ -12,6 +12,7 @@ class _ZM:
         self.match_no = no
         self.home_team = h
         self.away_team = a
+        self.competition = ""          # 对齐真 ZucaiMatch 接口(sense_zucai 现读该字段)
 
 
 def test_zucai_snapshots_canonical_and_fair():
@@ -140,3 +141,27 @@ def test_default_loader_missing_files_raise(tmp_path):
          "match_date": "2026-05-02"}])
     with pytest.raises(FileNotFoundError):
         _default_loader("26070", tmp_path)              # 有 issue 无 odds
+
+
+def test_sense_zucai_fills_competition_and_resolved_ids(tmp_path):
+    """zucai 路径同样修 competition 丢失 + resolve(loader 注入,不打网)。"""
+    from nutmeg.decision.ontology import Match
+    from nutmeg.decision.sense_zucai import sense_zucai
+    from nutmeg.decision.store import DecisionStore
+    from nutmeg.domain.zucai import ZucaiMatch
+
+    def loader(issue, output_dir):
+        matches = [ZucaiMatch(match_no=1, competition="瑞超", home_team="哈马比",
+                              away_team="卡尔马", match_date="2026-07-12")]
+        odds = {1: {"home": 2.0, "draw": 3.2, "away": 3.4}}
+        return matches, odds, {1: "2026-07-12"}
+
+    store = DecisionStore(tmp_path)
+    n = sense_zucai("26100", output_dir=tmp_path, taken_at="t",
+                    store=store, loader=loader)
+    assert n == 1
+    m = store.load(Match)[0]
+    assert m.competition == "瑞超"                    # 之前被硬编码 "" 丢掉
+    assert m.home_team_id == "swe-hammarby"          # 种子实体别名命中
+    assert m.away_team_id == "swe-kalmar"
+    assert m.competition_id == "swe-allsvenskan"
