@@ -1262,7 +1262,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `docs/superpowers/specs/2026-07-07-ontology-entity-layer-proposal.md`（状态行）
 - Modify: `CLAUDE.md` + `AGENTS.md`（Read schema 行加 `scope_key?`——两份必须同步改）
 
-- [ ] **Step 1: 全量测试 + lint**
+- [x] **Step 1: 全量测试 + lint**
 
 ```bash
 uv run pytest -q
@@ -1270,7 +1270,7 @@ uv run ruff check nutmeg/decision/ tests/decision/
 ```
 Expected: 全绿（基线 1051 + 本计划新增 ≈17 条）
 
-- [ ] **Step 2: live store 一次性纠偏（谨慎:动真数据前先看一眼）**
+- [x] **Step 2: live store 一次性纠偏（谨慎:动真数据前先看一眼）**
 
 ```bash
 # 先看 live factors.jsonl 现状(应无 scope 字段)
@@ -1288,19 +1288,19 @@ grep league_bias .nutmeg-data/jczq/decision/factors.jsonl
 ```
 Expected: 纠偏条数 = live store 中 scope 不符的种子因子数（首跑 >0，再跑 0）
 
-- [ ] **Step 3: verify skill 端到端（按 §B.3 收尾纪律）**
+- [x] **Step 3: verify skill 端到端（按 §B.3 收尾纪律）**
 
 调用项目 `verify` skill，重点配方：
 1. **sense replay**：拷贝一个近期有快照的日期目录到 scratchpad，跑 `uv run nutmeg decision-am --run-date <该日期> --output-dir <拷贝>`（fetch 失败 best-effort 继续、sense 从已存快照 replay）；检查 `matches.jsonl` 新行带 `competition`、国家队场带 `home_team_id`；`teams.jsonl`/`leagues.jsonl` 种子已落。
 2. **settle replay**：同拷贝跑 `decision-settle`；检查 calibrate 面板正常渲染、factors.jsonl scope 已纠偏、无回归。
 
-- [ ] **Step 4: 文档收尾（三处）**
+- [x] **Step 4: 文档收尾（三处）**
 
 1. `2026-07-06-decision-ontology-design.md` §2：`Factor` schema 行加 `scope`；`Match` schema 加三个 `*_id?`；对象清单加 `Team`/`League` 两行（标注"2026-07-07 实体层增补，见 proposal"）；§5 因子生死段加一句"scope_key 级诊断性子判决（`factor_id@scope_key`），生死判决仍在 factor 级"。
 2. `2026-07-07-ontology-entity-layer-proposal.md` 状态行改为：`**状态：Tier 1+2 已落地（2026-07-07，commits 见 git log）；Tier 3 判"过早、不建"。**`
 3. `CLAUDE.md` 与 `AGENTS.md`（同步改）：SOP 步骤 2 的 Read schema 里 `factors:[{factor_id, direction, weight_pp, evidence:[...]}]` → `factors:[{factor_id, scope_key?, direction, weight_pp, evidence:[...]}]`，并在判读硬约束后追加一行：`g. league/team 级因子引用必带 scope_key（如 league_bias → swe-allsvenskan）；联赛/球队画像读 store 的 League/Team profile_notes，不再只靠 memory。`
 
-- [ ] **Step 5: Final commit**
+- [x] **Step 5: Final commit**
 
 ```bash
 uv run pytest -q

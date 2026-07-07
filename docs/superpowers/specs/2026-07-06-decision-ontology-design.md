@@ -36,16 +36,19 @@
   （"Claude 自由推理、落盘强制 schema"），采纳其**本体中心**架构观；**不采纳**其平台级
   数据集成/流式/微服务（单人仓自杀行为）。
 
-## §2 决策本体（七对象，唯一持久层）
+## §2 决策本体（九对象，唯一持久层；2026-07-07 实体层增补 Team/League，见
+`2026-07-07-ontology-entity-layer-proposal.md`）
 
 一切持久状态 = 七类对象 + 血缘链接，存 `.nutmeg-data/decision/` 下按类型分文件的
 append-only JSONL（幂等 upsert-by-id，同 judge_ledger 的 append_day 纪律）。规模到
 1 万+ 对象再议 SQLite——当前每季数百行，JSONL diff 友好、零依赖。
 
 ```
-Match           一场比赛（跨通道身份）
+Match           一场比赛（跨通道身份；承载动作与联合属性的链接对象）
   {match_id, kickoff_at, home, away, competition,
-   channel_refs: {jczq_match_no?, zucai: {issue, index}?}}
+   channel_refs: {jczq_match_no?, zucai: {issue, index}?},
+   home_team_id?, away_team_id?, competition_id?}   ← 2026-07-07 实体层增补:
+     sense 策展式 resolve(别名表命中填,未命中 null+log,绝不自动造对象/模糊匹配)
 
 MarketSnapshot  某时刻的去水盘口（先验的来源，也是 CLV 的两端）
   {snapshot_id, match_id, taken_at, kind: read_time|closing,
@@ -53,9 +56,18 @@ MarketSnapshot  某时刻的去水盘口（先验的来源，也是 CLV 的两�
    fair: {market: {outcome: prob}}, raw_odds, lines: {hhad_line, ou_line}}
 
 Read            一次判读决策（系统的原子）——见 §3 详细 schema
+                （factors[] 引用可带 scope_key: team/league scope 因子必带,
+                  如 league_bias → "swe-allsvenskan"; 2026-07-07 实体层增补）
 Factor          命名理由（词典项，有出生证和死亡机制）
   {factor_id, name_zh, definition, born_at, born_from(复盘/洞见引用),
-   status: probation|active|retired, retire_reason?}
+   status: probation|active|retired, retire_reason?,
+   scope: match|pairing|appearance|team|league}   ← 2026-07-07 实体层增补:因子海拔
+
+Team            持久实体节点（信念输入与跨场学习的沉淀处；2026-07-07 实体层增补）
+  {team_id, name_zh, name_en, aliases[], competition_ids[],
+   profile_notes: [{key, note, evidence, at}]}   ——只为"我们对它有知识"的实体而生
+League          持久实体节点（联赛级结构偏差的沉淀处；同上增补）
+  {league_id, name_zh, name_en, country, season?, profile_notes[]}
 
 Ticket          一次下注行动（表达）
   {ticket_id, channel: jczq|shengfucai|renjiu, made_at,
@@ -155,6 +167,10 @@ Metaculus Baseline-score 的直译。
   双轴皆平庸 → watch 一期；再平庸 → **retired（词典移除，Read 校验即拒绝）**。
 - **词典有上限（≤12 个 active）**：新因子转正若超限，必须先退休最弱者——
   结构性防规则堆积（Rules A-J → R1-R28 坟场的免疫机制）。
+- **scope_key 级诊断性子判决（2026-07-07 实体层增补）**：Read 引用带 scope_key 时
+  calibrate 额外产 `factor_id@scope_key` 子判决（recommendation=diagnostic，面板分行
+  如"league_bias@swe-allsvenskan 7/9"）。**生死判决仍在 factor 级**（n≥30 反 churn 不变）
+  ——子判决是证据分辨率，不是多台生死状态机。
 
 **其它面板指标**：逐因子/逐信心桶校准曲线；**参与精度**（非 shadow 的 Read 偏移方向
 命中率 vs shadow 基线）；通道盈亏（娱乐预算审计，非目标函数）。

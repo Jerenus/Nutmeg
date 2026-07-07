@@ -55,7 +55,7 @@ CLV 快信息）。设计见 `docs/superpowers/specs/2026-07-06-decision-ontolog
    无命名理由不偏移，belief=prior）；只有**实名信息面理由**（伤停/复出/轮换/战意/联赛偏差）
    才落一条**偏移 Read**（belief 背离 prior + 命名 factor + 证据 URL + falsifier）。Read schema：
    `{read_id, match_id, snapshot_id, made_at, judge, market, prior, belief,
-   factors:[{factor_id, direction, weight_pp, evidence:[{url,quote,at}]}], confidence, shadow, note}`。
+   factors:[{factor_id, scope_key?, direction, weight_pp, evidence:[{url,quote,at}]}], confidence, shadow, note}`。
    深度分析/混合投注/世界杯窗口走**七阶段深研**（见下）。判断永不入脚本。
 
 3. **出票（`decision-close`，¥400 框架）：** 把最优玩法结构化成 legs（`{match_id, market,
@@ -104,7 +104,10 @@ c. 偏移票**默认 had 押模态方向**（实证 had 2/2 vs hhad 3/9）；hha
    "恰净胜 N"窄带禁区；hhad leg 落盘**必带 `line`**；
 d. 判读层平局单关按 bucket `draw`（conf≥4、≤¥40/注）——"平局收割 0/67"是引擎串票统计，不适用判读层单关；
 e. **跟市场的否决只许信息面理由**（实名伤停/轮换级），禁 EV 语言（7/04 教训：EV 否决胜方，实证 2/2 中）；
-f. Read 必须结构化 JSON（6/28 字符串票面曾丢整日判定）；decision-close/settle 收尾不可跳过（7/05 教训）。
+f. Read 必须结构化 JSON（6/28 字符串票面曾丢整日判定）；decision-close/settle 收尾不可跳过（7/05 教训）；
+g. league/team 级因子引用**必带 `scope_key`**（如 league_bias → "swe-allsvenskan"，校验强制）；
+   联赛/球队画像读 store 的 League/Team `profile_notes`（decision-sense 已幂等落种子），不再只靠 memory
+   （2026-07-07 实体层落库，见 `docs/superpowers/specs/2026-07-07-ontology-entity-layer-proposal.md`）。
 
 ### 决策本体核心立场（取代已删的 A/B/D/E 档位叙事）
 
