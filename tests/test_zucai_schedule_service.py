@@ -256,10 +256,10 @@ def test_schedule_service_skips_duplicate_and_force_regenerates(tmp_path) -> Non
 
 
 def test_launchd_templates_call_expected_slots_and_times() -> None:
-    afternoon = Path("scripts/launchd/com.nutmeg.zucai.afternoon.plist").read_text(
+    afternoon = Path("ops/launchd/com.nutmeg.zucai.afternoon.plist").read_text(
         encoding="utf-8"
     )
-    revision = Path("scripts/launchd/com.nutmeg.zucai.revision.plist").read_text(
+    revision = Path("ops/launchd/com.nutmeg.zucai.revision.plist").read_text(
         encoding="utf-8"
     )
 
