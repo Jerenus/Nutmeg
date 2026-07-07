@@ -45,6 +45,26 @@ def run_backfill(run_date: str, output_dir: Path, made_at: str) -> str:
     return f"decision-backfill {run_date}: 补 {n} 条市场基线 shadow"
 
 
+def run_day_regime(run_date: str, output_dir: Path) -> str:
+    # 日级盘面热度诊断:确定性算术攒样本,不进决策(2026-07-07 用户定)。
+    import json
+
+    from nutmeg.decision.day_regime import compute_day_regime
+    from nutmeg.decision.store import DecisionStore
+
+    store = DecisionStore(Path(output_dir) / "decision")
+    regime = compute_day_regime(store, run_date=run_date)
+    out = Path(output_dir) / "daily" / run_date / "day-regime.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(regime, ensure_ascii=False, indent=1),
+                   encoding="utf-8")
+    mean_fav = regime["mean_fav_prob"]
+    heat = f"热门均值 {mean_fav:.2f}" if mean_fav is not None else "空盘"
+    return (f"decision-day-regime {run_date}: {regime['n_matches']} 场 | {heat} | "
+            f"重热门 {regime['n_heavy_fav']} / 均势 {regime['n_tossup']} / "
+            f"gap警戒 {regime['n_gap_alert']} → day-regime.json(诊断,不进决策)")
+
+
 def run_read_ingest(reads_file: Path, output_dir: Path) -> str:
     import json
 
@@ -237,6 +257,8 @@ def run_decision_am(run_date: str, output_dir, zucai_dir=None, issue=None) -> st
         steps.append(
             ("sense-zucai", lambda: run_sense_zucai(issue, output_dir, stamp, zucai_dir)))
     steps.append(("backfill", lambda: run_backfill(run_date, output_dir, stamp)))
+    # 日级盘面热度诊断(只攒样本不进决策)——放 backfill 后,读的是本次 sense 的快照。
+    steps.append(("day-regime", lambda: run_day_regime(run_date, output_dir)))
     return _compose(f"decision-am {run_date} · 数据入库+市场基线(编排不含判读)", steps)
 
 

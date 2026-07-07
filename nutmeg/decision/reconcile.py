@@ -11,8 +11,22 @@ from nutmeg.decision.ontology import Settlement
 from nutmeg.decision.scoring import brier, clv_pp
 
 
+def read_actual(market: str, outcome_90: str | None, score: str | None) -> str | None:
+    """Read 的 Brier 靶按市场解析:had→90'胜平负键;ttg→total_{min(总进球,7)}(镜像
+    sporttery fair.ttg 桶键);其余市场未支持 → None(不产伪 Brier)。"""
+    if market == "had":
+        return outcome_90
+    if market == "ttg":
+        gh, ga = _score_goals(score)
+        if gh is None:
+            return None
+        return f"total_{min(gh + ga, 7)}"
+    return None
+
+
 def settle_read(read, *, outcome_90, score, closing) -> Settlement:
-    b = None if outcome_90 is None else brier(read.belief, outcome_90)
+    actual = read_actual(read.market, outcome_90, score)
+    b = None if actual is None else brier(read.belief, actual)
     clv = None
     if closing is not None and not read.shadow:
         closing_fair = (closing.fair or {}).get(read.market, {})
@@ -58,6 +72,24 @@ def settle_ticket_leg(*, market: str, pick: str, line: float | None,
 
 
 _HAD_OUTCOME = {"胜": "home", "平": "draw", "负": "away"}
+
+# 票面 selection 可读名 → 3 路键(7/07 修:7/06 起 legs 用"让胜·xxx"式 selection,
+# 旧口径只认裸键 → 整票被静默跳过永不入账)。had 与 hhad 前缀都规约到同一 3 路键。
+_PICK_ALIASES = {
+    "home": "home", "draw": "draw", "away": "away",
+    "主胜": "home", "胜": "home", "让胜": "home",
+    "平": "draw", "让平": "draw",
+    "客胜": "away", "负": "away", "让负": "away",
+}
+
+
+def normalize_pick(selection: str | None) -> str | None:
+    """"主胜·阿根廷90分钟"/"让负·杰尔+1不败"/"home" → home/draw/away;不可规约 → None。"""
+    s = (selection or "").strip()
+    if s in _PICK_ALIASES:
+        return _PICK_ALIASES[s]
+    head = s.replace("・", "·").split("·", 1)[0].strip()
+    return _PICK_ALIASES.get(head)
 
 
 def _score_goals(score: str | None) -> tuple[int | None, int | None]:
@@ -114,14 +146,15 @@ def settle_tickets(store, *, outcomes: dict, settled_at: str) -> int:
                 line = None if raw_line is None else float(raw_line)
             except (TypeError, ValueError):
                 line = None                       # 坏线→hhad 不可判→整票跳过
+            pick = normalize_pick(leg.get("selection"))
             res = settle_ticket_leg(
                 market=str(leg.get("market") or ""),
-                pick=str(leg.get("selection") or ""), line=line,
+                pick=pick or "", line=line,
                 outcome_90=outcome, goals_h=gh, goals_a=ga)
             if res is None:
                 leg_hits = None
                 break
-            leg_hits.append(res == str(leg.get("selection")))
+            leg_hits.append(res == pick)
         if not leg_hits:                          # None(不可判)或空 legs 都跳过
             continue
         hit = all(leg_hits)

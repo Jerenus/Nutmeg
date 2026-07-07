@@ -24,28 +24,30 @@ def _recorder(calls, name):
 
 def test_decision_am_order(tmp_path, monkeypatch):
     calls: list[str] = []
-    for name in ("fetch_day", "run_sense", "run_backfill"):
+    for name in ("fetch_day", "run_sense", "run_backfill", "run_day_regime"):
         monkeypatch.setattr(verbs, name, _recorder(calls, name))
     verbs.run_decision_am(_DATE, tmp_path)
-    assert calls == ["fetch_day", "run_sense", "run_backfill"]
+    assert calls == ["fetch_day", "run_sense", "run_backfill", "run_day_regime"]
 
 
 def test_decision_am_with_zucai_order(tmp_path, monkeypatch):
     calls: list[str] = []
-    for name in ("fetch_day", "fetch_zucai", "run_sense", "run_sense_zucai", "run_backfill"):
+    for name in ("fetch_day", "fetch_zucai", "run_sense", "run_sense_zucai",
+                 "run_backfill", "run_day_regime"):
         monkeypatch.setattr(verbs, name, _recorder(calls, name))
     verbs.run_decision_am(_DATE, tmp_path, zucai_dir=tmp_path / "zucai", issue="26091")
     assert calls == ["fetch_day", "fetch_zucai", "run_sense",
-                     "run_sense_zucai", "run_backfill"]
+                     "run_sense_zucai", "run_backfill", "run_day_regime"]
 
 
 def test_decision_am_no_issue_skips_zucai(tmp_path, monkeypatch):
     calls: list[str] = []
-    for name in ("fetch_day", "fetch_zucai", "run_sense", "run_sense_zucai", "run_backfill"):
+    for name in ("fetch_day", "fetch_zucai", "run_sense", "run_sense_zucai",
+                 "run_backfill", "run_day_regime"):
         monkeypatch.setattr(verbs, name, _recorder(calls, name))
     verbs.run_decision_am(_DATE, tmp_path, zucai_dir=tmp_path / "zucai")   # 无 issue
     assert "fetch_zucai" not in calls and "run_sense_zucai" not in calls
-    assert calls == ["fetch_day", "run_sense", "run_backfill"]
+    assert calls == ["fetch_day", "run_sense", "run_backfill", "run_day_regime"]
 
 
 # --- close ------------------------------------------------------------------

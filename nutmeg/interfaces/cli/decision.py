@@ -87,6 +87,16 @@ def decision_backfill(
     _cli.typer.echo(run_backfill(run_date, output_dir, made_at))
 
 
+@_cli.app.command("decision-day-regime")
+def decision_day_regime(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+) -> None:
+    """决策本体 · 日级盘面热度诊断:确定性算术攒样本,不进决策(decision-am 已内嵌)。"""
+    from nutmeg.decision.verbs import run_day_regime
+    _cli.typer.echo(run_day_regime(run_date, output_dir))
+
+
 @_cli.app.command("decision-capture-closing")
 def decision_capture_closing(
     run_date: str = _cli.typer.Option(..., "--run-date"),

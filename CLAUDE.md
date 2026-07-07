@@ -86,7 +86,13 @@ e. **跟市场的否决只许信息面理由**（实名伤停/轮换级），禁
 f. Read 必须结构化 JSON（6/28 字符串票面曾丢整日判定）；decision-close/settle 收尾不可跳过（7/05 教训）；
 g. league/team 级因子引用**必带 `scope_key`**（如 league_bias → "swe-allsvenskan"，校验强制）；
    联赛/球队画像读 store 的 League/Team `profile_notes`（decision-sense 已幂等落种子），不再只靠 memory
-   （2026-07-07 实体层落库，见 `docs/superpowers/specs/2026-07-07-ontology-entity-layer-proposal.md`）。
+   （2026-07-07 实体层落库，见 `docs/superpowers/specs/2026-07-07-ontology-entity-layer-proposal.md`）；
+h. **打穿共振三条件（2026-07-07 用户定）**：让胜(-1)/大胜类表达须同时满足 ①正路 conf≥4、
+   ②fair 大 2.5 球 ≥55%、③DC 净胜≥2 ≥40%——缺任一条退回正路或进球轴（强判胜≠打穿）；
+   **方向抛硬币场（fair 最大方向 <45%）换进球轴**：判总进球模态带+模态比分，表达=模态单点小额；
+i. **ttg 轴 Read 进双轴检验（2026-07-07 起）**：backfill 每场自动补 `market="ttg"` 市场基线
+   shadow（键 `total_0..total_7`）；有真实进球轴判断时落 ttg 真 Read。日级盘面热度诊断
+   `daily/<date>/day-regime.json`（decision-am 自动产）**只攒样本不进决策**——不得引作判读理由。
 
 ### 决策本体核心立场（取代已删的 A/B/D/E 档位叙事）
 

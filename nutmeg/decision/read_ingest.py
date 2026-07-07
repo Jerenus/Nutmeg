@@ -23,39 +23,52 @@ def ingest_reads(payloads: list[dict], *, store, factors: list) -> list[str]:
         if errs:
             errors.append(f"{read.read_id}: {'; '.join(errs)}")
             continue
-        # 真判读取代同场的市场基线 shadow(顺序无关的去重守卫):一场只留一条 Read。
+        # 真判读取代同场同市场的市场基线 shadow(顺序无关的去重守卫):
+        # 一场一市场只留一条 Read。按 (match_id, market) 去重——had 判读不误删 ttg shadow。
         if not read.shadow:
             for existing in store.load(Read):
                 if (existing.match_id == read.match_id and existing.shadow
+                        and existing.market == read.market
                         and existing.read_id != read.read_id):
                     store.remove(Read, existing.read_id)
         store.upsert(read)
     return errors
 
 
-def backfill_shadows(store, *, run_date: str, made_at: str) -> int:
-    """对当日有读时快照但无非 shadow Read 的场,补 belief=prior 的影子 Read。
+# backfill 覆盖的市场轴:had(方向)+ ttg(进球,2026-07-07 用户定:进球轴判断也要进
+# Brier 双轴检验,shadow 起步攒样本)。快照缺该市场 fair(如欧赔源无 ttg)→ 该轴自然跳过。
+_SHADOW_MARKETS = ("had", "ttg")
 
-    幂等:已有任何 Read（含 shadow）的 match_id 跳过。返回新建 shadow 数。
+
+def _shadow_read_id(match_id: str, market: str) -> str:
+    # had 保留历史 id 形状(R-shadow-<match>),新增市场轴带市场名后缀区分。
+    return f"R-shadow-{match_id}" if market == "had" else f"R-shadow-{market}-{match_id}"
+
+
+def backfill_shadows(store, *, run_date: str, made_at: str) -> int:
+    """对当日有读时快照但无 Read 的 (场, 市场),补 belief=prior 的影子 Read。
+
+    幂等:该 (match_id, market) 已有任何 Read（含 shadow）则跳过。返回新建 shadow 数。
     """
     prefix = f"M-{run_date}-"
     snaps_by_match: dict[str, list] = {}
     for s in store.load(MarketSnapshot):
         if s.match_id.startswith(prefix) and s.kind == "read_time":
             snaps_by_match.setdefault(s.match_id, []).append(s)
-    judged = {r.match_id for r in store.load(Read)}
+    judged = {(r.match_id, r.market) for r in store.load(Read)}
     made = 0
     for match_id, snaps in sorted(snaps_by_match.items()):
-        if match_id in judged:
-            continue
-        prior, anchor = resolve_prior(snaps, market="had")
-        if prior is None:
-            continue
-        store.upsert(Read(
-            read_id=f"R-shadow-{match_id}", match_id=match_id,
-            snapshot_id=anchor.snapshot_id, made_at=made_at, judge="shadow",
-            market="had", prior=dict(prior), belief=dict(prior),
-            factors=[], confidence=1, shadow=True, note="市场基线影子",
-        ))
-        made += 1
+        for market in _SHADOW_MARKETS:
+            if (match_id, market) in judged:
+                continue
+            prior, anchor = resolve_prior(snaps, market=market)
+            if prior is None:
+                continue
+            store.upsert(Read(
+                read_id=_shadow_read_id(match_id, market), match_id=match_id,
+                snapshot_id=anchor.snapshot_id, made_at=made_at, judge="shadow",
+                market=market, prior=dict(prior), belief=dict(prior),
+                factors=[], confidence=1, shadow=True, note="市场基线影子",
+            ))
+            made += 1
     return made
