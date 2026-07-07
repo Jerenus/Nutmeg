@@ -1,10 +1,14 @@
 # JCZQ 评判员深研决策流程（混合玩法 / 状态+战意）
 
-> 这是 Nutmeg JCZQ **评判员/创作层**的可复制 runbook，迭代自 `docs/jczq-decision-skeleton.md`
-> （那份只覆盖引擎层）。落地于 2026-06-21（西/沙·比/伊·乌/佛·新/埃 四场 MD2 全程边做边纠错）。
+> ⚠️ **命令面注记（2026-07-07 M2）**：命令面已于 2026-07-07 迁到决策本体五动词
+> （decision-am/read/close/settle），本文命令以 CLAUDE.md「JCZQ 每日决策 SOP」为准；
+> 文中残留的旧引擎叙述（jczq-today §A 票面 / bold-review 等）均为历史语境，引擎已删。
 >
-> **定位**：引擎层（`jczq-today` §A 票面）是确定性、勿改腿；本流程是其上的**深研判读层**，
-> 对应 SOP 第 6 条 (b) 的展开。世界杯窗口（2026-06-11~07-19）或用户要"深度分析/混合投注组合"时**默认进入**。
+> 这是 Nutmeg JCZQ **评判员/创作层**的可复制 runbook，迭代自 `docs/jczq-decision-skeleton.md`
+> （那份只覆盖已删的引擎层）。落地于 2026-06-21（西/沙·比/伊·乌/佛·新/埃 四场 MD2 全程边做边纠错）。
+>
+> **定位**：本流程是决策本体判读步骤（CLAUDE.md SOP 步骤 2）的**深研展开**。
+> 世界杯窗口（2026-06-11~07-19）或用户要"深度分析/混合投注组合"时**默认进入**。
 > 复现单位 = `jczq-match-analyst` agent（逐场）+ 主循环编排。
 
 ---
@@ -17,7 +21,7 @@
   挖最弱的那条腿（用新的工具调用取证）→ 诚实纠错 → 重判**。今天的质量（西班牙打穿辨析、比利时实证
   打脸、埃及让负修正、状态≠战意）全来自这些来回回合，**不是任何单个脚本/agent 一次产出的**。
 - **工具/脚本/agent 只做三件支撑**，判断永远不烤进脚本：
-  1. **取现有数据**：体彩子盘 / `bold_odds.json` / `bold-review.json` / 快照（用当前 fetch 函数）。
+  1. **取现有数据**：体彩子盘 / `bold_odds.json` / `bold-review.json`（历史账，bold-review 引擎已删不再产出）/ 快照（用当前 fetch 函数）。
   2. **采集外部信息**：WebSearch/WebFetch + `jczq-match-analyst` agent（模型主动调用拿新鲜事实）。
   3. **确定性算术**：组合赔率 × 命中 × 期望——**只为执行"禁嘴算"纪律**，不是替代判断。
 - **模型用最新版**：主循环 + 派出的 agent 都跑最新/最强 Claude（agent frontmatter `model: opus`），
@@ -27,18 +31,19 @@
 
 ---
 
-## 触发（任一 → 进入本流程，在引擎 SOP 之后）
+## 触发（任一 → 进入本流程，在 SOP 步骤 1 数据底座之后）
 
 - "今天四场（世界杯）深度分析" / "混合投注组合" / "为每场找合适的投注方法"
 - "高赔/可实现高赔组合" / "X 串 Y 方案" / "审核我的方案"
-- 世界杯窗口内的任何 JCZQ 决策（默认叠加在引擎 SOP 上）
+- 世界杯窗口内的任何 JCZQ 决策（默认叠加在 CLAUDE.md SOP 上）
 
 ---
 
 ## 七阶段流程
 
-### Phase 0 · 引擎底座（沿用 SOP）
-跑 `jczq-today`，读 `today-packet.md`。**§A 票面=确定性勿改腿**；本流程只在判读/组合层展开，与引擎注金永不合账。
+### Phase 0 · 数据底座（沿用 SOP）
+跑 `decision-am`（launchd 08:00 已自动，手动补跑见 CLAUDE.md SOP 步骤 1），读决策 store
+当日 Match+Snapshot。**decision-am 只备数据底座、不出判断**；本流程只在判读/组合层展开。
 
 ### Phase 1 · 盘口与赔率底座（数据纪律的来源）
 - **国际去水 fair**：读 `.nutmeg-data/jczq/daily/<date>/bold_odds.json`（1X2 + 大小球，已去水）。
@@ -77,7 +82,8 @@
   DC 矩阵显示**单一净胜模态 ≥35%** 时允许（"恰净胜 N"窄带玩法如 090 让平+2 属禁区）。
 
 ### Phase 4 · 失败教训过滤 + 人性
-- 扫近 `bold-review.json` 的**腿级按玩法命中率**（`bold_tickets[].legs[]` 的 market/hit）。
+- 扫近 `bold-review.json` 的**腿级按玩法命中率**（`bold_tickets[].legs[]` 的 market/hit）
+  （历史账，bold-review 引擎已删不再产出——存量文件仍是失败教训数据源）。
 - 套用硬教训（见"失败教训"节）。
 - **盘口=大众心理镜子**：value 在大众偏好的反面。
 - ⚠️ **教训的适用范围要对准生成过程（2026-07-06）**："平局收割 0/67"是**引擎平局串票**的
@@ -97,40 +103,44 @@
 
 | 桶 | 上限 | 说明 |
 | --- | --- | --- |
-| 引擎档 A/B/D/E | 按引擎自身输出（当前 ≤¥100×multiplier） | **不因总盘变大而加注**——引擎 40 票 2 中已实证，¥400 的增量一分不给引擎 |
+| 引擎档 A/B/D/E（已删，此行历史） | — | **不因总盘变大而加注**——引擎 40 票 2 中已实证；2026-07-07 引擎随 M2 下葬，此桶不再存在 |
 | 判读层·主方向单关 | ≤¥100 | had 模态方向，conf≥4 才上钱；单注 ≤¥50 |
 | 判读层·让球双选对冲 | ≤¥100 | 铁桶悬殊场保护（让平+让负 型，087 模式）；hhad 单关需 DC 单一净胜模态 ≥35% |
 | 判读层·平局单关试运行 | ≤¥40 | tag `draw_single`，conf≥4、单注 ≤¥20，30 注后按 ledger 裁决 |
 | 判读层·复选/串关创作票 | ≤¥60 | Phase 5 组合（含高赔小额彩票位 ≤¥10） |
 
-- 每张判读层票都必须**结构化落 `predictions.json`**（见 Phase 7 schema），进 judge ledger 长期
-  对账——¥400 框架的意义就是**成本可核算**，没有入账的票等于没打。
+- 每张判读层票都必须**结构化落库**（Read 走 `decision-read`、腿走 `daily/<date>/legs.json`，
+  见 Phase 7 schema），进决策 store 长期对账——¥400 框架的意义就是**成本可核算**，
+  没有入账的票等于没打。
 - 传统足彩（胜负彩/任九）独立记账：**每期 ¥400 复式预算**，见 CLAUDE.md「zucai」节。
 
 ### Phase 6 · 对抗验证（诚实纠错）
 - **挖最关键/最弱的那条腿**（例："这支强队打这类对手历史净胜够吗？"→ 查史实）。
 - 改判要说**"什么变了、为什么"**；别在浅层证据上来回摆（flip-flop 是大忌）。
 - 提交前再验一遍最弱腿。
-- **A 档否决限权（2026-07-06 落库）**：引擎 A 档是唯一有结构 edge 主张的档。判读层建议
-  "A 整张不买"**只允许信息面理由**（实名伤停/轮换/战意变化级证据），**禁止用价格/EV 语言**
-  （"隐含 62%>fair 55%"型——7/04 用这个否决了 A，A 2/2 中 @2.75；违反"判读层只判走向"定调）。
-  B/D/E 否决不受此限（7/03 否决 B 是对的）。每次 A-veto 在 `judgment-answers.json` 里标
-  `a_veto: true`，单独累计对错。
+- **跟市场否决限权（2026-07-06 教训，原"A 档否决限权"——引擎档已删，按 CLAUDE.md 硬约束 e
+  继承）**：对"跟市场/低赔正路"判断的否决**只允许信息面理由**（实名伤停/轮换/战意变化级
+  证据），**禁止用价格/EV 语言**（"隐含 62%>fair 55%"型——7/04 用这个否决了引擎 A 票，
+  A 2/2 中 @2.75；违反"判读层只判走向"定调）。此类否决在 Read 的 `note` 里标注，
+  单独累计对错。
 
 ### Phase 7 · 收尾
-- 写 `judgment-answers.json` + `predictions.json`（schema 见 SOP 第 6 条）。
-- ⚠️ **`opinion_ticket` 必须是结构化 dict，绝不写字符串**（6/28 字符串票面曾把整日判定
-  弄丢成 absent）。必填：`match_no / market("had"|"hhad") / pick("home"|"draw"|"away") /
-  odds / stake_yuan`；hhad 票**必带 `line`**（体彩 3 路让球线，如 -1、+2）——没有 line 的
-  hhad 票 ledger 无法自动对账。多张票时主票走 `opinion_ticket`，其余在 `judgment-answers`
-  final_note 里同 schema 列出（tag: `had_modal` / `hhad_cover` / `draw_single` / `parlay`）。
+- 判读落 `decision-read`（结构化 Read JSON 数组，schema 见 CLAUDE.md SOP 步骤 2；
+  偏移带命名 factor + 证据 URL + falsifier，跟市场则 belief=prior）。
+- 最优玩法写 `daily/<date>/legs.json`（`{match_id, market, selection, odds, bucket, line?}`，
+  bucket ∈ main/hedge/draw/parlay，空 legs = 空票合法）。
+- ⚠️ **Read/legs 必须是结构化 JSON，绝不写字符串票面**（6/28 字符串票面曾把整日判定
+  弄丢成 absent）；hhad leg **必带 `line`**（体彩 3 路让球线，如 -1、+2）——没有 line 的
+  hhad 票无法自动对账。
 - **这一步不可跳过**：7/05（巴西出局大冷日）漏做收尾 → 判读链断档、ledger 记 absent。
-  收尾三件套 = 答 §C → predictions.json → jczq-report 推送，缺一即当日缺席。
-- **手机友好 PDF**：reportlab + 系统 CJK 字体（`NutmegCJK`，见 `jczq_final_plan_pdf._register_cjk_font`），
-  窄竖版 `pagesize=(112*mm, ~235*mm)`、大字号、表格+卡片；
-  经 `TelegramBotClient(token).send_document(chat_id, document_path, caption)` 推送
+  收尾三件套 = 判读落 `decision-read` → 写 legs.json → `decision-close` 推送，缺一即当日缺席。
+- **手机友好 PDF**：由 decision-close 内的 report 段渲染（reportlab + 系统 CJK 字体
+  `NutmegCJK`，注册逻辑自包含在 `nutmeg/decision/report.py`），窄竖版 112mm、大字号、
+  表格+卡片；经 `TelegramBotClient(token).send_document(chat_id, document_path, caption)` 推送
   （env `NUTMEG_TELEGRAM_BOT_TOKEN` / `NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS`）。
-- 跑 `jczq-report --date today --dispatch-telegram --no-dry-run`（引擎日报，沿用 SOP）。
+- 跑 `decision-close --run-date <date> --output-dir .nutmeg-data/jczq --dispatch-telegram
+  --no-dry-run`（capture-closing → express 出票 → report PDF → Telegram；launchd 19:00
+  已自动，人工判读完 legs 后手动跑）。
 
 ---
 
@@ -180,10 +190,10 @@
 | 体彩全玩法子盘 | `SportteryJczqCalculatorProvider().fetch()` (WAF-aware) |
 | 国际去水 fair | `daily/<date>/bold_odds.json` |
 | 逐场深研 | `jczq-match-analyst` agent（web，每场一个，并行） |
-| 失败教训腿级数据 | `daily/<date>/bold-review.json` 的 `bold_tickets[].legs[]` |
-| 手机 PDF | reportlab + `NutmegCJK` + 112mm 窄竖版 |
+| 失败教训腿级数据 | `daily/<date>/bold-review.json` 的 `bold_tickets[].legs[]`（历史账，bold-review 引擎已删不再产出） |
+| 手机 PDF | reportlab + `NutmegCJK` + 112mm 窄竖版（自包含在 `nutmeg/decision/report.py`） |
 | 推送 | `TelegramBotClient.send_document` |
-| 落库 | `predictions.json` / `judgment-answers.json` / `wc-*.pdf` |
+| 落库 | `decision-read`（Read → reads.jsonl）/ `daily/<date>/legs.json` / decision-close PDF |
 
 > 关联：`CLAUDE.md` / `AGENTS.md` SOP · `docs/jczq-decision-skeleton.md`（引擎层骨架）·
 > `docs/jczq-decision-chain-critique.md`（根因）· spec §30 校准纪律。

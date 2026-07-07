@@ -8,9 +8,9 @@ repos:
         entry: uv run ruff check --force-exclude
         language: system
         types: [python]
-      - id: pytest-touched-wc
-        name: pytest (worldcup/jczq fast subset when touched)
-        entry: bash -c 'uv run pytest tests/test_wc_judge_ledger.py tests/test_wc_predictions.py tests/test_wc_results.py tests/test_jczq_tiered_review.py -q'
+      - id: pytest-touched-decision
+        name: pytest (decision ontology subset when touched)
+        entry: bash -c 'uv run pytest tests/decision/ -q'
         language: system
-        files: ^nutmeg/services/(worldcup/|jczq_tiered)
+        files: ^nutmeg/decision/
         pass_filenames: false

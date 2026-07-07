@@ -1,8 +1,9 @@
-# 决策本体系统 · 每日影子运行 runbook（M1 运营）
+# 决策本体系统 · 每日影子运行 runbook（M1 运营 → M2 已转正）
 
-> 2026-07-06 起。新决策本体（`nutmeg/decision/`）与现有 jczq SOP **并行影子运行**——
-> 每日判读落新本体、CLV 轴积累数据，**不动现 SOP/launchd**（M2 才切）。数据落
-> `.nutmeg-data/jczq/decision/{matches,snapshots,reads,factors,settlements,verdicts}.jsonl`。
+> 2026-07-06 M1 影子运行起步；**M2 已于 2026-07-07 完成切换**——决策本体（`nutmeg/decision/`）
+> 即唯一 live 系统，旧 SOP/launchd 已下葬，launchd 现挂 decision-am/close/settle 三段
+> （见文末"与现系统的边界"）。数据落
+> `.nutmeg-data/jczq/decision/{matches,snapshots,reads,factors,settlements,tickets,verdicts}.jsonl`。
 
 ## 每日序列（顺序纪律：判读 → 补 shadow，绝不反向）
 
@@ -34,7 +35,9 @@ uv run nutmeg decision-sense --run-date $TODAY --output-dir $OUT \
 uv run nutmeg decision-read --reads-file <today-reads.json> --output-dir $OUT
 
 # ③ 补 shadow(市场基线,belief=prior;只补②未判场)
-#    (M1 暂用脚本/后续加 CLI;当前 backfill_shadows 供代码调用)
+#    decision-backfill CLI 已就绪(decision-am 编排内含;单独补跑用下行)
+uv run nutmeg decision-backfill --run-date $TODAY --output-dir $OUT \
+  --made-at "${TODAY}T16:00:00+08:00"
 
 # ④ 近开赛收盘欧赔(需 NUTMEG_API_FOOTBALL_KEY;缺则该场 CLV=null)
 uv run nutmeg decision-capture-closing --run-date $TODAY --output-dir $OUT \
@@ -66,9 +69,10 @@ uv run nutmeg decision-calibrate --as-of $(date +%Y-%m-%d) --output-dir $OUT
 
 ## 与现系统的边界
 
-- **只增不改**：现 jczq SOP（jczq-today/tiered/report + 6 个活 launchd）照跑，本影子运行
-  纯新增，互不干扰。M2（7/19 世界杯后）才把 SOP/launchd 切到五动词、下葬旧机器。
-- 数据分离：新本体在 `.nutmeg-data/jczq/decision/`；现系统数据不受影响。
+- **M2 已于 2026-07-07 完成**：旧 SOP/launchd（jczq-today/tiered/report 等引擎命令）已下葬，
+  决策本体即唯一 live 系统。launchd 现挂三段：decision-am（08:00 数据入库+基线）/
+  decision-close（19:00 出票+报告推送）/ decision-settle（次晨 08:10 结算+校准）。
+- 数据位置：本体数据在 `.nutmeg-data/jczq/decision/`；`daily/<date>/` 存原始盘口快照与 legs.json。
 
 > 关联：spec `docs/superpowers/specs/2026-07-06-decision-ontology-design.md` · M1 计划
 > `docs/superpowers/plans/2026-07-06-decision-ontology-m1.md` · 记忆 `decision-ontology-design`。

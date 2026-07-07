@@ -355,22 +355,24 @@ Live provider acceptance is explicit and fails fast without required keys:
 NUTMEG_API_FOOTBALL_KEY=... bash scripts/acceptance.sh --live --league epl --past-days 7
 ```
 
-## JCZQ Daily Brief, Debate, and Final Plan
+## JCZQ Daily Decision Workflow (Decision Ontology)
+
+The live JCZQ path is the decision-ontology five-verb loop
+(sense/read/express/reconcile/calibrate). The legacy brief/debate/tiered/bold
+engines were removed in the 2026-07-07 M2 cutover.
 
 ```bash
-uv run nutmeg jczq-daily-brief --write .nutmeg-data/jczq/daily/$(date +%F)/brief.md
-uv run nutmeg jczq-debate-init --date today --output-dir .nutmeg-data/jczq --format json
-uv run nutmeg jczq-second-leg --date today --auto --top 8
-uv run nutmeg jczq-debate-finalize --date today --output-dir .nutmeg-data/jczq --format json
-uv run nutmeg jczq-final-plan-pdf --date today --output-dir .nutmeg-data/jczq
-python3 scripts/openclaw/nutmeg_command_router.py jczq-daily-advisor --provider live --date today --print-command
+# 1. Morning data ingest + market-baseline shadows (launchd 08:00)
+uv run nutmeg decision-am --run-date $(date +%F) --output-dir .nutmeg-data/jczq
+# 2. Claude judges each match in the main loop, then lands structured Reads
+uv run nutmeg decision-read --reads-file <reads.json> --output-dir .nutmeg-data/jczq
+# 3. Closing capture -> tickets from daily/<date>/legs.json -> PDF report (launchd 19:00; no legs.json = legal empty slate)
+uv run nutmeg decision-close --run-date $(date +%F) --output-dir .nutmeg-data/jczq
+# 4. Next-day settlement: Brier/CLV scoring + factor calibration + review report (launchd 08:10)
+uv run nutmeg decision-settle --run-date <yesterday> --output-dir .nutmeg-data/jczq
 ```
 
-The current JCZQ workflow is the brief → debate workspace → human finalization
-→ PDF path. `jczq-mixed-report --provider live` is retired and exits with
-guidance to this workflow; `--provider sample` remains only for historical
-smoke tests. The legacy OpenClaw router intentionally exposes only supported
-betting assistant actions and rejects retired non-betting content/video/WeChat/
-Seedance actions instead of fabricating commands. Project-level `nutmegbot`
-may still work freely on the codebase. Nutmeg remains analysis assistance only:
-no bet placement, no sportsbook connection, and no guaranteed-profit claims.
+`decision-close` and `decision-settle` default to dry-run; Telegram delivery
+requires an explicit `--dispatch-telegram --no-dry-run`. Nutmeg remains
+analysis assistance only: no bet placement, no sportsbook connection, and no
+guaranteed-profit claims.

@@ -1,61 +1,63 @@
 ---
 name: verify
-description: Nutmeg 项目端到端验证配方——改动 jczq/worldcup/zucai 代码后，除单测外还要驱动真实链路（replay 决策包、ledger 对账、tiered 复盘）观察行为
+description: Nutmeg 项目端到端验证配方——改动 nutmeg/decision 决策本体代码后，除单测外还要驱动真实链路（decision-am 快照回放、decision-settle 结算链、decision-close 出票链）观察行为
 ---
 
 # Nutmeg 项目验证（/verify 的项目配方）
 
 改动不同子系统时，跑对应的真实链路（不是只跑单测）。全部命令在 repo 根目录执行。
+2026-07-07 M2 切换后唯一 live 链路 = 决策本体五动词（decision-am/read/close/settle）；
+旧 jczq-today/tiered/report/judge-reconcile 配方已随命令下葬。
 
 ## 1. 通用（任何 nutmeg/ 代码改动）
 
 ```bash
 uv run ruff check .            # 必须 All checks passed
-uv run pytest -q               # 期望 0 failed（≈1200 用例，约 4 分钟）
+uv run pytest -q               # 期望 0 failed（≈700 用例）
 ```
 
-只想快验相关模块时用 pre-commit 同款子集：
-`uv run pytest tests/test_wc_judge_ledger.py tests/test_wc_predictions.py tests/test_wc_results.py tests/test_jczq_tiered_review.py -q`
+只想快验决策本体时用 pre-commit 同款子集：
+`uv run pytest tests/decision/ -q`
 
-## 2. jczq 决策链（jczq_tiered / jczq_today / packet 相关）
+## 2. 决策日循环 replay（sense/backfill/入库相关）
 
 ```bash
-# 从已存快照回放,不打外网、不写盘——观察 §A 票面/§C 问题是否合理生成
-uv run nutmeg jczq-today --replay $(ls .nutmeg-data/jczq/daily | tail -1) | head -80
+# 拷生产快照到临时目录回放,不碰生产 store
+D=<近两天某日>; TMP=$(mktemp -d)
+mkdir -p "$TMP/daily/$D" && cp .nutmeg-data/jczq/daily/$D/*.json "$TMP/daily/$D/"
+uv run nutmeg decision-am --run-date $D --output-dir "$TMP"        # D=今天/断网时
+# ⚠️ D 是历史日期且网络可达时,decision-am 内的 fetch 会重抓今日盘覆盖已拷快照
+#    (sense 得 0 场)——历史日期改跑两段回放(已实测 4 场入库+4 shadow):
+uv run nutmeg decision-sense --run-date $D --output-dir "$TMP" --taken-at "${D}T15:00:00+08:00"
+uv run nutmeg decision-backfill --run-date $D --output-dir "$TMP" --made-at "${D}T16:00:00+08:00"
 ```
 
-回放日无快照时换一个近期日期。**看点**：A/B/D/E 档结构、主题汰留警告行、§C q_id 列表。
+fetch 失败是 best-effort（离线合法），sense 从已拷快照回放。**看点**：
+`$TMP/decision/matches.jsonl` 带 competition/实体 id、backfill 补的 shadow 条数、
+teams/leagues 实体种子落盘。
 
-## 3. 世界杯判读/对账链（worldcup/*、judge_ledger、predictions）
+## 3. 结算链（reconcile/calibrate/scoring 相关）
 
 ```bash
-# 幂等全量重对账 + 摘要行(picks 判定率/票 pnl/pending)
-uv run nutmeg jczq-judge-reconcile
+# 同一临时目录接着跑;默认 dry,不推送
+uv run nutmeg decision-settle --run-date $D --output-dir "$TMP"
 ```
 
-**看点**：`pending=0`（世界杯窗口内、赛果就绪时）；ticket pnl 数字变化要能解释。
-改了 hhad 评分/匹配逻辑后，抽查 `.nutmeg-data/jczq/wc2026/judge-ledger.jsonl` 里
-一张 hhad 票的 `line / ticket_outcome / pnl_yuan` 是否与比分手推一致。
+**看点**：Read + Ticket 两类 Settlement 落库、`calibration-panel-<date>.md` 正常渲染
+（含参与精度小节）、`factors.jsonl` 的 scope 字段。
 
-## 4. tiered 复盘链（jczq_tiered_review）
+## 4. 出票链（express/report/PDF 相关）
 
 ```bash
-uv run nutmeg jczq-tiered-review --date <近两天某日>   # 默认 dry,不推送
+# 无 daily/<date>/legs.json = 空票,合法;默认 dry,不推送
+uv run nutmeg decision-close --run-date $D --output-dir "$TMP"
+ls "$TMP"/daily/$D/*.pdf
 ```
 
-**看点**：腿级 actual/hit 填充、`tiered-plan-history.json` 同日替换（不重复追加）。
-
-## 5. PDF/推送链（report_pdf / telegram）
-
-```bash
-uv run nutmeg jczq-report --date today   # 不带 --dispatch-telegram = 只落盘
-ls -la .nutmeg-data/jczq/daily/$(date +%F)/*.pdf
-```
-
-**看点**：PDF 正常渲染（CJK 字体不缺字）。推送验证必须用户明确要求才加
-`--dispatch-telegram --no-dry-run`。
+**看点**：PDF 正常落盘渲染（CJK 字体不缺字）。
 
 ## 红线
 
-- 验证命令一律 dry/replay 优先；任何 `--no-dry-run` 推送都是对外动作，先问用户。
+- 验证命令一律 dry/replay 优先（临时目录回放）；任何 `--dispatch-telegram --no-dry-run`
+  推送都是对外动作，必须用户明确要求才加。
 - `.nutmeg-data` 是生产数据：验证时只读或走幂等命令，不手改（修数据要留 note 字段）。
