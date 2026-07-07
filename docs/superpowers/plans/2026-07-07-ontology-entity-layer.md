@@ -1016,7 +1016,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/decision/calibrate.py:55-88`（run_calibrate）、`calibrate.py:157-196`（apply_verdicts）
 - Test: `tests/decision/test_calibrate.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/decision/test_calibrate.py` 末尾追加：
 
@@ -1064,12 +1064,12 @@ def test_apply_verdicts_ignores_diagnostic_subverdicts(tmp_path):
     assert fac.status == "probation"                       # 不受子判决影响
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/decision/test_calibrate.py -v`
 Expected: 第一个新测试 FAIL（无 `@` 子判决）；第二个可能已 PASS（`factors.get` miss 天然跳过）——仍要显式守卫（防未来 factor_id 撞 `@`）
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `nutmeg/decision/calibrate.py` — `run_calibrate` 的因子归集与判决构建改为：
 
@@ -1108,12 +1108,12 @@ Expected: 第一个新测试 FAIL（无 `@` 子判决）；第二个可能已 PA
 
 （`render_panel` 无需改动：`run_calibrate` 输出已按 id 字典序，`league_bias` 后紧跟 `league_bias@...` 子行，面板天然分组显示。）
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/decision/test_calibrate.py tests/decision/test_m1_calibrate.py tests/decision/test_factor_lifecycle.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run decision suite + commit**
+- [x] **Step 5: Run decision suite + commit**
 
 ```bash
 uv run pytest -q tests/decision/

@@ -78,11 +78,22 @@ def run_calibrate(store, *, as_of: str) -> list:
         }
         for f in read.factors:
             fid = f.get("factor_id")
-            if fid:
-                per_factor.setdefault(fid, []).append(entry)
+            if not fid:
+                continue
+            per_factor.setdefault(fid, []).append(entry)
+            # scope_key 引用 → 追加 factor_id@scope_key 诊断桶(实体层提案 §P3:
+            # 证据分辨率,非生死状态机;复合 id 防 store upsert-by-id clobber)
+            sk = f.get("scope_key")
+            if sk:
+                per_factor.setdefault(f"{fid}@{sk}", []).append(entry)
 
-    verdicts = [factor_verdict(fid, entries, as_of=as_of)
-                for fid, entries in sorted(per_factor.items())]
+    from dataclasses import replace as _replace
+    verdicts = []
+    for fid, entries in sorted(per_factor.items()):
+        v = factor_verdict(fid, entries, as_of=as_of)
+        if "@" in fid:                       # 子判决只做诊断,永不 retire/keep
+            v = _replace(v, recommendation="diagnostic")
+        verdicts.append(v)
     for v in verdicts:
         store.upsert(v)
     return verdicts
@@ -174,6 +185,8 @@ def apply_verdicts(store, verdicts) -> dict:
     retired: list[str] = []
 
     for fid, v in vmap.items():
+        if "@" in fid or v.recommendation == "diagnostic":
+            continue                          # 诊断子判决永不驱动生死(提案复核修正)
         f = factors.get(fid)
         if f is None or f.status == "retired":
             continue
