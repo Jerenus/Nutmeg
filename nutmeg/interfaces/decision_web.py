@@ -121,4 +121,23 @@ def create_decision_app(*, store: DecisionStore, output_dir) -> FastAPI:
                         obj_id="legs", result=f"{len(legs)} 腿 → legs.json")
         return {"ok": True, "legs": len(legs)}
 
+    from nutmeg.decision.workbench import append_user_message, read_events
+
+    @app.post("/thread")
+    def thread_post(payload: dict = Body(...)) -> Any:  # noqa: B008
+        """§3.5:浏览器追问 → user_message 事件(obj_id 锚定)。终端 agent 监视
+        文件后回应(写 agent_reply/read_draft),浏览器经 /events 拉回。"""
+        date = payload.get("date", _today())
+        append_user_message(output_dir, date, obj_id=payload["obj_id"],
+                            text=payload["text"], at=payload.get("at", ""))
+        return {"ok": True}
+
+    @app.get("/events")
+    def events(date: str, since: int = 0) -> dict:
+        """轮询式事件拉取(SSE 的 HTTP 后备;前端 app.js 用 EventSource 或轮询)。
+        返回 since 之后的新事件与新游标。"""
+        evs = read_events(output_dir, date, since=since)
+        cursor = evs[-1]["seq"] if evs else since
+        return {"events": evs, "cursor": cursor}
+
     return app

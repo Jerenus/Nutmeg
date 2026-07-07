@@ -639,7 +639,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/interfaces/decision_web.py`（加 `/thread` + `/events` SSE）
 - Test: `tests/test_decision_web.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/test_decision_web.py` 末尾追加：
 
@@ -666,12 +666,12 @@ def test_events_endpoint_returns_new_since(tmp_path):
     assert data["cursor"] == 2
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_decision_web.py -v`
 Expected: 2 个新测试 FAIL（404）
 
-- [ ] **Step 3: Implement /thread + /events**
+- [x] **Step 3: Implement /thread + /events**
 
 `nutmeg/interfaces/decision_web.py` — `return app` 前追加：
 
@@ -698,12 +698,12 @@ Expected: 2 个新测试 FAIL（404）
 
 > 说明：v1 用**轮询式 /events**（前端 app.js 每 2s 拉 `?since=cursor`）而非长连 SSE——TestClient 可断言、无需 async 流、与"文件被终端 agent 写"天然解耦。spec 称 SSE 是交付语义（实时增量推送），轮询是其最简实现；若后续要真 SSE，端点契约不变（同一 `read_events(since=)`）。
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_decision_web.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run suite + commit**
+- [x] **Step 5: Run suite + commit**
 
 ```bash
 uv run pytest -q

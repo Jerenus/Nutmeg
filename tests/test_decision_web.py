@@ -102,3 +102,25 @@ def test_reject_read_is_recorded_not_stored(tmp_path):
     assert r.status_code == 200
     # reject 用当天日期留痕(date 从 payload 或 today);此处断言留痕存在
     assert r.json()["ok"] is True
+
+
+def test_thread_post_appends_user_message(tmp_path):
+    client, out, date = _app(tmp_path)
+    r = client.post("/thread", json={"date": date, "obj_id": "O1",
+                                     "text": "为什么压平不压主胜？"})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    from nutmeg.decision.workbench import read_events
+    evs = [e for e in read_events(out, date) if e["kind"] == "user_message"]
+    assert evs and evs[0]["obj_id"] == "O1" and "压平" in evs[0]["text"]
+
+
+def test_events_endpoint_returns_new_since(tmp_path):
+    """SSE 拉取:/events?since=N 只回新事件(轮询式,便于 TestClient 断言)。"""
+    client, out, date = _app(tmp_path)
+    from nutmeg.decision.workbench import append_event
+    append_event(out, date, {"kind": "attention", "id": "A1"})
+    append_event(out, date, {"kind": "agent_reply", "obj_id": "O1", "text": "铁桶压净胜"})
+    r = client.get(f"/events?date={date}&since=1")
+    data = r.json()
+    assert [e["kind"] for e in data["events"]] == ["agent_reply"]
+    assert data["cursor"] == 2
