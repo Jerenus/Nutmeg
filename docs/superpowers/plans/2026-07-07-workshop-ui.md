@@ -858,7 +858,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/interfaces/web/static/decision/app.js`（窄屏 Tab 切换）
 - Test: 视觉验证（Task 9 verify skill 中截图），此 Task 单测覆盖 Tab 标记存在
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_decision_web.py` 末尾追加：
 
@@ -872,12 +872,12 @@ def test_mobile_tabs_markup_present(tmp_path):
         assert label in html
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_decision_web.py::test_mobile_tabs_markup_present -v`
 Expected: FAIL（无 `mtabs`）
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `workbench.html` — 在 `.wbbody` 前加移动 Tab 条（桌面 CSS `display:none`，窄屏显示）：
 
@@ -904,12 +904,12 @@ Expected: FAIL（无 `mtabs`）
 
 `app.js` — 加 Tab 切换：点 `.mtab` → 切 `.on`、给对应 `.col` 加/去 `.active`（桌面 media 外 `.active` 无副作用，因桌面三栏恒显）。默认 `flow` active。
 
-- [ ] **Step 4: Run test + 桌面回归**
+- [x] **Step 4: Run test + 桌面回归**
 
 Run: `uv run pytest tests/test_decision_web.py -v`
 Expected: 全 PASS（桌面三栏测试不回归——`.col` 在宽屏无 `display:none`）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 uv run pytest -q

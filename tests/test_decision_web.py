@@ -143,3 +143,12 @@ def test_附属页_all_render(tmp_path):
                          ("/ledger", "账本")]:
         r = client.get(path)
         assert r.status_code == 200 and marker in r.text
+
+
+def test_mobile_tabs_markup_present(tmp_path):
+    """窄屏三 Tab(议程/舞台/裁决)靠 CSS 折叠;标记须在 DOM(渐进增强)。"""
+    client, out, date = _app(tmp_path)
+    html = client.get(f"/?date={date}").text
+    assert 'class="mtabs"' in html
+    for label in ["议程", "舞台", "裁决"]:
+        assert label in html

@@ -226,3 +226,12 @@ body{
 .mtab.on{color:var(--cinnabar); border-bottom-color:var(--cinnabar); font-weight:700; background:var(--card)}
 .mtab .b{display:inline-block; min-width:15px; font-family:ui-monospace,Menlo,monospace; font-size:10px; background:var(--cinnabar); color:#fff; border-radius:99px; padding:0 4px; margin-left:3px; vertical-align:1px}
 .mtab .b:empty{display:none}
+
+/* 窄屏:三栏折叠为单列 Tab 切换(.mtab.on ↔ .col.active),桌面三栏恒显不受 .active 影响 */
+@media(max-width:720px){
+  .mtabs{display:flex}
+  .wbbody{grid-template-columns:1fr}
+  .col{display:none} .col.active{display:block}
+  .col.flow{border-right:none} .col.verdict{border-left:none}
+  .thread{position:sticky; bottom:0}
+}
