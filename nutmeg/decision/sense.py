@@ -17,37 +17,6 @@ from nutmeg.decision.ontology import Match
 logger = logging.getLogger(__name__)
 
 
-def sense_from_snapshot(run_date: str, *, output_dir, taken_at: str,
-                        store) -> int:
-    """已存 sporttery 快照 → MarketSnapshot + Match 入库。返回入库场数。"""
-    value = load_sporttery_snapshot(run_date, output_dir)
-    if value is None:
-        return 0
-    snaps = snapshots_from_sporttery(
-        value, run_date=run_date, taken_at=taken_at,
-        source="sporttery", kind="read_time",
-    )
-    from nutmeg.decision.entities import load_league_alias_table, load_team_alias_table
-
-    team_table = load_team_alias_table()
-    league_table = load_league_alias_table()
-    misses: set[str] = set()
-    for s in snaps:
-        # 从 value 里回捞队名建 Match(snapshot 已带 match_id)
-        m = _match_for_snapshot(s, value, run_date,
-                                team_table=team_table, league_table=league_table)
-        if m.home and m.home_team_id is None:
-            misses.add(m.home)
-        if m.away and m.away_team_id is None:
-            misses.add(m.away)
-        upsert_match_merged(store, m)
-        store.upsert(s)
-    if misses:   # 绝不静默:未命中照常入库(*_id=null),聚合一行可见
-        logger.info("sense resolve 未命中别名表(照常入库,*_id=null): %s",
-                    "、".join(sorted(misses)))
-    return len(snaps)
-
-
 def _match_for_snapshot(snapshot, value: dict, run_date: str, *,
                         team_table=None, league_table=None) -> Match:
     """按 canonical 反查队名/竞彩号/联赛名(snapshot.match_id 现为 canonical),
@@ -121,7 +90,6 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
 
     from nutmeg.decision.market_data import (
         euro_snapshot_from_bold_odds,
-        snapshots_from_sporttery,
     )
 
     value = load_sporttery_snapshot(run_date, output_dir)

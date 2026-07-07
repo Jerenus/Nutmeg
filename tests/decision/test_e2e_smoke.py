@@ -5,7 +5,7 @@ from nutmeg.decision.ontology import MarketSnapshot, Read
 from nutmeg.decision.read_validate import validate_read
 from nutmeg.decision.reconcile import settle_read
 from nutmeg.decision.scoring import brier
-from nutmeg.decision.sense import sense_from_snapshot
+from nutmeg.decision.sense import sense_day
 from nutmeg.decision.store import DecisionStore
 
 _BOARD = {"matchInfoList": [{"businessDate": "2026-07-08", "subMatchList": [{
@@ -20,9 +20,9 @@ def test_full_chain_on_snapshot(tmp_path):
     (daily / "sporttery_markets.json").write_text(json.dumps(_BOARD), encoding="utf-8")
     store = DecisionStore(tmp_path / "decision")
 
-    # sense
-    assert sense_from_snapshot("2026-07-08", output_dir=tmp_path,
-                               taken_at="2026-07-08T15:00:00+08:00", store=store) == 1
+    # sense(无 bold_odds.json → 欧赔优雅降级只落体彩)
+    assert sense_day("2026-07-08", output_dir=tmp_path,
+                     taken_at="2026-07-08T15:00:00+08:00", store=store) == 1
     snap = store.load(MarketSnapshot)[0]
     prior = snap.fair["had"]
 

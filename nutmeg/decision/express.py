@@ -31,12 +31,6 @@ def parlay_odds(odds: list[float]) -> float:
     return reduce(lambda a, b: a * b, odds, 1.0)
 
 
-def within_budget(channel: str, bucket: str, stake_yuan: float) -> bool:
-    budget = load_budget()
-    cap = budget.get(channel, {}).get(bucket)
-    return cap is not None and stake_yuan <= cap
-
-
 # ---------------------------------------------------------------------------
 # M1.5 express — 已声明投注腿 → Ticket(¥400 框架)。
 #

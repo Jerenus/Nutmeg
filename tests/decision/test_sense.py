@@ -2,7 +2,7 @@
 import json
 
 from nutmeg.decision.ontology import MarketSnapshot, Match
-from nutmeg.decision.sense import sense_from_snapshot
+from nutmeg.decision.sense import sense_day
 from nutmeg.decision.store import DecisionStore
 
 _BOARD = {"matchInfoList": [{"businessDate": "2026-07-08", "subMatchList": [{
@@ -14,13 +14,13 @@ _BOARD = {"matchInfoList": [{"businessDate": "2026-07-08", "subMatchList": [{
 
 
 def test_sense_persists_match_and_snapshot(tmp_path):
-    # 造一个已存 sporttery 快照
+    # 造一个已存 sporttery 快照(无 bold_odds.json → 欧赔优雅降级只落体彩)
     daily = tmp_path / "daily" / "2026-07-08"
     daily.mkdir(parents=True)
     (daily / "sporttery_markets.json").write_text(json.dumps(_BOARD), encoding="utf-8")
     store = DecisionStore(tmp_path / "decision")
-    n = sense_from_snapshot("2026-07-08", output_dir=tmp_path,
-                            taken_at="2026-07-08T15:00:00+08:00", store=store)
+    n = sense_day("2026-07-08", output_dir=tmp_path,
+                  taken_at="2026-07-08T15:00:00+08:00", store=store)
     assert n == 1
     assert len(store.load(Match)) == 1
     assert len(store.load(MarketSnapshot)) == 1
@@ -32,17 +32,17 @@ def test_sense_idempotent_on_rerun(tmp_path):
     daily.mkdir(parents=True)
     (daily / "sporttery_markets.json").write_text(json.dumps(_BOARD), encoding="utf-8")
     store = DecisionStore(tmp_path / "decision")
-    sense_from_snapshot("2026-07-08", output_dir=tmp_path,
-                        taken_at="2026-07-08T15:00:00+08:00", store=store)
-    sense_from_snapshot("2026-07-08", output_dir=tmp_path,
-                        taken_at="2026-07-08T15:00:00+08:00", store=store)
+    sense_day("2026-07-08", output_dir=tmp_path,
+              taken_at="2026-07-08T15:00:00+08:00", store=store)
+    sense_day("2026-07-08", output_dir=tmp_path,
+              taken_at="2026-07-08T15:00:00+08:00", store=store)
     assert len(store.load(MarketSnapshot)) == 1     # 幂等
 
 
 def test_sense_no_snapshot_returns_zero(tmp_path):
     store = DecisionStore(tmp_path / "decision")
-    assert sense_from_snapshot("2026-07-08", output_dir=tmp_path,
-                               taken_at="t", store=store) == 0
+    assert sense_day("2026-07-08", output_dir=tmp_path,
+                     taken_at="t", store=store) == 0
 
 
 def test_upsert_match_merged_preserves_resolved_ids_and_competition(tmp_path):

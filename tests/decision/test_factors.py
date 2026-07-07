@@ -1,5 +1,5 @@
 # tests/decision/test_factors.py
-from nutmeg.decision.factors import ACTIVE_CAP, active_factor_ids, load_seed_factors
+from nutmeg.decision.factors import ACTIVE_CAP, load_seed_factors
 
 
 def test_seed_has_six_probation_factors():
@@ -15,14 +15,16 @@ def test_seed_factors_carry_born_from():
     assert all(f.born_from for f in load_seed_factors())   # 出生证必填
 
 
-def test_active_ids_filters_status():
+def test_allowed_ids_filters_retired_only():
+    """allowed_factor_ids(Read 校验用):probation+active 可引用,retired 拒绝。"""
+    from nutmeg.decision.factors import allowed_factor_ids
     from nutmeg.decision.ontology import Factor
     factors = [
         Factor("a", "A", "d", "2026-07-06", "x", status="active"),
         Factor("b", "B", "d", "2026-07-06", "x", status="probation"),
         Factor("c", "C", "d", "2026-07-06", "x", status="retired"),
     ]
-    assert active_factor_ids(factors) == {"a"}
+    assert allowed_factor_ids(factors) == {"a", "b"}
 
 
 def test_active_cap_is_twelve():
