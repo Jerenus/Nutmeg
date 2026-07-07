@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from nutmeg.decision.anchor import resolve_prior
-from nutmeg.decision.factors import allowed_factor_ids
+from nutmeg.decision.factors import allowed_factor_ids, factor_scopes
 from nutmeg.decision.ontology import MarketSnapshot, Read
 from nutmeg.decision.read_validate import validate_read
 
@@ -15,10 +15,11 @@ from nutmeg.decision.read_validate import validate_read
 def ingest_reads(payloads: list[dict], *, store, factors: list) -> list[str]:
     """校验并落库 Claude 产出的 Read。返回错误串列表（空=全部落库）。"""
     allowed = allowed_factor_ids(factors)
+    scopes = factor_scopes(factors)
     errors: list[str] = []
     for payload in payloads:
         read = Read.from_dict(payload)
-        errs = validate_read(read, allowed_factors=allowed)
+        errs = validate_read(read, allowed_factors=allowed, factor_scopes=scopes)
         if errs:
             errors.append(f"{read.read_id}: {'; '.join(errs)}")
             continue

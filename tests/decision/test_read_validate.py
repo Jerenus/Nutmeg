@@ -60,3 +60,40 @@ def test_conf5_only_for_90min_direction():
                 prior={"1-1": 0.5, "0-0": 0.5}, belief={"1-1": 0.5, "0-0": 0.5},
                 factors=[])
     assert any("conf5" in e for e in validate_read(bad, allowed_factors=ALLOWED))
+
+
+def _mk_scoped_read(factors):
+    """weight_pp=4 与 belief−prior 偏移 4pp 一致(校验既有规则)。"""
+    from nutmeg.decision.ontology import Read
+    return Read(
+        read_id="R-scope", match_id="M-1", snapshot_id="S-1",
+        made_at="t", judge="claude", market="had",
+        prior={"home": 0.46, "draw": 0.27, "away": 0.27},
+        belief={"home": 0.42, "draw": 0.31, "away": 0.27},
+        factors=factors, confidence=3, shadow=False)
+
+
+def test_league_scope_factor_requires_scope_key():
+    from nutmeg.decision.read_validate import validate_read
+    read = _mk_scoped_read([{"factor_id": "league_bias", "direction": "draw",
+                             "weight_pp": 4, "evidence": [{"url": "u"}]}])
+    errs = validate_read(read, allowed_factors={"league_bias"},
+                         factor_scopes={"league_bias": "league"})
+    assert any("scope_key" in e for e in errs)
+
+
+def test_league_scope_factor_with_scope_key_passes():
+    from nutmeg.decision.read_validate import validate_read
+    read = _mk_scoped_read([{"factor_id": "league_bias", "direction": "draw",
+                             "weight_pp": 4, "scope_key": "swe-allsvenskan",
+                             "evidence": [{"url": "u"}]}])
+    assert validate_read(read, allowed_factors={"league_bias"},
+                         factor_scopes={"league_bias": "league"}) == []
+
+
+def test_factor_scopes_omitted_keeps_backward_compat():
+    """不传 factor_scopes(旧调用面)→ 不做 scope 校验,行为不变。"""
+    from nutmeg.decision.read_validate import validate_read
+    read = _mk_scoped_read([{"factor_id": "league_bias", "direction": "draw",
+                             "weight_pp": 4, "evidence": [{"url": "u"}]}])
+    assert validate_read(read, allowed_factors={"league_bias"}) == []

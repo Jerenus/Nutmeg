@@ -9,7 +9,8 @@ _DIRECTION_MARKETS = ("had", "hhad")
 _TOL = 1e-6
 
 
-def validate_read(read, *, allowed_factors: set[str]) -> list[str]:
+def validate_read(read, *, allowed_factors: set[str],
+                  factor_scopes: dict[str, str] | None = None) -> list[str]:
     errs: list[str] = []
 
     # 概率归一
@@ -33,6 +34,11 @@ def validate_read(read, *, allowed_factors: set[str]) -> list[str]:
                 errs.append(f"因子 {fid!r} 不在词典或已退休")
             if not f.get("evidence"):
                 errs.append(f"因子 {fid!r} 缺证据(非 shadow 必填)")
+            # team/league scope 因子引用必带 scope_key(实体层提案 §P3:
+            # calibrate 据此出 factor_id@scope_key 诊断性子判决)
+            scope = (factor_scopes or {}).get(fid)
+            if scope in ("team", "league") and not f.get("scope_key"):
+                errs.append(f"因子 {fid!r} scope={scope} 引用必须带 scope_key")
         # weight_pp 合计 ≈ belief−prior 的总偏移量(pp)
         moved = sum(abs(read.belief.get(k, 0.0) - read.prior.get(k, 0.0))
                     for k in read.prior) * 100 / 2

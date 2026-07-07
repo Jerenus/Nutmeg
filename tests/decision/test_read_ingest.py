@@ -61,3 +61,21 @@ def test_backfill_shadows_idempotent(tmp_path):
     backfill_shadows(store, run_date="2026-07-08", made_at="t2")
     n2 = backfill_shadows(store, run_date="2026-07-08", made_at="t3")
     assert n2 == 0                                           # 重跑不重复
+
+
+def test_ingest_rejects_league_factor_without_scope_key(tmp_path):
+    """ingest 用词典 scope 自动强制 scope_key(种子 league_bias=league scope)。"""
+    from nutmeg.decision.factors import load_seed_factors
+    from nutmeg.decision.read_ingest import ingest_reads
+    from nutmeg.decision.store import DecisionStore
+    payload = {
+        "read_id": "R-x", "match_id": "M-1", "snapshot_id": "S-1",
+        "made_at": "t", "judge": "claude", "market": "had",
+        "prior": {"home": 0.46, "draw": 0.27, "away": 0.27},
+        "belief": {"home": 0.42, "draw": 0.31, "away": 0.27},
+        "factors": [{"factor_id": "league_bias", "direction": "draw",
+                     "weight_pp": 4, "evidence": [{"url": "u"}]}],
+        "confidence": 3, "shadow": False}
+    store = DecisionStore(tmp_path)
+    errors = ingest_reads([payload], store=store, factors=load_seed_factors())
+    assert errors and "scope_key" in errors[0]

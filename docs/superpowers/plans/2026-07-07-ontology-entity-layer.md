@@ -885,7 +885,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/decision/read_ingest.py:15-22`
 - Test: `tests/decision/test_read_validate.py`, `tests/decision/test_read_ingest.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/decision/test_read_validate.py` 末尾追加：
 
@@ -948,12 +948,12 @@ def test_ingest_rejects_league_factor_without_scope_key(tmp_path):
     assert errors and "scope_key" in errors[0]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/decision/test_read_validate.py tests/decision/test_read_ingest.py -v`
 Expected: 前两个新测试 FAIL（`validate_read` 无 `factor_scopes` 参数 → TypeError）；backward-compat 测试 PASS（本来就该过）
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `nutmeg/decision/read_validate.py` — 签名与因子循环改为：
 
@@ -991,12 +991,12 @@ def ingest_reads(payloads: list[dict], *, store, factors: list) -> list[str]:
 
 （其余不变。）
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/decision/test_read_validate.py tests/decision/test_read_ingest.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run decision suite + commit**
+- [x] **Step 5: Run decision suite + commit**
 
 ```bash
 uv run pytest -q tests/decision/
