@@ -1,3 +1,5 @@
+> ⚠️ **M2 已删（2026-07-07）**：本文描述的引擎已随 M2 切换整体下葬，仅存历史参考；现行系统见 `docs/superpowers/specs/2026-07-06-decision-ontology-design.md` 与 CLAUDE.md SOP。
+
 # 大胆引擎多市场扩展 — 设计文档
 
 - **日期**：2026-05-18
@@ -639,4 +641,3 @@ anchor_ticket（最低赔热门）读它是「主胜」，bold_combos（大胆�
 - 全量 `pytest` 绿、ruff 清
 - 回填脚本一次性把 `.nutmeg-data/jczq/bold-review-history.json` 重算（保留
   现有 `chaos` / `anchor` / `bold` 字段），让 §24 在 5/25 自动 fire
-

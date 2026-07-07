@@ -1,3 +1,5 @@
+> ⚠️ **M2 已删（2026-07-07）**：本文描述的引擎已随 M2 切换整体下葬，仅存历史参考；现行系统见 `docs/superpowers/specs/2026-07-06-decision-ontology-design.md` 与 CLAUDE.md SOP。
+
 # JCZQ 世界杯 2026 专题改造 — 设计文档
 
 > 日期:2026-06-11(世界杯开幕日)

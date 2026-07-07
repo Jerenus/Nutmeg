@@ -1,3 +1,5 @@
+> ⚠️ **M2 已删（2026-07-07）**：本文描述的引擎已随 M2 切换整体下葬，仅存历史参考；现行系统见 `docs/superpowers/specs/2026-07-06-decision-ontology-design.md` 与 CLAUDE.md SOP。
+
 # JCZQ 每日决策骨架（结构图）
 
 > 本文是 Nutmeg JCZQ 每日决策流程的**一页式结构图 + 说明**。

@@ -1,4 +1,4 @@
-.PHONY: init install doctor test verify demo sync acceptance graph
+.PHONY: init install doctor test verify demo sync
 
 init:
 	bash ./init.sh
@@ -20,9 +20,3 @@ demo:
 
 sync:
 	uv run nutmeg fixtures-sync
-
-acceptance:
-	bash scripts/acceptance.sh --dry-run
-
-graph:
-	python3 scripts/refresh_graph.py --project-root . --output-dir graphify-out
