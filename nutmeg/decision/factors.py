@@ -34,3 +34,22 @@ def allowed_factor_ids(factors: list[Factor]) -> set[str]:
 def factor_scopes(factors: list[Factor]) -> dict[str, str]:
     """{factor_id: scope} — read 校验用(team/league scope 引用必带 scope_key)。"""
     return {f.factor_id: f.scope for f in factors}
+
+
+def sync_factor_scopes(store) -> int:
+    """store 的 Factor scope 与种子对齐(幂等,只改 scope,状态/其余字段保留)。
+
+    背景:M2 已落库的行无 scope 字段 → from_dict 默认 match,对 league_bias 等是错的。
+    只对齐种子里存在的 factor_id;未来非种子出生的因子不受影响。返回纠偏条数。
+    """
+    from dataclasses import replace
+
+    seed_scope = {f.factor_id: f.scope for f in load_seed_factors()}
+    stored = store.load(Factor)
+    changed = 0
+    for f in stored:
+        want = seed_scope.get(f.factor_id)
+        if want and f.scope != want:
+            store.upsert(replace(f, scope=want))
+            changed += 1
+    return changed

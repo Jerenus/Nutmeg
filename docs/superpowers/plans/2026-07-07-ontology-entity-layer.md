@@ -1133,7 +1133,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/decision/verbs.py:21-29`（run_sense）、`verbs.py:165-183`（run_calibrate_panel）
 - Test: `tests/decision/test_factors.py`, `tests/decision/test_verbs.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/decision/test_factors.py` 末尾追加：
 
@@ -1182,12 +1182,12 @@ def test_run_calibrate_panel_syncs_factor_scopes(tmp_path):
     assert store.get(Factor, "league_bias").scope == "league"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/decision/test_factors.py tests/decision/test_verbs.py -v`
 Expected: 3 FAIL（`ImportError: sync_factor_scopes` / run_sense 未落种子 / panel 未 sync）
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `nutmeg/decision/factors.py` — 追加：
 
@@ -1236,12 +1236,12 @@ def sync_factor_scopes(store) -> int:
     verdicts = run_calibrate(store, as_of=as_of)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/decision/test_factors.py tests/decision/test_verbs.py tests/decision/test_m1_verbs.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run decision suite + commit**
+- [x] **Step 5: Run decision suite + commit**
 
 ```bash
 uv run pytest -q tests/decision/

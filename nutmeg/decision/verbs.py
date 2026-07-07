@@ -26,7 +26,13 @@ def run_sense(run_date: str, output_dir: Path, taken_at: str) -> str:
     store = DecisionStore(Path(output_dir) / "decision")
     n = sense_day(run_date, output_dir=output_dir,
                   taken_at=taken_at, store=store)
-    return f"decision-sense {run_date}: 入库 {n} 场 Match+体彩/欧赔 Snapshot"
+    # 实体种子幂等落库(Tier 2):read 时 Claude 从 store 读联赛/球队画像
+    from nutmeg.decision.entities import seed_entities_if_empty
+    seeded = seed_entities_if_empty(store)
+    msg = f"decision-sense {run_date}: 入库 {n} 场 Match+体彩/欧赔 Snapshot"
+    if seeded:
+        msg += f" | 实体种子落库 {seeded} 条"
+    return msg
 
 
 def run_backfill(run_date: str, output_dir: Path, made_at: str) -> str:
@@ -171,6 +177,9 @@ def run_calibrate_panel(output_dir: Path, as_of: str) -> str:
     from nutmeg.decision.store import DecisionStore
 
     store = DecisionStore(Path(output_dir) / "decision")
+    # 幂等纠偏:旧 factors.jsonl 行无 scope(默认 match)→ 按种子对齐(实体层 Task 9)
+    from nutmeg.decision.factors import sync_factor_scopes
+    sync_factor_scopes(store)
     verdicts = run_calibrate(store, as_of=as_of)
     # 反积累免疫落地:把判决执行成 Factor 状态转换(转正/退休)+ 持久化。
     changes = apply_verdicts(store, verdicts)
