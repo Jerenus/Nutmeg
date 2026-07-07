@@ -57,7 +57,7 @@
 
 **保留（勿删，共享底座）**：`nutmeg/data/soccerdata_client.py`、`nutmeg/storage/client_state_repository.py`（materialization/snapshot 在用）；ClientService 的 sub-provider 服务（value_board/match_brief/odds/tactical/player/information，其它 D3 命令共用）。
 
-- [ ] **Step 1: 复核每个删除对象无其它 importer**
+- [x] **Step 1: 复核每个删除对象无其它 importer**
 
 ```bash
 cd /Users/jz71/Projects/Nutmeg
@@ -70,7 +70,7 @@ grep -rln "soccerdata_client\|client_state_repository" nutmeg/services/materiali
 ```
 Expected: 前循环**无命中**（client-web 专属，可安全删）；后一条**有命中**（保留件确实被共享）。若前循环有非预期命中 → 停下报告，不删该项。
 
-- [ ] **Step 2: 删除专属文件 + 目录**
+- [x] **Step 2: 删除专属文件 + 目录**
 
 ```bash
 git rm nutmeg/interfaces/client_web.py nutmeg/services/client.py \
@@ -79,21 +79,21 @@ git rm -r nutmeg/interfaces/web/templates/client nutmeg/interfaces/web/static/cl
           nutmeg/interfaces/web/static/jczq
 ```
 
-- [ ] **Step 3: 摘除 CLI 注册**
+- [x] **Step 3: 摘除 CLI 注册**
 
 `nutmeg/interfaces/cli/client.py` — 删除 8 个 `@_cli.app.command("client-*")` 函数（client-status/feed/match/question/watchlist/alerts/prediction-record/web）与 `build_client_service()` 工厂。若删空则 `git rm nutmeg/interfaces/cli/client.py` 并在 `cli/__init__.py` 底部移除其 import 触发行。
 `nutmeg/interfaces/cli/__init__.py` — 删除 `from nutmeg.interfaces.client_web import create_client_app`（:48）与仅服务 client 的 `from nutmeg.services.client import ClientService`（:53，先 grep 确认 __init__ 内无其它引用）。
 
-- [ ] **Step 4: 删测试用例**
+- [x] **Step 4: 删测试用例**
 
 `tests/test_cli.py` — 删除 `test_client_commands_are_registered_in_help`（:2610 附近）及任何仅断言 client-* 的用例（grep `client-` 定位）。
 
-- [ ] **Step 5: 跑全套确认无断链**
+- [x] **Step 5: 跑全套确认无断链**
 
 Run: `uv run pytest -q 2>&1 | tail -3 && uv run ruff check nutmeg/ tests/`
 Expected: 全绿（基线降至 699 − 删除的 client 用例数；无 collection error、无 ImportError）。若 red 于某处仍 import 已删符号 → 按报错逐一清理。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A

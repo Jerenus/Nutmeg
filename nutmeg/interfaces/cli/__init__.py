@@ -45,12 +45,10 @@ from nutmeg.interfaces.bot import (
     TelegramOffsetStore,
     TelegramPollingDaemon,
 )
-from nutmeg.interfaces.client_web import create_client_app
 from nutmeg.observability.langsmith import build_trace_context, traced_operation
 from nutmeg.process.harness import inspect_harness
 from nutmeg.process.superpowers import inspect_superpowers_bridge
 from nutmeg.services.analysis import AnalysisService, InsufficientEvidenceError
-from nutmeg.services.client import ClientService
 from nutmeg.services.evals import EvalDatasetNotFoundError, EvalService
 from nutmeg.services.event_data import EventTacticalModelService
 from nutmeg.services.fixtures import FixtureService
@@ -364,57 +362,6 @@ def build_eval_service() -> EvalService:
 def build_prediction_repository() -> tuple[SqlAlchemyPredictionRepository, Session]:
     session = _build_state_session()
     return SqlAlchemyPredictionRepository(session), session
-
-
-def build_client_service() -> tuple[ClientService, Session]:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    session = _build_state_session()
-    fixture_repository = DuckDbFixtureRepository(settings)
-    reference_repository = DuckDbReferenceRepository(settings)
-    weather_client = OpenMeteoClient(
-        geocoding_base_url=settings.open_meteo_geocoding_base_url,
-        weather_base_url=settings.open_meteo_weather_base_url,
-        reference_repository=reference_repository,
-    )
-    snapshot_service = FixtureSnapshotService(
-        fixture_repository=fixture_repository,
-        soccerdata_client=SoccerDataClient(database_path=settings.analytics_db_path),
-        transfermarkt_dataset=TransfermarktDataset(database_path=settings.analytics_db_path),
-        api_context_client=ApiFootballClient(
-            base_url=settings.api_football_base_url,
-            api_key=settings.api_football_key,
-        ),
-        reference_repository=reference_repository,
-        weather_client=weather_client,
-    )
-    odds_client = build_odds_provider_client(
-        settings,
-        fixture_repository=fixture_repository,
-        event_repository=DuckDbOddsEventRepository(settings),
-    )
-    odds_service = OddsSnapshotService(
-        fixture_repository=fixture_repository,
-        odds_client=odds_client,
-        odds_history_repository=DuckDbOddsHistoryRepository(settings),
-    )
-    return (
-        ClientService(
-            state_repository=SqlAlchemyClientStateRepository(session),
-            default_user_id=settings.default_user_id,
-            fixture_service=FixtureService(fixture_repository),
-            popularity_ranker=MatchPopularityRanker(),
-            value_board_service=ValueBoardService(
-                fixture_repository=fixture_repository,
-                snapshot_service=snapshot_service,
-                odds_service=odds_service,
-            ),
-            prediction_repository=SqlAlchemyPredictionRepository(session),
-            information_provider=FixtureInformationService(),
-        ),
-        session,
-    )
 
 
 def build_daily_operator_service() -> tuple[DailyOperatorService, Session]:
@@ -980,7 +927,6 @@ def _normalize_date(yyyymmdd: str) -> str:
 # registering every command on the shared ``app`` above. Done last so the package
 # namespace (factories, helpers, options) is fully populated before they load.
 # E402 is expected: registration must run after the namespace is built.
-from nutmeg.interfaces.cli import client as client  # noqa: E402
 from nutmeg.interfaces.cli import core as core  # noqa: E402
 from nutmeg.interfaces.cli import decision as decision  # noqa: E402
 from nutmeg.interfaces.cli import odds as odds  # noqa: E402
