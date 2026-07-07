@@ -35,3 +35,20 @@ def test_render_panel_contains_factor_and_rates(tmp_path):
     panel = render_panel(verdicts)
     assert "seeding_incentive" in panel
     assert "CLV" in panel and "Brier" in panel
+
+
+def test_render_panel_without_participation_omits_section():
+    assert "参与精度" not in render_panel([])
+
+
+def test_render_panel_renders_participation_section():
+    """participation_precision 的结果挂进面板尾部(spec §5 判读核心检验)。"""
+    participation = {
+        "divergent": {"n": 3, "clv_hit_rate": 2 / 3, "avg_brier_delta": -0.021},
+        "shadow": {"n": 5, "clv_hit_rate": None, "avg_brier_delta": 0.004},
+    }
+    panel = render_panel([], participation=participation)
+    assert "参与精度" in panel
+    assert "divergent" in panel and "shadow" in panel
+    assert "| divergent | 3 | 67% | -0.021 |" in panel
+    assert "| shadow | 5 | — | +0.004 |" in panel

@@ -52,3 +52,18 @@ def test_participation_precision_splits_divergent_vs_shadow(tmp_path):
     pp = participation_precision(s)
     assert pp["divergent"]["n"] == 1 and pp["divergent"]["clv_hit_rate"] == 1.0
     assert pp["shadow"]["n"] == 1 and pp["shadow"]["clv_hit_rate"] is None
+
+
+def test_run_calibrate_panel_writes_participation_section(tmp_path):
+    """verbs.run_calibrate_panel 把 participation_precision 挂进面板文件(wiring)。"""
+    from nutmeg.decision.verbs import run_calibrate_panel
+    s = DecisionStore(tmp_path / "decision")
+    p = {"home": 0.42, "draw": 0.28, "away": 0.30}
+    s.upsert(_read("d1", False, True, p, {"home": 0.36, "draw": 0.34, "away": 0.30}))
+    s.upsert(Settlement(settlement_id="SET-read-d1", ref_type="read", ref_id="d1",
+                        settled_at="t", outcome_90="draw", brier=0.5, clv_pp=0.01))
+    run_calibrate_panel(tmp_path, "2026-07-07")
+    panel = (tmp_path / "decision" / "calibration-panel-2026-07-07.md").read_text(
+        encoding="utf-8")
+    assert "参与精度" in panel
+    assert "divergent" in panel and "shadow" in panel

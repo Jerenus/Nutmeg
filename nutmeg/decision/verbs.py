@@ -171,6 +171,7 @@ def run_reconcile_zucai(issue: str, output_dir: Path, settled_at: str,
 def run_calibrate_panel(output_dir: Path, as_of: str) -> str:
     from nutmeg.decision.calibrate import (
         apply_verdicts,
+        participation_precision,
         render_panel,
         run_calibrate,
     )
@@ -183,7 +184,8 @@ def run_calibrate_panel(output_dir: Path, as_of: str) -> str:
     verdicts = run_calibrate(store, as_of=as_of)
     # 反积累免疫落地:把判决执行成 Factor 状态转换(转正/退休)+ 持久化。
     changes = apply_verdicts(store, verdicts)
-    panel = render_panel(verdicts)
+    # 参与精度(spec §5 判读核心检验)挂进面板尾部——divergent 是否跑赢 shadow 基线。
+    panel = render_panel(verdicts, participation=participation_precision(store))
     out = Path(output_dir) / "decision" / f"calibration-panel-{as_of}.md"
     out.write_text(panel, encoding="utf-8")
     msg = f"decision-calibrate: {len(verdicts)} 因子判决 → {out}"

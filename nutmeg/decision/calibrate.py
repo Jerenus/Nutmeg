@@ -99,8 +99,9 @@ def run_calibrate(store, *, as_of: str) -> list:
     return verdicts
 
 
-def render_panel(verdicts: list) -> str:
-    """校准面板 markdown——逐因子双轴 + 建议。参与精度/曲线留 M1.5 扩展。"""
+def render_panel(verdicts: list, participation: dict | None = None) -> str:
+    """校准面板 markdown——逐因子双轴 + 建议;participation 非 None 时尾部渲染
+    参与精度小节(participation_precision 的返回形状,spec §5 判读核心检验)。"""
     lines = [
         "# 决策校准面板", "",
         "| 因子 | n | Brier Δ | CLV 命中 | 建议 |",
@@ -110,6 +111,19 @@ def render_panel(verdicts: list) -> str:
         bd = "—" if v.brier_delta_vs_prior is None else f"{v.brier_delta_vs_prior:+.3f}"
         clv = "—" if v.clv_hit_rate is None else f"{v.clv_hit_rate:.0%}"
         lines.append(f"| {v.factor_id} | {v.n_reads} | {bd} | {clv} | {v.recommendation} |")
+    if participation is not None:
+        lines += [
+            "", "## 参与精度(divergent vs shadow)", "",
+            "| 组 | n | CLV 命中 | avg Brier Δ |",
+            "|---|---|---|---|",
+        ]
+        for group in ("divergent", "shadow"):
+            b = participation.get(group) or {}
+            clv = ("—" if b.get("clv_hit_rate") is None
+                   else f"{b['clv_hit_rate']:.0%}")
+            abd = ("—" if b.get("avg_brier_delta") is None
+                   else f"{b['avg_brier_delta']:+.3f}")
+            lines.append(f"| {group} | {b.get('n', 0)} | {clv} | {abd} |")
     return "\n".join(lines)
 
 
