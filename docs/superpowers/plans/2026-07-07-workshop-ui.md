@@ -111,7 +111,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Create: `nutmeg/decision/workbench.py`
 - Test: `tests/decision/test_workbench.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 新建 `tests/decision/test_workbench.py`：
 
@@ -179,12 +179,12 @@ def test_distill_note_summarizes_thread(tmp_path):
     assert "战意" in note and "争四" in note
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/decision/test_workbench.py -v`
 Expected: 全 FAIL（`ModuleNotFoundError: nutmeg.decision.workbench`）
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 新建 `nutmeg/decision/workbench.py`：
 
@@ -271,12 +271,12 @@ def distill_note(output_dir, date: str, *, obj_id: str) -> str:
     return note[:280]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/decision/test_workbench.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run suite + commit**
+- [x] **Step 5: Run suite + commit**
 
 ```bash
 uv run pytest -q tests/decision/
