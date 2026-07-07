@@ -23,6 +23,7 @@
   var cursor = 0;
   var allEvents = [];
   var selectedObj = null;
+  var judgments = {}; // obj_id -> 已落库判读 payload(桥接投影,只读)
 
   function pct(x) { return Math.max(0, Math.round((Number(x) || 0) * 100)); }
   function el(tag, cls, txt) {
@@ -172,6 +173,56 @@
     stageEl.appendChild(blk);
   }
 
+  // ---- center stage: 已落库判读(桥接 judgment,只读,含偏移读数器) --------
+  function renderStageJudgment(objId) {
+    var j = judgments[objId];
+    stageEl.innerHTML = "";
+    if (!j) {
+      stageEl.appendChild(el("div", "crumb", "选择议程项查看盘口 / 画像 / 读数器"));
+      return;
+    }
+    var crumb = el("div", "crumb");
+    var h = el("span", "h serif", j.match || objId);
+    crumb.appendChild(h);
+    if (j.competition) {
+      crumb.appendChild(el("span", "sep", "·"));
+      crumb.appendChild(el("span", null, j.competition));
+    }
+    crumb.appendChild(el("span", "sep", "·"));
+    crumb.appendChild(el("span", "meta mono", (j.market || "had") + " · conf" + (j.confidence || "?")));
+    stageEl.appendChild(crumb);
+
+    var blk = el("div", "vblock");
+    blk.appendChild(el("div", "vbhead", "判读读数 · prior → belief（已入库）"));
+    if (j.prior && j.belief) {
+      var pt = miniTrack(j.prior, false); pt.style.marginBottom = "5px";
+      blk.appendChild(pt);
+      blk.appendChild(miniTrack(j.belief, true));
+    }
+    var f = (j.factors || [])[0];
+    var delta = el("div", "acmeta");
+    var drow = el("div", "row");
+    drow.appendChild(el("span", "l", f ? "偏移" : "判读"));
+    var dv = el("span", "v");
+    if (f) {
+      dv.appendChild(el("span", "fchip", f.factor_id || "?"));
+      dv.appendChild(document.createTextNode(
+        " " + (f.direction || "") + " +" + (f.weight_pp || 0) + "pp"));
+    } else {
+      dv.appendChild(document.createTextNode("跟市场（belief = prior）"));
+    }
+    drow.appendChild(dv); delta.appendChild(drow);
+    blk.appendChild(delta);
+    stageEl.appendChild(blk);
+
+    if (j.note) {
+      var nb = el("div", "vblock");
+      nb.appendChild(el("div", "vbhead", "理由"));
+      nb.appendChild(el("div", "profile-line", j.note));
+      stageEl.appendChild(nb);
+    }
+  }
+
   // ---- anchored thread ----------------------------------------------
   function selectObj(objId, label) {
     selectedObj = objId;
@@ -179,6 +230,7 @@
     flowEl.querySelectorAll(".fitem").forEach(function (n) {
       n.classList.toggle("sel", n.getAttribute("data-obj") === objId);
     });
+    renderStageJudgment(objId);
     renderTurns();
   }
   function renderTurns() {
@@ -227,6 +279,7 @@
     if (e.seq && e.seq > cursor) cursor = e.seq;
     switch (e.kind) {
       case "attention": renderAttention(e); break;
+      case "judgment": judgments[e.obj_id] = e.payload || {}; break;
       case "read_draft": renderReadDraft(e); break;
       case "legs_proposal": renderLegsProposal(e); break;
       case "view_block": renderViewBlock(e); break;
