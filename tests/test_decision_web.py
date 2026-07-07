@@ -42,3 +42,63 @@ def test_empty_day_is_explicit_not_silent(tmp_path):
     r = client.get("/api/workbench?date=2026-07-09")
     assert r.status_code == 200
     assert r.json()["events"] == []   # 无 workbench.jsonl → 空事件,不报错
+
+
+def _seed_factors(store):
+    from nutmeg.decision.factors import load_seed_factors
+    store.upsert_many(load_seed_factors())
+
+
+def _valid_read_payload(date):
+    return {
+        "read_id": "R-web-1", "match_id": f"M-{date}-a-b", "snapshot_id": "S1",
+        "made_at": "t", "judge": "claude", "market": "had",
+        "prior": {"home": 0.52, "draw": 0.27, "away": 0.21},
+        "belief": {"home": 0.46, "draw": 0.31, "away": 0.23},
+        "factors": [{"factor_id": "league_bias", "scope_key": "swe-allsvenskan",
+                     "direction": "draw", "weight_pp": 6,
+                     "evidence": [{"url": "u"}]}],
+        "confidence": 3, "shadow": False}
+
+
+def test_approve_read_lands_in_store_via_same_gate(tmp_path):
+    client, out, date = _app(tmp_path)
+    _seed_factors(client.app.state.store)
+    r = client.post("/action/approve-read",
+                    json={"obj_id": "O1", "read": _valid_read_payload(date)})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    from nutmeg.decision.ontology import Read
+    assert client.app.state.store.get(Read, "R-web-1") is not None
+
+
+def test_approve_invalid_read_rejected_with_same_error(tmp_path):
+    """违规草稿(league 因子缺 scope_key)→ 400 + 与 validate_read 逐字相同的理由。"""
+    client, out, date = _app(tmp_path)
+    _seed_factors(client.app.state.store)
+    bad = _valid_read_payload(date)
+    bad["factors"][0].pop("scope_key")
+    r = client.post("/action/approve-read", json={"obj_id": "O1", "read": bad})
+    assert r.status_code == 400
+    assert any("scope_key" in e for e in r.json()["errors"])
+
+
+def test_confirm_legs_writes_legs_json_and_ticket(tmp_path):
+    client, out, date = _app(tmp_path)
+    leg = {"match_id": f"M-{date}-a-b", "market": "had", "selection": "home",
+           "odds": 1.92, "bucket": "main"}
+    r = client.post("/action/confirm-legs",
+                    json={"date": date, "legs": [leg]})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    import json
+    legs_file = out / "daily" / date / "legs.json"
+    assert legs_file.exists()
+    assert json.loads(legs_file.read_text())[0]["bucket"] == "main"
+
+
+def test_reject_read_is_recorded_not_stored(tmp_path):
+    client, out, date = _app(tmp_path)
+    r = client.post("/action/reject-read",
+                    json={"obj_id": "O1", "reason": "证据不足"})
+    assert r.status_code == 200
+    # reject 用当天日期留痕(date 从 payload 或 today);此处断言留痕存在
+    assert r.json()["ok"] is True

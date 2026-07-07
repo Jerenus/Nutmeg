@@ -32,6 +32,15 @@ def _day_state(store: DecisionStore, output_dir, date: str) -> dict[str, Any]:
     }
 
 
+def _factor_cls():
+    from nutmeg.decision.ontology import Factor
+    return Factor
+
+
+def self_daily(output_dir, date: str) -> Path:
+    return Path(output_dir) / "daily" / date
+
+
 def create_decision_app(*, store: DecisionStore, output_dir) -> FastAPI:
     app = FastAPI(title="Nutmeg 判读工作台")
     web_root = Path(__file__).parent / "web"
@@ -51,5 +60,65 @@ def create_decision_app(*, store: DecisionStore, output_dir) -> FastAPI:
         return templates.TemplateResponse(
             request, "decision/workbench.html",
             {"title": "判读工作台", "state": _day_state(store, output_dir, date)})
+
+    from datetime import date as _date
+
+    from fastapi import Body
+    from fastapi.responses import JSONResponse
+
+    from nutmeg.decision.factors import load_seed_factors
+    from nutmeg.decision.read_ingest import ingest_reads
+    from nutmeg.decision.workbench import distill_note, record_decision
+
+    def _today() -> str:
+        return _date.today().isoformat()
+
+    def _date_of(match_id: str) -> str:
+        # M-<date>-... → date(供 record_decision 归日)
+        parts = match_id.split("-")
+        return "-".join(parts[1:4]) if len(parts) >= 4 else _today()
+
+    @app.post("/action/approve-read")
+    def approve_read(payload: dict = Body(...)) -> Any:  # noqa: B008
+        read = dict(payload["read"])
+        obj_id = payload.get("obj_id", read.get("read_id", ""))
+        date = _date_of(read.get("match_id", ""))
+        # §3.5:把该 obj 的追问往来蒸馏进 note(不进 store);判断不在此
+        note = distill_note(output_dir, date, obj_id=obj_id)
+        if note:
+            read["note"] = (read.get("note", "") + " ⟨" + note + "⟩").strip()
+        factors = store.load(_factor_cls()) or load_seed_factors()
+        errors = ingest_reads([read], store=store, factors=factors)  # 同一校验闸
+        if errors:
+            record_decision(output_dir, date, action="approve_read",
+                            obj_id=obj_id, result="拒绝: " + "; ".join(errors))
+            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
+        record_decision(output_dir, date, action="approve_read",
+                        obj_id=obj_id, result=f"{read['read_id']} 入库")
+        return {"ok": True, "read_id": read["read_id"]}
+
+    @app.post("/action/reject-read")
+    def reject_read(payload: dict = Body(...)) -> Any:  # noqa: B008
+        obj_id = payload.get("obj_id", "")
+        date = payload.get("date", _today())
+        record_decision(output_dir, date, action="reject_read", obj_id=obj_id,
+                        result=payload.get("reason", ""))
+        return {"ok": True}
+
+    @app.post("/action/confirm-legs")
+    def confirm_legs(payload: dict = Body(...)) -> Any:  # noqa: B008
+        import json
+        date = payload.get("date", _today())
+        legs = payload["legs"]
+        legs_file = self_daily(output_dir, date) / "legs.json"
+        legs_file.parent.mkdir(parents=True, exist_ok=True)
+        if legs_file.exists():        # 写前留 .bak(spec §5 幂等)
+            legs_file.with_suffix(".json.bak").write_text(
+                legs_file.read_text(encoding="utf-8"), encoding="utf-8")
+        legs_file.write_text(json.dumps(legs, ensure_ascii=False, indent=2),
+                             encoding="utf-8")
+        record_decision(output_dir, date, action="confirm_legs",
+                        obj_id="legs", result=f"{len(legs)} 腿 → legs.json")
+        return {"ok": True, "legs": len(legs)}
 
     return app

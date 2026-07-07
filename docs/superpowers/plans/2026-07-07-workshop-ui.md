@@ -464,7 +464,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/interfaces/decision_web.py`（加 `/action/*` 端点）
 - Test: `tests/test_decision_web.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/test_decision_web.py` 末尾追加：
 
@@ -530,12 +530,12 @@ def test_reject_read_is_recorded_not_stored(tmp_path):
     assert r.json()["ok"] is True
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_decision_web.py -v`
 Expected: 4 个新测试 FAIL（404 无 /action/* 路由）
 
-- [ ] **Step 3: Implement action 端点（复用既有闸，零旁门）**
+- [x] **Step 3: Implement action 端点（复用既有闸，零旁门）**
 
 `nutmeg/interfaces/decision_web.py` — 在 `create_decision_app` 内、`return app` 前追加：
 
@@ -615,12 +615,12 @@ def self_daily(output_dir, date: str) -> Path:
 
 > 说明：`confirm-legs` v1 只做"写 legs.json + 留痕"（与 CLI SOP 一致：judge 写 legs、close 时 express 再枚举出票）。预算/schema 全量校验发生在 close 的 `compose_tickets`；此处不复制校验（避免双份），只把 legs 落成既有约定文件。**这保持零旁门：真正入库的 Ticket 仍由 express 闸产出。**
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_decision_web.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run suite + commit**
+- [x] **Step 5: Run suite + commit**
 
 ```bash
 uv run pytest -q
