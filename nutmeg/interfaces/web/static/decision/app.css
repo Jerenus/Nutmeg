@@ -161,6 +161,7 @@ body{
 .mini-track .s{display:flex;align-items:center;justify-content:center;color:#fff}
 .mini-track .h{background:var(--pine)}.mini-track .d{background:var(--pine-2);opacity:.7}.mini-track .a{background:#9AA79E}
 .mini-track.bel .d{background:var(--cinnabar);opacity:1}
+.mini-track .s.shift{background:var(--cinnabar);opacity:1}
 .acmeta{font-size:12px; color:var(--sub); line-height:1.6; margin:10px 0}
 .acmeta .row{display:flex; gap:8px; padding:3px 0}
 .acmeta .row .l{color:var(--faint); flex:0 0 46px; font-size:11px}

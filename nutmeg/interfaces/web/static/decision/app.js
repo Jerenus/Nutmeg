@@ -62,6 +62,18 @@
     return t;
   }
 
+  // belief 轨:只把「真正移动的那一档」染朱砂(诚实读数,跟市场则无朱砂)
+  function beliefTrack(prior, belief) {
+    var t = el("div", "mini-track");
+    ["home", "draw", "away"].forEach(function (k, i) {
+      var shifted = Math.abs((belief[k] || 0) - (prior[k] || 0)) > 0.005;
+      var s = el("span", "s " + (shifted ? "shift" : "hda"[i]), String(pct(belief[k])));
+      s.style.flex = pct(belief[k]) || 1;
+      t.appendChild(s);
+    });
+    return t;
+  }
+
   // ---- verdict: Read draft card -------------------------------------
   function renderReadDraft(e) {
     if (verdictEl.querySelector('[data-card="' + e.id + '"]')) return;
@@ -247,7 +259,7 @@
     if (j.prior && j.belief) {
       var pt = miniTrack(j.prior, false); pt.style.marginBottom = "5px";
       blk.appendChild(pt);
-      blk.appendChild(miniTrack(j.belief, true));
+      blk.appendChild(beliefTrack(j.prior, j.belief));
     }
     var f = (j.factors || [])[0];
     var delta = el("div", "acmeta");
