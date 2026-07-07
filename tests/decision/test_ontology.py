@@ -72,3 +72,17 @@ def test_factor_ticket_settlement_verdict_roundtrip():
                       direction_hit_rate=0.55, recommendation="keep",
                       next_review_at="2026-08-20")
     assert v.id == "seeding_incentive" and FactorVerdict.from_dict(v.to_dict()) == v
+
+
+def test_match_entity_refs_roundtrip_and_legacy_default():
+    from nutmeg.decision.ontology import Match
+    m = Match(match_id="M-x", kickoff_at="t", home="哈马比", away="卡尔马",
+              competition="瑞超", home_team_id="swe-hammarby",
+              away_team_id="swe-kalmar", competition_id="swe-allsvenskan")
+    m2 = Match.from_dict(m.to_dict())
+    assert (m2.home_team_id, m2.away_team_id, m2.competition_id) == (
+        "swe-hammarby", "swe-kalmar", "swe-allsvenskan")
+    # 旧 matches.jsonl 行(无新字段)→ None 默认,不炸
+    legacy = Match.from_dict({"match_id": "M-y", "kickoff_at": "t",
+                              "home": "a", "away": "b"})
+    assert legacy.home_team_id is None and legacy.competition_id is None

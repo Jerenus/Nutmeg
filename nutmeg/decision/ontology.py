@@ -23,6 +23,9 @@ class Match:
     away: str
     competition: str = ""
     channel_refs: dict[str, Any] = field(default_factory=dict)
+    home_team_id: str | None = None      # 策展 resolve 命中才填;未命中 None 绝不伪造
+    away_team_id: str | None = None
+    competition_id: str | None = None
 
     @property
     def id(self) -> str:

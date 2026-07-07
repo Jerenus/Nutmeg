@@ -47,13 +47,20 @@ def _match_for_snapshot(snapshot, value: dict, run_date: str) -> Match:
 
 def upsert_match_merged(store, match) -> None:
     """落 Match 前合并 channel_refs——同一 canonical 比赛被第二通道 sense 时,
-    不覆盖对方通道号(spec §2 一场多通道)。"""
+    不覆盖对方通道号(spec §2 一场多通道);已解析的实体 id/联赛名同理不被
+    未解析通道的空值 clobber(实体层提案 §P3)。"""
     from dataclasses import replace
 
     existing = store.get(Match, match.match_id)
     if existing is not None:
-        merged = {**existing.channel_refs, **match.channel_refs}
-        match = replace(match, channel_refs=merged)
+        match = replace(
+            match,
+            channel_refs={**existing.channel_refs, **match.channel_refs},
+            competition=match.competition or existing.competition,
+            home_team_id=match.home_team_id or existing.home_team_id,
+            away_team_id=match.away_team_id or existing.away_team_id,
+            competition_id=match.competition_id or existing.competition_id,
+        )
     store.upsert(match)
 
 

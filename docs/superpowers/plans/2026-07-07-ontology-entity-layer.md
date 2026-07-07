@@ -164,7 +164,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/decision/sense.py:48-57`（upsert_match_merged）
 - Test: `tests/decision/test_ontology.py`, `tests/decision/test_sense.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/decision/test_ontology.py` 末尾追加：
 
@@ -208,12 +208,12 @@ def test_upsert_match_merged_preserves_resolved_ids_and_competition(tmp_path):
     assert merged.channel_refs["zucai"]["issue"] == "26100"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/decision/test_ontology.py tests/decision/test_sense.py -v`
 Expected: 2 FAIL（`Match` 无 `home_team_id`）
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `nutmeg/decision/ontology.py` — `Match` 在 `channel_refs` 之后追加三个可空引用（位置参兼容）：
 
@@ -253,12 +253,12 @@ def upsert_match_merged(store, match) -> None:
     store.upsert(match)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/decision/test_ontology.py tests/decision/test_sense.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run decision suite + commit**
+- [x] **Step 5: Run decision suite + commit**
 
 ```bash
 uv run pytest -q tests/decision/

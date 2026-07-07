@@ -43,3 +43,25 @@ def test_sense_no_snapshot_returns_zero(tmp_path):
     store = DecisionStore(tmp_path / "decision")
     assert sense_from_snapshot("2026-07-08", output_dir=tmp_path,
                                taken_at="t", store=store) == 0
+
+
+def test_upsert_match_merged_preserves_resolved_ids_and_competition(tmp_path):
+    """第二通道(zucai)的未解析 Match 不得抹掉第一通道已解析的 id/联赛名。"""
+    from nutmeg.decision.ontology import Match
+    from nutmeg.decision.sense import upsert_match_merged
+    from nutmeg.decision.store import DecisionStore
+    store = DecisionStore(tmp_path)
+    upsert_match_merged(store, Match(
+        match_id="M-1", kickoff_at="t", home="h", away="a", competition="瑞超",
+        home_team_id="swe-hammarby", away_team_id="swe-kalmar",
+        competition_id="swe-allsvenskan",
+        channel_refs={"jczq_match_no": "周三001"}))
+    upsert_match_merged(store, Match(
+        match_id="M-1", kickoff_at="t", home="h", away="a", competition="",
+        channel_refs={"zucai": {"issue": "26100", "index": 3}}))
+    merged = store.get(Match, "M-1")
+    assert merged.competition == "瑞超"
+    assert merged.home_team_id == "swe-hammarby"
+    assert merged.competition_id == "swe-allsvenskan"
+    assert merged.channel_refs["jczq_match_no"] == "周三001"
+    assert merged.channel_refs["zucai"]["issue"] == "26100"
