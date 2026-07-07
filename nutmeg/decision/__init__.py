@@ -2,14 +2,16 @@
 from nutmeg.decision.ontology import (
     Factor,
     FactorVerdict,
+    League,
     MarketSnapshot,
     Match,
     Read,
     Settlement,
+    Team,
     Ticket,
 )
 
 __all__ = [
     "Match", "MarketSnapshot", "Read", "Factor",
-    "Ticket", "Settlement", "FactorVerdict",
+    "Ticket", "Settlement", "FactorVerdict", "Team", "League",
 ]

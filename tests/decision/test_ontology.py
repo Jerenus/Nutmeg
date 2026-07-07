@@ -86,3 +86,11 @@ def test_match_entity_refs_roundtrip_and_legacy_default():
     legacy = Match.from_dict({"match_id": "M-y", "kickoff_at": "t",
                               "home": "a", "away": "b"})
     assert legacy.home_team_id is None and legacy.competition_id is None
+
+
+def test_package_exports_team_and_league():
+    """九对象包级导出——Team/League(实体层增补)也从 nutmeg.decision 可 import。"""
+    import nutmeg.decision as decision
+    from nutmeg.decision import League, Team
+    assert Team("t-1").id == "t-1" and League("l-1").id == "l-1"
+    assert {"Team", "League"} <= set(decision.__all__)
