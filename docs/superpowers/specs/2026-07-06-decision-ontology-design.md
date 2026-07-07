@@ -267,6 +267,12 @@ WAF 降级不覆盖快照（6/11）｜字符串 schema 不丢整日（6/28）｜
 
 ## 附录 A · 符号处置清单（权威版，2026-07-06 从 `nutmeg/services/jczq_market_kernel.py` AST 实测生成）
 
+> ✅ **2026-07-07 执行完毕**：A.1 在用 12 基元（7 去水/解析 + 5 快照 I/O，含闭包
+> `_f`/`_RE_CRS_KEY`）物理迁入 `nutmeg/decision/market_data.py`；kernel 及 A.2/A.3
+> 全部删除（未用的 17 个 A.1 符号随文件消亡；`jczq_bold_markets` 同葬）。
+> 注：`nutmeg/services/jczq.py` 非孤儿——`fetch_sporttery_value_with_fallback`
+> 生产依赖，保留。
+
 实施 M0 时按此清单执行，**不要重新推导**（本会话已验证过依赖闭包）。
 
 ### A.1 迁入 `nutmeg/decision/market_data.py`（29 个，零 KILL 依赖，可直接搬）
