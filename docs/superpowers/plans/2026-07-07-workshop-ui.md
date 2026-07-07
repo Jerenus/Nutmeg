@@ -928,7 +928,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/interfaces/cli/decision.py`
 - Test: `tests/test_decision_web.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_decision_web.py` 末尾追加：
 
@@ -940,12 +940,12 @@ def test_non_loopback_host_warns(capsys, tmp_path):
     assert dweb._warn_if_exposed("127.0.0.1") is False
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_decision_web.py::test_non_loopback_host_warns -v`
 Expected: FAIL（`_warn_if_exposed` 不存在）
 
-- [ ] **Step 3: Implement CLI 命令**
+- [x] **Step 3: Implement CLI 命令**
 
 `nutmeg/interfaces/cli/decision.py` — 追加：
 
@@ -977,12 +977,12 @@ def decision_web(
     uvicorn.run(app, host=host, port=port)
 ```
 
-- [ ] **Step 4: Run test + 命令注册回归**
+- [x] **Step 4: Run test + 命令注册回归**
 
 Run: `uv run pytest tests/test_decision_web.py -v && uv run nutmeg --help 2>&1 | grep decision-web`
 Expected: 测试 PASS；`--help` 列出 `decision-web`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 uv run pytest -q

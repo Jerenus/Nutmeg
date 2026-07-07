@@ -231,3 +231,30 @@ def decision_calibrate(
     """决策本体 · 动词五:聚合 Settlement → FactorVerdict + 校准面板。"""
     from nutmeg.decision.verbs import run_calibrate_panel
     _cli.typer.echo(run_calibrate_panel(output_dir, as_of))
+
+
+def _warn_if_exposed(host: str) -> bool:
+    """非 loopback 绑定 → stderr 警告(单人无鉴权假设)。返回是否警告。"""
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        import sys
+        print(f"⚠️ decision-web 绑定 {host}:无鉴权,仅限可信局域网。", file=sys.stderr)
+        return True
+    return False
+
+
+@_cli.app.command("decision-web")
+def decision_web(
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    host: str = _cli.typer.Option("127.0.0.1", "--host"),
+    port: int = _cli.typer.Option(8787, "--port"),
+) -> None:
+    """Workshop 判读工作台:浏览器审草稿/追问共磨/确认出票(spec workshop-ui)。"""
+    import uvicorn
+
+    from nutmeg.decision.store import DecisionStore
+    from nutmeg.interfaces.decision_web import create_decision_app
+
+    _warn_if_exposed(host)
+    store = DecisionStore(Path(output_dir) / "decision")
+    app = create_decision_app(store=store, output_dir=Path(output_dir))
+    uvicorn.run(app, host=host, port=port)

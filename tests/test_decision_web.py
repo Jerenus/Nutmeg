@@ -152,3 +152,9 @@ def test_mobile_tabs_markup_present(tmp_path):
     assert 'class="mtabs"' in html
     for label in ["议程", "舞台", "裁决"]:
         assert label in html
+
+
+def test_non_loopback_host_warns(tmp_path):
+    from nutmeg.interfaces.cli import decision as dweb
+    assert dweb._warn_if_exposed("0.0.0.0") is True
+    assert dweb._warn_if_exposed("127.0.0.1") is False
