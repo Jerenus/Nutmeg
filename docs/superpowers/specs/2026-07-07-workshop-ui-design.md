@@ -1,7 +1,8 @@
 # Nutmeg Workshop UI — AI-native 判读工作台（设计定稿）
 
-> 2026-07-07 brainstorming 定稿（含锚定追问线程修订，同日）。Palantir Workshop 的
-> 单人 AI-native 对应物：**AI 起草，你与它就草稿增量对话、共同磨判断，最终你裁决落库。**
+> 2026-07-07 brainstorming 定稿（含锚定追问线程修订，同日）；**v1 已落地（Workshop Task 1-9，
+> commits 见 git log；`nutmeg decision-web`）**。Palantir Workshop 的单人 AI-native 对应物：
+> **AI 起草，你与它就草稿增量对话、共同磨判断，最终你裁决落库。**
 > 视觉稿：`docs/design/nutmeg-workshop.html`（frontend-design 出，双主题）。实现计划另出（writing-plans）。
 
 ## §0 已确认的五个根决策（用户拍板）

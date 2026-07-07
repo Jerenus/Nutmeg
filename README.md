@@ -370,6 +370,8 @@ uv run nutmeg decision-read --reads-file <reads.json> --output-dir .nutmeg-data/
 uv run nutmeg decision-close --run-date $(date +%F) --output-dir .nutmeg-data/jczq
 # 4. Next-day settlement: Brier/CLV scoring + factor calibration + review report (launchd 08:10)
 uv run nutmeg decision-settle --run-date <yesterday> --output-dir .nutmeg-data/jczq
+# Optional: browser Workshop — review drafts, interrogate & co-refine, confirm legs (127.0.0.1 only)
+uv run nutmeg decision-web --output-dir .nutmeg-data/jczq
 ```
 
 `decision-close` and `decision-settle` default to dry-run; Telegram delivery

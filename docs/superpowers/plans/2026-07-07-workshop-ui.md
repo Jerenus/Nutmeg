@@ -1001,7 +1001,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Test: `tests/test_decision_web.py`（e2e）
 - Modify: `docs/superpowers/specs/2026-07-07-workshop-ui-design.md`（状态行）、`README.md`（补 decision-web 一行）
 
-- [ ] **Step 1: e2e 全链测试**
+- [x] **Step 1: e2e 全链测试**
 
 `tests/test_decision_web.py` 末尾追加（伪造一天 → 追问 → 批准 → 确认 legs → 文件与 store 全链断言）：
 
@@ -1041,12 +1041,12 @@ def test_e2e_one_day_thread_approve_legs(tmp_path):
     assert len(store.load(Read)) == 1
 ```
 
-- [ ] **Step 2: Run e2e + 全套**
+- [x] **Step 2: Run e2e + 全套**
 
 Run: `uv run pytest tests/test_decision_web.py -v && uv run pytest -q 2>&1 | tail -2 && uv run ruff check nutmeg/ tests/`
 Expected: 全 PASS + ruff 全绿
 
-- [ ] **Step 3: verify skill 手动实链**
+- [x] **Step 3: verify skill 手动实链**
 
 启动真实服务观察（不阻塞测试）：
 ```bash
@@ -1058,12 +1058,12 @@ kill %1
 ```
 Expected: JSON 返回当日 matches/events；页面含"判读工作台"。用浏览器打开 `http://127.0.0.1:8787` 目视对照 `docs/design/nutmeg-workshop.html`（三栏 + 追问线程 + 双主题）。
 
-- [ ] **Step 4: 文档收尾**
+- [x] **Step 4: 文档收尾**
 
 `docs/superpowers/specs/2026-07-07-workshop-ui-design.md` 顶部状态：改注"v1 已落地（2026-07-07，Workshop Task 1-9，commits 见 git log）"。
 `README.md`：在 decision 五动词工作流段后补一行 `nutmeg decision-web` —— "浏览器判读工作台：审草稿/追问共磨/确认出票（只绑 127.0.0.1）"。
 
-- [ ] **Step 5: Final commit**
+- [x] **Step 5: Final commit**
 
 ```bash
 uv run pytest -q

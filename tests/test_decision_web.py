@@ -158,3 +158,38 @@ def test_non_loopback_host_warns(tmp_path):
     from nutmeg.interfaces.cli import decision as dweb
     assert dweb._warn_if_exposed("0.0.0.0") is True
     assert dweb._warn_if_exposed("127.0.0.1") is False
+
+
+def test_e2e_one_day_thread_approve_legs(tmp_path):
+    client, out, date = _app(tmp_path)
+    store = client.app.state.store
+    _seed_factors(store)
+    from nutmeg.decision.workbench import append_event
+    # agent 起草 + 推议程
+    append_event(out, date, {"kind": "attention", "id": "O1", "group": "草稿待审",
+                             "match": "哈马比 vs 卡尔马"})
+    append_event(out, date, {"kind": "read_draft", "id": "D1", "obj_id": "O1",
+                             "payload": _valid_read_payload(date)})
+    # 人追问(浏览器)
+    assert client.post("/thread", json={"date": date, "obj_id": "O1",
+                                        "text": "战意呢？"}).json()["ok"]
+    # agent 回应(模拟终端写回)
+    append_event(out, date, {"kind": "agent_reply", "obj_id": "O1", "text": "争四动力足"})
+    # 人批准 → 蒸馏进 note + 入库
+    r = client.post("/action/approve-read",
+                    json={"obj_id": "O1", "read": _valid_read_payload(date)})
+    assert r.json()["ok"]
+    from nutmeg.decision.ontology import Read
+    stored = store.get(Read, "R-web-1")
+    assert stored is not None and "战意" in stored.note      # 蒸馏痕迹入 note
+    # 确认 legs
+    leg = {"match_id": f"M-{date}-a-b", "market": "had", "selection": "home",
+           "odds": 1.92, "bucket": "main"}
+    assert client.post("/action/confirm-legs",
+                       json={"date": date, "legs": [leg]}).json()["ok"]
+    assert (out / "daily" / date / "legs.json").exists()
+    # 裁决留痕
+    dec = (out / "daily" / date / "decisions.jsonl").read_text()
+    assert "approve_read" in dec and "confirm_legs" in dec
+    # 线程未进九对象 store(本体不膨胀):store 只有那一条 Read
+    assert len(store.load(Read)) == 1
