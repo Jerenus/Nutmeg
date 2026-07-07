@@ -16,9 +16,11 @@ _MIN_SAMPLE = 30
 _CLV_BAR = 0.55
 
 
-def factor_verdict(factor_id: str, settlements: list[dict], *,
-                   as_of: str) -> FactorVerdict:
-    """settlements: [{brier_delta, clv_hit(0/1)}, ...](已结,非 pending)。"""
+def factor_verdict(factor_id: str, settlements: list[dict], *, as_of: str,
+                   direction_hit_rate: float | None = None) -> FactorVerdict:
+    """settlements: [{brier_delta, clv_hit(0/1)}, ...](已结,非 pending)。
+    direction_hit_rate 由调用方聚合(run_calibrate 从 factor ref 的 direction
+    与 outcome_90 比对得出);无样本 None。"""
     n = len(settlements)
     clv_rate = (sum(s["clv_hit"] for s in settlements) / n) if n else None
     brier_delta = (sum(s["brier_delta"] for s in settlements) / n) if n else None
@@ -37,7 +39,8 @@ def factor_verdict(factor_id: str, settlements: list[dict], *,
     return FactorVerdict(
         factor_id=factor_id, as_of=as_of, n_reads=n,
         brier_delta_vs_prior=brier_delta, clv_hit_rate=clv_rate,
-        direction_hit_rate=None, recommendation=rec, next_review_at="",
+        direction_hit_rate=direction_hit_rate, recommendation=rec,
+        next_review_at="",
     )
 
 
@@ -65,6 +68,7 @@ def run_calibrate(store, *, as_of: str) -> list:
 
     reads = {r.read_id: r for r in store.load(Read)}
     per_factor: dict[str, list[dict]] = {}
+    dir_hits: dict[str, list[int]] = {}      # 因子(含 @scope_key 子桶)→ 方向命中 0/1
     for st in store.load(Settlement):
         if st.ref_type != "read" or st.brier is None or st.outcome_90 is None:
             continue
@@ -80,17 +84,26 @@ def run_calibrate(store, *, as_of: str) -> list:
             fid = f.get("factor_id")
             if not fid:
                 continue
-            per_factor.setdefault(fid, []).append(entry)
+            buckets = [fid]
             # scope_key 引用 → 追加 factor_id@scope_key 诊断桶(实体层提案 §P3:
             # 证据分辨率,非生死状态机;复合 id 防 store upsert-by-id clobber)
             sk = f.get("scope_key")
             if sk:
-                per_factor.setdefault(f"{fid}@{sk}", []).append(entry)
+                buckets.append(f"{fid}@{sk}")
+            direction = f.get("direction")
+            for key in buckets:
+                per_factor.setdefault(key, []).append(entry)
+                if direction:                # 无 direction 的引用不计入(绝不伪造)
+                    dir_hits.setdefault(key, []).append(
+                        1 if direction == st.outcome_90 else 0)
 
     from dataclasses import replace as _replace
     verdicts = []
     for fid, entries in sorted(per_factor.items()):
-        v = factor_verdict(fid, entries, as_of=as_of)
+        dh = dir_hits.get(fid)
+        v = factor_verdict(
+            fid, entries, as_of=as_of,
+            direction_hit_rate=(sum(dh) / len(dh)) if dh else None)
         if "@" in fid:                       # 子判决只做诊断,永不 retire/keep
             v = _replace(v, recommendation="diagnostic")
         verdicts.append(v)

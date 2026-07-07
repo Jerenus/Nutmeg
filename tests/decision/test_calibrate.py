@@ -73,6 +73,64 @@ def test_run_calibrate_emits_diagnostic_subverdicts_per_scope_key(tmp_path):
     assert verdicts["league_bias@swe-allsvenskan"].recommendation == "diagnostic"
     assert verdicts["league_bias"].recommendation == "keep"   # n=1<30 只积累
     assert verdicts["league_bias@swe-allsvenskan"].n_reads == 1
+    # 子判决同样计算方向命中率(direction=draw vs outcome=draw → 1.0)
+    assert verdicts["league_bias@swe-allsvenskan"].direction_hit_rate == 1.0
+
+
+def test_factor_verdict_direction_hit_rate_param_defaults_none():
+    """factor_verdict 加 direction_hit_rate 参数,默认 None 保持兼容。"""
+    v = factor_verdict("f", _settlements(5, 0.6, -0.01), as_of="2026-07-07")
+    assert v.direction_hit_rate is None
+    v2 = factor_verdict("f", _settlements(5, 0.6, -0.01), as_of="2026-07-07",
+                        direction_hit_rate=0.75)
+    assert v2.direction_hit_rate == 0.75
+
+
+def _factored_read_and_settlement(store, i, *, direction, outcome, factor="bunker_profile"):
+    from nutmeg.decision.ontology import Read, Settlement
+    rid = f"R-{i}"
+    store.upsert(Read(
+        read_id=rid, match_id=f"M-{i}", snapshot_id="s", made_at="t",
+        judge="claude", market="had",
+        prior={"home": 0.5, "draw": 0.3, "away": 0.2},
+        belief={"home": 0.44, "draw": 0.36, "away": 0.2},
+        factors=[{"factor_id": factor, "direction": direction,
+                  "weight_pp": 6, "evidence": [{"url": "u"}]}]))
+    store.upsert(Settlement(
+        settlement_id=f"SET-read-{rid}", ref_type="read", ref_id=rid,
+        settled_at="t", outcome_90=outcome, brier=0.6, clv_pp=0.01))
+
+
+def test_run_calibrate_computes_direction_hit_rate(tmp_path):
+    """真计算:每因子引用的 direction 与 Settlement.outcome_90 比对 → 0/1 聚合。"""
+    from nutmeg.decision.calibrate import run_calibrate
+    from nutmeg.decision.store import DecisionStore
+    store = DecisionStore(tmp_path)
+    _factored_read_and_settlement(store, 0, direction="draw", outcome="draw")  # 中
+    _factored_read_and_settlement(store, 1, direction="draw", outcome="home")  # 失
+    verdicts = {v.factor_id: v for v in run_calibrate(store, as_of="2026-07-07")}
+    assert verdicts["bunker_profile"].direction_hit_rate == 0.5
+
+
+def test_run_calibrate_direction_rate_none_when_refs_lack_direction(tmp_path):
+    """引用无 direction 字段 → 不计入;无样本 → None(绝不伪造)。"""
+    from nutmeg.decision.calibrate import run_calibrate
+    from nutmeg.decision.ontology import Read, Settlement
+    from nutmeg.decision.store import DecisionStore
+    store = DecisionStore(tmp_path)
+    store.upsert(Read(
+        read_id="R-0", match_id="M-0", snapshot_id="s", made_at="t",
+        judge="claude", market="had",
+        prior={"home": 0.5, "draw": 0.3, "away": 0.2},
+        belief={"home": 0.44, "draw": 0.36, "away": 0.2},
+        factors=[{"factor_id": "bunker_profile", "weight_pp": 6,
+                  "evidence": [{"url": "u"}]}]))
+    store.upsert(Settlement(
+        settlement_id="SET-read-R-0", ref_type="read", ref_id="R-0",
+        settled_at="t", outcome_90="draw", brier=0.6, clv_pp=0.01))
+    verdicts = {v.factor_id: v for v in run_calibrate(store, as_of="2026-07-07")}
+    assert verdicts["bunker_profile"].n_reads == 1
+    assert verdicts["bunker_profile"].direction_hit_rate is None
 
 
 def test_apply_verdicts_ignores_diagnostic_subverdicts(tmp_path):
