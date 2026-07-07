@@ -89,7 +89,7 @@ def run_reconcile(run_date: str, output_dir: Path, settled_at: str) -> str:
     except Exception:  # noqa: BLE001 — 抓不到赛果 → 全 pending
         results = {}
     n = settle_day(store, run_date=run_date, results=results, settled_at=settled_at)
-    return f"decision-reconcile {run_date}: 结算 {n} 条 Read"
+    return f"decision-reconcile {run_date}: 结算 {n} 条(Read+Ticket)"
 
 
 def run_sense_zucai(issue: str, output_dir: Path, taken_at: str,

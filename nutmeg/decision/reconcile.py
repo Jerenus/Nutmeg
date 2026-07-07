@@ -60,19 +60,84 @@ def settle_ticket_leg(*, market: str, pick: str, line: float | None,
 _HAD_OUTCOME = {"胜": "home", "平": "draw", "负": "away"}
 
 
+def _score_goals(score: str | None) -> tuple[int | None, int | None]:
+    """比分串("2:1"/"2：1")→ (goals_h, goals_a)。缺/坏 → (None, None)。"""
+    if not score:
+        return None, None
+    try:
+        gh, ga = (int(x) for x in score.replace("：", ":").split(":"))
+    except ValueError:
+        return None, None
+    return gh, ga
+
+
 def _result_outcome(result: dict) -> tuple[str | None, str | None, int | None, int | None]:
     """okooo 赛果行 → (outcome_90, score, goals_h, goals_a)。缺 → (None,...)。"""
     had = _HAD_OUTCOME.get(result.get("had", ""))
     score = result.get("score") or None
-    gh = ga = None
-    if score:
-        try:
-            gh, ga = (int(x) for x in score.replace("：", ":").split(":"))
-        except ValueError:
-            gh = ga = None
-        if had is None and gh is not None:
-            had = "home" if gh > ga else "away" if gh < ga else "draw"
+    gh, ga = _score_goals(score)
+    if had is None and gh is not None:
+        had = "home" if gh > ga else "away" if gh < ga else "draw"
     return had, score, gh, ga
+
+
+def settle_tickets(store, *, outcomes: dict, settled_at: str) -> int:
+    """Ticket → Settlement(ref_type=ticket, hit + pnl_yuan)。spec §2:结算双账,
+    Read 记判断,Ticket 记钱。返回结算票数。确定性金额算术(禁嘴算):
+
+    - single:每票一腿,hit=腿 hit,pnl = hit ? stake×odds−stake : −stake;
+    - parlay:全腿 hit 才 hit,pnl = hit ? stake×∏odds−stake : −stake;
+    - fushi:M1.5 先跳过(复式拆票结算未实现,不产伪结果)。
+
+    outcomes={canonical match_id: (outcome_90, score)}。任一 leg 无赛果或不可判
+    (settle_ticket_leg→None,含 hhad 缺线/pick 不可规约)→ 整票跳过不产 pending
+    (继承「未终局跳过」纪律)。幂等:该 ticket 已有 Settlement → 跳过不覆盖。
+    """
+    from nutmeg.decision.ontology import Ticket
+
+    settled_ids = {s.ref_id for s in store.load(Settlement)
+                   if s.ref_type == "ticket"}
+    n = 0
+    for t in store.load(Ticket):
+        if t.ticket_id in settled_ids or t.structure == "fushi":
+            continue
+        leg_hits: list[bool] | None = []
+        for leg in t.legs:
+            oc = outcomes.get(str(leg.get("match_id") or ""))
+            if oc is None:
+                leg_hits = None
+                break
+            outcome, score = oc
+            gh, ga = _score_goals(score)
+            raw_line = leg.get("line")
+            try:
+                line = None if raw_line is None else float(raw_line)
+            except (TypeError, ValueError):
+                line = None                       # 坏线→hhad 不可判→整票跳过
+            res = settle_ticket_leg(
+                market=str(leg.get("market") or ""),
+                pick=str(leg.get("selection") or ""), line=line,
+                outcome_90=outcome, goals_h=gh, goals_a=ga)
+            if res is None:
+                leg_hits = None
+                break
+            leg_hits.append(res == str(leg.get("selection")))
+        if not leg_hits:                          # None(不可判)或空 legs 都跳过
+            continue
+        hit = all(leg_hits)
+        if hit:
+            combined = 1.0
+            for leg in t.legs:
+                combined *= float(leg["odds"])
+            pnl = round(t.stake_yuan * combined - t.stake_yuan, 2)
+        else:
+            pnl = -float(t.stake_yuan)
+        store.upsert(Settlement(
+            settlement_id=f"SET-ticket-{t.ticket_id}", ref_type="ticket",
+            ref_id=t.ticket_id, settled_at=settled_at,
+            hit=hit, pnl_yuan=pnl))
+        n += 1
+    return n
 
 
 def settle_reads_for_matches(store, *, outcomes: dict, settled_at: str) -> int:
@@ -104,11 +169,12 @@ def settle_reads_for_matches(store, *, outcomes: dict, settled_at: str) -> int:
 
 
 def settle_day(store, *, run_date: str, results: dict, settled_at: str) -> int:
-    """当日竞彩 Read → Settlement(Brier+CLV)落库。返回结算数。
+    """当日竞彩 Read+Ticket → Settlement 落库(spec §2 各一条)。返回结算总数
+    (Read 数 + Ticket 数)。
 
     赛果按 okooo 口径 {竞彩号: {score, had}}。canonical 迁移后 match_id 不含竞彩号,
     改经 Match.channel_refs.jczq_match_no 映射到 canonical,再走通用 settle_reads_for_matches
-    (与 zucai 统一;2026-07-06 canonical 修)。
+    (与 zucai 统一;2026-07-06 canonical 修)+ settle_tickets(hit/pnl_yuan)。
     """
     from nutmeg.decision.ontology import Match
 
@@ -125,4 +191,6 @@ def settle_day(store, *, run_date: str, results: dict, settled_at: str) -> int:
         # 只喂有真实结果的场——未终局(outcome None)不产 pending 结算(诚实计数+不占位)。
         if canonical and outcome is not None:
             outcomes[canonical] = (outcome, score)
-    return settle_reads_for_matches(store, outcomes=outcomes, settled_at=settled_at)
+    n_reads = settle_reads_for_matches(store, outcomes=outcomes, settled_at=settled_at)
+    n_tickets = settle_tickets(store, outcomes=outcomes, settled_at=settled_at)
+    return n_reads + n_tickets
