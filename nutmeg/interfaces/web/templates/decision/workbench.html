@@ -1,0 +1,6 @@
+{% extends "decision/layout.html" %}
+{% block body %}
+<main class="wb"><h1>判读工作台</h1>
+<div id="wb-data" data-date="{{ state.date }}">{{ state.matches|length }} 场在售</div>
+</main>
+{% endblock %}

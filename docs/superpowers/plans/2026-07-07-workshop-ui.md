@@ -296,7 +296,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Create: `nutmeg/interfaces/web/templates/decision/layout.html`, `workbench.html`（占位骨架，Task 6 填充视觉）
 - Test: `tests/test_decision_web.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 新建 `tests/test_decision_web.py`：
 
@@ -347,12 +347,12 @@ def test_empty_day_is_explicit_not_silent(tmp_path):
     assert r.json()["events"] == []   # 无 workbench.jsonl → 空事件,不报错
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_decision_web.py -v`
 Expected: 全 FAIL（`ModuleNotFoundError: nutmeg.interfaces.decision_web`）
 
-- [ ] **Step 3: Implement app 工厂 + 只读端点**
+- [x] **Step 3: Implement app 工厂 + 只读端点**
 
 新建 `nutmeg/interfaces/decision_web.py`：
 
@@ -439,12 +439,12 @@ def create_decision_app(*, store: DecisionStore, output_dir) -> FastAPI:
 
 新建空静态占位（Task 6 填充）：`nutmeg/interfaces/web/static/decision/app.css`（写 `/* Workshop UI — Task 6 填充 */`）、`app.js`（写 `// Workshop UI — Task 6 填充`）。
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_decision_web.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run suite + commit**
+- [x] **Step 5: Run suite + commit**
 
 ```bash
 uv run pytest -q
