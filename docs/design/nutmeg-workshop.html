@@ -1,0 +1,520 @@
+<title>Nutmeg Workshop · 判读工作台 视觉稿</title>
+<style>
+:root{
+  --canvas:#E9EDE7; --paper:#F5F7F3; --card:#FDFEFC; --sink:#EEF2EC;
+  --ink:#1B2620; --sub:#5C6B63; --faint:#8A968D;
+  --pine:#1F5C46; --pine-2:#2C7357; --pine-soft:#E3EDE7;
+  --cinnabar:#B23A2C; --cinnabar-soft:#F6E7E3; --cinnabar-ink:#8F2C20;
+  --gold:#8A6F2F; --gold-soft:#F0EAD9;
+  --line:#D7DFD6; --line-2:#C6D0C4;
+  --mono-bg:#EDF1EA;
+}
+@media (prefers-color-scheme:dark){:root{
+  --canvas:#0B120E; --paper:#0F1613; --card:#161F1A; --sink:#111A15;
+  --ink:#DEE6DE; --sub:#93A398; --faint:#6A7A70;
+  --pine:#5BBA93; --pine-2:#6FCBA4; --pine-soft:#17281F;
+  --cinnabar:#E0705A; --cinnabar-soft:#361D18; --cinnabar-ink:#F0A08C;
+  --gold:#C9A85C; --gold-soft:#2A2415;
+  --line:#25322B; --line-2:#314138;
+  --mono-bg:#18211C;
+}}
+:root[data-theme="dark"]{
+  --canvas:#0B120E; --paper:#0F1613; --card:#161F1A; --sink:#111A15;
+  --ink:#DEE6DE; --sub:#93A398; --faint:#6A7A70;
+  --pine:#5BBA93; --pine-2:#6FCBA4; --pine-soft:#17281F;
+  --cinnabar:#E0705A; --cinnabar-soft:#361D18; --cinnabar-ink:#F0A08C;
+  --gold:#C9A85C; --gold-soft:#2A2415;
+  --line:#25322B; --line-2:#314138; --mono-bg:#18211C;
+}
+:root[data-theme="light"]{
+  --canvas:#E9EDE7; --paper:#F5F7F3; --card:#FDFEFC; --sink:#EEF2EC;
+  --ink:#1B2620; --sub:#5C6B63; --faint:#8A968D;
+  --pine:#1F5C46; --pine-2:#2C7357; --pine-soft:#E3EDE7;
+  --cinnabar:#B23A2C; --cinnabar-soft:#F6E7E3; --cinnabar-ink:#8F2C20;
+  --gold:#8A6F2F; --gold-soft:#F0EAD9;
+  --line:#D7DFD6; --line-2:#C6D0C4; --mono-bg:#EDF1EA;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--canvas); color:var(--ink);
+  font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+  line-height:1.6; -webkit-font-smoothing:antialiased; padding:0 20px 90px;
+}
+.serif{font-family:"Songti SC","Noto Serif SC","STSong",Georgia,serif}
+.mono{font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace; font-variant-numeric:tabular-nums}
+.wrap{max-width:1360px; margin:0 auto}
+
+/* ---- spec-sheet frame ---- */
+.sheet-head{padding:52px 4px 20px; border-bottom:1px solid var(--line-2); margin-bottom:30px}
+.kicker{font-size:11.5px; letter-spacing:.26em; text-transform:uppercase; color:var(--pine); font-weight:700}
+.sheet-head h1{margin:12px 0 6px; font-size:clamp(26px,4.2vw,40px); font-weight:800; letter-spacing:-.01em}
+.sheet-head h1 .serif{font-weight:900}
+.sheet-head p{margin:0; color:var(--sub); max-width:60ch; font-size:15px}
+.legend{display:flex; flex-wrap:wrap; gap:16px 26px; margin-top:22px; font-size:12.5px; color:var(--sub)}
+.legend b{color:var(--ink); font-weight:600}
+.sw{display:inline-flex; align-items:center; gap:7px}
+.dot{width:11px; height:11px; border-radius:3px; flex:0 0 auto}
+
+.screen-label{display:flex; align-items:baseline; gap:12px; margin:46px 4px 14px}
+.screen-label .n{font-family:"Songti SC",serif; font-weight:900; color:var(--pine); font-size:15px; font-variant-numeric:tabular-nums}
+.screen-label h2{margin:0; font-size:18px; font-weight:700}
+.screen-label span{color:var(--faint); font-size:13px}
+
+/* ================= WORKBENCH DEVICE ================= */
+.device{background:var(--paper); border:1px solid var(--line-2); border-radius:14px; box-shadow:0 22px 50px -30px rgba(20,40,30,.5); overflow:hidden}
+.chrome{display:flex; align-items:center; gap:8px; padding:9px 14px; background:var(--sink); border-bottom:1px solid var(--line)}
+.chrome i{width:11px;height:11px;border-radius:50%;background:var(--line-2)}
+.chrome .url{margin-left:10px; font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--faint)}
+
+/* top bar */
+.topbar{display:flex; align-items:center; gap:18px; padding:10px 18px; background:var(--card); border-bottom:1px solid var(--line)}
+.brand{font-weight:700; font-size:14px; white-space:nowrap}
+.brand .mk{color:var(--pine)}
+.datenav{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--sub)}
+.datenav .d{color:var(--ink); font-weight:600}
+.datenav b{font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums}
+.arw{color:var(--faint); cursor:default}
+.lights{display:flex; align-items:center; gap:14px; margin-left:4px; font-size:11.5px}
+.lite{display:flex; align-items:center; gap:5px; color:var(--sub); font-family:ui-monospace,Menlo,monospace}
+.lite .b{width:8px;height:8px;border-radius:50%}
+.lite.done .b{background:var(--pine)} .lite.done{color:var(--pine)}
+.lite.pend .b{background:transparent; border:1.5px solid var(--sub)}
+.lite.idle .b{background:var(--line-2)}
+.spacer{flex:1}
+.budget{display:flex; align-items:center; gap:9px; font-size:12px; color:var(--sub)}
+.budget .bar{width:96px; height:7px; border-radius:99px; background:var(--sink); overflow:hidden; border:1px solid var(--line)}
+.budget .fill{height:100%; width:20%; background:var(--pine)}
+.budget .amt{font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums; color:var(--ink); font-weight:600}
+.sse{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--pine);font-family:ui-monospace,Menlo,monospace}
+.sse .b{width:7px;height:7px;border-radius:50%;background:var(--pine)}
+.theme-toggle{border:1px solid var(--line-2); background:var(--card); color:var(--sub); border-radius:7px; padding:4px 10px; font-size:12px; cursor:pointer; font-family:inherit}
+.theme-toggle:hover{color:var(--ink); border-color:var(--pine)}
+
+/* 3-col body */
+.wbbody{display:grid; grid-template-columns:262px 1fr 328px; min-height:560px}
+.col{padding:16px 16px 20px; overflow:hidden}
+.col.flow{border-right:1px solid var(--line); background:linear-gradient(180deg,var(--paper),var(--paper))}
+.col.verdict{border-left:1px solid var(--line); background:var(--sink)}
+.coltitle{display:flex;align-items:center;justify-content:space-between; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:14px}
+.coltitle .cnt{font-family:ui-monospace,Menlo,monospace; color:var(--sub)}
+
+/* attention flow */
+.fgroup{margin-bottom:18px}
+.fglabel{display:flex;align-items:center;gap:7px; font-size:12px; color:var(--sub); margin-bottom:8px; font-weight:600}
+.fglabel .pip{width:7px;height:7px;border-radius:2px}
+.fglabel .k{margin-left:auto; font-family:ui-monospace,Menlo,monospace; color:var(--faint); font-weight:400}
+.fitem{background:var(--card); border:1px solid var(--line); border-radius:9px; padding:9px 11px; margin-bottom:7px; cursor:default; position:relative}
+.fitem.sel{border-color:var(--cinnabar); box-shadow:inset 3px 0 0 var(--cinnabar)}
+.fitem.hot{border-left:3px solid var(--cinnabar)}
+.fitem .m{font-size:13px; font-weight:600; letter-spacing:-.01em}
+.fitem .why{font-size:11.5px; color:var(--sub); margin-top:2px; display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+.tagmini{font-family:ui-monospace,Menlo,monospace; font-size:10.5px; padding:1px 6px; border-radius:4px; background:var(--pine-soft); color:var(--pine-2); font-variant-numeric:tabular-nums}
+.tagmini.cin{background:var(--cinnabar-soft); color:var(--cinnabar); font-weight:600}
+.tagmini.gold{background:var(--gold-soft); color:var(--gold)}
+.fitem.shadow{background:transparent; border-style:dashed; color:var(--sub); text-align:center; font-size:12px; padding:11px}
+.fitem.shadow .m{font-weight:500; color:var(--sub)}
+
+/* center stage */
+.crumb{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--sub); margin-bottom:16px; flex-wrap:wrap}
+.crumb .h{font-family:"Songti SC",serif; font-size:19px; font-weight:900; color:var(--ink); letter-spacing:.01em}
+.crumb .sep{color:var(--line-2)}
+.crumb .meta{font-family:ui-monospace,Menlo,monospace; font-size:12px}
+.vblock{background:var(--card); border:1px solid var(--line); border-radius:11px; padding:14px 16px; margin-bottom:12px}
+.vbhead{display:flex; align-items:center; gap:8px; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:11px}
+.vbhead .tick{font-family:ui-monospace,Menlo,monospace; letter-spacing:0; text-transform:none; margin-left:auto; color:var(--sub)}
+.vbhead.ent{color:var(--gold)}
+.vbhead.ent::before{content:"◆"; color:var(--gold)}
+
+/* 3-way market bar */
+.way{display:flex; height:34px; border-radius:7px; overflow:hidden; border:1px solid var(--line); font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums}
+.way .seg{display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff; font-size:11px; line-height:1.15}
+.way .seg small{opacity:.85; font-size:9.5px}
+.way .home{background:var(--pine)} .way .draw{background:var(--pine-2); opacity:.72} .way .away{background:#9AA79E}
+:root[data-theme="dark"] .way .away, :where(@media (prefers-color-scheme:dark)) .way .away{background:#4A5852}
+.wlabels{display:flex; justify-content:space-between; font-size:10.5px; color:var(--faint); margin-top:5px; font-family:ui-monospace,Menlo,monospace}
+
+/* league profile */
+.profile-line{font-size:12.5px; color:var(--sub); line-height:1.55}
+.profile-line b{color:var(--ink); font-weight:600}
+.evi{display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--gold); font-family:ui-monospace,Menlo,monospace; margin-top:6px}
+
+/* DC matrix mini */
+.dc{display:grid; grid-template-columns:repeat(5,1fr); gap:3px; max-width:210px}
+.dc .cell{aspect-ratio:1; border-radius:3px; background:var(--pine-soft); display:flex;align-items:center;justify-content:center; font-family:ui-monospace,Menlo,monospace; font-size:9px; color:var(--sub)}
+.dc .cell.m1{background:var(--pine); color:#fff; font-weight:600}
+.dc .cell.m2{background:var(--pine-2); color:#fff}
+.dc .cell.m3{background:var(--pine-2); opacity:.55; color:#fff}
+
+/* ---- SIGNATURE: deviation readout ---- */
+.dev{margin-top:2px}
+.devrow{display:grid; grid-template-columns:52px 1fr; align-items:center; gap:10px; margin-bottom:7px}
+.devrow .lab{font-size:11px; color:var(--sub); text-align:right; font-family:"Songti SC",serif; font-weight:700}
+.devrow .lab.prior{color:var(--faint); font-family:ui-monospace,Menlo,monospace; font-weight:400}
+.track{display:flex; height:26px; border-radius:6px; overflow:hidden; border:1px solid var(--line); font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums; font-size:10.5px}
+.track .s{display:flex;align-items:center;justify-content:center;color:#fff}
+.track .s.h{background:var(--pine)} .track .s.d{background:var(--pine-2);opacity:.7} .track .s.a{background:#9AA79E}
+.track.belief .s.d{background:var(--cinnabar); opacity:1}
+.delta{display:flex; align-items:center; gap:8px; margin-top:9px; padding-top:10px; border-top:1px dashed var(--line)}
+.delta .amt{font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums; font-weight:700; color:var(--cinnabar); font-size:15px}
+.delta .via{font-size:12px; color:var(--sub)}
+.delta .fac{font-family:ui-monospace,Menlo,monospace; font-size:11.5px; padding:2px 8px; border-radius:5px; background:var(--gold-soft); color:var(--gold); font-weight:600}
+
+/* verdict cards */
+.vcount{color:var(--cinnabar)!important}
+.acard{background:var(--card); border:1px solid var(--line); border-radius:11px; padding:0; margin-bottom:12px; overflow:hidden; position:relative}
+.acard::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--cinnabar)}
+@media (prefers-reduced-motion:no-preference){
+  .acard::before{animation:breathe 2.6s ease-in-out infinite}
+  @keyframes breathe{0%,100%{opacity:.45} 50%{opacity:1}}
+}
+.acard .inner{padding:13px 15px 14px 16px}
+.actype{display:flex; align-items:center; gap:7px; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--cinnabar); font-weight:700; margin-bottom:9px}
+.actype .kind{margin-left:auto; color:var(--faint); letter-spacing:0; text-transform:none; font-family:ui-monospace,Menlo,monospace}
+.acmatch{font-size:14px; font-weight:600; margin-bottom:2px}
+.acmarket{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--sub); margin-bottom:11px}
+.mini-dev{margin:10px 0}
+.mini-track{display:flex;height:20px;border-radius:5px;overflow:hidden;border:1px solid var(--line);font-family:ui-monospace,Menlo,monospace;font-size:9.5px}
+.mini-track .s{display:flex;align-items:center;justify-content:center;color:#fff}
+.mini-track .h{background:var(--pine)}.mini-track .d{background:var(--pine-2);opacity:.7}.mini-track .a{background:#9AA79E}
+.mini-track.bel .d{background:var(--cinnabar);opacity:1}
+.acmeta{font-size:12px; color:var(--sub); line-height:1.6; margin:10px 0}
+.acmeta .row{display:flex; gap:8px; padding:3px 0}
+.acmeta .row .l{color:var(--faint); flex:0 0 46px; font-size:11px}
+.acmeta .row .v{color:var(--ink)}
+.acmeta .fchip{font-family:ui-monospace,Menlo,monospace; font-size:11px; background:var(--gold-soft); color:var(--gold); padding:1px 7px; border-radius:4px; font-weight:600}
+.acmeta a{color:var(--gold); text-decoration:none; border-bottom:1px dotted var(--gold)}
+.conf{display:inline-flex; gap:3px; align-items:center}
+.conf b{width:7px;height:7px;border-radius:50%;background:var(--line-2)}
+.conf b.on{background:var(--pine)}
+.gate{font-size:10.5px; color:var(--faint); font-family:ui-monospace,Menlo,monospace; margin-top:8px; padding-top:9px; border-top:1px solid var(--line)}
+.acbtns{display:flex; gap:8px; margin-top:12px}
+.btn{flex:1; border:1px solid var(--line-2); background:var(--card); color:var(--sub); border-radius:8px; padding:8px 0; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; text-align:center}
+.btn:hover{border-color:var(--sub); color:var(--ink)}
+.btn.primary{background:var(--cinnabar); border-color:var(--cinnabar); color:#fff}
+.btn.primary:hover{background:var(--cinnabar-ink); border-color:var(--cinnabar-ink); color:#fff}
+.btn.pine{background:var(--pine); border-color:var(--pine); color:#fff}
+.btn.pine:hover{background:var(--pine-2);border-color:var(--pine-2)}
+.legline{font-size:11.5px; color:var(--sub); margin:8px 0 3px; display:flex; justify-content:space-between; font-family:ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums}
+.emptypos{margin-top:16px; text-align:center; border:1px dashed var(--line-2); border-radius:9px; padding:11px; font-size:12.5px; color:var(--sub); cursor:default}
+.emptypos:hover{border-color:var(--pine); color:var(--pine)}
+
+/* anchored thread */
+.thread{border-top:1px solid var(--line); background:var(--paper); padding:12px 18px 14px}
+.thhead{display:flex; align-items:center; gap:8px; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:10px}
+.thhead .ico{font-family:"Songti SC",serif; font-weight:900; color:var(--cinnabar); font-size:15px; letter-spacing:0}
+.thhead .anchor{color:var(--cinnabar); letter-spacing:0; text-transform:none; font-weight:600}
+.thhead .v2{margin-left:auto; font-family:ui-monospace,Menlo,monospace; font-size:10.5px; padding:2px 8px; border:1px dashed var(--line-2); border-radius:6px; color:var(--faint); font-weight:400}
+.turns{display:flex; flex-direction:column; gap:8px; margin-bottom:11px}
+.turn{display:flex; gap:9px; align-items:flex-start; font-size:12.5px; line-height:1.5}
+.turn .who{flex:0 0 auto; width:20px; height:20px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-family:"Songti SC",serif; font-weight:900; font-size:12px; margin-top:1px}
+.turn.you .who{background:var(--sink); color:var(--sub)}
+.turn.ai .who{background:var(--cinnabar-soft); color:var(--cinnabar)}
+.turn .txt{color:var(--ink)}
+.turn .txt .rev{display:inline-flex; align-items:center; gap:4px; font-family:ui-monospace,Menlo,monospace; font-size:10.5px; color:var(--cinnabar); background:var(--cinnabar-soft); padding:1px 7px; border-radius:5px; margin-left:6px; font-weight:600}
+.turn .txt .fchip2{font-family:ui-monospace,Menlo,monospace; font-size:11px; background:var(--gold-soft); color:var(--gold); padding:0 6px; border-radius:4px; font-weight:600}
+.askbar{display:flex; gap:9px; align-items:center}
+.askbar .field{flex:1; border:1px solid var(--line-2); background:var(--card); border-radius:9px; padding:9px 12px; font-size:12.5px; color:var(--faint)}
+.askbar .send{border:1px solid var(--pine); background:var(--card); color:var(--pine); border-radius:9px; padding:9px 15px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit}
+.askbar .send:hover{background:var(--pine); color:#fff}
+
+/* ============ CARD ANATOMY ============ */
+.anat{display:grid; grid-template-columns:1fr 300px; gap:26px; align-items:start}
+@media(max-width:820px){.anat{grid-template-columns:1fr}}
+.anat-card{background:var(--card); border:1px solid var(--line); border-radius:13px; overflow:hidden; position:relative; box-shadow:0 18px 40px -28px rgba(20,40,30,.5)}
+.anat-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cinnabar)}
+.anat-notes{display:flex; flex-direction:column; gap:14px}
+.note{background:var(--paper); border:1px solid var(--line); border-radius:9px; padding:11px 13px}
+.note .nt{font-family:"Songti SC",serif; font-weight:900; font-size:13px; color:var(--pine); margin-bottom:3px; display:flex; gap:8px; align-items:baseline}
+.note .nt .idx{font-family:ui-monospace,Menlo,monospace; color:var(--cinnabar); font-size:12px}
+.note p{margin:0; font-size:12.5px; color:var(--sub); line-height:1.55}
+.note code{font-family:ui-monospace,Menlo,monospace; font-size:11.5px; background:var(--mono-bg); padding:1px 5px; border-radius:4px; color:var(--ink)}
+
+/* ============ MOBILE ============ */
+.mobile-row{display:flex; gap:26px; align-items:flex-start; flex-wrap:wrap}
+.phone{width:320px; flex:0 0 320px; background:var(--paper); border:8px solid #10171300; border-radius:30px; box-shadow:0 0 0 2px var(--line-2), 0 26px 50px -28px rgba(20,40,30,.55); overflow:hidden}
+.phone .notch{height:26px; background:var(--card); border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:center}
+.phone .notch::after{content:""; width:70px; height:5px; border-radius:99px; background:var(--line-2)}
+.mtop{padding:10px 14px; background:var(--card); border-bottom:1px solid var(--line)}
+.mtop .r1{display:flex; align-items:center; justify-content:space-between; font-size:13px}
+.mtop .r1 b{font-weight:700} .mtop .r1 .d{font-family:ui-monospace,Menlo,monospace; color:var(--sub); font-size:12px}
+.mtop .r2{display:flex; align-items:center; gap:8px; margin-top:7px}
+.mtop .r2 .bar{flex:1; height:6px; border-radius:99px; background:var(--sink); overflow:hidden; border:1px solid var(--line)}
+.mtop .r2 .fill{height:100%; width:20%; background:var(--pine)}
+.mtop .r2 .amt{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--ink); font-weight:600}
+.mtabs{display:flex; background:var(--sink); border-bottom:1px solid var(--line)}
+.mtab{flex:1; text-align:center; padding:9px 0; font-size:12px; color:var(--sub); border-bottom:2px solid transparent}
+.mtab.on{color:var(--cinnabar); border-bottom-color:var(--cinnabar); font-weight:700; background:var(--card)}
+.mtab .b{display:inline-block; min-width:15px; font-family:ui-monospace,Menlo,monospace; font-size:10px; background:var(--cinnabar); color:#fff; border-radius:99px; padding:0 4px; margin-left:3px; vertical-align:1px}
+.mbody{padding:13px; background:var(--paper); min-height:420px}
+
+.mfoot{color:var(--sub); font-size:12.5px; max-width:280px}
+.mfoot h4{font-family:"Songti SC",serif; font-weight:900; color:var(--ink); font-size:15px; margin:0 0 8px}
+.mfoot p{margin:0 0 10px; line-height:1.6}
+.mfoot code{font-family:ui-monospace,Menlo,monospace; font-size:11.5px; background:var(--mono-bg); padding:1px 5px; border-radius:4px}
+
+footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--line-2); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; font-size:12px; color:var(--faint)}
+footer .mono{font-family:ui-monospace,Menlo,monospace}
+</style>
+
+<div class="wrap">
+
+<header class="sheet-head">
+  <div class="kicker">Nutmeg · Decision Ontology · Workshop UI</div>
+  <h1><span class="serif">判读工作台</span> — AI 起草，你追问共磨，最后裁决</h1>
+  <p>Palantir Workshop 的单人 AI-native 对应物。agent 排好今天该看什么、把判断做成带证据的草稿；你可以就每个草稿<b style="color:var(--cinnabar)">增量追问、与它一起把理解磨深</b>，草稿随讨论实时改写；满意后一键裁决——每一次批准都经与命令行同一份 schema 校验入库。界面不产生判断，只承载判断的对话、记录你的裁决。</p>
+  <div class="legend">
+    <span class="sw"><span class="dot" style="background:var(--pine)"></span><b>Pine</b>市场锚 · 确定性代码</span>
+    <span class="sw"><span class="dot" style="background:var(--cinnabar)"></span><b>Cinnabar</b>只亮在待你裁决处</span>
+    <span class="sw"><span class="dot" style="background:var(--gold)"></span><b>Gold</b>实体层 · 联赛/球队画像</span>
+    <span class="sw"><span class="serif" style="font-weight:900;color:var(--ink)">宋</span>判断层</span>
+    <span class="sw"><span class="mono" style="color:var(--ink)">0.46</span>机器数据 · 等宽对齐</span>
+    <button class="theme-toggle" onclick="var r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'">切换主题</button>
+  </div>
+</header>
+
+<!-- ================= SCREEN 1: WORKBENCH ================= -->
+<div class="screen-label"><span class="n">壹</span><h2>桌面工作台</h2><span>1360 · 与 Claude 会话双窗并排</span></div>
+
+<div class="device">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">127.0.0.1:8787 · decision-web</span></div>
+
+  <div class="topbar">
+    <div class="brand"><span class="mk">▸</span> 判读工作台</div>
+    <div class="datenav"><span class="arw">◀</span><span class="d mono">2026-07-07</span><span class="arw">▶</span></div>
+    <div class="lights">
+      <span class="lite done"><span class="b"></span>am 08:00 ✓</span>
+      <span class="lite pend"><span class="b"></span>close 19:00 · 4:31</span>
+      <span class="lite idle"><span class="b"></span>settle —</span>
+    </div>
+    <div class="spacer" style="flex:1"></div>
+    <div class="budget"><span>预算</span><span class="bar"><span class="fill"></span></span><span class="amt">¥80/400</span></div>
+    <div class="sse"><span class="b"></span>实时</div>
+  </div>
+
+  <div class="wbbody">
+    <!-- LEFT: attention flow -->
+    <div class="col flow">
+      <div class="coltitle">今日议程 · agent 排序 <span class="cnt">8</span></div>
+
+      <div class="fgroup">
+        <div class="fglabel"><span class="pip" style="background:var(--cinnabar)"></span>因子候选 <span class="k">1</span></div>
+        <div class="fitem hot">
+          <div class="m">阿根廷 vs 埃及</div>
+          <div class="why"><span class="tagmini cin">签位激励?</span>MD3 高名次碰强签</div>
+        </div>
+      </div>
+
+      <div class="fgroup">
+        <div class="fglabel"><span class="pip" style="background:var(--cinnabar)"></span>草稿待审 <span class="k">1</span></div>
+        <div class="fitem sel">
+          <div class="m">哈马比 vs 卡尔马</div>
+          <div class="why"><span class="tagmini gold">league_bias</span>平 <span class="mono" style="color:var(--cinnabar);font-weight:600">+6pp</span></div>
+        </div>
+      </div>
+
+      <div class="fgroup">
+        <div class="fglabel"><span class="pip" style="background:var(--gold)"></span>急动待查 <span class="k">1</span></div>
+        <div class="fitem">
+          <div class="m">瑞士 vs 哥伦比亚</div>
+          <div class="why">欧赔 24h <span class="tagmini">主 −0.08</span>先查因</div>
+        </div>
+      </div>
+
+      <div class="fgroup">
+        <div class="fglabel"><span class="pip" style="background:var(--pine)"></span>跟市场 shadow <span class="k">5</span></div>
+        <div class="fitem shadow"><div class="m">5 场 belief = prior · 自动基线</div></div>
+      </div>
+    </div>
+
+    <!-- CENTER: stage -->
+    <div class="col stage">
+      <div class="crumb"><span class="h serif">哈马比 vs 卡尔马</span><span class="sep">·</span><span>瑞超</span><span class="sep">·</span><span class="meta">今晚 01:00</span></div>
+
+      <div class="vblock">
+        <div class="vbhead">市场锚 · 欧赔去水 fair <span class="tick">apifootball · 08:00</span></div>
+        <div class="way">
+          <div class="seg home" style="flex:52">主胜<small>0.52</small></div>
+          <div class="seg draw" style="flex:27">平<small>0.27</small></div>
+          <div class="seg away" style="flex:21">客胜<small>0.21</small></div>
+        </div>
+        <div class="wlabels"><span>had @1.92</span><span>@3.45</span><span>@4.30</span></div>
+      </div>
+
+      <div class="vblock">
+        <div class="vbhead ent">瑞超画像 · League profile</div>
+        <div class="profile-line"><b>极端主客分裂</b>：卡尔马客场 0 分 · 哥德堡主场 0 胜 · 哈马比主场 20–5 — 禁用通用主场加成。</div>
+        <div class="profile-line" style="margin-top:6px">xG 背离：<b>哈马比被积分榜低估</b>（xG 第 2 强）· 6/5 换帅 Rydström。</div>
+        <span class="evi">◆ memory allsvenskan-2026 ↗</span>
+      </div>
+
+      <div class="vblock">
+        <div class="vbhead">比分矩阵 · Dixon-Coles from fair <span class="tick">模态 1:0 → 2:1</span></div>
+        <div class="dc">
+          <div class="cell m1">1:0</div><div class="cell m2">2:1</div><div class="cell">1:1</div><div class="cell m3">2:0</div><div class="cell">0:0</div>
+          <div class="cell">2:2</div><div class="cell">3:1</div><div class="cell">1:2</div><div class="cell">0:1</div><div class="cell">3:0</div>
+        </div>
+      </div>
+
+      <div class="vblock">
+        <div class="vbhead">判读读数 · prior → belief</div>
+        <div class="dev">
+          <div class="devrow"><span class="lab prior">prior</span>
+            <div class="track"><span class="s h" style="flex:52">主 52</span><span class="s d" style="flex:27">平 27</span><span class="s a" style="flex:21">客 21</span></div>
+          </div>
+          <div class="devrow"><span class="lab serif">belief</span>
+            <div class="track belief"><span class="s h" style="flex:46">主 46</span><span class="s d" style="flex:31">平 31</span><span class="s a" style="flex:23">客 23</span></div>
+          </div>
+          <div class="delta"><span class="amt">平 +6pp</span><span class="via">← 偏移许可</span><span class="fac">league_bias @swe-allsvenskan</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: verdict -->
+    <div class="col verdict">
+      <div class="coltitle">待裁决 <span class="cnt vcount">2</span></div>
+
+      <div class="acard">
+        <div class="inner">
+          <div class="actype">Read 草稿<span class="kind">typed action</span></div>
+          <div class="acmatch">哈马比 vs 卡尔马</div>
+          <div class="acmarket">market = had · judge = claude</div>
+          <div class="mini-dev">
+            <div class="mini-track" style="margin-bottom:4px"><span class="s h" style="flex:52">52</span><span class="s d" style="flex:27">27</span><span class="s a" style="flex:21">21</span></div>
+            <div class="mini-track bel"><span class="s h" style="flex:46">46</span><span class="s d" style="flex:31">31</span><span class="s a" style="flex:23">23</span></div>
+          </div>
+          <div class="acmeta">
+            <div class="row"><span class="l">因子</span><span class="v"><span class="fchip">league_bias</span> 平 +6pp</span></div>
+            <div class="row"><span class="l">证据</span><span class="v"><a href="#">瑞超画像 · allsvenskan-2026 ↗</a></span></div>
+            <div class="row"><span class="l">证伪</span><span class="v">若哈马比轮换双前锋则撤回</span></div>
+            <div class="row"><span class="l">信心</span><span class="v conf"><b class="on"></b><b class="on"></b><b class="on"></b><b></b><b></b> <span class="mono" style="color:var(--sub)">3</span></span></div>
+          </div>
+          <div class="gate">批准 → ingest_reads() 同一校验入库</div>
+          <div class="acbtns"><button class="btn">拒绝</button><button class="btn primary">批准入库</button></div>
+        </div>
+      </div>
+
+      <div class="acard">
+        <div class="inner">
+          <div class="actype">legs 提案<span class="kind">typed action</span></div>
+          <div class="acmatch">哈马比 主胜</div>
+          <div class="acmarket">bucket = main · 主方向单关</div>
+          <div class="acmeta">
+            <div class="row"><span class="l">赔率</span><span class="v mono">@1.92</span></div>
+            <div class="row"><span class="l">命中</span><span class="v mono">0.46 <span style="color:var(--faint)">（代码算）</span></span></div>
+            <div class="row"><span class="l">注额</span><span class="v mono" style="font-weight:600">¥80</span></div>
+          </div>
+          <div class="legline"><span>主方向桶</span><span>¥80 / 100</span></div>
+          <div class="gate">确认 → 预算闸 + schema → legs.json</div>
+          <div class="acbtns"><button class="btn">移除</button><button class="btn pine">确认出票</button></div>
+        </div>
+      </div>
+
+      <div class="emptypos">空仓：今天不打 · 空仓永远合法</div>
+    </div>
+  </div>
+
+  <div class="thread">
+    <div class="thhead"><span class="ico">追</span>追问线程<span class="anchor">· 锚定：哈马比 vs 卡尔马 Read 草稿</span><span class="v2">v1 终端引擎 → v2 内嵌</span></div>
+    <div class="turns">
+      <div class="turn you"><span class="who">你</span><span class="txt">瑞超主客分裂这么极端，哈马比主场 20-5，为什么压平不压主胜？</span></div>
+      <div class="turn ai"><span class="who">判</span><span class="txt">主场 20-5 是全季累计；但卡尔马客场 0 分却已连丢两场，铁桶画像压净胜——翻出 <span class="fchip2">bunker_profile</span>，平局档反而更厚。<span class="rev">↑ 草稿改写 平 +6→+9pp</span></span></div>
+      <div class="turn you"><span class="who">你</span><span class="txt">那战意呢？哈马比是争冠还是保级？</span></div>
+    </div>
+    <div class="askbar"><span class="field">继续追问，或让它去查战意…</span><span class="send">发送</span></div>
+  </div>
+</div>
+
+<!-- ================= SCREEN 2: CARD ANATOMY ================= -->
+<div class="screen-label"><span class="n">贰</span><h2>Read 审批卡 · 解剖</h2><span>签名元素：prior→belief 偏移读数器</span></div>
+
+<div class="anat">
+  <div class="anat-card">
+    <div class="inner" style="padding:18px 20px 20px 22px">
+      <div class="actype" style="font-size:11px">Read 草稿<span class="kind">typed action · draft_id R-2026-07-07-014</span></div>
+      <div class="acmatch" style="font-size:17px">哈马比 vs 卡尔马</div>
+      <div class="acmarket" style="margin-bottom:16px">market = had · judge = claude · made_at 14:22</div>
+
+      <div class="vbhead" style="margin-bottom:9px">prior → belief</div>
+      <div class="dev" style="margin-bottom:6px">
+        <div class="devrow"><span class="lab prior">prior</span>
+          <div class="track" style="height:30px"><span class="s h" style="flex:52">主 52</span><span class="s d" style="flex:27">平 27</span><span class="s a" style="flex:21">客 21</span></div>
+        </div>
+        <div class="devrow"><span class="lab serif">belief</span>
+          <div class="track belief" style="height:30px"><span class="s h" style="flex:46">主 46</span><span class="s d" style="flex:31">平 31</span><span class="s a" style="flex:23">客 23</span></div>
+        </div>
+        <div class="delta"><span class="amt">平 +6pp</span><span class="via">← 偏移许可</span><span class="fac">league_bias @swe-allsvenskan</span></div>
+      </div>
+
+      <div class="acmeta" style="margin-top:14px">
+        <div class="row"><span class="l">证据</span><span class="v"><a href="#">瑞超极端主客分裂 · allsvenskan-2026 ↗</a></span></div>
+        <div class="row"><span class="l">证伪</span><span class="v">若哈马比轮换双前锋则撤回本偏移</span></div>
+        <div class="row"><span class="l">信心</span><span class="v conf"><b class="on"></b><b class="on"></b><b class="on"></b><b></b><b></b> <span class="mono" style="color:var(--sub)">conf 3</span></span></div>
+      </div>
+      <div class="gate">批准 → ingest_reads() 同一校验：概率归一 · weight_pp 对账 · 因子在词典 · 证据非空 · league scope 必带 scope_key</div>
+      <div class="acbtns"><button class="btn">拒绝并留痕</button><button class="btn primary">批准入库</button></div>
+    </div>
+  </div>
+
+  <div class="anat-notes">
+    <div class="note"><div class="nt"><span class="idx">A</span>偏移读数器（签名）</div><p>系统的原子被渲染成一支量规：pine 基线是<b>市场先验</b>，belief 行里唯独偏移的那一档转为 <code>cinnabar</code>。判断从哪偏、偏多少，一眼可读。</p></div>
+    <div class="note"><div class="nt"><span class="idx">B</span>命名因子 = 许可证</div><p>没有命名因子就不许偏移。<code>gold</code> 芯片标注因子与 <code>scope_key</code>——偏移的合法性来源，也是 CLV/Brier 事后归因的键。</p></div>
+    <div class="note"><div class="nt"><span class="idx">C</span>证据 + 证伪</div><p>每条偏移带证据链接与 falsifier。空证据的草稿批不进——校验会挡。</p></div>
+    <div class="note"><div class="nt"><span class="idx">D</span>朱砂只在此亮</div><p>整个工作台仅"待裁决"处用 cinnabar：左侧竖纹缓慢呼吸、批准按钮实心朱砂。你的视线被精确带到需要判断的地方。</p></div>
+    <div class="note"><div class="nt"><span class="idx">E</span>批准即过闸</div><p>按钮下方明写将执行的校验。界面与 <code>decision-read</code> 命令行走<b>同一份 validate_read</b>——UI 不是绕过 schema 的旁门。</p></div>
+  </div>
+</div>
+
+<!-- ================= SCREEN 3: MOBILE ================= -->
+<div class="screen-label"><span class="n">叁</span><h2>手机 · 单列</h2><span>晚间从手机审卡确认出票</span></div>
+
+<div class="mobile-row">
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="mtop">
+      <div class="r1"><b>判读工作台</b><span class="d">2026-07-07</span></div>
+      <div class="r2"><span class="bar"><span class="fill"></span></span><span class="amt">¥80/400</span></div>
+    </div>
+    <div class="mtabs">
+      <div class="mtab">议程</div>
+      <div class="mtab">舞台</div>
+      <div class="mtab on">裁决<span class="b">2</span></div>
+    </div>
+    <div class="mbody">
+      <div class="acard" style="margin-bottom:11px">
+        <div class="inner" style="padding:12px 13px 13px 15px">
+          <div class="actype" style="font-size:10px">Read 草稿</div>
+          <div class="acmatch" style="font-size:14px">哈马比 vs 卡尔马</div>
+          <div class="acmarket" style="margin-bottom:9px">market = had</div>
+          <div class="mini-dev">
+            <div class="mini-track" style="margin-bottom:4px"><span class="s h" style="flex:52">52</span><span class="s d" style="flex:27">27</span><span class="s a" style="flex:21">21</span></div>
+            <div class="mini-track bel"><span class="s h" style="flex:46">46</span><span class="s d" style="flex:31">31</span><span class="s a" style="flex:23">23</span></div>
+          </div>
+          <div style="font-size:12px;color:var(--sub);margin:9px 0 2px"><span class="fchip" style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;background:var(--gold-soft);color:var(--gold);padding:1px 6px;border-radius:4px;font-weight:600">league_bias</span> 平 <span class="mono" style="color:var(--cinnabar);font-weight:600">+6pp</span></div>
+          <div class="acbtns" style="margin-top:10px"><button class="btn" style="padding:7px 0">拒绝</button><button class="btn primary" style="padding:7px 0">批准</button></div>
+        </div>
+      </div>
+      <div class="acard">
+        <div class="inner" style="padding:12px 13px 13px 15px">
+          <div class="actype" style="font-size:10px">legs 提案</div>
+          <div class="acmatch" style="font-size:14px">哈马比 主胜 <span class="mono" style="font-size:12px;color:var(--sub);font-weight:400">@1.92</span></div>
+          <div class="acmarket" style="margin-bottom:7px">main · ¥80 · 命中 0.46</div>
+          <div class="acbtns" style="margin-top:8px"><button class="btn" style="padding:7px 0">移除</button><button class="btn pine" style="padding:7px 0">确认出票</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mfoot">
+    <h4 class="serif">同一本体，两块屏</h4>
+    <p>手机不做判读，只做裁决。三栏在窄屏折叠成 <code>议程 / 舞台 / 裁决</code> 三个 Tab，保住唯一关键路径：19:00 收盘前，从手机批准草稿、确认 legs。</p>
+    <p>写操作全走 <code>127.0.0.1</code> 的同一批 <code>/action/*</code> 端点与同一份 schema 校验——桌面拒绝的，手机一样拒绝，理由一字不差。</p>
+  </div>
+</div>
+
+<footer>
+  <span>Nutmeg Workshop UI · frontend-design 视觉稿 · 实现基准</span>
+  <span class="mono">spec: 2026-07-07-workshop-ui-design.md · v1 伴生态</span>
+</footer>
+
+</div>
