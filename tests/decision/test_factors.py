@@ -27,3 +27,29 @@ def test_active_ids_filters_status():
 
 def test_active_cap_is_twelve():
     assert ACTIVE_CAP == 12
+
+
+def test_seed_factors_carry_scope():
+    """种子词典的隐性多尺度显式化(提案 §P0 漏点2)。"""
+    scopes = {f.factor_id: f.scope for f in load_seed_factors()}
+    assert scopes == {
+        "seeding_incentive": "pairing",
+        "bunker_profile": "pairing",
+        "lineup_news_gap": "appearance",
+        "league_bias": "league",
+        "market_line_error": "match",
+        "fatigue_discount": "appearance",
+    }
+
+
+def test_factor_scope_defaults_to_match_for_legacy_rows():
+    """旧 factors.jsonl 行无 scope → 加载默认 match(向后兼容,不炸 live store)。"""
+    from nutmeg.decision.ontology import Factor
+    f = Factor.from_dict({"factor_id": "x", "name_zh": "X", "definition": "d",
+                          "born_at": "2026-07-07", "born_from": "test"})
+    assert f.scope == "match"
+
+
+def test_factor_scopes_map():
+    from nutmeg.decision.factors import factor_scopes
+    assert factor_scopes(load_seed_factors())["league_bias"] == "league"

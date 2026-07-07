@@ -29,3 +29,8 @@ def active_factor_ids(factors: list[Factor]) -> set[str]:
 def allowed_factor_ids(factors: list[Factor]) -> set[str]:
     """Read 校验用:probation + active 都可引用,retired 拒绝。"""
     return {f.factor_id for f in factors if f.status != "retired"}
+
+
+def factor_scopes(factors: list[Factor]) -> dict[str, str]:
+    """{factor_id: scope} — read 校验用(team/league scope 引用必带 scope_key)。"""
+    return {f.factor_id: f.scope for f in factors}

@@ -97,6 +97,7 @@ class Factor:
     born_from: str
     status: str = "probation"           # probation | active | retired
     retire_reason: str = ""
+    scope: str = "match"                # match|pairing|appearance|team|league(提案§P2 因子海拔)
 
     @property
     def id(self) -> str:
