@@ -328,7 +328,8 @@ chaos:    day_chaos, chaos_band
   plist 备份在 `.nutmeg-data/launchd-backups/`）。
 - **仍在跑的 launchd（M1 期间不得打断）**：daily-tiered、daily-today、tiered-review-8am、
   wc-refresh-18、wc-report-20、wc-review-8am。世界杯窗口至 2026-07-19。
-- **测试基线**：1051 passed / ruff 全绿 / pre-commit 已装（ruff + wc/jczq 子集）。
+- **测试基线**：699 passed / ruff 全绿 / pre-commit 已装（ruff + decision 子集）。
+  （1051 是 M2 删旧引擎测试前的历史数字；2026-07-07 kernel 下葬 + 大扫除后新基线 699。）
 - **本会话关键 commit**：`9683e0e`(对账修复) `2f8f612`(¥400框架) `2f1489a`(路线图)
   `fc12621`(R1内核抽取) `57cba59`(bold删除) `0479d07`(D3证伪) `177f012`(本设计)。
 
