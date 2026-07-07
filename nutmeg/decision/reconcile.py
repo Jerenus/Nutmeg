@@ -45,19 +45,19 @@ def settle_read(read, *, outcome_90, score, closing) -> Settlement:
 def settle_ticket_leg(*, market: str, pick: str, line: float | None,
                       outcome_90: str | None, goals_h: int | None,
                       goals_a: int | None) -> str | None:
-    """票面口径 3 路结果(继承 judge_ledger._grade_ticket_outcome 全部 7/06 修复)。
+    """票面腿实际结果(继承 judge_ledger._grade_ticket_outcome 全部 7/06 修复)。
 
-    had=胜平负;hhad=90' 净胜球+让球线。line=None 且 hhad → None(pending)。
-    AET/PEN 90'=平 margin 0。pick 无法规约成 home/draw/away → None(pending,不误判输)。
-    赛果缺(outcome_90=None)→ None。
+    had=胜平负;hhad=90' 净胜球+让球线(line=None → pending);ttg=总进球桶(7=7+ 封顶,
+    镜像体彩玩法);crs=精确比分"H:A"。pick 无法规约 / 赛果缺 → None(pending,不误判输)。
+    AET/PEN 90'=平 margin 0。
     """
-    if pick not in ("home", "draw", "away"):
+    if not pick:
         return None
-    if outcome_90 is None:
-        return None
-    if market == "had":
-        return outcome_90
-    if market == "hhad":
+    if market in ("had", "hhad"):
+        if pick not in ("home", "draw", "away") or outcome_90 is None:
+            return None
+        if market == "had":
+            return outcome_90
         if line is None:
             return None
         if outcome_90 == "draw":
@@ -68,6 +68,12 @@ def settle_ticket_leg(*, market: str, pick: str, line: float | None,
             margin = goals_h - goals_a
         adj = margin + line
         return "home" if adj > 0 else "away" if adj < 0 else "draw"
+    if goals_h is None or goals_a is None:
+        return None
+    if market == "ttg":
+        return str(min(goals_h + goals_a, 7))
+    if market == "crs":
+        return f"{goals_h}:{goals_a}"
     return None
 
 
@@ -90,6 +96,29 @@ def normalize_pick(selection: str | None) -> str | None:
         return _PICK_ALIASES[s]
     head = s.replace("・", "·").split("·", 1)[0].strip()
     return _PICK_ALIASES.get(head)
+
+
+def normalize_selection(market: str, selection: str | None) -> str | None:
+    """按市场把票面 selection 规约成 settle_ticket_leg 的结果键。
+
+    had/hhad → home/draw/away;ttg "2球"/"7+球"/"total_2" → "2".."7"(7=7+);
+    crs "2:1"(含全角冒号) → "H:A"。"胜其他"类聚合桶未支持 → None(整票 pending 不误判)。
+    """
+    if market in ("had", "hhad"):
+        return normalize_pick(selection)
+    head = ((selection or "").strip().replace("：", ":").replace("・", "·")
+            .split("·", 1)[0].strip())
+    if market == "ttg":
+        if head.startswith("total_"):
+            head = head[len("total_"):]
+        head = head.removesuffix("球").removesuffix("+")
+        return head if head.isdigit() and 0 <= int(head) <= 7 else None
+    if market == "crs":
+        parts = head.split(":")
+        if len(parts) == 2 and all(p.strip().isdigit() for p in parts):
+            return f"{int(parts[0])}:{int(parts[1])}"
+        return None
+    return None
 
 
 def _score_goals(score: str | None) -> tuple[int | None, int | None]:
@@ -146,9 +175,10 @@ def settle_tickets(store, *, outcomes: dict, settled_at: str) -> int:
                 line = None if raw_line is None else float(raw_line)
             except (TypeError, ValueError):
                 line = None                       # 坏线→hhad 不可判→整票跳过
-            pick = normalize_pick(leg.get("selection"))
+            market = str(leg.get("market") or "")
+            pick = normalize_selection(market, leg.get("selection"))
             res = settle_ticket_leg(
-                market=str(leg.get("market") or ""),
+                market=market,
                 pick=pick or "", line=line,
                 outcome_90=outcome, goals_h=gh, goals_a=ga)
             if res is None:
