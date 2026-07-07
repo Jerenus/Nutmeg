@@ -5,10 +5,14 @@ live 抓取(fetch_sporttery_value_with_fallback + 500.com 备源)在 M1 编排�
 """
 from __future__ import annotations
 
+import logging
+
 from nutmeg.decision.identity import canonical_match_id
 from nutmeg.decision.market_data import snapshots_from_sporttery
 from nutmeg.decision.ontology import Match
 from nutmeg.services.jczq_market_kernel import load_sporttery_snapshot
+
+logger = logging.getLogger(__name__)
 
 
 def sense_from_snapshot(run_date: str, *, output_dir, taken_at: str,
@@ -21,16 +25,43 @@ def sense_from_snapshot(run_date: str, *, output_dir, taken_at: str,
         value, run_date=run_date, taken_at=taken_at,
         source="sporttery", kind="read_time",
     )
+    from nutmeg.decision.entities import load_league_alias_table, load_team_alias_table
+
+    team_table = load_team_alias_table()
+    league_table = load_league_alias_table()
+    misses: set[str] = set()
     for s in snaps:
         # 从 value 里回捞队名建 Match(snapshot 已带 match_id)
-        upsert_match_merged(store, _match_for_snapshot(s, value, run_date))
+        m = _match_for_snapshot(s, value, run_date,
+                                team_table=team_table, league_table=league_table)
+        if m.home and m.home_team_id is None:
+            misses.add(m.home)
+        if m.away and m.away_team_id is None:
+            misses.add(m.away)
+        upsert_match_merged(store, m)
         store.upsert(s)
+    if misses:   # 绝不静默:未命中照常入库(*_id=null),聚合一行可见
+        logger.info("sense resolve 未命中别名表(照常入库,*_id=null): %s",
+                    "、".join(sorted(misses)))
     return len(snaps)
 
 
-def _match_for_snapshot(snapshot, value: dict, run_date: str) -> Match:
-    """按 canonical 反查队名/竞彩号(snapshot.match_id 现为 canonical)。"""
-    home = away = match_no = ""
+def _match_for_snapshot(snapshot, value: dict, run_date: str, *,
+                        team_table=None, league_table=None) -> Match:
+    """按 canonical 反查队名/竞彩号/联赛名(snapshot.match_id 现为 canonical),
+    并策展式 resolve 实体 id(命中填,未命中 None——绝不伪造/模糊匹配)。"""
+    from nutmeg.decision.entities import (
+        load_league_alias_table,
+        load_team_alias_table,
+        resolve_league,
+        resolve_team,
+    )
+
+    if team_table is None:
+        team_table = load_team_alias_table()
+    if league_table is None:
+        league_table = load_league_alias_table()
+    home = away = match_no = league = ""
     for day in value.get("matchInfoList") or []:
         for raw in day.get("subMatchList") or []:
             h = str(raw.get("homeTeamAbbName") or "")
@@ -38,10 +69,14 @@ def _match_for_snapshot(snapshot, value: dict, run_date: str) -> Match:
             if canonical_match_id(h, a, run_date) == snapshot.match_id:
                 home, away = h, a
                 match_no = str(raw.get("matchNumStr") or "")
+                league = str(raw.get("leagueAbbName") or "")
     return Match(
         match_id=snapshot.match_id, kickoff_at=snapshot.taken_at,
-        home=home, away=away, competition="",
+        home=home, away=away, competition=league,
         channel_refs={"jczq_match_no": match_no},
+        home_team_id=resolve_team(home, team_table),
+        away_team_id=resolve_team(away, team_table),
+        competition_id=resolve_league(league, league_table),
     )
 
 
@@ -105,9 +140,23 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
             no_to_canonical[str(raw.get("matchNumStr") or "")] = canonical_match_id(
                 h, a, run_date
             )
+    from nutmeg.decision.entities import load_league_alias_table, load_team_alias_table
+
+    team_table = load_team_alias_table()
+    league_table = load_league_alias_table()
+    misses: set[str] = set()
     for s in tc_snaps:
-        upsert_match_merged(store, _match_for_snapshot(s, value, run_date))
+        m = _match_for_snapshot(s, value, run_date,
+                                team_table=team_table, league_table=league_table)
+        if m.home and m.home_team_id is None:
+            misses.add(m.home)
+        if m.away and m.away_team_id is None:
+            misses.add(m.away)
+        upsert_match_merged(store, m)
         store.upsert(s)
+    if misses:   # 绝不静默:未命中照常入库(*_id=null),聚合一行可见
+        logger.info("sense resolve 未命中别名表(照常入库,*_id=null): %s",
+                    "、".join(sorted(misses)))
     bold = _load_euro_bold_odds(run_date, output_dir)
     for s in euro_snapshot_from_bold_odds(
         bold, run_date=run_date, taken_at=taken_at,

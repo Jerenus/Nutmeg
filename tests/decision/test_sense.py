@@ -65,3 +65,22 @@ def test_upsert_match_merged_preserves_resolved_ids_and_competition(tmp_path):
     assert merged.competition_id == "swe-allsvenskan"
     assert merged.channel_refs["jczq_match_no"] == "周三001"
     assert merged.channel_refs["zucai"]["issue"] == "26100"
+
+
+def test_match_for_snapshot_fills_competition_and_resolved_ids():
+    """修 sense 丢 competition 的既有数据丢失 + 策展 resolve(未命中 None 不伪造)。"""
+    from nutmeg.decision.identity import canonical_match_id
+    from nutmeg.decision.ontology import MarketSnapshot
+    from nutmeg.decision.sense import _match_for_snapshot
+    run_date = "2026-07-08"
+    mid = canonical_match_id("荷兰", "法国", run_date)
+    snap = MarketSnapshot(snapshot_id="S-1", match_id=mid, taken_at="t",
+                          kind="read_time", source="sporttery")
+    value = {"matchInfoList": [{"subMatchList": [{
+        "matchNumStr": "周三001", "leagueAbbName": "世界杯",
+        "homeTeamAbbName": "荷兰", "awayTeamAbbName": "法国"}]}]}
+    m = _match_for_snapshot(snap, value, run_date)
+    assert m.competition == "世界杯"                  # 之前被硬编码 "" 丢掉
+    assert m.home_team_id == "netherlands"           # 国家队别名表命中
+    assert m.away_team_id == "france"
+    assert m.competition_id is None                  # 世界杯无联赛实体:未命中→None+log

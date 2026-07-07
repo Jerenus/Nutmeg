@@ -649,7 +649,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/decision/sense.py:31-45`（_match_for_snapshot）、`sense.py:14-28`（sense_from_snapshot）、`sense.py:70-116`（sense_day）
 - Test: `tests/decision/test_sense.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/decision/test_sense.py` 末尾追加：
 
@@ -673,12 +673,12 @@ def test_match_for_snapshot_fills_competition_and_resolved_ids():
     assert m.competition_id is None                  # 世界杯无联赛实体:未命中→None+log
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/decision/test_sense.py -v`
 Expected: 新测试 FAIL（`m.competition == ""`）
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `nutmeg/decision/sense.py`：
 
@@ -749,12 +749,12 @@ def _match_for_snapshot(snapshot, value: dict, run_date: str, *,
                     "、".join(sorted(misses)))
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/decision/test_sense.py tests/decision/test_m1_sense.py tests/decision/test_m1_verbs_sense.py -v`
 Expected: 全 PASS（既有 sense 测试不回归——新字段全可空）
 
-- [ ] **Step 5: Run decision suite + commit**
+- [x] **Step 5: Run decision suite + commit**
 
 ```bash
 uv run pytest -q tests/decision/
