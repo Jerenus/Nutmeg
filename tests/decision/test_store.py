@@ -68,3 +68,22 @@ def test_lineage_settlement_for_ref(tmp_path):
                             settled_at="t"))
     assert store.settlement_for("read", "R-1").settlement_id == "SET-1"
     assert store.settlement_for("read", "R-9") is None
+
+
+def test_team_league_objects_roundtrip_via_store(tmp_path):
+    from nutmeg.decision.ontology import League, Team
+    from nutmeg.decision.store import DecisionStore
+    store = DecisionStore(tmp_path)
+    store.upsert(Team(
+        team_id="swe-hammarby", name_zh="哈马比", name_en="Hammarby",
+        aliases=["Hammarby IF"], competition_ids=["swe-allsvenskan"],
+        profile_notes=[{"key": "home_fortress", "note": "主场20-5",
+                        "evidence": "memory allsvenskan-2026-league-profile",
+                        "at": "2026-07-07"}]))
+    store.upsert(League(league_id="swe-allsvenskan", name_zh="瑞超",
+                        name_en="Allsvenskan", country="Sweden", season="2026"))
+    t = store.get(Team, "swe-hammarby")
+    assert t.profile_notes[0]["key"] == "home_fortress"
+    assert store.get(League, "swe-allsvenskan").name_zh == "瑞超"
+    assert (tmp_path / "teams.jsonl").exists()
+    assert (tmp_path / "leagues.jsonl").exists()

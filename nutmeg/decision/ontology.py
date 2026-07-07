@@ -1,4 +1,5 @@
-"""七对象本体 — frozen dataclass + to_dict/from_dict + 校验(无 I/O)。
+"""九对象（2026-07-07 实体层增补 Team/League）本体
+— frozen dataclass + to_dict/from_dict + 校验(无 I/O)。
 
 设计: docs/superpowers/specs/2026-07-06-decision-ontology-design.md §2。
 每对象有 .id(主键,供 store 幂等 upsert)与 .to_dict/.from_dict(JSONL 往返)。
@@ -184,4 +185,49 @@ class FactorVerdict:
 
     @classmethod
     def from_dict(cls, payload: dict) -> "FactorVerdict":
+        return _from_dict(cls, payload)
+
+
+@dataclass(frozen=True, slots=True)
+class Team:
+    """持久实体节点——信念输入与跨场学习的沉淀处(实体层提案 §P2)。
+    只为"我们对它有知识"的实体而生:策展式创建,绝不由 sense 自动造。"""
+    team_id: str
+    name_zh: str = ""
+    name_en: str = ""
+    aliases: list[str] = field(default_factory=list)
+    competition_ids: list[str] = field(default_factory=list)
+    profile_notes: list[dict] = field(default_factory=list)  # {key,note,evidence,at}
+
+    @property
+    def id(self) -> str:
+        return self.team_id
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> "Team":
+        return _from_dict(cls, payload)
+
+
+@dataclass(frozen=True, slots=True)
+class League:
+    """持久实体节点——联赛级结构偏差(league scope 因子)的沉淀处。"""
+    league_id: str
+    name_zh: str = ""
+    name_en: str = ""
+    country: str = ""
+    season: str = ""
+    profile_notes: list[dict] = field(default_factory=list)
+
+    @property
+    def id(self) -> str:
+        return self.league_id
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> "League":
         return _from_dict(cls, payload)

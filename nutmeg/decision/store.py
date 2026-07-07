@@ -19,6 +19,8 @@ _FILENAMES = {
     "Ticket": "tickets.jsonl",
     "Settlement": "settlements.jsonl",
     "FactorVerdict": "verdicts.jsonl",
+    "Team": "teams.jsonl",
+    "League": "leagues.jsonl",
 }
 
 

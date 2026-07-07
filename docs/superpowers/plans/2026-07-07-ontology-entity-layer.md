@@ -279,7 +279,7 @@ Claude-Session: https://claude.ai/code/session_01XfSkXib7b5rf4aocCqbG8M"
 - Modify: `nutmeg/decision/store.py:14-22`（_FILENAMES）
 - Test: `tests/decision/test_store.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/decision/test_store.py` 末尾追加：
 
@@ -303,12 +303,12 @@ def test_team_league_objects_roundtrip_via_store(tmp_path):
     assert (tmp_path / "leagues.jsonl").exists()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/decision/test_store.py -v`
 Expected: FAIL（`ImportError: Team`）
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `nutmeg/decision/ontology.py` — 文件末尾追加（模块 docstring 首行的"七对象"改为"九对象（2026-07-07 实体层增补 Team/League）"）：
 
@@ -374,12 +374,12 @@ _FILENAMES = {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/decision/test_store.py -v`
 Expected: 全 PASS
 
-- [ ] **Step 5: Run decision suite + commit**
+- [x] **Step 5: Run decision suite + commit**
 
 ```bash
 uv run pytest -q tests/decision/
