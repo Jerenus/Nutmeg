@@ -24,6 +24,7 @@
   var allEvents = [];
   var selectedObj = null;
   var judgments = {}; // obj_id -> 已落库判读 payload(桥接投影,只读)
+  var dayRegime = null; // 日级盘面诊断(只攒样本,不进决策)
 
   function pct(x) { return Math.max(0, Math.round((Number(x) || 0) * 100)); }
   function el(tag, cls, txt) {
@@ -173,14 +174,63 @@
     stageEl.appendChild(blk);
   }
 
+  // ---- 进球轴读数器(ttg total_0..7 分布,模态高亮) -----------------------
+  var GOALS = ["total_0", "total_1", "total_2", "total_3",
+    "total_4", "total_5", "total_6", "total_7"];
+  function goalsAxis(ttg) {
+    var dist = ttg.belief || {};
+    var modal = GOALS.reduce(function (a, k) {
+      return (dist[k] || 0) > (dist[a] || 0) ? k : a;
+    }, GOALS[0]);
+    var wrap = el("div", "vblock");
+    var head = el("div", "vbhead", "进球轴 · total 分布");
+    head.appendChild(el("span", "tick", "conf" + (ttg.confidence || "?")));
+    wrap.appendChild(head);
+    var bar = el("div", "mini-track");
+    GOALS.forEach(function (k) {
+      var p = pct(dist[k]);
+      if (!p) return;
+      var s = el("span", "s " + (k === modal ? "h" : "d"),
+        k.slice(6) + "球 " + p);
+      s.style.flex = p;
+      bar.appendChild(s);
+    });
+    wrap.appendChild(bar);
+    wrap.appendChild(el("div", "profile-line",
+      "模态 " + modal.slice(6) + " 球（" + pct(dist[modal]) + "%）· " +
+      (ttg.note || "")));
+    return wrap;
+  }
+
+  // ---- 舞台默认态:今日盘面诊断(day-regime,只攒样本不进决策) ---------------
+  function renderDayRegime() {
+    stageEl.innerHTML = "";
+    if (!dayRegime) {
+      stageEl.appendChild(el("div", "crumb", "选择议程项查看盘口 / 画像 / 读数器"));
+      return;
+    }
+    var r = dayRegime;
+    var blk = el("div", "vblock");
+    blk.appendChild(el("div", "vbhead", "今日盘面诊断 · day-regime"));
+    var grid = el("div", "profile-line");
+    grid.innerHTML =
+      "在售 <b>" + (r.n_matches || 0) + "</b> 场 · 重热门 <b>" +
+      (r.n_heavy_fav || 0) + "</b> · 抛硬币 <b>" + (r.n_tossup || 0) +
+      "</b> · 均期望进球 <b>" +
+      (r.mean_expected_goals != null ? r.mean_expected_goals.toFixed(2) : "—") +
+      "</b>";
+    blk.appendChild(grid);
+    blk.appendChild(el("div", "gate",
+      "只攒样本，不进决策（n<30 反积累免疫）· 不得引作判读理由"));
+    stageEl.appendChild(blk);
+    stageEl.appendChild(el("div", "crumb", "← 点左侧议程项查看单场判读读数器"));
+  }
+
   // ---- center stage: 已落库判读(桥接 judgment,只读,含偏移读数器) --------
   function renderStageJudgment(objId) {
     var j = judgments[objId];
     stageEl.innerHTML = "";
-    if (!j) {
-      stageEl.appendChild(el("div", "crumb", "选择议程项查看盘口 / 画像 / 读数器"));
-      return;
-    }
+    if (!j) { renderDayRegime(); return; }
     var crumb = el("div", "crumb");
     var h = el("span", "h serif", j.match || objId);
     crumb.appendChild(h);
@@ -221,6 +271,7 @@
       nb.appendChild(el("div", "profile-line", j.note));
       stageEl.appendChild(nb);
     }
+    if (j.ttg) stageEl.appendChild(goalsAxis(j.ttg)); // 进球轴读数器(约束 h)
   }
 
   // ---- anchored thread ----------------------------------------------
@@ -280,6 +331,7 @@
     switch (e.kind) {
       case "attention": renderAttention(e); break;
       case "judgment": judgments[e.obj_id] = e.payload || {}; break;
+      case "day_regime": dayRegime = e.payload || null; break;
       case "read_draft": renderReadDraft(e); break;
       case "legs_proposal": renderLegsProposal(e); break;
       case "view_block": renderViewBlock(e); break;
@@ -325,6 +377,7 @@
         if (!flowEl.querySelector(".fitem")) {
           flowEl.appendChild(el("p", "empty", "今日 agent 尚未开工——在终端说「今天的方案」。"));
         }
+        if (!selectedObj) renderDayRegime(); // 未选中→舞台显今日盘面
       })
       .catch(function () { /* 保留服务端渲染的降级视图 */ })
       .finally(function () { setInterval(poll, 2000); });
