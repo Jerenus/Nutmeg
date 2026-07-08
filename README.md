@@ -198,24 +198,10 @@ the match-winner market fair probability and ranks positive-edge candidates with
 quarter-Kelly sizing. It reports skipped fixtures when snapshot or odds inputs
 are unavailable instead of fabricating a value call.
 
-AI-native Web/PWA betting-analysis client:
-
-```bash
-uv run nutmeg client-status --format json
-uv run nutmeg client-feed --league epl --days 3 --demo --format json
-uv run nutmeg client-match --fixture-id epl-001 --format json
-uv run nutmeg client-question --fixture-id epl-001 --question "这场比赛怎么看？" --format json
-uv run nutmeg client-watchlist --target-type fixture --target-id epl-001 --alert-preference odds --alert-preference value_edge --format json
-uv run nutmeg client-alerts --format json
-uv run nutmeg client-prediction-record --fixture-id epl-001 --pick home --source-audit-id audit-1 --format json
-uv run nutmeg client-web --host 127.0.0.1 --port 8765
-```
-
-Open `http://127.0.0.1:8765/client` for the Chinese-first daily opportunity
-feed, or `/client/matches/<fixture_id>` for the match workspace. The client is
-subscription-ready through user-scoped entitlements, watchlists, grouped alerts,
-and calibration records, but it never places bets, connects sportsbooks, or
-promises profit.
+The browser Workshop (judgment cockpit) is served by `nutmeg decision-web` — see
+[JCZQ Daily Decision Workflow](#jczq-daily-decision-workflow-decision-ontology)
+below. The legacy `client-web`/PWA cluster was buried in the 2026-07-07 Workshop
+cutover.
 
 Traditional Zucai 14-match workflow:
 
@@ -284,7 +270,6 @@ Latest fixture information digest:
 uv run nutmeg fixture-information --fixture-id epl-001 --home-team Arsenal --away-team "Tottenham Hotspur" --format json
 uv run nutmeg fixture-information --fixture-id epl-001 --sources-file nutmeg/information/samples/epl-001-information.json
 uv run nutmeg fixture-information --fixture-id epl-001 --sources-config nutmeg/information/samples/epl-001-sources.json --format json
-uv run nutmeg client-match --fixture-id epl-001 --information-sources-config nutmeg/information/samples/epl-001-sources.json --format json
 ```
 
 `fixture-information` reads local JSON/RSS files or an explicit source manifest,
