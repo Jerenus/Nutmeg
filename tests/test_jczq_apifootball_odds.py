@@ -288,3 +288,53 @@ def test_alias_table_covers_todays_board_and_strips_comment():
         ("西班牙", "Spain"),
     ):
         assert aliases[zh] == en
+
+
+# --- 俱乐部别名（欧战资格赛/联赛）------------------------------------------
+
+
+def test_resolves_club_alias_and_collects():
+    # 俱乐部赛(欧罗巴)：体彩中文俱乐部名 → API-Football 英文名 → 采集。
+    # 默认(不显式传 aliases)即应覆盖俱乐部，证明国家队+俱乐部合并生效。
+    value = _board("伏伊伏丁", "费伦茨", match_date="2026-06-09", match_time="02:45:00")
+    fixtures = {
+        "2026-06-08": [
+            _fixture("F1", "Vojvodina", "Ferencvarosi TC", "2026-06-08T18:45:00+00:00")
+        ]
+    }
+    feeds = {"F1": _winner_feed([3.1], [3.3], [2.0])}
+
+    result = collect_bold_odds_apifootball(
+        value,
+        run_date="2026-06-08",
+        fixture_fetcher=lambda d: fixtures.get(d.isoformat(), []),
+        odds_fetcher=lambda fid: feeds[fid],
+    )
+
+    assert "周一201" in result
+    assert result["周一201"]["match_winner"].odds["away"] == 2.0
+
+
+def test_load_club_team_aliases_strips_comment_and_covers_board():
+    from nutmeg.services.jczq_apifootball_odds import load_club_team_aliases
+
+    aliases = load_club_team_aliases()
+    assert "_comment" not in aliases
+    for zh, en in (
+        ("伏伊伏丁", "Vojvodina"),
+        ("费伦茨", "Ferencvarosi TC"),
+        ("索陆军", "CSKA Sofia"),
+        ("德里城", "Derry City"),
+        ("斯海杜克", "HNK Hajduk Split"),
+        ("日利纳", "Žilina"),
+    ):
+        assert aliases[zh] == en
+
+
+def test_load_team_aliases_merges_national_and_club():
+    from nutmeg.services.jczq_apifootball_odds import load_team_aliases
+
+    merged = load_team_aliases()
+    assert "_comment" not in merged
+    assert merged["法国"] == "France"  # 国家队
+    assert merged["索陆军"] == "CSKA Sofia"  # 俱乐部

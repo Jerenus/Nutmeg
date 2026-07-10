@@ -1,0 +1,9 @@
+{
+  "_comment": "中国体彩竞彩(JCZQ)俱乐部中文名 → API-Football 英文队名。用于把体彩 俱乐部赛(欧战资格赛/欧战正赛/各国联赛)盘面对齐到 API-Football fixture 以采集国际欧赔——与 jczq_national_team_aliases.json(国家队)平级、由同一采集器合并使用。键为体彩 homeTeamAbbName/awayTeamAbbName;英文值必须与 API-Football /fixtures 返回的 team.name 完全一致(匹配做空格无关+casefold 归一化,保留重音,如 Žilina)。别名缺失 → 该场无国际信号且记录原因,绝不模糊匹配。新增俱乐部时优先用 API-Football /teams?search= 或 /fixtures?date= 核对官方拼写。注意:本表 ≠ nutmeg/data/jczq_team_aliases.json —— 后者是 fcom500/jczq_match_align 用的 understat(soccerdata) 侧队名、按联赛嵌套,两者服务不同 provider,不可混用。",
+  "伏伊伏丁": "Vojvodina",
+  "费伦茨": "Ferencvarosi TC",
+  "索陆军": "CSKA Sofia",
+  "德里城": "Derry City",
+  "斯海杜克": "HNK Hajduk Split",
+  "日利纳": "Žilina"
+}

@@ -1,56 +1,185 @@
 {
-  "_comment": "策展实体种子(实体层提案 Tier 2)。Team/League 只为'我们对它有知识'的实体而生;aliases/name_* 自动进 resolve 别名表。profile_notes 是证据式笔记(evidence 必填),不是规则——判断永不进代码。",
-  "leagues": [
-    {"league_id": "swe-allsvenskan", "name_zh": "瑞超", "name_en": "Allsvenskan",
-     "country": "Sweden", "season": "2026",
-     "profile_notes": [
-       {"key": "home_away_split", "note": "极端主客分裂:卡尔马客场0分/哥德堡主场0胜/哈马比主场20-5,禁用通用主场加成",
-        "evidence": "memory allsvenskan-2026-league-profile", "at": "2026-07-05"},
-       {"key": "xg_divergence", "note": "xG背离榜:哈马比被积分榜低估(xG第2强);米亚尔比战绩虚高",
-        "evidence": "memory allsvenskan-2026-league-profile", "at": "2026-07-05"},
-       {"key": "summer_window", "note": "夏窗7/8后才开=复赛首轮新援不能上",
-        "evidence": "memory allsvenskan-2026-league-profile", "at": "2026-07-05"}]},
-    {"league_id": "fra-ligue1", "name_zh": "法甲", "name_en": "Ligue 1",
-     "country": "France", "season": "",
-     "profile_notes": [
-       {"key": "goal_residual_drift", "note": "泊松残差历史双向漂移(5/13 -0.10→5/28 +0.05),联赛画像必须 rolling 复核不可静态引用",
-        "evidence": "memory jczq-5-28-v2-4 R25", "at": "2026-05-28"}]},
-    {"league_id": "nor-eliteserien", "name_zh": "挪超", "name_en": "Eliteserien",
-     "country": "Norway", "season": "",
-     "profile_notes": [
-       {"key": "goals_overestimated", "note": "反直觉:模型历史高估进球(R25 avg≤-0.30 触发反向 delta),引擎时代统计仅供参考",
-        "evidence": "memory jczq-5-28-v2-4 R25", "at": "2026-05-28"}]},
-    {"league_id": "fin-veikkausliiga", "name_zh": "芬超", "name_en": "Veikkausliiga",
-     "country": "Finland", "season": "",
-     "profile_notes": [
-       {"key": "goals_overestimated", "note": "反直觉:模型历史高估进球(R25 反向联赛),引擎时代统计仅供参考",
-        "evidence": "memory jczq-5-28-v2-4 R25", "at": "2026-05-28"}]},
-    {"league_id": "jpn-j1", "name_zh": "日职", "name_en": "J1 League",
-     "country": "Japan", "season": "",
-     "profile_notes": [
-       {"key": "goals_overestimated", "note": "反直觉:模型历史高估进球(R25 反向联赛),引擎时代统计仅供参考",
-        "evidence": "memory jczq-5-28-v2-4 R25", "at": "2026-05-28"}]}
-  ],
-  "teams": [
-    {"team_id": "swe-hammarby", "name_zh": "哈马比", "name_en": "Hammarby",
-     "aliases": ["Hammarby IF"], "competition_ids": ["swe-allsvenskan"],
-     "profile_notes": [
-       {"key": "underrated_xg", "note": "xG第2强被积分榜低估;主场20-5;6/5换帅Rydström",
-        "evidence": "memory allsvenskan-2026-league-profile", "at": "2026-07-05"}]},
-    {"team_id": "swe-kalmar", "name_zh": "卡尔马", "name_en": "Kalmar FF",
-     "aliases": ["Kalmar"], "competition_ids": ["swe-allsvenskan"],
-     "profile_notes": [
-       {"key": "away_zero", "note": "客场0分——客场腿禁用通用画像",
-        "evidence": "memory allsvenskan-2026-league-profile", "at": "2026-07-05"}]},
-    {"team_id": "swe-goteborg", "name_zh": "哥德堡", "name_en": "IFK Goteborg",
-     "aliases": ["IFK Göteborg", "Goteborg"], "competition_ids": ["swe-allsvenskan"],
-     "profile_notes": [
-       {"key": "home_zero_wins", "note": "主场0胜——主场腿禁用通用主场加成",
-        "evidence": "memory allsvenskan-2026-league-profile", "at": "2026-07-05"}]},
-    {"team_id": "swe-mjallby", "name_zh": "米亚尔比", "name_en": "Mjallby AIF",
-     "aliases": ["Mjällby", "Mjallby"], "competition_ids": ["swe-allsvenskan"],
-     "profile_notes": [
-       {"key": "overrated_results", "note": "战绩虚高于 xG——正路信心需打折",
-        "evidence": "memory allsvenskan-2026-league-profile", "at": "2026-07-05"}]}
-  ]
+ "_comment": "策展实体种子(实体层提案 Tier 2)。Team/League 只为'我们对它有知识'的实体而生;aliases/name_* 自动进 resolve 别名表。profile_notes 是证据式笔记(evidence 必填),不是规则——判断永不进代码。",
+ "leagues": [
+  {
+   "league_id": "swe-allsvenskan",
+   "name_zh": "瑞超",
+   "name_en": "Allsvenskan",
+   "country": "Sweden",
+   "season": "2026",
+   "profile_notes": [
+    {
+     "key": "home_away_split",
+     "note": "极端主客分裂:卡尔马客场0分/哥德堡主场0胜/哈马比主场20-5,禁用通用主场加成",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    },
+    {
+     "key": "xg_divergence",
+     "note": "xG背离榜:哈马比被积分榜低估(xG第2强);米亚尔比战绩虚高",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    },
+    {
+     "key": "summer_window",
+     "note": "夏窗7/8后才开=复赛首轮新援不能上",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    }
+   ]
+  },
+  {
+   "league_id": "fra-ligue1",
+   "name_zh": "法甲",
+   "name_en": "Ligue 1",
+   "country": "France",
+   "season": "",
+   "profile_notes": [
+    {
+     "key": "goal_residual_drift",
+     "note": "泊松残差历史双向漂移(5/13 -0.10→5/28 +0.05),联赛画像必须 rolling 复核不可静态引用",
+     "evidence": "memory jczq-5-28-v2-4 R25",
+     "at": "2026-05-28"
+    }
+   ]
+  },
+  {
+   "league_id": "nor-eliteserien",
+   "name_zh": "挪超",
+   "name_en": "Eliteserien",
+   "country": "Norway",
+   "season": "",
+   "profile_notes": [
+    {
+     "key": "goals_overestimated",
+     "note": "反直觉:模型历史高估进球(R25 avg≤-0.30 触发反向 delta),引擎时代统计仅供参考",
+     "evidence": "memory jczq-5-28-v2-4 R25",
+     "at": "2026-05-28"
+    }
+   ]
+  },
+  {
+   "league_id": "fin-veikkausliiga",
+   "name_zh": "芬超",
+   "name_en": "Veikkausliiga",
+   "country": "Finland",
+   "season": "",
+   "profile_notes": [
+    {
+     "key": "goals_overestimated",
+     "note": "反直觉:模型历史高估进球(R25 反向联赛),引擎时代统计仅供参考",
+     "evidence": "memory jczq-5-28-v2-4 R25",
+     "at": "2026-05-28"
+    }
+   ]
+  },
+  {
+   "league_id": "jpn-j1",
+   "name_zh": "日职",
+   "name_en": "J1 League",
+   "country": "Japan",
+   "season": "",
+   "profile_notes": [
+    {
+     "key": "goals_overestimated",
+     "note": "反直觉:模型历史高估进球(R25 反向联赛),引擎时代统计仅供参考",
+     "evidence": "memory jczq-5-28-v2-4 R25",
+     "at": "2026-05-28"
+    }
+   ]
+  },
+  {
+   "league_id": "uefa-qualifiers",
+   "name_zh": "欧战资格赛",
+   "name_en": "UEFA qualifiers (CL/EL/ECL)",
+   "profile_notes": [
+    {
+     "key": "ttg_high_variance",
+     "note": "7-8月资格赛窗:悬殊热门局常打高分,\"强弱悬殊=低分\"先验不可靠(2026-07-09 索德1.20超热门赢3:2=5球/伏费1:2=3球,双双打爆模态2球,ttg Brier 0.97/0.72);n=2仅入账观察——资格赛窗口内ttg少下真金、只判读攒样本",
+     "evidence": "settlements 2026-07-09 SET-read-R-claude-ttg-*",
+     "at": "2026-07-10"
+    }
+   ]
+  }
+ ],
+ "teams": [
+  {
+   "team_id": "swe-hammarby",
+   "name_zh": "哈马比",
+   "name_en": "Hammarby",
+   "aliases": [
+    "Hammarby IF"
+   ],
+   "competition_ids": [
+    "swe-allsvenskan"
+   ],
+   "profile_notes": [
+    {
+     "key": "underrated_xg",
+     "note": "xG第2强被积分榜低估;主场20-5;6/5换帅Rydström",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    }
+   ]
+  },
+  {
+   "team_id": "swe-kalmar",
+   "name_zh": "卡尔马",
+   "name_en": "Kalmar FF",
+   "aliases": [
+    "Kalmar"
+   ],
+   "competition_ids": [
+    "swe-allsvenskan"
+   ],
+   "profile_notes": [
+    {
+     "key": "away_zero",
+     "note": "客场0分——客场腿禁用通用画像",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    }
+   ]
+  },
+  {
+   "team_id": "swe-goteborg",
+   "name_zh": "哥德堡",
+   "name_en": "IFK Goteborg",
+   "aliases": [
+    "IFK Göteborg",
+    "Goteborg"
+   ],
+   "competition_ids": [
+    "swe-allsvenskan"
+   ],
+   "profile_notes": [
+    {
+     "key": "home_zero_wins",
+     "note": "主场0胜——主场腿禁用通用主场加成",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    }
+   ]
+  },
+  {
+   "team_id": "swe-mjallby",
+   "name_zh": "米亚尔比",
+   "name_en": "Mjallby AIF",
+   "aliases": [
+    "Mjällby",
+    "Mjallby"
+   ],
+   "competition_ids": [
+    "swe-allsvenskan"
+   ],
+   "profile_notes": [
+    {
+     "key": "overrated_results",
+     "note": "战绩虚高于 xG——正路信心需打折",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    }
+   ]
+  }
+ ]
 }

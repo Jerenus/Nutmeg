@@ -12,7 +12,8 @@
 
 1. 把每场体彩 ``matchDate``+``matchTime``（北京时间）换算成 API-Football 归档用的
    UTC 日历日（深夜场常差一天）。
-2. 用 ``jczq_national_team_aliases.json`` 把中文队名 → API-Football 英文名。
+2. 用 ``jczq_national_team_aliases.json``（国家队）+ ``jczq_club_team_aliases.json``
+   （俱乐部）把中文队名 → API-Football 英文名（世界杯窗口后盘面主体是俱乐部赛）。
 3. 在「按该 UTC 日拉取的全联赛 fixture 池」里按队对匹配（容忍主客翻转）。
 4. 命中 fixture → ``/odds`` → 转成 ``MarketOdds``。
 
@@ -40,11 +41,14 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "collect_bold_odds_apifootball",
     "collect_bold_odds_apifootball_live",
+    "load_club_team_aliases",
     "load_national_team_aliases",
+    "load_team_aliases",
     "merge_bold_odds",
 ]
 
 _ALIASES_RESOURCE = "jczq_national_team_aliases.json"
+_CLUB_ALIASES_RESOURCE = "jczq_club_team_aliases.json"
 
 # 体彩 JCZQ 标的时间是北京时间（UTC+8，中国无夏令时，固定偏移）。
 _BEIJING_UTC_OFFSET_HOURS = 8
@@ -63,18 +67,38 @@ def _normalize(name: str) -> str:
     return "".join((name or "").split()).casefold()
 
 
-def load_national_team_aliases() -> dict[str, str]:
-    """中国体彩国家队中文名 → API-Football 英文名（去掉 ``_`` 注释键）。"""
+def _load_flat_aliases(resource: str) -> dict[str, str]:
+    """读某张扁平「中文名 → API-Football 英文名」别名表（去掉 ``_`` 注释键）。"""
     raw = json.loads(
-        resources.files("nutmeg.data")
-        .joinpath(_ALIASES_RESOURCE)
-        .read_text(encoding="utf-8")
+        resources.files("nutmeg.data").joinpath(resource).read_text(encoding="utf-8")
     )
     return {
         key: str(value)
         for key, value in raw.items()
         if not key.startswith("_") and isinstance(value, str)
     }
+
+
+def load_national_team_aliases() -> dict[str, str]:
+    """中国体彩国家队中文名 → API-Football 英文名（去掉 ``_`` 注释键）。"""
+    return _load_flat_aliases(_ALIASES_RESOURCE)
+
+
+def load_club_team_aliases() -> dict[str, str]:
+    """中国体彩俱乐部中文名 → API-Football 英文名（去掉 ``_`` 注释键）。
+
+    覆盖欧战资格赛/正赛及各国联赛的俱乐部——世界杯窗口后盘面主体。与国家队表
+    平级，由 ``load_team_aliases`` 合并给采集器。别名缺失照旧优雅降级。
+    """
+    return _load_flat_aliases(_CLUB_ALIASES_RESOURCE)
+
+
+def load_team_aliases() -> dict[str, str]:
+    """国家队 + 俱乐部合并别名（采集器默认口径）。
+
+    两张表键域天然不相交（国名 vs 队名）；若偶有同名，俱乐部表后合并、以其为准。
+    """
+    return {**load_national_team_aliases(), **load_club_team_aliases()}
 
 
 def _utc_date(beijing_date: str, beijing_time: str) -> date:
@@ -250,7 +274,7 @@ def collect_bold_odds_apifootball(
     返回 ``{match_no: {"match_winner": MarketOdds, "over_under": MarketOdds}}``；
     任一场对齐失败/无盘口/抓取异常仅令该场缺席——从不崩。
     """
-    resolved_aliases = aliases if aliases is not None else load_national_team_aliases()
+    resolved_aliases = aliases if aliases is not None else load_team_aliases()
     board = _board_matches(value, run_date)
     if not board:
         return {}
@@ -280,7 +304,8 @@ def collect_bold_odds_apifootball(
                 if en is None
             ]
             logger.info(
-                "apifootball-odds skip %s: 国家队别名缺失 %s（补 jczq_national_team_aliases.json）",
+                "apifootball-odds skip %s: 队名别名缺失 %s"
+                "（补 jczq_national_team_aliases.json 或 jczq_club_team_aliases.json）",
                 match.match_no, missing,
             )
             continue
