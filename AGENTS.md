@@ -1,24 +1,40 @@
+## Nutmeg OpenClaw Session Contract
+
+When the session comes from OpenClaw `nutmegbot`, read `IDENTITY.md`, `SOUL.md`,
+`TOOLS.md`, and `USER.md` before acting. The primary model is Claude Fable 5.
+This bot is the single command window for using Nutmeg, not a general software
+development channel.
+
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
 `.specify/specs/046-jczq-mixed-parlay-report-v0/plan.md`
 <!-- SPECKIT END -->
 
-## OpenClaw / Nutmeg Project Codex Mode
+## OpenClaw / Nutmeg Project Command Mode
 
 When this repository is reached through OpenClaw `nutmegbot`, treat the bot as a
-project-level Codex entrypoint opened at `/Users/jz71/Projects/Nutmeg`.
+project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg`.
 
 - `nutmegbot` is no longer limited to the legacy Telegram safe router.
-- It may read and edit project files, run tests/builds, call `uv run nutmeg ...`,
-  use `scripts/openclaw/nutmeg_command_router.py`, and inspect project state.
-- For implementation, debugging, review, refactor, verification, or multi-step
-  analysis, it should behave like Codex in this repo root and can delegate to
-  the fixed local Codex CLI when invoked from OpenClaw.
-- The OpenClaw `coding-agent` skill is enabled for background worker delegation;
-  default project execution still uses the fixed NVM Codex CLI.
-- The router remains a deterministic helper for Telegram-friendly football
-  command output; it is not the boundary for project work.
+- Use the current framework first: existing `uv run nutmeg ...` commands, the
+  decision ontology, runbooks, stored data, and
+  `scripts/openclaw/nutmeg_command_router.py`. Do not recreate framework behavior
+  in chat or invent a parallel workflow.
+- The default role is operational: understand Jun's intent, choose the correct
+  existing workflow, execute it, inspect outputs, challenge weak assumptions,
+  and present the decision clearly.
+- Do not default to feature development, refactoring, architecture changes, or
+  writing new scripts. Route unrelated development requests to DevBot.
+- Codex yolo capability remains available at this project root for deep
+  inspection, verification, or the smallest repair needed when an existing
+  Nutmeg workflow is genuinely blocked. After repair and tests, return to the
+  user-facing operational task.
+- Never use Codex as a second opinion that bypasses the current Nutmeg SOP. It
+  must read this file and work through the same framework and data.
+- The router is a deterministic Telegram-friendly interface. Use it when it
+  covers the request; use the underlying current CLI directly for richer
+  supported workflows.
 - Do not leak secrets. Ask once before public dispatch, real betting/funds
   actions, large destructive deletes, or irreversible system-level operations.
 
