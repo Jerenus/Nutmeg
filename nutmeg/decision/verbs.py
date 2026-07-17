@@ -6,16 +6,68 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 # 日循环编排复用阶段一新增的自立动词(fetch/express/report)。在此 import 为模块级名,
 # 令编排以裸名调用 → 测试可统一 monkeypatch 本模块属性断言调用顺序。三模块顶层 import
 # 都很轻(reportlab/体彩 client 均惰性 import),且都不反向 import verbs,无环。
 from nutmeg.decision.express import run_express
 from nutmeg.decision.fetch import fetch_day, fetch_zucai
-from nutmeg.decision.report import run_report
+from nutmeg.decision.report import DecisionReportResult, run_report
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True, frozen=True)
+class DecisionStepResult:
+    label: str
+    status: str
+    message: str
+    details: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "status": self.status,
+            "message": self.message,
+            "details": self.details,
+        }
+
+
+@dataclass(slots=True, frozen=True)
+class DecisionWorkflowResult:
+    name: str
+    run_date: str
+    steps: tuple[DecisionStepResult, ...]
+    description: str | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return all(step.status != "failed" for step in self.steps)
+
+    @property
+    def status(self) -> str:
+        return "succeeded" if self.succeeded else "failed"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "run_date": self.run_date,
+            "status": self.status,
+            "description": self.description,
+            "steps": [step.to_dict() for step in self.steps],
+        }
+
+    def __str__(self) -> str:
+        header = f"{self.name} {self.run_date}"
+        if self.description:
+            header += f" · {self.description}"
+        return "\n".join([header, *(step.message for step in self.steps)])
+
+    def __contains__(self, value: str) -> bool:
+        return value in str(self)
 
 
 def run_sense(run_date: str, output_dir: Path, taken_at: str) -> str:
@@ -228,19 +280,45 @@ def _now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def _compose(header: str, steps: list) -> str:
+def _compose(
+    name: str,
+    run_date: str,
+    description: str,
+    steps: list,
+) -> DecisionWorkflowResult:
     """按序跑各步,单步失败只记账不断整日循环(cron 健壮性:best-effort,可见降级)。"""
-    lines = [header]
+    results: list[DecisionStepResult] = []
     for label, fn in steps:
         try:
-            lines.append(fn())
+            value = fn()
+            if isinstance(value, DecisionReportResult):
+                results.append(
+                    DecisionStepResult(
+                        label=label,
+                        status="succeeded" if value.succeeded else "failed",
+                        message=str(value),
+                        details=value.to_dict(),
+                    )
+                )
+            else:
+                results.append(
+                    DecisionStepResult(label=label, status="succeeded", message=str(value))
+                )
         except Exception as exc:  # noqa: BLE001 — 单步失败不该拖垮整条日循环
-            logger.warning("%s · %s 失败", header, label, exc_info=True)
-            lines.append(f"{label}: 失败 — {exc}")
-    return "\n".join(lines)
+            logger.warning("%s %s · %s 失败", name, run_date, label, exc_info=True)
+            results.append(
+                DecisionStepResult(
+                    label=label,
+                    status="failed",
+                    message=f"{label}: 失败 — {exc}",
+                )
+            )
+    return DecisionWorkflowResult(name, run_date, tuple(results), description)
 
 
-def run_decision_am(run_date: str, output_dir, zucai_dir=None, issue=None) -> str:
+def run_decision_am(
+    run_date: str, output_dir, zucai_dir=None, issue=None
+) -> DecisionWorkflowResult:
     """日循环 · 早段(am):数据入库 + 市场基线。fetch(+可选 zucai)→ sense(+可选 zucai)→ backfill。
 
     ⚠️ **编排不含判读**:am 只把盘口/欧赔快照入库,并给未判场补市场基线 shadow(belief=prior)。
@@ -259,7 +337,9 @@ def run_decision_am(run_date: str, output_dir, zucai_dir=None, issue=None) -> st
     steps.append(("backfill", lambda: run_backfill(run_date, output_dir, stamp)))
     # 日级盘面热度诊断(只攒样本不进决策)——放 backfill 后,读的是本次 sense 的快照。
     steps.append(("day-regime", lambda: run_day_regime(run_date, output_dir)))
-    return _compose(f"decision-am {run_date} · 数据入库+市场基线(编排不含判读)", steps)
+    return _compose(
+        "decision-am", run_date, "数据入库+市场基线(编排不含判读)", steps
+    )
 
 
 def _express_step(run_date: str, output_dir, stamp: str) -> str:
@@ -272,7 +352,7 @@ def _express_step(run_date: str, output_dir, stamp: str) -> str:
 
 
 def run_decision_close(run_date: str, output_dir, *, dispatch: bool = False,
-                       dry_run: bool = True) -> str:
+                       dry_run: bool = True) -> DecisionWorkflowResult:
     """日循环 · 收盘段(close):收盘捕获 + 出票 + 推日报。capture-closing → express → report。
 
     ⚠️ express 的 legs 是**主循环 Claude 判读产物**——close 读 daily/<date>/legs.json,
@@ -283,13 +363,15 @@ def run_decision_close(run_date: str, output_dir, *, dispatch: bool = False,
         ("capture-closing", lambda: run_capture_closing(run_date, output_dir, stamp)),
         ("express", lambda: _express_step(run_date, output_dir, stamp)),
         ("report", lambda: run_report(run_date, output_dir,
-                                      dispatch_telegram=dispatch, dry_run=dry_run)),
+                                      dispatch_telegram=dispatch, dry_run=dry_run,
+                                      stage="close")),
     ]
-    return _compose(f"decision-close {run_date} · 收盘+出票+推日报", steps)
+    return _compose("decision-close", run_date, "收盘+出票+推日报", steps)
 
 
 def run_decision_settle(run_date: str, output_dir, *, dispatch: bool = False,
-                        dry_run: bool = True, issue=None, zucai_dir=None) -> str:
+                        dry_run: bool = True, issue=None,
+                        zucai_dir=None) -> DecisionWorkflowResult:
     """日循环 · 结算段(settle):结算(+可选 zucai)+ 校准 + 复盘日报。
 
     reconcile(+可选 reconcile-zucai)→ calibrate → report。``dispatch``/``dry_run`` 透传 report。
@@ -303,5 +385,6 @@ def run_decision_settle(run_date: str, output_dir, *, dispatch: bool = False,
              lambda: run_reconcile_zucai(issue, output_dir, stamp, zucai_dir)))
     steps.append(("calibrate", lambda: run_calibrate_panel(output_dir, run_date)))
     steps.append(("report", lambda: run_report(run_date, output_dir,
-                                               dispatch_telegram=dispatch, dry_run=dry_run)))
-    return _compose(f"decision-settle {run_date} · 复盘(结算+校准+日报)", steps)
+                                               dispatch_telegram=dispatch, dry_run=dry_run,
+                                               stage="settle")))
+    return _compose("decision-settle", run_date, "复盘(结算+校准+日报)", steps)

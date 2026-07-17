@@ -12,10 +12,67 @@ from __future__ import annotations
 
 import io
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from nutmeg.notifications.models import (
+    NotificationAttachment,
+    NotificationOutcome,
+    NotificationRequest,
+    semantic_fingerprint,
+)
+
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True, frozen=True)
+class DecisionReportResult:
+    run_date: str
+    stage: str
+    pdf_path: Path
+    pdf_bytes: int
+    notification: NotificationOutcome | None = None
+
+    @classmethod
+    def success(
+        cls,
+        run_date: str,
+        stage: str,
+        pdf_path: Path,
+        pdf_bytes: int,
+    ) -> "DecisionReportResult":
+        return cls(run_date, stage, pdf_path, pdf_bytes)
+
+    @property
+    def succeeded(self) -> bool:
+        return self.notification is None or self.notification.is_success
+
+    @property
+    def status(self) -> str:
+        if self.notification is None:
+            return "generated"
+        return self.notification.status.value
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "run_date": self.run_date,
+            "stage": self.stage,
+            "pdf_path": str(self.pdf_path),
+            "pdf_bytes": self.pdf_bytes,
+            "notification": (
+                self.notification.to_dict() if self.notification is not None else None
+            ),
+        }
+
+    def __str__(self) -> str:
+        message = (
+            f"decision-report {self.run_date}: PDF {self.pdf_bytes} bytes → {self.pdf_path}"
+        )
+        if self.notification is not None:
+            message += f" | notification: {self.notification.to_dict()}"
+        return message
 
 # --- 字体注册(自包含,复制自 jczq_final_plan_pdf 的可复用逻辑;宿主属阶段三待删)-----
 _CJK_FONT_CANDIDATES = [
@@ -178,7 +235,7 @@ def _calibration_line(reads, settle, n_tickets: int, total_stake: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 渲染 + 推送
+# 渲染 + 通知内核接入
 # ---------------------------------------------------------------------------
 
 def _styles():
@@ -232,55 +289,15 @@ def render_report_pdf(store, run_date: str) -> bytes:
     return buffer.getvalue()
 
 
-def dispatch(pdf_bytes: bytes, *, client=None, chat_ids=None, dry_run: bool = True,
-             caption: str = "", pdf_path=None) -> dict:
-    """推送 PDF。dry_run 不真推(不碰 client);--no-dry-run 走注入/真 client。
-
-    ``send_document`` 按**文件路径**读,故先把 pdf_bytes 落盘(pdf_path 指定则写那里,
-    否则临时文件),再逐 chat_id 推。缺 client/chat_ids → 跳过不崩。
-    """
-    chat_ids = list(chat_ids or [])
-    if dry_run:
-        return {"dispatched": False, "reason": "dry_run",
-                "chat_ids": chat_ids, "bytes": len(pdf_bytes)}
-    if client is None or not chat_ids:
-        return {"dispatched": False, "reason": "missing client/chat_ids",
-                "chat_ids": chat_ids, "bytes": len(pdf_bytes)}
-
-    if pdf_path is not None:
-        path = Path(pdf_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(pdf_bytes)
-    else:
-        import tempfile
-        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-        tmp.write(pdf_bytes)
-        tmp.close()
-        path = Path(tmp.name)
-
-    sent: list[int] = []
-    for chat_id in chat_ids:
-        client.send_document(chat_id=chat_id, document_path=path, caption=caption)
-        sent.append(chat_id)
-    return {"dispatched": True, "chat_ids": sent, "bytes": len(pdf_bytes)}
-
-
-def _resolve_telegram():
-    """从 settings 装配真 client + chat_ids;缺凭据 → (None, [])。"""
-    from nutmeg.config.settings import get_settings
-    from nutmeg.interfaces.bot.telegram import TelegramBotClient
-
-    s = get_settings()
-    token = (s.telegram_bot_token or "").strip()
-    raw = s.telegram_allowed_chat_ids or ""
-    chat_ids = [int(p.strip()) for p in raw.split(",") if p.strip()]
-    if not token or not chat_ids:
-        return None, []
-    return TelegramBotClient(token=token), chat_ids
-
-
-def run_report(run_date: str, output_dir, *, dispatch_telegram: bool = False,
-               dry_run: bool = True) -> str:
+def run_report(
+    run_date: str,
+    output_dir,
+    *,
+    dispatch_telegram: bool = False,
+    dry_run: bool = True,
+    stage: str = "manual",
+    notification_service=None,
+) -> DecisionReportResult:
     """CLI 胶水:渲染当日 PDF → 落盘 → 可选 Telegram 推送 → 一行摘要。"""
     from nutmeg.decision.store import DecisionStore
 
@@ -289,10 +306,30 @@ def run_report(run_date: str, output_dir, *, dispatch_telegram: bool = False,
     pdf_path = Path(output_dir) / "daily" / run_date / f"decision-report-{run_date}.pdf"
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     pdf_path.write_bytes(pdf_bytes)
-    msg = f"decision-report {run_date}: PDF {len(pdf_bytes)} bytes → {pdf_path}"
+    notification = None
     if dispatch_telegram:
-        client, chat_ids = (None, None) if dry_run else _resolve_telegram()
-        res = dispatch(pdf_bytes, client=client, chat_ids=chat_ids, dry_run=dry_run,
-                       caption=f"决策日报 {run_date}", pdf_path=pdf_path)
-        msg += f" | telegram: {res}"
-    return msg
+        if notification_service is None:
+            from nutmeg.notifications.wiring import build_notification_service
+
+            notification_service = build_notification_service()
+        blocks = _report_blocks(store, run_date)
+        request = NotificationRequest(
+            kind=f"decision.{stage}.report",
+            business_key=run_date,
+            stage=stage,
+            semantic_fingerprint=semantic_fingerprint(
+                {"stage": stage, "blocks": blocks}
+            ),
+            subject=f"决策日报 {run_date}",
+            caption=f"决策日报 {run_date}",
+            attachments=(NotificationAttachment(pdf_path, "application/pdf"),),
+            metadata={"run_date": run_date, "stage": stage},
+        )
+        notification = notification_service.publish(request, dry_run=dry_run)
+    return DecisionReportResult(
+        run_date=run_date,
+        stage=stage,
+        pdf_path=pdf_path,
+        pdf_bytes=len(pdf_bytes),
+        notification=notification,
+    )

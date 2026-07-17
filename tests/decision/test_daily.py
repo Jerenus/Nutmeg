@@ -7,6 +7,8 @@
 from typer.testing import CliRunner
 
 import nutmeg.decision.verbs as verbs
+from nutmeg.decision.report import DecisionReportResult
+from nutmeg.decision.verbs import DecisionStepResult, DecisionWorkflowResult
 from nutmeg.interfaces.cli import app
 
 runner = CliRunner()
@@ -62,15 +64,15 @@ def test_decision_close_order_and_dispatch_passthrough(tmp_path, monkeypatch):
     monkeypatch.setattr(verbs, "run_capture_closing", _recorder(calls, "capture"))
     monkeypatch.setattr(verbs, "run_express", _recorder(calls, "express"))
 
-    def _report(rd, od, *, dispatch_telegram, dry_run):
+    def _report(rd, od, *, dispatch_telegram, dry_run, stage):
         calls.append("report")
-        seen.update(dispatch=dispatch_telegram, dry_run=dry_run)
-        return "report-ok"
+        seen.update(dispatch=dispatch_telegram, dry_run=dry_run, stage=stage)
+        return DecisionReportResult.success(rd, stage, tmp_path / "report.pdf", 10)
 
     monkeypatch.setattr(verbs, "run_report", _report)
     verbs.run_decision_close(_DATE, tmp_path, dispatch=True, dry_run=False)
     assert calls == ["capture", "express", "report"]
-    assert seen == {"dispatch": True, "dry_run": False}     # 旗标透传
+    assert seen == {"dispatch": True, "dry_run": False, "stage": "close"}
 
 
 def test_decision_close_no_legs_yields_empty_ticket(tmp_path, monkeypatch):
@@ -92,15 +94,15 @@ def test_decision_settle_order_and_dispatch(tmp_path, monkeypatch):
     monkeypatch.setattr(verbs, "run_reconcile", _recorder(calls, "reconcile"))
     monkeypatch.setattr(verbs, "run_calibrate_panel", _recorder(calls, "calibrate"))
 
-    def _report(rd, od, *, dispatch_telegram, dry_run):
+    def _report(rd, od, *, dispatch_telegram, dry_run, stage):
         calls.append("report")
-        seen.update(dispatch=dispatch_telegram, dry_run=dry_run)
-        return "ok"
+        seen.update(dispatch=dispatch_telegram, dry_run=dry_run, stage=stage)
+        return DecisionReportResult.success(rd, stage, tmp_path / "report.pdf", 10)
 
     monkeypatch.setattr(verbs, "run_report", _report)
     verbs.run_decision_settle(_DATE, tmp_path, dispatch=True, dry_run=False)
     assert calls == ["reconcile", "calibrate", "report"]
-    assert seen == {"dispatch": True, "dry_run": False}
+    assert seen == {"dispatch": True, "dry_run": False, "stage": "settle"}
 
 
 def test_decision_settle_with_zucai_order(tmp_path, monkeypatch):
@@ -156,3 +158,34 @@ def test_decision_settle_cli_defaults_dry_run(tmp_path, monkeypatch):
                             "--output-dir", str(tmp_path)])
     assert r.exit_code == 0, r.output
     assert seen == {"dispatch": False, "dry_run": True}    # 默认 dry-run,不推
+
+
+def test_decision_close_cli_json_failure_exits_nonzero(tmp_path, monkeypatch):
+    result_value = DecisionWorkflowResult(
+        name="decision-close",
+        run_date=_DATE,
+        steps=(
+            DecisionStepResult(
+                label="report",
+                status="failed",
+                message="Telegram delivery failed",
+            ),
+        ),
+    )
+    monkeypatch.setattr(verbs, "run_decision_close", lambda *args, **kwargs: result_value)
+
+    result = runner.invoke(
+        app,
+        [
+            "decision-close",
+            "--run-date",
+            _DATE,
+            "--output-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert '"status": "failed"' in result.output
