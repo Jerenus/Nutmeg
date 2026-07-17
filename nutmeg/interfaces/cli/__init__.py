@@ -45,6 +45,7 @@ from nutmeg.interfaces.bot import (
     TelegramOffsetStore,
     TelegramPollingDaemon,
 )
+from nutmeg.notifications.wiring import build_notification_service
 from nutmeg.observability.langsmith import build_trace_context, traced_operation
 from nutmeg.process.harness import inspect_harness
 from nutmeg.process.superpowers import inspect_superpowers_bridge
@@ -453,17 +454,8 @@ def build_zucai_workflow_service() -> ZucaiWorkflowService:
     settings = get_settings()
     ensure_storage_paths(settings)
     create_analytics_schema(settings)
-    telegram_sender = None
-    if settings.telegram_bot_token:
-        telegram_sender = TelegramBotClient(
-            token=settings.telegram_bot_token,
-            base_url=settings.telegram_api_base_url,
-        )
     return ZucaiWorkflowService(
-        telegram_sender=telegram_sender,
-        telegram_chat_ids=sorted(
-            parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
-        ),
+        notification_service=build_notification_service(settings=settings),
         betting_repository=DuckDbBettingPlanRepository(settings),
     )
 
@@ -475,17 +467,8 @@ def build_zucai_scheduled_delivery_service() -> ZucaiScheduledDeliveryService:
 def build_zucai_renjiu_daily_service() -> ZucaiRenjiuDailyService:
     settings = get_settings()
     ensure_storage_paths(settings)
-    telegram_sender = None
-    if settings.telegram_bot_token:
-        telegram_sender = TelegramBotClient(
-            token=settings.telegram_bot_token,
-            base_url=settings.telegram_api_base_url,
-        )
     return ZucaiRenjiuDailyService(
-        telegram_sender=telegram_sender,
-        telegram_chat_ids=sorted(
-            parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
-        ),
+        notification_service=build_notification_service(settings=settings),
     )
 
 

@@ -27,7 +27,7 @@ SCHEDULE_SLOTS: dict[str, ZucaiScheduleSlot] = {
         name="revision", label="18:30修正确认", scheduled_time="18:30"
     ),
 }
-COMPLETED_STATUSES = {"generated", "dry_run", "sent"}
+COMPLETED_STATUSES = {"generated", "dry_run", "sent", "deduplicated"}
 
 
 class ZucaiScheduledDeliveryService:
@@ -113,6 +113,7 @@ class ZucaiScheduledDeliveryService:
                 dry_run=dry_run,
                 dispatch_caption=caption,
                 record_final=True,
+                notification_stage=slot_def.name,
             )
             status = report.dispatch.status if dispatch_telegram else "generated"
             run_warnings = [*warnings, *report.warnings]

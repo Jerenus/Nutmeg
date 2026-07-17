@@ -26,6 +26,11 @@ from nutmeg.domain.zucai_renjiu import (
     RenjiuMatchAnalysis,
     RenjiuTicket,
 )
+from nutmeg.notifications.models import (
+    NotificationAttachment,
+    NotificationRequest,
+    semantic_fingerprint,
+)
 from nutmeg.services.zucai import ZucaiWorkflowService
 from nutmeg.services.zucai_value_bridge import ZucaiValueReport
 
@@ -34,10 +39,6 @@ logger = logging.getLogger(__name__)
 
 class ZucaiRenjiuValidationError(ValueError):
     pass
-
-
-class RenjiuDocumentSender(Protocol):
-    def send_document(self, *, chat_id: int, document_path: Path, caption: str): ...
 
 
 class RenjiuValueBridge(Protocol):
@@ -63,12 +64,10 @@ class ZucaiRenjiuDailyService:
     def __init__(
         self,
         *,
-        telegram_sender: RenjiuDocumentSender | None = None,
-        telegram_chat_ids: list[int] | None = None,
+        notification_service=None,
         registry_file: Path | str = Path(".nutmeg-data/zucai/issues.json"),
     ) -> None:
-        self._telegram_sender = telegram_sender
-        self._telegram_chat_ids = telegram_chat_ids or []
+        self._notification_service = notification_service
         self._registry_file = Path(registry_file)
         self._zucai = ZucaiWorkflowService()
 
@@ -84,6 +83,7 @@ class ZucaiRenjiuDailyService:
         dispatch_telegram: bool = False,
         dry_run: bool = True,
         value_bridge: RenjiuValueBridge | None = None,
+        notification_stage: str = "manual",
     ) -> RenjiuDailyReport:
         resolved_date = _normalize_date(run_date)
         resolved_issue_file, resolved_odds_file = self._resolve_inputs(
@@ -128,7 +128,11 @@ class ZucaiRenjiuDailyService:
         )
         report = replace(report, artifacts=artifacts)
         if dispatch_telegram:
-            dispatch = self._dispatch(report, dry_run=dry_run)
+            dispatch = self._notify(
+                report,
+                dry_run=dry_run,
+                stage=notification_stage,
+            )
             report = replace(report, dispatch=dispatch)
             if artifacts.json_path:
                 Path(artifacts.json_path).write_text(
@@ -518,48 +522,44 @@ class ZucaiRenjiuDailyService:
             bottomMargin=11 * mm,
         ).build(story)
 
-    def _dispatch(self, report: RenjiuDailyReport, *, dry_run: bool) -> RenjiuDispatch:
+    def _notify(
+        self, report: RenjiuDailyReport, *, dry_run: bool, stage: str
+    ) -> RenjiuDispatch:
         caption = (
             f"Nutmeg 任九第{report.issue_id}期三档方案。主推："
             f"{_ticket_by_id(report, report.recommended_ticket_id).code}。仅供娱乐参考。"
         )
         if not report.artifacts.pdf_path:
             return RenjiuDispatch(status="failed", caption=caption, error="PDF artifact missing")
-        if dry_run:
-            return RenjiuDispatch(
-                status="dry_run",
-                caption=caption,
-                document_path=report.artifacts.pdf_path,
-                chat_ids=list(self._telegram_chat_ids),
-            )
-        if self._telegram_sender is None or not self._telegram_chat_ids:
-            return RenjiuDispatch(
-                status="failed",
-                caption=caption,
-                document_path=report.artifacts.pdf_path,
-                error="Telegram sender or chat ids unavailable",
-            )
-        try:
-            for chat_id in self._telegram_chat_ids:
-                self._telegram_sender.send_document(
-                    chat_id=chat_id,
-                    document_path=Path(report.artifacts.pdf_path),
-                    caption=caption,
-                )
-        except Exception as exc:  # pragma: no cover - network seam
-            return RenjiuDispatch(
-                status="failed",
-                caption=caption,
-                document_path=report.artifacts.pdf_path,
-                chat_ids=list(self._telegram_chat_ids),
-                error=str(exc),
-            )
-        return RenjiuDispatch(
-            status="sent",
+        service = self._notification_service
+        if service is None:
+            from nutmeg.notifications.wiring import build_notification_service
+
+            service = build_notification_service()
+        payload = report.to_dict()
+        for noisy_key in ("generated_at", "artifacts", "dispatch"):
+            payload.pop(noisy_key, None)
+        request = NotificationRequest(
+            kind="zucai.renjiu.report",
+            business_key=report.issue_id,
+            stage=stage,
+            semantic_fingerprint=semantic_fingerprint(
+                {"stage": stage, "report": payload}
+            ),
+            subject=f"任九第{report.issue_id}期报告",
+            caption=caption,
+            attachments=(
+                NotificationAttachment(
+                    Path(report.artifacts.pdf_path), "application/pdf"
+                ),
+            ),
+            metadata={"issue_id": report.issue_id, "stage": stage},
+        )
+        outcome = service.publish(request, dry_run=dry_run)
+        return RenjiuDispatch(**outcome.to_compat_dispatch(
             caption=caption,
             document_path=report.artifacts.pdf_path,
-            chat_ids=list(self._telegram_chat_ids),
-        )
+        ))
 
 
 class ZucaiRenjiuBotWorkflow:

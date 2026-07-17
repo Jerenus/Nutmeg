@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -28,14 +28,15 @@ from nutmeg.domain.zucai import (
     ZucaiRecommendation,
     ZucaiReport,
 )
+from nutmeg.notifications.models import (
+    NotificationAttachment,
+    NotificationRequest,
+    semantic_fingerprint,
+)
 
 
 class ZucaiValidationError(ValueError):
     pass
-
-
-class ZucaiDocumentSender(Protocol):
-    def send_document(self, *, chat_id: int, document_path: Path, caption: str): ...
 
 
 VALID_CODES = {"3", "1", "0"}
@@ -68,13 +69,11 @@ class ZucaiWorkflowService:
     def __init__(
         self,
         *,
-        telegram_sender: ZucaiDocumentSender | None = None,
-        telegram_chat_ids: list[int] | None = None,
+        notification_service=None,
         sample_dir: Path | None = None,
         betting_repository: Any | None = None,
     ) -> None:
-        self._telegram_sender = telegram_sender
-        self._telegram_chat_ids = telegram_chat_ids or []
+        self._notification_service = notification_service
         self._sample_dir = sample_dir or Path(__file__).parents[1] / "zucai" / "samples"
         self._betting_repository = betting_repository
 
@@ -91,6 +90,7 @@ class ZucaiWorkflowService:
         dry_run: bool = True,
         dispatch_caption: str | None = None,
         record_final: bool = False,
+        notification_stage: str = "manual",
     ) -> ZucaiReport:
         resolved_issue_file = self._resolve_file(issue_file, issue_id, "issue")
         resolved_issue_id = issue_id or self._issue_id_from_path(resolved_issue_file)
@@ -139,7 +139,12 @@ class ZucaiWorkflowService:
                 sources=sources,
             )
         if dispatch_telegram:
-            dispatch = self._dispatch(report, dry_run=dry_run, caption=dispatch_caption)
+            dispatch = self._notify(
+                report,
+                dry_run=dry_run,
+                caption=dispatch_caption,
+                stage=notification_stage,
+            )
             report = ZucaiReport(
                 issue=issue,
                 generated_at=generated_at,
@@ -661,8 +666,13 @@ class ZucaiWorkflowService:
             note=str(payload.get("note") or ""),
         )
 
-    def _dispatch(
-        self, report: ZucaiReport, *, dry_run: bool, caption: str | None = None
+    def _notify(
+        self,
+        report: ZucaiReport,
+        *,
+        dry_run: bool,
+        caption: str | None = None,
+        stage: str,
     ) -> ZucaiDispatch:
         document_path = report.artifacts.pdf_path
         caption = caption or (
@@ -672,41 +682,33 @@ class ZucaiWorkflowService:
             return ZucaiDispatch(
                 status="failed", caption=caption, error="PDF artifact is unavailable"
             )
-        if dry_run:
-            return ZucaiDispatch(
-                status="dry_run",
-                caption=caption,
-                document_path=document_path,
-                chat_ids=self._telegram_chat_ids,
-            )
-        if self._telegram_sender is None or not self._telegram_chat_ids:
-            return ZucaiDispatch(
-                status="config_missing",
-                caption=caption,
-                document_path=document_path,
-                chat_ids=self._telegram_chat_ids,
-            )
-        try:
-            for chat_id in self._telegram_chat_ids:
-                self._telegram_sender.send_document(
-                    chat_id=chat_id,
-                    document_path=Path(document_path),
-                    caption=caption,
-                )
-        except Exception as exc:
-            return ZucaiDispatch(
-                status="failed",
-                caption=caption,
-                document_path=document_path,
-                chat_ids=self._telegram_chat_ids,
-                error=str(exc),
-            )
-        return ZucaiDispatch(
-            status="sent",
+        service = self._notification_service
+        if service is None:
+            from nutmeg.notifications.wiring import build_notification_service
+
+            service = build_notification_service()
+        payload = report.to_dict()
+        for noisy_key in ("generated_at", "artifacts", "dispatch"):
+            payload.pop(noisy_key, None)
+        request = NotificationRequest(
+            kind="zucai.report",
+            business_key=report.issue.issue_id,
+            stage=stage,
+            semantic_fingerprint=semantic_fingerprint(
+                {"stage": stage, "report": payload}
+            ),
+            subject=f"足彩第{report.issue.issue_id}期报告",
+            caption=caption,
+            attachments=(
+                NotificationAttachment(Path(document_path), "application/pdf"),
+            ),
+            metadata={"issue_id": report.issue.issue_id, "stage": stage},
+        )
+        outcome = service.publish(request, dry_run=dry_run)
+        return ZucaiDispatch(**outcome.to_compat_dispatch(
             caption=caption,
             document_path=document_path,
-            chat_ids=self._telegram_chat_ids,
-        )
+        ))
 
     def _resolve_file(self, explicit: Path | str | None, issue_id: str | None, kind: str) -> Path:
         if explicit is not None:

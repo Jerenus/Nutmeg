@@ -6,9 +6,43 @@ from pathlib import Path
 import pytest
 
 from nutmeg.config.settings import AppSettings
+from nutmeg.notifications.models import (
+    DeliveryOutcome,
+    DeliveryStatus,
+    NotificationOutcome,
+    NotificationStatus,
+)
 from nutmeg.services.zucai import ZucaiValidationError, ZucaiWorkflowService
 from nutmeg.storage.betting_plan_repository import DuckDbBettingPlanRepository
 from nutmeg.storage.bootstrap import create_analytics_schema
+
+
+class RecordingNotificationService:
+    def __init__(self, outcome: NotificationOutcome) -> None:
+        self.outcome = outcome
+        self.calls = []
+
+    def publish(self, request, *, dry_run=False):
+        self.calls.append((request, dry_run))
+        return self.outcome
+
+
+def _dry_run_outcome(destination: str = "1234") -> NotificationOutcome:
+    return NotificationOutcome(
+        notification_id=None,
+        dedupe_key="zucai:dry-run",
+        status=NotificationStatus.DRY_RUN,
+        deliveries=(
+            DeliveryOutcome(
+                delivery_id=None,
+                channel="telegram",
+                recipient_key="owner",
+                destination=destination,
+                required=True,
+                status=DeliveryStatus.DRY_RUN,
+            ),
+        ),
+    )
 
 
 def _write_json(path: Path, payload: dict) -> Path:
@@ -261,7 +295,8 @@ def test_zucai_service_writes_markdown_pdf_and_report_json(tmp_path) -> None:
 
 
 def test_zucai_service_dry_run_dispatch_keeps_pdf_available(tmp_path) -> None:
-    report = ZucaiWorkflowService(telegram_chat_ids=[1234]).build_report(
+    notifier = RecordingNotificationService(_dry_run_outcome())
+    report = ZucaiWorkflowService(notification_service=notifier).build_report(
         issue_file=Path("nutmeg/zucai/samples/26068-issue.json"),
         odds_file=Path("nutmeg/zucai/samples/26068-odds.json"),
         overrides_file=Path("nutmeg/zucai/samples/26068-overrides.json"),
@@ -269,12 +304,16 @@ def test_zucai_service_dry_run_dispatch_keeps_pdf_available(tmp_path) -> None:
         render_pdf=True,
         dispatch_telegram=True,
         dry_run=True,
+        notification_stage="manual",
     )
 
     assert report.dispatch.status == "dry_run"
     assert report.dispatch.chat_ids == [1234]
     assert report.dispatch.document_path == report.artifacts.pdf_path
     assert "26068" in (report.dispatch.caption or "")
+    assert notifier.calls[0][0].business_key == "26068"
+    assert notifier.calls[0][0].stage == "manual"
+    assert notifier.calls[0][1] is True
 
 
 def test_zucai_service_grades_report_against_outcomes(tmp_path) -> None:

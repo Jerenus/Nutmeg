@@ -5,19 +5,24 @@ from pathlib import Path
 
 import pytest
 
+from nutmeg.notifications.models import NotificationOutcome, NotificationStatus
 from nutmeg.services.zucai_renjiu_daily import (
     ZucaiRenjiuDailyService,
     ZucaiRenjiuValidationError,
 )
 
 
-class RecordingSender:
+class RecordingNotificationService:
     def __init__(self) -> None:
-        self.sent: list[tuple[int, Path, str]] = []
+        self.calls = []
 
-    def send_document(self, *, chat_id: int, document_path: Path, caption: str):
-        self.sent.append((chat_id, Path(document_path), caption))
-        return {"ok": True}
+    def publish(self, request, *, dry_run=False):
+        self.calls.append((request, dry_run))
+        return NotificationOutcome(
+            notification_id=None,
+            dedupe_key=request.dedupe_key,
+            status=NotificationStatus.DRY_RUN,
+        )
 
 
 def _write_issue_and_odds(tmp_path: Path) -> tuple[Path, Path]:
@@ -125,11 +130,10 @@ def test_renjiu_daily_writes_artifacts_and_pdf(tmp_path: Path) -> None:
 
 def test_renjiu_daily_dry_run_dispatch_keeps_pdf_available(tmp_path: Path) -> None:
     issue_path, odds_path = _write_issue_and_odds(tmp_path)
-    sender = RecordingSender()
+    notifier = RecordingNotificationService()
 
     report = ZucaiRenjiuDailyService(
-        telegram_sender=sender,
-        telegram_chat_ids=[123],
+        notification_service=notifier,
     ).build_report(
         run_date="2026-05-10",
         issue_file=issue_path,
@@ -137,11 +141,13 @@ def test_renjiu_daily_dry_run_dispatch_keeps_pdf_available(tmp_path: Path) -> No
         output_dir=tmp_path / "out",
         dispatch_telegram=True,
         dry_run=True,
+        notification_stage="manual",
     )
 
     assert report.dispatch.status == "dry_run"
     assert report.artifacts.pdf_path is not None
-    assert sender.sent == []
+    assert notifier.calls[0][0].business_key == "26074"
+    assert notifier.calls[0][0].stage == "manual"
 
 
 def test_renjiu_daily_rejects_incomplete_issue(tmp_path: Path) -> None:

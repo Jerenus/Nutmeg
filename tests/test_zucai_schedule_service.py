@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from nutmeg.notifications.models import NotificationOutcome, NotificationStatus
 from nutmeg.services.zucai import ZucaiWorkflowService
 from nutmeg.services.zucai_schedule import (
     ZucaiScheduledDeliveryService,
@@ -13,6 +14,19 @@ from nutmeg.services.zucai_schedule import (
 )
 
 SAMPLE_DIR = Path("nutmeg/zucai/samples")
+
+
+class DryRunNotificationService:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def publish(self, request, *, dry_run=False):
+        self.calls.append((request, dry_run))
+        return NotificationOutcome(
+            notification_id=None,
+            dedupe_key=request.dedupe_key,
+            status=NotificationStatus.DRY_RUN,
+        )
 
 
 def _write_json(path: Path, payload: dict) -> Path:
@@ -23,7 +37,9 @@ def _write_json(path: Path, payload: dict) -> Path:
 
 def _service() -> ZucaiScheduledDeliveryService:
     return ZucaiScheduledDeliveryService(
-        workflow_service=ZucaiWorkflowService(telegram_chat_ids=[1234])
+        workflow_service=ZucaiWorkflowService(
+            notification_service=DryRunNotificationService()
+        )
     )
 
 

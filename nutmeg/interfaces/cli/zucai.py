@@ -42,8 +42,15 @@ def zucai_report(
         raise _cli.typer.Exit(code=2) from exc
 
     payload = report.to_dict()
+    delivery_failed = _required_delivery_failed(
+        report.dispatch.status,
+        dispatch_telegram=dispatch_telegram,
+        dry_run=dry_run,
+    )
     if format == "json":
         _cli.typer.echo(_cli.json.dumps(payload, indent=2, sort_keys=True, default=str))
+        if delivery_failed:
+            raise _cli.typer.Exit(code=1)
         return
 
     _cli.console.print(
@@ -59,6 +66,8 @@ def zucai_report(
             f"{recommendation.match_no}. pick={recommendation.pick} "
             f"risk={recommendation.risk_tier} confidence={recommendation.confidence:.2f}"
         )
+    if delivery_failed:
+        raise _cli.typer.Exit(code=1)
 
 
 @_cli.app.command("zucai-renjiu-daily")
@@ -92,8 +101,15 @@ def zucai_renjiu_daily(
         raise _cli.typer.Exit(code=2) from exc
 
     payload = report.to_dict()
+    delivery_failed = _required_delivery_failed(
+        report.dispatch.status,
+        dispatch_telegram=dispatch_telegram,
+        dry_run=dry_run,
+    )
     if format == "json":
         _cli.typer.echo(_cli.json.dumps(payload, indent=2, sort_keys=True, default=str))
+        if delivery_failed:
+            raise _cli.typer.Exit(code=1)
         return
 
     recommended = next(
@@ -110,6 +126,8 @@ def zucai_renjiu_daily(
         _cli.console.print(
             f" - {ticket.name}: {ticket.code} ({ticket.stake_count}注/{ticket.cost_yuan}元)"
         )
+    if delivery_failed:
+        raise _cli.typer.Exit(code=1)
 
 
 @_cli.app.command("zucai-auto-run")
@@ -142,8 +160,15 @@ def zucai_auto_run(
         raise _cli.typer.Exit(code=2) from exc
 
     payload = result.to_dict()
+    delivery_failed = _required_delivery_failed(
+        result.dispatch.status,
+        dispatch_telegram=dispatch_telegram,
+        dry_run=dry_run,
+    )
     if format == "json":
         _cli.typer.echo(_cli.json.dumps(payload, indent=2, sort_keys=True, default=str))
+        if delivery_failed:
+            raise _cli.typer.Exit(code=1)
         return
     if quiet and result.status == "skipped_no_issue":
         return
@@ -158,6 +183,21 @@ def zucai_auto_run(
     _cli.console.print(f"dispatch={result.dispatch.status}")
     for warning in result.warnings:
         _cli.console.print(f"warning: {warning}")
+    if delivery_failed:
+        raise _cli.typer.Exit(code=1)
+
+
+def _required_delivery_failed(
+    status: str,
+    *,
+    dispatch_telegram: bool,
+    dry_run: bool,
+) -> bool:
+    return (
+        dispatch_telegram
+        and not dry_run
+        and status not in {"sent", "deduplicated"}
+    )
 
 
 @_cli.app.command("zucai-source-sync")
