@@ -9,6 +9,21 @@ import httpx
 from nutmeg.interfaces.bot.adapter import BotAdapter
 
 
+class TelegramApiError(RuntimeError):
+    def __init__(
+        self,
+        description: str,
+        *,
+        status_code: int | None = None,
+        error_code: int | None = None,
+        retry_after_seconds: float | None = None,
+    ) -> None:
+        super().__init__(description)
+        self.status_code = status_code
+        self.error_code = error_code
+        self.retry_after_seconds = retry_after_seconds
+
+
 @dataclass(slots=True, frozen=True)
 class TelegramPollSummary:
     updates_seen: int
@@ -38,7 +53,7 @@ class TelegramBotClient:
         response.raise_for_status()
         data = response.json()
         if not data.get("ok"):
-            raise RuntimeError("Telegram getUpdates returned ok=false.")
+            raise _api_error(response, data, "getUpdates")
         result = data.get("result") or []
         if not isinstance(result, list):
             raise RuntimeError("Telegram getUpdates result was not a list.")
@@ -52,7 +67,7 @@ class TelegramBotClient:
         response.raise_for_status()
         data = response.json()
         if not data.get("ok"):
-            raise RuntimeError("Telegram sendMessage returned ok=false.")
+            raise _api_error(response, data, "sendMessage")
         return data
 
     def send_document(
@@ -72,11 +87,22 @@ class TelegramBotClient:
         response.raise_for_status()
         data = response.json()
         if not data.get("ok"):
-            raise RuntimeError("Telegram sendDocument returned ok=false.")
+            raise _api_error(response, data, "sendDocument")
         return data
 
     def _path(self, method: str) -> str:
         return f"/bot{self._token}/{method}"
+
+
+def _api_error(response, data: dict[str, Any], method: str) -> TelegramApiError:
+    parameters = data.get("parameters")
+    retry_after = parameters.get("retry_after") if isinstance(parameters, dict) else None
+    return TelegramApiError(
+        str(data.get("description") or f"Telegram {method} returned ok=false."),
+        status_code=getattr(response, "status_code", None),
+        error_code=data.get("error_code") if isinstance(data.get("error_code"), int) else None,
+        retry_after_seconds=float(retry_after) if isinstance(retry_after, (int, float)) else None,
+    )
 
 
 class TelegramBotRunner:

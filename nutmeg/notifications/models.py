@@ -84,6 +84,7 @@ class DeliveryTarget:
     recipient_key: str
     destination: str
     required: bool = True
+    audience: str = "owner"
 
 
 @dataclass(slots=True, frozen=True)

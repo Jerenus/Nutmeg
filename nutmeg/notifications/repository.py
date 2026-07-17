@@ -111,7 +111,10 @@ class SqlAlchemyNotificationRepository:
             rows = session.scalars(
                 select(NotificationDeliveryRecord)
                 .where(NotificationDeliveryRecord.notification_id == notification_id)
-                .order_by(NotificationDeliveryRecord.delivery_id)
+                .order_by(
+                    NotificationDeliveryRecord.recipient_key,
+                    NotificationDeliveryRecord.destination,
+                )
             ).all()
             return tuple(_delivery_view(row) for row in rows)
 
@@ -313,7 +316,10 @@ class SqlAlchemyNotificationRepository:
             deliveries = session.scalars(
                 select(NotificationDeliveryRecord)
                 .where(NotificationDeliveryRecord.notification_id == notification_id)
-                .order_by(NotificationDeliveryRecord.delivery_id)
+                .order_by(
+                    NotificationDeliveryRecord.recipient_key,
+                    NotificationDeliveryRecord.destination,
+                )
             ).all()
             delivery_ids = [row.delivery_id for row in deliveries]
             attempts = (

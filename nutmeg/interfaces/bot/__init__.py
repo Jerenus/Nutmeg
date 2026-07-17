@@ -15,6 +15,7 @@ __all__ = [
 ]
 
 from nutmeg.interfaces.bot.telegram import (
+    TelegramApiError,
     TelegramBotClient,
     TelegramBotRunner,
     TelegramDaemonSummary,
@@ -24,6 +25,7 @@ from nutmeg.interfaces.bot.telegram import (
 )
 
 __all__ += [
+    'TelegramApiError',
     'TelegramBotClient',
     'TelegramBotRunner',
     'TelegramDaemonSummary',
