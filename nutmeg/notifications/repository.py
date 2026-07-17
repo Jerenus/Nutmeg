@@ -127,6 +127,55 @@ class SqlAlchemyNotificationRepository:
             ).all()
             return tuple(_stored_artifact(row) for row in rows)
 
+    def reconcile_targets(
+        self,
+        notification_id: str,
+        targets: tuple[DeliveryTarget, ...],
+    ) -> None:
+        if not targets:
+            return
+        now = datetime.now(UTC)
+        with self._session() as session:
+            deliveries = session.scalars(
+                select(NotificationDeliveryRecord).where(
+                    NotificationDeliveryRecord.notification_id == notification_id
+                )
+            ).all()
+            existing = {(row.channel, row.destination) for row in deliveries if row.destination}
+            placeholders = [row for row in deliveries if not row.destination]
+            for target in targets:
+                key = (target.channel, target.destination)
+                if key in existing:
+                    continue
+                if placeholders:
+                    delivery = placeholders.pop(0)
+                    delivery.channel = target.channel
+                    delivery.recipient_key = target.recipient_key
+                    delivery.destination = target.destination
+                    delivery.required = target.required
+                    delivery.status = DeliveryStatus.PENDING.value
+                    delivery.last_error_code = None
+                    delivery.last_error_message = None
+                    delivery.next_retry_at = None
+                    delivery.updated_at = now
+                else:
+                    session.add(
+                        NotificationDeliveryRecord(
+                            delivery_id=f"D-{uuid4().hex}",
+                            notification_id=notification_id,
+                            channel=target.channel,
+                            recipient_key=target.recipient_key,
+                            destination=target.destination,
+                            required=target.required,
+                            status=DeliveryStatus.PENDING.value,
+                            attempt_count=0,
+                            updated_at=now,
+                        )
+                    )
+                existing.add(key)
+            self._aggregate_in_session(session, notification_id, now)
+            session.commit()
+
     def add_artifacts(
         self, notification_id: str, artifacts: tuple[StoredArtifact, ...]
     ) -> None:
@@ -227,6 +276,43 @@ class SqlAlchemyNotificationRepository:
             delivery.updated_at = failed_at
             self._aggregate_in_session(session, delivery.notification_id, failed_at)
             session.commit()
+
+    def record_fallback_attempt(
+        self,
+        delivery_id: str,
+        *,
+        started_at: datetime,
+        completed_at: datetime,
+        result: ProviderResult,
+    ) -> AttemptView:
+        with self._session() as session:
+            delivery = session.get(NotificationDeliveryRecord, delivery_id)
+            if delivery is None:
+                raise KeyError(f"notification delivery not found: {delivery_id}")
+            delivery.attempt_count += 1
+            delivery.updated_at = completed_at
+            attempt = NotificationAttemptRecord(
+                attempt_id=f"AT-{uuid4().hex}",
+                delivery_id=delivery_id,
+                attempt_number=delivery.attempt_count,
+                started_at=started_at,
+                completed_at=completed_at,
+                outcome=(
+                    AttemptOutcome.FALLBACK_SENT.value
+                    if result.status == DeliveryStatus.SENT
+                    else AttemptOutcome.FAILED.value
+                ),
+                provider_message_id=result.provider_message_id,
+                error_code=result.error_code,
+                error_message=result.error_message,
+                retryable=result.retryable,
+                retry_after_seconds=result.retry_after_seconds,
+                response_metadata_json=_json(dict(result.metadata)),
+                possible_duplicate=False,
+            )
+            session.add(attempt)
+            session.commit()
+            return _attempt_view(attempt)
 
     def aggregate_notification(self, notification_id: str) -> NotificationView:
         now = datetime.now(UTC)

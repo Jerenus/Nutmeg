@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import httpx
+import pytest
+
 from nutmeg.interfaces.bot.telegram import (
+    TelegramApiError,
     TelegramBotClient,
     TelegramBotRunner,
     TelegramOffsetStore,
@@ -48,6 +52,38 @@ def test_telegram_client_get_updates_uses_offset_and_timeout() -> None:
 
     assert updates == [{"update_id": 7}]
     assert http.posts == [("/botsecret-token/getUpdates", {"offset": 5, "timeout": 3})]
+
+
+def test_telegram_client_preserves_retry_after_from_http_429() -> None:
+    class RateLimitedResponse:
+        status_code = 429
+
+        def json(self):
+            return {
+                "ok": False,
+                "error_code": 429,
+                "description": "Too Many Requests",
+                "parameters": {"retry_after": 7},
+            }
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "rate limited",
+                request=httpx.Request("POST", "https://api.telegram.org"),
+                response=httpx.Response(429),
+            )
+
+    class RateLimitedHttpClient:
+        def post(self, path, json):
+            return RateLimitedResponse()
+
+    client = TelegramBotClient(token="secret-token", http_client=RateLimitedHttpClient())
+
+    with pytest.raises(TelegramApiError) as captured:
+        client.send_message(chat_id=12345, text="hello")
+
+    assert captured.value.error_code == 429
+    assert captured.value.retry_after_seconds == 7
 
 
 def test_telegram_runner_routes_allowed_messages_and_denies_unknown_chats() -> None:

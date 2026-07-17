@@ -8,6 +8,7 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.notifications.artifacts import ArtifactStore
 from nutmeg.notifications.models import (
     DeliveryTarget,
+    NotificationAttachment,
     NotificationRequest,
     ProviderResult,
 )
@@ -24,6 +25,7 @@ class ScriptedProvider:
         self.results = list(results)
         self.calls: list[str] = []
         self.fallback_calls: list[str] = []
+        self.fallback_requests = []
 
     def send(self, *, target, request, artifacts) -> ProviderResult:
         self.calls.append(target.destination)
@@ -31,6 +33,7 @@ class ScriptedProvider:
 
     def send_fallback(self, *, target, request, error) -> ProviderResult:
         self.fallback_calls.append(target.destination)
+        self.fallback_requests.append(request)
         return ProviderResult.sent("fallback-1")
 
 
@@ -230,3 +233,54 @@ def test_stale_sending_recovery_is_marked_possible_duplicate(
     assert outcome.status.value == "sent"
     assert outcome.possible_duplicate is True
     assert repository.get_bundle(notification.notification_id).attempts[-1].possible_duplicate
+
+
+def test_attachment_fallback_network_call_is_recorded(repository, tmp_path: Path) -> None:
+    source = tmp_path / "report.pdf"
+    source.write_bytes(b"%PDF")
+    provider = ScriptedProvider(
+        [ProviderResult.permanent_failure("invalid_attachment", "bad document")]
+    )
+    service = _service(
+        repository,
+        tmp_path,
+        provider,
+        (DeliveryTarget("telegram", "owner", "1", True),),
+    )
+    request = NotificationRequest(
+        kind="decision.close.report",
+        business_key="2026-07-17",
+        stage="close",
+        semantic_fingerprint="fallback",
+        subject="Decision report",
+        attachments=(NotificationAttachment(source, "application/pdf"),),
+    )
+
+    outcome = service.publish(request)
+
+    attempts = repository.get_bundle(outcome.notification_id).attempts
+    assert outcome.status.value == "failed"
+    assert provider.fallback_calls == ["1"]
+    assert provider.fallback_requests[0].metadata["notification_id"] == outcome.notification_id
+    assert [item.outcome.value for item in attempts] == ["failed", "fallback_sent"]
+    assert attempts[-1].provider_message_id == "fallback-1"
+
+
+def test_explicit_retry_binds_recipient_after_configuration_is_fixed(
+    repository, tmp_path: Path
+) -> None:
+    missing_service = _service(repository, tmp_path, ScriptedProvider([]), ())
+    failed = missing_service.publish(_request("fixed-config"))
+    provider = ScriptedProvider([ProviderResult.sent("message-1")])
+    fixed_service = _service(
+        repository,
+        tmp_path,
+        provider,
+        (DeliveryTarget("telegram", "owner", "99", True),),
+    )
+
+    recovered = fixed_service.retry(failed.notification_id, include_permanent=True)
+
+    assert recovered.status.value == "sent"
+    assert recovered.deliveries[0].destination == "99"
+    assert provider.calls == ["99"]

@@ -7,6 +7,7 @@ from nutmeg.notifications.models import (
     DeliveryTarget,
     NotificationAttachment,
     NotificationRequest,
+    ProviderResult,
     StoredArtifact,
 )
 from nutmeg.notifications.telegram import TelegramProvider
@@ -125,3 +126,27 @@ def test_telegram_provider_rejects_missing_artifact_before_network(tmp_path: Pat
     assert result.status.value == "permanent_failed"
     assert result.error_code == "invalid_attachment"
     assert client.documents == []
+
+
+def test_telegram_fallback_message_contains_notification_id(tmp_path: Path) -> None:
+    request, _artifact = _request(tmp_path)
+    request = NotificationRequest(
+        kind=request.kind,
+        business_key=request.business_key,
+        stage=request.stage,
+        semantic_fingerprint=request.semantic_fingerprint,
+        subject=request.subject,
+        caption=request.caption,
+        attachments=request.attachments,
+        metadata={"notification_id": "N-1"},
+    )
+    client = FakeTelegramClient()
+
+    result = TelegramProvider(client).send_fallback(
+        target=DeliveryTarget("telegram", "owner", "123"),
+        request=request,
+        error=ProviderResult.permanent_failure("invalid_attachment", "bad document"),
+    )
+
+    assert result.status.value == "sent"
+    assert "N-1" in client.messages[0][1]

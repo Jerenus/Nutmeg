@@ -174,3 +174,43 @@ def test_verify_close_uses_notification_ledger(tmp_path, monkeypatch, capsys):
     ops.verify_close(run_date, tmp_path, tmp_path / "logs")
 
     assert "NUTMEG_CLOSE_OK" in capsys.readouterr().out
+
+
+def test_run_strict_records_post_stage_context_failure(tmp_path, monkeypatch):
+    completed = subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout=json.dumps({"status": "succeeded", "steps": []}),
+        stderr="",
+    )
+    events = []
+    monkeypatch.setattr(ops, "_run", lambda command: completed)
+    monkeypatch.setattr(
+        ops,
+        "build_context",
+        lambda *args: (_ for _ in ()).throw(ops.SchedulerError("context failed")),
+    )
+    monkeypatch.setattr(
+        ops, "_publish_operation_event", lambda **event: events.append(event)
+    )
+
+    with pytest.raises(ops.SchedulerError, match="context failed"):
+        ops.run_strict(
+            "am",
+            "2026-07-17",
+            tmp_path,
+            operation_state_file=tmp_path / "operation-state.json",
+        )
+
+    assert [event["kind"] for event in events] == ["operations.failure"]
+
+
+def test_operation_failure_summary_redacts_secret_like_values() -> None:
+    summary = ops._safe_summary(
+        "POST /bot123456:ABC/sendDocument?api_key=topsecret "
+        "NUTMEG_TELEGRAM_BOT_TOKEN=anothersecret"
+    )
+
+    assert "topsecret" not in summary
+    assert "anothersecret" not in summary
+    assert "123456:ABC" not in summary

@@ -67,9 +67,10 @@ class TelegramProvider:
             return ProviderResult.permanent_failure(
                 "invalid_recipient", "Telegram recipient is not an integer"
             )
+        notification_id = str(request.metadata.get("notification_id") or "unknown")
         text = (
             f"{request.subject}: report attachment delivery failed "
-            f"({error.error_code or 'unknown'})."
+            f"({error.error_code or 'unknown'}). Notification ID: {notification_id}."
         )
         try:
             payload = self._client.send_message(chat_id=chat_id, text=text)

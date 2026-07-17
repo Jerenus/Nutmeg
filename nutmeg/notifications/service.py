@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Callable, Mapping, Protocol
 from uuid import uuid4
@@ -107,6 +108,8 @@ class NotificationService:
             except Exception:
                 self._artifact_store.remove_notification(notification_id)
                 raise
+        elif targets:
+            self.repository.reconcile_targets(existing.notification_id, targets)
 
         self._deliver(existing.notification_id, request)
         return self._outcome(existing.notification_id)
@@ -114,6 +117,7 @@ class NotificationService:
     def retry(
         self, notification_id: str, *, include_permanent: bool = False
     ) -> NotificationOutcome:
+        self.repository.reconcile_targets(notification_id, self._targets)
         bundle = self.repository.get_bundle(notification_id)
         request = NotificationRequest(
             kind=bundle.notification.kind,
@@ -208,7 +212,15 @@ class NotificationService:
                 )
                 delivery = self._delivery(notification_id, delivery.delivery_id)
                 if not result.retryable or delivery.attempt_count >= attempt_limit:
-                    self._try_fallback(provider, target, request, artifacts, result)
+                    self._try_fallback(
+                        provider,
+                        target,
+                        request,
+                        artifacts,
+                        result,
+                        notification_id=notification_id,
+                        delivery_id=delivery.delivery_id,
+                    )
                     break
                 self._sleep(
                     result.retry_after_seconds
@@ -236,6 +248,9 @@ class NotificationService:
         request: NotificationRequest,
         artifacts: tuple[StoredArtifact, ...],
         result: ProviderResult,
+        *,
+        notification_id: str,
+        delivery_id: str,
     ) -> None:
         if not artifacts or result.error_code not in {
             "caption_too_long",
@@ -243,7 +258,20 @@ class NotificationService:
             "invalid_attachment",
         }:
             return
-        provider.send_fallback(target=target, request=request, error=result)
+        started_at = self._now()
+        fallback_request = replace(
+            request,
+            metadata={**request.metadata, "notification_id": notification_id},
+        )
+        fallback_result = provider.send_fallback(
+            target=target, request=fallback_request, error=result
+        )
+        self.repository.record_fallback_attempt(
+            delivery_id,
+            started_at=started_at,
+            completed_at=self._now(),
+            result=fallback_result,
+        )
 
     def _targets_for(self, request: NotificationRequest) -> tuple[DeliveryTarget, ...]:
         return tuple(

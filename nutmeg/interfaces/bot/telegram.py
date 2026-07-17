@@ -50,10 +50,7 @@ class TelegramBotClient:
         if offset is not None:
             payload["offset"] = offset
         response = self._client.post(self._path("getUpdates"), json=payload)
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("ok"):
-            raise _api_error(response, data, "getUpdates")
+        data = _response_data(response, "getUpdates")
         result = data.get("result") or []
         if not isinstance(result, list):
             raise RuntimeError("Telegram getUpdates result was not a list.")
@@ -64,10 +61,7 @@ class TelegramBotClient:
             self._path("sendMessage"),
             json={"chat_id": chat_id, "text": text},
         )
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("ok"):
-            raise _api_error(response, data, "sendMessage")
+        data = _response_data(response, "sendMessage")
         return data
 
     def send_document(
@@ -84,10 +78,7 @@ class TelegramBotClient:
                 data={"chat_id": chat_id, "caption": caption or ""},
                 files={"document": (path.name, handle, "application/pdf")},
             )
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("ok"):
-            raise _api_error(response, data, "sendDocument")
+        data = _response_data(response, "sendDocument")
         return data
 
     def _path(self, method: str) -> str:
@@ -103,6 +94,20 @@ def _api_error(response, data: dict[str, Any], method: str) -> TelegramApiError:
         error_code=data.get("error_code") if isinstance(data.get("error_code"), int) else None,
         retry_after_seconds=float(retry_after) if isinstance(retry_after, (int, float)) else None,
     )
+
+
+def _response_data(response, method: str) -> dict[str, Any]:
+    try:
+        data = response.json()
+    except (TypeError, ValueError) as exc:
+        response.raise_for_status()
+        raise TelegramApiError(f"Telegram {method} returned invalid JSON.") from exc
+    if not isinstance(data, dict):
+        raise TelegramApiError(f"Telegram {method} returned a non-object response.")
+    if not data.get("ok"):
+        raise _api_error(response, data, method)
+    response.raise_for_status()
+    return data
 
 
 class TelegramBotRunner:

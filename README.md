@@ -363,3 +363,19 @@ uv run nutmeg decision-web --output-dir .nutmeg-data/jczq
 requires an explicit `--dispatch-telegram --no-dry-run`. Nutmeg remains
 analysis assistance only: no bet placement, no sportsbook connection, and no
 guaranteed-profit claims.
+
+Formal decision and Zucai reports share a durable notification ledger. The
+business report path remains the latest copy, while the exact sent attachment
+is retained under `.nutmeg-data/notifications/artifacts/<notification-id>/`.
+
+```bash
+uv run nutmeg notification-status --since 7d
+uv run nutmeg notification-show --notification-id <id>
+uv run nutmeg notification-retry --notification-id <id>
+```
+
+Delivery is at-least-once with local deduplication. If a process stops after
+Telegram accepts a message but before Nutmeg records the response, the attempt
+is marked `uncertain`; retrying it can duplicate the message and the audit
+timeline records that risk. A real Telegram smoke remains an explicit outbound
+action and must not be performed as part of automated tests or dry-run replay.

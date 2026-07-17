@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import date, datetime, timedelta
@@ -119,14 +120,17 @@ def run_strict(
     result = _run(command)
     try:
         _assert_strict_success(result, stage)
-    except SchedulerError as exc:
-        _record_operation_failure(stage, run_date, str(exc), operation_state_file)
-        raise
+        if stage == "am":
+            build_context(run_date, output_dir, DEFAULT_LOG_DIR)
+        elif stage == "settle":
+            build_context(date.today().isoformat(), output_dir, DEFAULT_LOG_DIR)
+    except Exception as exc:
+        error = exc if isinstance(exc, SchedulerError) else SchedulerError(str(exc))
+        _record_operation_failure(stage, run_date, str(error), operation_state_file)
+        if error is exc:
+            raise
+        raise error from exc
     _record_operation_success(stage, run_date, operation_state_file)
-    if stage == "am":
-        build_context(run_date, output_dir, DEFAULT_LOG_DIR)
-    elif stage == "settle":
-        build_context(date.today().isoformat(), output_dir, DEFAULT_LOG_DIR)
     print(f"NUTMEG_OK stage={stage} run_date={run_date}")
 
 
@@ -348,6 +352,7 @@ def _record_operation_failure(
     state_file: Path,
 ) -> None:
     key = f"{stage}:{run_date}"
+    error = _safe_summary(error)
     state = _load_operation_state(state_file)
     state[key] = {"status": "failed", "error": error, "updated_at": _now()}
     _write_operation_state(state_file, state)
@@ -385,6 +390,7 @@ def _publish_operation_event(
     from nutmeg.notifications.models import NotificationRequest, semantic_fingerprint
     from nutmeg.notifications.wiring import build_notification_service
 
+    summary = _safe_summary(summary)
     request = NotificationRequest.text(
         kind=kind,
         business_key=f"{stage}:{run_date}",
@@ -433,6 +439,16 @@ def _is_notification_transport_failure(error: str) -> bool:
     return "notification" in normalized and any(
         marker in normalized for marker in ("telegram", "delivery", "recipient", "provider")
     )
+
+
+def _safe_summary(value: str) -> str:
+    redacted = re.sub(r"/bot[^/\s]+", "/bot***", value)
+    redacted = re.sub(
+        r"(?i)((?:api[_-]?key|token|secret|password)[A-Z0-9_]*\s*=\s*)[^&\s]+",
+        r"\1***",
+        redacted,
+    )
+    return redacted[:2000]
 
 
 def _now() -> str:
