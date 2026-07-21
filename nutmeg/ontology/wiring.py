@@ -1,19 +1,24 @@
 """Compose ``AppSettings`` into a ready ontology kernel.
 
 One engine and Action service back every domain facade: IngestArtifact, the
-identity/match/market Actions, and the market-day ingest orchestration — wired
-but not initialized. Construction is side-effect-light: it never applies
-migrations, so ``status`` on a fresh kernel still reports uninitialized.
+identity/match/market Actions and market-day ingest, and the person/observation/
+claim Actions and evidence-day ingest — wired but not initialized. Construction is
+side-effect-light: it never applies migrations, so ``status`` on a fresh kernel
+still reports uninitialized.
 """
 from __future__ import annotations
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
+from nutmeg.ontology.actions.claim_actions import ClaimActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.market_actions import MarketActions
 from nutmeg.ontology.actions.match_actions import MatchActions
+from nutmeg.ontology.actions.observation_actions import ObservationActions
+from nutmeg.ontology.actions.person_actions import PersonActions
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
+from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.kernel import OntologyKernel
 from nutmeg.ontology.paths import OntologyPaths
@@ -36,9 +41,15 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         match_actions=MatchActions(action_service),
         market_actions=MarketActions(action_service),
     )
+    evidence_day_ingest = EvidenceDayIngestService(
+        person_actions=PersonActions(action_service),
+        observation_actions=ObservationActions(action_service),
+        claim_actions=ClaimActions(action_service),
+    )
     return OntologyKernel(
         paths=paths,
         engine=engine,
         artifact_ingest=artifact_ingest,
         market_day_ingest=market_day_ingest,
+        evidence_day_ingest=evidence_day_ingest,
     )

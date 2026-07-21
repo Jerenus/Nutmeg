@@ -138,6 +138,36 @@ uv run nutmeg ontology ingest-market-day --business-date <YYYY-MM-DD> \
 It initializes the kernel if needed, upserts teams, records matches with real
 schedules, and de-vigs had snapshots; international odds align to the same opaque
 match by sporttery match number. `nutmeg ontology status` then reports
-`team_count`/`match_count`/`quote_count`/`snapshot_count`. Package 2B (Person,
-RoleAssignment, LineupEntry, Claim/Observation, adapter wiring) follows on 2A's
-verified interfaces.
+`team_count`/`match_count`/`quote_count`/`snapshot_count`.
+
+## 11. Package 2B — Evidence & Context
+
+Package 2B adds the people layer and graded evidence. Design:
+`docs/superpowers/specs/2026-07-21-ontology-kernel-v2-package-2-design.md`.
+
+**People.** Person resolution reuses 2A's provider-id-first resolver over the
+shared external-identifier/alias tables — provisional, never null.
+PersonMatchStatus is observation-backed (每个状态回到一条 Observation).
+
+**Graded write-back.** Connectors/deterministic systems record official/
+deterministic **Observations**; AI extractors record only **provisional Claims**
+with evidence spans and can never record a verified fact or self-verify. Claim
+content is immutable; verify/dispute/retract (operator only) append a replayable
+`claim_status_events` trail. **Conflicting claims for the same subject coexist —
+nothing is auto-overwritten.**
+
+**Ingest a saved evidence day** (idempotent):
+
+```bash
+uv run nutmeg ontology ingest-evidence-day --business-date <YYYY-MM-DD> \
+  --availability <path> [--weather <path>] [--news <path>] --format json
+```
+
+Availability rows become upserted persons + observation-backed match statuses,
+weather becomes observations, news becomes provisional claims. Rows that cannot
+attach to a known match are **counted as skipped** and printed — standalone the
+match map is empty, so Package 3 chains market-day and evidence-day to attach
+evidence to real matches. `nutmeg ontology status` then also reports
+`person_count`/`observation_count`/`claim_count`. Together with 2A this closes
+umbrella Package 2 (Football World & Evidence); Package 3 (Decision & Finance
+Loop) follows.
