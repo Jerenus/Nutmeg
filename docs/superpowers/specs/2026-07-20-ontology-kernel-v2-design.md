@@ -175,7 +175,7 @@ Observation payload，不为“看起来完整”新增对象类型。
 ### 2.4 赔率不是资金流
 
 赔率是价格与信息状态。只有来源提供真实成交量、投注比例或资金净流时，才创建
-`MarketFlowObservation`。用户自己的资金只存在于 Ticket、CashTransaction 与 Settlement。
+`MarketFlowObservation`。用户自己的资金只存在于 Ticket、CashTransaction 与 TicketSettlement。
 禁止从赔率移动直接命名“资金流入/流出”。
 
 ### 2.5 派生结果必须可重算
@@ -276,25 +276,29 @@ resolution_status
 #### Match
 
 ```text
-match_id                       # 内部稳定 opaque id，不含队名
-competition_edition_id
-scheduled_at                   # 真实开赛时间；未知必须显式 unknown，不用抓取时间代替
-venue_id?
-status: scheduled | live | finished | postponed | cancelled
-home_team_appearance_id
-away_team_appearance_id
-round_label?
-recorded_at
+Match {match_id, current_revision_id}  # 内部稳定 opaque id，不含队名
+
+MatchRevision {
+  match_revision_id, match_id, version,
+  competition_edition_id,
+  scheduled_at,                  # 真实开赛时间；未知必须显式 unknown，不用抓取时间代替
+  venue_id?,
+  status: scheduled | live | finished | postponed | cancelled,
+  round_label?, recorded_at, supersedes_revision_id?
+}
 ```
 
 Provider event id、竞彩号、足彩期号/序号全部进入 `ExternalIdentifier`，不是 Match 主键。
+参赛双方由 `TeamAppearance(match_id, team_id, side)` 关联；标准足球 Match 必须恰有两个
+TeamAppearance、一个 designated home 和一个 designated away（中立场也保留票面主客角色），
+避免 Match 与 TeamAppearance 形成双向外键循环。
 
 #### ExternalIdentifier 与 EntityMerge
 
 ```text
 ExternalIdentifier {entity_id, entity_type, provider, external_id, valid_from?, valid_to?}
 EntityAlias        {entity_id, normalized_alias, language?, provider?}
-EntityMerge        {from_id, into_id, reason, evidence_artifact_ids, actor, at, reversible}
+EntityMerge        {from_id, into_id, reason, evidence_retrieval_ids, actor, at, reversible}
 ```
 
 身份 resolve 先用 provider ID，再用策展 alias 和受控 fingerprint；不执行无日志 fuzzy merge。
@@ -322,11 +326,11 @@ source_observation_id
 team_appearance_id
 match_id / team_id
 side: home | away | neutral_designated_home | neutral_designated_away
-rest_days?
-travel_distance_km?
-motivation_state?              # 只引用 verified Observation，不存 LLM 自由结论
-formation_expected? / formation_confirmed?
 ```
+
+TeamAppearance 只表达稳定的参赛关系，不复制动态状态。rest、travel、condition、motivation、
+expected formation 等全部作为带来源与时效的 typed Observation 挂在 TeamAppearance；confirmed
+formation 由 LineupEntry 投影。这样“状态 ≠ 战意”既能结构化，也不会丢失证据血缘。
 
 #### PersonMatchStatus
 
@@ -356,19 +360,17 @@ observed_at / observation_id
 
 ```text
 artifact_id                     # sha256:<digest>
-source_name / source_type
-canonical_url?
-published_at?
-retrieved_at
+first_recorded_at
 content_type
 storage_path
 byte_size
 content_hash
-source_health_run_id
 ```
 
 原文、API 响应、盘口快照、公告、网页与用户上传文件均先进入内容寻址存储。同样内容重复抓取只
-增加 retrieval 记录，不复制正文。
+增加 `ArtifactRetrieval {artifact_retrieval_id, artifact_id, source_run_id, source_name,
+source_type, canonical_url?, requested_url?, published_at?, retrieved_at, status}`，不复制正文，
+也不把一个内容哈希错误地绑定到某个来源或单次抓取运行。
 
 #### Claim
 
@@ -381,12 +383,13 @@ scope_match_id?
 valid_from / valid_to?
 status: provisional | corroborated | verified | disputed | expired | retracted
 extractor / extractor_version
-evidence_spans: [{artifact_id, quote, locator}]
+evidence_spans: [{artifact_id, artifact_retrieval_id, quote, locator}]
 created_at / adjudicated_at?
 ```
 
 允许多个相互冲突的 Claim 共存。`VerifyClaim`、`DisputeClaim`、`RetractClaim` 是显式 Action，
-不会覆盖原主张。
+不会覆盖原主张。Claim 内容 immutable；表中的 `status` 是 current projection，每次转换另追加
+`ClaimStatusEvent {claim_id, from_status, to_status, action_id, at}`，可重放其完整裁决轨迹。
 
 #### Observation
 
@@ -399,7 +402,7 @@ value_json / schema_version
 valid_from / valid_to?
 observed_at
 recorded_at
-source_artifact_ids[]
+source_artifact_retrieval_ids[]
 claim_ids[]
 verification_method: deterministic | official | corroborated | adjudicated
 quality_json
@@ -418,7 +421,7 @@ frozen_at
 information_cutoff_at
 market_snapshot_id
 verified_observation_ids[]
-supporting_artifact_ids[]
+supporting_artifact_retrieval_ids[]
 caveat_claim_ids[]              # provisional/disputed 仅作风险提示，不能许可偏移
 identity_resolution_version
 source_coverage_json
@@ -450,7 +453,7 @@ match_id / market_definition_id / selection_id
 provider / bookmaker?
 decimal_odds
 captured_at
-artifact_id
+artifact_retrieval_id
 quote_status
 ```
 
@@ -482,11 +485,11 @@ source_coverage / freshness / disagreement
 
 ```text
 ForecastSeries {
-  forecast_series_id, match_id, market_definition_id, judge_role
+  forecast_series_id, match_id, market_definition_id
 }
 
 ForecastRevision {
-  forecast_revision_id, forecast_series_id, revision_no,
+  forecast_revision_id, forecast_series_id, decision_session_id, revision_no,
   status: draft | committed | superseded | withdrawn,
   made_at, information_cutoff_at,
   prior_snapshot_id, prior_distribution,
@@ -513,7 +516,7 @@ FactorDefinition {
   factor_definition_id, factor_family_id, version,
   name, definition, scope,
   status: probation | active | retired,
-  born_from_artifact_ids[], valid_from, valid_to?, policy_version
+  born_from_refs[], valid_from, valid_to?, policy_version
 }
 
 FactorApplication {
@@ -554,26 +557,31 @@ BetLeg {bet_leg_id, ticket_id, forecast_revision_id,
 
 ```text
 CashAccount {account_id, channel_scope, currency, status}
-CashTransaction {transaction_id, account_id, ticket_id?, settlement_id?,
+CashTransaction {transaction_id, account_id, ticket_id?, ticket_settlement_id?,
                  kind: stake | payout | adjustment,
                  amount, occurred_at, idempotency_key}
 ```
 
 竞彩与传统足彩可以有独立预算 policy，但最终进入同一资金流水语义。
 
-#### MatchOutcome 与 Settlement
+#### MatchOutcome、BetLegSettlement 与 TicketSettlement
 
 ```text
 MatchOutcome {outcome_id, match_id, version,
               score_90, score_aet?, penalties?, status,
-              source_artifact_ids[], recorded_at, supersedes?}
+              source_artifact_retrieval_ids[], recorded_at, supersedes?}
 
-Settlement {settlement_id, ref_type: forecast | ticket,
-            ref_id, outcome_id, closing_snapshot_id?,
-            settled_at, hit?, pnl?, settlement_method_version}
+BetLegSettlement {bet_leg_settlement_id, bet_leg_id, outcome_id,
+                  grade, hit?, settlement_method_version}
+
+TicketSettlement {ticket_settlement_id, ticket_id, settled_at,
+                  status, stake_amount, payout_amount, pnl_amount,
+                  bet_leg_settlement_ids[], settlement_method_version}
 ```
 
-赛果修正创建新 Outcome version，并触发 Settlement/analytics 重建；不覆盖原结果。
+赛果修正创建新 Outcome version，并触发 BetLeg/Ticket Settlement 与 analytics 重建；不覆盖原结果。
+Forecast 不产生 operational Settlement；它的 Brier/closing/calibration 全部属于可重算 Evaluation
+projection。这样“预测评价”不会再次混入“真实资金结算”。
 
 ### 4.7 评价对象的存储边界
 
@@ -600,13 +608,15 @@ flowchart LR
     FR --> BL[BetLeg]
     BL --> T[Ticket]
     T --> TX[CashTransaction]
-    MO[MatchOutcome] --> ST[Settlement]
-    T --> ST
-    FR --> ST
-    MS2[Closing Snapshot] --> ST
+    MO[MatchOutcome] --> BLS[BetLegSettlement]
+    BL --> BLS
+    BLS --> TS[TicketSettlement]
+    T --> TS
+    TS --> TX
     FR --> EV[Evaluation Projection]
+    BL --> EV
     MO --> EV
-    MS2 --> EV
+    MS2[Closing Snapshot] --> EV
 ```
 
 ### 5.1 四种时间不可混用
@@ -654,7 +664,7 @@ SQLite transaction 同时提交业务对象和 action log，不能出现“Ticke
 | AI Extractor | provisional Claim、实体匹配候选 | verified Observation、Forecast commit |
 | AI Analyst | draft Forecast、Factor/Claim review proposal | 自行 commit、批准资金动作 |
 | Judge/Operator | Claim 裁决、Forecast commit/revise/withdraw、Ticket approve、Policy approve | 绕过 validator 直接写表 |
-| Deterministic System | 去水 Snapshot、Bundle freeze、Policy validation、Outcome ingest、Settlement、EvaluationRun | 选择投注方向、编造缺失值 |
+| Deterministic System | 去水 Snapshot、Bundle freeze、Policy validation、Outcome ingest、BetLeg/Ticket Settlement、EvaluationRun；满足官方结构化来源/交叉验证 policy 时执行 Claim 验证 | 选择投注方向、凭模型措辞自行验证 Claim、编造缺失值 |
 
 在单用户系统中，Judge/Operator 可以由主循环最新模型在用户授权范围内扮演，但 actor、model
 version 与 action 仍必须落库；“主循环可以判断”不等于“可以绕过 schema”。
@@ -703,7 +713,7 @@ version 与 action 仍必须落库；“主循环可以判断”不等于“可�
 
 1. CaptureClosing 保存同玩法、同 selection、同 line 的 closing quotes/snapshot。
 2. RecordOutcome 显式保存 90 分钟、加时、点球与终局状态。
-3. Settlement 只在结果充分时生成；缺失保持 unavailable，不制造 pending 输票。
+3. BetLeg/Ticket Settlement 只在结果充分时生成；缺失保持 unavailable，不制造 pending 输票。
 4. Outcome/price 更正触发新版本与重算，不覆盖历史。
 
 ### 7.5 calibrate：提出学习动作，不静默改变世界
@@ -720,11 +730,13 @@ version 与 action 仍必须落库；“主循环可以判断”不等于“可�
 
 ### 8.1 SQLite：唯一 operational truth
 
-使用 typed relational tables，不采用“万能 objects + links + payload”的纯 EAV 模型。建议表组：
+运行库固定为 `.nutmeg-data/ontology/ontology.db`，与通知/客户端状态使用的 `state.db` 分离。
+使用现有 SQLAlchemy 依赖的 Core 层加显式编号 migration，不引入通用 ORM 魔法。数据模型采用
+typed relational tables，不使用“万能 objects + links + payload”的纯 EAV 模型。表组如下：
 
 ```text
 identity:
-  competitions, competition_editions, teams, persons, venues, matches
+  competitions, competition_editions, teams, persons, venues, matches, match_revisions
   external_identifiers, entity_aliases, entity_merges
 
 context:
@@ -732,7 +744,7 @@ context:
 
 evidence:
   source_artifacts, artifact_retrievals, source_runs, source_health
-  claims, claim_evidence_spans, observations, observation_sources
+  claims, claim_status_events, claim_evidence_spans, observations, observation_sources
   evidence_bundles, evidence_bundle_items
 
 market:
@@ -745,7 +757,8 @@ decision:
 
 finance/outcome:
   budget_policies, ticket_proposals, tickets, bet_legs
-  cash_accounts, cash_transactions, match_outcomes, settlements
+  cash_accounts, cash_transactions, match_outcomes
+  bet_leg_settlements, ticket_settlements
 
 governance:
   actions, policy_versions, schema_migrations, evaluation_runs
@@ -822,7 +835,8 @@ Brier Skill Score = 1 - Σ_i BS(q_i, y_i) / Σ_i BS(p_i, y_i)
 ```
 
 大于 0 表示该 cohort 总体优于市场先验。报告 raw Brier、prior Brier、skill、n、coverage 与
-bootstrap/Bayesian interval；禁止只报一个方向命中率。
+bootstrap/Bayesian interval；若 cohort 的 prior Brier 分母为 0，则 skill 标 unavailable，禁止
+除零或补默认值。禁止只报一个方向命中率。
 
 同时使用：
 
@@ -917,6 +931,8 @@ yield、ROI、drawdown、exposure concentration 与相关性簇。财务指标�
 - 单 factor Read：paired score contribution 可直接计算；
 - 多 factor Read：使用基于 delta 子集的 Shapley score attribution，把 Brier/closing skill 的
   联合增益公平分配；
+- validator 必须确认总 belief 位于概率 simplex；Shapley 所需的任一 factor 子集若产生非法
+  中间分布，则该条多因子 attribution 标 `confounded_not_attributable`，不得投影/裁剪后伪分功劳；
 - 同时保留 raw cohort estimate，避免 Shapley 结果被误解为因果效应；
 - FactorEstimate 按 factor family/version、scope、market 与 cohort 分层，并使用 shrinkage 与
   uncertainty interval；小样本向全局均值收缩，不报极端命中率；
@@ -1015,7 +1031,8 @@ RegimeVector {
 
 percentile 必须相对可比较 cohort（competition/season、距离开赛阶段、slate size），不能把世界杯
 决赛与 18 场北欧周末盘放进同一分布。允许多标签，如“共识平静”“热门堆积”“信息冲突”
-“临场冲击”“数据贫瘠”，不压成单一冷热分。
+“临场冲击”“数据贫瘠”，不压成单一冷热分。cohort 历史不足时只展示 raw value、coverage 与
+`percentile_unavailable`，不借用不相干联赛补基线。
 
 ### 11.4 赛后研究标签
 
@@ -1037,7 +1054,7 @@ nutmeg/
     evidence/        # Artifact/Claim/Observation/EvidenceBundle
     market/          # Definition/Quote/Snapshot
     decision/        # Forecast/Factor/Scenario
-    finance/         # Budget/Ticket/Ledger/Settlement
+    finance/         # Budget/Ticket/Ledger/TicketSettlement
     actions/         # commands/handlers/permissions/validators
     repository/      # SQLite schema/migrations/unit-of-work
   ingest/            # provider adapters; no judgment
@@ -1116,7 +1133,7 @@ Market ingest；把现有 Fixture/Player/Weather/Information 能力接入唯一�
 
 #### Package 3 — Decision & Finance Loop
 
-交付：EvidenceBundle、Forecast revisions、FactorApplication、Ticket/Ledger、Outcome/Settlement 与
+交付：EvidenceBundle、Forecast revisions、FactorApplication、Ticket/Ledger、Outcome/TicketSettlement 与
 五动词 facade；竞彩/足彩共享信念层与资金语义。
 
 #### Package 4 — Learning & Regime
@@ -1146,7 +1163,8 @@ Market ingest；把现有 Fixture/Player/Weather/Information 能力接入唯一�
 | 重复 real Read | 按 made_at/revision 证据建立 series；无法确定顺序时并存并标 migration ambiguity，不重复评分 |
 | Factor | 迁 Definition v1；旧 Verdict 不迁为当前状态，统一重算 |
 | Ticket | 保留真实资金动作；能唯一关联时补 Forecast，不能则标 `lineage_unresolved`，绝不猜接 |
-| Settlement | 关联 v2 Outcome 后重算；原数值保留 legacy audit field |
+| Read Settlement | 提取 Outcome/closing 引用后转为 DuckDB ForecastScore；不迁 operational Settlement |
+| Ticket Settlement | 拆为 BetLegSettlement + TicketSettlement；关联 v2 Outcome 后重算，原数值保留 legacy audit field |
 | calibration/day-regime/report | 作为 Artifact；派生指标不迁为真相 |
 | DuckDB betting_plan 历史 | 只读归档；只有能证明真实下注的记录才进入 Ledger |
 
@@ -1172,7 +1190,7 @@ Market ingest；把现有 Fixture/Player/Weather/Information 能力接入唯一�
 2. **不覆盖证据**：Artifact immutable；Claim/Forecast/Outcome 更正使用版本和 retract/supersede。
 3. **不泄漏未来**：Forecast 只能引用 `recorded_at <= cutoff` 且当时有效的 EvidenceBundle item。
 4. **不把缺失算失败**：missing closing/outcome/evidence 从相应分母排除并显示 coverage。
-5. **不产生孤儿动作**：BetLeg→committed Forecast→EvidenceBundle；Settlement→Outcome；外键强制。
+5. **不产生孤儿动作**：BetLeg→committed Forecast→EvidenceBundle；BetLegSettlement→Outcome；外键强制。
 6. **不靠名字碰运气**：未解析身份进入 quarantine；merge/split 是可撤销 Action。
 
 ### 14.2 降级规则
@@ -1181,7 +1199,7 @@ Market ingest；把现有 Fixture/Player/Weather/Information 能力接入唯一�
 - 身份冲突：Match 可进入 staged/quarantine，但不能 commit 需要该身份的 Forecast。
 - Claim 冲突：并存并降低 evidence quality；不自动挑一条“听起来合理”的覆盖另一条。
 - closing 缺失：Ticket 可结算，Market Information score unavailable。
-- Outcome 非终局：不产 Settlement；后续 rerun 幂等补结。
+- Outcome 非终局：不产 BetLeg/Ticket Settlement；后续 rerun 幂等补结。
 - Projection 失败：保留上一成功版本，运行状态 failed；业务真相不受影响。
 
 ---
@@ -1195,7 +1213,7 @@ Market ingest；把现有 Fixture/Player/Weather/Information 能力接入唯一�
 - foreign keys、唯一约束、状态转换、version/supersedes；
 - Claim 权限与 status transition；
 - Forecast 概率归一、delta 重建、single-current revision；
-- BetLeg/Transaction/Settlement 原子性；
+- BetLeg/Transaction/TicketSettlement 原子性；
 - Entity merge/split redirect 与可撤销性。
 
 #### Property-based math tests
