@@ -100,6 +100,13 @@ class MarketRepository:
             select(func.count()).select_from(sm.market_snapshots)
         ).scalar_one()
 
+    def selection_outcome_key(self, selection_id: str) -> str | None:
+        return self._connection.execute(
+            select(sm.selection_definitions.c.outcome_key).where(
+                sm.selection_definitions.c.selection_id == selection_id
+            )
+        ).scalar_one_or_none()
+
     def snapshot_quote_ids(self, market_snapshot_id: str) -> tuple[str, ...]:
         rows = self._connection.execute(
             select(sm.market_snapshot_quotes.c.quote_id).where(
