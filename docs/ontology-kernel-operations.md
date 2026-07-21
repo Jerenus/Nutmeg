@@ -338,10 +338,14 @@ the drop is counted (`factors_dropped`). Old snapshots re-enter through
 `away`→`0-1`) so had one-hot scoring reconstructs the same result.
 
 **Reconciliation is evidence, not an assertion about production.** After importing into
-the fresh target, `calibrate` rebuilds `forecast_scores`; the `Reconciler` joins the
-rebuilt Brier to the old Read-settlement Brier per (match, market) and reports
-matched / mismatched / coverage with per-row deltas. A rebuilt score with no old
-baseline is counted, never hidden.
+the fresh target, `calibrate` rebuilds `forecast_scores`; the `Reconciler` (v2) compares
+the rebuilt Brier to the **surviving** read's old settlement per (match, market) and
+reports matched / mismatched / **superseded** / no_baseline with per-row deltas. Because
+the new store keeps one current committed revision per series, an old settlement for a
+superseded read is bucketed as `superseded`, not a false mismatch. A rebuilt score with
+no old baseline (e.g. `hhad`/`ttg`, which 4A does not score) is counted, never hidden.
+The latest read-only dry run over the production store: **90 matched, 0 mismatched**, 10
+superseded, 89 no-baseline — the `had` scoring rebuild is exact.
 
 Run it with `nutmeg migrate-decision-store --source <old .nutmeg-data/jczq> --target
 <fresh dir>`: it imports + reconciles into the target and prints a JSON summary. It

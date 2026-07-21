@@ -18,7 +18,8 @@ The three live schedules (`com.nutmeg.decision.am`/`.close`/`.settle`) are **boo
 
 ## 1. Reconciliation evidence (review before deciding)
 
-Latest read-only dry import over the production store (`.nutmeg-data/jczq`, no writes):
+Latest read-only dry import over the production store (`.nutmeg-data/jczq`, no writes),
+with superseded-read bucketing (`reconcile-v2`):
 
 | Metric | Value |
 |---|---|
@@ -27,23 +28,24 @@ Latest read-only dry import over the production store (`.nutmeg-data/jczq`, no w
 | reads imported | 245 |
 | outcomes imported | 91 |
 | factors dropped (old direction/weight_pp, not replayable) | 27 |
-| rebuilt Brier **matched** old baseline (≤1e-6) | **91** |
-| **mismatched** | 9 |
-| no baseline (old settlement had no brier / unscored) | 89 |
-| coverage | 0.53 |
+| rebuilt Brier **matched** old baseline (≤1e-6) | **90** |
+| **mismatched** | **0** |
+| superseded (earlier read of a revised series; not retained) | 10 |
+| no baseline (`hhad`/`ttg` — 4A scores `had` only) | 89 |
+| coverage (had, surviving reads) | 90/90 = **100%** |
 
-**Reading this evidence:** the 91 exact Brier matches confirm the scoring rebuild is
-faithful. Before go-live, the **9 mismatches** and the **0.53 coverage** should be
-understood — likely causes to investigate (not yet done):
+**Reading this evidence:** the rebuild is **exact** — every surviving `had` read's
+rebuilt Brier equals the old baseline to ≤1e-6, with **zero mismatches**. The earlier
+investigation's "9 mismatches" were an artifact of joining by (match, market): a series
+with multiple reads keeps only the latest committed belief, so an old settlement for a
+superseded read is now bucketed as `superseded`, not a false mismatch. The 89
+"no baseline" are `hhad`/`ttg` reads, which Package 4A does not score (a documented
+had-only scope limit), plus the 27 dropped legacy factors (belief still imported
+follow-market; only the factor attribution is absent).
 
-- old settlements that used a different/older Brier convention for some rows;
-- reads on `hhad`/`ttg` markets (4A scores only `had`, so they land in "no baseline");
-- the 27 dropped legacy factors (belief still imported follow-market; only the factor
-  attribution is absent).
-
-None of these block a *fresh-start* cutover; they only bound how much history the new
-`calibrate` projections inherit. A clean go/no-go needs the user's call on whether the
-9 mismatches are acceptable or warrant a scoring-convention reconciliation first.
+**Conclusion:** nothing blocks a *fresh-start* cutover; the had scoring path is proven
+faithful. The only bounded item is analytical *breadth* (hhad/ttg scoring) — a
+follow-on, not a go-live blocker.
 
 ## 2. Go-live sequence (manual, reversible until step 5)
 
@@ -76,10 +78,13 @@ None of these block a *fresh-start* cutover; they only bound how much history th
   evidence.
 - `.nutmeg-data` is production: the importer only ever writes the `--target` you pass.
 
-## 4. What Package 5B still leaves open (honest)
+## 4. What is still open (honest)
 
 - The flag-gated adapter that routes the live `decision-*` commands onto the kernel is
-  the go-live mechanism itself (steps 3–5); it is documented here rather than wired into
-  the default path, so that an unset flag is a guaranteed no-op.
-- Investigating the 9 Brier mismatches and raising coverage above 0.53 is recommended
-  pre-go-live work, not yet done.
+  the go-live mechanism itself (steps 3–5). Building the kernel-backed daily verbs
+  (`decision-am/close/settle` on the new kernel, reusing fetch/report) is the remaining
+  focused package; until it lands, "go-live" means the schedules would still call the old
+  `nutmeg.decision.verbs` path, so step 5 must wait on that build.
+- The Brier reconciliation is now clean (0 mismatches). The only bounded item is
+  analytical breadth — Package 4A scores `had` only, so `hhad`/`ttg` reads have no rebuilt
+  score yet. That is a scoring follow-on, not a go-live blocker.
