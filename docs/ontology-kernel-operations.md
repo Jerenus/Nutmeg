@@ -234,3 +234,10 @@ with a leg on the match; `nutmeg ontology status` then reports
 (Decision & Finance Loop). Package 4 (Learning & Regime) consumes committed
 forecasts, closing snapshots, outcomes and settlements to build the DuckDB
 scoring/regime projections.
+
+**Known 3B limitations (owned by Package 4/follow-on).** `score_90` is the string
+convention `"home-away"` (e.g. `"2-1"`); the historical importer normalizes to it.
+Settlement is idempotent per idempotency key, but re-settling a ticket under a *new*
+key after a `correct_outcome` writes a second `TicketSettlement` and payout rather
+than superseding the first — net-P&L reconciliation and supersede-on-resettle are
+Package 4 concerns, not silently handled here.
