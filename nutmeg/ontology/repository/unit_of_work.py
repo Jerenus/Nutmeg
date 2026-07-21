@@ -8,8 +8,12 @@ business write shares the same transaction as its Action-log row.
 from __future__ import annotations
 
 from types import TracebackType
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Connection, Engine
+
+if TYPE_CHECKING:
+    from nutmeg.ontology.repository.actions import ActionRepository
 
 
 class OntologyUnitOfWork:
@@ -22,6 +26,12 @@ class OntologyUnitOfWork:
         if self._connection is None:
             raise RuntimeError('unit of work is not active')
         return self._connection
+
+    @property
+    def actions(self) -> ActionRepository:
+        from nutmeg.ontology.repository.actions import ActionRepository
+
+        return ActionRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         self._connection = self._engine.connect()
