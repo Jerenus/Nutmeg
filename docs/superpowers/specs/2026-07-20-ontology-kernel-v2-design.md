@@ -369,7 +369,8 @@ content_hash
 
 原文、API 响应、盘口快照、公告、网页与用户上传文件均先进入内容寻址存储。同样内容重复抓取只
 增加 `ArtifactRetrieval {artifact_retrieval_id, artifact_id, source_run_id, source_name,
-source_type, canonical_url?, requested_url?, published_at?, retrieved_at, status}`，不复制正文，
+source_type, reported_content_type, canonical_url?, requested_url?, published_at?, retrieved_at, status}`，
+不复制正文，
 也不把一个内容哈希错误地绑定到某个来源或单次抓取运行。
 
 #### Claim
