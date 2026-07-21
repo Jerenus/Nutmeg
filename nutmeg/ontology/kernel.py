@@ -14,6 +14,8 @@ from sqlalchemy import Engine, func, select
 
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
 from nutmeg.ontology.decision.read_flow import DecisionReadService
+from nutmeg.ontology.finance.express_flow import ExpressService
+from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.paths import OntologyPaths
@@ -21,6 +23,7 @@ from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.artifacts import ArtifactRepository
 from nutmeg.ontology.repository.decision import DecisionRepository
 from nutmeg.ontology.repository.evidence import EvidenceRepository
+from nutmeg.ontology.repository.finance import FinanceRepository
 from nutmeg.ontology.repository.identity import IdentityRepository
 from nutmeg.ontology.repository.market import MarketRepository
 from nutmeg.ontology.repository.migrations import (
@@ -49,6 +52,8 @@ class OntologyKernelStatus:
     claim_count: int
     forecast_count: int
     bundle_count: int
+    ticket_count: int
+    settlement_count: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -68,6 +73,8 @@ class OntologyKernelStatus:
             'claim_count': self.claim_count,
             'forecast_count': self.forecast_count,
             'bundle_count': self.bundle_count,
+            'ticket_count': self.ticket_count,
+            'settlement_count': self.settlement_count,
         }
 
 
@@ -81,6 +88,8 @@ class OntologyKernel:
         market_day_ingest: MarketDayIngestService,
         evidence_day_ingest: EvidenceDayIngestService,
         decision_read: DecisionReadService,
+        express: ExpressService,
+        reconcile: ReconcileService,
     ) -> None:
         self._paths = paths
         self._engine = engine
@@ -88,6 +97,8 @@ class OntologyKernel:
         self.market_day_ingest = market_day_ingest
         self.evidence_day_ingest = evidence_day_ingest
         self.decision_read = decision_read
+        self.express = express
+        self.reconcile = reconcile
 
     @property
     def engine(self) -> Engine:
@@ -116,6 +127,8 @@ class OntologyKernel:
                 claim_count=0,
                 forecast_count=0,
                 bundle_count=0,
+                ticket_count=0,
+                settlement_count=0,
             )
 
         migration = migration_status(self._engine)
@@ -147,6 +160,9 @@ class OntologyKernel:
             decision = DecisionRepository(connection)
             forecast_count = decision.count_committed_revisions()
             bundle_count = decision.count_bundles()
+            finance = FinanceRepository(connection)
+            ticket_count = finance.count_tickets()
+            settlement_count = finance.count_settlements()
 
         return OntologyKernelStatus(
             initialized=True,
@@ -165,4 +181,6 @@ class OntologyKernel:
             claim_count=claim_count,
             forecast_count=forecast_count,
             bundle_count=bundle_count,
+            ticket_count=ticket_count,
+            settlement_count=settlement_count,
         )
