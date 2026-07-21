@@ -358,6 +358,45 @@ class DecisionRepository:
             )
         ).scalar_one_or_none()
 
+    def iter_factor_applications(
+        self, forecast_revision_id: str
+    ) -> list[tuple[str, dict[str, float]]]:
+        rows = self._connection.execute(
+            select(
+                sd.factor_applications.c.factor_definition_id,
+                sd.factor_applications.c.delta_distribution_json,
+            )
+            .where(sd.factor_applications.c.forecast_revision_id == forecast_revision_id)
+            .order_by(sd.factor_applications.c.factor_application_id)
+        ).all()
+        return [(factor_id, json.loads(delta_json)) for factor_id, delta_json in rows]
+
+    def factor_definition(self, factor_definition_id: str) -> FactorDefinitionRow | None:
+        row = (
+            self._connection.execute(
+                select(sd.factor_definitions).where(
+                    sd.factor_definitions.c.factor_definition_id == factor_definition_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            return None
+        return FactorDefinitionRow(
+            factor_definition_id=row['factor_definition_id'],
+            factor_family_id=row['factor_family_id'],
+            version=row['version'],
+            name=row['name'],
+            definition=row['definition'],
+            scope=row['scope'],
+            status=row['status'],
+            born_from_refs=json.loads(row['born_from_refs_json']),
+            valid_from=row['valid_from'],
+            valid_to=row['valid_to'],
+            policy_version=row['policy_version'],
+        )
+
     def insert_factor_application(self, row: FactorApplicationRow) -> None:
         self._connection.execute(
             insert(sd.factor_applications).values(
