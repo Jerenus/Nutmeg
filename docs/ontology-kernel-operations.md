@@ -278,3 +278,42 @@ learning and RegimeVector are Package 4B.
 had 3-way is the outcome mapping shipped here; ordered-market RPS (ttg) and other
 mappings are a documented 4B follow-on — a non-had revision is scored only where a
 mapping exists.
+
+## 15. Package 4B — Factor Learning, Regime & Integrity/Action
+
+Package 4B completes the calibrate verb and umbrella Package 4. All of it is
+re-computable DuckDB projection; it changes operational truth only through the
+existing judge_operator factor Action.
+
+**Attribution conserves and refuses to fake it.** `factor_score_contributions`
+attributes each committed forecast's Brier/closing gain to its factors — a direct
+paired contribution for one factor, **Shapley** over factor-delta subsets for many,
+summing back to the whole gain. If **any** subset's intermediate distribution leaves
+the probability simplex, the revision is written `confounded=True` with null
+contributions and feeds **no** estimate — credit is never fabricated.
+
+**Estimates shrink.** `factor_estimates` aggregates the honest contributions per
+stratum (factor family/version, scope, market) with shrinkage toward the global mean
+(K=10): a small sample is pulled to the mean rather than reporting an extreme effect.
+
+**Lifecycle proposes; the Action applies.** `factor_lifecycle_proposals` reads a
+versioned policy (`lifecycle-v1`: min sample, interval sign) and the factor's current
+status and proposes probation→active / active→retired. calibrate **never** changes
+factor status — `FactorActions.apply_factor_status` (judge_operator only) does. AI can
+propose, never apply.
+
+**Five scorecards, now complete.** The Integrity & Action cards
+(`integrity_action_scorecards`) compute ledger balance, stake/payout totals and counts
+from real cash Transactions ("no entry = not bet"), plus outcome completeness and
+closing coverage — independent of the forecast cards.
+
+**RegimeVector is a thermometer.** `regime_vectors` records a pre-match environment per
+match with five axes; 4B computes real `market_shape` and `portfolio_risk`, while the
+other three carry `percentile_unavailable` until their sensor inputs land. Post-match
+research labels (`regime_postmatch_labels`) live in a separate table so a pre-match
+vector never leaks a result. Regime never changes a direction or a stake.
+
+`nutmeg ontology status` now also reports `factor_estimate_count`,
+`regime_vector_count` and `lifecycle_proposal_count`. Package 5 (Evidence Migration &
+Cutover) imports history, rewires the CLI onto these verbs, shuts the old write paths,
+and restores the paused schedules as the single irreversible go-live step.
