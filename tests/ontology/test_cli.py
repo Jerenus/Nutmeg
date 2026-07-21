@@ -4,6 +4,7 @@ from typer.testing import CliRunner
 
 from nutmeg.config.settings import get_settings
 from nutmeg.interfaces.cli import app
+from nutmeg.ontology.repository.migrations import MIGRATIONS
 
 runner = CliRunner()
 
@@ -21,7 +22,9 @@ def test_ontology_init_then_status_and_doctor() -> None:
     status = runner.invoke(app, ["ontology", "status", "--format", "json"])
     doctor = runner.invoke(app, ["doctor", "--format", "json"])
     assert initialized.exit_code == 0
-    assert json.loads(initialized.stdout)["applied_versions"] == [1, 2]
+    assert json.loads(initialized.stdout)["applied_versions"] == [
+        migration.version for migration in MIGRATIONS
+    ]
     assert status.exit_code == 0
     assert json.loads(status.stdout)["integrity_check"] == "ok"
     assert json.loads(doctor.stdout)["ontology"]["initialized"] is True

@@ -14,11 +14,13 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import Connection, Engine, insert, inspect, select
 
 from nutmeg.ontology.errors import MigrationDriftError
-from nutmeg.ontology.repository import schema
+from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
+from nutmeg.ontology.repository import schema, schema_identity
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +95,85 @@ def _apply_evidence_kernel(connection: Connection) -> None:
     schema.artifact_retrievals.create(connection)
 
 
+def _load_team_alias_seed() -> dict[tuple[str, str], set[str]]:
+    """Curated `{chinese_alias: english_canonical}` files -> {(canonical, kind): aliases}."""
+    root = Path(__file__).resolve().parents[2] / 'data'
+    seed: dict[tuple[str, str], set[str]] = {}
+    for filename, kind in (
+        ('jczq_club_team_aliases.json', TeamKind.CLUB.value),
+        ('jczq_national_team_aliases.json', TeamKind.NATIONAL.value),
+    ):
+        raw = json.loads((root / filename).read_text(encoding='utf-8'))
+        for alias, canonical in raw.items():
+            if alias == '_comment' or not isinstance(canonical, str):
+                continue
+            aliases = seed.setdefault((canonical, kind), set())
+            aliases.add(alias.strip().casefold())
+            aliases.add(canonical.strip().casefold())
+    return seed
+
+
+_IDENTITY_ACTION_PERMISSIONS = (
+    ('upsert_provisional_entity', 'connector'),
+    ('upsert_provisional_entity', 'deterministic_system'),
+    ('link_external_identifier', 'connector'),
+    ('link_external_identifier', 'deterministic_system'),
+    ('propose_identity_link', 'connector'),
+    ('propose_identity_link', 'ai_extractor'),
+    ('merge_entity', 'judge_operator'),
+    ('record_match', 'connector'),
+    ('record_match', 'deterministic_system'),
+)
+
+
+def _apply_football_identity(connection: Connection) -> None:
+    # Foreign-key order.
+    for table in (
+        schema_identity.competitions,
+        schema_identity.competition_editions,
+        schema_identity.teams,
+        schema_identity.venues,
+        schema_identity.matches,
+        schema_identity.match_revisions,
+        schema_identity.team_appearances,
+        schema_identity.external_identifiers,
+        schema_identity.entity_aliases,
+        schema_identity.entity_merges,
+    ):
+        table.create(connection)
+
+    now = datetime.now(UTC).isoformat()
+    team_rows: list[dict[str, object]] = []
+    alias_rows: list[dict[str, object]] = []
+    for (canonical, kind), aliases in _load_team_alias_seed().items():
+        team_id = mint_id(EntityType.TEAM)
+        team_rows.append({
+            'team_id': team_id, 'team_kind': kind, 'canonical_name': canonical,
+            'country': None, 'resolution_status': 'provisional', 'created_at': now,
+        })
+        for alias in sorted(aliases):
+            alias_rows.append({
+                'entity_id': team_id, 'entity_type': EntityType.TEAM.value,
+                'normalized_alias': alias, 'language': None, 'provider': None,
+            })
+    if team_rows:
+        connection.execute(insert(schema_identity.teams), team_rows)
+    if alias_rows:
+        connection.execute(insert(schema_identity.entity_aliases), alias_rows)
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                'policy_version_id': 'governance-v1',
+                'action_type': action_type,
+                'actor_role': actor_role,
+            }
+            for action_type, actor_role in _IDENTITY_ACTION_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -105,6 +186,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='evidence_kernel',
         fingerprint='source_runs+source_artifacts+artifact_retrievals',
         apply=_apply_evidence_kernel,
+    ),
+    Migration(
+        version=3,
+        name='football_identity',
+        fingerprint='competitions..entity_merges+team_alias_seed+identity_permissions',
+        apply=_apply_football_identity,
     ),
 )
 

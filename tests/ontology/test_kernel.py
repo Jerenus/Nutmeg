@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from nutmeg.config.settings import AppSettings
+from nutmeg.ontology.repository.migrations import MIGRATIONS
 from nutmeg.ontology.wiring import build_ontology_kernel
 
 
@@ -19,10 +20,10 @@ def test_initialize_is_idempotent_and_status_is_healthy(tmp_path: Path) -> None:
     first = kernel.initialize()
     second = kernel.initialize()
     status = kernel.status()
-    assert first.applied_versions == (1, 2)
+    assert first.applied_versions == tuple(migration.version for migration in MIGRATIONS)
     assert second.applied_versions == ()
     assert status.initialized is True
-    assert status.schema_version == 2
+    assert status.schema_version == MIGRATIONS[-1].version
     assert status.pending_migrations == ()
     assert status.integrity_check == "ok"
     assert status.action_counts == {}
