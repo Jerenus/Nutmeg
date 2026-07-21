@@ -20,7 +20,13 @@ from sqlalchemy import Connection, Engine, insert, inspect, select
 
 from nutmeg.ontology.errors import MigrationDriftError
 from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
-from nutmeg.ontology.repository import schema, schema_context, schema_identity, schema_market
+from nutmeg.ontology.repository import (
+    schema,
+    schema_context,
+    schema_evidence,
+    schema_identity,
+    schema_market,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,6 +277,49 @@ def _apply_context(connection: Connection) -> None:
         table.create(connection)
 
 
+# Graded write-back (design §2.4): AI extractors write only provisional claims and
+# can never record a verified fact or adjudicate one.
+_EVIDENCE_ACTION_PERMISSIONS = (
+    ('upsert_person', 'connector'),
+    ('upsert_person', 'deterministic_system'),
+    ('record_observation', 'connector'),
+    ('record_observation', 'deterministic_system'),
+    ('record_person_match_status', 'connector'),
+    ('record_person_match_status', 'deterministic_system'),
+    ('record_lineup_entry', 'connector'),
+    ('record_lineup_entry', 'deterministic_system'),
+    ('extract_claim', 'ai_extractor'),
+    ('verify_claim', 'deterministic_system'),
+    ('verify_claim', 'judge_operator'),
+    ('dispute_claim', 'judge_operator'),
+    ('retract_claim', 'judge_operator'),
+)
+
+
+def _apply_evidence(connection: Connection) -> None:
+    for table in (
+        schema_evidence.claims,
+        schema_evidence.claim_status_events,
+        schema_evidence.claim_evidence_spans,
+        schema_evidence.observations,
+        schema_evidence.observation_sources,
+        schema_evidence.observation_claims,
+    ):
+        table.create(connection)
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                'policy_version_id': 'governance-v1',
+                'action_type': action_type,
+                'actor_role': actor_role,
+            }
+            for action_type, actor_role in _EVIDENCE_ACTION_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -301,6 +350,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='football_context',
         fingerprint='persons+role_assignments+person_match_statuses+lineup_entries',
         apply=_apply_context,
+    ),
+    Migration(
+        version=6,
+        name='football_evidence',
+        fingerprint='claims..observation_claims+evidence_permissions',
+        apply=_apply_evidence,
     ),
 )
 
