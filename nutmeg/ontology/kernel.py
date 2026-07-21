@@ -13,9 +13,12 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, func, select
 
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
+from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.artifacts import ArtifactRepository
+from nutmeg.ontology.repository.identity import IdentityRepository
+from nutmeg.ontology.repository.market import MarketRepository
 from nutmeg.ontology.repository.migrations import (
     MIGRATIONS,
     MigrationReport,
@@ -33,6 +36,10 @@ class OntologyKernelStatus:
     action_counts: dict[str, int]
     artifact_count: int
     retrieval_count: int
+    team_count: int
+    match_count: int
+    quote_count: int
+    snapshot_count: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -43,6 +50,10 @@ class OntologyKernelStatus:
             'action_counts': dict(self.action_counts),
             'artifact_count': self.artifact_count,
             'retrieval_count': self.retrieval_count,
+            'team_count': self.team_count,
+            'match_count': self.match_count,
+            'quote_count': self.quote_count,
+            'snapshot_count': self.snapshot_count,
         }
 
 
@@ -53,10 +64,16 @@ class OntologyKernel:
         paths: OntologyPaths,
         engine: Engine,
         artifact_ingest: ArtifactIngestService,
+        market_day_ingest: MarketDayIngestService,
     ) -> None:
         self._paths = paths
         self._engine = engine
         self.artifact_ingest = artifact_ingest
+        self.market_day_ingest = market_day_ingest
+
+    @property
+    def engine(self) -> Engine:
+        return self._engine
 
     def initialize(self) -> MigrationReport:
         self._paths.ensure_directories()
@@ -72,6 +89,10 @@ class OntologyKernel:
                 action_counts={},
                 artifact_count=0,
                 retrieval_count=0,
+                team_count=0,
+                match_count=0,
+                quote_count=0,
+                snapshot_count=0,
             )
 
         migration = migration_status(self._engine)
@@ -90,6 +111,12 @@ class OntologyKernel:
             artifacts = ArtifactRepository(connection)
             artifact_count = artifacts.count_artifacts()
             retrieval_count = artifacts.count_retrievals()
+            identity = IdentityRepository(connection)
+            team_count = identity.count_teams()
+            match_count = identity.count_matches()
+            market = MarketRepository(connection)
+            quote_count = market.count_quotes()
+            snapshot_count = market.count_snapshots()
 
         return OntologyKernelStatus(
             initialized=True,
@@ -99,4 +126,8 @@ class OntologyKernel:
             action_counts=action_counts,
             artifact_count=artifact_count,
             retrieval_count=retrieval_count,
+            team_count=team_count,
+            match_count=match_count,
+            quote_count=quote_count,
+            snapshot_count=snapshot_count,
         )

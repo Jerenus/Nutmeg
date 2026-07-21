@@ -16,8 +16,8 @@ from nutmeg.ontology.repository.schema import action_permissions, policy_version
 
 def test_migrations_apply_once_and_seed_governance_policy(tmp_path: Path) -> None:
     engine = build_ontology_engine(tmp_path / "ontology.db")
-    first = run_migrations(engine)
-    second = run_migrations(engine)
+    first = run_migrations(engine, migrations=MIGRATIONS[:2])
+    second = run_migrations(engine, migrations=MIGRATIONS[:2])
     assert first.applied_versions == (1, 2)
     assert second.applied_versions == ()
     assert migration_status(engine).current_version == 2
