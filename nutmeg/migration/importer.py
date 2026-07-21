@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from nutmeg.ontology.actions.entity_actions import EntityActions, UpsertTeamRequest
+from nutmeg.ontology.actions.market_actions import MarketActions
 from nutmeg.ontology.actions.match_actions import (
     MatchActions,
     MatchSideRef,
@@ -20,7 +21,10 @@ from nutmeg.ontology.actions.match_actions import (
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.identity.models import MatchSide, MatchStatus, TeamKind
+from nutmeg.ontology.market.models import QuoteInput, SnapshotBuildRequest
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+_HAD_MARKET = 'md-had'
 
 _EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -54,6 +58,7 @@ class HistoricalImporter:
         service = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
         self._entities = EntityActions(service)
         self._matches = MatchActions(service)
+        self._markets = MarketActions(service)
         self.report = ImportReport()
 
     def _team_id(self, old_ref: str, name: str) -> str:
@@ -89,4 +94,33 @@ class HistoricalImporter:
                 idempotency_key=f'import:match:{old_id}', requested_at=_to_datetime(kickoff)))
             self.report.match_id_map[old_id] = outcome.result_refs[0].object_id
             self.report.bump('matches')
+        return self.report
+
+    def import_snapshots(self, rows: list[dict[str, object]]) -> ImportReport:
+        for row in rows:
+            old_id = str(row['snapshot_id'])
+            if old_id in self.report.snapshot_id_map:
+                continue
+            new_match = self.report.match_id_map.get(str(row['match_id']))
+            if new_match is None:
+                self.report.skipped.append(f'snapshot:{old_id}:unmapped_match')
+                continue
+            fair = row.get('fair') or {}
+            quotes = [
+                QuoteInput(_HAD_MARKET, f'sel-had-{key}', 1.0 / float(prob))
+                for key, prob in fair.items()
+                if isinstance(prob, int | float) and 0.0 < float(prob) < 1.0
+            ]
+            if len(quotes) != len(fair) or not quotes:
+                self.report.skipped.append(f'snapshot:{old_id}:degenerate_fair')
+                continue
+            as_of = str(row.get('taken_at') or _EPOCH.isoformat())
+            outcome = self._markets.build_snapshot(SnapshotBuildRequest(
+                match_id=new_match, market_definition_id=_HAD_MARKET,
+                snapshot_kind=str(row.get('kind') or 'open'), as_of=as_of, provider='import',
+                quotes=quotes, actor_id=self._actor, actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key=f'import:snapshot:{old_id}',
+                requested_at=_to_datetime(row.get('taken_at'))))
+            self.report.snapshot_id_map[old_id] = outcome.result_refs[0].object_id
+            self.report.bump('snapshots')
         return self.report
