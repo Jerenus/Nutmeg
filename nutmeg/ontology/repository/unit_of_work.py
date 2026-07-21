@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.context import ContextRepository
     from nutmeg.ontology.repository.decision import DecisionRepository
     from nutmeg.ontology.repository.evidence import EvidenceRepository
+    from nutmeg.ontology.repository.finance import FinanceRepository
     from nutmeg.ontology.repository.identity import IdentityRepository
     from nutmeg.ontology.repository.market import MarketRepository
 
@@ -74,6 +75,12 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.decision import DecisionRepository
 
         return DecisionRepository(self.connection)
+
+    @property
+    def finance(self) -> FinanceRepository:
+        from nutmeg.ontology.repository.finance import FinanceRepository
+
+        return FinanceRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         self._connection = self._engine.connect()
