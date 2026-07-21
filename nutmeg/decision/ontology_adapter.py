@@ -17,6 +17,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+_MARKET_MAP = {'had': 'md-had', 'hhad': 'md-hhad', 'ttg': 'md-ttg', 'crs': 'md-crs'}
+
 
 def _default_kernel():
     from nutmeg.config.settings import get_settings
@@ -63,3 +65,69 @@ def run_decision_am_v2(run_date: str, output_dir, *, kernel=None, fetch: bool = 
         ("sense-v2", lambda: _ingest_market_day(active_kernel, run_date, output_dir, requested_at))
     )
     return _compose("decision-am", run_date, "数据入库(ontology v2 kernel)", steps)
+
+
+def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
+    """Commit each judged Read payload as a kernel ForecastRevision (no money, no push).
+
+    Read payloads carry kernel match ids + the market string. Old-style factors
+    (direction/weight_pp) cannot be replayed as per-outcome deltas, so the belief is
+    committed follow-market and the drop is counted, never faked; new-style factors that
+    carry a per-outcome ``delta`` reconstructing belief−prior are kept.
+    """
+    from nutmeg.ontology.actions.forecast_actions import (
+        CommitForecastRequest,
+        FactorInput,
+        ForecastActions,
+    )
+    from nutmeg.ontology.actions.models import ActorRole
+    from nutmeg.ontology.actions.service import ActionService
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+    payloads = json.loads(Path(reads_file).read_text(encoding="utf-8"))
+    active_kernel = kernel if kernel is not None else _default_kernel()
+    forecasts = ForecastActions(
+        ActionService(lambda: OntologyUnitOfWork(active_kernel.engine)))
+
+    committed = 0
+    dropped_factors = 0
+    rejected: list[str] = []
+    for payload in payloads:
+        read_id = str(payload.get("read_id", ""))
+        market = _MARKET_MAP.get(str(payload.get("market")))
+        if market is None:
+            rejected.append(f"{read_id}:unmapped_market")
+            continue
+        prior = payload.get("prior")
+        belief = payload.get("belief")
+        factors: list[FactorInput] = []
+        for factor in payload.get("factors") or []:
+            if isinstance(factor, dict) and isinstance(factor.get("delta"), dict):
+                factors.append(FactorInput(
+                    str(factor["factor_id"]), factor["delta"],
+                    factor.get("scope_entity_ids", []), [], factor.get("note")))
+            else:
+                dropped_factors += 1
+        try:
+            outcome = forecasts.commit_forecast(CommitForecastRequest(
+                match_id=str(payload["match_id"]), market_definition_id=market,
+                decision_session_id=None, prior_distribution=prior, belief_distribution=belief,
+                factors=factors, commitment_tier=str(payload.get("commitment_tier", "commit")),
+                evidence_bundle_id=None, prior_snapshot_id=payload.get("snapshot_id"),
+                falsifier=payload.get("falsifier"), actor_id="judge:owner",
+                actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key=f"read:{read_id}",
+                requested_at=datetime.fromisoformat(payload["made_at"])))
+        except (ValueError, KeyError) as error:
+            rejected.append(f"{read_id}:{error}")
+            continue
+        if outcome.status.is_success:
+            committed += 1
+        else:
+            rejected.append(f"{read_id}:{outcome.status.value}")
+
+    msg = f"decision-read-v2: 摄取 {committed}/{len(payloads)} 条 Read(kernel)"
+    if dropped_factors:
+        msg += f" | 旧式因子丢弃 {dropped_factors}"
+    if rejected:
+        msg += " | 拒绝: " + "; ".join(rejected)
+    return msg
