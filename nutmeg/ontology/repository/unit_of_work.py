@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.actions import ActionRepository
     from nutmeg.ontology.repository.artifacts import ArtifactRepository
     from nutmeg.ontology.repository.identity import IdentityRepository
+    from nutmeg.ontology.repository.market import MarketRepository
 
 
 class OntologyUnitOfWork:
@@ -46,6 +47,12 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.identity import IdentityRepository
 
         return IdentityRepository(self.connection)
+
+    @property
+    def market(self) -> MarketRepository:
+        from nutmeg.ontology.repository.market import MarketRepository
+
+        return MarketRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         self._connection = self._engine.connect()

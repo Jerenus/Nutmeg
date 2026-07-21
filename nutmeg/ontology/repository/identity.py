@@ -239,6 +239,10 @@ class IdentityRepository:
             insert(si.matches).values(match_id=match_id, current_revision_id=None)
         )
 
+    def insert_match_minimal(self, match_id: str) -> None:
+        """A bare matches row (no revision) — used to satisfy market FKs in tests/tooling."""
+        self.insert_match(match_id)
+
     def insert_match_revision(self, row: MatchRevisionRow) -> None:
         self._connection.execute(
             insert(si.match_revisions).values(
