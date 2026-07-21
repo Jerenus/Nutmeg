@@ -47,6 +47,7 @@ from nutmeg.interfaces.bot import (
 )
 from nutmeg.notifications.wiring import build_notification_service
 from nutmeg.observability.langsmith import build_trace_context, traced_operation
+from nutmeg.ontology import build_ontology_kernel
 from nutmeg.process.harness import inspect_harness
 from nutmeg.process.superpowers import inspect_superpowers_bridge
 from nutmeg.services.analysis import AnalysisService, InsufficientEvidenceError
@@ -914,6 +915,7 @@ from nutmeg.interfaces.cli import core as core  # noqa: E402
 from nutmeg.interfaces.cli import decision as decision  # noqa: E402
 from nutmeg.interfaces.cli import notifications as notifications  # noqa: E402
 from nutmeg.interfaces.cli import odds as odds  # noqa: E402
+from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402
 from nutmeg.interfaces.cli import operations as operations  # noqa: E402
 from nutmeg.interfaces.cli import psychology as psychology  # noqa: E402
 from nutmeg.interfaces.cli import telegram as telegram  # noqa: E402
