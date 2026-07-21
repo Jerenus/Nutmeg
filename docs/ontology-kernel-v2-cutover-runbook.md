@@ -78,13 +78,25 @@ follow-on, not a go-live blocker.
   evidence.
 - `.nutmeg-data` is production: the importer only ever writes the `--target` you pass.
 
-## 4. What is still open (honest)
+## 4. Adapter progress (flag-gated, inert by default)
 
-- The flag-gated adapter that routes the live `decision-*` commands onto the kernel is
-  the go-live mechanism itself (steps 3–5). Building the kernel-backed daily verbs
-  (`decision-am/close/settle` on the new kernel, reusing fetch/report) is the remaining
-  focused package; until it lands, "go-live" means the schedules would still call the old
-  `nutmeg.decision.verbs` path, so step 5 must wait on that build.
-- The Brier reconciliation is now clean (0 mismatches). The only bounded item is
-  analytical breadth — Package 4A scores `had` only, so `hhad`/`ttg` reads have no rebuilt
-  score yet. That is a scoring follow-on, not a go-live blocker.
+The `NUTMEG_ONTOLOGY_V2` flag now exists (`AppSettings.ontology_v2`, default off). With
+it unset the `decision-*` commands run the old JSONL path byte-for-byte; set, they route
+to `nutmeg.decision.ontology_adapter`.
+
+- **`decision-am` — cut over. ✅** `run_decision_am_v2` = fetch (best-effort, reused) →
+  `market_day_ingest` into the kernel. No judgment, no money, no push. In the kernel the
+  market snapshot *is* the market baseline, so the old JSONL "backfill shadow" step is
+  unnecessary. Validated on a real production day (2026-07-19, read-only): 7 matches / 8
+  snapshots / 14 teams ingested into a temp kernel.
+- **`decision-close` / `decision-settle` — not yet.** close (capture-closing → express
+  legs → report PDF → optional Telegram) and settle (reconcile → calibrate → report) are
+  the money/report verbs; they need their own kernel-backed build + a v2 report renderer,
+  then a shadow day. Until they land, only `am` is safe to run with the flag on.
+
+## 5. Still open (honest)
+
+- close/settle v2 (above) — the remaining daily-verb builds before a full go-live.
+- Brier reconciliation is clean (0 mismatches). The only bounded analytical item is
+  breadth — Package 4A scores `had` only, so `hhad`/`ttg` reads have no rebuilt score yet.
+  A scoring follow-on, not a go-live blocker.

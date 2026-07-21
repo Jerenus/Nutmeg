@@ -196,9 +196,17 @@ def decision_am(
     """决策本体 · 日循环早段:fetch(+可选 zucai)→ sense(+可选 zucai)→ backfill。
 
     编排不含判读——只数据入库+市场基线;主循环 Claude 在 am 与 close 之间人工插 decision-read。
+
+    NUTMEG_ONTOLOGY_V2=1 时改走 kernel-backed am(ontology_adapter);否则旧 JSONL 路径不变。
     """
-    from nutmeg.decision.verbs import run_decision_am
-    result = run_decision_am(run_date, output_dir, zucai_dir=zucai_dir, issue=issue)
+    from nutmeg.config.settings import get_settings
+
+    if get_settings().ontology_v2:
+        from nutmeg.decision.ontology_adapter import run_decision_am_v2
+        result = run_decision_am_v2(run_date, output_dir)
+    else:
+        from nutmeg.decision.verbs import run_decision_am
+        result = run_decision_am(run_date, output_dir, zucai_dir=zucai_dir, issue=issue)
     _emit_result(result, format=format)
     if not getattr(result, "succeeded", True):
         raise _cli.typer.Exit(code=1)
