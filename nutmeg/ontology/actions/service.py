@@ -17,8 +17,11 @@ service adds no untested retry logic.
 """
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from nutmeg.ontology.actions.models import (
     ActionCommand,
@@ -34,6 +37,15 @@ from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 ActionHandler = Callable[[OntologyUnitOfWork, ActionCommand], tuple[ObjectRef, ...]]
 
 UnitOfWorkFactory = Callable[[], OntologyUnitOfWork]
+
+# Backoff for looking up a concurrent same-key winner after a unique/lock race.
+_RACE_RETRY_DELAYS = (0.01, 0.02, 0.03, 0.04, 0.05)
+
+
+def _is_same_key_race(error: Exception) -> bool:
+    """True only for an Actions idempotency-key unique clash or a SQLite lock."""
+    message = str(error).lower()
+    return 'idempotency_key' in message or 'database is locked' in message
 
 
 class ActionService:
@@ -64,6 +76,16 @@ class ActionService:
             return self._audit_terminal(
                 command, ActionStatus.REJECTED, 'permission_denied', str(error)
             )
+        except (IntegrityError, OperationalError) as error:
+            # A concurrent writer may have won this idempotency key between our
+            # lookup and our insert. Replay the winner's outcome if one appears;
+            # otherwise treat it as a genuine failure.
+            if _is_same_key_race(error):
+                replayed = self._replay_committed_winner(command)
+                if replayed is not None:
+                    return replayed
+            self._audit_terminal(command, ActionStatus.FAILED, 'handler_error', str(error))
+            raise
         except Exception as error:
             self._audit_terminal(command, ActionStatus.FAILED, 'handler_error', str(error))
             raise
@@ -79,6 +101,20 @@ class ActionService:
     def _lookup(self, idempotency_key: str):
         with self._unit_of_work_factory() as uow:
             return uow.actions.get_by_idempotency_key(idempotency_key)
+
+    def _replay_committed_winner(self, command: ActionCommand) -> ActionOutcome | None:
+        for delay in _RACE_RETRY_DELAYS:
+            time.sleep(delay)
+            existing = self._lookup(command.idempotency_key)
+            if existing is None:
+                continue
+            if existing.request_hash != command.request_hash:
+                raise IdempotencyConflictError(
+                    f'idempotency key {command.idempotency_key} was reused '
+                    f'with a different request'
+                )
+            return ActionRepository.to_outcome(existing)
+        return None
 
     def _audit_terminal(
         self,
