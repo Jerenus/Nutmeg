@@ -70,6 +70,20 @@ class ForecastRevisionRow:
 
 
 @dataclass(frozen=True, slots=True)
+class CommittedRevisionRow:
+    forecast_revision_id: str
+    match_id: str
+    market_definition_id: str
+    made_at: str
+    prior_distribution: dict[str, float]
+    belief_distribution: dict[str, float]
+    commitment_tier: str
+    actor_id: str
+    model_name: str | None
+    model_version: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class FactorFamilyRow:
     factor_family_id: str
     name: str
@@ -204,6 +218,50 @@ class DecisionRepository:
                 sd.forecast_revisions.c.status == 'committed'
             )
         ).scalar_one()
+
+    def iter_committed_revisions(self) -> list[CommittedRevisionRow]:
+        rows = (
+            self._connection.execute(
+                select(
+                    sd.forecast_revisions.c.forecast_revision_id,
+                    sd.forecast_series.c.match_id,
+                    sd.forecast_series.c.market_definition_id,
+                    sd.forecast_revisions.c.made_at,
+                    sd.forecast_revisions.c.prior_distribution_json,
+                    sd.forecast_revisions.c.belief_distribution_json,
+                    sd.forecast_revisions.c.commitment_tier,
+                    sd.forecast_revisions.c.actor_id,
+                    sd.forecast_revisions.c.model_name,
+                    sd.forecast_revisions.c.model_version,
+                )
+                .select_from(
+                    sd.forecast_revisions.join(
+                        sd.forecast_series,
+                        sd.forecast_revisions.c.forecast_series_id
+                        == sd.forecast_series.c.forecast_series_id,
+                    )
+                )
+                .where(sd.forecast_revisions.c.status == 'committed')
+                .order_by(sd.forecast_revisions.c.forecast_revision_id)
+            )
+            .mappings()
+            .all()
+        )
+        return [
+            CommittedRevisionRow(
+                forecast_revision_id=row['forecast_revision_id'],
+                match_id=row['match_id'],
+                market_definition_id=row['market_definition_id'],
+                made_at=row['made_at'],
+                prior_distribution=json.loads(row['prior_distribution_json']),
+                belief_distribution=json.loads(row['belief_distribution_json']),
+                commitment_tier=row['commitment_tier'],
+                actor_id=row['actor_id'],
+                model_name=row['model_name'],
+                model_version=row['model_version'],
+            )
+            for row in rows
+        ]
 
     # -- bundles ----------------------------------------------------------
     def insert_bundle(self, row: EvidenceBundleRow) -> None:

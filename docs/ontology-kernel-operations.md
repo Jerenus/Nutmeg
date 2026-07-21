@@ -241,3 +241,40 @@ Settlement is idempotent per idempotency key, but re-settling a ticket under a *
 key after a `correct_outcome` writes a second `TicketSettlement` and payout rather
 than superseding the first — net-P&L reconciliation and supersede-on-resettle are
 Package 4 concerns, not silently handled here.
+
+## 14. Package 4A — Analytical Substrate & Forecast Scoring
+
+Package 4A is the first half of the **calibrate** verb: rebuild re-computable
+analytical projections from SQLite and produce forecast scorecards. It never writes
+operational truth.
+
+**DuckDB is re-computable, never business truth.** A second database
+`analytics.duckdb` (`OntologyPaths.analytics`, opened via the POSIX-locked
+`connect_analytics_db`) holds only projections. Every row carries six provenance
+columns (`projection_name`, `projection_version`, `source_high_watermark`,
+`built_at`, `cohort_definition_version`, `metric_version`). A build freezes the
+SQLite high-watermark (`max(rowid)` of the append-only `actions` log), runs each
+projector **in memory**, then writes all rows in one DuckDB transaction that first
+deletes the prior rows for that `projection_version`. No metric reads the clock, so a
+rebuild at the same watermark reproduces byte-identical rows. **Keep-last-good:** a
+projector that raises records a `failed` run in `projection_runs` and touches no
+projection rows — analytics never half-updates.
+
+**Scoring primitives** (`nutmeg/analytics/scoring.py`, `metric_version=scoring-v1`)
+are pure: Brier, Brier skill (vs the same-match prior; **`None` when the prior
+denominator is 0** — never a divide-by-zero or default), log score, RPS,
+closing-skill delta, directional alignment, and ticket CLV log. A missing outcome or
+closing is **excluded from that metric's denominator**, never counted as 0.
+
+**Five scorecards, no single total.** 4A ships three — Forecast Truth (Brier skill),
+Market Information (closing skill), Calibration & Selectivity (follow-market vs
+divergent) — cohorted by market (`cohort-v1`). Earning money never launders a bad
+probability; that is why there is no one number. Integrity/Action scorecards, factor
+learning and RegimeVector are Package 4B.
+
+`kernel.calibrate.build(CalibrateRequest{as_of, built_at, high_watermark?})` rebuilds
+`forecast_scores` + `forecast_scorecards`; `nutmeg ontology status` then reports
+`projection_run_count`/`scorecard_count` (read-only — it never creates the DuckDB).
+had 3-way is the outcome mapping shipped here; ordered-market RPS (ttg) and other
+mappings are a documented 4B follow-on — a non-had revision is scored only where a
+mapping exists.

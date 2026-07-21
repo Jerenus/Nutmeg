@@ -35,6 +35,8 @@ from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 
 def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
+    from nutmeg.analytics.calibrate_flow import CalibrateService
+
     paths = OntologyPaths.from_data_dir(settings.data_dir)
     engine = build_ontology_engine(settings.ontology_db_path)
     unit_of_work_factory = lambda: OntologyUnitOfWork(engine)  # noqa: E731
@@ -65,6 +67,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         outcome_actions=OutcomeActions(action_service),
         unit_of_work_factory=unit_of_work_factory,
     )
+    calibrate = CalibrateService(engine=engine, analytics_path=paths.analytics)
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -74,4 +77,5 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         decision_read=decision_read,
         express=express,
         reconcile=reconcile,
+        calibrate=calibrate,
     )

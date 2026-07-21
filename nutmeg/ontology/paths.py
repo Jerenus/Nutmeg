@@ -16,6 +16,7 @@ class OntologyPaths:
     root: Path
     database: Path
     artifacts: Path
+    analytics: Path
 
     @classmethod
     def from_data_dir(cls, data_dir: Path | str) -> OntologyPaths:
@@ -24,6 +25,7 @@ class OntologyPaths:
             root=root,
             database=root / 'ontology.db',
             artifacts=root / 'artifacts',
+            analytics=root / 'analytics.duckdb',
         )
 
     def ensure_directories(self) -> None:

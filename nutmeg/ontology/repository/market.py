@@ -115,6 +115,28 @@ class MarketRepository:
         ).scalars().all()
         return tuple(rows)
 
+    def closing_fair(
+        self, match_id: str, market_definition_id: str
+    ) -> dict[str, float] | None:
+        fair_json = self._connection.execute(
+            select(sm.market_snapshots.c.fair_distribution_json)
+            .where(
+                sm.market_snapshots.c.match_id == match_id,
+                sm.market_snapshots.c.market_definition_id == market_definition_id,
+                sm.market_snapshots.c.snapshot_kind == 'closing',
+            )
+            .order_by(sm.market_snapshots.c.as_of.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        return None if fair_json is None else json.loads(fair_json)
+
+    def market_kind(self, market_definition_id: str) -> str | None:
+        return self._connection.execute(
+            select(sm.market_definitions.c.market_kind).where(
+                sm.market_definitions.c.market_definition_id == market_definition_id
+            )
+        ).scalar_one_or_none()
+
     def latest_fair(self, match_id: str, market_definition_id: str) -> dict[str, float]:
         fair_json = self._connection.execute(
             select(sm.market_snapshots.c.fair_distribution_json)
