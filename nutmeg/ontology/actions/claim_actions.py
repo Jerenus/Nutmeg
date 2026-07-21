@@ -54,6 +54,23 @@ class ExtractClaimRequest:
             raise ValueError('idempotency_key is required')
 
 
+@dataclass(frozen=True, slots=True)
+class ClaimAdjudicationRequest:
+    claim_id: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.requested_at.tzinfo is None or self.requested_at.utcoffset() is None:
+            raise ValueError('requested_at must be timezone-aware')
+        if not self.claim_id.strip():
+            raise ValueError('claim_id is required')
+        if not self.idempotency_key.strip():
+            raise ValueError('idempotency_key is required')
+
+
 class ClaimActions:
     def __init__(self, action_service: ActionService) -> None:
         self._action_service = action_service
@@ -116,5 +133,45 @@ class ClaimActions:
                 at,
             )
             return (ObjectRef('claim', claim_id),)
+
+        return self._action_service.execute(command, handler)
+
+    def verify_claim(self, request: ClaimAdjudicationRequest) -> ActionOutcome:
+        return self._adjudicate(request, 'verify_claim', ClaimStatus.VERIFIED)
+
+    def dispute_claim(self, request: ClaimAdjudicationRequest) -> ActionOutcome:
+        return self._adjudicate(request, 'dispute_claim', ClaimStatus.DISPUTED)
+
+    def retract_claim(self, request: ClaimAdjudicationRequest) -> ActionOutcome:
+        return self._adjudicate(request, 'retract_claim', ClaimStatus.RETRACTED)
+
+    def _adjudicate(
+        self,
+        request: ClaimAdjudicationRequest,
+        action_type: str,
+        to_status: ClaimStatus,
+    ) -> ActionOutcome:
+        command = ActionCommand.create(
+            action_type=action_type,
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload={'claim_id': request.claim_id, 'to_status': to_status.value},
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            at = request.requested_at.astimezone(UTC).isoformat()
+            from_status = uow.evidence.claim_status(request.claim_id)
+            uow.evidence.update_claim_status(request.claim_id, to_status.value, at)
+            uow.evidence.insert_claim_status_event(
+                mint_evidence_id('cse'),
+                request.claim_id,
+                from_status,
+                to_status.value,
+                _command.action_id,
+                at,
+            )
+            return (ObjectRef('claim', request.claim_id),)
 
         return self._action_service.execute(command, handler)
