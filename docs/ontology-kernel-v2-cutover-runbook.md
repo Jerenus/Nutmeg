@@ -89,14 +89,26 @@ to `nutmeg.decision.ontology_adapter`.
   market snapshot *is* the market baseline, so the old JSONL "backfill shadow" step is
   unnecessary. Validated on a real production day (2026-07-19, read-only): 7 matches / 8
   snapshots / 14 teams ingested into a temp kernel.
+- **`decision-read` — cut over. ✅** `run_decision_read_v2` commits each judged Read
+  payload as a kernel ForecastRevision (old-style factors dropped + counted, new-style
+  delta factors kept, unmapped markets rejected). Beliefs only — no money, no push. Read
+  payloads carry kernel match ids (Claude reads them from the store after `am`).
 - **`decision-close` / `decision-settle` — not yet.** close (capture-closing → express
-  legs → report PDF → optional Telegram) and settle (reconcile → calibrate → report) are
-  the money/report verbs; they need their own kernel-backed build + a v2 report renderer,
-  then a shadow day. Until they land, only `am` is safe to run with the flag on.
+  legs → report PDF → optional Telegram) is the **money + push** verb (tickets, ¥400
+  budget, real payouts); settle (reconcile → calibrate → report) is the learning loop.
+  Both need a kernel-backed build + a v2 report renderer, and — for close — careful
+  money-handling review, then a shadow day. They warrant their own dedicated effort.
+
+> **Critical:** `NUTMEG_ONTOLOGY_V2` is a **single global flag** — setting it routes
+> *all four* verbs. Since only `am`/`read` have a v2 path, enabling it now would leave
+> `close`/`settle` on the old JSONL store while `am`/`read` populate the kernel — an
+> incoherent split. **Keep the flag OFF in production until all four verbs are cut over.**
+> `am`/`read` v2 are validated only in shadow (temp kernel) meanwhile.
 
 ## 5. Still open (honest)
 
-- close/settle v2 (above) — the remaining daily-verb builds before a full go-live.
+- **close/settle v2** — the remaining daily-verb builds; the flag must stay off until
+  they land. close is the money/push verb and deserves a dedicated, reviewed build.
 - Brier reconciliation is clean (0 mismatches). The only bounded analytical item is
   breadth — Package 4A scores `had` only, so `hhad`/`ttg` reads have no rebuilt score yet.
   A scoring follow-on, not a go-live blocker.
