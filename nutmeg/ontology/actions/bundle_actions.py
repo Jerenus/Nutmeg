@@ -111,5 +111,12 @@ class BundleActions:
 
 
 def _recorded_at_or_before(recorded_at: str | None, cutoff_at: str) -> bool:
-    # ISO-8601 strings with the same offset order lexicographically by instant.
-    return recorded_at is not None and recorded_at <= cutoff_at
+    # Compare by instant, not lexicographically: observations are recorded in UTC
+    # while a cutoff may be given in Beijing (+08:00), so a string compare across
+    # different offsets would wrongly include/exclude evidence.
+    if recorded_at is None:
+        return False
+    try:
+        return datetime.fromisoformat(recorded_at) <= datetime.fromisoformat(cutoff_at)
+    except ValueError:
+        return False

@@ -50,3 +50,27 @@ def test_freeze_excludes_evidence_recorded_after_cutoff(tmp_path: Path) -> None:
 def test_ai_analyst_cannot_freeze_bundle(tmp_path: Path) -> None:
     actions, _engine = _setup(tmp_path)
     assert actions.freeze_bundle(_req("b:d", ActorRole.AI_ANALYST)).status is ActionStatus.REJECTED
+
+
+def test_freeze_compares_by_instant_across_offsets(tmp_path: Path) -> None:
+    engine = build_ontology_engine(tmp_path / "ontology.db")
+    run_migrations(engine)
+    with OntologyUnitOfWork(engine) as uow:
+        uow.identity.insert_match_minimal("match-1")
+        # recorded in Beijing +08:00 (= 06:00 UTC), before a UTC cutoff of 07:00
+        uow.evidence.insert_observation(ObservationRow(
+            observation_id="obs-bj", observation_type="availability", subject_type="person",
+            subject_id="p", scope_match_id="match-1", value={"availability": "out"},
+            schema_version="1", valid_from="2026-07-19T00:00:00+08:00", valid_to=None,
+            observed_at="2026-07-19T14:00:00+08:00", recorded_at="2026-07-19T14:00:00+08:00",
+            verification_method=VerificationMethod.OFFICIAL.value, quality={}))
+    actions = BundleActions(ActionService(lambda: OntologyUnitOfWork(engine)))
+    outcome = actions.freeze_bundle(FreezeBundleRequest(
+        match_id="match-1", decision_session_id=None, cutoff_at="2026-07-19T07:00:00+00:00",
+        market_snapshot_id=None, prior_distribution={"home": 0.5, "draw": 0.3, "away": 0.2},
+        candidate_observation_ids=["obs-bj"], caveat_claim_ids=[], actor_id="system:freeze",
+        actor_role=ActorRole.DETERMINISTIC_SYSTEM, idempotency_key="b:instant",
+        requested_at=datetime(2026, 7, 19, 8, tzinfo=UTC)))
+    with OntologyUnitOfWork(engine) as uow:
+        # 06:00 UTC <= 07:00 UTC cutoff -> included (a lexicographic compare would exclude it)
+        assert "obs-bj" in uow.decision.bundle_item_ids(outcome.result_refs[0].object_id)
