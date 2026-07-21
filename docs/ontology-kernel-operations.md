@@ -197,3 +197,40 @@ The read flow chains it: `kernel.decision_read.read_match(...)` opens a session,
 freezes a bundle, and commits a forecast; `nutmeg ontology status` then reports
 `forecast_count`/`bundle_count`. Package 3B (Ticket/Ledger/Outcome/Settlement)
 follows on 3A's committed-forecast interface; calibrate/scoring is Package 4.
+
+## 13. Package 3B — Finance & Outcome Layer
+
+Package 3B adds the express and reconcile verbs: turning a committed forecast into a
+budget-checked, ledger-atomic ticket, then settling it against a match outcome.
+
+**BudgetPolicy** is versioned data, not scattered `if`s — a ¥400 total cap plus
+per-bucket caps (main/hedge/draw/parlay). The cap is a **ceiling, not a fill
+target**: an empty proposal is a legal no-op, and `kernel.express.approve_for_match`
+with no legs writes nothing. Only judge_operator changes a policy.
+
+**Express is atomic.** Every `BetLeg` references the *current committed*
+`ForecastRevision` for its match+market — a leg pointing at a non-committed forecast
+is rejected. `approve_ticket` (judge_operator) writes the `Ticket`, its `BetLeg`s,
+and the single stake `CashTransaction` in one handler after `validate_within_budget`;
+either all land or none do. `propose_ticket` (ai_analyst or judge_operator) records
+the intent first. Cash amounts are **signed** (stake negative, payout positive), so
+`ledger_balance` is a plain SUM.
+
+**Outcomes are versioned truth.** `record_outcome` (deterministic_system) writes
+version 1; `correct_outcome` writes a superseding version and **keeps the prior row**
+— corrections never overwrite. `current_outcome` returns the highest version.
+
+**Settlement never fabricates a pending loss.** `settle_ticket` reads
+`current_outcome(match_id)`; if there is no outcome it writes nothing and returns
+`settled=False`. When an outcome exists, each had leg is graded by `grade_had`
+(90-minute home/draw/away), one `BetLegSettlement` and one `TicketSettlement` are
+written, and a winning ticket books a payout `CashTransaction`. P&L uses a flat win
+multiplier placeholder here — **odds-faithful payout and CLV are Package 4**; hhad/
+ttg/crs grading beyond the had representative is a documented 3B follow-on.
+
+`kernel.reconcile.settle_match(...)` records the outcome then settles every ticket
+with a leg on the match; `nutmeg ontology status` then reports
+`ticket_count`/`settlement_count`. Together with 3A this closes umbrella Package 3
+(Decision & Finance Loop). Package 4 (Learning & Regime) consumes committed
+forecasts, closing snapshots, outcomes and settlements to build the DuckDB
+scoring/regime projections.
