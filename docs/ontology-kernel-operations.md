@@ -169,5 +169,31 @@ attach to a known match are **counted as skipped** and printed — standalone th
 match map is empty, so Package 3 chains market-day and evidence-day to attach
 evidence to real matches. `nutmeg ontology status` then also reports
 `person_count`/`observation_count`/`claim_count`. Together with 2A this closes
-umbrella Package 2 (Football World & Evidence); Package 3 (Decision & Finance
-Loop) follows.
+umbrella Package 2 (Football World & Evidence).
+
+## 12. Package 3A — Belief Layer
+
+Package 3A adds the read verb: turning a market prior into an auditable belief.
+Design: `docs/superpowers/specs/2026-07-21-ontology-kernel-v2-package-3-design.md`.
+
+**EvidenceBundle** freezes an as-of input set at a cutoff — only observations whose
+`recorded_at <= cutoff` enter (a later-recorded observation, even if published
+earlier, cannot — no future leak). A content hash proves "same inputs, same bundle".
+
+**ForecastRevision** anchors `prior` to the market and records `belief`.
+`belief = prior` is a legal follow-market commit. When factors move belief, each
+`FactorApplication` carries a signed per-outcome delta summing to zero, and **all
+factor deltas must reconstruct `belief − prior` exactly** — enforced before commit.
+Each series keeps exactly **one current committed revision**; commit/revise inserts
+a new revision that supersedes the prior one (UNIQUE(series, revision_no) is the
+concurrency guard); withdraw clears the current.
+
+**Graded write-back.** ai_analyst drafts and proposes; **only judge_operator commits,
+revises, withdraws, or applies a factor status**. The factor lifecycle here is a
+state machine only — the aggregate skill/CLV verdict that justifies a transition is
+a Package 4 projection.
+
+The read flow chains it: `kernel.decision_read.read_match(...)` opens a session,
+freezes a bundle, and commits a forecast; `nutmeg ontology status` then reports
+`forecast_count`/`bundle_count`. Package 3B (Ticket/Ledger/Outcome/Settlement)
+follows on 3A's committed-forecast interface; calibrate/scoring is Package 4.
