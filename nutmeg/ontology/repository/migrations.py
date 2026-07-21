@@ -25,6 +25,7 @@ from nutmeg.ontology.repository import (
     schema_context,
     schema_decision,
     schema_evidence,
+    schema_finance,
     schema_identity,
     schema_market,
 )
@@ -363,6 +364,46 @@ def _apply_decision(connection: Connection) -> None:
     )
 
 
+_FINANCE_ACTION_PERMISSIONS = (
+    ('change_budget_policy', 'judge_operator'),
+    ('propose_ticket', 'ai_analyst'),
+    ('propose_ticket', 'judge_operator'),
+    ('approve_ticket', 'judge_operator'),
+    ('record_cash_transaction', 'deterministic_system'),
+    ('record_cash_transaction', 'judge_operator'),
+    ('record_outcome', 'deterministic_system'),
+    ('correct_outcome', 'deterministic_system'),
+    ('settle_ticket', 'deterministic_system'),
+)
+
+
+def _apply_finance(connection: Connection) -> None:
+    for table in (
+        schema_finance.cash_accounts,
+        schema_finance.budget_policies,
+        schema_finance.ticket_proposals,
+        schema_finance.tickets,
+        schema_finance.bet_legs,
+        schema_finance.cash_transactions,
+        schema_finance.match_outcomes,
+        schema_finance.bet_leg_settlements,
+        schema_finance.ticket_settlements,
+    ):
+        table.create(connection)
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                'policy_version_id': 'governance-v1',
+                'action_type': action_type,
+                'actor_role': actor_role,
+            }
+            for action_type, actor_role in _FINANCE_ACTION_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -405,6 +446,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='decision',
         fingerprint='decision_sessions..scenarios+decision_permissions',
         apply=_apply_decision,
+    ),
+    Migration(
+        version=8,
+        name='finance',
+        fingerprint='budget_policies..ticket_settlements+finance_permissions',
+        apply=_apply_finance,
     ),
 )
 
