@@ -9,12 +9,16 @@ from nutmeg.ontology.identity.models import (
     TeamKind,
     mint_id,
 )
+from nutmeg.ontology.identity.resolver import Resolution, ResolutionMethod, resolve_entity
 
 __all__ = [
     'EntityType',
     'MatchSide',
     'MatchStatus',
+    'Resolution',
+    'ResolutionMethod',
     'ResolutionStatus',
     'TeamKind',
     'mint_id',
+    'resolve_entity',
 ]
