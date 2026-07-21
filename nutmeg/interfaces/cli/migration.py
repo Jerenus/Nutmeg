@@ -55,6 +55,7 @@ def migrate_decision_store(
         "reconciliation": {
             "matched": reconciliation.matched,
             "mismatched": reconciliation.mismatched,
+            "superseded": reconciliation.superseded,
             "no_baseline": reconciliation.no_baseline,
             "coverage": reconciliation.coverage,
             "tolerance": reconciliation.tolerance,

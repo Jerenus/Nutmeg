@@ -1,10 +1,13 @@
 """Reconcile the rebuilt calibrate metrics against the old settlements.
 
 After importing into a fresh kernel, `calibrate` rebuilds `forecast_scores` from the
-immutable inputs. The reconciler joins the rebuilt Brier to the old Read-settlement
-Brier for the same (match, market) and reports matched / mismatched / coverage with a
+immutable inputs. The new store keeps exactly one current committed revision per
+(match, market), so only the **surviving** read is retained and scorable; an old
+settlement for a *superseded* read is bucketed as ``superseded`` rather than falsely
+counted as a mismatch. The reconciler joins the rebuilt Brier to the surviving read's
+old settlement and reports matched / mismatched / superseded / no_baseline with a
 per-row delta list. It **asserts nothing about production** — it is evidence for the
-go-live decision. A rebuilt score with no old baseline is counted, never hidden.
+go-live decision.
 """
 from __future__ import annotations
 
@@ -21,10 +24,11 @@ _TOLERANCE = 1e-6
 class ReconciliationReport:
     matched: int = 0
     mismatched: int = 0
+    superseded: int = 0
     no_baseline: int = 0
     coverage: float = 0.0
     tolerance: float = _TOLERANCE
-    method_version: str = 'reconcile-v1'
+    method_version: str = 'reconcile-v2'
     deltas: list[float] = field(default_factory=list)
 
 
@@ -49,12 +53,16 @@ class Reconciler:
             ).fetchall():
                 scores[(match_id, market_id)] = float(brier)
 
+        # Map each read to its (match, market); the last read per key is the one the
+        # importer leaves committed (earlier reads are superseded and not retained).
         read_key: dict[str, tuple[str, str]] = {}
+        surviving: dict[tuple[str, str], str] = {}
         for read in reads:
             new_match = report.match_id_map.get(str(read['match_id']))
             market = _MARKET_MAP.get(str(read.get('market')))
             if new_match is not None and market is not None:
                 read_key[str(read['read_id'])] = (new_match, market)
+                surviving[(new_match, market)] = str(read['read_id'])
 
         result = ReconciliationReport()
         total = 0
@@ -62,9 +70,13 @@ class Reconciler:
             if settlement.get('ref_type') != 'read' or settlement.get('brier') is None:
                 continue
             total += 1
-            key = read_key.get(str(settlement.get('ref_id')))
+            ref_id = str(settlement.get('ref_id'))
+            key = read_key.get(ref_id)
             if key is None or key not in scores:
                 result.no_baseline += 1
+                continue
+            if surviving.get(key) != ref_id:
+                result.superseded += 1   # an older read; the new store retained the later one
                 continue
             delta = abs(scores[key] - float(settlement['brier']))
             result.deltas.append(delta)
