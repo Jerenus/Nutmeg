@@ -36,6 +36,7 @@ FORECAST_SCORE_COLUMNS = {
     'rps': 'DOUBLE',
     'has_outcome': 'BOOLEAN',
     'has_closing': 'BOOLEAN',
+    'follow_market': 'BOOLEAN',
     'commitment_tier': 'VARCHAR',
     'judge_or_model': 'VARCHAR',
 }
@@ -81,6 +82,7 @@ def compute_forecast_score_rows(engine: Engine) -> list[dict[str, object]]:
                     'rps': None,   # ordered-market RPS is a 4B follow-on
                     'has_outcome': has_outcome,
                     'has_closing': has_closing,
+                    'follow_market': q == p,
                     'commitment_tier': revision.commitment_tier,
                     'judge_or_model': judge_or_model,
                 }
