@@ -37,13 +37,23 @@ _PROVENANCE_TYPES = {
 }
 
 
-def projection_counts(analytics_path: Path) -> tuple[int, int]:
-    """(projection_run_count, scorecard_count); (0, 0) when analytics is absent.
+_COUNTED_TABLES = {
+    'projection_run_count': 'projection_runs',
+    'scorecard_count': 'forecast_scorecards',
+    'factor_estimate_count': 'factor_estimates',
+    'regime_vector_count': 'regime_vectors',
+    'lifecycle_proposal_count': 'factor_lifecycle_proposals',
+}
+
+
+def projection_counts(analytics_path: Path) -> dict[str, int]:
+    """Projection counts keyed by status field; all 0 when analytics is absent.
 
     Read-only: never creates ``analytics.duckdb``. Missing tables count as 0.
     """
+    counts = {key: 0 for key in _COUNTED_TABLES}
     if not analytics_path.exists():
-        return (0, 0)
+        return counts
     with connect_analytics_db(analytics_path) as connection:
         tables = {
             row[0]
@@ -51,17 +61,12 @@ def projection_counts(analytics_path: Path) -> tuple[int, int]:
                 'SELECT table_name FROM information_schema.tables'
             ).fetchall()
         }
-        runs = (
-            connection.execute('SELECT count(*) FROM projection_runs').fetchone()[0]
-            if 'projection_runs' in tables
-            else 0
-        )
-        cards = (
-            connection.execute('SELECT count(*) FROM forecast_scorecards').fetchone()[0]
-            if 'forecast_scorecards' in tables
-            else 0
-        )
-    return (int(runs), int(cards))
+        for key, table in _COUNTED_TABLES.items():
+            if table in tables:
+                counts[key] = int(
+                    connection.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0]
+                )
+    return counts
 
 
 def _infer_type(value: object) -> str:

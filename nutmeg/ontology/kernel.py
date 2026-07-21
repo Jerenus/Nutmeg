@@ -60,6 +60,9 @@ class OntologyKernelStatus:
     settlement_count: int
     projection_run_count: int
     scorecard_count: int
+    factor_estimate_count: int
+    regime_vector_count: int
+    lifecycle_proposal_count: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -83,6 +86,9 @@ class OntologyKernelStatus:
             'settlement_count': self.settlement_count,
             'projection_run_count': self.projection_run_count,
             'scorecard_count': self.scorecard_count,
+            'factor_estimate_count': self.factor_estimate_count,
+            'regime_vector_count': self.regime_vector_count,
+            'lifecycle_proposal_count': self.lifecycle_proposal_count,
         }
 
 
@@ -141,6 +147,9 @@ class OntologyKernel:
                 settlement_count=0,
                 projection_run_count=0,
                 scorecard_count=0,
+                factor_estimate_count=0,
+                regime_vector_count=0,
+                lifecycle_proposal_count=0,
             )
 
         migration = migration_status(self._engine)
@@ -177,7 +186,7 @@ class OntologyKernel:
             settlement_count = finance.count_settlements()
         from nutmeg.analytics.substrate import projection_counts
 
-        projection_run_count, scorecard_count = projection_counts(self._paths.analytics)
+        counts = projection_counts(self._paths.analytics)
 
         return OntologyKernelStatus(
             initialized=True,
@@ -198,6 +207,9 @@ class OntologyKernel:
             bundle_count=bundle_count,
             ticket_count=ticket_count,
             settlement_count=settlement_count,
-            projection_run_count=projection_run_count,
-            scorecard_count=scorecard_count,
+            projection_run_count=counts['projection_run_count'],
+            scorecard_count=counts['scorecard_count'],
+            factor_estimate_count=counts['factor_estimate_count'],
+            regime_vector_count=counts['regime_vector_count'],
+            lifecycle_proposal_count=counts['lifecycle_proposal_count'],
         )
