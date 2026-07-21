@@ -123,23 +123,29 @@ class EvidenceDayIngestService:
             observations += 1
 
         for entry in request.news:
+            subject_type = str(entry.get('subject_type') or '')
+            subject_id = str(entry.get('subject_id') or '')
+            predicate = str(entry.get('predicate') or '')
             spans = [
                 EvidenceSpanInput(
-                    artifact_id=span['artifact_id'],
-                    artifact_retrieval_id=span['artifact_retrieval_id'],
-                    quote=span['quote'],
+                    artifact_id=str(span['artifact_id']),
+                    artifact_retrieval_id=str(span['artifact_retrieval_id']),
+                    quote=str(span['quote']),
                     locator=span.get('locator'),
                 )
                 for span in entry.get('spans') or []
+                if span.get('artifact_id')
+                and span.get('artifact_retrieval_id')
+                and span.get('quote')
             ]
-            if not spans:
+            if not (subject_type and subject_id and predicate and spans):
                 skipped += 1
                 continue
             self._claim_actions.extract_claim(
                 ExtractClaimRequest(
-                    subject_type=entry['subject_type'],
-                    subject_id=entry['subject_id'],
-                    predicate=entry['predicate'],
+                    subject_type=subject_type,
+                    subject_id=subject_id,
+                    predicate=predicate,
                     value=entry.get('value') or {},
                     scope_match_id=entry.get('scope_match_id'),
                     valid_from=str(entry.get('valid_from') or ''),
@@ -148,9 +154,7 @@ class EvidenceDayIngestService:
                     spans=spans,
                     actor_id='model:extractor',
                     actor_role=ActorRole.AI_EXTRACTOR,
-                    idempotency_key=(
-                        f'claim:{request.business_date}:{entry["subject_id"]}:{entry["predicate"]}'
-                    ),
+                    idempotency_key=f'claim:{request.business_date}:{subject_id}:{predicate}',
                     requested_at=request.requested_at,
                 )
             )
