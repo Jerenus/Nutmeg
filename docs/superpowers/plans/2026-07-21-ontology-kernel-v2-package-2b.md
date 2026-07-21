@@ -1064,6 +1064,7 @@ from pathlib import Path
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestRequest
+from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 
 AVAIL = [{"match_no": "周日001", "team": "哈马比", "players": [
@@ -1074,9 +1075,10 @@ def test_ingest_evidence_day_records_person_status(tmp_path: Path) -> None:
     settings = AppSettings(data_dir=tmp_path / "data")
     kernel = build_ontology_kernel(settings)
     kernel.initialize()
-    # a match the availability rows can attach to
-    with kernel.engine.begin():
-        pass
+    # a real match (from a prior market-day ingest) the availability rows attach to;
+    # here pre-seed a bare match so the person_match_statuses FK holds.
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        uow.identity.insert_match_minimal("match-preseeded")
     result = kernel.evidence_day_ingest.ingest(EvidenceDayIngestRequest(
         business_date="2026-07-19",
         match_no_to_id={"周日001": "match-preseeded"},
