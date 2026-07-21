@@ -57,3 +57,36 @@ def test_import_snapshots_reproduces_fair_and_skips_unmapped(tmp_path: Path) -> 
     assert abs(fair["home"] - 0.5) < 1e-9    # de-vig of no-vig quotes reproduces the old fair
     assert abs(fair["draw"] - 0.3) < 1e-9
     assert abs(fair["away"] - 0.2) < 1e-9
+
+
+READS = [
+    {"read_id": "old-r1", "match_id": "old-m1", "snapshot_id": "old-s1", "market": "had",
+     "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
+     "belief": {"home": 0.6, "draw": 0.25, "away": 0.15},
+     "factors": [{"factor_id": "lineup_news_gap", "direction": "home", "weight_pp": 3}],
+     "confidence": 4, "made_at": "2026-07-19T15:00:00+08:00", "falsifier": None, "note": ""},
+    {"read_id": "old-r2", "match_id": "old-m2", "snapshot_id": None, "market": "cricket",
+     "prior": {"home": 0.4, "draw": 0.3, "away": 0.3},
+     "belief": {"home": 0.4, "draw": 0.3, "away": 0.3},
+     "factors": [], "confidence": 3, "made_at": "2026-07-19T15:00:00+08:00"},
+]
+SETTLEMENTS = [
+    {"settlement_id": "st-1", "ref_type": "read", "ref_id": "old-r1", "outcome_90": "home",
+     "brier": 0.2, "clv_pp": None, "hit": 1, "settled_at": "2026-07-20T10:00:00+08:00"},
+]
+
+
+def test_import_reads_drops_factors_and_records_outcomes(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    importer = HistoricalImporter(kernel)
+    importer.import_matches(MATCHES)
+    importer.import_snapshots(SNAPSHOTS)
+    importer.import_reads(READS)
+    assert kernel.status().forecast_count == 1                 # r2 market unmapped -> skipped
+    assert "read:old-r2:unmapped_market" in importer.report.skipped
+    assert importer.report.counts["factors_dropped"] == 1      # old factor cannot be replayed
+    importer.import_outcomes(SETTLEMENTS)
+    assert importer.report.counts["outcomes"] == 1
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        new_match = importer.report.match_id_map["old-m1"]
+        assert uow.finance.current_outcome(new_match).score_90 == "1-0"   # home result
