@@ -69,6 +69,16 @@ class CommitForecastRequest:
     requested_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class WithdrawForecastRequest:
+    match_id: str
+    market_definition_id: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+
 def _validate_forecast(
     prior: dict[str, float], belief: dict[str, float], factors: list[FactorInput]
 ) -> None:
@@ -118,6 +128,36 @@ class ForecastActions:
 
     def commit_forecast(self, request: CommitForecastRequest) -> ActionOutcome:
         return self._commit(request, 'commit_forecast', require_current=False)
+
+    def revise_forecast(self, request: CommitForecastRequest) -> ActionOutcome:
+        return self._commit(request, 'revise_forecast', require_current=True)
+
+    def withdraw_forecast(self, request: WithdrawForecastRequest) -> ActionOutcome:
+        command = ActionCommand.create(
+            action_type='withdraw_forecast',
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload={
+                'match_id': request.match_id,
+                'market_definition_id': request.market_definition_id,
+            },
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            series_id = uow.decision.ensure_series(
+                request.match_id, request.market_definition_id
+            )
+            current = uow.decision.current_committed_revision(series_id)
+            if current is None:
+                raise ValueError('no committed forecast to withdraw')
+            uow.decision.set_revision_status(
+                current.forecast_revision_id, ForecastStatus.WITHDRAWN.value
+            )
+            return (ObjectRef('forecast_revision', current.forecast_revision_id),)
+
+        return self._action_service.execute(command, handler)
 
     def _commit(
         self, request: CommitForecastRequest, action_type: str, require_current: bool
