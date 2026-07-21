@@ -916,6 +916,7 @@ from nutmeg.interfaces.cli import decision as decision  # noqa: E402
 from nutmeg.interfaces.cli import notifications as notifications  # noqa: E402
 from nutmeg.interfaces.cli import odds as odds  # noqa: E402
 from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402
+from nutmeg.interfaces.cli import ontology_ingest as ontology_ingest  # noqa: E402
 from nutmeg.interfaces.cli import operations as operations  # noqa: E402
 from nutmeg.interfaces.cli import psychology as psychology  # noqa: E402
 from nutmeg.interfaces.cli import telegram as telegram  # noqa: E402

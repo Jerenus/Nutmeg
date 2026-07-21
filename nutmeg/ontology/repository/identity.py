@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass
 from uuid import uuid4
 
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, func, insert, select, update
 
 from nutmeg.ontology.errors import OntologyError
 from nutmeg.ontology.identity.models import EntityType, ResolutionStatus, TeamKind
@@ -313,3 +313,15 @@ class IdentityRepository:
             )
         ).all()
         return {side: team_id for side, team_id in rows}
+
+    def count_teams(self) -> int:
+        return self._connection.execute(select(func.count()).select_from(si.teams)).scalar_one()
+
+    def count_matches(self) -> int:
+        return self._connection.execute(
+            select(func.count()).select_from(si.matches)
+        ).scalar_one()
+
+    def all_match_ids(self) -> tuple[str, ...]:
+        rows = self._connection.execute(select(si.matches.c.match_id)).scalars().all()
+        return tuple(rows)
