@@ -20,7 +20,7 @@ from sqlalchemy import Connection, Engine, insert, inspect, select
 
 from nutmeg.ontology.errors import MigrationDriftError
 from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
-from nutmeg.ontology.repository import schema, schema_identity
+from nutmeg.ontology.repository import schema, schema_identity, schema_market
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +174,93 @@ def _apply_football_identity(connection: Connection) -> None:
     )
 
 
+_CRS_SELECTIONS: list[tuple[str, str, str | None]] = [
+    (f'sel-crs-{home}-{away}', f'{home}:{away}', None)
+    for home in range(4)
+    for away in range(4)
+] + [('sel-crs-other', 'other', None)]
+
+_MARKET_SEED: dict[str, dict[str, object]] = {
+    'md-had': {
+        'market_kind': 'had', 'settlement_scope': 'regular_time', 'ordered': 0, 'line_schema': None,
+        'selections': [
+            ('sel-had-home', 'home', None),
+            ('sel-had-draw', 'draw', None),
+            ('sel-had-away', 'away', None),
+        ],
+    },
+    'md-hhad': {
+        'market_kind': 'hhad', 'settlement_scope': 'regular_time', 'ordered': 0,
+        'line_schema': 'integer_handicap',
+        'selections': [
+            ('sel-hhad-home', 'home', None),
+            ('sel-hhad-draw', 'draw', None),
+            ('sel-hhad-away', 'away', None),
+        ],
+    },
+    'md-ttg': {
+        'market_kind': 'ttg', 'settlement_scope': 'regular_time', 'ordered': 1, 'line_schema': None,
+        'selections': [(f'sel-ttg-{n}', f'total_{n}', None) for n in range(8)],
+    },
+    'md-crs': {
+        'market_kind': 'crs', 'settlement_scope': 'regular_time', 'ordered': 0, 'line_schema': None,
+        'selections': _CRS_SELECTIONS,
+    },
+}
+
+_MARKET_ACTION_PERMISSIONS = (
+    ('record_market_quote', 'connector'),
+    ('build_market_snapshot', 'deterministic_system'),
+)
+
+
+def _apply_market(connection: Connection) -> None:
+    for table in (
+        schema_market.market_definitions,
+        schema_market.selection_definitions,
+        schema_market.market_quotes,
+        schema_market.market_snapshots,
+        schema_market.market_snapshot_quotes,
+    ):
+        table.create(connection)
+
+    for market_definition_id, spec in _MARKET_SEED.items():
+        connection.execute(
+            insert(schema_market.market_definitions).values(
+                market_definition_id=market_definition_id,
+                market_kind=spec['market_kind'],
+                settlement_scope=spec['settlement_scope'],
+                ordered=spec['ordered'],
+                line_schema=spec['line_schema'],
+                outcome_schema_version='1',
+            )
+        )
+        connection.execute(
+            insert(schema_market.selection_definitions),
+            [
+                {
+                    'selection_id': selection_id,
+                    'market_definition_id': market_definition_id,
+                    'outcome_key': outcome_key,
+                    'line': line,
+                }
+                for selection_id, outcome_key, line in spec['selections']
+            ],
+        )
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                'policy_version_id': 'governance-v1',
+                'action_type': action_type,
+                'actor_role': actor_role,
+            }
+            for action_type, actor_role in _MARKET_ACTION_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -192,6 +279,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='football_identity',
         fingerprint='competitions..entity_merges+team_alias_seed+identity_permissions',
         apply=_apply_football_identity,
+    ),
+    Migration(
+        version=4,
+        name='market_definitions',
+        fingerprint='market_defs+selection_defs(had,hhad,ttg,crs)+market_permissions',
+        apply=_apply_market,
     ),
 )
 
