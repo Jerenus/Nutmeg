@@ -8,9 +8,11 @@ alias, then nothing.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from uuid import uuid4
 
-from sqlalchemy import Connection, insert, select
+from sqlalchemy import Connection, insert, select, update
 
 from nutmeg.ontology.errors import OntologyError
 from nutmeg.ontology.identity.models import EntityType, ResolutionStatus, TeamKind
@@ -131,3 +133,80 @@ class IdentityRepository:
             )
             .limit(1)
         ).scalar_one_or_none()
+
+    def get_team(self, team_id: str) -> TeamRow:
+        row = (
+            self._connection.execute(select(si.teams).where(si.teams.c.team_id == team_id))
+            .mappings()
+            .first()
+        )
+        if row is None:
+            raise OntologyError(f'team {team_id} not found')
+        return TeamRow(
+            team_id=row['team_id'],
+            team_kind=TeamKind(row['team_kind']),
+            canonical_name=row['canonical_name'],
+            country=row['country'],
+            resolution_status=ResolutionStatus(row['resolution_status']),
+            created_at=row['created_at'],
+        )
+
+    def mark_resolution_status(
+        self,
+        entity_id: str,
+        entity_type: EntityType,
+        status: ResolutionStatus,
+    ) -> None:
+        if entity_type is not EntityType.TEAM:
+            raise OntologyError(f'resolution status update not supported for {entity_type.value}')
+        self._connection.execute(
+            update(si.teams)
+            .where(si.teams.c.team_id == entity_id)
+            .values(resolution_status=status.value)
+        )
+
+    def record_merge(
+        self,
+        *,
+        from_id: str,
+        into_id: str,
+        entity_type: EntityType,
+        reason: str,
+        evidence_retrieval_ids: tuple[str, ...] = (),
+        actor_id: str,
+        at: str,
+        reversible: bool = True,
+    ) -> None:
+        self._connection.execute(
+            insert(si.entity_merges).values(
+                merge_id=f'merge-{uuid4().hex}',
+                from_id=from_id,
+                into_id=into_id,
+                entity_type=entity_type.value,
+                reason=reason,
+                evidence_retrieval_ids_json=json.dumps(
+                    list(evidence_retrieval_ids), separators=(',', ':')
+                ),
+                actor_id=actor_id,
+                at=at,
+                reversible=1 if reversible else 0,
+            )
+        )
+        self.mark_resolution_status(from_id, entity_type, ResolutionStatus.MERGED)
+
+    def redirect(self, entity_id: str, entity_type: EntityType) -> str:
+        current = entity_id
+        seen = {current}
+        while True:
+            into = self._connection.execute(
+                select(si.entity_merges.c.into_id)
+                .where(
+                    si.entity_merges.c.from_id == current,
+                    si.entity_merges.c.entity_type == entity_type.value,
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            if into is None or into in seen:
+                return current
+            seen.add(into)
+            current = into

@@ -42,6 +42,29 @@ class UpsertTeamRequest:
             raise ValueError('idempotency_key is required')
 
 
+@dataclass(frozen=True, slots=True)
+class MergeEntityRequest:
+    entity_type: EntityType
+    from_id: str
+    into_id: str
+    reason: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+    evidence_retrieval_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.requested_at.tzinfo is None or self.requested_at.utcoffset() is None:
+            raise ValueError('requested_at must be timezone-aware')
+        if self.from_id == self.into_id:
+            raise ValueError('cannot merge an entity into itself')
+        if not self.reason.strip():
+            raise ValueError('reason is required')
+        if not self.idempotency_key.strip():
+            raise ValueError('idempotency_key is required')
+
+
 class EntityActions:
     def __init__(self, action_service: ActionService) -> None:
         self._action_service = action_service
@@ -94,5 +117,37 @@ class EntityActions:
                 )
             uow.identity.add_alias(team_id, EntityType.TEAM, request.canonical_name)
             return (ObjectRef('team', team_id),)
+
+        return self._action_service.execute(command, handler)
+
+    def merge_entity(self, request: MergeEntityRequest) -> ActionOutcome:
+        payload: dict[str, object] = {
+            'entity_type': request.entity_type.value,
+            'from_id': request.from_id,
+            'into_id': request.into_id,
+            'reason': request.reason,
+            'evidence_retrieval_ids': list(request.evidence_retrieval_ids),
+        }
+        command = ActionCommand.create(
+            action_type='merge_entity',
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload=payload,
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            uow.identity.record_merge(
+                from_id=request.from_id,
+                into_id=request.into_id,
+                entity_type=request.entity_type,
+                reason=request.reason,
+                evidence_retrieval_ids=request.evidence_retrieval_ids,
+                actor_id=request.actor_id,
+                at=request.requested_at.astimezone(UTC).isoformat(),
+                reversible=True,
+            )
+            return (ObjectRef(request.entity_type.value, request.into_id),)
 
         return self._action_service.execute(command, handler)
