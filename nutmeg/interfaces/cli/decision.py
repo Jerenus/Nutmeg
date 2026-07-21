@@ -71,9 +71,18 @@ def decision_read(
     reads_file: Path = _READS_FILE_OPTION,
     output_dir: Path = _OUTPUT_DIR_OPTION,
 ) -> None:
-    """决策本体 · 动词二:摄取 Claude 运行时产出的 Read(校验+落库)。"""
-    from nutmeg.decision.verbs import run_read_ingest
-    _cli.typer.echo(run_read_ingest(reads_file, output_dir))
+    """决策本体 · 动词二:摄取 Claude 运行时产出的 Read(校验+落库)。
+
+    NUTMEG_ONTOLOGY_V2=1 时提交到 kernel(ontology_adapter);否则旧 JSONL 路径不变。
+    """
+    from nutmeg.config.settings import get_settings
+
+    if get_settings().ontology_v2:
+        from nutmeg.decision.ontology_adapter import run_decision_read_v2
+        _cli.typer.echo(run_decision_read_v2(reads_file, output_dir))
+    else:
+        from nutmeg.decision.verbs import run_read_ingest
+        _cli.typer.echo(run_read_ingest(reads_file, output_dir))
 
 
 @_cli.app.command("decision-backfill")
