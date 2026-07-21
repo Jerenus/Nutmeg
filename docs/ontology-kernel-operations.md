@@ -317,3 +317,35 @@ vector never leaks a result. Regime never changes a direction or a stake.
 `regime_vector_count` and `lifecycle_proposal_count`. Package 5 (Evidence Migration &
 Cutover) imports history, rewires the CLI onto these verbs, shuts the old write paths,
 and restores the paused schedules as the single irreversible go-live step.
+
+## 16. Package 5A — Historical Importer & Reconciliation
+
+Package 5A replays the old append-only JSONL decision store into a fresh kernel through
+the typed Actions, then reconciles the rebuilt metrics against the old ones. It is
+**read-only on the source** and writes **only the target dir it is given** — never the
+production kernel path.
+
+**Idempotent, nothing dropped silently.** Every Action's idempotency key is derived
+from the old object id (`import:<type>:<old_id>`), so a re-run imports nothing twice.
+An `old→new` id map threads matches to their snapshots/reads/outcomes; an unresolved
+reference is counted in `ImportReport.skipped`, never hidden. Old factors carry
+direction/weight_pp (not a per-outcome delta that reconstructs belief−prior), so they
+cannot be replayed as FactorApplications — the belief is committed follow-market and
+the drop is counted (`factors_dropped`). Old snapshots re-enter through
+`build_snapshot` by synthesizing no-vig quotes from the stored `fair` (decimal odds =
+1/p), so the de-vig reproduces the old fair exactly and the path stays Action-pure. Old
+`outcome_90` result keys map to a canonical score (`home`→`1-0`, `draw`→`0-0`,
+`away`→`0-1`) so had one-hot scoring reconstructs the same result.
+
+**Reconciliation is evidence, not an assertion about production.** After importing into
+the fresh target, `calibrate` rebuilds `forecast_scores`; the `Reconciler` joins the
+rebuilt Brier to the old Read-settlement Brier per (match, market) and reports
+matched / mismatched / coverage with per-row deltas. A rebuilt score with no old
+baseline is counted, never hidden.
+
+Run it with `nutmeg migrate-decision-store --source <old .nutmeg-data/jczq> --target
+<fresh dir>`: it imports + reconciles into the target and prints a JSON summary. It
+touches no production data, dispatches nothing, and restores no schedule. **Go-live
+(enable the flag, shut the old writers, restore the three `com.nutmeg.decision.*`
+schedules) is Package 5B and happens only on explicit user approval after reviewing the
+reconciliation evidence; the freeze archive is retained read-only throughout.**
