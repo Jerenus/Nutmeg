@@ -15,6 +15,8 @@ from sqlalchemy import Connection, Engine
 if TYPE_CHECKING:
     from nutmeg.ontology.repository.actions import ActionRepository
     from nutmeg.ontology.repository.artifacts import ArtifactRepository
+    from nutmeg.ontology.repository.context import ContextRepository
+    from nutmeg.ontology.repository.evidence import EvidenceRepository
     from nutmeg.ontology.repository.identity import IdentityRepository
     from nutmeg.ontology.repository.market import MarketRepository
 
@@ -53,6 +55,18 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.market import MarketRepository
 
         return MarketRepository(self.connection)
+
+    @property
+    def context(self) -> ContextRepository:
+        from nutmeg.ontology.repository.context import ContextRepository
+
+        return ContextRepository(self.connection)
+
+    @property
+    def evidence(self) -> EvidenceRepository:
+        from nutmeg.ontology.repository.evidence import EvidenceRepository
+
+        return EvidenceRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         self._connection = self._engine.connect()
