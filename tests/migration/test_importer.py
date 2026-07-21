@@ -34,12 +34,13 @@ def test_import_matches_maps_ids_and_is_idempotent(tmp_path: Path) -> None:
     assert kernel.status().match_count == 2
 
 
+# Real old snapshots nest fair by market: {"had": {...}, "hhad": {...}, ...}
 SNAPSHOTS = [
     {"snapshot_id": "old-s1", "match_id": "old-m1", "kind": "closing",
-     "fair": {"home": 0.5, "draw": 0.3, "away": 0.2}, "raw_odds": {}, "lines": {},
-     "source": "test", "taken_at": "2026-07-19T18:00:00+08:00"},
+     "fair": {"had": {"home": 0.5, "draw": 0.3, "away": 0.2}, "hhad": {"home": 0.4}},
+     "raw_odds": {}, "lines": {}, "source": "test", "taken_at": "2026-07-19T18:00:00+08:00"},
     {"snapshot_id": "old-s2", "match_id": "does-not-exist", "kind": "open",
-     "fair": {"home": 0.4, "draw": 0.3, "away": 0.3}, "raw_odds": {}, "lines": {},
+     "fair": {"had": {"home": 0.4, "draw": 0.3, "away": 0.3}}, "raw_odds": {}, "lines": {},
      "source": "test", "taken_at": "2026-07-19T10:00:00+08:00"},
 ]
 
@@ -90,3 +91,26 @@ def test_import_reads_drops_factors_and_records_outcomes(tmp_path: Path) -> None
     with OntologyUnitOfWork(kernel.engine) as uow:
         new_match = importer.report.match_id_map["old-m1"]
         assert uow.finance.current_outcome(new_match).score_90 == "1-0"   # home result
+
+
+def test_full_import_is_idempotent_and_calibrate_scores(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    reads = [READS[0]]                    # the had read (r2 is unmapped market)
+
+    def run_all():
+        imp = HistoricalImporter(kernel)
+        imp.import_matches(MATCHES)
+        imp.import_snapshots(SNAPSHOTS)
+        imp.import_reads(reads)
+        imp.import_outcomes(SETTLEMENTS)
+        return imp
+
+    run_all()
+    forecast_after_first = kernel.status().forecast_count
+    run_all()                            # second full import is a no-op (idempotent)
+    assert kernel.status().forecast_count == forecast_after_first == 1
+
+    from nutmeg.analytics.calibrate_flow import CalibrateRequest
+    result = kernel.calibrate.build(CalibrateRequest(
+        as_of="2026-07-20T00:00:00+00:00", built_at="2026-07-20T00:00:00+00:00"))
+    assert result.scorecard_count >= 3   # imported forecast produces a non-empty scorecard

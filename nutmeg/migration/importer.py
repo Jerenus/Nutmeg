@@ -112,7 +112,10 @@ class HistoricalImporter:
             if new_match is None:
                 self.report.skipped.append(f'snapshot:{old_id}:unmapped_match')
                 continue
-            fair = row.get('fair') or {}
+            # The old snapshot fair is nested by market: {"had": {home,draw,away}, "hhad": …};
+            # 5A imports the had book. A flat {home,draw,away} is also accepted.
+            fair_all = row.get('fair') or {}
+            fair = fair_all.get('had', fair_all) if isinstance(fair_all, dict) else {}
             quotes = [
                 QuoteInput(_HAD_MARKET, f'sel-had-{key}', 1.0 / float(prob))
                 for key, prob in fair.items()
