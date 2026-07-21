@@ -85,7 +85,7 @@ Those belong to Packages 2–5. Do not add generic object payload tables as a sh
 - `nutmeg/interfaces/cli/core.py`: add read-only ontology status to `doctor` without auto-initializing it.
 - `.pre-commit-config.yaml`: run ontology tests whenever kernel/ontology CLI files change.
 - `README.md`: document Package 1 experimental operations without claiming v2 cutover.
-- `AGENTS.md` and `CLAUDE.md`: replace the retired `.specify/specs/046-jczq-mixed-parlay-report-v0/plan.md` pointer with this plan, keeping both harness copies identical.
+- `AGENTS.md` and `CLAUDE.md`: point both harness copies at this plan. `AGENTS.md` already has a `<!-- SPECKIT START -->` block holding the retired `.specify/specs/046-jczq-mixed-parlay-report-v0/plan.md` pointer (replace the path in place); `CLAUDE.md` has no such block and no current-plan pointer today (add an identical block), so the two copies end up carrying the same pointer.
 
 ### User-owned files that must not be reverted
 
@@ -114,9 +114,28 @@ git status --short
 Expected: branch `main`; HEAD contains the confirmed v2 spec and this plan; dirty entries are limited to
 the user-owned files listed above. If any additional path appears, stop and ask before continuing.
 
-- [ ] **Step 2: Inspect and stop only the three installed decision schedules**
+- [ ] **Step 2: Enumerate every loaded schedule, then stop only the v1-data writers**
 
-Run each read first:
+Spec §13.1 Phase 0 requires stopping the decision am/close/settle jobs **and any related football-lottery
+(zucai) auto tasks** before the freeze; a freeze is only sound if no scheduler can still write into the data
+this task is about to hash read-only. So first enumerate, do not assume the writer set:
+
+```bash
+launchctl print "gui/$(id -u)" | grep -i 'com\.nutmeg'
+```
+
+Classify every loaded `com.nutmeg.*` service:
+
+- **v1-data writers that must be stopped** — the three decision jobs plus any loaded zucai/jczq writer
+  (`com.nutmeg.zucai.afternoon`, `com.nutmeg.zucai.revision`, or any `com.nutmeg.jczq.*` job that actually
+  runs a `decision`/`zucai`/`jczq` command). As of 2026-07-21 only the three decision jobs are loaded; the
+  `com.nutmeg.jczq.daily-*` names that show up as `enabled` are stale enable-state with **no installed plist**
+  and the two `com.nutmeg.zucai.*` plists in `ops/launchd/` are **not loaded** — but re-verify at run time,
+  because a loaded zucai/jczq writer here would silently mutate the archive Step 3 creates.
+- **Unrelated jobs that must be left alone** — Telegram/OpenClaw and anything not writing `.nutmeg-data`
+  decision/zucai state.
+
+Read each writer you intend to stop first:
 
 ```bash
 launchctl print "gui/$(id -u)/com.nutmeg.decision.am"
@@ -124,7 +143,7 @@ launchctl print "gui/$(id -u)/com.nutmeg.decision.close"
 launchctl print "gui/$(id -u)/com.nutmeg.decision.settle"
 ```
 
-For every loaded service, run its exact reversible bootout:
+Then bootout every loaded v1-data writer (reversible). For the current state that is exactly:
 
 ```bash
 launchctl bootout "gui/$(id -u)/com.nutmeg.decision.am"
@@ -132,8 +151,9 @@ launchctl bootout "gui/$(id -u)/com.nutmeg.decision.close"
 launchctl bootout "gui/$(id -u)/com.nutmeg.decision.settle"
 ```
 
-Expected: loaded services are removed. A service that was already absent needs no bootout. Do not modify
-the plist files and do not stop Telegram/OpenClaw or unrelated launchd jobs.
+If the enumeration surfaced any additional loaded zucai/jczq writer, bootout it the same way and record it in
+the progress notes. Expected: every v1-data writer is removed. A service that was already absent needs no
+bootout. Do not modify the plist files and do not stop Telegram/OpenClaw or unrelated launchd jobs.
 
 - [ ] **Step 3: Create a read-only evidence-first freeze copy and hash manifest**
 
@@ -168,12 +188,15 @@ ARCHIVE=$(find .nutmeg-data/archive -maxdepth 1 -type d \
 launchctl print "gui/$(id -u)/com.nutmeg.decision.am"
 launchctl print "gui/$(id -u)/com.nutmeg.decision.close"
 launchctl print "gui/$(id -u)/com.nutmeg.decision.settle"
+launchctl print "gui/$(id -u)" | grep -iE 'com\.nutmeg\.(decision|zucai|jczq)' || echo "no loaded decision/zucai/jczq writer"
 find "$ARCHIVE" -type f | wc -l
 head -5 "$ARCHIVE/SHA256SUMS"
 ```
 
-Expected: all three `launchctl print` calls report that the service cannot be found; the archive has files
-and hashes. Do not re-enable schedules until Package 5 cutover gates pass.
+Expected: all three `launchctl print` calls report that the service cannot be found; the grep prints
+`no loaded decision/zucai/jczq writer` (any remaining match is a writer Step 2 missed — stop it and rehash
+before proceeding); the archive has files and hashes. Do not re-enable schedules until Package 5 cutover
+gates pass.
 
 - [ ] **Step 5: Create the dedicated implementation worktree**
 
@@ -515,6 +538,10 @@ artifact_retrievals:
 The `schema_migrations` bootstrap table is created by the runner with
 `version INTEGER PRIMARY KEY, name TEXT, checksum TEXT, applied_at TEXT`.
 
+`actions.request_hash` is an intentional superset of the spec §6.1 envelope field list: the spec names the
+envelope fields but idempotency (§8.2) needs a stored canonical hash to detect "same idempotency key, different
+request" conflicts (Task 6). It is a persistence-layer necessity, not a semantic addition.
+
 - [ ] **Step 4: Implement two numbered migrations**
 
 Create frozen `Migration`, `MigrationReport` and `MigrationStatus` dataclasses. Migration 1 creates
@@ -528,9 +555,17 @@ Create frozen `Migration`, `MigrationReport` and `MigrationStatus` dataclasses. 
 Seed permissions exactly:
 
 ```text
-ingest_artifact: connector, deterministic_system, judge_operator
+ingest_artifact: connector, judge_operator
 change_policy: judge_operator
 ```
+
+This is the tightest seed the spec justifies: §6.2's permission matrix grants raw Artifact write only to
+`connector` (live source fetch), and §4.3 makes user-uploaded files Artifacts, so `judge_operator` (the
+operator uploading a file) is also allowed. `deterministic_system` is deliberately **not** seeded — the spec
+matrix lists its writes as snapshots/settlements/evaluations, not raw artifact ingestion, and deny-by-default
+means any future need (e.g. a Package 5 migration re-ingesting archived artifacts) must arrive through an
+explicit policy Action rather than a pre-granted role. `ai_extractor`/`ai_analyst` remain denied, exercising
+the deny path in Task 5.
 
 Migration 2 creates `source_runs`, `source_artifacts` and `artifact_retrievals`. Create tables in foreign-key
 order; Migration 1 likewise creates policy versions before Actions/permissions and seeds only after all three
@@ -904,6 +939,13 @@ Use this exact order:
 4. on `PermissionDeniedError`, roll back and insert one `rejected` row in a fresh UoW, then return it;
 5. on any other exception, roll back and insert one `failed` row in a fresh UoW, then re-raise the original.
 
+Terminal outcomes are sticky under their idempotency key: because the `failed`/`rejected` row carries the
+`idempotency_key`, a later call with the same key and matching `request_hash` takes path 2 and **returns** the
+stored terminal outcome instead of re-running (so the first attempt raises, a replay returns). This is the
+intended contract — one idempotency key means "this exact request was already terminally attempted", and it
+upholds invariant §14.1.1 (a partial/failed run never masquerades as success). A caller that wants to retry a
+transient failure must issue a new idempotency key; do not silently re-execute a stored terminal action.
+
 Package 1 deliberately adds concurrent unique-key race recovery under the RED test in Task 12; do not add
 untested retry logic in this task.
 
@@ -995,6 +1037,12 @@ Define frozen `ArtifactBlob` with `artifact_id`, `content_hash`, `byte_size`, `r
    `FileExistsError` as a concurrent identical writer);
 7. unlink the temporary file in `finally` and fsync the containing directory;
 8. verify the published size and raise `OntologyError` on mismatch.
+
+This deliberately publishes with `os.link` rather than spec §8.3's literal "atomic rename": for a
+content-addressed store the destination must never be silently replaced, and `os.rename` onto an existing path
+would clobber the blob and refresh its mtime, breaking the `st_mtime_ns` no-rewrite invariant asserted in
+Step 1. `os.link` is equally atomic and preserves immutability by failing (`FileExistsError`) when the
+identical blob already exists.
 
 `put_file()` resolves the source, requires `is_file()`, and streams it once in 1 MiB chunks into a temporary
 file while computing bytes/hash. It then publishes that temporary file through the same link/fsync helper;
@@ -1393,13 +1441,24 @@ paused during the approved rebuild.
 
 - [ ] **Step 4: Synchronize AGENTS/CLAUDE plan pointers**
 
-In both files, replace only the path inside the existing `<!-- SPECKIT START -->` block with:
+The two harness copies are asymmetric today: `AGENTS.md` already carries a `<!-- SPECKIT START -->` /
+`<!-- SPECKIT END -->` block whose body points at the retired mixed-parlay plan, while `CLAUDE.md` has
+**neither the block nor any current-plan pointer**. Because `test_governance_docs.py` asserts the new plan
+path appears in *both* files, a pure in-place replace is not enough for `CLAUDE.md`.
+
+- In `AGENTS.md`: replace only the path inside the existing block so the body reads:
 
 ```text
 docs/superpowers/plans/2026-07-21-ontology-kernel-v2-package-1.md
 ```
 
-Do not rewrite either JCZQ SOP in Package 1. Verify the two harness copies still carry the same plan pointer.
+- In `CLAUDE.md`: add an identical `<!-- SPECKIT START -->` … `<!-- SPECKIT END -->` block carrying the
+  same pointer. Place it near the top (before the JCZQ SOP) so it reads as the current-plan header, mirroring
+  `AGENTS.md`'s wording. Do not otherwise touch the JCZQ SOP body.
+
+Do not rewrite either JCZQ SOP in Package 1. Verify with
+`grep -n 'ontology-kernel-v2-package-1' AGENTS.md CLAUDE.md` that both copies now carry the same plan pointer
+and that neither still references `.specify/specs/046-jczq-mixed-parlay-report-v0/plan.md`.
 
 - [ ] **Step 5: Add the ontology pre-commit hook**
 
@@ -1592,6 +1651,13 @@ scope. Do not merge, restore schedules or delete the freeze archive in this task
 | One current plan and matching AGENTS/CLAUDE pointer | Task 11 |
 | TDD, idempotent restart and concurrency evidence | Tasks 1–12 |
 | v1 evidence freeze without destructive deletion | Task 0 |
+
+One envelope field is intentionally **defined but dormant** in Package 1: `expected_versions{}` (spec §8.2
+optimistic concurrency) is stored on every Action and validated as non-negative integers in Task 4, but
+Package 1 has no mutable/versioned object to lock against — Artifacts are immutable and content-addressed. Its
+conflict-rejection path therefore has no handler and no test here; it is first exercised when a mutable
+versioned object (Match/Forecast revisions) arrives in Package 2/3. This row is deliberately absent from the
+coverage table above so nobody expects optimistic-lock behaviour from the Package 1 kernel.
 
 Package 1 is complete only when Task 12 passes. It does not authorize Package 2 implementation; Package 2
 must receive its own focused spec/plan using this kernel's actual verified interfaces.
