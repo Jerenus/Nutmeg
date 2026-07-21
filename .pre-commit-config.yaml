@@ -14,3 +14,9 @@ repos:
         language: system
         files: ^nutmeg/decision/
         pass_filenames: false
+      - id: pytest-ontology
+        name: pytest (ontology kernel subset when touched)
+        entry: bash -c 'uv run pytest tests/ontology/ -q'
+        language: system
+        files: ^(nutmeg/ontology/|nutmeg/interfaces/cli/ontology\.py|tests/ontology/)
+        pass_filenames: false

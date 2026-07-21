@@ -379,3 +379,22 @@ Telegram accepts a message but before Nutmeg records the response, the attempt
 is marked `uncertain`; retrying it can duplicate the message and the audit
 timeline records that risk. A real Telegram smoke remains an explicit outbound
 action and must not be performed as part of automated tests or dry-run replay.
+
+## Ontology Kernel v2 — Package 1 (experimental)
+
+A ground-up rebuild of the decision write path is underway. **Package 1** ships
+only the transactional kernel — a separate SQLite operational database
+(`.nutmeg-data/ontology/ontology.db`), a content-addressed artifact store, typed
+and idempotent Actions, deny-by-default permissions, and numbered migrations. It
+creates no football-domain objects yet.
+
+```bash
+uv run nutmeg ontology init --format json     # apply migrations (idempotent)
+uv run nutmeg ontology status --format json    # read-only; never initializes/migrates
+```
+
+The five-verb `decision` commands above remain the **current production
+interface** until the Package 5 cutover; the decision schedules are intentionally
+paused during this approved rebuild and are not re-enabled until the cutover
+gates pass. Design: `docs/superpowers/specs/2026-07-20-ontology-kernel-v2-design.md`;
+operations: `docs/ontology-kernel-operations.md`.

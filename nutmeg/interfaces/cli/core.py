@@ -24,6 +24,7 @@ def doctor(format: str = _cli.typer.Option("text", "--format", help="text or jso
         latest_sync = _cli.SqlAlchemySyncRunRepository(session).latest()
     finally:
         session.close()
+    ontology_status = _cli.build_ontology_kernel(settings).status()
     report = {
         "app": {
             "name": settings.app_name,
@@ -34,7 +35,10 @@ def doctor(format: str = _cli.typer.Option("text", "--format", help="text or jso
             "data_dir": str(settings.data_dir),
             "state_db_url": settings.state_db_url,
             "analytics_db_url": settings.analytics_db_url,
+            "ontology_db_url": settings.ontology_db_url,
+            "ontology_artifact_dir": str(settings.ontology_artifact_dir),
         },
+        "ontology": ontology_status.to_dict(),
         "providers": {
             "api_football_configured": bool(settings.api_football_key),
             "portkey_configured": bool(settings.portkey_api_key),
@@ -77,6 +81,10 @@ def doctor(format: str = _cli.typer.Option("text", "--format", help="text or jso
     _cli.console.print(f"superpowers bridge verdict={bridge.verdict}")
     _cli.console.print(
         f"harness: {harness.passing_features}/{harness.total_features} feature checks passing"
+    )
+    _cli.console.print(
+        f"ontology: initialized={ontology_status.initialized} "
+        f"schema={ontology_status.schema_version} integrity={ontology_status.integrity_check}"
     )
     if latest_sync is not None:
         _cli.console.print(

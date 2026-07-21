@@ -101,6 +101,22 @@ class AppSettings(BaseSettings):
     def analytics_db_url(self) -> str:
         return f'duckdb:///{self.analytics_db_path.resolve()}'
 
+    @property
+    def ontology_dir(self) -> Path:
+        return self.data_dir / 'ontology'
+
+    @property
+    def ontology_db_path(self) -> Path:
+        return self.ontology_dir / 'ontology.db'
+
+    @property
+    def ontology_artifact_dir(self) -> Path:
+        return self.ontology_dir / 'artifacts'
+
+    @property
+    def ontology_db_url(self) -> str:
+        return f'sqlite+pysqlite:///{self.ontology_db_path.resolve()}'
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
