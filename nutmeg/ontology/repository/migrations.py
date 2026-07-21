@@ -23,6 +23,7 @@ from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
 from nutmeg.ontology.repository import (
     schema,
     schema_context,
+    schema_decision,
     schema_evidence,
     schema_identity,
     schema_market,
@@ -320,6 +321,48 @@ def _apply_evidence(connection: Connection) -> None:
     )
 
 
+_DECISION_ACTION_PERMISSIONS = (
+    ('open_decision_session', 'judge_operator'),
+    ('open_decision_session', 'deterministic_system'),
+    ('freeze_evidence_bundle', 'deterministic_system'),
+    ('draft_forecast', 'ai_analyst'),
+    ('draft_forecast', 'judge_operator'),
+    ('commit_forecast', 'judge_operator'),
+    ('revise_forecast', 'judge_operator'),
+    ('withdraw_forecast', 'judge_operator'),
+    ('propose_factor_status', 'ai_analyst'),
+    ('propose_factor_status', 'judge_operator'),
+    ('apply_factor_status', 'judge_operator'),
+)
+
+
+def _apply_decision(connection: Connection) -> None:
+    for table in (
+        schema_decision.decision_sessions,
+        schema_decision.evidence_bundles,
+        schema_decision.evidence_bundle_items,
+        schema_decision.forecast_series,
+        schema_decision.factor_families,
+        schema_decision.factor_definitions,
+        schema_decision.forecast_revisions,
+        schema_decision.factor_applications,
+        schema_decision.scenarios,
+    ):
+        table.create(connection)
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                'policy_version_id': 'governance-v1',
+                'action_type': action_type,
+                'actor_role': actor_role,
+            }
+            for action_type, actor_role in _DECISION_ACTION_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -356,6 +399,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='football_evidence',
         fingerprint='claims..observation_claims+evidence_permissions',
         apply=_apply_evidence,
+    ),
+    Migration(
+        version=7,
+        name='decision',
+        fingerprint='decision_sessions..scenarios+decision_permissions',
+        apply=_apply_decision,
     ),
 )
 
