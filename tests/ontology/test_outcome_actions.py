@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import select
+
 from nutmeg.ontology.actions.forecast_actions import CommitForecastRequest, ForecastActions
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.outcome_actions import (
@@ -15,6 +17,7 @@ from nutmeg.ontology.actions.ticket_actions import (
     ProposeTicketRequest,
     TicketActions,
 )
+from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.finance import CashAccountRow
 from nutmeg.ontology.repository.migrations import run_migrations
@@ -93,6 +96,37 @@ def test_settle_winning_ticket_pays_out(tmp_path: Path) -> None:
         assert uow.finance.count_settlements() == 1
         # −100 stake + 200 payout (flat 2× placeholder) = +100
         assert uow.finance.ledger_balance("acct-jczq") == 100.0
+
+
+def test_settle_non_had_leg_grades_void(tmp_path: Path) -> None:
+    engine, svc, _fr = _setup(tmp_path)
+    out = ForecastActions(svc).commit_forecast(CommitForecastRequest(
+        match_id="match-1", market_definition_id="md-hhad", decision_session_id="sess-x",
+        prior_distribution=PRIOR, belief_distribution=PRIOR, factors=[], commitment_tier="follow",
+        evidence_bundle_id=None, prior_snapshot_id=None, falsifier=None, actor_id="op:owner",
+        actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key="c:hhad", requested_at=T))
+    fr_hhad = out.result_refs[0].object_id
+    tickets = TicketActions(svc)
+    leg = LegInput(match_id="match-1", market_definition_id="md-hhad",
+                   selection_id="sel-hhad-home", forecast_revision_id=fr_hhad,
+                   bucket="hedge", stake=100.0, line="-1")
+    proposal = tickets.propose_ticket(ProposeTicketRequest(
+        channel="jczq", decision_session_id="sess-x", legs=[leg], actor_id="op:owner",
+        actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key="pt:h", requested_at=T))
+    approved = tickets.approve_ticket(ApproveTicketRequest(
+        channel="jczq", account_id="acct-jczq", proposal_id=proposal.result_refs[0].object_id,
+        legs=[leg], actor_id="op:owner", actor_role=ActorRole.JUDGE_OPERATOR,
+        idempotency_key="at:h", requested_at=T))
+    ticket_id = next(r.object_id for r in approved.result_refs if r.object_type == "ticket")
+    outcomes = OutcomeActions(svc)
+    outcomes.record_outcome(_record("o:1", "2-1"))   # a home win at 90'
+    outcomes.settle_ticket(SettleTicketRequest(
+        ticket_id=ticket_id, match_id="match-1", account_id="acct-jczq", actor_id="sys",
+        actor_role=ActorRole.DETERMINISTIC_SYSTEM, idempotency_key="st:h", requested_at=T))
+    with OntologyUnitOfWork(engine) as uow:
+        grades = uow.connection.execute(select(sf.bet_leg_settlements.c.grade)).scalars().all()
+        assert grades == ["void"]   # non-had market graded VOID, not mis-read as a loss
+        assert uow.finance.ledger_balance("acct-jczq") == -100.0   # VOID pays nothing
 
 
 def test_settle_missing_outcome_writes_no_pending(tmp_path: Path) -> None:

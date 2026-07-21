@@ -31,6 +31,19 @@ _SETTLEMENT_METHOD_VERSION = 'had-3way-v1'
 # Package 3B settles P&L against a flat win multiplier: odds-faithful payout (from the
 # entry quote) and CLV live in Package 4. Documented in ontology-kernel-operations.md.
 _PLACEHOLDER_WIN_MULTIPLIER = 2.0
+# Only the had 3-way market is graded in 3B; any other market is graded VOID (hit
+# unknown) rather than silently mis-read as a loss. hhad/ttg/crs grading is a
+# documented 3B follow-on.
+_HAD_MARKET_ID = 'md-had'
+
+
+def _grade_leg(
+    market_definition_id: str, selection_id: str, home: int, away: int
+) -> tuple[SettlementGrade, int | None]:
+    if market_definition_id != _HAD_MARKET_ID:
+        return SettlementGrade.VOID, None
+    grade = grade_had(selection_id.rsplit('-', 1)[-1], home, away)
+    return grade, 1 if grade is SettlementGrade.WIN else 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,10 +152,9 @@ class OutcomeActions:
             leg_settlement_ids: list[ObjectRef] = []
             all_win = True
             for leg in legs:
-                selection_key = leg.selection_id.rsplit('-', 1)[-1]
-                grade = grade_had(selection_key, home, away)
+                grade, hit = _grade_leg(leg.market_definition_id, leg.selection_id, home, away)
                 if grade is not SettlementGrade.WIN:
-                    all_win = False
+                    all_win = False   # a VOID (ungraded) leg conservatively blocks payout
                 settlement_id = mint_finance_id('bls')
                 uow.finance.insert_bet_leg_settlement(
                     BetLegSettlementRow(
@@ -150,7 +162,7 @@ class OutcomeActions:
                         bet_leg_id=leg.bet_leg_id,
                         outcome_id=outcome.outcome_id,
                         grade=grade.value,
-                        hit=1 if grade is SettlementGrade.WIN else 0,
+                        hit=hit,
                         settlement_method_version=_SETTLEMENT_METHOD_VERSION,
                     )
                 )
