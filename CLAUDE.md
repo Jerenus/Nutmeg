@@ -3,6 +3,12 @@
 > 本文件与 `AGENTS.md` 的「JCZQ Daily Decision SOP」是**同一份行为指令的两个 harness
 > 副本**。改一处必须同步另一处。背景见 `docs/jczq-decision-chain-critique.md` + spec §32。
 
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan:
+`docs/superpowers/plans/2026-07-21-ontology-kernel-v2-package-1.md`
+<!-- SPECKIT END -->
+
 ## JCZQ 每日决策 SOP — 决策本体五动词（2026-07-07 M2 切换后）
 
 历史根因：agent 即兴在多套命令/引擎/Poisson 间挑选 → 决策路径不一致。**旧 tiered/bold/
