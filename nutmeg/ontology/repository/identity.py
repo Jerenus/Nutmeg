@@ -29,6 +29,29 @@ class TeamRow:
     created_at: str
 
 
+@dataclass(frozen=True, slots=True)
+class MatchRevisionRow:
+    match_revision_id: str
+    match_id: str
+    version: int
+    competition_edition_id: str | None
+    scheduled_at: str | None
+    schedule_status: str
+    venue_id: str | None
+    status: str
+    round_label: str | None
+    recorded_at: str
+    supersedes_revision_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TeamAppearanceRow:
+    team_appearance_id: str
+    match_id: str
+    team_id: str
+    side: str
+
+
 class IdentityRepository:
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
@@ -210,3 +233,79 @@ class IdentityRepository:
                 return current
             seen.add(into)
             current = into
+
+    def insert_match(self, match_id: str) -> None:
+        self._connection.execute(
+            insert(si.matches).values(match_id=match_id, current_revision_id=None)
+        )
+
+    def insert_match_revision(self, row: MatchRevisionRow) -> None:
+        self._connection.execute(
+            insert(si.match_revisions).values(
+                match_revision_id=row.match_revision_id,
+                match_id=row.match_id,
+                version=row.version,
+                competition_edition_id=row.competition_edition_id,
+                scheduled_at=row.scheduled_at,
+                schedule_status=row.schedule_status,
+                venue_id=row.venue_id,
+                status=row.status,
+                round_label=row.round_label,
+                recorded_at=row.recorded_at,
+                supersedes_revision_id=row.supersedes_revision_id,
+            )
+        )
+        self._connection.execute(
+            update(si.matches)
+            .where(si.matches.c.match_id == row.match_id)
+            .values(current_revision_id=row.match_revision_id)
+        )
+
+    def insert_team_appearance(self, row: TeamAppearanceRow) -> None:
+        self._connection.execute(
+            insert(si.team_appearances).values(
+                team_appearance_id=row.team_appearance_id,
+                match_id=row.match_id,
+                team_id=row.team_id,
+                side=row.side,
+            )
+        )
+
+    def current_match_revision(self, match_id: str) -> MatchRevisionRow:
+        current_id = self._connection.execute(
+            select(si.matches.c.current_revision_id).where(si.matches.c.match_id == match_id)
+        ).scalar_one_or_none()
+        if current_id is None:
+            raise OntologyError(f'match {match_id} has no current revision')
+        row = (
+            self._connection.execute(
+                select(si.match_revisions).where(
+                    si.match_revisions.c.match_revision_id == current_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            raise OntologyError(f'match revision {current_id} not found')
+        return MatchRevisionRow(
+            match_revision_id=row['match_revision_id'],
+            match_id=row['match_id'],
+            version=row['version'],
+            competition_edition_id=row['competition_edition_id'],
+            scheduled_at=row['scheduled_at'],
+            schedule_status=row['schedule_status'],
+            venue_id=row['venue_id'],
+            status=row['status'],
+            round_label=row['round_label'],
+            recorded_at=row['recorded_at'],
+            supersedes_revision_id=row['supersedes_revision_id'],
+        )
+
+    def appearance_sides(self, match_id: str) -> dict[str, str]:
+        rows = self._connection.execute(
+            select(si.team_appearances.c.side, si.team_appearances.c.team_id).where(
+                si.team_appearances.c.match_id == match_id
+            )
+        ).all()
+        return {side: team_id for side, team_id in rows}
