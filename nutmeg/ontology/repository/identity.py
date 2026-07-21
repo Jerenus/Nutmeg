@@ -16,6 +16,7 @@ from sqlalchemy import Connection, func, insert, select, update
 
 from nutmeg.ontology.errors import OntologyError
 from nutmeg.ontology.identity.models import EntityType, ResolutionStatus, TeamKind
+from nutmeg.ontology.repository import schema_context as sc
 from nutmeg.ontology.repository import schema_identity as si
 
 
@@ -50,6 +51,16 @@ class TeamAppearanceRow:
     match_id: str
     team_id: str
     side: str
+
+
+@dataclass(frozen=True, slots=True)
+class PersonRow:
+    person_id: str
+    canonical_name: str
+    birth_date: str | None
+    nationality: str | None
+    resolution_status: ResolutionStatus
+    created_at: str
 
 
 class IdentityRepository:
@@ -324,4 +335,42 @@ class IdentityRepository:
 
     def all_match_ids(self) -> tuple[str, ...]:
         rows = self._connection.execute(select(si.matches.c.match_id)).scalars().all()
+        return tuple(rows)
+
+    def insert_person(self, row: PersonRow) -> None:
+        self._connection.execute(
+            insert(sc.persons).values(
+                person_id=row.person_id,
+                canonical_name=row.canonical_name,
+                birth_date=row.birth_date,
+                nationality=row.nationality,
+                resolution_status=row.resolution_status.value,
+                created_at=row.created_at,
+            )
+        )
+
+    def get_person(self, person_id: str) -> PersonRow:
+        row = (
+            self._connection.execute(select(sc.persons).where(sc.persons.c.person_id == person_id))
+            .mappings()
+            .first()
+        )
+        if row is None:
+            raise OntologyError(f'person {person_id} not found')
+        return PersonRow(
+            person_id=row['person_id'],
+            canonical_name=row['canonical_name'],
+            birth_date=row['birth_date'],
+            nationality=row['nationality'],
+            resolution_status=ResolutionStatus(row['resolution_status']),
+            created_at=row['created_at'],
+        )
+
+    def count_persons(self) -> int:
+        return self._connection.execute(
+            select(func.count()).select_from(sc.persons)
+        ).scalar_one()
+
+    def all_person_ids(self) -> tuple[str, ...]:
+        rows = self._connection.execute(select(sc.persons.c.person_id)).scalars().all()
         return tuple(rows)
