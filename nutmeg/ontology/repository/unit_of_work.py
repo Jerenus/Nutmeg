@@ -15,6 +15,7 @@ from sqlalchemy import Connection, Engine
 if TYPE_CHECKING:
     from nutmeg.ontology.repository.actions import ActionRepository
     from nutmeg.ontology.repository.artifacts import ArtifactRepository
+    from nutmeg.ontology.repository.identity import IdentityRepository
 
 
 class OntologyUnitOfWork:
@@ -39,6 +40,12 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.artifacts import ArtifactRepository
 
         return ArtifactRepository(self.connection)
+
+    @property
+    def identity(self) -> IdentityRepository:
+        from nutmeg.ontology.repository.identity import IdentityRepository
+
+        return IdentityRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         self._connection = self._engine.connect()
