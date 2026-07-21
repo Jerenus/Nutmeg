@@ -7,12 +7,17 @@ from nutmeg.ontology.errors import (
     OntologyError,
     PermissionDeniedError,
 )
+from nutmeg.ontology.kernel import OntologyKernel, OntologyKernelStatus
 from nutmeg.ontology.paths import OntologyPaths
+from nutmeg.ontology.wiring import build_ontology_kernel
 
 __all__ = [
     'IdempotencyConflictError',
     'MigrationDriftError',
     'OntologyError',
+    'OntologyKernel',
+    'OntologyKernelStatus',
     'OntologyPaths',
     'PermissionDeniedError',
+    'build_ontology_kernel',
 ]
