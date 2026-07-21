@@ -20,7 +20,7 @@ from sqlalchemy import Connection, Engine, insert, inspect, select
 
 from nutmeg.ontology.errors import MigrationDriftError
 from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
-from nutmeg.ontology.repository import schema, schema_identity, schema_market
+from nutmeg.ontology.repository import schema, schema_context, schema_identity, schema_market
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +261,16 @@ def _apply_market(connection: Connection) -> None:
     )
 
 
+def _apply_context(connection: Connection) -> None:
+    for table in (
+        schema_context.persons,
+        schema_context.role_assignments,
+        schema_context.person_match_statuses,
+        schema_context.lineup_entries,
+    ):
+        table.create(connection)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -285,6 +295,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='market_definitions',
         fingerprint='market_defs+selection_defs(had,hhad,ttg,crs)+market_permissions',
         apply=_apply_market,
+    ),
+    Migration(
+        version=5,
+        name='football_context',
+        fingerprint='persons+role_assignments+person_match_statuses+lineup_entries',
+        apply=_apply_context,
     ),
 )
 
