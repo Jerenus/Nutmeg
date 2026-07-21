@@ -13,11 +13,13 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, func, select
 
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
+from nutmeg.ontology.decision.read_flow import DecisionReadService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.artifacts import ArtifactRepository
+from nutmeg.ontology.repository.decision import DecisionRepository
 from nutmeg.ontology.repository.evidence import EvidenceRepository
 from nutmeg.ontology.repository.identity import IdentityRepository
 from nutmeg.ontology.repository.market import MarketRepository
@@ -45,6 +47,8 @@ class OntologyKernelStatus:
     person_count: int
     observation_count: int
     claim_count: int
+    forecast_count: int
+    bundle_count: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -62,6 +66,8 @@ class OntologyKernelStatus:
             'person_count': self.person_count,
             'observation_count': self.observation_count,
             'claim_count': self.claim_count,
+            'forecast_count': self.forecast_count,
+            'bundle_count': self.bundle_count,
         }
 
 
@@ -74,12 +80,14 @@ class OntologyKernel:
         artifact_ingest: ArtifactIngestService,
         market_day_ingest: MarketDayIngestService,
         evidence_day_ingest: EvidenceDayIngestService,
+        decision_read: DecisionReadService,
     ) -> None:
         self._paths = paths
         self._engine = engine
         self.artifact_ingest = artifact_ingest
         self.market_day_ingest = market_day_ingest
         self.evidence_day_ingest = evidence_day_ingest
+        self.decision_read = decision_read
 
     @property
     def engine(self) -> Engine:
@@ -106,6 +114,8 @@ class OntologyKernel:
                 person_count=0,
                 observation_count=0,
                 claim_count=0,
+                forecast_count=0,
+                bundle_count=0,
             )
 
         migration = migration_status(self._engine)
@@ -134,6 +144,9 @@ class OntologyKernel:
             evidence = EvidenceRepository(connection)
             observation_count = evidence.count_observations()
             claim_count = evidence.count_claims()
+            decision = DecisionRepository(connection)
+            forecast_count = decision.count_committed_revisions()
+            bundle_count = decision.count_bundles()
 
         return OntologyKernelStatus(
             initialized=True,
@@ -150,4 +163,6 @@ class OntologyKernel:
             person_count=person_count,
             observation_count=observation_count,
             claim_count=claim_count,
+            forecast_count=forecast_count,
+            bundle_count=bundle_count,
         )
