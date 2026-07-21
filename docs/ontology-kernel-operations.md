@@ -101,5 +101,43 @@ layer so that business rows and the Action audit log commit atomically.
 
 Packages 2–5 add the football world & evidence, the decision & finance loop,
 learning & regime analytics, and the evidence migration & cutover. Until then:
-no identity resolution, no Claim/Observation/Forecast/Ticket, no DuckDB scoring,
-and no legacy data migration live behind this kernel.
+no Claim/Observation/Forecast/Ticket, no DuckDB scoring, and no legacy data
+migration live behind this kernel.
+
+## 10. Package 2A — Identity & Market Facts
+
+Package 2A turns a Match into a cross-channel object with resolved identities and
+typed market snapshots. Design:
+`docs/superpowers/specs/2026-07-21-ontology-kernel-v2-package-2-design.md`.
+
+**Identity.** Teams/venues/competitions/matches carry opaque ids; provider ids
+(sporttery matchId, api-football ids) live in `external_identifiers`. Resolution
+is **provider-id-first, then curated alias** (seeded from `jczq_*_aliases.json`);
+an unresolved entity becomes a `provisional` row — **never null, never guessed
+from a team-name string**. `MergeEntity` (judge_operator only) records a
+reversible tombstone; `redirect` follows merges to the survivor. A `matchId`
+uniquely identifies a sporttery match; `matchNumStr` ("周日104") is the per-day
+cross-channel key international odds align to.
+
+**Real schedule.** `MatchRevision.scheduled_at` is the true kickoff (sporttery
+`matchDate` + `matchTime`, Beijing), so an early-morning game lands on the next
+calendar day — never the ingestion time. Unknown times are explicit
+(`schedule_status='unknown'`).
+
+**Market.** `MarketDefinition` carries an explicit `settlement_scope`;
+`BuildMarketSnapshot` (deterministic_system) records quotes and de-vigs the fair
+distribution by reusing `nutmeg.decision.market_data.devig`.
+
+**Ingest a saved market day** (idempotent):
+
+```bash
+uv run nutmeg ontology ingest-market-day --business-date <YYYY-MM-DD> \
+  --sporttery <path/to/sporttery_markets.json> [--intl <path/to/bold_odds.json>] --format json
+```
+
+It initializes the kernel if needed, upserts teams, records matches with real
+schedules, and de-vigs had snapshots; international odds align to the same opaque
+match by sporttery match number. `nutmeg ontology status` then reports
+`team_count`/`match_count`/`quote_count`/`snapshot_count`. Package 2B (Person,
+RoleAssignment, LineupEntry, Claim/Observation, adapter wiring) follows on 2A's
+verified interfaces.
