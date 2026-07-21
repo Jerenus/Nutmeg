@@ -9,6 +9,7 @@ read the migration high-water mark, and count Actions/artifacts/retrievals.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Engine, func, select
 
@@ -33,6 +34,9 @@ from nutmeg.ontology.repository.migrations import (
     run_migrations,
 )
 
+if TYPE_CHECKING:
+    from nutmeg.analytics.calibrate_flow import CalibrateService
+
 
 @dataclass(frozen=True, slots=True)
 class OntologyKernelStatus:
@@ -54,6 +58,8 @@ class OntologyKernelStatus:
     bundle_count: int
     ticket_count: int
     settlement_count: int
+    projection_run_count: int
+    scorecard_count: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -75,6 +81,8 @@ class OntologyKernelStatus:
             'bundle_count': self.bundle_count,
             'ticket_count': self.ticket_count,
             'settlement_count': self.settlement_count,
+            'projection_run_count': self.projection_run_count,
+            'scorecard_count': self.scorecard_count,
         }
 
 
@@ -90,6 +98,7 @@ class OntologyKernel:
         decision_read: DecisionReadService,
         express: ExpressService,
         reconcile: ReconcileService,
+        calibrate: CalibrateService,
     ) -> None:
         self._paths = paths
         self._engine = engine
@@ -99,6 +108,7 @@ class OntologyKernel:
         self.decision_read = decision_read
         self.express = express
         self.reconcile = reconcile
+        self.calibrate = calibrate
 
     @property
     def engine(self) -> Engine:
@@ -129,6 +139,8 @@ class OntologyKernel:
                 bundle_count=0,
                 ticket_count=0,
                 settlement_count=0,
+                projection_run_count=0,
+                scorecard_count=0,
             )
 
         migration = migration_status(self._engine)
@@ -163,6 +175,9 @@ class OntologyKernel:
             finance = FinanceRepository(connection)
             ticket_count = finance.count_tickets()
             settlement_count = finance.count_settlements()
+        from nutmeg.analytics.substrate import projection_counts
+
+        projection_run_count, scorecard_count = projection_counts(self._paths.analytics)
 
         return OntologyKernelStatus(
             initialized=True,
@@ -183,4 +198,6 @@ class OntologyKernel:
             bundle_count=bundle_count,
             ticket_count=ticket_count,
             settlement_count=settlement_count,
+            projection_run_count=projection_run_count,
+            scorecard_count=scorecard_count,
         )
