@@ -122,11 +122,19 @@ to `nutmeg.decision.ontology_adapter`.
 
 ## 5. Still open (honest, before flag-on)
 
+**P0 closed (2026-07-22):** settlement is now **odds-faithful** — `bet_legs.entry_odds`
+(migration 9) is required at approve and settles payout = stake × Π(odds of WIN legs);
+VOID legs push (×1.0), losses pay 0; legacy pre-migration legs stay auditable under
+`settlement_method_version='had-3way-v1'`. And settle fetches **okooo live results**
+automatically (竞彩号 → matchId → kernel match), with manual `results.json` as override;
+unfinished matches skip and settle idempotently on the next day's re-run.
+
 - **PDF report** — the v2 report is markdown + Telegram text; the reportlab PDF is not
   ported (a rendering nicety — the markdown carries the same content). Not a blocker.
-- Brier reconciliation is clean (0 mismatches). The only bounded analytical item is
-  breadth — Package 4A scores `had` only, so `hhad`/`ttg` reads have no rebuilt score yet.
-  A scoring follow-on, not a go-live blocker.
+- **Market breadth** — the kernel ingests/expresses/scores `had` only (parsers drop the
+  sporttery hhad/ttg/crs pools). The judgment layer's ttg/handicap axes cannot be priced
+  or expressed until this lands — the recommended next package, not a settlement blocker.
+- Brier reconciliation is clean (0 mismatches).
 
 **Ready for the shadow day.** Provision the prod kernel store (§2.2), set
 `NUTMEG_ONTOLOGY_V2=1`, run one live day's `decision-am/read/close/settle` **dry** (no
