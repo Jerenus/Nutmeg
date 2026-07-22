@@ -182,13 +182,15 @@ def run_decision_express_v2(legs_file, output_dir, *, kernel=None, made_at=None)
                 # Resolve the selection by outcome key only — the handicap/line lives on
                 # the bet leg, not on the (line-agnostic) selection definition.
                 selection = uow.market.selection_id_for(market, str(leg.get("selection")))
-            if revision is None or selection is None:
-                resolvable = False
+            odds = leg.get("odds")
+            has_price = isinstance(odds, int | float) and float(odds) > 1.0
+            if revision is None or selection is None or not has_price:
+                resolvable = False   # no committed Read / no selection / no real price
                 break
             leg_inputs.append(LegInput(
                 match_id=match_id, market_definition_id=market, selection_id=selection,
                 forecast_revision_id=revision.forecast_revision_id, bucket=str(ticket["bucket"]),
-                stake=share, entry_quote_id=None, line=leg.get("line")))
+                stake=share, entry_odds=float(odds), entry_quote_id=None, line=leg.get("line")))
         if not resolvable:
             skipped.append(str(ticket["ticket_id"]))
             continue
@@ -204,7 +206,7 @@ def run_decision_express_v2(legs_file, output_dir, *, kernel=None, made_at=None)
     if summary["scaled"]:
         msg += "(超 ¥400 硬顶已缩)"
     if skipped:
-        msg += f" | 跳过 {len(skipped)}(无判读/无匹配选项)"
+        msg += f" | 跳过 {len(skipped)}(无判读/无匹配选项/无赔)"
     return msg
 
 

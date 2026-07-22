@@ -34,7 +34,7 @@ def test_action_and_integrity_cards(tmp_path: Path) -> None:
     fr = out.result_refs[0].object_id
     kernel.express.approve_for_match(ExpressRequest(
         channel="jczq", account_id="acct-jczq", decision_session_id=None,
-        legs=[LegInput("match-1", "md-had", "sel-had-home", fr, "main", 100.0)],
+        legs=[LegInput("match-1", "md-had", "sel-had-home", fr, "main", 100.0, 2.10)],
         actor_id="op:owner", actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key="ex:1",
         requested_at=T))
     kernel.reconcile.settle_match(ReconcileRequest(
@@ -45,8 +45,8 @@ def test_action_and_integrity_cards(tmp_path: Path) -> None:
     cards = {r["scorecard"]: json.loads(r["metrics_json"])
              for r in compute_integrity_action_rows(kernel.engine)}
     action = cards["action_finance"]
-    assert action["stake_total"] == 100.0 and action["payout_total"] == 200.0
-    assert action["ledger_balance"] == 100.0        # no entry = not bet; signed sum reconciles
+    assert action["stake_total"] == 100.0 and action["payout_total"] == 210.0
+    assert action["ledger_balance"] == 110.0        # odds-faithful: 100×2.10 payout
     assert action["ticket_count"] == 1 and action["settlement_count"] == 1
     integrity = cards["evidence_integrity"]
     assert integrity["outcome_completeness"] == 1.0    # the one revision's match has an outcome

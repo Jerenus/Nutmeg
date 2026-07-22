@@ -53,7 +53,7 @@ def _approve_home_ticket(svc: ActionService, fr_id: str) -> str:
     tickets = TicketActions(svc)
     leg = LegInput(match_id="match-1", market_definition_id="md-had",
                    selection_id="sel-had-home", forecast_revision_id=fr_id,
-                   bucket="main", stake=100.0)
+                   bucket="main", stake=100.0, entry_odds=2.10)
     proposal = tickets.propose_ticket(ProposeTicketRequest(
         channel="jczq", decision_session_id="sess-x", legs=[leg], actor_id="op:owner",
         actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key="pt:1", requested_at=T))
@@ -94,8 +94,8 @@ def test_settle_winning_ticket_pays_out(tmp_path: Path) -> None:
     assert result.settled is True
     with OntologyUnitOfWork(engine) as uow:
         assert uow.finance.count_settlements() == 1
-        # −100 stake + 200 payout (flat 2× placeholder) = +100
-        assert uow.finance.ledger_balance("acct-jczq") == 100.0
+        # −100 stake + 100×2.10 odds-faithful payout = +110
+        assert uow.finance.ledger_balance("acct-jczq") == 110.0
 
 
 def test_settle_non_had_leg_grades_void(tmp_path: Path) -> None:
@@ -109,7 +109,7 @@ def test_settle_non_had_leg_grades_void(tmp_path: Path) -> None:
     tickets = TicketActions(svc)
     leg = LegInput(match_id="match-1", market_definition_id="md-hhad",
                    selection_id="sel-hhad-home", forecast_revision_id=fr_hhad,
-                   bucket="hedge", stake=100.0, line="-1")
+                   bucket="hedge", stake=100.0, entry_odds=2.0, line="-1")
     proposal = tickets.propose_ticket(ProposeTicketRequest(
         channel="jczq", decision_session_id="sess-x", legs=[leg], actor_id="op:owner",
         actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key="pt:h", requested_at=T))
@@ -126,7 +126,8 @@ def test_settle_non_had_leg_grades_void(tmp_path: Path) -> None:
     with OntologyUnitOfWork(engine) as uow:
         grades = uow.connection.execute(select(sf.bet_leg_settlements.c.grade)).scalars().all()
         assert grades == ["void"]   # non-had market graded VOID, not mis-read as a loss
-        assert uow.finance.ledger_balance("acct-jczq") == -100.0   # VOID pays nothing
+        # odds-faithful: a VOID leg is a push — the stake is refunded (×1.0), net 0
+        assert uow.finance.ledger_balance("acct-jczq") == 0.0
 
 
 def test_settle_missing_outcome_writes_no_pending(tmp_path: Path) -> None:

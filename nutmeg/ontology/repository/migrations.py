@@ -404,6 +404,20 @@ def _apply_finance(connection: Connection) -> None:
     )
 
 
+def _apply_finance_entry_odds(connection: Connection) -> None:
+    """Add ``bet_legs.entry_odds`` (booking-time decimal odds — the settlement price).
+
+    Fresh databases already get the column from migration 8's ``table.create`` (the
+    Table definition carries it), so this ALTER is guarded by a PRAGMA check and only
+    fires when upgrading a store created before this migration.
+    """
+    columns = {
+        row[1] for row in connection.exec_driver_sql('PRAGMA table_info(bet_legs)').fetchall()
+    }
+    if 'entry_odds' not in columns:
+        connection.exec_driver_sql('ALTER TABLE bet_legs ADD COLUMN entry_odds REAL')
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -452,6 +466,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='finance',
         fingerprint='budget_policies..ticket_settlements+finance_permissions',
         apply=_apply_finance,
+    ),
+    Migration(
+        version=9,
+        name='finance_entry_odds',
+        fingerprint='bet_legs+entry_odds(guarded_alter)',
+        apply=_apply_finance_entry_odds,
     ),
 )
 
