@@ -35,6 +35,7 @@ class MarketDayIngestRequest:
     requested_at: datetime
     intl_value: dict | None = None
     snapshot_kind: str = 'read_time'
+    sporttery_snapshots: bool = True
 
     def __post_init__(self) -> None:
         if self.requested_at.tzinfo is None or self.requested_at.utcoffset() is None:
@@ -91,7 +92,7 @@ class MarketDayIngestService:
             match_ids.add(match_id)
             match_no_to_id[parsed.match_no] = match_id
             had = [quote for quote in parsed.quotes if quote.market_kind == 'had']
-            if had:
+            if had and request.sporttery_snapshots:
                 self._build_had_snapshot(
                     request, match_id, parsed.match_no, 'sporttery',
                     parsed.scheduled_at, had, sporttery_retrieval,

@@ -60,7 +60,11 @@ def test_capture_closing_v2_ingests_closing_snapshot(tmp_path: Path) -> None:
     assert "收盘快照" in msg
     with OntologyUnitOfWork(kernel.engine) as uow:
         closing = uow.market.closing_fair(match_id, "md-had")
+        read_time = uow.market.latest_fair(match_id, "md-had")
     assert closing is not None and abs(sum(closing.values()) - 1.0) < 1e-9
+    # the closing fair is the intl CLOSING odds (home 1.95 < read-time 2.10), not the
+    # read-time sporttery odds re-marked closing — so home prob is higher at close
+    assert closing["home"] > read_time["home"]
 
 
 def test_capture_closing_v2_skips_without_file(tmp_path: Path) -> None:

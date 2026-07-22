@@ -277,11 +277,12 @@ def _capture_closing_v2(kernel, run_date: str, output_dir, requested_at) -> str:
         return f"decision-capture-closing-v2 {run_date}: 无收盘欧赔文件 — 跳过(CLV 空)"
     closing = json.loads(closing_path.read_text(encoding="utf-8"))
     # Same actor as am so the idempotent team/match upserts replay rather than conflict;
-    # only the closing snapshots (keyed by snapshot_kind) are new.
+    # sporttery_snapshots=False so the closing fair is the intl closing odds only (not the
+    # read-time sporttery odds re-marked closing) — the true CLV reference.
     result = kernel.market_day_ingest.ingest(MarketDayIngestRequest(
         business_date=run_date, sporttery_value=sporttery, intl_value=closing,
         actor_id="source:sporttery", actor_role=ActorRole.CONNECTOR, snapshot_kind="closing",
-        requested_at=requested_at))
+        sporttery_snapshots=False, requested_at=requested_at))
     return f"decision-capture-closing-v2 {run_date}: 收盘快照 {result.snapshots} 条"
 
 
