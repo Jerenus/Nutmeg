@@ -9,6 +9,7 @@ from the business date + provider ids, so a rerun commits nothing new.
 """
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,12 +19,17 @@ from nutmeg.ontology.actions.entity_actions import EntityActions, UpsertTeamRequ
 from nutmeg.ontology.actions.market_actions import MarketActions
 from nutmeg.ontology.actions.match_actions import MatchActions, MatchSideRef, RecordMatchRequest
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
+from nutmeg.ontology.errors import IdempotencyConflictError
 from nutmeg.ontology.identity.models import MatchSide, MatchStatus, TeamKind
 from nutmeg.ontology.ingest.intl_odds import ParsedIntlQuote, parse_bold_odds
 from nutmeg.ontology.ingest.sporttery import ParsedMatch, ParsedQuote, parse_sporttery_markets
 from nutmeg.ontology.market.models import QuoteInput, SnapshotBuildRequest
 
 _HAD = 'md-had'
+
+
+def _content_key(value: dict) -> str:
+    return hashlib.sha256(canonical_json(value).encode('utf-8')).hexdigest()[:12]
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,12 +75,13 @@ class MarketDayIngestService:
         kind = request.snapshot_kind
         sporttery_retrieval = self._ingest_artifact(
             request, request.sporttery_value, 'sporttery',
-            f'sporttery:{kind}:{request.business_date}'
+            f'sporttery:{kind}:{request.business_date}:{_content_key(request.sporttery_value)}'
         )
         intl_retrieval = None
         if request.intl_value is not None:
             intl_retrieval = self._ingest_artifact(
-                request, request.intl_value, 'intl', f'intl:{kind}:{request.business_date}'
+                request, request.intl_value, 'intl',
+                f'intl:{kind}:{request.business_date}:{_content_key(request.intl_value)}'
             )
 
         match_ids: set[str] = set()
@@ -93,11 +100,14 @@ class MarketDayIngestService:
             match_no_to_id[parsed.match_no] = match_id
             had = [quote for quote in parsed.quotes if quote.market_kind == 'had']
             if had and request.sporttery_snapshots:
-                self._build_had_snapshot(
-                    request, match_id, parsed.match_no, 'sporttery',
-                    parsed.scheduled_at, had, sporttery_retrieval,
-                )
-                snapshots += 1
+                try:
+                    self._build_had_snapshot(
+                        request, match_id, parsed.match_no, 'sporttery',
+                        parsed.scheduled_at, had, sporttery_retrieval,
+                    )
+                    snapshots += 1
+                except IdempotencyConflictError:
+                    pass   # 盘中赔率已动:保留早盘 read_time 锚(判读时的价),不覆盖
 
         if request.intl_value is not None:
             by_match_no: dict[str, list[ParsedIntlQuote]] = defaultdict(list)
@@ -109,10 +119,13 @@ class MarketDayIngestService:
                     continue
                 had = [quote for quote in quotes if quote.market_kind == 'had']
                 if had:
-                    self._build_had_snapshot(
-                        request, match_id, match_no, 'intl', None, had, intl_retrieval
-                    )
-                    snapshots += 1
+                    try:
+                        self._build_had_snapshot(
+                            request, match_id, match_no, 'intl', None, had, intl_retrieval
+                        )
+                        snapshots += 1
+                    except IdempotencyConflictError:
+                        pass   # 同上:保留已存锚
 
         return MarketDayIngestResult(
             matches=len(match_ids), snapshots=snapshots, teams=len(team_ids)
