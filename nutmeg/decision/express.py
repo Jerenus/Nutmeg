@@ -156,6 +156,9 @@ def compose_tickets(legs, budget=None, *, channel, made_at="", store=None) -> di
             "structure": d["structure"], "stake_yuan": int(d["stake"]),
             "combined_odds": d["combined_odds"], "n_legs": len(d["legs"]),
             "computed_hit_prob": d["hit_prob"],
+            # Full legs exposed for the kernel-backed express path (additive; old
+            # callers ignore it). Deterministic ¥400 allocation stays in this function.
+            "legs": [dict(leg) for leg in d["legs"]],
         })
     if store is not None:
         store.upsert_many(tickets)
