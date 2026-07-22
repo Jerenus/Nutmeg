@@ -28,8 +28,11 @@ from nutmeg.ontology.repository.finance import (
 )
 
 _SETTLEMENT_METHOD_VERSION = 'had-3way-v1'
-# Package 3B settles P&L against a flat win multiplier: odds-faithful payout (from the
-# entry quote) and CLV live in Package 4. Documented in ontology-kernel-operations.md.
+# Odds-faithful settlement: payout = stake × Π(entry_odds of WIN legs); VOID/PUSH legs
+# contribute 1.0 (a push, per sporttery parlay convention — all legs void refunds the
+# stake); any LOSS pays 0. The legacy flat ×2 multiplier survives ONLY for legs written
+# before migration 9 (entry_odds NULL) and is auditable via settlement_method_version.
+_SETTLEMENT_METHOD_ODDS = 'odds-faithful-v1'
 _PLACEHOLDER_WIN_MULTIPLIER = 2.0
 # Only the had 3-way market is graded in 3B; any other market is graded VOID (hit
 # unknown) rather than silently mis-read as a loss. hhad/ttg/crs grading is a
@@ -149,12 +152,21 @@ class OutcomeActions:
             at = request.requested_at.astimezone(UTC).isoformat()
             home, away = _score_parts(outcome.score_90)
             legs = uow.finance.bet_legs_for(request.ticket_id)
+            odds_known = bool(legs) and all(leg.entry_odds is not None for leg in legs)
+            method = _SETTLEMENT_METHOD_ODDS if odds_known else _SETTLEMENT_METHOD_VERSION
             leg_settlement_ids: list[ObjectRef] = []
             all_win = True
+            any_loss = False
+            odds_product = 1.0
             for leg in legs:
                 grade, hit = _grade_leg(leg.market_definition_id, leg.selection_id, home, away)
                 if grade is not SettlementGrade.WIN:
-                    all_win = False   # a VOID (ungraded) leg conservatively blocks payout
+                    all_win = False
+                if grade is SettlementGrade.LOSS:
+                    any_loss = True
+                elif grade is SettlementGrade.WIN and odds_known:
+                    odds_product *= float(leg.entry_odds)
+                # VOID/PUSH legs contribute 1.0 to the product (a push)
                 settlement_id = mint_finance_id('bls')
                 uow.finance.insert_bet_leg_settlement(
                     BetLegSettlementRow(
@@ -163,13 +175,17 @@ class OutcomeActions:
                         outcome_id=outcome.outcome_id,
                         grade=grade.value,
                         hit=hit,
-                        settlement_method_version=_SETTLEMENT_METHOD_VERSION,
+                        settlement_method_version=method,
                     )
                 )
                 leg_settlement_ids.append(ObjectRef('bet_leg_settlement', settlement_id))
             stake = sum(leg.stake_share or 0.0 for leg in legs)
-            payout = stake * _PLACEHOLDER_WIN_MULTIPLIER if all_win and legs else 0.0
-            pnl = payout - stake
+            if odds_known:
+                payout = 0.0 if any_loss or not legs else round(stake * odds_product, 2)
+            else:
+                # legacy pre-migration-9 legs: flat multiplier, VOID blocks payout
+                payout = stake * _PLACEHOLDER_WIN_MULTIPLIER if all_win and legs else 0.0
+            pnl = round(payout - stake, 2)
             ticket_settlement_id = mint_finance_id('ts')
             uow.finance.insert_ticket_settlement(
                 TicketSettlementRow(
@@ -181,7 +197,7 @@ class OutcomeActions:
                     payout_amount=payout,
                     pnl_amount=pnl,
                     bet_leg_settlement_ids=[ref.object_id for ref in leg_settlement_ids],
-                    settlement_method_version=_SETTLEMENT_METHOD_VERSION,
+                    settlement_method_version=method,
                 )
             )
             refs: list[ObjectRef] = [

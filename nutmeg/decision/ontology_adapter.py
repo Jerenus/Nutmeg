@@ -182,13 +182,15 @@ def run_decision_express_v2(legs_file, output_dir, *, kernel=None, made_at=None)
                 # Resolve the selection by outcome key only — the handicap/line lives on
                 # the bet leg, not on the (line-agnostic) selection definition.
                 selection = uow.market.selection_id_for(market, str(leg.get("selection")))
-            if revision is None or selection is None:
-                resolvable = False
+            odds = leg.get("odds")
+            has_price = isinstance(odds, int | float) and float(odds) > 1.0
+            if revision is None or selection is None or not has_price:
+                resolvable = False   # no committed Read / no selection / no real price
                 break
             leg_inputs.append(LegInput(
                 match_id=match_id, market_definition_id=market, selection_id=selection,
                 forecast_revision_id=revision.forecast_revision_id, bucket=str(ticket["bucket"]),
-                stake=share, entry_quote_id=None, line=leg.get("line")))
+                stake=share, entry_odds=float(odds), entry_quote_id=None, line=leg.get("line")))
         if not resolvable:
             skipped.append(str(ticket["ticket_id"]))
             continue
@@ -204,7 +206,7 @@ def run_decision_express_v2(legs_file, output_dir, *, kernel=None, made_at=None)
     if summary["scaled"]:
         msg += "(超 ¥400 硬顶已缩)"
     if skipped:
-        msg += f" | 跳过 {len(skipped)}(无判读/无匹配选项)"
+        msg += f" | 跳过 {len(skipped)}(无判读/无匹配选项/无赔)"
     return msg
 
 
@@ -312,20 +314,75 @@ def run_decision_close_v2(run_date: str, output_dir, *, kernel=None, dispatch: b
     return _compose("decision-close", run_date, "出票(ontology v2 kernel)", steps)
 
 
-def _reconcile_v2(kernel, run_date: str, output_dir, requested_at) -> str:
-    """Record outcomes + settle each match's tickets from a results source. A match with
-    no result is skipped (never a pending settlement). Results: daily/<date>/results.json
-    ``{kernel_match_id: home|draw|away}``."""
+def _normalize_score(value: object) -> str | None:
+    """"2-1"/"2:1"/"2：1" → "2-1"; home/draw/away → canonical score; else None."""
+    text = str(value or "").strip().replace("：", ":").replace(":", "-")
+    parts = text.split("-")
+    if len(parts) == 2 and all(p.isdigit() for p in parts):
+        return f"{int(parts[0])}-{int(parts[1])}"
+    return _RESULT_SCORE.get(str(value))
+
+
+def _results_v2(kernel, run_date: str, output_dir, live_fetcher=None) -> dict[str, str]:
+    """Final scores keyed by kernel match id: ``{match_id: "2-1"}``.
+
+    ``daily/<date>/results.json`` (manual override, score or home/draw/away values) wins;
+    otherwise fetch okooo live results and map 竞彩号 → sporttery matchId (via the saved
+    snapshot) → kernel match (external_identifiers). Unfinished/unmappable matches are
+    skipped — a missing result is never a pending settlement.
+    """
+    from nutmeg.decision.market_data import load_sporttery_snapshot
+    from nutmeg.ontology.identity.models import EntityType
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+    results_path = Path(output_dir) / "daily" / run_date / "results.json"
+    if results_path.exists():
+        manual = json.loads(results_path.read_text(encoding="utf-8"))
+        return {
+            str(match_id): score
+            for match_id, value in manual.items()
+            if (score := _normalize_score(value)) is not None
+        }
+
+    if live_fetcher is None:
+        from nutmeg.services.jczq_results import OkoooJczqResultProvider
+        live_fetcher = OkoooJczqResultProvider().fetch_results
+    try:
+        okooo = live_fetcher(run_date) or {}
+    except Exception:   # noqa: BLE001 — 抓不到赛果 → 全部跳过(不产 pending)
+        return {}
+
+    sporttery = load_sporttery_snapshot(run_date, output_dir) or {}
+    no_to_external: dict[str, str] = {}
+    for day in sporttery.get("matchInfoList") or []:
+        for sub in day.get("subMatchList") or []:
+            if sub.get("matchNumStr") and sub.get("matchId") is not None:
+                no_to_external[str(sub["matchNumStr"])] = str(sub["matchId"])
+
+    results: dict[str, str] = {}
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        for match_no, row in okooo.items():
+            score = _normalize_score((row or {}).get("score"))
+            external = no_to_external.get(str(match_no))
+            if score is None or external is None:
+                continue   # 未终局/未对上 → 跳过
+            kernel_match = uow.identity.entity_by_external_id(
+                EntityType.MATCH, provider="sporttery", external_id=external)
+            if kernel_match is not None:
+                results[kernel_match] = score
+    return results
+
+
+def _reconcile_v2(kernel, run_date: str, output_dir, requested_at, live_fetcher=None) -> str:
+    """Record outcomes + settle each match's tickets. Results come from ``_results_v2``
+    (manual override or okooo live); a match with no final result is skipped — never a
+    pending settlement."""
     from nutmeg.ontology.actions.models import ActorRole
     from nutmeg.ontology.finance.reconcile_flow import ReconcileRequest
 
-    results_path = Path(output_dir) / "daily" / run_date / "results.json"
-    results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.exists() else {}
+    results = _results_v2(kernel, run_date, output_dir, live_fetcher=live_fetcher)
     settled = 0
-    for match_id, result_key in results.items():
-        score = _RESULT_SCORE.get(str(result_key))
-        if score is None:
-            continue
+    for match_id, score in results.items():
         outcome = kernel.reconcile.settle_match(ReconcileRequest(
             match_id=str(match_id), account_id=_ACCOUNT, score_90=score, status="final",
             source_artifact_retrieval_ids=[], actor_id="system:reconcile",
@@ -345,7 +402,8 @@ def _calibrate_v2(kernel, stamp: str) -> str:
 
 
 def run_decision_settle_v2(run_date: str, output_dir, *, kernel=None, dispatch: bool = False,
-                           dry_run: bool = True, notification_service=None):
+                           dry_run: bool = True, notification_service=None,
+                           results_fetcher=None):
     """settle on the kernel: reconcile (record outcomes + settle tickets) → calibrate → report."""
     from nutmeg.decision.verbs import _compose, _now_iso
 
@@ -353,7 +411,8 @@ def run_decision_settle_v2(run_date: str, output_dir, *, kernel=None, dispatch: 
     requested_at = datetime.fromisoformat(stamp)
     active_kernel = kernel if kernel is not None else _default_kernel()
     steps = [
-        ("reconcile", lambda: _reconcile_v2(active_kernel, run_date, output_dir, requested_at)),
+        ("reconcile", lambda: _reconcile_v2(active_kernel, run_date, output_dir, requested_at,
+                                            live_fetcher=results_fetcher)),
         ("calibrate", lambda: _calibrate_v2(active_kernel, stamp)),
         ("report", lambda: _report_v2(active_kernel, run_date, output_dir, "settle", dispatch,
                                       dry_run, notification_service)),

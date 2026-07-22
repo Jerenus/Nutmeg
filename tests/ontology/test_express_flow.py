@@ -42,7 +42,7 @@ def _express(kernel, legs, key="ex:1"):
 def test_express_approves_committed_forecast(tmp_path: Path) -> None:
     kernel, fr_id = _kernel_with_forecast(tmp_path)
     leg = LegInput(match_id="match-1", market_definition_id="md-had", selection_id="sel-had-home",
-                   forecast_revision_id=fr_id, bucket="main", stake=100.0)
+                   forecast_revision_id=fr_id, bucket="main", stake=100.0, entry_odds=2.10)
     result = _express(kernel, [leg])
     assert result.approved is True and result.ticket_id is not None
     with OntologyUnitOfWork(kernel.engine) as uow:

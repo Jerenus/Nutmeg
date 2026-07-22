@@ -43,7 +43,7 @@ def _setup(tmp_path: Path):
 def _leg(fr_id: str, stake: float = 100.0) -> LegInput:
     return LegInput(match_id="match-1", market_definition_id="md-had",
                     selection_id="sel-had-home", forecast_revision_id=fr_id,
-                    bucket="main", stake=stake)
+                    bucket="main", stake=stake, entry_odds=2.10)
 
 
 def _propose(tickets: TicketActions, legs, key="pt:1") -> str:

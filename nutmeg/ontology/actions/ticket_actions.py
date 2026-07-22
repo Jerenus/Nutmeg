@@ -36,8 +36,15 @@ class LegInput:
     forecast_revision_id: str
     bucket: str
     stake: float
+    entry_odds: float
     entry_quote_id: str | None = None
     line: str | None = None
+
+    def __post_init__(self) -> None:
+        # The booking price is the settlement price — a bet without real decimal odds
+        # cannot be honestly settled or CLV-checked.
+        if self.entry_odds is None or self.entry_odds <= 1.0:
+            raise ValueError('entry_odds must be decimal odds > 1.0')
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +90,7 @@ def _leg_dict(leg: LegInput) -> dict[str, object]:
         'forecast_revision_id': leg.forecast_revision_id,
         'bucket': leg.bucket,
         'stake': leg.stake,
+        'entry_odds': leg.entry_odds,
         'entry_quote_id': leg.entry_quote_id,
         'line': leg.line,
     }
@@ -183,6 +191,7 @@ class TicketActions:
                         entry_quote_id=leg.entry_quote_id,
                         line=leg.line,
                         stake_share=leg.stake,
+                        entry_odds=leg.entry_odds,
                     )
                 )
                 refs.append(ObjectRef('bet_leg', bet_leg_id))

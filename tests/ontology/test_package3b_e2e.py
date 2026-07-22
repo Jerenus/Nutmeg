@@ -27,7 +27,7 @@ def _commit(service: ActionService, match: str, key: str) -> str:
 
 def _express(kernel, account: str, match: str, fr_id: str, key: str):
     leg = LegInput(match_id=match, market_definition_id="md-had", selection_id="sel-had-home",
-                   forecast_revision_id=fr_id, bucket="main", stake=100.0)
+                   forecast_revision_id=fr_id, bucket="main", stake=100.0, entry_odds=2.0)
     return kernel.express.approve_for_match(ExpressRequest(
         channel="jczq", account_id=account, decision_session_id="sess-x", legs=[leg],
         actor_id="op:owner", actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key=key,

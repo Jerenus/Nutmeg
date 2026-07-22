@@ -70,6 +70,7 @@ class BetLegRow:
     entry_quote_id: str | None
     line: str | None
     stake_share: float | None
+    entry_odds: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +198,7 @@ class FinanceRepository:
                 forecast_revision_id=row.forecast_revision_id, match_id=row.match_id,
                 market_definition_id=row.market_definition_id, selection_id=row.selection_id,
                 entry_quote_id=row.entry_quote_id, line=row.line, stake_share=row.stake_share,
+                entry_odds=row.entry_odds,
             )
         )
 
@@ -220,6 +222,7 @@ class FinanceRepository:
                 forecast_revision_id=r['forecast_revision_id'], match_id=r['match_id'],
                 market_definition_id=r['market_definition_id'], selection_id=r['selection_id'],
                 entry_quote_id=r['entry_quote_id'], line=r['line'], stake_share=r['stake_share'],
+                entry_odds=r['entry_odds'],
             )
             for r in rows
         ]

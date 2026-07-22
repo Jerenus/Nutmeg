@@ -88,6 +88,9 @@ bet_legs = Table(
            ForeignKey('market_quotes.quote_id', ondelete='RESTRICT'), nullable=True),
     Column('line', Text, nullable=True),
     Column('stake_share', Float, nullable=True),
+    # Decimal odds at booking time — the settlement price. Nullable only for legs
+    # written before migration 9; approve_ticket requires it going forward.
+    Column('entry_odds', Float, nullable=True),
 )
 
 cash_transactions = Table(
