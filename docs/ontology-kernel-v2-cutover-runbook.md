@@ -99,29 +99,37 @@ to `nutmeg.decision.ontology_adapter`.
   Each ticket is idempotency-keyed (re-run replays, never double-books); a leg with no
   committed Read or no matching selection is skipped and counted — never a fabricated
   bet. Empty legs = empty slate (空仓合法).
+- **`decision-close` capture-closing — cut over. ✅** `_capture_closing_v2` ingests a
+  closing market snapshot (CLV reference) from `daily/<date>/bold_odds_closing.json` via
+  `market_day_ingest` with `snapshot_kind='closing'`; absent file → skip (CLV empty,
+  Brier/settlement unaffected).
 - **`decision-settle` — cut over. ✅** `run_decision_settle_v2` = reconcile (record
   outcomes from `daily/<date>/results.json` + settle each match's tickets; a match with
   no result is skipped — never a pending settlement) → `calibrate`.
-- **Full loop validated on real data (2026-07-19, read-only temp kernel):** am (7 matches
-  / 8 snapshots) → read (7/7) → express (**1 main ticket ¥100** — the ¥400 main-bucket
-  cap) → settle (1 settled) → calibrate (3 scorecards).
+- **v2 report — cut over. ✅** `_report_v2` renders a kernel-fed markdown daily report
+  (matches / forecasts / tickets / settlements / stake·payout·ledger / coverage /
+  calibration) to `daily/<date>/decision-report-v2-<date>.md`, and — only when
+  `--dispatch-telegram` is passed — publishes it through the notification service, gated
+  by `--dry-run` (default dry: **never** a live send unless `--no-dry-run` is explicit).
+- **Full loop validated on real data (2026-07-19, read-only temp kernel):** am (7 matches)
+  → read (7/7) → close (capture-closing 8 closing snapshots → express **1 main ticket
+  ¥100** → report) → settle (reconcile 1 → calibrate 3 scorecards → report). Report:
+  ¥100 staked / ¥200 payout / ¥100 net, **closing coverage 100%**. No push (dry).
 
-> **Critical:** `NUTMEG_ONTOLOGY_V2` is a **single global flag** — setting it routes all
-> four verbs. All four now have a v2 path, so enabling it is coherent — but keep it OFF in
-> production until the **remaining follow-ons land** and a full shadow day (dry, no push)
-> is reviewed. The flag stays a shadow-only tool until then.
+> **`NUTMEG_ONTOLOGY_V2` is now shadow-ready:** all four verbs + capture-closing + the
+> report (with a dry-gated push) are on the kernel. It is still a **single global flag**;
+> keep it OFF in production until a full **shadow day** on real data is reviewed (below).
 
 ## 5. Still open (honest, before flag-on)
 
-- **capture-closing (CLV) v2** — close's closing-snapshot capture is not yet ported; the
-  Ticket-Price CLV axis stays empty until it lands (Brier/settlement are unaffected).
-- **v2 report renderer** — close/settle emit a text summary; the PDF report and Telegram
-  push are **not** ported (the v2 report never pushes — it says so if `--dispatch`
-  `--no-dry-run` is passed). No live push can happen through v2 yet.
+- **PDF report** — the v2 report is markdown + Telegram text; the reportlab PDF is not
+  ported (a rendering nicety — the markdown carries the same content). Not a blocker.
 - Brier reconciliation is clean (0 mismatches). The only bounded analytical item is
   breadth — Package 4A scores `had` only, so `hhad`/`ttg` reads have no rebuilt score yet.
   A scoring follow-on, not a go-live blocker.
 
-Once capture-closing + the report renderer land, run a full **shadow day** with the flag
-on (dry, no `--dispatch-telegram --no-dry-run`), review it, then follow §2 steps 5–6 to
-restore the schedules — the single irreversible go-live step, on explicit user approval.
+**Ready for the shadow day.** Provision the prod kernel store (§2.2), set
+`NUTMEG_ONTOLOGY_V2=1`, run one live day's `decision-am/read/close/settle` **dry** (no
+`--dispatch-telegram --no-dry-run`), review the markdown report + `nutmeg ontology
+status`, then — on explicit user approval — §2 steps 5–6 restore the schedules (the one
+irreversible go-live step).

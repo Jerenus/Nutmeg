@@ -34,6 +34,8 @@ class MarketDayIngestRequest:
     actor_role: ActorRole
     requested_at: datetime
     intl_value: dict | None = None
+    snapshot_kind: str = 'read_time'
+    sporttery_snapshots: bool = True
 
     def __post_init__(self) -> None:
         if self.requested_at.tzinfo is None or self.requested_at.utcoffset() is None:
@@ -64,13 +66,15 @@ class MarketDayIngestService:
         self._market_actions = market_actions
 
     def ingest(self, request: MarketDayIngestRequest) -> MarketDayIngestResult:
+        kind = request.snapshot_kind
         sporttery_retrieval = self._ingest_artifact(
-            request, request.sporttery_value, 'sporttery', f'sporttery:{request.business_date}'
+            request, request.sporttery_value, 'sporttery',
+            f'sporttery:{kind}:{request.business_date}'
         )
         intl_retrieval = None
         if request.intl_value is not None:
             intl_retrieval = self._ingest_artifact(
-                request, request.intl_value, 'intl', f'intl:{request.business_date}'
+                request, request.intl_value, 'intl', f'intl:{kind}:{request.business_date}'
             )
 
         match_ids: set[str] = set()
@@ -88,7 +92,7 @@ class MarketDayIngestService:
             match_ids.add(match_id)
             match_no_to_id[parsed.match_no] = match_id
             had = [quote for quote in parsed.quotes if quote.market_kind == 'had']
-            if had:
+            if had and request.sporttery_snapshots:
                 self._build_had_snapshot(
                     request, match_id, parsed.match_no, 'sporttery',
                     parsed.scheduled_at, had, sporttery_retrieval,
@@ -181,11 +185,12 @@ class MarketDayIngestService:
         artifact_retrieval_id: str | None,
     ) -> None:
         as_of = scheduled_at or request.requested_at.astimezone(UTC).isoformat()
+        kind = request.snapshot_kind
         self._market_actions.build_snapshot(
             SnapshotBuildRequest(
                 match_id=match_id,
                 market_definition_id=_HAD,
-                snapshot_kind='read_time',
+                snapshot_kind=kind,
                 as_of=as_of,
                 provider=channel,
                 quotes=[
@@ -198,7 +203,7 @@ class MarketDayIngestService:
                 ],
                 actor_id='system:devig',
                 actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-                idempotency_key=f'snap:{channel}:{request.business_date}:{match_no}:had',
+                idempotency_key=f'snap:{channel}:{kind}:{request.business_date}:{match_no}:had',
                 requested_at=request.requested_at,
                 artifact_retrieval_id=artifact_retrieval_id,
             )

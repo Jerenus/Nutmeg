@@ -208,25 +208,93 @@ def run_decision_express_v2(legs_file, output_dir, *, kernel=None, made_at=None)
     return msg
 
 
-def _report_v2(kernel, run_date: str, stage: str, dispatch: bool, dry_run: bool) -> str:
+def _render_report_markdown(kernel, run_date: str, stage: str) -> str:
+    import json as _json
+
+    from nutmeg.analytics.integrity_action import compute_integrity_action_rows
+
     status = kernel.status()
+    cards = {r["scorecard"]: _json.loads(r["metrics_json"])
+             for r in compute_integrity_action_rows(kernel.engine)}
+    action = cards.get("action_finance", {})
+    integrity = cards.get("evidence_integrity", {})
+    return "\n".join([
+        f"# 决策日报 v2 — {run_date} [{stage}]",
+        "",
+        f"- 场次 {status.match_count} | 判读(forecast) {status.forecast_count}",
+        f"- 票 {int(action.get('ticket_count', 0))} | "
+        f"结算 {int(action.get('settlement_count', 0))}",
+        f"- 注金 ¥{action.get('stake_total', 0):.0f} | 回款 ¥{action.get('payout_total', 0):.0f}"
+        f" | 账户净额 ¥{action.get('ledger_balance', 0):.0f}",
+        f"- 覆盖 outcome {integrity.get('outcome_completeness', 0):.0%}"
+        f" / closing {integrity.get('closing_coverage', 0):.0%}",
+        f"- 校准 scorecards {status.scorecard_count} | factor_estimates "
+        f"{status.factor_estimate_count} | proposals {status.lifecycle_proposal_count}",
+        "",
+        "> 空仓永远合法;本报告只读 kernel,判断永不入脚本。",
+    ])
+
+
+def _report_v2(kernel, run_date: str, output_dir, stage: str, dispatch: bool, dry_run: bool,
+               notification_service=None) -> str:
+    from nutmeg.notifications.models import NotificationRequest, semantic_fingerprint
+
+    markdown = _render_report_markdown(kernel, run_date, stage)
+    report_path = Path(output_dir) / "daily" / run_date / f"decision-report-v2-{run_date}.md"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(markdown, encoding="utf-8")
+
     note = ""
-    if dispatch and not dry_run:
-        # Never push silently: the v2 report has no Telegram/PDF renderer yet.
-        note = " | ⚠️ v2 report 暂无 PDF/Telegram 推送(follow-on;未推送)"
-    return (f"decision-report-v2 {run_date} [{stage}]: tickets={status.ticket_count} "
-            f"settlements={status.settlement_count} forecasts={status.forecast_count}{note}")
+    if dispatch:
+        if notification_service is None:
+            from nutmeg.notifications.wiring import build_notification_service
+            notification_service = build_notification_service()
+        request = NotificationRequest(
+            kind=f"decision.{stage}.report.v2", business_key=run_date, stage=stage,
+            semantic_fingerprint=semantic_fingerprint({"stage": stage, "markdown": markdown}),
+            subject=f"决策日报 v2 {run_date}", caption=f"决策日报 v2 {run_date}", body=markdown,
+            metadata={"run_date": run_date, "stage": stage})
+        outcome = notification_service.publish(request, dry_run=dry_run)
+        note = f" | 推送 {outcome.status.value}"
+    return f"decision-report-v2 {run_date} [{stage}]: {report_path.name}{note}"
+
+
+def _capture_closing_v2(kernel, run_date: str, output_dir, requested_at) -> str:
+    """Ingest a closing market snapshot (CLV reference) from a saved closing-odds file.
+
+    Reuses ``market_day_ingest`` with ``snapshot_kind='closing'`` and the closing
+    ``bold_odds_closing.json`` as the international odds; sporttery gives match identity.
+    Absent closing file → skip (CLV stays empty; Brier/settlement unaffected)."""
+    from nutmeg.decision.market_data import load_sporttery_snapshot
+    from nutmeg.ontology.actions.models import ActorRole
+    from nutmeg.ontology.ingest.market_day import MarketDayIngestRequest
+
+    sporttery = load_sporttery_snapshot(run_date, output_dir)
+    if not sporttery:
+        return f"decision-capture-closing-v2 {run_date}: 无 sporttery 快照 — 跳过"
+    closing_path = Path(output_dir) / "daily" / run_date / "bold_odds_closing.json"
+    if not closing_path.exists():
+        return f"decision-capture-closing-v2 {run_date}: 无收盘欧赔文件 — 跳过(CLV 空)"
+    closing = json.loads(closing_path.read_text(encoding="utf-8"))
+    # Same actor as am so the idempotent team/match upserts replay rather than conflict;
+    # sporttery_snapshots=False so the closing fair is the intl closing odds only (not the
+    # read-time sporttery odds re-marked closing) — the true CLV reference.
+    result = kernel.market_day_ingest.ingest(MarketDayIngestRequest(
+        business_date=run_date, sporttery_value=sporttery, intl_value=closing,
+        actor_id="source:sporttery", actor_role=ActorRole.CONNECTOR, snapshot_kind="closing",
+        sporttery_snapshots=False, requested_at=requested_at))
+    return f"decision-capture-closing-v2 {run_date}: 收盘快照 {result.snapshots} 条"
 
 
 def run_decision_close_v2(run_date: str, output_dir, *, kernel=None, dispatch: bool = False,
-                          dry_run: bool = True):
-    """close on the kernel: express legs → tickets. capture-closing (CLV) and the PDF/
-    Telegram report are documented follow-ons; the money path (express) is built here."""
+                          dry_run: bool = True, notification_service=None):
+    """close on the kernel: capture-closing (CLV) → express legs → tickets → report."""
     from pathlib import Path as _Path
 
-    from nutmeg.decision.verbs import _compose
+    from nutmeg.decision.verbs import _compose, _now_iso
 
     active_kernel = kernel if kernel is not None else _default_kernel()
+    requested_at = datetime.fromisoformat(_now_iso())
     legs_path = _Path(output_dir) / "daily" / run_date / "legs.json"
 
     def _express() -> str:
@@ -235,8 +303,11 @@ def run_decision_close_v2(run_date: str, output_dir, *, kernel=None, dispatch: b
         return f"decision-express-v2: 无 daily/{run_date}/legs.json → 空票(合法)"
 
     steps = [
+        ("capture-closing",
+         lambda: _capture_closing_v2(active_kernel, run_date, output_dir, requested_at)),
         ("express", _express),
-        ("report", lambda: _report_v2(active_kernel, run_date, "close", dispatch, dry_run)),
+        ("report", lambda: _report_v2(active_kernel, run_date, output_dir, "close", dispatch,
+                                      dry_run, notification_service)),
     ]
     return _compose("decision-close", run_date, "出票(ontology v2 kernel)", steps)
 
@@ -274,8 +345,8 @@ def _calibrate_v2(kernel, stamp: str) -> str:
 
 
 def run_decision_settle_v2(run_date: str, output_dir, *, kernel=None, dispatch: bool = False,
-                           dry_run: bool = True):
-    """settle on the kernel: reconcile (record outcomes + settle tickets) → calibrate."""
+                           dry_run: bool = True, notification_service=None):
+    """settle on the kernel: reconcile (record outcomes + settle tickets) → calibrate → report."""
     from nutmeg.decision.verbs import _compose, _now_iso
 
     stamp = _now_iso()
@@ -284,6 +355,7 @@ def run_decision_settle_v2(run_date: str, output_dir, *, kernel=None, dispatch: 
     steps = [
         ("reconcile", lambda: _reconcile_v2(active_kernel, run_date, output_dir, requested_at)),
         ("calibrate", lambda: _calibrate_v2(active_kernel, stamp)),
-        ("report", lambda: _report_v2(active_kernel, run_date, "settle", dispatch, dry_run)),
+        ("report", lambda: _report_v2(active_kernel, run_date, output_dir, "settle", dispatch,
+                                      dry_run, notification_service)),
     ]
     return _compose("decision-settle", run_date, "复盘(结算+校准,ontology v2 kernel)", steps)
