@@ -93,22 +93,35 @@ to `nutmeg.decision.ontology_adapter`.
   payload as a kernel ForecastRevision (old-style factors dropped + counted, new-style
   delta factors kept, unmapped markets rejected). Beliefs only — no money, no push. Read
   payloads carry kernel match ids (Claude reads them from the store after `am`).
-- **`decision-close` / `decision-settle` — not yet.** close (capture-closing → express
-  legs → report PDF → optional Telegram) is the **money + push** verb (tickets, ¥400
-  budget, real payouts); settle (reconcile → calibrate → report) is the learning loop.
-  Both need a kernel-backed build + a v2 report renderer, and — for close — careful
-  money-handling review, then a shadow day. They warrant their own dedicated effort.
+- **`decision-close` — cut over (money core). ✅** `run_decision_close_v2` = express
+  legs → kernel Tickets. The ¥400 cap stays enforced by the reused `compose_tickets`
+  (single authoritative source); the kernel only stores its deterministic allocation.
+  Each ticket is idempotency-keyed (re-run replays, never double-books); a leg with no
+  committed Read or no matching selection is skipped and counted — never a fabricated
+  bet. Empty legs = empty slate (空仓合法).
+- **`decision-settle` — cut over. ✅** `run_decision_settle_v2` = reconcile (record
+  outcomes from `daily/<date>/results.json` + settle each match's tickets; a match with
+  no result is skipped — never a pending settlement) → `calibrate`.
+- **Full loop validated on real data (2026-07-19, read-only temp kernel):** am (7 matches
+  / 8 snapshots) → read (7/7) → express (**1 main ticket ¥100** — the ¥400 main-bucket
+  cap) → settle (1 settled) → calibrate (3 scorecards).
 
-> **Critical:** `NUTMEG_ONTOLOGY_V2` is a **single global flag** — setting it routes
-> *all four* verbs. Since only `am`/`read` have a v2 path, enabling it now would leave
-> `close`/`settle` on the old JSONL store while `am`/`read` populate the kernel — an
-> incoherent split. **Keep the flag OFF in production until all four verbs are cut over.**
-> `am`/`read` v2 are validated only in shadow (temp kernel) meanwhile.
+> **Critical:** `NUTMEG_ONTOLOGY_V2` is a **single global flag** — setting it routes all
+> four verbs. All four now have a v2 path, so enabling it is coherent — but keep it OFF in
+> production until the **remaining follow-ons land** and a full shadow day (dry, no push)
+> is reviewed. The flag stays a shadow-only tool until then.
 
-## 5. Still open (honest)
+## 5. Still open (honest, before flag-on)
 
-- **close/settle v2** — the remaining daily-verb builds; the flag must stay off until
-  they land. close is the money/push verb and deserves a dedicated, reviewed build.
+- **capture-closing (CLV) v2** — close's closing-snapshot capture is not yet ported; the
+  Ticket-Price CLV axis stays empty until it lands (Brier/settlement are unaffected).
+- **v2 report renderer** — close/settle emit a text summary; the PDF report and Telegram
+  push are **not** ported (the v2 report never pushes — it says so if `--dispatch`
+  `--no-dry-run` is passed). No live push can happen through v2 yet.
 - Brier reconciliation is clean (0 mismatches). The only bounded analytical item is
   breadth — Package 4A scores `had` only, so `hhad`/`ttg` reads have no rebuilt score yet.
   A scoring follow-on, not a go-live blocker.
+
+Once capture-closing + the report renderer land, run a full **shadow day** with the flag
+on (dry, no `--dispatch-telegram --no-dry-run`), review it, then follow §2 steps 5–6 to
+restore the schedules — the single irreversible go-live step, on explicit user approval.

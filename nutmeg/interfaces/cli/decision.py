@@ -232,11 +232,20 @@ def decision_close(
     """决策本体 · 日循环收盘段:capture-closing → express → report。
 
     express legs 来自主循环 Claude 判读(daily/<date>/legs.json,无则空票)。
+
+    NUTMEG_ONTOLOGY_V2=1 时改走 kernel-backed close(ontology_adapter);否则旧路径不变。
     """
-    from nutmeg.decision.verbs import run_decision_close
-    result = run_decision_close(
-        run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run
-    )
+    from nutmeg.config.settings import get_settings
+
+    if get_settings().ontology_v2:
+        from nutmeg.decision.ontology_adapter import run_decision_close_v2
+        result = run_decision_close_v2(
+            run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run)
+    else:
+        from nutmeg.decision.verbs import run_decision_close
+        result = run_decision_close(
+            run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run
+        )
     _emit_result(result, format=format)
     if not getattr(result, "succeeded", True):
         raise _cli.typer.Exit(code=1)
@@ -252,16 +261,26 @@ def decision_settle(
     zucai_dir: Path = _ZUCAI_DIR_OPTION,
     format: str = _cli.typer.Option("text", "--format", help="text or json"),
 ) -> None:
-    """决策本体 · 日循环结算段:reconcile(+可选 zucai)→ calibrate → report(复盘)。"""
-    from nutmeg.decision.verbs import run_decision_settle
-    result = run_decision_settle(
-        run_date,
-        output_dir,
-        dispatch=dispatch_telegram,
-        dry_run=dry_run,
-        issue=issue,
-        zucai_dir=zucai_dir,
-    )
+    """决策本体 · 日循环结算段:reconcile(+可选 zucai)→ calibrate → report(复盘)。
+
+    NUTMEG_ONTOLOGY_V2=1 时改走 kernel-backed settle(ontology_adapter);否则旧路径不变。
+    """
+    from nutmeg.config.settings import get_settings
+
+    if get_settings().ontology_v2:
+        from nutmeg.decision.ontology_adapter import run_decision_settle_v2
+        result = run_decision_settle_v2(
+            run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run)
+    else:
+        from nutmeg.decision.verbs import run_decision_settle
+        result = run_decision_settle(
+            run_date,
+            output_dir,
+            dispatch=dispatch_telegram,
+            dry_run=dry_run,
+            issue=issue,
+            zucai_dir=zucai_dir,
+        )
     _emit_result(result, format=format)
     if not getattr(result, "succeeded", True):
         raise _cli.typer.Exit(code=1)

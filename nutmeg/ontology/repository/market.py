@@ -107,6 +107,19 @@ class MarketRepository:
             )
         ).scalar_one_or_none()
 
+    def selection_id_for(
+        self, market_definition_id: str, outcome_key: str, line: str | None = None
+    ) -> str | None:
+        conditions = [
+            sm.selection_definitions.c.market_definition_id == market_definition_id,
+            sm.selection_definitions.c.outcome_key == outcome_key,
+        ]
+        if line is not None:
+            conditions.append(sm.selection_definitions.c.line == line)
+        return self._connection.execute(
+            select(sm.selection_definitions.c.selection_id).where(*conditions).limit(1)
+        ).scalar_one_or_none()
+
     def snapshot_quote_ids(self, market_snapshot_id: str) -> tuple[str, ...]:
         rows = self._connection.execute(
             select(sm.market_snapshot_quotes.c.quote_id).where(
