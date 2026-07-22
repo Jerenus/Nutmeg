@@ -13,7 +13,7 @@ from nutmeg.decision.ontology_adapter import (
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 
-DATE = "2026-07-22"
+DATE = "2026-07-19"
 PRIOR = {"home": 0.5, "draw": 0.3, "away": 0.2}
 SPORTTERY = {"matchInfoList": [{"businessDate": DATE, "subMatchList": [
     {"matchStatus": "Selling", "businessDate": DATE, "matchNumStr": "周三001",
@@ -112,3 +112,34 @@ def test_partial_day_settles_rest_on_rerun(tmp_path: Path) -> None:
     assert kernel.status().settlement_count == 1        # 次日补结,同 key 幂等不冲突
     run_decision_settle_v2(DATE, output_dir, kernel=kernel, results_fetcher=second_run)
     assert kernel.status().settlement_count == 1        # 三跑 replay,不重复结算
+
+
+def test_kickoff_guard_rejects_results_for_unplayed_matches(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+    kernel, match_id, output_dir = _kernel_with_ticket(tmp_path)
+
+    def poison_okooo(run_date):
+        # okooo 开奖页回退:未开奖日返回别的开奖日的行(2026-07-22 真实事故)
+        return {"周三001": {"score": "1:1"}}
+
+    kickoff = datetime.fromisoformat(f"{DATE}T19:30:00+08:00")
+    before = kickoff.astimezone(UTC).replace(hour=5)               # 开球前
+    just_under = kickoff + __import__("datetime").timedelta(minutes=100)   # 开球后100min<110
+    after = kickoff + __import__("datetime").timedelta(minutes=115)        # 可能终局
+
+    assert _results_v2(kernel, DATE, output_dir, live_fetcher=poison_okooo,
+                       now=before) == {}
+    assert _results_v2(kernel, DATE, output_dir, live_fetcher=poison_okooo,
+                       now=just_under) == {}
+    assert _results_v2(kernel, DATE, output_dir, live_fetcher=poison_okooo,
+                       now=after) == {match_id: "1-1"}
+
+
+def test_manual_override_bypasses_kickoff_guard(tmp_path: Path) -> None:
+    # 人工 results.json 是显式动作(改期/腰斩等特殊场景的出口),不受 guard 限制
+    from datetime import UTC, datetime
+    kernel, match_id, output_dir = _kernel_with_ticket(tmp_path)
+    (output_dir / "daily" / DATE / "results.json").write_text(
+        json.dumps({match_id: "2-0"}), encoding="utf-8")
+    early = datetime(2026, 7, 19, 1, 0, tzinfo=UTC)   # 远早于开球
+    assert _results_v2(kernel, DATE, output_dir, now=early) == {match_id: "2-0"}
