@@ -179,8 +179,9 @@ def run_decision_express_v2(legs_file, output_dir, *, kernel=None, made_at=None)
             with OntologyUnitOfWork(active_kernel.engine) as uow:
                 series = uow.decision.ensure_series(match_id, market)
                 revision = uow.decision.current_committed_revision(series)
-                selection = uow.market.selection_id_for(
-                    market, str(leg.get("selection")), leg.get("line"))
+                # Resolve the selection by outcome key only — the handicap/line lives on
+                # the bet leg, not on the (line-agnostic) selection definition.
+                selection = uow.market.selection_id_for(market, str(leg.get("selection")))
             if revision is None or selection is None:
                 resolvable = False
                 break

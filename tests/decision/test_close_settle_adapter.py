@@ -64,6 +64,26 @@ def test_express_v2_books_ticket_within_budget(tmp_path: Path) -> None:
     assert row.forecast_revision_id            # and the committed Read
 
 
+def test_express_v2_books_hhad_leg_with_line(tmp_path: Path) -> None:
+    kernel, match_id, output_dir = _kernel_with_read(tmp_path)
+    # a committed hhad read + an hhad leg carrying a handicap line
+    reads = [{"read_id": "rh", "match_id": match_id, "market": "hhad",
+              "prior": PRIOR, "belief": PRIOR, "factors": [],
+              "made_at": "2026-07-19T15:00:00+08:00"}]
+    (output_dir / "daily" / DATE / "reads_hhad.json").write_text(json.dumps(reads),
+                                                                 encoding="utf-8")
+    run_decision_read_v2(output_dir / "daily" / DATE / "reads_hhad.json", output_dir,
+                         kernel=kernel)
+    legs = [{"match_id": match_id, "market": "hhad", "selection": "home", "line": "-1",
+             "odds": 2.0, "bucket": "hedge"}]
+    msg = run_decision_express_v2(_write_legs(output_dir, legs), output_dir, kernel=kernel)
+    assert "1 票" in msg                          # line lives on the leg, not the selection
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        [ticket_id] = uow.finance.tickets_for_match(match_id)
+        [row] = uow.finance.bet_legs_for(ticket_id)
+    assert row.line == "-1"                        # the handicap is preserved on the leg
+
+
 def test_express_v2_skips_leg_without_read(tmp_path: Path) -> None:
     kernel, match_id, output_dir = _kernel_with_read(tmp_path)
     legs = [{"match_id": match_id, "market": "ttg", "selection": "total_2",
