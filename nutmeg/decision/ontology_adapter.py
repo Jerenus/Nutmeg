@@ -14,7 +14,7 @@ identically to the old path.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 _MARKET_MAP = {'had': 'md-had', 'hhad': 'md-hhad', 'ttg': 'md-ttg', 'crs': 'md-crs'}
@@ -323,12 +323,35 @@ def _normalize_score(value: object) -> str | None:
     return _RESULT_SCORE.get(str(value))
 
 
-def _results_v2(kernel, run_date: str, output_dir, live_fetcher=None) -> dict[str, str]:
+# A match cannot be final before kickoff + regulation + half-time + stoppage. Any
+# auto-fetched "result" arriving earlier is poison (e.g. okooo's 开奖 page falls back to
+# the latest *completed* day when the requested date has no results yet, and its row
+# numbers collide with today's 竞彩号 — observed live on 2026-07-22).
+_MIN_MATCH_MINUTES = 110
+
+
+def _kickoff_passed(scheduled_at: str | None, now: datetime) -> bool:
+    """True only when the match could physically be finished by ``now``."""
+    if not scheduled_at:
+        return False   # no kickoff on record → never auto-settle (manual override only)
+    try:
+        kickoff = datetime.fromisoformat(scheduled_at)
+    except ValueError:
+        return False
+    if kickoff.tzinfo is None:
+        return False
+    return (now - kickoff).total_seconds() >= _MIN_MATCH_MINUTES * 60
+
+
+def _results_v2(kernel, run_date: str, output_dir, live_fetcher=None,
+                now: datetime | None = None) -> dict[str, str]:
     """Final scores keyed by kernel match id: ``{match_id: "2-1"}``.
 
-    ``daily/<date>/results.json`` (manual override, score or home/draw/away values) wins;
-    otherwise fetch okooo live results and map 竞彩号 → sporttery matchId (via the saved
-    snapshot) → kernel match (external_identifiers). Unfinished/unmappable matches are
+    ``daily/<date>/results.json`` (manual override, score or home/draw/away values) wins
+    and is trusted as an explicit human action; otherwise fetch okooo live results and
+    map 竞彩号 → sporttery matchId (saved snapshot) → kernel match. The auto path accepts
+    a score **only for a match whose kickoff + 110min has passed** — a source claiming a
+    result for an unplayed match is poison, not truth. Unfinished/unmappable matches are
     skipped — a missing result is never a pending settlement.
     """
     from nutmeg.decision.market_data import load_sporttery_snapshot
@@ -359,6 +382,7 @@ def _results_v2(kernel, run_date: str, output_dir, live_fetcher=None) -> dict[st
             if sub.get("matchNumStr") and sub.get("matchId") is not None:
                 no_to_external[str(sub["matchNumStr"])] = str(sub["matchId"])
 
+    current_time = now if now is not None else datetime.now(UTC)
     results: dict[str, str] = {}
     with OntologyUnitOfWork(kernel.engine) as uow:
         for match_no, row in okooo.items():
@@ -368,8 +392,12 @@ def _results_v2(kernel, run_date: str, output_dir, live_fetcher=None) -> dict[st
                 continue   # 未终局/未对上 → 跳过
             kernel_match = uow.identity.entity_by_external_id(
                 EntityType.MATCH, provider="sporttery", external_id=external)
-            if kernel_match is not None:
-                results[kernel_match] = score
+            if kernel_match is None:
+                continue
+            revision = uow.identity.current_match_revision(kernel_match)
+            if not _kickoff_passed(revision.scheduled_at, current_time):
+                continue   # 开球+110min 未到 → 物理上不可能终局,拒收(毒数据防线)
+            results[kernel_match] = score
     return results
 
 
