@@ -219,6 +219,10 @@ class League:
     name_en: str = ""
     country: str = ""
     season: str = ""
+    # 体彩 leagueAbbName 的口径变体(如 uefa-qualifiers ← 欧冠/欧联/欧协联)。
+    # 缺这个字段时 uefa-qualifiers(name_zh="欧战资格赛")对不上任何板面名,
+    # 画像整整一个月没挂上过一场比赛(2026-08-05 由 decision-alias-audit 发现)。
+    aliases: list[str] = field(default_factory=list)
     profile_notes: list[dict] = field(default_factory=list)
 
     @property

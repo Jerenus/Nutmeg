@@ -78,12 +78,14 @@ def run_sense(run_date: str, output_dir: Path, taken_at: str) -> str:
     store = DecisionStore(Path(output_dir) / "decision")
     n = sense_day(run_date, output_dir=output_dir,
                   taken_at=taken_at, store=store)
-    # 实体种子幂等落库(Tier 2):read 时 Claude 从 store 读联赛/球队画像
-    from nutmeg.decision.entities import seed_entities_if_empty
-    seeded = seed_entities_if_empty(store)
+    # 实体种子幂等同步(Tier 2):read 时 Claude 从 store 读联赛/球队画像。
+    # 用 sync_entities 而非旧的"只在空库落种子"——否则新增联赛永远进不了已有 store。
+    from nutmeg.decision.entities import sync_entities
+    synced = sync_entities(store)
     msg = f"decision-sense {run_date}: 入库 {n} 场 Match+体彩/欧赔 Snapshot"
-    if seeded:
-        msg += f" | 实体种子落库 {seeded} 条"
+    if synced["added"] or synced["updated"]:
+        msg += (f" | 实体同步 +{synced['added']} 新 / "
+                f"{synced['updated']} 更新")
     return msg
 
 
@@ -115,6 +117,13 @@ def run_day_regime(run_date: str, output_dir: Path) -> str:
     return (f"decision-day-regime {run_date}: {regime['n_matches']} 场 | {heat} | "
             f"重热门 {regime['n_heavy_fav']} / 均势 {regime['n_tossup']} / "
             f"gap警戒 {regime['n_gap_alert']} → day-regime.json(诊断,不进决策)")
+
+
+def run_alias_audit(run_date: str, output_dir) -> str:
+    """别名覆盖审计:未命中 = 该场丢国际欧赔锚(prior 静默退化)。只报告,不改数据。"""
+    from nutmeg.decision.alias_audit import audit_day, format_audit
+
+    return format_audit(run_date, audit_day(run_date, output_dir))
 
 
 def run_read_ingest(reads_file: Path, output_dir: Path) -> str:
@@ -337,6 +346,8 @@ def run_decision_am(
     steps.append(("backfill", lambda: run_backfill(run_date, output_dir, stamp)))
     # 日级盘面热度诊断(只攒样本不进决策)——放 backfill 后,读的是本次 sense 的快照。
     steps.append(("day-regime", lambda: run_day_regime(run_date, output_dir)))
+    # 别名覆盖审计:欧赔锚缺失过去是静默的(8/04 全板面丢锚才被发现),这里必须出声。
+    steps.append(("alias-audit", lambda: run_alias_audit(run_date, output_dir)))
     return _compose(
         "decision-am", run_date, "数据入库+市场基线(编排不含判读)", steps
     )

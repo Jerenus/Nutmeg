@@ -2,85 +2,84 @@
  "_comment": "策展实体种子(实体层提案 Tier 2)。Team/League 只为'我们对它有知识'的实体而生;aliases/name_* 自动进 resolve 别名表。profile_notes 是证据式笔记(evidence 必填),不是规则——判断永不进代码。",
  "leagues": [
   {
-   "league_id": "swe-allsvenskan",
-   "name_zh": "瑞超",
-   "name_en": "Allsvenskan",
-   "country": "Sweden",
+   "league_id": "bra-copa-do-brasil",
+   "name_zh": "巴西杯",
+   "name_en": "Copa do Brasil",
+   "country": "Brazil",
    "season": "2026",
+   "aliases": [],
    "profile_notes": [
     {
-     "key": "home_away_split",
-     "note": "极端主客分裂:卡尔马客场0分/哥德堡主场0胜/哈马比主场20-5,禁用通用主场加成",
-     "evidence": "memory allsvenskan-2026-league-profile",
-     "at": "2026-07-05"
-    },
-    {
-     "key": "xg_divergence",
-     "note": "xG背离榜:哈马比被积分榜低估(xG第2强);米亚尔比战绩虚高",
-     "evidence": "memory allsvenskan-2026-league-profile",
-     "at": "2026-07-05"
-    },
-    {
-     "key": "summer_window",
-     "note": "夏窗7/8后才开=复赛首轮新援不能上",
-     "evidence": "memory allsvenskan-2026-league-profile",
-     "at": "2026-07-05"
-    },
-    {
-     "key": "resumption_variance",
-     "note": "夏歇复赛首轮mid-range热门失效(n=1晚入账):7/11米亚尔比主场.51负AIK、垫底厄格里特4:3掀翻赫根(.63客热);复赛首1-2轮歇前分档/画像可信度打折,方差上调;结构极差场另论",
-     "evidence": "settlements 2026-07-11",
-     "at": "2026-07-12"
-    },
-    {
-     "key": "resumption_round2_normal",
-     "note": "复赛第2轮结构恢复正常(7/12哈马比2:0/马尔默4:0/韦斯特罗2:0全兑现,盖斯1:0)——首轮方差窗口只持续1轮;哈马比打穿全牌照让胜验证成功(净胜恰2)",
-     "evidence": "settlements 2026-07-12",
-     "at": "2026-07-13"
+     "key": "two_legged_format",
+     "note": "两回合淘汰制:'总分已决/需翻盘/悬置'三档分级(约束o)在此同样适用,悬置档=无方向性旗→全包。**不与巴甲联赛画像共享**——赛制不同,巴甲的 regime(强主被中下游抢分)是联赛语境结论",
+     "evidence": "CLAUDE.md 约束o + 2026-08-04/05 板面赛制(Copa Do Brasil 两回合)",
+     "at": "2026-08-05"
     }
    ]
   },
   {
-   "league_id": "fra-ligue1",
-   "name_zh": "法甲",
-   "name_en": "Ligue 1",
-   "country": "France",
-   "season": "",
+   "league_id": "bra-serie-a",
+   "name_zh": "巴甲",
+   "name_en": "Brasileirao Serie A",
+   "country": "Brazil",
+   "season": "2026",
+   "aliases": [
+    "巴西甲"
+   ],
    "profile_notes": [
     {
-     "key": "goal_residual_drift",
-     "note": "泊松残差历史双向漂移(5/13 -0.10→5/28 +0.05),联赛画像必须 rolling 复核不可静态引用",
-     "evidence": "memory jczq-5-28-v2-4 R25",
-     "at": "2026-05-28"
+     "key": "draw_regime_2026h2",
+     "note": "2026下半程平局regime:强锚被抢分倾向。强主胆样本n=5(博塔弗戈/桑托斯/瓦斯科/沙佩科→弗拉门戈1-1圣保罗,26096复盘)+R20十场六平(全部1:1非0:0)+7/29客锚场外推广首证:国际1:1弗拉门戈(客锚fair49%,模态比分1:1精确开出,降格空仓正确)。用法:巴甲强锚(主客不限)默认conf封顶+31/双选表达;联赛平局率28.1%与市场平价时无折价可吃(7/29维多利亚-帕尔梅拉斯核验)",
+     "evidence": "26096期13[31]兑现; R20 6/10平; SET 2026-07-29 周三004 1:1",
+     "at": "2026-07-30"
+    },
+    {
+     "key": "bottom_side_resilience_mixed",
+     "note": "垫底队在强主场拿分抗性:n=3✓(26094博塔弗戈0:0/26095桑托斯2:2沙佩科/米拉索尔客平瓦斯科)后首个反样本✗:7/29里莫(18位)客负米拉索尔(19位)1:2——但该场是垫底vs垫底保级六分战非'垫底vs上游',形态不完全可比。继续攒,勿过早入典",
+     "evidence": "SET 2026-07-29 周三003 2:1(agent模态比分精确命中)",
+     "at": "2026-07-30"
+    },
+    {
+     "key": "no_nil_nil_league",
+     "note": "巴甲2026是0-0极稀缺联赛(赛季初曾65场无0-0创60年纪录);ttg判读0球档默认陷阱价(7/29 004 0球@11.50点名后开1:1=2球)",
+     "evidence": "365scores 2026 巴甲0-0纪录报道",
+     "at": "2026-07-30"
     }
    ]
   },
   {
-   "league_id": "nor-eliteserien",
-   "name_zh": "挪超",
-   "name_en": "Eliteserien",
-   "country": "Norway",
-   "season": "",
-   "profile_notes": [
-    {
-     "key": "goals_overestimated",
-     "note": "反直觉:模型历史高估进球(R25 avg≤-0.30 触发反向 delta),引擎时代统计仅供参考",
-     "evidence": "memory jczq-5-28-v2-4 R25",
-     "at": "2026-05-28"
-    },
-    {
-     "key": "resumption_variance",
-     "note": "复赛首轮两面验证(n=1晚):结构极差场兑现(特罗姆瑟4:0=主场榜1打客场榜10;利勒斯0:2客胜),mid-range归平(奥勒松2:2莫尔德——45%粘平画像再验证);当晚挪超中高进球,引擎\"高估进球\"旧画像不适用复赛窗市场盘",
-     "evidence": "settlements 2026-07-11",
-     "at": "2026-07-12"
-    },
-    {
-     "key": "punch_conf_discipline",
-     "note": "打穿条件①(conf≥4)的价值实证:哈马比(全牌照)让胜2:0✓ vs 布兰(市场条件过但conf3=半牌照)2:1仅净1让胜✗——conf档位恰好区分了两者;另:维京.54-.57客胜带连续失效(萨堡1:0爆冷,fair仅.22),窄胜画像的尾部不止拖平还包括整场哑火客负",
-     "evidence": "settlements 2026-07-12",
-     "at": "2026-07-13"
-    }
-   ]
+   "league_id": "eng-league-cup",
+   "name_zh": "英联赛杯",
+   "name_en": "League Cup",
+   "country": "England",
+   "season": "2026",
+   "aliases": [
+    "英格兰联赛杯",
+    "联赛杯"
+   ],
+   "profile_notes": []
+  },
+  {
+   "league_id": "eng-premier",
+   "name_zh": "英超",
+   "name_en": "Premier League",
+   "country": "England",
+   "season": "2026-27",
+   "aliases": [
+    "英格兰超级联赛"
+   ],
+   "profile_notes": []
+  },
+  {
+   "league_id": "esp-laliga",
+   "name_zh": "西甲",
+   "name_en": "La Liga",
+   "country": "Spain",
+   "season": "2026-27",
+   "aliases": [
+    "西班牙甲级联赛"
+   ],
+   "profile_notes": []
   },
   {
    "league_id": "fin-veikkausliiga",
@@ -88,6 +87,9 @@
    "name_en": "Veikkausliiga",
    "country": "Finland",
    "season": "",
+   "aliases": [
+    "芬兰超级联赛"
+   ],
    "profile_notes": [
     {
      "key": "goals_overestimated",
@@ -100,41 +102,206 @@
      "note": "7/11三场全出乎市场(n=1晚):HJK.45客负0:2、奥卢.39客负0:3、格尼斯坦4:2;教训①连续客场惨败(奥卢1-5→0-3)是趋势非离群点;②小样本H2H形态(TPS-奥卢均总1.15/BTTS15%→实际3:0)复赛窗不可依赖;③头尾场上尾肥(格尼斯坦6球),打穿三条件首次实战验证成功(净胜恰2)",
      "evidence": "settlements 2026-07-11",
      "at": "2026-07-12"
+    },
+    {
+     "key": "goal_baseline_and_shape",
+     "note": "场均 2.804 球 / 大2.5 55.3% / 0-0 5.8%(n=501)。主 44.1% / 平 23.0% / 客 32.9%。⭐**恰净胜1 高达 42.5%——已建档联赛里最肥的让平档**(超过葡超41.4%、德乙38.9%、日职39.6%)。让球3路:主让1球→让胜20.0/让平24.2/让负55.9;主受让1球→让胜67.1/让平18.4/让负14.6。**整数让一球盘在芬超'让平'≈24%,亚盘直觉的误差在这里最大,定注前必双泊松重算3路**(约束c'恰净胜N窄带禁区'照旧)。常见比分 1:1(11.2%)/2:1(11.0%)/0:1(8.2%)/1:0(8.0%)/1:2(7.8%)。",
+     "evidence": "API-Football league=244 seasons 2022/2023/2024 全 501 场终局统计(确定性算术)",
+     "at": "2026-08-07"
     }
    ]
   },
   {
-   "league_id": "jpn-j1",
-   "name_zh": "日职",
-   "name_en": "J1 League",
-   "country": "Japan",
+   "league_id": "fra-ligue1",
+   "name_zh": "法甲",
+   "name_en": "Ligue 1",
+   "country": "France",
    "season": "",
+   "aliases": [
+    "法国甲级联赛"
+   ],
    "profile_notes": [
     {
-     "key": "goals_overestimated",
-     "note": "反直觉:模型历史高估进球(R25 反向联赛),引擎时代统计仅供参考",
+     "key": "goal_residual_drift",
+     "note": "泊松残差历史双向漂移(5/13 -0.10→5/28 +0.05),联赛画像必须 rolling 复核不可静态引用",
      "evidence": "memory jczq-5-28-v2-4 R25",
      "at": "2026-05-28"
     }
    ]
   },
   {
-   "league_id": "uefa-qualifiers",
-   "name_zh": "欧战资格赛",
-   "name_en": "UEFA qualifiers (CL/EL/ECL)",
+   "league_id": "fra-ligue2",
+   "name_zh": "法乙",
+   "name_en": "Ligue 2",
+   "country": "France",
+   "season": "2026",
+   "aliases": [
+    "法国乙级联赛",
+    "法国乙级"
+   ],
+   "profile_notes": []
+  },
+  {
+   "league_id": "ger-bundesliga",
+   "name_zh": "德甲",
+   "name_en": "Bundesliga",
+   "country": "Germany",
+   "season": "2026-27",
+   "aliases": [
+    "德国甲级联赛"
+   ],
+   "profile_notes": []
+  },
+  {
+   "league_id": "ger-bundesliga2",
+   "name_zh": "德乙",
+   "name_en": "2. Bundesliga",
+   "country": "Germany",
+   "season": "2026",
+   "aliases": [
+    "德国乙级联赛"
+   ],
    "profile_notes": [
     {
-     "key": "ttg_high_variance",
-     "note": "7-8月资格赛窗:悬殊热门局常打高分,\"强弱悬殊=低分\"先验不可靠(2026-07-09 索德1.20超热门赢3:2=5球/伏费1:2=3球,双双打爆模态2球,ttg Brier 0.97/0.72);n=2仅入账观察——资格赛窗口内ttg少下真金、只判读攒样本",
-     "evidence": "settlements 2026-07-09 SET-read-R-claude-ttg-*",
-     "at": "2026-07-10"
+     "key": "goal_baseline_and_shape",
+     "note": "场均 3.022 球 / 大2.5 59.5% / 0-0 仅 5.4%(n=923)。主 44.1% / 平 25.0% / 客 30.9%——高进球+强主场,与荷乙近乎同形。让球3路:主让1球→让胜23.1/让平21.0/让负55.9;主受让1球→让胜69.1/让平17.9/让负13.0。**恰净胜1合计38.9%,'让平'档偏肥**(与葡超/日职同级),整数让一球盘定注前必双泊松重算3路,禁亚盘直觉。常见比分 1:1(10.4%)/1:2(8.8%)/1:0(8.8%)/2:1(8.7%)/2:2(7.5%)。",
+     "evidence": "API-Football league=79 seasons 2022/2023/2024 全 923 场终局统计(确定性算术)",
+     "at": "2026-08-07"
     }
    ]
+  },
+  {
+   "league_id": "ita-seriea",
+   "name_zh": "意甲",
+   "name_en": "Serie A",
+   "country": "Italy",
+   "season": "2026-27",
+   "aliases": [
+    "意大利甲级联赛"
+   ],
+   "profile_notes": []
+  },
+  {
+   "league_id": "jpn-j1",
+   "name_zh": "日职",
+   "name_en": "J1 League",
+   "country": "Japan",
+   "season": "2026-27",
+   "aliases": [
+    "日本J1",
+    "日本职业联赛",
+    "日职联"
+   ],
+   "profile_notes": [
+    {
+     "key": "goals_overestimated",
+     "note": "⚠️历史遗留(引擎时代 R25):Poisson 引擎曾系统性高估日职进球。**2026-08-07 已被 goal_baseline 取代**——真实基线是场均 2.582 球/大2.5 47.8%,即 J1 本来就是低进球联赛,'模型高估'其实是模型没吃到这个基线。判读一律引 goal_baseline,本条只留作 R25 历史注脚。",
+     "evidence": "memory jczq-5-28-v2-4 R25(2026-05-28) + 本联赛 goal_baseline n=992 复核(2026-08-07)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "season_format_2026_27",
+     "note": "2026-27 是 J.League 史上**首个秋春制跨年赛季**:2026-08-07 开幕 → 2027-06-06 第38轮收官,20队38轮。⚠️**冬歇期 2026年12月第2周赛后 → 2027年2月第3周**——歇冬后复赛首轮应比照瑞超/挪超 resumption_variance 处理(复赛窗 mid-range 热门实证失效)。降级/ACL 名额见 wiki。外援每场大名单上限5人(J联盟伙伴国选手豁免)。",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "transition_season_2026_contamination",
+     "note": "⚠️**2026 赛季不是常规联赛,是过渡杯赛**「J1百年構想リーグ」(2026-02-06 ~ 06-07):20队分 East/West 各10,**只在本区内双循环18轮**(跨区完全没交手过)→ 后接同名次对位的两回合排位赛定 1-20 名;**90分钟平局用点球决胜**,胜者2分/负者1分;**无降级**。三重后果:①任何来自 2026 的'平局率/胜率'统计都被点球规则污染,不可直接引用;②每队只打过 9 个对手,**跨区实力对比零样本**,2026-27 East×West 的场次先验特别弱;③'上季名次'的信息量远低于常规38轮联赛,按 l 表只能算**推断结构 0-2pp**,不许当强先验。",
+     "evidence": "https://en.wikipedia.org/wiki/J1_100_Year_Vision_League + https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "final_table_2026",
+     "note": "2026 百年构想联赛最终总排名(1→20):神户/鹿岛/大阪樱花/FC东京/町田/名古屋/广岛/川崎前锋/大阪钢巴/东京绿茵/冈山/浦和/横滨水手/清水/柏太阳神/京都/长崎/水户/福冈/千叶市原。神户夺冠(决赛两回合总分5-2胜鹿岛,首回合5-0)。**三支升班马(长崎17/水户18/千叶20)包办下游**,但见 transition_season_2026_contamination:这是过渡杯赛名次,不等于常规联赛实力序。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "goal_baseline",
+     "note": "场均 2.582 球(主 1.394 / 客 1.188)/ 大2.5 仅 47.78% / **0-0 高达 9.27%**(n=992)。横向对比:荷甲 3.10球·大2.5 59.6%·0-0 5.6%;葡超 2.65球·大2.5 50.9%·0-0 6.2%。**J1 是已建档联赛里最低进球、0-0 最肥的一个**——约束h 打穿条件②(fair 大2.5≥55%)在日职天然极难满足,打穿类表达在这里应比葡超还保守;反过来小球/0-0 相关表达的先验比其他联赛厚。逐季大2.5 45.1%(2022)→48.0%(2023)→49.7%(2024)缓升,须 rolling 复核。",
+     "evidence": "API-Football league=98 seasons 2022/2023/2024 全 992 场终局统计(确定性算术)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "outcome_split",
+     "note": "主 40.02% / **平 28.13%** / 客 31.86%(n=992)。平局率是已建档联赛里最高的(荷甲 24.5% / 葡超 22.8%)→ 降格全包在日职的相对成本低于荷甲,平局单关(bucket draw)的先验也更厚。逐季平局 31.7%(2022)→25.5%(2023)→27.4%(2024)波动大,别用单季值。主场优势温和且稳定(主客场均进球差仅 0.18-0.26 球)。",
+     "evidence": "API-Football league=98 seasons 2022/2023/2024 全 992 场终局统计(确定性算术)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "margin_shape_hhad",
+     "note": "净胜形状(n=992):**恰净胜1合计 39.6%**(主 20.4% / 客 19.3%)vs 净胜≥2 合计 32.3%(主 19.7% / 客 12.6%)。体彩让球3路直接映射(**禁亚盘直觉,'受让方+1'的亚盘口径会系统性高估约28pp**):①主队让1球 → 让胜(净胜≥2)19.7% / 让平(恰净胜1)20.4% / 让负(平或负)60.0%;②主队受让1球 → 让胜(主不败)68.1% / 让平(客恰赢1)19.3% / 让负(客赢≥2)12.6%。**'让平'档在日职极肥(≈20%),与葡超同级、远高于荷甲的 30.6%恰净胜1口径**;但约束c 的'恰净胜N窄带禁区'仍适用——肥不等于可押,仍须逐场双泊松重算3路。最常见比分:1:1(12.4%) / 0:1(9.6%) / 2:1(9.5%) / 0:0(9.3%) / 1:0(8.7%) / 2:0(7.3%)。",
+     "evidence": "API-Football league=98 seasons 2022/2023/2024 全 992 场终局统计(确定性算术)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "throw_in_5s_rule_2026_27",
+     "note": "2026-27 起施行**界外球5秒规则**。判读含义:直接削弱以长距离界外球为战术支柱的球队(尤以町田为最),把'上季定位球产量'当先验时必须打折——规则改变了生产函数,不是状态波动。",
+     "evidence": "https://news.livedoor.com/article/detail/32002136/ (黒田監督コメント)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "derby_map",
+     "note": "恩怨/德比图谱(战意类因子只许在这些对阵上引用,且按 l 表 ≤2pp 且只许朝平):①**大阪德比** 大阪樱花 vs 大阪钢巴——2026 开幕战即此役,4万2101人,史上首次以点球决胜(钢巴胜);②**多摩川クラシコ** FC东京 vs 川崎前锋(2007年起命名,JFL 时代结怨);③**神奈川德比/SKY系列** 川崎前锋 vs 横滨水手(vs 湘南已降级,2026-27 不构成);④**东京德比** FC东京 vs 东京绿茵。⚠️**埼玉德比(浦和 vs 大宫)2026-27 不存在**——大宫在 J2,8/01 那场 2-2 只是季前热身赛,不可当联赛德比引用。",
+     "evidence": "https://ja.wikipedia.org/wiki/日本のダービーマッチ + https://www.frontale.co.jp/info/2026/0326_1.html + https://www.gamba-osaka.net/report/index/no/1004/ + https://www2.targma.jp/omiya-kaden/2026/08/01/post24802/",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "title_race_2026_27",
+     "note": "赛前公论:**鹿岛与神户是'2强'且夏窗双双增强**,名古屋与大阪钢巴则'补强动作少';完成度/稳定性略高的一档是鹿岛/町田/神户,FC东京·广岛·钢巴·名古屋·浦和·柏·川崎争 ACL 区。这是媒体共识不是硬事实,按 l 表算**推断结构 0-2pp**,只用于解释盘口而非产生偏移。",
+     "evidence": "https://sports.yahoo.co.jp/contents/22794 (Yahoo!スポーツ 26-27開幕企画·補強診断) + https://www.rrr3k.com/entry/2026/08/05/110000",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "season_opening_variance",
+     "note": "首轮=方差窗口,与荷甲/葡超同规:**conf 封顶、优先降格全包、上季名次与画像可信度打折**。在 J1 这条比别处更硬,因为叠加了 transition_season_2026_contamination(上季是杯赛、跨区零样本)+ 秋春制首季无任何同制度历史。",
+     "evidence": "荷甲/葡超 season_opening_variance 同款 + 本联赛 2026 赛制特殊性",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "original_10_note",
+     "note": "2026-27 是 2005 年以来首次'原始10队'现存9队全部同处 J1(千叶市原17年后重返顶级)。只作背景,不产生任何判读权重。",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "draw_rate_by_closeness",
+     "note": "⭐平局率随实力接近度单调上升(n=992,用同季终榜积分差作实力代理):积分差0-5 → 平29.8%/0-0 11.5%;6-11 → 平30.8%/0-0 10.0%;12-19 → 平28.8%/0-0 9.0%;20-29 → 平23.2%/0-0 7.7%;≥30 → 平18.3%/0-0 1.7%。**判读含义:联赛均值 28.1% 是含悬殊场的稀释值,均势场(积分差≤11,n=512)的真实平局基线是≈30%、0-0≈11%**——遇到 fair 三面接近的日职场,平局先验应取 30% 而非 28%。均势场最常见比分:1:1(12.9%)/0:1(10.7%)/0-0(10.7%)/2:1(10.7%)/1:0(8.4%);均势场大2.5=48.0%(与全联盟持平,即'均势'并不改变进球轴,只抬高平局)。",
+     "evidence": "API-Football league=98 seasons 2022/2023/2024 全 992 场终局 + 同季积分自算(确定性算术)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "opening_round_2026_08_07_countersample",
+     "note": "⚠️⚠️**画像建成当日即被证伪的部分(2026-08-07 秋春制揭幕轮 n=2)**:横滨3:4鹿岛、钢巴4:3浦和,**两场各7球、合计14球、双双分出胜负**。而我用 goal_baseline(场均2.582/大2.5 47.8%/0-0 9.3%)+draw_rate_by_closeness(均势场平局30%)判两场'低进球+高平局',两条 ttg shadow Read 的 Brier(1.1239/1.1225)是当日全板最差。**三条根因**:①**基线在方差窗口里不是先验**——本联赛 season_opening_variance 明写'首轮画像可信度打折',我却用均值推出了非常具体的方向性结论,等于用画像的一半否决了画像的另一半;②**单向推理**:'双方新帅+换血+磨合不足'被我单向推成'踢不开→低进球',同一前提同样能推出'防守组织未成型→互相打崩',实证站后者;③goal_baseline 的样本(2022-2024)全部来自**春秋制常规赛季**,而这是秋春制首季+夏季+长休整后的揭幕战,**制度断裂下不可外推**。**用法**:J1 揭幕轮/复赛轮一律不得引 goal_baseline 或 draw_rate_by_closeness 作方向性依据,只许跟市场;两条基线仅适用于赛季进行中的常规轮次。",
+     "evidence": "settlements 2026-08-07(周五001 3:4 / 周五002 4:3,官方赛果三源核验) + 同日 ttg shadow Read Brier 1.1239/1.1225",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "league_id": "jpn-j2",
+   "name_zh": "日乙",
+   "name_en": "J2 League",
+   "country": "Japan",
+   "season": "2026",
+   "aliases": [
+    "日本J2",
+    "日职乙",
+    "日乙联"
+   ],
+   "profile_notes": []
   },
   {
    "league_id": "kor-kleague1",
    "name_zh": "韩职K1",
    "name_en": "K League 1",
+   "country": "",
+   "season": "",
+   "aliases": [
+    "韩职",
+    "韩K1"
+   ],
    "profile_notes": [
     {
      "key": "draw_machines",
@@ -173,9 +340,1335 @@
      "at": "2026-07-13"
     }
    ]
+  },
+  {
+   "league_id": "ned-eerste-divisie",
+   "name_zh": "荷乙",
+   "name_en": "Eerste Divisie",
+   "country": "Netherlands",
+   "season": "2026",
+   "aliases": [
+    "荷兰乙级联赛"
+   ],
+   "profile_notes": [
+    {
+     "key": "goal_baseline_and_shape",
+     "note": "场均 3.045 球 / 大2.5 59.8% / 0-0 仅 5.1%(n=1140)。**主 46.0% / 平 22.9% / 客 31.1%——主场优势是已建档联赛里最强的一档,平局率最低的一档**(对比日职 40.0/28.1/31.9、荷甲 44.5/24.5/31.0)。判读含义:①降格全包在荷乙的相对成本高(平局便宜不了);②约束h 打穿条件②(fair大2.5≥55%)在荷乙天然易达,与荷甲同;③让球3路:主让1球→让胜26.6/让平19.4/让负54.0;主受让1球→让胜68.9/让平17.5/让负13.7。恰净胜1合计36.8%。常见比分 1:1(10.5%)/2:1(8.2%)/1:0(7.4%)/1:2(7.1%)/0:1(6.8%)。",
+     "evidence": "API-Football league=89 seasons 2022/2023/2024 全 1140 场终局统计(确定性算术)",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "league_id": "ned-eredivisie",
+   "name_zh": "荷甲",
+   "name_en": "Eredivisie",
+   "country": "Netherlands",
+   "season": "2026-27",
+   "aliases": [],
+   "profile_notes": [
+    {
+     "key": "goal_baseline",
+     "note": "场均 3.10 球 / 大2.5 59.6% / 0-0 仅 5.6%(n=957);逐季 2.97-3.28 稳定。判读含义:约束h打穿条件②(fair 大2.5≥55%)在荷甲基线上天然易达——但基线**不能代替单场 fair**,只说明进球轴表达在这里比葡超便宜",
+     "evidence": "API-Football league=88 seasons 2022-2024 全 957 场终局统计(确定性算术)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "margin_shape",
+     "note": "净胜≥2 占 44.9% / 恰净胜1 占 30.6%(n=957)。让球3路映射:荷甲让一球落'让平'档的概率显著低于葡超(30.6% vs 41.4%),让胜相对好 cover;仍须逐场双泊松重算3路,禁嘴算",
+     "evidence": "API-Football league=88 seasons 2022-2024 全 957 场终局统计(确定性算术)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "outcome_split",
+     "note": "主 44.5% / 平 24.5% / 客 31.0%(n=957)。平局率不高,降格全包的相对成本高于高平 regime 联赛",
+     "evidence": "API-Football league=88 seasons 2022-2024 全 957 场终局统计(确定性算术)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "polarization_2025_26",
+     "note": "极端分化:埃因霍温 84分/101球/GD+56 vs 垫底海拉克勒斯 19分/GD−50。强弱悬殊场出大比分是常态而非意外",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Eredivisie 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "divergence_2025_26",
+     "note": "战绩↔净胜球背离榜:鹿特丹斯巴达第10但GD−22(虚高)、前进之鹰第12但GD+1(被低估)、兹沃勒第15但GD−27。首轮市场按上季榜位定价时,这三支先验可疑",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Eredivisie 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "promoted_2026_27",
+     "note": "升班:海牙(缺席5年)/甘布尔(3年)/蒂尔堡威廉(1年);降级:福伦丹/布雷达/海拉克勒斯。三支升班马无本级样本,画像空白——空白≠弱,别替市场加码",
+     "evidence": "https://en.wikipedia.org/wiki/2026-27_Eredivisie",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "season_opening_variance",
+     "note": "新赛季首1-2轮=方差窗口(无本赛季样本/夏窗未闭/体能未同步)。参照瑞超复赛实证:首轮 mid-range 热门全失效、第2轮结构即恢复。首轮 conf 封顶、优先降格全包,上季榜位与画像可信度打折",
+     "evidence": "瑞超 resumption_variance 实证(settlements 2026-07-11/07-12)+ 首轮无本赛季样本",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "european_sandwich_2026_08",
+     "note": "首轮(8/07-09)与欧战资格赛Q3重叠:奈梅亨(UCL Q3,8/04 客场 0-0 = 总分悬置→ 约束o 无方向性旗→全包)、阿贾克斯(UECL Q3 8/06)、特温特(UECL Q3 8/06)。按次回合状态分级,不按'有没有欧战'一刀切",
+     "evidence": "API-Football /fixtures?date=2026-08-04..06(欧战资格赛 Q3 实测)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "manager_changes_2026",
+     "note": "换帅:阿贾克斯→Míchel(6/02)、费耶诺德→范布隆克霍斯特(6/15)、乌德勒支→Anthony Correia(7/01)、甘布尔→Johan Plat(7/01)。新帅首轮属推断结构证据(0-2pp),不是官宣级",
+     "evidence": "https://en.wikipedia.org/wiki/2026-27_Eredivisie",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "draw_distribution_2025_26",
+     "note": "平局分布极不均匀:阿贾克斯与前进之鹰各 14 平(41.2%)、特温特 13 平(38.2%)、奈梅亨 11 平(32.4%) vs 埃因霍温仅 3 平(8.8%)。判决表的双选/全包成本必须**按队**估,不能用联赛均值 24.5% 一刀切",
+     "evidence": "500.com liansai zuqiu-9111/jifen-22202 荷甲 2025/26 终榜(赛/胜/平/负/进/失/胜率/平率)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "round1_fixtures_2026_08",
+     "note": "首轮(北京 8/08-8/09)9 场:坎布尔-SBV精英、奈梅亨-特尔斯达、前进之鹰-威廉二世、埃因霍温-福图纳锡塔德、阿尔克马尔-海牙、鹿特丹斯巴达-费耶诺德(鹿特丹德比)、格罗宁根-乌德勒支、兹沃勒-阿贾克斯、海伦芬-特温特",
+     "evidence": "500.com liansai zuqiu-19878 / zuqiu-19987 首轮赛程(2026-08-05 抓取)",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "league_id": "nor-eliteserien",
+   "name_zh": "挪超",
+   "name_en": "Eliteserien",
+   "country": "Norway",
+   "season": "",
+   "aliases": [],
+   "profile_notes": [
+    {
+     "key": "goals_overestimated",
+     "note": "反直觉:模型历史高估进球(R25 avg≤-0.30 触发反向 delta),引擎时代统计仅供参考",
+     "evidence": "memory jczq-5-28-v2-4 R25",
+     "at": "2026-05-28"
+    },
+    {
+     "key": "resumption_variance",
+     "note": "复赛首轮两面验证(n=1晚):结构极差场兑现(特罗姆瑟4:0=主场榜1打客场榜10;利勒斯0:2客胜),mid-range归平(奥勒松2:2莫尔德——45%粘平画像再验证);当晚挪超中高进球,引擎\"高估进球\"旧画像不适用复赛窗市场盘",
+     "evidence": "settlements 2026-07-11",
+     "at": "2026-07-12"
+    },
+    {
+     "key": "punch_conf_discipline",
+     "note": "打穿条件①(conf≥4)的价值实证:哈马比(全牌照)让胜2:0✓ vs 布兰(市场条件过但conf3=半牌照)2:1仅净1让胜✗——conf档位恰好区分了两者;另:维京.54-.57客胜带连续失效(萨堡1:0爆冷,fair仅.22),窄胜画像的尾部不止拖平还包括整场哑火客负",
+     "evidence": "settlements 2026-07-12",
+     "at": "2026-07-13"
+    },
+    {
+     "key": "goal_baseline_and_shape",
+     "note": "场均 3.063 球 / 大2.5 60.1% / 0-0 仅 4.7%(n=725)。主 46.1% / 平 22.1% / 客 31.9%——**主场最强、平局最低、0-0 最少的一档**,与荷乙近乎同形,是日职的镜像。约束h 打穿条件②在挪超天然易达。让球3路:主让1球→让胜23.3/让平22.8/让负53.9;主受让1球→让胜68.1/让平17.1/让负14.8。恰净胜1合计39.9%。常见比分 1:1(9.7%)/1:0(9.4%)/2:1(8.7%)/1:2(7.3%)/0:1(7.2%)。⚠️注意与旧笔记 goals_overestimated(引擎时代 R25'高估进球')的关系:真实基线是**高进球**,旧笔记只描述引擎误差,判读一律引本条。",
+     "evidence": "API-Football league=103 seasons 2022/2023/2024 全 725 场终局统计(确定性算术)",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "league_id": "por-primeira",
+   "name_zh": "葡超",
+   "name_en": "Primeira Liga",
+   "country": "Portugal",
+   "season": "2026-27",
+   "aliases": [],
+   "profile_notes": [
+    {
+     "key": "goal_baseline",
+     "note": "场均 2.65 球 / 大2.5 50.9% / 0-0 6.2%(n=923),比荷甲低 0.45 球。约束h打穿条件②(fair 大2.5≥55%)在葡超基线下天然难满足——打穿类表达在这里应更保守",
+     "evidence": "API-Football league=94 seasons 2022-2024 全 923 场终局统计(确定性算术)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "margin_shape",
+     "note": "⚠️恰净胜1 占 41.4% > 净胜≥2 占 35.9%(n=923)。整数让一球盘的'让平'档在葡超特别肥;体彩 hhad 是3路不是亚盘,'受让方+1'的亚盘直觉会系统性高估命中率约 28pp。定注前必双泊松去水 fair 重算3路",
+     "evidence": "API-Football league=94 seasons 2022-2024 全 923 场终局统计(确定性算术)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "outcome_split",
+     "note": "主 45.3% / 平 22.8% / 客 32.0%(n=923);平局率逐季上行 17.9%(2022)→24.4%(2023)→26.0%(2024),说明该画像须 rolling 复核不可静态引用",
+     "evidence": "API-Football league=94 seasons 2022-2024 全 923 场终局统计(确定性算术)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "big_three_gap_2025_26",
+     "note": "三强断层:波尔图88(66-18)/里斯本竞技82(89-24)/本菲卡80(74-25) vs 第4布拉加59——21分鸿沟。注意形状差异:波尔图是防守型冠军(场均失0.5),竞技攻击最强(89球)却只拿第2",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "promoted_2026_27",
+     "note": "升班:马里迪莫(马德拉)/维塞乌;降级:AVS/托迪拉;卡萨皮亚附加赛保级成功。马德拉两队(马里迪莫/国民)客场需跨海飞行,赛程负担高于本土队",
+     "evidence": "https://en.wikipedia.org/wiki/2026-27_Primeira_Liga",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "season_opening_variance",
+     "note": "新赛季首1-2轮=方差窗口,同荷甲:首轮 conf 封顶、优先降格全包,上季榜位可信度打折",
+     "evidence": "瑞超 resumption_variance 实证(settlements 2026-07-11/07-12)+ 首轮无本赛季样本",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "european_sandwich_2026_08",
+     "note": "首轮与欧战资格赛Q3重叠:本菲卡(UEL Q3 8/06 对 Hearts)、布拉加(UECL Q3 8/06)。三强之一打资格赛=赛程密度异常,按约束o 按次回合状态分级",
+     "evidence": "API-Football /fixtures?date=2026-08-04..06(欧战资格赛 Q3 实测)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "manager_changes_2026",
+     "note": "换帅:本菲卡→Marco Silva、法马利康→Carvalhal(推断结构证据 0-2pp)",
+     "evidence": "https://en.wikipedia.org/wiki/2026-27_Primeira_Liga",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "draw_distribution_2025_26",
+     "note": "平局按队分档极散:本菲卡 11 平(32.4%,且 0 负)、里奥阿维/阿马多拉之星/卡萨比亚各 12 平(35.3%)、布拉加与法马利康与吉尔维森特各 11 平 vs 波尔图仅 4 平(11.8%)。'强队必胜'在葡超要按队分档,不能按名次推",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "round1_fixtures_2026_08",
+     "note": "首轮(北京 8/08-8/11)9 场:埃斯托里尔-法马利康、马里迪莫-卡萨比亚、吉马良斯-阿罗卡、阿马多拉之星-葡萄牙体育、波尔图-艾华卡、本菲卡-维塞乌、吉尔维森特-里奥阿维、莫雷拉人-布拉加、圣克拉拉-马德拉国民",
+     "evidence": "500.com liansai zuqiu-19878 / zuqiu-19987 首轮赛程(2026-08-05 抓取)",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "league_id": "swe-allsvenskan",
+   "name_zh": "瑞超",
+   "name_en": "Allsvenskan",
+   "country": "Sweden",
+   "season": "2026",
+   "aliases": [
+    "瑞典超"
+   ],
+   "profile_notes": [
+    {
+     "key": "home_away_split",
+     "note": "极端主客分裂:卡尔马客场0分/哥德堡主场0胜/哈马比主场20-5,禁用通用主场加成",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    },
+    {
+     "key": "xg_divergence",
+     "note": "xG背离榜:哈马比被积分榜低估(xG第2强);米亚尔比战绩虚高",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    },
+    {
+     "key": "summer_window",
+     "note": "夏窗7/8后才开=复赛首轮新援不能上",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    },
+    {
+     "key": "resumption_variance",
+     "note": "夏歇复赛首轮mid-range热门失效(n=1晚入账):7/11米亚尔比主场.51负AIK、垫底厄格里特4:3掀翻赫根(.63客热);复赛首1-2轮歇前分档/画像可信度打折,方差上调;结构极差场另论",
+     "evidence": "settlements 2026-07-11",
+     "at": "2026-07-12"
+    },
+    {
+     "key": "resumption_round2_normal",
+     "note": "复赛第2轮结构恢复正常(7/12哈马比2:0/马尔默4:0/韦斯特罗2:0全兑现,盖斯1:0)——首轮方差窗口只持续1轮;哈马比打穿全牌照让胜验证成功(净胜恰2)",
+     "evidence": "settlements 2026-07-12",
+     "at": "2026-07-13"
+    }
+   ]
+  },
+  {
+   "league_id": "uefa-qualifiers",
+   "name_zh": "欧战资格赛",
+   "name_en": "UEFA qualifiers (CL/EL/ECL)",
+   "country": "",
+   "season": "",
+   "aliases": [
+    "欧冠",
+    "欧联",
+    "欧协联",
+    "欧冠杯",
+    "欧罗巴",
+    "欧会杯"
+   ],
+   "profile_notes": [
+    {
+     "key": "entity_scope",
+     "note": "本实体覆盖体彩板面的欧冠/欧联/欧协联**全部阶段**;以下笔记多数只适用两回合淘汰制(资格赛/淘汰赛),小组赛/联赛阶段引用前须自检赛制。历史缺陷:2026-08-05 前本实体 name_zh='欧战资格赛' 与板面 '欧冠' 对不上,画像从未挂到任何一场比赛(由 decision-alias-audit 发现)",
+     "evidence": "decision-alias-audit 2026-08-04/05 + 板面 leagueAbbName 实测",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "ttg_high_variance",
+     "note": "7-8月资格赛窗:悬殊热门局常打高分,\"强弱悬殊=低分\"先验不可靠。n=3:2026-07-09 索德1.20超热门赢3:2=5球/伏费1:2=3球(ttg Brier 0.97/0.72);2026-07-30 本菲卡fair83%超热门5:0圣加仑=5球(ttg模态3球单点¥50死,Brier 0.89)。⚠️7/30违反本条'少下真金'警示落了真金——资格赛窗ttg禁真金升为硬执行;悬殊热门(fair≥70%)场ttg分布右尾肥,模态单点必死型",
+     "evidence": "settlements 2026-07-09 SET-read-R-claude-ttg-*",
+     "at": "2026-07-31"
+    },
+    {
+     "key": "second_leg_decided_leader_90min",
+     "note": "次回合总分已决场:领先方90'口径方差远大于市场价——领先方守总分不守90'结果,绝望方需大胜反而全力压上。n=2方向相反:HJK(5:0已决)1:0胜✓ vs 波兹南(4:1已决)主场0:3负✗(半场0:1,AGF恰好打出翻盘所需3球,点球淘汰莱赫;市场主胜fair55.7%照样全灭,conf4锚腿三票共¥210归零)。候选规则(攒样本):已决场领先方正路conf封顶3、禁单选/禁锚腿。机理26097判断文件7/27已单列却未传导到jczq层——见跨渠道传导约束j",
+     "evidence": "SET-read-R-claude-2026-07-29-周三002-had Brier 0.988; 26096期HJK先例",
+     "at": "2026-07-30"
+    },
+    {
+     "key": "second_leg_trailing_exact_margin",
+     "note": "次回合需翻盘方(落后1球)的'恰净胜1逼加时'是博弈最自然达成态,相对市场有结构性抬升:卡拉特落后0:1→90'恰1:0(DC先验恰净胜1=22.7%已是最大净胜单带,照样开出);让负(平+客55.7%大面)押市场大面死于该窄带。n=1只入账。附:001两条方向性旗(停赛+自产尾巴)均指平,实开主胜——'旗预测脆不预测脆向哪'再+1",
+     "evidence": "SET-read-R-claude-2026-07-29-周三001-had 1:0; 加时0:0点球6:5",
+     "at": "2026-07-30"
+    }
+   ]
+  },
+  {
+   "league_id": "usa-mls",
+   "name_zh": "美职",
+   "name_en": "Major League Soccer",
+   "country": "USA",
+   "season": "2026-27",
+   "aliases": [
+    "美职联",
+    "美职足"
+   ],
+   "profile_notes": []
+  },
+  {
+   "league_id": "conmebol-libertadores",
+   "name_zh": "解放者杯",
+   "name_en": "Copa Libertadores",
+   "country": "South America",
+   "season": "2026",
+   "aliases": [
+    "南美解放者杯"
+   ],
+   "profile_notes": [
+    {
+     "key": "two_legged_format",
+     "note": "两回合淘汰制,R16 起 ida/vuelta;**客场进球规则 CONMEBOL 自 2022 已废除**,总分平→加时→点球;小组头名次回合主场。约束 o 三档分级适用;首回合独立 regime:次回合主场一方 0:0 即满分答卷(结构性压低进球,规则事实非叙事)",
+     "evidence": "CONMEBOL 官网 2026-08-07 octavos ida 公告 + Wikipedia 2026 Copa Libertadores + 2026-08-12 周三002/003 双 agent 独立核实",
+     "at": "2026-08-12"
+    },
+    {
+     "key": "crash_scan_first_sample",
+     "note": "p 条竞彩渠道首个正式样本:2026-08-12 周三003 帕尔梅拉斯 fair 72.2%≥70%∧self_made_tail(确证级:同赛季对位 0胜1平1负+主场1.55球/场+对手小组头名4场零封)→判翻车场,竞彩空仓。待 8/13 晨开奖回填结果",
+     "evidence": "R-claude-jczq-20260812-003-had + daily/2026-08-12/judge-notes.md",
+     "at": "2026-08-12"
+    }
+   ]
+  },
+  {
+   "league_id": "uefa-super-cup",
+   "name_zh": "欧超杯",
+   "name_en": "UEFA Super Cup",
+   "country": "Europe",
+   "season": "2026",
+   "aliases": [
+    "欧洲超级杯"
+   ],
+   "profile_notes": [
+    {
+     "key": "single_leg_no_extra_time",
+     "note": "单场决胜且 **2022 起取消加时**:90' 平直接点球 ⇒ 足彩/竞彩结算的'平'是自然终局,不会被加时吃掉。中立场=国际盘原生中立定价,fair 里没有主场加成可扣;赛季极早期双方常为零正赛样本(备战差看世界杯/杯赛晚归者的边际权重,不看名义归队日期)",
+     "evidence": "Wikipedia 2026 UEFA Super Cup + 26103 场14 agent 核实(PSG-维拉,双方本季正赛均 0 场)",
+     "at": "2026-08-12"
+    }
+   ]
   }
  ],
  "teams": [
+  {
+   "team_id": "jpn-cerezo",
+   "name_zh": "大阪樱花",
+   "name_en": "Cerezo Osaka",
+   "aliases": [
+    "樱花大阪"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第3——过渡杯赛最大黑马(赛前非夺冠热门)。⚠️见联赛 transition_season_2026_contamination:该名次只有18场同区样本支撑。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "manager_2026_27",
+     "note": "主帅 Pablo Machín(西),3后卫体系代表人物。大阪德比对手=大阪钢巴。",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-fc-tokyo",
+   "name_zh": "FC东京",
+   "name_en": "FC Tokyo",
+   "aliases": [
+    "东京FC"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第4。被列为 ACL 区竞争者。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "tactics_matsuhashi",
+     "note": "主帅 松橋力蔵第2年。攻守两端 aggressive、要求掌握比赛主动权并诱导对手失位;方法论是**'战术优先',先装战术再让身体条件追上** → 赛季初期可能出现体能与战术不同步的窗口。",
+     "evidence": "https://www.fctokyo.co.jp/fan/fanzone/detail/330651/ + https://soccermagazine.jp/j1/17823169",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-fukuoka",
+   "name_zh": "福冈黄蜂",
+   "name_en": "Avispa Fukuoka",
+   "aliases": [
+    "福冈"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第19。主帅 塚原慎也。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-gamba",
+   "name_zh": "大阪钢巴",
+   "name_en": "Gamba Osaka",
+   "aliases": [
+    "钢巴大阪"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第9;开幕大阪德比以**史上首次点球决胜**取胜(10打10)。⚠️夏窗**补强动作少**(与名古屋同被点名),被列为 ACL 区竞争者但阵容未加强。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://sports.yahoo.co.jp/contents/22794 + https://www.gamba-osaka.net/report/index/no/1004/",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "manager_myojin_2026_07",
+     "note": "2026年7月新帅 **明神智和**(俱乐部青训教练升任,前日本国脚)——接替 Vissing。继承前任的前场高压起手,新增'进攻时边路球员拉开宽度'。新帅+仅数周磨合+补强少 → 赛季初属推断结构 0-2pp 的方差源,不产生方向性偏移。",
+     "evidence": "https://www.gamba-osaka.net/news/index/no/20544/ + https://blog.domesoccer.jp/archives/60252163.html",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-hiroshima",
+   "name_zh": "广岛三箭",
+   "name_en": "Sanfrecce Hiroshima",
+   "aliases": [
+    "广岛"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第7。被列为 ACL 区竞争者。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "tactics_gaul",
+     "note": "2025年12月上任的 Bartosz Gaul(波兰;无职业球员经历,沙尔克04/美因茨05/RB莱比锡背景)。**'继承型'而非'破坏重建'**:其压迫强度、夺回球位置、转换速度等指标与广岛历史数据高度接近 → 换帅**不构成**结构断裂,上季形状可继续沿用。打法:中场压迫组 block,夺回后快速纵向传球抢主动。",
+     "evidence": "https://www.footballista.jp/feature/213885 + https://note.com/sporpath/n/n2780f447ac06",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-jef-chiba",
+   "name_zh": "千叶市原",
+   "name_en": "JEF United Chiba",
+   "aliases": [
+    "千叶"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "promoted_2026",
+     "note": "升班马:2025 J1 附加赛胜出,**17年后重返顶级**(2008年降级)。2026 过渡杯赛综合**第20=垫底**。主帅 小林慶行。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "no_top_flight_sample",
+     "note": "本级样本近乎空白且过渡杯赛垫底。⚠️但'升班马包办17/18/20'是**过渡杯赛**结果,不是常规联赛实力序,不可当强先验。",
+     "evidence": "联赛 transition_season_2026_contamination",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-kashima",
+   "name_zh": "鹿岛鹿角",
+   "name_en": "Kashima",
+   "aliases": [
+    "鹿岛"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第2(East 区常规战绩全联盟最佳),排位赛决赛负神户。2026-27 与神户并列为夺冠2强且夏窗增强。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "tactics_oniki",
+     "note": "主帅 鬼木達(前川崎前锋4冠功勋)第2年。推进核心是**后腰频繁移位、接球次数大增**。⚠️关键性格:**极端实用主义——为赢球不惜使用与其理想相悖的长传与深度防守**,所以'鹿岛=传控'的默认先验不成立,场面形态会随对手切换。目标 J1+ACLE 双冠。",
+     "evidence": "https://note.com/takegola/n/n8c03c7c69181 + https://www1.targma.jp/gelmag/2026/07/07/post38172/",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-kashiwa",
+   "name_zh": "柏太阳神",
+   "name_en": "Kashiwa Reysol",
+   "aliases": [
+    "柏"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第15。被列为 ACL 区竞争者(名次与预期背离)。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "tactics_ricardo",
+     "note": "主帅 Ricardo Rodríguez(西)。位置足球/控球体系,3-4-2-1;**场均传球 608.4 次、控球率 58.5%,两项均为联赛第1**。⚠️判读含义:**控球统治力与结果严重背离**(控球第1却只排第15)→ 遇柏时不可用'控球强=强队'推导,该队更可能出现'压着打但打不开'的自产尾巴形态(m 条方向性旗→平)。",
+     "evidence": "https://www.footballista.jp/feature/200044 + https://note.com/jafanalysisroom/n/n053e486c9675",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-kawasaki",
+   "name_zh": "川崎前锋",
+   "name_en": "Kawasaki Frontale",
+   "aliases": [
+    "川崎"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第8。被列为 ACL 区竞争者。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "tactics_hasebe",
+     "note": "主帅 長谷部茂利。保留俱乐部传控哲学,但把**防守修正**列为首要工程;**4-4-2 多以中场压迫(ミドルプレス)起手**,全队共享压迫触发时机 → 不是全场高位队,别按'川崎=极端控球'的旧印象定位。",
+     "evidence": "https://www.footballchannel.jp/2025/05/29/post724143/ + https://www.frontale.co.jp/profile/2026sp/staff_01.html",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "derbies",
+     "note": "恩怨双线:多摩川クラシコ(vs FC东京)+ 神奈川德比(vs 横滨水手)。",
+     "evidence": "https://ja.wikipedia.org/wiki/多摩川クラシコ",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-kobe",
+   "name_zh": "神户胜利船",
+   "name_en": "Vissel Kobe",
+   "aliases": [
+    "神户"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 百年构想联赛**冠军**(West 区第1,9胜0平3负/27进21失;排位赛两回合总分5-2胜鹿岛,首回合5-0)。2026-27 参加 ACLE → 赛程密度高。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "tactics_skibbe",
+     "note": "主帅 Michael Skibbe(德)首季即夺冠。**拿结果时用 4-3-3,但本人偏好 3-4-2-1** → 赛季初存在阵型切换风险,'上季形状'不可直接外推。核心=大迫勇也(10号),进攻围绕其支点作用。",
+     "evidence": "https://gmbosk2005.com/26-27-kobe/ + https://www.vissel-kobe.co.jp/profile/?mode=detail&id=356",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-kyoto",
+   "name_zh": "京都不死鸟",
+   "name_en": "Kyoto Sanga",
+   "aliases": [
+    "京都"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第16。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "manager_popovic_2026_27",
+     "note": "2026-27 新帅 **Ranko Popović**(塞)。新帅=推断结构 0-2pp。",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-machida",
+   "name_zh": "町田泽维亚",
+   "name_en": "Machida Zelvia",
+   "aliases": [
+    "町田"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第5;被列为完成度/稳定性第一档(与鹿岛、神户并列)。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致)",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "tactics_kuroda_longthrow",
+     "note": "主帅 黑田剛(高中足球30年名帅转型)。标志战术=**高压 + 长距离界外球 + 定位球花招**,首选出球方向是防线身后;长掷套路种类繁多、对手难预判。",
+     "evidence": "https://king-gear.com/articles/2148 + https://www.tokyo-np.co.jp/article/333083",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "weapon_degraded_2026_27",
+     "note": "⚠️**2026-27 其招牌武器遭双重削弱**:①联赛施行界外球5秒新规;②主力长掷手 **林幸多郎转会浦和**。→ 第5名先验须打折,'町田=定位球高产'不可直接沿用上季数据。这是生产函数改变,不是状态波动。",
+     "evidence": "https://news.livedoor.com/article/detail/32002136/",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-mito",
+   "name_zh": "水户蜀葵",
+   "name_en": "Mito Hollyhock",
+   "aliases": [
+    "水户"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "promoted_2026",
+     "note": "升班马:2025 **J2 冠军、队史首次升上 J1**。2026 过渡杯赛综合第18(排位赛两回合总分0-2负长崎)。主帅 木森大介。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "no_top_flight_sample",
+     "note": "顶级联赛**零历史样本**。市场对其定价高度依赖 J2 数据外推,是全联盟先验最不确定的一队;判读默认跟市场,不自行加减码。",
+     "evidence": "联赛 transition_season_2026_contamination",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-nagasaki",
+   "name_zh": "长崎",
+   "name_en": "V-varen Nagasaki",
+   "aliases": [
+    "长崎航海"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "promoted_2026",
+     "note": "升班马:2025 J2 亚军,**8个赛季后重返顶级**。2026 过渡杯赛综合第17(排位赛两回合总分2-0胜水户)。主帅 高木琢也。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "no_top_flight_sample",
+     "note": "本级样本近乎空白(2026 只有18场同区赛+排位赛,且是点球决胜制)。**空白≠弱,别替市场加码**——同荷甲升班马条款。",
+     "evidence": "联赛 transition_season_2026_contamination + 荷甲 promoted_2026_27 同款条款",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-nagoya",
+   "name_zh": "名古屋鲸鱼",
+   "name_en": "Nagoya Grampus",
+   "aliases": [
+    "名古屋"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第6。⚠️夏窗**补强动作少**(与大阪钢巴同被点名)。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://sports.yahoo.co.jp/contents/22794",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "tactics_misha",
+     "note": "主帅 Mihailo Petrović(ミシャ式)。**可变 3-4-2-1 + 高位压迫 + 全场盯人**;进攻时翼卫极高位,与前场3人形成近似5前锋。判读含义:**高方差体系**——盯人+高位线意味着两端都可能出大比分,进球轴先验应高于联赛均值(J1 大2.5 仅 47.8%),但这是形状判断,单场仍须以 fair 为准。",
+     "evidence": "https://grapo.net/2026/01/26/27961/ + https://ja.wikipedia.org/wiki/ミハイロ・ペトロヴィッチ",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-okayama",
+   "name_zh": "冈山绿雉",
+   "name_en": "Fagiano Okayama",
+   "aliases": [
+    "冈山"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第11。主帅 木山隆之。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-shimizu",
+   "name_zh": "清水心跳",
+   "name_en": "Shimizu S-pulse",
+   "aliases": [
+    "清水"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第14。主帅 吉田達磨。2025 曾在留级附加赛两回合总分1-4负横滨水手。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-tokyo-verdy",
+   "name_zh": "东京绿茵",
+   "name_en": "Tokyo Verdy",
+   "aliases": [
+    "东京日视"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第10。主帅 城福浩。东京德比对手=FC东京。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-urawa",
+   "name_zh": "浦和红钻",
+   "name_en": "Urawa",
+   "aliases": [
+    "浦和"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第12(低于其资源体量)。主场埼玉2002 容量 62,040,全联盟最大。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://en.wikipedia.org/wiki/2026%E2%80%9327_J1_League + https://ja.wikipedia.org/wiki/2026/27シーズンのJ1リーグ",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "manager_cho_2026_27",
+     "note": "2026-27 新帅 **曺貴裁**(俱乐部OB)。宣言:'自己掌握主动权的 aggressive 风格',体育总监堀之内聖要求'**纵向推进力**';曺自述走'**hybrid 型**'(举克洛普与热刺为例=右手激情左手战术)。⚠️新帅+风格转型=推断结构 0-2pp,**不许当偏移理由**;但可解释盘口对浦和的重新定价。",
+     "evidence": "https://news.mynavi.jp/article/20260804-4775793/ + https://sakanowa.jp/topics/110544",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "signing_lin_2026",
+     "note": "夏窗从町田签下 **林幸多郎**(町田的主力长掷手)——同时是町田武器被削弱的原因。",
+     "evidence": "https://news.livedoor.com/article/detail/32002136/",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "jpn-yokohama-fm",
+   "name_zh": "横滨水手",
+   "name_en": "Yokohama F. Marinos",
+   "aliases": [
+    "横滨FM"
+   ],
+   "competition_ids": [
+    "jpn-j1"
+   ],
+   "profile_notes": [
+    {
+     "key": "standing_2026",
+     "note": "2026 综合第13。2025 常规赛季第13名,靠附加赛两回合总分4-1胜清水才留级 → **连续两个口径都在中下游**,'水手=豪门'的默认先验本季不成立。",
+     "evidence": "https://news.yahoo.co.jp/articles/80a0fd4e54e5c2330877f1dc5e8969280a6d5b51(フットボールチャンネル) + https://www.jleague.jp/j1/standings/2026/ 官方顺位表(双源一致) + https://www.365scores.com/football/match/j1-league-147/kashima-antlers-yokohama-f.-marinos-2146-2147-147",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "manager_corica_2026_27",
+     "note": "2026-27 新帅 **Steve Corica**(澳,现役期澳国脚32场;执教澳超8季6冠)。宣言攻守两端 aggressive,并会**按阵容灵活变阵**(无固定体系承诺)→ 首季形状不可预测,属推断结构 0-2pp。夏窗仅补3人。",
+     "evidence": "https://www.jleague.jp/news/article/34248/ + https://hiyosi.net/2026/07/06/f_marinos2027/",
+     "at": "2026-08-07"
+    },
+    {
+     "key": "home_ground",
+     "note": "常规主场=日产球场(71,624,全国最大级)。⚠️2026-27 开幕战(8/07 vs 鹿岛)例外地安排在**东京·国立(MUFG)球场=中立场**,触发判决表 m 条'赛地异常'无方向性旗。主场画像不适用于该场。",
+     "evidence": "https://www.365scores.com/... + https://hs19892020.xsrv.jp/jl-26-27-7576 (開幕カード会場)",
+     "at": "2026-08-07"
+    }
+   ]
+  },
+  {
+   "team_id": "ned-ajax",
+   "name_zh": "阿贾克斯",
+   "name_en": "Ajax",
+   "aliases": [],
+   "competition_ids": [
+    "ned-eredivisie"
+   ],
+   "profile_notes": [
+    {
+     "key": "underperform_2025_26",
+     "note": "2025-26 仅第5(56分/62球),靠欧战附加赛才拿到资格——'阿贾克斯=豪门'的默认先验在本赛季首轮不成立",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Eredivisie 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "new_manager_and_sandwich",
+     "note": "2026夏换帅 Míchel(6/02);UECL Q3 8/06 夹心,首轮 8/09 客场兹沃勒",
+     "evidence": "API-Football /fixtures?date=2026-08-04..06(欧战资格赛 Q3 实测)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "draw_prone_2025_26",
+     "note": "34 场 14 平(41.2%)、仅 14 胜——平局率全联赛并列第一。'豪门单选胜'在阿贾克斯身上是上赛季最贵的假设",
+     "evidence": "500.com liansai zuqiu-9111/jifen-22202 荷甲 2025/26 终榜(赛/胜/平/负/进/失/胜率/平率)",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "ned-feyenoord",
+   "name_zh": "费耶诺德",
+   "name_en": "Feyenoord",
+   "aliases": [
+    "飞燕诺"
+   ],
+   "competition_ids": [
+    "ned-eredivisie"
+   ],
+   "profile_notes": [
+    {
+     "key": "runner_up_2025_26",
+     "note": "2025-26 第2(19胜8平7负,70-44),落后埃因霍温 19 分",
+     "evidence": "500.com liansai zuqiu-9111/jifen-22202 荷甲 2025/26 终榜(赛/胜/平/负/进/失/胜率/平率)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "round1_derby",
+     "note": "首轮客场打鹿特丹斯巴达=鹿特丹德比;德比属'战意故事'档(0-2pp 且只许朝平),不得当作方向性理由",
+     "evidence": "500.com liansai zuqiu-19878 / zuqiu-19987 首轮赛程(2026-08-05 抓取)",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "ned-go-ahead-eagles",
+   "name_zh": "前进之鹰",
+   "name_en": "GO Ahead Eagles",
+   "aliases": [
+    "前进鹰",
+    "埃格尔斯"
+   ],
+   "competition_ids": [
+    "ned-eredivisie"
+   ],
+   "profile_notes": [
+    {
+     "key": "record_gd_divergence",
+     "note": "2025-26 第12(38分)但 GD+1(54-53)——战绩偏低型背离,与鹿特丹斯巴达方向相反,按榜位定价会低估",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Eredivisie 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "draw_prone_2025_26",
+     "note": "34 场 14 平(41.2%)、仅 8 胜——平局粘性最高档,GD 仅 +1 却排第 12",
+     "evidence": "500.com liansai zuqiu-9111/jifen-22202 荷甲 2025/26 终榜(赛/胜/平/负/进/失/胜率/平率)",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "ned-nec",
+   "name_zh": "奈梅亨",
+   "name_en": "NEC Nijmegen",
+   "aliases": [
+    "内梅亨"
+   ],
+   "competition_ids": [
+    "ned-eredivisie"
+   ],
+   "profile_notes": [
+    {
+     "key": "overperform_2025_26",
+     "note": "2025-26 第3(59分,77-53),越过阿贾克斯拿到 UCL 资格赛席位",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Eredivisie 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "european_suspended_2026_08",
+     "note": "UCL Q3 首回合 2026-08-04 客场 0-0 奥林匹亚科斯 = 总分悬置,次回合在首轮之后→ 约束o 悬置档:无方向性旗、强制全包(悬置夹心历史 3/3 未赢)",
+     "evidence": "API-Football /fixtures?date=2026-08-04..06(欧战资格赛 Q3 实测)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "draw_prone_2025_26",
+     "note": "34 场 11 平(32.4%),进攻强(77球)但防守漏(53失)",
+     "evidence": "500.com liansai zuqiu-9111/jifen-22202 荷甲 2025/26 终榜(赛/胜/平/负/进/失/胜率/平率)",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "ned-pec-zwolle",
+   "name_zh": "兹沃勒",
+   "name_en": "PEC Zwolle",
+   "aliases": [
+    "兹瓦勒"
+   ],
+   "competition_ids": [
+    "ned-eredivisie"
+   ],
+   "profile_notes": [
+    {
+     "key": "survival_structure_2025_26",
+     "note": "2025-26 第15(37分)GD−27(44-71),失球第二多——保级结构;2026-27 首轮主场迎阿贾克斯",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Eredivisie 终榜",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "ned-psv",
+   "name_zh": "埃因霍温",
+   "name_en": "PSV Eindhoven",
+   "aliases": [
+    "PSV埃因霍温",
+    "PSV"
+   ],
+   "competition_ids": [
+    "ned-eredivisie"
+   ],
+   "profile_notes": [
+    {
+     "key": "dominance_2025_26",
+     "note": "2025-26 统治级卫冕:84分 / 101球 / GD+56 / 27胜3平4负——荷甲唯一破百球队",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Eredivisie 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "draw_averse_2025_26",
+     "note": "34 场仅 3 平(8.8%)——极低平率,分胜负型",
+     "evidence": "500.com liansai zuqiu-9111/jifen-22202 荷甲 2025/26 终榜(赛/胜/平/负/进/失/胜率/平率)",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "ned-sparta-rotterdam",
+   "name_zh": "鹿特丹斯巴达",
+   "name_en": "Sparta Rotterdam",
+   "aliases": [
+    "鹿斯巴达",
+    "鹿特丹斯",
+    "斯巴达鹿特丹"
+   ],
+   "competition_ids": [
+    "ned-eredivisie"
+   ],
+   "profile_notes": [
+    {
+     "key": "record_gd_divergence",
+     "note": "2025-26 第10(43分)但 GD−22(40-62)——战绩虚高型背离,按榜位定价会高估",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Eredivisie 终榜",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "ned-telstar",
+   "name_zh": "特尔斯达",
+   "name_en": "Telstar",
+   "aliases": [
+    "特尔斯塔"
+   ],
+   "competition_ids": [
+    "ned-eredivisie"
+   ],
+   "profile_notes": [
+    {
+     "key": "promoted_consolidated",
+     "note": "升班后 2025-26 第14(37分,49-55)站稳,进球不算少——不是标准鱼腩,别按升班马折价",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Eredivisie 终榜",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "ned-twente",
+   "name_zh": "特温特",
+   "name_en": "Twente",
+   "aliases": [],
+   "competition_ids": [
+    "ned-eredivisie"
+   ],
+   "profile_notes": [
+    {
+     "key": "draw_prone_2025_26",
+     "note": "2025-26 第4(15胜13平6负,59-40):13 平=38.2%,少输当赢型",
+     "evidence": "500.com liansai zuqiu-9111/jifen-22202 荷甲 2025/26 终榜(赛/胜/平/负/进/失/胜率/平率)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "european_sandwich_2026_08",
+     "note": "UECL Q3 8/06 对 Dunajska Streda,首轮 8/09 客场海伦芬",
+     "evidence": "API-Football /fixtures?date=2026-08-06",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-arouca",
+   "name_zh": "阿罗卡",
+   "name_en": "Arouca",
+   "aliases": [],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "leaky_both_ends_2025_26",
+     "note": "2025-26 第8(12胜6平16负,47-64):攻守皆漏、平率仅 17.6%,分胜负型中游——大球/让球两轴都活跃",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-benfica",
+   "name_zh": "本菲卡",
+   "name_en": "Benfica",
+   "aliases": [],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "third_2025_26",
+     "note": "2025-26 第3 80分(74-25),含34场不败纪录段",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "new_manager_and_sandwich",
+     "note": "2026夏换帅 Marco Silva;UEL Q3 8/06 主场对 Hearts = 首轮前夹心",
+     "evidence": "API-Football /fixtures?date=2026-08-04..06(欧战资格赛 Q3 实测)",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "unbeaten_but_drawn_2025_26",
+     "note": "⚠️2025-26 34 场 0 负,但 11 平(32.4%)只拿第 3。**不败 ≠ 必胜**——'不败'叙事必须拆成胜/平分布再定注(同 7/17 西雅图 H2H 教训:5胜5平的'不败'被误读成平局风险)",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-braga",
+   "name_zh": "布拉加",
+   "name_en": "SC Braga",
+   "aliases": [],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "best_of_the_rest_2025_26",
+     "note": "2025-26 第4 59分(64-36),三强之外头名但差本菲卡21分",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "european_sandwich_2026_08",
+     "note": "UECL Q3 8/06 对迪纳摩明斯克 = 首轮前夹心",
+     "evidence": "API-Football /fixtures?date=2026-08-04..06(欧战资格赛 Q3 实测)",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-casa-pia",
+   "name_zh": "卡萨比亚",
+   "name_en": "Casa Pia",
+   "aliases": [
+    "卡萨皮亚"
+   ],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "draw_prone_survivor",
+     "note": "2025-26 第16(6胜12平16负,31-57),附加赛保级成功;12 平=35.3% 且进球全联赛第二低——低产高平型",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-estoril",
+   "name_zh": "埃斯托里尔",
+   "name_en": "Estoril",
+   "aliases": [
+    "爱斯托里尔",
+    "埃斯托里"
+   ],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "high_goals_midtable_2025_26",
+     "note": "2025-26 第10(10胜9平15负,54-57):进失双高,全联赛总进球数最高的中游队之一——进球轴候选",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-estrela",
+   "name_zh": "阿马多拉之星",
+   "name_en": "Estrela",
+   "aliases": [
+    "阿马多拉",
+    "埃斯特雷拉"
+   ],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "draw_prone_2025_26",
+     "note": "2025-26 第15(6胜12平16负,38-56):12 平=35.3%,保级队里的高平样本",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-famalicao",
+   "name_zh": "法马利康",
+   "name_en": "Famalicao",
+   "aliases": [
+    "法马利卡奥",
+    "法马利"
+   ],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "low_scoring_overachiever",
+     "note": "2025-26 第5 56分但只有 42-29——低分取胜型,进球轴表达(大球/比分)与其名次不匹配",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "new_manager",
+     "note": "2026夏换帅 Carvalhal(推断结构证据 0-2pp)",
+     "evidence": "https://en.wikipedia.org/wiki/2026-27_Primeira_Liga",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-gil-vicente",
+   "name_zh": "吉尔维森特",
+   "name_en": "GIL Vicente",
+   "aliases": [
+    "基尔维森特",
+    "吉维森特"
+   ],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "best_of_rest_2025_26",
+     "note": "2025-26 第6(13胜11平10负,47-38),三强+布拉加+法马利康之后的头名",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-porto",
+   "name_zh": "波尔图",
+   "name_en": "FC Porto",
+   "aliases": [],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "defensive_champion_2025_26",
+     "note": "2025-26 冠军 88分 28胜4平2负,66-18——场均失0.5,夺冠靠防守而非火力(进球比里斯本竞技少23)",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 终榜",
+     "at": "2026-08-05"
+    },
+    {
+     "key": "draw_averse_2025_26",
+     "note": "34 场仅 4 平(11.8%),28胜2负——分胜负型冠军",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-rio-ave",
+   "name_zh": "里奥阿维",
+   "name_en": "Rio Ave",
+   "aliases": [],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "draw_prone_2025_26",
+     "note": "2025-26 第12(8胜12平14负):12 平=35.3%,高平低胜型",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-santa-clara",
+   "name_zh": "圣克拉拉",
+   "name_en": "Santa Clara",
+   "aliases": [],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "low_scoring_2025_26",
+     "note": "2025-26 第13(9胜9平16负)但只进 32 球=全联赛最低,失 41 球却排中下——低产但防守不烂,进球轴表达应偏小球",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 完整终榜 18 行",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "por-sporting",
+   "name_zh": "里斯本竞技",
+   "name_en": "Sporting CP",
+   "aliases": [
+    "葡萄牙体育",
+    "里竞技",
+    "士砵亭"
+   ],
+   "competition_ids": [
+    "por-primeira"
+   ],
+   "profile_notes": [
+    {
+     "key": "attack_first_runner_up",
+     "note": "2025-26 第2 82分,89-24 全联赛最强攻击线,比冠军多进23球却少6分——'火力≠积分'的典型",
+     "evidence": "https://en.wikipedia.org/wiki/2025-26_Primeira_Liga 终榜",
+     "at": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "team_id": "swe-goteborg",
+   "name_zh": "哥德堡",
+   "name_en": "IFK Goteborg",
+   "aliases": [
+    "IFK Göteborg",
+    "Goteborg"
+   ],
+   "competition_ids": [
+    "swe-allsvenskan"
+   ],
+   "profile_notes": [
+    {
+     "key": "home_zero_wins",
+     "note": "主场0胜——主场腿禁用通用主场加成",
+     "evidence": "memory allsvenskan-2026-league-profile",
+     "at": "2026-07-05"
+    }
+   ]
+  },
   {
    "team_id": "swe-hammarby",
    "name_zh": "哈马比",
@@ -209,26 +1702,6 @@
     {
      "key": "away_zero",
      "note": "客场0分——客场腿禁用通用画像",
-     "evidence": "memory allsvenskan-2026-league-profile",
-     "at": "2026-07-05"
-    }
-   ]
-  },
-  {
-   "team_id": "swe-goteborg",
-   "name_zh": "哥德堡",
-   "name_en": "IFK Goteborg",
-   "aliases": [
-    "IFK Göteborg",
-    "Goteborg"
-   ],
-   "competition_ids": [
-    "swe-allsvenskan"
-   ],
-   "profile_notes": [
-    {
-     "key": "home_zero_wins",
-     "note": "主场0胜——主场腿禁用通用主场加成",
      "evidence": "memory allsvenskan-2026-league-profile",
      "at": "2026-07-05"
     }

@@ -60,3 +60,22 @@ def test_connector_cannot_merge(tmp_path: Path) -> None:
         idempotency_key="merge:denied", requested_at=datetime(2026, 7, 21, 9, tzinfo=UTC),
     ))
     assert outcome.status is ActionStatus.REJECTED
+
+
+def test_upsert_links_external_id_when_resolved_by_curated_alias(tmp_path: Path) -> None:
+    """回归 2026-08-05:别名种子命中时曾直接 return,provider 的 external_id 永不登记。
+
+    俱乐部别名表扩到 ~400 条后,这条'命中已有实体'路径从罕见变成常态。
+    """
+    engine = build_ontology_engine(tmp_path / "ontology.db")
+    run_migrations(engine)
+    actions = EntityActions(ActionService(lambda: OntologyUnitOfWork(engine)))
+    team_id = actions.upsert_team(UpsertTeamRequest(
+        canonical_name="AIK Stockholm", team_kind=TeamKind.CLUB, country="SE",
+        provider="api-football", external_id="AF-377",
+        actor_id="source:api", actor_role=ActorRole.CONNECTOR, idempotency_key="aik:seeded",
+        requested_at=datetime(2026, 8, 5, 8, tzinfo=UTC),
+    )).result_refs[0].object_id
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.identity.entity_by_external_id(
+            EntityType.TEAM, provider="api-football", external_id="AF-377") == team_id

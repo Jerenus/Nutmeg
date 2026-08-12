@@ -96,6 +96,19 @@ class EntityActions:
                 aliases=(request.canonical_name.casefold(),),
             )
             if resolution.entity_id is not None:
+                # 命中已有实体(多为策展别名种子)时仍要登记本 provider 的 external_id 与来名——
+                # 否则该队在本 provider 下永远没有外部 id,后续对齐只能再走别名。
+                # 两个仓储方法都幂等;external_id 若已指向别的实体会抛错(真身份冲突,应当暴露)。
+                if request.provider and request.external_id:
+                    uow.identity.link_external_identifier(
+                        entity_id=resolution.entity_id,
+                        entity_type=EntityType.TEAM,
+                        provider=request.provider,
+                        external_id=request.external_id,
+                    )
+                uow.identity.add_alias(
+                    resolution.entity_id, EntityType.TEAM, request.canonical_name
+                )
                 return (ObjectRef('team', resolution.entity_id),)
             team_id = mint_id(EntityType.TEAM)
             uow.identity.insert_team(

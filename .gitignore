@@ -20,3 +20,6 @@ build/
 .specify/extensions/.cache/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
+
+.tmp/
+media/
