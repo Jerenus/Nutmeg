@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nutmeg.zucai.prep-revision</string>
+  <!-- 传统足彩备料(revision)。有期才干活,无期发心跳。只出事实与确定性算术,不含判读。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; /opt/homebrew/bin/uv run nutmeg zucai-prep --slot revision --dispatch-telegram</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>18</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/zucai.prep-revision.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/zucai.prep-revision.err.log</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/jz71/Projects/Nutmeg</string>
+</dict>
+</plist>

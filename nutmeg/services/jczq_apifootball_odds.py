@@ -303,7 +303,7 @@ def collect_bold_odds_apifootball(
                 for zh, en in ((match.home_zh, home_en), (match.away_zh, away_en))
                 if en is None
             ]
-            logger.info(
+            logger.warning(
                 "apifootball-odds skip %s: 队名别名缺失 %s"
                 "（补 jczq_national_team_aliases.json 或 jczq_club_team_aliases.json）",
                 match.match_no, missing,

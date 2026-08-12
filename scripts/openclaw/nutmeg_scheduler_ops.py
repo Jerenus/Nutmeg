@@ -205,6 +205,26 @@ def build_context(run_date: str, output_dir: Path, log_dir: Path) -> Path:
                     "status": match.get("matchStatus"),
                 })
 
+    # 判读前置知识:当日板面涉及的联赛/球队画像 + 别名覆盖审计。
+    # 画像不注入 = 建了也读不到(profile_notes 曾整整一个月零消费者);
+    # 别名缺口不注入 = 欧赔锚静默丢失(8/04 全板面丢锚)。导入失败只降级,不拖垮 context。
+    entity_profiles: dict[str, Any] | None = None
+    alias_audit: dict[str, Any] | None = None
+    try:
+        from nutmeg.decision.alias_audit import audit_board
+        from nutmeg.decision.entities import profiles_for_board
+        from nutmeg.decision.store import DecisionStore
+
+        store = DecisionStore(decision_dir)
+        entity_profiles = profiles_for_board(
+            store,
+            [str(f.get("league") or "") for f in fixtures],
+            [str(f.get(side) or "") for f in fixtures for side in ("home", "away")],
+        )
+        alias_audit = audit_board(markets) if isinstance(markets, dict) else None
+    except Exception as exc:  # noqa: BLE001 — 上下文构建永不因附加信息失败
+        print(f"NUTMEG_CONTEXT_WARN entity_profiles_unavailable={exc}", file=sys.stderr)
+
     settle_out = log_dir / "decision.settle.out.log"
     settle_err = log_dir / "decision.settle.err.log"
     settle_lines = settle_out.read_text(encoding="utf-8", errors="replace").splitlines()[-40:] \
@@ -243,6 +263,8 @@ def build_context(run_date: str, output_dir: Path, log_dir: Path) -> Path:
             ),
             "market_total_count": markets.get("totalCount") if isinstance(markets, dict) else None,
             "fixtures": fixtures,
+            "entity_profiles": entity_profiles,
+            "alias_audit": alias_audit,
         },
     }
     context_path = day_dir / "scheduler-context.json"

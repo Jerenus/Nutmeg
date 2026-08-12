@@ -19,6 +19,7 @@ _ZUCAI_SCHEDULE_SOURCE_FILE_OPTION = _cli.typer.Option(
     None, "--schedule-source-file", help="赛程源文件(离线;省略则需 --live-fetch)")
 _ZUCAI_ODDS_SOURCE_FILE_OPTION = _cli.typer.Option(
     None, "--odds-source-file", help="赔率源文件(离线;省略则需 --live-fetch)")
+_LEGS_AUDIT_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="票面结构 JSON")
 
 
 @_cli.app.command("decision-fetch")
@@ -104,6 +105,108 @@ def decision_day_regime(
     """决策本体 · 日级盘面热度诊断:确定性算术攒样本,不进决策(decision-am 已内嵌)。"""
     from nutmeg.decision.verbs import run_day_regime
     _cli.typer.echo(run_day_regime(run_date, output_dir))
+
+
+@_cli.app.command("decision-alias-audit")
+def decision_alias_audit(
+    run_date: str | None = _cli.typer.Option(None, "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    history: bool = _cli.typer.Option(
+        False, "--history", help="改跑全部历史板面的覆盖率(加完别名后的验收口径)"),
+) -> None:
+    """决策本体 · 别名覆盖审计:未命中 = 丢国际欧赔锚(decision-am 已内嵌当日审计)。"""
+    if history:
+        from nutmeg.decision.alias_audit import audit_history, format_history
+        _cli.typer.echo(format_history(audit_history(output_dir)))
+        return
+    if not run_date:
+        _cli.typer.echo("❌ 需要 --run-date 或 --history", err=True)
+        raise _cli.typer.Exit(code=1)
+    from nutmeg.decision.verbs import run_alias_audit
+    _cli.typer.echo(run_alias_audit(run_date, output_dir))
+
+
+@_cli.app.command("decision-entities-sync")
+def decision_entities_sync(
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    write_seed: bool = _cli.typer.Option(
+        False, "--write-seed", help="反向:把 store 里领先的实体/笔记回灌种子文件"),
+) -> None:
+    """决策本体 · 实体同步:种子 → store 幂等 upsert(画像笔记按 key 合并)。"""
+    from nutmeg.decision.entities import export_entities_to_seed, sync_entities
+    from nutmeg.decision.store import DecisionStore
+
+    store = DecisionStore(Path(output_dir) / "decision")
+    if write_seed:
+        written = export_entities_to_seed(store)
+        _cli.typer.echo(
+            f"decision-entities-sync --write-seed: 回灌种子 "
+            f"{written['leagues']} 联赛 / {written['teams']} 球队")
+        return
+    stats = sync_entities(store)
+    _cli.typer.echo(
+        f"decision-entities-sync: 新增 {stats['added']} / 更新 {stats['updated']} / "
+        f"未变 {stats['unchanged']}")
+
+
+@_cli.app.command("decision-profile")
+def decision_profile(
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    league: str | None = _cli.typer.Option(None, "--league", help="league_id"),
+    team: str | None = _cli.typer.Option(None, "--team", help="team_id"),
+    run_date: str | None = _cli.typer.Option(
+        None, "--run-date", help="按当日板面列出相关联赛/球队画像"),
+    add_note: bool = _cli.typer.Option(False, "--add-note", help="写模式"),
+    key: str = _cli.typer.Option("", "--key"),
+    note: str = _cli.typer.Option("", "--note"),
+    evidence: str = _cli.typer.Option("", "--evidence", help="必填:URL 或数据出处"),
+    at: str = _cli.typer.Option("", "--at", help="YYYY-MM-DD"),
+) -> None:
+    """决策本体 · 联赛/球队画像读写(证据式笔记,evidence 必填)。"""
+    import json as _json
+
+    from nutmeg.decision.entities import add_profile_note, profiles_for_board
+    from nutmeg.decision.ontology import League, Team
+    from nutmeg.decision.store import DecisionStore
+
+    store = DecisionStore(Path(output_dir) / "decision")
+    if add_note:
+        try:
+            _cli.typer.echo(add_profile_note(
+                store, league_id=league, team_id=team,
+                key=key, note=note, evidence=evidence, at=at))
+        except ValueError as exc:
+            _cli.typer.echo(f"❌ {exc}", err=True)
+            raise _cli.typer.Exit(code=1) from exc
+        return
+    if run_date:
+        from nutmeg.decision.alias_audit import board_matches
+        from nutmeg.decision.market_data import load_sporttery_snapshot
+
+        value = load_sporttery_snapshot(run_date, output_dir) or {}
+        rows = board_matches(value)
+        payload = profiles_for_board(
+            store,
+            [str(r.get("leagueAbbName") or "") for r in rows],
+            [str(r.get(k) or "") for r in rows
+             for k in ("homeTeamAbbName", "awayTeamAbbName")],
+        )
+        _cli.typer.echo(_json.dumps(payload, ensure_ascii=False, indent=1))
+        return
+    entities = (
+        [store.get(League, league)] if league
+        else [store.get(Team, team)] if team
+        else [*store.load(League), *store.load(Team)]
+    )
+    for entity in entities:
+        if entity is None:
+            _cli.typer.echo("❌ 实体不在 store(先建种子再 decision-entities-sync)", err=True)
+            raise _cli.typer.Exit(code=1)
+        _cli.typer.echo(f"== {entity.id} {entity.name_zh} ({len(entity.profile_notes)} 条)")
+        for row in entity.profile_notes:
+            _cli.typer.echo(
+                f"   [{row.get('key')}] {row.get('note')}"
+                f"\n      证据 {row.get('evidence')} · {row.get('at')}")
 
 
 @_cli.app.command("decision-capture-closing")
@@ -334,3 +437,194 @@ def decision_web(
     store = DecisionStore(Path(output_dir) / "decision")
     app = create_decision_app(store=store, output_dir=Path(output_dir))
     uvicorn.run(app, host=host, port=port)
+
+
+@_cli.app.command("zucai-prep")
+def zucai_prep(
+    run_date: str | None = _cli.typer.Option(None, "--run-date", help="YYYY-MM-DD,默认今天"),
+    slot: str = _cli.typer.Option(
+        "afternoon", "--slot", help="afternoon(14:00 备料) 或 revision(18:30 位移复核)"),
+    issue: str | None = _cli.typer.Option(
+        None, "--issue", help="强制期号(手动补跑;省略则自动探测在售期)"),
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    no_fetch: bool = _cli.typer.Option(False, "--no-fetch", help="不抓取,只用已落盘快照重算"),
+    dispatch_telegram: bool = _cli.typer.Option(False, "--dispatch-telegram"),
+) -> None:
+    """传统足彩备料底座(有期才干活,无期发心跳)。**只出事实与确定性算术,不含判读。**
+
+    旗 / 共振级 / 动作阶梯 / 票面一律留空——判断由主循环 Claude 产出,永不入脚本
+    (26102 复盘:预生成的"初稿"会锚定后续判读)。
+    """
+    from nutmeg.decision.zucai_prep import run_zucai_prep
+
+    result = run_zucai_prep(
+        run_date=run_date, slot=slot, issue=issue,
+        zucai_dir=zucai_dir, output_dir=output_dir,
+        live_fetch=not no_fetch, dispatch=dispatch_telegram,
+    )
+    _cli.typer.echo(result.summary)
+    for label, path in (("备料", result.prep_path), ("brief", result.brief_path),
+                        ("位移", result.diff_path)):
+        if path:
+            _cli.typer.echo(f"  {label} → {path}")
+    if not result.succeeded:
+        raise _cli.typer.Exit(code=1)
+
+
+@_cli.app.command("decision-audit-legs")
+def decision_audit_legs(
+    legs_file: Path = _LEGS_AUDIT_FILE_OPTION,
+) -> None:
+    """出票前结构校验:把「用新理由撤掉结构保险」变成非零退出码。
+
+    只看「这条腿有没有方向性旗」和「面集合有几个面」,**不听任何论证**——
+    同一个动作已杀死四张票(26098/26101/26102/26103),每次的理由都不同且一次比一次讲究,
+    这说明散文规则挡不住它。有 ERROR 即退出码 1。
+    """
+    import json as _json
+
+    from nutmeg.decision.legs_audit import (
+        audit_legs,
+        format_findings,
+        has_blocking,
+        legs_from_dict,
+    )
+
+    payload = _json.loads(Path(legs_file).read_text("utf-8"))
+    findings = audit_legs(legs_from_dict(payload))
+    _cli.typer.echo(format_findings(findings, issue=str(payload.get("issue", ""))))
+    if has_blocking(findings):
+        raise _cli.typer.Exit(code=1)
+
+
+@_cli.app.command("zucai-official")
+def zucai_official(
+    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26103"),
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+    write_outcomes: bool = _cli.typer.Option(
+        False, "--write-outcomes", help="落 {issue}-outcomes.json(喂 decision-reconcile-zucai)"),
+    settle_ledger: bool = _cli.typer.Option(
+        False, "--settle-ledger", help="按 rx.final_ticket 计命中并回填 ledger(幂等,已结不重结)"),
+) -> None:
+    """官方赛果/奖金(gameNo=90,90分钟口径)——结算与回填的唯一权威源。
+
+    ⚠️AET 守卫:赛果只取官方 lotteryDrawResult 串,永不接触 API-Football 的 goals
+    (含加时;2026-08-11 博德实测 90' 2-2 / goals 3-2)。未开奖 → 明确报"尚未开奖",退出码 1。
+    """
+    from datetime import date as _date
+
+    from nutmeg.decision.zucai_official import (
+        fetch_official,
+        format_draw,
+    )
+    from nutmeg.decision.zucai_official import (
+        settle_ledger as _settle,
+    )
+    from nutmeg.decision.zucai_official import (
+        write_outcomes as _write,
+    )
+
+    draw = fetch_official(issue)
+    if draw is None:
+        _cli.typer.echo(f"⚠️ {issue} 尚未开奖(官方列表未出现)——不可当作赛果为空")
+        raise _cli.typer.Exit(code=1)
+    _cli.typer.echo(format_draw(draw))
+    if write_outcomes:
+        _cli.typer.echo(f"  outcomes → {_write(draw, zucai_dir)}")
+    if settle_ledger:
+        for line in _settle(issue, zucai_dir, draw, settled_at=_date.today().isoformat()):
+            _cli.typer.echo(f"  ledger: {line}")
+
+
+@_cli.app.command("decision-rules")
+def decision_rules(
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    verify_issue: str | None = _cli.typer.Option(
+        None, "--verify-issue", help="用官方赛果核验该期全部 pending falsifier(幂等)"),
+) -> None:
+    """规则/证伪登记表(Roadmap A1):预登记的证伪条件由机器核验,不再依赖"记得去核"。
+
+    check 是封闭谓词词典(outcome_eq/outcome_count/margin),只判赛果与比分——判断进不来。
+    """
+    from datetime import date as _date
+
+    from nutmeg.decision.rules_registry import format_rules, load_rules
+    from nutmeg.decision.rules_registry import verify_issue as _verify
+
+    store = Path(output_dir) / "decision"
+    if verify_issue:
+        from nutmeg.decision.zucai_official import fetch_official
+
+        draw = fetch_official(verify_issue)
+        if draw is None:
+            _cli.typer.echo(f"⚠️ {verify_issue} 尚未开奖,falsifier 保持 pending")
+            raise _cli.typer.Exit(code=1)
+        for line in _verify(store, verify_issue, draw.results, draw.scores,
+                            verified_at=_date.today().isoformat()):
+            _cli.typer.echo(line)
+        return
+    _cli.typer.echo(format_rules(load_rules(store)))
+
+
+@_cli.app.command("decision-alias-propose")
+def decision_alias_propose(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    apply: bool = _cli.typer.Option(False, "--apply", help="把'恰一个候选'的提案写入别名表"),
+) -> None:
+    """别名自愈提案器(Roadmap C1):audit 缺口 → 对手推断(确定性,零LLM) → 人一键确认。
+
+    双边都未解析的场推断不了,如实报出;多候选/零候选只报告不写入。
+    """
+    from nutmeg.decision.alias_propose import run_propose
+
+    _cli.typer.echo(run_propose(run_date, output_dir, apply=apply))
+
+
+@_cli.app.command("zucai-ticket")
+def zucai_ticket(
+    legs_file: Path = _LEGS_AUDIT_FILE_OPTION,
+    sales: float = _cli.typer.Option(13_000_000, "--sales", help="当期任九销量估计(¥)"),
+    skip_audit: bool = _cli.typer.Option(False, "--skip-audit", help="跳过结构校验(不建议)"),
+) -> None:
+    """票面算术(Roadmap D1,确定性,零判断):注数/P/回本门槛/需中奖注数,并自动过结构校验。
+
+    输入与 decision-audit-legs 同一 JSON。该买哪面不归它管。
+    """
+    import json as _json
+
+    from nutmeg.decision.legs_audit import audit_legs, format_findings, has_blocking, legs_from_dict
+    from nutmeg.decision.zucai_ticket import format_stats, ticket_stats
+
+    payload = _json.loads(Path(legs_file).read_text("utf-8"))
+    stats = ticket_stats(payload.get("legs") or {}, sales=sales)
+    _cli.typer.echo(format_stats(stats, issue=str(payload.get("issue", ""))))
+    if not skip_audit:
+        findings = audit_legs(legs_from_dict(payload))
+        _cli.typer.echo("")
+        _cli.typer.echo(format_findings(findings, issue=str(payload.get("issue", ""))))
+        if has_blocking(findings):
+            raise _cli.typer.Exit(code=1)
+
+
+@_cli.app.command("zucai-ledger")
+def zucai_ledger(
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+    issue: str | None = _cli.typer.Option(None, "--issue", help="按期号过滤(list)"),
+    add: bool = _cli.typer.Option(False, "--add", help="追加一行入账(配 --kind/--stake/...)"),
+    kind: str | None = _cli.typer.Option(None, "--kind", help="任九|胜负彩"),
+    stake: int | None = _cli.typer.Option(None, "--stake", help="stake_yuan"),
+    tickets: int | None = _cli.typer.Option(None, "--tickets", help="注数"),
+    code: str | None = _cli.typer.Option(None, "--code", help="票面串"),
+    note: str | None = _cli.typer.Option(None, "--note", help="备注"),
+) -> None:
+    """账本操作(Roadmap D2):没入账 = 没打。结算/派奖由 zucai-official --settle-ledger 填。"""
+    from nutmeg.decision.zucai_ticket import ledger_add, ledger_summary
+
+    if add:
+        _cli.typer.echo(ledger_add(zucai_dir, {
+            "issue": issue, "kind": kind, "stake_yuan": stake,
+            "tickets": tickets, "code": code, "note": note}))
+        return
+    _cli.typer.echo(ledger_summary(zucai_dir, issue=issue))
