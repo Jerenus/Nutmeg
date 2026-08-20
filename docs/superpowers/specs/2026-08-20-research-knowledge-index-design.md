@@ -1,7 +1,7 @@
 # Research Knowledge Index Design
 
-**Date:** 2026-08-20  
-**Status:** Approved design, pending written-spec review  
+**Date:** 2026-08-20
+**Status:** Approved design, pending written-spec review
 **Scope:** Cross-session discovery of Nutmeg football research for GPT/Codex and Claude
 
 ## 1. Goal
