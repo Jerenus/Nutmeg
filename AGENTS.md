@@ -11,6 +11,13 @@ shell commands, and other important information, read the current plan:
 `docs/superpowers/plans/2026-07-21-ontology-kernel-v2-package-1.md`
 <!-- SPECKIT END -->
 
+<!-- RESEARCH INDEX START -->
+For league, team, fixture, transfer, availability, cohesion, or correction work,
+read `docs/research/INDEX.md` before answering or mutating entity knowledge. Follow
+its authority order and supersession rules; do not rely on chat memory as the
+knowledge source.
+<!-- RESEARCH INDEX END -->
+
 ## OpenClaw / Nutmeg Project Command Mode
 
 When this repository is reached through OpenClaw `nutmegbot`, treat the bot as a

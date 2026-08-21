@@ -9,6 +9,13 @@ shell commands, and other important information, read the current plan:
 `docs/superpowers/plans/2026-07-21-ontology-kernel-v2-package-1.md`
 <!-- SPECKIT END -->
 
+<!-- RESEARCH INDEX START -->
+For league, team, fixture, transfer, availability, cohesion, or correction work,
+read `docs/research/INDEX.md` before answering or mutating entity knowledge. Follow
+its authority order and supersession rules; do not rely on chat memory as the
+knowledge source.
+<!-- RESEARCH INDEX END -->
+
 ## JCZQ 每日决策 SOP — 决策本体五动词（2026-07-07 M2 切换后）
 
 历史根因：agent 即兴在多套命令/引擎/Poisson 间挑选 → 决策路径不一致。**旧 tiered/bold/
