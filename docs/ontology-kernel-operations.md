@@ -421,3 +421,44 @@ readiness, budget, payout, audit, ticket, or settlement implementation. SSE keep
 last durable sequence in `sessionStorage`, resumes after disconnect, and changes only
 the visible connectivity indicator. M2 performs no ticket/funds/dispatch operation,
 does not call an AI provider, and does not restore or modify any scheduler.
+
+## 19. Intelligence OS M3 — temporal investigation and guarded copilot
+
+The Match Investigation Room binds every rendered object and every Proposal request to
+one canonical Match and one visible timezone-aware `as_of`. Claim state is replayed from
+status events at that cutoff; Observations, market snapshots, workflow objects,
+EvidenceBundles, and Forecasts recorded later are excluded. Differing active source
+values remain visible. A provisional disagreement is
+`source_conflict_provisional` and permits investigation; two differing verified values
+are `source_conflict_unresolved` and block Forecast commitment until a human Claim
+Action resolves the conflict.
+
+The provider is disabled by default, and deterministic investigation remains usable.
+Enable the Portkey-compatible adapter only with both settings:
+
+```bash
+NUTMEG_AGENT_SYNTHESIS_ENABLED=true \
+NUTMEG_PORTKEY_API_KEY=<secret> \
+uv run nutmeg app --host 127.0.0.1 --port 8788
+```
+
+Provider input is built only from the temporal Product Query DTO. Evidence is labeled
+untrusted data, eligible citation IDs are enumerated, and credentials, actor/policy
+fields, SQL, and Action authority are excluded. A complete response is parsed as one
+strict JSON `CopilotDraft`; malformed, uncited, extra-field, or out-of-cutoff output is
+rejected before any Proposal Action is written. Provider timeout returns the stable
+`copilot_unavailable` state and never persists partial model text.
+
+AgentProposal is not a fact. It records operator prompt, information cutoff,
+model/version, structured draft, and citations as an immutable workflow proposal.
+AI cannot verify Claims or commit Forecasts. The server fixes its Proposal actor to
+`ai_analyst`; Claim adjudication, Proposal approval/rejection, Adjudication with
+`evidence_rejected`, and Forecast commitment are server-assigned `judge_operator`
+Actions with idempotency and expected-version checks. Approval changes Proposal status
+and version but never rewrites its payload.
+
+The browser uses the same local session, CSRF, same-origin, and typed Action boundary as
+the API. It copies entered values only; readiness, conflict classification, probability
+validation, Bundle freezing, and version enforcement stay on the server.
+M3 never creates, approves, dispatches, or settles a Ticket, places a bet, moves funds, calls
+Telegram, or restores a scheduler.

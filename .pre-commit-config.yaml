@@ -24,7 +24,7 @@ repos:
         name: pytest (product contract subset when touched)
         entry: bash -c 'uv run pytest tests/product/ -q'
         language: system
-        files: ^(nutmeg/product/|nutmeg/interfaces/product_api\.py|nutmeg/interfaces/cli/product\.py|tests/product/)
+        files: ^(nutmeg/product/|nutmeg/interfaces/product_api\.py|nutmeg/interfaces/product_ui\.py|nutmeg/interfaces/web/|nutmeg/interfaces/cli/product\.py|tests/product/)
         pass_filenames: false
       - id: pytest-research-index
         name: pytest (research index contract when touched)
