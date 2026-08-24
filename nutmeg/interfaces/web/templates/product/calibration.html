@@ -1,0 +1,48 @@
+{% extends "product/layout.html" %}
+
+{% block title %}规则与校准 · Nutmeg{% endblock %}
+
+{% block content %}
+<div class="learning-workspace" data-calibration-as-of="{{ calibration.as_of.isoformat() }}">
+  <header class="m5-page-head">
+    <div><div class="section-kicker">Rules / Calibration</div><h1>规则与校准</h1></div>
+    <div class="projection-stamp state-{{ calibration.health.state.value }}"><strong>{{ calibration.health.state.value }}</strong><span>{{ calibration.health.projection_version or calibration.health.code }}</span><small>{{ calibration.health.cohort_definition_version or 'cohort unknown' }} · HWM {{ calibration.health.source_high_watermark if calibration.health.source_high_watermark is not none else '—' }}</small></div>
+  </header>
+
+  <p id="action-feedback" class="action-feedback" aria-live="polite">等待操作者裁决。</p>
+
+  <section class="m5-section" aria-labelledby="factor-title">
+    <div class="section-heading"><div><div class="section-kicker">Factor Estimates</div><h2 id="factor-title">因子估计</h2></div><span>{{ calibration.factors|length }} 个 cohort</span></div>
+    <div class="table-scroll" tabindex="0">
+      <table class="m5-table factor-table">
+        <thead><tr><th>Factor</th><th>状态</th><th>Cohort</th><th>n</th><th>Raw</th><th>Shrunk</th><th>95% interval</th></tr></thead>
+        <tbody>
+          {% for factor in calibration.factors %}
+            <tr><th><code>{{ factor.factor_definition_id }}</code><small>{{ factor.factor_family }} / v{{ factor.factor_version }}</small></th><td>{{ factor.current_status or 'unknown' }}</td><td><code>{{ factor.cohort_key }}</code><small>{{ factor.scope_key or 'global' }} / {{ factor.market_definition_id }}</small></td><td>n={{ factor.n_eff }}</td><td>{{ '%.4f'|format(factor.raw_mean) }}</td><td>{{ '%.4f'|format(factor.shrunk_mean) }}</td><td>{% if factor.interval_low is not none %}{{ '%.4f'|format(factor.interval_low) }} … {{ '%.4f'|format(factor.interval_high) }}{% else %}<span class="unscored">未估计</span>{% endif %}</td></tr>
+          {% else %}<tr><td colspan="7" class="m5-empty">当前没有可估计的因子样本。</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="m5-section" aria-labelledby="lifecycle-title">
+    <div class="section-heading"><div><div class="section-kicker">Lifecycle Proposals</div><h2 id="lifecycle-title">生命周期裁决</h2></div><span>{{ calibration.lifecycle_proposals|length }} 项</span></div>
+    <div class="lifecycle-list">
+      {% for proposal in calibration.lifecycle_proposals %}
+        {% set factor_version = namespace(value=0) %}
+        {% for factor in calibration.factors %}{% if factor.factor_definition_id == proposal.factor_definition_id %}{% set factor_version.value = factor.factor_version %}{% endif %}{% endfor %}
+        <form data-action="factor-lifecycle-adjudication" data-proposal-id="{{ proposal.proposal_id }}" data-factor-id="{{ proposal.factor_definition_id }}" data-from-status="{{ proposal.from_status }}" data-to-status="{{ proposal.to_status }}" data-factor-version="{{ factor_version.value }}">
+          <div><code>{{ proposal.factor_definition_id }}</code><strong>{{ proposal.from_status }} → {{ proposal.to_status }}</strong><small>{{ proposal.policy_version }} · {{ proposal.rationale }}</small></div>
+          <label><span>裁决理由</span><textarea class="m5-control" name="reason" required></textarea></label>
+          <div class="lifecycle-actions"><button class="m5-control" type="submit" name="decision" value="apply">应用</button><button class="m5-control secondary" type="submit" name="decision" value="reject">拒绝</button></div>
+        </form>
+      {% else %}<div class="m5-empty">当前没有生命周期变更提案。</div>{% endfor %}
+    </div>
+  </section>
+
+  <section class="m5-section" aria-labelledby="regime-title">
+    <div class="section-heading"><div><div class="section-kicker">Regimes</div><h2 id="regime-title">状态向量</h2></div><span>{{ calibration.regimes|length }} 条</span></div>
+    <div class="regime-ledger">{% for regime in calibration.regimes %}<div><code>{{ regime.regime_key }}</code><pre>{{ regime.values }}</pre></div>{% else %}<div class="m5-empty">当前没有状态向量。</div>{% endfor %}</div>
+  </section>
+</div>
+{% endblock %}

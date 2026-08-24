@@ -102,6 +102,10 @@
       .filter(Boolean);
   }
 
+  function optionalNumber(value) {
+    return value === null || String(value).trim() === "" ? null : Number(value);
+  }
+
   function ticketLegs(form) {
     return [...form.querySelectorAll("[data-ticket-match]")]
       .map((card) => {
@@ -375,6 +379,80 @@
           expected_versions: {},
         }),
       );
+      return;
+    }
+
+    if (action === "record-scoreboard-observation") {
+      submitMutation(form, "正在记录人工观察…", () =>
+        postJson("/api/v1/actions", {
+          action_type: "record_scoreboard_observation",
+          idempotency_key: `ui:scoreboard-observation:${crypto.randomUUID()}`,
+          payload: {
+            group_key: values.get("group_key"),
+            metric_key: values.get("metric_key"),
+            tally: values.get("tally"),
+            detail: values.get("detail"),
+            status: values.get("status"),
+            numerator: optionalNumber(values.get("numerator")),
+            denominator: optionalNumber(values.get("denominator")),
+            value: optionalNumber(values.get("value")),
+            unit: values.get("unit") || null,
+            evidence_refs: [
+              {
+                object_type: values.get("evidence_type"),
+                object_id: values.get("evidence_id"),
+              },
+            ],
+            effective_at: values.get("effective_at"),
+            supersedes_observation_id: null,
+          },
+          expected_versions: {},
+        }),
+      );
+      return;
+    }
+
+    if (action === "factor-lifecycle-adjudication") {
+      submitMutation(form, "正在记录生命周期裁决…", async () => {
+        const decision = values.get("decision");
+        const adjudication = await postJson("/api/v1/actions", {
+          action_type: "record_adjudication",
+          idempotency_key: `ui:factor-adjudication:${crypto.randomUUID()}`,
+          payload: {
+            subject_type: "factor_definition",
+            subject_id: form.dataset.factorId,
+            decision,
+            reason: values.get("reason"),
+            evidence_rejected: [],
+            alternative: {
+              lifecycle_proposal_id: form.dataset.proposalId,
+              proposed_status: form.dataset.toStatus,
+            },
+          },
+          expected_versions: {},
+        });
+        if (decision === "reject") return adjudication;
+        const adjudicationRef = adjudication.result_refs.find(
+          (ref) => ref.object_type === "adjudication",
+        );
+        if (!adjudicationRef) throw new Error("裁决未返回 Adjudication 引用");
+        return postJson("/api/v1/actions", {
+          action_type: "apply_factor_status",
+          idempotency_key: `ui:factor-status:${crypto.randomUUID()}`,
+          payload: {
+            proposal_id: form.dataset.proposalId,
+            factor_definition_id: form.dataset.factorId,
+            expected_current_status: form.dataset.fromStatus,
+            target_status: form.dataset.toStatus,
+            adjudication_id: adjudicationRef.object_id,
+          },
+          expected_versions: {
+            [`factor_definition:${form.dataset.factorId}`]: Number(
+              form.dataset.factorVersion,
+            ),
+          },
+        });
+      });
       return;
     }
 

@@ -121,6 +121,103 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/review', include_in_schema=False)
+    async def review_page(
+        request: Request,
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        review = services.queries.review(as_of=as_of or clock())
+        return templates.TemplateResponse(
+            request=request,
+            name='product/review.html',
+            context={
+                'workspace': 'review',
+                'active_nav': 'review',
+                'review': review,
+                'health': services.queries.health(),
+                'alerts': [],
+            },
+        )
+
+    @app.get('/calibration', include_in_schema=False)
+    async def calibration_page(
+        request: Request,
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        calibration = services.queries.calibration(as_of=as_of or clock())
+        return templates.TemplateResponse(
+            request=request,
+            name='product/calibration.html',
+            context={
+                'workspace': 'calibration',
+                'active_nav': 'calibration',
+                'calibration': calibration,
+                'health': services.queries.health(),
+                'alerts': [],
+            },
+        )
+
+    @app.get('/ontology', include_in_schema=False)
+    async def ontology_page(
+        request: Request,
+        object_type: Annotated[str, Query(alias='type')] = 'match',
+        query: Annotated[str | None, Query(alias='q')] = None,
+        after: Annotated[str | None, Query()] = None,
+        object_id: Annotated[str | None, Query()] = None,
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        cutoff = as_of or clock()
+        page = services.queries.ontology_objects(
+            object_type=object_type,
+            query=query,
+            after=after,
+            limit=100,
+            as_of=cutoff,
+        )
+        detail = None
+        if object_id is not None:
+            try:
+                detail = services.queries.ontology_object(
+                    object_type, object_id, as_of=cutoff
+                )
+            except ProductNotFoundError as error:
+                return not_found_response(request, error)
+        return templates.TemplateResponse(
+            request=request,
+            name='product/ontology.html',
+            context={
+                'workspace': 'ontology',
+                'active_nav': 'ontology',
+                'page': page,
+                'detail': detail,
+                'filters': {
+                    'object_type': object_type,
+                    'query': query or '',
+                    'as_of': cutoff.isoformat(),
+                },
+                'object_types': (
+                    'match',
+                    'team',
+                    'competition',
+                    'person',
+                    'claim',
+                    'observation',
+                    'market_snapshot',
+                    'forecast_revision',
+                    'factor_definition',
+                    'ticket',
+                    'outcome',
+                    'settlement',
+                    'adjudication',
+                    'flag_instance',
+                    'prediction',
+                    'action',
+                ),
+                'health': services.queries.health(),
+                'alerts': [],
+            },
+        )
+
     def not_found_response(request: Request, error: ProductNotFoundError):
         return templates.TemplateResponse(
             request=request,

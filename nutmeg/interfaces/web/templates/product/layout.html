@@ -27,11 +27,20 @@
         <a class="rail-link{% if active_nav == 'operations' %} is-active{% endif %}" href="/operations">
           <span aria-hidden="true">02</span> 数据运营
         </a>
-        <a class="rail-link{% if active_nav == 'match-investigation' %} is-active{% endif %}" href="{% if detail is defined %}/matches/{{ detail.match.match_id }}{% else %}/#match-board{% endif %}">
+        <a class="rail-link{% if active_nav == 'match-investigation' %} is-active{% endif %}" href="{% if active_nav == 'match-investigation' and detail is defined %}/matches/{{ detail.match.match_id }}{% else %}/#match-board{% endif %}">
           <span aria-hidden="true">03</span> 比赛调查
         </a>
         <a class="rail-link{% if active_nav == 'ticket-workbench' %} is-active{% endif %}" href="/tickets">
           <span aria-hidden="true">04</span> 裁决工作台
+        </a>
+        <a class="rail-link{% if active_nav == 'review' %} is-active{% endif %}" href="/review">
+          <span aria-hidden="true">05</span> 结算复盘
+        </a>
+        <a class="rail-link{% if active_nav == 'calibration' %} is-active{% endif %}" href="/calibration">
+          <span aria-hidden="true">06</span> 规则校准
+        </a>
+        <a class="rail-link{% if active_nav == 'ontology' %} is-active{% endif %}" href="/ontology">
+          <span aria-hidden="true">07</span> 本体浏览
         </a>
         <div class="rail-foot">
           <span>ONTOLOGY v{{ health.ontology_schema_version }}</span>
