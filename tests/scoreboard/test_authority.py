@@ -80,6 +80,29 @@ def _classification(classification: str = "formal_manual") -> list[dict[str, obj
     return [item]
 
 
+def _record_new_manual_fact(kernel, key: str = "later") -> None:
+    kernel.scoreboard_actions.record_observation(
+        RecordScoreboardObservationRequest(
+            group_key="chains",
+            metric_key=key,
+            tally="1/1",
+            detail=f"manual fact recorded after projection: {key}",
+            status="active",
+            numerator=1.0,
+            denominator=1.0,
+            value=1.0,
+            unit="ratio",
+            evidence_refs=[ObjectRef("adjudication", f"adj-{key}")],
+            effective_at=AT,
+            supersedes_observation_id=None,
+            actor_id="operator:jun",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key=f"m5:authority:observation:{key}",
+            requested_at=AT,
+        )
+    )
+
+
 def test_sop_checker_requires_all_statements_in_all_five_documents(
     tmp_path: Path,
 ) -> None:
@@ -137,8 +160,81 @@ def test_shadow_hashes_exact_bytes_and_requires_complete_explicit_classification
     assert review.unexplained_count == 0
 
 
+def test_shadow_rejects_projection_stale_against_operational_actions(
+    tmp_path: Path,
+) -> None:
+    kernel, service, legacy, _sop_root, watermark = _setup(tmp_path)
+    _record_new_manual_fact(kernel)
+
+    with pytest.raises(ScoreboardAuthorityError, match="projection.*stale"):
+        service.shadow(
+            legacy_path=legacy,
+            classification=_classification(),
+            projection_version="sb-v1",
+            source_high_watermark=watermark,
+            acknowledge_manual_source=True,
+            requested_at=AT,
+        )
+
+
+def test_same_classification_can_be_shadowed_at_a_new_projection_watermark(
+    tmp_path: Path,
+) -> None:
+    kernel, service, legacy, _sop_root, watermark = _setup(tmp_path)
+    first = service.shadow(
+        legacy_path=legacy,
+        classification=_classification(),
+        projection_version="sb-v1",
+        source_high_watermark=watermark,
+        acknowledge_manual_source=True,
+        requested_at=AT,
+    )
+    rebuilt = kernel.calibrate.build(
+        CalibrateRequest(
+            as_of=AT.isoformat(),
+            built_at="2026-08-24T10:40:00+00:00",
+        )
+    )
+
+    second = service.shadow(
+        legacy_path=legacy,
+        classification=_classification(),
+        projection_version="sb-v1",
+        source_high_watermark=rebuilt.high_watermark,
+        acknowledge_manual_source=True,
+        requested_at=AT,
+    )
+
+    assert second.result_refs[0].object_id != first.result_refs[0].object_id
+
+
+def test_cutover_rejects_business_action_recorded_after_shadow(
+    tmp_path: Path,
+) -> None:
+    kernel, service, legacy, sop_root, watermark = _setup(tmp_path)
+    shadow = service.shadow(
+        legacy_path=legacy,
+        classification=_classification(),
+        projection_version="sb-v1",
+        source_high_watermark=watermark,
+        acknowledge_manual_source=True,
+        requested_at=AT,
+    )
+    _record_new_manual_fact(kernel)
+
+    with pytest.raises(ScoreboardAuthorityError, match="shadow.*stale"):
+        service.cutover(
+            legacy_path=legacy,
+            shadow_review_id=shadow.result_refs[0].object_id,
+            expected_authority_version=1,
+            sop_paths=list(sop_root.iterdir()),
+            approve=True,
+            requested_at=AT,
+        )
+
+
 def test_unexplained_shadow_or_incomplete_sop_blocks_cutover(tmp_path: Path) -> None:
-    _kernel, service, legacy, sop_root, watermark = _setup(tmp_path)
+    kernel, service, legacy, sop_root, watermark = _setup(tmp_path)
     review = service.shadow(
         legacy_path=legacy,
         classification=_classification("unexplained"),
@@ -157,11 +253,17 @@ def test_unexplained_shadow_or_incomplete_sop_blocks_cutover(tmp_path: Path) -> 
             requested_at=AT,
         )
 
+    rebuilt = kernel.calibrate.build(
+        CalibrateRequest(
+            as_of=AT.isoformat(),
+            built_at="2026-08-24T10:40:00+00:00",
+        )
+    )
     clean = service.shadow(
         legacy_path=legacy,
         classification=_classification(),
         projection_version="sb-v1",
-        source_high_watermark=watermark,
+        source_high_watermark=rebuilt.high_watermark,
         acknowledge_manual_source=True,
         requested_at=AT,
     )
@@ -225,6 +327,77 @@ def test_clean_isolated_cutover_exports_canonical_bytes_and_detects_drift(
         service.export(destination, requested_at=AT)
     with OntologyUnitOfWork(kernel.engine) as uow:
         assert uow.scoreboard.authority().state == "ontology"
+
+
+def test_first_export_can_replace_the_exact_legacy_destination(tmp_path: Path) -> None:
+    _kernel, service, legacy, sop_root, watermark = _setup(tmp_path)
+    shadow = service.shadow(
+        legacy_path=legacy,
+        classification=_classification(),
+        projection_version="sb-v1",
+        source_high_watermark=watermark,
+        acknowledge_manual_source=True,
+        requested_at=AT,
+    )
+    service.cutover(
+        legacy_path=legacy,
+        shadow_review_id=shadow.result_refs[0].object_id,
+        expected_authority_version=1,
+        sop_paths=list(sop_root.iterdir()),
+        approve=True,
+        requested_at=AT,
+    )
+
+    exported = service.export(legacy, requested_at=AT)
+
+    assert hashlib.sha256(legacy.read_bytes()).hexdigest() == exported.sha256
+    assert json.loads(legacy.read_text(encoding="utf-8"))["authority"]["state"] == (
+        "ontology"
+    )
+
+
+def test_export_blocks_stale_projection_and_refreshes_after_calibrate(
+    tmp_path: Path,
+) -> None:
+    kernel, service, legacy, sop_root, watermark = _setup(tmp_path)
+    shadow = service.shadow(
+        legacy_path=legacy,
+        classification=_classification(),
+        projection_version="sb-v1",
+        source_high_watermark=watermark,
+        acknowledge_manual_source=True,
+        requested_at=AT,
+    )
+    service.cutover(
+        legacy_path=legacy,
+        shadow_review_id=shadow.result_refs[0].object_id,
+        expected_authority_version=1,
+        sop_paths=list(sop_root.iterdir()),
+        approve=True,
+        requested_at=AT,
+    )
+    destination = tmp_path / "compatibility.json"
+    first = service.export(destination, requested_at=AT)
+    _record_new_manual_fact(kernel, "refresh")
+
+    with pytest.raises(ScoreboardAuthorityError, match="projection.*stale"):
+        service.export(destination, requested_at=AT)
+
+    rebuilt = kernel.calibrate.build(
+        CalibrateRequest(
+            as_of=AT.isoformat(),
+            built_at="2026-08-24T10:50:00+00:00",
+        )
+    )
+    refreshed = service.export(destination, requested_at=AT)
+    document = json.loads(destination.read_text(encoding="utf-8"))
+
+    assert refreshed.sha256 != first.sha256
+    assert document["projection"]["source_high_watermark"] == rebuilt.high_watermark
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        authority = uow.scoreboard.authority()
+    assert authority.source_high_watermark == rebuilt.high_watermark
+    assert authority.compatibility_export_sha256 == refreshed.sha256
 
 
 def test_atomic_write_keeps_prior_complete_file_when_replace_fails(

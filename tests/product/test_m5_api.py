@@ -198,7 +198,7 @@ def test_factor_lifecycle_action_is_bound_to_current_proposal_and_adjudication(
             decision="apply",
             reason="sample and interval satisfy the registered lifecycle policy",
             evidence_rejected=[],
-            alternative={},
+            alternative={"proposal_id": "factor-rest:probation->active"},
             supersedes_adjudication_id=None,
             actor_id="operator:owner",
             actor_role=ActorRole.JUDGE_OPERATOR,
@@ -207,6 +207,21 @@ def test_factor_lifecycle_action_is_bound_to_current_proposal_and_adjudication(
         )
     )
     adjudication_id = adjudication.result_refs[0].object_id
+    rejected_adjudication_id = kernel.workflow.record_adjudication(
+        RecordAdjudicationRequest(
+            subject_type="factor_definition",
+            subject_id="factor-rest",
+            decision="reject",
+            reason="the operator rejects this lifecycle proposal",
+            evidence_rejected=[],
+            alternative={"proposal_id": "factor-rest:probation->active"},
+            supersedes_adjudication_id=None,
+            actor_id="operator:owner",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key="m5:factor:adjudication:reject",
+            requested_at=AT,
+        )
+    ).result_refs[0].object_id
 
     def proposal(context) -> None:
         context.write(
@@ -244,6 +259,20 @@ def test_factor_lifecycle_action_is_bound_to_current_proposal_and_adjudication(
         "expected_versions": {"factor_definition:factor-rest": 1},
     }
 
+    rejected_apply = client.post(
+        "/api/v1/actions",
+        json={
+            **body,
+            "idempotency_key": "m5:api:factor:rejected-adjudication",
+            "payload": {
+                **body["payload"],
+                "adjudication_id": rejected_adjudication_id,
+            },
+        },
+        headers=_session(client),
+    )
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.decision.factor_status("factor-rest") == "probation"
     applied = client.post("/api/v1/actions", json=body, headers=_session(client))
     stale = client.post(
         "/api/v1/actions",
@@ -256,6 +285,8 @@ def test_factor_lifecycle_action_is_bound_to_current_proposal_and_adjudication(
         headers=_session(client),
     )
 
+    assert rejected_apply.status_code == 409
+    assert rejected_apply.json()["code"] == "action_blocked"
     assert applied.status_code == 200
     assert applied.json()["status"] == "committed"
     assert stale.status_code == 409

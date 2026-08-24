@@ -146,6 +146,44 @@ def test_observation_is_idempotent_and_revision_must_exist(tmp_path: Path) -> No
         )
 
 
+def test_observation_revision_must_extend_current_chain_and_respects_recorded_as_of(
+    tmp_path: Path,
+) -> None:
+    kernel = _kernel(tmp_path)
+    first = kernel.scoreboard_actions.record_observation(_observation())
+    first_id = first.result_refs[0].object_id
+
+    with pytest.raises(ValueError, match="supersede.*current"):
+        kernel.scoreboard_actions.record_observation(
+            replace(_observation(key="m5:observation:parallel"), detail="parallel leaf")
+        )
+
+    later = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    revised = kernel.scoreboard_actions.record_observation(
+        replace(
+            _observation(key="m5:observation:later"),
+            detail="later recorded correction",
+            supersedes_observation_id=first_id,
+            requested_at=later,
+        )
+    )
+    revised_id = revised.result_refs[0].object_id
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert (
+            uow.scoreboard.latest_observations(NOW.isoformat())[
+                0
+            ].scoreboard_observation_id
+            == first_id
+        )
+        assert (
+            uow.scoreboard.latest_observations(later.isoformat())[
+                0
+            ].scoreboard_observation_id
+            == revised_id
+        )
+
+
 def test_shadow_review_enforces_role_and_classification_counts(tmp_path: Path) -> None:
     kernel = _kernel(tmp_path)
     artifact_id = _legacy_artifact(kernel)
@@ -222,6 +260,8 @@ def test_unexplained_review_blocks_cutover_and_export_is_system_only(
 
     export = RecordScoreboardExportRequest(
         export_sha256="b" * 64,
+        projection_version="sb-v1",
+        source_high_watermark=42,
         expected_authority_version=1,
         actor_id="system:scoreboard",
         actor_role=ActorRole.JUDGE_OPERATOR,

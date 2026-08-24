@@ -164,11 +164,38 @@ def _seed(tmp_path: Path):
             }
         },
     )
+    extra = adjudicate(
+        "extra",
+        EARLY,
+        "match-settled",
+        {
+            "counterfactual": {
+                "market_definition_id": "md-had",
+                "distribution": DIST,
+                "label": "shape has an undeclared key",
+                "comment": "must not be ignored",
+            }
+        },
+    )
+    coerced = adjudicate(
+        "coerced",
+        EARLY,
+        "match-settled",
+        {
+            "counterfactual": {
+                "market_definition_id": "md-had",
+                "distribution": {"home": "0.5", "draw": 0.3, "away": 0.2},
+                "label": "string probability must not be coerced",
+            }
+        },
+    )
     return kernel, {
         "eligible": eligible,
         "late": late,
         "invalid": invalid,
         "missing": missing,
+        "extra": extra,
+        "coerced": coerced,
     }
 
 
@@ -185,6 +212,8 @@ def test_counterfactual_scores_only_preregistered_valid_distribution(
     assert rows[ids["late"]]["eligibility_code"] == "recorded_after_outcome"
     assert rows[ids["invalid"]]["eligibility_code"] == "invalid_distribution"
     assert rows[ids["missing"]]["eligibility_code"] == "missing_outcome"
+    assert rows[ids["extra"]]["eligibility_code"] == "invalid_counterfactual"
+    assert rows[ids["coerced"]]["eligibility_code"] == "invalid_distribution"
     assert rows[ids["late"]]["brier"] is None
 
 
@@ -204,7 +233,7 @@ def test_intervention_scorecards_report_counts_and_coverage_before_rates(
     assert rows[("flag_instance", "outcome_coverage")]["rate"] == 0.5
     assert rows[("adjudication", "rejected_evidence_coverage")]["rate"] == 1.0
     assert rows[("counterfactual", "eligible_coverage")]["numerator"] == 1
-    assert rows[("counterfactual", "eligible_coverage")]["denominator"] == 4
+    assert rows[("counterfactual", "eligible_coverage")]["denominator"] == 6
 
 
 def test_calibrate_registers_intervention_projection(tmp_path: Path) -> None:

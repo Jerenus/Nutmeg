@@ -43,7 +43,9 @@ fields are optional; a supplied denominator must be non-negative and a numerator
 not exceed it.
 
 Use a new immutable observation for a correction. Pass the prior observation ID with
-`--supersedes`; keep the same group and metric keys. Never overwrite the prior row.
+`--supersedes`; keep the same group and metric keys. The referenced observation must
+be the single current leaf for that group/metric. Parallel leaves and revisions of an
+older, already-superseded row are rejected. Never overwrite the prior row.
 
 ```bash
 UV_FROZEN=1 uv run nutmeg scoreboard observe \
@@ -81,10 +83,13 @@ The order is strict:
 5. Run `shadow` with the exact projection version and high-watermark.
 6. Inspect `status`. Resolve every `unexplained` row by correcting a source, recording
    a supported manual observation, or documenting a supported source correction. Then
-   rebuild and shadow again. Do not proceed with unexplained differences.
+   rebuild and shadow again. A shadow Action itself advances the operational Action
+   log, so every repeated shadow requires a fresh calibrate first. Do not proceed with
+   unexplained differences.
 7. Freeze operational writes. Supply the latest review, authority version, exact legacy
    file, projection identity, all five SOP files, and `--approve` to `cutover`.
-8. Export to a previously absent destination with the current authority version.
+8. Export to a previously absent destination, or to the exact legacy path whose current
+   bytes still hash to the cutover `legacy_sha256`, with the current authority version.
 9. Run `verify-export`, archive the status output and hashes, then resume only the
    workflows approved by the production runbook.
 
@@ -135,13 +140,19 @@ Four values bind a cutover:
 The latest shadow review must be `succeeded`, have zero unexplained rows, and match the
 legacy hash and projection identity. A newer review supersedes an older review for
 cutover purposes. Cutover increments authority version once; first export records its
-hash and increments the version again. Always reread status immediately before a
-mutating command. A version conflict is a reload-and-review signal, never permission to
-retry with a guessed version.
+hash plus projection identity and increments the version again. A repeated export at
+the same projection identity returns the recorded bytes; a newer successful projection
+atomically refreshes the export and advances the stored projection identity. Always
+reread status immediately before a mutating command. A version conflict is a
+reload-and-review signal, never permission to retry with a guessed version.
 
 No business, observation, settlement, lifecycle, or authority mutation may occur
 between the final calibrate, shadow inspection, and cutover. If one occurs, rebuild the
-projection and repeat shadow review before seeking approval.
+projection and repeat shadow review before seeking approval. Cutover accepts only the
+exact legacy artifact ingest and shadow-review Actions bound to that review after the
+projection watermark. Export similarly rejects any committed business Action newer
+than its current projection; administrative shadow/cutover/export Actions do not alter
+scoreboard metric truth.
 
 ## 7. CLI authority sequence
 
@@ -186,23 +197,27 @@ UV_FROZEN=1 uv run nutmeg scoreboard verify-export \
   --destination /absolute/path/to/compatibility/scoreboard.json
 ```
 
-All output is canonical JSON. Preserve the Action IDs, shadow review ID, authority
-versions, projection identity, legacy hash, and export hash with the change record.
+All output is canonical JSON. Mutating results include a `targets` object containing
+resolved absolute data, input, SOP, and destination paths as applicable. Preserve those
+targets together with the Action IDs, shadow review ID, authority versions, projection
+identity, legacy hash, and export hash in the change record.
 
 ## 8. Drift and atomic-write recovery
 
 `scoreboard.json` is generated output after cutover. A changed, missing, or untracked
-destination raises `scoreboard_export_drift`; it is never imported and never
-overwritten automatically.
+destination raises `scoreboard_export_drift`; it is never imported. The sole first-run
+exception is the exact legacy destination whose bytes still match the authority row's
+`legacy_sha256`; export may atomically replace that file with generated output.
 
 | Condition | Required response |
 | --- | --- |
 | File hash differs from recorded export hash | Stop writers, preserve both bytes and hashes, inspect the diff and Action history, then restore the exact recorded file from a verified backup. |
 | Recorded file is missing | Restore the exact file whose SHA-256 equals the authority row. If unavailable, restore the database, DuckDB, CAS, and compatibility file from one coherent pre-export backup. |
-| Destination exists before first tracked export | Move the unexpected file into incident evidence, verify the intended destination is absent, and rerun export only after review. |
+| Destination exists before first tracked export and differs from `legacy_sha256` | Move the unexpected file into incident evidence, verify the intended destination is absent, and rerun export only after review. |
 | Process fails before `os.replace` | The prior complete destination remains; remove no evidence and rerun only after `verify-export` or status establishes a coherent authority state. |
 | Export Action committed but file replacement failed | Do not edit SQLite or invent bytes. Restore the exact recorded file if backed up; otherwise restore the whole coherent pre-export recovery point and repeat the reviewed sequence. |
-| Projection identity changed | Reconcile/calibrate, repeat shadow, and obtain a fresh human cutover decision; do not relabel the old review. |
+| Projection is stale against committed business Actions | Reconcile/calibrate before export; never reuse stale projection bytes. |
+| A newer current projection exists after cutover | Export builds new canonical bytes, records the new projection identity, and atomically replaces the prior tracked output. |
 
 Atomic write creates and fsyncs a temporary file in the destination directory, replaces
 the destination, then fsyncs the directory. A failed replace leaves the prior complete

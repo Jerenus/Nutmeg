@@ -1,6 +1,7 @@
 """Intervention coverage and preregistered counterfactual replay projections."""
 from __future__ import annotations
 
+import math
 from collections import Counter
 from datetime import datetime
 
@@ -100,6 +101,9 @@ def _counterfactual_row(adjudication, uow) -> dict[str, object]:
     candidate = adjudication.alternative.get("counterfactual")
     if not isinstance(candidate, dict):
         return base
+    if set(candidate) != {"market_definition_id", "distribution", "label"}:
+        base["eligibility_code"] = "invalid_counterfactual"
+        return base
 
     match_id = uow.workflow.match_for_subject(
         adjudication.subject_type, adjudication.subject_id
@@ -135,6 +139,13 @@ def _counterfactual_row(adjudication, uow) -> dict[str, object]:
         return base
 
     try:
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            for value in distribution.values()
+        ):
+            raise ValueError("probabilities must be finite numbers")
         normalized = {str(key): float(value) for key, value in distribution.items()}
         validate_simplex(normalized)
     except (TypeError, ValueError):

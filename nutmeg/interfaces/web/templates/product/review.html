@@ -33,7 +33,7 @@
                 <dt>{{ metric.group_key }} / {{ metric.metric_key }}</dt>
                 <dd>{% if metric.value is not none %}{{ '%.4f'|format(metric.value) }}{% else %}<span class="unscored">未评分</span>{% endif %}</dd>
                 <small>
-                  {% if metric.denominator is not none %}{{ '%g'|format(metric.numerator if metric.numerator is not none else 0) }} / {{ '%g'|format(metric.denominator) }}{% else %}coverage —{% endif %}
+                  {% if metric.denominator is not none %}{% if metric.numerator is not none %}{{ '%g'|format(metric.numerator) }}{% else %}—{% endif %} / {{ '%g'|format(metric.denominator) }}{% else %}coverage —{% endif %}
                   · {{ metric.status }}
                 </small>
                 {% for ref in metric.source_refs %}<code>{{ ref.object_type }}:{{ ref.object_id }}</code>{% endfor %}

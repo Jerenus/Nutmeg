@@ -238,7 +238,7 @@ class ProductReadRepository:
             )
             public_versions = [dict(properties)]
             del label_name, status_name
-        lineage = self.lineage(object_type, object_id) or []
+        lineage = self.lineage(object_type, object_id, as_of=as_of) or []
         return {
             "object_type": object_type,
             "object_id": object_id,
@@ -1597,14 +1597,21 @@ class ProductReadRepository:
             )
         return result
 
-    def lineage(self, object_type: str, object_id: str) -> list[LineageTuple] | None:
+    def lineage(
+        self, object_type: str, object_id: str, *, as_of: str | None = None
+    ) -> list[LineageTuple] | None:
         with self._engine.connect() as connection:
             edges = self._lineage_for_object(connection, object_type, object_id)
             if edges is None:
                 return None
-            action_rows = connection.execute(
-                select(schema.actions.c.action_id, schema.actions.c.result_refs_json)
-            ).all()
+            action_statement = select(
+                schema.actions.c.action_id, schema.actions.c.result_refs_json
+            )
+            if as_of is not None:
+                action_statement = action_statement.where(
+                    schema.actions.c.requested_at <= as_of
+                )
+            action_rows = connection.execute(action_statement).all()
         for action_id, result_refs_json in action_rows:
             if any(
                 item.get('object_type') == object_type and item.get('object_id') == object_id

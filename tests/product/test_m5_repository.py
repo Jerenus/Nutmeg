@@ -3,8 +3,12 @@ from datetime import UTC, datetime
 import pytest
 
 from nutmeg.analytics.calibrate_flow import CalibrateRequest
+from nutmeg.ontology.actions.entity_actions import MergeEntityRequest
 from nutmeg.ontology.actions.models import ActorRole, ObjectRef
 from nutmeg.ontology.actions.scoreboard_actions import RecordScoreboardObservationRequest
+from nutmeg.ontology.identity.models import EntityType, ResolutionStatus, TeamKind
+from nutmeg.ontology.repository.identity import TeamRow
+from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.repository import ProductReadRepository
 
 AT = datetime(2026, 8, 24, 10, tzinfo=UTC)
@@ -151,3 +155,47 @@ def test_ontology_detail_exposes_typed_properties_lineage_and_history_only(
     assert "SELECT " not in serialized
     assert "storage_path" not in serialized
     assert "payload_json" not in serialized
+
+
+def test_ontology_detail_as_of_excludes_future_action_lineage(seeded_product) -> None:
+    with OntologyUnitOfWork(seeded_product.kernel.engine) as uow:
+        uow.identity.insert_team(
+            TeamRow(
+                team_id="team-future-merge",
+                team_kind=TeamKind.CLUB,
+                canonical_name="Future Duplicate",
+                country="CN",
+                resolution_status=ResolutionStatus.PROVISIONAL,
+                created_at="2026-08-24T08:00:00+00:00",
+            )
+        )
+    future = seeded_product.kernel.entity_actions.merge_entity(
+        MergeEntityRequest(
+            entity_type=EntityType.TEAM,
+            from_id="team-future-merge",
+            into_id="team-home",
+            reason="future identity correction",
+            actor_id="operator:owner",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key="m5:future-team-merge",
+            requested_at=datetime(2026, 8, 24, 11, tzinfo=UTC),
+        )
+    )
+    repository = ProductReadRepository(
+        seeded_product.kernel.engine,
+        seeded_product.settings.analytics_db_path,
+    )
+
+    detail = repository.ontology_object("team", "team-home", as_of=AT.isoformat())
+    lineage = repository.lineage("team", "team-home", as_of=AT.isoformat()) or []
+
+    assert detail is not None
+    assert not any(
+        edge[0] == "created_by_action" and edge[4] == future.action_id
+        for edge in lineage
+    )
+    assert not any(
+        link["relation"] == "created_by_action"
+        and link["target"]["object_id"] == future.action_id
+        for link in detail["links"]
+    )

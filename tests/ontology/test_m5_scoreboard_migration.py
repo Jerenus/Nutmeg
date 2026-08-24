@@ -185,8 +185,12 @@ def test_repository_records_review_and_updates_authority_optimistically(
         exported = uow.scoreboard.record_export(
             expected_version=2,
             export_sha256="b" * 64,
+            projection_version="sb-v2",
+            source_high_watermark=43,
             action_id=export_action,
         )
         assert exported.compatibility_export_sha256 == "b" * 64
+        assert exported.projection_version == "sb-v2"
+        assert exported.source_high_watermark == 43
         assert exported.version == 3
         assert uow.scoreboard.count_shadow_reviews() == 1

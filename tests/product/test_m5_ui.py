@@ -47,7 +47,7 @@ def _plane(name: str, value: float | None, status: str) -> ScorePlaneSummary:
                 group_key=f"{name}:all",
                 metric_key="coverage" if value is not None else "unscored_sample",
                 value=value,
-                numerator=1 if value is not None else 0,
+                numerator=1 if value is not None else None,
                 denominator=2,
                 unit="ratio",
                 status=status,
@@ -237,6 +237,8 @@ def test_review_workspace_separates_planes_and_preserves_unscored_rows(
     assert "odds-faithful-v1" in html
     assert "recorded_after_outcome" in html
     assert "未评分" in html
+    assert "— / 2" in html
+    assert "0 / 2" not in html
     assert 'data-action="record-scoreboard-observation"' in html
     assert 'name="actor_role"' not in html
     assert 'name="actor_id"' not in html
@@ -311,6 +313,7 @@ def test_m5_navigation_css_and_javascript_preserve_authority_boundaries(
     assert 'action_type: "record_scoreboard_observation"' in script
     assert 'action_type: "apply_factor_status"' in script
     assert 'action_type: "record_adjudication"' in script
+    assert "proposal_id: form.dataset.proposalId" in script
     assert "actor_role" not in script
     for forbidden in (
         "brier =",

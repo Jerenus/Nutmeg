@@ -211,6 +211,9 @@ class ProductActionGateway:
         if (
             adjudication_properties['subject_type'] != 'factor_definition'
             or adjudication_properties['subject_id'] != factor_id
+            or adjudication_properties['decision'] != 'apply'
+            or adjudication_properties['alternative'].get('proposal_id')
+            != proposal_id
             or not str(adjudication_properties['reason']).strip()
         ):
             raise ProductActionBlockedError(
@@ -228,6 +231,7 @@ class ProductActionGateway:
                     expected_current_status=current_status,
                     expected_factor_version=expected_version,
                     adjudication_id=adjudication_id,
+                    proposal_id=proposal_id,
                 )
             )
         )

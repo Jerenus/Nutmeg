@@ -42,7 +42,10 @@ class ScoreboardRepository:
         rows = (
             self._connection.execute(
                 select(ss.scoreboard_observations)
-                .where(ss.scoreboard_observations.c.effective_at <= as_of)
+                .where(
+                    ss.scoreboard_observations.c.effective_at <= as_of,
+                    ss.scoreboard_observations.c.recorded_at <= as_of,
+                )
                 .order_by(
                     ss.scoreboard_observations.c.recorded_at,
                     ss.scoreboard_observations.c.scoreboard_observation_id,
@@ -56,6 +59,42 @@ class ScoreboardRepository:
             row = self._observation_row(raw)
             latest[(row.group_key, row.metric_key)] = row
         return [latest[key] for key in sorted(latest)]
+
+    def current_observation(
+        self, group_key: str, metric_key: str
+    ) -> ScoreboardObservationRow | None:
+        rows = (
+            self._connection.execute(
+                select(ss.scoreboard_observations)
+                .where(
+                    ss.scoreboard_observations.c.group_key == group_key,
+                    ss.scoreboard_observations.c.metric_key == metric_key,
+                )
+                .order_by(
+                    ss.scoreboard_observations.c.recorded_at,
+                    ss.scoreboard_observations.c.scoreboard_observation_id,
+                )
+            )
+            .mappings()
+            .all()
+        )
+        if not rows:
+            return None
+        superseded_ids = {
+            str(row["supersedes_observation_id"])
+            for row in rows
+            if row["supersedes_observation_id"] is not None
+        }
+        leaves = [
+            row
+            for row in rows
+            if row["scoreboard_observation_id"] not in superseded_ids
+        ]
+        if len(leaves) != 1:
+            raise ValueError(
+                f"scoreboard observation chain {group_key}/{metric_key} is ambiguous"
+            )
+        return self._observation_row(leaves[0])
 
     def insert_shadow_review(self, row: ScoreboardShadowReviewRow) -> None:
         values = asdict(row)
@@ -136,7 +175,13 @@ class ScoreboardRepository:
         return self.authority()
 
     def record_export(
-        self, *, expected_version: int, export_sha256: str, action_id: str
+        self,
+        *,
+        expected_version: int,
+        export_sha256: str,
+        projection_version: str,
+        source_high_watermark: int,
+        action_id: str,
     ) -> ScoreboardAuthorityRow:
         del action_id  # The generation Action is retained in the immutable Actions table.
         result = self._connection.execute(
@@ -148,6 +193,8 @@ class ScoreboardRepository:
             )
             .values(
                 compatibility_export_sha256=export_sha256,
+                projection_version=projection_version,
+                source_high_watermark=source_high_watermark,
                 version=expected_version + 1,
             )
         )

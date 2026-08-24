@@ -10,8 +10,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
+from nutmeg.analytics.high_watermark import high_watermark
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.actions.scoreboard_actions import (
@@ -158,6 +159,10 @@ class ScoreboardAuthorityService:
             raise ScoreboardAuthorityError(
                 "projection version or source high-watermark is stale"
             )
+        if high_watermark(self._kernel.engine) != identity.source_high_watermark:
+            raise ScoreboardAuthorityError(
+                "scoreboard projection is stale against operational actions"
+            )
 
         artifact = self._kernel.artifact_ingest.ingest(
             ArtifactIngestRequest(
@@ -199,7 +204,10 @@ class ScoreboardAuthorityService:
                 status="succeeded",
                 actor_id="system:scoreboard-shadow",
                 actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-                idempotency_key=f"scoreboard:shadow:{digest}:{review_key}",
+                idempotency_key=(
+                    f"scoreboard:shadow:{digest}:{projection_version}:"
+                    f"{source_high_watermark}:{review_key}"
+                ),
                 requested_at=requested_at,
             )
         )
@@ -236,6 +244,7 @@ class ScoreboardAuthorityService:
             or identity.source_high_watermark != review.source_high_watermark
         ):
             raise ScoreboardAuthorityError("shadow review projection is no longer current")
+        self._assert_shadow_workflow_is_current(review)
         return self._kernel.scoreboard_actions.approve_cutover(
             ApproveScoreboardCutoverRequest(
                 shadow_review_id=shadow_review_id,
@@ -256,32 +265,36 @@ class ScoreboardAuthorityService:
             authority = uow.scoreboard.authority()
         if authority.state != "ontology":
             raise ScoreboardAuthorityError("scoreboard authority is not ontology")
+        identity = self._projection_identity()
+        self._assert_export_projection_is_current(identity)
         if authority.compatibility_export_sha256 is not None and destination.exists():
             existing_hash = hashlib.sha256(destination.read_bytes()).hexdigest()
             if existing_hash != authority.compatibility_export_sha256:
                 raise ScoreboardExportDriftError(
                     "scoreboard_export_drift: compatibility output was edited"
                 )
-            document = json.loads(destination.read_text(encoding="utf-8"))
-            return ScoreboardExportResult(
-                path=destination,
-                sha256=existing_hash,
-                action_id=str(document["generation_action_ref"]["object_id"]),
-            )
+            if (
+                identity.version == authority.projection_version
+                and identity.source_high_watermark == authority.source_high_watermark
+            ):
+                document = json.loads(destination.read_text(encoding="utf-8"))
+                return ScoreboardExportResult(
+                    path=destination,
+                    sha256=existing_hash,
+                    action_id=str(document["generation_action_ref"]["object_id"]),
+                )
         if authority.compatibility_export_sha256 is not None and not destination.exists():
             raise ScoreboardExportDriftError(
                 "scoreboard_export_drift: recorded compatibility output is missing"
             )
         if authority.compatibility_export_sha256 is None and destination.exists():
-            raise ScoreboardExportDriftError(
-                "scoreboard_export_drift: untracked compatibility output already exists"
-            )
+            existing_hash = hashlib.sha256(destination.read_bytes()).hexdigest()
+            if existing_hash != authority.legacy_sha256:
+                raise ScoreboardExportDriftError(
+                    "scoreboard_export_drift: untracked compatibility output already exists"
+                )
 
-        identity = self._projection_identity()
-        if (
-            identity.version != authority.projection_version
-            or identity.source_high_watermark != authority.source_high_watermark
-        ):
+        if identity.source_high_watermark < authority.source_high_watermark:
             raise ScoreboardAuthorityError("authority projection is stale")
         action_id = f"ACT-{uuid4().hex}"
         content = self._export_bytes(authority, identity, action_id)
@@ -289,6 +302,8 @@ class ScoreboardAuthorityService:
         outcome = self._kernel.scoreboard_actions.record_export(
             RecordScoreboardExportRequest(
                 export_sha256=digest,
+                projection_version=identity.version,
+                source_high_watermark=identity.source_high_watermark,
                 expected_authority_version=authority.version,
                 actor_id="system:scoreboard-export",
                 actor_role=ActorRole.DETERMINISTIC_SYSTEM,
@@ -303,6 +318,77 @@ class ScoreboardAuthorityService:
             sha256=digest,
             action_id=outcome.action_id,
         )
+
+    def _actions_after(self, source_high_watermark: int) -> list[dict[str, object]]:
+        with self._kernel.engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT rowid, action_id, action_type, status, result_refs_json "
+                    "FROM actions WHERE rowid > :source_high_watermark ORDER BY rowid"
+                ),
+                {"source_high_watermark": source_high_watermark},
+            ).mappings().all()
+        return [
+            {
+                **dict(row),
+                "result_refs": json.loads(str(row["result_refs_json"])),
+            }
+            for row in rows
+        ]
+
+    def _assert_shadow_workflow_is_current(self, review) -> None:
+        review_action_seen = False
+        for action in self._actions_after(review.source_high_watermark):
+            refs = action["result_refs"]
+            if (
+                action["action_id"] == review.action_id
+                and action["action_type"] == "record_scoreboard_shadow_review"
+                and action["status"] == "committed"
+                and any(
+                    ref.get("object_type") == "scoreboard_shadow_review"
+                    and ref.get("object_id") == review.scoreboard_shadow_review_id
+                    for ref in refs
+                )
+            ):
+                review_action_seen = True
+                continue
+            if (
+                action["action_type"] == "ingest_artifact"
+                and action["status"] == "committed"
+                and any(
+                    ref.get("object_type") == "source_artifact"
+                    and ref.get("object_id") == review.legacy_source_artifact_id
+                    for ref in refs
+                )
+            ):
+                continue
+            raise ScoreboardAuthorityError(
+                "scoreboard shadow review is stale against operational actions"
+            )
+        if not review_action_seen:
+            raise ScoreboardAuthorityError(
+                "scoreboard shadow review is stale against operational actions"
+            )
+
+    def _assert_export_projection_is_current(
+        self, identity: ProjectionIdentity
+    ) -> None:
+        administrative_actions = {
+            "ingest_artifact",
+            "record_scoreboard_shadow_review",
+            "approve_scoreboard_cutover",
+            "record_scoreboard_export",
+        }
+        stale_actions = [
+            action
+            for action in self._actions_after(identity.source_high_watermark)
+            if action["status"] == "committed"
+            and action["action_type"] not in administrative_actions
+        ]
+        if stale_actions:
+            raise ScoreboardAuthorityError(
+                "scoreboard projection is stale against operational actions"
+            )
 
     def _projection_identity(self) -> ProjectionIdentity:
         path = self._kernel.paths.analytics

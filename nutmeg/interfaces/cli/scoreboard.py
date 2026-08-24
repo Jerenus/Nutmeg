@@ -70,14 +70,19 @@ def _fail(error: Exception) -> None:
     raise _cli.typer.Exit(code=1)
 
 
-def _outcome(outcome) -> dict[str, object]:
-    return {
+def _outcome(
+    outcome, *, targets: dict[str, object] | None = None
+) -> dict[str, object]:
+    result: dict[str, object] = {
         "action_id": outcome.action_id,
         "action_type": outcome.action_type,
         "status": outcome.status.value,
         "result_refs": [ref.to_dict() for ref in outcome.result_refs],
         "error_code": outcome.error_code,
     }
+    if targets is not None:
+        result["targets"] = targets
+    return result
 
 
 @scoreboard_app.command("status")
@@ -129,7 +134,7 @@ def scoreboard_observe(
             raise ScoreboardAuthorityError(
                 "observe requires --acknowledge-manual-source"
             )
-        kernel, _resolved = _kernel(data_dir)
+        kernel, resolved = _kernel(data_dir)
         outcome = kernel.scoreboard_actions.record_observation(
             RecordScoreboardObservationRequest(
                 group_key=group_key,
@@ -153,7 +158,7 @@ def scoreboard_observe(
                 requested_at=_at(requested_at),
             )
         )
-        _emit(_outcome(outcome))
+        _emit(_outcome(outcome, targets={"data_dir": str(resolved)}))
     except (ScoreboardAuthorityError, ValueError) as error:
         _fail(error)
 
@@ -169,9 +174,11 @@ def scoreboard_shadow(
     acknowledge_manual_source: bool = _ACKNOWLEDGE_MANUAL_SOURCE_OPTION,
 ) -> None:
     try:
-        kernel, _resolved = _kernel(data_dir)
+        kernel, resolved = _kernel(data_dir)
+        legacy_path = Path(legacy_file).expanduser().resolve()
+        classification_path = Path(classification_file).expanduser().resolve()
         classification = json.loads(
-            Path(classification_file).read_text(encoding="utf-8")
+            classification_path.read_text(encoding="utf-8")
         )
         if not isinstance(classification, list) or not all(
             isinstance(item, dict) for item in classification
@@ -180,14 +187,23 @@ def scoreboard_shadow(
                 "classification file must contain a JSON list"
             )
         outcome = ScoreboardAuthorityService(kernel).shadow(
-            legacy_path=Path(legacy_file),
+            legacy_path=legacy_path,
             classification=classification,
             projection_version=projection_version,
             source_high_watermark=source_high_watermark,
             acknowledge_manual_source=acknowledge_manual_source,
             requested_at=_at(requested_at),
         )
-        _emit(_outcome(outcome))
+        _emit(
+            _outcome(
+                outcome,
+                targets={
+                    "classification_file": str(classification_path),
+                    "data_dir": str(resolved),
+                    "legacy_file": str(legacy_path),
+                },
+            )
+        )
     except (OSError, json.JSONDecodeError, ScoreboardAuthorityError, ValueError) as error:
         _fail(error)
 
@@ -205,7 +221,9 @@ def scoreboard_cutover(
     approve: bool = _APPROVE_OPTION,
 ) -> None:
     try:
-        kernel, _resolved = _kernel(data_dir)
+        kernel, resolved = _kernel(data_dir)
+        legacy_path = Path(legacy_file).expanduser().resolve()
+        resolved_sop_files = [Path(path).expanduser().resolve() for path in sop_files]
         with OntologyUnitOfWork(kernel.engine) as uow:
             review = uow.scoreboard.shadow_review(review_id)
         if review is None:
@@ -220,14 +238,23 @@ def scoreboard_cutover(
                 "supplied projection identity does not match the shadow review"
             )
         outcome = ScoreboardAuthorityService(kernel).cutover(
-            legacy_path=Path(legacy_file),
+            legacy_path=legacy_path,
             shadow_review_id=review_id,
             expected_authority_version=expected_authority_version,
-            sop_paths=[Path(path) for path in sop_files],
+            sop_paths=resolved_sop_files,
             approve=approve,
             requested_at=_at(requested_at),
         )
-        _emit(_outcome(outcome))
+        _emit(
+            _outcome(
+                outcome,
+                targets={
+                    "data_dir": str(resolved),
+                    "legacy_file": str(legacy_path),
+                    "sop_files": [str(path) for path in resolved_sop_files],
+                },
+            )
+        )
     except (OSError, ScoreboardAuthorityError, ValueError) as error:
         _fail(error)
 
@@ -240,7 +267,8 @@ def scoreboard_export(
     requested_at: str = _REQUESTED_AT_OPTION,
 ) -> None:
     try:
-        kernel, _resolved = _kernel(data_dir)
+        kernel, resolved = _kernel(data_dir)
+        destination_path = Path(destination).expanduser().resolve()
         with OntologyUnitOfWork(kernel.engine) as uow:
             authority = uow.scoreboard.authority()
         if authority.version != expected_authority_version:
@@ -249,7 +277,7 @@ def scoreboard_export(
                 f"expected {expected_authority_version}"
             )
         result = ScoreboardAuthorityService(kernel).export(
-            Path(destination), requested_at=_at(requested_at)
+            destination_path, requested_at=_at(requested_at)
         )
         _emit(
             {
@@ -257,6 +285,10 @@ def scoreboard_export(
                 "path": str(result.path),
                 "sha256": result.sha256,
                 "status": "exported",
+                "targets": {
+                    "data_dir": str(resolved),
+                    "destination": str(destination_path),
+                },
             }
         )
     except (OSError, ScoreboardAuthorityError, ValueError) as error:
@@ -269,10 +301,10 @@ def scoreboard_verify_export(
     destination: Path = _DESTINATION_OPTION,
 ) -> None:
     try:
-        kernel, _resolved = _kernel(data_dir)
+        kernel, resolved = _kernel(data_dir)
         with OntologyUnitOfWork(kernel.engine) as uow:
             authority = uow.scoreboard.authority()
-        path = Path(destination)
+        path = Path(destination).expanduser().resolve()
         if not path.is_file() or authority.compatibility_export_sha256 is None:
             raise ScoreboardAuthorityError(
                 "recorded compatibility export is unavailable"
@@ -280,6 +312,16 @@ def scoreboard_verify_export(
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         if digest != authority.compatibility_export_sha256:
             raise ScoreboardAuthorityError("scoreboard_export_drift")
-        _emit({"path": str(path), "sha256": digest, "status": "verified"})
+        _emit(
+            {
+                "path": str(path),
+                "sha256": digest,
+                "status": "verified",
+                "targets": {
+                    "data_dir": str(resolved),
+                    "destination": str(path),
+                },
+            }
+        )
     except (OSError, ScoreboardAuthorityError, ValueError) as error:
         _fail(error)

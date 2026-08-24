@@ -157,6 +157,8 @@ class ApproveScoreboardCutoverRequest:
 @dataclass(frozen=True, slots=True)
 class RecordScoreboardExportRequest:
     export_sha256: str
+    projection_version: str
+    source_high_watermark: int
     expected_authority_version: int
     actor_id: str
     actor_role: ActorRole
@@ -166,6 +168,9 @@ class RecordScoreboardExportRequest:
     def __post_init__(self) -> None:
         _require_aware(self.requested_at, "requested_at")
         _sha256(self.export_sha256, "export_sha256")
+        _required(self.projection_version, "projection_version")
+        if self.source_high_watermark < 0:
+            raise ValueError("source_high_watermark cannot be negative")
         if self.expected_authority_version < 1:
             raise ValueError("expected_authority_version must be positive")
 
@@ -201,6 +206,9 @@ class ScoreboardActions:
         )
 
         def handler(uow, action) -> tuple[ObjectRef, ...]:
+            current = uow.scoreboard.current_observation(
+                request.group_key, request.metric_key
+            )
             if request.supersedes_observation_id is not None:
                 superseded = uow.scoreboard.observation(
                     request.supersedes_observation_id
@@ -215,6 +223,17 @@ class ScoreboardActions:
                     request.metric_key,
                 ):
                     raise ValueError("a revision must keep the same group and metric keys")
+            if current is not None and (
+                request.supersedes_observation_id
+                != current.scoreboard_observation_id
+            ):
+                raise ValueError(
+                    "a scoreboard observation revision must supersede the current leaf"
+                )
+            if current is None and request.supersedes_observation_id is not None:
+                raise ValueError(
+                    "a scoreboard observation revision must supersede the current leaf"
+                )
             observation_id = f"sbo-{uuid4().hex}"
             uow.scoreboard.insert_observation(
                 ScoreboardObservationRow(
@@ -352,7 +371,11 @@ class ScoreboardActions:
             actor_id=request.actor_id,
             actor_role=request.actor_role,
             idempotency_key=request.idempotency_key,
-            payload={"export_sha256": request.export_sha256},
+            payload={
+                "export_sha256": request.export_sha256,
+                "projection_version": request.projection_version,
+                "source_high_watermark": request.source_high_watermark,
+            },
             expected_versions={
                 "scoreboard_authority:primary": request.expected_authority_version
             },
@@ -364,6 +387,8 @@ class ScoreboardActions:
             uow.scoreboard.record_export(
                 expected_version=request.expected_authority_version,
                 export_sha256=request.export_sha256,
+                projection_version=request.projection_version,
+                source_high_watermark=request.source_high_watermark,
                 action_id=action.action_id,
             )
             return (ObjectRef("scoreboard_authority", "primary"),)

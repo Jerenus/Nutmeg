@@ -136,6 +136,7 @@ def test_scoreboard_cli_drives_explicit_isolated_authority_lifecycle(
         )
     )
     assert observed["status"] == "committed"
+    assert observed["targets"]["data_dir"] == str(data_dir.resolve())
 
     build = kernel.calibrate.build(
         CalibrateRequest(as_of=at, built_at="2026-08-24T10:05:00+00:00")
@@ -178,6 +179,11 @@ def test_scoreboard_cli_drives_explicit_isolated_authority_lifecycle(
         )
     )
     review_id = shadow["result_refs"][0]["object_id"]
+    assert shadow["targets"] == {
+        "classification_file": str(classification.resolve()),
+        "data_dir": str(data_dir.resolve()),
+        "legacy_file": str(legacy.resolve()),
+    }
 
     sop_root = tmp_path / "sop"
     shutil.copytree(Path("tests/fixtures/m5/sop"), sop_root)
@@ -210,6 +216,17 @@ def test_scoreboard_cli_drives_explicit_isolated_authority_lifecycle(
     assert blocked.exit_code != 0
     cutover = _json_result(_invoke_scoreboard(*cutover_args, "--approve"))
     assert cutover["status"] == "committed"
+    assert cutover["targets"]["legacy_file"] == str(legacy.resolve())
+    assert cutover["targets"]["sop_files"] == [
+        str((sop_root / name).resolve())
+        for name in (
+            "CONSTITUTION.md",
+            "RUNBOOK.md",
+            "RULEBOOK.md",
+            "AGENTS.md",
+            "CLAUDE.md",
+        )
+    ]
 
     destination = tmp_path / "compatibility" / "scoreboard.json"
     exported = _json_result(
@@ -236,6 +253,8 @@ def test_scoreboard_cli_drives_explicit_isolated_authority_lifecycle(
     )
     assert verified["status"] == "verified"
     assert verified["sha256"] == exported["sha256"]
+    assert exported["targets"]["destination"] == str(destination.resolve())
+    assert verified["targets"]["destination"] == str(destination.resolve())
 
     missing_data_dir = _invoke_scoreboard("observe", "--approve")
     assert missing_data_dir.exit_code == 2

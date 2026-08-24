@@ -39,6 +39,7 @@ class ApplyFactorStatusRequest:
     expected_current_status: str | None = None
     expected_factor_version: int | None = None
     adjudication_id: str | None = None
+    proposal_id: str | None = None
 
 
 class FactorActions:
@@ -78,6 +79,7 @@ class FactorActions:
                 'expected_current_status': request.expected_current_status,
                 'expected_factor_version': request.expected_factor_version,
                 'adjudication_id': request.adjudication_id,
+                'proposal_id': request.proposal_id,
             },
             requested_at=request.requested_at,
         )
@@ -110,6 +112,12 @@ class FactorActions:
                 if (
                     adjudication.subject_type != 'factor_definition'
                     or adjudication.subject_id != request.factor_definition_id
+                    or adjudication.decision != 'apply'
+                    or (
+                        request.proposal_id is not None
+                        and adjudication.alternative.get('proposal_id')
+                        != request.proposal_id
+                    )
                     or not adjudication.reason.strip()
                 ):
                     raise ValueError(

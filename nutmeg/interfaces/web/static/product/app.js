@@ -425,7 +425,7 @@
             reason: values.get("reason"),
             evidence_rejected: [],
             alternative: {
-              lifecycle_proposal_id: form.dataset.proposalId,
+              proposal_id: form.dataset.proposalId,
               proposed_status: form.dataset.toStatus,
             },
           },
