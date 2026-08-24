@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 
-from sqlalchemy import Engine, and_, func, or_, select
+from sqlalchemy import Engine, and_, case, func, or_, select
 
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository import schema_decision as sd
@@ -130,10 +130,36 @@ class ProductReadRepository:
         return result
 
     def claims_for_match(self, match_id: str, as_of: str) -> list[dict]:
+        status_at_cutoff = (
+            select(se.claim_status_events.c.to_status)
+            .where(
+                se.claim_status_events.c.claim_id == se.claims.c.claim_id,
+                se.claim_status_events.c.at <= as_of,
+            )
+            .order_by(
+                se.claim_status_events.c.at.desc(),
+                se.claim_status_events.c.claim_status_event_id.desc(),
+            )
+            .limit(1)
+            .correlate(se.claims)
+            .scalar_subquery()
+        )
+        has_status_history = (
+            select(se.claim_status_events.c.claim_status_event_id)
+            .where(se.claim_status_events.c.claim_id == se.claims.c.claim_id)
+            .correlate(se.claims)
+            .exists()
+        )
         with self._engine.connect() as connection:
             rows = (
                 connection.execute(
-                    select(se.claims)
+                    select(
+                        se.claims,
+                        case(
+                            (has_status_history, status_at_cutoff),
+                            else_=se.claims.c.status,
+                        ).label('status_at_cutoff'),
+                    )
                     .where(
                         se.claims.c.created_at <= as_of,
                         (
@@ -149,7 +175,40 @@ class ProductReadRepository:
                 .mappings()
                 .all()
             )
-        return [self._decode_json(row, ('value_json',)) for row in rows]
+            claim_ids = [row['claim_id'] for row in rows]
+            span_rows = (
+                connection.execute(
+                    select(se.claim_evidence_spans)
+                    .where(se.claim_evidence_spans.c.claim_id.in_(claim_ids))
+                    .order_by(
+                        se.claim_evidence_spans.c.claim_id,
+                        se.claim_evidence_spans.c.claim_evidence_span_id,
+                    )
+                )
+                .mappings()
+                .all()
+                if claim_ids
+                else []
+            )
+        spans_by_claim: dict[str, list[dict]] = {claim_id: [] for claim_id in claim_ids}
+        for span in span_rows:
+            spans_by_claim[span['claim_id']].append(
+                {
+                    'object_type': 'claim',
+                    'object_id': span['claim_id'],
+                    'artifact_id': span['artifact_id'],
+                    'artifact_retrieval_id': span['artifact_retrieval_id'],
+                    'quote': span['quote'],
+                    'locator': span['locator'],
+                }
+            )
+        result: list[dict] = []
+        for row in rows:
+            item = self._decode_json(row, ('value_json',))
+            item['status'] = item.pop('status_at_cutoff')
+            item['spans'] = spans_by_claim[item['claim_id']]
+            result.append(item)
+        return result
 
     def observations_for_match(self, match_id: str, as_of: str) -> list[dict]:
         with self._engine.connect() as connection:
@@ -171,7 +230,300 @@ class ProductReadRepository:
                 .mappings()
                 .all()
             )
-        return [self._decode_json(row, ('value_json', 'quality_json')) for row in rows]
+            observation_ids = [row['observation_id'] for row in rows]
+            source_rows = (
+                connection.execute(
+                    select(se.observation_sources)
+                    .where(se.observation_sources.c.observation_id.in_(observation_ids))
+                    .order_by(
+                        se.observation_sources.c.observation_id,
+                        se.observation_sources.c.artifact_retrieval_id,
+                    )
+                )
+                .mappings()
+                .all()
+                if observation_ids
+                else []
+            )
+        sources_by_observation: dict[str, list[str]] = {
+            observation_id: [] for observation_id in observation_ids
+        }
+        for source in source_rows:
+            sources_by_observation[source['observation_id']].append(
+                source['artifact_retrieval_id']
+            )
+        result = [
+            self._decode_json(row, ('value_json', 'quality_json')) for row in rows
+        ]
+        for item in result:
+            item['source_retrieval_ids'] = sources_by_observation[item['observation_id']]
+        return result
+
+    def market_timeline(
+        self, match_id: str, market_definition_id: str, as_of: str
+    ) -> list[dict]:
+        with self._engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(sm.market_snapshots)
+                    .where(
+                        sm.market_snapshots.c.match_id == match_id,
+                        sm.market_snapshots.c.market_definition_id
+                        == market_definition_id,
+                        sm.market_snapshots.c.as_of <= as_of,
+                    )
+                    .order_by(
+                        sm.market_snapshots.c.as_of,
+                        sm.market_snapshots.c.market_snapshot_id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        return [
+            self._decode_json(
+                row,
+                (
+                    'fair_distribution_json',
+                    'source_coverage_json',
+                    'freshness_json',
+                    'disagreement_json',
+                ),
+            )
+            for row in rows
+        ]
+
+    def evidence_bundles_for_match(self, match_id: str, as_of: str) -> list[dict]:
+        with self._engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(sd.evidence_bundles)
+                    .where(
+                        sd.evidence_bundles.c.match_id == match_id,
+                        sd.evidence_bundles.c.frozen_at <= as_of,
+                    )
+                    .order_by(
+                        sd.evidence_bundles.c.frozen_at,
+                        sd.evidence_bundles.c.evidence_bundle_id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            bundle_ids = [row['evidence_bundle_id'] for row in rows]
+            item_rows = (
+                connection.execute(
+                    select(sd.evidence_bundle_items)
+                    .where(sd.evidence_bundle_items.c.evidence_bundle_id.in_(bundle_ids))
+                    .order_by(
+                        sd.evidence_bundle_items.c.evidence_bundle_id,
+                        sd.evidence_bundle_items.c.item_type,
+                        sd.evidence_bundle_items.c.item_id,
+                    )
+                )
+                .mappings()
+                .all()
+                if bundle_ids
+                else []
+            )
+        items_by_bundle: dict[str, list[dict[str, str]]] = {
+            bundle_id: [] for bundle_id in bundle_ids
+        }
+        for item in item_rows:
+            if item['observation_id'] is not None:
+                object_type = 'observation'
+                object_id = item['observation_id']
+            else:
+                object_type = 'claim'
+                object_id = item['claim_id']
+            items_by_bundle[item['evidence_bundle_id']].append(
+                {'object_type': object_type, 'object_id': object_id}
+            )
+        result = [
+            self._decode_json(
+                row,
+                (
+                    'prior_distribution_json',
+                    'source_coverage_json',
+                    'freshness_json',
+                ),
+            )
+            for row in rows
+        ]
+        for item in result:
+            item['item_refs'] = items_by_bundle[item['evidence_bundle_id']]
+        return result
+
+    def agent_proposals_for_match(self, match_id: str, as_of: str) -> list[dict]:
+        with self._engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(sw.agent_proposals)
+                    .where(
+                        sw.agent_proposals.c.subject_type == 'match',
+                        sw.agent_proposals.c.subject_id == match_id,
+                        sw.agent_proposals.c.created_at <= as_of,
+                    )
+                    .order_by(
+                        sw.agent_proposals.c.created_at,
+                        sw.agent_proposals.c.agent_proposal_id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        return [
+            self._decode_json(row, ('payload_json', 'citation_refs_json'))
+            for row in rows
+        ]
+
+    def agent_proposal(self, proposal_id: str) -> dict | None:
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                select(sw.agent_proposals).where(
+                    sw.agent_proposals.c.agent_proposal_id == proposal_id
+                )
+            ).mappings().first()
+        if row is None:
+            return None
+        return self._decode_json(row, ('payload_json', 'citation_refs_json'))
+
+    def flag_instances_for_match(self, match_id: str, as_of: str) -> list[dict]:
+        with self._engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(sw.flag_instances)
+                    .where(
+                        sw.flag_instances.c.match_id == match_id,
+                        sw.flag_instances.c.created_at <= as_of,
+                    )
+                    .order_by(
+                        sw.flag_instances.c.created_at,
+                        sw.flag_instances.c.flag_instance_id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        return [self._decode_json(row, ('evidence_refs_json',)) for row in rows]
+
+    def predictions_for_match(self, match_id: str, as_of: str) -> list[dict]:
+        with self._engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(sw.predictions)
+                    .where(
+                        sw.predictions.c.match_id == match_id,
+                        sw.predictions.c.registered_at <= as_of,
+                    )
+                    .order_by(
+                        sw.predictions.c.registered_at,
+                        sw.predictions.c.prediction_id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        return [dict(row) for row in rows]
+
+    def precedents_for_match(self, match_id: str, as_of: str) -> list[dict]:
+        with self._engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(sw.precedent_links)
+                    .where(
+                        sw.precedent_links.c.subject_type == 'match',
+                        sw.precedent_links.c.subject_id == match_id,
+                        sw.precedent_links.c.created_at <= as_of,
+                    )
+                    .order_by(
+                        sw.precedent_links.c.created_at,
+                        sw.precedent_links.c.precedent_link_id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        return [self._decode_json(row, ('evidence_refs_json',)) for row in rows]
+
+    def adjudications_for_match(self, match_id: str, as_of: str) -> list[dict]:
+        claim_ids = select(se.claims.c.claim_id).where(
+            or_(
+                se.claims.c.scope_match_id == match_id,
+                and_(
+                    se.claims.c.subject_type == 'match',
+                    se.claims.c.subject_id == match_id,
+                ),
+            )
+        )
+        observation_ids = select(se.observations.c.observation_id).where(
+            or_(
+                se.observations.c.scope_match_id == match_id,
+                and_(
+                    se.observations.c.subject_type == 'match',
+                    se.observations.c.subject_id == match_id,
+                ),
+            )
+        )
+        proposal_ids = select(sw.agent_proposals.c.agent_proposal_id).where(
+            sw.agent_proposals.c.subject_type == 'match',
+            sw.agent_proposals.c.subject_id == match_id,
+        )
+        forecast_ids = (
+            select(sd.forecast_revisions.c.forecast_revision_id)
+            .select_from(
+                sd.forecast_revisions.join(
+                    sd.forecast_series,
+                    sd.forecast_revisions.c.forecast_series_id
+                    == sd.forecast_series.c.forecast_series_id,
+                )
+            )
+            .where(sd.forecast_series.c.match_id == match_id)
+        )
+        subject_matches = or_(
+            and_(
+                sw.adjudications.c.subject_type == 'match',
+                sw.adjudications.c.subject_id == match_id,
+            ),
+            and_(
+                sw.adjudications.c.subject_type == 'claim',
+                sw.adjudications.c.subject_id.in_(claim_ids),
+            ),
+            and_(
+                sw.adjudications.c.subject_type == 'observation',
+                sw.adjudications.c.subject_id.in_(observation_ids),
+            ),
+            and_(
+                sw.adjudications.c.subject_type == 'agent_proposal',
+                sw.adjudications.c.subject_id.in_(proposal_ids),
+            ),
+            and_(
+                sw.adjudications.c.subject_type == 'forecast_revision',
+                sw.adjudications.c.subject_id.in_(forecast_ids),
+            ),
+        )
+        with self._engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(sw.adjudications)
+                    .where(
+                        subject_matches,
+                        sw.adjudications.c.created_at <= as_of,
+                    )
+                    .order_by(
+                        sw.adjudications.c.created_at,
+                        sw.adjudications.c.adjudication_id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        return [
+            self._decode_json(
+                row, ('evidence_rejected_json', 'alternative_json')
+            )
+            for row in rows
+        ]
 
     def forecasts_for_match(self, match_id: str, as_of: str) -> list[dict]:
         with self._engine.connect() as connection:

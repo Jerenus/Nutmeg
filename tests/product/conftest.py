@@ -1,8 +1,10 @@
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import insert
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
@@ -12,8 +14,13 @@ from nutmeg.ontology.actions.workflow_actions import (
     RecordAdjudicationRequest,
 )
 from nutmeg.ontology.identity.models import EntityType, ResolutionStatus, TeamKind
-from nutmeg.ontology.repository.decision import ForecastRevisionRow
-from nutmeg.ontology.repository.evidence import ClaimRow, ObservationRow
+from nutmeg.ontology.repository import schema_evidence as se
+from nutmeg.ontology.repository.decision import EvidenceBundleRow, ForecastRevisionRow
+from nutmeg.ontology.repository.evidence import (
+    ClaimEvidenceSpanRow,
+    ClaimRow,
+    ObservationRow,
+)
 from nutmeg.ontology.repository.identity import (
     MatchRevisionRow,
     TeamAppearanceRow,
@@ -22,6 +29,13 @@ from nutmeg.ontology.repository.identity import (
 from nutmeg.ontology.repository.market import SnapshotRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
+from nutmeg.ontology.workflow.models import (
+    AdjudicationRow,
+    FlagInstanceRow,
+    PrecedentLinkRow,
+    PredictionRow,
+    PredictionStatus,
+)
 
 CLOCK = datetime(2026, 8, 24, 10, tzinfo=UTC)
 
@@ -301,6 +315,190 @@ def m2_seeded_product(seeded_product: SeededProduct) -> SeededProduct:
         )
     )
     return seeded_product
+
+
+@pytest.fixture
+def m3_seeded_product(m2_seeded_product: SeededProduct) -> SeededProduct:
+    kernel = m2_seeded_product.kernel
+    sporttery_artifact_id = "sha256:" + hashlib.sha256(b"sporttery-fresh").hexdigest()
+    intl_artifact_id = "sha256:" + hashlib.sha256(b"international-stale").hexdigest()
+    sporttery_retrieval_id = "RET-" + hashlib.sha256(
+        b"fixture:artifact:sporttery"
+    ).hexdigest()[:32]
+    intl_retrieval_id = "RET-" + hashlib.sha256(
+        b"fixture:artifact:intl"
+    ).hexdigest()[:32]
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        uow.market.insert_snapshot(
+            SnapshotRow(
+                market_snapshot_id="snapshot-early",
+                match_id="match-1",
+                market_definition_id="md-had",
+                snapshot_kind="read_time",
+                as_of="2026-08-24T08:30:00+00:00",
+                fair_distribution={"home": 0.48, "draw": 0.31, "away": 0.21},
+                devig_method="proportional",
+                method_version="1",
+                source_coverage={"sources": 2},
+                freshness={},
+                disagreement={},
+            )
+        )
+        uow.evidence.insert_claim(
+            ClaimRow(
+                claim_id="claim-conflict",
+                subject_type="match",
+                subject_id="match-1",
+                predicate="availability_risk",
+                value={"risk": "low"},
+                scope_match_id="match-1",
+                valid_from="2026-08-24T09:00:00+00:00",
+                valid_to=None,
+                status="verified",
+                extractor="fixture",
+                extractor_version="1",
+                created_at="2026-08-24T09:25:00+00:00",
+                adjudicated_at="2026-08-24T10:20:00+00:00",
+            )
+        )
+        for span in (
+            ClaimEvidenceSpanRow(
+                claim_evidence_span_id="span-before",
+                claim_id="claim-before",
+                artifact_id=sporttery_artifact_id,
+                artifact_retrieval_id=sporttery_retrieval_id,
+                quote="home player unavailable",
+                locator="line:1",
+            ),
+            ClaimEvidenceSpanRow(
+                claim_evidence_span_id="span-conflict",
+                claim_id="claim-conflict",
+                artifact_id=intl_artifact_id,
+                artifact_retrieval_id=intl_retrieval_id,
+                quote="home player available",
+                locator="line:2",
+            ),
+        ):
+            uow.evidence.insert_evidence_span(span)
+        uow.connection.execute(
+            insert(se.observation_sources).values(
+                observation_id="obs-before",
+                artifact_retrieval_id=sporttery_retrieval_id,
+            )
+        )
+        for event in (
+            (
+                "cse-before-created",
+                "claim-before",
+                None,
+                "provisional",
+                "fixture:claim-before:created",
+                "2026-08-24T09:20:00+00:00",
+            ),
+            (
+                "cse-conflict-created",
+                "claim-conflict",
+                None,
+                "provisional",
+                "fixture:claim-conflict:created",
+                "2026-08-24T09:25:00+00:00",
+            ),
+            (
+                "cse-before-verified",
+                "claim-before",
+                "provisional",
+                "verified",
+                "fixture:claim-before:verified",
+                "2026-08-24T10:10:00+00:00",
+            ),
+            (
+                "cse-conflict-verified",
+                "claim-conflict",
+                "provisional",
+                "verified",
+                "fixture:claim-conflict:verified",
+                "2026-08-24T10:20:00+00:00",
+            ),
+        ):
+            uow.evidence.insert_claim_status_event(*event)
+        uow.evidence.update_claim_status(
+            "claim-before", "verified", "2026-08-24T10:10:00+00:00"
+        )
+        uow.decision.insert_bundle(
+            EvidenceBundleRow(
+                evidence_bundle_id="bundle-fixture",
+                match_id="match-1",
+                decision_session_id=None,
+                frozen_at="2026-08-24T09:55:00+00:00",
+                information_cutoff_at="2026-08-24T09:50:00+00:00",
+                market_snapshot_id="snapshot-before",
+                prior_distribution={"home": 0.5, "draw": 0.3, "away": 0.2},
+                identity_resolution_version="fixture-identity-v1",
+                source_coverage={"sources": 2},
+                freshness={"max_age_seconds": 300},
+                content_hash="fixture-bundle-hash",
+            )
+        )
+        uow.decision.add_bundle_item(
+            "bundle-fixture", "observation", observation_id="obs-before"
+        )
+        uow.decision.add_bundle_item(
+            "bundle-fixture", "caveat_claim", claim_id="claim-before"
+        )
+        uow.workflow.insert_flag_instance(
+            FlagInstanceRow(
+                flag_instance_id="flag-fixture",
+                flag_type="anchor_shield_out",
+                match_id="match-1",
+                direction="draw",
+                strength=0.8,
+                evidence_refs=[{"object_type": "claim", "object_id": "claim-before"}],
+                predicted_face="draw",
+                status="active",
+                created_at="2026-08-24T09:40:00+00:00",
+            )
+        )
+        uow.workflow.insert_prediction(
+            PredictionRow(
+                prediction_id="prediction-fixture",
+                match_id="match-1",
+                claim="home protection remains weak",
+                falsifier="starting midfielder returns",
+                status=PredictionStatus.PENDING,
+                outcome=None,
+                registered_at="2026-08-24T09:41:00+00:00",
+                settled_at=None,
+            )
+        )
+        uow.workflow.insert_precedent_link(
+            PrecedentLinkRow(
+                precedent_link_id="precedent-fixture",
+                subject_type="match",
+                subject_id="match-1",
+                precedent_match_id="match-1",
+                scope="same_structure",
+                evidence_refs=[{"object_type": "claim", "object_id": "claim-before"}],
+                created_at="2026-08-24T09:42:00+00:00",
+            )
+        )
+        uow.workflow.insert_adjudication(
+            AdjudicationRow(
+                adjudication_id="adjudication-fixture",
+                subject_type="match",
+                subject_id="match-1",
+                decision="hold",
+                actor_id="operator:owner",
+                reason="await the official lineup",
+                evidence_rejected=[
+                    {"object_type": "claim", "object_id": "claim-conflict"}
+                ],
+                alternative={"next_action": "wait"},
+                created_at="2026-08-24T09:43:00+00:00",
+                supersedes_adjudication_id=None,
+            )
+        )
+    return m2_seeded_product
 
 
 @pytest.fixture
