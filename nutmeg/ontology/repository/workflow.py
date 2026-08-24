@@ -62,6 +62,37 @@ class WorkflowRepository:
             supersedes_adjudication_id=row['supersedes_adjudication_id'],
         )
 
+    def latest_adjudication(
+        self, subject_type: str, subject_id: str
+    ) -> AdjudicationRow | None:
+        row = (
+            self._connection.execute(
+                select(sw.adjudications)
+                .where(
+                    sw.adjudications.c.subject_type == subject_type,
+                    sw.adjudications.c.subject_id == subject_id,
+                )
+                .order_by(sw.adjudications.c.created_at.desc())
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            return None
+        return AdjudicationRow(
+            adjudication_id=row['adjudication_id'],
+            subject_type=row['subject_type'],
+            subject_id=row['subject_id'],
+            decision=row['decision'],
+            actor_id=row['actor_id'],
+            reason=row['reason'],
+            evidence_rejected=json.loads(row['evidence_rejected_json']),
+            alternative=json.loads(row['alternative_json']),
+            created_at=row['created_at'],
+            supersedes_adjudication_id=row['supersedes_adjudication_id'],
+        )
+
     def count_adjudications(self) -> int:
         return self._connection.execute(
             select(func.count()).select_from(sw.adjudications)

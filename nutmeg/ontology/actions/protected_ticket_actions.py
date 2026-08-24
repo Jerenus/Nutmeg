@@ -14,8 +14,15 @@ from nutmeg.ontology.actions.models import (
 )
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
-from nutmeg.ontology.repository.tickets import TicketBatchRevisionRow
-from nutmeg.ontology.tickets.composition import canonical_bytes, compose_batch
+from nutmeg.ontology.repository.tickets import (
+    AuditedTicketArtifactRow,
+    TicketBatchRevisionRow,
+)
+from nutmeg.ontology.tickets.composition import (
+    canonical_bytes,
+    canonical_digest,
+    compose_batch,
+)
 from nutmeg.ontology.tickets.models import TicketLegDraft
 
 
@@ -41,6 +48,21 @@ class CreateTicketBatchRequest:
 class RemoveTicketLegRequest:
     ticket_batch_id: str
     leg_key: str
+    expected_revision_no: int
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_aware(self.requested_at, "requested_at")
+        if self.expected_revision_no < 1:
+            raise ValueError("expected_revision_no must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class ApproveTicketBatchRequest:
+    ticket_batch_id: str
     expected_revision_no: int
     actor_id: str
     actor_role: ActorRole
@@ -163,6 +185,127 @@ class ProtectedTicketActions:
 
         return self._action_service.execute(command, handler)
 
+    def approve_ticket_batch(
+        self, request: ApproveTicketBatchRequest
+    ) -> ActionOutcome:
+        command = ActionCommand.create(
+            action_type="approve_ticket_batch",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload={"ticket_batch_id": request.ticket_batch_id},
+            expected_versions={
+                f"ticket_batch:{request.ticket_batch_id}": request.expected_revision_no
+            },
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, action) -> tuple[ObjectRef, ...]:
+            current = uow.tickets.assert_current_revision(
+                request.ticket_batch_id, request.expected_revision_no
+            )
+            if current.state not in {"draft", "empty"}:
+                raise ValueError("only a draft or empty ticket batch can be approved")
+            errors = [
+                finding
+                for finding in current.audit_findings
+                if finding.get("level") == "ERROR"
+            ]
+            if errors:
+                raise ValueError("ticket audit ERROR cannot be overridden")
+            warning_adjudications: list[str] = []
+            for finding in current.audit_findings:
+                if finding.get("level") != "WARN":
+                    continue
+                finding_id = ticket_audit_finding_id(
+                    current.ticket_batch_revision_id, finding
+                )
+                adjudication = uow.workflow.latest_adjudication(
+                    "ticket_audit_finding", finding_id
+                )
+                if (
+                    adjudication is None
+                    or adjudication.decision != "accept_warning"
+                    or not adjudication.reason.strip()
+                ):
+                    raise ValueError(f"unadjudicated WARN {finding_id}")
+                warning_adjudications.append(adjudication.adjudication_id)
+
+            legs = [TicketLegDraft.from_dict(item) for item in current.input_legs]
+            deadline = _parse_aware(current.deadline_at, "deadline_at")
+            self._validate_batch(
+                uow,
+                channel=current.channel,
+                account_id=current.account_id,
+                currency=current.currency,
+                deadline_at=deadline,
+                requested_at=request.requested_at,
+                legs=legs,
+            )
+            refs = list(
+                self._insert_revision(
+                    uow,
+                    command=action,
+                    batch_id=current.ticket_batch_id,
+                    revision_no=current.revision_no + 1,
+                    supersedes_revision_id=current.ticket_batch_revision_id,
+                    run_date=current.run_date,
+                    channel=current.channel,
+                    account_id=current.account_id,
+                    currency=current.currency,
+                    deadline_at=deadline,
+                    legs=legs,
+                    requested_at=request.requested_at,
+                    state_override="approved_empty" if not legs else "approved",
+                )
+            )
+            approved_revision_id = refs[0].object_id
+            approved = uow.tickets.batch_revision(approved_revision_id)
+            if approved is None:
+                raise RuntimeError("approved ticket batch revision was not persisted")
+            for index, ticket in enumerate(approved.composition["tickets"]):
+                document = {
+                    "schema_version": "1",
+                    "policy_version": action.policy_version,
+                    "ticket_batch_revision_id": approved_revision_id,
+                    "ticket_index": index,
+                    "channel": current.channel,
+                    "account_id": current.account_id,
+                    "currency": current.currency,
+                    "deadline_at": current.deadline_at,
+                    "ticket": ticket,
+                    "audit_findings": approved.audit_findings,
+                    "warning_adjudication_ids": warning_adjudications,
+                    "approved_by_action_id": action.action_id,
+                }
+                blob = self._artifact_store.put_bytes(canonical_bytes(document))
+                uow.artifacts.upsert_blob(
+                    blob,
+                    "application/vnd.nutmeg.audited-ticket+json",
+                    request.requested_at.astimezone(UTC).isoformat(),
+                )
+                ticket_artifact_id = f"tat-{blob.content_hash[:32]}"
+                uow.tickets.insert_ticket_artifact(
+                    AuditedTicketArtifactRow(
+                        ticket_artifact_id=ticket_artifact_id,
+                        ticket_batch_revision_id=approved_revision_id,
+                        ticket_index=index,
+                        ticket_hash=blob.content_hash,
+                        source_artifact_id=blob.artifact_id,
+                        amount=float(ticket["stake_yuan"]),
+                        currency=current.currency,
+                        channel=current.channel,
+                        deadline_at=current.deadline_at,
+                        payload=document,
+                        approved_at=request.requested_at.astimezone(UTC).isoformat(),
+                        approved_by_action_id=action.action_id,
+                    )
+                )
+                refs.append(ObjectRef("audited_ticket_artifact", ticket_artifact_id))
+            return tuple(refs)
+
+        return self._action_service.execute(command, handler)
+
     def _insert_revision(
         self,
         uow,
@@ -178,6 +321,7 @@ class ProtectedTicketActions:
         deadline_at: datetime,
         legs: list[TicketLegDraft],
         requested_at: datetime,
+        state_override: str | None = None,
     ) -> tuple[ObjectRef, ...]:
         revision_id = f"tbr-{uuid4().hex}"
         composition = compose_batch(legs, channel=channel, made_at=requested_at)
@@ -194,6 +338,7 @@ class ProtectedTicketActions:
             "deadline_at": deadline_at.astimezone(UTC).isoformat(),
             "input_legs": [leg.to_dict() for leg in legs],
             "composition": composition.to_dict(),
+            "state": state_override or ("empty" if composition.is_empty else "draft"),
         }
         blob = self._artifact_store.put_bytes(canonical_bytes(document))
         at = requested_at.astimezone(UTC).isoformat()
@@ -214,7 +359,7 @@ class ProtectedTicketActions:
                 input_legs=[leg.to_dict() for leg in legs],
                 composition=composition.to_dict(),
                 audit_findings=[finding.to_dict() for finding in composition.findings],
-                state="empty" if composition.is_empty else "draft",
+                state=state_override or ("empty" if composition.is_empty else "draft"),
                 content_hash=blob.content_hash,
                 source_artifact_id=blob.artifact_id,
                 created_at=at,
@@ -293,3 +438,18 @@ def _parse_aware(value: str, name: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     _require_aware(parsed, name)
     return parsed.astimezone(UTC)
+
+
+def ticket_audit_finding_id(
+    ticket_batch_revision_id: str, finding: dict[str, object]
+) -> str:
+    digest = canonical_digest(
+        {
+            "ticket_batch_revision_id": ticket_batch_revision_id,
+            "level": finding.get("level"),
+            "code": finding.get("code"),
+            "match_no": finding.get("match_no"),
+            "message": finding.get("message"),
+        }
+    )
+    return f"taf-{digest[:32]}"

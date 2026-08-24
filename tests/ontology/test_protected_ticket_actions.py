@@ -8,10 +8,13 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.forecast_actions import CommitForecastRequest, ForecastActions
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.protected_ticket_actions import (
+    ApproveTicketBatchRequest,
     CreateTicketBatchRequest,
     RemoveTicketLegRequest,
+    ticket_audit_finding_id,
 )
 from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.actions.workflow_actions import RecordAdjudicationRequest
 from nutmeg.ontology.repository.finance import CashAccountRow
 from nutmeg.ontology.repository.market import QuoteRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -255,3 +258,168 @@ def test_remove_absent_leg_fails_without_new_revision(tmp_path: Path) -> None:
 
     with OntologyUnitOfWork(kernel.engine) as uow:
         assert len(uow.tickets.batch_history(first.ticket_batch_id)) == 1
+
+
+def _approve_request(
+    batch_id: str,
+    revision_no: int,
+    *,
+    key: str = "m4:batch:approve",
+    role: ActorRole = ActorRole.JUDGE_OPERATOR,
+) -> ApproveTicketBatchRequest:
+    return ApproveTicketBatchRequest(
+        ticket_batch_id=batch_id,
+        expected_revision_no=revision_no,
+        actor_id="operator:owner" if role is ActorRole.JUDGE_OPERATOR else "model:test",
+        actor_role=role,
+        idempotency_key=key,
+        requested_at=AT,
+    )
+
+
+def test_audit_error_cannot_be_overridden_or_approved(tmp_path: Path) -> None:
+    kernel, forecast_id = _setup(tmp_path)
+    created = kernel.protected_tickets.create_ticket_batch(
+        _create_request(_leg(forecast_id, confidence=3))
+    )
+    draft = _created_row(kernel, created)
+    assert draft is not None
+    assert any(item["level"] == "ERROR" for item in draft.audit_findings)
+
+    with pytest.raises(ValueError, match="audit ERROR"):
+        kernel.protected_tickets.approve_ticket_batch(
+            _approve_request(draft.ticket_batch_id, 1)
+        )
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert len(uow.tickets.batch_history(draft.ticket_batch_id)) == 1
+        assert uow.tickets.count_artifacts() == 0
+        assert uow.finance.count_tickets() == 0
+        assert uow.finance.ledger_balance("acct-jczq") == 0.0
+
+
+def test_warn_requires_matching_human_adjudication_before_approval(
+    tmp_path: Path,
+) -> None:
+    kernel, forecast_id = _setup(tmp_path)
+    created = kernel.protected_tickets.create_ticket_batch(
+        _create_request(
+            _leg(
+                forecast_id,
+                faces="31",
+                nondirectional_flags=("two_way_instability",),
+            )
+        )
+    )
+    draft = _created_row(kernel, created)
+    assert draft is not None
+    warning = next(item for item in draft.audit_findings if item["level"] == "WARN")
+    finding_id = ticket_audit_finding_id(
+        draft.ticket_batch_revision_id, warning
+    )
+
+    with pytest.raises(ValueError, match="unadjudicated WARN"):
+        kernel.protected_tickets.approve_ticket_batch(
+            _approve_request(draft.ticket_batch_id, 1)
+        )
+
+    adjudicated = kernel.workflow.record_adjudication(
+        RecordAdjudicationRequest(
+            subject_type="ticket_audit_finding",
+            subject_id=finding_id,
+            decision="accept_warning",
+            reason="Accept this disclosed residual risk after source review.",
+            evidence_rejected=[
+                {"object_type": "claim", "object_id": "claim-rejected"}
+            ],
+            alternative={"action": "drop_match"},
+            supersedes_adjudication_id=None,
+            actor_id="operator:owner",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key="m4:warn:adjudicate",
+            requested_at=AT,
+        )
+    )
+    approved = kernel.protected_tickets.approve_ticket_batch(
+        _approve_request(
+            draft.ticket_batch_id, 1, key="m4:batch:approve:after-adjudication"
+        )
+    )
+    row = _created_row(kernel, approved)
+
+    assert row is not None
+    assert row.revision_no == 2
+    assert row.state == "approved"
+    artifact_refs = [
+        ref for ref in approved.result_refs if ref.object_type == "audited_ticket_artifact"
+    ]
+    assert len(artifact_refs) == 1
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        [artifact] = uow.tickets.ticket_artifacts_for_revision(
+            row.ticket_batch_revision_id
+        )
+        assert artifact.ticket_hash == artifact.source_artifact_id.removeprefix("sha256:")
+        assert artifact.payload["warning_adjudication_ids"] == [
+            adjudicated.result_refs[0].object_id
+        ]
+        assert uow.finance.count_tickets() == 0
+        assert uow.finance.ledger_balance("acct-jczq") == 0.0
+
+
+def test_approve_empty_slate_writes_no_ticket_artifact_or_money(tmp_path: Path) -> None:
+    kernel, forecast_id = _setup(tmp_path)
+    created = kernel.protected_tickets.create_ticket_batch(
+        _create_request(_leg(forecast_id))
+    )
+    first = _created_row(kernel, created)
+    assert first is not None
+    removed = kernel.protected_tickets.remove_ticket_leg(
+        RemoveTicketLegRequest(
+            ticket_batch_id=first.ticket_batch_id,
+            leg_key="match-1:md-had:home",
+            expected_revision_no=1,
+            actor_id="operator:owner",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key="m4:empty:remove",
+            requested_at=AT,
+        )
+    )
+    empty = _created_row(kernel, removed)
+    assert empty is not None and empty.state == "empty"
+
+    approved = kernel.protected_tickets.approve_ticket_batch(
+        _approve_request(first.ticket_batch_id, 2, key="m4:empty:approve")
+    )
+    approved_empty = _created_row(kernel, approved)
+
+    assert approved_empty is not None
+    assert approved_empty.state == "approved_empty"
+    assert not any(
+        ref.object_type == "audited_ticket_artifact" for ref in approved.result_refs
+    )
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.tickets.count_artifacts() == 0
+        assert uow.finance.count_tickets() == 0
+        assert uow.finance.ledger_balance("acct-jczq") == 0.0
+
+
+def test_ai_cannot_approve_clean_batch(tmp_path: Path) -> None:
+    kernel, forecast_id = _setup(tmp_path)
+    created = kernel.protected_tickets.create_ticket_batch(
+        _create_request(_leg(forecast_id))
+    )
+    draft = _created_row(kernel, created)
+    assert draft is not None
+
+    denied = kernel.protected_tickets.approve_ticket_batch(
+        _approve_request(
+            draft.ticket_batch_id,
+            1,
+            key="m4:batch:approve:ai",
+            role=ActorRole.AI_ANALYST,
+        )
+    )
+
+    assert denied.status is ActionStatus.REJECTED
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert len(uow.tickets.batch_history(draft.ticket_batch_id)) == 1

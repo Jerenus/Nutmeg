@@ -348,7 +348,7 @@ UV_FROZEN=1 git commit -m "feat(ontology): govern ticket batch revisions"
 - Modify: `nutmeg/product/repository.py`
 - Test: `tests/ontology/test_protected_ticket_actions.py`
 
-- [ ] **Step 1: Add failing ERROR/WARN/approval tests**
+- [x] **Step 1: Add failing ERROR/WARN/approval tests**
 
 Build one batch with C1 ERROR and assert approval fails with no approved revision or
 artifact. Build a C6/C7 WARN batch and assert it fails until an existing Adjudication
@@ -366,19 +366,19 @@ Then assert approval writes the next immutable `approved` revision, one CAS arti
 per authoritative composed ticket, and no formal Ticket or ledger debit. Add an empty
 batch test proving `approved_empty`, zero artifacts, zero Tickets, and zero cash rows.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/ontology/test_protected_ticket_actions.py -q -k approve`
 
 Expected: missing `approve_ticket_batch` behavior.
 
-- [ ] **Step 3: Implement stable finding IDs and Adjudication lookup**
+- [x] **Step 3: Implement stable finding IDs and Adjudication lookup**
 
 Finding IDs use SHA-256 over revision ID, level, code, match number, and message with
 prefix `taf-`. Add a repository read that returns the latest Adjudication for exact
 subject type/id. It must not accept an Adjudication from a superseded revision.
 
-- [ ] **Step 4: Implement ApproveTicketBatch**
+- [x] **Step 4: Implement ApproveTicketBatch**
 
 Reject ERROR before CAS writes. Require all current WARN findings to resolve to
 `accept_warning`. Insert an approved/approved-empty revision. For each composed ticket,
@@ -386,7 +386,7 @@ construct canonical artifact JSON, publish to CAS, register SourceArtifact, and 
 the artifact row. Return batch revision first, then artifacts. Do not call Express and
 do not write finance rows.
 
-- [ ] **Step 5: Run approval, workflow, and finance regressions**
+- [x] **Step 5: Run approval, workflow, and finance regressions**
 
 Run:
 
@@ -397,7 +397,7 @@ UV_FROZEN=1 uv run ruff check nutmeg/ontology/actions/protected_ticket_actions.p
 
 Expected: all pass; legacy approval still debits exactly once, protected approval does not.
 
-- [ ] **Step 6: Commit Task 4**
+- [x] **Step 6: Commit Task 4**
 
 ```bash
 UV_FROZEN=1 git add nutmeg/ontology/actions/protected_ticket_actions.py nutmeg/ontology/repository/tickets.py nutmeg/product/repository.py tests/ontology/test_protected_ticket_actions.py
