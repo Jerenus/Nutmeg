@@ -64,3 +64,44 @@ def evaluate_readiness(
     else:
         level = ReadinessLevel.READY
     return ReadinessState(level=level, issues=issues)
+
+
+def evaluate_forecast_readiness(
+    base: ReadinessState,
+    *,
+    blocking_conflicts: int,
+    provisional_conflicts: int = 0,
+) -> ReadinessState:
+    if blocking_conflicts < 0 or provisional_conflicts < 0:
+        raise ValueError('conflict counts cannot be negative')
+
+    issues = list(base.issues)
+    if blocking_conflicts:
+        issues.append(
+            ReadinessIssue(
+                code='source_conflict_unresolved',
+                message=(
+                    f'{blocking_conflicts} verified source conflict(s) '
+                    'require adjudication'
+                ),
+            )
+        )
+        level = ReadinessLevel.BLOCKED
+    elif provisional_conflicts:
+        issues.append(
+            ReadinessIssue(
+                code='source_conflict_provisional',
+                message=(
+                    f'{provisional_conflicts} provisional source conflict(s) '
+                    'remain visible'
+                ),
+            )
+        )
+        level = (
+            ReadinessLevel.DEGRADED
+            if base.level is ReadinessLevel.READY
+            else base.level
+        )
+    else:
+        level = base.level
+    return ReadinessState(level=level, issues=issues)

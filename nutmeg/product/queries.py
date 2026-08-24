@@ -2,25 +2,33 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from nutmeg.product.contracts import (
     ActionPage,
     ActionView,
+    AdjudicationSummary,
+    AgentProposalSummary,
     AlertSeverity,
     AlertSummary,
     BoardResponse,
     ClaimSummary,
     CommandCenterResponse,
     EventPage,
+    EvidenceBundleSummary,
+    EvidenceConflictSummary,
+    EvidenceSpanSummary,
     EvidenceSummary,
+    FlagInstanceSummary,
     ForecastSummary,
     HealthResponse,
     IdentityQueueItem,
     LineageEdge,
     LineageResponse,
     MarketSnapshotSummary,
+    MatchContextSummary,
     MatchDetail,
     MatchSummary,
     ObjectRefContract,
@@ -28,12 +36,14 @@ from nutmeg.product.contracts import (
     OperationsMetrics,
     OperationsResponse,
     OutboxEventView,
+    PrecedentLinkSummary,
+    PredictionSummary,
     ReadinessLevel,
     SourceHealthSummary,
     WorkflowObjectSummary,
 )
 from nutmeg.product.errors import ProductNotFoundError
-from nutmeg.product.readiness import evaluate_readiness
+from nutmeg.product.readiness import evaluate_forecast_readiness, evaluate_readiness
 from nutmeg.product.repository import ProductReadRepository
 
 _SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -228,12 +238,46 @@ class ProductQueryService:
         observations = self._repository.observations_for_match(
             match_id, cutoff.isoformat()
         )
+        conflicts = _classify_conflicts(claims)
         snapshot = self._repository.latest_snapshot(
             match_id, _DEFAULT_MARKET, cutoff.isoformat()
         )
-        summary = self._summary(record, cutoff, snapshot, len(claims) + len(observations))
+        summary = self._summary(
+            record,
+            cutoff,
+            snapshot,
+            len(claims) + len(observations),
+            blocking_conflicts=sum(item.blocking for item in conflicts),
+            provisional_conflicts=sum(not item.blocking for item in conflicts),
+        )
         forecasts = self._repository.forecasts_for_match(match_id, cutoff.isoformat())
         workflow = self._repository.workflow_for_match(match_id, cutoff.isoformat())
+        timeline = self._repository.market_timeline(
+            match_id, _DEFAULT_MARKET, cutoff.isoformat()
+        )
+        bundles = self._repository.evidence_bundles_for_match(
+            match_id, cutoff.isoformat()
+        )
+        flags = self._repository.flag_instances_for_match(
+            match_id, cutoff.isoformat()
+        )
+        predictions = self._repository.predictions_for_match(
+            match_id, cutoff.isoformat()
+        )
+        precedents = self._repository.precedents_for_match(
+            match_id, cutoff.isoformat()
+        )
+        adjudications = self._repository.adjudications_for_match(
+            match_id, cutoff.isoformat()
+        )
+        proposals = self._repository.agent_proposals_for_match(
+            match_id, cutoff.isoformat()
+        )
+        eligible_refs = {
+            ('claim', item['claim_id']) for item in claims
+        } | {
+            ('observation', item['observation_id']) for item in observations
+        }
         return MatchDetail(
             match=summary,
             market_snapshot=self._snapshot_contract(snapshot),
@@ -247,6 +291,7 @@ class ProductQueryService:
                         value=item['value'],
                         status=item['status'],
                         created_at=item['created_at'],
+                        spans=[EvidenceSpanSummary(**span) for span in item['spans']],
                     )
                     for item in claims
                 ],
@@ -260,9 +305,11 @@ class ProductQueryService:
                         observed_at=item['observed_at'],
                         recorded_at=item['recorded_at'],
                         verification_method=item['verification_method'],
+                        source_retrieval_ids=item['source_retrieval_ids'],
                     )
                     for item in observations
                 ],
+                conflicts=conflicts,
             ),
             forecasts=[self._forecast_contract(item) for item in forecasts],
             workflow=[
@@ -277,6 +324,96 @@ class ProductQueryService:
                 for item in workflow
             ],
             as_of=cutoff,
+            context=MatchContextSummary(
+                match_revision_id=record['match_revision_id'],
+                competition_id=record['competition_id'],
+                competition_edition_id=record['competition_edition_id'],
+                competition=record['competition'],
+                round_label=record['round_label'],
+                venue_id=record['venue_id'],
+                scheduled_at=record['scheduled_at'],
+                schedule_status=record['schedule_status'],
+                status=record['status'],
+                home_team_id=record['home_team_id'],
+                home_team=record['home_team'],
+                away_team_id=record['away_team_id'],
+                away_team=record['away_team'],
+            ),
+            market_timeline=[
+                self._snapshot_contract(item) for item in timeline
+            ],
+            evidence_bundles=[
+                EvidenceBundleSummary(
+                    evidence_bundle_id=item['evidence_bundle_id'],
+                    frozen_at=item['frozen_at'],
+                    information_cutoff_at=item['information_cutoff_at'],
+                    market_snapshot_id=item['market_snapshot_id'],
+                    prior_distribution=item['prior_distribution'],
+                    identity_resolution_version=item['identity_resolution_version'],
+                    source_coverage=item['source_coverage'],
+                    freshness=item['freshness'],
+                    content_hash=item['content_hash'],
+                    item_refs=[ObjectRefContract(**ref) for ref in item['item_refs']],
+                )
+                for item in bundles
+            ],
+            flag_instances=[
+                FlagInstanceSummary(
+                    flag_instance_id=item['flag_instance_id'],
+                    flag_type=item['flag_type'],
+                    match_id=item['match_id'],
+                    direction=item['direction'],
+                    strength=item['strength'],
+                    evidence_refs=[
+                        ObjectRefContract(**ref) for ref in item['evidence_refs']
+                    ],
+                    predicted_face=item['predicted_face'],
+                    status=item['status'],
+                    created_at=item['created_at'],
+                )
+                for item in flags
+            ],
+            predictions=[PredictionSummary(**item) for item in predictions],
+            precedent_links=[
+                PrecedentLinkSummary(
+                    precedent_link_id=item['precedent_link_id'],
+                    subject_type=item['subject_type'],
+                    subject_id=item['subject_id'],
+                    precedent_match_id=item['precedent_match_id'],
+                    scope=item['scope'],
+                    evidence_refs=[
+                        ObjectRefContract(**ref) for ref in item['evidence_refs']
+                    ],
+                    created_at=item['created_at'],
+                )
+                for item in precedents
+            ],
+            adjudications=[
+                AdjudicationSummary(
+                    adjudication_id=item['adjudication_id'],
+                    subject_type=item['subject_type'],
+                    subject_id=item['subject_id'],
+                    decision=item['decision'],
+                    actor_id=item['actor_id'],
+                    reason=item['reason'],
+                    evidence_rejected=[
+                        ObjectRefContract(**ref) for ref in item['evidence_rejected']
+                    ],
+                    alternative=item['alternative'],
+                    created_at=item['created_at'],
+                    supersedes_adjudication_id=item['supersedes_adjudication_id'],
+                )
+                for item in adjudications
+            ],
+            agent_proposals=[
+                _proposal_contract(
+                    item,
+                    claims=claims,
+                    observations=observations,
+                    eligible_refs=eligible_refs,
+                )
+                for item in proposals
+            ],
         )
 
     def lineage(self, object_type: str, object_id: str) -> LineageResponse:
@@ -337,6 +474,7 @@ class ProductQueryService:
         snapshot = self._repository.latest_snapshot(
             record['match_id'], _DEFAULT_MARKET, cutoff.isoformat()
         )
+        conflicts = _classify_conflicts(claims)
         return self._summary(
             record,
             cutoff,
@@ -345,6 +483,8 @@ class ProductQueryService:
             self._repository.flag_count_for_match(
                 record['match_id'], as_of=cutoff.isoformat()
             ),
+            blocking_conflicts=sum(item.blocking for item in conflicts),
+            provisional_conflicts=sum(not item.blocking for item in conflicts),
         )
 
     @staticmethod
@@ -354,16 +494,23 @@ class ProductQueryService:
         snapshot: dict | None,
         evidence_count: int,
         flag_count: int = 0,
+        *,
+        blocking_conflicts: int = 0,
+        provisional_conflicts: int = 0,
     ) -> MatchSummary:
         snapshot_at = _parse_iso(snapshot['as_of']) if snapshot is not None else None
-        readiness = evaluate_readiness(
-            identity_resolved=(
-                record['home_resolution_status'] == 'resolved'
-                and record['away_resolution_status'] == 'resolved'
+        readiness = evaluate_forecast_readiness(
+            evaluate_readiness(
+                identity_resolved=(
+                    record['home_resolution_status'] == 'resolved'
+                    and record['away_resolution_status'] == 'resolved'
+                ),
+                snapshot_at=snapshot_at,
+                as_of=cutoff,
+                evidence_count=evidence_count,
             ),
-            snapshot_at=snapshot_at,
-            as_of=cutoff,
-            evidence_count=evidence_count,
+            blocking_conflicts=blocking_conflicts,
+            provisional_conflicts=provisional_conflicts,
         )
         workflow_state, next_action = {
             ReadinessLevel.READY: ('inspect', 'open_match'),
@@ -462,6 +609,129 @@ def _aware(value: datetime, name: str) -> datetime:
 def _parse_iso(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
     return _aware(parsed, 'timestamp')
+
+
+def _classify_conflicts(claims: list[dict]) -> list[EvidenceConflictSummary]:
+    grouped: dict[tuple[str, str, str], dict[str, list[dict]]] = {}
+    for claim in claims:
+        if claim['status'] == 'retracted':
+            continue
+        group_key = (
+            claim['subject_type'],
+            claim['subject_id'],
+            claim['predicate'],
+        )
+        value_key = json.dumps(
+            claim['value'], sort_keys=True, separators=(',', ':'), ensure_ascii=False
+        )
+        grouped.setdefault(group_key, {}).setdefault(value_key, []).append(claim)
+
+    conflicts: list[EvidenceConflictSummary] = []
+    for group_key, values in grouped.items():
+        if len(values) < 2:
+            continue
+        claims_in_group = sorted(
+            (claim for group in values.values() for claim in group),
+            key=lambda item: item['claim_id'],
+        )
+        verified_values = sum(
+            any(claim['status'] == 'verified' for claim in group)
+            for group in values.values()
+        )
+        identity = json.dumps(
+            [*group_key, *sorted(values)],
+            separators=(',', ':'),
+            ensure_ascii=False,
+        )
+        conflicts.append(
+            EvidenceConflictSummary(
+                conflict_id=(
+                    'conflict-'
+                    + hashlib.sha256(identity.encode('utf-8')).hexdigest()[:20]
+                ),
+                predicate=group_key[2],
+                claim_ids=[item['claim_id'] for item in claims_in_group],
+                statuses=[item['status'] for item in claims_in_group],
+                blocking=verified_values >= 2,
+            )
+        )
+    return sorted(conflicts, key=lambda item: (item.predicate, item.conflict_id))
+
+
+def _proposal_contract(
+    item: dict,
+    *,
+    claims: list[dict],
+    observations: list[dict],
+    eligible_refs: set[tuple[str, str]],
+) -> AgentProposalSummary:
+    claims_by_id = {claim['claim_id']: claim for claim in claims}
+    observations_by_id = {
+        observation['observation_id']: observation for observation in observations
+    }
+    citations: list[EvidenceSpanSummary] = []
+    cited_refs: set[tuple[str, str]] = set()
+    for ref in item['citation_refs']:
+        object_type = ref['object_type']
+        object_id = ref['object_id']
+        cited_refs.add((object_type, object_id))
+        if object_type == 'claim' and object_id in claims_by_id:
+            spans = claims_by_id[object_id]['spans']
+            citations.extend(
+                EvidenceSpanSummary(**span) for span in spans
+            )
+            if spans:
+                continue
+        if object_type == 'observation' and object_id in observations_by_id:
+            retrieval_ids = observations_by_id[object_id]['source_retrieval_ids']
+            citations.extend(
+                EvidenceSpanSummary(
+                    object_type=object_type,
+                    object_id=object_id,
+                    artifact_retrieval_id=retrieval_id,
+                )
+                for retrieval_id in retrieval_ids
+            )
+            if retrieval_ids:
+                continue
+        citations.append(
+            EvidenceSpanSummary(object_type=object_type, object_id=object_id)
+        )
+
+    payload = item['payload']
+    coverage = (
+        len(cited_refs & eligible_refs) / len(eligible_refs)
+        if eligible_refs
+        else 0.0
+    )
+    return AgentProposalSummary(
+        agent_proposal_id=item['agent_proposal_id'],
+        subject_type=item['subject_type'],
+        subject_id=item['subject_id'],
+        proposal_type=item['proposal_type'],
+        status=item['status'],
+        version=item['version'],
+        information_cutoff_at=item.get('information_cutoff_at'),
+        operator_prompt=item.get('operator_prompt'),
+        summary=str(
+            payload.get('summary')
+            or payload.get('note')
+            or item['proposal_type']
+        ),
+        scenarios=payload.get('scenarios', []),
+        proposed_belief=payload.get('proposed_belief'),
+        factors=payload.get('factors', []),
+        falsifier=payload.get('falsifier'),
+        citations=citations,
+        citation_coverage=coverage,
+        conflicts=payload.get('conflicts', []),
+        missing_evidence=payload.get('missing_evidence', []),
+        model_name=item['model_name'],
+        model_version=item['model_version'],
+        created_at=item['created_at'],
+        resolved_at=item['resolved_at'],
+        resolved_by_action_id=item['resolved_by_action_id'],
+    )
 
 
 def _alert(

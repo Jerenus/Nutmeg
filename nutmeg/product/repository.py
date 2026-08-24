@@ -65,9 +65,15 @@ class ProductReadRepository:
                 si.match_revisions.c.schedule_status,
                 home_team.c.canonical_name.label('home_team'),
                 away_team.c.canonical_name.label('away_team'),
+                home_team.c.team_id.label('home_team_id'),
+                away_team.c.team_id.label('away_team_id'),
                 home_team.c.resolution_status.label('home_resolution_status'),
                 away_team.c.resolution_status.label('away_resolution_status'),
+                si.competitions.c.competition_id,
+                si.competition_editions.c.competition_edition_id,
                 si.competitions.c.name.label('competition'),
+                si.match_revisions.c.round_label,
+                si.match_revisions.c.venue_id,
             )
             .select_from(
                 si.matches.join(

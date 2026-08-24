@@ -535,3 +535,22 @@ def m2_product_services(m2_seeded_product: SeededProduct):
         ),
         settings=m2_seeded_product.settings,
     )
+
+
+@pytest.fixture
+def m3_product_services(m3_seeded_product: SeededProduct):
+    from nutmeg.product.actions import ProductActionGateway
+    from nutmeg.product.queries import ProductQueryService
+    from nutmeg.product.repository import ProductReadRepository
+
+    repository = ProductReadRepository(m3_seeded_product.kernel.engine)
+    return ProductTestServices(
+        kernel=m3_seeded_product.kernel,
+        queries=ProductQueryService(repository, m3_seeded_product.kernel),
+        actions=ProductActionGateway(
+            m3_seeded_product.kernel,
+            repository,
+            clock=lambda: m3_seeded_product.clock,
+        ),
+        settings=m3_seeded_product.settings,
+    )
