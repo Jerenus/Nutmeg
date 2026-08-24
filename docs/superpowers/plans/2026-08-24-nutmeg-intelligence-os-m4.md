@@ -690,7 +690,7 @@ UV_FROZEN=1 git commit -m "feat(ui): add ticket adjudication workbench"
 - Create: `docs/nutmeg-intelligence-os-m4-operations.md`
 - Modify: `.pre-commit-config.yaml` only if the existing hooks omit a new M4 path
 
-- [ ] **Step 1: Write failing full M4 lifecycle E2E**
+- [x] **Step 1: Write failing full M4 lifecycle E2E**
 
 Drive the FastAPI app through:
 
@@ -705,25 +705,25 @@ session -> workbench -> create batch -> blocked ERROR path
 Assert exact object counts, one debit, CAS bytes/hash, no receipt/nonce leakage, AI
 denials, and SSE cursor continuity.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/product/test_m4_e2e.py -q -x`
 
 Expected: the first unimplemented lifecycle assertion fails for the intended reason.
 
-- [ ] **Step 3: Fix only integration gaps exposed by the E2E**
+- [x] **Step 3: Fix only integration gaps exposed by the E2E**
 
 Apply the systematic-debugging protocol for each unexpected failure. Do not add new
 features. Re-run the smallest failing test after each fix, then the full M4 E2E.
 
-- [ ] **Step 4: Write the operations contract**
+- [x] **Step 4: Write the operations contract**
 
 Document local-only authority, two-stage semantics, hashes, WARN/ERROR behavior,
 confirmation expiry/recovery, manual receipt, connector disabled-by-default, empty
 slate, backup inputs, audit queries, legacy Express compatibility, and explicit
 prohibitions on direct SQL/CAS edits or live dispatch during M4.
 
-- [ ] **Step 5: Run focused M4 and adjacent deterministic suites**
+- [x] **Step 5: Run focused M4 and adjacent deterministic suites**
 
 Run:
 

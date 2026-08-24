@@ -1308,6 +1308,63 @@ class ProductReadRepository:
                 ('ticket_uses_forecast', 'ticket', object_id, 'forecast_revision', revision_id)
                 for revision_id in legs
             ]
+        if object_type == 'audited_ticket_artifact':
+            row = connection.execute(
+                select(
+                    st.audited_ticket_artifacts.c.ticket_batch_revision_id,
+                    st.audited_ticket_artifacts.c.source_artifact_id,
+                    st.ticket_placements.c.ticket_placement_id,
+                    st.ticket_placements.c.ticket_id,
+                )
+                .select_from(
+                    st.audited_ticket_artifacts.outerjoin(
+                        st.ticket_placements,
+                        st.ticket_placements.c.ticket_artifact_id
+                        == st.audited_ticket_artifacts.c.ticket_artifact_id,
+                    )
+                )
+                .where(
+                    st.audited_ticket_artifacts.c.ticket_artifact_id == object_id
+                )
+            ).first()
+            if row is None:
+                return None
+            edges = [
+                (
+                    'ticket_artifact_for_batch_revision',
+                    object_type,
+                    object_id,
+                    'ticket_batch_revision',
+                    row.ticket_batch_revision_id,
+                ),
+                (
+                    'ticket_artifact_stored_as_source',
+                    object_type,
+                    object_id,
+                    'source_artifact',
+                    row.source_artifact_id,
+                ),
+            ]
+            if row.ticket_placement_id is not None:
+                edges.extend(
+                    (
+                        (
+                            'ticket_artifact_has_placement',
+                            object_type,
+                            object_id,
+                            'ticket_placement',
+                            row.ticket_placement_id,
+                        ),
+                        (
+                            'ticket_artifact_placed_as_ticket',
+                            object_type,
+                            object_id,
+                            'ticket',
+                            row.ticket_id,
+                        ),
+                    )
+                )
+            return edges
         if object_type in {'settlement', 'ticket_settlement'}:
             row = connection.execute(
                 select(sf.ticket_settlements.c.ticket_id).where(
