@@ -33,6 +33,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  overflow-x: clip;
   background:
     radial-gradient(circle at 77% 9%, rgba(138, 111, 47, 0.14), transparent 25rem),
     linear-gradient(135deg, var(--paper) 0%, #eef2ed 64%, #e3e9e3 100%);
@@ -264,6 +265,20 @@ select:focus-visible,
   background: var(--gold);
   border-radius: 50%;
   box-shadow: 0 0 0 4px var(--gold-pale);
+}
+
+.connection-state[data-event-state="connected"] .signal-dot {
+  background: var(--pine);
+  box-shadow: 0 0 0 4px var(--pine-pale);
+}
+
+.connection-state[data-event-state="offline"] {
+  color: var(--cinnabar);
+}
+
+.connection-state[data-event-state="offline"] .signal-dot {
+  background: var(--cinnabar);
+  box-shadow: 0 0 0 4px var(--cinnabar-pale);
 }
 
 .workspace-grid {

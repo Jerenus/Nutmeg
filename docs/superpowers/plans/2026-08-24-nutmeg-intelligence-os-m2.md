@@ -657,7 +657,7 @@ git commit -m "feat(ui): add temporal match and lineage views"
 - Modify: `README.md`
 - Modify: `docs/ontology-kernel-operations.md`
 
-- [ ] **Step 1: Write the M2 golden-path test**
+- [x] **Step 1: Write the M2 golden-path test**
 
 ```python
 def test_m2_golden_path_board_to_lineage_to_identity_merge(client, product_services):
@@ -678,12 +678,12 @@ Add an architecture test scanning product templates/static/controller for
 `DecisionStore`, `workbench.jsonl`, raw SQL, devig formulas, payout formulas, and
 privileged actor fields.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_e2e.py -q`
 Expected: event connectivity and/or responsive shell assertions are missing.
 
-- [ ] **Step 3: Add client event connectivity state**
+- [x] **Step 3: Add client event connectivity state**
 
 Open `EventSource('/api/v1/events/stream?after=<session cursor>')`, keep the cursor in
 `sessionStorage`, mark the health strip connected on messages and visibly offline on
@@ -691,13 +691,13 @@ errors, and reconnect using the last event ID. Browser event state never changes
 domain readiness. Add keyboard-visible focus, 44 px touch targets below 760 px, no
 horizontal page overflow at 390 px, and reduced-motion handling.
 
-- [ ] **Step 4: Document M2 operations**
+- [x] **Step 4: Document M2 operations**
 
 Document `/`, `/operations`, Match/lineage routes, filters, identity merge governance,
 the absence of client arithmetic, and the fact that M2 still performs no ticket,
 funds, dispatch, or scheduler operation.
 
-- [ ] **Step 5: Run M2 and M1 regression gates**
+- [x] **Step 5: Run M2 and M1 regression gates**
 
 ```bash
 UV_FROZEN=1 uv run pytest -o addopts='' tests/product -q
@@ -709,7 +709,7 @@ git diff --check
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/interfaces/web/static/product/app.js \

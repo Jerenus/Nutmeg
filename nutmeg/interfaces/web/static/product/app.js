@@ -2,6 +2,39 @@
   "use strict";
 
   const feedback = document.querySelector("#action-feedback");
+  const eventState = document.querySelector("[data-event-state]");
+  const eventCursorKey = "nutmeg:event-cursor";
+  let eventSource;
+  let reconnectTimer;
+
+  function showEventState(state, label) {
+    if (!eventState) return;
+    eventState.dataset.eventState = state;
+    eventState.lastChild.textContent = ` ${label}`;
+  }
+
+  function rememberEvent(event) {
+    if (!event.lastEventId) return;
+    sessionStorage.setItem(eventCursorKey, event.lastEventId);
+  }
+
+  function connectEventStream() {
+    if (!eventState || typeof EventSource === "undefined") return;
+    const cursor = sessionStorage.getItem(eventCursorKey) || "0";
+    eventSource = new EventSource(
+      `/api/v1/events/stream?after=${encodeURIComponent(cursor)}`,
+    );
+    eventSource.onopen = () => showEventState("connected", "事件流已连接");
+    for (const topic of ["action.committed", "action.rejected", "action.failed"]) {
+      eventSource.addEventListener(topic, rememberEvent);
+    }
+    eventSource.onerror = () => {
+      showEventState("offline", "事件流离线");
+      eventSource.close();
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = window.setTimeout(connectEventStream, 1200);
+    };
+  }
 
   function report(message, state = "info") {
     if (!feedback) return;
@@ -67,4 +100,6 @@
     event.preventDefault();
     submitIdentityMerge(form);
   });
+  window.addEventListener("beforeunload", () => eventSource?.close());
+  connectEventStream();
 })();

@@ -391,3 +391,33 @@ typed provider identities and resolves legacy prior Snapshot IDs only when match
 market, snapshot kind, and provider all agree. An unresolved identity is rejected
 visibly before Forecast persistence; operators must repair the source mapping rather
 than bypassing a foreign key or creating a synthetic Match/Snapshot.
+
+## 18. Intelligence OS M2 — local read-heavy workspaces
+
+Launch the same loopback service with `uv run nutmeg app`, then use:
+
+| Route | Operator purpose |
+|---|---|
+| `/` | Command Center board, readiness filters, next Actions, and global alerts |
+| `/operations` | source freshness, failure audit, identity queue, and governed merge |
+| `/matches/<match_id>?as_of=<timestamp>` | temporal evidence, market anchor, Forecast history, and workflow objects |
+| `/lineage/<object_type>/<object_id>` | typed object links and Action provenance |
+
+The Command Center's readiness counts are computed before filtering, so an empty
+filtered board never masquerades as an empty day. Match views use the requested
+timezone-aware `as_of` cutoff: later Observations, Claims, snapshots, and Forecasts
+are excluded. Historical `legacy_unbundled` Forecasts stay visibly labeled and no
+EvidenceBundle is fabricated for them.
+
+Data Operations reports source age, failed/rejected Actions, ontology/outbox high-water
+marks, and provisional Team identities. Schedule health is intentionally shown as
+"not instrumented" in M2; the UI does not infer launchd health from missing facts.
+Identity merge is the only mutation: the browser supplies source, survivor, reason,
+and idempotency key, while the server supplies the operator actor and enforces local
+session, CSRF, same-origin, permission, identity-state, and Action audit rules.
+
+The browser contains presentation and transport code only. It has no probability,
+readiness, budget, payout, audit, ticket, or settlement implementation. SSE keeps its
+last durable sequence in `sessionStorage`, resumes after disconnect, and changes only
+the visible connectivity indicator. M2 performs no ticket/funds/dispatch operation,
+does not call an AI provider, and does not restore or modify any scheduler.

@@ -56,7 +56,7 @@ intent classifier"}
         uv run pytest
         ```
 
-        ## Intelligence OS (M1 headless contract)
+        ## Intelligence OS (M2 local application)
 
         Initialize the Ontology Kernel v2 store, then launch the local API:
 
@@ -65,11 +65,22 @@ intent classifier"}
         uv run nutmeg app
         ```
 
-        M1 is API-only; M2 adds the Command Center and Data Operations UI. Product
-        reads and writes use Ontology Kernel v2 exclusively, and every mutation passes
-        through a governed Action. There is no autonomous funds action or unattended
-        betting path. `decision-web` remains a legacy workshop and is not a product
-        data source.
+        The local application opens at `http://127.0.0.1:8788/`. Its current
+        workspaces are the Command Center (`/`), Data Operations (`/operations`),
+        temporal Match dossiers (`/matches/<match_id>?as_of=...`), and typed lineage
+        pages (`/lineage/<object_type>/<object_id>`). Board filters never hide the
+        unfiltered readiness counts, and an empty result is shown as an explicit state.
+
+        Product reads and writes use Ontology Kernel v2 exclusively. The only M2 UI
+        mutation is governed Team identity merge; it obtains a local CSRF session at
+        submit time and sends `merge_entity` through the same Action Gateway as the
+        API. Browser assets contain no devig, readiness, ticket, payout, or settlement
+        arithmetic. SSE reconnect resumes from a session-scoped durable cursor and
+        visibly marks the page offline without changing domain readiness.
+
+        M2 does not construct or approve tickets, confirm dispatch, move funds,
+        restore schedulers, or call an AI provider. `decision-web` remains a legacy
+        workshop and is not a product data source.
 
         `fixtures-sync` requires `NUTMEG_API_FOOTBALL_KEY`. Without it, the CLI remains usable with demo fixtures.
 

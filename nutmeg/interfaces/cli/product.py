@@ -21,7 +21,7 @@ def product_app(
     host: str = _cli.typer.Option('127.0.0.1', '--host'),
     port: int = _cli.typer.Option(8788, '--port'),
 ) -> None:
-    """Launch the versioned local product API (M1 headless contract)."""
+    """Launch the versioned local Intelligence OS application."""
     import uvicorn
 
     from nutmeg.interfaces.product_api import create_product_app
