@@ -1244,8 +1244,11 @@ textarea:focus-visible,
 }
 
 .decision-desk input,
-.decision-desk textarea {
+.decision-desk textarea,
+.decision-desk select {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 10px;
   background: white;
   border: 1px solid var(--line-dark);
@@ -1998,7 +2001,8 @@ textarea:focus-visible,
 
   .decision-desk button,
   .decision-desk input,
-  .decision-desk textarea {
+  .decision-desk textarea,
+  .decision-desk select {
     min-height: 44px;
   }
 }

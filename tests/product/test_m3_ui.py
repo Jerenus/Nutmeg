@@ -168,3 +168,22 @@ def test_disabled_copilot_keeps_deterministic_investigation_usable(
     assert "disabled" in copilot_form
     assert '<button type="submit">提交人工 Forecast</button>' in html
     assert "Copilot 未配置，人工流程可用" in html
+
+
+def test_long_proposal_select_is_width_bounded_and_touch_sized(
+    client: TestClient,
+) -> None:
+    css = client.get("/assets/product/app.css").text
+    assert re.search(
+        r"\.decision-desk input,\s*\.decision-desk textarea,\s*"
+        r"\.decision-desk select\s*\{[^}]*width:\s*100%;[^}]*"
+        r"min-width:\s*0;[^}]*max-width:\s*100%;",
+        css,
+        re.DOTALL,
+    )
+    narrow = css.split("@media (max-width: 760px)", maxsplit=1)[1]
+    assert re.search(
+        r"\.decision-desk select\s*\{[^}]*min-height:\s*44px;",
+        narrow,
+        re.DOTALL,
+    )
