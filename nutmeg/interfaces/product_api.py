@@ -1,0 +1,232 @@
+"""Local FastAPI boundary for the versioned Nutmeg product contract."""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import secrets
+import time
+from collections.abc import Callable
+from datetime import UTC, date, datetime
+from typing import Annotated
+from uuid import uuid4
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, StreamingResponse
+
+from nutmeg.ontology.actions.models import ActorRole, canonical_json
+from nutmeg.ontology.errors import IdempotencyConflictError, OptimisticConcurrencyError
+from nutmeg.product.contracts import ProductActionRequest, ProductError
+from nutmeg.product.errors import (
+    ProductActionBlockedError,
+    ProductActionNotAllowedError,
+    ProductNotFoundError,
+)
+
+_SESSION_COOKIE = 'nutmeg_session'
+
+
+def create_product_app(
+    services,
+    session_secret: str | None = None,
+    csrf_secret: str | None = None,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> FastAPI:
+    """Create one process-local, single-user application boundary."""
+    now = clock or (lambda: datetime.now(UTC))
+    session_key = (session_secret or secrets.token_urlsafe(32)).encode()
+    csrf_key = (csrf_secret or secrets.token_urlsafe(32)).encode()
+    session_token = hmac.new(
+        session_key, b'nutmeg-local-session', hashlib.sha256
+    ).hexdigest()
+    csrf_token = hmac.new(csrf_key, session_token.encode(), hashlib.sha256).hexdigest()
+
+    app = FastAPI(title='Nutmeg Intelligence OS', version='1')
+
+    def error_response(status_code: int, error: ProductError) -> JSONResponse:
+        return JSONResponse(status_code=status_code, content=error.model_dump(mode='json'))
+
+    @app.exception_handler(ProductNotFoundError)
+    async def product_not_found(_request: Request, error: ProductNotFoundError):
+        return error_response(
+            404, ProductError(code='object_not_found', message=str(error))
+        )
+
+    @app.exception_handler(ProductActionNotAllowedError)
+    async def action_not_allowed(_request: Request, error: ProductActionNotAllowedError):
+        return error_response(
+            403, ProductError(code='action_not_allowed', message=str(error))
+        )
+
+    @app.exception_handler(ProductActionBlockedError)
+    async def action_blocked(_request: Request, error: ProductActionBlockedError):
+        return error_response(409, ProductError(code='action_blocked', message=str(error)))
+
+    @app.exception_handler(IdempotencyConflictError)
+    async def idempotency_conflict(_request: Request, error: IdempotencyConflictError):
+        return error_response(
+            409, ProductError(code='idempotency_conflict', message=str(error))
+        )
+
+    @app.exception_handler(OptimisticConcurrencyError)
+    async def optimistic_conflict(_request: Request, error: OptimisticConcurrencyError):
+        return error_response(
+            409, ProductError(code='version_conflict', message=str(error), retryable=False)
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation(_request: Request, error: RequestValidationError):
+        field_errors: dict[str, list[str]] = {}
+        for item in error.errors():
+            field = '.'.join(str(part) for part in item['loc'] if part != 'body') or 'body'
+            field_errors.setdefault(field, []).append(item['msg'])
+        return error_response(
+            422,
+            ProductError(
+                code='validation_error',
+                message='request validation failed',
+                field_errors=field_errors,
+            ),
+        )
+
+    @app.exception_handler(ValueError)
+    async def value_error(_request: Request, error: ValueError):
+        return error_response(422, ProductError(code='validation_error', message=str(error)))
+
+    @app.exception_handler(HTTPException)
+    async def http_error(_request: Request, error: HTTPException):
+        return error_response(
+            error.status_code,
+            ProductError(code='request_forbidden', message=str(error.detail)),
+        )
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(_request: Request, _error: Exception):
+        correlation_id = f'err-{uuid4().hex}'
+        return error_response(
+            500,
+            ProductError(
+                code='internal_error',
+                message='internal server error',
+                details={'correlation_id': correlation_id},
+            ),
+        )
+
+    async def require_mutation_session(request: Request) -> None:
+        cookie = request.cookies.get(_SESSION_COOKIE)
+        supplied_csrf = request.headers.get('X-CSRF-Token')
+        origin = request.headers.get('Origin')
+        expected_origin = f'{request.url.scheme}://{request.url.netloc}'
+        if cookie is None or not hmac.compare_digest(cookie, session_token):
+            raise HTTPException(status_code=403, detail='local session is required')
+        if supplied_csrf is None or not hmac.compare_digest(supplied_csrf, csrf_token):
+            raise HTTPException(status_code=403, detail='valid CSRF token is required')
+        if origin != expected_origin:
+            raise HTTPException(status_code=403, detail='same-origin request is required')
+
+    @app.get('/api/v1/session')
+    async def session() -> JSONResponse:
+        response = JSONResponse({'csrf_token': csrf_token})
+        response.set_cookie(
+            _SESSION_COOKIE,
+            session_token,
+            httponly=True,
+            samesite='strict',
+            secure=False,
+            path='/',
+        )
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+
+    @app.get('/api/v1/system/health')
+    async def health():
+        return services.queries.health()
+
+    @app.get('/api/v1/board')
+    async def board(
+        day: Annotated[date, Query(alias='date')],
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        return services.queries.board(day, as_of=as_of or now())
+
+    @app.get('/api/v1/matches/{match_id}')
+    async def match(
+        match_id: str, as_of: Annotated[datetime | None, Query()] = None
+    ):
+        return services.queries.match(match_id, as_of=as_of or now())
+
+    @app.get('/api/v1/lineage/{object_type}/{object_id}')
+    async def lineage(object_type: str, object_id: str):
+        return services.queries.lineage(object_type, object_id)
+
+    @app.get('/api/v1/actions')
+    async def actions(
+        after: Annotated[str | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    ):
+        return services.queries.actions(after=after, limit=limit)
+
+    @app.post('/api/v1/actions')
+    async def execute_action(
+        command: ProductActionRequest,
+        _session: None = Depends(require_mutation_session),
+    ):
+        response = services.actions.execute(
+            command,
+            actor_id=services.settings.default_user_id,
+            actor_role=ActorRole.JUDGE_OPERATOR,
+        )
+        if response.status == 'rejected':
+            return error_response(
+                403,
+                ProductError(
+                    code=response.error_code or 'action_rejected',
+                    message=response.error_detail or 'action was rejected',
+                    action_id=response.action_id,
+                ),
+            )
+        return response
+
+    @app.get('/api/v1/events')
+    async def events(
+        after: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    ):
+        return services.queries.events(after=after, limit=limit)
+
+    @app.get('/api/v1/events/stream')
+    async def event_stream(
+        after: Annotated[int, Query(ge=0)] = 0,
+        once: Annotated[bool, Query()] = False,
+    ):
+        async def generate():
+            cursor = after
+            last_activity = time.monotonic()
+            while True:
+                page = services.queries.events(after=cursor, limit=100)
+                if page.items:
+                    for event in page.items:
+                        payload = canonical_json(event.model_dump(mode='json'))
+                        yield (
+                            f'id: {event.sequence}\n'
+                            f'event: {event.topic}\n'
+                            f'data: {payload}\n\n'
+                        )
+                        cursor = event.sequence
+                    last_activity = time.monotonic()
+                if once:
+                    return
+                if time.monotonic() - last_activity >= 15:
+                    yield ': heartbeat\n\n'
+                    last_activity = time.monotonic()
+                await asyncio.sleep(0.5)
+
+        return StreamingResponse(
+            generate(),
+            media_type='text/event-stream',
+            headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+        )
+
+    return app

@@ -866,7 +866,7 @@ git commit -m "feat(product): add governed action gateway"
 - Create: `nutmeg/interfaces/product_api.py`
 - Create: `tests/product/test_api.py`
 
-- [ ] **Step 1: Write API contract and security tests**
+- [x] **Step 1: Write API contract and security tests**
 
 ```python
 def _session(client):
@@ -909,12 +909,12 @@ def test_events_resume_after_cursor(client, committed_event):
 Also test `GET /api/v1/events/stream?after=0&once=true` returns `text/event-stream`
 with `id:`, `event:`, and JSON `data:` lines.
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_api.py -q`  
 Expected: collection FAIL because `create_product_app` does not exist.
 
-- [ ] **Step 3: Implement local session protection**
+- [x] **Step 3: Implement local session protection**
 
 `create_product_app(services, session_secret=None, csrf_secret=None)` stores random
 `secrets.token_urlsafe(32)` values when not injected. `GET /api/v1/session` sets an
@@ -924,7 +924,7 @@ The mutation dependency validates cookie, `X-CSRF-Token`, and Origin host. Paylo
 actor fields are ignored because the server always assigns `settings.default_user_id`
 and `JUDGE_OPERATOR`.
 
-- [ ] **Step 4: Implement query and Action routes**
+- [x] **Step 4: Implement query and Action routes**
 
 Add the six design endpoints plus `/api/v1/session` and `/api/v1/events/stream`.
 Register exception handlers for `ProductNotFoundError`,
@@ -935,7 +935,7 @@ return stack traces.
 For a rejected `ProductActionResponse`, return 403 with the standard envelope and the
 Action ID; committed responses return 200.
 
-- [ ] **Step 5: Implement durable SSE encoding**
+- [x] **Step 5: Implement durable SSE encoding**
 
 The SSE generator reads `services.queries.events(after, limit=100)`, emits:
 
@@ -949,12 +949,12 @@ data: <canonical JSON payload>
 When `once=true`, emit the current batch and close for deterministic tests. Otherwise
 poll every 0.5 seconds and emit a comment heartbeat after 15 seconds of inactivity.
 
-- [ ] **Step 6: Run API tests**
+- [x] **Step 6: Run API tests**
 
 Run: `uv run pytest tests/product/test_api.py -q`  
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/interfaces/product_api.py tests/product/test_api.py

@@ -26,6 +26,7 @@ CLOCK = datetime(2026, 8, 24, 10, tzinfo=UTC)
 class SeededProduct:
     kernel: object
     clock: datetime
+    settings: AppSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,11 +34,13 @@ class ProductTestServices:
     kernel: object
     queries: object
     actions: object
+    settings: AppSettings
 
 
 @pytest.fixture
 def seeded_product(tmp_path: Path) -> SeededProduct:
-    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    settings = AppSettings(data_dir=tmp_path / "data")
+    kernel = build_ontology_kernel(settings)
     kernel.initialize()
     with OntologyUnitOfWork(kernel.engine) as uow:
         for team_id, name in (("team-home", "Home FC"), ("team-away", "Away FC")):
@@ -225,7 +228,7 @@ def seeded_product(tmp_path: Path) -> SeededProduct:
             requested_at=datetime(2026, 8, 24, 9, 51, tzinfo=UTC),
         )
     )
-    return SeededProduct(kernel=kernel, clock=CLOCK)
+    return SeededProduct(kernel=kernel, clock=CLOCK, settings=settings)
 
 
 @pytest.fixture
@@ -241,4 +244,5 @@ def product_services(seeded_product: SeededProduct):
         actions=ProductActionGateway(
             seeded_product.kernel, repository, clock=lambda: seeded_product.clock
         ),
+        settings=seeded_product.settings,
     )
