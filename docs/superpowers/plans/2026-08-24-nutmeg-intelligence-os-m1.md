@@ -655,14 +655,14 @@ git commit -m "feat(product): define v1 contracts and readiness policy"
 - Create: `tests/product/conftest.py`
 - Create: `tests/product/test_queries.py`
 
-- [ ] **Step 1: Add a deterministic product fixture**
+- [x] **Step 1: Add a deterministic product fixture**
 
 `tests/product/conftest.py` builds a temp kernel, applies migrations, and records two
 teams, one resolved match revision, home/away appearances, one read-time HAD snapshot,
 one Observation, one provisional Claim, and one legacy Forecast with no bundle. Return
 the kernel and fixed clock `2026-08-24T10:00:00Z`.
 
-- [ ] **Step 2: Write query behavior tests**
+- [x] **Step 2: Write query behavior tests**
 
 ```python
 def test_board_returns_named_match_and_explicit_readiness(product_services):
@@ -688,12 +688,12 @@ def test_lineage_and_action_queries_are_stable(product_services):
     assert product_services.queries.actions(limit=20).items
 ```
 
-- [ ] **Step 3: Run the test and verify RED**
+- [x] **Step 3: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_queries.py -q`  
 Expected: FAIL because product query modules do not exist.
 
-- [ ] **Step 4: Implement read-only repository queries**
+- [x] **Step 4: Implement read-only repository queries**
 
 `ProductReadRepository` receives the ontology `Engine` and opens short read connections.
 Implement explicit SQLAlchemy Core selects for:
@@ -724,7 +724,7 @@ def latest_snapshot(self, match_id: str, market_id: str, as_of: str):
 
 Do not accept a client-supplied prior distribution in this repository.
 
-- [ ] **Step 5: Assemble DTOs in Query Service**
+- [x] **Step 5: Assemble DTOs in Query Service**
 
 `ProductQueryService` converts repository records into Pydantic contracts, applies
 `evaluate_readiness`, labels a Forecast `bundled` only when `evidence_bundle_id` is
@@ -733,12 +733,12 @@ non-null, and raises `ProductNotFoundError` for absent objects.
 `board()` uses the Asia/Shanghai business-day interval and an explicit `as_of`; it does
 not infer the system clock inside repository code.
 
-- [ ] **Step 6: Run query tests**
+- [x] **Step 6: Run query tests**
 
 Run: `uv run pytest tests/product/test_queries.py tests/product/test_readiness.py -q`  
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/product/repository.py nutmeg/product/queries.py \
