@@ -6,8 +6,12 @@ from datetime import UTC, datetime
 
 from nutmeg.ontology.actions.claim_actions import ClaimAdjudicationRequest
 from nutmeg.ontology.actions.entity_actions import MergeEntityRequest
+from nutmeg.ontology.actions.factor_actions import ApplyFactorStatusRequest
 from nutmeg.ontology.actions.forecast_actions import CommitForecastRequest, FactorInput
-from nutmeg.ontology.actions.models import ActionOutcome, ActorRole
+from nutmeg.ontology.actions.models import ActionOutcome, ActorRole, ObjectRef
+from nutmeg.ontology.actions.scoreboard_actions import (
+    RecordScoreboardObservationRequest,
+)
 from nutmeg.ontology.actions.workflow_actions import (
     CreateAgentProposalRequest,
     LinkPrecedentRequest,
@@ -49,6 +53,8 @@ _ALLOWED_ACTIONS = {
     'verify_claim',
     'dispute_claim',
     'retract_claim',
+    'record_scoreboard_observation',
+    'apply_factor_status',
 }
 
 
@@ -91,10 +97,138 @@ class ProductActionGateway:
             return self._adjudicate_claim(
                 request, actor_id, actor_role, requested_at
             )
+        if request.action_type == 'record_scoreboard_observation':
+            return self._record_scoreboard_observation(
+                request, actor_id, actor_role, requested_at
+            )
+        if request.action_type == 'apply_factor_status':
+            return self._apply_factor_status(
+                request, actor_id, actor_role, requested_at
+            )
         outcome = self._execute_workflow(
             request, actor_id=actor_id, actor_role=actor_role, requested_at=requested_at
         )
         return _response(outcome)
+
+    def _record_scoreboard_observation(
+        self,
+        request: ProductActionRequest,
+        actor_id: str,
+        actor_role: ActorRole,
+        requested_at: datetime,
+    ) -> ProductActionResponse:
+        payload = request.payload
+        _reject_actor_payload(payload)
+        outcome = self._kernel.scoreboard_actions.record_observation(
+            RecordScoreboardObservationRequest(
+                group_key=_required_str(payload, 'group_key'),
+                metric_key=_required_str(payload, 'metric_key'),
+                tally=_required_str(payload, 'tally'),
+                detail=_required_str(payload, 'detail'),
+                status=_required_str(payload, 'status'),
+                numerator=_optional_float(payload.get('numerator'), 'numerator'),
+                denominator=_optional_float(
+                    payload.get('denominator'), 'denominator'
+                ),
+                value=_optional_float(payload.get('value'), 'value'),
+                unit=_optional_str(payload.get('unit')),
+                evidence_refs=[
+                    ObjectRef(ref['object_type'], ref['object_id'])
+                    for ref in _reference_list(payload.get('evidence_refs', []))
+                ],
+                effective_at=_parse_aware(
+                    _required_str(payload, 'effective_at'), 'effective_at'
+                ),
+                supersedes_observation_id=_optional_str(
+                    payload.get('supersedes_observation_id')
+                ),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=request.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        return _response(outcome)
+
+    def _apply_factor_status(
+        self,
+        request: ProductActionRequest,
+        actor_id: str,
+        actor_role: ActorRole,
+        requested_at: datetime,
+    ) -> ProductActionResponse:
+        payload = request.payload
+        _reject_actor_payload(payload)
+        factor_id = _required_str(payload, 'factor_definition_id')
+        proposal_id = _required_str(payload, 'proposal_id')
+        current_status = _required_str(payload, 'expected_current_status')
+        target_status = _required_str(payload, 'target_status')
+        adjudication_id = _required_str(payload, 'adjudication_id')
+        version_key = f'factor_definition:{factor_id}'
+        if version_key not in request.expected_versions:
+            raise ValueError(f'expected version {version_key} is required')
+        expected_version = request.expected_versions[version_key]
+        detail = self._repository.ontology_object(
+            'factor_definition', factor_id, as_of=requested_at.isoformat()
+        )
+        if detail is None:
+            raise ProductNotFoundError(f'factor definition {factor_id} not found')
+        properties = detail['properties']
+        if (
+            properties['version'] != expected_version
+            or properties['status'] != current_status
+        ):
+            from nutmeg.ontology.errors import OptimisticConcurrencyError
+
+            raise OptimisticConcurrencyError(
+                f'factor {factor_id} no longer matches the expected version/status'
+            )
+        proposals = self._repository.projection_rows(
+            'factor_lifecycle_proposals', as_of=requested_at.isoformat()
+        )
+        if proposals['health']['state'] != 'available':
+            raise ProductActionBlockedError('lifecycle projection is not current')
+        proposal = next(
+            (row for row in proposals['rows'] if row['proposal_id'] == proposal_id),
+            None,
+        )
+        if proposal is None or (
+            proposal['factor_definition_id'],
+            proposal['from_status'],
+            proposal['to_status'],
+        ) != (factor_id, current_status, target_status):
+            raise ProductActionBlockedError(
+                'lifecycle proposal is missing or no longer matches the factor'
+            )
+        adjudication = self._repository.ontology_object(
+            'adjudication', adjudication_id, as_of=requested_at.isoformat()
+        )
+        if adjudication is None:
+            raise ProductNotFoundError(f'adjudication {adjudication_id} not found')
+        adjudication_properties = adjudication['properties']
+        if (
+            adjudication_properties['subject_type'] != 'factor_definition'
+            or adjudication_properties['subject_id'] != factor_id
+            or not str(adjudication_properties['reason']).strip()
+        ):
+            raise ProductActionBlockedError(
+                'a reason-bearing factor adjudication is required'
+            )
+        return _response(
+            self._kernel.factor_actions.apply_factor_status(
+                ApplyFactorStatusRequest(
+                    factor_definition_id=factor_id,
+                    target_status=target_status,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    idempotency_key=request.idempotency_key,
+                    requested_at=requested_at,
+                    expected_current_status=current_status,
+                    expected_factor_version=expected_version,
+                    adjudication_id=adjudication_id,
+                )
+            )
+        )
 
     def _commit_forecast(
         self,
@@ -436,6 +570,19 @@ def _optional_str(value: object) -> str | None:
     if not isinstance(value, str):
         raise ValueError('optional text value must be a string')
     return value
+
+
+def _optional_float(value: object, name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f'{name} must be a number or null')
+    return float(value)
+
+
+def _reject_actor_payload(payload: dict[str, object]) -> None:
+    if 'actor_id' in payload or 'actor_role' in payload:
+        raise ValueError('actor identity and role are server-derived')
 
 
 def _object_dict(value: object, name: str) -> dict[str, object]:

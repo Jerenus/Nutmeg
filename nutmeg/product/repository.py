@@ -78,7 +78,41 @@ class ProductReadRepository:
             columns = [item[0] for item in cursor.description]
             rows = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
         if not rows:
-            return unavailable
+            projection_names = {
+                "counterfactual_replays": "intervention_quality",
+                "factor_estimates": "factor_estimates",
+                "factor_lifecycle_proposals": "factor_lifecycle_proposals",
+                "regime_vectors": "regime_vectors",
+                "regime_postmatch_labels": "regime_postmatch_labels",
+                "scoreboard_metrics": "scoreboard",
+            }
+            projection_name = projection_names[table]
+            with duckdb.connect(str(path), read_only=True) as connection:
+                run = connection.execute(
+                    "SELECT projection_version, source_high_watermark, finished_at "
+                    "FROM projection_runs WHERE projection_name = ? "
+                    "AND status = 'succeeded' ORDER BY finished_at DESC, run_id DESC LIMIT 1",
+                    [projection_name],
+                ).fetchone()
+            if run is None:
+                return unavailable
+            version, watermark, built_at = run
+            stale = int(watermark) < self.action_high_watermark()
+            return {
+                "health": {
+                    "state": "stale" if stale else "available",
+                    "code": "projection_stale" if stale else None,
+                    "instruction": (
+                        "run `nutmeg ontology calibrate`" if stale else None
+                    ),
+                    "projection_version": str(version),
+                    "source_high_watermark": int(watermark),
+                    "built_at": str(built_at),
+                    "cohort_definition_version": None,
+                    "metric_version": None,
+                },
+                "rows": [],
+            }
         identities = {
             (
                 str(row["projection_version"]),

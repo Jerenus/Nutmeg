@@ -243,6 +243,44 @@ def create_product_app(
     async def operations(as_of: Annotated[datetime | None, Query()] = None):
         return services.queries.operations(as_of=as_of or now())
 
+    @app.get('/api/v1/review')
+    async def review(as_of: Annotated[datetime | None, Query()] = None):
+        return services.queries.review(as_of=as_of or now())
+
+    @app.get('/api/v1/calibration')
+    async def calibration(as_of: Annotated[datetime | None, Query()] = None):
+        return services.queries.calibration(as_of=as_of or now())
+
+    @app.get('/api/v1/ontology/objects')
+    async def ontology_objects(
+        object_type: Annotated[str, Query(alias='type')],
+        query: Annotated[str | None, Query(alias='q', max_length=200)] = None,
+        after: Annotated[str | None, Query(max_length=2000)] = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        return services.queries.ontology_objects(
+            object_type=object_type,
+            query=query,
+            after=after,
+            limit=limit,
+            as_of=as_of or now(),
+        )
+
+    @app.get('/api/v1/ontology/objects/{object_type}/{object_id}')
+    async def ontology_object(
+        object_type: str,
+        object_id: str,
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        return services.queries.ontology_object(
+            object_type, object_id, as_of=as_of or now()
+        )
+
+    @app.get('/api/v1/scoreboard')
+    async def scoreboard(as_of: Annotated[datetime | None, Query()] = None):
+        return services.queries.scoreboard(as_of=as_of or now())
+
     @app.get('/api/v1/alerts')
     async def alerts(as_of: Annotated[datetime | None, Query()] = None):
         return services.queries.operations(as_of=as_of or now()).alerts

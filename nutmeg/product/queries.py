@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from nutmeg.ontology.actions.protected_ticket_actions import ticket_audit_finding_id
+from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.contracts import (
     ActionPage,
     ActionView,
@@ -14,30 +16,45 @@ from nutmeg.product.contracts import (
     AlertSeverity,
     AlertSummary,
     BoardResponse,
+    CalibrationResponse,
     ClaimSummary,
     CommandCenterResponse,
+    CounterfactualReplaySummary,
     EventPage,
     EvidenceBundleSummary,
     EvidenceSpanSummary,
     EvidenceSummary,
+    FactorEstimateSummary,
     FlagInstanceSummary,
     ForecastSummary,
     HealthResponse,
     IdentityQueueItem,
+    LifecycleProposalSummary,
     LineageEdge,
     LineageResponse,
     MarketSnapshotSummary,
     MatchContextSummary,
     MatchDetail,
     MatchSummary,
+    MetricSummary,
     ObjectRefContract,
     ObservationSummary,
+    OntologyObjectDetail,
+    OntologyObjectPage,
+    OntologyObjectSummary,
     OperationsMetrics,
     OperationsResponse,
     OutboxEventView,
     PrecedentLinkSummary,
     PredictionSummary,
+    ProjectionHealth,
     ReadinessLevel,
+    RegimeSummary,
+    ReviewResponse,
+    ScoreboardAuthoritySummary,
+    ScoreboardResponse,
+    ScorePlaneSummary,
+    SettlementSummary,
     SourceHealthSummary,
     TicketArtifactDetail,
     TicketAuditFindingSummary,
@@ -65,6 +82,205 @@ class ProductQueryService:
     def __init__(self, repository: ProductReadRepository, kernel) -> None:
         self._repository = repository
         self._kernel = kernel
+
+    def review(self, *, as_of: datetime) -> ReviewResponse:
+        cutoff = _aware(as_of, 'as_of')
+        projection = self._repository.scoreboard_projection(
+            as_of=cutoff.isoformat()
+        )
+        counterfactuals = self._repository.projection_rows(
+            'counterfactual_replays', as_of=cutoff.isoformat()
+        )
+        return ReviewResponse(
+            as_of=cutoff,
+            forecast=self._score_plane('forecast', projection),
+            money=self._score_plane('money', projection),
+            intervention=self._score_plane('intervention', projection),
+            settlements=[
+                SettlementSummary(
+                    ticket_settlement_id=row['ticket_settlement_id'],
+                    ticket_id=row['ticket_id'],
+                    status=row['status'],
+                    settled_at=row['settled_at'],
+                    stake_amount=row['stake_amount'],
+                    payout_amount=row['payout_amount'],
+                    pnl_amount=row['pnl_amount'],
+                    settlement_method_version=row['settlement_method_version'],
+                    leg_settlement_ids=row['bet_leg_settlement_ids'],
+                )
+                for row in self._repository.settlements(as_of=cutoff.isoformat())
+            ],
+            counterfactuals=[
+                CounterfactualReplaySummary(
+                    **{
+                        key: row[key]
+                        for key in CounterfactualReplaySummary.model_fields
+                    }
+                )
+                for row in counterfactuals['rows']
+            ],
+        )
+
+    def calibration(self, *, as_of: datetime) -> CalibrationResponse:
+        cutoff = _aware(as_of, 'as_of')
+        estimates = self._repository.projection_rows(
+            'factor_estimates', as_of=cutoff.isoformat()
+        )
+        proposals = self._repository.projection_rows(
+            'factor_lifecycle_proposals', as_of=cutoff.isoformat()
+        )
+        vectors = self._repository.projection_rows(
+            'regime_vectors', as_of=cutoff.isoformat()
+        )
+        labels = self._repository.projection_rows(
+            'regime_postmatch_labels', as_of=cutoff.isoformat()
+        )
+        factors: list[FactorEstimateSummary] = []
+        for row in estimates['rows']:
+            detail = self._repository.ontology_object(
+                'factor_definition',
+                str(row['factor_definition_id']),
+                as_of=cutoff.isoformat(),
+            )
+            factors.append(
+                FactorEstimateSummary(
+                    **{
+                        key: row[key]
+                        for key in FactorEstimateSummary.model_fields
+                        if key != 'current_status'
+                    },
+                    current_status=(
+                        str(detail['properties']['status']) if detail else None
+                    ),
+                )
+            )
+        postmatch = {
+            str(row['match_id']): _json_value(row['labels_json'], 'labels_json')
+            for row in labels['rows']
+        }
+        regimes = []
+        for row in vectors['rows']:
+            scope_id = str(row['scope_id'])
+            regimes.append(
+                RegimeSummary(
+                    regime_key=str(row['regime_id']),
+                    values={
+                        'scope_type': row['scope_type'],
+                        'scope_id': scope_id,
+                        'as_of': row['as_of'],
+                        'axes': _json_value(row['axes_json'], 'axes_json'),
+                        'labels': _json_value(row['labels_json'], 'labels_json'),
+                        'postmatch_labels': postmatch.get(scope_id),
+                    },
+                )
+            )
+        return CalibrationResponse(
+            as_of=cutoff,
+            health=ProjectionHealth(**estimates['health']),
+            factors=factors,
+            lifecycle_proposals=[
+                LifecycleProposalSummary(
+                    proposal_id=row['proposal_id'],
+                    factor_definition_id=row['factor_definition_id'],
+                    from_status=row['from_status'],
+                    to_status=row['to_status'],
+                    rationale=_json_value(row['rationale_json'], 'rationale_json'),
+                    policy_version=row['policy_version'],
+                )
+                for row in proposals['rows']
+            ],
+            regimes=regimes,
+        )
+
+    def ontology_objects(
+        self,
+        *,
+        object_type: str,
+        query: str | None,
+        after: str | None,
+        limit: int,
+        as_of: datetime,
+    ) -> OntologyObjectPage:
+        cutoff = _aware(as_of, 'as_of')
+        result = self._repository.ontology_objects(
+            object_type=object_type,
+            query=query,
+            after=after,
+            limit=limit,
+            as_of=cutoff.isoformat(),
+        )
+        return OntologyObjectPage(
+            object_type=object_type,
+            as_of=cutoff,
+            items=[OntologyObjectSummary(**item) for item in result['items']],
+            next_cursor=result['next_cursor'],
+        )
+
+    def ontology_object(
+        self, object_type: str, object_id: str, *, as_of: datetime
+    ) -> OntologyObjectDetail:
+        cutoff = _aware(as_of, 'as_of')
+        result = self._repository.ontology_object(
+            object_type, object_id, as_of=cutoff.isoformat()
+        )
+        if result is None:
+            raise ProductNotFoundError(f'{object_type} {object_id} not found')
+        return OntologyObjectDetail(
+            object_type=result['object_type'],
+            object_id=result['object_id'],
+            as_of=cutoff,
+            properties=result['properties'],
+            links=[LineageEdge(**item) for item in result['links']],
+            versions=result['versions'],
+            actions=[self._action_contract(item) for item in result['actions']],
+        )
+
+    def scoreboard(self, *, as_of: datetime) -> ScoreboardResponse:
+        cutoff = _aware(as_of, 'as_of')
+        projection = self._repository.scoreboard_projection(
+            as_of=cutoff.isoformat()
+        )
+        with OntologyUnitOfWork(self._kernel.engine) as uow:
+            authority = uow.scoreboard.authority()
+        return ScoreboardResponse(
+            as_of=cutoff,
+            authority=ScoreboardAuthoritySummary(
+                state=authority.state,
+                version=authority.version,
+                projection_version=authority.projection_version,
+                source_high_watermark=authority.source_high_watermark,
+                legacy_sha256=authority.legacy_sha256,
+                shadow_review_id=authority.shadow_review_id,
+                compatibility_export_sha256=authority.compatibility_export_sha256,
+                approved_at=authority.approved_at,
+                approved_by_action_id=authority.approved_by_action_id,
+            ),
+            health=ProjectionHealth(**projection['health']),
+            planes=[
+                self._score_plane(plane, projection)
+                for plane in (
+                    'forecast',
+                    'money',
+                    'intervention',
+                    'lifecycle',
+                    'manual',
+                )
+            ],
+        )
+
+    @staticmethod
+    def _score_plane(plane: str, projection: dict) -> ScorePlaneSummary:
+        return ScorePlaneSummary(
+            plane=plane,
+            health=ProjectionHealth(**projection['health']),
+            metrics=[
+                MetricSummary(
+                    **{key: row[key] for key in MetricSummary.model_fields}
+                )
+                for row in projection['rows']
+                if row['plane'] == plane
+            ],
+        )
 
     def board(self, day: date, *, as_of: datetime) -> BoardResponse:
         cutoff = _aware(as_of, 'as_of')
@@ -841,6 +1057,13 @@ def _aware(value: datetime, name: str) -> datetime:
 def _parse_iso(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
     return _aware(parsed, 'timestamp')
+
+
+def _json_value(value: str, name: str) -> dict | list:
+    decoded = json.loads(value)
+    if not isinstance(decoded, (dict, list)):
+        raise ValueError(f'{name} must contain an object or list')
+    return decoded
 
 
 def _proposal_contract(
