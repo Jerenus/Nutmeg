@@ -457,7 +457,7 @@ git commit -m "feat(api): expose M2 operations contract"
 - Modify: `nutmeg/interfaces/product_api.py`
 - Create: `tests/product/test_m2_ui.py`
 
-- [ ] **Step 1: Write failing shell and Command Center tests**
+- [x] **Step 1: Write failing shell and Command Center tests**
 
 ```python
 def test_command_center_renders_semantic_attention_surface(client):
@@ -481,19 +481,19 @@ def test_empty_filter_is_designed_state(client):
 Also assert skip-link, landmarks, visible focus stylesheet, no external CDN assets,
 and no inline probability arithmetic script.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_ui.py -q`
 Expected: `/` returns 404.
 
-- [ ] **Step 3: Register the SSR boundary**
+- [x] **Step 3: Register the SSR boundary**
 
 `mount_product_ui(app, services, clock)` mounts `/assets/product`, creates Jinja
 templates from package-relative paths, and registers `/`. The controller validates
 filters through product enums, calls `queries.command_center`, and passes only DTOs,
 active filter values, and route metadata to templates.
 
-- [ ] **Step 4: Build the visual shell**
+- [x] **Step 4: Build the visual shell**
 
 Use the approved ledger/editorial direction:
 
@@ -513,12 +513,12 @@ surface, semantic status text/icons, and no dark-mode default. Desktop uses a de
 Cinnabar is limited to conflict/pending judgment. Add one staggered page-load reveal,
 disabled by `prefers-reduced-motion`.
 
-- [ ] **Step 5: Run UI tests and ruff**
+- [x] **Step 5: Run UI tests and ruff**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_ui.py -q && UV_FROZEN=1 uv run ruff check nutmeg/interfaces/product_ui.py`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/interfaces/product_ui.py nutmeg/interfaces/product_api.py \

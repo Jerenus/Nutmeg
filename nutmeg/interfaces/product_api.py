@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from nutmeg.interfaces.product_ui import mount_product_ui
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.errors import IdempotencyConflictError, OptimisticConcurrencyError
 from nutmeg.product.contracts import ProductActionRequest, ProductError, ReadinessLevel
@@ -271,4 +272,5 @@ def create_product_app(
             headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
         )
 
+    mount_product_ui(app, services, now)
     return app

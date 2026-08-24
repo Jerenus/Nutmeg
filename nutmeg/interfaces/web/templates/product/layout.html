@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>{% block title %}Nutmeg Intelligence OS{% endblock %}</title>
+    <link rel="stylesheet" href="/assets/product/app.css">
+  </head>
+  <body data-workspace="{{ workspace }}">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <div class="paper-noise" aria-hidden="true"></div>
+    <div class="app-shell">
+      <nav class="ontology-rail" aria-label="工作区导航">
+        <a class="wordmark" href="/" aria-label="Nutmeg 首页">
+          <span class="wordmark-mark" aria-hidden="true">N</span>
+          <span class="wordmark-copy">
+            <strong>Nutmeg</strong>
+            <small>INTELLIGENCE OS</small>
+          </span>
+        </a>
+        <div class="rail-label">工作区</div>
+        <a class="rail-link{% if active_nav == 'command-center' %} is-active{% endif %}" href="/">
+          <span aria-hidden="true">01</span> 指挥中心
+        </a>
+        <a class="rail-link{% if active_nav == 'operations' %} is-active{% endif %}" href="/operations">
+          <span aria-hidden="true">02</span> 数据运营
+        </a>
+        <span class="rail-link is-locked" aria-disabled="true">
+          <span aria-hidden="true">03</span> 比赛调查
+        </span>
+        <span class="rail-link is-locked" aria-disabled="true">
+          <span aria-hidden="true">04</span> 裁决工作台
+        </span>
+        <div class="rail-foot">
+          <span>ONTOLOGY v{{ health.ontology_schema_version }}</span>
+          <span>LOCAL / PRIVATE</span>
+        </div>
+      </nav>
+
+      <div class="workspace-frame">
+        <header class="health-strip" aria-label="系统健康状态">
+          <div class="health-ledger">
+            <span class="eyebrow">运行状态</span>
+            <strong class="health-state{% if health.initialized and health.integrity_check == 'ok' and not health.pending_migrations %} is-ready{% else %} is-blocked{% endif %}">
+              {% if health.initialized and health.integrity_check == 'ok' and not health.pending_migrations %}SYSTEM READY{% else %}SYSTEM DEGRADED{% endif %}
+            </strong>
+          </div>
+          <dl class="health-facts">
+            <div><dt>完整性</dt><dd>{{ health.integrity_check }}</dd></div>
+            <div><dt>Schema</dt><dd>{{ health.ontology_schema_version }}</dd></div>
+            <div><dt>Outbox</dt><dd>{{ health.outbox_latest_sequence }}</dd></div>
+            <div><dt>Actions</dt><dd>{{ health.action_counts.get('committed', 0) }}</dd></div>
+          </dl>
+          <span class="connection-state" data-event-state="idle">
+            <span class="signal-dot" aria-hidden="true"></span>
+            事件流待连接
+          </span>
+        </header>
+
+        <div class="workspace-grid">
+          <main id="main-content" class="main-canvas" tabindex="-1">
+            {% block content %}{% endblock %}
+          </main>
+
+          <aside class="alert-rail" aria-labelledby="alert-title">
+            <div class="section-kicker">Attention Rail</div>
+            <h2 id="alert-title">全局预警</h2>
+            {% if alerts %}
+              <ol class="alert-list">
+                {% for alert in alerts %}
+                  <li class="alert-card severity-{{ alert.severity.value }} reveal-item">
+                    <div class="alert-meta">
+                      <span>{{ alert.severity.value }}</span>
+                      <time datetime="{{ alert.observed_at.isoformat() }}">{{ alert.observed_at.strftime('%H:%M') }}</time>
+                    </div>
+                    <strong>{{ alert.title }}</strong>
+                    <p>{{ alert.detail }}</p>
+                    {% if alert.href %}<a href="{{ alert.href }}">查看对象 →</a>{% endif %}
+                  </li>
+                {% endfor %}
+              </ol>
+            {% else %}
+              <div class="quiet-state">
+                <span aria-hidden="true">○</span>
+                <p>当前没有需要升级处理的预警。</p>
+              </div>
+            {% endif %}
+          </aside>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
