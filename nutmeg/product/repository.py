@@ -1310,6 +1310,26 @@ class ProductReadRepository:
             ).scalar_one()
         return int(value)
 
+    def actions_after_high_watermark(self, watermark: int) -> list[dict]:
+        if watermark < 0:
+            raise ValueError('action high-watermark cannot be negative')
+        with self._engine.connect() as connection:
+            rows = connection.exec_driver_sql(
+                'SELECT rowid, action_id, action_type, status, result_refs_json '
+                'FROM actions WHERE rowid > ? ORDER BY rowid',
+                (watermark,),
+            ).mappings().all()
+        return [
+            {
+                'rowid': int(row['rowid']),
+                'action_id': str(row['action_id']),
+                'action_type': str(row['action_type']),
+                'status': str(row['status']),
+                'result_refs': json.loads(row['result_refs_json']),
+            }
+            for row in rows
+        ]
+
     def pending_workflow_count(self, *, as_of: str) -> int:
         with self._engine.connect() as connection:
             proposals = connection.execute(

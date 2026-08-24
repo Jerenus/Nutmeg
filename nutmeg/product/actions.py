@@ -186,7 +186,9 @@ class ProductActionGateway:
         proposals = self._repository.projection_rows(
             'factor_lifecycle_proposals', as_of=requested_at.isoformat()
         )
-        if proposals['health']['state'] != 'available':
+        if not self._lifecycle_projection_is_applicable(
+            proposals, adjudication_id=adjudication_id
+        ):
             raise ProductActionBlockedError('lifecycle projection is not current')
         proposal = next(
             (row for row in proposals['rows'] if row['proposal_id'] == proposal_id),
@@ -227,6 +229,29 @@ class ProductActionGateway:
                     expected_factor_version=expected_version,
                     adjudication_id=adjudication_id,
                 )
+            )
+        )
+
+    def _lifecycle_projection_is_applicable(
+        self, projection: dict, *, adjudication_id: str
+    ) -> bool:
+        health = projection['health']
+        if health['state'] == 'available':
+            return True
+        watermark = health.get('source_high_watermark')
+        if health['state'] != 'stale' or watermark is None:
+            return False
+        actions = self._repository.actions_after_high_watermark(int(watermark))
+        if len(actions) != 1:
+            return False
+        [action] = actions
+        return (
+            action['action_type'] == 'record_adjudication'
+            and action['status'] == 'committed'
+            and any(
+                ref.get('object_type') == 'adjudication'
+                and ref.get('object_id') == adjudication_id
+                for ref in action['result_refs']
             )
         )
 
