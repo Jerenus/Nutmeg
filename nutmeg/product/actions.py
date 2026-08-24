@@ -9,6 +9,7 @@ from nutmeg.ontology.actions.entity_actions import MergeEntityRequest
 from nutmeg.ontology.actions.factor_actions import ApplyFactorStatusRequest
 from nutmeg.ontology.actions.forecast_actions import CommitForecastRequest, FactorInput
 from nutmeg.ontology.actions.models import ActionOutcome, ActorRole, ObjectRef
+from nutmeg.ontology.actions.reliability_actions import ApproveReleaseRequest
 from nutmeg.ontology.actions.scoreboard_actions import (
     RecordScoreboardObservationRequest,
 )
@@ -55,6 +56,7 @@ _ALLOWED_ACTIONS = {
     'retract_claim',
     'record_scoreboard_observation',
     'apply_factor_status',
+    'approve_release',
 }
 
 
@@ -105,8 +107,48 @@ class ProductActionGateway:
             return self._apply_factor_status(
                 request, actor_id, actor_role, requested_at
             )
+        if request.action_type == 'approve_release':
+            return self._approve_release(
+                request, actor_id, actor_role, requested_at
+            )
         outcome = self._execute_workflow(
             request, actor_id=actor_id, actor_role=actor_role, requested_at=requested_at
+        )
+        return _response(outcome)
+
+    def _approve_release(
+        self,
+        request: ProductActionRequest,
+        actor_id: str,
+        actor_role: ActorRole,
+        requested_at: datetime,
+    ) -> ProductActionResponse:
+        payload = request.payload
+        _reject_actor_payload(payload)
+        allowed = {
+            'release_version',
+            'candidate_commit',
+            'expected_snapshot_sha256',
+            'reason',
+        }
+        unknown = set(payload) - allowed
+        if unknown:
+            raise ValueError(
+                f"approve_release has unknown fields: {', '.join(sorted(unknown))}"
+            )
+        outcome = self._kernel.reliability_actions.approve_release(
+            ApproveReleaseRequest(
+                release_version=_required_str(payload, 'release_version'),
+                candidate_commit=_required_str(payload, 'candidate_commit'),
+                expected_snapshot_sha256=_required_str(
+                    payload, 'expected_snapshot_sha256'
+                ),
+                reason=_required_str(payload, 'reason'),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=request.idempotency_key,
+                requested_at=requested_at,
+            )
         )
         return _response(outcome)
 

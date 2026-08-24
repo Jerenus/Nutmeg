@@ -243,6 +243,24 @@ def create_product_app(
     async def operations(as_of: Annotated[datetime | None, Query()] = None):
         return services.queries.operations(as_of=as_of or now())
 
+    @app.get('/api/v1/release')
+    async def release(
+        release_version: Annotated[str, Query(min_length=1, max_length=100)],
+        candidate_commit: Annotated[str, Query(min_length=1, max_length=200)],
+        evaluated_at: Annotated[datetime, Query()],
+    ):
+        return services.queries.release(
+            release_version=release_version,
+            candidate_commit=candidate_commit,
+            evaluated_at=evaluated_at,
+        )
+
+    @app.get('/api/v1/reliability/metrics')
+    async def reliability_metrics(
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        return services.queries.reliability_metrics(as_of=as_of or now())
+
     @app.get('/api/v1/review')
     async def review(as_of: Annotated[datetime | None, Query()] = None):
         return services.queries.review(as_of=as_of or now())

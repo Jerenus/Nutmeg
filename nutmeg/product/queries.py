@@ -50,11 +50,17 @@ from nutmeg.product.contracts import (
     ProjectionHealth,
     ReadinessLevel,
     RegimeSummary,
+    ReleaseApprovalSummary,
+    ReleaseGateSummary,
+    ReleaseResponse,
+    ReliabilityEvidenceSummary,
+    ReliabilityMetricsResponse,
     ReviewResponse,
     ScoreboardAuthoritySummary,
     ScoreboardResponse,
     ScorePlaneSummary,
     SettlementSummary,
+    SoakCoverageSummary,
     SourceHealthSummary,
     TicketArtifactDetail,
     TicketAuditFindingSummary,
@@ -73,6 +79,7 @@ from nutmeg.product.readiness import (
     evaluate_readiness,
 )
 from nutmeg.product.repository import ProductReadRepository
+from nutmeg.reliability.release import ReleaseEvaluator
 
 _SHANGHAI = ZoneInfo('Asia/Shanghai')
 _DEFAULT_MARKET = 'md-had'
@@ -912,6 +919,103 @@ class ProductQueryService:
             action_counts=status.action_counts,
             outbox_event_count=status.outbox_event_count,
             outbox_latest_sequence=status.outbox_latest_sequence,
+        )
+
+    def release(
+        self,
+        *,
+        release_version: str,
+        candidate_commit: str,
+        evaluated_at: datetime,
+    ) -> ReleaseResponse:
+        cutoff = _aware(evaluated_at, 'evaluated_at')
+        with OntologyUnitOfWork(self._kernel.engine) as uow:
+            evaluation = ReleaseEvaluator(uow.reliability).evaluate(
+                release_version,
+                candidate_commit=candidate_commit,
+                evaluated_at=cutoff,
+            )
+            approval = uow.reliability.approval_for_release(release_version)
+        approval_summary = None
+        if approval is not None:
+            approval_summary = ReleaseApprovalSummary(
+                release_approval_id=approval.release_approval_id,
+                release_version=approval.release_version,
+                evidence_snapshot_sha256=approval.evidence_snapshot_sha256,
+                policy_version=approval.policy_version,
+                reason=approval.reason,
+                approved_at=approval.approved_at,
+                status=evaluation.approval_status,
+            )
+        return ReleaseResponse(
+            release_version=evaluation.release_version,
+            candidate_commit=evaluation.candidate_commit,
+            policy_version=evaluation.policy_version,
+            evaluated_at=evaluation.evaluated_at,
+            ready=evaluation.ready,
+            gates=[
+                ReleaseGateSummary(**gate.to_dict())
+                for gate in evaluation.gates.values()
+            ],
+            evidence=[self._reliability_evidence(row) for row in evaluation.selected_evidence],
+            soak_coverage=[
+                SoakCoverageSummary(**coverage.to_dict())
+                for coverage in evaluation.soak_coverage.values()
+            ],
+            evidence_snapshot_sha256=evaluation.evidence_snapshot_sha256,
+            approval_status=evaluation.approval_status,
+            approval=approval_summary,
+        )
+
+    def reliability_metrics(self, *, as_of: datetime) -> ReliabilityMetricsResponse:
+        cutoff = _aware(as_of, 'as_of')
+        status = self._kernel.status()
+        with OntologyUnitOfWork(self._kernel.engine) as uow:
+            rows = uow.reliability.list_evidence(recorded_to=cutoff.isoformat())
+            authority = uow.scoreboard.authority().state
+        freshness: dict[str, datetime | None] = {}
+        for row in rows:
+            if row.evidence_kind not in freshness:
+                freshness[row.evidence_kind] = _parse_iso(row.recorded_at)
+        last_restore = next(
+            (
+                row
+                for row in rows
+                if row.evidence_kind == 'backup_restore' and row.status == 'passed'
+            ),
+            None,
+        )
+        projection = self._repository.scoreboard_projection(as_of=cutoff.isoformat())
+        action_high_watermark = self._repository.action_high_watermark()
+        return ReliabilityMetricsResponse(
+            as_of=cutoff,
+            routes=[],
+            action_status_counts=status.action_counts,
+            action_high_watermark=action_high_watermark,
+            outbox_high_watermark=status.outbox_latest_sequence,
+            outbox_lag=max(0, action_high_watermark - status.outbox_latest_sequence),
+            projection_state=projection['health']['state'],
+            authority_state=authority,
+            evidence_freshness=freshness,
+            last_restore_drill=(
+                self._reliability_evidence(last_restore)
+                if last_restore is not None
+                else None
+            ),
+        )
+
+    @staticmethod
+    def _reliability_evidence(row) -> ReliabilityEvidenceSummary:
+        return ReliabilityEvidenceSummary(
+            reliability_evidence_id=row.reliability_evidence_id,
+            evidence_kind=row.evidence_kind,
+            workflow=row.workflow,
+            business_date=row.business_date,
+            observed_from=row.observed_from,
+            observed_to=row.observed_to,
+            status=row.status,
+            content_hash=row.content_hash,
+            recorded_at=row.recorded_at,
         )
 
     def _match_summary(self, record: dict, cutoff: datetime) -> MatchSummary:

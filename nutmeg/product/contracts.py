@@ -777,3 +777,78 @@ class ScoreboardResponse(VersionedContract):
     authority: ScoreboardAuthoritySummary
     health: ProjectionHealth
     planes: list[ScorePlaneSummary] = Field(default_factory=list)
+
+
+class ReleaseGateSummary(StrictContract):
+    gate_id: Literal['G1', 'G2', 'G3', 'G4', 'G5', 'G6']
+    name: str
+    passed: bool
+    code: str
+    detail: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ReliabilityEvidenceSummary(StrictContract):
+    reliability_evidence_id: str
+    evidence_kind: str
+    workflow: Literal['system', 'jczq', 'zucai'] | None = None
+    business_date: date | None = None
+    observed_from: AwareDatetime
+    observed_to: AwareDatetime
+    status: Literal['passed', 'failed']
+    content_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
+    recorded_at: AwareDatetime
+
+
+class SoakCoverageSummary(StrictContract):
+    workflow: Literal['jczq', 'zucai']
+    dates: list[date] = Field(default_factory=list)
+    distinct_days: int = Field(ge=0)
+    first_date: date | None = None
+    last_date: date | None = None
+    inclusive_span_days: int = Field(ge=0)
+
+
+class ReleaseApprovalSummary(StrictContract):
+    release_approval_id: str
+    release_version: str
+    evidence_snapshot_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    policy_version: Literal['release-v1']
+    reason: str
+    approved_at: AwareDatetime
+    status: Literal['current', 'superseded']
+
+
+class ReleaseResponse(VersionedContract):
+    release_version: str
+    candidate_commit: str
+    policy_version: Literal['release-v1']
+    evaluated_at: AwareDatetime
+    ready: bool
+    gates: list[ReleaseGateSummary]
+    evidence: list[ReliabilityEvidenceSummary] = Field(default_factory=list)
+    soak_coverage: list[SoakCoverageSummary] = Field(default_factory=list)
+    evidence_snapshot_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    approval_status: Literal['none', 'current', 'superseded']
+    approval: ReleaseApprovalSummary | None = None
+
+
+class RouteMetricSummary(StrictContract):
+    route_template: str = Field(min_length=1, pattern=r'^/[^?]*$')
+    method: Literal['GET', 'POST']
+    request_count: int = Field(ge=0)
+    error_count: int = Field(ge=0)
+    p95_ms: float = Field(ge=0)
+
+
+class ReliabilityMetricsResponse(VersionedContract):
+    as_of: AwareDatetime
+    routes: list[RouteMetricSummary] = Field(default_factory=list)
+    action_status_counts: dict[str, int] = Field(default_factory=dict)
+    action_high_watermark: int = Field(ge=0)
+    outbox_high_watermark: int = Field(ge=0)
+    outbox_lag: int = Field(ge=0)
+    projection_state: Literal['available', 'stale', 'unavailable']
+    authority_state: Literal['legacy', 'ontology']
+    evidence_freshness: dict[str, AwareDatetime | None] = Field(default_factory=dict)
+    last_restore_drill: ReliabilityEvidenceSummary | None = None
