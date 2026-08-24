@@ -353,3 +353,41 @@ touches no production data, dispatches nothing, and restores no schedule. **Go-l
 (enable the flag, shut the old writers, restore the three `com.nutmeg.decision.*`
 schedules) is Package 5B and happens only on explicit user approval after reviewing the
 reconciliation evidence; the freeze archive is retained read-only throughout.**
+
+## 17. Intelligence OS M1 — headless product contract
+
+Migration 10 adds governed workflow objects (`Adjudication`, `FlagInstance`,
+`Prediction`, `PrecedentLink`, and `AgentProposal`) plus `outbox_events`. Every
+committed, rejected, or failed formal Action appends one terminal outbox event in
+the same SQLite transaction as its Action audit row. `ontology status` exposes
+`outbox_event_count` and `outbox_latest_sequence` for local health checks.
+
+Initialize the current schema and launch the loopback-only product API:
+
+```bash
+uv run nutmeg ontology init --format json
+uv run nutmeg app
+```
+
+`nutmeg app` refuses an uninitialized, unhealthy, or migration-pending kernel and
+binds `127.0.0.1:8788` by default. `GET /api/v1/session` issues an HttpOnly,
+SameSite=strict local-session cookie and a CSRF token; every mutation also requires
+the matching token and a same-origin `Origin` header. Actor identity and role are
+assigned by the server, never trusted from the payload.
+
+Outbox consumers resume with the last durable sequence:
+
+```text
+GET /api/v1/events?after=<sequence>&limit=100
+GET /api/v1/events/stream?after=<sequence>
+```
+
+Delivery is at least once, so clients deduplicate by `event_id`. M1 does not restore
+or alter production launchd schedules, dispatch Telegram, place a bet, or move funds.
+`decision-web` remains a legacy workshop and is not a formal product data source.
+
+During v1 snapshot replay, `decision-read` resolves legacy canonical Match IDs through
+typed provider identities and resolves legacy prior Snapshot IDs only when match,
+market, snapshot kind, and provider all agree. An unresolved identity is rejected
+visibly before Forecast persistence; operators must repair the source mapping rather
+than bypassing a foreign key or creating a synthetic Match/Snapshot.

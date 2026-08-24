@@ -1137,7 +1137,7 @@ git commit -m "test(product): prove M1 golden-day contract"
 - Modify: `docs/ontology-kernel-operations.md`
 - Modify: `docs/superpowers/plans/2026-08-24-nutmeg-intelligence-os-m1.md`
 
-- [ ] **Step 1: Run formatting and static checks**
+- [x] **Step 1: Run formatting and static checks**
 
 Run:
 
@@ -1149,7 +1149,7 @@ git diff --check
 
 Expected: both commands exit 0.
 
-- [ ] **Step 2: Run the fresh focused test gate**
+- [x] **Step 2: Run the fresh focused test gate**
 
 Run:
 
@@ -1159,7 +1159,7 @@ uv run pytest tests/product tests/ontology -q
 
 Expected: all tests pass with zero failures.
 
-- [ ] **Step 3: Run decision-adapter regressions**
+- [x] **Step 3: Run decision-adapter regressions**
 
 Run:
 
@@ -1172,12 +1172,12 @@ uv run pytest tests/decision/test_ontology_adapter.py \
 
 Expected: all tests pass. M1 must not change the cutover adapter's behavior.
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
 
 Run: `uv run pytest -q`  
 Expected: zero failures.
 
-- [ ] **Step 5: Run a temp-store application smoke**
+- [x] **Step 5: Run a temp-store application smoke**
 
 Run:
 
@@ -1191,13 +1191,13 @@ Expected: migration 10 is applied, schema version is 10, integrity is `ok`, and 
 production `.nutmeg-data` directory is untouched. Remove only the resolved temp path
 after verifying it is under the system temp directory.
 
-- [ ] **Step 6: Update operations documentation**
+- [x] **Step 6: Update operations documentation**
 
 Document migration 10, outbox health fields, `nutmeg app`, local session behavior,
 event cursor recovery, and the fact that M1 does not restore production schedules or
 perform funds actions.
 
-- [ ] **Step 7: Add the product pre-commit gate**
+- [x] **Step 7: Add the product pre-commit gate**
 
 Append this local hook after the ontology hook:
 
@@ -1210,13 +1210,13 @@ Append this local hook after the ontology hook:
         pass_filenames: false
 ```
 
-- [ ] **Step 8: Record fresh verification evidence in this plan**
+- [x] **Step 8: Record fresh verification evidence in this plan**
 
 Append a `## Verification Evidence` section containing the exact UTC timestamp, commit,
 commands, pass counts, and temp-store status. Do not mark a command passed without fresh
 output from Step 1-5.
 
-- [ ] **Step 9: Commit verification documentation**
+- [x] **Step 9: Commit verification documentation**
 
 ```bash
 git add docs/ontology-kernel-operations.md \
@@ -1231,3 +1231,39 @@ M1 is complete only when all ten tasks are checked, the full suite is green, the
 temp-store smoke reports schema 10/integrity ok, and fresh verification evidence is
 committed. M1 completion does not authorize restoring schedules, dispatching Telegram,
 or placing any real bet.
+
+## Verification Evidence
+
+Verified at `2026-08-24T04:48:28Z` against code commit
+`b5e3ffc68316267a341f8c5a8f22696612c67e1e` with `UV_FROZEN=1` so the unrelated
+`uv.lock` version drift was not rewritten.
+
+- Static checks: `uv run ruff check .`, product/ontology scoped ruff,
+  `python -m compileall -q nutmeg scripts`, and `git diff --check` all exited 0.
+- Product + Ontology gate: `uv run pytest -o addopts='' tests/product tests/ontology -q`
+  reported `175 passed in 3.79s`.
+- Cutover adapter gate: the four Task 10 adapter files reported `19 passed in 1.14s`.
+- Full repository gate: `uv run pytest -o addopts='' -q` reported
+  `1070 passed in 21.93s`.
+- Hook gate: `pre-commit run pytest-ontology --all-files` and
+  `pre-commit run pytest-product --all-files` both passed.
+- Fresh-store smoke used
+  `/var/folders/nx/3nk0ln556f14gdwbxx14jnkh0000gn/T/tmp.cFR1PL0u5V`: migrations
+  1-10 applied, schema version 10, no pending migrations, and both kernel status and
+  direct SQLite `PRAGMA integrity_check` reported `ok`.
+- Real v2 replay used
+  `/var/folders/nx/3nk0ln556f14gdwbxx14jnkh0000gn/T/tmp.tB4W3V6ogS` and copied only
+  the 2026-08-24 Sporttery, international-odds, and Read snapshots. It produced
+  11 Match, 18 Snapshot, 22 Team, and 11/11 committed Forecast results; dry close
+  produced an explicit empty slate, dry settlement consumed an injected empty result
+  source, and the final report showed 0 tickets, 0 settlements, and CNY 0 ledger
+  movement. Final kernel status was schema 10 / integrity `ok`, with 64 committed
+  Actions and 64 outbox events.
+- The replay exposed and then verified two adapter-boundary regressions: legacy
+  canonical Match IDs now resolve through typed external identity (`6fd4252`), and
+  legacy prior Snapshot IDs now resolve to context-matched kernel snapshots
+  (`731c408`). Unresolved IDs are visibly rejected before any Forecast write.
+
+No verification step dispatched Telegram, placed a bet, moved funds, restored a
+schedule, mutated the production ontology, or fetched settlement results from the
+network.

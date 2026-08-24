@@ -20,6 +20,12 @@ repos:
         language: system
         files: ^(nutmeg/ontology/|nutmeg/interfaces/cli/ontology\.py|tests/ontology/)
         pass_filenames: false
+      - id: pytest-product
+        name: pytest (product contract subset when touched)
+        entry: bash -c 'uv run pytest tests/product/ -q'
+        language: system
+        files: ^(nutmeg/product/|nutmeg/interfaces/product_api\.py|nutmeg/interfaces/cli/product\.py|tests/product/)
+        pass_filenames: false
       - id: pytest-research-index
         name: pytest (research index contract when touched)
         entry: bash -c 'uv run pytest tests/decision/test_research_index.py -q'
