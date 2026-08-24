@@ -23,6 +23,44 @@ class ObjectRefContract(StrictContract):
     object_id: str
 
 
+class EvidenceSpanSummary(ObjectRefContract):
+    artifact_id: str | None = None
+    artifact_retrieval_id: str | None = None
+    quote: str | None = None
+    locator: str | None = None
+
+
+class ScenarioSummary(StrictContract):
+    label: str
+    mechanism: str
+    probability: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class CopilotFactorDraft(StrictContract):
+    factor_definition_id: str
+    delta: dict[str, float]
+    scope_entity_ids: list[str] = Field(default_factory=list)
+    supporting_observation_ids: list[str] = Field(default_factory=list)
+    note: str | None = None
+
+
+class CopilotDraft(StrictContract):
+    summary: str = Field(min_length=1)
+    scenarios: list[ScenarioSummary]
+    proposed_belief: dict[str, float] | None = None
+    factors: list[CopilotFactorDraft]
+    falsifier: str | None = None
+    citations: list[ObjectRefContract] = Field(min_length=1)
+    conflicts: list[str]
+    missing_evidence: list[str]
+
+
+class CopilotRequest(VersionedContract):
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    prompt: str = Field(min_length=1, max_length=4000)
+    as_of: datetime
+
+
 class ReadinessLevel(StrEnum):
     READY = 'ready'
     DEGRADED = 'degraded'
@@ -86,6 +124,7 @@ class ClaimSummary(StrictContract):
     value: dict[str, object]
     status: str
     created_at: str
+    spans: list[EvidenceSpanSummary] = Field(default_factory=list)
 
 
 class ObservationSummary(StrictContract):
@@ -97,11 +136,121 @@ class ObservationSummary(StrictContract):
     observed_at: str
     recorded_at: str
     verification_method: str
+    source_retrieval_ids: list[str] = Field(default_factory=list)
+
+
+class EvidenceConflictSummary(StrictContract):
+    conflict_id: str
+    predicate: str
+    claim_ids: list[str]
+    statuses: list[str]
+    blocking: bool
 
 
 class EvidenceSummary(StrictContract):
     claims: list[ClaimSummary] = Field(default_factory=list)
     observations: list[ObservationSummary] = Field(default_factory=list)
+    conflicts: list[EvidenceConflictSummary] = Field(default_factory=list)
+
+
+class MatchContextSummary(StrictContract):
+    match_revision_id: str
+    competition_id: str | None = None
+    competition_edition_id: str | None = None
+    competition: str | None = None
+    round_label: str | None = None
+    venue_id: str | None = None
+    scheduled_at: str | None = None
+    schedule_status: str
+    status: str
+    home_team_id: str
+    home_team: str
+    away_team_id: str
+    away_team: str
+
+
+class EvidenceBundleSummary(StrictContract):
+    evidence_bundle_id: str
+    frozen_at: str
+    information_cutoff_at: str
+    market_snapshot_id: str | None = None
+    prior_distribution: dict[str, float]
+    identity_resolution_version: str | None = None
+    source_coverage: dict[str, object]
+    freshness: dict[str, object]
+    content_hash: str
+    item_refs: list[ObjectRefContract] = Field(default_factory=list)
+
+
+class FlagInstanceSummary(StrictContract):
+    flag_instance_id: str
+    flag_type: str
+    match_id: str
+    direction: str | None = None
+    strength: float
+    evidence_refs: list[ObjectRefContract] = Field(default_factory=list)
+    predicted_face: str | None = None
+    status: str
+    created_at: str
+
+
+class PredictionSummary(StrictContract):
+    prediction_id: str
+    match_id: str
+    claim: str
+    falsifier: str
+    status: str
+    outcome: str | None = None
+    registered_at: str
+    settled_at: str | None = None
+
+
+class PrecedentLinkSummary(StrictContract):
+    precedent_link_id: str
+    subject_type: str
+    subject_id: str
+    precedent_match_id: str
+    scope: str
+    evidence_refs: list[ObjectRefContract] = Field(default_factory=list)
+    created_at: str
+
+
+class AdjudicationSummary(StrictContract):
+    adjudication_id: str
+    subject_type: str
+    subject_id: str
+    decision: str
+    actor_id: str
+    reason: str
+    evidence_rejected: list[ObjectRefContract] = Field(default_factory=list)
+    alternative: dict[str, object] = Field(default_factory=dict)
+    created_at: str
+    supersedes_adjudication_id: str | None = None
+
+
+class AgentProposalSummary(StrictContract):
+    agent_proposal_id: str
+    subject_type: str
+    subject_id: str
+    proposal_type: str
+    status: str
+    version: int
+    information_cutoff_at: str | None = None
+    operator_prompt: str | None = None
+    summary: str
+    scenarios: list[ScenarioSummary] = Field(default_factory=list)
+    proposed_belief: dict[str, float] | None = None
+    factors: list[CopilotFactorDraft] = Field(default_factory=list)
+    falsifier: str | None = None
+    citations: list[EvidenceSpanSummary] = Field(default_factory=list)
+    citation_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
+    conflicts: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+    model_name: str
+    model_version: str
+    created_at: str
+    resolved_at: str | None = None
+    resolved_by_action_id: str | None = None
 
 
 class ForecastSummary(StrictContract):
@@ -133,6 +282,14 @@ class MatchDetail(VersionedContract):
     forecasts: list[ForecastSummary] = Field(default_factory=list)
     workflow: list[WorkflowObjectSummary] = Field(default_factory=list)
     as_of: datetime
+    context: MatchContextSummary | None = None
+    market_timeline: list[MarketSnapshotSummary] = Field(default_factory=list)
+    evidence_bundles: list[EvidenceBundleSummary] = Field(default_factory=list)
+    flag_instances: list[FlagInstanceSummary] = Field(default_factory=list)
+    predictions: list[PredictionSummary] = Field(default_factory=list)
+    precedent_links: list[PrecedentLinkSummary] = Field(default_factory=list)
+    adjudications: list[AdjudicationSummary] = Field(default_factory=list)
+    agent_proposals: list[AgentProposalSummary] = Field(default_factory=list)
 
 
 class LineageEdge(StrictContract):
