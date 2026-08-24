@@ -1062,7 +1062,7 @@ git commit -m "feat(product): wire local Nutmeg application service"
 - Modify: `nutmeg/product/queries.py`
 - Modify: `nutmeg/product/actions.py`
 
-- [ ] **Step 1: Write the complete golden-day test**
+- [x] **Step 1: Write the complete golden-day test**
 
 ```python
 def test_m1_golden_day_from_board_to_forecast_and_lineage(client):
@@ -1099,30 +1099,30 @@ def test_m1_golden_day_from_board_to_forecast_and_lineage(client):
     assert any(item["object_id"] == revision_id for item in events["items"])
 ```
 
-- [ ] **Step 2: Add restart/idempotency assertions**
+- [x] **Step 2: Add restart/idempotency assertions**
 
 Rebuild `ProductServices` against the same temp `data_dir`, repeat the exact Action,
 and assert the same Forecast revision/Action IDs and no extra committed revision. Then
 resume events from the prior cursor and assert only later events are returned.
 
-- [ ] **Step 3: Add architecture boundary assertion**
+- [x] **Step 3: Add architecture boundary assertion**
 
 Use `inspect.getsource` on every module under `nutmeg.product` and
 `nutmeg.interfaces.product_api`; assert none contains imports from
 `nutmeg.decision.store` or `nutmeg.decision.workbench`.
 
-- [ ] **Step 4: Run the M1 end-to-end tests**
+- [x] **Step 4: Run the M1 end-to-end tests**
 
 Run: `uv run pytest tests/product/test_m1_e2e.py -q`  
 Expected: PASS.
 
-- [ ] **Step 5: Run all M1 tests and fix only observed failures**
+- [x] **Step 5: Run all M1 tests and fix only observed failures**
 
 Run: `uv run pytest tests/product tests/ontology -q`  
 Expected: PASS. If an existing ontology test fails, preserve the existing public API
 unless the approved M1 contract explicitly changes it.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tests/product/test_m1_e2e.py tests/product/conftest.py \
