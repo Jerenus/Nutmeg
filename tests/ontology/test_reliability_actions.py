@@ -1,0 +1,171 @@
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from nutmeg.config.settings import AppSettings
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole, ObjectRef
+from nutmeg.ontology.actions.reliability_actions import (
+    RecordReliabilityEvidenceRequest,
+)
+from nutmeg.ontology.errors import IdempotencyConflictError
+from nutmeg.ontology.repository.actions import ActionRepository
+from nutmeg.ontology.repository.reliability import ReliabilityRepository
+from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+from nutmeg.ontology.wiring import build_ontology_kernel
+
+NOW = datetime(2026, 8, 24, 10, tzinfo=UTC)
+
+
+def _kernel(tmp_path: Path):
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    return kernel
+
+
+def _request(
+    *,
+    role: ActorRole = ActorRole.DETERMINISTIC_SYSTEM,
+    key: str = "m6:evidence:one",
+) -> RecordReliabilityEvidenceRequest:
+    return RecordReliabilityEvidenceRequest(
+        evidence_kind="deterministic_suite",
+        workflow="system",
+        business_date=None,
+        observed_from=datetime(2026, 8, 24, 9, tzinfo=UTC),
+        observed_to=NOW,
+        status="passed",
+        report={
+            "candidate_commit": "abc123",
+            "policy_version": "release-v1",
+            "checks": {"pytest": True, "ruff": True},
+        },
+        source_refs=[ObjectRef("test_run", "run-1")],
+        actor_id="system:reliability",
+        actor_role=role,
+        idempotency_key=key,
+        requested_at=NOW,
+    )
+
+
+def test_request_requires_aware_bounds_finite_json_and_exact_kinds() -> None:
+    with pytest.raises(ValueError, match="observed_from must be timezone-aware"):
+        replace(_request(), observed_from=datetime(2026, 8, 24, 9))
+    with pytest.raises(ValueError, match="observed_from cannot be after"):
+        replace(_request(), observed_from=NOW, observed_to=NOW.replace(hour=9))
+    with pytest.raises(ValueError, match="unknown evidence_kind"):
+        replace(_request(), evidence_kind="claimed_green")
+    with pytest.raises(ValueError, match="finite JSON number"):
+        replace(
+            _request(),
+            report={
+                "candidate_commit": "abc123",
+                "policy_version": "release-v1",
+                "checks": {"pytest": True},
+                "duration": float("inf"),
+            },
+        )
+    with pytest.raises(ValueError, match="source_refs cannot be empty"):
+        replace(_request(), source_refs=[])
+    with pytest.raises(ValueError, match="status must be failed"):
+        replace(
+            _request(),
+            report={
+                "candidate_commit": "abc123",
+                "policy_version": "release-v1",
+                "checks": {"pytest": False},
+            },
+        )
+    with pytest.raises(ValueError, match="all checks are true"):
+        replace(_request(), status="failed")
+
+
+def test_soak_request_requires_workflow_date_and_non_dispatch_real_report() -> None:
+    report = {
+        "schema_version": "soak-v1",
+        "policy_version": "release-v1",
+        "dispatch": False,
+        "synthetic": False,
+        "divergences": {"identity": 0, "audit": 0, "ledger": 0},
+    }
+    request = replace(
+        _request(),
+        evidence_kind="soak_run",
+        workflow="jczq",
+        business_date="2026-08-24",
+        report=report,
+    )
+    assert request.business_date == "2026-08-24"
+
+    with pytest.raises(ValueError, match="workflow must be jczq or zucai"):
+        replace(request, workflow="system")
+    with pytest.raises(ValueError, match="business_date"):
+        replace(request, business_date=None)
+    with pytest.raises(ValueError, match="status must be failed"):
+        replace(request, report={**report, "synthetic": True})
+
+
+def test_action_is_role_guarded_content_addressed_and_idempotent(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    denied = kernel.reliability_actions.record_evidence(
+        _request(role=ActorRole.AI_ANALYST, key="m6:evidence:denied")
+    )
+    first = kernel.reliability_actions.record_evidence(_request())
+    replay = kernel.reliability_actions.record_evidence(_request())
+    same_content = kernel.reliability_actions.record_evidence(
+        _request(key="m6:evidence:same-content")
+    )
+
+    assert denied.status is ActionStatus.REJECTED
+    assert first.status is ActionStatus.COMMITTED
+    assert replay.action_id == first.action_id
+    assert same_content.action_id != first.action_id
+    assert same_content.result_refs == first.result_refs
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.reliability.count_evidence() == 1
+        evidence = uow.reliability.evidence(first.result_refs[0].object_id)
+        assert evidence is not None
+        assert evidence.content_hash == _request().content_hash
+        assert evidence.source_refs == [
+            {"object_type": "test_run", "object_id": "run-1"}
+        ]
+
+
+def test_action_detects_reused_key_with_different_content(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    kernel.reliability_actions.record_evidence(_request())
+
+    with pytest.raises(IdempotencyConflictError, match="m6:evidence:one"):
+        kernel.reliability_actions.record_evidence(
+            replace(
+                _request(),
+                report={
+                    "candidate_commit": "def456",
+                    "policy_version": "release-v1",
+                    "checks": {"pytest": True},
+                },
+            )
+        )
+
+
+def test_handler_failure_rolls_back_evidence_and_audits_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kernel = _kernel(tmp_path)
+
+    def fail_insert(_repository, _row) -> None:
+        raise RuntimeError("injected evidence failure")
+
+    monkeypatch.setattr(ReliabilityRepository, "insert_evidence", fail_insert)
+    with pytest.raises(RuntimeError, match="injected evidence failure"):
+        kernel.reliability_actions.record_evidence(_request())
+
+    with kernel.engine.connect() as connection:
+        record = ActionRepository(connection).get_by_idempotency_key(
+            "m6:evidence:one"
+        )
+        assert record is not None
+        assert record.status is ActionStatus.FAILED
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.reliability.count_evidence() == 0

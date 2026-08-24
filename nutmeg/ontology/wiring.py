@@ -21,6 +21,7 @@ from nutmeg.ontology.actions.observation_actions import ObservationActions
 from nutmeg.ontology.actions.outcome_actions import OutcomeActions
 from nutmeg.ontology.actions.person_actions import PersonActions
 from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
+from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.actions.session_actions import SessionActions
@@ -79,6 +80,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     workflow = WorkflowActions(action_service)
     protected_tickets = ProtectedTicketActions(action_service, artifact_store)
     scoreboard_actions = ScoreboardActions(action_service)
+    reliability_actions = ReliabilityActions(action_service)
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -96,4 +98,5 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         workflow=workflow,
         protected_tickets=protected_tickets,
         scoreboard_actions=scoreboard_actions,
+        reliability_actions=reliability_actions,
     )

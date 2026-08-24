@@ -19,6 +19,7 @@ from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.factor_actions import FactorActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
+from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.decision.read_flow import DecisionReadService
@@ -136,6 +137,7 @@ class OntologyKernel:
         workflow: WorkflowActions,
         protected_tickets: ProtectedTicketActions,
         scoreboard_actions: ScoreboardActions,
+        reliability_actions: ReliabilityActions,
     ) -> None:
         self._paths = paths
         self._engine = engine
@@ -153,6 +155,7 @@ class OntologyKernel:
         self.workflow = workflow
         self.protected_tickets = protected_tickets
         self.scoreboard_actions = scoreboard_actions
+        self.reliability_actions = reliability_actions
 
     @property
     def engine(self) -> Engine:
