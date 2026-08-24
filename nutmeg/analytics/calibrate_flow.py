@@ -18,6 +18,7 @@ from nutmeg.analytics.factor_projection import (
 )
 from nutmeg.analytics.forecast_projection import ForecastScoresProjector
 from nutmeg.analytics.integrity_action import IntegrityActionScorecardProjector
+from nutmeg.analytics.intervention_projection import InterventionQualityProjector
 from nutmeg.analytics.lifecycle import FactorLifecycleProjector
 from nutmeg.analytics.regime import RegimePostmatchProjector, RegimeVectorProjector
 from nutmeg.analytics.scorecards import ForecastScorecardProjector
@@ -65,6 +66,8 @@ class CalibrateService:
                 ('regime_vectors', 'rv-v1', RegimeVectorProjector(self._engine).project),
                 ('regime_postmatch_labels', 'rp-v1',
                  RegimePostmatchProjector(self._engine).project),
+                ('intervention_quality', 'iq-v1',
+                 InterventionQualityProjector(self._engine).project),
             ],
             built_at=request.built_at,
             high_watermark=request.high_watermark,

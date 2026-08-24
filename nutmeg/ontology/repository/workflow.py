@@ -10,6 +10,8 @@ from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.errors import OptimisticConcurrencyError
 from nutmeg.ontology.repository import schema_decision as sd
 from nutmeg.ontology.repository import schema_evidence as se
+from nutmeg.ontology.repository import schema_finance as sf
+from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository import schema_market as sm
 from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.ontology.workflow.models import (
@@ -98,6 +100,19 @@ class WorkflowRepository:
             select(func.count()).select_from(sw.adjudications)
         ).scalar_one()
 
+    def iter_adjudications(self) -> list[AdjudicationRow]:
+        rows = (
+            self._connection.execute(
+                select(sw.adjudications).order_by(
+                    sw.adjudications.c.created_at,
+                    sw.adjudications.c.adjudication_id,
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return [self._adjudication_row(row) for row in rows]
+
     def insert_flag_instance(self, row: FlagInstanceRow) -> None:
         self._connection.execute(
             insert(sw.flag_instances).values(
@@ -131,6 +146,32 @@ class WorkflowRepository:
             created_at=row['created_at'],
         )
 
+    def iter_flag_instances(self) -> list[FlagInstanceRow]:
+        rows = (
+            self._connection.execute(
+                select(sw.flag_instances).order_by(
+                    sw.flag_instances.c.created_at,
+                    sw.flag_instances.c.flag_instance_id,
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return [
+            FlagInstanceRow(
+                flag_instance_id=row['flag_instance_id'],
+                flag_type=row['flag_type'],
+                match_id=row['match_id'],
+                direction=row['direction'],
+                strength=row['strength'],
+                evidence_refs=json.loads(row['evidence_refs_json']),
+                predicted_face=row['predicted_face'],
+                status=row['status'],
+                created_at=row['created_at'],
+            )
+            for row in rows
+        ]
+
     def insert_prediction(self, row: PredictionRow) -> None:
         self._connection.execute(
             insert(sw.predictions).values(
@@ -160,6 +201,69 @@ class WorkflowRepository:
             settled_at=row['settled_at'],
         )
 
+    def iter_predictions(self) -> list[PredictionRow]:
+        rows = (
+            self._connection.execute(
+                select(sw.predictions).order_by(
+                    sw.predictions.c.registered_at,
+                    sw.predictions.c.prediction_id,
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return [
+            PredictionRow(
+                prediction_id=row['prediction_id'],
+                match_id=row['match_id'],
+                claim=row['claim'],
+                falsifier=row['falsifier'],
+                status=PredictionStatus(row['status']),
+                outcome=row['outcome'],
+                registered_at=row['registered_at'],
+                settled_at=row['settled_at'],
+            )
+            for row in rows
+        ]
+
+    def match_for_subject(self, subject_type: str, subject_id: str) -> str | None:
+        if subject_type == 'match':
+            return self._connection.execute(
+                select(si.matches.c.match_id).where(si.matches.c.match_id == subject_id)
+            ).scalar_one_or_none()
+        if subject_type in {'forecast', 'forecast_revision'}:
+            return self._connection.execute(
+                select(sd.forecast_series.c.match_id)
+                .select_from(
+                    sd.forecast_revisions.join(
+                        sd.forecast_series,
+                        sd.forecast_revisions.c.forecast_series_id
+                        == sd.forecast_series.c.forecast_series_id,
+                    )
+                )
+                .where(sd.forecast_revisions.c.forecast_revision_id == subject_id)
+            ).scalar_one_or_none()
+        if subject_type == 'prediction':
+            return self._connection.execute(
+                select(sw.predictions.c.match_id).where(
+                    sw.predictions.c.prediction_id == subject_id
+                )
+            ).scalar_one_or_none()
+        if subject_type == 'flag_instance':
+            return self._connection.execute(
+                select(sw.flag_instances.c.match_id).where(
+                    sw.flag_instances.c.flag_instance_id == subject_id
+                )
+            ).scalar_one_or_none()
+        if subject_type == 'ticket':
+            match_ids = self._connection.execute(
+                select(sf.bet_legs.c.match_id)
+                .where(sf.bet_legs.c.ticket_id == subject_id)
+                .distinct()
+            ).scalars().all()
+            return match_ids[0] if len(match_ids) == 1 else None
+        return None
+
     def insert_precedent_link(self, row: PrecedentLinkRow) -> None:
         self._connection.execute(
             insert(sw.precedent_links).values(
@@ -171,6 +275,21 @@ class WorkflowRepository:
                 evidence_refs_json=canonical_json(row.evidence_refs),
                 created_at=row.created_at,
             )
+        )
+
+    @staticmethod
+    def _adjudication_row(row) -> AdjudicationRow:
+        return AdjudicationRow(
+            adjudication_id=row['adjudication_id'],
+            subject_type=row['subject_type'],
+            subject_id=row['subject_id'],
+            decision=row['decision'],
+            actor_id=row['actor_id'],
+            reason=row['reason'],
+            evidence_rejected=json.loads(row['evidence_rejected_json']),
+            alternative=json.loads(row['alternative_json']),
+            created_at=row['created_at'],
+            supersedes_adjudication_id=row['supersedes_adjudication_id'],
         )
 
     def get_precedent_link(self, precedent_link_id: str) -> PrecedentLinkRow:
