@@ -414,7 +414,7 @@ UV_FROZEN=1 git commit -m "feat(ontology): approve immutable audited tickets"
 - Test: `tests/ontology/test_ticket_confirmation.py`
 - Test: `tests/ontology/test_ticket_actions.py`
 
-- [ ] **Step 1: Write failing confirmation security and recovery tests**
+- [x] **Step 1: Write failing confirmation security and recovery tests**
 
 Tests must prove:
 
@@ -433,13 +433,13 @@ Tests must prove:
 - injected failure after business-row insertion rolls back every database row;
 - no default connector is callable; fake connector cannot be selected by a client actor.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/ontology/test_ticket_confirmation.py -q -x`
 
 Expected: confirmation request/service objects are missing.
 
-- [ ] **Step 3: Extract the shared atomic booking helper under legacy characterization tests**
+- [x] **Step 3: Extract the shared atomic booking helper under legacy characterization tests**
 
 First add assertions to `tests/ontology/test_ticket_actions.py` for exact refs, Ticket
 status, BetLeg count, ledger amount, and idempotent replay. Then implement:
@@ -455,20 +455,20 @@ def book_ticket_rows(
 It validates current Forecasts and budget, writes current finance rows, and returns IDs.
 Legacy `TicketActions.approve_ticket()` calls it with unchanged semantics.
 
-- [ ] **Step 4: Run legacy characterization and verify GREEN**
+- [x] **Step 4: Run legacy characterization and verify GREEN**
 
 Run: `UV_FROZEN=1 uv run pytest tests/ontology/test_ticket_actions.py tests/ontology/test_express_flow.py tests/decision/test_close_settle_adapter.py -q`
 
 Expected: all pass with no output contract changes.
 
-- [ ] **Step 5: Implement IssueTicketConfirmation**
+- [x] **Step 5: Implement IssueTicketConfirmation**
 
 Generate at least 32 random bytes with `secrets.token_urlsafe`, store only SHA-256, bind
 all displayed fields, and persist through a judge-only Action. Return a typed result
 containing ActionOutcome, confirmation ID, plaintext nonce, and expiry. Never put the
 nonce in Action payload or outbox result refs.
 
-- [ ] **Step 6: Implement ConfirmTicketPlacement**
+- [x] **Step 6: Implement ConfirmTicketPlacement**
 
 Use `hmac.compare_digest`, exact decimal-safe amount comparison in integer fen, injected
 clock, current Forecast validation, and the shared booking helper. Manual receipt bytes
@@ -477,7 +477,7 @@ Register `source_name="manual-ticket-receipt"` and one deterministic Retrieval. 
 placement and consume all open challenges only after finance writes succeed in the same
 transaction.
 
-- [ ] **Step 7: Run confirmation and full finance regressions**
+- [x] **Step 7: Run confirmation and full finance regressions**
 
 Run:
 
@@ -488,7 +488,7 @@ UV_FROZEN=1 uv run ruff check nutmeg/ontology/actions/protected_ticket_actions.p
 
 Expected: all pass; ledger conservation and legacy settlement remain intact.
 
-- [ ] **Step 8: Commit Task 5**
+- [x] **Step 8: Commit Task 5**
 
 ```bash
 UV_FROZEN=1 git add nutmeg/ontology/finance/booking.py nutmeg/ontology/actions/ticket_actions.py nutmeg/ontology/actions/protected_ticket_actions.py nutmeg/ontology/tickets/models.py tests/ontology/test_ticket_confirmation.py tests/ontology/test_ticket_actions.py

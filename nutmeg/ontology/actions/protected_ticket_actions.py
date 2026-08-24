@@ -1,9 +1,13 @@
 """Governed immutable ticket-batch Actions before any money is recorded."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import math
+import secrets
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from uuid import uuid4
 
 from nutmeg.ontology.actions.models import (
@@ -13,10 +17,15 @@ from nutmeg.ontology.actions.models import (
     ObjectRef,
 )
 from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.actions.ticket_actions import LegInput
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
+from nutmeg.ontology.finance.booking import assert_current_forecast, book_ticket_rows
+from nutmeg.ontology.repository.artifacts import ArtifactRetrievalRow
 from nutmeg.ontology.repository.tickets import (
     AuditedTicketArtifactRow,
+    ConfirmationChallengeRow,
     TicketBatchRevisionRow,
+    TicketPlacementRow,
 )
 from nutmeg.ontology.tickets.composition import (
     canonical_bytes,
@@ -73,6 +82,49 @@ class ApproveTicketBatchRequest:
         _require_aware(self.requested_at, "requested_at")
         if self.expected_revision_no < 1:
             raise ValueError("expected_revision_no must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class IssueTicketConfirmationRequest:
+    ticket_artifact_id: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_aware(self.requested_at, "requested_at")
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmationIssueResult:
+    outcome: ActionOutcome
+    confirmation_id: str | None
+    nonce: str | None
+    expires_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmTicketPlacementRequest:
+    ticket_artifact_id: str
+    confirmation_id: str
+    nonce: str | None
+    ticket_hash: str
+    amount: float
+    currency: str
+    channel: str
+    placement_mode: str
+    external_reference: str
+    receipt_content: bytes
+    receipt_content_type: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_aware(self.requested_at, "requested_at")
+        _amount_fen(self.amount)
 
 
 class ProtectedTicketActions:
@@ -306,6 +358,198 @@ class ProtectedTicketActions:
 
         return self._action_service.execute(command, handler)
 
+    def issue_ticket_confirmation(
+        self, request: IssueTicketConfirmationRequest
+    ) -> ConfirmationIssueResult:
+        nonce = secrets.token_urlsafe(32)
+        nonce_hash = hashlib.sha256(nonce.encode("utf-8")).hexdigest()
+        expires_at = request.requested_at + timedelta(minutes=5)
+        command = ActionCommand.create(
+            action_type="issue_ticket_confirmation",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload={"ticket_artifact_id": request.ticket_artifact_id},
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, _action) -> tuple[ObjectRef, ...]:
+            artifact = uow.tickets.ticket_artifact(request.ticket_artifact_id)
+            if artifact is None:
+                raise ValueError(
+                    f"ticket artifact {request.ticket_artifact_id} does not exist"
+                )
+            if uow.tickets.placement_for_artifact(request.ticket_artifact_id) is not None:
+                raise ValueError("ticket artifact is already placed")
+            if _parse_aware(artifact.deadline_at, "deadline_at") <= request.requested_at:
+                raise ValueError("ticket deadline has passed")
+            for leg in _artifact_legs(artifact):
+                assert_current_forecast(uow, leg)
+            confirmation_id = f"tc-{uuid4().hex}"
+            uow.tickets.insert_confirmation(
+                ConfirmationChallengeRow(
+                    confirmation_id=confirmation_id,
+                    ticket_artifact_id=artifact.ticket_artifact_id,
+                    nonce_hash=nonce_hash,
+                    ticket_hash=artifact.ticket_hash,
+                    amount=artifact.amount,
+                    currency=artifact.currency,
+                    channel=artifact.channel,
+                    issued_at=request.requested_at.astimezone(UTC).isoformat(),
+                    expires_at=expires_at.astimezone(UTC).isoformat(),
+                    consumed_at=None,
+                    consumed_by_action_id=None,
+                )
+            )
+            return (ObjectRef("ticket_confirmation", confirmation_id),)
+
+        outcome = self._action_service.execute(command, handler)
+        confirmation_id = next(
+            (
+                ref.object_id
+                for ref in outcome.result_refs
+                if ref.object_type == "ticket_confirmation"
+            ),
+            None,
+        )
+        first_execution = outcome.action_id == command.action_id and confirmation_id is not None
+        return ConfirmationIssueResult(
+            outcome=outcome,
+            confirmation_id=confirmation_id,
+            nonce=nonce if first_execution else None,
+            expires_at=(
+                expires_at.astimezone(UTC).isoformat() if first_execution else None
+            ),
+        )
+
+    def confirm_ticket_placement(
+        self, request: ConfirmTicketPlacementRequest
+    ) -> ActionOutcome:
+        nonce_hash = hashlib.sha256((request.nonce or "").encode("utf-8")).hexdigest()
+        receipt_hash = hashlib.sha256(request.receipt_content).hexdigest()
+        command = ActionCommand.create(
+            action_type="confirm_ticket_placement",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload={
+                "ticket_artifact_id": request.ticket_artifact_id,
+                "confirmation_id": request.confirmation_id,
+                "nonce_hash": nonce_hash,
+                "ticket_hash": request.ticket_hash,
+                "amount_fen": _amount_fen(request.amount),
+                "currency": request.currency,
+                "channel": request.channel,
+                "placement_mode": request.placement_mode,
+                "external_reference": request.external_reference,
+                "receipt_hash": receipt_hash,
+                "receipt_size": len(request.receipt_content),
+                "receipt_content_type": request.receipt_content_type,
+            },
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, action) -> tuple[ObjectRef, ...]:
+            artifact = uow.tickets.ticket_artifact(request.ticket_artifact_id)
+            if artifact is None:
+                raise ValueError(
+                    f"ticket artifact {request.ticket_artifact_id} does not exist"
+                )
+            placement = uow.tickets.placement_for_artifact(request.ticket_artifact_id)
+            if placement is not None:
+                raise ValueError("ticket artifact is already placed")
+            challenge = uow.tickets.confirmation(request.confirmation_id)
+            if challenge is None or challenge.ticket_artifact_id != artifact.ticket_artifact_id:
+                raise ValueError("confirmation binding mismatch")
+            if challenge.consumed_at is not None:
+                raise ValueError("confirmation is already consumed")
+            if _parse_aware(challenge.expires_at, "expires_at") < request.requested_at:
+                raise ValueError("confirmation has expired")
+            if _parse_aware(artifact.deadline_at, "deadline_at") <= request.requested_at:
+                raise ValueError("ticket deadline has passed")
+            if not hmac.compare_digest(challenge.nonce_hash, nonce_hash):
+                raise ValueError("confirmation nonce mismatch")
+            if (
+                challenge.ticket_hash != request.ticket_hash
+                or artifact.ticket_hash != request.ticket_hash
+                or _amount_fen(challenge.amount) != _amount_fen(request.amount)
+                or _amount_fen(artifact.amount) != _amount_fen(request.amount)
+                or challenge.currency != request.currency
+                or artifact.currency != request.currency
+                or challenge.channel != request.channel
+                or artifact.channel != request.channel
+            ):
+                raise ValueError("confirmation binding mismatch")
+            if request.placement_mode != "manual":
+                raise ValueError("connector placement is unavailable")
+            if not request.external_reference.strip():
+                raise ValueError("manual external_reference is required")
+            if not request.receipt_content or not request.receipt_content_type.strip():
+                raise ValueError("manual receipt is required")
+
+            legs = _artifact_legs(artifact)
+            booking = book_ticket_rows(
+                uow,
+                channel=artifact.channel,
+                account_id=str(artifact.payload["account_id"]),
+                proposal_id=None,
+                legs=legs,
+                at=request.requested_at.astimezone(UTC).isoformat(),
+                stake_idempotency_key=f"{action.action_id}:stake",
+            )
+            receipt = self._artifact_store.put_bytes(request.receipt_content)
+            at = request.requested_at.astimezone(UTC).isoformat()
+            uow.artifacts.upsert_blob(receipt, request.receipt_content_type, at)
+            retrieval_id = "RET-" + hashlib.sha256(
+                f"{action.action_id}:receipt".encode("utf-8")
+            ).hexdigest()[:32]
+            uow.artifacts.insert_retrieval(
+                ArtifactRetrievalRow(
+                    artifact_retrieval_id=retrieval_id,
+                    artifact_id=receipt.artifact_id,
+                    source_run_id=None,
+                    source_name="manual-ticket-receipt",
+                    source_type="manual",
+                    reported_content_type=request.receipt_content_type,
+                    canonical_url=None,
+                    requested_url=None,
+                    published_at=None,
+                    retrieved_at=at,
+                    status="stored",
+                )
+            )
+            placement_id = f"tpl-{uuid4().hex}"
+            uow.tickets.insert_placement(
+                TicketPlacementRow(
+                    ticket_placement_id=placement_id,
+                    ticket_artifact_id=artifact.ticket_artifact_id,
+                    ticket_id=booking.ticket_id,
+                    placement_mode="manual",
+                    external_reference=request.external_reference,
+                    receipt_artifact_id=receipt.artifact_id,
+                    receipt_retrieval_id=retrieval_id,
+                    placed_at=at,
+                    action_id=action.action_id,
+                )
+            )
+            uow.tickets.invalidate_open_confirmations(
+                artifact.ticket_artifact_id, at, action.action_id
+            )
+            refs: list[ObjectRef] = [ObjectRef("ticket", booking.ticket_id)]
+            refs.extend(ObjectRef("bet_leg", item) for item in booking.bet_leg_ids)
+            if booking.transaction_id is not None:
+                refs.append(ObjectRef("cash_transaction", booking.transaction_id))
+            refs.extend(
+                (
+                    ObjectRef("ticket_placement", placement_id),
+                    ObjectRef("source_artifact", receipt.artifact_id),
+                    ObjectRef("artifact_retrieval", retrieval_id),
+                )
+            )
+            return tuple(refs)
+
+        return self._action_service.execute(command, handler)
+
     def _insert_revision(
         self,
         uow,
@@ -438,6 +682,48 @@ def _parse_aware(value: str, name: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     _require_aware(parsed, name)
     return parsed.astimezone(UTC)
+
+
+def _amount_fen(value: float) -> int:
+    try:
+        amount = Decimal(str(value)) * 100
+    except InvalidOperation as error:
+        raise ValueError("amount must be a finite currency value") from error
+    if not amount.is_finite() or amount != amount.to_integral_value() or amount <= 0:
+        raise ValueError("amount must be positive and exactly representable in fen")
+    return int(amount)
+
+
+def _artifact_legs(artifact: AuditedTicketArtifactRow) -> list[LegInput]:
+    ticket = artifact.payload.get("ticket")
+    if not isinstance(ticket, dict):
+        raise ValueError("ticket artifact payload is malformed")
+    raw_legs = ticket.get("legs")
+    if not isinstance(raw_legs, list) or not raw_legs:
+        raise ValueError("ticket artifact has no legs")
+    share = artifact.amount / len(raw_legs)
+    legs: list[LegInput] = []
+    for raw in raw_legs:
+        if not isinstance(raw, dict):
+            raise ValueError("ticket artifact leg is malformed")
+        legs.append(
+            LegInput(
+                match_id=str(raw["match_id"]),
+                market_definition_id=str(raw["market"]),
+                selection_id=str(raw["selection_id"]),
+                forecast_revision_id=str(raw["forecast_revision_id"]),
+                bucket=str(ticket["bucket"]),
+                stake=share,
+                entry_odds=float(raw["odds"]),
+                entry_quote_id=(
+                    str(raw["entry_quote_id"])
+                    if raw.get("entry_quote_id") is not None
+                    else None
+                ),
+                line=str(raw["line"]) if raw.get("line") is not None else None,
+            )
+        )
+    return legs
 
 
 def ticket_audit_finding_id(
