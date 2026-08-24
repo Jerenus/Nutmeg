@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -56,6 +57,7 @@ from nutmeg.product.contracts import (
     ReliabilityEvidenceSummary,
     ReliabilityMetricsResponse,
     ReviewResponse,
+    RouteMetricSummary,
     ScoreboardAuthoritySummary,
     ScoreboardResponse,
     ScorePlaneSummary,
@@ -79,6 +81,7 @@ from nutmeg.product.readiness import (
     evaluate_readiness,
 )
 from nutmeg.product.repository import ProductReadRepository
+from nutmeg.reliability.metrics import RouteMetricSnapshot
 from nutmeg.reliability.release import ReleaseEvaluator
 
 _SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -967,7 +970,12 @@ class ProductQueryService:
             approval=approval_summary,
         )
 
-    def reliability_metrics(self, *, as_of: datetime) -> ReliabilityMetricsResponse:
+    def reliability_metrics(
+        self,
+        *,
+        as_of: datetime,
+        routes: Iterable[RouteMetricSnapshot] = (),
+    ) -> ReliabilityMetricsResponse:
         cutoff = _aware(as_of, 'as_of')
         status = self._kernel.status()
         with OntologyUnitOfWork(self._kernel.engine) as uow:
@@ -989,7 +997,16 @@ class ProductQueryService:
         action_high_watermark = self._repository.action_high_watermark()
         return ReliabilityMetricsResponse(
             as_of=cutoff,
-            routes=[],
+            routes=[
+                RouteMetricSummary(
+                    route_template=row.route_template,
+                    method=row.method,
+                    request_count=row.request_count,
+                    error_count=row.error_count,
+                    p95_ms=row.p95_ms,
+                )
+                for row in routes
+            ],
             action_status_counts=status.action_counts,
             action_high_watermark=action_high_watermark,
             outbox_high_watermark=status.outbox_latest_sequence,

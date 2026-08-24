@@ -39,6 +39,7 @@ from nutmeg.product.errors import (
     ProductNotFoundError,
     ProductTicketError,
 )
+from nutmeg.reliability.metrics import RouteMetricsRegistry
 
 _SESSION_COOKIE = 'nutmeg_session'
 
@@ -60,6 +61,31 @@ def create_product_app(
     csrf_token = hmac.new(csrf_key, session_token.encode(), hashlib.sha256).hexdigest()
 
     app = FastAPI(title='Nutmeg Intelligence OS', version='1')
+    route_metrics = RouteMetricsRegistry()
+
+    @app.middleware('http')
+    async def observe_allowlisted_route(request: Request, call_next):
+        started_ns = time.perf_counter_ns()
+        status_code = 500
+        failed = False
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception:
+            failed = True
+            raise
+        finally:
+            route = request.scope.get('route')
+            route_template = getattr(route, 'path', None)
+            if isinstance(route_template, str):
+                route_metrics.record(
+                    method=request.method,
+                    route_template=route_template,
+                    duration_ns=time.perf_counter_ns() - started_ns,
+                    status_code=status_code,
+                    failed=failed,
+                )
 
     def error_response(status_code: int, error: ProductError) -> JSONResponse:
         return JSONResponse(status_code=status_code, content=error.model_dump(mode='json'))
@@ -259,7 +285,9 @@ def create_product_app(
     async def reliability_metrics(
         as_of: Annotated[datetime | None, Query()] = None,
     ):
-        return services.queries.reliability_metrics(as_of=as_of or now())
+        return services.queries.reliability_metrics(
+            as_of=as_of or now(), routes=route_metrics.snapshot()
+        )
 
     @app.get('/api/v1/review')
     async def review(as_of: Annotated[datetime | None, Query()] = None):

@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from nutmeg.product.contracts import ReadinessLevel
 from nutmeg.product.errors import ProductNotFoundError
+from nutmeg.reliability.contracts import PERFORMANCE_BUDGETS_MS
 
 _SHANGHAI = ZoneInfo('Asia/Shanghai')
 
@@ -82,6 +83,53 @@ def mount_product_ui(
                 'operations': operations,
                 'health': services.queries.health(),
                 'alerts': operations.alerts,
+            },
+        )
+
+    @app.get('/release', include_in_schema=False)
+    async def release_page(
+        request: Request,
+        release_version: Annotated[
+            str | None, Query(min_length=1, max_length=100)
+        ] = None,
+        candidate_commit: Annotated[
+            str | None, Query(min_length=1, max_length=200)
+        ] = None,
+        evaluated_at: Annotated[datetime | None, Query()] = None,
+    ):
+        cutoff = evaluated_at or clock()
+        selected_version = release_version or getattr(
+            services.settings, 'release_version', 'unreleased'
+        )
+        selected_candidate = candidate_commit or getattr(
+            services.settings, 'candidate_commit', 'unresolved'
+        )
+        release = services.queries.release(
+            release_version=selected_version,
+            candidate_commit=selected_candidate,
+            evaluated_at=cutoff,
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name='product/release.html',
+            context={
+                'workspace': 'release',
+                'active_nav': 'release',
+                'release': release,
+                'performance_budgets': PERFORMANCE_BUDGETS_MS,
+                'evidence_kinds': (
+                    'scheduler_authority',
+                    'deterministic_suite',
+                    'migration_replay',
+                    'fault_matrix',
+                    'ai_safety',
+                    'browser_e2e',
+                    'performance',
+                    'backup_restore',
+                    'observability',
+                ),
+                'health': services.queries.health(),
+                'alerts': [],
             },
         )
 

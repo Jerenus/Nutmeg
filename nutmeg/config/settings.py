@@ -20,6 +20,8 @@ class AppSettings(BaseSettings):
     app_env: str = 'dev'
     default_user_id: str = 'owner'
     data_dir: Path = Path('.nutmeg-data')
+    release_version: str = 'unreleased'
+    candidate_commit: str = 'unresolved'
     # Ontology Kernel v2 cutover flag (env NUTMEG_ONTOLOGY_V2). Default off: the live
     # decision-* commands run the old JSONL path unchanged. Set to route them onto the
     # new kernel — the fresh-start go-live seam (see the cutover runbook).

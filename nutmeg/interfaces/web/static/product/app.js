@@ -199,6 +199,23 @@
     const values = valuesFor(form, event.submitter);
     const action = form.dataset.action;
 
+    if (action === "approve-release") {
+      submitMutation(form, "正在批准当前证据快照…", () =>
+        postJson("/api/v1/actions", {
+          action_type: "approve_release",
+          idempotency_key: `ui:release-approval:${crypto.randomUUID()}`,
+          payload: {
+            release_version: form.dataset.releaseVersion,
+            candidate_commit: form.dataset.candidateCommit,
+            expected_snapshot_sha256: form.dataset.snapshot,
+            reason: values.get("reason"),
+          },
+          expected_versions: {},
+        }),
+      );
+      return;
+    }
+
     if (action === "create-ticket-batch") {
       submitMutation(form, "正在由服务器构票并执行 C0–C7…", () =>
         postJson("/api/v1/ticket-batches", {
