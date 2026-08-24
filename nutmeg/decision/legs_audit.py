@@ -44,7 +44,8 @@ class Leg:
     directional_flags: tuple = ()      # 指向具体一面的旗；元素形如 ("self_made_tail", "1")
     nondirectional_flags: tuple = ()   # 只指向"不可测"的旗（确证结构事实级以上才计）
     anchor_integrity: str = "unknown"  # pass | fail | symmetric_damage | unknown
-    precedents: tuple = ()             # 同场地同型先例；元素形如 ("0", "2023-04-27 圣马梅斯 0:1", "alive"|"dead")
+    # 同场地同型先例；元素形如 ("0", "2023-04-27 圣马梅斯 0:1", "alive"|"dead")
+    precedents: tuple = ()
 
     @property
     def modal(self) -> str:
