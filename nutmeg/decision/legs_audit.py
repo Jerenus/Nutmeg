@@ -44,6 +44,7 @@ class Leg:
     directional_flags: tuple = ()      # 指向具体一面的旗；元素形如 ("self_made_tail", "1")
     nondirectional_flags: tuple = ()   # 只指向"不可测"的旗（确证结构事实级以上才计）
     anchor_integrity: str = "unknown"  # pass | fail | symmetric_damage | unknown
+    precedents: tuple = ()             # 同场地同型先例；元素形如 ("0", "2023-04-27 圣马梅斯 0:1", "alive"|"dead")
 
     @property
     def modal(self) -> str:
@@ -143,6 +144,23 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 f"{len(set(lg.faces))} 面。降格场的第 3 面开出频率高（26101 实测 7 场中 5 场）。",
                 "8/08:全包场只能保留或整场丢掉,不许降档"))
 
+        # C7 —— 被排面上有同场地同型的**活**先例:r3 双证的机械化。
+        # 26105 场3(西布罗上季卡罗路 0:1 客胜先例被当 form 归零→客面开出杀全部票版)与
+        # 26109 场10(塞维 2023-04-27 圣马梅斯 0:1 先例躺在深研笔记里、因排面来自处方双选
+        # 而非"主动砍腿"未触发 r3→塞维 1:3)是同一死法:**先例是机制样本不是 form,
+        # 不适用 0pp 归零;而检查若只靠散文触发,就会在"默认形状"里静默失效。**
+        if len(set(lg.faces)) < 3 and lg.precedents:
+            excluded = set(FACE_KEYS) - set(lg.faces)
+            hits = [(f, s) for f, s, status in lg.precedents
+                    if f in excluded and status == "alive"]
+            for f, s in hits:
+                out.append(Finding(
+                    "WARN", "excluded_face_live_precedent", n,
+                    f"场{n} {lg.name}：被排面 {FACE_ZH[f]} 存在同场地同型**活先例**（{s}）。"
+                    f"r 条 3——先例是机制样本，砍带先例的面需「先例+钱流」双证；"
+                    f"双证不齐 → 盖住该面或整场丢掉。",
+                    "26105 场3 西布罗 / 26109 场10 塞维(2026-08-23 立规则,WARN 级)"))
+
     # ── 全票级：模态组合错配 ────────────────────────────────────────────
     singles = [lg for lg in legs if len(set(lg.faces)) == 1]
     if singles:
@@ -190,5 +208,6 @@ def legs_from_dict(payload: dict) -> list[Leg]:
             directional_flags=tuple(tuple(x) for x in v.get("directional_flags", [])),
             nondirectional_flags=tuple(v.get("nondirectional_flags", [])),
             anchor_integrity=v.get("anchor_integrity", "unknown"),
+            precedents=tuple(tuple(x) for x in v.get("precedents", [])),
         ))
     return sorted(out, key=lambda lg: lg.match_no)

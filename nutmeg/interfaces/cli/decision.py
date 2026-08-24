@@ -315,7 +315,7 @@ def decision_am(
 
     if get_settings().ontology_v2:
         from nutmeg.decision.ontology_adapter import run_decision_am_v2
-        result = run_decision_am_v2(run_date, output_dir)
+        result = run_decision_am_v2(run_date, output_dir, issue=issue, zucai_dir=zucai_dir)
     else:
         from nutmeg.decision.verbs import run_decision_am
         result = run_decision_am(run_date, output_dir, zucai_dir=zucai_dir, issue=issue)
@@ -492,6 +492,18 @@ def decision_audit_legs(
     )
 
     payload = _json.loads(Path(legs_file).read_text("utf-8"))
+    # JCZQ close consumes a flat legs array; an empty array is the canonical
+    # abstain shape and has no structure to audit.
+    if isinstance(payload, list):
+        if payload:
+            _cli.typer.echo(
+                "出票前结构校验：1 个 ERROR\n\n"
+                "❌ [missing_audit_metadata] JCZQ 投注腿数组不含 fair/旗/锚方完整度，"
+                "无法执行结构纪律校验。"
+            )
+            raise _cli.typer.Exit(code=1)
+        _cli.typer.echo(format_findings([]))
+        return
     findings = audit_legs(legs_from_dict(payload))
     _cli.typer.echo(format_findings(findings, issue=str(payload.get("issue", ""))))
     if has_blocking(findings):

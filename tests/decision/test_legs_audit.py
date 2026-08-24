@@ -132,3 +132,64 @@ def test_legs_from_dict_roundtrip():
     assert abs(legs[0].coverage - 0.66) < 1e-9
     # away_side_draw_utility 是词典外自命名 → 只 WARN,不阻断（26103 场7 的真实形态）
     assert not has_blocking(audit_legs(legs))
+
+
+def test_decision_audit_accepts_canonical_empty_jczq_array(tmp_path):
+    from typer.testing import CliRunner
+
+    from nutmeg.interfaces.cli import app
+
+    legs_file = tmp_path / "legs.json"
+    legs_file.write_text("[]\n", encoding="utf-8")
+    result = CliRunner().invoke(app, [
+        "decision-audit-legs", "--legs-file", str(legs_file),
+    ])
+    assert result.exit_code == 0
+    assert "通过" in result.stdout
+
+
+# ── C7: 被排面活先例（2026-08-23 立规则，26105西布罗/26109场10 两死换来） ──
+
+def test_excluded_face_live_precedent_warns_on_double():
+    # 26109 场10 形态：31 双选排掉客面，而客队有同场地同型活先例
+    leg = _leg(faces="31", fair={"home": 0.552, "draw": 0.264, "away": 0.184},
+               precedents=(("0", "2023-04-27 圣马梅斯 ATH 0:1 SEV", "alive"),))
+    findings = audit_legs([leg])
+    codes = [f.code for f in findings]
+    assert "excluded_face_live_precedent" in codes
+    assert not has_blocking(findings)  # WARN 级，点名不拦票
+
+
+def test_excluded_face_dead_precedent_silent():
+    # 26109 场13 形态：0-4 先例已被载体清算否决（dead）→ 不告警
+    leg = _leg(faces="31", fair={"home": 0.607, "draw": 0.221, "away": 0.172},
+               precedents=(("0", "上季 0-4 但四条进球载体全离队", "dead"),))
+    assert "excluded_face_live_precedent" not in [f.code for f in audit_legs([leg])]
+
+
+def test_covered_face_precedent_silent():
+    # 先例面已被盖住（全包或双选含该面）→ 不告警
+    full = _leg(faces="310", precedents=(("0", "同场地客胜先例", "alive"),))
+    double_covering = _leg(faces="30", fair=FAIR_HOME,
+                           precedents=(("0", "同场地客胜先例", "alive"),))
+    assert "excluded_face_live_precedent" not in [f.code for f in audit_legs([full])]
+    assert "excluded_face_live_precedent" not in [
+        f.code for f in audit_legs([double_covering])]
+
+
+def test_naked_single_with_live_precedent_warns():
+    # 裸单的两个被排面之一有活先例 → 同样点名
+    leg = _leg(faces="3", precedents=(("1", "同场地对阵近3次2平", "alive"),))
+    assert "excluded_face_live_precedent" in [f.code for f in audit_legs([leg])]
+
+
+def test_legs_from_dict_parses_precedents():
+    payload = {"issue": "26110", "legs": {"10": {
+        "name": "毕尔巴-塞维利", "faces": "31",
+        "fair": {"home": 0.552, "draw": 0.264, "away": 0.184}, "confidence": 3,
+        "directional_flags": [["self_made_tail", "1"]],
+        "nondirectional_flags": [], "anchor_integrity": "pass",
+        "precedents": [["0", "2023-04-27 圣马梅斯 0:1", "alive"]]}}}
+    legs = legs_from_dict(payload)
+    assert legs[0].precedents == (("0", "2023-04-27 圣马梅斯 0:1", "alive"),)
+    assert "excluded_face_live_precedent" in [f.code for f in audit_legs(legs)]

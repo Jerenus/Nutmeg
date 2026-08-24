@@ -7,6 +7,7 @@ international book's quotes to the same opaque match by sporttery match number a
 record their snapshot. Every step's idempotency key is derived deterministically
 from the business date + provider ids, so a rerun commits nothing new.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -25,11 +26,11 @@ from nutmeg.ontology.ingest.intl_odds import ParsedIntlQuote, parse_bold_odds
 from nutmeg.ontology.ingest.sporttery import ParsedMatch, ParsedQuote, parse_sporttery_markets
 from nutmeg.ontology.market.models import QuoteInput, SnapshotBuildRequest
 
-_HAD = 'md-had'
+_HAD = "md-had"
 
 
 def _content_key(value: dict) -> str:
-    return hashlib.sha256(canonical_json(value).encode('utf-8')).hexdigest()[:12]
+    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()[:12]
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,14 +41,14 @@ class MarketDayIngestRequest:
     actor_role: ActorRole
     requested_at: datetime
     intl_value: dict | None = None
-    snapshot_kind: str = 'read_time'
+    snapshot_kind: str = "read_time"
     sporttery_snapshots: bool = True
 
     def __post_init__(self) -> None:
         if self.requested_at.tzinfo is None or self.requested_at.utcoffset() is None:
-            raise ValueError('requested_at must be timezone-aware')
+            raise ValueError("requested_at must be timezone-aware")
         if not self.business_date.strip():
-            raise ValueError('business_date is required')
+            raise ValueError("business_date is required")
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,14 +75,18 @@ class MarketDayIngestService:
     def ingest(self, request: MarketDayIngestRequest) -> MarketDayIngestResult:
         kind = request.snapshot_kind
         sporttery_retrieval = self._ingest_artifact(
-            request, request.sporttery_value, 'sporttery',
-            f'sporttery:{kind}:{request.business_date}:{_content_key(request.sporttery_value)}'
+            request,
+            request.sporttery_value,
+            "sporttery",
+            f"sporttery:{kind}:{request.business_date}:{_content_key(request.sporttery_value)}",
         )
         intl_retrieval = None
         if request.intl_value is not None:
             intl_retrieval = self._ingest_artifact(
-                request, request.intl_value, 'intl',
-                f'intl:{kind}:{request.business_date}:{_content_key(request.intl_value)}'
+                request,
+                request.intl_value,
+                "intl",
+                f"intl:{kind}:{request.business_date}:{_content_key(request.intl_value)}",
             )
 
         match_ids: set[str] = set()
@@ -98,16 +103,21 @@ class MarketDayIngestService:
             match_id = self._record_match(request, parsed, home_id, away_id)
             match_ids.add(match_id)
             match_no_to_id[parsed.match_no] = match_id
-            had = [quote for quote in parsed.quotes if quote.market_kind == 'had']
+            had = [quote for quote in parsed.quotes if quote.market_kind == "had"]
             if had and request.sporttery_snapshots:
                 try:
                     self._build_had_snapshot(
-                        request, match_id, parsed.match_no, 'sporttery',
-                        parsed.scheduled_at, had, sporttery_retrieval,
+                        request,
+                        match_id,
+                        parsed.match_no,
+                        "sporttery",
+                        parsed.scheduled_at,
+                        had,
+                        sporttery_retrieval,
                     )
                     snapshots += 1
                 except IdempotencyConflictError:
-                    pass   # 盘中赔率已动:保留早盘 read_time 锚(判读时的价),不覆盖
+                    pass  # 盘中赔率已动:保留早盘 read_time 锚(判读时的价),不覆盖
 
         if request.intl_value is not None:
             by_match_no: dict[str, list[ParsedIntlQuote]] = defaultdict(list)
@@ -117,15 +127,15 @@ class MarketDayIngestService:
                 match_id = match_no_to_id.get(match_no)
                 if match_id is None:
                     continue
-                had = [quote for quote in quotes if quote.market_kind == 'had']
+                had = [quote for quote in quotes if quote.market_kind == "had"]
                 if had:
                     try:
                         self._build_had_snapshot(
-                            request, match_id, match_no, 'intl', None, had, intl_retrieval
+                            request, match_id, match_no, "intl", None, had, intl_retrieval
                         )
                         snapshots += 1
                     except IdempotencyConflictError:
-                        pass   # 同上:保留已存锚
+                        pass  # 同上:保留已存锚
 
         return MarketDayIngestResult(
             matches=len(match_ids), snapshots=snapshots, teams=len(team_ids)
@@ -134,12 +144,20 @@ class MarketDayIngestService:
     def _ingest_artifact(
         self, request: MarketDayIngestRequest, value: dict, source_name: str, key: str
     ) -> str | None:
+        try:
+            return self._ingest_artifact_once(request, value, source_name, key)
+        except IdempotencyConflictError:
+            return None  # 同内容重放(requested_at 不同):既有 artifact 已在库,静默跳过
+
+    def _ingest_artifact_once(
+        self, request: MarketDayIngestRequest, value: dict, source_name: str, key: str
+    ) -> str | None:
         outcome = self._artifact_ingest.ingest(
             ArtifactIngestRequest(
-                content=canonical_json(value).encode('utf-8'),
-                content_type='application/json',
+                content=canonical_json(value).encode("utf-8"),
+                content_type="application/json",
                 source_name=source_name,
-                source_type='api',
+                source_type="api",
                 actor_id=request.actor_id,
                 actor_role=request.actor_role,
                 idempotency_key=key,
@@ -147,7 +165,7 @@ class MarketDayIngestService:
             )
         )
         for ref in outcome.result_refs:
-            if ref.object_type == 'artifact_retrieval':
+            if ref.object_type == "artifact_retrieval":
                 return ref.object_id
         return None
 
@@ -161,7 +179,7 @@ class MarketDayIngestService:
                 external_id=None,
                 actor_id=request.actor_id,
                 actor_role=request.actor_role,
-                idempotency_key=f'team:{request.business_date}:{name.casefold()}',
+                idempotency_key=f"team:{request.business_date}:{name.casefold()}",
                 requested_at=request.requested_at,
             )
         )
@@ -181,7 +199,7 @@ class MarketDayIngestService:
                 away=MatchSideRef(team_id=away_id, side=MatchSide.AWAY),
                 actor_id=request.actor_id,
                 actor_role=request.actor_role,
-                idempotency_key=f'match:{request.business_date}:{parsed.external_id}',
+                idempotency_key=f"match:{request.business_date}:{parsed.external_id}",
                 requested_at=request.requested_at,
             )
         )
@@ -209,14 +227,14 @@ class MarketDayIngestService:
                 quotes=[
                     QuoteInput(
                         market_definition_id=_HAD,
-                        selection_id=f'sel-had-{quote.outcome_key}',
+                        selection_id=f"sel-had-{quote.outcome_key}",
                         decimal_odds=quote.decimal_odds,
                     )
                     for quote in had_quotes
                 ],
-                actor_id='system:devig',
+                actor_id="system:devig",
                 actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-                idempotency_key=f'snap:{channel}:{kind}:{request.business_date}:{match_no}:had',
+                idempotency_key=f"snap:{channel}:{kind}:{request.business_date}:{match_no}:had",
                 requested_at=request.requested_at,
                 artifact_retrieval_id=artifact_retrieval_id,
             )

@@ -76,7 +76,8 @@ def test_unset_flag_keeps_old_path(tmp_path: Path, monkeypatch) -> None:
         return DecisionWorkflowResult("decision-am", run_date, (), "old")
 
     monkeypatch.setattr("nutmeg.decision.verbs.run_decision_am", fake_old)
-    monkeypatch.delenv("NUTMEG_ONTOLOGY_V2", raising=False)
+    # 显式 =0(而非 delenv):生产 .env 已携带 NUTMEG_ONTOLOGY_V2=1,env var 优先级盖过 env_file
+    monkeypatch.setenv("NUTMEG_ONTOLOGY_V2", "0")
     settings_module.get_settings.cache_clear()
     try:
         result = CliRunner().invoke(cli.app, [
@@ -85,3 +86,43 @@ def test_unset_flag_keeps_old_path(tmp_path: Path, monkeypatch) -> None:
         assert seen["old"] == 1                # flag off -> old JSONL path unchanged
     finally:
         settings_module.get_settings.cache_clear()
+
+
+# ── zucai 泳道穿透(2026-08-24 cutover 缺口修复) ──────────────────────────
+
+ZUCAI_ISSUE = {"issue": "26110", "matches": [
+    {"match_no": 1, "competition": "英超", "home_team": "曼城",
+     "away_team": "伯恩茅斯", "match_date": "2026-08-23"}]}
+ZUCAI_ODDS = {"matches": [
+    {"match_no": 1, "home": 1.30, "draw": 5.50, "away": 9.00}]}
+
+
+def _write_zucai(zucai_dir: Path) -> None:
+    zucai_dir.mkdir(parents=True)
+    (zucai_dir / "26110-issue.json").write_text(json.dumps(ZUCAI_ISSUE), encoding="utf-8")
+    (zucai_dir / "26110-odds.json").write_text(json.dumps(ZUCAI_ODDS), encoding="utf-8")
+
+
+def test_am_v2_with_issue_ingests_zucai(tmp_path: Path) -> None:
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    output_dir = tmp_path / "jczq"
+    _write_snapshots(output_dir)
+    zucai_dir = tmp_path / "zucai"
+    _write_zucai(zucai_dir)
+    result = run_decision_am_v2(DATE, output_dir, kernel=kernel, fetch=False,
+                                issue="26110", zucai_dir=zucai_dir)
+    assert result.succeeded
+    assert "decision-sense-zucai-v2 26110: 入库 1 场" in str(result)
+    assert kernel.status().match_count == 2   # jczq 1 + zucai 1
+
+
+def test_am_v2_issue_missing_snapshot_degrades_visibly(tmp_path: Path) -> None:
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    output_dir = tmp_path / "jczq"
+    _write_snapshots(output_dir)
+    result = run_decision_am_v2(DATE, output_dir, kernel=kernel, fetch=False,
+                                issue="26999", zucai_dir=tmp_path / "zucai-none")
+    assert result.succeeded
+    assert "源快照缺失" in str(result)
