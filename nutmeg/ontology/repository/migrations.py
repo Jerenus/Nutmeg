@@ -28,6 +28,7 @@ from nutmeg.ontology.repository import (
     schema_finance,
     schema_identity,
     schema_market,
+    schema_reliability,
     schema_scoreboard,
     schema_tickets,
     schema_workflow,
@@ -555,6 +556,32 @@ def _apply_scoreboard_authority(connection: Connection) -> None:
     )
 
 
+_RELIABILITY_PERMISSIONS = (
+    ("record_reliability_evidence", "deterministic_system"),
+    ("record_reliability_evidence", "judge_operator"),
+    ("approve_release", "judge_operator"),
+)
+
+
+def _apply_reliability_governance(connection: Connection) -> None:
+    for table in (
+        schema_reliability.reliability_evidence,
+        schema_reliability.release_approvals,
+    ):
+        table.create(connection)
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": actor_role,
+            }
+            for action_type, actor_role in _RELIABILITY_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -642,6 +669,14 @@ MIGRATIONS: tuple[Migration, ...] = (
             "scoreboard_authority+role_separated_permissions"
         ),
         apply=_apply_scoreboard_authority,
+    ),
+    Migration(
+        version=14,
+        name="reliability_governance",
+        fingerprint=(
+            "reliability_evidence+release_approvals+role_separated_permissions"
+        ),
+        apply=_apply_reliability_governance,
     ),
 )
 

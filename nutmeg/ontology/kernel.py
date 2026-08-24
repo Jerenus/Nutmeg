@@ -41,6 +41,7 @@ from nutmeg.ontology.repository.migrations import (
     run_migrations,
 )
 from nutmeg.ontology.repository.outbox import OutboxRepository
+from nutmeg.ontology.repository.reliability import ReliabilityRepository
 from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
 
 if TYPE_CHECKING:
@@ -77,6 +78,8 @@ class OntologyKernelStatus:
     scoreboard_observation_count: int
     scoreboard_shadow_review_count: int
     scoreboard_authority_state: str
+    reliability_evidence_count: int
+    release_approval_count: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -108,6 +111,8 @@ class OntologyKernelStatus:
             'scoreboard_observation_count': self.scoreboard_observation_count,
             'scoreboard_shadow_review_count': self.scoreboard_shadow_review_count,
             'scoreboard_authority_state': self.scoreboard_authority_state,
+            'reliability_evidence_count': self.reliability_evidence_count,
+            'release_approval_count': self.release_approval_count,
         }
 
 
@@ -192,6 +197,8 @@ class OntologyKernel:
                 scoreboard_observation_count=0,
                 scoreboard_shadow_review_count=0,
                 scoreboard_authority_state='uninitialized',
+                reliability_evidence_count=0,
+                release_approval_count=0,
             )
 
         migration = migration_status(self._engine)
@@ -242,6 +249,13 @@ class OntologyKernel:
                 scoreboard_observation_count = 0
                 scoreboard_shadow_review_count = 0
                 scoreboard_authority_state = 'unavailable'
+            if 14 in applied:
+                reliability = ReliabilityRepository(connection)
+                reliability_evidence_count = reliability.count_evidence()
+                release_approval_count = reliability.count_approvals()
+            else:
+                reliability_evidence_count = 0
+                release_approval_count = 0
         from nutmeg.analytics.substrate import projection_counts
 
         counts = projection_counts(self._paths.analytics)
@@ -275,4 +289,6 @@ class OntologyKernel:
             scoreboard_observation_count=scoreboard_observation_count,
             scoreboard_shadow_review_count=scoreboard_shadow_review_count,
             scoreboard_authority_state=scoreboard_authority_state,
+            reliability_evidence_count=reliability_evidence_count,
+            release_approval_count=release_approval_count,
         )

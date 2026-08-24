@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.identity import IdentityRepository
     from nutmeg.ontology.repository.market import MarketRepository
     from nutmeg.ontology.repository.outbox import OutboxRepository
+    from nutmeg.ontology.repository.reliability import ReliabilityRepository
     from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
     from nutmeg.ontology.repository.tickets import TicketWorkbenchRepository
     from nutmeg.ontology.repository.workflow import WorkflowRepository
@@ -109,6 +110,12 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
 
         return ScoreboardRepository(self.connection)
+
+    @property
+    def reliability(self) -> ReliabilityRepository:
+        from nutmeg.ontology.repository.reliability import ReliabilityRepository
+
+        return ReliabilityRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         self._connection = self._engine.connect()

@@ -82,7 +82,7 @@ def test_migration_13_seeds_legacy_authority_and_exact_permissions(
 ) -> None:
     kernel, report = _kernel(tmp_path)
 
-    assert report.applied_versions[-1] == 13
+    assert 13 in report.applied_versions
     assert {
         "scoreboard_observations",
         "scoreboard_shadow_reviews",
