@@ -80,6 +80,8 @@ class AgentProposalRow:
     subject_type: str
     subject_id: str
     proposal_type: str
+    information_cutoff_at: str | None
+    operator_prompt: str | None
     payload: dict[str, object]
     citation_refs: list[dict[str, str]]
     model_name: str

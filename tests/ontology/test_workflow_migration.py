@@ -12,7 +12,7 @@ def test_migration_10_adds_workflow_outbox_and_permissions(tmp_path: Path) -> No
 
     report = run_migrations(engine)
 
-    assert report.applied_versions[-1] == 10
+    assert 10 in report.applied_versions
     assert {
         "adjudications",
         "flag_instances",

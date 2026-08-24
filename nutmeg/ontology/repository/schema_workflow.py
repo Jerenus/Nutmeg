@@ -83,6 +83,8 @@ agent_proposals = Table(
     Column("subject_type", Text, nullable=False, index=True),
     Column("subject_id", Text, nullable=False, index=True),
     Column("proposal_type", Text, nullable=False),
+    Column("information_cutoff_at", Text, nullable=True),
+    Column("operator_prompt", Text, nullable=True),
     Column("payload_json", Text, nullable=False),
     Column("citation_refs_json", Text, nullable=False),
     Column("model_name", Text, nullable=False),

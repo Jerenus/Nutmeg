@@ -99,6 +99,8 @@ class CreateAgentProposalRequest:
     subject_type: str
     subject_id: str
     proposal_type: str
+    information_cutoff_at: str
+    operator_prompt: str
     payload: dict[str, object]
     citation_refs: list[dict[str, str]]
     model_name: str
@@ -276,6 +278,8 @@ class WorkflowActions:
                 'subject_type': request.subject_type,
                 'subject_id': request.subject_id,
                 'proposal_type': request.proposal_type,
+                'information_cutoff_at': request.information_cutoff_at,
+                'operator_prompt': request.operator_prompt,
                 'payload': request.payload,
                 'citation_refs': request.citation_refs,
                 'model_name': request.model_name,
@@ -284,6 +288,14 @@ class WorkflowActions:
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            if not request.operator_prompt.strip():
+                raise ValueError('operator_prompt is required')
+            uow.workflow.validate_citation_refs(
+                request.subject_type,
+                request.subject_id,
+                request.citation_refs,
+                request.information_cutoff_at,
+            )
             proposal_id = mint_workflow_id('proposal')
             uow.workflow.insert_agent_proposal(
                 AgentProposalRow(
@@ -291,6 +303,8 @@ class WorkflowActions:
                     subject_type=request.subject_type,
                     subject_id=request.subject_id,
                     proposal_type=request.proposal_type,
+                    information_cutoff_at=request.information_cutoff_at,
+                    operator_prompt=request.operator_prompt,
                     payload=dict(request.payload),
                     citation_refs=list(request.citation_refs),
                     model_name=request.model_name,
@@ -322,6 +336,13 @@ class WorkflowActions:
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            proposal = uow.workflow.get_agent_proposal(request.agent_proposal_id)
+            uow.workflow.validate_citation_refs(
+                proposal.subject_type,
+                proposal.subject_id,
+                proposal.citation_refs,
+                proposal.information_cutoff_at,
+            )
             uow.workflow.resolve_agent_proposal(
                 request.agent_proposal_id,
                 request.resolution,

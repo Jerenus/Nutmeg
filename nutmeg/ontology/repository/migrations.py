@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import Connection, Engine, insert, inspect, select
+from sqlalchemy import Connection, Engine, delete, insert, inspect, select
 
 from nutmeg.ontology.errors import MigrationDriftError
 from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
@@ -457,6 +457,30 @@ def _apply_product_workflow(connection: Connection) -> None:
     )
 
 
+def _apply_m3_proposal_citations(connection: Connection) -> None:
+    columns = {
+        row[1]
+        for row in connection.exec_driver_sql(
+            'PRAGMA table_info(agent_proposals)'
+        ).fetchall()
+    }
+    if 'information_cutoff_at' not in columns:
+        connection.exec_driver_sql(
+            'ALTER TABLE agent_proposals ADD COLUMN information_cutoff_at TEXT'
+        )
+    if 'operator_prompt' not in columns:
+        connection.exec_driver_sql(
+            'ALTER TABLE agent_proposals ADD COLUMN operator_prompt TEXT'
+        )
+    connection.execute(
+        delete(schema.action_permissions).where(
+            schema.action_permissions.c.policy_version_id == 'governance-v1',
+            schema.action_permissions.c.action_type == 'create_agent_proposal',
+            schema.action_permissions.c.actor_role == 'judge_operator',
+        )
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -520,6 +544,12 @@ MIGRATIONS: tuple[Migration, ...] = (
             'outbox+workflow_permissions'
         ),
         apply=_apply_product_workflow,
+    ),
+    Migration(
+        version=11,
+        name='m3_proposal_citations',
+        fingerprint='agent_proposals+cutoff+prompt+ai_only_create',
+        apply=_apply_m3_proposal_citations,
     ),
 )
 

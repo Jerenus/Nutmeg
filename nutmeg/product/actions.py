@@ -267,6 +267,10 @@ class ProductActionGateway:
                     subject_type=_required_str(payload, 'subject_type'),
                     subject_id=_required_str(payload, 'subject_id'),
                     proposal_type=_required_str(payload, 'proposal_type'),
+                    information_cutoff_at=_required_str(
+                        payload, 'information_cutoff_at'
+                    ),
+                    operator_prompt=_required_str(payload, 'operator_prompt'),
                     payload=_object_dict(payload.get('payload', {}), 'payload'),
                     citation_refs=_reference_list(payload.get('citation_refs', [])),
                     model_name=_required_str(payload, 'model_name'),

@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 from nutmeg.config.settings import AppSettings
 from nutmeg.interfaces.cli import app
 from nutmeg.interfaces.cli import product as product_cli
+from nutmeg.ontology.repository.migrations import MIGRATIONS
 from nutmeg.ontology.wiring import build_ontology_kernel
 from nutmeg.product.errors import ProductNotReadyError
 from nutmeg.product.wiring import build_product_services
@@ -23,7 +24,7 @@ def test_product_services_compose_only_current_kernel(tmp_path: Path) -> None:
     services = build_product_services(settings)
 
     assert services.kernel.status().integrity_check == "ok"
-    assert services.queries.health().ontology_schema_version == 10
+    assert services.queries.health().ontology_schema_version == MIGRATIONS[-1].version
     assert services.settings is settings
 
 

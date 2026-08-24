@@ -16,6 +16,7 @@ from nutmeg.ontology.actions.workflow_actions import (
 )
 from nutmeg.ontology.errors import OptimisticConcurrencyError
 from nutmeg.ontology.repository.connection import build_ontology_engine
+from nutmeg.ontology.repository.evidence import ObservationRow
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.workflow.models import PredictionStatus, ProposalStatus
@@ -29,19 +30,52 @@ def _setup(tmp_path: Path):
     with OntologyUnitOfWork(engine) as uow:
         uow.identity.insert_match_minimal("match-1")
         uow.identity.insert_match_minimal("match-precedent")
+        uow.identity.insert_match_minimal("match-other")
+        for observation_id, match_id, recorded_at in (
+            ("obs-1", "match-1", "2026-08-24T09:30:00+00:00"),
+            ("obs-future", "match-1", "2026-08-24T10:01:00+00:00"),
+            ("obs-other", "match-other", "2026-08-24T09:30:00+00:00"),
+        ):
+            uow.evidence.insert_observation(
+                ObservationRow(
+                    observation_id=observation_id,
+                    observation_type="availability",
+                    subject_type="match",
+                    subject_id=match_id,
+                    scope_match_id=match_id,
+                    value={"available": observation_id == "obs-1"},
+                    schema_version="1",
+                    valid_from="2026-08-24T09:00:00+00:00",
+                    valid_to=None,
+                    observed_at=recorded_at,
+                    recorded_at=recorded_at,
+                    verification_method="official",
+                    quality={"grade": "A"},
+                )
+            )
     service = ActionService(lambda: OntologyUnitOfWork(engine))
     return WorkflowActions(service), engine
 
 
 def _proposal(
-    *, role: ActorRole = ActorRole.AI_ANALYST, key: str = "proposal:create:1"
+    *,
+    role: ActorRole = ActorRole.AI_ANALYST,
+    key: str = "proposal:create:1",
+    citation_refs: list[dict[str, str]] | None = None,
+    operator_prompt: str = "Investigate the verified availability evidence.",
 ) -> CreateAgentProposalRequest:
     return CreateAgentProposalRequest(
         subject_type="match",
         subject_id="match-1",
         proposal_type="forecast",
         payload={"belief": {"home": 0.52, "draw": 0.28, "away": 0.2}},
-        citation_refs=[{"object_type": "observation", "object_id": "obs-1"}],
+        citation_refs=(
+            [{"object_type": "observation", "object_id": "obs-1"}]
+            if citation_refs is None
+            else citation_refs
+        ),
+        information_cutoff_at=AT.isoformat(),
+        operator_prompt=operator_prompt,
         model_name="analyst-agent",
         model_version="2026-08-24",
         actor_id="model:analyst",
@@ -77,7 +111,58 @@ def test_ai_proposal_is_not_an_adjudication(tmp_path: Path) -> None:
     with OntologyUnitOfWork(engine) as uow:
         row = uow.workflow.get_agent_proposal(proposal.result_refs[0].object_id)
         assert row.status is ProposalStatus.PENDING
+        assert row.information_cutoff_at == AT.isoformat()
+        assert row.operator_prompt == "Investigate the verified availability evidence."
         assert uow.workflow.count_adjudications() == 0
+
+
+@pytest.mark.parametrize(
+    ("label", "citation_refs"),
+    (
+        ("empty", []),
+        ("future", [{"object_type": "observation", "object_id": "obs-future"}]),
+        ("foreign", [{"object_type": "observation", "object_id": "obs-other"}]),
+        ("missing", [{"object_type": "observation", "object_id": "obs-missing"}]),
+        ("unsupported", [{"object_type": "action", "object_id": "action-1"}]),
+        (
+            "duplicate",
+            [
+                {"object_type": "observation", "object_id": "obs-1"},
+                {"object_type": "observation", "object_id": "obs-1"},
+            ],
+        ),
+    ),
+)
+def test_proposal_rejects_invalid_citations(
+    tmp_path: Path,
+    label: str,
+    citation_refs: list[dict[str, str]],
+) -> None:
+    workflow, _engine = _setup(tmp_path)
+
+    with pytest.raises(ValueError, match="citation"):
+        workflow.create_agent_proposal(
+            _proposal(key=f"proposal:invalid:{label}", citation_refs=citation_refs)
+        )
+
+
+def test_judge_cannot_create_ai_proposal(tmp_path: Path) -> None:
+    workflow, _engine = _setup(tmp_path)
+
+    outcome = workflow.create_agent_proposal(
+        _proposal(role=ActorRole.JUDGE_OPERATOR, key="proposal:judge:denied")
+    )
+
+    assert outcome.status is ActionStatus.REJECTED
+
+
+def test_proposal_requires_operator_prompt(tmp_path: Path) -> None:
+    workflow, _engine = _setup(tmp_path)
+
+    with pytest.raises(ValueError, match="operator_prompt"):
+        workflow.create_agent_proposal(
+            _proposal(key="proposal:blank-prompt", operator_prompt=" ")
+        )
 
 
 def test_ai_cannot_record_operator_adjudication(tmp_path: Path) -> None:
@@ -144,6 +229,22 @@ def test_operator_resolves_proposal_without_mutating_payload(tmp_path: Path) -> 
         assert row.payload == {
             "belief": {"home": 0.52, "draw": 0.28, "away": 0.2}
         }
+
+
+def test_proposal_resolution_revalidates_stored_citations(tmp_path: Path) -> None:
+    workflow, engine = _setup(tmp_path)
+    created = workflow.create_agent_proposal(_proposal())
+    proposal_id = created.result_refs[0].object_id
+    with OntologyUnitOfWork(engine) as uow:
+        uow.connection.exec_driver_sql(
+            "DELETE FROM observations WHERE observation_id = 'obs-1'"
+        )
+
+    with pytest.raises(ValueError, match="citation"):
+        workflow.resolve_agent_proposal(_resolve(proposal_id))
+
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.workflow.get_agent_proposal(proposal_id).status is ProposalStatus.PENDING
 
 
 def test_stale_proposal_resolution_is_rejected(tmp_path: Path) -> None:
