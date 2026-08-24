@@ -8,11 +8,14 @@ from nutmeg.product.contracts import (
     ReadinessLevel,
     ReadinessState,
 )
+from nutmeg.product.wiring import ProductServices, build_product_services
 
 __all__ = [
     'ProductActionRequest',
     'ProductActionResponse',
     'ProductError',
+    'ProductServices',
     'ReadinessLevel',
     'ReadinessState',
+    'build_product_services',
 ]

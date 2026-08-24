@@ -56,6 +56,21 @@ intent classifier"}
         uv run pytest
         ```
 
+        ## Intelligence OS (M1 headless contract)
+
+        Initialize the Ontology Kernel v2 store, then launch the local API:
+
+        ```bash
+        uv run nutmeg ontology init
+        uv run nutmeg app
+        ```
+
+        M1 is API-only; M2 adds the Command Center and Data Operations UI. Product
+        reads and writes use Ontology Kernel v2 exclusively, and every mutation passes
+        through a governed Action. There is no autonomous funds action or unattended
+        betting path. `decision-web` remains a legacy workshop and is not a product
+        data source.
+
         `fixtures-sync` requires `NUTMEG_API_FOOTBALL_KEY`. Without it, the CLI remains usable with demo fixtures.
 
         To exercise the fuller Sprint 1 snapshot:

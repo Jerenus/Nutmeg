@@ -971,7 +971,7 @@ git commit -m "feat(api): expose secured product v1 contract"
 - Modify: `README.md`
 - Create: `tests/product/test_cli.py`
 
-- [ ] **Step 1: Write wiring and CLI tests**
+- [x] **Step 1: Write wiring and CLI tests**
 
 ```python
 def test_product_services_refuse_uninitialized_kernel(tmp_path):
@@ -992,12 +992,12 @@ def test_app_command_binds_loopback_by_default(monkeypatch, tmp_path):
     assert captured["port"] == 8788
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_cli.py -q`  
 Expected: FAIL because product wiring/command do not exist.
 
-- [ ] **Step 3: Compose product services**
+- [x] **Step 3: Compose product services**
 
 Define:
 
@@ -1024,13 +1024,13 @@ def build_product_services(settings: AppSettings) -> ProductServices:
     )
 ```
 
-- [ ] **Step 4: Register `nutmeg app`**
+- [x] **Step 4: Register `nutmeg app`**
 
 The command uses `build_product_services`, `create_product_app`, warns on non-loopback
 host with the existing `_warn_if_exposed` behavior, and calls Uvicorn on port 8788 by
 default. Import the module in the CLI registration block.
 
-- [ ] **Step 5: Document M1**
+- [x] **Step 5: Document M1**
 
 README must state:
 
@@ -1040,12 +1040,12 @@ README must state:
 - API mutations are Action-gated and no autonomous funds action exists;
 - `decision-web` remains legacy and is not a product data source.
 
-- [ ] **Step 6: Run CLI tests**
+- [x] **Step 6: Run CLI tests**
 
 Run: `uv run pytest tests/product/test_cli.py tests/ontology/test_cli.py -q`  
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/product/wiring.py nutmeg/product/__init__.py \

@@ -16,3 +16,7 @@ class ProductActionNotAllowedError(ProductError):
 
 class ProductActionBlockedError(ProductError):
     """Readiness policy blocks the requested state transition."""
+
+
+class ProductNotReadyError(ProductError):
+    """The product cannot start against an unhealthy or outdated ontology."""

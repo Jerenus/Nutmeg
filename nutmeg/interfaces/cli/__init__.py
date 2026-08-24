@@ -920,6 +920,7 @@ from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402
 from nutmeg.interfaces.cli import ontology_evidence as ontology_evidence  # noqa: E402
 from nutmeg.interfaces.cli import ontology_ingest as ontology_ingest  # noqa: E402
 from nutmeg.interfaces.cli import operations as operations  # noqa: E402
+from nutmeg.interfaces.cli import product as product  # noqa: E402
 from nutmeg.interfaces.cli import psychology as psychology  # noqa: E402
 from nutmeg.interfaces.cli import telegram as telegram  # noqa: E402
 from nutmeg.interfaces.cli import zucai as zucai  # noqa: E402
