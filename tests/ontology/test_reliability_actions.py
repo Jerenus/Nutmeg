@@ -102,8 +102,20 @@ def test_soak_request_requires_workflow_date_and_non_dispatch_real_report() -> N
         replace(request, workflow="system")
     with pytest.raises(ValueError, match="business_date"):
         replace(request, business_date=None)
-    with pytest.raises(ValueError, match="status must be failed"):
+    with pytest.raises(ValueError, match="synthetic soak evidence cannot be recorded"):
         replace(request, report={**report, "synthetic": True})
+    with pytest.raises(ValueError, match="synthetic soak evidence cannot be recorded"):
+        replace(
+            request,
+            status="failed",
+            report={**report, "synthetic": True},
+        )
+    with pytest.raises(ValueError, match="dispatch-enabled soak evidence"):
+        replace(
+            request,
+            status="failed",
+            report={**report, "dispatch": True},
+        )
 
 
 def test_action_is_role_guarded_content_addressed_and_idempotent(tmp_path: Path) -> None:

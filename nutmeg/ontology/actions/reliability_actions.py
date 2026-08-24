@@ -5,6 +5,7 @@ import copy
 import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from nutmeg.ontology.actions.models import (
     ActionCommand,
@@ -14,12 +15,17 @@ from nutmeg.ontology.actions.models import (
     canonical_json,
 )
 from nutmeg.ontology.actions.service import ActionService
-from nutmeg.ontology.reliability.models import ReliabilityEvidenceRow
+from nutmeg.ontology.errors import OptimisticConcurrencyError
+from nutmeg.ontology.reliability.models import (
+    ReleaseApprovalRow,
+    ReliabilityEvidenceRow,
+)
 from nutmeg.reliability.contracts import (
     EVIDENCE_KINDS,
     validate_evidence_report,
     validate_json_value,
 )
+from nutmeg.reliability.release import ReleaseEvaluator
 
 
 def _aware(value: datetime, name: str) -> None:
@@ -87,6 +93,11 @@ class RecordReliabilityEvidenceRequest:
                 raise ValueError("non-soak business_date must be null")
 
         result = validate_evidence_report(self.evidence_kind, self.report)
+        if self.evidence_kind == "soak_run":
+            if "synthetic_evidence" in result.failures:
+                raise ValueError("synthetic soak evidence cannot be recorded")
+            if "dispatch_enabled" in result.failures:
+                raise ValueError("dispatch-enabled soak evidence cannot be recorded")
         expected_status = "passed" if result.passed else "failed"
         if self.status != expected_status:
             message = (
@@ -110,6 +121,36 @@ class RecordReliabilityEvidenceRequest:
             "content_hash",
             hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest(),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ApproveReleaseRequest:
+    release_version: str
+    candidate_commit: str
+    expected_snapshot_sha256: str
+    reason: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        _aware(self.requested_at, "requested_at")
+        for value, name in (
+            (self.release_version, "release_version"),
+            (self.candidate_commit, "candidate_commit"),
+            (self.reason, "reason"),
+            (self.actor_id, "actor_id"),
+        ):
+            if not value.strip():
+                raise ValueError(f"{name} is required")
+        if len(self.expected_snapshot_sha256) != 64 or any(
+            char not in "0123456789abcdef"
+            for char in self.expected_snapshot_sha256
+        ):
+            raise ValueError(
+                "expected_snapshot_sha256 must be a lowercase SHA-256 digest"
+            )
 
 
 class ReliabilityActions:
@@ -167,5 +208,72 @@ class ReliabilityActions:
                 )
             )
             return (ObjectRef("reliability_evidence", evidence_id),)
+
+        return self._action_service.execute(command, handler)
+
+    def approve_release(self, request: ApproveReleaseRequest) -> ActionOutcome:
+        command = ActionCommand.create(
+            action_type="approve_release",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload={
+                "release_version": request.release_version,
+                "candidate_commit": request.candidate_commit,
+                "expected_snapshot_sha256": request.expected_snapshot_sha256,
+                "reason": request.reason,
+            },
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, action) -> tuple[ObjectRef, ...]:
+            evaluation = ReleaseEvaluator(uow.reliability).evaluate(
+                request.release_version,
+                candidate_commit=request.candidate_commit,
+                evaluated_at=request.requested_at,
+            )
+            if not evaluation.ready:
+                blocked = ", ".join(
+                    f"{gate.gate_id}:{gate.code}"
+                    for gate in evaluation.gates.values()
+                    if not gate.passed
+                )
+                raise ValueError(f"release gates are blocked: {blocked}")
+            if (
+                evaluation.evidence_snapshot_sha256
+                != request.expected_snapshot_sha256
+            ):
+                raise OptimisticConcurrencyError(
+                    "release evidence snapshot changed before approval"
+                )
+            existing = uow.reliability.approval_for_release(
+                request.release_version
+            )
+            if existing is not None:
+                if (
+                    existing.evidence_snapshot_sha256
+                    == request.expected_snapshot_sha256
+                ):
+                    return (
+                        ObjectRef(
+                            "release_approval", existing.release_approval_id
+                        ),
+                    )
+                raise ValueError(
+                    f"release {request.release_version} already has an approval"
+                )
+            approval_id = f"rap-{uuid4().hex}"
+            uow.reliability.insert_approval(
+                ReleaseApprovalRow(
+                    release_approval_id=approval_id,
+                    release_version=request.release_version,
+                    evidence_snapshot_sha256=request.expected_snapshot_sha256,
+                    policy_version=evaluation.policy_version,
+                    reason=request.reason.strip(),
+                    approved_at=action.requested_at,
+                    action_id=action.action_id,
+                )
+            )
+            return (ObjectRef("release_approval", approval_id),)
 
         return self._action_service.execute(command, handler)
