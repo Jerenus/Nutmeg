@@ -1,0 +1,1 @@
+"""Scoreboard authority workflow tests."""

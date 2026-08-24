@@ -342,7 +342,10 @@ class ScoreboardActions:
         return self._action_service.execute(command, handler)
 
     def record_export(
-        self, request: RecordScoreboardExportRequest
+        self,
+        request: RecordScoreboardExportRequest,
+        *,
+        action_id: str | None = None,
     ) -> ActionOutcome:
         command = ActionCommand.create(
             action_type="record_scoreboard_export",
@@ -354,6 +357,7 @@ class ScoreboardActions:
                 "scoreboard_authority:primary": request.expected_authority_version
             },
             requested_at=request.requested_at,
+            action_id=action_id,
         )
 
         def handler(uow, action) -> tuple[ObjectRef, ...]:

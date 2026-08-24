@@ -21,6 +21,7 @@ from nutmeg.analytics.integrity_action import IntegrityActionScorecardProjector
 from nutmeg.analytics.intervention_projection import InterventionQualityProjector
 from nutmeg.analytics.lifecycle import FactorLifecycleProjector
 from nutmeg.analytics.regime import RegimePostmatchProjector, RegimeVectorProjector
+from nutmeg.analytics.scoreboard_projection import ScoreboardProjector
 from nutmeg.analytics.scorecards import ForecastScorecardProjector
 from nutmeg.analytics.substrate import AnalyticsProjectionBuilder, projection_counts
 from nutmeg.storage.duckdb_utils import connect_analytics_db
@@ -68,6 +69,8 @@ class CalibrateService:
                  RegimePostmatchProjector(self._engine).project),
                 ('intervention_quality', 'iq-v1',
                  InterventionQualityProjector(self._engine).project),
+                ('scoreboard', 'sb-v1',
+                 ScoreboardProjector(self._engine, as_of=request.as_of).project),
             ],
             built_at=request.built_at,
             high_watermark=request.high_watermark,

@@ -43,6 +43,7 @@ _COUNTED_TABLES = {
     'factor_estimate_count': 'factor_estimates',
     'regime_vector_count': 'regime_vectors',
     'lifecycle_proposal_count': 'factor_lifecycle_proposals',
+    'scoreboard_metric_count': 'scoreboard_metrics',
 }
 
 
