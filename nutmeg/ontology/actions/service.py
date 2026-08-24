@@ -72,6 +72,9 @@ class ActionService:
                 result_refs = tuple(handler(uow, command))
                 committed_at = datetime.now(UTC).isoformat()
                 repository.mark_committed(command.action_id, result_refs, committed_at)
+                uow.outbox.append_for_action(
+                    command, ActionStatus.COMMITTED, result_refs, committed_at
+                )
         except PermissionDeniedError as error:
             return self._audit_terminal(
                 command, ActionStatus.REJECTED, 'permission_denied', str(error)
@@ -123,8 +126,10 @@ class ActionService:
         error_code: str,
         error_detail: str,
     ) -> ActionOutcome:
+        occurred_at = datetime.now(UTC).isoformat()
         with self._unit_of_work_factory() as uow:
             uow.actions.insert_terminal(command, status, error_code, error_detail)
+            uow.outbox.append_for_action(command, status, (), occurred_at)
         return ActionOutcome(
             action_id=command.action_id,
             action_type=command.action_type,

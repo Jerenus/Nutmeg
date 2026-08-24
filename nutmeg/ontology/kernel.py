@@ -34,6 +34,7 @@ from nutmeg.ontology.repository.migrations import (
     migration_status,
     run_migrations,
 )
+from nutmeg.ontology.repository.outbox import OutboxRepository
 
 if TYPE_CHECKING:
     from nutmeg.analytics.calibrate_flow import CalibrateService
@@ -46,6 +47,8 @@ class OntologyKernelStatus:
     pending_migrations: tuple[int, ...]
     integrity_check: str
     action_counts: dict[str, int]
+    outbox_event_count: int
+    outbox_latest_sequence: int
     artifact_count: int
     retrieval_count: int
     team_count: int
@@ -72,6 +75,8 @@ class OntologyKernelStatus:
             'pending_migrations': list(self.pending_migrations),
             'integrity_check': self.integrity_check,
             'action_counts': dict(self.action_counts),
+            'outbox_event_count': self.outbox_event_count,
+            'outbox_latest_sequence': self.outbox_latest_sequence,
             'artifact_count': self.artifact_count,
             'retrieval_count': self.retrieval_count,
             'team_count': self.team_count,
@@ -135,6 +140,8 @@ class OntologyKernel:
                 pending_migrations=tuple(migration.version for migration in MIGRATIONS),
                 integrity_check='uninitialized',
                 action_counts={},
+                outbox_event_count=0,
+                outbox_latest_sequence=0,
                 artifact_count=0,
                 retrieval_count=0,
                 team_count=0,
@@ -187,6 +194,13 @@ class OntologyKernel:
             finance = FinanceRepository(connection)
             ticket_count = finance.count_tickets()
             settlement_count = finance.count_settlements()
+            if 10 in applied:
+                outbox = OutboxRepository(connection)
+                outbox_event_count = outbox.count()
+                outbox_latest_sequence = outbox.latest_sequence()
+            else:
+                outbox_event_count = 0
+                outbox_latest_sequence = 0
         from nutmeg.analytics.substrate import projection_counts
 
         counts = projection_counts(self._paths.analytics)
@@ -197,6 +211,8 @@ class OntologyKernel:
             pending_migrations=pending,
             integrity_check=integrity,
             action_counts=action_counts,
+            outbox_event_count=outbox_event_count,
+            outbox_latest_sequence=outbox_latest_sequence,
             artifact_count=artifact_count,
             retrieval_count=retrieval_count,
             team_count=team_count,

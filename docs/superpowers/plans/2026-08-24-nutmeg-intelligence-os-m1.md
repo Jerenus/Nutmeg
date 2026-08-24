@@ -453,7 +453,7 @@ git commit -m "feat(ontology): add governed workflow actions"
 - Modify: `nutmeg/ontology/kernel.py`
 - Create: `tests/ontology/test_action_outbox.py`
 
-- [ ] **Step 1: Write atomicity and replay tests**
+- [x] **Step 1: Write atomicity and replay tests**
 
 ```python
 def test_committed_action_and_event_share_transaction(service, engine):
@@ -485,12 +485,12 @@ def test_outbox_cursor_resumes_without_duplication(service, engine):
     assert second[0].sequence > first[0].sequence
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/ontology/test_action_outbox.py -q`  
 Expected: FAIL because `OntologyUnitOfWork.outbox` is missing.
 
-- [ ] **Step 3: Implement the outbox repository**
+- [x] **Step 3: Implement the outbox repository**
 
 Define `OutboxEventRow` and methods:
 
@@ -525,24 +525,24 @@ def after(self, sequence: int, *, limit: int) -> list[OutboxEventRow]:
 
 Add `count()` and `latest_sequence()` and expose the repository as `uow.outbox`.
 
-- [ ] **Step 4: Append events inside Action transactions**
+- [x] **Step 4: Append events inside Action transactions**
 
 After `mark_committed`, call `uow.outbox.append_for_action` before the UoW exits. In
 `_audit_terminal`, insert the rejected/failed Action and its event in the same UoW.
 Never put the Action payload in the event; only action type, status, and result refs are
 safe product metadata.
 
-- [ ] **Step 5: Expose outbox counts in kernel status**
+- [x] **Step 5: Expose outbox counts in kernel status**
 
 Add `outbox_event_count` and `outbox_latest_sequence` to `OntologyKernelStatus`,
 `to_dict`, empty status, and live status.
 
-- [ ] **Step 6: Run Action and kernel regression tests**
+- [x] **Step 6: Run Action and kernel regression tests**
 
 Run: `uv run pytest tests/ontology/test_action_outbox.py tests/ontology/test_action_service.py tests/ontology/test_kernel.py tests/ontology/test_kernel_e2e.py -q`  
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/ontology/repository/outbox.py nutmeg/ontology/repository/unit_of_work.py \
