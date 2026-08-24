@@ -560,7 +560,7 @@ git commit -m "feat(ontology): publish actions through transactional outbox"
 - Create: `tests/product/__init__.py`
 - Create: `tests/product/test_readiness.py`
 
-- [ ] **Step 1: Write pure readiness tests**
+- [x] **Step 1: Write pure readiness tests**
 
 ```python
 def test_unresolved_identity_blocks_next_action():
@@ -584,12 +584,12 @@ def test_absent_market_anchor_blocks_forecast():
     assert any(issue.code == "market_anchor_missing" for issue in state.issues)
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_readiness.py -q`  
 Expected: collection FAIL because `nutmeg.product` does not exist.
 
-- [ ] **Step 3: Define versioned contracts**
+- [x] **Step 3: Define versioned contracts**
 
 Use Pydantic `BaseModel` with `extra="forbid"`. Define:
 
@@ -628,19 +628,19 @@ Also define `MatchSummary`, `BoardResponse`, `EvidenceSummary`, `ForecastSummary
 `ProductActionRequest`, and `ProductActionResponse`. Every top-level response includes
 `schema_version: Literal["1"]`.
 
-- [ ] **Step 4: Implement deterministic readiness precedence**
+- [x] **Step 4: Implement deterministic readiness precedence**
 
 `evaluate_readiness` collects all issues, then sets BLOCKED if any hard issue exists,
 otherwise DEGRADED if any issue exists. Hard codes are `identity_unresolved` and
 `market_anchor_missing`. `evidence_empty` and `market_anchor_stale` are degraded.
 Stale means older than six hours at `as_of`.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `uv run pytest tests/product/test_readiness.py -q`  
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/product tests/product/__init__.py tests/product/test_readiness.py
