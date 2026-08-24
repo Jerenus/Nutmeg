@@ -47,9 +47,10 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         action_service=action_service,
         artifact_store=artifact_store,
     )
+    entity_actions = EntityActions(action_service)
     market_day_ingest = MarketDayIngestService(
         artifact_ingest=artifact_ingest,
-        entity_actions=EntityActions(action_service),
+        entity_actions=entity_actions,
         match_actions=MatchActions(action_service),
         market_actions=MarketActions(action_service),
     )
@@ -80,5 +81,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         express=express,
         reconcile=reconcile,
         calibrate=calibrate,
+        entity_actions=entity_actions,
         workflow=workflow,
     )

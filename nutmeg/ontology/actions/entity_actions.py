@@ -151,6 +151,13 @@ class EntityActions:
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            if request.entity_type is EntityType.TEAM:
+                source = uow.identity.get_team(request.from_id)
+                target = uow.identity.get_team(request.into_id)
+                if source.resolution_status is not ResolutionStatus.PROVISIONAL:
+                    raise ValueError('merge source must be provisional')
+                if target.resolution_status is ResolutionStatus.MERGED:
+                    raise ValueError('merge target cannot be merged')
             uow.identity.record_merge(
                 from_id=request.from_id,
                 into_id=request.into_id,

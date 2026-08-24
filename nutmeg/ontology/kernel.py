@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Engine, func, select
 
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
+from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.decision.read_flow import DecisionReadService
 from nutmeg.ontology.finance.express_flow import ExpressService
@@ -111,6 +112,7 @@ class OntologyKernel:
         express: ExpressService,
         reconcile: ReconcileService,
         calibrate: CalibrateService,
+        entity_actions: EntityActions,
         workflow: WorkflowActions,
     ) -> None:
         self._paths = paths
@@ -122,6 +124,7 @@ class OntologyKernel:
         self.express = express
         self.reconcile = reconcile
         self.calibrate = calibrate
+        self.entity_actions = entity_actions
         self.workflow = workflow
 
     @property

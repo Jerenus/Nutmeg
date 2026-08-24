@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from nutmeg.ontology.actions.entity_actions import MergeEntityRequest
 from nutmeg.ontology.actions.forecast_actions import FactorInput
 from nutmeg.ontology.actions.models import ActionOutcome, ActorRole
 from nutmeg.ontology.actions.workflow_actions import (
@@ -15,6 +16,7 @@ from nutmeg.ontology.actions.workflow_actions import (
     ResolveAgentProposalRequest,
 )
 from nutmeg.ontology.decision.read_flow import ReadMatchRequest
+from nutmeg.ontology.identity.models import EntityType
 from nutmeg.ontology.workflow.models import ProposalStatus
 from nutmeg.product.contracts import (
     ObjectRefContract,
@@ -38,6 +40,7 @@ _ALLOWED_ACTIONS = {
     'link_precedent',
     'create_agent_proposal',
     'resolve_agent_proposal',
+    'merge_entity',
 }
 
 
@@ -74,6 +77,8 @@ class ProductActionGateway:
 
         if request.action_type == 'commit_forecast':
             return self._commit_forecast(request, actor_id, actor_role, requested_at)
+        if request.action_type == 'merge_entity':
+            return self._merge_entity(request, actor_id, actor_role, requested_at)
         outcome = self._execute_workflow(
             request, actor_id=actor_id, actor_role=actor_role, requested_at=requested_at
         )
@@ -156,6 +161,42 @@ class ProductActionGateway:
             status='committed' if result.committed else 'rejected',
             result_refs=refs,
         )
+
+    def _merge_entity(
+        self,
+        request: ProductActionRequest,
+        actor_id: str,
+        actor_role: ActorRole,
+        requested_at: datetime,
+    ) -> ProductActionResponse:
+        payload = request.payload
+        entity_type = _required_str(payload, 'entity_type')
+        if entity_type != EntityType.TEAM.value:
+            raise ValueError('M2 identity merge supports team entities only')
+        from_id = _required_str(payload, 'from_id')
+        into_id = _required_str(payload, 'into_id')
+        if from_id == into_id:
+            raise ValueError('cannot merge an entity into itself')
+        for entity_id in (from_id, into_id):
+            if self._repository.identity_item(entity_type, entity_id) is None:
+                raise ProductNotFoundError(f'team {entity_id} not found')
+
+        outcome = self._kernel.entity_actions.merge_entity(
+            MergeEntityRequest(
+                entity_type=EntityType.TEAM,
+                from_id=from_id,
+                into_id=into_id,
+                reason=_required_str(payload, 'reason'),
+                evidence_retrieval_ids=tuple(
+                    _string_list(payload.get('evidence_retrieval_ids', []))
+                ),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=request.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        return _response(outcome)
 
     def _execute_workflow(
         self,

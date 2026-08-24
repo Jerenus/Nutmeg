@@ -327,7 +327,7 @@ git commit -m "feat(product): assemble command and operations views"
 - Modify: `nutmeg/product/actions.py`
 - Create: `tests/product/test_m2_actions.py`
 
-- [ ] **Step 1: Write merge safety tests**
+- [x] **Step 1: Write merge safety tests**
 
 ```python
 def test_operator_can_merge_provisional_duplicate(product_services):
@@ -355,12 +355,12 @@ def test_merge_rejects_absent_target_and_payload_actor_spoof(product_services):
 Also test same-ID merge, non-Team entity type, already-merged source, and idempotent
 replay.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_actions.py -q`
 Expected: `merge_entity` is not whitelisted and the kernel does not expose the facade.
 
-- [ ] **Step 3: Reuse the ontology identity Action**
+- [x] **Step 3: Reuse the ontology identity Action**
 
 Construct one `EntityActions` in `build_ontology_kernel`, pass the same instance to
 `MarketDayIngestService`, and expose it as `kernel.entity_actions`. Do not alter its
@@ -371,12 +371,12 @@ Add `merge_entity` to `_ALLOWED_ACTIONS`. Before invoking it, load source/target
 `provisional`, require target status not `merged`, ignore all payload actor fields,
 and build the existing `MergeEntityRequest` with the server actor and clock.
 
-- [ ] **Step 4: Run gateway and ontology identity regressions**
+- [x] **Step 4: Run gateway and ontology identity regressions**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_actions.py tests/product/test_actions.py tests/ontology/test_merge_entity.py -q`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/ontology/kernel.py nutmeg/ontology/wiring.py nutmeg/product/actions.py \
