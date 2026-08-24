@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,19 @@ def test_product_ui_has_durable_event_and_narrow_screen_contract(
     assert "@media (max-width: 430px)" in css
     assert "min-height: 44px" in css
     assert "overflow-x: clip" in css
+
+
+def test_narrow_screen_stacks_hero_ledger_before_operations_timestamp(
+    client: TestClient,
+) -> None:
+    css = client.get("/assets/product/app.css").text
+    narrow_rules = css.split("@media (max-width: 760px)", maxsplit=1)[1]
+
+    assert re.search(
+        r"\.hero-ledger\s*\{[^}]*grid-template-columns:\s*1fr;",
+        narrow_rules,
+        re.DOTALL,
+    )
 
 
 def test_formal_ui_contains_no_legacy_store_or_domain_arithmetic() -> None:

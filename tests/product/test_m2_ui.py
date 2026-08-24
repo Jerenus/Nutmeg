@@ -48,12 +48,15 @@ def test_shell_has_local_assets_landmarks_and_keyboard_focus(
 ) -> None:
     response = client.get("/?date=2026-08-24")
     css = client.get("/assets/product/app.css")
+    favicon = client.get("/assets/product/favicon.svg")
 
     assert 'class="skip-link" href="#main-content"' in response.text
     assert "<nav" in response.text
     assert "<main" in response.text
     assert "<aside" in response.text
     assert css.status_code == 200
+    assert favicon.status_code == 200
+    assert 'rel="icon" href="/assets/product/favicon.svg"' in response.text
     assert ":focus-visible" in css.text
     assert "--paper: #f5f7f3" in css.text
     assert not re.search(r'(?:src|href)="https?://', response.text)

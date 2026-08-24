@@ -1481,6 +1481,8 @@ select:focus-visible,
 
   .hero-ledger {
     align-items: start;
+    grid-template-columns: 1fr;
+    gap: 18px;
   }
 
   .hero-ledger h1 {
