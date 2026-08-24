@@ -1,5 +1,5 @@
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -125,3 +125,48 @@ def test_repository_expands_source_and_evidence_lineage(
     ]
     assert team_edges is not None
     assert any(edge[0] == "team_has_external_id" for edge in team_edges)
+
+
+def test_command_center_filters_without_hiding_unfiltered_counts(
+    m2_product_services,
+) -> None:
+    result = m2_product_services.queries.command_center(
+        date(2026, 8, 24),
+        as_of=CLOCK,
+        readiness=ReadinessLevel.READY,
+        competition=None,
+        query="Home",
+    )
+    empty = m2_product_services.queries.command_center(
+        date(2026, 8, 24),
+        as_of=CLOCK,
+        readiness=ReadinessLevel.BLOCKED,
+        competition=None,
+        query="nothing",
+    )
+
+    assert [item.match_id for item in result.board.matches] == ["match-1"]
+    assert empty.board.matches == []
+    assert empty.readiness_counts["ready"] == 1
+    assert "score" not in result.board.matches[0].model_dump()
+
+
+def test_operations_turns_stale_source_and_failures_into_alerts(
+    m2_product_services,
+) -> None:
+    result = m2_product_services.queries.operations(
+        as_of=CLOCK,
+        identity_limit=500,
+    )
+    limited = m2_product_services.queries.operations(as_of=CLOCK, identity_limit=1)
+
+    assert {alert.code for alert in result.alerts} >= {
+        "source_stale",
+        "action_failed",
+        "identity_unresolved",
+    }
+    assert result.metrics.ontology_integrity == "ok"
+    assert result.metrics.action_high_watermark > 0
+    assert result.metrics.unresolved_identity_count == len(result.identities)
+    assert limited.metrics.unresolved_identity_count > len(limited.identities)
+    assert result.sources[0].age_seconds is not None

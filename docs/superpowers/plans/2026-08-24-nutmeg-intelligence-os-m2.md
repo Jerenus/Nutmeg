@@ -255,7 +255,7 @@ git commit -m "feat(product): add operations and source lineage queries"
 - Modify: `nutmeg/product/queries.py`
 - Modify: `tests/product/test_m2_queries.py`
 
-- [ ] **Step 1: Write failing service behavior tests**
+- [x] **Step 1: Write failing service behavior tests**
 
 ```python
 def test_command_center_filters_without_hiding_empty_state(product_services):
@@ -282,12 +282,12 @@ def test_operations_turns_stale_source_and_failed_action_into_alerts(product_ser
 Also test readiness-derived match alerts retain the affected Match object reference
 and that the service never ranks matches by an opaque score.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_queries.py -q`
 Expected: missing `command_center` and `operations` methods.
 
-- [ ] **Step 3: Implement deterministic assembly**
+- [x] **Step 3: Implement deterministic assembly**
 
 `command_center()` calls `board()` once, computes unfiltered readiness counts, then
 applies case-insensitive team/competition text, readiness, and competition filters.
@@ -307,12 +307,12 @@ DEGRADED   -> workflow_state="needs_evidence", next_action="inspect_gaps"
 BLOCKED    -> workflow_state="blocked", next_action="resolve_blocker"
 ```
 
-- [ ] **Step 4: Run M1/M2 query tests**
+- [x] **Step 4: Run M1/M2 query tests**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_queries.py tests/product/test_m2_queries.py -q`
 Expected: all pass, including historical `as_of` exclusions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/product/queries.py tests/product/test_m2_queries.py

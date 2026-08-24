@@ -374,6 +374,15 @@ class ProductReadRepository:
             if (item := self.identity_item('team', entity_id)) is not None
         ]
 
+    def unresolved_identity_count(self) -> int:
+        with self._engine.connect() as connection:
+            value = connection.execute(
+                select(func.count()).select_from(si.teams).where(
+                    si.teams.c.resolution_status == 'provisional'
+                )
+            ).scalar_one()
+        return int(value)
+
     def identity_item(self, entity_type: str, entity_id: str) -> dict | None:
         if entity_type != 'team':
             return None

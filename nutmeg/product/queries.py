@@ -1,18 +1,23 @@
 """Versioned product DTO assembly with explicit information cutoffs."""
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from nutmeg.product.contracts import (
     ActionPage,
     ActionView,
+    AlertSeverity,
+    AlertSummary,
     BoardResponse,
     ClaimSummary,
+    CommandCenterResponse,
     EventPage,
     EvidenceSummary,
     ForecastSummary,
     HealthResponse,
+    IdentityQueueItem,
     LineageEdge,
     LineageResponse,
     MarketSnapshotSummary,
@@ -20,7 +25,11 @@ from nutmeg.product.contracts import (
     MatchSummary,
     ObjectRefContract,
     ObservationSummary,
+    OperationsMetrics,
+    OperationsResponse,
     OutboxEventView,
+    ReadinessLevel,
+    SourceHealthSummary,
     WorkflowObjectSummary,
 )
 from nutmeg.product.errors import ProductNotFoundError
@@ -47,6 +56,167 @@ class ProductQueryService:
             date=day,
             as_of=cutoff,
             matches=[self._match_summary(record, cutoff) for record in records],
+        )
+
+    def command_center(
+        self,
+        day: date,
+        *,
+        as_of: datetime,
+        readiness: ReadinessLevel | None = None,
+        competition: str | None = None,
+        query: str | None = None,
+    ) -> CommandCenterResponse:
+        unfiltered = self.board(day, as_of=as_of)
+        counts = {level.value: 0 for level in ReadinessLevel}
+        for match in unfiltered.matches:
+            counts[match.readiness.level.value] += 1
+
+        query_text = (query or '').strip().casefold()
+        competition_text = (competition or '').strip().casefold()
+        filtered = [
+            match
+            for match in unfiltered.matches
+            if (readiness is None or match.readiness.level is readiness)
+            and (
+                not competition_text
+                or (match.competition or '').casefold() == competition_text
+            )
+            and (
+                not query_text
+                or query_text in match.home_team.casefold()
+                or query_text in match.away_team.casefold()
+                or query_text in (match.competition or '').casefold()
+            )
+        ]
+        cutoff = _aware(as_of, 'as_of')
+        return CommandCenterResponse(
+            board=BoardResponse(date=day, as_of=cutoff, matches=filtered),
+            health=self.health(),
+            alerts=self._board_alerts(unfiltered, cutoff),
+            readiness_counts=counts,
+            pending_workflow_count=self._repository.pending_workflow_count(
+                as_of=cutoff.isoformat()
+            ),
+        )
+
+    def operations(
+        self,
+        *,
+        as_of: datetime,
+        identity_limit: int = 100,
+    ) -> OperationsResponse:
+        cutoff = _aware(as_of, 'as_of')
+        source_rows = self._repository.source_health(cutoff.isoformat())
+        sources: list[SourceHealthSummary] = []
+        alerts: list[AlertSummary] = []
+        for row in source_rows:
+            retrieved_at = (
+                _parse_iso(row['latest_retrieved_at'])
+                if row['latest_retrieved_at'] is not None
+                else None
+            )
+            age_seconds = (
+                max(0, int((cutoff - retrieved_at).total_seconds()))
+                if retrieved_at is not None
+                else None
+            )
+            source = SourceHealthSummary(**row, age_seconds=age_seconds)
+            sources.append(source)
+            if age_seconds is not None and age_seconds > 6 * 60 * 60:
+                alerts.append(
+                    _alert(
+                        severity=AlertSeverity.WARN,
+                        code='source_stale',
+                        title=f'{source.source_name} source is stale',
+                        detail=f'latest retrieval is {age_seconds} seconds old',
+                        observed_at=cutoff,
+                        object_ref=ObjectRefContract(
+                            object_type='source', object_id=source.source_name
+                        ),
+                        href='/operations',
+                    )
+                )
+
+        identities = [
+            IdentityQueueItem(**row)
+            for row in self._repository.identity_queue(limit=identity_limit)
+        ]
+        unresolved_count = self._repository.unresolved_identity_count()
+        if unresolved_count:
+            alerts.append(
+                _alert(
+                    severity=AlertSeverity.WARN,
+                    code='identity_unresolved',
+                    title='Identity queue requires review',
+                    detail=f'{unresolved_count} provisional teams remain unresolved',
+                    observed_at=cutoff,
+                    href='/operations#identity-queue',
+                )
+            )
+
+        failures = [
+            self._action_contract(row)
+            for row in self._repository.failed_actions(limit=20)
+        ]
+        for action in failures:
+            alerts.append(
+                _alert(
+                    severity=(
+                        AlertSeverity.ERROR
+                        if action.status == 'failed'
+                        else AlertSeverity.WARN
+                    ),
+                    code='action_failed',
+                    title=f'Action {action.status}: {action.action_type}',
+                    detail=action.error_code or 'formal Action did not commit',
+                    observed_at=_parse_iso(action.requested_at),
+                    object_ref=ObjectRefContract(
+                        object_type='action', object_id=action.action_id
+                    ),
+                    href='/operations#action-failures',
+                )
+            )
+
+        status = self._kernel.status()
+        if status.integrity_check != 'ok' or status.pending_migrations:
+            alerts.append(
+                _alert(
+                    severity=AlertSeverity.ERROR,
+                    code='ontology_unhealthy',
+                    title='Ontology health gate is blocked',
+                    detail=(
+                        f'integrity={status.integrity_check}; '
+                        f'pending={list(status.pending_migrations)}'
+                    ),
+                    observed_at=cutoff,
+                    href='/operations',
+                )
+            )
+        alerts.append(
+            _alert(
+                severity=AlertSeverity.WARN,
+                code='schedule_visibility_missing',
+                title='Schedule state is not instrumented',
+                detail='M2 does not infer scheduler health from absent ontology facts',
+                observed_at=cutoff,
+                href='/operations',
+            )
+        )
+        return OperationsResponse(
+            as_of=cutoff,
+            sources=sources,
+            identities=identities,
+            recent_failures=failures,
+            alerts=_sort_alerts(alerts),
+            metrics=OperationsMetrics(
+                ontology_integrity=status.integrity_check,
+                ontology_schema_version=status.schema_version,
+                action_high_watermark=self._repository.action_high_watermark(),
+                outbox_high_watermark=status.outbox_latest_sequence,
+                projection_run_count=status.projection_run_count,
+                unresolved_identity_count=unresolved_count,
+            ),
         )
 
     def match(self, match_id: str, *, as_of: datetime) -> MatchDetail:
@@ -127,20 +297,7 @@ class ProductQueryService:
 
     def actions(self, *, after: str | None = None, limit: int = 100) -> ActionPage:
         records = self._repository.actions(after=after, limit=limit)
-        items = [
-            ActionView(
-                action_id=item['action_id'],
-                action_type=item['action_type'],
-                actor_id=item['actor_id'],
-                actor_role=item['actor_role'],
-                requested_at=item['requested_at'],
-                status=item['status'],
-                result_refs=[ObjectRefContract(**ref) for ref in item['result_refs']],
-                error_code=item['error_code'],
-                committed_at=item['committed_at'],
-            )
-            for item in records
-        ]
+        items = [self._action_contract(item) for item in records]
         return ActionPage(items=items, next_cursor=items[-1].action_id if items else None)
 
     def events(self, *, after: int, limit: int = 100) -> EventPage:
@@ -180,7 +337,15 @@ class ProductQueryService:
         snapshot = self._repository.latest_snapshot(
             record['match_id'], _DEFAULT_MARKET, cutoff.isoformat()
         )
-        return self._summary(record, cutoff, snapshot, len(claims) + len(observations))
+        return self._summary(
+            record,
+            cutoff,
+            snapshot,
+            len(claims) + len(observations),
+            self._repository.flag_count_for_match(
+                record['match_id'], as_of=cutoff.isoformat()
+            ),
+        )
 
     @staticmethod
     def _summary(
@@ -188,6 +353,7 @@ class ProductQueryService:
         cutoff: datetime,
         snapshot: dict | None,
         evidence_count: int,
+        flag_count: int = 0,
     ) -> MatchSummary:
         snapshot_at = _parse_iso(snapshot['as_of']) if snapshot is not None else None
         readiness = evaluate_readiness(
@@ -199,6 +365,11 @@ class ProductQueryService:
             as_of=cutoff,
             evidence_count=evidence_count,
         )
+        workflow_state, next_action = {
+            ReadinessLevel.READY: ('inspect', 'open_match'),
+            ReadinessLevel.DEGRADED: ('needs_evidence', 'inspect_gaps'),
+            ReadinessLevel.BLOCKED: ('blocked', 'resolve_blocker'),
+        }[readiness.level]
         return MatchSummary(
             match_id=record['match_id'],
             home_team=record['home_team'],
@@ -207,7 +378,49 @@ class ProductQueryService:
             kickoff_at=record['scheduled_at'],
             latest_snapshot_at=snapshot['as_of'] if snapshot is not None else None,
             readiness=readiness,
+            evidence_count=evidence_count,
+            workflow_state=workflow_state,
+            next_action=next_action,
+            flag_count=flag_count,
         )
+
+    @staticmethod
+    def _action_contract(item: dict) -> ActionView:
+        return ActionView(
+            action_id=item['action_id'],
+            action_type=item['action_type'],
+            actor_id=item['actor_id'],
+            actor_role=item['actor_role'],
+            requested_at=item['requested_at'],
+            status=item['status'],
+            result_refs=[ObjectRefContract(**ref) for ref in item['result_refs']],
+            error_code=item['error_code'],
+            committed_at=item['committed_at'],
+        )
+
+    @staticmethod
+    def _board_alerts(board: BoardResponse, cutoff: datetime) -> list[AlertSummary]:
+        alerts: list[AlertSummary] = []
+        for match in board.matches:
+            for issue in match.readiness.issues:
+                alerts.append(
+                    _alert(
+                        severity=(
+                            AlertSeverity.ERROR
+                            if match.readiness.level is ReadinessLevel.BLOCKED
+                            else AlertSeverity.WARN
+                        ),
+                        code=issue.code,
+                        title=f'{match.home_team} v {match.away_team}',
+                        detail=issue.message,
+                        observed_at=issue.observed_at or cutoff,
+                        object_ref=ObjectRefContract(
+                            object_type='match', object_id=match.match_id
+                        ),
+                        href=f'/matches/{match.match_id}?as_of={cutoff.isoformat()}',
+                    )
+                )
+        return _sort_alerts(alerts)
 
     @staticmethod
     def _snapshot_contract(snapshot: dict | None) -> MarketSnapshotSummary | None:
@@ -249,3 +462,46 @@ def _aware(value: datetime, name: str) -> datetime:
 def _parse_iso(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
     return _aware(parsed, 'timestamp')
+
+
+def _alert(
+    *,
+    severity: AlertSeverity,
+    code: str,
+    title: str,
+    detail: str,
+    observed_at: datetime,
+    object_ref: ObjectRefContract | None = None,
+    href: str | None = None,
+) -> AlertSummary:
+    identity = '|'.join(
+        (
+            code,
+            object_ref.object_type if object_ref is not None else '',
+            object_ref.object_id if object_ref is not None else '',
+            observed_at.isoformat(),
+        )
+    )
+    alert_id = 'alert-' + hashlib.sha256(identity.encode('utf-8')).hexdigest()[:20]
+    return AlertSummary(
+        alert_id=alert_id,
+        severity=severity,
+        code=code,
+        title=title,
+        detail=detail,
+        observed_at=observed_at,
+        object_ref=object_ref,
+        href=href,
+    )
+
+
+def _sort_alerts(alerts: list[AlertSummary]) -> list[AlertSummary]:
+    rank = {
+        AlertSeverity.ERROR: 0,
+        AlertSeverity.WARN: 1,
+        AlertSeverity.INFO: 2,
+    }
+    return sorted(
+        alerts,
+        key=lambda item: (rank[item.severity], item.observed_at, item.alert_id),
+    )
