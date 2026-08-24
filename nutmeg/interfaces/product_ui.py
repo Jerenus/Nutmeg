@@ -65,3 +65,21 @@ def mount_product_ui(
                 },
             },
         )
+
+    @app.get('/operations', include_in_schema=False)
+    async def operations_page(
+        request: Request,
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        operations = services.queries.operations(as_of=as_of or clock())
+        return templates.TemplateResponse(
+            request=request,
+            name='product/operations.html',
+            context={
+                'workspace': 'operations',
+                'active_nav': 'operations',
+                'operations': operations,
+                'health': services.queries.health(),
+                'alerts': operations.alerts,
+            },
+        )

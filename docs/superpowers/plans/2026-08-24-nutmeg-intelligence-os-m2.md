@@ -537,7 +537,7 @@ git commit -m "feat(ui): add Nutmeg command center"
 - Modify: `nutmeg/interfaces/web/templates/product/layout.html`
 - Modify: `tests/product/test_m2_ui.py`
 
-- [ ] **Step 1: Write failing operations interaction tests**
+- [x] **Step 1: Write failing operations interaction tests**
 
 ```python
 def test_operations_page_shows_source_age_identity_and_failure(client):
@@ -556,12 +556,12 @@ def test_merge_controls_embed_no_privileged_actor(client):
     assert 'name="actor_id"' not in html
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_ui.py -q`
 Expected: `/operations` returns 404.
 
-- [ ] **Step 3: Render operations from the product DTO**
+- [x] **Step 3: Render operations from the product DTO**
 
 Add `/operations` using `queries.operations`. Render source age/status, Action
 high-water marks, projection count, failed/rejected Actions, provisional identities,
@@ -569,7 +569,7 @@ and explicit "schedule visibility not instrumented" degraded state. The identity
 form asks for survivor ID and reason, then JavaScript posts a `merge_entity`
 `ProductActionRequest` through `/api/v1/actions`.
 
-- [ ] **Step 4: Implement the small client boundary**
+- [x] **Step 4: Implement the small client boundary**
 
 `app.js` obtains `/api/v1/session` only when the operator submits a mutation, sends
 the CSRF header and same-origin request, generates an idempotency key with
@@ -577,12 +577,12 @@ the CSRF header and same-origin request, generates an idempotency key with
 commit. It displays the stable server error envelope in an `aria-live="polite"`
 region. It contains no probability/readiness/money calculations.
 
-- [ ] **Step 5: Run UI/API/action regressions**
+- [x] **Step 5: Run UI/API/action regressions**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_ui.py tests/product/test_m2_api.py tests/product/test_m2_actions.py -q`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/interfaces/product_ui.py \
