@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import func, insert, select
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
@@ -15,6 +15,7 @@ from nutmeg.ontology.actions.workflow_actions import (
 )
 from nutmeg.ontology.identity.models import EntityType, ResolutionStatus, TeamKind
 from nutmeg.ontology.repository import schema_evidence as se
+from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository.decision import EvidenceBundleRow, ForecastRevisionRow
 from nutmeg.ontology.repository.evidence import (
     ClaimEvidenceSpanRow,
@@ -257,6 +258,13 @@ def seeded_product(tmp_path: Path) -> SeededProduct:
 def m2_seeded_product(seeded_product: SeededProduct) -> SeededProduct:
     kernel = seeded_product.kernel
     with OntologyUnitOfWork(kernel.engine) as uow:
+        latest_team_created_at = uow.connection.execute(
+            select(func.max(si.teams.c.created_at))
+        ).scalar_one()
+        assert latest_team_created_at is not None
+        queue_created_at = (
+            datetime.fromisoformat(latest_team_created_at) + timedelta(microseconds=1)
+        ).isoformat()
         uow.identity.insert_team(
             TeamRow(
                 team_id="team-duplicate",
@@ -264,7 +272,7 @@ def m2_seeded_product(seeded_product: SeededProduct) -> SeededProduct:
                 canonical_name="Home Football Club",
                 country="CN",
                 resolution_status=ResolutionStatus.PROVISIONAL,
-                created_at="2026-08-24T09:00:00+00:00",
+                created_at=queue_created_at,
             )
         )
         uow.identity.link_external_identifier(

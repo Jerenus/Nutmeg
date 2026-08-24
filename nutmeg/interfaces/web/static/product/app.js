@@ -95,12 +95,199 @@
     return submitter ? new FormData(form, submitter) : new FormData(form);
   }
 
+  function commaValues(value) {
+    return String(value || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function ticketLegs(form) {
+    return [...form.querySelectorAll("[data-ticket-match]")]
+      .map((card) => {
+        const primary = card.querySelector('input[type="radio"]:checked');
+        if (!primary) return null;
+        const faces = [...card.querySelectorAll(".ticket-face:checked")]
+          .map((input) => input.value)
+          .join("");
+        const directionalFlags = commaValues(
+          card.querySelector('[name="directional_flags"]')?.value,
+        ).map((item) => {
+          const [flag, face = ""] = item.split("=", 2);
+          return [flag.trim(), face.trim()];
+        });
+        return {
+          leg_key: `${card.dataset.matchId}:${card.dataset.marketId}:${primary.value}`,
+          match_id: card.dataset.matchId,
+          match_no: Number(card.dataset.matchNo),
+          name: card.dataset.matchName,
+          market_definition_id: card.dataset.marketId,
+          selection_id: primary.dataset.selectionId,
+          outcome_key: primary.value,
+          faces,
+          forecast_revision_id: card.dataset.forecastId,
+          entry_quote_id: primary.dataset.quoteId,
+          odds: Number(primary.dataset.odds),
+          line: primary.dataset.line || null,
+          bucket: card.querySelector('[name="bucket"]').value,
+          fair: {
+            home: Number(card.dataset.fairHome),
+            draw: Number(card.dataset.fairDraw),
+            away: Number(card.dataset.fairAway),
+          },
+          confidence: Number(card.querySelector('[name="confidence"]').value),
+          directional_flags: directionalFlags,
+          nondirectional_flags: commaValues(
+            card.querySelector('[name="nondirectional_flags"]').value,
+          ),
+          anchor_integrity: card.querySelector('[name="anchor_integrity"]').value,
+          precedents: [],
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function fileBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("无法读取出票回执"));
+      reader.onload = () => {
+        const encoded = String(reader.result).split(",", 2)[1];
+        if (!encoded) reject(new Error("出票回执为空"));
+        else resolve(encoded);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function issueConfirmation(form) {
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    report("正在签发一次性确认口令…");
+    try {
+      const artifactId = form.dataset.ticketArtifactId;
+      const result = await postJson(
+        `/api/v1/ticket-artifacts/${artifactId}/confirmations`,
+        {
+          schema_version: "1",
+          idempotency_key: `ui:ticket-confirmation:${crypto.randomUUID()}`,
+        },
+      );
+      const confirmationForm = form.parentElement.querySelector(
+        '[data-action="confirm-ticket-placement"]',
+      );
+      confirmationForm.elements.confirmation_id.value = result.confirmation_id || "";
+      confirmationForm.elements.nonce.value = result.nonce || "";
+      report(
+        `一次性口令已签发；服务端失效时间 ${result.expires_at || "未返回"}`,
+        "success",
+      );
+    } catch (error) {
+      report(error instanceof Error ? error.message : "操作失败", "error");
+      button.disabled = false;
+    }
+  }
+
   document.addEventListener("submit", (event) => {
     const form = event.target.closest("form[data-action]");
     if (!form) return;
     event.preventDefault();
     const values = valuesFor(form, event.submitter);
     const action = form.dataset.action;
+
+    if (action === "create-ticket-batch") {
+      submitMutation(form, "正在由服务器构票并执行 C0–C7…", () =>
+        postJson("/api/v1/ticket-batches", {
+          schema_version: "1",
+          run_date: form.dataset.runDate,
+          channel: values.get("channel"),
+          account_id: values.get("account_id"),
+          currency: values.get("currency"),
+          deadline_at: values.get("deadline_at"),
+          legs: ticketLegs(form),
+          idempotency_key: `ui:ticket-batch:${crypto.randomUUID()}`,
+        }),
+      );
+      return;
+    }
+
+    if (action === "remove-ticket-leg") {
+      const batchId = form.dataset.ticketBatchId;
+      submitMutation(form, "正在创建移除腿后的新版本…", () =>
+        postJson(`/api/v1/ticket-batches/${batchId}/remove-leg`, {
+          schema_version: "1",
+          leg_key: form.dataset.legKey,
+          expected_revision_no: Number(form.dataset.revisionNo),
+          idempotency_key: `ui:ticket-remove:${crypto.randomUUID()}`,
+        }),
+      );
+      return;
+    }
+
+    if (action === "ticket-warn-adjudication") {
+      const rejected = commaValues(values.get("evidence_rejected"));
+      submitMutation(form, "正在写入 WARN 人工裁决…", () =>
+        postJson("/api/v1/actions", {
+          action_type: "record_adjudication",
+          idempotency_key: `ui:ticket-warn:${crypto.randomUUID()}`,
+          payload: {
+            subject_type: "ticket_audit_finding",
+            subject_id: form.dataset.findingId,
+            decision: "accept_warning",
+            reason: values.get("reason"),
+            evidence_rejected: rejected.map((objectId) => ({
+              object_type: "claim",
+              object_id: objectId,
+            })),
+            alternative: {},
+          },
+          expected_versions: {},
+        }),
+      );
+      return;
+    }
+
+    if (action === "approve-ticket-batch") {
+      const batchId = form.dataset.ticketBatchId;
+      submitMutation(form, "正在批准不可变批次版本…", () =>
+        postJson(`/api/v1/ticket-batches/${batchId}/approve`, {
+          schema_version: "1",
+          expected_revision_no: Number(form.dataset.revisionNo),
+          idempotency_key: `ui:ticket-approve:${crypto.randomUUID()}`,
+        }),
+      );
+      return;
+    }
+
+    if (action === "issue-ticket-confirmation") {
+      issueConfirmation(form);
+      return;
+    }
+
+    if (action === "confirm-ticket-placement") {
+      const artifactId = form.dataset.ticketArtifactId;
+      const receipt = values.get("receipt");
+      submitMutation(form, "正在确认人工出票并原子入账…", async () => {
+        if (!(receipt instanceof File) || !receipt.size) {
+          throw new Error("请选择出票回执");
+        }
+        return postJson(`/api/v1/ticket-artifacts/${artifactId}/confirm`, {
+          schema_version: "1",
+          confirmation_id: values.get("confirmation_id"),
+          nonce: values.get("nonce"),
+          ticket_hash: form.dataset.ticketHash,
+          amount: Number(form.dataset.amount),
+          currency: form.dataset.currency,
+          channel: form.dataset.channel,
+          placement_mode: "manual",
+          external_reference: values.get("external_reference"),
+          receipt_base64: await fileBase64(receipt),
+          receipt_content_type: receipt.type || "application/octet-stream",
+          idempotency_key: `ui:ticket-placement:${crypto.randomUUID()}`,
+        });
+      });
+      return;
+    }
 
     if (action === "merge-identity") {
       submitMutation(form, "正在验证身份合并…", () =>

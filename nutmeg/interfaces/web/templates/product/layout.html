@@ -30,9 +30,9 @@
         <a class="rail-link{% if active_nav == 'match-investigation' %} is-active{% endif %}" href="{% if detail is defined %}/matches/{{ detail.match.match_id }}{% else %}/#match-board{% endif %}">
           <span aria-hidden="true">03</span> 比赛调查
         </a>
-        <span class="rail-link is-locked" aria-disabled="true">
+        <a class="rail-link{% if active_nav == 'ticket-workbench' %} is-active{% endif %}" href="/tickets">
           <span aria-hidden="true">04</span> 裁决工作台
-        </span>
+        </a>
         <div class="rail-foot">
           <span>ONTOLOGY v{{ health.ontology_schema_version }}</span>
           <span>LOCAL / PRIVATE</span>

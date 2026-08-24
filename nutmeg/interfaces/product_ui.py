@@ -85,6 +85,42 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/tickets', include_in_schema=False)
+    async def ticket_workbench_page(
+        request: Request,
+        day: Annotated[date | None, Query(alias='date')] = None,
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        cutoff = as_of or clock()
+        selected_day = day or cutoff.astimezone(_SHANGHAI).date()
+        workbench = services.queries.ticket_workbench(
+            selected_day, as_of=cutoff
+        )
+        histories = {
+            batch.ticket_batch_id: services.queries.ticket_batch(
+                batch.ticket_batch_id
+            )
+            for batch in workbench.batch_revisions
+        }
+        artifacts = [
+            services.queries.ticket_artifact(artifact_id, as_of=cutoff)
+            for batch in workbench.batch_revisions
+            for artifact_id in batch.artifact_ids
+        ]
+        return templates.TemplateResponse(
+            request=request,
+            name='product/tickets.html',
+            context={
+                'workspace': 'ticket-workbench',
+                'active_nav': 'ticket-workbench',
+                'workbench': workbench,
+                'histories': histories,
+                'artifacts': artifacts,
+                'health': services.queries.health(),
+                'alerts': [],
+            },
+        )
+
     def not_found_response(request: Request, error: ProductNotFoundError):
         return templates.TemplateResponse(
             request=request,

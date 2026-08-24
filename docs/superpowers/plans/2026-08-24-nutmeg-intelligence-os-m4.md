@@ -633,7 +633,7 @@ UV_FROZEN=1 git commit -m "feat(api): add protected ticket endpoints"
 - Modify: `nutmeg/interfaces/web/static/product/app.css`
 - Test: `tests/product/test_m4_ui.py`
 
-- [ ] **Step 1: Write failing SSR and static-boundary tests**
+- [x] **Step 1: Write failing SSR and static-boundary tests**
 
 Assert `/tickets?date=2026-08-24` returns the matrix, committed Forecast revision IDs,
 server-provided odds, explicit empty state, audit panel, revision rail, artifact hashes,
@@ -645,27 +645,27 @@ allocation, combined odds, hash generation, expiry validation, payout, or settle
 Assert skip link, labels, live regions, keyboard-native controls, and CSS narrow-screen
 minimum height 44px.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/product/test_m4_ui.py -q`
 
 Expected: `/tickets` is 404 and the template is absent.
 
-- [ ] **Step 3: Implement SSR route and intentional workbench layout**
+- [x] **Step 3: Implement SSR route and intentional workbench layout**
 
 Use the existing paper/ink/pine/cinnabar/gold tokens and typography. Desktop has the
 face matrix and sticky audit ledger; mobile uses ordered full-width match cards. Render
 all deterministic values from DTOs. Keep ERROR non-actionable, WARN forms explicit,
 and confirmation visually separate from approval.
 
-- [ ] **Step 4: Add progressive form behavior**
+- [x] **Step 4: Add progressive form behavior**
 
 Reuse the existing session bootstrap and `postJson()`. JavaScript may collect form
 values, generate idempotency keys with `crypto.randomUUID`, encode a selected receipt
 with `FileReader`, update live regions, and reload server state after success. It must
 not decide readiness or confirmation freshness locally.
 
-- [ ] **Step 5: Run UI and adjacent route tests**
+- [x] **Step 5: Run UI and adjacent route tests**
 
 Run:
 
@@ -676,7 +676,7 @@ UV_FROZEN=1 uv run ruff check nutmeg/interfaces/product_ui.py tests/product/test
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit Task 8**
+- [x] **Step 6: Commit Task 8**
 
 ```bash
 UV_FROZEN=1 git add nutmeg/interfaces/product_ui.py nutmeg/interfaces/web/templates/product nutmeg/interfaces/web/static/product tests/product/test_m4_ui.py
