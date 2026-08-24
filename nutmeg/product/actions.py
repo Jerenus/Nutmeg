@@ -4,8 +4,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from nutmeg.ontology.actions.claim_actions import ClaimAdjudicationRequest
 from nutmeg.ontology.actions.entity_actions import MergeEntityRequest
-from nutmeg.ontology.actions.forecast_actions import FactorInput
+from nutmeg.ontology.actions.forecast_actions import CommitForecastRequest, FactorInput
 from nutmeg.ontology.actions.models import ActionOutcome, ActorRole
 from nutmeg.ontology.actions.workflow_actions import (
     CreateAgentProposalRequest,
@@ -29,7 +30,11 @@ from nutmeg.product.errors import (
     ProductActionNotAllowedError,
     ProductNotFoundError,
 )
-from nutmeg.product.readiness import evaluate_readiness
+from nutmeg.product.readiness import (
+    classify_claim_conflicts,
+    evaluate_forecast_readiness,
+    evaluate_readiness,
+)
 from nutmeg.product.repository import ProductReadRepository
 
 _ALLOWED_ACTIONS = {
@@ -41,6 +46,9 @@ _ALLOWED_ACTIONS = {
     'create_agent_proposal',
     'resolve_agent_proposal',
     'merge_entity',
+    'verify_claim',
+    'dispute_claim',
+    'retract_claim',
 }
 
 
@@ -79,6 +87,10 @@ class ProductActionGateway:
             return self._commit_forecast(request, actor_id, actor_role, requested_at)
         if request.action_type == 'merge_entity':
             return self._merge_entity(request, actor_id, actor_role, requested_at)
+        if request.action_type in {'verify_claim', 'dispute_claim', 'retract_claim'}:
+            return self._adjudicate_claim(
+                request, actor_id, actor_role, requested_at
+            )
         outcome = self._execute_workflow(
             request, actor_id=actor_id, actor_role=actor_role, requested_at=requested_at
         )
@@ -108,19 +120,61 @@ class ProductActionGateway:
             match_id, cutoff.isoformat()
         )
         claims = self._repository.claims_for_match(match_id, cutoff.isoformat())
-        readiness = evaluate_readiness(
-            identity_resolved=(
-                match['home_resolution_status'] == 'resolved'
-                and match['away_resolution_status'] == 'resolved'
+        conflicts = classify_claim_conflicts(claims)
+        readiness = evaluate_forecast_readiness(
+            evaluate_readiness(
+                identity_resolved=(
+                    match['home_resolution_status'] == 'resolved'
+                    and match['away_resolution_status'] == 'resolved'
+                ),
+                snapshot_at=(
+                    _parse_aware(snapshot['as_of'], 'snapshot.as_of')
+                    if snapshot
+                    else None
+                ),
+                as_of=cutoff,
+                evidence_count=len(observations) + len(claims),
             ),
-            snapshot_at=_parse_aware(snapshot['as_of'], 'snapshot.as_of') if snapshot else None,
-            as_of=cutoff,
-            evidence_count=len(observations) + len(claims),
+            blocking_conflicts=sum(item.blocking for item in conflicts),
+            provisional_conflicts=sum(not item.blocking for item in conflicts),
         )
         if readiness.level is ReadinessLevel.BLOCKED:
             codes = ', '.join(issue.code for issue in readiness.issues)
             raise ProductActionBlockedError(f'forecast is blocked: {codes}')
         assert snapshot is not None
+        belief_distribution = _float_distribution(payload, 'belief_distribution')
+        factors = _factors(payload.get('factors', []))
+        proposal_id = _optional_str(payload.get('agent_proposal_id'))
+        if proposal_id is not None:
+            self._validate_forecast_proposal(
+                request,
+                match_id=match_id,
+                proposal_id=proposal_id,
+                belief_distribution=belief_distribution,
+            )
+
+        if actor_role is not ActorRole.JUDGE_OPERATOR:
+            outcome = self._kernel.forecast_actions.commit_forecast(
+                CommitForecastRequest(
+                    match_id=match_id,
+                    market_definition_id=market_id,
+                    decision_session_id=None,
+                    prior_distribution=snapshot['fair_distribution'],
+                    belief_distribution=belief_distribution,
+                    factors=factors,
+                    commitment_tier=str(payload.get('commitment_tier', 'judged')),
+                    evidence_bundle_id=None,
+                    prior_snapshot_id=snapshot['market_snapshot_id'],
+                    falsifier=_optional_str(payload.get('falsifier')),
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    idempotency_key=request.idempotency_key,
+                    requested_at=requested_at,
+                    information_cutoff_at=cutoff.isoformat(),
+                    expected_current_revision_no=request.expected_versions[version_key],
+                )
+            )
+            return _response(outcome)
 
         result = self._kernel.decision_read.read_match(
             ReadMatchRequest(
@@ -132,8 +186,8 @@ class ProductActionGateway:
                     str(key): float(value)
                     for key, value in snapshot['fair_distribution'].items()
                 },
-                belief_distribution=_float_distribution(payload, 'belief_distribution'),
-                factors=_factors(payload.get('factors', [])),
+                belief_distribution=belief_distribution,
+                factors=factors,
                 actor_id=actor_id,
                 actor_role=actor_role,
                 requested_at=requested_at,
@@ -161,6 +215,71 @@ class ProductActionGateway:
             status='committed' if result.committed else 'rejected',
             result_refs=refs,
         )
+
+    def _validate_forecast_proposal(
+        self,
+        request: ProductActionRequest,
+        *,
+        match_id: str,
+        proposal_id: str,
+        belief_distribution: dict[str, float],
+    ) -> None:
+        proposal = self._repository.agent_proposal(proposal_id)
+        if proposal is None:
+            raise ProductNotFoundError(f'agent proposal {proposal_id} not found')
+        version_key = f'agent_proposal:{proposal_id}'
+        if version_key not in request.expected_versions:
+            raise ValueError(f'expected version {version_key} is required')
+        expected_version = request.expected_versions[version_key]
+        if proposal['version'] != expected_version:
+            from nutmeg.ontology.errors import OptimisticConcurrencyError
+
+            raise OptimisticConcurrencyError(
+                f'proposal {proposal_id} is at version {proposal["version"]}, '
+                f'expected {expected_version}'
+            )
+        if (
+            proposal['subject_type'] != 'match'
+            or proposal['subject_id'] != match_id
+            or proposal['status'] != 'approved'
+        ):
+            raise ProductActionBlockedError(
+                'forecast proposal must be approved for the same match'
+            )
+        proposed = proposal['payload'].get('proposed_belief')
+        if not isinstance(proposed, dict):
+            raise ProductActionBlockedError('proposal belief is missing')
+        proposed_belief = {
+            str(key): float(value) for key, value in proposed.items()
+        }
+        if proposed_belief != belief_distribution:
+            raise ProductActionBlockedError(
+                'forecast belief does not match the approved proposal belief'
+            )
+
+    def _adjudicate_claim(
+        self,
+        request: ProductActionRequest,
+        actor_id: str,
+        actor_role: ActorRole,
+        requested_at: datetime,
+    ) -> ProductActionResponse:
+        claim_id = _required_str(request.payload, 'claim_id')
+        if self._repository.claim(claim_id) is None:
+            raise ProductNotFoundError(f'claim {claim_id} not found')
+        command = ClaimAdjudicationRequest(
+            claim_id=claim_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            idempotency_key=request.idempotency_key,
+            requested_at=requested_at,
+        )
+        action = {
+            'verify_claim': self._kernel.claim_actions.verify_claim,
+            'dispute_claim': self._kernel.claim_actions.dispute_claim,
+            'retract_claim': self._kernel.claim_actions.retract_claim,
+        }[request.action_type]
+        return _response(action(command))
 
     def _merge_entity(
         self,

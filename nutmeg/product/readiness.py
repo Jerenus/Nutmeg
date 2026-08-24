@@ -1,9 +1,16 @@
 """Pure readiness policy for product-visible next actions."""
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timedelta
 
-from nutmeg.product.contracts import ReadinessIssue, ReadinessLevel, ReadinessState
+from nutmeg.product.contracts import (
+    EvidenceConflictSummary,
+    ReadinessIssue,
+    ReadinessLevel,
+    ReadinessState,
+)
 
 _MAX_MARKET_AGE = timedelta(hours=6)
 _HARD_ISSUES = {'identity_unresolved', 'market_anchor_missing'}
@@ -105,3 +112,50 @@ def evaluate_forecast_readiness(
     else:
         level = base.level
     return ReadinessState(level=level, issues=issues)
+
+
+def classify_claim_conflicts(claims: list[dict]) -> list[EvidenceConflictSummary]:
+    grouped: dict[tuple[str, str, str], dict[str, list[dict]]] = {}
+    for claim in claims:
+        if claim['status'] == 'retracted':
+            continue
+        group_key = (
+            claim['subject_type'],
+            claim['subject_id'],
+            claim['predicate'],
+        )
+        value_key = json.dumps(
+            claim['value'], sort_keys=True, separators=(',', ':'), ensure_ascii=False
+        )
+        grouped.setdefault(group_key, {}).setdefault(value_key, []).append(claim)
+
+    conflicts: list[EvidenceConflictSummary] = []
+    for group_key, values in grouped.items():
+        if len(values) < 2:
+            continue
+        claims_in_group = sorted(
+            (claim for group in values.values() for claim in group),
+            key=lambda item: item['claim_id'],
+        )
+        verified_values = sum(
+            any(claim['status'] == 'verified' for claim in group)
+            for group in values.values()
+        )
+        identity = json.dumps(
+            [*group_key, *sorted(values)],
+            separators=(',', ':'),
+            ensure_ascii=False,
+        )
+        conflicts.append(
+            EvidenceConflictSummary(
+                conflict_id=(
+                    'conflict-'
+                    + hashlib.sha256(identity.encode('utf-8')).hexdigest()[:20]
+                ),
+                predicate=group_key[2],
+                claim_ids=[item['claim_id'] for item in claims_in_group],
+                statuses=[item['status'] for item in claims_in_group],
+                blocking=verified_values >= 2,
+            )
+        )
+    return sorted(conflicts, key=lambda item: (item.predicate, item.conflict_id))

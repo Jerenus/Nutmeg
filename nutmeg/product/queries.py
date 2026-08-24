@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -18,7 +17,6 @@ from nutmeg.product.contracts import (
     CommandCenterResponse,
     EventPage,
     EvidenceBundleSummary,
-    EvidenceConflictSummary,
     EvidenceSpanSummary,
     EvidenceSummary,
     FlagInstanceSummary,
@@ -43,7 +41,11 @@ from nutmeg.product.contracts import (
     WorkflowObjectSummary,
 )
 from nutmeg.product.errors import ProductNotFoundError
-from nutmeg.product.readiness import evaluate_forecast_readiness, evaluate_readiness
+from nutmeg.product.readiness import (
+    classify_claim_conflicts,
+    evaluate_forecast_readiness,
+    evaluate_readiness,
+)
 from nutmeg.product.repository import ProductReadRepository
 
 _SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -238,7 +240,7 @@ class ProductQueryService:
         observations = self._repository.observations_for_match(
             match_id, cutoff.isoformat()
         )
-        conflicts = _classify_conflicts(claims)
+        conflicts = classify_claim_conflicts(claims)
         snapshot = self._repository.latest_snapshot(
             match_id, _DEFAULT_MARKET, cutoff.isoformat()
         )
@@ -474,7 +476,7 @@ class ProductQueryService:
         snapshot = self._repository.latest_snapshot(
             record['match_id'], _DEFAULT_MARKET, cutoff.isoformat()
         )
-        conflicts = _classify_conflicts(claims)
+        conflicts = classify_claim_conflicts(claims)
         return self._summary(
             record,
             cutoff,
@@ -609,53 +611,6 @@ def _aware(value: datetime, name: str) -> datetime:
 def _parse_iso(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
     return _aware(parsed, 'timestamp')
-
-
-def _classify_conflicts(claims: list[dict]) -> list[EvidenceConflictSummary]:
-    grouped: dict[tuple[str, str, str], dict[str, list[dict]]] = {}
-    for claim in claims:
-        if claim['status'] == 'retracted':
-            continue
-        group_key = (
-            claim['subject_type'],
-            claim['subject_id'],
-            claim['predicate'],
-        )
-        value_key = json.dumps(
-            claim['value'], sort_keys=True, separators=(',', ':'), ensure_ascii=False
-        )
-        grouped.setdefault(group_key, {}).setdefault(value_key, []).append(claim)
-
-    conflicts: list[EvidenceConflictSummary] = []
-    for group_key, values in grouped.items():
-        if len(values) < 2:
-            continue
-        claims_in_group = sorted(
-            (claim for group in values.values() for claim in group),
-            key=lambda item: item['claim_id'],
-        )
-        verified_values = sum(
-            any(claim['status'] == 'verified' for claim in group)
-            for group in values.values()
-        )
-        identity = json.dumps(
-            [*group_key, *sorted(values)],
-            separators=(',', ':'),
-            ensure_ascii=False,
-        )
-        conflicts.append(
-            EvidenceConflictSummary(
-                conflict_id=(
-                    'conflict-'
-                    + hashlib.sha256(identity.encode('utf-8')).hexdigest()[:20]
-                ),
-                predicate=group_key[2],
-                claim_ids=[item['claim_id'] for item in claims_in_group],
-                statuses=[item['status'] for item in claims_in_group],
-                blocking=verified_values >= 2,
-            )
-        )
-    return sorted(conflicts, key=lambda item: (item.predicate, item.conflict_id))
 
 
 def _proposal_contract(

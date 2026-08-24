@@ -216,6 +216,15 @@ class ProductReadRepository:
             result.append(item)
         return result
 
+    def claim(self, claim_id: str) -> dict | None:
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                select(se.claims).where(se.claims.c.claim_id == claim_id)
+            ).mappings().first()
+        if row is None:
+            return None
+        return self._decode_json(row, ('value_json',))
+
     def observations_for_match(self, match_id: str, as_of: str) -> list[dict]:
         with self._engine.connect() as connection:
             rows = (

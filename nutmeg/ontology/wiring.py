@@ -48,6 +48,8 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         artifact_store=artifact_store,
     )
     entity_actions = EntityActions(action_service)
+    claim_actions = ClaimActions(action_service)
+    forecast_actions = ForecastActions(action_service)
     market_day_ingest = MarketDayIngestService(
         artifact_ingest=artifact_ingest,
         entity_actions=entity_actions,
@@ -57,12 +59,12 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     evidence_day_ingest = EvidenceDayIngestService(
         person_actions=PersonActions(action_service),
         observation_actions=ObservationActions(action_service),
-        claim_actions=ClaimActions(action_service),
+        claim_actions=claim_actions,
     )
     decision_read = DecisionReadService(
         session_actions=SessionActions(action_service),
         bundle_actions=BundleActions(action_service),
-        forecast_actions=ForecastActions(action_service),
+        forecast_actions=forecast_actions,
     )
     express = ExpressService(ticket_actions=TicketActions(action_service))
     reconcile = ReconcileService(
@@ -82,5 +84,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         reconcile=reconcile,
         calibrate=calibrate,
         entity_actions=entity_actions,
+        claim_actions=claim_actions,
+        forecast_actions=forecast_actions,
         workflow=workflow,
     )

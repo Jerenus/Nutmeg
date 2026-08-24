@@ -1,6 +1,6 @@
 import hashlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -554,7 +554,7 @@ def m3_product_services(m3_seeded_product: SeededProduct):
         actions=ProductActionGateway(
             m3_seeded_product.kernel,
             repository,
-            clock=lambda: m3_seeded_product.clock,
+            clock=lambda: m3_seeded_product.clock + timedelta(hours=1),
         ),
         settings=m3_seeded_product.settings,
     )
