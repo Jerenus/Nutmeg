@@ -184,7 +184,7 @@ git commit -m "feat(product): define M2 operations contracts"
 - Modify: `tests/product/conftest.py`
 - Modify: `tests/product/test_m2_queries.py`
 
-- [ ] **Step 1: Seed and test operational reads**
+- [x] **Step 1: Seed and test operational reads**
 
 Extend the fixture with two artifact retrievals (`sporttery` fresh and `intl` stale),
 one failed Action, and one provisional duplicate Team. Test:
@@ -205,12 +205,12 @@ seeded kernel engine; do not share a write connection across test assertions.
 Add lineage assertions for `source_artifact`, `artifact_retrieval`,
 `market_snapshot`, `observation`, `claim`, and `team`.
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_queries.py -q`
 Expected: `ProductReadRepository` is missing the M2 methods and lineage cases.
 
-- [ ] **Step 3: Implement explicit SQLAlchemy queries**
+- [x] **Step 3: Implement explicit SQLAlchemy queries**
 
 Add seven explicit methods: `source_health(as_of)`, `identity_queue(limit=)`,
 `identity_item(entity_type, entity_id)`, `failed_actions(limit=)`,
@@ -237,12 +237,12 @@ claim --claim_for_match--> match (when scope_match_id exists)
 team --team_has_external_id--> external_identifier:<provider>:<external_id>
 ```
 
-- [ ] **Step 4: Run repository and existing query regressions**
+- [x] **Step 4: Run repository and existing query regressions**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_queries.py tests/product/test_queries.py -q`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/product/repository.py tests/product/conftest.py tests/product/test_m2_queries.py

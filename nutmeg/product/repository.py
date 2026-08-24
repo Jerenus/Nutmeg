@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 
-from sqlalchemy import Engine, and_, or_, select
+from sqlalchemy import Engine, and_, func, or_, select
 
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository import schema_decision as sd
@@ -320,6 +320,150 @@ class ProductReadRepository:
         with self._engine.connect() as connection:
             return OutboxRepository(connection).after(after, limit=limit)
 
+    def source_health(self, as_of: str) -> list[dict]:
+        with self._engine.connect() as connection:
+            retrievals = connection.execute(
+                select(schema.artifact_retrievals)
+                .where(schema.artifact_retrievals.c.retrieved_at <= as_of)
+                .order_by(
+                    schema.artifact_retrievals.c.source_name,
+                    schema.artifact_retrievals.c.source_type,
+                    schema.artifact_retrievals.c.retrieved_at.desc(),
+                )
+            ).mappings().all()
+            runs = connection.execute(
+                select(schema.source_runs)
+                .where(schema.source_runs.c.started_at <= as_of)
+                .order_by(
+                    schema.source_runs.c.source_name,
+                    schema.source_runs.c.started_at.desc(),
+                )
+            ).mappings().all()
+
+        latest_runs: dict[str, dict] = {}
+        for row in runs:
+            latest_runs.setdefault(row['source_name'], dict(row))
+        grouped: dict[tuple[str, str], dict] = {}
+        for row in retrievals:
+            key = (row['source_name'], row['source_type'])
+            if key not in grouped:
+                run = latest_runs.get(row['source_name'])
+                grouped[key] = {
+                    'source_name': row['source_name'],
+                    'source_type': row['source_type'],
+                    'status': run['status'] if run is not None else row['status'],
+                    'retrieval_count': 0,
+                    'latest_retrieved_at': row['retrieved_at'],
+                    'error_code': run['error_code'] if run is not None else None,
+                    'error_detail': run['error_detail'] if run is not None else None,
+                }
+            grouped[key]['retrieval_count'] += 1
+        return [grouped[key] for key in sorted(grouped)]
+
+    def identity_queue(self, *, limit: int) -> list[dict]:
+        with self._engine.connect() as connection:
+            ids = connection.execute(
+                select(si.teams.c.team_id)
+                .where(si.teams.c.resolution_status == 'provisional')
+                .order_by(si.teams.c.created_at.desc(), si.teams.c.team_id)
+                .limit(limit)
+            ).scalars().all()
+        return [
+            item
+            for entity_id in ids
+            if (item := self.identity_item('team', entity_id)) is not None
+        ]
+
+    def identity_item(self, entity_type: str, entity_id: str) -> dict | None:
+        if entity_type != 'team':
+            return None
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                select(si.teams).where(si.teams.c.team_id == entity_id)
+            ).mappings().first()
+            if row is None:
+                return None
+            external = connection.execute(
+                select(
+                    si.external_identifiers.c.provider,
+                    si.external_identifiers.c.external_id,
+                )
+                .where(
+                    si.external_identifiers.c.entity_type == 'team',
+                    si.external_identifiers.c.entity_id == entity_id,
+                )
+                .order_by(
+                    si.external_identifiers.c.provider,
+                    si.external_identifiers.c.external_id,
+                )
+            ).all()
+            aliases = connection.execute(
+                select(si.entity_aliases.c.normalized_alias)
+                .where(
+                    si.entity_aliases.c.entity_type == 'team',
+                    si.entity_aliases.c.entity_id == entity_id,
+                )
+                .order_by(si.entity_aliases.c.normalized_alias)
+            ).scalars().all()
+        return {
+            'entity_type': 'team',
+            'entity_id': row['team_id'],
+            'canonical_name': row['canonical_name'],
+            'resolution_status': row['resolution_status'],
+            'country': row['country'],
+            'created_at': row['created_at'],
+            'external_identifiers': [
+                f'{provider}:{external_id}' for provider, external_id in external
+            ],
+            'aliases': list(aliases),
+        }
+
+    def failed_actions(self, *, limit: int) -> list[dict]:
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                select(schema.actions)
+                .where(schema.actions.c.status.in_(('failed', 'rejected')))
+                .order_by(
+                    schema.actions.c.requested_at.desc(),
+                    schema.actions.c.action_id.desc(),
+                )
+                .limit(limit)
+            ).mappings().all()
+        return [self._decode_json(row, ('result_refs_json',)) for row in rows]
+
+    def action_high_watermark(self) -> int:
+        with self._engine.connect() as connection:
+            value = connection.exec_driver_sql(
+                'SELECT COALESCE(MAX(rowid), 0) FROM actions'
+            ).scalar_one()
+        return int(value)
+
+    def pending_workflow_count(self, *, as_of: str) -> int:
+        with self._engine.connect() as connection:
+            proposals = connection.execute(
+                select(func.count()).select_from(sw.agent_proposals).where(
+                    sw.agent_proposals.c.status == 'pending',
+                    sw.agent_proposals.c.created_at <= as_of,
+                )
+            ).scalar_one()
+            predictions = connection.execute(
+                select(func.count()).select_from(sw.predictions).where(
+                    sw.predictions.c.status == 'pending',
+                    sw.predictions.c.registered_at <= as_of,
+                )
+            ).scalar_one()
+        return int(proposals) + int(predictions)
+
+    def flag_count_for_match(self, match_id: str, *, as_of: str) -> int:
+        with self._engine.connect() as connection:
+            value = connection.execute(
+                select(func.count()).select_from(sw.flag_instances).where(
+                    sw.flag_instances.c.match_id == match_id,
+                    sw.flag_instances.c.created_at <= as_of,
+                )
+            ).scalar_one()
+        return int(value)
+
     def lineage(self, object_type: str, object_id: str) -> list[LineageTuple] | None:
         with self._engine.connect() as connection:
             edges = self._lineage_for_object(connection, object_type, object_id)
@@ -340,6 +484,115 @@ class ProductReadRepository:
 
     @staticmethod
     def _lineage_for_object(connection, object_type: str, object_id: str):
+        if object_type == 'artifact_retrieval':
+            artifact_id = connection.execute(
+                select(schema.artifact_retrievals.c.artifact_id).where(
+                    schema.artifact_retrievals.c.artifact_retrieval_id == object_id
+                )
+            ).scalar_one_or_none()
+            if artifact_id is None:
+                return None
+            return [
+                ('retrieval_of', object_type, object_id, 'source_artifact', artifact_id)
+            ]
+        if object_type == 'source_artifact':
+            exists = connection.execute(
+                select(schema.source_artifacts.c.artifact_id).where(
+                    schema.source_artifacts.c.artifact_id == object_id
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                return None
+            retrieval_ids = connection.execute(
+                select(schema.artifact_retrievals.c.artifact_retrieval_id).where(
+                    schema.artifact_retrievals.c.artifact_id == object_id
+                )
+            ).scalars()
+            return [
+                (
+                    'artifact_has_retrieval',
+                    object_type,
+                    object_id,
+                    'artifact_retrieval',
+                    retrieval_id,
+                )
+                for retrieval_id in retrieval_ids
+            ]
+        if object_type == 'market_snapshot':
+            row = connection.execute(
+                select(sm.market_snapshots.c.match_id).where(
+                    sm.market_snapshots.c.market_snapshot_id == object_id
+                )
+            ).first()
+            if row is None:
+                return None
+            edges: list[LineageTuple] = [
+                ('snapshot_for_match', object_type, object_id, 'match', row.match_id)
+            ]
+            quote_ids = connection.execute(
+                select(sm.market_snapshot_quotes.c.quote_id).where(
+                    sm.market_snapshot_quotes.c.market_snapshot_id == object_id
+                )
+            ).scalars()
+            edges.extend(
+                (
+                    'snapshot_contains_quote',
+                    object_type,
+                    object_id,
+                    'market_quote',
+                    quote_id,
+                )
+                for quote_id in quote_ids
+            )
+            return edges
+        if object_type in {'observation', 'claim'}:
+            table = se.observations if object_type == 'observation' else se.claims
+            id_column = (
+                se.observations.c.observation_id
+                if object_type == 'observation'
+                else se.claims.c.claim_id
+            )
+            row = connection.execute(
+                select(table.c.scope_match_id).where(id_column == object_id)
+            ).first()
+            if row is None:
+                return None
+            if row.scope_match_id is None:
+                return []
+            return [
+                (
+                    f'{object_type}_for_match',
+                    object_type,
+                    object_id,
+                    'match',
+                    row.scope_match_id,
+                )
+            ]
+        if object_type == 'team':
+            exists = connection.execute(
+                select(si.teams.c.team_id).where(si.teams.c.team_id == object_id)
+            ).scalar_one_or_none()
+            if exists is None:
+                return None
+            identifiers = connection.execute(
+                select(
+                    si.external_identifiers.c.provider,
+                    si.external_identifiers.c.external_id,
+                ).where(
+                    si.external_identifiers.c.entity_type == 'team',
+                    si.external_identifiers.c.entity_id == object_id,
+                )
+            ).all()
+            return [
+                (
+                    'team_has_external_id',
+                    object_type,
+                    object_id,
+                    'external_identifier',
+                    f'{provider}:{external_id}',
+                )
+                for provider, external_id in identifiers
+            ]
         if object_type == 'forecast_revision':
             row = connection.execute(
                 select(

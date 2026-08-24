@@ -5,9 +5,13 @@ from pathlib import Path
 import pytest
 
 from nutmeg.config.settings import AppSettings
+from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
 from nutmeg.ontology.actions.models import ActorRole
-from nutmeg.ontology.actions.workflow_actions import CreateAgentProposalRequest
-from nutmeg.ontology.identity.models import ResolutionStatus, TeamKind
+from nutmeg.ontology.actions.workflow_actions import (
+    CreateAgentProposalRequest,
+    RecordAdjudicationRequest,
+)
+from nutmeg.ontology.identity.models import EntityType, ResolutionStatus, TeamKind
 from nutmeg.ontology.repository.decision import ForecastRevisionRow
 from nutmeg.ontology.repository.evidence import ClaimRow, ObservationRow
 from nutmeg.ontology.repository.identity import (
@@ -229,6 +233,74 @@ def seeded_product(tmp_path: Path) -> SeededProduct:
         )
     )
     return SeededProduct(kernel=kernel, clock=CLOCK, settings=settings)
+
+
+@pytest.fixture
+def m2_seeded_product(seeded_product: SeededProduct) -> SeededProduct:
+    kernel = seeded_product.kernel
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        uow.identity.insert_team(
+            TeamRow(
+                team_id="team-duplicate",
+                team_kind=TeamKind.CLUB,
+                canonical_name="Home Football Club",
+                country="CN",
+                resolution_status=ResolutionStatus.PROVISIONAL,
+                created_at="2026-08-24T09:00:00+00:00",
+            )
+        )
+        uow.identity.link_external_identifier(
+            entity_id="team-duplicate",
+            entity_type=EntityType.TEAM,
+            provider="api-football",
+            external_id="duplicate-home-1",
+        )
+        uow.identity.add_alias(
+            "team-duplicate",
+            EntityType.TEAM,
+            "Home FC Duplicate",
+            provider="api-football",
+        )
+    for source_name, content, retrieved_at in (
+        (
+            "sporttery",
+            b"sporttery-fresh",
+            datetime(2026, 8, 24, 9, 30, tzinfo=UTC),
+        ),
+        (
+            "intl",
+            b"international-stale",
+            datetime(2026, 8, 24, 1, 0, tzinfo=UTC),
+        ),
+    ):
+        kernel.artifact_ingest.ingest(
+            ArtifactIngestRequest(
+                content=content,
+                content_type="application/json",
+                source_name=source_name,
+                source_type="fixture",
+                actor_id=f"source:{source_name}",
+                actor_role=ActorRole.CONNECTOR,
+                idempotency_key=f"fixture:artifact:{source_name}",
+                retrieved_at=retrieved_at,
+            )
+        )
+    kernel.workflow.record_adjudication(
+        RecordAdjudicationRequest(
+            subject_type="claim",
+            subject_id="claim-before",
+            decision="approve",
+            reason="AI must not adjudicate",
+            evidence_rejected=[],
+            alternative={},
+            supersedes_adjudication_id=None,
+            actor_id="model:fixture",
+            actor_role=ActorRole.AI_ANALYST,
+            idempotency_key="fixture:rejected-adjudication",
+            requested_at=datetime(2026, 8, 24, 9, 55, tzinfo=UTC),
+        )
+    )
+    return seeded_product
 
 
 @pytest.fixture
