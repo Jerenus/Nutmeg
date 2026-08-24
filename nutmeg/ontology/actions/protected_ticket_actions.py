@@ -279,6 +279,13 @@ class ProtectedTicketActions:
                     adjudication is None
                     or adjudication.decision != "accept_warning"
                     or not adjudication.reason.strip()
+                    or (
+                        not adjudication.evidence_rejected
+                        and adjudication.alternative.get(
+                            "no_evidence_rejected_acknowledged"
+                        )
+                        is not True
+                    )
                 ):
                     raise ValueError(f"unadjudicated WARN {finding_id}")
                 warning_adjudications.append(adjudication.adjudication_id)
@@ -463,7 +470,7 @@ class ProtectedTicketActions:
                 raise ValueError("confirmation binding mismatch")
             if challenge.consumed_at is not None:
                 raise ValueError("confirmation is already consumed")
-            if _parse_aware(challenge.expires_at, "expires_at") < request.requested_at:
+            if _parse_aware(challenge.expires_at, "expires_at") <= request.requested_at:
                 raise ValueError("confirmation has expired")
             if _parse_aware(artifact.deadline_at, "deadline_at") <= request.requested_at:
                 raise ValueError("ticket deadline has passed")
@@ -480,12 +487,12 @@ class ProtectedTicketActions:
                 or artifact.channel != request.channel
             ):
                 raise ValueError("confirmation binding mismatch")
-            if request.placement_mode != "manual":
-                raise ValueError("connector placement is unavailable")
+            if request.placement_mode not in {"manual", "connector"}:
+                raise ValueError("placement mode is invalid")
             if not request.external_reference.strip():
-                raise ValueError("manual external_reference is required")
+                raise ValueError(f"{request.placement_mode} external_reference is required")
             if not request.receipt_content or not request.receipt_content_type.strip():
-                raise ValueError("manual receipt is required")
+                raise ValueError(f"{request.placement_mode} receipt is required")
 
             legs = _artifact_legs(artifact)
             booking = book_ticket_rows(
@@ -508,8 +515,8 @@ class ProtectedTicketActions:
                     artifact_retrieval_id=retrieval_id,
                     artifact_id=receipt.artifact_id,
                     source_run_id=None,
-                    source_name="manual-ticket-receipt",
-                    source_type="manual",
+                    source_name=f"{request.placement_mode}-ticket-receipt",
+                    source_type=request.placement_mode,
                     reported_content_type=request.receipt_content_type,
                     canonical_url=None,
                     requested_url=None,
@@ -524,7 +531,7 @@ class ProtectedTicketActions:
                     ticket_placement_id=placement_id,
                     ticket_artifact_id=artifact.ticket_artifact_id,
                     ticket_id=booking.ticket_id,
-                    placement_mode="manual",
+                    placement_mode=request.placement_mode,
                     external_reference=request.external_reference,
                     receipt_artifact_id=receipt.artifact_id,
                     receipt_retrieval_id=retrieval_id,

@@ -75,7 +75,18 @@ def _batch(
         composition={
             "total_stake_yuan": 100 if state not in {"empty", "approved_empty"} else 0,
             "n_tickets": 1 if state not in {"empty", "approved_empty"} else 0,
-            "tickets": [],
+            "tickets": (
+                [
+                    {
+                        "structure": "single",
+                        "n_legs": 1,
+                        "stake_yuan": 100,
+                        "computed_hit_prob": 0.55,
+                    }
+                ]
+                if state not in {"empty", "approved_empty"}
+                else []
+            ),
         },
         audit_state=audit_state,
         audit_findings=[finding] if finding is not None else [],
@@ -257,6 +268,11 @@ def test_ticket_workbench_renders_matrix_audit_revisions_and_confirmation(
     assert 'data-action="confirm-ticket-placement"' in html
     assert "批准空仓" in html
     assert 'aria-live="polite"' in html
+    assert 'data-composition-summary="true"' in html
+    assert "票数" in html and "1 张" in html
+    assert "总额" in html and "100 元" in html
+    assert "结构" in html and "single" in html
+    assert "组合覆盖" in html and "1 腿" in html
 
 
 def test_ticket_workbench_escapes_untrusted_content_and_keeps_error_blocked(
@@ -283,6 +299,8 @@ def test_warn_adjudication_is_explicit_and_actor_never_enters_forms(
     assert 'data-action="ticket-warn-adjudication"' in html
     assert 'name="reason"' in html
     assert 'name="evidence_rejected"' in html
+    assert 'name="no_evidence_rejected"' in html
+    assert "明确确认没有拒绝任何证据" in html
     assert 'name="actor_role"' not in html
     assert 'name="actor_id"' not in html
     assert 'class="skip-link" href="#main-content"' in html

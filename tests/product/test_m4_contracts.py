@@ -19,7 +19,11 @@ from nutmeg.product.contracts import (
     RemoveTicketLegCommand,
     TicketLegCommand,
 )
-from nutmeg.product.tickets import ProductTicketService
+from nutmeg.product.errors import ProductTicketError
+from nutmeg.product.tickets import (
+    ConnectorPlacementReceipt,
+    ProductTicketService,
+)
 
 AT = datetime(2026, 8, 24, 10, tzinfo=UTC)
 DEADLINE = datetime(2026, 8, 24, 12, tzinfo=UTC)
@@ -137,6 +141,19 @@ class _ProtectedTicketSpy:
         return _outcome("confirm_ticket_placement")
 
 
+class _FakeConnector:
+    def __init__(self) -> None:
+        self.requests: list[object] = []
+
+    def place(self, request):
+        self.requests.append(request)
+        return ConnectorPlacementReceipt(
+            external_reference="connector-order-001",
+            receipt_content=b"fake connector receipt",
+            receipt_content_type="application/json",
+        )
+
+
 def _outcome(action_type: str) -> ActionOutcome:
     return ActionOutcome(
         action_id=f"action-{action_type}",
@@ -187,3 +204,65 @@ def test_product_ticket_service_assigns_human_actor_and_decodes_receipt() -> Non
     )
     assert all(request.actor_id == "operator:owner" for request in actions.requests)
     assert actions.requests[-1].receipt_content == receipt
+
+
+def test_product_ticket_service_routes_connector_mode_through_configured_port() -> None:
+    actions = _ProtectedTicketSpy()
+    connector = _FakeConnector()
+    service = ProductTicketService(
+        actions,
+        actor_id="operator:owner",
+        clock=lambda: AT,
+        connector=connector,
+    )
+
+    response = service.confirm_placement(
+        "ticket-artifact-1",
+        ConfirmPlacementCommand(
+            confirmation_id="confirmation-1",
+            nonce="nonce-once",
+            ticket_hash="a" * 64,
+            amount=100.0,
+            currency="CNY",
+            channel="jczq",
+            placement_mode="connector",
+            external_reference="browser-cannot-choose-this",
+            idempotency_key="m4:confirm:connector",
+        ),
+    )
+
+    assert response.status == "committed"
+    assert len(connector.requests) == 1
+    connector_request = connector.requests[0]
+    assert connector_request.ticket_artifact_id == "ticket-artifact-1"
+    assert connector_request.ticket_hash == "a" * 64
+    assert not hasattr(connector_request, "nonce")
+    persisted = actions.requests[-1]
+    assert persisted.placement_mode == "connector"
+    assert persisted.external_reference == "connector-order-001"
+    assert persisted.receipt_content == b"fake connector receipt"
+    assert persisted.receipt_content_type == "application/json"
+
+
+def test_product_ticket_service_blocks_connector_mode_when_port_is_absent() -> None:
+    actions = _ProtectedTicketSpy()
+    service = ProductTicketService(actions, actor_id="operator:owner", clock=lambda: AT)
+
+    with pytest.raises(ProductTicketError) as captured:
+        service.confirm_placement(
+            "ticket-artifact-1",
+            ConfirmPlacementCommand(
+                confirmation_id="confirmation-1",
+                nonce="nonce-once",
+                ticket_hash="a" * 64,
+                amount=100.0,
+                currency="CNY",
+                channel="jczq",
+                placement_mode="connector",
+                external_reference="ignored",
+                idempotency_key="m4:confirm:no-connector",
+            ),
+        )
+
+    assert captured.value.code == "connector_unavailable"
+    assert actions.requests == []

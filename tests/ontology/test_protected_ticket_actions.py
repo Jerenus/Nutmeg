@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -364,6 +364,68 @@ def test_warn_requires_matching_human_adjudication_before_approval(
         ]
         assert uow.finance.count_tickets() == 0
         assert uow.finance.ledger_balance("acct-jczq") == 0.0
+
+
+def test_warn_with_empty_evidence_requires_explicit_no_rejection_acknowledgment(
+    tmp_path: Path,
+) -> None:
+    kernel, forecast_id = _setup(tmp_path)
+    created = kernel.protected_tickets.create_ticket_batch(
+        _create_request(
+            _leg(
+                forecast_id,
+                faces="31",
+                nondirectional_flags=("two_way_instability",),
+            )
+        )
+    )
+    draft = _created_row(kernel, created)
+    assert draft is not None
+    warning = next(item for item in draft.audit_findings if item["level"] == "WARN")
+    finding_id = ticket_audit_finding_id(
+        draft.ticket_batch_revision_id, warning
+    )
+    common = {
+        "subject_type": "ticket_audit_finding",
+        "subject_id": finding_id,
+        "decision": "accept_warning",
+        "reason": "Accept the disclosed residual risk.",
+        "evidence_rejected": [],
+        "supersedes_adjudication_id": None,
+        "actor_id": "operator:owner",
+        "actor_role": ActorRole.JUDGE_OPERATOR,
+        "requested_at": AT,
+    }
+    first = kernel.workflow.record_adjudication(
+        RecordAdjudicationRequest(
+            **common,
+            alternative={},
+            idempotency_key="m4:warn:no-empty-ack",
+        )
+    )
+
+    with pytest.raises(ValueError, match="unadjudicated WARN"):
+        kernel.protected_tickets.approve_ticket_batch(
+            _approve_request(draft.ticket_batch_id, 1, key="m4:approve:no-empty-ack")
+        )
+
+    first_id = first.result_refs[0].object_id
+    kernel.workflow.record_adjudication(
+        RecordAdjudicationRequest(
+            **{
+                **common,
+                "supersedes_adjudication_id": first_id,
+                "requested_at": AT + timedelta(seconds=1),
+            },
+            alternative={"no_evidence_rejected_acknowledged": True},
+            idempotency_key="m4:warn:with-empty-ack",
+        )
+    )
+    approved = kernel.protected_tickets.approve_ticket_batch(
+        _approve_request(draft.ticket_batch_id, 1, key="m4:approve:with-empty-ack")
+    )
+
+    assert approved.status is ActionStatus.COMMITTED
 
 
 def test_approve_empty_slate_writes_no_ticket_artifact_or_money(tmp_path: Path) -> None:

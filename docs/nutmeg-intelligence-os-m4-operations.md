@@ -1,6 +1,6 @@
 # Nutmeg Intelligence OS M4 Operations Contract
 
-Date: 2026-08-24  
+Date: 2026-08-24
 Scope: local Ticket and Adjudication Workbench only
 
 ## 1. Authority boundary
@@ -128,4 +128,3 @@ During M4, never:
 - reuse a nonce, change a confirmation payload under the same idempotency key, or
   backdate a deadline;
 - run tests or replays against the production data directory.
-

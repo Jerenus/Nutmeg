@@ -1,7 +1,7 @@
 # Nutmeg Intelligence OS M4 - Ticket, Audit, and Protected Confirmation Design
 
-Date: 2026-08-24  
-Status: Approved by the program architecture and the operator's continuous implementation authorization  
+Date: 2026-08-24
+Status: Approved by the program architecture and the operator's continuous implementation authorization
 Scope: M4 only; M1-M3 remain closed unless a regression is found
 
 ## 1. Outcome

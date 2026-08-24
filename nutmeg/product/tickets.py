@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Protocol
 
 from nutmeg.ontology.actions.models import ActionOutcome, ActorRole
 from nutmeg.ontology.actions.protected_ticket_actions import (
@@ -29,6 +31,34 @@ from nutmeg.product.contracts import (
 from nutmeg.product.errors import ProductNotFoundError, ProductTicketError
 
 
+@dataclass(frozen=True, slots=True)
+class ConnectorPlacementRequest:
+    ticket_artifact_id: str
+    confirmation_id: str
+    ticket_hash: str
+    amount: float
+    currency: str
+    channel: str
+    idempotency_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorPlacementReceipt:
+    external_reference: str
+    receipt_content: bytes
+    receipt_content_type: str
+
+    def __post_init__(self) -> None:
+        if not self.external_reference.strip():
+            raise ValueError('connector external_reference is required')
+        if not self.receipt_content or not self.receipt_content_type.strip():
+            raise ValueError('connector receipt is required')
+
+
+class TicketPlacementConnector(Protocol):
+    def place(self, request: ConnectorPlacementRequest) -> ConnectorPlacementReceipt: ...
+
+
 class ProductTicketService:
     def __init__(
         self,
@@ -36,7 +66,7 @@ class ProductTicketService:
         *,
         actor_id: str,
         clock: Callable[[], datetime] | None = None,
-        connector=None,
+        connector: TicketPlacementConnector | None = None,
     ) -> None:
         self._actions = protected_actions
         self._actor_id = actor_id
@@ -125,19 +155,37 @@ class ProductTicketService:
     def confirm_placement(
         self, ticket_artifact_id: str, command: ConfirmPlacementCommand
     ) -> ProductActionResponse:
-        if command.placement_mode == 'manual' and (
-            command.receipt_base64 is None or command.receipt_content_type is None
-        ):
-            raise ProductTicketError(
-                'receipt_required',
-                'manual receipt and content type are required',
-                status_code=422,
+        if command.placement_mode == 'connector':
+            if self._connector is None:
+                raise ProductTicketError(
+                    'connector_unavailable',
+                    'connector placement is unavailable',
+                    status_code=503,
+                )
+            connector_receipt = self._connector.place(
+                ConnectorPlacementRequest(
+                    ticket_artifact_id=ticket_artifact_id,
+                    confirmation_id=command.confirmation_id,
+                    ticket_hash=command.ticket_hash,
+                    amount=command.amount,
+                    currency=command.currency,
+                    channel=command.channel,
+                    idempotency_key=command.idempotency_key,
+                )
             )
-        receipt = (
-            base64.b64decode(command.receipt_base64, validate=True)
-            if command.receipt_base64 is not None
-            else b''
-        )
+            external_reference = connector_receipt.external_reference
+            receipt = connector_receipt.receipt_content
+            receipt_content_type = connector_receipt.receipt_content_type
+        else:
+            if command.receipt_base64 is None or command.receipt_content_type is None:
+                raise ProductTicketError(
+                    'receipt_required',
+                    'manual receipt and content type are required',
+                    status_code=422,
+                )
+            external_reference = command.external_reference
+            receipt = base64.b64decode(command.receipt_base64, validate=True)
+            receipt_content_type = command.receipt_content_type
         outcome = self._execute(
             lambda: self._actions.confirm_ticket_placement(
                 ConfirmTicketPlacementRequest(
@@ -149,9 +197,9 @@ class ProductTicketService:
                     currency=command.currency,
                     channel=command.channel,
                     placement_mode=command.placement_mode,
-                    external_reference=command.external_reference,
+                    external_reference=external_reference,
                     receipt_content=receipt,
-                    receipt_content_type=command.receipt_content_type or '',
+                    receipt_content_type=receipt_content_type,
                     actor_id=self._actor_id,
                     actor_role=ActorRole.JUDGE_OPERATOR,
                     idempotency_key=command.idempotency_key,

@@ -2203,6 +2203,43 @@ textarea:focus-visible,
   resize: vertical;
 }
 
+.ticket-empty-evidence-ack {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ticket-empty-evidence-ack input {
+  width: auto;
+  min-width: 18px;
+  margin-top: 2px;
+}
+
+.ticket-composition-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 14px 0;
+  background: var(--line);
+}
+
+.ticket-composition-summary div {
+  min-width: 0;
+  padding: 10px;
+  background: var(--paper);
+}
+
+.ticket-composition-summary dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.ticket-composition-summary dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
 .audit-hard-stop,
 .audit-resolved,
 .audit-clean {

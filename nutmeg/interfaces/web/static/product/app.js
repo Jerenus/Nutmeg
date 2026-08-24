@@ -226,8 +226,13 @@
 
     if (action === "ticket-warn-adjudication") {
       const rejected = commaValues(values.get("evidence_rejected"));
-      submitMutation(form, "正在写入 WARN 人工裁决…", () =>
-        postJson("/api/v1/actions", {
+      const noEvidenceRejectedAcknowledged =
+        values.get("no_evidence_rejected") === "acknowledged";
+      submitMutation(form, "正在写入 WARN 人工裁决…", () => {
+        if (!rejected.length && !noEvidenceRejectedAcknowledged) {
+          throw new Error("请填写拒绝的证据，或明确确认没有拒绝任何证据");
+        }
+        return postJson("/api/v1/actions", {
           action_type: "record_adjudication",
           idempotency_key: `ui:ticket-warn:${crypto.randomUUID()}`,
           payload: {
@@ -239,11 +244,14 @@
               object_type: "claim",
               object_id: objectId,
             })),
-            alternative: {},
+            alternative: {
+              no_evidence_rejected_acknowledged:
+                !rejected.length && noEvidenceRejectedAcknowledged,
+            },
           },
           expected_versions: {},
-        }),
-      );
+        });
+      });
       return;
     }
 

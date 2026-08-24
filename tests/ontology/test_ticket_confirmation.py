@@ -204,6 +204,24 @@ def test_expired_confirmation_never_books(tmp_path: Path) -> None:
         assert uow.finance.count_tickets() == 0
 
 
+def test_confirmation_is_expired_at_exact_expiry_instant(tmp_path: Path) -> None:
+    kernel, _forecast_id, artifact = _approved(tmp_path)
+    issued = _issue(kernel, artifact.ticket_artifact_id)
+
+    with pytest.raises(ValueError, match="expired"):
+        kernel.protected_tickets.confirm_ticket_placement(
+            _confirm(
+                artifact,
+                issued,
+                idempotency_key="m4:confirm:exact-expiry",
+                requested_at=AT + timedelta(minutes=5),
+            )
+        )
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.finance.count_tickets() == 0
+
+
 def test_duplicate_confirmation_replays_once_and_consumed_nonce_cannot_rebook(
     tmp_path: Path,
 ) -> None:
@@ -301,7 +319,7 @@ def test_database_failure_rolls_back_booking_and_challenge_consumption(
     assert challenge is not None and challenge.consumed_at is None
 
 
-def test_manual_confirmation_requires_receipt_and_connector_is_disabled(
+def test_manual_confirmation_requires_receipt(
     tmp_path: Path,
 ) -> None:
     kernel, _forecast_id, artifact = _approved(tmp_path)
@@ -316,12 +334,30 @@ def test_manual_confirmation_requires_receipt_and_connector_is_disabled(
                 idempotency_key="m4:confirm:no-receipt",
             )
         )
-    with pytest.raises(ValueError, match="connector.*unavailable"):
-        kernel.protected_tickets.confirm_ticket_placement(
-            _confirm(
-                artifact,
-                issued,
-                placement_mode="connector",
-                idempotency_key="m4:confirm:connector",
-            )
+
+
+def test_connector_receipt_is_recorded_without_manual_receipt_semantics(
+    tmp_path: Path,
+) -> None:
+    kernel, _forecast_id, artifact = _approved(tmp_path)
+    issued = _issue(kernel, artifact.ticket_artifact_id)
+
+    outcome = kernel.protected_tickets.confirm_ticket_placement(
+        _confirm(
+            artifact,
+            issued,
+            placement_mode="connector",
+            external_reference="connector-order-001",
+            receipt_content=b"fake connector receipt",
+            receipt_content_type="application/json",
+            idempotency_key="m4:confirm:connector-receipt",
         )
+    )
+
+    assert outcome.status is ActionStatus.COMMITTED
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        placement = uow.tickets.placement_for_artifact(artifact.ticket_artifact_id)
+    assert placement is not None
+    assert placement.placement_mode == "connector"
+    assert placement.external_reference == "connector-order-001"
+    assert placement.receipt_artifact_id is not None

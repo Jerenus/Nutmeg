@@ -735,7 +735,7 @@ git diff --check
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit Task 9**
+- [x] **Step 6: Commit Task 9**
 
 ```bash
 UV_FROZEN=1 git add tests/product/test_m4_e2e.py docs/nutmeg-intelligence-os-m4-operations.md .pre-commit-config.yaml nutmeg tests
@@ -749,7 +749,7 @@ UV_FROZEN=1 git commit -m "test(product): prove protected ticket lifecycle"
 - Modify: this plan only to check tasks and record exact evidence
 - Modify production only if a test-first browser/replay defect is proven
 
-- [ ] **Step 1: Run repository static and full test gates from clean state**
+- [x] **Step 1: Run repository static and full test gates from clean state**
 
 Run:
 
@@ -765,7 +765,7 @@ git diff --check
 
 Record exact pass counts in this plan.
 
-- [ ] **Step 2: Run browser verification at desktop and narrow sizes**
+- [x] **Step 2: Run browser verification at desktop and narrow sizes**
 
 Start the product against an isolated fixture database. Use the browser skill to inspect
 1440x1000 and 390x844 for clean, ERROR, WARN, approved, confirmation, placed, empty,
@@ -775,7 +775,7 @@ Verify HTTP 200, no horizontal overflow, no clipped IDs/hash, controls at least 
 skip link first, visible focus, sensible keyboard order, no console/page errors, escaped
 untrusted text, confirmation separation, and SSE reconnection.
 
-- [ ] **Step 3: Run an isolated frozen M3-store replay**
+- [x] **Step 3: Run an isolated frozen M3-store replay**
 
 Copy the prior verified M3 frozen root to a new `mktemp -d` root. Set all relevant data
 paths to the copy, keep fetch/providers/connectors/dispatch disabled, apply migration 12,
@@ -792,19 +792,19 @@ and execute one manual M4 lifecycle with a fixture text receipt. Verify:
 
 Record the resolved temporary path and counts in this plan; do not commit temporary data.
 
-- [ ] **Step 4: Invoke project decision-chain verification**
+- [x] **Step 4: Invoke project decision-chain verification**
 
 Read and execute the `verify` skill with `UV_FROZEN=1`. Use replay/no-fetch inputs and
 report any external-source unavailability explicitly. No stage may silently fall back
 to legacy production data.
 
-- [ ] **Step 5: Invoke the mandatory completion/spec-coverage gate**
+- [x] **Step 5: Invoke the mandatory completion/spec-coverage gate**
 
 Read and execute `speckit-superb-verify` and `verification-before-completion`. Build a
 requirement-to-test/evidence matrix for every M4 design section. Do not mark a task done
 without fresh command output.
 
-- [ ] **Step 6: Record evidence, commit, and inspect without merging**
+- [x] **Step 6: Record evidence, commit, and inspect without merging**
 
 Check every box only after its evidence exists. Add pass counts, browser screenshot
 paths, replay counts, no-side-effect statement, and the spec coverage matrix to this
@@ -827,24 +827,125 @@ M4 is complete only when Task 10 passes. Completion does not authorize Scoreboar
 cutover, scheduler restoration, live connector configuration, or production betting.
 M5 begins with a separate focused design and plan based on the verified M4 interfaces.
 
+## M4 verification evidence
+
+- Verified at `2026-08-24T09:48:51Z` against code commit
+  `79c455aa8b7c3afbb779afca8dfc912d1cd2892f` plus the final review-fix commit.
+- Fresh repository gates: Ruff passed; `compileall` passed; full repository `1243 passed`;
+  product `145 passed`; ontology `203 passed`; all five pre-commit hooks passed; and
+  `git diff --check` passed.
+- The in-app browser Node REPL was unavailable in this harness. Verification used the existing
+  local Playwright 1.58.0 and Chromium 145.0.7632.6 without downloads. The post-review isolated
+  browser root was `/Users/jz71/.openclaw/tmp/nutmeg-m4-browser-l8x29l6m`.
+- At 1440x1000 and 390x844, the workbench returned HTTP 200 for clean, ERROR, WARN, approved,
+  open-confirmation, placed, and approved-empty states. Document width equaled viewport width,
+  every visible narrow button was 44 px high, long IDs/hashes fit, the skip link was first with a
+  3 px visible outline, injected markup remained escaped text, and the confirmation surface was
+  separate from composition. All six batch states rendered the server-provided ticket count,
+  amount, structure, and coverage summary; the WARN form rendered the explicit empty-evidence
+  acknowledgement. Connected-state browser verification had zero console/page errors.
+- Killing the isolated fixture produced the explicit offline state and restarting the same root
+  restored `connected`; the forced offline interval emitted the expected incomplete-stream
+  transport error only. Browser evidence:
+  `docs/superpowers/evidence/m4/workbench-desktop.png`,
+  `docs/superpowers/evidence/m4/workbench-390.png`,
+  `docs/superpowers/evidence/m4/workbench-offline-390.png`, and
+  `docs/superpowers/evidence/m4/workbench-restored-390.png`.
+- Screenshot SHA-256 values are respectively
+  `9f66315dca09b09e68139c02d300658ba223c524ef6d6345c5c28008b5f39e19`,
+  `3dd49a50dda54cee83ee8c511fb38a4317b3c3d07fb3d7277d0fa4a420c8afaf`,
+  `4eeca527eb41104c5599890e742cf0c2714f6427f78f3616b36224630bb56b9d`, and
+  `6be2af45d0330ce7b82773b5fada58f836b9e61269fe0bcce0eaeb4299628844`.
+
+### Frozen M3-store replay
+
+- Final isolated root: `/tmp/nutmeg-m4-verified-replay.tt2iol`, copied from verified M3 root
+  `/tmp/nutmeg-m3-verified-replay.KdnfN8`. Before migration, both database files had SHA-256
+  `b26e418bca0610a86307f3ac273d8c6a772518702ae70047f95cce800dc38acb`; the source remained
+  schema 11, read-only, healthy, and unchanged. Migration 12 alone upgraded the copy to schema 12.
+- Preserved pre-M4 counts: 468 Teams, 11 Matches, 18 MarketSnapshots, 12 ForecastRevisions
+  (11 committed + 1 superseded), 1 EvidenceBundle, 1 AgentProposal, 1 Adjudication, 70 Actions,
+  70 outbox events, 2 SourceArtifacts, 2 ArtifactRetrievals, and zero accounts/tickets/settlements.
+- Real frozen Match `match-fc438c246570449580dacc8ae3af3586` used committed Forecast
+  `fr-f93aed3bd8ac496dadb31c0ef91cf599` and frozen quote
+  `quote-2d452ade3f134c3b95cc25aa28510a79`. The modal-preserving two-face slate produced one WARN;
+  a judge Adjudication with `evidence_rejected` resolved it.
+- Final M4 objects: 2 immutable batch revisions, 1 audited artifact, 1 confirmation challenge,
+  1 placement, 1 formal Ticket, 1 BetLeg, 1 cash account, exactly 1 negative stake transaction,
+  and 0 settlements. Actions/outbox advanced from 70 to 76, SourceArtifacts from 2 to 6,
+  ArtifactRetrievals from 2 to 3, and Adjudications from 1 to 2; all pre-existing counts stayed
+  unchanged.
+- Audited artifact `tat-c3b8b90f2af04c2070ad40605af504eb` and its CAS bytes both hash to
+  `c3b8b90f2af04c2070ad40605af504eb41c536c9d265865f156422096faac391`.
+  Ticket `tk-6ebeb257306744e4b0986147b583f374` retained the exact Forecast/quote references and cash
+  transaction `cx-027a48bb790542f0b7ce2e41784fb9fa` was the single stake debit. The nonce existed durably
+  only as SHA-256, receipt bytes matched their CAS artifact, and Action/event feeds contained
+  neither nonce nor receipt base64.
+- Artifact and formal Ticket lineage returned HTTP 200 with approved-revision, source-artifact,
+  placement, Ticket, creator-Action, and Forecast edges. Dry `decision-close` produced the legal
+  empty slate; dry `decision-settle` consumed local `{}` results and created 0 settlements.
+- Project `verify` ran in separate root `/tmp/nutmeg-m4-decision-verify.k7VyL2`: historical
+  `decision-sense` replayed 11 Matches, `decision-backfill` added 22 shadow baselines, dry close
+  and settle succeeded, and schema 12 remained healthy with 11 Matches, 18 MarketSnapshots,
+  12 ForecastRevisions, 0 Tickets, and 0 Settlements. Current ontology-v2 report emitted Markdown,
+  not the older recipe's PDF checkpoint; this is unchanged pre-M4 compatibility behavior.
+- All commands pinned `NUTMEG_DATA_DIR` to an isolated root and kept providers, connector,
+  Telegram, scheduler, public dispatch, and funds actions disabled. Production data and
+  `.nutmeg-data/scoreboard.json` were not mutated.
+
+### M4 design coverage matrix
+
+| Design section | Verification evidence |
+| --- | --- |
+| 1. Outcome | `tests/product/test_m4_e2e.py` full HTTP lifecycle plus frozen replay |
+| 2. Locked constraints | composition/audit delegation tests, protected Action permissions, API security/redaction tests, no-side-effect replay |
+| 3. Selected approach | legacy characterization in `tests/decision/test_close_settle_adapter.py` plus protected two-stage E2E |
+| 4. Domain model | `tests/ontology/test_protected_ticket_actions.py`, `tests/ontology/test_ticket_confirmation.py`, and E2E exact counts |
+| 5. Persistence/migration 12 | `tests/ontology/test_m4_ticket_migration.py` and schema-11-to-12 frozen replay |
+| 6. Service boundaries | `tests/ontology/test_ticket_composition.py`, `tests/product/test_m4_contracts.py`, `test_m4_queries.py`, and `test_m4_api.py` |
+| 7. Workbench experience | `tests/product/test_m4_ui.py` plus four Playwright captures at both target viewports |
+| 8. Failure/restart/concurrency | protected Action/confirmation tests and `test_m4_e2e.py` restart, replay, ERROR/WARN, empty-slate paths |
+| 9. Verification strategy | full/static/pre-commit gates, browser evidence, frozen replay, and project `verify` evidence above |
+| 10. Explicit non-goals | operations contract, connector-default-off tests, isolated roots, and no-live-side-effect statement |
+
 ## M4 spec coverage checklist
 
-| Requirement | Planned evidence |
+| Requirement | Actual evidence |
 | --- | --- |
-| One composition implementation | Tasks 1, 9, 10 |
-| One C0-C7 audit implementation | Tasks 1, 4, 9, 10 |
-| Current committed Forecast binding | Tasks 3, 5, 6 |
-| Immutable revisions and comparison | Tasks 2-4, 6, 8 |
-| ERROR non-overridable | Tasks 4, 7-10 |
-| WARN + `evidence_rejected` | Tasks 4, 8-10 |
-| Immutable per-ticket CAS artifact/hash | Tasks 4, 6, 9, 10 |
-| Approval does not debit | Tasks 4, 9, 10 |
-| Fresh per-ticket confirmation | Tasks 5, 7-10 |
-| AI cannot approve/confirm/dispatch | Tasks 2-5, 7, 9 |
-| Manual receipt and placement | Tasks 5, 7-10 |
-| Optional isolated connector | Tasks 5, 7, 9 |
-| Empty slate legal and explicit | Tasks 1, 3, 4, 8-10 |
-| Duplicate/stale/restart recovery | Tasks 2, 5, 7, 9, 10 |
-| CLI/Express compatibility | Tasks 3-5, 9, 10 |
-| Desktop/mobile/accessibility | Tasks 8, 10 |
-| No live side effects | Scope lock, Tasks 9-10 |
+| One composition implementation | `test_ticket_composition.py`, authoritative Express regressions, E2E |
+| One C0-C7 audit implementation | `test_ticket_composition.py`, `test_legs_audit.py`, ERROR/WARN E2E |
+| Current committed Forecast binding | protected Action and confirmation tests plus frozen Forecast/quote replay |
+| Immutable revisions and comparison | migration/repository, protected Action, M4 query, and UI tests |
+| ERROR non-overridable | protected Action, API error, UI hard-stop, and E2E tests |
+| WARN + `evidence_rejected` | protected Action requires evidence or explicit empty-list acknowledgement; UI, E2E, and frozen judge-Adjudication replay |
+| Immutable per-ticket CAS artifact/hash | protected Action/query/E2E tests plus CAS byte/hash frozen replay |
+| Approval does not debit | protected Action and E2E pre-confirmation ledger assertions |
+| Fresh per-ticket confirmation | confirmation, API, UI, and E2E restart tests |
+| AI cannot approve/confirm/dispatch | migration permission, protected Action, API actor-spoof, and no-dispatch tests |
+| Manual receipt and placement | confirmation and E2E exact Ticket/BetLeg/debit/receipt assertions |
+| Optional isolated connector | fake `TicketPlacementConnector` port/receipt test plus connector-unavailable default and stable API error tests |
+| Empty slate legal and explicit | composition, protected Action, UI, and E2E approved-empty tests |
+| Duplicate/stale/restart recovery | repository/action/confirmation/API/E2E recovery tests |
+| CLI/Express compatibility | Express, close/settle adapter regressions, and two isolated dry chains |
+| Desktop/mobile/accessibility | M4 UI tests and four verified Playwright captures |
+| No live side effects | operations contract, isolated paths, unchanged source hash, and explicit replay statement |
+
+### Post-implementation critique closure
+
+The spec-aligned review found four Important omissions and one repository-hygiene issue.
+All were closed test-first before the final gate:
+
+- the optional `TicketPlacementConnector` port now has an explicit typed request/receipt
+  contract, one fake implementation test, receipt persistence in connector mode, and a
+  default-off test proving no protected Action is called when the port is absent;
+- each immutable batch card renders the server-provided ticket count, total amount,
+  structure, and combination coverage without browser arithmetic;
+- an empty `evidence_rejected` list satisfies a WARN only when the operator records the
+  explicit `no_evidence_rejected_acknowledged` marker;
+- a confirmation is stale at the exact `expires_at` instant;
+- historical trailing whitespace in the M4 design and operations documents was removed,
+  and both base-to-head and working-tree `git diff --check` pass.
+
+The independent re-review found zero remaining Critical or Important M4 issues. The
+known external-side-effect recovery problem for a future live connector remains an
+explicit M6 concern; M4 ships no connector implementation or configuration.

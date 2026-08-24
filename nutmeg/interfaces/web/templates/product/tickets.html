@@ -140,6 +140,26 @@
                     </li>
                   {% endfor %}
                 </ol>
+                <dl class="ticket-composition-summary" data-composition-summary="true">
+                  <div><dt>票数</dt><dd>{{ batch.composition.n_tickets }} 张</dd></div>
+                  <div><dt>总额</dt><dd>{{ batch.composition.total_stake_yuan }} 元</dd></div>
+                  <div>
+                    <dt>结构</dt>
+                    <dd>
+                      {% if batch.composition.tickets %}
+                        {% for ticket in batch.composition.tickets %}{{ ticket.structure }}{% if not loop.last %} / {% endif %}{% endfor %}
+                      {% else %}空仓{% endif %}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>组合覆盖</dt>
+                    <dd>
+                      {% if batch.composition.tickets %}
+                        {% for ticket in batch.composition.tickets %}{{ ticket.n_legs }} 腿{% if not loop.last %} / {% endif %}{% endfor %}
+                      {% else %}0 腿{% endif %}
+                    </dd>
+                  </div>
+                </dl>
                 {% if batch.legs %}
                   <div class="ticket-leg-list">
                     {% for leg in batch.legs %}
@@ -239,7 +259,11 @@
                 {% else %}
                   <form data-action="ticket-warn-adjudication" data-finding-id="{{ finding.finding_id }}">
                     <label><span>裁决理由</span><textarea name="reason" required></textarea></label>
-                    <label><span>拒绝的证据 ID（逗号分隔，可留空）</span><input name="evidence_rejected"></label>
+                    <label><span>拒绝的证据 ID（逗号分隔）</span><input name="evidence_rejected"></label>
+                    <label class="ticket-empty-evidence-ack">
+                      <input type="checkbox" name="no_evidence_rejected" value="acknowledged">
+                      <span>若上项留空，我明确确认没有拒绝任何证据</span>
+                    </label>
                     <button type="submit">接受此 WARN</button>
                   </form>
                 {% endif %}
