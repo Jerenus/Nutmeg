@@ -506,7 +506,7 @@ UV_FROZEN=1 git commit -m "feat(ontology): protect ticket placement confirmation
 - Test: `tests/product/test_m4_contracts.py`
 - Test: `tests/product/test_m4_queries.py`
 
-- [ ] **Step 1: Write failing strict-contract tests**
+- [x] **Step 1: Write failing strict-contract tests**
 
 Define fixtures and expected DTO JSON for:
 
@@ -518,13 +518,13 @@ Define fixtures and expected DTO JSON for:
 - strict mutation DTOs rejecting unknown fields, actor role, negative expected version,
   naive timestamps, invalid base64, or amount not representable as fen.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/product/test_m4_contracts.py tests/product/test_m4_queries.py -q`
 
 Expected: M4 contracts and queries are absent.
 
-- [ ] **Step 3: Add strict DTOs**
+- [x] **Step 3: Add strict DTOs**
 
 Add `TicketWorkbenchResponse`, `TicketWorkbenchMatch`, `TicketSelection`,
 `TicketBatchRevisionSummary`, `TicketBatchHistoryResponse`, `TicketArtifactDetail`,
@@ -532,21 +532,21 @@ Add `TicketWorkbenchResponse`, `TicketWorkbenchMatch`, `TicketSelection`,
 `IssueConfirmationCommand/Response`, and `ConfirmPlacementCommand`. All extend current
 strict/versioned bases and expose only JSON-safe values.
 
-- [ ] **Step 4: Add temporal repository reads**
+- [x] **Step 4: Add temporal repository reads**
 
 Select current committed Forecast and latest quote per selection with SQLite
 `julianday()` cutoffs, never lexical timestamp comparison. Add reads for batch history,
 artifacts, placement, warning Adjudications, and exact object lookup. Stable ordering is
 kickoff/match ID, revision number, and ticket index.
 
-- [ ] **Step 5: Assemble Query Service and ProductTicketService**
+- [x] **Step 5: Assemble Query Service and ProductTicketService**
 
 The Query Service maps rows to DTOs and computes only display diffs, never domain
 arithmetic. ProductTicketService parses DTOs into ontology requests, assigns actor from
 the server, decodes receipt bytes, and delegates to ProtectedTicketActions. Its
 connector dependency defaults to `None`.
 
-- [ ] **Step 6: Run product and temporal regressions**
+- [x] **Step 6: Run product and temporal regressions**
 
 Run:
 
@@ -557,7 +557,7 @@ UV_FROZEN=1 uv run ruff check nutmeg/product tests/product/test_m4_contracts.py 
 
 Expected: all pass; no future quote/Forecast leaks through `as_of`.
 
-- [ ] **Step 7: Commit Task 6**
+- [x] **Step 7: Commit Task 6**
 
 ```bash
 UV_FROZEN=1 git add nutmeg/product tests/product/test_m4_contracts.py tests/product/test_m4_queries.py

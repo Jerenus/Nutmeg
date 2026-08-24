@@ -1,11 +1,14 @@
 """Strict, versioned DTOs exposed by the local Nutmeg application."""
 from __future__ import annotations
 
+import base64
+import binascii
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 SCHEMA_VERSION: Literal['1'] = '1'
 
@@ -427,3 +430,196 @@ class ProductActionResponse(VersionedContract):
     error_code: str | None = None
     error_detail: str | None = None
     committed_at: str | None = None
+
+
+class TicketLegCommand(StrictContract):
+    leg_key: str = Field(min_length=1)
+    match_id: str = Field(min_length=1)
+    match_no: int = Field(ge=1)
+    name: str = Field(min_length=1)
+    market_definition_id: str = Field(min_length=1)
+    selection_id: str = Field(min_length=1)
+    outcome_key: Literal['home', 'draw', 'away']
+    faces: str = Field(pattern=r'^[310]+$')
+    forecast_revision_id: str = Field(min_length=1)
+    entry_quote_id: str | None = None
+    odds: float = Field(gt=1.0)
+    line: str | None = None
+    bucket: str = Field(min_length=1)
+    fair: dict[str, float]
+    confidence: int = Field(ge=0, le=5)
+    directional_flags: list[tuple[str, str]] = Field(default_factory=list)
+    nondirectional_flags: list[str] = Field(default_factory=list)
+    anchor_integrity: Literal['pass', 'fail', 'symmetric_damage', 'unknown'] = 'unknown'
+    precedents: list[tuple[str, str, str]] = Field(default_factory=list)
+
+
+class TicketAuditFindingSummary(StrictContract):
+    finding_id: str
+    level: Literal['ERROR', 'WARN']
+    code: str
+    match_no: int | None = None
+    message: str
+    since: str
+    adjudication_id: str | None = None
+    adjudication_decision: str | None = None
+
+
+class TicketSelection(StrictContract):
+    market_definition_id: str
+    selection_id: str
+    outcome_key: str
+    line: str | None = None
+    quote_id: str | None = None
+    odds: float | None = None
+    captured_at: str | None = None
+    provider: str | None = None
+    eligible: bool
+    block_reasons: list[str] = Field(default_factory=list)
+
+
+class TicketWorkbenchMatch(StrictContract):
+    match_id: str
+    match_revision_id: str
+    match_no: int = Field(ge=1)
+    home_team: str
+    away_team: str
+    competition: str | None = None
+    kickoff_at: str
+    market_definition_id: str
+    forecast_revision_id: str | None = None
+    forecast_revision_no: int | None = None
+    belief_distribution: dict[str, float] | None = None
+    selections: list[TicketSelection] = Field(default_factory=list)
+    eligible: bool
+    block_reasons: list[str] = Field(default_factory=list)
+
+
+class TicketBatchRevisionSummary(StrictContract):
+    ticket_batch_revision_id: str
+    ticket_batch_id: str
+    revision_no: int = Field(ge=1)
+    supersedes_revision_id: str | None = None
+    run_date: date
+    channel: str
+    account_id: str
+    currency: str
+    deadline_at: str
+    state: Literal['draft', 'empty', 'approved', 'approved_empty']
+    content_hash: str
+    source_artifact_id: str
+    created_at: str
+    created_by_action_id: str
+    legs: list[TicketLegCommand] = Field(default_factory=list)
+    composition: dict[str, object] = Field(default_factory=dict)
+    audit_state: Literal['clean', 'warn', 'error']
+    audit_findings: list[TicketAuditFindingSummary] = Field(default_factory=list)
+    artifact_ids: list[str] = Field(default_factory=list)
+    added_leg_keys: list[str] = Field(default_factory=list)
+    removed_leg_keys: list[str] = Field(default_factory=list)
+    changed_leg_keys: list[str] = Field(default_factory=list)
+
+
+class TicketWorkbenchResponse(VersionedContract):
+    date: date
+    as_of: datetime
+    matches: list[TicketWorkbenchMatch] = Field(default_factory=list)
+    batch_revisions: list[TicketBatchRevisionSummary] = Field(default_factory=list)
+
+
+class TicketBatchHistoryResponse(VersionedContract):
+    ticket_batch_id: str
+    revisions: list[TicketBatchRevisionSummary] = Field(default_factory=list)
+
+
+class TicketArtifactDetail(VersionedContract):
+    ticket_artifact_id: str
+    ticket_batch_revision_id: str
+    ticket_index: int = Field(ge=0)
+    ticket_hash: str
+    source_artifact_id: str
+    amount: float = Field(gt=0)
+    currency: str
+    channel: str
+    deadline_at: str
+    payload: dict[str, object]
+    approved_at: str
+    approved_by_action_id: str
+    confirmation_state: Literal['not_issued', 'open', 'expired', 'consumed']
+    confirmation_id: str | None = None
+    confirmation_expires_at: str | None = None
+    placement_state: Literal['unplaced', 'placed']
+    ticket_placement_id: str | None = None
+    ticket_id: str | None = None
+    placement_mode: str | None = None
+    external_reference: str | None = None
+    receipt_artifact_id: str | None = None
+    receipt_retrieval_id: str | None = None
+    placed_at: str | None = None
+
+
+class CreateTicketBatchCommand(VersionedContract):
+    run_date: date
+    channel: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    currency: str = Field(min_length=1)
+    deadline_at: AwareDatetime
+    legs: list[TicketLegCommand]
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class RemoveTicketLegCommand(VersionedContract):
+    leg_key: str = Field(min_length=1)
+    expected_revision_no: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class ApproveTicketBatchCommand(VersionedContract):
+    expected_revision_no: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class IssueConfirmationCommand(VersionedContract):
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class IssueConfirmationResponse(ProductActionResponse):
+    confirmation_id: str | None = None
+    nonce: str | None = None
+    expires_at: str | None = None
+
+
+class ConfirmPlacementCommand(VersionedContract):
+    confirmation_id: str = Field(min_length=1)
+    nonce: str = Field(min_length=1)
+    ticket_hash: str = Field(min_length=1)
+    amount: float = Field(gt=0)
+    currency: str = Field(min_length=1)
+    channel: str = Field(min_length=1)
+    placement_mode: Literal['manual', 'connector']
+    external_reference: str = Field(min_length=1)
+    receipt_base64: str = Field(min_length=1)
+    receipt_content_type: str = Field(min_length=1)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+    @field_validator('amount')
+    @classmethod
+    def amount_must_be_whole_fen(cls, value: float) -> float:
+        try:
+            amount = Decimal(str(value))
+        except InvalidOperation as error:
+            raise ValueError('amount must be representable as whole fen') from error
+        if amount * 100 != (amount * 100).to_integral_value():
+            raise ValueError('amount must be representable as whole fen')
+        return value
+
+    @field_validator('receipt_base64')
+    @classmethod
+    def receipt_must_be_valid_base64(cls, value: str) -> str:
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError('receipt_base64 must be valid base64') from error
+        if not decoded:
+            raise ValueError('receipt_base64 must contain non-empty receipt bytes')
+        return value

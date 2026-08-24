@@ -5,6 +5,7 @@ import hashlib
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from nutmeg.ontology.actions.protected_ticket_actions import ticket_audit_finding_id
 from nutmeg.product.contracts import (
     ActionPage,
     ActionView,
@@ -38,6 +39,14 @@ from nutmeg.product.contracts import (
     PredictionSummary,
     ReadinessLevel,
     SourceHealthSummary,
+    TicketArtifactDetail,
+    TicketAuditFindingSummary,
+    TicketBatchHistoryResponse,
+    TicketBatchRevisionSummary,
+    TicketLegCommand,
+    TicketSelection,
+    TicketWorkbenchMatch,
+    TicketWorkbenchResponse,
     WorkflowObjectSummary,
 )
 from nutmeg.product.errors import ProductNotFoundError
@@ -417,6 +426,227 @@ class ProductQueryService:
                 for item in proposals
             ],
         )
+
+    def ticket_workbench(
+        self, day: date, *, as_of: datetime
+    ) -> TicketWorkbenchResponse:
+        cutoff = _aware(as_of, 'as_of')
+        start = datetime.combine(day, time.min, tzinfo=_SHANGHAI).astimezone(UTC)
+        end = start + timedelta(days=1)
+        records = self._repository.board_matches(
+            start.isoformat(), end.isoformat(), cutoff.isoformat()
+        )
+        matches: list[TicketWorkbenchMatch] = []
+        for match_no, record in enumerate(records, start=1):
+            forecast = self._repository.ticket_forecast_at(
+                record['match_id'], _DEFAULT_MARKET, cutoff.isoformat()
+            )
+            selection_rows = self._repository.ticket_selections_at(
+                record['match_id'], _DEFAULT_MARKET, cutoff.isoformat()
+            )
+            selections: list[TicketSelection] = []
+            for row in selection_rows:
+                reasons: list[str] = []
+                if forecast is None:
+                    reasons.append('no_committed_forecast')
+                if row['quote_id'] is None:
+                    reasons.append('no_active_quote')
+                selections.append(
+                    TicketSelection(
+                        market_definition_id=row['market_definition_id'],
+                        selection_id=row['selection_id'],
+                        outcome_key=row['outcome_key'],
+                        line=row['line'],
+                        quote_id=row['quote_id'],
+                        odds=row['decimal_odds'],
+                        captured_at=row['captured_at'],
+                        provider=row['provider'],
+                        eligible=not reasons,
+                        block_reasons=reasons,
+                    )
+                )
+            block_reasons: list[str] = []
+            if forecast is None:
+                block_reasons.append('no_committed_forecast')
+            if not any(row['quote_id'] is not None for row in selection_rows):
+                block_reasons.append('no_active_quote')
+            matches.append(
+                TicketWorkbenchMatch(
+                    match_id=record['match_id'],
+                    match_revision_id=record['match_revision_id'],
+                    match_no=match_no,
+                    home_team=record['home_team'],
+                    away_team=record['away_team'],
+                    competition=record['competition'],
+                    kickoff_at=record['scheduled_at'],
+                    market_definition_id=_DEFAULT_MARKET,
+                    forecast_revision_id=(
+                        forecast['forecast_revision_id'] if forecast else None
+                    ),
+                    forecast_revision_no=(
+                        forecast['revision_no'] if forecast else None
+                    ),
+                    belief_distribution=(
+                        forecast['belief_distribution'] if forecast else None
+                    ),
+                    selections=selections,
+                    eligible=not block_reasons,
+                    block_reasons=block_reasons,
+                )
+            )
+        batch_rows = self._repository.current_ticket_batches(
+            day.isoformat(), cutoff.isoformat()
+        )
+        return TicketWorkbenchResponse(
+            date=day,
+            as_of=cutoff,
+            matches=matches,
+            batch_revisions=self._ticket_batch_summaries(batch_rows),
+        )
+
+    def ticket_batch(self, ticket_batch_id: str) -> TicketBatchHistoryResponse:
+        rows = self._repository.ticket_batch_history(ticket_batch_id)
+        if not rows:
+            raise ProductNotFoundError(f'ticket batch {ticket_batch_id} not found')
+        return TicketBatchHistoryResponse(
+            ticket_batch_id=ticket_batch_id,
+            revisions=self._ticket_batch_summaries(rows),
+        )
+
+    def ticket_artifact(
+        self, ticket_artifact_id: str, *, as_of: datetime | None = None
+    ) -> TicketArtifactDetail:
+        row = self._repository.ticket_artifact(ticket_artifact_id)
+        if row is None:
+            raise ProductNotFoundError(
+                f'ticket artifact {ticket_artifact_id} not found'
+            )
+        cutoff = _aware(as_of or datetime.now(UTC), 'as_of')
+        confirmation = self._repository.latest_confirmation(ticket_artifact_id)
+        if confirmation is None:
+            confirmation_state = 'not_issued'
+        elif confirmation['consumed_at'] is not None:
+            confirmation_state = 'consumed'
+        elif _parse_iso(confirmation['expires_at']) < cutoff:
+            confirmation_state = 'expired'
+        else:
+            confirmation_state = 'open'
+        placed = row['ticket_placement_id'] is not None
+        return TicketArtifactDetail(
+            ticket_artifact_id=row['ticket_artifact_id'],
+            ticket_batch_revision_id=row['ticket_batch_revision_id'],
+            ticket_index=row['ticket_index'],
+            ticket_hash=row['ticket_hash'],
+            source_artifact_id=row['source_artifact_id'],
+            amount=row['amount'],
+            currency=row['currency'],
+            channel=row['channel'],
+            deadline_at=row['deadline_at'],
+            payload=row['payload'],
+            approved_at=row['approved_at'],
+            approved_by_action_id=row['approved_by_action_id'],
+            confirmation_state=confirmation_state,
+            confirmation_id=(
+                confirmation['confirmation_id'] if confirmation else None
+            ),
+            confirmation_expires_at=(
+                confirmation['expires_at'] if confirmation else None
+            ),
+            placement_state='placed' if placed else 'unplaced',
+            ticket_placement_id=row['ticket_placement_id'],
+            ticket_id=row['ticket_id'],
+            placement_mode=row['placement_mode'],
+            external_reference=row['external_reference'],
+            receipt_artifact_id=row['receipt_artifact_id'],
+            receipt_retrieval_id=row['receipt_retrieval_id'],
+            placed_at=row['placed_at'],
+        )
+
+    def _ticket_batch_summaries(
+        self, rows: list[dict]
+    ) -> list[TicketBatchRevisionSummary]:
+        revision_ids = [row['ticket_batch_revision_id'] for row in rows]
+        artifact_ids = self._repository.ticket_artifact_ids_for_revisions(
+            revision_ids
+        )
+        finding_ids = [
+            ticket_audit_finding_id(row['ticket_batch_revision_id'], finding)
+            for row in rows
+            for finding in row['audit_findings']
+            if finding['level'] == 'WARN'
+        ]
+        adjudications = self._repository.ticket_warning_adjudications(finding_ids)
+        result: list[TicketBatchRevisionSummary] = []
+        previous_by_batch: dict[str, dict[str, dict[str, object]]] = {}
+        for row in rows:
+            current_legs = {
+                str(leg['leg_key']): leg for leg in row['input_legs']
+            }
+            previous_legs = previous_by_batch.get(row['ticket_batch_id'], {})
+            added = sorted(current_legs.keys() - previous_legs.keys())
+            removed = sorted(previous_legs.keys() - current_legs.keys())
+            changed = sorted(
+                key
+                for key in current_legs.keys() & previous_legs.keys()
+                if current_legs[key] != previous_legs[key]
+            )
+            findings: list[TicketAuditFindingSummary] = []
+            for finding in row['audit_findings']:
+                finding_id = ticket_audit_finding_id(
+                    row['ticket_batch_revision_id'], finding
+                )
+                adjudication = adjudications.get(finding_id)
+                findings.append(
+                    TicketAuditFindingSummary(
+                        finding_id=finding_id,
+                        level=finding['level'],
+                        code=finding['code'],
+                        match_no=finding['match_no'],
+                        message=finding['message'],
+                        since=finding['since'],
+                        adjudication_id=(
+                            adjudication['adjudication_id']
+                            if adjudication
+                            else None
+                        ),
+                        adjudication_decision=(
+                            adjudication['decision'] if adjudication else None
+                        ),
+                    )
+                )
+            levels = {finding.level for finding in findings}
+            audit_state = (
+                'error' if 'ERROR' in levels else 'warn' if 'WARN' in levels else 'clean'
+            )
+            revision_id = row['ticket_batch_revision_id']
+            result.append(
+                TicketBatchRevisionSummary(
+                    ticket_batch_revision_id=revision_id,
+                    ticket_batch_id=row['ticket_batch_id'],
+                    revision_no=row['revision_no'],
+                    supersedes_revision_id=row['supersedes_revision_id'],
+                    run_date=row['run_date'],
+                    channel=row['channel'],
+                    account_id=row['account_id'],
+                    currency=row['currency'],
+                    deadline_at=row['deadline_at'],
+                    state=row['state'],
+                    content_hash=row['content_hash'],
+                    source_artifact_id=row['source_artifact_id'],
+                    created_at=row['created_at'],
+                    created_by_action_id=row['created_by_action_id'],
+                    legs=[TicketLegCommand(**leg) for leg in row['input_legs']],
+                    composition=row['composition'],
+                    audit_state=audit_state,
+                    audit_findings=findings,
+                    artifact_ids=artifact_ids.get(revision_id, []),
+                    added_leg_keys=added,
+                    removed_leg_keys=removed,
+                    changed_leg_keys=changed,
+                )
+            )
+            previous_by_batch[row['ticket_batch_id']] = current_legs
+        return result
 
     def lineage(self, object_type: str, object_id: str) -> LineageResponse:
         edges = self._repository.lineage(object_type, object_id)

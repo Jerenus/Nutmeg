@@ -11,6 +11,7 @@ from nutmeg.product.copilot import MatchCopilotService, build_copilot_provider
 from nutmeg.product.errors import ProductNotReadyError
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
+from nutmeg.product.tickets import ProductTicketService
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +21,7 @@ class ProductServices:
     actions: ProductActionGateway
     settings: AppSettings
     copilot: MatchCopilotService | None = None
+    tickets: ProductTicketService | None = None
 
 
 def build_product_services(settings: AppSettings) -> ProductServices:
@@ -50,5 +52,9 @@ def build_product_services(settings: AppSettings) -> ProductServices:
             )
             if provider is not None
             else None
+        ),
+        tickets=ProductTicketService(
+            kernel.protected_tickets,
+            actor_id=settings.default_user_id,
         ),
     )

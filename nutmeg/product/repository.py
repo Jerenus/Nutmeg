@@ -12,6 +12,7 @@ from nutmeg.ontology.repository import schema_evidence as se
 from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository import schema_market as sm
+from nutmeg.ontology.repository import schema_tickets as st
 from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.ontology.repository.outbox import OutboxEventRow, OutboxRepository
 
@@ -845,6 +846,247 @@ class ProductReadRepository:
             ).scalar_one()
         return int(value)
 
+    def ticket_forecast_at(
+        self, match_id: str, market_definition_id: str, as_of: str
+    ) -> dict | None:
+        with self._engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(
+                        sd.forecast_revisions,
+                        sd.forecast_series.c.market_definition_id,
+                    )
+                    .select_from(
+                        sd.forecast_revisions.join(
+                            sd.forecast_series,
+                            sd.forecast_revisions.c.forecast_series_id
+                            == sd.forecast_series.c.forecast_series_id,
+                        )
+                    )
+                    .where(
+                        sd.forecast_series.c.match_id == match_id,
+                        sd.forecast_series.c.market_definition_id
+                        == market_definition_id,
+                        sd.forecast_revisions.c.status.in_(
+                            ('committed', 'superseded')
+                        ),
+                        func.julianday(sd.forecast_revisions.c.made_at)
+                        <= func.julianday(as_of),
+                    )
+                    .order_by(
+                        func.julianday(sd.forecast_revisions.c.made_at).desc(),
+                        sd.forecast_revisions.c.revision_no.desc(),
+                    )
+                    .limit(1)
+                )
+                .mappings()
+                .first()
+            )
+        if row is None:
+            return None
+        return self._decode_json(
+            row, ('prior_distribution_json', 'belief_distribution_json')
+        )
+
+    def ticket_selections_at(
+        self, match_id: str, market_definition_id: str, as_of: str
+    ) -> list[dict]:
+        latest_quote_id = (
+            select(sm.market_quotes.c.quote_id)
+            .where(
+                sm.market_quotes.c.match_id == match_id,
+                sm.market_quotes.c.market_definition_id == market_definition_id,
+                sm.market_quotes.c.selection_id
+                == sm.selection_definitions.c.selection_id,
+                sm.market_quotes.c.quote_status == 'active',
+                func.julianday(sm.market_quotes.c.captured_at)
+                <= func.julianday(as_of),
+            )
+            .order_by(
+                func.julianday(sm.market_quotes.c.captured_at).desc(),
+                sm.market_quotes.c.quote_id.desc(),
+            )
+            .limit(1)
+            .correlate(sm.selection_definitions)
+            .scalar_subquery()
+        )
+        statement = (
+            select(
+                sm.selection_definitions.c.market_definition_id,
+                sm.selection_definitions.c.selection_id,
+                sm.selection_definitions.c.outcome_key,
+                sm.selection_definitions.c.line,
+                sm.market_quotes.c.quote_id,
+                sm.market_quotes.c.decimal_odds,
+                sm.market_quotes.c.captured_at,
+                sm.market_quotes.c.provider,
+                sm.market_quotes.c.bookmaker,
+            )
+            .select_from(
+                sm.selection_definitions.outerjoin(
+                    sm.market_quotes,
+                    sm.market_quotes.c.quote_id == latest_quote_id,
+                )
+            )
+            .where(
+                sm.selection_definitions.c.market_definition_id
+                == market_definition_id
+            )
+            .order_by(
+                sm.selection_definitions.c.outcome_key,
+                sm.selection_definitions.c.selection_id,
+            )
+        )
+        with self._engine.connect() as connection:
+            return [
+                dict(row) for row in connection.execute(statement).mappings().all()
+            ]
+
+    def current_ticket_batches(self, run_date: str, as_of: str) -> list[dict]:
+        current = st.ticket_batch_revisions.alias('current_ticket_batch')
+        candidate = st.ticket_batch_revisions.alias('candidate_ticket_batch')
+        current_revision_id = (
+            select(candidate.c.ticket_batch_revision_id)
+            .where(
+                candidate.c.ticket_batch_id == current.c.ticket_batch_id,
+                candidate.c.run_date == run_date,
+                func.julianday(candidate.c.created_at) <= func.julianday(as_of),
+            )
+            .order_by(candidate.c.revision_no.desc())
+            .limit(1)
+            .correlate(current)
+            .scalar_subquery()
+        )
+        statement = (
+            select(current)
+            .where(
+                current.c.run_date == run_date,
+                current.c.ticket_batch_revision_id == current_revision_id,
+            )
+            .order_by(current.c.created_at, current.c.ticket_batch_id)
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(statement).mappings().all()
+        return [self._ticket_batch_row(row) for row in rows]
+
+    def ticket_batch_history(self, ticket_batch_id: str) -> list[dict]:
+        statement = (
+            select(st.ticket_batch_revisions)
+            .where(st.ticket_batch_revisions.c.ticket_batch_id == ticket_batch_id)
+            .order_by(st.ticket_batch_revisions.c.revision_no)
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(statement).mappings().all()
+        return [self._ticket_batch_row(row) for row in rows]
+
+    def ticket_artifact_ids_for_revisions(
+        self, revision_ids: list[str]
+    ) -> dict[str, list[str]]:
+        if not revision_ids:
+            return {}
+        statement = (
+            select(
+                st.audited_ticket_artifacts.c.ticket_batch_revision_id,
+                st.audited_ticket_artifacts.c.ticket_artifact_id,
+            )
+            .where(
+                st.audited_ticket_artifacts.c.ticket_batch_revision_id.in_(
+                    revision_ids
+                )
+            )
+            .order_by(
+                st.audited_ticket_artifacts.c.ticket_batch_revision_id,
+                st.audited_ticket_artifacts.c.ticket_index,
+            )
+        )
+        result = {revision_id: [] for revision_id in revision_ids}
+        with self._engine.connect() as connection:
+            for revision_id, artifact_id in connection.execute(statement):
+                result[revision_id].append(artifact_id)
+        return result
+
+    def ticket_artifact(self, ticket_artifact_id: str) -> dict | None:
+        statement = (
+            select(
+                st.audited_ticket_artifacts,
+                st.ticket_placements.c.ticket_placement_id,
+                st.ticket_placements.c.ticket_id,
+                st.ticket_placements.c.placement_mode,
+                st.ticket_placements.c.external_reference,
+                st.ticket_placements.c.receipt_artifact_id,
+                st.ticket_placements.c.receipt_retrieval_id,
+                st.ticket_placements.c.placed_at,
+            )
+            .select_from(
+                st.audited_ticket_artifacts.outerjoin(
+                    st.ticket_placements,
+                    st.ticket_placements.c.ticket_artifact_id
+                    == st.audited_ticket_artifacts.c.ticket_artifact_id,
+                )
+            )
+            .where(
+                st.audited_ticket_artifacts.c.ticket_artifact_id
+                == ticket_artifact_id
+            )
+        )
+        with self._engine.connect() as connection:
+            row = connection.execute(statement).mappings().first()
+        if row is None:
+            return None
+        return self._decode_json(row, ('payload_json',))
+
+    def latest_confirmation(self, ticket_artifact_id: str) -> dict | None:
+        statement = (
+            select(
+                st.ticket_confirmation_challenges.c.confirmation_id,
+                st.ticket_confirmation_challenges.c.ticket_artifact_id,
+                st.ticket_confirmation_challenges.c.issued_at,
+                st.ticket_confirmation_challenges.c.expires_at,
+                st.ticket_confirmation_challenges.c.consumed_at,
+                st.ticket_confirmation_challenges.c.consumed_by_action_id,
+            )
+            .where(
+                st.ticket_confirmation_challenges.c.ticket_artifact_id
+                == ticket_artifact_id
+            )
+            .order_by(
+                func.julianday(
+                    st.ticket_confirmation_challenges.c.issued_at
+                ).desc(),
+                st.ticket_confirmation_challenges.c.confirmation_id.desc(),
+            )
+            .limit(1)
+        )
+        with self._engine.connect() as connection:
+            row = connection.execute(statement).mappings().first()
+        return dict(row) if row is not None else None
+
+    def ticket_warning_adjudications(
+        self, finding_ids: list[str]
+    ) -> dict[str, dict]:
+        if not finding_ids:
+            return {}
+        statement = (
+            select(sw.adjudications)
+            .where(
+                sw.adjudications.c.subject_type == 'ticket_audit_finding',
+                sw.adjudications.c.subject_id.in_(finding_ids),
+            )
+            .order_by(
+                sw.adjudications.c.subject_id,
+                func.julianday(sw.adjudications.c.created_at),
+                sw.adjudications.c.adjudication_id,
+            )
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(statement).mappings().all()
+        result: dict[str, dict] = {}
+        for row in rows:
+            result[row['subject_id']] = self._decode_json(
+                row, ('evidence_rejected_json', 'alternative_json')
+            )
+        return result
+
     def lineage(self, object_type: str, object_id: str) -> list[LineageTuple] | None:
         with self._engine.connect() as connection:
             edges = self._lineage_for_object(connection, object_type, object_id)
@@ -1095,3 +1337,10 @@ class ProductReadRepository:
         for column in columns:
             result[column.removesuffix('_json')] = json.loads(result.pop(column))
         return result
+
+    @classmethod
+    def _ticket_batch_row(cls, row) -> dict:
+        return cls._decode_json(
+            row,
+            ('input_legs_json', 'composition_json', 'audit_findings_json'),
+        )
