@@ -27,9 +27,9 @@
         <a class="rail-link{% if active_nav == 'operations' %} is-active{% endif %}" href="/operations">
           <span aria-hidden="true">02</span> 数据运营
         </a>
-        <span class="rail-link is-locked" aria-disabled="true">
+        <a class="rail-link{% if active_nav == 'match-investigation' %} is-active{% endif %}" href="{% if detail is defined %}/matches/{{ detail.match.match_id }}{% else %}/#match-board{% endif %}">
           <span aria-hidden="true">03</span> 比赛调查
-        </span>
+        </a>
         <span class="rail-link is-locked" aria-disabled="true">
           <span aria-hidden="true">04</span> 裁决工作台
         </span>

@@ -22,7 +22,7 @@ def mount_product_ui(
     services,
     clock: Callable[[], datetime],
 ) -> None:
-    """Mount local assets and read-only M2 workspace controllers."""
+    """Mount local assets and ontology-backed workspace controllers."""
     web_root = Path(__file__).resolve().parent / 'web'
     templates = Jinja2Templates(directory=web_root / 'templates')
     app.mount(
@@ -113,9 +113,10 @@ def mount_product_ui(
             request=request,
             name='product/match.html',
             context={
-                'workspace': 'match',
-                'active_nav': '',
+                'workspace': 'match-investigation',
+                'active_nav': 'match-investigation',
                 'detail': detail,
+                'copilot_available': getattr(services, 'copilot', None) is not None,
                 'health': services.queries.health(),
                 'alerts': [],
             },
