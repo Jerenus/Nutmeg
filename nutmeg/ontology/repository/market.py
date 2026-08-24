@@ -65,6 +65,16 @@ class MarketRepository:
             )
         )
 
+    def quote(self, quote_id: str) -> QuoteRow | None:
+        row = (
+            self._connection.execute(
+                select(sm.market_quotes).where(sm.market_quotes.c.quote_id == quote_id)
+            )
+            .mappings()
+            .first()
+        )
+        return None if row is None else QuoteRow(**dict(row))
+
     def insert_snapshot(self, row: SnapshotRow, quote_ids: tuple[str, ...] = ()) -> None:
         self._connection.execute(
             insert(sm.market_snapshots).values(

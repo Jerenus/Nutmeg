@@ -17,6 +17,7 @@ from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
 from nutmeg.ontology.actions.claim_actions import ClaimActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
+from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.decision.read_flow import DecisionReadService
 from nutmeg.ontology.finance.express_flow import ExpressService
@@ -118,6 +119,7 @@ class OntologyKernel:
         claim_actions: ClaimActions,
         forecast_actions: ForecastActions,
         workflow: WorkflowActions,
+        protected_tickets: ProtectedTicketActions,
     ) -> None:
         self._paths = paths
         self._engine = engine
@@ -132,10 +134,15 @@ class OntologyKernel:
         self.claim_actions = claim_actions
         self.forecast_actions = forecast_actions
         self.workflow = workflow
+        self.protected_tickets = protected_tickets
 
     @property
     def engine(self) -> Engine:
         return self._engine
+
+    @property
+    def paths(self) -> OntologyPaths:
+        return self._paths
 
     def initialize(self) -> MigrationReport:
         self._paths.ensure_directories()

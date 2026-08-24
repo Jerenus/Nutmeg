@@ -124,6 +124,50 @@ class TicketLegDraft:
             "precedents": [list(item) for item in self.precedents],
         }
 
+    @classmethod
+    def from_dict(cls, value: dict[str, object]) -> TicketLegDraft:
+        fair = value.get("fair")
+        if not isinstance(fair, dict):
+            raise ValueError("fair must be an object")
+        directional = value.get("directional_flags", [])
+        nondirectional = value.get("nondirectional_flags", [])
+        precedents = value.get("precedents", [])
+        if not all(isinstance(item, list | tuple) for item in directional):
+            raise ValueError("directional_flags must contain pairs")
+        if not isinstance(nondirectional, list | tuple):
+            raise ValueError("nondirectional_flags must be a list")
+        if not all(isinstance(item, list | tuple) for item in precedents):
+            raise ValueError("precedents must contain triples")
+        return cls(
+            leg_key=str(value["leg_key"]),
+            match_id=str(value["match_id"]),
+            match_no=int(value["match_no"]),
+            name=str(value["name"]),
+            market_definition_id=str(value["market_definition_id"]),
+            selection_id=str(value["selection_id"]),
+            outcome_key=str(value["outcome_key"]),
+            faces=str(value["faces"]),
+            forecast_revision_id=str(value["forecast_revision_id"]),
+            entry_quote_id=(
+                str(value["entry_quote_id"])
+                if value.get("entry_quote_id") is not None
+                else None
+            ),
+            odds=float(value["odds"]),
+            line=str(value["line"]) if value.get("line") is not None else None,
+            bucket=str(value["bucket"]),
+            fair={str(key): float(probability) for key, probability in fair.items()},
+            confidence=int(value["confidence"]),
+            directional_flags=tuple(
+                (str(item[0]), str(item[1])) for item in directional
+            ),
+            nondirectional_flags=tuple(str(item) for item in nondirectional),
+            anchor_integrity=str(value.get("anchor_integrity", "unknown")),
+            precedents=tuple(
+                (str(item[0]), str(item[1]), str(item[2])) for item in precedents
+            ),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class AuditFindingRecord:

@@ -278,7 +278,7 @@ UV_FROZEN=1 git commit -m "feat(ontology): add protected ticket persistence"
 - Modify: `nutmeg/ontology/wiring.py`
 - Test: `tests/ontology/test_protected_ticket_actions.py`
 
-- [ ] **Step 1: Write failing Create/Remove Action tests**
+- [x] **Step 1: Write failing Create/Remove Action tests**
 
 Seed one Match, current committed Forecast, account, selection, and quote. Tests must
 prove:
@@ -296,13 +296,13 @@ prove:
 Use a helper request with the exact fields from `TicketLegDraft`; do not mock the
 authoritative functions in Action tests.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/ontology/test_protected_ticket_actions.py -q -x`
 
 Expected: import failure for `ProtectedTicketActions`.
 
-- [ ] **Step 3: Implement request/result contracts and CreateTicketBatch**
+- [x] **Step 3: Implement request/result contracts and CreateTicketBatch**
 
 Define `CreateTicketBatchRequest`, `RemoveTicketLegRequest`, and `TicketBatchResult`.
 The Action handler must validate account, current Forecast, selection, quote, and
@@ -310,19 +310,19 @@ deadline inside the same UoW, call `compose_batch()`, publish canonical bytes to
 upsert SourceArtifact, and insert the revision with the accepted Action ID. Action JSON
 stores hashes and identifiers, never full receipt/source bytes.
 
-- [ ] **Step 4: Run the Create tests and verify GREEN**
+- [x] **Step 4: Run the Create tests and verify GREEN**
 
 Run: `UV_FROZEN=1 uv run pytest tests/ontology/test_protected_ticket_actions.py -q -k 'create or ai'`
 
 Expected: selected tests pass.
 
-- [ ] **Step 5: Add RemoveTicketLeg under a fresh failing stale-version test**
+- [x] **Step 5: Add RemoveTicketLeg under a fresh failing stale-version test**
 
 Resolve the current revision in the handler, compare `expected_revision_no`, address a
 leg by deterministic leg key, remove exactly one, and insert the next immutable
 revision. Never update prior JSON/state.
 
-- [ ] **Step 6: Run full Task 3 tests and regressions**
+- [x] **Step 6: Run full Task 3 tests and regressions**
 
 Run:
 
@@ -333,7 +333,7 @@ UV_FROZEN=1 uv run ruff check nutmeg/ontology/actions/protected_ticket_actions.p
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit Task 3**
+- [x] **Step 7: Commit Task 3**
 
 ```bash
 UV_FROZEN=1 git add nutmeg/ontology/actions/protected_ticket_actions.py nutmeg/ontology/kernel.py nutmeg/ontology/wiring.py tests/ontology/test_protected_ticket_actions.py

@@ -19,6 +19,7 @@ from nutmeg.ontology.actions.match_actions import MatchActions
 from nutmeg.ontology.actions.observation_actions import ObservationActions
 from nutmeg.ontology.actions.outcome_actions import OutcomeActions
 from nutmeg.ontology.actions.person_actions import PersonActions
+from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.actions.session_actions import SessionActions
 from nutmeg.ontology.actions.ticket_actions import TicketActions
@@ -73,6 +74,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     )
     calibrate = CalibrateService(engine=engine, analytics_path=paths.analytics)
     workflow = WorkflowActions(action_service)
+    protected_tickets = ProtectedTicketActions(action_service, artifact_store)
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -87,4 +89,5 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         claim_actions=claim_actions,
         forecast_actions=forecast_actions,
         workflow=workflow,
+        protected_tickets=protected_tickets,
     )
