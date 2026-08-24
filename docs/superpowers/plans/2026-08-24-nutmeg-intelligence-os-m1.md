@@ -754,7 +754,7 @@ git commit -m "feat(product): add temporal query service"
 - Modify: `nutmeg/ontology/decision/read_flow.py`
 - Create: `tests/product/test_actions.py`
 
-- [ ] **Step 1: Write gateway safety tests**
+- [x] **Step 1: Write gateway safety tests**
 
 ```python
 def test_forecast_commit_uses_server_snapshot_not_client_prior(product_services):
@@ -795,12 +795,12 @@ def test_stale_forecast_version_is_a_conflict(product_services):
         product_services.actions.execute(stale)
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_actions.py -q`  
 Expected: FAIL because the gateway does not exist.
 
-- [ ] **Step 3: Persist the Forecast information cutoff**
+- [x] **Step 3: Persist the Forecast information cutoff**
 
 Add optional `information_cutoff_at` and `expected_current_revision_no` to draft/commit
 requests and write the cutoff in `_revision_row` rather than hard-coding `None`.
@@ -823,7 +823,7 @@ The read flow uses the caller key as the idempotency root, passes the selected s
 evidence IDs, falsifier, and cutoff into bundle/forecast Actions, and returns the
 Forecast Action ID in `ReadMatchResult`.
 
-- [ ] **Step 4: Implement the explicit Action dispatcher**
+- [x] **Step 4: Implement the explicit Action dispatcher**
 
 `ProductActionGateway.execute(request, actor_id="owner", actor_role=JUDGE_OPERATOR)`
 accepts only:
@@ -847,12 +847,12 @@ For workflow Actions, construct the exact typed request and pass only the server
 Map `ActionOutcome` to `ProductActionResponse`; a rejected outcome stays a normal
 response with `status="rejected"` for the HTTP layer to map.
 
-- [ ] **Step 5: Run gateway and decision regressions**
+- [x] **Step 5: Run gateway and decision regressions**
 
 Run: `uv run pytest tests/product/test_actions.py tests/ontology/test_decision_read_flow.py tests/ontology/test_commit_forecast.py -q`  
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/product/actions.py nutmeg/ontology/actions/forecast_actions.py \

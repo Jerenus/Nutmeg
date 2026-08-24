@@ -49,6 +49,8 @@ class DraftForecastRequest:
     actor_role: ActorRole
     idempotency_key: str
     requested_at: datetime
+    information_cutoff_at: str | None = None
+    expected_current_revision_no: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +69,8 @@ class CommitForecastRequest:
     actor_role: ActorRole
     idempotency_key: str
     requested_at: datetime
+    information_cutoff_at: str | None = None
+    expected_current_revision_no: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,8 +109,16 @@ class ForecastActions:
                 'match_id': request.match_id,
                 'market_definition_id': request.market_definition_id,
                 'commitment_tier': request.commitment_tier,
+                'prior_distribution': request.prior_distribution,
+                'belief_distribution': request.belief_distribution,
+                'factors': [_factor_payload(factor) for factor in request.factors],
+                'evidence_bundle_id': request.evidence_bundle_id,
+                'prior_snapshot_id': request.prior_snapshot_id,
+                'information_cutoff_at': request.information_cutoff_at,
+                'falsifier': request.falsifier,
             },
             requested_at=request.requested_at,
+            expected_versions=_forecast_expected_versions(request),
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
@@ -174,8 +186,16 @@ class ForecastActions:
                 'match_id': request.match_id,
                 'market_definition_id': request.market_definition_id,
                 'commitment_tier': request.commitment_tier,
+                'prior_distribution': request.prior_distribution,
+                'belief_distribution': request.belief_distribution,
+                'factors': [_factor_payload(factor) for factor in request.factors],
+                'evidence_bundle_id': request.evidence_bundle_id,
+                'prior_snapshot_id': request.prior_snapshot_id,
+                'information_cutoff_at': request.information_cutoff_at,
+                'falsifier': request.falsifier,
             },
             requested_at=request.requested_at,
+            expected_versions=_forecast_expected_versions(request),
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
@@ -183,6 +203,18 @@ class ForecastActions:
                 request.match_id, request.market_definition_id
             )
             current = uow.decision.current_committed_revision(series_id)
+            current_revision_no = current.revision_no if current is not None else 0
+            if (
+                request.expected_current_revision_no is not None
+                and current_revision_no != request.expected_current_revision_no
+            ):
+                from nutmeg.ontology.errors import OptimisticConcurrencyError
+
+                raise OptimisticConcurrencyError(
+                    f'forecast {request.match_id}:{request.market_definition_id} is at '
+                    f'version {current_revision_no}, expected '
+                    f'{request.expected_current_revision_no}'
+                )
             if require_current and current is None:
                 raise ValueError('no committed forecast to revise')
             revision_no = uow.decision.max_revision_no(series_id) + 1
@@ -220,7 +252,7 @@ def _revision_row(
         revision_no=revision_no,
         status=status,
         made_at=request.requested_at.astimezone(UTC).isoformat(),
-        information_cutoff_at=None,
+        information_cutoff_at=request.information_cutoff_at,
         prior_snapshot_id=request.prior_snapshot_id,
         prior_distribution=request.prior_distribution,
         belief_distribution=request.belief_distribution,
@@ -251,3 +283,23 @@ def _insert_factor_applications(uow, revision_id: str, factors: list[FactorInput
                 note=factor.note,
             )
         )
+
+
+def _factor_payload(factor: FactorInput) -> dict[str, object]:
+    return {
+        'factor_definition_id': factor.factor_definition_id,
+        'delta': factor.delta,
+        'scope_entity_ids': factor.scope_entity_ids,
+        'supporting_observation_ids': factor.supporting_observation_ids,
+        'note': factor.note,
+    }
+
+
+def _forecast_expected_versions(request) -> dict[str, int] | None:
+    if request.expected_current_revision_no is None:
+        return None
+    return {
+        f'forecast:{request.match_id}:{request.market_definition_id}': (
+            request.expected_current_revision_no
+        )
+    }

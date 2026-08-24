@@ -8,3 +8,11 @@ class ProductError(Exception):
 
 class ProductNotFoundError(ProductError):
     """The requested ontology-backed product object does not exist."""
+
+
+class ProductActionNotAllowedError(ProductError):
+    """The requested command is outside the explicit product Action whitelist."""
+
+
+class ProductActionBlockedError(ProductError):
+    """Readiness policy blocks the requested state transition."""

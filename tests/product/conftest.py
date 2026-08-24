@@ -28,6 +28,13 @@ class SeededProduct:
     clock: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class ProductTestServices:
+    kernel: object
+    queries: object
+    actions: object
+
+
 @pytest.fixture
 def seeded_product(tmp_path: Path) -> SeededProduct:
     kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
@@ -223,9 +230,15 @@ def seeded_product(tmp_path: Path) -> SeededProduct:
 
 @pytest.fixture
 def product_services(seeded_product: SeededProduct):
+    from nutmeg.product.actions import ProductActionGateway
     from nutmeg.product.queries import ProductQueryService
     from nutmeg.product.repository import ProductReadRepository
 
-    return ProductQueryService(
-        ProductReadRepository(seeded_product.kernel.engine), seeded_product.kernel
+    repository = ProductReadRepository(seeded_product.kernel.engine)
+    return ProductTestServices(
+        kernel=seeded_product.kernel,
+        queries=ProductQueryService(repository, seeded_product.kernel),
+        actions=ProductActionGateway(
+            seeded_product.kernel, repository, clock=lambda: seeded_product.clock
+        ),
     )

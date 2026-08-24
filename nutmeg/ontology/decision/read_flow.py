@@ -7,7 +7,7 @@ keys derive from match + cutoff so a rerun replays.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from nutmeg.ontology.actions.bundle_actions import BundleActions, FreezeBundleRequest
@@ -33,13 +33,19 @@ class ReadMatchRequest:
     actor_role: ActorRole
     requested_at: datetime
     commitment_tier: str = 'follow'
-
+    prior_snapshot_id: str | None = None
+    candidate_observation_ids: list[str] = field(default_factory=list)
+    caveat_claim_ids: list[str] = field(default_factory=list)
+    falsifier: str | None = None
+    idempotency_key: str | None = None
+    expected_current_revision_no: int | None = None
 
 @dataclass(frozen=True, slots=True)
 class ReadMatchResult:
     committed: bool
     forecast_revision_id: str | None
     bundle_id: str
+    forecast_action_id: str
 
 
 class DecisionReadService:
@@ -55,7 +61,7 @@ class DecisionReadService:
         self._forecast_actions = forecast_actions
 
     def read_match(self, request: ReadMatchRequest) -> ReadMatchResult:
-        key = f'{request.match_id}:{request.cutoff_at}'
+        key = request.idempotency_key or f'{request.match_id}:{request.cutoff_at}'
         session = self._session_actions.open_session(
             OpenSessionRequest(
                 operator_id=request.operator_id,
@@ -63,7 +69,7 @@ class DecisionReadService:
                 scope={'matches': [request.match_id]},
                 actor_id=request.actor_id,
                 actor_role=request.actor_role,
-                idempotency_key=f'sess:{key}',
+                idempotency_key=f'{key}:session',
                 requested_at=request.requested_at,
             )
         )
@@ -73,13 +79,13 @@ class DecisionReadService:
                 match_id=request.match_id,
                 decision_session_id=session_id,
                 cutoff_at=request.cutoff_at,
-                market_snapshot_id=None,
+                market_snapshot_id=request.prior_snapshot_id,
                 prior_distribution=request.prior_distribution,
-                candidate_observation_ids=[],
-                caveat_claim_ids=[],
+                candidate_observation_ids=request.candidate_observation_ids,
+                caveat_claim_ids=request.caveat_claim_ids,
                 actor_id='system:freeze',
                 actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-                idempotency_key=f'bundle:{key}',
+                idempotency_key=f'{key}:bundle',
                 requested_at=request.requested_at,
             )
         )
@@ -94,12 +100,14 @@ class DecisionReadService:
                 factors=request.factors,
                 commitment_tier=request.commitment_tier,
                 evidence_bundle_id=bundle_id,
-                prior_snapshot_id=None,
-                falsifier=None,
+                prior_snapshot_id=request.prior_snapshot_id,
+                falsifier=request.falsifier,
                 actor_id=request.actor_id,
                 actor_role=request.actor_role,
-                idempotency_key=f'commit:{key}',
+                idempotency_key=f'{key}:forecast',
                 requested_at=request.requested_at,
+                information_cutoff_at=request.cutoff_at,
+                expected_current_revision_no=request.expected_current_revision_no,
             )
         )
         committed = forecast.status is ActionStatus.COMMITTED
@@ -107,4 +115,5 @@ class DecisionReadService:
             committed=committed,
             forecast_revision_id=forecast.result_refs[0].object_id if committed else None,
             bundle_id=bundle_id,
+            forecast_action_id=forecast.action_id,
         )
