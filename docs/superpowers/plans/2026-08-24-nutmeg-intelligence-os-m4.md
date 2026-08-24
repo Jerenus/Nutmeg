@@ -172,7 +172,7 @@ UV_FROZEN=1 git commit -m "feat(ontology): adapt authoritative ticket compositio
 - Modify: `nutmeg/ontology/repository/unit_of_work.py`
 - Test: `tests/ontology/test_m4_ticket_migration.py`
 
-- [ ] **Step 1: Write failing migration, permission, immutability, and revision tests**
+- [x] **Step 1: Write failing migration, permission, immutability, and revision tests**
 
 Assert migration 12 creates exactly the four tables declared by the design and seeds
 only judge permissions:
@@ -202,13 +202,13 @@ Repository tests must prove monotonic revisions, current-revision lookup, stale 
 version rejection, exact JSON round-trip, immutable inserts, challenge lookup/consume,
 single placement per artifact, and all foreign keys.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/ontology/test_m4_ticket_migration.py -q`
 
 Expected: current schema version is 11 and protected tables are absent.
 
-- [ ] **Step 3: Declare schema and append migration 12**
+- [x] **Step 3: Declare schema and append migration 12**
 
 Declare the four tables exactly as the design spec, including self-FK, account,
 SourceArtifact, ArtifactRetrieval, Action, Ticket, and uniqueness constraints. Append,
@@ -228,7 +228,7 @@ Migration(
 
 Create tables in FK order and seed the five judge-only permissions.
 
-- [ ] **Step 4: Implement repository rows and methods**
+- [x] **Step 4: Implement repository rows and methods**
 
 Provide typed rows and these exact operations:
 
@@ -252,7 +252,7 @@ count_batches() / count_artifacts() / count_placements()
 
 Use canonical JSON and fail loudly on malformed persisted data.
 
-- [ ] **Step 5: Run migration/repository and all migration regressions**
+- [x] **Step 5: Run migration/repository and all migration regressions**
 
 Run:
 
@@ -263,7 +263,7 @@ UV_FROZEN=1 uv run ruff check nutmeg/ontology/repository tests/ontology/test_m4_
 
 Expected: all pass; migration sequence is 1-12 with no drift.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 UV_FROZEN=1 git add nutmeg/ontology/repository tests/ontology/test_m4_ticket_migration.py

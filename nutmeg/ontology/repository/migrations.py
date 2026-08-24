@@ -28,6 +28,7 @@ from nutmeg.ontology.repository import (
     schema_finance,
     schema_identity,
     schema_market,
+    schema_tickets,
     schema_workflow,
 )
 
@@ -481,6 +482,36 @@ def _apply_m3_proposal_citations(connection: Connection) -> None:
     )
 
 
+_PROTECTED_TICKET_PERMISSIONS = (
+    ("create_ticket_batch", "judge_operator"),
+    ("remove_ticket_leg", "judge_operator"),
+    ("approve_ticket_batch", "judge_operator"),
+    ("issue_ticket_confirmation", "judge_operator"),
+    ("confirm_ticket_placement", "judge_operator"),
+)
+
+
+def _apply_protected_tickets(connection: Connection) -> None:
+    for table in (
+        schema_tickets.ticket_batch_revisions,
+        schema_tickets.audited_ticket_artifacts,
+        schema_tickets.ticket_confirmation_challenges,
+        schema_tickets.ticket_placements,
+    ):
+        table.create(connection)
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": actor_role,
+            }
+            for action_type, actor_role in _PROTECTED_TICKET_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -550,6 +581,15 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='m3_proposal_citations',
         fingerprint='agent_proposals+cutoff+prompt+ai_only_create',
         apply=_apply_m3_proposal_citations,
+    ),
+    Migration(
+        version=12,
+        name="protected_ticket_workbench",
+        fingerprint=(
+            "ticket_batch_revisions+audited_ticket_artifacts+"
+            "ticket_confirmation_challenges+ticket_placements+judge_only_permissions"
+        ),
+        apply=_apply_protected_tickets,
     ),
 )
 

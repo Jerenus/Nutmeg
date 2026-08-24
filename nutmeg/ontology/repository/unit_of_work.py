@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.identity import IdentityRepository
     from nutmeg.ontology.repository.market import MarketRepository
     from nutmeg.ontology.repository.outbox import OutboxRepository
+    from nutmeg.ontology.repository.tickets import TicketWorkbenchRepository
     from nutmeg.ontology.repository.workflow import WorkflowRepository
 
 
@@ -95,6 +96,12 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.outbox import OutboxRepository
 
         return OutboxRepository(self.connection)
+
+    @property
+    def tickets(self) -> TicketWorkbenchRepository:
+        from nutmeg.ontology.repository.tickets import TicketWorkbenchRepository
+
+        return TicketWorkbenchRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         self._connection = self._engine.connect()

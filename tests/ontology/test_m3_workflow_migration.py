@@ -27,7 +27,7 @@ def test_migration_11_adds_proposal_cutoff_prompt_and_tightens_permission(
     assert "information_cutoff_at" not in before
     assert "operator_prompt" not in before
 
-    report = run_migrations(engine)
+    report = run_migrations(engine, migrations=MIGRATIONS[:11])
 
     assert report.applied_versions == (11,)
     columns = {
@@ -47,5 +47,5 @@ def test_migration_11_adds_proposal_cutoff_prompt_and_tightens_permission(
 def test_migration_11_reopens_without_reapplying(tmp_path: Path) -> None:
     engine = build_ontology_engine(tmp_path / "ontology.db")
 
-    assert run_migrations(engine).applied_versions[-1] == 11
-    assert run_migrations(engine).applied_versions == ()
+    assert run_migrations(engine, migrations=MIGRATIONS[:11]).applied_versions[-1] == 11
+    assert run_migrations(engine, migrations=MIGRATIONS[:11]).applied_versions == ()
