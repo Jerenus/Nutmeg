@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.errors import IdempotencyConflictError, OptimisticConcurrencyError
-from nutmeg.product.contracts import ProductActionRequest, ProductError
+from nutmeg.product.contracts import ProductActionRequest, ProductError, ReadinessLevel
 from nutmeg.product.errors import (
     ProductActionBlockedError,
     ProductActionNotAllowedError,
@@ -148,8 +148,50 @@ def create_product_app(
     async def board(
         day: Annotated[date, Query(alias='date')],
         as_of: Annotated[datetime | None, Query()] = None,
+        readiness: Annotated[ReadinessLevel | None, Query()] = None,
+        competition: Annotated[str | None, Query()] = None,
+        query: Annotated[str | None, Query(alias='q')] = None,
     ):
-        return services.queries.board(day, as_of=as_of or now())
+        return services.queries.command_center(
+            day,
+            as_of=as_of or now(),
+            readiness=readiness,
+            competition=competition,
+            query=query,
+        ).board
+
+    @app.get('/api/v1/command-center')
+    async def command_center(
+        day: Annotated[date, Query(alias='date')],
+        as_of: Annotated[datetime | None, Query()] = None,
+        readiness: Annotated[ReadinessLevel | None, Query()] = None,
+        competition: Annotated[str | None, Query()] = None,
+        query: Annotated[str | None, Query(alias='q')] = None,
+    ):
+        return services.queries.command_center(
+            day,
+            as_of=as_of or now(),
+            readiness=readiness,
+            competition=competition,
+            query=query,
+        )
+
+    @app.get('/api/v1/operations')
+    async def operations(as_of: Annotated[datetime | None, Query()] = None):
+        return services.queries.operations(as_of=as_of or now())
+
+    @app.get('/api/v1/alerts')
+    async def alerts(as_of: Annotated[datetime | None, Query()] = None):
+        return services.queries.operations(as_of=as_of or now()).alerts
+
+    @app.get('/api/v1/identities')
+    async def identities(
+        as_of: Annotated[datetime | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    ):
+        return services.queries.operations(
+            as_of=as_of or now(), identity_limit=limit
+        ).identities
 
     @app.get('/api/v1/matches/{match_id}')
     async def match(

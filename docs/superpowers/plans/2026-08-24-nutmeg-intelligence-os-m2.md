@@ -390,7 +390,7 @@ git commit -m "feat(product): expose governed identity merge"
 - Modify: `nutmeg/interfaces/product_api.py`
 - Create: `tests/product/test_m2_api.py`
 
-- [ ] **Step 1: Write endpoint and security tests**
+- [x] **Step 1: Write endpoint and security tests**
 
 ```python
 def test_m2_query_endpoints_publish_v1_contract(client):
@@ -414,12 +414,12 @@ def test_identity_merge_still_requires_session_csrf_and_same_origin(client):
 Test invalid readiness produces the standard 422 envelope and all `as_of` values are
 timezone-aware.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_api.py -q`
 Expected: the four M2 query routes return 404.
 
-- [ ] **Step 3: Add API routes**
+- [x] **Step 3: Add API routes**
 
 Add:
 
@@ -435,12 +435,12 @@ All delegate to `ProductQueryService`; `alerts` and `identities` slice the same
 diverge. Keep `/api/v1/board` backward compatible while adding the same optional
 filters.
 
-- [ ] **Step 4: Run all API tests**
+- [x] **Step 4: Run all API tests**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_api.py tests/product/test_m2_api.py -q`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/interfaces/product_api.py tests/product/test_m2_api.py
