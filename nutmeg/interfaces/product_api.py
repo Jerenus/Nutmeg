@@ -18,7 +18,16 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from nutmeg.interfaces.product_ui import mount_product_ui
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.errors import IdempotencyConflictError, OptimisticConcurrencyError
-from nutmeg.product.contracts import ProductActionRequest, ProductError, ReadinessLevel
+from nutmeg.product.contracts import (
+    CopilotRequest,
+    ProductActionRequest,
+    ProductError,
+    ReadinessLevel,
+)
+from nutmeg.product.copilot import (
+    ProductCopilotResponseError,
+    ProductCopilotUnavailableError,
+)
 from nutmeg.product.errors import (
     ProductActionBlockedError,
     ProductActionNotAllowedError,
@@ -64,6 +73,31 @@ def create_product_app(
     @app.exception_handler(ProductActionBlockedError)
     async def action_blocked(_request: Request, error: ProductActionBlockedError):
         return error_response(409, ProductError(code='action_blocked', message=str(error)))
+
+    @app.exception_handler(ProductCopilotUnavailableError)
+    async def copilot_unavailable(
+        _request: Request, _error: ProductCopilotUnavailableError
+    ):
+        return error_response(
+            503,
+            ProductError(
+                code='copilot_unavailable',
+                message='copilot provider is unavailable',
+                retryable=True,
+            ),
+        )
+
+    @app.exception_handler(ProductCopilotResponseError)
+    async def copilot_response_invalid(
+        _request: Request, _error: ProductCopilotResponseError
+    ):
+        return error_response(
+            422,
+            ProductError(
+                code='copilot_response_invalid',
+                message='copilot returned an invalid investigation draft',
+            ),
+        )
 
     @app.exception_handler(IdempotencyConflictError)
     async def idempotency_conflict(_request: Request, error: IdempotencyConflictError):
@@ -231,6 +265,21 @@ def create_product_app(
                 ),
             )
         return response
+
+    @app.post('/api/v1/matches/{match_id}/copilot')
+    async def investigate_match(
+        match_id: str,
+        command: CopilotRequest,
+        _session: None = Depends(require_mutation_session),
+    ):
+        if services.copilot is None:
+            raise ProductCopilotUnavailableError('copilot is disabled')
+        return services.copilot.investigate(
+            match_id,
+            prompt=command.prompt,
+            as_of=command.as_of,
+            idempotency_key=command.idempotency_key,
+        )
 
     @app.get('/api/v1/events')
     async def events(
