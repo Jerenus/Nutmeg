@@ -66,6 +66,10 @@ class MatchSummary(StrictContract):
     kickoff_at: str | None = None
     latest_snapshot_at: str | None = None
     readiness: ReadinessState
+    evidence_count: int = 0
+    workflow_state: str = 'unread'
+    next_action: str = 'inspect'
+    flag_count: int = 0
 
 
 class BoardResponse(VersionedContract):
@@ -183,6 +187,71 @@ class HealthResponse(VersionedContract):
     action_counts: dict[str, int] = Field(default_factory=dict)
     outbox_event_count: int
     outbox_latest_sequence: int
+
+
+class AlertSeverity(StrEnum):
+    INFO = 'info'
+    WARN = 'warn'
+    ERROR = 'error'
+
+
+class AlertSummary(StrictContract):
+    alert_id: str
+    severity: AlertSeverity
+    code: str
+    title: str
+    detail: str
+    observed_at: datetime
+    object_ref: ObjectRefContract | None = None
+    href: str | None = None
+
+
+class SourceHealthSummary(StrictContract):
+    source_name: str
+    source_type: str
+    status: str
+    retrieval_count: int
+    latest_retrieved_at: str | None = None
+    age_seconds: int | None = None
+    error_code: str | None = None
+    error_detail: str | None = None
+
+
+class IdentityQueueItem(StrictContract):
+    entity_type: Literal['team']
+    entity_id: str
+    canonical_name: str
+    resolution_status: str
+    country: str | None = None
+    created_at: str
+    external_identifiers: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+
+
+class OperationsMetrics(StrictContract):
+    ontology_integrity: str
+    ontology_schema_version: int
+    action_high_watermark: int
+    outbox_high_watermark: int
+    projection_run_count: int
+    unresolved_identity_count: int
+
+
+class OperationsResponse(VersionedContract):
+    as_of: datetime
+    sources: list[SourceHealthSummary] = Field(default_factory=list)
+    identities: list[IdentityQueueItem] = Field(default_factory=list)
+    recent_failures: list[ActionView] = Field(default_factory=list)
+    alerts: list[AlertSummary] = Field(default_factory=list)
+    metrics: OperationsMetrics
+
+
+class CommandCenterResponse(VersionedContract):
+    board: BoardResponse
+    health: HealthResponse
+    alerts: list[AlertSummary] = Field(default_factory=list)
+    readiness_counts: dict[str, int] = Field(default_factory=dict)
+    pending_workflow_count: int = 0
 
 
 class ProductActionRequest(VersionedContract):

@@ -57,7 +57,7 @@ resolution arrive with the M6 reliability workflow.
 - Modify: `nutmeg/product/contracts.py`
 - Test: `tests/product/test_m2_queries.py`
 
-- [ ] **Step 1: Write failing DTO strictness tests**
+- [x] **Step 1: Write failing DTO strictness tests**
 
 ```python
 def test_m2_contracts_are_versioned_and_strict() -> None:
@@ -88,12 +88,12 @@ def test_m2_contracts_are_versioned_and_strict() -> None:
 Also assert `MatchSummary` exposes `evidence_count`, `workflow_state`, `next_action`,
 and `flag_count` with conservative defaults so existing M1 clients remain valid.
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_queries.py -q`
 Expected: collection fails because M2 contracts do not exist.
 
-- [ ] **Step 3: Implement the contracts**
+- [x] **Step 3: Implement the contracts**
 
 Add strict DTOs with these exact shapes:
 
@@ -165,12 +165,12 @@ class CommandCenterResponse(VersionedContract):
 
 Extend `MatchSummary` with the four defaulted display fields named in Step 1.
 
-- [ ] **Step 4: Run tests and ruff**
+- [x] **Step 4: Run tests and ruff**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_queries.py -q && UV_FROZEN=1 uv run ruff check nutmeg/product/contracts.py tests/product/test_m2_queries.py`
 Expected: DTO tests pass and ruff reports no errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/product/contracts.py tests/product/test_m2_queries.py
