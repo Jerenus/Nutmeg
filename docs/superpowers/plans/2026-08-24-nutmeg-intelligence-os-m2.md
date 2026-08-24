@@ -724,19 +724,19 @@ git commit -m "test(product): prove M2 operator path"
 - Modify: `docs/superpowers/plans/2026-08-24-nutmeg-intelligence-os-m2.md`
 - Modify only if a verified defect is found: M2 files listed above
 
-- [ ] **Step 1: Run the local server against a seeded isolated store**
+- [x] **Step 1: Run the local server against a seeded isolated store**
 
 Start `uv run nutmeg app --host 127.0.0.1 --port 8788` with an isolated
 `NUTMEG_DATA_DIR`; never point browser mutation tests at production.
 
-- [ ] **Step 2: Use the local browser verification skill**
+- [x] **Step 2: Use the local browser verification skill**
 
 Verify Command Center, Operations, Match, and lineage at desktop and 390 px width.
 Capture screenshots as test evidence; check loading/empty/degraded/blocked/offline,
 keyboard navigation, focus visibility, overflow, console errors, and SSE reconnect.
 No external URL or dispatch workflow is authorized.
 
-- [ ] **Step 3: Run final code gates**
+- [x] **Step 3: Run final code gates**
 
 ```bash
 UV_FROZEN=1 uv run ruff check .
@@ -748,14 +748,14 @@ git diff --check
 
 Expected: zero failures and no whitespace errors.
 
-- [ ] **Step 4: Run a real read-only M2 smoke**
+- [x] **Step 4: Run a real read-only M2 smoke**
 
 Copy the 2026-08-24 Sporttery/international/Read fixtures into a fresh temp directory,
 run the verified v2 dry replay, then request Command Center, Operations, one Match, and
 one lineage page. Do not copy legs/results, dispatch, fetch live results, move funds,
 or mutate production.
 
-- [ ] **Step 5: Record verification evidence and commit**
+- [x] **Step 5: Record verification evidence and commit**
 
 Append UTC timestamp, tested commit, test counts, browser viewport/screenshots,
 real-smoke object counts, and explicit safety statement to this plan, then commit:
@@ -764,6 +764,35 @@ real-smoke object counts, and explicit safety statement to this plan, then commi
 git add docs/superpowers/plans/2026-08-24-nutmeg-intelligence-os-m2.md
 git commit -m "docs(product): record M2 verification"
 ```
+
+### M2 completion evidence — 2026-08-24T05:49:30Z
+
+- Tested commit before evidence write: `1964a0c` (`fix(ui): harden M2 browser experience`).
+- Final code gates: Ruff passed; `compileall` exited 0; the complete repository suite passed
+  `1102` tests in `21.07s`; `pytest-product --all-files` passed; `git diff --check` passed.
+- Focused browser contracts passed `13` tests after a RED/GREEN responsive regression and a
+  RED/GREEN local-favicon regression. The former stacks `.hero-ledger` at 760 px; the latter
+  removes the browser's implicit `/favicon.ico` 404 without adding an external asset.
+- Browser evidence was captured with the local Playwright 1.58 CLI and installed Chrome because
+  this harness did not expose the in-app browser Node REPL. Each capture waited 800 ms for reveal
+  animations. Desktop (`1440x1000`) and mobile (`390x844`) evidence is stored under
+  `docs/superpowers/evidence/m2/` for Command Center, Operations, Match, and lineage.
+- A scripted Chrome pass loaded all eight route/viewport combinations with HTTP 200, zero
+  horizontal overflow, zero console errors, zero page errors, and SSE `connected`. Keyboard Tab
+  focused the skip link first; an absent filter rendered the designed empty state; an aborted
+  first SSE request rendered `offline` and automatically reconnected to `connected`.
+- Fresh dry replay store: `/tmp/nutmeg-m2-final.R0JZyp`. Inputs were copied read-only from the
+  earlier isolated 2026-08-24 replay, then `run_decision_am_v2(fetch=False)` ingested the frozen
+  market files and `decision-read` committed `11/11` Reads. This is the cutover path; the lower
+  `decision-sense` command remains the legacy JSONL verb and was not used as v2 completion proof.
+- Reopened kernel status: schema `10`, integrity `ok`, no pending migrations, `468` Teams, `11`
+  Matches, `18` MarketSnapshots, `11` committed Forecasts, `64` committed Actions and `64` outbox
+  events. Command Center, Operations, one Match, and one Forecast lineage page each returned 200.
+- Dry `decision-close` explicitly accepted missing closing odds and missing legs as a legal empty
+  slate. Dry `decision-settle` consumed a local empty `results.json`, settled `0` matches / `0`
+  tickets, and produced `3` scorecards. Final status remained `0` Tickets and `0` Settlements.
+- Safety boundary: no production database was mutated; no live result fetch, identity merge,
+  betting/funds action, Telegram/public dispatch, scheduler restoration, or external write ran.
 
 ## M2 completion boundary
 
