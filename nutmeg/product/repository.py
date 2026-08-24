@@ -121,9 +121,13 @@ class ProductReadRepository:
                         sm.market_snapshots.c.match_id == match_id,
                         sm.market_snapshots.c.market_definition_id
                         == market_definition_id,
-                        sm.market_snapshots.c.as_of <= as_of,
+                        func.julianday(sm.market_snapshots.c.as_of)
+                        <= func.julianday(as_of),
                     )
-                    .order_by(sm.market_snapshots.c.as_of.desc())
+                    .order_by(
+                        func.julianday(sm.market_snapshots.c.as_of).desc(),
+                        sm.market_snapshots.c.market_snapshot_id.desc(),
+                    )
                     .limit(1)
                 )
                 .mappings()
@@ -285,10 +289,11 @@ class ProductReadRepository:
                         sm.market_snapshots.c.match_id == match_id,
                         sm.market_snapshots.c.market_definition_id
                         == market_definition_id,
-                        sm.market_snapshots.c.as_of <= as_of,
+                        func.julianday(sm.market_snapshots.c.as_of)
+                        <= func.julianday(as_of),
                     )
                     .order_by(
-                        sm.market_snapshots.c.as_of,
+                        func.julianday(sm.market_snapshots.c.as_of),
                         sm.market_snapshots.c.market_snapshot_id,
                     )
                 )

@@ -1,3 +1,5 @@
+from nutmeg.ontology.repository.market import SnapshotRow
+from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.repository import ProductReadRepository
 
 
@@ -63,6 +65,43 @@ def test_market_timeline_and_bundles_obey_cutoff(m3_seeded_product) -> None:
     assert bundles[0]["item_refs"] == [
         {"object_type": "claim", "object_id": "claim-before"},
         {"object_type": "observation", "object_id": "obs-before"},
+    ]
+
+
+def test_market_cutoff_compares_instants_across_iso_offsets(
+    m3_seeded_product,
+) -> None:
+    with OntologyUnitOfWork(m3_seeded_product.kernel.engine) as uow:
+        uow.market.insert_snapshot(
+            SnapshotRow(
+                market_snapshot_id="snapshot-offset",
+                match_id="match-1",
+                market_definition_id="md-had",
+                snapshot_kind="read_time",
+                as_of="2026-08-24T17:30:00+08:00",
+                fair_distribution={"home": 0.47, "draw": 0.31, "away": 0.22},
+                devig_method="proportional",
+                method_version="1",
+                source_coverage={"sources": 2},
+                freshness={},
+                disagreement={},
+            )
+        )
+    repository = ProductReadRepository(m3_seeded_product.kernel.engine)
+
+    latest = repository.latest_snapshot(
+        "match-1", "md-had", "2026-08-24T10:00:00+00:00"
+    )
+    timeline = repository.market_timeline(
+        "match-1", "md-had", "2026-08-24T10:00:00+00:00"
+    )
+
+    assert latest is not None
+    assert latest["market_snapshot_id"] == "snapshot-offset"
+    assert [item["market_snapshot_id"] for item in timeline] == [
+        "snapshot-early",
+        "snapshot-before",
+        "snapshot-offset",
     ]
 
 
