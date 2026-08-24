@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from nutmeg.product.contracts import ReadinessLevel
+from nutmeg.product.errors import ProductNotFoundError
 
 _SHANGHAI = ZoneInfo('Asia/Shanghai')
 
@@ -81,5 +82,59 @@ def mount_product_ui(
                 'operations': operations,
                 'health': services.queries.health(),
                 'alerts': operations.alerts,
+            },
+        )
+
+    def not_found_response(request: Request, error: ProductNotFoundError):
+        return templates.TemplateResponse(
+            request=request,
+            name='product/not_found.html',
+            status_code=404,
+            context={
+                'workspace': 'not-found',
+                'active_nav': '',
+                'health': services.queries.health(),
+                'alerts': [],
+                'message': str(error),
+            },
+        )
+
+    @app.get('/matches/{match_id}', include_in_schema=False)
+    async def match_page(
+        request: Request,
+        match_id: str,
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        try:
+            detail = services.queries.match(match_id, as_of=as_of or clock())
+        except ProductNotFoundError as error:
+            return not_found_response(request, error)
+        return templates.TemplateResponse(
+            request=request,
+            name='product/match.html',
+            context={
+                'workspace': 'match',
+                'active_nav': '',
+                'detail': detail,
+                'health': services.queries.health(),
+                'alerts': [],
+            },
+        )
+
+    @app.get('/lineage/{object_type}/{object_id}', include_in_schema=False)
+    async def lineage_page(request: Request, object_type: str, object_id: str):
+        try:
+            lineage = services.queries.lineage(object_type, object_id)
+        except ProductNotFoundError as error:
+            return not_found_response(request, error)
+        return templates.TemplateResponse(
+            request=request,
+            name='product/lineage.html',
+            context={
+                'workspace': 'lineage',
+                'active_nav': '',
+                'lineage': lineage,
+                'health': services.queries.health(),
+                'alerts': [],
             },
         )

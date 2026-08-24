@@ -1,3 +1,4 @@
+import hashlib
 import re
 
 import pytest
@@ -84,3 +85,45 @@ def test_merge_controls_embed_no_privileged_actor(client: TestClient) -> None:
     assert "/api/v1/session" in script.text
     assert "crypto.randomUUID()" in script.text
     assert "X-CSRF-Token" in script.text
+
+
+def test_match_page_keeps_as_of_and_links_source_lineage(
+    client: TestClient,
+) -> None:
+    response = client.get("/matches/match-1?as_of=2026-08-24T10:00:00Z")
+
+    assert response.status_code == 200
+    assert "2026-08-24T10:00:00+00:00" in response.text
+    assert "legacy_unbundled" in response.text
+    assert "/lineage/forecast_revision/fr-legacy" in response.text
+    assert "obs-before" in response.text
+    assert "obs-future" not in response.text
+
+
+def test_lineage_page_renders_typed_edges_not_raw_sql(client: TestClient) -> None:
+    response = client.get("/lineage/forecast_revision/fr-legacy")
+    artifact_id = "sha256:" + hashlib.sha256(b"sporttery-fresh").hexdigest()
+    artifact = client.get(f"/lineage/source_artifact/{artifact_id}")
+
+    assert response.status_code == 200
+    assert "forecast_for_match" in response.text
+    assert "forecast_uses_snapshot" in response.text
+    assert artifact.status_code == 200
+    assert "created_by_action" in artifact.text
+    assert "SELECT " not in response.text
+    assert "SELECT " not in artifact.text
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/matches/absent", "/lineage/forecast_revision/absent"],
+)
+def test_absent_ui_object_renders_stable_404(
+    client: TestClient,
+    path: str,
+) -> None:
+    response = client.get(path)
+
+    assert response.status_code == 404
+    assert "对象未找到" in response.text
+    assert "Traceback" not in response.text

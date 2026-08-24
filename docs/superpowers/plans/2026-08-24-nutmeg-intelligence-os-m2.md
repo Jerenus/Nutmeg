@@ -600,7 +600,7 @@ git commit -m "feat(ui): add data operations workspace"
 - Modify: `nutmeg/interfaces/product_ui.py`
 - Modify: `tests/product/test_m2_ui.py`
 
-- [ ] **Step 1: Write failing navigation tests**
+- [x] **Step 1: Write failing navigation tests**
 
 ```python
 def test_match_page_keeps_as_of_and_links_source_lineage(client):
@@ -622,24 +622,24 @@ def test_lineage_page_renders_typed_edges_not_raw_sql(client):
 
 Test absent objects render the stable product 404 page without a stack trace.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_ui.py -q`
 Expected: match/lineage UI routes return 404.
 
-- [ ] **Step 3: Add temporal Match and generic lineage views**
+- [x] **Step 3: Add temporal Match and generic lineage views**
 
 Match renders identity/context, one server-computed market anchor, readiness issues,
 evidence, Forecast history, and workflow objects. Claims remain visually distinct from
 Observations; legacy Forecasts show an explicit unsourced-history badge. Lineage
 renders typed source/target object cards and keeps object IDs copyable in monospace.
 
-- [ ] **Step 4: Run all UI tests**
+- [x] **Step 4: Run all UI tests**
 
 Run: `UV_FROZEN=1 uv run pytest -o addopts='' tests/product/test_m2_ui.py -q`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/interfaces/product_ui.py \

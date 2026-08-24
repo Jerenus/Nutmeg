@@ -1,0 +1,15 @@
+{% extends "product/layout.html" %}
+
+{% block title %}对象未找到 · Nutmeg{% endblock %}
+
+{% block content %}
+  <section class="not-found-state" aria-labelledby="page-title">
+    <span aria-hidden="true">404</span>
+    <div>
+      <div class="section-kicker">Stable Product Error</div>
+      <h1 id="page-title">对象未找到</h1>
+      <p>{{ message }}</p>
+      <a href="/">返回指挥中心</a>
+    </div>
+  </section>
+{% endblock %}

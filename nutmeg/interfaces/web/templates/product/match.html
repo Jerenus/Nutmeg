@@ -1,0 +1,191 @@
+{% extends "product/layout.html" %}
+
+{% block title %}{{ detail.match.home_team }} vs {{ detail.match.away_team }} · Nutmeg{% endblock %}
+
+{% block content %}
+  <nav class="breadcrumb" aria-label="面包屑">
+    <a href="/">指挥中心</a><span aria-hidden="true">/</span><span>比赛档案</span>
+  </nav>
+
+  <section class="match-dossier-head" aria-labelledby="page-title">
+    <div>
+      <div class="section-kicker">Match Investigation / {{ detail.match.match_id }}</div>
+      <h1 id="page-title">
+        {{ detail.match.home_team }}
+        <span>vs</span>
+        {{ detail.match.away_team }}
+      </h1>
+      <p>{{ detail.match.competition or '赛事上下文待补全' }} · {{ detail.match.kickoff_at or '开赛时间待定' }}</p>
+    </div>
+    <div class="asof-seal">
+      <span>AS OF</span>
+      <time datetime="{{ detail.as_of.isoformat() }}">{{ detail.as_of.isoformat() }}</time>
+      <small>页面只读取此刻之前的事实</small>
+    </div>
+  </section>
+
+  <section class="dossier-grid" aria-label="比赛状态摘要">
+    <article>
+      <span>Readiness</span>
+      <strong class="readiness-text-{{ detail.match.readiness.level.value }}">{{ detail.match.readiness.level.value }}</strong>
+      <small>{{ detail.match.next_action }}</small>
+    </article>
+    <article>
+      <span>Evidence</span>
+      <strong>{{ detail.match.evidence_count }}</strong>
+      <small>claims + observations</small>
+    </article>
+    <article>
+      <span>Flags</span>
+      <strong>{{ detail.match.flag_count }}</strong>
+      <small>当前 cutoff 内</small>
+    </article>
+    <article>
+      <span>Workflow</span>
+      <strong>{{ detail.workflow|length }}</strong>
+      <small>{{ detail.match.workflow_state }}</small>
+    </article>
+  </section>
+
+  {% if detail.match.readiness.issues %}
+    <section class="readiness-panel" aria-labelledby="readiness-title">
+      <div class="section-kicker">Readiness Gate</div>
+      <h2 id="readiness-title">当前阻力</h2>
+      <ul>
+        {% for issue in detail.match.readiness.issues %}
+          <li><code>{{ issue.code }}</code><span>{{ issue.message }}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  <section class="investigation-section" aria-labelledby="market-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Market Anchor</div>
+        <h2 id="market-title">去水锚点</h2>
+      </div>
+      {% if detail.market_snapshot %}
+        <a href="/lineage/market_snapshot/{{ detail.market_snapshot.market_snapshot_id }}">查看 Snapshot 血缘 →</a>
+      {% endif %}
+    </div>
+    {% if detail.market_snapshot %}
+      <div class="market-anchor">
+        <div>
+          <span>Snapshot</span>
+          <code>{{ detail.market_snapshot.market_snapshot_id }}</code>
+          <small>{{ detail.market_snapshot.as_of }}</small>
+        </div>
+        {% for face, probability in detail.market_snapshot.devig_distribution.items() %}
+          <div class="market-face">
+            <span>{{ face }}</span>
+            <strong>{{ '%.3f'|format(probability) }}</strong>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="inline-empty">在当前 cutoff 前没有可用的服务器计算市场锚点。</div>
+    {% endif %}
+  </section>
+
+  <section class="investigation-section" aria-labelledby="evidence-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Evidence Timeline</div>
+        <h2 id="evidence-title">证据时间线</h2>
+      </div>
+      <span>{{ detail.evidence.observations|length }} Observations / {{ detail.evidence.claims|length }} Claims</span>
+    </div>
+    <div class="evidence-columns">
+      <div>
+        <h3>Observations <small>可验证事实</small></h3>
+        {% if detail.evidence.observations %}
+          <ol class="evidence-list observations-list">
+            {% for item in detail.evidence.observations %}
+              <li>
+                <div class="evidence-time"><time>{{ item.recorded_at }}</time><span>{{ item.verification_method }}</span></div>
+                <strong>{{ item.observation_type }}</strong>
+                <code>{{ item.observation_id }}</code>
+                <p>{{ item.value }}</p>
+                <a href="/lineage/observation/{{ item.observation_id }}">血缘 →</a>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}<div class="inline-empty">无 Observation。</div>{% endif %}
+      </div>
+      <div>
+        <h3>Claims <small>来源主张</small></h3>
+        {% if detail.evidence.claims %}
+          <ol class="evidence-list claims-list">
+            {% for item in detail.evidence.claims %}
+              <li>
+                <div class="evidence-time"><time>{{ item.created_at }}</time><span>{{ item.status }}</span></div>
+                <strong>{{ item.predicate }}</strong>
+                <code>{{ item.claim_id }}</code>
+                <p>{{ item.value }}</p>
+                <a href="/lineage/claim/{{ item.claim_id }}">血缘 →</a>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}<div class="inline-empty">无 Claim。</div>{% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="investigation-section" aria-labelledby="forecast-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Forecast History</div>
+        <h2 id="forecast-title">Forecast 版本</h2>
+      </div>
+      <span>{{ detail.forecasts|length }} 个版本</span>
+    </div>
+    {% if detail.forecasts %}
+      <ol class="forecast-list">
+        {% for forecast in detail.forecasts %}
+          <li>
+            <div class="forecast-version">
+              <span>REV {{ forecast.revision_no }}</span>
+              <strong>{{ forecast.status }}</strong>
+              <time>{{ forecast.made_at }}</time>
+            </div>
+            <div>
+              <span class="evidence-badge status-{{ forecast.evidence_status }}">{{ forecast.evidence_status }}</span>
+              {% if forecast.evidence_status == 'legacy_unbundled' %}
+                <p>迁移历史：没有 EvidenceBundle，不展示为完整来源链。</p>
+              {% endif %}
+            </div>
+            <div class="distribution-pair">
+              <code>prior {{ forecast.prior_distribution }}</code>
+              <code>belief {{ forecast.belief_distribution }}</code>
+            </div>
+            <a href="/lineage/forecast_revision/{{ forecast.forecast_revision_id }}">打开 Forecast 血缘 →</a>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <div class="inline-empty">当前 cutoff 前没有 Forecast 版本。</div>
+    {% endif %}
+  </section>
+
+  <section class="investigation-section" aria-labelledby="workflow-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Workflow Objects</div>
+        <h2 id="workflow-title">待处理工作流</h2>
+      </div>
+    </div>
+    {% if detail.workflow %}
+      <ul class="workflow-list">
+        {% for item in detail.workflow %}
+          <li>
+            <span>{{ item.workflow_type }}</span>
+            <code>{{ item.object_ref.object_id }}</code>
+            <strong>{{ item.status }}</strong>
+            <time>{{ item.created_at }}</time>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}<div class="inline-empty">没有待处理工作流对象。</div>{% endif %}
+  </section>
+{% endblock %}
