@@ -80,7 +80,7 @@
 - Create: `nutmeg/ontology/tickets/composition.py`
 - Test: `tests/ontology/test_ticket_composition.py`
 
-- [ ] **Step 1: Write failing delegation, normalization, empty-slate, and hash tests**
+- [x] **Step 1: Write failing delegation, normalization, empty-slate, and hash tests**
 
 Create tests that construct one `TicketLegDraft` with explicit audit facts and monkeypatch
 the imported authoritative functions:
@@ -118,13 +118,13 @@ Also assert:
 - `TicketLegDraft` rejects naive deadlines, invalid faces, odds `<=1`, probability
   distributions not summing to one within tolerance, and blank committed revision IDs.
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/ontology/test_ticket_composition.py -q`
 
 Expected: collection fails because `nutmeg.ontology.tickets` does not exist.
 
-- [ ] **Step 3: Implement immutable models and the thin adapter**
+- [x] **Step 3: Implement immutable models and the thin adapter**
 
 Define frozen/slotted `TicketLegDraft`, `AuditFindingRecord`, `ComposedTicket`, and
 `BatchComposition`. `TicketLegDraft.express_dict()` returns only the legacy express
@@ -145,7 +145,7 @@ findings = audit_legs([leg.audit_leg() for leg in legs])
 Normalize the summary into immutable models. Canonical bytes use `canonical_json()`;
 SHA-256 is computed over those bytes. Do not add fallback arithmetic.
 
-- [ ] **Step 4: Run focused tests and Ruff**
+- [x] **Step 4: Run focused tests and Ruff**
 
 Run:
 
@@ -156,7 +156,7 @@ UV_FROZEN=1 uv run ruff check nutmeg/ontology/tickets tests/ontology/test_ticket
 
 Expected: all pass; authoritative decision tests remain unchanged.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 UV_FROZEN=1 git add nutmeg/ontology/tickets tests/ontology/test_ticket_composition.py
