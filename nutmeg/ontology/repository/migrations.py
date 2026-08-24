@@ -28,6 +28,7 @@ from nutmeg.ontology.repository import (
     schema_finance,
     schema_identity,
     schema_market,
+    schema_scoreboard,
     schema_tickets,
     schema_workflow,
 )
@@ -512,6 +513,48 @@ def _apply_protected_tickets(connection: Connection) -> None:
     )
 
 
+_SCOREBOARD_PERMISSIONS = (
+    ("record_scoreboard_observation", "judge_operator"),
+    ("approve_scoreboard_cutover", "judge_operator"),
+    ("record_scoreboard_shadow_review", "deterministic_system"),
+    ("record_scoreboard_export", "deterministic_system"),
+)
+
+
+def _apply_scoreboard_authority(connection: Connection) -> None:
+    for table in (
+        schema_scoreboard.scoreboard_observations,
+        schema_scoreboard.scoreboard_shadow_reviews,
+        schema_scoreboard.scoreboard_authority,
+    ):
+        table.create(connection)
+    connection.execute(
+        insert(schema_scoreboard.scoreboard_authority).values(
+            authority_id="primary",
+            state="legacy",
+            projection_version=None,
+            source_high_watermark=None,
+            legacy_sha256=None,
+            shadow_review_id=None,
+            compatibility_export_sha256=None,
+            approved_at=None,
+            approved_by_action_id=None,
+            version=1,
+        )
+    )
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": actor_role,
+            }
+            for action_type, actor_role in _SCOREBOARD_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -590,6 +633,15 @@ MIGRATIONS: tuple[Migration, ...] = (
             "ticket_confirmation_challenges+ticket_placements+judge_only_permissions"
         ),
         apply=_apply_protected_tickets,
+    ),
+    Migration(
+        version=13,
+        name="scoreboard_authority",
+        fingerprint=(
+            "scoreboard_observations+scoreboard_shadow_reviews+"
+            "scoreboard_authority+role_separated_permissions"
+        ),
+        apply=_apply_scoreboard_authority,
     ),
 )
 

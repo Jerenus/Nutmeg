@@ -87,7 +87,7 @@ def _revision(
 def test_migration_12_adds_protected_ticket_schema(tmp_path: Path) -> None:
     kernel, report, _action_id, _artifact_id = _kernel(tmp_path)
 
-    assert report.applied_versions[-1] == 12
+    assert 12 in report.applied_versions
     assert {
         "ticket_batch_revisions",
         "audited_ticket_artifacts",
