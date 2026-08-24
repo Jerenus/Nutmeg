@@ -13,6 +13,7 @@ from nutmeg.ontology.actions.protected_ticket_actions import (
     IssueTicketConfirmationRequest,
     RemoveTicketLegRequest,
 )
+from nutmeg.ontology.errors import OptimisticConcurrencyError
 from nutmeg.ontology.tickets.models import TicketLegDraft
 from nutmeg.product.contracts import (
     ApproveTicketBatchCommand,
@@ -25,6 +26,7 @@ from nutmeg.product.contracts import (
     RemoveTicketLegCommand,
     TicketLegCommand,
 )
+from nutmeg.product.errors import ProductNotFoundError, ProductTicketError
 
 
 class ProductTicketService:
@@ -44,18 +46,20 @@ class ProductTicketService:
     def create_batch(
         self, command: CreateTicketBatchCommand
     ) -> ProductActionResponse:
-        outcome = self._actions.create_ticket_batch(
-            CreateTicketBatchRequest(
-                run_date=command.run_date.isoformat(),
-                channel=command.channel,
-                account_id=command.account_id,
-                currency=command.currency,
-                deadline_at=command.deadline_at,
-                legs=[_ticket_leg(leg) for leg in command.legs],
-                actor_id=self._actor_id,
-                actor_role=ActorRole.JUDGE_OPERATOR,
-                idempotency_key=command.idempotency_key,
-                requested_at=self._requested_at(),
+        outcome = self._execute(
+            lambda: self._actions.create_ticket_batch(
+                CreateTicketBatchRequest(
+                    run_date=command.run_date.isoformat(),
+                    channel=command.channel,
+                    account_id=command.account_id,
+                    currency=command.currency,
+                    deadline_at=command.deadline_at,
+                    legs=[_ticket_leg(leg) for leg in command.legs],
+                    actor_id=self._actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                    idempotency_key=command.idempotency_key,
+                    requested_at=self._requested_at(),
+                )
             )
         )
         return _response(outcome)
@@ -63,15 +67,17 @@ class ProductTicketService:
     def remove_leg(
         self, ticket_batch_id: str, command: RemoveTicketLegCommand
     ) -> ProductActionResponse:
-        outcome = self._actions.remove_ticket_leg(
-            RemoveTicketLegRequest(
-                ticket_batch_id=ticket_batch_id,
-                leg_key=command.leg_key,
-                expected_revision_no=command.expected_revision_no,
-                actor_id=self._actor_id,
-                actor_role=ActorRole.JUDGE_OPERATOR,
-                idempotency_key=command.idempotency_key,
-                requested_at=self._requested_at(),
+        outcome = self._execute(
+            lambda: self._actions.remove_ticket_leg(
+                RemoveTicketLegRequest(
+                    ticket_batch_id=ticket_batch_id,
+                    leg_key=command.leg_key,
+                    expected_revision_no=command.expected_revision_no,
+                    actor_id=self._actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                    idempotency_key=command.idempotency_key,
+                    requested_at=self._requested_at(),
+                )
             )
         )
         return _response(outcome)
@@ -79,14 +85,16 @@ class ProductTicketService:
     def approve_batch(
         self, ticket_batch_id: str, command: ApproveTicketBatchCommand
     ) -> ProductActionResponse:
-        outcome = self._actions.approve_ticket_batch(
-            ApproveTicketBatchRequest(
-                ticket_batch_id=ticket_batch_id,
-                expected_revision_no=command.expected_revision_no,
-                actor_id=self._actor_id,
-                actor_role=ActorRole.JUDGE_OPERATOR,
-                idempotency_key=command.idempotency_key,
-                requested_at=self._requested_at(),
+        outcome = self._execute(
+            lambda: self._actions.approve_ticket_batch(
+                ApproveTicketBatchRequest(
+                    ticket_batch_id=ticket_batch_id,
+                    expected_revision_no=command.expected_revision_no,
+                    actor_id=self._actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                    idempotency_key=command.idempotency_key,
+                    requested_at=self._requested_at(),
+                )
             )
         )
         return _response(outcome)
@@ -94,14 +102,17 @@ class ProductTicketService:
     def issue_confirmation(
         self, ticket_artifact_id: str, command: IssueConfirmationCommand
     ) -> IssueConfirmationResponse:
-        result = self._actions.issue_ticket_confirmation(
-            IssueTicketConfirmationRequest(
-                ticket_artifact_id=ticket_artifact_id,
-                actor_id=self._actor_id,
-                actor_role=ActorRole.JUDGE_OPERATOR,
-                idempotency_key=command.idempotency_key,
-                requested_at=self._requested_at(),
-            )
+        result = self._execute(
+            lambda: self._actions.issue_ticket_confirmation(
+                IssueTicketConfirmationRequest(
+                    ticket_artifact_id=ticket_artifact_id,
+                    actor_id=self._actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                    idempotency_key=command.idempotency_key,
+                    requested_at=self._requested_at(),
+                )
+            ),
+            confirmation=True,
         )
         response = _response(result.outcome)
         return IssueConfirmationResponse(
@@ -114,25 +125,40 @@ class ProductTicketService:
     def confirm_placement(
         self, ticket_artifact_id: str, command: ConfirmPlacementCommand
     ) -> ProductActionResponse:
-        receipt = base64.b64decode(command.receipt_base64, validate=True)
-        outcome = self._actions.confirm_ticket_placement(
-            ConfirmTicketPlacementRequest(
-                ticket_artifact_id=ticket_artifact_id,
-                confirmation_id=command.confirmation_id,
-                nonce=command.nonce,
-                ticket_hash=command.ticket_hash,
-                amount=command.amount,
-                currency=command.currency,
-                channel=command.channel,
-                placement_mode=command.placement_mode,
-                external_reference=command.external_reference,
-                receipt_content=receipt,
-                receipt_content_type=command.receipt_content_type,
-                actor_id=self._actor_id,
-                actor_role=ActorRole.JUDGE_OPERATOR,
-                idempotency_key=command.idempotency_key,
-                requested_at=self._requested_at(),
+        if command.placement_mode == 'manual' and (
+            command.receipt_base64 is None or command.receipt_content_type is None
+        ):
+            raise ProductTicketError(
+                'receipt_required',
+                'manual receipt and content type are required',
+                status_code=422,
             )
+        receipt = (
+            base64.b64decode(command.receipt_base64, validate=True)
+            if command.receipt_base64 is not None
+            else b''
+        )
+        outcome = self._execute(
+            lambda: self._actions.confirm_ticket_placement(
+                ConfirmTicketPlacementRequest(
+                    ticket_artifact_id=ticket_artifact_id,
+                    confirmation_id=command.confirmation_id,
+                    nonce=command.nonce,
+                    ticket_hash=command.ticket_hash,
+                    amount=command.amount,
+                    currency=command.currency,
+                    channel=command.channel,
+                    placement_mode=command.placement_mode,
+                    external_reference=command.external_reference,
+                    receipt_content=receipt,
+                    receipt_content_type=command.receipt_content_type or '',
+                    actor_id=self._actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                    idempotency_key=command.idempotency_key,
+                    requested_at=self._requested_at(),
+                )
+            ),
+            confirmation=True,
         )
         return _response(outcome)
 
@@ -141,6 +167,42 @@ class ProductTicketService:
         if requested_at.tzinfo is None or requested_at.utcoffset() is None:
             raise ValueError('product ticket clock must be timezone-aware')
         return requested_at.astimezone(UTC)
+
+    @staticmethod
+    def _execute(operation, *, confirmation: bool = False):
+        try:
+            return operation()
+        except OptimisticConcurrencyError as error:
+            raise ProductTicketError(
+                'ticket_revision_conflict', str(error), status_code=409
+            ) from error
+        except ValueError as error:
+            message = str(error)
+            lowered = message.casefold()
+            if 'does not exist' in lowered:
+                raise ProductNotFoundError(message) from error
+            mappings = (
+                ('audit error', 'ticket_audit_blocked', 409),
+                ('unadjudicated warn', 'ticket_warning_unadjudicated', 409),
+                ('deadline has passed', 'ticket_deadline_passed', 409),
+                ('already placed', 'ticket_already_placed', 409),
+                ('already consumed', 'confirmation_reused', 409),
+                ('confirmation has expired', 'confirmation_stale', 409),
+                ('binding mismatch', 'confirmation_binding_mismatch', 409),
+                ('nonce mismatch', 'confirmation_binding_mismatch', 409),
+                ('connector placement is unavailable', 'connector_unavailable', 503),
+                ('manual receipt is required', 'receipt_required', 422),
+            )
+            for fragment, code, status_code in mappings:
+                if fragment in lowered:
+                    raise ProductTicketError(
+                        code, message, status_code=status_code
+                    ) from error
+            if confirmation and 'committed revision' in lowered:
+                raise ProductTicketError(
+                    'confirmation_stale', message, status_code=409
+                ) from error
+            raise
 
 
 def _ticket_leg(leg: TicketLegCommand) -> TicketLegDraft:

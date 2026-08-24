@@ -598,8 +598,8 @@ class ConfirmPlacementCommand(VersionedContract):
     channel: str = Field(min_length=1)
     placement_mode: Literal['manual', 'connector']
     external_reference: str = Field(min_length=1)
-    receipt_base64: str = Field(min_length=1)
-    receipt_content_type: str = Field(min_length=1)
+    receipt_base64: str | None = None
+    receipt_content_type: str | None = None
     idempotency_key: str = Field(min_length=1, max_length=200)
 
     @field_validator('amount')
@@ -615,7 +615,9 @@ class ConfirmPlacementCommand(VersionedContract):
 
     @field_validator('receipt_base64')
     @classmethod
-    def receipt_must_be_valid_base64(cls, value: str) -> str:
+    def receipt_must_be_valid_base64(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         try:
             decoded = base64.b64decode(value, validate=True)
         except (binascii.Error, ValueError) as error:

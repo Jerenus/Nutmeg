@@ -19,10 +19,15 @@ from nutmeg.interfaces.product_ui import mount_product_ui
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.errors import IdempotencyConflictError, OptimisticConcurrencyError
 from nutmeg.product.contracts import (
+    ApproveTicketBatchCommand,
+    ConfirmPlacementCommand,
     CopilotRequest,
+    CreateTicketBatchCommand,
+    IssueConfirmationCommand,
     ProductActionRequest,
     ProductError,
     ReadinessLevel,
+    RemoveTicketLegCommand,
 )
 from nutmeg.product.copilot import (
     ProductCopilotResponseError,
@@ -32,6 +37,7 @@ from nutmeg.product.errors import (
     ProductActionBlockedError,
     ProductActionNotAllowedError,
     ProductNotFoundError,
+    ProductTicketError,
 )
 
 _SESSION_COOKIE = 'nutmeg_session'
@@ -74,6 +80,17 @@ def create_product_app(
     async def action_blocked(_request: Request, error: ProductActionBlockedError):
         return error_response(409, ProductError(code='action_blocked', message=str(error)))
 
+    @app.exception_handler(ProductTicketError)
+    async def ticket_error(_request: Request, error: ProductTicketError):
+        return error_response(
+            error.status_code,
+            ProductError(
+                code=error.code,
+                message=str(error),
+                retryable=error.retryable,
+            ),
+        )
+
     @app.exception_handler(ProductCopilotUnavailableError)
     async def copilot_unavailable(
         _request: Request, _error: ProductCopilotUnavailableError
@@ -112,7 +129,18 @@ def create_product_app(
         )
 
     @app.exception_handler(RequestValidationError)
-    async def request_validation(_request: Request, error: RequestValidationError):
+    async def request_validation(request: Request, error: RequestValidationError):
+        if request.url.path.endswith('/confirm') and any(
+            'receipt_base64' in item['loc'] or 'receipt_content_type' in item['loc']
+            for item in error.errors()
+        ):
+            return error_response(
+                422,
+                ProductError(
+                    code='receipt_required',
+                    message='manual receipt and content type are required',
+                ),
+            )
         field_errors: dict[str, list[str]] = {}
         for item in error.errors():
             field = '.'.join(str(part) for part in item['loc'] if part != 'body') or 'body'
@@ -233,6 +261,80 @@ def create_product_app(
         match_id: str, as_of: Annotated[datetime | None, Query()] = None
     ):
         return services.queries.match(match_id, as_of=as_of or now())
+
+    @app.get('/api/v1/ticket-workbench')
+    async def ticket_workbench(
+        day: Annotated[date, Query(alias='date')],
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        return services.queries.ticket_workbench(day, as_of=as_of or now())
+
+    @app.get('/api/v1/ticket-batches/{ticket_batch_id}')
+    async def ticket_batch(ticket_batch_id: str):
+        return services.queries.ticket_batch(ticket_batch_id)
+
+    @app.get('/api/v1/ticket-artifacts/{ticket_artifact_id}')
+    async def ticket_artifact(ticket_artifact_id: str):
+        return services.queries.ticket_artifact(ticket_artifact_id, as_of=now())
+
+    def ticket_action_response(response):
+        if response.status == 'rejected':
+            return error_response(
+                403,
+                ProductError(
+                    code=response.error_code or 'action_rejected',
+                    message=response.error_detail or 'action was rejected',
+                    action_id=response.action_id,
+                ),
+            )
+        return response
+
+    @app.post('/api/v1/ticket-batches')
+    async def create_ticket_batch(
+        command: CreateTicketBatchCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return ticket_action_response(services.tickets.create_batch(command))
+
+    @app.post('/api/v1/ticket-batches/{ticket_batch_id}/remove-leg')
+    async def remove_ticket_leg(
+        ticket_batch_id: str,
+        command: RemoveTicketLegCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return ticket_action_response(
+            services.tickets.remove_leg(ticket_batch_id, command)
+        )
+
+    @app.post('/api/v1/ticket-batches/{ticket_batch_id}/approve')
+    async def approve_ticket_batch(
+        ticket_batch_id: str,
+        command: ApproveTicketBatchCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return ticket_action_response(
+            services.tickets.approve_batch(ticket_batch_id, command)
+        )
+
+    @app.post('/api/v1/ticket-artifacts/{ticket_artifact_id}/confirmations')
+    async def issue_ticket_confirmation(
+        ticket_artifact_id: str,
+        command: IssueConfirmationCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return ticket_action_response(
+            services.tickets.issue_confirmation(ticket_artifact_id, command)
+        )
+
+    @app.post('/api/v1/ticket-artifacts/{ticket_artifact_id}/confirm')
+    async def confirm_ticket_placement(
+        ticket_artifact_id: str,
+        command: ConfirmPlacementCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return ticket_action_response(
+            services.tickets.confirm_placement(ticket_artifact_id, command)
+        )
 
     @app.get('/api/v1/lineage/{object_type}/{object_id}')
     async def lineage(object_type: str, object_id: str):

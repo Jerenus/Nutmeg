@@ -20,3 +20,20 @@ class ProductActionBlockedError(ProductError):
 
 class ProductNotReadyError(ProductError):
     """The product cannot start against an unhealthy or outdated ontology."""
+
+
+class ProductTicketError(ProductError):
+    """A stable protected-ticket failure exposed by the product boundary."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        status_code: int = 409,
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status_code = status_code
+        self.retryable = retryable

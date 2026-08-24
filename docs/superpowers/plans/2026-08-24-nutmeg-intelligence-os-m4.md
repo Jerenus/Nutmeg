@@ -571,7 +571,7 @@ UV_FROZEN=1 git commit -m "feat(product): expose ticket workbench contract"
 - Modify: `nutmeg/product/errors.py`
 - Test: `tests/product/test_m4_api.py`
 
-- [ ] **Step 1: Write failing route/security/error tests**
+- [x] **Step 1: Write failing route/security/error tests**
 
 Test all M4 GETs and POSTs. Every POST without session, CSRF, and exact Origin must be
 403. Payload actor spoofing must be 422 because strict DTOs forbid it. Assert stable
@@ -586,13 +586,13 @@ Also assert:
 - receipt base64 and nonce are absent from `/api/v1/actions` and `/api/v1/events`;
 - confirmation responses carry formal Action and object references.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/product/test_m4_api.py -q -x`
 
 Expected: 404 for M4 routes.
 
-- [ ] **Step 3: Implement dedicated routes through the existing security dependency**
+- [x] **Step 3: Implement dedicated routes through the existing security dependency**
 
 All mutations use `Depends(require_mutation_session)` and server values:
 
@@ -605,7 +605,7 @@ Do not add a second session or CSRF mechanism. Map typed ticket errors to the st
 `ProductError` envelope. Receipt decoding errors are 422; state conflicts are 409;
 connector unavailable is 503; permission remains 403.
 
-- [ ] **Step 4: Run API and security regressions**
+- [x] **Step 4: Run API and security regressions**
 
 Run:
 
@@ -616,7 +616,7 @@ UV_FROZEN=1 uv run ruff check nutmeg/interfaces/product_api.py tests/product/tes
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit Task 7**
+- [x] **Step 5: Commit Task 7**
 
 ```bash
 UV_FROZEN=1 git add nutmeg/interfaces/product_api.py nutmeg/product/errors.py tests/product/test_m4_api.py
