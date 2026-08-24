@@ -261,7 +261,7 @@ git commit -m "feat(ontology): add product workflow schema"
 - Modify: `nutmeg/ontology/wiring.py`
 - Create: `tests/ontology/test_workflow_actions.py`
 
-- [ ] **Step 1: Write permission and persistence tests**
+- [x] **Step 1: Write permission and persistence tests**
 
 Test all six transitions explicitly:
 
@@ -304,12 +304,12 @@ def test_stale_proposal_resolution_is_rejected(workflow):
 Also assert `record_flag_instance`, `register_prediction`, and `link_precedent`
 persist their typed rows and reject roles not present in migration 10.
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/ontology/test_workflow_actions.py -q`  
 Expected: collection FAIL because workflow modules do not exist.
 
-- [ ] **Step 3: Add immutable workflow value objects**
+- [x] **Step 3: Add immutable workflow value objects**
 
 Use frozen dataclasses and explicit enums in `workflow/models.py`:
 
@@ -359,7 +359,7 @@ Define matching frozen rows for `AdjudicationRow`, `FlagInstanceRow`,
 `workflow_actions.py`; each includes actor, role, idempotency key, and timezone-aware
 `requested_at`.
 
-- [ ] **Step 4: Implement the workflow repository**
+- [x] **Step 4: Implement the workflow repository**
 
 `WorkflowRepository` must expose explicit insert/get methods, JSON through
 `canonical_json`, proposal resolution as an update, and counts. The proposal update is:
@@ -385,7 +385,7 @@ def resolve_agent_proposal(
 
 Add `OntologyUnitOfWork.workflow` returning this repository.
 
-- [ ] **Step 5: Implement typed workflow Actions**
+- [x] **Step 5: Implement typed workflow Actions**
 
 `WorkflowActions` receives the existing `ActionService`. Every public method builds an
 `ActionCommand`, writes exactly one workflow object in its handler, and returns an
@@ -424,17 +424,17 @@ resolution accepts only `approved`, `rejected`, or `withdrawn`, and places
 `{"agent_proposal:<id>": expected_version}` in `ActionCommand.expected_versions`.
 Add `OptimisticConcurrencyError` to `nutmeg/ontology/errors.py`.
 
-- [ ] **Step 6: Wire the workflow facade into the kernel**
+- [x] **Step 6: Wire the workflow facade into the kernel**
 
 Construct one `WorkflowActions(action_service)` in `build_ontology_kernel`, pass it to
 `OntologyKernel`, and expose it as `kernel.workflow`.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run: `uv run pytest tests/ontology/test_workflow_actions.py tests/ontology/test_permissions.py -q`  
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add nutmeg/ontology/workflow nutmeg/ontology/repository/workflow.py \

@@ -22,6 +22,7 @@ from nutmeg.ontology.actions.person_actions import PersonActions
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.actions.session_actions import SessionActions
 from nutmeg.ontology.actions.ticket_actions import TicketActions
+from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
 from nutmeg.ontology.decision.read_flow import DecisionReadService
 from nutmeg.ontology.finance.express_flow import ExpressService
@@ -68,6 +69,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         unit_of_work_factory=unit_of_work_factory,
     )
     calibrate = CalibrateService(engine=engine, analytics_path=paths.analytics)
+    workflow = WorkflowActions(action_service)
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -78,4 +80,5 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         express=express,
         reconcile=reconcile,
         calibrate=calibrate,
+        workflow=workflow,
     )
