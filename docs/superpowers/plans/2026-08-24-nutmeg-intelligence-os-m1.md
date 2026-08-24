@@ -68,7 +68,7 @@ visual workspaces themselves.
 - Modify: `nutmeg/ontology/repository/migrations.py`
 - Create: `tests/ontology/test_workflow_migration.py`
 
-- [ ] **Step 1: Write the failing migration test**
+- [x] **Step 1: Write the failing migration test**
 
 ```python
 from pathlib import Path
@@ -98,12 +98,12 @@ def test_migration_10_adds_workflow_outbox_and_permissions(tmp_path: Path) -> No
     assert ("resolve_agent_proposal", "judge_operator") in permissions
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/ontology/test_workflow_migration.py -q`  
 Expected: FAIL because migration 10 and the six tables do not exist.
 
-- [ ] **Step 3: Declare the workflow tables**
+- [x] **Step 3: Declare the workflow tables**
 
 Create `schema_workflow.py` with six explicit tables on the shared metadata:
 
@@ -197,7 +197,7 @@ outbox_events = Table(
 )
 ```
 
-- [ ] **Step 4: Add migration 10 and exact permissions**
+- [x] **Step 4: Add migration 10 and exact permissions**
 
 Import `schema_workflow`, create the tables in FK order, and seed:
 
@@ -236,12 +236,12 @@ def _apply_product_workflow(connection: Connection) -> None:
 Append migration 10 with fingerprint
 `adjudications+flags+predictions+precedents+agent_proposals+outbox+workflow_permissions`.
 
-- [ ] **Step 5: Run focused migration tests**
+- [x] **Step 5: Run focused migration tests**
 
 Run: `uv run pytest tests/ontology/test_workflow_migration.py tests/ontology/test_migrations.py -q`  
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/ontology/repository/schema_workflow.py \

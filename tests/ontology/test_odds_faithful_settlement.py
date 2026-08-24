@@ -150,4 +150,5 @@ def test_migration9_upgrades_schema8_store(tmp_path: Path) -> None:
         columns = {row[1] for row in
                    connection.exec_driver_sql("PRAGMA table_info(bet_legs)").fetchall()}
     assert "entry_odds" in columns
-    assert MIGRATIONS[-1].version == 9
+    migration9 = next(migration for migration in MIGRATIONS if migration.version == 9)
+    assert migration9.name == "finance_entry_odds"

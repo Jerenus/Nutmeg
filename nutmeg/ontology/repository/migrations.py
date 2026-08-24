@@ -28,6 +28,7 @@ from nutmeg.ontology.repository import (
     schema_finance,
     schema_identity,
     schema_market,
+    schema_workflow,
 )
 
 
@@ -418,6 +419,44 @@ def _apply_finance_entry_odds(connection: Connection) -> None:
         connection.exec_driver_sql('ALTER TABLE bet_legs ADD COLUMN entry_odds REAL')
 
 
+_WORKFLOW_ACTION_PERMISSIONS = (
+    ('record_adjudication', 'judge_operator'),
+    ('record_flag_instance', 'judge_operator'),
+    ('record_flag_instance', 'deterministic_system'),
+    ('register_prediction', 'ai_analyst'),
+    ('register_prediction', 'judge_operator'),
+    ('link_precedent', 'judge_operator'),
+    ('link_precedent', 'deterministic_system'),
+    ('create_agent_proposal', 'ai_analyst'),
+    ('create_agent_proposal', 'judge_operator'),
+    ('resolve_agent_proposal', 'judge_operator'),
+)
+
+
+def _apply_product_workflow(connection: Connection) -> None:
+    for table in (
+        schema_workflow.adjudications,
+        schema_workflow.flag_instances,
+        schema_workflow.predictions,
+        schema_workflow.precedent_links,
+        schema_workflow.agent_proposals,
+        schema_workflow.outbox_events,
+    ):
+        table.create(connection)
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                'policy_version_id': 'governance-v1',
+                'action_type': action_type,
+                'actor_role': actor_role,
+            }
+            for action_type, actor_role in _WORKFLOW_ACTION_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -472,6 +511,15 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='finance_entry_odds',
         fingerprint='bet_legs+entry_odds(guarded_alter)',
         apply=_apply_finance_entry_odds,
+    ),
+    Migration(
+        version=10,
+        name='product_workflow',
+        fingerprint=(
+            'adjudications+flags+predictions+precedents+agent_proposals+'
+            'outbox+workflow_permissions'
+        ),
+        apply=_apply_product_workflow,
     ),
 )
 
