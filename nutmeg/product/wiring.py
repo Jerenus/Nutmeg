@@ -7,6 +7,7 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.kernel import OntologyKernel
 from nutmeg.ontology.wiring import build_ontology_kernel
 from nutmeg.product.actions import ProductActionGateway
+from nutmeg.product.copilot import MatchCopilotService, build_copilot_provider
 from nutmeg.product.errors import ProductNotReadyError
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
@@ -18,6 +19,7 @@ class ProductServices:
     queries: ProductQueryService
     actions: ProductActionGateway
     settings: AppSettings
+    copilot: MatchCopilotService | None = None
 
 
 def build_product_services(settings: AppSettings) -> ProductServices:
@@ -32,9 +34,21 @@ def build_product_services(settings: AppSettings) -> ProductServices:
             'ontology is not initialized, healthy, and current; run `nutmeg ontology init`'
         )
     repository = ProductReadRepository(kernel.engine)
+    queries = ProductQueryService(repository, kernel)
+    actions = ProductActionGateway(kernel, repository)
+    provider = build_copilot_provider(settings)
     return ProductServices(
         kernel=kernel,
-        queries=ProductQueryService(repository, kernel),
-        actions=ProductActionGateway(kernel, repository),
+        queries=queries,
+        actions=actions,
         settings=settings,
+        copilot=(
+            MatchCopilotService(
+                queries=queries,
+                actions=actions,
+                provider=provider,
+            )
+            if provider is not None
+            else None
+        ),
     )

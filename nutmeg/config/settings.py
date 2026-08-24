@@ -30,18 +30,20 @@ class AppSettings(BaseSettings):
     langsmith_project: str = 'nutmeg-local'
     langsmith_api_key: str | None = Field(
         default=None,
+        repr=False,
         validation_alias=AliasChoices(
             'LANGSMITH_API_KEY',
             'NUTMEG_LANGSMITH_API_KEY',
         ),
     )
     portkey_base_url: str = 'https://api.portkey.ai/v1'
-    portkey_api_key: str | None = None
+    portkey_api_key: str | None = Field(default=None, repr=False)
     anthropic_model: str = 'claude-sonnet-4-5'
     agent_synthesis_enabled: bool = False
     openai_base_url: str = 'https://api.openai.com/v1'
     openai_api_key: str | None = Field(
         default=None,
+        repr=False,
         validation_alias=AliasChoices(
             'OPENAI_API_KEY',
             'NUTMEG_OPENAI_API_KEY',
@@ -50,14 +52,14 @@ class AppSettings(BaseSettings):
     bot_llm_fallback_enabled: bool = False
     bot_llm_fallback_model: str = 'gpt-5.5'
     api_football_base_url: str = 'https://v3.football.api-sports.io/'
-    api_football_key: str | None = None
+    api_football_key: str | None = Field(default=None, repr=False)
     odds_provider: str = 'api-football'
     the_odds_api_base_url: str = 'https://api.the-odds-api.com/v4/'
-    the_odds_api_key: str | None = None
+    the_odds_api_key: str | None = Field(default=None, repr=False)
     open_meteo_geocoding_base_url: str = 'https://geocoding-api.open-meteo.com/v1/'
     open_meteo_weather_base_url: str = 'https://api.open-meteo.com/v1/'
     telegram_api_base_url: str = 'https://api.telegram.org'
-    telegram_bot_token: str | None = None
+    telegram_bot_token: str | None = Field(default=None, repr=False)
     telegram_allowed_chat_ids: str | None = None
     psychology_layer_enabled: bool = False
     psychology_conviction_threshold: float = 0.7
