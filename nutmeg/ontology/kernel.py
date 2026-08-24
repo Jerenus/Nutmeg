@@ -18,6 +18,7 @@ from nutmeg.ontology.actions.claim_actions import ClaimActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
+from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.decision.read_flow import DecisionReadService
 from nutmeg.ontology.finance.express_flow import ExpressService
@@ -39,6 +40,7 @@ from nutmeg.ontology.repository.migrations import (
     run_migrations,
 )
 from nutmeg.ontology.repository.outbox import OutboxRepository
+from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
 
 if TYPE_CHECKING:
     from nutmeg.analytics.calibrate_flow import CalibrateService
@@ -71,6 +73,9 @@ class OntologyKernelStatus:
     factor_estimate_count: int
     regime_vector_count: int
     lifecycle_proposal_count: int
+    scoreboard_observation_count: int
+    scoreboard_shadow_review_count: int
+    scoreboard_authority_state: str
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -99,6 +104,9 @@ class OntologyKernelStatus:
             'factor_estimate_count': self.factor_estimate_count,
             'regime_vector_count': self.regime_vector_count,
             'lifecycle_proposal_count': self.lifecycle_proposal_count,
+            'scoreboard_observation_count': self.scoreboard_observation_count,
+            'scoreboard_shadow_review_count': self.scoreboard_shadow_review_count,
+            'scoreboard_authority_state': self.scoreboard_authority_state,
         }
 
 
@@ -120,6 +128,7 @@ class OntologyKernel:
         forecast_actions: ForecastActions,
         workflow: WorkflowActions,
         protected_tickets: ProtectedTicketActions,
+        scoreboard_actions: ScoreboardActions,
     ) -> None:
         self._paths = paths
         self._engine = engine
@@ -135,6 +144,7 @@ class OntologyKernel:
         self.forecast_actions = forecast_actions
         self.workflow = workflow
         self.protected_tickets = protected_tickets
+        self.scoreboard_actions = scoreboard_actions
 
     @property
     def engine(self) -> Engine:
@@ -176,6 +186,9 @@ class OntologyKernel:
                 factor_estimate_count=0,
                 regime_vector_count=0,
                 lifecycle_proposal_count=0,
+                scoreboard_observation_count=0,
+                scoreboard_shadow_review_count=0,
+                scoreboard_authority_state='uninitialized',
             )
 
         migration = migration_status(self._engine)
@@ -217,6 +230,15 @@ class OntologyKernel:
             else:
                 outbox_event_count = 0
                 outbox_latest_sequence = 0
+            if 13 in applied:
+                scoreboard = ScoreboardRepository(connection)
+                scoreboard_observation_count = scoreboard.count_observations()
+                scoreboard_shadow_review_count = scoreboard.count_shadow_reviews()
+                scoreboard_authority_state = scoreboard.authority().state
+            else:
+                scoreboard_observation_count = 0
+                scoreboard_shadow_review_count = 0
+                scoreboard_authority_state = 'unavailable'
         from nutmeg.analytics.substrate import projection_counts
 
         counts = projection_counts(self._paths.analytics)
@@ -247,4 +269,7 @@ class OntologyKernel:
             factor_estimate_count=counts['factor_estimate_count'],
             regime_vector_count=counts['regime_vector_count'],
             lifecycle_proposal_count=counts['lifecycle_proposal_count'],
+            scoreboard_observation_count=scoreboard_observation_count,
+            scoreboard_shadow_review_count=scoreboard_shadow_review_count,
+            scoreboard_authority_state=scoreboard_authority_state,
         )
