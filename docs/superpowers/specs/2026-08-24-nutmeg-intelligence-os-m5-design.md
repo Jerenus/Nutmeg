@@ -123,8 +123,10 @@ A counterfactual candidate is an Adjudication alternative containing:
 }
 ```
 
-The review projector validates the three-way distribution with the existing probability
-contract and accepts it only when `adjudication.created_at <= outcome.recorded_at`. It
+The review projector requires exactly `market_definition_id`, `distribution`, and
+`label`, accepts only finite numeric non-boolean probabilities, validates the three-way
+distribution with the existing probability contract, and accepts it only when
+`adjudication.created_at <= outcome.recorded_at`. It
 uses the existing Brier primitive against the current versioned Outcome and records the
 source Adjudication, Outcome, metric version, and eligibility reason. Invalid, late, or
 unlinked alternatives are returned with an explicit exclusion code and no score.
@@ -193,8 +195,9 @@ It grants `record_scoreboard_shadow_review` and `record_scoreboard_export` only 
 
 `RecordScoreboardObservation` requires group/metric keys, non-empty tally/detail/status,
 an effective time, and at least one valid evidence reference. Optional numerator,
-denominator, value, and unit are retained as structured data. Revisions supersede rather
-than overwrite. A dedicated CLI may import a legacy file only with an explicit
+denominator, value, and unit are retained as structured data. Revisions must supersede
+the single current leaf rather than overwrite or create a parallel branch. A dedicated
+CLI may import a legacy file only with an explicit
 `--acknowledge-manual-source` flag; it emits one judge Action per metric and preserves
 the original file as a CAS SourceArtifact.
 
@@ -209,6 +212,11 @@ planes, lifecycle state, and the latest valid manual observations. The shadow se
    `unexplained`;
 4. records the projection watermark and a canonical comparison;
 5. commits `RecordScoreboardShadowReview` through the Action service.
+
+Shadow requires the projection watermark to equal the current operational Action
+watermark before it ingests anything. Cutover then permits only the exact artifact
+ingest and shadow-review Actions bound to that review after the watermark; any business
+Action makes the review stale.
 
 No string heuristic is allowed to silently convert a tally into a numeric metric.
 
@@ -226,8 +234,11 @@ The compatibility exporter is deterministic canonical JSON containing:
 - manual observations grouped by their stable legacy group/metric keys;
 - content hash and generation Action reference.
 
-The writer uses atomic replacement. Verification compares file bytes with the recorded
-export hash. Manual edits produce `scoreboard_export_drift`; they are not imported.
+The writer uses atomic replacement. The first export may replace an existing destination
+only when its bytes equal the cutover legacy hash. Verification compares later file
+bytes with the recorded export hash. A newer current projection refreshes the output and
+stored projection identity; an unprojected business Action blocks export. Manual edits
+produce `scoreboard_export_drift`; they are not imported.
 
 ## 8. Product contract
 
@@ -272,12 +283,14 @@ to every metric. Empty/unsettled states are explicit.
 `/calibration` shows projection health, factor estimates with interval/sample/cohort,
 lifecycle proposals, current states, and regime summaries. Each proposal has a human
 apply/reject form. Apply uses the existing `apply_factor_status` Action and requires a
-reason-bearing Adjudication link; AI and browser payloads cannot choose actor role.
+reason-bearing `apply` Adjudication bound to the exact proposal; AI and browser payloads
+cannot choose actor role.
 
 ### 9.3 Ontology Browser
 
 `/ontology` provides allowlisted type filters, stable cursor pagination, object identity,
-properties, links, versions, source lineage, and Action history. It never renders raw
+properties, links, versions, source lineage, and Action history, all filtered by the
+requested `as_of`. It never renders raw
 table names, accepts SQL, or exposes secret/blob bytes. Historical `as_of` is visible and
 enforced server-side.
 
