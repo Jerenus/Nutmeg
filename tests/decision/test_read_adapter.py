@@ -67,6 +67,48 @@ def test_read_v2_resolves_legacy_canonical_match_id(tmp_path: Path) -> None:
     assert revision.match_id == match_id
 
 
+def test_read_v2_resolves_legacy_prior_snapshot_id(tmp_path: Path) -> None:
+    kernel, match_id, output_dir = _kernel_with_match(tmp_path)
+    reads = [{
+        "read_id": "r-snapshot", "match_id": match_id,
+        "snapshot_id": "S-read_time-sporttery-周日001-2026-07-19T15:00:00+08:00",
+        "market": "had", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
+        "belief": {"home": 0.5, "draw": 0.3, "away": 0.2}, "factors": [],
+        "made_at": "2026-07-19T15:00:00+08:00",
+    }]
+    reads_file = output_dir / "daily" / DATE / "reads-snapshot.json"
+    reads_file.write_text(json.dumps(reads), encoding="utf-8")
+
+    msg = run_decision_read_v2(reads_file, output_dir, kernel=kernel)
+
+    assert "摄取 1/1" in msg
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        series_id = uow.decision.ensure_series(match_id, "md-had")
+        revision = uow.decision.current_committed_revision(series_id)
+    assert revision is not None
+    assert revision.prior_snapshot_id is not None
+    assert revision.prior_snapshot_id.startswith("snapshot-")
+
+
+def test_read_v2_rejects_unresolved_prior_snapshot_before_write(tmp_path: Path) -> None:
+    kernel, match_id, output_dir = _kernel_with_match(tmp_path)
+    reads = [{
+        "read_id": "r-missing-snapshot", "match_id": match_id,
+        "snapshot_id": "S-read_time-unknown-周日001-2026-07-19T15:00:00+08:00",
+        "market": "had", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
+        "belief": {"home": 0.5, "draw": 0.3, "away": 0.2}, "factors": [],
+        "made_at": "2026-07-19T15:00:00+08:00",
+    }]
+    reads_file = output_dir / "daily" / DATE / "reads-unresolved-snapshot.json"
+    reads_file.write_text(json.dumps(reads), encoding="utf-8")
+
+    msg = run_decision_read_v2(reads_file, output_dir, kernel=kernel)
+
+    assert "摄取 0/1" in msg
+    assert "r-missing-snapshot:unresolved_snapshot" in msg
+    assert kernel.status().forecast_count == 0
+
+
 def test_read_v2_rejects_unresolved_match_before_forecast_write(tmp_path: Path) -> None:
     kernel, _match_id, output_dir = _kernel_with_match(tmp_path)
     reads = [{

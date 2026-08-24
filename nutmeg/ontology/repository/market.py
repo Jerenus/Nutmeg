@@ -128,6 +128,53 @@ class MarketRepository:
         ).scalars().all()
         return tuple(rows)
 
+    def snapshot_exists_for(
+        self,
+        market_snapshot_id: str,
+        match_id: str,
+        market_definition_id: str,
+    ) -> bool:
+        snapshot = self._connection.execute(
+            select(sm.market_snapshots.c.market_snapshot_id).where(
+                sm.market_snapshots.c.market_snapshot_id == market_snapshot_id,
+                sm.market_snapshots.c.match_id == match_id,
+                sm.market_snapshots.c.market_definition_id == market_definition_id,
+            )
+        ).scalar_one_or_none()
+        return snapshot is not None
+
+    def snapshot_id_for_source(
+        self,
+        match_id: str,
+        market_definition_id: str,
+        snapshot_kind: str,
+        provider: str,
+    ) -> str | None:
+        return self._connection.execute(
+            select(sm.market_snapshots.c.market_snapshot_id)
+            .select_from(
+                sm.market_snapshots.join(
+                    sm.market_snapshot_quotes,
+                    sm.market_snapshot_quotes.c.market_snapshot_id
+                    == sm.market_snapshots.c.market_snapshot_id,
+                ).join(
+                    sm.market_quotes,
+                    sm.market_quotes.c.quote_id == sm.market_snapshot_quotes.c.quote_id,
+                )
+            )
+            .where(
+                sm.market_snapshots.c.match_id == match_id,
+                sm.market_snapshots.c.market_definition_id == market_definition_id,
+                sm.market_snapshots.c.snapshot_kind == snapshot_kind,
+                sm.market_quotes.c.provider == provider,
+            )
+            .order_by(
+                sm.market_snapshots.c.as_of.desc(),
+                sm.market_snapshots.c.market_snapshot_id.desc(),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+
     def closing_fair(
         self, match_id: str, market_definition_id: str
     ) -> dict[str, float] | None:

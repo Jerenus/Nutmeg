@@ -192,6 +192,43 @@ def _resolve_read_match_id(kernel, source_match_id: str, reads_file: Path) -> st
     return None
 
 
+def _resolve_read_snapshot_id(
+    kernel,
+    source_snapshot_id: str,
+    match_id: str,
+    market_definition_id: str,
+) -> str | None:
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        if uow.market.snapshot_exists_for(
+            source_snapshot_id,
+            match_id,
+            market_definition_id,
+        ):
+            return source_snapshot_id
+
+    parts = source_snapshot_id.split("-", 4)
+    if len(parts) != 5 or parts[0] != "S":
+        return None
+    _prefix, snapshot_kind, legacy_provider, _match_no, _captured_at = parts
+    provider = {
+        "api-football": "intl",
+        "apifootball": "intl",
+        "intl": "intl",
+        "sporttery": "sporttery",
+    }.get(legacy_provider)
+    if provider is None:
+        return None
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        return uow.market.snapshot_id_for_source(
+            match_id,
+            market_definition_id,
+            snapshot_kind,
+            provider,
+        )
+
+
 def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
     """Commit each judged Read payload as a kernel ForecastRevision (no money, no push).
 
@@ -231,6 +268,18 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
         if match_id is None:
             rejected.append(f"{read_id}:unresolved_match")
             continue
+        source_snapshot_id = str(payload.get("snapshot_id") or "")
+        prior_snapshot_id = None
+        if source_snapshot_id:
+            prior_snapshot_id = _resolve_read_snapshot_id(
+                active_kernel,
+                source_snapshot_id,
+                match_id,
+                market,
+            )
+            if prior_snapshot_id is None:
+                rejected.append(f"{read_id}:unresolved_snapshot")
+                continue
         prior = payload.get("prior")
         belief = payload.get("belief")
         factors: list[FactorInput] = []
@@ -258,7 +307,7 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
                     factors=factors,
                     commitment_tier=str(payload.get("commitment_tier", "commit")),
                     evidence_bundle_id=None,
-                    prior_snapshot_id=payload.get("snapshot_id"),
+                    prior_snapshot_id=prior_snapshot_id,
                     falsifier=payload.get("falsifier"),
                     actor_id="judge:owner",
                     actor_role=ActorRole.JUDGE_OPERATOR,
