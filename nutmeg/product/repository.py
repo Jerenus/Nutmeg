@@ -1,12 +1,15 @@
 """Read-only temporal queries over Ontology Kernel v2."""
 from __future__ import annotations
 
+import base64
 import json
 from collections.abc import Iterable
+from pathlib import Path
 
 from sqlalchemy import Engine, and_, case, func, or_, select
 
 from nutmeg.ontology.repository import schema
+from nutmeg.ontology.repository import schema_context as sc
 from nutmeg.ontology.repository import schema_decision as sd
 from nutmeg.ontology.repository import schema_evidence as se
 from nutmeg.ontology.repository import schema_finance as sf
@@ -20,8 +23,461 @@ LineageTuple = tuple[str, str, str, str, str]
 
 
 class ProductReadRepository:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, analytics_path: Path | None = None) -> None:
         self._engine = engine
+        self._analytics_path = Path(analytics_path) if analytics_path is not None else None
+
+    def scoreboard_projection(self, *, as_of: str) -> dict:
+        result = self._projection_rows("scoreboard_metrics", as_of=as_of)
+        if result["rows"]:
+            for row in result["rows"]:
+                row["source_refs"] = json.loads(row.pop("source_refs_json"))
+        return result
+
+    def projection_rows(self, table: str, *, as_of: str) -> dict:
+        allowed = {
+            "counterfactual_replays",
+            "factor_estimates",
+            "factor_lifecycle_proposals",
+            "regime_vectors",
+            "regime_postmatch_labels",
+        }
+        if table not in allowed:
+            raise ValueError(f"projection table {table} is not allowlisted")
+        return self._projection_rows(table, as_of=as_of)
+
+    def _projection_rows(self, table: str, *, as_of: str) -> dict:
+        path = self._analytics_path
+        unavailable = {
+            "health": {
+                "state": "unavailable",
+                "code": "projection_unavailable",
+                "instruction": "run `nutmeg ontology calibrate`",
+                "projection_version": None,
+                "source_high_watermark": None,
+                "built_at": None,
+                "cohort_definition_version": None,
+                "metric_version": None,
+            },
+            "rows": [],
+        }
+        if path is None or not path.is_file():
+            return unavailable
+        import duckdb
+
+        with duckdb.connect(str(path), read_only=True) as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT table_name FROM information_schema.tables"
+                ).fetchall()
+            }
+            if table not in tables:
+                return unavailable
+            cursor = connection.execute(f'SELECT * FROM "{table}" ORDER BY 1, 2')
+            columns = [item[0] for item in cursor.description]
+            rows = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+        if not rows:
+            return unavailable
+        identities = {
+            (
+                str(row["projection_version"]),
+                int(row["source_high_watermark"]),
+                str(row["built_at"]),
+                str(row["cohort_definition_version"]),
+                str(row["metric_version"]),
+            )
+            for row in rows
+        }
+        if len(identities) != 1:
+            raise ValueError(f"projection {table} has ambiguous provenance")
+        version, watermark, built_at, cohort_version, metric_version = identities.pop()
+        stale = watermark < self.action_high_watermark()
+        return {
+            "health": {
+                "state": "stale" if stale else "available",
+                "code": "projection_stale" if stale else None,
+                "instruction": "run `nutmeg ontology calibrate`" if stale else None,
+                "projection_version": version,
+                "source_high_watermark": watermark,
+                "built_at": built_at,
+                "cohort_definition_version": cohort_version,
+                "metric_version": metric_version,
+            },
+            "rows": rows,
+        }
+
+    def settlements(self, *, as_of: str) -> list[dict]:
+        with self._engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(sf.ticket_settlements)
+                    .where(sf.ticket_settlements.c.settled_at <= as_of)
+                    .order_by(
+                        sf.ticket_settlements.c.settled_at.desc(),
+                        sf.ticket_settlements.c.ticket_settlement_id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        return [
+            self._decode_json(row, ("bet_leg_settlement_ids_json",)) for row in rows
+        ]
+
+    def ontology_objects(
+        self,
+        *,
+        object_type: str,
+        query: str | None,
+        after: str | None,
+        limit: int,
+        as_of: str,
+    ) -> dict:
+        if not 1 <= limit <= 1000:
+            raise ValueError("ontology object limit must be between 1 and 1000")
+        items = self._ontology_summaries(object_type, as_of)
+        query_text = (query or "").strip().casefold()
+        if query_text:
+            items = [
+                item
+                for item in items
+                if query_text in item["object_id"].casefold()
+                or query_text in item["label"].casefold()
+            ]
+        if after is not None:
+            cursor = self._decode_ontology_cursor(after)
+            items = [item for item in items if self._ontology_sort_key(item) > cursor]
+        page = items[: limit + 1]
+        has_more = len(page) > limit
+        page = page[:limit]
+        return {
+            "items": page,
+            "next_cursor": (
+                self._encode_ontology_cursor(self._ontology_sort_key(page[-1]))
+                if has_more and page
+                else None
+            ),
+        }
+
+    def ontology_object(
+        self, object_type: str, object_id: str, *, as_of: str
+    ) -> dict | None:
+        if object_type == "match":
+            with self._engine.connect() as connection:
+                versions = (
+                    connection.execute(
+                        select(si.match_revisions)
+                        .where(
+                            si.match_revisions.c.match_id == object_id,
+                            si.match_revisions.c.recorded_at <= as_of,
+                        )
+                        .order_by(
+                            si.match_revisions.c.recorded_at,
+                            si.match_revisions.c.version,
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+            if not versions:
+                return None
+            public_versions = [dict(row) for row in versions]
+            properties = {
+                "match_id": object_id,
+                "current_revision_id": public_versions[-1]["match_revision_id"],
+                "status": public_versions[-1]["status"],
+                "scheduled_at": public_versions[-1]["scheduled_at"],
+            }
+        else:
+            specification = self._ontology_spec(object_type)
+            table, id_name, label_name, status_name, recorded_name, json_columns = specification
+            statement = select(table).where(table.c[id_name] == object_id)
+            if recorded_name is not None:
+                statement = statement.where(table.c[recorded_name] <= as_of)
+            with self._engine.connect() as connection:
+                row = connection.execute(statement).mappings().first()
+            if row is None:
+                return None
+            properties = self._public_object_properties(
+                object_type, row, json_columns
+            )
+            public_versions = [dict(properties)]
+            del label_name, status_name
+        lineage = self.lineage(object_type, object_id) or []
+        return {
+            "object_type": object_type,
+            "object_id": object_id,
+            "properties": properties,
+            "versions": public_versions,
+            "links": [
+                {
+                    "relation": relation,
+                    "source": {"object_type": source_type, "object_id": source_id},
+                    "target": {"object_type": target_type, "object_id": target_id},
+                }
+                for relation, source_type, source_id, target_type, target_id in lineage
+            ],
+            "actions": self._object_action_history(object_type, object_id, as_of),
+        }
+
+    def _ontology_summaries(self, object_type: str, as_of: str) -> list[dict]:
+        if object_type == "match":
+            with self._engine.connect() as connection:
+                rows = (
+                    connection.execute(
+                        select(si.match_revisions).where(
+                            si.match_revisions.c.recorded_at <= as_of
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+            current: dict[str, dict] = {}
+            for row in rows:
+                item = dict(row)
+                prior = current.get(item["match_id"])
+                if prior is None or (item["recorded_at"], item["version"]) > (
+                    prior["recorded_at"],
+                    prior["version"],
+                ):
+                    current[item["match_id"]] = item
+            items = [
+                {
+                    "object_type": "match",
+                    "object_id": match_id,
+                    "label": match_id,
+                    "status": row["status"],
+                    "recorded_at": row["recorded_at"],
+                }
+                for match_id, row in current.items()
+            ]
+        else:
+            table, id_name, label_name, status_name, recorded_name, _json = (
+                self._ontology_spec(object_type)
+            )
+            statement = select(table)
+            if recorded_name is not None:
+                statement = statement.where(table.c[recorded_name] <= as_of)
+            with self._engine.connect() as connection:
+                rows = connection.execute(statement).mappings().all()
+            items = [
+                {
+                    "object_type": object_type,
+                    "object_id": str(row[id_name]),
+                    "label": str(row[label_name] or row[id_name]),
+                    "status": (
+                        str(row[status_name])
+                        if status_name is not None and row[status_name] is not None
+                        else None
+                    ),
+                    "recorded_at": (
+                        str(row[recorded_name])
+                        if recorded_name is not None and row[recorded_name] is not None
+                        else None
+                    ),
+                }
+                for row in rows
+            ]
+        return sorted(items, key=self._ontology_sort_key)
+
+    @staticmethod
+    def _ontology_spec(object_type: str):
+        specifications = {
+            "team": (
+                si.teams,
+                "team_id",
+                "canonical_name",
+                "resolution_status",
+                "created_at",
+                (),
+            ),
+            "competition": (
+                si.competitions,
+                "competition_id",
+                "name",
+                None,
+                None,
+                (),
+            ),
+            "person": (
+                sc.persons,
+                "person_id",
+                "canonical_name",
+                "resolution_status",
+                "created_at",
+                (),
+            ),
+            "claim": (
+                se.claims,
+                "claim_id",
+                "predicate",
+                "status",
+                "created_at",
+                ("value_json",),
+            ),
+            "observation": (
+                se.observations,
+                "observation_id",
+                "observation_type",
+                "verification_method",
+                "recorded_at",
+                ("value_json", "quality_json"),
+            ),
+            "market_snapshot": (
+                sm.market_snapshots,
+                "market_snapshot_id",
+                "market_definition_id",
+                "snapshot_kind",
+                "as_of",
+                (
+                    "fair_distribution_json",
+                    "source_coverage_json",
+                    "freshness_json",
+                    "disagreement_json",
+                ),
+            ),
+            "forecast_revision": (
+                sd.forecast_revisions,
+                "forecast_revision_id",
+                "forecast_revision_id",
+                "status",
+                "made_at",
+                ("prior_distribution_json", "belief_distribution_json"),
+            ),
+            "factor_definition": (
+                sd.factor_definitions,
+                "factor_definition_id",
+                "name",
+                "status",
+                "valid_from",
+                ("born_from_refs_json",),
+            ),
+            "ticket": (sf.tickets, "ticket_id", "structure", "status", "approved_at", ()),
+            "outcome": (
+                sf.match_outcomes,
+                "outcome_id",
+                "match_id",
+                "status",
+                "recorded_at",
+                ("source_artifact_retrieval_ids_json",),
+            ),
+            "settlement": (
+                sf.ticket_settlements,
+                "ticket_settlement_id",
+                "ticket_id",
+                "status",
+                "settled_at",
+                ("bet_leg_settlement_ids_json",),
+            ),
+            "adjudication": (
+                sw.adjudications,
+                "adjudication_id",
+                "decision",
+                "decision",
+                "created_at",
+                ("evidence_rejected_json", "alternative_json"),
+            ),
+            "flag_instance": (
+                sw.flag_instances,
+                "flag_instance_id",
+                "flag_type",
+                "status",
+                "created_at",
+                ("evidence_refs_json",),
+            ),
+            "prediction": (sw.predictions, "prediction_id", "claim", "status", "registered_at", ()),
+            "action": (
+                schema.actions,
+                "action_id",
+                "action_type",
+                "status",
+                "requested_at",
+                ("result_refs_json",),
+            ),
+        }
+        try:
+            return specifications[object_type]
+        except KeyError as error:
+            raise ValueError(
+                f"ontology object type {object_type} is not allowlisted"
+            ) from error
+
+    @staticmethod
+    def _public_object_properties(object_type: str, row, json_columns) -> dict:
+        properties = dict(row)
+        for column in json_columns:
+            properties[column.removesuffix("_json")] = json.loads(
+                properties.pop(column)
+            )
+        if object_type == "action":
+            for field in (
+                "payload_json",
+                "request_hash",
+                "expected_versions_json",
+                "idempotency_key",
+                "error_detail",
+            ):
+                properties.pop(field, None)
+        return properties
+
+    def _object_action_history(
+        self, object_type: str, object_id: str, as_of: str
+    ) -> list[dict]:
+        with self._engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(
+                        schema.actions.c.action_id,
+                        schema.actions.c.action_type,
+                        schema.actions.c.actor_id,
+                        schema.actions.c.actor_role,
+                        schema.actions.c.requested_at,
+                        schema.actions.c.status,
+                        schema.actions.c.result_refs_json,
+                        schema.actions.c.error_code,
+                        schema.actions.c.committed_at,
+                    )
+                    .where(schema.actions.c.requested_at <= as_of)
+                    .order_by(schema.actions.c.requested_at, schema.actions.c.action_id)
+                )
+                .mappings()
+                .all()
+            )
+        history: list[dict] = []
+        for row in rows:
+            refs = json.loads(row["result_refs_json"])
+            if not any(
+                ref.get("object_type") == object_type
+                and ref.get("object_id") == object_id
+                for ref in refs
+            ):
+                continue
+            item = dict(row)
+            item.pop("result_refs_json")
+            item["result_refs"] = refs
+            history.append(item)
+        return history
+
+    @staticmethod
+    def _ontology_sort_key(item: dict) -> tuple[str, str]:
+        return str(item.get("recorded_at") or ""), str(item["object_id"])
+
+    @staticmethod
+    def _encode_ontology_cursor(cursor: tuple[str, str]) -> str:
+        return base64.urlsafe_b64encode(
+            json.dumps(cursor, separators=(",", ":")).encode("utf-8")
+        ).decode("ascii")
+
+    @staticmethod
+    def _decode_ontology_cursor(value: str) -> tuple[str, str]:
+        try:
+            decoded = json.loads(base64.urlsafe_b64decode(value.encode("ascii")))
+        except (ValueError, json.JSONDecodeError) as error:
+            raise ValueError("ontology cursor is invalid") from error
+        if not isinstance(decoded, list) or len(decoded) != 2:
+            raise ValueError("ontology cursor is invalid")
+        return str(decoded[0]), str(decoded[1])
 
     def board_matches(self, start_at: str, end_at: str, as_of: str) -> list[dict]:
         statement = self._match_statement(as_of).where(

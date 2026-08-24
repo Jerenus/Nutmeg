@@ -625,3 +625,155 @@ class ConfirmPlacementCommand(VersionedContract):
         if not decoded:
             raise ValueError('receipt_base64 must contain non-empty receipt bytes')
         return value
+
+
+class ProjectionState(StrEnum):
+    AVAILABLE = 'available'
+    STALE = 'stale'
+    UNAVAILABLE = 'unavailable'
+
+
+class ProjectionHealth(StrictContract):
+    state: ProjectionState
+    code: str | None = None
+    instruction: str | None = None
+    projection_version: str | None = None
+    source_high_watermark: int | None = None
+    built_at: datetime | None = None
+    cohort_definition_version: str | None = None
+    metric_version: str | None = None
+
+
+class MetricSummary(StrictContract):
+    group_key: str
+    metric_key: str
+    value: float | None = None
+    numerator: float | None = None
+    denominator: float | None = None
+    unit: str | None = None
+    status: str
+    tally: str | None = None
+    detail: str | None = None
+    source_refs: list[ObjectRefContract] = Field(default_factory=list)
+
+
+class ScorePlaneSummary(StrictContract):
+    plane: Literal['forecast', 'money', 'intervention', 'lifecycle', 'manual']
+    health: ProjectionHealth
+    metrics: list[MetricSummary] = Field(default_factory=list)
+
+
+class SettlementSummary(StrictContract):
+    ticket_settlement_id: str
+    ticket_id: str
+    status: str
+    settled_at: str
+    stake_amount: float
+    payout_amount: float
+    pnl_amount: float
+    settlement_method_version: str
+    leg_settlement_ids: list[str] = Field(default_factory=list)
+
+
+class CounterfactualReplaySummary(StrictContract):
+    adjudication_id: str
+    subject_type: str
+    subject_id: str
+    match_id: str | None = None
+    outcome_id: str | None = None
+    market_definition_id: str | None = None
+    label: str | None = None
+    eligibility_code: str
+    brier: float | None = None
+    adjudication_created_at: str
+    outcome_recorded_at: str | None = None
+
+
+class ReviewResponse(VersionedContract):
+    as_of: datetime
+    forecast: ScorePlaneSummary
+    money: ScorePlaneSummary
+    intervention: ScorePlaneSummary
+    settlements: list[SettlementSummary] = Field(default_factory=list)
+    counterfactuals: list[CounterfactualReplaySummary] = Field(default_factory=list)
+
+
+class FactorEstimateSummary(StrictContract):
+    factor_definition_id: str
+    factor_family: str
+    factor_version: int
+    scope_key: str | None = None
+    market_definition_id: str
+    cohort_key: str
+    n_eff: int
+    raw_mean: float
+    shrunk_mean: float
+    interval_low: float | None = None
+    interval_high: float | None = None
+    current_status: str | None = None
+
+
+class LifecycleProposalSummary(StrictContract):
+    proposal_id: str
+    factor_definition_id: str
+    from_status: str
+    to_status: str
+    rationale: dict[str, object]
+    policy_version: str
+
+
+class RegimeSummary(StrictContract):
+    regime_key: str
+    values: dict[str, object]
+
+
+class CalibrationResponse(VersionedContract):
+    as_of: datetime
+    health: ProjectionHealth
+    factors: list[FactorEstimateSummary] = Field(default_factory=list)
+    lifecycle_proposals: list[LifecycleProposalSummary] = Field(default_factory=list)
+    regimes: list[RegimeSummary] = Field(default_factory=list)
+
+
+class OntologyObjectSummary(StrictContract):
+    object_type: str
+    object_id: str
+    label: str
+    status: str | None = None
+    recorded_at: str | None = None
+
+
+class OntologyObjectPage(VersionedContract):
+    object_type: str
+    as_of: datetime
+    items: list[OntologyObjectSummary] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class OntologyObjectDetail(VersionedContract):
+    object_type: str
+    object_id: str
+    as_of: datetime
+    properties: dict[str, object]
+    links: list[LineageEdge] = Field(default_factory=list)
+    versions: list[dict[str, object]] = Field(default_factory=list)
+    actions: list[ActionView] = Field(default_factory=list)
+
+
+class ScoreboardAuthoritySummary(StrictContract):
+    state: Literal['legacy', 'ontology']
+    version: int
+    projection_version: str | None = None
+    source_high_watermark: int | None = None
+    legacy_sha256: str | None = None
+    shadow_review_id: str | None = None
+    compatibility_export_sha256: str | None = None
+    approved_at: str | None = None
+    approved_by_action_id: str | None = None
+
+
+class ScoreboardResponse(VersionedContract):
+    as_of: datetime
+    authority: ScoreboardAuthoritySummary
+    health: ProjectionHealth
+    planes: list[ScorePlaneSummary] = Field(default_factory=list)

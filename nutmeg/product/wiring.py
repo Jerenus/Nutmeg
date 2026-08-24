@@ -35,7 +35,7 @@ def build_product_services(settings: AppSettings) -> ProductServices:
         raise ProductNotReadyError(
             'ontology is not initialized, healthy, and current; run `nutmeg ontology init`'
         )
-    repository = ProductReadRepository(kernel.engine)
+    repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
     queries = ProductQueryService(repository, kernel)
     actions = ProductActionGateway(kernel, repository)
     provider = build_copilot_provider(settings)
