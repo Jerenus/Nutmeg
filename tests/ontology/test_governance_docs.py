@@ -1,13 +1,13 @@
 from pathlib import Path
 
-PLAN = "docs/superpowers/plans/2026-07-21-ontology-kernel-v2-package-1.md"
+DESIGN = "docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md"
 RETIRED_PLAN = ".specify/specs/046-jczq-mixed-parlay-report-v0/plan.md"
 
 
-def test_agent_harnesses_point_to_the_current_package_plan() -> None:
+def test_agent_harnesses_point_to_the_current_intelligence_os_design() -> None:
     for path in (Path("AGENTS.md"), Path("CLAUDE.md")):
         text = path.read_text(encoding="utf-8")
-        assert PLAN in text
+        assert DESIGN in text
         assert RETIRED_PLAN not in text
 
 
