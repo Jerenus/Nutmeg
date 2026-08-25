@@ -162,3 +162,26 @@ Before and after values were identical:
 - [x] Full M1-M6 API/browser lifecycle, reconnect, focus, and degraded-state coverage.
 - [x] Read-only scheduler authority inspection and secret-safe product summaries.
 - [x] Production non-mutation proof and truthful real 14-day soak block.
+
+## Second-Pass Independent Critique (2026-08-25, session nutmeg-5f)
+
+A second independent adversarial review of `9032644..33e5753` (0 Critical, 3
+Important, 8 Minor) was closed RED-GREEN on top of the recorded evidence:
+
+| Finding | Closure |
+| --- | --- |
+| I-1 FAILED terminal actions permanently poisoned their idempotency key, and a replayed failure exited 0 | `676d3e8` releases the key under `#failed-<action_id>` (audit row kept) and re-executes; `a41caa8` makes every non-COMMITTED CLI outcome exit 1 |
+| I-3 operator-supplied `--requested-at`/`--evaluated-at` in the future could pre-fabricate 14-day soak evidence through the release-v1 gate | `a41caa8` caps every explicit CLI instant at the server clock (+5 min skew; business_date +1 day zone slack); the API path already used the server clock |
+| I-2 the seven generic check-report kinds accepted a single self-declared boolean, letting G1/G2/G4/G5/G6 turn green without named evidence | `9e7aa77` fixes per-kind `schema_version` + required check lists (scheduler_authority aligned to `to_evidence_report`), rejects unknown fields, caps canonical report size at 256 KB |
+
+Minor findings M-1..M-8 (acknowledged trade-offs, display truncation, attribution
+constants) are recorded in the session review and left as documented behavior.
+
+Post-closure gates on this branch state: full pytest exit 0, Ruff clean,
+compileall exit 0, base-to-head and worktree whitespace checks clean. An
+independent re-verification earlier in the same session also reproduced the
+migration rehearsal (production copy 9→14, integrity ok), the atomic
+backup/restore drill (`status: "passed"`, watermark 5223), the `/verify`
+decision-chain replay for 2026-08-24, the blocked release evaluation
+(`ready=false`, both soak lanes 0/14), and byte-identical production hashes
+before and after all operations.
