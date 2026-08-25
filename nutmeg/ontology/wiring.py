@@ -13,15 +13,20 @@ from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
 from nutmeg.ontology.actions.bundle_actions import BundleActions
 from nutmeg.ontology.actions.claim_actions import ClaimActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
+from nutmeg.ontology.actions.factor_actions import FactorActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.market_actions import MarketActions
 from nutmeg.ontology.actions.match_actions import MatchActions
 from nutmeg.ontology.actions.observation_actions import ObservationActions
 from nutmeg.ontology.actions.outcome_actions import OutcomeActions
 from nutmeg.ontology.actions.person_actions import PersonActions
+from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
+from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
+from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.actions.session_actions import SessionActions
 from nutmeg.ontology.actions.ticket_actions import TicketActions
+from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
 from nutmeg.ontology.decision.read_flow import DecisionReadService
 from nutmeg.ontology.finance.express_flow import ExpressService
@@ -46,21 +51,25 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         action_service=action_service,
         artifact_store=artifact_store,
     )
+    entity_actions = EntityActions(action_service)
+    claim_actions = ClaimActions(action_service)
+    factor_actions = FactorActions(action_service)
+    forecast_actions = ForecastActions(action_service)
     market_day_ingest = MarketDayIngestService(
         artifact_ingest=artifact_ingest,
-        entity_actions=EntityActions(action_service),
+        entity_actions=entity_actions,
         match_actions=MatchActions(action_service),
         market_actions=MarketActions(action_service),
     )
     evidence_day_ingest = EvidenceDayIngestService(
         person_actions=PersonActions(action_service),
         observation_actions=ObservationActions(action_service),
-        claim_actions=ClaimActions(action_service),
+        claim_actions=claim_actions,
     )
     decision_read = DecisionReadService(
         session_actions=SessionActions(action_service),
         bundle_actions=BundleActions(action_service),
-        forecast_actions=ForecastActions(action_service),
+        forecast_actions=forecast_actions,
     )
     express = ExpressService(ticket_actions=TicketActions(action_service))
     reconcile = ReconcileService(
@@ -68,6 +77,10 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         unit_of_work_factory=unit_of_work_factory,
     )
     calibrate = CalibrateService(engine=engine, analytics_path=paths.analytics)
+    workflow = WorkflowActions(action_service)
+    protected_tickets = ProtectedTicketActions(action_service, artifact_store)
+    scoreboard_actions = ScoreboardActions(action_service)
+    reliability_actions = ReliabilityActions(action_service)
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -78,4 +91,12 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         express=express,
         reconcile=reconcile,
         calibrate=calibrate,
+        entity_actions=entity_actions,
+        claim_actions=claim_actions,
+        factor_actions=factor_actions,
+        forecast_actions=forecast_actions,
+        workflow=workflow,
+        protected_tickets=protected_tickets,
+        scoreboard_actions=scoreboard_actions,
+        reliability_actions=reliability_actions,
     )

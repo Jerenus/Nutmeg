@@ -79,6 +79,7 @@ class ActionCommand:
         requested_at: datetime,
         expected_versions: dict[str, int] | None = None,
         policy_version: str = DEFAULT_POLICY_VERSION,
+        action_id: str | None = None,
     ) -> ActionCommand:
         if requested_at.tzinfo is None or requested_at.utcoffset() is None:
             raise ValueError('requested_at must be timezone-aware')
@@ -105,7 +106,7 @@ class ActionCommand:
         ).hexdigest()
 
         return cls(
-            action_id=f'ACT-{uuid4().hex}',
+            action_id=action_id or f'ACT-{uuid4().hex}',
             action_type=action_type,
             actor_id=actor_id,
             actor_role=actor_role,

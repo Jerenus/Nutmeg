@@ -353,3 +353,112 @@ touches no production data, dispatches nothing, and restores no schedule. **Go-l
 (enable the flag, shut the old writers, restore the three `com.nutmeg.decision.*`
 schedules) is Package 5B and happens only on explicit user approval after reviewing the
 reconciliation evidence; the freeze archive is retained read-only throughout.**
+
+## 17. Intelligence OS M1 — headless product contract
+
+Migration 10 adds governed workflow objects (`Adjudication`, `FlagInstance`,
+`Prediction`, `PrecedentLink`, and `AgentProposal`) plus `outbox_events`. Every
+committed, rejected, or failed formal Action appends one terminal outbox event in
+the same SQLite transaction as its Action audit row. `ontology status` exposes
+`outbox_event_count` and `outbox_latest_sequence` for local health checks.
+
+Initialize the current schema and launch the loopback-only product API:
+
+```bash
+uv run nutmeg ontology init --format json
+uv run nutmeg app
+```
+
+`nutmeg app` refuses an uninitialized, unhealthy, or migration-pending kernel and
+binds `127.0.0.1:8788` by default. `GET /api/v1/session` issues an HttpOnly,
+SameSite=strict local-session cookie and a CSRF token; every mutation also requires
+the matching token and a same-origin `Origin` header. Actor identity and role are
+assigned by the server, never trusted from the payload.
+
+Outbox consumers resume with the last durable sequence:
+
+```text
+GET /api/v1/events?after=<sequence>&limit=100
+GET /api/v1/events/stream?after=<sequence>
+```
+
+Delivery is at least once, so clients deduplicate by `event_id`. M1 does not restore
+or alter production launchd schedules, dispatch Telegram, place a bet, or move funds.
+`decision-web` remains a legacy workshop and is not a formal product data source.
+
+During v1 snapshot replay, `decision-read` resolves legacy canonical Match IDs through
+typed provider identities and resolves legacy prior Snapshot IDs only when match,
+market, snapshot kind, and provider all agree. An unresolved identity is rejected
+visibly before Forecast persistence; operators must repair the source mapping rather
+than bypassing a foreign key or creating a synthetic Match/Snapshot.
+
+## 18. Intelligence OS M2 — local read-heavy workspaces
+
+Launch the same loopback service with `uv run nutmeg app`, then use:
+
+| Route | Operator purpose |
+|---|---|
+| `/` | Command Center board, readiness filters, next Actions, and global alerts |
+| `/operations` | source freshness, failure audit, identity queue, and governed merge |
+| `/matches/<match_id>?as_of=<timestamp>` | temporal evidence, market anchor, Forecast history, and workflow objects |
+| `/lineage/<object_type>/<object_id>` | typed object links and Action provenance |
+
+The Command Center's readiness counts are computed before filtering, so an empty
+filtered board never masquerades as an empty day. Match views use the requested
+timezone-aware `as_of` cutoff: later Observations, Claims, snapshots, and Forecasts
+are excluded. Historical `legacy_unbundled` Forecasts stay visibly labeled and no
+EvidenceBundle is fabricated for them.
+
+Data Operations reports source age, failed/rejected Actions, ontology/outbox high-water
+marks, and provisional Team identities. Schedule health is intentionally shown as
+"not instrumented" in M2; the UI does not infer launchd health from missing facts.
+Identity merge is the only mutation: the browser supplies source, survivor, reason,
+and idempotency key, while the server supplies the operator actor and enforces local
+session, CSRF, same-origin, permission, identity-state, and Action audit rules.
+
+The browser contains presentation and transport code only. It has no probability,
+readiness, budget, payout, audit, ticket, or settlement implementation. SSE keeps its
+last durable sequence in `sessionStorage`, resumes after disconnect, and changes only
+the visible connectivity indicator. M2 performs no ticket/funds/dispatch operation,
+does not call an AI provider, and does not restore or modify any scheduler.
+
+## 19. Intelligence OS M3 — temporal investigation and guarded copilot
+
+The Match Investigation Room binds every rendered object and every Proposal request to
+one canonical Match and one visible timezone-aware `as_of`. Claim state is replayed from
+status events at that cutoff; Observations, market snapshots, workflow objects,
+EvidenceBundles, and Forecasts recorded later are excluded. Differing active source
+values remain visible. A provisional disagreement is
+`source_conflict_provisional` and permits investigation; two differing verified values
+are `source_conflict_unresolved` and block Forecast commitment until a human Claim
+Action resolves the conflict.
+
+The provider is disabled by default, and deterministic investigation remains usable.
+Enable the Portkey-compatible adapter only with both settings:
+
+```bash
+NUTMEG_AGENT_SYNTHESIS_ENABLED=true \
+NUTMEG_PORTKEY_API_KEY=<secret> \
+uv run nutmeg app --host 127.0.0.1 --port 8788
+```
+
+Provider input is built only from the temporal Product Query DTO. Evidence is labeled
+untrusted data, eligible citation IDs are enumerated, and credentials, actor/policy
+fields, SQL, and Action authority are excluded. A complete response is parsed as one
+strict JSON `CopilotDraft`; malformed, uncited, extra-field, or out-of-cutoff output is
+rejected before any Proposal Action is written. Provider timeout returns the stable
+`copilot_unavailable` state and never persists partial model text.
+
+AgentProposal is not a fact. It records operator prompt, information cutoff,
+model/version, structured draft, and citations as an immutable workflow proposal.
+AI cannot verify Claims or commit Forecasts. The server fixes its Proposal actor to
+`ai_analyst`; Claim adjudication, Proposal approval/rejection, Adjudication with
+`evidence_rejected`, and Forecast commitment are server-assigned `judge_operator`
+Actions with idempotency and expected-version checks. Approval changes Proposal status
+and version but never rewrites its payload.
+
+The browser uses the same local session, CSRF, same-origin, and typed Action boundary as
+the API. It copies entered values only; readiness, conflict classification, probability
+validation, Bundle freezing, and version enforcement stay on the server.
+M3 never creates, approves, dispatches, or settles a Ticket, places a bet, moves funds, calls
+Telegram, or restores a scheduler.

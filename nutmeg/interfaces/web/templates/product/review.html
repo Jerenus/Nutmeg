@@ -1,0 +1,101 @@
+{% extends "product/layout.html" %}
+
+{% block title %}结算与复盘 · Nutmeg{% endblock %}
+
+{% block content %}
+<div class="learning-workspace" data-review-as-of="{{ review.as_of.isoformat() }}">
+  <header class="m5-page-head">
+    <div><div class="section-kicker">Settlement / Review</div><h1>结算与复盘</h1></div>
+    <div class="projection-stamp state-{{ review.forecast.health.state.value }}">
+      <strong>{{ review.forecast.health.state.value }}</strong>
+      <span>{{ review.forecast.health.projection_version or 'NO PROJECTION' }}</span>
+      <small>HWM {{ review.forecast.health.source_high_watermark if review.forecast.health.source_high_watermark is not none else '—' }}</small>
+    </div>
+  </header>
+
+  <p id="action-feedback" class="action-feedback" aria-live="polite">等待操作者动作。</p>
+
+  <section class="score-plane-grid" aria-label="独立计分平面">
+    {% for plane in [review.forecast, review.money, review.intervention] %}
+      <article class="score-plane-band plane-{{ plane.plane }}" data-score-plane="{{ plane.plane }}">
+        <header>
+          <div class="section-kicker">{{ plane.plane }}</div>
+          <strong>{{ {'forecast': '预测真相', 'money': '资金账本', 'intervention': '干预质量'}[plane.plane] }}</strong>
+        </header>
+        <div class="plane-provenance">
+          <code>{{ plane.health.projection_version or plane.health.code }}</code>
+          <span>HWM {{ plane.health.source_high_watermark if plane.health.source_high_watermark is not none else '—' }}</span>
+        </div>
+        {% if plane.metrics %}
+          <dl class="plane-metrics">
+            {% for metric in plane.metrics %}
+              <div>
+                <dt>{{ metric.group_key }} / {{ metric.metric_key }}</dt>
+                <dd>{% if metric.value is not none %}{{ '%.4f'|format(metric.value) }}{% else %}<span class="unscored">未评分</span>{% endif %}</dd>
+                <small>
+                  {% if metric.denominator is not none %}{% if metric.numerator is not none %}{{ '%g'|format(metric.numerator) }}{% else %}—{% endif %} / {{ '%g'|format(metric.denominator) }}{% else %}coverage —{% endif %}
+                  · {{ metric.status }}
+                </small>
+                {% for ref in metric.source_refs %}<code>{{ ref.object_type }}:{{ ref.object_id }}</code>{% endfor %}
+              </div>
+            {% endfor %}
+          </dl>
+        {% else %}
+          <div class="m5-empty">{{ plane.health.code or '当前 cohort 没有指标行' }}</div>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </section>
+
+  <section class="m5-section" aria-labelledby="settlement-title">
+    <div class="section-heading"><div><div class="section-kicker">Ledger</div><h2 id="settlement-title">结算账页</h2></div><span>{{ review.settlements|length }} 条</span></div>
+    <div class="table-scroll" tabindex="0">
+      <table class="m5-table">
+        <thead><tr><th>Ticket</th><th>状态</th><th>本金</th><th>派彩</th><th>P/L</th><th>方法 / 血缘</th></tr></thead>
+        <tbody>
+          {% for item in review.settlements %}
+            <tr><th><code>{{ item.ticket_id }}</code></th><td>{{ item.status }}</td><td>{{ '%.2f'|format(item.stake_amount) }}</td><td>{{ '%.2f'|format(item.payout_amount) }}</td><td>{{ '%.2f'|format(item.pnl_amount) }}</td><td><code>{{ item.settlement_method_version }}</code>{% for leg in item.leg_settlement_ids %}<code>{{ leg }}</code>{% endfor %}</td></tr>
+          {% else %}
+            <tr><td colspan="6" class="m5-empty">当前截止时间没有结算记录。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="m5-section" aria-labelledby="counterfactual-title">
+    <div class="section-heading"><div><div class="section-kicker">Preregistered Replay</div><h2 id="counterfactual-title">反事实回放</h2></div><span>{{ review.counterfactuals|length }} 条</span></div>
+    <div class="table-scroll" tabindex="0">
+      <table class="m5-table">
+        <thead><tr><th>Adjudication</th><th>对象</th><th>资格</th><th>Brier</th><th>Outcome</th></tr></thead>
+        <tbody>
+          {% for item in review.counterfactuals %}
+            <tr><th><code>{{ item.adjudication_id }}</code></th><td>{{ item.subject_type }} / <code>{{ item.subject_id }}</code></td><td>{{ item.eligibility_code }}</td><td>{% if item.brier is not none %}{{ '%.4f'|format(item.brier) }}{% else %}<span class="unscored">未评分</span>{% endif %}</td><td><code>{{ item.outcome_id or 'none' }}</code></td></tr>
+          {% else %}
+            <tr><td colspan="5" class="m5-empty">尚无已登记的反事实候选。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="m5-section observation-entry" aria-labelledby="observation-title">
+    <div class="section-heading"><div><div class="section-kicker">Manual Plane</div><h2 id="observation-title">人工观察</h2></div><span>Typed Action</span></div>
+    <form data-action="record-scoreboard-observation">
+      <label><span>分组</span><input class="m5-control" name="group_key" required></label>
+      <label><span>指标</span><input class="m5-control" name="metric_key" required></label>
+      <label><span>Tally</span><input class="m5-control" name="tally" required></label>
+      <label><span>状态</span><input class="m5-control" name="status" value="active" required></label>
+      <label><span>Numerator</span><input class="m5-control" name="numerator" type="number" step="any"></label>
+      <label><span>Denominator</span><input class="m5-control" name="denominator" type="number" step="any"></label>
+      <label><span>Value</span><input class="m5-control" name="value" type="number" step="any"></label>
+      <label><span>Unit</span><input class="m5-control" name="unit"></label>
+      <label class="wide"><span>事实描述</span><textarea class="m5-control" name="detail" required></textarea></label>
+      <label><span>证据类型</span><input class="m5-control" name="evidence_type" required></label>
+      <label><span>证据 ID</span><input class="m5-control" name="evidence_id" required></label>
+      <input name="effective_at" type="hidden" value="{{ review.as_of.isoformat() }}">
+      <button class="m5-control" type="submit">记录观察</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import Connection, Engine, insert, inspect, select
+from sqlalchemy import Connection, Engine, delete, insert, inspect, select
 
 from nutmeg.ontology.errors import MigrationDriftError
 from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
@@ -28,6 +28,10 @@ from nutmeg.ontology.repository import (
     schema_finance,
     schema_identity,
     schema_market,
+    schema_reliability,
+    schema_scoreboard,
+    schema_tickets,
+    schema_workflow,
 )
 
 
@@ -418,6 +422,166 @@ def _apply_finance_entry_odds(connection: Connection) -> None:
         connection.exec_driver_sql('ALTER TABLE bet_legs ADD COLUMN entry_odds REAL')
 
 
+_WORKFLOW_ACTION_PERMISSIONS = (
+    ('record_adjudication', 'judge_operator'),
+    ('record_flag_instance', 'judge_operator'),
+    ('record_flag_instance', 'deterministic_system'),
+    ('register_prediction', 'ai_analyst'),
+    ('register_prediction', 'judge_operator'),
+    ('link_precedent', 'judge_operator'),
+    ('link_precedent', 'deterministic_system'),
+    ('create_agent_proposal', 'ai_analyst'),
+    ('create_agent_proposal', 'judge_operator'),
+    ('resolve_agent_proposal', 'judge_operator'),
+)
+
+
+def _apply_product_workflow(connection: Connection) -> None:
+    for table in (
+        schema_workflow.adjudications,
+        schema_workflow.flag_instances,
+        schema_workflow.predictions,
+        schema_workflow.precedent_links,
+        schema_workflow.agent_proposals,
+        schema_workflow.outbox_events,
+    ):
+        table.create(connection)
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                'policy_version_id': 'governance-v1',
+                'action_type': action_type,
+                'actor_role': actor_role,
+            }
+            for action_type, actor_role in _WORKFLOW_ACTION_PERMISSIONS
+        ],
+    )
+
+
+def _apply_m3_proposal_citations(connection: Connection) -> None:
+    columns = {
+        row[1]
+        for row in connection.exec_driver_sql(
+            'PRAGMA table_info(agent_proposals)'
+        ).fetchall()
+    }
+    if 'information_cutoff_at' not in columns:
+        connection.exec_driver_sql(
+            'ALTER TABLE agent_proposals ADD COLUMN information_cutoff_at TEXT'
+        )
+    if 'operator_prompt' not in columns:
+        connection.exec_driver_sql(
+            'ALTER TABLE agent_proposals ADD COLUMN operator_prompt TEXT'
+        )
+    connection.execute(
+        delete(schema.action_permissions).where(
+            schema.action_permissions.c.policy_version_id == 'governance-v1',
+            schema.action_permissions.c.action_type == 'create_agent_proposal',
+            schema.action_permissions.c.actor_role == 'judge_operator',
+        )
+    )
+
+
+_PROTECTED_TICKET_PERMISSIONS = (
+    ("create_ticket_batch", "judge_operator"),
+    ("remove_ticket_leg", "judge_operator"),
+    ("approve_ticket_batch", "judge_operator"),
+    ("issue_ticket_confirmation", "judge_operator"),
+    ("confirm_ticket_placement", "judge_operator"),
+)
+
+
+def _apply_protected_tickets(connection: Connection) -> None:
+    for table in (
+        schema_tickets.ticket_batch_revisions,
+        schema_tickets.audited_ticket_artifacts,
+        schema_tickets.ticket_confirmation_challenges,
+        schema_tickets.ticket_placements,
+    ):
+        table.create(connection)
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": actor_role,
+            }
+            for action_type, actor_role in _PROTECTED_TICKET_PERMISSIONS
+        ],
+    )
+
+
+_SCOREBOARD_PERMISSIONS = (
+    ("record_scoreboard_observation", "judge_operator"),
+    ("approve_scoreboard_cutover", "judge_operator"),
+    ("record_scoreboard_shadow_review", "deterministic_system"),
+    ("record_scoreboard_export", "deterministic_system"),
+)
+
+
+def _apply_scoreboard_authority(connection: Connection) -> None:
+    for table in (
+        schema_scoreboard.scoreboard_observations,
+        schema_scoreboard.scoreboard_shadow_reviews,
+        schema_scoreboard.scoreboard_authority,
+    ):
+        table.create(connection)
+    connection.execute(
+        insert(schema_scoreboard.scoreboard_authority).values(
+            authority_id="primary",
+            state="legacy",
+            projection_version=None,
+            source_high_watermark=None,
+            legacy_sha256=None,
+            shadow_review_id=None,
+            compatibility_export_sha256=None,
+            approved_at=None,
+            approved_by_action_id=None,
+            version=1,
+        )
+    )
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": actor_role,
+            }
+            for action_type, actor_role in _SCOREBOARD_PERMISSIONS
+        ],
+    )
+
+
+_RELIABILITY_PERMISSIONS = (
+    ("record_reliability_evidence", "deterministic_system"),
+    ("record_reliability_evidence", "judge_operator"),
+    ("approve_release", "judge_operator"),
+)
+
+
+def _apply_reliability_governance(connection: Connection) -> None:
+    for table in (
+        schema_reliability.reliability_evidence,
+        schema_reliability.release_approvals,
+    ):
+        table.create(connection)
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": actor_role,
+            }
+            for action_type, actor_role in _RELIABILITY_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -472,6 +636,47 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='finance_entry_odds',
         fingerprint='bet_legs+entry_odds(guarded_alter)',
         apply=_apply_finance_entry_odds,
+    ),
+    Migration(
+        version=10,
+        name='product_workflow',
+        fingerprint=(
+            'adjudications+flags+predictions+precedents+agent_proposals+'
+            'outbox+workflow_permissions'
+        ),
+        apply=_apply_product_workflow,
+    ),
+    Migration(
+        version=11,
+        name='m3_proposal_citations',
+        fingerprint='agent_proposals+cutoff+prompt+ai_only_create',
+        apply=_apply_m3_proposal_citations,
+    ),
+    Migration(
+        version=12,
+        name="protected_ticket_workbench",
+        fingerprint=(
+            "ticket_batch_revisions+audited_ticket_artifacts+"
+            "ticket_confirmation_challenges+ticket_placements+judge_only_permissions"
+        ),
+        apply=_apply_protected_tickets,
+    ),
+    Migration(
+        version=13,
+        name="scoreboard_authority",
+        fingerprint=(
+            "scoreboard_observations+scoreboard_shadow_reviews+"
+            "scoreboard_authority+role_separated_permissions"
+        ),
+        apply=_apply_scoreboard_authority,
+    ),
+    Migration(
+        version=14,
+        name="reliability_governance",
+        fingerprint=(
+            "reliability_evidence+release_approvals+role_separated_permissions"
+        ),
+        apply=_apply_reliability_governance,
     ),
 )
 

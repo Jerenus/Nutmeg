@@ -1,0 +1,895 @@
+"""Strict, versioned DTOs exposed by the local Nutmeg application."""
+from __future__ import annotations
+
+import base64
+import binascii
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from enum import StrEnum
+from typing import Literal
+
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+
+SCHEMA_VERSION: Literal['1'] = '1'
+
+
+class StrictContract(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+
+class VersionedContract(StrictContract):
+    schema_version: Literal['1'] = SCHEMA_VERSION
+
+
+class ObjectRefContract(StrictContract):
+    object_type: str
+    object_id: str
+
+
+class EvidenceSpanSummary(ObjectRefContract):
+    artifact_id: str | None = None
+    artifact_retrieval_id: str | None = None
+    quote: str | None = None
+    locator: str | None = None
+
+
+class ScenarioSummary(StrictContract):
+    label: str
+    mechanism: str
+    probability: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class CopilotFactorDraft(StrictContract):
+    factor_definition_id: str
+    delta: dict[str, float]
+    scope_entity_ids: list[str] = Field(default_factory=list)
+    supporting_observation_ids: list[str] = Field(default_factory=list)
+    note: str | None = None
+
+
+class CopilotDraft(StrictContract):
+    summary: str = Field(min_length=1)
+    scenarios: list[ScenarioSummary]
+    proposed_belief: dict[str, float] | None = None
+    factors: list[CopilotFactorDraft]
+    falsifier: str | None = None
+    citations: list[ObjectRefContract] = Field(min_length=1)
+    conflicts: list[str]
+    missing_evidence: list[str]
+
+
+class CopilotRequest(VersionedContract):
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    prompt: str = Field(min_length=1, max_length=4000)
+    as_of: datetime
+
+
+class ReadinessLevel(StrEnum):
+    READY = 'ready'
+    DEGRADED = 'degraded'
+    BLOCKED = 'blocked'
+
+
+class ReadinessIssue(StrictContract):
+    code: str
+    message: str
+    object_ref: ObjectRefContract | None = None
+    observed_at: datetime | None = None
+
+
+class ReadinessState(StrictContract):
+    level: ReadinessLevel
+    issues: list[ReadinessIssue] = Field(default_factory=list)
+
+
+class ProductError(StrictContract):
+    code: str
+    message: str
+    action_id: str | None = None
+    field_errors: dict[str, list[str]] = Field(default_factory=dict)
+    retryable: bool = False
+    current_version: int | None = None
+    details: dict[str, object] = Field(default_factory=dict)
+
+
+class MarketSnapshotSummary(StrictContract):
+    market_snapshot_id: str
+    market_definition_id: str
+    as_of: str
+    devig_distribution: dict[str, float]
+
+
+class MatchSummary(StrictContract):
+    match_id: str
+    home_team: str
+    away_team: str
+    competition: str | None = None
+    kickoff_at: str | None = None
+    latest_snapshot_at: str | None = None
+    readiness: ReadinessState
+    evidence_count: int = 0
+    workflow_state: str = 'unread'
+    next_action: str = 'inspect'
+    flag_count: int = 0
+
+
+class BoardResponse(VersionedContract):
+    date: date
+    as_of: datetime
+    matches: list[MatchSummary] = Field(default_factory=list)
+
+
+class ClaimSummary(StrictContract):
+    claim_id: str
+    subject_type: str
+    subject_id: str
+    predicate: str
+    value: dict[str, object]
+    status: str
+    created_at: str
+    spans: list[EvidenceSpanSummary] = Field(default_factory=list)
+
+
+class ObservationSummary(StrictContract):
+    observation_id: str
+    observation_type: str
+    subject_type: str
+    subject_id: str
+    value: dict[str, object]
+    observed_at: str
+    recorded_at: str
+    verification_method: str
+    source_retrieval_ids: list[str] = Field(default_factory=list)
+
+
+class EvidenceConflictSummary(StrictContract):
+    conflict_id: str
+    predicate: str
+    claim_ids: list[str]
+    statuses: list[str]
+    blocking: bool
+
+
+class EvidenceSummary(StrictContract):
+    claims: list[ClaimSummary] = Field(default_factory=list)
+    observations: list[ObservationSummary] = Field(default_factory=list)
+    conflicts: list[EvidenceConflictSummary] = Field(default_factory=list)
+
+
+class MatchContextSummary(StrictContract):
+    match_revision_id: str
+    competition_id: str | None = None
+    competition_edition_id: str | None = None
+    competition: str | None = None
+    round_label: str | None = None
+    venue_id: str | None = None
+    scheduled_at: str | None = None
+    schedule_status: str
+    status: str
+    home_team_id: str
+    home_team: str
+    away_team_id: str
+    away_team: str
+
+
+class EvidenceBundleSummary(StrictContract):
+    evidence_bundle_id: str
+    frozen_at: str
+    information_cutoff_at: str
+    market_snapshot_id: str | None = None
+    prior_distribution: dict[str, float]
+    identity_resolution_version: str | None = None
+    source_coverage: dict[str, object]
+    freshness: dict[str, object]
+    content_hash: str
+    item_refs: list[ObjectRefContract] = Field(default_factory=list)
+
+
+class FlagInstanceSummary(StrictContract):
+    flag_instance_id: str
+    flag_type: str
+    match_id: str
+    direction: str | None = None
+    strength: float
+    evidence_refs: list[ObjectRefContract] = Field(default_factory=list)
+    predicted_face: str | None = None
+    status: str
+    created_at: str
+
+
+class PredictionSummary(StrictContract):
+    prediction_id: str
+    match_id: str
+    claim: str
+    falsifier: str
+    status: str
+    outcome: str | None = None
+    registered_at: str
+    settled_at: str | None = None
+
+
+class PrecedentLinkSummary(StrictContract):
+    precedent_link_id: str
+    subject_type: str
+    subject_id: str
+    precedent_match_id: str
+    scope: str
+    evidence_refs: list[ObjectRefContract] = Field(default_factory=list)
+    created_at: str
+
+
+class AdjudicationSummary(StrictContract):
+    adjudication_id: str
+    subject_type: str
+    subject_id: str
+    decision: str
+    actor_id: str
+    reason: str
+    evidence_rejected: list[ObjectRefContract] = Field(default_factory=list)
+    alternative: dict[str, object] = Field(default_factory=dict)
+    created_at: str
+    supersedes_adjudication_id: str | None = None
+
+
+class AgentProposalSummary(StrictContract):
+    agent_proposal_id: str
+    subject_type: str
+    subject_id: str
+    proposal_type: str
+    status: str
+    version: int
+    information_cutoff_at: str | None = None
+    operator_prompt: str | None = None
+    summary: str
+    scenarios: list[ScenarioSummary] = Field(default_factory=list)
+    proposed_belief: dict[str, float] | None = None
+    factors: list[CopilotFactorDraft] = Field(default_factory=list)
+    falsifier: str | None = None
+    citations: list[EvidenceSpanSummary] = Field(default_factory=list)
+    citation_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
+    conflicts: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+    model_name: str
+    model_version: str
+    created_at: str
+    resolved_at: str | None = None
+    resolved_by_action_id: str | None = None
+
+
+class ForecastSummary(StrictContract):
+    forecast_revision_id: str
+    forecast_series_id: str
+    revision_no: int
+    status: str
+    made_at: str
+    information_cutoff_at: str | None = None
+    prior_snapshot_id: str | None = None
+    prior_distribution: dict[str, float]
+    belief_distribution: dict[str, float]
+    evidence_bundle_id: str | None = None
+    evidence_status: Literal['bundled', 'legacy_unbundled']
+    commitment_tier: str
+
+
+class WorkflowObjectSummary(StrictContract):
+    object_ref: ObjectRefContract
+    workflow_type: str
+    status: str
+    created_at: str
+
+
+class MatchDetail(VersionedContract):
+    match: MatchSummary
+    market_snapshot: MarketSnapshotSummary | None = None
+    evidence: EvidenceSummary
+    forecasts: list[ForecastSummary] = Field(default_factory=list)
+    workflow: list[WorkflowObjectSummary] = Field(default_factory=list)
+    as_of: datetime
+    context: MatchContextSummary | None = None
+    market_timeline: list[MarketSnapshotSummary] = Field(default_factory=list)
+    evidence_bundles: list[EvidenceBundleSummary] = Field(default_factory=list)
+    flag_instances: list[FlagInstanceSummary] = Field(default_factory=list)
+    predictions: list[PredictionSummary] = Field(default_factory=list)
+    precedent_links: list[PrecedentLinkSummary] = Field(default_factory=list)
+    adjudications: list[AdjudicationSummary] = Field(default_factory=list)
+    agent_proposals: list[AgentProposalSummary] = Field(default_factory=list)
+
+
+class LineageEdge(StrictContract):
+    relation: str
+    source: ObjectRefContract
+    target: ObjectRefContract
+
+
+class LineageResponse(VersionedContract):
+    object_ref: ObjectRefContract
+    edges: list[LineageEdge] = Field(default_factory=list)
+
+
+class ActionView(StrictContract):
+    action_id: str
+    action_type: str
+    actor_id: str
+    actor_role: str
+    requested_at: str
+    status: str
+    result_refs: list[ObjectRefContract] = Field(default_factory=list)
+    error_code: str | None = None
+    committed_at: str | None = None
+
+
+class ActionPage(VersionedContract):
+    items: list[ActionView] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class OutboxEventView(StrictContract):
+    sequence: int
+    event_id: str
+    action_id: str
+    topic: str
+    object_type: str | None = None
+    object_id: str | None = None
+    payload: dict[str, object]
+    occurred_at: str
+
+
+class EventPage(VersionedContract):
+    items: list[OutboxEventView] = Field(default_factory=list)
+    next_cursor: int
+
+
+class HealthResponse(VersionedContract):
+    initialized: bool
+    ontology_schema_version: int
+    integrity_check: str
+    pending_migrations: list[int] = Field(default_factory=list)
+    action_counts: dict[str, int] = Field(default_factory=dict)
+    outbox_event_count: int
+    outbox_latest_sequence: int
+
+
+class AlertSeverity(StrEnum):
+    INFO = 'info'
+    WARN = 'warn'
+    ERROR = 'error'
+
+
+class AlertSummary(StrictContract):
+    alert_id: str
+    severity: AlertSeverity
+    code: str
+    title: str
+    detail: str
+    observed_at: datetime
+    object_ref: ObjectRefContract | None = None
+    href: str | None = None
+
+
+class SourceHealthSummary(StrictContract):
+    source_name: str
+    source_type: str
+    status: str
+    retrieval_count: int
+    latest_retrieved_at: str | None = None
+    age_seconds: int | None = None
+    error_code: str | None = None
+    error_detail: str | None = None
+
+
+class IdentityQueueItem(StrictContract):
+    entity_type: Literal['team']
+    entity_id: str
+    canonical_name: str
+    resolution_status: str
+    country: str | None = None
+    created_at: str
+    external_identifiers: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+
+
+class OperationsMetrics(StrictContract):
+    ontology_integrity: str
+    ontology_schema_version: int
+    action_high_watermark: int
+    outbox_high_watermark: int
+    projection_run_count: int
+    unresolved_identity_count: int
+
+
+class OperationsResponse(VersionedContract):
+    as_of: datetime
+    sources: list[SourceHealthSummary] = Field(default_factory=list)
+    identities: list[IdentityQueueItem] = Field(default_factory=list)
+    recent_failures: list[ActionView] = Field(default_factory=list)
+    alerts: list[AlertSummary] = Field(default_factory=list)
+    metrics: OperationsMetrics
+
+
+class CommandCenterResponse(VersionedContract):
+    board: BoardResponse
+    health: HealthResponse
+    alerts: list[AlertSummary] = Field(default_factory=list)
+    readiness_counts: dict[str, int] = Field(default_factory=dict)
+    pending_workflow_count: int = 0
+
+
+class ProductActionRequest(VersionedContract):
+    action_type: str
+    idempotency_key: str
+    payload: dict[str, object]
+    expected_versions: dict[str, int] = Field(default_factory=dict)
+    policy_version: str = 'governance-v1'
+
+
+class ProductActionResponse(VersionedContract):
+    action_id: str
+    action_type: str
+    status: str
+    result_refs: list[ObjectRefContract] = Field(default_factory=list)
+    error_code: str | None = None
+    error_detail: str | None = None
+    committed_at: str | None = None
+
+
+class TicketLegCommand(StrictContract):
+    leg_key: str = Field(min_length=1)
+    match_id: str = Field(min_length=1)
+    match_no: int = Field(ge=1)
+    name: str = Field(min_length=1)
+    market_definition_id: str = Field(min_length=1)
+    selection_id: str = Field(min_length=1)
+    outcome_key: Literal['home', 'draw', 'away']
+    faces: str = Field(pattern=r'^[310]+$')
+    forecast_revision_id: str = Field(min_length=1)
+    entry_quote_id: str | None = None
+    odds: float = Field(gt=1.0)
+    line: str | None = None
+    bucket: str = Field(min_length=1)
+    fair: dict[str, float]
+    confidence: int = Field(ge=0, le=5)
+    directional_flags: list[tuple[str, str]] = Field(default_factory=list)
+    nondirectional_flags: list[str] = Field(default_factory=list)
+    anchor_integrity: Literal['pass', 'fail', 'symmetric_damage', 'unknown'] = 'unknown'
+    precedents: list[tuple[str, str, str]] = Field(default_factory=list)
+
+
+class TicketAuditFindingSummary(StrictContract):
+    finding_id: str
+    level: Literal['ERROR', 'WARN']
+    code: str
+    match_no: int | None = None
+    message: str
+    since: str
+    adjudication_id: str | None = None
+    adjudication_decision: str | None = None
+
+
+class TicketSelection(StrictContract):
+    market_definition_id: str
+    selection_id: str
+    outcome_key: str
+    line: str | None = None
+    quote_id: str | None = None
+    odds: float | None = None
+    captured_at: str | None = None
+    provider: str | None = None
+    eligible: bool
+    block_reasons: list[str] = Field(default_factory=list)
+
+
+class TicketWorkbenchMatch(StrictContract):
+    match_id: str
+    match_revision_id: str
+    match_no: int = Field(ge=1)
+    home_team: str
+    away_team: str
+    competition: str | None = None
+    kickoff_at: str
+    market_definition_id: str
+    forecast_revision_id: str | None = None
+    forecast_revision_no: int | None = None
+    belief_distribution: dict[str, float] | None = None
+    selections: list[TicketSelection] = Field(default_factory=list)
+    eligible: bool
+    block_reasons: list[str] = Field(default_factory=list)
+
+
+class TicketBatchRevisionSummary(StrictContract):
+    ticket_batch_revision_id: str
+    ticket_batch_id: str
+    revision_no: int = Field(ge=1)
+    supersedes_revision_id: str | None = None
+    run_date: date
+    channel: str
+    account_id: str
+    currency: str
+    deadline_at: str
+    state: Literal['draft', 'empty', 'approved', 'approved_empty']
+    content_hash: str
+    source_artifact_id: str
+    created_at: str
+    created_by_action_id: str
+    legs: list[TicketLegCommand] = Field(default_factory=list)
+    composition: dict[str, object] = Field(default_factory=dict)
+    audit_state: Literal['clean', 'warn', 'error']
+    audit_findings: list[TicketAuditFindingSummary] = Field(default_factory=list)
+    artifact_ids: list[str] = Field(default_factory=list)
+    added_leg_keys: list[str] = Field(default_factory=list)
+    removed_leg_keys: list[str] = Field(default_factory=list)
+    changed_leg_keys: list[str] = Field(default_factory=list)
+
+
+class TicketWorkbenchResponse(VersionedContract):
+    date: date
+    as_of: datetime
+    matches: list[TicketWorkbenchMatch] = Field(default_factory=list)
+    batch_revisions: list[TicketBatchRevisionSummary] = Field(default_factory=list)
+
+
+class TicketBatchHistoryResponse(VersionedContract):
+    ticket_batch_id: str
+    revisions: list[TicketBatchRevisionSummary] = Field(default_factory=list)
+
+
+class TicketArtifactDetail(VersionedContract):
+    ticket_artifact_id: str
+    ticket_batch_revision_id: str
+    ticket_index: int = Field(ge=0)
+    ticket_hash: str
+    source_artifact_id: str
+    amount: float = Field(gt=0)
+    currency: str
+    channel: str
+    deadline_at: str
+    payload: dict[str, object]
+    approved_at: str
+    approved_by_action_id: str
+    confirmation_state: Literal['not_issued', 'open', 'expired', 'consumed']
+    confirmation_id: str | None = None
+    confirmation_expires_at: str | None = None
+    placement_state: Literal['unplaced', 'placed']
+    ticket_placement_id: str | None = None
+    ticket_id: str | None = None
+    placement_mode: str | None = None
+    external_reference: str | None = None
+    receipt_artifact_id: str | None = None
+    receipt_retrieval_id: str | None = None
+    placed_at: str | None = None
+
+
+class CreateTicketBatchCommand(VersionedContract):
+    run_date: date
+    channel: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    currency: str = Field(min_length=1)
+    deadline_at: AwareDatetime
+    legs: list[TicketLegCommand]
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class RemoveTicketLegCommand(VersionedContract):
+    leg_key: str = Field(min_length=1)
+    expected_revision_no: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class ApproveTicketBatchCommand(VersionedContract):
+    expected_revision_no: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class IssueConfirmationCommand(VersionedContract):
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class IssueConfirmationResponse(ProductActionResponse):
+    confirmation_id: str | None = None
+    nonce: str | None = None
+    expires_at: str | None = None
+
+
+class ConfirmPlacementCommand(VersionedContract):
+    confirmation_id: str = Field(min_length=1)
+    nonce: str = Field(min_length=1)
+    ticket_hash: str = Field(min_length=1)
+    amount: float = Field(gt=0)
+    currency: str = Field(min_length=1)
+    channel: str = Field(min_length=1)
+    placement_mode: Literal['manual', 'connector']
+    external_reference: str = Field(min_length=1)
+    receipt_base64: str | None = None
+    receipt_content_type: str | None = None
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+    @field_validator('amount')
+    @classmethod
+    def amount_must_be_whole_fen(cls, value: float) -> float:
+        try:
+            amount = Decimal(str(value))
+        except InvalidOperation as error:
+            raise ValueError('amount must be representable as whole fen') from error
+        if amount * 100 != (amount * 100).to_integral_value():
+            raise ValueError('amount must be representable as whole fen')
+        return value
+
+    @field_validator('receipt_base64')
+    @classmethod
+    def receipt_must_be_valid_base64(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError('receipt_base64 must be valid base64') from error
+        if not decoded:
+            raise ValueError('receipt_base64 must contain non-empty receipt bytes')
+        return value
+
+
+class ProjectionState(StrEnum):
+    AVAILABLE = 'available'
+    STALE = 'stale'
+    UNAVAILABLE = 'unavailable'
+
+
+class ProjectionHealth(StrictContract):
+    state: ProjectionState
+    code: str | None = None
+    instruction: str | None = None
+    projection_version: str | None = None
+    source_high_watermark: int | None = None
+    built_at: datetime | None = None
+    cohort_definition_version: str | None = None
+    metric_version: str | None = None
+
+
+class MetricSummary(StrictContract):
+    group_key: str
+    metric_key: str
+    value: float | None = None
+    numerator: float | None = None
+    denominator: float | None = None
+    unit: str | None = None
+    status: str
+    tally: str | None = None
+    detail: str | None = None
+    source_refs: list[ObjectRefContract] = Field(default_factory=list)
+
+
+class ScorePlaneSummary(StrictContract):
+    plane: Literal['forecast', 'money', 'intervention', 'lifecycle', 'manual']
+    health: ProjectionHealth
+    metrics: list[MetricSummary] = Field(default_factory=list)
+
+
+class SettlementSummary(StrictContract):
+    ticket_settlement_id: str
+    ticket_id: str
+    status: str
+    settled_at: str
+    stake_amount: float
+    payout_amount: float
+    pnl_amount: float
+    settlement_method_version: str
+    leg_settlement_ids: list[str] = Field(default_factory=list)
+
+
+class CounterfactualReplaySummary(StrictContract):
+    adjudication_id: str
+    subject_type: str
+    subject_id: str
+    match_id: str | None = None
+    outcome_id: str | None = None
+    market_definition_id: str | None = None
+    label: str | None = None
+    eligibility_code: str
+    brier: float | None = None
+    adjudication_created_at: str
+    outcome_recorded_at: str | None = None
+
+
+class ReviewResponse(VersionedContract):
+    as_of: datetime
+    forecast: ScorePlaneSummary
+    money: ScorePlaneSummary
+    intervention: ScorePlaneSummary
+    settlements: list[SettlementSummary] = Field(default_factory=list)
+    counterfactuals: list[CounterfactualReplaySummary] = Field(default_factory=list)
+
+
+class FactorEstimateSummary(StrictContract):
+    factor_definition_id: str
+    factor_family: str
+    factor_version: int
+    scope_key: str | None = None
+    market_definition_id: str
+    cohort_key: str
+    n_eff: int
+    raw_mean: float
+    shrunk_mean: float
+    interval_low: float | None = None
+    interval_high: float | None = None
+    current_status: str | None = None
+
+
+class LifecycleProposalSummary(StrictContract):
+    proposal_id: str
+    factor_definition_id: str
+    from_status: str
+    to_status: str
+    rationale: dict[str, object]
+    policy_version: str
+
+
+class RegimeSummary(StrictContract):
+    regime_key: str
+    values: dict[str, object]
+
+
+class CalibrationResponse(VersionedContract):
+    as_of: datetime
+    health: ProjectionHealth
+    factors: list[FactorEstimateSummary] = Field(default_factory=list)
+    lifecycle_proposals: list[LifecycleProposalSummary] = Field(default_factory=list)
+    regimes: list[RegimeSummary] = Field(default_factory=list)
+
+
+class OntologyObjectSummary(StrictContract):
+    object_type: str
+    object_id: str
+    label: str
+    status: str | None = None
+    recorded_at: str | None = None
+
+
+class OntologyObjectPage(VersionedContract):
+    object_type: str
+    as_of: datetime
+    items: list[OntologyObjectSummary] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class OntologyObjectDetail(VersionedContract):
+    object_type: str
+    object_id: str
+    as_of: datetime
+    properties: dict[str, object]
+    links: list[LineageEdge] = Field(default_factory=list)
+    versions: list[dict[str, object]] = Field(default_factory=list)
+    actions: list[ActionView] = Field(default_factory=list)
+
+
+class ScoreboardAuthoritySummary(StrictContract):
+    state: Literal['legacy', 'ontology']
+    version: int
+    projection_version: str | None = None
+    source_high_watermark: int | None = None
+    legacy_sha256: str | None = None
+    shadow_review_id: str | None = None
+    compatibility_export_sha256: str | None = None
+    approved_at: str | None = None
+    approved_by_action_id: str | None = None
+
+
+class ScoreboardResponse(VersionedContract):
+    as_of: datetime
+    authority: ScoreboardAuthoritySummary
+    health: ProjectionHealth
+    planes: list[ScorePlaneSummary] = Field(default_factory=list)
+
+
+class ReleaseGateSummary(StrictContract):
+    gate_id: Literal['G1', 'G2', 'G3', 'G4', 'G5', 'G6']
+    name: str
+    passed: bool
+    code: str
+    detail: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ReliabilityEvidenceSummary(StrictContract):
+    reliability_evidence_id: str
+    evidence_kind: str
+    workflow: Literal['system', 'jczq', 'zucai'] | None = None
+    business_date: date | None = None
+    observed_from: AwareDatetime
+    observed_to: AwareDatetime
+    status: Literal['passed', 'failed']
+    content_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
+    recorded_at: AwareDatetime
+
+
+class SoakCoverageSummary(StrictContract):
+    workflow: Literal['jczq', 'zucai']
+    dates: list[date] = Field(default_factory=list)
+    distinct_days: int = Field(ge=0)
+    first_date: date | None = None
+    last_date: date | None = None
+    inclusive_span_days: int = Field(ge=0)
+
+
+class ReleaseApprovalSummary(StrictContract):
+    release_approval_id: str
+    release_version: str
+    evidence_snapshot_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    policy_version: Literal['release-v1']
+    reason: str
+    approved_at: AwareDatetime
+    status: Literal['current', 'superseded']
+
+
+class ReleaseSchedulerSummary(StrictContract):
+    reliability_evidence_id: str
+    status: Literal['passed', 'failed']
+    observed_to: AwareDatetime
+    ontology_v2: bool | None = None
+    scoreboard_authority: Literal['legacy', 'ontology'] | None = None
+    sop_ready: bool | None = None
+    configured_stages: int = Field(ge=0)
+    loaded_stages: int = Field(ge=0)
+
+
+class ReleaseBackupRestoreSummary(StrictContract):
+    reliability_evidence_id: str
+    status: Literal['passed', 'failed']
+    observed_to: AwareDatetime
+    sqlite_integrity: str | None = None
+    schema_version: int | None = Field(default=None, ge=0)
+    action_high_watermark: int | None = Field(default=None, ge=0)
+    outbox_cursor: int | None = Field(default=None, ge=0)
+    projection_high_watermark: int | None = Field(default=None, ge=0)
+    source_manifest_sha256: str | None = Field(
+        default=None, pattern=r'^[0-9a-f]{64}$'
+    )
+
+
+class ReleasePerformanceSummary(StrictContract):
+    metric: Literal[
+        'board_query_ms',
+        'match_query_ms',
+        'action_ack_ms',
+        'event_reconnect_ms',
+    ]
+    p95_ms: float = Field(ge=0)
+    budget_ms: float = Field(gt=0)
+    sample_count: int = Field(gt=0)
+    passed: bool
+
+
+class ReleaseResponse(VersionedContract):
+    release_version: str
+    candidate_commit: str
+    policy_version: Literal['release-v1']
+    evaluated_at: AwareDatetime
+    ready: bool
+    gates: list[ReleaseGateSummary]
+    evidence: list[ReliabilityEvidenceSummary] = Field(default_factory=list)
+    soak_coverage: list[SoakCoverageSummary] = Field(default_factory=list)
+    evidence_snapshot_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    approval_status: Literal['none', 'current', 'superseded']
+    approval: ReleaseApprovalSummary | None = None
+    scheduler_authority: ReleaseSchedulerSummary | None = None
+    backup_restore: ReleaseBackupRestoreSummary | None = None
+    performance: list[ReleasePerformanceSummary] = Field(default_factory=list)
+
+
+class RouteMetricSummary(StrictContract):
+    route_template: str = Field(min_length=1, pattern=r'^/[^?]*$')
+    method: Literal['GET', 'POST']
+    request_count: int = Field(ge=0)
+    error_count: int = Field(ge=0)
+    p95_ms: float = Field(ge=0)
+
+
+class ReliabilityMetricsResponse(VersionedContract):
+    as_of: AwareDatetime
+    routes: list[RouteMetricSummary] = Field(default_factory=list)
+    action_status_counts: dict[str, int] = Field(default_factory=dict)
+    action_high_watermark: int = Field(ge=0)
+    outbox_high_watermark: int = Field(ge=0)
+    outbox_lag: int = Field(ge=0)
+    projection_state: Literal['available', 'stale', 'unavailable']
+    authority_state: Literal['legacy', 'ontology']
+    evidence_freshness: dict[str, AwareDatetime | None] = Field(default_factory=dict)
+    last_restore_drill: ReliabilityEvidenceSummary | None = None

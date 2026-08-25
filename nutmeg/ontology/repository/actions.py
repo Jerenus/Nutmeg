@@ -51,6 +51,22 @@ class ActionRepository:
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
 
+    def release_failed_idempotency_key(self, key: str, action_id: str) -> None:
+        """Free a FAILED attempt's key so an identical retry can execute.
+
+        The audit row survives under a derived key; only terminal FAILED rows
+        are eligible — committed and rejected outcomes stay replayable.
+        """
+        self._connection.execute(
+            update(schema.actions)
+            .where(
+                schema.actions.c.action_id == action_id,
+                schema.actions.c.idempotency_key == key,
+                schema.actions.c.status == ActionStatus.FAILED.value,
+            )
+            .values(idempotency_key=f'{key}#failed-{action_id}')
+        )
+
     def get_by_idempotency_key(self, key: str) -> ActionRecord | None:
         row = (
             self._connection.execute(

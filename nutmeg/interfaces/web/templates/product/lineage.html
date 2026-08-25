@@ -1,0 +1,48 @@
+{% extends "product/layout.html" %}
+
+{% block title %}血缘 · {{ lineage.object_ref.object_id }} · Nutmeg{% endblock %}
+
+{% block content %}
+  <nav class="breadcrumb" aria-label="面包屑">
+    <a href="/">指挥中心</a><span aria-hidden="true">/</span><span>对象血缘</span>
+  </nav>
+
+  <section class="lineage-head" aria-labelledby="page-title">
+    <div class="section-kicker">Ontology Lineage</div>
+    <h1 id="page-title">{{ lineage.object_ref.object_type }}</h1>
+    <code class="copyable-id">{{ lineage.object_ref.object_id }}</code>
+    <p>这里只展示类型化对象关系与 Action 血缘，不暴露数据库表或查询语句。</p>
+  </section>
+
+  <section class="lineage-section" aria-labelledby="edges-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Typed Edges</div>
+        <h2 id="edges-title">关系边</h2>
+      </div>
+      <span>{{ lineage.edges|length }} 条</span>
+    </div>
+    {% if lineage.edges %}
+      <ol class="lineage-edges">
+        {% for edge in lineage.edges %}
+          <li class="reveal-item">
+            <a class="object-node" href="/lineage/{{ edge.source.object_type }}/{{ edge.source.object_id }}">
+              <span>{{ edge.source.object_type }}</span>
+              <code>{{ edge.source.object_id }}</code>
+            </a>
+            <div class="relation-arrow">
+              <strong>{{ edge.relation }}</strong>
+              <span aria-hidden="true">────────→</span>
+            </div>
+            <a class="object-node" href="/lineage/{{ edge.target.object_type }}/{{ edge.target.object_id }}">
+              <span>{{ edge.target.object_type }}</span>
+              <code>{{ edge.target.object_id }}</code>
+            </a>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <div class="inline-empty">对象存在，但当前没有已登记的类型化关系边。</div>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -151,6 +151,84 @@ def run_decision_am_v2(
     return _compose("decision-am", run_date, "数据入库(ontology v2 kernel)", steps)
 
 
+def _resolve_read_match_id(kernel, source_match_id: str, reads_file: Path) -> str | None:
+    """Resolve legacy decision IDs at the v1-to-kernel adapter boundary."""
+    from nutmeg.decision.identity import canonical_match_id
+    from nutmeg.ontology.identity.models import EntityType
+    from nutmeg.ontology.ingest.sporttery import parse_sporttery_markets
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        if source_match_id in uow.identity.all_match_ids():
+            return source_match_id
+        resolved = uow.identity.entity_by_external_id(
+            EntityType.MATCH,
+            provider="zucai-canonical",
+            external_id=source_match_id,
+        )
+    if resolved is not None:
+        return resolved
+
+    snapshot_path = reads_file.parent / "sporttery_markets.json"
+    if not snapshot_path.is_file():
+        return None
+    try:
+        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(snapshot, dict):
+        return None
+
+    for parsed in parse_sporttery_markets(snapshot, business_date=""):
+        business_date = parsed.business_date or reads_file.parent.name
+        if canonical_match_id(parsed.home_name, parsed.away_name, business_date) != source_match_id:
+            continue
+        with OntologyUnitOfWork(kernel.engine) as uow:
+            return uow.identity.entity_by_external_id(
+                EntityType.MATCH,
+                provider="sporttery",
+                external_id=parsed.external_id,
+            )
+    return None
+
+
+def _resolve_read_snapshot_id(
+    kernel,
+    source_snapshot_id: str,
+    match_id: str,
+    market_definition_id: str,
+) -> str | None:
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        if uow.market.snapshot_exists_for(
+            source_snapshot_id,
+            match_id,
+            market_definition_id,
+        ):
+            return source_snapshot_id
+
+    parts = source_snapshot_id.split("-", 4)
+    if len(parts) != 5 or parts[0] != "S":
+        return None
+    _prefix, snapshot_kind, legacy_provider, _match_no, _captured_at = parts
+    provider = {
+        "api-football": "intl",
+        "apifootball": "intl",
+        "intl": "intl",
+        "sporttery": "sporttery",
+    }.get(legacy_provider)
+    if provider is None:
+        return None
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        return uow.market.snapshot_id_for_source(
+            match_id,
+            market_definition_id,
+            snapshot_kind,
+            provider,
+        )
+
+
 def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
     """Commit each judged Read payload as a kernel ForecastRevision (no money, no push).
 
@@ -168,7 +246,8 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
     from nutmeg.ontology.actions.service import ActionService
     from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
-    payloads = json.loads(Path(reads_file).read_text(encoding="utf-8"))
+    reads_path = Path(reads_file)
+    payloads = json.loads(reads_path.read_text(encoding="utf-8"))
     active_kernel = kernel if kernel is not None else _default_kernel()
     forecasts = ForecastActions(ActionService(lambda: OntologyUnitOfWork(active_kernel.engine)))
 
@@ -181,6 +260,26 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
         if market is None:
             rejected.append(f"{read_id}:unmapped_market")
             continue
+        match_id = _resolve_read_match_id(
+            active_kernel,
+            str(payload.get("match_id") or ""),
+            reads_path,
+        )
+        if match_id is None:
+            rejected.append(f"{read_id}:unresolved_match")
+            continue
+        source_snapshot_id = str(payload.get("snapshot_id") or "")
+        prior_snapshot_id = None
+        if source_snapshot_id:
+            prior_snapshot_id = _resolve_read_snapshot_id(
+                active_kernel,
+                source_snapshot_id,
+                match_id,
+                market,
+            )
+            if prior_snapshot_id is None:
+                rejected.append(f"{read_id}:unresolved_snapshot")
+                continue
         prior = payload.get("prior")
         belief = payload.get("belief")
         factors: list[FactorInput] = []
@@ -200,7 +299,7 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
         try:
             outcome = forecasts.commit_forecast(
                 CommitForecastRequest(
-                    match_id=str(payload["match_id"]),
+                    match_id=match_id,
                     market_definition_id=market,
                     decision_session_id=None,
                     prior_distribution=prior,
@@ -208,7 +307,7 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
                     factors=factors,
                     commitment_tier=str(payload.get("commitment_tier", "commit")),
                     evidence_bundle_id=None,
-                    prior_snapshot_id=payload.get("snapshot_id"),
+                    prior_snapshot_id=prior_snapshot_id,
                     falsifier=payload.get("falsifier"),
                     actor_id="judge:owner",
                     actor_role=ActorRole.JUDGE_OPERATOR,

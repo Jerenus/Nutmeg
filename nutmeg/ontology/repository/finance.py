@@ -141,6 +141,18 @@ class FinanceRepository:
             )
         )
 
+    def account(self, account_id: str) -> CashAccountRow | None:
+        row = (
+            self._connection.execute(
+                select(sf.cash_accounts).where(
+                    sf.cash_accounts.c.account_id == account_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return None if row is None else CashAccountRow(**dict(row))
+
     def insert_budget_policy(self, row: BudgetPolicyRow) -> None:
         self._connection.execute(
             insert(sf.budget_policies).values(

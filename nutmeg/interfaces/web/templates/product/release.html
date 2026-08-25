@@ -1,0 +1,206 @@
+{% extends "product/layout.html" %}
+
+{% block title %}发布治理 · Nutmeg{% endblock %}
+
+{% block content %}
+  <section class="release-masthead" aria-labelledby="page-title">
+    <div>
+      <div class="section-kicker">Reliability / Release Governance</div>
+      <h1 id="page-title">发布证据台</h1>
+      <p>这里只呈现服务端判定、不可变证据和人工批准；缺失证据保持阻断。</p>
+    </div>
+    <div class="release-readiness" data-release-ready="{{ 'true' if release.ready else 'false' }}">
+      <span>release-v1</span>
+      <strong>{{ 'READY' if release.ready else 'BLOCKED' }}</strong>
+      <small>{{ release.release_version }}</small>
+    </div>
+  </section>
+
+  <form class="release-selector" method="get" action="/release">
+    <label>
+      <span>版本</span>
+      <input class="release-approval-control" name="release_version" value="{{ release.release_version }}" required>
+    </label>
+    <label>
+      <span>候选提交</span>
+      <input class="release-approval-control" name="candidate_commit" value="{{ release.candidate_commit }}" required>
+    </label>
+    <label>
+      <span>评估时间</span>
+      <input class="release-approval-control" name="evaluated_at" value="{{ release.evaluated_at.isoformat() }}" required>
+    </label>
+    <button class="release-approval-control" type="submit">重新评估</button>
+  </form>
+
+  <section class="release-section" aria-labelledby="gates-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Server Evaluation</div>
+        <h2 id="gates-title">六个发布门</h2>
+      </div>
+      <code>{{ release.evidence_snapshot_sha256 }}</code>
+    </div>
+    <div class="release-gate-list">
+      {% for gate in release.gates %}
+        <article class="release-gate-row" data-release-gate="{{ gate.gate_id }}" data-gate-state="{{ 'passed' if gate.passed else 'blocked' }}">
+          <div class="release-gate-id">{{ gate.gate_id }}</div>
+          <div>
+            <h3>{{ gate.name }}</h3>
+            <p>{{ gate.detail }}</p>
+          </div>
+          <code class="release-block-code">{{ gate.code }}</code>
+          <span class="release-gate-state">{{ 'PASS' if gate.passed else 'BLOCK' }}</span>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="release-section" aria-labelledby="soak-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Real Non-Dispatch Soak</div>
+        <h2 id="soak-title">双泳道日历</h2>
+      </div>
+      <span>每条泳道至少 14 个自然日</span>
+    </div>
+    <div class="soak-grid">
+      {% for coverage in release.soak_coverage %}
+        <article class="soak-workflow" data-soak-workflow="{{ coverage.workflow }}">
+          <header>
+            <strong>{{ coverage.workflow|upper }}</strong>
+            <span>{{ coverage.distinct_days }} 天 / 跨度 {{ coverage.inclusive_span_days }} 天</span>
+          </header>
+          <div class="soak-calendar">
+            {% for day in coverage.dates %}
+              <time data-soak-date="{{ day.isoformat() }}" datetime="{{ day.isoformat() }}">{{ day.strftime('%m-%d') }}</time>
+            {% else %}
+              <span class="soak-empty">尚无真实 soak 日期</span>
+            {% endfor %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="release-section" aria-labelledby="operations-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Authority / Recovery</div>
+        <h2 id="operations-title">运维事实</h2>
+      </div>
+      <span>来自当前证据快照</span>
+    </div>
+    <div class="release-operations-grid">
+      <article data-release-operations="scheduler">
+        <header><strong>调度与权威</strong><span>{{ release.scheduler_authority.status|upper if release.scheduler_authority else 'MISSING' }}</span></header>
+        {% if release.scheduler_authority %}
+          <dl>
+            <div><dt>Ontology v2</dt><dd>{{ 'ON' if release.scheduler_authority.ontology_v2 else 'OFF' }}</dd></div>
+            <div><dt>Scoreboard</dt><dd>{{ release.scheduler_authority.scoreboard_authority or 'unknown' }}</dd></div>
+            <div><dt>SOP</dt><dd>{{ 'READY' if release.scheduler_authority.sop_ready else 'BLOCKED' }}</dd></div>
+            <div><dt>Stages</dt><dd>{{ release.scheduler_authority.loaded_stages }} loaded / {{ release.scheduler_authority.configured_stages }} configured</dd></div>
+          </dl>
+        {% else %}
+          <p>尚无 scheduler_authority 证据。</p>
+        {% endif %}
+      </article>
+      <article data-release-operations="backup_restore">
+        <header><strong>备份与恢复</strong><span>{{ release.backup_restore.status|upper if release.backup_restore else 'MISSING' }}</span></header>
+        {% if release.backup_restore %}
+          <dl>
+            <div><dt>SQLite</dt><dd>{{ release.backup_restore.sqlite_integrity or 'unknown' }}</dd></div>
+            <div><dt>Schema</dt><dd>{{ release.backup_restore.schema_version if release.backup_restore.schema_version is not none else 'unknown' }}</dd></div>
+            <div><dt>Action / Outbox</dt><dd>{{ release.backup_restore.action_high_watermark if release.backup_restore.action_high_watermark is not none else 'unknown' }} / {{ release.backup_restore.outbox_cursor if release.backup_restore.outbox_cursor is not none else 'unknown' }}</dd></div>
+            <div><dt>Projection</dt><dd>{{ release.backup_restore.projection_high_watermark if release.backup_restore.projection_high_watermark is not none else 'unknown' }}</dd></div>
+          </dl>
+        {% else %}
+          <p>尚无 backup_restore 证据。</p>
+        {% endif %}
+      </article>
+    </div>
+  </section>
+
+  <section class="release-section" aria-labelledby="performance-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Fixed Budgets</div>
+        <h2 id="performance-title">性能预算</h2>
+      </div>
+      <span>10x reference volume</span>
+    </div>
+    <div class="performance-ledger">
+      {% for name, budget in performance_budgets.items() %}
+        {% set observed = release.performance|selectattr('metric', 'equalto', name)|first %}
+        <div data-performance-metric="{{ name }}">
+          <code>{{ name }}</code>
+          <strong>{{ budget|int }} ms</strong>
+          {% if observed %}
+            <span data-observed-p95="{{ name }}">{{ observed.p95_ms|round(3) }} ms observed / {{ observed.sample_count }} samples</span>
+          {% else %}
+            <span>尚无当前实测</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="release-section" aria-labelledby="evidence-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Selected Evidence</div>
+        <h2 id="evidence-title">证据摘要</h2>
+      </div>
+      <span>{{ release.evidence|length }} 条已选</span>
+    </div>
+    <div class="table-scroll" tabindex="0" aria-label="发布证据摘要">
+      <table class="operations-table release-evidence-table">
+        <thead>
+          <tr><th scope="col">类型</th><th scope="col">状态</th><th scope="col">观察截止</th><th scope="col">内容哈希</th></tr>
+        </thead>
+        <tbody>
+          {% for kind in evidence_kinds %}
+            {% set rows = release.evidence|selectattr('evidence_kind', 'equalto', kind)|list %}
+            <tr data-evidence-kind="{{ kind }}">
+              <th scope="row">{{ kind }}</th>
+              {% if rows %}
+                {% set row = rows[0] %}
+                <td><span class="evidence-status is-{{ row.status }}">{{ row.status }}</span></td>
+                <td><time datetime="{{ row.observed_to.isoformat() }}">{{ row.observed_to.isoformat() }}</time></td>
+                <td><code>{{ row.content_hash }}</code></td>
+              {% else %}
+                <td><span class="evidence-status is-missing">missing</span></td>
+                <td>—</td>
+                <td>—</td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="release-section release-approval" aria-labelledby="approval-title" data-approval-status="{{ release.approval_status }}">
+    <div>
+      <div class="section-kicker">Judge-Only Action</div>
+      <h2 id="approval-title">人工发布批准</h2>
+      {% if release.approval %}
+        <p>{{ release.approval.reason }}</p>
+        <code>{{ release.approval.evidence_snapshot_sha256 }}</code>
+      {% elif not release.ready %}
+        <p>当前证据快照仍被发布门阻断，批准入口不开放。</p>
+      {% else %}
+        <p>所有服务端发布门已通过，可批准这个精确快照。</p>
+      {% endif %}
+    </div>
+    {% if release.ready and release.approval_status == 'none' %}
+      <form data-action="approve-release" data-release-version="{{ release.release_version }}" data-candidate-commit="{{ release.candidate_commit }}" data-snapshot="{{ release.evidence_snapshot_sha256 }}">
+        <label>
+          <span>批准理由</span>
+          <textarea class="release-approval-control" name="reason" required minlength="8"></textarea>
+        </label>
+        <button class="release-approval-control" type="submit">批准当前快照</button>
+      </form>
+    {% endif %}
+    <div id="action-feedback" class="action-feedback" aria-live="polite"></div>
+  </section>
+{% endblock %}

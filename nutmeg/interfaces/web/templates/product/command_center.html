@@ -1,0 +1,114 @@
+{% extends "product/layout.html" %}
+
+{% block title %}指挥中心 · Nutmeg{% endblock %}
+
+{% block content %}
+  <section class="hero-ledger" aria-labelledby="page-title">
+    <div>
+      <div class="section-kicker">Command Center / {{ filters.date }}</div>
+      <h1 id="page-title">今天，先看哪里？</h1>
+      <p class="hero-deck">这里不做推荐排名。它只把证据缺口、时限和下一步动作摆到同一张桌面上。</p>
+    </div>
+    <div class="date-stamp" aria-label="板面日期">
+      <span>{{ command.board.date.strftime('%m') }}</span>
+      <strong>{{ command.board.date.strftime('%d') }}</strong>
+      <small>{{ command.board.date.strftime('%Y') }}</small>
+    </div>
+  </section>
+
+  <section class="control-ledger" aria-label="板面筛选">
+    <form class="filter-bar" method="get" action="/">
+      <label>
+        <span>比赛日</span>
+        <input type="date" name="date" value="{{ filters.date }}">
+      </label>
+      <label>
+        <span>状态</span>
+        <select name="readiness">
+          <option value=""{% if not filters.readiness %} selected{% endif %}>全部</option>
+          <option value="ready"{% if filters.readiness == 'ready' %} selected{% endif %}>READY</option>
+          <option value="degraded"{% if filters.readiness == 'degraded' %} selected{% endif %}>DEGRADED</option>
+          <option value="blocked"{% if filters.readiness == 'blocked' %} selected{% endif %}>BLOCKED</option>
+        </select>
+      </label>
+      <label>
+        <span>赛事</span>
+        <input type="search" name="competition" value="{{ filters.competition }}" placeholder="精确赛事名">
+      </label>
+      <label class="filter-query">
+        <span>对象检索</span>
+        <input type="search" name="q" value="{{ filters.query }}" placeholder="球队或赛事">
+      </label>
+      <button type="submit">应用筛选</button>
+    </form>
+
+    <dl class="readiness-tally" aria-label="未筛选板面状态计数">
+      {% for level in ['ready', 'degraded', 'blocked'] %}
+        <div class="tally-{{ level }}">
+          <dt>{{ level }}</dt>
+          <dd>{{ command.readiness_counts.get(level, 0) }}</dd>
+        </div>
+      {% endfor %}
+      <div>
+        <dt>待裁决对象</dt>
+        <dd>{{ command.pending_workflow_count }}</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="board-section" aria-labelledby="board-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Daily Board</div>
+        <h2 id="board-title">比赛板面</h2>
+      </div>
+      <span>{{ command.board.matches|length }} 场可见</span>
+    </div>
+
+    {% if command.board.matches %}
+      <ol class="match-ledger">
+        {% for match in command.board.matches %}
+          <li class="match-row readiness-{{ match.readiness.level.value }} reveal-item">
+            <div class="match-index">{{ '%02d'|format(loop.index) }}</div>
+            <div class="match-identity">
+              <div class="match-context">
+                <span>{{ match.competition or '赛事待补全' }}</span>
+                <time datetime="{{ match.kickoff_at or '' }}">{{ match.kickoff_at or '开赛时间待定' }}</time>
+              </div>
+              <h3>{{ match.home_team }} <span>vs</span> {{ match.away_team }}</h3>
+              <code>{{ match.match_id }}</code>
+            </div>
+            <div class="evidence-meter">
+              <span>证据覆盖</span>
+              <strong>{{ match.evidence_count }}</strong>
+              <small>条可追溯对象</small>
+            </div>
+            <div class="readiness-cell">
+              <span class="status-chip">{{ match.readiness.level.value }}</span>
+              {% if match.readiness.issues %}
+                <small>{{ match.readiness.issues[0].message }}</small>
+              {% else %}
+                <small>硬前置已满足</small>
+              {% endif %}
+            </div>
+            <div class="next-action">
+              <span>{{ match.workflow_state }}</span>
+              <a href="/matches/{{ match.match_id }}?as_of={{ command.board.as_of.isoformat() }}">
+                打开比赛档案 <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <div class="empty-board" data-empty-state="board">
+        <div class="empty-glyph" aria-hidden="true">0</div>
+        <div>
+          <h3>没有符合当前筛选的比赛</h3>
+          <p>板面没有隐藏推荐，也不会用相似对象填充空白。调整筛选条件或等待新的本体事实进入。</p>
+          <a href="/?date={{ filters.date }}">清除筛选</a>
+        </div>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

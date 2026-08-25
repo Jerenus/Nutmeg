@@ -1,0 +1,164 @@
+{% extends "product/layout.html" %}
+
+{% block title %}数据运营 · Nutmeg{% endblock %}
+
+{% block content %}
+  <section class="hero-ledger operations-hero" aria-labelledby="page-title">
+    <div>
+      <div class="section-kicker">Data Operations / Foundry Plane</div>
+      <h1 id="page-title">先让数据说清楚。</h1>
+      <p class="hero-deck">来源、身份和失败动作都保留时间与血缘；未知不会被包装成正常。</p>
+    </div>
+    <div class="operations-asof">
+      <span>观察截止</span>
+      <time datetime="{{ operations.as_of.isoformat() }}">{{ operations.as_of.isoformat() }}</time>
+    </div>
+  </section>
+
+  <section class="metric-ledger" aria-label="运营指标">
+    <article>
+      <span>Ontology</span>
+      <strong>{{ operations.metrics.ontology_integrity }}</strong>
+      <small>schema {{ operations.metrics.ontology_schema_version }}</small>
+    </article>
+    <article>
+      <span>Action HWM</span>
+      <strong>{{ operations.metrics.action_high_watermark }}</strong>
+      <small>只增审计脊柱</small>
+    </article>
+    <article>
+      <span>Outbox HWM</span>
+      <strong>{{ operations.metrics.outbox_high_watermark }}</strong>
+      <small>持久事件游标</small>
+    </article>
+    <article>
+      <span>Identity Queue</span>
+      <strong>{{ operations.metrics.unresolved_identity_count }}</strong>
+      <small>provisional teams</small>
+    </article>
+  </section>
+
+  <section class="operations-section" aria-labelledby="sources-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Source Ledger</div>
+        <h2 id="sources-title">来源健康</h2>
+      </div>
+      <span>{{ operations.sources|length }} 个来源</span>
+    </div>
+    {% if operations.sources %}
+      <div class="table-scroll" tabindex="0" aria-label="来源状态横向表格">
+        <table class="operations-table">
+          <thead>
+            <tr>
+              <th scope="col">来源</th>
+              <th scope="col">类型</th>
+              <th scope="col">状态</th>
+              <th scope="col">Retrievals</th>
+              <th scope="col">最新采集</th>
+              <th scope="col">年龄</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for source in operations.sources %}
+              <tr>
+                <th scope="row">{{ source.source_name }}</th>
+                <td>{{ source.source_type }}</td>
+                <td><span class="source-status">{{ source.status }}</span></td>
+                <td>{{ source.retrieval_count }}</td>
+                <td><code>{{ source.latest_retrieved_at or 'never' }}</code></td>
+                <td>
+                  {% if source.age_seconds is not none %}
+                    <strong class="{% if source.age_seconds > 21600 %}age-stale{% endif %}">{{ source.age_seconds }}s</strong>
+                  {% else %}
+                    unknown
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="inline-empty">尚无来源检索记录；系统不会把“没采到”显示成健康。</div>
+    {% endif %}
+    <div class="instrumentation-gap" role="status">
+      <span aria-hidden="true">!</span>
+      <div>
+        <strong>调度状态尚未接入本体事实</strong>
+        <p>M2 不从缺失记录猜测 launchd 健康度；恢复计划需按运行手册单独核验。</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="identity-queue" class="operations-section" aria-labelledby="identity-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Identity Resolution</div>
+        <h2 id="identity-title">待裁决身份</h2>
+      </div>
+      <span>{{ operations.identities|length }} 项可见</span>
+    </div>
+    <div id="action-feedback" class="action-feedback" aria-live="polite"></div>
+    {% if operations.identities %}
+      <div class="identity-grid">
+        {% for identity in operations.identities %}
+          <article class="identity-card reveal-item" data-identity-id="{{ identity.entity_id }}">
+            <div class="identity-card-head">
+              <span class="status-chip">{{ identity.resolution_status }}</span>
+              <code>{{ identity.entity_id }}</code>
+            </div>
+            <h3>{{ identity.canonical_name }}</h3>
+            <dl>
+              <div><dt>国家</dt><dd>{{ identity.country or 'unknown' }}</dd></div>
+              <div><dt>外部 ID</dt><dd>{{ identity.external_identifiers|join(', ') or 'none' }}</dd></div>
+              <div><dt>别名</dt><dd>{{ identity.aliases|join(', ') or 'none' }}</dd></div>
+            </dl>
+            <form data-action="merge-identity" data-entity-id="{{ identity.entity_id }}">
+              <label>
+                <span>保留实体 ID</span>
+                <input name="survivor_id" required autocomplete="off" placeholder="team-…">
+              </label>
+              <label>
+                <span>裁决理由</span>
+                <textarea name="reason" required rows="2" placeholder="说明为什么是同一实体"></textarea>
+              </label>
+              <button type="submit">提交合并 Action</button>
+            </form>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="inline-empty">当前没有 provisional Team 等待身份裁决。</div>
+    {% endif %}
+  </section>
+
+  <section id="action-failures" class="operations-section" aria-labelledby="failures-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Audit Exceptions</div>
+        <h2 id="failures-title">最近失败与拒绝</h2>
+      </div>
+      <span>{{ operations.recent_failures|length }} 条</span>
+    </div>
+    {% if operations.recent_failures %}
+      <ol class="failure-list">
+        {% for action in operations.recent_failures %}
+          <li>
+            <span class="failure-state state-{{ action.status }}">{{ action.status }}</span>
+            <div>
+              <strong>{{ action.action_type }}</strong>
+              <code>{{ action.action_id }}</code>
+            </div>
+            <div>
+              <span>{{ action.error_code or 'no_error_code' }}</span>
+              <time datetime="{{ action.requested_at }}">{{ action.requested_at }}</time>
+            </div>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <div class="inline-empty">当前没有失败或拒绝的 Action。</div>
+    {% endif %}
+  </section>
+{% endblock %}

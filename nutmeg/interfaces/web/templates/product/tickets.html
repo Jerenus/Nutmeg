@@ -1,0 +1,282 @@
+{% extends "product/layout.html" %}
+
+{% block title %}票据与裁决工作台 · Nutmeg{% endblock %}
+
+{% block content %}
+<div class="ticket-room" data-ticket-as-of="{{ workbench.as_of.isoformat() }}">
+  <nav class="breadcrumb" aria-label="票据工作台主导航">
+    <a href="/">指挥中心</a><span aria-hidden="true">/</span><span>票据与裁决</span>
+  </nav>
+
+  <section class="ticket-masthead" aria-labelledby="page-title">
+    <div>
+      <div class="section-kicker">Ticket &amp; Adjudication / {{ workbench.date.isoformat() }}</div>
+      <h1 id="page-title">把判断变成<br><em>可审计动作</em></h1>
+      <p>先构票、再审计、后批准；确认出票是另一道门。批准不等于下注，没入账就没有打。</p>
+    </div>
+    <div class="ticket-seal" aria-label="工作台截止视图">
+      <span>INFORMATION CUTOFF</span>
+      <time datetime="{{ workbench.as_of.isoformat() }}">{{ workbench.as_of.isoformat() }}</time>
+      <strong>{{ workbench.matches|length }} MATCHES / {{ workbench.batch_revisions|length }} BATCHES</strong>
+    </div>
+  </section>
+
+  <p id="action-feedback" class="action-feedback ticket-feedback" aria-live="polite">等待操作者动作。</p>
+
+  <div class="ticket-workbench-grid">
+    <div class="ticket-build-column">
+      <section class="ticket-builder" aria-labelledby="face-matrix-title" data-ticket-face-matrix="true">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Face Matrix</div>
+            <h2 id="face-matrix-title">面选格</h2>
+          </div>
+          <span>Forecast + Quote 只读</span>
+        </div>
+
+        <form data-action="create-ticket-batch" data-run-date="{{ workbench.date.isoformat() }}">
+          <div class="ticket-builder-meta">
+            <label><span>账户</span><input name="account_id" value="acct-jczq" required></label>
+            <label><span>渠道</span><input name="channel" value="jczq" required></label>
+            <label><span>币种</span><input name="currency" value="CNY" required></label>
+            <label><span>截止时间（ISO，含时区）</span><input name="deadline_at" value="{{ workbench.date.isoformat() }}T23:59:00+08:00" required></label>
+          </div>
+
+          {% if workbench.matches %}
+            <div class="ticket-match-stack">
+              {% for match in workbench.matches %}
+                <article class="ticket-match-card{% if not match.eligible %} is-blocked{% endif %} reveal-item"
+                  data-ticket-match
+                  data-match-id="{{ match.match_id }}"
+                  data-match-no="{{ match.match_no }}"
+                  data-match-name="{{ match.home_team }} - {{ match.away_team }}"
+                  data-market-id="{{ match.market_definition_id }}"
+                  data-forecast-id="{{ match.forecast_revision_id or '' }}"
+                  data-fair-home="{{ match.belief_distribution.get('home', '') if match.belief_distribution else '' }}"
+                  data-fair-draw="{{ match.belief_distribution.get('draw', '') if match.belief_distribution else '' }}"
+                  data-fair-away="{{ match.belief_distribution.get('away', '') if match.belief_distribution else '' }}">
+                  <header>
+                    <span class="ticket-match-number">{{ '%02d'|format(match.match_no) }}</span>
+                    <div>
+                      <small>{{ match.competition or '赛事待补全' }} · {{ match.kickoff_at }}</small>
+                      <h3>{{ match.home_team }} <span>vs</span> {{ match.away_team }}</h3>
+                      <code>{{ match.match_id }}</code>
+                    </div>
+                    <div class="forecast-stamp">
+                      <span>Forecast r{{ match.forecast_revision_no or '—' }}</span>
+                      <code>{{ match.forecast_revision_id or 'BLOCKED' }}</code>
+                    </div>
+                  </header>
+                  {% if match.block_reasons %}
+                    <div class="ticket-block-reasons" role="status">{{ match.block_reasons|join(' / ') }}</div>
+                  {% endif %}
+                  <fieldset class="face-choice-grid"{% if not match.eligible %} disabled{% endif %}>
+                    <legend>主表达与覆盖面</legend>
+                    {% for selection in match.selections %}
+                      {% set face = '3' if selection.outcome_key == 'home' else ('1' if selection.outcome_key == 'draw' else '0') %}
+                      <div class="face-choice{% if not selection.eligible %} is-unquoted{% endif %}">
+                        <div class="face-mark">{{ face }}</div>
+                        <strong>{{ selection.outcome_key }}</strong>
+                        {% if selection.quote_id %}
+                          <span class="face-price">{{ '%.3f'|format(selection.odds) }}</span>
+                          <code>{{ selection.quote_id }}</code>
+                        {% else %}
+                          <span class="face-price">NO QUOTE</span>
+                        {% endif %}
+                        <label>
+                          <input type="radio" name="primary-{{ match.match_no }}" value="{{ selection.outcome_key }}"
+                            data-selection-id="{{ selection.selection_id }}"
+                            data-quote-id="{{ selection.quote_id or '' }}"
+                            data-odds="{{ selection.odds or '' }}"
+                            data-line="{{ selection.line or '' }}"{% if not selection.eligible %} disabled{% endif %}>
+                          主表达
+                        </label>
+                        <label>
+                          <input class="ticket-face" type="checkbox" value="{{ face }}"{% if not selection.eligible %} disabled{% endif %}>
+                          纳入覆盖
+                        </label>
+                      </div>
+                    {% endfor %}
+                  </fieldset>
+                  <div class="ticket-authored-facts">
+                    <label><span>置信度 0–5</span><input type="number" name="confidence" min="0" max="5" value="4"></label>
+                    <label><span>预算桶</span><select name="bucket"><option value="main">main</option><option value="hedge">hedge</option><option value="draw">draw</option><option value="parlay">parlay</option></select></label>
+                    <label><span>锚方完整度</span><select name="anchor_integrity"><option value="unknown">unknown</option><option value="pass">pass</option><option value="fail">fail</option><option value="symmetric_damage">symmetric_damage</option></select></label>
+                    <label><span>方向旗（flag=face，逗号分隔）</span><input name="directional_flags" placeholder="anchor_shield_out=1"></label>
+                    <label><span>无方向旗（逗号分隔）</span><input name="nondirectional_flags" placeholder="source_disagreement"></label>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+            <button class="ticket-primary-action" type="submit">创建不可变批次草稿</button>
+          {% else %}
+            <div class="empty-board" data-empty-state="ticket-matches">
+              <div class="empty-glyph" aria-hidden="true">0</div>
+              <div><h3>这个比赛日没有可构票对象</h3><p>空白不会被推荐或历史比赛填充。</p></div>
+            </div>
+          {% endif %}
+        </form>
+      </section>
+
+      <section class="ticket-revision-section" aria-labelledby="revision-title">
+        <div class="section-heading">
+          <div><div class="section-kicker">Revision Rail</div><h2 id="revision-title">不可变批次</h2></div>
+          <span>{{ workbench.batch_revisions|length }} 个当前版本</span>
+        </div>
+        {% if workbench.batch_revisions %}
+          <div class="ticket-batch-list">
+            {% for batch in workbench.batch_revisions %}
+              <article class="ticket-batch-card audit-{{ batch.audit_state }}" data-ticket-batch="{{ batch.ticket_batch_id }}">
+                <header>
+                  <div><span>{{ batch.state }}</span><h3>{{ batch.ticket_batch_id }}</h3></div>
+                  <code>r{{ batch.revision_no }} / {{ batch.content_hash }}</code>
+                </header>
+                <ol class="revision-rail" aria-label="{{ batch.ticket_batch_id }} 版本历史">
+                  {% for revision in histories[batch.ticket_batch_id].revisions %}
+                    <li{% if revision.revision_no == batch.revision_no %} class="is-current"{% endif %}>
+                      <strong>r{{ revision.revision_no }}</strong>
+                      <span>{{ revision.state }}</span>
+                      <small>+{{ revision.added_leg_keys|length }} / −{{ revision.removed_leg_keys|length }} / Δ{{ revision.changed_leg_keys|length }}</small>
+                    </li>
+                  {% endfor %}
+                </ol>
+                <dl class="ticket-composition-summary" data-composition-summary="true">
+                  <div><dt>票数</dt><dd>{{ batch.composition.n_tickets }} 张</dd></div>
+                  <div><dt>总额</dt><dd>{{ batch.composition.total_stake_yuan }} 元</dd></div>
+                  <div>
+                    <dt>结构</dt>
+                    <dd>
+                      {% if batch.composition.tickets %}
+                        {% for ticket in batch.composition.tickets %}{{ ticket.structure }}{% if not loop.last %} / {% endif %}{% endfor %}
+                      {% else %}空仓{% endif %}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>组合覆盖</dt>
+                    <dd>
+                      {% if batch.composition.tickets %}
+                        {% for ticket in batch.composition.tickets %}{{ ticket.n_legs }} 腿{% if not loop.last %} / {% endif %}{% endfor %}
+                      {% else %}0 腿{% endif %}
+                    </dd>
+                  </div>
+                </dl>
+                {% if batch.legs %}
+                  <div class="ticket-leg-list">
+                    {% for leg in batch.legs %}
+                      <div>
+                        <span>{{ leg.faces }}</span>
+                        <p><strong>{{ leg.name }}</strong><code>{{ leg.leg_key }} / {{ leg.forecast_revision_id }}</code></p>
+                        {% if batch.state in ['draft', 'empty'] %}
+                          <form data-action="remove-ticket-leg" data-ticket-batch-id="{{ batch.ticket_batch_id }}" data-revision-no="{{ batch.revision_no }}" data-leg-key="{{ leg.leg_key }}">
+                            <button type="submit">移除这条腿</button>
+                          </form>
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% elif batch.state == 'approved_empty' %}
+                  <div class="approved-empty"><strong>批准空仓</strong><span>零 Ticket / 零扣款 / 无确认 nonce</span></div>
+                {% else %}
+                  <div class="approved-empty"><strong>空票草稿</strong><span>空仓始终合法，可直接批准。</span></div>
+                {% endif %}
+                {% if batch.audit_state == 'error' %}
+                  <strong class="audit-hard-stop">ERROR / 不可覆盖</strong>
+                {% endif %}
+                {% if batch.audit_state != 'error' and batch.state in ['draft', 'empty'] %}
+                  {% set gate = namespace(ready=true) %}
+                  {% for finding in batch.audit_findings %}
+                    {% if finding.level == 'WARN' and finding.adjudication_decision != 'accept_warning' %}{% set gate.ready = false %}{% endif %}
+                  {% endfor %}
+                  <form class="ticket-approve-form" data-action="approve-ticket-batch" data-ticket-batch-id="{{ batch.ticket_batch_id }}" data-revision-no="{{ batch.revision_no }}">
+                    <button type="submit"{% if not gate.ready %} disabled aria-describedby="audit-{{ batch.ticket_batch_id }}"{% endif %}>批准此版本</button>
+                    {% if not gate.ready %}<small>先完成当前 WARN 的人工裁决。</small>{% endif %}
+                  </form>
+                {% endif %}
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="inline-empty">尚未创建批次。面选格的第一笔动作会生成 r1。</div>
+        {% endif %}
+      </section>
+
+      <section class="protected-confirmation" aria-labelledby="confirmation-title">
+        <div class="section-heading">
+          <div><div class="section-kicker">Protected Confirmation</div><h2 id="confirmation-title">人工出票确认</h2></div>
+          <span>批准 ≠ 出票</span>
+        </div>
+        {% if artifacts %}
+          {% for artifact in artifacts %}
+            <article class="ticket-artifact" data-ticket-artifact="{{ artifact.ticket_artifact_id }}">
+              <header><span>{{ artifact.placement_state }}</span><strong>¥{{ '%.2f'|format(artifact.amount) }}</strong></header>
+              <code class="artifact-hash">{{ artifact.ticket_hash }}</code>
+              <dl><div><dt>Artifact</dt><dd>{{ artifact.ticket_artifact_id }}</dd></div><div><dt>Deadline</dt><dd>{{ artifact.deadline_at }}</dd></div></dl>
+              {% if artifact.placement_state == 'unplaced' %}
+                <form data-action="issue-ticket-confirmation" data-ticket-artifact-id="{{ artifact.ticket_artifact_id }}">
+                  <button type="submit">签发一次性确认口令</button>
+                </form>
+                <form class="confirmation-form" data-action="confirm-ticket-placement"
+                  data-ticket-artifact-id="{{ artifact.ticket_artifact_id }}"
+                  data-ticket-hash="{{ artifact.ticket_hash }}"
+                  data-amount="{{ artifact.amount }}"
+                  data-currency="{{ artifact.currency }}"
+                  data-channel="{{ artifact.channel }}">
+                  <label><span>Confirmation ID</span><input name="confirmation_id" value="{{ artifact.confirmation_id or '' }}" required></label>
+                  <label><span>一次性口令</span><input name="nonce" autocomplete="off" required></label>
+                  <label><span>手工出票参考号</span><input name="external_reference" required></label>
+                  <label><span>出票回执</span><input type="file" name="receipt" required></label>
+                  <button type="submit">最终确认并入账</button>
+                  <small>口令明文只在签发响应中出现一次；页面不会自行判断是否过期。</small>
+                </form>
+              {% else %}
+                <div class="placement-seal"><strong>已入账</strong><span>{{ artifact.external_reference }} / {{ artifact.ticket_id }}</span></div>
+              {% endif %}
+            </article>
+          {% endfor %}
+        {% else %}
+          <div class="inline-empty">当前没有待确认的已批准 Ticket artifact。</div>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="ticket-audit-ledger" aria-labelledby="audit-ledger-title">
+      <div class="section-kicker">Deterministic Gate</div>
+      <h2 id="audit-ledger-title">审计账页</h2>
+      <p>这里展示服务器保存的 C0–C7 结果。ERROR 没有覆盖入口；WARN 只接受带理由的人工裁决。</p>
+      {% for batch in workbench.batch_revisions %}
+        <section id="audit-{{ batch.ticket_batch_id }}" class="audit-docket audit-{{ batch.audit_state }}">
+          <header><strong>{{ batch.ticket_batch_id }}</strong><span>{{ batch.audit_state|upper }}</span></header>
+          {% if batch.audit_findings %}
+            {% for finding in batch.audit_findings %}
+              <article>
+                <div><span>{{ finding.level }}</span><code>{{ finding.code }}</code></div>
+                <p>{{ finding.message }}</p>
+                <code>{{ finding.finding_id }}</code>
+                {% if finding.level == 'ERROR' %}
+                  <strong class="audit-hard-stop">ERROR / 不可覆盖</strong>
+                {% elif finding.adjudication_decision == 'accept_warning' %}
+                  <strong class="audit-resolved">WARN 已人工接受 / {{ finding.adjudication_id }}</strong>
+                {% else %}
+                  <form data-action="ticket-warn-adjudication" data-finding-id="{{ finding.finding_id }}">
+                    <label><span>裁决理由</span><textarea name="reason" required></textarea></label>
+                    <label><span>拒绝的证据 ID（逗号分隔）</span><input name="evidence_rejected"></label>
+                    <label class="ticket-empty-evidence-ack">
+                      <input type="checkbox" name="no_evidence_rejected" value="acknowledged">
+                      <span>若上项留空，我明确确认没有拒绝任何证据</span>
+                    </label>
+                    <button type="submit">接受此 WARN</button>
+                  </form>
+                {% endif %}
+              </article>
+            {% endfor %}
+          {% else %}
+            <div class="audit-clean">C0–C7 未产生 finding。</div>
+          {% endif %}
+        </section>
+      {% else %}
+        <div class="inline-empty">批次创建后，审计结果会出现在这里。</div>
+      {% endfor %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

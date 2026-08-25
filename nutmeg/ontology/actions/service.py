@@ -60,7 +60,14 @@ class ActionService:
                     f'idempotency key {command.idempotency_key} was reused '
                     f'with a different request'
                 )
-            return ActionRepository.to_outcome(existing)
+            if existing.status is not ActionStatus.FAILED:
+                return ActionRepository.to_outcome(existing)
+            # A FAILED attempt must not satisfy a retry as if it were a result:
+            # keep the audit row under a derived key and execute afresh.
+            with self._unit_of_work_factory() as uow:
+                uow.actions.release_failed_idempotency_key(
+                    command.idempotency_key, existing.action_id
+                )
 
         try:
             with self._unit_of_work_factory() as uow:
@@ -72,6 +79,9 @@ class ActionService:
                 result_refs = tuple(handler(uow, command))
                 committed_at = datetime.now(UTC).isoformat()
                 repository.mark_committed(command.action_id, result_refs, committed_at)
+                uow.outbox.append_for_action(
+                    command, ActionStatus.COMMITTED, result_refs, committed_at
+                )
         except PermissionDeniedError as error:
             return self._audit_terminal(
                 command, ActionStatus.REJECTED, 'permission_denied', str(error)
@@ -123,8 +133,10 @@ class ActionService:
         error_code: str,
         error_detail: str,
     ) -> ActionOutcome:
+        occurred_at = datetime.now(UTC).isoformat()
         with self._unit_of_work_factory() as uow:
             uow.actions.insert_terminal(command, status, error_code, error_detail)
+            uow.outbox.append_for_action(command, status, (), occurred_at)
         return ActionOutcome(
             action_id=command.action_id,
             action_type=command.action_type,

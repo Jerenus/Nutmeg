@@ -13,6 +13,7 @@ from nutmeg.ontology.actions.models import (
     ObjectRef,
     canonical_json,
 )
+from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.service import ActionService
 
 __all__ = [
@@ -24,5 +25,6 @@ __all__ = [
     'ArtifactIngestRequest',
     'ArtifactIngestService',
     'ObjectRef',
+    'ScoreboardActions',
     'canonical_json',
 ]

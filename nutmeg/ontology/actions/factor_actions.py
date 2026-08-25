@@ -14,6 +14,7 @@ from datetime import datetime
 from nutmeg.ontology.actions.models import ActionCommand, ActionOutcome, ActorRole, ObjectRef
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.decision.models import FactorStatus
+from nutmeg.ontology.errors import OptimisticConcurrencyError
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +36,10 @@ class ApplyFactorStatusRequest:
     actor_role: ActorRole
     idempotency_key: str
     requested_at: datetime
+    expected_current_status: str | None = None
+    expected_factor_version: int | None = None
+    adjudication_id: str | None = None
+    proposal_id: str | None = None
 
 
 class FactorActions:
@@ -71,12 +76,56 @@ class FactorActions:
             payload={
                 'factor_definition_id': request.factor_definition_id,
                 'target_status': target.value,
+                'expected_current_status': request.expected_current_status,
+                'expected_factor_version': request.expected_factor_version,
+                'adjudication_id': request.adjudication_id,
+                'proposal_id': request.proposal_id,
             },
             requested_at=request.requested_at,
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            definition = uow.decision.factor_definition(request.factor_definition_id)
+            if definition is None:
+                raise ValueError(
+                    f'factor definition {request.factor_definition_id} does not exist'
+                )
+            if (
+                request.expected_factor_version is not None
+                and definition.version != request.expected_factor_version
+            ):
+                raise OptimisticConcurrencyError(
+                    f'factor {request.factor_definition_id} is at version '
+                    f'{definition.version}, expected {request.expected_factor_version}'
+                )
+            if (
+                request.expected_current_status is not None
+                and definition.status != request.expected_current_status
+            ):
+                raise OptimisticConcurrencyError(
+                    f'factor {request.factor_definition_id} is {definition.status}, '
+                    f'expected {request.expected_current_status}'
+                )
+            refs = [ObjectRef('factor_definition', request.factor_definition_id)]
+            if request.adjudication_id is not None:
+                adjudication = uow.workflow.get_adjudication(request.adjudication_id)
+                if (
+                    adjudication.subject_type != 'factor_definition'
+                    or adjudication.subject_id != request.factor_definition_id
+                    or adjudication.decision != 'apply'
+                    or (
+                        request.proposal_id is not None
+                        and adjudication.alternative.get('proposal_id')
+                        != request.proposal_id
+                    )
+                    or not adjudication.reason.strip()
+                ):
+                    raise ValueError(
+                        'factor status adjudication must contain a reason and target '
+                        'the factor definition'
+                    )
+                refs.append(ObjectRef('adjudication', request.adjudication_id))
             uow.decision.set_factor_status(request.factor_definition_id, target.value)
-            return (ObjectRef('factor_definition', request.factor_definition_id),)
+            return tuple(refs)
 
         return self._action_service.execute(command, handler)

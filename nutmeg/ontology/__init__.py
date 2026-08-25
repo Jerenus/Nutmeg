@@ -5,6 +5,7 @@ from nutmeg.ontology.errors import (
     IdempotencyConflictError,
     MigrationDriftError,
     OntologyError,
+    OptimisticConcurrencyError,
     PermissionDeniedError,
 )
 from nutmeg.ontology.kernel import OntologyKernel, OntologyKernelStatus
@@ -15,6 +16,7 @@ __all__ = [
     'IdempotencyConflictError',
     'MigrationDriftError',
     'OntologyError',
+    'OptimisticConcurrencyError',
     'OntologyKernel',
     'OntologyKernelStatus',
     'OntologyPaths',

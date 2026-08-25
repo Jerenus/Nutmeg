@@ -16,3 +16,7 @@ class PermissionDeniedError(OntologyError):
 
 class IdempotencyConflictError(OntologyError):
     """An idempotency key was reused with a different canonical request."""
+
+
+class OptimisticConcurrencyError(OntologyError):
+    """An object changed after the caller read its expected version."""

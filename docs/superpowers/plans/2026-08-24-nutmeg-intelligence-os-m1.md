@@ -68,7 +68,7 @@ visual workspaces themselves.
 - Modify: `nutmeg/ontology/repository/migrations.py`
 - Create: `tests/ontology/test_workflow_migration.py`
 
-- [ ] **Step 1: Write the failing migration test**
+- [x] **Step 1: Write the failing migration test**
 
 ```python
 from pathlib import Path
@@ -98,12 +98,12 @@ def test_migration_10_adds_workflow_outbox_and_permissions(tmp_path: Path) -> No
     assert ("resolve_agent_proposal", "judge_operator") in permissions
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/ontology/test_workflow_migration.py -q`  
 Expected: FAIL because migration 10 and the six tables do not exist.
 
-- [ ] **Step 3: Declare the workflow tables**
+- [x] **Step 3: Declare the workflow tables**
 
 Create `schema_workflow.py` with six explicit tables on the shared metadata:
 
@@ -197,7 +197,7 @@ outbox_events = Table(
 )
 ```
 
-- [ ] **Step 4: Add migration 10 and exact permissions**
+- [x] **Step 4: Add migration 10 and exact permissions**
 
 Import `schema_workflow`, create the tables in FK order, and seed:
 
@@ -236,12 +236,12 @@ def _apply_product_workflow(connection: Connection) -> None:
 Append migration 10 with fingerprint
 `adjudications+flags+predictions+precedents+agent_proposals+outbox+workflow_permissions`.
 
-- [ ] **Step 5: Run focused migration tests**
+- [x] **Step 5: Run focused migration tests**
 
 Run: `uv run pytest tests/ontology/test_workflow_migration.py tests/ontology/test_migrations.py -q`  
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/ontology/repository/schema_workflow.py \
@@ -261,7 +261,7 @@ git commit -m "feat(ontology): add product workflow schema"
 - Modify: `nutmeg/ontology/wiring.py`
 - Create: `tests/ontology/test_workflow_actions.py`
 
-- [ ] **Step 1: Write permission and persistence tests**
+- [x] **Step 1: Write permission and persistence tests**
 
 Test all six transitions explicitly:
 
@@ -304,12 +304,12 @@ def test_stale_proposal_resolution_is_rejected(workflow):
 Also assert `record_flag_instance`, `register_prediction`, and `link_precedent`
 persist their typed rows and reject roles not present in migration 10.
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/ontology/test_workflow_actions.py -q`  
 Expected: collection FAIL because workflow modules do not exist.
 
-- [ ] **Step 3: Add immutable workflow value objects**
+- [x] **Step 3: Add immutable workflow value objects**
 
 Use frozen dataclasses and explicit enums in `workflow/models.py`:
 
@@ -359,7 +359,7 @@ Define matching frozen rows for `AdjudicationRow`, `FlagInstanceRow`,
 `workflow_actions.py`; each includes actor, role, idempotency key, and timezone-aware
 `requested_at`.
 
-- [ ] **Step 4: Implement the workflow repository**
+- [x] **Step 4: Implement the workflow repository**
 
 `WorkflowRepository` must expose explicit insert/get methods, JSON through
 `canonical_json`, proposal resolution as an update, and counts. The proposal update is:
@@ -385,7 +385,7 @@ def resolve_agent_proposal(
 
 Add `OntologyUnitOfWork.workflow` returning this repository.
 
-- [ ] **Step 5: Implement typed workflow Actions**
+- [x] **Step 5: Implement typed workflow Actions**
 
 `WorkflowActions` receives the existing `ActionService`. Every public method builds an
 `ActionCommand`, writes exactly one workflow object in its handler, and returns an
@@ -424,17 +424,17 @@ resolution accepts only `approved`, `rejected`, or `withdrawn`, and places
 `{"agent_proposal:<id>": expected_version}` in `ActionCommand.expected_versions`.
 Add `OptimisticConcurrencyError` to `nutmeg/ontology/errors.py`.
 
-- [ ] **Step 6: Wire the workflow facade into the kernel**
+- [x] **Step 6: Wire the workflow facade into the kernel**
 
 Construct one `WorkflowActions(action_service)` in `build_ontology_kernel`, pass it to
 `OntologyKernel`, and expose it as `kernel.workflow`.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run: `uv run pytest tests/ontology/test_workflow_actions.py tests/ontology/test_permissions.py -q`  
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add nutmeg/ontology/workflow nutmeg/ontology/repository/workflow.py \
@@ -453,7 +453,7 @@ git commit -m "feat(ontology): add governed workflow actions"
 - Modify: `nutmeg/ontology/kernel.py`
 - Create: `tests/ontology/test_action_outbox.py`
 
-- [ ] **Step 1: Write atomicity and replay tests**
+- [x] **Step 1: Write atomicity and replay tests**
 
 ```python
 def test_committed_action_and_event_share_transaction(service, engine):
@@ -485,12 +485,12 @@ def test_outbox_cursor_resumes_without_duplication(service, engine):
     assert second[0].sequence > first[0].sequence
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/ontology/test_action_outbox.py -q`  
 Expected: FAIL because `OntologyUnitOfWork.outbox` is missing.
 
-- [ ] **Step 3: Implement the outbox repository**
+- [x] **Step 3: Implement the outbox repository**
 
 Define `OutboxEventRow` and methods:
 
@@ -525,24 +525,24 @@ def after(self, sequence: int, *, limit: int) -> list[OutboxEventRow]:
 
 Add `count()` and `latest_sequence()` and expose the repository as `uow.outbox`.
 
-- [ ] **Step 4: Append events inside Action transactions**
+- [x] **Step 4: Append events inside Action transactions**
 
 After `mark_committed`, call `uow.outbox.append_for_action` before the UoW exits. In
 `_audit_terminal`, insert the rejected/failed Action and its event in the same UoW.
 Never put the Action payload in the event; only action type, status, and result refs are
 safe product metadata.
 
-- [ ] **Step 5: Expose outbox counts in kernel status**
+- [x] **Step 5: Expose outbox counts in kernel status**
 
 Add `outbox_event_count` and `outbox_latest_sequence` to `OntologyKernelStatus`,
 `to_dict`, empty status, and live status.
 
-- [ ] **Step 6: Run Action and kernel regression tests**
+- [x] **Step 6: Run Action and kernel regression tests**
 
 Run: `uv run pytest tests/ontology/test_action_outbox.py tests/ontology/test_action_service.py tests/ontology/test_kernel.py tests/ontology/test_kernel_e2e.py -q`  
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/ontology/repository/outbox.py nutmeg/ontology/repository/unit_of_work.py \
@@ -560,7 +560,7 @@ git commit -m "feat(ontology): publish actions through transactional outbox"
 - Create: `tests/product/__init__.py`
 - Create: `tests/product/test_readiness.py`
 
-- [ ] **Step 1: Write pure readiness tests**
+- [x] **Step 1: Write pure readiness tests**
 
 ```python
 def test_unresolved_identity_blocks_next_action():
@@ -584,12 +584,12 @@ def test_absent_market_anchor_blocks_forecast():
     assert any(issue.code == "market_anchor_missing" for issue in state.issues)
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_readiness.py -q`  
 Expected: collection FAIL because `nutmeg.product` does not exist.
 
-- [ ] **Step 3: Define versioned contracts**
+- [x] **Step 3: Define versioned contracts**
 
 Use Pydantic `BaseModel` with `extra="forbid"`. Define:
 
@@ -628,19 +628,19 @@ Also define `MatchSummary`, `BoardResponse`, `EvidenceSummary`, `ForecastSummary
 `ProductActionRequest`, and `ProductActionResponse`. Every top-level response includes
 `schema_version: Literal["1"]`.
 
-- [ ] **Step 4: Implement deterministic readiness precedence**
+- [x] **Step 4: Implement deterministic readiness precedence**
 
 `evaluate_readiness` collects all issues, then sets BLOCKED if any hard issue exists,
 otherwise DEGRADED if any issue exists. Hard codes are `identity_unresolved` and
 `market_anchor_missing`. `evidence_empty` and `market_anchor_stale` are degraded.
 Stale means older than six hours at `as_of`.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `uv run pytest tests/product/test_readiness.py -q`  
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/product tests/product/__init__.py tests/product/test_readiness.py
@@ -655,14 +655,14 @@ git commit -m "feat(product): define v1 contracts and readiness policy"
 - Create: `tests/product/conftest.py`
 - Create: `tests/product/test_queries.py`
 
-- [ ] **Step 1: Add a deterministic product fixture**
+- [x] **Step 1: Add a deterministic product fixture**
 
 `tests/product/conftest.py` builds a temp kernel, applies migrations, and records two
 teams, one resolved match revision, home/away appearances, one read-time HAD snapshot,
 one Observation, one provisional Claim, and one legacy Forecast with no bundle. Return
 the kernel and fixed clock `2026-08-24T10:00:00Z`.
 
-- [ ] **Step 2: Write query behavior tests**
+- [x] **Step 2: Write query behavior tests**
 
 ```python
 def test_board_returns_named_match_and_explicit_readiness(product_services):
@@ -688,12 +688,12 @@ def test_lineage_and_action_queries_are_stable(product_services):
     assert product_services.queries.actions(limit=20).items
 ```
 
-- [ ] **Step 3: Run the test and verify RED**
+- [x] **Step 3: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_queries.py -q`  
 Expected: FAIL because product query modules do not exist.
 
-- [ ] **Step 4: Implement read-only repository queries**
+- [x] **Step 4: Implement read-only repository queries**
 
 `ProductReadRepository` receives the ontology `Engine` and opens short read connections.
 Implement explicit SQLAlchemy Core selects for:
@@ -724,7 +724,7 @@ def latest_snapshot(self, match_id: str, market_id: str, as_of: str):
 
 Do not accept a client-supplied prior distribution in this repository.
 
-- [ ] **Step 5: Assemble DTOs in Query Service**
+- [x] **Step 5: Assemble DTOs in Query Service**
 
 `ProductQueryService` converts repository records into Pydantic contracts, applies
 `evaluate_readiness`, labels a Forecast `bundled` only when `evidence_bundle_id` is
@@ -733,12 +733,12 @@ non-null, and raises `ProductNotFoundError` for absent objects.
 `board()` uses the Asia/Shanghai business-day interval and an explicit `as_of`; it does
 not infer the system clock inside repository code.
 
-- [ ] **Step 6: Run query tests**
+- [x] **Step 6: Run query tests**
 
 Run: `uv run pytest tests/product/test_queries.py tests/product/test_readiness.py -q`  
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/product/repository.py nutmeg/product/queries.py \
@@ -754,7 +754,7 @@ git commit -m "feat(product): add temporal query service"
 - Modify: `nutmeg/ontology/decision/read_flow.py`
 - Create: `tests/product/test_actions.py`
 
-- [ ] **Step 1: Write gateway safety tests**
+- [x] **Step 1: Write gateway safety tests**
 
 ```python
 def test_forecast_commit_uses_server_snapshot_not_client_prior(product_services):
@@ -795,12 +795,12 @@ def test_stale_forecast_version_is_a_conflict(product_services):
         product_services.actions.execute(stale)
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_actions.py -q`  
 Expected: FAIL because the gateway does not exist.
 
-- [ ] **Step 3: Persist the Forecast information cutoff**
+- [x] **Step 3: Persist the Forecast information cutoff**
 
 Add optional `information_cutoff_at` and `expected_current_revision_no` to draft/commit
 requests and write the cutoff in `_revision_row` rather than hard-coding `None`.
@@ -823,7 +823,7 @@ The read flow uses the caller key as the idempotency root, passes the selected s
 evidence IDs, falsifier, and cutoff into bundle/forecast Actions, and returns the
 Forecast Action ID in `ReadMatchResult`.
 
-- [ ] **Step 4: Implement the explicit Action dispatcher**
+- [x] **Step 4: Implement the explicit Action dispatcher**
 
 `ProductActionGateway.execute(request, actor_id="owner", actor_role=JUDGE_OPERATOR)`
 accepts only:
@@ -847,12 +847,12 @@ For workflow Actions, construct the exact typed request and pass only the server
 Map `ActionOutcome` to `ProductActionResponse`; a rejected outcome stays a normal
 response with `status="rejected"` for the HTTP layer to map.
 
-- [ ] **Step 5: Run gateway and decision regressions**
+- [x] **Step 5: Run gateway and decision regressions**
 
 Run: `uv run pytest tests/product/test_actions.py tests/ontology/test_decision_read_flow.py tests/ontology/test_commit_forecast.py -q`  
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/product/actions.py nutmeg/ontology/actions/forecast_actions.py \
@@ -866,7 +866,7 @@ git commit -m "feat(product): add governed action gateway"
 - Create: `nutmeg/interfaces/product_api.py`
 - Create: `tests/product/test_api.py`
 
-- [ ] **Step 1: Write API contract and security tests**
+- [x] **Step 1: Write API contract and security tests**
 
 ```python
 def _session(client):
@@ -909,12 +909,12 @@ def test_events_resume_after_cursor(client, committed_event):
 Also test `GET /api/v1/events/stream?after=0&once=true` returns `text/event-stream`
 with `id:`, `event:`, and JSON `data:` lines.
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_api.py -q`  
 Expected: collection FAIL because `create_product_app` does not exist.
 
-- [ ] **Step 3: Implement local session protection**
+- [x] **Step 3: Implement local session protection**
 
 `create_product_app(services, session_secret=None, csrf_secret=None)` stores random
 `secrets.token_urlsafe(32)` values when not injected. `GET /api/v1/session` sets an
@@ -924,7 +924,7 @@ The mutation dependency validates cookie, `X-CSRF-Token`, and Origin host. Paylo
 actor fields are ignored because the server always assigns `settings.default_user_id`
 and `JUDGE_OPERATOR`.
 
-- [ ] **Step 4: Implement query and Action routes**
+- [x] **Step 4: Implement query and Action routes**
 
 Add the six design endpoints plus `/api/v1/session` and `/api/v1/events/stream`.
 Register exception handlers for `ProductNotFoundError`,
@@ -935,7 +935,7 @@ return stack traces.
 For a rejected `ProductActionResponse`, return 403 with the standard envelope and the
 Action ID; committed responses return 200.
 
-- [ ] **Step 5: Implement durable SSE encoding**
+- [x] **Step 5: Implement durable SSE encoding**
 
 The SSE generator reads `services.queries.events(after, limit=100)`, emits:
 
@@ -949,12 +949,12 @@ data: <canonical JSON payload>
 When `once=true`, emit the current batch and close for deterministic tests. Otherwise
 poll every 0.5 seconds and emit a comment heartbeat after 15 seconds of inactivity.
 
-- [ ] **Step 6: Run API tests**
+- [x] **Step 6: Run API tests**
 
 Run: `uv run pytest tests/product/test_api.py -q`  
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/interfaces/product_api.py tests/product/test_api.py
@@ -971,7 +971,7 @@ git commit -m "feat(api): expose secured product v1 contract"
 - Modify: `README.md`
 - Create: `tests/product/test_cli.py`
 
-- [ ] **Step 1: Write wiring and CLI tests**
+- [x] **Step 1: Write wiring and CLI tests**
 
 ```python
 def test_product_services_refuse_uninitialized_kernel(tmp_path):
@@ -992,12 +992,12 @@ def test_app_command_binds_loopback_by_default(monkeypatch, tmp_path):
     assert captured["port"] == 8788
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/product/test_cli.py -q`  
 Expected: FAIL because product wiring/command do not exist.
 
-- [ ] **Step 3: Compose product services**
+- [x] **Step 3: Compose product services**
 
 Define:
 
@@ -1024,13 +1024,13 @@ def build_product_services(settings: AppSettings) -> ProductServices:
     )
 ```
 
-- [ ] **Step 4: Register `nutmeg app`**
+- [x] **Step 4: Register `nutmeg app`**
 
 The command uses `build_product_services`, `create_product_app`, warns on non-loopback
 host with the existing `_warn_if_exposed` behavior, and calls Uvicorn on port 8788 by
 default. Import the module in the CLI registration block.
 
-- [ ] **Step 5: Document M1**
+- [x] **Step 5: Document M1**
 
 README must state:
 
@@ -1040,12 +1040,12 @@ README must state:
 - API mutations are Action-gated and no autonomous funds action exists;
 - `decision-web` remains legacy and is not a product data source.
 
-- [ ] **Step 6: Run CLI tests**
+- [x] **Step 6: Run CLI tests**
 
 Run: `uv run pytest tests/product/test_cli.py tests/ontology/test_cli.py -q`  
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/product/wiring.py nutmeg/product/__init__.py \
@@ -1062,7 +1062,7 @@ git commit -m "feat(product): wire local Nutmeg application service"
 - Modify: `nutmeg/product/queries.py`
 - Modify: `nutmeg/product/actions.py`
 
-- [ ] **Step 1: Write the complete golden-day test**
+- [x] **Step 1: Write the complete golden-day test**
 
 ```python
 def test_m1_golden_day_from_board_to_forecast_and_lineage(client):
@@ -1099,30 +1099,30 @@ def test_m1_golden_day_from_board_to_forecast_and_lineage(client):
     assert any(item["object_id"] == revision_id for item in events["items"])
 ```
 
-- [ ] **Step 2: Add restart/idempotency assertions**
+- [x] **Step 2: Add restart/idempotency assertions**
 
 Rebuild `ProductServices` against the same temp `data_dir`, repeat the exact Action,
 and assert the same Forecast revision/Action IDs and no extra committed revision. Then
 resume events from the prior cursor and assert only later events are returned.
 
-- [ ] **Step 3: Add architecture boundary assertion**
+- [x] **Step 3: Add architecture boundary assertion**
 
 Use `inspect.getsource` on every module under `nutmeg.product` and
 `nutmeg.interfaces.product_api`; assert none contains imports from
 `nutmeg.decision.store` or `nutmeg.decision.workbench`.
 
-- [ ] **Step 4: Run the M1 end-to-end tests**
+- [x] **Step 4: Run the M1 end-to-end tests**
 
 Run: `uv run pytest tests/product/test_m1_e2e.py -q`  
 Expected: PASS.
 
-- [ ] **Step 5: Run all M1 tests and fix only observed failures**
+- [x] **Step 5: Run all M1 tests and fix only observed failures**
 
 Run: `uv run pytest tests/product tests/ontology -q`  
 Expected: PASS. If an existing ontology test fails, preserve the existing public API
 unless the approved M1 contract explicitly changes it.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tests/product/test_m1_e2e.py tests/product/conftest.py \
@@ -1137,7 +1137,7 @@ git commit -m "test(product): prove M1 golden-day contract"
 - Modify: `docs/ontology-kernel-operations.md`
 - Modify: `docs/superpowers/plans/2026-08-24-nutmeg-intelligence-os-m1.md`
 
-- [ ] **Step 1: Run formatting and static checks**
+- [x] **Step 1: Run formatting and static checks**
 
 Run:
 
@@ -1149,7 +1149,7 @@ git diff --check
 
 Expected: both commands exit 0.
 
-- [ ] **Step 2: Run the fresh focused test gate**
+- [x] **Step 2: Run the fresh focused test gate**
 
 Run:
 
@@ -1159,7 +1159,7 @@ uv run pytest tests/product tests/ontology -q
 
 Expected: all tests pass with zero failures.
 
-- [ ] **Step 3: Run decision-adapter regressions**
+- [x] **Step 3: Run decision-adapter regressions**
 
 Run:
 
@@ -1172,12 +1172,12 @@ uv run pytest tests/decision/test_ontology_adapter.py \
 
 Expected: all tests pass. M1 must not change the cutover adapter's behavior.
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
 
 Run: `uv run pytest -q`  
 Expected: zero failures.
 
-- [ ] **Step 5: Run a temp-store application smoke**
+- [x] **Step 5: Run a temp-store application smoke**
 
 Run:
 
@@ -1191,13 +1191,13 @@ Expected: migration 10 is applied, schema version is 10, integrity is `ok`, and 
 production `.nutmeg-data` directory is untouched. Remove only the resolved temp path
 after verifying it is under the system temp directory.
 
-- [ ] **Step 6: Update operations documentation**
+- [x] **Step 6: Update operations documentation**
 
 Document migration 10, outbox health fields, `nutmeg app`, local session behavior,
 event cursor recovery, and the fact that M1 does not restore production schedules or
 perform funds actions.
 
-- [ ] **Step 7: Add the product pre-commit gate**
+- [x] **Step 7: Add the product pre-commit gate**
 
 Append this local hook after the ontology hook:
 
@@ -1210,13 +1210,13 @@ Append this local hook after the ontology hook:
         pass_filenames: false
 ```
 
-- [ ] **Step 8: Record fresh verification evidence in this plan**
+- [x] **Step 8: Record fresh verification evidence in this plan**
 
 Append a `## Verification Evidence` section containing the exact UTC timestamp, commit,
 commands, pass counts, and temp-store status. Do not mark a command passed without fresh
 output from Step 1-5.
 
-- [ ] **Step 9: Commit verification documentation**
+- [x] **Step 9: Commit verification documentation**
 
 ```bash
 git add docs/ontology-kernel-operations.md \
@@ -1231,3 +1231,39 @@ M1 is complete only when all ten tasks are checked, the full suite is green, the
 temp-store smoke reports schema 10/integrity ok, and fresh verification evidence is
 committed. M1 completion does not authorize restoring schedules, dispatching Telegram,
 or placing any real bet.
+
+## Verification Evidence
+
+Verified at `2026-08-24T04:48:28Z` against code commit
+`b5e3ffc68316267a341f8c5a8f22696612c67e1e` with `UV_FROZEN=1` so the unrelated
+`uv.lock` version drift was not rewritten.
+
+- Static checks: `uv run ruff check .`, product/ontology scoped ruff,
+  `python -m compileall -q nutmeg scripts`, and `git diff --check` all exited 0.
+- Product + Ontology gate: `uv run pytest -o addopts='' tests/product tests/ontology -q`
+  reported `175 passed in 3.79s`.
+- Cutover adapter gate: the four Task 10 adapter files reported `19 passed in 1.14s`.
+- Full repository gate: `uv run pytest -o addopts='' -q` reported
+  `1070 passed in 21.93s`.
+- Hook gate: `pre-commit run pytest-ontology --all-files` and
+  `pre-commit run pytest-product --all-files` both passed.
+- Fresh-store smoke used
+  `/var/folders/nx/3nk0ln556f14gdwbxx14jnkh0000gn/T/tmp.cFR1PL0u5V`: migrations
+  1-10 applied, schema version 10, no pending migrations, and both kernel status and
+  direct SQLite `PRAGMA integrity_check` reported `ok`.
+- Real v2 replay used
+  `/var/folders/nx/3nk0ln556f14gdwbxx14jnkh0000gn/T/tmp.tB4W3V6ogS` and copied only
+  the 2026-08-24 Sporttery, international-odds, and Read snapshots. It produced
+  11 Match, 18 Snapshot, 22 Team, and 11/11 committed Forecast results; dry close
+  produced an explicit empty slate, dry settlement consumed an injected empty result
+  source, and the final report showed 0 tickets, 0 settlements, and CNY 0 ledger
+  movement. Final kernel status was schema 10 / integrity `ok`, with 64 committed
+  Actions and 64 outbox events.
+- The replay exposed and then verified two adapter-boundary regressions: legacy
+  canonical Match IDs now resolve through typed external identity (`6fd4252`), and
+  legacy prior Snapshot IDs now resolve to context-matched kernel snapshots
+  (`731c408`). Unresolved IDs are visibly rejected before any Forecast write.
+
+No verification step dispatched Telegram, placed a bet, moved funds, restored a
+schedule, mutated the production ontology, or fetched settlement results from the
+network.

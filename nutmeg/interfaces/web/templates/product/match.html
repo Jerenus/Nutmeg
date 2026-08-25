@@ -1,0 +1,455 @@
+{% extends "product/layout.html" %}
+
+{% block title %}{{ detail.match.home_team }} vs {{ detail.match.away_team }} · Nutmeg{% endblock %}
+
+{% block content %}
+<div class="investigation-room" data-investigation-cutoff="{{ detail.as_of.isoformat() }}" data-copilot-state="{% if copilot_available %}available{% else %}unavailable{% endif %}">
+  <nav class="breadcrumb" aria-label="面包屑">
+    <a href="/">指挥中心</a><span aria-hidden="true">/</span><span>比赛档案</span>
+  </nav>
+
+  <section class="match-dossier-head" aria-labelledby="page-title">
+    <div>
+      <div class="section-kicker">Match Investigation / {{ detail.match.match_id }}</div>
+      <h1 id="page-title">
+        {{ detail.match.home_team }}
+        <span>vs</span>
+        {{ detail.match.away_team }}
+      </h1>
+      <p>{{ detail.match.competition or '赛事上下文待补全' }} · {{ detail.match.kickoff_at or '开赛时间待定' }}</p>
+    </div>
+    <div class="asof-seal">
+      <span>AS OF</span>
+      <time datetime="{{ detail.as_of.isoformat() }}">{{ detail.as_of.isoformat() }}</time>
+      <small>页面只读取此刻之前的事实</small>
+    </div>
+  </section>
+
+  <section class="dossier-grid" aria-label="比赛状态摘要">
+    <article>
+      <span>Readiness</span>
+      <strong class="readiness-text-{{ detail.match.readiness.level.value }}">{{ detail.match.readiness.level.value }}</strong>
+      <small>{{ detail.match.next_action }}</small>
+    </article>
+    <article>
+      <span>Evidence</span>
+      <strong>{{ detail.match.evidence_count }}</strong>
+      <small>claims + observations</small>
+    </article>
+    <article>
+      <span>Flags</span>
+      <strong>{{ detail.match.flag_count }}</strong>
+      <small>当前 cutoff 内</small>
+    </article>
+    <article>
+      <span>Workflow</span>
+      <strong>{{ detail.workflow|length }}</strong>
+      <small>{{ detail.match.workflow_state }}</small>
+    </article>
+  </section>
+
+  <section class="investigation-section context-ledger" aria-labelledby="context-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Canonical Context</div>
+        <h2 id="context-title">比赛本体</h2>
+      </div>
+      {% if detail.context %}<code>{{ detail.context.match_revision_id }}</code>{% endif %}
+    </div>
+    {% if detail.context %}
+      <dl>
+        <div><dt>Home</dt><dd>{{ detail.context.home_team }} <code>{{ detail.context.home_team_id }}</code></dd></div>
+        <div><dt>Away</dt><dd>{{ detail.context.away_team }} <code>{{ detail.context.away_team_id }}</code></dd></div>
+        <div><dt>Competition</dt><dd>{{ detail.context.competition or detail.context.competition_id or '待补全' }}</dd></div>
+        <div><dt>Schedule</dt><dd>{{ detail.context.scheduled_at or '待定' }} / {{ detail.context.schedule_status }}</dd></div>
+        <div><dt>Round</dt><dd>{{ detail.context.round_label or '未登记' }}</dd></div>
+        <div><dt>Venue</dt><dd>{{ detail.context.venue_id or '未登记' }}</dd></div>
+      </dl>
+    {% else %}<div class="inline-empty">当前 cutoff 没有 canonical Match revision。</div>{% endif %}
+  </section>
+
+  {% if detail.match.readiness.issues %}
+    <section class="readiness-panel" aria-labelledby="readiness-title">
+      <div class="section-kicker">Readiness Gate</div>
+      <h2 id="readiness-title">当前阻力</h2>
+      <ul>
+        {% for issue in detail.match.readiness.issues %}
+          <li><code>{{ issue.code }}</code><span>{{ issue.message }}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  <section class="investigation-section conflict-docket" aria-labelledby="conflict-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Conflict Docket</div>
+        <h2 id="conflict-title">证据冲突</h2>
+      </div>
+      <span>{{ detail.evidence.conflicts|length }} 项</span>
+    </div>
+    {% if detail.evidence.conflicts %}
+      <ol class="conflict-list">
+        {% for conflict in detail.evidence.conflicts %}
+          <li data-conflict-state="{% if conflict.blocking %}blocking{% else %}provisional{% endif %}">
+            <strong>{{ conflict.predicate }}</strong>
+            <span>{% if conflict.blocking %}阻断 Forecast{% else %}暂定分歧 / 允许调查{% endif %}</span>
+            <code>{{ conflict.claim_ids|join(' ↔ ') }}</code>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <div class="inline-empty">当前 cutoff 内没有跨来源冲突。</div>
+    {% endif %}
+  </section>
+
+  <section class="investigation-section" aria-labelledby="market-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Market Anchor</div>
+        <h2 id="market-title">去水锚点</h2>
+      </div>
+      {% if detail.market_snapshot %}
+        <a href="/lineage/market_snapshot/{{ detail.market_snapshot.market_snapshot_id }}">查看 Snapshot 血缘 →</a>
+      {% endif %}
+    </div>
+    {% if detail.market_snapshot %}
+      <div class="market-anchor">
+        <div>
+          <span>Snapshot</span>
+          <code>{{ detail.market_snapshot.market_snapshot_id }}</code>
+          <small>{{ detail.market_snapshot.as_of }}</small>
+        </div>
+        {% for face, probability in detail.market_snapshot.devig_distribution.items() %}
+          <div class="market-face">
+            <span>{{ face }}</span>
+            <strong>{{ '%.3f'|format(probability) }}</strong>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="inline-empty">在当前 cutoff 前没有可用的服务器计算市场锚点。</div>
+    {% endif %}
+  </section>
+
+  <section class="investigation-section" aria-labelledby="market-timeline-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Temporal Market</div>
+        <h2 id="market-timeline-title">市场时间线</h2>
+      </div>
+      <span>{{ detail.market_timeline|length }} 个 Snapshot</span>
+    </div>
+    {% if detail.market_timeline %}
+      <ol class="market-timeline">
+        {% for snapshot in detail.market_timeline %}
+          <li>
+            <time>{{ snapshot.as_of }}</time>
+            <code>{{ snapshot.market_snapshot_id }}</code>
+            <span>{{ snapshot.devig_distribution }}</span>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}<div class="inline-empty">当前 cutoff 前没有市场轨迹。</div>{% endif %}
+  </section>
+
+  <section class="investigation-section" aria-labelledby="evidence-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Evidence Timeline</div>
+        <h2 id="evidence-title">证据时间线</h2>
+      </div>
+      <span>{{ detail.evidence.observations|length }} Observations / {{ detail.evidence.claims|length }} Claims</span>
+    </div>
+    <div class="evidence-columns">
+      <div>
+        <h3>Observations <small>可验证事实</small></h3>
+        {% if detail.evidence.observations %}
+          <ol class="evidence-list observations-list">
+            {% for item in detail.evidence.observations %}
+              <li>
+                <div class="evidence-time"><time>{{ item.recorded_at }}</time><span>{{ item.verification_method }}</span></div>
+                <strong>{{ item.observation_type }}</strong>
+                <code>{{ item.observation_id }}</code>
+                <p>{{ item.value }}</p>
+                <a href="/lineage/observation/{{ item.observation_id }}">血缘 →</a>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}<div class="inline-empty">无 Observation。</div>{% endif %}
+      </div>
+      <div>
+        <h3>Claims <small>来源主张</small></h3>
+        {% if detail.evidence.claims %}
+          <ol class="evidence-list claims-list">
+            {% for item in detail.evidence.claims %}
+              <li>
+                <div class="evidence-time"><time>{{ item.created_at }}</time><span>{{ item.status }}</span></div>
+                <strong>{{ item.predicate }}</strong>
+                <code>{{ item.claim_id }}</code>
+                <p>{{ item.value }}</p>
+                <div class="source-spans">
+                  <span>来源片段</span>
+                  {% if item.spans %}
+                    {% for span in item.spans %}
+                      <blockquote>
+                        <p>{{ span.quote or '来源只提供对象引用' }}</p>
+                        <cite>{{ span.locator or span.artifact_retrieval_id or span.artifact_id or span.object_id }}</cite>
+                      </blockquote>
+                    {% endfor %}
+                  {% else %}<small>没有可展示的原文片段。</small>{% endif %}
+                </div>
+                <a href="/lineage/claim/{{ item.claim_id }}">血缘 →</a>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}<div class="inline-empty">无 Claim。</div>{% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="investigation-section decision-docket" aria-labelledby="decision-docket-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Authored Judgment</div>
+        <h2 id="decision-docket-title">调查与裁决</h2>
+      </div>
+      <span>{% if copilot_available %}Copilot 可用{% else %}Copilot 未配置，人工流程可用{% endif %}</span>
+    </div>
+    <div class="decision-desk">
+      <form data-action="copilot-investigate" data-match-id="{{ detail.match.match_id }}" data-as-of="{{ detail.as_of.isoformat() }}">
+        <h3>对象锚定调查</h3>
+        <label><span>调查问题</span><textarea name="prompt" required>比较当前 lineup 主张并列出缺失证据。</textarea></label>
+        <button type="submit"{% if not copilot_available %} disabled{% endif %}>生成带引用 Proposal</button>
+      </form>
+
+      <div class="claim-adjudication-list">
+        <h3>Claim 裁决</h3>
+        {% for claim in detail.evidence.claims %}
+          <form data-action="claim-adjudication" data-claim-id="{{ claim.claim_id }}">
+            <code>{{ claim.claim_id }}</code>
+            <button type="submit" name="claim_action" value="verify_claim">核实</button>
+            <button type="submit" name="claim_action" value="dispute_claim">争议</button>
+            <button type="submit" name="claim_action" value="retract_claim">撤回</button>
+          </form>
+        {% endfor %}
+      </div>
+
+      <div class="proposal-resolution-list">
+        <h3>Proposal 裁决</h3>
+        {% for proposal in detail.agent_proposals %}
+          <form data-action="proposal-resolution" data-proposal-id="{{ proposal.agent_proposal_id }}" data-proposal-version="{{ proposal.version }}">
+            <code>{{ proposal.agent_proposal_id }}</code>
+            <span>{{ proposal.status }}</span>
+            {% if proposal.status == 'pending' %}
+              <button type="submit" name="resolution" value="approved">批准</button>
+              <button type="submit" name="resolution" value="rejected">拒绝</button>
+            {% endif %}
+          </form>
+        {% endfor %}
+      </div>
+
+      <form data-action="record-adjudication" data-subject-type="match" data-subject-id="{{ detail.match.match_id }}">
+        <h3>证据裁决记录</h3>
+        <label>
+          <span>决定</span>
+          <select name="decision" required>
+            <option value="hold">等待更多证据</option>
+            <option value="approve">采用当前判断</option>
+            <option value="reject">拒绝当前判断</option>
+            <option value="override">人工覆盖</option>
+          </select>
+        </label>
+        <label><span>理由</span><textarea name="reason" required></textarea></label>
+        <label>
+          <span>拒绝的证据（可多选）</span>
+          <select name="evidence_rejected" multiple>
+            {% for claim in detail.evidence.claims %}
+              <option value="{{ claim.claim_id }}">Claim · {{ claim.claim_id }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">记录 Adjudication</button>
+      </form>
+
+      <form data-action="forecast-commit" data-match-id="{{ detail.match.match_id }}" data-market-id="{{ detail.market_snapshot.market_definition_id if detail.market_snapshot else 'md-had' }}" data-as-of="{{ detail.as_of.isoformat() }}" data-forecast-version="{{ detail.forecasts[-1].revision_no if detail.forecasts else 0 }}">
+        <h3>Forecast 提交</h3>
+        {% for face in ['home', 'draw', 'away'] %}
+          <label><span>{{ face }}</span><input name="belief_{{ face }}" inputmode="decimal" value="{{ detail.market_snapshot.devig_distribution.get(face, '') if detail.market_snapshot else '' }}" required></label>
+        {% endfor %}
+        <label>
+          <span>绑定 AgentProposal（可选）</span>
+          <select name="agent_proposal_id">
+            <option value="">人工 Forecast，不绑定 Proposal</option>
+            {% for proposal in detail.agent_proposals %}
+              <option value="{{ proposal.agent_proposal_id }}" data-version="{{ proposal.version }}"{% if proposal.status != 'approved' %} disabled{% endif %}>{{ proposal.agent_proposal_id }} · {{ proposal.status }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">提交人工 Forecast</button>
+      </form>
+    </div>
+    <div id="action-feedback" class="action-feedback" aria-live="polite"></div>
+  </section>
+
+  <section class="investigation-section workflow-evidence" aria-labelledby="workflow-evidence-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Structured Judgment</div>
+        <h2 id="workflow-evidence-title">Flags / Predictions / Precedents</h2>
+      </div>
+    </div>
+    <div class="workflow-evidence-grid">
+      <article>
+        <h3>Flags</h3>
+        {% for flag in detail.flag_instances %}
+          <div class="workflow-object-card">
+            <code>{{ flag.flag_instance_id }}</code>
+            <strong>{{ flag.flag_type }}</strong>
+            <span>{{ flag.direction or 'neutral' }} / {{ flag.strength }} / {{ flag.status }}</span>
+          </div>
+        {% else %}<div class="inline-empty">没有 FlagInstance。</div>{% endfor %}
+      </article>
+      <article>
+        <h3>Predictions</h3>
+        {% for prediction in detail.predictions %}
+          <div class="workflow-object-card">
+            <code>{{ prediction.prediction_id }}</code>
+            <strong>{{ prediction.claim }}</strong>
+            <span>Falsifier: {{ prediction.falsifier }}</span>
+          </div>
+        {% else %}<div class="inline-empty">没有 Prediction。</div>{% endfor %}
+      </article>
+      <article>
+        <h3>Precedents</h3>
+        {% for precedent in detail.precedent_links %}
+          <div class="workflow-object-card">
+            <code>{{ precedent.precedent_link_id }}</code>
+            <strong>{{ precedent.scope }}</strong>
+            <a href="/matches/{{ precedent.precedent_match_id }}">{{ precedent.precedent_match_id }} →</a>
+          </div>
+        {% else %}<div class="inline-empty">没有 PrecedentLink。</div>{% endfor %}
+      </article>
+    </div>
+  </section>
+
+  <section class="investigation-section" aria-labelledby="bundle-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Frozen Evidence</div>
+        <h2 id="bundle-title">EvidenceBundle</h2>
+      </div>
+      <span>{{ detail.evidence_bundles|length }} 个版本</span>
+    </div>
+    {% if detail.evidence_bundles %}
+      <ol class="bundle-list">
+        {% for bundle in detail.evidence_bundles %}
+          <li>
+            <div><code>{{ bundle.evidence_bundle_id }}</code><time>{{ bundle.frozen_at }}</time></div>
+            <span>cutoff {{ bundle.information_cutoff_at }}</span>
+            <code class="content-hash">{{ bundle.content_hash }}</code>
+            <div class="bundle-refs">
+              {% for ref in bundle.item_refs %}<code>{{ ref.object_type }}:{{ ref.object_id }}</code>{% endfor %}
+            </div>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}<div class="inline-empty">尚未冻结 EvidenceBundle。</div>{% endif %}
+  </section>
+
+  <section class="investigation-section" aria-labelledby="proposal-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">AI Workflow / Not Truth</div>
+        <h2 id="proposal-title">AgentProposal Thread</h2>
+      </div>
+      <span>{{ detail.agent_proposals|length }} 条完整 Proposal</span>
+    </div>
+    {% if detail.agent_proposals %}
+      <ol class="proposal-thread">
+        {% for proposal in detail.agent_proposals %}
+          <li data-proposal-status="{{ proposal.status }}">
+            <header>
+              <div><code>{{ proposal.agent_proposal_id }}</code><strong>{{ proposal.proposal_type }}</strong></div>
+              <span>{{ proposal.model_name }} / {{ proposal.model_version }}</span>
+              <time>{{ proposal.created_at }}</time>
+            </header>
+            <p class="operator-prompt">{{ proposal.operator_prompt or '旧 Proposal 未记录 operator prompt' }}</p>
+            <blockquote>{{ proposal.summary }}</blockquote>
+            <div class="proposal-meta">
+              <span>Cutoff {{ proposal.information_cutoff_at or 'legacy' }}</span>
+              <span>Citation coverage {{ '%.0f%%'|format(proposal.citation_coverage * 100) }}</span>
+              <strong>{{ proposal.status }}</strong>
+            </div>
+            <div class="proposal-citations">
+              {% for citation in proposal.citations %}
+                <a href="/lineage/{{ citation.object_type }}/{{ citation.object_id }}">
+                  <code>{{ citation.object_type }}:{{ citation.object_id }}</code>
+                  {% if citation.quote %}<span>{{ citation.quote }}</span>{% endif %}
+                </a>
+              {% endfor %}
+            </div>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}<div class="inline-empty">没有完整、可引用的 AgentProposal。</div>{% endif %}
+  </section>
+
+  <section class="investigation-section" aria-labelledby="forecast-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Forecast History</div>
+        <h2 id="forecast-title">Forecast 版本</h2>
+      </div>
+      <span>{{ detail.forecasts|length }} 个版本</span>
+    </div>
+    {% if detail.forecasts %}
+      <ol class="forecast-list">
+        {% for forecast in detail.forecasts %}
+          <li>
+            <div class="forecast-version">
+              <span>REV {{ forecast.revision_no }}</span>
+              <strong>{{ forecast.status }}</strong>
+              <time>{{ forecast.made_at }}</time>
+            </div>
+            <div>
+              <span class="evidence-badge status-{{ forecast.evidence_status }}">{{ forecast.evidence_status }}</span>
+              {% if forecast.evidence_status == 'legacy_unbundled' %}
+                <p>迁移历史：没有 EvidenceBundle，不展示为完整来源链。</p>
+              {% endif %}
+            </div>
+            <div class="distribution-pair">
+              <code>prior {{ forecast.prior_distribution }}</code>
+              <code>belief {{ forecast.belief_distribution }}</code>
+            </div>
+            <a href="/lineage/forecast_revision/{{ forecast.forecast_revision_id }}">打开 Forecast 血缘 →</a>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <div class="inline-empty">当前 cutoff 前没有 Forecast 版本。</div>
+    {% endif %}
+  </section>
+
+  <section class="investigation-section" aria-labelledby="workflow-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Workflow Objects</div>
+        <h2 id="workflow-title">待处理工作流</h2>
+      </div>
+    </div>
+    {% if detail.workflow %}
+      <ul class="workflow-list">
+        {% for item in detail.workflow %}
+          <li>
+            <span>{{ item.workflow_type }}</span>
+            <code>{{ item.object_ref.object_id }}</code>
+            <strong>{{ item.status }}</strong>
+            <time>{{ item.created_at }}</time>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}<div class="inline-empty">没有待处理工作流对象。</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

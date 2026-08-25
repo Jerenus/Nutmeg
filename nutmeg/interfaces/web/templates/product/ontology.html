@@ -1,0 +1,38 @@
+{% extends "product/layout.html" %}
+
+{% block title %}本体浏览器 · Nutmeg{% endblock %}
+
+{% block content %}
+<div class="ontology-workspace" data-ontology-as-of="{{ page.as_of.isoformat() }}">
+  <header class="m5-page-head"><div><div class="section-kicker">Ontology Browser</div><h1>本体浏览器</h1></div><div class="projection-stamp"><strong>{{ page.object_type }}</strong><span>{{ page.items|length }} objects</span><small>{{ page.as_of.isoformat() }}</small></div></header>
+
+  <form class="ontology-filter" method="get" action="/ontology">
+    <label><span>对象类型</span><select class="m5-control" name="type">{% for type in object_types %}<option value="{{ type }}"{% if filters.object_type == type %} selected{% endif %}>{{ type }}</option>{% endfor %}</select></label>
+    <label><span>搜索</span><input class="m5-control" name="q" value="{{ filters.query }}"></label>
+    <label><span>As of</span><input class="m5-control" name="as_of" value="{{ filters.as_of }}"></label>
+    <button class="m5-control" type="submit">查询</button>
+  </form>
+
+  <div class="ontology-browser-grid">
+    <section class="ontology-result-list" aria-labelledby="objects-title">
+      <div class="section-heading"><div><div class="section-kicker">Objects</div><h2 id="objects-title">对象</h2></div></div>
+      <ol>{% for item in page.items %}<li><a href="/ontology?type={{ page.object_type|urlencode }}&amp;q={{ filters.query|urlencode }}&amp;object_id={{ item.object_id|urlencode }}&amp;as_of={{ filters.as_of|urlencode }}"><strong>{{ item.label }}</strong><code>{{ item.object_id }}</code><span>{{ item.status or 'no status' }} · {{ item.recorded_at or 'timeless' }}</span></a></li>{% else %}<li class="m5-empty">没有匹配对象。</li>{% endfor %}</ol>
+      {% if page.next_cursor %}<a class="cursor-link m5-control" href="/ontology?type={{ page.object_type|urlencode }}&amp;q={{ filters.query|urlencode }}&amp;after={{ page.next_cursor|urlencode }}&amp;as_of={{ filters.as_of|urlencode }}">下一页 <code>{{ page.next_cursor }}</code></a>{% endif %}
+    </section>
+
+    <section class="ontology-detail" aria-labelledby="detail-title">
+      <div class="section-heading"><div><div class="section-kicker">Typed Detail</div><h2 id="detail-title">对象详情</h2></div></div>
+      {% if detail %}
+        <header><span>{{ detail.object_type }}</span><code>{{ detail.object_id }}</code></header>
+        <dl class="property-ledger">{% for key, value in detail.properties.items() %}<div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
+        <h3>链接</h3>
+        <ol class="ontology-links">{% for link in detail.links %}<li><code>{{ link.source.object_type }}:{{ link.source.object_id }}</code><strong>{{ link.relation }}</strong><code>{{ link.target.object_type }}:{{ link.target.object_id }}</code></li>{% else %}<li>无链接</li>{% endfor %}</ol>
+        <h3>版本</h3>
+        <ol class="version-ledger">{% for version in detail.versions %}<li><strong>版本 {{ version.get('version', loop.index) }}</strong><code>{{ version }}</code></li>{% endfor %}</ol>
+        <h3>Action 历史</h3>
+        <ol class="action-history">{% for action in detail.actions %}<li><strong>{{ action.action_type }}</strong><code>{{ action.action_id }}</code><span>{{ action.status }} / {{ action.requested_at }}</span></li>{% else %}<li>无关联 Action</li>{% endfor %}</ol>
+      {% else %}<div class="m5-empty">从左侧对象账页选择一项。</div>{% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

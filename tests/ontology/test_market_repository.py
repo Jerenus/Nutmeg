@@ -35,3 +35,10 @@ def test_insert_quote_and_snapshot_links(tmp_path: Path) -> None:
         assert uow.market.count_quotes() == 1
         assert uow.market.count_snapshots() == 1
         assert uow.market.snapshot_quote_ids("s1") == ("q1",)
+        assert uow.market.snapshot_exists_for("s1", "match-1", "md-had") is True
+        assert uow.market.snapshot_id_for_source(
+            "match-1", "md-had", "read_time", "sporttery"
+        ) == "s1"
+        assert uow.market.snapshot_id_for_source(
+            "match-1", "md-had", "read_time", "intl"
+        ) is None

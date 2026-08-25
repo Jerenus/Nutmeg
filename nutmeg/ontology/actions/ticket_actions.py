@@ -13,18 +13,14 @@ from datetime import UTC, datetime
 
 from nutmeg.ontology.actions.models import ActionCommand, ActionOutcome, ActorRole, ObjectRef
 from nutmeg.ontology.actions.service import ActionService
-from nutmeg.ontology.finance.budget import validate_within_budget
+from nutmeg.ontology.finance.booking import assert_current_forecast, book_ticket_rows
 from nutmeg.ontology.finance.models import (
     ProposalStatus,
-    TicketStatus,
-    TransactionKind,
     mint_finance_id,
 )
 from nutmeg.ontology.repository.finance import (
-    BetLegRow,
     CashTransactionRow,
     ProposalRow,
-    TicketRow,
 )
 
 
@@ -96,16 +92,6 @@ def _leg_dict(leg: LegInput) -> dict[str, object]:
     }
 
 
-def _assert_committed(uow, leg: LegInput) -> None:
-    series_id = uow.decision.ensure_series(leg.match_id, leg.market_definition_id)
-    current = uow.decision.current_committed_revision(series_id)
-    if current is None or current.forecast_revision_id != leg.forecast_revision_id:
-        raise ValueError(
-            f'leg forecast {leg.forecast_revision_id} is not the committed revision '
-            f'for {leg.match_id}/{leg.market_definition_id}'
-        )
-
-
 class TicketActions:
     def __init__(self, action_service: ActionService) -> None:
         self._action_service = action_service
@@ -122,7 +108,7 @@ class TicketActions:
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
             for leg in request.legs:
-                _assert_committed(uow, leg)
+                assert_current_forecast(uow, leg)
             at = request.requested_at.astimezone(UTC).isoformat()
             proposal_id = mint_finance_id('tp')
             uow.finance.insert_proposal(
@@ -151,65 +137,20 @@ class TicketActions:
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
-            for leg in request.legs:
-                _assert_committed(uow, leg)
-            policy = uow.finance.active_budget_policy(request.channel)
-            if policy is not None:
-                validate_within_budget(
-                    policy.total_cap,
-                    policy.bucket_caps,
-                    [{'bucket': leg.bucket, 'stake': leg.stake} for leg in request.legs],
-                )
             at = request.requested_at.astimezone(UTC).isoformat()
-            total_stake = sum(leg.stake for leg in request.legs)
-            ticket_id = mint_finance_id('tk')
-            structure = 'single' if len(request.legs) == 1 else 'parlay'
-            uow.finance.insert_ticket(
-                TicketRow(
-                    ticket_id=ticket_id,
-                    channel=request.channel,
-                    proposal_id=request.proposal_id,
-                    approved_at=at,
-                    status=TicketStatus.APPROVED.value,
-                    structure=structure,
-                    total_stake=total_stake,
-                    currency='CNY',
-                    account_id=request.account_id,
-                )
+            booking = book_ticket_rows(
+                uow,
+                channel=request.channel,
+                account_id=request.account_id,
+                proposal_id=request.proposal_id,
+                legs=request.legs,
+                at=at,
+                stake_idempotency_key=f'{_command.action_id}:stake',
             )
-            refs: list[ObjectRef] = [ObjectRef('ticket', ticket_id)]
-            for leg in request.legs:
-                bet_leg_id = mint_finance_id('bl')
-                uow.finance.insert_bet_leg(
-                    BetLegRow(
-                        bet_leg_id=bet_leg_id,
-                        ticket_id=ticket_id,
-                        forecast_revision_id=leg.forecast_revision_id,
-                        match_id=leg.match_id,
-                        market_definition_id=leg.market_definition_id,
-                        selection_id=leg.selection_id,
-                        entry_quote_id=leg.entry_quote_id,
-                        line=leg.line,
-                        stake_share=leg.stake,
-                        entry_odds=leg.entry_odds,
-                    )
-                )
-                refs.append(ObjectRef('bet_leg', bet_leg_id))
-            if total_stake > 0:
-                transaction_id = mint_finance_id('cx')
-                uow.finance.insert_cash_transaction(
-                    CashTransactionRow(
-                        transaction_id=transaction_id,
-                        account_id=request.account_id,
-                        ticket_id=ticket_id,
-                        ticket_settlement_id=None,
-                        kind=TransactionKind.STAKE.value,
-                        amount=-total_stake,
-                        occurred_at=at,
-                        idempotency_key=f'{ticket_id}:stake',
-                    )
-                )
-                refs.append(ObjectRef('cash_transaction', transaction_id))
+            refs: list[ObjectRef] = [ObjectRef('ticket', booking.ticket_id)]
+            refs.extend(ObjectRef('bet_leg', item) for item in booking.bet_leg_ids)
+            if booking.transaction_id is not None:
+                refs.append(ObjectRef('cash_transaction', booking.transaction_id))
             return tuple(refs)
 
         return self._action_service.execute(command, handler)

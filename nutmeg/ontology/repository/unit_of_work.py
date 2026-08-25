@@ -21,6 +21,11 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.finance import FinanceRepository
     from nutmeg.ontology.repository.identity import IdentityRepository
     from nutmeg.ontology.repository.market import MarketRepository
+    from nutmeg.ontology.repository.outbox import OutboxRepository
+    from nutmeg.ontology.repository.reliability import ReliabilityRepository
+    from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
+    from nutmeg.ontology.repository.tickets import TicketWorkbenchRepository
+    from nutmeg.ontology.repository.workflow import WorkflowRepository
 
 
 class OntologyUnitOfWork:
@@ -81,6 +86,36 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.finance import FinanceRepository
 
         return FinanceRepository(self.connection)
+
+    @property
+    def workflow(self) -> WorkflowRepository:
+        from nutmeg.ontology.repository.workflow import WorkflowRepository
+
+        return WorkflowRepository(self.connection)
+
+    @property
+    def outbox(self) -> OutboxRepository:
+        from nutmeg.ontology.repository.outbox import OutboxRepository
+
+        return OutboxRepository(self.connection)
+
+    @property
+    def tickets(self) -> TicketWorkbenchRepository:
+        from nutmeg.ontology.repository.tickets import TicketWorkbenchRepository
+
+        return TicketWorkbenchRepository(self.connection)
+
+    @property
+    def scoreboard(self) -> ScoreboardRepository:
+        from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
+
+        return ScoreboardRepository(self.connection)
+
+    @property
+    def reliability(self) -> ReliabilityRepository:
+        from nutmeg.ontology.repository.reliability import ReliabilityRepository
+
+        return ReliabilityRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         self._connection = self._engine.connect()
