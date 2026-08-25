@@ -35,7 +35,7 @@ New tests live under `tests/reliability/`, `tests/ontology/`, and `tests/product
 
 **Files:** schema, models, migrations, repository, UoW, kernel status, migration tests.
 
-- [ ] **Step 1: Write RED tests**
+- [x] **Step 1: Write RED tests**
 
 Create tests that initialize through migration 14, assert the two tables and exact
 permissions, round-trip JSON/source refs, reject duplicate content hashes, paginate
@@ -48,13 +48,13 @@ with OntologyUnitOfWork(kernel.engine) as uow:
     assert uow.reliability.latest_by_kind("fault_matrix").content_hash == "a" * 64
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/ontology/test_m6_reliability_migration.py -q`
 
 Expected: schema/module imports fail.
 
-- [ ] **Step 3: Implement exact rows and repository**
+- [x] **Step 3: Implement exact rows and repository**
 
 Use frozen dataclasses matching the design. Repository methods are:
 
@@ -71,7 +71,7 @@ approval_for_release(release_version) -> ReleaseApprovalRow | None
 Append migration 14 after migration 13 and grant `record_reliability_evidence` to
 deterministic/judge roles and `approve_release` only to judge.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run migration tests plus all prior migration tests and Ruff. Commit:
 `feat(ontology): add reliability evidence ledger`.
@@ -80,7 +80,7 @@ Run migration tests plus all prior migration tests and Ruff. Commit:
 
 **Files:** reliability contracts/actions, wiring, tests.
 
-- [ ] **Step 1: Write RED validator and Action tests**
+- [x] **Step 1: Write RED validator and Action tests**
 
 Cover aware bounds, exact kind allowlist, `observed_from <= observed_to`, finite JSON
 numbers, source refs, canonical content hash, role denial, idempotency, rollback, strict
@@ -94,11 +94,11 @@ with pytest.raises(ValueError, match="volume_multiplier"):
     validate_performance_report({"volume_multiplier": 9, "metrics": {}})
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/reliability/test_contracts.py tests/ontology/test_reliability_actions.py -q`
 
-- [ ] **Step 3: Implement validators and record Action**
+- [x] **Step 3: Implement validators and record Action**
 
 `RecordReliabilityEvidenceRequest` derives its content hash from canonical kind,
 workflow/date/bounds/report/source refs. The Action reuses an existing row for equal
@@ -116,7 +116,7 @@ Other evidence kinds require `candidate_commit`, `policy_version=release-v1`, an
 `checks` with at least one boolean value; `status=passed` is valid only when all checks
 are true.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run focused tests and Ruff. Commit: `feat(reliability): govern release evidence`.
 
@@ -124,7 +124,7 @@ Run focused tests and Ruff. Commit: `feat(reliability): govern release evidence`
 
 **Files:** release evaluator, approval Action, repository queries, tests.
 
-- [ ] **Step 1: Write RED policy tests**
+- [x] **Step 1: Write RED policy tests**
 
 Start with an empty ledger and assert six blocked gates. Seed one evidence kind at a
 time. Prove candidate mismatch, failed/stale rows, future soak, synthetic/dispatch soak,
@@ -140,11 +140,11 @@ assert evaluation.gates["G6"].code == "soak_days_insufficient"
 Approval tests prove AI denial, blocked judge request, stale snapshot conflict, exact
 green approval, idempotent replay, and superseded status after new evidence.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/reliability/test_release_policy.py tests/ontology/test_release_actions.py -q`
 
-- [ ] **Step 3: Implement pure evaluation and in-transaction recheck**
+- [x] **Step 3: Implement pure evaluation and in-transaction recheck**
 
 `ReleaseEvaluator.evaluate()` selects current evidence for the exact candidate,
 computes G1-G6, and hashes this canonical material:
@@ -163,7 +163,7 @@ snapshot = canonical_json({
 the same evaluator on its UoW repository, rejects non-green or mismatched snapshots,
 then inserts one immutable approval.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Commit: `feat(reliability): enforce release approval gates`.
 
@@ -171,7 +171,7 @@ Commit: `feat(reliability): enforce release approval gates`.
 
 **Files:** backup service, tests, operations fixtures.
 
-- [ ] **Step 1: Write RED backup tests**
+- [x] **Step 1: Write RED backup tests**
 
 Use an isolated M5 lifecycle store. Assert explicit acknowledgement/destination, SQLite
 backup integrity, DuckDB/CAS hashes, action HWM, outbox cursor, table counts, sorted
@@ -179,11 +179,11 @@ ticket hashes, and ledger balances. Inject a copy/replace failure and prove the 
 published backup is complete and unchanged. Tamper each component and prove restore
 fails before reporting success.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/reliability/test_backup.py -q`
 
-- [ ] **Step 3: Implement canonical manifest and restore comparison**
+- [x] **Step 3: Implement canonical manifest and restore comparison**
 
 Public API:
 
@@ -197,7 +197,7 @@ Build in `destination.parent / ("." + destination.name + ".staging-<uuid>")`, us
 and publish with `os.replace`. Restore only into an absent directory, verify hashes,
 open schema 14 with integrity `ok`, compare facts, then rebuild projections.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Commit: `feat(reliability): add atomic recovery drills`.
 
@@ -205,18 +205,18 @@ Commit: `feat(reliability): add atomic recovery drills`.
 
 **Files:** scheduler inspector, CLI, registration, operations doc, tests.
 
-- [ ] **Step 1: Write RED inspector/CLI tests**
+- [x] **Step 1: Write RED inspector/CLI tests**
 
 Parse fixture plists and runtime JSON. Cover missing/duplicate stage, wrong root, wrong
 stage argument, missing calendar/log path, unloaded stage, ontology-v2 false, legacy
 scoreboard authority, incomplete SOP, secret redaction, canonical output, required
 acknowledgements, resolved targets, and no default production mutation.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/reliability/test_scheduler.py tests/product/test_m6_cli.py -q`
 
-- [ ] **Step 3: Implement read-only inspection and commands**
+- [x] **Step 3: Implement read-only inspection and commands**
 
 Commands:
 
@@ -231,7 +231,7 @@ reliability approve-release --data-dir --release-version --candidate-commit --ex
 
 Every mutation includes resolved `targets`; scheduler review calls no subprocess.
 
-- [ ] **Step 4: Document and commit**
+- [x] **Step 4: Document and commit**
 
 Write `docs/nutmeg-intelligence-os-m6-operations.md`. Commit:
 `feat(cli): add guarded reliability operations`.
@@ -240,7 +240,7 @@ Write `docs/nutmeg-intelligence-os-m6-operations.md`. Commit:
 
 **Files:** product contracts/repository/queries/actions/API/wiring, tests.
 
-- [ ] **Step 1: Write RED contracts/query/API tests**
+- [x] **Step 1: Write RED contracts/query/API tests**
 
 Add strict DTOs for gate, evidence, soak coverage, release approval, release response,
 route metrics, and reliability metrics. Exercise `GET /api/v1/release` and
@@ -248,17 +248,17 @@ route metrics, and reliability metrics. Exercise `GET /api/v1/release` and
 strict aware time/candidate parameters, no report blobs/secrets, and generic
 `approve_release` actor assignment/stale snapshot handling.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/product/test_m6_contracts.py tests/product/test_m6_api.py -q`
 
-- [ ] **Step 3: Implement product adapters**
+- [x] **Step 3: Implement product adapters**
 
 Query service converts `ReleaseEvaluation` and local metrics to strict DTOs. API routes
 are read-only; Action gateway maps only `approve_release` and derives judge identity
 server-side. Unexpected evidence report details remain summarized/allowlisted.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Commit: `feat(api): expose governed release readiness`.
 
@@ -266,25 +266,25 @@ Commit: `feat(api): expose governed release readiness`.
 
 **Files:** metrics registry, API middleware, release template, layout/CSS/JS, UI tests.
 
-- [ ] **Step 1: Write RED metrics and SSR tests**
+- [x] **Step 1: Write RED metrics and SSR tests**
 
 Prove bounded samples, route-template aggregation, count/error/p95, no query/ID capture,
 and reset on process restart. `/release` must SSR six gates, exact block codes, two soak
 calendars, performance budgets, backup/scheduler evidence, and current approval. It must
 not render an enabled approval form while blocked or contain client gate arithmetic.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `UV_FROZEN=1 uv run pytest tests/reliability/test_metrics.py tests/product/test_m6_ui.py -q`
 
-- [ ] **Step 3: Implement bounded telemetry and SSR workspace**
+- [x] **Step 3: Implement bounded telemetry and SSR workspace**
 
 Use `deque(maxlen=512)` per allowlisted route template and `perf_counter_ns`. Middleware
 records after response and on exceptions; payloads and raw URLs are never retained.
 Release UI uses full-width gate rows and compact evidence tables, reuses existing status
 tokens, keeps controls at least 44px, and performs only Action submission in JS.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Commit: `feat(ui): add reliability release workspace`.
 
@@ -292,27 +292,27 @@ Commit: `feat(ui): add reliability release workspace`.
 
 **Files:** M6 E2E/fault/performance tests and fixtures.
 
-- [ ] **Step 1: Add executable fault matrix tests**
+- [x] **Step 1: Add executable fault matrix tests**
 
 Map all eight `fault-v1` rows to real tests. Reuse provider/schema, Action duplicate,
 SSE, and projection cases; add SQLite-lock and backup-interruption cases. Only after
 each behavior passes may the test build a valid fault report.
 
-- [ ] **Step 2: Add reference performance test**
+- [x] **Step 2: Add reference performance test**
 
 Build a deterministic isolated reference store with declared multiplier 10. Warm each
 query/Action/event path, collect at least 20 samples, compute p95 server-side, validate
 the report against fixed budgets, and store timings in test output. Never weaken a
 budget based on the observed result.
 
-- [ ] **Step 3: Add full product lifecycle browser/API E2E**
+- [x] **Step 3: Add full product lifecycle browser/API E2E**
 
 Drive operations -> match -> Forecast -> ticket audit/confirmation -> settlement ->
 review -> release. Exercise empty, conflict, blocked, DuckDB offline/restored, event
 reconnect, keyboard focus, and approval-blocked states. Seeded 14-day rows may prove the
 approval path only inside this test.
 
-- [ ] **Step 4: Run and commit**
+- [x] **Step 4: Run and commit**
 
 Run all M1-M6 E2E, fault, recovery, and performance tests. Commit:
 `test(product): prove M6 reliability lifecycle`.
@@ -321,12 +321,12 @@ Run all M1-M6 E2E, fault, recovery, and performance tests. Commit:
 
 **Files:** M6 evidence README/screenshots; defects only if verification exposes them.
 
-- [ ] **Step 1: Run independent critique**
+- [x] **Step 1: Run independent critique**
 
 Review design, plan, base-to-head diff, migrations, Action authority, backup safety,
 snapshot logic, and tests. Resolve every Critical/Important finding with RED-GREEN.
 
-- [ ] **Step 2: Run full gates**
+- [x] **Step 2: Run full gates**
 
 ```bash
 UV_FROZEN=1 uv run pytest -q
@@ -337,25 +337,25 @@ git diff --check main...HEAD
 git diff --check
 ```
 
-- [ ] **Step 3: Run isolated recovery and project replay**
+- [x] **Step 3: Run isolated recovery and project replay**
 
 Create/restore/verify a temporary backup, rebuild projections, exercise event cursor
 recovery, and run the project decision sense/backfill/settle/close recipe only in a
 temporary root with dry-run dispatch.
 
-- [ ] **Step 4: Capture browser evidence**
+- [x] **Step 4: Capture browser evidence**
 
 At 1440x1000 and 390x844 capture the complete lifecycle and `/release` blocked state;
 capture DuckDB offline/restored and keyboard focus. Require HTTP/assets 200, zero severe
 console entries, no viewport overflow/overlap, and visible stable block codes.
 
-- [ ] **Step 5: Prove production non-mutation and real soak block**
+- [x] **Step 5: Prove production non-mutation and real soak block**
 
 Hash production scoreboard/ontology/SOP/harness files before/after. Run read-only
 release evaluation against a copied production store. Record the actual missing soak
 dates and prove no production ReleaseApproval exists or is created.
 
-- [ ] **Step 6: Record and commit evidence**
+- [x] **Step 6: Record and commit evidence**
 
 Create `docs/superpowers/evidence/m6/README.md`, mark this plan complete, and commit:
 `docs(product): record M6 verification`.
