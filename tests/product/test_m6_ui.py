@@ -4,7 +4,12 @@ from fastapi.testclient import TestClient
 
 from tests.reliability.test_release_policy import COMMIT, _seed_soak, _seed_system
 
-from .test_m6_api import _client, _release_url, _session
+from .test_m6_api import (
+    _client,
+    _release_url,
+    _seed_release_details,
+    _session,
+)
 
 
 def _release_page_url() -> str:
@@ -46,6 +51,7 @@ def test_release_workspace_renders_green_approval_and_current_decision(
 ) -> None:
     _seed_system(seeded_product.kernel)
     _seed_soak(seeded_product.kernel)
+    _seed_release_details(seeded_product.kernel)
     client = _client(seeded_product)
 
     green = client.get(_release_page_url())
@@ -58,6 +64,13 @@ def test_release_workspace_renders_green_approval_and_current_decision(
     assert 'name="reason"' in html
     assert 'name="actor_id"' not in html
     assert 'name="actor_role"' not in html
+    assert 'data-release-operations="scheduler"' in html
+    assert 'data-release-operations="backup_restore"' in html
+    assert 'data-observed-p95="board_query_ms"' in html
+    assert "500.0 ms observed" in html
+    assert "ontology" in html
+    assert "must-not-leak" not in html
+    assert "/must/not/leak" not in html
 
     evaluation = client.get(_release_url()).json()
     approval = client.post(

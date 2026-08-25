@@ -1,6 +1,12 @@
+from datetime import timedelta
+
 from fastapi.testclient import TestClient
 
 from nutmeg.interfaces.product_api import create_product_app
+from nutmeg.ontology.actions.models import ActorRole, ObjectRef
+from nutmeg.ontology.actions.reliability_actions import (
+    RecordReliabilityEvidenceRequest,
+)
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.actions import ProductActionGateway
@@ -14,6 +20,71 @@ from tests.reliability.test_release_policy import (
     _seed_soak,
     _seed_system,
 )
+
+
+def _record_release_detail(
+    kernel,
+    *,
+    kind: str,
+    report: dict[str, object],
+) -> None:
+    kernel.reliability_actions.record_evidence(
+        RecordReliabilityEvidenceRequest(
+            evidence_kind=kind,
+            workflow="system",
+            business_date=None,
+            observed_from=NOW - timedelta(minutes=10),
+            observed_to=NOW - timedelta(minutes=2),
+            status="passed",
+            report=report,
+            source_refs=[ObjectRef("test_run", f"detailed-{kind}")],
+            actor_id="system:m6-product-test",
+            actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+            idempotency_key=f"m6:product-detail:{kind}",
+            requested_at=NOW - timedelta(minutes=1),
+        )
+    )
+
+
+def _seed_release_details(kernel) -> None:
+    _record_release_detail(
+        kernel,
+        kind="scheduler_authority",
+        report={
+            "candidate_commit": COMMIT,
+            "policy_version": "release-v1",
+            "checks": {"authority": True},
+            "summary": {
+                "ontology_v2": True,
+                "scoreboard_authority": "ontology",
+                "sop_ready": True,
+                "stages": [
+                    {"stage": "am", "configured": True, "loaded": True},
+                    {"stage": "close", "configured": True, "loaded": True},
+                    {"stage": "settle", "configured": True, "loaded": True},
+                ],
+                "secret": "must-not-leak",
+            },
+        },
+    )
+    _record_release_detail(
+        kernel,
+        kind="backup_restore",
+        report={
+            "candidate_commit": COMMIT,
+            "policy_version": "release-v1",
+            "checks": {"restore": True},
+            "summary": {
+                "sqlite_integrity": "ok",
+                "schema_version": 14,
+                "action_high_watermark": 27,
+                "outbox_cursor": 27,
+                "projection_high_watermark": 27,
+                "source_manifest_sha256": "d" * 64,
+                "source_data_root": "/must/not/leak",
+            },
+        },
+    )
 
 
 def _services(seeded_product) -> ProductServices:
@@ -75,6 +146,9 @@ def test_release_and_metrics_routes_publish_strict_empty_state(seeded_product) -
         "G6",
     ]
     assert payload["approval_status"] == "none"
+    assert payload["scheduler_authority"] is None
+    assert payload["backup_restore"] is None
+    assert payload["performance"] == []
     assert metrics.status_code == 200
     assert metrics.json()["authority_state"] == "legacy"
     assert "report" not in release.text
@@ -89,6 +163,7 @@ def test_release_route_reaches_green_fixture_without_client_arithmetic(
 ) -> None:
     _seed_system(seeded_product.kernel)
     _seed_soak(seeded_product.kernel)
+    _seed_release_details(seeded_product.kernel)
 
     response = _client(seeded_product).get(_release_url())
 
@@ -101,6 +176,31 @@ def test_release_route_reaches_green_fixture_without_client_arithmetic(
         "zucai",
     }
     assert all(item["distinct_days"] == 14 for item in payload["soak_coverage"])
+    assert payload["scheduler_authority"] == {
+        "reliability_evidence_id": payload["scheduler_authority"][
+            "reliability_evidence_id"
+        ],
+        "status": "passed",
+        "observed_to": "2026-08-24T11:58:00Z",
+        "ontology_v2": True,
+        "scoreboard_authority": "ontology",
+        "sop_ready": True,
+        "configured_stages": 3,
+        "loaded_stages": 3,
+    }
+    assert payload["backup_restore"]["sqlite_integrity"] == "ok"
+    assert payload["backup_restore"]["schema_version"] == 14
+    assert payload["backup_restore"]["action_high_watermark"] == 27
+    assert payload["backup_restore"]["source_manifest_sha256"] == "d" * 64
+    assert {row["metric"] for row in payload["performance"]} == {
+        "board_query_ms",
+        "match_query_ms",
+        "action_ack_ms",
+        "event_reconnect_ms",
+    }
+    assert all(row["sample_count"] == 20 for row in payload["performance"])
+    assert "must-not-leak" not in response.text
+    assert "/must/not/leak" not in response.text
 
 
 def test_release_routes_require_aware_time_and_nonblank_candidate(

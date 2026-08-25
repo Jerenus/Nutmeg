@@ -819,6 +819,44 @@ class ReleaseApprovalSummary(StrictContract):
     status: Literal['current', 'superseded']
 
 
+class ReleaseSchedulerSummary(StrictContract):
+    reliability_evidence_id: str
+    status: Literal['passed', 'failed']
+    observed_to: AwareDatetime
+    ontology_v2: bool | None = None
+    scoreboard_authority: Literal['legacy', 'ontology'] | None = None
+    sop_ready: bool | None = None
+    configured_stages: int = Field(ge=0)
+    loaded_stages: int = Field(ge=0)
+
+
+class ReleaseBackupRestoreSummary(StrictContract):
+    reliability_evidence_id: str
+    status: Literal['passed', 'failed']
+    observed_to: AwareDatetime
+    sqlite_integrity: str | None = None
+    schema_version: int | None = Field(default=None, ge=0)
+    action_high_watermark: int | None = Field(default=None, ge=0)
+    outbox_cursor: int | None = Field(default=None, ge=0)
+    projection_high_watermark: int | None = Field(default=None, ge=0)
+    source_manifest_sha256: str | None = Field(
+        default=None, pattern=r'^[0-9a-f]{64}$'
+    )
+
+
+class ReleasePerformanceSummary(StrictContract):
+    metric: Literal[
+        'board_query_ms',
+        'match_query_ms',
+        'action_ack_ms',
+        'event_reconnect_ms',
+    ]
+    p95_ms: float = Field(ge=0)
+    budget_ms: float = Field(gt=0)
+    sample_count: int = Field(gt=0)
+    passed: bool
+
+
 class ReleaseResponse(VersionedContract):
     release_version: str
     candidate_commit: str
@@ -831,6 +869,9 @@ class ReleaseResponse(VersionedContract):
     evidence_snapshot_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     approval_status: Literal['none', 'current', 'superseded']
     approval: ReleaseApprovalSummary | None = None
+    scheduler_authority: ReleaseSchedulerSummary | None = None
+    backup_restore: ReleaseBackupRestoreSummary | None = None
+    performance: list[ReleasePerformanceSummary] = Field(default_factory=list)
 
 
 class RouteMetricSummary(StrictContract):

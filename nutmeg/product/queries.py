@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -52,8 +53,11 @@ from nutmeg.product.contracts import (
     ReadinessLevel,
     RegimeSummary,
     ReleaseApprovalSummary,
+    ReleaseBackupRestoreSummary,
     ReleaseGateSummary,
+    ReleasePerformanceSummary,
     ReleaseResponse,
+    ReleaseSchedulerSummary,
     ReliabilityEvidenceSummary,
     ReliabilityMetricsResponse,
     ReviewResponse,
@@ -81,6 +85,7 @@ from nutmeg.product.readiness import (
     evaluate_readiness,
 )
 from nutmeg.product.repository import ProductReadRepository
+from nutmeg.reliability.contracts import PERFORMANCE_BUDGETS_MS
 from nutmeg.reliability.metrics import RouteMetricSnapshot
 from nutmeg.reliability.release import ReleaseEvaluator
 
@@ -950,6 +955,12 @@ class ProductQueryService:
                 approved_at=approval.approved_at,
                 status=evaluation.approval_status,
             )
+        selected_by_kind = {
+            row.evidence_kind: row for row in evaluation.selected_evidence
+        }
+        scheduler_row = selected_by_kind.get('scheduler_authority')
+        backup_row = selected_by_kind.get('backup_restore')
+        performance_row = selected_by_kind.get('performance')
         return ReleaseResponse(
             release_version=evaluation.release_version,
             candidate_commit=evaluation.candidate_commit,
@@ -968,6 +979,21 @@ class ProductQueryService:
             evidence_snapshot_sha256=evaluation.evidence_snapshot_sha256,
             approval_status=evaluation.approval_status,
             approval=approval_summary,
+            scheduler_authority=(
+                self._release_scheduler_summary(scheduler_row)
+                if scheduler_row is not None
+                else None
+            ),
+            backup_restore=(
+                self._release_backup_summary(backup_row)
+                if backup_row is not None
+                else None
+            ),
+            performance=(
+                self._release_performance_summary(performance_row)
+                if performance_row is not None
+                else []
+            ),
         )
 
     def reliability_metrics(
@@ -1034,6 +1060,110 @@ class ProductQueryService:
             content_hash=row.content_hash,
             recorded_at=row.recorded_at,
         )
+
+    @staticmethod
+    def _release_scheduler_summary(row) -> ReleaseSchedulerSummary:
+        summary = row.report.get('summary')
+        summary = summary if isinstance(summary, dict) else {}
+        stages = summary.get('stages')
+        stages = stages if isinstance(stages, list) else []
+        configured = sum(
+            1
+            for stage in stages
+            if isinstance(stage, dict) and stage.get('configured') is True
+        )
+        loaded = sum(
+            1
+            for stage in stages
+            if isinstance(stage, dict) and stage.get('loaded') is True
+        )
+        authority = summary.get('scoreboard_authority')
+        return ReleaseSchedulerSummary(
+            reliability_evidence_id=row.reliability_evidence_id,
+            status=row.status,
+            observed_to=row.observed_to,
+            ontology_v2=(
+                summary.get('ontology_v2')
+                if isinstance(summary.get('ontology_v2'), bool)
+                else None
+            ),
+            scoreboard_authority=(
+                authority if authority in {'legacy', 'ontology'} else None
+            ),
+            sop_ready=(
+                summary.get('sop_ready')
+                if isinstance(summary.get('sop_ready'), bool)
+                else None
+            ),
+            configured_stages=configured,
+            loaded_stages=loaded,
+        )
+
+    @staticmethod
+    def _release_backup_summary(row) -> ReleaseBackupRestoreSummary:
+        summary = row.report.get('summary')
+        summary = summary if isinstance(summary, dict) else {}
+
+        def non_negative_int(name: str) -> int | None:
+            value = summary.get(name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                return None
+            return value
+
+        digest = summary.get('source_manifest_sha256')
+        if not (
+            isinstance(digest, str)
+            and len(digest) == 64
+            and all(char in '0123456789abcdef' for char in digest)
+        ):
+            digest = None
+        integrity = summary.get('sqlite_integrity')
+        return ReleaseBackupRestoreSummary(
+            reliability_evidence_id=row.reliability_evidence_id,
+            status=row.status,
+            observed_to=row.observed_to,
+            sqlite_integrity=integrity if isinstance(integrity, str) else None,
+            schema_version=non_negative_int('schema_version'),
+            action_high_watermark=non_negative_int('action_high_watermark'),
+            outbox_cursor=non_negative_int('outbox_cursor'),
+            projection_high_watermark=non_negative_int(
+                'projection_high_watermark'
+            ),
+            source_manifest_sha256=digest,
+        )
+
+    @staticmethod
+    def _release_performance_summary(row) -> list[ReleasePerformanceSummary]:
+        metrics = row.report.get('metrics')
+        if not isinstance(metrics, dict):
+            return []
+        summaries: list[ReleasePerformanceSummary] = []
+        for name, budget in PERFORMANCE_BUDGETS_MS.items():
+            raw = metrics.get(name)
+            if not isinstance(raw, dict):
+                continue
+            p95 = raw.get('p95_ms')
+            samples = raw.get('sample_count')
+            if (
+                isinstance(p95, bool)
+                or not isinstance(p95, (int, float))
+                or not math.isfinite(float(p95))
+                or float(p95) < 0
+                or isinstance(samples, bool)
+                or not isinstance(samples, int)
+                or samples <= 0
+            ):
+                continue
+            summaries.append(
+                ReleasePerformanceSummary(
+                    metric=name,
+                    p95_ms=float(p95),
+                    budget_ms=budget,
+                    sample_count=samples,
+                    passed=row.status == 'passed' and float(p95) <= budget,
+                )
+            )
+        return summaries
 
     def _match_summary(self, record: dict, cutoff: datetime) -> MatchSummary:
         claims = self._repository.claims_for_match(record['match_id'], cutoff.isoformat())

@@ -5,8 +5,11 @@ from pydantic import ValidationError
 
 from nutmeg.product.contracts import (
     ReleaseApprovalSummary,
+    ReleaseBackupRestoreSummary,
     ReleaseGateSummary,
+    ReleasePerformanceSummary,
     ReleaseResponse,
+    ReleaseSchedulerSummary,
     ReliabilityEvidenceSummary,
     ReliabilityMetricsResponse,
     RouteMetricSummary,
@@ -59,6 +62,36 @@ def _release() -> ReleaseResponse:
         evidence_snapshot_sha256="b" * 64,
         approval_status="none",
         approval=None,
+        scheduler_authority=ReleaseSchedulerSummary(
+            reliability_evidence_id="rel-one",
+            status="failed",
+            observed_to=NOW,
+            ontology_v2=False,
+            scoreboard_authority="legacy",
+            sop_ready=False,
+            configured_stages=2,
+            loaded_stages=1,
+        ),
+        backup_restore=ReleaseBackupRestoreSummary(
+            reliability_evidence_id="rel-backup",
+            status="passed",
+            observed_to=NOW,
+            sqlite_integrity="ok",
+            schema_version=14,
+            action_high_watermark=12,
+            outbox_cursor=12,
+            projection_high_watermark=12,
+            source_manifest_sha256="c" * 64,
+        ),
+        performance=[
+            ReleasePerformanceSummary(
+                metric="board_query_ms",
+                p95_ms=8.5,
+                budget_ms=500,
+                sample_count=20,
+                passed=True,
+            )
+        ],
     )
 
 
@@ -69,6 +102,9 @@ def test_m6_release_contracts_are_strict_and_hide_report_payloads() -> None:
     assert payload["schema_version"] == "1"
     assert "report" not in payload["evidence"][0]
     assert "source_refs" not in payload["evidence"][0]
+    assert payload["scheduler_authority"]["scoreboard_authority"] == "legacy"
+    assert payload["backup_restore"]["sqlite_integrity"] == "ok"
+    assert payload["performance"][0]["p95_ms"] == 8.5
     with pytest.raises(ValidationError, match="extra"):
         ReliabilityEvidenceSummary(
             **release.evidence[0].model_dump(),
@@ -80,6 +116,11 @@ def test_m6_release_contracts_are_strict_and_hide_report_payloads() -> None:
                 **release.model_dump(),
                 "evaluated_at": datetime(2026, 8, 24, 12),
             }
+        )
+    with pytest.raises(ValidationError, match="extra"):
+        ReleaseSchedulerSummary(
+            **release.scheduler_authority.model_dump(),
+            secret="must not escape",
         )
 
 

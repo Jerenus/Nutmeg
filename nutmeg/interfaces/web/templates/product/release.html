@@ -82,6 +82,44 @@
     </div>
   </section>
 
+  <section class="release-section" aria-labelledby="operations-title">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Authority / Recovery</div>
+        <h2 id="operations-title">运维事实</h2>
+      </div>
+      <span>来自当前证据快照</span>
+    </div>
+    <div class="release-operations-grid">
+      <article data-release-operations="scheduler">
+        <header><strong>调度与权威</strong><span>{{ release.scheduler_authority.status|upper if release.scheduler_authority else 'MISSING' }}</span></header>
+        {% if release.scheduler_authority %}
+          <dl>
+            <div><dt>Ontology v2</dt><dd>{{ 'ON' if release.scheduler_authority.ontology_v2 else 'OFF' }}</dd></div>
+            <div><dt>Scoreboard</dt><dd>{{ release.scheduler_authority.scoreboard_authority or 'unknown' }}</dd></div>
+            <div><dt>SOP</dt><dd>{{ 'READY' if release.scheduler_authority.sop_ready else 'BLOCKED' }}</dd></div>
+            <div><dt>Stages</dt><dd>{{ release.scheduler_authority.loaded_stages }} loaded / {{ release.scheduler_authority.configured_stages }} configured</dd></div>
+          </dl>
+        {% else %}
+          <p>尚无 scheduler_authority 证据。</p>
+        {% endif %}
+      </article>
+      <article data-release-operations="backup_restore">
+        <header><strong>备份与恢复</strong><span>{{ release.backup_restore.status|upper if release.backup_restore else 'MISSING' }}</span></header>
+        {% if release.backup_restore %}
+          <dl>
+            <div><dt>SQLite</dt><dd>{{ release.backup_restore.sqlite_integrity or 'unknown' }}</dd></div>
+            <div><dt>Schema</dt><dd>{{ release.backup_restore.schema_version if release.backup_restore.schema_version is not none else 'unknown' }}</dd></div>
+            <div><dt>Action / Outbox</dt><dd>{{ release.backup_restore.action_high_watermark if release.backup_restore.action_high_watermark is not none else 'unknown' }} / {{ release.backup_restore.outbox_cursor if release.backup_restore.outbox_cursor is not none else 'unknown' }}</dd></div>
+            <div><dt>Projection</dt><dd>{{ release.backup_restore.projection_high_watermark if release.backup_restore.projection_high_watermark is not none else 'unknown' }}</dd></div>
+          </dl>
+        {% else %}
+          <p>尚无 backup_restore 证据。</p>
+        {% endif %}
+      </article>
+    </div>
+  </section>
+
   <section class="release-section" aria-labelledby="performance-title">
     <div class="section-heading">
       <div>
@@ -92,9 +130,15 @@
     </div>
     <div class="performance-ledger">
       {% for name, budget in performance_budgets.items() %}
+        {% set observed = release.performance|selectattr('metric', 'equalto', name)|first %}
         <div data-performance-metric="{{ name }}">
           <code>{{ name }}</code>
           <strong>{{ budget|int }} ms</strong>
+          {% if observed %}
+            <span data-observed-p95="{{ name }}">{{ observed.p95_ms|round(3) }} ms observed / {{ observed.sample_count }} samples</span>
+          {% else %}
+            <span>尚无当前实测</span>
+          {% endif %}
         </div>
       {% endfor %}
     </div>
