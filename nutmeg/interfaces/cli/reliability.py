@@ -158,21 +158,33 @@ def reliability_record(
         report_path, report, report_hash = _read_report(report_file)
         validation = validate_evidence_report(kind, report)
         status = "passed" if validation.passed else "failed"
+        observed_from_at = _at(observed_from, "observed_from")
+        observed_to_at = _at(observed_to, "observed_to")
+        requested_at_at = _at(requested_at, "requested_at")
+        identity = {
+            "business_date": business_date,
+            "evidence_kind": kind,
+            "observed_from": observed_from_at.isoformat(),
+            "observed_to": observed_to_at.isoformat(),
+            "report_sha256": report_hash,
+            "workflow": workflow,
+        }
+        identity_hash = hashlib.sha256(
+            canonical_json(identity).encode("utf-8")
+        ).hexdigest()
         request = RecordReliabilityEvidenceRequest(
             evidence_kind=kind,
             workflow=workflow,
             business_date=business_date,
-            observed_from=_at(observed_from, "observed_from"),
-            observed_to=_at(observed_to, "observed_to"),
+            observed_from=observed_from_at,
+            observed_to=observed_to_at,
             status=status,
             report=report,
             source_refs=[ObjectRef("report_file_sha256", report_hash)],
             actor_id="operator:reliability-record",
             actor_role=ActorRole.JUDGE_OPERATOR,
-            idempotency_key=(
-                f"reliability:record:{kind}:{report_hash}:{observed_to}"
-            ),
-            requested_at=_at(requested_at, "requested_at"),
+            idempotency_key=f"reliability:record:{identity_hash}",
+            requested_at=requested_at_at,
         )
         outcome = kernel.reliability_actions.record_evidence(request)
         _emit(

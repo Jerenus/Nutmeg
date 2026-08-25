@@ -82,6 +82,52 @@ def test_reliability_status_and_record_are_explicit_and_canonical(
     )
 
 
+def test_reliability_record_scopes_idempotency_to_soak_workflow(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
+    kernel.initialize()
+    report_file = tmp_path / "soak.json"
+    report_file.write_text(
+        json.dumps(
+            {
+                "schema_version": "soak-v1",
+                "policy_version": "release-v1",
+                "dispatch": False,
+                "synthetic": False,
+                "divergences": {"identity": 0, "audit": 0, "ledger": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    common = (
+        "record",
+        "--data-dir",
+        str(data_dir),
+        "--kind",
+        "soak_run",
+        "--report-file",
+        str(report_file),
+        "--business-date",
+        "2026-08-24",
+        "--observed-from",
+        "2026-08-24T11:00:00+00:00",
+        "--observed-to",
+        NOW,
+        "--requested-at",
+        NOW,
+        "--acknowledge",
+    )
+
+    jczq = _json(_invoke(*common, "--workflow", "jczq"))
+    zucai = _json(_invoke(*common, "--workflow", "zucai"))
+
+    assert jczq["status"] == zucai["status"] == "committed"
+    assert jczq["action_id"] != zucai["action_id"]
+    assert kernel.status().reliability_evidence_count == 2
+
+
 def test_reliability_backup_restore_and_blocked_approval_are_guarded(
     tmp_path: Path,
 ) -> None:
