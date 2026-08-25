@@ -216,7 +216,15 @@ class ReleaseEvaluator:
             if not candidates:
                 missing.append(kind)
                 continue
-            row = candidates[0]
+            row = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if candidate.report.get("candidate_commit")
+                    == candidate_commit
+                ),
+                candidates[0],
+            )
             rows.append(row)
             selected[row.reliability_evidence_id] = row
         if missing:

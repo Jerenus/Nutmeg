@@ -278,6 +278,32 @@ def test_each_gate_uses_current_candidate_and_non_future_evidence(
     assert _evaluate(kernel).gates["G1"].passed is True
 
 
+def test_release_selects_latest_evidence_within_the_requested_candidate(
+    tmp_path: Path,
+) -> None:
+    kernel = _kernel(tmp_path)
+    current = _record_system(
+        kernel,
+        "scheduler_authority",
+        suffix="requested-candidate",
+        requested_at=NOW - timedelta(minutes=2),
+    )
+    _record_system(
+        kernel,
+        "scheduler_authority",
+        candidate="next-candidate",
+        suffix="newer-other-candidate",
+        requested_at=NOW - timedelta(minutes=1),
+    )
+
+    evaluation = _evaluate(kernel)
+
+    assert evaluation.gates["G1"].passed is True
+    assert evaluation.gates["G1"].evidence_ids == (
+        current.result_refs[0].object_id,
+    )
+
+
 def test_release_needs_14_dates_and_inclusive_span_for_both_workflows(
     tmp_path: Path,
 ) -> None:
