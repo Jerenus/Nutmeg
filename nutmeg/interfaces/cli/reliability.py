@@ -3,12 +3,17 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import nutmeg.interfaces.cli as _cli
 from nutmeg.config.settings import AppSettings
-from nutmeg.ontology.actions.models import ActorRole, ObjectRef, canonical_json
+from nutmeg.ontology.actions.models import (
+    ActionStatus,
+    ActorRole,
+    ObjectRef,
+    canonical_json,
+)
 from nutmeg.ontology.actions.reliability_actions import (
     ApproveReleaseRequest,
     RecordReliabilityEvidenceRequest,
@@ -54,6 +59,28 @@ def _at(value: str, name: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
+# Operator-supplied instants cannot pre-date evidence into the future: the
+# release-v1 soak gate counts real elapsed days, so every explicit CLI instant
+# is capped at the server clock (small skew allowance only).
+_FUTURE_SKEW = timedelta(minutes=5)
+
+
+def _not_future(parsed: datetime, name: str) -> datetime:
+    if parsed > datetime.now(UTC) + _FUTURE_SKEW:
+        raise ValueError(f"{name} must not be in the future")
+    return parsed
+
+
+def _business_date_not_future(value: str) -> None:
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return  # shape errors are the Action layer's to report
+    # One day of slack keeps a +08:00 business date valid near UTC midnight.
+    if parsed.date() > datetime.now(UTC).date() + timedelta(days=1):
+        raise ValueError("business_date must not be in the future")
+
+
 def _kernel(data_dir: Path):
     resolved = Path(data_dir).expanduser().resolve()
     kernel = _cli.build_ontology_kernel(AppSettings(data_dir=resolved))
@@ -84,6 +111,21 @@ def _outcome(outcome, *, targets: dict[str, object]) -> dict[str, object]:
         "error_code": outcome.error_code,
         "targets": targets,
     }
+
+
+def _emit_outcome(
+    outcome,
+    *,
+    targets: dict[str, object],
+    extra: dict[str, object] | None = None,
+) -> None:
+    document = _outcome(outcome, targets=targets)
+    if extra:
+        document.update(extra)
+    _emit(document)
+    if outcome.status is not ActionStatus.COMMITTED:
+        # A replayed or rejected terminal outcome is not a success.
+        raise _cli.typer.Exit(code=1)
 
 
 def _evaluation_document(evaluation) -> dict[str, object]:
@@ -127,7 +169,9 @@ def reliability_status(
             evaluation = ReleaseEvaluator(uow.reliability).evaluate(
                 release_version,
                 candidate_commit=candidate_commit,
-                evaluated_at=_at(evaluated_at, "evaluated_at"),
+                evaluated_at=_not_future(
+                    _at(evaluated_at, "evaluated_at"), "evaluated_at"
+                ),
             )
         document = _evaluation_document(evaluation)
         document["targets"] = {
@@ -158,9 +202,15 @@ def reliability_record(
         report_path, report, report_hash = _read_report(report_file)
         validation = validate_evidence_report(kind, report)
         status = "passed" if validation.passed else "failed"
-        observed_from_at = _at(observed_from, "observed_from")
-        observed_to_at = _at(observed_to, "observed_to")
-        requested_at_at = _at(requested_at, "requested_at")
+        observed_from_at = _not_future(
+            _at(observed_from, "observed_from"), "observed_from"
+        )
+        observed_to_at = _not_future(_at(observed_to, "observed_to"), "observed_to")
+        requested_at_at = _not_future(
+            _at(requested_at, "requested_at"), "requested_at"
+        )
+        if business_date is not None:
+            _business_date_not_future(business_date)
         identity = {
             "business_date": business_date,
             "evidence_kind": kind,
@@ -187,15 +237,13 @@ def reliability_record(
             requested_at=requested_at_at,
         )
         outcome = kernel.reliability_actions.record_evidence(request)
-        _emit(
-            _outcome(
-                outcome,
-                targets={
-                    "data_dir": str(resolved),
-                    "ontology_db": str(kernel.paths.database.resolve()),
-                    "report_file": str(report_path),
-                },
-            )
+        _emit_outcome(
+            outcome,
+            targets={
+                "data_dir": str(resolved),
+                "ontology_db": str(kernel.paths.database.resolve()),
+                "report_file": str(report_path),
+            },
         )
     except (OSError, OntologyError, ValueError) as error:
         _fail(error)
@@ -216,7 +264,9 @@ def reliability_backup_create(
         result = create_backup(
             kernel,
             target,
-            requested_at=_at(requested_at, "requested_at"),
+            requested_at=_not_future(
+                _at(requested_at, "requested_at"), "requested_at"
+            ),
             acknowledge_writers_stopped=acknowledge_writers_stopped,
         )
         _emit(
@@ -249,7 +299,9 @@ def reliability_restore_drill(
         report = run_restore_drill(
             source,
             target,
-            requested_at=_at(requested_at, "requested_at"),
+            requested_at=_not_future(
+                _at(requested_at, "requested_at"), "requested_at"
+            ),
         )
         _emit(
             {
@@ -286,7 +338,7 @@ def reliability_scheduler_review(
         resolved_sops = [Path(path).expanduser().resolve() for path in sop_files]
         runtime_path = Path(runtime_report).expanduser().resolve()
         root = Path(project_root).expanduser().resolve()
-        at = _at(requested_at, "requested_at")
+        at = _not_future(_at(requested_at, "requested_at"), "requested_at")
         review = inspect_scheduler_authority(
             kernel=kernel,
             plist_paths=resolved_plists,
@@ -320,7 +372,7 @@ def reliability_scheduler_review(
                 requested_at=at,
             )
         )
-        document = _outcome(
+        _emit_outcome(
             outcome,
             targets={
                 "data_dir": str(resolved),
@@ -329,9 +381,8 @@ def reliability_scheduler_review(
                 "runtime_report": str(runtime_path),
                 "sop_files": [str(path) for path in resolved_sops],
             },
+            extra={"review": review.to_dict()},
         )
-        document["review"] = review.to_dict()
-        _emit(document)
     except (OSError, OntologyError, ValueError) as error:
         _fail(error)
 
@@ -361,18 +412,18 @@ def reliability_approve_release(
                 idempotency_key=(
                     f"reliability:approve:{release_version}:{expected_snapshot}"
                 ),
-                requested_at=_at(requested_at, "requested_at"),
+                requested_at=_not_future(
+                    _at(requested_at, "requested_at"), "requested_at"
+                ),
             )
         )
-        _emit(
-            _outcome(
-                outcome,
-                targets={
-                    "data_dir": str(resolved),
-                    "ontology_db": str(kernel.paths.database.resolve()),
-                    "release_version": release_version,
-                },
-            )
+        _emit_outcome(
+            outcome,
+            targets={
+                "data_dir": str(resolved),
+                "ontology_db": str(kernel.paths.database.resolve()),
+                "release_version": release_version,
+            },
         )
     except (OSError, OntologyError, ValueError) as error:
         _fail(error)

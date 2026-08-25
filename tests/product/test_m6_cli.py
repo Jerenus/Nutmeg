@@ -281,3 +281,122 @@ def test_scheduler_review_cli_records_sanitized_failed_evidence(tmp_path: Path) 
     assert "scoreboard_authority_not_ontology" in reviewed["review"]["issues"]
     assert "must-not-leak" not in canonical_json(reviewed)
     assert reviewed["targets"]["runtime_report"] == str(runtime.resolve())
+
+
+def test_reliability_approve_failure_retry_exits_nonzero(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    build_ontology_kernel(AppSettings(data_dir=data_dir)).initialize()
+    args = (
+        "approve-release",
+        "--data-dir",
+        str(data_dir),
+        "--release-version",
+        "v1.0.0",
+        "--candidate-commit",
+        "abc123",
+        "--expected-snapshot",
+        "0" * 64,
+        "--reason",
+        "blocked-approve-retry",
+        "--requested-at",
+        NOW,
+        "--approve",
+    )
+    first = _invoke(*args)
+    assert first.exit_code == 1                 # gates blocked -> failed attempt
+    second = _invoke(*args)                     # identical retry must not turn green
+    assert second.exit_code == 1
+    assert '"status":"committed"' not in second.stdout
+
+
+def test_emit_outcome_exits_nonzero_for_noncommitted_outcome() -> None:
+    import click
+    import pytest
+
+    from nutmeg.interfaces.cli import reliability as reliability_cli
+    from nutmeg.ontology.actions.models import ActionOutcome, ActionStatus
+
+    outcome = ActionOutcome(
+        action_id="ACT-rejected",
+        action_type="record_reliability_evidence",
+        status=ActionStatus.REJECTED,
+        error_code="permission_denied",
+    )
+    with pytest.raises(click.exceptions.Exit) as excinfo:
+        reliability_cli._emit_outcome(outcome, targets={})
+    assert excinfo.value.exit_code == 1
+
+
+def test_reliability_cli_rejects_future_timestamps(tmp_path: Path) -> None:
+    from datetime import timedelta
+
+    data_dir = tmp_path / "data"
+    build_ontology_kernel(AppSettings(data_dir=data_dir)).initialize()
+    future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    report_file = tmp_path / "det.json"
+    report_file.write_text(
+        json.dumps(
+            {
+                "schema_version": "deterministic_suite-v1",
+                "candidate_commit": "abc123",
+                "policy_version": "release-v1",
+                "checks": {"pytest_full": True, "ruff": True, "compileall": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = _invoke(
+        "status", "--data-dir", str(data_dir), "--release-version", "v1.0.0",
+        "--candidate-commit", "abc123", "--evaluated-at", future,
+    )
+    assert status.exit_code == 1
+    assert "future" in status.stdout
+
+    record = _invoke(
+        "record", "--data-dir", str(data_dir), "--kind", "deterministic_suite",
+        "--report-file", str(report_file),
+        "--observed-from", NOW, "--observed-to", future,
+        "--requested-at", NOW, "--acknowledge",
+    )
+    assert record.exit_code == 1
+    assert "future" in record.stdout
+
+    approve = _invoke(
+        "approve-release", "--data-dir", str(data_dir),
+        "--release-version", "v1.0.0", "--candidate-commit", "abc123",
+        "--expected-snapshot", "0" * 64, "--reason", "x",
+        "--requested-at", future, "--approve",
+    )
+    assert approve.exit_code == 1
+    assert "future" in approve.stdout
+
+
+def test_reliability_cli_rejects_future_soak_business_date(tmp_path: Path) -> None:
+    from datetime import timedelta
+
+    data_dir = tmp_path / "data"
+    build_ontology_kernel(AppSettings(data_dir=data_dir)).initialize()
+    soak_file = tmp_path / "soak.json"
+    soak_file.write_text(
+        json.dumps(
+            {
+                "schema_version": "soak-v1",
+                "policy_version": "release-v1",
+                "dispatch": False,
+                "synthetic": False,
+                "divergences": {"identity": 0, "audit": 0, "ledger": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    future_date = (datetime.now(UTC) + timedelta(days=3)).strftime("%Y-%m-%d")
+    soak = _invoke(
+        "record", "--data-dir", str(data_dir), "--kind", "soak_run",
+        "--report-file", str(soak_file), "--workflow", "jczq",
+        "--business-date", future_date,
+        "--observed-from", "2026-08-24T11:00:00+00:00", "--observed-to", NOW,
+        "--requested-at", NOW, "--acknowledge",
+    )
+    assert soak.exit_code == 1
+    assert "future" in soak.stdout
