@@ -19,13 +19,14 @@ one issue routinely spans multiple days).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from nutmeg.ontology.actions.entity_actions import EntityActions, UpsertTeamRequest
 from nutmeg.ontology.actions.market_actions import MarketActions
 from nutmeg.ontology.actions.match_actions import MatchActions, MatchSideRef, RecordMatchRequest
-from nutmeg.ontology.actions.models import ActorRole
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.errors import IdempotencyConflictError
 from nutmeg.ontology.identity.models import MatchSide, MatchStatus, TeamKind
 from nutmeg.ontology.market.models import QuoteInput, SnapshotBuildRequest
@@ -77,10 +78,14 @@ class ZucaiIssueIngestService:
         entity_actions: EntityActions,
         match_actions: MatchActions,
         market_actions: MarketActions,
+        snapshot_probe: Callable[[str], bool] | None = None,
     ) -> None:
         self._entity_actions = entity_actions
         self._match_actions = match_actions
         self._market_actions = market_actions
+        # 首个 read_time 锚保持:probe 报告该场已有 zucai 快照 → 不再建新的
+        # (判读时的价是锚,盘中位移不覆盖)。
+        self._snapshot_probe = snapshot_probe
 
     def ingest(self, request: ZucaiIssueIngestRequest) -> ZucaiIssueIngestResult:
         from nutmeg.decision.identity import canonical_match_id
@@ -122,29 +127,47 @@ class ZucaiIssueIngestService:
             match_id = outcome.result_refs[0].object_id
             match_ids.add(match_id)
 
+            if self._snapshot_probe is not None and self._snapshot_probe(match_id):
+                # 盘中赔率已动的重跑:保留首个 read_time 锚(判读时的价),可见跳过
+                skipped.append(f"{request.issue}-{row.match_no}:first_anchor_kept")
+                continue
+
+            as_of = request.requested_at.astimezone(UTC).isoformat()
             try:
-                self._market_actions.build_snapshot(
+                outcome = self._market_actions.build_snapshot(
                     SnapshotBuildRequest(
                         match_id=match_id,
                         market_definition_id=_HAD,
                         snapshot_kind=request.snapshot_kind,
-                        as_of=request.requested_at.astimezone(UTC).isoformat(),
+                        as_of=as_of,
                         provider="zucai",
                         quotes=[
                             QuoteInput(_HAD, f"sel-had-{key}", float(odds[key]))
                             for key in _OUTCOMES
                         ],
                         actor_id=request.actor_id,
-                        actor_role=request.actor_role,
+                        # 与 market_day 同一治理约定:快照是确定性算术产物,
+                        # 由 deterministic_system 执行(connector 无此授权)。
+                        actor_role=ActorRole.DETERMINISTIC_SYSTEM,
                         idempotency_key=(
-                            f"zucai:snapshot:{request.issue}:{row.match_no}:{request.snapshot_kind}"
+                            f"zucai:snapshot:{request.issue}:{row.match_no}"
+                            f":{request.snapshot_kind}:{as_of}"
                         ),
                         requested_at=request.requested_at,
                     )
                 )
-                snapshots += 1
             except IdempotencyConflictError:
-                pass  # 盘中赔率已动:保留首个 read_time 锚(判读时的价),不覆盖
+                skipped.append(f"{request.issue}-{row.match_no}:snapshot_key_conflict")
+                continue
+            if outcome.status is ActionStatus.COMMITTED:
+                snapshots += 1
+            else:
+                # 拒绝/失败不是入库(26110-26111 曾把 rejected 计成 14 Snapshot)
+                code = f":{outcome.error_code}" if outcome.error_code else ""
+                skipped.append(
+                    f"{request.issue}-{row.match_no}"
+                    f":snapshot_{outcome.status.value}{code}"
+                )
 
         return ZucaiIssueIngestResult(
             matches=len(match_ids),

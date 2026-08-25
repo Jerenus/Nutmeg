@@ -83,10 +83,19 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
         return f"decision-sense-zucai-v2 {issue}: 源快照缺失 — {exc}"
 
     service_factory = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
+
+    def _anchor_probe(match_id: str) -> bool:
+        with OntologyUnitOfWork(kernel.engine) as uow:
+            return (
+                uow.market.snapshot_id_for_source(match_id, "md-had", "read_time", "zucai")
+                is not None
+            )
+
     service = ZucaiIssueIngestService(
         entity_actions=EntityActions(service_factory),
         match_actions=MatchActions(service_factory),
         market_actions=MarketActions(service_factory),
+        snapshot_probe=_anchor_probe,
     )
     result = service.ingest(
         ZucaiIssueIngestRequest(

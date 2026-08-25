@@ -20,10 +20,19 @@ _AT = datetime(2026, 8, 24, 6, 0, tzinfo=UTC)
 
 def _service(kernel) -> ZucaiIssueIngestService:
     factory = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
+
+    def probe(match_id: str) -> bool:
+        with OntologyUnitOfWork(kernel.engine) as uow:
+            return (
+                uow.market.snapshot_id_for_source(match_id, "md-had", "read_time", "zucai")
+                is not None
+            )
+
     return ZucaiIssueIngestService(
         entity_actions=EntityActions(factory),
         match_actions=MatchActions(factory),
         market_actions=MarketActions(factory),
+        snapshot_probe=probe,
     )
 
 
@@ -56,7 +65,9 @@ def test_ingests_matches_teams_snapshots(tmp_path: Path) -> None:
     result = _service(kernel).ingest(_request(rows))
     assert result.matches == 2 and result.snapshots == 2 and result.teams == 4
     assert result.skipped == ()
-    assert kernel.status().match_count == 2
+    status = kernel.status()
+    assert status.match_count == 2
+    assert status.snapshot_count == 2      # 计数必须对应真实快照行,不许虚报
 
 
 def test_rerun_is_idempotent(tmp_path: Path) -> None:
@@ -162,3 +173,52 @@ def test_market_day_rerun_with_same_content_is_noop(tmp_path: Path) -> None:
         )
     )
     assert rerun.matches == 1  # 重放解析到同一 match,零冲突异常
+
+
+def test_noncommitted_snapshot_is_not_counted_as_success(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from nutmeg.ontology.actions.models import ActionOutcome, ActionStatus
+
+    kernel = _kernel(tmp_path)
+    rows = [
+        ZucaiRow(
+            1, "曼城", "伯恩茅斯", "英超", "2026-08-23", {"home": 1.30, "draw": 5.50, "away": 9.00}
+        )
+    ]
+
+    def rejected(_self, request) -> ActionOutcome:
+        return ActionOutcome(
+            action_id="ACT-denied",
+            action_type="build_market_snapshot",
+            status=ActionStatus.REJECTED,
+            error_code="permission_denied",
+        )
+
+    monkeypatch.setattr(MarketActions, "build_snapshot", rejected)
+    result = _service(kernel).ingest(_request(rows))
+    assert result.snapshots == 0                       # 拒绝不是入库
+    assert any("snapshot_rejected" in item for item in result.skipped)
+
+
+def test_second_run_keeps_first_read_time_anchor(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    service = _service(kernel)
+    row1 = ZucaiRow(
+        1, "曼城", "伯恩茅斯", "英超", "2026-08-23", {"home": 1.30, "draw": 5.50, "away": 9.00}
+    )
+    service.ingest(_request([row1]))
+    moved = ZucaiRow(
+        1, "曼城", "伯恩茅斯", "英超", "2026-08-23", {"home": 1.25, "draw": 5.80, "away": 10.0}
+    )
+    later = ZucaiIssueIngestRequest(
+        issue="26110",
+        rows=(moved,),
+        actor_id="source:zucai",
+        actor_role=ActorRole.CONNECTOR,
+        requested_at=_AT.replace(hour=9),
+    )
+    again = service.ingest(later)
+    assert kernel.status().snapshot_count == 1         # 首个 read_time 锚保持
+    assert again.snapshots == 0
+    assert any("first_anchor_kept" in item for item in again.skipped)
