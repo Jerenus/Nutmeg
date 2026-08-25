@@ -200,6 +200,25 @@ def test_backup_requires_acknowledgement_new_non_overlapping_target(
         )
 
 
+def test_backup_rejects_corrupted_source_cas_before_publication(
+    tmp_path: Path,
+) -> None:
+    kernel, digest = _seed_kernel(tmp_path)
+    artifact = kernel.paths.artifacts / "sha256" / digest[:2] / digest
+    artifact.write_bytes(b"corrupted-after-ingest")
+    destination = tmp_path / "corrupted-source-backup"
+
+    with pytest.raises(RecoveryError, match="CAS content hash mismatch"):
+        create_backup(
+            kernel,
+            destination,
+            requested_at=NOW,
+            acknowledge_writers_stopped=True,
+        )
+
+    assert not destination.exists()
+
+
 def test_interrupted_backup_never_publishes_partial_or_changes_prior_backup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

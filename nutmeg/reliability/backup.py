@@ -184,6 +184,23 @@ def _file_entry(path: Path, relative: Path, kind: str) -> dict[str, object]:
     }
 
 
+def _validate_cas_blob(path: Path, relative: Path) -> None:
+    parts = relative.parts
+    if (
+        len(parts) != 3
+        or parts[0] != "sha256"
+        or len(parts[1]) != 2
+        or len(parts[2]) != 64
+        or parts[1] != parts[2][:2]
+        or any(char not in "0123456789abcdef" for char in parts[2])
+    ):
+        raise RecoveryError(f"invalid CAS storage path: {relative.as_posix()}")
+    if _sha256(path) != parts[2]:
+        raise RecoveryError(
+            f"CAS content hash mismatch: {relative.as_posix()}"
+        )
+
+
 def _atomic_publish(staging: Path, destination: Path) -> None:
     os.replace(staging, destination)
     _fsync_directory(destination.parent)
@@ -237,6 +254,10 @@ def create_backup(
                 )
                 copied = staging / relative
                 _copy_file(source, copied)
+                _validate_cas_blob(
+                    copied,
+                    source.relative_to(kernel.paths.artifacts),
+                )
                 files.append(_file_entry(copied, relative, "cas"))
 
         facts = _sqlite_facts(sqlite_destination)
