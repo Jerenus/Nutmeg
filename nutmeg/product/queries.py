@@ -6,6 +6,7 @@ import json
 import math
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from nutmeg.ontology.actions.protected_ticket_actions import ticket_audit_finding_id
@@ -1263,7 +1264,10 @@ class ProductQueryService:
                         object_ref=ObjectRefContract(
                             object_type='match', object_id=match.match_id
                         ),
-                        href=f'/matches/{match.match_id}?as_of={cutoff.isoformat()}',
+                        href=(
+                            f'/matches/{match.match_id}?'
+                            f'{urlencode({"as_of": cutoff.isoformat()})}'
+                        ),
                     )
                 )
         return _sort_alerts(alerts)

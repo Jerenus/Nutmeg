@@ -6,9 +6,11 @@ from pydantic import ValidationError
 
 from nutmeg.product.contracts import (
     AlertSummary,
+    BoardResponse,
     MatchSummary,
     OperationsMetrics,
     OperationsResponse,
+    ReadinessIssue,
     ReadinessLevel,
     ReadinessState,
 )
@@ -149,6 +151,37 @@ def test_command_center_filters_without_hiding_unfiltered_counts(
     assert empty.board.matches == []
     assert empty.readiness_counts["ready"] == 1
     assert "score" not in result.board.matches[0].model_dump()
+
+
+def test_command_center_alert_match_links_url_encode_cutoff(
+    m2_product_services,
+) -> None:
+    board = BoardResponse(
+        date=date(2026, 8, 24),
+        as_of=CLOCK,
+        matches=[
+            MatchSummary(
+                match_id="match-1",
+                home_team="Home FC",
+                away_team="Away FC",
+                readiness=ReadinessState(
+                    level=ReadinessLevel.DEGRADED,
+                    issues=[
+                        ReadinessIssue(
+                            code="source_stale",
+                            message="source evidence is stale",
+                            observed_at=CLOCK,
+                        )
+                    ],
+                ),
+            )
+        ],
+    )
+    alerts = m2_product_services.queries._board_alerts(board, CLOCK)
+
+    assert alerts[0].href == (
+        "/matches/match-1?as_of=2026-08-24T10%3A00%3A00%2B00%3A00"
+    )
 
 
 def test_operations_turns_stale_source_and_failures_into_alerts(

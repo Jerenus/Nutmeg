@@ -35,6 +35,18 @@ def test_command_center_renders_semantic_attention_surface(
     assert 'href="/matches/match-1' in response.text
 
 
+def test_command_center_match_link_url_encodes_and_preserves_cutoff(
+    client: TestClient,
+) -> None:
+    response = client.get("/?date=2026-08-24")
+    href = "/matches/match-1?as_of=2026-08-24T10%3A00%3A00%2B00%3A00"
+
+    assert f'href="{href}"' in response.text
+    detail = client.get(href)
+    assert detail.status_code == 200
+    assert "2026-08-24T10:00:00+00:00" in detail.text
+
+
 def test_empty_filter_is_designed_state(client: TestClient) -> None:
     response = client.get("/?date=2026-08-24&q=absent")
 

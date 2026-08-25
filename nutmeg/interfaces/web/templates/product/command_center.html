@@ -93,7 +93,7 @@
             </div>
             <div class="next-action">
               <span>{{ match.workflow_state }}</span>
-              <a href="/matches/{{ match.match_id }}?as_of={{ command.board.as_of.isoformat() }}">
+              <a href="/matches/{{ match.match_id }}?as_of={{ command.board.as_of.isoformat()|urlencode }}">
                 打开比赛档案 <span aria-hidden="true">↗</span>
               </a>
             </div>
