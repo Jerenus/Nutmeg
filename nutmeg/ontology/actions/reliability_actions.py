@@ -33,6 +33,30 @@ def _aware(value: datetime, name: str) -> None:
         raise ValueError(f"{name} must be timezone-aware")
 
 
+def _evidence_content_hash(
+    *,
+    evidence_kind: str,
+    workflow: str | None,
+    business_date: str | None,
+    observed_from: str,
+    observed_to: str,
+    status: str,
+    report: dict[str, object],
+    source_refs: list[dict[str, str]],
+) -> str:
+    material = {
+        "evidence_kind": evidence_kind,
+        "workflow": workflow,
+        "business_date": business_date,
+        "observed_from": observed_from,
+        "observed_to": observed_to,
+        "status": status,
+        "report": report,
+        "source_refs": source_refs,
+    }
+    return hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class RecordReliabilityEvidenceRequest:
     evidence_kind: str
@@ -64,12 +88,16 @@ class RecordReliabilityEvidenceRequest:
             raise ValueError("status must be passed or failed")
         if not isinstance(self.report, dict):
             raise ValueError("report must be an object")
-        validate_json_value(self.report)
-        if not self.source_refs:
+        report = copy.deepcopy(self.report)
+        source_ref_values = list(self.source_refs)
+        object.__setattr__(self, "report", report)
+        object.__setattr__(self, "source_refs", source_ref_values)
+        validate_json_value(report)
+        if not source_ref_values:
             raise ValueError("source_refs cannot be empty")
         if any(
             not ref.object_type.strip() or not ref.object_id.strip()
-            for ref in self.source_refs
+            for ref in source_ref_values
         ):
             raise ValueError("source_refs must contain non-blank object refs")
         if not self.actor_id.strip():
@@ -92,7 +120,7 @@ class RecordReliabilityEvidenceRequest:
             if self.business_date is not None:
                 raise ValueError("non-soak business_date must be null")
 
-        result = validate_evidence_report(self.evidence_kind, self.report)
+        result = validate_evidence_report(self.evidence_kind, report)
         if self.evidence_kind == "soak_run":
             if "synthetic_evidence" in result.failures:
                 raise ValueError("synthetic soak evidence cannot be recorded")
@@ -105,21 +133,20 @@ class RecordReliabilityEvidenceRequest:
             )
             raise ValueError(f"status must be {expected_status}: {message}")
 
-        source_refs = [ref.to_dict() for ref in self.source_refs]
-        material = {
-            "evidence_kind": self.evidence_kind,
-            "workflow": self.workflow,
-            "business_date": self.business_date,
-            "observed_from": self.observed_from.astimezone(UTC).isoformat(),
-            "observed_to": self.observed_to.astimezone(UTC).isoformat(),
-            "status": self.status,
-            "report": self.report,
-            "source_refs": source_refs,
-        }
+        source_refs = [ref.to_dict() for ref in source_ref_values]
         object.__setattr__(
             self,
             "content_hash",
-            hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest(),
+            _evidence_content_hash(
+                evidence_kind=self.evidence_kind,
+                workflow=self.workflow,
+                business_date=self.business_date,
+                observed_from=self.observed_from.astimezone(UTC).isoformat(),
+                observed_to=self.observed_to.astimezone(UTC).isoformat(),
+                status=self.status,
+                report=report,
+                source_refs=source_refs,
+            ),
         )
 
 
@@ -162,6 +189,18 @@ class ReliabilityActions:
     ) -> ActionOutcome:
         source_refs = [ref.to_dict() for ref in request.source_refs]
         report = copy.deepcopy(request.report)
+        current_hash = _evidence_content_hash(
+            evidence_kind=request.evidence_kind,
+            workflow=request.workflow,
+            business_date=request.business_date,
+            observed_from=request.observed_from.astimezone(UTC).isoformat(),
+            observed_to=request.observed_to.astimezone(UTC).isoformat(),
+            status=request.status,
+            report=report,
+            source_refs=source_refs,
+        )
+        if current_hash != request.content_hash:
+            raise ValueError("evidence request changed after validation")
         payload = {
             "evidence_kind": request.evidence_kind,
             "workflow": request.workflow,
