@@ -1,6 +1,10 @@
 # Ontology Kernel v2 — Cutover Runbook (Package 5B, go-live is user-gated)
 
-> **Status: NOT executed.** This runbook documents the single irreversible go-live
+>**Status 2026-08-24: steps 1-4 EXECUTED** (fresh reconcile 0 mismatch → prod kernel seeded →
+> flag ON in .env → shadow am clean on both lanes). Step 5 (schedules) pending user grading
+> per the L3 roadmap. Original preamble below.
+
+> This runbook documents the single irreversible go-live
 > sequence. Every step below is manual and gated on explicit user approval after the
 > reconciliation evidence is reviewed. Nothing in the codebase runs this automatically.
 > The read-only freeze archive `.nutmeg-data/archive/20260721-112449-ontology-v2-freeze`
@@ -16,7 +20,23 @@ metrics — read-only on the source, writing only a caller-chosen target.
 The three live schedules (`com.nutmeg.decision.am`/`.close`/`.settle`) are **booted out
 (paused)** and must stay paused until go-live.
 
-## 1. Reconciliation evidence (review before deciding)
+## 1b. Fresh evidence (2026-08-24 production run, superseding §1 numbers)
+
+| Metric | Value |
+|---|---|
+| matches / snapshots / reads / outcomes imported | 618 / 2,299 / 1,107 / 473 |
+| skipped (degenerate fair etc.) | 67 |
+| factors dropped (legacy shape) | 70 |
+| rebuilt Brier matched (≤1e-6) / **mismatched** | 465 / **0** |
+| superseded / no-baseline (hhad/ttg scope) | 22 / 457 |
+
+Cutover执行记录: §2.2 seeded into `.nutmeg-data/ontology/` (schema v9, integrity ok);
+§2.3 `NUTMEG_ONTOLOGY_V2=1` in `.env`; §2.4 shadow: jczq am (11 matches/18 snapshots) +
+**zucai lane** (26110: 14 matches/14 snapshots via new `ZucaiIssueIngestService` —
+the flag-on gap that silently dropped `--issue` is closed, commit a19d60f). Same-content
+rerun is now a visible no-op (artifact replay tolerance).
+
+## 1. Reconciliation evidence (2026-07 baseline, superseded by §1b)
 
 Latest read-only dry import over the production store (`.nutmeg-data/jczq`, no writes),
 with superseded-read bucketing (`reconcile-v2`):
