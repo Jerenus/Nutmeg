@@ -91,7 +91,7 @@ class SchedulerAuthorityReport:
             "candidate_commit": self.candidate_commit,
             "policy_version": "release-v1",
             "checks": checks,
-            "scheduler_contract_version": "scheduler-v1",
+            "schema_version": "scheduler-v1",
             "summary": self.to_dict(),
         }
 

@@ -51,9 +51,20 @@ def _seed_release_details(kernel) -> None:
         kernel,
         kind="scheduler_authority",
         report={
+            "schema_version": "scheduler-v1",
             "candidate_commit": COMMIT,
             "policy_version": "release-v1",
-            "checks": {"authority": True},
+            "checks": {
+                "am_configured": True,
+                "am_loaded": True,
+                "close_configured": True,
+                "close_loaded": True,
+                "settle_configured": True,
+                "settle_loaded": True,
+                "ontology_v2": True,
+                "scoreboard_authority": True,
+                "sop_authority": True,
+            },
             "summary": {
                 "ontology_v2": True,
                 "scoreboard_authority": "ontology",
@@ -71,9 +82,14 @@ def _seed_release_details(kernel) -> None:
         kernel,
         kind="backup_restore",
         report={
+            "schema_version": "backup_restore-v1",
             "candidate_commit": COMMIT,
             "policy_version": "release-v1",
-            "checks": {"restore": True},
+            "checks": {
+                "backup_created": True,
+                "restore_verified": True,
+                "projection_rebuilt": True,
+            },
             "summary": {
                 "sqlite_integrity": "ok",
                 "schema_version": 14,

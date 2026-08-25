@@ -11,7 +11,7 @@ from nutmeg.ontology.actions.reliability_actions import (
 from nutmeg.ontology.reliability.models import ReliabilityEvidenceRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
-from nutmeg.reliability.contracts import FAULT_SCENARIOS, PERFORMANCE_BUDGETS_MS
+from nutmeg.reliability.contracts import CHECK_REPORT_SPECS, FAULT_SCENARIOS, PERFORMANCE_BUDGETS_MS
 from nutmeg.reliability.release import ReleaseEvaluator
 
 NOW = datetime(2026, 8, 24, 12, tzinfo=UTC)
@@ -69,10 +69,12 @@ def _report(kind: str, *, candidate: str = COMMIT, passed: bool = True):
             "volume_multiplier": 10,
             "metrics": metrics,
         }
+    schema_version, required_checks = CHECK_REPORT_SPECS[kind]
     return {
+        "schema_version": schema_version,
         "candidate_commit": candidate,
         "policy_version": "release-v1",
-        "checks": {"primary": passed},
+        "checks": {name: passed for name in sorted(required_checks)},
     }
 
 

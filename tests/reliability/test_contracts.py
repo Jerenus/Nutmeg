@@ -127,3 +127,72 @@ def test_soak_contract_forbids_dispatch_synthetic_and_divergence() -> None:
     malformed["divergences"]["audit"] = -1  # type: ignore[index]
     with pytest.raises(ValueError, match="non-negative integer"):
         validate_soak_report(malformed)
+
+
+def test_check_reports_require_schema_and_named_checks() -> None:
+    from nutmeg.reliability.contracts import validate_evidence_report
+
+    base = {
+        "schema_version": "deterministic_suite-v1",
+        "candidate_commit": "abc123",
+        "policy_version": "release-v1",
+        "checks": {"pytest_full": True, "ruff": True, "compileall": True},
+    }
+    assert validate_evidence_report("deterministic_suite", base).passed is True
+
+    with pytest.raises(ValueError, match="schema_version"):
+        validate_evidence_report(
+            "deterministic_suite",
+            {key: value for key, value in base.items() if key != "schema_version"},
+        )
+    with pytest.raises(ValueError, match="compileall"):
+        validate_evidence_report(
+            "deterministic_suite", {**base, "checks": {"pytest_full": True}}
+        )
+    with pytest.raises(ValueError, match="unknown fields"):
+        validate_evidence_report("deterministic_suite", {**base, "extra": 1})
+    failing = validate_evidence_report(
+        "deterministic_suite",
+        {**base, "checks": {**base["checks"], "ruff": False}},
+    )
+    assert failing.passed is False
+    assert "ruff" in failing.failures
+
+
+def test_scheduler_authority_evidence_report_matches_contract() -> None:
+    from nutmeg.reliability.contracts import validate_evidence_report
+
+    checks: dict[str, bool] = {
+        f"{stage}_{fact}": True
+        for stage in ("am", "close", "settle")
+        for fact in ("configured", "loaded")
+    }
+    checks.update(
+        {"ontology_v2": True, "scoreboard_authority": True, "sop_authority": True}
+    )
+    report = {
+        "schema_version": "scheduler-v1",
+        "candidate_commit": "abc123",
+        "policy_version": "release-v1",
+        "checks": checks,
+        "summary": {"stages": []},
+    }
+    assert validate_evidence_report("scheduler_authority", report).passed is True
+
+
+def test_reports_reject_oversized_payloads() -> None:
+    from nutmeg.reliability.contracts import validate_evidence_report
+
+    report = {
+        "schema_version": "observability-v1",
+        "candidate_commit": "abc123",
+        "policy_version": "release-v1",
+        "checks": {
+            "health_endpoint": True,
+            "route_metrics": True,
+            "outbox_lag_visible": True,
+        },
+        "summary": {"blob": "x" * 300_000},
+    }
+    with pytest.raises(ValueError, match="size"):
+        validate_evidence_report("observability", report)

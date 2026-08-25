@@ -37,9 +37,10 @@ def _request(
         observed_to=NOW,
         status="passed",
         report={
+            "schema_version": "deterministic_suite-v1",
             "candidate_commit": "abc123",
             "policy_version": "release-v1",
-            "checks": {"pytest": True, "ruff": True},
+            "checks": {"pytest_full": True, "ruff": True, "compileall": True},
         },
         source_refs=[ObjectRef("test_run", "run-1")],
         actor_id="system:reliability",
@@ -72,9 +73,10 @@ def test_request_requires_aware_bounds_finite_json_and_exact_kinds() -> None:
         replace(
             _request(),
             report={
+                "schema_version": "deterministic_suite-v1",
                 "candidate_commit": "abc123",
                 "policy_version": "release-v1",
-                "checks": {"pytest": False},
+                "checks": {"pytest_full": False, "ruff": True, "compileall": True},
             },
         )
     with pytest.raises(ValueError, match="all checks are true"):
@@ -149,9 +151,10 @@ def test_request_snapshots_inputs_and_rejects_post_validation_mutation(
 ) -> None:
     kernel = _kernel(tmp_path)
     report = {
+        "schema_version": "deterministic_suite-v1",
         "candidate_commit": "abc123",
         "policy_version": "release-v1",
-        "checks": {"pytest": True},
+        "checks": {"pytest_full": True, "ruff": True, "compileall": True},
     }
     refs = [ObjectRef("test_run", "snapshot-run")]
     request = replace(
@@ -160,7 +163,7 @@ def test_request_snapshots_inputs_and_rejects_post_validation_mutation(
         source_refs=refs,
         idempotency_key="m6:evidence:snapshot-input",
     )
-    report["checks"]["pytest"] = False
+    report["checks"]["pytest_full"] = False
     refs.append(ObjectRef("test_run", "late-ref"))
 
     outcome = kernel.reliability_actions.record_evidence(request)
@@ -168,13 +171,17 @@ def test_request_snapshots_inputs_and_rejects_post_validation_mutation(
     with OntologyUnitOfWork(kernel.engine) as uow:
         evidence = uow.reliability.evidence(outcome.result_refs[0].object_id)
         assert evidence is not None
-        assert evidence.report["checks"] == {"pytest": True}
+        assert evidence.report["checks"] == {
+            "pytest_full": True,
+            "ruff": True,
+            "compileall": True,
+        }
         assert evidence.source_refs == [
             {"object_type": "test_run", "object_id": "snapshot-run"}
         ]
 
     mutated = _request(key="m6:evidence:mutated-after-validation")
-    mutated.report["checks"]["pytest"] = False
+    mutated.report["checks"]["pytest_full"] = False
     with pytest.raises(ValueError, match="changed after validation"):
         kernel.reliability_actions.record_evidence(mutated)
 
@@ -188,9 +195,10 @@ def test_action_detects_reused_key_with_different_content(tmp_path: Path) -> Non
             replace(
                 _request(),
                 report={
+                    "schema_version": "deterministic_suite-v1",
                     "candidate_commit": "def456",
                     "policy_version": "release-v1",
-                    "checks": {"pytest": True},
+                    "checks": {"pytest_full": True, "ruff": True, "compileall": True},
                 },
             )
         )

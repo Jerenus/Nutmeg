@@ -51,9 +51,10 @@ def test_reliability_status_and_record_are_explicit_and_canonical(
     report_file.write_text(
         json.dumps(
             {
+                "schema_version": "deterministic_suite-v1",
                 "candidate_commit": "abc123",
                 "policy_version": "release-v1",
-                "checks": {"pytest": True},
+                "checks": {"pytest_full": True, "ruff": True, "compileall": True},
             }
         ),
         encoding="utf-8",

@@ -4,6 +4,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from nutmeg.ontology.actions.models import canonical_json
+
 RELEASE_POLICY_VERSION = "release-v1"
 
 FAULT_SCENARIOS = (
@@ -222,16 +224,82 @@ def validate_soak_report(report: dict[str, object]) -> ValidationResult:
     return ValidationResult(not failures, tuple(failures))
 
 
-def validate_check_report(report: dict[str, object]) -> ValidationResult:
+# Every generic check-report kind names its schema version and the checks that
+# must actually have been run. A single self-declared boolean cannot turn a
+# release gate green (independent-critique I-2).
+CHECK_REPORT_SPECS: dict[str, tuple[str, frozenset[str]]] = {
+    "scheduler_authority": (
+        "scheduler-v1",
+        frozenset(
+            {
+                "am_configured",
+                "am_loaded",
+                "close_configured",
+                "close_loaded",
+                "settle_configured",
+                "settle_loaded",
+                "ontology_v2",
+                "scoreboard_authority",
+                "sop_authority",
+            }
+        ),
+    ),
+    "deterministic_suite": (
+        "deterministic_suite-v1",
+        frozenset({"pytest_full", "ruff", "compileall"}),
+    ),
+    "migration_replay": (
+        "migration_replay-v1",
+        frozenset({"migration_applied", "integrity_ok", "reconcile_zero_mismatch"}),
+    ),
+    "ai_safety": (
+        "ai_safety-v1",
+        frozenset({"citation_gate", "role_denial", "prompt_injection_fixtures"}),
+    ),
+    "browser_e2e": (
+        "browser_e2e-v1",
+        frozenset({"desktop_lifecycle", "mobile_lifecycle", "console_clean"}),
+    ),
+    "backup_restore": (
+        "backup_restore-v1",
+        frozenset({"backup_created", "restore_verified", "projection_rebuilt"}),
+    ),
+    "observability": (
+        "observability-v1",
+        frozenset({"health_endpoint", "route_metrics", "outbox_lag_visible"}),
+    ),
+}
+
+REPORT_MAX_CANONICAL_BYTES = 262_144
+
+
+def validate_check_report(
+    evidence_kind: str, report: dict[str, object]
+) -> ValidationResult:
     validate_json_value(report)
+    spec = CHECK_REPORT_SPECS.get(evidence_kind)
+    if spec is None:
+        raise ValueError(f"unknown check-report kind {evidence_kind!r}")
+    schema_version, required_checks = spec
+    required_keys = {"schema_version", "candidate_commit", "policy_version", "checks"}
+    _exact_keys(
+        {key: value for key, value in report.items() if key != "summary"},
+        required_keys,
+        f"{evidence_kind} report",
+    )
+    if report.get("schema_version") != schema_version:
+        raise ValueError(f"schema_version must be {schema_version}")
     _required_string(report, "candidate_commit")
     if report.get("policy_version") != RELEASE_POLICY_VERSION:
         raise ValueError(f"policy_version must be {RELEASE_POLICY_VERSION}")
     checks = _object(report.get("checks"), "checks")
-    if not checks:
-        raise ValueError("checks must contain at least one boolean")
     if any(not isinstance(value, bool) for value in checks.values()):
         raise ValueError("checks must contain only boolean values")
+    missing_checks = required_checks - set(checks)
+    if missing_checks:
+        raise ValueError(
+            f"checks missing required entries: {', '.join(sorted(missing_checks))}"
+        )
     failures = tuple(sorted(name for name, passed in checks.items() if not passed))
     return ValidationResult(not failures, failures)
 
@@ -246,5 +314,14 @@ VALIDATORS = {
 def validate_evidence_report(
     evidence_kind: str, report: dict[str, object]
 ) -> ValidationResult:
-    validator = VALIDATORS.get(evidence_kind, validate_check_report)
-    return validator(report)
+    validate_json_value(report)
+    canonical_size = len(canonical_json(report).encode("utf-8"))
+    if canonical_size > REPORT_MAX_CANONICAL_BYTES:
+        raise ValueError(
+            f"report exceeds the canonical size limit "
+            f"({canonical_size} > {REPORT_MAX_CANONICAL_BYTES} bytes)"
+        )
+    validator = VALIDATORS.get(evidence_kind)
+    if validator is not None:
+        return validator(report)
+    return validate_check_report(evidence_kind, report)
