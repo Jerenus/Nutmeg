@@ -7,8 +7,10 @@ development channel.
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan:
-`docs/superpowers/plans/2026-07-21-ontology-kernel-v2-package-1.md`
+shell commands, and other important information, read the current design:
+`docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md`
+(M1-M6 merged to main 2026-08-25; per-milestone evidence under
+`docs/superpowers/evidence/`).
 <!-- SPECKIT END -->
 
 <!-- RESEARCH INDEX START -->

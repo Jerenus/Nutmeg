@@ -4,6 +4,14 @@
 > flag ON in .env → shadow am clean on both lanes). Step 5 (schedules) pending user grading
 > per the L3 roadmap. Original preamble below.
 
+>**Status 2026-08-25: Intelligence OS M1-M6 merged to main** (merge `1a3eadf`; full suite
+> green under the production flag). Step 5 (schedules) remains the only user gate in this
+> runbook. ⚠️ The production kernel is still schema 9 — the first v2 command run after this
+> merge auto-migrates it 9→14 (rehearsed on a byte-identical production copy: migrations
+> 10-14 applied, integrity `ok`, backup/restore drill passed). Release governance itself is
+> tracked by `docs/superpowers/evidence/m6/README.md` and stays BLOCKED pending real 14-day
+> two-lane soak and a judge-only ReleaseApproval.
+
 > This runbook documents the single irreversible go-live
 > sequence. Every step below is manual and gated on explicit user approval after the
 > reconciliation evidence is reviewed. Nothing in the codebase runs this automatically.

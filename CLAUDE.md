@@ -32,7 +32,7 @@ its authority order and supersession rules; do not rely on chat memory as the
 knowledge source.
 <!-- RESEARCH INDEX END -->
 
-- 工程背景与技术栈：读当前计划 `docs/superpowers/plans/2026-07-21-ontology-kernel-v2-package-1.md`。
+- 工程背景与技术栈：读 `docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md`（M1-M6 已于 2026-08-25 并入 main；各里程碑证据在 `docs/superpowers/evidence/`）。
 - 决策本体设计：`docs/superpowers/specs/2026-07-06-decision-ontology-design.md`；运营序列 `docs/decision-shadow-run-runbook.md`。
 
 ## 历史警戒
