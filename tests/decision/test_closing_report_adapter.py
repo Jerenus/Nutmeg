@@ -94,3 +94,12 @@ def test_report_v2_no_dispatch_writes_but_never_pushes(tmp_path: Path) -> None:
     assert (output_dir / "daily" / DATE / f"decision-report-v2-{DATE}.md").exists()
     assert notifier.calls == []            # dispatch off -> publish never called
     assert "推送" not in msg
+
+
+def test_report_v2_finance_is_scoped_to_report_date(tmp_path: Path) -> None:
+    kernel, _match_id, output_dir = _kernel(tmp_path)
+    _report_v2(kernel, "2026-07-20", output_dir, "close", dispatch=False, dry_run=True)
+    report = (output_dir / "daily" / "2026-07-20" /
+              "decision-report-v2-2026-07-20.md").read_text(encoding="utf-8")
+    assert "当日票 0" in report
+    assert "当日注金 ¥0" in report

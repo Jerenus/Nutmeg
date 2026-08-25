@@ -329,7 +329,10 @@ def run_decision_express_v2(legs_file, output_dir, *, kernel=None, made_at=None)
 def _render_report_markdown(kernel, run_date: str, stage: str) -> str:
     import json as _json
 
+    from sqlalchemy import func, select
+
     from nutmeg.analytics.integrity_action import compute_integrity_action_rows
+    from nutmeg.ontology.repository import schema_finance as sf
 
     status = kernel.status()
     cards = {
@@ -338,16 +341,35 @@ def _render_report_markdown(kernel, run_date: str, stage: str) -> str:
     }
     action = cards.get("action_finance", {})
     integrity = cards.get("evidence_integrity", {})
+    day_prefix = f"{run_date}%"
+    with kernel.engine.connect() as connection:
+        day_ticket_count = connection.execute(
+            select(func.count()).select_from(sf.tickets).where(
+                sf.tickets.c.approved_at.like(day_prefix)
+            )
+        ).scalar_one()
+        day_settlement_count = connection.execute(
+            select(func.count()).select_from(sf.ticket_settlements).where(
+                sf.ticket_settlements.c.settled_at.like(day_prefix)
+            )
+        ).scalar_one()
+        day_transactions = dict(
+            connection.execute(
+                select(sf.cash_transactions.c.kind, func.sum(sf.cash_transactions.c.amount))
+                .where(sf.cash_transactions.c.occurred_at.like(day_prefix))
+                .group_by(sf.cash_transactions.c.kind)
+            ).all()
+        )
+    day_stake = abs(float(day_transactions.get("stake", 0.0)))
+    day_payout = float(day_transactions.get("payout", 0.0))
     return "\n".join(
         [
             f"# 决策日报 v2 — {run_date} [{stage}]",
             "",
             f"- 场次 {status.match_count} | 判读(forecast) {status.forecast_count}",
-            f"- 票 {int(action.get('ticket_count', 0))} | "
-            f"结算 {int(action.get('settlement_count', 0))}",
-            f"- 注金 ¥{action.get('stake_total', 0):.0f} | "
-            f"回款 ¥{action.get('payout_total', 0):.0f}"
-            f" | 账户净额 ¥{action.get('ledger_balance', 0):.0f}",
+            f"- 当日票 {day_ticket_count} | 当日结算 {day_settlement_count}",
+            f"- 当日注金 ¥{day_stake:.0f} | 当日回款 ¥{day_payout:.0f}"
+            f" | 累计账户净额 ¥{action.get('ledger_balance', 0):.0f}",
             f"- 覆盖 outcome {integrity.get('outcome_completeness', 0):.0%}"
             f" / closing {integrity.get('closing_coverage', 0):.0%}",
             f"- 校准 scorecards {status.scorecard_count} | factor_estimates "
