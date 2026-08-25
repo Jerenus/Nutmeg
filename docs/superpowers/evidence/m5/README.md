@@ -1,7 +1,7 @@
 # M5 Verification Evidence
 
-Verified at: 2026-08-24T11:30:07Z  
-Tested commit: `694ba63` (`fix(product): close M5 authority review findings`)  
+Verified at: 2026-08-24T11:30:07Z
+Tested commit: `694ba63` (`fix(product): close M5 authority review findings`)
 Scope: M5 settlement learning, calibration, ontology browser, and isolated scoreboard authority lifecycle
 
 ## Result
@@ -51,7 +51,7 @@ closed by `694ba63`:
 
 ## Safe Replay
 
-Replay root: `/tmp/nutmeg-m5-replay.cHJZfv` (temporary, non-production)  
+Replay root: `/tmp/nutmeg-m5-replay.cHJZfv` (temporary, non-production)
 Business date: `2026-08-23`
 
 The historical snapshot-safe two-stage replay was used instead of `decision-am` so no
