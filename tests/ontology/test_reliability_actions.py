@@ -216,3 +216,47 @@ def test_handler_failure_rolls_back_evidence_and_audits_failure(
         assert record.status is ActionStatus.FAILED
     with OntologyUnitOfWork(kernel.engine) as uow:
         assert uow.reliability.count_evidence() == 0
+
+
+def test_failed_attempt_does_not_poison_idempotency_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kernel = _kernel(tmp_path)
+    real_insert = ReliabilityRepository.insert_evidence
+    calls = {"n": 0}
+
+    def fail_once(repository, row) -> None:
+        if calls["n"] == 0:
+            calls["n"] += 1
+            raise RuntimeError("transient evidence failure")
+        return real_insert(repository, row)
+
+    monkeypatch.setattr(ReliabilityRepository, "insert_evidence", fail_once)
+    with pytest.raises(RuntimeError, match="transient evidence failure"):
+        kernel.reliability_actions.record_evidence(_request())
+
+    retried = kernel.reliability_actions.record_evidence(_request())
+    assert retried.status is ActionStatus.COMMITTED
+
+    from sqlalchemy import select
+
+    from nutmeg.ontology.repository import schema
+
+    with kernel.engine.connect() as connection:
+        current = ActionRepository(connection).get_by_idempotency_key(
+            "m6:evidence:one"
+        )
+        assert current is not None
+        assert current.status is ActionStatus.COMMITTED
+        rows = connection.execute(
+            select(
+                schema.actions.c.idempotency_key, schema.actions.c.status
+            ).where(schema.actions.c.action_type == "record_reliability_evidence")
+        ).all()
+    failed_rows = [row for row in rows if row.status == "failed"]
+    assert len(failed_rows) == 1                      # audit row survives …
+    assert failed_rows[0].idempotency_key.startswith(
+        "m6:evidence:one#failed-"
+    )                                                 # … under a released key
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.reliability.count_evidence() == 1

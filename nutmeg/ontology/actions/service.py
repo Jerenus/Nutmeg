@@ -60,7 +60,14 @@ class ActionService:
                     f'idempotency key {command.idempotency_key} was reused '
                     f'with a different request'
                 )
-            return ActionRepository.to_outcome(existing)
+            if existing.status is not ActionStatus.FAILED:
+                return ActionRepository.to_outcome(existing)
+            # A FAILED attempt must not satisfy a retry as if it were a result:
+            # keep the audit row under a derived key and execute afresh.
+            with self._unit_of_work_factory() as uow:
+                uow.actions.release_failed_idempotency_key(
+                    command.idempotency_key, existing.action_id
+                )
 
         try:
             with self._unit_of_work_factory() as uow:
