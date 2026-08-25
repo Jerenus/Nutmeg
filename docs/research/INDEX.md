@@ -49,7 +49,7 @@
 | 比赛 / 窗口 | 状态 | 档案 | 主要用途 | 限制 |
 |---|---|---|---|---|
 | 巴列卡诺 vs 阿拉维斯，2026-08-21 | `historical` | [巴列卡诺 vs 阿拉维斯跨渠道深研](2026-08-20-rayo-alaves-cross-channel-deep-read.md) | 跨渠道继承、赛地异常与无方向性旗的证据样本 | 比赛窗口已结束；当前事实以 settlement/store 为准 |
-| 贝蒂斯 vs 皇家社会、敦刻尔克 vs 蒙彼利埃、登博思 vs 埃因FC，2026-08-22 | `time-bounded` | [三场优先比赛深研](2026-08-20-three-priority-fixtures-deep-read.md) | 三场统一状态比较、五玩法初判、证据触发器 | 开赛前必须刷新伤停、正式首发和市场；赛后转为 `historical` |
+|  贝蒂斯 vs 皇家社会、敦刻尔克 vs 蒙彼利埃、登博思 vs 埃因FC，2026-08-22（含 2026-08-21 纠错说明） | `time-bounded` | [三场优先比赛深研](2026-08-20-three-priority-fixtures-deep-read.md) | 三场统一状态比较、五玩法初判、证据触发器 | 开赛前必须刷新伤停、正式首发和市场；赛后转为 `historical` |
 
 ## Historical Research
 
