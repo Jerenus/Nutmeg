@@ -6,6 +6,7 @@ from nutmeg.decision.zucai_night import (
     night_results,
     render_report,
     result_code,
+    run_night_calibrate,
     ticket_partial_status,
 )
 
@@ -112,3 +113,34 @@ def test_render_report_lines():
     assert "AET" in text                        # 加时场标注口径来源
     assert "R9: 存活 | 已中 3,5 | 未决 7" in text
     assert "场8: af-map 无映射" in text
+
+
+def test_run_night_calibrate_end_to_end(tmp_path, monkeypatch):
+    monkeypatch.setenv("NUTMEG_API_FOOTBALL_BASE_URL", "https://af.example")
+    monkeypatch.setenv("NUTMEG_API_FOOTBALL_KEY", "k")
+    (tmp_path / "26111-issue.json").write_text(json.dumps({"issue_id": "26111", "matches": [
+        {"match_no": 3, "home_team": "雅典", "away_team": "索斯基"},
+        {"match_no": 5, "home_team": "采列", "away_team": "布拉迪"}]}), "utf-8")
+    (tmp_path / "26111-af-map.json").write_text(json.dumps(
+        {"issue": "26111", "fixtures": {"3": 1234501, "5": 1234503}}), "utf-8")
+    (tmp_path / "26111-final-tickets.json").write_text(json.dumps({"issue": "26111", "tickets": [
+        {"id": "R9", "kind": "任九", "faces": {"3": "31", "5": "310"}}]}), "utf-8")
+
+    report = run_night_calibrate("26111", "2026-08-26", tmp_path,
+                                 fetcher=lambda url, headers: _af_payload())
+    assert "R9: 存活" in report
+    snap = json.loads((tmp_path / "26111-night-2026-08-26-af.json").read_text("utf-8"))
+    assert snap["results"]["3"]["code"] == "3"
+    assert snap["source"].startswith("API-Football")
+
+
+def test_run_night_calibrate_no_tickets_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("NUTMEG_API_FOOTBALL_BASE_URL", "https://af.example")
+    monkeypatch.setenv("NUTMEG_API_FOOTBALL_KEY", "k")
+    (tmp_path / "26111-issue.json").write_text(json.dumps({"issue_id": "26111", "matches": [
+        {"match_no": 3, "home_team": "雅典", "away_team": "索斯基"}]}), "utf-8")
+    (tmp_path / "26111-af-map.json").write_text(json.dumps(
+        {"issue": "26111", "fixtures": {"3": 1234501}}), "utf-8")
+    report = run_night_calibrate("26111", "2026-08-26", tmp_path,
+                                 fetcher=lambda url, headers: _af_payload())
+    assert "场3" in report            # 无票文件仍出彩果，不报错

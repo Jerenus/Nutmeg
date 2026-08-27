@@ -122,3 +122,29 @@ def render_report(issue: str, date: str, results: dict[str, dict],
                      f" | 未决 {','.join(st['undecided']) or '-'}")
     lines.extend(skipped)
     return "\n".join(lines)
+
+
+def run_night_calibrate(issue: str, date: str, zucai_dir, *, fetcher=None) -> str:
+    """一次夜间校准：抓取→解析→存活→快照→报告。只读 zucai 文件+写快照，不碰 rx/scoreboard。"""
+    from datetime import datetime, timezone
+
+    zucai_dir = Path(zucai_dir)
+    issue_doc = json.loads((zucai_dir / f"{issue}-issue.json").read_text("utf-8"))
+    af_map = load_af_map(zucai_dir, issue)
+    fixtures = fetch_af_day(date, fetcher=fetcher)
+    results, skipped = night_results(issue_doc["matches"], af_map, fixtures)
+
+    tickets_path = zucai_dir / f"{issue}-final-tickets.json"
+    tickets = (json.loads(tickets_path.read_text("utf-8"))["tickets"]
+               if tickets_path.exists() else [])
+
+    snap_path = zucai_dir / f"{issue}-night-{date}-af.json"
+    snap_path.write_text(json.dumps({
+        "issue": issue,
+        "source": f"API-Football fixtures?date={date} (score.fulltime 90' 口径)",
+        "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "results": results,
+        "skipped": skipped,
+    }, ensure_ascii=False, indent=1), "utf-8")
+
+    return render_report(issue, date, results, skipped, tickets)

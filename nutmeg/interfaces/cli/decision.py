@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import nutmeg.interfaces.cli as _cli
+from nutmeg.decision.zucai_night import run_night_calibrate
 
 # 含嵌套 Path() 构造的 Option 提到模块级单例(避 B008,仿 jczq.py 的
 # JCZQ_OUTPUT_DIR_OPTION 惯例);行为与内联默认完全一致。
@@ -640,3 +641,15 @@ def zucai_ledger(
             "tickets": tickets, "code": code, "note": note}))
         return
     _cli.typer.echo(ledger_summary(zucai_dir, issue=issue))
+
+
+@_cli.app.command("zucai-night-calibrate")
+def zucai_night_calibrate(
+    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26111"),
+    date: str = _cli.typer.Option(
+        ..., "--date",
+        help="欧洲比赛日 YYYY-MM-DD(API-Football date 口径,北京凌晨场取前一天)"),
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+):
+    """夜间结果校准:抓当日完赛→90'彩果→票面存活报告(不写 rx/scoreboard)。"""
+    _cli.typer.echo(run_night_calibrate(issue, date, zucai_dir))
