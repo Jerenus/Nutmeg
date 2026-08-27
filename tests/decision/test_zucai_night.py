@@ -4,6 +4,7 @@ from nutmeg.decision.zucai_night import (
     fetch_af_day,
     load_af_map,
     night_results,
+    render_report,
     result_code,
     ticket_partial_status,
 )
@@ -98,3 +99,16 @@ def test_ticket_partial_status_alive_and_dead():
 def test_ticket_partial_status_all_alive():
     st = ticket_partial_status({"3": "31", "12": "31"}, {"3": "3", "12": "3"})
     assert st["alive"] is True and st["dead"] == [] and st["undecided"] == []
+
+
+def test_render_report_lines():
+    results = {"3": {"code": "3", "ft": "4-0", "home": "AEK Athens FC",
+                     "away": "Levski Sofia", "status": "FT"},
+               "5": {"code": "1", "ft": "1-1", "home": "Celje",
+                     "away": "Slovan Bratislava", "status": "AET"}}
+    tickets = [{"id": "R9", "faces": {"3": "31", "5": "310", "7": "3"}}]
+    text = render_report("26111", "2026-08-26", results, ["场8: af-map 无映射"], tickets)
+    assert "场3 AEK Athens FC vs Levski Sofia: 4-0(90') → 3" in text
+    assert "AET" in text                        # 加时场标注口径来源
+    assert "R9: 存活 | 已中 3,5 | 未决 7" in text
+    assert "场8: af-map 无映射" in text

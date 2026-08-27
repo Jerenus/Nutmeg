@@ -105,3 +105,20 @@ def ticket_partial_status(faces: dict, codes: dict[str, str]) -> dict:
                    if no in codes and codes[no] not in set(f)), key=int)
     undecided = sorted((no for no in faces if no not in codes), key=int)
     return {"alive": not dead, "hit": hit, "dead": dead, "undecided": undecided}
+
+
+def render_report(issue: str, date: str, results: dict[str, dict],
+                  skipped: list[str], tickets: list[dict]) -> str:
+    lines = [f"== {issue} 夜间校准 {date} (API-Football, 90' 口径) =="]
+    for no in sorted(results, key=int):
+        r = results[no]
+        tag = f" [{r['status']}→取90']" if r["status"] != "FT" else ""
+        lines.append(f"场{no} {r['home']} vs {r['away']}: {r['ft']}(90') → {r['code']}{tag}")
+    codes = {no: r["code"] for no, r in results.items()}
+    for t in tickets:
+        st = ticket_partial_status(t["faces"], codes)
+        state = "存活" if st["alive"] else f"已死(断腿 {','.join(st['dead'])})"
+        lines.append(f"{t['id']}: {state} | 已中 {','.join(st['hit']) or '-'}"
+                     f" | 未决 {','.join(st['undecided']) or '-'}")
+    lines.extend(skipped)
+    return "\n".join(lines)
