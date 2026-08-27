@@ -566,9 +566,12 @@ class ProductActionGateway:
                 )
             )
         if request.action_type == 'register_prediction':
+            match_id = _required_str(payload, 'match_id')
             return self._kernel.workflow.register_prediction(
                 RegisterPredictionRequest(
-                    match_id=_required_str(payload, 'match_id'),
+                    match_id=match_id,
+                    subject_type='match',
+                    subject_id=match_id,
                     claim=_required_str(payload, 'claim'),
                     falsifier=_required_str(payload, 'falsifier'),
                     **common,

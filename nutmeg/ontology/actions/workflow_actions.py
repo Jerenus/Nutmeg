@@ -66,7 +66,9 @@ class RecordFlagInstanceRequest:
 
 @dataclass(frozen=True, slots=True)
 class RegisterPredictionRequest:
-    match_id: str
+    match_id: str | None
+    subject_type: str
+    subject_id: str
     claim: str
     falsifier: str
     actor_id: str
@@ -76,6 +78,37 @@ class RegisterPredictionRequest:
 
     def __post_init__(self) -> None:
         _require_aware(self.requested_at)
+        if self.subject_type not in ('match', 'issue'):
+            raise ValueError('subject_type must be match or issue')
+        if self.subject_type == 'match' and self.match_id != self.subject_id:
+            raise ValueError('match-scoped prediction requires subject_id == match_id')
+        if self.subject_type == 'issue' and self.match_id is not None:
+            raise ValueError('issue-scoped prediction must not carry match_id')
+
+
+_GRADE_OUTCOME_STATUS = {
+    'hit': PredictionStatus.CONFIRMED,
+    'miss': PredictionStatus.REFUTED,
+    'na': PredictionStatus.VOID,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class GradePredictionRequest:
+    prediction_id: str
+    outcome: str
+    reason: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_aware(self.requested_at)
+        if self.outcome not in ('hit', 'miss', 'na'):
+            raise ValueError('outcome must be hit, miss, or na')
+        if not self.reason.strip():
+            raise ValueError('grade reason is required')
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +248,8 @@ class WorkflowActions:
             request,
             {
                 'match_id': request.match_id,
+                'subject_type': request.subject_type,
+                'subject_id': request.subject_id,
                 'claim': request.claim,
                 'falsifier': request.falsifier,
             },
@@ -226,8 +261,8 @@ class WorkflowActions:
                 PredictionRow(
                     prediction_id=prediction_id,
                     match_id=request.match_id,
-                    subject_type='match',
-                    subject_id=request.match_id,
+                    subject_type=request.subject_type,
+                    subject_id=request.subject_id,
                     claim=request.claim,
                     falsifier=request.falsifier,
                     status=PredictionStatus.PENDING,
@@ -237,6 +272,36 @@ class WorkflowActions:
                 )
             )
             return (ObjectRef('prediction', prediction_id),)
+
+        return self._action_service.execute(command, handler)
+
+    def grade_prediction(self, request: GradePredictionRequest) -> ActionOutcome:
+        command = self._command(
+            'grade_prediction',
+            request,
+            {
+                'prediction_id': request.prediction_id,
+                'outcome': request.outcome,
+                'reason': request.reason,
+            },
+        )
+
+        def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            prediction = uow.workflow.get_prediction(request.prediction_id)
+            if (
+                prediction.status is not PredictionStatus.PENDING
+                or prediction.outcome is not None
+            ):
+                raise ValueError(
+                    f'prediction {request.prediction_id} is already graded'
+                )
+            uow.workflow.update_prediction_outcome(
+                request.prediction_id,
+                request.outcome,
+                _GRADE_OUTCOME_STATUS[request.outcome].value,
+                self._at(request),
+            )
+            return (ObjectRef('prediction', request.prediction_id),)
 
         return self._action_service.execute(command, handler)
 

@@ -205,6 +205,15 @@ class WorkflowRepository:
             settled_at=row['settled_at'],
         )
 
+    def update_prediction_outcome(
+        self, prediction_id: str, outcome: str, status: str, settled_at: str
+    ) -> None:
+        self._connection.execute(
+            update(sw.predictions)
+            .where(sw.predictions.c.prediction_id == prediction_id)
+            .values(status=status, outcome=outcome, settled_at=settled_at)
+        )
+
     def iter_predictions(self) -> list[PredictionRow]:
         rows = (
             self._connection.execute(
