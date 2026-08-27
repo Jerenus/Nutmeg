@@ -90,3 +90,18 @@ def night_results(matches: list[dict], af_map: dict[str, int],
             "home": fx["home"], "away": fx["away"], "status": fx["status"],
         }
     return results, skipped
+
+
+def ticket_partial_status(faces: dict, codes: dict[str, str]) -> dict:
+    """期中口径的复式票状态。faces={场次: "31"...}, codes={场次: 彩果}。
+
+    与 zucai_official.ticket_hits 的区别：hits 是终局全量口径，
+    这里区分 已中/已死/未决 三态，供夜间报告与在场监控使用。
+    """
+    faces = {str(k): str(v) for k, v in faces.items()}
+    hit = sorted((no for no, f in faces.items()
+                  if no in codes and codes[no] in set(f)), key=int)
+    dead = sorted((no for no, f in faces.items()
+                   if no in codes and codes[no] not in set(f)), key=int)
+    undecided = sorted((no for no in faces if no not in codes), key=int)
+    return {"alive": not dead, "hit": hit, "dead": dead, "undecided": undecided}

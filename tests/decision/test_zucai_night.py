@@ -5,6 +5,7 @@ from nutmeg.decision.zucai_night import (
     load_af_map,
     night_results,
     result_code,
+    ticket_partial_status,
 )
 
 
@@ -82,3 +83,18 @@ def test_night_results_codes_and_skips():
     assert "7" not in results                    # 未完赛
     assert any("场7" in s and "NS" in s for s in skipped)
     assert any("场8" in s and "无映射" in s for s in skipped)
+
+
+def test_ticket_partial_status_alive_and_dead():
+    faces = {"3": "31", "4": "31", "5": "310", "7": "3"}
+    codes = {"3": "3", "4": "0", "5": "1"}      # 场7 未赛
+    st = ticket_partial_status(faces, codes)
+    assert st["dead"] == ["4"]                   # 双31 漏客胜
+    assert st["hit"] == ["3", "5"]
+    assert st["undecided"] == ["7"]
+    assert st["alive"] is False
+
+
+def test_ticket_partial_status_all_alive():
+    st = ticket_partial_status({"3": "31", "12": "31"}, {"3": "3", "12": "3"})
+    assert st["alive"] is True and st["dead"] == [] and st["undecided"] == []
