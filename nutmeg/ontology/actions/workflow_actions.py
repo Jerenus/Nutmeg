@@ -226,6 +226,8 @@ class WorkflowActions:
                 PredictionRow(
                     prediction_id=prediction_id,
                     match_id=request.match_id,
+                    subject_type='match',
+                    subject_id=request.match_id,
                     claim=request.claim,
                     falsifier=request.falsifier,
                     status=PredictionStatus.PENDING,

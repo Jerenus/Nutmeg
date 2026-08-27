@@ -54,7 +54,9 @@ class FlagInstanceRow:
 @dataclass(frozen=True, slots=True)
 class PredictionRow:
     prediction_id: str
-    match_id: str
+    match_id: str | None
+    subject_type: str
+    subject_id: str
     claim: str
     falsifier: str
     status: PredictionStatus

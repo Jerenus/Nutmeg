@@ -177,6 +177,8 @@ class WorkflowRepository:
             insert(sw.predictions).values(
                 prediction_id=row.prediction_id,
                 match_id=row.match_id,
+                subject_type=row.subject_type,
+                subject_id=row.subject_id,
                 claim=row.claim,
                 falsifier=row.falsifier,
                 status=row.status.value,
@@ -193,6 +195,8 @@ class WorkflowRepository:
         return PredictionRow(
             prediction_id=row['prediction_id'],
             match_id=row['match_id'],
+            subject_type=row['subject_type'],
+            subject_id=row['subject_id'],
             claim=row['claim'],
             falsifier=row['falsifier'],
             status=PredictionStatus(row['status']),
@@ -216,6 +220,8 @@ class WorkflowRepository:
             PredictionRow(
                 prediction_id=row['prediction_id'],
                 match_id=row['match_id'],
+                subject_type=row['subject_type'],
+                subject_id=row['subject_id'],
                 claim=row['claim'],
                 falsifier=row['falsifier'],
                 status=PredictionStatus(row['status']),
