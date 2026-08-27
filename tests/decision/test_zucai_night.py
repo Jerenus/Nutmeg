@@ -1,6 +1,11 @@
 import json
 
-from nutmeg.decision.zucai_night import fetch_af_day, load_af_map, result_code
+from nutmeg.decision.zucai_night import (
+    fetch_af_day,
+    load_af_map,
+    night_results,
+    result_code,
+)
 
 
 def test_result_code_home_win():
@@ -51,3 +56,29 @@ def test_fetch_af_day_uses_fulltime_and_status(monkeypatch):
     assert fixtures[1234503] == {"status": "AET", "ft_home": 1, "ft_away": 1,
                                  "home": "Celje", "away": "Slovan Bratislava"}
     assert fixtures[1234501]["ft_home"] == 4
+
+
+_MATCHES = [
+    {"match_no": 3, "home_team": "雅典", "away_team": "索斯基"},
+    {"match_no": 5, "home_team": "采列", "away_team": "布拉迪"},
+    {"match_no": 7, "home_team": "萨茨堡", "away_team": "米亚尔"},
+    {"match_no": 8, "home_team": "比尔森", "away_team": "红星"},
+]
+_FIXTURES = {
+    1234501: {"status": "FT", "ft_home": 4, "ft_away": 0,
+              "home": "AEK Athens FC", "away": "Levski Sofia"},
+    1234503: {"status": "AET", "ft_home": 1, "ft_away": 1,
+              "home": "Celje", "away": "Slovan Bratislava"},
+    1234507: {"status": "NS", "ft_home": None, "ft_away": None,
+              "home": "Salzburg", "away": "Brann"},
+}
+
+
+def test_night_results_codes_and_skips():
+    af_map = {"3": 1234501, "5": 1234503, "7": 1234507}
+    results, skipped = night_results(_MATCHES, af_map, _FIXTURES)
+    assert results["3"]["code"] == "3" and results["3"]["ft"] == "4-0"
+    assert results["5"]["code"] == "1"          # AET 取 90' 1-1 = 平
+    assert "7" not in results                    # 未完赛
+    assert any("场7" in s and "NS" in s for s in skipped)
+    assert any("场8" in s and "无映射" in s for s in skipped)

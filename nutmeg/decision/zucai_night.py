@@ -57,3 +57,36 @@ def fetch_af_day(date: str, *, fetcher=None) -> dict[int, dict]:
             "away": f["teams"]["away"]["name"],
         }
     return out
+
+
+def night_results(matches: list[dict], af_map: dict[str, int],
+                  fixtures: dict[int, dict]) -> tuple[dict[str, dict], list[str]]:
+    """逐场解析当夜彩果。返回 (results, skipped)。
+
+    results = {match_no: {code, ft, home, away, status}}；
+    skipped 逐条给出机器可读理由——缺失不静默变确定性。
+    """
+    results: dict[str, dict] = {}
+    skipped: list[str] = []
+    for m in matches:
+        no = str(m["match_no"])
+        fid = af_map.get(no)
+        if fid is None:
+            skipped.append(f"场{no}: af-map 无映射")
+            continue
+        fx = fixtures.get(fid)
+        if fx is None:
+            skipped.append(f"场{no}: fixture {fid} 该日未返回(未开赛或非本夜)")
+            continue
+        if fx["status"] not in _FINISHED:
+            skipped.append(f"场{no}: 状态 {fx['status']} 未完赛")
+            continue
+        if fx["ft_home"] is None or fx["ft_away"] is None:
+            skipped.append(f"场{no}: fulltime 缺失")
+            continue
+        results[no] = {
+            "code": result_code(fx["ft_home"], fx["ft_away"]),
+            "ft": f"{fx['ft_home']}-{fx['ft_away']}",
+            "home": fx["home"], "away": fx["away"], "status": fx["status"],
+        }
+    return results, skipped
