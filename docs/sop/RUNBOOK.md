@@ -27,7 +27,8 @@
 | B6 | **审计门** | 同 A5；historical: 自查比人工多抓 2 条 |
 | B7 | rx 预注册 | `<issue>-rx.json`：终版票+待裁刀+可证伪预测（含奖金模型分支检验） |
 | B8 | 18:30 位移复核 | prep 链自动 diff；牌照线（体彩vs国际反向≥3pp→撤单选）、分歧场归属 |
-| B9 | **部署门**+出票+入账 | B5 资金使用率＋帽内最优结构中位奖金倍数过门槛（低于→空仓或丢场式减注，见 RULEBOOK 部署门；只许减不许加）；用户确认后 ledger 追加（口径注明）；**没入账=没打** |
+| B9 | **部署门**+出票+入账 | B5 资金使用率＋帽内最优结构中位奖金倍数过门槛（低于→空仓或丢场式减注，见 RULEBOOK 部署门；只许减不许加）；用户确认后 ledger 追加（口径注明）；**没入账=没打**；同时落 `<issue>-final-tickets.json` 结构化票面与 `<issue>-af-map.json` 身份映射（faces 不再只住散文） |
+| B9b | 晨间夜账校准（多夜期次每夜一次） | `uv run nutmeg zucai-night-calibrate --issue <issue> --date <欧洲比赛日>`（90' 口径，AET/PEN 取 fulltime）；报告供主循环写 rx night 块；af-map 缺映射=显式跳过，禁按队名猜测补 |
 | B10 | 开奖结算 | okooo 先行 + 官方 gameNo=90 终核（含任九奖金→奖金模型记分）；ledger settle + rx outcome + scoreboard 更新 + retro memory |
 
 ## 收尾检查表（每期）

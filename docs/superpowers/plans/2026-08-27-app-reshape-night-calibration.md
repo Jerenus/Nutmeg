@@ -636,9 +636,11 @@ Expected: 场3/4/5/6/12 彩果与 rx night2 块一致（3/0/1/3/3），SFC192 �
 
 - [ ] **Step 3: Commit**
 
+（执行时修订：`.nutmeg-data/` 整目录被 .gitignore 排除——运行时数据不进库，与其他期档一致。两个回填文件保持 untracked，只提交 RUNBOOK。）
+
 ```bash
-git add docs/sop/RUNBOOK.md .nutmeg-data/zucai/26111-af-map.json .nutmeg-data/zucai/26111-final-tickets.json
-git commit -m "docs(sop): RUNBOOK B9b 夜间校准挂接 + 26111 输入回填"
+git add docs/sop/RUNBOOK.md docs/superpowers/plans/2026-08-27-app-reshape-night-calibration.md
+git commit -m "docs(sop): RUNBOOK B9/B9b 夜间校准挂接"
 ```
 
 ---
