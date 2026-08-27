@@ -7,6 +7,9 @@
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 _FINISHED = {"FT", "AET", "PEN"}
 
 
@@ -17,3 +20,12 @@ def result_code(ft_home: int, ft_away: int) -> str:
     if ft_home == ft_away:
         return "1"
     return "0"
+
+
+def load_af_map(zucai_dir, issue: str) -> dict[str, int]:
+    """{issue}-af-map.json → {match_no(str): fixture_id(int)}。缺文件=空映射（全场显式跳过）。"""
+    path = Path(zucai_dir) / f"{issue}-af-map.json"
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text("utf-8"))
+    return {str(k): int(v) for k, v in (data.get("fixtures") or {}).items()}
