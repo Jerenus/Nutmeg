@@ -1,0 +1,39 @@
+"""rx JSON → workflow 请求的确定性映射。判断不入脚本:只做字段搬运与已决/未决分拣。"""
+from __future__ import annotations
+
+_RESOLVED_MARKS = ("已裁", "行权", "已复核", "终版", "已定")
+
+
+def map_rx_predictions(rx: dict, issue: str) -> list[dict]:
+    out = []
+    for p in rx.get("predictions") or []:
+        out.append({
+            "match_id": None,
+            "subject_type": "issue",
+            "subject_id": issue,
+            "claim": p["claim"],
+            "falsifier": p["falsifier"],
+            "idempotency_key": f"rx:{issue}:{p['id']}",
+        })
+    return out
+
+
+def map_rx_adjudications(rx: dict, issue: str) -> tuple[list[dict], list[str]]:
+    out, skipped = [], []
+    for a in rx.get("pending_adjudications") or []:
+        status = a.get("status", "")
+        if not any(m in status for m in _RESOLVED_MARKS):
+            skipped.append(f"{a['id']}: 未决({status})")
+            continue
+        reason = "｜".join(x for x in (a.get("q"), a.get("reason")) if x)
+        rejected = a.get("evidence_rejected")
+        out.append({
+            "subject_type": "issue",
+            "subject_id": issue,
+            "decision": "override" if "行权" in status else "approve",
+            "reason": reason,
+            "evidence_rejected": [{"type": "note", "id": rejected}] if rejected else [],
+            "alternative": {"options": a["options"]} if a.get("options") else {},
+            "idempotency_key": f"rx:{issue}:{a['id']}",
+        })
+    return out, skipped
