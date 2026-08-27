@@ -336,17 +336,17 @@ class GradePredictionRequest:
 
 ```python
     def update_prediction_outcome(
-        self, prediction_id: str, outcome: str, reason: str, settled_at: str
+        self, prediction_id: str, outcome: str, status: str, settled_at: str
     ) -> None:
         sw = schema_workflow
         self._connection.execute(
             update(sw.predictions)
             .where(sw.predictions.c.prediction_id == prediction_id)
-            .values(status='settled', outcome=outcome, settled_at=settled_at)
+            .values(status=status, outcome=outcome, settled_at=settled_at)
         )
 ```
 
-（`update` 从 sqlalchemy 导入；status 值 'settled' 若 PredictionStatus 枚举拼法不同，以枚举为准。reason 落在 Action 审计记录里而非行上——typed Action 本身带 payload。既有 `test_workflow_actions.py` 中 register 用法补 `subject_type='match', subject_id=<同 match_id>`。）
+（**Task 1 已确认**：PredictionStatus 枚举为 PENDING/CONFIRMED/REFUTED/VOID。grade 的状态映射：outcome hit→CONFIRMED、miss→REFUTED、na→VOID，outcome 列存字面 hit/miss/na；handler 校验现状态为 PENDING 且 outcome 为 None 才许判定。`update` 从 sqlalchemy 导入。reason 落在 Action 审计记录里而非行上。既有 `test_workflow_actions.py` 中 register 用法补 `subject_type='match', subject_id=<同 match_id>`。）
 
 - [ ] **Step 4: 跑测试确认通过**
 

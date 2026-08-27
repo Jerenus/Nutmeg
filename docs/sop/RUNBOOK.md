@@ -25,10 +25,10 @@
 | B5 | **首版构票（一步到位，2026-08-24 用户定）** | 在处方之上**直接完成砍腿后的第一版实票**，不得只交全包清单等用户逐轮压缩：①单选＝牌照/实质单核验（净线优先）；②3进2＝排面活性验尸（先例载体存亡+钱流方向+热度×资讯偏差）后砍第三面；③2进1＝保险性价比表（兑现概率×每元效率）定裸/保；④附**资金使用率报告**（票价 vs 难度、每笔保险买的是哪个面）＋2-3 个备选档位 |
 | B5b | **风险预警与裁决分工** | 翻车场/异常项（改场/夹心/源分歧/终核异动）逐条列出，标注「我已裁决：理由」或「需你裁决：两选项」。**默认我裁**；以下必须上交：翻车场裸单、终核≥2pp异动打在裸单上、用户历史点名过的死法形状 |
 | B6 | **审计门** | 同 A5；historical: 自查比人工多抓 2 条 |
-| B7 | rx 预注册 | `<issue>-rx.json`：终版票+待裁刀+可证伪预测（含奖金模型分支检验） |
+| B7 | rx 预注册 | `<issue>-rx.json`：终版票+待裁刀+可证伪预测（含奖金模型分支检验）；落盘后 `uv run nutmeg workflow register-rx --rx-file <issue>-rx.json --issue <issue>`（幂等，裁决后重跑补录已决 ADJ） |
 | B8 | 18:30 位移复核 | prep 链自动 diff；牌照线（体彩vs国际反向≥3pp→撤单选）、分歧场归属 |
 | B9 | 出票+入账 | 用户确认后 ledger 追加（口径注明）；**没入账=没打** |
-| B10 | 开奖结算 | okooo 先行 + 官方 gameNo=90 终核（含任九奖金→奖金模型记分）；ledger settle + rx outcome + scoreboard 更新 + retro memory |
+| B10 | 开奖结算 | okooo 先行 + 官方 gameNo=90 终核（含任九奖金→奖金模型记分）；ledger settle + rx outcome + scoreboard 更新 + retro memory；预测判定 `workflow grade-prediction` 逐条记账（判断在主循环，动作只记账）；**影子期双轨**：scoreboard.json 每处手改镜像一条 `nutmeg scoreboard observe`（JSON 仍权威，无镜像=违 M5），期末 `nutmeg scoreboard shadow` 对账入证据 |
 
 ## 收尾检查表（每期）
 
