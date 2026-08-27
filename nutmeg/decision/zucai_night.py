@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 _FINISHED = {"FT", "AET", "PEN"}
@@ -29,3 +30,30 @@ def load_af_map(zucai_dir, issue: str) -> dict[str, int]:
         return {}
     data = json.loads(path.read_text("utf-8"))
     return {str(k): int(v) for k, v in (data.get("fixtures") or {}).items()}
+
+
+def fetch_af_day(date: str, *, fetcher=None) -> dict[int, dict]:
+    """API-Football /fixtures?date= → {fixture_id: {status, ft_home, ft_away, home, away}}。
+
+    ft_* 取 score.fulltime（90' 口径）；加时/点球比分被刻意丢弃。
+    """
+    if fetcher is None:
+        def fetcher(url, headers):
+            import httpx
+            resp = httpx.get(url, headers=headers, timeout=25.0)
+            resp.raise_for_status()
+            return resp.json()
+    base = os.environ["NUTMEG_API_FOOTBALL_BASE_URL"].rstrip("/")
+    headers = {"x-apisports-key": os.environ["NUTMEG_API_FOOTBALL_KEY"]}
+    payload = fetcher(f"{base}/fixtures?date={date}", headers)
+    out: dict[int, dict] = {}
+    for f in payload.get("response") or []:
+        ft = (f.get("score") or {}).get("fulltime") or {}
+        out[int(f["fixture"]["id"])] = {
+            "status": f["fixture"]["status"]["short"],
+            "ft_home": ft.get("home"),
+            "ft_away": ft.get("away"),
+            "home": f["teams"]["home"]["name"],
+            "away": f["teams"]["away"]["name"],
+        }
+    return out
