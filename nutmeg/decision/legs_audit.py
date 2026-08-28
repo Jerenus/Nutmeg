@@ -30,6 +30,9 @@ DIRECTIONAL_LEXICON = frozenset({
 
 FACE_KEYS = {"3": "home", "1": "draw", "0": "away"}
 FACE_ZH = {"3": "主胜", "1": "平", "0": "客胜"}
+STRONG_ADJUSTMENT_EVIDENCE_TIERS = frozenset({"official", "confirmed_structural"})
+_C8_THRESHOLD = 0.05
+_PROBABILITY_TOLERANCE = 1e-9
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,8 @@ class Leg:
     faces: str
     fair: dict            # {"home":..,"draw":..,"away":..}
     confidence: int
+    prior: dict | None = None  # 偏移前市场基线；历史票缺失时不追溯触发 C8
+    adjustment_evidence_tiers: tuple = ()
     directional_flags: tuple = ()      # 指向具体一面的旗；元素形如 ("self_made_tail", "1")
     nondirectional_flags: tuple = ()   # 只指向"不可测"的旗（确证结构事实级以上才计）
     anchor_integrity: str = "unknown"  # pass | fail | symmetric_damage | unknown
@@ -162,6 +167,26 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                     f"双证不齐 → 盖住该面或整场丢掉。",
                     "26105 场3 西布罗 / 26109 场10 塞维(2026-08-23 立规则,WARN 级)"))
 
+        # C8 —— 净偏移达到 5pp 时，必须由作者显式声明官宣或确证结构级证据锚。
+        # 只检查结构化等级，不从 URL、quote 或自然语言猜权威性。
+        if lg.prior is not None:
+            offset = sum(
+                abs(lg.fair.get(key, 0.0) - lg.prior.get(key, 0.0))
+                for key in FACE_KEYS.values()
+            ) / 2
+            has_strong_anchor = bool(
+                STRONG_ADJUSTMENT_EVIDENCE_TIERS
+                & set(lg.adjustment_evidence_tiers)
+            )
+            if offset + _PROBABILITY_TOLERANCE >= _C8_THRESHOLD and not has_strong_anchor:
+                tiers = "/".join(lg.adjustment_evidence_tiers) or "未登记"
+                out.append(Finding(
+                    "WARN", "pseudo_precision_anchor", n,
+                    f"场{n} {lg.name}：belief 相对 prior 净偏移 {offset * 100:.1f}pp，"
+                    f"但证据等级仅为 `{tiers}`，没有 official 或 confirmed_structural 锚。"
+                    f"l 条——纯推断/战意不得堆叠成伪精确偏移；由主循环复核证据等级或归零。",
+                    "2026-08-26:用模糊代替精确(C8 WARN)"))
+
     # ── 全票级：模态组合错配 ────────────────────────────────────────────
     singles = [lg for lg in legs if len(set(lg.faces)) == 1]
     if singles:
@@ -206,6 +231,8 @@ def legs_from_dict(payload: dict) -> list[Leg]:
         out.append(Leg(
             match_no=int(k), name=v.get("name", ""), faces=str(v["faces"]),
             fair=v["fair"], confidence=int(v.get("confidence", 0)),
+            prior=v.get("prior"),
+            adjustment_evidence_tiers=tuple(v.get("adjustment_evidence_tiers", [])),
             directional_flags=tuple(tuple(x) for x in v.get("directional_flags", [])),
             nondirectional_flags=tuple(v.get("nondirectional_flags", [])),
             anchor_integrity=v.get("anchor_integrity", "unknown"),

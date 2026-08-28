@@ -193,3 +193,71 @@ def test_legs_from_dict_parses_precedents():
     legs = legs_from_dict(payload)
     assert legs[0].precedents == (("0", "2023-04-27 圣马梅斯 0:1", "alive"),)
     assert "excluded_face_live_precedent" in [f.code for f in audit_legs(legs)]
+
+
+# ── C8: 伪精确锚定（2026-08-26 立规则） ──
+
+def test_pseudo_precision_warns_for_six_pp_inference_only_shift():
+    leg = _leg(
+        prior={"home": 0.60, "draw": 0.25, "away": 0.15},
+        fair={"home": 0.66, "draw": 0.20, "away": 0.14},
+        adjustment_evidence_tiers=("inference", "motivation"),
+    )
+
+    finding = next(
+        item for item in audit_legs([leg]) if item.code == "pseudo_precision_anchor"
+    )
+
+    assert finding.level == "WARN"
+    assert "6.0pp" in finding.message
+    assert not has_blocking([finding])
+
+
+def test_pseudo_precision_accepts_official_or_confirmed_structural_anchor():
+    common = {
+        "prior": {"home": 0.60, "draw": 0.25, "away": 0.15},
+        "fair": {"home": 0.66, "draw": 0.20, "away": 0.14},
+    }
+
+    for tier in ("official", "confirmed_structural"):
+        leg = _leg(**common, adjustment_evidence_tiers=("inference", tier))
+        assert "pseudo_precision_anchor" not in _codes([leg])
+
+
+def test_pseudo_precision_boundary_is_exactly_five_pp():
+    prior = {"home": 0.60, "draw": 0.25, "away": 0.15}
+    below = _leg(
+        prior=prior,
+        fair={"home": 0.6499, "draw": 0.2001, "away": 0.15},
+        adjustment_evidence_tiers=("inference",),
+    )
+    boundary = _leg(
+        prior=prior,
+        fair={"home": 0.65, "draw": 0.20, "away": 0.15},
+        adjustment_evidence_tiers=("inference",),
+    )
+
+    assert "pseudo_precision_anchor" not in _codes([below])
+    assert "pseudo_precision_anchor" in _codes([boundary])
+
+
+def test_pseudo_precision_ignores_legacy_leg_without_authored_prior():
+    leg = _leg(adjustment_evidence_tiers=("inference", "motivation"))
+    assert "pseudo_precision_anchor" not in _codes([leg])
+
+
+def test_legs_from_dict_parses_c8_inputs():
+    payload = {"legs": {"1": {
+        "name": "甲-乙",
+        "faces": "3",
+        "fair": {"home": 0.66, "draw": 0.20, "away": 0.14},
+        "prior": {"home": 0.60, "draw": 0.25, "away": 0.15},
+        "confidence": 4,
+        "adjustment_evidence_tiers": ["inference", "motivation"],
+    }}}
+
+    leg = legs_from_dict(payload)[0]
+
+    assert leg.prior == {"home": 0.60, "draw": 0.25, "away": 0.15}
+    assert leg.adjustment_evidence_tiers == ("inference", "motivation")
+    assert "pseudo_precision_anchor" in _codes([leg])
