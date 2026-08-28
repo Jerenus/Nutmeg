@@ -10,7 +10,7 @@
 | A2 | 判读 | 深度请求→每场并行派 `jczq-match-analyst`（七阶段）；否则主循环直判。每场落到判决表四级之一 |
 | A3 | 落 Read | `decision-read --reads-file …`（结构化 JSON；因子必须在词典内；league/team 因子带 scope_key） |
 | A4 | 构票 | 写 legs.json（含 flags/anchor_integrity/**precedents**） |
-| A5 | **审计门** | `uv run nutmeg decision-audit-legs --legs-file …` — ERROR=退出码1不许出票；WARN 逐条显式裁决入账 |
+| A5 | **审计门** | `uv run nutmeg decision-audit-legs --legs-file …` — 默认/AI/无人值守遇 ERROR=退出码1不许出票；仅 Jun 显式 `--user-override` 且登记 reason/rule ID、evidence_rejected Adjudication 入账成功后可继续；WARN 逐条显式裁决入账 |
 | A6 | 出票 | `decision-close --run-date … --dispatch-telegram --no-dry-run`；空 legs=空票合法 |
 | A7 | 次日结算 | `decision-settle --run-date <昨天> … --no-dry-run` → 更新 `scoreboard.json` → 复盘写 rx outcome |
 

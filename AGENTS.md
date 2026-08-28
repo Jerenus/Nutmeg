@@ -61,7 +61,7 @@ project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg
 3. `docs/sop/RULEBOOK.md` — 规则注册表：判决表 k/l/m/o/p/q/r/s 各条全文、状态机、战绩指针、audit 代码化映射（C0-C7）。
 
 **记分牌单一事实源** = `.nutmeg-data/scoreboard.json`（复盘只改那里，散文引用不复制）。
-**出票硬门** = `uv run nutmeg decision-audit-legs --legs-file <票面>`，ERROR 即退出码 1，不听论证。
+**出票硬门** = `uv run nutmeg decision-audit-legs --legs-file <票面>`，默认/AI/无人值守遇 ERROR 即退出码 1，不听论证；仅 Jun 显式 `--user-override` 且 evidence_rejected Adjudication 入账成功后可继续。
 
 ### 触发短语
 
