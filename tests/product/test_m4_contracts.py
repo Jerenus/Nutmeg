@@ -95,6 +95,19 @@ def test_m4_mutation_contracts_are_strict_and_server_owned() -> None:
         )
 
 
+def test_ticket_leg_contract_preserves_c8_adjustment_inputs() -> None:
+    payload = _leg().model_dump(mode="python")
+    payload["prior"] = {"home": 0.55, "draw": 0.30, "away": 0.15}
+    payload["adjustment_evidence_tiers"] = ["confirmed_structural", "inference"]
+    command = TicketLegCommand(**payload)
+
+    assert command.prior == {"home": 0.55, "draw": 0.30, "away": 0.15}
+    assert command.adjustment_evidence_tiers == [
+        "confirmed_structural",
+        "inference",
+    ]
+
+
 def test_confirmation_contract_rejects_invalid_base64_and_sub_fen_amounts() -> None:
     values: dict[str, object] = {
         "confirmation_id": "confirmation-1",

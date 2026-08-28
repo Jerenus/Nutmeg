@@ -270,6 +270,8 @@ def _ticket_leg(leg: TicketLegCommand) -> TicketLegDraft:
         bucket=leg.bucket,
         fair=dict(leg.fair),
         confidence=leg.confidence,
+        prior=dict(leg.prior) if leg.prior is not None else None,
+        adjustment_evidence_tiers=tuple(leg.adjustment_evidence_tiers),
         directional_flags=tuple(leg.directional_flags),
         nondirectional_flags=tuple(leg.nondirectional_flags),
         anchor_integrity=leg.anchor_integrity,
