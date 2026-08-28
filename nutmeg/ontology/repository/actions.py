@@ -9,6 +9,7 @@ defaulting.
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from sqlalchemy import Connection, RowMapping, func, insert, select, update
@@ -95,6 +96,30 @@ class ActionRepository:
             query = query.where(
                 schema.actions.c.idempotency_key.startswith(idempotency_prefix)
             )
+        return self._connection.execute(query).scalar_one()
+
+    def count_committed_snapshot_matches(
+        self,
+        match_ids: Collection[str],
+        *,
+        provider: str,
+        snapshot_kind: str,
+    ) -> int:
+        if not match_ids:
+            return 0
+        match_id = func.json_extract(schema.actions.c.payload_json, "$.match_id")
+        query = (
+            select(func.count(func.distinct(match_id)))
+            .select_from(schema.actions)
+            .where(
+                schema.actions.c.action_type == "build_market_snapshot",
+                schema.actions.c.status == ActionStatus.COMMITTED.value,
+                match_id.in_(tuple(match_ids)),
+                func.json_extract(schema.actions.c.payload_json, "$.provider") == provider,
+                func.json_extract(schema.actions.c.payload_json, "$.snapshot_kind")
+                == snapshot_kind,
+            )
+        )
         return self._connection.execute(query).scalar_one()
 
     def insert_accepted(self, command: ActionCommand) -> None:

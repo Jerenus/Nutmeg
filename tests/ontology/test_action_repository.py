@@ -16,19 +16,26 @@ def _kernel(tmp_path: Path):
     return kernel
 
 
-def _command(action_type: str, key: str) -> ActionCommand:
+def _command(
+    action_type: str, key: str, payload: dict[str, object] | None = None,
+) -> ActionCommand:
     return ActionCommand.create(
         action_type=action_type,
         actor_id="system:test",
         actor_role=ActorRole.DETERMINISTIC_SYSTEM,
         idempotency_key=key,
-        payload={},
+        payload=payload or {},
         requested_at=AT,
     )
 
 
-def _commit(repository: ActionRepository, action_type: str, key: str) -> None:
-    command = _command(action_type, key)
+def _commit(
+    repository: ActionRepository,
+    action_type: str,
+    key: str,
+    payload: dict[str, object] | None = None,
+) -> None:
+    command = _command(action_type, key, payload)
     repository.insert_accepted(command)
     repository.mark_committed(command.action_id, (), AT.isoformat())
 
@@ -62,3 +69,37 @@ def test_count_filters_action_truth_by_type_status_and_prefix(tmp_path: Path) ->
             )
             == 1
         )
+
+
+def test_count_snapshot_matches_uses_distinct_action_payload_truth(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        _commit(
+            uow.actions,
+            "build_market_snapshot",
+            "zucai:snapshot:26110:1:x",
+            {"match_id": "match-a", "provider": "zucai", "snapshot_kind": "read_time"},
+        )
+        _commit(
+            uow.actions,
+            "build_market_snapshot",
+            "zucai:snapshot:26111:1:x",
+            {"match_id": "match-a", "provider": "zucai", "snapshot_kind": "read_time"},
+        )
+        _commit(
+            uow.actions,
+            "build_market_snapshot",
+            "zucai:snapshot:26111:2:x",
+            {"match_id": "match-b", "provider": "zucai", "snapshot_kind": "read_time"},
+        )
+        _commit(
+            uow.actions,
+            "build_market_snapshot",
+            "snap:intl:read_time:date:1:had",
+            {"match_id": "match-b", "provider": "intl", "snapshot_kind": "read_time"},
+        )
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.actions.count_committed_snapshot_matches(
+            {"match-a", "match-b"}, provider="zucai", snapshot_kind="read_time"
+        ) == 2

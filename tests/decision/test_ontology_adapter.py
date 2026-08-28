@@ -114,7 +114,97 @@ def test_am_v2_with_issue_ingests_zucai(tmp_path: Path) -> None:
                                 issue="26110", zucai_dir=zucai_dir)
     assert result.succeeded
     assert "decision-sense-zucai-v2 26110: 入库 1 场" in str(result)
+    assert (
+        "kernel对账 Snapshot: actions落库 1 / prep报告 1 / service本次 1"
+        in str(result)
+    )
     assert kernel.status().match_count == 2   # jczq 1 + zucai 1
+
+
+def test_am_v2_zucai_rerun_reconciles_cumulative_action_truth(tmp_path: Path) -> None:
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    output_dir = tmp_path / "jczq"
+    _write_snapshots(output_dir)
+    zucai_dir = tmp_path / "zucai"
+    _write_zucai(zucai_dir)
+
+    first = run_decision_am_v2(
+        DATE, output_dir, kernel=kernel, fetch=False,
+        issue="26110", zucai_dir=zucai_dir,
+    )
+    second = run_decision_am_v2(
+        DATE, output_dir, kernel=kernel, fetch=False,
+        issue="26110", zucai_dir=zucai_dir,
+    )
+
+    assert first.succeeded and second.succeeded
+    assert (
+        "kernel对账 Snapshot: actions落库 1 / prep报告 1 / service本次 0"
+        in str(second)
+    )
+
+
+def test_am_v2_cross_issue_anchor_reuse_reconciles_original_action_truth(
+    tmp_path: Path,
+) -> None:
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    output_dir = tmp_path / "jczq"
+    _write_snapshots(output_dir)
+    zucai_dir = tmp_path / "zucai"
+    _write_zucai(zucai_dir)
+    first = run_decision_am_v2(
+        DATE, output_dir, kernel=kernel, fetch=False,
+        issue="26110", zucai_dir=zucai_dir,
+    )
+    (zucai_dir / "26111-issue.json").write_text(
+        json.dumps({**ZUCAI_ISSUE, "issue": "26111"}), encoding="utf-8"
+    )
+    (zucai_dir / "26111-odds.json").write_text(json.dumps(ZUCAI_ODDS), encoding="utf-8")
+
+    second = run_decision_am_v2(
+        DATE, output_dir, kernel=kernel, fetch=False,
+        issue="26111", zucai_dir=zucai_dir,
+    )
+
+    assert first.succeeded and second.succeeded
+    assert (
+        "kernel对账 Snapshot: actions落库 1 / prep报告 1 / service本次 0"
+        in str(second)
+    )
+
+
+def test_am_v2_rejected_snapshot_fails_kernel_count_assertion(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from nutmeg.ontology.actions.market_actions import MarketActions
+    from nutmeg.ontology.actions.models import ActionOutcome, ActionStatus
+
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    output_dir = tmp_path / "jczq"
+    _write_snapshots(output_dir)
+    zucai_dir = tmp_path / "zucai"
+    _write_zucai(zucai_dir)
+
+    def rejected(_self, _request) -> ActionOutcome:
+        return ActionOutcome(
+            action_id="ACT-denied",
+            action_type="build_market_snapshot",
+            status=ActionStatus.REJECTED,
+            error_code="permission_denied",
+        )
+
+    monkeypatch.setattr(MarketActions, "build_snapshot", rejected)
+    result = run_decision_am_v2(
+        DATE, output_dir, kernel=kernel, fetch=False,
+        issue="26110", zucai_dir=zucai_dir,
+    )
+
+    assert not result.succeeded
+    assert "kernel_snapshot_count_mismatch" in str(result)
+    assert "actions=0 prep=1 service=0" in str(result)
 
 
 def test_am_v2_issue_missing_snapshot_degrades_visibly(tmp_path: Path) -> None:
