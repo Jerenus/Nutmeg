@@ -302,6 +302,37 @@ class TicketWorkbenchRepository:
         )
         return None if row is None else TicketShadowRow(**dict(row))
 
+    def due_shadow_candidates(self, as_of: str) -> list[tuple[str, str]]:
+        rows = self._connection.execute(
+            select(
+                st.audited_ticket_artifacts.c.ticket_artifact_id,
+                func.max(st.ticket_confirmation_challenges.c.confirmation_id),
+            )
+            .join(
+                st.ticket_confirmation_challenges,
+                st.ticket_confirmation_challenges.c.ticket_artifact_id
+                == st.audited_ticket_artifacts.c.ticket_artifact_id,
+            )
+            .outerjoin(
+                st.ticket_placements,
+                st.ticket_placements.c.ticket_artifact_id
+                == st.audited_ticket_artifacts.c.ticket_artifact_id,
+            )
+            .outerjoin(
+                st.ticket_shadow_records,
+                st.ticket_shadow_records.c.ticket_artifact_id
+                == st.audited_ticket_artifacts.c.ticket_artifact_id,
+            )
+            .where(
+                st.audited_ticket_artifacts.c.deadline_at <= as_of,
+                st.ticket_placements.c.ticket_placement_id.is_(None),
+                st.ticket_shadow_records.c.ticket_shadow_id.is_(None),
+            )
+            .group_by(st.audited_ticket_artifacts.c.ticket_artifact_id)
+            .order_by(st.audited_ticket_artifacts.c.ticket_artifact_id)
+        ).all()
+        return [(str(row[0]), str(row[1])) for row in rows]
+
     def count_batches(self) -> int:
         return int(
             self._connection.execute(
