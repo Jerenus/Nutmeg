@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import Connection, Engine, delete, insert, inspect, select
+from sqlalchemy import Connection, Engine, delete, func, insert, inspect, select
 
 from nutmeg.ontology.errors import MigrationDriftError
 from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
@@ -630,6 +630,27 @@ def _apply_prediction_subjects(connection: Connection) -> None:
         )
 
 
+def _apply_ticket_shadows(connection: Connection) -> None:
+    schema_tickets.ticket_shadow_records.create(connection, checkfirst=True)
+    granted = connection.execute(
+        select(func.count())
+        .select_from(schema.action_permissions)
+        .where(
+            schema.action_permissions.c.policy_version_id == "governance-v1",
+            schema.action_permissions.c.action_type == "mark_ticket_shadow",
+            schema.action_permissions.c.actor_role == "deterministic_system",
+        )
+    ).scalar_one()
+    if granted == 0:
+        connection.execute(
+            insert(schema.action_permissions).values(
+                policy_version_id="governance-v1",
+                action_type="mark_ticket_shadow",
+                actor_role="deterministic_system",
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -731,6 +752,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name='prediction_subjects',
         fingerprint='predictions+subject_type+subject_id+match_nullable+grade_permission',
         apply=_apply_prediction_subjects,
+    ),
+    Migration(
+        version=16,
+        name="ticket_shadows",
+        fingerprint="ticket_shadow_records+deterministic_system_permission",
+        apply=_apply_ticket_shadows,
     ),
 )
 

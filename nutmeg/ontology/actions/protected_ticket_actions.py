@@ -26,6 +26,7 @@ from nutmeg.ontology.repository.tickets import (
     ConfirmationChallengeRow,
     TicketBatchRevisionRow,
     TicketPlacementRow,
+    TicketShadowRow,
 )
 from nutmeg.ontology.tickets.composition import (
     canonical_bytes,
@@ -125,6 +126,22 @@ class ConfirmTicketPlacementRequest:
     def __post_init__(self) -> None:
         _require_aware(self.requested_at, "requested_at")
         _amount_fen(self.amount)
+
+
+@dataclass(frozen=True, slots=True)
+class MarkTicketShadowRequest:
+    ticket_artifact_id: str
+    confirmation_id: str
+    reason: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_aware(self.requested_at, "requested_at")
+        if self.reason != "deadline_unconfirmed":
+            raise ValueError("ticket shadow reason must be deadline_unconfirmed")
 
 
 class ProtectedTicketActions:
@@ -554,6 +571,56 @@ class ProtectedTicketActions:
                 )
             )
             return tuple(refs)
+
+        return self._action_service.execute(command, handler)
+
+    def mark_ticket_shadow(self, request: MarkTicketShadowRequest) -> ActionOutcome:
+        command = ActionCommand.create(
+            action_type="mark_ticket_shadow",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload={
+                "ticket_artifact_id": request.ticket_artifact_id,
+                "confirmation_id": request.confirmation_id,
+                "reason": request.reason,
+            },
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, action) -> tuple[ObjectRef, ...]:
+            artifact = uow.tickets.ticket_artifact(request.ticket_artifact_id)
+            if artifact is None:
+                raise ValueError(
+                    f"ticket artifact {request.ticket_artifact_id} does not exist"
+                )
+            confirmation = uow.tickets.confirmation(request.confirmation_id)
+            if (
+                confirmation is None
+                or confirmation.ticket_artifact_id != artifact.ticket_artifact_id
+            ):
+                raise ValueError("confirmation binding mismatch")
+            if uow.tickets.placement_for_artifact(request.ticket_artifact_id) is not None:
+                raise ValueError("ticket artifact is already placed")
+            deadline = _parse_aware(artifact.deadline_at, "deadline_at")
+            if deadline > request.requested_at:
+                raise ValueError("ticket deadline has not passed")
+            existing = uow.tickets.shadow_for_artifact(request.ticket_artifact_id)
+            if existing is not None:
+                return (ObjectRef("ticket_shadow", existing.ticket_shadow_id),)
+            shadow_id = f"tsh-{uuid4().hex}"
+            uow.tickets.insert_shadow(
+                TicketShadowRow(
+                    ticket_shadow_id=shadow_id,
+                    ticket_artifact_id=artifact.ticket_artifact_id,
+                    confirmation_id=confirmation.confirmation_id,
+                    reason=request.reason,
+                    deadline_at=artifact.deadline_at,
+                    marked_at=request.requested_at.astimezone(UTC).isoformat(),
+                    action_id=action.action_id,
+                )
+            )
+            return (ObjectRef("ticket_shadow", shadow_id),)
 
         return self._action_service.execute(command, handler)
 

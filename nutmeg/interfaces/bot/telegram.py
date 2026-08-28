@@ -31,6 +31,8 @@ class TelegramPollSummary:
     messages_denied: int
     messages_ignored: int
     next_offset: int | None
+    callbacks_handled: int = 0
+    shadows_marked: int = 0
 
 
 class TelegramBotClient:
@@ -56,13 +58,31 @@ class TelegramBotClient:
             raise RuntimeError("Telegram getUpdates result was not a list.")
         return result
 
-    def send_message(self, *, chat_id: int, text: str) -> dict[str, Any]:
+    def send_message(
+        self,
+        *,
+        chat_id: int,
+        text: str,
+        reply_markup: dict[str, object] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, object] = {"chat_id": chat_id, "text": text}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
         response = self._client.post(
             self._path("sendMessage"),
-            json={"chat_id": chat_id, "text": text},
+            json=payload,
         )
         data = _response_data(response, "sendMessage")
         return data
+
+    def answer_callback_query(
+        self, *, callback_query_id: str, text: str
+    ) -> dict[str, Any]:
+        response = self._client.post(
+            self._path("answerCallbackQuery"),
+            json={"callback_query_id": callback_query_id, "text": text},
+        )
+        return _response_data(response, "answerCallbackQuery")
 
     def send_document(
         self,
@@ -117,21 +137,76 @@ class TelegramBotRunner:
         client: TelegramBotClient,
         bot_adapter: BotAdapter,
         allowed_chat_ids: set[int],
+        confirmation_handler=None,
     ) -> None:
         self._client = client
         self._bot_adapter = bot_adapter
         self._allowed_chat_ids = allowed_chat_ids
+        self._confirmation_handler = confirmation_handler
 
     def poll_once(self, *, offset: int | None = None, timeout: int = 10) -> TelegramPollSummary:
         updates = self._client.get_updates(offset=offset, timeout=timeout)
         handled = 0
         denied = 0
         ignored = 0
+        callbacks_handled = 0
         next_offset = offset
         for update in updates:
             update_id = update.get("update_id")
             if isinstance(update_id, int):
                 next_offset = max(next_offset or 0, update_id + 1)
+            callback = update.get("callback_query")
+            if isinstance(callback, dict):
+                callback_id = callback.get("id")
+                data = callback.get("data")
+                callback_message = callback.get("message")
+                chat = (
+                    callback_message.get("chat")
+                    if isinstance(callback_message, dict)
+                    else None
+                )
+                chat_id = chat.get("id") if isinstance(chat, dict) else None
+                if (
+                    not isinstance(callback_id, str)
+                    or not isinstance(data, str)
+                    or not data.startswith("ntc:")
+                    or not isinstance(chat_id, int)
+                ):
+                    ignored += 1
+                    continue
+                if chat_id not in self._allowed_chat_ids:
+                    denied += 1
+                    self._client.answer_callback_query(
+                        callback_query_id=callback_id,
+                        text="Unauthorized owner callback.",
+                    )
+                    continue
+                if self._confirmation_handler is None:
+                    ignored += 1
+                    self._client.answer_callback_query(
+                        callback_query_id=callback_id,
+                        text="Ticket confirmation is unavailable.",
+                    )
+                    continue
+                try:
+                    answer = self._confirmation_handler.handle_callback(callback)
+                except ValueError as error:
+                    ignored += 1
+                    self._client.answer_callback_query(
+                        callback_query_id=callback_id,
+                        text=f"Confirmation failed: {error}",
+                    )
+                    continue
+                callbacks_handled += 1
+                self._client.answer_callback_query(
+                    callback_query_id=callback_id,
+                    text=str(answer),
+                )
+                self._client.send_message(
+                    chat_id=chat_id,
+                    text="Ticket placement confirmation recorded.",
+                )
+                continue
             message = update.get("message")
             if not isinstance(message, dict):
                 ignored += 1
@@ -152,12 +227,19 @@ class TelegramBotRunner:
             response = self._bot_adapter.handle_message(text)
             handled += 1
             self._client.send_message(chat_id=chat_id, text=response.text)
+        shadows_marked = (
+            int(self._confirmation_handler.expire_due())
+            if self._confirmation_handler is not None
+            else 0
+        )
         return TelegramPollSummary(
             updates_seen=len(updates),
             messages_handled=handled,
             messages_denied=denied,
             messages_ignored=ignored,
             next_offset=next_offset,
+            callbacks_handled=callbacks_handled,
+            shadows_marked=shadows_marked,
         )
 
 
@@ -188,6 +270,8 @@ class TelegramDaemonSummary:
     messages_ignored: int
     next_offset: int | None
     stop_reason: str
+    callbacks_handled: int = 0
+    shadows_marked: int = 0
 
 
 class TelegramPollingDaemon:
@@ -216,6 +300,8 @@ class TelegramPollingDaemon:
         messages_handled = 0
         messages_denied = 0
         messages_ignored = 0
+        callbacks_handled = 0
+        shadows_marked = 0
         next_offset = offset
         stop_reason = "max_polls" if max_polls == 0 else "running"
 
@@ -227,6 +313,8 @@ class TelegramPollingDaemon:
                 messages_handled += summary.messages_handled
                 messages_denied += summary.messages_denied
                 messages_ignored += summary.messages_ignored
+                callbacks_handled += summary.callbacks_handled
+                shadows_marked += summary.shadows_marked
                 next_offset = summary.next_offset
                 if next_offset is not None and self._offset_store is not None:
                     self._offset_store.write(next_offset)
@@ -246,4 +334,6 @@ class TelegramPollingDaemon:
             messages_ignored=messages_ignored,
             next_offset=next_offset,
             stop_reason=stop_reason,
+            callbacks_handled=callbacks_handled,
+            shadows_marked=shadows_marked,
         )

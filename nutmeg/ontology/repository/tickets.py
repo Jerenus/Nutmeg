@@ -76,6 +76,17 @@ class TicketPlacementRow:
     action_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class TicketShadowRow:
+    ticket_shadow_id: str
+    ticket_artifact_id: str
+    confirmation_id: str
+    reason: str
+    deadline_at: str
+    marked_at: str
+    action_id: str
+
+
 class TicketWorkbenchRepository:
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
@@ -218,6 +229,20 @@ class TicketWorkbenchRepository:
         )
         return None if row is None else ConfirmationChallengeRow(**dict(row))
 
+    def confirmation_by_nonce_hash(
+        self, nonce_hash: str
+    ) -> ConfirmationChallengeRow | None:
+        row = (
+            self._connection.execute(
+                select(st.ticket_confirmation_challenges).where(
+                    st.ticket_confirmation_challenges.c.nonce_hash == nonce_hash
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return None if row is None else ConfirmationChallengeRow(**dict(row))
+
     def consume_confirmation(
         self, confirmation_id: str, consumed_at: str, action_id: str
     ) -> None:
@@ -261,6 +286,52 @@ class TicketWorkbenchRepository:
             .first()
         )
         return None if row is None else TicketPlacementRow(**dict(row))
+
+    def insert_shadow(self, row: TicketShadowRow) -> None:
+        self._connection.execute(insert(st.ticket_shadow_records).values(**asdict(row)))
+
+    def shadow_for_artifact(self, artifact_id: str) -> TicketShadowRow | None:
+        row = (
+            self._connection.execute(
+                select(st.ticket_shadow_records).where(
+                    st.ticket_shadow_records.c.ticket_artifact_id == artifact_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return None if row is None else TicketShadowRow(**dict(row))
+
+    def due_shadow_candidates(self, as_of: str) -> list[tuple[str, str]]:
+        rows = self._connection.execute(
+            select(
+                st.audited_ticket_artifacts.c.ticket_artifact_id,
+                func.max(st.ticket_confirmation_challenges.c.confirmation_id),
+            )
+            .join(
+                st.ticket_confirmation_challenges,
+                st.ticket_confirmation_challenges.c.ticket_artifact_id
+                == st.audited_ticket_artifacts.c.ticket_artifact_id,
+            )
+            .outerjoin(
+                st.ticket_placements,
+                st.ticket_placements.c.ticket_artifact_id
+                == st.audited_ticket_artifacts.c.ticket_artifact_id,
+            )
+            .outerjoin(
+                st.ticket_shadow_records,
+                st.ticket_shadow_records.c.ticket_artifact_id
+                == st.audited_ticket_artifacts.c.ticket_artifact_id,
+            )
+            .where(
+                st.audited_ticket_artifacts.c.deadline_at <= as_of,
+                st.ticket_placements.c.ticket_placement_id.is_(None),
+                st.ticket_shadow_records.c.ticket_shadow_id.is_(None),
+            )
+            .group_by(st.audited_ticket_artifacts.c.ticket_artifact_id)
+            .order_by(st.audited_ticket_artifacts.c.ticket_artifact_id)
+        ).all()
+        return [(str(row[0]), str(row[1])) for row in rows]
 
     def count_batches(self) -> int:
         return int(

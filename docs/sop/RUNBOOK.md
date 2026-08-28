@@ -27,8 +27,8 @@
 | B6 | **审计门** | 同 A5；historical: 自查比人工多抓 2 条 |
 | B7 | rx 预注册 | `<issue>-rx.json`：终版票+待裁刀+可证伪预测（含奖金模型分支检验）；落盘后 `uv run nutmeg workflow register-rx --rx-file <issue>-rx.json --issue <issue>`（幂等，裁决后重跑补录已决 ADJ） |
 | B8 | 18:30 位移复核 | prep 链自动 diff；牌照线（体彩vs国际反向≥3pp→撤单选）、分歧场归属 |
-| B9 | **部署门**+出票+入账 | B5 资金使用率＋帽内最优结构中位奖金倍数过门槛（低于→空仓或丢场式减注，见 RULEBOOK 部署门；只许减不许加）；用户确认后 ledger 追加（口径注明）；**没入账=没打**；同时落 `<issue>-final-tickets.json` 结构化票面与 `<issue>-af-map.json` 身份映射（faces 不再只住散文） |
-| B9b | 晨间夜账校准（多夜期次每夜一次） | `uv run nutmeg zucai-night-calibrate --issue <issue> --date <欧洲比赛日>`（90' 口径，AET/PEN 取 fulltime）；报告供主循环写 rx night 块；af-map 缺映射=显式跳过，禁按队名猜测补 |
+| B9 | **部署门**+出票+入账 | B5 资金使用率＋帽内最优结构中位奖金倍数过门槛（低于→空仓或丢场式减注，见 RULEBOOK 部署门；只许减不许加）；审计/部署通过并产 approved artifact 后跑 `uv run nutmeg ticket-confirmation request --ticket-artifact-id <id> --data-dir .nutmeg-data --no-dry-run`，只有 Telegram owner 按钮可消费第二段确认；callback 原子写 Ticket/ledger，截止未确认自动记 shadow 且不入 ledger，故仍是**没入账=没打**；同时落 `<issue>-final-tickets.json` 结构化票面与 `<issue>-af-map.json` 身份映射（faces 不再只住散文） |
+| B9b | 晨间夜账校准（多夜期次每夜一次） | `uv run nutmeg zucai-night-calibrate --issue <issue> --date <欧洲比赛日>`（90' 口径，AET/PEN 取 fulltime）；需推送时显式加 `--dispatch-telegram --no-dry-run`；报告供主循环写 rx night 块；af-map 缺映射=显式跳过，禁按队名猜测补 |
 | B10 | 开奖结算 | okooo 先行 + 官方 gameNo=90 终核（含任九奖金→奖金模型记分）；ledger settle + rx outcome + scoreboard 更新 + retro memory；预测判定 `workflow grade-prediction` 逐条记账（判断在主循环，动作只记账）；**影子期双轨**：scoreboard.json 每处手改镜像一条 `nutmeg scoreboard observe`（JSON 仍权威，无镜像=违 M5），期末 `nutmeg scoreboard shadow` 对账入证据 |
 
 ## 收尾检查表（每期）
