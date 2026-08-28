@@ -23,6 +23,10 @@ _RESULT_SCORE = {"home": "1-0", "draw": "0-0", "away": "0-1"}
 _ACCOUNT = "acct-jczq"
 
 
+class KernelCountMismatch(RuntimeError):
+    """A workflow report disagrees with its persisted Action truth."""
+
+
 def _default_kernel():
     from nutmeg.config.settings import get_settings
     from nutmeg.ontology.wiring import build_ontology_kernel
@@ -97,30 +101,65 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
         market_actions=MarketActions(service_factory),
         snapshot_probe=_anchor_probe,
     )
+    rows = tuple(
+        ZucaiRow(
+            match_no=m.match_no,
+            home=m.home_team,
+            away=m.away_team,
+            competition=m.competition,
+            match_date=dates.get(m.match_no),
+            odds=odds.get(m.match_no),
+        )
+        for m in matches
+    )
     result = service.ingest(
         ZucaiIssueIngestRequest(
             issue=issue,
-            rows=tuple(
-                ZucaiRow(
-                    match_no=m.match_no,
-                    home=m.home_team,
-                    away=m.away_team,
-                    competition=m.competition,
-                    match_date=dates.get(m.match_no),
-                    odds=odds.get(m.match_no),
-                )
-                for m in matches
-            ),
+            rows=rows,
             actor_id="source:zucai",
             actor_role=ActorRole.CONNECTOR,
             requested_at=requested_at,
         )
     )
+    action_count = _committed_zucai_snapshot_actions(kernel, rows)
+    prep_count = len(rows)
+    if action_count != prep_count:
+        raise KernelCountMismatch(
+            "kernel_snapshot_count_mismatch "
+            f"issue={issue} actions={action_count} prep={prep_count} "
+            f"service={result.snapshots}"
+        )
     skipped_note = f" | 跳过 {len(result.skipped)}" if result.skipped else ""
     return (
         f"decision-sense-zucai-v2 {issue}: 入库 {result.matches} 场 Match + "
-        f"{result.snapshots} Snapshot（{result.teams} 队）{skipped_note}"
+        f"{result.snapshots} Snapshot（{result.teams} 队）{skipped_note} | "
+        f"kernel对账 Snapshot: actions落库 {action_count} / prep报告 {prep_count} / "
+        f"service本次 {result.snapshots}"
     )
+
+
+def _committed_zucai_snapshot_actions(kernel, rows) -> int:
+    from nutmeg.decision.identity import canonical_match_id
+    from nutmeg.ontology.identity.models import EntityType
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        match_ids = set()
+        for row in rows:
+            if not row.match_date:
+                continue
+            match_id = uow.identity.entity_by_external_id(
+                EntityType.MATCH,
+                provider="zucai-canonical",
+                external_id=canonical_match_id(row.home, row.away, row.match_date),
+            )
+            if match_id is not None:
+                match_ids.add(match_id)
+        return uow.actions.count_committed_snapshot_matches(
+            match_ids,
+            provider="zucai",
+            snapshot_kind="read_time",
+        )
 
 
 def run_decision_am_v2(
