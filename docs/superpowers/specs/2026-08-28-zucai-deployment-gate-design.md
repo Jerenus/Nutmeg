@@ -1,6 +1,6 @@
 # Zucai Deployment Gate Design
 
-Date: 2026-08-28  
+Date: 2026-08-28
 Status: Approved by the engineering handoff and operator continuation instruction
 
 ## Goal
@@ -72,4 +72,3 @@ compromise ticket.
 - face optimization (T6);
 - automatic reduction, empty-slate selection, or dispatch;
 - production data writes, scoreboard cutover, or Adjudication creation.
-

@@ -47,7 +47,7 @@ def test_count_filters_action_truth_by_type_status_and_prefix(tmp_path):
 
 - [x] **Step 2: 跑测试确认 RED**
 
-Run: `uv run pytest tests/ontology/test_action_repository.py -v`  
+Run: `uv run pytest tests/ontology/test_action_repository.py -v`
 Expected: FAIL，`ActionRepository.count` 不存在。
 
 - [x] **Step 3: 最小实现**
@@ -74,7 +74,7 @@ def count(
 
 - [x] **Step 4: 跑仓储测试确认 GREEN**
 
-Run: `uv run pytest tests/ontology/test_action_repository.py -v`  
+Run: `uv run pytest tests/ontology/test_action_repository.py -v`
 Expected: all tests pass。
 
 - [x] **Step 5: Commit**
@@ -137,7 +137,7 @@ def test_am_v2_rejected_snapshot_fails_kernel_count_assertion(tmp_path, monkeypa
 
 - [x] **Step 2: 跑指定测试确认 RED**
 
-Run: `uv run pytest tests/decision/test_ontology_adapter.py -v -k 'zucai or rejected_snapshot'`  
+Run: `uv run pytest tests/decision/test_ontology_adapter.py -v -k 'zucai or rejected_snapshot'`
 Expected: 正常/幂等测试因无对账输出 FAIL；rejected 测试因 result 仍 succeeded FAIL。
 
 - [x] **Step 3: 实现对账**
@@ -174,7 +174,7 @@ canonical match IDs 查询 Action payload 的 distinct truth 数。两者不等�
 
 - [x] **Step 4: 跑 adapter 测试确认 GREEN**
 
-Run: `uv run pytest tests/decision/test_ontology_adapter.py -v`  
+Run: `uv run pytest tests/decision/test_ontology_adapter.py -v`
 Expected: all tests pass；rejected step failed 且稳定错误可见。
 
 - [x] **Step 5: Commit**
@@ -191,13 +191,13 @@ git commit -m "feat(decision): reconcile zucai reports with action truth"
 
 - [x] **Step 1: cherry-pick schema 15 共享测试修复**
 
-Run: `git cherry-pick 5c68f09`  
+Run: `git cherry-pick 5c68f09`
 Expected: 当前分支获得 reliability 动态 schema 期望，避免无关全量失败。
 
 - [x] **Step 2: 静态检查与全量测试**
 
-Run: `uv run ruff check .`  
-Run: `uv run pytest -q`  
+Run: `uv run ruff check .`
+Run: `uv run pytest -q`
 Expected: 0 failed。
 
 - [x] **Step 3: 真实 26111 源复制到临时目录**

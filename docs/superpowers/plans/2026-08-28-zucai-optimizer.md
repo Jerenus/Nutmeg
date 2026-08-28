@@ -75,7 +75,7 @@ def test_invalid_input_is_rejected(mutation):
 
 - [x] **Step 2: 跑测试确认 RED**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`
 Expected: collection FAIL，`nutmeg.decision.zucai_optimizer` 不存在。
 
 - [x] **Step 3: 写最小实现**
@@ -108,7 +108,7 @@ def _version_stats(version, fair, price_per_note):
 
 - [x] **Step 4: 跑测试确认 GREEN**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`
 Expected: all tests pass。
 
 - [x] **Step 5: Commit**
@@ -145,7 +145,7 @@ def test_cap_ranking_and_baseline_deltas_are_stable():
 
 - [x] **Step 2: 跑指定测试确认 RED**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer.py::test_cap_ranking_and_baseline_deltas_are_stable -v`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer.py::test_cap_ranking_and_baseline_deltas_are_stable -v`
 Expected: FAIL，缺少 ranking/delta。
 
 - [x] **Step 3: 最小实现**
@@ -157,7 +157,7 @@ ranking 为空且 `best_within_cap_id` 为 `None`，不渲染空仓建议。
 
 - [x] **Step 4: 跑纯函数测试确认 GREEN**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`
 Expected: all tests pass。
 
 - [x] **Step 5: Commit**
@@ -200,7 +200,7 @@ def test_group_omits_common_dead_faces_for_non_common_legs():
 
 - [x] **Step 2: 跑指定测试确认 RED**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v -k group`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v -k group`
 Expected: FAIL，groups 尚未计算。
 
 - [x] **Step 3: 最小实现**
@@ -212,7 +212,7 @@ faces 并集覆盖的面。
 
 - [x] **Step 4: 跑纯函数测试确认 GREEN**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`
 Expected: all tests pass。
 
 - [x] **Step 5: Commit**
@@ -251,12 +251,12 @@ versions = [
 
 - [x] **Step 2: 跑测试；如失败只修计算实现，不改验收锚**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v -k 26111`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v -k 26111`
 Expected: PASS；若 RED，差异必须追溯到输入/公式后修实现。
 
 - [x] **Step 3: 跑整个纯函数文件**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer.py -v`
 Expected: all tests pass。
 
 - [x] **Step 4: Commit**
@@ -313,7 +313,7 @@ def test_zucai_optimize_bad_input_exits_two(tmp_path):
 
 - [x] **Step 2: 跑 CLI 测试确认 RED**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer_cli.py -v`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer_cli.py -v`
 Expected: FAIL，命令不存在。
 
 - [x] **Step 3: 实现文本渲染与 CLI**
@@ -341,7 +341,7 @@ def zucai_optimize(
 
 - [x] **Step 4: 跑 CLI 与纯函数测试确认 GREEN**
 
-Run: `uv run pytest tests/decision/test_zucai_optimizer.py tests/decision/test_zucai_optimizer_cli.py -v`  
+Run: `uv run pytest tests/decision/test_zucai_optimizer.py tests/decision/test_zucai_optimizer_cli.py -v`
 Expected: all tests pass。
 
 - [x] **Step 5: Commit**
@@ -359,17 +359,17 @@ git commit -m "feat(cli): expose zucai candidate optimizer"
 
 - [x] **Step 1: 静态检查**
 
-Run: `uv run ruff check .`  
+Run: `uv run ruff check .`
 Expected: `All checks passed!`
 
 - [x] **Step 2: 全量测试**
 
-Run: `uv run pytest -q`  
+Run: `uv run pytest -q`
 Expected: 0 failed。
 
 - [x] **Step 3: CLI help smoke**
 
-Run: `uv run nutmeg zucai-optimize --help`  
+Run: `uv run nutmeg zucai-optimize --help`
 Expected: exit 0，列出 `--input-file` 与 `--json`。
 
 - [x] **Step 4: 临时目录回放 26111**

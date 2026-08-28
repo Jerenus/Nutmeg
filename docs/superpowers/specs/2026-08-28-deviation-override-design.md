@@ -1,6 +1,6 @@
 # Prescription Deviation And User Override Design
 
-Date: 2026-08-28  
+Date: 2026-08-28
 Status: Approved by the engineering handoff and operator continuation instruction
 
 ## Goal
@@ -77,4 +77,3 @@ an authoritative result and match/issue identity link exist.
 - natural-language rule inference;
 - outcome grading without authoritative identity/result links;
 - production database migration or direct `scoreboard.json` writes.
-

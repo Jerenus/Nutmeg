@@ -1,6 +1,6 @@
 # C8 Pseudo-Precision Audit Design
 
-Date: 2026-08-28  
+Date: 2026-08-28
 Status: Approved by the 2026-08-28 engineering handoff and the operator's continue instruction
 
 ## Goal
@@ -52,4 +52,3 @@ decides whether the authored evidence tier is valid and whether to revise the le
 - no probability adjustment or reset performed by code;
 - no change to ERROR policy or ticket dispatch;
 - no production data mutation or historical ticket rewrite.
-

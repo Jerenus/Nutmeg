@@ -213,4 +213,3 @@ def format_deployment_gate(result: DeploymentGateResult) -> str:
     else:
         lines.append("报告通过；出票仍须用户确认与 ledger 入账。")
     return "\n".join(lines)
-

@@ -76,13 +76,13 @@ CHILD = {
 
 - [x] **Step 3: 跑测试确认状态 RED→GREEN 链整体通过**
 
-Run: `uv run pytest tests/scoreboard/test_o_rule_observations.py -v`  
+Run: `uv run pytest tests/scoreboard/test_o_rule_observations.py -v`
 Expected: 1 passed，测试内部先捕获缺 observation 错误，随后成功产生 shadow review。
 
 - [x] **Step 4: 跑相关回归与 ruff**
 
-Run: `uv run pytest tests/scoreboard/ tests/ontology/test_scoreboard_actions.py tests/analytics/test_scoreboard_projection.py -v`  
-Run: `uv run ruff check tests/scoreboard/test_o_rule_observations.py`  
+Run: `uv run pytest tests/scoreboard/ tests/ontology/test_scoreboard_actions.py tests/analytics/test_scoreboard_projection.py -v`
+Run: `uv run ruff check tests/scoreboard/test_o_rule_observations.py`
 Expected: 0 failed，All checks passed。
 
 - [x] **Step 5: Commit**
@@ -99,14 +99,14 @@ git commit -m "test(scoreboard): formalize o-rule subtype observations"
 
 - [x] **Step 1: 只读查询当前 parent 叶节点**
 
-Run a read-only SQLite query for `chains/suspended_tie_sandwich_o`。  
+Run a read-only SQLite query for `chains/suspended_tie_sandwich_o`。
 Expected: one current leaf，numerator=3、denominator=6、status=`retired-subpattern`；保存其
 `scoreboard_observation_id` 作为 `--supersedes` 与 evidence ID。
 
 - [x] **Step 2: 在临时 data-dir 初始化 kernel 并调用两次真实 CLI**
 
 对临时 ontology 先写一个 parent，再运行与生产完全相同的 supersede 和 child
-`uv run nutmeg scoreboard observe` 命令。  
+`uv run nutmeg scoreboard observe` 命令。
 Expected: 两次 stdout 都是 committed Action；SQLite 查询 parent 当前叶为 revision，child
 为独立叶，数值分别 3/6 与 5/5。
 
@@ -156,8 +156,8 @@ Run: `git cherry-pick 5c68f09`
 
 - [x] **Step 2: 全库验证**
 
-Run: `uv run ruff check .`  
-Run: `uv run pytest -q`  
+Run: `uv run ruff check .`
+Run: `uv run pytest -q`
 Expected: 0 failed。
 
 - [x] **Step 3: 写入执行证据、勾选计划并提交**
