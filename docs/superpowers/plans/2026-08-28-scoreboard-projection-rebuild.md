@@ -1,6 +1,6 @@
 # Scoreboard Projection Rebuild Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add an explicit build-only `nutmeg scoreboard rebuild-projection` command that refreshes the M5 DuckDB projection after operational Actions and before a shadow review.
 
@@ -23,7 +23,7 @@ No repository, schema, Action, projector, authority, or production data file cha
 **Files:**
 - Create: `tests/product/test_scoreboard_projection_cli.py`
 
-- [ ] **Step 1: Write the failing CLI tests**
+- [x] **Step 1: Write the failing CLI tests**
 
 Create the test module with isolated helpers and two tests:
 
@@ -220,7 +220,7 @@ def test_rebuild_projection_rejects_naive_time_and_uninitialized_root(
     assert "ontology must be initialized" in absent.stdout
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -236,7 +236,7 @@ Expected: both tests fail because Typer reports `No such command 'rebuild-projec
 - Modify: `nutmeg/interfaces/cli/scoreboard.py`
 - Test: `tests/product/test_scoreboard_projection_cli.py`
 
-- [ ] **Step 1: Add the projection request import and command**
+- [x] **Step 1: Add the projection request import and command**
 
 Add:
 
@@ -290,7 +290,7 @@ def scoreboard_rebuild_projection(
         _fail(error)
 ```
 
-- [ ] **Step 2: Run focused tests and verify GREEN**
+- [x] **Step 2: Run focused tests and verify GREEN**
 
 Run:
 
@@ -301,7 +301,7 @@ UV_FROZEN=1 uv run pytest tests/product/test_scoreboard_projection_cli.py -v
 Expected: `2 passed`; the first test demonstrates stale before rebuild and a committed
 shadow after rebuild.
 
-- [ ] **Step 3: Run adjacent scoreboard and analytics tests**
+- [x] **Step 3: Run adjacent scoreboard and analytics tests**
 
 Run:
 
@@ -315,7 +315,7 @@ UV_FROZEN=1 uv run pytest \
 
 Expected: all selected tests pass.
 
-- [ ] **Step 4: Commit the implementation**
+- [x] **Step 4: Commit the implementation**
 
 ```bash
 git add nutmeg/interfaces/cli/scoreboard.py \
@@ -332,7 +332,7 @@ while M5 projection freshness belongs to an explicit ontology build command.
 **Files:**
 - Modify: `docs/nutmeg-intelligence-os-m5-operations.md`
 
-- [ ] **Step 1: Replace the direct-service gap with the CLI sequence**
+- [x] **Step 1: Replace the direct-service gap with the CLI sequence**
 
 In section 3, retain the warning against legacy `decision-calibrate` and add:
 
@@ -346,7 +346,7 @@ UV_FROZEN=1 uv run nutmeg scoreboard rebuild-projection \
 State that `source_high_watermark` and `projection_version` from the canonical JSON output
 are the exact values passed to the following `scoreboard shadow` invocation.
 
-- [ ] **Step 2: Run formatting and package tests**
+- [x] **Step 2: Run formatting and package tests**
 
 Run:
 
@@ -361,7 +361,7 @@ git diff --check
 Expected: ruff reports `All checks passed`; pytest reports zero failures; both diff checks
 produce no output.
 
-- [ ] **Step 3: Smoke-test CLI help**
+- [x] **Step 3: Smoke-test CLI help**
 
 Run:
 
@@ -371,12 +371,25 @@ UV_FROZEN=1 uv run nutmeg scoreboard rebuild-projection --help
 
 Expected: help lists required `--data-dir`, `--as-of`, and `--built-at` options.
 
-- [ ] **Step 4: Commit documentation**
+- [x] **Step 4: Commit documentation**
 
 ```bash
 git add docs/nutmeg-intelligence-os-m5-operations.md
 UV_FROZEN=1 git commit -m "docs(scoreboard): document projection rebuild order"
 ```
+
+## Execution Record (2026-08-28)
+
+- `uv run pytest tests/product/test_scoreboard_projection_cli.py -v`: 2 passed.
+- `uv run ruff check .`: All checks passed; `uv run pytest -q`: 1,390 tests
+  collected, exit 0.
+- Isolated CLI chain: the pre-rebuild shadow exited 1 with `projection is stale`;
+  `scoreboard rebuild-projection` preserved the Action high-watermark and returned
+  the new source high-watermark; the immediately following shadow was `committed`.
+- Option 1 was selected because legacy `decision-calibrate` owns the JSONL path,
+  while M5 freshness belongs to an explicit build-only ontology command. The reason
+  is recorded in implementation commit `14f6940`.
+- The shared schema-15 backup-test baseline fix is commit `9a21dac` on this branch.
 
 ## Explicit exclusions
 
