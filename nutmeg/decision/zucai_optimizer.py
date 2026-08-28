@@ -6,6 +6,7 @@ validates that structure and compares it; it never generates or recommends a tic
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from itertools import combinations
 from typing import Any
 
 FACE_KEYS = {"3": "home", "1": "draw", "0": "away"}
@@ -112,6 +113,32 @@ def _validate_payload(payload: object) -> dict[str, Any]:
     if baseline_id is not None and baseline_id not in version_ids:
         raise OptimizerInputError(f"unknown baseline_id: {baseline_id}")
 
+    raw_groups = payload.get("groups", [])
+    if not isinstance(raw_groups, list):
+        raise OptimizerInputError("groups must be an array")
+    groups = []
+    group_ids: set[str] = set()
+    for position, raw_group in enumerate(raw_groups):
+        if not isinstance(raw_group, dict):
+            raise OptimizerInputError(f"groups[{position}] must be an object")
+        group_id = raw_group.get("id")
+        if not isinstance(group_id, str) or not group_id.strip():
+            raise OptimizerInputError(f"groups[{position}].id must be a non-empty string")
+        if group_id in group_ids:
+            raise OptimizerInputError(f"duplicate group id: {group_id}")
+        group_ids.add(group_id)
+        members = raw_group.get("version_ids")
+        if not isinstance(members, list) or not members:
+            raise OptimizerInputError(f"group {group_id} version_ids must be a non-empty array")
+        if any(not isinstance(member, str) for member in members):
+            raise OptimizerInputError(f"group {group_id} version_ids must be strings")
+        if len(set(members)) != len(members):
+            raise OptimizerInputError(f"group {group_id} has duplicate version_ids")
+        unknown = [member for member in members if member not in version_ids]
+        if unknown:
+            raise OptimizerInputError(f"group {group_id} references unknown versions: {unknown}")
+        groups.append({"id": group_id, "version_ids": members})
+
     return {
         "issue": issue,
         "price_per_note": price_per_note,
@@ -119,7 +146,7 @@ def _validate_payload(payload: object) -> dict[str, Any]:
         "baseline_id": baseline_id,
         "fair": fair,
         "versions": versions,
-        "groups": payload.get("groups", []),
+        "groups": groups,
     }
 
 
@@ -146,6 +173,53 @@ def _version_stats(
         "expected_broken": float(expected_broken),
     }
     return result, probability, expected_broken
+
+
+def _intersection_probability(
+    versions: tuple[dict[str, Any], ...],
+    fair: dict[str, dict[str, Decimal]],
+) -> Decimal:
+    probability = Decimal(1)
+    match_nos = set().union(*(version["faces"] for version in versions))
+    for match_no in match_nos:
+        constraints = [
+            set(version["faces"][match_no])
+            for version in versions
+            if match_no in version["faces"]
+        ]
+        allowed = set.intersection(*constraints)
+        if not allowed:
+            return Decimal(0)
+        coverage = sum((fair[match_no][FACE_KEYS[face]] for face in allowed), Decimal(0))
+        probability *= coverage
+    return probability
+
+
+def _group_stats(
+    group: dict[str, Any],
+    versions_by_id: dict[str, dict[str, Any]],
+    fair: dict[str, dict[str, Decimal]],
+) -> dict[str, Any]:
+    members = [versions_by_id[version_id] for version_id in group["version_ids"]]
+    probability = Decimal(0)
+    for size in range(1, len(members) + 1):
+        sign = 1 if size % 2 else -1
+        for subset in combinations(members, size):
+            probability += sign * _intersection_probability(subset, fair)
+
+    common_matches = set.intersection(*(set(member["faces"]) for member in members))
+    common_dead_faces = []
+    for match_no in sorted(common_matches, key=int):
+        covered = set().union(*(set(member["faces"][match_no]) for member in members))
+        dead = "".join(face for face in FACE_KEYS if face not in covered)
+        if dead:
+            common_dead_faces.append({"match_no": match_no, "faces": dead})
+    return {
+        "id": group["id"],
+        "version_ids": group["version_ids"],
+        "p_any_all": float(probability),
+        "common_dead_faces": common_dead_faces,
+    }
 
 
 def optimize(payload: object) -> dict[str, Any]:
@@ -182,6 +256,11 @@ def optimize(payload: object) -> dict[str, Any]:
     ]
     candidates.sort(key=lambda item: (-item[1], item[0]["cost_yuan"], item[0]["id"]))
     ranking = [item[0]["id"] for item in candidates]
+    versions_by_id = {version["id"]: version for version in data["versions"]}
+    groups = [
+        _group_stats(group, versions_by_id, data["fair"])
+        for group in data["groups"]
+    ]
     return {
         "issue": data["issue"],
         "price_per_note": data["price_per_note"],
@@ -190,4 +269,5 @@ def optimize(payload: object) -> dict[str, Any]:
         "versions": [item[0] for item in calculated],
         "ranking": ranking,
         "best_within_cap_id": ranking[0] if ranking else None,
+        "groups": groups,
     }

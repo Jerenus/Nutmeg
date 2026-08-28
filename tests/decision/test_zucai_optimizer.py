@@ -81,3 +81,50 @@ def test_no_candidate_within_cap_is_reported_without_a_decision() -> None:
     assert result["ranking"] == []
     assert result["best_within_cap_id"] is None
     assert result["versions"][0]["within_cap"] is False
+
+
+def test_group_union_probability_uses_inclusion_exclusion() -> None:
+    payload = _payload()
+    payload["versions"] = [
+        {"id": "H", "faces": {"1": "3"}},
+        {"id": "D", "faces": {"1": "1"}},
+    ]
+    payload["groups"] = [{"id": "pair", "version_ids": ["H", "D"]}]
+
+    group = optimize(payload)["groups"][0]
+
+    assert group["p_any_all"] == pytest.approx(0.8)
+    assert group["common_dead_faces"] == [{"match_no": "1", "faces": "0"}]
+
+
+def test_group_intersection_combines_constraints_on_different_legs() -> None:
+    payload = _payload()
+    payload["versions"] = [
+        {"id": "M1", "faces": {"1": "3"}},
+        {"id": "M2", "faces": {"2": "3"}},
+    ]
+    payload["groups"] = [{"id": "pair", "version_ids": ["M1", "M2"]}]
+
+    group = optimize(payload)["groups"][0]
+
+    assert group["p_any_all"] == pytest.approx(0.8)
+    assert group["common_dead_faces"] == []
+
+
+@pytest.mark.parametrize(
+    "groups",
+    [
+        [{"id": "pair", "version_ids": ["A", "missing"]}],
+        [{"id": "pair", "version_ids": ["A", "A"]}],
+        [
+            {"id": "pair", "version_ids": ["A"]},
+            {"id": "pair", "version_ids": ["A"]},
+        ],
+    ],
+)
+def test_invalid_group_references_are_rejected(groups) -> None:
+    payload = _payload()
+    payload["groups"] = groups
+
+    with pytest.raises(OptimizerInputError):
+        optimize(payload)
