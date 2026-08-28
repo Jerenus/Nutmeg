@@ -2,6 +2,7 @@
 from nutmeg.decision.legs_audit import (
     Leg,
     audit_legs,
+    audit_prescription_deviations,
     format_findings,
     has_blocking,
     legs_from_dict,
@@ -261,3 +262,75 @@ def test_legs_from_dict_parses_c8_inputs():
     assert leg.prior == {"home": 0.60, "draw": 0.25, "away": 0.15}
     assert leg.adjustment_evidence_tiers == ("inference", "motivation")
     assert "pseudo_precision_anchor" in _codes([leg])
+
+
+# ── 偏离登记（2026-08-26 立规则） ──
+
+def _deviation_codes(payload):
+    return {finding.code for finding in audit_prescription_deviations(payload)}
+
+
+def test_unnamed_prescription_deviation_warns():
+    payload = {
+        "prescription": {"1": "31"},
+        "legs": {"1": {"faces": "3"}},
+        "deviation_registry": [],
+    }
+
+    findings = audit_prescription_deviations(payload)
+
+    finding = next(item for item in findings if item.match_no == 1)
+    assert finding.code == "unnamed_prescription_deviation"
+    assert finding.level == "WARN"
+    assert "31" in finding.message and "3" in finding.message
+
+
+def test_known_rule_names_prescription_deviation():
+    payload = {
+        "prescription": {"1": "31"},
+        "legs": {"1": {"faces": "3"}},
+        "deviation_registry": [{
+            "match_no": 1,
+            "rule_ids": ["m-单选"],
+            "reason": "operator-authored reason",
+        }],
+    }
+    assert "unnamed_prescription_deviation" not in _deviation_codes(payload)
+
+
+def test_unknown_rule_does_not_name_prescription_deviation():
+    payload = {
+        "prescription": {"1": "31"},
+        "legs": {"1": {"faces": "3"}},
+        "deviation_registry": [{
+            "match_no": 1,
+            "rule_ids": ["a-fifth-better-reason"],
+            "reason": "not a registered rule",
+        }],
+    }
+    assert "unnamed_prescription_deviation" in _deviation_codes(payload)
+
+
+def test_equal_prescription_and_ticket_faces_need_no_registration():
+    payload = {
+        "prescription": {"1": "31"},
+        "legs": {"1": {"faces": "13"}},
+        "deviation_registry": [],
+    }
+    assert audit_prescription_deviations(payload) == []
+
+
+def test_dropped_prescribed_match_is_a_deviation():
+    payload = {
+        "prescription": {"1": "31"},
+        "legs": {},
+        "deviation_registry": [],
+    }
+    findings = audit_prescription_deviations(payload)
+    assert findings[0].match_no == 1
+    assert "丢整场" in findings[0].message
+
+
+def test_legacy_payload_without_prescription_has_no_deviation_findings():
+    payload = {"legs": {"1": {"faces": "3"}}}
+    assert audit_prescription_deviations(payload) == []
