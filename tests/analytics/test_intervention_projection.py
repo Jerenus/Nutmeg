@@ -240,6 +240,45 @@ def test_intervention_scorecards_report_counts_and_coverage_before_rates(
     assert rows[("counterfactual", "eligible_coverage")]["denominator"] == 6
 
 
+def test_intervention_scorecards_count_registered_user_naked_wheels(tmp_path: Path) -> None:
+    kernel, _ids = _seed(tmp_path)
+    for key, metric in (
+        ("naked", "user_naked_wheels"),
+        ("double", "user_structure_overrides"),
+    ):
+        kernel.workflow.record_adjudication(
+            RecordAdjudicationRequest(
+                subject_type="ticket_audit_finding",
+                subject_id=f"tao-{key}",
+                decision="override",
+                reason="explicit operator override",
+                evidence_rejected=[{
+                    "object_type": "ticket_audit_finding",
+                    "object_id": f"taf-{key}",
+                }],
+                alternative={
+                    "kind": "ticket_audit_user_override",
+                    "scoreboard_metric": metric,
+                },
+                supersedes_adjudication_id=None,
+                actor_id="operator:jun",
+                actor_role=ActorRole.JUDGE_OPERATOR,
+                idempotency_key=f"audit-override:{key}",
+                requested_at=EARLY,
+            )
+        )
+
+    row = next(
+        item
+        for item in compute_intervention_scorecard_rows(kernel.engine)
+        if item["object_type"] == "adjudication"
+        and item["group_key"] == "user_naked_wheels"
+        and item["metric"] == "registered"
+    )
+
+    assert row["count"] == 1
+
+
 def test_calibrate_registers_intervention_projection(tmp_path: Path) -> None:
     kernel, _ids = _seed(tmp_path)
 
