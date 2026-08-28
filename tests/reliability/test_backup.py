@@ -11,6 +11,7 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.repository.finance import CashAccountRow, CashTransactionRow
+from nutmeg.ontology.repository.migrations import MIGRATIONS
 from nutmeg.ontology.repository.tickets import (
     AuditedTicketArtifactRow,
     TicketBatchRevisionRow,
@@ -129,7 +130,7 @@ def test_backup_manifest_and_restore_round_trip_all_invariants(tmp_path: Path) -
     assert result.backup_dir == destination.resolve()
     assert result.manifest_path == destination.resolve() / "manifest.json"
     assert result.manifest["manifest_version"] == "backup-v1"
-    assert result.manifest["schema_version"] == 14
+    assert result.manifest["schema_version"] == MIGRATIONS[-1].version
     assert result.manifest["sqlite_integrity"] == "ok"
     assert result.manifest["action_high_watermark"] == 1
     assert result.manifest["outbox_cursor"] == 1
@@ -158,7 +159,7 @@ def test_backup_manifest_and_restore_round_trip_all_invariants(tmp_path: Path) -
     assert drill.projection_high_watermark == 1
     restored = build_ontology_kernel(AppSettings(data_dir=restore_dir))
     status = restored.status()
-    assert status.schema_version == 14
+    assert status.schema_version == MIGRATIONS[-1].version
     assert status.integrity_check == "ok"
     assert status.artifact_count == 1
 
