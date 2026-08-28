@@ -616,7 +616,19 @@ class ProductQueryService:
                 )
                 for item in flags
             ],
-            predictions=[PredictionSummary(**item) for item in predictions],
+            predictions=[
+                PredictionSummary(
+                    prediction_id=item['prediction_id'],
+                    match_id=item['match_id'],
+                    claim=item['claim'],
+                    falsifier=item['falsifier'],
+                    status=item['status'],
+                    outcome=item['outcome'],
+                    registered_at=item['registered_at'],
+                    settled_at=item['settled_at'],
+                )
+                for item in predictions
+            ],
             precedent_links=[
                 PrecedentLinkSummary(
                     precedent_link_id=item['precedent_link_id'],

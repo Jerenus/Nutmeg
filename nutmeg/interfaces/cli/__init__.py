@@ -925,6 +925,7 @@ from nutmeg.interfaces.cli import psychology as psychology  # noqa: E402
 from nutmeg.interfaces.cli import reliability as reliability  # noqa: E402
 from nutmeg.interfaces.cli import scoreboard as scoreboard  # noqa: E402
 from nutmeg.interfaces.cli import telegram as telegram  # noqa: E402
+from nutmeg.interfaces.cli import workflow as workflow  # noqa: E402
 from nutmeg.interfaces.cli import zucai as zucai  # noqa: E402
 
 if __name__ == "__main__":

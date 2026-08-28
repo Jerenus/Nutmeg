@@ -475,6 +475,8 @@ def m3_seeded_product(m2_seeded_product: SeededProduct) -> SeededProduct:
             PredictionRow(
                 prediction_id="prediction-fixture",
                 match_id="match-1",
+                subject_type="match",
+                subject_id="match-1",
                 claim="home protection remains weak",
                 falsifier="starting midfielder returns",
                 status=PredictionStatus.PENDING,

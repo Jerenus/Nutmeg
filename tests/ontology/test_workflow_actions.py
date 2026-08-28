@@ -280,6 +280,8 @@ def test_flag_prediction_and_precedent_are_typed_and_governed(tmp_path: Path) ->
     prediction = workflow.register_prediction(
         RegisterPredictionRequest(
             match_id="match-1",
+            subject_type="match",
+            subject_id="match-1",
             claim="away price shortens before close",
             falsifier="away price stays flat or lengthens",
             actor_id="model:analyst",

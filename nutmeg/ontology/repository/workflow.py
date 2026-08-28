@@ -177,6 +177,8 @@ class WorkflowRepository:
             insert(sw.predictions).values(
                 prediction_id=row.prediction_id,
                 match_id=row.match_id,
+                subject_type=row.subject_type,
+                subject_id=row.subject_id,
                 claim=row.claim,
                 falsifier=row.falsifier,
                 status=row.status.value,
@@ -193,12 +195,23 @@ class WorkflowRepository:
         return PredictionRow(
             prediction_id=row['prediction_id'],
             match_id=row['match_id'],
+            subject_type=row['subject_type'],
+            subject_id=row['subject_id'],
             claim=row['claim'],
             falsifier=row['falsifier'],
             status=PredictionStatus(row['status']),
             outcome=row['outcome'],
             registered_at=row['registered_at'],
             settled_at=row['settled_at'],
+        )
+
+    def update_prediction_outcome(
+        self, prediction_id: str, outcome: str, status: str, settled_at: str
+    ) -> None:
+        self._connection.execute(
+            update(sw.predictions)
+            .where(sw.predictions.c.prediction_id == prediction_id)
+            .values(status=status, outcome=outcome, settled_at=settled_at)
         )
 
     def iter_predictions(self) -> list[PredictionRow]:
@@ -216,6 +229,8 @@ class WorkflowRepository:
             PredictionRow(
                 prediction_id=row['prediction_id'],
                 match_id=row['match_id'],
+                subject_type=row['subject_type'],
+                subject_id=row['subject_id'],
                 claim=row['claim'],
                 falsifier=row['falsifier'],
                 status=PredictionStatus(row['status']),

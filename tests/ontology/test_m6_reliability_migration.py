@@ -83,7 +83,7 @@ def _evidence(
 def test_migration_14_creates_tables_and_exact_permissions(tmp_path: Path) -> None:
     kernel, report = _kernel(tmp_path)
 
-    assert report.applied_versions[-1] == 14
+    assert 14 in report.applied_versions
     assert {"reliability_evidence", "release_approvals"} <= set(
         inspect(kernel.engine).get_table_names()
     )
@@ -109,7 +109,7 @@ def test_migration_14_upgrades_an_existing_schema_13_store(tmp_path: Path) -> No
         (row["action_type"], row["actor_role"]) for row in before
     }
 
-    report = run_migrations(engine)
+    report = run_migrations(engine, migrations=MIGRATIONS[:14])
 
     assert report.applied_versions == (14,)
     with engine.connect() as connection:

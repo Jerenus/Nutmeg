@@ -50,6 +50,8 @@ def _seed(tmp_path: Path):
             PredictionRow(
                 prediction_id="prediction-confirmed",
                 match_id="match-settled",
+                subject_type="match",
+                subject_id="match-settled",
                 claim="home will win",
                 falsifier="home does not win",
                 status=PredictionStatus.CONFIRMED,
@@ -62,6 +64,8 @@ def _seed(tmp_path: Path):
             PredictionRow(
                 prediction_id="prediction-pending",
                 match_id="match-open",
+                subject_type="match",
+                subject_id="match-open",
                 claim="home will win",
                 falsifier="home does not win",
                 status=PredictionStatus.PENDING,

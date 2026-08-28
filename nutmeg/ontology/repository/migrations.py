@@ -582,6 +582,54 @@ def _apply_reliability_governance(connection: Connection) -> None:
     )
 
 
+_PREDICTION_GRADE_PERMISSIONS = (
+    ('grade_prediction', 'judge_operator'),
+)
+
+
+def _apply_prediction_subjects(connection: Connection) -> None:
+    """Widen predictions to subject scope (issue-level rx predictions) + grade permission.
+
+    Fresh databases already get ``subject_type``/``subject_id`` and the nullable
+    ``match_id`` from migration 10's ``table.create`` (the Table definition carries
+    them), so the rebuild is guarded by a PRAGMA check and only fires when upgrading
+    a store created before this migration. SQLite cannot relax NOT NULL in place, so
+    the upgrade path rebuilds the table (12-step simplified; pre-v15 production
+    tables are empty or tiny). ``RENAME TO`` keeps the old table's indexes under
+    their original names, so the stale index is dropped before ``create`` re-makes it.
+    """
+    cols = {row[1] for row in connection.exec_driver_sql('PRAGMA table_info(predictions)')}
+    if 'subject_type' not in cols:
+        connection.exec_driver_sql('ALTER TABLE predictions RENAME TO predictions_v14')
+        connection.exec_driver_sql('DROP INDEX IF EXISTS ix_predictions_match_id')
+        schema_workflow.predictions.create(connection)
+        connection.exec_driver_sql(
+            'INSERT INTO predictions (prediction_id, match_id, subject_type, subject_id,'
+            ' claim, falsifier, status, outcome, registered_at, settled_at)'
+            " SELECT prediction_id, match_id, 'match', match_id,"
+            ' claim, falsifier, status, outcome, registered_at, settled_at'
+            ' FROM predictions_v14'
+        )
+        connection.exec_driver_sql('DROP TABLE predictions_v14')
+    # Permission insert sits outside the rebuild guard (fresh stores skip the rebuild
+    # but still need the grant) behind its own COUNT guard so it lands exactly once.
+    granted = connection.exec_driver_sql(
+        "SELECT COUNT(*) FROM action_permissions WHERE action_type='grade_prediction'"
+    ).scalar_one()
+    if granted == 0:
+        connection.execute(
+            insert(schema.action_permissions),
+            [
+                {
+                    'policy_version_id': 'governance-v1',
+                    'action_type': action_type,
+                    'actor_role': actor_role,
+                }
+                for action_type, actor_role in _PREDICTION_GRADE_PERMISSIONS
+            ],
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -677,6 +725,12 @@ MIGRATIONS: tuple[Migration, ...] = (
             "reliability_evidence+release_approvals+role_separated_permissions"
         ),
         apply=_apply_reliability_governance,
+    ),
+    Migration(
+        version=15,
+        name='prediction_subjects',
+        fingerprint='predictions+subject_type+subject_id+match_nullable+grade_permission',
+        apply=_apply_prediction_subjects,
     ),
 )
 
