@@ -46,7 +46,7 @@
 | **r4-点名** | 用户点名某腿脆→单独重审该腿证据，禁 P 支配一票否决 | active | 26105 C版9/9被否 | 协议 |
 | **处方优先** | 双选=模态+旗面，禁弃模态面；agent 建议与处方冲突以处方为准 | active | 7/29 双弃模态全死 | C3 |
 | **排面记录** | 被排面必须留"活而薄"显式记录；被排面开出=断腿唯一贯穿形态（七连） | active | 26103-26109 七期 | C7 部分 |
-| **偏离登记** | 票面与处方每处偏离须引用命名规则 ID；无名偏离＝"第五个更好的理由"，WARN；定稿后重开已裁腿须**新证据**（非新论证），否则唯一合法动作=丢整场 | probation | 2026-08-26 金句立法（用正确代替准确）；26103 票8/9 死于无名偏离、26109 干预净差0 | 待（挂 audit override 通道） |
+| **偏离登记** | 票面与处方每处偏离须引用命名规则 ID；无名偏离＝"第五个更好的理由"，WARN；定稿后重开已裁腿须**新证据**（非新论证），否则唯一合法动作=丢整场 | probation | 2026-08-26 金句立法（用正确代替准确）；26103 票8/9 死于无名偏离、26109 干预净差0 | `unnamed_prescription_deviation` (WARN) + human-only `--user-override` |
 
 ## 五、构票与预算
 
@@ -81,6 +81,8 @@
 | C0 flag_off_lexicon | WARN | 词典封闭 |
 | **C7 excluded_face_live_precedent** | WARN | **r3-双证（2026-08-23 入码）** |
 | **C8 pseudo_precision_anchor** | WARN | **伪精确锚定（净偏移≥5pp 缺强证据锚）** |
+| unnamed_prescription_deviation | WARN | 偏离登记（票面 vs 处方须引用命名规则 ID） |
+| `--user-override` | human-only override | ERROR 原样保留为 evidence_rejected Adjudication；AI/无人值守仍阻断 |
 | modal_stack_mismatch | WARN | 模态组合错配（26103） |
 
 ## 已退休/引擎时代常数（禁区，不再复述理由）

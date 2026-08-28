@@ -235,6 +235,19 @@ def compute_intervention_scorecard_rows(engine: Engine) -> list[dict[str, object
             rows.append(
                 _count_row("adjudication", "decision", count, group_key=decision)
             )
+        naked_wheel_overrides = sum(
+            item.alternative.get("kind") == "ticket_audit_user_override"
+            and item.alternative.get("scoreboard_metric") == "user_naked_wheels"
+            for item in adjudications
+        )
+        rows.append(
+            _count_row(
+                "adjudication",
+                "registered",
+                naked_wheel_overrides,
+                group_key="user_naked_wheels",
+            )
+        )
 
         eligible = sum(
             item["eligibility_code"] == "eligible" for item in counterfactuals

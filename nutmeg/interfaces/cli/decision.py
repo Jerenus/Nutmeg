@@ -21,6 +21,7 @@ _ZUCAI_SCHEDULE_SOURCE_FILE_OPTION = _cli.typer.Option(
 _ZUCAI_ODDS_SOURCE_FILE_OPTION = _cli.typer.Option(
     None, "--odds-source-file", help="赔率源文件(离线;省略则需 --live-fetch)")
 _LEGS_AUDIT_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="票面结构 JSON")
+_AUDIT_DATA_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
 
 
 @_cli.app.command("decision-fetch")
@@ -476,6 +477,12 @@ def zucai_prep(
 @_cli.app.command("decision-audit-legs")
 def decision_audit_legs(
     legs_file: Path = _LEGS_AUDIT_FILE_OPTION,
+    user_override: bool = _cli.typer.Option(
+        False,
+        "--user-override",
+        help="Jun 显式知情行权：保留 ERROR 并写 evidence_rejected Adjudication",
+    ),
+    data_dir: Path = _AUDIT_DATA_DIR_OPTION,
 ) -> None:
     """出票前结构校验:把「用新理由撤掉结构保险」变成非零退出码。
 
@@ -484,9 +491,14 @@ def decision_audit_legs(
     这说明散文规则挡不住它。有 ERROR 即退出码 1。
     """
     import json as _json
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
 
+    from nutmeg.config.settings import AppSettings
+    from nutmeg.decision.audit_override import AuditOverrideError, record_user_overrides
     from nutmeg.decision.legs_audit import (
         audit_legs,
+        audit_prescription_deviations,
         format_findings,
         has_blocking,
         legs_from_dict,
@@ -505,9 +517,39 @@ def decision_audit_legs(
             raise _cli.typer.Exit(code=1)
         _cli.typer.echo(format_findings([]))
         return
-    findings = audit_legs(legs_from_dict(payload))
+    findings = [
+        *audit_legs(legs_from_dict(payload)),
+        *audit_prescription_deviations(payload),
+    ]
     _cli.typer.echo(format_findings(findings, issue=str(payload.get("issue", ""))))
     if has_blocking(findings):
+        if user_override:
+            try:
+                kernel = _cli.build_ontology_kernel(
+                    AppSettings(data_dir=Path(data_dir).expanduser().resolve())
+                )
+                status = kernel.status()
+                if (
+                    not status.initialized
+                    or status.integrity_check != "ok"
+                    or status.pending_migrations
+                ):
+                    raise AuditOverrideError(
+                        "ontology must be initialized, healthy, and current"
+                    )
+                result = record_user_overrides(
+                    payload,
+                    findings,
+                    workflow_actions=kernel.workflow,
+                    requested_at=_datetime.now(_UTC),
+                )
+                _cli.typer.echo(
+                    f"user override 已入账：{result.error_count} 个 ERROR -> "
+                    f"{result.adjudication_count} 条 Adjudication"
+                )
+                return
+            except (AuditOverrideError, ValueError) as error:
+                _cli.typer.echo(f"❌ user override blocked: {error}")
         raise _cli.typer.Exit(code=1)
 
 

@@ -33,6 +33,41 @@ FACE_ZH = {"3": "主胜", "1": "平", "0": "客胜"}
 STRONG_ADJUSTMENT_EVIDENCE_TIERS = frozenset({"official", "confirmed_structural"})
 _C8_THRESHOLD = 0.05
 _PROBABILITY_TOLERANCE = 1e-9
+DEVIATION_RULE_IDS = frozenset({
+    "k",
+    "m-单选",
+    "conf",
+    "h-硬币",
+    "打穿共振",
+    "l-权重表",
+    "l-归零",
+    "先例≠form",
+    "已定价≠免疫",
+    "禁嘴算",
+    "伪精确锚定",
+    "旗-方向性",
+    "旗-无方向",
+    "旗-方向纪律",
+    "r5-牙口",
+    "o-夹心",
+    "p-翻车场",
+    "r2-废腿",
+    "r3-双证",
+    "r4-点名",
+    "处方优先",
+    "排面记录",
+    "偏离登记",
+    "q-两阶段",
+    "8/08铁律",
+    "命中率优先",
+    "分流",
+    "保险≠期权",
+    "部署门",
+    "j-传导",
+    "g-scope",
+    "f-结构化",
+    "零售信息",
+})
 
 
 @dataclass(frozen=True)
@@ -72,6 +107,80 @@ class Finding:
     match_no: int | None
     message: str
     since: str        # 这条判据是哪一次亏损换来的
+
+
+@dataclass(frozen=True)
+class DeviationRegistration:
+    match_no: int
+    rule_ids: tuple[str, ...]
+    reason: str
+    user_override: bool = False
+
+    @property
+    def known_rule_ids(self) -> tuple[str, ...]:
+        return tuple(rule_id for rule_id in self.rule_ids if rule_id in DEVIATION_RULE_IDS)
+
+
+def deviation_registrations(payload: dict) -> dict[int, tuple[DeviationRegistration, ...]]:
+    raw = payload.get("deviation_registry", [])
+    if not isinstance(raw, list):
+        raise ValueError("deviation_registry must be a list")
+    grouped: dict[int, list[DeviationRegistration]] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("deviation_registry entries must be objects")
+        rule_ids = item.get("rule_ids", [])
+        if not isinstance(rule_ids, list):
+            raise ValueError("deviation_registry rule_ids must be a list")
+        registration = DeviationRegistration(
+            match_no=int(item["match_no"]),
+            rule_ids=tuple(str(rule_id) for rule_id in rule_ids),
+            reason=str(item.get("reason", "")).strip(),
+            user_override=item.get("user_override") is True,
+        )
+        grouped.setdefault(registration.match_no, []).append(registration)
+    return {match_no: tuple(items) for match_no, items in grouped.items()}
+
+
+def _faces(value: object, *, field: str) -> str:
+    faces = str(value) if value is not None else ""
+    if len(set(faces)) != len(faces) or not set(faces) <= set(FACE_KEYS):
+        raise ValueError(f"{field} faces must contain unique 3/1/0 values")
+    return faces
+
+
+def audit_prescription_deviations(payload: dict) -> list[Finding]:
+    """Compare authored prescription and ticket faces; never infer deviation reasons."""
+    if "prescription" not in payload:
+        return []
+    prescription = payload["prescription"]
+    legs = payload.get("legs", {})
+    if not isinstance(prescription, dict) or not isinstance(legs, dict):
+        raise ValueError("prescription and legs must be objects")
+    registry = deviation_registrations(payload)
+    findings: list[Finding] = []
+    match_numbers = sorted({int(key) for key in prescription} | {int(key) for key in legs})
+    for match_no in match_numbers:
+        prescribed = _faces(prescription.get(str(match_no)), field="prescription")
+        leg = legs.get(str(match_no))
+        current = _faces(leg.get("faces") if isinstance(leg, dict) else None, field="ticket")
+        if set(prescribed) == set(current):
+            continue
+        registrations = registry.get(match_no, ())
+        if any(item.known_rule_ids for item in registrations):
+            continue
+        supplied = sorted({rule for item in registrations for rule in item.rule_ids})
+        label = current or "丢整场"
+        findings.append(Finding(
+            "WARN",
+            "unnamed_prescription_deviation",
+            match_no,
+            f"场{match_no}：票面 `{label}` 偏离处方 `{prescribed or '无'}`，"
+            f"但未引用已登记规则 ID（现有：{','.join(supplied) or '无'}）。"
+            f"偏离登记条——无名偏离是「第五个更好的理由」，须命名或撤回。",
+            "26103 票8/9 / 26109 干预净差0(2026-08-26 立规则)",
+        ))
+    return findings
 
 
 def _flag_faces(leg: Leg) -> set:
