@@ -1,0 +1,13 @@
+{
+  "issue": "26104",
+  "period_cap_yuan": 1600,
+  "history_as_of_issue": "26104",
+  "history_window": 14,
+  "candidates": [
+    {
+      "id": "M1296",
+      "stake_yuan": 1296,
+      "hit_probability": 0.21256355584713793
+    }
+  ]
+}

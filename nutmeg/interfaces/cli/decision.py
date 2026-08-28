@@ -22,6 +22,14 @@ _ZUCAI_ODDS_SOURCE_FILE_OPTION = _cli.typer.Option(
     None, "--odds-source-file", help="赔率源文件(离线;省略则需 --live-fetch)")
 _LEGS_AUDIT_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="票面结构 JSON")
 _AUDIT_DATA_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
+_DEPLOYMENT_GATE_FILE_OPTION = _cli.typer.Option(
+    ..., "--gate-file", help="部署门候选、注金帽与历史窗口 JSON"
+)
+_OFFICIAL_HISTORY_FILE_OPTION = _cli.typer.Option(
+    None,
+    "--official-history-file",
+    help="离线 sporttery gameNo=90 历史响应 JSON；省略则抓官方接口",
+)
 
 
 @_cli.app.command("decision-fetch")
@@ -590,6 +598,44 @@ def zucai_official(
     if settle_ledger:
         for line in _settle(issue, zucai_dir, draw, settled_at=_date.today().isoformat()):
             _cli.typer.echo(f"  ledger: {line}")
+
+
+@_cli.app.command("zucai-deployment-gate")
+def zucai_deployment_gate(
+    gate_file: Path = _DEPLOYMENT_GATE_FILE_OPTION,
+    official_history_file: Path | None = _OFFICIAL_HISTORY_FILE_OPTION,
+    json_output: bool = _cli.typer.Option(False, "--json", help="输出机器可读 JSON"),
+) -> None:
+    """足彩出票前部署门：确定性资金/回本算术，只报告不改票。"""
+    import json as _json
+
+    from nutmeg.decision.zucai_deployment import (
+        evaluate_deployment_gate,
+        format_deployment_gate,
+    )
+    from nutmeg.decision.zucai_official import (
+        fetch_renjiu_history,
+        parse_renjiu_history_payload,
+    )
+
+    try:
+        payload = _json.loads(Path(gate_file).read_text("utf-8"))
+        if official_history_file is None:
+            history = fetch_renjiu_history()
+        else:
+            raw_history = _json.loads(Path(official_history_file).read_text("utf-8"))
+            history = parse_renjiu_history_payload(raw_history)
+        result = evaluate_deployment_gate(payload, history)
+    except Exception as error:
+        _cli.typer.echo(f"deployment gate error: {error}")
+        raise _cli.typer.Exit(code=1) from error
+
+    if json_output:
+        _cli.typer.echo(_json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        _cli.typer.echo(format_deployment_gate(result))
+    if result.exit_code:
+        raise _cli.typer.Exit(code=result.exit_code)
 
 
 @_cli.app.command("decision-rules")
