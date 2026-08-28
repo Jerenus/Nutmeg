@@ -43,6 +43,31 @@ def test_telegram_client_sends_message_without_leaking_token_in_path_body() -> N
     assert http.posts == [("/botsecret-token/sendMessage", {"chat_id": 12345, "text": "hello"})]
 
 
+def test_telegram_client_sends_inline_reply_markup_and_answers_callback() -> None:
+    http = FakeHttpClient()
+    client = TelegramBotClient(token="secret-token", http_client=http)
+    markup = {
+        "inline_keyboard": [[{
+            "text": "confirmed placed",
+            "callback_data": "ntc:x",
+        }]],
+    }
+
+    client.send_message(chat_id=42, text="confirm", reply_markup=markup)
+    client.answer_callback_query(callback_query_id="cb-1", text="recorded")
+
+    assert http.posts == [
+        (
+            "/botsecret-token/sendMessage",
+            {"chat_id": 42, "text": "confirm", "reply_markup": markup},
+        ),
+        (
+            "/botsecret-token/answerCallbackQuery",
+            {"callback_query_id": "cb-1", "text": "recorded"},
+        ),
+    ]
+
+
 def test_telegram_client_get_updates_uses_offset_and_timeout() -> None:
     http = FakeHttpClient()
     http.responses.append({"ok": True, "result": [{"update_id": 7}]})
@@ -138,6 +163,120 @@ def test_telegram_runner_routes_allowed_messages_and_denies_unknown_chats() -> N
         (111, "Match Brief: Arsenal vs Spurs"),
         (999, "Unauthorized chat id. This Nutmeg bot is owner-only."),
     ]
+
+
+def test_telegram_runner_routes_owner_callback_outside_message_adapter() -> None:
+    class StubAdapter:
+        def handle_message(self, text: str):
+            raise AssertionError(f"callback reached message adapter: {text}")
+
+    class StubConfirmationHandler:
+        def __init__(self) -> None:
+            self.callbacks = []
+            self.expiry_calls = 0
+
+        def handle_callback(self, callback):
+            self.callbacks.append(callback)
+            return "recorded"
+
+        def expire_due(self):
+            self.expiry_calls += 1
+            return 2
+
+    class StubClient:
+        def __init__(self) -> None:
+            self.answers = []
+            self.sent = []
+
+        def get_updates(self, *, offset, timeout):
+            return [{
+                "update_id": 20,
+                "callback_query": {
+                    "id": "cb-1",
+                    "data": "ntc:secret",
+                    "message": {"message_id": 8, "chat": {"id": 111}},
+                },
+            }]
+
+        def answer_callback_query(self, *, callback_query_id, text):
+            self.answers.append((callback_query_id, text))
+
+        def send_message(self, *, chat_id, text):
+            self.sent.append((chat_id, text))
+
+    client = StubClient()
+    handler = StubConfirmationHandler()
+    runner = TelegramBotRunner(
+        client=client,
+        bot_adapter=StubAdapter(),
+        allowed_chat_ids={111},
+        confirmation_handler=handler,
+    )
+
+    summary = runner.poll_once(offset=20, timeout=1)
+
+    assert summary.callbacks_handled == 1
+    assert summary.shadows_marked == 2
+    assert summary.messages_handled == 0
+    assert handler.callbacks[0]["id"] == "cb-1"
+    assert handler.expiry_calls == 1
+    assert client.answers == [("cb-1", "recorded")]
+    assert client.sent == [(111, "Ticket placement confirmation recorded.")]
+
+
+def test_telegram_runner_denies_unknown_callback_and_maintains_empty_poll() -> None:
+    class StubHandler:
+        def __init__(self) -> None:
+            self.callback_calls = 0
+            self.expiry_calls = 0
+
+        def handle_callback(self, callback):
+            self.callback_calls += 1
+            return "recorded"
+
+        def expire_due(self):
+            self.expiry_calls += 1
+            return 1
+
+    class StubClient:
+        def __init__(self) -> None:
+            self.poll = 0
+            self.answers = []
+
+        def get_updates(self, *, offset, timeout):
+            self.poll += 1
+            if self.poll == 1:
+                return [{
+                    "update_id": 30,
+                    "callback_query": {
+                        "id": "cb-denied",
+                        "data": "ntc:secret",
+                        "message": {"chat": {"id": 999}},
+                    },
+                }]
+            return []
+
+        def answer_callback_query(self, *, callback_query_id, text):
+            self.answers.append((callback_query_id, text))
+
+    handler = StubHandler()
+    runner = TelegramBotRunner(
+        client=StubClient(),
+        bot_adapter=object(),
+        allowed_chat_ids={111},
+        confirmation_handler=handler,
+    )
+
+    denied = runner.poll_once(offset=30, timeout=1)
+    empty = runner.poll_once(offset=31, timeout=1)
+
+    assert denied.messages_denied == 1
+    assert denied.callbacks_handled == 0
+    assert denied.shadows_marked == 1
+    assert empty.updates_seen == 0
+    assert empty.shadows_marked == 1
+    assert handler.callback_calls == 0
+    assert handler.expiry_calls == 2
 
 
 def test_telegram_offset_store_round_trips_and_ignores_invalid_values(tmp_path) -> None:
