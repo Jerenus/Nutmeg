@@ -1,7 +1,7 @@
 # Scoreboard Projection Rebuild Design
 
-Date: 2026-08-28  
-Status: Approved for implementation  
+Date: 2026-08-28
+Status: Approved for implementation
 Scope: T1 - expose the existing ontology analytics projection build as an explicit CLI
 
 ## 1. Problem and verified root cause
