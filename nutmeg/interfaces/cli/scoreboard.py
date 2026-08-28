@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import nutmeg.interfaces.cli as _cli
+from nutmeg.analytics.calibrate_flow import CalibrateRequest
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.models import ActorRole, ObjectRef, canonical_json
 from nutmeg.ontology.actions.scoreboard_actions import (
@@ -159,6 +160,47 @@ def scoreboard_observe(
             )
         )
         _emit(_outcome(outcome, targets={"data_dir": str(resolved)}))
+    except (ScoreboardAuthorityError, ValueError) as error:
+        _fail(error)
+
+
+@scoreboard_app.command("rebuild-projection")
+def scoreboard_rebuild_projection(
+    data_dir: Path = _DATA_DIR_OPTION,
+    as_of: str = _cli.typer.Option(..., "--as-of"),
+    built_at: str = _cli.typer.Option(..., "--built-at"),
+) -> None:
+    try:
+        kernel, resolved = _kernel(data_dir)
+        result = kernel.calibrate.build(
+            CalibrateRequest(
+                as_of=_at(as_of).isoformat(),
+                built_at=_at(built_at).isoformat(),
+            )
+        )
+        if result.status != "succeeded":
+            raise ScoreboardAuthorityError(
+                f"scoreboard projection rebuild failed: {result.run_id}"
+            )
+        _emit(
+            {
+                "status": result.status,
+                "run_id": result.run_id,
+                "projection_version": "sb-v1",
+                "source_high_watermark": result.high_watermark,
+                "counts": {
+                    "scorecards": result.scorecard_count,
+                    "factor_estimates": result.factor_estimate_count,
+                    "lifecycle_proposals": result.lifecycle_proposal_count,
+                    "regime_vectors": result.regime_vector_count,
+                },
+                "targets": {
+                    "data_dir": str(resolved),
+                    "ontology_db": str(kernel.paths.database),
+                    "analytics_db": str(kernel.paths.analytics),
+                },
+            }
+        )
     except (ScoreboardAuthorityError, ValueError) as error:
         _fail(error)
 

@@ -70,6 +70,19 @@ After the last observation, run the current ontology reconcile/calibrate workflo
 record its `sb-v1` projection version and source high-watermark. Do not use the legacy
 `decision-calibrate` JSONL command as a substitute for the M5 ontology projection.
 
+Use the public build-only command after the last operational write:
+
+```bash
+UV_FROZEN=1 uv run nutmeg scoreboard rebuild-projection \
+  --data-dir /absolute/path/to/isolated-data \
+  --as-of 2026-08-24T10:05:00+08:00 \
+  --built-at 2026-08-24T10:05:00+08:00
+```
+
+Pass the canonical JSON output's `projection_version` and `source_high_watermark`
+unchanged to the following `scoreboard shadow` invocation. Any operational Action after
+that build makes the projection stale and requires another explicit rebuild.
+
 ## 4. Required operating order
 
 The order is strict:
