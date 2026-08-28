@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from sqlalchemy import Connection, RowMapping, insert, select, update
+from sqlalchemy import Connection, RowMapping, func, insert, select, update
 
 from nutmeg.ontology.actions.models import (
     ActionCommand,
@@ -78,6 +78,24 @@ class ActionRepository:
         if row is None:
             return None
         return self._to_record(row)
+
+    def count(
+        self,
+        *,
+        action_type: str | None = None,
+        status: ActionStatus | None = None,
+        idempotency_prefix: str | None = None,
+    ) -> int:
+        query = select(func.count()).select_from(schema.actions)
+        if action_type is not None:
+            query = query.where(schema.actions.c.action_type == action_type)
+        if status is not None:
+            query = query.where(schema.actions.c.status == status.value)
+        if idempotency_prefix is not None:
+            query = query.where(
+                schema.actions.c.idempotency_key.startswith(idempotency_prefix)
+            )
+        return self._connection.execute(query).scalar_one()
 
     def insert_accepted(self, command: ActionCommand) -> None:
         self._connection.execute(
