@@ -144,19 +144,17 @@ def _committed_zucai_snapshot_actions(kernel, rows) -> int:
     from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
     with OntologyUnitOfWork(kernel.engine) as uow:
-        match_ids = {
-            match_id
-            for row in rows
-            if row.match_date
-            for match_id in (
-                uow.identity.entity_by_external_id(
-                    EntityType.MATCH,
-                    provider="zucai-canonical",
-                    external_id=canonical_match_id(row.home, row.away, row.match_date),
-                ),
+        match_ids = set()
+        for row in rows:
+            if not row.match_date:
+                continue
+            match_id = uow.identity.entity_by_external_id(
+                EntityType.MATCH,
+                provider="zucai-canonical",
+                external_id=canonical_match_id(row.home, row.away, row.match_date),
             )
-            if match_id is not None
-        }
+            if match_id is not None:
+                match_ids.add(match_id)
         return uow.actions.count_committed_snapshot_matches(
             match_ids,
             provider="zucai",
