@@ -108,11 +108,15 @@ def _validate_payload(payload: object) -> dict[str, Any]:
             faces[match_no] = selected
         versions.append({"id": version_id, "faces": faces})
 
+    baseline_id = payload.get("baseline_id")
+    if baseline_id is not None and baseline_id not in version_ids:
+        raise OptimizerInputError(f"unknown baseline_id: {baseline_id}")
+
     return {
         "issue": issue,
         "price_per_note": price_per_note,
         "budget_yuan": budget,
-        "baseline_id": payload.get("baseline_id"),
+        "baseline_id": baseline_id,
         "fair": fair,
         "versions": versions,
         "groups": payload.get("groups", []),
@@ -147,13 +151,43 @@ def _version_stats(
 def optimize(payload: object) -> dict[str, Any]:
     """Validate and compare supplied candidates without making a betting decision."""
     data = _validate_payload(payload)
-    versions = [
-        _version_stats(version, data["fair"], data["price_per_note"])[0]
+    calculated = [
+        _version_stats(version, data["fair"], data["price_per_note"])
         for version in data["versions"]
     ]
+    internal = {
+        public["id"]: (public, probability, expected_broken)
+        for public, probability, expected_broken in calculated
+    }
+    baseline = internal.get(data["baseline_id"])
+    for public, probability, expected_broken in calculated:
+        public["within_cap"] = (
+            None
+            if data["budget_yuan"] is None
+            else public["cost_yuan"] <= data["budget_yuan"]
+        )
+        if baseline is not None:
+            baseline_public, baseline_probability, baseline_broken = baseline
+            public["delta_vs_baseline"] = {
+                "notes": public["notes"] - baseline_public["notes"],
+                "cost_yuan": public["cost_yuan"] - baseline_public["cost_yuan"],
+                "p_all_pp": float((probability - baseline_probability) * 100),
+                "expected_broken": float(expected_broken - baseline_broken),
+            }
+
+    candidates = [
+        item
+        for item in calculated
+        if data["budget_yuan"] is None or item[0]["within_cap"]
+    ]
+    candidates.sort(key=lambda item: (-item[1], item[0]["cost_yuan"], item[0]["id"]))
+    ranking = [item[0]["id"] for item in candidates]
     return {
         "issue": data["issue"],
         "price_per_note": data["price_per_note"],
         "budget_yuan": data["budget_yuan"],
-        "versions": versions,
+        "baseline_id": data["baseline_id"],
+        "versions": [item[0] for item in calculated],
+        "ranking": ranking,
+        "best_within_cap_id": ranking[0] if ranking else None,
     }

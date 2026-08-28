@@ -44,3 +44,40 @@ def test_invalid_input_is_rejected(mutation) -> None:
 
     with pytest.raises(OptimizerInputError):
         optimize(payload)
+
+
+def test_cap_ranking_and_baseline_deltas_are_stable() -> None:
+    payload = _payload()
+    payload["baseline_id"] = "A"
+    payload["versions"] += [
+        {"id": "B", "faces": {"1": "310", "2": "3"}},
+        {"id": "C", "faces": {"1": "31", "2": "31"}},
+        {"id": "D", "faces": {"1": "31", "2": "3"}},
+    ]
+    payload["budget_yuan"] = 8
+
+    result = optimize(payload)
+
+    assert result["ranking"] == ["C", "B", "A", "D"]
+    assert result["best_within_cap_id"] == "C"
+    c_version = next(item for item in result["versions"] if item["id"] == "C")
+    assert c_version["within_cap"] is True
+    assert c_version["delta_vs_baseline"] == pytest.approx(
+        {
+            "notes": 2,
+            "cost_yuan": 4,
+            "p_all_pp": 20,
+            "expected_broken": -0.25,
+        }
+    )
+
+
+def test_no_candidate_within_cap_is_reported_without_a_decision() -> None:
+    payload = _payload()
+    payload["budget_yuan"] = 1
+
+    result = optimize(payload)
+
+    assert result["ranking"] == []
+    assert result["best_within_cap_id"] is None
+    assert result["versions"][0]["within_cap"] is False
