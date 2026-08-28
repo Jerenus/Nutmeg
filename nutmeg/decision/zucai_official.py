@@ -21,6 +21,7 @@ API_URL = ("https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 VALID_CODES = {"3", "1", "0"}
+RENJIU_RETURN_RATE = 0.64
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,25 @@ class OfficialDraw:
     sfc_second: dict | None
     sale_amount_rj: float | None
     scores: dict | None = None   # {"1": (2,1), ...} 90 分钟比分(czScore),缺则 None
+
+
+@dataclass(frozen=True)
+class OfficialRenjiuHistory:
+    """Bonus-only official history; independent from the 14-result settlement string."""
+
+    issue: str
+    draw_date: str
+    stake_count: int
+    stake_amount: float
+    sale_amount: float
+
+    @property
+    def pool_implied_bonus(self) -> float:
+        return self.sale_amount * RENJIU_RETURN_RATE / self.stake_count
+
+    @property
+    def observed_return_rate(self) -> float:
+        return self.stake_amount * self.stake_count / self.sale_amount
 
 
 def _num(raw) -> float | None:
@@ -82,6 +102,67 @@ def parse_draw(item: dict) -> OfficialDraw:
         sale_amount_rj=_num(item.get("totalSaleAmountRj")),
         scores=scores or None,
     )
+
+
+def parse_renjiu_history_item(item: dict) -> OfficialRenjiuHistory:
+    """Parse only official Renjiu bonus facts; cancelled result faces stay irrelevant."""
+    issue = str(item.get("lotteryDrawNum") or "").strip()
+    prize = None
+    for row in item.get("prizeLevelListRj") or []:
+        count = _num(row.get("stakeCount"))
+        amount = _num(row.get("stakeAmount"))
+        if count is not None and amount is not None:
+            prize = (count, amount)
+            break
+    sale = _num(item.get("totalSaleAmountRj"))
+    if (
+        not issue
+        or prize is None
+        or prize[0] <= 0
+        or prize[1] <= 0
+        or sale is None
+        or sale <= 0
+    ):
+        raise ValueError(f"任九历史奖金事实缺失或非正数({issue or 'unknown'})")
+    history = OfficialRenjiuHistory(
+        issue=issue,
+        draw_date=str(item.get("lotteryDrawTime") or ""),
+        stake_count=int(prize[0]),
+        stake_amount=float(prize[1]),
+        sale_amount=float(sale),
+    )
+    if abs(history.observed_return_rate - RENJIU_RETURN_RATE) > 0.002:
+        raise ValueError(
+            f"任九历史返奖率异常({issue}): {history.observed_return_rate:.4f}"
+        )
+    return history
+
+
+def parse_renjiu_history_payload(payload: dict) -> list[OfficialRenjiuHistory]:
+    """Parse the official history response without depending on result faces."""
+    if not isinstance(payload, dict):
+        raise ValueError("official history payload must be an object")
+    items = (payload.get("value") or {}).get("list") or []
+    if not isinstance(items, list) or not items:
+        raise ValueError("official history contains no rows")
+    return [parse_renjiu_history_item(item) for item in items]
+
+
+def fetch_renjiu_history(*, fetcher=None, page_size: int = 60) -> list[OfficialRenjiuHistory]:
+    """Fetch bonus-only gameNo=90 history in provider order."""
+    if fetcher is None:
+        def fetcher(url):
+            import httpx
+
+            response = httpx.get(
+                url,
+                headers={"User-Agent": _UA, "Referer": "https://www.sporttery.cn/"},
+                timeout=20.0,
+            )
+            response.raise_for_status()
+            return response.json()
+    payload = fetcher(API_URL.format(page_size=page_size))
+    return parse_renjiu_history_payload(payload)
 
 
 def fetch_official(issue: str, *, fetcher=None, page_size: int = 15) -> OfficialDraw | None:

@@ -1,0 +1,20 @@
+{
+  "value": {
+    "list": [
+      {"lotteryDrawNum":"26103","lotteryDrawTime":"2026-08-26","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"3,296","stakeAmount":"2,744"}],"totalSaleAmountRj":"14,135,916"},
+      {"lotteryDrawNum":"26102","lotteryDrawTime":"2026-08-24","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"408","stakeAmount":"21,018"}],"totalSaleAmountRj":"13,399,134"},
+      {"lotteryDrawNum":"26101","lotteryDrawTime":"2026-08-22","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"209","stakeAmount":"46,573"}],"totalSaleAmountRj":"15,209,134"},
+      {"lotteryDrawNum":"26100","lotteryDrawTime":"2026-08-20","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"3,296","stakeAmount":"2,422"}],"totalSaleAmountRj":"12,478,054"},
+      {"lotteryDrawNum":"26099","lotteryDrawTime":"2026-08-18","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"1,505","stakeAmount":"4,937"}],"totalSaleAmountRj":"11,611,826"},
+      {"lotteryDrawNum":"26098","lotteryDrawTime":"2026-08-16","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"987","stakeAmount":"7,956"}],"totalSaleAmountRj":"12,270,216"},
+      {"lotteryDrawNum":"26097","lotteryDrawTime":"2026-08-14","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"760","stakeAmount":"10,904"}],"totalSaleAmountRj":"12,949,594"},
+      {"lotteryDrawNum":"26096","lotteryDrawTime":"2026-08-12","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"501","stakeAmount":"16,097"}],"totalSaleAmountRj":"12,601,364"},
+      {"lotteryDrawNum":"26095","lotteryDrawTime":"2026-08-10","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"250","stakeAmount":"30,607"}],"totalSaleAmountRj":"11,956,014"},
+      {"lotteryDrawNum":"26094","lotteryDrawTime":"2026-08-08","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"652","stakeAmount":"11,533"}],"totalSaleAmountRj":"11,749,264"},
+      {"lotteryDrawNum":"26093","lotteryDrawTime":"2026-08-06","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"3,071","stakeAmount":"2,510"}],"totalSaleAmountRj":"12,047,162"},
+      {"lotteryDrawNum":"26092","lotteryDrawTime":"2026-08-04","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"2,107","stakeAmount":"3,838"}],"totalSaleAmountRj":"12,635,578"},
+      {"lotteryDrawNum":"26091","lotteryDrawTime":"2026-08-02","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"5,774","stakeAmount":"1,626"}],"totalSaleAmountRj":"14,674,292"},
+      {"lotteryDrawNum":"26090","lotteryDrawTime":"2026-07-31","lotteryDrawResult":"* * * * * * * * * * * * * *","prizeLevelListRj":[{"prizeLevel":"任选9场","stakeCount":"7,194","stakeAmount":"1,305"}],"totalSaleAmountRj":"14,675,304"}
+    ]
+  }
+}
