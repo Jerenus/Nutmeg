@@ -21,6 +21,9 @@ _ZUCAI_SCHEDULE_SOURCE_FILE_OPTION = _cli.typer.Option(
 _ZUCAI_ODDS_SOURCE_FILE_OPTION = _cli.typer.Option(
     None, "--odds-source-file", help="赔率源文件(离线;省略则需 --live-fetch)")
 _LEGS_AUDIT_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="票面结构 JSON")
+_ZUCAI_OPTIMIZER_INPUT_OPTION = _cli.typer.Option(
+    ..., "--input-file", help="候选版本与 fair JSON"
+)
 
 
 @_cli.app.command("decision-fetch")
@@ -509,6 +512,32 @@ def decision_audit_legs(
     _cli.typer.echo(format_findings(findings, issue=str(payload.get("issue", ""))))
     if has_blocking(findings):
         raise _cli.typer.Exit(code=1)
+
+
+@_cli.app.command("zucai-optimize")
+def zucai_optimize(
+    input_file: Path = _ZUCAI_OPTIMIZER_INPUT_OPTION,
+    json_output: bool = _cli.typer.Option(False, "--json", help="输出稳定 JSON"),
+) -> None:
+    """比较人工给定的足彩候选版本，只做确定性算术，不生成或裁决票面。"""
+    import json
+
+    from nutmeg.decision.zucai_optimizer import (
+        OptimizerInputError,
+        format_report,
+        optimize,
+    )
+
+    try:
+        payload = json.loads(input_file.read_text("utf-8"))
+        result = optimize(payload)
+    except (OSError, json.JSONDecodeError, OptimizerInputError) as exc:
+        _cli.typer.echo(f"输入错误：{exc}", err=True)
+        raise _cli.typer.Exit(code=2) from exc
+    if json_output:
+        _cli.typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        _cli.typer.echo(format_report(result))
 
 
 @_cli.app.command("zucai-official")

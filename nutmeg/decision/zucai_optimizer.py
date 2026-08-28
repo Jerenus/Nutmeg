@@ -277,3 +277,55 @@ def optimize(payload: object) -> dict[str, Any]:
         "best_within_cap_id": ranking[0] if ranking else None,
         "groups": groups,
     }
+
+
+def format_report(result: dict[str, Any]) -> str:
+    """Render optimizer evidence for a terminal without adding a decision."""
+    lines = [f"足彩候选比较（{result['issue']}）"]
+    if result["budget_yuan"] is None:
+        lines.append("注金帽: 未设置")
+    else:
+        lines.append(f"注金帽: ¥{result['budget_yuan']:,}")
+    lines.extend(
+        [
+            "",
+            "版本                         注数      票价  P(全对)  期望断腿  帽内",
+            "------------------------ -------- -------- -------- -------- ----",
+        ]
+    )
+    for version in result["versions"]:
+        within_cap = {True: "是", False: "否", None: "—"}[version["within_cap"]]
+        lines.append(
+            f"{version['id']:<24} {version['notes']:>8,} "
+            f"¥{version['cost_yuan']:>7,} {version['p_all'] * 100:>7.2f}% "
+            f"{version['expected_broken']:>8.3f} {within_cap:>4}"
+        )
+        delta = version.get("delta_vs_baseline")
+        if delta:
+            lines.append(
+                "  对 baseline: "
+                f"注数 {delta['notes']:+,} / 票价 {delta['cost_yuan']:+,} / "
+                f"P {delta['p_all_pp']:+.2f}pp / 断腿 {delta['expected_broken']:+.3f}"
+            )
+
+    lines.append("")
+    if result["ranking"]:
+        lines.append(f"帽内排序: {' > '.join(result['ranking'])}")
+        lines.append(f"帽内第一: {result['best_within_cap_id']}")
+    else:
+        lines.append("帽内候选: 0（仅表示输入候选均超帽）")
+
+    for group in result["groups"]:
+        lines.append("")
+        lines.append(
+            f"联合组 {group['id']}: P(至少一票全对)={group['p_any_all'] * 100:.2f}%"
+        )
+        if group["common_dead_faces"]:
+            rendered = "、".join(
+                f"场{item['match_no']}={item['faces']}"
+                for item in group["common_dead_faces"]
+            )
+            lines.append(f"  共同死面: {rendered}")
+        else:
+            lines.append("  共同死面: 无")
+    return "\n".join(lines)
