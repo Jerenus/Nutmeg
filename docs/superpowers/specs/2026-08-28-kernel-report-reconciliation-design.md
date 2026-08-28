@@ -23,8 +23,9 @@ T7 在 `decision-am --issue` 的 Zucai kernel 步骤后查询 actions 表，并�
    独立防线。
 2. 查询 `market_snapshots` 业务表。能证明对象存在，却绕过了“所有后果必须有 Action”
    的本体不变量。
-3. 查询 actions 表（采用）。用 `action_type/status/idempotency_key prefix` 锁定本期
-   Zucai snapshot Action，既证明对象通过 typed Action，又与服务内存计数独立。
+3. 查询 actions 表（采用）。用 `action_type/status` 和结构化 Action payload 锁定当前
+   prep 各 canonical match 的 Zucai snapshot Action，既证明对象通过 typed Action，
+   又与服务内存计数独立。
 
 ## 3. 作用域与判据
 
@@ -34,20 +35,23 @@ Zucai snapshot Action 的既有幂等键为：
 zucai:snapshot:<issue>:<match_no>:<snapshot_kind>:<as_of>
 ```
 
-因此本期作用域前缀稳定为 `zucai:snapshot:<issue>:`。ActionRepository 新增只读计数
-方法，条件为：
+ActionRepository 新增只读计数方法。adapter 先由 prep 行的队名+日期解析当前
+canonical match IDs，再按以下条件统计 distinct `payload.match_id`：
 
 - `action_type == "build_market_snapshot"`；
 - `status == "committed"`；
-- `idempotency_key` 以本期前缀开头。
+- `payload.match_id` 属于当前 prep match IDs；
+- `payload.provider == "zucai"`；
+- `payload.snapshot_kind == "read_time"`。
 
 prep 报告数取 `_default_loader` 返回的本期 matches 数量。它与 prep 的 `n_matches`
 同源，代表应形成 shadow 市场锚的板面场数。无源文件仍沿用现有“源快照缺失”可见降级，
 不进入对账；有源文件但缺 odds/date、Action rejected/failed 或服务误报均会造成实际
 committed 数小于 prep 报告数，从而报警。
 
-同一期幂等重跑读取累计 committed Action 数，仍应等于 prep 报告数，不会把“本次新建
-为 0”误判成失败。service 本次数只作为诊断字段，不参与硬判据。
+同一期幂等重跑以及跨期同一 canonical match 复用首个 read-time anchor 时，原始
+committed Action 仍能被 payload match ID 找到，不会把“本次新建为 0”误判成失败。
+service 本次数只作为诊断字段，不参与硬判据。
 
 ## 4. 错误与输出
 

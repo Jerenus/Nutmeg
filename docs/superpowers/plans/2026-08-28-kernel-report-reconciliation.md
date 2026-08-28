@@ -1,10 +1,10 @@
 # Kernel 落库-报告对账 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 让 kernel-backed `decision-am --issue` 用 actions 表独立核验 Zucai prep 场数，杜绝 rejected snapshot 被写成成功 shadow 证据。
 
-**Architecture:** ActionRepository 提供按 action type/status/idempotency prefix 的通用只读计数；ontology adapter 在 Zucai typed ingest 后查询本期 committed snapshot Action，并与 prep 同源 matches 数硬比较。失败仍由既有 `_compose` 转成可见 failed step 和 CLI 非零退出。
+**Architecture:** ActionRepository 提供通用 Action 计数和按结构化 payload 统计 distinct snapshot match 的只读查询；ontology adapter 在 Zucai typed ingest 后查询当前 prep canonical matches 对应的 committed snapshot Action，并与 prep 同源 matches 数硬比较。失败仍由既有 `_compose` 转成可见 failed step 和 CLI 非零退出。
 
 **Tech Stack:** Python 3.12、SQLAlchemy Core、typed Actions、pytest、Typer。
 
@@ -24,7 +24,7 @@
 - Create: `tests/ontology/test_action_repository.py`
 - Modify: `nutmeg/ontology/repository/actions.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 用临时 kernel 的 `ActionRepository` 插入两个 committed `build_market_snapshot`（其中一个
 幂等键属于 26111）、一个 rejected 同类型 Action 和一个 committed 其他类型 Action：
@@ -45,12 +45,12 @@ def test_count_filters_action_truth_by_type_status_and_prefix(tmp_path):
         ) == 1
 ```
 
-- [ ] **Step 2: 跑测试确认 RED**
+- [x] **Step 2: 跑测试确认 RED**
 
 Run: `uv run pytest tests/ontology/test_action_repository.py -v`  
 Expected: FAIL，`ActionRepository.count` 不存在。
 
-- [ ] **Step 3: 最小实现**
+- [x] **Step 3: 最小实现**
 
 在 `ActionRepository` 增加：
 
@@ -72,12 +72,12 @@ def count(
     return self._connection.execute(query).scalar_one()
 ```
 
-- [ ] **Step 4: 跑仓储测试确认 GREEN**
+- [x] **Step 4: 跑仓储测试确认 GREEN**
 
 Run: `uv run pytest tests/ontology/test_action_repository.py -v`  
 Expected: all tests pass。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/ontology/repository/actions.py tests/ontology/test_action_repository.py
@@ -90,7 +90,7 @@ git commit -m "feat(ontology): query scoped action truth counts"
 - Modify: `tests/decision/test_ontology_adapter.py`
 - Modify: `nutmeg/decision/ontology_adapter.py`
 
-- [ ] **Step 1: 写正常、幂等和 rejected 失败测试**
+- [x] **Step 1: 写正常、幂等和 rejected 失败测试**
 
 扩展现有 `test_am_v2_with_issue_ingests_zucai`：
 
@@ -101,7 +101,7 @@ assert (
 )
 ```
 
-再新增幂等重跑：第一次 ingest 后用同一期再跑，断言两次 result 都 succeeded，第二次输出
+再新增幂等重跑和跨期同一 canonical match 复用：断言结果均 succeeded，后续运行输出
 `actions落库 1 / prep报告 1 / service本次 0`。
 
 同一 RED 中 monkeypatch `MarketActions.build_snapshot` 返回 `ActionStatus.REJECTED`：
@@ -135,12 +135,12 @@ def test_am_v2_rejected_snapshot_fails_kernel_count_assertion(tmp_path, monkeypa
     assert "actions=0 prep=1 service=0" in str(result)
 ```
 
-- [ ] **Step 2: 跑指定测试确认 RED**
+- [x] **Step 2: 跑指定测试确认 RED**
 
 Run: `uv run pytest tests/decision/test_ontology_adapter.py -v -k 'zucai or rejected_snapshot'`  
 Expected: 正常/幂等测试因无对账输出 FAIL；rejected 测试因 result 仍 succeeded FAIL。
 
-- [ ] **Step 3: 实现对账**
+- [x] **Step 3: 实现对账**
 
 新增：
 
@@ -149,25 +149,35 @@ class KernelCountMismatch(RuntimeError):
     pass
 
 
-def _committed_zucai_snapshot_actions(kernel, issue: str) -> int:
+def _committed_zucai_snapshot_actions(kernel, rows) -> int:
     with OntologyUnitOfWork(kernel.engine) as uow:
-        return uow.actions.count(
-            action_type="build_market_snapshot",
-            status=ActionStatus.COMMITTED,
-            idempotency_prefix=f"zucai:snapshot:{issue}:",
+        match_ids = set()
+        for row in rows:
+            if not row.match_date:
+                continue
+            match_id = uow.identity.entity_by_external_id(
+                EntityType.MATCH,
+                provider="zucai-canonical",
+                external_id=canonical_match_id(row.home, row.away, row.match_date),
+            )
+            if match_id is not None:
+                match_ids.add(match_id)
+        return uow.actions.count_committed_snapshot_matches(
+            match_ids, provider="zucai", snapshot_kind="read_time"
         )
 ```
 
-`_ingest_zucai_issue` 保存 `rows` tuple，service ingest 后取 `prep_count=len(rows)` 与 Action
-计数。两者不等时抛稳定 `kernel_snapshot_count_mismatch`；相等时把三数对账追加到现有
-message。service 本次数只诊断，不参与硬判据，以支持 first-anchor 幂等重跑。
+`_ingest_zucai_issue` 保存 `rows` tuple，service ingest 后取 `prep_count=len(rows)`，按
+canonical match IDs 查询 Action payload 的 distinct truth 数。两者不等时抛稳定
+`kernel_snapshot_count_mismatch`；相等时把三数对账追加到现有 message。service 本次数
+只诊断，不参与硬判据，以支持同一期及跨期 first-anchor 幂等复用。
 
-- [ ] **Step 4: 跑 adapter 测试确认 GREEN**
+- [x] **Step 4: 跑 adapter 测试确认 GREEN**
 
 Run: `uv run pytest tests/decision/test_ontology_adapter.py -v`  
 Expected: all tests pass；rejected step failed 且稳定错误可见。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/decision/ontology_adapter.py tests/decision/test_ontology_adapter.py
@@ -179,25 +189,25 @@ git commit -m "feat(decision): reconcile zucai reports with action truth"
 **Files:**
 - Modify: `docs/superpowers/plans/2026-08-28-kernel-report-reconciliation.md`
 
-- [ ] **Step 1: cherry-pick schema 15 共享测试修复**
+- [x] **Step 1: cherry-pick schema 15 共享测试修复**
 
 Run: `git cherry-pick 5c68f09`  
 Expected: 当前分支获得 reliability 动态 schema 期望，避免无关全量失败。
 
-- [ ] **Step 2: 静态检查与全量测试**
+- [x] **Step 2: 静态检查与全量测试**
 
 Run: `uv run ruff check .`  
 Run: `uv run pytest -q`  
 Expected: 0 failed。
 
-- [ ] **Step 3: 真实 26111 源复制到临时目录**
+- [x] **Step 3: 真实 26111 源复制到临时目录**
 
 把生产 `26111-issue.json`、`26111-odds.json` 只读复制到 `mktemp -d` 的 Zucai 目录，
-使用临时 `AppSettings(data_dir=...)` kernel 调 `run_decision_am_v2(..., issue="26111")`。
+使用临时 `AppSettings` kernel 调用 26111 的 `run_decision_am_v2`。
 Expected: 输出 `actions落库 14 / prep报告 14`，临时 actions 表 committed snapshot 计数 14；
 不写生产 ontology。
 
-- [ ] **Step 4: 计划勾选、记录证据并提交**
+- [x] **Step 4: 计划勾选、记录证据并提交**
 
 ```bash
 git add docs/superpowers/plans/2026-08-28-kernel-report-reconciliation.md
@@ -210,3 +220,17 @@ git commit -m "docs(plan): record kernel reconciliation verification"
 - 不改权限、重试或修复策略；本包只做查询、计数、断言和退出码。
 - 不改变 prep 的判读空白区，不生成票面或概率判断。
 - 不对 legacy JSONL 路径伪造 actions 对账。
+
+## 执行记录（2026-08-28）
+
+- `uv run ruff check .`：All checks passed。
+- `uv run pytest -q`：1,393 tests collected，退出码 0。
+- 正常/幂等/跨期锚复用/rejected 注入定向测试：11 passed。
+- 26111 真实源只读复制到 `mktemp` 后用全新临时 kernel 回放：14 场 Match、14 Snapshot，
+  输出 `actions落库 14 / prep报告 14 / service本次 14`；actions 表实查 committed
+  `build_market_snapshot` 为 14。
+- rejected 注入：`kernel_snapshot_count_mismatch issue=26110 actions=0 prep=1 service=0`，
+  workflow `succeeded=False`。
+- 为兼容跨期同一 canonical match 复用首个锚，实际实现从设计初稿的 issue key 前缀
+  计数改为 Action payload 中当前 prep distinct match IDs 计数；仍只读取 actions 真相层。
+- schema 15 共享测试修复 `5c68f09` cherry-pick 后，本分支对应 commit 为 `55c2ee6`。
