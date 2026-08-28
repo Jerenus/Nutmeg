@@ -30,6 +30,9 @@ _OFFICIAL_HISTORY_FILE_OPTION = _cli.typer.Option(
     "--official-history-file",
     help="离线 sporttery gameNo=90 历史响应 JSON；省略则抓官方接口",
 )
+_ZUCAI_OPTIMIZER_INPUT_OPTION = _cli.typer.Option(
+    ..., "--input-file", help="候选版本与 fair JSON"
+)
 
 
 @_cli.app.command("decision-fetch")
@@ -559,6 +562,32 @@ def decision_audit_legs(
             except (AuditOverrideError, ValueError) as error:
                 _cli.typer.echo(f"❌ user override blocked: {error}")
         raise _cli.typer.Exit(code=1)
+
+
+@_cli.app.command("zucai-optimize")
+def zucai_optimize(
+    input_file: Path = _ZUCAI_OPTIMIZER_INPUT_OPTION,
+    json_output: bool = _cli.typer.Option(False, "--json", help="输出稳定 JSON"),
+) -> None:
+    """比较人工给定的足彩候选版本，只做确定性算术，不生成或裁决票面。"""
+    import json
+
+    from nutmeg.decision.zucai_optimizer import (
+        OptimizerInputError,
+        format_report,
+        optimize,
+    )
+
+    try:
+        payload = json.loads(input_file.read_text("utf-8"))
+        result = optimize(payload)
+    except (OSError, json.JSONDecodeError, OptimizerInputError) as exc:
+        _cli.typer.echo(f"输入错误：{exc}", err=True)
+        raise _cli.typer.Exit(code=2) from exc
+    if json_output:
+        _cli.typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        _cli.typer.echo(format_report(result))
 
 
 @_cli.app.command("zucai-official")
