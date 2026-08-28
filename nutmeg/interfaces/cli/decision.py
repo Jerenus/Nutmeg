@@ -650,6 +650,30 @@ def zucai_night_calibrate(
         ..., "--date",
         help="欧洲比赛日 YYYY-MM-DD(API-Football date 口径,北京凌晨场取前一天)"),
     zucai_dir: Path = _ZUCAI_DIR_OPTION,
+    dispatch_telegram: bool = _cli.typer.Option(False, "--dispatch-telegram"),
+    dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run"),
 ):
     """夜间结果校准:抓当日完赛→90'彩果→票面存活报告(不写 rx/scoreboard)。"""
-    _cli.typer.echo(run_night_calibrate(issue, date, zucai_dir))
+    import hashlib
+
+    from nutmeg.notifications.models import NotificationRequest
+
+    report = run_night_calibrate(issue, date, zucai_dir)
+    _cli.typer.echo(report)
+    if not dispatch_telegram:
+        return
+    service = _cli.build_notification_service(settings=_cli.get_settings())
+    outcome = service.publish(
+        NotificationRequest.text(
+            kind="zucai.night-calibration",
+            business_key=issue,
+            stage=date,
+            semantic_fingerprint=hashlib.sha256(report.encode("utf-8")).hexdigest(),
+            subject=f"{issue} 夜间校准 {date}",
+            text=report,
+        ),
+        dry_run=dry_run,
+    )
+    _cli.typer.echo(f"notification: {outcome.status.value}")
+    if not outcome.is_success:
+        raise _cli.typer.Exit(code=1)
