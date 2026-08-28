@@ -22,6 +22,7 @@ import sys
 import time
 from contextlib import redirect_stdout
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -31,7 +32,7 @@ from sqlalchemy.orm import Session
 from nutmeg.agents.llm_provider import build_bot_fallback_provider, build_synthesis_provider
 from nutmeg.agents.router import classify_intent
 from nutmeg.agents.workflow import LANGGRAPH_AVAILABLE, MatchAnalysisAgentWorkflow
-from nutmeg.config.settings import get_settings
+from nutmeg.config.settings import AppSettings, get_settings
 from nutmeg.data.api_football import ApiFootballClient, ApiFootballError
 from nutmeg.data.open_meteo import OpenMeteoClient
 from nutmeg.data.soccerdata_client import SoccerDataClient, SoccerDataError
@@ -810,11 +811,30 @@ def build_telegram_bot_runner(settings) -> TelegramBotRunner:
     if not allowed_chat_ids:
         raise ValueError("NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS is not configured.")
     workflow, _session = build_agent_workflow()
+    client = TelegramBotClient(
+        token=settings.telegram_bot_token,
+        base_url=settings.telegram_api_base_url,
+    )
+    confirmation_handler = None
+    kernel = build_ontology_kernel(AppSettings(data_dir=settings.data_dir))
+    status = kernel.status()
+    if (
+        status.initialized
+        and status.integrity_check == "ok"
+        and not status.pending_migrations
+    ):
+        from nutmeg.services.telegram_ticket_confirmation import (
+            TelegramTicketConfirmationService,
+        )
+
+        confirmation_handler = TelegramTicketConfirmationService(
+            kernel=kernel,
+            telegram_client=client,
+            allowed_chat_ids=allowed_chat_ids,
+            now_fn=lambda: datetime.now(UTC),
+        )
     return TelegramBotRunner(
-        client=TelegramBotClient(
-            token=settings.telegram_bot_token,
-            base_url=settings.telegram_api_base_url,
-        ),
+        client=client,
         bot_adapter=BotAdapter(
             workflow=workflow,
             payload_builder=build_match_brief_payload,
@@ -829,6 +849,49 @@ def build_telegram_bot_runner(settings) -> TelegramBotRunner:
             ),
         ),
         allowed_chat_ids=allowed_chat_ids,
+        confirmation_handler=confirmation_handler,
+    )
+
+
+def build_telegram_ticket_confirmation_service(
+    settings,
+    data_dir: Path,
+    *,
+    telegram_client=None,
+):
+    if not settings.telegram_bot_token:
+        raise ValueError("NUTMEG_TELEGRAM_BOT_TOKEN is not configured.")
+    allowed_chat_ids = parse_telegram_allowed_chat_ids(
+        settings.telegram_allowed_chat_ids
+    )
+    if not allowed_chat_ids:
+        raise ValueError("NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS is not configured.")
+    kernel = build_ontology_kernel(
+        AppSettings(data_dir=Path(data_dir).expanduser().resolve())
+    )
+    status = kernel.status()
+    if (
+        not status.initialized
+        or status.integrity_check != "ok"
+        or status.pending_migrations
+    ):
+        raise ValueError("ontology must be initialized, healthy, and current")
+    from nutmeg.services.telegram_ticket_confirmation import (
+        TelegramTicketConfirmationService,
+    )
+
+    client = telegram_client or TelegramBotClient(
+        token=settings.telegram_bot_token,
+        base_url=settings.telegram_api_base_url,
+    )
+    return (
+        TelegramTicketConfirmationService(
+            kernel=kernel,
+            telegram_client=client,
+            allowed_chat_ids=allowed_chat_ids,
+            now_fn=lambda: datetime.now(UTC),
+        ),
+        allowed_chat_ids,
     )
 
 
@@ -862,6 +925,8 @@ def telegram_daemon_summary_payload(
         "messages_handled": summary.messages_handled,
         "messages_denied": summary.messages_denied,
         "messages_ignored": summary.messages_ignored,
+        "callbacks_handled": getattr(summary, "callbacks_handled", 0),
+        "shadows_marked": getattr(summary, "shadows_marked", 0),
         "next_offset": summary.next_offset,
         "stop_reason": summary.stop_reason,
         "offset_persistence_enabled": offset_persistence_enabled,
@@ -925,6 +990,7 @@ from nutmeg.interfaces.cli import psychology as psychology  # noqa: E402
 from nutmeg.interfaces.cli import reliability as reliability  # noqa: E402
 from nutmeg.interfaces.cli import scoreboard as scoreboard  # noqa: E402
 from nutmeg.interfaces.cli import telegram as telegram  # noqa: E402
+from nutmeg.interfaces.cli import ticket_confirmation as ticket_confirmation  # noqa: E402
 from nutmeg.interfaces.cli import workflow as workflow  # noqa: E402
 from nutmeg.interfaces.cli import zucai as zucai  # noqa: E402
 

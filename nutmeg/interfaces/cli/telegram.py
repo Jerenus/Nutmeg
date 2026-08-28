@@ -50,6 +50,8 @@ def telegram_bot_poll_once(
         "messages_handled": summary.messages_handled,
         "messages_denied": summary.messages_denied,
         "messages_ignored": summary.messages_ignored,
+        "callbacks_handled": getattr(summary, "callbacks_handled", 0),
+        "shadows_marked": getattr(summary, "shadows_marked", 0),
         "next_offset": summary.next_offset,
     }
     if format == "json":
@@ -58,6 +60,8 @@ def telegram_bot_poll_once(
     _cli.console.print(
         f"updates={summary.updates_seen} handled={summary.messages_handled} "
         f"denied={summary.messages_denied} ignored={summary.messages_ignored} "
+        f"callbacks={getattr(summary, 'callbacks_handled', 0)} "
+        f"shadows={getattr(summary, 'shadows_marked', 0)} "
         f"next_offset={summary.next_offset}"
     )
 
@@ -114,6 +118,8 @@ def telegram_bot_run(
         f"polls={summary.polls_run} updates={summary.updates_seen} "
         f"handled={summary.messages_handled} denied={summary.messages_denied} "
         f"ignored={summary.messages_ignored} next_offset={summary.next_offset} "
+        f"callbacks={getattr(summary, 'callbacks_handled', 0)} "
+        f"shadows={getattr(summary, 'shadows_marked', 0)} "
         f"stop={summary.stop_reason} offset_source={offset_source} "
         f"offset_file={resolved_offset_file}"
     )
