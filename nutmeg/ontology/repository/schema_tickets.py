@@ -173,3 +173,32 @@ ticket_placements = Table(
         unique=True,
     ),
 )
+
+ticket_shadow_records = Table(
+    "ticket_shadow_records",
+    metadata,
+    Column("ticket_shadow_id", Text, primary_key=True),
+    Column(
+        "ticket_artifact_id",
+        Text,
+        ForeignKey("audited_ticket_artifacts.ticket_artifact_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column(
+        "confirmation_id",
+        Text,
+        ForeignKey("ticket_confirmation_challenges.confirmation_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("reason", Text, nullable=False),
+    Column("deadline_at", Text, nullable=False),
+    Column("marked_at", Text, nullable=False),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+)
