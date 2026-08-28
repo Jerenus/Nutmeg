@@ -448,6 +448,10 @@ class TicketLegCommand(StrictContract):
     bucket: str = Field(min_length=1)
     fair: dict[str, float]
     confidence: int = Field(ge=0, le=5)
+    prior: dict[str, float] | None = None
+    adjustment_evidence_tiers: list[
+        Literal['official', 'confirmed_structural', 'inference', 'motivation']
+    ] = Field(default_factory=list)
     directional_flags: list[tuple[str, str]] = Field(default_factory=list)
     nondirectional_flags: list[str] = Field(default_factory=list)
     anchor_integrity: Literal['pass', 'fail', 'symmetric_damage', 'unknown'] = 'unknown'

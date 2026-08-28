@@ -8,6 +8,12 @@ from nutmeg.decision.legs_audit import Leg
 
 _FACE_FOR_OUTCOME = {"home": "3", "draw": "1", "away": "0"}
 _ANCHOR_STATES = {"pass", "fail", "symmetric_damage", "unknown"}
+_ADJUSTMENT_EVIDENCE_TIERS = {
+    "official",
+    "confirmed_structural",
+    "inference",
+    "motivation",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +35,8 @@ class TicketLegDraft:
     bucket: str
     fair: dict[str, float]
     confidence: int
+    prior: dict[str, float] | None = None
+    adjustment_evidence_tiers: tuple[str, ...] = ()
     directional_flags: tuple[tuple[str, str], ...] = ()
     nondirectional_flags: tuple[str, ...] = ()
     anchor_integrity: str = "unknown"
@@ -68,6 +76,18 @@ class TicketLegDraft:
             raise ValueError("fair probabilities must be between zero and one")
         if not math.isclose(sum(self.fair.values()), 1.0, abs_tol=1e-6):
             raise ValueError("fair probabilities must sum to one")
+        if self.prior is not None:
+            if set(self.prior) != set(_FACE_FOR_OUTCOME):
+                raise ValueError("prior must contain home, draw, and away")
+            if any(
+                not math.isfinite(float(value)) or not 0.0 <= float(value) <= 1.0
+                for value in self.prior.values()
+            ):
+                raise ValueError("prior probabilities must be between zero and one")
+            if not math.isclose(sum(self.prior.values()), 1.0, abs_tol=1e-6):
+                raise ValueError("prior probabilities must sum to one")
+        if not set(self.adjustment_evidence_tiers) <= _ADJUSTMENT_EVIDENCE_TIERS:
+            raise ValueError("adjustment_evidence_tiers contains an unknown tier")
         if not 0 <= self.confidence <= 5:
             raise ValueError("confidence must be between zero and five")
         if self.anchor_integrity not in _ANCHOR_STATES:
@@ -95,6 +115,8 @@ class TicketLegDraft:
             faces=self.faces,
             fair=dict(self.fair),
             confidence=self.confidence,
+            prior=dict(self.prior) if self.prior is not None else None,
+            adjustment_evidence_tiers=self.adjustment_evidence_tiers,
             directional_flags=self.directional_flags,
             nondirectional_flags=self.nondirectional_flags,
             anchor_integrity=self.anchor_integrity,
@@ -118,6 +140,8 @@ class TicketLegDraft:
             "bucket": self.bucket,
             "fair": dict(self.fair),
             "confidence": self.confidence,
+            "prior": dict(self.prior) if self.prior is not None else None,
+            "adjustment_evidence_tiers": list(self.adjustment_evidence_tiers),
             "directional_flags": [list(item) for item in self.directional_flags],
             "nondirectional_flags": list(self.nondirectional_flags),
             "anchor_integrity": self.anchor_integrity,
@@ -129,6 +153,12 @@ class TicketLegDraft:
         fair = value.get("fair")
         if not isinstance(fair, dict):
             raise ValueError("fair must be an object")
+        prior = value.get("prior")
+        if prior is not None and not isinstance(prior, dict):
+            raise ValueError("prior must be an object")
+        adjustment_tiers = value.get("adjustment_evidence_tiers", [])
+        if not isinstance(adjustment_tiers, list | tuple):
+            raise ValueError("adjustment_evidence_tiers must be a list")
         directional = value.get("directional_flags", [])
         nondirectional = value.get("nondirectional_flags", [])
         precedents = value.get("precedents", [])
@@ -158,6 +188,12 @@ class TicketLegDraft:
             bucket=str(value["bucket"]),
             fair={str(key): float(probability) for key, probability in fair.items()},
             confidence=int(value["confidence"]),
+            prior=(
+                {str(key): float(probability) for key, probability in prior.items()}
+                if prior is not None
+                else None
+            ),
+            adjustment_evidence_tiers=tuple(str(item) for item in adjustment_tiers),
             directional_flags=tuple(
                 (str(item[0]), str(item[1])) for item in directional
             ),

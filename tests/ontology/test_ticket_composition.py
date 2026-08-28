@@ -153,3 +153,26 @@ def test_ticket_leg_express_and_audit_views_are_explicit() -> None:
     assert audit.faces == "31"
     assert audit.directional_flags == (("self_made_tail", "1"),)
     assert audit.precedents == (("0", "same venue away win", "alive"),)
+
+
+def test_ticket_leg_roundtrips_c8_adjustment_inputs() -> None:
+    leg = _leg(
+        prior={"home": 0.55, "draw": 0.30, "away": 0.15},
+        adjustment_evidence_tiers=("confirmed_structural", "inference"),
+    )
+
+    restored = TicketLegDraft.from_dict(leg.to_dict())
+    audit = restored.audit_leg()
+
+    assert restored.prior == {"home": 0.55, "draw": 0.30, "away": 0.15}
+    assert restored.adjustment_evidence_tiers == (
+        "confirmed_structural",
+        "inference",
+    )
+    assert audit.prior == restored.prior
+    assert audit.adjustment_evidence_tiers == restored.adjustment_evidence_tiers
+
+
+def test_ticket_leg_rejects_unknown_adjustment_evidence_tier() -> None:
+    with pytest.raises(ValueError, match="adjustment_evidence_tiers"):
+        _leg(adjustment_evidence_tiers=("press_rumor",))
