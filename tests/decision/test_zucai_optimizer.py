@@ -28,6 +28,17 @@ def test_single_version_arithmetic() -> None:
     assert version["expected_broken"] == pytest.approx(0.6)
 
 
+def test_full_cover_is_certain_despite_rounded_fair_sum() -> None:
+    payload = _payload()
+    payload["fair"]["1"] = {"home": 0.5, "draw": 0.3, "away": 0.199}
+    payload["versions"] = [{"id": "full", "faces": {"1": "310"}}]
+
+    version = optimize(payload)["versions"][0]
+
+    assert version["p_all"] == 1
+    assert version["expected_broken"] == 0
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -128,3 +139,82 @@ def test_invalid_group_references_are_rejected(groups) -> None:
 
     with pytest.raises(OptimizerInputError):
         optimize(payload)
+
+
+def test_26111_u864_series_matches_recorded_probabilities() -> None:
+    payload = {
+        "issue": "26111",
+        "price_per_note": 2,
+        "budget_yuan": 864,
+        "fair": {
+            "1": {"home": 0.631, "draw": 0.193, "away": 0.176},
+            "3": {"home": 0.622, "draw": 0.234, "away": 0.144},
+            "5": {"home": 0.390, "draw": 0.295, "away": 0.315},
+            "7": {"home": 0.753, "draw": 0.154, "away": 0.092},
+            "9": {"home": 0.169, "draw": 0.200, "away": 0.631},
+            "10": {"home": 0.636, "draw": 0.212, "away": 0.152},
+            "11": {"home": 0.342, "draw": 0.290, "away": 0.367},
+            "12": {"home": 0.702, "draw": 0.176, "away": 0.122},
+            "14": {"home": 0.701, "draw": 0.177, "away": 0.122},
+        },
+        "versions": [
+            {
+                "id": "U864用户版",
+                "faces": {
+                    "1": "310",
+                    "3": "3",
+                    "5": "310",
+                    "7": "31",
+                    "9": "01",
+                    "10": "31",
+                    "11": "310",
+                    "12": "31",
+                    "14": "3",
+                },
+            },
+            {
+                "id": "U864优化版",
+                "faces": {
+                    "1": "310",
+                    "3": "31",
+                    "5": "310",
+                    "7": "3",
+                    "9": "01",
+                    "10": "31",
+                    "11": "310",
+                    "12": "31",
+                    "14": "3",
+                },
+            },
+            {
+                "id": "U1296",
+                "faces": {
+                    "1": "310",
+                    "3": "31",
+                    "5": "310",
+                    "7": "3",
+                    "9": "310",
+                    "10": "31",
+                    "11": "310",
+                    "12": "31",
+                    "14": "3",
+                },
+            },
+        ],
+    }
+
+    result = optimize(payload)
+
+    versions = {version["id"]: version for version in result["versions"]}
+    assert [(versions[name]["notes"], versions[name]["cost_yuan"]) for name in versions] == [
+        (432, 864),
+        (432, 864),
+        (648, 1296),
+    ]
+    # Persisted legs fair is rounded to 3 dp; rx kept 2 dp percentages from the
+    # higher-precision working values. Half of the fair quantum is the replay tolerance.
+    assert versions["U864用户版"]["p_all"] * 100 == pytest.approx(24.49, abs=0.05)
+    assert versions["U864优化版"]["p_all"] * 100 == pytest.approx(27.96, abs=0.05)
+    assert versions["U1296"]["p_all"] * 100 == pytest.approx(33.65, abs=0.05)
+    assert result["ranking"] == ["U864优化版", "U864用户版"]
+    assert result["best_within_cap_id"] == "U864优化版"

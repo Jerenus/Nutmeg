@@ -40,6 +40,12 @@ def _sorted_faces(faces: dict[str, str]) -> list[tuple[str, str]]:
     return sorted(faces.items(), key=lambda item: int(item[0]))
 
 
+def _coverage(probabilities: dict[str, Decimal], faces: set[str]) -> Decimal:
+    if faces == set(FACE_KEYS):
+        return Decimal(1)
+    return sum((probabilities[FACE_KEYS[face]] for face in faces), Decimal(0))
+
+
 def _validate_payload(payload: object) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise OptimizerInputError("root must be an object")
@@ -160,7 +166,7 @@ def _version_stats(
     notes = 1
     ordered_faces = _sorted_faces(version["faces"])
     for match_no, faces in ordered_faces:
-        coverage = sum((fair[match_no][FACE_KEYS[face]] for face in faces), Decimal(0))
+        coverage = _coverage(fair[match_no], set(faces))
         probability *= coverage
         expected_broken += Decimal(1) - coverage
         notes *= len(faces)
@@ -190,7 +196,7 @@ def _intersection_probability(
         allowed = set.intersection(*constraints)
         if not allowed:
             return Decimal(0)
-        coverage = sum((fair[match_no][FACE_KEYS[face]] for face in allowed), Decimal(0))
+        coverage = _coverage(fair[match_no], allowed)
         probability *= coverage
     return probability
 
