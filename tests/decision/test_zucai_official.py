@@ -56,6 +56,22 @@ def test_parse_renjiu_history_keeps_bonus_when_results_contain_cancellations():
     assert abs(row.pool_implied_bonus - 4347.93) < 0.01
 
 
+def test_parse_renjiu_history_accepts_26111_floor_rounding():
+    row = parse_renjiu_history_item({
+        "lotteryDrawNum": "26111",
+        "lotteryDrawTime": "2026-08-28",
+        "prizeLevelListRj": [{
+            "prizeLevel": "任选9场",
+            "stakeCount": "43,365",
+            "stakeAmount": "215",
+        }],
+        "totalSaleAmountRj": "14,617,834",
+    })
+
+    assert row.issue == "26111"
+    assert row.payout_consistent_with_return_rate()
+
+
 @pytest.mark.parametrize(
     "changes",
     [

@@ -1,13 +1,13 @@
 {
- "issue": "26103",
- "period_cap_yuan": 400,
- "history_as_of_issue": "26104",
- "history_window": 12,
- "candidates": [
-  {
-   "id": "cap-optimal",
-   "stake_yuan": 400,
-   "hit_probability": 0.02775464890369137
-  }
- ]
+  "issue": "26103",
+  "period_cap_yuan": 400,
+  "history_as_of_issue": "26104",
+  "history_window": 14,
+  "candidates": [
+    {
+      "id": "cap-optimal",
+      "stake_yuan": 400,
+      "hit_probability": 0.02775464890369137
+    }
+  ]
 }

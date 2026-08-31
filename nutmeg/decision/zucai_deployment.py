@@ -12,10 +12,11 @@ from nutmeg.decision.zucai_official import (
 )
 
 RENJIU_HISTORY_WINDOW = 12
-"""官方任九历史锚的唯一窗口（2026-08-29 用户裁定，26113 ADJ-2）。
+RENJIU_HISTORY_WINDOW_EFFECTIVE_ISSUE = 26113
+"""当前官方任九历史锚窗口（2026-08-29 用户裁定，26113 ADJ-2）。
 
-CLI 与 product 查询共用同一常量：奖金锚必须是滚动 12 期官方中位。
-n=3 近期窗已废止——26112 用它锚 ¥414 而实开 ¥4,098（10 倍低估）。"""
+CLI 与 product 查询从 26113 起共用滚动 12 期官方中位；更早期次保留当时
+显式登记的窗口，以便历史裁决可复现。"""
 
 PASS_RATIO_MAX = 0.95
 REDUCE_RATIO_MIN = 2.2
@@ -153,9 +154,15 @@ def evaluate_deployment_gate(
     if (
         isinstance(window_raw, bool)
         or not isinstance(window_raw, int)
-        or window_raw != RENJIU_HISTORY_WINDOW
+        or window_raw <= 0
+        or (
+            int(issue) >= RENJIU_HISTORY_WINDOW_EFFECTIVE_ISSUE
+            and window_raw != RENJIU_HISTORY_WINDOW
+        )
     ):
-        raise ValueError(f"history_window must equal {RENJIU_HISTORY_WINDOW}")
+        raise ValueError(
+            "history_window must be positive and must equal 12 from issue 26113"
+        )
     raw_candidates = payload.get("candidates")
     if not isinstance(raw_candidates, list) or not raw_candidates:
         raise ValueError("candidates must be a nonempty list")

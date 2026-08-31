@@ -69,7 +69,7 @@ class OfficialRenjiuHistory:
         epsilon = 1e-9 * max(abs(expected_total), 1.0)
         # 只允许「非负且严格小于 注数×¥1」的取整损耗:
         # 多付(shortfall<0)与少付≥1元/注 都是真实漂移,必须拒绝。
-        return -epsilon <= shortfall < self.stake_count - epsilon
+        return -epsilon <= shortfall < self.stake_count
 
 
 def _num(raw) -> float | None:

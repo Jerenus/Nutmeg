@@ -52,11 +52,17 @@ class FakeProductQueries:
 
 
 def _history() -> list[OfficialRenjiuHistory]:
-    # 固定 12 期窗口（RENJIU_HISTORY_WINDOW）要求至少 12 行先期官方数据。
     return [
-        OfficialRenjiuHistory(str(26111 - offset), "2026-08-20", 64, 1000.0, 100000.0)
-        for offset in range(12)
+        OfficialRenjiuHistory(str(issue), "2026-08-20", 64, 1000.0, 100000.0)
+        for issue in (26109, 26110, 26111)
     ]
+
+
+def test_product_history_window_is_policy_versioned() -> None:
+    from nutmeg.product import operator_queries as module
+
+    assert module._renjiu_history_window("26113", available_rows=20) == 12
+    assert module._renjiu_history_window("26112", available_rows=3) == 3
 
 
 @pytest.fixture

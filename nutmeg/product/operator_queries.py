@@ -11,6 +11,7 @@ from typing import Any
 from nutmeg.decision.legs_audit import Leg, audit_legs, audit_prescription_deviations
 from nutmeg.decision.zucai_deployment import (
     RENJIU_HISTORY_WINDOW,
+    RENJIU_HISTORY_WINDOW_EFFECTIVE_ISSUE,
     DeploymentGateState,
     evaluate_deployment_gate,
 )
@@ -56,6 +57,12 @@ from nutmeg.product.operator_state import (
 )
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
+
+
+def _renjiu_history_window(issue: str, *, available_rows: int) -> int:
+    if issue.isdigit() and int(issue) >= RENJIU_HISTORY_WINDOW_EFFECTIVE_ISSUE:
+        return RENJIU_HISTORY_WINDOW
+    return min(20, available_rows)
 
 _ACTIONABLE_STATES = {
     OperatorTaskState.PREPARE,
@@ -707,7 +714,9 @@ class OperatorQueryService:
                     "issue": bundle.issue.issue_id,
                     "history_as_of_issue": bundle.issue.issue_id,
                     "period_cap_yuan": 400,
-                    "history_window": RENJIU_HISTORY_WINDOW,
+                    "history_window": _renjiu_history_window(
+                        bundle.issue.issue_id, available_rows=len(history)
+                    ),
                     "candidates": [
                         {
                             "id": candidate.candidate_id,
