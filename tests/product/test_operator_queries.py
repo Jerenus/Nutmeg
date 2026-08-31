@@ -23,6 +23,7 @@ class FakeRepository:
     adjudications: dict[str, list[dict]] = field(default_factory=dict)
     predictions: dict[str, list[dict]] = field(default_factory=dict)
     tickets: list[dict] = field(default_factory=list)
+    settlement_rows: list[dict] = field(default_factory=list)
 
     def adjudications_for_subject(self, subject_type: str, subject_id: str, as_of: str):
         assert subject_type == "issue"
@@ -34,6 +35,9 @@ class FakeRepository:
 
     def operator_ticket_artifacts(self, as_of: str):
         return list(self.tickets)
+
+    def settlements(self, *, as_of: str):
+        return list(self.settlement_rows)
 
 
 class FakeProductQueries:
@@ -290,6 +294,83 @@ def test_gate_names_cap_candidate_without_relabeling_operator_choice(
     assert task.step.gate_candidate_id == "V288"
     assert task.step.gate_candidate_cost_yuan == 288
     assert "keep" not in task.step.allowed_decisions
+
+
+def test_result_ready_task_presents_one_pending_prediction_for_review(
+    artifact_root: Path,
+    operator_queries: OperatorQueryService,
+    repository: FakeRepository,
+) -> None:
+    rx_path = artifact_root / "26112-rx.json"
+    rx = json.loads(rx_path.read_text("utf-8"))
+    rx["outcomes"] = {
+        "settled_at": "2026-08-29T10:00:00+08:00",
+        "source": "official 90-minute results",
+        "draw_result": "fixture",
+        "position": "placed",
+        "prescription_score": "fixture",
+        "ticket_counterfactuals": "fixture",
+        "predictions": {},
+        "adjudication_outcomes": {},
+        "key_lessons": "must not be exposed",
+    }
+    rx_path.write_text(json.dumps(rx, ensure_ascii=False), "utf-8")
+    _record(repository, {"rx_adjudication_id": "ADJ-1"})
+    _record(
+        repository,
+        {"candidate_id": "R432"},
+        created_at="2026-08-28T09:05:00+00:00",
+    )
+    _record(
+        repository,
+        {"deployment_decision": "keep", "ticket_artifact_id": "tat-1"},
+        created_at="2026-08-28T09:10:00+00:00",
+    )
+    repository.tickets = [{
+        "run_date": "2026-08-28",
+        "ticket_batch_revision_id": "revision-1",
+        "ticket_artifact_id": "tat-1",
+        "confirmation_id": "confirmation-1",
+        "consumed_at": "2026-08-28T09:12:00+00:00",
+        "expires_at": "2026-08-28T09:15:00+00:00",
+        "ticket_placement_id": "placement-1",
+        "ticket_shadow_id": None,
+        "ticket_id": "ticket-1",
+        "amount": 100,
+        "currency": "CNY",
+        "deadline_at": "2026-08-29T03:00:00+08:00",
+        "external_reference": "telegram:fixture",
+    }]
+    repository.predictions["26112"] = [
+        {
+            "prediction_id": "prediction-p1",
+            "claim": "至少一场平",
+            "falsifier": "全无平局",
+            "status": "pending",
+            "outcome": None,
+            "registered_at": "2026-08-28T09:00:00+00:00",
+            "settled_at": None,
+        },
+        {
+            "prediction_id": "prediction-p2",
+            "claim": "主队至少赢一场",
+            "falsifier": "主队全不胜",
+            "status": "pending",
+            "outcome": None,
+            "registered_at": "2026-08-28T09:01:00+00:00",
+            "settled_at": None,
+        },
+    ]
+
+    task = operator_queries.task("zucai:26112", as_of=NOW)
+
+    assert task.selected.state == "review"
+    assert task.step.kind == "review"
+    assert task.step.current_item.item_id == "prediction-p1"
+    assert task.step.current_item.title == "至少一场平"
+    assert task.step.current_item.evidence[0].value == "全无平局"
+    assert task.step.current_item.allowed_outcomes == ["hit", "miss", "na"]
+    assert "must not be exposed" not in task.model_dump_json()
 
 
 def test_fixture_rx_outcomes_are_not_rendered_as_operator_prose(

@@ -96,6 +96,9 @@ class FakeOperatorActions:
             message_preview="fixture",
         )
 
+    def grade_prediction(self, task_id, command, **identity):
+        return self._committed("grade", task_id, command, **identity)
+
 
 @pytest.fixture
 def operator_actions() -> FakeOperatorActions:
@@ -155,6 +158,15 @@ def _payloads():
         (
             "/api/v1/operator/tasks/jczq:2026-08-28/telegram-confirmation",
             {**common, "dry_run": True},
+        ),
+        (
+            "/api/v1/operator/tasks/zucai:26112/grade-prediction",
+            {
+                **common,
+                "prediction_id": "prediction-p1",
+                "outcome": "hit",
+                "reason": "official result",
+            },
         ),
     ]
 
@@ -223,5 +235,6 @@ def test_openapi_lists_narrow_operator_routes(client: TestClient) -> None:
         "/api/v1/operator/tasks/{task_id}/candidate",
         "/api/v1/operator/tasks/{task_id}/deployment",
         "/api/v1/operator/tasks/{task_id}/telegram-confirmation",
+        "/api/v1/operator/tasks/{task_id}/grade-prediction",
     ):
         assert path in paths

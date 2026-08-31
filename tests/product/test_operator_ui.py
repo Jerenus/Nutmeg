@@ -23,6 +23,8 @@ from nutmeg.product.operator_contracts import (
     OperatorTaskSummary,
     OperatorWorklistResponse,
     PrescriptionDifferenceSummary,
+    ReviewItemSummary,
+    ReviewStep,
     TaskProgressSummary,
     TicketVersionSummary,
     WaitingDataStep,
@@ -148,6 +150,27 @@ class FakeOperatorQueries:
                 median_bonus=4098,
                 break_even_to_median=0.94,
                 allowed_decisions=allowed,
+            )
+        elif self.summary.state is OperatorTaskState.REVIEW:
+            step = ReviewStep(
+                task_id=task_id,
+                hit_count=1,
+                total_count=2,
+                stake_yuan=100,
+                payout_yuan=160,
+                pnl_yuan=60,
+                calibration_summary="赛后结果已登记",
+                current_item=ReviewItemSummary(
+                    item_type="prediction",
+                    item_id="prediction-p1",
+                    title="至少一场平",
+                    evidence=[
+                        BusinessEvidenceSummary(
+                            label="证伪条件", value="全无平局"
+                        )
+                    ],
+                    allowed_outcomes=["hit", "miss", "na"],
+                ),
             )
         elif self.summary.state is OperatorTaskState.JUDGE_MATCHES:
             step = JudgeMatchesStep(
@@ -324,6 +347,11 @@ def confirmation_client(m2_product_services):
 @pytest.fixture
 def await_result_client(m2_product_services) -> TestClient:
     return _client(m2_product_services, FakeOperatorQueries("await_result"))
+
+
+@pytest.fixture
+def review_client(m2_product_services) -> TestClient:
+    return _client(m2_product_services, FakeOperatorQueries("review"))
 
 
 def test_root_opens_selected_task_without_system_chrome(client: TestClient) -> None:
@@ -541,3 +569,25 @@ def test_await_result_refreshes_without_exposing_ledger_payload(
     assert 'data-auto-refresh="waiting"' in html
     assert "预计结果时间" in html
     assert "cash_transactions" not in html
+
+
+def test_review_shows_one_prediction_and_requires_owner_grade(
+    review_client: TestClient,
+) -> None:
+    html = review_client.get("/tasks/zucai:26112").text
+
+    assert 'data-step-kind="review"' in html
+    assert "命中 1 / 2" in html
+    assert "本金 ¥100" in html
+    assert "返还 ¥160" in html
+    assert "盈亏 +¥60" in html
+    assert "至少一场平" in html
+    assert "全无平局" in html
+    assert 'data-action="grade-prediction"' in html
+    assert html.count('class="primary-action"') == 1
+    assert 'name="outcome" value="hit"' in html
+    assert 'name="outcome" value="miss"' in html
+    assert 'name="outcome" value="na"' in html
+    assert 'name="reason"' in html
+    assert 'name="outcome" value="hit" checked' not in html
+    assert "概率" not in html

@@ -15,6 +15,7 @@ from nutmeg.ontology.actions.scoreboard_actions import (
 )
 from nutmeg.ontology.actions.workflow_actions import (
     CreateAgentProposalRequest,
+    GradePredictionRequest,
     LinkPrecedentRequest,
     RecordAdjudicationRequest,
     RecordFlagInstanceRequest,
@@ -45,6 +46,7 @@ from nutmeg.product.repository import ProductReadRepository
 _ALLOWED_ACTIONS = {
     'commit_forecast',
     'record_adjudication',
+    'grade_prediction',
     'record_flag_instance',
     'register_prediction',
     'link_precedent',
@@ -549,6 +551,15 @@ class ProductActionGateway:
                     supersedes_adjudication_id=_optional_str(
                         payload.get('supersedes_adjudication_id')
                     ),
+                    **common,
+                )
+            )
+        if request.action_type == 'grade_prediction':
+            return self._kernel.workflow.grade_prediction(
+                GradePredictionRequest(
+                    prediction_id=_required_str(payload, 'prediction_id'),
+                    outcome=_required_str(payload, 'outcome'),
+                    reason=_required_str(payload, 'reason'),
                     **common,
                 )
             )

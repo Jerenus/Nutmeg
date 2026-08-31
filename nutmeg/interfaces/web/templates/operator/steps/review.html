@@ -1,0 +1,67 @@
+<div class="step-heading">
+  <span class="step-kicker">赛后复盘</span>
+  <h1>逐项核对已登记判断</h1>
+  <p>每次只处理一项；结论由你依据权威赛果记录。</p>
+</div>
+
+<section class="review-summary" aria-label="结算摘要">
+  {% if task.step.hit_count is not none and task.step.total_count is not none %}
+    <div><span>判断记录</span><strong>命中 {{ task.step.hit_count }} / {{ task.step.total_count }}</strong></div>
+  {% endif %}
+  {% if task.step.stake_yuan is not none %}
+    <div><span>资金</span><strong>本金 ¥{{ "%.0f"|format(task.step.stake_yuan) }}</strong></div>
+  {% endif %}
+  {% if task.step.payout_yuan is not none %}
+    <div><span>返还</span><strong>返还 ¥{{ "%.0f"|format(task.step.payout_yuan) }}</strong></div>
+  {% endif %}
+  {% if task.step.pnl_yuan is not none %}
+    <div class="{% if task.step.pnl_yuan >= 0 %}state-pass{% else %}state-error{% endif %}">
+      <span>盈亏</span>
+      <strong>盈亏 {% if task.step.pnl_yuan >= 0 %}+{% else %}-{% endif %}¥{{ "%.0f"|format(task.step.pnl_yuan|abs) }}</strong>
+    </div>
+  {% endif %}
+</section>
+
+{% if task.step.calibration_summary %}
+  <p class="gate-notice">{{ task.step.calibration_summary }}</p>
+{% endif %}
+
+<section class="review-item" aria-labelledby="review-item-title">
+  <span class="step-kicker">当前复盘项</span>
+  <h2 id="review-item-title">{{ task.step.current_item.title }}</h2>
+  <div class="review-evidence">
+    {% for evidence in task.step.current_item.evidence %}
+      <div class="evidence-row severity-{{ evidence.severity }}">
+        <strong>{{ evidence.label }}</strong>
+        <span>{{ evidence.value }}</span>
+        {% if evidence.source_label %}<small>{{ evidence.source_label }}</small>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if task.step.current_item.item_type == "prediction" %}
+  <form class="operator-form review-form" data-action="grade-prediction"
+        data-task-id="{{ task.selected.task_id }}"
+        data-prediction-id="{{ task.step.current_item.item_id }}">
+    <fieldset>
+      <legend>记录赛果结论</legend>
+      <div class="option-list">
+        {% for outcome in task.step.current_item.allowed_outcomes %}
+          <label>
+            <input type="radio" name="outcome" value="{{ outcome }}" required>
+            <span>{{ {"hit": "命中", "miss": "未命中", "na": "不适用"}[outcome] }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <label class="field-label">
+      <span>判定依据</span>
+      <textarea name="reason" rows="4" required></textarea>
+    </label>
+    <button class="primary-action" type="submit">记录并处理下一项</button>
+  </form>
+{% else %}
+  <a class="primary-link" href="/system/review">打开治理复盘</a>
+{% endif %}
+

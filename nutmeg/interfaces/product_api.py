@@ -41,6 +41,7 @@ from nutmeg.product.errors import (
     ProductTicketError,
 )
 from nutmeg.product.operator_contracts import (
+    GradePredictionCommand,
     RecordDeploymentCommand,
     RequestTelegramConfirmationCommand,
     ResolveIssueAdjudicationCommand,
@@ -335,6 +336,19 @@ def create_product_app(
         _session: None = Depends(require_mutation_session),
     ):
         return services.operator_actions.request_telegram_confirmation(
+            task_id,
+            command,
+            actor_id=services.settings.default_user_id,
+            actor_role=ActorRole.JUDGE_OPERATOR,
+        )
+
+    @app.post('/api/v1/operator/tasks/{task_id}/grade-prediction')
+    async def grade_operator_prediction(
+        task_id: str,
+        command: GradePredictionCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return services.operator_actions.grade_prediction(
             task_id,
             command,
             actor_id=services.settings.default_user_id,

@@ -36,6 +36,8 @@ from nutmeg.product.operator_contracts import (
     OperatorTaskSummary,
     OperatorWorklistResponse,
     PrescriptionDifferenceSummary,
+    ReviewItemSummary,
+    ReviewStep,
     StepView,
     TaskProgressSummary,
     TicketVersionSummary,
@@ -240,10 +242,14 @@ class OperatorQueryService:
         )
         confirmation_state = self._confirmation_state(ticket, cutoff) if ticket else None
         placement_state = self._placement_state(ticket) if ticket else None
-        result_available = any(row.get("settled_at") or row.get("outcome") for row in predictions)
-        pending_reviews = sum(
-            row.get("status") not in {"graded", "settled", "complete"} for row in predictions
+        settlement = self._ticket_settlement(ticket, cutoff)
+        result_available = (
+            bundle.rx.outcomes is not None
+            or settlement is not None
+            or any(row.get("settled_at") or row.get("outcome") for row in predictions)
         )
+        pending_predictions = [row for row in predictions if row.get("status") == "pending"]
+        pending_reviews = len(pending_predictions)
         candidate_ids = {candidate.candidate_id for candidate in bundle.candidates}
         selection_invalid = selected_id is not None and selected_id not in candidate_ids
         facts = OperatorTaskFacts(
@@ -369,6 +375,14 @@ class OperatorQueryService:
             )
         elif state is OperatorTaskState.AWAIT_LEDGER and ticket is not None:
             step = self._ledger_step(task_id, ticket)
+        elif state is OperatorTaskState.REVIEW:
+            step = self._review_step(
+                task_id,
+                predictions=predictions,
+                pending_predictions=pending_predictions,
+                settlement=settlement,
+                bundle=bundle,
+            )
         else:
             step = AwaitResultStep(
                 task_id=task_id,
@@ -408,6 +422,61 @@ class OperatorQueryService:
             "ticket": ticket,
         }
         return _BuiltTask(facts, summary, progress, step, _token(mutation_payload))
+
+    def _ticket_settlement(
+        self, ticket: dict[str, Any] | None, cutoff: datetime
+    ) -> dict[str, Any] | None:
+        if ticket is None or not ticket.get("ticket_id"):
+            return None
+        ticket_id = str(ticket["ticket_id"])
+        return next(
+            (
+                row
+                for row in self._repository.settlements(as_of=cutoff.isoformat())
+                if str(row.get("ticket_id")) == ticket_id
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _review_step(
+        task_id: str,
+        *,
+        predictions: list[dict[str, Any]],
+        pending_predictions: list[dict[str, Any]],
+        settlement: dict[str, Any] | None,
+        bundle: ZucaiArtifactBundle,
+    ) -> ReviewStep:
+        current = pending_predictions[0]
+        hit_count = sum(row.get("outcome") == "hit" for row in predictions)
+        calibration_summary = None
+        if bundle.night_snapshots:
+            latest = bundle.night_snapshots[-1]
+            calibration_summary = f"夜间校准已收录 {len(latest.results)} 场赛果"
+        elif bundle.rx.outcomes is not None:
+            calibration_summary = "赛后结果已登记"
+        return ReviewStep(
+            task_id=task_id,
+            hit_count=hit_count,
+            total_count=len(predictions),
+            stake_yuan=(float(settlement["stake_amount"]) if settlement else None),
+            payout_yuan=(float(settlement["payout_amount"]) if settlement else None),
+            pnl_yuan=(float(settlement["pnl_amount"]) if settlement else None),
+            calibration_summary=calibration_summary,
+            current_item=ReviewItemSummary(
+                item_type="prediction",
+                item_id=str(current["prediction_id"]),
+                title=str(current["claim"]),
+                evidence=[
+                    BusinessEvidenceSummary(
+                        label="证伪条件",
+                        value=str(current["falsifier"]),
+                        source_label="已登记 prediction",
+                    )
+                ],
+                allowed_outcomes=["hit", "miss", "na"],
+            ),
+        )
 
     def _source_block(self, task_id: str, issue: str, error: Exception) -> _BuiltTask:
         facts = OperatorTaskFacts(

@@ -144,6 +144,21 @@
         },
       ));
     }
+
+    if (action === "grade-prediction") {
+      return submit(form, () => postJson(
+        `/api/v1/operator/tasks/${encodeURIComponent(form.dataset.taskId)}`
+          + "/grade-prediction",
+        {
+          schema_version: "1",
+          expected_snapshot_token: expectedToken,
+          prediction_id: form.dataset.predictionId,
+          outcome: values.get("outcome"),
+          reason: values.get("reason"),
+          idempotency_key: `ui:operator:grade:${crypto.randomUUID()}`,
+        },
+      ));
+    }
   });
 
   const waiting = document.querySelector("[data-auto-refresh='waiting']");

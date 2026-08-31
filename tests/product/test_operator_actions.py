@@ -13,6 +13,7 @@ from nutmeg.product.operator_contracts import (
     BusinessEvidenceSummary,
     ConfirmationStep,
     ConstructTicketStep,
+    GradePredictionCommand,
     OperatorLane,
     OperatorTaskResponse,
     OperatorTaskState,
@@ -22,6 +23,8 @@ from nutmeg.product.operator_contracts import (
     RecordDeploymentCommand,
     RequestTelegramConfirmationCommand,
     ResolveIssueAdjudicationCommand,
+    ReviewItemSummary,
+    ReviewStep,
     SelectTicketVersionCommand,
     TaskProgressSummary,
     TicketVersionSummary,
@@ -157,6 +160,21 @@ def _audit_step():
         median_bonus=1000,
         break_even_to_median=0.01,
         allowed_decisions=["keep", "change_structure"],
+    )
+
+
+def _review_step():
+    return ReviewStep(
+        task_id="zucai:26112",
+        current_item=ReviewItemSummary(
+            item_type="prediction",
+            item_id="prediction-p1",
+            title="至少一场平",
+            evidence=[
+                BusinessEvidenceSummary(label="证伪条件", value="全无平局")
+            ],
+            allowed_outcomes=["hit", "miss", "na"],
+        ),
     )
 
 
@@ -323,6 +341,68 @@ def test_telegram_uses_bound_artifact_and_configured_owner() -> None:
     }
     assert result.dispatch_state == "dry_run"
     assert "callback" not in result.model_dump_json()
+
+
+def test_grade_current_prediction_commits_as_judge_operator() -> None:
+    service = _service(_review_step())
+
+    result = service.grade_prediction(
+        "zucai:26112",
+        GradePredictionCommand(
+            expected_snapshot_token=TOKEN,
+            prediction_id="prediction-p1",
+            outcome="hit",
+            reason="Official 90-minute result satisfies the registered claim",
+            idempotency_key="ui:26112:grade:p1",
+        ),
+        actor_id="owner",
+        actor_role=ActorRole.JUDGE_OPERATOR,
+    )
+
+    assert result.status == "committed"
+    request = service.action_gateway.requests[-1]
+    assert request.action_type == "grade_prediction"
+    assert request.payload == {
+        "prediction_id": "prediction-p1",
+        "outcome": "hit",
+        "reason": "Official 90-minute result satisfies the registered claim",
+    }
+
+
+def test_ai_cannot_grade_prediction() -> None:
+    service = _service(_review_step())
+
+    with pytest.raises(ProductActionBlockedError, match="judge_operator"):
+        service.grade_prediction(
+            "zucai:26112",
+            GradePredictionCommand(
+                expected_snapshot_token=TOKEN,
+                prediction_id="prediction-p1",
+                outcome="miss",
+                reason="AI guess",
+                idempotency_key="ai:grade",
+            ),
+            actor_id="model:test",
+            actor_role=ActorRole.AI_ANALYST,
+        )
+
+
+def test_grade_rejects_prediction_that_is_not_current() -> None:
+    service = _service(_review_step())
+
+    with pytest.raises(ProductActionBlockedError, match="current review item"):
+        service.grade_prediction(
+            "zucai:26112",
+            GradePredictionCommand(
+                expected_snapshot_token=TOKEN,
+                prediction_id="prediction-p2",
+                outcome="hit",
+                reason="Wrong item",
+                idempotency_key="ui:grade:wrong",
+            ),
+            actor_id="owner",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+        )
 
 
 @pytest.mark.parametrize("field", ["actor_id", "actor_role", "chat_id", "amount", "hash"])

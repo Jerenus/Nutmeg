@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -9,13 +10,18 @@ from sqlalchemy import func, select
 from nutmeg.config.settings import AppSettings
 from nutmeg.interfaces.bot.telegram import TelegramBotRunner
 from nutmeg.interfaces.product_api import create_product_app
-from nutmeg.ontology.actions.models import ActionStatus
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole
+from nutmeg.ontology.actions.workflow_actions import (
+    RecordAdjudicationRequest,
+    RegisterPredictionRequest,
+)
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.operator_actions import OperatorActionService
 from nutmeg.product.operator_artifacts import ZucaiArtifactRepository
+from nutmeg.product.operator_contracts import GradePredictionCommand
 from nutmeg.product.operator_queries import OperatorQueryService
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
@@ -30,6 +36,7 @@ from tests.ontology.test_protected_ticket_actions import (
     _leg,
     _setup,
 )
+from tests.product.operator_fixtures import write_26112_bundle
 
 
 class _TelegramClient:
@@ -240,3 +247,138 @@ def test_operator_confirmation_books_one_and_timeout_explains_shadow(
         ).scalar_one()
     assert confirm_role == "judge_operator"
 
+
+def test_grading_advances_one_review_item_at_a_time(tmp_path: Path) -> None:
+    kernel, forecast_id = _setup(tmp_path)
+    artifact = _artifact(kernel, forecast_id, run_date="2026-08-24", index=1)
+    telegram_client = _TelegramClient()
+    confirmation = TelegramTicketConfirmationService(
+        kernel=kernel,
+        telegram_client=telegram_client,
+        allowed_chat_ids={111},
+        now_fn=lambda: AT,
+    )
+    prepared = confirmation.request_confirmation(
+        ticket_artifact_id=artifact.ticket_artifact_id,
+        chat_id=111,
+        dry_run=True,
+        requested_at=AT,
+    )
+    confirmation.handle_callback({
+        "id": "operator-review-placement",
+        "data": prepared.callback_data,
+        "message": {"message_id": 8, "chat": {"id": 111}},
+    })
+
+    artifact_root = write_26112_bundle(tmp_path / "zucai")
+    rx_path = artifact_root / "26112-rx.json"
+    rx = json.loads(rx_path.read_text("utf-8"))
+    rx["outcomes"] = {
+        "settled_at": "2026-08-29T10:00:00+08:00",
+        "source": "official 90-minute results",
+        "draw_result": "fixture",
+        "position": "placed",
+        "prescription_score": "fixture",
+        "ticket_counterfactuals": "fixture",
+        "predictions": {},
+        "adjudication_outcomes": {},
+        "key_lessons": "not operator copy",
+    }
+    rx_path.write_text(json.dumps(rx, ensure_ascii=False), "utf-8")
+
+    prediction_ids = []
+    for index, (claim, falsifier) in enumerate((
+        ("至少一场平", "全无平局"),
+        ("主队至少赢一场", "主队全不胜"),
+    )):
+        registered = kernel.workflow.register_prediction(
+            RegisterPredictionRequest(
+                match_id=None,
+                subject_type="issue",
+                subject_id="26112",
+                claim=claim,
+                falsifier=falsifier,
+                actor_id="operator:owner",
+                actor_role=ActorRole.JUDGE_OPERATOR,
+                idempotency_key=f"operator:e2e:prediction:{index}",
+                requested_at=AT + timedelta(seconds=index + 1),
+            )
+        )
+        assert registered.status is ActionStatus.COMMITTED
+        prediction_ids.append(registered.result_refs[0].object_id)
+
+    alternatives = (
+        {"rx_adjudication_id": "ADJ-1", "selected_option": "R432"},
+        {"candidate_id": "R432", "deviation_registry": []},
+        {
+            "deployment_decision": "keep",
+            "ticket_artifact_id": artifact.ticket_artifact_id,
+        },
+    )
+    for index, alternative in enumerate(alternatives):
+        outcome = kernel.workflow.record_adjudication(
+            RecordAdjudicationRequest(
+                subject_type="issue",
+                subject_id="26112",
+                decision="operator_workbench",
+                reason="test fixture transition",
+                evidence_rejected=[],
+                alternative=alternative,
+                supersedes_adjudication_id=None,
+                actor_id="operator:owner",
+                actor_role=ActorRole.JUDGE_OPERATOR,
+                idempotency_key=f"operator:e2e:adjudication:{index}",
+                requested_at=AT + timedelta(minutes=index + 1),
+            )
+        )
+        assert outcome.status is ActionStatus.COMMITTED
+
+    clock = AT + timedelta(minutes=5)
+    repository = ProductReadRepository(kernel.engine)
+    product_queries = ProductQueryService(repository, kernel)
+    queries = OperatorQueryService(
+        repository=repository,
+        product_queries=product_queries,
+        artifacts=ZucaiArtifactRepository(artifact_root),
+        official_history_provider=lambda: [],
+        clock=lambda: clock,
+    )
+    service = OperatorActionService(
+        queries=queries,
+        action_gateway=ProductActionGateway(kernel, repository, clock=lambda: clock),
+    )
+
+    first = queries.task("zucai:26112", as_of=clock)
+    assert first.step.kind == "review"
+    assert first.step.current_item.item_id == prediction_ids[0]
+    result = service.grade_prediction(
+        "zucai:26112",
+        GradePredictionCommand(
+            expected_snapshot_token=first.mutation_token,
+            prediction_id=prediction_ids[0],
+            outcome="hit",
+            reason="official result satisfies the claim",
+            idempotency_key="operator:e2e:grade:1",
+        ),
+        actor_id="owner",
+        actor_role=ActorRole.JUDGE_OPERATOR,
+    )
+    assert result.status == "committed"
+
+    second = queries.task("zucai:26112", as_of=clock)
+    assert second.step.current_item.item_id == prediction_ids[1]
+    service.grade_prediction(
+        "zucai:26112",
+        GradePredictionCommand(
+            expected_snapshot_token=second.mutation_token,
+            prediction_id=prediction_ids[1],
+            outcome="miss",
+            reason="official result falsifies the claim",
+            idempotency_key="operator:e2e:grade:2",
+        ),
+        actor_id="owner",
+        actor_role=ActorRole.JUDGE_OPERATOR,
+    )
+
+    final = queries.task("zucai:26112", as_of=clock)
+    assert final.selected.state == "complete"

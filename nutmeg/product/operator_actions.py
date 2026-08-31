@@ -9,6 +9,7 @@ from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.contracts import ProductActionRequest, ProductActionResponse
 from nutmeg.product.errors import ProductActionBlockedError
 from nutmeg.product.operator_contracts import (
+    GradePredictionCommand,
     RecordDeploymentCommand,
     RequestTelegramConfirmationCommand,
     ResolveIssueAdjudicationCommand,
@@ -211,6 +212,41 @@ class OperatorActionService:
             expires_at=_parse_aware(prepared.expires_at, "expires_at"),
             dispatch_state="dry_run" if command.dry_run else "sent",
             message_preview=prepared.text,
+        )
+
+    def grade_prediction(
+        self,
+        task_id: str,
+        command: GradePredictionCommand,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> ProductActionResponse:
+        if actor_role is not ActorRole.JUDGE_OPERATOR:
+            raise ProductActionBlockedError(
+                "prediction grade requires judge_operator"
+            )
+        task = self._current_task(task_id, command.expected_snapshot_token)
+        if task.step.kind != "review":
+            raise ProductActionBlockedError("task is no longer in review")
+        current = task.step.current_item
+        if current.item_type != "prediction" or current.item_id != command.prediction_id:
+            raise ProductActionBlockedError(
+                "prediction is no longer the current review item"
+            )
+        return self._actions.execute(
+            ProductActionRequest(
+                action_type="grade_prediction",
+                idempotency_key=command.idempotency_key,
+                payload={
+                    "prediction_id": command.prediction_id,
+                    "outcome": command.outcome,
+                    "reason": command.reason,
+                },
+                policy_version="governance-v1",
+            ),
+            actor_id=actor_id,
+            actor_role=actor_role,
         )
 
     def _execute_adjudication(

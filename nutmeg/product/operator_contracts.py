@@ -269,6 +269,12 @@ class RequestTelegramConfirmationCommand(OperatorMutationCommand):
     dry_run: bool = True
 
 
+class GradePredictionCommand(OperatorMutationCommand):
+    prediction_id: str = Field(min_length=1)
+    outcome: Literal['hit', 'miss', 'na']
+    reason: str = Field(min_length=1)
+
+
 class TelegramConfirmationDispatch(VersionedOperatorContract):
     ticket_artifact_id: str
     confirmation_id: str
