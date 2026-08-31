@@ -46,17 +46,24 @@ invented marker as evidence that C9 fired. JSON loading remains backward compati
 
 ## 3. Deployment Anchor Contract
 
-The deployment gate owns a public constant `RENJIU_HISTORY_WINDOW = 12`. Callers may retain
-the `history_window` input field for explicit auditability, but its value must equal 12.
-Missing, boolean, non-integer, or any other integer value is a source-contract error.
+The deployment gate owns public constants `RENJIU_HISTORY_WINDOW = 12` and
+`RENJIU_HISTORY_WINDOW_EFFECTIVE_ISSUE = 26113`. Callers retain the `history_window` input
+field for explicit auditability. For issue 26113 and later its value must equal 12. Missing,
+boolean, non-integer, nonpositive, or a different current-policy value is a source-contract
+error.
 
-The cohort contains the 12 highest numeric official issue numbers strictly before
-`history_as_of_issue`. Later or equal issues are excluded. Fewer than 12 eligible rows is a
-source error; the gate does not shrink its window.
+For current-policy issues the cohort contains the 12 highest numeric official issue numbers
+strictly before `history_as_of_issue`. Later or equal issues are excluded. Fewer than 12
+eligible rows is a source error; the gate does not shrink its window.
 
-The product operator projection passes the same constant rather than deriving a window from
-available row count. Therefore CLI and browser reports cannot disagree about the bonus
-anchor.
+Issues before 26113 preserve their explicitly authored positive window. This is deliberate
+policy-versioned replay: the 26103 and 26104 evidence remains reproducible under the rule in
+force at the time, while the `scoreboard.json` 26113 adjudication marks rolling 12 as
+effective immediately from that issue. New policy never rewrites old adjudication evidence.
+
+The product operator projection passes the same constant for issue 26113 and later rather
+than deriving a current-policy window from available row count. Therefore CLI and browser
+reports cannot disagree about the current bonus anchor.
 
 The deployment gate is specific to fixed-bonus Renjiu candidates. Inside the period cap it
 selects the minimum `stake_yuan / hit_probability`, with lower stake and stable candidate ID
@@ -133,10 +140,11 @@ Focused tests cover:
 - every C9-C12 trigger, non-trigger, lower boundary, and upper boundary;
 - full-cover and dropped-match-compatible behavior;
 - unknown crash marker warning and backward-compatible JSON parsing;
-- exactly-12 window enforcement in the domain function, CLI fixture, and product query;
+- exactly-12 enforcement from issue 26113 in the domain function, live-shaped gate input,
+  and product query, plus unchanged 26103/26104 policy-versioned replays;
 - 26111 floor-rounding acceptance, parser acceptance, true underpayment rejection, and
   overpayment rejection;
-- existing 26103/26104 deployment replays under the fixed 12-row cohort.
+- existing 26103/26104 deployment replays under their authored historical windows;
 - optimizer break-even arithmetic, fixed-bonus ordering, legacy P ordering, report labels,
   and median validation;
 - deployment and optimizer agreement on the minimum-break-even candidate.
