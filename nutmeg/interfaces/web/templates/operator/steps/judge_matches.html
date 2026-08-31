@@ -1,0 +1,55 @@
+<div class="step-heading">
+  <div>
+    <span class="step-kicker">当前需要你处理 · {{ task.step.item_key }}</span>
+    <h1>{{ task.step.title }}</h1>
+    <p>{{ task.step.prompt }}</p>
+  </div>
+</div>
+
+<div class="judgment-layout">
+  <section class="evidence-list" aria-labelledby="evidence-title">
+    <h2 id="evidence-title">本次判断所需数据</h2>
+    {% for evidence in task.step.evidence %}
+      <div class="evidence-row severity-{{ evidence.severity }}">
+        <strong>{{ evidence.label }}</strong>
+        <span>{{ evidence.value }}</span>
+        <small>
+          {{ evidence.source_label or "当前工作流" }}
+          {% if evidence.freshness_label %} · 更新于 {{ evidence.freshness_label }}{% endif %}
+        </small>
+        {% if evidence.evidence_href %}
+          <a href="{{ evidence.evidence_href }}">查看来源</a>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </section>
+
+  <form class="operator-form" data-action="resolve-issue-adjudication"
+        data-task-id="{{ task.selected.task_id }}"
+        data-adjudication-key="{{ task.step.item_key }}">
+    <fieldset>
+      <legend>记录你的裁决</legend>
+      <div class="option-list">
+        {% for option in task.step.options %}
+          <label>
+            <input type="radio" name="selected_option" value="{{ option }}" required>
+            <span>{{ option }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <label class="field-label">
+      <span>裁决类型</span>
+      <select name="decision" required>
+        <option value="approve">确认</option>
+        <option value="override">行权偏离</option>
+        <option value="reject">拒绝</option>
+      </select>
+    </label>
+    <label class="field-label">
+      <span>理由</span>
+      <textarea name="reason" rows="4" required></textarea>
+    </label>
+    <button class="primary-action" type="submit">保存并进入下一步</button>
+  </form>
+</div>

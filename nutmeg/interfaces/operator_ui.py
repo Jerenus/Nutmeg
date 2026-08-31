@@ -1,6 +1,7 @@
 """Focused server-rendered operator task routes."""
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -18,12 +19,16 @@ def mount_operator_ui(
     templates = Jinja2Templates(directory=web_root / "templates")
 
     def task_response(request: Request, task):
+        token_bytes = bytes.fromhex(task.mutation_token)
         return templates.TemplateResponse(
             request=request,
             name="operator/task.html",
             context={
                 "workspace": "operator-task",
                 "task": task,
+                "snapshot_token": base64.urlsafe_b64encode(token_bytes)
+                .decode("ascii")
+                .rstrip("="),
             },
         )
 

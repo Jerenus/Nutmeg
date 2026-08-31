@@ -1,0 +1,99 @@
+<div class="step-heading">
+  <span class="step-kicker">比较结构</span>
+  <h1>选择本期票版</h1>
+  <p>以下数值来自已登记票面和 fair 的确定性计算。</p>
+</div>
+
+<section class="comparison" aria-labelledby="comparison-title">
+  <h2 id="comparison-title">候选对比</h2>
+  <div class="table-scroll" tabindex="0">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">版本</th>
+          <th scope="col">注数</th>
+          <th scope="col">票价</th>
+          <th scope="col">P(全对)</th>
+          <th scope="col">期望断腿</th>
+          <th scope="col">共同死面</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for candidate in task.step.candidates %}
+          <tr>
+            <th scope="row">{{ candidate.label }}</th>
+            <td>{{ candidate.notes }}</td>
+            <td>¥{{ candidate.cost_yuan }}</td>
+            <td>{{ "%.2f"|format(candidate.p_all * 100) }}%</td>
+            <td>{{ "%.2f"|format(candidate.expected_broken) }}</td>
+            <td>{{ candidate.common_dead_faces|join("、") or "无" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="prescription-summary" aria-labelledby="prescription-title">
+  <h2 id="prescription-title">处方基线</h2>
+  <ol class="face-list">
+    {% for match_no, faces in task.step.prescription|dictsort %}
+      <li><span>场 {{ match_no }}</span><strong>{{ faces }}</strong></li>
+    {% endfor %}
+  </ol>
+</section>
+
+<form class="operator-form ticket-selection" data-action="select-ticket-version"
+      data-task-id="{{ task.selected.task_id }}">
+  <fieldset>
+    <legend>采用版本</legend>
+    <div class="option-list candidate-options">
+      {% for candidate in task.step.candidates %}
+        <label>
+          <input type="radio" name="candidate_id" value="{{ candidate.candidate_id }}"
+                 {% if loop.first %}checked{% endif %} required>
+          <span>{{ candidate.label }} · ¥{{ candidate.cost_yuan }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  {% for candidate in task.step.candidates %}
+    {% set candidate_selected = loop.first %}
+    <fieldset class="deviation-group" data-candidate-group="{{ candidate.candidate_id }}"
+              {% if not candidate_selected %}hidden{% endif %}>
+      <legend>{{ candidate.label }} 的处方偏离</legend>
+      {% if candidate.prescription_differences %}
+        {% for difference in candidate.prescription_differences %}
+          <div class="deviation-row" data-deviation-candidate="{{ candidate.candidate_id }}"
+               data-deviation-match="{{ difference.match_no }}">
+            <div class="difference-faces">
+              <strong>场 {{ difference.match_no }}</strong>
+              <span>处方 {{ difference.prescribed_faces or "丢整场" }}</span>
+              <span>候选 {{ difference.candidate_faces or "丢整场" }}</span>
+            </div>
+            <label class="field-label">
+              <span>命名规则 ID</span>
+              <input data-deviation-rules required type="text"
+                     value="{{ difference.registered_rule_ids|join(', ') }}"
+                     {% if not candidate_selected %}disabled{% endif %}>
+            </label>
+            <label class="field-label">
+              <span>本场偏离理由</span>
+              <textarea data-deviation-reason required rows="2"
+                        {% if not candidate_selected %}disabled{% endif %}></textarea>
+            </label>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="muted">该版本与处方一致，无需登记偏离。</p>
+      {% endif %}
+    </fieldset>
+  {% endfor %}
+
+  <label class="field-label">
+    <span>采用理由</span>
+    <textarea name="reason" rows="3" required></textarea>
+  </label>
+  <button class="primary-action" type="submit">采用并进入审计</button>
+</form>

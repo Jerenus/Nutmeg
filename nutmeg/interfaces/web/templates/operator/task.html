@@ -2,7 +2,7 @@
 {% block title %}{{ task.selected.title }} · Nutmeg{% endblock %}
 {% block content %}
   <section class="current-step" data-step-kind="{{ task.step.kind }}"
-           data-snapshot-token="{{ task.mutation_token }}">
+           data-snapshot-token="{{ snapshot_token }}">
     {% include "operator/steps/" ~ task.step.kind ~ ".html" %}
   </section>
 {% endblock %}

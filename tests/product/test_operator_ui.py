@@ -8,13 +8,18 @@ from fastapi.testclient import TestClient
 from nutmeg.interfaces.product_api import create_product_app
 from nutmeg.product.operator_contracts import (
     BlockedStep,
+    BusinessEvidenceSummary,
+    ConstructTicketStep,
+    JudgeMatchesStep,
     OperatorLane,
     OperatorRecoverySummary,
     OperatorTaskResponse,
     OperatorTaskState,
     OperatorTaskSummary,
     OperatorWorklistResponse,
+    PrescriptionDifferenceSummary,
     TaskProgressSummary,
+    TicketVersionSummary,
     WaitingDataStep,
 )
 
@@ -22,7 +27,7 @@ NOW = datetime(2026, 8, 28, 10, tzinfo=UTC)
 
 
 class FakeOperatorQueries:
-    def __init__(self, state: str = "waiting_data", *, empty: bool = False) -> None:
+    def __init__(self, state: str = "judge_matches", *, empty: bool = False) -> None:
         self.empty = empty
         self.summary = OperatorTaskSummary(
             task_id="zucai:26112",
@@ -46,7 +51,52 @@ class FakeOperatorQueries:
         )
 
     def task(self, task_id: str, *, as_of):
-        if self.summary.state is OperatorTaskState.BLOCKED:
+        if self.summary.state is OperatorTaskState.JUDGE_MATCHES:
+            step = JudgeMatchesStep(
+                task_id=task_id,
+                item_key="ADJ-1",
+                title="任九档位",
+                prompt="当前需要你处理",
+                options=["R432", "V288"],
+                evidence=[
+                    BusinessEvidenceSummary(
+                        label="资金",
+                        value="V288=72%帽内",
+                        freshness_label="14:00",
+                    )
+                ],
+            )
+        elif self.summary.state is OperatorTaskState.CONSTRUCT_TICKET:
+            step = ConstructTicketStep(
+                task_id=task_id,
+                prescription={"12": "31", "13": "3"},
+                candidates=[
+                    TicketVersionSummary(
+                        candidate_id="R432",
+                        label="R432",
+                        faces={"12": "3", "13": "31"},
+                        notes=216,
+                        cost_yuan=432,
+                        p_all=0.2796,
+                        expected_broken=1.65,
+                        within_cap=False,
+                        common_dead_faces=["场 4: 0"],
+                        prescription_differences=[
+                            PrescriptionDifferenceSummary(
+                                match_no=12,
+                                prescribed_faces="31",
+                                candidate_faces="3",
+                            ),
+                            PrescriptionDifferenceSummary(
+                                match_no=13,
+                                prescribed_faces="3",
+                                candidate_faces="31",
+                            ),
+                        ],
+                    )
+                ],
+            )
+        elif self.summary.state is OperatorTaskState.BLOCKED:
             step = BlockedStep(
                 task_id=task_id,
                 title="数据需要修复",
@@ -112,12 +162,17 @@ def no_tasks(m2_product_services) -> TestClient:
 
 @pytest.fixture
 def waiting(m2_product_services) -> TestClient:
-    return _client(m2_product_services, FakeOperatorQueries())
+    return _client(m2_product_services, FakeOperatorQueries("waiting_data"))
 
 
 @pytest.fixture
 def invalid_source(m2_product_services) -> TestClient:
     return _client(m2_product_services, FakeOperatorQueries("blocked"))
+
+
+@pytest.fixture
+def client_with_resolved_adj(m2_product_services) -> TestClient:
+    return _client(m2_product_services, FakeOperatorQueries("construct_ticket"))
 
 
 def test_root_opens_selected_task_without_system_chrome(client: TestClient) -> None:
@@ -177,3 +232,67 @@ def test_shell_is_semantic_local_and_escaped(client: TestClient) -> None:
     assert not re.search(r'(?:src|href)="https?://', html)
     assert client.get("/assets/product/operator.css").status_code == 200
     assert client.get("/assets/product/operator.js").status_code == 200
+
+
+def test_judgment_state_shows_business_evidence_and_one_action(client: TestClient) -> None:
+    html = client.get("/tasks/zucai:26112").text
+
+    assert 'data-step-kind="judge_matches"' in html
+    assert "当前需要你处理" in html
+    assert "任九档位" in html
+    assert "V288=72%帽内" in html
+    assert html.count('class="primary-action"') == 1
+    assert 'data-action="resolve-issue-adjudication"' in html
+    assert 'name="actor_id"' not in html
+    assert 'name="actor_role"' not in html
+    assert "payload_json" not in html
+
+
+def test_ticket_state_is_a_business_table_not_rx_json(
+    client_with_resolved_adj: TestClient,
+) -> None:
+    html = client_with_resolved_adj.get("/tasks/zucai:26112").text
+
+    assert 'data-step-kind="construct_ticket"' in html
+    assert "版本" in html and "注数" in html and "票价" in html
+    assert "P(全对)" in html and "期望断腿" in html
+    assert "R432" in html
+    assert 'data-action="select-ticket-version"' in html
+    assert "ticket_versions" not in html
+    assert "human note; not parsed" not in html
+    assert "{" not in html
+    assert html.count('data-deviation-match="') == 2
+    assert 'data-deviation-rules required' in html
+    assert 'data-deviation-reason required' in html
+    assert 'type="radio" name="candidate_id"' in html
+
+
+def test_operator_forms_escape_content_and_require_governed_fields(client: TestClient) -> None:
+    html = client.get("/tasks/zucai:26112").text
+    assert '<script>alert("fixture")</script>' not in html
+    assert "&lt;script&gt;" in html
+    assert 'name="reason"' in html
+    assert 'name="selected_option"' in html
+    assert "更新于" in html
+    assert re.search(r"action-[0-9a-f]{8}", html) is None
+    assert re.search(r"\b[0-9a-f]{64}\b", html) is None
+    assert html.count('class="primary-action"') == 1
+
+
+def test_operator_javascript_only_collects_forms(client: TestClient) -> None:
+    script = client.get("/assets/product/operator.js").text
+    assert "/adjudications" in script
+    assert "/candidate" in script
+    for forbidden in (
+        "optimize",
+        "p_all *",
+        "expected_broken =",
+        "audit_legs",
+        "deployment gate",
+        "capital_utilization =",
+        "median_bonus =",
+        "odds *",
+        "fair *",
+        "priority",
+    ):
+        assert forbidden not in script
