@@ -6,11 +6,13 @@ to complete all remaining development work
 
 ## 1. Scope
 
-Close the two incomplete code paths introduced by the 26113 review:
+Close the three incomplete code paths introduced by the 26113/26114 reviews:
 
 1. machine-check the C9-C12 probation rules without adding football judgment; and
 2. make the Zucai deployment bonus anchor use exactly the latest 12 eligible official
-   Renjiu issues while accepting the provider's per-winning-stake floor rounding.
+   Renjiu issues while accepting the provider's per-winning-stake floor rounding; and
+3. make fixed-bonus Renjiu candidate comparison and deployment use the authored
+   break-even criterion consistently.
 
 The implementation preserves the existing split between authored inputs and deterministic
 checks. The main loop decides whether an opening-round crash marker applies, authors fair
@@ -56,6 +58,12 @@ The product operator projection passes the same constant rather than deriving a 
 available row count. Therefore CLI and browser reports cannot disagree about the bonus
 anchor.
 
+The deployment gate is specific to fixed-bonus Renjiu candidates. Inside the period cap it
+selects the minimum `stake_yuan / hit_probability`, with lower stake and stable candidate ID
+as deterministic tie-breakers. This replaces the superseded maximum-P selection. The gate
+still reports PASS, REVIEW, or REDUCE_OR_EMPTY from the selected candidate's break-even to
+the fixed 12-issue median and never chooses the human deployment action.
+
 ## 4. Official Payout Validation
 
 For a Renjiu history row:
@@ -73,7 +81,26 @@ overpayment or a shortfall of CNY 1 or more per winning stake.
 
 Both the official response parser and deployment cohort validator call the same method.
 
-## 5. Data Flow
+## 5. Optimizer Contract
+
+Every supplied version reports:
+
+```text
+break_even_bonus_yuan = cost_yuan / P(all correct)
+```
+
+`median_bonus_yuan` is an optional positive field in the structured optimizer JSON. Its
+presence explicitly selects fixed-bonus ranking and adds
+`break_even_to_median = break_even_bonus_yuan / median_bonus_yuan`. Fixed-bonus ranking is
+ascending by break-even, then cost, then stable version ID. When the field is absent, the
+optimizer preserves its previous descending-P ranking for workflows whose payout changes
+with the selected combination.
+
+The CLI continues to take one structured `--input-file`; it does not add a second scalar
+override that could disagree with the JSON evidence. The report labels which ranking rule
+was used and shows break-even values without recommending a stake or ticket.
+
+## 6. Data Flow
 
 ```text
 authored legs JSON
@@ -86,13 +113,20 @@ official gameNo=90 history
     -> parse_renjiu_history_item
     -> floor-rounding validation
     -> fixed 12-row cohort
+    -> minimum-break-even candidate
     -> deterministic deployment report/exit code
     -> human deployment adjudication
+
+authored candidate JSON + authored fair
+    -> optimizer validation
+    -> P(all correct), cost, break-even, median ratio
+    -> deterministic comparison table
+    -> human scale/ticket choice
 ```
 
 No new persistence type, Action, schema migration, or background process is required.
 
-## 6. Verification
+## 7. Verification
 
 Focused tests cover:
 
@@ -103,11 +137,14 @@ Focused tests cover:
 - 26111 floor-rounding acceptance, parser acceptance, true underpayment rejection, and
   overpayment rejection;
 - existing 26103/26104 deployment replays under the fixed 12-row cohort.
+- optimizer break-even arithmetic, fixed-bonus ordering, legacy P ordering, report labels,
+  and median validation;
+- deployment and optimizer agreement on the minimum-break-even candidate.
 
 Completion also requires decision/product regressions, five-domain pytest, ruff, compileall,
 pre-commit, and read-only CLI replay. Production ontology and scoreboard data are not written.
 
-## 7. Explicit Exclusions
+## 8. Explicit Exclusions
 
 - no automatic classification of promoted teams, paper strength, opening round, or coach
   debut;
