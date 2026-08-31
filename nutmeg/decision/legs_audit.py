@@ -28,6 +28,26 @@ DIRECTIONAL_LEXICON = frozenset({
 凭空造一个名字把单选堵死——那不是纪律，是瘫痪。新因子须先过双轴检验才进词典（上限 12）。
 另：「领先方可接受平」这一机理，26097 判读层已裁定**是机理不是旗**，不得当旗用。"""
 
+CRASH_MARKER_LEXICON = frozenset({
+    "opening_promoted_vs_paper",   # 开季窗(前3轮):升班马对阵纸面强队
+    "opening_new_coach_debut",     # 开季窗(前3轮):换帅首秀(任一侧为锚方时)
+})
+"""开季翻车 regime 标记（2026-08-30 立法,probation）。判断"是否属开季窗/是否升班马刀"
+仍在主循环判读层；本词典只锁死标记名,防 agent 自命名膨胀。样本:26112 波鸿 0:1 奥斯纳
+布吕克 + 26113 场2(赫尔客胜)/场5(埃弗斯贝格 3:2 勒沃)/场10(弗洛西诺内 0:3)——四刀全部
+穿透双选。"""
+
+_C11_GAP_LO = 0.05
+_C11_GAP_HI = 0.10
+"""C11 虚假方向带：top1−top2 落在 [5pp,10pp) 时模态命中率仅 27.8%(n=18)——
+低于三面近均分(<5pp)的 47.4%(n=19)。市场给出一个微弱方向，比它完全给不出方向更危险：
+三面接近时作者知道自己在抛硬币，5-10pp 会产生虚假信心。2026-08-30 立法，154 场实证。"""
+
+_C12_DRAW_LO = 0.29
+_C12_DRAW_HI = 0.32
+"""C12 平局低估带：平局 fair 落在 [29%,32%) 时，实开平率 35.7% vs 预期 30.1%(n=14)，
+市场系统性低估 +5.6pp；对照 <22% 带市场高估 −5.3pp(n=37)。2026-08-30 立法，154 场实证。"""
+
 FACE_KEYS = {"3": "home", "1": "draw", "0": "away"}
 FACE_ZH = {"3": "主胜", "1": "平", "0": "客胜"}
 STRONG_ADJUSTMENT_EVIDENCE_TIERS = frozenset({"official", "confirmed_structural"})
@@ -86,6 +106,8 @@ class Leg:
     anchor_integrity: str = "unknown"  # pass | fail | symmetric_damage | unknown
     # 同场地同型先例；元素形如 ("0", "2023-04-27 圣马梅斯 0:1", "alive"|"dead")
     precedents: tuple = ()
+    # 开季翻车 regime 标记（CRASH_MARKER_LEXICON 封闭词典;判定在主循环）
+    crash_markers: tuple = ()
 
     @property
     def modal(self) -> str:
@@ -98,6 +120,12 @@ class Leg:
     @property
     def modal_p(self) -> float:
         return self.fair[FACE_KEYS[self.modal]]
+
+    @property
+    def top_gap(self) -> float:
+        """top1 − top2。落 [5pp,10pp) 是虚假方向带（C11）。"""
+        ranked = sorted(self.fair.values(), reverse=True)
+        return ranked[0] - ranked[1]
 
 
 @dataclass
@@ -259,6 +287,53 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 f"{len(set(lg.faces))} 面。降格场的第 3 面开出频率高（26101 实测 7 场中 5 场）。",
                 "8/08:全包场只能保留或整场丢掉,不许降档"))
 
+        # C11 —— 虚假方向带:top1−top2 落 [5pp,10pp) 且未全包（2026-08-30 立法,probation）
+        if _C11_GAP_LO <= lg.top_gap < _C11_GAP_HI and len(set(lg.faces)) < 3:
+            out.append(Finding(
+                "WARN", "false_direction_band", n,
+                f"场{n} {lg.name}：top1−top2 = {lg.top_gap * 100:.1f}pp 落在虚假方向带"
+                f"（5-10pp），该带模态命中率仅 27.8%(n=18)，**低于三面近均分带的 47.4%**。"
+                f"市场给出微弱方向比给不出方向更危险——三面接近时你知道在抛硬币，"
+                f"5-10pp 会产生虚假信心。合法响应=全包或丢整场。",
+                "2026-08-30 立法:154 场实证,gap12 分层最低命中带"))
+
+        # C12 —— 平局低估带:平局 fair ∈ [29%,32%) 却未买平（2026-08-30 立法,probation）
+        draw_p = lg.fair[FACE_KEYS["1"]]
+        if _C12_DRAW_LO <= draw_p < _C12_DRAW_HI and "1" not in lg.faces:
+            out.append(Finding(
+                "WARN", "draw_underpriced_band", n,
+                f"场{n} {lg.name}：平局 fair {draw_p * 100:.1f}% 落在市场低估带"
+                f"（29-32%：实开 35.7% vs 预期 30.1%，n=14，低估 +5.6pp），但面集合 "
+                f"`{lg.faces}` 未买平。对照 <22% 带市场反而高估 −5.3pp——平局的错价是分层的，"
+                f"不是全局的。",
+                "2026-08-30 立法:154 场实证,平局 fair 分层偏差"))
+
+        # C9 —— 开季翻车 regime:升班马刀/换帅首秀,表达只许全包或丢场（2026-08-30 立法,probation）
+        known_markers = [m for m in lg.crash_markers if m in CRASH_MARKER_LEXICON]
+        unknown_markers = [m for m in lg.crash_markers if m not in CRASH_MARKER_LEXICON]
+        if unknown_markers:
+            out.append(Finding(
+                "WARN", "crash_marker_off_lexicon", n,
+                f"场{n} {lg.name}：开季翻车标记不在封闭词典：{'/'.join(unknown_markers)}。",
+                "C9 crash_markers 只接受注册词典；未知名不得静默生效"))
+        if known_markers and len(set(lg.faces)) < 3:
+            out.append(Finding(
+                "WARN", "opening_upset_double", n,
+                f"场{n} {lg.name}：带开季翻车标记（{'/'.join(known_markers)}）却只买了 "
+                f"{len(set(lg.faces))} 面。开季窗结构未成型是赛前可识别的 regime——"
+                f"升班马/换帅刀的合法表达只有全包或丢整场。",
+                "26112 波鸿+26113 场2/5/10:四把开季刀全部穿透双选(2026-08-30 立法)"))
+
+        # C10 —— 旗只报脆不报方向:方向性旗场的双选(含盖旗面)降为 WARN（2026-08-30 立法,probation）
+        if in_lex and len(set(lg.faces)) == 2:
+            out.append(Finding(
+                "WARN", "flagged_double_not_full", n,
+                f"场{n} {lg.name}：带方向性旗（{'/'.join(in_lex)}）以双选表达。"
+                f"旗的实证是只会报『脆』不会报方向（shield 方向 0/8、26113 四旗指平场零平、"
+                f"保险面 10/50≈公允价无增益）——盖旗面买不到方向增益。合法响应=全包或丢整场；"
+                f"C1 裸单仍是 ERROR 底线。",
+                "26113 P3 四旗零平+断腿全开第三面(2026-08-30 立法)"))
+
         # C7 —— 被排面上有同场地同型的**活**先例:r3 双证的机械化。
         # 26105 场3(西布罗上季卡罗路 0:1 客胜先例被当 form 归零→客面开出杀全部票版)与
         # 26109 场10(塞维 2023-04-27 圣马梅斯 0:1 先例躺在深研笔记里、因排面来自处方双选
@@ -346,5 +421,6 @@ def legs_from_dict(payload: dict) -> list[Leg]:
             nondirectional_flags=tuple(v.get("nondirectional_flags", [])),
             anchor_integrity=v.get("anchor_integrity", "unknown"),
             precedents=tuple(tuple(x) for x in v.get("precedents", [])),
+            crash_markers=tuple(v.get("crash_markers", [])),
         ))
     return sorted(out, key=lambda lg: lg.match_no)
