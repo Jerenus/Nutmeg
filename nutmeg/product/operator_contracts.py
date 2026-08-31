@@ -267,3 +267,11 @@ class RecordDeploymentCommand(OperatorMutationCommand):
 
 class RequestTelegramConfirmationCommand(OperatorMutationCommand):
     dry_run: bool = True
+
+
+class TelegramConfirmationDispatch(VersionedOperatorContract):
+    ticket_artifact_id: str
+    confirmation_id: str
+    expires_at: AwareDatetime
+    dispatch_state: Literal['dry_run', 'sent']
+    message_preview: str
