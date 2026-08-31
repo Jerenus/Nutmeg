@@ -59,5 +59,6 @@ select = ["E", "F", "I", "B"]
 
 [dependency-groups]
 dev = [
+    "playwright>=1.51,<2",
     "pre-commit>=4.6.0",
 ]
