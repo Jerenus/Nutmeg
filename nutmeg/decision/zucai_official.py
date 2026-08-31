@@ -56,6 +56,21 @@ class OfficialRenjiuHistory:
     def observed_return_rate(self) -> float:
         return self.stake_amount * self.stake_count / self.sale_amount
 
+    def payout_consistent_with_return_rate(self) -> bool:
+        """64% 常数校验，允许官方单注奖金向下取整到元的损耗。
+
+        每注取整损失 <¥1，故实付总额与 销量×64% 的差必须落在
+        [0, stake_count) 区间（26111 实测：43,365 注把观察返奖率压到
+        63.78%，旧的 ±0.2pp 平坦容差在高中奖注数下必然误报）。
+        """
+        expected_total = self.sale_amount * RENJIU_RETURN_RATE
+        paid_total = self.stake_amount * self.stake_count
+        shortfall = expected_total - paid_total
+        epsilon = 1e-9 * max(abs(expected_total), 1.0)
+        # 只允许「非负且严格小于 注数×¥1」的取整损耗:
+        # 多付(shortfall<0)与少付≥1元/注 都是真实漂移,必须拒绝。
+        return -epsilon <= shortfall < self.stake_count
+
 
 def _num(raw) -> float | None:
     if raw in (None, ""):
@@ -131,7 +146,7 @@ def parse_renjiu_history_item(item: dict) -> OfficialRenjiuHistory:
         stake_amount=float(prize[1]),
         sale_amount=float(sale),
     )
-    if abs(history.observed_return_rate - RENJIU_RETURN_RATE) > 0.002:
+    if not history.payout_consistent_with_return_rate():
         raise ValueError(
             f"任九历史返奖率异常({issue}): {history.observed_return_rate:.4f}"
         )

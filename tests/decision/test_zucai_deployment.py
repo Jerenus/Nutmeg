@@ -10,6 +10,7 @@ from nutmeg.decision.zucai_deployment import (
     format_deployment_gate,
 )
 from nutmeg.decision.zucai_official import OfficialRenjiuHistory
+from nutmeg.decision.zucai_optimizer import optimize
 from nutmeg.interfaces.cli import app
 
 _OFFICIAL_26104_COHORT = [
@@ -59,7 +60,7 @@ def _payload(**changes):
     return payload
 
 
-def test_gate_selects_max_probability_inside_cap_and_reports_arithmetic():
+def test_gate_selects_lowest_break_even_inside_cap_and_reports_arithmetic():
     payload = _payload(
         period_cap_yuan=400,
         candidates=[
@@ -71,13 +72,14 @@ def test_gate_selects_max_probability_inside_cap_and_reports_arithmetic():
 
     result = evaluate_deployment_gate(payload, _history())
 
-    assert result.selected_id == "V384"
-    assert result.capital_utilization == pytest.approx(0.96)
-    assert result.break_even_bonus == pytest.approx(2400.0)
+    # 回本线：V288=¥2,057 < V384=¥2,400 → 新语义选 V288（旧 max-P 语义会选 V384）。
+    assert result.selected_id == "V288"
+    assert result.capital_utilization == pytest.approx(0.72)
+    assert result.break_even_bonus == pytest.approx(288 / 0.14)
     assert result.median_bonus == pytest.approx(6446.5)
-    assert result.break_even_to_median == pytest.approx(2400 / 6446.5)
+    assert result.break_even_to_median == pytest.approx((288 / 0.14) / 6446.5)
     assert result.equivalent_max_winning_stakes == math.floor(
-        result.median_sale_amount * 0.64 / 2400
+        result.median_sale_amount * 0.64 / (288 / 0.14)
     )
     assert result.excluded_over_cap == ("R432",)
 
@@ -105,10 +107,15 @@ def test_gate_breaks_equal_probability_tie_by_lower_stake_then_id():
 )
 def test_gate_exact_ratio_boundaries(ratio, state, exit_code):
     median = 1000.0
-    history = [OfficialRenjiuHistory("1", "", 640, median, 1_000_000)]
+    # 固定 12 期窗口：12 行等值历史，中位仍为 median，仅检验比值分档边界。
+    history = [
+        OfficialRenjiuHistory(str(idx), "", 640, median, 1_000_000)
+        for idx in range(1, 13)
+    ]
     payload = _payload(
-        history_as_of_issue="2",
-        history_window=1,
+        issue="26113",
+        history_as_of_issue="13",
+        history_window=12,
         candidates=[{
             "id": "boundary",
             "stake_yuan": 100,
@@ -136,11 +143,14 @@ def test_gate_rejects_invalid_or_absent_cap_candidate(changes):
 
 
 def test_gate_rejects_insufficient_official_history():
-    with pytest.raises(ValueError, match="history_window"):
-        evaluate_deployment_gate(_payload(history_window=15), _history())
+    short_history = _history()[:8]
+    with pytest.raises(ValueError, match="requires 12 prior official rows"):
+        evaluate_deployment_gate(
+            _payload(issue="26113", history_window=12), short_history
+        )
 
 
-def test_26103_replay_returns_reduce_or_empty_like_actual_empty_slate():
+def test_26103_replay_preserves_recorded_reduce_or_empty_state():
     result = evaluate_deployment_gate(
         _payload(
             issue="26103",
@@ -154,6 +164,7 @@ def test_26103_replay_returns_reduce_or_empty_like_actual_empty_slate():
         _history(),
     )
     assert result.state is DeploymentGateState.REDUCE_OR_EMPTY
+    assert result.history_window == 14
     assert result.break_even_to_median == pytest.approx(2.24, abs=0.01)
     assert "丢场式减注" in format_deployment_gate(result)
     assert "无合格减注版" in format_deployment_gate(result)
@@ -163,6 +174,7 @@ def test_26104_replay_passes_at_recorded_point_95_compromise():
     result = evaluate_deployment_gate(_payload(), _history())
     assert result.state is DeploymentGateState.PASS
     assert result.break_even_bonus == pytest.approx(6097)
+    assert result.history_window == 14
     assert result.break_even_to_median == pytest.approx(0.95, abs=0.01)
     assert result.capital_utilization == pytest.approx(0.81)
 
@@ -171,10 +183,10 @@ def _write_cli_files(tmp_path, *, ratio: float):
     median = 1000.0
     gate_file = tmp_path / "gate.json"
     gate_file.write_text(json.dumps({
-        "issue": "26104",
+        "issue": "26113",
         "period_cap_yuan": 100,
-        "history_as_of_issue": "26104",
-        "history_window": 1,
+        "history_as_of_issue": "26113",
+        "history_window": 12,
         "candidates": [{
             "id": "candidate",
             "stake_yuan": 100,
@@ -182,19 +194,20 @@ def _write_cli_files(tmp_path, *, ratio: float):
         }],
     }), encoding="utf-8")
     history_file = tmp_path / "history.json"
-    history_file.write_text(json.dumps({
-        "value": {"list": [{
-            "lotteryDrawNum": "26103",
+    rows = []
+    for offset in range(12):
+        issue = str(26112 - offset)
+        rows.append({
+            "lotteryDrawNum": issue,
             "lotteryDrawTime": "2026-08-26",
             "lotteryDrawResult": "* * * * * * * * * * * * * *",
             "prizeLevelListRj": [{
-                "prizeLevel": "任选9场",
-                "stakeCount": "640",
-                "stakeAmount": "1,000",
+                "stakeCount": "10",
+                "stakeAmount": f"{median:.0f}",
             }],
-            "totalSaleAmountRj": "1,000,000",
-        }]},
-    }), encoding="utf-8")
+            "totalSaleAmountRj": f"{median * 10 / 0.64:.0f}",
+        })
+    history_file.write_text(json.dumps({"value": {"list": rows}}), encoding="utf-8")
     return gate_file, history_file
 
 
@@ -227,3 +240,123 @@ def test_deployment_gate_cli_returns_one_for_malformed_official_history(tmp_path
 
     assert result.exit_code == 1
     assert "official history" in result.stdout
+
+
+def test_cohort_accepts_floor_rounded_high_count_payout_26111():
+    # 26111 实况：43,365 注 × ¥215 / 销量 ¥14,617,834 → 观察返奖率 63.78%。
+    # 单注奖金向下取整到元在高中奖注数下把返奖率压出旧 ±0.2pp 平坦容差,
+    # 但实付总额与 销量×64% 的差 (¥31,938.76) < 注数 (43,365×¥1),属合法取整损耗。
+    history = _history() + [
+        OfficialRenjiuHistory(
+            issue="26111",
+            draw_date="2026-08-28",
+            stake_count=43365,
+            stake_amount=215.0,
+            sale_amount=14617834.0,
+        )
+    ]
+    result = evaluate_deployment_gate(
+        _payload(issue="26112", history_as_of_issue="26112", history_window=12),
+        history,
+    )
+    assert "26111" in result.history_issues
+
+
+def test_cohort_still_rejects_true_return_rate_drift():
+    history = _history() + [
+        OfficialRenjiuHistory(
+            issue="26111",
+            draw_date="2026-08-28",
+            stake_count=43365,
+            stake_amount=210.0,  # 少付超过取整损耗上限
+            sale_amount=14617834.0,
+        )
+    ]
+    with pytest.raises(ValueError, match="return rate drifted"):
+        evaluate_deployment_gate(
+            _payload(issue="26112", history_as_of_issue="26112", history_window=12),
+            history,
+        )
+
+
+def test_gate_requires_twelve_from_effective_issue_and_preserves_legacy_replay():
+    with pytest.raises(ValueError, match="must equal 12"):
+        evaluate_deployment_gate(
+            _payload(issue="26113", history_as_of_issue="26113", history_window=14),
+            _history(),
+        )
+
+    legacy = evaluate_deployment_gate(_payload(history_window=14), _history())
+
+    assert legacy.history_window == 14
+
+
+def test_floor_rounding_rejects_overpayment_and_one_yuan_per_winner_shortfall():
+    exact = OfficialRenjiuHistory("1", "2026-01-01", 10, 64.0, 1000.0)
+    just_under_limit = OfficialRenjiuHistory(
+        "1", "2026-01-01", 10, 63.00000001, 1000.0
+    )
+    over = OfficialRenjiuHistory("1", "2026-01-01", 10, 64.1, 1000.0)
+    short = OfficialRenjiuHistory("1", "2026-01-01", 10, 63.0, 1000.0)
+    assert exact.payout_consistent_with_return_rate()
+    assert just_under_limit.payout_consistent_with_return_rate()
+    assert not over.payout_consistent_with_return_rate()
+    assert not short.payout_consistent_with_return_rate()
+
+
+def test_deployment_selects_lowest_break_even_inside_cap():
+    """s条修订(2026-08-31):固定奖金玩法按回本线最小选档,不按 P 最大。
+
+    26114 实证:¥256→¥1,728 时 P 涨 4.1 倍而回本线从 ¥3,902 爬到 ¥6,417,
+    当晚实开 ¥214——加注让经济性单调变差。
+    """
+    result = evaluate_deployment_gate(
+        _payload(candidates=[
+            {"id": "small", "stake_yuan": 288, "hit_probability": 0.14},
+            {"id": "wide", "stake_yuan": 384, "hit_probability": 0.16},
+        ]),
+        _history(),
+    )
+    assert result.selected_id == "small"
+    assert result.break_even_bonus == pytest.approx(288 / 0.14)
+
+
+def test_deployment_and_optimizer_select_the_same_fixed_bonus_candidate():
+    optimized = optimize({
+        "issue": "26114",
+        "price_per_note": 2,
+        "budget_yuan": 10,
+        "median_bonus_yuan": 1000,
+        "fair": {
+            "1": {"home": 0.50, "draw": 0.30, "away": 0.20},
+            "2": {"home": 0.60, "draw": 0.25, "away": 0.15},
+        },
+        "versions": [
+            {"id": "small", "faces": {"1": "3", "2": "3"}},
+            {"id": "wide", "faces": {"1": "31", "2": "31"}},
+        ],
+    })
+    history = [
+        OfficialRenjiuHistory(str(26113 - offset), "", 64, 1000.0, 100000.0)
+        for offset in range(12)
+    ]
+
+    deployed = evaluate_deployment_gate(
+        {
+            "issue": "26114",
+            "history_as_of_issue": "26114",
+            "period_cap_yuan": 10,
+            "history_window": 12,
+            "candidates": [
+                {
+                    "id": version["id"],
+                    "stake_yuan": version["cost_yuan"],
+                    "hit_probability": version["p_all"],
+                }
+                for version in optimized["versions"]
+            ],
+        },
+        history,
+    )
+
+    assert deployed.selected_id == optimized["best_within_cap_id"] == "small"

@@ -58,6 +58,13 @@ def _history() -> list[OfficialRenjiuHistory]:
     ]
 
 
+def test_product_history_window_is_policy_versioned() -> None:
+    from nutmeg.product import operator_queries as module
+
+    assert module._renjiu_history_window("26113", available_rows=20) == 12
+    assert module._renjiu_history_window("26112", available_rows=3) == 3
+
+
 @pytest.fixture
 def artifact_root(tmp_path: Path) -> Path:
     root = write_26112_bundle(tmp_path / "zucai")

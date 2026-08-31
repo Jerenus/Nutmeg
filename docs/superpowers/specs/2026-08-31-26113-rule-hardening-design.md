@@ -1,0 +1,163 @@
+# 26113 Rule Hardening Design
+
+Date: 2026-08-31  
+Status: Approved through the 2026-08-30 RULEBOOK adjudications and Jun's instruction
+to complete all remaining development work
+
+## 1. Scope
+
+Close the three incomplete code paths introduced by the 26113/26114 reviews:
+
+1. machine-check the C9-C12 probation rules without adding football judgment; and
+2. make the Zucai deployment bonus anchor use exactly the latest 12 eligible official
+   Renjiu issues while accepting the provider's per-winning-stake floor rounding; and
+3. make fixed-bonus Renjiu candidate comparison and deployment use the authored
+   break-even criterion consistently.
+
+The implementation preserves the existing split between authored inputs and deterministic
+checks. The main loop decides whether an opening-round crash marker applies, authors fair
+probabilities, chooses ticket faces, and adjudicates every WARN. Code validates marker
+vocabulary, interval membership, official facts, and deployment arithmetic only.
+
+## 2. Audit Contract
+
+`Leg.crash_markers` accepts a closed vocabulary:
+
+- `opening_promoted_vs_paper`
+- `opening_new_coach_debut`
+
+The audit produces these non-blocking findings:
+
+- `opening_upset_double`: a known crash marker is present and the retained leg has fewer
+  than three faces;
+- `flagged_double_not_full`: a registered directional flag is expressed with exactly two
+  faces;
+- `false_direction_band`: `top1 - top2` is in `[0.05, 0.10)` and the leg is not full;
+- `draw_underpriced_band`: draw fair is in `[0.29, 0.32)` and draw is absent;
+- `crash_marker_off_lexicon`: an authored crash marker is outside the closed vocabulary.
+
+All five findings are WARN. Existing ERROR behavior, including C1 naked directional flags,
+does not change. A dropped match is absent from `legs`, so it remains a legal response and
+does not receive a finding.
+
+Unknown crash markers must not silently disappear. They are reported without treating the
+invented marker as evidence that C9 fired. JSON loading remains backward compatible when
+`crash_markers` is absent.
+
+## 3. Deployment Anchor Contract
+
+The deployment gate owns public constants `RENJIU_HISTORY_WINDOW = 12` and
+`RENJIU_HISTORY_WINDOW_EFFECTIVE_ISSUE = 26113`. Callers retain the `history_window` input
+field for explicit auditability. For issue 26113 and later its value must equal 12. Missing,
+boolean, non-integer, nonpositive, or a different current-policy value is a source-contract
+error.
+
+For current-policy issues the cohort contains the 12 highest numeric official issue numbers
+strictly before `history_as_of_issue`. Later or equal issues are excluded. Fewer than 12
+eligible rows is a source error; the gate does not shrink its window.
+
+Issues before 26113 preserve their explicitly authored positive window. This is deliberate
+policy-versioned replay: the 26103 and 26104 evidence remains reproducible under the rule in
+force at the time, while the `scoreboard.json` 26113 adjudication marks rolling 12 as
+effective immediately from that issue. New policy never rewrites old adjudication evidence.
+
+The product operator projection passes the same constant for issue 26113 and later rather
+than deriving a current-policy window from available row count. Therefore CLI and browser
+reports cannot disagree about the current bonus anchor.
+
+The deployment gate is specific to fixed-bonus Renjiu candidates. Inside the period cap it
+selects the minimum `stake_yuan / hit_probability`, with lower stake and stable candidate ID
+as deterministic tie-breakers. This replaces the superseded maximum-P selection. The gate
+still reports PASS, REVIEW, or REDUCE_OR_EMPTY from the selected candidate's break-even to
+the fixed 12-issue median and never chooses the human deployment action.
+
+## 4. Official Payout Validation
+
+For a Renjiu history row:
+
+```text
+expected_pool = sale_amount * 0.64
+paid_pool = stake_amount * stake_count
+floor_loss = expected_pool - paid_pool
+```
+
+The row is consistent only when `floor_loss` is at least zero, within floating-point epsilon,
+and strictly less than `stake_count`. This models an official stake amount floored by less
+than CNY 1 for each winning stake. It accepts the real 26111 high-winner-count row and rejects
+overpayment or a shortfall of CNY 1 or more per winning stake.
+
+Both the official response parser and deployment cohort validator call the same method.
+
+## 5. Optimizer Contract
+
+Every supplied version reports:
+
+```text
+break_even_bonus_yuan = cost_yuan / P(all correct)
+```
+
+`median_bonus_yuan` is an optional positive field in the structured optimizer JSON. Its
+presence explicitly selects fixed-bonus ranking and adds
+`break_even_to_median = break_even_bonus_yuan / median_bonus_yuan`. Fixed-bonus ranking is
+ascending by break-even, then cost, then stable version ID. When the field is absent, the
+optimizer preserves its previous descending-P ranking for workflows whose payout changes
+with the selected combination.
+
+The CLI continues to take one structured `--input-file`; it does not add a second scalar
+override that could disagree with the JSON evidence. The report labels which ranking rule
+was used and shows break-even values without recommending a stake or ticket.
+
+## 6. Data Flow
+
+```text
+authored legs JSON
+    -> legs_from_dict
+    -> audit_legs
+    -> C9-C12/lexicon WARN findings
+    -> human adjudication
+
+official gameNo=90 history
+    -> parse_renjiu_history_item
+    -> floor-rounding validation
+    -> fixed 12-row cohort
+    -> minimum-break-even candidate
+    -> deterministic deployment report/exit code
+    -> human deployment adjudication
+
+authored candidate JSON + authored fair
+    -> optimizer validation
+    -> P(all correct), cost, break-even, median ratio
+    -> deterministic comparison table
+    -> human scale/ticket choice
+```
+
+No new persistence type, Action, schema migration, or background process is required.
+
+## 7. Verification
+
+Focused tests cover:
+
+- every C9-C12 trigger, non-trigger, lower boundary, and upper boundary;
+- full-cover and dropped-match-compatible behavior;
+- unknown crash marker warning and backward-compatible JSON parsing;
+- exactly-12 enforcement from issue 26113 in the domain function, live-shaped gate input,
+  and product query, plus unchanged 26103/26104 policy-versioned replays;
+- 26111 floor-rounding acceptance, parser acceptance, true underpayment rejection, and
+  overpayment rejection;
+- existing 26103/26104 deployment replays under their authored historical windows;
+- optimizer break-even arithmetic, fixed-bonus ordering, legacy P ordering, report labels,
+  and median validation;
+- deployment and optimizer agreement on the minimum-break-even candidate.
+
+Completion also requires decision/product regressions, five-domain pytest, ruff, compileall,
+pre-commit, and read-only CLI replay. Production ontology and scoreboard data are not written.
+
+## 8. Explicit Exclusions
+
+- no automatic classification of promoted teams, paper strength, opening round, or coach
+  debut;
+- no automatic face, drop-match, ticket, deployment, or empty-position choice;
+- no change to ERROR override authority or `ConfirmDispatch`;
+- no scoreboard cutover, launchd change, soak, ReleaseApproval, or production Action;
+- no changes, staging, or commits for the scheduler operation files, the Codex handoff file,
+  or the 26113 PDF rendering script currently present in Jun's worktree.

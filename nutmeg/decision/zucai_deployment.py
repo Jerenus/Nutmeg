@@ -11,6 +11,13 @@ from nutmeg.decision.zucai_official import (
     OfficialRenjiuHistory,
 )
 
+RENJIU_HISTORY_WINDOW = 12
+RENJIU_HISTORY_WINDOW_EFFECTIVE_ISSUE = 26113
+"""当前官方任九历史锚窗口（2026-08-29 用户裁定，26113 ADJ-2）。
+
+CLI 与 product 查询从 26113 起共用滚动 12 期官方中位；更早期次保留当时
+显式登记的窗口，以便历史裁决可复现。"""
+
 PASS_RATIO_MAX = 0.95
 REDUCE_RATIO_MIN = 2.2
 _TOLERANCE = 1e-12
@@ -118,7 +125,7 @@ def _cohort(
             or row.sale_amount <= 0
         ):
             raise ValueError("official history contains invalid facts")
-        if abs(row.observed_return_rate - RENJIU_RETURN_RATE) > 0.002:
+        if not row.payout_consistent_with_return_rate():
             raise ValueError(f"official history return rate drifted for {row.issue}")
         if int(row.issue) < int(as_of_issue):
             eligible.append(row)
@@ -133,7 +140,7 @@ def _cohort(
 def evaluate_deployment_gate(
     payload: dict, history: list[OfficialRenjiuHistory]
 ) -> DeploymentGateResult:
-    """Select max-P structure inside the cap and evaluate official-median economics."""
+    """Select minimum break-even inside the cap and report official-median economics."""
     if not isinstance(payload, dict):
         raise ValueError("deployment gate input must be an object")
     issue = str(payload.get("issue", "")).strip()
@@ -144,8 +151,18 @@ def evaluate_deployment_gate(
     if not cap.is_integer():
         raise ValueError("period_cap_yuan must be a whole yuan amount")
     window_raw = payload.get("history_window")
-    if isinstance(window_raw, bool) or not isinstance(window_raw, int) or window_raw <= 0:
-        raise ValueError("history_window must be a positive integer")
+    if (
+        isinstance(window_raw, bool)
+        or not isinstance(window_raw, int)
+        or window_raw <= 0
+        or (
+            int(issue) >= RENJIU_HISTORY_WINDOW_EFFECTIVE_ISSUE
+            and window_raw != RENJIU_HISTORY_WINDOW
+        )
+    ):
+        raise ValueError(
+            "history_window must be positive and must equal 12 from issue 26113"
+        )
     raw_candidates = payload.get("candidates")
     if not isinstance(raw_candidates, list) or not raw_candidates:
         raise ValueError("candidates must be a nonempty list")
@@ -155,9 +172,15 @@ def evaluate_deployment_gate(
     inside = [item for item in candidates if item.stake_yuan <= int(cap)]
     if not inside:
         raise ValueError("no candidate is inside period_cap_yuan")
+    # 固定奖金玩法按回本线（票价÷P）升序取档，不按 P 降序（s条 2026-08-31 修订）。
+    # 任九中奖只拿 1 注奖金而成本随注数线性涨 → 加注必然抬高回本线。
     selected = min(
         inside,
-        key=lambda item: (-item.hit_probability, item.stake_yuan, item.candidate_id),
+        key=lambda item: (
+            item.stake_yuan / item.hit_probability,
+            item.stake_yuan,
+            item.candidate_id,
+        ),
     )
     cohort = _cohort(history, as_of_issue=as_of_issue, window=window_raw)
     median_bonus = float(statistics.median(row.stake_amount for row in cohort))

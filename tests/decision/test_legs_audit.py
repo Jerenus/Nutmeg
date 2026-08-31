@@ -1,4 +1,6 @@
 # tests/decision/test_legs_audit.py
+import pytest
+
 from nutmeg.decision.legs_audit import (
     Leg,
     audit_legs,
@@ -112,8 +114,9 @@ def test_modal_stack_mismatch_reports_the_arithmetic():
 
 
 def test_clean_ticket_passes():
+    # 2026-08-30 旗响应改革(C10)后:方向性旗场的干净表达=全包,双选降为 WARN
     legs = [
-        _leg(match_no=1, faces="31", directional_flags=(("self_made_tail", "1"),)),
+        _leg(match_no=1, faces="310", directional_flags=(("self_made_tail", "1"),)),
         _leg(match_no=2, faces="3", confidence=4, anchor_integrity="pass"),
         _leg(match_no=3, faces="310", nondirectional_flags=("dressing_room_turmoil",),
              anchor_integrity="fail"),
@@ -334,3 +337,101 @@ def test_dropped_prescribed_match_is_a_deviation():
 def test_legacy_payload_without_prescription_has_no_deviation_findings():
     payload = {"legs": {"1": {"faces": "3"}}}
     assert audit_prescription_deviations(payload) == []
+
+
+def test_c9_opening_upset_double_warns_and_full_cover_passes():
+    warn = audit_legs([_leg(faces="31", confidence=3,
+                            crash_markers=("opening_promoted_vs_paper",))])
+    assert any(f.code == "opening_upset_double" and f.level == "WARN" for f in warn)
+    ok = audit_legs([_leg(faces="310", confidence=3,
+                          crash_markers=("opening_new_coach_debut",))])
+    assert not any(f.code == "opening_upset_double" for f in ok)
+    # 词典外标记不触发(封闭词典)
+    off = audit_legs([_leg(faces="31", confidence=3, crash_markers=("made_up_marker",))])
+    assert not any(f.code == "opening_upset_double" for f in off)
+
+
+def test_c10_flagged_double_warns_naked_still_error_full_passes():
+    flagged = dict(directional_flags=(("anchor_shield_out", "1"),))
+    warn = audit_legs([_leg(faces="31", confidence=3, **flagged)])
+    assert any(f.code == "flagged_double_not_full" and f.level == "WARN" for f in warn)
+    naked = audit_legs([_leg(faces="3", confidence=4, **flagged)])
+    assert any(f.code == "flagged_naked_single" and f.level == "ERROR" for f in naked)
+    full = audit_legs([_leg(faces="310", confidence=3, **flagged)])
+    assert not any(f.code in ("flagged_double_not_full", "flagged_naked_single")
+                   for f in full)
+
+
+def test_c11_false_direction_band_warns_only_in_5_to_10pp():
+    # gap12 = 6.6pp 落带内,双选 → WARN
+    inband = {"home": 0.377, "draw": 0.311, "away": 0.312}
+    hit = audit_legs([_leg(faces="31", confidence=3, fair=inband)])
+    assert any(f.code == "false_direction_band" for f in hit)
+    # 同一场全包 → 不触发
+    full = audit_legs([_leg(faces="310", confidence=3, fair=inband)])
+    assert not any(f.code == "false_direction_band" for f in full)
+    # gap12 = 1.8pp 在带外(<5pp) → 不触发
+    below = {"home": 0.367, "draw": 0.284, "away": 0.349}
+    assert not any(f.code == "false_direction_band"
+                   for f in audit_legs([_leg(faces="30", confidence=3, fair=below)]))
+    # gap12 = 49.2pp 在带外(>10pp) → 不触发
+    above = {"home": 0.682, "draw": 0.190, "away": 0.128}
+    assert not any(f.code == "false_direction_band"
+                   for f in audit_legs([_leg(faces="31", confidence=3, fair=above)]))
+
+
+def test_c12_draw_underpriced_band_only_when_draw_not_bought():
+    band = {"home": 0.375, "draw": 0.313, "away": 0.312}   # 平 31.3% 落 29-32 带
+    # 未买平 → WARN
+    assert any(f.code == "draw_underpriced_band"
+               for f in audit_legs([_leg(faces="30", confidence=3, fair=band)]))
+    # 买了平 → 不触发
+    assert not any(f.code == "draw_underpriced_band"
+                   for f in audit_legs([_leg(faces="31", confidence=3, fair=band)]))
+    # 平局 fair 低于带(20.9%) 且未买平 → 不触发(市场反而高估平)
+    low = {"home": 0.121, "draw": 0.209, "away": 0.670}
+    assert not any(f.code == "draw_underpriced_band"
+                   for f in audit_legs([_leg(faces="0", confidence=4, fair=low,
+                                             anchor_integrity="pass")]))
+
+
+def test_unknown_crash_marker_warns_without_triggering_c9():
+    findings = audit_legs([
+        _leg(faces="31", confidence=3, crash_markers=("invented_opening_story",))
+    ])
+    assert "crash_marker_off_lexicon" in {item.code for item in findings}
+    assert "opening_upset_double" not in {item.code for item in findings}
+
+
+@pytest.mark.parametrize(
+    ("fair", "warns"),
+    [
+        ({"home": 0.40, "draw": 0.35, "away": 0.25}, True),
+        ({"home": 0.4499, "draw": 0.35, "away": 0.2001}, True),
+        ({"home": 0.45, "draw": 0.35, "away": 0.20}, False),
+    ],
+)
+def test_c11_exact_half_open_boundaries(fair, warns):
+    codes = _codes([_leg(faces="31", confidence=3, fair=fair)])
+    assert ("false_direction_band" in codes) is warns
+
+
+@pytest.mark.parametrize(("draw", "warns"), [(0.29, True), (0.3199, True), (0.32, False)])
+def test_c12_exact_half_open_boundaries(draw, warns):
+    home = 0.40
+    codes = _codes([_leg(faces="30", confidence=3, fair={
+        "home": home, "draw": draw, "away": 1 - home - draw,
+    })])
+    assert ("draw_underpriced_band" in codes) is warns
+
+
+def test_legs_from_dict_defaults_and_parses_crash_markers():
+    with_marker = legs_from_dict({"legs": {"1": {
+        "faces": "31", "fair": FAIR_HOME, "confidence": 3,
+        "crash_markers": ["opening_promoted_vs_paper"],
+    }}})[0]
+    legacy = legs_from_dict({"legs": {"1": {
+        "faces": "31", "fair": FAIR_HOME, "confidence": 3,
+    }}})[0]
+    assert with_marker.crash_markers == ("opening_promoted_vs_paper",)
+    assert legacy.crash_markers == ()
