@@ -9,6 +9,14 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.templating import Jinja2Templates
 
+_DEPLOYMENT_LABELS = {
+    "keep": "保留当前结构",
+    "drop_match": "丢场式减注",
+    "change_structure": "调整结构后重审",
+    "empty_position": "空仓（当前部署门允许）",
+}
+_AUDIT_LABELS = {"pass": "PASS", "warn": "WARN", "error": "ERROR"}
+
 
 def mount_operator_ui(
     app: FastAPI,
@@ -26,6 +34,8 @@ def mount_operator_ui(
             context={
                 "workspace": "operator-task",
                 "task": task,
+                "deployment_labels": _DEPLOYMENT_LABELS,
+                "audit_labels": _AUDIT_LABELS,
                 "snapshot_token": base64.urlsafe_b64encode(token_bytes)
                 .decode("ascii")
                 .rstrip("="),

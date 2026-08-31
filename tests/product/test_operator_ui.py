@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from nutmeg.interfaces.product_api import create_product_app
 from nutmeg.product.operator_contracts import (
+    AuditDeploymentStep,
     BlockedStep,
     BusinessEvidenceSummary,
     ConstructTicketStep,
@@ -27,8 +28,17 @@ NOW = datetime(2026, 8, 28, 10, tzinfo=UTC)
 
 
 class FakeOperatorQueries:
-    def __init__(self, state: str = "judge_matches", *, empty: bool = False) -> None:
+    def __init__(
+        self,
+        state: str = "judge_matches",
+        *,
+        empty: bool = False,
+        audit_state: str = "pass",
+        deployment_state: str = "pass",
+    ) -> None:
         self.empty = empty
+        self.audit_state = audit_state
+        self.deployment_state = deployment_state
         self.summary = OperatorTaskSummary(
             task_id="zucai:26112",
             lane=OperatorLane.ZUCAI,
@@ -51,7 +61,40 @@ class FakeOperatorQueries:
         )
 
     def task(self, task_id: str, *, as_of):
-        if self.summary.state is OperatorTaskState.JUDGE_MATCHES:
+        if self.summary.state is OperatorTaskState.AUDIT_DEPLOYMENT:
+            allowed = (
+                ["drop_match", "change_structure", "empty_position"]
+                if self.deployment_state == "reduce_or_empty"
+                else ["keep", "change_structure"]
+            )
+            step = AuditDeploymentStep(
+                task_id=task_id,
+                candidate=TicketVersionSummary(
+                    candidate_id="R432",
+                    label="R432",
+                    faces={"1": "310"},
+                    notes=216,
+                    cost_yuan=432,
+                    p_all=0.2796,
+                    expected_broken=1.65,
+                ),
+                gate_candidate_id="V288",
+                gate_candidate_cost_yuan=288,
+                audit_state=self.audit_state,
+                findings=[
+                    BusinessEvidenceSummary(
+                        label="C8",
+                        value='<img src=x onerror=alert("finding")>',
+                        severity="warn",
+                    )
+                ],
+                deployment_state=self.deployment_state,
+                capital_utilization=0.72,
+                median_bonus=4098,
+                break_even_to_median=0.94,
+                allowed_decisions=allowed,
+            )
+        elif self.summary.state is OperatorTaskState.JUDGE_MATCHES:
             step = JudgeMatchesStep(
                 task_id=task_id,
                 item_key="ADJ-1",
@@ -175,6 +218,30 @@ def client_with_resolved_adj(m2_product_services) -> TestClient:
     return _client(m2_product_services, FakeOperatorQueries("construct_ticket"))
 
 
+@pytest.fixture
+def client_at_gate(m2_product_services) -> TestClient:
+    return _client(m2_product_services, FakeOperatorQueries("audit_deployment"))
+
+
+@pytest.fixture
+def client_at_reduce_or_empty_gate(m2_product_services) -> TestClient:
+    return _client(
+        m2_product_services,
+        FakeOperatorQueries("audit_deployment", deployment_state="reduce_or_empty"),
+    )
+
+
+@pytest.fixture
+def gate_client_factory(m2_product_services):
+    def factory(audit_state: str) -> TestClient:
+        return _client(
+            m2_product_services,
+            FakeOperatorQueries("audit_deployment", audit_state=audit_state),
+        )
+
+    return factory
+
+
 def test_root_opens_selected_task_without_system_chrome(client: TestClient) -> None:
     response = client.get("/")
 
@@ -296,3 +363,50 @@ def test_operator_javascript_only_collects_forms(client: TestClient) -> None:
         "priority",
     ):
         assert forbidden not in script
+
+
+def test_deployment_view_translates_gate_without_defaulting_empty(
+    client_at_gate: TestClient,
+) -> None:
+    html = client_at_gate.get("/tasks/zucai:26112").text
+
+    assert 'data-step-kind="audit_deployment"' in html
+    assert "票面审计" in html
+    assert "资金使用率" in html
+    assert "中位奖金" in html
+    assert "回本/中位" in html
+    assert "需要你的部署裁决" in html
+    assert 'value="keep"' in html
+    assert 'value="empty_position"' not in html
+    assert "系统建议空仓" not in html
+    assert html.count('class="primary-action"') == 1
+
+
+def test_empty_position_appears_only_for_explicit_gate_failure(
+    client_at_reduce_or_empty_gate: TestClient,
+) -> None:
+    html = client_at_reduce_or_empty_gate.get("/tasks/zucai:26112").text
+
+    assert 'value="empty_position"' in html
+    assert "部署门未通过" in html
+
+
+@pytest.mark.parametrize(
+    ("audit_state", "label"),
+    [("pass", "PASS"), ("warn", "WARN"), ("error", "ERROR")],
+)
+def test_audit_labels_are_textual_and_findings_are_escaped(
+    gate_client_factory, audit_state, label
+) -> None:
+    html = gate_client_factory(audit_state).get("/tasks/zucai:26112").text
+    assert label in html
+    assert "C8" in html
+    assert 'href="/tasks/zucai:26112"' in html
+    assert '<img src=x onerror=alert("finding")>' not in html
+    assert '"exit_code"' not in html
+
+
+def test_deployment_javascript_posts_only_governed_fields(client_at_gate: TestClient) -> None:
+    script = client_at_gate.get("/assets/product/operator.js").text
+    assert "/deployment" in script
+    assert "record-deployment" in script

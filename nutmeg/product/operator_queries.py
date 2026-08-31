@@ -348,7 +348,7 @@ class OperatorQueryService:
                 task_id=task_id,
                 title="本期流程已完成",
                 summary=(
-                    "已明确选择空仓，未出票"
+                    "已明确裁决空仓；没有出票或入账"
                     if deployment_decision == "empty_position"
                     else "流程已按持久化记录完成"
                 ),

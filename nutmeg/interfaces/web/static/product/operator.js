@@ -117,5 +117,19 @@
         },
       ));
     }
+
+    if (action === "record-deployment") {
+      submit(form, () => postJson(
+        `/api/v1/operator/tasks/${encodeURIComponent(form.dataset.taskId)}/deployment`,
+        {
+          schema_version: "1",
+          expected_snapshot_token: expectedToken,
+          candidate_id: form.dataset.candidateId,
+          decision: values.get("decision"),
+          reason: values.get("reason"),
+          idempotency_key: `ui:operator:deployment:${crypto.randomUUID()}`,
+        },
+      ));
+    }
   });
 })();

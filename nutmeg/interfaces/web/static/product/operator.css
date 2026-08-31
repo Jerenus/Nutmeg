@@ -119,6 +119,25 @@ thead th { color: var(--muted); font-size: .82rem; }
 .deviation-row { display: grid; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .difference-faces { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .difference-faces span { color: var(--muted); }
+.gate-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 28px 0; border-block: 1px solid var(--line); }
+.gate-metric { min-height: 112px; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 16px; border-right: 1px solid var(--line); }
+.gate-metric:last-child { border-right: 0; }
+.gate-metric span, .gate-metric small { color: var(--muted); }
+.gate-metric strong { font-size: 1.32rem; }
+.gate-metric.state-pass strong { color: var(--pass); }
+.gate-metric.state-warn strong, .gate-metric.state-review strong { color: var(--warn); }
+.gate-metric.state-error strong, .gate-metric.state-reduce_or_empty strong { color: var(--error); }
+.gate-notice { margin: 16px 0; padding: 13px 16px; background: var(--quiet); border-left: 4px solid var(--line); }
+.gate-notice.state-warn { border-left-color: var(--warn); }
+.gate-notice.state-error { border-left-color: var(--error); }
+.finding-list { margin: 30px 0; }
+.finding-list h2 { font-size: 1rem; }
+.finding-row { padding: 14px 0 14px 14px; border-bottom: 1px solid var(--line); border-left: 3px solid var(--line); }
+.finding-row p { margin: 4px 0; overflow-wrap: anywhere; }
+.finding-row.severity-warn { border-left-color: var(--warn); }
+.finding-row.severity-error { border-left-color: var(--error); }
+.deployment-form { max-width: 620px; padding-top: 26px; border-top: 1px solid var(--line); }
+.quiet-link { min-height: 44px; display: inline-flex; align-items: center; margin-top: 22px; color: var(--muted); }
 .step-copy h1, .worklist h1, .system-index h1 { margin: 6px 0 18px; font-size: 2rem; letter-spacing: 0; }
 .eyebrow { margin: 0; color: var(--muted); font-size: .82rem; font-weight: 700; text-transform: uppercase; }
 .muted, .time-line { color: var(--muted); }
@@ -165,6 +184,8 @@ thead th { color: var(--muted); font-size: .82rem; }
   .step-copy h1, .worklist h1, .system-index h1 { font-size: 1.65rem; }
   .step-heading h1 { font-size: 1.65rem; }
   .judgment-layout { grid-template-columns: 1fr; gap: 26px; }
+  .gate-metrics { grid-template-columns: 1fr; }
+  .gate-metric { min-height: 88px; border-right: 0; border-bottom: 1px solid var(--line); }
   .task-list a { align-items: flex-start; flex-direction: column; gap: 3px; padding: 12px 0; }
   .maintenance-links { grid-template-columns: 1fr; }
 }
