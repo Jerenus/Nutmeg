@@ -140,7 +140,7 @@ def _cohort(
 def evaluate_deployment_gate(
     payload: dict, history: list[OfficialRenjiuHistory]
 ) -> DeploymentGateResult:
-    """Select max-P structure inside the cap and evaluate official-median economics."""
+    """Select minimum break-even inside the cap and report official-median economics."""
     if not isinstance(payload, dict):
         raise ValueError("deployment gate input must be an object")
     issue = str(payload.get("issue", "")).strip()

@@ -279,10 +279,15 @@ def optimize(payload: object) -> dict[str, Any]:
         if data["budget_yuan"] is None or item[0]["within_cap"]
     ]
     if data["median_bonus_yuan"] is not None:
-        # s条修订(2026-08-31):固定奖金玩法按回本线升序,不按 P 降序
-        candidates.sort(key=lambda item: (
-            item[0].get("break_even_bonus_yuan", float("inf")),
-            item[0]["cost_yuan"], item[0]["id"]))
+        candidates.sort(
+            key=lambda item: (
+                Decimal(item[0]["cost_yuan"]) / item[1]
+                if item[1] > 0
+                else Decimal("Infinity"),
+                item[0]["cost_yuan"],
+                item[0]["id"],
+            )
+        )
     else:
         candidates.sort(key=lambda item: (-item[1], item[0]["cost_yuan"], item[0]["id"]))
     ranking = [item[0]["id"] for item in candidates]

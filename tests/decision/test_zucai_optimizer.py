@@ -1,8 +1,10 @@
 import copy
+import json
+from pathlib import Path
 
 import pytest
 
-from nutmeg.decision.zucai_optimizer import OptimizerInputError, optimize
+from nutmeg.decision.zucai_optimizer import OptimizerInputError, format_report, optimize
 
 
 def _payload() -> dict:
@@ -267,3 +269,36 @@ def test_without_median_ranking_falls_back_to_probability():
 def test_median_bonus_must_be_positive():
     with pytest.raises(OptimizerInputError):
         optimize(_econ_payload(median_bonus_yuan=0))
+
+
+def test_fixed_bonus_ranking_keeps_decimal_precision():
+    payload = {
+        "issue": "26114",
+        "median_bonus_yuan": 100,
+        "fair": {
+            "1": {
+                "home": "0.333333333333333333",
+                "draw": "0.333333333333333334",
+                "away": "0.333333333333333333",
+            }
+        },
+        "versions": [
+            {"id": "single", "faces": {"1": "3"}},
+            {"id": "double", "faces": {"1": "31"}},
+        ],
+    }
+
+    result = optimize(payload)
+
+    assert result["ranking"] == ["double", "single"]
+
+
+def test_26114_fixed_bonus_fixture_replays_report_and_ranking():
+    fixture = Path(__file__).parents[1] / "fixtures/zucai/26114-optimizer-break-even.json"
+    result = optimize(json.loads(fixture.read_text("utf-8")))
+    report = format_report(result)
+
+    assert result["best_within_cap_id"] == "R256"
+    assert "回本线" in report
+    assert "官方中位奖金锚: ¥3,113" in report
+    assert "排序按回本线升序" in report

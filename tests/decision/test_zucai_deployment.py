@@ -10,6 +10,7 @@ from nutmeg.decision.zucai_deployment import (
     format_deployment_gate,
 )
 from nutmeg.decision.zucai_official import OfficialRenjiuHistory
+from nutmeg.decision.zucai_optimizer import optimize
 from nutmeg.interfaces.cli import app
 
 _OFFICIAL_26104_COHORT = [
@@ -318,3 +319,44 @@ def test_deployment_selects_lowest_break_even_inside_cap():
     )
     assert result.selected_id == "small"
     assert result.break_even_bonus == pytest.approx(288 / 0.14)
+
+
+def test_deployment_and_optimizer_select_the_same_fixed_bonus_candidate():
+    optimized = optimize({
+        "issue": "26114",
+        "price_per_note": 2,
+        "budget_yuan": 10,
+        "median_bonus_yuan": 1000,
+        "fair": {
+            "1": {"home": 0.50, "draw": 0.30, "away": 0.20},
+            "2": {"home": 0.60, "draw": 0.25, "away": 0.15},
+        },
+        "versions": [
+            {"id": "small", "faces": {"1": "3", "2": "3"}},
+            {"id": "wide", "faces": {"1": "31", "2": "31"}},
+        ],
+    })
+    history = [
+        OfficialRenjiuHistory(str(26113 - offset), "", 64, 1000.0, 100000.0)
+        for offset in range(12)
+    ]
+
+    deployed = evaluate_deployment_gate(
+        {
+            "issue": "26114",
+            "history_as_of_issue": "26114",
+            "period_cap_yuan": 10,
+            "history_window": 12,
+            "candidates": [
+                {
+                    "id": version["id"],
+                    "stake_yuan": version["cost_yuan"],
+                    "hit_probability": version["p_all"],
+                }
+                for version in optimized["versions"]
+            ],
+        },
+        history,
+    )
+
+    assert deployed.selected_id == optimized["best_within_cap_id"] == "small"
