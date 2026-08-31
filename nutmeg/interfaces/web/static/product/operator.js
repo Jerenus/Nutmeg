@@ -131,5 +131,21 @@
         },
       ));
     }
+
+    if (action === "request-telegram-confirmation") {
+      return submit(form, () => postJson(
+        `/api/v1/operator/tasks/${encodeURIComponent(form.dataset.taskId)}`
+          + "/telegram-confirmation",
+        {
+          schema_version: "1",
+          expected_snapshot_token: expectedToken,
+          dry_run: false,
+          idempotency_key: `ui:operator:telegram:${crypto.randomUUID()}`,
+        },
+      ));
+    }
   });
+
+  const waiting = document.querySelector("[data-auto-refresh='waiting']");
+  if (waiting) window.setTimeout(() => window.location.reload(), 15000);
 })();

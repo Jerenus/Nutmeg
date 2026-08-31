@@ -1,0 +1,14 @@
+<div class="step-heading">
+  <span class="step-kicker">等待赛果</span>
+  <h1>{{ task.step.title }}</h1>
+  <p>出票与入账已经记录。赛果到齐后，这里会进入逐项复盘。</p>
+</div>
+
+<dl class="placement-summary" data-auto-refresh="waiting">
+  <div>
+    <dt>预计结果时间</dt>
+    <dd>{{ task.step.expected_at or "等待权威赛果源更新" }}</dd>
+  </div>
+  <div><dt>现在可以</dt><dd>暂时无需操作</dd></div>
+</dl>
+

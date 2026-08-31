@@ -137,6 +137,22 @@ thead th { color: var(--muted); font-size: .82rem; }
 .finding-row.severity-warn { border-left-color: var(--warn); }
 .finding-row.severity-error { border-left-color: var(--error); }
 .deployment-form { max-width: 620px; padding-top: 26px; border-top: 1px solid var(--line); }
+.confirmation-timeline { margin: 28px 0; padding: 0; list-style: none; border-block: 1px solid var(--line); }
+.confirmation-timeline li { min-height: 76px; display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 14px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+.confirmation-timeline li:last-child { border-bottom: 0; }
+.confirmation-timeline li > span { width: 30px; height: 30px; display: grid; place-items: center; color: var(--muted); border: 1px solid var(--line); border-radius: 50%; }
+.confirmation-timeline li > div { min-width: 0; display: grid; gap: 3px; }
+.confirmation-timeline small { color: var(--muted); overflow-wrap: anywhere; }
+.confirmation-timeline .is-complete > span { color: #fff; background: var(--pass); border-color: var(--pass); }
+.confirmation-timeline .is-current > span { color: #fff; background: var(--warn); border-color: var(--warn); }
+.confirmation-timeline .is-error > span { color: #fff; background: var(--error); border-color: var(--error); }
+.confirmation-form { max-width: 520px; }
+.waiting-note { max-width: 620px; padding: 14px 16px; color: var(--muted); background: var(--quiet); border-left: 4px solid var(--warn); }
+.placement-summary { max-width: 620px; margin: 26px 0; border-block: 1px solid var(--line); }
+.placement-summary div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 18px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.placement-summary div:last-child { border-bottom: 0; }
+.placement-summary dt { color: var(--muted); }
+.placement-summary dd { margin: 0; overflow-wrap: anywhere; }
 .quiet-link { min-height: 44px; display: inline-flex; align-items: center; margin-top: 22px; color: var(--muted); }
 .step-copy h1, .worklist h1, .system-index h1 { margin: 6px 0 18px; font-size: 2rem; letter-spacing: 0; }
 .eyebrow { margin: 0; color: var(--muted); font-size: .82rem; font-weight: 700; text-transform: uppercase; }
@@ -186,6 +202,7 @@ thead th { color: var(--muted); font-size: .82rem; }
   .judgment-layout { grid-template-columns: 1fr; gap: 26px; }
   .gate-metrics { grid-template-columns: 1fr; }
   .gate-metric { min-height: 88px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .placement-summary div { grid-template-columns: 1fr; gap: 3px; }
   .task-list a { align-items: flex-start; flex-direction: column; gap: 3px; padding: 12px 0; }
   .maintenance-links { grid-template-columns: 1fr; }
 }

@@ -8,10 +8,14 @@ from fastapi.testclient import TestClient
 from nutmeg.interfaces.product_api import create_product_app
 from nutmeg.product.operator_contracts import (
     AuditDeploymentStep,
+    AwaitResultStep,
     BlockedStep,
     BusinessEvidenceSummary,
+    CompleteStep,
+    ConfirmationStep,
     ConstructTicketStep,
     JudgeMatchesStep,
+    LedgerStep,
     OperatorLane,
     OperatorRecoverySummary,
     OperatorTaskResponse,
@@ -35,10 +39,14 @@ class FakeOperatorQueries:
         empty: bool = False,
         audit_state: str = "pass",
         deployment_state: str = "pass",
+        confirmation_state: str = "not_issued",
+        placement_state: str = "unplaced",
     ) -> None:
         self.empty = empty
         self.audit_state = audit_state
         self.deployment_state = deployment_state
+        self.confirmation_state = confirmation_state
+        self.placement_state = placement_state
         self.summary = OperatorTaskSummary(
             task_id="zucai:26112",
             lane=OperatorLane.ZUCAI,
@@ -61,7 +69,54 @@ class FakeOperatorQueries:
         )
 
     def task(self, task_id: str, *, as_of):
-        if self.summary.state is OperatorTaskState.AUDIT_DEPLOYMENT:
+        lane_value, business_key = task_id.split(":", 1)
+        selected = self.summary.model_copy(
+            update={
+                "task_id": task_id,
+                "lane": OperatorLane(lane_value),
+                "business_key": business_key,
+            }
+        )
+        if self.summary.state is OperatorTaskState.AWAIT_CONFIRMATION:
+            step = ConfirmationStep(
+                task_id=task_id,
+                ticket_artifact_id="tat-1",
+                amount=100,
+                currency="CNY",
+                deadline_at=NOW + timedelta(hours=2),
+                confirmation_state=self.confirmation_state,
+                confirmation_expires_at=(
+                    NOW + timedelta(minutes=5)
+                    if self.confirmation_state == "open"
+                    else None
+                ),
+            )
+        elif self.summary.state is OperatorTaskState.AWAIT_LEDGER:
+            step = LedgerStep(
+                task_id=task_id,
+                ticket_artifact_id="tat-1",
+                placement_state=self.placement_state,
+                amount=100,
+                currency="CNY",
+                external_reference="telegram:fixture",
+            )
+        elif self.summary.state is OperatorTaskState.AWAIT_RESULT:
+            step = AwaitResultStep(
+                task_id=task_id,
+                title="等待权威赛果",
+                expected_at=NOW + timedelta(hours=4),
+            )
+        elif self.summary.state is OperatorTaskState.COMPLETE:
+            step = CompleteStep(
+                task_id=task_id,
+                title="本日流程已完成",
+                summary=(
+                    "未确认，按未出票处理；没有入账"
+                    if self.placement_state == "shadow"
+                    else "流程已完成"
+                ),
+            )
+        elif self.summary.state is OperatorTaskState.AUDIT_DEPLOYMENT:
             allowed = (
                 ["drop_match", "change_structure", "empty_position"]
                 if self.deployment_state == "reduce_or_empty"
@@ -165,7 +220,7 @@ class FakeOperatorQueries:
         return OperatorTaskResponse(
             as_of=as_of,
             mutation_token="a" * 64,
-            selected=self.summary,
+            selected=selected,
             alternatives=[],
             progress=TaskProgressSummary(completed=0, total=1, label="当前需要你处理"),
             step=step,
@@ -240,6 +295,35 @@ def gate_client_factory(m2_product_services):
         )
 
     return factory
+
+
+@pytest.fixture
+def client_with_artifact(m2_product_services) -> TestClient:
+    return _client(m2_product_services, FakeOperatorQueries("await_confirmation"))
+
+
+@pytest.fixture
+def client_with_shadow(m2_product_services) -> TestClient:
+    return _client(
+        m2_product_services,
+        FakeOperatorQueries("complete", placement_state="shadow"),
+    )
+
+
+@pytest.fixture
+def confirmation_client(m2_product_services):
+    def factory(state: str) -> TestClient:
+        return _client(
+            m2_product_services,
+            FakeOperatorQueries("await_confirmation", confirmation_state=state),
+        )
+
+    return factory
+
+
+@pytest.fixture
+def await_result_client(m2_product_services) -> TestClient:
+    return _client(m2_product_services, FakeOperatorQueries("await_result"))
 
 
 def test_root_opens_selected_task_without_system_chrome(client: TestClient) -> None:
@@ -410,3 +494,50 @@ def test_deployment_javascript_posts_only_governed_fields(client_at_gate: TestCl
     script = client_at_gate.get("/assets/product/operator.js").text
     assert "/deployment" in script
     assert "record-deployment" in script
+
+
+def test_confirmation_state_has_one_owner_dispatch_action(
+    client_with_artifact: TestClient,
+) -> None:
+    html = client_with_artifact.get("/tasks/jczq:2026-08-28").text
+
+    assert 'data-step-kind="await_confirmation"' in html
+    assert "票面与金额已锁定" in html
+    assert "Telegram 本人确认" in html
+    assert "入账确认" in html
+    assert 'data-action="request-telegram-confirmation"' in html
+    assert "ConfirmDispatch" not in html
+    assert "nonce" not in html
+    assert "ticket_hash" not in html
+
+
+def test_shadow_is_explained_as_not_placed(client_with_shadow: TestClient) -> None:
+    html = client_with_shadow.get("/tasks/jczq:2026-08-28").text
+
+    assert "未确认，按未出票处理" in html
+    assert "没有入账" in html
+    assert "ticket_shadow_records" not in html
+
+
+@pytest.mark.parametrize(
+    ("state", "text", "has_send"),
+    [
+        ("not_issued", "发送 Telegram 本人确认", True),
+        ("open", "等待你在 Telegram 点击", False),
+        ("expired", "确认已过期", True),
+    ],
+)
+def test_confirmation_states(confirmation_client, state, text, has_send) -> None:
+    html = confirmation_client(state).get("/tasks/jczq:2026-08-28").text
+    assert text in html
+    assert ('data-action="request-telegram-confirmation"' in html) is has_send
+    assert "receipt_content" not in html
+
+
+def test_await_result_refreshes_without_exposing_ledger_payload(
+    await_result_client: TestClient,
+) -> None:
+    html = await_result_client.get("/tasks/jczq:2026-08-28").text
+    assert 'data-auto-refresh="waiting"' in html
+    assert "预计结果时间" in html
+    assert "cash_transactions" not in html

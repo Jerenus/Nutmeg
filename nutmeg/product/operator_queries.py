@@ -764,7 +764,12 @@ class OperatorQueryService:
         elif state is OperatorTaskState.AWAIT_LEDGER and ticket is not None:
             step = self._ledger_step(task_id, ticket)
         elif state is OperatorTaskState.COMPLETE:
-            step = CompleteStep(task_id=task_id, title="本日流程已完成", summary="已按记录完成")
+            summary = (
+                "未确认，按未出票处理；没有入账"
+                if placement == "shadow"
+                else "已按记录完成"
+            )
+            step = CompleteStep(task_id=task_id, title="本日流程已完成", summary=summary)
         else:
             step = AwaitResultStep(task_id=task_id, title="等待赛果", expected_at=deadline)
         return _BuiltTask(
