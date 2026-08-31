@@ -1,13 +1,13 @@
 <div class="step-copy state-error">
   <p class="eyebrow">需要处理</p>
   <h1>{{ task.step.title }}</h1>
-  <dl class="recovery-list">
-    <div><dt>缺少</dt><dd>{{ task.step.recovery.missing }}</dd></div>
+  <dl class="recovery-ledger">
+    <div><dt>缺少或失败</dt><dd>{{ task.step.recovery.missing }}</dd></div>
     <div><dt>影响</dt><dd>{{ task.step.recovery.impact }}</dd></div>
+    <div><dt>现在可以</dt><dd>
+      {% if task.step.recovery.href %}<a href="{{ task.step.recovery.href }}">{{ task.step.recovery.action_label }}</a>{% else %}{{ task.step.recovery.action_label }}{% endif %}
+    </dd></div>
+    <div><dt>重试</dt><dd>{{ task.step.recovery.retry_at or "完成上项后可立即重试" }}</dd></div>
   </dl>
-  {% if task.step.recovery.href %}
-    <a class="primary-link" href="{{ task.step.recovery.href }}">
-      {{ task.step.recovery.action_label }}
-    </a>
-  {% endif %}
+  {% if task.step.correlation_id %}<p class="correlation-id">关联号 {{ task.step.correlation_id }}</p>{% endif %}
 </div>

@@ -27,8 +27,10 @@ from nutmeg.product.operator_contracts import (
     CompleteStep,
     ConfirmationStep,
     ConstructTicketStep,
+    EvidenceFieldSummary,
     JudgeMatchesStep,
     LedgerStep,
+    OperatorEvidenceResponse,
     OperatorLane,
     OperatorRecoverySummary,
     OperatorTaskResponse,
@@ -166,6 +168,67 @@ class OperatorQueryService:
     def now(self) -> datetime:
         return _aware(self._clock(), "operator clock")
 
+    def evidence(
+        self,
+        task_id: str,
+        evidence_key: str,
+        *,
+        as_of: datetime,
+    ) -> OperatorEvidenceResponse:
+        _aware(as_of, "as_of")
+        task_match = re.fullmatch(r"zucai:(\d{5})", task_id)
+        if task_match is None:
+            raise ProductNotFoundError("operator evidence not found")
+        issue = task_match.group(1)
+        try:
+            bundle = self._artifacts.load(issue)
+        except OperatorArtifactError as error:
+            raise ProductNotFoundError("operator evidence not found") from error
+        prep_match = re.fullmatch(r"prep-match-(\d{1,2})", evidence_key)
+        if prep_match:
+            match_no = int(prep_match.group(1))
+            record = bundle.match_record(match_no)
+            if record is None:
+                raise ProductNotFoundError("operator evidence not found")
+            return OperatorEvidenceResponse(
+                task_id=task_id,
+                evidence_key=evidence_key,
+                title=f"场 {match_no} {record.name}",
+                source_label=f"足彩 {issue} 下午准备数据",
+                observed_at=bundle.prep.captured_at,
+                freshness_label=bundle.prep.captured_at.strftime("%Y-%m-%d %H:%M"),
+                fields=[
+                    EvidenceFieldSummary(label="赛事", value=record.league),
+                    EvidenceFieldSummary(label="开球", value=record.kickoff_bj),
+                    EvidenceFieldSummary(
+                        label="胜", value=f"{record.fair_had.home:.2%}"
+                    ),
+                    EvidenceFieldSummary(
+                        label="平", value=f"{record.fair_had.draw:.2%}"
+                    ),
+                    EvidenceFieldSummary(
+                        label="负", value=f"{record.fair_had.away:.2%}"
+                    ),
+                    EvidenceFieldSummary(
+                        label="让球", value=record.hhad_line or "未提供"
+                    ),
+                ],
+            )
+        if evidence_key == "rx-capital":
+            return OperatorEvidenceResponse(
+                task_id=task_id,
+                evidence_key=evidence_key,
+                title=f"足彩 {issue} 资金约束",
+                source_label="已登记处方",
+                observed_at=bundle.rx.registered_at,
+                freshness_label=bundle.rx.registered_at.strftime("%Y-%m-%d %H:%M"),
+                fields=[
+                    EvidenceFieldSummary(label=str(label), value=str(value))
+                    for label, value in sorted(bundle.rx.capital_report.items())
+                ],
+            )
+        raise ProductNotFoundError("operator evidence not found")
+
     def _build_all(self, cutoff: datetime) -> list[_BuiltTask]:
         built = [self._build_zucai(issue, cutoff) for issue in self._artifacts.discover_issues()]
         ticket_rows = self._repository.operator_ticket_artifacts(cutoff.isoformat())
@@ -293,6 +356,7 @@ class OperatorQueryService:
                         value="；".join(
                             f"{label}: {value}" for label, value in bundle.rx.capital_report.items()
                         ),
+                        evidence_href=f"/tasks/{task_id}/evidence/rx-capital",
                     )
                 ],
             )

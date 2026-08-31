@@ -62,6 +62,22 @@ class BusinessEvidenceSummary(StrictOperatorContract):
     evidence_href: str | None = None
 
 
+class EvidenceFieldSummary(StrictOperatorContract):
+    label: str
+    value: str
+
+
+class OperatorEvidenceResponse(VersionedOperatorContract):
+    task_id: str
+    evidence_key: str
+    title: str
+    source_label: str
+    observed_at: AwareDatetime | None = None
+    freshness_label: str | None = None
+    fields: list[EvidenceFieldSummary]
+    audit_href: str | None = None
+
+
 class PrescriptionDifferenceSummary(StrictOperatorContract):
     match_no: int = Field(ge=1, le=14)
     prescribed_faces: str

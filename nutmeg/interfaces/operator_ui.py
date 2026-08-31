@@ -2,12 +2,18 @@
 from __future__ import annotations
 
 import base64
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.templating import Jinja2Templates
+
+from nutmeg.product.errors import ProductNotFoundError
+
+_LOGGER = logging.getLogger(__name__)
 
 _DEPLOYMENT_LABELS = {
     "keep": "保留当前结构",
@@ -42,36 +48,93 @@ def mount_operator_ui(
             },
         )
 
+    def unexpected_response(request: Request, error: Exception):
+        correlation_id = f"err-{uuid4().hex}"
+        _LOGGER.exception(
+            "operator UI request failed correlation_id=%s",
+            correlation_id,
+            exc_info=error,
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="operator/error.html",
+            context={
+                "workspace": "operator-error",
+                "correlation_id": correlation_id,
+            },
+            status_code=500,
+        )
+
     @app.get("/", include_in_schema=False)
     async def operator_root(request: Request):
-        worklist = services.operator_queries.worklist(as_of=clock())
-        if worklist.selected is None:
+        try:
+            worklist = services.operator_queries.worklist(as_of=clock())
+            if worklist.selected is None:
+                return templates.TemplateResponse(
+                    request=request,
+                    name="operator/tasks.html",
+                    context={"workspace": "operator-tasks", "worklist": worklist},
+                )
+            task = services.operator_queries.task(
+                worklist.selected.task_id,
+                as_of=worklist.as_of,
+            )
+            return task_response(request, task)
+        except ProductNotFoundError:
+            raise
+        except Exception as error:
+            return unexpected_response(request, error)
+
+    @app.get("/tasks", include_in_schema=False)
+    async def operator_tasks_page(request: Request):
+        try:
+            worklist = services.operator_queries.worklist(as_of=clock())
             return templates.TemplateResponse(
                 request=request,
                 name="operator/tasks.html",
                 context={"workspace": "operator-tasks", "worklist": worklist},
             )
-        task = services.operator_queries.task(
-            worklist.selected.task_id,
-            as_of=worklist.as_of,
-        )
-        return task_response(request, task)
+        except ProductNotFoundError:
+            raise
+        except Exception as error:
+            return unexpected_response(request, error)
 
-    @app.get("/tasks", include_in_schema=False)
-    async def operator_tasks_page(request: Request):
-        worklist = services.operator_queries.worklist(as_of=clock())
-        return templates.TemplateResponse(
-            request=request,
-            name="operator/tasks.html",
-            context={"workspace": "operator-tasks", "worklist": worklist},
-        )
+    @app.get(
+        "/tasks/{task_id}/evidence/{evidence_key}",
+        include_in_schema=False,
+    )
+    async def operator_evidence_page(
+        request: Request,
+        task_id: str,
+        evidence_key: str,
+    ):
+        try:
+            detail = services.operator_queries.evidence(
+                task_id,
+                evidence_key,
+                as_of=clock(),
+            )
+            return templates.TemplateResponse(
+                request=request,
+                name="operator/evidence.html",
+                context={"workspace": "operator-evidence", "detail": detail},
+            )
+        except ProductNotFoundError:
+            raise
+        except Exception as error:
+            return unexpected_response(request, error)
 
     @app.get("/tasks/{task_id}", include_in_schema=False)
     async def operator_task_page(request: Request, task_id: str):
-        return task_response(
-            request,
-            services.operator_queries.task(task_id, as_of=clock()),
-        )
+        try:
+            return task_response(
+                request,
+                services.operator_queries.task(task_id, as_of=clock()),
+            )
+        except ProductNotFoundError:
+            raise
+        except Exception as error:
+            return unexpected_response(request, error)
 
     @app.get("/system", include_in_schema=False)
     async def system_index(request: Request):

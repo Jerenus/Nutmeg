@@ -32,6 +32,14 @@ from nutmeg.product.operator_contracts import (
 
 NOW = datetime(2026, 8, 28, 10, tzinfo=UTC)
 
+RECOVERY_COPY = {
+    "odds_snapshot_stale": ("赔率快照已过期", "不能冻结当前判断", "刷新数据"),
+    "identity_unresolved": ("比赛身份未对齐", "不能构票", "打开身份维护"),
+    "ticket_audit_blocked": ("票面存在 ERROR", "不能提交确认", "返回调整票面"),
+    "confirmation_expired": ("Telegram 确认已过期", "尚未入账", "重新发送确认"),
+    "projection_stale": ("记分投影已过期", "暂不能复盘", "重建投影"),
+}
+
 
 class FakeOperatorQueries:
     def __init__(
@@ -43,12 +51,14 @@ class FakeOperatorQueries:
         deployment_state: str = "pass",
         confirmation_state: str = "not_issued",
         placement_state: str = "unplaced",
+        recovery_code: str | None = None,
     ) -> None:
         self.empty = empty
         self.audit_state = audit_state
         self.deployment_state = deployment_state
         self.confirmation_state = confirmation_state
         self.placement_state = placement_state
+        self.recovery_code = recovery_code
         self.summary = OperatorTaskSummary(
             task_id="zucai:26112",
             lane=OperatorLane.ZUCAI,
@@ -218,14 +228,18 @@ class FakeOperatorQueries:
                 ],
             )
         elif self.summary.state is OperatorTaskState.BLOCKED:
+            missing, impact, action = RECOVERY_COPY.get(
+                self.recovery_code or "",
+                ("有效数据", "不能继续", "重新检查"),
+            )
             step = BlockedStep(
                 task_id=task_id,
                 title="数据需要修复",
                 recovery=OperatorRecoverySummary(
-                    code="source_contract_invalid",
-                    missing="有效数据",
-                    impact="不能继续",
-                    action_label="重新检查",
+                    code=self.recovery_code or "source_contract_invalid",
+                    missing=missing,
+                    impact=impact,
+                    action_label=action,
                 ),
             )
         else:
@@ -247,6 +261,23 @@ class FakeOperatorQueries:
             alternatives=[],
             progress=TaskProgressSummary(completed=0, total=1, label="当前需要你处理"),
             step=step,
+        )
+
+    def evidence(self, task_id: str, evidence_key: str, *, as_of):
+        return SimpleNamespace(
+            task_id=task_id,
+            evidence_key=evidence_key,
+            title="场 1 水晶宫-曼彻斯特城",
+            source_label="足彩 26112 下午准备数据",
+            observed_at=NOW,
+            freshness_label="2026-08-28 14:00",
+            fields=[
+                SimpleNamespace(label="赛事", value="英超"),
+                SimpleNamespace(label="胜", value="19.56%"),
+                SimpleNamespace(label="平", value="23.43%"),
+                SimpleNamespace(label="负", value="57.02%"),
+            ],
+            audit_href=None,
         )
 
 
@@ -352,6 +383,26 @@ def await_result_client(m2_product_services) -> TestClient:
 @pytest.fixture
 def review_client(m2_product_services) -> TestClient:
     return _client(m2_product_services, FakeOperatorQueries("review"))
+
+
+@pytest.fixture
+def recovery_client(m2_product_services):
+    def factory(code: str) -> TestClient:
+        return _client(
+            m2_product_services,
+            FakeOperatorQueries("blocked", recovery_code=code),
+        )
+
+    return factory
+
+
+@pytest.fixture
+def broken_client(m2_product_services) -> TestClient:
+    class BrokenQueries(FakeOperatorQueries):
+        def worklist(self, *, as_of):
+            raise RuntimeError("secret SQL and traceback details")
+
+    return _client(m2_product_services, BrokenQueries())
 
 
 def test_root_opens_selected_task_without_system_chrome(client: TestClient) -> None:
@@ -591,3 +642,82 @@ def test_review_shows_one_prediction_and_requires_owner_grade(
     assert 'name="reason"' in html
     assert 'name="outcome" value="hit" checked' not in html
     assert "概率" not in html
+
+
+@pytest.mark.parametrize(
+    ("code", "missing", "impact", "action"),
+    [
+        ("odds_snapshot_stale", "赔率快照已过期", "不能冻结当前判断", "刷新数据"),
+        ("identity_unresolved", "比赛身份未对齐", "不能构票", "打开身份维护"),
+        ("ticket_audit_blocked", "票面存在 ERROR", "不能提交确认", "返回调整票面"),
+        ("confirmation_expired", "Telegram 确认已过期", "尚未入账", "重新发送确认"),
+        ("projection_stale", "记分投影已过期", "暂不能复盘", "重建投影"),
+    ],
+)
+def test_recovery_answers_four_operator_questions(
+    recovery_client, code, missing, impact, action
+) -> None:
+    html = recovery_client(code).get("/").text
+    assert missing in html
+    assert impact in html
+    assert action in html
+    assert "缺少或失败" in html
+    assert "现在可以" in html
+    assert "重试" in html
+    assert "Traceback" not in html
+
+
+def test_evidence_page_formats_allowlisted_business_fields(client: TestClient) -> None:
+    response = client.get("/tasks/zucai:26112/evidence/prep-match-1")
+    html = response.text
+
+    assert response.status_code == 200
+    assert 'data-workspace="operator-evidence"' in html
+    assert "场 1 水晶宫-曼彻斯特城" in html
+    assert "足彩 26112 下午准备数据" in html
+    assert "2026-08-28 14:00" in html
+    assert "胜" in html and "19.56%" in html
+    assert "{" not in html and "<pre" not in html
+    assert "forecast_revision_id" not in html
+    assert "SELECT " not in html
+
+
+def test_unexpected_operator_error_is_html_without_exception_text(
+    broken_client: TestClient,
+) -> None:
+    response = broken_client.get("/")
+
+    assert response.status_code == 500
+    assert "当前任务暂时无法显示" in response.text
+    assert re.search(r"err-[0-9a-f]{32}", response.text)
+    assert "secret SQL" not in response.text
+    assert "Traceback" not in response.text
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "client",
+        "client_with_resolved_adj",
+        "client_at_gate",
+        "client_with_artifact",
+        "await_result_client",
+        "review_client",
+    ],
+)
+def test_normal_workflow_pages_do_not_render_raw_structures(
+    request,
+    fixture_name: str,
+) -> None:
+    page = request.getfixturevalue(fixture_name).get("/").text
+
+    assert "<pre" not in page
+    assert "{" not in page
+    for forbidden in (
+        "schema_version",
+        "action_id",
+        "content_hash",
+        "forecast_revision_id",
+        "Traceback",
+    ):
+        assert forbidden not in page

@@ -197,6 +197,35 @@ def test_unknown_task_is_not_found(operator_queries) -> None:
         operator_queries.task("zucai:99999", as_of=NOW)
 
 
+def test_prep_evidence_is_fixed_business_fields(operator_queries) -> None:
+    detail = operator_queries.evidence(
+        "zucai:26112", "prep-match-1", as_of=NOW
+    )
+
+    assert detail.title == "场 1 水晶宫-曼彻斯特城"
+    assert detail.source_label == "足彩 26112 下午准备数据"
+    assert detail.freshness_label == "2026-08-28 14:00"
+    assert [(field.label, field.value) for field in detail.fields] == [
+        ("赛事", "英超"),
+        ("开球", "2026-08-29 03:00"),
+        ("胜", "19.56%"),
+        ("平", "23.43%"),
+        ("负", "57.02%"),
+        ("让球", "+1"),
+    ]
+    serialized = detail.model_dump_json()
+    assert "forecast_revision_id" not in serialized
+    assert "sporttery_match_num" not in serialized
+    assert "fit_loss" not in serialized
+
+
+def test_unknown_evidence_key_is_not_found(operator_queries) -> None:
+    with pytest.raises(ProductNotFoundError, match="evidence"):
+        operator_queries.evidence(
+            "zucai:26112", "raw-json", as_of=NOW
+        )
+
+
 def test_empty_position_completes_but_is_not_auto_selected(
     operator_queries: OperatorQueryService, repository: FakeRepository
 ) -> None:
