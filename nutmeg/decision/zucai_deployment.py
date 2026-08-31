@@ -165,9 +165,15 @@ def evaluate_deployment_gate(
     inside = [item for item in candidates if item.stake_yuan <= int(cap)]
     if not inside:
         raise ValueError("no candidate is inside period_cap_yuan")
+    # 固定奖金玩法按回本线（票价÷P）升序取档，不按 P 降序（s条 2026-08-31 修订）。
+    # 任九中奖只拿 1 注奖金而成本随注数线性涨 → 加注必然抬高回本线。
     selected = min(
         inside,
-        key=lambda item: (-item.hit_probability, item.stake_yuan, item.candidate_id),
+        key=lambda item: (
+            item.stake_yuan / item.hit_probability,
+            item.stake_yuan,
+            item.candidate_id,
+        ),
     )
     cohort = _cohort(history, as_of_issue=as_of_issue, window=window_raw)
     median_bonus = float(statistics.median(row.stake_amount for row in cohort))

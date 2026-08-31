@@ -58,6 +58,12 @@ def _validate_payload(payload: object) -> dict[str, Any]:
     if budget is not None:
         budget = _positive_int(budget, field="budget_yuan")
 
+    median_bonus = payload.get("median_bonus_yuan")
+    if median_bonus is not None:
+        median_bonus = _as_decimal(median_bonus, field="median_bonus_yuan")
+        if median_bonus <= 0:
+            raise OptimizerInputError("median_bonus_yuan must be positive")
+
     raw_fair = payload.get("fair")
     if not isinstance(raw_fair, dict) or not raw_fair:
         raise OptimizerInputError("fair must be a non-empty object")
@@ -149,6 +155,7 @@ def _validate_payload(payload: object) -> dict[str, Any]:
         "issue": issue,
         "price_per_note": price_per_note,
         "budget_yuan": budget,
+        "median_bonus_yuan": median_bonus,
         "baseline_id": baseline_id,
         "fair": fair,
         "versions": versions,
@@ -246,6 +253,17 @@ def optimize(payload: object) -> dict[str, Any]:
             if data["budget_yuan"] is None
             else public["cost_yuan"] <= data["budget_yuan"]
         )
+        # 回本线 = 票价 / P(全对)。任九类固定奖金玩法的经济性判据:
+        # 中奖只拿 1 注奖金,成本却随注数线性涨 → 加注让回本线单调变差。
+        # 2026-08-31 立法(s条修订),26114 实证:¥256→¥1,728 时 P 涨 4.1 倍而回本线从
+        # ¥3,902 爬到 ¥6,417,当晚实开 ¥214,任何规模都是负期望。
+        if probability > 0:
+            break_even = Decimal(public["cost_yuan"]) / probability
+            public["break_even_bonus_yuan"] = float(break_even)
+            if data["median_bonus_yuan"] is not None:
+                public["break_even_to_median"] = float(
+                    break_even / data["median_bonus_yuan"]
+                )
         if baseline is not None:
             baseline_public, baseline_probability, baseline_broken = baseline
             public["delta_vs_baseline"] = {
@@ -260,7 +278,13 @@ def optimize(payload: object) -> dict[str, Any]:
         for item in calculated
         if data["budget_yuan"] is None or item[0]["within_cap"]
     ]
-    candidates.sort(key=lambda item: (-item[1], item[0]["cost_yuan"], item[0]["id"]))
+    if data["median_bonus_yuan"] is not None:
+        # s条修订(2026-08-31):固定奖金玩法按回本线升序,不按 P 降序
+        candidates.sort(key=lambda item: (
+            item[0].get("break_even_bonus_yuan", float("inf")),
+            item[0]["cost_yuan"], item[0]["id"]))
+    else:
+        candidates.sort(key=lambda item: (-item[1], item[0]["cost_yuan"], item[0]["id"]))
     ranking = [item[0]["id"] for item in candidates]
     versions_by_id = {version["id"]: version for version in data["versions"]}
     groups = [
@@ -271,6 +295,10 @@ def optimize(payload: object) -> dict[str, Any]:
         "issue": data["issue"],
         "price_per_note": data["price_per_note"],
         "budget_yuan": data["budget_yuan"],
+        "median_bonus_yuan": (
+            None if data["median_bonus_yuan"] is None
+            else float(data["median_bonus_yuan"])
+        ),
         "baseline_id": data["baseline_id"],
         "versions": [item[0] for item in calculated],
         "ranking": ranking,
@@ -289,16 +317,21 @@ def format_report(result: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "版本                         注数      票价  P(全对)  期望断腿  帽内",
-            "------------------------ -------- -------- -------- -------- ----",
+            "版本                         注数      票价  P(全对)  期望断腿    回本线   倍数  帽内",
+            "------------------------ -------- -------- -------- -------- --------- ------ ----",
         ]
     )
     for version in result["versions"]:
         within_cap = {True: "是", False: "否", None: "—"}[version["within_cap"]]
+        break_even = version.get("break_even_bonus_yuan")
+        break_even_text = "—" if break_even is None else f"¥{break_even:,.0f}"
+        multiple = version.get("break_even_to_median")
+        multiple_text = "—" if multiple is None else f"{multiple:.2f}x"
         lines.append(
             f"{version['id']:<24} {version['notes']:>8,} "
             f"¥{version['cost_yuan']:>7,} {version['p_all'] * 100:>7.2f}% "
-            f"{version['expected_broken']:>8.3f} {within_cap:>4}"
+            f"{version['expected_broken']:>8.3f} "
+            f"{break_even_text:>9} {multiple_text:>6} {within_cap:>4}"
         )
         delta = version.get("delta_vs_baseline")
         if delta:
@@ -309,6 +342,11 @@ def format_report(result: dict[str, Any]) -> str:
             )
 
     lines.append("")
+    if result.get("median_bonus_yuan"):
+        lines.append(
+            f"官方中位奖金锚: ¥{result['median_bonus_yuan']:,.0f}"
+            "（排序按回本线升序 — s条修订:任九类固定奖金玩法用回本线最小化，非 P 最大化）"
+        )
     if result["ranking"]:
         lines.append(f"帽内排序: {' > '.join(result['ranking'])}")
         lines.append(f"帽内第一: {result['best_within_cap_id']}")

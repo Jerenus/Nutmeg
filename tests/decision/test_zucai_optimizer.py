@@ -218,3 +218,52 @@ def test_26111_u864_series_matches_recorded_probabilities() -> None:
     assert versions["U1296"]["p_all"] * 100 == pytest.approx(33.65, abs=0.05)
     assert result["ranking"] == ["U864优化版", "U864用户版"]
     assert result["best_within_cap_id"] == "U864优化版"
+
+
+def _econ_payload(**changes):
+    payload = {
+        "issue": "26114",
+        "price_per_note": 2,
+        "median_bonus_yuan": 3113,
+        "fair": {
+            "1": {"home": 0.50, "draw": 0.30, "away": 0.20},
+            "2": {"home": 0.60, "draw": 0.25, "away": 0.15},
+        },
+        "versions": [
+            {"id": "small", "faces": {"1": "3", "2": "3"}},        # 1注, P=0.30
+            {"id": "wide", "faces": {"1": "31", "2": "31"}},       # 4注, P=0.68
+        ],
+    }
+    payload.update(changes)
+    return payload
+
+
+def test_break_even_line_computed_and_ranked_ascending():
+    """s条修订(2026-08-31):给了 median_bonus_yuan 就按回本线升序,不按 P 降序。
+
+    任九类固定奖金玩法中奖只拿 1 注奖金,加注必然抬高回本线 —— 26114 实证。
+    """
+    result = optimize(_econ_payload())
+    by_id = {v["id"]: v for v in result["versions"]}
+    # small: 2/0.30 ≈ 6.67 ; wide: 8/0.68 ≈ 11.76
+    assert by_id["small"]["break_even_bonus_yuan"] < by_id["wide"]["break_even_bonus_yuan"]
+    assert by_id["small"]["break_even_to_median"] == pytest.approx(
+        by_id["small"]["break_even_bonus_yuan"] / 3113)
+    # 排名按回本线升序 → small 在前，尽管 wide 的 P 更高
+    assert result["ranking"][0] == "small"
+    assert by_id["wide"]["p_all"] > by_id["small"]["p_all"]
+
+
+def test_without_median_ranking_falls_back_to_probability():
+    """未提供奖金锚时维持旧行为（P 降序），避免影响竞彩类玩法。"""
+    payload = _econ_payload()
+    del payload["median_bonus_yuan"]
+    result = optimize(payload)
+    assert result["ranking"][0] == "wide"          # P 最高者在前
+    assert result["median_bonus_yuan"] is None
+    assert "break_even_to_median" not in result["versions"][0]
+
+
+def test_median_bonus_must_be_positive():
+    with pytest.raises(OptimizerInputError):
+        optimize(_econ_payload(median_bonus_yuan=0))
