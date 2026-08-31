@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Nutmeg{% endblock %}</title>
+    <link rel="icon" href="/assets/product/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/product/operator.css">
+  </head>
+  <body data-workspace="{{ workspace }}">
+    <a class="skip-link" href="#main-content">跳到当前任务</a>
+    <header class="operator-header">
+      <a class="operator-wordmark" href="/">
+        <img src="/assets/product/favicon.svg" alt="" width="28" height="28">
+        <span>Nutmeg</span>
+      </a>
+      {% if task is defined %}
+        <div class="operator-context">
+          <strong>{{ task.selected.title }}</strong>
+          <span>{{ task.selected.next_action_label }}</span>
+        </div>
+        <a class="task-switcher" href="/tasks">另外 {{ task.alternatives|length }} 项</a>
+      {% else %}
+        <nav class="operator-nav" aria-label="工作区导航">
+          <a href="/tasks">任务</a>
+        </nav>
+      {% endif %}
+      <a class="system-link" href="/system" aria-label="系统维护">设置</a>
+    </header>
+    {% if task is defined %}
+      <nav class="phase-line" aria-label="当前流程进度">
+        <span>{{ task.progress.label }}</span>
+        <strong>{{ task.progress.completed }} / {{ task.progress.total }}</strong>
+      </nav>
+    {% endif %}
+    <main id="main-content" tabindex="-1">{% block content %}{% endblock %}</main>
+    <p id="action-feedback" aria-live="polite"></p>
+    <script src="/assets/product/operator.js" defer></script>
+  </body>
+</html>

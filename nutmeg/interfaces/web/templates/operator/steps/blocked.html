@@ -1,0 +1,13 @@
+<div class="step-copy state-error">
+  <p class="eyebrow">需要处理</p>
+  <h1>{{ task.step.title }}</h1>
+  <dl class="recovery-list">
+    <div><dt>缺少</dt><dd>{{ task.step.recovery.missing }}</dd></div>
+    <div><dt>影响</dt><dd>{{ task.step.recovery.impact }}</dd></div>
+  </dl>
+  {% if task.step.recovery.href %}
+    <a class="primary-link" href="{{ task.step.recovery.href }}">
+      {{ task.step.recovery.action_label }}
+    </a>
+  {% endif %}
+</div>

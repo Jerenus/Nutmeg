@@ -1,0 +1,9 @@
+<div class="step-copy">
+  <p class="eyebrow">等待数据</p>
+  <h1>{{ task.step.title }}</h1>
+  <p>{{ task.step.recovery.missing }}</p>
+  <p class="muted">{{ task.step.recovery.impact }}</p>
+  {% if task.step.recovery.retry_at %}
+    <p class="time-line">下次检查 {{ task.step.recovery.retry_at }}</p>
+  {% endif %}
+</div>

@@ -1,0 +1,25 @@
+{% extends "operator/layout.html" %}
+{% block title %}任务 · Nutmeg{% endblock %}
+{% block content %}
+  <section class="worklist" aria-labelledby="worklist-title">
+    <p class="eyebrow">其他入口</p>
+    <h1 id="worklist-title">任务</h1>
+    {% if worklist.tasks %}
+      <ol class="task-list">
+        {% for item in worklist.tasks %}
+          <li>
+            <a href="/tasks/{{ item.task_id }}">
+              <span>{{ item.title }}</span>
+              <strong>{{ item.next_action_label }}</strong>
+            </a>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <div class="empty-state" data-empty-state="operator-tasks">
+        <h2>当前没有待处理任务</h2>
+        <p>新的结构化数据或正式流程记录出现后，会在这里形成任务。</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

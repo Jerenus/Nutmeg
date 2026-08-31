@@ -32,7 +32,7 @@ def mount_product_ui(
         name='product-assets',
     )
 
-    @app.get('/', include_in_schema=False)
+    @app.get('/system/command-center', include_in_schema=False)
     async def command_center_page(
         request: Request,
         day: Annotated[date | None, Query(alias='date')] = None,
@@ -68,6 +68,7 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/system/operations', include_in_schema=False)
     @app.get('/operations', include_in_schema=False)
     async def operations_page(
         request: Request,
@@ -86,6 +87,7 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/system/release', include_in_schema=False)
     @app.get('/release', include_in_schema=False)
     async def release_page(
         request: Request,
@@ -133,6 +135,7 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/system/tickets', include_in_schema=False)
     @app.get('/tickets', include_in_schema=False)
     async def ticket_workbench_page(
         request: Request,
@@ -169,6 +172,7 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/system/review', include_in_schema=False)
     @app.get('/review', include_in_schema=False)
     async def review_page(
         request: Request,
@@ -187,6 +191,7 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/system/calibration', include_in_schema=False)
     @app.get('/calibration', include_in_schema=False)
     async def calibration_page(
         request: Request,
@@ -205,6 +210,7 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/system/ontology', include_in_schema=False)
     @app.get('/ontology', include_in_schema=False)
     async def ontology_page(
         request: Request,
@@ -280,6 +286,7 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/system/matches/{match_id}', include_in_schema=False)
     @app.get('/matches/{match_id}', include_in_schema=False)
     async def match_page(
         request: Request,
@@ -303,6 +310,7 @@ def mount_product_ui(
             },
         )
 
+    @app.get('/system/lineage/{object_type}/{object_id}', include_in_schema=False)
     @app.get('/lineage/{object_type}/{object_id}', include_in_schema=False)
     async def lineage_page(request: Request, object_type: str, object_id: str):
         try:
