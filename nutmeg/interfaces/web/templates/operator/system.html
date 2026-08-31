@@ -1,0 +1,18 @@
+{% extends "operator/layout.html" %}
+{% block title %}系统维护 · Nutmeg{% endblock %}
+{% block content %}
+  <section class="system-index" aria-labelledby="system-title">
+    <p class="eyebrow">诊断与维护</p>
+    <h1 id="system-title">系统维护</h1>
+    <p>这些页面用于检查数据、治理和历史记录，不是日常决策流程。</p>
+    <nav class="maintenance-links" aria-label="维护工具">
+      <a href="/system/command-center">旧命令中心</a>
+      <a href="/system/operations">运行状态</a>
+      <a href="/system/tickets">出票制品</a>
+      <a href="/system/review">治理复盘</a>
+      <a href="/system/calibration">校准</a>
+      <a href="/system/ontology">数据对象</a>
+      <a href="/system/release">发布检查</a>
+    </nav>
+  </section>
+{% endblock %}

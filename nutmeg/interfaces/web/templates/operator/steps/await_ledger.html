@@ -1,0 +1,25 @@
+<div class="step-heading">
+  <span class="step-kicker">入账状态</span>
+  {% if task.step.placement_state == "placed" %}
+    <h1>出票与入账已记录</h1>
+    <p>金额 {{ task.step.currency }} {{ "%.2f"|format(task.step.amount) }} 已进入正式账本。</p>
+  {% elif task.step.placement_state == "shadow" %}
+    <h1>未确认，按未出票处理</h1>
+    <p>截止时刻前没有完成本人确认，因此没有入账。</p>
+  {% else %}
+    <h1>等待入账记录</h1>
+    <p>本人确认已完成，正在核对正式出票与资金流水。</p>
+  {% endif %}
+</div>
+
+{% if task.step.external_reference %}
+  <dl class="placement-summary">
+    <div><dt>金额</dt><dd>{{ task.step.currency }} {{ "%.2f"|format(task.step.amount) }}</dd></div>
+    <div><dt>确认来源</dt><dd>{{ task.step.external_reference }}</dd></div>
+  </dl>
+{% endif %}
+
+{% if task.step.placement_state == "unplaced" %}
+  <p class="waiting-note" data-auto-refresh="waiting">页面会自动检查入账状态。</p>
+{% endif %}
+

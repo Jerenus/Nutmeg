@@ -1,0 +1,19 @@
+{% extends "operator/layout.html" %}
+{% block title %}{{ detail.title }} · Nutmeg{% endblock %}
+{% block content %}
+  <article class="evidence-detail">
+    <div class="step-heading">
+      <span class="step-kicker">证据与来源</span>
+      <h1>{{ detail.title }}</h1>
+      <p>{{ detail.source_label }}{% if detail.freshness_label %} · 更新于 {{ detail.freshness_label }}{% endif %}</p>
+    </div>
+    <dl class="evidence-fields">
+      {% for field in detail.fields %}
+        <div><dt>{{ field.label }}</dt><dd>{{ field.value }}</dd></div>
+      {% endfor %}
+    </dl>
+    <a class="quiet-link" href="/tasks/{{ detail.task_id }}">返回当前任务</a>
+    {% if detail.audit_href %}<a class="quiet-link" href="{{ detail.audit_href }}">查看审计记录</a>{% endif %}
+  </article>
+{% endblock %}
+

@@ -1,0 +1,17 @@
+{% extends "operator/layout.html" %}
+{% block title %}当前任务暂时无法显示 · Nutmeg{% endblock %}
+{% block content %}
+  <section class="step-copy state-error" data-step-kind="blocked">
+    <p class="eyebrow">需要重试</p>
+    <h1>当前任务暂时无法显示</h1>
+    <p>系统已记录这次错误。请稍后刷新；若持续出现，可用下方编号检查日志。</p>
+    <dl class="recovery-ledger">
+      <div><dt>缺少或失败</dt><dd>当前任务读取失败</dd></div>
+      <div><dt>影响</dt><dd>本页暂时不能继续</dd></div>
+      <div><dt>现在可以</dt><dd>稍后刷新</dd></div>
+      <div><dt>重试</dt><dd>完成检查后可立即重试</dd></div>
+    </dl>
+    <p class="correlation-id">关联号 {{ correlation_id }}</p>
+  </section>
+{% endblock %}
+

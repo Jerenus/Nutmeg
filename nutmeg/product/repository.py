@@ -1452,6 +1452,155 @@ class ProductReadRepository:
                 dict(row) for row in connection.execute(statement).mappings().all()
             ]
 
+    def adjudications_for_subject(
+        self, subject_type: str, subject_id: str, as_of: str
+    ) -> list[dict]:
+        statement = (
+            select(sw.adjudications)
+            .where(
+                sw.adjudications.c.subject_type == subject_type,
+                sw.adjudications.c.subject_id == subject_id,
+                sw.adjudications.c.created_at <= as_of,
+            )
+            .order_by(
+                sw.adjudications.c.created_at,
+                sw.adjudications.c.adjudication_id,
+            )
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(statement).mappings().all()
+        return [
+            self._decode_json(row, ("evidence_rejected_json", "alternative_json"))
+            for row in rows
+        ]
+
+    def predictions_for_subject(
+        self, subject_type: str, subject_id: str, as_of: str
+    ) -> list[dict]:
+        statement = (
+            select(sw.predictions)
+            .where(
+                sw.predictions.c.subject_type == subject_type,
+                sw.predictions.c.subject_id == subject_id,
+                sw.predictions.c.registered_at <= as_of,
+            )
+            .order_by(
+                sw.predictions.c.registered_at,
+                sw.predictions.c.prediction_id,
+            )
+        )
+        with self._engine.connect() as connection:
+            return [
+                dict(row) for row in connection.execute(statement).mappings().all()
+            ]
+
+    def operator_ticket_artifacts(self, as_of: str) -> list[dict]:
+        batch = st.ticket_batch_revisions.alias("operator_batch")
+        candidate = st.ticket_batch_revisions.alias("operator_batch_candidate")
+        artifact = st.audited_ticket_artifacts.alias("operator_artifact")
+        confirmation = st.ticket_confirmation_challenges.alias("operator_confirmation")
+        placement = st.ticket_placements.alias("operator_placement")
+        shadow = st.ticket_shadow_records.alias("operator_shadow")
+        current_revision_id = (
+            select(candidate.c.ticket_batch_revision_id)
+            .where(
+                candidate.c.ticket_batch_id == batch.c.ticket_batch_id,
+                candidate.c.created_at <= as_of,
+            )
+            .order_by(candidate.c.revision_no.desc())
+            .limit(1)
+            .correlate(batch)
+            .scalar_subquery()
+        )
+        latest_confirmation_id = (
+            select(confirmation.c.confirmation_id)
+            .where(
+                confirmation.c.ticket_artifact_id == artifact.c.ticket_artifact_id,
+                confirmation.c.issued_at <= as_of,
+            )
+            .order_by(
+                confirmation.c.issued_at.desc(),
+                confirmation.c.confirmation_id.desc(),
+            )
+            .limit(1)
+            .correlate(artifact)
+            .scalar_subquery()
+        )
+        statement = (
+            select(
+                batch.c.ticket_batch_revision_id,
+                batch.c.ticket_batch_id,
+                batch.c.revision_no,
+                batch.c.run_date,
+                batch.c.channel,
+                batch.c.currency.label("batch_currency"),
+                batch.c.deadline_at.label("batch_deadline_at"),
+                batch.c.state.label("batch_state"),
+                batch.c.content_hash,
+                batch.c.created_at.label("batch_created_at"),
+                artifact.c.ticket_artifact_id,
+                artifact.c.ticket_index,
+                artifact.c.ticket_hash,
+                artifact.c.amount,
+                artifact.c.currency,
+                artifact.c.deadline_at,
+                artifact.c.payload_json,
+                artifact.c.approved_at,
+                confirmation.c.confirmation_id,
+                confirmation.c.issued_at,
+                confirmation.c.expires_at,
+                confirmation.c.consumed_at,
+                placement.c.ticket_placement_id,
+                placement.c.ticket_id,
+                placement.c.external_reference,
+                placement.c.placed_at,
+                shadow.c.ticket_shadow_id,
+                shadow.c.marked_at.label("shadow_marked_at"),
+            )
+            .select_from(
+                batch.outerjoin(
+                    artifact,
+                    and_(
+                        artifact.c.ticket_batch_revision_id
+                        == batch.c.ticket_batch_revision_id,
+                        artifact.c.approved_at <= as_of,
+                    ),
+                )
+                .outerjoin(
+                    confirmation,
+                    confirmation.c.confirmation_id == latest_confirmation_id,
+                )
+                .outerjoin(
+                    placement,
+                    and_(
+                        placement.c.ticket_artifact_id == artifact.c.ticket_artifact_id,
+                        placement.c.placed_at <= as_of,
+                    ),
+                )
+                .outerjoin(
+                    shadow,
+                    and_(
+                        shadow.c.ticket_artifact_id == artifact.c.ticket_artifact_id,
+                        shadow.c.marked_at <= as_of,
+                    ),
+                )
+            )
+            .where(
+                batch.c.ticket_batch_revision_id == current_revision_id,
+                batch.c.created_at <= as_of,
+            )
+            .order_by(batch.c.run_date, batch.c.ticket_batch_id, artifact.c.ticket_index)
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(statement).mappings().all()
+        result = []
+        for row in rows:
+            item = dict(row)
+            payload = item.pop("payload_json")
+            item["payload"] = json.loads(payload) if payload is not None else None
+            result.append(item)
+        return result
+
     def current_ticket_batches(self, run_date: str, as_of: str) -> list[dict]:
         current = st.ticket_batch_revisions.alias('current_ticket_batch')
         candidate = st.ticket_batch_revisions.alias('candidate_ticket_batch')

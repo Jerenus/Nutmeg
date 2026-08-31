@@ -1,0 +1,10 @@
+<div class="step-copy">
+  <p class="eyebrow">等待数据</p>
+  <h1>{{ task.step.title }}</h1>
+  <dl class="recovery-ledger">
+    <div><dt>缺少或失败</dt><dd>{{ task.step.recovery.missing }}</dd></div>
+    <div><dt>影响</dt><dd>{{ task.step.recovery.impact }}</dd></div>
+    <div><dt>现在可以</dt><dd>{{ task.step.recovery.action_label }}</dd></div>
+    <div><dt>重试</dt><dd>{{ task.step.recovery.retry_at or "完成上项后可立即重试" }}</dd></div>
+  </dl>
+</div>

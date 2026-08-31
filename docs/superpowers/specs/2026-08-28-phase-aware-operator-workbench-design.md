@@ -1,7 +1,7 @@
 # Nutmeg Phase-Aware Operator Workbench Design
 
 Date: 2026-08-28  
-Status: Approved in interactive brainstorming; written review pending  
+Status: Implemented and verified on feature branch; awaiting Jun's merge decision
 Scope: Reshape the local product UI around the active JCZQ/Zucai operator workflow
 
 ## 1. Problem statement

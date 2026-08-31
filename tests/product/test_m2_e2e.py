@@ -47,7 +47,7 @@ def _merge_action_payload() -> dict[str, object]:
 def test_m2_golden_path_board_to_lineage_to_identity_merge(
     client: TestClient,
 ) -> None:
-    command = client.get("/?date=2026-08-24")
+    command = client.get("/system/command-center?date=2026-08-24")
     match = client.get("/matches/match-1?as_of=2026-08-24T10:00:00Z")
     lineage = client.get("/lineage/forecast_revision/fr-legacy")
     merged = client.post(
@@ -67,7 +67,7 @@ def test_m2_golden_path_board_to_lineage_to_identity_merge(
 def test_product_ui_has_durable_event_and_narrow_screen_contract(
     client: TestClient,
 ) -> None:
-    html = client.get("/?date=2026-08-24").text
+    html = client.get("/system/command-center?date=2026-08-24").text
     script = client.get("/assets/product/app.js").text
     css = client.get("/assets/product/app.css").text
 

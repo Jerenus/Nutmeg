@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from nutmeg.interfaces.operator_ui import mount_operator_ui
 from nutmeg.interfaces.product_ui import mount_product_ui
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.errors import IdempotencyConflictError, OptimisticConcurrencyError
@@ -38,6 +39,13 @@ from nutmeg.product.errors import (
     ProductActionNotAllowedError,
     ProductNotFoundError,
     ProductTicketError,
+)
+from nutmeg.product.operator_contracts import (
+    GradePredictionCommand,
+    RecordDeploymentCommand,
+    RequestTelegramConfirmationCommand,
+    ResolveIssueAdjudicationCommand,
+    SelectTicketVersionCommand,
 )
 from nutmeg.reliability.metrics import RouteMetricsRegistry
 
@@ -268,6 +276,84 @@ def create_product_app(
     @app.get('/api/v1/operations')
     async def operations(as_of: Annotated[datetime | None, Query()] = None):
         return services.queries.operations(as_of=as_of or now())
+
+    @app.get('/api/v1/operator/tasks')
+    async def operator_tasks(
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        return services.operator_queries.worklist(as_of=as_of or now())
+
+    @app.get('/api/v1/operator/tasks/{task_id}')
+    async def operator_task(
+        task_id: str,
+        as_of: Annotated[datetime | None, Query()] = None,
+    ):
+        return services.operator_queries.task(task_id, as_of=as_of or now())
+
+    @app.post('/api/v1/operator/tasks/{task_id}/adjudications')
+    async def resolve_operator_adjudication(
+        task_id: str,
+        command: ResolveIssueAdjudicationCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return services.operator_actions.resolve_issue_adjudication(
+            task_id,
+            command,
+            actor_id=services.settings.default_user_id,
+            actor_role=ActorRole.JUDGE_OPERATOR,
+        )
+
+    @app.post('/api/v1/operator/tasks/{task_id}/candidate')
+    async def select_operator_candidate(
+        task_id: str,
+        command: SelectTicketVersionCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return services.operator_actions.select_ticket_version(
+            task_id,
+            command,
+            actor_id=services.settings.default_user_id,
+            actor_role=ActorRole.JUDGE_OPERATOR,
+        )
+
+    @app.post('/api/v1/operator/tasks/{task_id}/deployment')
+    async def record_operator_deployment(
+        task_id: str,
+        command: RecordDeploymentCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return services.operator_actions.record_deployment(
+            task_id,
+            command,
+            actor_id=services.settings.default_user_id,
+            actor_role=ActorRole.JUDGE_OPERATOR,
+        )
+
+    @app.post('/api/v1/operator/tasks/{task_id}/telegram-confirmation')
+    async def request_operator_telegram_confirmation(
+        task_id: str,
+        command: RequestTelegramConfirmationCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return services.operator_actions.request_telegram_confirmation(
+            task_id,
+            command,
+            actor_id=services.settings.default_user_id,
+            actor_role=ActorRole.JUDGE_OPERATOR,
+        )
+
+    @app.post('/api/v1/operator/tasks/{task_id}/grade-prediction')
+    async def grade_operator_prediction(
+        task_id: str,
+        command: GradePredictionCommand,
+        _session: None = Depends(require_mutation_session),
+    ):
+        return services.operator_actions.grade_prediction(
+            task_id,
+            command,
+            actor_id=services.settings.default_user_id,
+            actor_role=ActorRole.JUDGE_OPERATOR,
+        )
 
     @app.get('/api/v1/release')
     async def release(
@@ -507,5 +593,6 @@ def create_product_app(
             headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
         )
 
+    mount_operator_ui(app, services, now)
     mount_product_ui(app, services, now)
     return app

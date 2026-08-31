@@ -1,0 +1,74 @@
+<div class="step-heading">
+  <span class="step-kicker">审计与部署</span>
+  <h1>检查 {{ task.step.candidate.label }}</h1>
+  <p>审计结论与资金门只限定可选动作，最终部署由你裁决。</p>
+</div>
+
+<section class="gate-metrics" aria-label="部署检查">
+  <div class="gate-metric state-{{ task.step.audit_state }}">
+    <span>票面审计</span>
+    <strong>{{ audit_labels[task.step.audit_state] }}</strong>
+    <small>{{ task.step.findings|length }} 项记录</small>
+  </div>
+  <div class="gate-metric">
+    <span>资金使用率</span>
+    <strong>{{ "%.1f"|format(task.step.capital_utilization * 100) }}%</strong>
+    <small>帽内测量版本 {{ task.step.gate_candidate_id }} · ¥{{ task.step.gate_candidate_cost_yuan }}</small>
+  </div>
+  <div class="gate-metric state-{{ task.step.deployment_state }}">
+    <span>中位奖金</span>
+    <strong>¥{{ "%.0f"|format(task.step.median_bonus) }}</strong>
+    <small>回本/中位 {{ "%.2f"|format(task.step.break_even_to_median) }}×</small>
+  </div>
+</section>
+
+{% if task.step.deployment_state == "reduce_or_empty" %}
+  <p class="gate-notice state-error"><strong>部署门未通过</strong>，只能在当前允许的减注、改结构或空仓动作中裁决。</p>
+{% elif task.step.deployment_state == "review" %}
+  <p class="gate-notice state-warn"><strong>部署门需要复核</strong>，请在下方明确选择。</p>
+{% endif %}
+
+{% if task.step.gate_candidate_id != task.step.candidate.candidate_id %}
+  <p class="gate-notice state-warn">
+    你选择的是 {{ task.step.candidate.candidate_id }}；资金门测量的是帽内候选
+    {{ task.step.gate_candidate_id }}，两者没有被合并显示。
+  </p>
+{% endif %}
+
+<section class="finding-list" aria-labelledby="finding-title">
+  <h2 id="finding-title">审计记录</h2>
+  {% if task.step.findings %}
+    {% for finding in task.step.findings %}
+      <div class="finding-row severity-{{ finding.severity }}">
+        <strong>{{ finding.label }}</strong>
+        <p>{{ finding.value }}</p>
+        {% if finding.evidence_href %}<a href="{{ finding.evidence_href }}">查看依据</a>{% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">没有审计异常。</p>
+  {% endif %}
+</section>
+
+<form class="operator-form deployment-form" data-action="record-deployment"
+      data-task-id="{{ task.selected.task_id }}"
+      data-candidate-id="{{ task.step.candidate.candidate_id }}">
+  <fieldset>
+    <legend>需要你的部署裁决</legend>
+    <div class="option-list">
+      {% for decision in task.step.allowed_decisions %}
+        <label>
+          <input type="radio" name="decision" value="{{ decision }}" required>
+          <span>{{ deployment_labels[decision] }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  <label class="field-label">
+    <span>裁决理由</span>
+    <textarea name="reason" rows="4" required></textarea>
+  </label>
+  <button class="primary-action" type="submit">记录裁决并继续</button>
+</form>
+
+<a class="quiet-link" href="/tasks/{{ task.selected.task_id }}">刷新当前任务</a>
