@@ -19,7 +19,7 @@ from pydantic import (
 )
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
-_RESOLVED_MARKS = ("已裁决", "已行权", "resolved", "complete", "完成")
+_RESOLVED_MARKS = ("已裁", "已行权", "取代", "resolved", "complete", "完成")
 _PROBABILITY_TOLERANCE = Decimal("0.001")
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 

@@ -116,6 +116,36 @@ def test_26112_query_selects_unresolved_adjudication(operator_queries) -> None:
     assert response.progress.total == 1
 
 
+def test_production_status_words_skip_resolved_and_superseded_adjudications(
+    artifact_root: Path,
+    operator_queries: OperatorQueryService,
+) -> None:
+    path = artifact_root / "26112-rx.json"
+    payload = json.loads(path.read_text("utf-8"))
+    payload["pending_adjudications"] = [
+        {"id": "ADJ-1", "status": "已行权", "q": "任九档位"},
+        {"id": "ADJ-2", "status": "我已裁", "q": "场1保持全包"},
+        {"id": "ADJ-3", "status": "我已裁", "q": "场13保持单3"},
+        {
+            "id": "ADJ-4",
+            "status": "待终核",
+            "q": "场14触发线终核",
+            "default": "开赛前首发公布时复核",
+        },
+        {"id": "ADJ-5", "status": "已被ADJ-6取代", "q": "旧SFC裁决"},
+        {"id": "ADJ-6", "status": "已行权A版", "q": "大胆SFC定稿"},
+    ]
+    path.write_text(json.dumps(payload, ensure_ascii=False), "utf-8")
+
+    task = operator_queries.task("zucai:26112", as_of=NOW)
+
+    assert task.step.kind == "judge_matches"
+    assert task.step.item_key == "ADJ-4"
+    assert task.step.options == ["开赛前首发公布时复核"]
+    assert task.progress.completed == 0
+    assert task.progress.total == 1
+
+
 def test_query_computes_candidate_rows_without_parsing_rx_prose(
     operator_queries: OperatorQueryService, repository: FakeRepository
 ) -> None:
