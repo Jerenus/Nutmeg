@@ -11,6 +11,12 @@ from nutmeg.decision.zucai_official import (
     OfficialRenjiuHistory,
 )
 
+RENJIU_HISTORY_WINDOW = 12
+"""官方任九历史锚的唯一窗口（2026-08-29 用户裁定，26113 ADJ-2）。
+
+CLI 与 product 查询共用同一常量：奖金锚必须是滚动 12 期官方中位。
+n=3 近期窗已废止——26112 用它锚 ¥414 而实开 ¥4,098（10 倍低估）。"""
+
 PASS_RATIO_MAX = 0.95
 REDUCE_RATIO_MIN = 2.2
 _TOLERANCE = 1e-12
@@ -118,7 +124,7 @@ def _cohort(
             or row.sale_amount <= 0
         ):
             raise ValueError("official history contains invalid facts")
-        if abs(row.observed_return_rate - RENJIU_RETURN_RATE) > 0.002:
+        if not row.payout_consistent_with_return_rate():
             raise ValueError(f"official history return rate drifted for {row.issue}")
         if int(row.issue) < int(as_of_issue):
             eligible.append(row)
@@ -144,8 +150,12 @@ def evaluate_deployment_gate(
     if not cap.is_integer():
         raise ValueError("period_cap_yuan must be a whole yuan amount")
     window_raw = payload.get("history_window")
-    if isinstance(window_raw, bool) or not isinstance(window_raw, int) or window_raw <= 0:
-        raise ValueError("history_window must be a positive integer")
+    if (
+        isinstance(window_raw, bool)
+        or not isinstance(window_raw, int)
+        or window_raw != RENJIU_HISTORY_WINDOW
+    ):
+        raise ValueError(f"history_window must equal {RENJIU_HISTORY_WINDOW}")
     raw_candidates = payload.get("candidates")
     if not isinstance(raw_candidates, list) or not raw_candidates:
         raise ValueError("candidates must be a nonempty list")

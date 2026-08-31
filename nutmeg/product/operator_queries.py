@@ -9,7 +9,11 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from nutmeg.decision.legs_audit import Leg, audit_legs, audit_prescription_deviations
-from nutmeg.decision.zucai_deployment import DeploymentGateState, evaluate_deployment_gate
+from nutmeg.decision.zucai_deployment import (
+    RENJIU_HISTORY_WINDOW,
+    DeploymentGateState,
+    evaluate_deployment_gate,
+)
 from nutmeg.decision.zucai_official import OfficialRenjiuHistory
 from nutmeg.decision.zucai_optimizer import optimize
 from nutmeg.product.errors import ProductNotFoundError
@@ -703,7 +707,7 @@ class OperatorQueryService:
                     "issue": bundle.issue.issue_id,
                     "history_as_of_issue": bundle.issue.issue_id,
                     "period_cap_yuan": 400,
-                    "history_window": min(20, len(history)),
+                    "history_window": RENJIU_HISTORY_WINDOW,
                     "candidates": [
                         {
                             "id": candidate.candidate_id,

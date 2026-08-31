@@ -52,9 +52,10 @@ class FakeProductQueries:
 
 
 def _history() -> list[OfficialRenjiuHistory]:
+    # 固定 12 期窗口（RENJIU_HISTORY_WINDOW）要求至少 12 行先期官方数据。
     return [
-        OfficialRenjiuHistory(str(issue), "2026-08-20", 64, 1000.0, 100000.0)
-        for issue in (26109, 26110, 26111)
+        OfficialRenjiuHistory(str(26111 - offset), "2026-08-20", 64, 1000.0, 100000.0)
+        for offset in range(12)
     ]
 
 
