@@ -1,7 +1,7 @@
 # Nutmeg Dual-Lane Operator Workbench Rebuild Design
 
 Date: 2026-09-03
-Status: Approved in brainstorming; written-spec review pending
+Status: Written spec approved by Jun on 2026-09-04
 Scope: Make the local Application the primary daily operator surface for both JCZQ and Zucai
 
 ## 1. Purpose
@@ -643,6 +643,14 @@ Jun's finite fixture, market, selection, and pass options from the evidence-comp
 judged slate. The service may combine those options and calculate their coverage, but does
 not decide which new fixture or market is worth betting.
 
+Candidate storage already contains the complete deterministic placement/settlement input:
+ticket kind, structure/group, currency, integer unit stake and multiplicity, total stake,
+canonical composition, and every ordered leg's offer/match/market/selection. JCZQ legs bind
+the exact Quote, positive booked Decimal odds, and signed HHAD line when required. Zucai legs
+forbid those odds fields and bind one registered fixed-prize policy revision shared by the
+candidate. Initial SFC/Renjiu policy revisions therefore exist before candidate generation,
+not only when an artifact or settlement is later created.
+
 Before ordering, every generated candidate runs the same current leg audit,
 prescription-difference audit, cap check, and lane deployment arithmetic. The candidate set
 retains all results in three visible partitions: eligible, audit-blocked, and over-cap. No
@@ -719,9 +727,10 @@ Action; no client field can extend the window.
 - WARN requires the existing typed Adjudication where the policy demands one.
 - Every prescription deviation requires a named Rule ID.
 - A change after audit creates a new revision and invalidates the prior audited artifact.
-- If an override changes candidate eligibility, deterministic re-evaluation creates a new
-  `TicketCandidateSetRevision` referencing the override receipts; it never edits the old
-  ranking or suppresses the original ERROR.
+- If an override changes candidate eligibility, the judge Action appends a candidate-
+  generation request referencing the override receipts. The deterministic worker alone
+  creates a new `TicketCandidateSetRevision`; neither step edits the old ranking or
+  suppresses the original ERROR.
 
 ### 8.4 No-ticket adjudication
 
@@ -736,7 +745,9 @@ snapshot; the browser cannot omit a pending artifact or add a closed/foreign one
 
 The closed initial reason codes are `human_all_dice`, `evidence_incomplete`,
 `no_compliant_structure_within_cap`, `discipline_brake`, and `operator_discretion`. Software
-does not choose or infer a code. A Rule-derived reason requires at least one current Rule ID;
+does not choose or infer a code or decide which code is Rule-derived. Jun submits the separate
+closed `reason_basis = rule_derived | operator_judgment`; `rule_derived` requires at least one
+current Rule ID, while `operator_judgment` does not require a fabricated Rule reference.
 `operator_discretion` preserves the constitutional right to no-ticket without fabricating a
 football rule.
 
@@ -790,6 +801,12 @@ no-ticket, natural deadline expiry, or official cancellation. A no-ticket or exp
 frozen baseline waits for the required Outcomes and then creates the forecast-truth review
 item even though money settlement remains `not_applicable`.
 
+Before the review schema is installed, these transitions persist a normalized review-
+eligibility fact containing the trigger, task/work-item snapshot, optional baseline, review
+kind, and `immediate | outcomes_required` readiness condition. The later deterministic review
+worker alone derives an actionable review item from that fact; deployment and settlement
+Actions never write a future review row directly.
+
 ## 9. Confirmation, ledger, settlement, and review
 
 ### 9.1 Protected confirmation
@@ -806,8 +823,10 @@ Each audited artifact has its own challenge and callback. A multi-ticket batch m
 be `partially_placed`: confirmed artifacts enter the ledger atomically, while other
 artifacts remain open or become shadow independently.
 
-Each challenge has one expected revision and exactly one terminal receipt, enforced by a
-unique challenge reference. The callback may transition `open -> placed` only when its
+Each challenge is an immutable revision bound to artifact hash, lineage, effective cutoff,
+and nonce hash. A per-artifact current-head relation enforces at most one open challenge while
+preserving predecessor revisions. Each challenge has one expected revision and exactly one
+terminal receipt, enforced by a unique challenge reference. The callback may transition `open -> placed` only when its
 server-recorded ingress time is strictly earlier than the effective cutoff. The scanner may
 transition `open -> shadow` only when `effective_cutoff <= as_of`; equality belongs to expiry.
 Callback, scanner, official-slate correction, and human no-ticket all use the same CAS in
@@ -815,13 +834,43 @@ their atomic Action transaction. The winner writes the sole terminal receipt; an
 replay returns it, while a competing different transition reports the existing terminal
 state and creates no Ticket, shadow duplicate, or cash row.
 
+Every artifact terminal receipt stores `terminal_kind = placed | shadow` separately from its
+closed `terminal_reason`. `actual_placement_confirmed` is valid only for `placed`;
+`confirmation_not_requested`, `deadline_unconfirmed`, `human_no_ticket`,
+`official_deadline_shortened`, and `official_offer_cancelled` are valid only for `shadow`.
+An approved artifact can terminalize without ever having a challenge, so artifact identity is
+the required CAS key and the challenge revision is nullable.
+
 ### 9.2 Telegram ownership and Application infrastructure worker
 
 Telegram updates have exactly one consumer per bot token. Production keeps OpenClaw as
 `telegram_update_owner`; `nutmeg app` must not start a native poller for that token. The
-OpenClaw callback router delegates `ntc:` updates to the existing
-`TelegramTicketConfirmationService`, so transport ownership does not create another
-placement implementation.
+repository ships a native OpenClaw plugin for that owner. In full registration mode it calls
+`api.registerInteractiveHandler({channel: "telegram", namespace: "ntc", handler})`; changing
+only the Python command router is not an integration. The handler captures its process clock
+at entry, then requires `accountId == "nutmeg"`, `auth.isAuthorizedSender`, and configured
+chat and sender allowlists. It serializes only the closed normalized callback fields to a
+fixed local Nutmeg bridge over stdin. It never places data on argv, invokes a shell, returns
+`submitText`, or allows an `ntc:` callback to enter the AI path. Success, safe rejection, and
+bridge failure all return `{handled: true}` after a bounded user-facing response.
+
+The plugin also uses `api.registerService` to maintain one operational owner-lease row per
+configured owner instance while its full runtime is alive. Startup records the immutable
+owner/configuration registration through `register_telegram_update_owner` as
+`deterministic_system`, idempotent on account, owner instance, transport, and router version.
+The first pulse and every 30-second pulse thereafter update only that registration's
+server-observed heartbeat sequence/time and 90-second lease expiry. A pulse is not a new
+typed Action or business-domain revision, so it cannot advance the Action high-water mark or
+stale the scoreboard projection; no per-pulse history is accumulated or pruned. The row
+binds `accountId="nutmeg"`, owner instance, transport label, plugin/router version, and the
+registration Action and contains no token or nonce. Actual callback attestations and terminal
+placement remain typed Actions. Actual channel connectivity is
+reported separately from the read-only result of
+`openclaw channels status --channel telegram --json`, selecting the `nutmeg` account. The
+legacy `telegram-bot.offset` file remains an update cursor and its mtime is never treated as
+health evidence. Plugin installation, enablement, and the production OpenClaw restart remain
+an explicit Jun activation gate; build and isolated verification do not change OpenClaw
+configuration.
 
 `nutmeg app` supervises only transport-independent infrastructure:
 
@@ -853,6 +902,15 @@ the stake transaction. JCZQ note legs require the booked Quote and decimal odds.
 SFC/Renjiu note legs bind official match/selection refs and the fixed-prize policy; they must
 not fabricate entry odds to fit the JCZQ model.
 
+The approved artifact also has a normalized binding row for the exact
+`candidate_ticket_id` (not merely its possibly multi-ticket candidate revision), ticket
+index/kind, integer total stake, currency, candidate/composition hash, lineage revision,
+frozen deadline, and nullable fixed-prize policy, plus ordered child links to every official
+offer revision. The candidate-ticket foreign key and a uniqueness constraint make one
+artifact resolve to exactly one candidate ticket. Its signed JSON document may duplicate
+those facts as an audit receipt, but normal queries, foreign-key checks, placement, and
+settlement never depend on parsing that JSON.
+
 The storage contract is explicit:
 
 ```text
@@ -867,6 +925,9 @@ TicketNoteLeg
   official_offer_id, match_id, market_definition_id, selection_code
   quote_id, booked_decimal_odds, settlement_parameter_decimal
   fixed_prize_policy_revision_id
+
+PlacementCashLink
+  ticket_id, transaction_id, stake_minor, currency
 
 ZucaiFixedPrizePolicyRevision
   fixed_prize_policy_revision_id, policy_version, ticket_kind, currency
@@ -884,6 +945,11 @@ leg copies that same revision and forbids quote/odds/parameter fields; mixed rev
 Ticket are an integrity error. Odds, lines, and later arithmetic inputs are canonical decimal
 strings, never binary floats. Currency is fixed across the Ticket, its notes, stake
 transaction, and later payout transactions.
+
+`PlacementCashLink.stake_minor` is the integer-money placement authority and reconciles to
+the Ticket/artifact/note sum. The linked legacy `CashTransaction.amount` remains a
+compatibility projection and is never converted back into minor units for audit or
+settlement arithmetic.
 
 `unit_count` is a positive integer and `stake_minor == unit_stake_minor * unit_count`. One
 `TicketNote` represents one unique canonical selection composition; repeated identical notes
@@ -986,8 +1052,8 @@ When present, `normalized_disposition` and `source_disposition` are exactly `pla
 `postponed`, or `official_void`. A missing receipt has null retrieval, capture, disposition,
 score, and invalid-code fields; missing/conflicting normalization has null normalized
 disposition and scores. An invalid receipt retains its available audit references, requires
-one of `artifact_unreadable | schema_mismatch | invalid_score | source_identity_mismatch |
-unsupported_status`, and has null disposition/scores. Scores are required non-negative
+one of `artifact_unreadable | schema_mismatch | invalid_score | source_identity_mismatch | unsupported_status`,
+and has null disposition/scores. Scores are required non-negative
 integers only for `played_90` and otherwise must be null. `agreement_state` is
 `missing | conflict | agreed`; only an agreed `played_90` or `official_void` creates a new
 `OutcomeRevision`. An agreed `postponed` match stays waiting without an Outcome. Each Outcome
@@ -996,6 +1062,12 @@ rather than rewrites it. Outcome stores facts only; each grader derives its mark
 code from the score/disposition, market definition, and persisted settlement parameter. For
 Zucai, `zucai_prize_table_revision_id` may be null until official prizes are published but is
 a hard settlement requirement; it is always null for JCZQ.
+
+JCZQ CRS uses three distinct official aggregate selection codes: `win_other`, `draw_other`,
+and `loss_other`. A grader returns a registered exact-score code when present and otherwise
+the aggregate matching the home/draw/away direction. The legacy generic `other` selection is
+retained only for historical audit and is non-deployable; candidate audit and settlement
+block it rather than guessing a direction.
 
 For each required match it contains:
 
@@ -1122,8 +1194,8 @@ the sum of all persisted note `unit_count` values regardless of outcome;
 that winning and void counts are both subsets of paid count. A note copies those rules into
 `winning_unit_count` and `void_unit_count`: respectively `unit_count/0` for won, `0/unit_count`
 for JCZQ void, and `0/0` for lost. Zucai always has `void_unit_count = 0`. Run skips use the
-closed codes `already_current | result_not_ready | prize_not_ready |
-placement_integrity_blocked`; a persisted unsupported market is an integrity failure rather
+closed codes `already_current | result_not_ready | prize_not_ready | placement_integrity_blocked`;
+a persisted unsupported market is an integrity failure rather
 than a silent skip. The receipt counts the exact scoped placed Tickets, and
 `requested = eligible + skipped`, `eligible = settled`, and every persisted child count must
 match the rows committed by the same Action.
@@ -1494,7 +1566,7 @@ The initial `/api/v2/operator` allowlist is:
 | `freeze_judgment_prescription` | current judgment revision tokens | `freeze_judgment_prescription` |
 | `request_candidate_generation` | baseline, envelope, prescription opaque tokens | queues deterministic `generate_ticket_candidate_set` |
 | `select_candidate` | candidate opaque token, reason | `select_ticket_candidate` |
-| `record_no_ticket` | work-item token, reason code/text, Rule IDs, optional comparison-candidate token; server derives remaining scope | `record_no_ticket` |
+| `record_no_ticket` | work-item token, reason code/text, reason basis, Rule IDs, optional comparison-candidate token; server derives remaining scope | `record_no_ticket` |
 | `supersede_no_ticket` | adjudication token, reason | `supersede_no_ticket` |
 | `create_ticket_batch` | selection token, account/channel | existing protected draft Action plus decision lineage |
 | `adjudicate_audit_warn` | batch/finding tokens, decision, reason, evidence refs | existing judge-only Adjudication |
@@ -1505,6 +1577,7 @@ The initial `/api/v2/operator` allowlist is:
 | `record_scoreboard_effect_disposition` | review token, disposition, metric keys, reason | matching judge-only Action |
 | `record_scoreboard_observation` | review token, typed observation, external scoreboard hash | existing `scoreboard observe` Action |
 | `request_scoreboard_review_completion` | current review/disposition tokens and exact signed shadow-review token | queues deterministic `complete_scoreboard_review` validation |
+| `rebuild_scoreboard_projection` | no business fields | invokes the existing build-only projector; writes no Action and never changes `scoreboard.json` |
 
 Judgment Factor input is also closed:
 
@@ -1710,11 +1783,23 @@ OpenClaw processes may still commit the typed Actions their runbooks authorize. 
 production shadow route is mounted in the canonical process and may not be served by a
 second Application instance.
 
+A separate ontology-writer lease coordinates migrations with every formal Action UOW.
+Normal Application, CLI, worker, and OpenClaw Action transactions hold a shared lease for
+their complete transaction; guarded maintenance holds an exclusive lease. A production
+schema migration must retain one exclusive descriptor continuously from the pre-backup audit
+through SQLite online backup, backup reconciliation, migration, and post-migration audit.
+Checking that a lease is free and releasing it before backup is not sufficient.
+
 ### 13.2 Scheduler ownership
 
 The System maintenance page detects overlapping OpenClaw and launchd ownership and reports
-the commands, labels, last runs, and conflict. It does not enable, disable, or edit system
-schedules. Existing launchd user gates remain untouched.
+the commands, labels, enabled/loaded state, last runs, and conflict. Its probe uses only fixed,
+bounded, read-only argv calls for `openclaw cron list --all --json`,
+`openclaw channels status --channel telegram --json`, and `launchctl print`; it never accepts
+command text from a request. The page groups jobs by normalized Nutmeg stage and flags two
+enabled owners for the same stage. It does not enable, disable, edit, run, or repair system
+schedules. Probe failure is a visible `diagnostic_unavailable` state, never evidence that an
+owner is absent. Existing launchd user gates remain untouched.
 
 ### 13.3 Projection consistency
 
@@ -1723,6 +1808,13 @@ source Action and projection high-water marks live in the audit envelope and mai
 view. If the projection is behind, affected controls block with `projection_stale`; a
 governed build-only rebuild can be invoked from maintenance. Rebuilding does not mutate
 `scoreboard.json` or perform a cutover.
+
+Projection dependencies are declared per command and checked immediately before its Action.
+In the initial surface, scoreboard effect disposition, scoreboard observation, and review
+completion all require the current scoreboard projection high-water and are disabled while
+it is stale. The build-only rebuild control stays available so the operator can recover.
+Unrelated evidence, judgment, ticket, and result commands do not acquire an invented
+scoreboard dependency. A stale token still fails after a rebuild, forcing a fresh GET.
 
 ### 13.4 Root rollout and rollback
 
@@ -1822,13 +1914,18 @@ package has its own branch and commits, and the repository pre-commit hooks must
   idempotency, stale token, exact-cutoff expiry precedence with a delayed scanner, explicit
   reopen, not-applicable settlement with no-ticket/natural-expiry/cancellation
   operational-or-forecast review, and no hindsight-counterfactual cases;
-- role restrictions, instance locking, projection high-water checks, and recovery codes;
+- role restrictions, instance locking, command-specific projection high-water checks across
+  every dependent control, rebuild recovery, and recovery codes;
 - the full surface/scope route matrix, mutation 405s, acceptance-commit mismatch, shadow GET
   Action high-water stability, isolated-path refusal, disabled isolated side effects,
   active-to-read-only rollback data retention, and in-flight challenge completion;
 - sole Telegram update ownership, per-artifact partial placement, atomic callback ledger,
   callback/scanner/correction/no-ticket CAS at the exact cutoff, approval-without-challenge
-  shadow, and absence of a Web final-confirmation endpoint;
+  shadow, native `ntc` interactive registration, account/auth/chat/sender denial, stdin-only
+  bridge dispatch, `{handled: true}` without AI fallback, plugin-service heartbeat, and
+  absence of a Web final-confirmation endpoint;
+- heartbeat renewal leaves Action/projection high water unchanged while an actual callback
+  advances it exactly once;
 - strict three-source result manifests, normalized 90-minute/official-void Outcome revisions,
   invalid-source audit refs, closed Zucai prize tiers, disagreement and correction,
   result-set/request permissions, and `deterministic_system` execution;
