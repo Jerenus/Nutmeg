@@ -80,6 +80,7 @@ class NoTicketFixture:
 class ArtifactFixture(NoTicketFixture):
     action_service: object
     artifact_id: str
+    artifact_ids: tuple[str, ...]
     cutoff: datetime
 
 
@@ -134,6 +135,7 @@ def _artifact_fixture(
     tmp_path: Path,
     *,
     at: datetime | None = None,
+    judgment_candidate=None,
 ) -> ArtifactFixture:
     candidate_fixture = _ready_fixture(tmp_path)
     with OntologyUnitOfWork(candidate_fixture.judgment.engine) as uow:
@@ -145,9 +147,9 @@ def _artifact_fixture(
             _generation_request(candidate_fixture)
         )
     )
-    generate_kwargs = (
-        {} if at is None else {"as_of": at + timedelta(seconds=7)}
-    )
+    generate_kwargs = {} if at is None else {"as_of": at + timedelta(seconds=7)}
+    if judgment_candidate is not None:
+        generate_kwargs["judgment_candidate"] = judgment_candidate
     _generate(
         candidate_fixture,
         request_id=generation_request.result_refs[0].object_id,
@@ -206,11 +208,12 @@ def _artifact_fixture(
             requested_at=AT + timedelta(seconds=3),
         )
     )
-    artifact_id = next(
+    artifact_ids = tuple(
         ref.object_id
         for ref in approved.result_refs
         if ref.object_type == "audited_ticket_artifact"
     )
+    artifact_id = artifact_ids[0]
     with OntologyUnitOfWork(candidate_fixture.judgment.engine) as uow:
         binding = uow.tickets.protected_artifact_binding(artifact_id)
         assert binding is not None
@@ -222,13 +225,14 @@ def _artifact_fixture(
         work_item_id=WORK_ITEM_ID,
         as_of=AT + timedelta(minutes=1),
     )
-    assert context.artifact_ids == (artifact_id,)
+    assert set(context.artifact_ids) == set(artifact_ids)
     return ArtifactFixture(
         engine=candidate_fixture.judgment.engine,
         actions=candidate_fixture.judgment.decision_actions,
         context=context,
         action_service=candidate_fixture.judgment.action_service,
         artifact_id=artifact_id,
+        artifact_ids=artifact_ids,
         cutoff=cutoff,
     )
 

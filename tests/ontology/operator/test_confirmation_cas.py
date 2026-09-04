@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -33,11 +34,13 @@ from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.services.telegram_ticket_confirmation import (
     TelegramOwnerHeartbeatService,
 )
+from tests.ontology.operator.test_candidate_actions import _candidate
 from tests.ontology.operator.test_no_ticket_actions import (
     AT,
     _artifact_fixture,
     _clean_candidate_audit,
     _issue_challenge,
+    _request,
 )
 
 
@@ -490,3 +493,117 @@ def test_v2_callback_reconciles_persisted_attestation_before_commit(
             sor.operator_telegram_callback_attestations,
         ):
             assert uow.connection.scalar(select(func.count()).select_from(table)) == 0
+
+
+def test_two_artifact_batch_records_partial_placement_when_one_is_shadowed(
+    tmp_path: Path,
+) -> None:
+    base_candidate = _candidate(
+        set_kind="judgment_bound",
+        content_hash="c" * 64,
+    )
+    first_ticket = base_candidate.tickets[0]
+    second_ticket = replace(
+        first_ticket,
+        composition_hash="ticket-" + "d" * 64,
+        legs=(
+            replace(
+                first_ticket.legs[0],
+                selection_code="1",
+                quote_id="quote-1",
+                booked_decimal_odds="3.333333333333",
+            ),
+        ),
+    )
+    candidate = replace(
+        base_candidate,
+        tickets=(first_ticket, second_ticket),
+        metrics=replace(
+            base_candidate.metrics,
+            ticket_count=2,
+            distinct_note_count=2,
+            paid_note_unit_count=2,
+            stake_minor=400,
+            probability_kind="any_ticket_all_required_legs",
+        ),
+    )
+    fixture = _artifact_fixture(tmp_path, judgment_candidate=candidate)
+    assert len(fixture.artifact_ids) == 2
+    protected = _protected(fixture, tmp_path)
+
+    placed_artifact_id, shadowed_artifact_id = fixture.artifact_ids
+    placed_fixture = replace(fixture, artifact_id=placed_artifact_id)
+    issued = _issue(
+        protected,
+        placed_fixture,
+        key="confirmation:partial:issue",
+    )
+    assert issued.confirmation_id is not None
+    assert issued.nonce is not None
+    with OntologyUnitOfWork(fixture.engine) as uow:
+        artifact = uow.tickets.ticket_artifact(placed_artifact_id)
+        head = uow.tickets.confirmation_challenge_head(placed_artifact_id)
+    assert artifact is not None
+    assert head is not None
+    confirmed = protected.confirm_ticket_placement(
+        ConfirmTicketPlacementRequest(
+            ticket_artifact_id=placed_artifact_id,
+            confirmation_id=issued.confirmation_id,
+            nonce=issued.nonce,
+            ticket_hash=artifact.ticket_hash,
+            amount=artifact.amount,
+            currency=artifact.currency,
+            channel=artifact.channel,
+            placement_mode="manual",
+            external_reference="telegram:callback-partial",
+            receipt_content=b'{"attestation":"actual_placement_confirmed"}',
+            receipt_content_type="application/vnd.nutmeg.telegram-attestation+json",
+            actor_id="jun",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key="confirmation:partial:callback",
+            requested_at=AT + timedelta(minutes=3),
+            expected_challenge_revision=head.revision_no,
+            telegram_attestation=_attestation(
+                fixture,
+                callback_id="callback-partial",
+                at=AT + timedelta(minutes=3),
+            ),
+        )
+    )
+    assert confirmed.status is ActionStatus.COMMITTED
+
+    context = fixture.actions.no_ticket_decision_context(
+        task_family_id=fixture.context.task_family_id,
+        lane=fixture.context.lane,
+        business_key=fixture.context.business_key,
+        work_item_id=fixture.context.work_item_id,
+        as_of=AT + timedelta(minutes=4),
+    )
+    assert context.artifact_ids == (shadowed_artifact_id,)
+    closed = fixture.actions.record_no_ticket(
+        _request(
+            fixture,
+            key="confirmation:partial:no-ticket",
+            requested_at=AT + timedelta(minutes=4),
+            context=context,
+        )
+    )
+    assert closed.status is ActionStatus.COMMITTED
+
+    with OntologyUnitOfWork(fixture.engine) as uow:
+        placed = uow.tickets.artifact_terminal_receipt(placed_artifact_id)
+        shadowed = uow.tickets.artifact_terminal_receipt(shadowed_artifact_id)
+        no_ticket = uow.operator_result.current_no_ticket_for_work_item(
+            fixture.context.work_item_id
+        )
+        ticket_count = uow.connection.scalar(select(func.count()).select_from(sf.tickets))
+        cash_count = uow.connection.scalar(
+            select(func.count()).select_from(sf.cash_transactions)
+        )
+    assert placed is not None and placed.terminal_kind == "placed"
+    assert shadowed is not None and shadowed.terminal_kind == "shadow"
+    assert shadowed.terminal_reason == "human_no_ticket"
+    assert no_ticket is not None
+    assert no_ticket.deployment_outcome == "partially_placed"
+    assert ticket_count == 1
+    assert cash_count == 1
