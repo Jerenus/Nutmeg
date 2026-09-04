@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 from nutmeg.config.settings import AppSettings, clear_settings_cache
 from nutmeg.interfaces import cli as cli_module
 from nutmeg.interfaces.cli import app
+from nutmeg.ontology.repository.migrations import MIGRATIONS
 from nutmeg.ontology.wiring import build_ontology_kernel
 from tests.ontology.test_protected_ticket_actions import AT
 from tests.ontology.test_ticket_confirmation import _approved
@@ -49,7 +50,7 @@ def test_ticket_confirmation_request_defaults_to_redacted_dry_run(
     assert "nonce" not in result.stdout.lower()
     assert "callback_data" not in result.stdout
     assert "telegram-secret" not in result.stdout
-    assert kernel.status().schema_version == 16
+    assert kernel.status().schema_version == MIGRATIONS[-1].version
 
 
 def test_ticket_confirmation_request_rejects_non_owner_before_live_send(
