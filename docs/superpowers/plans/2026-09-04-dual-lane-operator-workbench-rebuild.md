@@ -49,7 +49,9 @@ is pushed or described as merged.
 
 - `nutmeg/product/operator_runtime.py`: runtime modes, accepted/running commit validation,
   production-data-path checks, and the process lease.
-- `nutmeg/product/operator_workers.py`: transport-independent deadline and outbox workers.
+- `nutmeg/product/operator_workers.py`: the sole Application supervisor for evidence-freeze,
+  baseline, candidate-generation, deadline, settlement, review-materialization,
+  review-completion, outbox, and read-model workers, including durable lease/retry state.
 - `nutmeg/product/operator_contracts.py`: replace v1 DTOs with strict v2 discriminated
   response/command contracts; no persistence or arithmetic.
 - `nutmeg/product/operator_state.py`: pure offer/work-item/task/focus/Today resolvers.
@@ -127,6 +129,51 @@ is pushed or described as merged.
 Do not add more v2 logic to the already large `nutmeg/product/queries.py` or generic
 `nutmeg/product/actions.py`. Do not pass dictionaries from repositories into v2 templates.
 
+### Infrastructure worker contract
+
+`nutmeg app` owns one `OperatorInfrastructureWorkers` supervisor. Packages add consumers to
+this registry rather than starting background tasks in Actions, queries, routes, or Telegram.
+The final active order and exact completion Actions are:
+
+| Order | Consumer | Source | Completion |
+| --- | --- | --- | --- |
+| 1 | evidence freeze | `operator_evidence_freeze_requests` | `freeze_evidence_bundle` per match, then `link_operator_task_evidence_freeze` |
+| 2 | market baseline | completed task evidence-freeze claim | `freeze_market_prior_baseline` |
+| 3 | candidate generation | `operator_candidate_generation_requests` | `generate_ticket_candidate_set` |
+| 4 | confirmation deadline | due protected artifacts/challenge heads | existing `mark_ticket_shadow` via shared artifact CAS |
+| 5 | task settlement | `operator_task_settlement_requests` | `settle_task` |
+| 6 | review materialization | `operator_review_eligibility_facts` | `materialize_operator_review_item` |
+| 7 | review completion | `operator_scoreboard_review_completion_requests` | `complete_scoreboard_review` |
+| 8 | outbox/read model | committed outbox cursor | projection-only delivery/invalidation; no domain Action |
+
+Judge requests and eligibility facts remain immutable. Migration 19 creates the shared
+operational `operator_worker_jobs` table with one unique row per
+`(job_kind, source_object_type, source_object_id)`, state
+`queued | leased | completed | failed`,
+`lease_owner`, `lease_expires_at`, `attempt_count`, `available_at`, `last_error_code`, and
+nullable result Action/receipt. Each source Action appends its job atomically; later packages
+reuse the same table instead of adding private loops. Each `run_once(limit)` recovers expired
+leases, claims in creation/ID order, and processes one outer UOW per item. Retry only SQLite
+contention, interrupted/expired leases, and errors marked retryable, with bounded exponential
+backoff; validation, permission, stale-dependency, and invariant failures become visible
+terminal failures. Completion idempotency keys are derived from the source row and exact
+dependency revisions. Lease/error updates are operational; every successful business result
+is the named typed Action.
+
+The migration-19 `job_kind` check is closed from the start to `evidence_freeze`,
+`market_baseline`, `candidate_generation`, `task_settlement`, `review_materialization`, and
+`scoreboard_review_completion`. Deadline scanning and outbox projection are bounded scans,
+not synthetic jobs. A package may leave a future kind unclaimed until its consumer ships, but
+must never reinterpret or drop its durable row.
+
+The active lifespan recovers leases and starts the registry before serving HTTP. It stops new
+claims in reverse order, lets each current bounded transaction finish, then releases leases.
+Production `legacy_read_only` and `shadow` run only deadline, outbox, and read-model consumers;
+queued decision/result/review work stays durable. Isolated active runs all installed
+consumers. Package 9 wires consumers 1-4 and 8, Package 10 adds 5, Package 11 adds 6-7, and
+Package 12 proves the complete registry through TestClient lifespan without direct
+`run_once()` calls.
+
 ## Package 1: Single-instance lock and read-only rollout shell
 
 **Branch:** `feat/operator-runtime-shell`
@@ -149,7 +196,15 @@ Do not add more v2 logic to the already large `nutmeg/product/queries.py` or gen
 - Modify: `nutmeg/ontology/wiring.py`
 - Modify: `nutmeg/product/wiring.py`
 - Modify: `nutmeg/interfaces/web/templates/operator/layout.html`
+- Modify: `nutmeg/interfaces/web/templates/operator/task.html`
+- Modify: `nutmeg/interfaces/web/templates/operator/steps/audit_deployment.html`
+- Modify: `nutmeg/interfaces/web/templates/operator/steps/await_confirmation.html`
+- Modify: `nutmeg/interfaces/web/templates/operator/steps/construct_ticket.html`
+- Modify: `nutmeg/interfaces/web/templates/operator/steps/judge_matches.html`
+- Modify: `nutmeg/interfaces/web/templates/operator/steps/review.html`
 - Modify: `nutmeg/interfaces/web/static/product/operator.css`
+- Modify: `nutmeg/interfaces/web/static/product/operator.js`
+- Test: `tests/product/conftest.py`
 - Test: `tests/product/test_operator_api.py`
 - Test: `tests/product/test_operator_ui.py`
 - Test: `tests/product/test_cli.py`
@@ -230,9 +285,11 @@ Every settings construction in this package passes `_env_file=None`, because the
 has a configured production `.env` and an isolated test must never inherit its Telegram token
 or runtime switches. Parameterize the exact legal matrix: production with
 `legacy_read_only`, `shadow`, or `active`, and isolated candidate with `active` only. Reject
-the other two isolated combinations, require a production scope data path to resolve exactly
-to `production_data_dir`, and reject empty, short, non-hex, unresolved, or dirty commit
-identities even when all three strings happen to match.
+the other two isolated combinations and require a production scope data path to resolve
+exactly to `production_data_dir`. In production active only, reject empty, short, non-hex,
+unresolved, or dirty commit identities even when all three strings happen to match. Isolated
+active is the development/acceptance scope and may run from an identifiable dirty checkout;
+add an explicit passing test so the production acceptance rule cannot spread to that scope.
 
 - [ ] **Step 2: Run the runtime test and verify RED**
 
@@ -340,8 +397,13 @@ maintenance subprocess can acquire the exclusive lease only after every writer r
 Prove exclusive contention is `ontology_maintenance_conflict` and that no PID-file or mtime
 guess is accepted as ownership evidence.
 
-Add a subprocess test for `nutmeg ontology guarded-init --data-dir <production-root>
---backup-file <new-db-path>`. Hold a normal UOW or Application shared writer lease and prove
+Add a subprocess test for the guarded migration command:
+
+```bash
+nutmeg ontology guarded-init --data-dir <production-root> --backup-file <new-db-path>
+```
+
+Hold a normal UOW or Application shared writer lease and prove
 the command fails before opening the backup. Release it, then prove one process retains the
 same exclusive lock continuously across source audit, SQLite online backup, backup audit,
 migration, and post-migration audit. Inject a writer attempt between each stage and require
@@ -384,8 +446,12 @@ generic bypass. Both disabled-mode calls must leave Action and every domain coun
 Add CLI tests proving validation/lease failures happen before service construction and
 uvicorn, wiring tests for real-token rejection versus explicitly token-free simulated
 transport, and shell/browser tests proving `/operator-next` performs no artifact, provider,
-network, or Action call. Run `uv run pytest tests/product/ -q` now and retain the expected RED
-failures before Step 5.
+network, or Action call. Update `tests/product/conftest.py` and every Package 1 settings
+fixture to pass `_env_file=None`; prove an isolated wiring test with an inherited real token
+fails before constructing Telegram, while an explicitly token-free fixture receives only the
+simulated transport. Add a clean-release test that reacquires the same instance path in the
+same PID and proves the stable lock inode is not replaced. Run
+`uv run pytest tests/product/ -q` now and retain the expected RED failures before Step 5.
 
 - [ ] **Step 5: Implement the lease and mode-based route guards**
 
@@ -396,8 +462,14 @@ an already existing file, validate its stale JSON only after `os.kill(pid, 0)` r
 process, and fail closed for an empty record, missing/invalid PID, or malformed JSON. After
 lock acquisition it writes PID/start/data/bind/port with
 `seek(0)`, `truncate()`, canonical JSON, `flush()`, and `fsync()`, then keeps the descriptor
-open through the uvicorn lifespan. `release()` unlocks and closes the descriptor but does not
-recursively delete anything. Map contention to the stable `app_instance_conflict` error.
+open through the uvicorn lifespan. The stable file is never unlinked: its canonical record
+has `lease_state = held | released`; a clean `release()` writes `released`, a server release
+time, and the prior owner facts under the lock, fsyncs, then unlocks and closes. A later owner
+may accept a valid `released` record without treating the old PID as live ownership. It may
+accept a `held` record only after `os.kill(pid, 0)` proves that PID absent. Empty, malformed,
+or unverifiable existing records fail closed. This stable-inode protocol prevents the
+unlink/open ABA race while allowing clean same-process restart. Map contention to the stable
+`app_instance_conflict` error.
 
 `OntologyWriterLease` uses the separate writer-lock descriptor and `fcntl.LOCK_SH` for normal
 Application/CLI/callback ownership or `fcntl.LOCK_EX | LOCK_NB` for guarded maintenance. It
@@ -424,6 +496,17 @@ before the existing UI mount helpers so route order cannot expose the wrong root
 `/operator-next` is a typed, read-only shell that performs no rx/artifact/provider/network
 lookup; do not alias the current v1 operator task page because its deployment query can fetch
 Renjiu history. Mark the legacy root visibly read-only and remove/hide its mutation forms.
+Pass a server-owned read-only flag through `task.html` and the five phase templates above so
+no legacy form is present in the DOM in any runtime mode; `operator.js` must not request a
+session or attach mutation handlers on a read-only page.
+
+Package 1 also defines a strict `extra="forbid"` base `OperatorCommandV2` envelope with
+`schema_version="2"`, one closed `OperatorCommandKind`, `expected_snapshot_token`, and
+`idempotency_key`. An empty, unknown, or extra-field body is 422. A syntactically valid known
+kind whose business DTO is added only by a later package returns the stable non-writing
+`command_unavailable` response; it never falls through to a generic Action executor. Later
+packages replace that case one literal kind at a time with their discriminated DTO and named
+handler.
 
 Pass `OperatorRuntimeConfig` into `product/wiring.py`. Production must not construct another
 inbound Telegram poller. In isolated active, an inherited/configured real token fails startup;
@@ -635,8 +718,9 @@ manifest = {
 - [ ] **Step 5: Implement strict sale/check Actions**
 
 Use Pydantic `extra="forbid"` manifests and one `ActionService.execute()` transaction per
-import. Derive `offer_family_id` from canonical JSON of lane, business key, official match
-number, and canonical match ID. Never synthesize a deadline. Validate referenced retrieval,
+import. Derive `official_offer_family_id` from canonical JSON of lane, business key, official
+match number, and canonical match ID. Assign a new `official_offer_revision_id` to each slate
+revision. Never synthesize a deadline. Validate referenced retrieval,
 match, and markets before inserts. The committed Action returns the slate plus every offer
 revision and a count receipt; any mismatch raises inside the transaction.
 
@@ -737,6 +821,7 @@ git commit -m "feat(ontology): add official dual-lane sale discovery"
 - Modify: `nutmeg/product/operator_artifacts.py`
 - Modify: `nutmeg/product/operator_queries.py`
 - Modify: `nutmeg/interfaces/cli/workflow.py`
+- Modify: `tests/product/test_operator_queries.py`
 
 - [ ] **Step 1: Write golden legacy-import RED tests**
 
@@ -750,13 +835,22 @@ business key, official order, provenance state, committed counts, and idempotent
 issue/prep source lacking an official Sporttery retrieval is labelled `legacy_replay` and
 cannot become production slate authority.
 
+Before changing `_build_all()`, add two failing query tests in
+`tests/product/test_operator_queries.py`: one creates a current official slate with no rx file
+and requires the task to remain discoverable; the other writes an orphan `*-rx.json` without
+an official slate and requires no task. Patch `ZucaiArtifactRepository.discover()` to raise if
+called by the v2 query and assert the official-slate query still succeeds. These failures must
+be observed before Step 3 or Step 4 changes production code.
+
 - [ ] **Step 2: Verify legacy RED**
 
 ```bash
-uv run pytest tests/product/operator_v2/test_legacy_import.py -v
+uv run pytest tests/product/operator_v2/test_legacy_import.py \
+  tests/product/test_operator_queries.py -k "legacy_import or rx_file_cannot_create_task or official_slate_survives_missing_rx" -v
 ```
 
-Expected: `operator_legacy_import` is missing.
+Expected: `operator_legacy_import` is missing and the two authority tests fail against the
+legacy rx discovery path.
 
 - [ ] **Step 3: Implement closed v2/v3 models and deterministic mapping**
 
@@ -789,7 +883,7 @@ records typed existing Actions and one source-artifact-backed receipt. Issue/pre
 its own declared contract option and receipt. Neither path discovers current tasks; only
 current official slates do.
 
-- [ ] **Step 4: Remove rx filename discovery authority**
+- [ ] **Step 4: Remove rx filename discovery authority to satisfy the RED tests**
 
 Change `OperatorQueryService._build_all()` to start from official lane discovery. Keep
 `ZucaiArtifactRepository` only behind the explicit legacy import/fixture adapter. A missing
@@ -822,6 +916,7 @@ git commit -m "feat(product): quarantine versioned legacy operator artifacts"
 - Create: `tests/ontology/operator/test_evidence_migration.py`
 - Create: `tests/ontology/operator/test_evidence_ingest.py`
 - Create: `tests/product/operator_v2/test_evidence_policy.py`
+- Create: `tests/product/operator_v2/test_evidence_cli.py`
 - Create: `tests/product/fixtures/operator/evidence/jczq-valid.json`
 - Create: `tests/product/fixtures/operator/evidence/zucai-valid.json`
 - Modify: `nutmeg/ontology/repository/migrations.py`
@@ -829,6 +924,7 @@ git commit -m "feat(product): quarantine versioned legacy operator artifacts"
 - Modify: `nutmeg/ontology/wiring.py`
 - Modify: `nutmeg/interfaces/cli/workflow.py`
 - Modify: `scripts/openclaw/nutmeg_command_router.py`
+- Modify: `tests/test_openclaw_router.py`
 - Modify: `docs/sop/RUNBOOK.md`
 
 - [ ] **Step 1: Write manifest and migration 18 RED tests**
@@ -916,7 +1012,27 @@ diagnostics. Use instant comparisons, not ISO-string ordering. Only verified Obs
 separately adjudicated Claims count. E1-E6b must all be complete and EC clear for every
 required match.
 
-- [ ] **Step 6: Wire CLI/OpenClaw ingest and shadow-only RUNBOOK alignment**
+- [ ] **Step 6: Write CLI, OpenClaw-router, and RUNBOOK contract RED tests**
+
+In `test_evidence_cli.py`, invoke the exact CLI below with valid, quarantined, mismatched,
+and count-reconciliation fixtures. Assert the valid run calls the same ingest Action and
+prints the manifest hash plus committed/persisted counts; every invalid run exits nonzero and
+adds no row. In `test_openclaw_router.py`, require a reference below the configured intake
+root and the exact contract version; reject traversal, symlinks escaping the root, inline
+JSON, URLs, unknown versions, and extra arguments before delegation. Add a governance-doc
+test that fails until RUNBOOK names this bridge and keeps the v2 strict gate in shadow until
+the CLI and gate ship together.
+
+Run:
+
+```bash
+uv run pytest tests/product/operator_v2/test_evidence_cli.py tests/test_openclaw_router.py \
+  tests/ontology/test_governance_docs.py -k "evidence or operator" -v
+```
+
+Expected: the CLI command, router allowlist, and synchronized RUNBOOK text are absent.
+
+- [ ] **Step 7: Wire CLI/OpenClaw ingest and shadow-only RUNBOOK alignment**
 
 Add:
 
@@ -931,10 +1047,10 @@ intake directory; it delegates to the same service and never accepts arbitrary J
 Update RUNBOOK A1/B evidence steps to state that v2 remains shadow until this command and
 strict gate are deployed together.
 
-- [ ] **Step 7: Verify and commit Package 4**
+- [ ] **Step 8: Verify and commit Package 4**
 
 ```bash
-uv run pytest tests/ontology/operator/test_evidence_migration.py tests/ontology/operator/test_evidence_ingest.py tests/product/operator_v2/test_evidence_policy.py tests/ontology/test_evidence_models.py tests/ontology/test_claim_adjudication.py -q
+uv run pytest tests/ontology/operator/test_evidence_migration.py tests/ontology/operator/test_evidence_ingest.py tests/product/operator_v2/test_evidence_policy.py tests/product/operator_v2/test_evidence_cli.py tests/ontology/test_evidence_models.py tests/ontology/test_claim_adjudication.py -q
 uv run pytest tests/test_openclaw_router.py -q
 uv run ruff check nutmeg/ontology/operator/evidence_manifest.py nutmeg/ontology/operator/evidence_actions.py nutmeg/product/operator_evidence.py nutmeg/interfaces/cli/workflow.py tests/ontology/operator tests/product/operator_v2/test_evidence_policy.py
 ```
@@ -972,13 +1088,18 @@ git commit -m "feat(decision): enforce strict operator evidence intake"
 
 Require append-only `operator_evidence_freeze_requests`,
 `operator_task_evidence_bundle_revisions`, and
-`operator_task_evidence_bundle_items`. Test one current leaf per task family, immutable
+`operator_task_evidence_bundle_items`, plus the operational `operator_worker_jobs` table
+defined by the shared worker contract. Test one current leaf per task family, immutable
 supersession, exact policy/slate/task/cutoff binding, per-match existing EvidenceBundle IDs,
 requirement refs/states, market prior refs, conflicts cleared, content hash, request Action,
 and deterministic task-link Action. Grant `request_evidence_freeze` only to
 `judge_operator`; keep the existing `freeze_evidence_bundle` permission unchanged at
 `deterministic_system`, and grant `link_operator_task_evidence_freeze` only to
 `deterministic_system`. There is no second Action type that purports to freeze a match bundle.
+Assert request creation atomically adds exactly one evidence-freeze job, replay adds none,
+expired leases recover, and a terminal job retains its immutable source and result Action.
+The successful `link_operator_task_evidence_freeze` Action atomically adds exactly one
+`market_baseline` job sourced from the task-freeze revision.
 
 - [ ] **Step 2: Verify freeze RED**
 
@@ -1043,8 +1164,10 @@ render IDs/hashes outside audit drill-down.
 
 Submit `freeze_evidence` through `/api/v2/operator` with a token signed for that command and
 assert one judge request, no browser-supplied role/IDs, and a queued response. Test unknown
-fields, a token signed for another command, stale requirements, projection-stale blocking,
-and shadow/read-only 405s. Render complete, missing, stale, conflict, queued, and linked states
+fields, a token signed for another command, stale requirements, and shadow/read-only 405s.
+First advance the global Action high water beyond the scoreboard
+projection and prove `freeze_evidence` still queues normally: evidence freeze has no scoreboard
+dependency. Render complete, missing, stale, conflict, queued, and linked states
 without raw refs or JSON; the only primary control appears when the gate is currently
 complete. Test the named `rebuild_scoreboard_projection` maintenance command separately:
 it rebuilds only the projection, changes neither Action high water nor `scoreboard.json`
@@ -1054,11 +1177,10 @@ checksum, and returns the source/projection high waters; all generic Action POST
 
 Add the discriminated `FreezeEvidenceCommandV2` and delegate only to
 `request_evidence_freeze`; worker progress is read from committed request/link receipts.
-Before enabling the control, compare the operational Action high water with the projection
-high water. On `projection_stale`, block the mutation and link to the existing governed
-build-only `ScoreboardProjector.build` operation exposed as the strict
-`rebuild_scoreboard_projection` maintenance command; it never shells out. Neither GET nor rebuild writes
-`scoreboard.json` or advances the Action ledger.
+Evidence freeze has no scoreboard dependency and remains available when that projection is
+stale. Expose the existing governed build-only `ScoreboardProjector.build` operation
+separately as the strict `rebuild_scoreboard_projection` maintenance command; it never shells
+out. Neither GET nor rebuild writes `scoreboard.json` or advances the Action ledger.
 
 - [ ] **Step 8: Verify and commit Package 5**
 
@@ -1133,8 +1255,9 @@ strict `OfferConstraintInputV2` and `StructureTemplateInputV2` DTOs. Validate un
 market/bundle/template codes, cap in integer minor units, positive explicit enumeration
 limits, and lane-specific SFC/Renjiu/JCZQ structural rules. Do not infer any option.
 
-The infrastructure worker consumes each completed evidence-freeze request idempotently and
-runs `freeze_market_prior_baseline` before the work item can enter `judge_matches`. The
+The infrastructure worker consumes each `market_baseline` job idempotently and runs
+`freeze_market_prior_baseline` before the work item can enter `judge_matches`. It marks the
+job complete in the same outer UOW as that Action receipt. The
 browser never supplies a `deterministic_system` role or baseline probabilities. A missing or
 conflicting exact market Snapshot leaves a typed block and no partial baseline.
 
@@ -1325,7 +1448,8 @@ content hash. Do not calculate in JavaScript.
 - [ ] **Step 4: Write generation-request, all-candidate audit, and worker RED tests**
 
 Require the judge request to bind the exact task/baseline/envelope/prescription token set and
-start no work on a stale or cross-command token. Inject failures between the judgment-bound
+atomically append exactly one `candidate_generation` worker job; replay adds none and a stale
+or cross-command token starts no work. Inject failures between the judgment-bound
 and counterfactual sets and require neither set to commit. For every generated row assert the
 leg audit, prescription-difference audit, budget check, and deployment report are persisted;
 over-cap and ERROR rows remain visible but ineligible. Test the exact deterministic ordering,
@@ -1441,6 +1565,8 @@ operator_no_ticket_command_receipts
 operator_artifact_work_item_links
 operator_protected_artifact_bindings
 operator_protected_artifact_offer_revision_links
+operator_confirmation_challenge_revisions
+operator_confirmation_challenge_heads
 operator_artifact_terminal_receipts
 operator_review_eligibility_facts
 ```
@@ -1461,6 +1587,10 @@ a signed receipt, but JSON is never their query or integrity authority.
 `operator_artifact_terminal_receipts` stores a closed `terminal_kind = placed | shadow` and
 an independent `terminal_reason`. Enforce `actual_placement_confirmed` only with `placed` and
 all no-ticket/deadline/correction reasons only with `shadow`; no row overloads reason as state.
+Create the empty challenge revision/head tables before this receipt table in the same
+migration. Their exact keys are `challenge_revision_id` and `challenge_family_id`; the
+receipt's nullable unique `challenge_revision_id` has a real restricted foreign key from its
+first write. Package 8 creates no challenge and grants no confirmation authority.
 `operator_review_eligibility_facts` records terminal trigger, task/work-item snapshot,
 optional baseline, `operational_data_availability | forecast_truth`, and
 `immediate | outcomes_required`. It is not a review row and has no disposition.
@@ -1608,8 +1738,10 @@ class ArtifactTerminalReason(StrEnum):
 ```
 
 Implement the first shared artifact-terminal primitive in this package. Its required lookup
-key is the protected artifact, not a challenge; `confirmation_id` is nullable for
-approval-without-challenge and unique when present. The primitive accepts the terminal kind,
+key is the protected artifact, not a challenge; `challenge_revision_id` is nullable for
+approval-without-challenge and unique when present. Migration 22 creates the challenge table
+first and then this exact restricted foreign key; there is no forward reference or later
+receipt-column rename. The primitive accepts the terminal kind,
 compatible reason, server-derived effective cutoff, and server receipt time, takes the SQLite
 write lock before re-reading state, and returns an existing receipt on an
 idempotent/competing transition. Package 9 extends this same helper for placement callbacks
@@ -1773,14 +1905,13 @@ git commit -m "feat(decision): govern operator deployment adjudication"
 - Create: `tests/test_nutmeg_ticket_confirmation_bridge.py`
 - Modify: `tests/test_telegram_ticket_confirmation.py`
 
-- [ ] **Step 1: Write migration 23 and ticket-composition RED tests**
+- [ ] **Step 1: Write migration 23 upgrade and ticket-composition RED tests**
 
-Require append-only challenge, note, leg, placement-cash-link, and callback-attestation
-tables plus one explicitly operational heartbeat lease table:
+Require migration 22's empty challenge revision/head schema to remain unchanged. Migration 23
+adds append-only note, leg, placement-cash-link, and callback-attestation tables plus one
+explicitly operational heartbeat lease table:
 
 ```text
-operator_confirmation_challenge_revisions
-operator_confirmation_challenge_heads
 operator_ticket_notes
 operator_ticket_note_legs
 operator_placement_cash_links
@@ -1793,8 +1924,9 @@ observed/expiry fields in place. It has no `created_by_action_id` and renewal ne
 Action; it is health/lease state, not business evidence. All other listed tables remain
 append-only, and an actual callback attestation/placement is still one typed Action.
 
-Regression-test migration 22's unique terminal receipt per challenge and per protected
-artifact. A challenge revision stores `confirmation_id`, `challenge_family_id`,
+Regression-test migration 22's challenge/head schema and unique terminal receipt per non-null
+`challenge_revision_id` and per protected artifact. The precreated challenge revision stores
+`challenge_revision_id`, `challenge_family_id`, nullable unique `legacy_confirmation_id`,
 `revision_no`, nullable unique predecessor, `ticket_artifact_id`, artifact composition hash,
 lineage revision, nonce hash, `issued_at`, `effective_cutoff_at`, and issuing Action. The head
 table has one row per artifact and one unique challenge revision, which is the sole current-
@@ -1808,7 +1940,10 @@ currency on every v2 Ticket and cash row.
 
 Test the v22 -> v23 upgrade explicitly. Group legacy challenges per artifact, order them by
 `(issued_at, confirmation_id)`, assign one family with consecutive revisions/predecessors,
-and preserve the old `expires_at` only as `legacy_expires_at` audit data. For a non-terminal
+derive a stable `challenge_revision_id` from each legacy row, retain its old identifier only
+as `legacy_confirmation_id`, and preserve the old `expires_at` only as
+`legacy_expires_at` audit data. New compatibility responses may label the current
+`challenge_revision_id` as `confirmation_id`, but persistence and terminal CAS never do. For a non-terminal
 artifact the newest unconsumed row becomes the sole head and its new
 `effective_cutoff_at` is resolved from the protected artifact/current offer links, never the
 legacy five-minute value. A terminal artifact gets no head. More than one consumed legacy
@@ -1834,11 +1969,11 @@ creates no Action/outbox event, and accumulates no row requiring retention clean
 uv run pytest tests/ontology/operator/test_confirmation_migration.py tests/ontology/operator/test_ticket_notes.py -v
 ```
 
-Expected: migration 23 challenge/note/heartbeat/attestation rows are missing while migration
-21 policy and migration 22 terminal
-rows already exist.
+Expected: migration 23 note/heartbeat/attestation rows and legacy challenge upgrades are
+missing, while migration 21 policy and migration 22 empty challenge/terminal tables already
+exist.
 
-- [ ] **Step 3: Implement migration 23 and canonical notes**
+- [ ] **Step 3: Implement migration 23 legacy challenge upgrade and canonical notes**
 
 Add frozen row models and repository methods returning typed rows. Perform the tested legacy
 challenge reconciliation before enabling v2 writes, and use the head table for every current
@@ -1961,7 +2096,9 @@ prove the entry timestamp, rather than completion time, wins the callback/scanne
 
 Require the Python boundary to record the owner heartbeat and callback attestation, and
 delegate only the `ntc:` callback exactly once to the existing
-`TelegramTicketConfirmationService`. Duplicate callback IDs replay the same result; unknown
+`TelegramTicketConfirmationService`. A duplicate callback ID with byte-identical normalized
+content replays the same result; the same ID with different account/sender/chat/message/data
+or ingress content is an idempotency conflict and never reuses the old placement. Unknown
 prefixes, unauthorized chats, client timestamps, inline artifact fields, and malformed
 envelopes fail before placement. Assert the Application and the new plugin never open
 `/getUpdates`: the plugin attaches to the one Telegram consumer already owned by OpenClaw.
@@ -2028,7 +2165,8 @@ no Application poller and no browser command. Both bridge invocations are determ
 keep callback data off argv and stdout:
 
 ```bash
-env NUTMEG_TELEGRAM_OWNER_INSTANCE_ID=openclaw-primary \
+env NUTMEG_TELEGRAM_ACCOUNT_ID=nutmeg \
+  NUTMEG_TELEGRAM_OWNER_INSTANCE_ID=openclaw-primary \
   uv run python scripts/openclaw/nutmeg_ticket_confirmation_bridge.py callback \
   --contract-version openclaw-telegram-interactive-v1 \
   < tests/product/fixtures/operator/confirmation/openclaw-update.json
@@ -2051,15 +2189,26 @@ environment, timeout, and stdout/stderr byte limits. The plugin is validated fro
 checkout without installation; installing/enabling it in the live OpenClaw configuration and
 restarting the production gateway are explicit Jun deployment steps, not Application actions.
 
-Its public result is a business message, not IDs or canonical JSON. `nutmeg app` starts only:
+Its public result is a business message, not IDs or canonical JSON. At Package 9,
+`nutmeg app` registers every consumer implemented so far; later packages append their slots to
+the same supervisor:
 
 ```python
 workers = OperatorInfrastructureWorkers(
+    evidence_freeze=EvidenceFreezeRequestWorker(kernel),
+    market_baseline=MarketBaselineWorker(kernel),
+    candidate_generation=CandidateGenerationWorker(kernel),
     confirmation_deadlines=ConfirmationDeadlineWorker(kernel),
     outbox=ProductOutboxWorker(kernel),
     read_model=OperatorReadModelInvalidator(kernel),
 )
 ```
+
+The active lifespan calls `recover_expired_leases()` and `start()` before accepting requests,
+then `stop_accepting()`, `drain_current_transactions()`, and `close()` in reverse consumer
+order. Package 10 registers `TaskSettlementWorker`; Package 11 registers
+`ReviewMaterializationWorker` and `ScoreboardReviewCompletionWorker`. Tests fail if a queued
+request is visible after a bounded lifespan drain when all prerequisites are present.
 
 Every OpenClaw callback/heartbeat write and every infrastructure `run_once(limit)` holds the
 Package 1 shared `OntologyWriterLease` around its outer UOW. This lets a guarded migration take
@@ -2286,7 +2435,8 @@ def crs_result_code(home_90: int, away_90: int, exact_codes: frozenset[str]) -> 
 - [ ] **Step 6: Write request, task-run, reconciliation, and correction RED tests**
 
 Require `request_settlement` from `judge_operator` with exact task/result tokens and worker
-execution by `deterministic_system`. Test zero-placement `not_applicable`; result/prize
+execution by `deterministic_system`. The request Action atomically appends one
+`task_settlement` worker job and replay adds none. Test zero-placement `not_applicable`; result/prize
 waiting; placement integrity block; exact replay; multiple Tickets/notes; requested,
 eligible, skipped, settled, note, leg, and cash counts; `paid_note_unit_count`,
 `winning_note_unit_count`, and JCZQ-only `void_note_unit_count`; currency/policy/stake/tier
@@ -2338,7 +2488,9 @@ Invoke `workflow ingest-results --manifest <path>` against valid, missing, confl
 postponed, correction, and malformed fixtures; assert output counts reconcile to persisted
 rows and no partial Action survives rejection. Through `/api/v2/operator`, test
 `request_settlement`, wrong-command/stale tokens, unknown fields, browser-supplied actor or
-result IDs, worker queue/replay, and projection-stale blocking. Render source readiness,
+result IDs, and worker queue/replay. Advance the global Action high water beyond the
+scoreboard projection and prove `request_settlement` is unaffected; settlement has no
+scoreboard dependency. Render source readiness,
 conflict, result facts, prize readiness, every note/leg grade, payout/correction, and
 `not_applicable` without raw payloads or ontology IDs.
 
@@ -2425,9 +2577,12 @@ Require append-only `operator_review_items`,
 `operator_scoreboard_review_completion_requests`, and
 `operator_scoreboard_review_completion_receipts`. Test unique/current disposition rules,
 one completion receipt per review, immutable supersession before completion, terminality
-after completion, Action foreign keys, and nullable fields constrained by disposition.
+after completion, Action foreign keys, and nullable fields constrained by disposition. Grant
+`materialize_operator_review_item` and `complete_scoreboard_review` only to
+`deterministic_system`; disposition and observation-link requests remain judge-owned.
 
-Derive review items only from the Package 8-10 `operator_review_eligibility_facts`; no earlier
+Derive review items only through the exact `materialize_operator_review_item` Action from the
+Package 8-10 `operator_review_eligibility_facts`; no earlier
 package writes a review row. Cover placed settlement, zero-placement no-ticket, natural
 expiry, and official cancellation. A zero-placement eligibility with no baseline becomes an
 operational/data-availability review immediately after deployment terminality. One with a
@@ -2435,6 +2590,8 @@ baseline remains ineligible until the bound Outcomes exist, then becomes forecas
 review. Passive result waiting does not occupy Today, but an actionable review returns as
 `scope_kind=review` without making an archived task current. Repeated worker projection is
 idempotent and one eligibility fact can create at most one review item.
+Each Action that creates an eligibility fact also atomically appends its unique
+`review_materialization` job, even before the Package 11 consumer exists.
 
 - [ ] **Step 2: Verify review migration RED**
 
@@ -2449,6 +2606,9 @@ Expected: migration 25 and the review actions are missing.
 Start with eligibility facts from no-ticket, unrequested timeout, cancellation, placed
 settlement, and baseline-waits-for-Outcomes fixtures. Run the deterministic review worker and
 assert exactly the eligible rows appear, exact replay adds none, and no GET creates a review.
+Assert each row names its `materialize_operator_review_item` Action, actor role
+`deterministic_system`, and idempotency key derived from the eligibility fact plus exact
+satisfied Outcome revisions.
 Test `effect_required`/`no_effect`, non-empty reason, metric-key cross-fields, current-revision
 CAS, supersession only before completion, wrong role/token, and rollback after disposition or
 completion-receipt insertion.
@@ -2508,7 +2668,8 @@ class ShadowReviewTokenPayload(BaseModel):
 `record_scoreboard_observation` receives a signed review token and exactly one required
 metric key, then delegates to the existing scoreboard observation Action and appends the
 review link in the same failure boundary. `request_scoreboard_review_completion` records the
-current review/disposition and the exact opaque shadow token. It does not search storage.
+current review/disposition and the exact opaque shadow token and atomically appends one
+`scoreboard_review_completion` job. Replay adds neither a request nor a job. It does not search storage.
 The worker verifies that token, every link, current `scoreboard.json` hash supplied by the
 governed external step, the explicit shadow review, high water, and zero unexplained
 differences for the review's keys, then atomically writes
@@ -2625,6 +2786,30 @@ connected timestamps into strict DTOs. Detect two enabled owners of the same nor
 Nutmeg stage, but do not call enable/disable/run/edit commands. Timeout, malformed JSON, an
 unknown label, or a nonzero result yields `diagnostic_unavailable`, never an inferred absent
 owner. Assert the probe neither changes Action/outbox/Ticket/cash counts nor writes files.
+
+Table-drive the closed registry exactly as follows:
+
+| `OperatorStage` | OpenClaw exact name / normalized argv marker | launchd label |
+| --- | --- | --- |
+| `JCZQ_AM` | `Nutmeg-AM数据入库`; `Nutmeg-临场数据刷新`; `run-strict --stage am` | `com.nutmeg.decision.am` |
+| `JCZQ_DECISION` | `Nutmeg-每日最终决策` | - |
+| `JCZQ_DECISION_RECOVERY` | `Nutmeg-最终决策受限补跑` | - |
+| `JCZQ_PRECLOSE_CHECK` | `Nutmeg-收盘前闸门`; `validate-preclose` | - |
+| `JCZQ_CLOSE` | `Nutmeg-收盘`; `run-strict --stage close` | `com.nutmeg.decision.close` |
+| `JCZQ_CLOSE_VERIFY` | `Nutmeg-收盘交付确认`; `verify-close` | - |
+| `JCZQ_SETTLE` | `Nutmeg-昨日结算`; `decision-settle`; `run-strict --stage settle` | `com.nutmeg.decision.settle` |
+| `JCZQ_SETTLEMENT_RETRY` | `Nutmeg-D1D2补结算`; `retry-settlement` | - |
+| `ZUCAI_PREP` | - | `com.nutmeg.zucai.prep` |
+| `ZUCAI_PREP_REVISION` | - | `com.nutmeg.zucai.prep-revision` |
+| `ZUCAI_AFTERNOON` | - | `com.nutmeg.zucai.afternoon` |
+| `ZUCAI_REVISION` | - | `com.nutmeg.zucai.revision` |
+
+Count each enabled OpenClaw job and each loaded launchd label as one claim. Assert that any
+two claims for the same enum are a conflict, including two OpenClaw jobs with the same owner;
+the explicitly separate recovery/check/retry enums do not collide with their primary stage.
+An exact name whose normalized argv maps elsewhere, an unknown Nutmeg name/label, or an
+accepted command with unrecognized arguments makes the diagnostic unavailable rather than
+using substring inference.
 
 - [ ] **Step 2: Verify product-contract RED**
 
@@ -2904,19 +3089,22 @@ one intended server running for Jun's actual test.
 | Explicit exclusions and authority gates | every package | forbidden-route/role tests plus final diff/config audit |
 
 No approved requirement is left without an implementation package and fresh evidence. The
-review places the Zucai fixed-prize policy in migration 21 before candidate generation and
-the unified artifact-terminal receipt/CAS in migration 22, so Package 8 is independently
-executable; migration 23 extends that foundation with notes and placement rather than
-creating a competing model.
+review places the Zucai fixed-prize policy in migration 21 because candidate generation
+already requires it. Migration 22 adds challenge revision/head storage plus the unified
+artifact-terminal receipt/CAS and binds an approved artifact to that existing policy;
+migration 23 migrates legacy challenges and extends the foundation with notes and placement
+rather than creating a competing model.
 
 ### Mechanical and type review
 
 - Migration order is fixed at 17 sale, 18 evidence intake, 19 evidence freeze, 20
-  baseline/judgment, 21 candidates, 22 deployment/no-ticket/terminal/policy, 23 notes and
-  confirmation, 24 results/settlement, and 25 review completion.
+  baseline/judgment, 21 candidates/fixed-prize policy, 22 deployment/no-ticket/terminal,
+  challenge schema, 23 legacy challenge upgrade/notes/confirmation, 24 results/settlement,
+  and 25 review completion.
 - Shared identifiers are consistently named `task_snapshot_hash`,
   `expected_snapshot_token`, `ArtifactTerminalReason`, `ArtifactTerminalReceiptRow`,
-  `fixed_prize_policy_revision_id`, `result_set_revision_id`, and
+  `official_offer_family_id`, `official_offer_revision_id`, `challenge_family_id`,
+  `challenge_revision_id`, `fixed_prize_policy_revision_id`, `result_set_revision_id`, and
   `ScoreboardReviewCompletionReceipt`.
 - All normal mutations use `OperatorCommandV2`; all deterministic completions are queued from
   a judge-owned request or an objective system event and execute through one outer UOW.

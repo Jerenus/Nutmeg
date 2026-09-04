@@ -139,7 +139,8 @@ OfficialSaleSlateRevision
   valid_from, supersedes_revision_id, content_hash
 
 OfficialOffer
-  offer_id, offer_family_id, slate_revision_id, match_id, official_match_no
+  official_offer_revision_id, official_offer_family_id, slate_revision_id
+  match_id, official_match_no
   market_definition_ids, sale_opens_at, sale_deadline_at, status
 
 OfficialScheduleCheckReceipt
@@ -206,9 +207,10 @@ remain open. An approved artifact, placed Ticket, or review retains its own work
 the sale wave that created it is no longer current. At most one sale wave is current for the
 same task snapshot; multiple artifact, ticket, and review work items may coexist.
 
-`offer_family_id` is the stable server-derived identity of one official offer within a
-lane/business key across slate revisions. A revision receives a new `offer_id` but retains
-the family ID when its official match identity is unchanged. This is how an explicit
+`official_offer_family_id` is the stable server-derived identity of one official offer within
+a lane/business key across slate revisions. A revision receives a new
+`official_offer_revision_id` but retains the family ID when its official match identity is
+unchanged. This is how an explicit
 no-ticket scope remains closed across a correction while a genuinely added offer receives a
 new family ID and a new sale wave.
 
@@ -804,8 +806,10 @@ item even though money settlement remains `not_applicable`.
 Before the review schema is installed, these transitions persist a normalized review-
 eligibility fact containing the trigger, task/work-item snapshot, optional baseline, review
 kind, and `immediate | outcomes_required` readiness condition. The later deterministic review
-worker alone derives an actionable review item from that fact; deployment and settlement
-Actions never write a future review row directly.
+worker alone executes `materialize_operator_review_item` as `deterministic_system` to derive
+an actionable review item from that fact. Its idempotency key is the eligibility-fact ID plus
+the exact satisfied Outcome revision set. Deployment and settlement Actions never write a
+future review row directly, and no GET may materialize one.
 
 ## 9. Confirmation, ledger, settlement, and review
 
@@ -823,9 +827,11 @@ Each audited artifact has its own challenge and callback. A multi-ticket batch m
 be `partially_placed`: confirmed artifacts enter the ledger atomically, while other
 artifacts remain open or become shadow independently.
 
-Each challenge is an immutable revision bound to artifact hash, lineage, effective cutoff,
-and nonce hash. A per-artifact current-head relation enforces at most one open challenge while
-preserving predecessor revisions. Each challenge has one expected revision and exactly one
+Each challenge is an immutable revision identified by `challenge_revision_id` and grouped by
+a stable `challenge_family_id`. It is bound to artifact hash, lineage, effective cutoff, and
+nonce hash. A migrated legacy `confirmation_id` is retained only as nullable audit data; new
+API and terminal links use `challenge_revision_id`. A per-artifact current-head relation
+enforces at most one open challenge while preserving predecessor revisions. Each challenge has one expected revision and exactly one
 terminal receipt, enforced by a unique challenge reference. The callback may transition `open -> placed` only when its
 server-recorded ingress time is strictly earlier than the effective cutoff. The scanner may
 transition `open -> shadow` only when `effective_cutoff <= as_of`; equality belongs to expiry.
@@ -839,9 +845,13 @@ closed `terminal_reason`. `actual_placement_confirmed` is valid only for `placed
 `confirmation_not_requested`, `deadline_unconfirmed`, `human_no_ticket`,
 `official_deadline_shortened`, and `official_offer_cancelled` are valid only for `shadow`.
 An approved artifact can terminalize without ever having a challenge, so artifact identity is
-the required CAS key and the challenge revision is nullable.
+the required CAS key and `challenge_revision_id` on the receipt is nullable. Migration 22
+creates the challenge revision/head tables before the terminal-receipt table, so SQLite can
+enforce the nullable restricted foreign key from its first write. Migration 23 migrates legacy
+challenges into those tables and activates the confirmation/note workflow without renaming
+the receipt key or introducing a competing challenge model.
 
-### 9.2 Telegram ownership and Application infrastructure worker
+### 9.2 Telegram ownership and Application infrastructure workers
 
 Telegram updates have exactly one consumer per bot token. Production keeps OpenClaw as
 `telegram_update_owner`; `nutmeg app` must not start a native poller for that token. The
@@ -872,11 +882,46 @@ health evidence. Plugin installation, enablement, and the production OpenClaw re
 an explicit Jun activation gate; build and isolated verification do not change OpenClaw
 configuration.
 
-`nutmeg app` supervises only transport-independent infrastructure:
+`nutmeg app` is the sole owner of every transport-independent queue consumer. In active mode
+one `OperatorInfrastructureWorkers` supervisor starts the consumers in this fixed order:
 
-- confirmation-deadline scanning and deterministic shadow recording;
-- product outbox/SSE delivery and read-model invalidation;
-- visibility of the configured Telegram update owner and its last heartbeat.
+1. evidence-freeze requests (`request_evidence_freeze` -> existing
+   `freeze_evidence_bundle` plus `link_operator_task_evidence_freeze`);
+2. market-baseline derivation (`freeze_market_prior_baseline`);
+3. candidate-generation requests (`generate_ticket_candidate_set`);
+4. confirmation-deadline scanning (`mark_ticket_shadow` through the shared artifact CAS);
+5. settlement requests (`settle_task`);
+6. review-eligibility materialization (`materialize_operator_review_item`);
+7. scoreboard-review completion requests (`complete_scoreboard_review`);
+8. product outbox/SSE delivery and read-model invalidation.
+
+Every named completion is a `deterministic_system` Action; request Actions remain
+`judge_operator`. The only exceptions are the read-model invalidator and delivery cursor,
+which are projections of committed outbox data and cannot change business state. Startup
+finishes recovery of expired queue leases before accepting HTTP traffic. Shutdown stops new
+claims in reverse order, lets the current bounded transaction finish, then releases the
+writer and Application leases.
+
+Judge request and objective eligibility rows stay immutable. A separate operational
+`operator_worker_jobs` table has one unique row per
+`(job_kind, source_object_type, source_object_id)` and uses the closed state machine
+`queued -> leased -> completed | failed`, with `lease_owner`, `lease_expires_at`,
+`attempt_count`, `available_at`, `last_error_code`, and the resulting Action/receipt
+reference. The request/fact Action inserts its job atomically. A process death returns an
+expired lease to `queued`; idempotency keys make replay converge on the original result.
+Retryable SQLite contention and process interruption use bounded exponential backoff;
+invalid input, permission failure, stale dependencies, and invariant failure become visible
+terminal `failed` jobs and are never silently retried. Derived baseline/review work uses the
+same job contract even when its immutable source is a completed fact rather than a judge
+request. Queue lease updates are operational state, not football or business revisions; the
+job's successful business result is always the named typed Action.
+
+Production `legacy_read_only` and `shadow` modes start only deadline scanning, outbox delivery,
+and read-model invalidation. They do not claim decision/result/review requests; queued work
+remains durable until active mode returns. The deadline scanner remains enabled so rollback
+cannot abandon an already approved artifact. Isolated active mode starts the full supervisor
+against its isolated root and simulated transport. Telegram update consumption and owner
+heartbeats remain OpenClaw-owned and are not Application workers.
 
 A native Nutmeg poller is legal only with an explicitly different bot token or after Jun
 changes ownership and disables the OpenClaw consumer. The Application never performs that
@@ -922,7 +967,7 @@ TicketNote
 
 TicketNoteLeg
   ticket_note_leg_id, ticket_note_id, leg_index
-  official_offer_id, match_id, market_definition_id, selection_code
+  official_offer_revision_id, match_id, market_definition_id, selection_code
   quote_id, booked_decimal_odds, settlement_parameter_decimal
   fixed_prize_policy_revision_id
 
@@ -1033,7 +1078,7 @@ ResultEvidenceSetRevision
   zucai_prize_table_revision_id
 
 MatchResultEvidenceRevision
-  match_result_revision_id, result_set_revision_id, official_offer_id, match_id
+  match_result_revision_id, result_set_revision_id, official_offer_revision_id, match_id
   normalized_disposition, normalized_home_90, normalized_away_90, agreement_state
   source_receipts: list[ResultSourceReceipt]
 
@@ -1777,6 +1822,11 @@ writable instance fails fast with `app_instance_conflict`; stale locks are recla
 after verifying that the recorded process no longer exists. Read-only test/replay instances
 use explicit isolated data directories and do not share the production lock.
 
+The lock path keeps one stable inode. Clean release marks its canonical record released and
+fsyncs before unlocking; it does not unlink the path. A later owner can therefore distinguish
+a clean release from a crashed `held` record without an unlink/open race, while an empty,
+malformed, or unverifiable existing record still fails closed.
+
 For the production data directory this lease identifies the one canonical Application root
 and its infrastructure workers. It is not a global SQLite writer lock: existing CLI and
 OpenClaw processes may still commit the typed Actions their runbooks authorize. The
@@ -1796,10 +1846,31 @@ The System maintenance page detects overlapping OpenClaw and launchd ownership a
 the commands, labels, enabled/loaded state, last runs, and conflict. Its probe uses only fixed,
 bounded, read-only argv calls for `openclaw cron list --all --json`,
 `openclaw channels status --channel telegram --json`, and `launchctl print`; it never accepts
-command text from a request. The page groups jobs by normalized Nutmeg stage and flags two
-enabled owners for the same stage. It does not enable, disable, edit, run, or repair system
-schedules. Probe failure is a visible `diagnostic_unavailable` state, never evidence that an
-owner is absent. Existing launchd user gates remain untouched.
+command text from a request. Normalization uses this closed stage registry; an unknown job is
+reported as unmapped and cannot be silently assigned by substring guessing:
+
+| Stage | OpenClaw exact name or normalized argv | launchd label |
+| --- | --- | --- |
+| `jczq_am` | `Nutmeg-AM数据入库`; `Nutmeg-临场数据刷新`; `nutmeg_scheduler_ops.py run-strict --stage am` | `com.nutmeg.decision.am` |
+| `jczq_decision` | `Nutmeg-每日最终决策` | - |
+| `jczq_decision_recovery` | `Nutmeg-最终决策受限补跑` | - |
+| `jczq_preclose_check` | `Nutmeg-收盘前闸门`; `nutmeg_scheduler_ops.py validate-preclose` | - |
+| `jczq_close` | `Nutmeg-收盘`; `nutmeg_scheduler_ops.py run-strict --stage close` | `com.nutmeg.decision.close` |
+| `jczq_close_verify` | `Nutmeg-收盘交付确认`; `nutmeg_scheduler_ops.py verify-close` | - |
+| `jczq_settle` | `Nutmeg-昨日结算`; `decision-settle`; `run-strict --stage settle` | `com.nutmeg.decision.settle` |
+| `jczq_settlement_retry` | `Nutmeg-D1D2补结算`; `nutmeg_scheduler_ops.py retry-settlement` | - |
+| `zucai_prep` | - | `com.nutmeg.zucai.prep` |
+| `zucai_prep_revision` | - | `com.nutmeg.zucai.prep-revision` |
+| `zucai_afternoon` | - | `com.nutmeg.zucai.afternoon` |
+| `zucai_revision` | - | `com.nutmeg.zucai.revision` |
+
+Each enabled OpenClaw job and each loaded launchd label is one ownership claim. More than one
+claim for the same normalized stage is a conflict even when both claims come from OpenClaw or
+share an executable; the recovery/check/retry stages above remain distinct and therefore do
+not collide with their primary stage. A name and argv that map to different stages is
+`diagnostic_unavailable`, not a guessed claim. The page does not enable, disable, edit, run,
+or repair system schedules. Probe failure is a visible `diagnostic_unavailable` state, never
+evidence that an owner is absent. Existing launchd user gates remain untouched.
 
 ### 13.3 Projection consistency
 
