@@ -35,6 +35,7 @@ from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.kernel import OntologyKernel
+from nutmeg.ontology.operator.evidence_actions import EvidenceActions
 from nutmeg.ontology.operator.sale_actions import SaleActions
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository.connection import build_ontology_engine
@@ -92,6 +93,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     scoreboard_actions = ScoreboardActions(action_service)
     reliability_actions = ReliabilityActions(action_service)
     sale_actions = SaleActions(action_service)
+    evidence_actions = EvidenceActions(action_service)
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -111,4 +113,5 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         scoreboard_actions=scoreboard_actions,
         reliability_actions=reliability_actions,
         sale_actions=sale_actions,
+        evidence_actions=evidence_actions,
     )

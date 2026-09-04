@@ -69,6 +69,7 @@ class SaleSlateSnapshot:
     slate_revision_id: str
     content_hash: str
     offers: tuple[SaleOfferSnapshot, ...]
+    source_official: bool = False
 
 
 @dataclass(frozen=True, slots=True)

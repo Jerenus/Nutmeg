@@ -101,6 +101,91 @@ def test_router_builds_operator_sale_manifest_commands(tmp_path, monkeypatch) ->
     ]
 
 
+def test_router_builds_strict_operator_evidence_manifest_command(
+    tmp_path, monkeypatch
+) -> None:
+    router = _load_router()
+    intake = tmp_path / "intake"
+    intake.mkdir()
+    manifest = intake / "evidence.json"
+    manifest.write_text("{}", "utf-8")
+    monkeypatch.setattr(router, "DEFAULT_OPERATOR_INTAKE_ROOT", intake.resolve())
+
+    request = router.parse_request(
+        [
+            "operator-evidence-ingest",
+            "--manifest",
+            str(manifest),
+            "--contract-version",
+            "evidence-intake-v1",
+        ]
+    )
+
+    assert router.build_command(request) == [
+        "uv",
+        "run",
+        "nutmeg",
+        "workflow",
+        "ingest-evidence",
+        "--manifest",
+        str(manifest.resolve()),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("manifest", "contract"),
+    [
+        ("https://example.test/evidence.json", "evidence-intake-v1"),
+        ('{"schema_version":"evidence-intake-v1"}', "evidence-intake-v1"),
+        ("../outside.json", "evidence-intake-v1"),
+        ("evidence.json", "evidence-intake-v2"),
+    ],
+)
+def test_router_rejects_unsafe_operator_evidence_inputs(
+    tmp_path, monkeypatch, manifest, contract
+) -> None:
+    router = _load_router()
+    intake = tmp_path / "intake"
+    intake.mkdir()
+    (intake / "evidence.json").write_text("{}", "utf-8")
+    monkeypatch.setattr(router, "DEFAULT_OPERATOR_INTAKE_ROOT", intake.resolve())
+
+    with pytest.raises(router.RouterError):
+        router.parse_request(
+            [
+                "operator-evidence-ingest",
+                "--manifest",
+                manifest,
+                "--contract-version",
+                contract,
+            ]
+        )
+
+
+def test_router_rejects_evidence_symlink_escaping_intake_root(
+    tmp_path, monkeypatch
+) -> None:
+    router = _load_router()
+    intake = tmp_path / "intake"
+    intake.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}", "utf-8")
+    escaping = intake / "escaping.json"
+    escaping.symlink_to(outside)
+    monkeypatch.setattr(router, "DEFAULT_OPERATOR_INTAKE_ROOT", intake.resolve())
+
+    with pytest.raises(router.RouterError, match="below the configured intake root"):
+        router.parse_request(
+            [
+                "operator-evidence-ingest",
+                "--manifest",
+                str(escaping),
+                "--contract-version",
+                "evidence-intake-v1",
+            ]
+        )
+
+
 @pytest.mark.parametrize(
     ("manifest", "contract"),
     (

@@ -28,6 +28,7 @@ from nutmeg.ontology.repository import (
     schema_finance,
     schema_identity,
     schema_market,
+    schema_operator_decision,
     schema_operator_sale,
     schema_reliability,
     schema_scoreboard,
@@ -724,6 +725,22 @@ def _apply_operator_official_sale(connection: Connection) -> None:
     )
 
 
+def _apply_operator_evidence_intake(connection: Connection) -> None:
+    for table in (
+        schema_operator_decision.operator_evidence_intake_receipts,
+        schema_operator_decision.operator_evidence_intake_objects,
+        schema_operator_decision.operator_evidence_coverage_receipts,
+    ):
+        table.create(connection)
+    connection.execute(
+        insert(schema.action_permissions).values(
+            policy_version_id="governance-v1",
+            action_type="ingest_operator_evidence_manifest",
+            actor_role="deterministic_system",
+        )
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -841,6 +858,15 @@ MIGRATIONS: tuple[Migration, ...] = (
             "linear_revision_triggers+operator_sale_permissions"
         ),
         apply=_apply_operator_official_sale,
+    ),
+    Migration(
+        version=18,
+        name="operator_evidence_intake",
+        fingerprint=(
+            "operator_evidence_intake_receipts+operator_evidence_intake_objects+"
+            "operator_evidence_coverage_receipts+strict_counts+deterministic_permission"
+        ),
+        apply=_apply_operator_evidence_intake,
     ),
 )
 

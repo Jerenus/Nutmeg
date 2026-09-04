@@ -73,12 +73,11 @@ class MarketDayIngestService:
         self._market_actions = market_actions
 
     def ingest(self, request: MarketDayIngestRequest) -> MarketDayIngestResult:
-        kind = request.snapshot_kind
         sporttery_retrieval = self._ingest_artifact(
             request,
             request.sporttery_value,
             "sporttery",
-            f"sporttery:{kind}:{request.business_date}:{_content_key(request.sporttery_value)}",
+            self._retrieval_key(request, "sporttery", request.sporttery_value),
         )
         intl_retrieval = None
         if request.intl_value is not None:
@@ -86,7 +85,7 @@ class MarketDayIngestService:
                 request,
                 request.intl_value,
                 "intl",
-                f"intl:{kind}:{request.business_date}:{_content_key(request.intl_value)}",
+                self._retrieval_key(request, "intl", request.intl_value),
             )
 
         match_ids: set[str] = set()
@@ -111,7 +110,6 @@ class MarketDayIngestService:
                         match_id,
                         parsed.match_no,
                         "sporttery",
-                        parsed.scheduled_at,
                         had,
                         sporttery_retrieval,
                     )
@@ -131,7 +129,7 @@ class MarketDayIngestService:
                 if had:
                     try:
                         self._build_had_snapshot(
-                            request, match_id, match_no, "intl", None, had, intl_retrieval
+                            request, match_id, match_no, "intl", had, intl_retrieval
                         )
                         snapshots += 1
                     except IdempotencyConflictError:
@@ -147,7 +145,19 @@ class MarketDayIngestService:
         try:
             return self._ingest_artifact_once(request, value, source_name, key)
         except IdempotencyConflictError:
-            return None  # 同内容重放(requested_at 不同):既有 artifact 已在库,静默跳过
+            return None
+
+    @staticmethod
+    def _retrieval_key(
+        request: MarketDayIngestRequest,
+        source_name: str,
+        value: dict,
+    ) -> str:
+        captured_at = request.requested_at.astimezone(UTC).isoformat()
+        return (
+            f"{source_name}:{request.snapshot_kind}:{request.business_date}:"
+            f"{captured_at}:{_content_key(value)}"
+        )
 
     def _ingest_artifact_once(
         self, request: MarketDayIngestRequest, value: dict, source_name: str, key: str
@@ -211,11 +221,10 @@ class MarketDayIngestService:
         match_id: str,
         match_no: str,
         channel: str,
-        scheduled_at: str | None,
         had_quotes: list[ParsedQuote] | list[ParsedIntlQuote],
         artifact_retrieval_id: str | None,
     ) -> None:
-        as_of = scheduled_at or request.requested_at.astimezone(UTC).isoformat()
+        as_of = request.requested_at.astimezone(UTC).isoformat()
         kind = request.snapshot_kind
         self._market_actions.build_snapshot(
             SnapshotBuildRequest(
@@ -234,7 +243,10 @@ class MarketDayIngestService:
                 ],
                 actor_id="system:devig",
                 actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-                idempotency_key=f"snap:{channel}:{kind}:{request.business_date}:{match_no}:had",
+                idempotency_key=(
+                    f"snap:{channel}:{kind}:{request.business_date}:{match_no}:had:"
+                    f"{artifact_retrieval_id or as_of}"
+                ),
                 requested_at=request.requested_at,
                 artifact_retrieval_id=artifact_retrieval_id,
             )

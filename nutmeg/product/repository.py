@@ -6,6 +6,7 @@ import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from sqlalchemy import Engine, and_, case, func, or_, select
 
@@ -63,9 +64,44 @@ class ProductReadRepository:
                 .mappings()
                 .all()
             )
+            source_rows = (
+                connection.execute(
+                    select(
+                        sos.official_sale_slate_revisions.c.slate_revision_id,
+                        schema.artifact_retrievals.c.source_name,
+                        schema.artifact_retrievals.c.source_type,
+                        schema.artifact_retrievals.c.status.label("retrieval_status"),
+                        schema.artifact_retrievals.c.reported_content_type,
+                        schema.artifact_retrievals.c.canonical_url,
+                        schema.source_runs.c.source_name.label("run_source_name"),
+                        schema.source_runs.c.source_type.label("run_source_type"),
+                        schema.source_runs.c.status.label("run_status"),
+                    )
+                    .select_from(
+                        sos.official_sale_slate_revisions.outerjoin(
+                            schema.artifact_retrievals,
+                            sos.official_sale_slate_revisions.c.source_artifact_retrieval_id
+                            == schema.artifact_retrievals.c.artifact_retrieval_id,
+                        ).outerjoin(
+                            schema.source_runs,
+                            schema.artifact_retrievals.c.source_run_id
+                            == schema.source_runs.c.source_run_id,
+                        )
+                    )
+                    .where(
+                        sos.official_sale_slate_revisions.c.slate_revision_id.in_(slate_ids)
+                    )
+                )
+                .mappings()
+                .all()
+            )
         offers_by_slate: dict[str, list[dict]] = {slate_id: [] for slate_id in slate_ids}
         for row in offer_rows:
             offers_by_slate[str(row["slate_revision_id"])].append(dict(row))
+        source_official_by_slate = {
+            str(row["slate_revision_id"]): self._is_official_sale_source(row)
+            for row in source_rows
+        }
         snapshots = []
         for key, row in sorted(current.items()):
             offer_values = sorted(
@@ -101,9 +137,27 @@ class ProductReadRepository:
                         )
                         for offer in offer_values
                     ),
+                    source_official=source_official_by_slate.get(
+                        str(row["slate_revision_id"]),
+                        False,
+                    ),
                 )
             )
         return tuple(snapshots)
+
+    @staticmethod
+    def _is_official_sale_source(row) -> bool:
+        hostname = urlsplit(str(row["canonical_url"] or "")).hostname or ""
+        return (
+            row["source_name"] == "sporttery"
+            and row["source_type"] == "official_sale_schedule"
+            and row["retrieval_status"] == "stored"
+            and row["reported_content_type"] == "application/json"
+            and (hostname == "sporttery.cn" or hostname.endswith(".sporttery.cn"))
+            and row["run_source_name"] == "sporttery"
+            and row["run_source_type"] == "official_schedule"
+            and row["run_status"] == "succeeded"
+        )
 
     @staticmethod
     def _official_match_order(value: str) -> tuple[int, int | str]:
@@ -837,6 +891,45 @@ class ProductReadRepository:
                 if observation_ids
                 else []
             )
+            adjudication_rows = (
+                connection.execute(
+                    select(
+                        se.observation_claims.c.observation_id,
+                        se.claim_status_events.c.action_id,
+                    )
+                    .select_from(
+                        se.observation_claims.join(
+                            se.claims,
+                            se.observation_claims.c.claim_id == se.claims.c.claim_id,
+                        )
+                        .join(
+                            se.claim_status_events,
+                            se.observation_claims.c.claim_id
+                            == se.claim_status_events.c.claim_id,
+                        )
+                        .join(
+                            schema.actions,
+                            se.claim_status_events.c.action_id == schema.actions.c.action_id,
+                        )
+                    )
+                    .where(
+                        se.observation_claims.c.observation_id.in_(observation_ids),
+                        se.claims.c.status == "verified",
+                        se.claim_status_events.c.to_status == "verified",
+                        func.julianday(se.claim_status_events.c.at)
+                        <= func.julianday(as_of),
+                        schema.actions.c.action_type == "verify_claim",
+                        schema.actions.c.status == "committed",
+                    )
+                    .order_by(
+                        se.observation_claims.c.observation_id,
+                        se.claim_status_events.c.action_id,
+                    )
+                )
+                .all()
+                if observation_ids
+                else []
+            )
         sources_by_observation: dict[str, list[str]] = {
             observation_id: [] for observation_id in observation_ids
         }
@@ -844,11 +937,19 @@ class ProductReadRepository:
             sources_by_observation[source['observation_id']].append(
                 source['artifact_retrieval_id']
             )
+        adjudications_by_observation: dict[str, list[str]] = {
+            observation_id: [] for observation_id in observation_ids
+        }
+        for observation_id, action_id in adjudication_rows:
+            adjudications_by_observation[str(observation_id)].append(str(action_id))
         result = [
             self._decode_json(row, ('value_json', 'quality_json')) for row in rows
         ]
         for item in result:
             item['source_retrieval_ids'] = sources_by_observation[item['observation_id']]
+            item["adjudication_ref_tokens"] = adjudications_by_observation[
+                item["observation_id"]
+            ]
         return result
 
     def market_timeline(
@@ -873,7 +974,85 @@ class ProductReadRepository:
                 .mappings()
                 .all()
             )
-        return [
+            snapshot_ids = [str(row["market_snapshot_id"]) for row in rows]
+            lineage_rows = (
+                connection.execute(
+                    select(
+                        sm.market_snapshot_quotes.c.market_snapshot_id,
+                        sm.market_quotes.c.quote_id,
+                        sm.market_quotes.c.provider,
+                        sm.market_quotes.c.artifact_retrieval_id,
+                        schema.artifact_retrievals.c.source_name,
+                        schema.artifact_retrievals.c.source_type,
+                        schema.artifact_retrievals.c.status.label("retrieval_status"),
+                        schema.source_runs.c.status.label("run_status"),
+                    )
+                    .select_from(
+                        sm.market_snapshot_quotes.join(
+                            sm.market_quotes,
+                            sm.market_snapshot_quotes.c.quote_id
+                            == sm.market_quotes.c.quote_id,
+                        )
+                        .outerjoin(
+                            schema.artifact_retrievals,
+                            sm.market_quotes.c.artifact_retrieval_id
+                            == schema.artifact_retrievals.c.artifact_retrieval_id,
+                        )
+                        .outerjoin(
+                            schema.source_runs,
+                            schema.artifact_retrievals.c.source_run_id
+                            == schema.source_runs.c.source_run_id,
+                        )
+                    )
+                    .where(
+                        sm.market_snapshot_quotes.c.market_snapshot_id.in_(snapshot_ids)
+                    )
+                    .order_by(
+                        sm.market_snapshot_quotes.c.market_snapshot_id,
+                        sm.market_quotes.c.quote_id,
+                    )
+                )
+                .mappings()
+                .all()
+                if snapshot_ids
+                else []
+            )
+        lineage_by_snapshot: dict[str, list[dict[str, object]]] = {
+            snapshot_id: [] for snapshot_id in snapshot_ids
+        }
+        for lineage in lineage_rows:
+            lineage_by_snapshot[str(lineage["market_snapshot_id"])].append(
+                {
+                    "quote_id": str(lineage["quote_id"]),
+                    "provider": str(lineage["provider"]),
+                    "artifact_retrieval_id": (
+                        None
+                        if lineage["artifact_retrieval_id"] is None
+                        else str(lineage["artifact_retrieval_id"])
+                    ),
+                    "source_name": (
+                        None
+                        if lineage["source_name"] is None
+                        else str(lineage["source_name"])
+                    ),
+                    "source_type": (
+                        None
+                        if lineage["source_type"] is None
+                        else str(lineage["source_type"])
+                    ),
+                    "retrieval_status": (
+                        None
+                        if lineage["retrieval_status"] is None
+                        else str(lineage["retrieval_status"])
+                    ),
+                    "run_status": (
+                        None
+                        if lineage["run_status"] is None
+                        else str(lineage["run_status"])
+                    ),
+                }
+            )
+        result = [
             self._decode_json(
                 row,
                 (
@@ -885,6 +1064,9 @@ class ProductReadRepository:
             )
             for row in rows
         ]
+        for item in result:
+            item["quote_lineage"] = lineage_by_snapshot[item["market_snapshot_id"]]
+        return result
 
     def evidence_bundles_for_match(self, match_id: str, as_of: str) -> list[dict]:
         with self._engine.connect() as connection:

@@ -16,3 +16,11 @@ def test_operations_doc_names_non_mutating_status_contract() -> None:
     assert "uv run nutmeg ontology init --format json" in text
     assert "uv run nutmeg ontology status --format json" in text
     assert "status never initializes or migrates the database" in text
+
+
+def test_runbook_names_strict_operator_evidence_shadow_bridge() -> None:
+    text = Path("docs/sop/RUNBOOK.md").read_text(encoding="utf-8")
+
+    assert "workflow ingest-evidence --manifest" in text
+    assert "operator-evidence-policy-v1" in text
+    assert "v2" in text and "shadow" in text

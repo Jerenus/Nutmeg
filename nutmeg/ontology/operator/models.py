@@ -80,7 +80,59 @@ class SaleImportResult:
     counts: SaleImportCountReceiptRow
 
 
+@dataclass(frozen=True, slots=True)
+class EvidenceIntakeReceiptRow:
+    intake_receipt_id: str
+    action_id: str
+    lane: str
+    business_key: str
+    slate_revision_id: str
+    task_snapshot_hash: str
+    captured_at: str
+    manifest_sha256: str
+    source_retrieval_ids: tuple[str, ...]
+    committed_count: int
+    rejected_count: int
+    skipped_count: int
+    persisted_count: int
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceIntakeObjectRow:
+    intake_object_id: str
+    intake_receipt_id: str
+    match_id: str
+    object_kind: str
+    object_id: str
+    object_index: int
+    observed_at: str
+    source_retrieval_ids: tuple[str, ...]
+    source_kinds: tuple[str, ...]
+    source_identities: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceCoverageReceiptRow:
+    coverage_receipt_id: str
+    intake_receipt_id: str
+    match_id: str
+    requirement_id: str
+    subject_scope: str
+    evidence_ref_tokens: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceIntakeResult:
+    outcome: ActionOutcome
+    receipt: EvidenceIntakeReceiptRow | None
+
+
 __all__ = [
+    "EvidenceCoverageReceiptRow",
+    "EvidenceIntakeObjectRow",
+    "EvidenceIntakeReceiptRow",
+    "EvidenceIntakeResult",
     "OfficialOfferFamilyRow",
     "OfficialOfferRevisionRow",
     "OfficialSaleSlateRevisionRow",

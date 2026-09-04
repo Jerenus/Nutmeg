@@ -7,6 +7,7 @@
 | 步 | 动作 | 命令/门 |
 |---|---|---|
 | A1 | 数据入库+市场基线 | `uv run nutmeg decision-am --run-date $(date +%Y-%m-%d) --output-dir .nutmeg-data/jczq`；看 alias-audit 输出，未命中=该场丢国际锚 |
+| A1b | v2 外部证据桥（shadow） | 外部采集产严格 `evidence-intake-v1` 后执行 `uv run nutmeg workflow ingest-evidence --manifest <path>`；`operator-evidence-policy-v1` 全门与本命令共同部署前，v2 只作 shadow，不替代现行 A1-A7 |
 | A2 | 判读 | 深度请求→每场并行派 `jczq-match-analyst`（七阶段）；否则主循环直判。每场落到判决表四级之一 |
 | A3 | 落 Read | `decision-read --reads-file …`（结构化 JSON；因子必须在词典内；league/team 因子带 scope_key） |
 | A4 | 构票 | 写 legs.json（含 flags/anchor_integrity/**precedents**） |
@@ -20,6 +21,7 @@
 |---|---|---|
 | B1 | 14:00 备料 | prep 链自动（`zucai-prep`）；产 `<issue>-prep-afternoon.json/md`，判读表留空 |
 | B2 | 入 canonical | `decision-am --run-date <开赛业务日> --issue <issue>`（prep 不入 store，必须跑这步） |
+| B2b | v2 外部证据桥（shadow） | 14 场外部采集产严格 `evidence-intake-v1` 后执行 `uv run nutmeg workflow ingest-evidence --manifest <path>`；`operator-evidence-policy-v1` 全门与本命令共同部署前，v2 只作 shadow，不替代现行 B1-B10 |
 | B3 | 判读 | 逐场：市场锚→DC→结构完整度→旗→判决表动作；产 P14 处方。**处方票价只作当日难度指数，不是待售票** |
 | B4 | 落 Read | 同 A3；每场 note 里显式列旗名与动作级 |
 | B4b | **规模表（2026-08-31 新增，s条修订配套）** | 构票前先跑 `uv run nutmeg zucai-optimize --input-file <cand.json>`，输入含 `median_bonus_yuan`（滚动12期官方任九中位）→ 输出**回本线 vs 规模**表。任九类固定奖金玩法**按回本线升序取档，不按 P 降序**；规模由回本线决定，不由预算决定 |

@@ -44,6 +44,7 @@ SUPPORTED_ACTIONS = {
     "prediction-outcome",
     "operator-sale-ingest",
     "operator-schedule-check",
+    "operator-evidence-ingest",
 }
 
 LEAGUE_RE = re.compile(r"^[a-z0-9_-]{1,24}$")
@@ -325,6 +326,14 @@ def build_command(request: RouterRequest) -> list[str]:
             "--contract-version",
             options.contract_version,
         ]
+    if action == "operator-evidence-ingest":
+        return [
+            *base,
+            "workflow",
+            "ingest-evidence",
+            "--manifest",
+            options.manifest,
+        ]
 
     raise RouterError(f"Unsupported action `{action}`.")
 
@@ -526,7 +535,11 @@ def _build_parser() -> argparse.ArgumentParser:
     outcome.add_argument("--actual", choices=["home", "draw", "away"], required=True)
     outcome.add_argument("--confirm-write", action="store_true")
 
-    for name in ("operator-sale-ingest", "operator-schedule-check"):
+    for name in (
+        "operator-sale-ingest",
+        "operator-schedule-check",
+        "operator-evidence-ingest",
+    ):
         operator_manifest = subparsers.add_parser(name)
         operator_manifest.add_argument("--manifest", required=True)
         operator_manifest.add_argument("--contract-version", required=True)
@@ -607,7 +620,11 @@ def _validate_options(options: argparse.Namespace) -> None:
         raise RouterError("`zucai-report --dispatch-telegram` requires --confirm-dispatch.")
     if options.action in {"prediction-record", "prediction-outcome"} and not options.confirm_write:
         raise RouterError(f"`{options.action}` requires --confirm-write.")
-    if options.action in {"operator-sale-ingest", "operator-schedule-check"}:
+    if options.action in {
+        "operator-sale-ingest",
+        "operator-schedule-check",
+        "operator-evidence-ingest",
+    }:
         _validate_operator_manifest(options)
 
 
@@ -615,6 +632,7 @@ def _validate_operator_manifest(options: argparse.Namespace) -> None:
     expected_version = {
         "operator-sale-ingest": "official-sale-slate-v1",
         "operator-schedule-check": "official-schedule-check-v1",
+        "operator-evidence-ingest": "evidence-intake-v1",
     }[options.action]
     if options.contract_version != expected_version:
         raise RouterError(f"contract version must be exactly {expected_version}")

@@ -18,6 +18,8 @@ from nutmeg.ontology.actions.workflow_actions import (
     RecordAdjudicationRequest,
     RegisterPredictionRequest,
 )
+from nutmeg.ontology.operator.evidence_actions import IngestOperatorEvidenceRequest
+from nutmeg.ontology.operator.evidence_manifest import EvidenceIntakeManifestV1
 from nutmeg.ontology.operator.sale_actions import (
     ImportOfficialSaleSlateRequest,
     OfficialSaleSlateManifestV1,
@@ -207,6 +209,61 @@ def record_official_schedule_check(
                     "shanghai_check_date": parsed.shanghai_check_date.isoformat(),
                     "check_state": parsed.check_state,
                     "persisted_receipt_count": int(persisted_receipt_count or 0),
+                }
+            )
+        )
+    except (OSError, json.JSONDecodeError, WorkflowOperationError, ValueError) as error:
+        _fail(error)
+
+
+@workflow_app.command("ingest-evidence")
+def ingest_evidence(
+    manifest: Path = _MANIFEST_OPTION,
+    data_dir: Path = _DATA_DIR_OPTION,
+) -> None:
+    """Import one strict external evidence manifest through its typed Action."""
+    try:
+        document = json.loads(Path(manifest).expanduser().read_text("utf-8"))
+        if not isinstance(document, dict):
+            raise WorkflowOperationError("manifest root must be a JSON object")
+        parsed = EvidenceIntakeManifestV1.model_validate(document)
+        kernel = _kernel(data_dir)
+        result = kernel.evidence_actions.ingest_operator_evidence_manifest(
+            IngestOperatorEvidenceRequest(
+                manifest=parsed,
+                actor_id="system:operator-evidence",
+                actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key=f"evidence-intake-v1:{parsed.manifest_sha256}",
+                requested_at=_now(),
+            )
+        )
+        receipt = result.receipt
+        if not result.outcome.status.is_success or receipt is None:
+            raise WorkflowOperationError(
+                result.outcome.error_detail
+                or result.outcome.error_code
+                or "evidence manifest quarantined"
+            )
+        if (
+            receipt.manifest_sha256 != parsed.manifest_sha256
+            or receipt.committed_count != receipt.persisted_count
+            or receipt.rejected_count
+            or receipt.skipped_count
+        ):
+            raise WorkflowOperationError(
+                "evidence committed and persisted counts differ"
+            )
+        _cli.typer.echo(
+            canonical_json(
+                {
+                    "contract_version": parsed.schema_version,
+                    "action_id": result.outcome.action_id,
+                    "status": result.outcome.status.value,
+                    "lane": parsed.lane,
+                    "business_key": parsed.business_key,
+                    "manifest_sha256": parsed.manifest_sha256,
+                    "committed_count": receipt.committed_count,
+                    "persisted_count": receipt.persisted_count,
                 }
             )
         )

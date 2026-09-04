@@ -28,6 +28,7 @@ from nutmeg.ontology.finance.express_flow import ExpressService
 from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
+from nutmeg.ontology.operator.evidence_actions import EvidenceActions
 from nutmeg.ontology.operator.sale_actions import SaleActions
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository import schema
@@ -141,6 +142,7 @@ class OntologyKernel:
         scoreboard_actions: ScoreboardActions,
         reliability_actions: ReliabilityActions,
         sale_actions: SaleActions,
+        evidence_actions: EvidenceActions,
     ) -> None:
         self._paths = paths
         self._engine = engine
@@ -160,6 +162,7 @@ class OntologyKernel:
         self.scoreboard_actions = scoreboard_actions
         self.reliability_actions = reliability_actions
         self.sale_actions = sale_actions
+        self.evidence_actions = evidence_actions
 
     @property
     def engine(self) -> Engine:

@@ -153,6 +153,7 @@ def test_product_repository_reads_temporal_current_official_slates(tmp_path: Pat
     assert [slate.slate_revision_id for slate in after] == [
         second.slate.slate_revision_id
     ]
+    assert after[0].source_official
     assert after[0].offers[0].sale_deadline_at.utcoffset() is not None
 
 
