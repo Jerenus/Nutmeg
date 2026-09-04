@@ -45,6 +45,7 @@ def _ingest_market_day(kernel, run_date: str, output_dir, requested_at: datetime
     if not sporttery:
         return f"decision-sense-v2 {run_date}: 无 sporttery 快照 — 空盘(合法)"
     bold_path = Path(output_dir) / "daily" / run_date / "bold_odds.json"
+    sporttery_path = Path(output_dir) / "daily" / run_date / "sporttery_markets.json"
     intl = json.loads(bold_path.read_text(encoding="utf-8")) if bold_path.exists() else None
 
     result = kernel.market_day_ingest.ingest(
@@ -55,6 +56,8 @@ def _ingest_market_day(kernel, run_date: str, output_dir, requested_at: datetime
             actor_id="source:sporttery",
             actor_role=ActorRole.CONNECTOR,
             requested_at=requested_at,
+            sporttery_retrieved_at=_file_source_time(sporttery_path),
+            intl_retrieved_at=_file_source_time(bold_path) if intl is not None else None,
         )
     )
     intl_note = "" if intl else " | 无国际欧赔(降级体彩-only)"
@@ -62,6 +65,10 @@ def _ingest_market_day(kernel, run_date: str, output_dir, requested_at: datetime
         f"decision-sense-v2 {run_date}: 入库 {result.matches} 场 Match + "
         f"{result.snapshots} Snapshot（{result.teams} 队）{intl_note}"
     )
+
+
+def _file_source_time(path: Path) -> datetime:
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
 
 
 def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -> str:
@@ -77,6 +84,7 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
     from nutmeg.ontology.ingest.zucai_issue import (
         ZucaiIssueIngestRequest,
         ZucaiIssueIngestService,
+        ZucaiMarketSource,
         ZucaiRow,
     )
     from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -88,10 +96,12 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
 
     service_factory = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
 
-    def _anchor_probe(match_id: str) -> bool:
+    def _snapshot_probe(match_id: str, provider: str, as_of: str) -> bool:
         with OntologyUnitOfWork(kernel.engine) as uow:
             return (
-                uow.market.snapshot_id_for_source(match_id, "md-had", "read_time", "zucai")
+                uow.market.snapshot_id_for_source_at(
+                    match_id, "md-had", "read_time", provider, as_of
+                )
                 is not None
             )
 
@@ -99,8 +109,15 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
         entity_actions=EntityActions(service_factory),
         match_actions=MatchActions(service_factory),
         market_actions=MarketActions(service_factory),
-        snapshot_probe=_anchor_probe,
+        artifact_ingest=kernel.artifact_ingest,
+        snapshot_probe=_snapshot_probe,
     )
+    odds_path = max(
+        Path(zucai_dir).glob(f"{issue}-odds*.json"),
+        key=lambda path: path.stat().st_mtime,
+    )
+    odds_value = json.loads(odds_path.read_text(encoding="utf-8"))
+    source_at = _zucai_source_time(odds_value, odds_path)
     rows = tuple(
         ZucaiRow(
             match_no=m.match_no,
@@ -119,6 +136,13 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
             actor_id="source:zucai",
             actor_role=ActorRole.CONNECTOR,
             requested_at=requested_at,
+            market_sources=(
+                ZucaiMarketSource(
+                    provider="zucai",
+                    value=odds_value,
+                    retrieved_at=source_at,
+                ),
+            ),
         )
     )
     action_count = _committed_zucai_snapshot_actions(kernel, rows)
@@ -136,6 +160,23 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
         f"kernel对账 Snapshot: actions落库 {action_count} / prep报告 {prep_count} / "
         f"service本次 {result.snapshots}"
     )
+
+
+def _zucai_source_time(value: dict, path: Path) -> datetime:
+    from zoneinfo import ZoneInfo
+
+    raw = value.get("captured_at")
+    if isinstance(raw, str) and raw.strip():
+        normalized = raw.strip().replace(" CST", "+08:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            pass
+        else:
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+            return parsed
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
 
 
 def _committed_zucai_snapshot_actions(kernel, rows) -> int:

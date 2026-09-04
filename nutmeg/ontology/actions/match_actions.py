@@ -14,8 +14,20 @@ from uuid import uuid4
 
 from nutmeg.ontology.actions.models import ActionCommand, ActionOutcome, ActorRole, ObjectRef
 from nutmeg.ontology.actions.service import ActionService
-from nutmeg.ontology.identity.models import EntityType, MatchSide, MatchStatus, mint_id
-from nutmeg.ontology.repository.identity import MatchRevisionRow, TeamAppearanceRow
+from nutmeg.ontology.errors import OntologyError
+from nutmeg.ontology.identity.models import (
+    CompetitionEditionRef,
+    EntityType,
+    MatchSide,
+    MatchStatus,
+    mint_id,
+)
+from nutmeg.ontology.repository.identity import (
+    CompetitionEditionRow,
+    CompetitionRow,
+    MatchRevisionRow,
+    TeamAppearanceRow,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +50,7 @@ class RecordMatchRequest:
     idempotency_key: str
     requested_at: datetime
     competition_edition_id: str | None = None
+    competition_edition: CompetitionEditionRef | None = None
     venue_id: str | None = None
     round_label: str | None = None
 
@@ -50,6 +63,19 @@ class RecordMatchRequest:
             raise ValueError('home and away must have distinct sides')
         if not self.idempotency_key.strip():
             raise ValueError('idempotency_key is required')
+        if (
+            self.competition_edition_id is not None
+            and self.competition_edition is not None
+            and self.competition_edition_id
+            != self.competition_edition.competition_edition_id
+        ):
+            raise ValueError('competition edition id conflicts with its curated reference')
+
+    @property
+    def resolved_competition_edition_id(self) -> str | None:
+        if self.competition_edition is not None:
+            return self.competition_edition.competition_edition_id
+        return self.competition_edition_id
 
 
 class MatchActions:
@@ -65,6 +91,7 @@ class MatchActions:
             'status': request.status.value,
             'home_team_id': request.home.team_id,
             'away_team_id': request.away.team_id,
+            'competition_edition_id': request.resolved_competition_edition_id,
         }
         command = ActionCommand.create(
             action_type='record_match',
@@ -76,10 +103,58 @@ class MatchActions:
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            if request.competition_edition is not None:
+                edition = request.competition_edition
+                uow.identity.ensure_competition(
+                    CompetitionRow(
+                        competition_id=edition.competition_id,
+                        name=edition.competition_name,
+                        country=edition.competition_country,
+                        kind=edition.competition_kind,
+                    )
+                )
+                uow.identity.ensure_competition_edition(
+                    CompetitionEditionRow(
+                        competition_edition_id=edition.competition_edition_id,
+                        competition_id=edition.competition_id,
+                        name=edition.edition_name,
+                        country=edition.competition_country,
+                        format=None,
+                        season_label=edition.season_label,
+                        stage=None,
+                        valid_from=None,
+                        valid_to=None,
+                    )
+                )
             existing = uow.identity.entity_by_external_id(
                 EntityType.MATCH, provider=request.provider, external_id=request.external_id
             )
             if existing is not None:
+                current = uow.identity.current_match_revision(existing)
+                edition_id = request.resolved_competition_edition_id
+                if current.competition_edition_id is None and edition_id is not None:
+                    uow.identity.insert_match_revision(
+                        MatchRevisionRow(
+                            match_revision_id=f'mrv-{uuid4().hex}',
+                            match_id=existing,
+                            version=current.version + 1,
+                            competition_edition_id=edition_id,
+                            scheduled_at=current.scheduled_at,
+                            schedule_status=current.schedule_status,
+                            venue_id=current.venue_id,
+                            status=current.status,
+                            round_label=current.round_label,
+                            recorded_at=request.requested_at.astimezone(UTC).isoformat(),
+                            supersedes_revision_id=current.match_revision_id,
+                        )
+                    )
+                elif (
+                    edition_id is not None
+                    and current.competition_edition_id != edition_id
+                ):
+                    raise OntologyError(
+                        f'match {existing} already belongs to a different competition edition'
+                    )
                 return (ObjectRef('match', existing),)
             match_id = mint_id(EntityType.MATCH)
             recorded_at = request.requested_at.astimezone(UTC).isoformat()
@@ -89,7 +164,7 @@ class MatchActions:
                     match_revision_id=f'mrv-{uuid4().hex}',
                     match_id=match_id,
                     version=1,
-                    competition_edition_id=request.competition_edition_id,
+                    competition_edition_id=request.resolved_competition_edition_id,
                     scheduled_at=request.scheduled_at,
                     schedule_status=request.schedule_status,
                     venue_id=request.venue_id,

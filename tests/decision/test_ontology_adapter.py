@@ -1,11 +1,15 @@
 import json
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import select
 from typer.testing import CliRunner
 
 import nutmeg.config.settings as settings_module
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.ontology_adapter import run_decision_am_v2
+from nutmeg.ontology.repository import schema, schema_market
 from nutmeg.ontology.wiring import build_ontology_kernel
 
 DATE = "2026-07-19"
@@ -33,6 +37,50 @@ def test_am_v2_ingests_into_kernel(tmp_path: Path) -> None:
     assert result.succeeded
     assert "入库 1 场" in str(result)
     assert kernel.status().match_count == 1
+
+
+def test_am_v2_replay_uses_source_file_capture_times(tmp_path: Path) -> None:
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    output_dir = tmp_path / "jczq"
+    _write_snapshots(output_dir)
+    day = output_dir / "daily" / DATE
+    sporttery_at = datetime(2026, 7, 19, 7, 55, tzinfo=UTC)
+    intl_at = datetime(2026, 7, 19, 7, 57, tzinfo=UTC)
+    for path, captured_at in (
+        (day / "sporttery_markets.json", sporttery_at),
+        (day / "bold_odds.json", intl_at),
+    ):
+        path.touch()
+        timestamp = captured_at.timestamp()
+        os.utime(path, (timestamp, timestamp))
+
+    result = run_decision_am_v2(DATE, output_dir, kernel=kernel, fetch=False)
+
+    assert result.succeeded
+    with kernel.engine.connect() as connection:
+        source_times = connection.execute(
+            select(
+                schema_market.market_quotes.c.provider,
+                schema_market.market_quotes.c.captured_at,
+                schema.artifact_retrievals.c.retrieved_at,
+            )
+            .select_from(
+                schema_market.market_quotes.join(
+                    schema.artifact_retrievals,
+                    schema_market.market_quotes.c.artifact_retrieval_id
+                    == schema.artifact_retrievals.c.artifact_retrieval_id,
+                )
+            )
+            .where(schema_market.market_quotes.c.provider.in_(("sporttery", "intl")))
+        ).all()
+    assert {
+        (provider, captured_at, retrieved_at)
+        for provider, captured_at, retrieved_at in source_times
+    } == {
+        ("sporttery", sporttery_at.isoformat(), sporttery_at.isoformat()),
+        ("intl", intl_at.isoformat(), intl_at.isoformat()),
+    }
 
 
 def test_am_v2_empty_board_is_legal(tmp_path: Path) -> None:
@@ -93,7 +141,7 @@ def test_unset_flag_keeps_old_path(tmp_path: Path, monkeypatch) -> None:
 ZUCAI_ISSUE = {"issue": "26110", "matches": [
     {"match_no": 1, "competition": "英超", "home_team": "曼城",
      "away_team": "伯恩茅斯", "match_date": "2026-08-23"}]}
-ZUCAI_ODDS = {"matches": [
+ZUCAI_ODDS = {"issue_id": "26110", "captured_at": "2026-07-19T08:00:00+00:00", "matches": [
     {"match_no": 1, "home": 1.30, "draw": 5.50, "away": 9.00}]}
 
 
@@ -119,6 +167,35 @@ def test_am_v2_with_issue_ingests_zucai(tmp_path: Path) -> None:
         in str(result)
     )
     assert kernel.status().match_count == 2   # jczq 1 + zucai 1
+    with kernel.engine.connect() as connection:
+        lineage = connection.execute(
+            select(
+                schema_market.market_quotes.c.provider,
+                schema_market.market_quotes.c.captured_at,
+                schema.artifact_retrievals.c.source_name,
+                schema.artifact_retrievals.c.retrieved_at,
+            )
+            .select_from(
+                schema_market.market_quotes.join(
+                    schema.artifact_retrievals,
+                    schema_market.market_quotes.c.artifact_retrieval_id
+                    == schema.artifact_retrievals.c.artifact_retrieval_id,
+                )
+            )
+            .where(schema_market.market_quotes.c.provider == "zucai")
+        ).all()
+    assert lineage
+    assert {
+        (provider, captured_at, source_name, retrieved_at)
+        for provider, captured_at, source_name, retrieved_at in lineage
+    } == {
+        (
+            "zucai",
+            datetime(2026, 7, 19, 8, tzinfo=UTC).isoformat(),
+            "zucai",
+            datetime(2026, 7, 19, 8, tzinfo=UTC).isoformat(),
+        )
+    }
 
 
 def test_am_v2_zucai_rerun_reconciles_cumulative_action_truth(tmp_path: Path) -> None:
@@ -161,7 +238,10 @@ def test_am_v2_cross_issue_anchor_reuse_reconciles_original_action_truth(
     (zucai_dir / "26111-issue.json").write_text(
         json.dumps({**ZUCAI_ISSUE, "issue": "26111"}), encoding="utf-8"
     )
-    (zucai_dir / "26111-odds.json").write_text(json.dumps(ZUCAI_ODDS), encoding="utf-8")
+    (zucai_dir / "26111-odds.json").write_text(
+        json.dumps({**ZUCAI_ODDS, "issue_id": "26111"}),
+        encoding="utf-8",
+    )
 
     second = run_decision_am_v2(
         DATE, output_dir, kernel=kernel, fetch=False,

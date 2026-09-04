@@ -37,10 +37,44 @@ def test_ingest_market_day_builds_matches_and_snapshots(tmp_path: Path) -> None:
     with OntologyUnitOfWork(kernel.engine) as uow:
         [match_id] = uow.identity.all_match_ids()
         rev = uow.identity.current_match_revision(match_id)
+        assert rev.competition_edition_id is not None
         assert rev.scheduled_at.startswith("2026-07-19T23:30:00")
         assert rev.schedule_status == "scheduled"
         fair = uow.market.latest_fair(match_id, "md-had")
         assert abs(sum(fair.values()) - 1.0) < 1e-9
+
+
+def test_unknown_competition_stays_explicitly_unresolved(tmp_path: Path) -> None:
+    settings = AppSettings(data_dir=tmp_path / "data")
+    kernel = build_ontology_kernel(settings)
+    kernel.initialize()
+    unknown = {
+        "matchInfoList": [
+            {
+                "businessDate": "2026-07-19",
+                "subMatchList": [
+                    {
+                        **SPORTTERY["matchInfoList"][0]["subMatchList"][0],
+                        "leagueAbbName": "未登记测试联赛",
+                    }
+                ],
+            }
+        ]
+    }
+
+    kernel.market_day_ingest.ingest(
+        MarketDayIngestRequest(
+            business_date="2026-07-19",
+            sporttery_value=unknown,
+            actor_id="source:sporttery",
+            actor_role=ActorRole.CONNECTOR,
+            requested_at=datetime(2026, 7, 19, 8, tzinfo=UTC),
+        )
+    )
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        [match_id] = uow.identity.all_match_ids()
+        assert uow.identity.current_match_revision(match_id).competition_edition_id is None
 
 
 def test_sporttery_snapshot_as_of_is_retrieval_time_not_kickoff(tmp_path: Path) -> None:

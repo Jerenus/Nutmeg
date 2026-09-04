@@ -21,6 +21,7 @@ from nutmeg.ontology.operator.evidence_manifest import (
     EvidenceIntakeManifestV1,
     MatchEvidenceIntakeV1,
     RecentFormObservationValueV1,
+    TeamAvailabilityClearObservationValueV1,
     TypedClaimIntakeV1,
     TypedObservationIntakeV1,
 )
@@ -373,6 +374,7 @@ class EvidenceActions:
     ) -> None:
         declared_retrievals: dict[str, str] = {}
         declared_source_kinds: dict[str, str] = {}
+        declared_capture_times: dict[str, datetime] = {}
         for source in match.source_receipts:
             row = (
                 uow.connection.execute(
@@ -423,6 +425,7 @@ class EvidenceActions:
                 raise ValueError("evidence source captured_at follows manifest captured_at")
             declared_retrievals[source.artifact_retrieval_id] = row["artifact_id"]
             declared_source_kinds[source.artifact_retrieval_id] = source.source_kind
+            declared_capture_times[source.artifact_retrieval_id] = source.captured_at
 
         for observation in match.observations:
             EvidenceActions._assert_subject(
@@ -442,6 +445,21 @@ class EvidenceActions:
             ):
                 raise ValueError(
                     "recent-form evidence requires an authoritative_results source"
+                )
+            source_capture_ceiling = min(
+                declared_capture_times[retrieval_id]
+                for retrieval_id in observation.artifact_retrieval_ids
+            )
+            if observation.observed_at > source_capture_ceiling:
+                raise ValueError(
+                    "observation observed_at follows its earliest source capture"
+                )
+            if (
+                isinstance(observation.value, TeamAvailabilityClearObservationValueV1)
+                and observation.value.lookback_ended_at > source_capture_ceiling
+            ):
+                raise ValueError(
+                    "availability-clear lookback end follows its earliest source capture"
                 )
         for claim in match.claims:
             EvidenceActions._assert_subject(uow, claim.subject_type, claim.canonical_subject_id)

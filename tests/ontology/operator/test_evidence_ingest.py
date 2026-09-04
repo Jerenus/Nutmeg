@@ -37,7 +37,11 @@ from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.operator_decision import OperatorDecisionRepository
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.operator_contracts import OperatorLane
-from nutmeg.product.operator_evidence import EvidenceState, OperatorEvidenceService
+from nutmeg.product.operator_evidence import (
+    EvidenceCoverage,
+    EvidenceState,
+    OperatorEvidenceService,
+)
 from nutmeg.product.operator_lanes import SaleOfferSnapshot, SaleSlateSnapshot, task_snapshot_hash
 from nutmeg.product.repository import ProductReadRepository
 
@@ -617,6 +621,14 @@ def test_ingest_commits_one_parent_action_and_reconciled_rows(tmp_path: Path) ->
         assert connection.scalar(
             select(func.count()).select_from(sod.operator_evidence_coverage_receipts)
         ) == 1
+        assert connection.scalar(select(schema_evidence.observations.c.observed_at)) == (
+            "2026-09-04T01:50:00+00:00"
+        )
+        assert connection.scalar(
+            select(sod.operator_evidence_intake_objects.c.observed_at).where(
+                sod.operator_evidence_intake_objects.c.object_kind == "observation"
+            )
+        ) == "2026-09-04T01:50:00+00:00"
 
 
 def test_ingest_replay_returns_same_action_and_receipt(tmp_path: Path) -> None:
@@ -749,6 +761,120 @@ def test_ingest_rejects_manifest_source_kind_not_bound_to_retrieval(
     with pytest.raises(ValueError, match="source kind"):
         actions.ingest_operator_evidence_manifest(
             _request(document=document, key="evidence-intake:non-authoritative-form")
+        )
+
+    with engine.connect() as connection:
+        assert connection.scalar(
+            select(func.count()).select_from(sod.operator_evidence_intake_receipts)
+        ) == 0
+
+
+def test_ingest_rejects_old_retrieval_relabelled_as_fresh_observation(
+    tmp_path: Path,
+) -> None:
+    actions, engine = _actions(tmp_path)
+    old_capture = datetime(2026, 9, 1, 2, tzinfo=UTC)
+    with engine.begin() as connection:
+        connection.execute(
+            update(schema.artifact_retrievals)
+            .where(schema.artifact_retrievals.c.artifact_retrieval_id == "retrieval-1")
+            .values(retrieved_at=old_capture.isoformat())
+        )
+    document = deepcopy(_manifest())
+    document["matches"][0]["source_receipts"][0]["captured_at"] = old_capture.isoformat()
+    document["matches"][0]["observations"][0]["observed_at"] = AT.isoformat()
+
+    with pytest.raises(ValueError, match="observation observed_at"):
+        actions.ingest_operator_evidence_manifest(
+            _request(document=document, key="evidence-intake:old-source-new-observed-at")
+        )
+
+    with engine.connect() as connection:
+        assert connection.scalar(
+            select(func.count()).select_from(sod.operator_evidence_intake_receipts)
+        ) == 0
+
+
+def test_ingest_uses_earliest_referenced_capture_as_observation_ceiling(
+    tmp_path: Path,
+) -> None:
+    actions, engine = _actions(tmp_path)
+    later_capture = datetime(2026, 9, 4, 1, 58, tzinfo=UTC)
+    with engine.begin() as connection:
+        connection.execute(
+            insert(schema.source_runs).values(
+                source_run_id="run-2",
+                source_name="results-two",
+                source_type="authoritative_results",
+                started_at=later_capture.isoformat(),
+                finished_at=later_capture.isoformat(),
+                status="succeeded",
+                error_code=None,
+                error_detail=None,
+            )
+        )
+        connection.execute(
+            insert(schema.artifact_retrievals).values(
+                artifact_retrieval_id="retrieval-2",
+                artifact_id="artifact-1",
+                source_run_id="run-2",
+                source_name="results-two",
+                source_type="authoritative_results",
+                reported_content_type="application/json",
+                canonical_url="https://results-two.example.test/matches",
+                requested_url="https://results-two.example.test/matches",
+                published_at=later_capture.isoformat(),
+                retrieved_at=later_capture.isoformat(),
+                status="stored",
+            )
+        )
+    document = deepcopy(_manifest())
+    document["matches"][0]["source_receipts"].append(
+        {
+            "source_kind": "authoritative_results",
+            "source_run_id": "run-2",
+            "artifact_retrieval_id": "retrieval-2",
+            "captured_at": later_capture.isoformat(),
+        }
+    )
+    observation = document["matches"][0]["observations"][0]
+    observation["observed_at"] = "2026-09-04T01:55:00+00:00"
+    observation["artifact_retrieval_ids"].append("retrieval-2")
+
+    result = actions.ingest_operator_evidence_manifest(
+        _request(document=document, key="evidence-intake:multi-source-capture-ceiling")
+    )
+
+    assert result.outcome.status is ActionStatus.COMMITTED
+    with engine.connect() as connection:
+        assert connection.scalar(select(schema_evidence.observations.c.observed_at)) == (
+            "2026-09-04T01:55:00+00:00"
+        )
+
+
+def test_ingest_rejects_clear_lookback_after_source_capture(tmp_path: Path) -> None:
+    actions, engine = _actions(tmp_path)
+    document = deepcopy(_manifest())
+    observation = document["matches"][0]["observations"][0]
+    observation.update(
+        {
+            "observation_schema": "team_availability_clear_v1",
+            "observed_at": "2026-09-04T09:50:00+08:00",
+            "verification_method": "official",
+            "value": {
+                "kind": "team_availability_clear_v1",
+                "team_token": "team-home",
+                "checked_source_kinds": ["club_official"],
+                "lookback_started_at": "2026-09-03T09:50:00+08:00",
+                "lookback_ended_at": "2026-09-04T09:56:00+08:00",
+                "finding_count": 0,
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="lookback end"):
+        actions.ingest_operator_evidence_manifest(
+            _request(document=document, key="evidence-intake:future-clear-lookback")
         )
 
     with engine.connect() as connection:
@@ -1025,6 +1151,13 @@ def test_evidence_service_loads_typed_task_snapshot_from_sqlite(tmp_path: Path) 
         "sporttery_official",
     }
     assert match.observations[0].source_kinds == ("authoritative_results",)
+    assert match.coverage == (
+        EvidenceCoverage(
+            requirement_id="E6a",
+            subject_scope="team-home",
+            evidence_ref_tokens=(match.observations[0].ref_token,),
+        ),
+    )
     assert match.claims[0].observed_at == datetime(2026, 9, 4, 1, 55, tzinfo=UTC)
     assert match.claims[0].source_identity_tokens == (
         '{"source_name":"results","source_type":"authoritative_results"}',

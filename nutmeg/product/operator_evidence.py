@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -73,6 +74,7 @@ class OfficialOfferEvidence:
     kickoff_at: datetime | None
     sale_deadline_at: datetime | None
     market_definition_ids: tuple[str, ...]
+    source_status: str = "on_sale"
 
     def __post_init__(self) -> None:
         _aware(self.valid_from, "offer valid_from")
@@ -144,6 +146,13 @@ class ClaimEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceCoverage:
+    requirement_id: RequirementId
+    subject_scope: str
+    evidence_ref_tokens: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class MatchEvidenceSnapshot:
     match_id: str
     official_match_no: str
@@ -155,6 +164,7 @@ class MatchEvidenceSnapshot:
     observations: tuple[ObservationEvidence, ...]
     claims: tuple[ClaimEvidence, ...]
     coverage_ref_tokens: tuple[str, ...] = ()
+    coverage: tuple[EvidenceCoverage, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,8 +313,18 @@ class OperatorEvidenceService:
             ),
             sale_deadline_at=offer.sale_deadline_at,
             market_definition_ids=offer.market_definition_ids,
+            source_status=offer.source_status,
         )
         metadata, coverage = self._intake_metadata(offer.match_id, as_of)
+        coverage_ref_tokens = tuple(
+            sorted(
+                {
+                    ref
+                    for receipt in coverage
+                    for ref in receipt.evidence_ref_tokens
+                }
+            )
+        )
         return MatchEvidenceSnapshot(
             match_id=offer.match_id,
             official_match_no=offer.official_match_no,
@@ -315,7 +335,8 @@ class OperatorEvidenceService:
             markets=self._load_markets(offer.match_id, offer.market_definition_ids, as_of),
             observations=self._load_observations(offer.match_id, metadata, as_of),
             claims=self._load_claims(offer.match_id, metadata, as_of),
-            coverage_ref_tokens=coverage,
+            coverage_ref_tokens=coverage_ref_tokens,
+            coverage=coverage,
         )
 
     def _load_identity_alias_issues(
@@ -427,12 +448,29 @@ class OperatorEvidenceService:
                 match_id,
                 as_of=as_of.isoformat(),
             )
-            coverage = uow.operator_decision.evidence_coverage_ref_tokens_for_match(
+            coverage_rows = uow.operator_decision.evidence_coverage_receipts_for_match(
                 match_id,
                 as_of=as_of.isoformat(),
             )
+            coverage = tuple(
+                EvidenceCoverage(
+                    requirement_id=row.requirement_id,
+                    subject_scope=row.subject_scope,
+                    evidence_ref_tokens=row.evidence_ref_tokens,
+                )
+                for row in coverage_rows
+            )
             metadata = {row.object_id: row for row in rows}
-            missing_refs = tuple(token for token in coverage if token not in metadata)
+            missing_refs = tuple(
+                sorted(
+                    {
+                        token
+                        for receipt in coverage
+                        for token in receipt.evidence_ref_tokens
+                        if token not in metadata
+                    }
+                )
+            )
             for row in uow.operator_decision.evidence_lineage_for_refs(
                 match_id,
                 missing_refs,
@@ -792,6 +830,7 @@ def _evaluate_team_requirement(
     missing: list[str] = []
     stale: list[str] = []
     for team_id in snapshot.identity.team_ids:
+        registered_refs = _registered_coverage_refs(snapshot, requirement_id, team_id)
         observations = [
             fact
             for fact in snapshot.observations
@@ -803,6 +842,7 @@ def _evaluate_team_requirement(
                     and fact.kind is EvidenceObservationKind.PERSON_AVAILABILITY
                 )
             )
+            and (registered_refs is None or fact.ref_token in registered_refs)
         ]
         valid_observations = [
             fact
@@ -833,6 +873,7 @@ def _evaluate_team_requirement(
                 for fact in snapshot.claims
                 if fact.team_id == team_id
                 and fact.kind is expected_claim_kind
+                and (registered_refs is None or fact.ref_token in registered_refs)
                 and fact.status in {"verified", "corroborated"}
                 and len(set(fact.source_identity_tokens)) >= 2
                 and _claim_fresh_and_valid(fact, cutoff, maximum_age)
@@ -843,7 +884,11 @@ def _evaluate_team_requirement(
         ]
         if candidates:
             refs.append(sorted(candidates, key=lambda item: item.ref_token)[0].ref_token)
-        elif observations or any(fact.team_id == team_id for fact in snapshot.claims):
+        elif observations or any(
+            fact.team_id == team_id
+            and (registered_refs is None or fact.ref_token in registered_refs)
+            for fact in snapshot.claims
+        ):
             stale.extend(
                 fact.ref_token
                 for fact in (*observations, *snapshot.claims)
@@ -854,6 +899,21 @@ def _evaluate_team_requirement(
     if missing or stale:
         return _blocked(requirement_id, missing=tuple(missing), stale=tuple(stale))
     return _complete(requirement_id, tuple(refs))
+
+
+def _registered_coverage_refs(
+    snapshot: MatchEvidenceSnapshot,
+    requirement_id: RequirementId,
+    subject_scope: str,
+) -> frozenset[str] | None:
+    if snapshot.coverage is None:
+        return None
+    return frozenset(
+        ref
+        for receipt in snapshot.coverage
+        if receipt.requirement_id == requirement_id and receipt.subject_scope == subject_scope
+        for ref in receipt.evidence_ref_tokens
+    )
 
 
 def _evaluate_conflicts(
@@ -878,11 +938,80 @@ def _evaluate_conflicts(
         groups.setdefault(claim.conflict_scope, []).append(claim)
     conflict_refs: list[str] = []
     for facts in groups.values():
-        if len({fact.value_fingerprint for fact in facts}) > 1:
+        if len({_conflict_value(fact) for fact in facts}) > 1:
             conflict_refs.extend(fact.ref_token for fact in facts)
+    conflict_refs.extend(_availability_clear_conflicts(snapshot, cutoff))
     if conflict_refs:
         return _blocked("EC", conflict=tuple(conflict_refs))
     return _complete("EC")
+
+
+def _conflict_value(fact: ObservationEvidence | ClaimEvidence) -> str:
+    """Discard collection lineage from facts that make the same semantic assertion."""
+    try:
+        value = json.loads(fact.value_fingerprint)
+    except (TypeError, json.JSONDecodeError):
+        return fact.value_fingerprint
+    if not isinstance(value, dict):
+        return fact.value_fingerprint
+    if isinstance(fact, ObservationEvidence):
+        if fact.kind is EvidenceObservationKind.AVAILABILITY_CLEAR:
+            return "availability-clear"
+        if fact.kind is EvidenceObservationKind.RECENT_FORM:
+            keys = ("team_token", "wins", "draws", "losses", "goals_for", "goals_against")
+            return canonical_json({key: value.get(key) for key in keys})
+    return canonical_json(value)
+
+
+def _availability_clear_conflicts(
+    snapshot: MatchEvidenceSnapshot,
+    cutoff: datetime,
+) -> tuple[str, ...]:
+    clears_by_team: dict[str, list[ObservationEvidence]] = {}
+    negatives_by_team: dict[str, list[ObservationEvidence | ClaimEvidence]] = {}
+    for observation in snapshot.observations:
+        if not _inside_interval(cutoff, observation.valid_from, observation.valid_to):
+            continue
+        if observation.observed_at > cutoff:
+            continue
+        if observation.kind is EvidenceObservationKind.AVAILABILITY_CLEAR:
+            clears_by_team.setdefault(observation.team_id, []).append(observation)
+        elif observation.kind is EvidenceObservationKind.PERSON_AVAILABILITY and _is_unavailable(
+            observation
+        ):
+            negatives_by_team.setdefault(observation.team_id, []).append(observation)
+    for claim in snapshot.claims:
+        if claim.status in {"retracted", "expired"}:
+            continue
+        if not _inside_interval(cutoff, claim.valid_from, claim.valid_to):
+            continue
+        if claim.kind is EvidenceClaimKind.AVAILABILITY and _is_unavailable(claim):
+            negatives_by_team.setdefault(claim.team_id, []).append(claim)
+    return tuple(
+        sorted(
+            {
+                fact.ref_token
+                for team_id, clears in clears_by_team.items()
+                if team_id in negatives_by_team
+                for fact in (*clears, *negatives_by_team[team_id])
+            }
+        )
+    )
+
+
+def _is_unavailable(fact: ObservationEvidence | ClaimEvidence) -> bool:
+    try:
+        value = json.loads(fact.value_fingerprint)
+    except (TypeError, json.JSONDecodeError):
+        unavailable_states = ("doubtful", "out", "suspended")
+        return any(
+            f":{status}:" in fact.value_fingerprint for status in unavailable_states
+        )
+    return isinstance(value, dict) and value.get("availability") in {
+        "doubtful",
+        "out",
+        "suspended",
+    }
 
 
 def evaluate_requirement(
@@ -935,8 +1064,11 @@ def evaluate_task_evidence(
         if match.required_for_evidence
         and (
             snapshot.lane == "zucai"
+            and match.offer is not None
+            and match.offer.source_status != "cancelled"
             or (
-                match.offer is not None
+                snapshot.lane == "jczq"
+                and match.offer is not None
                 and match.offer.current
                 and match.offer.sale_deadline_at is not None
                 and cutoff < match.offer.sale_deadline_at
@@ -960,11 +1092,17 @@ def evaluate_task_evidence(
                 complete=all(row.state is EvidenceState.COMPLETE for row in rows),
                 requirements=rows,
             )
-        )
+    )
     complete_count = sum(status.complete for status in match_statuses)
-    required_count = 14 if snapshot.lane == "zucai" else len(required_matches)
+    required_count = (
+        14
+        if snapshot.lane == "zucai" and len(snapshot.matches) != 14
+        else len(required_matches)
+    )
+    normal_zucai_offer_count = snapshot.lane != "zucai" or len(snapshot.matches) == 14
     ready = (
         bool(required_count)
+        and normal_zucai_offer_count
         and len(required_matches) == required_count
         and complete_count == required_count
     )
@@ -978,6 +1116,7 @@ def evaluate_task_evidence(
 
 __all__ = [
     "ClaimEvidence",
+    "EvidenceCoverage",
     "EvidenceClaimKind",
     "EvidenceObservationKind",
     "EvidenceState",

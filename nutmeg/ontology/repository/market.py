@@ -185,6 +185,36 @@ class MarketRepository:
             .limit(1)
         ).scalar_one_or_none()
 
+    def snapshot_id_for_source_at(
+        self,
+        match_id: str,
+        market_definition_id: str,
+        snapshot_kind: str,
+        provider: str,
+        as_of: str,
+    ) -> str | None:
+        return self._connection.execute(
+            select(sm.market_snapshots.c.market_snapshot_id)
+            .select_from(
+                sm.market_snapshots.join(
+                    sm.market_snapshot_quotes,
+                    sm.market_snapshot_quotes.c.market_snapshot_id
+                    == sm.market_snapshots.c.market_snapshot_id,
+                ).join(
+                    sm.market_quotes,
+                    sm.market_quotes.c.quote_id == sm.market_snapshot_quotes.c.quote_id,
+                )
+            )
+            .where(
+                sm.market_snapshots.c.match_id == match_id,
+                sm.market_snapshots.c.market_definition_id == market_definition_id,
+                sm.market_snapshots.c.snapshot_kind == snapshot_kind,
+                sm.market_snapshots.c.as_of == as_of,
+                sm.market_quotes.c.provider == provider,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+
     def closing_fair(
         self, match_id: str, market_definition_id: str
     ) -> dict[str, float] | None:

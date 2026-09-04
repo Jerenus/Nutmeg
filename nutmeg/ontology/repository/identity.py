@@ -31,6 +31,27 @@ class TeamRow:
 
 
 @dataclass(frozen=True, slots=True)
+class CompetitionRow:
+    competition_id: str
+    name: str
+    country: str | None
+    kind: str
+
+
+@dataclass(frozen=True, slots=True)
+class CompetitionEditionRow:
+    competition_edition_id: str
+    competition_id: str
+    name: str
+    country: str | None
+    format: str | None
+    season_label: str | None
+    stage: str | None
+    valid_from: str | None
+    valid_to: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class MatchRevisionRow:
     match_revision_id: str
     match_id: str
@@ -78,6 +99,46 @@ class IdentityRepository:
                 created_at=row.created_at,
             )
         )
+
+    def ensure_competition(self, row: CompetitionRow) -> None:
+        existing = self._connection.execute(
+            select(si.competitions).where(si.competitions.c.competition_id == row.competition_id)
+        ).mappings().first()
+        values = {
+            "competition_id": row.competition_id,
+            "name": row.name,
+            "country": row.country,
+            "kind": row.kind,
+        }
+        if existing is None:
+            self._connection.execute(insert(si.competitions).values(**values))
+        elif dict(existing) != values:
+            raise OntologyError(f"competition {row.competition_id} conflicts with curated seed")
+
+    def ensure_competition_edition(self, row: CompetitionEditionRow) -> None:
+        existing = self._connection.execute(
+            select(si.competition_editions).where(
+                si.competition_editions.c.competition_edition_id
+                == row.competition_edition_id
+            )
+        ).mappings().first()
+        values = {
+            "competition_edition_id": row.competition_edition_id,
+            "competition_id": row.competition_id,
+            "name": row.name,
+            "country": row.country,
+            "format": row.format,
+            "season_label": row.season_label,
+            "stage": row.stage,
+            "valid_from": row.valid_from,
+            "valid_to": row.valid_to,
+        }
+        if existing is None:
+            self._connection.execute(insert(si.competition_editions).values(**values))
+        elif dict(existing) != values:
+            raise OntologyError(
+                f"competition edition {row.competition_edition_id} conflicts with curated seed"
+            )
 
     def link_external_identifier(
         self,

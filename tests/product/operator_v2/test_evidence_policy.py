@@ -8,6 +8,7 @@ import pytest
 from nutmeg.product.operator_evidence import (
     ClaimEvidence,
     EvidenceClaimKind,
+    EvidenceCoverage,
     EvidenceObservationKind,
     EvidenceState,
     IdentityEvidence,
@@ -511,9 +512,7 @@ def test_observation_and_non_retracted_claim_conflict_blocks() -> None:
     )
 
     assert status.state is EvidenceState.CONFLICT
-    assert status.conflict_ref_tokens == tuple(
-        sorted((observation.ref_token, claim.ref_token))
-    )
+    assert {observation.ref_token, claim.ref_token}.issubset(status.conflict_ref_tokens)
 
 
 def test_distinct_claim_scopes_do_not_create_false_conflicts() -> None:
@@ -541,11 +540,130 @@ def test_distinct_claim_scopes_do_not_create_false_conflicts() -> None:
 
     status = evaluate_requirement(
         "EC",
-        replace(snapshot, claims=(first, second)),
+        replace(
+            snapshot,
+            observations=tuple(
+                fact
+                for fact in snapshot.observations
+                if not (
+                    fact.team_id == team_id
+                    and fact.kind is EvidenceObservationKind.AVAILABILITY_CLEAR
+                )
+            ),
+            claims=(first, second),
+        ),
         cutoff=CUTOFF,
     )
 
     assert status.state is EvidenceState.COMPLETE
+
+
+def test_equivalent_clear_and_recent_form_observations_do_not_conflict_on_lineage() -> None:
+    snapshot = _complete_match()
+    team_id = snapshot.identity.team_ids[0]
+    clear = next(
+        item
+        for item in snapshot.observations
+        if item.team_id == team_id
+        and item.kind is EvidenceObservationKind.AVAILABILITY_CLEAR
+    )
+    recent_form = next(
+        item
+        for item in snapshot.observations
+        if item.team_id == team_id and item.kind is EvidenceObservationKind.RECENT_FORM
+    )
+    clear = replace(
+        clear,
+        value_fingerprint=(
+            '{"checked_source_kinds":["club_official"],"finding_count":0,'
+            '"lookback_ended_at":"2026-09-04T09:00:00+00:00",'
+            '"lookback_started_at":"2026-09-03T09:00:00+00:00",'
+            f'"team_token":"{team_id}"}}'
+        ),
+    )
+    recent_form = replace(
+        recent_form,
+        value_fingerprint=(
+            '{"draws":1,"goals_against":1,"goals_for":3,"losses":0,'
+            '"sample_match_tokens":["result-1","result-2"],'
+            f'"team_token":"{team_id}","wins":1}}'
+        ),
+    )
+    same_clear = replace(
+        clear,
+        ref_token="observation:home:availability-clear:refreshed",
+        observed_at=CUTOFF - timedelta(minutes=30),
+        source_kinds=("club_official", "credible_media"),
+        value_fingerprint=(
+            '{"checked_source_kinds":["club_official","credible_media"],'
+            '"finding_count":0,"lookback_ended_at":"2026-09-04T09:30:00+00:00",'
+            '"lookback_started_at":"2026-09-03T09:30:00+00:00",'
+            f'"team_token":"{team_id}"}}'
+        ),
+    )
+    same_recent_form = replace(
+        recent_form,
+        ref_token="observation:home:recent-form:refreshed",
+        observed_at=CUTOFF - timedelta(minutes=45),
+        authoritative_sample_ref_tokens=("result-3", "result-4"),
+        value_fingerprint=(
+            '{"draws":1,"goals_against":1,"goals_for":3,"losses":0,'
+            '"sample_match_tokens":["result-3","result-4"],'
+            f'"team_token":"{team_id}","wins":1}}'
+        ),
+    )
+
+    status = evaluate_requirement(
+        "EC",
+        replace(
+            snapshot,
+            observations=tuple(
+                same_clear
+                if fact.ref_token == clear.ref_token
+                else same_recent_form
+                if fact.ref_token == recent_form.ref_token
+                else fact
+                for fact in snapshot.observations
+            )
+            + (clear, recent_form),
+        ),
+        cutoff=CUTOFF,
+    )
+
+    assert status.state is EvidenceState.COMPLETE
+
+
+def test_team_availability_clear_conflicts_with_person_unavailable() -> None:
+    snapshot = _complete_match()
+    team_id = snapshot.identity.team_ids[0]
+    person_unavailable = ObservationEvidence(
+        ref_token="observation:person-1:out",
+        kind=EvidenceObservationKind.PERSON_AVAILABILITY,
+        team_id=team_id,
+        observed_at=CUTOFF - timedelta(hours=1),
+        valid_from=CUTOFF - timedelta(hours=1),
+        valid_to=CUTOFF + timedelta(hours=1),
+        verification_method="official",
+        source_kinds=("club_official",),
+        authoritative_sample_ref_tokens=(),
+        value_fingerprint="person-1:out:injury",
+    )
+
+    status = evaluate_requirement(
+        "EC",
+        replace(snapshot, observations=(*snapshot.observations, person_unavailable)),
+        cutoff=CUTOFF,
+    )
+
+    assert status.state is EvidenceState.CONFLICT
+    assert status.conflict_ref_tokens == tuple(
+        sorted(
+            (
+                "observation:match-1:home:availability-clear",
+                person_unavailable.ref_token,
+            )
+        )
+    )
 
 
 def test_coverage_receipts_alone_never_grant_readiness() -> None:
@@ -556,6 +674,60 @@ def test_coverage_receipts_alone_never_grant_readiness() -> None:
     assert statuses["E5"].state is EvidenceState.MISSING
     assert statuses["E6a"].state is EvidenceState.MISSING
     assert statuses["E6b"].state is EvidenceState.MISSING
+
+
+def test_team_requirement_uses_only_registered_evidence_for_its_scope() -> None:
+    snapshot = _complete_match()
+    home, away = snapshot.identity.team_ids
+    home_clear = next(
+        item
+        for item in snapshot.observations
+        if item.team_id == home and item.kind is EvidenceObservationKind.AVAILABILITY_CLEAR
+    )
+    scoped = replace(
+        snapshot,
+        coverage=(
+            EvidenceCoverage(
+                requirement_id="E5",
+                subject_scope=home,
+                evidence_ref_tokens=(home_clear.ref_token,),
+            ),
+            EvidenceCoverage(
+                requirement_id="E5",
+                subject_scope=away,
+                evidence_ref_tokens=(home_clear.ref_token,),
+            ),
+        ),
+    )
+
+    status = evaluate_requirement("E5", scoped, cutoff=CUTOFF)
+
+    assert status.state is EvidenceState.MISSING
+    assert f"E5:{snapshot.match_id}:{away}" in status.missing_ref_tokens
+
+
+def test_team_requirement_rejects_evidence_registered_for_another_requirement() -> None:
+    snapshot = _complete_match()
+    home = snapshot.identity.team_ids[0]
+    home_clear = next(
+        item
+        for item in snapshot.observations
+        if item.team_id == home and item.kind is EvidenceObservationKind.AVAILABILITY_CLEAR
+    )
+    wrong_requirement = replace(
+        snapshot,
+        coverage=(
+            EvidenceCoverage(
+                requirement_id="E6a",
+                subject_scope=home,
+                evidence_ref_tokens=(home_clear.ref_token,),
+            ),
+        ),
+    )
+
+    status = evaluate_requirement("E5", wrong_requirement, cutoff=CUTOFF)
+
+    assert status.state is EvidenceState.MISSING
 
 
 def test_whole_task_requires_fourteen_zucai_matches_and_open_jczq_only() -> None:
@@ -584,6 +756,25 @@ def test_whole_task_requires_fourteen_zucai_matches_and_open_jczq_only() -> None
     short_status = evaluate_task_evidence(short, cutoff=CUTOFF)
     assert not short_status.ready
     assert short_status.required_match_count == 14
+
+
+def test_zucai_readiness_excludes_cancelled_offers_from_evidence_scope() -> None:
+    task = TaskEvidenceSnapshot(
+        lane="zucai",
+        matches=tuple(_complete_match(f"match-{index}") for index in range(1, 15)),
+    )
+    cancelled = replace(
+        task.matches[-1],
+        offer=replace(task.matches[-1].offer, source_status="cancelled"),
+    )
+
+    status = evaluate_task_evidence(
+        replace(task, matches=(*task.matches[:-1], cancelled)),
+        cutoff=CUTOFF,
+    )
+
+    assert status.ready
+    assert (status.complete_match_count, status.required_match_count) == (13, 13)
 
 
 def test_zucai_service_evaluates_at_real_issue_cutoff_not_query_as_of() -> None:

@@ -196,9 +196,26 @@ class OperatorDecisionRepository:
         *,
         as_of: str,
     ) -> tuple[str, ...]:
+        rows = self.evidence_coverage_receipts_for_match(match_id, as_of=as_of)
+        return tuple(
+            sorted(
+                {
+                    str(token)
+                    for row in rows
+                    for token in row.evidence_ref_tokens
+                }
+            )
+        )
+
+    def evidence_coverage_receipts_for_match(
+        self,
+        match_id: str,
+        *,
+        as_of: str,
+    ) -> tuple[EvidenceCoverageReceiptRow, ...]:
         rows = (
             self._connection.execute(
-                select(sod.operator_evidence_coverage_receipts.c.evidence_ref_tokens_json)
+                select(sod.operator_evidence_coverage_receipts)
                 .select_from(
                     sod.operator_evidence_coverage_receipts.join(
                         sod.operator_evidence_intake_receipts,
@@ -211,20 +228,15 @@ class OperatorDecisionRepository:
                     func.julianday(sod.operator_evidence_intake_receipts.c.created_at)
                     <= func.julianday(as_of),
                 )
-                .order_by(sod.operator_evidence_coverage_receipts.c.coverage_receipt_id)
+                .order_by(
+                    sod.operator_evidence_intake_receipts.c.created_at,
+                    sod.operator_evidence_coverage_receipts.c.coverage_receipt_id,
+                )
             )
-            .scalars()
+            .mappings()
             .all()
         )
-        return tuple(
-            sorted(
-                {
-                    str(token)
-                    for encoded in rows
-                    for token in json.loads(encoded)
-                }
-            )
-        )
+        return tuple(self._coverage_receipt(row) for row in rows)
 
     def evidence_lineage_for_refs(
         self,
@@ -380,6 +392,14 @@ class OperatorDecisionRepository:
             values["source_identities"],
         ) = self._verified_sources_for_retrievals(requested_retrieval_ids)
         return EvidenceIntakeObjectRow(**values)
+
+    @staticmethod
+    def _coverage_receipt(row) -> EvidenceCoverageReceiptRow:
+        values = dict(row)
+        values["evidence_ref_tokens"] = tuple(
+            json.loads(values.pop("evidence_ref_tokens_json"))
+        )
+        return EvidenceCoverageReceiptRow(**values)
 
 
 def _row_fields(row) -> dict[str, object]:

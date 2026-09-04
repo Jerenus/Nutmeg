@@ -22,6 +22,7 @@ from nutmeg.ontology.actions.match_actions import MatchActions, MatchSideRef, Re
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.errors import IdempotencyConflictError
 from nutmeg.ontology.identity.models import MatchSide, MatchStatus, TeamKind
+from nutmeg.ontology.ingest.competition import resolve_competition_edition
 from nutmeg.ontology.ingest.intl_odds import ParsedIntlQuote, parse_bold_odds
 from nutmeg.ontology.ingest.sporttery import ParsedMatch, ParsedQuote, parse_sporttery_markets
 from nutmeg.ontology.market.models import QuoteInput, SnapshotBuildRequest
@@ -43,12 +44,18 @@ class MarketDayIngestRequest:
     intl_value: dict | None = None
     snapshot_kind: str = "read_time"
     sporttery_snapshots: bool = True
+    sporttery_retrieved_at: datetime | None = None
+    intl_retrieved_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.requested_at.tzinfo is None or self.requested_at.utcoffset() is None:
             raise ValueError("requested_at must be timezone-aware")
         if not self.business_date.strip():
             raise ValueError("business_date is required")
+        for name in ("sporttery_retrieved_at", "intl_retrieved_at"):
+            value = getattr(self, name)
+            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+                raise ValueError(f"{name} must be timezone-aware")
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +160,9 @@ class MarketDayIngestService:
         source_name: str,
         value: dict,
     ) -> str:
-        captured_at = request.requested_at.astimezone(UTC).isoformat()
+        captured_at = MarketDayIngestService._source_time(
+            request, source_name
+        ).astimezone(UTC).isoformat()
         return (
             f"{source_name}:{request.snapshot_kind}:{request.business_date}:"
             f"{captured_at}:{_content_key(value)}"
@@ -171,7 +180,7 @@ class MarketDayIngestService:
                 actor_id=request.actor_id,
                 actor_role=request.actor_role,
                 idempotency_key=key,
-                retrieved_at=request.requested_at,
+                retrieved_at=self._source_time(request, source_name),
             )
         )
         for ref in outcome.result_refs:
@@ -198,6 +207,7 @@ class MarketDayIngestService:
     def _record_match(
         self, request: MarketDayIngestRequest, parsed: ParsedMatch, home_id: str, away_id: str
     ) -> str:
+        competition_edition = resolve_competition_edition(parsed.league_name)
         outcome = self._match_actions.record_match(
             RecordMatchRequest(
                 provider=parsed.provider,
@@ -209,8 +219,14 @@ class MarketDayIngestService:
                 away=MatchSideRef(team_id=away_id, side=MatchSide.AWAY),
                 actor_id=request.actor_id,
                 actor_role=request.actor_role,
-                idempotency_key=f"match:{request.business_date}:{parsed.external_id}",
+                idempotency_key=(
+                    f"match:v2:{request.business_date}:{parsed.external_id}:"
+                    f"{competition_edition.competition_edition_id}"
+                    if competition_edition
+                    else f"match:v2:{request.business_date}:{parsed.external_id}:unresolved"
+                ),
                 requested_at=request.requested_at,
+                competition_edition=competition_edition,
             )
         )
         return outcome.result_refs[0].object_id
@@ -224,7 +240,7 @@ class MarketDayIngestService:
         had_quotes: list[ParsedQuote] | list[ParsedIntlQuote],
         artifact_retrieval_id: str | None,
     ) -> None:
-        as_of = request.requested_at.astimezone(UTC).isoformat()
+        as_of = self._source_time(request, channel).astimezone(UTC).isoformat()
         kind = request.snapshot_kind
         self._market_actions.build_snapshot(
             SnapshotBuildRequest(
@@ -251,3 +267,11 @@ class MarketDayIngestService:
                 artifact_retrieval_id=artifact_retrieval_id,
             )
         )
+
+    @staticmethod
+    def _source_time(request: MarketDayIngestRequest, source_name: str) -> datetime:
+        if source_name == "sporttery":
+            return request.sporttery_retrieved_at or request.requested_at
+        if source_name == "intl":
+            return request.intl_retrieved_at or request.requested_at
+        raise ValueError(f"unknown market source {source_name}")

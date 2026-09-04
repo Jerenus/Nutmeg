@@ -1,10 +1,17 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from nutmeg.ontology.actions.match_actions import MatchActions, MatchSideRef, RecordMatchRequest
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.service import ActionService
-from nutmeg.ontology.identity.models import MatchSide, MatchStatus, ResolutionStatus, TeamKind
+from nutmeg.ontology.identity.models import (
+    CompetitionEditionRef,
+    MatchSide,
+    MatchStatus,
+    ResolutionStatus,
+    TeamKind,
+)
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.identity import TeamRow
 from nutmeg.ontology.repository.migrations import run_migrations
@@ -60,3 +67,33 @@ def test_unknown_schedule_is_explicit_never_ingestion_time(tmp_path: Path) -> No
         rev = uow.identity.current_match_revision(match_id)
         assert rev.scheduled_at is None
         assert rev.schedule_status == "unknown"
+
+
+def test_existing_match_without_edition_gets_an_immutable_revision(tmp_path: Path) -> None:
+    actions, engine = _actions(tmp_path)
+    first = actions.record_match(_req("m:no-edition", "2026-07-19T19:00:00+02:00"))
+    match_id = first.result_refs[0].object_id
+    edition = CompetitionEditionRef(
+        competition_id="competition-se",
+        competition_name="Allsvenskan",
+        competition_country="SE",
+        competition_kind="football",
+        competition_edition_id="competition-edition-se-2026",
+        edition_name="Allsvenskan 2026",
+        season_label="2026",
+    )
+
+    second = actions.record_match(
+        replace(
+            _req("m:add-edition", "2026-07-19T19:00:00+02:00"),
+            competition_edition=edition,
+        )
+    )
+
+    assert second.status is ActionStatus.COMMITTED
+    assert second.result_refs[0].object_id == match_id
+    with OntologyUnitOfWork(engine) as uow:
+        revision = uow.identity.current_match_revision(match_id)
+        assert revision.version == 2
+        assert revision.competition_edition_id == edition.competition_edition_id
+        assert revision.supersedes_revision_id is not None
