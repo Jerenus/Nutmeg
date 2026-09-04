@@ -28,14 +28,15 @@
   </li>
 </ol>
 
-{% if task.step.confirmation_state in ("not_issued", "expired") %}
+{% if not read_only and task.step.confirmation_state in ("not_issued", "expired") %}
   <form class="operator-form confirmation-form"
         data-action="request-telegram-confirmation"
         data-task-id="{{ task.selected.task_id }}">
     <button class="primary-action" type="submit">发送 Telegram 本人确认</button>
     <small class="muted">点击仅发送确认按钮，不代表已经出票或入账。</small>
   </form>
-{% else %}
+{% elif task.step.confirmation_state == "open" %}
   <p class="waiting-note" data-auto-refresh="waiting">页面会自动检查确认状态。</p>
+{% else %}
+  <p class="waiting-note">只读模式不会发送确认请求。</p>
 {% endif %}
-

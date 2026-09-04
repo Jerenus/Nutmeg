@@ -183,24 +183,31 @@ def test_operator_get_routes_publish_strict_v1_contract(client: TestClient) -> N
 
 
 @pytest.mark.parametrize(("path", "payload"), _payloads())
-def test_every_operator_mutation_requires_session_csrf_and_origin(
-    client: TestClient, path: str, payload: dict
+def test_every_legacy_operator_mutation_is_retired_before_parsing(
+    client: TestClient,
+    operator_actions: FakeOperatorActions,
+    path: str,
+    payload: dict,
 ) -> None:
-    assert client.post(path, json=payload).status_code == 403
+    assert client.post(path, content=b"not-json").status_code == 405
     headers = _session(client)
-    assert client.post(path, json=payload, headers={"Origin": headers["Origin"]}).status_code == 403
+    assert (
+        client.post(path, json=payload, headers={"Origin": headers["Origin"]}).status_code
+        == 405
+    )
     assert (
         client.post(
             path,
             json=payload,
             headers={**headers, "Origin": "https://evil.example"},
         ).status_code
-        == 403
+        == 405
     )
-    assert client.post(path, json=payload, headers=headers).status_code == 200
+    assert client.post(path, json=payload, headers=headers).status_code == 405
+    assert operator_actions.calls == []
 
 
-def test_actor_spoofing_is_rejected_before_facade(
+def test_actor_spoofing_cannot_reach_retired_facade(
     client: TestClient, operator_actions: FakeOperatorActions
 ) -> None:
     path, payload = _payloads()[1]
@@ -210,20 +217,18 @@ def test_actor_spoofing_is_rejected_before_facade(
         headers=_session(client),
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 405
     assert operator_actions.calls == []
 
 
-def test_api_injects_owner_judge_identity(
+def test_retired_api_does_not_inject_or_call_owner_identity(
     client: TestClient, operator_actions: FakeOperatorActions
 ) -> None:
     path, payload = _payloads()[1]
     response = client.post(path, json=payload, headers=_session(client))
 
-    assert response.status_code == 200
-    identity = operator_actions.calls[-1][-1]
-    assert identity["actor_id"] == "owner"
-    assert identity["actor_role"].value == "judge_operator"
+    assert response.status_code == 405
+    assert operator_actions.calls == []
 
 
 def test_openapi_lists_narrow_operator_routes(client: TestClient) -> None:

@@ -2,13 +2,14 @@ import re
 
 from fastapi.testclient import TestClient
 
+from nutmeg.product.contracts import ProductActionRequest
 from tests.reliability.test_release_policy import COMMIT, _seed_soak, _seed_system
 
 from .test_m6_api import (
     _client,
     _release_url,
     _seed_release_details,
-    _session,
+    _services,
 )
 
 
@@ -53,6 +54,7 @@ def test_release_workspace_renders_green_approval_and_current_decision(
     _seed_soak(seeded_product.kernel)
     _seed_release_details(seeded_product.kernel)
     client = _client(seeded_product)
+    services = _services(seeded_product)
 
     green = client.get(_release_page_url())
 
@@ -73,10 +75,8 @@ def test_release_workspace_renders_green_approval_and_current_decision(
     assert "/must/not/leak" not in html
 
     evaluation = client.get(_release_url()).json()
-    approval = client.post(
-        "/api/v1/actions",
-        headers=_session(client),
-        json={
+    approval = services.actions.execute(
+        ProductActionRequest.model_validate({
             "action_type": "approve_release",
             "idempotency_key": "m6:ui:approve",
             "payload": {
@@ -88,9 +88,9 @@ def test_release_workspace_renders_green_approval_and_current_decision(
                 "reason": "operator reviewed exact release workspace snapshot",
             },
             "expected_versions": {},
-        },
+        })
     )
-    assert approval.status_code == 200
+    assert approval.status == "committed"
 
     current = client.get(_release_page_url())
     assert 'data-approval-status="current"' in current.text

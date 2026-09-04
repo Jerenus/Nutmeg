@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nutmeg.interfaces.product_api import create_product_app
+from nutmeg.product.contracts import ProductActionRequest
 
 from .conftest import CLOCK
 
@@ -19,15 +20,6 @@ def client(m2_product_services) -> TestClient:
             clock=lambda: CLOCK,
         )
     )
-
-
-def _session(client: TestClient) -> dict[str, str]:
-    response = client.get("/api/v1/session")
-    assert response.status_code == 200
-    return {
-        "X-CSRF-Token": response.json()["csrf_token"],
-        "Origin": "http://testserver",
-    }
 
 
 def _merge_action_payload() -> dict[str, object]:
@@ -46,21 +38,20 @@ def _merge_action_payload() -> dict[str, object]:
 
 def test_m2_golden_path_board_to_lineage_to_identity_merge(
     client: TestClient,
+    m2_product_services,
 ) -> None:
     command = client.get("/system/command-center?date=2026-08-24")
     match = client.get("/matches/match-1?as_of=2026-08-24T10:00:00Z")
     lineage = client.get("/lineage/forecast_revision/fr-legacy")
-    merged = client.post(
-        "/api/v1/actions",
-        headers=_session(client),
-        json=_merge_action_payload(),
+    merged = m2_product_services.actions.execute(
+        ProductActionRequest.model_validate(_merge_action_payload())
     )
     refreshed = client.get("/operations?as_of=2026-08-24T10:00:00Z")
 
     assert command.status_code == 200 and "Home FC" in command.text
     assert match.status_code == 200 and "obs-future" not in match.text
     assert lineage.status_code == 200 and "forecast_for_match" in lineage.text
-    assert merged.status_code == 200 and merged.json()["status"] == "committed"
+    assert merged.status == "committed"
     assert 'data-identity-id="team-duplicate"' not in refreshed.text
 
 

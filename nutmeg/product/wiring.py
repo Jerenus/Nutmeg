@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.zucai_official import fetch_renjiu_history
@@ -15,6 +16,10 @@ from nutmeg.product.errors import ProductNotReadyError
 from nutmeg.product.operator_actions import OperatorActionService
 from nutmeg.product.operator_artifacts import ZucaiArtifactRepository
 from nutmeg.product.operator_queries import OperatorQueryService
+from nutmeg.product.operator_runtime import (
+    OperatorRuntimeConfig,
+    OperatorRuntimeScope,
+)
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.tickets import ProductTicketService
@@ -29,6 +34,8 @@ class ProductServices:
     queries: ProductQueryService
     actions: ProductActionGateway
     settings: AppSettings
+    runtime: OperatorRuntimeConfig | None = None
+    confirmation_transport_kind: str = "unavailable"
     operator_queries: OperatorQueryService | None = None
     operator_actions: OperatorActionService | None = None
     copilot: MatchCopilotService | None = None
@@ -40,7 +47,42 @@ def _telegram_owner(raw: str | None) -> int | None:
     return next(iter(values)) if len(values) == 1 else None
 
 
-def build_product_services(settings: AppSettings) -> ProductServices:
+class SimulatedTelegramClient:
+    """In-memory outbound confirmation transport for isolated acceptance runs."""
+
+    def __init__(self) -> None:
+        self.sent_messages: list[dict[str, object]] = []
+
+    def send_message(
+        self,
+        *,
+        chat_id: int,
+        text: str,
+        reply_markup: dict[str, object] | None = None,
+    ) -> dict[str, Any]:
+        message = {
+            "chat_id": chat_id,
+            "text": text,
+            "reply_markup": reply_markup,
+        }
+        self.sent_messages.append(message)
+        return {"ok": True, "result": message}
+
+
+def build_product_services(
+    settings: AppSettings,
+    *,
+    runtime_config: OperatorRuntimeConfig | None = None,
+) -> ProductServices:
+    if runtime_config is not None and runtime_config.data_dir != settings.data_dir.resolve():
+        raise ValueError("operator runtime and service data directories must match")
+    isolated = (
+        runtime_config is not None
+        and runtime_config.runtime_scope is OperatorRuntimeScope.ISOLATED_CANDIDATE
+    )
+    if isolated and (settings.telegram_bot_token or settings.operator_scheduler_enabled):
+        raise ValueError("isolated candidate side effects must be disabled")
+
     kernel = build_ontology_kernel(settings)
     status = kernel.status()
     if (
@@ -63,7 +105,18 @@ def build_product_services(settings: AppSettings) -> ProductServices:
     )
     owner_chat_id = _telegram_owner(settings.telegram_allowed_chat_ids)
     telegram_confirmation = None
-    if settings.telegram_bot_token and owner_chat_id is not None:
+    confirmation_transport_kind = "unavailable"
+    if isolated:
+        owner_chat_id = 0
+        confirmation_transport_kind = "simulated"
+        telegram_confirmation = TelegramTicketConfirmationService(
+            kernel=kernel,
+            telegram_client=SimulatedTelegramClient(),
+            allowed_chat_ids={owner_chat_id},
+            now_fn=lambda: datetime.now(UTC),
+        )
+    elif settings.telegram_bot_token and owner_chat_id is not None:
+        confirmation_transport_kind = "telegram"
         telegram_confirmation = TelegramTicketConfirmationService(
             kernel=kernel,
             telegram_client=TelegramBotClient(
@@ -85,6 +138,8 @@ def build_product_services(settings: AppSettings) -> ProductServices:
         queries=queries,
         actions=actions,
         settings=settings,
+        runtime=runtime_config,
+        confirmation_transport_kind=confirmation_transport_kind,
         operator_queries=operator_queries,
         operator_actions=operator_actions,
         copilot=(
@@ -101,3 +156,10 @@ def build_product_services(settings: AppSettings) -> ProductServices:
             actor_id=settings.default_user_id,
         ),
     )
+
+
+__all__ = [
+    "ProductServices",
+    "SimulatedTelegramClient",
+    "build_product_services",
+]

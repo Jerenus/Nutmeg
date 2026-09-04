@@ -1,6 +1,8 @@
 (() => {
   "use strict";
 
+  if (document.body.dataset.readOnly === "true") return;
+
   const feedback = document.querySelector("#action-feedback");
 
   function snapshotHex(encoded) {

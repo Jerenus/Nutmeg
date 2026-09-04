@@ -7,8 +7,10 @@ business write shares the same transaction as its Action-log row.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from types import TracebackType
 from typing import TYPE_CHECKING
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import Connection, Engine
 
@@ -28,10 +30,32 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.workflow import WorkflowRepository
 
 
+_WRITER_LEASE_FACTORIES: WeakKeyDictionary[Engine, Callable[[], object]] = (
+    WeakKeyDictionary()
+)
+
+
+def register_writer_lease_factory(
+    engine: Engine,
+    factory: Callable[[], object],
+) -> None:
+    """Attach one data-root lease policy to every UOW using this engine."""
+    _WRITER_LEASE_FACTORIES[engine] = factory
+
+
 class OntologyUnitOfWork:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        writer_lease_factory: Callable[[], object] | None = None,
+    ) -> None:
         self._engine = engine
         self._connection: Connection | None = None
+        self._writer_lease_factory = (
+            writer_lease_factory or _WRITER_LEASE_FACTORIES.get(engine)
+        )
+        self._writer_lease = None
 
     @property
     def connection(self) -> Connection:
@@ -118,8 +142,18 @@ class OntologyUnitOfWork:
         return ReliabilityRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
-        self._connection = self._engine.connect()
-        self._connection.begin()
+        lease = self._writer_lease_factory() if self._writer_lease_factory else None
+        if lease is not None:
+            lease.acquire()
+        self._writer_lease = lease
+        try:
+            self._connection = self._engine.connect()
+            self._connection.begin()
+        except Exception:
+            self._writer_lease = None
+            if lease is not None:
+                lease.release()
+            raise
         return self
 
     def __exit__(
@@ -138,4 +172,10 @@ class OntologyUnitOfWork:
             else:
                 connection.rollback()
         finally:
-            connection.close()
+            try:
+                connection.close()
+            finally:
+                lease = self._writer_lease
+                self._writer_lease = None
+                if lease is not None:
+                    lease.release()

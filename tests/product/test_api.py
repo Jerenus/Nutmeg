@@ -62,9 +62,16 @@ def test_query_routes_publish_v1_contract(client: TestClient) -> None:
     assert match.json()["schema_version"] == "1"
 
 
-def test_mutation_requires_session_csrf_and_same_origin(client: TestClient) -> None:
+def test_legacy_mutation_is_retired_before_body_or_session_parsing(
+    client: TestClient,
+) -> None:
     payload = _action_payload()
-    assert client.post("/api/v1/actions", json=payload).status_code == 403
+    before = client.get("/api/v1/actions?limit=500").json()["items"]
+    assert client.post(
+        "/api/v1/actions",
+        content=b"not-json",
+        headers={"Content-Type": "application/json"},
+    ).status_code == 405
 
     headers = _session(client)
     evil = client.post(
@@ -72,11 +79,11 @@ def test_mutation_requires_session_csrf_and_same_origin(client: TestClient) -> N
         json=payload,
         headers={**headers, "Origin": "https://evil.example"},
     )
-    committed = client.post("/api/v1/actions", json=payload, headers=headers)
+    retired = client.post("/api/v1/actions", json=payload, headers=headers)
 
-    assert evil.status_code == 403
-    assert committed.status_code == 200
-    assert committed.json()["status"] == "committed"
+    assert evil.status_code == 405
+    assert retired.status_code == 405
+    assert client.get("/api/v1/actions?limit=500").json()["items"] == before
 
 
 def test_error_envelope_is_stable(client: TestClient) -> None:

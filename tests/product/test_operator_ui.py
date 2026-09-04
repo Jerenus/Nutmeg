@@ -464,15 +464,18 @@ def test_shell_is_semantic_local_and_escaped(client: TestClient) -> None:
     assert client.get("/assets/product/operator.js").status_code == 200
 
 
-def test_judgment_state_shows_business_evidence_and_one_action(client: TestClient) -> None:
+def test_judgment_state_shows_business_evidence_without_legacy_action(
+    client: TestClient,
+) -> None:
     html = client.get("/tasks/zucai:26112").text
 
     assert 'data-step-kind="judge_matches"' in html
     assert "当前需要你处理" in html
     assert "任九档位" in html
     assert "V288=72%帽内" in html
-    assert html.count('class="primary-action"') == 1
-    assert 'data-action="resolve-issue-adjudication"' in html
+    assert 'class="primary-action"' not in html
+    assert 'data-action="resolve-issue-adjudication"' not in html
+    assert "只读模式不会提交裁决" in html
     assert 'name="actor_id"' not in html
     assert 'name="actor_role"' not in html
     assert "payload_json" not in html
@@ -487,26 +490,29 @@ def test_ticket_state_is_a_business_table_not_rx_json(
     assert "版本" in html and "注数" in html and "票价" in html
     assert "P(全对)" in html and "期望断腿" in html
     assert "R432" in html
-    assert 'data-action="select-ticket-version"' in html
+    assert 'data-action="select-ticket-version"' not in html
     assert "ticket_versions" not in html
     assert "human note; not parsed" not in html
     assert "{" not in html
-    assert html.count('data-deviation-match="') == 2
-    assert 'data-deviation-rules required' in html
-    assert 'data-deviation-reason required' in html
-    assert 'type="radio" name="candidate_id"' in html
+    assert 'data-deviation-match="' not in html
+    assert 'data-deviation-rules' not in html
+    assert 'data-deviation-reason' not in html
+    assert 'type="radio" name="candidate_id"' not in html
+    assert "只读模式不会选择票版" in html
 
 
-def test_operator_forms_escape_content_and_require_governed_fields(client: TestClient) -> None:
+def test_read_only_operator_escapes_content_and_omits_governed_forms(
+    client: TestClient,
+) -> None:
     html = client.get("/tasks/zucai:26112").text
     assert '<script>alert("fixture")</script>' not in html
     assert "&lt;script&gt;" in html
-    assert 'name="reason"' in html
-    assert 'name="selected_option"' in html
+    assert 'name="reason"' not in html
+    assert 'name="selected_option"' not in html
     assert "更新于" in html
     assert re.search(r"action-[0-9a-f]{8}", html) is None
     assert re.search(r"\b[0-9a-f]{64}\b", html) is None
-    assert html.count('class="primary-action"') == 1
+    assert 'class="primary-action"' not in html
 
 
 def test_operator_javascript_only_collects_forms(client: TestClient) -> None:
@@ -538,11 +544,11 @@ def test_deployment_view_translates_gate_without_defaulting_empty(
     assert "资金使用率" in html
     assert "中位奖金" in html
     assert "回本/中位" in html
-    assert "需要你的部署裁决" in html
-    assert 'value="keep"' in html
+    assert "只读模式不会记录部署裁决" in html
+    assert 'value="keep"' not in html
     assert 'value="empty_position"' not in html
     assert "系统建议空仓" not in html
-    assert html.count('class="primary-action"') == 1
+    assert 'class="primary-action"' not in html
 
 
 def test_empty_position_appears_only_for_explicit_gate_failure(
@@ -550,7 +556,7 @@ def test_empty_position_appears_only_for_explicit_gate_failure(
 ) -> None:
     html = client_at_reduce_or_empty_gate.get("/tasks/zucai:26112").text
 
-    assert 'value="empty_position"' in html
+    assert 'value="empty_position"' not in html
     assert "部署门未通过" in html
 
 
@@ -584,7 +590,8 @@ def test_confirmation_state_has_one_owner_dispatch_action(
     assert "票面与金额已锁定" in html
     assert "Telegram 本人确认" in html
     assert "入账确认" in html
-    assert 'data-action="request-telegram-confirmation"' in html
+    assert 'data-action="request-telegram-confirmation"' not in html
+    assert "只读模式不会发送确认请求" in html
     assert "ConfirmDispatch" not in html
     assert "nonce" not in html
     assert "ticket_hash" not in html
@@ -599,17 +606,19 @@ def test_shadow_is_explained_as_not_placed(client_with_shadow: TestClient) -> No
 
 
 @pytest.mark.parametrize(
-    ("state", "text", "has_send"),
+    ("state", "text"),
     [
-        ("not_issued", "发送 Telegram 本人确认", True),
-        ("open", "等待你在 Telegram 点击", False),
-        ("expired", "确认已过期", True),
+        ("not_issued", "尚未发送确认按钮"),
+        ("open", "等待你在 Telegram 点击"),
+        ("expired", "确认已过期"),
     ],
 )
-def test_confirmation_states(confirmation_client, state, text, has_send) -> None:
+def test_confirmation_states_are_visible_but_never_mutable(
+    confirmation_client, state, text
+) -> None:
     html = confirmation_client(state).get("/tasks/jczq:2026-08-28").text
     assert text in html
-    assert ('data-action="request-telegram-confirmation"' in html) is has_send
+    assert 'data-action="request-telegram-confirmation"' not in html
     assert "receipt_content" not in html
 
 
@@ -634,12 +643,13 @@ def test_review_shows_one_prediction_and_requires_owner_grade(
     assert "盈亏 +¥60" in html
     assert "至少一场平" in html
     assert "全无平局" in html
-    assert 'data-action="grade-prediction"' in html
-    assert html.count('class="primary-action"') == 1
-    assert 'name="outcome" value="hit"' in html
-    assert 'name="outcome" value="miss"' in html
-    assert 'name="outcome" value="na"' in html
-    assert 'name="reason"' in html
+    assert 'data-action="grade-prediction"' not in html
+    assert 'class="primary-action"' not in html
+    assert 'name="outcome" value="hit"' not in html
+    assert 'name="outcome" value="miss"' not in html
+    assert 'name="outcome" value="na"' not in html
+    assert 'name="reason"' not in html
+    assert "只读模式不会登记赛果结论" in html
     assert 'name="outcome" value="hit" checked' not in html
     assert "概率" not in html
 

@@ -21,7 +21,10 @@ from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.operator_actions import OperatorActionService
 from nutmeg.product.operator_artifacts import ZucaiArtifactRepository
-from nutmeg.product.operator_contracts import GradePredictionCommand
+from nutmeg.product.operator_contracts import (
+    GradePredictionCommand,
+    RequestTelegramConfirmationCommand,
+)
 from nutmeg.product.operator_queries import OperatorQueryService
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
@@ -105,15 +108,6 @@ def _artifact(kernel, forecast_id: str, *, run_date: str, index: int):
     return artifact
 
 
-def _session_headers(client: TestClient) -> dict[str, str]:
-    response = client.get("/api/v1/session")
-    assert response.status_code == 200
-    return {
-        "X-CSRF-Token": response.json()["csrf_token"],
-        "Origin": "http://testserver",
-    }
-
-
 def test_operator_confirmation_books_one_and_timeout_explains_shadow(
     tmp_path: Path,
 ) -> None:
@@ -169,21 +163,19 @@ def test_operator_confirmation_books_one_and_timeout_explains_shadow(
             clock=lambda: clock[0],
         )
     )
-    headers = _session_headers(client)
-
     before = operator_queries.task("jczq:2026-08-24", as_of=clock[0])
     assert before.step.kind == "await_confirmation"
-    dispatch = client.post(
-        "/api/v1/operator/tasks/jczq:2026-08-24/telegram-confirmation",
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "expected_snapshot_token": before.mutation_token,
-            "dry_run": True,
-            "idempotency_key": "operator:e2e:dispatch:placed",
-        },
+    dispatch = operator_actions.request_telegram_confirmation(
+        "jczq:2026-08-24",
+        RequestTelegramConfirmationCommand(
+            expected_snapshot_token=before.mutation_token,
+            dry_run=True,
+            idempotency_key="operator:e2e:dispatch:placed",
+        ),
+        actor_id="owner",
+        actor_role=ActorRole.JUDGE_OPERATOR,
     )
-    assert dispatch.status_code == 200
+    assert dispatch.dispatch_state == "dry_run"
     assert confirmation.last is not None
 
     runner = TelegramBotRunner(
@@ -208,17 +200,17 @@ def test_operator_confirmation_books_one_and_timeout_explains_shadow(
     assert after.step.kind == "await_result"
 
     shadow_before = operator_queries.task("jczq:2026-08-25", as_of=clock[0])
-    shadow_dispatch = client.post(
-        "/api/v1/operator/tasks/jczq:2026-08-25/telegram-confirmation",
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "expected_snapshot_token": shadow_before.mutation_token,
-            "dry_run": True,
-            "idempotency_key": "operator:e2e:dispatch:shadow",
-        },
+    shadow_dispatch = operator_actions.request_telegram_confirmation(
+        "jczq:2026-08-25",
+        RequestTelegramConfirmationCommand(
+            expected_snapshot_token=shadow_before.mutation_token,
+            dry_run=True,
+            idempotency_key="operator:e2e:dispatch:shadow",
+        ),
+        actor_id="owner",
+        actor_role=ActorRole.JUDGE_OPERATOR,
     )
-    assert shadow_dispatch.status_code == 200
+    assert shadow_dispatch.dispatch_state == "dry_run"
 
     clock[0] = AT + timedelta(hours=2, minutes=1)
     timeout = runner.poll_once(offset=2, timeout=0)

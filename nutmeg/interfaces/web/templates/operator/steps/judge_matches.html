@@ -24,6 +24,7 @@
     {% endfor %}
   </section>
 
+  {% if not read_only %}
   <form class="operator-form" data-action="resolve-issue-adjudication"
         data-task-id="{{ task.selected.task_id }}"
         data-adjudication-key="{{ task.step.item_key }}">
@@ -52,4 +53,7 @@
     </label>
     <button class="primary-action" type="submit">保存并进入下一步</button>
   </form>
+  {% else %}
+    <p class="waiting-note">只读模式不会提交裁决。</p>
+  {% endif %}
 </div>

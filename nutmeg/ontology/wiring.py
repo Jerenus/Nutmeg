@@ -36,14 +36,22 @@ from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.kernel import OntologyKernel
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository.connection import build_ontology_engine
-from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+from nutmeg.ontology.repository.unit_of_work import (
+    OntologyUnitOfWork,
+    register_writer_lease_factory,
+)
 
 
 def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     from nutmeg.analytics.calibrate_flow import CalibrateService
+    from nutmeg.product.operator_runtime import OntologyWriterLease
 
     paths = OntologyPaths.from_data_dir(settings.data_dir)
     engine = build_ontology_engine(settings.ontology_db_path)
+    register_writer_lease_factory(
+        engine,
+        lambda: OntologyWriterLease.shared(settings.data_dir),
+    )
     unit_of_work_factory = lambda: OntologyUnitOfWork(engine)  # noqa: E731
     action_service = ActionService(unit_of_work_factory)
     artifact_store = ContentAddressedArtifactStore(settings.ontology_artifact_dir)

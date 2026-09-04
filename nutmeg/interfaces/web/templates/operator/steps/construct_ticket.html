@@ -43,6 +43,7 @@
   </ol>
 </section>
 
+{% if not read_only %}
 <form class="operator-form ticket-selection" data-action="select-ticket-version"
       data-task-id="{{ task.selected.task_id }}">
   <fieldset>
@@ -97,3 +98,6 @@
   </label>
   <button class="primary-action" type="submit">采用并进入审计</button>
 </form>
+{% else %}
+  <p class="waiting-note">只读模式不会选择票版。</p>
+{% endif %}

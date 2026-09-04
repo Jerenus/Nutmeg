@@ -1,16 +1,21 @@
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from nutmeg.analytics.lifecycle import PROPOSAL_COLUMNS
 from nutmeg.analytics.substrate import AnalyticsProjectionBuilder
 from nutmeg.interfaces.product_api import create_product_app
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.actions.workflow_actions import RecordAdjudicationRequest
+from nutmeg.ontology.errors import OptimisticConcurrencyError
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.decision import FactorDefinitionRow, FactorFamilyRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.actions import ProductActionGateway
+from nutmeg.product.contracts import ProductActionRequest
+from nutmeg.product.errors import ProductActionBlockedError
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.wiring import ProductServices
@@ -118,8 +123,7 @@ def test_m5_read_validation_and_not_found_use_stable_errors(seeded_product) -> N
 def test_manual_observation_action_uses_server_actor_and_requires_evidence(
     seeded_product,
 ) -> None:
-    client = _client(seeded_product)
-    headers = _session(client)
+    services = _services(seeded_product)
     body = {
         "action_type": "record_scoreboard_observation",
         "idempotency_key": "m5:api:observation",
@@ -142,25 +146,22 @@ def test_manual_observation_action_uses_server_actor_and_requires_evidence(
         "expected_versions": {},
     }
 
-    committed = client.post("/api/v1/actions", json=body, headers=headers)
-    missing_evidence = client.post(
-        "/api/v1/actions",
-        json={
+    committed = services.actions.execute(ProductActionRequest.model_validate(body))
+    with pytest.raises(ValueError, match="evidence"):
+        services.actions.execute(
+            ProductActionRequest.model_validate({
             **body,
             "idempotency_key": "m5:api:observation:no-evidence",
             "payload": {**body["payload"], "evidence_refs": []},
-        },
-        headers=headers,
-    )
+            })
+        )
 
-    assert committed.status_code == 200
-    assert committed.json()["status"] == "committed"
-    assert missing_evidence.status_code == 422
+    assert committed.status == "committed"
     with OntologyUnitOfWork(seeded_product.kernel.engine) as uow:
         observation = uow.scoreboard.latest_observations(as_of=AT.isoformat())[0]
         actor = uow.connection.execute(
             schema.actions.select().where(
-                schema.actions.c.action_id == committed.json()["action_id"]
+                schema.actions.c.action_id == committed.action_id
             )
         ).mappings().one()
     assert observation.group_key == "manual"
@@ -245,7 +246,7 @@ def test_factor_lifecycle_action_is_bound_to_current_proposal_and_adjudication(
         [("factor_lifecycle_proposals", "lc-v1", proposal)],
         built_at="2026-08-24T10:05:00+00:00",
     )
-    client = _client(seeded_product)
+    services = _services(seeded_product)
     body = {
         "action_type": "apply_factor_status",
         "idempotency_key": "m5:api:factor:apply",
@@ -259,39 +260,30 @@ def test_factor_lifecycle_action_is_bound_to_current_proposal_and_adjudication(
         "expected_versions": {"factor_definition:factor-rest": 1},
     }
 
-    rejected_apply = client.post(
-        "/api/v1/actions",
-        json={
+    with pytest.raises(ProductActionBlockedError):
+        services.actions.execute(
+            ProductActionRequest.model_validate({
             **body,
             "idempotency_key": "m5:api:factor:rejected-adjudication",
             "payload": {
                 **body["payload"],
                 "adjudication_id": rejected_adjudication_id,
             },
-        },
-        headers=_session(client),
-    )
+            })
+        )
     with OntologyUnitOfWork(kernel.engine) as uow:
         assert uow.decision.factor_status("factor-rest") == "probation"
-    applied = client.post("/api/v1/actions", json=body, headers=_session(client))
-    stale = client.post(
-        "/api/v1/actions",
-        json={**body, "idempotency_key": "m5:api:factor:stale"},
-        headers=_session(client),
-    )
-    spoofed = client.post(
-        "/api/v1/actions",
-        json={**body, "actor_role": "ai_analyst"},
-        headers=_session(client),
-    )
+    applied = services.actions.execute(ProductActionRequest.model_validate(body))
+    with pytest.raises(OptimisticConcurrencyError):
+        services.actions.execute(
+            ProductActionRequest.model_validate(
+                {**body, "idempotency_key": "m5:api:factor:stale"}
+            )
+        )
+    with pytest.raises(ValidationError):
+        ProductActionRequest.model_validate({**body, "actor_role": "ai_analyst"})
 
-    assert rejected_apply.status_code == 409
-    assert rejected_apply.json()["code"] == "action_blocked"
-    assert applied.status_code == 200
-    assert applied.json()["status"] == "committed"
-    assert stale.status_code == 409
-    assert stale.json()["code"] == "version_conflict"
-    assert spoofed.status_code == 422
+    assert applied.status == "committed"
     with OntologyUnitOfWork(kernel.engine) as uow:
         assert uow.decision.factor_status("factor-rest") == "active"
 
@@ -309,5 +301,5 @@ def test_browser_cannot_invoke_scoreboard_authority_actions(seeded_product) -> N
         headers=_session(client),
     )
 
-    assert response.status_code == 403
-    assert response.json()["code"] == "action_not_allowed"
+    assert response.status_code == 405
+    assert response.json()["code"] == "method_not_allowed"
