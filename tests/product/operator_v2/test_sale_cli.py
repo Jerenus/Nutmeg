@@ -10,7 +10,12 @@ from typer.testing import CliRunner
 from nutmeg.config.settings import AppSettings
 from nutmeg.interfaces.cli import app
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
-from nutmeg.ontology.actions.models import ActorRole
+from nutmeg.ontology.actions.models import ActorRole, canonical_json
+from nutmeg.ontology.operator.sale_actions import (
+    OfficialOfferManifestV1,
+    official_sale_parser_receipt_document,
+    official_sale_parser_receipt_hash,
+)
 from nutmeg.ontology.repository import schema, schema_identity
 from nutmeg.ontology.repository import schema_operator_sale as sos
 from nutmeg.ontology.wiring import build_ontology_kernel
@@ -18,7 +23,7 @@ from nutmeg.ontology.wiring import build_ontology_kernel
 
 def _data_dir(tmp_path: Path) -> Path:
     data_dir = tmp_path / "data"
-    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir, _env_file=None))
     kernel.initialize()
     at = "2026-09-04T08:01:00+08:00"
     with kernel.engine.begin() as connection:
@@ -34,6 +39,10 @@ def _data_dir(tmp_path: Path) -> Path:
                 error_detail=None,
             )
         )
+        base_document = _sale_document()
+        revised_offer = dict(base_document["offers"][0])
+        revised_offer["status"] = "sale_closed"
+        revision_document = _sale_document(offers=[revised_offer])
         for suffix, source_name in (
             ("official", "sporttery"),
             ("unofficial", "api-football"),
@@ -45,7 +54,11 @@ def _data_dir(tmp_path: Path) -> Path:
                     content_type="application/json",
                     storage_path=f"sha256/{suffix}",
                     byte_size=2,
-                    content_hash=("a" if suffix == "official" else "b") * 64,
+                    content_hash=(
+                        str(base_document["official_source_content_hash"])
+                        if suffix == "official"
+                        else "b" * 64
+                    ),
                 )
             )
             connection.execute(
@@ -83,7 +96,7 @@ def _data_dir(tmp_path: Path) -> Path:
                 content_type="application/json",
                 storage_path="sha256/official-revision",
                 byte_size=2,
-                content_hash="c" * 64,
+                content_hash=str(revision_document["official_source_content_hash"]),
             )
         )
         connection.execute(
@@ -112,7 +125,7 @@ def _sale_document(**changes: object) -> dict[str, object]:
         "published_at": "2026-09-04T08:00:00+08:00",
         "retrieved_at": "2026-09-04T08:01:00+08:00",
         "parser_contract_version": "sporttery-official-sale-parser-v1",
-        "official_source_content_hash": "a" * 64,
+        "official_source_content_hash": "0" * 64,
         "official_source_artifact_retrieval_id": "retrieval-official",
         "supersedes_slate_revision_id": None,
         "offers": [
@@ -127,7 +140,33 @@ def _sale_document(**changes: object) -> dict[str, object]:
         ],
     }
     document.update(changes)
+    if "official_source_content_hash" not in changes:
+        try:
+            document["official_source_content_hash"] = official_sale_parser_receipt_hash(
+                lane=document["lane"],
+                business_key=str(document["business_key"]),
+                published_at=datetime.fromisoformat(str(document["published_at"])),
+                offers=[
+                    OfficialOfferManifestV1.model_validate(offer)
+                    for offer in document["offers"]
+                ],
+            )
+        except (TypeError, ValueError):
+            pass
     return document
+
+
+def _sale_receipt_bytes(document: dict[str, object]) -> bytes:
+    receipt = official_sale_parser_receipt_document(
+        lane=document["lane"],
+        business_key=str(document["business_key"]),
+        published_at=datetime.fromisoformat(str(document["published_at"])),
+        offers=[
+            OfficialOfferManifestV1.model_validate(offer)
+            for offer in document["offers"]
+        ],
+    )
+    return canonical_json(receipt).encode("utf-8")
 
 
 def _write(path: Path, document: object) -> Path:
@@ -178,7 +217,7 @@ def test_sale_cli_commits_and_reports_persisted_counts(tmp_path: Path) -> None:
     }
 
 
-def test_sale_cli_accepts_approved_minimal_v1_manifest(tmp_path: Path) -> None:
+def test_sale_cli_rejects_manifest_without_trusted_parser_receipt(tmp_path: Path) -> None:
     data_dir = _data_dir(tmp_path)
     document = _sale_document()
     document.pop("parser_contract_version")
@@ -187,8 +226,13 @@ def test_sale_cli_accepts_approved_minimal_v1_manifest(tmp_path: Path) -> None:
 
     result = _invoke_sale(data_dir, manifest)
 
-    assert result.exit_code == 0, result.stdout
-    assert json.loads(result.stdout)["status"] == "committed"
+    assert result.exit_code == 1
+    assert "parser_contract_version" in result.stdout
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir, _env_file=None))
+    with kernel.engine.connect() as connection:
+        assert connection.scalar(
+            select(func.count()).select_from(sos.official_sale_slate_revisions)
+        ) == 0
 
 
 def test_sale_cli_revision_distinguishes_created_and_linked_counts(tmp_path: Path) -> None:
@@ -203,7 +247,6 @@ def test_sale_cli_revision_distinguishes_created_and_linked_counts(tmp_path: Pat
         _sale_document(
             retrieved_at="2026-09-04T08:02:00+08:00",
             official_source_artifact_retrieval_id="retrieval-official-revision",
-            official_source_content_hash="c" * 64,
             supersedes_slate_revision_id=first_payload["slate_revision_id"],
             offers=[revised_offer],
         ),
@@ -229,7 +272,7 @@ def test_sale_cli_accepts_official_retrieval_from_artifact_ingest_service(
     tmp_path: Path,
 ) -> None:
     data_dir = tmp_path / "data"
-    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir, _env_file=None))
     kernel.initialize()
     at = "2026-09-04T08:01:00+08:00"
     with kernel.engine.begin() as connection:
@@ -250,9 +293,10 @@ def test_sale_cli_accepts_official_retrieval_from_artifact_ingest_service(
                 match_id="match-1", current_revision_id=None
             )
         )
+    sale_document = _sale_document(retrieved_at="2026-09-04T00:01:00+00:00")
     ingest = kernel.artifact_ingest.ingest(
         ArtifactIngestRequest(
-            content=b'{"sale":"official"}',
+            content=_sale_receipt_bytes(sale_document),
             content_type="application/json",
             source_name="sporttery",
             source_type="official_sale_schedule",
@@ -269,15 +313,15 @@ def test_sale_cli_accepts_official_retrieval_from_artifact_ingest_service(
     )
     manifest = _write(
         tmp_path / "sale-from-ingest.json",
-        _sale_document(
-            official_source_artifact_retrieval_id=retrieval_id,
-            official_source_content_hash=next(
+        {
+            **sale_document,
+            "official_source_artifact_retrieval_id": retrieval_id,
+            "official_source_content_hash": next(
                 ref.object_id.removeprefix("sha256:")
                 for ref in ingest.result_refs
                 if ref.object_type == "source_artifact"
             ),
-            retrieved_at="2026-09-04T00:01:00+00:00",
-        ),
+        },
     )
 
     result = _invoke_sale(data_dir, manifest)
@@ -295,7 +339,7 @@ def test_sale_cli_replay_uses_one_action_and_one_slate(tmp_path: Path) -> None:
 
     assert first.exit_code == replay.exit_code == 0
     assert json.loads(first.stdout)["action_id"] == json.loads(replay.stdout)["action_id"]
-    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir, _env_file=None))
     with kernel.engine.connect() as connection:
         assert (
             connection.scalar(select(func.count()).select_from(sos.official_sale_slate_revisions))
@@ -318,7 +362,7 @@ def test_sale_cli_rejects_contract_and_source_without_partial_rows(tmp_path: Pat
     assert "contract" in wrong_version.stdout
     assert wrong_source.exit_code == 1
     assert "official" in wrong_source.stdout
-    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir, _env_file=None))
     with kernel.engine.connect() as connection:
         assert (
             connection.scalar(select(func.count()).select_from(sos.official_sale_slate_revisions))
@@ -340,7 +384,9 @@ def test_schedule_check_cli_commits_exact_receipt(tmp_path: Path) -> None:
             "source_run_id": "run-official",
             "check_state": "slate_imported",
             "parser_contract_version": "sporttery-official-sale-parser-v1",
-            "official_source_content_hash": "a" * 64,
+            "official_source_content_hash": _sale_document()[
+                "official_source_content_hash"
+            ],
             "official_source_artifact_retrieval_id": "retrieval-official",
             "observed_business_keys": ["2026-09-04"],
             "imported_business_keys": ["2026-09-04"],
@@ -381,7 +427,7 @@ def test_sale_cli_parses_complete_manifest_before_writing(tmp_path: Path) -> Non
     result = _invoke_sale(data_dir, malformed)
 
     assert result.exit_code == 1
-    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir, _env_file=None))
     with kernel.engine.connect() as connection:
         assert (
             connection.scalar(select(func.count()).select_from(sos.official_sale_slate_revisions))
@@ -401,7 +447,7 @@ def test_sale_cli_rejects_numeric_epoch_datetime_without_writing(tmp_path: Path)
 
     assert result.exit_code == 1
     assert "published_at" in result.stdout
-    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir, _env_file=None))
     with kernel.engine.connect() as connection:
         assert connection.scalar(
             select(func.count()).select_from(sos.official_sale_slate_revisions)

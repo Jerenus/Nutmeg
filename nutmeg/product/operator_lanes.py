@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -118,8 +119,8 @@ class TodayPriorityFacts:
     integrity_incident: bool = False
 
 
-class SaleSlateAdapter(Protocol):
-    """Package 2 sale-slate boundary, not the final public lane protocol."""
+class OperatorLaneAdapter(Protocol):
+    """Shared lane contract for official sale discovery inputs."""
 
     lane: OperatorLane
 
@@ -136,6 +137,10 @@ class SaleSlateAdapter(Protocol):
     def result_offer_ids(self, slate: SaleSlateSnapshot) -> Sequence[str]: ...
 
 
+# Compatibility for callers written while Package 2 used its temporary protocol name.
+SaleSlateAdapter = OperatorLaneAdapter
+
+
 def _require_aware(value: datetime, name: str) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware")
@@ -150,6 +155,19 @@ def offer_state(offer: SaleOfferSnapshot, as_of: datetime) -> OfferState:
     if as_of < offer.sale_opens_at:
         return OfferState.UPCOMING
     return OfferState.OPEN
+
+
+def _offer_sort_key(offer: SaleOfferSnapshot) -> tuple[str, int, str, str, str]:
+    match = re.fullmatch(r"(?P<prefix>.*?)(?P<number>[0-9]+)", offer.official_match_no)
+    prefix = match.group("prefix") if match else offer.official_match_no
+    number = int(match.group("number")) if match else 0
+    return (
+        prefix,
+        number,
+        offer.official_match_no,
+        offer.official_offer_family_id,
+        offer.official_offer_revision_id,
+    )
 
 
 def task_snapshot_hash(
@@ -176,7 +194,7 @@ def task_snapshot_hash(
                 "source_status": offer.source_status,
                 "derived_state": offer_state(offer, as_of).value,
             }
-            for offer in slate.offers
+            for offer in sorted(slate.offers, key=_offer_sort_key)
         ],
         "no_ticket_closures": [
             {
@@ -204,12 +222,12 @@ def derive_sale_wave(
     closed_families = {
         closure.official_offer_family_id for closure in no_ticket_closures
     }
-    actionable = tuple(
+    actionable = tuple(sorted((
         offer
         for offer in slate.offers
         if offer.official_offer_family_id not in closed_families
         and offer_state(offer, as_of) in {OfferState.UPCOMING, OfferState.OPEN}
-    )
+    ), key=_offer_sort_key))
     if not actionable:
         return None
     snapshot_hash = task_snapshot_hash(
@@ -338,7 +356,9 @@ class JczqLaneAdapter:
     ) -> Sequence[str]:
         self.validate_slate(slate)
         return tuple(
-            offer.official_offer_revision_id for offer in _selectable_offers(slate, as_of)
+            offer.official_offer_revision_id
+            for offer in sorted(slate.offers, key=_offer_sort_key)
+            if offer_state(offer, as_of) is OfferState.OPEN
         )
 
     def candidate_inputs(
@@ -349,7 +369,10 @@ class JczqLaneAdapter:
 
     def result_offer_ids(self, slate: SaleSlateSnapshot) -> Sequence[str]:
         self.validate_slate(slate)
-        return tuple(offer.official_offer_revision_id for offer in slate.offers)
+        return tuple(
+            offer.official_offer_revision_id
+            for offer in sorted(slate.offers, key=_offer_sort_key)
+        )
 
 
 class ZucaiLaneAdapter:
@@ -379,18 +402,21 @@ class ZucaiLaneAdapter:
 
     def result_offer_ids(self, slate: SaleSlateSnapshot) -> Sequence[str]:
         self.validate_slate(slate)
-        return tuple(offer.official_offer_revision_id for offer in slate.offers)
+        return tuple(
+            offer.official_offer_revision_id
+            for offer in sorted(slate.offers, key=_offer_sort_key)
+        )
 
 
 def _selectable_offers(
     slate: SaleSlateSnapshot,
     as_of: datetime,
 ) -> tuple[SaleOfferSnapshot, ...]:
-    return tuple(
+    return tuple(sorted((
         offer
         for offer in slate.offers
         if offer_state(offer, as_of) in {OfferState.UPCOMING, OfferState.OPEN}
-    )
+    ), key=_offer_sort_key))
 
 
 def _candidate_inputs(
@@ -435,6 +461,7 @@ __all__ = [
     "JczqLaneAdapter",
     "NoTicketClosure",
     "OfferState",
+    "OperatorLaneAdapter",
     "SaleSlateAdapter",
     "SaleOfferSnapshot",
     "SaleSlateSnapshot",

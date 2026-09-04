@@ -12,8 +12,8 @@ from nutmeg.product.operator_lanes import (
     JczqLaneAdapter,
     NoTicketClosure,
     OfferState,
+    OperatorLaneAdapter,
     SaleOfferSnapshot,
-    SaleSlateAdapter,
     SaleSlateSnapshot,
     SaleTaskState,
     ScopeKind,
@@ -127,6 +127,19 @@ def test_task_hash_ignores_raw_as_of_but_changes_at_offer_state_transition() -> 
     assert len(during_open) == 64
 
 
+def test_task_hash_and_sale_wave_are_stable_under_offer_permutation() -> None:
+    first = _slate(_offer("2"), _offer("1"))
+    permuted = replace(first, offers=tuple(reversed(first.offers)))
+
+    first_wave = derive_sale_wave(first, NOW)
+    permuted_wave = derive_sale_wave(permuted, NOW)
+
+    assert task_snapshot_hash(first, NOW) == task_snapshot_hash(permuted, NOW)
+    assert first_wave is not None and permuted_wave is not None
+    assert first_wave == permuted_wave
+    assert first_wave.offer_family_ids == ("family-1", "family-2")
+
+
 def test_new_offer_creates_new_wave_without_reopening_no_ticket_families() -> None:
     first = _slate(_offer("1"), _offer("2"))
     closures = (
@@ -182,8 +195,8 @@ def test_lane_adapters_keep_offer_count_order_and_markets_out_of_shared_resolver
         lane=OperatorLane.ZUCAI,
         business_key="26118",
     )
-    jczq_adapter: SaleSlateAdapter = JczqLaneAdapter()
-    zucai_adapter: SaleSlateAdapter = ZucaiLaneAdapter()
+    jczq_adapter: OperatorLaneAdapter = JczqLaneAdapter()
+    zucai_adapter: OperatorLaneAdapter = ZucaiLaneAdapter()
 
     jczq_adapter.validate_slate(jczq)
     zucai_adapter.validate_slate(zucai)
@@ -467,6 +480,21 @@ def test_lane_adapter_excludes_terminal_offers_from_readiness_and_candidates() -
     assert inputs.offer_revision_ids == (active.official_offer_revision_id,)
     assert adapter.result_offer_ids(slate) == tuple(
         offer.official_offer_revision_id for offer in slate.offers
+    )
+
+
+def test_jczq_evidence_scope_is_open_only_while_candidates_include_upcoming() -> None:
+    open_offer = _offer("1")
+    upcoming = _offer("2", opens_at=NOW + timedelta(minutes=30))
+    slate = _slate(upcoming, open_offer)
+    adapter = JczqLaneAdapter()
+
+    assert adapter.evidence_offer_ids(slate, NOW) == (
+        open_offer.official_offer_revision_id,
+    )
+    assert adapter.candidate_inputs(slate, NOW).offer_revision_ids == (
+        open_offer.official_offer_revision_id,
+        upcoming.official_offer_revision_id,
     )
 
 

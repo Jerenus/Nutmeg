@@ -1,4 +1,3 @@
-import hashlib
 import json
 from dataclasses import replace
 from datetime import timedelta
@@ -12,14 +11,17 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.interfaces.bot.telegram import TelegramBotRunner
 from nutmeg.interfaces.product_api import create_product_app
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
-from nutmeg.ontology.actions.models import ActionStatus, ActorRole
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole, canonical_json
 from nutmeg.ontology.actions.workflow_actions import (
     RecordAdjudicationRequest,
     RegisterPredictionRequest,
 )
 from nutmeg.ontology.operator.sale_actions import (
     ImportOfficialSaleSlateRequest,
+    OfficialOfferManifestV1,
     OfficialSaleSlateManifestV1,
+    official_sale_parser_receipt_document,
+    official_sale_parser_receipt_hash,
 )
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository import schema_finance as sf
@@ -119,7 +121,6 @@ def _artifact(kernel, forecast_id: str, *, run_date: str, index: int):
 
 def _seed_official_slate(kernel, *, lane: str, business_key: str) -> None:
     source_run_id = f"operator-e2e:{lane}:{business_key}"
-    content = f"official sale {lane} {business_key}".encode()
     published_at = AT - timedelta(hours=1)
     retrieved_at = AT - timedelta(minutes=30)
     with kernel.engine.begin() as connection:
@@ -135,6 +136,30 @@ def _seed_official_slate(kernel, *, lane: str, business_key: str) -> None:
                 error_detail=None,
             )
         )
+    offer_count = 14 if lane == "zucai" else 1
+    if lane == "zucai":
+        with OntologyUnitOfWork(kernel.engine) as uow:
+            for number in range(2, offer_count + 1):
+                uow.identity.insert_match_minimal(f"match-{number}")
+    offers = [
+        {
+            "canonical_match_id": f"match-{number}",
+            "official_match_no": str(number) if lane == "zucai" else "周六001",
+            "market_definition_ids": ["md-had"],
+            "sale_opens_at": published_at.isoformat(),
+            "sale_deadline_at": (AT + timedelta(hours=2)).isoformat(),
+            "status": "on_sale",
+        }
+        for number in range(1, offer_count + 1)
+    ]
+    parsed_offers = [OfficialOfferManifestV1.model_validate(offer) for offer in offers]
+    receipt = official_sale_parser_receipt_document(
+        lane=lane,
+        business_key=business_key,
+        published_at=published_at,
+        offers=parsed_offers,
+    )
+    content = canonical_json(receipt).encode("utf-8")
     artifact = kernel.artifact_ingest.ingest(
         ArtifactIngestRequest(
             content=content,
@@ -157,23 +182,6 @@ def _seed_official_slate(kernel, *, lane: str, business_key: str) -> None:
         for ref in artifact.result_refs
         if ref.object_type == "artifact_retrieval"
     )
-
-    offer_count = 14 if lane == "zucai" else 1
-    if lane == "zucai":
-        with OntologyUnitOfWork(kernel.engine) as uow:
-            for number in range(2, offer_count + 1):
-                uow.identity.insert_match_minimal(f"match-{number}")
-    offers = [
-        {
-            "canonical_match_id": f"match-{number}",
-            "official_match_no": str(number) if lane == "zucai" else "周六001",
-            "market_definition_ids": ["md-had"],
-            "sale_opens_at": published_at.isoformat(),
-            "sale_deadline_at": (AT + timedelta(hours=2)).isoformat(),
-            "status": "on_sale",
-        }
-        for number in range(1, offer_count + 1)
-    ]
     manifest = OfficialSaleSlateManifestV1.model_validate(
         {
             "schema_version": "official-sale-slate-v1",
@@ -182,7 +190,12 @@ def _seed_official_slate(kernel, *, lane: str, business_key: str) -> None:
             "published_at": published_at.isoformat(),
             "retrieved_at": retrieved_at.isoformat(),
             "parser_contract_version": "sporttery-official-sale-parser-v1",
-            "official_source_content_hash": hashlib.sha256(content).hexdigest(),
+            "official_source_content_hash": official_sale_parser_receipt_hash(
+                lane=lane,
+                business_key=business_key,
+                published_at=published_at,
+                offers=parsed_offers,
+            ),
             "official_source_artifact_retrieval_id": retrieval_id,
             "supersedes_slate_revision_id": None,
             "offers": offers,

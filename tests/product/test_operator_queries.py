@@ -112,26 +112,26 @@ def test_product_repository_reads_temporal_current_official_slates(tmp_path: Pat
         )
     )
     assert first.slate is not None
-    second_hash = sale_fixtures._add_official_retrieval(
+    second_manifest = sale_fixtures._manifest(
+        retrieved_at="2026-09-04T08:02:00+08:00",
+        official_source_artifact_retrieval_id="retrieval-r2",
+        supersedes_slate_revision_id=first.slate.slate_revision_id,
+        offers=[
+            sale_fixtures._offer(
+                sale_deadline_at="2026-09-04T20:00:00+08:00"
+            )
+        ],
+    )
+    sale_fixtures._add_official_retrieval(
         engine,
         "retrieval-r2",
         retrieved_at="2026-09-04T08:02:00+08:00",
-        hash_character="c",
+        content_hash=second_manifest.official_source_content_hash,
     )
     second = actions.import_official_sale_slate(
         replace(
             sale_fixtures._request(
-                sale_fixtures._manifest(
-                    retrieved_at="2026-09-04T08:02:00+08:00",
-                    official_source_content_hash=second_hash,
-                    official_source_artifact_retrieval_id="retrieval-r2",
-                    supersedes_slate_revision_id=first.slate.slate_revision_id,
-                    offers=[
-                        sale_fixtures._offer(
-                            sale_deadline_at="2026-09-04T20:00:00+08:00"
-                        )
-                    ],
-                ),
+                second_manifest,
                 key="sale:r2",
             ),
             requested_at=datetime(2026, 9, 4, 0, 2, tzinfo=UTC),

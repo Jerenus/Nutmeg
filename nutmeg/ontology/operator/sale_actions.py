@@ -93,6 +93,61 @@ def _slate_content(manifest: "OfficialSaleSlateManifestV1") -> dict[str, object]
     }
 
 
+def official_sale_parser_receipt_document(
+    *,
+    lane: _Lane,
+    business_key: str,
+    published_at: datetime,
+    offers: list["OfficialOfferManifestV1"],
+) -> dict[str, object]:
+    """Build the trusted parser's canonical sale receipt."""
+    return {
+        "schema_version": "sporttery-official-sale-parser-v1",
+        "lane": lane,
+        "business_key": business_key,
+        "published_at": published_at.astimezone(UTC).isoformat(),
+        "offers": _slate_content(
+            _ParserReceiptSlate(lane=lane, business_key=business_key, offers=offers)
+        )["offers"],
+    }
+
+
+def official_sale_parser_receipt_hash(
+    *,
+    lane: _Lane,
+    business_key: str,
+    published_at: datetime,
+    offers: list["OfficialOfferManifestV1"],
+) -> str:
+    """Hash the trusted parser's canonical sale receipt."""
+    return _digest(
+        official_sale_parser_receipt_document(
+            lane=lane,
+            business_key=business_key,
+            published_at=published_at,
+            offers=offers,
+        )
+    )
+
+
+def official_empty_schedule_parser_receipt_hash(*, lane: _Lane) -> str:
+    """Hash a trusted parser receipt that observed no sale business keys."""
+    return _digest(
+        {
+            "schema_version": "sporttery-official-sale-parser-v1",
+            "lane": lane,
+            "observed_business_keys": [],
+        }
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _ParserReceiptSlate:
+    lane: _Lane
+    business_key: str
+    offers: list["OfficialOfferManifestV1"]
+
+
 class OfficialOfferManifestV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -137,11 +192,8 @@ class OfficialSaleSlateManifestV1(BaseModel):
     business_key: str = Field(min_length=1, max_length=100)
     published_at: datetime
     retrieved_at: datetime
-    parser_contract_version: _ParserContract | None = None
-    official_source_content_hash: str | None = Field(
-        default=None,
-        pattern=r"^[0-9a-f]{64}$",
-    )
+    parser_contract_version: _ParserContract
+    official_source_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     official_source_artifact_retrieval_id: str = Field(min_length=1, max_length=500)
     supersedes_slate_revision_id: str | None = Field(max_length=500)
     offers: list[OfficialOfferManifestV1] = Field(min_length=1, max_length=500)
@@ -192,6 +244,16 @@ class OfficialSaleSlateManifestV1(BaseModel):
                 offer.sale_opens_at <= self.published_at < offer.sale_deadline_at
             ):
                 raise ValueError("on_sale offer is outside its source publication window")
+        expected_receipt_hash = official_sale_parser_receipt_hash(
+            lane=self.lane,
+            business_key=self.business_key,
+            published_at=self.published_at,
+            offers=self.offers,
+        )
+        if self.official_source_content_hash != expected_receipt_hash:
+            raise ValueError(
+                "official source content hash must match the trusted parser receipt"
+            )
         return self
 
 
@@ -267,6 +329,12 @@ class OfficialScheduleCheckManifestV1(BaseModel):
                 or self.error_code is not None
             ):
                 raise ValueError("confirmed_no_sale requires an explicit empty observation")
+            if self.official_source_content_hash != (
+                official_empty_schedule_parser_receipt_hash(lane=self.lane)
+            ):
+                raise ValueError(
+                    "confirmed_no_sale source hash must match the empty parser receipt"
+                )
         elif (
             self.parser_contract_version is not None
             or self.official_source_content_hash is not None
@@ -695,6 +763,9 @@ __all__ = [
     "OfficialOfferManifestV1",
     "OfficialSaleSlateManifestV1",
     "OfficialScheduleCheckManifestV1",
+    "official_empty_schedule_parser_receipt_hash",
+    "official_sale_parser_receipt_document",
+    "official_sale_parser_receipt_hash",
     "SaleActions",
     "RecordOfficialScheduleCheckRequest",
 ]
