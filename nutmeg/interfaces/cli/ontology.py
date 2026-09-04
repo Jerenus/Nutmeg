@@ -82,7 +82,11 @@ def _assert_migration_preserved_source(
     after_counts = after["table_counts"]
     assert isinstance(before_counts, dict)
     assert isinstance(after_counts, dict)
-    mutable_migration_tables = {"schema_migrations", "action_permissions"}
+    mutable_migration_tables = {
+        "schema_migrations",
+        "action_permissions",
+        "selection_definitions",
+    }
     for table, count in before_counts.items():
         if table in mutable_migration_tables:
             continue

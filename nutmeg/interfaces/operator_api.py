@@ -127,10 +127,23 @@ class FreezeJudgmentPrescriptionCommandV2(OperatorCommandV2):
     judgment_revision_tokens: list[str] = Field(min_length=1, max_length=100)
 
 
+class RequestCandidateGenerationCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.REQUEST_CANDIDATE_GENERATION]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    market_prior_baseline_token: str = Field(min_length=1, max_length=8192)
+    baseline_envelope_token: str = Field(min_length=1, max_length=8192)
+    judgment_prescription_token: str = Field(min_length=1, max_length=8192)
+
+
+class SelectTicketCandidateCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.SELECT_CANDIDATE]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    candidate_token: str = Field(min_length=1, max_length=8192)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
 class UnavailableOperatorCommandV2(OperatorCommandV2):
     kind: Literal[
-        OperatorCommandKind.REQUEST_CANDIDATE_GENERATION,
-        OperatorCommandKind.SELECT_CANDIDATE,
         OperatorCommandKind.RECORD_NO_TICKET,
         OperatorCommandKind.SUPERSEDE_NO_TICKET,
         OperatorCommandKind.CREATE_TICKET_BATCH,
@@ -150,6 +163,8 @@ InstalledOperatorCommandV2 = Annotated[
     | RecordBaselineEnvelopeCommandV2
     | CommitMatchJudgmentCommandV2
     | FreezeJudgmentPrescriptionCommandV2
+    | RequestCandidateGenerationCommandV2
+    | SelectTicketCandidateCommandV2
     | RebuildScoreboardProjectionCommandV2
     | UnavailableOperatorCommandV2,
     Field(discriminator="kind"),
@@ -219,6 +234,20 @@ def mount_operator_api(
                     actor_role=ActorRole.JUDGE_OPERATOR,
                 )
                 status_code = 200
+            elif isinstance(command, RequestCandidateGenerationCommandV2):
+                result = operator_actions.request_candidate_generation(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 202
+            elif isinstance(command, SelectTicketCandidateCommandV2):
+                result = operator_actions.select_ticket_candidate(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
             elif isinstance(command, RebuildScoreboardProjectionCommandV2):
                 result = operator_actions.rebuild_scoreboard_projection(
                     command,
@@ -271,6 +300,8 @@ __all__ = [
     "OperatorCommandV2",
     "RecordBaselineEnvelopeCommandV2",
     "RebuildScoreboardProjectionCommandV2",
+    "RequestCandidateGenerationCommandV2",
+    "SelectTicketCandidateCommandV2",
     "StructureTemplateInputV2",
     "mount_operator_api",
 ]

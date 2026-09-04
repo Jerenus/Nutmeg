@@ -36,7 +36,7 @@ from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.decision import FactorDefinitionRow, FactorFamilyRow
 from nutmeg.ontology.repository.evidence import ObservationRow
 from nutmeg.ontology.repository.market import QuoteRow, SnapshotRow
-from nutmeg.ontology.repository.migrations import run_migrations
+from nutmeg.ontology.repository.migrations import MIGRATIONS, run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.operator_workers import EvidenceFreezeRequestWorker, MarketBaselineWorker
 
@@ -63,6 +63,8 @@ def _seed_sale_market_and_evidence(
     engine,
     *,
     market_state: str,
+    market_definition_id: str = "md-had",
+    settlement_parameter_decimal: str | None = None,
 ) -> None:
     with engine.begin() as connection:
         connection.exec_driver_sql(
@@ -109,8 +111,12 @@ def _seed_sale_market_and_evidence(
             "match_id, official_match_no, market_definition_ids_json, sale_opens_at, "
             "sale_deadline_at, status) VALUES "
             "('offer-revision-1', 'offer-family-1', 'slate-1', 'match-1', '001', "
-            "'[\"md-had\"]', ?, ?, 'on_sale')",
-            (AT.isoformat(), (AT + timedelta(hours=4)).isoformat()),
+            "?, ?, ?, 'on_sale')",
+            (
+                f'["{market_definition_id}"]',
+                AT.isoformat(),
+                (AT + timedelta(hours=4)).isoformat(),
+            ),
         )
     with OntologyUnitOfWork(engine) as uow:
         uow.evidence.insert_observation(
@@ -133,15 +139,15 @@ def _seed_sale_market_and_evidence(
         if market_state != "missing":
             quote_ids = ("quote-3", "quote-1", "quote-0")
             for quote_id, selection_id, decimal_odds in (
-                ("quote-3", "sel-had-home", 2.5),
-                ("quote-1", "sel-had-draw", 10 / 3),
-                ("quote-0", "sel-had-away", 10 / 3),
+                ("quote-3", f"sel-{market_definition_id[3:]}-home", 2.5),
+                ("quote-1", f"sel-{market_definition_id[3:]}-draw", 10 / 3),
+                ("quote-0", f"sel-{market_definition_id[3:]}-away", 10 / 3),
             ):
                 uow.market.insert_quote(
                     QuoteRow(
                         quote_id=quote_id,
                         match_id="match-1",
-                        market_definition_id="md-had",
+                        market_definition_id=market_definition_id,
                         selection_id=selection_id,
                         provider="sporttery",
                         bookmaker=None,
@@ -149,13 +155,16 @@ def _seed_sale_market_and_evidence(
                         captured_at=AT.isoformat(),
                         artifact_retrieval_id="retrieval-1",
                         quote_status="active",
+                        settlement_parameter_decimal=(
+                            settlement_parameter_decimal
+                        ),
                     )
                 )
             uow.market.insert_snapshot(
                 SnapshotRow(
                     market_snapshot_id="snapshot-1",
                     match_id="match-1",
-                    market_definition_id="md-had",
+                    market_definition_id=market_definition_id,
                     snapshot_kind="read_time",
                     as_of=AT.isoformat(),
                     fair_distribution={"home": 0.4, "draw": 0.3, "away": 0.3},
@@ -274,10 +283,18 @@ def _fixture(
     *,
     market_state: str = "complete",
     match_count: int = 1,
+    market_definition_id: str = "md-had",
+    settlement_parameter_decimal: str | None = None,
+    migrations=MIGRATIONS,
 ) -> JudgmentFixture:
     engine = build_ontology_engine(tmp_path / "ontology.db")
-    run_migrations(engine)
-    _seed_sale_market_and_evidence(engine, market_state=market_state)
+    run_migrations(engine, migrations)
+    _seed_sale_market_and_evidence(
+        engine,
+        market_state=market_state,
+        market_definition_id=market_definition_id,
+        settlement_parameter_decimal=settlement_parameter_decimal,
+    )
     if match_count == 2:
         if market_state != "complete":
             raise ValueError("two-match fixture requires complete markets")
@@ -412,6 +429,8 @@ def _baseline_request(
 def _envelope_request(
     fixture: JudgmentFixture,
     key: str = "envelope:1",
+    *,
+    market_code: str = "had",
 ) -> RecordBaselineEnvelopeRequest:
     return RecordBaselineEnvelopeRequest(
         task_evidence_bundle_revision_id=fixture.task_bundle_revision_id,
@@ -423,7 +442,7 @@ def _envelope_request(
         offer_constraints=(
             BaselineEnvelopeOfferConstraint(
                 official_match_no="001",
-                market_code="had",
+                market_code=market_code,
                 allowed_face_bundles=(
                     FaceBundleInput(bundle_code="home", face_codes=("3",)),
                     FaceBundleInput(bundle_code="home_draw", face_codes=("3", "1")),
@@ -533,11 +552,16 @@ def test_baseline_copies_exact_snapshot_quotes_and_decimal_probabilities(
         ).mappings().one()
         rows = connection.execute(
             text(
-                "SELECT face_code, probability_decimal, market_snapshot_id, quote_id "
+                "SELECT face_code, probability_decimal, market_snapshot_id, quote_id, "
+                "booked_decimal_odds, quote_captured_at "
                 "FROM operator_market_prior_baseline_probabilities ORDER BY face_code"
             )
         ).mappings().all()
     assert parent["comparison_only"] == 1
+    assert {row["booked_decimal_odds"] for row in rows} == {
+        "2.500000000000",
+        "3.333333333333",
+    }
     assert parent["probability_precision"] == 12
     assert parent["arithmetic_version"]
     assert parent["task_evidence_bundle_revision_id"] == fixture.task_bundle_revision_id
@@ -547,6 +571,45 @@ def test_baseline_copies_exact_snapshot_quotes_and_decimal_probabilities(
     }
     assert {row["market_snapshot_id"] for row in rows} == {"snapshot-1"}
     assert {row["quote_id"] for row in rows} == {"quote-3", "quote-1", "quote-0"}
+    assert {row["quote_captured_at"] for row in rows} == {AT.isoformat()}
+
+
+@pytest.mark.parametrize(
+    ("market_definition_id", "initial_line", "corrupt_line"),
+    (
+        ("md-hhad", "-1.000000000000", "-2.000000000000"),
+        ("md-had", None, "-1.000000000000"),
+    ),
+)
+def test_baseline_rejects_inconsistent_or_unexpected_quote_lines(
+    tmp_path: Path,
+    market_definition_id: str,
+    initial_line: str | None,
+    corrupt_line: str,
+) -> None:
+    fixture = _fixture(
+        tmp_path,
+        market_definition_id=market_definition_id,
+        settlement_parameter_decimal=initial_line,
+    )
+    with fixture.engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE market_quotes SET settlement_parameter_decimal = :line "
+                "WHERE quote_id = 'quote-1'"
+            ),
+            {"line": corrupt_line},
+        )
+
+    with pytest.raises(ValueError, match="settlement parameter|signed line"):
+        fixture.decision_actions.freeze_market_prior_baseline(
+            _baseline_request(fixture)
+        )
+
+    with fixture.engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT COUNT(*) FROM operator_market_prior_baseline_revisions")
+        ) == 0
 
 
 @pytest.mark.parametrize("market_state", ["missing", "conflict"])
@@ -625,6 +688,19 @@ def test_envelope_preserves_only_explicit_judge_constraints(tmp_path: Path) -> N
     assert parent["maximum_exhaustive_candidate_count"] == 100
     assert bundles == [("home", "3"), ("home_draw", "1"), ("home_draw", "3")]
     assert templates["structure_code"] == "single-1"
+
+
+def test_envelope_rejects_zero_cap_before_persisting_a_revision(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+
+    with pytest.raises(ValueError, match="capital_cap_minor.*at least 1"):
+        fixture.decision_actions.record_baseline_envelope(
+            replace(_envelope_request(fixture), capital_cap_minor=0)
+        )
+    with fixture.engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT COUNT(*) FROM operator_baseline_envelope_revisions")
+        ) == 0
 
 
 def test_market_baseline_worker_waits_for_committed_link_then_binds_result(

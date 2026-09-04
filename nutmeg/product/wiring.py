@@ -8,7 +8,9 @@ from typing import Any
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.zucai_official import fetch_renjiu_history
 from nutmeg.interfaces.bot.telegram import TelegramBotClient
+from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.kernel import OntologyKernel
+from nutmeg.ontology.operator.result_actions import RegisterZucaiFixedPrizePolicyRequest
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 from nutmeg.product.actions import ProductActionGateway
@@ -47,6 +49,34 @@ class ProductServices:
 def _telegram_owner(raw: str | None) -> int | None:
     values = {int(item.strip()) for item in (raw or "").split(",") if item.strip()}
     return next(iter(values)) if len(values) == 1 else None
+
+
+def _ensure_initial_zucai_fixed_prize_policies(kernel: OntologyKernel) -> None:
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        missing = tuple(
+            ticket_kind
+            for ticket_kind in ("sfc", "renjiu")
+            if uow.operator_result.current_fixed_prize_policy(ticket_kind) is None
+        )
+    requested_at = datetime.now(UTC)
+    for ticket_kind in missing:
+        outcome = kernel.result_actions.register_zucai_fixed_prize_policy(
+            RegisterZucaiFixedPrizePolicyRequest(
+                ticket_kind=ticket_kind,
+                policy_version="zucai-fixed-prize-v1",
+                actor_id="system:fixed-prize-policy",
+                actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key=(
+                    f"operator-bootstrap:fixed-prize:{ticket_kind}:v1"
+                ),
+                requested_at=requested_at,
+                expected_current_revision_no=0,
+            )
+        )
+        if not outcome.is_success:
+            raise ProductNotReadyError(
+                f"initial {ticket_kind} fixed-prize policy was not registered"
+            )
 
 
 class SimulatedTelegramClient:
@@ -95,6 +125,8 @@ def build_product_services(
         raise ProductNotReadyError(
             'ontology is not initialized, healthy, and current; run `nutmeg ontology init`'
         )
+    if runtime_config is not None and runtime_config.mutations_enabled:
+        _ensure_initial_zucai_fixed_prize_policies(kernel)
     repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
     queries = ProductQueryService(repository, kernel)
     actions = ProductActionGateway(kernel, repository)

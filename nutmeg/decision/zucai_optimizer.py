@@ -253,10 +253,7 @@ def optimize(payload: object) -> dict[str, Any]:
             if data["budget_yuan"] is None
             else public["cost_yuan"] <= data["budget_yuan"]
         )
-        # 回本线 = 票价 / P(全对)。任九类固定奖金玩法的经济性判据:
-        # 中奖只拿 1 注奖金,成本却随注数线性涨 → 加注让回本线单调变差。
-        # 2026-08-31 立法(s条修订),26114 实证:¥256→¥1,728 时 P 涨 4.1 倍而回本线从
-        # ¥3,902 爬到 ¥6,417,当晚实开 ¥214,任何规模都是负期望。
+        # 回本线与官方中位倍数只作报告，不参与候选排序或部署裁决。
         if probability > 0:
             break_even = Decimal(public["cost_yuan"]) / probability
             public["break_even_bonus_yuan"] = float(break_even)
@@ -278,18 +275,7 @@ def optimize(payload: object) -> dict[str, Any]:
         for item in calculated
         if data["budget_yuan"] is None or item[0]["within_cap"]
     ]
-    if data["median_bonus_yuan"] is not None:
-        candidates.sort(
-            key=lambda item: (
-                Decimal(item[0]["cost_yuan"]) / item[1]
-                if item[1] > 0
-                else Decimal("Infinity"),
-                item[0]["cost_yuan"],
-                item[0]["id"],
-            )
-        )
-    else:
-        candidates.sort(key=lambda item: (-item[1], item[0]["cost_yuan"], item[0]["id"]))
+    candidates.sort(key=lambda item: (-item[1], item[0]["cost_yuan"], item[0]["id"]))
     ranking = [item[0]["id"] for item in candidates]
     versions_by_id = {version["id"]: version for version in data["versions"]}
     groups = [
@@ -350,8 +336,9 @@ def format_report(result: dict[str, Any]) -> str:
     if result.get("median_bonus_yuan"):
         lines.append(
             f"官方中位奖金锚: ¥{result['median_bonus_yuan']:,.0f}"
-            "（排序按回本线升序 — s条修订:任九类固定奖金玩法用回本线最小化，非 P 最大化）"
+            "（回本线/官方中位倍数只作报告，不参与排序或出票裁决）"
         )
+    lines.append("候选顺序: 帽内按 P(全对) 降序；同 P 按票价和稳定标识升序")
     if result["ranking"]:
         lines.append(f"帽内排序: {' > '.join(result['ranking'])}")
         lines.append(f"帽内第一: {result['best_within_cap_id']}")

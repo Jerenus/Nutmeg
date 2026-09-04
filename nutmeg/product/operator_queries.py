@@ -43,6 +43,10 @@ from nutmeg.product.operator_contracts import (
     BaselineEnvelopeStructureView,
     BlockedStep,
     BusinessEvidenceSummary,
+    CandidateAuditFindingView,
+    CandidateComparisonView,
+    CandidateCompositionView,
+    CandidateSetComparisonView,
     CompleteStep,
     ConfirmationStep,
     ConstructTicketStep,
@@ -189,6 +193,35 @@ class JudgmentPrescriptionCommandContext:
     judgment_revision_tokens: tuple[str, ...]
     judgment_revision_ids: tuple[str, ...]
     expected_current_revision_no: int
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateGenerationCommandContext:
+    task_key: str
+    task_snapshot_hash: str
+    work_item_id: str
+    dependency_revision_ids: tuple[str, ...]
+    task_evidence_bundle_revision_id: str
+    market_prior_baseline_revision_id: str
+    baseline_envelope_revision_id: str
+    judgment_prescription_revision_id: str
+    fixed_prize_policy_revision_id: str | None
+    expected_current_revision_no: int
+    market_prior_baseline_token: str
+    baseline_envelope_token: str
+    judgment_prescription_token: str
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateSelectionCommandContext:
+    task_key: str
+    task_snapshot_hash: str
+    work_item_id: str
+    dependency_revision_ids: tuple[str, ...]
+    expected_current_revision_no: int
+    candidate_refs_by_token: tuple[tuple[str, str, str], ...]
+    candidate_set_revision_id: str
+    candidate_revision_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -615,6 +648,346 @@ class OperatorQueryService:
             ),
         )
 
+    def candidate_generation_context(
+        self,
+        task_key: str,
+        *,
+        as_of: datetime,
+    ) -> CandidateGenerationCommandContext:
+        cutoff = _aware(as_of, "as_of")
+        with self._decision_uow() as uow:
+            lineage = self._decision_lineage(
+                uow,
+                task_key,
+                cutoff,
+                require_envelope=True,
+            )
+            prescription = self._current_prescription(uow, lineage)
+            if prescription is None:
+                raise ProductActionBlockedError(
+                    "candidate generation requires a current frozen prescription"
+                )
+            return self._candidate_generation_context_for_lineage(
+                uow,
+                lineage,
+                prescription,
+            )
+
+    def candidate_selection_context(
+        self,
+        task_key: str,
+        candidate_token: str,
+        *,
+        as_of: datetime,
+    ) -> CandidateSelectionCommandContext:
+        cutoff = _aware(as_of, "as_of")
+        with self._decision_uow() as uow:
+            lineage = self._decision_lineage(
+                uow,
+                task_key,
+                cutoff,
+                require_envelope=True,
+            )
+            prescription = self._current_prescription(uow, lineage)
+            if prescription is None:
+                raise ProductActionBlockedError(
+                    "candidate selection requires a current frozen prescription"
+                )
+            candidate_sets = self._current_candidate_sets(
+                uow,
+                lineage,
+                str(prescription["judgment_prescription_revision_id"]),
+            )
+            if not candidate_sets:
+                raise ProductActionBlockedError(
+                    "candidate selection requires current generated candidate sets"
+                )
+            judgment_set = next(
+                item for item in candidate_sets if item.set_kind == "judgment_bound"
+            )
+            selection = uow.operator_decision.current_candidate_selection(
+                task_family_id=lineage.task_key,
+                work_item_id=lineage.work_item_id,
+            )
+            if (
+                selection is not None
+                and selection.candidate_set_revision_id
+                == judgment_set.candidate_set_revision_id
+                and uow.operator_decision.action_is_committed(
+                    selection.action_id,
+                    action_type="select_ticket_candidate",
+                )
+            ):
+                raise ProductActionBlockedError(
+                    "ticket candidate is already selected for this candidate set"
+                )
+            dependencies = self._candidate_selection_dependencies(
+                lineage,
+                prescription_revision_id=str(
+                    prescription["judgment_prescription_revision_id"]
+                ),
+                candidate_sets=candidate_sets,
+                selection=selection,
+            )
+            refs = self._candidate_selection_refs(
+                uow,
+                lineage,
+                judgment_set,
+                dependencies,
+            )
+            selected = next(
+                (item for item in refs if item[0] == candidate_token),
+                None,
+            )
+            if selected is None:
+                raise ProductActionBlockedError(
+                    "candidate selection token is stale or invalid"
+                )
+            _, candidate_set_revision_id, candidate_revision_id = selected
+            return CandidateSelectionCommandContext(
+                task_key=lineage.task_key,
+                task_snapshot_hash=lineage.task_snapshot_hash,
+                work_item_id=lineage.work_item_id,
+                dependency_revision_ids=dependencies,
+                expected_current_revision_no=(
+                    0 if selection is None else selection.revision_no
+                ),
+                candidate_refs_by_token=(selected,),
+                candidate_set_revision_id=candidate_set_revision_id,
+                candidate_revision_id=candidate_revision_id,
+            )
+
+    def _candidate_generation_context_for_lineage(
+        self,
+        uow,
+        lineage: _DecisionLineage,
+        prescription: dict[str, object],
+    ) -> CandidateGenerationCommandContext:
+        envelope = uow.operator_decision.baseline_envelope_revision(
+            lineage.baseline_envelope_revision_id or ""
+        )
+        if envelope is None:
+            raise ProductActionBlockedError(
+                "candidate generation requires a current baseline envelope"
+            )
+        fixed_policy_id = None
+        if envelope.ticket_kind != "jczq_pass":
+            policy = uow.operator_result.current_fixed_prize_policy(
+                envelope.ticket_kind
+            )
+            if policy is None:
+                raise ProductActionBlockedError(
+                    "candidate generation requires a current fixed-prize policy"
+                )
+            fixed_policy_id = policy.fixed_prize_policy_revision_id
+        current_sets = tuple(
+            uow.operator_result.current_candidate_set(
+                task_family_id=lineage.task_key,
+                work_item_id=lineage.work_item_id,
+                set_kind=set_kind,
+            )
+            for set_kind in (
+                "judgment_bound",
+                "conditional_market_counterfactual",
+            )
+        )
+        dependencies = set(_decision_dependencies(lineage))
+        prescription_id = str(
+            prescription["judgment_prescription_revision_id"]
+        )
+        dependencies.add(f"prescription:{prescription_id}")
+        if fixed_policy_id is not None:
+            dependencies.add(f"fixed-policy:{fixed_policy_id}")
+        for set_kind, candidate_set in zip(
+            ("judgment_bound", "conditional_market_counterfactual"),
+            current_sets,
+            strict=True,
+        ):
+            dependencies.add(
+                f"candidate-set:{candidate_set.candidate_set_revision_id}"
+                if candidate_set is not None
+                else f"candidate-set:{set_kind}:none"
+            )
+        dependency_ids = tuple(sorted(dependencies))
+        judgment_set = current_sets[0]
+        command_kind = OperatorCommandKind.REQUEST_CANDIDATE_GENERATION
+        return CandidateGenerationCommandContext(
+            task_key=lineage.task_key,
+            task_snapshot_hash=lineage.task_snapshot_hash,
+            work_item_id=lineage.work_item_id,
+            dependency_revision_ids=dependency_ids,
+            task_evidence_bundle_revision_id=(
+                lineage.task_evidence_bundle_revision_id
+            ),
+            market_prior_baseline_revision_id=(
+                lineage.market_prior_baseline_revision_id
+            ),
+            baseline_envelope_revision_id=(
+                lineage.baseline_envelope_revision_id or ""
+            ),
+            judgment_prescription_revision_id=prescription_id,
+            fixed_prize_policy_revision_id=fixed_policy_id,
+            expected_current_revision_no=(
+                0 if judgment_set is None else judgment_set.revision_no
+            ),
+            market_prior_baseline_token=self._decision_command_token(
+                lineage,
+                command_kind,
+                (f"baseline:{lineage.market_prior_baseline_revision_id}",),
+            ),
+            baseline_envelope_token=self._decision_command_token(
+                lineage,
+                command_kind,
+                (f"envelope:{lineage.baseline_envelope_revision_id}",),
+            ),
+            judgment_prescription_token=self._decision_command_token(
+                lineage,
+                command_kind,
+                (f"prescription:{prescription_id}",),
+            ),
+        )
+
+    @staticmethod
+    def _current_prescription(uow, lineage: _DecisionLineage):
+        rows = _current_leaf_rows(
+            uow.connection,
+            sod.operator_judgment_prescription_revisions,
+            sod.operator_judgment_prescription_revisions.c.
+            judgment_prescription_revision_id,
+            sod.operator_judgment_prescription_revisions.c.task_family_id
+            == lineage.task_key,
+            sod.operator_judgment_prescription_revisions.c.work_item_id
+            == lineage.work_item_id,
+            sod.operator_judgment_prescription_revisions.c.task_snapshot_hash
+            == lineage.task_snapshot_hash,
+            sod.operator_judgment_prescription_revisions.c.
+            task_evidence_bundle_revision_id
+            == lineage.task_evidence_bundle_revision_id,
+            sod.operator_judgment_prescription_revisions.c.
+            market_prior_baseline_revision_id
+            == lineage.market_prior_baseline_revision_id,
+            sod.operator_judgment_prescription_revisions.c.
+            baseline_envelope_revision_id
+            == lineage.baseline_envelope_revision_id,
+        )
+        if len(rows) > 1:
+            raise ProductActionBlockedError(
+                "task judgment prescription is ambiguous"
+            )
+        prescription = rows[0] if rows else None
+        if prescription is not None and not uow.operator_decision.action_is_committed(
+            str(prescription["action_id"]),
+            action_type="freeze_judgment_prescription",
+        ):
+            raise ProductActionBlockedError(
+                "task judgment prescription is not committed"
+            )
+        return prescription
+
+    @staticmethod
+    def _current_candidate_sets(
+        uow,
+        lineage: _DecisionLineage,
+        prescription_revision_id: str,
+    ):
+        candidate_sets = tuple(
+            uow.operator_result.current_candidate_set(
+                task_family_id=lineage.task_key,
+                work_item_id=lineage.work_item_id,
+                set_kind=set_kind,
+            )
+            for set_kind in (
+                "judgment_bound",
+                "conditional_market_counterfactual",
+            )
+        )
+        if any(candidate_set is None for candidate_set in candidate_sets):
+            return ()
+        current_sets = tuple(
+            candidate_set
+            for candidate_set in candidate_sets
+            if candidate_set is not None
+        )
+        generation_ids = {
+            candidate_set.generation_request_id for candidate_set in current_sets
+        }
+        expected_lineage = (
+            lineage.task_key,
+            lineage.work_item_id,
+            lineage.task_snapshot_hash,
+            lineage.slate_revision_id,
+            lineage.market_prior_baseline_revision_id,
+            lineage.baseline_envelope_revision_id,
+            prescription_revision_id,
+        )
+        if len(generation_ids) != 1 or any(
+            (
+                candidate_set.task_family_id,
+                candidate_set.work_item_id,
+                candidate_set.task_snapshot_hash,
+                candidate_set.slate_revision_id,
+                candidate_set.market_prior_baseline_revision_id,
+                candidate_set.baseline_envelope_revision_id,
+                candidate_set.judgment_prescription_revision_id,
+            )
+            != expected_lineage
+            or not uow.operator_decision.action_is_committed(
+                candidate_set.action_id,
+                action_type="generate_ticket_candidate_set",
+            )
+            for candidate_set in current_sets
+        ):
+            return ()
+        return current_sets
+
+    @staticmethod
+    def _candidate_selection_dependencies(
+        lineage: _DecisionLineage,
+        *,
+        prescription_revision_id: str,
+        candidate_sets,
+        selection,
+    ) -> tuple[str, ...]:
+        dependencies = set(_decision_dependencies(lineage))
+        dependencies.add(f"prescription:{prescription_revision_id}")
+        dependencies.update(
+            f"candidate-set:{candidate_set.candidate_set_revision_id}"
+            for candidate_set in candidate_sets
+        )
+        dependencies.add(
+            "selection:none"
+            if selection is None
+            else f"selection:{selection.candidate_selection_id}"
+        )
+        return tuple(sorted(dependencies))
+
+    def _candidate_selection_refs(
+        self,
+        uow,
+        lineage: _DecisionLineage,
+        judgment_set,
+        dependencies: tuple[str, ...],
+    ) -> tuple[tuple[str, str, str], ...]:
+        refs = []
+        for candidate in uow.operator_result.candidates_for_set(
+            judgment_set.candidate_set_revision_id
+        ):
+            if candidate.partition == "over_cap":
+                continue
+            token = self._decision_command_token(
+                lineage,
+                OperatorCommandKind.SELECT_CANDIDATE,
+                tuple(sorted((*dependencies, f"candidate:{candidate.candidate_revision_id}"))),
+            )
+            refs.append(
+                (
+                    token,
+                    judgment_set.candidate_set_revision_id,
+                    candidate.candidate_revision_id,
+                )
+            )
+        return tuple(refs)
+
     def _decision_uow(self):
         if self._unit_of_work_factory is None:
             raise ProductActionBlockedError("operator judgment reads are not configured")
@@ -697,6 +1070,9 @@ class OperatorQueryService:
     ) -> _BuiltTask | None:
         if self._unit_of_work_factory is None or self._snapshot_tokens is None:
             return None
+        candidate_sets = ()
+        selection = None
+        selection_completed = False
         with self._decision_uow() as uow:
             bundle = uow.operator_decision.current_task_evidence_bundle_revision(
                 task_id,
@@ -753,13 +1129,98 @@ class OperatorQueryService:
                     )
                     progress_label = "逐场判断"
                 else:
-                    step, dependency_ids = self._prescription_ready_step(
-                        lineage,
-                        judgments,
-                        completed=completed,
-                        total=total,
-                    )
-                    progress_label = "冻结判断处方"
+                    prescription = self._current_prescription(uow, lineage)
+                    if prescription is None:
+                        step, dependency_ids = self._prescription_ready_step(
+                            lineage,
+                            judgments,
+                            completed=completed,
+                            total=total,
+                        )
+                        progress_label = "冻结判断处方"
+                    else:
+                        prescription_id = str(
+                            prescription["judgment_prescription_revision_id"]
+                        )
+                        candidate_sets = self._current_candidate_sets(
+                            uow,
+                            lineage,
+                            prescription_id,
+                        )
+                        if not candidate_sets:
+                            generation = self._candidate_generation_context_for_lineage(
+                                uow,
+                                lineage,
+                                prescription,
+                            )
+                            step = ConstructTicketStep(
+                                task_id=lineage.task_key,
+                                mode="candidate_request",
+                                request_generation_token=(
+                                    self._decision_command_token(
+                                        lineage,
+                                        OperatorCommandKind.REQUEST_CANDIDATE_GENERATION,
+                                        generation.dependency_revision_ids,
+                                    )
+                                ),
+                                market_prior_baseline_token=(
+                                    generation.market_prior_baseline_token
+                                ),
+                                baseline_envelope_token=(
+                                    generation.baseline_envelope_token
+                                ),
+                                judgment_prescription_token=(
+                                    generation.judgment_prescription_token
+                                ),
+                            )
+                            dependency_ids = generation.dependency_revision_ids
+                            progress_label = "生成完整候选集"
+                        else:
+                            judgment_set = next(
+                                candidate_set
+                                for candidate_set in candidate_sets
+                                if candidate_set.set_kind == "judgment_bound"
+                            )
+                            selection = (
+                                uow.operator_decision.current_candidate_selection(
+                                    task_family_id=lineage.task_key,
+                                    work_item_id=lineage.work_item_id,
+                                )
+                            )
+                            selection_completed = bool(
+                                selection is not None
+                                and selection.candidate_set_revision_id
+                                == judgment_set.candidate_set_revision_id
+                                and uow.operator_decision.action_is_committed(
+                                    selection.action_id,
+                                    action_type="select_ticket_candidate",
+                                )
+                            )
+                            dependency_ids = self._candidate_selection_dependencies(
+                                lineage,
+                                prescription_revision_id=prescription_id,
+                                candidate_sets=candidate_sets,
+                                selection=selection,
+                            )
+                            step = self._candidate_comparison_step(
+                                uow,
+                                lineage,
+                                prescription,
+                                candidate_sets,
+                                dependency_ids,
+                                selection=(
+                                    selection if selection_completed else None
+                                ),
+                            )
+                            progress_label = (
+                                "等待部署审计"
+                                if selection_completed
+                                else "比较候选票"
+                            )
+        formal_ticket_stage = isinstance(step, ConstructTicketStep)
+        candidate_count = sum(
+            candidate_set.candidate_count for candidate_set in candidate_sets
+        )
         facts = OperatorTaskFacts(
             lane=lane,
             business_key=business_key,
@@ -768,9 +1229,13 @@ class OperatorQueryService:
             source_error_code=None,
             has_issue=True,
             has_prep=True,
-            unresolved_adjudications=1,
-            candidate_count=0,
-            selected_candidate_id=None,
+            unresolved_adjudications=0 if formal_ticket_stage else 1,
+            candidate_count=candidate_count,
+            selected_candidate_id=(
+                selection.candidate_selection_id
+                if selection_completed and selection is not None
+                else None
+            ),
             audit_recorded=False,
             deployment_decision=None,
             ticket_artifact_id=None,
@@ -800,6 +1265,399 @@ class OperatorQueryService:
                 }
             ),
         )
+
+    def _candidate_comparison_step(
+        self,
+        uow,
+        lineage: _DecisionLineage,
+        prescription: dict[str, object],
+        candidate_sets,
+        dependencies: tuple[str, ...],
+        *,
+        selection,
+    ) -> ConstructTicketStep:
+        judgment_set = next(
+            item for item in candidate_sets if item.set_kind == "judgment_bound"
+        )
+        selection_refs = (
+            ()
+            if selection is not None
+            else self._candidate_selection_refs(
+                uow,
+                lineage,
+                judgment_set,
+                dependencies,
+            )
+        )
+        candidate_tokens = {
+            candidate_revision_id: token
+            for token, _candidate_set_revision_id, candidate_revision_id in selection_refs
+        }
+        conditional_set = next(
+            item
+            for item in candidate_sets
+            if item.set_kind == "conditional_market_counterfactual"
+        )
+        market_probability_by_signature = {}
+        for candidate in uow.operator_result.candidates_for_set(
+            conditional_set.candidate_set_revision_id
+        ):
+            _composition, signature, _faces = self._candidate_composition(
+                uow,
+                conditional_set,
+                candidate,
+            )
+            metric = uow.operator_result.candidate_metric(
+                candidate.candidate_revision_id
+            )
+            if metric is None:
+                raise ProductActionBlockedError(
+                    "candidate comparison metric is missing"
+                )
+            market_probability_by_signature[signature] = Decimal(
+                metric.objective_probability_decimal
+            )
+        candidate_set_views = []
+        for candidate_set in candidate_sets:
+            candidates = [
+                self._candidate_comparison_view(
+                    uow,
+                    prescription,
+                    candidate_set,
+                    candidate,
+                    candidate_token=candidate_tokens.get(
+                        candidate.candidate_revision_id
+                    ),
+                    market_probability_by_signature=(
+                        market_probability_by_signature
+                    ),
+                    selection_completed=selection is not None,
+                )
+                for candidate in uow.operator_result.candidates_for_set(
+                    candidate_set.candidate_set_revision_id
+                )
+            ]
+            if not candidates:
+                raise ProductActionBlockedError(
+                    "candidate comparison set is empty"
+                )
+            candidate_set_views.append(
+                CandidateSetComparisonView(
+                    label=(
+                        "判断处方候选"
+                        if candidate_set.set_kind == "judgment_bound"
+                        else "市场条件对照"
+                    ),
+                    comparison_only=bool(candidate_set.comparison_only),
+                    candidates=candidates,
+                )
+            )
+        selected_candidate_code = None
+        if selection is not None:
+            selected_candidate = uow.operator_result.candidate(
+                selection.candidate_revision_id
+            )
+            if selected_candidate is None:
+                raise ProductActionBlockedError(
+                    "selected ticket candidate is missing"
+                )
+            selected_candidate_code = selected_candidate.candidate_code
+        return ConstructTicketStep(
+            task_id=lineage.task_key,
+            mode="candidate_comparison",
+            selection_command_token=(
+                None
+                if selection is not None
+                else self._decision_command_token(
+                    lineage,
+                    OperatorCommandKind.SELECT_CANDIDATE,
+                    dependencies,
+                )
+            ),
+            selection_completed=selection is not None,
+            selected_candidate_code=selected_candidate_code,
+            candidate_sets=candidate_set_views,
+        )
+
+    def _candidate_comparison_view(
+        self,
+        uow,
+        prescription: dict[str, object],
+        candidate_set,
+        candidate,
+        *,
+        candidate_token: str | None,
+        market_probability_by_signature: dict[tuple[object, ...], Decimal],
+        selection_completed: bool,
+    ) -> CandidateComparisonView:
+        metric = uow.operator_result.candidate_metric(
+            candidate.candidate_revision_id
+        )
+        if metric is None:
+            raise ProductActionBlockedError("candidate comparison metric is missing")
+        composition, signature, candidate_faces = self._candidate_composition(
+            uow,
+            candidate_set,
+            candidate,
+        )
+        findings = uow.operator_result.candidate_audit_findings(
+            candidate.candidate_revision_id
+        )
+        selectable = bool(
+            not selection_completed
+            and candidate_set.set_kind == "judgment_bound"
+            and candidate.partition != "over_cap"
+            and candidate_token is not None
+        )
+        market_difference = None
+        market_probability = market_probability_by_signature.get(signature)
+        if candidate_set.set_kind == "judgment_bound" and market_probability is not None:
+            delta_pp = (
+                Decimal(metric.objective_probability_decimal) - market_probability
+            ) * 100
+            normalized = delta_pp.quantize(
+                _PROBABILITY_QUANTUM,
+                rounding=ROUND_HALF_EVEN,
+            )
+            if normalized == 0:
+                normalized = Decimal(0)
+            market_difference = f"相对市场先验 {normalized:+.12f} pp"
+        return CandidateComparisonView(
+            code=candidate.candidate_code,
+            partition=candidate.partition,
+            rank=candidate.rank,
+            selectable=selectable,
+            deployable=bool(candidate.deployable),
+            candidate_token=candidate_token if selectable else None,
+            composition=composition,
+            ticket_count=metric.ticket_count,
+            distinct_note_count=metric.distinct_note_count,
+            paid_note_unit_count=metric.paid_note_unit_count,
+            stake_minor=metric.stake_minor,
+            capital_utilization_decimal=metric.capital_utilization_decimal,
+            objective_label=(
+                "P(全对)"
+                if metric.probability_kind == "all_required_legs"
+                else "P(至少一票全对)"
+            ),
+            objective_probability_decimal=(
+                metric.objective_probability_decimal
+            ),
+            expected_broken_legs_decimal=(
+                metric.expected_broken_legs_decimal
+            ),
+            break_even_bonus_minor=metric.break_even_bonus_minor,
+            break_even_to_official_median_decimal=(
+                metric.break_even_to_official_median_decimal
+            ),
+            common_dead_faces=[
+                f"场 {item.official_match_no} · {item.face_code}"
+                for item in uow.operator_result.candidate_dead_faces(
+                    candidate.candidate_revision_id
+                )
+            ],
+            prescription_differences=self._candidate_prescription_differences(
+                uow,
+                prescription,
+                findings,
+                candidate_faces,
+            ),
+            audit_findings=[
+                CandidateAuditFindingView(
+                    audit_kind=item.audit_kind,
+                    finding_code=item.finding_code,
+                    severity=item.severity,
+                    message=item.message,
+                    rule_id=item.rule_id,
+                )
+                for item in findings
+            ],
+            market_difference=market_difference,
+        )
+
+    def _candidate_composition(self, uow, candidate_set, candidate):
+        tickets = uow.operator_result.candidate_tickets(
+            candidate.candidate_revision_id
+        )
+        if not tickets:
+            raise ProductActionBlockedError(
+                "candidate comparison ticket composition is missing"
+            )
+        offers_by_id = {
+            offer.official_offer_revision_id: offer
+            for offer in uow.operator_sale.offer_revisions_for_slate(
+                candidate_set.slate_revision_id
+            )
+        }
+        envelope_numbers = tuple(
+            str(value)
+            for value in uow.connection.execute(
+                select(
+                    sod.operator_baseline_envelope_offer_constraints.c.
+                    official_match_no
+                )
+                .where(
+                    sod.operator_baseline_envelope_offer_constraints.c.
+                    baseline_envelope_revision_id
+                    == candidate_set.baseline_envelope_revision_id
+                )
+                .order_by(
+                    sod.operator_baseline_envelope_offer_constraints.c.
+                    constraint_index
+                )
+            ).scalars()
+        )
+        singles: list[str] = []
+        doubles: list[str] = []
+        full_covers: list[str] = []
+        pass_groups: list[str] = []
+        selected_numbers: set[str] = set()
+        candidate_faces: dict[str, set[str]] = {}
+        signature_tickets = []
+        for ticket in tickets:
+            grouped: dict[tuple[str, str], list[str]] = {}
+            for leg in uow.operator_result.candidate_ticket_legs(
+                ticket.candidate_ticket_id
+            ):
+                key = (
+                    leg.official_offer_revision_id,
+                    leg.market_definition_id,
+                )
+                grouped.setdefault(key, []).append(leg.selection_code)
+            signature_legs = []
+            group_numbers = []
+            for (offer_id, market_id), raw_faces in grouped.items():
+                offer = offers_by_id.get(offer_id)
+                if offer is None:
+                    raise ProductActionBlockedError(
+                        "candidate comparison offer is missing"
+                    )
+                match_no = offer.official_match_no
+                faces = tuple(sorted(set(raw_faces), key=_face_sort_key))
+                selected_numbers.add(match_no)
+                candidate_faces.setdefault(match_no, set()).update(faces)
+                group_numbers.append(match_no)
+                label = f"场 {match_no} · {''.join(faces)}"
+                if len(faces) == 1:
+                    singles.append(label)
+                elif len(faces) == 2:
+                    doubles.append(label)
+                else:
+                    full_covers.append(label)
+                signature_legs.append((offer_id, market_id, faces))
+            group_parts = [ticket.structure_code]
+            if ticket.group_code:
+                group_parts.append(ticket.group_code)
+            group_parts.append(" / ".join(f"场 {number}" for number in group_numbers))
+            pass_groups.append(" · ".join(group_parts))
+            signature_tickets.append(
+                (
+                    ticket.ticket_kind,
+                    ticket.structure_code,
+                    ticket.group_code,
+                    tuple(signature_legs),
+                )
+            )
+        composition = CandidateCompositionView(
+            singles=list(dict.fromkeys(singles)),
+            doubles=list(dict.fromkeys(doubles)),
+            full_covers=list(dict.fromkeys(full_covers)),
+            omissions=[
+                f"场 {number}"
+                for number in envelope_numbers
+                if number not in selected_numbers
+            ],
+            pass_groups=list(dict.fromkeys(pass_groups)),
+        )
+        signature = tuple(signature_tickets)
+        return composition, signature, candidate_faces
+
+    @staticmethod
+    def _candidate_prescription_differences(
+        uow,
+        prescription: dict[str, object],
+        findings,
+        candidate_faces: dict[str, set[str]],
+    ) -> list[PrescriptionDifferenceSummary]:
+        difference_findings = [
+            finding
+            for finding in findings
+            if finding.audit_kind == "prescription_difference"
+            and finding.official_match_no is not None
+        ]
+        if not difference_findings:
+            return []
+        prescribed_faces: dict[str, set[str]] = {}
+        prescription_items = uow.operator_decision.judgment_prescription_items(
+            str(prescription["judgment_prescription_revision_id"])
+        )
+        for item in prescription_items:
+            judgment = uow.operator_decision.operator_match_judgment_revision(
+                item.operator_match_judgment_revision_id
+            )
+            if judgment is None:
+                continue
+            offer = next(
+                (
+                    current
+                    for current in uow.operator_sale.offer_revisions_for_slate(
+                        str(prescription["slate_revision_id"])
+                    )
+                    if current.match_id == judgment.match_id
+                ),
+                None,
+            )
+            if offer is None:
+                continue
+            rows = uow.connection.execute(
+                select(sod.operator_match_judgment_bundle_faces.c.face_code)
+                .select_from(
+                    sod.operator_match_judgment_face_bundles.join(
+                        sod.operator_match_judgment_bundle_faces
+                    )
+                )
+                .where(
+                    sod.operator_match_judgment_face_bundles.c.
+                    operator_match_judgment_revision_id
+                    == item.operator_match_judgment_revision_id
+                )
+                .order_by(
+                    sod.operator_match_judgment_face_bundles.c.bundle_index,
+                    sod.operator_match_judgment_bundle_faces.c.face_index,
+                )
+            ).scalars()
+            prescribed_faces[offer.official_match_no] = set(map(str, rows))
+        result = []
+        for match_no in dict.fromkeys(
+            str(finding.official_match_no) for finding in difference_findings
+        ):
+            rules = list(
+                dict.fromkeys(
+                    str(finding.rule_id)
+                    for finding in difference_findings
+                    if str(finding.official_match_no) == match_no
+                    and finding.rule_id is not None
+                )
+            )
+            result.append(
+                PrescriptionDifferenceSummary(
+                    match_no=int(match_no),
+                    prescribed_faces="".join(
+                        sorted(
+                            prescribed_faces.get(match_no, set()),
+                            key=_face_sort_key,
+                        )
+                    ),
+                    candidate_faces="".join(
+                        sorted(
+                            candidate_faces.get(match_no, set()),
+                            key=_face_sort_key,
+                        )
+                    ),
+                    registered_rule_ids=rules,
+                )
+            )
+        return result
 
     def _baseline_envelope_step(
         self,

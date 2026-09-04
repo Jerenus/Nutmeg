@@ -24,3 +24,20 @@ def test_runbook_names_strict_operator_evidence_shadow_bridge() -> None:
     assert "workflow ingest-evidence --manifest" in text
     assert "operator-evidence-policy-v1" in text
     assert "v2" in text and "shadow" in text
+
+
+def test_lower_sop_uses_constitutional_candidate_ordering() -> None:
+    runbook = Path("docs/sop/RUNBOOK.md").read_text(encoding="utf-8")
+    rulebook = Path("docs/sop/RULEBOOK.md").read_text(encoding="utf-8")
+
+    required = (
+        "帽内按 P(全对) 降序",
+        "同 P 依次按票价升序、内容哈希升序",
+        "回本线/官方中位倍数只作报告",
+        "不排序、不阻断、不自动建议空仓",
+    )
+    for phrase in required:
+        assert phrase in runbook
+        assert phrase in rulebook
+    assert "按回本线升序取档，不按 P 降序" not in runbook
+    assert "帽内回本线最小" not in rulebook

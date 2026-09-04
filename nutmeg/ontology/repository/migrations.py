@@ -29,6 +29,7 @@ from nutmeg.ontology.repository import (
     schema_identity,
     schema_market,
     schema_operator_decision,
+    schema_operator_result,
     schema_operator_sale,
     schema_reliability,
     schema_scoreboard,
@@ -1301,6 +1302,445 @@ def _apply_operator_judgment_baseline(connection: Connection) -> None:
     )
 
 
+def _apply_operator_candidate_comparison(connection: Connection) -> None:
+    existing_quote_columns = {
+        column["name"] for column in inspect(connection).get_columns("market_quotes")
+    }
+    if "settlement_parameter_decimal" not in existing_quote_columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE market_quotes "
+            "ADD COLUMN settlement_parameter_decimal TEXT NULL"
+        )
+    existing_baseline_columns = {
+        column["name"]
+        for column in inspect(connection).get_columns(
+            "operator_market_prior_baseline_probabilities"
+        )
+    }
+    requires_baseline_backfill = not {
+        "booked_decimal_odds",
+        "quote_captured_at",
+    } <= existing_baseline_columns
+    if requires_baseline_backfill:
+        connection.exec_driver_sql(
+            "DROP TRIGGER IF EXISTS "
+            "operator_market_prior_baseline_probabilities_no_update"
+        )
+    if "settlement_parameter_decimal" not in existing_baseline_columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE operator_market_prior_baseline_probabilities "
+            "ADD COLUMN settlement_parameter_decimal TEXT NULL"
+        )
+    if "booked_decimal_odds" not in existing_baseline_columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE operator_market_prior_baseline_probabilities "
+            "ADD COLUMN booked_decimal_odds TEXT NULL"
+        )
+        connection.exec_driver_sql(
+            "UPDATE operator_market_prior_baseline_probabilities "
+            "SET booked_decimal_odds = printf('%.12f', ("
+            "SELECT decimal_odds FROM market_quotes "
+            "WHERE market_quotes.quote_id = "
+            "operator_market_prior_baseline_probabilities.quote_id))"
+        )
+    if "quote_captured_at" not in existing_baseline_columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE operator_market_prior_baseline_probabilities "
+            "ADD COLUMN quote_captured_at TEXT NULL"
+        )
+        connection.exec_driver_sql(
+            "UPDATE operator_market_prior_baseline_probabilities "
+            "SET quote_captured_at = (SELECT captured_at FROM market_quotes "
+            "WHERE market_quotes.quote_id = "
+            "operator_market_prior_baseline_probabilities.quote_id)"
+        )
+    if requires_baseline_backfill:
+        connection.exec_driver_sql(
+            "CREATE TRIGGER operator_market_prior_baseline_probabilities_no_update "
+            "BEFORE UPDATE ON operator_market_prior_baseline_probabilities "
+            "BEGIN SELECT RAISE(ABORT, "
+            "'operator_market_prior_baseline_probabilities is append-only'); END"
+        )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_market_prior_booked_odds_required
+        BEFORE INSERT ON operator_market_prior_baseline_probabilities
+        WHEN NEW.booked_decimal_odds IS NULL
+          OR typeof(NEW.booked_decimal_odds) != 'text'
+          OR printf('%.12f', CAST(NEW.booked_decimal_odds AS REAL))
+             != NEW.booked_decimal_odds
+          OR CAST(NEW.booked_decimal_odds AS REAL) <= 1.0
+        BEGIN
+          SELECT RAISE(ABORT, 'baseline probability requires exact booked odds');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_market_prior_quote_capture_required
+        BEFORE INSERT ON operator_market_prior_baseline_probabilities
+        WHEN NEW.quote_captured_at IS NULL OR length(trim(NEW.quote_captured_at)) = 0
+        BEGIN
+          SELECT RAISE(ABORT, 'baseline probability requires Quote capture time');
+        END
+        """
+    )
+    existing_selection_columns = {
+        column["name"] for column in inspect(connection).get_columns("selection_definitions")
+    }
+    if "deployable" not in existing_selection_columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE selection_definitions "
+            "ADD COLUMN deployable INTEGER NOT NULL DEFAULT 1"
+        )
+    connection.exec_driver_sql(
+        "UPDATE selection_definitions SET deployable = 0 "
+        "WHERE market_definition_id = 'md-crs' AND outcome_key = 'other'"
+    )
+    for selection_id, outcome_key in (
+        ("sel-crs-win-other", "win_other"),
+        ("sel-crs-draw-other", "draw_other"),
+        ("sel-crs-loss-other", "loss_other"),
+    ):
+        connection.execute(
+            insert(schema_market.selection_definitions).values(
+                selection_id=selection_id,
+                market_definition_id="md-crs",
+                outcome_key=outcome_key,
+                line=None,
+                deployable=1,
+            )
+        )
+
+    for table in (
+        schema_operator_result.zucai_fixed_prize_policy_revisions,
+        schema_operator_result.zucai_fixed_prize_policy_tiers,
+        schema_operator_decision.operator_candidate_generation_requests,
+        schema_operator_decision.operator_candidate_set_revisions,
+        schema_operator_decision.operator_candidates,
+        schema_operator_decision.operator_candidate_metrics,
+        schema_operator_decision.operator_candidate_dead_faces,
+        schema_operator_decision.operator_candidate_audit_findings,
+        schema_operator_decision.operator_candidate_selections,
+        schema_operator_result.operator_candidate_tickets,
+        schema_operator_result.operator_candidate_ticket_legs,
+    ):
+        table.create(connection)
+
+    revision_contracts = (
+        (
+            "zucai_fixed_prize_policy_revisions",
+            "fixed_prize_policy_revision_id",
+            "fixed_prize_policy_family_id",
+            "zucai_fixed_prize_policy",
+            "register_zucai_fixed_prize_policy",
+            "deterministic_system",
+        ),
+        (
+            "operator_candidate_set_revisions",
+            "candidate_set_revision_id",
+            "candidate_set_family_id",
+            "operator_candidate_set",
+            "generate_ticket_candidate_set",
+            "deterministic_system",
+        ),
+        (
+            "operator_candidate_selections",
+            "candidate_selection_id",
+            "candidate_selection_family_id",
+            "candidate_selection",
+            "select_ticket_candidate",
+            "judge_operator",
+        ),
+    )
+    for table_name, id_column, family_column, prefix, action_type, actor_role in (
+        revision_contracts
+    ):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {prefix}_single_root
+            BEFORE INSERT ON {table_name}
+            WHEN NEW.supersedes_revision_id IS NULL
+              AND EXISTS (
+                SELECT 1 FROM {table_name}
+                WHERE {family_column} = NEW.{family_column}
+                  AND supersedes_revision_id IS NULL
+              )
+            BEGIN
+              SELECT RAISE(ABORT, '{family_column} already has a root revision');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {prefix}_linear_revision
+            BEFORE INSERT ON {table_name}
+            WHEN (NEW.supersedes_revision_id IS NULL AND NEW.revision_no != 1)
+              OR (NEW.supersedes_revision_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM {table_name} AS parent
+                WHERE parent.{id_column} = NEW.supersedes_revision_id
+                  AND parent.{family_column} = NEW.{family_column}
+                  AND NEW.revision_no = parent.revision_no + 1
+              ))
+            BEGIN
+              SELECT RAISE(ABORT, 'revision must directly follow its family predecessor');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {prefix}_typed_action
+            BEFORE INSERT ON {table_name}
+            WHEN NOT EXISTS (
+              SELECT 1 FROM actions
+              WHERE action_id = NEW.action_id
+                AND action_type = '{action_type}'
+                AND actor_role = '{actor_role}'
+                AND status IN ('accepted', 'committed')
+            )
+            BEGIN
+              SELECT RAISE(ABORT, '{table_name} requires its typed Action');
+            END
+            """
+        )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER candidate_generation_request_typed_action
+        BEFORE INSERT ON operator_candidate_generation_requests
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions
+          WHERE action_id = NEW.action_id
+            AND action_type IN (
+              'request_candidate_generation',
+              'record_ticket_audit_override'
+            )
+            AND actor_role = 'judge_operator'
+            AND status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'operator_candidate_generation_requests requires its typed Action'
+          );
+        END
+        """
+    )
+
+    immutable_tables = (
+        "zucai_fixed_prize_policy_revisions",
+        "zucai_fixed_prize_policy_tiers",
+        "operator_candidate_generation_requests",
+        "operator_candidate_set_revisions",
+        "operator_candidates",
+        "operator_candidate_tickets",
+        "operator_candidate_ticket_legs",
+        "operator_candidate_metrics",
+        "operator_candidate_dead_faces",
+        "operator_candidate_audit_findings",
+        "operator_candidate_selections",
+    )
+    for table_name in immutable_tables:
+        for operation in ("UPDATE", "DELETE"):
+            connection.exec_driver_sql(
+                f"""
+                CREATE TRIGGER {table_name}_no_{operation.lower()}
+                BEFORE {operation} ON {table_name}
+                BEGIN
+                  SELECT RAISE(ABORT, '{table_name} is append-only');
+                END
+                """
+            )
+
+    child_revision_guards = (
+        (
+            "zucai_fixed_prize_policy_tiers",
+            "zucai_fixed_prize_policy_revisions AS revision "
+            "ON revision.fixed_prize_policy_revision_id = "
+            "NEW.fixed_prize_policy_revision_id",
+        ),
+        (
+            "operator_candidates",
+            "operator_candidate_set_revisions AS revision "
+            "ON revision.candidate_set_revision_id = NEW.candidate_set_revision_id",
+        ),
+        (
+            "operator_candidate_metrics",
+            "operator_candidates AS candidate "
+            "ON candidate.candidate_revision_id = NEW.candidate_revision_id "
+            "JOIN operator_candidate_set_revisions AS revision "
+            "ON revision.candidate_set_revision_id = candidate.candidate_set_revision_id",
+        ),
+        (
+            "operator_candidate_dead_faces",
+            "operator_candidates AS candidate "
+            "ON candidate.candidate_revision_id = NEW.candidate_revision_id "
+            "JOIN operator_candidate_set_revisions AS revision "
+            "ON revision.candidate_set_revision_id = candidate.candidate_set_revision_id",
+        ),
+        (
+            "operator_candidate_audit_findings",
+            "operator_candidates AS candidate "
+            "ON candidate.candidate_revision_id = NEW.candidate_revision_id "
+            "JOIN operator_candidate_set_revisions AS revision "
+            "ON revision.candidate_set_revision_id = candidate.candidate_set_revision_id",
+        ),
+        (
+            "operator_candidate_tickets",
+            "operator_candidates AS candidate "
+            "ON candidate.candidate_revision_id = NEW.candidate_revision_id "
+            "JOIN operator_candidate_set_revisions AS revision "
+            "ON revision.candidate_set_revision_id = candidate.candidate_set_revision_id",
+        ),
+        (
+            "operator_candidate_ticket_legs",
+            "operator_candidate_tickets AS ticket "
+            "ON ticket.candidate_ticket_id = NEW.candidate_ticket_id "
+            "JOIN operator_candidates AS candidate "
+            "ON candidate.candidate_revision_id = ticket.candidate_revision_id "
+            "JOIN operator_candidate_set_revisions AS revision "
+            "ON revision.candidate_set_revision_id = candidate.candidate_set_revision_id",
+        ),
+    )
+    for table_name, revision_join in child_revision_guards:
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {table_name}_no_late_insert
+            BEFORE INSERT ON {table_name}
+            WHEN EXISTS (
+              SELECT 1
+              FROM actions AS action
+              JOIN {revision_join}
+              WHERE action.action_id = revision.action_id
+                AND action.status = 'committed'
+            )
+            BEGIN
+              SELECT RAISE(ABORT, '{table_name} is append-only after commit');
+            END
+            """
+        )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_candidate_set_semantics
+        BEFORE INSERT ON operator_candidates
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM operator_candidate_set_revisions AS candidate_set
+          WHERE candidate_set.candidate_set_revision_id = NEW.candidate_set_revision_id
+            AND (
+              (candidate_set.comparison_only = 1 AND NEW.deployable = 0)
+              OR (
+                candidate_set.comparison_only = 0
+                AND NEW.deployable = NEW.eligible
+              )
+            )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'candidate deployability must match its candidate set');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_candidate_selection_exact_binding
+        BEFORE INSERT ON operator_candidate_selections
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM operator_candidates AS candidate
+          JOIN operator_candidate_set_revisions AS candidate_set
+            ON candidate_set.candidate_set_revision_id = candidate.candidate_set_revision_id
+          WHERE candidate.candidate_revision_id = NEW.candidate_revision_id
+            AND candidate_set.candidate_set_revision_id = NEW.candidate_set_revision_id
+            AND candidate_set.set_kind = 'judgment_bound'
+            AND candidate_set.comparison_only = 0
+            AND candidate.partition IN ('eligible', 'audit_blocked')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'candidate selection requires a selectable judgment-bound row');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_candidate_generation_job_source
+        BEFORE INSERT ON operator_worker_jobs
+        WHEN NEW.job_kind = 'candidate_generation'
+          AND (
+            NEW.source_object_type != 'operator_candidate_generation_request'
+            OR NOT EXISTS (
+              SELECT 1
+              FROM operator_candidate_generation_requests AS request
+              JOIN actions AS action ON action.action_id = request.action_id
+              WHERE request.generation_request_id = NEW.source_object_id
+                AND action.action_type IN (
+                  'request_candidate_generation',
+                  'record_ticket_audit_override'
+                )
+                AND action.actor_role = 'judge_operator'
+                AND action.status IN ('accepted', 'committed')
+            )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'candidate generation job requires its typed request');
+        END
+        """
+    )
+    candidate_result_check = """
+      SELECT CASE WHEN NOT EXISTS (
+        SELECT 1
+        FROM actions AS action
+        JOIN operator_candidate_set_revisions AS candidate_set
+          ON candidate_set.action_id = action.action_id
+        WHERE action.action_id = NEW.result_action_id
+          AND action.action_type = 'generate_ticket_candidate_set'
+          AND action.actor_role = 'deterministic_system'
+          AND action.status IN ('accepted', 'committed')
+          AND NEW.source_object_type = 'operator_candidate_generation_request'
+          AND NEW.result_object_type = 'ticket_candidate_set_revision'
+          AND candidate_set.candidate_set_revision_id = NEW.result_object_id
+          AND candidate_set.generation_request_id = NEW.source_object_id
+      ) THEN RAISE(ABORT, 'candidate generation result does not match its typed Action') END;
+    """
+    for operation in ("INSERT", "UPDATE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER operator_worker_job_candidate_result_{operation.lower()}
+            BEFORE {operation} ON operator_worker_jobs
+            WHEN NEW.state = 'completed' AND NEW.job_kind = 'candidate_generation'
+            BEGIN
+              {candidate_result_check}
+            END
+            """
+        )
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "register_zucai_fixed_prize_policy",
+                "actor_role": "deterministic_system",
+            },
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "request_candidate_generation",
+                "actor_role": "judge_operator",
+            },
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "generate_ticket_candidate_set",
+                "actor_role": "deterministic_system",
+            },
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "select_ticket_candidate",
+                "actor_role": "judge_operator",
+            },
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -1448,6 +1888,17 @@ MIGRATIONS: tuple[Migration, ...] = (
             "role_separated_permissions"
         ),
         apply=_apply_operator_judgment_baseline,
+    ),
+    Migration(
+        version=21,
+        name="operator_candidate_comparison",
+        fingerprint=(
+            "candidate_generation+candidate_sets+candidate_tickets+candidate_metrics+"
+            "candidate_audits+revisioned_candidate_selection+zucai_fixed_prize_policy+"
+            "directional_crs_aggregates+three_way_partitions+complete_child_append_only+"
+            "typed_actions+worker_result_binding+exact_quote_bindings+audit_policy_version"
+        ),
+        apply=_apply_operator_candidate_comparison,
     ),
 )
 

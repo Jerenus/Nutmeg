@@ -1,3 +1,6 @@
+{% if task.step.mode != "legacy" %}
+  {% include "operator/steps/compare_tickets.html" %}
+{% else %}
 <div class="step-heading">
   <span class="step-kicker">比较结构</span>
   <h1>选择本期票版</h1>
@@ -100,4 +103,5 @@
 </form>
 {% else %}
   <p class="waiting-note">只读模式不会选择票版。</p>
+{% endif %}
 {% endif %}

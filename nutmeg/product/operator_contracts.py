@@ -273,11 +273,191 @@ class TicketVersionSummary(StrictOperatorContract):
     )
 
 
+class CandidateAuditFindingView(StrictOperatorContract):
+    audit_kind: Literal["legs", "prescription_difference", "budget", "deployment"]
+    finding_code: str = Field(min_length=1, max_length=100)
+    severity: Literal["WARN", "ERROR"]
+    message: str = Field(min_length=1, max_length=1000)
+    rule_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class CandidateCompositionView(StrictOperatorContract):
+    singles: list[str] = Field(default_factory=list, max_length=100)
+    doubles: list[str] = Field(default_factory=list, max_length=100)
+    full_covers: list[str] = Field(default_factory=list, max_length=100)
+    omissions: list[str] = Field(default_factory=list, max_length=100)
+    pass_groups: list[str] = Field(default_factory=list, max_length=100)
+
+
+class CandidateComparisonView(StrictOperatorContract):
+    code: str = Field(min_length=1, max_length=100)
+    partition: Literal["eligible", "audit_blocked", "over_cap"]
+    rank: int | None = Field(default=None, gt=0)
+    selectable: bool
+    deployable: bool
+    candidate_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    composition: CandidateCompositionView
+    ticket_count: int = Field(gt=0)
+    distinct_note_count: int = Field(gt=0)
+    paid_note_unit_count: int = Field(gt=0)
+    stake_minor: int = Field(gt=0)
+    capital_utilization_decimal: str = Field(pattern=r"^\d+\.\d{12}$")
+    objective_label: str = Field(min_length=1, max_length=200)
+    objective_probability_decimal: str = Field(pattern=r"^(?:0|1)\.\d{12}$")
+    expected_broken_legs_decimal: str = Field(pattern=r"^\d+\.\d{12}$")
+    break_even_bonus_minor: int | None = Field(default=None, gt=0)
+    break_even_to_official_median_decimal: str | None = Field(
+        default=None,
+        pattern=r"^\d+\.\d{12}$",
+    )
+    common_dead_faces: list[str] = Field(default_factory=list, max_length=500)
+    prescription_differences: list[PrescriptionDifferenceSummary] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    audit_findings: list[CandidateAuditFindingView] = Field(
+        default_factory=list,
+        max_length=500,
+    )
+    market_difference: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _validate_partition(self) -> "CandidateComparisonView":
+        if self.partition == "eligible":
+            if self.rank is None:
+                raise ValueError("eligible candidate requires rank")
+        elif self.rank is not None:
+            raise ValueError("ineligible candidate cannot have rank")
+        if self.deployable and self.partition != "eligible":
+            raise ValueError("only eligible candidates can be deployable")
+        if self.partition == "over_cap" and self.selectable:
+            raise ValueError("over-cap candidates cannot be selected")
+        if self.selectable != (self.candidate_token is not None):
+            raise ValueError("only selectable candidates receive a selection token")
+        return self
+
+
+class CandidateSetComparisonView(StrictOperatorContract):
+    label: str = Field(min_length=1, max_length=200)
+    comparison_only: bool
+    candidates: list[CandidateComparisonView] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_comparison_only(self) -> "CandidateSetComparisonView":
+        if self.comparison_only and any(
+            candidate.selectable
+            or candidate.deployable
+            or candidate.candidate_token is not None
+            for candidate in self.candidates
+        ):
+            raise ValueError("comparison-only candidates cannot be selected or deployed")
+        if not self.comparison_only:
+            for candidate in self.candidates:
+                expected_deployable = candidate.partition == "eligible"
+                if candidate.deployable != expected_deployable:
+                    raise ValueError("judgment candidates have invalid deployment state")
+        return self
+
+
 class ConstructTicketStep(StrictOperatorContract):
     kind: Literal['construct_ticket'] = 'construct_ticket'
     task_id: str
-    prescription: dict[str, str]
-    candidates: list[TicketVersionSummary]
+    mode: Literal["legacy", "candidate_request", "candidate_comparison"] = "legacy"
+    prescription: dict[str, str] = Field(default_factory=dict)
+    candidates: list[TicketVersionSummary] = Field(default_factory=list)
+    request_generation_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+    market_prior_baseline_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+    baseline_envelope_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+    judgment_prescription_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+    selection_command_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+    selection_completed: bool = False
+    selected_candidate_code: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+    candidate_sets: list[CandidateSetComparisonView] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_mode(self) -> "ConstructTicketStep":
+        if self.mode == "candidate_request":
+            request_tokens = (
+                self.request_generation_token,
+                self.market_prior_baseline_token,
+                self.baseline_envelope_token,
+                self.judgment_prescription_token,
+            )
+            if (
+                any(token is None for token in request_tokens)
+                or self.selection_command_token is not None
+                or self.selection_completed
+                or self.selected_candidate_code is not None
+                or self.candidate_sets
+            ):
+                raise ValueError("candidate request mode requires exact lineage tokens")
+        elif self.mode == "candidate_comparison":
+            request_tokens = (
+                self.request_generation_token,
+                self.market_prior_baseline_token,
+                self.baseline_envelope_token,
+                self.judgment_prescription_token,
+            )
+            if self.selection_completed:
+                selected_codes = {
+                    candidate.code
+                    for candidate_set in self.candidate_sets
+                    if not candidate_set.comparison_only
+                    for candidate in candidate_set.candidates
+                }
+                invalid_selection_state = (
+                    self.selection_command_token is not None
+                    or self.selected_candidate_code not in selected_codes
+                    or any(
+                        candidate.selectable
+                        or candidate.candidate_token is not None
+                        for candidate_set in self.candidate_sets
+                        for candidate in candidate_set.candidates
+                    )
+                )
+            else:
+                invalid_selection_state = (
+                    self.selection_command_token is None
+                    or self.selected_candidate_code is not None
+                    or any(
+                        candidate.selectable
+                        != (candidate.partition != "over_cap")
+                        for candidate_set in self.candidate_sets
+                        if not candidate_set.comparison_only
+                        for candidate in candidate_set.candidates
+                    )
+                )
+            if (
+                not self.candidate_sets
+                or invalid_selection_state
+                or any(token is not None for token in request_tokens)
+            ):
+                raise ValueError("candidate comparison mode requires persisted candidate sets")
+        return self
 
 
 class AuditDeploymentStep(StrictOperatorContract):
@@ -445,6 +625,8 @@ class OperatorCommandReceipt(VersionedOperatorContract):
         "record_baseline_envelope",
         "commit_match_judgment",
         "freeze_judgment_prescription",
+        "request_candidate_generation",
+        "select_candidate",
         "rebuild_scoreboard_projection",
     ]
     status: Literal["queued", "completed"]

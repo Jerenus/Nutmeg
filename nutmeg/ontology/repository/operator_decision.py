@@ -15,6 +15,8 @@ from nutmeg.ontology.operator.models import (
     BaselineEnvelopeRevisionRow,
     BaselineEnvelopeStructureTemplateRow,
     BaselineEnvelopeTemplateOfferRow,
+    CandidateGenerationRequestRow,
+    CandidateSelectionRow,
     EvidenceCoverageReceiptRow,
     EvidenceFreezeRequestRow,
     EvidenceIntakeObjectRow,
@@ -52,6 +54,88 @@ _EVIDENCE_SOURCE_KINDS = frozenset(
 class OperatorDecisionRepository:
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
+
+    def insert_candidate_generation_request(
+        self, row: CandidateGenerationRequestRow
+    ) -> None:
+        self._connection.execute(
+            insert(sod.operator_candidate_generation_requests).values(
+                **_row_fields(row)
+            )
+        )
+
+    def candidate_generation_request(
+        self, generation_request_id: str
+    ) -> CandidateGenerationRequestRow | None:
+        row = (
+            self._connection.execute(
+                select(sod.operator_candidate_generation_requests).where(
+                    sod.operator_candidate_generation_requests.c.generation_request_id
+                    == generation_request_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return CandidateGenerationRequestRow(**dict(row)) if row is not None else None
+
+    def insert_candidate_selection(self, row: CandidateSelectionRow) -> None:
+        self._connection.execute(
+            insert(sod.operator_candidate_selections).values(**_row_fields(row))
+        )
+
+    def candidate_selection_revision(
+        self, candidate_selection_id: str
+    ) -> CandidateSelectionRow | None:
+        row = (
+            self._connection.execute(
+                select(sod.operator_candidate_selections).where(
+                    sod.operator_candidate_selections.c.candidate_selection_id
+                    == candidate_selection_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return CandidateSelectionRow(**dict(row)) if row is not None else None
+
+    def candidate_selection_for_set(
+        self, candidate_set_revision_id: str
+    ) -> CandidateSelectionRow | None:
+        row = (
+            self._connection.execute(
+                select(sod.operator_candidate_selections).where(
+                    sod.operator_candidate_selections.c.candidate_set_revision_id
+                    == candidate_set_revision_id
+                )
+                .order_by(sod.operator_candidate_selections.c.revision_no.desc())
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        return CandidateSelectionRow(**dict(row)) if row is not None else None
+
+    def current_candidate_selection(
+        self,
+        *,
+        task_family_id: str,
+        work_item_id: str,
+    ) -> CandidateSelectionRow | None:
+        row = (
+            self._connection.execute(
+                select(sod.operator_candidate_selections)
+                .where(
+                    sod.operator_candidate_selections.c.task_family_id == task_family_id,
+                    sod.operator_candidate_selections.c.work_item_id == work_item_id,
+                )
+                .order_by(sod.operator_candidate_selections.c.revision_no.desc())
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        return CandidateSelectionRow(**dict(row)) if row is not None else None
 
     def insert_evidence_intake_receipt(self, row: EvidenceIntakeReceiptRow) -> None:
         values = _row_fields(row)
@@ -537,6 +621,8 @@ class OperatorDecisionRepository:
                 sm.market_quotes.c.market_definition_id,
                 sm.market_quotes.c.captured_at,
                 sm.market_quotes.c.quote_status,
+                sm.market_quotes.c.decimal_odds,
+                sm.market_quotes.c.settlement_parameter_decimal,
                 sm.selection_definitions.c.outcome_key,
             )
             .select_from(
@@ -914,6 +1000,36 @@ class OperatorDecisionRepository:
                 **_row_fields(row)
             )
         )
+
+    def judgment_prescription_revision(
+        self, revision_id: str
+    ) -> JudgmentPrescriptionRevisionRow | None:
+        row = (
+            self._connection.execute(
+                select(sod.operator_judgment_prescription_revisions).where(
+                    sod.operator_judgment_prescription_revisions.c.
+                    judgment_prescription_revision_id
+                    == revision_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return JudgmentPrescriptionRevisionRow(**dict(row)) if row is not None else None
+
+    def judgment_prescription_items(
+        self, revision_id: str
+    ) -> tuple[JudgmentPrescriptionItemRow, ...]:
+        rows = self._connection.execute(
+            select(sod.operator_judgment_prescription_items)
+            .where(
+                sod.operator_judgment_prescription_items.c.
+                judgment_prescription_revision_id
+                == revision_id
+            )
+            .order_by(sod.operator_judgment_prescription_items.c.item_index)
+        ).mappings()
+        return tuple(JudgmentPrescriptionItemRow(**dict(row)) for row in rows)
 
     def current_judgment_prescription_revision(
         self, family_id: str

@@ -31,11 +31,14 @@ from nutmeg.ontology.operator.models import (
     BaselineEnvelopeRevisionRow,
     BaselineEnvelopeStructureTemplateRow,
     BaselineEnvelopeTemplateOfferRow,
+    CandidateGenerationRequestRow,
+    CandidateSelectionRow,
     JudgmentPrescriptionItemRow,
     JudgmentPrescriptionRevisionRow,
     MarketPriorBaselineProbabilityRow,
     MarketPriorBaselineRevisionRow,
     OperatorMatchJudgmentRevisionRow,
+    OperatorWorkerJobRow,
 )
 
 _PROBABILITY_QUANTUM = Decimal("0.000000000001")
@@ -333,6 +336,64 @@ class FreezeJudgmentPrescriptionRequest:
         _validate_revision_type(self.expected_current_revision_no)
 
 
+@dataclass(frozen=True, slots=True)
+class RequestCandidateGenerationRequest:
+    task_evidence_bundle_revision_id: str
+    market_prior_baseline_revision_id: str
+    baseline_envelope_revision_id: str
+    judgment_prescription_revision_id: str
+    work_item_id: str
+    fixed_prize_policy_revision_id: str | None
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+    expected_current_revision_no: int | None = None
+
+    def __post_init__(self) -> None:
+        for name in (
+            "task_evidence_bundle_revision_id",
+            "market_prior_baseline_revision_id",
+            "baseline_envelope_revision_id",
+            "judgment_prescription_revision_id",
+            "work_item_id",
+            "actor_id",
+            "idempotency_key",
+        ):
+            _required(getattr(self, name), name)
+        if self.fixed_prize_policy_revision_id is not None:
+            _required(
+                self.fixed_prize_policy_revision_id,
+                "fixed_prize_policy_revision_id",
+            )
+        _aware(self.requested_at, "requested_at")
+        _validate_revision_type(self.expected_current_revision_no)
+
+
+@dataclass(frozen=True, slots=True)
+class SelectTicketCandidateRequest:
+    candidate_set_revision_id: str
+    candidate_revision_id: str
+    reason: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+    expected_current_revision_no: int | None = None
+
+    def __post_init__(self) -> None:
+        for name in (
+            "candidate_set_revision_id",
+            "candidate_revision_id",
+            "reason",
+            "actor_id",
+            "idempotency_key",
+        ):
+            _required(getattr(self, name), name)
+        _aware(self.requested_at, "requested_at")
+        _validate_revision_type(self.expected_current_revision_no)
+
+
 class OperatorDecisionActions:
     def __init__(self, action_service: ActionService) -> None:
         self._action_service = action_service
@@ -448,6 +509,472 @@ class OperatorDecisionActions:
                     completed_at=_utc(request.requested_at),
                 )
             return (result_ref,)
+
+        return self._action_service.execute(command, handler)
+
+    def request_candidate_generation(
+        self,
+        request: RequestCandidateGenerationRequest,
+    ) -> ActionOutcome:
+        policy_version = self._bundle_policy(request.task_evidence_bundle_revision_id)
+        command = ActionCommand.create(
+            action_type="request_candidate_generation",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            requested_at=request.requested_at,
+            policy_version=policy_version,
+            payload={
+                "task_evidence_bundle_revision_id": (
+                    request.task_evidence_bundle_revision_id
+                ),
+                "market_prior_baseline_revision_id": (
+                    request.market_prior_baseline_revision_id
+                ),
+                "baseline_envelope_revision_id": (
+                    request.baseline_envelope_revision_id
+                ),
+                "judgment_prescription_revision_id": (
+                    request.judgment_prescription_revision_id
+                ),
+                "work_item_id": request.work_item_id,
+                "fixed_prize_policy_revision_id": (
+                    request.fixed_prize_policy_revision_id
+                ),
+            },
+        )
+
+        def handler(uow, action_command) -> tuple[ObjectRef, ...]:
+            bundle, _items = self._current_bundle(
+                uow, request.task_evidence_bundle_revision_id
+            )
+            baseline, envelope = self._same_decision_lineage(
+                uow,
+                bundle,
+                request.work_item_id,
+                request.market_prior_baseline_revision_id,
+                request.baseline_envelope_revision_id,
+            )
+            prescription = uow.operator_decision.judgment_prescription_revision(
+                request.judgment_prescription_revision_id
+            )
+            if prescription is None:
+                raise ValueError("judgment prescription does not exist")
+            current_prescription = (
+                uow.operator_decision.current_judgment_prescription_revision(
+                    prescription.judgment_prescription_family_id
+                )
+            )
+            expected_lineage = (
+                bundle.task_family_id,
+                request.work_item_id,
+                bundle.task_snapshot_hash,
+                bundle.slate_revision_id,
+                bundle.task_evidence_bundle_revision_id,
+                baseline.market_prior_baseline_revision_id,
+                envelope.baseline_envelope_revision_id,
+            )
+            actual_lineage = (
+                prescription.task_family_id,
+                prescription.work_item_id,
+                prescription.task_snapshot_hash,
+                prescription.slate_revision_id,
+                prescription.task_evidence_bundle_revision_id,
+                prescription.market_prior_baseline_revision_id,
+                prescription.baseline_envelope_revision_id,
+            )
+            if (
+                current_prescription is None
+                or current_prescription.judgment_prescription_revision_id
+                != prescription.judgment_prescription_revision_id
+                or actual_lineage != expected_lineage
+            ):
+                raise StaleOperatorDecisionDependencyError(
+                    "candidate request prescription is stale or cross-lineage"
+                )
+            self._validate_fixed_prize_policy(
+                uow,
+                envelope.ticket_kind,
+                request.fixed_prize_policy_revision_id,
+            )
+            baseline_rows = (
+                uow.operator_decision.market_prior_baseline_probabilities(
+                    baseline.market_prior_baseline_revision_id
+                )
+            )
+            self._validate_baseline_quote_bindings(uow, baseline, baseline_rows)
+            self._require_open_offer_revisions(
+                uow,
+                baseline.slate_revision_id,
+                {
+                    str(row["official_offer_revision_id"])
+                    for row in baseline_rows
+                },
+                request.requested_at,
+            )
+            current_set = uow.operator_result.current_candidate_set(
+                task_family_id=bundle.task_family_id,
+                work_item_id=request.work_item_id,
+                set_kind="judgment_bound",
+            )
+            _assert_expected_revision(
+                expected=request.expected_current_revision_no,
+                current_revision_no=(
+                    0 if current_set is None else current_set.revision_no
+                ),
+                object_label="ticket candidate set",
+            )
+            dependency_document = {
+                "task_snapshot_hash": bundle.task_snapshot_hash,
+                "slate_revision_id": bundle.slate_revision_id,
+                "task_evidence_bundle_revision_id": (
+                    bundle.task_evidence_bundle_revision_id
+                ),
+                "market_prior_baseline_revision_id": (
+                    baseline.market_prior_baseline_revision_id
+                ),
+                "baseline_envelope_revision_id": (
+                    envelope.baseline_envelope_revision_id
+                ),
+                "judgment_prescription_revision_id": (
+                    prescription.judgment_prescription_revision_id
+                ),
+                "fixed_prize_policy_revision_id": (
+                    request.fixed_prize_policy_revision_id
+                ),
+            }
+            dependency_fingerprint = _content_hash(dependency_document)
+            request_document = {
+                **dependency_document,
+                "task_family_id": bundle.task_family_id,
+                "work_item_id": request.work_item_id,
+                "expected_current_revision_no": _required_revision(
+                    request.expected_current_revision_no
+                ),
+            }
+            content_hash = _content_hash(request_document)
+            generation_request_id = _stable_id(
+                "operator-candidate-generation-request",
+                bundle.task_family_id,
+                request.work_item_id,
+                content_hash,
+            )
+            requested_at = _utc(request.requested_at)
+            uow.operator_decision.insert_candidate_generation_request(
+                CandidateGenerationRequestRow(
+                    generation_request_id=generation_request_id,
+                    action_id=action_command.action_id,
+                    task_family_id=bundle.task_family_id,
+                    work_item_id=request.work_item_id,
+                    task_snapshot_hash=bundle.task_snapshot_hash,
+                    slate_revision_id=bundle.slate_revision_id,
+                    task_evidence_bundle_revision_id=(
+                        bundle.task_evidence_bundle_revision_id
+                    ),
+                    market_prior_baseline_revision_id=(
+                        baseline.market_prior_baseline_revision_id
+                    ),
+                    baseline_envelope_revision_id=(
+                        envelope.baseline_envelope_revision_id
+                    ),
+                    judgment_prescription_revision_id=(
+                        prescription.judgment_prescription_revision_id
+                    ),
+                    fixed_prize_policy_revision_id=(
+                        request.fixed_prize_policy_revision_id
+                    ),
+                    dependency_fingerprint=dependency_fingerprint,
+                    expected_current_revision_no=_required_revision(
+                        request.expected_current_revision_no
+                    ),
+                    content_hash=content_hash,
+                    requested_at=requested_at,
+                )
+            )
+            uow.operator_decision.insert_worker_job(
+                OperatorWorkerJobRow(
+                    worker_job_id=_stable_id(
+                        "operator-worker-job",
+                        "candidate_generation",
+                        generation_request_id,
+                    ),
+                    job_kind="candidate_generation",
+                    source_object_type="operator_candidate_generation_request",
+                    source_object_id=generation_request_id,
+                    state="queued",
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    attempt_count=0,
+                    available_at=requested_at,
+                    last_error_code=None,
+                    result_action_id=None,
+                    result_object_type=None,
+                    result_object_id=None,
+                    created_at=requested_at,
+                    updated_at=requested_at,
+                )
+            )
+            return (
+                ObjectRef(
+                    "operator_candidate_generation_request",
+                    generation_request_id,
+                ),
+            )
+
+        return self._action_service.execute(command, handler)
+
+    def select_ticket_candidate(
+        self,
+        request: SelectTicketCandidateRequest,
+    ) -> ActionOutcome:
+        policy_version = self._candidate_set_policy(request.candidate_set_revision_id)
+        command = ActionCommand.create(
+            action_type="select_ticket_candidate",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            requested_at=request.requested_at,
+            policy_version=policy_version,
+            expected_versions={
+                "ticket-candidate-selection": _required_revision(
+                    request.expected_current_revision_no
+                )
+            },
+            payload={
+                "candidate_set_revision_id": request.candidate_set_revision_id,
+                "candidate_revision_id": request.candidate_revision_id,
+                "reason": request.reason.strip(),
+            },
+        )
+
+        def handler(uow, action_command) -> tuple[ObjectRef, ...]:
+            candidate_set = uow.operator_result.candidate_set_revision(
+                request.candidate_set_revision_id
+            )
+            candidate = uow.operator_result.candidate(request.candidate_revision_id)
+            if candidate_set is None or candidate is None:
+                raise ValueError("ticket candidate does not exist")
+            current_set = uow.operator_result.current_candidate_set(
+                task_family_id=candidate_set.task_family_id,
+                work_item_id=candidate_set.work_item_id,
+                set_kind=candidate_set.set_kind,
+            )
+            if (
+                current_set is None
+                or current_set.candidate_set_revision_id
+                != candidate_set.candidate_set_revision_id
+            ):
+                raise StaleOperatorDecisionDependencyError(
+                    "ticket candidate set is stale or superseded"
+                )
+            if (
+                candidate_set.set_kind != "judgment_bound"
+                or candidate_set.comparison_only != 0
+                or candidate.candidate_set_revision_id
+                != candidate_set.candidate_set_revision_id
+            ):
+                raise ValueError("selection requires a judgment-bound candidate")
+            if candidate.partition == "over_cap":
+                raise ValueError("over-cap candidates cannot be selected")
+            if candidate.partition not in {"eligible", "audit_blocked"}:
+                raise ValueError("candidate partition cannot be selected")
+            generation = uow.operator_decision.candidate_generation_request(
+                candidate_set.generation_request_id
+            )
+            if generation is None:
+                raise ValueError("candidate generation request does not exist")
+            candidate_set_lineage = (
+                candidate_set.task_family_id,
+                candidate_set.work_item_id,
+                candidate_set.task_snapshot_hash,
+                candidate_set.slate_revision_id,
+                candidate_set.market_prior_baseline_revision_id,
+                candidate_set.baseline_envelope_revision_id,
+                candidate_set.judgment_prescription_revision_id,
+            )
+            generation_lineage = (
+                generation.task_family_id,
+                generation.work_item_id,
+                generation.task_snapshot_hash,
+                generation.slate_revision_id,
+                generation.market_prior_baseline_revision_id,
+                generation.baseline_envelope_revision_id,
+                generation.judgment_prescription_revision_id,
+            )
+            if candidate_set_lineage != generation_lineage:
+                raise StaleOperatorDecisionDependencyError(
+                    "candidate set crosses its generation lineage"
+                )
+            task_bundle, _items = self._current_bundle(
+                uow,
+                generation.task_evidence_bundle_revision_id,
+            )
+            _baseline, envelope = self._same_decision_lineage(
+                uow,
+                task_bundle,
+                generation.work_item_id,
+                generation.market_prior_baseline_revision_id,
+                generation.baseline_envelope_revision_id,
+            )
+            prescription = uow.operator_decision.judgment_prescription_revision(
+                generation.judgment_prescription_revision_id
+            )
+            if prescription is None:
+                raise ValueError("candidate judgment prescription does not exist")
+            current_prescription = (
+                uow.operator_decision.current_judgment_prescription_revision(
+                    prescription.judgment_prescription_family_id
+                )
+            )
+            if (
+                current_prescription is None
+                or current_prescription.judgment_prescription_revision_id
+                != prescription.judgment_prescription_revision_id
+            ):
+                raise StaleOperatorDecisionDependencyError(
+                    "candidate judgment prescription is stale or superseded"
+                )
+            expected_prescription_lineage = (
+                generation.task_family_id,
+                generation.work_item_id,
+                generation.task_snapshot_hash,
+                generation.slate_revision_id,
+                generation.task_evidence_bundle_revision_id,
+                generation.market_prior_baseline_revision_id,
+                generation.baseline_envelope_revision_id,
+            )
+            prescription_lineage = (
+                prescription.task_family_id,
+                prescription.work_item_id,
+                prescription.task_snapshot_hash,
+                prescription.slate_revision_id,
+                prescription.task_evidence_bundle_revision_id,
+                prescription.market_prior_baseline_revision_id,
+                prescription.baseline_envelope_revision_id,
+            )
+            if prescription_lineage != expected_prescription_lineage:
+                raise StaleOperatorDecisionDependencyError(
+                    "candidate prescription crosses its generation lineage"
+                )
+            if not uow.operator_decision.action_is_committed(
+                prescription.action_id,
+                action_type="freeze_judgment_prescription",
+            ):
+                raise ValueError("candidate prescription Action is not committed")
+            self._validate_fixed_prize_policy(
+                uow,
+                envelope.ticket_kind,
+                generation.fixed_prize_policy_revision_id,
+            )
+            candidate_offer_ids = {
+                leg.official_offer_revision_id
+                for ticket in uow.operator_result.candidate_tickets(
+                    candidate.candidate_revision_id
+                )
+                for leg in uow.operator_result.candidate_ticket_legs(
+                    ticket.candidate_ticket_id
+                )
+            }
+            self._require_open_offer_revisions(
+                uow,
+                candidate_set.slate_revision_id,
+                candidate_offer_ids,
+                request.requested_at,
+            )
+            current_slate = uow.operator_sale.current_slate(
+                task_bundle.lane,
+                task_bundle.business_key,
+            )
+            if (
+                current_slate is None
+                or current_slate.slate_revision_id != candidate_set.slate_revision_id
+            ):
+                raise StaleOperatorDecisionDependencyError(
+                    "candidate slate is stale or superseded"
+                )
+            selection_family_id = _stable_id(
+                "operator-candidate-selection-family",
+                candidate_set.task_family_id,
+                candidate_set.work_item_id,
+            )
+            current_selection = uow.operator_decision.current_candidate_selection(
+                task_family_id=candidate_set.task_family_id,
+                work_item_id=candidate_set.work_item_id,
+            )
+            _assert_expected_revision(
+                expected=request.expected_current_revision_no,
+                current_revision_no=(
+                    0 if current_selection is None else current_selection.revision_no
+                ),
+                object_label="ticket candidate selection",
+            )
+            selection_document = {
+                "candidate_set_revision_id": candidate_set.candidate_set_revision_id,
+                "candidate_revision_id": candidate.candidate_revision_id,
+                "task_family_id": candidate_set.task_family_id,
+                "work_item_id": candidate_set.work_item_id,
+                "task_snapshot_hash": candidate_set.task_snapshot_hash,
+                "slate_revision_id": candidate_set.slate_revision_id,
+                "task_evidence_bundle_revision_id": (
+                    generation.task_evidence_bundle_revision_id
+                ),
+                "market_prior_baseline_revision_id": (
+                    candidate_set.market_prior_baseline_revision_id
+                ),
+                "baseline_envelope_revision_id": (
+                    candidate_set.baseline_envelope_revision_id
+                ),
+                "judgment_prescription_revision_id": (
+                    candidate_set.judgment_prescription_revision_id
+                ),
+                "fixed_prize_policy_revision_id": (
+                    generation.fixed_prize_policy_revision_id
+                ),
+                "reason": request.reason.strip(),
+            }
+            content_hash = _content_hash(selection_document)
+            if (
+                current_selection is not None
+                and current_selection.content_hash == content_hash
+            ):
+                return (
+                    ObjectRef(
+                        "ticket_candidate_selection",
+                        current_selection.candidate_selection_id,
+                    ),
+                )
+            revision_no = (
+                1 if current_selection is None else current_selection.revision_no + 1
+            )
+            selection_id = _stable_id(
+                "operator-candidate-selection",
+                selection_family_id,
+                revision_no,
+                content_hash,
+            )
+            uow.operator_decision.insert_candidate_selection(
+                CandidateSelectionRow(
+                    candidate_selection_id=selection_id,
+                    candidate_selection_family_id=selection_family_id,
+                    revision_no=revision_no,
+                    supersedes_revision_id=(
+                        None
+                        if current_selection is None
+                        else current_selection.candidate_selection_id
+                    ),
+                    candidate_set_revision_id=candidate_set.candidate_set_revision_id,
+                    candidate_revision_id=candidate.candidate_revision_id,
+                    task_family_id=candidate_set.task_family_id,
+                    work_item_id=candidate_set.work_item_id,
+                    task_snapshot_hash=candidate_set.task_snapshot_hash,
+                    slate_revision_id=candidate_set.slate_revision_id,
+                    reason=request.reason.strip(),
+                    content_hash=content_hash,
+                    action_id=action_command.action_id,
+                    selected_at=_utc(request.requested_at),
+                )
+            )
+            return (ObjectRef("ticket_candidate_selection", selection_id),)
 
         return self._action_service.execute(command, handler)
 
@@ -862,6 +1389,133 @@ class OperatorDecisionActions:
                 raise ValueError("task evidence bundle does not exist")
             return bundle.policy_version
 
+    def _candidate_set_policy(self, candidate_set_revision_id: str) -> str:
+        with self._action_service.unit_of_work() as uow:
+            candidate_set = uow.operator_result.candidate_set_revision(
+                candidate_set_revision_id
+            )
+            if candidate_set is None:
+                raise ValueError("ticket candidate set does not exist")
+            generation = uow.operator_decision.candidate_generation_request(
+                candidate_set.generation_request_id
+            )
+            if generation is None:
+                raise ValueError("candidate generation request does not exist")
+            bundle = uow.operator_decision.task_evidence_bundle_revision(
+                generation.task_evidence_bundle_revision_id
+            )
+            if bundle is None:
+                raise ValueError("candidate evidence bundle does not exist")
+            return bundle.policy_version
+
+    @staticmethod
+    def _validate_fixed_prize_policy(uow, ticket_kind: str, revision_id: str | None) -> None:
+        if ticket_kind == "jczq_pass":
+            if revision_id is not None:
+                raise ValueError("JCZQ candidate generation cannot bind fixed-prize policy")
+            return
+        if ticket_kind not in {"sfc", "renjiu"} or revision_id is None:
+            raise ValueError("Zucai candidate generation requires fixed-prize policy")
+        policy = uow.operator_result.fixed_prize_policy_revision(revision_id)
+        current = uow.operator_result.current_fixed_prize_policy(ticket_kind)
+        if (
+            policy is None
+            or current is None
+            or policy.fixed_prize_policy_revision_id
+            != current.fixed_prize_policy_revision_id
+            or policy.ticket_kind != ticket_kind
+            or policy.currency != "CNY"
+            or policy.standard_unit_stake_minor != 200
+            or policy.official_void_rule != "all_faces_match"
+        ):
+            raise ValueError("fixed-prize policy is missing, stale, or incompatible")
+
+    @staticmethod
+    def _validate_baseline_quote_bindings(uow, baseline, baseline_rows) -> None:
+        snapshot_quote_ids: dict[str, set[str]] = {}
+        snapshots: dict[str, dict[str, object]] = {}
+        for row in baseline_rows:
+            quote = uow.market.quote(str(row["quote_id"]))
+            if quote is None:
+                raise ValueError("baseline Quote binding is unavailable")
+            snapshot_id = str(row["market_snapshot_id"])
+            if snapshot_id not in snapshot_quote_ids:
+                snapshot_quote_ids[snapshot_id] = set(
+                    uow.market.snapshot_quote_ids(snapshot_id)
+                )
+                snapshot = uow.operator_decision.market_snapshot(snapshot_id)
+                if snapshot is None:
+                    raise ValueError("baseline market snapshot is unavailable")
+                snapshots[snapshot_id] = snapshot
+            snapshot = snapshots[snapshot_id]
+            outcome_key = uow.market.selection_outcome_key(quote.selection_id)
+            face_code = _OUTCOME_FACE_CODES.get(str(outcome_key), str(outcome_key))
+            current_odds = _decimal_text(
+                _decimal_from_number(quote.decimal_odds, name="booked decimal odds")
+            )
+            current_line = (
+                None
+                if quote.settlement_parameter_decimal is None
+                else _decimal_text(
+                    _decimal_from_number(
+                        quote.settlement_parameter_decimal,
+                        name="settlement parameter",
+                    )
+                )
+            )
+            if (
+                quote.match_id != row["match_id"]
+                or quote.market_definition_id != row["market_definition_id"]
+                or quote.quote_status != "active"
+                or face_code != row["face_code"]
+                or quote.quote_id not in snapshot_quote_ids[snapshot_id]
+                or quote.captured_at != row["quote_captured_at"]
+                or snapshot["match_id"] != row["match_id"]
+                or snapshot["market_definition_id"]
+                != row["market_definition_id"]
+                or datetime.fromisoformat(quote.captured_at)
+                > datetime.fromisoformat(baseline.information_cutoff_at)
+                or current_odds != row["booked_decimal_odds"]
+                or current_line != row["settlement_parameter_decimal"]
+            ):
+                raise ValueError("baseline Quote odds or settlement binding has drifted")
+
+    @staticmethod
+    def _require_open_offer_revisions(
+        uow,
+        slate_revision_id: str,
+        revision_ids,
+        receipt_time: datetime,
+    ) -> None:
+        requested_at = _aware(receipt_time, "receipt_time").astimezone(UTC)
+        pending = set(revision_ids)
+        if not pending:
+            raise ValueError("candidate lineage contains no official offers")
+        offers_by_id = {
+            offer.official_offer_revision_id: offer
+            for offer in uow.operator_sale.offer_revisions_for_slate(slate_revision_id)
+        }
+        if not pending <= set(offers_by_id):
+            raise ValueError("candidate official offer does not exist in its slate")
+        rows = [offers_by_id[revision_id] for revision_id in sorted(pending)]
+        for offer in rows:
+            current = uow.operator_sale.current_offer_by_family(
+                offer.official_offer_family_id
+            )
+            opens_at = datetime.fromisoformat(offer.sale_opens_at).astimezone(UTC)
+            deadline_at = datetime.fromisoformat(offer.sale_deadline_at).astimezone(UTC)
+            if (
+                current is None
+                or current.official_offer_revision_id
+                != offer.official_offer_revision_id
+                or offer.status != "on_sale"
+                or requested_at < opens_at
+                or requested_at >= deadline_at
+            ):
+                raise StaleOperatorDecisionDependencyError(
+                    "candidate official offer is closed, stale, or at its deadline"
+                )
+
     @staticmethod
     def _current_bundle(uow, revision_id: str):
         bundle = uow.operator_decision.task_evidence_bundle_revision(revision_id)
@@ -1019,6 +1673,18 @@ class OperatorDecisionActions:
                 quote_by_face[face_code] = quote
             if set(quote_by_face) != set(fair):
                 raise ValueError("market Snapshot is missing an exact Quote")
+            quote_lines = {
+                quote["settlement_parameter_decimal"]
+                for quote in quote_by_face.values()
+            }
+            line_schema = uow.market.market_line_schema(market_id)
+            if line_schema is None:
+                if quote_lines != {None}:
+                    raise ValueError(
+                        "unlined market contains an unexpected settlement parameter"
+                    )
+            elif None in quote_lines or len(quote_lines) != 1:
+                raise ValueError("lined market requires one exact signed line")
             if frozen.market_snapshot_id not in item.market_prior_ref_tokens:
                 raise ValueError("market Snapshot is not anchored by the task freeze")
             for face_code in sorted(fair, key=_face_sort_key):
@@ -1033,6 +1699,30 @@ class OperatorDecisionActions:
                         "probability_decimal": _decimal_text(fair[face_code]),
                         "market_snapshot_id": frozen.market_snapshot_id,
                         "quote_id": str(quote_by_face[face_code]["quote_id"]),
+                        "booked_decimal_odds": _decimal_text(
+                            _decimal_from_number(
+                                quote_by_face[face_code]["decimal_odds"],
+                                name="booked decimal odds",
+                            )
+                        ),
+                        "quote_captured_at": str(
+                            quote_by_face[face_code]["captured_at"]
+                        ),
+                        "settlement_parameter_decimal": (
+                            None
+                            if quote_by_face[face_code][
+                                "settlement_parameter_decimal"
+                            ]
+                            is None
+                            else _decimal_text(
+                                _decimal_from_number(
+                                    quote_by_face[face_code][
+                                        "settlement_parameter_decimal"
+                                    ],
+                                    name="settlement parameter",
+                                )
+                            )
+                        ),
                     }
                 )
         return tuple(rows)
@@ -1045,7 +1735,7 @@ class OperatorDecisionActions:
             "maximum_exhaustive_candidate_count",
         ):
             value = getattr(request, name)
-            minimum = 0 if name == "capital_cap_minor" else 1
+            minimum = 1
             if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
                 raise ValueError(f"{name} must be an integer of at least {minimum}")
         if len(request.currency) != 3 or request.currency != request.currency.upper():
@@ -1476,7 +2166,9 @@ class OperatorDecisionActions:
             or current_envelope.baseline_envelope_revision_id
             != envelope.baseline_envelope_revision_id
         ):
-            raise ValueError("decision lineage contains a stale dependency")
+            raise StaleOperatorDecisionDependencyError(
+                "decision lineage contains a stale dependency"
+            )
         return baseline, envelope
 
     @classmethod
@@ -1793,4 +2485,6 @@ __all__ = [
     "FreezeMarketPriorBaselineRequest",
     "OperatorDecisionActions",
     "RecordBaselineEnvelopeRequest",
+    "RequestCandidateGenerationRequest",
+    "SelectTicketCandidateRequest",
 ]

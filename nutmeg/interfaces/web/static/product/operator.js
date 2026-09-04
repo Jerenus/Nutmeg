@@ -182,6 +182,32 @@
       }));
     }
 
+    if (action === "request-candidate-generation") {
+      return submit(form, () => postJson("/api/v2/operator", {
+        schema_version: "2",
+        kind: "request_candidate_generation",
+        expected_snapshot_token: form.dataset.commandToken,
+        idempotency_key: `ui:operator:candidates:${crypto.randomUUID()}`,
+        task_key: form.dataset.taskKey,
+        market_prior_baseline_token: values.get("market_prior_baseline_token"),
+        baseline_envelope_token: values.get("baseline_envelope_token"),
+        judgment_prescription_token: values.get("judgment_prescription_token"),
+      }));
+    }
+
+    if (action === "select-ticket-candidate") {
+      const candidateToken = values.get("candidate_token");
+      return submit(form, () => postJson("/api/v2/operator", {
+        schema_version: "2",
+        kind: "select_candidate",
+        expected_snapshot_token: form.dataset.commandToken,
+        idempotency_key: `ui:operator:candidate-selection:${crypto.randomUUID()}`,
+        task_key: form.dataset.taskKey,
+        candidate_token: candidateToken,
+        reason: values.get("reason"),
+      }));
+    }
+
     if (action === "resolve-issue-adjudication") {
       submit(form, () => postJson(
         `/api/v1/operator/tasks/${encodeURIComponent(form.dataset.taskId)}/adjudications`,

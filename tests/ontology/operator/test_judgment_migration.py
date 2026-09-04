@@ -307,14 +307,16 @@ def _insert_decimal_child(
                 "INSERT INTO operator_market_prior_baseline_probabilities "
                 "(market_prior_baseline_probability_id, market_prior_baseline_revision_id, "
                 "item_index, match_id, official_offer_revision_id, market_definition_id, "
-                "face_code, probability_decimal, market_snapshot_id, quote_id) VALUES "
+                "face_code, probability_decimal, market_snapshot_id, quote_id, "
+                "booked_decimal_odds, quote_captured_at) VALUES "
                 "(:child_id, :revision_id, 0, 'match-1', 'offer-revision-1', 'md-had', "
-                "'3', :value, 'snapshot-1', 'quote-1')"
+                "'3', :value, 'snapshot-1', 'quote-1', '2.000000000000', :captured_at)"
             ),
             {
                 "child_id": f"prior-probability-{suffix}",
                 "revision_id": revision_id,
                 "value": value,
+                "captured_at": AT,
             },
         )
         return
@@ -376,7 +378,7 @@ def _initialize(path: Path, *, from_version: int | None = None):
     engine = build_ontology_engine(path)
     if from_version is not None:
         run_migrations(engine, MIGRATIONS[:from_version])
-    run_migrations(engine)
+    run_migrations(engine, MIGRATIONS[:20])
     return engine
 
 
@@ -468,12 +470,13 @@ def test_committed_revision_children_cannot_be_changed_or_extended(tmp_path: Pat
                     "(market_prior_baseline_probability_id, "
                     "market_prior_baseline_revision_id, item_index, match_id, "
                     "official_offer_revision_id, market_definition_id, face_code, "
-                    "probability_decimal, market_snapshot_id, quote_id) VALUES "
+                    "probability_decimal, market_snapshot_id, quote_id, "
+                    "booked_decimal_odds, quote_captured_at) VALUES "
                     "('immutable-probability', :revision_id, 0, 'match-1', "
                     "'offer-revision-1', 'md-had', '3', '0.400000000000', "
-                    "'snapshot-1', 'quote-1')"
+                    "'snapshot-1', 'quote-1', '2.000000000000', :captured_at)"
                 ),
-                {"revision_id": revision_id},
+                {"revision_id": revision_id, "captured_at": AT},
             )
             connection.execute(
                 text(
@@ -493,10 +496,12 @@ def test_committed_revision_children_cannot_be_changed_or_extended(tmp_path: Pat
                 "(market_prior_baseline_probability_id, "
                 "market_prior_baseline_revision_id, item_index, match_id, "
                 "official_offer_revision_id, market_definition_id, face_code, "
-                "probability_decimal, market_snapshot_id, quote_id) VALUES "
+                "probability_decimal, market_snapshot_id, quote_id, "
+                "booked_decimal_odds, quote_captured_at) VALUES "
                 "('late-probability', 'market_prior_baseline-immutable-child', 1, "
                 "'match-1', 'offer-revision-1', 'md-had', '1', '0.300000000000', "
-                "'snapshot-1', 'quote-1')",
+                "'snapshot-1', 'quote-1', '2.000000000000', "
+                "'2026-09-04T08:00:00+00:00')",
             ):
                 with pytest.raises(IntegrityError, match="append-only"):
                     connection.execute(text(statement))

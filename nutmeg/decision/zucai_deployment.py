@@ -140,7 +140,7 @@ def _cohort(
 def evaluate_deployment_gate(
     payload: dict, history: list[OfficialRenjiuHistory]
 ) -> DeploymentGateResult:
-    """Select minimum break-even inside the cap and report official-median economics."""
+    """Select maximum all-correct probability inside the cap and report economics."""
     if not isinstance(payload, dict):
         raise ValueError("deployment gate input must be an object")
     issue = str(payload.get("issue", "")).strip()
@@ -172,12 +172,12 @@ def evaluate_deployment_gate(
     inside = [item for item in candidates if item.stake_yuan <= int(cap)]
     if not inside:
         raise ValueError("no candidate is inside period_cap_yuan")
-    # 固定奖金玩法按回本线（票价÷P）升序取档，不按 P 降序（s条 2026-08-31 修订）。
-    # 任九中奖只拿 1 注奖金而成本随注数线性涨 → 加注必然抬高回本线。
+    # Constitutional ordering: maximize P inside the external cap. Economic ratios below
+    # remain report-only and never choose a smaller ticket or a no-ticket outcome.
     selected = min(
         inside,
         key=lambda item: (
-            item.stake_yuan / item.hit_probability,
+            -item.hit_probability,
             item.stake_yuan,
             item.candidate_id,
         ),
@@ -230,9 +230,9 @@ def format_deployment_gate(result: DeploymentGateResult) -> str:
         f"状态: {result.state.value} (exit {result.exit_code})",
     ]
     if result.state is DeploymentGateState.REVIEW:
-        lines.append("建议: 先构造丢场式减注版并重跑；是否采用由主循环裁决。")
+        lines.append("观察: 历史中位倍数处于 review 区间；出票取舍由 Jun 裁决。")
     elif result.state is DeploymentGateState.REDUCE_OR_EMPTY:
-        lines.append("建议: 优先丢场式减注并重跑；无合格减注版时才空仓。")
+        lines.append("观察: 历史中位倍数处于高压区间；减注或空仓仅由 Jun 裁决。")
     else:
         lines.append("报告通过；出票仍须用户确认与 ledger 入账。")
     return "\n".join(lines)

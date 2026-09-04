@@ -19,6 +19,29 @@ def _canonical_decimal_check(column_name: str, *, probability: bool) -> str:
         f"AND {numeric_bounds}"
     )
 
+
+def _canonical_nonnegative_decimal_check(column_name: str) -> str:
+    return (
+        f"typeof({column_name}) = 'text' "
+        f"AND printf('%.12f', CAST({column_name} AS REAL)) = {column_name} "
+        f"AND CAST({column_name} AS REAL) >= 0.0"
+    )
+
+
+def _canonical_positive_decimal_check(column_name: str) -> str:
+    return (
+        f"typeof({column_name}) = 'text' "
+        f"AND printf('%.12f', CAST({column_name} AS REAL)) = {column_name} "
+        f"AND CAST({column_name} AS REAL) > 1.0"
+    )
+
+
+def _canonical_unbounded_decimal_check(column_name: str) -> str:
+    return (
+        f"typeof({column_name}) = 'text' "
+        f"AND printf('%.12f', CAST({column_name} AS REAL)) = {column_name}"
+    )
+
 operator_evidence_intake_receipts = Table(
     "operator_evidence_intake_receipts",
     metadata,
@@ -474,10 +497,22 @@ operator_market_prior_baseline_probabilities = Table(
         ForeignKey("market_quotes.quote_id", ondelete="RESTRICT"),
         nullable=False,
     ),
+    Column("booked_decimal_odds", Text, nullable=False),
+    Column("quote_captured_at", Text, nullable=False),
+    Column("settlement_parameter_decimal", Text, nullable=True),
     CheckConstraint("item_index >= 0", name="ck_market_prior_probability_index"),
     CheckConstraint(
         _canonical_decimal_check("probability_decimal", probability=True),
         name="ck_market_prior_probability_canonical",
+    ),
+    CheckConstraint(
+        _canonical_positive_decimal_check("booked_decimal_odds"),
+        name="ck_market_prior_booked_odds_canonical",
+    ),
+    CheckConstraint(
+        "settlement_parameter_decimal IS NULL OR "
+        + _canonical_unbounded_decimal_check("settlement_parameter_decimal"),
+        name="ck_market_prior_settlement_parameter_canonical",
     ),
     UniqueConstraint(
         "market_prior_baseline_revision_id",
@@ -1198,6 +1233,446 @@ operator_judgment_prescription_items = Table(
 )
 
 
+operator_candidate_generation_requests = Table(
+    "operator_candidate_generation_requests",
+    metadata,
+    Column("generation_request_id", Text, primary_key=True),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("task_family_id", Text, nullable=False, index=True),
+    Column("work_item_id", Text, nullable=False, index=True),
+    Column("task_snapshot_hash", Text, nullable=False),
+    Column(
+        "slate_revision_id",
+        Text,
+        ForeignKey("official_sale_slate_revisions.slate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "task_evidence_bundle_revision_id",
+        Text,
+        ForeignKey(
+            "operator_task_evidence_bundle_revisions.task_evidence_bundle_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "market_prior_baseline_revision_id",
+        Text,
+        ForeignKey(
+            "operator_market_prior_baseline_revisions.market_prior_baseline_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "baseline_envelope_revision_id",
+        Text,
+        ForeignKey(
+            "operator_baseline_envelope_revisions.baseline_envelope_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "judgment_prescription_revision_id",
+        Text,
+        ForeignKey(
+            "operator_judgment_prescription_revisions.judgment_prescription_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "fixed_prize_policy_revision_id",
+        Text,
+        ForeignKey(
+            "zucai_fixed_prize_policy_revisions.fixed_prize_policy_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    ),
+    Column("dependency_fingerprint", Text, nullable=False),
+    Column("expected_current_revision_no", Integer, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column("requested_at", Text, nullable=False),
+    CheckConstraint(
+        "expected_current_revision_no >= 0",
+        name="ck_operator_candidate_generation_expected_revision",
+    ),
+    UniqueConstraint(
+        "task_family_id",
+        "work_item_id",
+        "content_hash",
+        name="uq_operator_candidate_generation_request",
+    ),
+)
+
+
+operator_candidate_set_revisions = Table(
+    "operator_candidate_set_revisions",
+    metadata,
+    Column("candidate_set_revision_id", Text, primary_key=True),
+    Column("candidate_set_family_id", Text, nullable=False, index=True),
+    Column("revision_no", Integer, nullable=False),
+    Column(
+        "supersedes_revision_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_set_revisions.candidate_set_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        unique=True,
+    ),
+    Column(
+        "generation_request_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_generation_requests.generation_request_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column("task_family_id", Text, nullable=False, index=True),
+    Column("work_item_id", Text, nullable=False, index=True),
+    Column("task_snapshot_hash", Text, nullable=False),
+    Column(
+        "slate_revision_id",
+        Text,
+        ForeignKey("official_sale_slate_revisions.slate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "market_prior_baseline_revision_id",
+        Text,
+        ForeignKey(
+            "operator_market_prior_baseline_revisions.market_prior_baseline_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "baseline_envelope_revision_id",
+        Text,
+        ForeignKey(
+            "operator_baseline_envelope_revisions.baseline_envelope_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "judgment_prescription_revision_id",
+        Text,
+        ForeignKey(
+            "operator_judgment_prescription_revisions.judgment_prescription_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column("set_kind", Text, nullable=False),
+    Column("comparison_only", Integer, nullable=False),
+    Column("generator_version", Text, nullable=False),
+    Column("audit_policy_version", Text, nullable=False),
+    Column("candidate_count", Integer, nullable=False),
+    Column("eligible_count", Integer, nullable=False),
+    Column("audit_blocked_count", Integer, nullable=False),
+    Column("over_cap_count", Integer, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("created_at", Text, nullable=False),
+    CheckConstraint("revision_no >= 1", name="ck_operator_candidate_set_revision"),
+    CheckConstraint(
+        "set_kind IN ('judgment_bound', 'conditional_market_counterfactual')",
+        name="ck_operator_candidate_set_kind",
+    ),
+    CheckConstraint(
+        "(set_kind = 'judgment_bound' AND comparison_only = 0) "
+        "OR (set_kind = 'conditional_market_counterfactual' AND comparison_only = 1)",
+        name="ck_operator_candidate_set_comparison",
+    ),
+    CheckConstraint(
+        "candidate_count >= 0 AND eligible_count >= 0 "
+        "AND audit_blocked_count >= 0 AND over_cap_count >= 0 "
+        "AND candidate_count = eligible_count + audit_blocked_count + over_cap_count",
+        name="ck_operator_candidate_set_counts",
+    ),
+    UniqueConstraint(
+        "candidate_set_family_id",
+        "revision_no",
+        name="uq_operator_candidate_set_revision",
+    ),
+    UniqueConstraint(
+        "generation_request_id",
+        "set_kind",
+        name="uq_operator_candidate_set_request_kind",
+    ),
+)
+
+
+operator_candidates = Table(
+    "operator_candidates",
+    metadata,
+    Column("candidate_revision_id", Text, primary_key=True),
+    Column(
+        "candidate_set_revision_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_set_revisions.candidate_set_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    ),
+    Column("candidate_index", Integer, nullable=False),
+    Column("candidate_code", Text, nullable=False),
+    Column("partition", Text, nullable=False),
+    Column("rank", Integer, nullable=True),
+    Column("eligible", Integer, nullable=False),
+    Column("deployable", Integer, nullable=False),
+    Column("leg_audit_completed", Integer, nullable=False),
+    Column("prescription_audit_completed", Integer, nullable=False),
+    Column("budget_check_completed", Integer, nullable=False),
+    Column("deployment_report_completed", Integer, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    CheckConstraint("candidate_index >= 0", name="ck_operator_candidate_index"),
+    CheckConstraint(
+        "partition IN ('eligible', 'audit_blocked', 'over_cap')",
+        name="ck_operator_candidate_partition",
+    ),
+    CheckConstraint(
+        "(partition = 'eligible' AND eligible = 1) "
+        "OR (partition != 'eligible' AND eligible = 0)",
+        name="ck_operator_candidate_eligible",
+    ),
+    CheckConstraint(
+        "(partition = 'eligible' AND rank IS NOT NULL AND rank > 0) "
+        "OR (partition != 'eligible' AND rank IS NULL)",
+        name="ck_operator_candidate_rank",
+    ),
+    CheckConstraint(
+        "eligible IN (0, 1) AND deployable IN (0, 1) AND deployable <= eligible",
+        name="ck_operator_candidate_deployability",
+    ),
+    CheckConstraint(
+        "leg_audit_completed = 1 AND prescription_audit_completed = 1 "
+        "AND budget_check_completed = 1 AND deployment_report_completed = 1",
+        name="ck_operator_candidate_all_audits",
+    ),
+    UniqueConstraint(
+        "candidate_set_revision_id",
+        "candidate_index",
+        name="uq_operator_candidate_index",
+    ),
+    UniqueConstraint(
+        "candidate_set_revision_id",
+        "candidate_code",
+        name="uq_operator_candidate_code",
+    ),
+    UniqueConstraint(
+        "candidate_set_revision_id",
+        "content_hash",
+        name="uq_operator_candidate_content",
+    ),
+)
+
+
+operator_candidate_metrics = Table(
+    "operator_candidate_metrics",
+    metadata,
+    Column("candidate_metric_id", Text, primary_key=True),
+    Column(
+        "candidate_revision_id",
+        Text,
+        ForeignKey("operator_candidates.candidate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("currency", Text, nullable=False),
+    Column("ticket_count", Integer, nullable=False),
+    Column("distinct_note_count", Integer, nullable=False),
+    Column("paid_note_unit_count", Integer, nullable=False),
+    Column("stake_minor", Integer, nullable=False),
+    Column("capital_utilization_decimal", Text, nullable=False),
+    Column("probability_kind", Text, nullable=False),
+    Column("objective_probability_decimal", Text, nullable=False),
+    Column("expected_broken_legs_decimal", Text, nullable=False),
+    Column("break_even_bonus_minor", Integer, nullable=True),
+    Column("break_even_to_official_median_decimal", Text, nullable=True),
+    CheckConstraint("length(currency) = 3", name="ck_operator_candidate_metric_currency"),
+    CheckConstraint(
+        "ticket_count > 0 AND distinct_note_count > 0 "
+        "AND paid_note_unit_count > 0 AND stake_minor > 0",
+        name="ck_operator_candidate_metric_counts",
+    ),
+    CheckConstraint(
+        "probability_kind IN ('all_required_legs', 'any_ticket_all_required_legs')",
+        name="ck_operator_candidate_probability_kind",
+    ),
+    CheckConstraint(
+        _canonical_nonnegative_decimal_check("capital_utilization_decimal"),
+        name="ck_operator_candidate_capital_utilization",
+    ),
+    CheckConstraint(
+        _canonical_decimal_check("objective_probability_decimal", probability=True),
+        name="ck_operator_candidate_objective_probability",
+    ),
+    CheckConstraint(
+        _canonical_nonnegative_decimal_check("expected_broken_legs_decimal"),
+        name="ck_operator_candidate_expected_broken_legs",
+    ),
+    CheckConstraint(
+        "break_even_bonus_minor IS NULL OR break_even_bonus_minor >= 0",
+        name="ck_operator_candidate_break_even",
+    ),
+    CheckConstraint(
+        "break_even_to_official_median_decimal IS NULL OR "
+        + _canonical_nonnegative_decimal_check(
+            "break_even_to_official_median_decimal"
+        ),
+        name="ck_operator_candidate_median_multiple",
+    ),
+)
+
+
+operator_candidate_dead_faces = Table(
+    "operator_candidate_dead_faces",
+    metadata,
+    Column("candidate_dead_face_id", Text, primary_key=True),
+    Column(
+        "candidate_revision_id",
+        Text,
+        ForeignKey("operator_candidates.candidate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    ),
+    Column("dead_face_index", Integer, nullable=False),
+    Column("official_match_no", Text, nullable=False),
+    Column("face_code", Text, nullable=False),
+    CheckConstraint("dead_face_index >= 0", name="ck_operator_candidate_dead_face_index"),
+    UniqueConstraint(
+        "candidate_revision_id",
+        "dead_face_index",
+        name="uq_operator_candidate_dead_face_index",
+    ),
+    UniqueConstraint(
+        "candidate_revision_id",
+        "official_match_no",
+        "face_code",
+        name="uq_operator_candidate_dead_face",
+    ),
+)
+
+
+operator_candidate_audit_findings = Table(
+    "operator_candidate_audit_findings",
+    metadata,
+    Column("candidate_audit_finding_id", Text, primary_key=True),
+    Column(
+        "candidate_revision_id",
+        Text,
+        ForeignKey("operator_candidates.candidate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    ),
+    Column("finding_index", Integer, nullable=False),
+    Column("audit_kind", Text, nullable=False),
+    Column("finding_code", Text, nullable=False),
+    Column("severity", Text, nullable=False),
+    Column("message", Text, nullable=False),
+    Column("official_match_no", Text, nullable=True),
+    Column("rule_id", Text, nullable=True),
+    CheckConstraint("finding_index >= 0", name="ck_operator_candidate_finding_index"),
+    CheckConstraint(
+        "audit_kind IN ('legs', 'prescription_difference', 'budget', 'deployment')",
+        name="ck_operator_candidate_audit_kind",
+    ),
+    CheckConstraint(
+        "severity IN ('WARN', 'ERROR')",
+        name="ck_operator_candidate_audit_severity",
+    ),
+    UniqueConstraint(
+        "candidate_revision_id",
+        "finding_index",
+        name="uq_operator_candidate_finding_index",
+    ),
+)
+
+
+operator_candidate_selections = Table(
+    "operator_candidate_selections",
+    metadata,
+    Column("candidate_selection_id", Text, primary_key=True),
+    Column("candidate_selection_family_id", Text, nullable=False, index=True),
+    Column("revision_no", Integer, nullable=False),
+    Column(
+        "supersedes_revision_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_selections.candidate_selection_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        unique=True,
+    ),
+    Column(
+        "candidate_set_revision_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_set_revisions.candidate_set_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "candidate_revision_id",
+        Text,
+        ForeignKey("operator_candidates.candidate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("task_family_id", Text, nullable=False, index=True),
+    Column("work_item_id", Text, nullable=False, index=True),
+    Column("task_snapshot_hash", Text, nullable=False),
+    Column(
+        "slate_revision_id",
+        Text,
+        ForeignKey("official_sale_slate_revisions.slate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("reason", Text, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("selected_at", Text, nullable=False),
+    CheckConstraint(
+        "revision_no >= 1",
+        name="ck_operator_candidate_selection_revision_positive",
+    ),
+    CheckConstraint("length(trim(reason)) > 0", name="ck_operator_candidate_selection_reason"),
+    UniqueConstraint(
+        "candidate_selection_family_id",
+        "revision_no",
+        name="uq_operator_candidate_selection_family_revision",
+    ),
+)
+
+
 __all__ = [
     "operator_baseline_envelope_bundle_faces",
     "operator_baseline_envelope_face_bundles",
@@ -1205,6 +1680,13 @@ __all__ = [
     "operator_baseline_envelope_revisions",
     "operator_baseline_envelope_structure_templates",
     "operator_baseline_envelope_template_offers",
+    "operator_candidate_audit_findings",
+    "operator_candidate_dead_faces",
+    "operator_candidate_generation_requests",
+    "operator_candidate_metrics",
+    "operator_candidate_selections",
+    "operator_candidate_set_revisions",
+    "operator_candidates",
     "operator_evidence_coverage_receipts",
     "operator_evidence_freeze_requests",
     "operator_evidence_intake_objects",

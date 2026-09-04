@@ -46,6 +46,7 @@ selection_definitions = Table(
     ),
     Column('outcome_key', Text, nullable=False),
     Column('line', Text, nullable=True),
+    Column('deployable', Integer, nullable=False, server_default='1'),
 )
 
 market_quotes = Table(
@@ -68,6 +69,7 @@ market_quotes = Table(
     Column('provider', Text, nullable=False),
     Column('bookmaker', Text, nullable=True),
     Column('decimal_odds', Float, nullable=False),
+    Column('settlement_parameter_decimal', Text, nullable=True),
     Column('captured_at', Text, nullable=False),
     Column(
         'artifact_retrieval_id',

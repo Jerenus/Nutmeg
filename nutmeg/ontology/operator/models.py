@@ -279,6 +279,9 @@ class MarketPriorBaselineProbabilityRow:
     probability_decimal: str
     market_snapshot_id: str
     quote_id: str
+    booked_decimal_odds: str
+    quote_captured_at: str
+    settlement_parameter_decimal: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,6 +404,182 @@ class JudgmentPrescriptionItemRow:
     operator_match_judgment_revision_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateGenerationRequestRow:
+    generation_request_id: str
+    action_id: str
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    task_evidence_bundle_revision_id: str
+    market_prior_baseline_revision_id: str
+    baseline_envelope_revision_id: str
+    judgment_prescription_revision_id: str
+    fixed_prize_policy_revision_id: str | None
+    dependency_fingerprint: str
+    expected_current_revision_no: int
+    content_hash: str
+    requested_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class TicketCandidateSetRevisionRow:
+    candidate_set_revision_id: str
+    candidate_set_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
+    generation_request_id: str
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    market_prior_baseline_revision_id: str
+    baseline_envelope_revision_id: str
+    judgment_prescription_revision_id: str
+    set_kind: str
+    comparison_only: int
+    generator_version: str
+    audit_policy_version: str
+    candidate_count: int
+    eligible_count: int
+    audit_blocked_count: int
+    over_cap_count: int
+    content_hash: str
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class TicketCandidateRow:
+    candidate_revision_id: str
+    candidate_set_revision_id: str
+    candidate_index: int
+    candidate_code: str
+    partition: str
+    rank: int | None
+    eligible: int
+    deployable: int
+    leg_audit_completed: int
+    prescription_audit_completed: int
+    budget_check_completed: int
+    deployment_report_completed: int
+    content_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateMetricRow:
+    candidate_metric_id: str
+    candidate_revision_id: str
+    currency: str
+    ticket_count: int
+    distinct_note_count: int
+    paid_note_unit_count: int
+    stake_minor: int
+    capital_utilization_decimal: str
+    probability_kind: str
+    objective_probability_decimal: str
+    expected_broken_legs_decimal: str
+    break_even_bonus_minor: int | None
+    break_even_to_official_median_decimal: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateDeadFaceRow:
+    candidate_dead_face_id: str
+    candidate_revision_id: str
+    dead_face_index: int
+    official_match_no: str
+    face_code: str
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateAuditFindingRow:
+    candidate_audit_finding_id: str
+    candidate_revision_id: str
+    finding_index: int
+    audit_kind: str
+    finding_code: str
+    severity: str
+    message: str
+    official_match_no: str | None
+    rule_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateSelectionRow:
+    candidate_selection_id: str
+    candidate_selection_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
+    candidate_set_revision_id: str
+    candidate_revision_id: str
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    reason: str
+    content_hash: str
+    action_id: str
+    selected_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class ZucaiFixedPrizePolicyRevisionRow:
+    fixed_prize_policy_revision_id: str
+    fixed_prize_policy_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
+    policy_version: str
+    ticket_kind: str
+    currency: str
+    standard_unit_stake_minor: int
+    official_void_rule: str
+    effective_at: str
+    content_hash: str
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class ZucaiFixedPrizePolicyTierRow:
+    fixed_prize_policy_tier_id: str
+    fixed_prize_policy_revision_id: str
+    tier_index: int
+    tier_code: str
+    required_correct_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateTicketRow:
+    candidate_ticket_id: str
+    candidate_revision_id: str
+    ticket_index: int
+    ticket_kind: str
+    structure_code: str
+    group_code: str | None
+    currency: str
+    unit_stake_minor: int
+    unit_count: int
+    stake_minor: int
+    composition_hash: str
+    fixed_prize_policy_revision_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateTicketLegRow:
+    candidate_ticket_leg_id: str
+    candidate_ticket_id: str
+    leg_index: int
+    official_offer_revision_id: str
+    match_id: str
+    market_definition_id: str
+    selection_code: str
+    quote_id: str | None
+    booked_decimal_odds: str | None
+    settlement_parameter_decimal: str | None
+
+
 __all__ = [
     "BaselineEnvelopeBundleFaceRow",
     "BaselineEnvelopeFaceBundleRow",
@@ -408,6 +587,13 @@ __all__ = [
     "BaselineEnvelopeRevisionRow",
     "BaselineEnvelopeStructureTemplateRow",
     "BaselineEnvelopeTemplateOfferRow",
+    "CandidateAuditFindingRow",
+    "CandidateDeadFaceRow",
+    "CandidateGenerationRequestRow",
+    "CandidateMetricRow",
+    "CandidateSelectionRow",
+    "CandidateTicketLegRow",
+    "CandidateTicketRow",
     "EvidenceCoverageReceiptRow",
     "EvidenceFreezeGate",
     "EvidenceFreezeMatchPlan",
@@ -430,4 +616,8 @@ __all__ = [
     "SaleImportResult",
     "TaskEvidenceBundleItemRow",
     "TaskEvidenceBundleRevisionRow",
+    "TicketCandidateRow",
+    "TicketCandidateSetRevisionRow",
+    "ZucaiFixedPrizePolicyRevisionRow",
+    "ZucaiFixedPrizePolicyTierRow",
 ]

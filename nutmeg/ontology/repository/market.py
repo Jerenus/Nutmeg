@@ -28,6 +28,7 @@ class QuoteRow:
     captured_at: str
     artifact_retrieval_id: str | None
     quote_status: str
+    settlement_parameter_decimal: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,7 @@ class MarketRepository:
                 provider=row.provider,
                 bookmaker=row.bookmaker,
                 decimal_odds=row.decimal_odds,
+                settlement_parameter_decimal=row.settlement_parameter_decimal,
                 captured_at=row.captured_at,
                 artifact_retrieval_id=row.artifact_retrieval_id,
                 quote_status=row.quote_status,
@@ -233,6 +235,13 @@ class MarketRepository:
     def market_kind(self, market_definition_id: str) -> str | None:
         return self._connection.execute(
             select(sm.market_definitions.c.market_kind).where(
+                sm.market_definitions.c.market_definition_id == market_definition_id
+            )
+        ).scalar_one_or_none()
+
+    def market_line_schema(self, market_definition_id: str) -> str | None:
+        return self._connection.execute(
+            select(sm.market_definitions.c.line_schema).where(
                 sm.market_definitions.c.market_definition_id == market_definition_id
             )
         ).scalar_one_or_none()

@@ -18,6 +18,8 @@ from nutmeg.ontology.operator.decision_actions import (
     FactorAdjustmentInput,
     FreezeJudgmentPrescriptionRequest,
     RecordBaselineEnvelopeRequest,
+    RequestCandidateGenerationRequest,
+    SelectTicketCandidateRequest,
 )
 from nutmeg.ontology.operator.evidence_actions import RequestEvidenceFreezeRequest
 from nutmeg.product.actions import ProductActionGateway
@@ -395,6 +397,128 @@ class OperatorActionService:
         self._require_committed(outcome, "judgment prescription")
         return OperatorCommandReceipt(
             command_kind="freeze_judgment_prescription",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def request_candidate_generation(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.candidate_generation_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.REQUEST_CANDIDATE_GENERATION,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        supplied_lineage_tokens = (
+            command.market_prior_baseline_token,
+            command.baseline_envelope_token,
+            command.judgment_prescription_token,
+        )
+        current_lineage_tokens = (
+            context.market_prior_baseline_token,
+            context.baseline_envelope_token,
+            context.judgment_prescription_token,
+        )
+        if supplied_lineage_tokens != current_lineage_tokens:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        outcome = decision_actions.request_candidate_generation(
+            RequestCandidateGenerationRequest(
+                task_evidence_bundle_revision_id=(
+                    context.task_evidence_bundle_revision_id
+                ),
+                market_prior_baseline_revision_id=(
+                    context.market_prior_baseline_revision_id
+                ),
+                baseline_envelope_revision_id=(
+                    context.baseline_envelope_revision_id
+                ),
+                judgment_prescription_revision_id=(
+                    context.judgment_prescription_revision_id
+                ),
+                work_item_id=context.work_item_id,
+                fixed_prize_policy_revision_id=(
+                    context.fixed_prize_policy_revision_id
+                ),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(
+                    context.expected_current_revision_no
+                ),
+            )
+        )
+        self._require_committed(outcome, "candidate generation request")
+        return OperatorCommandReceipt(
+            command_kind="request_candidate_generation",
+            status="queued",
+            task_key=context.task_key,
+        )
+
+    def select_ticket_candidate(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.candidate_selection_context(
+            command.task_key,
+            command.candidate_token,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.SELECT_CANDIDATE,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        candidate_refs = {
+            token: (candidate_set_revision_id, candidate_revision_id)
+            for token, candidate_set_revision_id, candidate_revision_id in (
+                context.candidate_refs_by_token
+            )
+        }
+        try:
+            candidate_set_revision_id, candidate_revision_id = candidate_refs[
+                command.candidate_token
+            ]
+        except KeyError as error:
+            raise OperatorSnapshotTokenError("invalid_request") from error
+        outcome = decision_actions.select_ticket_candidate(
+            SelectTicketCandidateRequest(
+                candidate_set_revision_id=candidate_set_revision_id,
+                candidate_revision_id=candidate_revision_id,
+                reason=command.reason,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(
+                    context.expected_current_revision_no
+                ),
+            )
+        )
+        self._require_committed(outcome, "candidate selection")
+        return OperatorCommandReceipt(
+            command_kind="select_candidate",
             status="completed",
             task_key=context.task_key,
         )
