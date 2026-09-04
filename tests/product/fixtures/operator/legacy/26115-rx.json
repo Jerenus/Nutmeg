@@ -1,0 +1,29 @@
+{
+  "issue": "26115",
+  "registered_at": "2026-08-31T16:20:00+08:00",
+  "decision": "sanitized legacy decision",
+  "prescription_P14": "sanitized prescription",
+  "ticket_versions": [
+    {"id": "R5_576", "stake_yuan": 576, "p_model": 0.2, "expected_broken": 1.2, "break_even_bonus": 2880, "break_even_to_median": 1.1, "audit": "sanitized", "gate": "review", "status": "legacy", "notes": 9},
+    {"id": "S2_384", "stake_yuan": 384, "p_model": 0.15, "break_even_to_median": 1.2, "note": "sanitized"},
+    {"id": "R1_384", "stake_yuan": 384, "p_model": 0.14, "break_even_to_median": 1.3, "note": "sanitized"},
+    {"id": "empty", "note": "sanitized"}
+  ],
+  "capital_report": {"stake_yuan": 576, "period_cap_yuan": 400, "anchor_window": "sanitized"},
+  "predictions": [
+    {"id": "P1", "claim": "sanitized claim 1", "falsifier": "sanitized falsifier 1"},
+    {"id": "P2", "claim": "sanitized claim 2", "falsifier": "sanitized falsifier 2"},
+    {"id": "P3", "claim": "sanitized claim 3", "falsifier": "sanitized falsifier 3"},
+    {"id": "P4", "claim": "sanitized claim 4", "falsifier": "sanitized falsifier 4"},
+    {"id": "P5", "claim": "sanitized claim 5", "falsifier": "sanitized falsifier 5"},
+    {"id": "P6", "claim": "sanitized claim 6", "falsifier": "sanitized falsifier 6"}
+  ],
+  "notes": ["sanitized"],
+  "pending_adjudications": [
+    {"id": "ADJ-1", "status": "已裁·用户行权", "q": "sanitized", "options": "A / B", "resolution": "A", "note": "sanitized", "evidence_rejected": "sanitized"},
+    {"id": "ADJ-2", "status": "已裁", "q": "sanitized", "options": "A / B", "resolution": "A", "note": "sanitized"},
+    {"id": "ADJ-3", "status": "已裁", "q": "sanitized", "options": "A / B", "resolution": "A", "note": "sanitized"},
+    {"id": "ADJ-4", "status": "已裁", "q": "sanitized", "options": "A / B", "resolution": "A", "note": "sanitized"},
+    {"id": "ADJ-5", "status": "已裁", "q": "sanitized", "options": "A / B", "resolution": "A", "note": "sanitized"}
+  ]
+}

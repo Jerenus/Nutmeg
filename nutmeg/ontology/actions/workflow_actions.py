@@ -10,7 +10,7 @@ from nutmeg.ontology.actions.models import (
     ActorRole,
     ObjectRef,
 )
-from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.actions.service import ActionBatchItem, ActionService
 from nutmeg.ontology.workflow.models import (
     AdjudicationRow,
     AgentProposalRow,
@@ -170,6 +170,16 @@ class WorkflowActions:
     def record_adjudication(
         self, request: RecordAdjudicationRequest
     ) -> ActionOutcome:
+        command, handler = self.prepare_record_adjudication(request)
+        return self._action_service.execute(command, handler)
+
+    def prepare_record_adjudication(
+        self,
+        request: RecordAdjudicationRequest,
+        *,
+        action_id: str | None = None,
+    ) -> ActionBatchItem:
+        """Build an adjudication operation without opening a transaction."""
         command = self._command(
             'record_adjudication',
             request,
@@ -182,6 +192,7 @@ class WorkflowActions:
                 'alternative': request.alternative,
                 'supersedes_adjudication_id': request.supersedes_adjudication_id,
             },
+            action_id=action_id,
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
@@ -202,7 +213,7 @@ class WorkflowActions:
             )
             return (ObjectRef('adjudication', adjudication_id),)
 
-        return self._action_service.execute(command, handler)
+        return command, handler
 
     def record_flag_instance(
         self, request: RecordFlagInstanceRequest
@@ -243,6 +254,16 @@ class WorkflowActions:
     def register_prediction(
         self, request: RegisterPredictionRequest
     ) -> ActionOutcome:
+        command, handler = self.prepare_register_prediction(request)
+        return self._action_service.execute(command, handler)
+
+    def prepare_register_prediction(
+        self,
+        request: RegisterPredictionRequest,
+        *,
+        action_id: str | None = None,
+    ) -> ActionBatchItem:
+        """Build a prediction operation without opening a transaction."""
         command = self._command(
             'register_prediction',
             request,
@@ -253,6 +274,7 @@ class WorkflowActions:
                 'claim': request.claim,
                 'falsifier': request.falsifier,
             },
+            action_id=action_id,
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
@@ -273,7 +295,7 @@ class WorkflowActions:
             )
             return (ObjectRef('prediction', prediction_id),)
 
-        return self._action_service.execute(command, handler)
+        return command, handler
 
     def grade_prediction(self, request: GradePredictionRequest) -> ActionOutcome:
         command = self._command(
@@ -432,6 +454,7 @@ class WorkflowActions:
         payload: dict[str, object],
         *,
         expected_versions: dict[str, int] | None = None,
+        action_id: str | None = None,
     ) -> ActionCommand:
         return ActionCommand.create(
             action_type=action_type,
@@ -441,4 +464,5 @@ class WorkflowActions:
             payload=payload,
             requested_at=request.requested_at,
             expected_versions=expected_versions,
+            action_id=action_id,
         )

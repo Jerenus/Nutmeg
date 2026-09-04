@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import Engine, and_, case, func, or_, select
@@ -15,9 +16,12 @@ from nutmeg.ontology.repository import schema_evidence as se
 from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository import schema_market as sm
+from nutmeg.ontology.repository import schema_operator_sale as sos
 from nutmeg.ontology.repository import schema_tickets as st
 from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.ontology.repository.outbox import OutboxEventRow, OutboxRepository
+from nutmeg.product.operator_contracts import OperatorLane
+from nutmeg.product.operator_lanes import SaleOfferSnapshot, SaleSlateSnapshot
 
 LineageTuple = tuple[str, str, str, str, str]
 
@@ -26,6 +30,84 @@ class ProductReadRepository:
     def __init__(self, engine: Engine, analytics_path: Path | None = None) -> None:
         self._engine = engine
         self._analytics_path = Path(analytics_path) if analytics_path is not None else None
+
+    def operator_sale_slates(self, *, as_of: str) -> tuple[SaleSlateSnapshot, ...]:
+        cutoff = datetime.fromisoformat(as_of)
+        if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+            raise ValueError("operator sale as_of must be timezone-aware")
+        cutoff = cutoff.astimezone(UTC)
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                select(sos.official_sale_slate_revisions).order_by(
+                    sos.official_sale_slate_revisions.c.lane,
+                    sos.official_sale_slate_revisions.c.business_key,
+                    sos.official_sale_slate_revisions.c.revision_no,
+                )
+            ).mappings()
+            current: dict[tuple[str, str], dict] = {}
+            for row in rows:
+                valid_from = datetime.fromisoformat(str(row["valid_from"]))
+                if valid_from.tzinfo is None or valid_from.utcoffset() is None:
+                    raise ValueError("official sale valid_from must be timezone-aware")
+                if valid_from.astimezone(UTC) <= cutoff:
+                    current[(str(row["lane"]), str(row["business_key"]))] = dict(row)
+            if not current:
+                return ()
+            slate_ids = [str(row["slate_revision_id"]) for row in current.values()]
+            offer_rows = (
+                connection.execute(
+                    select(sos.official_offer_revisions).where(
+                        sos.official_offer_revisions.c.slate_revision_id.in_(slate_ids)
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        offers_by_slate: dict[str, list[dict]] = {slate_id: [] for slate_id in slate_ids}
+        for row in offer_rows:
+            offers_by_slate[str(row["slate_revision_id"])].append(dict(row))
+        snapshots = []
+        for key, row in sorted(current.items()):
+            offer_values = sorted(
+                offers_by_slate[str(row["slate_revision_id"])],
+                key=lambda item: self._official_match_order(str(item["official_match_no"])),
+            )
+            snapshots.append(
+                SaleSlateSnapshot(
+                    lane=OperatorLane(key[0]),
+                    business_key=key[1],
+                    slate_revision_id=str(row["slate_revision_id"]),
+                    content_hash=str(row["content_hash"]),
+                    offers=tuple(
+                        SaleOfferSnapshot(
+                            official_offer_family_id=str(
+                                offer["official_offer_family_id"]
+                            ),
+                            official_offer_revision_id=str(
+                                offer["official_offer_revision_id"]
+                            ),
+                            match_id=str(offer["match_id"]),
+                            official_match_no=str(offer["official_match_no"]),
+                            market_definition_ids=tuple(
+                                json.loads(str(offer["market_definition_ids_json"]))
+                            ),
+                            sale_opens_at=datetime.fromisoformat(
+                                str(offer["sale_opens_at"])
+                            ),
+                            sale_deadline_at=datetime.fromisoformat(
+                                str(offer["sale_deadline_at"])
+                            ),
+                            source_status=str(offer["status"]),
+                        )
+                        for offer in offer_values
+                    ),
+                )
+            )
+        return tuple(snapshots)
+
+    @staticmethod
+    def _official_match_order(value: str) -> tuple[int, int | str]:
+        return (0, int(value)) if value.isdigit() else (1, value)
 
     def scoreboard_projection(self, *, as_of: str) -> dict:
         result = self._projection_rows("scoreboard_metrics", as_of=as_of)

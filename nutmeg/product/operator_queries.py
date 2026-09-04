@@ -21,8 +21,8 @@ from nutmeg.product.errors import ProductNotFoundError
 from nutmeg.product.operator_artifacts import (
     OperatorArtifactError,
     ZucaiArtifactBundle,
-    ZucaiArtifactRepository,
     ZucaiCandidateDocument,
+    ZucaiReplayBundleAdapter,
 )
 from nutmeg.product.operator_contracts import (
     AuditDeploymentStep,
@@ -42,12 +42,18 @@ from nutmeg.product.operator_contracts import (
     OperatorTaskState,
     OperatorTaskSummary,
     OperatorWorklistResponse,
+    PrepareStep,
     PrescriptionDifferenceSummary,
     ReviewItemSummary,
     ReviewStep,
     StepView,
     TaskProgressSummary,
     TicketVersionSummary,
+)
+from nutmeg.product.operator_lanes import (
+    JczqLaneAdapter,
+    SaleSlateSnapshot,
+    ZucaiLaneAdapter,
 )
 from nutmeg.product.operator_state import (
     NEXT_ACTION_LABELS,
@@ -134,13 +140,13 @@ class OperatorQueryService:
         *,
         repository: ProductReadRepository,
         product_queries: ProductQueryService,
-        artifacts: ZucaiArtifactRepository,
         official_history_provider: Callable[[], list[OfficialRenjiuHistory]],
         clock: Callable[[], datetime],
+        legacy_fixture_adapter: ZucaiReplayBundleAdapter | None = None,
     ) -> None:
         self._repository = repository
         self._product_queries = product_queries
-        self._artifacts = artifacts
+        self._legacy_fixture_adapter = legacy_fixture_adapter
         self._official_history = official_history_provider
         self._clock = clock
 
@@ -191,10 +197,14 @@ class OperatorQueryService:
         if task_match is None:
             raise ProductNotFoundError("operator evidence not found")
         issue = task_match.group(1)
+        if self._official_slate(task_id, as_of) is None:
+            raise ProductNotFoundError("operator evidence not found")
         try:
-            bundle = self._artifacts.load(issue)
+            bundle = self._legacy_bundle(issue)
         except OperatorArtifactError as error:
             raise ProductNotFoundError("operator evidence not found") from error
+        if bundle is None:
+            raise ProductNotFoundError("operator evidence not found")
         prep_match = re.fullmatch(r"prep-match-(\d{1,2})", evidence_key)
         if prep_match:
             match_no = int(prep_match.group(1))
@@ -240,27 +250,69 @@ class OperatorQueryService:
             )
         raise ProductNotFoundError("operator evidence not found")
 
+    def _legacy_bundle(self, issue: str) -> ZucaiArtifactBundle | None:
+        if self._legacy_fixture_adapter is None:
+            return None
+        return self._legacy_fixture_adapter.load_optional(issue)
+
     def _build_all(self, cutoff: datetime) -> list[_BuiltTask]:
-        built = [self._build_zucai(issue, cutoff) for issue in self._artifacts.discover_issues()]
+        slates = self._repository.operator_sale_slates(as_of=cutoff.isoformat())
         ticket_rows = self._repository.operator_ticket_artifacts(cutoff.isoformat())
-        run_dates = sorted({str(row["run_date"]) for row in ticket_rows})
-        built.extend(self._build_jczq(run_date, cutoff, ticket_rows) for run_date in run_dates)
+        built: list[_BuiltTask] = []
+        for slate in slates:
+            if slate.lane is OperatorLane.ZUCAI:
+                ZucaiLaneAdapter().validate_slate(slate)
+                built.append(self._build_zucai(slate.business_key, cutoff, slate))
+            else:
+                JczqLaneAdapter().validate_slate(slate)
+                built.append(self._build_jczq(slate.business_key, cutoff, ticket_rows, slate))
         return built
 
     def _build_task(self, task_id: str, cutoff: datetime) -> _BuiltTask:
+        slate = self._official_slate(task_id, cutoff)
+        if slate is None:
+            raise ProductNotFoundError(f"operator task {task_id} not found")
         if match := re.fullmatch(r"zucai:(\d{5})", task_id):
-            return self._build_zucai(match.group(1), cutoff)
+            return self._build_zucai(match.group(1), cutoff, slate)
         if match := re.fullmatch(r"jczq:(\d{4}-\d{2}-\d{2})", task_id):
             rows = self._repository.operator_ticket_artifacts(cutoff.isoformat())
-            return self._build_jczq(match.group(1), cutoff, rows)
+            return self._build_jczq(match.group(1), cutoff, rows, slate)
         raise ProductNotFoundError(f"operator task {task_id} not found")
 
-    def _build_zucai(self, issue: str, cutoff: datetime) -> _BuiltTask:
+    def _official_slate(
+        self, task_id: str, cutoff: datetime
+    ) -> SaleSlateSnapshot | None:
+        return next(
+            (
+                slate
+                for slate in self._repository.operator_sale_slates(
+                    as_of=cutoff.isoformat()
+                )
+                if f"{slate.lane.value}:{slate.business_key}" == task_id
+            ),
+            None,
+        )
+
+    def _build_zucai(
+        self, issue: str, cutoff: datetime, slate: SaleSlateSnapshot
+    ) -> _BuiltTask:
         task_id = f"zucai:{issue}"
+        official_deadline = min(
+            (offer.sale_deadline_at for offer in slate.offers),
+            default=None,
+        )
         try:
-            bundle = self._artifacts.load(issue)
+            bundle = self._legacy_bundle(issue)
         except OperatorArtifactError as error:
-            return self._source_block(task_id, issue, error)
+            return self._source_block(task_id, issue, error, official_deadline, slate)
+        if bundle is None:
+            return self._prepare_task(
+                task_id,
+                OperatorLane.ZUCAI,
+                issue,
+                official_deadline,
+                slate,
+            )
         adjudications = self._repository.adjudications_for_subject(
             "issue", issue, cutoff.isoformat()
         )
@@ -329,7 +381,7 @@ class OperatorQueryService:
         facts = OperatorTaskFacts(
             lane=OperatorLane.ZUCAI,
             business_key=issue,
-            deadline_at=bundle.fallback_deadline(),
+            deadline_at=official_deadline,
             waiting_until=None,
             source_error_code="selected_candidate_missing" if selection_invalid else None,
             has_issue=True,
@@ -476,6 +528,7 @@ class OperatorQueryService:
         )
         mutation_payload = {
             "task_id": task_id,
+            "official_slate": slate,
             "bundle": bundle.model_dump(mode="json"),
             "candidate_ids": [candidate.candidate_id for candidate in bundle.candidates],
             "adjudications": [
@@ -553,14 +606,21 @@ class OperatorQueryService:
             ),
         )
 
-    def _source_block(self, task_id: str, issue: str, error: Exception) -> _BuiltTask:
+    def _source_block(
+        self,
+        task_id: str,
+        issue: str,
+        error: Exception,
+        deadline: datetime | None,
+        slate: SaleSlateSnapshot,
+    ) -> _BuiltTask:
         facts = OperatorTaskFacts(
             lane=OperatorLane.ZUCAI,
             business_key=issue,
-            deadline_at=None,
+            deadline_at=deadline,
             waiting_until=None,
             source_error_code="source_contract_invalid",
-            has_issue=False,
+            has_issue=True,
             has_prep=False,
             unresolved_adjudications=0,
             candidate_count=0,
@@ -589,7 +649,60 @@ class OperatorQueryService:
             _summary(facts, title=f"足彩 {issue}", block_reason_code="source_contract_invalid"),
             TaskProgressSummary(completed=0, total=0, label="数据校验"),
             step,
-            _token({"task_id": task_id, "error": str(error)}),
+            _token({"task_id": task_id, "slate": slate, "error": str(error)}),
+        )
+
+    @staticmethod
+    def _prepare_task(
+        task_id: str,
+        lane: OperatorLane,
+        business_key: str,
+        deadline: datetime | None,
+        slate: SaleSlateSnapshot,
+    ) -> _BuiltTask:
+        facts = OperatorTaskFacts(
+            lane=lane,
+            business_key=business_key,
+            deadline_at=deadline,
+            waiting_until=None,
+            source_error_code=None,
+            has_issue=True,
+            has_prep=False,
+            unresolved_adjudications=0,
+            candidate_count=0,
+            selected_candidate_id=None,
+            audit_recorded=False,
+            deployment_decision=None,
+            ticket_artifact_id=None,
+            confirmation_state=None,
+            placement_state=None,
+            result_available=False,
+            pending_review_items=0,
+        )
+        step = PrepareStep(
+            task_id=task_id,
+            title="准备本任务数据",
+            recovery=OperatorRecoverySummary(
+                code="operator_inputs_missing",
+                missing="本任务的严格证据与结构化输入",
+                impact="官方任务已建立，判断与构票尚不能开始",
+                action_label="采集并导入本任务数据",
+            ),
+        )
+        return _BuiltTask(
+            facts=facts,
+            summary=_summary(
+                facts,
+                title=("足彩 " if lane is OperatorLane.ZUCAI else "竞彩 ")
+                + business_key,
+            ),
+            progress=TaskProgressSummary(
+                completed=0,
+                total=0,
+                label=NEXT_ACTION_LABELS[resolve_state(facts)],
+            ),
+            step=step,
+            mutation_token=_token({"task_id": task_id, "slate": slate}),
         )
 
     def _candidate_summaries(
@@ -842,12 +955,25 @@ class OperatorQueryService:
         )
 
     def _build_jczq(
-        self, run_date: str, cutoff: datetime, rows: list[dict[str, Any]]
+        self,
+        run_date: str,
+        cutoff: datetime,
+        rows: list[dict[str, Any]],
+        slate: SaleSlateSnapshot,
     ) -> _BuiltTask:
         task_id = f"jczq:{run_date}"
         task_rows = [row for row in rows if str(row["run_date"]) == run_date]
         if not task_rows:
-            raise ProductNotFoundError(f"operator task {task_id} not found")
+            return self._prepare_task(
+                task_id,
+                OperatorLane.JCZQ,
+                run_date,
+                min(
+                    (offer.sale_deadline_at for offer in slate.offers),
+                    default=None,
+                ),
+                slate,
+            )
         ticket = next((row for row in task_rows if row.get("ticket_artifact_id")), None)
         deadline_raw = next(
             (
@@ -857,7 +983,10 @@ class OperatorQueryService:
             ),
             None,
         )
-        deadline = datetime.fromisoformat(str(deadline_raw)) if deadline_raw else None
+        deadline = min(
+            (offer.sale_deadline_at for offer in slate.offers),
+            default=(datetime.fromisoformat(str(deadline_raw)) if deadline_raw else None),
+        )
         confirmation = self._confirmation_state(ticket, cutoff) if ticket else None
         placement = self._placement_state(ticket) if ticket else None
         facts = OperatorTaskFacts(

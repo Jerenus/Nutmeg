@@ -1,6 +1,6 @@
 import json
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,9 +10,15 @@ from sqlalchemy import insert
 from nutmeg.decision.zucai_official import OfficialRenjiuHistory
 from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.product.errors import ProductNotFoundError
-from nutmeg.product.operator_artifacts import ZucaiArtifactRepository
+from nutmeg.product.operator_artifacts import (
+    FilesystemZucaiFixtureAdapter,
+    ZucaiArtifactRepository,
+)
+from nutmeg.product.operator_contracts import OperatorLane
+from nutmeg.product.operator_lanes import SaleOfferSnapshot, SaleSlateSnapshot
 from nutmeg.product.operator_queries import OperatorQueryService
 from nutmeg.product.repository import ProductReadRepository
+from tests.ontology.operator import test_sale_actions as sale_fixtures
 from tests.product.operator_fixtures import write_26112_bundle
 
 NOW = datetime(2026, 8, 28, 10, tzinfo=UTC)
@@ -24,6 +30,7 @@ class FakeRepository:
     predictions: dict[str, list[dict]] = field(default_factory=dict)
     tickets: list[dict] = field(default_factory=list)
     settlement_rows: list[dict] = field(default_factory=list)
+    sale_slates: list[SaleSlateSnapshot] = field(default_factory=list)
 
     def adjudications_for_subject(self, subject_type: str, subject_id: str, as_of: str):
         assert subject_type == "issue"
@@ -38,6 +45,9 @@ class FakeRepository:
 
     def settlements(self, *, as_of: str):
         return list(self.settlement_rows)
+
+    def operator_sale_slates(self, *, as_of: str):
+        return tuple(self.sale_slates)
 
 
 class FakeProductQueries:
@@ -58,11 +68,92 @@ def _history() -> list[OfficialRenjiuHistory]:
     ]
 
 
+def _official_slate(
+    business_key: str,
+    *,
+    lane: OperatorLane = OperatorLane.ZUCAI,
+) -> SaleSlateSnapshot:
+    count = 14 if lane is OperatorLane.ZUCAI else 1
+    offers = tuple(
+        SaleOfferSnapshot(
+            official_offer_family_id=f"{lane.value}:{business_key}:family:{index}",
+            official_offer_revision_id=f"{lane.value}:{business_key}:offer:{index}:r1",
+            match_id=f"{lane.value}:{business_key}:match:{index}",
+            official_match_no=(str(index) if lane is OperatorLane.ZUCAI else "周五001"),
+            market_definition_ids=("md-had",),
+            sale_opens_at=NOW - timedelta(hours=1),
+            sale_deadline_at=NOW + timedelta(days=1),
+            source_status="on_sale",
+        )
+        for index in range(1, count + 1)
+    )
+    return SaleSlateSnapshot(
+        lane=lane,
+        business_key=business_key,
+        slate_revision_id=f"{lane.value}:{business_key}:slate:r1",
+        content_hash="a" * 64,
+        offers=offers,
+    )
+
+
 def test_product_history_window_is_policy_versioned() -> None:
     from nutmeg.product import operator_queries as module
 
     assert module._renjiu_history_window("26113", available_rows=20) == 12
     assert module._renjiu_history_window("26112", available_rows=3) == 3
+
+
+def test_product_repository_reads_temporal_current_official_slates(tmp_path: Path) -> None:
+    actions, engine = sale_fixtures._setup(tmp_path)
+    first = actions.import_official_sale_slate(
+        replace(
+            sale_fixtures._request(sale_fixtures._manifest(), key="sale:r1"),
+            requested_at=datetime(2026, 9, 4, 0, 1, tzinfo=UTC),
+        )
+    )
+    assert first.slate is not None
+    second_hash = sale_fixtures._add_official_retrieval(
+        engine,
+        "retrieval-r2",
+        retrieved_at="2026-09-04T08:02:00+08:00",
+        hash_character="c",
+    )
+    second = actions.import_official_sale_slate(
+        replace(
+            sale_fixtures._request(
+                sale_fixtures._manifest(
+                    retrieved_at="2026-09-04T08:02:00+08:00",
+                    official_source_content_hash=second_hash,
+                    official_source_artifact_retrieval_id="retrieval-r2",
+                    supersedes_slate_revision_id=first.slate.slate_revision_id,
+                    offers=[
+                        sale_fixtures._offer(
+                            sale_deadline_at="2026-09-04T20:00:00+08:00"
+                        )
+                    ],
+                ),
+                key="sale:r2",
+            ),
+            requested_at=datetime(2026, 9, 4, 0, 2, tzinfo=UTC),
+        )
+    )
+    assert second.slate is not None
+    repository = ProductReadRepository(engine)
+
+    before = repository.operator_sale_slates(
+        as_of="2026-09-04T00:01:30+00:00"
+    )
+    after = repository.operator_sale_slates(
+        as_of="2026-09-04T00:02:30+00:00"
+    )
+
+    assert [slate.slate_revision_id for slate in before] == [
+        first.slate.slate_revision_id
+    ]
+    assert [slate.slate_revision_id for slate in after] == [
+        second.slate.slate_revision_id
+    ]
+    assert after[0].offers[0].sale_deadline_at.utcoffset() is not None
 
 
 @pytest.fixture
@@ -74,7 +165,9 @@ def artifact_root(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def repository() -> FakeRepository:
-    return FakeRepository()
+    return FakeRepository(
+        sale_slates=[_official_slate("26112"), _official_slate("26113")]
+    )
 
 
 @pytest.fixture
@@ -82,7 +175,9 @@ def operator_queries(artifact_root: Path, repository: FakeRepository) -> Operato
     return OperatorQueryService(
         repository=repository,
         product_queries=FakeProductQueries(),
-        artifacts=ZucaiArtifactRepository(artifact_root),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            ZucaiArtifactRepository(artifact_root)
+        ),
         official_history_provider=_history,
         clock=lambda: NOW,
     )
@@ -222,6 +317,126 @@ def test_worklist_prefers_earliest_actionable_deadline(operator_queries) -> None
     assert [item.priority_rank for item in worklist.tasks] == list(range(len(worklist.tasks)))
 
 
+def test_official_slate_survives_missing_rx_without_artifact_discovery(
+    tmp_path: Path,
+) -> None:
+    class NoDiscoveryArtifacts(ZucaiArtifactRepository):
+        def discover_issues(self) -> list[str]:
+            raise AssertionError("legacy filename discovery must not run")
+
+    repository = FakeRepository(sale_slates=[_official_slate("26117")])
+    service = OperatorQueryService(
+        repository=repository,
+        product_queries=FakeProductQueries(),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            NoDiscoveryArtifacts(tmp_path / "empty")
+        ),
+        official_history_provider=_history,
+        clock=lambda: NOW,
+    )
+
+    worklist = service.worklist(as_of=NOW)
+
+    assert [task.task_id for task in worklist.tasks] == ["zucai:26117"]
+    assert worklist.tasks[0].state == "prepare"
+
+
+def test_production_query_without_legacy_adapter_stays_prepare_and_hides_evidence(
+    repository: FakeRepository,
+) -> None:
+    repository.sale_slates = [_official_slate("26112")]
+    service = OperatorQueryService(
+        repository=repository,
+        product_queries=FakeProductQueries(),
+        official_history_provider=_history,
+        clock=lambda: NOW,
+    )
+
+    first = service.task("zucai:26112", as_of=NOW)
+    second = service.task("zucai:26112", as_of=NOW)
+
+    assert first.selected.state == "prepare"
+    assert first.step.kind == "prepare"
+    assert second.mutation_token == first.mutation_token
+    with pytest.raises(ProductNotFoundError, match="evidence"):
+        service.evidence("zucai:26112", "rx-capital", as_of=NOW)
+
+
+def test_rx_file_cannot_create_task_without_official_slate(tmp_path: Path) -> None:
+    root = write_26112_bundle(tmp_path / "zucai")
+    service = OperatorQueryService(
+        repository=FakeRepository(),
+        product_queries=FakeProductQueries(),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            ZucaiArtifactRepository(root)
+        ),
+        official_history_provider=_history,
+        clock=lambda: NOW,
+    )
+
+    assert service.worklist(as_of=NOW).tasks == []
+    with pytest.raises(ProductNotFoundError):
+        service.task("zucai:26112", as_of=NOW)
+
+
+def test_official_jczq_slate_survives_missing_ticket(tmp_path: Path) -> None:
+    service = OperatorQueryService(
+        repository=FakeRepository(
+            sale_slates=[
+                _official_slate("2026-08-28", lane=OperatorLane.JCZQ)
+            ]
+        ),
+        product_queries=FakeProductQueries(),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            ZucaiArtifactRepository(tmp_path / "empty")
+        ),
+        official_history_provider=_history,
+        clock=lambda: NOW,
+    )
+
+    task = service.task("jczq:2026-08-28", as_of=NOW)
+
+    assert task.selected.state == "prepare"
+
+
+def test_ticket_cannot_create_jczq_task_without_official_slate(tmp_path: Path) -> None:
+    repository = FakeRepository(
+        tickets=[
+            {
+                "run_date": "2026-08-28",
+                "ticket_batch_revision_id": "orphan-revision",
+            }
+        ]
+    )
+    service = OperatorQueryService(
+        repository=repository,
+        product_queries=FakeProductQueries(),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            ZucaiArtifactRepository(tmp_path / "empty")
+        ),
+        official_history_provider=_history,
+        clock=lambda: NOW,
+    )
+
+    assert service.worklist(as_of=NOW).tasks == []
+
+
+def test_orphan_rx_evidence_is_not_found(tmp_path: Path) -> None:
+    root = write_26112_bundle(tmp_path / "zucai")
+    service = OperatorQueryService(
+        repository=FakeRepository(),
+        product_queries=FakeProductQueries(),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            ZucaiArtifactRepository(root)
+        ),
+        official_history_provider=_history,
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(ProductNotFoundError, match="evidence"):
+        service.evidence("zucai:26112", "rx-capital", as_of=NOW)
+
+
 def test_invalid_bundle_is_visible_block_not_exception(operator_queries) -> None:
     worklist = operator_queries.worklist(as_of=NOW)
     task = next(item for item in worklist.tasks if item.business_key == "26113")
@@ -348,7 +563,9 @@ def test_gate_names_cap_candidate_without_relabeling_operator_choice(
     service = OperatorQueryService(
         repository=repository,
         product_queries=FakeProductQueries(),
-        artifacts=ZucaiArtifactRepository(artifact_root),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            ZucaiArtifactRepository(artifact_root)
+        ),
         official_history_provider=_history,
         clock=lambda: NOW,
     )
@@ -459,7 +676,9 @@ def test_fixture_rx_outcomes_are_not_rendered_as_operator_prose(
     service = OperatorQueryService(
         repository=repository,
         product_queries=FakeProductQueries(),
-        artifacts=ZucaiArtifactRepository(artifact_root),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            ZucaiArtifactRepository(artifact_root)
+        ),
         official_history_provider=_history,
         clock=lambda: NOW,
     )

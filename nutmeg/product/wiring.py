@@ -14,7 +14,6 @@ from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.copilot import MatchCopilotService, build_copilot_provider
 from nutmeg.product.errors import ProductNotReadyError
 from nutmeg.product.operator_actions import OperatorActionService
-from nutmeg.product.operator_artifacts import ZucaiArtifactRepository
 from nutmeg.product.operator_queries import OperatorQueryService
 from nutmeg.product.operator_runtime import (
     OperatorRuntimeConfig,
@@ -99,7 +98,6 @@ def build_product_services(
     operator_queries = OperatorQueryService(
         repository=repository,
         product_queries=queries,
-        artifacts=ZucaiArtifactRepository(settings.data_dir / "zucai"),
         official_history_provider=fetch_renjiu_history,
         clock=lambda: datetime.now(UTC),
     )

@@ -19,7 +19,7 @@ from nutmeg.ontology.actions.models import (
     ActorRole,
     ObjectRef,
 )
-from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.actions.service import ActionBatchItem, ActionService
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
 from nutmeg.ontology.repository.artifacts import ArtifactRetrievalRow
 
@@ -64,6 +64,17 @@ class ArtifactIngestService:
         self._artifact_store = artifact_store
 
     def ingest(self, request: ArtifactIngestRequest) -> ActionOutcome:
+        command, handler = self.prepare(request)
+        return self._action_service.execute(command, handler)
+
+    def prepare(
+        self,
+        request: ArtifactIngestRequest,
+        *,
+        action_id: str | None = None,
+        payload_extension: dict[str, object] | None = None,
+    ) -> ActionBatchItem:
+        """Build an artifact operation for a caller-owned atomic batch."""
         digest = hashlib.sha256(request.content).hexdigest()
         artifact_id = f'sha256:{digest}'
         byte_size = len(request.content)
@@ -86,6 +97,14 @@ class ArtifactIngestService:
             'canonical_url': request.canonical_url,
             'published_at': request.published_at,
         }
+        if payload_extension:
+            overlap = payload.keys() & payload_extension.keys()
+            if overlap:
+                raise ValueError(
+                    'artifact payload extension conflicts with reserved fields: '
+                    f'{sorted(overlap)}'
+                )
+            payload.update(payload_extension)
         command = ActionCommand.create(
             action_type='ingest_artifact',
             actor_id=request.actor_id,
@@ -93,6 +112,7 @@ class ArtifactIngestService:
             idempotency_key=request.idempotency_key,
             payload=payload,
             requested_at=request.retrieved_at,
+            action_id=action_id,
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
@@ -122,4 +142,10 @@ class ArtifactIngestService:
                 ObjectRef('artifact_retrieval', retrieval_id),
             )
 
-        return self._action_service.execute(command, handler)
+        return command, handler
+
+    def execute_batch(
+        self, items: tuple[ActionBatchItem, ...]
+    ) -> tuple[ActionOutcome, ...]:
+        """Commit a prepared artifact and its related Actions atomically."""
+        return self._action_service.execute_batch(items)

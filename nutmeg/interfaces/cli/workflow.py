@@ -25,6 +25,10 @@ from nutmeg.ontology.operator.sale_actions import (
     RecordOfficialScheduleCheckRequest,
 )
 from nutmeg.ontology.repository import schema_operator_sale as sos
+from nutmeg.product.operator_legacy_import import (
+    LegacyOperatorImporter,
+    LegacyQuarantineReport,
+)
 
 workflow_app = _cli.typer.Typer(help="rx 对象化与预测判定")
 _cli.app.add_typer(workflow_app, name="workflow")
@@ -206,6 +210,34 @@ def record_official_schedule_check(
                 }
             )
         )
+    except (OSError, json.JSONDecodeError, WorkflowOperationError, ValueError) as error:
+        _fail(error)
+
+
+@workflow_app.command("import-legacy-operator")
+def import_legacy_operator(
+    manifest: Path = _MANIFEST_OPTION,
+    contract_version: str = _CONTRACT_VERSION_OPTION,
+    data_dir: Path = _DATA_DIR_OPTION,
+    imported_at: str | None = _cli.typer.Option(None, "--imported-at"),
+) -> None:
+    """Import one explicitly versioned legacy artifact as replay-only data."""
+    try:
+        at = datetime.fromisoformat(imported_at) if imported_at is not None else _now()
+        kernel = _kernel(data_dir)
+        result = LegacyOperatorImporter(
+            artifact_ingest=kernel.artifact_ingest,
+            workflow=kernel.workflow,
+        ).import_path(
+            manifest,
+            contract_version=contract_version,
+            imported_at=at,
+        )
+        _cli.typer.echo(canonical_json(result.model_dump(mode="json")))
+        if isinstance(result, LegacyQuarantineReport):
+            raise _cli.typer.Exit(code=1)
+    except _cli.typer.Exit:
+        raise
     except (OSError, json.JSONDecodeError, WorkflowOperationError, ValueError) as error:
         _fail(error)
 

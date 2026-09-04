@@ -1,0 +1,11 @@
+{
+  "issue": "26116",
+  "run_date": "2026-09-01",
+  "slot": "afternoon",
+  "captured_at": "2026-09-01T14:00:00+08:00",
+  "n_matches": 14,
+  "alignment": {"unmatched": [], "ambiguous": []},
+  "screens": {"strong_anchors": [], "coinflip": [], "fattest_draws": [], "missing_euro_anchor": [], "missing_ttg_anchor": []},
+  "records": {"1": {"name": "Fixture 1"}, "2": {"name": "Fixture 2"}, "3": {"name": "Fixture 3"}, "4": {"name": "Fixture 4"}, "5": {"name": "Fixture 5"}, "6": {"name": "Fixture 6"}, "7": {"name": "Fixture 7"}, "8": {"name": "Fixture 8"}, "9": {"name": "Fixture 9"}, "10": {"name": "Fixture 10"}, "11": {"name": "Fixture 11"}, "12": {"name": "Fixture 12"}, "13": {"name": "Fixture 13"}, "14": {"name": "Fixture 14"}},
+  "judgment": null
+}

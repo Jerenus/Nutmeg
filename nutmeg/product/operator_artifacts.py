@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal, TypeVar
+from typing import Literal, Protocol, TypeVar
 from zoneinfo import ZoneInfo
 
 from pydantic import (
@@ -305,6 +305,12 @@ class OperatorArtifactError(ValueError):
     pass
 
 
+class ZucaiReplayBundleAdapter(Protocol):
+    """Explicit replay-only enrichment boundary for query fixtures."""
+
+    def load_optional(self, issue: str) -> ZucaiArtifactBundle | None: ...
+
+
 class ZucaiArtifactRepository:
     RX_PATTERN = re.compile(r"^(?P<issue>\d{5})-rx\.json$")
     PREP_PATTERN = re.compile(r"^(?P<issue>\d{5})-prep-(?P<slot>[^/]+)\.json$")
@@ -325,6 +331,36 @@ class ZucaiArtifactRepository:
                 for path in self._root.iterdir()
                 if path.is_file() and (match := self.RX_PATTERN.fullmatch(path.name))
             }
+        )
+
+    def has_bundle(self, issue: str) -> bool:
+        """Check enrichment files for an already-authorized official issue."""
+        if not re.fullmatch(r"\d{5}", issue) or not self._root.exists():
+            return False
+        if not self._path(f"{issue}-issue.json").is_file():
+            return False
+        if not self._path(f"{issue}-rx.json").is_file():
+            return False
+        return any(
+            path.is_file()
+            and (match := self.PREP_PATTERN.fullmatch(path.name)) is not None
+            and match.group("issue") == issue
+            for path in self._root.iterdir()
+        )
+
+    def has_artifacts(self, issue: str) -> bool:
+        """Report whether an official issue has any legacy enrichment to validate."""
+        if not re.fullmatch(r"\d{5}", issue) or not self._root.exists():
+            return False
+        return any(
+            path.is_file()
+            and (
+                path.name in {f"{issue}-issue.json", f"{issue}-rx.json"}
+                or path.name.startswith(f"{issue}-prep-")
+                or path.name.startswith(f"{issue}-legs-")
+                or path.name.startswith(f"{issue}-night-")
+            )
+            for path in self._root.iterdir()
         )
 
     def load(self, issue: str) -> ZucaiArtifactBundle:
@@ -425,3 +461,15 @@ class ZucaiArtifactRepository:
                 document = self._read(path.name, ZucaiNightDocument)
                 documents.append((document.fetched_at, path.name, document))
         return [item[2] for item in sorted(documents, key=lambda item: (item[0], item[1]))]
+
+
+class FilesystemZucaiFixtureAdapter:
+    """Opt-in filesystem adapter for tests and explicit historical replay only."""
+
+    def __init__(self, repository: ZucaiArtifactRepository) -> None:
+        self._repository = repository
+
+    def load_optional(self, issue: str) -> ZucaiArtifactBundle | None:
+        if not self._repository.has_artifacts(issue):
+            return None
+        return self._repository.load(issue)
