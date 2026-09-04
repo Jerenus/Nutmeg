@@ -148,10 +148,13 @@ def test_migration_17_applies_fresh_and_from_v16(tmp_path: Path) -> None:
         "official_offer_revisions",
         "official_schedule_check_receipts",
     }
-    for name, initial in (("fresh", MIGRATIONS), ("upgrade", MIGRATIONS[:16])):
+    for name, initial in (
+        ("fresh", MIGRATIONS[:17]),
+        ("upgrade", MIGRATIONS[:16]),
+    ):
         engine = build_ontology_engine(tmp_path / f"{name}.db")
         run_migrations(engine, initial)
-        run_migrations(engine)
+        run_migrations(engine, MIGRATIONS[:17])
         assert migration_status(engine).current_version == 17
         assert expected_tables <= set(inspect(engine).get_table_names())
         inspector = inspect(engine)

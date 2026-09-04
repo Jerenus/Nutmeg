@@ -198,15 +198,17 @@ def task_snapshot_hash(
         ],
         "no_ticket_closures": [
             {
-                "official_offer_family_id": closure.official_offer_family_id,
-                "official_offer_revision_id": closure.official_offer_revision_id,
+                "official_offer_family_id": family_id,
+                "official_offer_revision_id": revision_id,
             }
-            for closure in sorted(
-                no_ticket_closures,
-                key=lambda item: (
-                    item.official_offer_family_id,
-                    item.official_offer_revision_id,
-                ),
+            for family_id, revision_id in sorted(
+                {
+                    (
+                        closure.official_offer_family_id,
+                        closure.official_offer_revision_id,
+                    )
+                    for closure in no_ticket_closures
+                }
             )
         ],
     }

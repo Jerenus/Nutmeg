@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from nutmeg.ontology.operator.sale_actions import (
     RecordOfficialScheduleCheckRequest,
     SaleActions,
     official_empty_schedule_parser_receipt_hash,
+    official_sale_parser_receipt_document,
     official_sale_parser_receipt_hash,
 )
 from nutmeg.ontology.repository import schema, schema_identity
@@ -33,7 +35,7 @@ AT = datetime(2026, 9, 4, 0, 5, tzinfo=UTC)
 def _seed_dependencies(engine, *, official_content_hash: str | None = None) -> None:
     at = "2026-09-04T08:01:00+08:00"
     if official_content_hash is None:
-        official_content_hash = _manifest().official_source_content_hash
+        official_content_hash = _parser_receipt_hash(_manifest())
     with engine.begin() as connection:
         connection.execute(
             insert(schema.source_runs).values(
@@ -170,27 +172,21 @@ def _manifest(**changes: object) -> OfficialSaleSlateManifestV1:
         "business_key": "2026-09-04",
         "published_at": "2026-09-04T08:00:00+08:00",
         "retrieved_at": "2026-09-04T08:01:00+08:00",
-        "parser_contract_version": "sporttery-official-sale-parser-v1",
-        "official_source_content_hash": "0" * 64,
         "official_source_artifact_retrieval_id": "retrieval-official",
         "supersedes_slate_revision_id": None,
         "offers": [_offer()],
     }
     value.update(changes)
-    if "official_source_content_hash" not in changes:
-        try:
-            value["official_source_content_hash"] = official_sale_parser_receipt_hash(
-                lane=value["lane"],
-                business_key=value["business_key"],
-                published_at=datetime.fromisoformat(value["published_at"]),
-                offers=[
-                    OfficialOfferManifestV1.model_validate(offer)
-                    for offer in value["offers"]
-                ],
-            )
-        except (TypeError, ValueError, ValidationError):
-            pass
     return OfficialSaleSlateManifestV1.model_validate(value)
+
+
+def _parser_receipt_hash(manifest: OfficialSaleSlateManifestV1) -> str:
+    return official_sale_parser_receipt_hash(
+        lane=manifest.lane,
+        business_key=manifest.business_key,
+        published_at=manifest.published_at,
+        offers=manifest.offers,
+    )
 
 
 def _request(
@@ -232,7 +228,7 @@ def test_offer_manifest_rejects_unknown_fields_and_duplicate_markets() -> None:
         OfficialOfferManifestV1.model_validate(_offer(market_definition_ids=["md-had", "md-had"]))
 
 
-def test_sale_manifest_requires_trusted_parser_receipt_fields() -> None:
+def test_sale_manifest_accepts_only_the_approved_minimal_v1_contract() -> None:
     document = {
         "schema_version": "official-sale-slate-v1",
         "lane": "jczq",
@@ -244,13 +240,17 @@ def test_sale_manifest_requires_trusted_parser_receipt_fields() -> None:
         "offers": [_offer()],
     }
 
-    with pytest.raises(ValidationError, match="parser_contract_version"):
-        OfficialSaleSlateManifestV1.model_validate(document)
+    parsed = OfficialSaleSlateManifestV1.model_validate(document)
 
-
-def test_sale_manifest_hash_must_bind_exact_normalized_offers() -> None:
-    with pytest.raises(ValidationError, match="parser receipt"):
-        _manifest(official_source_content_hash="0" * 64)
+    assert parsed.schema_version == "official-sale-slate-v1"
+    for internal_field, value in (
+        ("parser_contract_version", "sporttery-official-sale-parser-v1"),
+        ("official_source_content_hash", "0" * 64),
+    ):
+        with pytest.raises(ValidationError, match="extra"):
+            OfficialSaleSlateManifestV1.model_validate(
+                {**document, internal_field: value}
+            )
 
 
 @pytest.mark.parametrize(
@@ -304,7 +304,7 @@ def test_imports_jczq_slate_atomically_with_exact_counts(tmp_path: Path) -> None
     manifest = _manifest(offers=[_offer(1), _offer(2)])
     actions, engine = _setup(
         tmp_path,
-        official_content_hash=manifest.official_source_content_hash,
+        official_content_hash=_parser_receipt_hash(manifest),
     )
 
     result = actions.import_official_sale_slate(_request(manifest))
@@ -362,7 +362,7 @@ def test_zucai_requires_exact_ordered_fourteen(tmp_path: Path) -> None:
     manifest = _manifest(lane="zucai", business_key="26120", offers=offers)
     actions, _engine = _setup(
         tmp_path,
-        official_content_hash=manifest.official_source_content_hash,
+        official_content_hash=_parser_receipt_hash(manifest),
     )
 
     result = actions.import_official_sale_slate(
@@ -376,6 +376,26 @@ def test_zucai_requires_exact_ordered_fourteen(tmp_path: Path) -> None:
     assert tuple(offer.official_match_no for offer in result.offers) == tuple(
         str(number) for number in range(1, 15)
     )
+
+
+def test_zucai_parser_receipt_preserves_official_match_order() -> None:
+    offers = [
+        OfficialOfferManifestV1.model_validate(
+            _offer(number, official_match_no=str(number))
+        )
+        for number in range(1, 15)
+    ]
+
+    receipt = official_sale_parser_receipt_document(
+        lane="zucai",
+        business_key="26120",
+        published_at=datetime.fromisoformat("2026-09-04T08:00:00+08:00"),
+        offers=offers,
+    )
+
+    assert [offer["official_match_no"] for offer in receipt["offers"]] == [
+        str(number) for number in range(1, 15)
+    ]
 
 
 def test_sale_manifest_enforces_lane_business_key_and_market_contract() -> None:
@@ -452,7 +472,7 @@ def test_import_rolls_back_if_a_later_offer_write_fails(
     manifest = _manifest(offers=[_offer(1), _offer(2)])
     actions, engine = _setup(
         tmp_path,
-        official_content_hash=manifest.official_source_content_hash,
+        official_content_hash=_parser_receipt_hash(manifest),
     )
     original = OperatorSaleRepository.insert_offer_revision
     calls = 0
@@ -500,7 +520,7 @@ def test_import_rolls_back_when_persisted_counts_do_not_reconcile(
     manifest = _manifest(offers=[_offer(1), _offer(2)])
     actions, engine = _setup(
         tmp_path,
-        official_content_hash=manifest.official_source_content_hash,
+        official_content_hash=_parser_receipt_hash(manifest),
     )
     monkeypatch.setattr(
         OperatorSaleRepository,
@@ -536,7 +556,7 @@ def test_revision_preserves_families_and_requires_current_supersession(tmp_path:
     first_manifest = _manifest(offers=[_offer(1), _offer(2)])
     actions, engine = _setup(
         tmp_path,
-        official_content_hash=first_manifest.official_source_content_hash,
+        official_content_hash=_parser_receipt_hash(first_manifest),
     )
     first = actions.import_official_sale_slate(_request(first_manifest))
     family_ids = {offer.official_match_no: offer.official_offer_family_id for offer in first.offers}
@@ -550,7 +570,7 @@ def test_revision_preserves_families_and_requires_current_supersession(tmp_path:
         engine,
         "retrieval-official-revision-2",
         retrieved_at="2026-09-04T08:02:00+08:00",
-        content_hash=revision.official_source_content_hash,
+        content_hash=_parser_receipt_hash(revision),
     )
 
     second = actions.import_official_sale_slate(_request(revision, key="official-sale:revision:2"))
@@ -573,7 +593,7 @@ def test_revision_preserves_families_and_requires_current_supersession(tmp_path:
         engine,
         "retrieval-official-revision-3",
         retrieved_at="2026-09-04T08:03:00+08:00",
-        content_hash=bad.official_source_content_hash,
+        content_hash=_parser_receipt_hash(bad),
     )
     with pytest.raises(ValueError, match="supersede"):
         actions.import_official_sale_slate(_request(bad, key="official-sale:bad-supersession"))
@@ -585,7 +605,7 @@ def test_same_business_content_retrieval_and_jczq_order_reuse_current_revision(
     first_manifest = _manifest(offers=[_offer(1), _offer(2)])
     actions, engine = _setup(
         tmp_path,
-        official_content_hash=first_manifest.official_source_content_hash,
+        official_content_hash=_parser_receipt_hash(first_manifest),
     )
     first = actions.import_official_sale_slate(
         _request(first_manifest, key="official-sale:content:first")
@@ -625,13 +645,11 @@ def test_same_business_content_retrieval_and_jczq_order_reuse_current_revision(
     assert second.counts.offer_family_count == 2
     check = actions.record_official_schedule_check(
         _check_request(
-                    _check_manifest(
-                        official_source_artifact_retrieval_id="retrieval-official-2",
-                        official_source_content_hash=(
-                            repeated.official_source_content_hash
-                        ),
-                        checked_at="2026-09-04T08:04:00+08:00",
-                ),
+            _check_manifest(
+                official_source_artifact_retrieval_id="retrieval-official-2",
+                official_source_content_hash=_parser_receipt_hash(repeated),
+                checked_at="2026-09-04T08:04:00+08:00",
+            ),
             key="official-check:content:second",
         )
     )
@@ -698,7 +716,7 @@ def _check_manifest(**changes: object) -> OfficialScheduleCheckManifestV1:
         "source_run_id": "run-official",
         "check_state": "slate_imported",
         "parser_contract_version": "sporttery-official-sale-parser-v1",
-        "official_source_content_hash": _manifest().official_source_content_hash,
+        "official_source_content_hash": _parser_receipt_hash(_manifest()),
         "official_source_artifact_retrieval_id": "retrieval-official",
         "observed_business_keys": ["2026-09-04"],
         "imported_business_keys": ["2026-09-04"],
@@ -864,7 +882,7 @@ def test_schedule_check_requires_complete_retrieval_business_key_set(
         _engine,
         "retrieval-official-complete-set-2",
         retrieved_at="2026-09-04T08:02:00+08:00",
-        content_hash=second_manifest.official_source_content_hash,
+        content_hash=_parser_receipt_hash(second_manifest),
     )
     actions.import_official_sale_slate(
         _request(
@@ -985,6 +1003,59 @@ def test_schedule_check_is_unique_per_run_lane_and_shanghai_date(
         )
 
 
+@pytest.mark.parametrize("failure_mode", ("no_op", "mismatch"))
+def test_schedule_check_reconciles_receipt_inside_action_transaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+) -> None:
+    empty_hash = official_empty_schedule_parser_receipt_hash(lane="jczq")
+    actions, engine = _setup(tmp_path, official_content_hash=empty_hash)
+    original = OperatorSaleRepository.insert_schedule_check
+
+    def faulty_insert(repository, row):
+        if failure_mode == "mismatch":
+            original(
+                repository,
+                replace(row, checked_at="2026-09-04T00:03:00+00:00"),
+            )
+
+    monkeypatch.setattr(
+        OperatorSaleRepository,
+        "insert_schedule_check",
+        faulty_insert,
+    )
+    manifest = _check_manifest(
+        check_state="confirmed_no_sale",
+        observed_business_keys=[],
+        imported_business_keys=[],
+    )
+
+    with pytest.raises(ValueError, match="schedule check receipt did not reconcile"):
+        actions.record_official_schedule_check(
+            _check_request(
+                manifest,
+                key=f"official-check:reconcile:{failure_mode}",
+            )
+        )
+
+    with engine.connect() as connection:
+        assert connection.scalar(
+            select(func.count()).select_from(sos.official_schedule_check_receipts)
+        ) == 0
+        action_rows = connection.execute(
+            select(
+                schema.actions.c.action_type,
+                schema.actions.c.status,
+                schema.actions.c.error_detail,
+            )
+        ).all()
+        assert len(action_rows) == 1
+        assert action_rows[0].action_type == "record_official_schedule_check"
+        assert action_rows[0].status == "failed"
+        assert "did not reconcile" in action_rows[0].error_detail
+
+
 def test_sale_retrieval_requires_successful_official_schedule_run(
     tmp_path: Path,
 ) -> None:
@@ -1002,18 +1073,23 @@ def test_sale_retrieval_requires_successful_official_schedule_run(
         )
 
 
-def test_sale_manifest_must_bind_exact_official_source_content_and_time(
+def test_sale_import_derives_and_binds_exact_parser_receipt_hash(
     tmp_path: Path,
 ) -> None:
-    actions, engine = _setup(tmp_path)
+    actions, engine = _setup(tmp_path, official_content_hash="c" * 64)
 
     with pytest.raises(ValueError, match="content hash"):
         actions.import_official_sale_slate(
             _request(
-                _manifest(official_source_content_hash="c" * 64),
+                _manifest(),
                 key="official-sale:wrong-source-hash",
             )
         )
+
+    with engine.connect() as connection:
+        assert connection.scalar(
+            select(func.count()).select_from(sos.official_sale_slate_revisions)
+        ) == 0
 
 
 def test_official_source_times_are_monotonic_and_not_from_the_future(
@@ -1033,7 +1109,7 @@ def test_official_source_times_are_monotonic_and_not_from_the_future(
         engine,
         "retrieval-official-stale",
         retrieved_at="2026-09-04T08:00:00+08:00",
-        content_hash=stale_manifest.official_source_content_hash,
+        content_hash=_parser_receipt_hash(stale_manifest),
     )
     with pytest.raises(ValueError, match="advance monotonically"):
         actions.import_official_sale_slate(
@@ -1053,7 +1129,7 @@ def test_official_source_times_are_monotonic_and_not_from_the_future(
         engine,
         "retrieval-official-future",
         retrieved_at="2026-09-04T08:06:00+08:00",
-        content_hash=future_manifest.official_source_content_hash,
+        content_hash=_parser_receipt_hash(future_manifest),
     )
     with pytest.raises(ValueError, match="later than the Action"):
         actions.import_official_sale_slate(
@@ -1069,9 +1145,7 @@ def test_official_source_times_are_monotonic_and_not_from_the_future(
                 _check_manifest(
                     checked_at="2026-09-04T08:05:00+08:00",
                     official_source_artifact_retrieval_id="retrieval-official-future",
-                    official_source_content_hash=(
-                        future_manifest.official_source_content_hash
-                    ),
+                    official_source_content_hash=_parser_receipt_hash(future_manifest),
                 ),
                 key="official-check:time:future",
             )
@@ -1187,7 +1261,7 @@ def test_schedule_check_retrieval_must_match_shanghai_check_date(
         engine,
         "retrieval-official-sale",
         retrieved_at="2026-09-04T08:01:00+08:00",
-        content_hash=sale_manifest.official_source_content_hash,
+        content_hash=_parser_receipt_hash(sale_manifest),
     )
     actions.import_official_sale_slate(
         _request(sale_manifest, key="official-sale:cross-date-check")
@@ -1338,7 +1412,7 @@ def test_equivalent_timezone_sale_content_reuses_current_revision(
         engine,
         "retrieval-official-timezone",
         retrieved_at="2026-09-04T00:02:00+00:00",
-        content_hash=equivalent.official_source_content_hash,
+        content_hash=_parser_receipt_hash(equivalent),
     )
 
     repeated = actions.import_official_sale_slate(

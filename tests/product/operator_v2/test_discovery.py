@@ -140,6 +140,32 @@ def test_task_hash_and_sale_wave_are_stable_under_offer_permutation() -> None:
     assert first_wave.offer_family_ids == ("family-1", "family-2")
 
 
+def test_duplicate_no_ticket_closures_do_not_change_snapshot_or_wave() -> None:
+    slate = _slate(_offer("1"), _offer("2"))
+    closure = NoTicketClosure("family-1", "offer-1-r1")
+    single = (closure,)
+    duplicated = (closure, replace(closure))
+
+    assert task_snapshot_hash(
+        slate,
+        NOW,
+        no_ticket_closures=single,
+    ) == task_snapshot_hash(
+        slate,
+        NOW,
+        no_ticket_closures=duplicated,
+    )
+    assert derive_sale_wave(
+        slate,
+        NOW,
+        no_ticket_closures=single,
+    ) == derive_sale_wave(
+        slate,
+        NOW,
+        no_ticket_closures=duplicated,
+    )
+
+
 def test_new_offer_creates_new_wave_without_reopening_no_ticket_families() -> None:
     first = _slate(_offer("1"), _offer("2"))
     closures = (

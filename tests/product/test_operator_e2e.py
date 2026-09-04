@@ -21,7 +21,6 @@ from nutmeg.ontology.operator.sale_actions import (
     OfficialOfferManifestV1,
     OfficialSaleSlateManifestV1,
     official_sale_parser_receipt_document,
-    official_sale_parser_receipt_hash,
 )
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository import schema_finance as sf
@@ -189,13 +188,6 @@ def _seed_official_slate(kernel, *, lane: str, business_key: str) -> None:
             "business_key": business_key,
             "published_at": published_at.isoformat(),
             "retrieved_at": retrieved_at.isoformat(),
-            "parser_contract_version": "sporttery-official-sale-parser-v1",
-            "official_source_content_hash": official_sale_parser_receipt_hash(
-                lane=lane,
-                business_key=business_key,
-                published_at=published_at,
-                offers=parsed_offers,
-            ),
             "official_source_artifact_retrieval_id": retrieval_id,
             "supersedes_slate_revision_id": None,
             "offers": offers,

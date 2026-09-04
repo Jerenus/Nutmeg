@@ -55,7 +55,7 @@ def _data_dir(tmp_path: Path) -> Path:
                     storage_path=f"sha256/{suffix}",
                     byte_size=2,
                     content_hash=(
-                        str(base_document["official_source_content_hash"])
+                        _sale_receipt_hash(base_document)
                         if suffix == "official"
                         else "b" * 64
                     ),
@@ -96,7 +96,7 @@ def _data_dir(tmp_path: Path) -> Path:
                 content_type="application/json",
                 storage_path="sha256/official-revision",
                 byte_size=2,
-                content_hash=str(revision_document["official_source_content_hash"]),
+                content_hash=_sale_receipt_hash(revision_document),
             )
         )
         connection.execute(
@@ -124,8 +124,6 @@ def _sale_document(**changes: object) -> dict[str, object]:
         "business_key": "2026-09-04",
         "published_at": "2026-09-04T08:00:00+08:00",
         "retrieved_at": "2026-09-04T08:01:00+08:00",
-        "parser_contract_version": "sporttery-official-sale-parser-v1",
-        "official_source_content_hash": "0" * 64,
         "official_source_artifact_retrieval_id": "retrieval-official",
         "supersedes_slate_revision_id": None,
         "offers": [
@@ -140,20 +138,19 @@ def _sale_document(**changes: object) -> dict[str, object]:
         ],
     }
     document.update(changes)
-    if "official_source_content_hash" not in changes:
-        try:
-            document["official_source_content_hash"] = official_sale_parser_receipt_hash(
-                lane=document["lane"],
-                business_key=str(document["business_key"]),
-                published_at=datetime.fromisoformat(str(document["published_at"])),
-                offers=[
-                    OfficialOfferManifestV1.model_validate(offer)
-                    for offer in document["offers"]
-                ],
-            )
-        except (TypeError, ValueError):
-            pass
     return document
+
+
+def _sale_receipt_hash(document: dict[str, object]) -> str:
+    return official_sale_parser_receipt_hash(
+        lane=document["lane"],
+        business_key=str(document["business_key"]),
+        published_at=datetime.fromisoformat(str(document["published_at"])),
+        offers=[
+            OfficialOfferManifestV1.model_validate(offer)
+            for offer in document["offers"]
+        ],
+    )
 
 
 def _sale_receipt_bytes(document: dict[str, object]) -> bytes:
@@ -217,22 +214,20 @@ def test_sale_cli_commits_and_reports_persisted_counts(tmp_path: Path) -> None:
     }
 
 
-def test_sale_cli_rejects_manifest_without_trusted_parser_receipt(tmp_path: Path) -> None:
+def test_sale_cli_accepts_the_approved_minimal_v1_contract(tmp_path: Path) -> None:
     data_dir = _data_dir(tmp_path)
     document = _sale_document()
-    document.pop("parser_contract_version")
-    document.pop("official_source_content_hash")
     manifest = _write(tmp_path / "minimal-sale.json", document)
 
     result = _invoke_sale(data_dir, manifest)
 
-    assert result.exit_code == 1
-    assert "parser_contract_version" in result.stdout
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(result.stdout)["status"] == "committed"
     kernel = build_ontology_kernel(AppSettings(data_dir=data_dir, _env_file=None))
     with kernel.engine.connect() as connection:
         assert connection.scalar(
             select(func.count()).select_from(sos.official_sale_slate_revisions)
-        ) == 0
+        ) == 1
 
 
 def test_sale_cli_revision_distinguishes_created_and_linked_counts(tmp_path: Path) -> None:
@@ -316,11 +311,6 @@ def test_sale_cli_accepts_official_retrieval_from_artifact_ingest_service(
         {
             **sale_document,
             "official_source_artifact_retrieval_id": retrieval_id,
-            "official_source_content_hash": next(
-                ref.object_id.removeprefix("sha256:")
-                for ref in ingest.result_refs
-                if ref.object_type == "source_artifact"
-            ),
         },
     )
 
@@ -384,9 +374,7 @@ def test_schedule_check_cli_commits_exact_receipt(tmp_path: Path) -> None:
             "source_run_id": "run-official",
             "check_state": "slate_imported",
             "parser_contract_version": "sporttery-official-sale-parser-v1",
-            "official_source_content_hash": _sale_document()[
-                "official_source_content_hash"
-            ],
+            "official_source_content_hash": _sale_receipt_hash(_sale_document()),
             "official_source_artifact_retrieval_id": "retrieval-official",
             "observed_business_keys": ["2026-09-04"],
             "imported_business_keys": ["2026-09-04"],

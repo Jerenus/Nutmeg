@@ -126,7 +126,7 @@ def test_product_repository_reads_temporal_current_official_slates(tmp_path: Pat
         engine,
         "retrieval-r2",
         retrieved_at="2026-09-04T08:02:00+08:00",
-        content_hash=second_manifest.official_source_content_hash,
+        content_hash=sale_fixtures._parser_receipt_hash(second_manifest),
     )
     second = actions.import_official_sale_slate(
         replace(

@@ -71,6 +71,28 @@ def _digest(document: object) -> str:
     return hashlib.sha256(canonical_json(document).encode("utf-8")).hexdigest()
 
 
+def _official_match_sort_key(
+    lane: _Lane,
+    official_match_no: str,
+    canonical_match_id: str,
+) -> tuple[int, str, int, str, str]:
+    if lane == "zucai":
+        match = re.fullmatch(r"[0-9]+", official_match_no)
+        if match is not None:
+            return (0, "", int(official_match_no), official_match_no, canonical_match_id)
+        return (1, official_match_no, 0, official_match_no, canonical_match_id)
+    match = re.fullmatch(r"(?P<prefix>.*?)(?P<number>[0-9]+)", official_match_no)
+    if match is None:
+        return (1, official_match_no, 0, official_match_no, canonical_match_id)
+    return (
+        0,
+        match.group("prefix"),
+        int(match.group("number")),
+        official_match_no,
+        canonical_match_id,
+    )
+
+
 def _slate_content(manifest: "OfficialSaleSlateManifestV1") -> dict[str, object]:
     offers = sorted(
         (
@@ -84,7 +106,11 @@ def _slate_content(manifest: "OfficialSaleSlateManifestV1") -> dict[str, object]
             }
             for offer in manifest.offers
         ),
-        key=lambda offer: (offer["official_match_no"], offer["canonical_match_id"]),
+        key=lambda offer: _official_match_sort_key(
+            manifest.lane,
+            str(offer["official_match_no"]),
+            str(offer["canonical_match_id"]),
+        ),
     )
     return {
         "lane": manifest.lane,
@@ -192,8 +218,6 @@ class OfficialSaleSlateManifestV1(BaseModel):
     business_key: str = Field(min_length=1, max_length=100)
     published_at: datetime
     retrieved_at: datetime
-    parser_contract_version: _ParserContract
-    official_source_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     official_source_artifact_retrieval_id: str = Field(min_length=1, max_length=500)
     supersedes_slate_revision_id: str | None = Field(max_length=500)
     offers: list[OfficialOfferManifestV1] = Field(min_length=1, max_length=500)
@@ -244,16 +268,6 @@ class OfficialSaleSlateManifestV1(BaseModel):
                 offer.sale_opens_at <= self.published_at < offer.sale_deadline_at
             ):
                 raise ValueError("on_sale offer is outside its source publication window")
-        expected_receipt_hash = official_sale_parser_receipt_hash(
-            lane=self.lane,
-            business_key=self.business_key,
-            published_at=self.published_at,
-            offers=self.offers,
-        )
-        if self.official_source_content_hash != expected_receipt_hash:
-            raise ValueError(
-                "official source content hash must match the trusted parser receipt"
-            )
         return self
 
 
@@ -508,10 +522,16 @@ class SaleActions:
 
         def handler(uow, action) -> tuple[ObjectRef, ...]:
             nonlocal created_family_count
+            expected_receipt_hash = official_sale_parser_receipt_hash(
+                lane=manifest.lane,
+                business_key=manifest.business_key,
+                published_at=manifest.published_at,
+                offers=manifest.offers,
+            )
             self._assert_official_retrieval(
                 uow,
                 manifest.official_source_artifact_retrieval_id,
-                expected_content_hash=manifest.official_source_content_hash,
+                expected_content_hash=expected_receipt_hash,
                 expected_retrieved_at=manifest.retrieved_at,
             )
             if manifest.retrieved_at > request.requested_at:
@@ -731,23 +751,29 @@ class SaleActions:
             if manifest.check_state == "confirmed_no_sale" and persisted_keys:
                 raise ValueError("confirmed no sale conflicts with imported sale slates")
             receipt_id = f"OSC-{uuid4().hex}"
-            uow.operator_sale.insert_schedule_check(
-                OfficialScheduleCheckReceiptRow(
-                    schedule_check_id=receipt_id,
-                    action_id=action.action_id,
-                    lane=manifest.lane,
-                    shanghai_check_date=manifest.shanghai_check_date.isoformat(),
-                    checked_at=manifest.checked_at.astimezone(UTC).isoformat(),
-                    source_run_id=manifest.source_run_id,
-                    check_state=manifest.check_state,
-                    parser_contract_version=manifest.parser_contract_version,
-                    official_source_content_hash=manifest.official_source_content_hash,
-                    official_source_artifact_retrieval_id=retrieval_id,
-                    observed_business_keys=observed_keys,
-                    imported_business_keys=tuple(manifest.imported_business_keys),
-                    error_code=manifest.error_code,
-                )
+            receipt = OfficialScheduleCheckReceiptRow(
+                schedule_check_id=receipt_id,
+                action_id=action.action_id,
+                lane=manifest.lane,
+                shanghai_check_date=manifest.shanghai_check_date.isoformat(),
+                checked_at=manifest.checked_at.astimezone(UTC).isoformat(),
+                source_run_id=manifest.source_run_id,
+                check_state=manifest.check_state,
+                parser_contract_version=manifest.parser_contract_version,
+                official_source_content_hash=manifest.official_source_content_hash,
+                official_source_artifact_retrieval_id=retrieval_id,
+                observed_business_keys=observed_keys,
+                imported_business_keys=tuple(manifest.imported_business_keys),
+                error_code=manifest.error_code,
             )
+            uow.operator_sale.insert_schedule_check(receipt)
+            persisted_receipt = uow.operator_sale.schedule_check_for_run_scope(
+                manifest.source_run_id,
+                manifest.lane,
+                manifest.shanghai_check_date.isoformat(),
+            )
+            if persisted_receipt != receipt:
+                raise ValueError("schedule check receipt did not reconcile")
             return (ObjectRef("official_schedule_check_receipt", receipt_id),)
 
         return self._action_service.execute(command, handler)
