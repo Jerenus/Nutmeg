@@ -164,6 +164,10 @@ class OperatorDecisionRepository:
         match_id: str,
         *,
         as_of: str,
+        lane: str,
+        business_key: str,
+        slate_revision_id: str,
+        task_snapshot_hash: str,
     ) -> tuple[EvidenceIntakeObjectRow, ...]:
         rows = (
             self._connection.execute(
@@ -177,6 +181,12 @@ class OperatorDecisionRepository:
                 )
                 .where(
                     sod.operator_evidence_intake_objects.c.match_id == match_id,
+                    sod.operator_evidence_intake_receipts.c.lane == lane,
+                    sod.operator_evidence_intake_receipts.c.business_key == business_key,
+                    sod.operator_evidence_intake_receipts.c.slate_revision_id
+                    == slate_revision_id,
+                    sod.operator_evidence_intake_receipts.c.task_snapshot_hash
+                    == task_snapshot_hash,
                     func.julianday(sod.operator_evidence_intake_receipts.c.created_at)
                     <= func.julianday(as_of),
                 )
@@ -195,8 +205,19 @@ class OperatorDecisionRepository:
         match_id: str,
         *,
         as_of: str,
+        lane: str,
+        business_key: str,
+        slate_revision_id: str,
+        task_snapshot_hash: str,
     ) -> tuple[str, ...]:
-        rows = self.evidence_coverage_receipts_for_match(match_id, as_of=as_of)
+        rows = self.evidence_coverage_receipts_for_match(
+            match_id,
+            as_of=as_of,
+            lane=lane,
+            business_key=business_key,
+            slate_revision_id=slate_revision_id,
+            task_snapshot_hash=task_snapshot_hash,
+        )
         return tuple(
             sorted(
                 {
@@ -212,6 +233,10 @@ class OperatorDecisionRepository:
         match_id: str,
         *,
         as_of: str,
+        lane: str,
+        business_key: str,
+        slate_revision_id: str,
+        task_snapshot_hash: str,
     ) -> tuple[EvidenceCoverageReceiptRow, ...]:
         rows = (
             self._connection.execute(
@@ -225,6 +250,12 @@ class OperatorDecisionRepository:
                 )
                 .where(
                     sod.operator_evidence_coverage_receipts.c.match_id == match_id,
+                    sod.operator_evidence_intake_receipts.c.lane == lane,
+                    sod.operator_evidence_intake_receipts.c.business_key == business_key,
+                    sod.operator_evidence_intake_receipts.c.slate_revision_id
+                    == slate_revision_id,
+                    sod.operator_evidence_intake_receipts.c.task_snapshot_hash
+                    == task_snapshot_hash,
                     func.julianday(sod.operator_evidence_intake_receipts.c.created_at)
                     <= func.julianday(as_of),
                 )

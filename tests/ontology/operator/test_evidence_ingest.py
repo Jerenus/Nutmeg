@@ -690,6 +690,113 @@ def test_ingest_replay_survives_a_later_slate_revision(tmp_path: Path) -> None:
         ) == 1
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("lane", "zucai"),
+        ("business_key", "2026-09-05"),
+        ("slate_revision_id", "slate-other"),
+        ("task_snapshot_hash", "f" * 64),
+    ],
+)
+def test_intake_repository_scopes_rows_to_exact_task_identity(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    actions, engine = _actions(tmp_path)
+    actions.ingest_operator_evidence_manifest(
+        _request(key=f"evidence-intake:scope:{field}")
+    )
+    scope = {
+        "lane": "jczq",
+        "business_key": "2026-09-04",
+        "slate_revision_id": "slate-1",
+        "task_snapshot_hash": _expected_task_snapshot_hash(),
+    }
+
+    with OntologyUnitOfWork(engine) as uow:
+        assert len(
+            uow.operator_decision.evidence_intake_objects_for_match(
+                "match-1",
+                as_of=AT.isoformat(),
+                **scope,
+            )
+        ) == 2
+        assert len(
+            uow.operator_decision.evidence_coverage_receipts_for_match(
+                "match-1",
+                as_of=AT.isoformat(),
+                **scope,
+            )
+        ) == 1
+        mismatched = {**scope, field: value}
+        assert not uow.operator_decision.evidence_intake_objects_for_match(
+            "match-1",
+            as_of=AT.isoformat(),
+            **mismatched,
+        )
+        assert not uow.operator_decision.evidence_coverage_receipts_for_match(
+            "match-1",
+            as_of=AT.isoformat(),
+            **mismatched,
+        )
+
+
+def test_evidence_service_does_not_load_intake_from_a_prior_slate(
+    tmp_path: Path,
+) -> None:
+    actions, engine = _actions(tmp_path)
+    actions.ingest_operator_evidence_manifest(
+        _request(key="evidence-intake:prior-slate")
+    )
+    current_at = AT + timedelta(minutes=2)
+    with engine.begin() as connection:
+        connection.execute(
+            insert(sos.official_sale_slate_revisions).values(
+                slate_revision_id="slate-2",
+                slate_family_id="slate-family-1",
+                lane="jczq",
+                business_key="2026-09-04",
+                revision_no=2,
+                source_artifact_retrieval_id="retrieval-1",
+                published_at=(AT + timedelta(minutes=1)).isoformat(),
+                retrieved_at=(AT + timedelta(minutes=1)).isoformat(),
+                valid_from=(AT + timedelta(minutes=1)).isoformat(),
+                supersedes_slate_revision_id="slate-1",
+                content_hash="d" * 64,
+            )
+        )
+        connection.execute(
+            insert(sos.official_offer_revisions).values(
+                official_offer_revision_id="offer-revision-2",
+                official_offer_family_id="offer-family-1",
+                slate_revision_id="slate-2",
+                match_id="match-1",
+                official_match_no="周五001",
+                market_definition_ids_json='["md-had"]',
+                sale_opens_at="2026-09-04T00:00:00+00:00",
+                sale_deadline_at="2026-09-04T11:00:00+00:00",
+                status="on_sale",
+            )
+        )
+    service = OperatorEvidenceService(
+        repository=ProductReadRepository(engine),
+        unit_of_work_factory=lambda: OntologyUnitOfWork(engine),
+    )
+
+    snapshot = service.load_task_snapshot(
+        lane="jczq",
+        business_key="2026-09-04",
+        as_of=current_at,
+    )
+
+    match = snapshot.matches[0]
+    assert match.coverage == ()
+    assert match.observations == ()
+    assert match.claims == ()
+
+
 def test_ingest_denies_non_system_role_without_business_rows(tmp_path: Path) -> None:
     actions, engine = _actions(tmp_path)
 

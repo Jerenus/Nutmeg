@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -633,6 +633,60 @@ def test_equivalent_clear_and_recent_form_observations_do_not_conflict_on_lineag
     assert status.state is EvidenceState.COMPLETE
 
 
+def test_recent_form_refreshes_at_different_instants_do_not_conflict() -> None:
+    snapshot = _complete_match()
+    recent_form = next(
+        item
+        for item in snapshot.observations
+        if item.team_id == snapshot.identity.team_ids[0]
+        and item.kind is EvidenceObservationKind.RECENT_FORM
+    )
+    refreshed = replace(
+        recent_form,
+        ref_token="observation:home:recent-form:later-window",
+        observed_at=recent_form.observed_at + timedelta(hours=1),
+        value_fingerprint="2-0-0:5-1",
+    )
+
+    status = evaluate_requirement(
+        "EC",
+        replace(snapshot, observations=(*snapshot.observations, refreshed)),
+        cutoff=CUTOFF,
+    )
+
+    assert status.state is EvidenceState.COMPLETE
+    assert status.conflict_ref_tokens == ()
+
+
+def test_recent_form_values_at_the_same_instant_still_conflict() -> None:
+    snapshot = _complete_match()
+    recent_form = next(
+        item
+        for item in snapshot.observations
+        if item.team_id == snapshot.identity.team_ids[0]
+        and item.kind is EvidenceObservationKind.RECENT_FORM
+    )
+    contradictory = replace(
+        recent_form,
+        ref_token="observation:home:recent-form:contradictory",
+        observed_at=recent_form.observed_at.astimezone(
+            timezone(timedelta(hours=8))
+        ),
+        value_fingerprint="2-0-0:5-1",
+    )
+
+    status = evaluate_requirement(
+        "EC",
+        replace(snapshot, observations=(*snapshot.observations, contradictory)),
+        cutoff=CUTOFF,
+    )
+
+    assert status.state is EvidenceState.CONFLICT
+    assert status.conflict_ref_tokens == tuple(
+        sorted((recent_form.ref_token, contradictory.ref_token))
+    )
+
+
 def test_team_availability_clear_conflicts_with_person_unavailable() -> None:
     snapshot = _complete_match()
     team_id = snapshot.identity.team_ids[0]
@@ -664,6 +718,235 @@ def test_team_availability_clear_conflicts_with_person_unavailable() -> None:
             )
         )
     )
+
+
+def test_claim_observed_after_cutoff_cannot_create_any_ec_conflict() -> None:
+    snapshot = _complete_match()
+    team_id = snapshot.identity.team_ids[0]
+    current = ClaimEvidence(
+        ref_token="claim:current",
+        kind=EvidenceClaimKind.AVAILABILITY,
+        team_id=team_id,
+        predicate="availability",
+        conflict_scope="person:player-1:availability",
+        value_fingerprint='{"availability":"available"}',
+        status="verified",
+        valid_from=CUTOFF - timedelta(hours=2),
+        valid_to=CUTOFF + timedelta(hours=2),
+        source_kinds=("club_official", "credible_media"),
+        observed_at=CUTOFF - timedelta(hours=1),
+        source_identity_tokens=("club", "media"),
+    )
+    future = replace(
+        current,
+        ref_token="claim:future",
+        value_fingerprint='{"availability":"out"}',
+        observed_at=CUTOFF + timedelta(microseconds=1),
+    )
+
+    status = evaluate_requirement(
+        "EC",
+        replace(
+            snapshot,
+            claims=(current, future),
+            coverage=(
+                EvidenceCoverage(
+                    requirement_id="E5",
+                    subject_scope=team_id,
+                    evidence_ref_tokens=(current.ref_token, future.ref_token),
+                ),
+            ),
+        ),
+        cutoff=CUTOFF,
+    )
+
+    assert status.state is EvidenceState.COMPLETE
+    assert status.conflict_ref_tokens == ()
+
+
+@pytest.mark.parametrize("availability_clear_path", [False, True])
+def test_ec_ignores_unregistered_evidence_when_typed_coverage_exists(
+    availability_clear_path: bool,
+) -> None:
+    snapshot = _complete_match()
+    team_id = snapshot.identity.team_ids[0]
+    available = ClaimEvidence(
+        ref_token="claim:registered",
+        kind=EvidenceClaimKind.AVAILABILITY,
+        team_id=team_id,
+        predicate="availability",
+        conflict_scope="person:player-1:availability",
+        value_fingerprint='{"availability":"available"}',
+        status="verified",
+        valid_from=CUTOFF - timedelta(hours=2),
+        valid_to=CUTOFF + timedelta(hours=2),
+        source_kinds=("club_official", "credible_media"),
+        observed_at=CUTOFF - timedelta(hours=1),
+        source_identity_tokens=("club", "media"),
+    )
+    unavailable = replace(
+        available,
+        ref_token="claim:unregistered",
+        value_fingerprint='{"availability":"out"}',
+    )
+    clear = next(
+        item
+        for item in snapshot.observations
+        if item.team_id == team_id
+        and item.kind is EvidenceObservationKind.AVAILABILITY_CLEAR
+    )
+    registered = clear if availability_clear_path else available
+
+    status = evaluate_requirement(
+        "EC",
+        replace(
+            snapshot,
+            observations=(clear,) if availability_clear_path else (),
+            claims=(unavailable,) if availability_clear_path else (available, unavailable),
+            coverage=(
+                EvidenceCoverage(
+                    requirement_id="E5",
+                    subject_scope=team_id,
+                    evidence_ref_tokens=(registered.ref_token,),
+                ),
+            ),
+        ),
+        cutoff=CUTOFF,
+    )
+
+    assert status.state is EvidenceState.COMPLETE
+    assert status.conflict_ref_tokens == ()
+
+
+def test_ec_still_blocks_when_both_conflicting_refs_are_registered() -> None:
+    snapshot = _complete_match()
+    team_id = snapshot.identity.team_ids[0]
+    first = ClaimEvidence(
+        ref_token="claim:registered:first",
+        kind=EvidenceClaimKind.AVAILABILITY,
+        team_id=team_id,
+        predicate="availability",
+        conflict_scope="person:player-1:availability",
+        value_fingerprint='{"availability":"available"}',
+        status="verified",
+        valid_from=CUTOFF - timedelta(hours=2),
+        valid_to=CUTOFF + timedelta(hours=2),
+        source_kinds=("club_official", "credible_media"),
+        observed_at=CUTOFF - timedelta(hours=1),
+        source_identity_tokens=("club", "media"),
+    )
+    second = replace(
+        first,
+        ref_token="claim:registered:second",
+        value_fingerprint='{"availability":"out"}',
+    )
+
+    status = evaluate_requirement(
+        "EC",
+        replace(
+            snapshot,
+            observations=(),
+            claims=(first, second),
+            coverage=(
+                EvidenceCoverage(
+                    requirement_id="E5",
+                    subject_scope=team_id,
+                    evidence_ref_tokens=(first.ref_token, second.ref_token),
+                ),
+            ),
+        ),
+        cutoff=CUTOFF,
+    )
+
+    assert status.state is EvidenceState.CONFLICT
+    assert status.conflict_ref_tokens == (first.ref_token, second.ref_token)
+
+
+@pytest.mark.parametrize(
+    ("requirement_id", "subject_scope"),
+    [
+        ("EC", "match-1"),
+        ("E5", "person-1"),
+    ],
+)
+def test_ec_uses_every_ref_registered_by_typed_coverage(
+    requirement_id: str,
+    subject_scope: str,
+) -> None:
+    snapshot = _complete_match()
+    team_id = snapshot.identity.team_ids[0]
+    first = ClaimEvidence(
+        ref_token="claim:wrong-coverage:first",
+        kind=EvidenceClaimKind.AVAILABILITY,
+        team_id=team_id,
+        predicate="availability",
+        conflict_scope="person:player-1:availability",
+        value_fingerprint='{"availability":"available"}',
+        status="verified",
+        valid_from=CUTOFF - timedelta(hours=2),
+        valid_to=CUTOFF + timedelta(hours=2),
+        source_kinds=("club_official", "credible_media"),
+        observed_at=CUTOFF - timedelta(hours=1),
+        source_identity_tokens=("club", "media"),
+    )
+    second = replace(
+        first,
+        ref_token="claim:wrong-coverage:second",
+        value_fingerprint='{"availability":"out"}',
+    )
+
+    status = evaluate_requirement(
+        "EC",
+        replace(
+            snapshot,
+            observations=(),
+            claims=(first, second),
+            coverage=(
+                EvidenceCoverage(
+                    requirement_id=requirement_id,
+                    subject_scope=subject_scope,
+                    evidence_ref_tokens=(first.ref_token, second.ref_token),
+                ),
+            ),
+        ),
+        cutoff=CUTOFF,
+    )
+
+    assert status.state is EvidenceState.CONFLICT
+    assert status.conflict_ref_tokens == (first.ref_token, second.ref_token)
+
+
+def test_ec_without_typed_coverage_preserves_legacy_all_facts_behavior() -> None:
+    snapshot = _complete_match()
+    team_id = snapshot.identity.team_ids[0]
+    first = ClaimEvidence(
+        ref_token="claim:legacy:first",
+        kind=EvidenceClaimKind.AVAILABILITY,
+        team_id=team_id,
+        predicate="availability",
+        conflict_scope="person:player-1:availability",
+        value_fingerprint='{"availability":"available"}',
+        status="verified",
+        valid_from=CUTOFF - timedelta(hours=2),
+        valid_to=CUTOFF + timedelta(hours=2),
+        source_kinds=("club_official", "credible_media"),
+        observed_at=CUTOFF - timedelta(hours=1),
+        source_identity_tokens=("club", "media"),
+    )
+    second = replace(
+        first,
+        ref_token="claim:legacy:second",
+        value_fingerprint='{"availability":"out"}',
+    )
+
+    status = evaluate_requirement(
+        "EC",
+        replace(snapshot, observations=(), claims=(first, second), coverage=None),
+        cutoff=CUTOFF,
+    )
+
+    assert status.state is EvidenceState.CONFLICT
+    assert status.conflict_ref_tokens == (first.ref_token, second.ref_token)
 
 
 def test_coverage_receipts_alone_never_grant_readiness() -> None:

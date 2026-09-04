@@ -102,6 +102,23 @@ class MatchActions:
             requested_at=request.requested_at,
         )
 
+        def result_refs(match_id: str, match_revision_id: str) -> tuple[ObjectRef, ...]:
+            refs = [
+                ObjectRef('match', match_id),
+                ObjectRef('match_revision', match_revision_id),
+            ]
+            if request.competition_edition is not None:
+                refs.extend(
+                    (
+                        ObjectRef('competition', request.competition_edition.competition_id),
+                        ObjectRef(
+                            'competition_edition',
+                            request.competition_edition.competition_edition_id,
+                        ),
+                    )
+                )
+            return tuple(refs)
+
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
             if request.competition_edition is not None:
                 edition = request.competition_edition
@@ -133,9 +150,10 @@ class MatchActions:
                 current = uow.identity.current_match_revision(existing)
                 edition_id = request.resolved_competition_edition_id
                 if current.competition_edition_id is None and edition_id is not None:
+                    match_revision_id = f'mrv-{uuid4().hex}'
                     uow.identity.insert_match_revision(
                         MatchRevisionRow(
-                            match_revision_id=f'mrv-{uuid4().hex}',
+                            match_revision_id=match_revision_id,
                             match_id=existing,
                             version=current.version + 1,
                             competition_edition_id=edition_id,
@@ -148,6 +166,7 @@ class MatchActions:
                             supersedes_revision_id=current.match_revision_id,
                         )
                     )
+                    current = uow.identity.current_match_revision(existing)
                 elif (
                     edition_id is not None
                     and current.competition_edition_id != edition_id
@@ -155,13 +174,14 @@ class MatchActions:
                     raise OntologyError(
                         f'match {existing} already belongs to a different competition edition'
                     )
-                return (ObjectRef('match', existing),)
+                return result_refs(existing, current.match_revision_id)
             match_id = mint_id(EntityType.MATCH)
             recorded_at = request.requested_at.astimezone(UTC).isoformat()
             uow.identity.insert_match(match_id)
+            match_revision_id = f'mrv-{uuid4().hex}'
             uow.identity.insert_match_revision(
                 MatchRevisionRow(
-                    match_revision_id=f'mrv-{uuid4().hex}',
+                    match_revision_id=match_revision_id,
                     match_id=match_id,
                     version=1,
                     competition_edition_id=request.resolved_competition_edition_id,
@@ -189,6 +209,6 @@ class MatchActions:
                 provider=request.provider,
                 external_id=request.external_id,
             )
-            return (ObjectRef('match', match_id),)
+            return result_refs(match_id, match_revision_id)
 
         return self._action_service.execute(command, handler)

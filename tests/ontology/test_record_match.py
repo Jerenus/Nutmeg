@@ -97,3 +97,37 @@ def test_existing_match_without_edition_gets_an_immutable_revision(tmp_path: Pat
         assert revision.version == 2
         assert revision.competition_edition_id == edition.competition_edition_id
         assert revision.supersedes_revision_id is not None
+
+
+def test_record_match_action_exposes_every_created_lineage_object(tmp_path: Path) -> None:
+    actions, engine = _actions(tmp_path)
+    edition = CompetitionEditionRef(
+        competition_id="competition-se",
+        competition_name="Allsvenskan",
+        competition_country="SE",
+        competition_kind="football",
+        competition_edition_id="competition-edition-se-2026",
+        edition_name="Allsvenskan 2026",
+        season_label="2026",
+    )
+
+    outcome = actions.record_match(
+        replace(
+            _req("m:lineage", "2026-07-19T19:00:00+02:00"),
+            competition_edition=edition,
+        )
+    )
+
+    refs = {(ref.object_type, ref.object_id) for ref in outcome.result_refs}
+    match_id = next(ref.object_id for ref in outcome.result_refs if ref.object_type == "match")
+    with OntologyUnitOfWork(engine) as uow:
+        revision = uow.identity.current_match_revision(match_id)
+        action = uow.actions.get_by_idempotency_key("m:lineage")
+    assert refs == {
+        ("match", match_id),
+        ("match_revision", revision.match_revision_id),
+        ("competition", edition.competition_id),
+        ("competition_edition", edition.competition_edition_id),
+    }
+    assert action is not None
+    assert action.payload["competition_edition_id"] == edition.competition_edition_id

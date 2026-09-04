@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 _MARKET_MAP = {"had": "md-had", "hhad": "md-hhad", "ttg": "md-ttg", "crs": "md-crs"}
 _RESULT_SCORE = {"home": "1-0", "draw": "0-0", "away": "0-1"}
@@ -118,6 +119,7 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
     )
     odds_value = json.loads(odds_path.read_text(encoding="utf-8"))
     source_at = _zucai_source_time(odds_value, odds_path)
+    market_provider = _zucai_market_provider(odds_value)
     rows = tuple(
         ZucaiRow(
             match_no=m.match_no,
@@ -138,14 +140,18 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
             requested_at=requested_at,
             market_sources=(
                 ZucaiMarketSource(
-                    provider="zucai",
+                    provider=market_provider,
                     value=odds_value,
                     retrieved_at=source_at,
                 ),
             ),
         )
     )
-    action_count = _committed_zucai_snapshot_actions(kernel, rows)
+    action_count = _committed_zucai_snapshot_actions(
+        kernel,
+        rows,
+        provider=market_provider,
+    )
     prep_count = len(rows)
     if action_count != prep_count:
         raise KernelCountMismatch(
@@ -179,7 +185,21 @@ def _zucai_source_time(value: dict, path: Path) -> datetime:
     return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
 
 
-def _committed_zucai_snapshot_actions(kernel, rows) -> int:
+def _zucai_market_provider(value: dict) -> str:
+    sources = value.get("sources")
+    if not isinstance(sources, list) or not sources:
+        return "intl"
+    hosts = []
+    for source in sources:
+        if not isinstance(source, dict) or not isinstance(source.get("url"), str):
+            return "intl"
+        hosts.append((urlparse(source["url"]).hostname or "").casefold())
+    if hosts and all(host == "sporttery.cn" or host.endswith(".sporttery.cn") for host in hosts):
+        return "zucai"
+    return "intl"
+
+
+def _committed_zucai_snapshot_actions(kernel, rows, *, provider: str) -> int:
     from nutmeg.decision.identity import canonical_match_id
     from nutmeg.ontology.identity.models import EntityType
     from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -198,7 +218,7 @@ def _committed_zucai_snapshot_actions(kernel, rows) -> int:
                 match_ids.add(match_id)
         return uow.actions.count_committed_snapshot_matches(
             match_ids,
-            provider="zucai",
+            provider=provider,
             snapshot_kind="read_time",
         )
 

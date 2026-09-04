@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Literal
 
@@ -13,7 +13,11 @@ from sqlalchemy import func, select
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository import schema_identity
-from nutmeg.product.operator_lanes import JczqLaneAdapter, ZucaiLaneAdapter
+from nutmeg.product.operator_lanes import (
+    JczqLaneAdapter,
+    ZucaiLaneAdapter,
+    task_snapshot_hash,
+)
 
 if TYPE_CHECKING:
     from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -232,12 +236,17 @@ class OperatorEvidenceService:
             raise ValueError("operator evidence task has no current official slate")
         adapter = JczqLaneAdapter() if lane == "jczq" else ZucaiLaneAdapter()
         required_offer_ids = set(adapter.evidence_offer_ids(slate, as_of))
+        current_task_snapshot_hash = task_snapshot_hash(slate, as_of)
         matches = tuple(
             self._load_match_snapshot(
                 offer=offer,
                 required=offer.official_offer_revision_id in required_offer_ids,
                 as_of=as_of,
                 source_official=slate.source_official,
+                lane=lane,
+                business_key=business_key,
+                slate_revision_id=slate.slate_revision_id,
+                task_snapshot_hash=current_task_snapshot_hash,
             )
             for offer in slate.offers
         )
@@ -265,6 +274,10 @@ class OperatorEvidenceService:
         required: bool,
         as_of: datetime,
         source_official: bool,
+        lane: Literal["jczq", "zucai"],
+        business_key: str,
+        slate_revision_id: str,
+        task_snapshot_hash: str,
     ):
         record = self._repository.match(offer.match_id, as_of.isoformat())
         team_ids = () if record is None else (
@@ -315,7 +328,14 @@ class OperatorEvidenceService:
             market_definition_ids=offer.market_definition_ids,
             source_status=offer.source_status,
         )
-        metadata, coverage = self._intake_metadata(offer.match_id, as_of)
+        metadata, coverage = self._intake_metadata(
+            offer.match_id,
+            as_of,
+            lane=lane,
+            business_key=business_key,
+            slate_revision_id=slate_revision_id,
+            task_snapshot_hash=task_snapshot_hash,
+        )
         coverage_ref_tokens = tuple(
             sorted(
                 {
@@ -442,15 +462,32 @@ class OperatorEvidenceService:
         }
         return tuple(sorted(unresolved)), tuple(sorted(ambiguous)), tuple(sorted(merged))
 
-    def _intake_metadata(self, match_id: str, as_of: datetime):
+    def _intake_metadata(
+        self,
+        match_id: str,
+        as_of: datetime,
+        *,
+        lane: str,
+        business_key: str,
+        slate_revision_id: str,
+        task_snapshot_hash: str,
+    ):
         with self._unit_of_work_factory() as uow:
             rows = uow.operator_decision.evidence_intake_objects_for_match(
                 match_id,
                 as_of=as_of.isoformat(),
+                lane=lane,
+                business_key=business_key,
+                slate_revision_id=slate_revision_id,
+                task_snapshot_hash=task_snapshot_hash,
             )
             coverage_rows = uow.operator_decision.evidence_coverage_receipts_for_match(
                 match_id,
                 as_of=as_of.isoformat(),
+                lane=lane,
+                business_key=business_key,
+                slate_revision_id=slate_revision_id,
+                task_snapshot_hash=task_snapshot_hash,
             )
             coverage = tuple(
                 EvidenceCoverage(
@@ -920,8 +957,13 @@ def _evaluate_conflicts(
     snapshot: MatchEvidenceSnapshot,
     cutoff: datetime,
 ) -> RequirementStatus:
-    groups: dict[str, list[ObservationEvidence | ClaimEvidence]] = {}
+    groups: dict[
+        tuple[str, datetime | None],
+        list[ObservationEvidence | ClaimEvidence],
+    ] = {}
     for observation in snapshot.observations:
+        if not _registered_for_conflict(snapshot, observation):
+            continue
         if not _inside_interval(cutoff, observation.valid_from, observation.valid_to):
             continue
         if observation.observed_at > cutoff:
@@ -929,13 +971,22 @@ def _evaluate_conflicts(
         scope = observation.conflict_scope or (
             f"team:{observation.team_id}:{observation.kind.value}"
         )
-        groups.setdefault(scope, []).append(observation)
+        observed_at = (
+            observation.observed_at.astimezone(UTC)
+            if observation.kind is EvidenceObservationKind.RECENT_FORM
+            else None
+        )
+        groups.setdefault((scope, observed_at), []).append(observation)
     for claim in snapshot.claims:
+        if not _registered_for_conflict(snapshot, claim):
+            continue
         if claim.status in {"retracted", "expired"}:
             continue
         if not _inside_interval(cutoff, claim.valid_from, claim.valid_to):
             continue
-        groups.setdefault(claim.conflict_scope, []).append(claim)
+        if claim.observed_at > cutoff:
+            continue
+        groups.setdefault((claim.conflict_scope, None), []).append(claim)
     conflict_refs: list[str] = []
     for facts in groups.values():
         if len({_conflict_value(fact) for fact in facts}) > 1:
@@ -963,6 +1014,18 @@ def _conflict_value(fact: ObservationEvidence | ClaimEvidence) -> str:
     return canonical_json(value)
 
 
+def _registered_for_conflict(
+    snapshot: MatchEvidenceSnapshot,
+    fact: ObservationEvidence | ClaimEvidence,
+) -> bool:
+    if snapshot.coverage is None:
+        return True
+    return any(
+        fact.ref_token in receipt.evidence_ref_tokens
+        for receipt in snapshot.coverage
+    )
+
+
 def _availability_clear_conflicts(
     snapshot: MatchEvidenceSnapshot,
     cutoff: datetime,
@@ -970,6 +1033,8 @@ def _availability_clear_conflicts(
     clears_by_team: dict[str, list[ObservationEvidence]] = {}
     negatives_by_team: dict[str, list[ObservationEvidence | ClaimEvidence]] = {}
     for observation in snapshot.observations:
+        if not _registered_for_conflict(snapshot, observation):
+            continue
         if not _inside_interval(cutoff, observation.valid_from, observation.valid_to):
             continue
         if observation.observed_at > cutoff:
@@ -981,9 +1046,13 @@ def _availability_clear_conflicts(
         ):
             negatives_by_team.setdefault(observation.team_id, []).append(observation)
     for claim in snapshot.claims:
+        if not _registered_for_conflict(snapshot, claim):
+            continue
         if claim.status in {"retracted", "expired"}:
             continue
         if not _inside_interval(cutoff, claim.valid_from, claim.valid_to):
+            continue
+        if claim.observed_at > cutoff:
             continue
         if claim.kind is EvidenceClaimKind.AVAILABILITY and _is_unavailable(claim):
             negatives_by_team.setdefault(claim.team_id, []).append(claim)

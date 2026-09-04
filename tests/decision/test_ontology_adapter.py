@@ -141,7 +141,16 @@ def test_unset_flag_keeps_old_path(tmp_path: Path, monkeypatch) -> None:
 ZUCAI_ISSUE = {"issue": "26110", "matches": [
     {"match_no": 1, "competition": "英超", "home_team": "曼城",
      "away_team": "伯恩茅斯", "match_date": "2026-08-23"}]}
-ZUCAI_ODDS = {"issue_id": "26110", "captured_at": "2026-07-19T08:00:00+00:00", "matches": [
+ZUCAI_ODDS = {
+    "issue_id": "26110",
+    "captured_at": "2026-07-19T08:00:00+00:00",
+    "sources": [
+        {
+            "label": "Sporttery JCZQ HAD odds snapshot",
+            "url": "https://www.sporttery.cn/jc/jsq/zqspf/",
+        }
+    ],
+    "matches": [
     {"match_no": 1, "home": 1.30, "draw": 5.50, "away": 9.00}]}
 
 
@@ -196,6 +205,57 @@ def test_am_v2_with_issue_ingests_zucai(tmp_path: Path) -> None:
             datetime(2026, 7, 19, 8, tzinfo=UTC).isoformat(),
         )
     }
+
+
+def test_am_v2_classifies_500_odds_as_international_not_official(
+    tmp_path: Path,
+) -> None:
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    output_dir = tmp_path / "jczq"
+    _write_snapshots(output_dir)
+    zucai_dir = tmp_path / "zucai"
+    _write_zucai(zucai_dir)
+    odds_path = zucai_dir / "26110-odds.json"
+    odds_path.write_text(
+        json.dumps(
+            {
+                **ZUCAI_ODDS,
+                "sources": [
+                    {
+                        "label": "500.com average odds",
+                        "url": "https://trade.500.com/rj/?expect=26110",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_decision_am_v2(
+        DATE,
+        output_dir,
+        kernel=kernel,
+        fetch=False,
+        issue="26110",
+        zucai_dir=zucai_dir,
+    )
+
+    assert result.succeeded
+    with kernel.engine.connect() as connection:
+        lineage = connection.execute(
+            select(
+                schema_market.market_quotes.c.provider,
+                schema.artifact_retrievals.c.source_name,
+            ).select_from(
+                schema_market.market_quotes.join(
+                    schema.artifact_retrievals,
+                    schema_market.market_quotes.c.artifact_retrieval_id
+                    == schema.artifact_retrievals.c.artifact_retrieval_id,
+                )
+            ).where(schema_market.market_quotes.c.provider.in_(("zucai", "intl")))
+        ).all()
+    assert set(lineage) == {("intl", "intl")}
 
 
 def test_am_v2_zucai_rerun_reconciles_cumulative_action_truth(tmp_path: Path) -> None:
