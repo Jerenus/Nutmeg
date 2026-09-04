@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.product.contracts import ProductError
+from nutmeg.product.errors import ProductActionBlockedError
 from nutmeg.product.operator_contracts import OperatorCommandReceipt
 from nutmeg.product.operator_tokens import (
     OperatorCommandKind,
@@ -382,6 +383,16 @@ def mount_operator_api(
             )
             return JSONResponse(
                 status_code=409 if error.code == "task_snapshot_changed" else 422,
+                content=product_error.model_dump(mode="json"),
+            )
+        except ProductActionBlockedError as error:
+            product_error = ProductError(
+                code=error.code,
+                message=str(error),
+                retryable=True,
+            )
+            return JSONResponse(
+                status_code=409,
                 content=product_error.model_dump(mode="json"),
             )
         receipt = OperatorCommandReceipt.model_validate(result)

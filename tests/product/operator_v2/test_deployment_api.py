@@ -356,6 +356,20 @@ class _ConfirmationTransport:
         )
 
 
+class _OwnerHealth:
+    def __init__(self, *, available: bool, blocking_code: str | None = None) -> None:
+        self.available = available
+        self.blocking_code = blocking_code
+        self.calls = []
+
+    def status(self, *, as_of):
+        self.calls.append(as_of)
+        return SimpleNamespace(
+            available=self.available,
+            blocking_code=self.blocking_code,
+        )
+
+
 def test_request_confirmation_api_only_opens_owner_telegram_stage_one() -> None:
     command_token = _token(
         OperatorCommandKind.REQUEST_CONFIRMATION,
@@ -415,6 +429,63 @@ def test_request_confirmation_api_only_opens_owner_telegram_stage_one() -> None:
             "requested_at": NOW,
         }
     ]
+
+
+def test_request_confirmation_blocks_when_formal_owner_heartbeat_is_missing() -> None:
+    command_token = _token(
+        OperatorCommandKind.REQUEST_CONFIRMATION,
+        "ticket_artifact:artifact-1",
+    )
+    step = AuditDeploymentStep(
+        surface_version="2",
+        task_id=TASK_KEY,
+        candidate=DeploymentCandidateSummary(
+            label="U864-A",
+            ticket_count=1,
+            stake_minor=172800,
+            objective_label="P(全对)",
+            objective_probability_decimal="0.279600000000",
+        ),
+        audit_state="pass",
+        findings=[],
+        mode="request_confirmation",
+        command_token=command_token,
+        ticket_artifact_token=command_token,
+        no_ticket_command_token=_token(
+            OperatorCommandKind.RECORD_NO_TICKET,
+            "ticket_artifact:artifact-1",
+        ),
+    )
+    transport = _ConfirmationTransport()
+    owner = _OwnerHealth(
+        available=False,
+        blocking_code="telegram_owner_missing",
+    )
+    service = OperatorActionService(
+        queries=_DeploymentQueries(step),
+        action_gateway=_AdjudicationGateway(),
+        telegram_confirmation=transport,
+        telegram_owner_chat_id=771,
+        telegram_owner_health=owner,
+        snapshot_tokens=OperatorSnapshotTokenCodec(TOKEN_KEY),
+        clock=lambda: NOW,
+    )
+    client, _actions = _client(service)
+
+    response = client.post(
+        "/api/v2/operator",
+        json=_command(
+            "request_confirmation",
+            expected_snapshot_token=command_token,
+            ticket_artifact_token=command_token,
+        ),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "telegram_owner_missing"
+    assert "unavailable" in response.json()["message"]
+    assert owner.calls == [NOW]
+    assert transport.calls == []
 
 
 class _NoTicketDecisionActions:

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_EVEN, Decimal
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
@@ -16,9 +19,11 @@ from nutmeg.ontology.actions.models import ActionOutcome, ActorRole, canonical_j
 from nutmeg.ontology.actions.protected_ticket_actions import (
     CurrentOperatorCandidateAudit,
     CurrentOperatorCandidateAuditFinding,
+    MarkTicketShadowRequest,
 )
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.errors import OptimisticConcurrencyError, PermissionDeniedError
+from nutmeg.ontology.operator.confirmation import effective_artifact_cutoff
 from nutmeg.ontology.operator.decision_actions import (
     FreezeMarketPriorBaselineRequest,
     OperatorDecisionActions,
@@ -56,6 +61,7 @@ from nutmeg.product.operator_candidates import (
     OfferCandidateInput,
     enumerate_candidates,
 )
+from nutmeg.product.operator_runtime import OntologyWriterLease
 
 _CANDIDATE_GENERATOR_VERSION = "operator-candidate-v1"
 _CANDIDATE_AUDIT_POLICY_VERSION = "operator-candidate-audit-v1"
@@ -67,6 +73,114 @@ _SUPPORTED_SETTLEMENT_MARKETS = {
 }
 
 
+class OperatorInfrastructureWorkers:
+    """Run the bounded operator consumers under one application lifespan."""
+
+    _ORDER = (
+        "evidence_freeze",
+        "market_baseline",
+        "candidate_generation",
+        "confirmation_deadlines",
+        "task_settlement",
+        "review_materialization",
+        "scoreboard_review_completion",
+        "outbox",
+        "read_model",
+    )
+
+    def __init__(
+        self,
+        *,
+        data_dir: Path,
+        clock,
+        poll_interval_seconds: float = 1.0,
+        batch_size: int = 100,
+        evidence_freeze=None,
+        market_baseline=None,
+        candidate_generation=None,
+        confirmation_deadlines=None,
+        task_settlement=None,
+        review_materialization=None,
+        scoreboard_review_completion=None,
+        outbox=None,
+        read_model=None,
+    ) -> None:
+        if poll_interval_seconds <= 0:
+            raise ValueError("worker poll interval must be positive")
+        if batch_size <= 0:
+            raise ValueError("worker batch size must be positive")
+        self._data_dir = data_dir.resolve()
+        self._clock = clock
+        self._poll_interval_seconds = poll_interval_seconds
+        self._batch_size = batch_size
+        supplied = locals()
+        self._workers = tuple(
+            supplied[name] for name in self._ORDER if supplied[name] is not None
+        )
+        self._accepting = False
+        self._cycle_lock = asyncio.Lock()
+        self._task: asyncio.Task[None] | None = None
+
+    @property
+    def worker_names(self) -> tuple[str, ...]:
+        return tuple(type(worker).__name__ for worker in self._workers)
+
+    async def start(self) -> None:
+        if self._task is not None:
+            return
+        self._accepting = True
+        await self._run_cycle()
+        self._task = asyncio.create_task(
+            self._run_loop(),
+            name="nutmeg-operator-infrastructure",
+        )
+
+    def stop_accepting(self) -> None:
+        self._accepting = False
+
+    async def drain_current_transactions(self) -> None:
+        async with self._cycle_lock:
+            return
+
+    async def close(self) -> None:
+        self.stop_accepting()
+        task = self._task
+        self._task = None
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    @asynccontextmanager
+    async def lifespan(self, _app):
+        await self.start()
+        try:
+            yield
+        finally:
+            self.stop_accepting()
+            await self.drain_current_transactions()
+            await self.close()
+
+    async def _run_loop(self) -> None:
+        while self._accepting:
+            await asyncio.sleep(self._poll_interval_seconds)
+            if self._accepting:
+                await self._run_cycle()
+
+    async def _run_cycle(self) -> None:
+        async with self._cycle_lock:
+            await asyncio.to_thread(self._run_cycle_sync)
+
+    def _run_cycle_sync(self) -> None:
+        if not self._workers:
+            return
+        as_of = _aware(self._clock(), "worker clock").astimezone(UTC)
+        with OntologyWriterLease.shared(self._data_dir):
+            for worker in self._workers:
+                worker.run_once(limit=self._batch_size, as_of=as_of)
+
+
 @dataclass(frozen=True, slots=True)
 class _CandidateAuditOffer:
     official_match_no: str
@@ -75,6 +189,94 @@ class _CandidateAuditOffer:
     prior: tuple[tuple[str, str], ...]
     prescribed_face_bundles: tuple[frozenset[str], ...]
     rule_ids: tuple[str, ...]
+
+
+class ConfirmationDeadlineWorker:
+    """Boundedly terminalize protected artifacts whose effective cutoff is due."""
+
+    def __init__(
+        self,
+        *,
+        action_service: ActionService,
+        protected_tickets,
+        worker_id: str,
+    ) -> None:
+        if not worker_id.strip():
+            raise ValueError("worker_id is required")
+        self._action_service = action_service
+        self._protected_tickets = protected_tickets
+        self._worker_id = worker_id
+
+    def run_once(self, *, limit: int, as_of: datetime) -> tuple[ActionOutcome, ...]:
+        at = _aware(as_of, "as_of").astimezone(UTC)
+        if limit < 1:
+            return ()
+        with self._action_service.unit_of_work() as uow:
+            artifact_ids = uow.tickets.open_protected_artifact_ids(
+                limit=max(limit * 10, limit)
+            )
+
+        outcomes: list[ActionOutcome] = []
+        for artifact_id in artifact_ids:
+            if len(outcomes) >= limit:
+                break
+            with self._action_service.unit_of_work() as uow:
+                binding = uow.tickets.protected_artifact_binding(artifact_id)
+                links = uow.tickets.protected_artifact_offer_revision_links(
+                    artifact_id
+                )
+                current_offers = tuple(
+                    current
+                    for link in links
+                    if (
+                        source := uow.operator_sale.offer_revision(
+                            link.official_offer_revision_id
+                        )
+                    )
+                    is not None
+                    and (
+                        current := uow.operator_sale.current_offer_by_family(
+                            source.official_offer_family_id
+                        )
+                    )
+                    is not None
+                )
+                head = uow.tickets.confirmation_challenge_head(artifact_id)
+            if binding is None or len(current_offers) != len(links):
+                continue
+            cutoff = effective_artifact_cutoff(binding, current_offers)
+            cancelled = any(offer.status == "cancelled" for offer in current_offers)
+            closed = any(offer.status == "sale_closed" for offer in current_offers)
+            if not cancelled and not closed and at < cutoff:
+                continue
+            if cancelled:
+                reason = "official_offer_cancelled"
+            elif closed and at < cutoff:
+                reason = "official_deadline_shortened"
+            else:
+                reason = (
+                    "confirmation_not_requested"
+                    if head is None
+                    else "deadline_unconfirmed"
+                )
+            outcome = self._protected_tickets.mark_ticket_shadow(
+                MarkTicketShadowRequest(
+                    ticket_artifact_id=artifact_id,
+                    confirmation_id=(
+                        None if head is None else head.challenge_revision_id
+                    ),
+                    reason=reason,
+                    actor_id=f"system:{self._worker_id}",
+                    actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                    idempotency_key=(
+                        f"operator-confirmation-deadline:{artifact_id}:"
+                        f"{cutoff.isoformat()}:{reason}"
+                    ),
+                    requested_at=at,
+                )
+            )
+            outcomes.append(outcome)
+        return tuple(outcomes)
 
 
 def _aware(value: datetime, name: str) -> datetime:

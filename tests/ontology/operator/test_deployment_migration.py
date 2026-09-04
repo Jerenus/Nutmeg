@@ -74,7 +74,7 @@ def test_migration_22_adds_exact_deployment_tables_fresh_and_from_v21(
         engine = build_ontology_engine(tmp_path / f"{label}.db")
         if initial:
             run_migrations(engine, initial)
-        run_migrations(engine)
+        run_migrations(engine, MIGRATIONS[:22])
 
         assert migration_status(engine).current_version == 22
         assert set(inspect(engine).get_table_names()) - v21_tables == DEPLOYMENT_TABLES

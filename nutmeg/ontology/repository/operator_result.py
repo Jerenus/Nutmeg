@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
-from sqlalchemy import Connection, exists, insert, select
+from sqlalchemy import Connection, exists, insert, select, update
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.operator.models import (
@@ -29,6 +30,85 @@ from nutmeg.ontology.operator.models import (
 )
 from nutmeg.ontology.repository import schema_operator_decision as sod
 from nutmeg.ontology.repository import schema_operator_result as sor
+
+
+@dataclass(frozen=True, slots=True)
+class TicketNoteRow:
+    ticket_note_id: str
+    ticket_id: str
+    ticket_artifact_id: str
+    note_index: int
+    ticket_kind: str
+    structure_code: str
+    group_code: str | None
+    currency: str
+    unit_stake_minor: int
+    unit_count: int
+    stake_minor: int
+    composition_hash: str
+    fixed_prize_policy_revision_id: str | None
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class TicketNoteLegRow:
+    ticket_note_leg_id: str
+    ticket_note_id: str
+    leg_index: int
+    official_offer_revision_id: str
+    match_id: str
+    market_definition_id: str
+    selection_code: str
+    quote_id: str | None
+    booked_decimal_odds: str | None
+    settlement_parameter_decimal: str | None
+    fixed_prize_policy_revision_id: str | None
+    action_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class PlacementCashLinkRow:
+    placement_cash_link_id: str
+    ticket_id: str
+    transaction_id: str
+    stake_minor: int
+    currency: str
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class TelegramOwnerHeartbeatRow:
+    telegram_owner_heartbeat_id: str
+    account_id: str
+    owner_instance_id: str
+    transport_label: str
+    owner_mode: str
+    router_version: str
+    heartbeat_sequence: int
+    observed_at: str
+    lease_expires_at: str
+    registration_action_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class TelegramCallbackAttestationRow:
+    telegram_callback_attestation_id: str
+    account_id: str
+    owner_instance_id: str
+    callback_query_id: str
+    sender_id: str
+    chat_id: str
+    message_id: str
+    namespace: str
+    callback_data_hash: str
+    server_ingress_at: str
+    owner_heartbeat_id: str
+    source_artifact_id: str
+    source_artifact_retrieval_id: str
+    action_id: str
+    created_at: str
 
 
 class OperatorResultRepository:
@@ -242,6 +322,147 @@ class OperatorResultRepository:
             )
         ).mappings()
         return tuple(ReviewEligibilityFactRow(**dict(row)) for row in rows)
+
+    def insert_ticket_note(self, row: TicketNoteRow) -> None:
+        self._connection.execute(
+            insert(sor.operator_ticket_notes).values(**_row_fields(row))
+        )
+
+    def ticket_notes(self, ticket_id: str) -> tuple[TicketNoteRow, ...]:
+        rows = self._connection.execute(
+            select(sor.operator_ticket_notes)
+            .where(sor.operator_ticket_notes.c.ticket_id == ticket_id)
+            .order_by(sor.operator_ticket_notes.c.note_index)
+        ).mappings()
+        return tuple(TicketNoteRow(**dict(row)) for row in rows)
+
+    def insert_ticket_note_leg(self, row: TicketNoteLegRow) -> None:
+        self._connection.execute(
+            insert(sor.operator_ticket_note_legs).values(**_row_fields(row))
+        )
+
+    def ticket_note_legs(self, ticket_note_id: str) -> tuple[TicketNoteLegRow, ...]:
+        rows = self._connection.execute(
+            select(sor.operator_ticket_note_legs)
+            .where(sor.operator_ticket_note_legs.c.ticket_note_id == ticket_note_id)
+            .order_by(sor.operator_ticket_note_legs.c.leg_index)
+        ).mappings()
+        return tuple(TicketNoteLegRow(**dict(row)) for row in rows)
+
+    def insert_placement_cash_link(self, row: PlacementCashLinkRow) -> None:
+        self._connection.execute(
+            insert(sor.operator_placement_cash_links).values(**_row_fields(row))
+        )
+
+    def placement_cash_link(self, ticket_id: str) -> PlacementCashLinkRow | None:
+        row = (
+            self._connection.execute(
+                select(sor.operator_placement_cash_links).where(
+                    sor.operator_placement_cash_links.c.ticket_id == ticket_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return PlacementCashLinkRow(**dict(row)) if row is not None else None
+
+    def insert_telegram_owner_heartbeat(
+        self,
+        row: TelegramOwnerHeartbeatRow,
+    ) -> None:
+        self._connection.execute(
+            insert(sor.operator_telegram_owner_heartbeats).values(**_row_fields(row))
+        )
+
+    def telegram_owner_heartbeat(
+        self,
+        *,
+        account_id: str,
+        owner_instance_id: str,
+    ) -> TelegramOwnerHeartbeatRow | None:
+        row = (
+            self._connection.execute(
+                select(sor.operator_telegram_owner_heartbeats).where(
+                    sor.operator_telegram_owner_heartbeats.c.account_id == account_id,
+                    sor.operator_telegram_owner_heartbeats.c.owner_instance_id
+                    == owner_instance_id,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return TelegramOwnerHeartbeatRow(**dict(row)) if row is not None else None
+
+    def telegram_owner_heartbeats(
+        self,
+        *,
+        account_id: str,
+    ) -> tuple[TelegramOwnerHeartbeatRow, ...]:
+        rows = self._connection.execute(
+            select(sor.operator_telegram_owner_heartbeats)
+            .where(
+                sor.operator_telegram_owner_heartbeats.c.account_id == account_id
+            )
+            .order_by(
+                sor.operator_telegram_owner_heartbeats.c.owner_instance_id
+            )
+        ).mappings()
+        return tuple(TelegramOwnerHeartbeatRow(**dict(row)) for row in rows)
+
+    def renew_telegram_owner_heartbeat(
+        self,
+        *,
+        heartbeat_id: str,
+        expected_sequence: int,
+        heartbeat_sequence: int,
+        observed_at: str,
+        lease_expires_at: str,
+    ) -> bool:
+        result = self._connection.execute(
+            update(sor.operator_telegram_owner_heartbeats)
+            .where(
+                sor.operator_telegram_owner_heartbeats.c.telegram_owner_heartbeat_id
+                == heartbeat_id,
+                sor.operator_telegram_owner_heartbeats.c.heartbeat_sequence
+                == expected_sequence,
+            )
+            .values(
+                heartbeat_sequence=heartbeat_sequence,
+                observed_at=observed_at,
+                lease_expires_at=lease_expires_at,
+            )
+        )
+        return result.rowcount == 1
+
+    def insert_telegram_callback_attestation(
+        self,
+        row: TelegramCallbackAttestationRow,
+    ) -> None:
+        self._connection.execute(
+            insert(sor.operator_telegram_callback_attestations).values(
+                **_row_fields(row)
+            )
+        )
+
+    def telegram_callback_attestation(
+        self,
+        *,
+        account_id: str,
+        callback_query_id: str,
+    ) -> TelegramCallbackAttestationRow | None:
+        row = (
+            self._connection.execute(
+                select(sor.operator_telegram_callback_attestations).where(
+                    sor.operator_telegram_callback_attestations.c.account_id
+                    == account_id,
+                    sor.operator_telegram_callback_attestations.c.callback_query_id
+                    == callback_query_id,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return TelegramCallbackAttestationRow(**dict(row)) if row is not None else None
 
     def insert_no_ticket_revision(self, row: NoTicketRevisionRow) -> None:
         values = _row_fields(row)
@@ -714,4 +935,11 @@ def _no_ticket_revision_row(row) -> NoTicketRevisionRow:
     return NoTicketRevisionRow(**values)
 
 
-__all__ = ["OperatorResultRepository"]
+__all__ = [
+    "OperatorResultRepository",
+    "PlacementCashLinkRow",
+    "TelegramCallbackAttestationRow",
+    "TelegramOwnerHeartbeatRow",
+    "TicketNoteLegRow",
+    "TicketNoteRow",
+]

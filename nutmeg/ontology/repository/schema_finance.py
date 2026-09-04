@@ -8,6 +8,7 @@ Settlements are produced only when an outcome is sufficient.
 from __future__ import annotations
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     Float,
     ForeignKey,
@@ -67,6 +68,27 @@ tickets = Table(
     Column('currency', Text, nullable=False),
     Column('account_id', Text,
            ForeignKey('cash_accounts.account_id', ondelete='RESTRICT'), nullable=False),
+    Column('ticket_kind', Text, nullable=True),
+    Column('stake_minor', Integer, nullable=True),
+    Column(
+        'fixed_prize_policy_revision_id',
+        Text,
+        ForeignKey(
+            'zucai_fixed_prize_policy_revisions.fixed_prize_policy_revision_id',
+            ondelete='RESTRICT',
+        ),
+        nullable=True,
+    ),
+    CheckConstraint(
+        "(ticket_kind IS NULL AND stake_minor IS NULL "
+        "AND fixed_prize_policy_revision_id IS NULL) OR "
+        "(ticket_kind IN ('jczq_pass', 'sfc', 'renjiu') AND stake_minor > 0 "
+        "AND ((ticket_kind = 'jczq_pass' "
+        "AND fixed_prize_policy_revision_id IS NULL) "
+        "OR (ticket_kind IN ('sfc', 'renjiu') "
+        "AND fixed_prize_policy_revision_id IS NOT NULL)))",
+        name='ck_tickets_v2_shape',
+    ),
 )
 
 bet_legs = Table(
@@ -103,8 +125,16 @@ cash_transactions = Table(
     Column('ticket_settlement_id', Text, nullable=True),
     Column('kind', Text, nullable=False),
     Column('amount', Float, nullable=False),
+    Column('amount_minor', Integer, nullable=True),
+    Column('currency', Text, nullable=True),
     Column('occurred_at', Text, nullable=False),
     Column('idempotency_key', Text, nullable=False, unique=True),
+    CheckConstraint(
+        "(amount_minor IS NULL AND currency IS NULL) OR "
+        "(amount_minor IS NOT NULL AND amount_minor != 0 "
+        "AND currency IS NOT NULL AND length(currency) = 3)",
+        name='ck_cash_transactions_v2_money',
+    ),
 )
 
 match_outcomes = Table(

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import Connection, Engine, delete, func, insert, inspect, select
+from sqlalchemy import Connection, Engine, delete, func, insert, inspect, select, text
 
 from nutmeg.ontology.errors import MigrationDriftError
 from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
@@ -2379,6 +2379,680 @@ def _apply_operator_deployment_adjudication(connection: Connection) -> None:
     )
 
 
+def _legacy_confirmation_conflict(detail: str) -> None:
+    raise ValueError(f"legacy_confirmation_conflict: {detail}")
+
+
+def _stable_migration_id(prefix: str, document: dict[str, object]) -> str:
+    digest = hashlib.sha256(_canonical_json(document).encode("utf-8")).hexdigest()
+    return f"{prefix}-{digest}"
+
+
+def _legacy_confirmation_action_ids(connection: Connection) -> dict[str, str]:
+    result: dict[str, str] = {}
+    rows = connection.execute(
+        select(schema.actions.c.action_id, schema.actions.c.result_refs_json).where(
+            schema.actions.c.action_type == "issue_ticket_confirmation",
+            schema.actions.c.status == "committed",
+        )
+    ).mappings()
+    for row in rows:
+        try:
+            refs = json.loads(str(row["result_refs_json"]))
+        except (TypeError, json.JSONDecodeError):
+            _legacy_confirmation_conflict("issue Action has malformed result refs")
+        for ref in refs:
+            if not isinstance(ref, dict) or ref.get("object_type") != "ticket_confirmation":
+                continue
+            confirmation_id = ref.get("object_id")
+            if not isinstance(confirmation_id, str) or not confirmation_id:
+                _legacy_confirmation_conflict("issue Action has an invalid confirmation ref")
+            if confirmation_id in result:
+                _legacy_confirmation_conflict(
+                    f"confirmation {confirmation_id} has more than one issuing Action"
+                )
+            result[confirmation_id] = str(row["action_id"])
+    return result
+
+
+def _migration_datetime(value: object, *, label: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        _legacy_confirmation_conflict(f"{label} is not ISO 8601")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        _legacy_confirmation_conflict(f"{label} is not timezone-aware")
+    return parsed
+
+
+def _legacy_artifact_binding(
+    connection: Connection,
+    ticket_artifact_id: str,
+) -> dict[str, str]:
+    row = connection.execute(
+        text(
+            "SELECT composition_hash, lineage_revision_id, frozen_deadline_at "
+            "FROM operator_protected_artifact_bindings "
+            "WHERE ticket_artifact_id = :ticket_artifact_id"
+        ),
+        {"ticket_artifact_id": ticket_artifact_id},
+    ).mappings().one_or_none()
+    if row is None:
+        _legacy_confirmation_conflict(
+            f"artifact {ticket_artifact_id} has no normalized binding"
+        )
+    return {name: str(row[name]) for name in row}
+
+
+def _legacy_artifact_effective_cutoff(
+    connection: Connection,
+    ticket_artifact_id: str,
+    binding: dict[str, str],
+) -> str:
+    source_offer_ids = tuple(
+        connection.execute(
+            text(
+                "SELECT official_offer_revision_id "
+                "FROM operator_protected_artifact_offer_revision_links "
+                "WHERE ticket_artifact_id = :ticket_artifact_id ORDER BY offer_index"
+            ),
+            {"ticket_artifact_id": ticket_artifact_id},
+        ).scalars()
+    )
+    if not source_offer_ids:
+        _legacy_confirmation_conflict(
+            f"artifact {ticket_artifact_id} has no normalized offer links"
+        )
+
+    cutoff_values = [binding["frozen_deadline_at"]]
+    for source_offer_id in source_offer_ids:
+        current = connection.execute(
+            text(
+                "SELECT current_offer.sale_deadline_at "
+                "FROM official_offer_revisions AS source_offer "
+                "JOIN official_offer_families AS family "
+                "ON family.official_offer_family_id = "
+                "source_offer.official_offer_family_id "
+                "JOIN official_sale_slate_revisions AS current_slate "
+                "ON current_slate.lane = family.lane "
+                "AND current_slate.business_key = family.business_key "
+                "JOIN official_offer_revisions AS current_offer "
+                "ON current_offer.official_offer_family_id = "
+                "family.official_offer_family_id "
+                "AND current_offer.slate_revision_id = current_slate.slate_revision_id "
+                "WHERE source_offer.official_offer_revision_id = :source_offer_id "
+                "AND NOT EXISTS ("
+                "SELECT 1 FROM official_sale_slate_revisions AS child "
+                "WHERE child.supersedes_slate_revision_id = "
+                "current_slate.slate_revision_id)"
+            ),
+            {"source_offer_id": source_offer_id},
+        ).scalar_one_or_none()
+        if current is None:
+            _legacy_confirmation_conflict(
+                f"offer {source_offer_id} has no current official revision"
+            )
+        cutoff_values.append(str(current))
+
+    parsed = [
+        (_migration_datetime(value, label="effective cutoff"), value)
+        for value in cutoff_values
+    ]
+    return str(min(parsed, key=lambda item: item[0])[1])
+
+
+def _legacy_terminal_source(
+    connection: Connection,
+    ticket_artifact_id: str,
+    legacy_rows: list[dict[str, object]],
+) -> tuple[str, str, str, str, str | None] | None:
+    consumed = [
+        row
+        for row in legacy_rows
+        if row["consumed_at"] is not None or row["consumed_by_action_id"] is not None
+    ]
+    if any(
+        (row["consumed_at"] is None) != (row["consumed_by_action_id"] is None)
+        for row in consumed
+    ):
+        _legacy_confirmation_conflict("legacy consumed fields are incomplete")
+    if len(consumed) > 1:
+        _legacy_confirmation_conflict(
+            f"artifact {ticket_artifact_id} has more than one consumed challenge"
+        )
+
+    placement = connection.execute(
+        text(
+            "SELECT placed_at, action_id FROM ticket_placements "
+            "WHERE ticket_artifact_id = :ticket_artifact_id"
+        ),
+        {"ticket_artifact_id": ticket_artifact_id},
+    ).mappings().one_or_none()
+    shadow = connection.execute(
+        text(
+            "SELECT confirmation_id, reason, marked_at, action_id "
+            "FROM ticket_shadow_records "
+            "WHERE ticket_artifact_id = :ticket_artifact_id"
+        ),
+        {"ticket_artifact_id": ticket_artifact_id},
+    ).mappings().one_or_none()
+    if placement is not None and shadow is not None:
+        _legacy_confirmation_conflict(
+            f"artifact {ticket_artifact_id} has both placement and shadow rows"
+        )
+    if placement is not None:
+        if len(consumed) != 1:
+            _legacy_confirmation_conflict(
+                f"placed artifact {ticket_artifact_id} has no unique consumed challenge"
+            )
+        consumed_row = consumed[0]
+        if consumed_row["consumed_by_action_id"] != placement["action_id"]:
+            _legacy_confirmation_conflict(
+                f"placed artifact {ticket_artifact_id} consumed by another Action"
+            )
+        return (
+            "placed",
+            "actual_placement_confirmed",
+            str(placement["placed_at"]),
+            str(placement["action_id"]),
+            str(consumed_row["confirmation_id"]),
+        )
+    if shadow is not None:
+        if consumed:
+            _legacy_confirmation_conflict(
+                f"shadow artifact {ticket_artifact_id} has a consumed challenge"
+            )
+        allowed_reasons = {
+            "confirmation_not_requested",
+            "deadline_unconfirmed",
+            "human_no_ticket",
+            "official_deadline_shortened",
+            "official_offer_cancelled",
+        }
+        if shadow["reason"] not in allowed_reasons:
+            _legacy_confirmation_conflict(
+                f"shadow artifact {ticket_artifact_id} has an unknown reason"
+            )
+        return (
+            "shadow",
+            str(shadow["reason"]),
+            str(shadow["marked_at"]),
+            str(shadow["action_id"]),
+            str(shadow["confirmation_id"]),
+        )
+    if consumed:
+        _legacy_confirmation_conflict(
+            f"artifact {ticket_artifact_id} consumed without a terminal row"
+        )
+    return None
+
+
+def _legacy_confirmation_rows(
+    connection: Connection,
+) -> dict[str, list[dict[str, object]]]:
+    legacy_by_artifact: dict[str, list[dict[str, object]]] = {}
+    rows = connection.execute(
+        select(schema_tickets.ticket_confirmation_challenges).order_by(
+            schema_tickets.ticket_confirmation_challenges.c.ticket_artifact_id,
+            schema_tickets.ticket_confirmation_challenges.c.issued_at,
+            schema_tickets.ticket_confirmation_challenges.c.confirmation_id,
+        )
+    ).mappings()
+    for row in rows:
+        values = dict(row)
+        legacy_by_artifact.setdefault(str(values["ticket_artifact_id"]), []).append(
+            values
+        )
+    return legacy_by_artifact
+
+
+def _preflight_legacy_confirmation_challenges(connection: Connection) -> None:
+    legacy_by_artifact = _legacy_confirmation_rows(connection)
+    if not legacy_by_artifact:
+        return
+    issuing_actions = _legacy_confirmation_action_ids(connection)
+    for ticket_artifact_id, legacy_rows in legacy_by_artifact.items():
+        existing_count = connection.execute(
+            select(func.count())
+            .select_from(schema_tickets.operator_confirmation_challenge_revisions)
+            .where(
+                schema_tickets.operator_confirmation_challenge_revisions.c.ticket_artifact_id
+                == ticket_artifact_id
+            )
+        ).scalar_one()
+        if existing_count:
+            _legacy_confirmation_conflict(
+                f"artifact {ticket_artifact_id} mixes legacy and revisioned challenges"
+            )
+        binding = _legacy_artifact_binding(connection, ticket_artifact_id)
+        _legacy_artifact_effective_cutoff(connection, ticket_artifact_id, binding)
+        for legacy in legacy_rows:
+            legacy_id = str(legacy["confirmation_id"])
+            if legacy_id not in issuing_actions:
+                _legacy_confirmation_conflict(
+                    f"confirmation {legacy_id} has no committed issuing Action"
+                )
+        terminal = _legacy_terminal_source(
+            connection,
+            ticket_artifact_id,
+            legacy_rows,
+        )
+        existing_terminal = connection.execute(
+            select(schema_tickets.operator_artifact_terminal_receipts).where(
+                schema_tickets.operator_artifact_terminal_receipts.c.ticket_artifact_id
+                == ticket_artifact_id
+            )
+        ).mappings().one_or_none()
+        if terminal is None or existing_terminal is None:
+            continue
+        kind, reason, _at, action_id, _legacy_id = terminal
+        if (
+            existing_terminal["terminal_kind"] != kind
+            or existing_terminal["terminal_reason"] != reason
+            or existing_terminal["action_id"] != action_id
+        ):
+            _legacy_confirmation_conflict(
+                f"artifact {ticket_artifact_id} has contradictory terminal evidence"
+            )
+
+
+def _reconcile_legacy_confirmation_challenges(connection: Connection) -> None:
+    legacy_by_artifact = _legacy_confirmation_rows(connection)
+    if not legacy_by_artifact:
+        return
+
+    issuing_actions = _legacy_confirmation_action_ids(connection)
+    for ticket_artifact_id, legacy_rows in legacy_by_artifact.items():
+        existing_count = connection.execute(
+            select(func.count())
+            .select_from(schema_tickets.operator_confirmation_challenge_revisions)
+            .where(
+                schema_tickets.operator_confirmation_challenge_revisions.c.ticket_artifact_id
+                == ticket_artifact_id
+            )
+        ).scalar_one()
+        if existing_count:
+            _legacy_confirmation_conflict(
+                f"artifact {ticket_artifact_id} mixes legacy and revisioned challenges"
+            )
+        binding = _legacy_artifact_binding(connection, ticket_artifact_id)
+        effective_cutoff = _legacy_artifact_effective_cutoff(
+            connection,
+            ticket_artifact_id,
+            binding,
+        )
+        family_id = _stable_migration_id(
+            "challenge-family-legacy",
+            {"ticket_artifact_id": ticket_artifact_id},
+        )
+        revision_by_legacy: dict[str, str] = {}
+        predecessor: str | None = None
+        for revision_no, legacy in enumerate(legacy_rows, start=1):
+            legacy_id = str(legacy["confirmation_id"])
+            action_id = issuing_actions.get(legacy_id)
+            if action_id is None:
+                _legacy_confirmation_conflict(
+                    f"confirmation {legacy_id} has no committed issuing Action"
+                )
+            revision_id = _stable_migration_id(
+                "challenge-revision-legacy",
+                {"legacy_confirmation_id": legacy_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO operator_confirmation_challenge_revisions "
+                    "(challenge_revision_id, challenge_family_id, "
+                    "legacy_confirmation_id, revision_no, supersedes_revision_id, "
+                    "ticket_artifact_id, artifact_composition_hash, "
+                    "lineage_revision_id, nonce_hash, issued_at, effective_cutoff_at, "
+                    "action_id, legacy_expires_at) VALUES "
+                    "(:revision_id, :family_id, :legacy_id, :revision_no, "
+                    ":predecessor, :artifact_id, :composition_hash, :lineage_id, "
+                    ":nonce_hash, :issued_at, :effective_cutoff, :action_id, "
+                    ":legacy_expires_at)"
+                ),
+                {
+                    "revision_id": revision_id,
+                    "family_id": family_id,
+                    "legacy_id": legacy_id,
+                    "revision_no": revision_no,
+                    "predecessor": predecessor,
+                    "artifact_id": ticket_artifact_id,
+                    "composition_hash": binding["composition_hash"],
+                    "lineage_id": binding["lineage_revision_id"],
+                    "nonce_hash": legacy["nonce_hash"],
+                    "issued_at": legacy["issued_at"],
+                    "effective_cutoff": effective_cutoff,
+                    "action_id": action_id,
+                    "legacy_expires_at": legacy["expires_at"],
+                },
+            )
+            revision_by_legacy[legacy_id] = revision_id
+            predecessor = revision_id
+
+        terminal = _legacy_terminal_source(
+            connection,
+            ticket_artifact_id,
+            legacy_rows,
+        )
+        existing_terminal = connection.execute(
+            select(schema_tickets.operator_artifact_terminal_receipts).where(
+                schema_tickets.operator_artifact_terminal_receipts.c.ticket_artifact_id
+                == ticket_artifact_id
+            )
+        ).mappings().one_or_none()
+        if terminal is not None and existing_terminal is not None:
+            kind, reason, _at, action_id, _legacy_id = terminal
+            if (
+                existing_terminal["terminal_kind"] != kind
+                or existing_terminal["terminal_reason"] != reason
+                or existing_terminal["action_id"] != action_id
+            ):
+                _legacy_confirmation_conflict(
+                    f"artifact {ticket_artifact_id} has contradictory terminal evidence"
+                )
+        elif terminal is not None:
+            kind, reason, terminal_at, action_id, terminal_legacy_id = terminal
+            challenge_revision_id = (
+                None
+                if terminal_legacy_id is None
+                else revision_by_legacy.get(terminal_legacy_id)
+            )
+            if terminal_legacy_id is not None and challenge_revision_id is None:
+                _legacy_confirmation_conflict(
+                    f"terminal artifact {ticket_artifact_id} references another challenge"
+                )
+            connection.execute(
+                insert(schema_tickets.operator_artifact_terminal_receipts).values(
+                    artifact_terminal_receipt_id=_stable_migration_id(
+                        "artifact-terminal",
+                        {"ticket_artifact_id": ticket_artifact_id, "state": "terminal"},
+                    ),
+                    ticket_artifact_id=ticket_artifact_id,
+                    challenge_revision_id=challenge_revision_id,
+                    terminal_kind=kind,
+                    terminal_reason=reason,
+                    effective_cutoff_at=effective_cutoff,
+                    terminal_at=terminal_at,
+                    action_id=action_id,
+                )
+            )
+
+        if terminal is None and existing_terminal is None:
+            latest = legacy_rows[-1]
+            latest_legacy_id = str(latest["confirmation_id"])
+            connection.execute(
+                insert(schema_tickets.operator_confirmation_challenge_heads).values(
+                    ticket_artifact_id=ticket_artifact_id,
+                    challenge_revision_id=revision_by_legacy[latest_legacy_id],
+                    challenge_family_id=family_id,
+                    revision_no=len(legacy_rows),
+                    updated_at=latest["issued_at"],
+                )
+            )
+
+
+def _apply_operator_confirmation_ledger(connection: Connection) -> None:
+    _preflight_legacy_confirmation_challenges(connection)
+    challenge_columns = {
+        str(row[1])
+        for row in connection.exec_driver_sql(
+            "PRAGMA table_info(operator_confirmation_challenge_revisions)"
+        ).fetchall()
+    }
+    if "legacy_expires_at" not in challenge_columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE operator_confirmation_challenge_revisions "
+            "ADD COLUMN legacy_expires_at TEXT"
+        )
+
+    _reconcile_legacy_confirmation_challenges(connection)
+
+    connection.exec_driver_sql("DROP TRIGGER operator_artifact_terminal_typed_action")
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_artifact_terminal_typed_action
+        BEFORE INSERT ON operator_artifact_terminal_receipts
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions AS action
+          WHERE action.action_id = NEW.action_id
+            AND action.status IN ('accepted', 'committed')
+            AND (
+              (NEW.terminal_reason = 'actual_placement_confirmed'
+               AND action.action_type = 'confirm_ticket_placement'
+               AND action.actor_role = 'judge_operator')
+              OR (NEW.terminal_reason = 'human_no_ticket'
+                  AND action.action_type = 'record_no_ticket'
+                  AND action.actor_role = 'judge_operator')
+              OR (NEW.terminal_reason IN (
+                    'confirmation_not_requested',
+                    'deadline_unconfirmed'
+                  )
+                  AND (
+                    (action.action_type = 'mark_ticket_shadow'
+                     AND action.actor_role = 'deterministic_system')
+                    OR (NEW.terminal_reason = 'deadline_unconfirmed'
+                        AND action.action_type = 'confirm_ticket_placement'
+                        AND action.actor_role = 'judge_operator')
+                    OR (action.action_type IN (
+                          'record_no_ticket',
+                          'supersede_no_ticket'
+                        )
+                        AND action.actor_role = 'judge_operator')
+                  ))
+              OR (NEW.terminal_reason IN (
+                    'official_deadline_shortened',
+                    'official_offer_cancelled'
+                  )
+                  AND action.action_type = 'import_official_sale_slate'
+                  AND action.actor_role = 'deterministic_system')
+            )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'artifact terminal requires its exact typed Action');
+        END
+        """
+    )
+
+    ticket_columns = {
+        str(row[1])
+        for row in connection.exec_driver_sql("PRAGMA table_info(tickets)").fetchall()
+    }
+    for name, ddl in (
+        ("ticket_kind", "TEXT"),
+        ("stake_minor", "INTEGER"),
+        (
+            "fixed_prize_policy_revision_id",
+            "TEXT REFERENCES zucai_fixed_prize_policy_revisions"
+            "(fixed_prize_policy_revision_id) ON DELETE RESTRICT",
+        ),
+    ):
+        if name not in ticket_columns:
+            connection.exec_driver_sql(f"ALTER TABLE tickets ADD COLUMN {name} {ddl}")
+
+    cash_columns = {
+        str(row[1])
+        for row in connection.exec_driver_sql(
+            "PRAGMA table_info(cash_transactions)"
+        ).fetchall()
+    }
+    for name, ddl in (("amount_minor", "INTEGER"), ("currency", "TEXT")):
+        if name not in cash_columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE cash_transactions ADD COLUMN {name} {ddl}"
+            )
+
+    immutable_tables = (
+        schema_operator_result.operator_ticket_notes,
+        schema_operator_result.operator_ticket_note_legs,
+        schema_operator_result.operator_placement_cash_links,
+        schema_operator_result.operator_telegram_callback_attestations,
+    )
+    for table in (
+        *immutable_tables,
+        schema_operator_result.operator_telegram_owner_heartbeats,
+    ):
+        table.create(connection)
+
+    for table in immutable_tables:
+        for operation in ("UPDATE", "DELETE"):
+            connection.exec_driver_sql(
+                f"""
+                CREATE TRIGGER {table.name}_no_{operation.lower()}
+                BEFORE {operation} ON {table.name}
+                BEGIN
+                  SELECT RAISE(ABORT, '{table.name} is append-only');
+                END
+                """
+            )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER tickets_v2_money_insert
+        BEFORE INSERT ON tickets
+        WHEN (NEW.ticket_kind IS NOT NULL OR NEW.stake_minor IS NOT NULL
+              OR NEW.fixed_prize_policy_revision_id IS NOT NULL)
+          AND NOT (
+            NEW.ticket_kind IN ('jczq_pass', 'sfc', 'renjiu')
+            AND NEW.stake_minor > 0
+            AND CAST(ROUND(NEW.total_stake * 100) AS INTEGER) = NEW.stake_minor
+            AND (
+              (NEW.ticket_kind = 'jczq_pass'
+               AND NEW.fixed_prize_policy_revision_id IS NULL)
+              OR (NEW.ticket_kind IN ('sfc', 'renjiu')
+                  AND NEW.fixed_prize_policy_revision_id IS NOT NULL)
+            )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'v2 ticket minor-unit fields do not reconcile');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER cash_transactions_v2_money_insert
+        BEFORE INSERT ON cash_transactions
+        WHEN (NEW.amount_minor IS NOT NULL OR NEW.currency IS NOT NULL)
+          AND NOT (
+            NEW.amount_minor IS NOT NULL
+            AND NEW.amount_minor != 0
+            AND NEW.currency IS NOT NULL
+            AND length(NEW.currency) = 3
+            AND CAST(ROUND(NEW.amount * 100) AS INTEGER) = NEW.amount_minor
+            AND EXISTS (
+              SELECT 1 FROM cash_accounts AS account
+              WHERE account.account_id = NEW.account_id
+                AND account.currency = NEW.currency
+            )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'v2 cash minor-unit fields do not reconcile');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_ticket_note_parent_consistency
+        BEFORE INSERT ON operator_ticket_notes
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM tickets AS ticket
+          WHERE ticket.ticket_id = NEW.ticket_id
+            AND ticket.ticket_kind = NEW.ticket_kind
+            AND ticket.currency = NEW.currency
+            AND ticket.fixed_prize_policy_revision_id
+                IS NEW.fixed_prize_policy_revision_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'ticket note policy or currency does not match ticket');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_ticket_note_fixed_policy
+        BEFORE INSERT ON operator_ticket_notes
+        WHEN NEW.fixed_prize_policy_revision_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM zucai_fixed_prize_policy_revisions AS policy
+            WHERE policy.fixed_prize_policy_revision_id =
+                  NEW.fixed_prize_policy_revision_id
+              AND policy.ticket_kind = NEW.ticket_kind
+              AND policy.currency = NEW.currency
+              AND policy.standard_unit_stake_minor = NEW.unit_stake_minor
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'ticket note does not match fixed-prize policy');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_ticket_note_leg_parent_consistency
+        BEFORE INSERT ON operator_ticket_note_legs
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM operator_ticket_notes AS note
+          WHERE note.ticket_note_id = NEW.ticket_note_id
+            AND note.fixed_prize_policy_revision_id
+                IS NEW.fixed_prize_policy_revision_id
+            AND note.action_id = NEW.action_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'ticket note leg policy or Action does not match note');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_placement_cash_link_reconciliation
+        BEFORE INSERT ON operator_placement_cash_links
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM tickets AS ticket
+          JOIN cash_transactions AS cash
+            ON cash.transaction_id = NEW.transaction_id
+           AND cash.ticket_id = ticket.ticket_id
+          JOIN ticket_placements AS placement
+            ON placement.ticket_id = ticket.ticket_id
+           AND placement.action_id = NEW.action_id
+          WHERE ticket.ticket_id = NEW.ticket_id
+            AND ticket.stake_minor = NEW.stake_minor
+            AND ticket.currency = NEW.currency
+            AND cash.kind = 'stake'
+            AND cash.amount_minor = -NEW.stake_minor
+            AND cash.currency = NEW.currency
+            AND (
+              SELECT COALESCE(SUM(note.stake_minor), 0)
+              FROM operator_ticket_notes AS note
+              WHERE note.ticket_id = ticket.ticket_id
+            ) = NEW.stake_minor
+            AND NOT EXISTS (
+              SELECT 1
+              FROM operator_ticket_notes AS note
+              WHERE note.ticket_id = ticket.ticket_id
+                AND (note.ticket_artifact_id != placement.ticket_artifact_id
+                     OR note.action_id != NEW.action_id)
+            )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'placement cash link does not reconcile');
+        END
+        """
+    )
+
+    connection.execute(
+        insert(schema.action_permissions),
+        {
+            "policy_version_id": "governance-v1",
+            "action_type": "register_telegram_update_owner",
+            "actor_role": "deterministic_system",
+        },
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -2550,6 +3224,18 @@ MIGRATIONS: tuple[Migration, ...] = (
             "approved_lineage_revision+linear_revision+append_only+judge_permissions"
         ),
         apply=_apply_operator_deployment_adjudication,
+    ),
+    Migration(
+        version=23,
+        name="operator_confirmation_ledger",
+        fingerprint=(
+            "ticket_notes+ticket_note_legs+placement_cash_links+"
+            "telegram_owner_heartbeat_lease+telegram_callback_attestations+"
+            "legacy_challenge_reconciliation+integer_money_authority+"
+            "append_only_business_rows+deterministic_owner_registration+"
+            "late_callback_terminal_authority"
+        ),
+        apply=_apply_operator_confirmation_ledger,
     ),
 )
 

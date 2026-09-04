@@ -57,6 +57,9 @@ class TicketRow:
     total_stake: float
     currency: str
     account_id: str
+    ticket_kind: str | None = None
+    stake_minor: int | None = None
+    fixed_prize_policy_revision_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +86,8 @@ class CashTransactionRow:
     amount: float
     occurred_at: str
     idempotency_key: str
+    amount_minor: int | None = None
+    currency: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +205,8 @@ class FinanceRepository:
                 ticket_id=row.ticket_id, channel=row.channel, proposal_id=row.proposal_id,
                 approved_at=row.approved_at, status=row.status, structure=row.structure,
                 total_stake=row.total_stake, currency=row.currency, account_id=row.account_id,
+                ticket_kind=row.ticket_kind, stake_minor=row.stake_minor,
+                fixed_prize_policy_revision_id=row.fixed_prize_policy_revision_id,
             )
         )
 
@@ -251,7 +258,8 @@ class FinanceRepository:
                 transaction_id=row.transaction_id, account_id=row.account_id,
                 ticket_id=row.ticket_id, ticket_settlement_id=row.ticket_settlement_id,
                 kind=row.kind, amount=row.amount, occurred_at=row.occurred_at,
-                idempotency_key=row.idempotency_key,
+                idempotency_key=row.idempotency_key, amount_minor=row.amount_minor,
+                currency=row.currency,
             )
         )
 

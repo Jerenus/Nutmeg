@@ -540,6 +540,25 @@ def test_active_runtime_registers_exactly_one_operator_command_route(
     assert len(command_routes) == 1
 
 
+def test_active_runtime_does_not_register_a_web_placement_route(
+    tmp_path: Path,
+) -> None:
+    client = _runtime_app(tmp_path, scope="isolated_candidate", mode="active")
+
+    placement_routes = [
+        route
+        for route in client.app.routes
+        if getattr(route, "path", None)
+        in {
+            "/api/v1/ticket-artifacts/{ticket_artifact_id}/confirm",
+            "/api/v2/operator/ticket-artifacts/{ticket_artifact_id}/confirm",
+        }
+        and "POST" in (getattr(route, "methods", None) or set())
+    ]
+
+    assert placement_routes == []
+
+
 LEGACY_WRITE_PATHS = (
     "/api/v1/operator/tasks/zucai:26112/adjudications",
     "/api/v1/operator/tasks/zucai:26112/candidate",

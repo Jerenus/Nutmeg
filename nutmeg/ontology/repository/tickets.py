@@ -203,6 +203,44 @@ class TicketWorkbenchRepository:
             else None
         )
 
+    def confirmation_challenge_by_nonce_hash(
+        self, nonce_hash: str
+    ) -> ConfirmationChallengeRevisionRow | None:
+        row = (
+            self._connection.execute(
+                select(st.operator_confirmation_challenge_revisions).where(
+                    st.operator_confirmation_challenge_revisions.c.nonce_hash
+                    == nonce_hash
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return (
+            ConfirmationChallengeRevisionRow(**dict(row))
+            if row is not None
+            else None
+        )
+
+    def open_protected_artifact_ids(self, *, limit: int) -> tuple[str, ...]:
+        if limit < 1:
+            return ()
+        rows = self._connection.execute(
+            select(st.operator_protected_artifact_bindings.c.ticket_artifact_id)
+            .outerjoin(
+                st.operator_artifact_terminal_receipts,
+                st.operator_artifact_terminal_receipts.c.ticket_artifact_id
+                == st.operator_protected_artifact_bindings.c.ticket_artifact_id,
+            )
+            .where(
+                st.operator_artifact_terminal_receipts.c.
+                artifact_terminal_receipt_id.is_(None)
+            )
+            .order_by(st.operator_protected_artifact_bindings.c.ticket_artifact_id)
+            .limit(limit)
+        ).scalars()
+        return tuple(str(row) for row in rows)
+
     def insert_confirmation_challenge_head(
         self, row: ConfirmationChallengeHeadRow
     ) -> None:

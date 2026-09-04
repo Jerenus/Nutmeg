@@ -130,7 +130,11 @@ def _request(
     )
 
 
-def _artifact_fixture(tmp_path: Path) -> ArtifactFixture:
+def _artifact_fixture(
+    tmp_path: Path,
+    *,
+    at: datetime | None = None,
+) -> ArtifactFixture:
     candidate_fixture = _ready_fixture(tmp_path)
     with OntologyUnitOfWork(candidate_fixture.judgment.engine) as uow:
         uow.finance.ensure_account(
@@ -141,9 +145,13 @@ def _artifact_fixture(tmp_path: Path) -> ArtifactFixture:
             _generation_request(candidate_fixture)
         )
     )
+    generate_kwargs = (
+        {} if at is None else {"as_of": at + timedelta(seconds=7)}
+    )
     _generate(
         candidate_fixture,
         request_id=generation_request.result_refs[0].object_id,
+        **generate_kwargs,
     )
     with OntologyUnitOfWork(candidate_fixture.judgment.engine) as uow:
         candidate_set = uow.operator_result.current_candidate_set(

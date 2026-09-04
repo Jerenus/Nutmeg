@@ -252,8 +252,8 @@ def test_m4_get_routes_remain_published_and_legacy_posts_are_retired(
         "/api/v1/ticket-batches/{ticket_batch_id}/remove-leg",
         "/api/v1/ticket-batches/{ticket_batch_id}/approve",
         "/api/v1/ticket-artifacts/{ticket_artifact_id}/confirmations",
-        "/api/v1/ticket-artifacts/{ticket_artifact_id}/confirm",
     } <= paths.keys()
+    assert "/api/v1/ticket-artifacts/{ticket_artifact_id}/confirm" not in paths
 
 
 @pytest.mark.parametrize(("path", "body"), POST_CASES)

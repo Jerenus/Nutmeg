@@ -93,12 +93,15 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     workflow = WorkflowActions(action_service)
     scoreboard_actions = ScoreboardActions(action_service)
     reliability_actions = ReliabilityActions(action_service)
-    sale_actions = SaleActions(action_service)
-    evidence_actions = EvidenceActions(action_service)
     decision_actions = OperatorDecisionActions(
         action_service,
         audit_token_signing_key=settings.operator_token_signing_key,
     )
+    sale_actions = SaleActions(
+        action_service,
+        operator_decisions=decision_actions,
+    )
+    evidence_actions = EvidenceActions(action_service)
     protected_tickets = ProtectedTicketActions(
         action_service,
         artifact_store,

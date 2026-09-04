@@ -100,6 +100,7 @@ class OperatorActionService:
         action_gateway: ProductActionGateway,
         telegram_confirmation=None,
         telegram_owner_chat_id: int | None = None,
+        telegram_owner_health=None,
         evidence_actions=None,
         decision_actions=None,
         protected_tickets=None,
@@ -113,6 +114,7 @@ class OperatorActionService:
         self._actions = action_gateway
         self._telegram = telegram_confirmation
         self._owner_chat_id = telegram_owner_chat_id
+        self._telegram_owner_health = telegram_owner_health
         self._evidence_actions = evidence_actions
         self._decision_actions = decision_actions
         self._protected_tickets = protected_tickets
@@ -942,6 +944,7 @@ class OperatorActionService:
         self._require_judge(actor_id, actor_role)
         if self._telegram is None or self._owner_chat_id is None:
             raise ProductActionBlockedError("Telegram confirmation is not configured")
+        self._require_telegram_owner_available()
         _task, _step, requested_at = self._deployment_step(
             command,
             expected_mode="request_confirmation",
@@ -964,6 +967,16 @@ class OperatorActionService:
             status="queued",
             task_key=command.task_key,
         )
+
+    def _require_telegram_owner_available(self) -> None:
+        if self._telegram_owner_health is None:
+            return
+        owner_status = self._telegram_owner_health.status(as_of=self._clock())
+        if not owner_status.available:
+            raise ProductActionBlockedError(
+                "Telegram update owner is unavailable",
+                code=owner_status.blocking_code or "telegram_owner_unavailable",
+            )
 
     @staticmethod
     def _require_committed(outcome, label: str) -> None:
@@ -1143,6 +1156,7 @@ class OperatorActionService:
             raise ProductActionBlockedError("Telegram confirmation is not configured")
         if self._owner_chat_id is None:
             raise ProductActionBlockedError("exactly one Telegram owner must be configured")
+        self._require_telegram_owner_available()
         prepared = self._telegram.request_confirmation(
             ticket_artifact_id=task.step.ticket_artifact_id,
             chat_id=self._owner_chat_id,

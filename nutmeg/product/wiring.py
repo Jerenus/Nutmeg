@@ -1,14 +1,17 @@
 """Compose the current ontology into headless product services."""
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.zucai_official import fetch_renjiu_history
 from nutmeg.interfaces.bot.telegram import TelegramBotClient
-from nutmeg.ontology.actions.models import ActorRole
+from nutmeg.ontology.actions.bundle_actions import BundleActions
+from nutmeg.ontology.actions.models import ActorRole, canonical_json
+from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.kernel import OntologyKernel
 from nutmeg.ontology.operator.result_actions import RegisterZucaiFixedPrizePolicyRequest
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -22,13 +25,22 @@ from nutmeg.product.operator_queries import OperatorQueryService
 from nutmeg.product.operator_runtime import (
     OperatorRuntimeConfig,
     OperatorRuntimeScope,
+    OperatorSurfaceMode,
 )
 from nutmeg.product.operator_tokens import OperatorSnapshotTokenCodec
-from nutmeg.product.operator_workers import audit_current_candidate
+from nutmeg.product.operator_workers import (
+    CandidateGenerationWorker,
+    ConfirmationDeadlineWorker,
+    EvidenceFreezeRequestWorker,
+    MarketBaselineWorker,
+    OperatorInfrastructureWorkers,
+    audit_current_candidate,
+)
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.tickets import ProductTicketService
 from nutmeg.services.telegram_ticket_confirmation import (
+    TelegramOwnerHeartbeatService,
     TelegramTicketConfirmationService,
 )
 
@@ -45,6 +57,7 @@ class ProductServices:
     operator_actions: OperatorActionService | None = None
     copilot: MatchCopilotService | None = None
     tickets: ProductTicketService | None = None
+    infrastructure_workers: OperatorInfrastructureWorkers | None = None
 
 
 def _telegram_owner(raw: str | None) -> int | None:
@@ -100,6 +113,108 @@ class SimulatedTelegramClient:
         }
         self.sent_messages.append(message)
         return {"ok": True, "result": message}
+
+
+def _operator_work_item_id(engine, task_evidence_bundle_revision_id: str) -> str:
+    """Recreate the frozen sale-wave identity before a baseline exists."""
+    with OntologyUnitOfWork(engine) as uow:
+        bundle = uow.operator_decision.task_evidence_bundle_revision(
+            task_evidence_bundle_revision_id
+        )
+        if bundle is None:
+            raise ValueError("task evidence bundle does not exist")
+        current_slate = uow.operator_sale.current_slate(
+            bundle.lane,
+            bundle.business_key,
+        )
+        items = uow.operator_decision.task_evidence_bundle_items(
+            task_evidence_bundle_revision_id
+        )
+        item_matches = {item.match_id for item in items}
+        offers = tuple(
+            offer
+            for offer in uow.operator_sale.offer_revisions_for_slate(
+                bundle.slate_revision_id
+            )
+            if offer.match_id in item_matches
+        )
+    if (
+        current_slate is None
+        or current_slate.slate_revision_id != bundle.slate_revision_id
+        or len(items) != bundle.required_match_count
+        or len(offers) != bundle.required_match_count
+    ):
+        raise ValueError("task evidence bundle sale wave is stale")
+    scope_key = hashlib.sha256(
+        canonical_json(
+            {
+                "families": sorted(
+                    offer.official_offer_family_id for offer in offers
+                ),
+                "revisions": sorted(
+                    offer.official_offer_revision_id for offer in offers
+                ),
+            }
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    return (
+        f"{bundle.task_family_id}:{bundle.task_snapshot_hash}:"
+        f"sale_wave:{scope_key}"
+    )
+
+
+def _build_operator_infrastructure_workers(
+    *,
+    kernel: OntologyKernel,
+    operator_queries: OperatorQueryService,
+    runtime_config: OperatorRuntimeConfig | None,
+    data_dir,
+) -> OperatorInfrastructureWorkers | None:
+    if runtime_config is None:
+        return None
+    action_service = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
+    confirmation = ConfirmationDeadlineWorker(
+        action_service=action_service,
+        protected_tickets=kernel.protected_tickets,
+        worker_id="operator-confirmation-deadline",
+    )
+    common = {
+        "data_dir": data_dir,
+        "clock": lambda: datetime.now(UTC),
+    }
+    if runtime_config.surface_mode is not OperatorSurfaceMode.ACTIVE:
+        return OperatorInfrastructureWorkers(
+            confirmation_deadlines=confirmation,
+            **common,
+        )
+
+    return OperatorInfrastructureWorkers(
+        evidence_freeze=EvidenceFreezeRequestWorker(
+            action_service=action_service,
+            evidence_actions=kernel.evidence_actions,
+            bundle_actions=BundleActions(action_service),
+            worker_id="operator-evidence-freeze",
+            lease_duration=timedelta(minutes=5),
+        ),
+        market_baseline=MarketBaselineWorker(
+            action_service=action_service,
+            decision_actions=kernel.decision_actions,
+            worker_id="operator-market-baseline",
+            lease_duration=timedelta(minutes=5),
+            work_item_id_resolver=lambda revision_id: _operator_work_item_id(
+                kernel.engine,
+                revision_id,
+            ),
+        ),
+        candidate_generation=CandidateGenerationWorker(
+            action_service=action_service,
+            result_actions=kernel.result_actions,
+            worker_id="operator-candidate-generation",
+            lease_duration=timedelta(minutes=5),
+        ),
+        confirmation_deadlines=confirmation,
+        **common,
+    )
 
 
 def build_product_services(
@@ -158,6 +273,7 @@ def build_product_services(
     )
     owner_chat_id = _telegram_owner(settings.telegram_allowed_chat_ids)
     telegram_confirmation = None
+    telegram_owner_health = None
     confirmation_transport_kind = "unavailable"
     if isolated:
         owner_chat_id = 0
@@ -179,11 +295,21 @@ def build_product_services(
             allowed_chat_ids={owner_chat_id},
             now_fn=lambda: datetime.now(UTC),
         )
+        telegram_owner_health = TelegramOwnerHeartbeatService(
+            action_service=ActionService(lambda: OntologyUnitOfWork(kernel.engine)),
+            account_id="nutmeg",
+            owner_instance_id="openclaw-primary",
+            transport_label="openclaw-telegram",
+            owner_mode="openclaw",
+            router_version="ntc-v1",
+            lease_duration=timedelta(seconds=90),
+        )
     operator_actions = OperatorActionService(
         queries=operator_queries,
         action_gateway=actions,
         telegram_confirmation=telegram_confirmation,
         telegram_owner_chat_id=owner_chat_id,
+        telegram_owner_health=telegram_owner_health,
         evidence_actions=kernel.evidence_actions,
         decision_actions=kernel.decision_actions,
         protected_tickets=kernel.protected_tickets,
@@ -191,6 +317,12 @@ def build_product_services(
         calibrate=kernel.calibrate,
         repository=repository,
         scoreboard_path=settings.data_dir / "scoreboard.json",
+    )
+    infrastructure_workers = _build_operator_infrastructure_workers(
+        kernel=kernel,
+        operator_queries=operator_queries,
+        runtime_config=runtime_config,
+        data_dir=settings.data_dir,
     )
     provider = build_copilot_provider(settings)
     return ProductServices(
@@ -215,6 +347,7 @@ def build_product_services(
             kernel.protected_tickets,
             actor_id=settings.default_user_id,
         ),
+        infrastructure_workers=infrastructure_workers,
     )
 
 

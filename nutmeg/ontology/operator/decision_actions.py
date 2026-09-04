@@ -3220,6 +3220,26 @@ class OperatorDecisionActions:
         uow.operator_result.insert_review_eligibility_fact(row)
         return row
 
+    def insert_artifact_terminal_review_eligibility(
+        self,
+        uow,
+        *,
+        action_id: str,
+        fact_index: int,
+        work_link,
+        artifact_terminal_receipt,
+        created_at: datetime,
+    ) -> ReviewEligibilityFactRow:
+        """Append the objective review fact in an existing terminal Action UOW."""
+        return self._insert_artifact_terminal_review_eligibility(
+            uow,
+            action_id=action_id,
+            fact_index=fact_index,
+            work_link=work_link,
+            artifact_terminal_receipt=artifact_terminal_receipt,
+            created_at=created_at,
+        )
+
     def _audit_token_codec(self) -> _TicketAuditTokenCodec:
         if self._audit_tokens is None:
             raise TicketAuditOverrideTokenError(

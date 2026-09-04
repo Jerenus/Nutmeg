@@ -41,6 +41,29 @@ class OperatorSaleRepository:
         )
         return OfficialOfferFamilyRow(**dict(row)) if row is not None else None
 
+    def offer_family_by_identity(
+        self,
+        *,
+        lane: str,
+        business_key: str,
+        official_match_no: str,
+        match_id: str,
+    ) -> OfficialOfferFamilyRow | None:
+        row = (
+            self._connection.execute(
+                select(sos.official_offer_families).where(
+                    sos.official_offer_families.c.lane == lane,
+                    sos.official_offer_families.c.business_key == business_key,
+                    sos.official_offer_families.c.official_match_no
+                    == official_match_no,
+                    sos.official_offer_families.c.match_id == match_id,
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return OfficialOfferFamilyRow(**dict(row)) if row is not None else None
+
     def insert_offer_revision(self, row: OfficialOfferRevisionRow) -> None:
         values = row_fields(row)
         values["market_definition_ids_json"] = canonical_json(list(row.market_definition_ids))

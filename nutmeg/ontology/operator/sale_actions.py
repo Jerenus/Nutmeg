@@ -22,6 +22,12 @@ from nutmeg.ontology.actions.models import (
     canonical_json,
 )
 from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.operator.confirmation import (
+    ArtifactTerminalKind,
+    ArtifactTerminalReason,
+    consume_artifact_terminal,
+    effective_artifact_cutoff,
+)
 from nutmeg.ontology.operator.models import (
     OfficialOfferFamilyRow,
     OfficialOfferRevisionRow,
@@ -387,8 +393,9 @@ class RecordOfficialScheduleCheckRequest:
 
 
 class SaleActions:
-    def __init__(self, action_service: ActionService) -> None:
+    def __init__(self, action_service: ActionService, *, operator_decisions=None) -> None:
         self._action_service = action_service
+        self._operator_decisions = operator_decisions
 
     @staticmethod
     def _validated_slate(
@@ -586,6 +593,16 @@ class SaleActions:
                     ),
                 ]
                 return tuple(refs)
+            previous_offers = {
+                offer.official_offer_family_id: offer
+                for offer in (
+                    ()
+                    if current is None
+                    else uow.operator_sale.offer_revisions_for_slate(
+                        current.slate_revision_id
+                    )
+                )
+            }
             slate_id = f"OSR-{uuid4().hex}"
             slate = OfficialSaleSlateRevisionRow(
                 slate_revision_id=slate_id,
@@ -602,6 +619,8 @@ class SaleActions:
             )
             uow.operator_sale.insert_slate_revision(slate)
             refs: list[ObjectRef] = [ObjectRef("official_sale_slate_revision", slate_id)]
+            correction_reasons: dict[str, ArtifactTerminalReason] = {}
+            current_family_ids: set[str] = set()
             for offer in manifest.offers:
                 family_material = {
                     "lane": manifest.lane,
@@ -609,8 +628,18 @@ class SaleActions:
                     "official_match_no": offer.official_match_no,
                     "canonical_match_id": offer.canonical_match_id,
                 }
-                family_id = f"OOF-{_digest(family_material)}"
-                if uow.operator_sale.offer_family(family_id) is None:
+                existing_family = uow.operator_sale.offer_family_by_identity(
+                    lane=manifest.lane,
+                    business_key=manifest.business_key,
+                    official_match_no=offer.official_match_no,
+                    match_id=offer.canonical_match_id,
+                )
+                family_id = (
+                    existing_family.official_offer_family_id
+                    if existing_family is not None
+                    else f"OOF-{_digest(family_material)}"
+                )
+                if existing_family is None:
                     created_family_count += 1
                     uow.operator_sale.insert_offer_family(
                         OfficialOfferFamilyRow(
@@ -622,6 +651,7 @@ class SaleActions:
                             created_at=action.requested_at,
                         )
                     )
+                current_family_ids.add(family_id)
                 offer_revision_id = f"OOR-{uuid4().hex}"
                 uow.operator_sale.insert_offer_revision(
                     OfficialOfferRevisionRow(
@@ -637,6 +667,33 @@ class SaleActions:
                     )
                 )
                 refs.append(ObjectRef("official_offer_revision", offer_revision_id))
+                previous = previous_offers.get(family_id)
+                if previous is not None:
+                    if offer.status == "cancelled":
+                        correction_reasons[family_id] = (
+                            ArtifactTerminalReason.OFFICIAL_OFFER_CANCELLED
+                        )
+                    elif offer.status == "sale_closed" or (
+                        offer.sale_deadline_at.astimezone(UTC)
+                        < datetime.fromisoformat(previous.sale_deadline_at).astimezone(UTC)
+                        and offer.sale_deadline_at.astimezone(UTC)
+                        <= request.requested_at.astimezone(UTC)
+                    ):
+                        correction_reasons[family_id] = (
+                            ArtifactTerminalReason.OFFICIAL_DEADLINE_SHORTENED
+                        )
+            for removed_family_id in previous_offers.keys() - current_family_ids:
+                correction_reasons[removed_family_id] = (
+                    ArtifactTerminalReason.OFFICIAL_OFFER_CANCELLED
+                )
+            refs.extend(
+                self._terminalize_official_corrections(
+                    uow,
+                    action_id=action.action_id,
+                    requested_at=request.requested_at,
+                    correction_reasons=correction_reasons,
+                )
+            )
             persisted = uow.operator_sale.persisted_counts_for_slate(slate_id)
             expected = (1, len(manifest.offers), len(manifest.offers))
             if persisted != expected:
@@ -650,8 +707,99 @@ class SaleActions:
             )
             return tuple(refs)
 
-        outcome = self._action_service.execute(command, handler)
+        outcome = self._action_service.execute(
+            command,
+            handler,
+            acquire_write_lock=True,
+        )
         return self._hydrate_import_result(outcome)
+
+    def _terminalize_official_corrections(
+        self,
+        uow,
+        *,
+        action_id: str,
+        requested_at: datetime,
+        correction_reasons: dict[str, ArtifactTerminalReason],
+    ) -> tuple[ObjectRef, ...]:
+        if not correction_reasons:
+            return ()
+        refs: list[ObjectRef] = []
+        fact_index = 0
+        for artifact_id in uow.tickets.open_protected_artifact_ids(limit=10_000):
+            current_offers = []
+            artifact_families = set()
+            for link in uow.tickets.protected_artifact_offer_revision_links(
+                artifact_id
+            ):
+                source = uow.operator_sale.offer_revision(
+                    link.official_offer_revision_id
+                )
+                if source is None:
+                    raise ValueError("protected artifact offer revision is missing")
+                artifact_families.add(source.official_offer_family_id)
+                current = uow.operator_sale.current_offer_by_family(
+                    source.official_offer_family_id
+                )
+                current_offers.append(source if current is None else current)
+            reasons = {
+                correction_reasons[family_id]
+                for family_id in artifact_families & correction_reasons.keys()
+            }
+            if not reasons:
+                continue
+            reason = (
+                ArtifactTerminalReason.OFFICIAL_OFFER_CANCELLED
+                if ArtifactTerminalReason.OFFICIAL_OFFER_CANCELLED in reasons
+                else ArtifactTerminalReason.OFFICIAL_DEADLINE_SHORTENED
+            )
+            if reason is ArtifactTerminalReason.OFFICIAL_DEADLINE_SHORTENED:
+                binding = uow.tickets.protected_artifact_binding(artifact_id)
+                if binding is None:
+                    raise ValueError("protected artifact binding is missing")
+                cutoff = effective_artifact_cutoff(binding, current_offers)
+                explicitly_closed = any(
+                    offer.status == "sale_closed" for offer in current_offers
+                )
+                if not explicitly_closed and requested_at.astimezone(UTC) < cutoff:
+                    continue
+            transition = consume_artifact_terminal(
+                uow,
+                ticket_artifact_id=artifact_id,
+                terminal_kind=ArtifactTerminalKind.SHADOW,
+                terminal_reason=reason,
+                action_id=action_id,
+                ingress_at=requested_at,
+            )
+            refs.append(
+                ObjectRef(
+                    "artifact_terminal_receipt",
+                    transition.receipt.artifact_terminal_receipt_id,
+                )
+            )
+            if not transition.created:
+                continue
+            work_link = uow.tickets.artifact_work_item_link(artifact_id)
+            if work_link is None or self._operator_decisions is None:
+                raise ValueError(
+                    "official correction review eligibility is not configured"
+                )
+            fact = self._operator_decisions.insert_artifact_terminal_review_eligibility(
+                uow,
+                action_id=action_id,
+                fact_index=fact_index,
+                work_link=work_link,
+                artifact_terminal_receipt=transition.receipt,
+                created_at=requested_at,
+            )
+            fact_index += 1
+            refs.append(
+                ObjectRef(
+                    "operator_review_eligibility_fact",
+                    fact.review_eligibility_fact_id,
+                )
+            )
+        return tuple(refs)
 
     def import_slate(self, request: ImportOfficialSaleSlateRequest) -> SaleImportResult:
         """Compatibility spelling for kernel callers; the Action name stays explicit."""

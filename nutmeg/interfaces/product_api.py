@@ -22,7 +22,6 @@ from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.errors import IdempotencyConflictError, OptimisticConcurrencyError
 from nutmeg.product.contracts import (
     ApproveTicketBatchCommand,
-    ConfirmPlacementCommand,
     CopilotRequest,
     CreateTicketBatchCommand,
     IssueConfirmationCommand,
@@ -85,7 +84,16 @@ def create_product_app(
             running_commit='unresolved',
         )
 
-    app = FastAPI(title='Nutmeg Intelligence OS', version='1')
+    infrastructure_workers = getattr(services, 'infrastructure_workers', None)
+    app = FastAPI(
+        title='Nutmeg Intelligence OS',
+        version='1',
+        lifespan=(
+            None
+            if infrastructure_workers is None
+            else infrastructure_workers.lifespan
+        ),
+    )
     route_metrics = RouteMetricsRegistry()
 
     mount_operator_rollout_routes(app, runtime)
@@ -564,16 +572,6 @@ def create_product_app(
     ):
         return ticket_action_response(
             services.tickets.issue_confirmation(ticket_artifact_id, command)
-        )
-
-    @app.post('/api/v1/ticket-artifacts/{ticket_artifact_id}/confirm')
-    async def confirm_ticket_placement(
-        ticket_artifact_id: str,
-        command: ConfirmPlacementCommand,
-        _session: None = Depends(require_mutation_session),
-    ):
-        return ticket_action_response(
-            services.tickets.confirm_placement(ticket_artifact_id, command)
         )
 
     @app.get('/api/v1/lineage/{object_type}/{object_id}')
