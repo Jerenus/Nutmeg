@@ -15,6 +15,7 @@
 Concurrent unique-key race recovery is intentionally deferred to Task 12; this
 service adds no untested retry logic.
 """
+
 from __future__ import annotations
 
 import time
@@ -45,20 +46,23 @@ _RACE_RETRY_DELAYS = (0.01, 0.02, 0.03, 0.04, 0.05)
 def _is_same_key_race(error: Exception) -> bool:
     """True only for an Actions idempotency-key unique clash or a SQLite lock."""
     message = str(error).lower()
-    return 'idempotency_key' in message or 'database is locked' in message
+    return "idempotency_key" in message or "database is locked" in message
 
 
 class ActionService:
     def __init__(self, unit_of_work_factory: UnitOfWorkFactory) -> None:
         self._unit_of_work_factory = unit_of_work_factory
 
+    def unit_of_work(self):
+        """Open the same governed UOW used by Actions for typed result hydration."""
+        return self._unit_of_work_factory()
+
     def execute(self, command: ActionCommand, handler: ActionHandler) -> ActionOutcome:
         existing = self._lookup(command.idempotency_key)
         if existing is not None:
             if existing.request_hash != command.request_hash:
                 raise IdempotencyConflictError(
-                    f'idempotency key {command.idempotency_key} was reused '
-                    f'with a different request'
+                    f"idempotency key {command.idempotency_key} was reused with a different request"
                 )
             if existing.status is not ActionStatus.FAILED:
                 return ActionRepository.to_outcome(existing)
@@ -84,7 +88,7 @@ class ActionService:
                 )
         except PermissionDeniedError as error:
             return self._audit_terminal(
-                command, ActionStatus.REJECTED, 'permission_denied', str(error)
+                command, ActionStatus.REJECTED, "permission_denied", str(error)
             )
         except (IntegrityError, OperationalError) as error:
             # A concurrent writer may have won this idempotency key between our
@@ -94,10 +98,10 @@ class ActionService:
                 replayed = self._replay_committed_winner(command)
                 if replayed is not None:
                     return replayed
-            self._audit_terminal(command, ActionStatus.FAILED, 'handler_error', str(error))
+            self._audit_terminal(command, ActionStatus.FAILED, "handler_error", str(error))
             raise
         except Exception as error:
-            self._audit_terminal(command, ActionStatus.FAILED, 'handler_error', str(error))
+            self._audit_terminal(command, ActionStatus.FAILED, "handler_error", str(error))
             raise
 
         return ActionOutcome(
@@ -120,8 +124,7 @@ class ActionService:
                 continue
             if existing.request_hash != command.request_hash:
                 raise IdempotencyConflictError(
-                    f'idempotency key {command.idempotency_key} was reused '
-                    f'with a different request'
+                    f"idempotency key {command.idempotency_key} was reused with a different request"
                 )
             return ActionRepository.to_outcome(existing)
         return None

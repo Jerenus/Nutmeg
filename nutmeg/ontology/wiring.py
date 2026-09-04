@@ -6,6 +6,7 @@ claim Actions and evidence-day ingest — wired but not initialized. Constructio
 side-effect-light: it never applies migrations, so ``status`` on a fresh kernel
 still reports uninitialized.
 """
+
 from __future__ import annotations
 
 from nutmeg.config.settings import AppSettings
@@ -34,6 +35,7 @@ from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.kernel import OntologyKernel
+from nutmeg.ontology.operator.sale_actions import SaleActions
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.unit_of_work import (
@@ -89,6 +91,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     protected_tickets = ProtectedTicketActions(action_service, artifact_store)
     scoreboard_actions = ScoreboardActions(action_service)
     reliability_actions = ReliabilityActions(action_service)
+    sale_actions = SaleActions(action_service)
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -107,4 +110,5 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         protected_tickets=protected_tickets,
         scoreboard_actions=scoreboard_actions,
         reliability_actions=reliability_actions,
+        sale_actions=sale_actions,
     )

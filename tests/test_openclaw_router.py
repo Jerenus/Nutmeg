@@ -48,6 +48,90 @@ def test_router_rejects_unknown_actions() -> None:
         router.parse_request(["shell", "rm", "-rf", "/"])
 
 
+def test_router_builds_operator_sale_manifest_commands(tmp_path, monkeypatch) -> None:
+    router = _load_router()
+    intake = tmp_path / "intake"
+    intake.mkdir()
+    sale = intake / "sale.json"
+    check = intake / "check.json"
+    sale.write_text("{}", "utf-8")
+    check.write_text("{}", "utf-8")
+    monkeypatch.setattr(router, "DEFAULT_OPERATOR_INTAKE_ROOT", intake.resolve())
+
+    sale_request = router.parse_request(
+        [
+            "operator-sale-ingest",
+            "--manifest",
+            str(sale),
+            "--contract-version",
+            "official-sale-slate-v1",
+        ]
+    )
+    check_request = router.parse_request(
+        [
+            "operator-schedule-check",
+            "--manifest",
+            str(check),
+            "--contract-version",
+            "official-schedule-check-v1",
+        ]
+    )
+
+    assert router.build_command(sale_request) == [
+        "uv",
+        "run",
+        "nutmeg",
+        "workflow",
+        "ingest-official-sale",
+        "--manifest",
+        str(sale.resolve()),
+        "--contract-version",
+        "official-sale-slate-v1",
+    ]
+    assert router.build_command(check_request) == [
+        "uv",
+        "run",
+        "nutmeg",
+        "workflow",
+        "record-official-schedule-check",
+        "--manifest",
+        str(check.resolve()),
+        "--contract-version",
+        "official-schedule-check-v1",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("manifest", "contract"),
+    (
+        ("https://example.test/sale.json", "official-sale-slate-v1"),
+        ('{"schema_version":"official-sale-slate-v1"}', "official-sale-slate-v1"),
+        ("../outside.json", "official-sale-slate-v1"),
+        ("sale.json", "official-sale-slate-v2"),
+        ("~nutmeg-user-that-does-not-exist/sale.json", "official-sale-slate-v1"),
+    ),
+)
+def test_router_rejects_unsafe_operator_sale_inputs(
+    tmp_path, monkeypatch, manifest, contract
+) -> None:
+    router = _load_router()
+    intake = tmp_path / "intake"
+    intake.mkdir()
+    (intake / "sale.json").write_text("{}", "utf-8")
+    monkeypatch.setattr(router, "DEFAULT_OPERATOR_INTAKE_ROOT", intake.resolve())
+
+    with pytest.raises(router.RouterError):
+        router.parse_request(
+            [
+                "operator-sale-ingest",
+                "--manifest",
+                manifest,
+                "--contract-version",
+                contract,
+            ]
+        )
+
+
 @pytest.mark.parametrize(
     "action",
     [

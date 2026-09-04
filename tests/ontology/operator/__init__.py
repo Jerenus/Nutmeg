@@ -1,0 +1,1 @@
+"""Operator ontology contract tests."""

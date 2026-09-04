@@ -28,6 +28,7 @@ from nutmeg.ontology.repository import (
     schema_finance,
     schema_identity,
     schema_market,
+    schema_operator_sale,
     schema_reliability,
     schema_scoreboard,
     schema_tickets,
@@ -651,6 +652,78 @@ def _apply_ticket_shadows(connection: Connection) -> None:
         )
 
 
+def _apply_operator_official_sale(connection: Connection) -> None:
+    for table in (
+        schema_operator_sale.official_sale_slate_revisions,
+        schema_operator_sale.official_offer_families,
+        schema_operator_sale.official_offer_revisions,
+        schema_operator_sale.official_schedule_check_receipts,
+    ):
+        table.create(connection)
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_sale_single_root
+        BEFORE INSERT ON official_sale_slate_revisions
+        WHEN NEW.supersedes_slate_revision_id IS NULL
+          AND EXISTS (
+            SELECT 1
+            FROM official_sale_slate_revisions
+            WHERE slate_family_id = NEW.slate_family_id
+              AND supersedes_slate_revision_id IS NULL
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'slate_family_id already has a root revision');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_sale_root_revision_no
+        BEFORE INSERT ON official_sale_slate_revisions
+        WHEN NEW.supersedes_slate_revision_id IS NULL AND NEW.revision_no != 1
+        BEGIN
+          SELECT RAISE(ABORT, 'root revision_no must be 1');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_sale_linear_child
+        BEFORE INSERT ON official_sale_slate_revisions
+        WHEN NEW.supersedes_slate_revision_id IS NOT NULL
+        BEGIN
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1
+            FROM official_sale_slate_revisions AS parent
+            WHERE parent.slate_revision_id = NEW.supersedes_slate_revision_id
+              AND parent.slate_family_id = NEW.slate_family_id
+              AND parent.lane = NEW.lane
+              AND parent.business_key = NEW.business_key
+          ) THEN RAISE(ABORT, 'superseding revision must belong to same slate family') END;
+          SELECT CASE WHEN NEW.revision_no != (
+            SELECT parent.revision_no + 1
+            FROM official_sale_slate_revisions AS parent
+            WHERE parent.slate_revision_id = NEW.supersedes_slate_revision_id
+          ) THEN RAISE(ABORT, 'revision_no must immediately follow parent') END;
+        END
+        """
+    )
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": "deterministic_system",
+            }
+            for action_type in (
+                "import_official_sale_slate",
+                "record_official_schedule_check",
+            )
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -758,6 +831,16 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="ticket_shadows",
         fingerprint="ticket_shadow_records+deterministic_system_permission",
         apply=_apply_ticket_shadows,
+    ),
+    Migration(
+        version=17,
+        name="operator_official_sale",
+        fingerprint=(
+            "official_sale_slate_revisions+official_offer_families+"
+            "official_offer_revisions+official_schedule_check_receipts_v4+"
+            "linear_revision_triggers+operator_sale_permissions"
+        ),
+        apply=_apply_operator_official_sale,
     ),
 )
 

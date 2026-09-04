@@ -5,6 +5,7 @@ commits on a clean exit, rolls back on any exception, and always closes the
 connection. Repositories are exposed on an *active* Unit of Work so every
 business write shares the same transaction as its Action-log row.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.finance import FinanceRepository
     from nutmeg.ontology.repository.identity import IdentityRepository
     from nutmeg.ontology.repository.market import MarketRepository
+    from nutmeg.ontology.repository.operator_sale import OperatorSaleRepository
     from nutmeg.ontology.repository.outbox import OutboxRepository
     from nutmeg.ontology.repository.reliability import ReliabilityRepository
     from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
@@ -30,9 +32,7 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.workflow import WorkflowRepository
 
 
-_WRITER_LEASE_FACTORIES: WeakKeyDictionary[Engine, Callable[[], object]] = (
-    WeakKeyDictionary()
-)
+_WRITER_LEASE_FACTORIES: WeakKeyDictionary[Engine, Callable[[], object]] = WeakKeyDictionary()
 
 
 def register_writer_lease_factory(
@@ -52,15 +52,13 @@ class OntologyUnitOfWork:
     ) -> None:
         self._engine = engine
         self._connection: Connection | None = None
-        self._writer_lease_factory = (
-            writer_lease_factory or _WRITER_LEASE_FACTORIES.get(engine)
-        )
+        self._writer_lease_factory = writer_lease_factory or _WRITER_LEASE_FACTORIES.get(engine)
         self._writer_lease = None
 
     @property
     def connection(self) -> Connection:
         if self._connection is None:
-            raise RuntimeError('unit of work is not active')
+            raise RuntimeError("unit of work is not active")
         return self._connection
 
     @property
@@ -122,6 +120,12 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.outbox import OutboxRepository
 
         return OutboxRepository(self.connection)
+
+    @property
+    def operator_sale(self) -> OperatorSaleRepository:
+        from nutmeg.ontology.repository.operator_sale import OperatorSaleRepository
+
+        return OperatorSaleRepository(self.connection)
 
     @property
     def tickets(self) -> TicketWorkbenchRepository:
