@@ -8,6 +8,17 @@ from pathlib import Path
 from nutmeg.analytics.calibrate_flow import CalibrateRequest
 from nutmeg.decision.legs_audit import DEVIATION_RULE_IDS
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole, canonical_json
+from nutmeg.ontology.operator.decision_actions import (
+    BaselineEnvelopeOfferConstraint,
+    BaselineEnvelopeStructureTemplate,
+    CommitOperatorMatchJudgmentRequest,
+    FaceBundleInput,
+    FaceOffsetInput,
+    FaceProbabilityInput,
+    FactorAdjustmentInput,
+    FreezeJudgmentPrescriptionRequest,
+    RecordBaselineEnvelopeRequest,
+)
 from nutmeg.ontology.operator.evidence_actions import RequestEvidenceFreezeRequest
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.contracts import ProductActionRequest, ProductActionResponse
@@ -81,6 +92,7 @@ class OperatorActionService:
         telegram_confirmation=None,
         telegram_owner_chat_id: int | None = None,
         evidence_actions=None,
+        decision_actions=None,
         snapshot_tokens: OperatorSnapshotTokenCodec | None = None,
         calibrate=None,
         repository=None,
@@ -92,6 +104,7 @@ class OperatorActionService:
         self._telegram = telegram_confirmation
         self._owner_chat_id = telegram_owner_chat_id
         self._evidence_actions = evidence_actions
+        self._decision_actions = decision_actions
         self._snapshot_tokens = snapshot_tokens
         self._calibrate = calibrate
         self._repository = repository
@@ -106,6 +119,10 @@ class OperatorActionService:
     def telegram(self):
         return self._telegram
 
+    @property
+    def decision_actions(self):
+        return self._decision_actions
+
     @staticmethod
     def _require_judge(actor_id: str, actor_role: ActorRole) -> None:
         if actor_role is not ActorRole.JUDGE_OPERATOR or not actor_id.strip():
@@ -114,9 +131,7 @@ class OperatorActionService:
     def _current_task(self, task_id: str, expected_snapshot_token: str):
         task = self._queries.task(task_id, as_of=self._queries.now())
         if task.mutation_token != expected_snapshot_token:
-            raise ProductActionBlockedError(
-                "operator task changed after the form was opened"
-            )
+            raise ProductActionBlockedError("operator task changed after the form was opened")
         return task
 
     def request_evidence_freeze(
@@ -141,9 +156,7 @@ class OperatorActionService:
             expected_command_kind=OperatorCommandKind.FREEZE_EVIDENCE,
             current_task_snapshot_hash=context.task_snapshot_hash,
             current_work_item_id=f"{context.task_key}:evidence",
-            current_dependency_revision_ids=(
-                context.dependency_leaves.token_revision_ids()
-            ),
+            current_dependency_revision_ids=(context.dependency_leaves.token_revision_ids()),
         )
         if not context.ready:
             raise ProductActionBlockedError("operator evidence gate is not complete")
@@ -167,6 +180,220 @@ class OperatorActionService:
             task_key=context.task_key,
         )
 
+    def record_baseline_envelope(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.baseline_envelope_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.RECORD_BASELINE_ENVELOPE,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        outcome = decision_actions.record_baseline_envelope(
+            RecordBaselineEnvelopeRequest(
+                task_evidence_bundle_revision_id=(context.task_evidence_bundle_revision_id),
+                work_item_id=context.work_item_id,
+                ticket_kind=command.ticket_kind,
+                capital_cap_minor=command.capital_cap_minor,
+                currency=command.currency,
+                maximum_ticket_count=command.maximum_ticket_count,
+                offer_constraints=tuple(
+                    BaselineEnvelopeOfferConstraint(
+                        official_match_no=item.official_match_no,
+                        market_code=item.market_code,
+                        allowed_face_bundles=tuple(
+                            FaceBundleInput(
+                                bundle_code=bundle.bundle_code,
+                                face_codes=tuple(bundle.face_codes),
+                            )
+                            for bundle in item.allowed_face_bundles
+                        ),
+                        omission_allowed=item.omission_allowed,
+                    )
+                    for item in command.offer_constraints
+                ),
+                structure_templates=tuple(
+                    BaselineEnvelopeStructureTemplate(
+                        kind=item.kind,
+                        structure_code=item.structure_code,
+                        eligible_official_match_nos=tuple(item.eligible_official_match_nos),
+                        pass_size=item.pass_size,
+                        required_offer_count=item.required_offer_count,
+                        maximum_groups=item.maximum_groups,
+                    )
+                    for item in command.structure_templates
+                ),
+                maximum_exhaustive_candidate_count=(command.maximum_exhaustive_candidate_count),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(context.expected_current_revision_no),
+            )
+        )
+        self._require_committed(outcome, "baseline envelope")
+        return OperatorCommandReceipt(
+            command_kind="record_baseline_envelope",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def commit_match_judgment(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.match_judgment_context(
+            command.task_key,
+            command.official_match_no,
+            command.market_code,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.COMMIT_MATCH_JUDGMENT,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        expected_scope_key = f"match:{command.official_match_no}"
+        if any(item.scope_key != expected_scope_key for item in command.factors):
+            raise OperatorSnapshotTokenError("invalid_request")
+        outcome = decision_actions.commit_operator_match_judgment(
+            CommitOperatorMatchJudgmentRequest(
+                task_evidence_bundle_revision_id=(context.task_evidence_bundle_revision_id),
+                market_prior_baseline_revision_id=(context.market_prior_baseline_revision_id),
+                baseline_envelope_revision_id=(context.baseline_envelope_revision_id),
+                work_item_id=context.work_item_id,
+                match_id=context.match_id,
+                official_offer_revision_id=context.official_offer_revision_id,
+                market_definition_id=context.market_definition_id,
+                prior=tuple(
+                    FaceProbabilityInput(
+                        face_code=face_code,
+                        probability_decimal=probability,
+                    )
+                    for face_code, probability in context.prior
+                ),
+                belief=tuple(
+                    FaceProbabilityInput(
+                        face_code=item.face_code,
+                        probability_decimal=item.probability_decimal,
+                    )
+                    for item in command.belief
+                ),
+                factors=tuple(
+                    FactorAdjustmentInput(
+                        factor_definition_id=item.factor_id,
+                        scope_key=context.match_id,
+                        evidence_ref_tokens=tuple(item.evidence_ref_tokens),
+                        offsets=tuple(
+                            FaceOffsetInput(
+                                face_code=offset.face_code,
+                                offset_probability_decimal=(offset.offset_probability_decimal),
+                            )
+                            for offset in item.offsets
+                        ),
+                    )
+                    for item in command.factors
+                ),
+                expression_bundles=tuple(
+                    FaceBundleInput(
+                        bundle_code=item.bundle_code,
+                        face_codes=tuple(item.face_codes),
+                    )
+                    for item in command.expression_bundles
+                ),
+                rule_ids=tuple(command.rule_ids),
+                evidence_ref_tokens=tuple(command.evidence_ref_tokens),
+                falsifier=command.falsifier,
+                rationale=command.rationale,
+                commitment_tier="commit",
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(context.expected_current_revision_no),
+            )
+        )
+        self._require_committed(outcome, "match judgment")
+        return OperatorCommandReceipt(
+            command_kind="commit_match_judgment",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def freeze_judgment_prescription(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.judgment_prescription_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.FREEZE_JUDGMENT_PRESCRIPTION,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        if tuple(command.judgment_revision_tokens) != tuple(context.judgment_revision_tokens):
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        outcome = decision_actions.freeze_judgment_prescription(
+            FreezeJudgmentPrescriptionRequest(
+                task_evidence_bundle_revision_id=(context.task_evidence_bundle_revision_id),
+                market_prior_baseline_revision_id=(context.market_prior_baseline_revision_id),
+                baseline_envelope_revision_id=(context.baseline_envelope_revision_id),
+                work_item_id=context.work_item_id,
+                judgment_revision_ids=tuple(context.judgment_revision_ids),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(context.expected_current_revision_no),
+            )
+        )
+        self._require_committed(outcome, "judgment prescription")
+        return OperatorCommandReceipt(
+            command_kind="freeze_judgment_prescription",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def _decision_dependencies(self):
+        if self._decision_actions is None or self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator judgment is not configured")
+        return self._decision_actions, self._snapshot_tokens
+
+    @staticmethod
+    def _require_committed(outcome, label: str) -> None:
+        if outcome.status is not ActionStatus.COMMITTED:
+            raise ProductActionBlockedError(f"{label} Action was not committed")
+
     def rebuild_scoreboard_projection(
         self,
         command,
@@ -175,11 +402,7 @@ class OperatorActionService:
         actor_role: ActorRole,
     ) -> OperatorCommandReceipt:
         self._require_judge(actor_id, actor_role)
-        if (
-            self._snapshot_tokens is None
-            or self._calibrate is None
-            or self._repository is None
-        ):
+        if self._snapshot_tokens is None or self._calibrate is None or self._repository is None:
             raise ProductActionBlockedError("scoreboard projection rebuild is not configured")
         source_high_watermark = self._repository.action_high_watermark()
         current = scoreboard_projection_snapshot(source_high_watermark)
@@ -312,9 +535,7 @@ class OperatorActionService:
         if command.candidate_id != task.step.candidate.candidate_id:
             raise ProductActionBlockedError("deployment candidate changed")
         if command.decision not in task.step.allowed_decisions:
-            raise ProductActionBlockedError(
-                "deployment decision is not allowed by current gate"
-            )
+            raise ProductActionBlockedError("deployment decision is not allowed by current gate")
         return self._execute_adjudication(
             issue=_zucai_issue(task_id),
             decision="deployment",
@@ -369,17 +590,13 @@ class OperatorActionService:
         actor_role: ActorRole,
     ) -> ProductActionResponse:
         if actor_role is not ActorRole.JUDGE_OPERATOR:
-            raise ProductActionBlockedError(
-                "prediction grade requires judge_operator"
-            )
+            raise ProductActionBlockedError("prediction grade requires judge_operator")
         task = self._current_task(task_id, command.expected_snapshot_token)
         if task.step.kind != "review":
             raise ProductActionBlockedError("task is no longer in review")
         current = task.step.current_item
         if current.item_type != "prediction" or current.item_id != command.prediction_id:
-            raise ProductActionBlockedError(
-                "prediction is no longer the current review item"
-            )
+            raise ProductActionBlockedError("prediction is no longer the current review item")
         return self._actions.execute(
             ProductActionRequest(
                 action_type="grade_prediction",

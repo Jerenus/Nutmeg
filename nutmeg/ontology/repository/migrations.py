@@ -974,6 +974,333 @@ def _apply_operator_evidence_freeze(connection: Connection) -> None:
     )
 
 
+def _apply_operator_judgment_baseline(connection: Connection) -> None:
+    for table in (
+        schema_operator_decision.operator_market_prior_baseline_revisions,
+        schema_operator_decision.operator_market_prior_baseline_probabilities,
+        schema_operator_decision.operator_baseline_envelope_revisions,
+        schema_operator_decision.operator_baseline_envelope_offer_constraints,
+        schema_operator_decision.operator_baseline_envelope_face_bundles,
+        schema_operator_decision.operator_baseline_envelope_bundle_faces,
+        schema_operator_decision.operator_baseline_envelope_structure_templates,
+        schema_operator_decision.operator_baseline_envelope_template_offers,
+        schema_operator_decision.operator_match_judgment_revisions,
+        schema_operator_decision.operator_match_judgment_probabilities,
+        schema_operator_decision.operator_match_judgment_factor_adjustments,
+        schema_operator_decision.operator_match_judgment_factor_offsets,
+        schema_operator_decision.operator_match_judgment_factor_evidence_refs,
+        schema_operator_decision.operator_match_judgment_face_bundles,
+        schema_operator_decision.operator_match_judgment_bundle_faces,
+        schema_operator_decision.operator_match_judgment_rule_refs,
+        schema_operator_decision.operator_match_judgment_evidence_refs,
+        schema_operator_decision.operator_judgment_prescription_revisions,
+        schema_operator_decision.operator_judgment_prescription_items,
+    ):
+        table.create(connection)
+    revision_contracts = (
+        (
+            "operator_market_prior_baseline_revisions",
+            "market_prior_baseline_revision_id",
+            "market_prior_baseline_family_id",
+            "market_prior_baseline",
+            "freeze_market_prior_baseline",
+            "deterministic_system",
+        ),
+        (
+            "operator_baseline_envelope_revisions",
+            "baseline_envelope_revision_id",
+            "baseline_envelope_family_id",
+            "baseline_envelope",
+            "record_baseline_envelope",
+            "judge_operator",
+        ),
+        (
+            "operator_match_judgment_revisions",
+            "operator_match_judgment_revision_id",
+            "operator_match_judgment_family_id",
+            "operator_match_judgment",
+            "commit_operator_match_judgment",
+            "judge_operator",
+        ),
+        (
+            "operator_judgment_prescription_revisions",
+            "judgment_prescription_revision_id",
+            "judgment_prescription_family_id",
+            "judgment_prescription",
+            "freeze_judgment_prescription",
+            "judge_operator",
+        ),
+    )
+    for table_name, id_column, family_column, trigger_prefix, action_type, actor_role in (
+        revision_contracts
+    ):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {trigger_prefix}_single_root
+            BEFORE INSERT ON {table_name}
+            WHEN NEW.supersedes_revision_id IS NULL
+              AND EXISTS (
+                SELECT 1
+                FROM {table_name}
+                WHERE {family_column} = NEW.{family_column}
+                  AND supersedes_revision_id IS NULL
+              )
+            BEGIN
+              SELECT RAISE(ABORT, '{family_column} already has a root revision');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {trigger_prefix}_root_revision_no
+            BEFORE INSERT ON {table_name}
+            WHEN NEW.supersedes_revision_id IS NULL AND NEW.revision_no != 1
+            BEGIN
+              SELECT RAISE(ABORT, 'root revision_no must be 1');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {trigger_prefix}_linear_child
+            BEFORE INSERT ON {table_name}
+            WHEN NEW.supersedes_revision_id IS NOT NULL
+            BEGIN
+              SELECT CASE WHEN NOT EXISTS (
+                SELECT 1
+                FROM {table_name} AS parent
+                WHERE parent.{id_column} = NEW.supersedes_revision_id
+                  AND parent.{family_column} = NEW.{family_column}
+              ) THEN RAISE(ABORT, 'superseding revision must belong to same family') END;
+              SELECT CASE WHEN NEW.revision_no != (
+                SELECT parent.revision_no + 1
+                FROM {table_name} AS parent
+                WHERE parent.{id_column} = NEW.supersedes_revision_id
+              ) THEN RAISE(ABORT, 'revision_no must immediately follow parent') END;
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {trigger_prefix}_typed_action
+            BEFORE INSERT ON {table_name}
+            WHEN NOT EXISTS (
+              SELECT 1
+              FROM actions
+              WHERE action_id = NEW.action_id
+                AND action_type = '{action_type}'
+                AND actor_role = '{actor_role}'
+                AND status IN ('accepted', 'committed')
+            )
+            BEGIN
+              SELECT RAISE(ABORT, '{table_name} requires its typed Action');
+            END
+            """
+        )
+        for operation in ("UPDATE", "DELETE"):
+            connection.exec_driver_sql(
+                f"""
+                CREATE TRIGGER {trigger_prefix}_no_{operation.lower()}
+                BEFORE {operation} ON {table_name}
+                BEGIN
+                  SELECT RAISE(ABORT, '{table_name} is append-only');
+                END
+                """
+            )
+    child_revision_guards = (
+        (
+            "operator_market_prior_baseline_probabilities",
+            "operator_market_prior_baseline_revisions AS revision "
+            "ON revision.market_prior_baseline_revision_id = "
+            "NEW.market_prior_baseline_revision_id",
+        ),
+        (
+            "operator_baseline_envelope_offer_constraints",
+            "operator_baseline_envelope_revisions AS revision "
+            "ON revision.baseline_envelope_revision_id = "
+            "NEW.baseline_envelope_revision_id",
+        ),
+        (
+            "operator_baseline_envelope_face_bundles",
+            "operator_baseline_envelope_offer_constraints AS child_parent "
+            "ON child_parent.baseline_envelope_offer_constraint_id = "
+            "NEW.baseline_envelope_offer_constraint_id "
+            "JOIN operator_baseline_envelope_revisions AS revision "
+            "ON revision.baseline_envelope_revision_id = "
+            "child_parent.baseline_envelope_revision_id",
+        ),
+        (
+            "operator_baseline_envelope_bundle_faces",
+            "operator_baseline_envelope_face_bundles AS child_parent "
+            "ON child_parent.baseline_envelope_face_bundle_id = "
+            "NEW.baseline_envelope_face_bundle_id "
+            "JOIN operator_baseline_envelope_offer_constraints AS offer_parent "
+            "ON offer_parent.baseline_envelope_offer_constraint_id = "
+            "child_parent.baseline_envelope_offer_constraint_id "
+            "JOIN operator_baseline_envelope_revisions AS revision "
+            "ON revision.baseline_envelope_revision_id = "
+            "offer_parent.baseline_envelope_revision_id",
+        ),
+        (
+            "operator_baseline_envelope_structure_templates",
+            "operator_baseline_envelope_revisions AS revision "
+            "ON revision.baseline_envelope_revision_id = "
+            "NEW.baseline_envelope_revision_id",
+        ),
+        (
+            "operator_baseline_envelope_template_offers",
+            "operator_baseline_envelope_structure_templates AS child_parent "
+            "ON child_parent.baseline_envelope_structure_template_id = "
+            "NEW.baseline_envelope_structure_template_id "
+            "JOIN operator_baseline_envelope_revisions AS revision "
+            "ON revision.baseline_envelope_revision_id = "
+            "child_parent.baseline_envelope_revision_id",
+        ),
+        (
+            "operator_match_judgment_probabilities",
+            "operator_match_judgment_revisions AS revision "
+            "ON revision.operator_match_judgment_revision_id = "
+            "NEW.operator_match_judgment_revision_id",
+        ),
+        (
+            "operator_match_judgment_factor_adjustments",
+            "operator_match_judgment_revisions AS revision "
+            "ON revision.operator_match_judgment_revision_id = "
+            "NEW.operator_match_judgment_revision_id",
+        ),
+        (
+            "operator_match_judgment_factor_offsets",
+            "operator_match_judgment_factor_adjustments AS child_parent "
+            "ON child_parent.operator_match_judgment_factor_adjustment_id = "
+            "NEW.operator_match_judgment_factor_adjustment_id "
+            "JOIN operator_match_judgment_revisions AS revision "
+            "ON revision.operator_match_judgment_revision_id = "
+            "child_parent.operator_match_judgment_revision_id",
+        ),
+        (
+            "operator_match_judgment_factor_evidence_refs",
+            "operator_match_judgment_factor_adjustments AS child_parent "
+            "ON child_parent.operator_match_judgment_factor_adjustment_id = "
+            "NEW.operator_match_judgment_factor_adjustment_id "
+            "JOIN operator_match_judgment_revisions AS revision "
+            "ON revision.operator_match_judgment_revision_id = "
+            "child_parent.operator_match_judgment_revision_id",
+        ),
+        (
+            "operator_match_judgment_face_bundles",
+            "operator_match_judgment_revisions AS revision "
+            "ON revision.operator_match_judgment_revision_id = "
+            "NEW.operator_match_judgment_revision_id",
+        ),
+        (
+            "operator_match_judgment_bundle_faces",
+            "operator_match_judgment_face_bundles AS child_parent "
+            "ON child_parent.operator_match_judgment_face_bundle_id = "
+            "NEW.operator_match_judgment_face_bundle_id "
+            "JOIN operator_match_judgment_revisions AS revision "
+            "ON revision.operator_match_judgment_revision_id = "
+            "child_parent.operator_match_judgment_revision_id",
+        ),
+        (
+            "operator_match_judgment_rule_refs",
+            "operator_match_judgment_revisions AS revision "
+            "ON revision.operator_match_judgment_revision_id = "
+            "NEW.operator_match_judgment_revision_id",
+        ),
+        (
+            "operator_match_judgment_evidence_refs",
+            "operator_match_judgment_revisions AS revision "
+            "ON revision.operator_match_judgment_revision_id = "
+            "NEW.operator_match_judgment_revision_id",
+        ),
+        (
+            "operator_judgment_prescription_items",
+            "operator_judgment_prescription_revisions AS revision "
+            "ON revision.judgment_prescription_revision_id = "
+            "NEW.judgment_prescription_revision_id",
+        ),
+    )
+    for table_name, revision_join in child_revision_guards:
+        for operation in ("UPDATE", "DELETE"):
+            connection.exec_driver_sql(
+                f"""
+                CREATE TRIGGER {table_name}_no_{operation.lower()}
+                BEFORE {operation} ON {table_name}
+                BEGIN
+                  SELECT RAISE(ABORT, '{table_name} is append-only');
+                END
+                """
+            )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {table_name}_no_late_insert
+            BEFORE INSERT ON {table_name}
+            WHEN EXISTS (
+              SELECT 1
+              FROM actions AS action
+              JOIN {revision_join}
+              WHERE action.action_id = revision.action_id
+                AND action.status = 'committed'
+            )
+            BEGIN
+              SELECT RAISE(ABORT, '{table_name} is append-only after commit');
+            END
+            """
+        )
+    market_baseline_result_check = """
+      SELECT CASE WHEN NOT EXISTS (
+        SELECT 1
+        FROM actions AS action
+        JOIN operator_market_prior_baseline_revisions AS revision
+          ON revision.action_id = action.action_id
+        WHERE action.action_id = NEW.result_action_id
+          AND action.action_type = 'freeze_market_prior_baseline'
+          AND action.actor_role = 'deterministic_system'
+          AND action.status IN ('accepted', 'committed')
+          AND NEW.source_object_type = 'task_evidence_bundle_revision'
+          AND NEW.result_object_type = 'market_prior_baseline_revision'
+          AND revision.market_prior_baseline_revision_id = NEW.result_object_id
+          AND revision.task_evidence_bundle_revision_id = NEW.source_object_id
+      ) THEN RAISE(ABORT, 'market baseline job result does not match its typed Action') END;
+    """
+    for operation in ("INSERT", "UPDATE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER operator_worker_job_market_baseline_result_{operation.lower()}
+            BEFORE {operation} ON operator_worker_jobs
+            WHEN NEW.state = 'completed' AND NEW.job_kind = 'market_baseline'
+            BEGIN
+              {market_baseline_result_check}
+            END
+            """
+        )
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "freeze_market_prior_baseline",
+                "actor_role": "deterministic_system",
+            },
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "record_baseline_envelope",
+                "actor_role": "judge_operator",
+            },
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "commit_operator_match_judgment",
+                "actor_role": "judge_operator",
+            },
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "freeze_judgment_prescription",
+                "actor_role": "judge_operator",
+            },
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -1110,6 +1437,17 @@ MIGRATIONS: tuple[Migration, ...] = (
             "atomic_item_counts+typed_result_actions+immutable_rows+role_separated_permissions"
         ),
         apply=_apply_operator_evidence_freeze,
+    ),
+    Migration(
+        version=20,
+        name="operator_judgment_baseline",
+        fingerprint=(
+            "market_prior_baseline+baseline_envelope+operator_match_judgment+"
+            "judgment_prescription+normalized_children+canonical_decimal_text+"
+            "linear_revision+complete_child_append_only+typed_result_actions+"
+            "role_separated_permissions"
+        ),
+        apply=_apply_operator_judgment_baseline,
     ),
 )
 

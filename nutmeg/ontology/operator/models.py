@@ -246,7 +246,168 @@ class TaskEvidenceBundleRevisionRow:
     supersedes_revision_id: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class MarketPriorBaselineRevisionRow:
+    market_prior_baseline_revision_id: str
+    market_prior_baseline_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    task_evidence_bundle_revision_id: str
+    information_cutoff_at: str
+    policy_version: str
+    arithmetic_version: str
+    probability_precision: int
+    comparison_only: int
+    content_hash: str
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class MarketPriorBaselineProbabilityRow:
+    market_prior_baseline_probability_id: str
+    market_prior_baseline_revision_id: str
+    item_index: int
+    match_id: str
+    official_offer_revision_id: str
+    market_definition_id: str
+    face_code: str
+    probability_decimal: str
+    market_snapshot_id: str
+    quote_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineEnvelopeRevisionRow:
+    baseline_envelope_revision_id: str
+    baseline_envelope_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    task_evidence_bundle_revision_id: str
+    ticket_kind: str
+    capital_cap_minor: int
+    currency: str
+    maximum_ticket_count: int
+    maximum_exhaustive_candidate_count: int
+    content_hash: str
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineEnvelopeOfferConstraintRow:
+    baseline_envelope_offer_constraint_id: str
+    baseline_envelope_revision_id: str
+    constraint_index: int
+    official_match_no: str
+    market_code: str
+    omission_allowed: int
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineEnvelopeFaceBundleRow:
+    baseline_envelope_face_bundle_id: str
+    baseline_envelope_offer_constraint_id: str
+    bundle_index: int
+    bundle_code: str
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineEnvelopeBundleFaceRow:
+    baseline_envelope_bundle_face_id: str
+    baseline_envelope_face_bundle_id: str
+    face_index: int
+    face_code: str
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineEnvelopeStructureTemplateRow:
+    baseline_envelope_structure_template_id: str
+    baseline_envelope_revision_id: str
+    template_index: int
+    kind: str
+    structure_code: str
+    pass_size: int | None
+    required_offer_count: int
+    maximum_groups: int
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineEnvelopeTemplateOfferRow:
+    baseline_envelope_template_offer_id: str
+    baseline_envelope_structure_template_id: str
+    offer_index: int
+    official_match_no: str
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorMatchJudgmentRevisionRow:
+    operator_match_judgment_revision_id: str
+    operator_match_judgment_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    task_evidence_bundle_revision_id: str
+    market_prior_baseline_revision_id: str
+    baseline_envelope_revision_id: str
+    match_id: str
+    official_offer_revision_id: str
+    market_definition_id: str
+    forecast_revision_id: str
+    falsifier: str
+    rationale: str
+    content_hash: str
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class JudgmentPrescriptionRevisionRow:
+    judgment_prescription_revision_id: str
+    judgment_prescription_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    task_evidence_bundle_revision_id: str
+    market_prior_baseline_revision_id: str
+    baseline_envelope_revision_id: str
+    required_match_count: int
+    judgment_count: int
+    content_hash: str
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class JudgmentPrescriptionItemRow:
+    operator_judgment_prescription_item_id: str
+    judgment_prescription_revision_id: str
+    item_index: int
+    match_id: str
+    operator_match_judgment_revision_id: str
+
+
 __all__ = [
+    "BaselineEnvelopeBundleFaceRow",
+    "BaselineEnvelopeFaceBundleRow",
+    "BaselineEnvelopeOfferConstraintRow",
+    "BaselineEnvelopeRevisionRow",
+    "BaselineEnvelopeStructureTemplateRow",
+    "BaselineEnvelopeTemplateOfferRow",
     "EvidenceCoverageReceiptRow",
     "EvidenceFreezeGate",
     "EvidenceFreezeMatchPlan",
@@ -255,11 +416,16 @@ __all__ = [
     "EvidenceIntakeReceiptRow",
     "EvidenceIntakeResult",
     "FrozenEvidenceBundleActionRow",
+    "JudgmentPrescriptionItemRow",
+    "JudgmentPrescriptionRevisionRow",
+    "MarketPriorBaselineProbabilityRow",
+    "MarketPriorBaselineRevisionRow",
     "OfficialOfferFamilyRow",
     "OfficialOfferRevisionRow",
     "OfficialSaleSlateRevisionRow",
     "OfficialScheduleCheckReceiptRow",
     "OperatorWorkerJobRow",
+    "OperatorMatchJudgmentRevisionRow",
     "SaleImportCountReceiptRow",
     "SaleImportResult",
     "TaskEvidenceBundleItemRow",

@@ -11,6 +11,10 @@ from nutmeg.ontology.actions.bundle_actions import BundleActions, FreezeBundleRe
 from nutmeg.ontology.actions.models import ActionOutcome, ActorRole, canonical_json
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.errors import OptimisticConcurrencyError, PermissionDeniedError
+from nutmeg.ontology.operator.decision_actions import (
+    FreezeMarketPriorBaselineRequest,
+    OperatorDecisionActions,
+)
 from nutmeg.ontology.operator.evidence_actions import (
     EvidenceActions,
     LinkTaskEvidenceFreezeRequest,
@@ -38,6 +42,13 @@ def _retryable_error_code(error: Exception) -> str | None:
 
 
 def _terminal_error_code(error: Exception) -> str:
+    stable_code = getattr(error, "code", None)
+    if isinstance(stable_code, str) and stable_code in {
+        "evidence_conflict",
+        "evidence_missing",
+        "stale_dependency",
+    }:
+        return stable_code
     if isinstance(error, OptimisticConcurrencyError):
         return "stale_dependency"
     if isinstance(error, PermissionDeniedError):
@@ -207,4 +218,134 @@ class EvidenceFreezeRequestWorker:
         return link_outcome
 
 
-__all__ = ["EvidenceFreezeRequestWorker"]
+class MarketBaselineWorker:
+    """Claim task evidence revisions and freeze their exact market prior."""
+
+    def __init__(
+        self,
+        *,
+        action_service: ActionService,
+        decision_actions: OperatorDecisionActions,
+        worker_id: str,
+        lease_duration: timedelta,
+        work_item_id_resolver,
+    ) -> None:
+        if not worker_id.strip():
+            raise ValueError("worker_id is required")
+        if lease_duration <= timedelta(0):
+            raise ValueError("lease_duration must be positive")
+        self._action_service = action_service
+        self._decision_actions = decision_actions
+        self._worker_id = worker_id
+        self._lease_duration = lease_duration
+        self._work_item_id_resolver = work_item_id_resolver
+
+    def run_once(self, *, limit: int, as_of: datetime) -> tuple[ActionOutcome, ...]:
+        cutoff = _aware(as_of, "as_of").astimezone(UTC)
+        if limit < 1:
+            return ()
+        with self._action_service.unit_of_work() as uow:
+            uow.operator_decision.recover_expired_worker_jobs(
+                job_kind="market_baseline",
+                as_of=cutoff.isoformat(),
+            )
+            jobs = uow.operator_decision.claim_worker_jobs(
+                job_kind="market_baseline",
+                lease_owner=self._worker_id,
+                as_of=cutoff.isoformat(),
+                lease_expires_at=(cutoff + self._lease_duration).isoformat(),
+                limit=limit,
+            )
+
+        completed: list[ActionOutcome] = []
+        for job in jobs:
+            try:
+                outcome = self.process_task_evidence_bundle(
+                    job.source_object_id,
+                    worker_job_id=job.worker_job_id,
+                    as_of=cutoff,
+                )
+            except Exception as error:
+                with self._action_service.unit_of_work() as uow:
+                    retry_code = _retryable_error_code(error)
+                    if retry_code is None:
+                        uow.operator_decision.fail_worker_job(
+                            worker_job_id=job.worker_job_id,
+                            lease_owner=self._worker_id,
+                            error_code=_terminal_error_code(error),
+                            failed_at=cutoff.isoformat(),
+                        )
+                    else:
+                        delay_seconds = min(2 ** max(job.attempt_count - 1, 0), 300)
+                        uow.operator_decision.requeue_worker_job(
+                            worker_job_id=job.worker_job_id,
+                            lease_owner=self._worker_id,
+                            error_code=retry_code,
+                            available_at=(
+                                cutoff + timedelta(seconds=delay_seconds)
+                            ).isoformat(),
+                            updated_at=cutoff.isoformat(),
+                        )
+                continue
+            completed.append(outcome)
+        return tuple(completed)
+
+    def process_task_evidence_bundle(
+        self,
+        task_evidence_bundle_revision_id: str,
+        *,
+        worker_job_id: str,
+        as_of: datetime,
+    ) -> ActionOutcome:
+        requested_at = _aware(as_of, "as_of").astimezone(UTC)
+        with self._action_service.unit_of_work() as uow:
+            job = uow.operator_decision.worker_job(worker_job_id)
+            bundle = uow.operator_decision.task_evidence_bundle_revision(
+                task_evidence_bundle_revision_id
+            )
+        if (
+            job is None
+            or bundle is None
+            or job.job_kind != "market_baseline"
+            or job.source_object_type != "task_evidence_bundle_revision"
+            or job.source_object_id != task_evidence_bundle_revision_id
+            or job.state != "leased"
+            or job.lease_owner != self._worker_id
+        ):
+            raise ValueError("market baseline task is not leased by this worker")
+        work_item_id = self._work_item_id_resolver(
+            task_evidence_bundle_revision_id
+        )
+        if not isinstance(work_item_id, str) or not work_item_id.strip():
+            raise ValueError("market baseline work item could not be resolved")
+        idempotency_key = "operator-market-baseline:" + _digest(
+            {
+                "task_evidence_bundle_revision_id": (
+                    task_evidence_bundle_revision_id
+                ),
+                "task_bundle_content_hash": bundle.content_hash,
+                "work_item_id": work_item_id,
+            }
+        )
+        outcome = self._decision_actions.freeze_market_prior_baseline(
+            FreezeMarketPriorBaselineRequest(
+                task_evidence_bundle_revision_id=(
+                    task_evidence_bundle_revision_id
+                ),
+                work_item_id=work_item_id,
+                actor_id="system:operator-market-baseline",
+                actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key=idempotency_key,
+                requested_at=requested_at,
+                worker_job_id=worker_job_id,
+                lease_owner=self._worker_id,
+            )
+        )
+        if not outcome.is_success or len(outcome.result_refs) != 1:
+            raise ValueError("freeze_market_prior_baseline Action did not commit")
+        if outcome.result_refs[0].object_type != "market_prior_baseline_revision":
+            raise ValueError("market baseline Action returned an invalid result type")
+        return outcome
+
+
+__all__ = ["EvidenceFreezeRequestWorker", "MarketBaselineWorker"]

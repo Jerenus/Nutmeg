@@ -84,6 +84,104 @@
       }));
     }
 
+    if (action === "record-baseline-envelope") {
+      const offerConstraints = [...form.querySelectorAll("[data-envelope-offer]")]
+        .map((offer) => ({
+          official_match_no: offer.dataset.officialMatchNo,
+          market_code: offer.dataset.marketCode,
+          allowed_face_bundles: [...offer.querySelectorAll(
+            'input[name="allowed_face_bundle"]:checked',
+          )].map((input) => ({
+            bundle_code: input.value,
+            face_codes: commaValues(input.dataset.faceCodes),
+          })),
+          omission_allowed: Boolean(offer.querySelector(
+            'input[name="omission_allowed"]:checked',
+          )),
+        }))
+        .filter((offer) => offer.allowed_face_bundles.length > 0);
+      const structures = [...form.querySelectorAll("[data-envelope-structure]")]
+        .filter((row) => row.querySelector('input[name="structure_code"]:checked'))
+        .map((row) => ({
+          kind: row.dataset.kind,
+          structure_code: row.dataset.structureCode,
+          eligible_official_match_nos: commaValues(row.dataset.eligibleMatches),
+          pass_size: row.dataset.passSize ? Number(row.dataset.passSize) : null,
+          required_offer_count: Number(row.dataset.requiredOfferCount),
+          maximum_groups: Number(row.dataset.maximumGroups),
+        }));
+      return submit(form, () => postJson("/api/v2/operator", {
+        schema_version: "2",
+        kind: "record_baseline_envelope",
+        expected_snapshot_token: form.dataset.commandToken,
+        idempotency_key: `ui:operator:envelope:${crypto.randomUUID()}`,
+        task_key: form.dataset.taskKey,
+        ticket_kind: values.get("ticket_kind"),
+        capital_cap_minor: Number(values.get("capital_cap_minor")),
+        currency: form.dataset.currency,
+        maximum_ticket_count: Number(values.get("maximum_ticket_count")),
+        offer_constraints: offerConstraints,
+        structure_templates: structures,
+        maximum_exhaustive_candidate_count: Number(
+          values.get("maximum_exhaustive_candidate_count"),
+        ),
+      }));
+    }
+
+    if (action === "commit-match-judgment") {
+      const factors = [...form.querySelectorAll("[data-factor-row]")]
+        .filter((row) => row.querySelector('input[name="factor_id"]:checked'))
+        .map((row) => ({
+          factor_id: row.dataset.factorId,
+          scope_key: row.dataset.scopeKey,
+          evidence_ref_tokens: [...row.querySelectorAll(
+            'input[name="factor_evidence_ref_token"]',
+          )].map((input) => input.value),
+          offsets: [...row.querySelectorAll('input[name="factor_offset"]')]
+            .map((input) => ({
+              face_code: input.dataset.faceCode,
+              offset_probability_decimal: input.value,
+            })),
+        }));
+      const expressionBundles = [...form.querySelectorAll(
+        'input[name="face_bundle"]:checked',
+      )].map((input) => ({
+        bundle_code: input.value,
+        face_codes: commaValues(input.dataset.faceCodes),
+      }));
+      return submit(form, () => postJson("/api/v2/operator", {
+        schema_version: "2",
+        kind: "commit_match_judgment",
+        expected_snapshot_token: form.dataset.commandToken,
+        idempotency_key: `ui:operator:judgment:${crypto.randomUUID()}`,
+        task_key: form.dataset.taskKey,
+        official_match_no: form.dataset.officialMatchNo,
+        market_code: form.dataset.marketCode,
+        belief: [...form.querySelectorAll('input[name="belief_probability_decimal"]')]
+          .map((input) => ({
+            face_code: input.dataset.faceCode,
+            probability_decimal: input.value,
+          })),
+        factors,
+        expression_bundles: expressionBundles,
+        rule_ids: values.getAll("rule_id"),
+        evidence_ref_tokens: values.getAll("judgment_evidence_ref_token"),
+        falsifier: values.get("falsifier"),
+        rationale: values.get("rationale"),
+      }));
+    }
+
+    if (action === "freeze-judgment-prescription") {
+      return submit(form, () => postJson("/api/v2/operator", {
+        schema_version: "2",
+        kind: "freeze_judgment_prescription",
+        expected_snapshot_token: form.dataset.commandToken,
+        idempotency_key: `ui:operator:prescription:${crypto.randomUUID()}`,
+        task_key: form.dataset.taskKey,
+        judgment_revision_tokens: values.getAll("judgment_revision_token"),
+      }));
+    }
+
     if (action === "resolve-issue-adjudication") {
       submit(form, () => postJson(
         `/api/v1/operator/tasks/${encodeURIComponent(form.dataset.taskId)}/adjudications`,

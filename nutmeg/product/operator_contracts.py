@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictOperatorContract(BaseModel):
@@ -143,6 +143,77 @@ class PrepareEvidenceStep(StrictOperatorContract):
     )
 
 
+class JudgmentFaceView(StrictOperatorContract):
+    face_code: str = Field(min_length=1, max_length=50)
+    face_label: str = Field(min_length=1, max_length=100)
+    prior_probability_decimal: str = Field(pattern=r"^(?:0|1)\.\d{12}$")
+    movement_pp_decimal: str = Field(pattern=r"^-?\d+\.\d{12}$")
+    belief_probability_decimal: str = Field(pattern=r"^(?:0|1)\.\d{12}$")
+
+
+class JudgmentFactorView(StrictOperatorContract):
+    factor_id: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1, max_length=200)
+    scope_key: str = Field(min_length=1, max_length=200)
+    evidence_ref_tokens: list[str] = Field(min_length=1, max_length=100)
+
+
+class JudgmentRuleView(StrictOperatorContract):
+    rule_id: str = Field(min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=200)
+
+
+class JudgmentFaceBundleView(StrictOperatorContract):
+    bundle_code: str = Field(min_length=1, max_length=100)
+    face_codes: list[str] = Field(min_length=1, max_length=100)
+
+
+class MatchJudgmentEditorView(StrictOperatorContract):
+    official_match_no: str = Field(min_length=1, max_length=20)
+    match_label: str = Field(min_length=1, max_length=300)
+    competition_label: str = Field(min_length=1, max_length=200)
+    kickoff_at: AwareDatetime
+    sale_deadline_at: AwareDatetime
+    market_code: str = Field(min_length=1, max_length=100)
+    market_label: str = Field(min_length=1, max_length=200)
+    evidence: list[BusinessEvidenceSummary]
+    evidence_ref_tokens: list[str] = Field(min_length=1, max_length=500)
+    faces: list[JudgmentFaceView] = Field(min_length=2, max_length=100)
+    factors: list[JudgmentFactorView] = Field(max_length=100)
+    rules: list[JudgmentRuleView] = Field(max_length=100)
+    face_bundles: list[JudgmentFaceBundleView] = Field(min_length=1, max_length=100)
+
+
+class BaselineEnvelopeOfferView(StrictOperatorContract):
+    official_match_no: str = Field(min_length=1, max_length=20)
+    match_label: str = Field(min_length=1, max_length=300)
+    market_code: str = Field(min_length=1, max_length=100)
+    market_label: str = Field(min_length=1, max_length=200)
+    face_bundles: list[JudgmentFaceBundleView] = Field(min_length=1, max_length=100)
+    omission_available: bool
+
+
+class BaselineEnvelopeStructureView(StrictOperatorContract):
+    kind: Literal["jczq_pass", "zucai_group"]
+    structure_code: str = Field(min_length=1, max_length=100)
+    structure_label: str = Field(min_length=1, max_length=200)
+    eligible_official_match_nos: list[str] = Field(min_length=1, max_length=100)
+    pass_size: int | None = Field(default=None, gt=0)
+    required_offer_count: int = Field(gt=0)
+    maximum_groups: int = Field(gt=0)
+
+
+class BaselineEnvelopeEditorView(StrictOperatorContract):
+    lane: OperatorLane
+    ticket_kinds: list[Literal["jczq_pass", "sfc", "renjiu"]]
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    capital_cap_minor: int = Field(gt=0)
+    maximum_ticket_count: int = Field(gt=0)
+    maximum_exhaustive_candidate_count: int = Field(gt=0)
+    offers: list[BaselineEnvelopeOfferView] = Field(min_length=1, max_length=100)
+    structures: list[BaselineEnvelopeStructureView] = Field(min_length=1, max_length=100)
+
+
 class JudgeMatchesStep(StrictOperatorContract):
     kind: Literal['judge_matches'] = 'judge_matches'
     task_id: str
@@ -151,6 +222,40 @@ class JudgeMatchesStep(StrictOperatorContract):
     prompt: str
     options: list[str]
     evidence: list[BusinessEvidenceSummary] = Field(default_factory=list)
+    mode: Literal[
+        "legacy",
+        "baseline_envelope",
+        "match_judgment",
+        "prescription_ready",
+    ] = "legacy"
+    comparison_only: bool = False
+    completed_match_count: int = Field(default=0, ge=0)
+    required_match_count: int = Field(default=0, ge=0)
+    envelope: BaselineEnvelopeEditorView | None = None
+    editor: MatchJudgmentEditorView | None = None
+    envelope_command_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    judgment_command_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    prescription_command_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+    judgment_revision_tokens: list[str] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def _validate_editor_mode(self) -> "JudgeMatchesStep":
+        if self.completed_match_count > self.required_match_count:
+            raise ValueError("completed match count cannot exceed required match count")
+        if self.mode == "baseline_envelope":
+            if self.envelope is None or self.envelope_command_token is None:
+                raise ValueError("baseline envelope mode requires editor and command token")
+        elif self.mode == "match_judgment":
+            if self.editor is None or self.judgment_command_token is None:
+                raise ValueError("match judgment mode requires editor and command token")
+        elif self.mode == "prescription_ready":
+            if self.prescription_command_token is None or not self.judgment_revision_tokens:
+                raise ValueError("prescription mode requires current judgments and command token")
+        return self
 
 
 class TicketVersionSummary(StrictOperatorContract):
@@ -335,7 +440,13 @@ class TelegramConfirmationDispatch(VersionedOperatorContract):
 
 
 class OperatorCommandReceipt(VersionedOperatorContract):
-    command_kind: Literal["freeze_evidence", "rebuild_scoreboard_projection"]
+    command_kind: Literal[
+        "freeze_evidence",
+        "record_baseline_envelope",
+        "commit_match_judgment",
+        "freeze_judgment_prescription",
+        "rebuild_scoreboard_projection",
+    ]
     status: Literal["queued", "completed"]
     task_key: str | None = None
     source_high_watermark: int | None = Field(default=None, ge=0)

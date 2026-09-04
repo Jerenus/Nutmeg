@@ -124,6 +124,51 @@ main {
 .field-label textarea { resize: vertical; }
 .primary-action { min-height: 48px; padding: 0 18px; color: #fff; background: var(--ink); border: 0; border-radius: 6px; font: inherit; font-weight: 750; cursor: pointer; }
 .primary-action:disabled { opacity: .58; cursor: wait; }
+.comparison-only-notice {
+  display: grid;
+  gap: 3px;
+  margin: 0 0 28px;
+  padding: 14px 16px;
+  border-left: 4px solid var(--focus);
+  background: var(--quiet);
+}
+.comparison-only-notice span { color: var(--muted); }
+.compact-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.envelope-offers { display: grid; gap: 20px; }
+.envelope-offer { padding: 18px 0; border-top: 1px solid var(--line); }
+.envelope-offer h2 { margin: 0; font-size: 1.05rem; }
+.envelope-offer > p { margin: 4px 0 12px; color: var(--muted); }
+.probability-editor { border-block: 1px solid var(--line); }
+.probability-header,
+.probability-row {
+  display: grid;
+  grid-template-columns: minmax(80px, .8fr) repeat(3, minmax(110px, 1fr));
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  border-bottom: 1px solid var(--line);
+}
+.probability-header { min-height: 40px; color: var(--muted); font-size: .82rem; }
+.probability-row:last-child { border-bottom: 0; }
+.probability-row input,
+.factor-offsets input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #aab4ad;
+  border-radius: 5px;
+  font: inherit;
+}
+.typed-option-list { display: grid; gap: 12px; }
+.factor-input { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); }
+.factor-input > label { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.factor-offsets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.factor-offsets label { display: grid; gap: 5px; color: var(--muted); font-size: .86rem; }
 .comparison, .prescription-summary { margin: 28px 0; }
 .table-scroll { overflow-x: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 table { width: 100%; border-collapse: collapse; white-space: nowrap; }
@@ -234,6 +279,9 @@ thead th { color: var(--muted); font-size: .82rem; }
   .step-copy h1, .worklist h1, .system-index h1 { font-size: 1.65rem; }
   .step-heading h1 { font-size: 1.65rem; }
   .judgment-layout { grid-template-columns: 1fr; gap: 26px; }
+  .compact-fields, .factor-offsets { grid-template-columns: 1fr; }
+  .probability-header { display: none; }
+  .probability-row { grid-template-columns: minmax(70px, .7fr) repeat(3, minmax(0, 1fr)); }
   .gate-metrics { grid-template-columns: 1fr; }
   .gate-metric { min-height: 88px; border-right: 0; border-bottom: 1px solid var(--line); }
   .placement-summary div { grid-template-columns: 1fr; gap: 3px; }

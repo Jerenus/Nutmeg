@@ -38,11 +38,97 @@ class RebuildScoreboardProjectionCommandV2(OperatorCommandV2):
     kind: Literal[OperatorCommandKind.REBUILD_SCOREBOARD_PROJECTION]
 
 
+class FaceProbabilityInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    face_code: str = Field(min_length=1, max_length=50)
+    probability_decimal: str = Field(
+        pattern=r"^(?:0\.\d{12}|1\.0{12})$",
+    )
+
+
+class FaceOffsetInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    face_code: str = Field(min_length=1, max_length=50)
+    offset_probability_decimal: str = Field(
+        pattern=r"^-?(?:0\.\d{12}|1\.0{12})$",
+    )
+
+
+class FactorAdjustmentInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    factor_id: str = Field(min_length=1, max_length=200)
+    scope_key: str = Field(min_length=1, max_length=200)
+    evidence_ref_tokens: list[str] = Field(min_length=1, max_length=100)
+    offsets: list[FaceOffsetInputV2] = Field(min_length=1, max_length=100)
+
+
+class FaceBundleInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    bundle_code: str = Field(min_length=1, max_length=100)
+    face_codes: list[str] = Field(min_length=1, max_length=100)
+
+
+class OfferConstraintInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    official_match_no: str = Field(min_length=1, max_length=20)
+    market_code: str = Field(min_length=1, max_length=100)
+    allowed_face_bundles: list[FaceBundleInputV2] = Field(min_length=1, max_length=100)
+    omission_allowed: bool
+
+
+class StructureTemplateInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["jczq_pass", "zucai_group"]
+    structure_code: str = Field(min_length=1, max_length=100)
+    eligible_official_match_nos: list[str] = Field(min_length=1, max_length=100)
+    pass_size: int | None = Field(default=None, gt=0)
+    required_offer_count: int = Field(gt=0)
+    maximum_groups: int = Field(gt=0)
+
+
+class RecordBaselineEnvelopeCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.RECORD_BASELINE_ENVELOPE]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    ticket_kind: Literal["jczq_pass", "sfc", "renjiu"]
+    capital_cap_minor: int = Field(gt=0)
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    maximum_ticket_count: int = Field(gt=0)
+    offer_constraints: list[OfferConstraintInputV2] = Field(min_length=1, max_length=100)
+    structure_templates: list[StructureTemplateInputV2] = Field(
+        min_length=1,
+        max_length=100,
+    )
+    maximum_exhaustive_candidate_count: int = Field(gt=0)
+
+
+class CommitMatchJudgmentCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.COMMIT_MATCH_JUDGMENT]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    official_match_no: str = Field(min_length=1, max_length=20)
+    market_code: str = Field(min_length=1, max_length=100)
+    belief: list[FaceProbabilityInputV2] = Field(min_length=2, max_length=100)
+    factors: list[FactorAdjustmentInputV2] = Field(max_length=100)
+    expression_bundles: list[FaceBundleInputV2] = Field(min_length=1, max_length=100)
+    rule_ids: list[str] = Field(max_length=100)
+    evidence_ref_tokens: list[str] = Field(max_length=500)
+    falsifier: str = Field(min_length=1, max_length=4000)
+    rationale: str = Field(min_length=1, max_length=4000)
+
+
+class FreezeJudgmentPrescriptionCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.FREEZE_JUDGMENT_PRESCRIPTION]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    judgment_revision_tokens: list[str] = Field(min_length=1, max_length=100)
+
+
 class UnavailableOperatorCommandV2(OperatorCommandV2):
     kind: Literal[
-        OperatorCommandKind.RECORD_BASELINE_ENVELOPE,
-        OperatorCommandKind.COMMIT_MATCH_JUDGMENT,
-        OperatorCommandKind.FREEZE_JUDGMENT_PRESCRIPTION,
         OperatorCommandKind.REQUEST_CANDIDATE_GENERATION,
         OperatorCommandKind.SELECT_CANDIDATE,
         OperatorCommandKind.RECORD_NO_TICKET,
@@ -61,6 +147,9 @@ class UnavailableOperatorCommandV2(OperatorCommandV2):
 
 InstalledOperatorCommandV2 = Annotated[
     FreezeEvidenceCommandV2
+    | RecordBaselineEnvelopeCommandV2
+    | CommitMatchJudgmentCommandV2
+    | FreezeJudgmentPrescriptionCommandV2
     | RebuildScoreboardProjectionCommandV2
     | UnavailableOperatorCommandV2,
     Field(discriminator="kind"),
@@ -109,6 +198,27 @@ def mount_operator_api(
                     actor_role=ActorRole.JUDGE_OPERATOR,
                 )
                 status_code = 202
+            elif isinstance(command, RecordBaselineEnvelopeCommandV2):
+                result = operator_actions.record_baseline_envelope(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, CommitMatchJudgmentCommandV2):
+                result = operator_actions.commit_match_judgment(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, FreezeJudgmentPrescriptionCommandV2):
+                result = operator_actions.freeze_judgment_prescription(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
             elif isinstance(command, RebuildScoreboardProjectionCommandV2):
                 result = operator_actions.rebuild_scoreboard_projection(
                     command,
@@ -149,9 +259,18 @@ def mount_operator_api(
 
 
 __all__ = [
+    "CommitMatchJudgmentCommandV2",
+    "FaceBundleInputV2",
+    "FaceOffsetInputV2",
+    "FaceProbabilityInputV2",
+    "FactorAdjustmentInputV2",
     "FreezeEvidenceCommandV2",
+    "FreezeJudgmentPrescriptionCommandV2",
     "InstalledOperatorCommandV2",
+    "OfferConstraintInputV2",
     "OperatorCommandV2",
+    "RecordBaselineEnvelopeCommandV2",
     "RebuildScoreboardProjectionCommandV2",
+    "StructureTemplateInputV2",
     "mount_operator_api",
 ]

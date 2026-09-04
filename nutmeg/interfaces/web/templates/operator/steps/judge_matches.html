@@ -1,59 +1,207 @@
-<div class="step-heading">
-  <div>
-    <span class="step-kicker">当前需要你处理 · {{ task.step.item_key }}</span>
-    <h1>{{ task.step.title }}</h1>
-    <p>{{ task.step.prompt }}</p>
+{% if task.step.mode == "baseline_envelope" %}
+  {% include "operator/steps/baseline_envelope.html" %}
+{% elif task.step.mode == "match_judgment" %}
+  <div class="step-heading">
+    <span class="step-kicker">逐场判断 · {{ task.step.editor.official_match_no }}</span>
+    <h1>{{ task.step.editor.match_label }}</h1>
+    <p>
+      {{ task.step.editor.competition_label }} · 开赛 {{ task.step.editor.kickoff_at }} ·
+      截止 {{ task.step.editor.sale_deadline_at }}
+    </p>
   </div>
-</div>
 
-<div class="judgment-layout">
-  <section class="evidence-list" aria-labelledby="evidence-title">
-    <h2 id="evidence-title">本次判断所需数据</h2>
-    {% for evidence in task.step.evidence %}
-      <div class="evidence-row severity-{{ evidence.severity }}">
-        <strong>{{ evidence.label }}</strong>
-        <span>{{ evidence.value }}</span>
-        <small>
-          {{ evidence.source_label or "当前工作流" }}
-          {% if evidence.freshness_label %} · 更新于 {{ evidence.freshness_label }}{% endif %}
-        </small>
-        {% if evidence.evidence_href %}
-          <a href="{{ evidence.evidence_href }}">查看来源</a>
-        {% endif %}
-      </div>
-    {% endfor %}
-  </section>
+  <div class="judgment-layout">
+    <section class="evidence-list" aria-labelledby="evidence-title">
+      <h2 id="evidence-title">冻结证据</h2>
+      {% for evidence in task.step.editor.evidence %}
+        <div class="evidence-row severity-{{ evidence.severity }}">
+          <strong>{{ evidence.label }}</strong>
+          <span>{{ evidence.value }}</span>
+          <small>
+            {{ evidence.source_label or "当前证据版本" }}
+            {% if evidence.freshness_label %} · {{ evidence.freshness_label }}{% endif %}
+          </small>
+        </div>
+      {% endfor %}
+    </section>
 
-  {% if not read_only %}
-  <form class="operator-form" data-action="resolve-issue-adjudication"
-        data-task-id="{{ task.selected.task_id }}"
-        data-adjudication-key="{{ task.step.item_key }}">
-    <fieldset>
-      <legend>记录你的裁决</legend>
-      <div class="option-list">
-        {% for option in task.step.options %}
-          <label>
-            <input type="radio" name="selected_option" value="{{ option }}" required>
-            <span>{{ option }}</span>
-          </label>
+    {% if not read_only %}
+      <form class="operator-form judgment-form" data-action="commit-match-judgment"
+            data-task-key="{{ task.selected.task_id }}"
+            data-command-token="{{ task.step.judgment_command_token }}"
+            data-official-match-no="{{ task.step.editor.official_match_no }}"
+            data-market-code="{{ task.step.editor.market_code }}">
+        {% for evidence_token in task.step.editor.evidence_ref_tokens %}
+          <input type="hidden" name="judgment_evidence_ref_token"
+                 value="{{ evidence_token }}">
         {% endfor %}
-      </div>
-    </fieldset>
-    <label class="field-label">
-      <span>裁决类型</span>
-      <select name="decision" required>
-        <option value="approve">确认</option>
-        <option value="override">行权偏离</option>
-        <option value="reject">拒绝</option>
-      </select>
-    </label>
-    <label class="field-label">
-      <span>理由</span>
-      <textarea name="reason" rows="4" required></textarea>
-    </label>
-    <button class="primary-action" type="submit">保存并进入下一步</button>
-  </form>
+        <fieldset>
+          <legend>{{ task.step.editor.market_label }}概率</legend>
+          <div class="probability-editor">
+            <div class="probability-header" aria-hidden="true">
+              <span>结果</span><span>市场先验</span><span>盘面变化</span><span>你的概率</span>
+            </div>
+            {% for face in task.step.editor.faces %}
+              <label class="probability-row">
+                <strong>{{ face.face_label }}</strong>
+                <span>{{ face.prior_probability_decimal }}</span>
+                <span>{{ face.movement_pp_decimal }} pp</span>
+                <input type="text" inputmode="decimal" name="belief_probability_decimal"
+                       data-face-code="{{ face.face_code }}"
+                       value="{{ face.belief_probability_decimal }}"
+                       pattern="(?:0\.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]|1\.000000000000)"
+                       required>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>影响因子与逐面偏移</legend>
+          <div class="typed-option-list">
+            {% for factor in task.step.editor.factors %}
+              <div class="factor-input" data-factor-row
+                   data-factor-id="{{ factor.factor_id }}"
+                   data-scope-key="{{ factor.scope_key }}">
+                <label>
+                  <input type="checkbox" name="factor_id" value="{{ factor.factor_id }}">
+                  <span>{{ factor.label }}</span>
+                </label>
+                {% for evidence_token in factor.evidence_ref_tokens %}
+                  <input type="hidden" name="factor_evidence_ref_token"
+                         value="{{ evidence_token }}">
+                {% endfor %}
+                <div class="factor-offsets">
+                  {% for face in task.step.editor.faces %}
+                    <label>
+                      <span>{{ face.face_label }}偏移</span>
+                      <input type="text" inputmode="decimal" name="factor_offset"
+                             data-face-code="{{ face.face_code }}"
+                             value="0.000000000000"
+                             pattern="-?(?:0\.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]|1\.000000000000)">
+                    </label>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>表达面</legend>
+          <div class="option-list">
+            {% for bundle in task.step.editor.face_bundles %}
+              <label>
+                <input type="checkbox" name="face_bundle" value="{{ bundle.bundle_code }}"
+                       data-face-codes="{{ bundle.face_codes|join(',') }}">
+                <span>{{ bundle.face_codes|join(' / ') }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>命名规则</legend>
+          <div class="option-list">
+            {% for rule in task.step.editor.rules %}
+              <label>
+                <input type="checkbox" name="rule_id" value="{{ rule.rule_id }}">
+                <span>{{ rule.label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <label class="field-label">
+          <span>证伪条件</span>
+          <textarea name="falsifier" rows="3" required></textarea>
+        </label>
+        <label class="field-label">
+          <span>判断理由</span>
+          <textarea name="rationale" rows="4" required></textarea>
+        </label>
+        <button class="primary-action" type="submit">提交本场并继续</button>
+      </form>
+    {% else %}
+      <p class="waiting-note">只读模式不会提交判断。</p>
+    {% endif %}
+  </div>
+{% elif task.step.mode == "prescription_ready" %}
+  <div class="step-heading">
+    <span class="step-kicker">逐场判断已登记</span>
+    <h1>冻结本轮判断处方</h1>
+    <p>{{ task.step.completed_match_count }} / {{ task.step.required_match_count }} 场已提交。</p>
+  </div>
+  {% if not read_only %}
+    <form class="operator-form" data-action="freeze-judgment-prescription"
+          data-task-key="{{ task.selected.task_id }}"
+          data-command-token="{{ task.step.prescription_command_token }}">
+      {% for token in task.step.judgment_revision_tokens %}
+        <input type="hidden" name="judgment_revision_token" value="{{ token }}">
+      {% endfor %}
+      <button class="primary-action" type="submit">冻结处方并比较票面</button>
+    </form>
   {% else %}
-    <p class="waiting-note">只读模式不会提交裁决。</p>
+    <p class="waiting-note">只读模式不会冻结判断处方。</p>
   {% endif %}
-</div>
+{% else %}
+  <div class="step-heading">
+    <div>
+      <span class="step-kicker">当前需要你处理 · {{ task.step.item_key }}</span>
+      <h1>{{ task.step.title }}</h1>
+      <p>{{ task.step.prompt }}</p>
+    </div>
+  </div>
+
+  <div class="judgment-layout">
+    <section class="evidence-list" aria-labelledby="evidence-title">
+      <h2 id="evidence-title">本次判断所需数据</h2>
+      {% for evidence in task.step.evidence %}
+        <div class="evidence-row severity-{{ evidence.severity }}">
+          <strong>{{ evidence.label }}</strong>
+          <span>{{ evidence.value }}</span>
+          <small>
+            {{ evidence.source_label or "当前工作流" }}
+            {% if evidence.freshness_label %} · 更新于 {{ evidence.freshness_label }}{% endif %}
+          </small>
+          {% if evidence.evidence_href %}
+            <a href="{{ evidence.evidence_href }}">查看来源</a>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </section>
+
+    {% if not read_only %}
+      <form class="operator-form" data-action="resolve-issue-adjudication"
+            data-task-id="{{ task.selected.task_id }}"
+            data-adjudication-key="{{ task.step.item_key }}">
+        <fieldset>
+          <legend>记录你的裁决</legend>
+          <div class="option-list">
+            {% for option in task.step.options %}
+              <label>
+                <input type="radio" name="selected_option" value="{{ option }}" required>
+                <span>{{ option }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+        <label class="field-label">
+          <span>裁决类型</span>
+          <select name="decision" required>
+            <option value="approve">确认</option>
+            <option value="override">行权偏离</option>
+            <option value="reject">拒绝</option>
+          </select>
+        </label>
+        <label class="field-label">
+          <span>理由</span>
+          <textarea name="reason" rows="4" required></textarea>
+        </label>
+        <button class="primary-action" type="submit">保存并进入下一步</button>
+      </form>
+    {% else %}
+      <p class="waiting-note">只读模式不会提交裁决。</p>
+    {% endif %}
+  </div>
+{% endif %}

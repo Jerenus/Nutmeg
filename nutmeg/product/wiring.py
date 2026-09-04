@@ -117,6 +117,8 @@ def build_product_services(
         official_history_provider=fetch_renjiu_history,
         clock=lambda: datetime.now(UTC),
         operator_evidence=operator_evidence,
+        unit_of_work_factory=lambda: OntologyUnitOfWork(kernel.engine),
+        snapshot_tokens=snapshot_tokens,
     )
     owner_chat_id = _telegram_owner(settings.telegram_allowed_chat_ids)
     telegram_confirmation = None
@@ -147,6 +149,7 @@ def build_product_services(
         telegram_confirmation=telegram_confirmation,
         telegram_owner_chat_id=owner_chat_id,
         evidence_actions=kernel.evidence_actions,
+        decision_actions=kernel.decision_actions,
         snapshot_tokens=snapshot_tokens,
         calibrate=kernel.calibrate,
         repository=repository,
