@@ -276,6 +276,21 @@ class OperatorActionService:
         expected_scope_key = f"match:{command.official_match_no}"
         if any(item.scope_key != expected_scope_key for item in command.factors):
             raise OperatorSnapshotTokenError("invalid_request")
+        evidence_refs_by_token = dict(context.evidence_refs_by_token)
+        try:
+            judgment_evidence_refs = tuple(
+                evidence_refs_by_token[token]
+                for token in command.evidence_ref_tokens
+            )
+            factor_evidence_refs = tuple(
+                tuple(
+                    evidence_refs_by_token[token]
+                    for token in factor.evidence_ref_tokens
+                )
+                for factor in command.factors
+            )
+        except KeyError as error:
+            raise OperatorSnapshotTokenError("invalid_request") from error
         outcome = decision_actions.commit_operator_match_judgment(
             CommitOperatorMatchJudgmentRequest(
                 task_evidence_bundle_revision_id=(context.task_evidence_bundle_revision_id),
@@ -303,7 +318,7 @@ class OperatorActionService:
                     FactorAdjustmentInput(
                         factor_definition_id=item.factor_id,
                         scope_key=context.match_id,
-                        evidence_ref_tokens=tuple(item.evidence_ref_tokens),
+                        evidence_ref_tokens=factor_evidence_refs[index],
                         offsets=tuple(
                             FaceOffsetInput(
                                 face_code=offset.face_code,
@@ -312,7 +327,7 @@ class OperatorActionService:
                             for offset in item.offsets
                         ),
                     )
-                    for item in command.factors
+                    for index, item in enumerate(command.factors)
                 ),
                 expression_bundles=tuple(
                     FaceBundleInput(
@@ -322,7 +337,7 @@ class OperatorActionService:
                     for item in command.expression_bundles
                 ),
                 rule_ids=tuple(command.rule_ids),
-                evidence_ref_tokens=tuple(command.evidence_ref_tokens),
+                evidence_ref_tokens=judgment_evidence_refs,
                 falsifier=command.falsifier,
                 rationale=command.rationale,
                 commitment_tier="commit",

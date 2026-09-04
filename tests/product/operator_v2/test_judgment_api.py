@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -8,12 +9,14 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.interfaces.operator_api import (
     CommitMatchJudgmentCommandV2,
     mount_operator_api,
 )
+from nutmeg.interfaces.product_api import create_product_app
 from nutmeg.ontology.actions.models import (
     ActionOutcome,
     ActionStatus,
@@ -33,6 +36,11 @@ from nutmeg.product.operator_contracts import (
 )
 from nutmeg.product.operator_lanes import SaleSlateSnapshot
 from nutmeg.product.operator_queries import OperatorQueryService
+from nutmeg.product.operator_runtime import (
+    OperatorRuntimeConfig,
+    OperatorRuntimeScope,
+    OperatorSurfaceMode,
+)
 from nutmeg.product.operator_tokens import (
     OperatorCommandKind,
     OperatorSnapshotTokenCodec,
@@ -176,6 +184,7 @@ class _DecisionQueries:
                 ("1", "0.300000000000"),
                 ("0", "0.300000000000"),
             ),
+            evidence_refs_by_token=(("opaque.evidence-1", "evidence:lineup:001"),),
             expected_current_revision_no=7,
         )
 
@@ -313,7 +322,7 @@ def _judgment_document(**updates: object) -> dict[str, object]:
             {
                 "factor_id": "factor-lineup-v1",
                 "scope_key": "match:001",
-                "evidence_ref_tokens": ["evidence:lineup:001"],
+                "evidence_ref_tokens": ["opaque.evidence-1"],
                 "offsets": [
                     {"face_code": "3", "offset_probability_decimal": "0.050000000000"},
                     {"face_code": "1", "offset_probability_decimal": "-0.020000000000"},
@@ -323,7 +332,7 @@ def _judgment_document(**updates: object) -> dict[str, object]:
         ],
         "expression_bundles": [{"bundle_code": "home_draw", "face_codes": ["3", "1"]}],
         "rule_ids": ["k"],
-        "evidence_ref_tokens": ["evidence:lineup:001"],
+        "evidence_ref_tokens": ["opaque.evidence-1"],
         "falsifier": "首发阵容不再支持已登记的结构前提。",
         "rationale": "依据冻结证据登记本场判断。",
     }
@@ -471,6 +480,8 @@ def test_real_service_resolves_match_ids_prior_and_forecast_cas() -> None:
     assert request.expected_current_revision_no == 7
     assert request.commitment_tier == "commit"
     assert request.factors[0].scope_key == "match-internal-1"
+    assert request.factors[0].evidence_ref_tokens == ("evidence:lineup:001",)
+    assert request.evidence_ref_tokens == ("evidence:lineup:001",)
 
 
 def test_real_service_rejects_factor_scope_outside_selected_match() -> None:
@@ -483,7 +494,7 @@ def test_real_service_rejects_factor_scope_outside_selected_match() -> None:
                 {
                     "factor_id": "factor-lineup-v1",
                     "scope_key": "match:999",
-                    "evidence_ref_tokens": ["evidence:lineup:001"],
+                    "evidence_ref_tokens": ["opaque.evidence-1"],
                     "offsets": [
                         {
                             "face_code": "3",
@@ -500,6 +511,23 @@ def test_real_service_rejects_factor_scope_outside_selected_match() -> None:
                     ],
                 }
             ],
+        ),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "invalid_request"
+    assert decision_actions.calls == []
+
+
+def test_real_service_rejects_unrecognized_opaque_evidence_reference() -> None:
+    service, decision_actions = _real_actions()
+    response = _client(service).post(
+        "/api/v2/operator",
+        json=_judgment_document(
+            expected_snapshot_token=_decision_token(
+                OperatorCommandKind.COMMIT_MATCH_JUDGMENT
+            ),
+            evidence_ref_tokens=["opaque.evidence-from-another-form"],
         ),
     )
 
@@ -859,3 +887,175 @@ def test_zucai_public_task_prefers_formal_judgment_over_legacy_rx(
     assert isinstance(task.step, JudgeMatchesStep)
     assert task.step.mode == "baseline_envelope"
     assert legacy.calls == 0
+
+
+def _real_app_client(fixture, tmp_path: Path) -> TestClient:
+    data_dir = (tmp_path / "isolated-app").resolve()
+    runtime = OperatorRuntimeConfig(
+        surface_mode=OperatorSurfaceMode.ACTIVE,
+        runtime_scope=OperatorRuntimeScope.ISOLATED_CANDIDATE,
+        data_dir=data_dir,
+        production_data_dir=(tmp_path / "production").resolve(),
+        running_commit="a" * 40,
+    )
+    queries = _task_queries(fixture)
+    actions = OperatorActionService(
+        queries=queries,
+        action_gateway=SimpleNamespace(),
+        decision_actions=fixture.decision_actions,
+        snapshot_tokens=OperatorSnapshotTokenCodec(KEY),
+        clock=lambda: NOW,
+    )
+    services = SimpleNamespace(
+        settings=SimpleNamespace(default_user_id="jun", data_dir=data_dir),
+        runtime=runtime,
+        queries=SimpleNamespace(),
+        actions=SimpleNamespace(),
+        operator_queries=queries,
+        operator_actions=actions,
+        copilot=None,
+        tickets=SimpleNamespace(),
+    )
+    return TestClient(
+        create_product_app(
+            services,
+            runtime_config=runtime,
+            session_secret="package-six-real-app-session",
+            csrf_secret="package-six-real-app-csrf",
+            clock=lambda: NOW,
+        )
+    )
+
+
+def _command_token(html: str, action: str) -> str:
+    match = re.search(
+        rf'data-action="{re.escape(action)}"[^>]*data-command-token="([^"]+)"',
+        html,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    return match.group(1)
+
+
+def _active_session_headers(client: TestClient) -> dict[str, str]:
+    csrf_token = client.get("/api/v1/session").json()["csrf_token"]
+    return {"Origin": "http://testserver", "X-CSRF-Token": csrf_token}
+
+
+def test_real_app_round_trips_envelope_judgment_and_prescription(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    _seed_task_identity(fixture)
+    fixture.decision_actions.freeze_market_prior_baseline(_baseline_request(fixture))
+    client = _real_app_client(fixture, tmp_path)
+    headers = _active_session_headers(client)
+
+    envelope_page = client.get("/tasks/jczq:2026-09-04")
+    envelope_token = _command_token(envelope_page.text, "record-baseline-envelope")
+    envelope_response = client.post(
+        "/api/v2/operator",
+        json=_envelope_document(expected_snapshot_token=envelope_token),
+        headers=headers,
+    )
+
+    judgment_page = client.get("/tasks/jczq:2026-09-04")
+    judgment_token = _command_token(judgment_page.text, "commit-match-judgment")
+    judgment_response = client.post(
+        "/api/v2/operator",
+        json=_judgment_document(
+            expected_snapshot_token=judgment_token,
+            belief=[
+                {"face_code": "3", "probability_decimal": "0.400000000000"},
+                {"face_code": "1", "probability_decimal": "0.300000000000"},
+                {"face_code": "0", "probability_decimal": "0.300000000000"},
+            ],
+            factors=[],
+            evidence_ref_tokens=re.findall(
+                r'name="judgment_evidence_ref_token"\s+value="([^"]+)"',
+                judgment_page.text,
+            ),
+        ),
+        headers=headers,
+    )
+    assert judgment_response.status_code == 200, judgment_response.text
+
+    prescription_page = client.get("/tasks/jczq:2026-09-04")
+    prescription_token = _command_token(
+        prescription_page.text,
+        "freeze-judgment-prescription",
+    )
+    judgment_tokens = re.findall(
+        r'name="judgment_revision_token"\s+value="([^"]+)"',
+        prescription_page.text,
+    )
+    prescription_response = client.post(
+        "/api/v2/operator",
+        json={
+            "schema_version": "2",
+            "kind": "freeze_judgment_prescription",
+            "expected_snapshot_token": prescription_token,
+            "idempotency_key": "browser:prescription:full-chain:1",
+            "task_key": "jczq:2026-09-04",
+            "judgment_revision_tokens": judgment_tokens,
+        },
+        headers=headers,
+    )
+
+    assert envelope_response.status_code == 200
+    assert judgment_response.status_code == 200
+    assert prescription_response.status_code == 200
+    with fixture.engine.connect() as connection:
+        counts = {
+            table_name: connection.scalar(
+                text(f"SELECT COUNT(*) FROM {table_name}")
+            )
+            for table_name in (
+                "evidence_bundles",
+                "forecast_revisions",
+                "operator_match_judgment_revisions",
+                "operator_judgment_prescription_revisions",
+            )
+        }
+    assert counts == {
+        "evidence_bundles": 1,
+        "forecast_revisions": 1,
+        "operator_match_judgment_revisions": 1,
+        "operator_judgment_prescription_revisions": 1,
+    }
+
+
+def test_real_judgment_page_exposes_only_opaque_evidence_references(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    _seed_task_identity(fixture)
+    fixture.decision_actions.freeze_market_prior_baseline(_baseline_request(fixture))
+    client = _real_app_client(fixture, tmp_path)
+    headers = _active_session_headers(client)
+    envelope_page = client.get("/tasks/jczq:2026-09-04")
+
+    response = client.post(
+        "/api/v2/operator",
+        json=_envelope_document(
+            expected_snapshot_token=_command_token(
+                envelope_page.text,
+                "record-baseline-envelope",
+            )
+        ),
+        headers=headers,
+    )
+    judgment_page = client.get("/tasks/jczq:2026-09-04")
+
+    assert response.status_code == 200
+    assert judgment_page.status_code == 200
+    assert 'name="judgment_evidence_ref_token"' in judgment_page.text
+    assert 'name="factor_evidence_ref_token"' in judgment_page.text
+    for internal_reference in (
+        "obs-anchor",
+        "snapshot-1",
+        "quote-3",
+        "quote-1",
+        "quote-0",
+    ):
+        assert internal_reference not in judgment_page.text

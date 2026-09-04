@@ -173,6 +173,7 @@ class MatchJudgmentCommandContext:
     official_offer_revision_id: str
     market_definition_id: str
     prior: tuple[tuple[str, str], ...]
+    evidence_refs_by_token: tuple[tuple[str, str], ...]
     expected_current_revision_no: int
 
 
@@ -451,8 +452,8 @@ class OperatorQueryService:
                 market_code,
             )
 
-    @staticmethod
     def _match_judgment_context_for_lineage(
+        self,
         uow,
         lineage: _DecisionLineage,
         official_match_no: str,
@@ -502,6 +503,11 @@ class OperatorQueryService:
         dependencies.append(f"offer:{offer.official_offer_revision_id}")
         if forecast_revision_id is not None:
             dependencies.append(f"forecast:{forecast_revision_id}")
+        evidence_refs = self._judgment_evidence_refs(
+            uow,
+            lineage,
+            match_id=offer.match_id,
+        )
         return MatchJudgmentCommandContext(
             task_key=lineage.task_key,
             task_snapshot_hash=lineage.task_snapshot_hash,
@@ -514,6 +520,13 @@ class OperatorQueryService:
             official_offer_revision_id=offer.official_offer_revision_id,
             market_definition_id=market_definition_id,
             prior=prior,
+            evidence_refs_by_token=tuple(
+                (
+                    self._judgment_evidence_token(lineage, evidence_ref),
+                    evidence_ref,
+                )
+                for evidence_ref in evidence_refs
+            ),
             expected_current_revision_no=expected_revision_no,
         )
 
@@ -1001,16 +1014,11 @@ class OperatorQueryService:
         frozen = uow.operator_decision.freeze_bundle_for_action(item.freeze_bundle_action_id)
         if frozen is None:
             raise ProductActionBlockedError("frozen judgment evidence is unavailable")
-        evidence_refs = tuple(
-            sorted(
-                {
-                    *item.requirement_ref_tokens,
-                    *item.market_prior_ref_tokens,
-                    *item.conflicts_cleared_ref_tokens,
-                    *frozen.evidence_ref_tokens,
-                }
-            )
-        )
+        evidence_token_by_ref = {
+            evidence_ref: token
+            for token, evidence_ref in context.evidence_refs_by_token
+        }
+        evidence_refs = set(evidence_token_by_ref)
         evidence = [
             BusinessEvidenceSummary(
                 label=f"{requirement_id} · "
@@ -1068,7 +1076,7 @@ class OperatorQueryService:
         factors = []
         for row in factor_rows:
             anchors = [
-                str(ref)
+                evidence_token_by_ref[str(ref)]
                 for ref in json.loads(str(row["born_from_refs_json"]))
                 if str(ref) in evidence_refs
             ]
@@ -1098,7 +1106,7 @@ class OperatorQueryService:
                 context.market_definition_id,
             ),
             evidence=evidence,
-            evidence_ref_tokens=list(evidence_refs),
+            evidence_ref_tokens=list(evidence_token_by_ref.values()),
             faces=faces,
             factors=factors,
             rules=[
@@ -1172,6 +1180,55 @@ class OperatorQueryService:
                 work_item_id=lineage.work_item_id,
                 command_kind=command_kind,
                 dependency_revision_ids=list(dependency_revision_ids),
+            )
+        )
+
+    def _judgment_evidence_token(
+        self,
+        lineage: _DecisionLineage,
+        evidence_ref: str,
+    ) -> str:
+        digest = hashlib.sha256(evidence_ref.encode("utf-8")).hexdigest()
+        return self._decision_command_token(
+            lineage,
+            OperatorCommandKind.COMMIT_MATCH_JUDGMENT,
+            (f"evidence-ref:{digest}",),
+        )
+
+    @staticmethod
+    def _judgment_evidence_refs(
+        uow,
+        lineage: _DecisionLineage,
+        *,
+        match_id: str,
+    ) -> tuple[str, ...]:
+        item = next(
+            (
+                candidate
+                for candidate in uow.operator_decision.task_evidence_bundle_items(
+                    lineage.task_evidence_bundle_revision_id
+                )
+                if candidate.match_id == match_id
+            ),
+            None,
+        )
+        if item is None:
+            raise ProductActionBlockedError(
+                "judgment match has no current frozen evidence item"
+            )
+        frozen = uow.operator_decision.freeze_bundle_for_action(
+            item.freeze_bundle_action_id
+        )
+        if frozen is None:
+            raise ProductActionBlockedError("frozen judgment evidence is unavailable")
+        return tuple(
+            sorted(
+                {
+                    *item.requirement_ref_tokens,
+                    *item.market_prior_ref_tokens,
+                    *item.conflicts_cleared_ref_tokens,
+                    *frozen.evidence_ref_tokens,
+                }
             )
         )
 
