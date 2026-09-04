@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
+from nutmeg.product import operator_evidence
 from nutmeg.product.operator_evidence import (
     ClaimEvidence,
     EvidenceClaimKind,
@@ -120,6 +122,68 @@ def _complete_match(
         claims=(),
         coverage_ref_tokens=("coverage:E5:home",),
     )
+
+
+def test_requirement_resolution_uses_latest_fresh_market_and_observation() -> None:
+    snapshot = _complete_match()
+    latest_market = replace(
+        snapshot.markets[0],
+        ref_token="zz-latest-official-market",
+        observed_at=CUTOFF - timedelta(minutes=5),
+    )
+    old_home_form = next(
+        item
+        for item in snapshot.observations
+        if item.team_id == "match-1:home"
+        and item.kind is EvidenceObservationKind.RECENT_FORM
+    )
+    latest_home_form = replace(
+        old_home_form,
+        ref_token="zz-latest-home-form",
+        observed_at=CUTOFF - timedelta(minutes=4),
+        value_fingerprint="2-0-0:5-1",
+    )
+    snapshot = replace(
+        snapshot,
+        markets=(*snapshot.markets, latest_market),
+        observations=(*snapshot.observations, latest_home_form),
+    )
+
+    market = evaluate_requirement("E3", snapshot, cutoff=CUTOFF)
+    recent_form = evaluate_requirement("E6a", snapshot, cutoff=CUTOFF)
+
+    assert market.evidence_ref_tokens == (latest_market.ref_token,)
+    assert latest_home_form.ref_token in recent_form.evidence_ref_tokens
+    assert old_home_form.ref_token not in recent_form.evidence_ref_tokens
+
+    original_status = evaluate_task_evidence(
+        TaskEvidenceSnapshot(lane="jczq", matches=(_complete_match(),)),
+        cutoff=CUTOFF,
+    )
+    refreshed_status = evaluate_task_evidence(
+        TaskEvidenceSnapshot(lane="jczq", matches=(snapshot,)),
+        cutoff=CUTOFF,
+    )
+    original_token = operator_evidence._requirement_revision_token(
+        snapshot_hash="a" * 64,
+        cutoff=CUTOFF,
+        status=original_status,
+    )
+    refreshed_token = operator_evidence._requirement_revision_token(
+        snapshot_hash="a" * 64,
+        cutoff=CUTOFF,
+        status=refreshed_status,
+    )
+    same_state_later = operator_evidence._requirement_revision_token(
+        snapshot_hash="a" * 64,
+        cutoff=CUTOFF + timedelta(seconds=1),
+        status=original_status,
+    )
+    assert original_token != refreshed_token
+    assert original_token == same_state_later
+    current = SimpleNamespace(requirement_revision_token=original_token)
+    assert not operator_evidence._new_evidence_available(current, original_token)
+    assert operator_evidence._new_evidence_available(current, refreshed_token)
 
 
 @pytest.mark.parametrize(

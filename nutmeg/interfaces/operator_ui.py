@@ -36,6 +36,7 @@ def mount_operator_ui(
     clock: Callable[[], datetime],
     *,
     mount_root: bool = True,
+    mount_next: bool = False,
     read_only: bool = False,
 ) -> None:
     web_root = Path(__file__).resolve().parent / "web"
@@ -101,6 +102,14 @@ def mount_operator_ui(
     if mount_root:
         app.add_api_route(
             "/",
+            operator_root,
+            methods=["GET"],
+            include_in_schema=False,
+        )
+
+    if mount_next:
+        app.add_api_route(
+            "/operator-next",
             operator_root,
             methods=["GET"],
             include_in_schema=False,
@@ -179,28 +188,6 @@ def mount_operator_rollout_routes(
     runtime: OperatorRuntimeConfig,
 ) -> None:
     """Own `/` and `/operator-next` according to the closed rollout matrix."""
-    web_root = Path(__file__).resolve().parent / "web"
-    templates = Jinja2Templates(directory=web_root / "templates")
-
-    def shell_response(request: Request, *, legacy: bool):
-        return templates.TemplateResponse(
-            request=request,
-            name="operator/read_only_shell.html",
-            context={
-                "workspace": "operator-read-only",
-                "read_only": True,
-                "lane_label": "JCZQ / 足彩",
-                "title": "Nutmeg 操作台",
-                "status_text": (
-                    "当前界面为只读，操作入口已关闭。"
-                    if legacy
-                    else "新版工作台为只读预览，正在读取受治理的数据投影。"
-                ),
-                "recovery_href": "/tasks" if legacy else None,
-                "recovery_label": "查看只读任务",
-            },
-        )
-
     if (
         runtime.runtime_scope is OperatorRuntimeScope.ISOLATED_CANDIDATE
         and runtime.surface_mode is OperatorSurfaceMode.ACTIVE
@@ -209,12 +196,6 @@ def mount_operator_rollout_routes(
         @app.get("/", include_in_schema=False)
         async def isolated_root_redirect():
             return RedirectResponse("/operator-next", status_code=307)
-
-    elif runtime.surface_mode is OperatorSurfaceMode.ACTIVE:
-
-        @app.get("/", include_in_schema=False)
-        async def rollout_root(request: Request):
-            return shell_response(request, legacy=False)
 
     if runtime.surface_mode is OperatorSurfaceMode.LEGACY_READ_ONLY:
         return
@@ -227,9 +208,3 @@ def mount_operator_rollout_routes(
         @app.get("/operator-next", include_in_schema=False)
         async def production_next_redirect():
             return RedirectResponse("/", status_code=307)
-
-    else:
-
-        @app.get("/operator-next", include_in_schema=False)
-        async def candidate_shell(request: Request):
-            return shell_response(request, legacy=False)

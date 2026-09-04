@@ -3,6 +3,10 @@
 {% block content %}
   <section class="current-step" data-step-kind="{{ task.step.kind }}"
            data-snapshot-token="{{ snapshot_token }}">
-    {% include "operator/steps/" ~ task.step.kind ~ ".html" %}
+    {% if task.step.kind == "prepare_evidence" %}
+      {% include "operator/steps/prepare_evidence_v2.html" %}
+    {% else %}
+      {% include "operator/steps/" ~ task.step.kind ~ ".html" %}
+    {% endif %}
   </section>
 {% endblock %}

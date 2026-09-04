@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from nutmeg.ontology.actions.models import ActionOutcome
 
@@ -128,15 +129,139 @@ class EvidenceIntakeResult:
     receipt: EvidenceIntakeReceiptRow | None
 
 
+@dataclass(frozen=True, slots=True)
+class EvidenceFreezeMatchPlan:
+    match_id: str
+    market_snapshot_id: str | None
+    prior_distribution: dict[str, float]
+    candidate_observation_ids: tuple[str, ...]
+    caveat_claim_ids: tuple[str, ...]
+    requirement_states: tuple[tuple[str, str], ...]
+    requirement_ref_tokens: tuple[str, ...]
+    market_prior_ref_tokens: tuple[str, ...]
+    conflicts_cleared_ref_tokens: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceFreezeGate:
+    task_family_id: str
+    lane: str
+    business_key: str
+    slate_revision_id: str
+    task_snapshot_hash: str
+    requirement_revision_token: str
+    information_cutoff_at: datetime
+    policy_version: str
+    ready: bool
+    required_match_count: int
+    matches: tuple[EvidenceFreezeMatchPlan, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceFreezeRequestRow:
+    evidence_freeze_request_id: str
+    action_id: str
+    task_family_id: str
+    lane: str
+    business_key: str
+    slate_revision_id: str
+    task_snapshot_hash: str
+    requirement_revision_token: str
+    information_cutoff_at: str
+    policy_version: str
+    dependency_fingerprint: str
+    requested_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorWorkerJobRow:
+    worker_job_id: str
+    job_kind: str
+    source_object_type: str
+    source_object_id: str
+    state: str
+    lease_owner: str | None
+    lease_expires_at: str | None
+    attempt_count: int
+    available_at: str
+    last_error_code: str | None
+    result_action_id: str | None
+    result_object_type: str | None
+    result_object_id: str | None
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenEvidenceBundleActionRow:
+    action_id: str
+    action_type: str
+    actor_role: str
+    status: str
+    policy_version: str
+    evidence_bundle_id: str
+    match_id: str
+    information_cutoff_at: str
+    market_snapshot_id: str | None
+    prior_distribution: dict[str, float]
+    evidence_ref_tokens: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TaskEvidenceBundleItemRow:
+    task_evidence_bundle_item_id: str
+    task_evidence_bundle_revision_id: str
+    item_index: int
+    match_id: str
+    evidence_bundle_id: str
+    freeze_bundle_action_id: str
+    requirement_states: tuple[tuple[str, str], ...]
+    requirement_ref_tokens: tuple[str, ...]
+    market_prior_ref_tokens: tuple[str, ...]
+    conflicts_cleared_ref_tokens: tuple[str, ...]
+    content_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class TaskEvidenceBundleRevisionRow:
+    task_evidence_bundle_revision_id: str
+    task_family_id: str
+    lane: str
+    business_key: str
+    revision_no: int
+    evidence_freeze_request_id: str
+    link_action_id: str
+    slate_revision_id: str
+    task_snapshot_hash: str
+    requirement_revision_token: str
+    information_cutoff_at: str
+    policy_version: str
+    dependency_fingerprint: str
+    required_match_count: int
+    bundle_count: int
+    item_count: int
+    conflicts_cleared_count: int
+    content_hash: str
+    frozen_at: str
+    supersedes_revision_id: str | None
+
+
 __all__ = [
     "EvidenceCoverageReceiptRow",
+    "EvidenceFreezeGate",
+    "EvidenceFreezeMatchPlan",
+    "EvidenceFreezeRequestRow",
     "EvidenceIntakeObjectRow",
     "EvidenceIntakeReceiptRow",
     "EvidenceIntakeResult",
+    "FrozenEvidenceBundleActionRow",
     "OfficialOfferFamilyRow",
     "OfficialOfferRevisionRow",
     "OfficialSaleSlateRevisionRow",
     "OfficialScheduleCheckReceiptRow",
+    "OperatorWorkerJobRow",
     "SaleImportCountReceiptRow",
     "SaleImportResult",
+    "TaskEvidenceBundleItemRow",
+    "TaskEvidenceBundleRevisionRow",
 ]

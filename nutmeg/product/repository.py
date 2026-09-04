@@ -4,11 +4,12 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Iterable
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from sqlalchemy import Engine, and_, case, func, or_, select
+from sqlalchemy import Connection, Engine, and_, case, func, or_, select
 
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository import schema_context as sc
@@ -28,16 +29,38 @@ LineageTuple = tuple[str, str, str, str, str]
 
 
 class ProductReadRepository:
-    def __init__(self, engine: Engine, analytics_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        analytics_path: Path | None = None,
+        *,
+        connection: Connection | None = None,
+    ) -> None:
         self._engine = engine
         self._analytics_path = Path(analytics_path) if analytics_path is not None else None
+        self._connection = connection
+
+    def bound_to(self, connection: Connection) -> ProductReadRepository:
+        return ProductReadRepository(
+            self._engine,
+            self._analytics_path,
+            connection=connection,
+        )
+
+    @contextmanager
+    def _read_connection(self):
+        if self._connection is not None:
+            yield self._connection
+            return
+        with self._engine.connect() as connection:
+            yield connection
 
     def operator_sale_slates(self, *, as_of: str) -> tuple[SaleSlateSnapshot, ...]:
         cutoff = datetime.fromisoformat(as_of)
         if cutoff.tzinfo is None or cutoff.utcoffset() is None:
             raise ValueError("operator sale as_of must be timezone-aware")
         cutoff = cutoff.astimezone(UTC)
-        with self._engine.connect() as connection:
+        with self._read_connection() as connection:
             rows = connection.execute(
                 select(sos.official_sale_slate_revisions).order_by(
                     sos.official_sale_slate_revisions.c.lane,
@@ -659,7 +682,7 @@ class ProductReadRepository:
 
     def match(self, match_id: str, as_of: str) -> dict | None:
         statement = self._match_statement(as_of).where(si.matches.c.match_id == match_id)
-        with self._engine.connect() as connection:
+        with self._read_connection() as connection:
             row = connection.execute(statement).mappings().first()
         return dict(row) if row is not None else None
 
@@ -787,7 +810,7 @@ class ProductReadRepository:
             .correlate(se.claims)
             .exists()
         )
-        with self._engine.connect() as connection:
+        with self._read_connection() as connection:
             rows = (
                 connection.execute(
                     select(
@@ -857,7 +880,7 @@ class ProductReadRepository:
         return self._decode_json(row, ('value_json',))
 
     def observations_for_match(self, match_id: str, as_of: str) -> list[dict]:
-        with self._engine.connect() as connection:
+        with self._read_connection() as connection:
             rows = (
                 connection.execute(
                     select(se.observations)
@@ -955,7 +978,7 @@ class ProductReadRepository:
     def market_timeline(
         self, match_id: str, market_definition_id: str, as_of: str
     ) -> list[dict]:
-        with self._engine.connect() as connection:
+        with self._read_connection() as connection:
             rows = (
                 connection.execute(
                     select(sm.market_snapshots)

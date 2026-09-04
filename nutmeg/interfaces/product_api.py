@@ -285,13 +285,12 @@ def create_product_app(
         if origin != expected_origin:
             raise HTTPException(status_code=403, detail='same-origin request is required')
 
-    if (
-        runtime_config is not None
-        and runtime_config.surface_mode is OperatorSurfaceMode.ACTIVE
-    ):
+    if runtime.surface_mode is OperatorSurfaceMode.ACTIVE:
         mount_operator_api(
             app,
             require_mutation_session=require_mutation_session,
+            operator_actions=services.operator_actions,
+            actor_id=services.settings.default_user_id,
         )
 
     @app.get('/api/v1/session')
@@ -668,11 +667,15 @@ def create_product_app(
         app,
         services,
         now,
-        mount_root=(
-            runtime.runtime_scope is OperatorRuntimeScope.PRODUCTION
-            and runtime.surface_mode is not OperatorSurfaceMode.ACTIVE
+        mount_root=runtime.runtime_scope is OperatorRuntimeScope.PRODUCTION,
+        mount_next=(
+            runtime.surface_mode is OperatorSurfaceMode.SHADOW
+            or (
+                runtime.runtime_scope is OperatorRuntimeScope.ISOLATED_CANDIDATE
+                and runtime.surface_mode is OperatorSurfaceMode.ACTIVE
+            )
         ),
-        read_only=True,
+        read_only=runtime.surface_mode is not OperatorSurfaceMode.ACTIVE,
     )
     mount_product_ui(app, services, now)
     return app

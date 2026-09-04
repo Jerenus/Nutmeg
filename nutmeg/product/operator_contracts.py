@@ -109,6 +109,40 @@ class PrepareStep(StrictOperatorContract):
     recovery: OperatorRecoverySummary
 
 
+class EvidenceRequirementSummary(StrictOperatorContract):
+    requirement_id: Literal["E1", "E2", "E3", "E4", "E5", "E6a", "E6b", "EC"]
+    label: str = Field(min_length=1)
+    state: Literal["complete", "missing", "stale", "conflict"]
+    detail: str = Field(min_length=1)
+
+
+class MatchEvidenceChecklist(StrictOperatorContract):
+    official_match_no: str = Field(min_length=1)
+    match_label: str = Field(min_length=1)
+    complete: bool
+    completed_requirement_count: int = Field(ge=0)
+    required_requirement_count: int = Field(gt=0)
+    requirements: list[EvidenceRequirementSummary]
+
+
+class PrepareEvidenceStep(StrictOperatorContract):
+    kind: Literal["prepare_evidence"] = "prepare_evidence"
+    task_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    gate_state: Literal["complete", "missing", "stale", "conflict"]
+    freeze_state: Literal["not_requested", "queued", "linked", "failed"]
+    complete_match_count: int = Field(ge=0)
+    required_match_count: int = Field(ge=0)
+    matches: list[MatchEvidenceChecklist]
+    new_evidence_available: bool = False
+    freeze_command_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    requirement_revision_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+
+
 class JudgeMatchesStep(StrictOperatorContract):
     kind: Literal['judge_matches'] = 'judge_matches'
     task_id: str
@@ -222,6 +256,7 @@ class BlockedStep(StrictOperatorContract):
 StepView = Annotated[
     WaitingDataStep
     | PrepareStep
+    | PrepareEvidenceStep
     | JudgeMatchesStep
     | ConstructTicketStep
     | AuditDeploymentStep
@@ -297,3 +332,11 @@ class TelegramConfirmationDispatch(VersionedOperatorContract):
     expires_at: AwareDatetime
     dispatch_state: Literal['dry_run', 'sent']
     message_preview: str
+
+
+class OperatorCommandReceipt(VersionedOperatorContract):
+    command_kind: Literal["freeze_evidence", "rebuild_scoreboard_projection"]
+    status: Literal["queued", "completed"]
+    task_key: str | None = None
+    source_high_watermark: int | None = Field(default=None, ge=0)
+    projection_high_watermark: int | None = Field(default=None, ge=0)

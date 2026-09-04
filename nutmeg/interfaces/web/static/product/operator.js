@@ -5,14 +5,6 @@
 
   const feedback = document.querySelector("#action-feedback");
 
-  function snapshotHex(encoded) {
-    const padded = encoded.replace(/-/g, "+").replace(/_/g, "/")
-      + "=".repeat((4 - encoded.length % 4) % 4);
-    return [...atob(padded)]
-      .map((character) => character.charCodeAt(0).toString(16).padStart(2, "0"))
-      .join("");
-  }
-
   function commaValues(value) {
     return value.split(",").map((item) => item.trim()).filter(Boolean);
   }
@@ -79,8 +71,18 @@
     event.preventDefault();
     const values = new FormData(form);
     const action = form.dataset.action;
-    const encodedToken = form.closest("[data-snapshot-token]").dataset.snapshotToken;
-    const expectedToken = snapshotHex(encodedToken);
+    const expectedToken = form.closest("[data-snapshot-token]").dataset.snapshotToken;
+
+    if (action === "freeze-evidence") {
+      return submit(form, () => postJson("/api/v2/operator", {
+        schema_version: "2",
+        kind: "freeze_evidence",
+        expected_snapshot_token: form.dataset.commandToken,
+        idempotency_key: `ui:operator:evidence:${crypto.randomUUID()}`,
+        task_key: form.dataset.taskKey,
+        requirement_revision_token: form.dataset.requirementToken,
+      }));
+    }
 
     if (action === "resolve-issue-adjudication") {
       submit(form, () => postJson(

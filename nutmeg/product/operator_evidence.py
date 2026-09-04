@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -12,11 +15,28 @@ from typing import TYPE_CHECKING, Literal
 from sqlalchemy import func, select
 
 from nutmeg.ontology.actions.models import canonical_json
+from nutmeg.ontology.operator.models import (
+    EvidenceFreezeGate,
+    EvidenceFreezeMatchPlan,
+    OperatorWorkerJobRow,
+    TaskEvidenceBundleRevisionRow,
+)
 from nutmeg.ontology.repository import schema_identity
+from nutmeg.ontology.repository import schema_operator_decision as sod
+from nutmeg.product.operator_contracts import (
+    EvidenceRequirementSummary,
+    MatchEvidenceChecklist,
+    PrepareEvidenceStep,
+)
 from nutmeg.product.operator_lanes import (
     JczqLaneAdapter,
     ZucaiLaneAdapter,
     task_snapshot_hash,
+)
+from nutmeg.product.operator_tokens import (
+    OperatorCommandKind,
+    OperatorSnapshotTokenCodec,
+    OperatorSnapshotTokenPayloadV1,
 )
 
 if TYPE_CHECKING:
@@ -34,6 +54,70 @@ _REQUIREMENT_IDS: tuple[RequirementId, ...] = (
     "E6b",
     "EC",
 )
+
+_DEPENDENCY_FIELDS: tuple[tuple[str, str], ...] = (
+    ("slate", "slate_revision_ids"),
+    ("offer_state", "offer_state_tokens"),
+    ("requirement", "requirement_revision_ids"),
+    ("evidence_bundle", "evidence_bundle_revision_ids"),
+    ("forecast", "forecast_revision_ids"),
+    ("prescription", "prescription_revision_ids"),
+    ("candidate_set", "candidate_set_revision_ids"),
+    ("selection", "selection_revision_ids"),
+    ("audit", "audit_revision_ids"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorDependencyLeaves:
+    """The complete typed leaf set consumed by one operator command form."""
+
+    slate_revision_ids: tuple[str, ...] = ()
+    offer_state_tokens: tuple[str, ...] = ()
+    requirement_revision_ids: tuple[str, ...] = ()
+    evidence_bundle_revision_ids: tuple[str, ...] = ()
+    forecast_revision_ids: tuple[str, ...] = ()
+    prescription_revision_ids: tuple[str, ...] = ()
+    candidate_set_revision_ids: tuple[str, ...] = ()
+    selection_revision_ids: tuple[str, ...] = ()
+    audit_revision_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for _prefix, field_name in _DEPENDENCY_FIELDS:
+            values = getattr(self, field_name)
+            if values != tuple(sorted(set(values))) or any(not value for value in values):
+                raise ValueError(f"{field_name} must be sorted and unique")
+
+    def token_revision_ids(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                f"{prefix}:{value}"
+                for prefix, field_name in _DEPENDENCY_FIELDS
+                for value in getattr(self, field_name)
+            )
+        )
+
+    def has_changed_from(self, prior: OperatorDependencyLeaves) -> bool:
+        return self.token_revision_ids() != prior.token_revision_ids()
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceFreezeCommandContext:
+    task_key: str
+    lane: Literal["jczq", "zucai"]
+    business_key: str
+    task_snapshot_hash: str
+    requirement_revision_token: str
+    ready: bool
+    dependency_leaves: OperatorDependencyLeaves
+
+    def __post_init__(self) -> None:
+        if self.task_key != f"{self.lane}:{self.business_key}":
+            raise ValueError("task_key must identify lane and business key")
+        if len(self.task_snapshot_hash) != 64:
+            raise ValueError("task_snapshot_hash must be a sha256 digest")
+        if not self.requirement_revision_token:
+            raise ValueError("requirement_revision_token is required")
 
 
 class EvidenceState(StrEnum):
@@ -97,6 +181,7 @@ class MarketEvidence:
     source_kind: Literal["sporttery_official", "international_market"]
     observed_at: datetime
     resolved_identity: bool
+    prior_distribution: dict[str, float] | None = None
 
     def __post_init__(self) -> None:
         _aware(self.observed_at, "market observed_at")
@@ -169,6 +254,7 @@ class MatchEvidenceSnapshot:
     claims: tuple[ClaimEvidence, ...]
     coverage_ref_tokens: tuple[str, ...] = ()
     coverage: tuple[EvidenceCoverage, ...] | None = None
+    display_label: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,9 +296,11 @@ class OperatorEvidenceService:
         *,
         repository: ProductReadRepository,
         unit_of_work_factory: Callable[[], OntologyUnitOfWork],
+        snapshot_tokens: OperatorSnapshotTokenCodec | None = None,
     ) -> None:
         self._repository = repository
         self._unit_of_work_factory = unit_of_work_factory
+        self._snapshot_tokens = snapshot_tokens
 
     def load_task_snapshot(
         self,
@@ -220,12 +308,18 @@ class OperatorEvidenceService:
         lane: Literal["jczq", "zucai"],
         business_key: str,
         as_of: datetime,
+        uow: OntologyUnitOfWork | None = None,
     ) -> TaskEvidenceSnapshot:
         _aware(as_of, "as_of")
+        repository = (
+            self._repository
+            if uow is None
+            else self._repository.bound_to(uow.connection)
+        )
         slate = next(
             (
                 item
-                for item in self._repository.operator_sale_slates(
+                for item in repository.operator_sale_slates(
                     as_of=as_of.isoformat()
                 )
                 if item.lane.value == lane and item.business_key == business_key
@@ -247,10 +341,201 @@ class OperatorEvidenceService:
                 business_key=business_key,
                 slate_revision_id=slate.slate_revision_id,
                 task_snapshot_hash=current_task_snapshot_hash,
+                repository=repository,
+                uow=uow,
             )
             for offer in slate.offers
         )
         return TaskEvidenceSnapshot(lane=lane, matches=matches)
+
+    def freeze_gate_for_uow(
+        self,
+        uow: OntologyUnitOfWork,
+        lane: str,
+        business_key: str,
+        as_of: datetime,
+    ) -> EvidenceFreezeGate:
+        if lane not in {"jczq", "zucai"}:
+            raise ValueError("unknown operator lane")
+        repository = self._repository.bound_to(uow.connection)
+        slate = next(
+            (
+                item
+                for item in repository.operator_sale_slates(as_of=as_of.isoformat())
+                if item.lane.value == lane and item.business_key == business_key
+            ),
+            None,
+        )
+        if slate is None:
+            raise ValueError("operator evidence task has no current official slate")
+        snapshot = self.load_task_snapshot(
+            lane=lane,
+            business_key=business_key,
+            as_of=as_of,
+            uow=uow,
+        )
+        cutoff = as_of if lane == "jczq" else _zucai_issue_cutoff(snapshot)
+        status = evaluate_task_evidence(snapshot, cutoff=cutoff)
+        snapshot_hash = task_snapshot_hash(slate, as_of)
+        requirement_token = _requirement_revision_token(
+            snapshot_hash=snapshot_hash,
+            cutoff=cutoff,
+            status=status,
+        )
+        snapshots_by_match = {item.match_id: item for item in snapshot.matches}
+        plans = tuple(
+            _freeze_match_plan(snapshots_by_match[item.match_id], item)
+            for item in status.matches
+        )
+        return EvidenceFreezeGate(
+            task_family_id=f"{lane}:{business_key}",
+            lane=lane,
+            business_key=business_key,
+            slate_revision_id=slate.slate_revision_id,
+            task_snapshot_hash=snapshot_hash,
+            requirement_revision_token=requirement_token,
+            information_cutoff_at=cutoff,
+            policy_version="governance-v1",
+            ready=status.ready,
+            required_match_count=status.required_match_count,
+            matches=plans,
+        )
+
+    def evidence_freeze_context(
+        self,
+        task_key: str,
+        *,
+        as_of: datetime,
+    ) -> EvidenceFreezeCommandContext:
+        lane, business_key = _split_task_key(task_key)
+        with self._unit_of_work_factory() as uow:
+            gate = self.freeze_gate_for_uow(uow, lane, business_key, as_of)
+            current = uow.operator_decision.current_task_evidence_bundle_revision(
+                task_key,
+                as_of=as_of.astimezone(UTC).isoformat(),
+            )
+        return EvidenceFreezeCommandContext(
+            task_key=task_key,
+            lane=lane,
+            business_key=business_key,
+            task_snapshot_hash=gate.task_snapshot_hash,
+            requirement_revision_token=gate.requirement_revision_token,
+            ready=gate.ready,
+            dependency_leaves=OperatorDependencyLeaves(
+                slate_revision_ids=(gate.slate_revision_id,),
+                requirement_revision_ids=(gate.requirement_revision_token,),
+                evidence_bundle_revision_ids=(
+                    ()
+                    if current is None
+                    else (current.task_evidence_bundle_revision_id,)
+                ),
+            ),
+        )
+
+    def prepare_step(
+        self,
+        task_key: str,
+        *,
+        as_of: datetime,
+    ) -> PrepareEvidenceStep:
+        lane, business_key = _split_task_key(task_key)
+        with self._unit_of_work_factory() as uow:
+            gate = self.freeze_gate_for_uow(uow, lane, business_key, as_of)
+            snapshot = self.load_task_snapshot(
+                lane=lane,
+                business_key=business_key,
+                as_of=as_of,
+                uow=uow,
+            )
+            current = uow.operator_decision.current_task_evidence_bundle_revision(
+                task_key,
+                as_of=as_of.astimezone(UTC).isoformat(),
+            )
+            request_row = _freeze_request_for_gate(
+                uow.connection,
+                task_family_id=task_key,
+                requirement_revision_token=gate.requirement_revision_token,
+                as_of=as_of,
+            )
+            job = (
+                None
+                if request_row is None
+                else uow.operator_decision.worker_job_for_source(
+                    job_kind="evidence_freeze",
+                    source_object_type="operator_evidence_freeze_request",
+                    source_object_id=str(
+                        request_row["evidence_freeze_request_id"]
+                    ),
+                )
+            )
+        status_by_match = {
+            item.match_id: item
+            for item in evaluate_task_evidence(
+                snapshot,
+                cutoff=(as_of if lane == "jczq" else _zucai_issue_cutoff(snapshot)),
+            ).matches
+        }
+        new_evidence = _new_evidence_available(
+            current,
+            gate.requirement_revision_token,
+        )
+        freeze_state = _freeze_state(current, job)
+        gate_state = _task_gate_state(tuple(status_by_match.values()), gate.ready)
+        context = EvidenceFreezeCommandContext(
+            task_key=task_key,
+            lane=lane,
+            business_key=business_key,
+            task_snapshot_hash=gate.task_snapshot_hash,
+            requirement_revision_token=gate.requirement_revision_token,
+            ready=gate.ready,
+            dependency_leaves=OperatorDependencyLeaves(
+                slate_revision_ids=(gate.slate_revision_id,),
+                requirement_revision_ids=(gate.requirement_revision_token,),
+                evidence_bundle_revision_ids=(
+                    ()
+                    if current is None
+                    else (current.task_evidence_bundle_revision_id,)
+                ),
+            ),
+        )
+        may_freeze = _may_request_freeze(
+            gate_ready=gate.ready,
+            freeze_state=freeze_state,
+            new_evidence_available=new_evidence,
+        )
+        command_token = (
+            self._snapshot_tokens.encode(
+                OperatorSnapshotTokenPayloadV1(
+                    task_snapshot_hash=context.task_snapshot_hash,
+                    work_item_id=f"{task_key}:evidence",
+                    command_kind=OperatorCommandKind.FREEZE_EVIDENCE,
+                    dependency_revision_ids=list(
+                        context.dependency_leaves.token_revision_ids()
+                    ),
+                )
+            )
+            if may_freeze and self._snapshot_tokens is not None
+            else None
+        )
+        snapshots = {item.match_id: item for item in snapshot.matches}
+        checklists = [
+            _match_checklist(snapshots[item.match_id], item)
+            for item in status_by_match.values()
+        ]
+        return PrepareEvidenceStep(
+            task_id=task_key,
+            title="核对本任务证据",
+            gate_state=gate_state,
+            freeze_state=freeze_state,
+            complete_match_count=sum(item.complete for item in status_by_match.values()),
+            required_match_count=gate.required_match_count,
+            matches=checklists,
+            new_evidence_available=new_evidence,
+            freeze_command_token=command_token,
+            requirement_revision_token=(
+                gate.requirement_revision_token if command_token is not None else None
+            ),
+        )
 
     def evaluate_task(
         self,
@@ -278,8 +563,10 @@ class OperatorEvidenceService:
         business_key: str,
         slate_revision_id: str,
         task_snapshot_hash: str,
+        repository: ProductReadRepository,
+        uow: OntologyUnitOfWork | None,
     ):
-        record = self._repository.match(offer.match_id, as_of.isoformat())
+        record = repository.match(offer.match_id, as_of.isoformat())
         team_ids = () if record is None else (
             str(record["home_team_id"]),
             str(record["away_team_id"]),
@@ -289,7 +576,7 @@ class OperatorEvidenceService:
             str(record["away_resolution_status"]),
         )
         unresolved_aliases, ambiguous_aliases, merged_aliases = (
-            self._load_identity_alias_issues(team_ids, as_of)
+            self._load_identity_alias_issues(team_ids, as_of, uow=uow)
         )
         identity = IdentityEvidence(
             match_revision_ref_token=(
@@ -335,6 +622,7 @@ class OperatorEvidenceService:
             business_key=business_key,
             slate_revision_id=slate_revision_id,
             task_snapshot_hash=task_snapshot_hash,
+            uow=uow,
         )
         coverage_ref_tokens = tuple(
             sorted(
@@ -352,22 +640,44 @@ class OperatorEvidenceService:
             identity=identity,
             offer=official_offer,
             required_market_definition_ids=offer.market_definition_ids,
-            markets=self._load_markets(offer.match_id, offer.market_definition_ids, as_of),
-            observations=self._load_observations(offer.match_id, metadata, as_of),
-            claims=self._load_claims(offer.match_id, metadata, as_of),
+            markets=self._load_markets(
+                offer.match_id,
+                offer.market_definition_ids,
+                as_of,
+                repository=repository,
+            ),
+            observations=self._load_observations(
+                offer.match_id,
+                metadata,
+                as_of,
+                repository=repository,
+            ),
+            claims=self._load_claims(
+                offer.match_id,
+                metadata,
+                as_of,
+                repository=repository,
+            ),
             coverage_ref_tokens=coverage_ref_tokens,
             coverage=coverage,
+            display_label=(
+                f"{record['home_team']} - {record['away_team']}"
+                if record is not None
+                else f"场 {offer.official_match_no}"
+            ),
         )
 
     def _load_identity_alias_issues(
         self,
         team_ids: tuple[str, ...],
         as_of: datetime,
+        *,
+        uow: OntologyUnitOfWork | None = None,
     ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
         if not team_ids:
             return (), (), ()
-        with self._unit_of_work_factory() as uow:
-            merge_rows = uow.connection.execute(
+        def load(active_uow):
+            merge_rows = active_uow.connection.execute(
                 select(
                     schema_identity.entity_merges.c.from_id,
                     schema_identity.entity_merges.c.into_id,
@@ -395,7 +705,7 @@ class OperatorEvidenceService:
                     if redirect(source_id) in team_ids
                 ),
             }
-            relevant_alias_rows = uow.connection.execute(
+            relevant_alias_rows = active_uow.connection.execute(
                 select(
                     schema_identity.entity_aliases.c.entity_id,
                     schema_identity.entity_aliases.c.normalized_alias,
@@ -406,7 +716,7 @@ class OperatorEvidenceService:
             ).all()
             alias_names = {str(row.normalized_alias) for row in relevant_alias_rows}
             all_alias_rows = (
-                uow.connection.execute(
+                active_uow.connection.execute(
                     select(
                         schema_identity.entity_aliases.c.entity_id,
                         schema_identity.entity_aliases.c.normalized_alias,
@@ -421,13 +731,31 @@ class OperatorEvidenceService:
             entity_ids = {str(row.entity_id) for row in relevant_alias_rows}
             statuses = {
                 str(row.team_id): str(row.resolution_status)
-                for row in uow.connection.execute(
+                for row in active_uow.connection.execute(
                     select(
                         schema_identity.teams.c.team_id,
                         schema_identity.teams.c.resolution_status,
                     ).where(schema_identity.teams.c.team_id.in_(entity_ids))
                 ).all()
             }
+
+            return redirects, relevant_alias_rows, all_alias_rows, statuses
+
+        if uow is None:
+            with self._unit_of_work_factory() as owned_uow:
+                redirects, relevant_alias_rows, all_alias_rows, statuses = load(
+                    owned_uow
+                )
+        else:
+            redirects, relevant_alias_rows, all_alias_rows, statuses = load(uow)
+
+        def redirect(team_id: str) -> str:
+            current = team_id
+            seen = {current}
+            while current in redirects and redirects[current] not in seen:
+                current = redirects[current]
+                seen.add(current)
+            return current
 
         def token(alias: str) -> str:
             return f"alias:team:{alias}"
@@ -471,9 +799,10 @@ class OperatorEvidenceService:
         business_key: str,
         slate_revision_id: str,
         task_snapshot_hash: str,
+        uow: OntologyUnitOfWork | None = None,
     ):
-        with self._unit_of_work_factory() as uow:
-            rows = uow.operator_decision.evidence_intake_objects_for_match(
+        def load(active_uow):
+            rows = active_uow.operator_decision.evidence_intake_objects_for_match(
                 match_id,
                 as_of=as_of.isoformat(),
                 lane=lane,
@@ -481,7 +810,7 @@ class OperatorEvidenceService:
                 slate_revision_id=slate_revision_id,
                 task_snapshot_hash=task_snapshot_hash,
             )
-            coverage_rows = uow.operator_decision.evidence_coverage_receipts_for_match(
+            coverage_rows = active_uow.operator_decision.evidence_coverage_receipts_for_match(
                 match_id,
                 as_of=as_of.isoformat(),
                 lane=lane,
@@ -508,23 +837,29 @@ class OperatorEvidenceService:
                     }
                 )
             )
-            for row in uow.operator_decision.evidence_lineage_for_refs(
+            for row in active_uow.operator_decision.evidence_lineage_for_refs(
                 match_id,
                 missing_refs,
                 as_of=as_of.isoformat(),
             ):
                 metadata[row.object_id] = row
-        return metadata, coverage
+            return metadata, coverage
+        if uow is None:
+            with self._unit_of_work_factory() as owned_uow:
+                return load(owned_uow)
+        return load(uow)
 
     def _load_markets(
         self,
         match_id: str,
         market_definition_ids: tuple[str, ...],
         as_of: datetime,
+        *,
+        repository: ProductReadRepository,
     ) -> tuple[MarketEvidence, ...]:
         facts: list[MarketEvidence] = []
         for market_id in market_definition_ids:
-            for record in self._repository.market_timeline(
+            for record in repository.market_timeline(
                 match_id,
                 market_id,
                 as_of.isoformat(),
@@ -537,11 +872,24 @@ class OperatorEvidenceService:
                             source_kind=source_kind,
                             observed_at=datetime.fromisoformat(str(record["as_of"])),
                             resolved_identity=True,
+                            prior_distribution={
+                                str(face): float(value)
+                                for face, value in (
+                                    record.get("fair_distribution") or {}
+                                ).items()
+                            },
                         )
                     )
         return tuple(sorted(facts, key=lambda item: item.ref_token))
 
-    def _load_observations(self, match_id: str, metadata, as_of: datetime):
+    def _load_observations(
+        self,
+        match_id: str,
+        metadata,
+        as_of: datetime,
+        *,
+        repository: ProductReadRepository,
+    ):
         kinds = {
             "person_availability_v1": EvidenceObservationKind.PERSON_AVAILABILITY,
             "team_availability_clear_v1": EvidenceObservationKind.AVAILABILITY_CLEAR,
@@ -549,7 +897,7 @@ class OperatorEvidenceService:
             "structural_context_v1": EvidenceObservationKind.STRUCTURAL_CONTEXT,
         }
         facts: list[ObservationEvidence] = []
-        for record in self._repository.observations_for_match(
+        for record in repository.observations_for_match(
             match_id,
             as_of.isoformat(),
         ):
@@ -585,13 +933,20 @@ class OperatorEvidenceService:
             )
         return tuple(facts)
 
-    def _load_claims(self, match_id: str, metadata, as_of: datetime):
+    def _load_claims(
+        self,
+        match_id: str,
+        metadata,
+        as_of: datetime,
+        *,
+        repository: ProductReadRepository,
+    ):
         kinds = {
             "availability_claim_v1": EvidenceClaimKind.AVAILABILITY,
             "structural_context_claim_v1": EvidenceClaimKind.STRUCTURAL_CONTEXT,
         }
         facts: list[ClaimEvidence] = []
-        for record in self._repository.claims_for_match(match_id, as_of.isoformat()):
+        for record in repository.claims_for_match(match_id, as_of.isoformat()):
             link = metadata.get(str(record["claim_id"]))
             value = record.get("value") or {}
             kind = kinds.get(str(value.get("kind"))) if isinstance(value, dict) else None
@@ -625,6 +980,238 @@ class OperatorEvidenceService:
                 )
             )
         return tuple(facts)
+
+
+def _requirement_revision_token(
+    *,
+    snapshot_hash: str,
+    cutoff: datetime,
+    status: TaskEvidenceStatus,
+) -> str:
+    document = {
+        "task_snapshot_hash": snapshot_hash,
+        "ready": status.ready,
+        "required_match_count": status.required_match_count,
+        "matches": [
+            {
+                "match_id": match.match_id,
+                "complete": match.complete,
+                "requirements": [
+                    {
+                        "requirement_id": requirement.requirement_id,
+                        "state": requirement.state.value,
+                        "evidence_ref_tokens": list(requirement.evidence_ref_tokens),
+                        "missing_ref_tokens": list(requirement.missing_ref_tokens),
+                        "stale_ref_tokens": list(requirement.stale_ref_tokens),
+                        "conflict_ref_tokens": list(requirement.conflict_ref_tokens),
+                    }
+                    for requirement in match.requirements
+                ],
+            }
+            for match in status.matches
+        ],
+    }
+    digest = hashlib.sha256(canonical_json(document).encode("utf-8")).digest()
+    encoded = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return f"reqv1_{encoded}"
+
+
+def _split_task_key(task_key: str) -> tuple[Literal["jczq", "zucai"], str]:
+    match = re.fullmatch(r"(jczq):(\d{4}-\d{2}-\d{2})|(zucai):(\d{5})", task_key)
+    if match is None:
+        raise ValueError("task_key must identify a JCZQ day or Zucai issue")
+    if match.group(1) is not None:
+        return "jczq", str(match.group(2))
+    return "zucai", str(match.group(4))
+
+
+def _freeze_state(
+    current: TaskEvidenceBundleRevisionRow | None,
+    job: OperatorWorkerJobRow | None,
+) -> Literal["not_requested", "queued", "linked", "failed"]:
+    if job is not None and job.state in {"queued", "leased"}:
+        return "queued"
+    if job is not None and job.state == "failed":
+        return "failed"
+    if current is not None:
+        return "linked"
+    if job is not None and job.state == "completed":
+        return "failed"
+    return "not_requested"
+
+
+def _freeze_request_for_gate(
+    connection,
+    *,
+    task_family_id: str,
+    requirement_revision_token: str,
+    as_of: datetime,
+):
+    _aware(as_of, "as_of")
+    return (
+        connection.execute(
+            select(sod.operator_evidence_freeze_requests)
+            .where(
+                sod.operator_evidence_freeze_requests.c.task_family_id
+                == task_family_id,
+                sod.operator_evidence_freeze_requests.c.requirement_revision_token
+                == requirement_revision_token,
+                func.julianday(sod.operator_evidence_freeze_requests.c.requested_at)
+                <= func.julianday(as_of.astimezone(UTC).isoformat()),
+            )
+            .order_by(sod.operator_evidence_freeze_requests.c.requested_at.desc())
+            .limit(1)
+        )
+        .mappings()
+        .first()
+    )
+
+
+def _may_request_freeze(
+    *,
+    gate_ready: bool,
+    freeze_state: str,
+    new_evidence_available: bool,
+) -> bool:
+    if not gate_ready or freeze_state == "queued":
+        return False
+    if freeze_state in {"linked", "failed"}:
+        return new_evidence_available
+    return freeze_state == "not_requested"
+
+
+def _new_evidence_available(
+    current: TaskEvidenceBundleRevisionRow | None,
+    requirement_revision_token: str,
+) -> bool:
+    return (
+        current is not None
+        and current.requirement_revision_token != requirement_revision_token
+    )
+
+
+def _task_gate_state(
+    matches: tuple[MatchEvidenceStatus, ...],
+    ready: bool,
+) -> Literal["complete", "missing", "stale", "conflict"]:
+    if ready:
+        return "complete"
+    states = {
+        requirement.state
+        for match in matches
+        for requirement in match.requirements
+    }
+    for state in (EvidenceState.CONFLICT, EvidenceState.STALE, EvidenceState.MISSING):
+        if state in states:
+            return state.value
+    return "missing"
+
+
+_REQUIREMENT_LABELS: dict[RequirementId, str] = {
+    "E1": "身份对齐",
+    "E2": "官方赛程与销售",
+    "E3": "官方市场",
+    "E4": "国际市场对照",
+    "E5": "阵容可用性",
+    "E6a": "近期状态",
+    "E6b": "结构背景",
+    "EC": "冲突清理",
+}
+
+_REQUIREMENT_DETAILS: dict[EvidenceState, str] = {
+    EvidenceState.COMPLETE: "已核验",
+    EvidenceState.MISSING: "尚缺数据",
+    EvidenceState.STALE: "需要刷新",
+    EvidenceState.CONFLICT: "需要裁决",
+}
+
+
+def _match_checklist(
+    snapshot: MatchEvidenceSnapshot,
+    status: MatchEvidenceStatus,
+) -> MatchEvidenceChecklist:
+    requirements = [
+        EvidenceRequirementSummary(
+            requirement_id=requirement.requirement_id,
+            label=_REQUIREMENT_LABELS[requirement.requirement_id],
+            state=requirement.state.value,
+            detail=_REQUIREMENT_DETAILS[requirement.state],
+        )
+        for requirement in status.requirements
+    ]
+    return MatchEvidenceChecklist(
+        official_match_no=snapshot.official_match_no,
+        match_label=snapshot.display_label or f"场 {snapshot.official_match_no}",
+        complete=status.complete,
+        completed_requirement_count=sum(
+            requirement.state is EvidenceState.COMPLETE
+            for requirement in status.requirements
+        ),
+        required_requirement_count=len(status.requirements),
+        requirements=requirements,
+    )
+
+
+def _freeze_match_plan(
+    snapshot: MatchEvidenceSnapshot,
+    status: MatchEvidenceStatus,
+) -> EvidenceFreezeMatchPlan:
+    requirement_refs = tuple(
+        sorted(
+            {
+                ref
+                for requirement in status.requirements
+                for ref in requirement.evidence_ref_tokens
+            }
+        )
+    )
+    observation_ids = {item.ref_token for item in snapshot.observations}
+    claim_ids = {item.ref_token for item in snapshot.claims}
+    market_refs = {
+        ref
+        for requirement in status.requirements
+        if requirement.requirement_id in {"E3", "E4"}
+        for ref in requirement.evidence_ref_tokens
+    }
+    official_markets = sorted(
+        (
+            item
+            for item in snapshot.markets
+            if item.source_kind == "sporttery_official"
+            and item.ref_token in market_refs
+        ),
+        key=lambda item: item.ref_token,
+    )
+    market = official_markets[0] if official_markets else None
+    conflicts_cleared = {
+        action_id
+        for observation in snapshot.observations
+        for action_id in observation.adjudication_ref_tokens
+    }
+    conflicts_cleared.update(
+        claim.ref_token
+        for claim in snapshot.claims
+        if claim.status in {"retracted", "expired"}
+    )
+    return EvidenceFreezeMatchPlan(
+        match_id=snapshot.match_id,
+        market_snapshot_id=None if market is None else market.ref_token,
+        prior_distribution=(
+            {} if market is None or market.prior_distribution is None
+            else dict(sorted(market.prior_distribution.items()))
+        ),
+        candidate_observation_ids=tuple(
+            ref for ref in requirement_refs if ref in observation_ids
+        ),
+        caveat_claim_ids=tuple(ref for ref in requirement_refs if ref in claim_ids),
+        requirement_states=tuple(
+            (requirement.requirement_id, requirement.state.value)
+            for requirement in status.requirements
+        ),
+        requirement_ref_tokens=requirement_refs,
+        market_prior_ref_tokens=tuple(sorted(market_refs)),
+        conflicts_cleared_ref_tokens=tuple(sorted(conflicts_cleared)),
+    )
 
 
 def _aware(value: datetime, name: str) -> None:
@@ -790,7 +1377,7 @@ def _evaluate_markets(
         if fresh:
             return _complete(
                 "E4",
-                (sorted(fresh, key=lambda item: item.ref_token)[0].ref_token,),
+                (_latest_evidence(fresh).ref_token,),
             )
         if eligible:
             return _blocked("E4", stale=tuple(fact.ref_token for fact in eligible))
@@ -807,7 +1394,7 @@ def _evaluate_markets(
             if _fresh(fact.observed_at, cutoff, timedelta(hours=6))
         ]
         if fresh:
-            refs.append(sorted(fresh, key=lambda item: item.ref_token)[0].ref_token)
+            refs.append(_latest_evidence(fresh).ref_token)
         elif candidates:
             stale.extend(fact.ref_token for fact in candidates)
         else:
@@ -920,7 +1507,7 @@ def _evaluate_team_requirement(
             *valid_claims,
         ]
         if candidates:
-            refs.append(sorted(candidates, key=lambda item: item.ref_token)[0].ref_token)
+            refs.append(_latest_evidence(candidates).ref_token)
         elif observations or any(
             fact.team_id == team_id
             and (registered_refs is None or fact.ref_token in registered_refs)
@@ -936,6 +1523,13 @@ def _evaluate_team_requirement(
     if missing or stale:
         return _blocked(requirement_id, missing=tuple(missing), stale=tuple(stale))
     return _complete(requirement_id, tuple(refs))
+
+
+def _latest_evidence(facts):
+    return max(
+        facts,
+        key=lambda item: (item.observed_at.astimezone(UTC), item.ref_token),
+    )
 
 
 def _registered_coverage_refs(
@@ -1186,6 +1780,7 @@ def evaluate_task_evidence(
 __all__ = [
     "ClaimEvidence",
     "EvidenceCoverage",
+    "EvidenceFreezeCommandContext",
     "EvidenceClaimKind",
     "EvidenceObservationKind",
     "EvidenceState",
@@ -1194,6 +1789,7 @@ __all__ = [
     "MatchEvidenceSnapshot",
     "MatchEvidenceStatus",
     "ObservationEvidence",
+    "OperatorDependencyLeaves",
     "OfficialOfferEvidence",
     "RequirementStatus",
     "TaskEvidenceSnapshot",

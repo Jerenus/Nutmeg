@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -1277,6 +1278,121 @@ def test_evidence_service_loads_typed_task_snapshot_from_sqlite(tmp_path: Path) 
     )
     assert status.required_match_count == 1
     assert not status.ready
+
+
+def test_freeze_gate_is_derived_from_the_callers_sqlite_uow(tmp_path: Path) -> None:
+    actions, engine = _actions(tmp_path)
+    result = actions.ingest_operator_evidence_manifest(
+        _request(key="evidence-intake:freeze-gate")
+    )
+    assert result.outcome.status is ActionStatus.COMMITTED
+    with engine.begin() as connection:
+        connection.execute(
+            update(sos.official_offer_revisions)
+            .where(
+                sos.official_offer_revisions.c.official_offer_revision_id
+                == "offer-revision-1"
+            )
+            .values(
+                sale_deadline_at=(AT + timedelta(hours=5, minutes=50)).isoformat()
+            )
+        )
+    service = OperatorEvidenceService(
+        repository=ProductReadRepository(engine),
+        unit_of_work_factory=lambda: OntologyUnitOfWork(engine),
+    )
+
+    with OntologyUnitOfWork(engine) as uow:
+        gate = service.freeze_gate_for_uow(
+            uow,
+            "jczq",
+            "2026-09-04",
+            AT,
+        )
+
+    assert gate.task_family_id == "jczq:2026-09-04"
+    assert gate.slate_revision_id == "slate-1"
+    assert len(gate.task_snapshot_hash) == 64
+    assert gate.requirement_revision_token.startswith("reqv1_")
+    assert re.fullmatch(r"[0-9a-f]{64}", gate.requirement_revision_token) is None
+    assert gate.required_match_count == 1
+    assert len(gate.matches) == 1
+    match = gate.matches[0]
+    assert match.match_id == "match-1"
+    assert tuple(requirement for requirement, _state in match.requirement_states) == (
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5",
+        "E6a",
+        "E6b",
+        "EC",
+    )
+    assert match.market_snapshot_id == "snapshot-official-1"
+    assert match.prior_distribution == {"away": 0.3, "draw": 0.3, "home": 0.4}
+
+
+def test_jczq_freeze_requirement_token_ignores_time_inside_one_state_interval(
+    tmp_path: Path,
+) -> None:
+    _, engine = _actions(tmp_path)
+    service = OperatorEvidenceService(
+        repository=ProductReadRepository(engine),
+        unit_of_work_factory=lambda: OntologyUnitOfWork(engine),
+    )
+
+    with OntologyUnitOfWork(engine) as uow:
+        first = service.freeze_gate_for_uow(
+            uow,
+            "jczq",
+            "2026-09-04",
+            AT,
+        )
+        one_second_later = service.freeze_gate_for_uow(
+            uow,
+            "jczq",
+            "2026-09-04",
+            AT + timedelta(seconds=1),
+        )
+
+    assert first.task_snapshot_hash == one_second_later.task_snapshot_hash
+    assert first.requirement_revision_token == one_second_later.requirement_revision_token
+    assert first.information_cutoff_at != one_second_later.information_cutoff_at
+
+
+def test_prepare_step_maps_sqlite_gate_to_business_checklists(tmp_path: Path) -> None:
+    _, engine = _actions(tmp_path)
+    service = OperatorEvidenceService(
+        repository=ProductReadRepository(engine),
+        unit_of_work_factory=lambda: OntologyUnitOfWork(engine),
+    )
+
+    step = service.prepare_step("jczq:2026-09-04", as_of=AT)
+
+    assert step.kind == "prepare_evidence"
+    assert step.task_id == "jczq:2026-09-04"
+    assert step.gate_state == "stale"
+    assert step.freeze_state == "not_requested"
+    assert step.complete_match_count == 0
+    assert step.required_match_count == 1
+    assert len(step.matches) == 1
+    checklist = step.matches[0]
+    assert checklist.match_label == "Home - Away"
+    assert [item.requirement_id for item in checklist.requirements] == [
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5",
+        "E6a",
+        "E6b",
+        "EC",
+    ]
+    visible = step.model_dump_json()
+    assert "snapshot-official-1" not in visible
+    assert "match-revision-1" not in visible
+    assert "slate-1" not in visible
 
 
 def test_evidence_service_surfaces_sqlite_alias_resolution_failures(tmp_path: Path) -> None:

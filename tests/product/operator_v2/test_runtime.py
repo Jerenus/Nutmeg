@@ -485,7 +485,7 @@ def _runtime_app(tmp_path: Path, *, scope: str, mode: str) -> TestClient:
         queries=_NoCalls(),
         actions=_NoCalls(),
         operator_queries=_EmptyOperatorQueries(),
-        operator_actions=_NoCalls(),
+        operator_actions=None,
         copilot=_NoCalls(),
         tickets=_NoCalls(),
     )
@@ -589,14 +589,16 @@ def test_guessed_v2_mutations_are_405(
     assert client.request(method, path, content=b"not-json").status_code == 405
 
 
-def test_shadow_candidate_shell_performs_no_service_or_network_call(tmp_path: Path) -> None:
+def test_shadow_candidate_renders_the_read_only_workbench(tmp_path: Path) -> None:
     client = _runtime_app(tmp_path, scope="production", mode="shadow")
 
     response = client.get("/operator-next")
 
     assert response.status_code == 200
-    assert 'data-workspace="operator-read-only"' in response.text
-    assert "只读" in response.text
+    assert 'data-workspace="operator-tasks"' in response.text
+    assert 'data-read-only="true"' in response.text
+    assert "当前没有待处理任务" in response.text
+    assert "<form" not in response.text
     assert "{" not in response.text
 
 

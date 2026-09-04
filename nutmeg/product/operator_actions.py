@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime
+from pathlib import Path
 
+from nutmeg.analytics.calibrate_flow import CalibrateRequest
 from nutmeg.decision.legs_audit import DEVIATION_RULE_IDS
-from nutmeg.ontology.actions.models import ActorRole
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole, canonical_json
+from nutmeg.ontology.operator.evidence_actions import RequestEvidenceFreezeRequest
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.contracts import ProductActionRequest, ProductActionResponse
 from nutmeg.product.errors import ProductActionBlockedError
 from nutmeg.product.operator_contracts import (
     GradePredictionCommand,
+    OperatorCommandReceipt,
     RecordDeploymentCommand,
     RequestTelegramConfirmationCommand,
     ResolveIssueAdjudicationCommand,
@@ -17,6 +22,12 @@ from nutmeg.product.operator_contracts import (
     TelegramConfirmationDispatch,
 )
 from nutmeg.product.operator_queries import OperatorQueryService
+from nutmeg.product.operator_tokens import (
+    OperatorCommandKind,
+    OperatorSnapshotTokenCodec,
+    OperatorSnapshotTokenError,
+    OperatorSnapshotTokenPayloadV1,
+)
 
 
 def _zucai_issue(task_id: str) -> str:
@@ -33,6 +44,34 @@ def _parse_aware(value: str | datetime, name: str) -> datetime:
     return parsed
 
 
+def scoreboard_projection_snapshot(
+    source_high_watermark: int,
+) -> OperatorSnapshotTokenPayloadV1:
+    if source_high_watermark < 0:
+        raise ValueError("source high-watermark cannot be negative")
+    dependency = f"action_high_watermark:{source_high_watermark}"
+    snapshot_hash = hashlib.sha256(
+        canonical_json(
+            {
+                "command_kind": OperatorCommandKind.REBUILD_SCOREBOARD_PROJECTION.value,
+                "dependency_revision_ids": [dependency],
+            }
+        ).encode("utf-8")
+    ).hexdigest()
+    return OperatorSnapshotTokenPayloadV1(
+        task_snapshot_hash=snapshot_hash,
+        work_item_id="system:scoreboard_projection",
+        command_kind=OperatorCommandKind.REBUILD_SCOREBOARD_PROJECTION,
+        dependency_revision_ids=[dependency],
+    )
+
+
+def _sha256_if_present(path: Path | None) -> str | None:
+    if path is None or not path.exists():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 class OperatorActionService:
     def __init__(
         self,
@@ -41,11 +80,23 @@ class OperatorActionService:
         action_gateway: ProductActionGateway,
         telegram_confirmation=None,
         telegram_owner_chat_id: int | None = None,
+        evidence_actions=None,
+        snapshot_tokens: OperatorSnapshotTokenCodec | None = None,
+        calibrate=None,
+        repository=None,
+        scoreboard_path: Path | None = None,
+        clock=None,
     ) -> None:
         self._queries = queries
         self._actions = action_gateway
         self._telegram = telegram_confirmation
         self._owner_chat_id = telegram_owner_chat_id
+        self._evidence_actions = evidence_actions
+        self._snapshot_tokens = snapshot_tokens
+        self._calibrate = calibrate
+        self._repository = repository
+        self._scoreboard_path = scoreboard_path
+        self._clock = clock or queries.now
 
     @property
     def action_gateway(self):
@@ -67,6 +118,101 @@ class OperatorActionService:
                 "operator task changed after the form was opened"
             )
         return task
+
+    def request_evidence_freeze(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._evidence_actions is None or self._snapshot_tokens is None:
+            raise ProductActionBlockedError("evidence freeze is not configured")
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.evidence_freeze_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        if command.requirement_revision_token != context.requirement_revision_token:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.FREEZE_EVIDENCE,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=f"{context.task_key}:evidence",
+            current_dependency_revision_ids=(
+                context.dependency_leaves.token_revision_ids()
+            ),
+        )
+        if not context.ready:
+            raise ProductActionBlockedError("operator evidence gate is not complete")
+        outcome = self._evidence_actions.request_evidence_freeze(
+            RequestEvidenceFreezeRequest(
+                task_family_id=context.task_key,
+                lane=context.lane,
+                business_key=context.business_key,
+                requirement_revision_token=context.requirement_revision_token,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        if outcome.status is not ActionStatus.COMMITTED:
+            raise ProductActionBlockedError("evidence freeze request was not committed")
+        return OperatorCommandReceipt(
+            command_kind="freeze_evidence",
+            status="queued",
+            task_key=context.task_key,
+        )
+
+    def rebuild_scoreboard_projection(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if (
+            self._snapshot_tokens is None
+            or self._calibrate is None
+            or self._repository is None
+        ):
+            raise ProductActionBlockedError("scoreboard projection rebuild is not configured")
+        source_high_watermark = self._repository.action_high_watermark()
+        current = scoreboard_projection_snapshot(source_high_watermark)
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.REBUILD_SCOREBOARD_PROJECTION,
+            current_task_snapshot_hash=current.task_snapshot_hash,
+            current_work_item_id=current.work_item_id,
+            current_dependency_revision_ids=current.dependency_revision_ids,
+        )
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        scoreboard_checksum = _sha256_if_present(self._scoreboard_path)
+        result = self._calibrate.build(
+            CalibrateRequest(
+                as_of=requested_at.isoformat(),
+                built_at=requested_at.isoformat(),
+                high_watermark=source_high_watermark,
+            )
+        )
+        if result.status != "succeeded":
+            raise ProductActionBlockedError("scoreboard projection rebuild failed")
+        if self._repository.action_high_watermark() != source_high_watermark:
+            raise ProductActionBlockedError("Action ledger changed during projection rebuild")
+        if _sha256_if_present(self._scoreboard_path) != scoreboard_checksum:
+            raise ProductActionBlockedError(
+                "scoreboard authority changed during projection rebuild"
+            )
+        return OperatorCommandReceipt(
+            command_kind="rebuild_scoreboard_projection",
+            status="completed",
+            source_high_watermark=source_high_watermark,
+            projection_high_watermark=result.high_watermark,
+        )
 
     def resolve_issue_adjudication(
         self,

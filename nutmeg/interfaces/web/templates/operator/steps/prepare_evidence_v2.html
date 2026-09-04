@@ -1,0 +1,58 @@
+<div class="step-heading">
+  <span class="step-kicker">证据准备</span>
+  <h1>{{ task.step.title }}</h1>
+  <p>逐场核对身份、官方赛程、市场、阵容近况与冲突状态。</p>
+</div>
+
+{% if task.step.freeze_state == "linked" %}
+  <p class="gate-notice state-pass">证据版本已冻结</p>
+  {% if task.step.new_evidence_available %}
+    <p class="gate-notice state-warn">有新证据可用；原冻结版本仍保留。</p>
+  {% endif %}
+{% elif task.step.freeze_state == "queued" %}
+  <p class="waiting-note" data-auto-refresh="waiting">冻结请求已排队，正在生成逐场证据版本。</p>
+{% elif task.step.freeze_state == "failed" %}
+  <p class="gate-notice state-error">冻结未完成，请刷新数据后重试。</p>
+{% elif task.step.gate_state == "complete" %}
+  <p class="gate-notice state-pass">证据已齐，可以冻结</p>
+{% else %}
+  <p class="gate-notice state-warn">证据尚未满足冻结条件。</p>
+{% endif %}
+
+<section class="evidence-list" aria-labelledby="evidence-checklist-title">
+  <h2 id="evidence-checklist-title">
+    已完成 {{ task.step.complete_match_count }} / {{ task.step.required_match_count }} 场
+  </h2>
+  {% for match in task.step.matches %}
+    <section class="evidence-match" aria-labelledby="evidence-match-{{ loop.index }}">
+      <h3 id="evidence-match-{{ loop.index }}">
+        场 {{ match.official_match_no }} · {{ match.match_label }}
+      </h3>
+      <p class="muted">
+        已核对 {{ match.completed_requirement_count }} / {{ match.required_requirement_count }} 项
+      </p>
+      {% for requirement in match.requirements %}
+        <div class="evidence-row severity-{% if requirement.state == 'complete' %}info{% else %}warn{% endif %}">
+          <strong>{{ requirement.requirement_id }} · {{ requirement.label }}</strong>
+          <span>{{ requirement.detail }}</span>
+          <small>
+            {{ {"complete": "已完成", "missing": "缺少", "stale": "已过期", "conflict": "有冲突"}[requirement.state] }}
+          </small>
+        </div>
+      {% endfor %}
+    </section>
+  {% endfor %}
+</section>
+
+{% if not read_only and task.step.gate_state == "complete" and task.step.freeze_command_token %}
+  <form class="operator-form" data-action="freeze-evidence"
+        data-task-key="{{ task.selected.task_id }}"
+        data-command-token="{{ task.step.freeze_command_token }}"
+        data-requirement-token="{{ task.step.requirement_revision_token }}">
+    <button class="primary-action" type="submit">
+      {% if task.step.freeze_state == "linked" %}重新冻结新证据{% else %}冻结当前证据并继续{% endif %}
+    </button>
+  </form>
+{% elif read_only and task.step.gate_state == "complete" %}
+  <p class="waiting-note">只读模式不会提交证据冻结请求。</p>
+{% endif %}

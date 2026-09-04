@@ -9,16 +9,19 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.decision.zucai_official import fetch_renjiu_history
 from nutmeg.interfaces.bot.telegram import TelegramBotClient
 from nutmeg.ontology.kernel import OntologyKernel
+from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.copilot import MatchCopilotService, build_copilot_provider
 from nutmeg.product.errors import ProductNotReadyError
 from nutmeg.product.operator_actions import OperatorActionService
+from nutmeg.product.operator_evidence import OperatorEvidenceService
 from nutmeg.product.operator_queries import OperatorQueryService
 from nutmeg.product.operator_runtime import (
     OperatorRuntimeConfig,
     OperatorRuntimeScope,
 )
+from nutmeg.product.operator_tokens import OperatorSnapshotTokenCodec
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.tickets import ProductTicketService
@@ -95,11 +98,25 @@ def build_product_services(
     repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
     queries = ProductQueryService(repository, kernel)
     actions = ProductActionGateway(kernel, repository)
+    snapshot_tokens = (
+        OperatorSnapshotTokenCodec(settings.operator_token_signing_key)
+        if settings.operator_token_signing_key is not None
+        else None
+    )
+    operator_evidence = OperatorEvidenceService(
+        repository=repository,
+        unit_of_work_factory=lambda: OntologyUnitOfWork(kernel.engine),
+        snapshot_tokens=snapshot_tokens,
+    )
+    kernel.evidence_actions.bind_freeze_gate_resolver(
+        operator_evidence.freeze_gate_for_uow
+    )
     operator_queries = OperatorQueryService(
         repository=repository,
         product_queries=queries,
         official_history_provider=fetch_renjiu_history,
         clock=lambda: datetime.now(UTC),
+        operator_evidence=operator_evidence,
     )
     owner_chat_id = _telegram_owner(settings.telegram_allowed_chat_ids)
     telegram_confirmation = None
@@ -129,6 +146,11 @@ def build_product_services(
         action_gateway=actions,
         telegram_confirmation=telegram_confirmation,
         telegram_owner_chat_id=owner_chat_id,
+        evidence_actions=kernel.evidence_actions,
+        snapshot_tokens=snapshot_tokens,
+        calibrate=kernel.calibrate,
+        repository=repository,
+        scoreboard_path=settings.data_dir / "scoreboard.json",
     )
     provider = build_copilot_provider(settings)
     return ProductServices(

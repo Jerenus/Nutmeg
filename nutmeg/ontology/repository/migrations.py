@@ -741,6 +741,239 @@ def _apply_operator_evidence_intake(connection: Connection) -> None:
     )
 
 
+def _apply_operator_evidence_freeze(connection: Connection) -> None:
+    for table in (
+        schema_operator_decision.operator_evidence_freeze_requests,
+        schema_operator_decision.operator_task_evidence_bundle_revisions,
+        schema_operator_decision.operator_task_evidence_bundle_items,
+        schema_operator_decision.operator_worker_jobs,
+    ):
+        table.create(connection)
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_evidence_freeze_request_action
+        BEFORE INSERT ON operator_evidence_freeze_requests
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions
+          WHERE action_id = NEW.action_id
+            AND action_type = 'request_evidence_freeze'
+            AND actor_role = 'judge_operator'
+            AND status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'evidence freeze request requires its judge Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER task_evidence_bundle_single_root
+        BEFORE INSERT ON operator_task_evidence_bundle_revisions
+        WHEN NEW.supersedes_revision_id IS NULL
+          AND EXISTS (
+            SELECT 1
+            FROM operator_task_evidence_bundle_revisions
+            WHERE task_family_id = NEW.task_family_id
+              AND supersedes_revision_id IS NULL
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'task_family_id already has a root evidence bundle');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER task_evidence_bundle_root_revision_no
+        BEFORE INSERT ON operator_task_evidence_bundle_revisions
+        WHEN NEW.supersedes_revision_id IS NULL AND NEW.revision_no != 1
+        BEGIN
+          SELECT RAISE(ABORT, 'root evidence bundle revision_no must be 1');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER task_evidence_bundle_linear_child
+        BEFORE INSERT ON operator_task_evidence_bundle_revisions
+        WHEN NEW.supersedes_revision_id IS NOT NULL
+        BEGIN
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1
+            FROM operator_task_evidence_bundle_revisions AS parent
+            WHERE parent.task_evidence_bundle_revision_id = NEW.supersedes_revision_id
+              AND parent.task_family_id = NEW.task_family_id
+              AND parent.lane = NEW.lane
+              AND parent.business_key = NEW.business_key
+          ) THEN RAISE(ABORT, 'superseding evidence bundle must belong to same task family') END;
+          SELECT CASE WHEN NEW.revision_no != (
+            SELECT parent.revision_no + 1
+            FROM operator_task_evidence_bundle_revisions AS parent
+            WHERE parent.task_evidence_bundle_revision_id = NEW.supersedes_revision_id
+          ) THEN RAISE(ABORT, 'evidence bundle revision_no must immediately follow parent') END;
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER task_evidence_bundle_counts_match_items
+        BEFORE INSERT ON operator_task_evidence_bundle_revisions
+        BEGIN
+          SELECT CASE WHEN NEW.item_count != (
+            SELECT COUNT(*)
+            FROM operator_task_evidence_bundle_items AS item
+            WHERE item.task_evidence_bundle_revision_id = NEW.task_evidence_bundle_revision_id
+          ) OR NEW.bundle_count != (
+            SELECT COUNT(DISTINCT item.evidence_bundle_id)
+            FROM operator_task_evidence_bundle_items AS item
+            WHERE item.task_evidence_bundle_revision_id = NEW.task_evidence_bundle_revision_id
+          ) OR NEW.required_match_count != (
+            SELECT COUNT(DISTINCT item.match_id)
+            FROM operator_task_evidence_bundle_items AS item
+            WHERE item.task_evidence_bundle_revision_id = NEW.task_evidence_bundle_revision_id
+          ) THEN RAISE(ABORT, 'task evidence bundle declared counts do not match items') END;
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER task_evidence_bundle_item_freeze_action
+        BEFORE INSERT ON operator_task_evidence_bundle_items
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions
+          WHERE action_id = NEW.freeze_bundle_action_id
+            AND action_type = 'freeze_evidence_bundle'
+            AND actor_role = 'deterministic_system'
+            AND status = 'committed'
+            AND json_array_length(result_refs_json) = 1
+            AND json_extract(result_refs_json, '$[0].object_type') = 'evidence_bundle'
+            AND json_extract(result_refs_json, '$[0].object_id') = NEW.evidence_bundle_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'bundle item requires a freeze_evidence_bundle Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER task_evidence_bundle_item_after_finalize
+        BEFORE INSERT ON operator_task_evidence_bundle_items
+        WHEN EXISTS (
+          SELECT 1
+          FROM operator_task_evidence_bundle_revisions
+          WHERE task_evidence_bundle_revision_id = NEW.task_evidence_bundle_revision_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'finalized task evidence bundle items are immutable');
+        END
+        """
+    )
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER operator_evidence_freeze_request_no_{operation.lower()}
+            BEFORE {operation} ON operator_evidence_freeze_requests
+            BEGIN
+              SELECT RAISE(ABORT, 'operator evidence freeze requests are append-only');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER task_evidence_bundle_item_no_{operation.lower()}
+            BEFORE {operation} ON operator_task_evidence_bundle_items
+            BEGIN
+              SELECT RAISE(ABORT, 'task evidence bundle items are append-only');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER task_evidence_bundle_revision_no_{operation.lower()}
+            BEFORE {operation} ON operator_task_evidence_bundle_revisions
+            BEGIN
+              SELECT RAISE(ABORT, 'task evidence bundle revisions are append-only');
+            END
+            """
+        )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_worker_job_immutable_source
+        BEFORE UPDATE ON operator_worker_jobs
+        WHEN NEW.worker_job_id != OLD.worker_job_id
+          OR NEW.job_kind != OLD.job_kind
+          OR NEW.source_object_type != OLD.source_object_type
+          OR NEW.source_object_id != OLD.source_object_id
+          OR NEW.created_at != OLD.created_at
+        BEGIN
+          SELECT RAISE(ABORT, 'operator worker job source is immutable');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_worker_job_terminal_no_delete
+        BEFORE DELETE ON operator_worker_jobs
+        WHEN OLD.state IN ('completed', 'failed')
+        BEGIN
+          SELECT RAISE(ABORT, 'terminal operator worker job is immutable');
+        END
+        """
+    )
+    evidence_freeze_result_check = """
+      SELECT CASE WHEN NOT EXISTS (
+        SELECT 1
+        FROM actions AS action
+        JOIN operator_task_evidence_bundle_revisions AS revision
+          ON revision.link_action_id = action.action_id
+        WHERE action.action_id = NEW.result_action_id
+          AND action.action_type = 'link_operator_task_evidence_freeze'
+          AND action.actor_role = 'deterministic_system'
+          AND NEW.source_object_type = 'operator_evidence_freeze_request'
+          AND NEW.result_object_type = 'task_evidence_bundle_revision'
+          AND revision.task_evidence_bundle_revision_id = NEW.result_object_id
+          AND revision.evidence_freeze_request_id = NEW.source_object_id
+      ) THEN RAISE(ABORT, 'evidence freeze job result does not match its link Action') END;
+    """
+    for operation in ("INSERT", "UPDATE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER operator_worker_job_evidence_freeze_result_{operation.lower()}
+            BEFORE {operation} ON operator_worker_jobs
+            WHEN NEW.state = 'completed' AND NEW.job_kind = 'evidence_freeze'
+            BEGIN
+              {evidence_freeze_result_check}
+            END
+            """
+        )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_worker_job_terminal_immutable
+        BEFORE UPDATE ON operator_worker_jobs
+        WHEN OLD.state IN ('completed', 'failed')
+        BEGIN
+          SELECT RAISE(ABORT, 'terminal operator worker job is immutable');
+        END
+        """
+    )
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "request_evidence_freeze",
+                "actor_role": "judge_operator",
+            },
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": "link_operator_task_evidence_freeze",
+                "actor_role": "deterministic_system",
+            },
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -867,6 +1100,16 @@ MIGRATIONS: tuple[Migration, ...] = (
             "operator_evidence_coverage_receipts+strict_counts+deterministic_permission"
         ),
         apply=_apply_operator_evidence_intake,
+    ),
+    Migration(
+        version=19,
+        name="operator_evidence_freeze",
+        fingerprint=(
+            "operator_evidence_freeze_requests+operator_task_evidence_bundle_revisions+"
+            "operator_task_evidence_bundle_items+operator_worker_jobs+linear_revision+"
+            "atomic_item_counts+typed_result_actions+immutable_rows+role_separated_permissions"
+        ),
+        apply=_apply_operator_evidence_freeze,
     ),
 )
 

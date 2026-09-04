@@ -50,6 +50,7 @@ from nutmeg.product.operator_contracts import (
     TaskProgressSummary,
     TicketVersionSummary,
 )
+from nutmeg.product.operator_evidence import OperatorEvidenceService
 from nutmeg.product.operator_lanes import (
     JczqLaneAdapter,
     SaleSlateSnapshot,
@@ -143,12 +144,19 @@ class OperatorQueryService:
         official_history_provider: Callable[[], list[OfficialRenjiuHistory]],
         clock: Callable[[], datetime],
         legacy_fixture_adapter: ZucaiReplayBundleAdapter | None = None,
+        operator_evidence: OperatorEvidenceService | None = None,
     ) -> None:
         self._repository = repository
         self._product_queries = product_queries
         self._legacy_fixture_adapter = legacy_fixture_adapter
         self._official_history = official_history_provider
         self._clock = clock
+        self._operator_evidence = operator_evidence
+
+    def evidence_freeze_context(self, task_key: str, *, as_of: datetime):
+        if self._operator_evidence is None:
+            raise ProductNotFoundError("operator evidence service is unavailable")
+        return self._operator_evidence.evidence_freeze_context(task_key, as_of=as_of)
 
     def worklist(self, *, as_of: datetime) -> OperatorWorklistResponse:
         cutoff = _aware(as_of, "as_of")
@@ -312,6 +320,7 @@ class OperatorQueryService:
                 issue,
                 official_deadline,
                 slate,
+                cutoff,
             )
         adjudications = self._repository.adjudications_for_subject(
             "issue", issue, cutoff.isoformat()
@@ -652,13 +661,14 @@ class OperatorQueryService:
             _token({"task_id": task_id, "slate": slate, "error": str(error)}),
         )
 
-    @staticmethod
     def _prepare_task(
+        self,
         task_id: str,
         lane: OperatorLane,
         business_key: str,
         deadline: datetime | None,
         slate: SaleSlateSnapshot,
+        cutoff: datetime,
     ) -> _BuiltTask:
         facts = OperatorTaskFacts(
             lane=lane,
@@ -679,15 +689,19 @@ class OperatorQueryService:
             result_available=False,
             pending_review_items=0,
         )
-        step = PrepareStep(
-            task_id=task_id,
-            title="准备本任务数据",
-            recovery=OperatorRecoverySummary(
-                code="operator_inputs_missing",
-                missing="本任务的严格证据与结构化输入",
-                impact="官方任务已建立，判断与构票尚不能开始",
-                action_label="采集并导入本任务数据",
-            ),
+        step = (
+            self._operator_evidence.prepare_step(task_id, as_of=cutoff)
+            if self._operator_evidence is not None
+            else PrepareStep(
+                task_id=task_id,
+                title="准备本任务数据",
+                recovery=OperatorRecoverySummary(
+                    code="operator_inputs_missing",
+                    missing="本任务的严格证据与结构化输入",
+                    impact="官方任务已建立，判断与构票尚不能开始",
+                    action_label="采集并导入本任务数据",
+                ),
+            )
         )
         return _BuiltTask(
             facts=facts,
@@ -973,6 +987,7 @@ class OperatorQueryService:
                     default=None,
                 ),
                 slate,
+                cutoff,
             )
         ticket = next((row for row in task_rows if row.get("ticket_artifact_id")), None)
         deadline_raw = next(
