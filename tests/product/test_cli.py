@@ -22,6 +22,7 @@ from nutmeg.product.operator_runtime import (
     OperatorSurfaceMode,
     SourceIdentity,
 )
+from nutmeg.product.operator_workers import audit_current_candidate
 from nutmeg.product.wiring import build_product_services
 
 
@@ -39,6 +40,10 @@ def test_product_services_compose_only_current_kernel(tmp_path: Path) -> None:
     assert services.kernel.status().integrity_check == "ok"
     assert services.queries.health().ontology_schema_version == MIGRATIONS[-1].version
     assert services.settings is settings
+    assert (
+        services.kernel.protected_tickets._operator_candidate_auditor
+        is audit_current_candidate
+    )
 
 
 def test_app_command_binds_loopback_by_default(monkeypatch, tmp_path: Path) -> None:

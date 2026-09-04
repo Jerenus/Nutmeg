@@ -8,6 +8,10 @@ from pathlib import Path
 from nutmeg.analytics.calibrate_flow import CalibrateRequest
 from nutmeg.decision.legs_audit import DEVIATION_RULE_IDS
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole, canonical_json
+from nutmeg.ontology.actions.protected_ticket_actions import (
+    ApproveOperatorTicketBatchRequest,
+    CreateOperatorTicketBatchRequest,
+)
 from nutmeg.ontology.operator.decision_actions import (
     BaselineEnvelopeOfferConstraint,
     BaselineEnvelopeStructureTemplate,
@@ -18,14 +22,17 @@ from nutmeg.ontology.operator.decision_actions import (
     FactorAdjustmentInput,
     FreezeJudgmentPrescriptionRequest,
     RecordBaselineEnvelopeRequest,
+    RecordNoTicketRequest,
     RequestCandidateGenerationRequest,
     SelectTicketCandidateRequest,
+    SupersedeNoTicketRequest,
 )
 from nutmeg.ontology.operator.evidence_actions import RequestEvidenceFreezeRequest
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.contracts import ProductActionRequest, ProductActionResponse
 from nutmeg.product.errors import ProductActionBlockedError
 from nutmeg.product.operator_contracts import (
+    AuditDeploymentStep,
     GradePredictionCommand,
     OperatorCommandReceipt,
     RecordDeploymentCommand,
@@ -95,6 +102,7 @@ class OperatorActionService:
         telegram_owner_chat_id: int | None = None,
         evidence_actions=None,
         decision_actions=None,
+        protected_tickets=None,
         snapshot_tokens: OperatorSnapshotTokenCodec | None = None,
         calibrate=None,
         repository=None,
@@ -107,6 +115,7 @@ class OperatorActionService:
         self._owner_chat_id = telegram_owner_chat_id
         self._evidence_actions = evidence_actions
         self._decision_actions = decision_actions
+        self._protected_tickets = protected_tickets
         self._snapshot_tokens = snapshot_tokens
         self._calibrate = calibrate
         self._repository = repository
@@ -527,6 +536,434 @@ class OperatorActionService:
         if self._decision_actions is None or self._snapshot_tokens is None:
             raise ProductActionBlockedError("operator judgment is not configured")
         return self._decision_actions, self._snapshot_tokens
+
+    def _deployment_step(
+        self,
+        command,
+        *,
+        expected_mode: str,
+        expected_kind: OperatorCommandKind,
+        token_attribute: str,
+    ):
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        task = self._queries.task(command.task_key, as_of=requested_at)
+        step = task.step
+        if not isinstance(step, AuditDeploymentStep) or step.surface_version != "2":
+            raise ProductActionBlockedError("task is no longer at protected deployment")
+        supplied_command = self._snapshot_tokens.decode(command.expected_snapshot_token)
+        if supplied_command.command_kind is not expected_kind:
+            raise OperatorSnapshotTokenError("invalid_request")
+        if step.mode != expected_mode:
+            raise ProductActionBlockedError("protected deployment command is no longer current")
+        if step.command_token != command.expected_snapshot_token:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        submitted_ref = getattr(command, token_attribute)
+        current_ref = getattr(step, token_attribute)
+        if submitted_ref != current_ref:
+            try:
+                supplied_ref = self._snapshot_tokens.decode(submitted_ref)
+            except OperatorSnapshotTokenError:
+                raise
+            if supplied_ref.command_kind is not expected_kind:
+                raise OperatorSnapshotTokenError("invalid_request")
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        return task, step, requested_at
+
+    def _deployment_ref(
+        self,
+        token: str,
+        *,
+        command_kind: OperatorCommandKind,
+        prefix: str,
+    ) -> str:
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        payload = self._snapshot_tokens.decode(token)
+        if payload.command_kind is not command_kind:
+            raise OperatorSnapshotTokenError("invalid_request")
+        marker = f"{prefix}:"
+        if len(payload.dependency_revision_ids) != 1:
+            raise OperatorSnapshotTokenError("invalid_request")
+        dependency = payload.dependency_revision_ids[0]
+        if not dependency.startswith(marker) or not dependency.removeprefix(marker):
+            raise OperatorSnapshotTokenError("invalid_request")
+        return dependency.removeprefix(marker)
+
+    def _no_ticket_context(
+        self,
+        token: str,
+        *,
+        command_kind: OperatorCommandKind,
+        task_key: str,
+    ) -> tuple[OperatorSnapshotTokenPayloadV1, dict[str, str]]:
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        payload = self._snapshot_tokens.decode(token)
+        if payload.command_kind is not command_kind:
+            raise OperatorSnapshotTokenError("invalid_request")
+        expected_prefixes = {
+            "business_key",
+            "lane",
+            "scope_fingerprint",
+            "slate_revision",
+            "task_family",
+        }
+        context: dict[str, str] = {}
+        for dependency in payload.dependency_revision_ids:
+            prefix, separator, value = dependency.partition(":")
+            if not separator or prefix not in expected_prefixes or not value:
+                raise OperatorSnapshotTokenError("invalid_request")
+            if prefix in context:
+                raise OperatorSnapshotTokenError("invalid_request")
+            context[prefix] = value
+        if set(context) != expected_prefixes:
+            raise OperatorSnapshotTokenError("invalid_request")
+        if (
+            context["task_family"] != task_key
+            or f'{context["lane"]}:{context["business_key"]}' != task_key
+            or re.fullmatch(r"[0-9a-f]{64}", context["scope_fingerprint"]) is None
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        return payload, context
+
+    def _no_ticket_ref(
+        self,
+        token: str,
+        *,
+        command_kind: OperatorCommandKind,
+        command_payload: OperatorSnapshotTokenPayloadV1,
+        prefix: str,
+    ) -> str:
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        payload = self._snapshot_tokens.decode(token)
+        if (
+            payload.command_kind is not command_kind
+            or payload.task_snapshot_hash != command_payload.task_snapshot_hash
+            or payload.work_item_id != command_payload.work_item_id
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        marker = f"{prefix}:"
+        if len(payload.dependency_revision_ids) != 1:
+            raise OperatorSnapshotTokenError("invalid_request")
+        dependency = payload.dependency_revision_ids[0]
+        if not dependency.startswith(marker) or not dependency.removeprefix(marker):
+            raise OperatorSnapshotTokenError("invalid_request")
+        return dependency.removeprefix(marker)
+
+    def _no_ticket_receipt_result(self, outcome) -> str:
+        self._require_committed(outcome, "no-ticket")
+        if self._decision_actions is None:
+            raise ProductActionBlockedError("operator judgment is not configured")
+        receipt = self._decision_actions.no_ticket_command_receipt(outcome.action_id)
+        if receipt is None:
+            raise ProductActionBlockedError("no-ticket command receipt is missing")
+        result = getattr(receipt.result, "value", receipt.result)
+        if result == "task_snapshot_changed":
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        if result not in {"recorded", "already_current"}:
+            raise ProductActionBlockedError("no-ticket command receipt is invalid")
+        return str(result)
+
+    def record_no_ticket(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, _tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        payload, context = self._no_ticket_context(
+            command.expected_snapshot_token,
+            command_kind=OperatorCommandKind.RECORD_NO_TICKET,
+            task_key=command.task_key,
+        )
+        rule_ids = tuple(
+            self._no_ticket_ref(
+                token,
+                command_kind=OperatorCommandKind.RECORD_NO_TICKET,
+                command_payload=payload,
+                prefix="rule",
+            )
+            for token in command.rule_tokens
+        )
+        if len(rule_ids) != len(set(rule_ids)) or any(
+            rule_id not in DEVIATION_RULE_IDS for rule_id in rule_ids
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        comparison_candidate_revision_id = (
+            None
+            if command.comparison_candidate_token is None
+            else self._no_ticket_ref(
+                command.comparison_candidate_token,
+                command_kind=OperatorCommandKind.RECORD_NO_TICKET,
+                command_payload=payload,
+                prefix="candidate",
+            )
+        )
+        outcome = decision_actions.record_no_ticket(
+            RecordNoTicketRequest(
+                task_family_id=context["task_family"],
+                lane=context["lane"],
+                business_key=context["business_key"],
+                work_item_id=payload.work_item_id,
+                expected_task_snapshot_hash=payload.task_snapshot_hash,
+                expected_scope_fingerprint=context["scope_fingerprint"],
+                reason_code=command.reason_code,
+                reason_basis=command.reason_basis,
+                reason_text=command.reason_text,
+                rule_ids=rule_ids,
+                comparison_candidate_revision_id=comparison_candidate_revision_id,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._no_ticket_receipt_result(outcome)
+        return OperatorCommandReceipt(
+            command_kind="record_no_ticket",
+            status="completed",
+            task_key=command.task_key,
+        )
+
+    def supersede_no_ticket(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, _tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        payload, context = self._no_ticket_context(
+            command.expected_snapshot_token,
+            command_kind=OperatorCommandKind.SUPERSEDE_NO_TICKET,
+            task_key=command.task_key,
+        )
+        revision_id = self._no_ticket_ref(
+            command.no_ticket_revision_token,
+            command_kind=OperatorCommandKind.SUPERSEDE_NO_TICKET,
+            command_payload=payload,
+            prefix="no_ticket_revision",
+        )
+        outcome = decision_actions.supersede_no_ticket(
+            SupersedeNoTicketRequest(
+                no_ticket_revision_id=revision_id,
+                expected_task_snapshot_hash=payload.task_snapshot_hash,
+                expected_scope_fingerprint=context["scope_fingerprint"],
+                reason_text=command.reason_text,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._no_ticket_receipt_result(outcome)
+        return OperatorCommandReceipt(
+            command_kind="supersede_no_ticket",
+            status="completed",
+            task_key=command.task_key,
+        )
+
+    def create_ticket_batch(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._protected_tickets is None:
+            raise ProductActionBlockedError("protected ticket Actions are not configured")
+        task, _step, requested_at = self._deployment_step(
+            command,
+            expected_mode="create_ticket_batch",
+            expected_kind=OperatorCommandKind.CREATE_TICKET_BATCH,
+            token_attribute="candidate_selection_token",
+        )
+        selection_id = self._deployment_ref(
+            command.candidate_selection_token,
+            command_kind=OperatorCommandKind.CREATE_TICKET_BATCH,
+            prefix="selection",
+        )
+        outcome = self._protected_tickets.create_operator_ticket_batch(
+            CreateOperatorTicketBatchRequest(
+                candidate_selection_id=selection_id,
+                account_id=f"acct-{task.selected.lane.value}",
+                run_date=task.selected.business_key,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "ticket batch creation")
+        return OperatorCommandReceipt(
+            command_kind="create_ticket_batch",
+            status="completed",
+            task_key=command.task_key,
+        )
+
+    def approve_ticket_batch(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._protected_tickets is None:
+            raise ProductActionBlockedError("protected ticket Actions are not configured")
+        _task, _step, requested_at = self._deployment_step(
+            command,
+            expected_mode="approve_ticket_batch",
+            expected_kind=OperatorCommandKind.APPROVE_TICKET_BATCH,
+            token_attribute="ticket_batch_token",
+        )
+        revision_id = self._deployment_ref(
+            command.ticket_batch_token,
+            command_kind=OperatorCommandKind.APPROVE_TICKET_BATCH,
+            prefix="ticket_batch_revision",
+        )
+        outcome = self._protected_tickets.approve_operator_ticket_batch(
+            ApproveOperatorTicketBatchRequest(
+                ticket_batch_revision_id=revision_id,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "ticket batch approval")
+        return OperatorCommandReceipt(
+            command_kind="approve_ticket_batch",
+            status="completed",
+            task_key=command.task_key,
+        )
+
+    def adjudicate_audit_warn(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        _task, step, _requested_at = self._deployment_step(
+            command,
+            expected_mode="adjudicate_audit_warn",
+            expected_kind=OperatorCommandKind.ADJUDICATE_AUDIT_WARN,
+            token_attribute="ticket_batch_token",
+        )
+        current_tokens = {
+            finding.finding_token
+            for finding in step.findings
+            if getattr(finding, "severity", None) == "warn"
+            and getattr(finding, "finding_token", None) is not None
+        }
+        submitted_tokens = [finding.finding_token for finding in command.findings]
+        if len(submitted_tokens) != len(set(submitted_tokens)) or set(
+            submitted_tokens
+        ) != current_tokens:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+
+        prepared = []
+        for finding in command.findings:
+            finding_id = self._deployment_ref(
+                finding.finding_token,
+                command_kind=OperatorCommandKind.ADJUDICATE_AUDIT_WARN,
+                prefix="finding",
+            )
+            rejected = [
+                self._deployment_evidence_ref(token)
+                for token in finding.evidence_rejected_tokens
+            ]
+            prepared.append((finding, finding_id, rejected))
+        for index, (finding, finding_id, rejected) in enumerate(prepared):
+            response = self._actions.execute(
+                ProductActionRequest(
+                    action_type="record_adjudication",
+                    idempotency_key=f"{command.idempotency_key}:warn:{index}",
+                    payload={
+                        "subject_type": "ticket_audit_finding",
+                        "subject_id": finding_id,
+                        "decision": "accept_warning",
+                        "reason": finding.reason,
+                        "evidence_rejected": rejected,
+                        "alternative": {
+                            "no_evidence_rejected_acknowledged": not rejected,
+                        },
+                    },
+                    policy_version="governance-v1",
+                ),
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
+            if response.status != ActionStatus.COMMITTED.value:
+                raise ProductActionBlockedError("WARN adjudication was not committed")
+        return OperatorCommandReceipt(
+            command_kind="adjudicate_audit_warn",
+            status="completed",
+            task_key=command.task_key,
+        )
+
+    def _deployment_evidence_ref(self, token: str) -> dict[str, str]:
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        payload = self._snapshot_tokens.decode(token)
+        if (
+            payload.command_kind is not OperatorCommandKind.ADJUDICATE_AUDIT_WARN
+            or len(payload.dependency_revision_ids) != 1
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        dependency = payload.dependency_revision_ids[0]
+        marker = "evidence:"
+        if not dependency.startswith(marker):
+            raise OperatorSnapshotTokenError("invalid_request")
+        raw = dependency.removeprefix(marker)
+        object_type, separator, object_id = raw.partition(":")
+        if not separator or not object_type or not object_id:
+            raise OperatorSnapshotTokenError("invalid_request")
+        return {"object_type": object_type, "object_id": object_id}
+
+    def request_confirmation(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._telegram is None or self._owner_chat_id is None:
+            raise ProductActionBlockedError("Telegram confirmation is not configured")
+        _task, _step, requested_at = self._deployment_step(
+            command,
+            expected_mode="request_confirmation",
+            expected_kind=OperatorCommandKind.REQUEST_CONFIRMATION,
+            token_attribute="ticket_artifact_token",
+        )
+        artifact_id = self._deployment_ref(
+            command.ticket_artifact_token,
+            command_kind=OperatorCommandKind.REQUEST_CONFIRMATION,
+            prefix="ticket_artifact",
+        )
+        self._telegram.request_confirmation(
+            ticket_artifact_id=artifact_id,
+            chat_id=self._owner_chat_id,
+            dry_run=False,
+            requested_at=requested_at,
+        )
+        return OperatorCommandReceipt(
+            command_kind="request_confirmation",
+            status="queued",
+            task_key=command.task_key,
+        )
 
     @staticmethod
     def _require_committed(outcome, label: str) -> None:

@@ -525,6 +525,230 @@ class CandidateSelectionRow:
 
 
 @dataclass(frozen=True, slots=True)
+class TicketDecisionLineageRevisionRow:
+    lineage_revision_id: str
+    lineage_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
+    ticket_batch_revision_id: str
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    task_evidence_bundle_revision_id: str
+    market_prior_baseline_revision_id: str
+    baseline_envelope_revision_id: str
+    judgment_prescription_revision_id: str
+    candidate_set_revision_id: str
+    candidate_selection_id: str
+    candidate_revision_id: str
+    audit_policy_version: str
+    content_hash: str
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class TicketDecisionLineageItemRow:
+    lineage_item_id: str
+    lineage_revision_id: str
+    item_index: int
+    candidate_ticket_id: str
+    ticket_index: int
+    candidate_ticket_leg_id: str
+    leg_index: int
+    official_offer_revision_id: str
+    match_id: str
+    market_definition_id: str
+    selection_code: str
+    market_prior_baseline_probability_id: str
+    operator_match_judgment_revision_id: str
+    forecast_revision_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class TicketAuditOverrideReceiptRow:
+    ticket_audit_override_receipt_id: str
+    action_id: str
+    receipt_index: int
+    adjudication_id: str
+    ticket_batch_revision_id: str
+    lineage_revision_id: str
+    candidate_revision_id: str
+    candidate_content_hash: str
+    candidate_audit_finding_id: str
+    finding_code: str
+    audit_policy_version: str
+    reason: str
+    rule_ids: tuple[str, ...]
+    evidence_rejected: tuple[dict[str, str], ...]
+    recorded_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateGenerationOverrideLinkRow:
+    candidate_generation_override_link_id: str
+    generation_request_id: str
+    override_receipt_id: str
+    link_index: int
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class NoTicketRevisionRow:
+    no_ticket_revision_id: str
+    no_ticket_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
+    action_id: str
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    reason_code: str
+    reason_basis: str
+    reason_text: str
+    rule_ids: tuple[str, ...]
+    phase: str
+    requirement_snapshot_hash: str | None
+    missing_requirement_ids: tuple[str, ...]
+    stale_requirement_ids: tuple[str, ...]
+    conflicting_requirement_ids: tuple[str, ...]
+    market_prior_baseline_revision_id: str | None
+    baseline_envelope_revision_id: str | None
+    candidate_set_revision_id: str | None
+    comparison_candidate_revision_id: str | None
+    deployment_outcome: str
+    content_hash: str
+    recorded_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class NoTicketOfferScopeRow:
+    no_ticket_offer_scope_id: str
+    no_ticket_revision_id: str
+    scope_index: int
+    official_offer_revision_id: str
+    effective_cutoff_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class NoTicketArtifactScopeRow:
+    no_ticket_artifact_scope_id: str
+    no_ticket_revision_id: str
+    scope_index: int
+    ticket_artifact_id: str
+    effective_cutoff_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class NoTicketCommandReceiptRow:
+    no_ticket_command_receipt_id: str
+    action_id: str
+    command_kind: str
+    no_ticket_revision_id: str | None
+    task_family_id: str
+    work_item_id: str
+    submitted_task_snapshot_hash: str
+    resolved_task_snapshot_hash: str
+    result: str
+    received_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactWorkItemLinkRow:
+    artifact_work_item_link_id: str
+    ticket_artifact_id: str
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    action_id: str
+    linked_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProtectedArtifactBindingRow:
+    protected_artifact_binding_id: str
+    ticket_artifact_id: str
+    lineage_revision_id: str
+    candidate_revision_id: str
+    candidate_ticket_id: str
+    ticket_index: int
+    ticket_kind: str
+    stake_minor: int
+    currency: str
+    composition_hash: str
+    fixed_prize_policy_revision_id: str | None
+    frozen_deadline_at: str
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProtectedArtifactOfferRevisionLinkRow:
+    protected_artifact_offer_revision_link_id: str
+    ticket_artifact_id: str
+    offer_index: int
+    official_offer_revision_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmationChallengeRevisionRow:
+    challenge_revision_id: str
+    challenge_family_id: str
+    legacy_confirmation_id: str | None
+    revision_no: int
+    supersedes_revision_id: str | None
+    ticket_artifact_id: str
+    artifact_composition_hash: str
+    lineage_revision_id: str
+    nonce_hash: str
+    issued_at: str
+    effective_cutoff_at: str
+    action_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmationChallengeHeadRow:
+    ticket_artifact_id: str
+    challenge_revision_id: str
+    challenge_family_id: str
+    revision_no: int
+    updated_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactTerminalReceiptRow:
+    artifact_terminal_receipt_id: str
+    ticket_artifact_id: str
+    challenge_revision_id: str | None
+    terminal_kind: str
+    terminal_reason: str
+    effective_cutoff_at: str
+    terminal_at: str
+    action_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewEligibilityFactRow:
+    review_eligibility_fact_id: str
+    action_id: str
+    fact_index: int
+    terminal_trigger: str
+    task_family_id: str
+    work_item_id: str
+    task_snapshot_hash: str
+    no_ticket_revision_id: str | None
+    artifact_terminal_receipt_id: str | None
+    market_prior_baseline_revision_id: str | None
+    review_kind: str
+    readiness_condition: str
+    content_hash: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
 class ZucaiFixedPrizePolicyRevisionRow:
     fixed_prize_policy_revision_id: str
     fixed_prize_policy_family_id: str
@@ -581,6 +805,8 @@ class CandidateTicketLegRow:
 
 
 __all__ = [
+    "ArtifactTerminalReceiptRow",
+    "ArtifactWorkItemLinkRow",
     "BaselineEnvelopeBundleFaceRow",
     "BaselineEnvelopeFaceBundleRow",
     "BaselineEnvelopeOfferConstraintRow",
@@ -590,10 +816,13 @@ __all__ = [
     "CandidateAuditFindingRow",
     "CandidateDeadFaceRow",
     "CandidateGenerationRequestRow",
+    "CandidateGenerationOverrideLinkRow",
     "CandidateMetricRow",
     "CandidateSelectionRow",
     "CandidateTicketLegRow",
     "CandidateTicketRow",
+    "ConfirmationChallengeHeadRow",
+    "ConfirmationChallengeRevisionRow",
     "EvidenceCoverageReceiptRow",
     "EvidenceFreezeGate",
     "EvidenceFreezeMatchPlan",
@@ -606,11 +835,18 @@ __all__ = [
     "JudgmentPrescriptionRevisionRow",
     "MarketPriorBaselineProbabilityRow",
     "MarketPriorBaselineRevisionRow",
+    "NoTicketArtifactScopeRow",
+    "NoTicketCommandReceiptRow",
+    "NoTicketOfferScopeRow",
+    "NoTicketRevisionRow",
     "OfficialOfferFamilyRow",
     "OfficialOfferRevisionRow",
     "OfficialSaleSlateRevisionRow",
     "OfficialScheduleCheckReceiptRow",
     "OperatorWorkerJobRow",
+    "ProtectedArtifactBindingRow",
+    "ProtectedArtifactOfferRevisionLinkRow",
+    "ReviewEligibilityFactRow",
     "OperatorMatchJudgmentRevisionRow",
     "SaleImportCountReceiptRow",
     "SaleImportResult",
@@ -618,6 +854,9 @@ __all__ = [
     "TaskEvidenceBundleRevisionRow",
     "TicketCandidateRow",
     "TicketCandidateSetRevisionRow",
+    "TicketAuditOverrideReceiptRow",
+    "TicketDecisionLineageItemRow",
+    "TicketDecisionLineageRevisionRow",
     "ZucaiFixedPrizePolicyRevisionRow",
     "ZucaiFixedPrizePolicyTierRow",
 ]

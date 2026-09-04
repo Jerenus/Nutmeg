@@ -26,6 +26,7 @@ from nutmeg.decision.zucai_deployment import (
 )
 from nutmeg.decision.zucai_official import OfficialRenjiuHistory
 from nutmeg.decision.zucai_optimizer import optimize
+from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
 from nutmeg.ontology.repository import schema_decision as sd
 from nutmeg.ontology.repository import schema_operator_decision as sod
 from nutmeg.product.errors import ProductActionBlockedError, ProductNotFoundError
@@ -50,6 +51,9 @@ from nutmeg.product.operator_contracts import (
     CompleteStep,
     ConfirmationStep,
     ConstructTicketStep,
+    DeploymentAuditFindingSummary,
+    DeploymentCandidateSummary,
+    DeploymentRuleOption,
     EvidenceFieldSummary,
     JudgeMatchesStep,
     JudgmentFaceBundleView,
@@ -58,6 +62,7 @@ from nutmeg.product.operator_contracts import (
     JudgmentRuleView,
     LedgerStep,
     MatchJudgmentEditorView,
+    NoTicketControl,
     OperatorEvidenceResponse,
     OperatorLane,
     OperatorRecoverySummary,
@@ -76,8 +81,10 @@ from nutmeg.product.operator_contracts import (
 from nutmeg.product.operator_evidence import OperatorEvidenceService
 from nutmeg.product.operator_lanes import (
     JczqLaneAdapter,
+    NoTicketClosure,
     SaleSlateSnapshot,
     ZucaiLaneAdapter,
+    derive_sale_wave,
 )
 from nutmeg.product.operator_state import (
     NEXT_ACTION_LABELS,
@@ -423,6 +430,8 @@ class OperatorQueryService:
         operator_evidence: OperatorEvidenceService | None = None,
         unit_of_work_factory: Callable[[], OntologyUnitOfWork] | None = None,
         snapshot_tokens: OperatorSnapshotTokenCodec | None = None,
+        operator_decisions=None,
+        operator_candidate_auditor=None,
     ) -> None:
         self._repository = repository
         self._product_queries = product_queries
@@ -432,6 +441,8 @@ class OperatorQueryService:
         self._operator_evidence = operator_evidence
         self._unit_of_work_factory = unit_of_work_factory
         self._snapshot_tokens = snapshot_tokens
+        self._operator_decisions = operator_decisions
+        self._operator_candidate_auditor = operator_candidate_auditor
 
     def evidence_freeze_context(self, task_key: str, *, as_of: datetime):
         if self._operator_evidence is None:
@@ -1202,22 +1213,31 @@ class OperatorQueryService:
                                 candidate_sets=candidate_sets,
                                 selection=selection,
                             )
-                            step = self._candidate_comparison_step(
-                                uow,
-                                lineage,
-                                prescription,
-                                candidate_sets,
-                                dependency_ids,
-                                selection=(
-                                    selection if selection_completed else None
-                                ),
-                            )
+                            if selection_completed and selection is not None:
+                                step, dependency_ids = self._deployment_step(
+                                    uow,
+                                    lineage,
+                                    prescription,
+                                    judgment_set,
+                                    selection,
+                                    dependency_ids,
+                                    as_of=cutoff,
+                                )
+                            else:
+                                step = self._candidate_comparison_step(
+                                    uow,
+                                    lineage,
+                                    prescription,
+                                    candidate_sets,
+                                    dependency_ids,
+                                    selection=None,
+                                )
                             progress_label = (
                                 "等待部署审计"
                                 if selection_completed
                                 else "比较候选票"
                             )
-        formal_ticket_stage = isinstance(step, ConstructTicketStep)
+        formal_ticket_stage = isinstance(step, (ConstructTicketStep, AuditDeploymentStep))
         candidate_count = sum(
             candidate_set.candidate_count for candidate_set in candidate_sets
         )
@@ -1264,6 +1284,355 @@ class OperatorQueryService:
                     "dependencies": dependency_ids,
                 }
             ),
+        )
+
+    def _deployment_step(
+        self,
+        uow,
+        lineage: _DecisionLineage,
+        prescription: dict[str, object],
+        candidate_set,
+        selection,
+        dependencies: tuple[str, ...],
+        *,
+        as_of: datetime,
+    ) -> tuple[AuditDeploymentStep, tuple[str, ...]]:
+        candidate = uow.operator_result.candidate(selection.candidate_revision_id)
+        if candidate is None:
+            raise ProductActionBlockedError("selected ticket candidate is missing")
+        metric = uow.operator_result.candidate_metric(candidate.candidate_revision_id)
+        if metric is None:
+            raise ProductActionBlockedError("selected ticket candidate metric is missing")
+        findings = uow.operator_result.candidate_audit_findings(
+            candidate.candidate_revision_id
+        )
+        if self._operator_candidate_auditor is not None:
+            if self._operator_decisions is None:
+                raise ProductActionBlockedError(
+                    "current candidate audit authority is not configured"
+                )
+            resolved_selection = self._operator_decisions.resolve_current_selection_in_uow(
+                uow,
+                candidate_selection_id=selection.candidate_selection_id,
+            )
+            current_audit = self._operator_candidate_auditor(uow, resolved_selection)
+            findings = current_audit.findings
+        lineage_row = uow.connection.execute(
+            select(sod.operator_ticket_decision_lineage_revisions)
+            .where(
+                sod.operator_ticket_decision_lineage_revisions.c.candidate_selection_id
+                == selection.candidate_selection_id
+            )
+            .order_by(
+                sod.operator_ticket_decision_lineage_revisions.c.revision_no.desc()
+            )
+            .limit(1)
+        ).mappings().first()
+        batch = None
+        artifacts = []
+        if lineage_row is not None:
+            source_batch = uow.tickets.batch_revision(
+                str(lineage_row["ticket_batch_revision_id"])
+            )
+            if source_batch is None:
+                raise ProductActionBlockedError("ticket decision lineage has no batch")
+            batch = uow.tickets.current_batch_revision(source_batch.ticket_batch_id)
+            if batch is None:
+                raise ProductActionBlockedError("ticket decision lineage batch is unavailable")
+            artifacts = uow.tickets.ticket_artifacts_for_revision(
+                str(lineage_row["ticket_batch_revision_id"])
+            )
+            if not artifacts:
+                artifacts = uow.tickets.ticket_artifacts_for_revision(
+                    batch.ticket_batch_revision_id
+                )
+
+        stage_dependencies = set(dependencies)
+        if batch is not None:
+            stage_dependencies.add(f"ticket_batch_revision:{batch.ticket_batch_revision_id}")
+        if artifacts:
+            stage_dependencies.update(
+                f"ticket_artifact:{artifact.ticket_artifact_id}"
+                for artifact in artifacts
+            )
+        resolved_error_ids: set[str] = set()
+        if lineage_row is not None and batch is not None:
+            batch_revision_id = str(lineage_row["ticket_batch_revision_id"])
+            direct_links = (
+                uow.operator_result.candidate_generation_override_links_for_batch(
+                    batch_revision_id
+                )
+            )
+            generation_is_current = not direct_links or any(
+                link.generation_request_id == candidate_set.generation_request_id
+                for link in direct_links
+            )
+            inherited_links = (
+                uow.operator_result.candidate_generation_override_links(
+                    candidate_set.generation_request_id
+                )
+                if generation_is_current
+                else ()
+            )
+            if inherited_links:
+                receipts = tuple(
+                    uow.operator_result.ticket_audit_override_receipt(
+                        link.override_receipt_id
+                    )
+                    for link in inherited_links
+                )
+                if all(receipt is not None for receipt in receipts):
+                    errors = tuple(
+                        finding for finding in findings if finding.severity == "ERROR"
+                    )
+                    try:
+                        matching = (
+                            ProtectedTicketActions._match_inherited_operator_overrides(
+                                uow,
+                                errors=errors,
+                                receipts=tuple(
+                                    receipt
+                                    for receipt in receipts
+                                    if receipt is not None
+                                ),
+                                candidate_content_hash=candidate.content_hash,
+                                audit_policy_version=(
+                                    candidate_set.audit_policy_version
+                                ),
+                            )
+                        )
+                    except ValueError:
+                        matching = {}
+                    resolved_error_ids = set(matching)
+            elif generation_is_current:
+                matching = {
+                    receipt.candidate_audit_finding_id
+                    for receipt in (
+                        uow.operator_result.ticket_audit_override_receipts_for_batch(
+                            batch_revision_id
+                        )
+                    )
+                    if receipt.candidate_revision_id
+                    == candidate.candidate_revision_id
+                    and receipt.candidate_content_hash == candidate.content_hash
+                    and receipt.audit_policy_version
+                    == candidate_set.audit_policy_version
+                }
+                current_error_ids = {
+                    finding.candidate_audit_finding_id
+                    for finding in findings
+                    if finding.severity == "ERROR"
+                }
+                if matching == current_error_ids:
+                    resolved_error_ids = matching
+        unresolved_errors = [
+            finding
+            for finding in findings
+            if finding.severity == "ERROR"
+            and finding.candidate_audit_finding_id not in resolved_error_ids
+        ]
+        unresolved_warns = []
+        for finding in findings:
+            if finding.severity != "WARN":
+                continue
+            adjudication = uow.workflow.latest_adjudication(
+                "ticket_audit_finding",
+                finding.candidate_audit_finding_id,
+            )
+            if adjudication is None or adjudication.decision != "accept_warning":
+                unresolved_warns.append(finding)
+
+        no_ticket_context = (
+            None
+            if self._operator_decisions is None
+            else self._operator_decisions.no_ticket_decision_context(
+                task_family_id=lineage.task_key,
+                lane=lineage.task_key.partition(":")[0],
+                business_key=lineage.task_key.partition(":")[2],
+                work_item_id=lineage.work_item_id,
+                as_of=as_of,
+            )
+        )
+        current_no_ticket = (
+            None
+            if no_ticket_context is None
+            or no_ticket_context.current_no_ticket_revision_id is None
+            else uow.operator_result.no_ticket_revision(
+                no_ticket_context.current_no_ticket_revision_id
+            )
+        )
+        if (
+            no_ticket_context is not None
+            and no_ticket_context.current_no_ticket_revision_id is not None
+            and current_no_ticket is None
+        ):
+            raise ProductActionBlockedError("current no-ticket revision is unavailable")
+        if (
+            current_no_ticket is not None
+            and current_no_ticket.deployment_outcome != "reopened"
+        ):
+            mode = "supersede_no_ticket"
+            command_kind = OperatorCommandKind.SUPERSEDE_NO_TICKET
+        elif batch is None:
+            mode = "create_ticket_batch"
+            command_kind = OperatorCommandKind.CREATE_TICKET_BATCH
+        elif unresolved_errors:
+            mode = "blocked"
+            command_kind = None
+        elif unresolved_warns:
+            mode = "adjudicate_audit_warn"
+            command_kind = OperatorCommandKind.ADJUDICATE_AUDIT_WARN
+        elif artifacts:
+            mode = "request_confirmation"
+            command_kind = OperatorCommandKind.REQUEST_CONFIRMATION
+        else:
+            mode = "approve_ticket_batch"
+            command_kind = OperatorCommandKind.APPROVE_TICKET_BATCH
+
+        stage_dependencies_tuple = tuple(sorted(stage_dependencies))
+        no_ticket_dependencies = (
+            stage_dependencies_tuple
+            if no_ticket_context is None
+            else tuple(
+                sorted(
+                    (
+                        f"business_key:{no_ticket_context.business_key}",
+                        f"lane:{no_ticket_context.lane}",
+                        f"scope_fingerprint:{no_ticket_context.scope_fingerprint}",
+                        f"slate_revision:{no_ticket_context.slate_revision_id}",
+                        f"task_family:{no_ticket_context.task_family_id}",
+                    )
+                )
+            )
+        )
+        command_token = (
+            None
+            if command_kind is None
+            else self._decision_command_token(
+                lineage,
+                command_kind,
+                (
+                    no_ticket_dependencies
+                    if command_kind is OperatorCommandKind.SUPERSEDE_NO_TICKET
+                    else stage_dependencies_tuple
+                ),
+            )
+        )
+        selection_token = (
+            self._decision_command_token(
+                lineage,
+                OperatorCommandKind.CREATE_TICKET_BATCH,
+                (f"selection:{selection.candidate_selection_id}",),
+            )
+            if mode == "create_ticket_batch"
+            else None
+        )
+        batch_token = (
+            self._decision_command_token(
+                lineage,
+                command_kind or OperatorCommandKind.APPROVE_TICKET_BATCH,
+                (f"ticket_batch_revision:{batch.ticket_batch_revision_id}",),
+            )
+            if batch is not None and mode in {
+                "adjudicate_audit_warn",
+                "approve_ticket_batch",
+            }
+            else None
+        )
+        artifact_token = (
+            self._decision_command_token(
+                lineage,
+                OperatorCommandKind.REQUEST_CONFIRMATION,
+                (f"ticket_artifact:{artifacts[0].ticket_artifact_id}",),
+            )
+            if mode == "request_confirmation" and len(artifacts) == 1
+            else None
+        )
+        if mode == "request_confirmation" and len(artifacts) != 1:
+            raise ProductActionBlockedError(
+                "confirmation currently requires one protected ticket artifact"
+            )
+        visible_findings = unresolved_errors or unresolved_warns or list(findings)
+        finding_views = [
+            DeploymentAuditFindingSummary(
+                severity=finding.severity.lower(),
+                label=f"{finding.finding_code} · {finding.audit_kind}",
+                value=finding.message,
+                finding_token=(
+                    self._decision_command_token(
+                        lineage,
+                        OperatorCommandKind.ADJUDICATE_AUDIT_WARN,
+                        (f"finding:{finding.candidate_audit_finding_id}",),
+                    )
+                    if finding in unresolved_warns
+                    else None
+                ),
+            )
+            for finding in visible_findings
+        ]
+        return (
+            AuditDeploymentStep(
+                surface_version="2",
+                task_id=lineage.task_key,
+                candidate=DeploymentCandidateSummary(
+                    label=candidate.candidate_code,
+                    ticket_count=metric.ticket_count,
+                    stake_minor=metric.stake_minor,
+                    objective_label=(
+                        "P(全对)"
+                        if metric.probability_kind == "all_required_legs"
+                        else "P(至少一票全对)"
+                    ),
+                    objective_probability_decimal=(
+                        metric.objective_probability_decimal
+                    ),
+                ),
+                audit_state=(
+                    "error"
+                    if unresolved_errors
+                    else "warn" if unresolved_warns else "pass"
+                ),
+                findings=finding_views,
+                mode=mode,
+                command_token=command_token,
+                candidate_selection_token=selection_token,
+                ticket_batch_token=batch_token,
+                ticket_artifact_token=artifact_token,
+                no_ticket_command_token=self._decision_command_token(
+                    lineage,
+                    OperatorCommandKind.RECORD_NO_TICKET,
+                    no_ticket_dependencies,
+                ),
+                no_ticket_revision_token=(
+                    self._decision_command_token(
+                        lineage,
+                        OperatorCommandKind.SUPERSEDE_NO_TICKET,
+                        (
+                            "no_ticket_revision:"
+                            f"{no_ticket_context.current_no_ticket_revision_id}",
+                        ),
+                    )
+                    if mode == "supersede_no_ticket" and no_ticket_context is not None
+                    else None
+                ),
+                comparison_candidate_token=self._decision_command_token(
+                    lineage,
+                    OperatorCommandKind.RECORD_NO_TICKET,
+                    (f"candidate:{candidate.candidate_revision_id}",),
+                ),
+                rule_options=[
+                    DeploymentRuleOption(
+                        label=rule_id,
+                        token=self._decision_command_token(
+                            lineage,
+                            OperatorCommandKind.RECORD_NO_TICKET,
+                            (f"rule:{rule_id}",),
+                        ),
+                    )
+                    for rule_id in sorted(DEVIATION_RULE_IDS)
+                ],
+            ),
+            stage_dependencies_tuple,
         )
 
     def _candidate_comparison_step(
@@ -2128,6 +2497,167 @@ class OperatorQueryService:
             alternatives=[item for item in worklist.tasks if item.task_id != task_id],
             progress=built.progress,
             step=built.step,
+            no_ticket=self._task_no_ticket_control(task_id, built.step, cutoff),
+        )
+
+    def _task_no_ticket_control(
+        self,
+        task_id: str,
+        step: StepView,
+        as_of: datetime,
+    ) -> NoTicketControl | None:
+        if self._snapshot_tokens is None or self._operator_decisions is None:
+            return None
+        if isinstance(step, AuditDeploymentStep) and step.surface_version == "2":
+            recorded = step.mode == "supersede_no_ticket"
+            command_token = (
+                step.command_token if recorded else step.no_ticket_command_token
+            )
+            if command_token is None:
+                return None
+            return NoTicketControl(
+                state="recorded" if recorded else "available",
+                command_token=command_token,
+                no_ticket_revision_token=step.no_ticket_revision_token,
+                comparison_candidate_token=step.comparison_candidate_token,
+                rule_options=step.rule_options,
+            )
+
+        lane, separator, business_key = task_id.partition(":")
+        if not separator or lane not in {"jczq", "zucai"} or not business_key:
+            return None
+        slate = self._official_slate(task_id, as_of)
+        if slate is None:
+            return None
+        work_item_id = None
+        closures: list[NoTicketClosure] = []
+        current_task_closures = ()
+        with self._decision_uow() as uow:
+            bundle = uow.operator_decision.current_task_evidence_bundle_revision(
+                task_id,
+                as_of=as_of.isoformat(),
+            )
+            if bundle is not None and bundle.slate_revision_id == slate.slate_revision_id:
+                baseline_rows = _current_baseline_rows(uow, task_id, bundle, as_of)
+                if len(baseline_rows) == 1:
+                    work_item_id = str(baseline_rows[0]["work_item_id"])
+            current_task_closures = (
+                uow.operator_result.current_no_ticket_revisions_for_task_family(
+                    task_id
+                )
+            )
+            for closure in current_task_closures:
+                if closure.deployment_outcome == "reopened":
+                    continue
+                for scope in uow.operator_result.no_ticket_offer_scopes(
+                    closure.no_ticket_revision_id
+                ):
+                    offer = uow.operator_sale.offer_revision(
+                        scope.official_offer_revision_id
+                    )
+                    if offer is not None:
+                        closures.append(
+                            NoTicketClosure(
+                                official_offer_family_id=(
+                                    offer.official_offer_family_id
+                                ),
+                                official_offer_revision_id=(
+                                    offer.official_offer_revision_id
+                                ),
+                            )
+                        )
+        if work_item_id is None:
+            wave = derive_sale_wave(
+                slate,
+                as_of,
+                no_ticket_closures=tuple(closures),
+            )
+            if wave is not None:
+                work_item_id = wave.work_item_id
+            else:
+                closed = tuple(
+                    closure
+                    for closure in current_task_closures
+                    if closure.deployment_outcome != "reopened"
+                )
+                if not closed:
+                    return None
+                work_item_id = closed[-1].work_item_id
+        context = self._operator_decisions.no_ticket_decision_context(
+            task_family_id=task_id,
+            lane=lane,
+            business_key=business_key,
+            work_item_id=work_item_id,
+            as_of=as_of,
+        )
+        current = None
+        if context.current_no_ticket_revision_id is not None:
+            with self._decision_uow() as uow:
+                current = uow.operator_result.no_ticket_revision(
+                    context.current_no_ticket_revision_id
+                )
+        recorded = bool(
+            current is not None
+            and current.deployment_outcome != "reopened"
+            and not context.offer_revision_ids
+            and not context.artifact_ids
+        )
+        if not recorded and not context.offer_revision_ids and not context.artifact_ids:
+            return None
+        command_kind = (
+            OperatorCommandKind.SUPERSEDE_NO_TICKET
+            if recorded
+            else OperatorCommandKind.RECORD_NO_TICKET
+        )
+        dependencies = tuple(
+            sorted(
+                (
+                    f"business_key:{context.business_key}",
+                    f"lane:{context.lane}",
+                    f"scope_fingerprint:{context.scope_fingerprint}",
+                    f"slate_revision:{context.slate_revision_id}",
+                    f"task_family:{context.task_family_id}",
+                )
+            )
+        )
+        command_token = self._snapshot_tokens.encode(
+            OperatorSnapshotTokenPayloadV1(
+                task_snapshot_hash=context.task_snapshot_hash,
+                work_item_id=context.work_item_id,
+                command_kind=command_kind,
+                dependency_revision_ids=list(dependencies),
+            )
+        )
+        revision_token = None
+        if recorded and current is not None:
+            revision_token = self._snapshot_tokens.encode(
+                OperatorSnapshotTokenPayloadV1(
+                    task_snapshot_hash=context.task_snapshot_hash,
+                    work_item_id=context.work_item_id,
+                    command_kind=command_kind,
+                    dependency_revision_ids=[
+                        f"no_ticket_revision:{current.no_ticket_revision_id}"
+                    ],
+                )
+            )
+        return NoTicketControl(
+            state="recorded" if recorded else "available",
+            command_token=command_token,
+            no_ticket_revision_token=revision_token,
+            rule_options=[
+                DeploymentRuleOption(
+                    label=rule_id,
+                    token=self._snapshot_tokens.encode(
+                        OperatorSnapshotTokenPayloadV1(
+                            task_snapshot_hash=context.task_snapshot_hash,
+                            work_item_id=context.work_item_id,
+                            command_kind=command_kind,
+                            dependency_revision_ids=[f"rule:{rule_id}"],
+                        )
+                    ),
+                )
+                for rule_id in sorted(DEVIATION_RULE_IDS)
+            ],
         )
 
     def now(self) -> datetime:

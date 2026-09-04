@@ -8,6 +8,14 @@ from sqlalchemy import Connection, func, insert, select, update
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.errors import OptimisticConcurrencyError
+from nutmeg.ontology.operator.models import (
+    ArtifactTerminalReceiptRow,
+    ArtifactWorkItemLinkRow,
+    ConfirmationChallengeHeadRow,
+    ConfirmationChallengeRevisionRow,
+    ProtectedArtifactBindingRow,
+    ProtectedArtifactOfferRevisionLinkRow,
+)
 from nutmeg.ontology.repository import schema_tickets as st
 
 
@@ -90,6 +98,154 @@ class TicketShadowRow:
 class TicketWorkbenchRepository:
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
+
+    def insert_artifact_work_item_link(self, row: ArtifactWorkItemLinkRow) -> None:
+        self._connection.execute(
+            insert(st.operator_artifact_work_item_links).values(**asdict(row))
+        )
+
+    def artifact_work_item_link(
+        self, ticket_artifact_id: str
+    ) -> ArtifactWorkItemLinkRow | None:
+        row = (
+            self._connection.execute(
+                select(st.operator_artifact_work_item_links).where(
+                    st.operator_artifact_work_item_links.c.ticket_artifact_id
+                    == ticket_artifact_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return ArtifactWorkItemLinkRow(**dict(row)) if row is not None else None
+
+    def artifact_work_item_links_for_work_item(
+        self, work_item_id: str
+    ) -> tuple[ArtifactWorkItemLinkRow, ...]:
+        rows = self._connection.execute(
+            select(st.operator_artifact_work_item_links)
+            .where(st.operator_artifact_work_item_links.c.work_item_id == work_item_id)
+            .order_by(st.operator_artifact_work_item_links.c.ticket_artifact_id)
+        ).mappings()
+        return tuple(ArtifactWorkItemLinkRow(**dict(row)) for row in rows)
+
+    def insert_protected_artifact_binding(
+        self, row: ProtectedArtifactBindingRow
+    ) -> None:
+        self._connection.execute(
+            insert(st.operator_protected_artifact_bindings).values(**asdict(row))
+        )
+
+    def protected_artifact_binding(
+        self, ticket_artifact_id: str
+    ) -> ProtectedArtifactBindingRow | None:
+        row = (
+            self._connection.execute(
+                select(st.operator_protected_artifact_bindings).where(
+                    st.operator_protected_artifact_bindings.c.ticket_artifact_id
+                    == ticket_artifact_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return ProtectedArtifactBindingRow(**dict(row)) if row is not None else None
+
+    def insert_protected_artifact_offer_revision_link(
+        self, row: ProtectedArtifactOfferRevisionLinkRow
+    ) -> None:
+        self._connection.execute(
+            insert(st.operator_protected_artifact_offer_revision_links).values(
+                **asdict(row)
+            )
+        )
+
+    def protected_artifact_offer_revision_links(
+        self, ticket_artifact_id: str
+    ) -> tuple[ProtectedArtifactOfferRevisionLinkRow, ...]:
+        rows = self._connection.execute(
+            select(st.operator_protected_artifact_offer_revision_links)
+            .where(
+                st.operator_protected_artifact_offer_revision_links.c.ticket_artifact_id
+                == ticket_artifact_id
+            )
+            .order_by(
+                st.operator_protected_artifact_offer_revision_links.c.offer_index
+            )
+        ).mappings()
+        return tuple(
+            ProtectedArtifactOfferRevisionLinkRow(**dict(row)) for row in rows
+        )
+
+    def insert_confirmation_challenge_revision(
+        self, row: ConfirmationChallengeRevisionRow
+    ) -> None:
+        self._connection.execute(
+            insert(st.operator_confirmation_challenge_revisions).values(**asdict(row))
+        )
+
+    def confirmation_challenge_revision(
+        self, challenge_revision_id: str
+    ) -> ConfirmationChallengeRevisionRow | None:
+        row = (
+            self._connection.execute(
+                select(st.operator_confirmation_challenge_revisions).where(
+                    st.operator_confirmation_challenge_revisions.c.challenge_revision_id
+                    == challenge_revision_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return (
+            ConfirmationChallengeRevisionRow(**dict(row))
+            if row is not None
+            else None
+        )
+
+    def insert_confirmation_challenge_head(
+        self, row: ConfirmationChallengeHeadRow
+    ) -> None:
+        self._connection.execute(
+            insert(st.operator_confirmation_challenge_heads).values(**asdict(row))
+        )
+
+    def confirmation_challenge_head(
+        self, ticket_artifact_id: str
+    ) -> ConfirmationChallengeHeadRow | None:
+        row = (
+            self._connection.execute(
+                select(st.operator_confirmation_challenge_heads).where(
+                    st.operator_confirmation_challenge_heads.c.ticket_artifact_id
+                    == ticket_artifact_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return ConfirmationChallengeHeadRow(**dict(row)) if row is not None else None
+
+    def insert_artifact_terminal_receipt(
+        self, row: ArtifactTerminalReceiptRow
+    ) -> None:
+        self._connection.execute(
+            insert(st.operator_artifact_terminal_receipts).values(**asdict(row))
+        )
+
+    def artifact_terminal_receipt(
+        self, ticket_artifact_id: str
+    ) -> ArtifactTerminalReceiptRow | None:
+        row = (
+            self._connection.execute(
+                select(st.operator_artifact_terminal_receipts).where(
+                    st.operator_artifact_terminal_receipts.c.ticket_artifact_id
+                    == ticket_artifact_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return ArtifactTerminalReceiptRow(**dict(row)) if row is not None else None
 
     def insert_batch_revision(self, row: TicketBatchRevisionRow) -> None:
         self._connection.execute(

@@ -24,6 +24,7 @@ from nutmeg.product.operator_runtime import (
     OperatorRuntimeScope,
 )
 from nutmeg.product.operator_tokens import OperatorSnapshotTokenCodec
+from nutmeg.product.operator_workers import audit_current_candidate
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.tickets import ProductTicketService
@@ -116,6 +117,7 @@ def build_product_services(
         raise ValueError("isolated candidate side effects must be disabled")
 
     kernel = build_ontology_kernel(settings)
+    kernel.protected_tickets.bind_operator_candidate_auditor(audit_current_candidate)
     status = kernel.status()
     if (
         not status.initialized
@@ -151,6 +153,8 @@ def build_product_services(
         operator_evidence=operator_evidence,
         unit_of_work_factory=lambda: OntologyUnitOfWork(kernel.engine),
         snapshot_tokens=snapshot_tokens,
+        operator_decisions=kernel.decision_actions,
+        operator_candidate_auditor=audit_current_candidate,
     )
     owner_chat_id = _telegram_owner(settings.telegram_allowed_chat_ids)
     telegram_confirmation = None
@@ -182,6 +186,7 @@ def build_product_services(
         telegram_owner_chat_id=owner_chat_id,
         evidence_actions=kernel.evidence_actions,
         decision_actions=kernel.decision_actions,
+        protected_tickets=kernel.protected_tickets,
         snapshot_tokens=snapshot_tokens,
         calibrate=kernel.calibrate,
         repository=repository,

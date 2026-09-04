@@ -198,6 +198,36 @@ thead th { color: var(--muted); font-size: .82rem; }
 .finding-row.severity-warn { border-left-color: var(--warn); }
 .finding-row.severity-error { border-left-color: var(--error); }
 .deployment-form { max-width: 620px; padding-top: 26px; border-top: 1px solid var(--line); }
+.deployment-recovery {
+  max-width: 680px;
+  padding: 18px 0;
+  border-block: 1px solid var(--line);
+}
+.deployment-recovery h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.deployment-recovery code { display: block; overflow-wrap: anywhere; color: var(--error); }
+.no-ticket-panel { max-width: 620px; margin-top: 28px; border-top: 1px solid var(--line); }
+.secondary-action {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 700;
+}
+.no-ticket-form { padding: 18px 0 8px; }
+.secondary-command {
+  min-height: 46px;
+  padding: 0 16px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid #8d9891;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.warn-adjudication-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.warn-adjudication-row textarea { grid-column: 2; width: 100%; padding: 10px; font: inherit; }
 .confirmation-timeline { margin: 28px 0; padding: 0; list-style: none; border-block: 1px solid var(--line); }
 .confirmation-timeline li { min-height: 76px; display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 14px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
 .confirmation-timeline li:last-child { border-bottom: 0; }

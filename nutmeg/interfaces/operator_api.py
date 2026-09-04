@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.product.contracts import ProductError
@@ -142,14 +142,70 @@ class SelectTicketCandidateCommandV2(OperatorCommandV2):
     reason: str = Field(min_length=1, max_length=4000)
 
 
+class RecordNoTicketCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.RECORD_NO_TICKET]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    reason_code: Literal[
+        "human_all_dice",
+        "evidence_incomplete",
+        "no_compliant_structure_within_cap",
+        "discipline_brake",
+        "operator_discretion",
+    ]
+    reason_basis: Literal["rule_derived", "operator_judgment"]
+    reason_text: str = Field(min_length=1, max_length=4000)
+    rule_tokens: list[str] = Field(max_length=100)
+    comparison_candidate_token: str | None = Field(default=None, max_length=8192)
+
+    @model_validator(mode="after")
+    def _rule_derived_has_a_rule(self):
+        if self.reason_basis == "rule_derived" and not self.rule_tokens:
+            raise ValueError("rule-derived no-ticket requires a named Rule token")
+        return self
+
+
+class SupersedeNoTicketCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.SUPERSEDE_NO_TICKET]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    no_ticket_revision_token: str = Field(min_length=1, max_length=8192)
+    reason_text: str = Field(min_length=1, max_length=4000)
+
+
+class CreateTicketBatchCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.CREATE_TICKET_BATCH]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    candidate_selection_token: str = Field(min_length=1, max_length=8192)
+
+
+class AuditWarnAdjudicationInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    finding_token: str = Field(min_length=1, max_length=8192)
+    reason: str = Field(min_length=1, max_length=4000)
+    evidence_rejected_tokens: list[str] = Field(max_length=100)
+
+
+class AdjudicateAuditWarnCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.ADJUDICATE_AUDIT_WARN]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    ticket_batch_token: str = Field(min_length=1, max_length=8192)
+    findings: list[AuditWarnAdjudicationInputV2] = Field(min_length=1, max_length=100)
+
+
+class ApproveTicketBatchCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.APPROVE_TICKET_BATCH]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    ticket_batch_token: str = Field(min_length=1, max_length=8192)
+
+
+class RequestConfirmationCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.REQUEST_CONFIRMATION]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    ticket_artifact_token: str = Field(min_length=1, max_length=8192)
+
+
 class UnavailableOperatorCommandV2(OperatorCommandV2):
     kind: Literal[
-        OperatorCommandKind.RECORD_NO_TICKET,
-        OperatorCommandKind.SUPERSEDE_NO_TICKET,
-        OperatorCommandKind.CREATE_TICKET_BATCH,
-        OperatorCommandKind.ADJUDICATE_AUDIT_WARN,
-        OperatorCommandKind.APPROVE_TICKET_BATCH,
-        OperatorCommandKind.REQUEST_CONFIRMATION,
         OperatorCommandKind.REQUEST_SETTLEMENT,
         OperatorCommandKind.GRADE_PREDICTION,
         OperatorCommandKind.RECORD_SCOREBOARD_EFFECT_DISPOSITION,
@@ -165,6 +221,12 @@ InstalledOperatorCommandV2 = Annotated[
     | FreezeJudgmentPrescriptionCommandV2
     | RequestCandidateGenerationCommandV2
     | SelectTicketCandidateCommandV2
+    | RecordNoTicketCommandV2
+    | SupersedeNoTicketCommandV2
+    | CreateTicketBatchCommandV2
+    | AdjudicateAuditWarnCommandV2
+    | ApproveTicketBatchCommandV2
+    | RequestConfirmationCommandV2
     | RebuildScoreboardProjectionCommandV2
     | UnavailableOperatorCommandV2,
     Field(discriminator="kind"),
@@ -248,6 +310,48 @@ def mount_operator_api(
                     actor_role=ActorRole.JUDGE_OPERATOR,
                 )
                 status_code = 200
+            elif isinstance(command, RecordNoTicketCommandV2):
+                result = operator_actions.record_no_ticket(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, SupersedeNoTicketCommandV2):
+                result = operator_actions.supersede_no_ticket(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, CreateTicketBatchCommandV2):
+                result = operator_actions.create_ticket_batch(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, AdjudicateAuditWarnCommandV2):
+                result = operator_actions.adjudicate_audit_warn(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, ApproveTicketBatchCommandV2):
+                result = operator_actions.approve_ticket_batch(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, RequestConfirmationCommandV2):
+                result = operator_actions.request_confirmation(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 202
             elif isinstance(command, RebuildScoreboardProjectionCommandV2):
                 result = operator_actions.rebuild_scoreboard_projection(
                     command,
@@ -288,7 +392,11 @@ def mount_operator_api(
 
 
 __all__ = [
+    "AdjudicateAuditWarnCommandV2",
+    "ApproveTicketBatchCommandV2",
+    "AuditWarnAdjudicationInputV2",
     "CommitMatchJudgmentCommandV2",
+    "CreateTicketBatchCommandV2",
     "FaceBundleInputV2",
     "FaceOffsetInputV2",
     "FaceProbabilityInputV2",
@@ -299,9 +407,12 @@ __all__ = [
     "OfferConstraintInputV2",
     "OperatorCommandV2",
     "RecordBaselineEnvelopeCommandV2",
+    "RecordNoTicketCommandV2",
     "RebuildScoreboardProjectionCommandV2",
     "RequestCandidateGenerationCommandV2",
+    "RequestConfirmationCommandV2",
     "SelectTicketCandidateCommandV2",
     "StructureTemplateInputV2",
+    "SupersedeNoTicketCommandV2",
     "mount_operator_api",
 ]

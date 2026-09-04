@@ -47,6 +47,7 @@ from nutmeg.product.operator_tokens import (
     OperatorSnapshotTokenError,
     OperatorSnapshotTokenPayloadV1,
 )
+from nutmeg.product.operator_workers import audit_current_candidate
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.wiring import build_product_services
 from tests.ontology.operator.test_judgment_actions import (
@@ -681,6 +682,7 @@ def _task_queries(
     *,
     repository: object | None = None,
     legacy_fixture_adapter: object | None = None,
+    operator_candidate_auditor=audit_current_candidate,
 ) -> OperatorQueryService:
     return OperatorQueryService(
         repository=repository or ProductReadRepository(fixture.engine),
@@ -690,6 +692,8 @@ def _task_queries(
         legacy_fixture_adapter=legacy_fixture_adapter,
         unit_of_work_factory=lambda: OntologyUnitOfWork(fixture.engine),
         snapshot_tokens=OperatorSnapshotTokenCodec(KEY),
+        operator_decisions=fixture.decision_actions,
+        operator_candidate_auditor=operator_candidate_auditor,
     )
 
 

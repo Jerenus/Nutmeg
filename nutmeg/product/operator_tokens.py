@@ -90,13 +90,16 @@ class OperatorSnapshotTokenCodec:
             raise OperatorSnapshotTokenError('invalid_request')
         padding = '=' * ((4 - len(value) % 4) % 4)
         try:
-            return base64.b64decode(
+            decoded = base64.b64decode(
                 value + padding,
                 altchars=b'-_',
                 validate=True,
             )
         except (ValueError, binascii.Error) as error:
             raise OperatorSnapshotTokenError('invalid_request') from error
+        if OperatorSnapshotTokenCodec._encode_frame(decoded) != value:
+            raise OperatorSnapshotTokenError('invalid_request')
+        return decoded
 
     def encode(self, payload: OperatorSnapshotTokenPayloadV1) -> str:
         if not isinstance(payload, OperatorSnapshotTokenPayloadV1):

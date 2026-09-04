@@ -33,7 +33,7 @@ def test_migration_21_applies_fresh_and_from_v20(tmp_path: Path) -> None:
         engine = build_ontology_engine(tmp_path / f"{label}.db")
         if initial:
             run_migrations(engine, initial)
-        run_migrations(engine)
+        run_migrations(engine, MIGRATIONS[:21])
 
         assert migration_status(engine).current_version == 21
         assert CANDIDATE_TABLES <= set(inspect(engine).get_table_names())
@@ -110,7 +110,7 @@ def test_migration_21_backfills_populated_append_only_v20_baseline(
     finally:
         raw.close()
 
-    run_migrations(fixture.engine)
+    run_migrations(fixture.engine, MIGRATIONS[:21])
 
     assert migration_status(fixture.engine).current_version == 21
     with fixture.engine.connect() as connection:

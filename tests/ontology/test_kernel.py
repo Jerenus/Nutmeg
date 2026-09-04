@@ -30,3 +30,11 @@ def test_initialize_is_idempotent_and_status_is_healthy(tmp_path: Path) -> None:
     assert status.artifact_count == 0
     assert status.retrieval_count == 0
     assert settings.ontology_artifact_dir.is_dir()
+
+
+def test_kernel_wires_operator_decisions_into_protected_ticket_actions(
+    tmp_path: Path,
+) -> None:
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+
+    assert kernel.protected_tickets._operator_decisions is kernel.decision_actions

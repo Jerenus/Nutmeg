@@ -59,7 +59,13 @@ class ActionService:
         """Open the same governed UOW used by Actions for typed result hydration."""
         return self._unit_of_work_factory()
 
-    def execute(self, command: ActionCommand, handler: ActionHandler) -> ActionOutcome:
+    def execute(
+        self,
+        command: ActionCommand,
+        handler: ActionHandler,
+        *,
+        acquire_write_lock: bool = False,
+    ) -> ActionOutcome:
         existing = self._lookup(command.idempotency_key)
         if existing is not None:
             if existing.request_hash != command.request_hash:
@@ -77,6 +83,8 @@ class ActionService:
 
         try:
             with self._unit_of_work_factory() as uow:
+                if acquire_write_lock:
+                    uow.acquire_write_lock()
                 PermissionGuard(uow.connection).assert_allowed(
                     command.policy_version, command.action_type, command.actor_role
                 )

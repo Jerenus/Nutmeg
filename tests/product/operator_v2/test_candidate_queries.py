@@ -6,14 +6,34 @@ from pathlib import Path
 import pytest
 
 from nutmeg.ontology.actions.models import ActorRole
+from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
+from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
 from nutmeg.ontology.operator.decision_actions import SelectTicketCandidateRequest
+from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.errors import ProductActionBlockedError
-from nutmeg.product.operator_contracts import ConstructTicketStep, OperatorTaskState
+from nutmeg.product.operator_contracts import (
+    AuditDeploymentStep,
+    ConstructTicketStep,
+    OperatorTaskState,
+)
 from nutmeg.product.operator_tokens import OperatorCommandKind, OperatorSnapshotTokenCodec
 from tests.ontology.operator.test_candidate_actions import (
     _generate,
     _generation_request,
     _ready_fixture,
+)
+from tests.ontology.operator.test_judgment_actions import (
+    AT as JUDGMENT_AT,
+)
+from tests.ontology.operator.test_judgment_actions import (
+    _fixture as _judgment_fixture,
+)
+from tests.ontology.operator.test_lineage_actions import (
+    _audit_blocked_candidate,
+    _create_operator_batch,
+    _override_request,
+    _persisted_current_audit,
+    _setup_override_fixture,
 )
 from tests.product.operator_v2.test_judgment_api import (
     KEY,
@@ -79,6 +99,44 @@ def test_frozen_prescription_exposes_exact_opaque_generation_context(
     assert list(command.dependency_revision_ids) == list(context.dependency_revision_ids)
 
 
+def test_no_ticket_is_available_before_candidate_generation(tmp_path: Path) -> None:
+    fixture, queries = _ready_queries(tmp_path)
+
+    task = queries.task("jczq:2026-09-04", as_of=NOW)
+
+    assert isinstance(task.step, ConstructTicketStep)
+    assert task.step.mode == "candidate_request"
+    assert task.no_ticket is not None
+    assert task.no_ticket.state == "available"
+    payload = OperatorSnapshotTokenCodec(KEY).decode(
+        task.no_ticket.command_token or ""
+    )
+    context = fixture.judgment.decision_actions.no_ticket_decision_context(
+        task_family_id="jczq:2026-09-04",
+        lane="jczq",
+        business_key="2026-09-04",
+        work_item_id=payload.work_item_id,
+        as_of=NOW,
+    )
+    assert payload.command_kind is OperatorCommandKind.RECORD_NO_TICKET
+    assert payload.task_snapshot_hash == context.task_snapshot_hash
+    assert f"scope_fingerprint:{context.scope_fingerprint}" in (
+        payload.dependency_revision_ids
+    )
+
+
+def test_discovery_no_ticket_binds_the_current_sale_wave(tmp_path: Path) -> None:
+    fixture = _judgment_fixture(tmp_path)
+    _seed_task_identity(fixture)
+    queries = _task_queries(fixture)
+
+    task = queries.task("jczq:2026-09-04", as_of=NOW)
+
+    assert task.no_ticket is not None
+    payload = OperatorSnapshotTokenCodec(KEY).decode(task.no_ticket.command_token)
+    assert ":sale_wave:" in payload.work_item_id
+
+
 def test_generated_sets_render_complete_comparison_and_selection_context(
     tmp_path: Path,
 ) -> None:
@@ -141,7 +199,7 @@ def test_generated_sets_render_complete_comparison_and_selection_context(
     assert "recommended" not in serialized
 
 
-def test_selection_advances_summary_but_keeps_comparison_read_only_until_package_8(
+def test_selection_advances_into_current_protected_deployment_surface(
     tmp_path: Path,
 ) -> None:
     fixture, queries = _ready_queries(tmp_path)
@@ -177,15 +235,26 @@ def test_selection_advances_summary_but_keeps_comparison_read_only_until_package
     )
 
     assert selected.selected.state is OperatorTaskState.AUDIT_DEPLOYMENT
-    assert isinstance(selected.step, ConstructTicketStep)
-    assert selected.step.mode == "candidate_comparison"
-    assert selected.step.selection_completed is True
-    assert selected.step.selected_candidate_code == "C0001"
-    assert selected.step.selection_command_token is None
-    assert all(
-        not candidate.selectable and candidate.candidate_token is None
-        for candidate_set in selected.step.candidate_sets
-        for candidate in candidate_set.candidates
+    assert isinstance(selected.step, AuditDeploymentStep)
+    assert selected.step.surface_version == "2"
+    assert selected.step.mode == "create_ticket_batch"
+    no_ticket = OperatorSnapshotTokenCodec(KEY).decode(
+        selected.step.no_ticket_command_token or ""
+    )
+    context = fixture.judgment.decision_actions.no_ticket_decision_context(
+        task_family_id="jczq:2026-09-04",
+        lane="jczq",
+        business_key="2026-09-04",
+        work_item_id=no_ticket.work_item_id,
+        as_of=NOW + timedelta(seconds=2),
+    )
+    assert no_ticket.command_kind is OperatorCommandKind.RECORD_NO_TICKET
+    assert no_ticket.task_snapshot_hash == context.task_snapshot_hash
+    assert f"scope_fingerprint:{context.scope_fingerprint}" in (
+        no_ticket.dependency_revision_ids
+    )
+    assert f"slate_revision:{context.slate_revision_id}" in (
+        no_ticket.dependency_revision_ids
     )
     with pytest.raises(ProductActionBlockedError, match="already selected"):
         queries.candidate_selection_context(
@@ -193,3 +262,72 @@ def test_selection_advances_summary_but_keeps_comparison_read_only_until_package
             candidate_token,
             as_of=NOW + timedelta(seconds=2),
         )
+
+
+def test_regenerated_inherited_override_allows_web_approval_mode(
+    tmp_path: Path,
+) -> None:
+    fixture = _setup_override_fixture(tmp_path)
+    override = fixture.actions.record_ticket_audit_override(
+        _override_request(fixture)
+    )
+    generation_request_id = next(
+        ref.object_id
+        for ref in override.result_refs
+        if ref.object_type == "operator_candidate_generation_request"
+    )
+    _generate(
+        fixture.candidate_fixture,
+        request_id=generation_request_id,
+        key="candidate:query:override-regeneration",
+        judgment_candidate=_audit_blocked_candidate(),
+        as_of=JUDGMENT_AT + timedelta(seconds=12),
+    )
+    with OntologyUnitOfWork(fixture.engine) as uow:
+        candidate_set = next(
+            row
+            for row in uow.operator_result.candidate_sets_for_request(
+                generation_request_id
+            )
+            if row.set_kind == "judgment_bound"
+        )
+        candidate = uow.operator_result.candidates_for_set(
+            candidate_set.candidate_set_revision_id
+        )[0]
+    selected = fixture.actions.select_ticket_candidate(
+        SelectTicketCandidateRequest(
+            candidate_set_revision_id=candidate_set.candidate_set_revision_id,
+            candidate_revision_id=candidate.candidate_revision_id,
+            reason="Jun reselects the candidate regenerated from his override.",
+            actor_id="jun",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key="candidate:query:override-selection",
+            requested_at=JUDGMENT_AT + timedelta(seconds=13),
+            expected_current_revision_no=1,
+        )
+    )
+    protected = ProtectedTicketActions(
+        fixture.action_service,
+        ContentAddressedArtifactStore(tmp_path / "query-artifacts"),
+        operator_decisions=fixture.actions,
+        operator_candidate_auditor=_persisted_current_audit,
+    )
+    _create_operator_batch(
+        protected,
+        selected.result_refs[0].object_id,
+        key="candidate:query:override-batch",
+    )
+    _seed_task_identity(fixture.candidate_fixture.judgment)
+    queries = _task_queries(
+        fixture.candidate_fixture.judgment,
+        operator_candidate_auditor=_persisted_current_audit,
+    )
+
+    task = queries.task(
+        "jczq:2026-09-04",
+        as_of=NOW + timedelta(seconds=14),
+    )
+
+    assert isinstance(task.step, AuditDeploymentStep)
+    assert task.step.audit_state == "pass"
+    assert task.step.mode == "approve_ticket_batch"

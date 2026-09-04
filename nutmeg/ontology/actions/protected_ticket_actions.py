@@ -20,6 +20,11 @@ from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.actions.ticket_actions import LegInput
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
 from nutmeg.ontology.finance.booking import assert_current_forecast, book_ticket_rows
+from nutmeg.ontology.operator.models import (
+    ArtifactWorkItemLinkRow,
+    ProtectedArtifactBindingRow,
+    ProtectedArtifactOfferRevisionLinkRow,
+)
 from nutmeg.ontology.repository.artifacts import ArtifactRetrievalRow
 from nutmeg.ontology.repository.tickets import (
     AuditedTicketArtifactRow,
@@ -34,6 +39,58 @@ from nutmeg.ontology.tickets.composition import (
     compose_batch,
 )
 from nutmeg.ontology.tickets.models import TicketLegDraft
+
+_OPERATOR_AUDIT_KINDS = (
+    "legs",
+    "prescription_difference",
+    "budget",
+    "deployment",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentOperatorCandidateAuditFinding:
+    candidate_audit_finding_id: str
+    audit_kind: str
+    finding_code: str
+    severity: str
+    message: str
+    official_match_no: str | None = None
+    rule_id: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in (
+            "candidate_audit_finding_id",
+            "audit_kind",
+            "finding_code",
+            "severity",
+            "message",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} is required")
+        if self.audit_kind not in _OPERATOR_AUDIT_KINDS:
+            raise ValueError("operator candidate audit kind is invalid")
+        if self.severity not in {"WARN", "ERROR"}:
+            raise ValueError("operator candidate audit severity is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentOperatorCandidateAudit:
+    policy_version: str
+    completed_audit_kinds: tuple[str, ...]
+    findings: tuple[CurrentOperatorCandidateAuditFinding, ...]
+
+    def __post_init__(self) -> None:
+        if not self.policy_version.strip():
+            raise ValueError("operator candidate audit policy version is required")
+        if self.completed_audit_kinds != _OPERATOR_AUDIT_KINDS:
+            raise ValueError("all current operator candidate audits must be completed")
+        finding_ids = tuple(
+            finding.candidate_audit_finding_id for finding in self.findings
+        )
+        if len(set(finding_ids)) != len(finding_ids):
+            raise ValueError("current operator candidate audit finding IDs must be unique")
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +109,29 @@ class CreateTicketBatchRequest:
     def __post_init__(self) -> None:
         _require_aware(self.requested_at, "requested_at")
         _require_aware(self.deadline_at, "deadline_at")
+
+
+@dataclass(frozen=True, slots=True)
+class CreateOperatorTicketBatchRequest:
+    candidate_selection_id: str
+    account_id: str
+    run_date: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_aware(self.requested_at, "requested_at")
+        for name in (
+            "candidate_selection_id",
+            "account_id",
+            "run_date",
+            "actor_id",
+            "idempotency_key",
+        ):
+            if not getattr(self, name).strip():
+                raise ValueError(f"{name} is required")
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +163,25 @@ class ApproveTicketBatchRequest:
         _require_aware(self.requested_at, "requested_at")
         if self.expected_revision_no < 1:
             raise ValueError("expected_revision_no must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class ApproveOperatorTicketBatchRequest:
+    ticket_batch_revision_id: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_aware(self.requested_at, "requested_at")
+        for name in (
+            "ticket_batch_revision_id",
+            "actor_id",
+            "idempotency_key",
+        ):
+            if not getattr(self, name).strip():
+                raise ValueError(f"{name} is required")
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,9 +248,20 @@ class ProtectedTicketActions:
         self,
         action_service: ActionService,
         artifact_store: ContentAddressedArtifactStore,
+        *,
+        operator_decisions=None,
+        operator_candidate_auditor=None,
     ) -> None:
         self._action_service = action_service
         self._artifact_store = artifact_store
+        self._operator_decisions = operator_decisions
+        self._operator_candidate_auditor = operator_candidate_auditor
+
+    def bind_operator_candidate_auditor(self, auditor) -> None:
+        """Bind the Product-owned deterministic auditor during service composition."""
+        if not callable(auditor):
+            raise TypeError("operator candidate auditor must be callable")
+        self._operator_candidate_auditor = auditor
 
     def create_ticket_batch(
         self, request: CreateTicketBatchRequest
@@ -196,6 +306,71 @@ class ProtectedTicketActions:
                 legs=request.legs,
                 requested_at=request.requested_at,
             )
+
+        return self._action_service.execute(command, handler)
+
+    def create_operator_ticket_batch(
+        self,
+        request: CreateOperatorTicketBatchRequest,
+    ) -> ActionOutcome:
+        """Materialize one selected v2 candidate without approving placement."""
+        command = ActionCommand.create(
+            action_type="create_ticket_batch",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload={
+                "candidate_selection_id": request.candidate_selection_id,
+                "account_id": request.account_id,
+                "run_date": request.run_date,
+            },
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, action) -> tuple[ObjectRef, ...]:
+            selected = self._operator_selection(
+                uow,
+                request.candidate_selection_id,
+            )
+            account = self._operator_account(
+                uow,
+                account_id=request.account_id,
+                channel=selected.bundle.lane,
+            )
+            tickets = self._operator_candidate_tickets(uow, selected)
+            current_audit = self._operator_current_audit(uow, selected)
+            deadline = self._operator_offer_deadline(
+                uow,
+                selected,
+                tickets,
+                receipt_time=request.requested_at,
+            )
+            batch_id = f"tb-{uuid4().hex}"
+            revision_ref = self._insert_operator_revision(
+                uow,
+                command=action,
+                batch_id=batch_id,
+                revision_no=1,
+                supersedes_revision_id=None,
+                run_date=request.run_date,
+                channel=selected.bundle.lane,
+                account_id=account.account_id,
+                currency=account.currency,
+                deadline_at=deadline,
+                selected=selected,
+                tickets=tickets,
+                current_audit=current_audit,
+                state="draft",
+                requested_at=request.requested_at,
+            )
+            lineage_ref = self._operator_decisions.insert_ticket_decision_lineage(
+                uow,
+                ticket_batch_revision_id=revision_ref.object_id,
+                candidate_selection_id=request.candidate_selection_id,
+                action_id=action.action_id,
+                created_at=request.requested_at,
+            )
+            return (revision_ref, lineage_ref)
 
         return self._action_service.execute(command, handler)
 
@@ -377,6 +552,205 @@ class ProtectedTicketActions:
                         approved_by_action_id=action.action_id,
                     )
                 )
+                refs.append(ObjectRef("audited_ticket_artifact", ticket_artifact_id))
+            return tuple(refs)
+
+        return self._action_service.execute(command, handler)
+
+    def approve_operator_ticket_batch(
+        self,
+        request: ApproveOperatorTicketBatchRequest,
+    ) -> ActionOutcome:
+        """Approve a v2 draft and bind every artifact to normalized lineage."""
+        command = ActionCommand.create(
+            action_type="approve_ticket_batch",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            payload={
+                "ticket_batch_revision_id": request.ticket_batch_revision_id,
+            },
+            requested_at=request.requested_at,
+        )
+
+        def handler(uow, action) -> tuple[ObjectRef, ...]:
+            draft = uow.tickets.batch_revision(request.ticket_batch_revision_id)
+            if draft is None:
+                raise ValueError("operator ticket batch revision does not exist")
+            current = uow.tickets.current_batch_revision(draft.ticket_batch_id)
+            if (
+                current is None
+                or current.ticket_batch_revision_id != draft.ticket_batch_revision_id
+                or draft.state != "draft"
+            ):
+                raise ValueError("operator ticket batch is stale or not a draft")
+            lineage = uow.operator_result.ticket_decision_lineage_for_batch(
+                draft.ticket_batch_revision_id
+            )
+            if lineage is None:
+                raise ValueError("operator ticket batch has no decision lineage")
+            selected = self._operator_selection(uow, lineage.candidate_selection_id)
+            if (
+                selected.candidate.candidate_revision_id
+                != lineage.candidate_revision_id
+                or selected.candidate_set.audit_policy_version
+                != lineage.audit_policy_version
+            ):
+                raise ValueError("operator ticket candidate lineage is stale")
+            current_audit = self._operator_current_audit(uow, selected)
+            override_receipt_ids = self._validate_operator_audit(
+                uow,
+                draft,
+                selected,
+                current_audit,
+            )
+            tickets = self._operator_candidate_tickets(uow, selected)
+            deadline = self._operator_offer_deadline(
+                uow,
+                selected,
+                tickets,
+                receipt_time=request.requested_at,
+            )
+            approved_ref = self._insert_operator_revision(
+                uow,
+                command=action,
+                batch_id=draft.ticket_batch_id,
+                revision_no=draft.revision_no + 1,
+                supersedes_revision_id=draft.ticket_batch_revision_id,
+                run_date=draft.run_date,
+                channel=draft.channel,
+                account_id=draft.account_id,
+                currency=draft.currency,
+                deadline_at=deadline,
+                selected=selected,
+                tickets=tickets,
+                current_audit=current_audit,
+                state="approved",
+                requested_at=request.requested_at,
+            )
+            approved_lineage_ref = (
+                self._operator_decisions.insert_ticket_decision_lineage(
+                    uow,
+                    ticket_batch_revision_id=approved_ref.object_id,
+                    candidate_selection_id=lineage.candidate_selection_id,
+                    action_id=action.action_id,
+                    created_at=request.requested_at,
+                )
+            )
+            refs: list[ObjectRef] = [approved_ref, approved_lineage_ref]
+            at = request.requested_at.astimezone(UTC).isoformat()
+            for ticket in tickets:
+                legs = uow.operator_result.candidate_ticket_legs(
+                    ticket.candidate_ticket_id
+                )
+                offer_ids = tuple(
+                    dict.fromkeys(leg.official_offer_revision_id for leg in legs)
+                )
+                ticket_document = self._operator_ticket_document(ticket, legs)
+                artifact_document = {
+                    "schema_version": "2",
+                    "lineage_revision_id": approved_lineage_ref.object_id,
+                    "candidate_ticket_id": ticket.candidate_ticket_id,
+                    "ticket_index": ticket.ticket_index,
+                    "candidate_content_hash": selected.candidate.content_hash,
+                    "audit_policy_version": selected.candidate_set.audit_policy_version,
+                    "audit_finding_ids": [
+                        finding.candidate_audit_finding_id
+                        for finding in current_audit.findings
+                    ],
+                    "override_receipt_ids": list(override_receipt_ids),
+                    "fixed_prize_policy_revision_id": (
+                        ticket.fixed_prize_policy_revision_id
+                    ),
+                    "frozen_deadline_at": deadline.astimezone(UTC).isoformat(),
+                    "offer_revision_ids": list(offer_ids),
+                    "ticket": ticket_document,
+                }
+                blob = self._artifact_store.put_bytes(
+                    canonical_bytes(artifact_document)
+                )
+                uow.artifacts.upsert_blob(
+                    blob,
+                    "application/vnd.nutmeg.audited-ticket+json",
+                    at,
+                )
+                ticket_artifact_id = f"tat-{blob.content_hash[:32]}"
+                uow.tickets.insert_ticket_artifact(
+                    AuditedTicketArtifactRow(
+                        ticket_artifact_id=ticket_artifact_id,
+                        ticket_batch_revision_id=approved_ref.object_id,
+                        ticket_index=ticket.ticket_index,
+                        ticket_hash=blob.content_hash,
+                        source_artifact_id=blob.artifact_id,
+                        amount=ticket.stake_minor / 100,
+                        currency=ticket.currency,
+                        channel=draft.channel,
+                        deadline_at=deadline.astimezone(UTC).isoformat(),
+                        payload=artifact_document,
+                        approved_at=at,
+                        approved_by_action_id=action.action_id,
+                    )
+                )
+                uow.tickets.insert_artifact_work_item_link(
+                    ArtifactWorkItemLinkRow(
+                        artifact_work_item_link_id=(
+                            f"awil-{canonical_digest({'artifact': ticket_artifact_id})[:32]}"
+                        ),
+                        ticket_artifact_id=ticket_artifact_id,
+                        task_family_id=lineage.task_family_id,
+                        work_item_id=lineage.work_item_id,
+                        task_snapshot_hash=lineage.task_snapshot_hash,
+                        slate_revision_id=lineage.slate_revision_id,
+                        action_id=action.action_id,
+                        linked_at=at,
+                    )
+                )
+                uow.tickets.insert_protected_artifact_binding(
+                    ProtectedArtifactBindingRow(
+                        protected_artifact_binding_id=(
+                            "pab-"
+                            + canonical_digest(
+                                {
+                                    "artifact": ticket_artifact_id,
+                                    "binding": "v2",
+                                }
+                            )[:32]
+                        ),
+                        ticket_artifact_id=ticket_artifact_id,
+                        lineage_revision_id=approved_lineage_ref.object_id,
+                        candidate_revision_id=selected.candidate.candidate_revision_id,
+                        candidate_ticket_id=ticket.candidate_ticket_id,
+                        ticket_index=ticket.ticket_index,
+                        ticket_kind=ticket.ticket_kind,
+                        stake_minor=ticket.stake_minor,
+                        currency=ticket.currency,
+                        composition_hash=ticket.composition_hash,
+                        fixed_prize_policy_revision_id=(
+                            ticket.fixed_prize_policy_revision_id
+                        ),
+                        frozen_deadline_at=deadline.astimezone(UTC).isoformat(),
+                        action_id=action.action_id,
+                        created_at=at,
+                    )
+                )
+                for offer_index, offer_id in enumerate(offer_ids):
+                    uow.tickets.insert_protected_artifact_offer_revision_link(
+                        ProtectedArtifactOfferRevisionLinkRow(
+                            protected_artifact_offer_revision_link_id=(
+                                "paol-"
+                                + canonical_digest(
+                                    {
+                                        "artifact": ticket_artifact_id,
+                                        "offer_index": offer_index,
+                                        "offer": offer_id,
+                                    }
+                                )[:32]
+                            ),
+                            ticket_artifact_id=ticket_artifact_id,
+                            offer_index=offer_index,
+                            official_offer_revision_id=offer_id,
+                        )
+                    )
                 refs.append(ObjectRef("audited_ticket_artifact", ticket_artifact_id))
             return tuple(refs)
 
@@ -623,6 +997,375 @@ class ProtectedTicketActions:
             return (ObjectRef("ticket_shadow", shadow_id),)
 
         return self._action_service.execute(command, handler)
+
+    def _operator_selection(self, uow, candidate_selection_id: str):
+        if self._operator_decisions is None:
+            raise ValueError("operator decision lineage is not configured")
+        return self._operator_decisions.resolve_current_selection_in_uow(
+            uow,
+            candidate_selection_id=candidate_selection_id,
+        )
+
+    def _operator_current_audit(self, uow, selected) -> CurrentOperatorCandidateAudit:
+        if self._operator_candidate_auditor is None:
+            raise ValueError("current operator candidate audit is not configured")
+        result = self._operator_candidate_auditor(uow, selected)
+        if not isinstance(result, CurrentOperatorCandidateAudit):
+            raise TypeError("operator candidate auditor returned an invalid result")
+        if result.policy_version != selected.candidate_set.audit_policy_version:
+            raise ValueError("operator candidate audit policy is stale; regenerate candidates")
+        return result
+
+    @staticmethod
+    def _operator_account(uow, *, account_id: str, channel: str):
+        account = uow.finance.account(account_id)
+        if account is None or account.status != "active":
+            raise ValueError(f"active cash account {account_id} is required")
+        if account.channel_scope not in {channel, "all"}:
+            raise ValueError("ticket channel is outside cash account scope")
+        return account
+
+    @staticmethod
+    def _operator_candidate_tickets(uow, selected):
+        candidate = selected.candidate
+        if candidate.partition == "over_cap":
+            raise ValueError("over-cap candidate cannot materialize")
+        if candidate.partition not in {"eligible", "audit_blocked"}:
+            raise ValueError("candidate partition cannot materialize")
+        tickets = uow.operator_result.candidate_tickets(
+            candidate.candidate_revision_id
+        )
+        metric = uow.operator_result.candidate_metric(candidate.candidate_revision_id)
+        if metric is None or not tickets:
+            raise ValueError("selected candidate composition is incomplete")
+        if (
+            metric.ticket_count != len(tickets)
+            or metric.stake_minor != sum(ticket.stake_minor for ticket in tickets)
+            or any(ticket.currency != metric.currency for ticket in tickets)
+        ):
+            raise ValueError("candidate ticket count, stake, or currency does not reconcile")
+        for ticket in tickets:
+            legs = uow.operator_result.candidate_ticket_legs(ticket.candidate_ticket_id)
+            if not legs:
+                raise ValueError("candidate ticket has no normalized legs")
+        return tickets
+
+    @staticmethod
+    def _operator_offer_deadline(
+        uow,
+        selected,
+        tickets,
+        *,
+        receipt_time: datetime,
+    ) -> datetime:
+        current_slate = uow.operator_sale.current_slate(
+            selected.bundle.lane,
+            selected.bundle.business_key,
+        )
+        if (
+            current_slate is None
+            or current_slate.slate_revision_id
+            != selected.candidate_set.slate_revision_id
+        ):
+            raise ValueError("candidate slate is stale or superseded")
+        offers = {
+            row.official_offer_revision_id: row
+            for row in uow.operator_sale.offer_revisions_for_slate(
+                current_slate.slate_revision_id
+            )
+        }
+        offer_ids = {
+            leg.official_offer_revision_id
+            for ticket in tickets
+            for leg in uow.operator_result.candidate_ticket_legs(
+                ticket.candidate_ticket_id
+            )
+        }
+        if not offer_ids or not offer_ids <= set(offers):
+            raise ValueError("candidate has no complete official offer scope")
+        received_at = receipt_time.astimezone(UTC)
+        deadlines: list[datetime] = []
+        for offer_id in sorted(offer_ids):
+            offer = offers[offer_id]
+            current_offer = uow.operator_sale.current_offer_by_family(
+                offer.official_offer_family_id
+            )
+            opens_at = _parse_aware(offer.sale_opens_at, "sale_opens_at")
+            deadline_at = _parse_aware(offer.sale_deadline_at, "sale_deadline_at")
+            if (
+                current_offer is None
+                or current_offer.official_offer_revision_id != offer_id
+                or offer.status != "on_sale"
+                or received_at < opens_at
+                or received_at >= deadline_at
+            ):
+                raise ValueError("official offer is closed, stale, or at its deadline")
+            deadlines.append(deadline_at)
+        return min(deadlines)
+
+    @staticmethod
+    def _operator_ticket_document(ticket, legs) -> dict[str, object]:
+        return {
+            "ticket_kind": ticket.ticket_kind,
+            "structure_code": ticket.structure_code,
+            "group_code": ticket.group_code,
+            "currency": ticket.currency,
+            "unit_stake_minor": ticket.unit_stake_minor,
+            "unit_count": ticket.unit_count,
+            "stake_minor": ticket.stake_minor,
+            "composition_hash": ticket.composition_hash,
+            "fixed_prize_policy_revision_id": ticket.fixed_prize_policy_revision_id,
+            "legs": [
+                {
+                    "official_offer_revision_id": leg.official_offer_revision_id,
+                    "match_id": leg.match_id,
+                    "market_definition_id": leg.market_definition_id,
+                    "selection_code": leg.selection_code,
+                    "quote_id": leg.quote_id,
+                    "booked_decimal_odds": leg.booked_decimal_odds,
+                    "settlement_parameter_decimal": (
+                        leg.settlement_parameter_decimal
+                    ),
+                }
+                for leg in legs
+            ],
+        }
+
+    def _insert_operator_revision(
+        self,
+        uow,
+        *,
+        command: ActionCommand,
+        batch_id: str,
+        revision_no: int,
+        supersedes_revision_id: str | None,
+        run_date: str,
+        channel: str,
+        account_id: str,
+        currency: str,
+        deadline_at: datetime,
+        selected,
+        tickets,
+        current_audit: CurrentOperatorCandidateAudit,
+        state: str,
+        requested_at: datetime,
+    ) -> ObjectRef:
+        if any(ticket.currency != currency for ticket in tickets):
+            raise ValueError("candidate currency does not match cash account")
+        ticket_documents = [
+            self._operator_ticket_document(
+                ticket,
+                uow.operator_result.candidate_ticket_legs(ticket.candidate_ticket_id),
+            )
+            for ticket in tickets
+        ]
+        audit_documents = [
+            {
+                "level": finding.severity,
+                "code": finding.finding_code,
+                "match_no": finding.official_match_no,
+                "message": finding.message,
+                "rule_id": finding.rule_id,
+                "candidate_audit_finding_id": (
+                    finding.candidate_audit_finding_id
+                ),
+            }
+            for finding in current_audit.findings
+        ]
+        revision_id = f"tbr-{uuid4().hex}"
+        document = {
+            "schema_version": "2",
+            "ticket_batch_id": batch_id,
+            "ticket_batch_revision_id": revision_id,
+            "revision_no": revision_no,
+            "supersedes_revision_id": supersedes_revision_id,
+            "run_date": run_date,
+            "channel": channel,
+            "account_id": account_id,
+            "currency": currency,
+            "deadline_at": deadline_at.astimezone(UTC).isoformat(),
+            "candidate_selection_id": selected.selection.candidate_selection_id,
+            "candidate_revision_id": selected.candidate.candidate_revision_id,
+            "tickets": ticket_documents,
+            "audit_findings": audit_documents,
+            "state": state,
+        }
+        blob = self._artifact_store.put_bytes(canonical_bytes(document))
+        at = requested_at.astimezone(UTC).isoformat()
+        uow.artifacts.upsert_blob(
+            blob,
+            "application/vnd.nutmeg.ticket-batch+json",
+            at,
+        )
+        uow.tickets.insert_batch_revision(
+            TicketBatchRevisionRow(
+                ticket_batch_revision_id=revision_id,
+                ticket_batch_id=batch_id,
+                revision_no=revision_no,
+                supersedes_revision_id=supersedes_revision_id,
+                run_date=run_date,
+                channel=channel,
+                account_id=account_id,
+                currency=currency,
+                deadline_at=deadline_at.astimezone(UTC).isoformat(),
+                input_legs=[
+                    leg
+                    for ticket in ticket_documents
+                    for leg in ticket["legs"]
+                ],
+                composition={
+                    "schema_version": "2",
+                    "tickets": ticket_documents,
+                    "ticket_count": len(ticket_documents),
+                    "stake_minor": sum(ticket.stake_minor for ticket in tickets),
+                },
+                audit_findings=audit_documents,
+                state=state,
+                content_hash=blob.content_hash,
+                source_artifact_id=blob.artifact_id,
+                created_at=at,
+                created_by_action_id=command.action_id,
+            )
+        )
+        return ObjectRef("ticket_batch_revision", revision_id)
+
+    @staticmethod
+    def _validate_operator_audit(
+        uow,
+        draft,
+        selected,
+        current_audit: CurrentOperatorCandidateAudit,
+    ) -> tuple[str, ...]:
+        findings = current_audit.findings
+        if any(
+            finding.audit_kind == "prescription_difference"
+            and not (finding.rule_id or "").strip()
+            for finding in findings
+        ):
+            raise ValueError("every prescription deviation requires a registered Rule ID")
+        errors = {
+            finding.candidate_audit_finding_id: finding
+            for finding in findings
+            if finding.severity == "ERROR"
+        }
+        direct_links = (
+            uow.operator_result.candidate_generation_override_links_for_batch(
+                draft.ticket_batch_revision_id
+            )
+        )
+        current_generation_id = selected.candidate_set.generation_request_id
+        if direct_links and not any(
+            link.generation_request_id == current_generation_id
+            for link in direct_links
+        ):
+            raise ValueError("ticket audit override requires candidate regeneration")
+
+        inherited_links = uow.operator_result.candidate_generation_override_links(
+            current_generation_id
+        )
+        if inherited_links:
+            receipts = tuple(
+                uow.operator_result.ticket_audit_override_receipt(
+                    link.override_receipt_id
+                )
+                for link in inherited_links
+            )
+            if any(receipt is None for receipt in receipts):
+                raise ValueError("candidate regeneration override lineage is incomplete")
+            matching = ProtectedTicketActions._match_inherited_operator_overrides(
+                uow,
+                errors=tuple(errors.values()),
+                receipts=tuple(receipt for receipt in receipts if receipt is not None),
+                candidate_content_hash=selected.candidate.content_hash,
+                audit_policy_version=selected.candidate_set.audit_policy_version,
+            )
+        else:
+            receipts = uow.operator_result.ticket_audit_override_receipts_for_batch(
+                draft.ticket_batch_revision_id
+            )
+            matching = {
+                receipt.candidate_audit_finding_id: receipt
+                for receipt in receipts
+                if receipt.candidate_revision_id
+                == selected.candidate.candidate_revision_id
+                and receipt.candidate_content_hash == selected.candidate.content_hash
+                and receipt.audit_policy_version
+                == selected.candidate_set.audit_policy_version
+            }
+            if set(matching) != set(errors):
+                if errors:
+                    raise ValueError("ticket audit ERROR requires exact current overrides")
+                if matching:
+                    raise ValueError(
+                        "ticket audit override set does not match current ERRORs"
+                    )
+        for finding in findings:
+            if finding.severity != "WARN":
+                continue
+            adjudication = uow.workflow.latest_adjudication(
+                "ticket_audit_finding",
+                finding.candidate_audit_finding_id,
+            )
+            if (
+                adjudication is None
+                or adjudication.decision != "accept_warning"
+                or not adjudication.reason.strip()
+            ):
+                raise ValueError(
+                    "ticket audit WARN requires an explicit current adjudication"
+                )
+        return tuple(
+            matching[finding_id].ticket_audit_override_receipt_id
+            for finding_id in sorted(matching)
+        )
+
+    @staticmethod
+    def _match_inherited_operator_overrides(
+        uow,
+        *,
+        errors,
+        receipts,
+        candidate_content_hash: str,
+        audit_policy_version: str,
+    ):
+        def signature(finding):
+            return (
+                finding.audit_kind,
+                finding.finding_code,
+                finding.severity,
+                finding.message,
+                finding.official_match_no,
+                finding.rule_id,
+            )
+
+        receipts_by_signature = {}
+        for receipt in receipts:
+            original = uow.operator_result.candidate_audit_finding(
+                receipt.candidate_audit_finding_id
+            )
+            if (
+                original is None
+                or receipt.candidate_content_hash != candidate_content_hash
+                or receipt.audit_policy_version != audit_policy_version
+            ):
+                raise ValueError("candidate regeneration override lineage is stale")
+            key = signature(original)
+            if key in receipts_by_signature:
+                raise ValueError("candidate regeneration override findings are ambiguous")
+            receipts_by_signature[key] = receipt
+
+        current_by_signature = {}
+        for finding in errors:
+            key = signature(finding)
+            if key in current_by_signature:
+                raise ValueError("current ticket audit ERROR findings are ambiguous")
+            current_by_signature[key] = finding
+        if set(receipts_by_signature) != set(current_by_signature):
+            raise ValueError("ticket audit ERROR requires exact inherited overrides")
+        return {
+            finding.candidate_audit_finding_id: receipts_by_signature[key]
+            for key, finding in current_by_signature.items()
+        }
 
     def _insert_revision(
         self,

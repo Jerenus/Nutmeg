@@ -42,7 +42,13 @@ def _setup(tmp_path: Path, *, complete_override: bool = True):
     return kernel, data_dir, legs_file
 
 
-def _invoke(data_dir: Path, legs_file: Path, *, override: bool):
+def _invoke(
+    data_dir: Path,
+    legs_file: Path,
+    *,
+    override: bool,
+    ticket_batch_token: str | None = None,
+):
     args = [
         "decision-audit-legs",
         "--legs-file",
@@ -52,6 +58,8 @@ def _invoke(data_dir: Path, legs_file: Path, *, override: bool):
     ]
     if override:
         args.append("--user-override")
+    if ticket_batch_token is not None:
+        args.extend(("--ticket-batch-token", ticket_batch_token))
     return CliRunner().invoke(app, args)
 
 
@@ -66,42 +74,24 @@ def test_default_audit_keeps_errors_blocking_and_writes_no_adjudication(tmp_path
         assert uow.workflow.count_adjudications() == 0
 
 
-def test_explicit_user_override_groups_errors_records_action_and_is_idempotent(tmp_path):
+def test_user_override_requires_a_signed_ticket_batch_token(tmp_path):
     kernel, data_dir, legs_file = _setup(tmp_path)
 
-    first = _invoke(data_dir, legs_file, override=True)
-    second = _invoke(data_dir, legs_file, override=True)
+    result = _invoke(data_dir, legs_file, override=True)
 
-    assert first.exit_code == 0
-    assert second.exit_code == 0
-    assert "3 个 ERROR -> 1 条 Adjudication" in first.stdout
+    assert result.exit_code == 1
+    assert "--ticket-batch-token" in result.stdout
     with OntologyUnitOfWork(kernel.engine) as uow:
-        rows = uow.workflow.iter_adjudications()
-    assert len(rows) == 1
-    row = rows[0]
-    assert row.subject_type == "ticket_audit_finding"
-    assert row.decision == "override"
-    assert row.actor_id == "operator:jun"
-    assert len(row.evidence_rejected) == 3
-    assert row.alternative["kind"] == "ticket_audit_user_override"
-    assert row.alternative["scoreboard_metric"] == "user_naked_wheels"
-    assert row.alternative["ticket_faces"] == "3"
-    assert row.alternative["prescription_faces"] == "31"
-    assert {item["code"] for item in row.alternative["audit_findings"]} == {
-        "flagged_naked_single",
-        "low_conf_single",
-        "broken_anchor_single",
-    }
+        assert uow.workflow.count_adjudications() == 0
 
 
-def test_user_override_without_complete_registration_stays_blocked(tmp_path):
+def test_user_override_without_batch_token_stays_blocked_before_registration(tmp_path):
     kernel, data_dir, legs_file = _setup(tmp_path, complete_override=False)
 
     result = _invoke(data_dir, legs_file, override=True)
 
     assert result.exit_code == 1
-    assert "场12" in result.stdout
-    assert "override 登记" in result.stdout
+    assert "--ticket-batch-token" in result.stdout
     with OntologyUnitOfWork(kernel.engine) as uow:
         assert uow.workflow.count_adjudications() == 0
 

@@ -80,6 +80,20 @@ def test_one_byte_payload_or_signature_tampering_is_invalid(part: int) -> None:
     assert caught.value.code == "invalid_request"
 
 
+def test_noncanonical_signature_frame_alias_is_invalid() -> None:
+    codec = OperatorSnapshotTokenCodec(KEY)
+    payload_frame, signature_frame = codec.encode(_payload()).split(".")
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    final_index = alphabet.index(signature_frame[-1])
+    assert final_index % 4 == 0
+    alias = signature_frame[:-1] + alphabet[final_index + 1]
+
+    with pytest.raises(OperatorSnapshotTokenError) as caught:
+        codec.decode(f"{payload_frame}.{alias}")
+
+    assert caught.value.code == "invalid_request"
+
+
 def test_wrong_key_and_cross_command_replay_are_invalid() -> None:
     token = OperatorSnapshotTokenCodec(KEY).encode(_payload())
 

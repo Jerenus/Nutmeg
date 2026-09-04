@@ -13,6 +13,10 @@ from sqlalchemy.exc import OperationalError
 from nutmeg.decision.legs_audit import Leg, audit_legs
 from nutmeg.ontology.actions.bundle_actions import BundleActions, FreezeBundleRequest
 from nutmeg.ontology.actions.models import ActionOutcome, ActorRole, canonical_json
+from nutmeg.ontology.actions.protected_ticket_actions import (
+    CurrentOperatorCandidateAudit,
+    CurrentOperatorCandidateAuditFinding,
+)
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.errors import OptimisticConcurrencyError, PermissionDeniedError
 from nutmeg.ontology.operator.decision_actions import (
@@ -46,12 +50,15 @@ from nutmeg.product.operator_candidates import (
     CandidateDraft,
     CandidateGenerationInput,
     CandidateStructureTemplate,
+    CandidateTicket,
+    CandidateTicketLeg,
     FaceBundleOption,
     OfferCandidateInput,
     enumerate_candidates,
 )
 
 _CANDIDATE_GENERATOR_VERSION = "operator-candidate-v1"
+_CANDIDATE_AUDIT_POLICY_VERSION = "operator-candidate-audit-v1"
 _DECIMAL_QUANTUM = Decimal("0.000000000001")
 _STANDARD_JCZQ_UNIT_STAKE_MINOR = 200
 _SUPPORTED_SETTLEMENT_MARKETS = {
@@ -748,6 +755,168 @@ def _candidate_generation_inputs(uow, generation):
     )
 
 
+def audit_current_candidate(uow, selected) -> CurrentOperatorCandidateAudit:
+    """Rerun all deterministic audits against one current frozen candidate."""
+    if (
+        selected.candidate_set.set_kind != "judgment_bound"
+        or selected.candidate_set.comparison_only != 0
+        or selected.candidate.candidate_set_revision_id
+        != selected.candidate_set.candidate_set_revision_id
+    ):
+        raise ValueError("current audit requires a judgment-bound candidate")
+    if selected.candidate_set.audit_policy_version != _CANDIDATE_AUDIT_POLICY_VERSION:
+        raise ValueError("candidate audit policy is stale; regenerate candidates")
+    judgment_inputs, _conditional_inputs, audit_offers, _conditional_audit = (
+        _candidate_generation_inputs(uow, selected.generation)
+    )
+    draft = _stored_candidate_draft(uow, selected, judgment_inputs)
+    findings = _audit_candidate(
+        draft,
+        lane=judgment_inputs.lane,
+        offers=audit_offers,
+        capital_cap_minor=judgment_inputs.capital_cap_minor,
+    )
+    return CurrentOperatorCandidateAudit(
+        policy_version=_CANDIDATE_AUDIT_POLICY_VERSION,
+        completed_audit_kinds=(
+            "legs",
+            "prescription_difference",
+            "budget",
+            "deployment",
+        ),
+        findings=tuple(
+            CurrentOperatorCandidateAuditFinding(
+                candidate_audit_finding_id=(
+                    "operator-candidate-finding-"
+                    + _digest(
+                        [
+                            selected.candidate.candidate_revision_id,
+                            finding.finding_id,
+                        ]
+                    )
+                ),
+                audit_kind=finding.audit_kind,
+                finding_code=finding.code,
+                severity=finding.severity,
+                message=finding.message,
+                official_match_no=finding.official_match_no,
+                rule_id=finding.rule_id,
+            )
+            for finding in findings
+        ),
+    )
+
+
+def _stored_candidate_draft(uow, selected, inputs) -> CandidateDraft:
+    rows = uow.operator_result.candidate_tickets(
+        selected.candidate.candidate_revision_id
+    )
+    metric = uow.operator_result.candidate_metric(
+        selected.candidate.candidate_revision_id
+    )
+    if metric is None or not rows:
+        raise ValueError("current candidate composition is incomplete")
+    offers = {
+        offer.official_offer_revision_id: offer
+        for offer in inputs.offers
+    }
+    tickets = tuple(
+        _stored_candidate_ticket(uow, row, offers=offers, lane=inputs.lane)
+        for row in rows
+    )
+    ordered = tuple(sorted(tickets, key=lambda item: item.composition_hash))
+    stake_minor = sum(ticket.stake_minor for ticket in ordered)
+    draft = CandidateDraft(
+        tickets=ordered,
+        stake_minor=stake_minor,
+        composition_hash=_digest(
+            {
+                "ticket_hashes": [ticket.composition_hash for ticket in ordered],
+                "stake_minor": stake_minor,
+            }
+        ),
+    )
+    if (
+        metric.ticket_count != len(tickets)
+        or metric.stake_minor != draft.stake_minor
+        or any(ticket.currency != metric.currency for ticket in tickets)
+    ):
+        raise ValueError("current candidate ticket count, stake, or currency has drifted")
+    return draft
+
+
+def _stored_candidate_ticket(uow, row, *, offers, lane: str) -> CandidateTicket:
+    stored_legs = uow.operator_result.candidate_ticket_legs(row.candidate_ticket_id)
+    if not stored_legs:
+        raise ValueError("current candidate ticket has no normalized legs")
+    grouped: dict[str, list[object]] = {}
+    for leg in stored_legs:
+        grouped.setdefault(leg.official_offer_revision_id, []).append(leg)
+    rebuilt_legs: list[CandidateTicketLeg] = []
+    for offer_revision_id, legs in grouped.items():
+        offer = offers.get(offer_revision_id)
+        if offer is None:
+            raise ValueError("current candidate ticket references an unknown offer")
+        first = legs[0]
+        if any(
+            (
+                leg.match_id,
+                leg.market_definition_id,
+                leg.settlement_parameter_decimal,
+            )
+            != (
+                first.match_id,
+                first.market_definition_id,
+                first.settlement_parameter_decimal,
+            )
+            for leg in legs
+        ):
+            raise ValueError("current candidate ticket leg grouping is inconsistent")
+        if (
+            first.match_id != offer.match_id
+            or first.market_definition_id != offer.market_definition_id
+        ):
+            raise ValueError("current candidate ticket crosses its frozen offer")
+        if lane == "jczq" and any(
+            leg.quote_id is None or leg.booked_decimal_odds is None for leg in legs
+        ):
+            raise ValueError("current JCZQ candidate lacks exact Quote bindings")
+        rebuilt_legs.append(
+            CandidateTicketLeg(
+                official_match_no=offer.official_match_no,
+                official_offer_revision_id=offer_revision_id,
+                match_id=first.match_id,
+                market_definition_id=first.market_definition_id,
+                selection_codes=tuple(leg.selection_code for leg in legs),
+                quote_ids=(
+                    tuple(str(leg.quote_id) for leg in legs)
+                    if lane == "jczq"
+                    else ()
+                ),
+                booked_decimal_odds=(
+                    tuple(str(leg.booked_decimal_odds) for leg in legs)
+                    if lane == "jczq"
+                    else ()
+                ),
+                settlement_parameter_decimal=first.settlement_parameter_decimal,
+            )
+        )
+    if row.group_code is None:
+        raise ValueError("current candidate ticket group code is missing")
+    return CandidateTicket(
+        ticket_kind=row.ticket_kind,
+        structure_code=row.structure_code,
+        group_code=row.group_code,
+        currency=row.currency,
+        unit_stake_minor=row.unit_stake_minor,
+        unit_count=row.unit_count,
+        stake_minor=row.stake_minor,
+        fixed_prize_policy_revision_id=row.fixed_prize_policy_revision_id,
+        legs=tuple(rebuilt_legs),
+        composition_hash=row.composition_hash,
+    )
+
+
 def _envelope_constraints(connection, envelope_revision_id: str):
     rows = connection.execute(
         select(sod.operator_baseline_envelope_offer_constraints)
@@ -1200,4 +1369,5 @@ __all__ = [
     "CandidateGenerationWorker",
     "EvidenceFreezeRequestWorker",
     "MarketBaselineWorker",
+    "audit_current_candidate",
 ]

@@ -178,12 +178,16 @@ def _candidate(
     )
 
 
-def _claim_generation_job(fixture: CandidateFixture):
+def _claim_generation_job(
+    fixture: CandidateFixture,
+    *,
+    as_of=AT + timedelta(seconds=7),
+):
     with OntologyUnitOfWork(fixture.judgment.engine) as uow:
         claimed = uow.operator_decision.claim_worker_jobs(
             job_kind="candidate_generation",
             lease_owner="candidate-worker",
-            as_of=(AT + timedelta(seconds=7)).isoformat(),
+            as_of=as_of.isoformat(),
             lease_expires_at=(AT + timedelta(minutes=5)).isoformat(),
             limit=1,
         )
@@ -198,8 +202,9 @@ def _generate(
     key: str = "candidate:generate:1",
     judgment_candidate: TicketCandidateInput | None = None,
     conditional_candidate: TicketCandidateInput | None = None,
+    as_of=AT + timedelta(seconds=7),
 ):
-    job = _claim_generation_job(fixture)
+    job = _claim_generation_job(fixture, as_of=as_of)
     return fixture.result_actions.generate_ticket_candidate_set(
         GenerateTicketCandidateSetRequest(
             generation_request_id=request_id,
@@ -230,7 +235,7 @@ def _generate(
             actor_id="system:operator-candidates",
             actor_role=ActorRole.DETERMINISTIC_SYSTEM,
             idempotency_key=key,
-            requested_at=AT + timedelta(seconds=8),
+            requested_at=as_of + timedelta(seconds=1),
         )
     )
 

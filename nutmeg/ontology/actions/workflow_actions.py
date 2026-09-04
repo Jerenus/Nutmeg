@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from nutmeg.ontology.actions.models import (
     ActionCommand,
@@ -21,6 +22,9 @@ from nutmeg.ontology.workflow.models import (
     ProposalStatus,
     mint_workflow_id,
 )
+
+if TYPE_CHECKING:
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 
 def _require_aware(requested_at: datetime) -> None:
@@ -44,6 +48,31 @@ class RecordAdjudicationRequest:
 
     def __post_init__(self) -> None:
         _require_aware(self.requested_at)
+
+
+def insert_adjudication_in_uow(
+    uow: OntologyUnitOfWork,
+    request: RecordAdjudicationRequest,
+    *,
+    adjudication_id: str | None = None,
+) -> str:
+    """Insert one Adjudication inside an already governed outer Action."""
+    resolved_id = adjudication_id or mint_workflow_id('adj')
+    uow.workflow.insert_adjudication(
+        AdjudicationRow(
+            adjudication_id=resolved_id,
+            subject_type=request.subject_type,
+            subject_id=request.subject_id,
+            decision=request.decision,
+            actor_id=request.actor_id,
+            reason=request.reason,
+            evidence_rejected=list(request.evidence_rejected),
+            alternative=dict(request.alternative),
+            created_at=request.requested_at.astimezone(UTC).isoformat(),
+            supersedes_adjudication_id=request.supersedes_adjudication_id,
+        )
+    )
+    return resolved_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,21 +225,7 @@ class WorkflowActions:
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
-            adjudication_id = mint_workflow_id('adj')
-            uow.workflow.insert_adjudication(
-                AdjudicationRow(
-                    adjudication_id=adjudication_id,
-                    subject_type=request.subject_type,
-                    subject_id=request.subject_id,
-                    decision=request.decision,
-                    actor_id=request.actor_id,
-                    reason=request.reason,
-                    evidence_rejected=list(request.evidence_rejected),
-                    alternative=dict(request.alternative),
-                    created_at=self._at(request),
-                    supersedes_adjudication_id=request.supersedes_adjudication_id,
-                )
-            )
+            adjudication_id = insert_adjudication_in_uow(uow, request)
             return (ObjectRef('adjudication', adjudication_id),)
 
         return command, handler

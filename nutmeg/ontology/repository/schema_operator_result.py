@@ -230,9 +230,97 @@ operator_candidate_ticket_legs = Table(
 )
 
 
+operator_review_eligibility_facts = Table(
+    "operator_review_eligibility_facts",
+    metadata,
+    Column("review_eligibility_fact_id", Text, primary_key=True),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    ),
+    Column("fact_index", Integer, nullable=False),
+    Column("terminal_trigger", Text, nullable=False),
+    Column("task_family_id", Text, nullable=False, index=True),
+    Column("work_item_id", Text, nullable=False, index=True),
+    Column("task_snapshot_hash", Text, nullable=False),
+    Column(
+        "no_ticket_revision_id",
+        Text,
+        ForeignKey("operator_no_ticket_revisions.no_ticket_revision_id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column(
+        "artifact_terminal_receipt_id",
+        Text,
+        ForeignKey(
+            "operator_artifact_terminal_receipts.artifact_terminal_receipt_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    ),
+    Column(
+        "market_prior_baseline_revision_id",
+        Text,
+        ForeignKey(
+            "operator_market_prior_baseline_revisions.market_prior_baseline_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    ),
+    Column("review_kind", Text, nullable=False),
+    Column("readiness_condition", Text, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column("created_at", Text, nullable=False),
+    CheckConstraint(
+        "fact_index >= 0",
+        name="ck_operator_review_eligibility_fact_index",
+    ),
+    CheckConstraint(
+        "terminal_trigger IN ('no_ticket', 'artifact_terminal', "
+        "'official_cancellation')",
+        name="ck_operator_review_eligibility_terminal_trigger",
+    ),
+    CheckConstraint(
+        "(terminal_trigger = 'no_ticket' "
+        "AND no_ticket_revision_id IS NOT NULL "
+        "AND artifact_terminal_receipt_id IS NULL) OR "
+        "(terminal_trigger IN ('artifact_terminal', 'official_cancellation') "
+        "AND no_ticket_revision_id IS NULL "
+        "AND artifact_terminal_receipt_id IS NOT NULL)",
+        name="ck_operator_review_eligibility_source",
+    ),
+    CheckConstraint(
+        "review_kind IN ('operational_data_availability', 'forecast_truth')",
+        name="ck_operator_review_eligibility_review_kind",
+    ),
+    CheckConstraint(
+        "readiness_condition IN ('immediate', 'outcomes_required')",
+        name="ck_operator_review_eligibility_readiness",
+    ),
+    CheckConstraint(
+        "(review_kind = 'operational_data_availability' "
+        "AND readiness_condition = 'immediate' "
+        "AND market_prior_baseline_revision_id IS NULL) OR "
+        "(review_kind = 'forecast_truth' "
+        "AND readiness_condition = 'outcomes_required' "
+        "AND market_prior_baseline_revision_id IS NOT NULL)",
+        name="ck_operator_review_eligibility_kind_readiness",
+    ),
+    UniqueConstraint(
+        "action_id",
+        "fact_index",
+        name="uq_operator_review_eligibility_action_index",
+    ),
+)
+
+
 __all__ = [
     "operator_candidate_ticket_legs",
     "operator_candidate_tickets",
+    "operator_review_eligibility_facts",
     "zucai_fixed_prize_policy_revisions",
     "zucai_fixed_prize_policy_tiers",
 ]

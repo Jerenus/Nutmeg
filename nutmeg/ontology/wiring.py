@@ -91,12 +91,19 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     )
     calibrate = CalibrateService(engine=engine, analytics_path=paths.analytics)
     workflow = WorkflowActions(action_service)
-    protected_tickets = ProtectedTicketActions(action_service, artifact_store)
     scoreboard_actions = ScoreboardActions(action_service)
     reliability_actions = ReliabilityActions(action_service)
     sale_actions = SaleActions(action_service)
     evidence_actions = EvidenceActions(action_service)
-    decision_actions = OperatorDecisionActions(action_service)
+    decision_actions = OperatorDecisionActions(
+        action_service,
+        audit_token_signing_key=settings.operator_token_signing_key,
+    )
+    protected_tickets = ProtectedTicketActions(
+        action_service,
+        artifact_store,
+        operator_decisions=decision_actions,
+    )
     result_actions = OperatorResultActions(action_service)
     return OntologyKernel(
         paths=paths,

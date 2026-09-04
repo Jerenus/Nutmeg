@@ -12,6 +12,7 @@ from nutmeg.interfaces.operator_ui import mount_operator_ui
 from nutmeg.product.operator_contracts import (
     EvidenceRequirementSummary,
     MatchEvidenceChecklist,
+    NoTicketControl,
     OperatorLane,
     OperatorTaskResponse,
     OperatorTaskState,
@@ -106,6 +107,10 @@ def _task(
         alternatives=[],
         progress=TaskProgressSummary(completed=0, total=1, label="证据准备"),
         step=step,
+        no_ticket=NoTicketControl(
+            state="available",
+            command_token="opaque.no-ticket.command",
+        ),
     )
 
 
@@ -189,6 +194,20 @@ def test_freeze_is_the_only_primary_control_and_only_when_gate_is_complete() -> 
         html = _client(state).get("/tasks/zucai:26116").text
         assert 'data-action="freeze-evidence"' not in html
         assert 'class="primary-action"' not in html
+
+
+def test_prepare_evidence_keeps_no_ticket_as_an_unselected_secondary_action() -> None:
+    html = _client("missing").get("/tasks/zucai:26116").text
+
+    assert "明确不出票" in html
+    assert 'data-action="record-no-ticket"' in html
+    assert 'class="secondary-action no-ticket-toggle"' in html
+    assert '<option value="" selected disabled>请选择理由</option>' in html
+    assert not re.search(
+        r'<option value="(?:human_all_dice|operator_discretion)" selected',
+        html,
+    )
+    assert "opaque.no-ticket.command" not in html
 
 
 def test_linked_bundle_with_new_evidence_offers_explicit_refreeze() -> None:

@@ -99,6 +99,21 @@ class OperatorSaleRepository:
         ordered = sorted(rows, key=self._official_offer_order)
         return tuple(self._offer(row) for row in ordered)
 
+    def offer_revision(
+        self, official_offer_revision_id: str
+    ) -> OfficialOfferRevisionRow | None:
+        row = (
+            self._connection.execute(
+                select(sos.official_offer_revisions).where(
+                    sos.official_offer_revisions.c.official_offer_revision_id
+                    == official_offer_revision_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return self._offer(row) if row is not None else None
+
     def current_offer_by_family(self, family_id: str) -> OfficialOfferRevisionRow | None:
         family = (
             self._connection.execute(

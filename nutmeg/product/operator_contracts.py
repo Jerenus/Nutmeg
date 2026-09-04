@@ -460,19 +460,108 @@ class ConstructTicketStep(StrictOperatorContract):
         return self
 
 
+class DeploymentCandidateSummary(StrictOperatorContract):
+    label: str = Field(min_length=1, max_length=100)
+    ticket_count: int = Field(gt=0)
+    stake_minor: int = Field(gt=0)
+    objective_label: str = Field(min_length=1, max_length=200)
+    objective_probability_decimal: str = Field(pattern=r"^(?:0|1)\.\d{12}$")
+
+
+class DeploymentAuditFindingSummary(StrictOperatorContract):
+    severity: Literal["warn", "error"]
+    label: str = Field(min_length=1, max_length=300)
+    value: str = Field(min_length=1, max_length=1000)
+    evidence_href: str | None = None
+    finding_token: str | None = Field(default=None, min_length=1, max_length=8192)
+
+
+class DeploymentRuleOption(StrictOperatorContract):
+    label: str = Field(min_length=1, max_length=200)
+    token: str = Field(min_length=1, max_length=8192)
+
+
+class NoTicketControl(StrictOperatorContract):
+    state: Literal["available", "recorded"]
+    command_token: str = Field(min_length=1, max_length=8192)
+    no_ticket_revision_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+    comparison_candidate_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+    rule_options: list[DeploymentRuleOption] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def _validate_state(self) -> "NoTicketControl":
+        if (self.state == "recorded") != (self.no_ticket_revision_token is not None):
+            raise ValueError("recorded no-ticket requires its current revision token")
+        return self
+
+
 class AuditDeploymentStep(StrictOperatorContract):
     kind: Literal['audit_deployment'] = 'audit_deployment'
+    surface_version: Literal["1", "2"] = "1"
     task_id: str
-    candidate: TicketVersionSummary
-    gate_candidate_id: str
-    gate_candidate_cost_yuan: int = Field(gt=0)
+    candidate: TicketVersionSummary | DeploymentCandidateSummary
+    gate_candidate_id: str | None = None
+    gate_candidate_cost_yuan: int | None = Field(default=None, gt=0)
     audit_state: Literal['pass', 'warn', 'error']
-    findings: list[BusinessEvidenceSummary]
-    deployment_state: Literal['pass', 'review', 'reduce_or_empty']
-    capital_utilization: float = Field(ge=0)
-    median_bonus: float = Field(ge=0)
-    break_even_to_median: float = Field(ge=0)
-    allowed_decisions: list[str]
+    findings: list[BusinessEvidenceSummary | DeploymentAuditFindingSummary]
+    deployment_state: Literal['pass', 'review', 'reduce_or_empty'] | None = None
+    capital_utilization: float | None = Field(default=None, ge=0)
+    median_bonus: float | None = Field(default=None, ge=0)
+    break_even_to_median: float | None = Field(default=None, ge=0)
+    allowed_decisions: list[str] = Field(default_factory=list)
+    mode: Literal[
+        "legacy",
+        "create_ticket_batch",
+        "adjudicate_audit_warn",
+        "approve_ticket_batch",
+        "request_confirmation",
+        "supersede_no_ticket",
+        "blocked",
+    ] = "legacy"
+    command_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    candidate_selection_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    ticket_batch_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    ticket_artifact_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    no_ticket_command_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    no_ticket_revision_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    comparison_candidate_token: str | None = Field(default=None, min_length=1, max_length=8192)
+    rule_options: list[DeploymentRuleOption] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def _validate_surface(self) -> "AuditDeploymentStep":
+        if self.surface_version == "1":
+            required = (
+                self.gate_candidate_id,
+                self.gate_candidate_cost_yuan,
+                self.deployment_state,
+                self.capital_utilization,
+                self.median_bonus,
+                self.break_even_to_median,
+            )
+            if self.mode != "legacy" or any(value is None for value in required):
+                raise ValueError("legacy deployment requires the complete deployment gate")
+            return self
+        if self.mode == "legacy" or self.no_ticket_command_token is None:
+            raise ValueError("v2 deployment requires a named mode and no-ticket command")
+        required_by_mode = {
+            "create_ticket_batch": self.candidate_selection_token,
+            "adjudicate_audit_warn": self.ticket_batch_token,
+            "approve_ticket_batch": self.ticket_batch_token,
+            "request_confirmation": self.ticket_artifact_token,
+            "supersede_no_ticket": self.no_ticket_revision_token,
+        }
+        required = required_by_mode.get(self.mode)
+        if self.mode != "blocked" and (self.command_token is None or required is None):
+            raise ValueError("v2 deployment mode is missing its exact command tokens")
+        return self
 
 
 class ConfirmationStep(StrictOperatorContract):
@@ -568,6 +657,7 @@ class OperatorTaskResponse(VersionedOperatorContract):
     alternatives: list[OperatorTaskSummary]
     progress: TaskProgressSummary
     step: StepView
+    no_ticket: NoTicketControl | None = None
 
 
 class OperatorMutationCommand(VersionedOperatorContract):
@@ -627,6 +717,12 @@ class OperatorCommandReceipt(VersionedOperatorContract):
         "freeze_judgment_prescription",
         "request_candidate_generation",
         "select_candidate",
+        "record_no_ticket",
+        "supersede_no_ticket",
+        "create_ticket_batch",
+        "adjudicate_audit_warn",
+        "approve_ticket_batch",
+        "request_confirmation",
         "rebuild_scoreboard_projection",
     ]
     status: Literal["queued", "completed"]

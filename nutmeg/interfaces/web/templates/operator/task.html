@@ -3,10 +3,17 @@
 {% block content %}
   <section class="current-step" data-step-kind="{{ task.step.kind }}"
            data-snapshot-token="{{ snapshot_token }}">
-    {% if task.step.kind == "prepare_evidence" %}
+    {% if task.step.kind == "audit_deployment" and task.step.surface_version|default("") == "2" %}
+      {% include "operator/steps/audit_deployment_v2.html" %}
+    {% elif task.step.kind == "prepare_evidence" %}
       {% include "operator/steps/prepare_evidence_v2.html" %}
     {% else %}
       {% include "operator/steps/" ~ task.step.kind ~ ".html" %}
+    {% endif %}
+    {% if task.no_ticket and not (
+      task.step.kind == "audit_deployment" and task.step.surface_version|default("") == "2"
+    ) %}
+      {% include "operator/no_ticket_control.html" %}
     {% endif %}
   </section>
 {% endblock %}

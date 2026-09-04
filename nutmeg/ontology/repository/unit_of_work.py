@@ -56,12 +56,22 @@ class OntologyUnitOfWork:
         self._connection: Connection | None = None
         self._writer_lease_factory = writer_lease_factory or _WRITER_LEASE_FACTORIES.get(engine)
         self._writer_lease = None
+        self._write_lock_acquired = False
 
     @property
     def connection(self) -> Connection:
         if self._connection is None:
             raise RuntimeError("unit of work is not active")
         return self._connection
+
+    def acquire_write_lock(self) -> None:
+        """Acquire SQLite's reserved writer lock before reading transition state."""
+        if self._connection is None:
+            raise RuntimeError("unit of work is not active")
+        if self._write_lock_acquired:
+            return
+        self._connection.exec_driver_sql("BEGIN IMMEDIATE")
+        self._write_lock_acquired = True
 
     @property
     def actions(self) -> ActionRepository:
@@ -167,6 +177,7 @@ class OntologyUnitOfWork:
         try:
             self._connection = self._engine.connect()
             self._connection.begin()
+            self._write_lock_acquired = False
         except Exception:
             self._writer_lease = None
             if lease is not None:
@@ -182,6 +193,7 @@ class OntologyUnitOfWork:
     ) -> None:
         connection = self._connection
         self._connection = None
+        self._write_lock_acquired = False
         if connection is None:
             return
         try:

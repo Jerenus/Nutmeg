@@ -1741,6 +1741,644 @@ def _apply_operator_candidate_comparison(connection: Connection) -> None:
     )
 
 
+def _apply_operator_deployment_adjudication(connection: Connection) -> None:
+    tables = (
+        schema_operator_decision.operator_ticket_decision_lineage_revisions,
+        schema_operator_decision.operator_ticket_decision_lineage_items,
+        schema_operator_decision.operator_ticket_audit_override_receipts,
+        schema_operator_decision.operator_candidate_generation_override_links,
+        schema_operator_decision.operator_no_ticket_revisions,
+        schema_operator_decision.operator_no_ticket_offer_scopes,
+        schema_operator_decision.operator_no_ticket_artifact_scopes,
+        schema_operator_decision.operator_no_ticket_command_receipts,
+        schema_tickets.operator_artifact_work_item_links,
+        schema_tickets.operator_protected_artifact_bindings,
+        schema_tickets.operator_protected_artifact_offer_revision_links,
+        schema_tickets.operator_confirmation_challenge_revisions,
+        schema_tickets.operator_confirmation_challenge_heads,
+        schema_tickets.operator_artifact_terminal_receipts,
+        schema_operator_result.operator_review_eligibility_facts,
+    )
+    for table in tables:
+        table.create(connection)
+
+    revision_contracts = (
+        (
+            "operator_ticket_decision_lineage_revisions",
+            "lineage_revision_id",
+            "lineage_family_id",
+            "operator_ticket_decision_lineage",
+        ),
+        (
+            "operator_no_ticket_revisions",
+            "no_ticket_revision_id",
+            "no_ticket_family_id",
+            "operator_no_ticket",
+        ),
+        (
+            "operator_confirmation_challenge_revisions",
+            "challenge_revision_id",
+            "challenge_family_id",
+            "operator_confirmation_challenge",
+        ),
+    )
+    for table_name, id_column, family_column, prefix in revision_contracts:
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {prefix}_single_root
+            BEFORE INSERT ON {table_name}
+            WHEN NEW.supersedes_revision_id IS NULL
+              AND EXISTS (
+                SELECT 1 FROM {table_name}
+                WHERE {family_column} = NEW.{family_column}
+                  AND supersedes_revision_id IS NULL
+              )
+            BEGIN
+              SELECT RAISE(ABORT, '{family_column} already has a root revision');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {prefix}_linear_revision
+            BEFORE INSERT ON {table_name}
+            WHEN (NEW.supersedes_revision_id IS NULL AND NEW.revision_no != 1)
+              OR (NEW.supersedes_revision_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM {table_name} AS parent
+                WHERE parent.{id_column} = NEW.supersedes_revision_id
+                  AND parent.{family_column} = NEW.{family_column}
+                  AND NEW.revision_no = parent.revision_no + 1
+              ))
+            BEGIN
+              SELECT RAISE(ABORT, 'revision must directly follow its family predecessor');
+            END
+            """
+        )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_ticket_decision_lineage_typed_action
+        BEFORE INSERT ON operator_ticket_decision_lineage_revisions
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions
+          WHERE action_id = NEW.action_id
+            AND action_type IN ('create_ticket_batch', 'approve_ticket_batch')
+            AND actor_role = 'judge_operator'
+            AND status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'operator ticket decision lineage requires its typed Action'
+          );
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_ticket_decision_lineage_exact_binding
+        BEFORE INSERT ON operator_ticket_decision_lineage_revisions
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM ticket_batch_revisions AS batch
+          JOIN operator_candidate_set_revisions AS candidate_set
+            ON candidate_set.candidate_set_revision_id = NEW.candidate_set_revision_id
+          JOIN operator_candidates AS candidate
+            ON candidate.candidate_revision_id = NEW.candidate_revision_id
+           AND candidate.candidate_set_revision_id = candidate_set.candidate_set_revision_id
+          JOIN operator_candidate_selections AS selection
+            ON selection.candidate_selection_id = NEW.candidate_selection_id
+           AND selection.candidate_set_revision_id = candidate_set.candidate_set_revision_id
+           AND selection.candidate_revision_id = candidate.candidate_revision_id
+          JOIN operator_judgment_prescription_revisions AS prescription
+            ON prescription.judgment_prescription_revision_id =
+               NEW.judgment_prescription_revision_id
+          WHERE batch.ticket_batch_revision_id = NEW.ticket_batch_revision_id
+            AND candidate_set.task_family_id = NEW.task_family_id
+            AND candidate_set.work_item_id = NEW.work_item_id
+            AND candidate_set.task_snapshot_hash = NEW.task_snapshot_hash
+            AND candidate_set.slate_revision_id = NEW.slate_revision_id
+            AND candidate_set.market_prior_baseline_revision_id =
+                NEW.market_prior_baseline_revision_id
+            AND candidate_set.baseline_envelope_revision_id =
+                NEW.baseline_envelope_revision_id
+            AND candidate_set.judgment_prescription_revision_id =
+                NEW.judgment_prescription_revision_id
+            AND selection.task_family_id = NEW.task_family_id
+            AND selection.work_item_id = NEW.work_item_id
+            AND selection.task_snapshot_hash = NEW.task_snapshot_hash
+            AND selection.slate_revision_id = NEW.slate_revision_id
+            AND prescription.task_evidence_bundle_revision_id =
+                NEW.task_evidence_bundle_revision_id
+            AND candidate_set.audit_policy_version = NEW.audit_policy_version
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'ticket decision lineage bindings do not reconcile');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_ticket_decision_lineage_item_exact_binding
+        BEFORE INSERT ON operator_ticket_decision_lineage_items
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM operator_ticket_decision_lineage_revisions AS lineage
+          JOIN operator_candidate_tickets AS ticket
+            ON ticket.candidate_ticket_id = NEW.candidate_ticket_id
+           AND ticket.candidate_revision_id = lineage.candidate_revision_id
+           AND ticket.ticket_index = NEW.ticket_index
+          JOIN operator_candidate_ticket_legs AS leg
+            ON leg.candidate_ticket_leg_id = NEW.candidate_ticket_leg_id
+           AND leg.candidate_ticket_id = ticket.candidate_ticket_id
+           AND leg.leg_index = NEW.leg_index
+           AND leg.official_offer_revision_id = NEW.official_offer_revision_id
+           AND leg.match_id = NEW.match_id
+           AND leg.market_definition_id = NEW.market_definition_id
+           AND leg.selection_code = NEW.selection_code
+          JOIN operator_market_prior_baseline_probabilities AS baseline
+            ON baseline.market_prior_baseline_probability_id =
+               NEW.market_prior_baseline_probability_id
+           AND baseline.market_prior_baseline_revision_id =
+               lineage.market_prior_baseline_revision_id
+           AND baseline.official_offer_revision_id = NEW.official_offer_revision_id
+           AND baseline.match_id = NEW.match_id
+           AND baseline.market_definition_id = NEW.market_definition_id
+           AND baseline.face_code = NEW.selection_code
+          JOIN operator_match_judgment_revisions AS judgment
+            ON judgment.operator_match_judgment_revision_id =
+               NEW.operator_match_judgment_revision_id
+           AND judgment.forecast_revision_id = NEW.forecast_revision_id
+           AND judgment.match_id = NEW.match_id
+           AND judgment.official_offer_revision_id = NEW.official_offer_revision_id
+           AND judgment.market_definition_id = NEW.market_definition_id
+          JOIN operator_judgment_prescription_items AS prescription_item
+            ON prescription_item.judgment_prescription_revision_id =
+               lineage.judgment_prescription_revision_id
+           AND prescription_item.operator_match_judgment_revision_id =
+               judgment.operator_match_judgment_revision_id
+          WHERE lineage.lineage_revision_id = NEW.lineage_revision_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'ticket decision lineage item does not match its source rows');
+        END
+        """
+    )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_ticket_audit_override_typed_action
+        BEFORE INSERT ON operator_ticket_audit_override_receipts
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions AS action
+          JOIN operator_ticket_decision_lineage_revisions AS lineage
+            ON lineage.lineage_revision_id = NEW.lineage_revision_id
+          JOIN operator_candidates AS candidate
+            ON candidate.candidate_revision_id = NEW.candidate_revision_id
+          JOIN operator_candidate_set_revisions AS candidate_set
+            ON candidate_set.candidate_set_revision_id = candidate.candidate_set_revision_id
+          JOIN operator_candidate_audit_findings AS finding
+            ON finding.candidate_audit_finding_id = NEW.candidate_audit_finding_id
+           AND finding.candidate_revision_id = candidate.candidate_revision_id
+          JOIN adjudications AS adjudication
+            ON adjudication.adjudication_id = NEW.adjudication_id
+          WHERE action.action_id = NEW.action_id
+            AND action.action_type = 'record_ticket_audit_override'
+            AND action.actor_role = 'judge_operator'
+            AND action.status IN ('accepted', 'committed')
+            AND lineage.ticket_batch_revision_id = NEW.ticket_batch_revision_id
+            AND lineage.candidate_revision_id = NEW.candidate_revision_id
+            AND candidate.content_hash = NEW.candidate_content_hash
+            AND candidate_set.audit_policy_version = NEW.audit_policy_version
+            AND finding.finding_code = NEW.finding_code
+            AND finding.severity = 'ERROR'
+            AND adjudication.subject_type = 'ticket_audit_finding'
+            AND adjudication.subject_id = NEW.candidate_audit_finding_id
+            AND adjudication.decision = 'override'
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'ticket audit override requires its exact typed Action');
+        END
+        """
+    )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_no_ticket_typed_action
+        BEFORE INSERT ON operator_no_ticket_revisions
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions
+          WHERE action_id = NEW.action_id
+            AND actor_role = 'judge_operator'
+            AND status IN ('accepted', 'committed')
+            AND (
+              (NEW.supersedes_revision_id IS NULL
+               AND action_type = 'record_no_ticket')
+              OR (NEW.supersedes_revision_id IS NOT NULL
+                  AND action_type = 'supersede_no_ticket')
+            )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'operator no-ticket revision requires its typed Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_no_ticket_command_typed_action
+        BEFORE INSERT ON operator_no_ticket_command_receipts
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions
+          WHERE action_id = NEW.action_id
+            AND action_type = NEW.command_kind
+            AND actor_role = 'judge_operator'
+            AND status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'operator no-ticket receipt requires its typed Action');
+        END
+        """
+    )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_artifact_work_item_link_exact_binding
+        BEFORE INSERT ON operator_artifact_work_item_links
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions AS action
+          JOIN audited_ticket_artifacts AS artifact
+            ON artifact.ticket_artifact_id = NEW.ticket_artifact_id
+          WHERE action.action_id = NEW.action_id
+            AND action.action_type = 'approve_ticket_batch'
+            AND action.actor_role = 'judge_operator'
+            AND action.status IN ('accepted', 'committed')
+            AND artifact.approved_by_action_id = NEW.action_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'artifact work-item link requires its approval Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_protected_artifact_exact_binding
+        BEFORE INSERT ON operator_protected_artifact_bindings
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM audited_ticket_artifacts AS artifact
+          JOIN operator_ticket_decision_lineage_revisions AS lineage
+            ON lineage.lineage_revision_id = NEW.lineage_revision_id
+          JOIN operator_candidate_tickets AS ticket
+            ON ticket.candidate_ticket_id = NEW.candidate_ticket_id
+          WHERE artifact.ticket_artifact_id = NEW.ticket_artifact_id
+            AND artifact.ticket_batch_revision_id = lineage.ticket_batch_revision_id
+            AND artifact.ticket_index = NEW.ticket_index
+            AND artifact.currency = NEW.currency
+            AND CAST(ROUND(artifact.amount * 100) AS INTEGER) = NEW.stake_minor
+            AND artifact.approved_by_action_id = NEW.action_id
+            AND lineage.candidate_revision_id = NEW.candidate_revision_id
+            AND ticket.candidate_revision_id = NEW.candidate_revision_id
+            AND ticket.ticket_index = NEW.ticket_index
+            AND ticket.ticket_kind = NEW.ticket_kind
+            AND ticket.stake_minor = NEW.stake_minor
+            AND ticket.currency = NEW.currency
+            AND ticket.composition_hash = NEW.composition_hash
+            AND ticket.fixed_prize_policy_revision_id IS
+                NEW.fixed_prize_policy_revision_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'protected artifact binding does not match source rows');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_protected_artifact_offer_exact_binding
+        BEFORE INSERT ON operator_protected_artifact_offer_revision_links
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM operator_protected_artifact_bindings AS binding
+          JOIN operator_candidate_ticket_legs AS leg
+            ON leg.candidate_ticket_id = binding.candidate_ticket_id
+          WHERE binding.ticket_artifact_id = NEW.ticket_artifact_id
+            AND leg.official_offer_revision_id = NEW.official_offer_revision_id
+            AND NEW.offer_index = (
+              SELECT COUNT(DISTINCT preceding.official_offer_revision_id)
+              FROM operator_candidate_ticket_legs AS preceding
+              WHERE preceding.candidate_ticket_id = binding.candidate_ticket_id
+                AND preceding.leg_index < (
+                  SELECT MIN(current_leg.leg_index)
+                  FROM operator_candidate_ticket_legs AS current_leg
+                  WHERE current_leg.candidate_ticket_id = binding.candidate_ticket_id
+                    AND current_leg.official_offer_revision_id =
+                        NEW.official_offer_revision_id
+                )
+            )
+        )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'protected artifact offer is not its ordered candidate offer'
+          );
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_protected_artifact_offer_complete
+        BEFORE UPDATE OF status ON actions
+        WHEN NEW.status = 'committed'
+          AND NEW.action_type = 'approve_ticket_batch'
+          AND EXISTS (
+            SELECT 1
+            FROM operator_protected_artifact_bindings AS binding
+            WHERE binding.action_id = NEW.action_id
+              AND (
+                SELECT COUNT(*)
+                FROM operator_protected_artifact_offer_revision_links AS link
+                WHERE link.ticket_artifact_id = binding.ticket_artifact_id
+              ) != (
+                SELECT COUNT(DISTINCT leg.official_offer_revision_id)
+                FROM operator_candidate_ticket_legs AS leg
+                WHERE leg.candidate_ticket_id = binding.candidate_ticket_id
+              )
+          )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'protected artifact requires complete ordered offer coverage'
+          );
+        END
+        """
+    )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_confirmation_challenge_typed_binding
+        BEFORE INSERT ON operator_confirmation_challenge_revisions
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions AS action
+          JOIN operator_protected_artifact_bindings AS binding
+            ON binding.ticket_artifact_id = NEW.ticket_artifact_id
+          WHERE action.action_id = NEW.action_id
+            AND action.action_type = 'issue_ticket_confirmation'
+            AND action.actor_role = 'judge_operator'
+            AND action.status IN ('accepted', 'committed')
+            AND binding.lineage_revision_id = NEW.lineage_revision_id
+            AND binding.composition_hash = NEW.artifact_composition_hash
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'confirmation challenge requires its exact typed binding');
+        END
+        """
+    )
+    challenge_head_check = """
+      SELECT CASE WHEN NOT EXISTS (
+        SELECT 1 FROM operator_confirmation_challenge_revisions AS challenge
+        WHERE challenge.challenge_revision_id = NEW.challenge_revision_id
+          AND challenge.ticket_artifact_id = NEW.ticket_artifact_id
+          AND challenge.challenge_family_id = NEW.challenge_family_id
+          AND challenge.revision_no = NEW.revision_no
+          AND NOT EXISTS (
+            SELECT 1 FROM operator_confirmation_challenge_revisions AS child
+            WHERE child.supersedes_revision_id = challenge.challenge_revision_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM operator_artifact_terminal_receipts AS terminal
+            WHERE terminal.ticket_artifact_id = NEW.ticket_artifact_id
+          )
+      ) THEN RAISE(ABORT, 'confirmation head must reference the current open leaf') END;
+    """
+    for operation in ("INSERT", "UPDATE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER operator_confirmation_challenge_head_{operation.lower()}
+            BEFORE {operation} ON operator_confirmation_challenge_heads
+            BEGIN
+              {challenge_head_check}
+            END
+            """
+        )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_artifact_terminal_exact_challenge
+        BEFORE INSERT ON operator_artifact_terminal_receipts
+        WHEN NEW.challenge_revision_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM operator_confirmation_challenge_revisions
+            WHERE challenge_revision_id = NEW.challenge_revision_id
+              AND ticket_artifact_id = NEW.ticket_artifact_id
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'artifact terminal challenge belongs to another artifact');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_artifact_terminal_typed_action
+        BEFORE INSERT ON operator_artifact_terminal_receipts
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions AS action
+          WHERE action.action_id = NEW.action_id
+            AND action.status IN ('accepted', 'committed')
+            AND (
+              (NEW.terminal_reason = 'actual_placement_confirmed'
+               AND action.action_type = 'confirm_ticket_placement'
+               AND action.actor_role = 'judge_operator')
+              OR (NEW.terminal_reason = 'human_no_ticket'
+                  AND action.action_type = 'record_no_ticket'
+                  AND action.actor_role = 'judge_operator')
+              OR (NEW.terminal_reason IN (
+                    'confirmation_not_requested',
+                    'deadline_unconfirmed'
+                  )
+                  AND (
+                    (action.action_type = 'mark_ticket_shadow'
+                     AND action.actor_role = 'deterministic_system')
+                    OR (action.action_type IN (
+                          'record_no_ticket',
+                          'supersede_no_ticket'
+                        )
+                        AND action.actor_role = 'judge_operator')
+                  ))
+              OR (NEW.terminal_reason IN (
+                    'official_deadline_shortened',
+                    'official_offer_cancelled'
+                  )
+                  AND action.action_type = 'import_official_sale_slate'
+                  AND action.actor_role = 'deterministic_system')
+            )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'artifact terminal requires its exact typed Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_artifact_terminal_close_head
+        AFTER INSERT ON operator_artifact_terminal_receipts
+        BEGIN
+          DELETE FROM operator_confirmation_challenge_heads
+          WHERE ticket_artifact_id = NEW.ticket_artifact_id;
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_review_eligibility_exact_source
+        BEFORE INSERT ON operator_review_eligibility_facts
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions AS action
+          WHERE action.action_id = NEW.action_id
+            AND action.status IN ('accepted', 'committed')
+            AND (
+              (NEW.terminal_trigger = 'no_ticket'
+               AND EXISTS (
+                 SELECT 1
+                 FROM operator_no_ticket_revisions AS no_ticket
+                 WHERE no_ticket.no_ticket_revision_id = NEW.no_ticket_revision_id
+                   AND no_ticket.action_id = NEW.action_id
+                   AND no_ticket.task_family_id = NEW.task_family_id
+                   AND no_ticket.work_item_id = NEW.work_item_id
+                   AND no_ticket.task_snapshot_hash = NEW.task_snapshot_hash
+               ))
+              OR (NEW.terminal_trigger = 'artifact_terminal'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM operator_artifact_terminal_receipts AS terminal
+                    JOIN operator_artifact_work_item_links AS work_link
+                      ON work_link.ticket_artifact_id = terminal.ticket_artifact_id
+                    WHERE terminal.artifact_terminal_receipt_id =
+                          NEW.artifact_terminal_receipt_id
+                      AND terminal.action_id = NEW.action_id
+                      AND terminal.terminal_reason != 'official_offer_cancelled'
+                      AND work_link.task_family_id = NEW.task_family_id
+                      AND work_link.work_item_id = NEW.work_item_id
+                      AND work_link.task_snapshot_hash = NEW.task_snapshot_hash
+                  ))
+              OR (NEW.terminal_trigger = 'official_cancellation'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM operator_artifact_terminal_receipts AS terminal
+                    JOIN operator_artifact_work_item_links AS work_link
+                      ON work_link.ticket_artifact_id = terminal.ticket_artifact_id
+                    WHERE terminal.artifact_terminal_receipt_id =
+                          NEW.artifact_terminal_receipt_id
+                      AND terminal.action_id = NEW.action_id
+                      AND terminal.terminal_reason = 'official_offer_cancelled'
+                      AND work_link.task_family_id = NEW.task_family_id
+                      AND work_link.work_item_id = NEW.work_item_id
+                      AND work_link.task_snapshot_hash = NEW.task_snapshot_hash
+                  ))
+            )
+        )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'review eligibility requires its exact creating Action and terminal source'
+          );
+        END
+        """
+    )
+
+    immutable_tables = (
+        "operator_ticket_decision_lineage_revisions",
+        "operator_ticket_decision_lineage_items",
+        "operator_ticket_audit_override_receipts",
+        "operator_candidate_generation_override_links",
+        "operator_no_ticket_revisions",
+        "operator_no_ticket_offer_scopes",
+        "operator_no_ticket_artifact_scopes",
+        "operator_no_ticket_command_receipts",
+        "operator_artifact_work_item_links",
+        "operator_protected_artifact_bindings",
+        "operator_protected_artifact_offer_revision_links",
+        "operator_confirmation_challenge_revisions",
+        "operator_artifact_terminal_receipts",
+        "operator_review_eligibility_facts",
+    )
+    for table_name in immutable_tables:
+        for operation in ("UPDATE", "DELETE"):
+            connection.exec_driver_sql(
+                f"""
+                CREATE TRIGGER {table_name}_no_{operation.lower()}
+                BEFORE {operation} ON {table_name}
+                BEGIN
+                  SELECT RAISE(ABORT, '{table_name} is append-only');
+                END
+                """
+            )
+
+    child_revision_guards = (
+        (
+            "operator_ticket_decision_lineage_items",
+            "operator_ticket_decision_lineage_revisions AS revision "
+            "ON revision.lineage_revision_id = NEW.lineage_revision_id",
+        ),
+        (
+            "operator_candidate_generation_override_links",
+            "operator_ticket_audit_override_receipts AS revision "
+            "ON revision.ticket_audit_override_receipt_id = "
+            "NEW.override_receipt_id",
+        ),
+        (
+            "operator_no_ticket_offer_scopes",
+            "operator_no_ticket_revisions AS revision "
+            "ON revision.no_ticket_revision_id = NEW.no_ticket_revision_id",
+        ),
+        (
+            "operator_no_ticket_artifact_scopes",
+            "operator_no_ticket_revisions AS revision "
+            "ON revision.no_ticket_revision_id = NEW.no_ticket_revision_id",
+        ),
+        (
+            "operator_protected_artifact_offer_revision_links",
+            "operator_protected_artifact_bindings AS revision "
+            "ON revision.ticket_artifact_id = NEW.ticket_artifact_id",
+        ),
+    )
+    for table_name, revision_join in child_revision_guards:
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {table_name}_no_late_insert
+            BEFORE INSERT ON {table_name}
+            WHEN EXISTS (
+              SELECT 1
+              FROM actions AS action
+              JOIN {revision_join}
+              WHERE action.action_id = revision.action_id
+                AND action.status = 'committed'
+            )
+            BEGIN
+              SELECT RAISE(ABORT, '{table_name} is append-only after commit');
+            END
+            """
+        )
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": "judge_operator",
+            }
+            for action_type in (
+                "record_ticket_audit_override",
+                "record_no_ticket",
+                "supersede_no_ticket",
+            )
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -1899,6 +2537,19 @@ MIGRATIONS: tuple[Migration, ...] = (
             "typed_actions+worker_result_binding+exact_quote_bindings+audit_policy_version"
         ),
         apply=_apply_operator_candidate_comparison,
+    ),
+    Migration(
+        version=22,
+        name="operator_deployment_adjudication",
+        fingerprint=(
+            "ticket_decision_lineage+ticket_audit_override+candidate_override_links+"
+            "no_ticket_revisions_and_scopes+protected_artifact_bindings+"
+            "empty_confirmation_challenge_schema+artifact_terminal_receipts+"
+            "review_eligibility_facts+typed_terminal_provenance+"
+            "complete_ordered_offer_coverage+review_source_binding+"
+            "approved_lineage_revision+linear_revision+append_only+judge_permissions"
+        ),
+        apply=_apply_operator_deployment_adjudication,
     ),
 )
 

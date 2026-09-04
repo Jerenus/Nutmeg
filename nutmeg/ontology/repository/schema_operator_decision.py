@@ -1673,6 +1673,561 @@ operator_candidate_selections = Table(
 )
 
 
+operator_ticket_decision_lineage_revisions = Table(
+    "operator_ticket_decision_lineage_revisions",
+    metadata,
+    Column("lineage_revision_id", Text, primary_key=True),
+    Column("lineage_family_id", Text, nullable=False, index=True),
+    Column("revision_no", Integer, nullable=False),
+    Column(
+        "supersedes_revision_id",
+        Text,
+        ForeignKey(
+            "operator_ticket_decision_lineage_revisions."
+            "lineage_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        unique=True,
+    ),
+    Column(
+        "ticket_batch_revision_id",
+        Text,
+        ForeignKey("ticket_batch_revisions.ticket_batch_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("task_family_id", Text, nullable=False, index=True),
+    Column("work_item_id", Text, nullable=False, index=True),
+    Column("task_snapshot_hash", Text, nullable=False),
+    Column(
+        "slate_revision_id",
+        Text,
+        ForeignKey("official_sale_slate_revisions.slate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "task_evidence_bundle_revision_id",
+        Text,
+        ForeignKey(
+            "operator_task_evidence_bundle_revisions.task_evidence_bundle_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "market_prior_baseline_revision_id",
+        Text,
+        ForeignKey(
+            "operator_market_prior_baseline_revisions.market_prior_baseline_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "baseline_envelope_revision_id",
+        Text,
+        ForeignKey(
+            "operator_baseline_envelope_revisions.baseline_envelope_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "judgment_prescription_revision_id",
+        Text,
+        ForeignKey(
+            "operator_judgment_prescription_revisions.judgment_prescription_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "candidate_set_revision_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_set_revisions.candidate_set_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "candidate_selection_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_selections.candidate_selection_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "candidate_revision_id",
+        Text,
+        ForeignKey("operator_candidates.candidate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("audit_policy_version", Text, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("created_at", Text, nullable=False),
+    CheckConstraint(
+        "revision_no >= 1",
+        name="ck_operator_ticket_decision_lineage_revision_positive",
+    ),
+    UniqueConstraint(
+        "lineage_family_id",
+        "revision_no",
+        name="uq_operator_ticket_decision_lineage_family_revision",
+    ),
+    UniqueConstraint(
+        "ticket_batch_revision_id",
+        "action_id",
+        name="uq_operator_ticket_decision_lineage_batch_action",
+    ),
+)
+
+
+operator_ticket_decision_lineage_items = Table(
+    "operator_ticket_decision_lineage_items",
+    metadata,
+    Column("lineage_item_id", Text, primary_key=True),
+    Column(
+        "lineage_revision_id",
+        Text,
+        ForeignKey(
+            "operator_ticket_decision_lineage_revisions."
+            "lineage_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    ),
+    Column("item_index", Integer, nullable=False),
+    Column(
+        "candidate_ticket_id",
+        Text,
+        ForeignKey("operator_candidate_tickets.candidate_ticket_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("ticket_index", Integer, nullable=False),
+    Column(
+        "candidate_ticket_leg_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_ticket_legs.candidate_ticket_leg_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column("leg_index", Integer, nullable=False),
+    Column(
+        "official_offer_revision_id",
+        Text,
+        ForeignKey(
+            "official_offer_revisions.official_offer_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column("match_id", Text, ForeignKey("matches.match_id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "market_definition_id",
+        Text,
+        ForeignKey("market_definitions.market_definition_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("selection_code", Text, nullable=False),
+    Column(
+        "market_prior_baseline_probability_id",
+        Text,
+        ForeignKey(
+            "operator_market_prior_baseline_probabilities."
+            "market_prior_baseline_probability_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "operator_match_judgment_revision_id",
+        Text,
+        ForeignKey(
+            "operator_match_judgment_revisions.operator_match_judgment_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "forecast_revision_id",
+        Text,
+        ForeignKey("forecast_revisions.forecast_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    CheckConstraint(
+        "item_index >= 0 AND ticket_index >= 0 AND leg_index >= 0",
+        name="ck_operator_ticket_decision_lineage_item_indexes",
+    ),
+    UniqueConstraint(
+        "lineage_revision_id",
+        "item_index",
+        name="uq_operator_ticket_decision_lineage_item_index",
+    ),
+    UniqueConstraint(
+        "lineage_revision_id",
+        "candidate_ticket_leg_id",
+        name="uq_operator_ticket_decision_lineage_candidate_leg",
+    ),
+)
+
+
+operator_ticket_audit_override_receipts = Table(
+    "operator_ticket_audit_override_receipts",
+    metadata,
+    Column("ticket_audit_override_receipt_id", Text, primary_key=True),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    ),
+    Column("receipt_index", Integer, nullable=False),
+    Column(
+        "adjudication_id",
+        Text,
+        ForeignKey("adjudications.adjudication_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column(
+        "ticket_batch_revision_id",
+        Text,
+        ForeignKey("ticket_batch_revisions.ticket_batch_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "lineage_revision_id",
+        Text,
+        ForeignKey(
+            "operator_ticket_decision_lineage_revisions."
+            "lineage_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column(
+        "candidate_revision_id",
+        Text,
+        ForeignKey("operator_candidates.candidate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("candidate_content_hash", Text, nullable=False),
+    Column(
+        "candidate_audit_finding_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_audit_findings.candidate_audit_finding_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column("finding_code", Text, nullable=False),
+    Column("audit_policy_version", Text, nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("rule_ids_json", Text, nullable=False),
+    Column("evidence_rejected_json", Text, nullable=False),
+    Column("recorded_at", Text, nullable=False),
+    CheckConstraint("receipt_index >= 0", name="ck_operator_ticket_override_index"),
+    CheckConstraint(
+        "length(trim(reason)) > 0",
+        name="ck_operator_ticket_override_reason",
+    ),
+    CheckConstraint(
+        "json_valid(evidence_rejected_json) "
+        "AND json_array_length(evidence_rejected_json) >= 1",
+        name="ck_operator_ticket_override_evidence_rejected",
+    ),
+    UniqueConstraint(
+        "action_id",
+        "receipt_index",
+        name="uq_operator_ticket_override_action_index",
+    ),
+    UniqueConstraint(
+        "ticket_batch_revision_id",
+        "candidate_revision_id",
+        "candidate_audit_finding_id",
+        "audit_policy_version",
+        name="uq_operator_ticket_override_exact_finding",
+    ),
+)
+
+
+operator_candidate_generation_override_links = Table(
+    "operator_candidate_generation_override_links",
+    metadata,
+    Column("candidate_generation_override_link_id", Text, primary_key=True),
+    Column(
+        "generation_request_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_generation_requests.generation_request_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    ),
+    Column("link_index", Integer, nullable=False),
+    Column(
+        "override_receipt_id",
+        Text,
+        ForeignKey(
+            "operator_ticket_audit_override_receipts.ticket_audit_override_receipt_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        unique=True,
+    ),
+    Column("created_at", Text, nullable=False),
+    CheckConstraint(
+        "link_index >= 0",
+        name="ck_operator_candidate_generation_override_link_index",
+    ),
+    UniqueConstraint(
+        "generation_request_id",
+        "link_index",
+        name="uq_operator_candidate_generation_override_link_index",
+    ),
+)
+
+
+operator_no_ticket_revisions = Table(
+    "operator_no_ticket_revisions",
+    metadata,
+    Column("no_ticket_revision_id", Text, primary_key=True),
+    Column("no_ticket_family_id", Text, nullable=False, index=True),
+    Column("revision_no", Integer, nullable=False),
+    Column(
+        "supersedes_revision_id",
+        Text,
+        ForeignKey(
+            "operator_no_ticket_revisions.no_ticket_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        unique=True,
+    ),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("task_family_id", Text, nullable=False, index=True),
+    Column("work_item_id", Text, nullable=False, index=True),
+    Column("task_snapshot_hash", Text, nullable=False),
+    Column(
+        "slate_revision_id",
+        Text,
+        ForeignKey("official_sale_slate_revisions.slate_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("reason_code", Text, nullable=False),
+    Column("reason_basis", Text, nullable=False),
+    Column("reason_text", Text, nullable=False),
+    Column("rule_ids_json", Text, nullable=False),
+    Column("phase", Text, nullable=False),
+    Column("requirement_snapshot_hash", Text, nullable=True),
+    Column("missing_requirement_ids_json", Text, nullable=False),
+    Column("stale_requirement_ids_json", Text, nullable=False),
+    Column("conflicting_requirement_ids_json", Text, nullable=False),
+    Column(
+        "market_prior_baseline_revision_id",
+        Text,
+        ForeignKey(
+            "operator_market_prior_baseline_revisions.market_prior_baseline_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    ),
+    Column(
+        "baseline_envelope_revision_id",
+        Text,
+        ForeignKey(
+            "operator_baseline_envelope_revisions.baseline_envelope_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    ),
+    Column(
+        "candidate_set_revision_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_set_revisions.candidate_set_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    ),
+    Column(
+        "comparison_candidate_revision_id",
+        Text,
+        ForeignKey("operator_candidates.candidate_revision_id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("deployment_outcome", Text, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column("recorded_at", Text, nullable=False),
+    CheckConstraint(
+        "revision_no >= 1",
+        name="ck_operator_no_ticket_revision_positive",
+    ),
+    CheckConstraint(
+        "reason_code IN ('human_all_dice', 'evidence_incomplete', "
+        "'no_compliant_structure_within_cap', 'discipline_brake', "
+        "'operator_discretion')",
+        name="ck_operator_no_ticket_reason_code",
+    ),
+    CheckConstraint(
+        "reason_basis IN ('rule_derived', 'operator_judgment')",
+        name="ck_operator_no_ticket_reason_basis",
+    ),
+    CheckConstraint(
+        "length(trim(reason_text)) > 0",
+        name="ck_operator_no_ticket_reason_text",
+    ),
+    CheckConstraint(
+        "phase IN ('discovery', 'evidence', 'baseline', 'envelope', 'candidate', "
+        "'artifact')",
+        name="ck_operator_no_ticket_phase",
+    ),
+    CheckConstraint(
+        "deployment_outcome IN ('no_ticket', 'partially_placed', 'reopened')",
+        name="ck_operator_no_ticket_deployment_outcome",
+    ),
+    UniqueConstraint(
+        "no_ticket_family_id",
+        "revision_no",
+        name="uq_operator_no_ticket_family_revision",
+    ),
+)
+
+
+operator_no_ticket_offer_scopes = Table(
+    "operator_no_ticket_offer_scopes",
+    metadata,
+    Column("no_ticket_offer_scope_id", Text, primary_key=True),
+    Column(
+        "no_ticket_revision_id",
+        Text,
+        ForeignKey("operator_no_ticket_revisions.no_ticket_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    ),
+    Column("scope_index", Integer, nullable=False),
+    Column(
+        "official_offer_revision_id",
+        Text,
+        ForeignKey(
+            "official_offer_revisions.official_offer_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    ),
+    Column("effective_cutoff_at", Text, nullable=False),
+    CheckConstraint("scope_index >= 0", name="ck_operator_no_ticket_offer_scope_index"),
+    UniqueConstraint(
+        "no_ticket_revision_id",
+        "scope_index",
+        name="uq_operator_no_ticket_offer_scope_index",
+    ),
+    UniqueConstraint(
+        "no_ticket_revision_id",
+        "official_offer_revision_id",
+        name="uq_operator_no_ticket_offer_scope_offer",
+    ),
+)
+
+
+operator_no_ticket_artifact_scopes = Table(
+    "operator_no_ticket_artifact_scopes",
+    metadata,
+    Column("no_ticket_artifact_scope_id", Text, primary_key=True),
+    Column(
+        "no_ticket_revision_id",
+        Text,
+        ForeignKey("operator_no_ticket_revisions.no_ticket_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    ),
+    Column("scope_index", Integer, nullable=False),
+    Column(
+        "ticket_artifact_id",
+        Text,
+        ForeignKey("audited_ticket_artifacts.ticket_artifact_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("effective_cutoff_at", Text, nullable=False),
+    CheckConstraint(
+        "scope_index >= 0",
+        name="ck_operator_no_ticket_artifact_scope_index",
+    ),
+    UniqueConstraint(
+        "no_ticket_revision_id",
+        "scope_index",
+        name="uq_operator_no_ticket_artifact_scope_index",
+    ),
+    UniqueConstraint(
+        "no_ticket_revision_id",
+        "ticket_artifact_id",
+        name="uq_operator_no_ticket_artifact_scope_artifact",
+    ),
+)
+
+
+operator_no_ticket_command_receipts = Table(
+    "operator_no_ticket_command_receipts",
+    metadata,
+    Column("no_ticket_command_receipt_id", Text, primary_key=True),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("command_kind", Text, nullable=False),
+    Column(
+        "no_ticket_revision_id",
+        Text,
+        ForeignKey("operator_no_ticket_revisions.no_ticket_revision_id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("task_family_id", Text, nullable=False, index=True),
+    Column("work_item_id", Text, nullable=False, index=True),
+    Column("submitted_task_snapshot_hash", Text, nullable=False),
+    Column("resolved_task_snapshot_hash", Text, nullable=False),
+    Column("result", Text, nullable=False),
+    Column("received_at", Text, nullable=False),
+    CheckConstraint(
+        "command_kind IN ('record_no_ticket', 'supersede_no_ticket')",
+        name="ck_operator_no_ticket_command_kind",
+    ),
+    CheckConstraint(
+        "result IN ('recorded', 'task_snapshot_changed', 'already_current')",
+        name="ck_operator_no_ticket_command_result",
+    ),
+    CheckConstraint(
+        "(result IN ('recorded', 'already_current') "
+        "AND no_ticket_revision_id IS NOT NULL) "
+        "OR (result = 'task_snapshot_changed' AND no_ticket_revision_id IS NULL)",
+        name="ck_operator_no_ticket_command_revision_result",
+    ),
+)
+
+
 __all__ = [
     "operator_baseline_envelope_bundle_faces",
     "operator_baseline_envelope_face_bundles",
@@ -1685,6 +2240,7 @@ __all__ = [
     "operator_candidate_generation_requests",
     "operator_candidate_metrics",
     "operator_candidate_selections",
+    "operator_candidate_generation_override_links",
     "operator_candidate_set_revisions",
     "operator_candidates",
     "operator_evidence_coverage_receipts",
@@ -1704,7 +2260,14 @@ __all__ = [
     "operator_match_judgment_probabilities",
     "operator_match_judgment_revisions",
     "operator_match_judgment_rule_refs",
+    "operator_no_ticket_artifact_scopes",
+    "operator_no_ticket_command_receipts",
+    "operator_no_ticket_offer_scopes",
+    "operator_no_ticket_revisions",
     "operator_task_evidence_bundle_items",
     "operator_task_evidence_bundle_revisions",
+    "operator_ticket_audit_override_receipts",
+    "operator_ticket_decision_lineage_items",
+    "operator_ticket_decision_lineage_revisions",
     "operator_worker_jobs",
 ]

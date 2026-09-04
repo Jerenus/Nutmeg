@@ -707,6 +707,38 @@ class OperatorDecisionRepository:
         )
         return MarketPriorBaselineRevisionRow(**dict(row)) if row is not None else None
 
+    def current_market_prior_baseline_for_work_item(
+        self,
+        *,
+        task_family_id: str,
+        work_item_id: str,
+        task_snapshot_hash: str,
+        slate_revision_id: str,
+    ) -> MarketPriorBaselineRevisionRow | None:
+        row = (
+            self._connection.execute(
+                select(sod.operator_market_prior_baseline_revisions)
+                .where(
+                    sod.operator_market_prior_baseline_revisions.c.task_family_id
+                    == task_family_id,
+                    sod.operator_market_prior_baseline_revisions.c.work_item_id
+                    == work_item_id,
+                    sod.operator_market_prior_baseline_revisions.c.task_snapshot_hash
+                    == task_snapshot_hash,
+                    sod.operator_market_prior_baseline_revisions.c.slate_revision_id
+                    == slate_revision_id,
+                )
+                .order_by(
+                    sod.operator_market_prior_baseline_revisions.c.revision_no.desc(),
+                    sod.operator_market_prior_baseline_revisions.c.created_at.desc(),
+                )
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        return MarketPriorBaselineRevisionRow(**dict(row)) if row is not None else None
+
     def market_prior_baseline_probabilities(
         self, revision_id: str
     ) -> tuple[dict[str, object], ...]:
@@ -799,6 +831,38 @@ class OperatorDecisionRepository:
                     == family_id
                 )
                 .order_by(sod.operator_baseline_envelope_revisions.c.revision_no.desc())
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        return BaselineEnvelopeRevisionRow(**dict(row)) if row is not None else None
+
+    def current_baseline_envelope_for_work_item(
+        self,
+        *,
+        task_family_id: str,
+        work_item_id: str,
+        task_snapshot_hash: str,
+        slate_revision_id: str,
+    ) -> BaselineEnvelopeRevisionRow | None:
+        row = (
+            self._connection.execute(
+                select(sod.operator_baseline_envelope_revisions)
+                .where(
+                    sod.operator_baseline_envelope_revisions.c.task_family_id
+                    == task_family_id,
+                    sod.operator_baseline_envelope_revisions.c.work_item_id
+                    == work_item_id,
+                    sod.operator_baseline_envelope_revisions.c.task_snapshot_hash
+                    == task_snapshot_hash,
+                    sod.operator_baseline_envelope_revisions.c.slate_revision_id
+                    == slate_revision_id,
+                )
+                .order_by(
+                    sod.operator_baseline_envelope_revisions.c.revision_no.desc(),
+                    sod.operator_baseline_envelope_revisions.c.created_at.desc(),
+                )
                 .limit(1)
             )
             .mappings()

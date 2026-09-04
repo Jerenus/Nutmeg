@@ -493,6 +493,11 @@ def decision_audit_legs(
         "--user-override",
         help="Jun 显式知情行权：保留 ERROR 并写 evidence_rejected Adjudication",
     ),
+    ticket_batch_token: str | None = _cli.typer.Option(
+        None,
+        "--ticket-batch-token",
+        help="Web 工位签发的当前票批次 token；ERROR override 必填",
+    ),
     data_dir: Path = _AUDIT_DATA_DIR_OPTION,
 ) -> None:
     """出票前结构校验:把「用新理由撤掉结构保险」变成非零退出码。
@@ -536,6 +541,10 @@ def decision_audit_legs(
     if has_blocking(findings):
         if user_override:
             try:
+                if ticket_batch_token is None or not ticket_batch_token.strip():
+                    raise AuditOverrideError(
+                        "--user-override requires --ticket-batch-token"
+                    )
                 kernel = _cli.build_ontology_kernel(
                     AppSettings(data_dir=Path(data_dir).expanduser().resolve())
                 )
@@ -551,7 +560,8 @@ def decision_audit_legs(
                 result = record_user_overrides(
                     payload,
                     findings,
-                    workflow_actions=kernel.workflow,
+                    decision_actions=kernel.decision_actions,
+                    ticket_batch_token=ticket_batch_token,
                     requested_at=_datetime.now(_UTC),
                 )
                 _cli.typer.echo(

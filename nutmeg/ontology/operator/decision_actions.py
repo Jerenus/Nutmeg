@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
+import hmac
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
-from typing import Literal
+from typing import Literal, Sequence
 
 from nutmeg.decision.legs_audit import DEVIATION_RULE_IDS
 from nutmeg.ontology.actions.forecast_actions import (
@@ -23,7 +26,19 @@ from nutmeg.ontology.actions.models import (
     canonical_json,
 )
 from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.actions.workflow_actions import (
+    RecordAdjudicationRequest,
+    insert_adjudication_in_uow,
+)
 from nutmeg.ontology.errors import OptimisticConcurrencyError
+from nutmeg.ontology.operator.confirmation import (
+    ArtifactTerminalKind,
+    ArtifactTerminalReason,
+    NoTicketCommandResult,
+    consume_artifact_terminal,
+    effective_artifact_cutoff,
+    validate_no_ticket_reason,
+)
 from nutmeg.ontology.operator.models import (
     BaselineEnvelopeBundleFaceRow,
     BaselineEnvelopeFaceBundleRow,
@@ -31,14 +46,23 @@ from nutmeg.ontology.operator.models import (
     BaselineEnvelopeRevisionRow,
     BaselineEnvelopeStructureTemplateRow,
     BaselineEnvelopeTemplateOfferRow,
+    CandidateGenerationOverrideLinkRow,
     CandidateGenerationRequestRow,
     CandidateSelectionRow,
     JudgmentPrescriptionItemRow,
     JudgmentPrescriptionRevisionRow,
     MarketPriorBaselineProbabilityRow,
     MarketPriorBaselineRevisionRow,
+    NoTicketArtifactScopeRow,
+    NoTicketCommandReceiptRow,
+    NoTicketOfferScopeRow,
+    NoTicketRevisionRow,
     OperatorMatchJudgmentRevisionRow,
     OperatorWorkerJobRow,
+    ReviewEligibilityFactRow,
+    TicketAuditOverrideReceiptRow,
+    TicketDecisionLineageItemRow,
+    TicketDecisionLineageRevisionRow,
 )
 
 _PROBABILITY_QUANTUM = Decimal("0.000000000001")
@@ -47,6 +71,8 @@ _ONE = Decimal("1.000000000000")
 _PROBABILITY_PRECISION = 12
 _ARITHMETIC_VERSION = "decimal-half-even-v1"
 _OUTCOME_FACE_CODES = {"home": "3", "draw": "1", "away": "0"}
+_AUDIT_TOKEN_CONTEXT = b"nutmeg-ticket-audit-override-v1\0"
+_AUDIT_TOKEN_KINDS = frozenset({"ticket_batch", "finding", "snapshot"})
 
 
 class OperatorDecisionDependencyError(ValueError):
@@ -65,6 +91,115 @@ class OperatorEvidenceMissingError(OperatorDecisionDependencyError):
 
 class OperatorEvidenceConflictError(OperatorDecisionDependencyError):
     code = "evidence_conflict"
+
+
+class TicketAuditOverrideTokenError(ValueError):
+    """A signed audit-override token is malformed or no longer current."""
+
+
+@dataclass(frozen=True, slots=True)
+class _TicketAuditTokenPayload:
+    kind: str
+    ticket_batch_revision_id: str
+    candidate_audit_finding_id: str | None = None
+    task_snapshot_hash: str | None = None
+    work_item_id: str | None = None
+    dependency_revision_ids: tuple[str, ...] = ()
+
+
+class _TicketAuditTokenCodec:
+    def __init__(self, signing_key: bytes | str) -> None:
+        key = signing_key.encode("utf-8") if isinstance(signing_key, str) else signing_key
+        if not isinstance(key, bytes) or len(key) < 32:
+            raise ValueError("audit override token signing key must contain at least 32 bytes")
+        self._key = key
+
+    def encode(self, payload: _TicketAuditTokenPayload) -> str:
+        encoded = canonical_json(asdict(payload)).encode("utf-8")
+        signature = hmac.new(
+            self._key,
+            _AUDIT_TOKEN_CONTEXT + encoded,
+            hashlib.sha256,
+        ).digest()
+        return f"{self._frame(encoded)}.{self._frame(signature)}"
+
+    def decode(self, token: str) -> _TicketAuditTokenPayload:
+        if not isinstance(token, str) or token.count(".") != 1:
+            raise TicketAuditOverrideTokenError("invalid signed audit override token")
+        payload_frame, signature_frame = token.split(".")
+        encoded = self._unframe(payload_frame)
+        signature = self._unframe(signature_frame)
+        expected = hmac.new(
+            self._key,
+            _AUDIT_TOKEN_CONTEXT + encoded,
+            hashlib.sha256,
+        ).digest()
+        if not hmac.compare_digest(signature, expected):
+            raise TicketAuditOverrideTokenError("invalid signed audit override token")
+        try:
+            document = json.loads(encoded.decode("utf-8"))
+            if not isinstance(document, dict) or set(document) != {
+                "kind",
+                "ticket_batch_revision_id",
+                "candidate_audit_finding_id",
+                "task_snapshot_hash",
+                "work_item_id",
+                "dependency_revision_ids",
+            }:
+                raise ValueError("unexpected audit token fields")
+            payload = _TicketAuditTokenPayload(
+                kind=str(document["kind"]),
+                ticket_batch_revision_id=str(document["ticket_batch_revision_id"]),
+                candidate_audit_finding_id=(
+                    None
+                    if document["candidate_audit_finding_id"] is None
+                    else str(document["candidate_audit_finding_id"])
+                ),
+                task_snapshot_hash=(
+                    None
+                    if document["task_snapshot_hash"] is None
+                    else str(document["task_snapshot_hash"])
+                ),
+                work_item_id=(
+                    None if document["work_item_id"] is None else str(document["work_item_id"])
+                ),
+                dependency_revision_ids=tuple(document["dependency_revision_ids"]),
+            )
+        except (UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise TicketAuditOverrideTokenError(
+                "invalid signed audit override token"
+            ) from error
+        if (
+            payload.kind not in _AUDIT_TOKEN_KINDS
+            or not payload.ticket_batch_revision_id.strip()
+            or tuple(sorted(set(payload.dependency_revision_ids)))
+            != payload.dependency_revision_ids
+            or self._frame(canonical_json(asdict(payload)).encode("utf-8"))
+            != payload_frame
+        ):
+            raise TicketAuditOverrideTokenError("invalid signed audit override token")
+        return payload
+
+    @staticmethod
+    def _frame(value: bytes) -> str:
+        return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+    @classmethod
+    def _unframe(cls, value: str) -> bytes:
+        padding = "=" * ((4 - len(value) % 4) % 4)
+        try:
+            decoded = base64.b64decode(
+                value + padding,
+                altchars=b"-_",
+                validate=True,
+            )
+        except (ValueError, binascii.Error) as error:
+            raise TicketAuditOverrideTokenError(
+                "invalid signed audit override token"
+            ) from error
+        if cls._frame(decoded) != value:
+            raise TicketAuditOverrideTokenError("invalid signed audit override token")
+        return decoded
 
 
 def _aware(value: datetime, name: str) -> datetime:
@@ -394,9 +529,908 @@ class SelectTicketCandidateRequest:
         _validate_revision_type(self.expected_current_revision_no)
 
 
+@dataclass(frozen=True, slots=True)
+class TicketAuditOverrideInput:
+    finding_token: str
+    reason: str
+    rule_ids: Sequence[str]
+
+    def __post_init__(self) -> None:
+        _required(self.finding_token, "finding_token")
+        _required(self.reason, "reason")
+        normalized = tuple(self.rule_ids)
+        _unique(normalized, "rule_ids")
+        object.__setattr__(self, "rule_ids", normalized)
+
+
+@dataclass(frozen=True, slots=True)
+class RecordTicketAuditOverrideRequest:
+    ticket_batch_token: str
+    expected_snapshot_token: str
+    overrides: Sequence[TicketAuditOverrideInput]
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        for name in (
+            "ticket_batch_token",
+            "expected_snapshot_token",
+            "actor_id",
+            "idempotency_key",
+        ):
+            _required(getattr(self, name), name)
+        normalized = tuple(self.overrides)
+        if not normalized:
+            raise ValueError("overrides must contain the exact nonempty ERROR set")
+        object.__setattr__(self, "overrides", normalized)
+        _aware(self.requested_at, "requested_at")
+
+
+@dataclass(frozen=True, slots=True)
+class NoTicketDecisionContext:
+    task_family_id: str
+    lane: str
+    business_key: str
+    work_item_id: str
+    task_snapshot_hash: str
+    slate_revision_id: str
+    scope_fingerprint: str
+    phase: str
+    requirement_snapshot_hash: str | None
+    missing_requirement_ids: tuple[str, ...]
+    stale_requirement_ids: tuple[str, ...]
+    conflicting_requirement_ids: tuple[str, ...]
+    market_prior_baseline_revision_id: str | None
+    baseline_envelope_revision_id: str | None
+    candidate_set_revision_id: str | None
+    comparison_candidate_revision_ids: tuple[str, ...]
+    offer_revision_ids: tuple[str, ...]
+    artifact_ids: tuple[str, ...]
+    current_no_ticket_revision_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RecordNoTicketRequest:
+    task_family_id: str
+    lane: str
+    business_key: str
+    work_item_id: str
+    expected_task_snapshot_hash: str
+    expected_scope_fingerprint: str
+    reason_code: str
+    reason_basis: str
+    reason_text: str
+    rule_ids: tuple[str, ...]
+    comparison_candidate_revision_id: str | None
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        for name in (
+            "task_family_id",
+            "lane",
+            "business_key",
+            "work_item_id",
+            "expected_task_snapshot_hash",
+            "expected_scope_fingerprint",
+            "actor_id",
+            "idempotency_key",
+        ):
+            _required(getattr(self, name), name)
+        _unique(tuple(self.rule_ids), "rule_ids", required=False)
+        validate_no_ticket_reason(
+            reason_code=self.reason_code,
+            reason_basis=self.reason_basis,
+            reason_text=self.reason_text,
+            rule_ids=self.rule_ids,
+        )
+        if self.comparison_candidate_revision_id is not None:
+            _required(
+                self.comparison_candidate_revision_id,
+                "comparison_candidate_revision_id",
+            )
+        _aware(self.requested_at, "requested_at")
+
+
+@dataclass(frozen=True, slots=True)
+class SupersedeNoTicketRequest:
+    no_ticket_revision_id: str
+    expected_task_snapshot_hash: str
+    expected_scope_fingerprint: str
+    reason_text: str
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+    def __post_init__(self) -> None:
+        for name in (
+            "no_ticket_revision_id",
+            "expected_task_snapshot_hash",
+            "expected_scope_fingerprint",
+            "reason_text",
+            "actor_id",
+            "idempotency_key",
+        ):
+            _required(getattr(self, name), name)
+        _aware(self.requested_at, "requested_at")
+
+
+@dataclass(frozen=True, slots=True)
+class TicketAuditFindingToken:
+    finding_token: str
+    candidate_audit_finding_id: str
+    finding_code: str
+    official_match_no: str | None
+    rule_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TicketAuditOverrideContext:
+    ticket_batch_revision_id: str
+    expected_snapshot_token: str
+    findings: tuple[TicketAuditFindingToken, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedTicketAudit:
+    batch: object
+    lineage: object
+    bundle: object
+    baseline: object
+    envelope: object
+    prescription: object
+    candidate_set: object
+    candidate: object
+    selection: object
+    candidate_tickets: tuple[object, ...]
+    errors: tuple[object, ...]
+    dependency_revision_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedSelection:
+    selection: object
+    candidate: object
+    candidate_set: object
+    generation: object
+    bundle: object
+    baseline: object
+    envelope: object
+    prescription: object
+
+
 class OperatorDecisionActions:
-    def __init__(self, action_service: ActionService) -> None:
+    def __init__(
+        self,
+        action_service: ActionService,
+        *,
+        audit_token_signing_key: bytes | str | None = None,
+        no_ticket_context_resolver=None,
+    ) -> None:
         self._action_service = action_service
+        self._audit_tokens = (
+            None
+            if audit_token_signing_key is None
+            else _TicketAuditTokenCodec(audit_token_signing_key)
+        )
+        self._no_ticket_context_resolver = no_ticket_context_resolver
+
+    def configure_audit_override_tokens(self, signing_key: bytes | str) -> None:
+        """Configure the external human-only token boundary during composition."""
+        self._audit_tokens = _TicketAuditTokenCodec(signing_key)
+
+    def issue_ticket_batch_audit_token(self, ticket_batch_revision_id: str) -> str:
+        codec = self._audit_token_codec()
+        return codec.encode(
+            _TicketAuditTokenPayload(
+                kind="ticket_batch",
+                ticket_batch_revision_id=_required(
+                    ticket_batch_revision_id,
+                    "ticket_batch_revision_id",
+                ),
+            )
+        )
+
+    def ticket_audit_override_context(
+        self,
+        ticket_batch_token: str,
+    ) -> TicketAuditOverrideContext:
+        codec = self._audit_token_codec()
+        batch_payload = codec.decode(ticket_batch_token)
+        self._assert_audit_token_kind(batch_payload, "ticket_batch")
+        with self._action_service.unit_of_work() as uow:
+            resolved = self._resolve_current_ticket_audit(
+                uow,
+                batch_payload.ticket_batch_revision_id,
+            )
+        if not resolved.errors:
+            raise ValueError("ticket batch has no current ERROR findings to override")
+        expected_snapshot_token = codec.encode(
+            _TicketAuditTokenPayload(
+                kind="snapshot",
+                ticket_batch_revision_id=resolved.batch.ticket_batch_revision_id,
+                task_snapshot_hash=resolved.lineage.task_snapshot_hash,
+                work_item_id=resolved.lineage.work_item_id,
+                dependency_revision_ids=resolved.dependency_revision_ids,
+            )
+        )
+        findings = tuple(
+            TicketAuditFindingToken(
+                finding_token=codec.encode(
+                    _TicketAuditTokenPayload(
+                        kind="finding",
+                        ticket_batch_revision_id=(
+                            resolved.batch.ticket_batch_revision_id
+                        ),
+                        candidate_audit_finding_id=(
+                            finding.candidate_audit_finding_id
+                        ),
+                    )
+                ),
+                candidate_audit_finding_id=finding.candidate_audit_finding_id,
+                finding_code=finding.finding_code,
+                official_match_no=finding.official_match_no,
+                rule_id=finding.rule_id,
+            )
+            for finding in resolved.errors
+        )
+        return TicketAuditOverrideContext(
+            ticket_batch_revision_id=resolved.batch.ticket_batch_revision_id,
+            expected_snapshot_token=expected_snapshot_token,
+            findings=findings,
+        )
+
+    def no_ticket_decision_context(
+        self,
+        *,
+        task_family_id: str,
+        lane: str,
+        business_key: str,
+        work_item_id: str,
+        as_of: datetime,
+    ) -> NoTicketDecisionContext:
+        _aware(as_of, "as_of")
+        with self._action_service.unit_of_work() as uow:
+            return self._resolve_no_ticket_context(
+                uow,
+                task_family_id=task_family_id,
+                lane=lane,
+                business_key=business_key,
+                work_item_id=work_item_id,
+                as_of=as_of,
+            )
+
+    def no_ticket_command_receipt(
+        self,
+        action_id: str,
+    ) -> NoTicketCommandReceiptRow | None:
+        with self._action_service.unit_of_work() as uow:
+            return uow.operator_result.no_ticket_command_receipt_for_action(action_id)
+
+    def record_no_ticket(self, request: RecordNoTicketRequest) -> ActionOutcome:
+        command = ActionCommand.create(
+            action_type="record_no_ticket",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            requested_at=request.requested_at,
+            payload={
+                "task_family_id": request.task_family_id,
+                "lane": request.lane,
+                "business_key": request.business_key,
+                "work_item_id": request.work_item_id,
+                "expected_task_snapshot_hash": (
+                    request.expected_task_snapshot_hash
+                ),
+                "expected_scope_fingerprint": request.expected_scope_fingerprint,
+                "reason_code": request.reason_code,
+                "reason_basis": request.reason_basis,
+                "reason_text": request.reason_text.strip(),
+                "rule_ids": list(request.rule_ids),
+                "comparison_candidate_revision_id": (
+                    request.comparison_candidate_revision_id
+                ),
+            },
+        )
+
+        def handler(uow, action_command) -> tuple[ObjectRef, ...]:
+            terminal_refs, terminal_changed = self._terminalize_due_artifacts(
+                uow,
+                task_family_id=request.task_family_id,
+                work_item_id=request.work_item_id,
+                action_id=action_command.action_id,
+                received_at=request.requested_at,
+            )
+            context = self._resolve_no_ticket_context(
+                uow,
+                task_family_id=request.task_family_id,
+                lane=request.lane,
+                business_key=request.business_key,
+                work_item_id=request.work_item_id,
+                as_of=request.requested_at,
+            )
+            refs = list(terminal_refs)
+            stale = terminal_changed or (
+                request.expected_task_snapshot_hash != context.task_snapshot_hash
+                or request.expected_scope_fingerprint != context.scope_fingerprint
+            )
+            if stale:
+                receipt = self._insert_no_ticket_command_receipt(
+                    uow,
+                    action_id=action_command.action_id,
+                    command_kind="record_no_ticket",
+                    no_ticket_revision_id=None,
+                    task_family_id=context.task_family_id,
+                    work_item_id=context.work_item_id,
+                    submitted_task_snapshot_hash=(
+                        request.expected_task_snapshot_hash
+                    ),
+                    resolved_task_snapshot_hash=context.task_snapshot_hash,
+                    result=NoTicketCommandResult.TASK_SNAPSHOT_CHANGED,
+                    received_at=request.requested_at,
+                )
+                return (
+                    ObjectRef(
+                        "no_ticket_command_receipt",
+                        receipt.no_ticket_command_receipt_id,
+                    ),
+                    *refs,
+                )
+
+            current = (
+                None
+                if context.current_no_ticket_revision_id is None
+                else uow.operator_result.no_ticket_revision(
+                    context.current_no_ticket_revision_id
+                )
+            )
+            if current is not None and current.deployment_outcome != "reopened":
+                receipt = self._insert_no_ticket_command_receipt(
+                    uow,
+                    action_id=action_command.action_id,
+                    command_kind="record_no_ticket",
+                    no_ticket_revision_id=current.no_ticket_revision_id,
+                    task_family_id=context.task_family_id,
+                    work_item_id=context.work_item_id,
+                    submitted_task_snapshot_hash=(
+                        request.expected_task_snapshot_hash
+                    ),
+                    resolved_task_snapshot_hash=context.task_snapshot_hash,
+                    result=NoTicketCommandResult.ALREADY_CURRENT,
+                    received_at=request.requested_at,
+                )
+                return (
+                    ObjectRef(
+                        "no_ticket_command_receipt",
+                        receipt.no_ticket_command_receipt_id,
+                    ),
+                    ObjectRef("no_ticket_revision", current.no_ticket_revision_id),
+                )
+            if not context.offer_revision_ids and not context.artifact_ids:
+                receipt = self._insert_no_ticket_command_receipt(
+                    uow,
+                    action_id=action_command.action_id,
+                    command_kind="record_no_ticket",
+                    no_ticket_revision_id=None,
+                    task_family_id=context.task_family_id,
+                    work_item_id=context.work_item_id,
+                    submitted_task_snapshot_hash=(
+                        request.expected_task_snapshot_hash
+                    ),
+                    resolved_task_snapshot_hash=context.task_snapshot_hash,
+                    result=NoTicketCommandResult.TASK_SNAPSHOT_CHANGED,
+                    received_at=request.requested_at,
+                )
+                return (
+                    ObjectRef(
+                        "no_ticket_command_receipt",
+                        receipt.no_ticket_command_receipt_id,
+                    ),
+                )
+
+            revision = self._insert_no_ticket_revision(
+                uow,
+                request=request,
+                context=context,
+                action_id=action_command.action_id,
+            )
+            refs.insert(
+                0,
+                ObjectRef("no_ticket_revision", revision.no_ticket_revision_id),
+            )
+            for ticket_artifact_id in context.artifact_ids:
+                transition = consume_artifact_terminal(
+                    uow,
+                    ticket_artifact_id=ticket_artifact_id,
+                    terminal_kind=ArtifactTerminalKind.SHADOW,
+                    terminal_reason=ArtifactTerminalReason.HUMAN_NO_TICKET,
+                    action_id=action_command.action_id,
+                    ingress_at=request.requested_at,
+                )
+                if not transition.requested_transition_won:
+                    raise OptimisticConcurrencyError(
+                        "artifact terminal state changed during no-ticket adjudication"
+                    )
+                if transition.created:
+                    refs.append(
+                        ObjectRef(
+                            "artifact_terminal_receipt",
+                            transition.receipt.artifact_terminal_receipt_id,
+                        )
+                    )
+            eligibility = self._insert_no_ticket_review_eligibility(
+                uow,
+                action_id=action_command.action_id,
+                fact_index=len(terminal_refs),
+                context=context,
+                no_ticket_revision_id=revision.no_ticket_revision_id,
+                created_at=request.requested_at,
+            )
+            refs.append(
+                ObjectRef(
+                    "operator_review_eligibility_fact",
+                    eligibility.review_eligibility_fact_id,
+                )
+            )
+            receipt = self._insert_no_ticket_command_receipt(
+                uow,
+                action_id=action_command.action_id,
+                command_kind="record_no_ticket",
+                no_ticket_revision_id=revision.no_ticket_revision_id,
+                task_family_id=context.task_family_id,
+                work_item_id=context.work_item_id,
+                submitted_task_snapshot_hash=request.expected_task_snapshot_hash,
+                resolved_task_snapshot_hash=context.task_snapshot_hash,
+                result=NoTicketCommandResult.RECORDED,
+                received_at=request.requested_at,
+            )
+            return (
+                ObjectRef(
+                    "no_ticket_command_receipt",
+                    receipt.no_ticket_command_receipt_id,
+                ),
+                *refs,
+            )
+
+        return self._action_service.execute(
+            command,
+            handler,
+            acquire_write_lock=True,
+        )
+
+    def supersede_no_ticket(
+        self,
+        request: SupersedeNoTicketRequest,
+    ) -> ActionOutcome:
+        command = ActionCommand.create(
+            action_type="supersede_no_ticket",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            requested_at=request.requested_at,
+            payload={
+                "no_ticket_revision_id": request.no_ticket_revision_id,
+                "expected_task_snapshot_hash": (
+                    request.expected_task_snapshot_hash
+                ),
+                "expected_scope_fingerprint": request.expected_scope_fingerprint,
+                "reason_text": request.reason_text.strip(),
+            },
+        )
+
+        def handler(uow, action_command) -> tuple[ObjectRef, ...]:
+            revision = uow.operator_result.no_ticket_revision(
+                request.no_ticket_revision_id
+            )
+            if revision is None:
+                raise ValueError("no-ticket revision does not exist")
+            current = uow.operator_result.current_no_ticket_revision(
+                revision.no_ticket_family_id
+            )
+            slate = uow.operator_sale.slate_revision(revision.slate_revision_id)
+            if current is None or slate is None:
+                raise ValueError("no-ticket revision lineage is incomplete")
+            terminal_refs, terminal_changed = self._terminalize_due_artifacts(
+                uow,
+                task_family_id=current.task_family_id,
+                work_item_id=current.work_item_id,
+                action_id=action_command.action_id,
+                received_at=request.requested_at,
+            )
+            context = self._resolve_no_ticket_context(
+                uow,
+                task_family_id=current.task_family_id,
+                lane=slate.lane,
+                business_key=slate.business_key,
+                work_item_id=current.work_item_id,
+                as_of=request.requested_at,
+            )
+            stale = (
+                current.no_ticket_revision_id != request.no_ticket_revision_id
+                or terminal_changed
+                or request.expected_task_snapshot_hash
+                != context.task_snapshot_hash
+                or request.expected_scope_fingerprint
+                != context.scope_fingerprint
+            )
+            if current.deployment_outcome == "reopened" and not stale:
+                receipt = self._insert_no_ticket_command_receipt(
+                    uow,
+                    action_id=action_command.action_id,
+                    command_kind="supersede_no_ticket",
+                    no_ticket_revision_id=current.no_ticket_revision_id,
+                    task_family_id=current.task_family_id,
+                    work_item_id=current.work_item_id,
+                    submitted_task_snapshot_hash=(
+                        request.expected_task_snapshot_hash
+                    ),
+                    resolved_task_snapshot_hash=context.task_snapshot_hash,
+                    result=NoTicketCommandResult.ALREADY_CURRENT,
+                    received_at=request.requested_at,
+                )
+                return (
+                    ObjectRef(
+                        "no_ticket_command_receipt",
+                        receipt.no_ticket_command_receipt_id,
+                    ),
+                    ObjectRef("no_ticket_revision", current.no_ticket_revision_id),
+                    *terminal_refs,
+                )
+
+            reopenable_offers = self._reopenable_no_ticket_offers(
+                uow,
+                current,
+                current_slate_revision_id=context.slate_revision_id,
+                received_at=request.requested_at,
+            )
+            if stale or not reopenable_offers:
+                receipt = self._insert_no_ticket_command_receipt(
+                    uow,
+                    action_id=action_command.action_id,
+                    command_kind="supersede_no_ticket",
+                    no_ticket_revision_id=None,
+                    task_family_id=current.task_family_id,
+                    work_item_id=current.work_item_id,
+                    submitted_task_snapshot_hash=(
+                        request.expected_task_snapshot_hash
+                    ),
+                    resolved_task_snapshot_hash=context.task_snapshot_hash,
+                    result=NoTicketCommandResult.TASK_SNAPSHOT_CHANGED,
+                    received_at=request.requested_at,
+                )
+                return (
+                    ObjectRef(
+                        "no_ticket_command_receipt",
+                        receipt.no_ticket_command_receipt_id,
+                    ),
+                    *terminal_refs,
+                )
+
+            reopened = self._insert_reopened_no_ticket_revision(
+                uow,
+                current=current,
+                context=context,
+                reopenable_offers=reopenable_offers,
+                reason_text=request.reason_text,
+                action_id=action_command.action_id,
+                recorded_at=request.requested_at,
+            )
+            receipt = self._insert_no_ticket_command_receipt(
+                uow,
+                action_id=action_command.action_id,
+                command_kind="supersede_no_ticket",
+                no_ticket_revision_id=reopened.no_ticket_revision_id,
+                task_family_id=current.task_family_id,
+                work_item_id=current.work_item_id,
+                submitted_task_snapshot_hash=request.expected_task_snapshot_hash,
+                resolved_task_snapshot_hash=context.task_snapshot_hash,
+                result=NoTicketCommandResult.RECORDED,
+                received_at=request.requested_at,
+            )
+            return (
+                ObjectRef(
+                    "no_ticket_command_receipt",
+                    receipt.no_ticket_command_receipt_id,
+                ),
+                ObjectRef("no_ticket_revision", reopened.no_ticket_revision_id),
+                *terminal_refs,
+            )
+
+        return self._action_service.execute(
+            command,
+            handler,
+            acquire_write_lock=True,
+        )
+
+    def insert_ticket_decision_lineage(
+        self,
+        uow,
+        *,
+        ticket_batch_revision_id: str,
+        candidate_selection_id: str,
+        action_id: str,
+        created_at: datetime,
+    ) -> ObjectRef:
+        """Write exact candidate lineage inside ``create_ticket_batch``'s UOW."""
+        _aware(created_at, "created_at")
+        batch = uow.tickets.batch_revision(ticket_batch_revision_id)
+        if batch is None:
+            raise ValueError("ticket batch revision does not exist")
+        current_batch = uow.tickets.current_batch_revision(batch.ticket_batch_id)
+        if (
+            current_batch is None
+            or current_batch.ticket_batch_revision_id != ticket_batch_revision_id
+        ):
+            raise StaleOperatorDecisionDependencyError(
+                "ticket batch revision is stale or superseded"
+            )
+        if batch.created_by_action_id != action_id:
+            raise ValueError("ticket batch and decision lineage require the same outer Action")
+        selected = self.resolve_current_selection_in_uow(
+            uow,
+            candidate_selection_id=candidate_selection_id,
+        )
+        if batch.channel != selected.bundle.lane:
+            raise ValueError("ticket batch channel crosses its selected candidate lineage")
+        item_documents = self._lineage_item_documents(uow, selected)
+        lineage_family_id = _stable_id(
+            "ticket-decision-lineage-family",
+            batch.ticket_batch_id,
+        )
+        document = {
+            "ticket_batch_revision_id": ticket_batch_revision_id,
+            "task_family_id": selected.candidate_set.task_family_id,
+            "work_item_id": selected.candidate_set.work_item_id,
+            "task_snapshot_hash": selected.candidate_set.task_snapshot_hash,
+            "slate_revision_id": selected.candidate_set.slate_revision_id,
+            "task_evidence_bundle_revision_id": (
+                selected.generation.task_evidence_bundle_revision_id
+            ),
+            "market_prior_baseline_revision_id": (
+                selected.candidate_set.market_prior_baseline_revision_id
+            ),
+            "baseline_envelope_revision_id": (
+                selected.candidate_set.baseline_envelope_revision_id
+            ),
+            "judgment_prescription_revision_id": (
+                selected.candidate_set.judgment_prescription_revision_id
+            ),
+            "candidate_set_revision_id": (
+                selected.candidate_set.candidate_set_revision_id
+            ),
+            "candidate_selection_id": selected.selection.candidate_selection_id,
+            "candidate_revision_id": selected.candidate.candidate_revision_id,
+            "audit_policy_version": selected.candidate_set.audit_policy_version,
+            "items": item_documents,
+        }
+        content_hash = _content_hash(document)
+        current = uow.operator_result.current_ticket_decision_lineage(
+            lineage_family_id
+        )
+        if current is not None and current.content_hash == content_hash:
+            if current.ticket_batch_revision_id != ticket_batch_revision_id:
+                raise ValueError("lineage content cannot alias a different batch revision")
+            return ObjectRef("ticket_decision_lineage_revision", current.lineage_revision_id)
+        revision_no = 1 if current is None else current.revision_no + 1
+        lineage_revision_id = _stable_id(
+            "ticket-decision-lineage",
+            lineage_family_id,
+            revision_no,
+            content_hash,
+        )
+        recorded_at = _utc(created_at)
+        uow.operator_result.insert_ticket_decision_lineage_revision(
+            TicketDecisionLineageRevisionRow(
+                lineage_revision_id=lineage_revision_id,
+                lineage_family_id=lineage_family_id,
+                revision_no=revision_no,
+                supersedes_revision_id=(
+                    None if current is None else current.lineage_revision_id
+                ),
+                ticket_batch_revision_id=ticket_batch_revision_id,
+                task_family_id=selected.candidate_set.task_family_id,
+                work_item_id=selected.candidate_set.work_item_id,
+                task_snapshot_hash=selected.candidate_set.task_snapshot_hash,
+                slate_revision_id=selected.candidate_set.slate_revision_id,
+                task_evidence_bundle_revision_id=(
+                    selected.generation.task_evidence_bundle_revision_id
+                ),
+                market_prior_baseline_revision_id=(
+                    selected.candidate_set.market_prior_baseline_revision_id
+                ),
+                baseline_envelope_revision_id=(
+                    selected.candidate_set.baseline_envelope_revision_id
+                ),
+                judgment_prescription_revision_id=(
+                    selected.candidate_set.judgment_prescription_revision_id
+                ),
+                candidate_set_revision_id=(
+                    selected.candidate_set.candidate_set_revision_id
+                ),
+                candidate_selection_id=selected.selection.candidate_selection_id,
+                candidate_revision_id=selected.candidate.candidate_revision_id,
+                audit_policy_version=selected.candidate_set.audit_policy_version,
+                content_hash=content_hash,
+                action_id=action_id,
+                created_at=recorded_at,
+            )
+        )
+        for index, item in enumerate(item_documents):
+            uow.operator_result.insert_ticket_decision_lineage_item(
+                TicketDecisionLineageItemRow(
+                    lineage_item_id=_stable_id(
+                        "ticket-decision-lineage-item",
+                        lineage_revision_id,
+                        index,
+                        item,
+                    ),
+                    lineage_revision_id=lineage_revision_id,
+                    item_index=index,
+                    **item,
+                )
+            )
+        return ObjectRef("ticket_decision_lineage_revision", lineage_revision_id)
+
+    def record_ticket_audit_override(
+        self,
+        request: RecordTicketAuditOverrideRequest,
+    ) -> ActionOutcome:
+        codec = self._audit_token_codec()
+        batch_payload = codec.decode(request.ticket_batch_token)
+        self._assert_audit_token_kind(batch_payload, "ticket_batch")
+        policy_version = self._ticket_batch_policy(
+            batch_payload.ticket_batch_revision_id
+        )
+        command = ActionCommand.create(
+            action_type="record_ticket_audit_override",
+            actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key,
+            requested_at=request.requested_at,
+            policy_version=policy_version,
+            payload={
+                "ticket_batch_token_hash": _content_hash(request.ticket_batch_token),
+                "expected_snapshot_token_hash": _content_hash(
+                    request.expected_snapshot_token
+                ),
+                "overrides": [
+                    {
+                        "finding_token_hash": _content_hash(item.finding_token),
+                        "reason": item.reason.strip(),
+                        "rule_ids": list(item.rule_ids),
+                    }
+                    for item in request.overrides
+                ],
+            },
+        )
+
+        def handler(uow, action_command) -> tuple[ObjectRef, ...]:
+            resolved = self._resolve_current_ticket_audit(
+                uow,
+                batch_payload.ticket_batch_revision_id,
+            )
+            candidate_offer_ids = {
+                leg.official_offer_revision_id
+                for ticket in resolved.candidate_tickets
+                for leg in uow.operator_result.candidate_ticket_legs(
+                    ticket.candidate_ticket_id
+                )
+            }
+            self._require_open_offer_revisions(
+                uow,
+                resolved.lineage.slate_revision_id,
+                candidate_offer_ids,
+                request.requested_at,
+            )
+            prepared = self._prevalidate_ticket_audit_overrides(
+                codec,
+                request,
+                resolved,
+            )
+            recorded_at = _utc(request.requested_at)
+            refs: list[ObjectRef] = []
+            receipt_ids: list[str] = []
+            for index, (finding, override) in enumerate(prepared):
+                adjudication_id = _stable_id(
+                    "ticket-audit-adjudication",
+                    action_command.action_id,
+                    finding.candidate_audit_finding_id,
+                )
+                evidence_rejected = (
+                    {
+                        "object_type": "ticket_audit_finding",
+                        "object_id": finding.candidate_audit_finding_id,
+                    },
+                )
+                insert_adjudication_in_uow(
+                    uow,
+                    RecordAdjudicationRequest(
+                        subject_type="ticket_audit_finding",
+                        subject_id=finding.candidate_audit_finding_id,
+                        decision="override",
+                        reason=override.reason.strip(),
+                        evidence_rejected=list(evidence_rejected),
+                        alternative={
+                            "kind": "ticket_audit_user_override",
+                            "ticket_batch_revision_id": (
+                                resolved.batch.ticket_batch_revision_id
+                            ),
+                            "lineage_revision_id": resolved.lineage.lineage_revision_id,
+                            "candidate_revision_id": (
+                                resolved.candidate.candidate_revision_id
+                            ),
+                            "candidate_content_hash": resolved.candidate.content_hash,
+                            "finding_code": finding.finding_code,
+                            "audit_policy_version": (
+                                resolved.candidate_set.audit_policy_version
+                            ),
+                            "rule_ids": list(override.rule_ids),
+                        },
+                        supersedes_adjudication_id=None,
+                        actor_id=request.actor_id,
+                        actor_role=request.actor_role,
+                        idempotency_key=(
+                            f"{request.idempotency_key}:adjudication:{index}"
+                        ),
+                        requested_at=request.requested_at,
+                    ),
+                    adjudication_id=adjudication_id,
+                )
+                refs.append(ObjectRef("adjudication", adjudication_id))
+                receipt_id = _stable_id(
+                    "ticket-audit-override-receipt",
+                    action_command.action_id,
+                    finding.candidate_audit_finding_id,
+                )
+                uow.operator_result.insert_ticket_audit_override_receipt(
+                    TicketAuditOverrideReceiptRow(
+                        ticket_audit_override_receipt_id=receipt_id,
+                        action_id=action_command.action_id,
+                        receipt_index=index,
+                        adjudication_id=adjudication_id,
+                        ticket_batch_revision_id=(
+                            resolved.batch.ticket_batch_revision_id
+                        ),
+                        lineage_revision_id=resolved.lineage.lineage_revision_id,
+                        candidate_revision_id=resolved.candidate.candidate_revision_id,
+                        candidate_content_hash=resolved.candidate.content_hash,
+                        candidate_audit_finding_id=(
+                            finding.candidate_audit_finding_id
+                        ),
+                        finding_code=finding.finding_code,
+                        audit_policy_version=(
+                            resolved.candidate_set.audit_policy_version
+                        ),
+                        reason=override.reason.strip(),
+                        rule_ids=tuple(override.rule_ids),
+                        evidence_rejected=evidence_rejected,
+                        recorded_at=recorded_at,
+                    )
+                )
+                receipt_ids.append(receipt_id)
+                refs.append(ObjectRef("ticket_audit_override_receipt", receipt_id))
+
+            generation_request_id = self._insert_override_generation_request(
+                uow,
+                resolved=resolved,
+                action_id=action_command.action_id,
+                receipt_ids=tuple(receipt_ids),
+                requested_at=request.requested_at,
+            )
+            refs.append(
+                ObjectRef(
+                    "operator_candidate_generation_request",
+                    generation_request_id,
+                )
+            )
+            return tuple(refs)
+
+        return self._action_service.execute(command, handler)
 
     def freeze_market_prior_baseline(
         self, request: FreezeMarketPriorBaselineRequest
@@ -1381,6 +2415,1357 @@ class OperatorDecisionActions:
                 ),
                 bundle.required_match_count,
             )
+
+    def _resolve_no_ticket_context(
+        self,
+        uow,
+        *,
+        task_family_id: str,
+        lane: str,
+        business_key: str,
+        work_item_id: str,
+        as_of: datetime,
+    ) -> NoTicketDecisionContext:
+        if self._no_ticket_context_resolver is not None:
+            context = self._no_ticket_context_resolver(
+                uow,
+                task_family_id=task_family_id,
+                lane=lane,
+                business_key=business_key,
+                work_item_id=work_item_id,
+                as_of=as_of,
+            )
+        else:
+            context = self._default_no_ticket_context(
+                uow,
+                task_family_id=task_family_id,
+                lane=lane,
+                business_key=business_key,
+                work_item_id=work_item_id,
+                as_of=as_of,
+            )
+        if (
+            context.task_family_id != task_family_id
+            or context.lane != lane
+            or context.business_key != business_key
+            or context.work_item_id != work_item_id
+        ):
+            raise ValueError("no-ticket context crosses its requested work item")
+        return context
+
+    def _default_no_ticket_context(
+        self,
+        uow,
+        *,
+        task_family_id: str,
+        lane: str,
+        business_key: str,
+        work_item_id: str,
+        as_of: datetime,
+    ) -> NoTicketDecisionContext:
+        slate = uow.operator_sale.current_slate(lane, business_key)
+        if slate is None or slate.slate_family_id != task_family_id:
+            raise ValueError("no-ticket requires the current official sale slate")
+        bundle = uow.operator_decision.current_task_evidence_bundle_revision(
+            task_family_id,
+            as_of=_utc(as_of),
+        )
+        if bundle is not None and bundle.slate_revision_id != slate.slate_revision_id:
+            bundle = None
+        task_snapshot_hash = (
+            slate.content_hash if bundle is None else bundle.task_snapshot_hash
+        )
+        requirement_states: list[tuple[str, str]] = []
+        if bundle is not None:
+            for item in uow.operator_decision.task_evidence_bundle_items(
+                bundle.task_evidence_bundle_revision_id
+            ):
+                requirement_states.extend(item.requirement_states)
+        missing = tuple(
+            sorted(
+                requirement_id
+                for requirement_id, state in requirement_states
+                if state == "missing"
+            )
+        )
+        stale = tuple(
+            sorted(
+                requirement_id
+                for requirement_id, state in requirement_states
+                if state == "stale"
+            )
+        )
+        conflicting = tuple(
+            sorted(
+                requirement_id
+                for requirement_id, state in requirement_states
+                if state in {"conflict", "conflicting"}
+            )
+        )
+        requirement_snapshot_hash = (
+            None
+            if bundle is None
+            else _content_hash(
+                {
+                    "bundle": bundle.task_evidence_bundle_revision_id,
+                    "states": requirement_states,
+                }
+            )
+        )
+        baseline = uow.operator_decision.current_market_prior_baseline_for_work_item(
+            task_family_id=task_family_id,
+            work_item_id=work_item_id,
+            task_snapshot_hash=task_snapshot_hash,
+            slate_revision_id=slate.slate_revision_id,
+        )
+        envelope = uow.operator_decision.current_baseline_envelope_for_work_item(
+            task_family_id=task_family_id,
+            work_item_id=work_item_id,
+            task_snapshot_hash=task_snapshot_hash,
+            slate_revision_id=slate.slate_revision_id,
+        )
+        candidate_set = uow.operator_result.current_candidate_set(
+            task_family_id=task_family_id,
+            work_item_id=work_item_id,
+            set_kind="judgment_bound",
+        )
+        if (
+            candidate_set is not None
+            and (
+                candidate_set.task_snapshot_hash != task_snapshot_hash
+                or candidate_set.slate_revision_id != slate.slate_revision_id
+            )
+        ):
+            candidate_set = None
+        candidates = (
+            ()
+            if candidate_set is None
+            else uow.operator_result.candidates_for_set(
+                candidate_set.candidate_set_revision_id
+            )
+        )
+        current_no_ticket = uow.operator_result.current_no_ticket_for_work_item(
+            work_item_id
+        )
+        if (
+            current_no_ticket is not None
+            and current_no_ticket.task_family_id != task_family_id
+        ):
+            current_no_ticket = None
+        closed_families: set[str] = set()
+        current_task_closures = (
+            uow.operator_result.current_no_ticket_revisions_for_task_family(
+                task_family_id
+            )
+        )
+        for closure in current_task_closures:
+            if closure.deployment_outcome == "reopened":
+                continue
+            for scope in uow.operator_result.no_ticket_offer_scopes(
+                closure.no_ticket_revision_id
+            ):
+                offer = uow.operator_sale.offer_revision(
+                    scope.official_offer_revision_id
+                )
+                if offer is not None:
+                    closed_families.add(offer.official_offer_family_id)
+
+        now = _aware(as_of, "as_of").astimezone(UTC)
+        all_offers = uow.operator_sale.offer_revisions_for_slate(
+            slate.slate_revision_id
+        )
+        offer_states = []
+        offer_revision_ids = []
+        for offer in all_offers:
+            deadline = datetime.fromisoformat(offer.sale_deadline_at).astimezone(UTC)
+            open_now = (
+                offer.status in {"scheduled", "on_sale"}
+                and now < deadline
+                and offer.official_offer_family_id not in closed_families
+            )
+            offer_states.append(
+                {
+                    "family_id": offer.official_offer_family_id,
+                    "revision_id": offer.official_offer_revision_id,
+                    "status": offer.status,
+                    "deadline_at": offer.sale_deadline_at,
+                    "open_for_no_ticket": open_now,
+                }
+            )
+            if open_now:
+                offer_revision_ids.append(offer.official_offer_revision_id)
+
+        artifact_ids = []
+        artifact_states = []
+        work_links = uow.tickets.artifact_work_item_links_for_work_item(work_item_id)
+        for link in work_links:
+            if (
+                link.task_family_id != task_family_id
+                or link.slate_revision_id != slate.slate_revision_id
+                or link.task_snapshot_hash != task_snapshot_hash
+            ):
+                continue
+            terminal = uow.tickets.artifact_terminal_receipt(link.ticket_artifact_id)
+            head = uow.tickets.confirmation_challenge_head(link.ticket_artifact_id)
+            binding = uow.tickets.protected_artifact_binding(link.ticket_artifact_id)
+            current_offers = self._current_artifact_offers(
+                uow,
+                link.ticket_artifact_id,
+            )
+            cutoff = (
+                None
+                if binding is None or not current_offers
+                else effective_artifact_cutoff(binding, current_offers)
+            )
+            open_now = bool(
+                terminal is None
+                and cutoff is not None
+                and now < cutoff
+                and all(
+                    offer.status in {"scheduled", "on_sale"}
+                    for offer in current_offers
+                )
+            )
+            artifact_states.append(
+                {
+                    "artifact_id": link.ticket_artifact_id,
+                    "terminal_receipt_id": (
+                        None
+                        if terminal is None
+                        else terminal.artifact_terminal_receipt_id
+                    ),
+                    "terminal_kind": (
+                        None if terminal is None else terminal.terminal_kind
+                    ),
+                    "challenge_revision_id": (
+                        None if head is None else head.challenge_revision_id
+                    ),
+                    "effective_cutoff_at": (
+                        None if cutoff is None else cutoff.isoformat()
+                    ),
+                    "open_for_no_ticket": open_now,
+                }
+            )
+            if open_now:
+                artifact_ids.append(link.ticket_artifact_id)
+
+        phase = "discovery"
+        if bundle is not None:
+            phase = "evidence"
+        if baseline is not None:
+            phase = "baseline"
+        if envelope is not None:
+            phase = "envelope"
+        if candidate_set is not None:
+            phase = "candidate"
+        if work_links:
+            phase = "artifact"
+        scope_fingerprint = _content_hash(
+            {
+                "task_snapshot_hash": task_snapshot_hash,
+                "slate_revision_id": slate.slate_revision_id,
+                "offers": offer_states,
+                "artifacts": artifact_states,
+                "current_no_ticket_revision_id": (
+                    None
+                    if current_no_ticket is None
+                    else current_no_ticket.no_ticket_revision_id
+                ),
+                "current_no_ticket_outcome": (
+                    None
+                    if current_no_ticket is None
+                    else current_no_ticket.deployment_outcome
+                ),
+            }
+        )
+        return NoTicketDecisionContext(
+            task_family_id=task_family_id,
+            lane=lane,
+            business_key=business_key,
+            work_item_id=work_item_id,
+            task_snapshot_hash=task_snapshot_hash,
+            slate_revision_id=slate.slate_revision_id,
+            scope_fingerprint=scope_fingerprint,
+            phase=phase,
+            requirement_snapshot_hash=requirement_snapshot_hash,
+            missing_requirement_ids=missing,
+            stale_requirement_ids=stale,
+            conflicting_requirement_ids=conflicting,
+            market_prior_baseline_revision_id=(
+                None
+                if baseline is None
+                else baseline.market_prior_baseline_revision_id
+            ),
+            baseline_envelope_revision_id=(
+                None if envelope is None else envelope.baseline_envelope_revision_id
+            ),
+            candidate_set_revision_id=(
+                None
+                if candidate_set is None
+                else candidate_set.candidate_set_revision_id
+            ),
+            comparison_candidate_revision_ids=tuple(
+                candidate.candidate_revision_id for candidate in candidates
+            ),
+            offer_revision_ids=tuple(offer_revision_ids),
+            artifact_ids=tuple(artifact_ids),
+            current_no_ticket_revision_id=(
+                None
+                if current_no_ticket is None
+                else current_no_ticket.no_ticket_revision_id
+            ),
+        )
+
+    @staticmethod
+    def _current_artifact_offers(uow, ticket_artifact_id: str) -> tuple[object, ...]:
+        offers = []
+        for link in uow.tickets.protected_artifact_offer_revision_links(
+            ticket_artifact_id
+        ):
+            source = uow.operator_sale.offer_revision(
+                link.official_offer_revision_id
+            )
+            if source is None:
+                return ()
+            current = uow.operator_sale.current_offer_by_family(
+                source.official_offer_family_id
+            )
+            if current is None:
+                return ()
+            offers.append(current)
+        return tuple(offers)
+
+    def _terminalize_due_artifacts(
+        self,
+        uow,
+        *,
+        task_family_id: str,
+        work_item_id: str,
+        action_id: str,
+        received_at: datetime,
+    ) -> tuple[tuple[ObjectRef, ...], bool]:
+        refs = []
+        changed = False
+        for link in uow.tickets.artifact_work_item_links_for_work_item(work_item_id):
+            if link.task_family_id != task_family_id:
+                continue
+            if uow.tickets.artifact_terminal_receipt(link.ticket_artifact_id) is not None:
+                continue
+            binding = uow.tickets.protected_artifact_binding(link.ticket_artifact_id)
+            current_offers = self._current_artifact_offers(
+                uow,
+                link.ticket_artifact_id,
+            )
+            if binding is None or not current_offers:
+                continue
+            cutoff = effective_artifact_cutoff(binding, current_offers)
+            reason = None
+            if any(offer.status == "cancelled" for offer in current_offers):
+                reason = ArtifactTerminalReason.OFFICIAL_OFFER_CANCELLED
+            elif any(offer.status == "sale_closed" for offer in current_offers):
+                reason = ArtifactTerminalReason.OFFICIAL_DEADLINE_SHORTENED
+            elif received_at >= cutoff:
+                reason = (
+                    ArtifactTerminalReason.CONFIRMATION_NOT_REQUESTED
+                    if uow.tickets.confirmation_challenge_head(
+                        link.ticket_artifact_id
+                    )
+                    is None
+                    else ArtifactTerminalReason.DEADLINE_UNCONFIRMED
+                )
+            if reason is None:
+                continue
+            transition = consume_artifact_terminal(
+                uow,
+                ticket_artifact_id=link.ticket_artifact_id,
+                terminal_kind=ArtifactTerminalKind.SHADOW,
+                terminal_reason=reason,
+                action_id=action_id,
+                ingress_at=received_at,
+            )
+            if transition.created:
+                changed = True
+                fact = self._insert_artifact_terminal_review_eligibility(
+                    uow,
+                    action_id=action_id,
+                    fact_index=sum(
+                        ref.object_type == "operator_review_eligibility_fact"
+                        for ref in refs
+                    ),
+                    work_link=link,
+                    artifact_terminal_receipt=transition.receipt,
+                    created_at=received_at,
+                )
+                refs.append(
+                    ObjectRef(
+                        "artifact_terminal_receipt",
+                        transition.receipt.artifact_terminal_receipt_id,
+                    )
+                )
+                refs.append(
+                    ObjectRef(
+                        "operator_review_eligibility_fact",
+                        fact.review_eligibility_fact_id,
+                    )
+                )
+        return tuple(refs), changed
+
+    def _insert_no_ticket_revision(
+        self,
+        uow,
+        *,
+        request: RecordNoTicketRequest,
+        context: NoTicketDecisionContext,
+        action_id: str,
+    ) -> NoTicketRevisionRow:
+        comparison_candidate_id = request.comparison_candidate_revision_id
+        if (
+            comparison_candidate_id is not None
+            and comparison_candidate_id
+            not in context.comparison_candidate_revision_ids
+        ):
+            raise ValueError("comparison candidate is not current for this work item")
+        current = (
+            None
+            if context.current_no_ticket_revision_id is None
+            else uow.operator_result.no_ticket_revision(
+                context.current_no_ticket_revision_id
+            )
+        )
+        family_id = _stable_id(
+            "no-ticket-family",
+            context.task_family_id,
+            context.work_item_id,
+            context.slate_revision_id,
+            (
+                None
+                if current is None or current.deployment_outcome != "reopened"
+                else current.no_ticket_revision_id
+            ),
+            context.scope_fingerprint,
+        )
+        placed = any(
+            (
+                terminal := uow.tickets.artifact_terminal_receipt(
+                    link.ticket_artifact_id
+                )
+            )
+            is not None
+            and terminal.terminal_kind == "placed"
+            for link in uow.tickets.artifact_work_item_links_for_work_item(
+                context.work_item_id
+            )
+        )
+        document = {
+            "family_id": family_id,
+            "task_family_id": context.task_family_id,
+            "work_item_id": context.work_item_id,
+            "task_snapshot_hash": context.task_snapshot_hash,
+            "slate_revision_id": context.slate_revision_id,
+            "reason_code": request.reason_code,
+            "reason_basis": request.reason_basis,
+            "reason_text": request.reason_text.strip(),
+            "rule_ids": list(request.rule_ids),
+            "phase": context.phase,
+            "requirement_snapshot_hash": context.requirement_snapshot_hash,
+            "missing_requirement_ids": list(context.missing_requirement_ids),
+            "stale_requirement_ids": list(context.stale_requirement_ids),
+            "conflicting_requirement_ids": list(
+                context.conflicting_requirement_ids
+            ),
+            "market_prior_baseline_revision_id": (
+                context.market_prior_baseline_revision_id
+            ),
+            "baseline_envelope_revision_id": (
+                context.baseline_envelope_revision_id
+            ),
+            "candidate_set_revision_id": context.candidate_set_revision_id,
+            "comparison_candidate_revision_id": comparison_candidate_id,
+            "deployment_outcome": "partially_placed" if placed else "no_ticket",
+            "offer_revision_ids": list(context.offer_revision_ids),
+            "artifact_ids": list(context.artifact_ids),
+        }
+        revision_id = _stable_id("no-ticket", action_id, document)
+        recorded_at = _utc(request.requested_at)
+        revision = NoTicketRevisionRow(
+            no_ticket_revision_id=revision_id,
+            no_ticket_family_id=family_id,
+            revision_no=1,
+            supersedes_revision_id=None,
+            action_id=action_id,
+            task_family_id=context.task_family_id,
+            work_item_id=context.work_item_id,
+            task_snapshot_hash=context.task_snapshot_hash,
+            slate_revision_id=context.slate_revision_id,
+            reason_code=request.reason_code,
+            reason_basis=request.reason_basis,
+            reason_text=request.reason_text.strip(),
+            rule_ids=tuple(request.rule_ids),
+            phase=context.phase,
+            requirement_snapshot_hash=context.requirement_snapshot_hash,
+            missing_requirement_ids=context.missing_requirement_ids,
+            stale_requirement_ids=context.stale_requirement_ids,
+            conflicting_requirement_ids=context.conflicting_requirement_ids,
+            market_prior_baseline_revision_id=(
+                context.market_prior_baseline_revision_id
+            ),
+            baseline_envelope_revision_id=(
+                context.baseline_envelope_revision_id
+            ),
+            candidate_set_revision_id=context.candidate_set_revision_id,
+            comparison_candidate_revision_id=comparison_candidate_id,
+            deployment_outcome="partially_placed" if placed else "no_ticket",
+            content_hash=_content_hash(document),
+            recorded_at=recorded_at,
+        )
+        uow.operator_result.insert_no_ticket_revision(revision)
+        for index, offer_revision_id in enumerate(context.offer_revision_ids):
+            offer = uow.operator_sale.offer_revision(offer_revision_id)
+            if offer is None:
+                raise ValueError("no-ticket offer scope is stale")
+            uow.operator_result.insert_no_ticket_offer_scope(
+                NoTicketOfferScopeRow(
+                    no_ticket_offer_scope_id=_stable_id(
+                        "no-ticket-offer", revision_id, offer_revision_id
+                    ),
+                    no_ticket_revision_id=revision_id,
+                    scope_index=index,
+                    official_offer_revision_id=offer_revision_id,
+                    effective_cutoff_at=offer.sale_deadline_at,
+                )
+            )
+        for index, ticket_artifact_id in enumerate(context.artifact_ids):
+            binding = uow.tickets.protected_artifact_binding(ticket_artifact_id)
+            current_offers = self._current_artifact_offers(
+                uow,
+                ticket_artifact_id,
+            )
+            if binding is None or not current_offers:
+                raise ValueError("no-ticket artifact scope is stale")
+            uow.operator_result.insert_no_ticket_artifact_scope(
+                NoTicketArtifactScopeRow(
+                    no_ticket_artifact_scope_id=_stable_id(
+                        "no-ticket-artifact", revision_id, ticket_artifact_id
+                    ),
+                    no_ticket_revision_id=revision_id,
+                    scope_index=index,
+                    ticket_artifact_id=ticket_artifact_id,
+                    effective_cutoff_at=effective_artifact_cutoff(
+                        binding,
+                        current_offers,
+                    ).isoformat(),
+                )
+            )
+        return revision
+
+    @staticmethod
+    def _reopenable_no_ticket_offers(
+        uow,
+        current: NoTicketRevisionRow,
+        *,
+        current_slate_revision_id: str,
+        received_at: datetime,
+    ) -> tuple[object, ...]:
+        reopened = []
+        seen_families = set()
+        received = _aware(received_at, "received_at").astimezone(UTC)
+        for scope in uow.operator_result.no_ticket_offer_scopes(
+            current.no_ticket_revision_id
+        ):
+            source = uow.operator_sale.offer_revision(
+                scope.official_offer_revision_id
+            )
+            if (
+                source is None
+                or source.official_offer_family_id in seen_families
+            ):
+                continue
+            seen_families.add(source.official_offer_family_id)
+            offer = uow.operator_sale.current_offer_by_family(
+                source.official_offer_family_id
+            )
+            if (
+                offer is not None
+                and offer.slate_revision_id == current_slate_revision_id
+                and offer.status in {"scheduled", "on_sale"}
+                and received
+                < datetime.fromisoformat(offer.sale_deadline_at).astimezone(UTC)
+            ):
+                reopened.append(offer)
+        return tuple(reopened)
+
+    @staticmethod
+    def _insert_reopened_no_ticket_revision(
+        uow,
+        *,
+        current: NoTicketRevisionRow,
+        context: NoTicketDecisionContext,
+        reopenable_offers: tuple[object, ...],
+        reason_text: str,
+        action_id: str,
+        recorded_at: datetime,
+    ) -> NoTicketRevisionRow:
+        document = {
+            "supersedes_revision_id": current.no_ticket_revision_id,
+            "task_snapshot_hash": context.task_snapshot_hash,
+            "slate_revision_id": context.slate_revision_id,
+            "reason_text": reason_text.strip(),
+            "deployment_outcome": "reopened",
+            "offer_revision_ids": [
+                offer.official_offer_revision_id for offer in reopenable_offers
+            ],
+        }
+        revision_id = _stable_id("no-ticket-reopened", action_id, document)
+        row = NoTicketRevisionRow(
+            no_ticket_revision_id=revision_id,
+            no_ticket_family_id=current.no_ticket_family_id,
+            revision_no=current.revision_no + 1,
+            supersedes_revision_id=current.no_ticket_revision_id,
+            action_id=action_id,
+            task_family_id=current.task_family_id,
+            work_item_id=current.work_item_id,
+            task_snapshot_hash=context.task_snapshot_hash,
+            slate_revision_id=context.slate_revision_id,
+            reason_code=current.reason_code,
+            reason_basis=current.reason_basis,
+            reason_text=reason_text.strip(),
+            rule_ids=current.rule_ids,
+            phase=current.phase,
+            requirement_snapshot_hash=current.requirement_snapshot_hash,
+            missing_requirement_ids=current.missing_requirement_ids,
+            stale_requirement_ids=current.stale_requirement_ids,
+            conflicting_requirement_ids=current.conflicting_requirement_ids,
+            market_prior_baseline_revision_id=(
+                current.market_prior_baseline_revision_id
+            ),
+            baseline_envelope_revision_id=current.baseline_envelope_revision_id,
+            candidate_set_revision_id=current.candidate_set_revision_id,
+            comparison_candidate_revision_id=(
+                current.comparison_candidate_revision_id
+            ),
+            deployment_outcome="reopened",
+            content_hash=_content_hash(document),
+            recorded_at=_utc(recorded_at),
+        )
+        uow.operator_result.insert_no_ticket_revision(row)
+        for index, offer in enumerate(reopenable_offers):
+            uow.operator_result.insert_no_ticket_offer_scope(
+                NoTicketOfferScopeRow(
+                    no_ticket_offer_scope_id=_stable_id(
+                        "no-ticket-reopened-offer",
+                        revision_id,
+                        offer.official_offer_revision_id,
+                    ),
+                    no_ticket_revision_id=revision_id,
+                    scope_index=index,
+                    official_offer_revision_id=(
+                        offer.official_offer_revision_id
+                    ),
+                    effective_cutoff_at=offer.sale_deadline_at,
+                )
+            )
+        return row
+
+    @staticmethod
+    def _insert_no_ticket_command_receipt(
+        uow,
+        *,
+        action_id: str,
+        command_kind: str,
+        no_ticket_revision_id: str | None,
+        task_family_id: str,
+        work_item_id: str,
+        submitted_task_snapshot_hash: str,
+        resolved_task_snapshot_hash: str,
+        result: NoTicketCommandResult,
+        received_at: datetime,
+    ) -> NoTicketCommandReceiptRow:
+        row = NoTicketCommandReceiptRow(
+            no_ticket_command_receipt_id=_stable_id(
+                "no-ticket-command-receipt", action_id
+            ),
+            action_id=action_id,
+            command_kind=command_kind,
+            no_ticket_revision_id=no_ticket_revision_id,
+            task_family_id=task_family_id,
+            work_item_id=work_item_id,
+            submitted_task_snapshot_hash=submitted_task_snapshot_hash,
+            resolved_task_snapshot_hash=resolved_task_snapshot_hash,
+            result=result.value,
+            received_at=_utc(received_at),
+        )
+        uow.operator_result.insert_no_ticket_command_receipt(row)
+        return row
+
+    @staticmethod
+    def _insert_no_ticket_review_eligibility(
+        uow,
+        *,
+        action_id: str,
+        fact_index: int,
+        context: NoTicketDecisionContext,
+        no_ticket_revision_id: str,
+        created_at: datetime,
+    ) -> ReviewEligibilityFactRow:
+        has_baseline = context.market_prior_baseline_revision_id is not None
+        document = {
+            "terminal_trigger": "no_ticket",
+            "task_family_id": context.task_family_id,
+            "work_item_id": context.work_item_id,
+            "task_snapshot_hash": context.task_snapshot_hash,
+            "no_ticket_revision_id": no_ticket_revision_id,
+            "market_prior_baseline_revision_id": (
+                context.market_prior_baseline_revision_id
+            ),
+            "review_kind": (
+                "forecast_truth"
+                if has_baseline
+                else "operational_data_availability"
+            ),
+            "readiness_condition": (
+                "outcomes_required" if has_baseline else "immediate"
+            ),
+        }
+        row = ReviewEligibilityFactRow(
+            review_eligibility_fact_id=_stable_id(
+                "review-eligibility", action_id, fact_index, document
+            ),
+            action_id=action_id,
+            fact_index=fact_index,
+            terminal_trigger="no_ticket",
+            task_family_id=context.task_family_id,
+            work_item_id=context.work_item_id,
+            task_snapshot_hash=context.task_snapshot_hash,
+            no_ticket_revision_id=no_ticket_revision_id,
+            artifact_terminal_receipt_id=None,
+            market_prior_baseline_revision_id=(
+                context.market_prior_baseline_revision_id
+            ),
+            review_kind=(
+                "forecast_truth"
+                if has_baseline
+                else "operational_data_availability"
+            ),
+            readiness_condition=(
+                "outcomes_required" if has_baseline else "immediate"
+            ),
+            content_hash=_content_hash(document),
+            created_at=_utc(created_at),
+        )
+        uow.operator_result.insert_review_eligibility_fact(row)
+        return row
+
+    @staticmethod
+    def _insert_artifact_terminal_review_eligibility(
+        uow,
+        *,
+        action_id: str,
+        fact_index: int,
+        work_link,
+        artifact_terminal_receipt,
+        created_at: datetime,
+    ) -> ReviewEligibilityFactRow:
+        binding = uow.tickets.protected_artifact_binding(
+            artifact_terminal_receipt.ticket_artifact_id
+        )
+        if binding is None:
+            raise ValueError("artifact terminal review requires a protected binding")
+        lineage = uow.operator_result.ticket_decision_lineage_revision(
+            binding.lineage_revision_id
+        )
+        if lineage is None:
+            raise ValueError("artifact terminal review requires complete decision lineage")
+        terminal_trigger = (
+            "official_cancellation"
+            if artifact_terminal_receipt.terminal_reason
+            == ArtifactTerminalReason.OFFICIAL_OFFER_CANCELLED.value
+            else "artifact_terminal"
+        )
+        document = {
+            "terminal_trigger": terminal_trigger,
+            "task_family_id": work_link.task_family_id,
+            "work_item_id": work_link.work_item_id,
+            "task_snapshot_hash": work_link.task_snapshot_hash,
+            "artifact_terminal_receipt_id": (
+                artifact_terminal_receipt.artifact_terminal_receipt_id
+            ),
+            "market_prior_baseline_revision_id": (
+                lineage.market_prior_baseline_revision_id
+            ),
+            "review_kind": "forecast_truth",
+            "readiness_condition": "outcomes_required",
+        }
+        row = ReviewEligibilityFactRow(
+            review_eligibility_fact_id=_stable_id(
+                "review-eligibility", action_id, fact_index, document
+            ),
+            action_id=action_id,
+            fact_index=fact_index,
+            terminal_trigger=terminal_trigger,
+            task_family_id=work_link.task_family_id,
+            work_item_id=work_link.work_item_id,
+            task_snapshot_hash=work_link.task_snapshot_hash,
+            no_ticket_revision_id=None,
+            artifact_terminal_receipt_id=(
+                artifact_terminal_receipt.artifact_terminal_receipt_id
+            ),
+            market_prior_baseline_revision_id=(
+                lineage.market_prior_baseline_revision_id
+            ),
+            review_kind="forecast_truth",
+            readiness_condition="outcomes_required",
+            content_hash=_content_hash(document),
+            created_at=_utc(created_at),
+        )
+        uow.operator_result.insert_review_eligibility_fact(row)
+        return row
+
+    def _audit_token_codec(self) -> _TicketAuditTokenCodec:
+        if self._audit_tokens is None:
+            raise TicketAuditOverrideTokenError(
+                "audit override signed-token support is not configured"
+            )
+        return self._audit_tokens
+
+    @staticmethod
+    def _assert_audit_token_kind(
+        payload: _TicketAuditTokenPayload,
+        expected: str,
+    ) -> None:
+        if payload.kind != expected:
+            raise TicketAuditOverrideTokenError("invalid signed audit override token")
+
+    def _ticket_batch_policy(self, ticket_batch_revision_id: str) -> str:
+        with self._action_service.unit_of_work() as uow:
+            resolved = self._resolve_current_ticket_audit(
+                uow,
+                ticket_batch_revision_id,
+            )
+            return resolved.bundle.policy_version
+
+    def _resolve_current_ticket_audit(
+        self,
+        uow,
+        ticket_batch_revision_id: str,
+    ) -> _ResolvedTicketAudit:
+        batch = uow.tickets.batch_revision(ticket_batch_revision_id)
+        if batch is None:
+            raise ValueError("ticket batch revision does not exist")
+        current_batch = uow.tickets.current_batch_revision(batch.ticket_batch_id)
+        if (
+            current_batch is None
+            or current_batch.ticket_batch_revision_id != ticket_batch_revision_id
+        ):
+            raise StaleOperatorDecisionDependencyError(
+                "ticket batch revision is stale or superseded"
+            )
+        lineage = uow.operator_result.ticket_decision_lineage_for_batch(
+            ticket_batch_revision_id
+        )
+        if lineage is None:
+            raise ValueError("ticket batch has no normalized decision lineage")
+        current_lineage = uow.operator_result.current_ticket_decision_lineage(
+            lineage.lineage_family_id
+        )
+        if (
+            current_lineage is None
+            or current_lineage.lineage_revision_id != lineage.lineage_revision_id
+        ):
+            raise StaleOperatorDecisionDependencyError(
+                "ticket decision lineage is stale or superseded"
+            )
+        selected = self.resolve_current_selection_in_uow(
+            uow,
+            candidate_selection_id=lineage.candidate_selection_id,
+        )
+        expected_parent = (
+            selected.candidate_set.task_family_id,
+            selected.candidate_set.work_item_id,
+            selected.candidate_set.task_snapshot_hash,
+            selected.candidate_set.slate_revision_id,
+            selected.generation.task_evidence_bundle_revision_id,
+            selected.candidate_set.market_prior_baseline_revision_id,
+            selected.candidate_set.baseline_envelope_revision_id,
+            selected.candidate_set.judgment_prescription_revision_id,
+            selected.candidate_set.candidate_set_revision_id,
+            selected.selection.candidate_selection_id,
+            selected.candidate.candidate_revision_id,
+            selected.candidate_set.audit_policy_version,
+        )
+        actual_parent = (
+            lineage.task_family_id,
+            lineage.work_item_id,
+            lineage.task_snapshot_hash,
+            lineage.slate_revision_id,
+            lineage.task_evidence_bundle_revision_id,
+            lineage.market_prior_baseline_revision_id,
+            lineage.baseline_envelope_revision_id,
+            lineage.judgment_prescription_revision_id,
+            lineage.candidate_set_revision_id,
+            lineage.candidate_selection_id,
+            lineage.candidate_revision_id,
+            lineage.audit_policy_version,
+        )
+        if actual_parent != expected_parent:
+            raise StaleOperatorDecisionDependencyError(
+                "ticket decision lineage crosses its selected candidate"
+            )
+        expected_items = self._lineage_item_documents(uow, selected)
+        stored_items = uow.operator_result.ticket_decision_lineage_items(
+            lineage.lineage_revision_id
+        )
+        actual_items = tuple(
+            {
+                "candidate_ticket_id": item.candidate_ticket_id,
+                "ticket_index": item.ticket_index,
+                "candidate_ticket_leg_id": item.candidate_ticket_leg_id,
+                "leg_index": item.leg_index,
+                "official_offer_revision_id": item.official_offer_revision_id,
+                "match_id": item.match_id,
+                "market_definition_id": item.market_definition_id,
+                "selection_code": item.selection_code,
+                "market_prior_baseline_probability_id": (
+                    item.market_prior_baseline_probability_id
+                ),
+                "operator_match_judgment_revision_id": (
+                    item.operator_match_judgment_revision_id
+                ),
+                "forecast_revision_id": item.forecast_revision_id,
+            }
+            for item in stored_items
+        )
+        if actual_items != expected_items:
+            raise StaleOperatorDecisionDependencyError(
+                "ticket decision lineage items are incomplete or cross-candidate"
+            )
+        errors = tuple(
+            finding
+            for finding in uow.operator_result.candidate_audit_findings(
+                selected.candidate.candidate_revision_id
+            )
+            if finding.severity == "ERROR"
+        )
+        dependencies = tuple(
+            sorted(
+                {
+                    f"lineage:{lineage.lineage_revision_id}",
+                    f"ticket-batch:{ticket_batch_revision_id}",
+                    f"bundle:{lineage.task_evidence_bundle_revision_id}",
+                    f"baseline:{lineage.market_prior_baseline_revision_id}",
+                    f"envelope:{lineage.baseline_envelope_revision_id}",
+                    f"prescription:{lineage.judgment_prescription_revision_id}",
+                    f"candidate-set:{lineage.candidate_set_revision_id}",
+                    f"selection:{lineage.candidate_selection_id}",
+                    f"candidate:{lineage.candidate_revision_id}",
+                    *(
+                        f"finding:{finding.candidate_audit_finding_id}"
+                        for finding in errors
+                    ),
+                }
+            )
+        )
+        return _ResolvedTicketAudit(
+            batch=batch,
+            lineage=lineage,
+            bundle=selected.bundle,
+            baseline=selected.baseline,
+            envelope=selected.envelope,
+            prescription=selected.prescription,
+            candidate_set=selected.candidate_set,
+            candidate=selected.candidate,
+            selection=selected.selection,
+            candidate_tickets=tuple(
+                uow.operator_result.candidate_tickets(
+                    selected.candidate.candidate_revision_id
+                )
+            ),
+            errors=errors,
+            dependency_revision_ids=dependencies,
+        )
+
+    def resolve_current_selection_in_uow(
+        self,
+        uow,
+        *,
+        candidate_selection_id: str,
+    ) -> _ResolvedSelection:
+        """Resolve one current selection inside an existing outer Action transaction."""
+        selection = uow.operator_decision.candidate_selection_revision(
+            candidate_selection_id
+        )
+        if selection is None:
+            raise ValueError("candidate selection does not exist")
+        candidate_set = uow.operator_result.candidate_set_revision(
+            selection.candidate_set_revision_id
+        )
+        candidate = uow.operator_result.candidate(selection.candidate_revision_id)
+        if candidate_set is None or candidate is None:
+            raise ValueError("selected ticket candidate does not exist")
+        current_selection = uow.operator_decision.current_candidate_selection(
+            task_family_id=selection.task_family_id,
+            work_item_id=selection.work_item_id,
+        )
+        current_set = uow.operator_result.current_candidate_set(
+            task_family_id=candidate_set.task_family_id,
+            work_item_id=candidate_set.work_item_id,
+            set_kind="judgment_bound",
+        )
+        if (
+            current_selection is None
+            or current_selection.candidate_selection_id != candidate_selection_id
+            or current_set is None
+            or current_set.candidate_set_revision_id
+            != candidate_set.candidate_set_revision_id
+        ):
+            raise StaleOperatorDecisionDependencyError(
+                "candidate selection or candidate set is stale or superseded"
+            )
+        if (
+            candidate_set.set_kind != "judgment_bound"
+            or candidate_set.comparison_only != 0
+            or candidate.candidate_set_revision_id
+            != candidate_set.candidate_set_revision_id
+            or candidate.candidate_revision_id != selection.candidate_revision_id
+        ):
+            raise ValueError("selection is not bound to a judgment candidate")
+        generation = uow.operator_decision.candidate_generation_request(
+            candidate_set.generation_request_id
+        )
+        if generation is None:
+            raise ValueError("candidate generation request does not exist")
+        bundle, _items = self._current_bundle(
+            uow,
+            generation.task_evidence_bundle_revision_id,
+        )
+        baseline, envelope = self._same_decision_lineage(
+            uow,
+            bundle,
+            generation.work_item_id,
+            generation.market_prior_baseline_revision_id,
+            generation.baseline_envelope_revision_id,
+        )
+        prescription = uow.operator_decision.judgment_prescription_revision(
+            generation.judgment_prescription_revision_id
+        )
+        if prescription is None:
+            raise ValueError("candidate judgment prescription does not exist")
+        current_prescription = (
+            uow.operator_decision.current_judgment_prescription_revision(
+                prescription.judgment_prescription_family_id
+            )
+        )
+        expected_lineage = (
+            generation.task_family_id,
+            generation.work_item_id,
+            generation.task_snapshot_hash,
+            generation.slate_revision_id,
+            generation.market_prior_baseline_revision_id,
+            generation.baseline_envelope_revision_id,
+            generation.judgment_prescription_revision_id,
+        )
+        if (
+            current_prescription is None
+            or current_prescription.judgment_prescription_revision_id
+            != prescription.judgment_prescription_revision_id
+            or (
+                candidate_set.task_family_id,
+                candidate_set.work_item_id,
+                candidate_set.task_snapshot_hash,
+                candidate_set.slate_revision_id,
+                candidate_set.market_prior_baseline_revision_id,
+                candidate_set.baseline_envelope_revision_id,
+                candidate_set.judgment_prescription_revision_id,
+            )
+            != expected_lineage
+            or (
+                prescription.task_family_id,
+                prescription.work_item_id,
+                prescription.task_snapshot_hash,
+                prescription.slate_revision_id,
+                prescription.market_prior_baseline_revision_id,
+                prescription.baseline_envelope_revision_id,
+                prescription.judgment_prescription_revision_id,
+            )
+            != expected_lineage
+        ):
+            raise StaleOperatorDecisionDependencyError(
+                "selected candidate has stale or cross-task decision lineage"
+            )
+        current_slate = uow.operator_sale.current_slate(bundle.lane, bundle.business_key)
+        if (
+            current_slate is None
+            or current_slate.slate_revision_id != candidate_set.slate_revision_id
+        ):
+            raise StaleOperatorDecisionDependencyError(
+                "selected candidate slate is stale or superseded"
+            )
+        return _ResolvedSelection(
+            selection=selection,
+            candidate=candidate,
+            candidate_set=candidate_set,
+            generation=generation,
+            bundle=bundle,
+            baseline=baseline,
+            envelope=envelope,
+            prescription=prescription,
+        )
+
+    def _lineage_item_documents(self, uow, selected) -> tuple[dict[str, object], ...]:
+        baseline_rows = uow.operator_decision.market_prior_baseline_probabilities(
+            selected.baseline.market_prior_baseline_revision_id
+        )
+        probabilities = {
+            (
+                str(row["official_offer_revision_id"]),
+                str(row["match_id"]),
+                str(row["market_definition_id"]),
+                str(row["face_code"]),
+            ): row
+            for row in baseline_rows
+        }
+        prescription_items = {
+            item.match_id: item
+            for item in uow.operator_decision.judgment_prescription_items(
+                selected.prescription.judgment_prescription_revision_id
+            )
+        }
+        documents: list[dict[str, object]] = []
+        tickets = uow.operator_result.candidate_tickets(
+            selected.candidate.candidate_revision_id
+        )
+        if not tickets:
+            raise ValueError("selected candidate has no candidate tickets")
+        for ticket in tickets:
+            legs = uow.operator_result.candidate_ticket_legs(ticket.candidate_ticket_id)
+            if not legs:
+                raise ValueError("selected candidate ticket has no legs")
+            for leg in legs:
+                probability = probabilities.get(
+                    (
+                        leg.official_offer_revision_id,
+                        leg.match_id,
+                        leg.market_definition_id,
+                        leg.selection_code,
+                    )
+                )
+                prescription_item = prescription_items.get(leg.match_id)
+                if probability is None or prescription_item is None:
+                    raise ValueError(
+                        "candidate leg has no exact baseline or prescription dependency"
+                    )
+                judgment = uow.operator_decision.operator_match_judgment_revision(
+                    prescription_item.operator_match_judgment_revision_id
+                )
+                if (
+                    judgment is None
+                    or judgment.match_id != leg.match_id
+                    or judgment.official_offer_revision_id
+                    != leg.official_offer_revision_id
+                    or judgment.market_definition_id != leg.market_definition_id
+                ):
+                    raise ValueError(
+                        "candidate leg crosses its committed judgment dependency"
+                    )
+                self._validate_current_prescription_judgment(
+                    uow,
+                    selected.bundle,
+                    selected.baseline,
+                    selected.envelope,
+                    selected.candidate_set.work_item_id,
+                    judgment,
+                )
+                documents.append(
+                    {
+                        "candidate_ticket_id": ticket.candidate_ticket_id,
+                        "ticket_index": ticket.ticket_index,
+                        "candidate_ticket_leg_id": leg.candidate_ticket_leg_id,
+                        "leg_index": leg.leg_index,
+                        "official_offer_revision_id": (
+                            leg.official_offer_revision_id
+                        ),
+                        "match_id": leg.match_id,
+                        "market_definition_id": leg.market_definition_id,
+                        "selection_code": leg.selection_code,
+                        "market_prior_baseline_probability_id": str(
+                            probability["market_prior_baseline_probability_id"]
+                        ),
+                        "operator_match_judgment_revision_id": (
+                            judgment.operator_match_judgment_revision_id
+                        ),
+                        "forecast_revision_id": judgment.forecast_revision_id,
+                    }
+                )
+        return tuple(documents)
+
+    def _prevalidate_ticket_audit_overrides(
+        self,
+        codec: _TicketAuditTokenCodec,
+        request: RecordTicketAuditOverrideRequest,
+        resolved: _ResolvedTicketAudit,
+    ) -> tuple[tuple[object, TicketAuditOverrideInput], ...]:
+        expected_snapshot = _TicketAuditTokenPayload(
+            kind="snapshot",
+            ticket_batch_revision_id=resolved.batch.ticket_batch_revision_id,
+            task_snapshot_hash=resolved.lineage.task_snapshot_hash,
+            work_item_id=resolved.lineage.work_item_id,
+            dependency_revision_ids=resolved.dependency_revision_ids,
+        )
+        if codec.decode(request.expected_snapshot_token) != expected_snapshot:
+            raise TicketAuditOverrideTokenError(
+                "audit override snapshot token is stale or cross-batch"
+            )
+        errors_by_id = {
+            finding.candidate_audit_finding_id: finding
+            for finding in resolved.errors
+        }
+        if not errors_by_id:
+            raise ValueError("ticket audit override requires a nonempty current ERROR set")
+        supplied: dict[str, TicketAuditOverrideInput] = {}
+        for override in request.overrides:
+            payload = codec.decode(override.finding_token)
+            self._assert_audit_token_kind(payload, "finding")
+            finding_id = payload.candidate_audit_finding_id
+            if (
+                payload.ticket_batch_revision_id
+                != resolved.batch.ticket_batch_revision_id
+                or finding_id is None
+                or finding_id in supplied
+            ):
+                raise TicketAuditOverrideTokenError(
+                    "signed finding token is duplicate or cross-batch"
+                )
+            unknown_rules = set(override.rule_ids) - DEVIATION_RULE_IDS
+            if unknown_rules:
+                raise ValueError(
+                    "audit override references unknown Rule IDs: "
+                    + ", ".join(sorted(unknown_rules))
+                )
+            supplied[finding_id] = override
+        if set(supplied) != set(errors_by_id):
+            raise ValueError("override inputs must equal the exact current ERROR set")
+        prepared = []
+        for finding in resolved.errors:
+            override = supplied[finding.candidate_audit_finding_id]
+            if finding.rule_id is not None and finding.rule_id not in override.rule_ids:
+                raise ValueError(
+                    "override Rule IDs do not preserve the committed deviation record"
+                )
+            prepared.append((finding, override))
+        return tuple(prepared)
+
+    def _insert_override_generation_request(
+        self,
+        uow,
+        *,
+        resolved: _ResolvedTicketAudit,
+        action_id: str,
+        receipt_ids: tuple[str, ...],
+        requested_at: datetime,
+    ) -> str:
+        original = uow.operator_decision.candidate_generation_request(
+            resolved.candidate_set.generation_request_id
+        )
+        if original is None:
+            raise ValueError("selected candidate generation request is missing")
+        dependency_document = {
+            "task_snapshot_hash": resolved.lineage.task_snapshot_hash,
+            "slate_revision_id": resolved.lineage.slate_revision_id,
+            "task_evidence_bundle_revision_id": (
+                resolved.lineage.task_evidence_bundle_revision_id
+            ),
+            "market_prior_baseline_revision_id": (
+                resolved.lineage.market_prior_baseline_revision_id
+            ),
+            "baseline_envelope_revision_id": (
+                resolved.lineage.baseline_envelope_revision_id
+            ),
+            "judgment_prescription_revision_id": (
+                resolved.lineage.judgment_prescription_revision_id
+            ),
+            "override_receipt_ids": list(receipt_ids),
+        }
+        dependency_fingerprint = _content_hash(dependency_document)
+        request_document = {
+            **dependency_document,
+            "task_family_id": resolved.lineage.task_family_id,
+            "work_item_id": resolved.lineage.work_item_id,
+            "expected_current_revision_no": resolved.candidate_set.revision_no,
+        }
+        content_hash = _content_hash(request_document)
+        generation_request_id = _stable_id(
+            "operator-candidate-generation-request",
+            resolved.lineage.task_family_id,
+            resolved.lineage.work_item_id,
+            content_hash,
+        )
+        recorded_at = _utc(requested_at)
+        uow.operator_decision.insert_candidate_generation_request(
+            CandidateGenerationRequestRow(
+                generation_request_id=generation_request_id,
+                action_id=action_id,
+                task_family_id=resolved.lineage.task_family_id,
+                work_item_id=resolved.lineage.work_item_id,
+                task_snapshot_hash=resolved.lineage.task_snapshot_hash,
+                slate_revision_id=resolved.lineage.slate_revision_id,
+                task_evidence_bundle_revision_id=(
+                    resolved.lineage.task_evidence_bundle_revision_id
+                ),
+                market_prior_baseline_revision_id=(
+                    resolved.lineage.market_prior_baseline_revision_id
+                ),
+                baseline_envelope_revision_id=(
+                    resolved.lineage.baseline_envelope_revision_id
+                ),
+                judgment_prescription_revision_id=(
+                    resolved.lineage.judgment_prescription_revision_id
+                ),
+                fixed_prize_policy_revision_id=(
+                    original.fixed_prize_policy_revision_id
+                ),
+                dependency_fingerprint=dependency_fingerprint,
+                expected_current_revision_no=resolved.candidate_set.revision_no,
+                content_hash=content_hash,
+                requested_at=recorded_at,
+            )
+        )
+        uow.operator_decision.insert_worker_job(
+            OperatorWorkerJobRow(
+                worker_job_id=_stable_id(
+                    "operator-worker-job",
+                    "candidate_generation",
+                    generation_request_id,
+                ),
+                job_kind="candidate_generation",
+                source_object_type="operator_candidate_generation_request",
+                source_object_id=generation_request_id,
+                state="queued",
+                lease_owner=None,
+                lease_expires_at=None,
+                attempt_count=0,
+                available_at=recorded_at,
+                last_error_code=None,
+                result_action_id=None,
+                result_object_type=None,
+                result_object_id=None,
+                created_at=recorded_at,
+                updated_at=recorded_at,
+            )
+        )
+        for index, receipt_id in enumerate(receipt_ids):
+            uow.operator_result.insert_candidate_generation_override_link(
+                CandidateGenerationOverrideLinkRow(
+                    candidate_generation_override_link_id=_stable_id(
+                        "candidate-generation-override-link",
+                        generation_request_id,
+                        receipt_id,
+                    ),
+                    generation_request_id=generation_request_id,
+                    override_receipt_id=receipt_id,
+                    link_index=index,
+                    created_at=recorded_at,
+                )
+            )
+        return generation_request_id
 
     def _bundle_policy(self, revision_id: str) -> str:
         with self._action_service.unit_of_work() as uow:
@@ -2483,8 +4868,16 @@ __all__ = [
     "FactorAdjustmentInput",
     "FreezeJudgmentPrescriptionRequest",
     "FreezeMarketPriorBaselineRequest",
+    "NoTicketDecisionContext",
     "OperatorDecisionActions",
     "RecordBaselineEnvelopeRequest",
+    "RecordNoTicketRequest",
+    "RecordTicketAuditOverrideRequest",
     "RequestCandidateGenerationRequest",
     "SelectTicketCandidateRequest",
+    "SupersedeNoTicketRequest",
+    "TicketAuditFindingToken",
+    "TicketAuditOverrideContext",
+    "TicketAuditOverrideInput",
+    "TicketAuditOverrideTokenError",
 ]

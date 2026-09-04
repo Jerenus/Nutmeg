@@ -1,8 +1,6 @@
 """Human-only conversion of disclosed audit ERRORs into typed Adjudications."""
 from __future__ import annotations
 
-import hashlib
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -10,9 +8,11 @@ from nutmeg.decision.legs_audit import (
     Finding,
     deviation_registrations,
 )
-from nutmeg.ontology.actions.models import ActionStatus, ActorRole, canonical_json
-from nutmeg.ontology.actions.protected_ticket_actions import ticket_audit_finding_id
-from nutmeg.ontology.actions.workflow_actions import RecordAdjudicationRequest
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole
+from nutmeg.ontology.operator.decision_actions import (
+    RecordTicketAuditOverrideRequest,
+    TicketAuditOverrideInput,
+)
 
 
 class AuditOverrideError(RuntimeError):
@@ -26,46 +26,44 @@ class AuditOverrideResult:
     action_ids: tuple[str, ...]
 
 
-def _finding_dict(finding: Finding) -> dict[str, object]:
-    return {
-        "level": finding.level,
-        "code": finding.code,
-        "match_no": finding.match_no,
-        "message": finding.message,
-        "since": finding.since,
-    }
-
-
 def record_user_overrides(
     payload: dict,
     findings: list[Finding],
     *,
-    workflow_actions,
+    decision_actions,
+    ticket_batch_token: str,
     requested_at: datetime,
 ) -> AuditOverrideResult:
-    """Record one judge-operator Adjudication per ERROR match, exactly once."""
+    """Record the exact current ERROR set through the human-only outer Action."""
     errors = [finding for finding in findings if finding.level == "ERROR"]
-    grouped: dict[int, list[Finding]] = defaultdict(list)
-    for finding in errors:
-        if finding.match_no is None:
-            raise AuditOverrideError("票级 ERROR 不能按 user_naked_wheels 通道覆盖")
-        grouped[finding.match_no].append(finding)
-    if not grouped:
+    if not errors:
         return AuditOverrideResult(0, 0, ())
-
+    context = decision_actions.ticket_audit_override_context(ticket_batch_token)
+    local_signatures = sorted(
+        (finding.code, None if finding.match_no is None else str(finding.match_no))
+        for finding in errors
+    )
+    current_signatures = sorted(
+        (
+            finding.finding_code,
+            (
+                None
+                if finding.official_match_no is None
+                else str(int(finding.official_match_no))
+            ),
+        )
+        for finding in context.findings
+    )
+    if local_signatures != current_signatures:
+        raise AuditOverrideError(
+            "legs file ERROR set differs from the signed current ticket batch"
+        )
     registry = deviation_registrations(payload)
-    issue = str(payload.get("issue", "")).strip()
-    if not issue:
-        raise AuditOverrideError("--user-override requires a nonblank issue")
-    legs = payload.get("legs", {})
-    prescription = payload.get("prescription", {})
-    if not isinstance(legs, dict) or not isinstance(prescription, dict):
-        raise AuditOverrideError("--user-override requires object legs and prescription")
-
-    payload_digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
-    source_revision_id = f"manual-audit-{payload_digest[:32]}"
-    prepared: list[tuple[int, RecordAdjudicationRequest]] = []
-    for match_no, match_findings in sorted(grouped.items()):
+    prepared: list[TicketAuditOverrideInput] = []
+    for finding in context.findings:
+        if finding.official_match_no is None:
+            raise AuditOverrideError("票级 ERROR 没有可引用的人工偏离登记")
+        match_no = int(finding.official_match_no)
         candidates = [
             item
             for item in registry.get(match_no, ())
@@ -77,61 +75,35 @@ def record_user_overrides(
                 "（需 user_override=true、reason、已登记 rule_ids）"
             )
         registration = candidates[0]
-        leg = legs.get(str(match_no))
-        ticket_faces = str(leg.get("faces", "")) if isinstance(leg, dict) else ""
-        prescription_faces = str(prescription.get(str(match_no), ""))
-        finding_rows = [_finding_dict(finding) for finding in match_findings]
-        evidence_rejected = [
-            {
-                "object_type": "ticket_audit_finding",
-                "object_id": ticket_audit_finding_id(source_revision_id, finding),
-            }
-            for finding in finding_rows
-        ]
-        subject_material = {
-            "source_revision_id": source_revision_id,
-            "match_no": match_no,
-            "finding_ids": [item["object_id"] for item in evidence_rejected],
-        }
-        subject_digest = hashlib.sha256(
-            canonical_json(subject_material).encode("utf-8")
-        ).hexdigest()
-        subject_id = f"tao-{subject_digest[:32]}"
-        alternative = {
-            "kind": "ticket_audit_user_override",
-            "scoreboard_metric": (
-                "user_naked_wheels" if len(set(ticket_faces)) == 1 else "user_structure_overrides"
-            ),
-            "issue": issue,
-            "match_no": match_no,
-            "ticket_faces": ticket_faces,
-            "prescription_faces": prescription_faces,
-            "rule_ids": list(registration.known_rule_ids),
-            "audit_findings": finding_rows,
-        }
-        prepared.append((
-            match_no,
-            RecordAdjudicationRequest(
-                subject_type="ticket_audit_finding",
-                subject_id=subject_id,
-                decision="override",
+        prepared.append(
+            TicketAuditOverrideInput(
+                finding_token=finding.finding_token,
                 reason=registration.reason,
-                evidence_rejected=evidence_rejected,
-                alternative=alternative,
-                supersedes_adjudication_id=None,
-                actor_id="operator:jun",
-                actor_role=ActorRole.JUDGE_OPERATOR,
-                idempotency_key=f"audit-override:{subject_id}",
-                requested_at=requested_at,
-            ),
-        ))
-
-    action_ids: list[str] = []
-    for match_no, request in prepared:
-        outcome = workflow_actions.record_adjudication(request)
-        if outcome.status is not ActionStatus.COMMITTED:
-            raise AuditOverrideError(
-                f"场{match_no} override Action {outcome.status.value}: {outcome.error_code}"
+                rule_ids=registration.known_rule_ids,
             )
-        action_ids.append(outcome.action_id)
-    return AuditOverrideResult(len(errors), len(action_ids), tuple(action_ids))
+        )
+    outcome = decision_actions.record_ticket_audit_override(
+        RecordTicketAuditOverrideRequest(
+            ticket_batch_token=ticket_batch_token,
+            expected_snapshot_token=context.expected_snapshot_token,
+            overrides=tuple(prepared),
+            actor_id="operator:jun",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key=(
+                f"audit-override:{context.ticket_batch_revision_id}"
+            ),
+            requested_at=requested_at,
+        )
+    )
+    if outcome.status is not ActionStatus.COMMITTED:
+        raise AuditOverrideError(
+            f"override Action {outcome.status.value}: {outcome.error_code}"
+        )
+    adjudication_count = sum(
+        ref.object_type == "adjudication" for ref in outcome.result_refs
+    )
+    return AuditOverrideResult(
+        len(errors),
+        adjudication_count,
+        (outcome.action_id,),
+    )

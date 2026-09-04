@@ -1,0 +1,123 @@
+<div class="step-heading">
+  <span class="step-kicker">审计与部署</span>
+  <h1>检查 {{ task.step.candidate.label }}</h1>
+  <p>确认审计结果，再由你决定是否创建受保护票据。</p>
+</div>
+
+<section class="finding-list" aria-labelledby="deployment-audit-title">
+  <h2 id="deployment-audit-title">审计记录</h2>
+  {% if task.step.findings %}
+    {% for finding in task.step.findings %}
+      <div class="finding-row severity-{{ finding.severity }}">
+        <strong>{{ finding.label }}</strong>
+        <p>{{ finding.value }}</p>
+        {% if finding.evidence_href %}<a href="{{ finding.evidence_href }}">查看依据</a>{% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">没有审计异常。</p>
+  {% endif %}
+</section>
+
+{% if read_only %}
+  <p class="waiting-note">只读模式不会创建、审批或关闭票据。</p>
+{% else %}
+  {% if task.step.mode == "supersede_no_ticket" %}
+    <section class="deployment-recovery" aria-labelledby="no-ticket-reopen-title">
+      <h2 id="no-ticket-reopen-title">本次范围已记录为不出票</h2>
+      <p>只有仍在截止时间之前且仍开放的销售范围可以由你明确重开。</p>
+      <form class="operator-form deployment-form" data-action="supersede-no-ticket"
+            data-task-key="{{ task.step.task_id }}">
+        <label class="field-label">
+          <span>重开理由</span>
+          <textarea name="supersede_reason" rows="4" required></textarea>
+        </label>
+        <button class="secondary-command" type="submit">重开仍开放范围</button>
+      </form>
+    </section>
+  {% elif task.step.mode == "create_ticket_batch" %}
+    <form class="operator-form deployment-form" data-action="create-ticket-batch"
+          data-task-key="{{ task.step.task_id }}" data-primary-command="true">
+      <button class="primary-action" type="submit">创建受保护票据</button>
+    </form>
+  {% elif task.step.audit_state == "error" %}
+    <section class="deployment-recovery" aria-labelledby="deployment-recovery-title">
+      <h2 id="deployment-recovery-title">当前 ERROR 阻止审批</h2>
+      <p>请在外部终端完成实名裁决，再返回本页重新生成候选：</p>
+      <code>nutmeg decision-audit-legs --user-override --ticket-batch-token &lt;token&gt;</code>
+    </section>
+  {% elif task.step.mode == "adjudicate_audit_warn" %}
+    <form class="operator-form deployment-form" data-action="adjudicate-audit-warn"
+          data-task-key="{{ task.step.task_id }}">
+      <fieldset>
+        <legend>逐条确认 WARN</legend>
+        {% for finding in task.step.findings %}
+          {% if finding.severity == "warn" %}
+            <label class="warn-adjudication-row" data-finding-index="{{ loop.index0 }}">
+              <input type="checkbox" name="finding_token" value="{{ loop.index0 }}" required>
+              <span>{{ finding.label }}</span>
+              <textarea name="warn_reason" rows="3" required
+                        data-warn-reason aria-label="{{ finding.label }} 的裁决理由"></textarea>
+            </label>
+          {% endif %}
+        {% endfor %}
+      </fieldset>
+      <button class="primary-action" type="submit">记录 WARN 裁决</button>
+    </form>
+  {% elif task.step.mode == "approve_ticket_batch" %}
+    <form class="operator-form deployment-form" data-action="approve-ticket-batch"
+          data-task-key="{{ task.step.task_id }}" data-primary-command="true">
+      <button class="primary-action" type="submit">审批受保护票据</button>
+    </form>
+  {% elif task.step.mode == "request_confirmation" %}
+    <form class="operator-form deployment-form" data-action="request-confirmation"
+          data-task-key="{{ task.step.task_id }}" data-primary-command="true">
+      <button class="primary-action" type="submit">发送 Telegram 确认</button>
+    </form>
+  {% endif %}
+
+  {% if task.step.mode != "supersede_no_ticket" %}
+  <details class="no-ticket-panel">
+    <summary class="secondary-action no-ticket-toggle">明确不出票</summary>
+    <form class="operator-form no-ticket-form" data-action="record-no-ticket"
+          data-task-key="{{ task.step.task_id }}">
+      <label class="field-label">
+        <span>理由类型</span>
+        <select name="reason_code" required>
+          <option value="" selected disabled>请选择理由</option>
+          <option value="human_all_dice">你判断本场组合缺乏可区分依据</option>
+          <option value="evidence_incomplete">关键证据未完成</option>
+          <option value="no_compliant_structure_within_cap">帽内没有合规结构</option>
+          <option value="discipline_brake">纪律刹车</option>
+          <option value="operator_discretion">其他人工裁决</option>
+        </select>
+      </label>
+      <fieldset>
+        <legend>理由依据</legend>
+        <div class="option-list">
+          <label><input type="radio" name="reason_basis" value="operator_judgment" required>人工判断</label>
+          <label><input type="radio" name="reason_basis" value="rule_derived" required>命名规则</label>
+        </div>
+      </fieldset>
+      {% if task.step.rule_options %}
+        <fieldset>
+          <legend>引用规则（规则派生时必选）</legend>
+          <div class="option-list">
+            {% for rule in task.step.rule_options %}
+              <label><input type="checkbox" name="rule_index"
+                            value="{{ loop.index0 }}">{{ rule.label }}</label>
+            {% endfor %}
+          </div>
+        </fieldset>
+      {% endif %}
+      <label class="field-label">
+        <span>说明</span>
+        <textarea name="reason_text" rows="4" required></textarea>
+      </label>
+      <button class="secondary-command" type="submit">记录本次不出票</button>
+    </form>
+  </details>
+  {% endif %}
+{% endif %}
+
+<a class="quiet-link" href="/tasks/{{ task.selected.task_id }}">刷新当前任务</a>
