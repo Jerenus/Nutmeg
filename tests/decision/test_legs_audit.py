@@ -435,3 +435,49 @@ def test_legs_from_dict_defaults_and_parses_crash_markers():
     }}})[0]
     assert with_marker.crash_markers == ("opening_promoted_vs_paper",)
     assert legacy.crash_markers == ()
+
+
+# ── C13/C14: 死亡三证与昂贵排除（2026-09-06 立规则，26118 场8 不来梅 3:1 莱比锡） ──
+
+def test_broken_anchor_double_warns_but_does_not_block():
+    # 26118 场8 形态：莱比锡完整度 fail，01 双选排掉不来梅主胜
+    leg = _leg(faces="01", fair={"home": 0.227, "draw": 0.229, "away": 0.543},
+               anchor_integrity="fail")
+    findings = audit_legs([leg])
+    assert "broken_anchor_double" in {f.code for f in findings}
+    assert not has_blocking(findings)
+
+
+def test_broken_anchor_double_silent_when_anchor_passes_or_full_cover():
+    assert "broken_anchor_double" not in _codes([_leg(faces="31", anchor_integrity="pass")])
+    assert "broken_anchor_double" not in _codes([_leg(faces="310", anchor_integrity="fail")])
+
+
+def test_expensive_exclusion_warns_above_twenty_percent():
+    # 被排面 22.7% 且锚方 FAIL → 昂贵排除
+    leg = _leg(faces="01", fair={"home": 0.227, "draw": 0.229, "away": 0.543},
+               anchor_integrity="fail")
+    assert "expensive_exclusion" in _codes([leg])
+
+
+def test_expensive_exclusion_silent_when_three_proofs_or_cheap_face():
+    # 锚方 PASS 且该面先例 dead → 三证可核部分齐，不告警
+    proven = _leg(faces="31", fair={"home": 0.55, "draw": 0.24, "away": 0.21},
+                  anchor_integrity="pass",
+                  precedents=(("0", "载体全离队", "dead"),))
+    assert "expensive_exclusion" not in _codes([proven])
+    # 被排面 ≤20% → 不告警（柏林联 13.9 形态）
+    cheap = _leg(faces="31", fair={"home": 0.681, "draw": 0.181, "away": 0.139},
+                 anchor_integrity="fail")
+    assert "expensive_exclusion" not in _codes([cheap])
+    # 全包无被排面
+    assert "expensive_exclusion" not in _codes([_leg(faces="310", fair=FAIR_AWAY)])
+
+
+def test_expensive_exclusion_applies_to_naked_single_faces():
+    # 裸单 55.7 的两个被排面 24.4/19.9：只有 24.4 那一面超线
+    leg = _leg(faces="3", fair={"home": 0.557, "draw": 0.244, "away": 0.199},
+               anchor_integrity="pass")
+    findings = [f for f in audit_legs([leg]) if f.code == "expensive_exclusion"]
+    assert len(findings) == 1
+    assert "平" in findings[0].message and "客胜" not in findings[0].message

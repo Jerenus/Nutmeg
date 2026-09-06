@@ -45,6 +45,9 @@ _C11_GAP_HI = 0.10
 
 _C12_DRAW_LO = 0.29
 _C12_DRAW_HI = 0.32
+_C14_EXCLUSION_P = 0.20
+"""C14 昂贵排除：被排面 fair>20% 且死亡三证不齐（锚方 PASS + 该面先例 dead）→ WARN。
+26117/26118 六处开出的被排面 fair = 14.8/12.1/23.2/15.5/27.4/(拜仁不胜 17.9)。"""
 """C12 平局低估带：平局 fair 落在 [29%,32%) 时，实开平率 35.7% vs 预期 30.1%(n=14)，
 市场系统性低估 +5.6pp；对照 <22% 带市场高估 −5.3pp(n=37)。2026-08-30 立法，154 场实证。"""
 
@@ -350,6 +353,41 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                     f"r 条 3——先例是机制样本，砍带先例的面需「先例+钱流」双证；"
                     f"双证不齐 → 盖住该面或整场丢掉。",
                     "26105 场3 西布罗 / 26109 场10 塞维(2026-08-23 立规则,WARN 级)"))
+
+        # C13 —— 锚方完整度 FAIL 却排掉一面（死亡三证(c)的机械化, 2026-09-06 立法, probation）。
+        # 26118 场8:莱比锡中场四缺+锋线全新=完整度 fail 已写在读判里,主循环仍以"不来梅 14 战不胜"
+        # 把主胜判死→3:1。裸单层早有 C5,双选层此前无码,判死面靠人工先例字段,garbage-in 静默失效。
+        if len(set(lg.faces)) == 2 and lg.anchor_integrity == "fail":
+            excluded = sorted(set(FACE_KEYS) - set(lg.faces))
+            ex = excluded[0] if excluded else ""
+            out.append(Finding(
+                "WARN", "broken_anchor_double", n,
+                f"场{n} {lg.name}：锚方结构完整度 FAIL 却以双选排掉 {FACE_ZH.get(ex, ex)}"
+                f"（{lg.fair.get(FACE_KEYS.get(ex, ''), 0.0) * 100:.1f}%）。"
+                f"死亡三证(c)——判一个面死,锚方必须完整;锚方有洞的场只许全包或丢整场。",
+                "26118 场8 不来梅 3:1 莱比锡(2026-09-06 立法,WARN 级)"))
+
+        # C14 —— 昂贵排除:被排面 fair>20% 且死亡三证不齐（2026-09-06 立法, probation）。
+        # 三证=机制缺席/先例载体不在(precedents 该面 dead)/锚方完整度 PASS;代码只能核后两证。
+        # 26117 开出的被排面是 14.8/12.1,26118 是 23.2/15.5/27.4——>20% 的排除是买方差不是省钱。
+        if len(set(lg.faces)) < 3:
+            excluded = set(FACE_KEYS) - set(lg.faces)
+            dead_faces = {f for f, _s, status in lg.precedents if status == "dead"}
+            costly = [
+                f for f in sorted(excluded)
+                if lg.fair.get(FACE_KEYS[f], 0.0) > _C14_EXCLUSION_P
+                and not (lg.anchor_integrity == "pass" and f in dead_faces)
+            ]
+            if costly:
+                desc = "、".join(
+                    f"{FACE_ZH[f]} {lg.fair.get(FACE_KEYS[f], 0.0) * 100:.1f}%" for f in costly)
+                out.append(Finding(
+                    "WARN", "expensive_exclusion", n,
+                    f"场{n} {lg.name}：被排面 {desc} 超过 {_C14_EXCLUSION_P * 100:.0f}% "
+                    f"且死亡三证不齐"
+                    f"（需锚方完整度 PASS 且该面先例记 dead）。"
+                    f"独立面效率表——>20% 的排除是买方差不是省钱;合法响应=盖住该面或整场丢掉。",
+                    "26118 场8/14/2 三处被排面 23.2/15.5/27.4 全开(2026-09-06 立法,WARN 级)"))
 
         # C8 —— 净偏移达到 5pp 时，必须由作者显式声明官宣或确证结构级证据锚。
         # 只检查结构化等级，不从 URL、quote 或自然语言猜权威性。
