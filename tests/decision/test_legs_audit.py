@@ -481,3 +481,26 @@ def test_expensive_exclusion_applies_to_naked_single_faces():
     findings = [f for f in audit_legs([leg]) if f.code == "expensive_exclusion"]
     assert len(findings) == 1
     assert "平" in findings[0].message and "客胜" not in findings[0].message
+
+
+# ── 追踪标签（2026-09-07 立：只入记分牌，不改审计动作） ──
+
+def test_tracking_tags_parse_and_do_not_change_audit():
+    payload = {"issue": "26119", "legs": {"11": {
+        "name": "马拉加-莱万特", "faces": "310",
+        "fair": {"home": 0.394, "draw": 0.29, "away": 0.316}, "confidence": 2,
+        "directional_flags": [], "nondirectional_flags": [], "anchor_integrity": "fail",
+        "precedents": [], "crash_markers": [],
+        "tracking_tags": ["promoted_side", "new_spine_pairing"]}}}
+    legs = legs_from_dict(payload)
+    assert legs[0].tracking_tags == ("promoted_side", "new_spine_pairing")
+    codes = {f.code for f in audit_legs(legs)}
+    assert "tracking_tag_off_lexicon" not in codes
+    assert not has_blocking(audit_legs(legs))
+
+
+def test_tracking_tag_off_lexicon_warns_only():
+    leg = _leg(faces="310", fair=FAIR_AWAY, tracking_tags=("cold_streak",))
+    findings = audit_legs([leg])
+    assert "tracking_tag_off_lexicon" in {f.code for f in findings}
+    assert not has_blocking(findings)

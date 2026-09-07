@@ -32,6 +32,17 @@ CRASH_MARKER_LEXICON = frozenset({
     "opening_promoted_vs_paper",   # 开季窗(前3轮):升班马对阵纸面强队
     "opening_new_coach_debut",     # 开季窗(前3轮):换帅首秀(任一侧为锚方时)
 })
+
+TRACKING_TAG_LEXICON = frozenset({
+    "promoted_side",            # 升班马(任一方,不限对纸面强队)
+    "new_spine_pairing",        # 正路中轴新组合(门将/中卫对/后腰)正赛合练≤2场
+    "midfield_pivot_absent",    # 后腰/屏障实名缺阵(≥1主力)
+    "post_window_integration",  # 窗口关后≤5天到队的新援进首发/名单
+    "pre_european_rotation",    # 欧战前一轮(≤4天)且轮换未证实/已证实
+})
+"""追踪标签(2026-09-07 立):只入记分牌 tags 组,不改变任何审计动作。
+用途=把'升班马/中轴新组合/后腰缺/新援磨合/欧战前轮换'从散文里拿出来,按期累计
+正路不胜率与非模态开出率。词典封闭,未知标签只报 WARN 不静默生效。"""
 """开季翻车 regime 标记（2026-08-30 立法,probation）。判断"是否属开季窗/是否升班马刀"
 仍在主循环判读层；本词典只锁死标记名,防 agent 自命名膨胀。样本:26112 波鸿 0:1 奥斯纳
 布吕克 + 26113 场2(赫尔客胜)/场5(埃弗斯贝格 3:2 勒沃)/场10(弗洛西诺内 0:3)——四刀全部
@@ -111,6 +122,8 @@ class Leg:
     precedents: tuple = ()
     # 开季翻车 regime 标记（CRASH_MARKER_LEXICON 封闭词典;判定在主循环）
     crash_markers: tuple = ()
+    # 追踪标签(TRACKING_TAG_LEXICON 封闭词典);不影响审计动作,只作记分牌累计
+    tracking_tags: tuple = ()
 
     @property
     def modal(self) -> str:
@@ -311,6 +324,15 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 f"不是全局的。",
                 "2026-08-30 立法:154 场实证,平局 fair 分层偏差"))
 
+        # 追踪标签词典封闭:未知名只报 WARN,不静默生效(2026-09-07 立)
+        unknown_tags = [t for t in lg.tracking_tags if t not in TRACKING_TAG_LEXICON]
+        if unknown_tags:
+            out.append(Finding(
+                "WARN", "tracking_tag_off_lexicon", n,
+                f"场{n} {lg.name}：tracking_tags 含未注册标签 {unknown_tags}。"
+                f"追踪标签只接受 TRACKING_TAG_LEXICON；未知名不入记分牌。",
+                "2026-09-07 追踪标签立法"))
+
         # C9 —— 开季翻车 regime:升班马刀/换帅首秀,表达只许全包或丢场（2026-08-30 立法,probation）
         known_markers = [m for m in lg.crash_markers if m in CRASH_MARKER_LEXICON]
         unknown_markers = [m for m in lg.crash_markers if m not in CRASH_MARKER_LEXICON]
@@ -460,5 +482,6 @@ def legs_from_dict(payload: dict) -> list[Leg]:
             anchor_integrity=v.get("anchor_integrity", "unknown"),
             precedents=tuple(tuple(x) for x in v.get("precedents", [])),
             crash_markers=tuple(v.get("crash_markers", [])),
+            tracking_tags=tuple(v.get("tracking_tags", [])),
         ))
     return sorted(out, key=lambda lg: lg.match_no)

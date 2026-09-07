@@ -10,7 +10,7 @@
 | A1b | v2 外部证据桥（shadow） | 外部采集产严格 `evidence-intake-v1` 后执行 `uv run nutmeg workflow ingest-evidence --manifest <path>`；`operator-evidence-policy-v1` 全门与本命令共同部署前，v2 只作 shadow，不替代现行 A1-A7 |
 | A2 | 判读 | 深度请求→每场并行派 `jczq-match-analyst`（七阶段）；否则主循环直判。每场落到判决表四级之一 |
 | A3 | 落 Read | `decision-read --reads-file …`（结构化 JSON；因子必须在词典内；league/team 因子带 scope_key） |
-| A4 | 构票 | 写 legs.json（含 flags/anchor_integrity/**precedents**） |
+| A4 | 构票 | 写 legs.json（含 flags/anchor_integrity/**precedents**/`tracking_tags` 追踪标签） |
 | A5 | **审计门** | `uv run nutmeg decision-audit-legs --legs-file …` — 默认/AI/无人值守遇 ERROR=退出码1不许出票；仅 Jun 显式 `--user-override` 且登记 reason/rule ID、evidence_rejected Adjudication 入账成功后可继续；WARN 逐条显式裁决入账 |
 | A6 | 出票 | `decision-close --run-date … --dispatch-telegram --no-dry-run`；空 legs=空票合法 |
 | A7 | 次日结算 | `decision-settle --run-date <昨天> … --no-dry-run` → 更新 `scoreboard.json` → 复盘写 rx outcome |
@@ -33,7 +33,7 @@
 | B8 | 18:30 位移复核 | prep 链自动 diff；牌照线（体彩vs国际反向≥3pp→撤单选）、分歧场归属。**只核对新事实是否已被价格吸收；临场事实只许加面（双选→全包/裸单→双选），换被排面须首发/停赛级事实并注明未被价格吸收；深研 agent 的"最薄面"结论只作 note**（RULEBOOK 已定价≠可反转 / 临场只加面，probation） |
 | B9 | **部署门**+出票+入账 | 所有候选逐行跑 audit、预算与部署算术；ERROR/over-cap 影响 eligible 分区，回本线门槛只显示历史可比报告，**不排序、不阻断、不自动建议空仓**。减注、丢场或空仓只由 Jun 显式裁决；正常路径仍以选择并出票为主。产 approved artifact 后跑 `uv run nutmeg ticket-confirmation request --ticket-artifact-id <id> --data-dir .nutmeg-data --no-dry-run`，只有 Telegram owner 按钮可消费第二段确认；callback 原子写 Ticket/ledger，截止未确认自动记 shadow 且不入 ledger，故仍是**没入账=没打**；同时落 `<issue>-final-tickets.json` 结构化票面与 `<issue>-af-map.json` 身份映射（faces 不再只住散文） |
 | B9b | 晨间夜账校准（多夜期次每夜一次） | `uv run nutmeg zucai-night-calibrate --issue <issue> --date <欧洲比赛日>`（90' 口径，AET/PEN 取 fulltime）；需推送时显式加 `--dispatch-telegram --no-dry-run`；报告供主循环写 rx night 块；af-map 缺映射=显式跳过，禁按队名猜测补 |
-| B10 | 开奖结算 | okooo 先行 + 官方 gameNo=90 终核（含任九奖金→奖金模型记分）；ledger settle + rx outcome + scoreboard 更新 + retro memory；预测判定 `workflow grade-prediction` 逐条记账（判断在主循环，动作只记账）；**影子期双轨**：scoreboard.json 每处手改镜像一条 `nutmeg scoreboard observe`（JSON 仍权威，无镜像=违 M5），期末 `nutmeg scoreboard shadow` 对账入证据 |
+| B10 | 开奖结算 | okooo 先行 + 官方 gameNo=90 终核（含任九奖金→奖金模型记分）；ledger settle + rx outcome + scoreboard 更新（含 `tags` 组按追踪标签累计）+ retro memory；预测判定 `workflow grade-prediction` 逐条记账（判断在主循环，动作只记账）；**影子期双轨**：scoreboard.json 每处手改镜像一条 `nutmeg scoreboard observe`（JSON 仍权威，无镜像=违 M5），期末 `nutmeg scoreboard shadow` 对账入证据 |
 
 ## 收尾检查表（每期）
 
