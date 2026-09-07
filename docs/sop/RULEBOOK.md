@@ -41,6 +41,7 @@
 | **旗-方向纪律** | 旗只预测"脆"不预测方向、**绝不预测比分**；shield 方向 2/12（26118 后，见 scoreboard）、署名比分 4 例后禁用 | active | 26105 整批回归 | — |
 | **r5-牙口** | 挂 shield 必查对手惩罚能力；无牙对手降半档只作保险不作偏移 | active | 奈梅亨4:1/波尔图0:2 | — |
 | **追踪标签** | legs `tracking_tags` 封闭词典（promoted_side / new_spine_pairing / midfield_pivot_absent / post_window_integration / pre_european_rotation）：**不改变审计动作**，只在 B10 复盘按标签累计"正路不胜率/非模态开出率"入 scoreboard `tags` 组；n≥20 且偏离隐含 ≥8pp 才可提案升为旗或标记 | probation | 2026-09-07 立（26118+26119 回填：升班马场非模态 5/9、中轴新组合正路不胜 9/19、后腰缺 5/7、新援≤5天 5/8、欧战前 2/5） | `tracking_tag_off_lexicon` (WARN) |
+| **球队影响因子标签** | legs `team_tags` = {home:[…],away:[…]}，封闭词典 22 个（攻端：no_natural_striker / finishing_broken / set_piece_strong / fast_start / transition_attack / low_block_breaker_weak；守端：new_gk / new_cb_pairing / pivot_absent / makeshift_fullback / high_line_exposed / set_piece_weak / buildup_fragile / late_collapse / low_block_home；风格情境：man_marking_press / squad_in_flux / coach_first_games / promoted / rotation_risk / dressing_room_noise / home_opener）。**不改审计动作**：①按对位表打印 INFO `pairing_mechanism`（攻端标签 × 对方守端标签 = 该方破门机制；low_block_breaker_weak × low_block_home = 机制缺席），直接喂牌照四问②③；②B10 按标签累计入 scoreboard `tags` 组。标签不带 pp，权重仍走 l-权重表；标签须带证据与失效条件（rotation_risk 到赛后失效、new_* 三场后失效），写进 store profile_notes key `tag:<name>` | probation | 2026-09-07 立（26119 对位样本：奥格斯堡 set_piece_strong→法兰 new_cb_pairing 1-4；埃弗顿 transition_attack→曼联 pivot_absent 2-2；曼联 low_block_breaker_weak×赫尔 low_block_home 0-2） | `team_tag_off_lexicon` (WARN) / `pairing_mechanism` (INFO) |
 | **崩塌双列** | 评估"对手崩塌"必须用同一套指标（中轴缺员/xGA/新组合场数）同时写正路自己；洞在正路侧中轴→翻车预警前移、禁裸单，双选只许排对手侧三证齐的面 | probation | 2026-09-06 立（26118 三处开出的被排面，正路自身的洞都在读判里：莱比锡中场四缺/富勒姆 xGA 1.86/马竞中轴新组三场，被"对手崩"盖住） | 提案 |
 | **o-夹心** | 欧战悬置夹心（总分平/1球差）＝**倾向**级不赢先验；已决/需翻盘=0pp | **tendency** | 3/4 未赢（26109里昂✓赢）；持平次回合90'平2/2、1球差分胜负5/5 | — |
 | **p-翻车场** | fair≥70% 强锚∧方向性旗＝翻车候选：任九全包/双选绝不裸，竞彩空仓 | active | 26101 双中(¥46,573 奖金确认) | — |
@@ -107,6 +108,8 @@
 | **C14 expensive_exclusion** | WARN | **独立面效率表/死亡三证：被排面 fair>20% 且非（锚方 PASS ∧ 该面先例 dead）（2026-09-06 入码，probation）** |
 | *C15 shared_exclusion*（提案） | WARN | 独立面效率表：多票共享同一 >20% 被排面 |
 | tracking_tag_off_lexicon | WARN | 追踪标签词典封闭（2026-09-07 入码，不改动作） |
+| team_tag_off_lexicon | WARN | 球队影响因子标签词典封闭（2026-09-07 入码） |
+| pairing_mechanism | INFO | 对位机制（攻端标签 × 对方守端标签），喂牌照四问②③，不改动作 |
 | *C16 late_face_swap*（提案） | WARN | 临场只加面：14:00 读判冻结后换被排面 |
 
 ## 已退休/引擎时代常数（禁区，不再复述理由）

@@ -504,3 +504,34 @@ def test_tracking_tag_off_lexicon_warns_only():
     findings = audit_legs([leg])
     assert "tracking_tag_off_lexicon" in {f.code for f in findings}
     assert not has_blocking(findings)
+
+
+# ── 球队影响因子标签与对位机制（2026-09-07 立） ──
+
+def test_team_tags_parse_and_pairing_info():
+    payload = {"issue": "26119", "legs": {"4": {
+        "name": "法兰克福-奥格斯", "faces": "310",
+        "fair": {"home": 0.505, "draw": 0.236, "away": 0.258}, "confidence": 3,
+        "directional_flags": [["anchor_shield_out", "1"]], "nondirectional_flags": [],
+        "anchor_integrity": "fail", "precedents": [], "crash_markers": [],
+        "team_tags": {"home": ["new_gk", "new_cb_pairing", "pivot_absent"],
+                      "away": ["set_piece_strong"]}}}}
+    legs = legs_from_dict(payload)
+    assert ("away", "set_piece_strong") in legs[0].team_tags
+    findings = audit_legs(legs)
+    info = [f for f in findings if f.code == "pairing_mechanism"]
+    assert info and info[0].level == "INFO"
+    assert "set_piece_strong" in info[0].message and "客队" in info[0].message
+    assert not has_blocking(findings)
+
+
+def test_team_tag_counter_and_off_lexicon():
+    leg = _leg(faces="310", fair=FAIR_AWAY,
+               team_tags=(("home", "low_block_home"), ("away", "low_block_breaker_weak"),
+                          ("away", "hot_streak")))
+    findings = audit_legs([leg])
+    codes = {f.code for f in findings}
+    assert "team_tag_off_lexicon" in codes
+    msg = next(f.message for f in findings if f.code == "pairing_mechanism")
+    assert "low_block_breaker_weak" in msg
+    assert not has_blocking(findings)
