@@ -19,8 +19,8 @@ def test_migration_16_upgrades_v15_once_and_grants_only_system(tmp_path: Path) -
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine, migrations=MIGRATIONS[:15])
 
-    first = run_migrations(engine)
-    second = run_migrations(engine)
+    first = run_migrations(engine, migrations=MIGRATIONS[:16])
+    second = run_migrations(engine, migrations=MIGRATIONS[:16])
 
     assert first.applied_versions == (16,)
     assert second.applied_versions == ()

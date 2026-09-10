@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 from nutmeg.interfaces.product_api import create_product_app
@@ -7,9 +8,11 @@ from nutmeg.ontology.actions.models import ActorRole, ObjectRef
 from nutmeg.ontology.actions.reliability_actions import (
     RecordReliabilityEvidenceRequest,
 )
+from nutmeg.ontology.errors import OptimisticConcurrencyError
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.actions import ProductActionGateway
+from nutmeg.product.contracts import ProductActionRequest
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.wiring import ProductServices
@@ -244,8 +247,15 @@ def test_generic_approval_uses_server_judge_and_rejects_stale_snapshot(
     kernel = seeded_product.kernel
     _seed_system(kernel)
     _seed_soak(kernel)
-    client = _client(seeded_product)
-    headers = _session(client)
+    services = _services(seeded_product)
+    client = TestClient(
+        create_product_app(
+            services,
+            session_secret="m6-api-session",
+            csrf_secret="m6-api-csrf",
+            clock=lambda: NOW,
+        )
+    )
     first = client.get(_release_url()).json()
     body = {
         "action_type": "approve_release",
@@ -259,35 +269,31 @@ def test_generic_approval_uses_server_judge_and_rejects_stale_snapshot(
         "expected_versions": {},
     }
 
-    spoofed = client.post(
-        "/api/v1/actions",
-        json={
+    with pytest.raises(ValueError, match="actor"):
+        services.actions.execute(
+            ProductActionRequest.model_validate({
             **body,
             "idempotency_key": "m6:api:approve:spoofed",
             "payload": {**body["payload"], "actor_role": "ai_analyst"},
-        },
-        headers=headers,
-    )
-    assert spoofed.status_code == 422
+            })
+        )
 
     _record_system(kernel, "observability", suffix="api-new-current")
-    stale = client.post("/api/v1/actions", json=body, headers=headers)
-    assert stale.status_code == 409
-    assert stale.json()["code"] == "version_conflict"
+    with pytest.raises(OptimisticConcurrencyError):
+        services.actions.execute(ProductActionRequest.model_validate(body))
 
     current = client.get(_release_url()).json()
     body["idempotency_key"] = "m6:api:approve:current"
     body["payload"]["expected_snapshot_sha256"] = current[
         "evidence_snapshot_sha256"
     ]
-    approved = client.post("/api/v1/actions", json=body, headers=headers)
+    approved = services.actions.execute(ProductActionRequest.model_validate(body))
 
-    assert approved.status_code == 200
-    assert approved.json()["status"] == "committed"
+    assert approved.status == "committed"
     with OntologyUnitOfWork(kernel.engine) as uow:
         action = uow.connection.execute(
             schema.actions.select().where(
-                schema.actions.c.action_id == approved.json()["action_id"]
+                schema.actions.c.action_id == approved.action_id
             )
         ).mappings().one()
     assert action["actor_id"] == seeded_product.settings.default_user_id

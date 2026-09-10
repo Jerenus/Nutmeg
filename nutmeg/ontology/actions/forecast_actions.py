@@ -199,41 +199,71 @@ class ForecastActions:
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
-            series_id = uow.decision.ensure_series(
-                request.match_id, request.market_definition_id
+            return (
+                commit_forecast_in_uow(
+                    uow,
+                    request,
+                    policy_version=command.policy_version,
+                    require_current=require_current,
+                ),
             )
-            current = uow.decision.current_committed_revision(series_id)
-            current_revision_no = current.revision_no if current is not None else 0
-            if (
-                request.expected_current_revision_no is not None
-                and current_revision_no != request.expected_current_revision_no
-            ):
-                from nutmeg.ontology.errors import OptimisticConcurrencyError
-
-                raise OptimisticConcurrencyError(
-                    f'forecast {request.match_id}:{request.market_definition_id} is at '
-                    f'version {current_revision_no}, expected '
-                    f'{request.expected_current_revision_no}'
-                )
-            if require_current and current is None:
-                raise ValueError('no committed forecast to revise')
-            revision_no = uow.decision.max_revision_no(series_id) + 1
-            revision_id = mint_decision_id('fr')
-            supersedes = current.forecast_revision_id if current is not None else None
-            uow.decision.insert_revision(
-                _revision_row(
-                    request, revision_id, series_id, revision_no,
-                    ForecastStatus.COMMITTED.value, supersedes, command.policy_version,
-                )
-            )
-            _insert_factor_applications(uow, revision_id, request.factors)
-            if current is not None:
-                uow.decision.set_revision_status(
-                    current.forecast_revision_id, ForecastStatus.SUPERSEDED.value
-                )
-            return (ObjectRef('forecast_revision', revision_id),)
 
         return self._action_service.execute(command, handler)
+
+
+def commit_forecast_in_uow(
+    uow,
+    request: CommitForecastRequest,
+    *,
+    policy_version: str,
+    require_current: bool = False,
+) -> ObjectRef:
+    """Persist a committed Forecast inside an existing governed transaction."""
+    _validate_forecast(
+        request.prior_distribution,
+        request.belief_distribution,
+        request.factors,
+    )
+    series_id = uow.decision.ensure_series(
+        request.match_id,
+        request.market_definition_id,
+    )
+    current = uow.decision.current_committed_revision(series_id)
+    current_revision_no = current.revision_no if current is not None else 0
+    if (
+        request.expected_current_revision_no is not None
+        and current_revision_no != request.expected_current_revision_no
+    ):
+        from nutmeg.ontology.errors import OptimisticConcurrencyError
+
+        raise OptimisticConcurrencyError(
+            f'forecast {request.match_id}:{request.market_definition_id} is at '
+            f'version {current_revision_no}, expected '
+            f'{request.expected_current_revision_no}'
+        )
+    if require_current and current is None:
+        raise ValueError('no committed forecast to revise')
+    revision_no = uow.decision.max_revision_no(series_id) + 1
+    revision_id = mint_decision_id('fr')
+    supersedes = current.forecast_revision_id if current is not None else None
+    uow.decision.insert_revision(
+        _revision_row(
+            request,
+            revision_id,
+            series_id,
+            revision_no,
+            ForecastStatus.COMMITTED.value,
+            supersedes,
+            policy_version,
+        )
+    )
+    _insert_factor_applications(uow, revision_id, request.factors)
+    if current is not None:
+        uow.decision.set_revision_status(
+            current.forecast_revision_id,
+            ForecastStatus.SUPERSEDED.value,
+        )
+    return ObjectRef('forecast_revision', revision_id)
 
 
 def _revision_row(

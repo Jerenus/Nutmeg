@@ -1,0 +1,233 @@
+<div class="step-heading">
+  <span class="step-kicker">完整候选比较</span>
+  {% if task.step.mode == "candidate_request" %}
+    <h1>生成完整候选集</h1>
+    <p>使用已冻结判断、票面范围与资金帽执行确定性枚举和逐票审计。</p>
+  {% else %}
+    <h1>比较候选票</h1>
+    <p>全部候选均已完成票腿、处方偏离、资金和部署审计。</p>
+  {% endif %}
+</div>
+
+{% if task.step.mode == "candidate_request" %}
+  {% if not read_only %}
+    <form class="operator-form" data-action="request-candidate-generation"
+          data-task-key="{{ task.selected.task_id }}"
+          data-command-token="{{ task.step.request_generation_token }}">
+      <input type="hidden" name="market_prior_baseline_token"
+             value="{{ task.step.market_prior_baseline_token }}">
+      <input type="hidden" name="baseline_envelope_token"
+             value="{{ task.step.baseline_envelope_token }}">
+      <input type="hidden" name="judgment_prescription_token"
+             value="{{ task.step.judgment_prescription_token }}">
+      <button class="primary-action" type="submit">生成完整候选集</button>
+    </form>
+  {% else %}
+    <p class="waiting-note">只读模式不会生成候选票。</p>
+  {% endif %}
+{% else %}
+  {% for candidate_set in task.step.candidate_sets %}
+    <section class="comparison candidate-comparison"
+             aria-labelledby="candidate-set-{{ loop.index }}">
+      <div class="comparison-heading">
+        <h2 id="candidate-set-{{ loop.index }}">{{ candidate_set.label }}</h2>
+        {% if candidate_set.comparison_only %}
+          <span class="status-label status-neutral">仅比较，不可出票</span>
+        {% endif %}
+      </div>
+      <div class="table-scroll" tabindex="0">
+        <table class="candidate-table">
+          <colgroup>
+            <col class="candidate-code-column">
+            <col class="candidate-status-column">
+            <col class="candidate-composition-column">
+            <col class="candidate-count-column">
+            <col class="candidate-money-column">
+            <col class="candidate-risk-column">
+            <col class="candidate-return-column">
+            <col class="candidate-audit-column">
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">候选</th>
+              <th scope="col">状态</th>
+              <th scope="col">结构内容</th>
+              <th scope="col">票量</th>
+              <th scope="col">资金</th>
+              <th scope="col">概率与风险</th>
+              <th scope="col">回本参考</th>
+              <th scope="col">处方与审计</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for candidate in candidate_set.candidates %}
+              <tr class="candidate-partition-{{ candidate.partition }}">
+                <th scope="row" data-label="候选">
+                  {{ candidate.code }}
+                  {% if candidate.rank %}<small>排序 {{ candidate.rank }}</small>{% endif %}
+                </th>
+                <td data-label="状态">
+                  {% if candidate_set.comparison_only %}
+                    仅比较
+                  {% elif candidate.partition == "eligible" %}
+                    可选择，可部署
+                  {% elif candidate.partition == "audit_blocked" %}
+                    可建草稿，审批仍阻断
+                  {% else %}
+                    超过资金帽
+                  {% endif %}
+                </td>
+                <td data-label="结构内容">
+                  <dl class="candidate-composition">
+                    <div>
+                      <dt>单选</dt>
+                      <dd>{{ candidate.composition.singles|join("、") or "无" }}</dd>
+                    </div>
+                    <div>
+                      <dt>双选</dt>
+                      <dd>{{ candidate.composition.doubles|join("、") or "无" }}</dd>
+                    </div>
+                    <div>
+                      <dt>全包</dt>
+                      <dd>{{ candidate.composition.full_covers|join("、") or "无" }}</dd>
+                    </div>
+                    <div>
+                      <dt>遗漏</dt>
+                      <dd>{{ candidate.composition.omissions|join("、") or "无" }}</dd>
+                    </div>
+                    <div>
+                      <dt>过关/分组</dt>
+                      <dd>{{ candidate.composition.pass_groups|join("；") }}</dd>
+                    </div>
+                  </dl>
+                </td>
+                <td data-label="票量">
+                  <dl class="candidate-metrics">
+                    <div><dt>票/组</dt><dd>{{ candidate.ticket_count }}</dd></div>
+                    <div><dt>去重注数</dt><dd>{{ candidate.distinct_note_count }}</dd></div>
+                    <div><dt>付费注数</dt><dd>{{ candidate.paid_note_unit_count }}</dd></div>
+                  </dl>
+                </td>
+                <td data-label="资金">
+                  <dl class="candidate-metrics">
+                    <div><dt>票价</dt><dd>¥{{ "{:,.2f}".format(candidate.stake_minor / 100) }}</dd></div>
+                    <div>
+                      <dt>资金占用</dt>
+                      <dd>{{ "{:.2f}%".format(candidate.capital_utilization_decimal|float * 100) }}</dd>
+                    </div>
+                  </dl>
+                </td>
+                <td data-label="概率与风险">
+                  <dl class="candidate-metrics">
+                    <div>
+                      <dt>{{ candidate.objective_label }}</dt>
+                      <dd>{{ "{:.4f}%".format(candidate.objective_probability_decimal|float * 100) }}</dd>
+                    </div>
+                    <div>
+                      <dt>期望断腿</dt>
+                      <dd>{{ "{:.4f}".format(candidate.expected_broken_legs_decimal|float) }}</dd>
+                    </div>
+                    <div>
+                      <dt>共同死面</dt>
+                      <dd>
+                        {% for face in candidate.common_dead_faces %}
+                          <span>{{ face }}</span>{% if not loop.last %}、{% endif %}
+                        {% else %}
+                          无
+                        {% endfor %}
+                      </dd>
+                    </div>
+                  </dl>
+                </td>
+                <td data-label="回本参考">
+                  <dl class="candidate-metrics">
+                    <div>
+                      <dt>回本金额</dt>
+                      <dd>
+                        {% if candidate.break_even_bonus_minor is not none %}
+                          ¥{{ "{:,.2f}".format(candidate.break_even_bonus_minor / 100) }}
+                        {% else %}
+                          不适用
+                        {% endif %}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>官方中位倍数</dt>
+                      <dd>
+                        {% if candidate.break_even_to_official_median_decimal is not none %}
+                          {{ "{:.4f}".format(candidate.break_even_to_official_median_decimal|float) }}×
+                        {% else %}
+                          不适用
+                        {% endif %}
+                      </dd>
+                    </div>
+                  </dl>
+                </td>
+                <td data-label="处方与审计">
+                  {% if candidate.market_difference %}
+                    <p>{{ candidate.market_difference }}</p>
+                  {% endif %}
+                  {% for difference in candidate.prescription_differences %}
+                    <p>
+                      场 {{ difference.match_no }}：{{ difference.prescribed_faces }} →
+                      {{ difference.candidate_faces }}
+                      {% if difference.registered_rule_ids %}
+                        · {{ difference.registered_rule_ids|join("、") }}
+                      {% endif %}
+                    </p>
+                  {% endfor %}
+                  {% for finding in candidate.audit_findings %}
+                    <p class="severity-{{ finding.severity|lower }}">
+                      {{ finding.severity }} · {{ finding.message }}
+                      {% if finding.rule_id %} · {{ finding.rule_id }}{% endif %}
+                    </p>
+                  {% endfor %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endfor %}
+
+  {% if task.step.selection_completed %}
+    <p class="waiting-note">
+      已选择 {{ task.step.selected_candidate_code }}，等待部署审计
+    </p>
+  {% elif not read_only %}
+    <form class="operator-form ticket-selection"
+          data-action="select-ticket-candidate"
+          data-task-key="{{ task.selected.task_id }}"
+          data-command-token="{{ task.step.selection_command_token }}">
+      <fieldset>
+        <legend>人工选择一个判断候选</legend>
+        <div class="option-list candidate-options">
+          {% for candidate_set in task.step.candidate_sets %}
+            {% if not candidate_set.comparison_only %}
+              {% for candidate in candidate_set.candidates %}
+                {% if candidate.selectable %}
+                  <label>
+                    <input type="radio" name="candidate_token"
+                           value="{{ candidate.candidate_token }}" required>
+                    <span>
+                      {{ candidate.code }} · ¥{{ "{:,.2f}".format(candidate.stake_minor / 100) }}
+                      {% if not candidate.deployable %}· 审计阻断草稿{% endif %}
+                    </span>
+                  </label>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      </fieldset>
+      <label class="field-label">
+        <span>采用理由</span>
+        <textarea name="reason" rows="3" required></textarea>
+      </label>
+      <button class="primary-action" type="submit">确认选择并进入部署审计</button>
+    </form>
+  {% else %}
+    <p class="waiting-note">只读模式不会选择候选票。</p>
+  {% endif %}
+{% endif %}

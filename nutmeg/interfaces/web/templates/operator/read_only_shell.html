@@ -1,0 +1,12 @@
+{% extends "operator/layout.html" %}
+{% block title %}Nutmeg 操作台{% endblock %}
+{% block content %}
+  <section class="operator-rollout-shell" aria-labelledby="operator-shell-title">
+    <p class="eyebrow">{{ lane_label }}</p>
+    <h1 id="operator-shell-title">{{ title }}</h1>
+    <p class="shell-status" role="status">{{ status_text }}</p>
+    {% if recovery_href %}
+      <a class="quiet-link" href="{{ recovery_href }}">{{ recovery_label }}</a>
+    {% endif %}
+  </section>
+{% endblock %}

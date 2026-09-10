@@ -240,24 +240,18 @@ def _econ_payload(**changes):
     return payload
 
 
-def test_break_even_line_computed_and_ranked_ascending():
-    """s条修订(2026-08-31):给了 median_bonus_yuan 就按回本线升序,不按 P 降序。
-
-    任九类固定奖金玩法中奖只拿 1 注奖金,加注必然抬高回本线 —— 26114 实证。
-    """
+def test_break_even_line_is_report_only_and_probability_still_orders():
     result = optimize(_econ_payload())
     by_id = {v["id"]: v for v in result["versions"]}
     # small: 2/0.30 ≈ 6.67 ; wide: 8/0.68 ≈ 11.76
     assert by_id["small"]["break_even_bonus_yuan"] < by_id["wide"]["break_even_bonus_yuan"]
     assert by_id["small"]["break_even_to_median"] == pytest.approx(
         by_id["small"]["break_even_bonus_yuan"] / 3113)
-    # 排名按回本线升序 → small 在前，尽管 wide 的 P 更高
-    assert result["ranking"][0] == "small"
     assert by_id["wide"]["p_all"] > by_id["small"]["p_all"]
+    assert result["ranking"][0] == "wide"
 
 
-def test_without_median_ranking_falls_back_to_probability():
-    """未提供奖金锚时维持旧行为（P 降序），避免影响竞彩类玩法。"""
+def test_without_median_uses_the_same_probability_ordering():
     payload = _econ_payload()
     del payload["median_bonus_yuan"]
     result = optimize(payload)
@@ -298,7 +292,8 @@ def test_26114_fixed_bonus_fixture_replays_report_and_ranking():
     result = optimize(json.loads(fixture.read_text("utf-8")))
     report = format_report(result)
 
-    assert result["best_within_cap_id"] == "R256"
+    assert result["best_within_cap_id"] == "R1728"
     assert "回本线" in report
     assert "官方中位奖金锚: ¥3,113" in report
-    assert "排序按回本线升序" in report
+    assert "回本线/官方中位倍数只作报告" in report
+    assert "帽内按 P(全对) 降序" in report

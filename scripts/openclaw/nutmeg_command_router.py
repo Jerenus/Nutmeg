@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -13,6 +14,11 @@ from typing import Any, NamedTuple
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LOCK_PATH = ROOT / ".nutmeg-data" / "state" / "openclaw-router.lock"
 DEFAULT_TIMEOUT_SECONDS = 180
+DEFAULT_OPERATOR_INTAKE_ROOT = (
+    Path(os.environ.get("NUTMEG_OPERATOR_INTAKE_ROOT", ROOT / ".nutmeg-data" / "intake"))
+    .expanduser()
+    .resolve()
+)
 SUPPORTED_ACTIONS = {
     "doctor",
     "status",
@@ -36,6 +42,9 @@ SUPPORTED_ACTIONS = {
     "review",
     "prediction-record",
     "prediction-outcome",
+    "operator-sale-ingest",
+    "operator-schedule-check",
+    "operator-evidence-ingest",
 }
 
 LEAGUE_RE = re.compile(r"^[a-z0-9_-]{1,24}$")
@@ -297,6 +306,34 @@ def build_command(request: RouterRequest) -> list[str]:
             "--format",
             "json",
         ]
+    if action == "operator-sale-ingest":
+        return [
+            *base,
+            "workflow",
+            "ingest-official-sale",
+            "--manifest",
+            options.manifest,
+            "--contract-version",
+            options.contract_version,
+        ]
+    if action == "operator-schedule-check":
+        return [
+            *base,
+            "workflow",
+            "record-official-schedule-check",
+            "--manifest",
+            options.manifest,
+            "--contract-version",
+            options.contract_version,
+        ]
+    if action == "operator-evidence-ingest":
+        return [
+            *base,
+            "workflow",
+            "ingest-evidence",
+            "--manifest",
+            options.manifest,
+        ]
 
     raise RouterError(f"Unsupported action `{action}`.")
 
@@ -498,6 +535,15 @@ def _build_parser() -> argparse.ArgumentParser:
     outcome.add_argument("--actual", choices=["home", "draw", "away"], required=True)
     outcome.add_argument("--confirm-write", action="store_true")
 
+    for name in (
+        "operator-sale-ingest",
+        "operator-schedule-check",
+        "operator-evidence-ingest",
+    ):
+        operator_manifest = subparsers.add_parser(name)
+        operator_manifest.add_argument("--manifest", required=True)
+        operator_manifest.add_argument("--contract-version", required=True)
+
     return parser
 
 
@@ -574,6 +620,38 @@ def _validate_options(options: argparse.Namespace) -> None:
         raise RouterError("`zucai-report --dispatch-telegram` requires --confirm-dispatch.")
     if options.action in {"prediction-record", "prediction-outcome"} and not options.confirm_write:
         raise RouterError(f"`{options.action}` requires --confirm-write.")
+    if options.action in {
+        "operator-sale-ingest",
+        "operator-schedule-check",
+        "operator-evidence-ingest",
+    }:
+        _validate_operator_manifest(options)
+
+
+def _validate_operator_manifest(options: argparse.Namespace) -> None:
+    expected_version = {
+        "operator-sale-ingest": "official-sale-slate-v1",
+        "operator-schedule-check": "official-schedule-check-v1",
+        "operator-evidence-ingest": "evidence-intake-v1",
+    }[options.action]
+    if options.contract_version != expected_version:
+        raise RouterError(f"contract version must be exactly {expected_version}")
+    raw = options.manifest.strip()
+    if "://" in raw or raw.startswith(("{", "[")):
+        raise RouterError("operator manifest must be a local file reference")
+    try:
+        candidate = Path(raw).expanduser()
+        if not candidate.is_absolute():
+            candidate = DEFAULT_OPERATOR_INTAKE_ROOT / candidate
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(DEFAULT_OPERATOR_INTAKE_ROOT)
+    except (FileNotFoundError, RuntimeError, ValueError, OSError) as error:
+        raise RouterError(
+            "operator manifest must resolve below the configured intake root"
+        ) from error
+    if not resolved.is_file():
+        raise RouterError("operator manifest must be a regular file")
+    options.manifest = str(resolved)
 
 
 def _validate_probabilities(options: argparse.Namespace) -> None:
@@ -734,9 +812,7 @@ def _render_zucai(payload: dict[str, Any]) -> str:
             home = item.get("home_team", "-")
             away = item.get("away_team", "-")
             pick = item.get("pick", "-")
-            lines.append(
-                f"- {item.get('match_no', '-')}. {home} vs {away}｜{pick}"
-            )
+            lines.append(f"- {item.get('match_no', '-')}. {home} vs {away}｜{pick}")
     return "\n".join(lines)
 
 

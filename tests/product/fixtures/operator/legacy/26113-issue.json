@@ -1,0 +1,21 @@
+{
+  "issue_id": "26113",
+  "sale_deadline": "2026-08-29T18:00:00+08:00",
+  "sources": [{"label": "sanitized legacy source", "url": "https://legacy.example.invalid/26113", "captured_at": "2026-08-29T14:00:00+08:00"}],
+  "matches": [
+    {"match_no": 1, "competition": "League 1", "home_team": "Home 1", "away_team": "Away 1", "kickoff_bj": "2026-08-29 20:00", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 2, "competition": "League 2", "home_team": "Home 2", "away_team": "Away 2", "kickoff_bj": "2026-08-29 20:10", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 3, "competition": "League 3", "home_team": "Home 3", "away_team": "Away 3", "kickoff_bj": "2026-08-29 20:20", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 4, "competition": "League 4", "home_team": "Home 4", "away_team": "Away 4", "kickoff_bj": "2026-08-29 20:30", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 5, "competition": "League 5", "home_team": "Home 5", "away_team": "Away 5", "kickoff_bj": "2026-08-29 20:40", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 6, "competition": "League 6", "home_team": "Home 6", "away_team": "Away 6", "kickoff_bj": "2026-08-29 20:50", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 7, "competition": "League 7", "home_team": "Home 7", "away_team": "Away 7", "kickoff_bj": "2026-08-29 21:00", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 8, "competition": "League 8", "home_team": "Home 8", "away_team": "Away 8", "kickoff_bj": "2026-08-29 21:10", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 9, "competition": "League 9", "home_team": "Home 9", "away_team": "Away 9", "kickoff_bj": "2026-08-29 21:20", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 10, "competition": "League 10", "home_team": "Home 10", "away_team": "Away 10", "kickoff_bj": "2026-08-29 21:30", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 11, "competition": "League 11", "home_team": "Home 11", "away_team": "Away 11", "kickoff_bj": "2026-08-29 21:40", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 12, "competition": "League 12", "home_team": "Home 12", "away_team": "Away 12", "kickoff_bj": "2026-08-29 21:50", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 13, "competition": "League 13", "home_team": "Home 13", "away_team": "Away 13", "kickoff_bj": "2026-08-29 22:00", "match_date": "2026-08-29", "asian_ref": null},
+    {"match_no": 14, "competition": "League 14", "home_team": "Home 14", "away_team": "Away 14", "kickoff_bj": "2026-08-29 22:10", "match_date": "2026-08-29", "asian_ref": null}
+  ]
+}

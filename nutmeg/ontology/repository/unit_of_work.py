@@ -5,10 +5,13 @@ commits on a clean exit, rolls back on any exception, and always closes the
 connection. Repositories are exposed on an *active* Unit of Work so every
 business write shares the same transaction as its Action-log row.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from types import TracebackType
 from typing import TYPE_CHECKING
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import Connection, Engine
 
@@ -21,6 +24,10 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.finance import FinanceRepository
     from nutmeg.ontology.repository.identity import IdentityRepository
     from nutmeg.ontology.repository.market import MarketRepository
+    from nutmeg.ontology.repository.operator_decision import OperatorDecisionRepository
+    from nutmeg.ontology.repository.operator_result import OperatorResultRepository
+    from nutmeg.ontology.repository.operator_review import OperatorReviewRepository
+    from nutmeg.ontology.repository.operator_sale import OperatorSaleRepository
     from nutmeg.ontology.repository.outbox import OutboxRepository
     from nutmeg.ontology.repository.reliability import ReliabilityRepository
     from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
@@ -28,16 +35,44 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.workflow import WorkflowRepository
 
 
+_WRITER_LEASE_FACTORIES: WeakKeyDictionary[Engine, Callable[[], object]] = WeakKeyDictionary()
+
+
+def register_writer_lease_factory(
+    engine: Engine,
+    factory: Callable[[], object],
+) -> None:
+    """Attach one data-root lease policy to every UOW using this engine."""
+    _WRITER_LEASE_FACTORIES[engine] = factory
+
+
 class OntologyUnitOfWork:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        writer_lease_factory: Callable[[], object] | None = None,
+    ) -> None:
         self._engine = engine
         self._connection: Connection | None = None
+        self._writer_lease_factory = writer_lease_factory or _WRITER_LEASE_FACTORIES.get(engine)
+        self._writer_lease = None
+        self._write_lock_acquired = False
 
     @property
     def connection(self) -> Connection:
         if self._connection is None:
-            raise RuntimeError('unit of work is not active')
+            raise RuntimeError("unit of work is not active")
         return self._connection
+
+    def acquire_write_lock(self) -> None:
+        """Acquire SQLite's reserved writer lock before reading transition state."""
+        if self._connection is None:
+            raise RuntimeError("unit of work is not active")
+        if self._write_lock_acquired:
+            return
+        self._connection.exec_driver_sql("BEGIN IMMEDIATE")
+        self._write_lock_acquired = True
 
     @property
     def actions(self) -> ActionRepository:
@@ -100,6 +135,30 @@ class OntologyUnitOfWork:
         return OutboxRepository(self.connection)
 
     @property
+    def operator_sale(self) -> OperatorSaleRepository:
+        from nutmeg.ontology.repository.operator_sale import OperatorSaleRepository
+
+        return OperatorSaleRepository(self.connection)
+
+    @property
+    def operator_decision(self) -> OperatorDecisionRepository:
+        from nutmeg.ontology.repository.operator_decision import OperatorDecisionRepository
+
+        return OperatorDecisionRepository(self.connection)
+
+    @property
+    def operator_result(self) -> OperatorResultRepository:
+        from nutmeg.ontology.repository.operator_result import OperatorResultRepository
+
+        return OperatorResultRepository(self.connection)
+
+    @property
+    def operator_review(self) -> OperatorReviewRepository:
+        from nutmeg.ontology.repository.operator_review import OperatorReviewRepository
+
+        return OperatorReviewRepository(self.connection)
+
+    @property
     def tickets(self) -> TicketWorkbenchRepository:
         from nutmeg.ontology.repository.tickets import TicketWorkbenchRepository
 
@@ -118,8 +177,19 @@ class OntologyUnitOfWork:
         return ReliabilityRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
-        self._connection = self._engine.connect()
-        self._connection.begin()
+        lease = self._writer_lease_factory() if self._writer_lease_factory else None
+        if lease is not None:
+            lease.acquire()
+        self._writer_lease = lease
+        try:
+            self._connection = self._engine.connect()
+            self._connection.begin()
+            self._write_lock_acquired = False
+        except Exception:
+            self._writer_lease = None
+            if lease is not None:
+                lease.release()
+            raise
         return self
 
     def __exit__(
@@ -130,6 +200,7 @@ class OntologyUnitOfWork:
     ) -> None:
         connection = self._connection
         self._connection = None
+        self._write_lock_acquired = False
         if connection is None:
             return
         try:
@@ -138,4 +209,10 @@ class OntologyUnitOfWork:
             else:
                 connection.rollback()
         finally:
-            connection.close()
+            try:
+                connection.close()
+            finally:
+                lease = self._writer_lease
+                self._writer_lease = None
+                if lease is not None:
+                    lease.release()

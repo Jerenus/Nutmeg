@@ -90,7 +90,9 @@ def _leg(forecast_revision_id: str, **changes: object) -> TicketLegDraft:
         "directional_flags": (),
         "nondirectional_flags": (),
         "anchor_integrity": "pass",
-        "precedents": (),
+        # 默认腿是"合法裸单":被排面 平 25% > C14 的 20% 阈值,所以死亡三证必须齐
+        # (锚方 PASS + 该面先例记 dead),否则 C14 会给整张票挂 WARN。
+        "precedents": (("1", "2026-05-12 同场地同型 1:0 主胜", "dead"),),
     }
     values.update(changes)
     return TicketLegDraft(**values)

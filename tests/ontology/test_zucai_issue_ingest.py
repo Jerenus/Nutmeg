@@ -10,6 +10,7 @@ from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.ingest.zucai_issue import (
     ZucaiIssueIngestRequest,
     ZucaiIssueIngestService,
+    ZucaiMarketSource,
     ZucaiRow,
 )
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -21,14 +22,17 @@ _AT = datetime(2026, 8, 24, 6, 0, tzinfo=UTC)
 def _service(kernel) -> ZucaiIssueIngestService:
     factory = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
 
-    def probe(match_id: str) -> bool:
+    def probe(match_id: str, provider: str, as_of: str) -> bool:
         with OntologyUnitOfWork(kernel.engine) as uow:
             return (
-                uow.market.snapshot_id_for_source(match_id, "md-had", "read_time", "zucai")
+                uow.market.snapshot_id_for_source_at(
+                    match_id, "md-had", "read_time", provider, as_of
+                )
                 is not None
             )
 
     return ZucaiIssueIngestService(
+        artifact_ingest=kernel.artifact_ingest,
         entity_actions=EntityActions(factory),
         match_actions=MatchActions(factory),
         market_actions=MarketActions(factory),
@@ -52,6 +56,17 @@ def _request(rows) -> ZucaiIssueIngestRequest:
     )
 
 
+def _market_value(rows: list[ZucaiRow]) -> dict:
+    return {
+        "issue_id": "26110",
+        "captured_at": _AT.isoformat(),
+        "matches": [
+            {"match_no": row.match_no, **(row.odds or {})}
+            for row in rows
+        ],
+    }
+
+
 def test_ingests_matches_teams_snapshots(tmp_path: Path) -> None:
     kernel = _kernel(tmp_path)
     rows = [
@@ -68,6 +83,108 @@ def test_ingests_matches_teams_snapshots(tmp_path: Path) -> None:
     status = kernel.status()
     assert status.match_count == 2
     assert status.snapshot_count == 2      # 计数必须对应真实快照行,不许虚报
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        for match_id in uow.identity.all_match_ids():
+            assert uow.identity.current_match_revision(match_id).competition_edition_id
+
+
+def test_source_artifacts_link_official_and_international_quotes(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    rows = [
+        ZucaiRow(
+            1,
+            "曼城",
+            "伯恩茅斯",
+            "英超",
+            "2026-08-23",
+            {"home": 1.30, "draw": 5.50, "away": 9.00},
+        )
+    ]
+    official = _market_value(rows)
+    international = {
+        **official,
+        "matches": [{"match_no": 1, "home": 1.35, "draw": 5.40, "away": 8.80}],
+    }
+    request = ZucaiIssueIngestRequest(
+        **{
+            field: getattr(_request(rows), field)
+            for field in ("issue", "rows", "actor_id", "actor_role", "requested_at")
+        },
+        market_sources=(
+            ZucaiMarketSource(
+                provider="zucai",
+                value=official,
+                retrieved_at=_AT,
+            ),
+            ZucaiMarketSource(
+                provider="intl",
+                value=international,
+                retrieved_at=_AT,
+            ),
+        ),
+    )
+
+    result = _service(kernel).ingest(request)
+
+    assert result.snapshots == 2
+    with kernel.engine.connect() as connection:
+        rows = connection.exec_driver_sql(
+            """
+            SELECT q.provider, r.source_name, r.retrieved_at
+            FROM market_quotes AS q
+            JOIN artifact_retrievals AS r
+              ON r.artifact_retrieval_id = q.artifact_retrieval_id
+            ORDER BY q.provider, q.selection_id
+            """
+        ).all()
+    assert {(provider, source_name) for provider, source_name, _ in rows} == {
+        ("intl", "intl"),
+        ("zucai", "zucai"),
+    }
+    assert {retrieved_at for _, _, retrieved_at in rows} == {_AT.isoformat()}
+
+
+def test_identical_source_content_at_later_retrieval_adds_timepoint(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    rows = [
+        ZucaiRow(
+            1,
+            "曼城",
+            "伯恩茅斯",
+            "英超",
+            "2026-08-23",
+            {"home": 1.30, "draw": 5.50, "away": 9.00},
+        )
+    ]
+    value = _market_value(rows)
+    service = _service(kernel)
+    for retrieved_at in (_AT, _AT.replace(hour=9)):
+        service.ingest(
+            ZucaiIssueIngestRequest(
+                **{
+                    field: getattr(_request(rows), field)
+                    for field in ("issue", "rows", "actor_id", "actor_role")
+                },
+                requested_at=retrieved_at,
+                market_sources=(
+                    ZucaiMarketSource(
+                        provider="zucai",
+                        value=value,
+                        retrieved_at=retrieved_at,
+                    ),
+                ),
+            )
+        )
+
+    with kernel.engine.connect() as connection:
+        snapshot_times = connection.exec_driver_sql(
+            "SELECT as_of FROM market_snapshots ORDER BY as_of"
+        ).scalars().all()
+        retrieval_times = connection.exec_driver_sql(
+            "SELECT retrieved_at FROM artifact_retrievals ORDER BY retrieved_at"
+        ).scalars().all()
+    assert snapshot_times == [_AT.isoformat(), _AT.replace(hour=9).isoformat()]
+    assert retrieval_times == [_AT.isoformat(), _AT.replace(hour=9).isoformat()]
 
 
 def test_rerun_is_idempotent(tmp_path: Path) -> None:
@@ -201,7 +318,7 @@ def test_noncommitted_snapshot_is_not_counted_as_success(
     assert any("snapshot_rejected" in item for item in result.skipped)
 
 
-def test_second_run_keeps_first_read_time_anchor(tmp_path: Path) -> None:
+def test_second_run_adds_an_immutable_read_time_snapshot(tmp_path: Path) -> None:
     kernel = _kernel(tmp_path)
     service = _service(kernel)
     row1 = ZucaiRow(
@@ -219,6 +336,6 @@ def test_second_run_keeps_first_read_time_anchor(tmp_path: Path) -> None:
         requested_at=_AT.replace(hour=9),
     )
     again = service.ingest(later)
-    assert kernel.status().snapshot_count == 1         # 首个 read_time 锚保持
-    assert again.snapshots == 0
-    assert any("first_anchor_kept" in item for item in again.skipped)
+    assert kernel.status().snapshot_count == 2
+    assert again.snapshots == 1
+    assert again.skipped == ()

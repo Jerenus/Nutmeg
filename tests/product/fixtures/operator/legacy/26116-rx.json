@@ -1,0 +1,42 @@
+{
+  "issue": "26116",
+  "registered_at": "2026-09-01T16:20:00+08:00",
+  "decision": "sanitized legacy decision",
+  "prescription_P14": "sanitized prescription",
+  "board_diagnosis": {"strong_anchors_ge70": 1, "coinflip_top1_lt45": [2], "note": "sanitized"},
+  "capital_report": {"period_cap_yuan": 400, "anchor_window": "sanitized", "gate_state": "review"},
+  "ticket_versions": [
+    {"id": "empty", "note": "sanitized"},
+    {"id": "R1_1024", "faces": {"1": "3", "2": "31", "3": "30", "4": "310", "5": "01", "6": "3", "7": "31", "8": "30", "9": "310"}, "drop": [10, 11, 12, 13, 14], "stake_yuan": 1024, "p_model": 0.2, "expected_broken": 1.2, "break_even": 5000, "multiple": 1.5, "capital_util": 0.64, "audit": "sanitized", "note": "sanitized", "notes": 9},
+    {"id": "R2_1536", "stake_yuan": 1536, "p_model": 0.22, "expected_broken": 1.1, "break_even": 6000, "multiple": 1.6, "capital_util": 0.96, "audit": "sanitized", "note": "sanitized", "notes": 9},
+    {"id": "COV1_1024", "stake_yuan": 1024, "p_model": 0.18, "break_even": 5700, "multiple": 1.7, "note": "sanitized", "notes": 9},
+    {"id": "S4C_486", "faces": {"1": "3", "2": "31", "3": "30", "4": "310", "5": "01", "6": "3", "7": "31", "8": "30", "9": "310"}, "drop": [10, 11, 12, 13, 14], "stake_yuan": 486, "p_model": 0.12, "expected_broken": 1.4, "break_even": 4050, "multiple": 1.3, "capital_util": 0.3, "audit": "sanitized", "note": "sanitized", "notes": 9},
+    {"id": "S4D_324", "faces": {"1": "3", "2": "31", "3": "30", "4": "310", "5": "01", "6": "3", "7": "31", "8": "30", "9": "310"}, "drop": [10, 11, 12, 13, 14], "stake_yuan": 324, "p_model": 0.1, "expected_broken": 1.5, "break_even": 3240, "multiple": 1.2, "capital_util": 0.2, "note": "sanitized", "notes": 9},
+    {"id": "S5_162", "stake_yuan": 162, "p_model": 0.08, "break_even": 2025, "multiple": 1.1, "note": "sanitized", "notes": 9},
+    {"id": "K2_1024", "faces": {"1": "3", "2": "31", "3": "30", "4": "310", "5": "01", "6": "3", "7": "31", "8": "30", "9": "310"}, "drop": [10, 11, 12, 13, 14], "stake_yuan": 1024, "p_model": 0.19, "break_even": 5300, "multiple": 1.5, "capital_util": 0.64, "audit": "sanitized", "note": "sanitized", "notes": 9},
+    {"id": "K2F_1536", "faces": {"1": "3", "2": "31", "3": "30", "4": "310", "5": "01", "6": "3", "7": "31", "8": "30", "9": "310"}, "drop": [10, 11, 12, 13, 14], "stake_yuan": 1536, "p_model": 0.21, "expected_broken": 1.1, "break_even": 6100, "multiple_new_anchor": 1.8, "capital_util": 0.96, "audit": "sanitized", "note": "sanitized", "notes": 9},
+    {"id": "C1_1152", "faces": {"1": "3", "2": "31", "3": "30", "4": "310", "5": "01", "6": "3", "7": "31", "8": "30", "9": "310"}, "drop": [10, 11, 12, 13, 14], "stake_yuan": 1152, "p_model": 0.2, "break_even": 5760, "multiple_new_anchor": 1.7, "audit_est": "sanitized", "note": "sanitized", "notes": 9},
+    {"id": "C3_1458", "faces": {"1": "3", "2": "31", "3": "30", "4": "310", "5": "01", "6": "3", "7": "31", "8": "30", "9": "310"}, "drop": [10, 11, 12, 13, 14], "stake_yuan": 1458, "p_model": 0.22, "break_even": 6627, "multiple_new_anchor": 1.9, "audit_est": "sanitized", "note": "sanitized", "notes": 9},
+    {"id": "C3D_1458", "faces": {"1": "3", "2": "31", "3": "30", "4": "310", "5": "01", "6": "3", "7": "31", "8": "30", "9": "310"}, "drop": [10, 11, 12, 13, 14], "stake_yuan": 1458, "p_model_market": 0.2, "p_model_mech": 0.23, "break_even": 6339, "multiple_new_anchor": 1.8, "audit_est": "sanitized", "note": "sanitized", "notes": 9}
+  ],
+  "predictions": [
+    {"id": "P1", "claim": "sanitized claim 1", "falsifier": "sanitized falsifier 1", "outcome": "hit"},
+    {"id": "P2", "claim": "sanitized claim 2", "falsifier": "sanitized falsifier 2", "outcome": "miss"},
+    {"id": "P3", "claim": "sanitized claim 3", "falsifier": "sanitized falsifier 3", "outcome": null},
+    {"id": "P4", "claim": "sanitized claim 4", "falsifier": "sanitized falsifier 4", "outcome": null},
+    {"id": "P5", "claim": "sanitized claim 5", "falsifier": "sanitized falsifier 5", "outcome": "hit"},
+    {"id": "P6", "claim": "sanitized claim 6", "falsifier": "sanitized falsifier 6", "outcome": "miss"},
+    {"id": "P7", "claim": "sanitized claim 7", "falsifier": "sanitized falsifier 7", "outcome": "hit"},
+    {"id": "P8", "claim": "sanitized claim 8", "falsifier": "sanitized falsifier 8", "outcome": "miss"}
+  ],
+  "pending_adjudications": [
+    {"id": "ADJ-1", "status": "待用户裁决", "q": "sanitized", "options": "A / B", "note": "sanitized"},
+    {"id": "ADJ-2", "status": "待用户确认", "q": "sanitized", "note": "sanitized"},
+    {"id": "ADJ-3", "status": "已裁", "q": "sanitized", "resolution": "A", "note": "sanitized"},
+    {"id": "ADJ-4", "status": "已裁", "q": "sanitized", "resolution": "A", "note": "sanitized"},
+    {"id": "ADJ-5", "status": "终裁完毕·待用户裁决结构", "q": "sanitized", "resolution": "A", "note": "sanitized"},
+    {"id": "ADJ-6", "status": "已裁", "q": "sanitized", "resolution": "A", "note": "sanitized"},
+    {"id": "ADJ-7", "status": "用户已裁·待出票确认", "q": "sanitized", "resolution": "A", "note": "sanitized"}
+  ],
+  "notes": ["sanitized"]
+}

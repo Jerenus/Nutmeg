@@ -60,7 +60,7 @@ def _payload(**changes):
     return payload
 
 
-def test_gate_selects_lowest_break_even_inside_cap_and_reports_arithmetic():
+def test_gate_selects_highest_probability_inside_cap_and_reports_arithmetic():
     payload = _payload(
         period_cap_yuan=400,
         candidates=[
@@ -72,14 +72,13 @@ def test_gate_selects_lowest_break_even_inside_cap_and_reports_arithmetic():
 
     result = evaluate_deployment_gate(payload, _history())
 
-    # 回本线：V288=¥2,057 < V384=¥2,400 → 新语义选 V288（旧 max-P 语义会选 V384）。
-    assert result.selected_id == "V288"
-    assert result.capital_utilization == pytest.approx(0.72)
-    assert result.break_even_bonus == pytest.approx(288 / 0.14)
+    assert result.selected_id == "V384"
+    assert result.capital_utilization == pytest.approx(0.96)
+    assert result.break_even_bonus == pytest.approx(384 / 0.16)
     assert result.median_bonus == pytest.approx(6446.5)
-    assert result.break_even_to_median == pytest.approx((288 / 0.14) / 6446.5)
+    assert result.break_even_to_median == pytest.approx((384 / 0.16) / 6446.5)
     assert result.equivalent_max_winning_stakes == math.floor(
-        result.median_sale_amount * 0.64 / (288 / 0.14)
+        result.median_sale_amount * 0.64 / (384 / 0.16)
     )
     assert result.excluded_over_cap == ("R432",)
 
@@ -166,8 +165,8 @@ def test_26103_replay_preserves_recorded_reduce_or_empty_state():
     assert result.state is DeploymentGateState.REDUCE_OR_EMPTY
     assert result.history_window == 14
     assert result.break_even_to_median == pytest.approx(2.24, abs=0.01)
-    assert "丢场式减注" in format_deployment_gate(result)
-    assert "无合格减注版" in format_deployment_gate(result)
+    assert "高压区间" in format_deployment_gate(result)
+    assert "仅由 Jun 裁决" in format_deployment_gate(result)
 
 
 def test_26104_replay_passes_at_recorded_point_95_compromise():
@@ -304,12 +303,7 @@ def test_floor_rounding_rejects_overpayment_and_one_yuan_per_winner_shortfall():
     assert not short.payout_consistent_with_return_rate()
 
 
-def test_deployment_selects_lowest_break_even_inside_cap():
-    """s条修订(2026-08-31):固定奖金玩法按回本线最小选档,不按 P 最大。
-
-    26114 实证:¥256→¥1,728 时 P 涨 4.1 倍而回本线从 ¥3,902 爬到 ¥6,417,
-    当晚实开 ¥214——加注让经济性单调变差。
-    """
+def test_deployment_selects_highest_probability_inside_cap():
     result = evaluate_deployment_gate(
         _payload(candidates=[
             {"id": "small", "stake_yuan": 288, "hit_probability": 0.14},
@@ -317,8 +311,8 @@ def test_deployment_selects_lowest_break_even_inside_cap():
         ]),
         _history(),
     )
-    assert result.selected_id == "small"
-    assert result.break_even_bonus == pytest.approx(288 / 0.14)
+    assert result.selected_id == "wide"
+    assert result.break_even_bonus == pytest.approx(384 / 0.16)
 
 
 def test_deployment_and_optimizer_select_the_same_fixed_bonus_candidate():
@@ -359,4 +353,4 @@ def test_deployment_and_optimizer_select_the_same_fixed_bonus_candidate():
         history,
     )
 
-    assert deployed.selected_id == optimized["best_within_cap_id"] == "small"
+    assert deployed.selected_id == optimized["best_within_cap_id"] == "wide"

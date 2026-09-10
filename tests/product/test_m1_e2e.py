@@ -7,17 +7,10 @@ from fastapi.testclient import TestClient
 import nutmeg.product
 from nutmeg.interfaces.product_api import create_product_app
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+from nutmeg.product.contracts import ProductActionRequest
 from nutmeg.product.wiring import build_product_services
 
 from .conftest import CLOCK
-
-
-def _session(client: TestClient) -> dict[str, str]:
-    response = client.get("/api/v1/session")
-    return {
-        "X-CSRF-Token": response.json()["csrf_token"],
-        "Origin": "http://testserver",
-    }
 
 
 def _forecast_action(match_id: str) -> dict[str, object]:
@@ -55,12 +48,12 @@ def test_m1_golden_day_from_board_to_forecast_lineage_and_restart(
     )
 
     action_payload = _forecast_action(match["match_id"])
-    committed = client.post(
-        "/api/v1/actions", headers=_session(client), json=action_payload
+    committed = product_services.actions.execute(
+        ProductActionRequest.model_validate(action_payload)
     )
-    assert committed.status_code == 200
-    revision_id = committed.json()["result_refs"][0]["object_id"]
-    action_id = committed.json()["action_id"]
+    assert committed.status == "committed"
+    revision_id = committed.result_refs[0].object_id
+    action_id = committed.action_id
 
     lineage = client.get(
         f"/api/v1/lineage/forecast_revision/{revision_id}"
@@ -77,13 +70,12 @@ def test_m1_golden_day_from_board_to_forecast_lineage_and_restart(
     restarted = TestClient(
         create_product_app(restarted_services, clock=lambda: CLOCK)
     )
-    replayed = restarted.post(
-        "/api/v1/actions", headers=_session(restarted), json=action_payload
+    replayed = restarted_services.actions.execute(
+        ProductActionRequest.model_validate(action_payload)
     )
 
-    assert replayed.status_code == 200
-    assert replayed.json()["action_id"] == action_id
-    assert replayed.json()["result_refs"][0]["object_id"] == revision_id
+    assert replayed.action_id == action_id
+    assert replayed.result_refs[0].object_id == revision_id
     with OntologyUnitOfWork(restarted_services.kernel.engine) as uow:
         series_id = uow.decision.ensure_series(match["match_id"], "md-had")
         assert uow.decision.max_revision_no(series_id) == 2

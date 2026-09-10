@@ -1,0 +1,98 @@
+<div class="step-heading">
+  <span class="step-kicker">市场基线 · 仅用于比较</span>
+  <h1>限定本轮票面搜索范围</h1>
+  <p>市场概率只作为反事实基线。你明确允许的比赛、表达面和结构才会进入穷举。</p>
+</div>
+
+<section class="comparison-only-notice" aria-label="市场基线状态">
+  <strong>市场基线已冻结</strong>
+  <span>仅用于比较，不可选择、审批或出票。</span>
+</section>
+
+{% if not read_only %}
+  <form class="operator-form envelope-form" data-action="record-baseline-envelope"
+        data-task-key="{{ task.selected.task_id }}"
+        data-command-token="{{ task.step.envelope_command_token }}"
+        data-currency="{{ task.step.envelope.currency }}">
+    <div class="compact-fields">
+      <label class="field-label">
+        <span>票种</span>
+        <select name="ticket_kind" required>
+          {% for ticket_kind in task.step.envelope.ticket_kinds %}
+            <option value="{{ ticket_kind }}">
+              {{ {"jczq_pass": "竞彩过关", "sfc": "胜负彩", "renjiu": "任九"}[ticket_kind] }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field-label">
+        <span>资金上限（分）</span>
+        <input type="number" name="capital_cap_minor" min="1"
+               value="{{ task.step.envelope.capital_cap_minor }}" required>
+      </label>
+      <label class="field-label">
+        <span>最多票数</span>
+        <input type="number" name="maximum_ticket_count" min="1"
+               value="{{ task.step.envelope.maximum_ticket_count }}" required>
+      </label>
+      <label class="field-label">
+        <span>穷举上限</span>
+        <input type="number" name="maximum_exhaustive_candidate_count" min="1"
+               value="{{ task.step.envelope.maximum_exhaustive_candidate_count }}" required>
+      </label>
+    </div>
+
+    <fieldset>
+      <legend>比赛与允许表达面</legend>
+      <div class="envelope-offers">
+        {% for offer in task.step.envelope.offers %}
+          <section class="envelope-offer" data-envelope-offer
+                   data-official-match-no="{{ offer.official_match_no }}"
+                   data-market-code="{{ offer.market_code }}">
+            <h2>{{ offer.official_match_no }} · {{ offer.match_label }}</h2>
+            <p>{{ offer.market_label }}</p>
+            <div class="option-list">
+              {% for bundle in offer.face_bundles %}
+                <label>
+                  <input type="checkbox" name="allowed_face_bundle"
+                         value="{{ bundle.bundle_code }}"
+                         data-face-codes="{{ bundle.face_codes|join(',') }}">
+                  <span>{{ bundle.face_codes|join(' / ') }}</span>
+                </label>
+              {% endfor %}
+              {% if offer.omission_available %}
+                <label>
+                  <input type="checkbox" name="omission_allowed">
+                  <span>允许本结构省略该场</span>
+                </label>
+              {% endif %}
+            </div>
+          </section>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>允许结构</legend>
+      <div class="option-list">
+        {% for structure in task.step.envelope.structures %}
+          <label data-envelope-structure
+                 data-kind="{{ structure.kind }}"
+                 data-structure-code="{{ structure.structure_code }}"
+                 data-eligible-matches="{{ structure.eligible_official_match_nos|join(',') }}"
+                 data-pass-size="{{ structure.pass_size or '' }}"
+                 data-required-offer-count="{{ structure.required_offer_count }}"
+                 data-maximum-groups="{{ structure.maximum_groups }}">
+            <input type="checkbox" name="structure_code"
+                   value="{{ structure.structure_code }}">
+            <span>{{ structure.structure_label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <button class="primary-action" type="submit">保存范围并开始逐场判断</button>
+  </form>
+{% else %}
+  <p class="waiting-note">只读模式不会提交票面范围。</p>
+{% endif %}

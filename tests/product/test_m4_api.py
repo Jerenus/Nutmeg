@@ -227,7 +227,9 @@ POST_CASES = (
 )
 
 
-def test_m4_get_post_and_openapi_routes_are_published(client: TestClient) -> None:
+def test_m4_get_routes_remain_published_and_legacy_posts_are_retired(
+    client: TestClient,
+) -> None:
     headers = _session(client)
     gets = (
         client.get(
@@ -238,13 +240,9 @@ def test_m4_get_post_and_openapi_routes_are_published(client: TestClient) -> Non
     )
     posts = [client.post(path, json=body, headers=headers) for path, body in POST_CASES]
 
-    assert all(response.status_code == 200 for response in (*gets, *posts))
+    assert all(response.status_code == 200 for response in gets)
+    assert all(response.status_code == 405 for response in posts)
     assert gets[0].json()["schema_version"] == "1"
-    assert posts[-2].json()["nonce"] == "nonce-plaintext-once"
-    assert {ref["object_type"] for ref in posts[-1].json()["result_refs"]} == {
-        "ticket",
-        "cash_transaction",
-    }
     paths = client.get("/openapi.json").json()["paths"]
     assert {
         "/api/v1/ticket-workbench",
@@ -254,19 +252,24 @@ def test_m4_get_post_and_openapi_routes_are_published(client: TestClient) -> Non
         "/api/v1/ticket-batches/{ticket_batch_id}/remove-leg",
         "/api/v1/ticket-batches/{ticket_batch_id}/approve",
         "/api/v1/ticket-artifacts/{ticket_artifact_id}/confirmations",
-        "/api/v1/ticket-artifacts/{ticket_artifact_id}/confirm",
     } <= paths.keys()
+    assert "/api/v1/ticket-artifacts/{ticket_artifact_id}/confirm" not in paths
 
 
 @pytest.mark.parametrize(("path", "body"), POST_CASES)
-def test_every_m4_mutation_requires_session_csrf_and_exact_origin(
+def test_every_m4_mutation_is_retired_before_session_or_body_parsing(
     client: TestClient, path: str, body: dict[str, object]
 ) -> None:
-    assert client.post(path, json=body).status_code == 403
+    assert client.post(path, json=body).status_code == 405
+    assert client.post(
+        path,
+        content=b"not-json",
+        headers={"Content-Type": "application/json"},
+    ).status_code == 405
     headers = _session(client)
     assert (
         client.post(path, json=body, headers={"Origin": headers["Origin"]}).status_code
-        == 403
+        == 405
     )
     assert (
         client.post(
@@ -274,19 +277,20 @@ def test_every_m4_mutation_requires_session_csrf_and_exact_origin(
             json=body,
             headers={**headers, "Origin": "https://evil.example"},
         ).status_code
-        == 403
+        == 405
     )
+    assert client.post(path, json=body, headers=headers).status_code == 405
 
 
-def test_actor_spoofing_is_rejected_by_strict_command(client: TestClient) -> None:
+def test_actor_spoofing_cannot_reach_retired_ticket_route(client: TestClient) -> None:
     response = client.post(
         "/api/v1/ticket-batches",
         json={**_create(), "actor_id": "attacker", "actor_role": "ai_analyst"},
         headers=_session(client),
     )
 
-    assert response.status_code == 422
-    assert response.json()["code"] == "validation_error"
+    assert response.status_code == 405
+    assert response.json()["code"] == "method_not_allowed"
 
 
 @pytest.mark.parametrize(
@@ -304,13 +308,11 @@ def test_actor_spoofing_is_rejected_by_strict_command(client: TestClient) -> Non
         (503, "connector_unavailable"),
     ),
 )
-def test_ticket_errors_have_stable_status_and_code(
+def test_retired_ticket_routes_do_not_invoke_ticket_services(
     m3_product_services, status: int, code: str
 ) -> None:
-    client = _client(
-        m3_product_services,
-        _ApiTickets(ProductTicketError(code, f"fixture {code}", status_code=status)),
-    )
+    tickets = _ApiTickets(ProductTicketError(code, f"fixture {code}", status_code=status))
+    client = _client(m3_product_services, tickets)
 
     response = client.post(
         "/api/v1/ticket-batches/batch-1/approve",
@@ -322,11 +324,11 @@ def test_ticket_errors_have_stable_status_and_code(
         headers=_session(client),
     )
 
-    assert response.status_code == status
-    assert response.json()["code"] == code
+    assert response.status_code == 405
+    assert tickets.calls == []
 
 
-def test_not_found_idempotency_permission_and_missing_receipt_are_stable(
+def test_get_not_found_remains_stable_while_legacy_mutations_are_retired(
     m3_product_services,
 ) -> None:
     missing = _client(m3_product_services).get("/api/v1/ticket-batches/absent")
@@ -363,15 +365,12 @@ def test_not_found_idempotency_permission_and_missing_receipt_are_stable(
 
     assert missing.status_code == 404
     assert missing.json()["code"] == "object_not_found"
-    assert conflict.status_code == 409
-    assert conflict.json()["code"] == "idempotency_conflict"
-    assert denied.status_code == 403
-    assert denied.json()["code"] == "permission_denied"
-    assert receipt.status_code == 422
-    assert receipt.json()["code"] == "receipt_required"
+    assert conflict.status_code == 405
+    assert denied.status_code == 405
+    assert receipt.status_code == 405
 
 
-def test_nonce_and_receipt_are_absent_from_action_and_event_feeds(
+def test_blocked_nonce_and_receipt_never_reach_action_or_event_feeds(
     client: TestClient,
 ) -> None:
     headers = _session(client)
@@ -388,8 +387,8 @@ def test_nonce_and_receipt_are_absent_from_action_and_event_feeds(
     actions = client.get("/api/v1/actions?limit=500")
     events = client.get("/api/v1/events?after=0&limit=500")
 
-    assert issued.json()["nonce"] == "nonce-plaintext-once"
-    assert confirmed.status_code == 200
+    assert issued.status_code == 405
+    assert confirmed.status_code == 405
     for feed in (actions.text, events.text):
         assert "nonce-plaintext-once" not in feed
         assert "cmVjZWlwdA==" not in feed

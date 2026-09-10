@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
@@ -17,6 +18,15 @@ from nutmeg.ontology.repository.market import QuoteRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 from nutmeg.product.actions import ProductActionGateway
+from nutmeg.product.contracts import (
+    ApproveTicketBatchCommand,
+    ConfirmPlacementCommand,
+    CreateTicketBatchCommand,
+    IssueConfirmationCommand,
+    ProductActionRequest,
+    RemoveTicketLegCommand,
+)
+from nutmeg.product.errors import ProductTicketError
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.tickets import ProductTicketService
@@ -67,9 +77,14 @@ def _session(client: TestClient) -> dict[str, str]:
 
 
 def _ref(response, object_type: str) -> str:
+    payload = (
+        response.model_dump(mode="json")
+        if hasattr(response, "model_dump")
+        else response.json()
+    )
     return next(
         item["object_id"]
-        for item in response.json()["result_refs"]
+        for item in payload["result_refs"]
         if item["object_type"] == object_type
     )
 
@@ -112,7 +127,11 @@ def _leg(match: dict[str, object], *, mode: str) -> dict[str, object]:
             ["two_way_instability"] if mode == "warn" else []
         ),
         "anchor_integrity": "pass",
-        "precedents": [],
+        # clean/error 腿是裸单,被排面 平 28% > C14 阈值 20%,死亡三证必须齐;
+        # warn 腿买 "31",被排面只剩 客 20%,不触发 C14,保留它原本要测的那条 WARN。
+        "precedents": (
+            [] if mode == "warn" else [["1", "2026-05-12 同场地同型 1:0 主胜", "dead"]]
+        ),
     }
 
 
@@ -225,57 +244,48 @@ def test_m4_golden_path_is_audited_restart_safe_and_exactly_once(
             "actor_role": "ai_analyst",
         },
     )
-    assert spoofed.status_code == 422
+    assert spoofed.status_code == 405
 
-    error_created = client.post(
-        "/api/v1/ticket-batches",
-        headers=headers,
-        json=_create_payload(match, mode="error"),
+    error_created = services.tickets.create_batch(
+        CreateTicketBatchCommand.model_validate(_create_payload(match, mode="error"))
     )
-    assert error_created.status_code == 200
+    assert error_created.status == "committed"
     error_revision_id = _ref(error_created, "ticket_batch_revision")
     error_batch = _batch_for_revision(client, error_revision_id)
     assert error_batch["audit_state"] == "error"
-    error_approval = client.post(
-        f'/api/v1/ticket-batches/{error_batch["ticket_batch_id"]}/approve',
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "expected_revision_no": 1,
-            "idempotency_key": "m4:e2e:approve:error",
-        },
-    )
-    assert error_approval.status_code == 409
-    assert error_approval.json()["code"] == "ticket_audit_blocked"
+    with pytest.raises(ProductTicketError, match="audit ERROR") as error_approval:
+        services.tickets.approve_batch(
+            str(error_batch["ticket_batch_id"]),
+            ApproveTicketBatchCommand(
+                expected_revision_no=1,
+                idempotency_key="m4:e2e:approve:error",
+            ),
+        )
+    assert error_approval.value.code == "ticket_audit_blocked"
     assert _counts(kernel)["ticket_artifacts"] == baseline["ticket_artifacts"]
 
-    warn_created = client.post(
-        "/api/v1/ticket-batches",
-        headers=headers,
-        json=_create_payload(match, mode="warn"),
+    warn_created = services.tickets.create_batch(
+        CreateTicketBatchCommand.model_validate(_create_payload(match, mode="warn"))
     )
-    assert warn_created.status_code == 200
+    assert warn_created.status == "committed"
     warn_revision_id = _ref(warn_created, "ticket_batch_revision")
     warn_batch = _batch_for_revision(client, warn_revision_id)
     warning = next(
         item for item in warn_batch["audit_findings"] if item["level"] == "WARN"
     )
-    warn_blocked = client.post(
-        f'/api/v1/ticket-batches/{warn_batch["ticket_batch_id"]}/approve',
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "expected_revision_no": 1,
-            "idempotency_key": "m4:e2e:approve:warn:blocked",
-        },
-    )
-    assert warn_blocked.status_code == 409
-    assert warn_blocked.json()["code"] == "ticket_warning_unadjudicated"
+    with pytest.raises(ProductTicketError, match="unadjudicated WARN") as warn_blocked:
+        services.tickets.approve_batch(
+            str(warn_batch["ticket_batch_id"]),
+            ApproveTicketBatchCommand(
+                expected_revision_no=1,
+                idempotency_key="m4:e2e:approve:warn:blocked",
+            ),
+        )
+    assert warn_blocked.value.code == "ticket_warning_unadjudicated"
 
-    adjudicated = client.post(
-        "/api/v1/actions",
-        headers=headers,
-        json={
+    adjudicated = services.actions.execute(
+        ProductActionRequest.model_validate(
+            {
             "schema_version": "1",
             "action_type": "record_adjudication",
             "idempotency_key": "m4:e2e:warn:adjudication",
@@ -290,19 +300,18 @@ def test_m4_golden_path_is_audited_restart_safe_and_exactly_once(
                 "alternative": {"action": "drop_match"},
             },
             "expected_versions": {},
-        },
+            }
+        )
     )
-    assert adjudicated.status_code == 200
-    warn_approved = client.post(
-        f'/api/v1/ticket-batches/{warn_batch["ticket_batch_id"]}/approve',
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "expected_revision_no": 1,
-            "idempotency_key": "m4:e2e:approve:warn",
-        },
+    assert adjudicated.status == "committed"
+    warn_approved = services.tickets.approve_batch(
+        str(warn_batch["ticket_batch_id"]),
+        ApproveTicketBatchCommand(
+            expected_revision_no=1,
+            idempotency_key="m4:e2e:approve:warn",
+        ),
     )
-    assert warn_approved.status_code == 200
+    assert warn_approved.status == "committed"
     artifact_id = _ref(warn_approved, "audited_ticket_artifact")
     artifact = client.get(f"/api/v1/ticket-artifacts/{artifact_id}").json()
     assert artifact["placement_state"] == "unplaced"
@@ -312,22 +321,18 @@ def test_m4_golden_path_is_audited_restart_safe_and_exactly_once(
     assert hashlib.sha256(artifact_bytes).hexdigest() == artifact["ticket_hash"]
     assert json.loads(artifact_bytes) == artifact["payload"]
 
-    issued = client.post(
-        f"/api/v1/ticket-artifacts/{artifact_id}/confirmations",
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "idempotency_key": "m4:e2e:confirmation",
-        },
+    issued = services.tickets.issue_confirmation(
+        artifact_id,
+        IssueConfirmationCommand(idempotency_key="m4:e2e:confirmation"),
     )
-    assert issued.status_code == 200
-    nonce = issued.json()["nonce"]
-    confirmation_id = issued.json()["confirmation_id"]
+    assert issued.status == "committed"
+    nonce = issued.nonce
+    confirmation_id = issued.confirmation_id
     assert nonce and confirmation_id
     cursor = client.get("/api/v1/events?after=0&limit=1000").json()["next_cursor"]
 
-    restarted = _client(_services(m3_seeded_product.settings))
-    restart_headers = _session(restarted)
+    restarted_services = _services(m3_seeded_product.settings)
+    restarted = _client(restarted_services)
     confirm_payload = {
         "schema_version": "1",
         "confirmation_id": confirmation_id,
@@ -342,31 +347,29 @@ def test_m4_golden_path_is_audited_restart_safe_and_exactly_once(
         "receipt_content_type": "text/plain",
         "idempotency_key": "m4:e2e:confirm",
     }
-    confirmed = restarted.post(
-        f"/api/v1/ticket-artifacts/{artifact_id}/confirm",
-        headers=restart_headers,
-        json=confirm_payload,
+    confirmed = restarted_services.tickets.confirm_placement(
+        artifact_id,
+        ConfirmPlacementCommand.model_validate(confirm_payload),
     )
-    assert confirmed.status_code == 200
+    assert confirmed.status == "committed"
     ticket_id = _ref(confirmed, "ticket")
     cash_transaction_id = _ref(confirmed, "cash_transaction")
     placement_id = _ref(confirmed, "ticket_placement")
     receipt_artifact_id = _ref(confirmed, "source_artifact")
 
-    replayed = restarted.post(
-        f"/api/v1/ticket-artifacts/{artifact_id}/confirm",
-        headers=restart_headers,
-        json=confirm_payload,
+    replayed = restarted_services.tickets.confirm_placement(
+        artifact_id,
+        ConfirmPlacementCommand.model_validate(confirm_payload),
     )
-    assert replayed.status_code == 200
-    assert replayed.json()["action_id"] == confirmed.json()["action_id"]
-    reused = restarted.post(
-        f"/api/v1/ticket-artifacts/{artifact_id}/confirm",
-        headers=restart_headers,
-        json={**confirm_payload, "idempotency_key": "m4:e2e:confirm:reused"},
-    )
-    assert reused.status_code == 409
-    assert reused.json()["code"] in {"confirmation_reused", "ticket_already_placed"}
+    assert replayed.action_id == confirmed.action_id
+    with pytest.raises(ProductTicketError) as reused:
+        restarted_services.tickets.confirm_placement(
+            artifact_id,
+            ConfirmPlacementCommand.model_validate(
+                {**confirm_payload, "idempotency_key": "m4:e2e:confirm:reused"}
+            ),
+        )
+    assert reused.value.code in {"confirmation_reused", "ticket_already_placed"}
 
     placed = restarted.get(f"/api/v1/ticket-artifacts/{artifact_id}").json()
     assert placed["placement_state"] == "placed"
@@ -399,39 +402,33 @@ def test_m4_golden_path_is_audited_restart_safe_and_exactly_once(
     assert f'id: {cursor + 1}' in event_stream.text
     assert "event: action.committed" in event_stream.text
 
-    empty_created = restarted.post(
-        "/api/v1/ticket-batches",
-        headers=restart_headers,
-        json=_create_payload(match, mode="clean"),
+    empty_created = restarted_services.tickets.create_batch(
+        CreateTicketBatchCommand.model_validate(_create_payload(match, mode="clean"))
     )
-    assert empty_created.status_code == 200
+    assert empty_created.status == "committed"
     empty_first = _batch_for_revision(
         restarted, _ref(empty_created, "ticket_batch_revision")
     )
-    emptied = restarted.post(
-        f'/api/v1/ticket-batches/{empty_first["ticket_batch_id"]}/remove-leg',
-        headers=restart_headers,
-        json={
-            "schema_version": "1",
-            "leg_key": "match-1:md-had:home",
-            "expected_revision_no": 1,
-            "idempotency_key": "m4:e2e:empty:remove",
-        },
+    emptied = restarted_services.tickets.remove_leg(
+        str(empty_first["ticket_batch_id"]),
+        RemoveTicketLegCommand(
+            leg_key="match-1:md-had:home",
+            expected_revision_no=1,
+            idempotency_key="m4:e2e:empty:remove",
+        ),
     )
-    assert emptied.status_code == 200
-    approved_empty = restarted.post(
-        f'/api/v1/ticket-batches/{empty_first["ticket_batch_id"]}/approve',
-        headers=restart_headers,
-        json={
-            "schema_version": "1",
-            "expected_revision_no": 2,
-            "idempotency_key": "m4:e2e:empty:approve",
-        },
+    assert emptied.status == "committed"
+    approved_empty = restarted_services.tickets.approve_batch(
+        str(empty_first["ticket_batch_id"]),
+        ApproveTicketBatchCommand(
+            expected_revision_no=2,
+            idempotency_key="m4:e2e:empty:approve",
+        ),
     )
-    assert approved_empty.status_code == 200
+    assert approved_empty.status == "committed"
     assert not any(
-        item["object_type"] == "audited_ticket_artifact"
-        for item in approved_empty.json()["result_refs"]
+        item.object_type == "audited_ticket_artifact"
+        for item in approved_empty.result_refs
     )
     empty_current = _batch_for_revision(
         restarted, _ref(approved_empty, "ticket_batch_revision")

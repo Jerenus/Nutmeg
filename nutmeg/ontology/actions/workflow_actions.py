@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from nutmeg.ontology.actions.models import (
     ActionCommand,
@@ -10,7 +11,7 @@ from nutmeg.ontology.actions.models import (
     ActorRole,
     ObjectRef,
 )
-from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.actions.service import ActionBatchItem, ActionService
 from nutmeg.ontology.workflow.models import (
     AdjudicationRow,
     AgentProposalRow,
@@ -21,6 +22,9 @@ from nutmeg.ontology.workflow.models import (
     ProposalStatus,
     mint_workflow_id,
 )
+
+if TYPE_CHECKING:
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 
 def _require_aware(requested_at: datetime) -> None:
@@ -44,6 +48,31 @@ class RecordAdjudicationRequest:
 
     def __post_init__(self) -> None:
         _require_aware(self.requested_at)
+
+
+def insert_adjudication_in_uow(
+    uow: OntologyUnitOfWork,
+    request: RecordAdjudicationRequest,
+    *,
+    adjudication_id: str | None = None,
+) -> str:
+    """Insert one Adjudication inside an already governed outer Action."""
+    resolved_id = adjudication_id or mint_workflow_id('adj')
+    uow.workflow.insert_adjudication(
+        AdjudicationRow(
+            adjudication_id=resolved_id,
+            subject_type=request.subject_type,
+            subject_id=request.subject_id,
+            decision=request.decision,
+            actor_id=request.actor_id,
+            reason=request.reason,
+            evidence_rejected=list(request.evidence_rejected),
+            alternative=dict(request.alternative),
+            created_at=request.requested_at.astimezone(UTC).isoformat(),
+            supersedes_adjudication_id=request.supersedes_adjudication_id,
+        )
+    )
+    return resolved_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +199,16 @@ class WorkflowActions:
     def record_adjudication(
         self, request: RecordAdjudicationRequest
     ) -> ActionOutcome:
+        command, handler = self.prepare_record_adjudication(request)
+        return self._action_service.execute(command, handler)
+
+    def prepare_record_adjudication(
+        self,
+        request: RecordAdjudicationRequest,
+        *,
+        action_id: str | None = None,
+    ) -> ActionBatchItem:
+        """Build an adjudication operation without opening a transaction."""
         command = self._command(
             'record_adjudication',
             request,
@@ -182,27 +221,14 @@ class WorkflowActions:
                 'alternative': request.alternative,
                 'supersedes_adjudication_id': request.supersedes_adjudication_id,
             },
+            action_id=action_id,
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
-            adjudication_id = mint_workflow_id('adj')
-            uow.workflow.insert_adjudication(
-                AdjudicationRow(
-                    adjudication_id=adjudication_id,
-                    subject_type=request.subject_type,
-                    subject_id=request.subject_id,
-                    decision=request.decision,
-                    actor_id=request.actor_id,
-                    reason=request.reason,
-                    evidence_rejected=list(request.evidence_rejected),
-                    alternative=dict(request.alternative),
-                    created_at=self._at(request),
-                    supersedes_adjudication_id=request.supersedes_adjudication_id,
-                )
-            )
+            adjudication_id = insert_adjudication_in_uow(uow, request)
             return (ObjectRef('adjudication', adjudication_id),)
 
-        return self._action_service.execute(command, handler)
+        return command, handler
 
     def record_flag_instance(
         self, request: RecordFlagInstanceRequest
@@ -243,6 +269,16 @@ class WorkflowActions:
     def register_prediction(
         self, request: RegisterPredictionRequest
     ) -> ActionOutcome:
+        command, handler = self.prepare_register_prediction(request)
+        return self._action_service.execute(command, handler)
+
+    def prepare_register_prediction(
+        self,
+        request: RegisterPredictionRequest,
+        *,
+        action_id: str | None = None,
+    ) -> ActionBatchItem:
+        """Build a prediction operation without opening a transaction."""
         command = self._command(
             'register_prediction',
             request,
@@ -253,6 +289,7 @@ class WorkflowActions:
                 'claim': request.claim,
                 'falsifier': request.falsifier,
             },
+            action_id=action_id,
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
@@ -273,7 +310,7 @@ class WorkflowActions:
             )
             return (ObjectRef('prediction', prediction_id),)
 
-        return self._action_service.execute(command, handler)
+        return command, handler
 
     def grade_prediction(self, request: GradePredictionRequest) -> ActionOutcome:
         command = self._command(
@@ -432,6 +469,7 @@ class WorkflowActions:
         payload: dict[str, object],
         *,
         expected_versions: dict[str, int] | None = None,
+        action_id: str | None = None,
     ) -> ActionCommand:
         return ActionCommand.create(
             action_type=action_type,
@@ -441,4 +479,5 @@ class WorkflowActions:
             payload=payload,
             requested_at=request.requested_at,
             expected_versions=expected_versions,
+            action_id=action_id,
         )

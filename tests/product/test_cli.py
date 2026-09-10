@@ -1,6 +1,7 @@
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -12,7 +13,16 @@ from nutmeg.interfaces.cli import product as product_cli
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository.migrations import MIGRATIONS
 from nutmeg.ontology.wiring import build_ontology_kernel
+from nutmeg.product import wiring as product_wiring
 from nutmeg.product.errors import ProductNotReadyError
+from nutmeg.product.operator_runtime import (
+    OperatorRuntimeConfig,
+    OperatorRuntimeError,
+    OperatorRuntimeScope,
+    OperatorSurfaceMode,
+    SourceIdentity,
+)
+from nutmeg.product.operator_workers import audit_current_candidate
 from nutmeg.product.wiring import build_product_services
 
 
@@ -30,10 +40,19 @@ def test_product_services_compose_only_current_kernel(tmp_path: Path) -> None:
     assert services.kernel.status().integrity_check == "ok"
     assert services.queries.health().ontology_schema_version == MIGRATIONS[-1].version
     assert services.settings is settings
+    assert (
+        services.kernel.protected_tickets._operator_candidate_auditor
+        is audit_current_candidate
+    )
 
 
 def test_app_command_binds_loopback_by_default(monkeypatch, tmp_path: Path) -> None:
-    settings = AppSettings(data_dir=tmp_path / "data")
+    data_dir = (tmp_path / "data").resolve()
+    settings = AppSettings(
+        _env_file=None,
+        data_dir=data_dir,
+        production_data_dir=data_dir,
+    )
     build_ontology_kernel(settings).initialize()
     captured: dict[str, object] = {}
     monkeypatch.setattr(product_cli._cli, "get_settings", lambda: settings)
@@ -49,6 +68,227 @@ def test_app_command_binds_loopback_by_default(monkeypatch, tmp_path: Path) -> N
     assert result.exit_code == 0
     assert captured["host"] == "127.0.0.1"
     assert captured["port"] == 8788
+
+
+def test_app_command_validates_and_locks_before_building_services(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from nutmeg.interfaces import product_api
+    from nutmeg.product import operator_runtime
+
+    production = (tmp_path / "production").resolve()
+    isolated = (tmp_path / "isolated").resolve()
+    settings = AppSettings(
+        _env_file=None,
+        data_dir=production,
+        production_data_dir=production,
+        operator_runtime_scope="isolated_candidate",
+        operator_surface_mode="active",
+        operator_token_signing_key="isolated-operator-signing-key-32-bytes",
+    )
+    runtime = OperatorRuntimeConfig(
+        surface_mode=OperatorSurfaceMode.ACTIVE,
+        runtime_scope=OperatorRuntimeScope.ISOLATED_CANDIDATE,
+        data_dir=isolated,
+        production_data_dir=production,
+        running_commit="a" * 40,
+    )
+    events: list[object] = []
+
+    monkeypatch.setattr(product_cli._cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        operator_runtime,
+        "probe_source_identity",
+        lambda: events.append("probe")
+        or SourceIdentity(running_commit="a" * 40, dirty=True, resolved=True),
+    )
+
+    def validate(candidate_settings, **kwargs):
+        events.append(("validate", candidate_settings.data_dir, kwargs))
+        return runtime
+
+    monkeypatch.setattr(operator_runtime, "validate_operator_runtime", validate)
+
+    class AppLease:
+        def __init__(self, data_dir, *, host, port):
+            events.append(("app_lease_init", data_dir, host, port))
+
+        def acquire(self):
+            events.append("app_acquire")
+            return self
+
+        def release(self):
+            events.append("app_release")
+
+    class WriterLease:
+        @classmethod
+        def shared(cls, data_dir):
+            events.append(("writer_lease_init", data_dir))
+            return cls()
+
+        def acquire(self):
+            events.append("writer_acquire")
+            return self
+
+        def release(self):
+            events.append("writer_release")
+
+    monkeypatch.setattr(operator_runtime, "ApplicationInstanceLease", AppLease)
+    monkeypatch.setattr(operator_runtime, "OntologyWriterLease", WriterLease)
+
+    def build(candidate_settings, *, runtime_config):
+        events.append(("build", candidate_settings.data_dir, runtime_config))
+        return SimpleNamespace()
+
+    monkeypatch.setattr(product_wiring, "build_product_services", build)
+    monkeypatch.setattr(
+        product_api,
+        "create_product_app",
+        lambda services, *, runtime_config: events.append(
+            ("create_app", services, runtime_config)
+        )
+        or "application",
+    )
+    monkeypatch.setattr(
+        "uvicorn.run",
+        lambda application, host, port: events.append(
+            ("uvicorn", application, host, port)
+        ),
+    )
+
+    result = CliRunner().invoke(app, ["app", "--data-dir", str(isolated)])
+
+    assert result.exit_code == 0, result.output
+    assert events[0] == "probe"
+    assert events[1] == (
+        "validate",
+        isolated,
+        {
+            "running_commit": "a" * 40,
+            "dirty": True,
+            "data_dir_was_explicit": True,
+        },
+    )
+    assert [event if isinstance(event, str) else event[0] for event in events] == [
+        "probe",
+        "validate",
+        "app_lease_init",
+        "app_acquire",
+        "writer_lease_init",
+        "writer_acquire",
+        "build",
+        "create_app",
+        "uvicorn",
+        "writer_release",
+        "app_release",
+    ]
+
+
+def test_app_command_reports_lease_conflict_before_service_construction(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from nutmeg.product import operator_runtime
+
+    production = (tmp_path / "production").resolve()
+    settings = AppSettings(
+        _env_file=None,
+        data_dir=production,
+        production_data_dir=production,
+    )
+    monkeypatch.setattr(product_cli._cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        operator_runtime,
+        "probe_source_identity",
+        lambda: SourceIdentity(running_commit="a" * 40, dirty=False, resolved=True),
+    )
+
+    class ConflictingLease:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def acquire(self):
+            raise OperatorRuntimeError("app_instance_conflict", "already running")
+
+    monkeypatch.setattr(operator_runtime, "ApplicationInstanceLease", ConflictingLease)
+    constructed = False
+
+    def build(*_args, **_kwargs):
+        nonlocal constructed
+        constructed = True
+        raise AssertionError("services must not be constructed")
+
+    monkeypatch.setattr(product_wiring, "build_product_services", build)
+
+    result = CliRunner().invoke(app, ["app"])
+
+    assert result.exit_code != 0
+    assert "app_instance_conflict" in result.output
+    assert constructed is False
+
+
+def test_isolated_wiring_rejects_real_token_before_constructing_telegram(
+    monkeypatch, tmp_path: Path
+) -> None:
+    production = (tmp_path / "production").resolve()
+    isolated = (tmp_path / "isolated").resolve()
+    settings = AppSettings(
+        _env_file=None,
+        data_dir=isolated,
+        production_data_dir=production,
+        operator_runtime_scope="isolated_candidate",
+        operator_surface_mode="active",
+        operator_token_signing_key="isolated-operator-signing-key-32-bytes",
+        telegram_bot_token="real-token-must-not-be-used",
+        telegram_allowed_chat_ids="7",
+    )
+    build_ontology_kernel(settings).initialize()
+    runtime = OperatorRuntimeConfig(
+        surface_mode=OperatorSurfaceMode.ACTIVE,
+        runtime_scope=OperatorRuntimeScope.ISOLATED_CANDIDATE,
+        data_dir=isolated,
+        production_data_dir=production,
+        running_commit="a" * 40,
+    )
+
+    class TelegramMustNotConstruct:
+        def __init__(self, **_kwargs):
+            raise AssertionError("real Telegram was constructed")
+
+    monkeypatch.setattr(product_wiring, "TelegramBotClient", TelegramMustNotConstruct)
+
+    with pytest.raises(ValueError, match="side effects"):
+        build_product_services(settings, runtime_config=runtime)
+
+
+def test_token_free_isolated_wiring_uses_only_simulated_confirmation(
+    tmp_path: Path,
+) -> None:
+    production = (tmp_path / "production").resolve()
+    isolated = (tmp_path / "isolated").resolve()
+    settings = AppSettings(
+        _env_file=None,
+        data_dir=isolated,
+        production_data_dir=production,
+        operator_runtime_scope="isolated_candidate",
+        operator_surface_mode="active",
+        operator_token_signing_key="isolated-operator-signing-key-32-bytes",
+        telegram_bot_token=None,
+        telegram_allowed_chat_ids=None,
+    )
+    build_ontology_kernel(settings).initialize()
+    runtime = OperatorRuntimeConfig(
+        surface_mode=OperatorSurfaceMode.ACTIVE,
+        runtime_scope=OperatorRuntimeScope.ISOLATED_CANDIDATE,
+        data_dir=isolated,
+        production_data_dir=production,
+        running_commit="a" * 40,
+    )
+
+    services = build_product_services(settings, runtime_config=runtime)
+
+    assert services.runtime is runtime
+    assert services.confirmation_transport_kind == "simulated"
+    assert services.operator_actions.telegram is not None
 
 
 def _invoke_scoreboard(*args: str):

@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from nutmeg.ontology.actions.models import ActionCommand, ActionStatus, ActorRole, ObjectRef
 from nutmeg.ontology.actions.service import ActionService
-from nutmeg.ontology.errors import IdempotencyConflictError
+from nutmeg.ontology.errors import IdempotencyConflictError, PermissionDeniedError
 from nutmeg.ontology.repository.actions import ActionRepository
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.migrations import run_migrations
@@ -21,15 +21,29 @@ def _service(tmp_path: Path) -> tuple[ActionService, object]:
     return ActionService(lambda: OntologyUnitOfWork(engine)), engine
 
 
-def _command(payload: dict[str, object] | None = None) -> ActionCommand:
+def _command(
+    payload: dict[str, object] | None = None,
+    *,
+    key: str = "probe:one",
+    role: ActorRole = ActorRole.CONNECTOR,
+) -> ActionCommand:
     return ActionCommand.create(
         action_type="ingest_artifact",
         actor_id="source:test",
-        actor_role=ActorRole.CONNECTOR,
-        idempotency_key="probe:one",
+        actor_role=role,
+        idempotency_key=key,
         payload=payload or {"value": "one"},
         requested_at=datetime(2026, 7, 21, 8, tzinfo=UTC),
     )
+
+
+def _counts(engine) -> tuple[int, int, int]:
+    with OntologyUnitOfWork(engine) as uow:
+        return (
+            uow.actions.count(),
+            uow.connection.execute(text("SELECT COUNT(*) FROM probe")).scalar_one(),
+            uow.outbox.count(),
+        )
 
 
 def test_action_commits_once_and_replays_stored_outcome(tmp_path: Path) -> None:
@@ -89,3 +103,155 @@ def test_permission_denial_is_audited_without_calling_handler(tmp_path: Path) ->
     outcome = service.execute(command, lambda _uow, _command: pytest.fail("handler called"))
     assert outcome.status is ActionStatus.REJECTED
     assert outcome.error_code == "permission_denied"
+
+
+def test_batch_commits_actions_business_rows_and_outbox_atomically(tmp_path: Path) -> None:
+    service, engine = _service(tmp_path)
+
+    def handler(uow, command):
+        uow.connection.execute(text("INSERT INTO probe(value) VALUES (:value)"), command.payload)
+        return (ObjectRef("probe", str(command.payload["value"])),)
+
+    outcomes = service.execute_batch(
+        (
+            (_command(key="probe:batch:one"), handler),
+            (_command({"value": "two"}, key="probe:batch:two"), handler),
+        )
+    )
+
+    assert [outcome.status for outcome in outcomes] == [
+        ActionStatus.COMMITTED,
+        ActionStatus.COMMITTED,
+    ]
+    assert [outcome.result_refs[0].object_id for outcome in outcomes] == ["one", "two"]
+    assert _counts(engine) == (2, 2, 2)
+
+
+def test_batch_duplicate_key_is_rejected_before_handlers_and_writes(tmp_path: Path) -> None:
+    service, engine = _service(tmp_path)
+    calls = 0
+
+    def handler(_uow, _command):
+        nonlocal calls
+        calls += 1
+        return ()
+
+    with pytest.raises(IdempotencyConflictError, match="duplicate.*probe:duplicate"):
+        service.execute_batch(
+            (
+                (_command(key="probe:duplicate"), handler),
+                (_command(key="probe:duplicate"), handler),
+            )
+        )
+
+    assert calls == 0
+    assert _counts(engine) == (0, 0, 0)
+
+
+def test_batch_existing_hash_conflict_is_rejected_before_handlers_and_writes(
+    tmp_path: Path,
+) -> None:
+    service, engine = _service(tmp_path)
+    service.execute(_command(key="probe:existing"), lambda _uow, _command: ())
+    calls = 0
+
+    def handler(_uow, _command):
+        nonlocal calls
+        calls += 1
+        return ()
+
+    with pytest.raises(IdempotencyConflictError, match="probe:existing"):
+        service.execute_batch(
+            (
+                (_command(key="probe:new"), handler),
+                (
+                    _command({"value": "different"}, key="probe:existing"),
+                    handler,
+                ),
+            )
+        )
+
+    assert calls == 0
+    assert _counts(engine) == (1, 0, 1)
+
+
+def test_batch_permission_denial_is_rejected_before_handlers_and_writes(tmp_path: Path) -> None:
+    service, engine = _service(tmp_path)
+    calls = 0
+
+    def handler(_uow, _command):
+        nonlocal calls
+        calls += 1
+        return ()
+
+    with pytest.raises(PermissionDeniedError, match="ai_analyst"):
+        service.execute_batch(
+            (
+                (_command(key="probe:allowed"), handler),
+                (
+                    _command(key="probe:denied", role=ActorRole.AI_ANALYST),
+                    handler,
+                ),
+            )
+        )
+
+    assert calls == 0
+    assert _counts(engine) == (0, 0, 0)
+
+
+def test_batch_replays_committed_action_and_only_executes_new_handler(tmp_path: Path) -> None:
+    service, engine = _service(tmp_path)
+
+    def insert_probe(uow, command):
+        uow.connection.execute(text("INSERT INTO probe(value) VALUES (:value)"), command.payload)
+        return (ObjectRef("probe", str(command.payload["value"])),)
+
+    existing = service.execute(_command(key="probe:replay"), insert_probe)
+    calls = 0
+
+    def new_handler(uow, command):
+        nonlocal calls
+        calls += 1
+        return insert_probe(uow, command)
+
+    outcomes = service.execute_batch(
+        (
+            (
+                _command(key="probe:replay"),
+                lambda _uow, _command: pytest.fail("replay handler called"),
+            ),
+            (_command({"value": "new"}, key="probe:new"), new_handler),
+        )
+    )
+
+    assert outcomes[0].action_id == existing.action_id
+    assert outcomes[1].status is ActionStatus.COMMITTED
+    assert calls == 1
+    assert _counts(engine) == (2, 2, 2)
+
+
+def test_batch_handler_failure_rolls_back_all_actions_business_rows_and_outbox(
+    tmp_path: Path,
+) -> None:
+    service, engine = _service(tmp_path)
+
+    def insert_probe(uow, command):
+        uow.connection.execute(text("INSERT INTO probe(value) VALUES (:value)"), command.payload)
+        return ()
+
+    def fail_after_insert(uow, command):
+        insert_probe(uow, command)
+        raise RuntimeError("batch handler exploded")
+
+    with pytest.raises(RuntimeError, match="batch handler exploded"):
+        service.execute_batch(
+            (
+                (_command(key="probe:batch:first"), insert_probe),
+                (
+                    _command({"value": "second"}, key="probe:batch:second"),
+                    fail_after_insert,
+                ),
+            )
+        )
+
+    assert _counts(engine) == (0, 0, 0)

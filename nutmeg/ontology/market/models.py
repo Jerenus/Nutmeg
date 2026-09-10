@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from nutmeg.ontology.actions.models import ActorRole
 
@@ -13,6 +14,7 @@ class QuoteInput:
     selection_id: str
     decimal_odds: float
     bookmaker: str | None = None
+    settlement_parameter_decimal: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,5 +40,23 @@ class SnapshotBuildRequest:
             raise ValueError('at least one quote is required')
         if any(quote.decimal_odds <= 1.0 for quote in self.quotes):
             raise ValueError('decimal_odds must be greater than 1.0')
+        if any(
+            quote.market_definition_id != self.market_definition_id
+            for quote in self.quotes
+        ):
+            raise ValueError('every Quote must belong to the Snapshot market')
+        lines = {quote.settlement_parameter_decimal for quote in self.quotes}
+        if self.market_definition_id == 'md-hhad':
+            if None in lines or len(lines) != 1:
+                raise ValueError('HHAD Snapshot requires one exact signed line')
+        elif lines != {None}:
+            raise ValueError('unlined Snapshot cannot contain a settlement parameter')
+        for line in lines - {None}:
+            try:
+                parsed = Decimal(line)
+            except (InvalidOperation, TypeError) as error:
+                raise ValueError('settlement parameter must be a canonical decimal') from error
+            if not parsed.is_finite() or format(parsed, '.12f') != line:
+                raise ValueError('settlement parameter must have twelve decimal places')
         if not self.idempotency_key.strip():
             raise ValueError('idempotency_key is required')

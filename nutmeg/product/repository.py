@@ -3,10 +3,15 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import Engine, and_, case, func, or_, select
+from sqlalchemy import Connection, Engine, and_, case, func, or_, select
 
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository import schema_context as sc
@@ -15,17 +20,305 @@ from nutmeg.ontology.repository import schema_evidence as se
 from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository import schema_market as sm
+from nutmeg.ontology.repository import schema_operator_sale as sos
 from nutmeg.ontology.repository import schema_tickets as st
 from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.ontology.repository.outbox import OutboxEventRow, OutboxRepository
+from nutmeg.product.operator_contracts import OperatorLane
+from nutmeg.product.operator_lanes import (
+    SaleOfferSnapshot,
+    SaleSlateSnapshot,
+    ScheduleRecoverySnapshot,
+)
 
 LineageTuple = tuple[str, str, str, str, str]
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class MatchReadRow(Mapping[str, object]):
+    """Typed temporal match row with read-only compatibility for legacy readers."""
+
+    match_id: str
+    match_revision_id: str
+    scheduled_at: datetime | str
+    status: str
+    schedule_status: str
+    home_team: str | None
+    away_team: str | None
+    home_team_id: str
+    away_team_id: str
+    home_resolution_status: str
+    away_resolution_status: str
+    competition_id: str | None
+    competition_edition_id: str | None
+    competition: str | None
+    round_label: str | None
+    venue_id: str | None
+
+    def __getitem__(self, key: str) -> object:
+        if key not in self.__dataclass_fields__:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.__dataclass_fields__)
+
+    def __len__(self) -> int:
+        return len(self.__dataclass_fields__)
+
+    @classmethod
+    def from_mapping(cls, row: Mapping[str, object]) -> MatchReadRow:
+        scheduled_at = row["scheduled_at"]
+        if not isinstance(scheduled_at, (datetime, str)):
+            raise ValueError("match scheduled_at must be a datetime or ISO timestamp")
+
+        def optional_text(field: str) -> str | None:
+            value = row[field]
+            return None if value is None else str(value)
+
+        return cls(
+            match_id=str(row["match_id"]),
+            match_revision_id=str(row["match_revision_id"]),
+            scheduled_at=scheduled_at,
+            status=str(row["status"]),
+            schedule_status=str(row["schedule_status"]),
+            home_team=optional_text("home_team"),
+            away_team=optional_text("away_team"),
+            home_team_id=str(row["home_team_id"]),
+            away_team_id=str(row["away_team_id"]),
+            home_resolution_status=str(row["home_resolution_status"]),
+            away_resolution_status=str(row["away_resolution_status"]),
+            competition_id=optional_text("competition_id"),
+            competition_edition_id=optional_text("competition_edition_id"),
+            competition=optional_text("competition"),
+            round_label=optional_text("round_label"),
+            venue_id=optional_text("venue_id"),
+        )
+
+
 class ProductReadRepository:
-    def __init__(self, engine: Engine, analytics_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        analytics_path: Path | None = None,
+        *,
+        connection: Connection | None = None,
+    ) -> None:
         self._engine = engine
         self._analytics_path = Path(analytics_path) if analytics_path is not None else None
+        self._connection = connection
+
+    def bound_to(self, connection: Connection) -> ProductReadRepository:
+        return ProductReadRepository(
+            self._engine,
+            self._analytics_path,
+            connection=connection,
+        )
+
+    @contextmanager
+    def _read_connection(self):
+        if self._connection is not None:
+            yield self._connection
+            return
+        with self._engine.connect() as connection:
+            yield connection
+
+    def operator_sale_slates(self, *, as_of: str) -> tuple[SaleSlateSnapshot, ...]:
+        cutoff = datetime.fromisoformat(as_of)
+        if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+            raise ValueError("operator sale as_of must be timezone-aware")
+        cutoff = cutoff.astimezone(UTC)
+        with self._read_connection() as connection:
+            rows = connection.execute(
+                select(sos.official_sale_slate_revisions).order_by(
+                    sos.official_sale_slate_revisions.c.lane,
+                    sos.official_sale_slate_revisions.c.business_key,
+                    sos.official_sale_slate_revisions.c.revision_no,
+                )
+            ).mappings()
+            current: dict[tuple[str, str], dict] = {}
+            for row in rows:
+                valid_from = datetime.fromisoformat(str(row["valid_from"]))
+                if valid_from.tzinfo is None or valid_from.utcoffset() is None:
+                    raise ValueError("official sale valid_from must be timezone-aware")
+                if valid_from.astimezone(UTC) <= cutoff:
+                    current[(str(row["lane"]), str(row["business_key"]))] = dict(row)
+            if not current:
+                return ()
+            slate_ids = [str(row["slate_revision_id"]) for row in current.values()]
+            offer_rows = (
+                connection.execute(
+                    select(sos.official_offer_revisions).where(
+                        sos.official_offer_revisions.c.slate_revision_id.in_(slate_ids)
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            source_rows = (
+                connection.execute(
+                    select(
+                        sos.official_sale_slate_revisions.c.slate_revision_id,
+                        schema.artifact_retrievals.c.source_name,
+                        schema.artifact_retrievals.c.source_type,
+                        schema.artifact_retrievals.c.status.label("retrieval_status"),
+                        schema.artifact_retrievals.c.reported_content_type,
+                        schema.artifact_retrievals.c.canonical_url,
+                        schema.source_runs.c.source_name.label("run_source_name"),
+                        schema.source_runs.c.source_type.label("run_source_type"),
+                        schema.source_runs.c.status.label("run_status"),
+                    )
+                    .select_from(
+                        sos.official_sale_slate_revisions.outerjoin(
+                            schema.artifact_retrievals,
+                            sos.official_sale_slate_revisions.c.source_artifact_retrieval_id
+                            == schema.artifact_retrievals.c.artifact_retrieval_id,
+                        ).outerjoin(
+                            schema.source_runs,
+                            schema.artifact_retrievals.c.source_run_id
+                            == schema.source_runs.c.source_run_id,
+                        )
+                    )
+                    .where(
+                        sos.official_sale_slate_revisions.c.slate_revision_id.in_(slate_ids)
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        offers_by_slate: dict[str, list[dict]] = {slate_id: [] for slate_id in slate_ids}
+        for row in offer_rows:
+            offers_by_slate[str(row["slate_revision_id"])].append(dict(row))
+        source_official_by_slate = {
+            str(row["slate_revision_id"]): self._is_official_sale_source(row)
+            for row in source_rows
+        }
+        snapshots = []
+        for key, row in sorted(current.items()):
+            offer_values = sorted(
+                offers_by_slate[str(row["slate_revision_id"])],
+                key=lambda item: self._official_match_order(str(item["official_match_no"])),
+            )
+            snapshots.append(
+                SaleSlateSnapshot(
+                    lane=OperatorLane(key[0]),
+                    business_key=key[1],
+                    slate_revision_id=str(row["slate_revision_id"]),
+                    content_hash=str(row["content_hash"]),
+                    revision_no=int(row["revision_no"]),
+                    published_at=datetime.fromisoformat(str(row["published_at"])),
+                    retrieved_at=datetime.fromisoformat(str(row["retrieved_at"])),
+                    offers=tuple(
+                        SaleOfferSnapshot(
+                            official_offer_family_id=str(
+                                offer["official_offer_family_id"]
+                            ),
+                            official_offer_revision_id=str(
+                                offer["official_offer_revision_id"]
+                            ),
+                            match_id=str(offer["match_id"]),
+                            official_match_no=str(offer["official_match_no"]),
+                            market_definition_ids=tuple(
+                                json.loads(str(offer["market_definition_ids_json"]))
+                            ),
+                            sale_opens_at=datetime.fromisoformat(
+                                str(offer["sale_opens_at"])
+                            ),
+                            sale_deadline_at=datetime.fromisoformat(
+                                str(offer["sale_deadline_at"])
+                            ),
+                            source_status=str(offer["status"]),
+                        )
+                        for offer in offer_values
+                    ),
+                    source_official=source_official_by_slate.get(
+                        str(row["slate_revision_id"]),
+                        False,
+                    ),
+                )
+            )
+        return tuple(snapshots)
+
+    def operator_schedule_checks(
+        self,
+        *,
+        as_of: str,
+    ) -> tuple[ScheduleRecoverySnapshot, ...]:
+        cutoff = datetime.fromisoformat(as_of)
+        if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+            raise ValueError("operator schedule as_of must be timezone-aware")
+        shanghai_date = cutoff.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        snapshots = []
+        with self._read_connection() as connection:
+            for lane in OperatorLane:
+                row = (
+                    connection.execute(
+                        select(
+                            sos.official_schedule_check_receipts,
+                            schema.source_runs.c.status.label("source_run_status"),
+                        )
+                        .outerjoin(
+                            schema.source_runs,
+                            schema.source_runs.c.source_run_id
+                            == sos.official_schedule_check_receipts.c.source_run_id,
+                        )
+                        .where(
+                            sos.official_schedule_check_receipts.c.lane == lane.value,
+                            sos.official_schedule_check_receipts.c.shanghai_check_date
+                            == shanghai_date,
+                        )
+                        .order_by(
+                            sos.official_schedule_check_receipts.c.checked_at.desc(),
+                            sos.official_schedule_check_receipts.c.schedule_check_id.desc(),
+                        )
+                        .limit(1)
+                    )
+                    .mappings()
+                    .first()
+                )
+                snapshots.append(
+                    ScheduleRecoverySnapshot(
+                        lane=lane,
+                        shanghai_check_date=shanghai_date,
+                        last_check_state=(
+                            None if row is None else str(row["check_state"])
+                        ),
+                        last_checked_at=(
+                            None
+                            if row is None
+                            else datetime.fromisoformat(str(row["checked_at"]))
+                        ),
+                        last_source_run_state=(
+                            None
+                            if row is None or row["source_run_status"] is None
+                            else str(row["source_run_status"])
+                        ),
+                        error_code=(
+                            None
+                            if row is None or row["error_code"] is None
+                            else str(row["error_code"])
+                        ),
+                    )
+                )
+        return tuple(snapshots)
+
+    @staticmethod
+    def _is_official_sale_source(row) -> bool:
+        hostname = urlsplit(str(row["canonical_url"] or "")).hostname or ""
+        return (
+            row["source_name"] == "sporttery"
+            and row["source_type"] == "official_sale_schedule"
+            and row["retrieval_status"] == "stored"
+            and row["reported_content_type"] == "application/json"
+            and (hostname == "sporttery.cn" or hostname.endswith(".sporttery.cn"))
+            and row["run_source_name"] == "sporttery"
+            and row["run_source_type"] == "official_schedule"
+            and row["run_status"] == "succeeded"
+        )
+
+    @staticmethod
+    def _official_match_order(value: str) -> tuple[int, int | str]:
+        return (0, int(value)) if value.isdigit() else (1, value)
 
     def scoreboard_projection(self, *, as_of: str) -> dict:
         result = self._projection_rows("scoreboard_metrics", as_of=as_of)
@@ -521,11 +814,11 @@ class ProductReadRepository:
         with self._engine.connect() as connection:
             return [dict(row) for row in connection.execute(statement).mappings().all()]
 
-    def match(self, match_id: str, as_of: str) -> dict | None:
+    def match(self, match_id: str, as_of: str) -> MatchReadRow | None:
         statement = self._match_statement(as_of).where(si.matches.c.match_id == match_id)
-        with self._engine.connect() as connection:
+        with self._read_connection() as connection:
             row = connection.execute(statement).mappings().first()
-        return dict(row) if row is not None else None
+        return MatchReadRow.from_mapping(row) if row is not None else None
 
     @staticmethod
     def _match_statement(as_of: str):
@@ -651,7 +944,7 @@ class ProductReadRepository:
             .correlate(se.claims)
             .exists()
         )
-        with self._engine.connect() as connection:
+        with self._read_connection() as connection:
             rows = (
                 connection.execute(
                     select(
@@ -721,7 +1014,7 @@ class ProductReadRepository:
         return self._decode_json(row, ('value_json',))
 
     def observations_for_match(self, match_id: str, as_of: str) -> list[dict]:
-        with self._engine.connect() as connection:
+        with self._read_connection() as connection:
             rows = (
                 connection.execute(
                     select(se.observations)
@@ -755,6 +1048,45 @@ class ProductReadRepository:
                 if observation_ids
                 else []
             )
+            adjudication_rows = (
+                connection.execute(
+                    select(
+                        se.observation_claims.c.observation_id,
+                        se.claim_status_events.c.action_id,
+                    )
+                    .select_from(
+                        se.observation_claims.join(
+                            se.claims,
+                            se.observation_claims.c.claim_id == se.claims.c.claim_id,
+                        )
+                        .join(
+                            se.claim_status_events,
+                            se.observation_claims.c.claim_id
+                            == se.claim_status_events.c.claim_id,
+                        )
+                        .join(
+                            schema.actions,
+                            se.claim_status_events.c.action_id == schema.actions.c.action_id,
+                        )
+                    )
+                    .where(
+                        se.observation_claims.c.observation_id.in_(observation_ids),
+                        se.claims.c.status == "verified",
+                        se.claim_status_events.c.to_status == "verified",
+                        func.julianday(se.claim_status_events.c.at)
+                        <= func.julianday(as_of),
+                        schema.actions.c.action_type == "verify_claim",
+                        schema.actions.c.status == "committed",
+                    )
+                    .order_by(
+                        se.observation_claims.c.observation_id,
+                        se.claim_status_events.c.action_id,
+                    )
+                )
+                .all()
+                if observation_ids
+                else []
+            )
         sources_by_observation: dict[str, list[str]] = {
             observation_id: [] for observation_id in observation_ids
         }
@@ -762,17 +1094,25 @@ class ProductReadRepository:
             sources_by_observation[source['observation_id']].append(
                 source['artifact_retrieval_id']
             )
+        adjudications_by_observation: dict[str, list[str]] = {
+            observation_id: [] for observation_id in observation_ids
+        }
+        for observation_id, action_id in adjudication_rows:
+            adjudications_by_observation[str(observation_id)].append(str(action_id))
         result = [
             self._decode_json(row, ('value_json', 'quality_json')) for row in rows
         ]
         for item in result:
             item['source_retrieval_ids'] = sources_by_observation[item['observation_id']]
+            item["adjudication_ref_tokens"] = adjudications_by_observation[
+                item["observation_id"]
+            ]
         return result
 
     def market_timeline(
         self, match_id: str, market_definition_id: str, as_of: str
     ) -> list[dict]:
-        with self._engine.connect() as connection:
+        with self._read_connection() as connection:
             rows = (
                 connection.execute(
                     select(sm.market_snapshots)
@@ -791,7 +1131,85 @@ class ProductReadRepository:
                 .mappings()
                 .all()
             )
-        return [
+            snapshot_ids = [str(row["market_snapshot_id"]) for row in rows]
+            lineage_rows = (
+                connection.execute(
+                    select(
+                        sm.market_snapshot_quotes.c.market_snapshot_id,
+                        sm.market_quotes.c.quote_id,
+                        sm.market_quotes.c.provider,
+                        sm.market_quotes.c.artifact_retrieval_id,
+                        schema.artifact_retrievals.c.source_name,
+                        schema.artifact_retrievals.c.source_type,
+                        schema.artifact_retrievals.c.status.label("retrieval_status"),
+                        schema.source_runs.c.status.label("run_status"),
+                    )
+                    .select_from(
+                        sm.market_snapshot_quotes.join(
+                            sm.market_quotes,
+                            sm.market_snapshot_quotes.c.quote_id
+                            == sm.market_quotes.c.quote_id,
+                        )
+                        .outerjoin(
+                            schema.artifact_retrievals,
+                            sm.market_quotes.c.artifact_retrieval_id
+                            == schema.artifact_retrievals.c.artifact_retrieval_id,
+                        )
+                        .outerjoin(
+                            schema.source_runs,
+                            schema.artifact_retrievals.c.source_run_id
+                            == schema.source_runs.c.source_run_id,
+                        )
+                    )
+                    .where(
+                        sm.market_snapshot_quotes.c.market_snapshot_id.in_(snapshot_ids)
+                    )
+                    .order_by(
+                        sm.market_snapshot_quotes.c.market_snapshot_id,
+                        sm.market_quotes.c.quote_id,
+                    )
+                )
+                .mappings()
+                .all()
+                if snapshot_ids
+                else []
+            )
+        lineage_by_snapshot: dict[str, list[dict[str, object]]] = {
+            snapshot_id: [] for snapshot_id in snapshot_ids
+        }
+        for lineage in lineage_rows:
+            lineage_by_snapshot[str(lineage["market_snapshot_id"])].append(
+                {
+                    "quote_id": str(lineage["quote_id"]),
+                    "provider": str(lineage["provider"]),
+                    "artifact_retrieval_id": (
+                        None
+                        if lineage["artifact_retrieval_id"] is None
+                        else str(lineage["artifact_retrieval_id"])
+                    ),
+                    "source_name": (
+                        None
+                        if lineage["source_name"] is None
+                        else str(lineage["source_name"])
+                    ),
+                    "source_type": (
+                        None
+                        if lineage["source_type"] is None
+                        else str(lineage["source_type"])
+                    ),
+                    "retrieval_status": (
+                        None
+                        if lineage["retrieval_status"] is None
+                        else str(lineage["retrieval_status"])
+                    ),
+                    "run_status": (
+                        None
+                        if lineage["run_status"] is None
+                        else str(lineage["run_status"])
+                    ),
+                }
+            )
+        result = [
             self._decode_json(
                 row,
                 (
@@ -803,6 +1221,9 @@ class ProductReadRepository:
             )
             for row in rows
         ]
+        for item in result:
+            item["quote_lineage"] = lineage_by_snapshot[item["market_snapshot_id"]]
+        return result
 
     def evidence_bundles_for_match(self, match_id: str, as_of: str) -> list[dict]:
         with self._engine.connect() as connection:

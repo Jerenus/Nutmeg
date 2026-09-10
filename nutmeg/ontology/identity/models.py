@@ -7,6 +7,7 @@ in the database.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from uuid import uuid4
 
@@ -46,6 +47,19 @@ class MatchStatus(StrEnum):
     FINISHED = 'finished'
     POSTPONED = 'postponed'
     CANCELLED = 'cancelled'
+
+
+@dataclass(frozen=True, slots=True)
+class CompetitionEditionRef:
+    """One exact curated competition edition safe to attach to a Match."""
+
+    competition_id: str
+    competition_name: str
+    competition_country: str | None
+    competition_kind: str
+    competition_edition_id: str
+    edition_name: str
+    season_label: str
 
 
 def mint_id(entity_type: EntityType) -> str:

@@ -5,23 +5,36 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, insert, select
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.interfaces.bot.telegram import TelegramBotRunner
 from nutmeg.interfaces.product_api import create_product_app
-from nutmeg.ontology.actions.models import ActionStatus, ActorRole
+from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole, canonical_json
 from nutmeg.ontology.actions.workflow_actions import (
     RecordAdjudicationRequest,
     RegisterPredictionRequest,
+)
+from nutmeg.ontology.operator.sale_actions import (
+    ImportOfficialSaleSlateRequest,
+    OfficialOfferManifestV1,
+    OfficialSaleSlateManifestV1,
+    official_sale_parser_receipt_document,
 )
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.operator_actions import OperatorActionService
-from nutmeg.product.operator_artifacts import ZucaiArtifactRepository
-from nutmeg.product.operator_contracts import GradePredictionCommand
+from nutmeg.product.operator_artifacts import (
+    FilesystemZucaiFixtureAdapter,
+    ZucaiArtifactRepository,
+)
+from nutmeg.product.operator_contracts import (
+    GradePredictionCommand,
+    RequestTelegramConfirmationCommand,
+)
 from nutmeg.product.operator_queries import OperatorQueryService
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
@@ -105,13 +118,91 @@ def _artifact(kernel, forecast_id: str, *, run_date: str, index: int):
     return artifact
 
 
-def _session_headers(client: TestClient) -> dict[str, str]:
-    response = client.get("/api/v1/session")
-    assert response.status_code == 200
-    return {
-        "X-CSRF-Token": response.json()["csrf_token"],
-        "Origin": "http://testserver",
-    }
+def _seed_official_slate(kernel, *, lane: str, business_key: str) -> None:
+    source_run_id = f"operator-e2e:{lane}:{business_key}"
+    published_at = AT - timedelta(hours=1)
+    retrieved_at = AT - timedelta(minutes=30)
+    with kernel.engine.begin() as connection:
+        connection.execute(
+            insert(schema.source_runs).values(
+                source_run_id=source_run_id,
+                source_name="sporttery",
+                source_type="official_schedule",
+                started_at=published_at.isoformat(),
+                finished_at=retrieved_at.isoformat(),
+                status="succeeded",
+                error_code=None,
+                error_detail=None,
+            )
+        )
+    offer_count = 14 if lane == "zucai" else 1
+    if lane == "zucai":
+        with OntologyUnitOfWork(kernel.engine) as uow:
+            for number in range(2, offer_count + 1):
+                uow.identity.insert_match_minimal(f"match-{number}")
+    offers = [
+        {
+            "canonical_match_id": f"match-{number}",
+            "official_match_no": str(number) if lane == "zucai" else "周六001",
+            "market_definition_ids": ["md-had"],
+            "sale_opens_at": published_at.isoformat(),
+            "sale_deadline_at": (AT + timedelta(hours=2)).isoformat(),
+            "status": "on_sale",
+        }
+        for number in range(1, offer_count + 1)
+    ]
+    parsed_offers = [OfficialOfferManifestV1.model_validate(offer) for offer in offers]
+    receipt = official_sale_parser_receipt_document(
+        lane=lane,
+        business_key=business_key,
+        published_at=published_at,
+        offers=parsed_offers,
+    )
+    content = canonical_json(receipt).encode("utf-8")
+    artifact = kernel.artifact_ingest.ingest(
+        ArtifactIngestRequest(
+            content=content,
+            content_type="application/json",
+            source_name="sporttery",
+            source_type="official_sale_schedule",
+            source_run_id=source_run_id,
+            actor_id="source:sporttery",
+            actor_role=ActorRole.CONNECTOR,
+            idempotency_key=f"operator-e2e:artifact:{lane}:{business_key}",
+            retrieved_at=retrieved_at,
+            requested_url=f"https://www.sporttery.cn/{lane}/{business_key}.json",
+            canonical_url=f"https://www.sporttery.cn/{lane}/{business_key}.json",
+            published_at=published_at.isoformat(),
+        )
+    )
+    assert artifact.status is ActionStatus.COMMITTED
+    retrieval_id = next(
+        ref.object_id
+        for ref in artifact.result_refs
+        if ref.object_type == "artifact_retrieval"
+    )
+    manifest = OfficialSaleSlateManifestV1.model_validate(
+        {
+            "schema_version": "official-sale-slate-v1",
+            "lane": lane,
+            "business_key": business_key,
+            "published_at": published_at.isoformat(),
+            "retrieved_at": retrieved_at.isoformat(),
+            "official_source_artifact_retrieval_id": retrieval_id,
+            "supersedes_slate_revision_id": None,
+            "offers": offers,
+        }
+    )
+    imported = kernel.sale_actions.import_official_sale_slate(
+        ImportOfficialSaleSlateRequest(
+            manifest=manifest,
+            actor_id="system:official-sale",
+            actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+            idempotency_key=f"operator-e2e:sale:{lane}:{business_key}",
+            requested_at=AT,
+        )
+    )
+    assert imported.outcome.status is ActionStatus.COMMITTED
 
 
 def test_operator_confirmation_books_one_and_timeout_explains_shadow(
@@ -124,6 +215,8 @@ def test_operator_confirmation_books_one_and_timeout_explains_shadow(
     shadow_artifact = _artifact(
         kernel, forecast_id, run_date="2026-08-25", index=2
     )
+    _seed_official_slate(kernel, lane="jczq", business_key="2026-08-24")
+    _seed_official_slate(kernel, lane="jczq", business_key="2026-08-25")
     clock = [AT]
     telegram_client = _TelegramClient()
     confirmation = _RecordingConfirmationService(
@@ -140,7 +233,9 @@ def test_operator_confirmation_books_one_and_timeout_explains_shadow(
     operator_queries = OperatorQueryService(
         repository=repository,
         product_queries=product_queries,
-        artifacts=ZucaiArtifactRepository(tmp_path / "empty-zucai"),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            ZucaiArtifactRepository(tmp_path / "empty-zucai")
+        ),
         official_history_provider=lambda: [],
         clock=lambda: clock[0],
     )
@@ -169,21 +264,19 @@ def test_operator_confirmation_books_one_and_timeout_explains_shadow(
             clock=lambda: clock[0],
         )
     )
-    headers = _session_headers(client)
-
     before = operator_queries.task("jczq:2026-08-24", as_of=clock[0])
     assert before.step.kind == "await_confirmation"
-    dispatch = client.post(
-        "/api/v1/operator/tasks/jczq:2026-08-24/telegram-confirmation",
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "expected_snapshot_token": before.mutation_token,
-            "dry_run": True,
-            "idempotency_key": "operator:e2e:dispatch:placed",
-        },
+    dispatch = operator_actions.request_telegram_confirmation(
+        "jczq:2026-08-24",
+        RequestTelegramConfirmationCommand(
+            expected_snapshot_token=before.mutation_token,
+            dry_run=True,
+            idempotency_key="operator:e2e:dispatch:placed",
+        ),
+        actor_id="owner",
+        actor_role=ActorRole.JUDGE_OPERATOR,
     )
-    assert dispatch.status_code == 200
+    assert dispatch.dispatch_state == "dry_run"
     assert confirmation.last is not None
 
     runner = TelegramBotRunner(
@@ -208,17 +301,17 @@ def test_operator_confirmation_books_one_and_timeout_explains_shadow(
     assert after.step.kind == "await_result"
 
     shadow_before = operator_queries.task("jczq:2026-08-25", as_of=clock[0])
-    shadow_dispatch = client.post(
-        "/api/v1/operator/tasks/jczq:2026-08-25/telegram-confirmation",
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "expected_snapshot_token": shadow_before.mutation_token,
-            "dry_run": True,
-            "idempotency_key": "operator:e2e:dispatch:shadow",
-        },
+    shadow_dispatch = operator_actions.request_telegram_confirmation(
+        "jczq:2026-08-25",
+        RequestTelegramConfirmationCommand(
+            expected_snapshot_token=shadow_before.mutation_token,
+            dry_run=True,
+            idempotency_key="operator:e2e:dispatch:shadow",
+        ),
+        actor_id="owner",
+        actor_role=ActorRole.JUDGE_OPERATOR,
     )
-    assert shadow_dispatch.status_code == 200
+    assert shadow_dispatch.dispatch_state == "dry_run"
 
     clock[0] = AT + timedelta(hours=2, minutes=1)
     timeout = runner.poll_once(offset=2, timeout=0)
@@ -271,6 +364,7 @@ def test_grading_advances_one_review_item_at_a_time(tmp_path: Path) -> None:
     })
 
     artifact_root = write_26112_bundle(tmp_path / "zucai")
+    _seed_official_slate(kernel, lane="zucai", business_key="26112")
     rx_path = artifact_root / "26112-rx.json"
     rx = json.loads(rx_path.read_text("utf-8"))
     rx["outcomes"] = {
@@ -339,7 +433,9 @@ def test_grading_advances_one_review_item_at_a_time(tmp_path: Path) -> None:
     queries = OperatorQueryService(
         repository=repository,
         product_queries=product_queries,
-        artifacts=ZucaiArtifactRepository(artifact_root),
+        legacy_fixture_adapter=FilesystemZucaiFixtureAdapter(
+            ZucaiArtifactRepository(artifact_root)
+        ),
         official_history_provider=lambda: [],
         clock=lambda: clock,
     )

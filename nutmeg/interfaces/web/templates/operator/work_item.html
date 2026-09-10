@@ -1,0 +1,76 @@
+{% extends "operator/workbench_layout.html" %}
+{% block title %}{{ work_item.scope_label }} · Nutmeg{% endblock %}
+{% block content %}
+  <header class="page-heading task-heading">
+    <a class="back-link" href="/operator-next/{{ task_v2.lane.value }}/{{ task_v2.business_key }}">返回{{ task_v2.task_label }}</a>
+    {% with phase=work_item.phase %}{% include "operator/_status.html" %}{% endwith %}
+    <h1>{{ work_item.scope_label }}</h1>
+    <p>{{ work_item.progress.progress_label }}</p>
+  </header>
+  {% if work_item.blocking_reason %}
+    <section class="recovery-panel">
+      <h2>{{ work_item.blocking_reason.message }}</h2>
+      <p>恢复码：<code>{{ work_item.blocking_reason.code }}</code></p>
+      <p>处理方：{{ work_item.blocking_reason.repair_owner }}</p>
+      {% if work_item.blocking_reason.reevaluate_at %}
+        <p>重新检查 {{ work_item.blocking_reason.reevaluate_at.strftime("%m-%d %H:%M") }}</p>
+      {% endif %}
+      <a class="quiet-link" href="{{ work_item.blocking_reason.recovery_link }}">打开恢复入口</a>
+    </section>
+  {% endif %}
+  {% if work_item == task_v2.active_work_item %}
+    {% set selected = namespace(task_id=task_v2.task_id) %}
+    {% set task = namespace(step=task_v2.step, selected=selected, no_ticket=task_v2.no_ticket) %}
+    <section class="current-step" data-step-kind="{{ task_v2.step.kind }}">
+      {% if task_v2.step.kind == "await_result" and task_v2.step.surface_version|default("") == "2" %}
+        {% include "operator/steps/await_result_v2.html" %}
+      {% elif task_v2.step.kind == "review" and task_v2.step.surface_version|default("") == "2" %}
+        {% include "operator/steps/review_v2.html" %}
+      {% elif task_v2.step.kind == "audit_deployment" and task_v2.step.surface_version|default("") == "2" %}
+        {% include "operator/steps/audit_deployment_v2.html" %}
+      {% elif task_v2.step.kind == "prepare_evidence" %}
+        {% include "operator/steps/prepare_evidence_v2.html" %}
+      {% else %}
+        {% include "operator/steps/" ~ task_v2.step.kind ~ ".html" %}
+      {% endif %}
+      {% if task_v2.no_ticket and not (
+        task_v2.step.kind == "audit_deployment"
+        and task_v2.step.surface_version|default("") == "2"
+      ) %}
+        {% include "operator/no_ticket_control.html" %}
+      {% endif %}
+    </section>
+  {% endif %}
+  <section class="offer-list" aria-labelledby="work-offer-title">
+    <h2 id="work-offer-title">本项涉及的比赛</h2>
+    {% for offer in task_v2.current_slate.offers %}
+      <article class="offer-row">
+        <div class="offer-number">{{ offer.official_match_no }}</div>
+        <div class="offer-main">
+          <strong>{{ offer.match_label }}</strong>
+          <span>{{ offer.competition_label }}</span>
+          <small>截止 {{ offer.sale_deadline_at.strftime("%m-%d %H:%M") }}</small>
+        </div>
+        <div class="offer-progress">
+          <strong>{{ offer.evidence_complete_count }} / {{ offer.evidence_required_count }}</strong>
+          <span>{{ offer.next_action }}</span>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+  {% if work_item.audit_href %}
+    <div class="audit-entry">
+      <a class="quiet-link" href="{{ work_item.audit_href }}">技术审计</a>
+    </div>
+  {% endif %}
+  {% if work_item.next_action and work_item != task_v2.active_work_item %}
+    <div class="work-action">
+      {% if not read_only and work_item.next_action.enabled %}
+        <a class="primary-link" data-primary-command="true"
+           href="{{ work_item.next_action.recovery_link }}">{{ work_item.next_action.action_label }}</a>
+      {% else %}
+        <span class="read-only-action">{{ work_item.next_action.action_label }} · 当前为只读</span>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}

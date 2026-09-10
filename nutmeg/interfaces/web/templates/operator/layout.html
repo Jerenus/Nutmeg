@@ -7,7 +7,8 @@
     <link rel="icon" href="/assets/product/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/product/operator.css">
   </head>
-  <body data-workspace="{{ workspace }}">
+  <body data-workspace="{{ workspace }}"
+        data-read-only="{{ 'true' if read_only|default(true) else 'false' }}">
     <a class="skip-link" href="#main-content">跳到当前任务</a>
     <header class="operator-header">
       <a class="operator-wordmark" href="/">
@@ -34,7 +35,9 @@
       </nav>
     {% endif %}
     <main id="main-content" tabindex="-1">{% block content %}{% endblock %}</main>
-    <p id="action-feedback" aria-live="polite"></p>
+    {% if not read_only|default(true) %}
+      <p id="action-feedback" aria-live="polite"></p>
+    {% endif %}
     <script src="/assets/product/operator.js" defer></script>
   </body>
 </html>

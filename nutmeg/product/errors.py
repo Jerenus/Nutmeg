@@ -17,6 +17,10 @@ class ProductActionNotAllowedError(ProductError):
 class ProductActionBlockedError(ProductError):
     """Readiness policy blocks the requested state transition."""
 
+    def __init__(self, message: str, *, code: str = "action_blocked") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 class ProductNotReadyError(ProductError):
     """The product cannot start against an unhealthy or outdated ontology."""

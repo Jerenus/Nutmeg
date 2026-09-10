@@ -58,10 +58,13 @@ def test_dry_request_issues_challenge_and_redacts_public_preview(tmp_path: Path)
 
     assert re.fullmatch(r"ntc:[A-Za-z0-9_-]+", prepared.callback_data)
     assert len(prepared.callback_data.encode("ascii")) <= 64
-    assert artifact.ticket_hash in prepared.text
     assert f"{artifact.amount:.2f}" in prepared.text
     assert artifact.deadline_at in prepared.text
-    assert "sel-had-home" in prepared.text
+    assert artifact.ticket_hash not in prepared.text
+    assert artifact.ticket_artifact_id not in prepared.text
+    assert "sel-had-home" not in prepared.text
+    assert "{" not in prepared.text
+    assert "核对已在应用中批准的票面后" in prepared.text
     assert client.sent == []
     public = prepared.to_public_dict()
     assert public["callback_bytes"] == len(prepared.callback_data)

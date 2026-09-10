@@ -1,0 +1,25 @@
+{
+  "schema_version": "official-sale-slate-v1",
+  "lane": "zucai",
+  "business_key": "26117",
+  "published_at": "2026-09-05T10:00:00+08:00",
+  "retrieved_at": "2026-09-05T10:01:00+08:00",
+  "official_source_artifact_retrieval_id": "retrieval-current-zucai-issue",
+  "supersedes_slate_revision_id": null,
+  "offers": [
+    {"canonical_match_id": "match-current-zucai-01", "official_match_no": "1", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-02", "official_match_no": "2", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-03", "official_match_no": "3", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-04", "official_match_no": "4", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-05", "official_match_no": "5", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-06", "official_match_no": "6", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-07", "official_match_no": "7", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-08", "official_match_no": "8", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-09", "official_match_no": "9", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-10", "official_match_no": "10", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-11", "official_match_no": "11", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-12", "official_match_no": "12", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-13", "official_match_no": "13", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"},
+    {"canonical_match_id": "match-current-zucai-14", "official_match_no": "14", "market_definition_ids": ["md-had"], "sale_opens_at": "2026-09-05T08:00:00+08:00", "sale_deadline_at": "2026-09-05T22:00:00+08:00", "status": "on_sale"}
+  ]
+}

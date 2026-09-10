@@ -1,0 +1,48 @@
+{
+  "schema_version": "result-evidence-v1",
+  "lane": "jczq",
+  "business_key": "2026-09-04",
+  "task_snapshot_token": "opaque.jczq.task-snapshot",
+  "slate_revision_token": "opaque.jczq.slate-revision",
+  "result_cutoff_at": "2026-09-05T08:00:00+08:00",
+  "supersedes_result_set_token": null,
+  "matches": [
+    {
+      "official_match_no": "001",
+      "canonical_match_id": "match-jczq-001",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-jczq-001-api",
+          "captured_at": "2026-09-05T07:30:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-jczq-001-official",
+          "captured_at": "2026-09-05T07:40:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-jczq-001-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    }
+  ],
+  "zucai_prize_table": null
+}

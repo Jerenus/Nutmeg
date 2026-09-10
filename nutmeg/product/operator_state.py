@@ -66,6 +66,8 @@ def resolve_state(facts: OperatorTaskFacts) -> OperatorTaskState:
         return OperatorTaskState.PREPARE
     if facts.unresolved_adjudications:
         return OperatorTaskState.JUDGE_MATCHES
+    if facts.result_available and facts.pending_review_items:
+        return OperatorTaskState.REVIEW
     if not facts.candidate_count or facts.selected_candidate_id is None:
         return OperatorTaskState.CONSTRUCT_TICKET
     if not facts.audit_recorded:
@@ -86,9 +88,25 @@ def resolve_state(facts: OperatorTaskFacts) -> OperatorTaskState:
         return OperatorTaskState.AWAIT_LEDGER
     if not facts.result_available:
         return OperatorTaskState.AWAIT_RESULT
-    if facts.pending_review_items:
-        return OperatorTaskState.REVIEW
     return OperatorTaskState.COMPLETE
+
+
+def is_passive_expired_deployment(
+    facts: OperatorTaskFacts,
+    now: datetime,
+) -> bool:
+    return bool(
+        facts.deadline_at is not None
+        and facts.deadline_at <= now
+        and resolve_state(facts)
+        in {
+            OperatorTaskState.WAITING_DATA,
+            OperatorTaskState.PREPARE,
+            OperatorTaskState.JUDGE_MATCHES,
+            OperatorTaskState.CONSTRUCT_TICKET,
+            OperatorTaskState.AUDIT_DEPLOYMENT,
+        }
+    )
 
 
 def priority_key(facts: OperatorTaskFacts, now: datetime) -> tuple[int, datetime, str, str, str]:

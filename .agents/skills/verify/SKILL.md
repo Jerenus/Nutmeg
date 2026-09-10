@@ -21,9 +21,15 @@ uv run pytest -q               # 期望 0 failed（≈700 用例）
 
 ## 2. 决策日循环 replay（sense/backfill/入库相关）
 
+> ⚠️ **`--output-dir` 只重定向文件产物,不隔离本体库。** 只给 `--output-dir` 的回放会
+> 写生产 `.nutmeg-data/ontology/ontology.db`(并在那里自动跑待执行迁移)。隔离本体库靠
+> `NUTMEG_DATA_DIR`,两个都要给。2026-09-10 实测:漏了它的一次 settle 回放把 2 条
+> `record_outcome` 写进了生产库,并把生产自动迁到 schema 28。
+
 ```bash
-# 拷生产快照到临时目录回放,不碰生产 store
+# 拷生产快照到临时目录回放;NUTMEG_DATA_DIR 隔离本体库,--output-dir 隔离文件产物
 D=<近两天某日>; TMP=$(mktemp -d)
+export NUTMEG_DATA_DIR="$TMP"          # 少了这行就是在写生产库
 mkdir -p "$TMP/daily/$D" && cp .nutmeg-data/jczq/daily/$D/*.json "$TMP/daily/$D/"
 uv run nutmeg decision-am --run-date $D --output-dir "$TMP"        # D=今天/断网时
 # ⚠️ D 是历史日期且网络可达时,decision-am 内的 fetch 会重抓今日盘覆盖已拷快照
@@ -46,6 +52,10 @@ uv run nutmeg decision-settle --run-date $D --output-dir "$TMP"
 **看点**：Read + Ticket 两类 Settlement 落库、`calibration-panel-<date>.md` 正常渲染
 （含参与精度小节）、`factors.jsonl` 的 scope 字段。
 
+隔离库是空的，所以 kernel-backed reconcile 会报「结算 0 场结果」——这是隔离生效的正常
+结果，不是坏了。要在隔离库里看到非零结算，先用 `nutmeg ontology ingest-market-day` /
+`ingest-evidence-day` 把那天的比赛与赛果喂进 `$TMP` 的本体库，再跑 settle。
+
 ## 4. 出票链（express/report/PDF 相关）
 
 ```bash
@@ -60,4 +70,6 @@ ls "$TMP"/daily/$D/*.pdf
 
 - 验证命令一律 dry/replay 优先（临时目录回放）；任何 `--dispatch-telegram --no-dry-run`
   推送都是对外动作，必须用户明确要求才加。
+- 回放前先确认隔离生效：`NUTMEG_DATA_DIR="$TMP" uv run nutmeg ontology status` 必须报
+  `initialized=False schema_version=0`；报出生产 schema 版本就说明还连着生产库，停下。
 - `.nutmeg-data` 是生产数据：验证时只读或走幂等命令，不手改（修数据要留 note 字段）。

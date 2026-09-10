@@ -32,6 +32,65 @@ CRASH_MARKER_LEXICON = frozenset({
     "opening_promoted_vs_paper",   # 开季窗(前3轮):升班马对阵纸面强队
     "opening_new_coach_debut",     # 开季窗(前3轮):换帅首秀(任一侧为锚方时)
 })
+
+TRACKING_TAG_LEXICON = frozenset({
+    "promoted_side",            # 升班马(任一方,不限对纸面强队)
+    "new_spine_pairing",        # 正路中轴新组合(门将/中卫对/后腰)正赛合练≤2场
+    "midfield_pivot_absent",    # 后腰/屏障实名缺阵(≥1主力)
+    "post_window_integration",  # 窗口关后≤5天到队的新援进首发/名单
+    "pre_european_rotation",    # 欧战前一轮(≤4天)且轮换未证实/已证实
+})
+"""追踪标签(2026-09-07 立):只入记分牌 tags 组,不改变任何审计动作。
+用途=把'升班马/中轴新组合/后腰缺/新援磨合/欧战前轮换'从散文里拿出来,按期累计
+正路不胜率与非模态开出率。词典封闭,未知标签只报 WARN 不静默生效。"""
+
+TEAM_TAG_LEXICON = frozenset({
+    # 攻端
+    "no_natural_striker",      # 无正印中锋/独苗(实名离队+替代者不首发)
+    "finishing_broken",        # 终结载体被拆(实名卖出/伤缺≥2名进球载体)
+    "set_piece_strong",        # 定位球强(角球/高点/主罚手,结构级)
+    "fast_start",              # 开场早破门习惯(≥2场开场15'内)
+    "transition_attack",       # 转换/直接进攻型
+    "low_block_breaker_weak",  # 破低位块弱(同型失败样本+无穿透型中场)
+    # 守端/出球
+    "new_gk",                  # 新门将正赛≤3场
+    "new_cb_pairing",          # 中卫对新组合正赛≤2场
+    "pivot_absent",            # 后腰/屏障实名缺阵
+    "makeshift_fullback",      # 临时边卫(客串/改造)
+    "high_line_exposed",       # 高位线身后已被打穿(本季样本)
+    "set_piece_weak",          # 定位球失球(结构级:高点缺/新组合)
+    "buildup_fragile",         # 后场出球脆(主帅自承/门将中卫新)
+    "late_collapse",           # 末段崩盘样本(领先被追/补时失球)
+    "low_block_home",          # 中低位块+让球权(控球<45%)
+    # 风格/情境
+    "man_marking_press",       # 人盯人高压(Juric/Amorim型)
+    "squad_in_flux",           # 窗口大换血或≤5天新援进首发
+    "coach_first_games",       # 新帅≤3场正赛
+    "promoted",                # 升班马
+    "rotation_risk",           # 欧战前≤4天(到期自动失效)
+    "dressing_room_noise",     # 更衣室/转会风波(实名)
+    "home_opener",             # 本季首个主场
+})
+"""球队影响因子标签(2026-09-07 立):挂在队伍上,legs `team_tags` = {"home":[...],"away":[...]}。
+不改变审计动作;只做两件事:①按 TEAM_TAG_PAIRINGS 打印对位机制(INFO),喂牌照四问的②③;
+②B10 按标签累计入 scoreboard `tags` 组。
+权重带由 l-权重表决定(官宣4-8/确证结构3-6/推断0-2),标签本身不带 pp。"""
+
+# 对位机制:攻端标签(一方) × 守端标签(另一方) → 该方有破门机制;
+# 反向对位:攻端弱点 × 对方防守风格 → 该方破门机制缺席。
+TEAM_TAG_PAIRINGS = (
+    ("set_piece_strong", ("new_cb_pairing", "set_piece_weak", "new_gk"),
+     "定位球打新组合/高点缺(奥格斯堡1-4法兰型)"),
+    ("transition_attack", ("pivot_absent", "high_line_exposed", "makeshift_fullback"),
+     "转换打屏障缺/高位线身后(埃弗顿2-2曼联型)"),
+    ("fast_start", ("new_cb_pairing", "new_gk"), "快启撞新中卫前15分钟(切尔西型)"),
+    ("man_marking_press", ("buildup_fragile", "new_gk", "new_cb_pairing"),
+     "高压打新后场出球(蒙扎/萨索洛型)"),
+)
+TEAM_TAG_COUNTERS = (
+    ("low_block_breaker_weak", ("low_block_home",),
+     "破低位块弱撞中低位块(曼联0-2赫尔型)→该方破门机制缺席"),
+)
 """开季翻车 regime 标记（2026-08-30 立法,probation）。判断"是否属开季窗/是否升班马刀"
 仍在主循环判读层；本词典只锁死标记名,防 agent 自命名膨胀。样本:26112 波鸿 0:1 奥斯纳
 布吕克 + 26113 场2(赫尔客胜)/场5(埃弗斯贝格 3:2 勒沃)/场10(弗洛西诺内 0:3)——四刀全部
@@ -45,6 +104,9 @@ _C11_GAP_HI = 0.10
 
 _C12_DRAW_LO = 0.29
 _C12_DRAW_HI = 0.32
+_C14_EXCLUSION_P = 0.20
+"""C14 昂贵排除：被排面 fair>20% 且死亡三证不齐（锚方 PASS + 该面先例 dead）→ WARN。
+26117/26118 六处开出的被排面 fair = 14.8/12.1/23.2/15.5/27.4/(拜仁不胜 17.9)。"""
 """C12 平局低估带：平局 fair 落在 [29%,32%) 时，实开平率 35.7% vs 预期 30.1%(n=14)，
 市场系统性低估 +5.6pp；对照 <22% 带市场高估 −5.3pp(n=37)。2026-08-30 立法，154 场实证。"""
 
@@ -108,6 +170,10 @@ class Leg:
     precedents: tuple = ()
     # 开季翻车 regime 标记（CRASH_MARKER_LEXICON 封闭词典;判定在主循环）
     crash_markers: tuple = ()
+    # 追踪标签(TRACKING_TAG_LEXICON 封闭词典);不影响审计动作,只作记分牌累计
+    tracking_tags: tuple = ()
+    # 球队影响因子标签:元素形如 ("home","new_gk");词典 TEAM_TAG_LEXICON;只产 INFO 对位机制
+    team_tags: tuple = ()
 
     @property
     def modal(self) -> str:
@@ -308,6 +374,48 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 f"不是全局的。",
                 "2026-08-30 立法:154 场实证,平局 fair 分层偏差"))
 
+        # 追踪标签词典封闭:未知名只报 WARN,不静默生效(2026-09-07 立)
+        unknown_tags = [t for t in lg.tracking_tags if t not in TRACKING_TAG_LEXICON]
+        if unknown_tags:
+            out.append(Finding(
+                "WARN", "tracking_tag_off_lexicon", n,
+                f"场{n} {lg.name}：tracking_tags 含未注册标签 {unknown_tags}。"
+                f"追踪标签只接受 TRACKING_TAG_LEXICON；未知名不入记分牌。",
+                "2026-09-07 追踪标签立法"))
+
+        # 球队影响因子标签:词典封闭 + 对位机制 INFO(2026-09-07 立;不改审计动作)
+        bad_team_tags = [t for _side, t in lg.team_tags if t not in TEAM_TAG_LEXICON]
+        if bad_team_tags:
+            out.append(Finding(
+                "WARN", "team_tag_off_lexicon", n,
+                f"场{n} {lg.name}：team_tags 含未注册标签 {bad_team_tags}。"
+                f"只接受 TEAM_TAG_LEXICON；未知名不入记分牌。",
+                "2026-09-07 球队标签立法"))
+        if lg.team_tags:
+            side_zh = {"home": "主队", "away": "客队"}
+            tags_of = {
+                side: {t for s_, t in lg.team_tags if s_ == side}
+                for side in ("home", "away")
+            }
+            hits = []
+            for atk_side, def_side in (("home", "away"), ("away", "home")):
+                for atk, defs, label in TEAM_TAG_PAIRINGS:
+                    if atk in tags_of[atk_side]:
+                        matched = [d for d in defs if d in tags_of[def_side]]
+                        if matched:
+                            hits.append(
+                                f"{side_zh[atk_side]} {atk} → {side_zh[def_side]} "
+                                f"{'/'.join(matched)}：{label}")
+                for weak, styles, label in TEAM_TAG_COUNTERS:
+                    if weak in tags_of[atk_side] and any(st in tags_of[def_side] for st in styles):
+                        hits.append(
+                            f"{side_zh[atk_side]} {weak} × {side_zh[def_side]} 风格：{label}")
+            if hits:
+                out.append(Finding(
+                    "INFO", "pairing_mechanism", n,
+                    f"场{n} {lg.name}：对位机制 " + "；".join(hits) + "。喂牌照四问②③,不改动作。",
+                    "2026-09-07 球队标签立法"))
+
         # C9 —— 开季翻车 regime:升班马刀/换帅首秀,表达只许全包或丢场（2026-08-30 立法,probation）
         known_markers = [m for m in lg.crash_markers if m in CRASH_MARKER_LEXICON]
         unknown_markers = [m for m in lg.crash_markers if m not in CRASH_MARKER_LEXICON]
@@ -350,6 +458,41 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                     f"r 条 3——先例是机制样本，砍带先例的面需「先例+钱流」双证；"
                     f"双证不齐 → 盖住该面或整场丢掉。",
                     "26105 场3 西布罗 / 26109 场10 塞维(2026-08-23 立规则,WARN 级)"))
+
+        # C13 —— 锚方完整度 FAIL 却排掉一面（死亡三证(c)的机械化, 2026-09-06 立法, probation）。
+        # 26118 场8:莱比锡中场四缺+锋线全新=完整度 fail 已写在读判里,主循环仍以"不来梅 14 战不胜"
+        # 把主胜判死→3:1。裸单层早有 C5,双选层此前无码,判死面靠人工先例字段,garbage-in 静默失效。
+        if len(set(lg.faces)) == 2 and lg.anchor_integrity == "fail":
+            excluded = sorted(set(FACE_KEYS) - set(lg.faces))
+            ex = excluded[0] if excluded else ""
+            out.append(Finding(
+                "WARN", "broken_anchor_double", n,
+                f"场{n} {lg.name}：锚方结构完整度 FAIL 却以双选排掉 {FACE_ZH.get(ex, ex)}"
+                f"（{lg.fair.get(FACE_KEYS.get(ex, ''), 0.0) * 100:.1f}%）。"
+                f"死亡三证(c)——判一个面死,锚方必须完整;锚方有洞的场只许全包或丢整场。",
+                "26118 场8 不来梅 3:1 莱比锡(2026-09-06 立法,WARN 级)"))
+
+        # C14 —— 昂贵排除:被排面 fair>20% 且死亡三证不齐（2026-09-06 立法, probation）。
+        # 三证=机制缺席/先例载体不在(precedents 该面 dead)/锚方完整度 PASS;代码只能核后两证。
+        # 26117 开出的被排面是 14.8/12.1,26118 是 23.2/15.5/27.4——>20% 的排除是买方差不是省钱。
+        if len(set(lg.faces)) < 3:
+            excluded = set(FACE_KEYS) - set(lg.faces)
+            dead_faces = {f for f, _s, status in lg.precedents if status == "dead"}
+            costly = [
+                f for f in sorted(excluded)
+                if lg.fair.get(FACE_KEYS[f], 0.0) > _C14_EXCLUSION_P
+                and not (lg.anchor_integrity == "pass" and f in dead_faces)
+            ]
+            if costly:
+                desc = "、".join(
+                    f"{FACE_ZH[f]} {lg.fair.get(FACE_KEYS[f], 0.0) * 100:.1f}%" for f in costly)
+                out.append(Finding(
+                    "WARN", "expensive_exclusion", n,
+                    f"场{n} {lg.name}：被排面 {desc} 超过 {_C14_EXCLUSION_P * 100:.0f}% "
+                    f"且死亡三证不齐"
+                    f"（需锚方完整度 PASS 且该面先例记 dead）。"
+                    f"独立面效率表——>20% 的排除是买方差不是省钱;合法响应=盖住该面或整场丢掉。",
+                    "26118 场8/14/2 三处被排面 23.2/15.5/27.4 全开(2026-09-06 立法,WARN 级)"))
 
         # C8 —— 净偏移达到 5pp 时，必须由作者显式声明官宣或确证结构级证据锚。
         # 只检查结构化等级，不从 URL、quote 或自然语言猜权威性。
@@ -422,5 +565,11 @@ def legs_from_dict(payload: dict) -> list[Leg]:
             anchor_integrity=v.get("anchor_integrity", "unknown"),
             precedents=tuple(tuple(x) for x in v.get("precedents", [])),
             crash_markers=tuple(v.get("crash_markers", [])),
+            tracking_tags=tuple(v.get("tracking_tags", [])),
+            team_tags=tuple(
+                (side, tag)
+                for side in ("home", "away")
+                for tag in (v.get("team_tags") or {}).get(side, [])
+            ),
         ))
     return sorted(out, key=lambda lg: lg.match_no)

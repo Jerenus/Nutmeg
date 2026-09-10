@@ -1,0 +1,545 @@
+{
+  "schema_version": "result-evidence-v1",
+  "lane": "zucai",
+  "business_key": "26116",
+  "task_snapshot_token": "opaque.zucai.task-snapshot",
+  "slate_revision_token": "opaque.zucai.slate-revision",
+  "result_cutoff_at": "2026-09-05T08:00:00+08:00",
+  "supersedes_result_set_token": null,
+  "matches": [
+    {
+      "official_match_no": "1",
+      "canonical_match_id": "match-zucai-1",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-1-api",
+          "captured_at": "2026-09-05T07:30:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-1-official",
+          "captured_at": "2026-09-05T07:40:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-1-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "2",
+      "canonical_match_id": "match-zucai-2",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-2-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-2-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-2-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "3",
+      "canonical_match_id": "match-zucai-3",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-3-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-3-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-3-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "4",
+      "canonical_match_id": "match-zucai-4",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-4-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-4-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-4-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "5",
+      "canonical_match_id": "match-zucai-5",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-5-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-5-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-5-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "6",
+      "canonical_match_id": "match-zucai-6",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-6-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-6-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-6-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "7",
+      "canonical_match_id": "match-zucai-7",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-7-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-7-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-7-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "8",
+      "canonical_match_id": "match-zucai-8",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-8-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-8-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-8-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "9",
+      "canonical_match_id": "match-zucai-9",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-9-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-9-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-9-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "10",
+      "canonical_match_id": "match-zucai-10",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-10-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-10-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-10-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "11",
+      "canonical_match_id": "match-zucai-11",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-11-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-11-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-11-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "12",
+      "canonical_match_id": "match-zucai-12",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-12-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-12-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-12-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "13",
+      "canonical_match_id": "match-zucai-13",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-13-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-13-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-13-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    },
+    {
+      "official_match_no": "14",
+      "canonical_match_id": "match-zucai-14",
+      "sources": [
+        {
+          "source_kind": "api_football",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-14-api",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "sporttery_game90",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-14-official",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        },
+        {
+          "source_kind": "okooo_manual",
+          "receipt_state": "available",
+          "artifact_retrieval_id": "retrieval-zucai-14-manual",
+          "captured_at": "2026-09-05T07:50:00+08:00",
+          "source_disposition": "played_90",
+          "home_90": 2,
+          "away_90": 1,
+          "invalid_code": null
+        }
+      ]
+    }
+  ],
+  "zucai_prize_table": {
+    "issue": "26116",
+    "currency": "CNY",
+    "published_at": "2026-09-05T07:55:00+08:00",
+    "official_artifact_retrieval_id": "retrieval-zucai-26116-prize",
+    "supersedes_prize_table_token": null,
+    "tiers": [
+      {
+        "tier_code": "sfc_first",
+        "ticket_kind": "sfc",
+        "required_correct_count": 14,
+        "official_winning_note_count": 12,
+        "payout_minor_per_winning_note": 10000000
+      },
+      {
+        "tier_code": "sfc_second",
+        "ticket_kind": "sfc",
+        "required_correct_count": 13,
+        "official_winning_note_count": 508,
+        "payout_minor_per_winning_note": 520000
+      },
+      {
+        "tier_code": "renjiu_first",
+        "ticket_kind": "renjiu",
+        "required_correct_count": 9,
+        "official_winning_note_count": 15882,
+        "payout_minor_per_winning_note": 14800
+      }
+    ]
+  }
+}

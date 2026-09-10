@@ -50,6 +50,7 @@
   {% endif %}
 </section>
 
+{% if not read_only %}
 <form class="operator-form deployment-form" data-action="record-deployment"
       data-task-id="{{ task.selected.task_id }}"
       data-candidate-id="{{ task.step.candidate.candidate_id }}">
@@ -70,5 +71,8 @@
   </label>
   <button class="primary-action" type="submit">记录裁决并继续</button>
 </form>
+{% else %}
+  <p class="waiting-note">只读模式不会记录部署裁决。</p>
+{% endif %}
 
 <a class="quiet-link" href="/tasks/{{ task.selected.task_id }}">刷新当前任务</a>

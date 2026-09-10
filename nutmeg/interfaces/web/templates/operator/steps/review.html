@@ -40,7 +40,7 @@
   </div>
 </section>
 
-{% if task.step.current_item.item_type == "prediction" %}
+{% if not read_only and task.step.current_item.item_type == "prediction" %}
   <form class="operator-form review-form" data-action="grade-prediction"
         data-task-id="{{ task.selected.task_id }}"
         data-prediction-id="{{ task.step.current_item.item_id }}">
@@ -61,7 +61,8 @@
     </label>
     <button class="primary-action" type="submit">记录并处理下一项</button>
   </form>
-{% else %}
+{% elif task.step.current_item.item_type != "prediction" %}
   <a class="primary-link" href="/system/review">打开治理复盘</a>
+{% else %}
+  <p class="waiting-note">只读模式不会登记赛果结论。</p>
 {% endif %}
-

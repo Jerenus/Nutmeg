@@ -91,27 +91,29 @@ def _request(key: str = "copilot:api:first") -> dict[str, object]:
     }
 
 
-def test_copilot_requires_session_csrf_and_same_origin(client: TestClient) -> None:
+def test_legacy_copilot_route_is_retired_before_session_or_body_parsing(
+    client: TestClient,
+) -> None:
     body = _request()
-
-    assert (
-        client.post("/api/v1/matches/match-1/copilot", json=body).status_code
-        == 403
-    )
+    before = client.get("/api/v1/actions?limit=500").json()["items"]
+    assert client.post(
+        "/api/v1/matches/match-1/copilot",
+        content=b"not-json",
+        headers={"Content-Type": "application/json"},
+    ).status_code == 405
     headers = _session(client)
     evil = client.post(
         "/api/v1/matches/match-1/copilot",
         headers={**headers, "Origin": "https://evil.example"},
         json=body,
     )
-    accepted = client.post(
+    retired = client.post(
         "/api/v1/matches/match-1/copilot", headers=headers, json=body
     )
 
-    assert evil.status_code == 403
-    assert accepted.status_code == 200
-    assert accepted.json()["action_type"] == "create_agent_proposal"
-    assert accepted.json()["status"] == "committed"
+    assert evil.status_code == 405
+    assert retired.status_code == 405
+    assert client.get("/api/v1/actions?limit=500").json()["items"] == before
 
 
 def test_unavailable_copilot_is_explicit_not_internal_error(
@@ -123,9 +125,7 @@ def test_unavailable_copilot_is_explicit_not_internal_error(
         json=_request("copilot:api:disabled"),
     )
 
-    assert response.status_code == 503
-    assert response.json()["code"] == "copilot_unavailable"
-    assert response.json()["retryable"] is True
+    assert response.status_code == 405
 
 
 def test_invalid_copilot_response_uses_stable_422_without_provider_body(
@@ -174,8 +174,7 @@ def test_invalid_copilot_response_uses_stable_422_without_provider_body(
         json=_request("copilot:api:invalid"),
     )
 
-    assert response.status_code == 422
-    assert response.json()["code"] == "copilot_response_invalid"
+    assert response.status_code == 405
     assert "SECRET-PROVIDER-BODY" not in response.text
 
 
@@ -210,8 +209,7 @@ def test_copilot_rejects_actor_and_action_spoofing_before_write(
         json=body,
     )
 
-    assert response.status_code == 422
-    assert response.json()["code"] == "validation_error"
+    assert response.status_code == 405
     after = client.get("/api/v1/actions?limit=500").json()["items"]
     assert len(after) == len(before)
 
@@ -250,6 +248,5 @@ def test_transient_provider_failure_uses_redacted_503(m3_product_services) -> No
         json=_request("copilot:api:offline"),
     )
 
-    assert response.status_code == 503
-    assert response.json()["code"] == "copilot_unavailable"
+    assert response.status_code == 405
     assert "SECRET-UPSTREAM-DETAIL" not in response.text

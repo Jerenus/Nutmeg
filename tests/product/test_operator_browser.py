@@ -90,7 +90,7 @@ def browser_page(operator_app):
 
 
 @pytest.mark.parametrize("width,height", [(1440, 900), (390, 844)])
-def test_current_task_has_no_overlap_or_horizontal_escape(
+def test_read_only_shell_has_no_overlap_or_horizontal_escape(
     browser_page: tuple[Page, str],
     tmp_path: Path,
     width: int,
@@ -101,21 +101,17 @@ def test_current_task_has_no_overlap_or_horizontal_escape(
     page.goto(base_url + "/", wait_until="networkidle")
 
     assert page.locator("[data-workspace='operator-task']").count() == 1
-    assert page.locator(".primary-action").count() == 1
+    assert page.locator(".primary-action").count() == 0
+    assert page.locator("form").count() == 0
     assert page.locator("pre").count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     header = page.locator(".operator-header").bounding_box()
     main = page.locator("#main-content").bounding_box()
-    evidence = page.locator(".evidence-list").bounding_box()
-    form = page.locator(".operator-form").bounding_box()
-    button = page.locator(".primary-action").bounding_box()
     assert header and main and header["y"] + header["height"] <= main["y"]
-    assert evidence and form and evidence["y"] <= form["y"]
-    assert button and button["height"] >= 44
-    assert button["x"] >= 0 and button["x"] + button["width"] <= width
     assert page.locator("h1").evaluate(
         "node => parseFloat(getComputedStyle(node).fontSize)"
     ) <= 36
+    assert "只读" in page.locator("body").inner_text()
     body_text = page.locator("body").inner_text()
     assert not re.search(
         r"schema|outbox|action_id|content_hash|forecast_revision_id",
@@ -127,18 +123,27 @@ def test_current_task_has_no_overlap_or_horizontal_escape(
     assert screenshot.stat().st_size > 5_000
 
 
-def test_keyboard_and_mutation_progress(browser_page: tuple[Page, str]) -> None:
+def test_keyboard_and_retired_mutation_remain_read_only(
+    browser_page: tuple[Page, str],
+) -> None:
     page, base_url = browser_page
     page.goto(base_url + "/", wait_until="networkidle")
 
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("href") == "#main-content"
-    options = page.locator("input[name='selected_option']")
-    assert options.count() == 2
-    options.first.check()
-    page.locator("textarea[name='reason']").fill("browser fixture judgment")
-    page.locator("button.primary-action").click()
-    page.wait_for_selector("[data-step-kind='construct_ticket']")
+    assert page.locator("input[name='selected_option']").count() == 0
+    assert page.locator("button.primary-action").count() == 0
+    status = page.evaluate(
+        """async () => {
+          const response = await fetch('/api/v1/actions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: 'not-json'
+          });
+          return response.status;
+        }"""
+    )
 
-    assert page.locator("[data-step-kind='construct_ticket']").count() == 1
+    assert status == 405
+    assert page.locator("[data-workspace='operator-task']").count() == 1
     assert page.locator("pre").count() == 0

@@ -6,6 +6,7 @@ claim Actions and evidence-day ingest — wired but not initialized. Constructio
 side-effect-light: it never applies migrations, so ``status`` on a fresh kernel
 still reports uninitialized.
 """
+
 from __future__ import annotations
 
 from nutmeg.config.settings import AppSettings
@@ -34,16 +35,29 @@ from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.kernel import OntologyKernel
+from nutmeg.ontology.operator.decision_actions import OperatorDecisionActions
+from nutmeg.ontology.operator.evidence_actions import EvidenceActions
+from nutmeg.ontology.operator.result_actions import OperatorResultActions
+from nutmeg.ontology.operator.review_actions import OperatorReviewActions
+from nutmeg.ontology.operator.sale_actions import SaleActions
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository.connection import build_ontology_engine
-from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+from nutmeg.ontology.repository.unit_of_work import (
+    OntologyUnitOfWork,
+    register_writer_lease_factory,
+)
 
 
 def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     from nutmeg.analytics.calibrate_flow import CalibrateService
+    from nutmeg.product.operator_runtime import OntologyWriterLease
 
     paths = OntologyPaths.from_data_dir(settings.data_dir)
     engine = build_ontology_engine(settings.ontology_db_path)
+    register_writer_lease_factory(
+        engine,
+        lambda: OntologyWriterLease.shared(settings.data_dir),
+    )
     unit_of_work_factory = lambda: OntologyUnitOfWork(engine)  # noqa: E731
     action_service = ActionService(unit_of_work_factory)
     artifact_store = ContentAddressedArtifactStore(settings.ontology_artifact_dir)
@@ -78,9 +92,27 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     )
     calibrate = CalibrateService(engine=engine, analytics_path=paths.analytics)
     workflow = WorkflowActions(action_service)
-    protected_tickets = ProtectedTicketActions(action_service, artifact_store)
     scoreboard_actions = ScoreboardActions(action_service)
     reliability_actions = ReliabilityActions(action_service)
+    decision_actions = OperatorDecisionActions(
+        action_service,
+        audit_token_signing_key=settings.operator_token_signing_key,
+    )
+    sale_actions = SaleActions(
+        action_service,
+        operator_decisions=decision_actions,
+    )
+    evidence_actions = EvidenceActions(action_service)
+    protected_tickets = ProtectedTicketActions(
+        action_service,
+        artifact_store,
+        operator_decisions=decision_actions,
+    )
+    result_actions = OperatorResultActions(action_service)
+    review_actions = OperatorReviewActions(
+        action_service,
+        shadow_token_signing_key=settings.operator_token_signing_key,
+    )
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -99,4 +131,9 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         protected_tickets=protected_tickets,
         scoreboard_actions=scoreboard_actions,
         reliability_actions=reliability_actions,
+        sale_actions=sale_actions,
+        evidence_actions=evidence_actions,
+        decision_actions=decision_actions,
+        result_actions=result_actions,
+        review_actions=review_actions,
     )

@@ -28,6 +28,7 @@ class QuoteRow:
     captured_at: str
     artifact_retrieval_id: str | None
     quote_status: str
+    settlement_parameter_decimal: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,7 @@ class MarketRepository:
                 provider=row.provider,
                 bookmaker=row.bookmaker,
                 decimal_odds=row.decimal_odds,
+                settlement_parameter_decimal=row.settlement_parameter_decimal,
                 captured_at=row.captured_at,
                 artifact_retrieval_id=row.artifact_retrieval_id,
                 quote_status=row.quote_status,
@@ -185,6 +187,36 @@ class MarketRepository:
             .limit(1)
         ).scalar_one_or_none()
 
+    def snapshot_id_for_source_at(
+        self,
+        match_id: str,
+        market_definition_id: str,
+        snapshot_kind: str,
+        provider: str,
+        as_of: str,
+    ) -> str | None:
+        return self._connection.execute(
+            select(sm.market_snapshots.c.market_snapshot_id)
+            .select_from(
+                sm.market_snapshots.join(
+                    sm.market_snapshot_quotes,
+                    sm.market_snapshot_quotes.c.market_snapshot_id
+                    == sm.market_snapshots.c.market_snapshot_id,
+                ).join(
+                    sm.market_quotes,
+                    sm.market_quotes.c.quote_id == sm.market_snapshot_quotes.c.quote_id,
+                )
+            )
+            .where(
+                sm.market_snapshots.c.match_id == match_id,
+                sm.market_snapshots.c.market_definition_id == market_definition_id,
+                sm.market_snapshots.c.snapshot_kind == snapshot_kind,
+                sm.market_snapshots.c.as_of == as_of,
+                sm.market_quotes.c.provider == provider,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+
     def closing_fair(
         self, match_id: str, market_definition_id: str
     ) -> dict[str, float] | None:
@@ -203,6 +235,13 @@ class MarketRepository:
     def market_kind(self, market_definition_id: str) -> str | None:
         return self._connection.execute(
             select(sm.market_definitions.c.market_kind).where(
+                sm.market_definitions.c.market_definition_id == market_definition_id
+            )
+        ).scalar_one_or_none()
+
+    def market_line_schema(self, market_definition_id: str) -> str | None:
+        return self._connection.execute(
+            select(sm.market_definitions.c.line_schema).where(
                 sm.market_definitions.c.market_definition_id == market_definition_id
             )
         ).scalar_one_or_none()

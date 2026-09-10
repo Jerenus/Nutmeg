@@ -1,0 +1,38 @@
+{
+  "issue": "26113",
+  "registered_at": "2026-08-29T16:20:00+08:00",
+  "decision": "sanitized legacy decision",
+  "prescription_P14": {
+    "singles": {"1": "3"},
+    "doubles": {"2": "31"},
+    "fulls": ["3"],
+    "expected_broken_legs": 1.5,
+    "p_all": 0.25,
+    "difficulty_price_cny": 100,
+    "audit_P14": "sanitized"
+  },
+  "ticket_versions": {
+    "empty": "sanitized summary",
+    "U1536": "sanitized summary",
+    "U1024": "sanitized summary",
+    "U2304": "sanitized summary"
+  },
+  "capital_report": {"stake": "sanitized"},
+  "pending_adjudications": [
+    {"id": "ADJ-1", "status": "终裁并行权", "q": "sanitized", "options": "A / B", "resolution": "B", "note": "sanitized"},
+    {"id": "ADJ-2", "status": "已裁", "q": "sanitized", "options": "A / B", "resolution": "A"},
+    {"id": "ADJ-3", "status": "我已裁", "q": "sanitized", "reason": "sanitized"},
+    {"id": "ADJ-4", "status": "我已裁", "q": "sanitized", "reason": "sanitized"},
+    {"id": "ADJ-5", "status": "待18:30位移复核", "q": "sanitized", "default": "wait"},
+    {"id": "ADJ-6", "status": "待20:30首发窗", "q": "sanitized", "default": "wait"}
+  ],
+  "predictions": [
+    {"id": "P1", "claim": "sanitized claim 1", "falsifier": "sanitized falsifier 1"},
+    {"id": "P2", "claim": "sanitized claim 2", "falsifier": "sanitized falsifier 2"},
+    {"id": "P3", "claim": "sanitized claim 3", "falsifier": "sanitized falsifier 3"},
+    {"id": "P4", "claim": "sanitized claim 4", "falsifier": "sanitized falsifier 4"},
+    {"id": "P5", "claim": "sanitized claim 5", "falsifier": "sanitized falsifier 5"}
+  ],
+  "notes": "sanitized legacy narrative",
+  "outcomes": {"summary": "sanitized historical outcome"}
+}

@@ -1,0 +1,45 @@
+{% extends "operator/workbench_layout.html" %}
+{% block title %}{{ task_v2.task_label }} · Nutmeg{% endblock %}
+{% block content %}
+  <header class="page-heading task-heading">
+    <a class="back-link" href="/operator-next/{{ task_v2.lane.value }}">返回{{ "胜负彩" if task_v2.lane.value == "zucai" else "竞彩" }}</a>
+    <h1>{{ task_v2.task_label }}</h1>
+    <p>{{ task_v2.current_slate.open_offer_count }} 场在售，共 {{ task_v2.current_slate.total_offer_count }} 场。</p>
+  </header>
+  <section class="task-work" aria-labelledby="task-work-title">
+    <h2 id="task-work-title">当前流程</h2>
+    {% for item in task_v2.work_items %}
+      <article class="work-item-row">
+        <div>
+          {% with phase=item.phase %}{% include "operator/_status.html" %}{% endwith %}
+          <h3>{{ item.scope_label }}</h3>
+          <p>{{ item.progress.progress_label }}</p>
+          {% if item.blocking_reason %}<p>{{ item.blocking_reason.message }}</p>{% endif %}
+        </div>
+        {% if item.next_action %}
+          <a class="queue-link"
+             href="/operator-next/{{ task_v2.lane.value }}/{{ task_v2.business_key }}/{{ item.work_item_key }}">{{ "继续复盘" if item.phase == "review" else item.next_action.action_label }}</a>
+        {% else %}
+          <span class="muted">当前无需操作</span>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </section>
+  <section class="offer-list" aria-labelledby="offer-list-title">
+    <h2 id="offer-list-title">比赛与证据</h2>
+    {% for offer in task_v2.current_slate.offers %}
+      <article class="offer-row">
+        <div class="offer-number">{{ offer.official_match_no }}</div>
+        <div class="offer-main">
+          <strong>{{ offer.match_label }}</strong>
+          <span>{{ offer.competition_label }}</span>
+          <small>开赛 {{ offer.kickoff_at.strftime("%m-%d %H:%M") }} · 截止 {{ offer.sale_deadline_at.strftime("%m-%d %H:%M") }}</small>
+        </div>
+        <div class="offer-progress">
+          <strong>{{ offer.evidence_complete_count }} / {{ offer.evidence_required_count }}</strong>
+          <span>{{ offer.next_action }}</span>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}

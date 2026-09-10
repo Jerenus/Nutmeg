@@ -1,22 +1,64 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime
+from pathlib import Path
 
+from nutmeg.analytics.calibrate_flow import CalibrateRequest
 from nutmeg.decision.legs_audit import DEVIATION_RULE_IDS
-from nutmeg.ontology.actions.models import ActorRole
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole, ObjectRef, canonical_json
+from nutmeg.ontology.actions.protected_ticket_actions import (
+    ApproveOperatorTicketBatchRequest,
+    CreateOperatorTicketBatchRequest,
+)
+from nutmeg.ontology.actions.scoreboard_actions import RecordScoreboardObservationRequest
+from nutmeg.ontology.actions.workflow_actions import GradePredictionRequest
+from nutmeg.ontology.operator.decision_actions import (
+    BaselineEnvelopeOfferConstraint,
+    BaselineEnvelopeStructureTemplate,
+    CommitOperatorMatchJudgmentRequest,
+    FaceBundleInput,
+    FaceOffsetInput,
+    FacePrecedentInput,
+    FaceProbabilityInput,
+    FactorAdjustmentInput,
+    FreezeJudgmentPrescriptionRequest,
+    RecordBaselineEnvelopeRequest,
+    RecordNoTicketRequest,
+    RequestCandidateGenerationRequest,
+    SelectTicketCandidateRequest,
+    SupersedeNoTicketRequest,
+)
+from nutmeg.ontology.operator.evidence_actions import RequestEvidenceFreezeRequest
+from nutmeg.ontology.operator.result_actions import RequestSettlementRequest
+from nutmeg.ontology.operator.review_actions import (
+    RecordScoreboardEffectDispositionRequest,
+    RecordScoreboardReviewObservationRequest,
+    RequestScoreboardReviewCompletionRequest,
+)
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.contracts import ProductActionRequest, ProductActionResponse
 from nutmeg.product.errors import ProductActionBlockedError
 from nutmeg.product.operator_contracts import (
+    AuditDeploymentStep,
     GradePredictionCommand,
+    OperatorCommandReceipt,
     RecordDeploymentCommand,
     RequestTelegramConfirmationCommand,
     ResolveIssueAdjudicationCommand,
     SelectTicketVersionCommand,
     TelegramConfirmationDispatch,
 )
+from nutmeg.product.operator_lanes import ScopeKind
 from nutmeg.product.operator_queries import OperatorQueryService
+from nutmeg.product.operator_tokens import (
+    OperatorCommandKind,
+    OperatorSnapshotTokenCodec,
+    OperatorSnapshotTokenError,
+    OperatorSnapshotTokenPayloadV1,
+)
+from nutmeg.product.operator_workbench import operator_work_item_key
 
 
 def _zucai_issue(task_id: str) -> str:
@@ -33,6 +75,34 @@ def _parse_aware(value: str | datetime, name: str) -> datetime:
     return parsed
 
 
+def scoreboard_projection_snapshot(
+    source_high_watermark: int,
+) -> OperatorSnapshotTokenPayloadV1:
+    if source_high_watermark < 0:
+        raise ValueError("source high-watermark cannot be negative")
+    dependency = f"action_high_watermark:{source_high_watermark}"
+    snapshot_hash = hashlib.sha256(
+        canonical_json(
+            {
+                "command_kind": OperatorCommandKind.REBUILD_SCOREBOARD_PROJECTION.value,
+                "dependency_revision_ids": [dependency],
+            }
+        ).encode("utf-8")
+    ).hexdigest()
+    return OperatorSnapshotTokenPayloadV1(
+        task_snapshot_hash=snapshot_hash,
+        work_item_id="system:scoreboard_projection",
+        command_kind=OperatorCommandKind.REBUILD_SCOREBOARD_PROJECTION,
+        dependency_revision_ids=[dependency],
+    )
+
+
+def _sha256_if_present(path: Path | None) -> str | None:
+    if path is None or not path.exists():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 class OperatorActionService:
     def __init__(
         self,
@@ -41,11 +111,35 @@ class OperatorActionService:
         action_gateway: ProductActionGateway,
         telegram_confirmation=None,
         telegram_owner_chat_id: int | None = None,
+        telegram_owner_health=None,
+        evidence_actions=None,
+        decision_actions=None,
+        result_actions=None,
+        review_actions=None,
+        workflow_actions=None,
+        protected_tickets=None,
+        snapshot_tokens: OperatorSnapshotTokenCodec | None = None,
+        calibrate=None,
+        repository=None,
+        scoreboard_path: Path | None = None,
+        clock=None,
     ) -> None:
         self._queries = queries
         self._actions = action_gateway
         self._telegram = telegram_confirmation
         self._owner_chat_id = telegram_owner_chat_id
+        self._telegram_owner_health = telegram_owner_health
+        self._evidence_actions = evidence_actions
+        self._decision_actions = decision_actions
+        self._result_actions = result_actions
+        self._review_actions = review_actions
+        self._workflow_actions = workflow_actions
+        self._protected_tickets = protected_tickets
+        self._snapshot_tokens = snapshot_tokens
+        self._calibrate = calibrate
+        self._repository = repository
+        self._scoreboard_path = scoreboard_path
+        self._clock = clock or queries.now
 
     @property
     def action_gateway(self):
@@ -55,6 +149,10 @@ class OperatorActionService:
     def telegram(self):
         return self._telegram
 
+    @property
+    def decision_actions(self):
+        return self._decision_actions
+
     @staticmethod
     def _require_judge(actor_id: str, actor_role: ActorRole) -> None:
         if actor_role is not ActorRole.JUDGE_OPERATOR or not actor_id.strip():
@@ -63,10 +161,963 @@ class OperatorActionService:
     def _current_task(self, task_id: str, expected_snapshot_token: str):
         task = self._queries.task(task_id, as_of=self._queries.now())
         if task.mutation_token != expected_snapshot_token:
-            raise ProductActionBlockedError(
-                "operator task changed after the form was opened"
-            )
+            raise ProductActionBlockedError("operator task changed after the form was opened")
         return task
+
+    def request_evidence_freeze(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._evidence_actions is None or self._snapshot_tokens is None:
+            raise ProductActionBlockedError("evidence freeze is not configured")
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.evidence_freeze_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        if command.requirement_revision_token != context.requirement_revision_token:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.FREEZE_EVIDENCE,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=f"{context.task_key}:evidence",
+            current_dependency_revision_ids=(context.dependency_leaves.token_revision_ids()),
+        )
+        if not context.ready:
+            raise ProductActionBlockedError("operator evidence gate is not complete")
+        outcome = self._evidence_actions.request_evidence_freeze(
+            RequestEvidenceFreezeRequest(
+                task_family_id=context.task_key,
+                lane=context.lane,
+                business_key=context.business_key,
+                requirement_revision_token=context.requirement_revision_token,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        if outcome.status is not ActionStatus.COMMITTED:
+            raise ProductActionBlockedError("evidence freeze request was not committed")
+        return OperatorCommandReceipt(
+            command_kind="freeze_evidence",
+            status="queued",
+            task_key=context.task_key,
+        )
+
+    def record_baseline_envelope(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.baseline_envelope_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.RECORD_BASELINE_ENVELOPE,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        outcome = decision_actions.record_baseline_envelope(
+            RecordBaselineEnvelopeRequest(
+                task_evidence_bundle_revision_id=(context.task_evidence_bundle_revision_id),
+                work_item_id=context.work_item_id,
+                ticket_kind=command.ticket_kind,
+                capital_cap_minor=command.capital_cap_minor,
+                currency=command.currency,
+                maximum_ticket_count=command.maximum_ticket_count,
+                offer_constraints=tuple(
+                    BaselineEnvelopeOfferConstraint(
+                        official_match_no=item.official_match_no,
+                        market_code=item.market_code,
+                        allowed_face_bundles=tuple(
+                            FaceBundleInput(
+                                bundle_code=bundle.bundle_code,
+                                face_codes=tuple(bundle.face_codes),
+                            )
+                            for bundle in item.allowed_face_bundles
+                        ),
+                        omission_allowed=item.omission_allowed,
+                    )
+                    for item in command.offer_constraints
+                ),
+                structure_templates=tuple(
+                    BaselineEnvelopeStructureTemplate(
+                        kind=item.kind,
+                        structure_code=item.structure_code,
+                        eligible_official_match_nos=tuple(item.eligible_official_match_nos),
+                        pass_size=item.pass_size,
+                        required_offer_count=item.required_offer_count,
+                        maximum_groups=item.maximum_groups,
+                    )
+                    for item in command.structure_templates
+                ),
+                maximum_exhaustive_candidate_count=(command.maximum_exhaustive_candidate_count),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(context.expected_current_revision_no),
+            )
+        )
+        self._require_committed(outcome, "baseline envelope")
+        return OperatorCommandReceipt(
+            command_kind="record_baseline_envelope",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def commit_match_judgment(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.match_judgment_context(
+            command.task_key,
+            command.official_match_no,
+            command.market_code,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.COMMIT_MATCH_JUDGMENT,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        expected_scope_key = f"match:{command.official_match_no}"
+        if any(item.scope_key != expected_scope_key for item in command.factors):
+            raise OperatorSnapshotTokenError("invalid_request")
+        evidence_refs_by_token = dict(context.evidence_refs_by_token)
+        try:
+            judgment_evidence_refs = tuple(
+                evidence_refs_by_token[token]
+                for token in command.evidence_ref_tokens
+            )
+            factor_evidence_refs = tuple(
+                tuple(
+                    evidence_refs_by_token[token]
+                    for token in factor.evidence_ref_tokens
+                )
+                for factor in command.factors
+            )
+        except KeyError as error:
+            raise OperatorSnapshotTokenError("invalid_request") from error
+        outcome = decision_actions.commit_operator_match_judgment(
+            CommitOperatorMatchJudgmentRequest(
+                task_evidence_bundle_revision_id=(context.task_evidence_bundle_revision_id),
+                market_prior_baseline_revision_id=(context.market_prior_baseline_revision_id),
+                baseline_envelope_revision_id=(context.baseline_envelope_revision_id),
+                work_item_id=context.work_item_id,
+                match_id=context.match_id,
+                official_offer_revision_id=context.official_offer_revision_id,
+                market_definition_id=context.market_definition_id,
+                prior=tuple(
+                    FaceProbabilityInput(
+                        face_code=face_code,
+                        probability_decimal=probability,
+                    )
+                    for face_code, probability in context.prior
+                ),
+                belief=tuple(
+                    FaceProbabilityInput(
+                        face_code=item.face_code,
+                        probability_decimal=item.probability_decimal,
+                    )
+                    for item in command.belief
+                ),
+                factors=tuple(
+                    FactorAdjustmentInput(
+                        factor_definition_id=item.factor_id,
+                        scope_key=context.match_id,
+                        evidence_ref_tokens=factor_evidence_refs[index],
+                        offsets=tuple(
+                            FaceOffsetInput(
+                                face_code=offset.face_code,
+                                offset_probability_decimal=(offset.offset_probability_decimal),
+                            )
+                            for offset in item.offsets
+                        ),
+                    )
+                    for index, item in enumerate(command.factors)
+                ),
+                expression_bundles=tuple(
+                    FaceBundleInput(
+                        bundle_code=item.bundle_code,
+                        face_codes=tuple(item.face_codes),
+                    )
+                    for item in command.expression_bundles
+                ),
+                rule_ids=tuple(command.rule_ids),
+                evidence_ref_tokens=judgment_evidence_refs,
+                falsifier=command.falsifier,
+                rationale=command.rationale,
+                anchor_integrity=command.anchor_integrity,
+                face_precedents=tuple(
+                    FacePrecedentInput(
+                        face_code=item.face_code,
+                        precedent_ref=item.precedent_ref,
+                        status=item.status,
+                    )
+                    for item in command.face_precedents
+                ),
+                commitment_tier="commit",
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(context.expected_current_revision_no),
+            )
+        )
+        self._require_committed(outcome, "match judgment")
+        return OperatorCommandReceipt(
+            command_kind="commit_match_judgment",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def freeze_judgment_prescription(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.judgment_prescription_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.FREEZE_JUDGMENT_PRESCRIPTION,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        if tuple(command.judgment_revision_tokens) != tuple(context.judgment_revision_tokens):
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        outcome = decision_actions.freeze_judgment_prescription(
+            FreezeJudgmentPrescriptionRequest(
+                task_evidence_bundle_revision_id=(context.task_evidence_bundle_revision_id),
+                market_prior_baseline_revision_id=(context.market_prior_baseline_revision_id),
+                baseline_envelope_revision_id=(context.baseline_envelope_revision_id),
+                work_item_id=context.work_item_id,
+                judgment_revision_ids=tuple(context.judgment_revision_ids),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(context.expected_current_revision_no),
+            )
+        )
+        self._require_committed(outcome, "judgment prescription")
+        return OperatorCommandReceipt(
+            command_kind="freeze_judgment_prescription",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def request_candidate_generation(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.candidate_generation_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.REQUEST_CANDIDATE_GENERATION,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        supplied_lineage_tokens = (
+            command.market_prior_baseline_token,
+            command.baseline_envelope_token,
+            command.judgment_prescription_token,
+        )
+        current_lineage_tokens = (
+            context.market_prior_baseline_token,
+            context.baseline_envelope_token,
+            context.judgment_prescription_token,
+        )
+        if supplied_lineage_tokens != current_lineage_tokens:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        outcome = decision_actions.request_candidate_generation(
+            RequestCandidateGenerationRequest(
+                task_evidence_bundle_revision_id=(
+                    context.task_evidence_bundle_revision_id
+                ),
+                market_prior_baseline_revision_id=(
+                    context.market_prior_baseline_revision_id
+                ),
+                baseline_envelope_revision_id=(
+                    context.baseline_envelope_revision_id
+                ),
+                judgment_prescription_revision_id=(
+                    context.judgment_prescription_revision_id
+                ),
+                work_item_id=context.work_item_id,
+                fixed_prize_policy_revision_id=(
+                    context.fixed_prize_policy_revision_id
+                ),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(
+                    context.expected_current_revision_no
+                ),
+            )
+        )
+        self._require_committed(outcome, "candidate generation request")
+        return OperatorCommandReceipt(
+            command_kind="request_candidate_generation",
+            status="queued",
+            task_key=context.task_key,
+        )
+
+    def select_ticket_candidate(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.candidate_selection_context(
+            command.task_key,
+            command.candidate_token,
+            as_of=requested_at,
+        )
+        tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.SELECT_CANDIDATE,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        candidate_refs = {
+            token: (candidate_set_revision_id, candidate_revision_id)
+            for token, candidate_set_revision_id, candidate_revision_id in (
+                context.candidate_refs_by_token
+            )
+        }
+        try:
+            candidate_set_revision_id, candidate_revision_id = candidate_refs[
+                command.candidate_token
+            ]
+        except KeyError as error:
+            raise OperatorSnapshotTokenError("invalid_request") from error
+        outcome = decision_actions.select_ticket_candidate(
+            SelectTicketCandidateRequest(
+                candidate_set_revision_id=candidate_set_revision_id,
+                candidate_revision_id=candidate_revision_id,
+                reason=command.reason,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+                expected_current_revision_no=(
+                    context.expected_current_revision_no
+                ),
+            )
+        )
+        self._require_committed(outcome, "candidate selection")
+        return OperatorCommandReceipt(
+            command_kind="select_candidate",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def _decision_dependencies(self):
+        if self._decision_actions is None or self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator judgment is not configured")
+        return self._decision_actions, self._snapshot_tokens
+
+    def _deployment_step(
+        self,
+        command,
+        *,
+        expected_mode: str,
+        expected_kind: OperatorCommandKind,
+        token_attribute: str,
+    ):
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        task = self._queries.task(command.task_key, as_of=requested_at)
+        step = task.step
+        if not isinstance(step, AuditDeploymentStep) or step.surface_version != "2":
+            raise ProductActionBlockedError("task is no longer at protected deployment")
+        supplied_command = self._snapshot_tokens.decode(command.expected_snapshot_token)
+        if supplied_command.command_kind is not expected_kind:
+            raise OperatorSnapshotTokenError("invalid_request")
+        if step.mode != expected_mode:
+            raise ProductActionBlockedError("protected deployment command is no longer current")
+        if step.command_token != command.expected_snapshot_token:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        submitted_ref = getattr(command, token_attribute)
+        current_ref = getattr(step, token_attribute)
+        if submitted_ref != current_ref:
+            try:
+                supplied_ref = self._snapshot_tokens.decode(submitted_ref)
+            except OperatorSnapshotTokenError:
+                raise
+            if supplied_ref.command_kind is not expected_kind:
+                raise OperatorSnapshotTokenError("invalid_request")
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        return task, step, requested_at
+
+    def _deployment_ref(
+        self,
+        token: str,
+        *,
+        command_kind: OperatorCommandKind,
+        prefix: str,
+    ) -> str:
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        payload = self._snapshot_tokens.decode(token)
+        if payload.command_kind is not command_kind:
+            raise OperatorSnapshotTokenError("invalid_request")
+        marker = f"{prefix}:"
+        if len(payload.dependency_revision_ids) != 1:
+            raise OperatorSnapshotTokenError("invalid_request")
+        dependency = payload.dependency_revision_ids[0]
+        if not dependency.startswith(marker) or not dependency.removeprefix(marker):
+            raise OperatorSnapshotTokenError("invalid_request")
+        return dependency.removeprefix(marker)
+
+    def _no_ticket_context(
+        self,
+        token: str,
+        *,
+        command_kind: OperatorCommandKind,
+        task_key: str,
+    ) -> tuple[OperatorSnapshotTokenPayloadV1, dict[str, str]]:
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        payload = self._snapshot_tokens.decode(token)
+        if payload.command_kind is not command_kind:
+            raise OperatorSnapshotTokenError("invalid_request")
+        expected_prefixes = {
+            "business_key",
+            "lane",
+            "scope_fingerprint",
+            "slate_revision",
+            "task_family",
+        }
+        context: dict[str, str] = {}
+        for dependency in payload.dependency_revision_ids:
+            prefix, separator, value = dependency.partition(":")
+            if not separator or prefix not in expected_prefixes or not value:
+                raise OperatorSnapshotTokenError("invalid_request")
+            if prefix in context:
+                raise OperatorSnapshotTokenError("invalid_request")
+            context[prefix] = value
+        if set(context) != expected_prefixes:
+            raise OperatorSnapshotTokenError("invalid_request")
+        if (
+            context["task_family"] != task_key
+            or f'{context["lane"]}:{context["business_key"]}' != task_key
+            or re.fullmatch(r"[0-9a-f]{64}", context["scope_fingerprint"]) is None
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        return payload, context
+
+    def _no_ticket_ref(
+        self,
+        token: str,
+        *,
+        command_kind: OperatorCommandKind,
+        command_payload: OperatorSnapshotTokenPayloadV1,
+        prefix: str,
+    ) -> str:
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        payload = self._snapshot_tokens.decode(token)
+        if (
+            payload.command_kind is not command_kind
+            or payload.task_snapshot_hash != command_payload.task_snapshot_hash
+            or payload.work_item_id != command_payload.work_item_id
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        marker = f"{prefix}:"
+        if len(payload.dependency_revision_ids) != 1:
+            raise OperatorSnapshotTokenError("invalid_request")
+        dependency = payload.dependency_revision_ids[0]
+        if not dependency.startswith(marker) or not dependency.removeprefix(marker):
+            raise OperatorSnapshotTokenError("invalid_request")
+        return dependency.removeprefix(marker)
+
+    def _no_ticket_receipt_result(self, outcome) -> str:
+        self._require_committed(outcome, "no-ticket")
+        if self._decision_actions is None:
+            raise ProductActionBlockedError("operator judgment is not configured")
+        receipt = self._decision_actions.no_ticket_command_receipt(outcome.action_id)
+        if receipt is None:
+            raise ProductActionBlockedError("no-ticket command receipt is missing")
+        result = getattr(receipt.result, "value", receipt.result)
+        if result == "task_snapshot_changed":
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        if result not in {"recorded", "already_current"}:
+            raise ProductActionBlockedError("no-ticket command receipt is invalid")
+        return str(result)
+
+    def record_no_ticket(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, _tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        payload, context = self._no_ticket_context(
+            command.expected_snapshot_token,
+            command_kind=OperatorCommandKind.RECORD_NO_TICKET,
+            task_key=command.task_key,
+        )
+        rule_ids = tuple(
+            self._no_ticket_ref(
+                token,
+                command_kind=OperatorCommandKind.RECORD_NO_TICKET,
+                command_payload=payload,
+                prefix="rule",
+            )
+            for token in command.rule_tokens
+        )
+        if len(rule_ids) != len(set(rule_ids)) or any(
+            rule_id not in DEVIATION_RULE_IDS for rule_id in rule_ids
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        comparison_candidate_revision_id = (
+            None
+            if command.comparison_candidate_token is None
+            else self._no_ticket_ref(
+                command.comparison_candidate_token,
+                command_kind=OperatorCommandKind.RECORD_NO_TICKET,
+                command_payload=payload,
+                prefix="candidate",
+            )
+        )
+        outcome = decision_actions.record_no_ticket(
+            RecordNoTicketRequest(
+                task_family_id=context["task_family"],
+                lane=context["lane"],
+                business_key=context["business_key"],
+                work_item_id=payload.work_item_id,
+                expected_task_snapshot_hash=payload.task_snapshot_hash,
+                expected_scope_fingerprint=context["scope_fingerprint"],
+                reason_code=command.reason_code,
+                reason_basis=command.reason_basis,
+                reason_text=command.reason_text,
+                rule_ids=rule_ids,
+                comparison_candidate_revision_id=comparison_candidate_revision_id,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._no_ticket_receipt_result(outcome)
+        return OperatorCommandReceipt(
+            command_kind="record_no_ticket",
+            status="completed",
+            task_key=command.task_key,
+        )
+
+    def supersede_no_ticket(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        decision_actions, _tokens = self._decision_dependencies()
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        payload, context = self._no_ticket_context(
+            command.expected_snapshot_token,
+            command_kind=OperatorCommandKind.SUPERSEDE_NO_TICKET,
+            task_key=command.task_key,
+        )
+        revision_id = self._no_ticket_ref(
+            command.no_ticket_revision_token,
+            command_kind=OperatorCommandKind.SUPERSEDE_NO_TICKET,
+            command_payload=payload,
+            prefix="no_ticket_revision",
+        )
+        outcome = decision_actions.supersede_no_ticket(
+            SupersedeNoTicketRequest(
+                no_ticket_revision_id=revision_id,
+                expected_task_snapshot_hash=payload.task_snapshot_hash,
+                expected_scope_fingerprint=context["scope_fingerprint"],
+                reason_text=command.reason_text,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._no_ticket_receipt_result(outcome)
+        return OperatorCommandReceipt(
+            command_kind="supersede_no_ticket",
+            status="completed",
+            task_key=command.task_key,
+        )
+
+    def create_ticket_batch(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._protected_tickets is None:
+            raise ProductActionBlockedError("protected ticket Actions are not configured")
+        task, _step, requested_at = self._deployment_step(
+            command,
+            expected_mode="create_ticket_batch",
+            expected_kind=OperatorCommandKind.CREATE_TICKET_BATCH,
+            token_attribute="candidate_selection_token",
+        )
+        selection_id = self._deployment_ref(
+            command.candidate_selection_token,
+            command_kind=OperatorCommandKind.CREATE_TICKET_BATCH,
+            prefix="selection",
+        )
+        outcome = self._protected_tickets.create_operator_ticket_batch(
+            CreateOperatorTicketBatchRequest(
+                candidate_selection_id=selection_id,
+                account_id=f"acct-{task.selected.lane.value}",
+                run_date=task.selected.business_key,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "ticket batch creation")
+        return OperatorCommandReceipt(
+            command_kind="create_ticket_batch",
+            status="completed",
+            task_key=command.task_key,
+        )
+
+    def approve_ticket_batch(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._protected_tickets is None:
+            raise ProductActionBlockedError("protected ticket Actions are not configured")
+        _task, _step, requested_at = self._deployment_step(
+            command,
+            expected_mode="approve_ticket_batch",
+            expected_kind=OperatorCommandKind.APPROVE_TICKET_BATCH,
+            token_attribute="ticket_batch_token",
+        )
+        revision_id = self._deployment_ref(
+            command.ticket_batch_token,
+            command_kind=OperatorCommandKind.APPROVE_TICKET_BATCH,
+            prefix="ticket_batch_revision",
+        )
+        outcome = self._protected_tickets.approve_operator_ticket_batch(
+            ApproveOperatorTicketBatchRequest(
+                ticket_batch_revision_id=revision_id,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "ticket batch approval")
+        artifact_id = next(
+            (
+                ref.object_id
+                for ref in outcome.result_refs
+                if ref.object_type == "audited_ticket_artifact"
+            ),
+            None,
+        )
+        navigation_href = None
+        if artifact_id is not None:
+            token = self._snapshot_tokens.decode(command.expected_snapshot_token)
+            work_item_key = operator_work_item_key(
+                ScopeKind.ARTIFACT,
+                f"{token.work_item_id}:artifact:{artifact_id}",
+            )
+            lane, _, business_key = command.task_key.partition(":")
+            navigation_href = (
+                f"/operator-next/{lane}/{business_key}/{work_item_key}"
+            )
+        return OperatorCommandReceipt(
+            command_kind="approve_ticket_batch",
+            status="completed",
+            task_key=command.task_key,
+            navigation_href=navigation_href,
+        )
+
+    def adjudicate_audit_warn(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        _task, step, _requested_at = self._deployment_step(
+            command,
+            expected_mode="adjudicate_audit_warn",
+            expected_kind=OperatorCommandKind.ADJUDICATE_AUDIT_WARN,
+            token_attribute="ticket_batch_token",
+        )
+        current_tokens = {
+            finding.finding_token
+            for finding in step.findings
+            if getattr(finding, "severity", None) == "warn"
+            and getattr(finding, "finding_token", None) is not None
+        }
+        submitted_tokens = [finding.finding_token for finding in command.findings]
+        if len(submitted_tokens) != len(set(submitted_tokens)) or set(
+            submitted_tokens
+        ) != current_tokens:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+
+        prepared = []
+        for finding in command.findings:
+            finding_id = self._deployment_ref(
+                finding.finding_token,
+                command_kind=OperatorCommandKind.ADJUDICATE_AUDIT_WARN,
+                prefix="finding",
+            )
+            rejected = [
+                self._deployment_evidence_ref(token)
+                for token in finding.evidence_rejected_tokens
+            ]
+            prepared.append((finding, finding_id, rejected))
+        for index, (finding, finding_id, rejected) in enumerate(prepared):
+            response = self._actions.execute(
+                ProductActionRequest(
+                    action_type="record_adjudication",
+                    idempotency_key=f"{command.idempotency_key}:warn:{index}",
+                    payload={
+                        "subject_type": "ticket_audit_finding",
+                        "subject_id": finding_id,
+                        "decision": "accept_warning",
+                        "reason": finding.reason,
+                        "evidence_rejected": rejected,
+                        "alternative": {
+                            "no_evidence_rejected_acknowledged": not rejected,
+                        },
+                    },
+                    policy_version="governance-v1",
+                ),
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
+            if response.status != ActionStatus.COMMITTED.value:
+                raise ProductActionBlockedError("WARN adjudication was not committed")
+        return OperatorCommandReceipt(
+            command_kind="adjudicate_audit_warn",
+            status="completed",
+            task_key=command.task_key,
+        )
+
+    def _deployment_evidence_ref(self, token: str) -> dict[str, str]:
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator deployment tokens are not configured")
+        payload = self._snapshot_tokens.decode(token)
+        if (
+            payload.command_kind is not OperatorCommandKind.ADJUDICATE_AUDIT_WARN
+            or len(payload.dependency_revision_ids) != 1
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        dependency = payload.dependency_revision_ids[0]
+        marker = "evidence:"
+        if not dependency.startswith(marker):
+            raise OperatorSnapshotTokenError("invalid_request")
+        raw = dependency.removeprefix(marker)
+        object_type, separator, object_id = raw.partition(":")
+        if not separator or not object_type or not object_id:
+            raise OperatorSnapshotTokenError("invalid_request")
+        return {"object_type": object_type, "object_id": object_id}
+
+    def request_confirmation(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._telegram is None or self._owner_chat_id is None:
+            raise ProductActionBlockedError("Telegram confirmation is not configured")
+        self._require_telegram_owner_available()
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError(
+                "operator confirmation tokens are not configured"
+            )
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.confirmation_request_context(
+            command.task_key,
+            command.ticket_artifact_token,
+            as_of=requested_at,
+        )
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.REQUEST_CONFIRMATION,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        if command.expected_snapshot_token != context.command_token:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        self._telegram.request_confirmation(
+            ticket_artifact_id=context.ticket_artifact_id,
+            chat_id=self._owner_chat_id,
+            dry_run=False,
+            requested_at=requested_at,
+        )
+        return OperatorCommandReceipt(
+            command_kind="request_confirmation",
+            status="queued",
+            task_key=command.task_key,
+        )
+
+    def _require_telegram_owner_available(self) -> None:
+        if self._telegram_owner_health is None:
+            return
+        owner_status = self._telegram_owner_health.status(as_of=self._clock())
+        if not owner_status.available:
+            raise ProductActionBlockedError(
+                "Telegram update owner is unavailable",
+                code=owner_status.blocking_code or "telegram_owner_unavailable",
+            )
+
+    def request_settlement(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._result_actions is None or self._snapshot_tokens is None:
+            raise ProductActionBlockedError("settlement request is not configured")
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.settlement_request_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.REQUEST_SETTLEMENT,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        outcome = self._result_actions.request_settlement(
+            RequestSettlementRequest(
+                result_set_revision_id=context.result_set_revision_id,
+                expected_task_snapshot_hash=context.task_snapshot_hash,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "settlement request")
+        return OperatorCommandReceipt(
+            command_kind="request_settlement",
+            status="queued",
+            task_key=context.task_key,
+        )
+
+    @staticmethod
+    def _require_committed(outcome, label: str) -> None:
+        if outcome.status is not ActionStatus.COMMITTED:
+            raise ProductActionBlockedError(f"{label} Action was not committed")
+
+    def rebuild_scoreboard_projection(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._snapshot_tokens is None or self._calibrate is None or self._repository is None:
+            raise ProductActionBlockedError("scoreboard projection rebuild is not configured")
+        source_high_watermark = self._repository.action_high_watermark()
+        current = scoreboard_projection_snapshot(source_high_watermark)
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.REBUILD_SCOREBOARD_PROJECTION,
+            current_task_snapshot_hash=current.task_snapshot_hash,
+            current_work_item_id=current.work_item_id,
+            current_dependency_revision_ids=current.dependency_revision_ids,
+        )
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        scoreboard_checksum = _sha256_if_present(self._scoreboard_path)
+        result = self._calibrate.build(
+            CalibrateRequest(
+                as_of=requested_at.isoformat(),
+                built_at=requested_at.isoformat(),
+                high_watermark=source_high_watermark,
+            )
+        )
+        if result.status != "succeeded":
+            raise ProductActionBlockedError("scoreboard projection rebuild failed")
+        if self._repository.action_high_watermark() != source_high_watermark:
+            raise ProductActionBlockedError("Action ledger changed during projection rebuild")
+        if _sha256_if_present(self._scoreboard_path) != scoreboard_checksum:
+            raise ProductActionBlockedError(
+                "scoreboard authority changed during projection rebuild"
+            )
+        return OperatorCommandReceipt(
+            command_kind="rebuild_scoreboard_projection",
+            status="completed",
+            source_high_watermark=source_high_watermark,
+            projection_high_watermark=result.high_watermark,
+        )
 
     def resolve_issue_adjudication(
         self,
@@ -166,9 +1217,7 @@ class OperatorActionService:
         if command.candidate_id != task.step.candidate.candidate_id:
             raise ProductActionBlockedError("deployment candidate changed")
         if command.decision not in task.step.allowed_decisions:
-            raise ProductActionBlockedError(
-                "deployment decision is not allowed by current gate"
-            )
+            raise ProductActionBlockedError("deployment decision is not allowed by current gate")
         return self._execute_adjudication(
             issue=_zucai_issue(task_id),
             decision="deployment",
@@ -200,6 +1249,7 @@ class OperatorActionService:
             raise ProductActionBlockedError("Telegram confirmation is not configured")
         if self._owner_chat_id is None:
             raise ProductActionBlockedError("exactly one Telegram owner must be configured")
+        self._require_telegram_owner_available()
         prepared = self._telegram.request_confirmation(
             ticket_artifact_id=task.step.ticket_artifact_id,
             chat_id=self._owner_chat_id,
@@ -216,24 +1266,27 @@ class OperatorActionService:
 
     def grade_prediction(
         self,
-        task_id: str,
-        command: GradePredictionCommand,
+        command_or_task_id,
+        command: GradePredictionCommand | None = None,
         *,
         actor_id: str,
         actor_role: ActorRole,
-    ) -> ProductActionResponse:
-        if actor_role is not ActorRole.JUDGE_OPERATOR:
-            raise ProductActionBlockedError(
-                "prediction grade requires judge_operator"
+    ) -> OperatorCommandReceipt | ProductActionResponse:
+        if command is None:
+            return self._grade_prediction_v2(
+                command_or_task_id,
+                actor_id=actor_id,
+                actor_role=actor_role,
             )
+        task_id = command_or_task_id
+        if actor_role is not ActorRole.JUDGE_OPERATOR:
+            raise ProductActionBlockedError("prediction grade requires judge_operator")
         task = self._current_task(task_id, command.expected_snapshot_token)
         if task.step.kind != "review":
             raise ProductActionBlockedError("task is no longer in review")
         current = task.step.current_item
         if current.item_type != "prediction" or current.item_id != command.prediction_id:
-            raise ProductActionBlockedError(
-                "prediction is no longer the current review item"
-            )
+            raise ProductActionBlockedError("prediction is no longer the current review item")
         return self._actions.execute(
             ProductActionRequest(
                 action_type="grade_prediction",
@@ -247,6 +1300,261 @@ class OperatorActionService:
             ),
             actor_id=actor_id,
             actor_role=actor_role,
+        )
+
+    def _grade_prediction_v2(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._workflow_actions is None or self._snapshot_tokens is None:
+            raise ProductActionBlockedError("prediction review is not configured")
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.prediction_grade_context(
+            command.task_key,
+            command.expected_snapshot_token,
+            as_of=requested_at,
+        )
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.GRADE_PREDICTION,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        predictions = dict(context.prediction_refs_by_token)
+        try:
+            prediction_id = predictions[command.prediction_review_token]
+        except KeyError as error:
+            raise OperatorSnapshotTokenError("invalid_request") from error
+        outcome = self._workflow_actions.grade_prediction(
+            GradePredictionRequest(
+                prediction_id=prediction_id,
+                outcome=command.outcome,
+                reason=command.reason,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "prediction grade")
+        return OperatorCommandReceipt(
+            command_kind="grade_prediction",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def _scoreboard_review_context(
+        self,
+        command,
+        *,
+        command_kind: OperatorCommandKind,
+        requested_at: datetime,
+    ):
+        if (
+            self._review_actions is None
+            or self._snapshot_tokens is None
+            or self._repository is None
+        ):
+            raise ProductActionBlockedError("scoreboard review is not configured")
+        projection = self._repository.scoreboard_projection(
+            as_of=requested_at.isoformat()
+        )
+        health = projection.get("health", {})
+        state = health.get("state")
+        if state != "available":
+            code = "projection_stale" if state == "stale" else "projection_unavailable"
+            raise ProductActionBlockedError(
+                "scoreboard projection must be rebuilt before this review action",
+                code=code,
+            )
+        context = self._queries.scoreboard_review_context(
+            command.task_key,
+            command_kind,
+            command.expected_snapshot_token,
+            as_of=requested_at,
+        )
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=command_kind,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        if command.review_token != context.review_token:
+            raise OperatorSnapshotTokenError("invalid_request")
+        return context
+
+    def _scoreboard_hash(self) -> str:
+        checksum = _sha256_if_present(self._scoreboard_path)
+        if checksum is None:
+            raise ProductActionBlockedError(
+                "legacy scoreboard authority is not available",
+                code="scoreboard_authority_unavailable",
+            )
+        return checksum
+
+    def record_scoreboard_effect_disposition(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._scoreboard_review_context(
+            command,
+            command_kind=OperatorCommandKind.RECORD_SCOREBOARD_EFFECT_DISPOSITION,
+            requested_at=requested_at,
+        )
+        outcome = self._review_actions.record_scoreboard_effect_disposition(
+            RecordScoreboardEffectDispositionRequest(
+                review_id=context.review_id,
+                expected_disposition_revision_id=(context.disposition_revision_id),
+                disposition=command.effect.disposition,
+                required_metric_keys=tuple(command.effect.metric_keys),
+                reason=command.effect.reason,
+                pre_update_legacy_sha256=self._scoreboard_hash(),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "scoreboard effect disposition")
+        return OperatorCommandReceipt(
+            command_kind="record_scoreboard_effect_disposition",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def record_scoreboard_observation(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._scoreboard_review_context(
+            command,
+            command_kind=OperatorCommandKind.RECORD_SCOREBOARD_OBSERVATION,
+            requested_at=requested_at,
+        )
+        if (
+            context.disposition_revision_id is None
+            or command.disposition_token != context.disposition_token
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        evidence_by_token = dict(context.evidence_refs_by_token)
+        try:
+            evidence_refs = [
+                evidence_by_token[token]
+                for token in command.observation.evidence_ref_tokens
+            ]
+        except KeyError as error:
+            raise OperatorSnapshotTokenError("invalid_request") from error
+        supersedes_id = None
+        if command.observation.supersedes_observation_token is not None:
+            observations_by_token = dict(context.observation_refs_by_token)
+            try:
+                supersedes_id = observations_by_token[
+                    command.observation.supersedes_observation_token
+                ]
+            except KeyError as error:
+                raise OperatorSnapshotTokenError("invalid_request") from error
+        observation = RecordScoreboardObservationRequest(
+            group_key=command.observation.group_key,
+            metric_key=command.observation.metric_key,
+            tally=command.observation.tally,
+            detail=command.observation.detail,
+            status=command.observation.status,
+            numerator=(
+                None
+                if command.observation.numerator_decimal is None
+                else float(command.observation.numerator_decimal)
+            ),
+            denominator=(
+                None
+                if command.observation.denominator_decimal is None
+                else float(command.observation.denominator_decimal)
+            ),
+            value=(
+                None
+                if command.observation.value_decimal is None
+                else float(command.observation.value_decimal)
+            ),
+            unit=command.observation.unit,
+            evidence_refs=[
+                ref if isinstance(ref, ObjectRef) else ObjectRef(*ref)
+                for ref in evidence_refs
+            ],
+            effective_at=_parse_aware(
+                command.observation.effective_at,
+                "observation effective_at",
+            ),
+            supersedes_observation_id=supersedes_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            idempotency_key=command.idempotency_key,
+            requested_at=requested_at,
+        )
+        outcome = self._review_actions.record_scoreboard_review_observation(
+            RecordScoreboardReviewObservationRequest(
+                review_id=context.review_id,
+                expected_disposition_revision_id=(context.disposition_revision_id),
+                observed_legacy_sha256=self._scoreboard_hash(),
+                observation=observation,
+            )
+        )
+        self._require_committed(outcome, "scoreboard review observation")
+        return OperatorCommandReceipt(
+            command_kind="record_scoreboard_observation",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def request_scoreboard_review_completion(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._scoreboard_review_context(
+            command,
+            command_kind=OperatorCommandKind.REQUEST_SCOREBOARD_REVIEW_COMPLETION,
+            requested_at=requested_at,
+        )
+        if (
+            context.disposition_revision_id is None
+            or command.disposition_token != context.disposition_token
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        outcome = self._review_actions.request_scoreboard_review_completion(
+            RequestScoreboardReviewCompletionRequest(
+                review_id=context.review_id,
+                expected_disposition_revision_id=(context.disposition_revision_id),
+                shadow_review_token=command.shadow_review_token,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "scoreboard review completion request")
+        return OperatorCommandReceipt(
+            command_kind="request_scoreboard_review_completion",
+            status="queued",
+            task_key=context.task_key,
         )
 
     def _execute_adjudication(

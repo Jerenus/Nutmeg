@@ -1,0 +1,23 @@
+{
+  "schema_version": "evidence-intake-v1",
+  "lane": "zucai",
+  "business_key": "26117",
+  "slate_revision_id": "slate-zucai-26117",
+  "captured_at": "2026-09-04T10:00:00+08:00",
+  "matches": [
+    {"official_match_no":"1","canonical_match_id":"z-1","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"2","canonical_match_id":"z-2","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"3","canonical_match_id":"z-3","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"4","canonical_match_id":"z-4","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"5","canonical_match_id":"z-5","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"6","canonical_match_id":"z-6","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"7","canonical_match_id":"z-7","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"8","canonical_match_id":"z-8","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"9","canonical_match_id":"z-9","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"10","canonical_match_id":"z-10","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"11","canonical_match_id":"z-11","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"12","canonical_match_id":"z-12","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"13","canonical_match_id":"z-13","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]},
+    {"official_match_no":"14","canonical_match_id":"z-14","source_receipts":[],"observations":[],"claims":[],"coverage_receipts":[]}
+  ]
+}

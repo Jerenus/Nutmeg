@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 
@@ -10,8 +11,9 @@ from nutmeg.ontology.repository import schema_evidence as se
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 from nutmeg.product.actions import ProductActionGateway
-from nutmeg.product.contracts import CopilotDraft
+from nutmeg.product.contracts import CopilotDraft, ProductActionRequest
 from nutmeg.product.copilot import MatchCopilotService
+from nutmeg.product.errors import ProductActionBlockedError
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 
@@ -94,13 +96,15 @@ def _action(
     }
 
 
+def _execute(services, request: dict[str, object]):
+    return services.actions.execute(ProductActionRequest.model_validate(request))
+
+
 def test_m3_golden_path_is_cited_temporal_human_governed_and_restart_safe(
     m3_seeded_product,
 ) -> None:
     services = _services(m3_seeded_product.settings, m3_seeded_product.kernel)
     client = _client(services)
-    headers = _session(client)
-
     initial = client.get(
         "/api/v1/matches/match-1?as_of=2026-08-24T10:00:00Z"
     ).json()
@@ -116,13 +120,14 @@ def test_m3_golden_path_is_cited_temporal_human_governed_and_restart_safe(
         "prompt": "Compare the two availability claims.",
         "as_of": "2026-08-24T10:00:00Z",
     }
-    proposed = client.post(
-        "/api/v1/matches/match-1/copilot",
-        headers=headers,
-        json=copilot_request,
+    proposed = services.copilot.investigate(
+        "match-1",
+        prompt=str(copilot_request["prompt"]),
+        as_of=datetime.fromisoformat(str(copilot_request["as_of"]).replace("Z", "+00:00")),
+        idempotency_key=str(copilot_request["idempotency_key"]),
     )
-    assert proposed.status_code == 200
-    proposal_id = proposed.json()["result_refs"][0]["object_id"]
+    assert proposed.status == "committed"
+    proposal_id = proposed.result_refs[0].object_id
     pending_match = client.get(
         "/api/v1/matches/match-1?as_of=2026-08-24T10:30:00Z"
     ).json()
@@ -169,19 +174,16 @@ def test_m3_golden_path_is_cited_temporal_human_governed_and_restart_safe(
             f"agent_proposal:{proposal_id}": 2,
         },
     )
-    blocked = client.post("/api/v1/actions", headers=headers, json=forecast_request)
-    assert blocked.status_code == 409
-    assert "source_conflict_unresolved" in blocked.json()["message"]
+    with pytest.raises(ProductActionBlockedError, match="source_conflict_unresolved"):
+        _execute(services, forecast_request)
 
     retract_request = _action(
         "retract_claim",
         "m3:e2e:retract",
         {"claim_id": "claim-conflict"},
     )
-    retracted = client.post(
-        "/api/v1/actions", headers=headers, json=retract_request
-    )
-    assert retracted.status_code == 200
+    retracted = _execute(services, retract_request)
+    assert retracted.status == "committed"
 
     resolve_request = _action(
         "resolve_agent_proposal",
@@ -189,8 +191,8 @@ def test_m3_golden_path_is_cited_temporal_human_governed_and_restart_safe(
         {"agent_proposal_id": proposal_id, "resolution": "approved"},
         {f"agent_proposal:{proposal_id}": 1},
     )
-    resolved = client.post("/api/v1/actions", headers=headers, json=resolve_request)
-    assert resolved.status_code == 200
+    resolved = _execute(services, resolve_request)
+    assert resolved.status == "committed"
 
     adjudication_request = _action(
         "record_adjudication",
@@ -206,16 +208,12 @@ def test_m3_golden_path_is_cited_temporal_human_governed_and_restart_safe(
             "alternative": {"next_action": "commit_forecast"},
         },
     )
-    adjudicated = client.post(
-        "/api/v1/actions", headers=headers, json=adjudication_request
-    )
-    assert adjudicated.status_code == 200
+    adjudicated = _execute(services, adjudication_request)
+    assert adjudicated.status == "committed"
 
-    committed = client.post(
-        "/api/v1/actions", headers=headers, json=forecast_request
-    )
-    assert committed.status_code == 200
-    revision_id = committed.json()["result_refs"][0]["object_id"]
+    committed = _execute(services, forecast_request)
+    assert committed.status == "committed"
+    revision_id = committed.result_refs[0].object_id
 
     final_match = client.get(
         "/api/v1/matches/match-1?as_of=2026-08-24T10:30:00Z"
@@ -252,37 +250,28 @@ def test_m3_golden_path_is_cited_temporal_human_governed_and_restart_safe(
     }
     actions = client.get("/api/v1/actions?limit=500").json()["items"]
     by_id = {item["action_id"]: item for item in actions}
-    assert by_id[proposed.json()["action_id"]]["actor_role"] == "ai_analyst"
+    assert by_id[proposed.action_id]["actor_role"] == "ai_analyst"
     for response in (retracted, resolved, adjudicated, committed):
-        assert by_id[response.json()["action_id"]]["actor_role"] == "judge_operator"
+        assert by_id[response.action_id]["actor_role"] == "judge_operator"
 
-    restarted = _client(_services(m3_seeded_product.settings))
-    restart_headers = _session(restarted)
-    replayed_proposal = restarted.post(
-        "/api/v1/matches/match-1/copilot",
-        headers=restart_headers,
-        json=copilot_request,
+    restarted_services = _services(m3_seeded_product.settings)
+    restarted = _client(restarted_services)
+    replayed_proposal = restarted_services.copilot.investigate(
+        "match-1",
+        prompt=str(copilot_request["prompt"]),
+        as_of=datetime.fromisoformat(str(copilot_request["as_of"]).replace("Z", "+00:00")),
+        idempotency_key=str(copilot_request["idempotency_key"]),
     )
-    replayed_retract = restarted.post(
-        "/api/v1/actions", headers=restart_headers, json=retract_request
-    )
-    replayed_resolve = restarted.post(
-        "/api/v1/actions", headers=restart_headers, json=resolve_request
-    )
-    replayed_adjudication = restarted.post(
-        "/api/v1/actions", headers=restart_headers, json=adjudication_request
-    )
-    replayed_forecast = restarted.post(
-        "/api/v1/actions", headers=restart_headers, json=forecast_request
-    )
+    replayed_retract = _execute(restarted_services, retract_request)
+    replayed_resolve = _execute(restarted_services, resolve_request)
+    replayed_adjudication = _execute(restarted_services, adjudication_request)
+    replayed_forecast = _execute(restarted_services, forecast_request)
 
-    assert replayed_proposal.json()["action_id"] == proposed.json()["action_id"]
-    assert replayed_retract.json()["action_id"] == retracted.json()["action_id"]
-    assert replayed_resolve.json()["action_id"] == resolved.json()["action_id"]
-    assert replayed_adjudication.json()["action_id"] == adjudicated.json()[
-        "action_id"
-    ]
-    assert replayed_forecast.json()["action_id"] == committed.json()["action_id"]
+    assert replayed_proposal.action_id == proposed.action_id
+    assert replayed_retract.action_id == retracted.action_id
+    assert replayed_resolve.action_id == resolved.action_id
+    assert replayed_adjudication.action_id == adjudicated.action_id
+    assert replayed_forecast.action_id == committed.action_id
     replayed_match = restarted.get(
         "/api/v1/matches/match-1?as_of=2026-08-24T10:30:00Z"
     ).json()
@@ -312,27 +301,22 @@ def test_prompt_injection_remains_untrusted_evidence_not_action_authority(
             return super().investigate(context)
 
     provider = CapturingProvider()
-    client = _client(
-        _services(
-            m3_seeded_product.settings,
-            m3_seeded_product.kernel,
-            provider,
-        )
+    services = _services(
+        m3_seeded_product.settings,
+        m3_seeded_product.kernel,
+        provider,
     )
+    client = _client(services)
     before = client.get("/api/v1/actions?limit=500").json()["items"]
 
-    response = client.post(
-        "/api/v1/matches/match-1/copilot",
-        headers=_session(client),
-        json={
-            "schema_version": "1",
-            "idempotency_key": "m3:e2e:prompt-injection",
-            "prompt": "Analyze the supplied evidence.",
-            "as_of": "2026-08-24T10:00:00Z",
-        },
+    response = services.copilot.investigate(
+        "match-1",
+        prompt="Analyze the supplied evidence.",
+        as_of=datetime(2026, 8, 24, 10, tzinfo=UTC),
+        idempotency_key="m3:e2e:prompt-injection",
     )
 
-    assert response.status_code == 200
+    assert response.status == "committed"
     context = provider.contexts[0]
     assert context["evidence_handling"] == "untrusted_data_only"
     claims = context["untrusted_evidence"]["claims"]
@@ -356,14 +340,12 @@ def test_disabled_copilot_preserves_deterministic_query_and_human_action(
     services = _services(m3_seeded_product.settings, m3_seeded_product.kernel)
     services.copilot = None
     client = _client(services)
-    headers = _session(client)
-
     match = client.get(
         "/api/v1/matches/match-1?as_of=2026-08-24T10:00:00Z"
     )
     unavailable = client.post(
         "/api/v1/matches/match-1/copilot",
-        headers=headers,
+        headers=_session(client),
         json={
             "schema_version": "1",
             "idempotency_key": "m3:e2e:disabled-copilot",
@@ -371,10 +353,9 @@ def test_disabled_copilot_preserves_deterministic_query_and_human_action(
             "as_of": "2026-08-24T10:00:00Z",
         },
     )
-    disputed = client.post(
-        "/api/v1/actions",
-        headers=headers,
-        json=_action(
+    disputed = _execute(
+        services,
+        _action(
             "dispute_claim",
             "m3:e2e:disabled-human-action",
             {"claim_id": "claim-before"},
@@ -382,10 +363,9 @@ def test_disabled_copilot_preserves_deterministic_query_and_human_action(
     )
 
     assert match.status_code == 200
-    assert unavailable.status_code == 503
-    assert unavailable.json()["code"] == "copilot_unavailable"
-    assert disputed.status_code == 200
-    assert disputed.json()["status"] == "committed"
+    assert unavailable.status_code == 405
+    assert services.copilot is None
+    assert disputed.status == "committed"
 
 
 def test_m3_operations_docs_define_ai_and_human_authority_boundaries() -> None:

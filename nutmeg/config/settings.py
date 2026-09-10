@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+class OperatorSurfaceMode(StrEnum):
+    LEGACY_READ_ONLY = 'legacy_read_only'
+    SHADOW = 'shadow'
+    ACTIVE = 'active'
+
+
+class OperatorRuntimeScope(StrEnum):
+    PRODUCTION = 'production'
+    ISOLATED_CANDIDATE = 'isolated_candidate'
+
+
+_SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 
 class AppSettings(BaseSettings):
@@ -20,6 +35,15 @@ class AppSettings(BaseSettings):
     app_env: str = 'dev'
     default_user_id: str = 'owner'
     data_dir: Path = Path('.nutmeg-data')
+    production_data_dir: Path = Field(
+        default_factory=lambda: (_SOURCE_ROOT / '.nutmeg-data').resolve()
+    )
+    operator_surface_mode: OperatorSurfaceMode = OperatorSurfaceMode.LEGACY_READ_ONLY
+    operator_runtime_scope: OperatorRuntimeScope = OperatorRuntimeScope.PRODUCTION
+    operator_accepted_commit: str = ''
+    operator_token_signing_key: str | None = Field(default=None, repr=False)
+    telegram_update_owner: str = 'openclaw'
+    operator_scheduler_enabled: bool = False
     release_version: str = 'unreleased'
     candidate_commit: str = 'unresolved'
     # Ontology Kernel v2 cutover flag (env NUTMEG_ONTOLOGY_V2). Default off: the live
@@ -79,6 +103,13 @@ class AppSettings(BaseSettings):
     def _csv_to_list(cls, value):
         if isinstance(value, str):
             return [item.strip() for item in value.split(',') if item.strip()]
+        return value
+
+    @field_validator('production_data_dir')
+    @classmethod
+    def _production_data_dir_is_absolute(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            raise ValueError('production_data_dir must be absolute')
         return value
 
     @property

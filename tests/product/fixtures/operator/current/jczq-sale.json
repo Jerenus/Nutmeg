@@ -1,0 +1,27 @@
+{
+  "schema_version": "official-sale-slate-v1",
+  "lane": "jczq",
+  "business_key": "2026-09-05",
+  "published_at": "2026-09-05T10:00:00+08:00",
+  "retrieved_at": "2026-09-05T10:01:00+08:00",
+  "official_source_artifact_retrieval_id": "retrieval-current-jczq-sale",
+  "supersedes_slate_revision_id": null,
+  "offers": [
+    {
+      "canonical_match_id": "match-current-jczq-001",
+      "official_match_no": "周六001",
+      "market_definition_ids": ["md-had", "md-hhad"],
+      "sale_opens_at": "2026-09-05T08:00:00+08:00",
+      "sale_deadline_at": "2026-09-05T18:00:00+08:00",
+      "status": "on_sale"
+    },
+    {
+      "canonical_match_id": "match-current-jczq-002",
+      "official_match_no": "周六002",
+      "market_definition_ids": ["md-crs", "md-had", "md-hhad", "md-ttg"],
+      "sale_opens_at": "2026-09-05T08:00:00+08:00",
+      "sale_deadline_at": "2026-09-05T20:30:00+08:00",
+      "status": "on_sale"
+    }
+  ]
+}

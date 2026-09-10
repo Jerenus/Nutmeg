@@ -91,14 +91,15 @@ def test_invalid_filter_and_naive_as_of_use_standard_422_envelope(
     assert naive_as_of.json()["code"] == "validation_error"
 
 
-def test_identity_merge_still_requires_session_csrf_and_same_origin(
+def test_identity_merge_legacy_http_route_is_retired(
     client: TestClient,
 ) -> None:
     payload = _merge_action_payload()
-    assert client.post("/api/v1/actions", json=payload).status_code == 403
+    before = client.get("/api/v1/actions?limit=500").json()["items"]
+    assert client.post("/api/v1/actions", json=payload).status_code == 405
 
     headers = _session(client)
-    committed = client.post("/api/v1/actions", json=payload, headers=headers)
+    retired = client.post("/api/v1/actions", json=payload, headers=headers)
 
-    assert committed.status_code == 200
-    assert committed.json()["status"] == "committed"
+    assert retired.status_code == 405
+    assert client.get("/api/v1/actions?limit=500").json()["items"] == before

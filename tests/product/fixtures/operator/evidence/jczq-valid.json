@@ -1,0 +1,49 @@
+{
+  "schema_version": "evidence-intake-v1",
+  "lane": "jczq",
+  "business_key": "2026-09-04",
+  "slate_revision_id": "slate-jczq-1",
+  "captured_at": "2026-09-04T10:00:00+08:00",
+  "matches": [
+    {
+      "official_match_no": "周五001",
+      "canonical_match_id": "match-jczq-1",
+      "source_receipts": [
+        {
+          "source_kind": "club_official",
+          "source_run_id": "run-team-1",
+          "artifact_retrieval_id": "retrieval-team-1",
+          "captured_at": "2026-09-04T09:50:00+08:00"
+        }
+      ],
+      "observations": [
+        {
+          "observation_schema": "team_availability_clear_v1",
+          "subject_type": "team",
+          "canonical_subject_id": "team-jczq-home",
+          "valid_from": "2026-09-04T09:50:00+08:00",
+          "valid_to": "2026-09-04T20:00:00+08:00",
+          "observed_at": "2026-09-04T09:50:00+08:00",
+          "verification_method": "official",
+          "value": {
+            "kind": "team_availability_clear_v1",
+            "team_token": "team-jczq-home",
+            "checked_source_kinds": ["credible_media", "club_official"],
+            "lookback_started_at": "2026-09-03T09:50:00+08:00",
+            "lookback_ended_at": "2026-09-04T09:50:00+08:00",
+            "finding_count": 0
+          },
+          "artifact_retrieval_ids": ["retrieval-team-1"]
+        }
+      ],
+      "claims": [],
+      "coverage_receipts": [
+        {
+          "requirement_id": "E5",
+          "subject_scope": "team-jczq-home",
+          "evidence_ref_tokens": ["observation:0"]
+        }
+      ]
+    }
+  ]
+}

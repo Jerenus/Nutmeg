@@ -2,5 +2,9 @@
   <p class="eyebrow">已完成</p>
   <h1>{{ task.step.title }}</h1>
   <p>{{ task.step.summary }}</p>
-  <a class="primary-link" href="/tasks">查看其他任务</a>
+  {% if task_v2 is defined %}
+    <a class="quiet-link" href="/operator-next/{{ task_v2.lane.value }}">返回泳道记录</a>
+  {% else %}
+    <a class="quiet-link" href="/tasks">查看其他任务</a>
+  {% endif %}
 </div>

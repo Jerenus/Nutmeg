@@ -1,7 +1,16 @@
 """Governed human/AI workflow objects and the durable product event outbox."""
 from __future__ import annotations
 
-from sqlalchemy import Column, Float, ForeignKey, Integer, Table, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    Table,
+    Text,
+    UniqueConstraint,
+)
 
 from nutmeg.ontology.repository.schema import metadata
 
@@ -116,4 +125,16 @@ outbox_events = Table(
     Column("payload_json", Text, nullable=False),
     Column("occurred_at", Text, nullable=False),
     UniqueConstraint("action_id", "topic", name="uq_outbox_action_topic"),
+)
+
+operator_projection_cursors = Table(
+    "operator_projection_cursors",
+    metadata,
+    Column("consumer_name", Text, primary_key=True),
+    Column("last_sequence", Integer, nullable=False),
+    Column("updated_at", Text, nullable=False),
+    CheckConstraint(
+        "last_sequence >= 0",
+        name="ck_operator_projection_cursors_sequence",
+    ),
 )

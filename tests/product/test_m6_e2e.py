@@ -1,6 +1,7 @@
 import base64
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from nutmeg.analytics.calibrate_flow import CalibrateRequest
@@ -11,6 +12,13 @@ from nutmeg.ontology.repository.finance import CashAccountRow
 from nutmeg.ontology.repository.market import QuoteRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.actions import ProductActionGateway
+from nutmeg.product.contracts import (
+    ApproveTicketBatchCommand,
+    ConfirmPlacementCommand,
+    CreateTicketBatchCommand,
+    IssueConfirmationCommand,
+    ProductActionRequest,
+)
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.tickets import ProductTicketService
@@ -19,7 +27,6 @@ from tests.product.test_m4_e2e import (
     _batch_for_revision,
     _create_payload,
     _ref,
-    _session,
 )
 from tests.reliability.test_release_policy import (
     COMMIT,
@@ -31,10 +38,10 @@ from tests.reliability.test_release_policy import (
 TICKET_AT = datetime(2026, 8, 24, 10, 30, tzinfo=UTC)
 
 
-def _client_at(seeded_product, current_time: datetime) -> TestClient:
+def _services_at(seeded_product, current_time: datetime):
     kernel = seeded_product.kernel
     repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
-    services = type(
+    return type(
         "M6Services",
         (),
         {
@@ -52,6 +59,9 @@ def _client_at(seeded_product, current_time: datetime) -> TestClient:
             ),
         },
     )()
+
+
+def _client_for(services, current_time: datetime) -> TestClient:
     return TestClient(
         create_product_app(
             services,
@@ -92,26 +102,22 @@ def test_m6_full_product_lifecycle_recovery_and_release_governance(
             )
         )
 
-    client = _client_at(m3_seeded_product, TICKET_AT)
-    headers = _session(client)
+    services = _services_at(m3_seeded_product, TICKET_AT)
+    client = _client_for(services, TICKET_AT)
     assert client.get("/operations").status_code == 200
     assert client.get("/matches/match-1").status_code == 200
 
-    retracted = client.post(
-        "/api/v1/actions",
-        headers=headers,
-        json={
+    retracted = services.actions.execute(
+        ProductActionRequest.model_validate({
             "action_type": "retract_claim",
             "idempotency_key": "m6:e2e:retract-conflict",
             "payload": {"claim_id": "claim-conflict"},
             "expected_versions": {},
-        },
+        })
     )
-    assert retracted.status_code == 200
-    forecast = client.post(
-        "/api/v1/actions",
-        headers=headers,
-        json={
+    assert retracted.status == "committed"
+    forecast = services.actions.execute(
+        ProductActionRequest.model_validate({
             "action_type": "commit_forecast",
             "idempotency_key": "m6:e2e:forecast",
             "payload": {
@@ -128,9 +134,9 @@ def test_m6_full_product_lifecycle_recovery_and_release_governance(
                 "falsifier": "official lineup restores the unavailable starter",
             },
             "expected_versions": {"forecast:match-1:md-had": 1},
-        },
+        })
     )
-    assert forecast.status_code == 200
+    assert forecast.status == "committed"
 
     workbench = client.get(
         "/api/v1/ticket-workbench?date=2026-08-24&"
@@ -139,46 +145,37 @@ def test_m6_full_product_lifecycle_recovery_and_release_governance(
     match = next(
         item for item in workbench.json()["matches"] if item["match_id"] == "match-1"
     )
-    created = client.post(
-        "/api/v1/ticket-batches",
-        headers=headers,
-        json={
+    created = services.tickets.create_batch(
+        CreateTicketBatchCommand.model_validate({
             **_create_payload(match, mode="clean"),
             "idempotency_key": "m6:e2e:create-ticket",
-        },
+        })
     )
-    assert created.status_code == 200
+    assert created.status == "committed"
     revision_id = _ref(created, "ticket_batch_revision")
     batch = _batch_for_revision(client, revision_id)
     assert batch["audit_state"] == "clean"
-    approved = client.post(
-        f'/api/v1/ticket-batches/{batch["ticket_batch_id"]}/approve',
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "expected_revision_no": 1,
-            "idempotency_key": "m6:e2e:approve-ticket",
-        },
+    approved = services.tickets.approve_batch(
+        str(batch["ticket_batch_id"]),
+        ApproveTicketBatchCommand(
+            expected_revision_no=1,
+            idempotency_key="m6:e2e:approve-ticket",
+        ),
     )
-    assert approved.status_code == 200
+    assert approved.status == "committed"
     artifact_id = _ref(approved, "audited_ticket_artifact")
     artifact = client.get(f"/api/v1/ticket-artifacts/{artifact_id}").json()
-    issued = client.post(
-        f"/api/v1/ticket-artifacts/{artifact_id}/confirmations",
-        headers=headers,
-        json={
-            "schema_version": "1",
-            "idempotency_key": "m6:e2e:issue-confirmation",
-        },
+    issued = services.tickets.issue_confirmation(
+        artifact_id,
+        IssueConfirmationCommand(idempotency_key="m6:e2e:issue-confirmation"),
     )
-    assert issued.status_code == 200
-    confirmed = client.post(
-        f"/api/v1/ticket-artifacts/{artifact_id}/confirm",
-        headers=headers,
-        json={
+    assert issued.status == "committed"
+    confirmed = services.tickets.confirm_placement(
+        artifact_id,
+        ConfirmPlacementCommand.model_validate({
             "schema_version": "1",
-            "confirmation_id": issued.json()["confirmation_id"],
-            "nonce": issued.json()["nonce"],
+            "confirmation_id": issued.confirmation_id,
+            "nonce": issued.nonce,
             "ticket_hash": artifact["ticket_hash"],
             "amount": artifact["amount"],
             "currency": artifact["currency"],
@@ -188,9 +185,9 @@ def test_m6_full_product_lifecycle_recovery_and_release_governance(
             "receipt_base64": base64.b64encode(RECEIPT).decode("ascii"),
             "receipt_content_type": "text/plain",
             "idempotency_key": "m6:e2e:confirm-ticket",
-        },
+        }),
     )
-    assert confirmed.status_code == 200
+    assert confirmed.status == "committed"
     ticket_id = _ref(confirmed, "ticket")
 
     settled = kernel.reconcile.settle_match(
@@ -226,10 +223,8 @@ def test_m6_full_product_lifecycle_recovery_and_release_governance(
     assert restored["forecast"]["health"]["state"] in {"available", "stale"}
 
     cursor = client.get("/api/v1/events?after=0&limit=1000").json()["next_cursor"]
-    client.post(
-        "/api/v1/actions",
-        headers=headers,
-        json={
+    services.actions.execute(
+        ProductActionRequest.model_validate({
             "action_type": "record_adjudication",
             "idempotency_key": "m6:e2e:event-after-disconnect",
             "payload": {
@@ -241,21 +236,20 @@ def test_m6_full_product_lifecycle_recovery_and_release_governance(
                 "alternative": {},
             },
             "expected_versions": {},
-        },
+        })
     )
     resumed = client.get(
         f"/api/v1/events/stream?after={cursor}&once=true"
     )
     assert f"id: {cursor + 1}" in resumed.text
 
-    release_client = _client_at(m3_seeded_product, NOW)
-    release_headers = _session(release_client)
+    release_services = _services_at(m3_seeded_product, NOW)
+    release_client = _client_for(release_services, NOW)
     blocked = release_client.get(_release_url()).json()
     assert blocked["ready"] is False
-    blocked_approval = release_client.post(
-        "/api/v1/actions",
-        headers=release_headers,
-        json={
+    with pytest.raises(ValueError):
+        release_services.actions.execute(
+            ProductActionRequest.model_validate({
             "action_type": "approve_release",
             "idempotency_key": "m6:e2e:blocked-approval",
             "payload": {
@@ -267,9 +261,8 @@ def test_m6_full_product_lifecycle_recovery_and_release_governance(
                 "reason": "this must remain blocked without evidence",
             },
             "expected_versions": {},
-        },
-    )
-    assert blocked_approval.status_code == 422
+            })
+        )
     assert 'data-action="approve-release"' not in release_client.get(
         "/release?release_version=v1.0.0&candidate_commit=abc123&"
         "evaluated_at=2026-08-24T12:00:00Z"
@@ -279,10 +272,8 @@ def test_m6_full_product_lifecycle_recovery_and_release_governance(
     _seed_soak(kernel)
     green = release_client.get(_release_url()).json()
     assert green["ready"] is True
-    approved_release = release_client.post(
-        "/api/v1/actions",
-        headers=release_headers,
-        json={
+    approved_release = release_services.actions.execute(
+        ProductActionRequest.model_validate({
             "action_type": "approve_release",
             "idempotency_key": "m6:e2e:green-approval",
             "payload": {
@@ -294,9 +285,9 @@ def test_m6_full_product_lifecycle_recovery_and_release_governance(
                 "reason": "test-only fixture proves the guarded approval path",
             },
             "expected_versions": {},
-        },
+        })
     )
-    assert approved_release.status_code == 200
+    assert approved_release.status == "committed"
     current = release_client.get(_release_url()).json()
     assert current["approval_status"] == "current"
     assert 'data-approval-status="current"' in release_client.get(

@@ -1,0 +1,59 @@
+{% if not read_only %}
+  {% if task.no_ticket.state == "recorded" %}
+    <section class="deployment-recovery" aria-labelledby="task-no-ticket-reopen-title">
+      <h2 id="task-no-ticket-reopen-title">本次范围已记录为不出票</h2>
+      <p>只有仍在截止时间之前且仍开放的销售范围可以由你明确重开。</p>
+      <form class="operator-form deployment-form" data-action="supersede-no-ticket"
+            data-task-key="{{ task.selected.task_id }}">
+        <label class="field-label">
+          <span>重开理由</span>
+          <textarea name="supersede_reason" rows="4" required></textarea>
+        </label>
+        <button class="secondary-command" type="submit">重开仍开放范围</button>
+      </form>
+    </section>
+  {% else %}
+    <details class="no-ticket-panel">
+      <summary class="secondary-action no-ticket-toggle">明确不出票</summary>
+      <form class="operator-form no-ticket-form" data-action="record-no-ticket"
+            data-task-key="{{ task.selected.task_id }}">
+        <label class="field-label">
+          <span>理由类型</span>
+          <select name="reason_code" required>
+            <option value="" selected disabled>请选择理由</option>
+            <option value="human_all_dice">你判断本场组合缺乏可区分依据</option>
+            <option value="evidence_incomplete">关键证据未完成</option>
+            <option value="no_compliant_structure_within_cap">帽内没有合规结构</option>
+            <option value="discipline_brake">纪律刹车</option>
+            <option value="operator_discretion">其他人工裁决</option>
+          </select>
+        </label>
+        <fieldset>
+          <legend>理由依据</legend>
+          <div class="option-list">
+            <label><input type="radio" name="reason_basis"
+                          value="operator_judgment" required>人工判断</label>
+            <label><input type="radio" name="reason_basis"
+                          value="rule_derived" required>命名规则</label>
+          </div>
+        </fieldset>
+        {% if task.no_ticket.rule_options %}
+          <fieldset>
+            <legend>引用规则（规则派生时必选）</legend>
+            <div class="option-list">
+              {% for rule in task.no_ticket.rule_options %}
+                <label><input type="checkbox" name="rule_index"
+                              value="{{ loop.index0 }}">{{ rule.label }}</label>
+              {% endfor %}
+            </div>
+          </fieldset>
+        {% endif %}
+        <label class="field-label">
+          <span>说明</span>
+          <textarea name="reason_text" rows="4" required></textarea>
+        </label>
+        <button class="secondary-command" type="submit">记录本次不出票</button>
+      </form>
+    </details>
+  {% endif %}
+{% endif %}

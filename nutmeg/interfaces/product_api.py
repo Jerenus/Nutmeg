@@ -15,13 +15,13 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from nutmeg.interfaces.operator_ui import mount_operator_ui
+from nutmeg.interfaces.operator_api import mount_operator_api
+from nutmeg.interfaces.operator_ui import mount_operator_rollout_routes, mount_operator_ui
 from nutmeg.interfaces.product_ui import mount_product_ui
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.errors import IdempotencyConflictError, OptimisticConcurrencyError
 from nutmeg.product.contracts import (
     ApproveTicketBatchCommand,
-    ConfirmPlacementCommand,
     CopilotRequest,
     CreateTicketBatchCommand,
     IssueConfirmationCommand,
@@ -42,10 +42,20 @@ from nutmeg.product.errors import (
 )
 from nutmeg.product.operator_contracts import (
     GradePredictionCommand,
+    OperatorLane,
+    OperatorLaneResponseV1,
+    OperatorMaintenanceResponseV1,
+    OperatorTaskDetailV1,
+    OperatorTodayResponseV1,
     RecordDeploymentCommand,
     RequestTelegramConfirmationCommand,
     ResolveIssueAdjudicationCommand,
     SelectTicketVersionCommand,
+)
+from nutmeg.product.operator_runtime import (
+    OperatorRuntimeConfig,
+    OperatorRuntimeScope,
+    OperatorSurfaceMode,
 )
 from nutmeg.reliability.metrics import RouteMetricsRegistry
 
@@ -58,6 +68,7 @@ def create_product_app(
     csrf_secret: str | None = None,
     *,
     clock: Callable[[], datetime] | None = None,
+    runtime_config: OperatorRuntimeConfig | None = None,
 ) -> FastAPI:
     """Create one process-local, single-user application boundary."""
     now = clock or (lambda: datetime.now(UTC))
@@ -67,9 +78,73 @@ def create_product_app(
         session_key, b'nutmeg-local-session', hashlib.sha256
     ).hexdigest()
     csrf_token = hmac.new(csrf_key, session_token.encode(), hashlib.sha256).hexdigest()
+    runtime = runtime_config or getattr(services, 'runtime', None)
+    if runtime is None:
+        data_dir = services.settings.data_dir.resolve()
+        runtime = OperatorRuntimeConfig(
+            surface_mode=OperatorSurfaceMode.LEGACY_READ_ONLY,
+            runtime_scope=OperatorRuntimeScope.PRODUCTION,
+            data_dir=data_dir,
+            production_data_dir=data_dir,
+            running_commit='unresolved',
+        )
 
-    app = FastAPI(title='Nutmeg Intelligence OS', version='1')
+    infrastructure_workers = getattr(services, 'infrastructure_workers', None)
+    app = FastAPI(
+        title='Nutmeg Intelligence OS',
+        version='1',
+        lifespan=(
+            None
+            if infrastructure_workers is None
+            else infrastructure_workers.lifespan
+        ),
+    )
     route_metrics = RouteMetricsRegistry()
+
+    mount_operator_rollout_routes(app, runtime)
+
+    @app.middleware('http')
+    async def guard_retired_mutations(request: Request, call_next):
+        if request.method in {
+            'POST',
+            'PUT',
+            'PATCH',
+            'DELETE',
+        }:
+            path = request.url.path
+            legacy_write = (
+                path == '/api/v1/actions'
+                or path == '/api/v1/ticket-batches'
+                or path.startswith('/api/v1/ticket-batches/')
+                or path.startswith('/api/v1/ticket-artifacts/')
+                or (
+                    path.startswith('/api/v1/operator/tasks/')
+                    and path.rsplit('/', 1)[-1]
+                    in {
+                        'adjudications',
+                        'candidate',
+                        'deployment',
+                        'telegram-confirmation',
+                        'grade-prediction',
+                    }
+                )
+                or (path.startswith('/api/v1/matches/') and path.endswith('/copilot'))
+            )
+            v2_write = path.startswith('/api/v2/')
+            exact_v2_allowed = (
+                path == '/api/v2/operator'
+                and request.method == 'POST'
+                and runtime.surface_mode is OperatorSurfaceMode.ACTIVE
+            )
+            if legacy_write or (v2_write and not exact_v2_allowed):
+                return JSONResponse(
+                    status_code=405,
+                    content={
+                        'code': 'method_not_allowed',
+                        'message': 'this mutation route is not available',
+                    },
+                )
+        return await call_next(request)
 
     @app.middleware('http')
     async def observe_allowlisted_route(request: Request, call_next):
@@ -222,6 +297,56 @@ def create_product_app(
             raise HTTPException(status_code=403, detail='valid CSRF token is required')
         if origin != expected_origin:
             raise HTTPException(status_code=403, detail='same-origin request is required')
+
+    if runtime.surface_mode is OperatorSurfaceMode.ACTIVE:
+        mount_operator_api(
+            app,
+            require_mutation_session=require_mutation_session,
+            operator_actions=services.operator_actions,
+            actor_id=services.settings.default_user_id,
+        )
+
+    if runtime.surface_mode is not OperatorSurfaceMode.LEGACY_READ_ONLY:
+
+        @app.get('/api/v2/operator/today', response_model=OperatorTodayResponseV1)
+        async def operator_today_v2(
+            as_of: Annotated[datetime | None, Query()] = None,
+        ):
+            return services.operator_queries.today(as_of=as_of or now())
+
+        @app.get(
+            '/api/v2/operator/lanes/{lane}',
+            response_model=OperatorLaneResponseV1,
+        )
+        async def operator_lane_v2(
+            lane: OperatorLane,
+            as_of: Annotated[datetime | None, Query()] = None,
+        ):
+            return services.operator_queries.lane(lane, as_of=as_of or now())
+
+        @app.get(
+            '/api/v2/operator/tasks/{lane}/{business_key}',
+            response_model=OperatorTaskDetailV1,
+        )
+        async def operator_task_v2(
+            lane: OperatorLane,
+            business_key: str,
+            as_of: Annotated[datetime | None, Query()] = None,
+        ):
+            return services.operator_queries.task_v2(
+                lane,
+                business_key,
+                as_of=as_of or now(),
+            )
+
+        @app.get(
+            '/api/v2/operator/maintenance',
+            response_model=OperatorMaintenanceResponseV1,
+        )
+        async def operator_maintenance_v2(
+            as_of: Annotated[datetime | None, Query()] = None,
+        ):
+            return services.operator_queries.maintenance(as_of=as_of or now())
 
     @app.get('/api/v1/session')
     async def session() -> JSONResponse:
@@ -496,16 +621,6 @@ def create_product_app(
             services.tickets.issue_confirmation(ticket_artifact_id, command)
         )
 
-    @app.post('/api/v1/ticket-artifacts/{ticket_artifact_id}/confirm')
-    async def confirm_ticket_placement(
-        ticket_artifact_id: str,
-        command: ConfirmPlacementCommand,
-        _session: None = Depends(require_mutation_session),
-    ):
-        return ticket_action_response(
-            services.tickets.confirm_placement(ticket_artifact_id, command)
-        )
-
     @app.get('/api/v1/lineage/{object_type}/{object_id}')
     async def lineage(object_type: str, object_id: str):
         return services.queries.lineage(object_type, object_id)
@@ -570,8 +685,15 @@ def create_product_app(
             last_activity = time.monotonic()
             while True:
                 page = services.queries.events(after=cursor, limit=100)
-                if page.items:
-                    for event in page.items:
+                projection_signals = getattr(services, "projection_signals", None)
+                items = page.items
+                if projection_signals is not None:
+                    delivered = projection_signals.delivered_sequence
+                    items = [
+                        event for event in items if event.sequence <= delivered
+                    ]
+                if items:
+                    for event in items:
                         payload = canonical_json(event.model_dump(mode='json'))
                         yield (
                             f'id: {event.sequence}\n'
@@ -585,7 +707,14 @@ def create_product_app(
                 if time.monotonic() - last_activity >= 15:
                     yield ': heartbeat\n\n'
                     last_activity = time.monotonic()
-                await asyncio.sleep(0.5)
+                if projection_signals is None:
+                    await asyncio.sleep(0.5)
+                else:
+                    await asyncio.to_thread(
+                        projection_signals.wait_for_delivery,
+                        after=cursor,
+                        timeout_seconds=0.5,
+                    )
 
         return StreamingResponse(
             generate(),
@@ -593,6 +722,19 @@ def create_product_app(
             headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
         )
 
-    mount_operator_ui(app, services, now)
+    mount_operator_ui(
+        app,
+        services,
+        now,
+        mount_root=runtime.runtime_scope is OperatorRuntimeScope.PRODUCTION,
+        mount_next=(
+            runtime.surface_mode is OperatorSurfaceMode.SHADOW
+            or (
+                runtime.runtime_scope is OperatorRuntimeScope.ISOLATED_CANDIDATE
+                and runtime.surface_mode is OperatorSurfaceMode.ACTIVE
+            )
+        ),
+        read_only=runtime.surface_mode is not OperatorSurfaceMode.ACTIVE,
+    )
     mount_product_ui(app, services, now)
     return app

@@ -31,7 +31,19 @@ class MarketActions:
             'snapshot_kind': request.snapshot_kind,
             'as_of': request.as_of,
             'provider': request.provider,
-            'selections': [quote.selection_id for quote in request.quotes],
+            'artifact_retrieval_id': request.artifact_retrieval_id,
+            'quotes': [
+                {
+                    'market_definition_id': quote.market_definition_id,
+                    'selection_id': quote.selection_id,
+                    'decimal_odds': quote.decimal_odds,
+                    'bookmaker': quote.bookmaker,
+                    'settlement_parameter_decimal': (
+                        quote.settlement_parameter_decimal
+                    ),
+                }
+                for quote in request.quotes
+            ],
         }
         command = ActionCommand.create(
             action_type='build_market_snapshot',
@@ -56,6 +68,9 @@ class MarketActions:
                         provider=request.provider,
                         bookmaker=quote.bookmaker,
                         decimal_odds=quote.decimal_odds,
+                        settlement_parameter_decimal=(
+                            quote.settlement_parameter_decimal
+                        ),
                         captured_at=request.as_of,
                         artifact_retrieval_id=request.artifact_retrieval_id,
                         quote_status='active',
