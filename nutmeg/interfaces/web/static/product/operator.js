@@ -1,9 +1,20 @@
 (() => {
   "use strict";
 
-  if (document.body.dataset.readOnly === "true") return;
-
   const feedback = document.querySelector("#action-feedback");
+  const focusStorageKey = "nutmeg.operator.focus-after-command";
+
+  function restoreCommandFocus() {
+    if (sessionStorage.getItem(focusStorageKey) !== "true") return;
+    sessionStorage.removeItem(focusStorageKey);
+    const target = document.querySelector("[data-primary-command='true'] button")
+      || document.querySelector("[data-primary-command='true']")
+      || document.querySelector("#main-content");
+    if (target) target.focus();
+  }
+
+  restoreCommandFocus();
+  if (document.body.dataset.readOnly === "true") return;
 
   function commaValues(value) {
     return value.split(",").map((item) => item.trim()).filter(Boolean);
@@ -26,28 +37,34 @@
       body: JSON.stringify(payload),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.message || result.code);
+    if (!response.ok) {
+      const error = new Error(result.message || result.code);
+      error.recoveryHref = result.details?.recovery_href || null;
+      throw error;
+    }
     return result;
   }
 
-  function taskSnapshotToken(hexDigest) {
-    const bytes = hexDigest.match(/.{2}/g).map((pair) => Number.parseInt(pair, 16));
-    const binary = String.fromCharCode(...bytes);
-    return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  function taskCoordinates(taskKey) {
+    const separator = taskKey.indexOf(":");
+    if (separator < 1 || separator === taskKey.length - 1) {
+      throw new Error("当前任务标识无效，请返回 Today 重新进入。");
+    }
+    return [taskKey.slice(0, separator), taskKey.slice(separator + 1)];
   }
 
   async function currentOperatorTask(form) {
     const taskKey = form.dataset.taskKey;
-    const response = await fetch(`/api/v1/operator/tasks/${encodeURIComponent(taskKey)}`, {
+    const [lane, businessKey] = taskCoordinates(taskKey);
+    const response = await fetch(
+      `/api/v2/operator/tasks/${encodeURIComponent(lane)}/${encodeURIComponent(businessKey)}`,
+      {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
-    });
+      },
+    );
     const task = await response.json();
     if (!response.ok) throw new Error(task.message || task.code || "无法刷新当前任务。");
-    const pageToken = form.closest("[data-snapshot-token]").dataset.snapshotToken;
-    if (pageToken !== taskSnapshotToken(task.mutation_token)) {
-      throw new Error("页面数据已经变化，请刷新后重试。");
-    }
     return task;
   }
 
@@ -60,12 +77,17 @@
     controls.forEach((control) => { control.disabled = true; });
     if (feedback) feedback.textContent = "正在保存…";
     try {
-      await operation();
+      const result = await operation();
       if (feedback) feedback.textContent = "已保存，正在进入下一步。";
-      window.location.reload();
+      sessionStorage.setItem(focusStorageKey, "true");
+      window.location.assign(result.navigation_href || window.location.pathname);
     } catch (error) {
       controls.forEach((control) => { control.disabled = false; });
       if (feedback) feedback.textContent = error.message || "保存失败，请重试。";
+      if (error.recoveryHref) {
+        sessionStorage.setItem(focusStorageKey, "true");
+        window.location.assign(error.recoveryHref);
+      }
     }
   }
 
@@ -96,7 +118,8 @@
     event.preventDefault();
     const values = new FormData(form);
     const action = form.dataset.action;
-    const expectedToken = form.closest("[data-snapshot-token]").dataset.snapshotToken;
+    const legacySnapshot = form.closest("[data-snapshot-token]");
+    const expectedToken = legacySnapshot ? legacySnapshot.dataset.snapshotToken : null;
 
     if (action === "create-ticket-batch") {
       return submit(form, async () => {
@@ -161,6 +184,122 @@
           idempotency_key: `ui:operator:request-confirmation:${crypto.randomUUID()}`,
           task_key: form.dataset.taskKey,
           ticket_artifact_token: step.ticket_artifact_token,
+        });
+      });
+    }
+
+    if (action === "request-settlement") {
+      return submit(form, async () => {
+        const step = await currentOperatorStep(form);
+        return postJson("/api/v2/operator", {
+          schema_version: "2",
+          kind: "request_settlement",
+          expected_snapshot_token: step.settlement_command_token,
+          idempotency_key: `ui:operator:request-settlement:${crypto.randomUUID()}`,
+          task_key: form.dataset.taskKey,
+        });
+      });
+    }
+
+    if (action === "grade-prediction-v2") {
+      return submit(form, async () => {
+        const step = await currentOperatorStep(form);
+        const forecast = step.forecast_truth.find(
+          (item) => item.prediction_review_token === form.dataset.predictionToken,
+        );
+        if (!forecast) throw new Error("预测复盘项已经变化，请刷新后重试。");
+        return postJson("/api/v2/operator", {
+          schema_version: "2",
+          kind: "grade_prediction",
+          expected_snapshot_token: forecast.grade_command_token,
+          idempotency_key: `ui:operator:grade-prediction:${crypto.randomUUID()}`,
+          task_key: form.dataset.taskKey,
+          prediction_review_token: forecast.prediction_review_token,
+          outcome: values.get("outcome"),
+          reason: values.get("reason"),
+        });
+      });
+    }
+
+    if (action === "record-scoreboard-effect") {
+      return submit(form, async () => {
+        const step = await currentOperatorStep(form);
+        const intervention = step.intervention_quality;
+        const disposition = values.get("disposition");
+        return postJson("/api/v2/operator", {
+          schema_version: "2",
+          kind: "record_scoreboard_effect_disposition",
+          expected_snapshot_token: intervention.effect_command_token,
+          idempotency_key: `ui:operator:review-effect:${crypto.randomUUID()}`,
+          task_key: form.dataset.taskKey,
+          review_token: intervention.review_token,
+          effect: {
+            disposition,
+            metric_keys: disposition === "effect_required"
+              ? commaValues(values.get("metric_keys"))
+              : [],
+            reason: values.get("reason"),
+          },
+        });
+      });
+    }
+
+    if (action === "record-scoreboard-observation") {
+      return submit(form, async () => {
+        const step = await currentOperatorStep(form);
+        const intervention = step.intervention_quality;
+        const metricKey = form.dataset.metricKey;
+        if (!intervention.required_metric_keys.includes(metricKey)) {
+          throw new Error("治理指标已经变化，请刷新后重试。");
+        }
+        const optionalDecimal = (name) => {
+          const value = values.get(name).trim();
+          return value === "" ? null : value;
+        };
+        return postJson("/api/v2/operator", {
+          schema_version: "2",
+          kind: "record_scoreboard_observation",
+          expected_snapshot_token: intervention.observation_command_token,
+          idempotency_key: `ui:operator:review-observation:${crypto.randomUUID()}`,
+          task_key: form.dataset.taskKey,
+          review_token: intervention.review_token,
+          disposition_token: intervention.disposition_token,
+          observation: {
+            group_key: "review-effect",
+            metric_key: metricKey,
+            tally: values.get("tally"),
+            detail: values.get("detail"),
+            status: values.get("status"),
+            numerator_decimal: optionalDecimal("numerator_decimal"),
+            denominator_decimal: optionalDecimal("denominator_decimal"),
+            value_decimal: optionalDecimal("value_decimal"),
+            unit: values.get("unit"),
+            evidence_ref_tokens: values.getAll("evidence_ref_token"),
+            effective_at: new Date().toISOString(),
+            supersedes_observation_token: null,
+          },
+        });
+      });
+    }
+
+    if (action === "request-scoreboard-review-completion") {
+      return submit(form, async () => {
+        const step = await currentOperatorStep(form);
+        const intervention = step.intervention_quality;
+        const shadowToken = values.get("shadow_review_token");
+        const selected = intervention.shadow_options.find(
+          (item) => item.token === shadowToken && item.state === "ready",
+        );
+        if (!selected) throw new Error("影子核对记录已经变化，请刷新后重试。");
+        return postJson("/api/v2/operator", {
+          schema_version: "2",
+          kind: "request_scoreboard_review_completion",
+          expected_snapshot_token: intervention.completion_command_token,
+          idempotency_key: `ui:operator:review-completion:${crypto.randomUUID()}`,
+          task_key: form.dataset.taskKey,
+          review_token: intervention.review_token,
+          disposition_token: intervention.disposition_token,
+          shadow_review_token: selected.token,
         });
       });
     }
@@ -285,6 +424,13 @@
         bundle_code: input.value,
         face_codes: commaValues(input.dataset.faceCodes),
       }));
+      const facePrecedents = [...form.querySelectorAll("[data-precedent-row]")]
+        .map((row) => ({
+          face_code: row.dataset.precedentFaceCode,
+          precedent_ref: row.querySelector('input[name="precedent_ref"]').value.trim(),
+          status: row.querySelector('select[name="precedent_status"]').value,
+        }))
+        .filter((precedent) => precedent.precedent_ref !== "");
       return submit(form, () => postJson("/api/v2/operator", {
         schema_version: "2",
         kind: "commit_match_judgment",
@@ -304,6 +450,8 @@
         evidence_ref_tokens: values.getAll("judgment_evidence_ref_token"),
         falsifier: values.get("falsifier"),
         rationale: values.get("rationale"),
+        anchor_integrity: values.get("anchor_integrity"),
+        face_precedents: facePrecedents,
       }));
     }
 
@@ -426,5 +574,5 @@
   });
 
   const waiting = document.querySelector("[data-auto-refresh='waiting']");
-  if (waiting) window.setTimeout(() => window.location.reload(), 15000);
+  if (waiting) window.setTimeout(() => window.location.assign(window.location.href), 15000);
 })();

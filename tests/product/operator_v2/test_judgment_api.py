@@ -336,6 +336,14 @@ def _judgment_document(**updates: object) -> dict[str, object]:
         "evidence_ref_tokens": ["opaque.evidence-1"],
         "falsifier": "首发阵容不再支持已登记的结构前提。",
         "rationale": "依据冻结证据登记本场判断。",
+        "anchor_integrity": "pass",
+        "face_precedents": [
+            {
+                "face_code": "0",
+                "precedent_ref": "2026-05-12 同场地同型 1:0 主胜",
+                "status": "dead",
+            }
+        ],
     }
     document.update(updates)
     return document
@@ -438,6 +446,7 @@ def test_real_service_delegates_envelope_with_server_resolved_lineage() -> None:
         "task_key": "jczq:2026-09-04",
         "source_high_watermark": None,
         "projection_high_watermark": None,
+        "navigation_href": "/operator-next/jczq/2026-09-04",
     }
     kind, request = decision_actions.calls[0]
     assert kind == "envelope"
@@ -1063,3 +1072,44 @@ def test_real_judgment_page_exposes_only_opaque_evidence_references(
         "quote-0",
     ):
         assert internal_reference not in judgment_page.text
+
+
+def test_judgment_command_carries_the_operator_structure_facts() -> None:
+    actions = _Actions()
+
+    response = _client(actions).post("/api/v2/operator", json=_judgment_document())
+
+    assert response.status_code == 200
+    _kind, command, _actor_id, _actor_role = actions.calls[0]
+    assert command.anchor_integrity == "pass"
+    assert command.face_precedents[0].face_code == "0"
+    assert command.face_precedents[0].status == "dead"
+
+
+def test_judgment_command_rejects_structure_facts_outside_the_closed_vocabulary() -> None:
+    client = _client(_Actions())
+
+    for document in (
+        _judgment_document(anchor_integrity="solid"),
+        _judgment_document(
+            face_precedents=[
+                {"face_code": "9", "precedent_ref": "unknown face", "status": "dead"}
+            ]
+        ),
+        _judgment_document(
+            face_precedents=[
+                {"face_code": "0", "precedent_ref": "same venue", "status": "maybe"}
+            ]
+        ),
+        _judgment_document(
+            face_precedents=[
+                {
+                    "face_code": "0",
+                    "precedent_ref": "same venue",
+                    "status": "dead",
+                    "confidence": "high",
+                }
+            ]
+        ),
+    ):
+        assert client.post("/api/v2/operator", json=document).status_code == 422

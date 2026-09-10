@@ -44,13 +44,22 @@
             {% for face in task.step.editor.faces %}
               <label class="probability-row">
                 <strong>{{ face.face_label }}</strong>
-                <span>{{ face.prior_probability_decimal }}</span>
-                <span>{{ face.movement_pp_decimal }} pp</span>
-                <input type="text" inputmode="decimal" name="belief_probability_decimal"
-                       data-face-code="{{ face.face_code }}"
-                       value="{{ face.belief_probability_decimal }}"
-                       pattern="(?:0\.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]|1\.000000000000)"
-                       required>
+                <span class="probability-cell">
+                  <small class="probability-mobile-label">市场先验</small>
+                  <span>{{ "{:.4f}".format(face.prior_probability_decimal|float) }}</span>
+                </span>
+                <span class="probability-cell">
+                  <small class="probability-mobile-label">盘面变化</small>
+                  <span>{{ "{:+.2f}".format(face.movement_pp_decimal|float) }} pp</span>
+                </span>
+                <span class="probability-cell probability-belief">
+                  <small class="probability-mobile-label">你的概率</small>
+                  <input type="text" inputmode="decimal" name="belief_probability_decimal"
+                         data-face-code="{{ face.face_code }}"
+                         value="{{ face.belief_probability_decimal }}"
+                         pattern="(?:0\.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]|1\.000000000000)"
+                         required>
+                </span>
               </label>
             {% endfor %}
           </div>
@@ -96,6 +105,54 @@
                        data-face-codes="{{ bundle.face_codes|join(',') }}">
                 <span>{{ bundle.face_codes|join(' / ') }}</span>
               </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>锚方结构完整度</legend>
+          <p class="field-hint">
+            锚方有洞就不许裸单（C5），也不许靠双选把一面判死（C13）。这是判断，不是软件推的。
+          </p>
+          <div class="option-list">
+            {% for state, label in [
+              ("pass", "完整 —— 中轴与破门机制齐全"),
+              ("fail", "有洞 —— 锚方结构完整度 FAIL"),
+              ("symmetric_damage", "对称受损 —— 两侧同时缺"),
+              ("unknown", "未判 —— 本场没读到结构"),
+            ] %}
+              <label>
+                <input type="radio" name="anchor_integrity" value="{{ state }}" required>
+                <span>{{ label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>被排面先例</legend>
+          <p class="field-hint">
+            同场地同型先例是机制样本，不是 form。被排面上留着活先例要双证（C7）；
+            被排面高于 20% 而先例载体仍在，就是买方差不是省钱（C14）。没有就留空。
+          </p>
+          <div class="precedent-list">
+            {% for face in task.step.editor.faces %}
+              <div class="precedent-row" data-precedent-row
+                   data-precedent-face-code="{{ face.face_code }}">
+                <span class="precedent-face">{{ face.face_label }}</span>
+                <label class="field-label">
+                  <span>同场地同型先例</span>
+                  <input type="text" name="precedent_ref" maxlength="500"
+                         data-face-code="{{ face.face_code }}">
+                </label>
+                <label class="field-label">
+                  <span>载体状态</span>
+                  <select name="precedent_status" data-face-code="{{ face.face_code }}">
+                    <option value="dead">载体已不在（可以排）</option>
+                    <option value="alive">载体仍在（活先例）</option>
+                  </select>
+                </label>
+              </div>
             {% endfor %}
           </div>
         </fieldset>

@@ -27,6 +27,7 @@ from nutmeg.ontology.operator.models import (
     MarketPriorBaselineProbabilityRow,
     MarketPriorBaselineRevisionRow,
     OperatorMatchJudgmentRevisionRow,
+    OperatorMatchJudgmentStructureFacts,
     OperatorWorkerJobRow,
     TaskEvidenceBundleItemRow,
     TaskEvidenceBundleRevisionRow,
@@ -739,6 +740,32 @@ class OperatorDecisionRepository:
         )
         return MarketPriorBaselineRevisionRow(**dict(row)) if row is not None else None
 
+    def baseline_work_item_ids_for_task_snapshot(
+        self,
+        *,
+        task_family_id: str,
+        task_snapshot_hash: str,
+        slate_revision_id: str,
+    ) -> tuple[str, ...]:
+        rows = self._connection.execute(
+            select(
+                sod.operator_market_prior_baseline_revisions.c.work_item_id
+            )
+            .where(
+                sod.operator_market_prior_baseline_revisions.c.task_family_id
+                == task_family_id,
+                sod.operator_market_prior_baseline_revisions.c.task_snapshot_hash
+                == task_snapshot_hash,
+                sod.operator_market_prior_baseline_revisions.c.slate_revision_id
+                == slate_revision_id,
+            )
+            .distinct()
+            .order_by(
+                sod.operator_market_prior_baseline_revisions.c.work_item_id
+            )
+        ).scalars()
+        return tuple(str(work_item_id) for work_item_id in rows)
+
     def market_prior_baseline_probabilities(
         self, revision_id: str
     ) -> tuple[dict[str, object], ...]:
@@ -913,6 +940,8 @@ class OperatorDecisionRepository:
     def insert_operator_match_judgment_children(
         self,
         *,
+        anchor_facts: tuple[dict[str, object], ...] = (),
+        face_precedents: tuple[dict[str, object], ...] = (),
         probabilities: tuple[dict[str, object], ...],
         factor_adjustments: tuple[dict[str, object], ...],
         factor_offsets: tuple[dict[str, object], ...],
@@ -923,6 +952,8 @@ class OperatorDecisionRepository:
         evidence_refs: tuple[dict[str, object], ...],
     ) -> None:
         batches = (
+            (sod.operator_match_judgment_anchor_facts, anchor_facts),
+            (sod.operator_match_judgment_face_precedents, face_precedents),
             (sod.operator_match_judgment_probabilities, probabilities),
             (sod.operator_match_judgment_factor_adjustments, factor_adjustments),
             (sod.operator_match_judgment_factor_offsets, factor_offsets),
@@ -935,6 +966,40 @@ class OperatorDecisionRepository:
         for table, values in batches:
             if values:
                 self._connection.execute(insert(table), list(values))
+
+    def operator_match_judgment_structure_facts(
+        self, revision_id: str
+    ) -> OperatorMatchJudgmentStructureFacts:
+        """Read the operator-authored facts C5/C7/C13/C14 need for this revision."""
+        anchor = self._connection.execute(
+            select(sod.operator_match_judgment_anchor_facts.c.anchor_integrity).where(
+                sod.operator_match_judgment_anchor_facts.c.
+                operator_match_judgment_revision_id
+                == revision_id
+            )
+        ).scalar_one_or_none()
+        precedents = (
+            self._connection.execute(
+                select(
+                    sod.operator_match_judgment_face_precedents.c.face_code,
+                    sod.operator_match_judgment_face_precedents.c.precedent_ref,
+                    sod.operator_match_judgment_face_precedents.c.status,
+                )
+                .where(
+                    sod.operator_match_judgment_face_precedents.c.
+                    operator_match_judgment_revision_id
+                    == revision_id
+                )
+                .order_by(sod.operator_match_judgment_face_precedents.c.precedent_index)
+            )
+            .all()
+        )
+        return OperatorMatchJudgmentStructureFacts(
+            anchor_integrity="unknown" if anchor is None else str(anchor),
+            face_precedents=tuple(
+                (str(row[0]), str(row[1]), str(row[2])) for row in precedents
+            ),
+        )
 
     def operator_match_judgment_revision(
         self, revision_id: str

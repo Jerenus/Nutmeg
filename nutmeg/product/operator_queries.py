@@ -26,9 +26,17 @@ from nutmeg.decision.zucai_deployment import (
 )
 from nutmeg.decision.zucai_official import OfficialRenjiuHistory
 from nutmeg.decision.zucai_optimizer import optimize
+from nutmeg.ontology.actions.models import ObjectRef
 from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
+from nutmeg.ontology.operator.confirmation import effective_artifact_cutoff
+from nutmeg.ontology.operator.review_actions import (
+    ShadowReviewTokenCodec,
+    ShadowReviewTokenPayload,
+)
 from nutmeg.ontology.repository import schema_decision as sd
 from nutmeg.ontology.repository import schema_operator_decision as sod
+from nutmeg.ontology.repository import schema_scoreboard as ss
+from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.product.errors import ProductActionBlockedError, ProductNotFoundError
 from nutmeg.product.operator_artifacts import (
     OperatorArtifactError,
@@ -63,8 +71,12 @@ from nutmeg.product.operator_contracts import (
     LedgerStep,
     MatchJudgmentEditorView,
     NoTicketControl,
+    OperatorAuditEnvelopeV1,
+    OperatorAuditLineageItemV1,
+    OperatorAuditProjectionV1,
     OperatorEvidenceResponse,
     OperatorLane,
+    OperatorMaintenanceResponseV1,
     OperatorRecoverySummary,
     OperatorTaskResponse,
     OperatorTaskState,
@@ -72,10 +84,27 @@ from nutmeg.product.operator_contracts import (
     OperatorWorklistResponse,
     PrepareStep,
     PrescriptionDifferenceSummary,
+    ResultMatchSummary,
+    ResultPrizeTierSummary,
+    ResultSourceSummary,
+    ReviewAdjudicationSummary,
+    ReviewCompletionGateSummary,
+    ReviewEvidenceOptionSummary,
+    ReviewForecastSummary,
+    ReviewInterventionSummary,
     ReviewItemSummary,
+    ReviewMoneySummary,
+    ReviewScoreboardObservationSummary,
+    ReviewShadowOptionSummary,
     ReviewStep,
+    SettlementCashEntrySummary,
+    SettlementLegSummary,
+    SettlementNoteSummary,
+    SettlementTicketSummary,
     StepView,
     TaskProgressSummary,
+    TaskSettlementRunSummary,
+    TaskSettlementSkipSummary,
     TicketVersionSummary,
 )
 from nutmeg.product.operator_evidence import OperatorEvidenceService
@@ -83,25 +112,33 @@ from nutmeg.product.operator_lanes import (
     JczqLaneAdapter,
     NoTicketClosure,
     SaleSlateSnapshot,
+    ScopeKind,
     ZucaiLaneAdapter,
     derive_sale_wave,
 )
 from nutmeg.product.operator_state import (
     NEXT_ACTION_LABELS,
     OperatorTaskFacts,
+    is_passive_expired_deployment,
     priority_key,
     resolve_state,
 )
 from nutmeg.product.operator_tokens import (
     OperatorCommandKind,
     OperatorSnapshotTokenCodec,
+    OperatorSnapshotTokenError,
     OperatorSnapshotTokenPayloadV1,
+)
+from nutmeg.product.operator_workbench import (
+    OperatorWorkbenchAssembler,
+    schedule_recovery_views,
 )
 from nutmeg.product.queries import ProductQueryService
 from nutmeg.product.repository import ProductReadRepository
 
 if TYPE_CHECKING:
     from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+    from nutmeg.product.operator_maintenance import OperatorMaintenanceProbe
 
 
 def _renjiu_history_window(issue: str, *, available_rows: int) -> int:
@@ -145,6 +182,23 @@ _REQUIREMENT_STATE_LABELS = {
     "stale": "过期",
     "conflict": "冲突未清",
 }
+_RESULT_SOURCE_LABELS = {
+    "api_football": "API-Football",
+    "sporttery_game90": "官方竞彩",
+    "okooo_manual": "人工核对",
+}
+_PRIZE_TIER_LABELS = {
+    "sfc_first": "胜负彩一等奖",
+    "sfc_second": "胜负彩二等奖",
+    "renjiu_first": "任九一等奖",
+}
+_SETTLEMENT_METHOD_LABELS = {
+    "operator-task-settlement-v1": "确定性整单结算 v1",
+}
+_ROUNDING_POLICY_LABELS = {
+    "cn_sporttery_jczq_v1": "竞彩逐注四舍五入 v1",
+    None: "足彩固定奖金整数结算",
+}
 
 
 class _OfficialHistoryUnavailable(RuntimeError):
@@ -158,6 +212,93 @@ class _BuiltTask:
     progress: TaskProgressSummary
     step: StepView
     mutation_token: str
+    work_item_identity: str | None = None
+    scope_kind: ScopeKind | None = None
+    projected_state: OperatorTaskState | None = None
+    deployment_outcome: str | None = None
+    scope_label: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _SettlementProjection:
+    state: str
+    command_token: str | None = None
+    request_state: str = "not_requested"
+    placed_ticket_count: int = 0
+    settled_ticket_count: int = 0
+    blocking_codes: tuple[str, ...] = ()
+    last_run: TaskSettlementRunSummary | None = None
+    currency: str | None = None
+    total_stake_minor: int = 0
+    total_payout_minor: int = 0
+    tickets: tuple[SettlementTicketSummary, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorAuditLocator:
+    lane: OperatorLane
+    business_key: str
+    work_item_key: str
+    task_snapshot_hash: str
+
+
+class OperatorAuditTokenResolver:
+    """Issue and resolve audit-only locators through the configured HMAC codec."""
+
+    _MARKER = "audit-envelope-v1"
+    _COMMAND_KIND = OperatorCommandKind.REBUILD_SCOREBOARD_PROJECTION
+
+    def __init__(self, codec: OperatorSnapshotTokenCodec) -> None:
+        self._codec = codec
+
+    def issue(
+        self,
+        *,
+        lane: OperatorLane,
+        business_key: str,
+        work_item_key: str,
+        task_snapshot_hash: str,
+    ) -> str:
+        locator = f"{self._MARKER}|{lane.value}|{business_key}|{work_item_key}"
+        return self._codec.encode(
+            OperatorSnapshotTokenPayloadV1(
+                task_snapshot_hash=task_snapshot_hash,
+                work_item_id=locator,
+                command_kind=self._COMMAND_KIND,
+                dependency_revision_ids=[],
+            )
+        )
+
+    def resolve(self, token: str) -> OperatorAuditLocator:
+        try:
+            payload = self._codec.decode(token)
+            parts = payload.work_item_id.split("|")
+            if (
+                payload.command_kind is not self._COMMAND_KIND
+                or payload.dependency_revision_ids
+                or len(parts) != 4
+                or parts[0] != self._MARKER
+            ):
+                raise ValueError("not an audit locator")
+            lane = OperatorLane(parts[1])
+            business_key = parts[2]
+            work_item_key = parts[3]
+            business_pattern = (
+                r"\d{5}" if lane is OperatorLane.ZUCAI else r"\d{4}-\d{2}-\d{2}"
+            )
+            if (
+                re.fullmatch(business_pattern, business_key) is None
+                or re.fullmatch(r"[a-z][a-z0-9-]{8,100}", work_item_key) is None
+            ):
+                raise ValueError("invalid audit locator")
+        except (OperatorSnapshotTokenError, ValueError) as error:
+            raise ProductNotFoundError("operator audit record not found") from error
+        return OperatorAuditLocator(
+            lane=lane,
+            business_key=business_key,
+            work_item_key=work_item_key,
+            task_snapshot_hash=payload.task_snapshot_hash,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,6 +361,17 @@ class CandidateGenerationCommandContext:
 
 
 @dataclass(frozen=True, slots=True)
+class ConfirmationRequestCommandContext:
+    task_key: str
+    task_snapshot_hash: str
+    work_item_id: str
+    dependency_revision_ids: tuple[str, ...]
+    ticket_artifact_id: str
+    command_token: str
+    ticket_artifact_token: str
+
+
+@dataclass(frozen=True, slots=True)
 class CandidateSelectionCommandContext:
     task_key: str
     task_snapshot_hash: str
@@ -229,6 +381,42 @@ class CandidateSelectionCommandContext:
     candidate_refs_by_token: tuple[tuple[str, str, str], ...]
     candidate_set_revision_id: str
     candidate_revision_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class SettlementRequestCommandContext:
+    task_key: str
+    task_snapshot_hash: str
+    work_item_id: str
+    dependency_revision_ids: tuple[str, ...]
+    slate_revision_id: str
+    result_set_revision_id: str
+    prize_table_revision_id: str | None
+    command_token: str
+
+
+@dataclass(frozen=True, slots=True)
+class PredictionGradeCommandContext:
+    task_key: str
+    task_snapshot_hash: str
+    work_item_id: str
+    dependency_revision_ids: tuple[str, ...]
+    prediction_refs_by_token: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ScoreboardReviewCommandContext:
+    task_key: str
+    task_snapshot_hash: str
+    work_item_id: str
+    dependency_revision_ids: tuple[str, ...]
+    review_id: str
+    review_token: str
+    disposition_revision_id: str | None
+    disposition_token: str | None
+    evidence_refs_by_token: tuple[tuple[str, ObjectRef], ...]
+    observation_refs_by_token: tuple[tuple[str, str], ...]
+    command_kind: OperatorCommandKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -351,6 +539,10 @@ def _decimal_text(value: Decimal) -> str:
     return format(Decimal(0) if normalized == 0 else normalized, ".12f")
 
 
+def _history_decimal_text(value: float | None) -> str | None:
+    return None if value is None else format(Decimal(str(value)), "f")
+
+
 def _face_sort_key(face_code: str) -> tuple[int, str]:
     return _FACE_ORDER.find(face_code) if face_code in _FACE_ORDER else 3, face_code
 
@@ -396,6 +588,10 @@ def _token(payload: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _opaque_reference(kind: str, *parts: object) -> str:
+    return "opaque." + _token({"kind": kind, "parts": parts})
+
+
 def _summary(
     facts: OperatorTaskFacts,
     *,
@@ -432,6 +628,8 @@ class OperatorQueryService:
         snapshot_tokens: OperatorSnapshotTokenCodec | None = None,
         operator_decisions=None,
         operator_candidate_auditor=None,
+        maintenance_probe: OperatorMaintenanceProbe | None = None,
+        shadow_review_tokens: ShadowReviewTokenCodec | None = None,
     ) -> None:
         self._repository = repository
         self._product_queries = product_queries
@@ -441,13 +639,414 @@ class OperatorQueryService:
         self._operator_evidence = operator_evidence
         self._unit_of_work_factory = unit_of_work_factory
         self._snapshot_tokens = snapshot_tokens
+        self._audit_tokens = (
+            None
+            if snapshot_tokens is None
+            else OperatorAuditTokenResolver(snapshot_tokens)
+        )
         self._operator_decisions = operator_decisions
         self._operator_candidate_auditor = operator_candidate_auditor
+        self._maintenance_probe = maintenance_probe
+        self._shadow_review_tokens = shadow_review_tokens
+
+    def maintenance(self, *, as_of: datetime) -> OperatorMaintenanceResponseV1:
+        cutoff = _aware(as_of, "as_of")
+        if self._maintenance_probe is None:
+            raise ProductNotFoundError("operator maintenance diagnostic is unavailable")
+        return self._maintenance_probe.read(as_of=cutoff)
 
     def evidence_freeze_context(self, task_key: str, *, as_of: datetime):
         if self._operator_evidence is None:
             raise ProductNotFoundError("operator evidence service is unavailable")
         return self._operator_evidence.evidence_freeze_context(task_key, as_of=as_of)
+
+    def confirmation_request_context(
+        self,
+        task_key: str,
+        ticket_artifact_token: str,
+        *,
+        as_of: datetime,
+    ) -> ConfirmationRequestCommandContext:
+        cutoff = _aware(as_of, "as_of")
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError(
+                "operator confirmation tokens are not configured"
+            )
+        artifact_payload = self._snapshot_tokens.decode(ticket_artifact_token)
+        if (
+            artifact_payload.command_kind
+            is not OperatorCommandKind.REQUEST_CONFIRMATION
+            or len(artifact_payload.dependency_revision_ids) != 1
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        dependency = artifact_payload.dependency_revision_ids[0]
+        marker = "ticket_artifact:"
+        if not dependency.startswith(marker) or not dependency.removeprefix(marker):
+            raise OperatorSnapshotTokenError("invalid_request")
+        artifact_id = dependency.removeprefix(marker)
+        with self._decision_uow() as uow:
+            link = uow.tickets.artifact_work_item_link(artifact_id)
+            if (
+                link is None
+                or link.task_family_id != task_key
+                or _aware(
+                    datetime.fromisoformat(link.linked_at),
+                    "artifact link time",
+                )
+                > cutoff
+            ):
+                raise OperatorSnapshotTokenError("invalid_request")
+            stage = self._formal_artifact_stage(
+                uow,
+                link,
+                OperatorLane(link.task_family_id.partition(":")[0]),
+                link.task_family_id.partition(":")[2],
+                cutoff,
+            )
+        if (
+            not isinstance(stage.step, ConfirmationStep)
+            or stage.step.surface_version != "2"
+            or stage.step.confirmation_state != "not_issued"
+            or stage.step.command_token is None
+            or stage.step.ticket_artifact_token != ticket_artifact_token
+        ):
+            raise ProductActionBlockedError(
+                "artifact confirmation command is no longer current",
+                code="task_snapshot_changed",
+            )
+        command_payload = self._snapshot_tokens.decode(stage.step.command_token)
+        if (
+            command_payload.work_item_id != artifact_payload.work_item_id
+            or command_payload.task_snapshot_hash
+            != artifact_payload.task_snapshot_hash
+        ):
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        return ConfirmationRequestCommandContext(
+            task_key=task_key,
+            task_snapshot_hash=command_payload.task_snapshot_hash,
+            work_item_id=command_payload.work_item_id,
+            dependency_revision_ids=tuple(
+                command_payload.dependency_revision_ids
+            ),
+            ticket_artifact_id=artifact_id,
+            command_token=stage.step.command_token,
+            ticket_artifact_token=ticket_artifact_token,
+        )
+
+    def prediction_grade_context(
+        self,
+        task_key: str,
+        expected_snapshot_token: str,
+        *,
+        as_of: datetime,
+    ) -> PredictionGradeCommandContext:
+        cutoff = _aware(as_of, "as_of")
+        with self._decision_uow() as uow:
+            review = self._pending_review_from_snapshot_token(
+                uow,
+                task_key,
+                expected_snapshot_token,
+                OperatorCommandKind.GRADE_PREDICTION,
+            )
+            predictions = self._review_predictions(
+                uow,
+                review.business_key,
+                cutoff,
+                pending_only=True,
+            )
+        if not predictions:
+            raise ProductActionBlockedError("review has no pending prediction grade")
+        dependencies = tuple(
+            sorted(
+                {
+                    f"review:{review.review_id}",
+                    *(f"prediction:{row['prediction_id']}" for row in predictions),
+                }
+            )
+        )
+        return PredictionGradeCommandContext(
+            task_key=task_key,
+            task_snapshot_hash=review.task_snapshot_hash,
+            work_item_id=self._review_work_item_id(review),
+            dependency_revision_ids=dependencies,
+            prediction_refs_by_token=tuple(
+                (
+                    _opaque_reference(
+                        "prediction-review",
+                        review.review_id,
+                        row["prediction_id"],
+                    ),
+                    str(row["prediction_id"]),
+                )
+                for row in predictions
+            ),
+        )
+
+    def scoreboard_review_context(
+        self,
+        task_key: str,
+        command_kind: OperatorCommandKind,
+        expected_snapshot_token: str,
+        *,
+        as_of: datetime,
+    ) -> ScoreboardReviewCommandContext:
+        cutoff = _aware(as_of, "as_of")
+        if command_kind not in {
+            OperatorCommandKind.RECORD_SCOREBOARD_EFFECT_DISPOSITION,
+            OperatorCommandKind.RECORD_SCOREBOARD_OBSERVATION,
+            OperatorCommandKind.REQUEST_SCOREBOARD_REVIEW_COMPLETION,
+        }:
+            raise ProductActionBlockedError("unsupported scoreboard review command")
+        projection = self._repository.scoreboard_projection(as_of=cutoff.isoformat())
+        health = projection.get("health", {})
+        if health.get("state") != "available":
+            raise ProductActionBlockedError(
+                "scoreboard projection must be rebuilt before this review action",
+                code=(
+                    "projection_stale"
+                    if health.get("state") == "stale"
+                    else "projection_unavailable"
+                ),
+            )
+        high_watermark = health.get("source_high_watermark")
+        if not isinstance(high_watermark, int) or high_watermark < 0:
+            raise ProductActionBlockedError(
+                "scoreboard projection has no valid source high water",
+                code="projection_unavailable",
+            )
+        with self._decision_uow() as uow:
+            review = self._pending_review_from_snapshot_token(
+                uow,
+                task_key,
+                expected_snapshot_token,
+                command_kind,
+            )
+            disposition = uow.operator_review.current_disposition(review.review_id)
+            predictions = self._review_predictions(
+                uow,
+                review.business_key,
+                cutoff,
+                pending_only=False,
+            )
+            observation_refs: list[tuple[str, str]] = []
+            if disposition is not None:
+                for metric_key in disposition.required_metric_keys:
+                    observation = uow.scoreboard.current_observation(
+                        "review-effect",
+                        metric_key,
+                    )
+                    if observation is not None:
+                        observation_refs.append(
+                            (
+                                _opaque_reference(
+                                    "scoreboard-observation",
+                                    review.review_id,
+                                    observation.scoreboard_observation_id,
+                                ),
+                                observation.scoreboard_observation_id,
+                            )
+                        )
+        dependencies = tuple(
+            sorted(
+                {
+                    f"review:{review.review_id}",
+                    f"scoreboard_projection:{high_watermark}",
+                    *(
+                        ()
+                        if disposition is None
+                        else (f"disposition:{disposition.disposition_revision_id}",)
+                    ),
+                }
+            )
+        )
+        evidence_refs = [
+            (
+                _opaque_reference(
+                    "review-evidence",
+                    review.review_id,
+                    "operator-review",
+                    review.review_id,
+                ),
+                ObjectRef("operator_review", review.review_id),
+            ),
+            *[
+            (
+                _opaque_reference(
+                    "review-evidence",
+                    review.review_id,
+                    "prediction",
+                    row["prediction_id"],
+                ),
+                ObjectRef("prediction", str(row["prediction_id"])),
+            )
+            for row in predictions
+            ],
+        ]
+        evidence_refs.extend(
+            (
+                _opaque_reference(
+                    "review-evidence",
+                    review.review_id,
+                    "outcome",
+                    outcome_id,
+                ),
+                ObjectRef("outcome", outcome_id),
+            )
+            for outcome_id in review.outcome_revision_ids
+        )
+        return ScoreboardReviewCommandContext(
+            task_key=task_key,
+            task_snapshot_hash=review.task_snapshot_hash,
+            work_item_id=self._review_work_item_id(review),
+            dependency_revision_ids=dependencies,
+            review_id=review.review_id,
+            review_token=_opaque_reference(
+                "operator-review",
+                review.review_id,
+                review.task_snapshot_hash,
+            ),
+            disposition_revision_id=(
+                None if disposition is None else disposition.disposition_revision_id
+            ),
+            disposition_token=(
+                None
+                if disposition is None
+                else _opaque_reference(
+                    "scoreboard-disposition",
+                    review.review_id,
+                    disposition.disposition_revision_id,
+                )
+            ),
+            evidence_refs_by_token=tuple(evidence_refs),
+            observation_refs_by_token=tuple(observation_refs),
+            command_kind=command_kind,
+        )
+
+    @staticmethod
+    def _review_work_item_id(review) -> str:
+        return f"{review.task_family_id}:review:{review.review_id}"
+
+    def _pending_review_from_snapshot_token(
+        self,
+        uow,
+        task_key: str,
+        expected_snapshot_token: str,
+        command_kind: OperatorCommandKind,
+    ):
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator snapshot tokens are not configured")
+        payload = self._snapshot_tokens.decode(expected_snapshot_token)
+        prefix = f"{task_key}:review:"
+        if payload.command_kind is not command_kind or not payload.work_item_id.startswith(
+            prefix
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        review_id = payload.work_item_id.removeprefix(prefix)
+        if not review_id or ":" in review_id:
+            raise OperatorSnapshotTokenError("invalid_request")
+        review = uow.operator_review.review_item(review_id)
+        if (
+            review is None
+            or review.task_family_id != task_key
+            or self._review_work_item_id(review) != payload.work_item_id
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        if (
+            review.task_snapshot_hash != payload.task_snapshot_hash
+            or uow.operator_review.completion_receipt_for_review(review.review_id)
+            is not None
+        ):
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
+        return review
+
+    @staticmethod
+    def _review_predictions(
+        uow,
+        business_key: str,
+        cutoff: datetime,
+        *,
+        pending_only: bool,
+    ) -> tuple[dict[str, object], ...]:
+        statement = select(sw.predictions).where(
+            sw.predictions.c.subject_type == "issue",
+            sw.predictions.c.subject_id == business_key,
+            func.julianday(sw.predictions.c.registered_at)
+            <= func.julianday(cutoff.isoformat()),
+        )
+        if pending_only:
+            statement = statement.where(sw.predictions.c.status == "pending")
+        rows = uow.connection.execute(
+            statement.order_by(
+                sw.predictions.c.registered_at,
+                sw.predictions.c.prediction_id,
+            )
+        ).mappings()
+        return tuple(dict(row) for row in rows)
+
+    def settlement_request_context(
+        self,
+        task_key: str,
+        *,
+        as_of: datetime,
+    ) -> SettlementRequestCommandContext:
+        cutoff = _aware(as_of, "as_of")
+        lane_value, separator, business_key = task_key.partition(":")
+        if separator != ":" or lane_value not in {"jczq", "zucai"} or not business_key:
+            raise ProductActionBlockedError("invalid operator settlement task")
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator settlement tokens are not configured")
+        with self._decision_uow() as uow:
+            lineage = self._decision_lineage(
+                uow,
+                task_key,
+                cutoff,
+                require_envelope=True,
+            )
+            result_set = uow.operator_result.current_result_set(
+                lane=lane_value,
+                business_key=business_key,
+            )
+        if result_set is None:
+            raise ProductActionBlockedError("authoritative results are not available")
+        expected_lineage = (
+            result_set.task_family_id == lineage.task_key
+            and result_set.work_item_id == lineage.work_item_id
+            and result_set.task_snapshot_hash == lineage.task_snapshot_hash
+            and result_set.slate_revision_id == lineage.slate_revision_id
+        )
+        if not expected_lineage:
+            raise ProductActionBlockedError("result evidence does not match the current task")
+        if result_set.outcome_count != result_set.match_count:
+            raise ProductActionBlockedError("authoritative results are not complete")
+        prize_table_revision_id = result_set.zucai_prize_table_revision_id
+        if lane_value == "zucai" and prize_table_revision_id is None:
+            raise ProductActionBlockedError("official prize table is not available")
+        if lane_value == "jczq" and prize_table_revision_id is not None:
+            raise ProductActionBlockedError("JCZQ result set cannot include a prize table")
+        dependencies = tuple(
+            sorted(
+                (
+                    f"result_set_revision:{result_set.result_set_revision_id}",
+                    f"slate_revision:{lineage.slate_revision_id}",
+                )
+            )
+        )
+        payload = OperatorSnapshotTokenPayloadV1(
+            task_snapshot_hash=lineage.task_snapshot_hash,
+            work_item_id=lineage.work_item_id,
+            command_kind=OperatorCommandKind.REQUEST_SETTLEMENT,
+            dependency_revision_ids=list(dependencies),
+        )
+        return SettlementRequestCommandContext(
+            task_key=task_key,
+            task_snapshot_hash=lineage.task_snapshot_hash,
+            work_item_id=lineage.work_item_id,
+            dependency_revision_ids=dependencies,
+            slate_revision_id=lineage.slate_revision_id,
+            result_set_revision_id=result_set.result_set_revision_id,
+            prize_table_revision_id=prize_table_revision_id,
+            command_token=self._snapshot_tokens.encode(payload),
+        )
 
     def baseline_envelope_context(
         self,
@@ -1079,7 +1678,9 @@ class OperatorQueryService:
         slate: SaleSlateSnapshot,
         cutoff: datetime,
     ) -> _BuiltTask | None:
-        if self._unit_of_work_factory is None or self._snapshot_tokens is None:
+        if self._unit_of_work_factory is None:
+            return None
+        if self._snapshot_tokens is None:
             return None
         candidate_sets = ()
         selection = None
@@ -1107,6 +1708,19 @@ class OperatorQueryService:
                 cutoff,
                 require_envelope=False,
             )
+            artifact_links = uow.tickets.artifact_work_item_links_for_work_item(
+                lineage.work_item_id
+            )
+            if artifact_links:
+                return self._formal_sale_wave_artifact_stage(
+                    uow,
+                    lineage,
+                    lane,
+                    business_key,
+                    deadline,
+                    cutoff,
+                    artifact_links,
+                )
             items = uow.operator_decision.task_evidence_bundle_items(
                 lineage.task_evidence_bundle_revision_id
             )
@@ -1284,6 +1898,1772 @@ class OperatorQueryService:
                     "dependencies": dependency_ids,
                 }
             ),
+            work_item_identity=lineage.work_item_id,
+            scope_kind=ScopeKind.SALE_WAVE,
+        )
+
+    def _formal_review_stages(
+        self,
+        task_id: str,
+        lane: OperatorLane,
+        business_key: str,
+        deadline: datetime | None,
+        cutoff: datetime,
+    ) -> tuple[_BuiltTask, ...]:
+        if self._unit_of_work_factory is None:
+            return ()
+        with self._decision_uow() as uow:
+            review_ids = tuple(
+                review.review_id
+                for review in uow.operator_review.review_items_for_task(task_id)
+            )
+        return tuple(
+            self._formal_review_stage(
+                task_id,
+                lane,
+                business_key,
+                deadline,
+                cutoff,
+                review_id=review_id,
+            )
+            for review_id in review_ids
+        )
+
+    def _formal_review_stage(
+        self,
+        task_id: str,
+        lane: OperatorLane,
+        business_key: str,
+        deadline: datetime | None,
+        cutoff: datetime,
+        *,
+        review_id: str | None = None,
+    ) -> _BuiltTask:
+        with self._decision_uow() as uow:
+            reviews = uow.operator_review.review_items_for_task(task_id)
+            if not reviews:
+                raise ProductNotFoundError("operator review does not exist")
+            pending = uow.operator_review.pending_review_items_for_task(task_id)
+            review = next(
+                (
+                    item
+                    for item in reviews
+                    if review_id is None or item.review_id == review_id
+                ),
+                None,
+            )
+            if review is None:
+                raise ProductNotFoundError("operator review does not exist")
+            completion = uow.operator_review.completion_receipt_for_review(
+                review.review_id
+            )
+            if completion is not None:
+                facts = self._review_facts(
+                    lane,
+                    business_key,
+                    deadline,
+                    pending_count=0,
+                )
+                return _BuiltTask(
+                    facts=facts,
+                    summary=_summary(
+                        facts,
+                        title=("足彩 " if lane is OperatorLane.ZUCAI else "竞彩 ")
+                        + business_key,
+                    ),
+                    progress=TaskProgressSummary(
+                        completed=1,
+                        total=1,
+                        label="复盘",
+                    ),
+                    step=CompleteStep(
+                        task_id=task_id,
+                        title="本期复盘已完成",
+                        summary="预测、资金与治理处置均已留下可审计记录。",
+                    ),
+                    mutation_token=_token(
+                        {
+                            "task_id": task_id,
+                            "completed_review": review.review_id,
+                        }
+                    ),
+                    work_item_identity=self._review_work_item_id(review),
+                    scope_kind=ScopeKind.REVIEW,
+                    projected_state=OperatorTaskState.COMPLETE,
+                )
+            if review not in pending:
+                raise ProductActionBlockedError("operator review state is inconsistent")
+            fact = uow.operator_review.eligibility_fact(
+                review.review_eligibility_fact_id
+            )
+            if fact is None:
+                raise ProductActionBlockedError("review eligibility fact is unavailable")
+            disposition = uow.operator_review.current_disposition(review.review_id)
+            links = (
+                ()
+                if disposition is None
+                else uow.operator_review.observation_links_for_disposition(
+                    disposition.disposition_revision_id
+                )
+            )
+            completion_requests = uow.operator_review.completion_requests_for_review(
+                review.review_id
+            )
+            predictions = self._review_predictions(
+                uow,
+                business_key,
+                cutoff,
+                pending_only=False,
+            )
+            money = self._review_money_summary(uow, fact)
+            shadow_rows = tuple(
+                dict(row)
+                for row in uow.connection.execute(
+                    select(ss.scoreboard_shadow_reviews)
+                    .where(
+                        func.julianday(ss.scoreboard_shadow_reviews.c.reviewed_at)
+                        <= func.julianday(cutoff.isoformat())
+                    )
+                    .order_by(
+                        ss.scoreboard_shadow_reviews.c.reviewed_at.desc(),
+                        ss.scoreboard_shadow_reviews.c.scoreboard_shadow_review_id.desc(),
+                    )
+                ).mappings()
+            )
+            action_rowids = {
+                link.observation_action_id: uow.operator_review.action_rowid(
+                    link.observation_action_id
+                )
+                for link in links
+            }
+            adjudication_rows = uow.operator_review.adjudication_history(
+                business_key=business_key,
+                as_of=cutoff.isoformat(),
+            )
+            observation_rows = (
+                ()
+                if disposition is None
+                else uow.operator_review.scoreboard_observation_history(
+                    disposition.disposition_revision_id
+                )
+            )
+
+        projection = self._repository.scoreboard_projection(as_of=cutoff.isoformat())
+        health = projection.get("health", {})
+        projection_high_watermark = health.get("source_high_watermark")
+        scoreboard_projection_state = {
+            "available": "ready",
+            "stale": "stale",
+        }.get(str(health.get("state")), "unavailable")
+        projection_ready = (
+            scoreboard_projection_state == "ready"
+            and isinstance(projection_high_watermark, int)
+            and projection_high_watermark >= 0
+        )
+        review_work_item_id = self._review_work_item_id(review)
+        review_token = _opaque_reference(
+            "operator-review",
+            review.review_id,
+            review.task_snapshot_hash,
+        )
+        disposition_token = (
+            None
+            if disposition is None
+            else _opaque_reference(
+                "scoreboard-disposition",
+                review.review_id,
+                disposition.disposition_revision_id,
+            )
+        )
+        scoreboard_dependencies = (
+            ()
+            if not projection_ready
+            else tuple(
+                sorted(
+                    {
+                        f"review:{review.review_id}",
+                        f"scoreboard_projection:{projection_high_watermark}",
+                        *(
+                            ()
+                            if disposition is None
+                            else (
+                                f"disposition:{disposition.disposition_revision_id}",
+                            )
+                        ),
+                    }
+                )
+            )
+        )
+
+        def command_token(kind: OperatorCommandKind) -> str | None:
+            if not projection_ready or self._snapshot_tokens is None:
+                return None
+            return self._snapshot_tokens.encode(
+                OperatorSnapshotTokenPayloadV1(
+                    task_snapshot_hash=review.task_snapshot_hash,
+                    work_item_id=review_work_item_id,
+                    command_kind=kind,
+                    dependency_revision_ids=list(scoreboard_dependencies),
+                )
+            )
+
+        pending_predictions = [
+            row for row in predictions if row.get("status") == "pending"
+        ]
+        prediction_dependencies = tuple(
+            sorted(
+                {
+                    f"review:{review.review_id}",
+                    *(
+                        f"prediction:{row['prediction_id']}"
+                        for row in pending_predictions
+                    ),
+                }
+            )
+        )
+        grade_token = (
+            None
+            if not pending_predictions or self._snapshot_tokens is None
+            else self._snapshot_tokens.encode(
+                OperatorSnapshotTokenPayloadV1(
+                    task_snapshot_hash=review.task_snapshot_hash,
+                    work_item_id=review_work_item_id,
+                    command_kind=OperatorCommandKind.GRADE_PREDICTION,
+                    dependency_revision_ids=list(prediction_dependencies),
+                )
+            )
+        )
+        forecast = [
+            ReviewForecastSummary(
+                title=str(row["claim"]),
+                falsifier=str(row["falsifier"]),
+                state=(
+                    "pending"
+                    if row.get("status") == "pending"
+                    else str(row.get("outcome") or "na")
+                ),
+                prediction_review_token=(
+                    _opaque_reference(
+                        "prediction-review",
+                        review.review_id,
+                        row["prediction_id"],
+                    )
+                    if row.get("status") == "pending"
+                    else None
+                ),
+                grade_command_token=(
+                    grade_token if row.get("status") == "pending" else None
+                ),
+            )
+            for row in predictions
+        ]
+        evidence_options = [
+            ReviewEvidenceOptionSummary(
+                label="本期复盘范围",
+                token=_opaque_reference(
+                    "review-evidence",
+                    review.review_id,
+                    "operator-review",
+                    review.review_id,
+                ),
+            ),
+            *[
+            ReviewEvidenceOptionSummary(
+                label=f"预注册预测：{row['claim']}",
+                token=_opaque_reference(
+                    "review-evidence",
+                    review.review_id,
+                    "prediction",
+                    row["prediction_id"],
+                ),
+            )
+            for row in predictions
+            ],
+        ]
+        evidence_options.extend(
+            ReviewEvidenceOptionSummary(
+                label=f"正式赛果 {index}",
+                token=_opaque_reference(
+                    "review-evidence",
+                    review.review_id,
+                    "outcome",
+                    outcome_id,
+                ),
+            )
+            for index, outcome_id in enumerate(review.outcome_revision_ids, start=1)
+        )
+        shadow_options = self._review_shadow_options(
+            review,
+            disposition,
+            links,
+            shadow_rows,
+            action_rowids,
+        )
+        linked_keys = sorted(link.metric_key for link in links)
+        gates = self._review_completion_gates(
+            disposition,
+            links,
+            completion_requested=bool(completion_requests),
+        )
+        intervention = ReviewInterventionSummary(
+            disposition=("undecided" if disposition is None else disposition.disposition),
+            reason=None if disposition is None else disposition.reason,
+            required_metric_keys=(
+                [] if disposition is None else list(disposition.required_metric_keys)
+            ),
+            linked_metric_keys=linked_keys,
+            review_token=review_token,
+            disposition_token=disposition_token,
+            effect_command_token=command_token(
+                OperatorCommandKind.RECORD_SCOREBOARD_EFFECT_DISPOSITION
+            ),
+            observation_command_token=(
+                command_token(OperatorCommandKind.RECORD_SCOREBOARD_OBSERVATION)
+                if disposition is not None
+                and disposition.disposition == "effect_required"
+                else None
+            ),
+            completion_command_token=(
+                command_token(
+                    OperatorCommandKind.REQUEST_SCOREBOARD_REVIEW_COMPLETION
+                )
+                if disposition is not None
+                and disposition.disposition == "effect_required"
+                else None
+            ),
+            evidence_options=evidence_options,
+            shadow_options=shadow_options,
+        )
+        step = ReviewStep(
+            surface_version="2",
+            task_id=task_id,
+            title="本期复盘",
+            review_kind=review.review_kind,
+            review_state="pending",
+            scoreboard_projection_state=scoreboard_projection_state,
+            forecast_truth=forecast,
+            money_ledger=money,
+            intervention_quality=intervention,
+            adjudication_history=[
+                ReviewAdjudicationSummary(
+                    decision=row.decision,
+                    reason=row.reason,
+                    rejected_evidence_count=row.rejected_evidence_count,
+                    created_at=_aware(
+                        datetime.fromisoformat(row.created_at),
+                        "adjudication created_at",
+                    ),
+                )
+                for row in adjudication_rows
+            ],
+            scoreboard_observation_history=[
+                ReviewScoreboardObservationSummary(
+                    metric_key=row.metric_key,
+                    tally=row.tally,
+                    detail=row.detail,
+                    status=row.status,
+                    numerator_decimal=_history_decimal_text(row.numerator),
+                    denominator_decimal=_history_decimal_text(row.denominator),
+                    value_decimal=_history_decimal_text(row.value),
+                    unit=row.unit,
+                    effective_at=_aware(
+                        datetime.fromisoformat(row.effective_at),
+                        "scoreboard observation effective_at",
+                    ),
+                )
+                for row in observation_rows
+            ],
+            completion_gates=gates,
+            maintenance_href="/operator-next/maintenance",
+        )
+        facts = self._review_facts(
+            lane,
+            business_key,
+            deadline,
+            pending_count=1,
+        )
+        completed_steps = sum(item.state != "pending" for item in forecast)
+        completed_steps += sum(gate.state in {"complete", "not_required"} for gate in gates)
+        total_steps = len(forecast) + len(gates)
+        return _BuiltTask(
+            facts=facts,
+            summary=_summary(
+                facts,
+                title=("足彩 " if lane is OperatorLane.ZUCAI else "竞彩 ")
+                + business_key,
+            ),
+            progress=TaskProgressSummary(
+                completed=completed_steps,
+                total=total_steps,
+                label="复盘",
+            ),
+            step=step,
+            mutation_token=_token(
+                {
+                    "task_id": task_id,
+                    "review_id": review.review_id,
+                    "review_state": "pending",
+                    "review_kind": review.review_kind,
+                    "disposition": (
+                        None
+                        if disposition is None
+                        else disposition.disposition_revision_id
+                    ),
+                    "linked_metrics": linked_keys,
+                    "projection_high_watermark": projection_high_watermark,
+                }
+            ),
+            work_item_identity=review_work_item_id,
+            scope_kind=ScopeKind.REVIEW,
+            projected_state=OperatorTaskState.REVIEW,
+        )
+
+    @staticmethod
+    def _review_facts(
+        lane: OperatorLane,
+        business_key: str,
+        deadline: datetime | None,
+        *,
+        pending_count: int,
+    ) -> OperatorTaskFacts:
+        return OperatorTaskFacts(
+            lane=lane,
+            business_key=business_key,
+            deadline_at=deadline,
+            waiting_until=None,
+            source_error_code=None,
+            has_issue=True,
+            has_prep=True,
+            unresolved_adjudications=0,
+            candidate_count=1,
+            selected_candidate_id="review-terminal-scope",
+            audit_recorded=True,
+            deployment_decision="empty_position",
+            ticket_artifact_id=None,
+            confirmation_state=None,
+            placement_state=None,
+            result_available=True,
+            pending_review_items=pending_count,
+        )
+
+    @staticmethod
+    def _review_money_summary(uow, fact) -> ReviewMoneySummary:
+        if fact.settlement_run_id is None:
+            return ReviewMoneySummary(state="not_applicable")
+        run = uow.operator_result.task_settlement_run(fact.settlement_run_id)
+        if run is None:
+            raise ProductActionBlockedError("review settlement receipt is unavailable")
+        current = []
+        for revision_id in run.ticket_settlement_revision_ids:
+            revision = uow.operator_result.ticket_settlement_revision(revision_id)
+            if revision is None:
+                raise ProductActionBlockedError("review settlement row is unavailable")
+            leaf = uow.operator_result.current_ticket_settlement(revision.ticket_id)
+            if leaf is None:
+                raise ProductActionBlockedError("review settlement head is unavailable")
+            current.append(leaf)
+        if not current:
+            return ReviewMoneySummary(state="not_applicable")
+        currencies = {row.currency for row in current}
+        if len(currencies) != 1:
+            raise ProductActionBlockedError("review settlement currencies conflict")
+        stake_minor = sum(row.stake_minor for row in current)
+        payout_minor = sum(row.gross_payout_minor for row in current)
+        return ReviewMoneySummary(
+            state=(
+                "corrected"
+                if any(row.settlement_state == "corrected" for row in current)
+                else "settled"
+            ),
+            currency=currencies.pop(),
+            stake_minor=stake_minor,
+            payout_minor=payout_minor,
+            pnl_minor=payout_minor - stake_minor,
+            ticket_count=len(current),
+        )
+
+    def _review_shadow_options(
+        self,
+        review,
+        disposition,
+        links,
+        shadow_rows: tuple[dict[str, object], ...],
+        action_rowids: dict[str, int | None],
+    ) -> list[ReviewShadowOptionSummary]:
+        if (
+            disposition is None
+            or disposition.disposition != "effect_required"
+            or self._shadow_review_tokens is None
+        ):
+            return []
+        required = tuple(disposition.required_metric_keys)
+        observed_hashes = {link.observed_legacy_sha256 for link in links}
+        required_targets = {
+            (
+                link.metric_key,
+                f"scoreboard_observation:{link.scoreboard_observation_id}",
+            )
+            for link in links
+        }
+        options = []
+        for row in shadow_rows:
+            classification = json.loads(str(row["classification_json"]))
+            included = {
+                (str(item.get("metric_key")), str(item.get("target_ref")))
+                for item in classification
+                if item.get("classification") != "unexplained"
+            }
+            unexplained = {
+                (str(item.get("metric_key")), str(item.get("target_ref")))
+                for item in classification
+                if item.get("classification") == "unexplained"
+            }
+            high_watermark = int(row["source_high_watermark"])
+            ready = (
+                str(row["status"]) == "succeeded"
+                and len(observed_hashes) == 1
+                and str(row["legacy_sha256"]) in observed_hashes
+                and required_targets <= included
+                and required_targets.isdisjoint(unexplained)
+                and all(
+                    rowid is not None and rowid <= high_watermark
+                    for rowid in action_rowids.values()
+                )
+            )
+            reviewed_at = datetime.fromisoformat(str(row["reviewed_at"]))
+            options.append(
+                ReviewShadowOptionSummary(
+                    label=f"{reviewed_at:%Y-%m-%d %H:%M} 影子核对",
+                    state="ready" if ready else "not_ready",
+                    token=self._shadow_review_tokens.encode(
+                        ShadowReviewTokenPayload(
+                            shadow_review_id=str(
+                                row["scoreboard_shadow_review_id"]
+                            ),
+                            source_high_watermark=high_watermark,
+                            compared_legacy_sha256=str(row["legacy_sha256"]),
+                            metric_keys=required,
+                        )
+                    ),
+                )
+            )
+        return options
+
+    @staticmethod
+    def _review_completion_gates(
+        disposition,
+        links,
+        *,
+        completion_requested: bool,
+    ) -> list[ReviewCompletionGateSummary]:
+        if disposition is not None and disposition.disposition == "no_effect":
+            state = "not_required"
+            detail = "已明确本次复盘不改变治理记分牌。"
+            return [
+                ReviewCompletionGateSummary(
+                    gate=gate,
+                    label=label,
+                    state=state,
+                    detail=detail,
+                )
+                for gate, label in (
+                    ("legacy_update", "旧记分牌更新已观察"),
+                    ("observations", "所需观察已提交"),
+                    ("shadow_reconciliation", "所选影子核对有效"),
+                )
+            ]
+        required = () if disposition is None else disposition.required_metric_keys
+        linked = tuple(link.metric_key for link in links)
+        observed_hashes = {link.observed_legacy_sha256 for link in links}
+        legacy_complete = bool(
+            disposition is not None
+            and len(observed_hashes) == 1
+            and disposition.pre_update_legacy_sha256 not in observed_hashes
+        )
+        observations_complete = bool(required and linked == required)
+        return [
+            ReviewCompletionGateSummary(
+                gate="legacy_update",
+                label="旧记分牌更新已观察",
+                state="complete" if legacy_complete else "pending",
+                detail=(
+                    "已观察到更新后的权威文件。"
+                    if legacy_complete
+                    else "请先在外部治理步骤更新权威记分牌。"
+                ),
+            ),
+            ReviewCompletionGateSummary(
+                gate="observations",
+                label="所需观察已提交",
+                state="complete" if observations_complete else "pending",
+                detail=(
+                    "每项治理指标均已形成 typed Action。"
+                    if observations_complete
+                    else f"还需提交 {max(0, len(required) - len(linked))} 项治理观察。"
+                ),
+            ),
+            ReviewCompletionGateSummary(
+                gate="shadow_reconciliation",
+                label="所选影子核对有效",
+                state="pending",
+                detail=(
+                    "完成请求已提交，等待确定性校验回执。"
+                    if completion_requested
+                    else "等待选择并提交一份有效影子核对。"
+                ),
+            ),
+        ]
+
+    @staticmethod
+    def _visible_artifact_terminal(uow, artifact_id: str, cutoff: datetime):
+        terminal = uow.tickets.artifact_terminal_receipt(artifact_id)
+        if terminal is None:
+            return None
+        terminal_at = _aware(
+            datetime.fromisoformat(terminal.terminal_at),
+            "artifact terminal time",
+        )
+        return terminal if terminal_at <= cutoff else None
+
+    def _formal_sale_wave_artifact_stage(
+        self,
+        uow,
+        lineage: _DecisionLineage,
+        lane: OperatorLane,
+        business_key: str,
+        deadline: datetime | None,
+        cutoff: datetime,
+        links,
+    ) -> _BuiltTask:
+        terminals = tuple(
+            self._visible_artifact_terminal(
+                uow,
+                link.ticket_artifact_id,
+                cutoff,
+            )
+            for link in links
+        )
+        placed_count = sum(
+            terminal is not None and terminal.terminal_kind == "placed"
+            for terminal in terminals
+        )
+        terminal_count = sum(terminal is not None for terminal in terminals)
+        if placed_count:
+            outcome = "placed" if placed_count == len(links) else "partially_placed"
+        elif terminal_count == len(links):
+            outcome = (
+                "no_ticket"
+                if all(
+                    terminal is not None
+                    and terminal.terminal_reason == "human_no_ticket"
+                    for terminal in terminals
+                )
+                else "expired"
+            )
+        else:
+            outcome = "pending"
+        facts = OperatorTaskFacts(
+            lane=lane,
+            business_key=business_key,
+            deadline_at=deadline,
+            waiting_until=None,
+            source_error_code=None,
+            has_issue=True,
+            has_prep=True,
+            unresolved_adjudications=0,
+            candidate_count=1,
+            selected_candidate_id="protected-artifact-scope",
+            audit_recorded=True,
+            deployment_decision=("empty_position" if outcome == "no_ticket" else "keep"),
+            ticket_artifact_id=links[0].ticket_artifact_id,
+            confirmation_state=("consumed" if placed_count == len(links) else None),
+            placement_state=(
+                "placed"
+                if placed_count
+                else "shadow" if terminal_count == len(links) else "unplaced"
+            ),
+            result_available=False,
+            pending_review_items=0,
+        )
+        labels = {
+            "pending": "受保护票据已拆分，逐票等待本人确认。",
+            "placed": "本销售窗口的受保护票据均已确认出票。",
+            "partially_placed": "本销售窗口仅有部分票据确认出票。",
+            "no_ticket": "本销售窗口的剩余票据均已由本人明确关闭。",
+            "expired": "本销售窗口未形成正式出票。",
+        }
+        summary = _summary(
+            facts,
+            title=("足彩 " if lane is OperatorLane.ZUCAI else "竞彩 ") + business_key,
+        ).model_copy(
+            update={
+                "state": OperatorTaskState.COMPLETE,
+                "is_actionable": False,
+                "next_action_label": NEXT_ACTION_LABELS[OperatorTaskState.COMPLETE],
+            }
+        )
+        return _BuiltTask(
+            facts=facts,
+            summary=summary,
+            progress=TaskProgressSummary(
+                completed=terminal_count,
+                total=len(links),
+                label="出票结果",
+            ),
+            step=CompleteStep(
+                task_id=lineage.task_key,
+                title="销售窗口出票结果",
+                summary=labels[outcome],
+            ),
+            mutation_token=_token(
+                {
+                    "task_id": lineage.task_key,
+                    "work_item_id": lineage.work_item_id,
+                    "artifact_ids": [link.ticket_artifact_id for link in links],
+                    "terminal_ids": [
+                        None
+                        if terminal is None
+                        else terminal.artifact_terminal_receipt_id
+                        for terminal in terminals
+                    ],
+                }
+            ),
+            work_item_identity=lineage.work_item_id,
+            scope_kind=ScopeKind.SALE_WAVE,
+            projected_state=OperatorTaskState.COMPLETE,
+            deployment_outcome=outcome,
+        )
+
+    def _formal_artifact_stages(
+        self,
+        task_id: str,
+        lane: OperatorLane,
+        business_key: str,
+        cutoff: datetime,
+    ) -> tuple[_BuiltTask, ...]:
+        if self._unit_of_work_factory is None or self._snapshot_tokens is None:
+            return ()
+        with self._decision_uow() as uow:
+            links = uow.tickets.artifact_work_item_links_for_task_family(
+                task_id,
+                as_of=cutoff.isoformat(),
+            )
+            return tuple(
+                self._formal_artifact_stage(
+                    uow,
+                    link,
+                    lane,
+                    business_key,
+                    cutoff,
+                )
+                for link in links
+            )
+
+    @staticmethod
+    def _artifact_link_lineage(link, *, work_item_id: str) -> _DecisionLineage:
+        return _DecisionLineage(
+            task_key=link.task_family_id,
+            task_snapshot_hash=link.task_snapshot_hash,
+            work_item_id=work_item_id,
+            slate_revision_id=link.slate_revision_id,
+            task_evidence_bundle_revision_id="artifact-projection",
+            market_prior_baseline_revision_id="artifact-projection",
+            baseline_envelope_revision_id=None,
+            baseline_envelope_revision_no=0,
+            required_match_ids=(),
+        )
+
+    @staticmethod
+    def _artifact_current_offers(uow, artifact_id: str) -> tuple[object, ...]:
+        current = []
+        for link in uow.tickets.protected_artifact_offer_revision_links(artifact_id):
+            source = uow.operator_sale.offer_revision(link.official_offer_revision_id)
+            if source is None:
+                raise ProductActionBlockedError(
+                    "protected artifact offer revision is unavailable"
+                )
+            offer = uow.operator_sale.current_offer_by_family(
+                source.official_offer_family_id
+            )
+            if offer is not None:
+                current.append(offer)
+        return tuple(current)
+
+    def _formal_artifact_stage(
+        self,
+        uow,
+        link,
+        lane: OperatorLane,
+        business_key: str,
+        cutoff: datetime,
+    ) -> _BuiltTask:
+        artifact = uow.tickets.ticket_artifact(link.ticket_artifact_id)
+        binding = uow.tickets.protected_artifact_binding(link.ticket_artifact_id)
+        identity = f"{link.work_item_id}:artifact:{link.ticket_artifact_id}"
+        if artifact is None or binding is None:
+            facts = OperatorTaskFacts(
+                lane=lane,
+                business_key=business_key,
+                deadline_at=None,
+                waiting_until=None,
+                source_error_code="protected_artifact_binding_missing",
+                has_issue=True,
+                has_prep=True,
+                unresolved_adjudications=0,
+                candidate_count=1,
+                selected_candidate_id="protected-artifact",
+                audit_recorded=True,
+                deployment_decision="keep",
+                ticket_artifact_id=link.ticket_artifact_id,
+                confirmation_state=None,
+                placement_state=None,
+                result_available=False,
+                pending_review_items=0,
+            )
+            return _BuiltTask(
+                facts=facts,
+                summary=_summary(
+                    facts,
+                    title=("足彩 " if lane is OperatorLane.ZUCAI else "竞彩 ")
+                    + business_key,
+                    block_reason_code="protected_artifact_binding_missing",
+                ),
+                progress=TaskProgressSummary(completed=0, total=1, label="票据完整性"),
+                step=BlockedStep(
+                    task_id=link.task_family_id,
+                    title="受保护票据绑定缺失",
+                    recovery=OperatorRecoverySummary(
+                        code="protected_artifact_binding_missing",
+                        missing="受保护票据的正式决策绑定",
+                        impact="不能发起本人确认",
+                        action_label="运行完整性审计",
+                    ),
+                ),
+                mutation_token=_token({"artifact": link.ticket_artifact_id}),
+                work_item_identity=identity,
+                scope_kind=ScopeKind.ARTIFACT,
+                projected_state=OperatorTaskState.BLOCKED,
+                deployment_outcome="pending",
+                scope_label="受保护票据",
+            )
+
+        terminal = self._visible_artifact_terminal(
+            uow,
+            link.ticket_artifact_id,
+            cutoff,
+        )
+        if terminal is not None and terminal.terminal_kind == "placed":
+            result = self._formal_result_stage(
+                uow,
+                self._artifact_link_lineage(link, work_item_id=link.work_item_id),
+                lane,
+                business_key,
+                _aware(
+                    datetime.fromisoformat(binding.frozen_deadline_at),
+                    "artifact deadline",
+                ),
+                cutoff,
+                artifact_link=link,
+            )
+            if result is None:
+                raise ProductActionBlockedError("placed artifact has no result stage")
+            placement = uow.tickets.placement_for_artifact(link.ticket_artifact_id)
+            if placement is None:
+                raise ProductActionBlockedError("placed artifact has no placement")
+            return replace(
+                result,
+                work_item_identity=(
+                    f"{link.work_item_id}:ticket:{placement.ticket_id}"
+                ),
+                scope_kind=ScopeKind.TICKET,
+                deployment_outcome=None,
+                scope_label=f"已出票票 {binding.ticket_index + 1}",
+            )
+
+        current_offers = self._artifact_current_offers(
+            uow,
+            link.ticket_artifact_id,
+        )
+        effective_cutoff = effective_artifact_cutoff(binding, current_offers)
+        label = (
+            f"票 {binding.ticket_index + 1} · "
+            f"{binding.currency} {binding.stake_minor / 100:.2f}"
+        )
+        if terminal is not None:
+            outcome = (
+                "no_ticket"
+                if terminal.terminal_reason == "human_no_ticket"
+                else "expired"
+            )
+            facts = OperatorTaskFacts(
+                lane=lane,
+                business_key=business_key,
+                deadline_at=effective_cutoff,
+                waiting_until=None,
+                source_error_code=None,
+                has_issue=True,
+                has_prep=True,
+                unresolved_adjudications=0,
+                candidate_count=1,
+                selected_candidate_id="protected-artifact",
+                audit_recorded=True,
+                deployment_decision=(
+                    "empty_position" if outcome == "no_ticket" else "keep"
+                ),
+                ticket_artifact_id=link.ticket_artifact_id,
+                confirmation_state="expired",
+                placement_state="shadow",
+                result_available=False,
+                pending_review_items=0,
+            )
+            return _BuiltTask(
+                facts=facts,
+                summary=_summary(
+                    facts,
+                    title=("足彩 " if lane is OperatorLane.ZUCAI else "竞彩 ")
+                    + business_key,
+                ),
+                progress=TaskProgressSummary(completed=1, total=1, label="出票结果"),
+                step=CompleteStep(
+                    task_id=link.task_family_id,
+                    title="本票未出票",
+                    summary=(
+                        "已由你明确关闭本票。"
+                        if outcome == "no_ticket"
+                        else "截止前未完成本人确认，没有进入账本。"
+                    ),
+                ),
+                mutation_token=_token(
+                    {
+                        "artifact": link.ticket_artifact_id,
+                        "terminal": terminal.artifact_terminal_receipt_id,
+                    }
+                ),
+                work_item_identity=identity,
+                scope_kind=ScopeKind.ARTIFACT,
+                projected_state=OperatorTaskState.COMPLETE,
+                deployment_outcome=outcome,
+                scope_label=label,
+            )
+
+        head = uow.tickets.confirmation_challenge_head(link.ticket_artifact_id)
+        challenge = (
+            None
+            if head is None
+            else uow.tickets.confirmation_challenge_revision(
+                head.challenge_revision_id
+            )
+        )
+        if head is not None and challenge is None:
+            raise ProductActionBlockedError("confirmation challenge head is invalid")
+        if challenge is not None:
+            issued_at = _aware(
+                datetime.fromisoformat(challenge.issued_at),
+                "confirmation issued time",
+            )
+            if issued_at > cutoff:
+                head = None
+                challenge = None
+            else:
+                effective_cutoff = min(
+                    effective_cutoff,
+                    _aware(
+                        datetime.fromisoformat(challenge.effective_cutoff_at),
+                        "confirmation cutoff",
+                    ),
+                )
+        confirmation_state = "open" if challenge is not None else "not_issued"
+        source_error = (
+            "confirmation_expired" if effective_cutoff <= cutoff else None
+        )
+        facts = OperatorTaskFacts(
+            lane=lane,
+            business_key=business_key,
+            deadline_at=effective_cutoff,
+            waiting_until=None,
+            source_error_code=source_error,
+            has_issue=True,
+            has_prep=True,
+            unresolved_adjudications=0,
+            candidate_count=1,
+            selected_candidate_id="protected-artifact",
+            audit_recorded=True,
+            deployment_decision="keep",
+            ticket_artifact_id=link.ticket_artifact_id,
+            confirmation_state=(
+                "expired" if source_error is not None else confirmation_state
+            ),
+            placement_state="unplaced",
+            result_available=False,
+            pending_review_items=0,
+        )
+        if source_error is not None:
+            return _BuiltTask(
+                facts=facts,
+                summary=_summary(
+                    facts,
+                    title=("足彩 " if lane is OperatorLane.ZUCAI else "竞彩 ")
+                    + business_key,
+                    block_reason_code=source_error,
+                ),
+                progress=TaskProgressSummary(completed=0, total=1, label="等待截止扫描"),
+                step=BlockedStep(
+                    task_id=link.task_family_id,
+                    title="确认已到截止时刻",
+                    recovery=OperatorRecoverySummary(
+                        code=source_error,
+                        missing="artifact shadow 截止回执",
+                        impact="本票不能再发起或完成确认",
+                        action_label="等待截止扫描完成",
+                    ),
+                ),
+                mutation_token=_token(
+                    {
+                        "artifact": link.ticket_artifact_id,
+                        "cutoff": effective_cutoff,
+                    }
+                ),
+                work_item_identity=identity,
+                scope_kind=ScopeKind.ARTIFACT,
+                projected_state=OperatorTaskState.BLOCKED,
+                deployment_outcome="pending",
+                scope_label=label,
+            )
+
+        command_dependencies = [f"ticket_artifact:{link.ticket_artifact_id}"]
+        if challenge is not None:
+            command_dependencies.append(
+                f"challenge_revision:{challenge.challenge_revision_id}"
+            )
+        artifact_lineage = self._artifact_link_lineage(
+            link,
+            work_item_id=identity,
+        )
+        command_token = (
+            self._decision_command_token(
+                artifact_lineage,
+                OperatorCommandKind.REQUEST_CONFIRMATION,
+                tuple(sorted(command_dependencies)),
+            )
+            if confirmation_state == "not_issued"
+            else None
+        )
+        artifact_token = (
+            self._decision_command_token(
+                artifact_lineage,
+                OperatorCommandKind.REQUEST_CONFIRMATION,
+                (f"ticket_artifact:{link.ticket_artifact_id}",),
+            )
+            if confirmation_state == "not_issued"
+            else None
+        )
+        return _BuiltTask(
+            facts=facts,
+            summary=_summary(
+                facts,
+                title=("足彩 " if lane is OperatorLane.ZUCAI else "竞彩 ")
+                + business_key,
+            ),
+            progress=TaskProgressSummary(
+                completed=1 if confirmation_state == "open" else 0,
+                total=2,
+                label="本人确认",
+            ),
+            step=ConfirmationStep(
+                surface_version="2",
+                task_id=link.task_family_id,
+                amount_minor=binding.stake_minor,
+                currency=binding.currency,
+                deadline_at=effective_cutoff,
+                confirmation_state=confirmation_state,
+                confirmation_expires_at=(
+                    effective_cutoff if confirmation_state == "open" else None
+                ),
+                command_token=command_token,
+                ticket_artifact_token=artifact_token,
+            ),
+            mutation_token=command_token
+            or _token(
+                {
+                    "artifact": link.ticket_artifact_id,
+                    "challenge": challenge.challenge_revision_id,
+                }
+            ),
+            work_item_identity=identity,
+            scope_kind=ScopeKind.ARTIFACT,
+            projected_state=OperatorTaskState.AWAIT_CONFIRMATION,
+            deployment_outcome="pending",
+            scope_label=label,
+        )
+
+    def _formal_result_stage(
+        self,
+        uow,
+        lineage: _DecisionLineage,
+        lane: OperatorLane,
+        business_key: str,
+        deadline: datetime | None,
+        cutoff: datetime,
+        *,
+        artifact_link=None,
+    ) -> _BuiltTask | None:
+        links = (
+            (artifact_link,)
+            if artifact_link is not None
+            else uow.tickets.artifact_work_item_links_for_work_item(
+                lineage.work_item_id
+            )
+        )
+        if not links:
+            return None
+        terminals = tuple(
+            uow.tickets.artifact_terminal_receipt(link.ticket_artifact_id)
+            for link in links
+        )
+        if any(terminal is None for terminal in terminals):
+            return None
+        terminal_kinds = {
+            terminal.terminal_kind for terminal in terminals if terminal is not None
+        }
+        all_shadow = terminal_kinds == {"shadow"}
+        if all_shadow:
+            placed_ticket_ids = ()
+        elif artifact_link is not None:
+            placement = uow.tickets.placement_for_artifact(
+                artifact_link.ticket_artifact_id
+            )
+            placed_ticket_ids = () if placement is None else (placement.ticket_id,)
+        else:
+            placed_ticket_ids = uow.operator_result.placed_ticket_ids_for_work_item(
+                lineage.work_item_id
+            )
+        result_set = (
+            None
+            if all_shadow
+            else uow.operator_result.current_result_set(
+                lane=lane.value,
+                business_key=business_key,
+            )
+        )
+        matches: list[ResultMatchSummary] = []
+        result_state = "not_imported"
+        prize_state = "not_applicable" if lane is OperatorLane.JCZQ else "missing"
+        prize_published_at = None
+        prize_tiers: list[ResultPrizeTierSummary] = []
+        settlement = _SettlementProjection(
+            state="not_applicable" if all_shadow else "result_waiting",
+            placed_ticket_count=len(placed_ticket_ids),
+            blocking_codes=() if all_shadow else ("result_not_ready",),
+        )
+        if result_set is not None:
+            result_rows = uow.operator_result.result_matches_for_set(
+                result_set.result_set_revision_id
+            )
+            source_rows = uow.operator_result.result_source_receipts_for_set(
+                result_set.result_set_revision_id
+            )
+            outcomes_by_match = {
+                outcome.match_id: outcome
+                for outcome in uow.operator_result.outcomes_for_result_set(
+                    result_set.result_set_revision_id
+                )
+            }
+            sources_by_match: dict[str, list[object]] = {}
+            for source in source_rows:
+                sources_by_match.setdefault(source.match_result_revision_id, []).append(
+                    source
+                )
+            for row in result_rows:
+                match = self._repository.match(row.match_id, cutoff.isoformat())
+                match_label = self._match_label(match, row.official_match_no)
+                source_views = [
+                    ResultSourceSummary(
+                        source_label=_RESULT_SOURCE_LABELS[source.source_kind],
+                        state=source.receipt_state,
+                        result_label=self._result_source_label(source),
+                        captured_at=(
+                            None
+                            if source.captured_at is None
+                            else _aware(
+                                datetime.fromisoformat(source.captured_at),
+                                "result source capture",
+                            )
+                        ),
+                        source_kind=source.source_kind,
+                        source_disposition=source.source_disposition,
+                        home_90=source.home_90,
+                        away_90=source.away_90,
+                        invalid_code=source.invalid_code,
+                    )
+                    for source in sorted(
+                        sources_by_match.get(row.match_result_revision_id, []),
+                        key=lambda item: item.source_index,
+                    )
+                ]
+                outcome = outcomes_by_match.get(row.match_id)
+                matches.append(
+                    ResultMatchSummary(
+                        official_match_no=row.official_match_no,
+                        match_label=match_label,
+                        agreement_state=row.agreement_state,
+                        result_disposition=row.normalized_disposition,
+                        home_90=row.normalized_home_90,
+                        away_90=row.normalized_away_90,
+                        sources=source_views,
+                        outcome_state=(
+                            "waiting"
+                            if outcome is None
+                            else "corrected"
+                            if outcome.revision_no > 1
+                            else "committed"
+                        ),
+                    )
+                )
+            if any(match.agreement_state == "conflict" for match in matches):
+                result_state = "conflict"
+            elif any(match.agreement_state == "missing" for match in matches):
+                result_state = "missing"
+            elif any(match.result_disposition == "postponed" for match in matches):
+                result_state = "postponed"
+            elif len(matches) == result_set.match_count:
+                result_state = (
+                    "corrected" if getattr(result_set, "revision_no", 1) > 1 else "ready"
+                )
+            if lane is OperatorLane.ZUCAI:
+                prize_id = result_set.zucai_prize_table_revision_id
+                prize = (
+                    None
+                    if prize_id is None
+                    else uow.operator_result.prize_table_revision(prize_id)
+                )
+                if prize is not None:
+                    prize_state = "ready"
+                    prize_published_at = _aware(
+                        datetime.fromisoformat(prize.published_at),
+                        "prize publication",
+                    )
+                    prize_tiers = [
+                        ResultPrizeTierSummary(
+                            tier_label=_PRIZE_TIER_LABELS[tier.tier_code],
+                            tier_code=tier.tier_code,
+                            ticket_kind=tier.ticket_kind,
+                            required_correct_count=tier.required_correct_count,
+                            official_winning_note_count=(tier.official_winning_note_count),
+                            payout_minor_per_winning_note=(
+                                tier.payout_minor_per_winning_note
+                            ),
+                        )
+                        for tier in uow.operator_result.prize_table_tiers(
+                            prize.prize_table_revision_id
+                        )
+                    ]
+            if result_state in {"ready", "corrected"} and prize_state in {
+                "not_applicable",
+                "ready",
+            }:
+                context = self._settlement_context_for_result(
+                    lineage,
+                    result_set,
+                    lane=lane,
+                )
+                settlement = _SettlementProjection(
+                    state="not_requested",
+                    command_token=context.command_token,
+                    placed_ticket_count=len(placed_ticket_ids),
+                )
+            elif result_state in {"ready", "corrected"} and prize_state == "missing":
+                settlement = _SettlementProjection(
+                    state="prize_waiting",
+                    placed_ticket_count=len(placed_ticket_ids),
+                    blocking_codes=("prize_not_ready",),
+                )
+            else:
+                settlement = _SettlementProjection(
+                    state="result_waiting",
+                    placed_ticket_count=len(placed_ticket_ids),
+                    blocking_codes=("result_not_ready",),
+                )
+            settlement = self._persisted_settlement_projection(
+                uow,
+                result_set,
+                result_rows=result_rows,
+                cutoff=cutoff,
+                fallback=settlement,
+            )
+        facts = OperatorTaskFacts(
+            lane=lane,
+            business_key=business_key,
+            deadline_at=deadline,
+            waiting_until=None,
+            source_error_code=None,
+            has_issue=True,
+            has_prep=True,
+            unresolved_adjudications=0,
+            candidate_count=1,
+            selected_candidate_id="terminal-ticket-scope",
+            audit_recorded=True,
+            deployment_decision="keep",
+            ticket_artifact_id=links[0].ticket_artifact_id,
+            confirmation_state="consumed",
+            placement_state="shadow" if all_shadow else "placed",
+            result_available=False,
+            pending_review_items=0,
+        )
+        step = AwaitResultStep(
+            surface_version="2",
+            task_id=lineage.task_key,
+            title="赛果与结算",
+            expected_at=deadline,
+            result_state=result_state,
+            result_matches=matches,
+            prize_state=prize_state,
+            prize_published_at=prize_published_at,
+            prize_tiers=prize_tiers,
+            settlement_state=settlement.state,
+            settlement_command_token=settlement.command_token,
+            result_cutoff_at=(
+                None
+                if result_set is None
+                else _aware(
+                    datetime.fromisoformat(result_set.result_cutoff_at),
+                    "result cutoff",
+                )
+            ),
+            settlement_ready=settlement.command_token is not None,
+            request_state=settlement.request_state,
+            placed_ticket_count=settlement.placed_ticket_count,
+            settled_ticket_count=settlement.settled_ticket_count,
+            blocking_codes=list(settlement.blocking_codes),
+            last_run=settlement.last_run,
+            currency=settlement.currency,
+            total_stake_minor=settlement.total_stake_minor,
+            total_payout_minor=settlement.total_payout_minor,
+            tickets=list(settlement.tickets),
+        )
+        completed = sum(match.agreement_state == "agreed" for match in matches)
+        total = 0 if result_set is None else result_set.match_count
+        return _BuiltTask(
+            facts=facts,
+            summary=_summary(
+                facts,
+                title=("足彩 " if lane is OperatorLane.ZUCAI else "竞彩 ")
+                + business_key,
+            ),
+            progress=TaskProgressSummary(
+                completed=completed,
+                total=total,
+                label="赛果与结算",
+            ),
+            step=step,
+            mutation_token=_token(
+                {
+                    "task_id": lineage.task_key,
+                    "work_item_id": lineage.work_item_id,
+                    "terminal_kinds": sorted(terminal_kinds),
+                    "result_set_revision_id": (
+                        None
+                        if result_set is None
+                        else result_set.result_set_revision_id
+                    ),
+                }
+            ),
+            work_item_identity=lineage.work_item_id,
+            scope_kind=(ScopeKind.ARTIFACT if all_shadow else ScopeKind.TICKET),
+            projected_state=OperatorTaskState.AWAIT_RESULT,
+        )
+
+    def _persisted_settlement_projection(
+        self,
+        uow,
+        result_set,
+        *,
+        result_rows,
+        cutoff: datetime,
+        fallback: _SettlementProjection,
+    ) -> _SettlementProjection:
+        request = uow.operator_result.settlement_request_for_result(
+            result_set.result_set_revision_id
+        )
+        if request is None:
+            return fallback
+        run = uow.operator_result.task_settlement_run_for_request(
+            request.settlement_request_id
+        )
+        if run is None:
+            job = uow.operator_decision.worker_job_for_source(
+                job_kind="task_settlement",
+                source_object_type="operator_settlement_request",
+                source_object_id=request.settlement_request_id,
+            )
+            return _SettlementProjection(
+                state=(
+                    "integrity_blocked"
+                    if job is not None and job.state == "failed"
+                    else "queued"
+                ),
+                request_state=(
+                    "rejected"
+                    if job is not None and job.state == "failed"
+                    else "queued"
+                ),
+                placed_ticket_count=fallback.placed_ticket_count,
+                blocking_codes=(
+                    ("placement_integrity_blocked",)
+                    if job is not None and job.state == "failed"
+                    else ()
+                ),
+            )
+        placed_ticket_ids = uow.operator_result.placed_ticket_ids_for_work_item(
+            result_set.work_item_id
+        )
+        skips = uow.operator_result.task_settlement_skips(run.settlement_run_id)
+        ticket_labels = {
+            ticket_id: f"第 {index} 票"
+            for index, ticket_id in enumerate(placed_ticket_ids, start=1)
+        }
+        last_run = TaskSettlementRunSummary(
+            requested_ticket_count=run.requested_ticket_count,
+            eligible_ticket_count=run.eligible_ticket_count,
+            settled_ticket_count=run.settled_ticket_count,
+            skipped_ticket_count=run.skipped_ticket_count,
+            persisted_settlement_count=run.persisted_settlement_count,
+            skips=[
+                TaskSettlementSkipSummary(
+                    ticket_label=ticket_labels.get(skip.ticket_id, "未知票据"),
+                    reason_code=skip.reason_code,
+                )
+                for skip in skips
+            ],
+        )
+        blocking_codes = tuple(sorted({skip.reason_code for skip in skips}))
+        if run.settlement_state == "not_applicable":
+            return _SettlementProjection(
+                state="not_applicable",
+                request_state="completed",
+                placed_ticket_count=0,
+                settled_ticket_count=0,
+                blocking_codes=blocking_codes,
+                last_run=last_run,
+            )
+
+        ticket_views = self._settlement_ticket_views(
+            uow,
+            run,
+            result_rows=result_rows,
+            cutoff=cutoff,
+        )
+        if not ticket_views:
+            reasons = set(blocking_codes)
+            if "placement_integrity_blocked" in reasons:
+                state = "integrity_blocked"
+            elif "prize_not_ready" in reasons:
+                state = "prize_waiting"
+            elif "result_not_ready" in reasons:
+                state = "result_waiting"
+            else:
+                raise ProductActionBlockedError(
+                    "completed settlement run has no displayable ticket outcome"
+                )
+            return _SettlementProjection(
+                state=state,
+                request_state="completed",
+                placed_ticket_count=len(placed_ticket_ids),
+                settled_ticket_count=run.settled_ticket_count,
+                blocking_codes=blocking_codes,
+                last_run=last_run,
+            )
+        currencies = {ticket.currency for ticket in ticket_views}
+        if len(currencies) != 1:
+            raise ProductActionBlockedError("settlement ticket currencies conflict")
+        return _SettlementProjection(
+            state=run.settlement_state,
+            request_state="completed",
+            placed_ticket_count=len(placed_ticket_ids),
+            settled_ticket_count=run.settled_ticket_count,
+            blocking_codes=blocking_codes,
+            last_run=last_run,
+            currency=currencies.pop(),
+            total_stake_minor=sum(ticket.stake_minor for ticket in ticket_views),
+            total_payout_minor=sum(ticket.payout_minor for ticket in ticket_views),
+            tickets=ticket_views,
+        )
+
+    def _settlement_ticket_views(
+        self,
+        uow,
+        run,
+        *,
+        result_rows,
+        cutoff: datetime,
+    ) -> tuple[SettlementTicketSummary, ...]:
+        result_by_match = {row.match_id: row for row in result_rows}
+        views = []
+        for ticket_number, revision_id in enumerate(
+            run.ticket_settlement_revision_ids,
+            start=1,
+        ):
+            revision = uow.operator_result.ticket_settlement_revision(revision_id)
+            if revision is None:
+                raise ProductActionBlockedError("settlement ticket row is unavailable")
+            ticket = uow.finance.ticket(revision.ticket_id)
+            if ticket is None or ticket.ticket_kind is None:
+                raise ProductActionBlockedError("settlement ticket identity is unavailable")
+            notes_by_id = {
+                note.ticket_note_id: note
+                for note in uow.operator_result.ticket_notes(revision.ticket_id)
+            }
+            leg_results = {
+                row.ticket_note_leg_id: row
+                for row in uow.operator_result.ticket_note_leg_settlements(
+                    revision.settlement_revision_id
+                )
+            }
+            note_views = []
+            for note_result in uow.operator_result.ticket_note_settlements(
+                revision.settlement_revision_id
+            ):
+                note = notes_by_id.get(note_result.ticket_note_id)
+                if note is None:
+                    raise ProductActionBlockedError("settlement note binding is unavailable")
+                leg_views = []
+                for leg in uow.operator_result.ticket_note_legs(note.ticket_note_id):
+                    grade = leg_results.get(leg.ticket_note_leg_id)
+                    result = result_by_match.get(leg.match_id)
+                    match = self._repository.match(leg.match_id, cutoff.isoformat())
+                    if grade is None or result is None:
+                        raise ProductActionBlockedError(
+                            "settlement leg binding is unavailable"
+                        )
+                    market_code = (
+                        uow.market.market_kind(leg.market_definition_id)
+                        or leg.market_definition_id
+                    )
+                    leg_views.append(
+                        SettlementLegSummary(
+                            match_label=self._match_label(
+                                match,
+                                result.official_match_no,
+                            ),
+                            market_label=_MARKET_LABELS.get(
+                                market_code,
+                                market_code,
+                            ),
+                            selection_label=_face_label(
+                                leg.selection_code,
+                                market_code,
+                            ),
+                            result_label=self._settlement_result_label(
+                                grade.market_result_code,
+                                grade.result_disposition,
+                                market_code,
+                            ),
+                            grade=grade.leg_grade,
+                            leg_index=leg.leg_index,
+                            official_match_no=result.official_match_no,
+                            market_code=market_code,
+                            selection_code=leg.selection_code,
+                            result_disposition=grade.result_disposition,
+                            market_result_code=grade.market_result_code,
+                            leg_grade=grade.leg_grade,
+                            booked_decimal_odds=leg.booked_decimal_odds,
+                            settlement_parameter_decimal=(
+                                leg.settlement_parameter_decimal
+                            ),
+                        )
+                    )
+                note_views.append(
+                    SettlementNoteSummary(
+                        note_number=note.note_index + 1,
+                        structure_label=self._settlement_structure_label(note),
+                        grade=note_result.note_grade,
+                        unit_count=note_result.unit_count,
+                        correct_leg_count=note_result.correct_leg_count,
+                        void_leg_count=note_result.void_leg_count,
+                        prize_label=(
+                            None
+                            if note_result.prize_tier_code is None
+                            else _PRIZE_TIER_LABELS[note_result.prize_tier_code]
+                        ),
+                        payout_minor=note_result.payout_minor,
+                        legs=leg_views,
+                        note_index=note.note_index,
+                        group_label=self._settlement_group_label(
+                            note.ticket_kind,
+                            note.group_code,
+                        ),
+                        note_grade=note_result.note_grade,
+                        winning_unit_count=note_result.winning_unit_count,
+                        void_unit_count=note_result.void_unit_count,
+                        stake_minor=note.stake_minor,
+                        prize_tier_code=note_result.prize_tier_code,
+                    )
+                )
+            ticket_kind_label = self._settlement_ticket_label(
+                ticket.ticket_kind,
+                note_views,
+            )
+            views.append(
+                SettlementTicketSummary(
+                    ticket_number=ticket_number,
+                    ticket_kind_label=ticket_kind_label,
+                    settlement_state=revision.settlement_state,
+                    currency=revision.currency,
+                    stake_minor=revision.stake_minor,
+                    paid_note_unit_count=revision.paid_note_unit_count,
+                    winning_note_unit_count=revision.winning_note_unit_count,
+                    void_note_unit_count=revision.void_note_unit_count,
+                    payout_minor=revision.gross_payout_minor,
+                    notes=note_views,
+                    ticket_label=f"第 {ticket_number} 票 · {ticket_kind_label}",
+                    revision_no=revision.revision_no,
+                    corrected=revision.settlement_state == "corrected",
+                    settlement_method_label=self._settlement_method_label(
+                        revision.method_version
+                    ),
+                    rounding_policy_label=self._rounding_policy_label(
+                        revision.rounding_policy_version
+                    ),
+                    distinct_note_count=revision.distinct_note_count,
+                    cash_entries=[
+                        SettlementCashEntrySummary(
+                            transaction_kind=cash.transaction_kind,
+                            amount_minor=cash.amount_minor,
+                            currency=cash.currency,
+                            replaces_prior_payout=(
+                                cash.reverses_transaction_id is not None
+                            ),
+                        )
+                        for cash in uow.operator_result.settlement_cash_links(
+                            revision.settlement_revision_id
+                        )
+                    ],
+                )
+            )
+        return tuple(views)
+
+    @staticmethod
+    def _settlement_structure_label(note) -> str:
+        if note.ticket_kind == "sfc":
+            return "胜负彩 14 场"
+        if note.ticket_kind == "renjiu":
+            return "任九 9 场"
+        value = note.structure_code.replace("x", " 串 ")
+        return "单关" if value in {"1", "1 串 1"} else value
+
+    @staticmethod
+    def _settlement_ticket_label(
+        ticket_kind: str,
+        notes: list[SettlementNoteSummary],
+    ) -> str:
+        if ticket_kind == "sfc":
+            return "胜负彩"
+        if ticket_kind == "renjiu":
+            return "任九"
+        structure = notes[0].structure_label if notes else ""
+        return f"竞彩 {structure}".strip()
+
+    @staticmethod
+    def _settlement_group_label(
+        ticket_kind: str,
+        group_code: str | None,
+    ) -> str | None:
+        if ticket_kind != "renjiu" or group_code is None:
+            return None
+        official_match_nos = group_code.split("-")
+        if not all(re.fullmatch(r"\d+", number) for number in official_match_nos):
+            raise ProductActionBlockedError("settlement group label is unavailable")
+        return "场次 " + "、".join(official_match_nos)
+
+    @staticmethod
+    def _settlement_method_label(method_version: str) -> str:
+        try:
+            return _SETTLEMENT_METHOD_LABELS[method_version]
+        except KeyError as error:
+            raise ProductActionBlockedError(
+                "settlement method version is unavailable"
+            ) from error
+
+    @staticmethod
+    def _rounding_policy_label(rounding_policy_version: str | None) -> str:
+        try:
+            return _ROUNDING_POLICY_LABELS[rounding_policy_version]
+        except KeyError as error:
+            raise ProductActionBlockedError(
+                "settlement rounding policy is unavailable"
+            ) from error
+
+    @staticmethod
+    def _settlement_result_label(
+        result_code: str,
+        disposition: str,
+        market_code: str,
+    ) -> str:
+        if disposition == "official_void":
+            return "官方无效场"
+        face = {"home": "3", "draw": "1", "away": "0"}.get(
+            result_code,
+            result_code,
+        )
+        return _face_label(face, market_code)
+
+    @staticmethod
+    def _result_source_label(source) -> str | None:
+        if source.receipt_state != "available":
+            return None
+        if source.source_disposition == "played_90":
+            return f"{source.home_90} - {source.away_90}"
+        if source.source_disposition == "postponed":
+            return "比赛延期"
+        if source.source_disposition == "official_void":
+            return "官方无效场"
+        raise ProductActionBlockedError("result source disposition is invalid")
+
+    def _settlement_context_for_result(
+        self,
+        lineage: _DecisionLineage,
+        result_set,
+        *,
+        lane: OperatorLane,
+    ) -> SettlementRequestCommandContext:
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError("operator settlement tokens are not configured")
+        if (
+            result_set.task_family_id != lineage.task_key
+            or result_set.work_item_id != lineage.work_item_id
+            or result_set.task_snapshot_hash != lineage.task_snapshot_hash
+            or result_set.slate_revision_id != lineage.slate_revision_id
+            or result_set.lane != lane.value
+            or result_set.outcome_count != result_set.match_count
+        ):
+            raise ProductActionBlockedError("result evidence does not match the current task")
+        prize_id = result_set.zucai_prize_table_revision_id
+        if (lane is OperatorLane.ZUCAI and prize_id is None) or (
+            lane is OperatorLane.JCZQ and prize_id is not None
+        ):
+            raise ProductActionBlockedError("result prize binding is not ready")
+        dependencies = tuple(
+            sorted(
+                (
+                    f"result_set_revision:{result_set.result_set_revision_id}",
+                    f"slate_revision:{lineage.slate_revision_id}",
+                )
+            )
+        )
+        payload = OperatorSnapshotTokenPayloadV1(
+            task_snapshot_hash=lineage.task_snapshot_hash,
+            work_item_id=lineage.work_item_id,
+            command_kind=OperatorCommandKind.REQUEST_SETTLEMENT,
+            dependency_revision_ids=list(dependencies),
+        )
+        return SettlementRequestCommandContext(
+            task_key=lineage.task_key,
+            task_snapshot_hash=lineage.task_snapshot_hash,
+            work_item_id=lineage.work_item_id,
+            dependency_revision_ids=dependencies,
+            slate_revision_id=lineage.slate_revision_id,
+            result_set_revision_id=result_set.result_set_revision_id,
+            prize_table_revision_id=prize_id,
+            command_token=self._snapshot_tokens.encode(payload),
         )
 
     def _deployment_step(
@@ -1552,6 +3932,16 @@ class OperatorQueryService:
             raise ProductActionBlockedError(
                 "confirmation currently requires one protected ticket artifact"
             )
+        audit_override_ticket_batch_token = (
+            self._operator_decisions.issue_ticket_batch_audit_token(
+                batch.ticket_batch_revision_id
+            )
+            if mode == "blocked"
+            and unresolved_errors
+            and batch is not None
+            and self._operator_decisions is not None
+            else None
+        )
         visible_findings = unresolved_errors or unresolved_warns or list(findings)
         finding_views = [
             DeploymentAuditFindingSummary(
@@ -1597,6 +3987,9 @@ class OperatorQueryService:
                 command_token=command_token,
                 candidate_selection_token=selection_token,
                 ticket_batch_token=batch_token,
+                audit_override_ticket_batch_token=(
+                    audit_override_ticket_batch_token
+                ),
                 ticket_artifact_token=artifact_token,
                 no_ticket_command_token=self._decision_command_token(
                     lineage,
@@ -2471,10 +4864,21 @@ class OperatorQueryService:
         cutoff = _aware(as_of, "as_of")
         built = sorted(
             self._build_all(cutoff),
-            key=lambda item: priority_key(item.facts, cutoff),
+            key=lambda item: (
+                is_passive_expired_deployment(item.facts, cutoff),
+                priority_key(item.facts, cutoff),
+            ),
         )
         tasks = [
-            item.summary.model_copy(update={"priority_rank": rank})
+            item.summary.model_copy(
+                update={
+                    "priority_rank": rank,
+                    "is_actionable": (
+                        item.summary.is_actionable
+                        and not is_passive_expired_deployment(item.facts, cutoff)
+                    ),
+                }
+            )
             for rank, item in enumerate(built)
         ]
         selected = next(
@@ -2482,6 +4886,289 @@ class OperatorQueryService:
             None,
         )
         return OperatorWorklistResponse(as_of=cutoff, selected=selected, tasks=tasks)
+
+    def _workbench(self, cutoff: datetime) -> OperatorWorkbenchAssembler:
+        return OperatorWorkbenchAssembler(
+            slates=self._repository.operator_sale_slates(as_of=cutoff.isoformat()),
+            built_tasks=self._build_all(cutoff),
+            match_lookup=self._repository.match,
+            schedule_recoveries=schedule_recovery_views(
+                self._repository.operator_schedule_checks(as_of=cutoff.isoformat())
+            ),
+        )
+
+    def today(self, *, as_of: datetime):
+        cutoff = _aware(as_of, "as_of")
+        return self._workbench(cutoff).today(as_of=cutoff)
+
+    def lane(self, lane: OperatorLane, *, as_of: datetime):
+        cutoff = _aware(as_of, "as_of")
+        return self._workbench(cutoff).lane(lane, as_of=cutoff)
+
+    def task_v2(
+        self,
+        lane: OperatorLane,
+        business_key: str,
+        *,
+        as_of: datetime,
+    ):
+        expected = (
+            r"\d{5}"
+            if lane is OperatorLane.ZUCAI
+            else r"\d{4}-\d{2}-\d{2}"
+        )
+        if re.fullmatch(expected, business_key) is None:
+            raise ValueError("business key does not match lane")
+        cutoff = _aware(as_of, "as_of")
+        detail = self._workbench(cutoff).task(
+            lane,
+            business_key,
+            as_of=cutoff,
+        )
+        detail = self._with_audit_links(detail)
+        return detail.model_copy(
+            update={
+                "no_ticket": self._task_no_ticket_control(
+                    detail.task_id,
+                    detail.step,
+                    cutoff,
+                )
+            }
+        )
+
+    def work_item_v2(
+        self,
+        lane: OperatorLane,
+        business_key: str,
+        work_item_key: str,
+        *,
+        as_of: datetime,
+    ):
+        expected = (
+            r"\d{5}"
+            if lane is OperatorLane.ZUCAI
+            else r"\d{4}-\d{2}-\d{2}"
+        )
+        if re.fullmatch(expected, business_key) is None:
+            raise ValueError("business key does not match lane")
+        if re.fullmatch(r"[a-z][a-z0-9-]{8,100}", work_item_key) is None:
+            raise ValueError("work item key is invalid")
+        cutoff = _aware(as_of, "as_of")
+        detail = self._workbench(cutoff).task(
+            lane,
+            business_key,
+            as_of=cutoff,
+            work_item_key=work_item_key,
+        )
+        detail = self._with_audit_links(detail)
+        return detail.model_copy(
+            update={
+                "no_ticket": self._task_no_ticket_control(
+                    detail.task_id,
+                    detail.step,
+                    cutoff,
+                )
+            }
+        )
+
+    def audit(self, audit_token: str, *, as_of: datetime) -> OperatorAuditEnvelopeV1:
+        cutoff = _aware(as_of, "as_of")
+        if self._audit_tokens is None:
+            raise ProductNotFoundError("operator audit record not found")
+        locator = self._audit_tokens.resolve(audit_token)
+        try:
+            detail = self.work_item_v2(
+                locator.lane,
+                locator.business_key,
+                locator.work_item_key,
+                as_of=cutoff,
+            )
+        except (ProductNotFoundError, ValueError) as error:
+            raise ProductNotFoundError("operator audit record not found") from error
+        work_item = detail.active_work_item
+        if self._audit_snapshot_hash(work_item.snapshot_token) != locator.task_snapshot_hash:
+            raise ProductNotFoundError("operator audit record not found")
+
+        slate = next(
+            (
+                item
+                for item in self._repository.operator_sale_slates(
+                    as_of=cutoff.isoformat()
+                )
+                if item.lane is locator.lane
+                and item.business_key == locator.business_key
+            ),
+            None,
+        )
+        if slate is None:
+            raise ProductNotFoundError("operator audit record not found")
+
+        technical_work_item_id = work_item.work_item_key
+        dependency_revision_ids: list[str] = []
+        try:
+            command_payload = self._snapshot_tokens.decode(work_item.snapshot_token)
+        except OperatorSnapshotTokenError:
+            command_payload = None
+        if command_payload is not None:
+            technical_work_item_id = command_payload.work_item_id
+            dependency_revision_ids = command_payload.dependency_revision_ids
+
+        lineage = [
+            OperatorAuditLineageItemV1(
+                relation="identifies",
+                object_type="operator_work_item",
+                object_id=technical_work_item_id,
+                revision_id=None,
+                content_hash=locator.task_snapshot_hash,
+                created_by_action_id=None,
+                source_payload_location=None,
+            ),
+            OperatorAuditLineageItemV1(
+                relation="uses",
+                object_type="official_sale_slate_revision",
+                object_id=slate.slate_revision_id,
+                revision_id=slate.slate_revision_id,
+                content_hash=slate.content_hash,
+                created_by_action_id=None,
+                source_payload_location=None,
+            ),
+        ]
+        lineage.extend(
+            OperatorAuditLineageItemV1(
+                relation="contains",
+                object_type="official_offer_revision",
+                object_id=offer.official_offer_revision_id,
+                revision_id=offer.official_offer_revision_id,
+                content_hash=None,
+                created_by_action_id=None,
+                source_payload_location=None,
+            )
+            for offer in sorted(
+                slate.offers,
+                key=lambda item: (
+                    item.official_match_no,
+                    item.official_offer_revision_id,
+                ),
+            )
+        )
+        lineage.extend(
+            self._audit_dependency_item(reference)
+            for reference in dependency_revision_ids
+        )
+
+        projection = self._audit_projection(cutoff)
+        return_href = (
+            f"/operator-next/{locator.lane.value}/{locator.business_key}/"
+            f"{locator.work_item_key}"
+        )
+        return OperatorAuditEnvelopeV1(
+            as_of=cutoff,
+            title=f"{detail.task_label}技术审计",
+            task_label=detail.task_label,
+            work_item_label=work_item.scope_label,
+            return_href=return_href,
+            task_id=detail.task_id,
+            work_item_id=technical_work_item_id,
+            task_snapshot_hash=locator.task_snapshot_hash,
+            audit_override_ticket_batch_token=(
+                detail.step.audit_override_ticket_batch_token
+                if isinstance(detail.step, AuditDeploymentStep)
+                else None
+            ),
+            lineage=lineage,
+            projection=projection,
+        )
+
+    def _with_audit_links(self, detail):
+        if self._audit_tokens is None:
+            return detail
+        updated_items = [
+            item.model_copy(
+                update={
+                    "audit_href": (
+                        "/operator-next/audit/"
+                        + self._audit_tokens.issue(
+                            lane=detail.lane,
+                            business_key=detail.business_key,
+                            work_item_key=item.work_item_key,
+                            task_snapshot_hash=self._audit_snapshot_hash(
+                                item.snapshot_token
+                            ),
+                        )
+                    )
+                }
+            )
+            for item in detail.work_items
+        ]
+        active = next(
+            item
+            for item in updated_items
+            if item.work_item_key == detail.active_work_item.work_item_key
+        )
+        return detail.model_copy(
+            update={"work_items": updated_items, "active_work_item": active}
+        )
+
+    def _audit_snapshot_hash(self, snapshot_token: str) -> str:
+        if re.fullmatch(r"[0-9a-f]{64}", snapshot_token):
+            return snapshot_token
+        if self._snapshot_tokens is not None:
+            try:
+                return self._snapshot_tokens.decode(snapshot_token).task_snapshot_hash
+            except OperatorSnapshotTokenError:
+                pass
+        return _token({"audit_snapshot_token": snapshot_token})
+
+    @staticmethod
+    def _audit_dependency_item(reference: str) -> OperatorAuditLineageItemV1:
+        object_type, separator, object_id = reference.partition(":")
+        return OperatorAuditLineageItemV1(
+            relation="depends_on",
+            object_type=object_type if separator else "dependency_revision",
+            object_id=object_id if separator else reference,
+            revision_id=object_id if separator else reference,
+            content_hash=None,
+            created_by_action_id=(object_id if object_type == "action" else None),
+            source_payload_location=None,
+        )
+
+    def _audit_projection(self, cutoff: datetime) -> OperatorAuditProjectionV1:
+        projection = self._repository.scoreboard_projection(as_of=cutoff.isoformat())
+        current_high_watermark = self._repository.action_high_watermark()
+        health = projection.get("health")
+        if not isinstance(health, dict):
+            raise ValueError("scoreboard projection health is unavailable")
+        state = str(health.get("state"))
+        if state == "unavailable":
+            return OperatorAuditProjectionV1(
+                projection_name="scoreboard",
+                state="unavailable",
+                projection_version=None,
+                source_action_high_watermark=None,
+                current_action_high_watermark=current_high_watermark,
+                built_at=None,
+            )
+        if state not in {"available", "stale"}:
+            raise ValueError("unknown scoreboard projection state")
+        source_high_watermark = int(health["source_high_watermark"])
+        built_at_value = health.get("built_at")
+        built_at = (
+            built_at_value
+            if isinstance(built_at_value, datetime)
+            else datetime.fromisoformat(str(built_at_value))
+        )
+        return OperatorAuditProjectionV1(
+            projection_name="scoreboard",
+            state=(
+                "ready"
+                if source_high_watermark == current_high_watermark
+                else "stale"
+            ),
+            projection_version=str(health["projection_version"]),
+            source_action_high_watermark=source_high_watermark,
+            current_action_high_watermark=current_high_watermark,
+            built_at=_aware(built_at, "scoreboard projection built_at"),
+        )
 
     def task(self, task_id: str, *, as_of: datetime) -> OperatorTaskResponse:
         cutoff = _aware(as_of, "as_of")
@@ -2730,24 +5417,84 @@ class OperatorQueryService:
         ticket_rows = self._repository.operator_ticket_artifacts(cutoff.isoformat())
         built: list[_BuiltTask] = []
         for slate in slates:
+            deadline = min(
+                (offer.sale_deadline_at for offer in slate.offers),
+                default=None,
+            )
             if slate.lane is OperatorLane.ZUCAI:
                 ZucaiLaneAdapter().validate_slate(slate)
-                built.append(self._build_zucai(slate.business_key, cutoff, slate))
+                primary = self._build_zucai(slate.business_key, cutoff, slate)
             else:
                 JczqLaneAdapter().validate_slate(slate)
-                built.append(self._build_jczq(slate.business_key, cutoff, ticket_rows, slate))
+                primary = self._build_jczq(
+                    slate.business_key,
+                    cutoff,
+                    ticket_rows,
+                    slate,
+                )
+            built.append(self._archive_expired_sale_wave(primary, cutoff))
+            built.extend(
+                self._formal_artifact_stages(
+                    f"{slate.lane.value}:{slate.business_key}",
+                    slate.lane,
+                    slate.business_key,
+                    cutoff,
+                )
+            )
+            built.extend(
+                self._formal_review_stages(
+                    f"{slate.lane.value}:{slate.business_key}",
+                    slate.lane,
+                    slate.business_key,
+                    deadline,
+                    cutoff,
+                )
+            )
         return built
 
+    @staticmethod
+    def _archive_expired_sale_wave(
+        built: _BuiltTask,
+        cutoff: datetime,
+    ) -> _BuiltTask:
+        if not is_passive_expired_deployment(built.facts, cutoff):
+            return built
+        task_id = f"{built.facts.lane.value}:{built.facts.business_key}"
+        return replace(
+            built,
+            summary=built.summary.model_copy(
+                update={
+                    "state": OperatorTaskState.COMPLETE,
+                    "is_actionable": False,
+                    "next_action_label": NEXT_ACTION_LABELS[
+                        OperatorTaskState.COMPLETE
+                    ],
+                }
+            ),
+            step=CompleteStep(
+                task_id=task_id,
+                title="本销售窗口已结束",
+                summary="截止前未形成正式出票；本工作项仅保留在历史记录中。",
+            ),
+            scope_kind=ScopeKind.SALE_WAVE,
+            projected_state=OperatorTaskState.COMPLETE,
+        )
+
     def _build_task(self, task_id: str, cutoff: datetime) -> _BuiltTask:
-        slate = self._official_slate(task_id, cutoff)
-        if slate is None:
+        candidates = [
+            item
+            for item in self._build_all(cutoff)
+            if f"{item.facts.lane.value}:{item.facts.business_key}" == task_id
+        ]
+        if not candidates:
             raise ProductNotFoundError(f"operator task {task_id} not found")
-        if match := re.fullmatch(r"zucai:(\d{5})", task_id):
-            return self._build_zucai(match.group(1), cutoff, slate)
-        if match := re.fullmatch(r"jczq:(\d{4}-\d{2}-\d{2})", task_id):
-            rows = self._repository.operator_ticket_artifacts(cutoff.isoformat())
-            return self._build_jczq(match.group(1), cutoff, rows, slate)
-        raise ProductNotFoundError(f"operator task {task_id} not found")
+        return min(
+            candidates,
+            key=lambda item: (
+                is_passive_expired_deployment(item.facts, cutoff),
+                priority_key(item.facts, cutoff),
+            ),
+        )
 
     def _official_slate(self, task_id: str, cutoff: datetime) -> SaleSlateSnapshot | None:
         return next(

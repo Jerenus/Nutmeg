@@ -81,11 +81,18 @@ test("package and manifest expose one matching repository plugin", () => {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(HERE, "openclaw.plugin.json"), "utf8"),
   );
+  const plugin = createNutmegTicketConfirmationPlugin();
+  const metadata = plugin[
+    Symbol.for("openclaw.plugin-sdk.tool-plugin.metadata")
+  ];
 
   assert.deepEqual(packageJson.openclaw.extensions, ["./index.js"]);
   assert.equal(manifest.id, "nutmeg-ticket-confirmation");
   assert.equal(manifest.configSchema.additionalProperties, false);
   assert.equal(manifest.configSchema.properties.token, undefined);
+  assert.equal(metadata.id, manifest.id);
+  assert.deepEqual(metadata.tools, []);
+  assert.deepEqual(manifest.contracts.tools, []);
 });
 
 test("non-full registration modes have no runtime side effects", () => {

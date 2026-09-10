@@ -1,0 +1,13 @@
+<article class="task-summary{% if task.business_key == focus_business_key %} is-focus{% endif %}">
+  <div>
+    <span class="lane-label">{{ task.current_slate.open_offer_count }} 场在售</span>
+    <h3><a href="/operator-next/{{ task.lane.value }}/{{ task.business_key }}">{{ task.task_label }}</a></h3>
+  </div>
+  {% if task.work_items %}
+    {% set item = task.work_items[0] %}
+    <div class="task-summary-state">
+      {% with phase=item.phase %}{% include "operator/_status.html" %}{% endwith %}
+      <span>{{ item.progress.progress_label }}</span>
+    </div>
+  {% endif %}
+</article>

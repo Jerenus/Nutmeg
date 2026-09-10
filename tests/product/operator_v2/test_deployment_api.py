@@ -17,6 +17,7 @@ from nutmeg.product.operator_contracts import (
     OperatorCommandReceipt,
     OperatorLane,
 )
+from nutmeg.product.operator_queries import ConfirmationRequestCommandContext
 from nutmeg.product.operator_tokens import (
     OperatorCommandKind,
     OperatorSnapshotTokenCodec,
@@ -240,6 +241,29 @@ class _DeploymentQueries:
                 business_key="26111",
             ),
             step=self.step,
+        )
+
+    def confirmation_request_context(
+        self,
+        task_key: str,
+        ticket_artifact_token: str,
+        *,
+        as_of: datetime,
+    ) -> ConfirmationRequestCommandContext:
+        assert task_key == TASK_KEY
+        assert as_of == NOW
+        assert ticket_artifact_token == self.step.ticket_artifact_token
+        assert self.step.command_token is not None
+        payload = OperatorSnapshotTokenCodec(TOKEN_KEY).decode(self.step.command_token)
+        dependency = payload.dependency_revision_ids[0]
+        return ConfirmationRequestCommandContext(
+            task_key=task_key,
+            task_snapshot_hash=payload.task_snapshot_hash,
+            work_item_id=payload.work_item_id,
+            dependency_revision_ids=tuple(payload.dependency_revision_ids),
+            ticket_artifact_id=dependency.removeprefix("ticket_artifact:"),
+            command_token=self.step.command_token,
+            ticket_artifact_token=ticket_artifact_token,
         )
 
     def now(self) -> datetime:

@@ -31,6 +31,7 @@ from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.operator.decision_actions import OperatorDecisionActions
 from nutmeg.ontology.operator.evidence_actions import EvidenceActions
 from nutmeg.ontology.operator.result_actions import OperatorResultActions
+from nutmeg.ontology.operator.review_actions import OperatorReviewActions
 from nutmeg.ontology.operator.sale_actions import SaleActions
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository import schema
@@ -147,6 +148,7 @@ class OntologyKernel:
         evidence_actions: EvidenceActions,
         decision_actions: OperatorDecisionActions,
         result_actions: OperatorResultActions,
+        review_actions: OperatorReviewActions,
     ) -> None:
         self._paths = paths
         self._engine = engine
@@ -169,6 +171,7 @@ class OntologyKernel:
         self.evidence_actions = evidence_actions
         self.decision_actions = decision_actions
         self.result_actions = result_actions
+        self.review_actions = review_actions
 
     @property
     def engine(self) -> Engine:

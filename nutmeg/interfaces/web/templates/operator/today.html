@@ -1,0 +1,21 @@
+{% extends "operator/workbench_layout.html" %}
+{% block title %}今日待办 · Nutmeg{% endblock %}
+{% block content %}
+  <header class="page-heading">
+    <p class="eyebrow">Today</p>
+    <h1>今日待办</h1>
+    <p>按截止时间与流程状态排列。</p>
+  </header>
+  {% if today.entries %}
+    <section class="today-queue" data-testid="today-queue" aria-label="今日任务">
+      {% for entry in today.entries %}
+        {% with primary=loop.first %}{% include "operator/_queue_entry.html" %}{% endwith %}
+      {% endfor %}
+    </section>
+  {% else %}
+    <section class="empty-state" data-empty-state="operator-today">
+      <h2>当前没有需要处理的事项</h2>
+      <p>可从胜负彩或竞彩查看已完成和等待赛果的记录。</p>
+    </section>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "operator/workbench_layout.html" %}
+{% block title %}{{ "胜负彩" if lane_view.lane.value == "zucai" else "竞彩" }} · Nutmeg{% endblock %}
+{% block content %}
+  <header class="page-heading">
+    <p class="eyebrow">{{ lane_view.lane.value }}</p>
+    <h1>{{ "胜负彩" if lane_view.lane.value == "zucai" else "竞彩" }}</h1>
+    <p>当前任务与历史记录分开显示。</p>
+  </header>
+  <section class="lane-section" aria-labelledby="current-lane-title">
+    <h2 id="current-lane-title">当前期次</h2>
+    {% if lane_view.current_tasks %}
+      {% for task in lane_view.current_tasks %}
+        {% with focus_business_key=lane_view.focus_business_key %}{% include "operator/_task_summary.html" %}{% endwith %}
+      {% endfor %}
+    {% else %}
+      <p class="muted">当前没有在售或需要人工处理的任务。</p>
+    {% endif %}
+  </section>
+  <section class="lane-section lane-archive" aria-labelledby="archive-lane-title">
+    <h2 id="archive-lane-title">历史记录</h2>
+    {% if lane_view.archive_tasks %}
+      {% for task in lane_view.archive_tasks %}
+        {% with focus_business_key=lane_view.focus_business_key %}{% include "operator/_task_summary.html" %}{% endwith %}
+      {% endfor %}
+    {% else %}
+      <p class="muted">暂无历史记录。</p>
+    {% endif %}
+  </section>
+{% endblock %}

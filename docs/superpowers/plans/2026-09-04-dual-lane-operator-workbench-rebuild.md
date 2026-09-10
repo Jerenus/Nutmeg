@@ -3005,7 +3005,7 @@ only the main file can omit committed rows. Then:
 ```bash
 NUTMEG_PROD_ROOT=/Users/jz71/Projects/Nutmeg/.nutmeg-data
 NUTMEG_PROD_DB="$NUTMEG_PROD_ROOT/ontology/ontology.db"
-NUTMEG_BACKUP_DB=/Users/jz71/Projects/Nutmeg/.nutmeg-data/archive/ontology-pre-v17-20260904.db
+NUTMEG_BACKUP_DB=/Users/jz71/Projects/Nutmeg/.nutmeg-data/archive/ontology-pre-v27-20260905.db
 mkdir -p /Users/jz71/Projects/Nutmeg/.nutmeg-data/archive
 test ! -e "$NUTMEG_BACKUP_DB"
 env NUTMEG_PRODUCTION_DATA_DIR="$NUTMEG_PROD_ROOT" \
@@ -3013,8 +3013,8 @@ env NUTMEG_PRODUCTION_DATA_DIR="$NUTMEG_PROD_ROOT" \
   --data-dir "$NUTMEG_PROD_ROOT" \
   --backup-file "$NUTMEG_BACKUP_DB" \
   --format json
-sqlite3 "$NUTMEG_PROD_DB" "PRAGMA integrity_check; PRAGMA user_version; SELECT coalesce(max(rowid),0) FROM actions;"
-sqlite3 "$NUTMEG_BACKUP_DB" "PRAGMA integrity_check; PRAGMA user_version; SELECT coalesce(max(rowid),0) FROM actions;"
+sqlite3 "$NUTMEG_PROD_DB" "PRAGMA integrity_check; SELECT coalesce(max(version),0) FROM schema_migrations; SELECT coalesce(max(rowid),0) FROM actions;"
+sqlite3 "$NUTMEG_BACKUP_DB" "PRAGMA integrity_check; SELECT coalesce(max(version),0) FROM schema_migrations; SELECT coalesce(max(rowid),0) FROM actions;"
 shasum -a 256 "$NUTMEG_BACKUP_DB"
 ```
 
@@ -3022,7 +3022,8 @@ The command's JSON receipt must include the one lease identity, pre-source facts
 facts, applied migration versions, post-source facts, and backup SHA-256. It exits before
 migration if the lease is contended or if backup schema/high-water/key counts differ from the
 source snapshot captured under that lease. Expected: both integrity checks print `ok`;
-production reaches schema 25; the backup remains at schema 16 with exactly the stable
+production reaches schema 27; the backup remains at the source schema recorded by the
+guarded pre-audit (schema 19 in the 2026-09-05 read-only inspection) with exactly the stable
 pre-migration counts. Record only the backup's SHA-256 because a WAL-safe logical snapshot
 need not be byte-identical to the source file. Do not restore, overwrite, or delete any
 database. If the archive path already exists, stop and choose a new explicit name.
@@ -3127,3 +3128,58 @@ named `superpowers:subagent-driven-development` package is not installed in this
 so execution uses the native collaboration agents with the same fresh-agent and two-review
 discipline. Never merge or push a package silently; stacked local branches/commits may keep
 the work moving, with final integration reported for Jun's disposition.
+
+## Package 13: Judgment structure facts for the authoritative leg audit
+
+**Branch:** `feat/operator-results-settlement` (delivered with packages 10-12)
+
+Added 2026-09-10 after the packages 1-12 gate ran red on 28 tests whose single root cause was
+the audit contract, not the fixtures. See spec §19 for the requirement and Jun's approval.
+
+**Files:**
+
+- Modify: `nutmeg/ontology/repository/schema_operator_decision.py`
+- Modify: `nutmeg/ontology/repository/migrations.py`
+- Modify: `nutmeg/ontology/operator/models.py`
+- Modify: `nutmeg/ontology/operator/decision_actions.py`
+- Modify: `nutmeg/ontology/repository/operator_decision.py`
+- Modify: `nutmeg/product/operator_workers.py`
+- Modify: `nutmeg/product/operator_actions.py`
+- Modify: `nutmeg/interfaces/operator_api.py`
+- Modify: `nutmeg/interfaces/web/templates/operator/steps/judge_matches.html`
+- Modify: `nutmeg/interfaces/web/static/product/operator.{css,js}`
+- Modify: `docs/application-operator-manual.md`
+- Modify: `tests/ontology/operator/test_judgment_migration.py`
+- Modify: `tests/ontology/operator/test_judgment_actions.py`
+- Modify: `tests/product/operator_v2/test_candidate_worker.py`
+- Modify: `tests/product/operator_v2/test_judgment_api.py`
+- Modify: `tests/product/operator_v2/test_judgment_ui.py`
+
+- [x] **Step 1: RED — migration 28 tables, closed vocabularies, append-only children**
+
+Two additive children of `OperatorMatchJudgmentRevision`: one anchor fact per revision
+(unique) and ordered face precedents. Both reject values outside their closed vocabulary at
+the database, carry `no_update`/`no_delete`/`no_late_insert` triggers, and apply identically
+fresh and from v27.
+
+- [x] **Step 2: RED then GREEN — the judgment Action records both facts**
+
+`CommitOperatorMatchJudgmentRequest` gains `anchor_integrity` and `face_precedents`; both
+enter the content hash, so changing only a structure fact creates a new revision. The Action
+rejects unknown anchor states, unknown faces, unknown statuses, blank references, and
+duplicate `(face, reference)` pairs. `unknown` plus no precedents stores no rows, which keeps
+the Action usable against pre-28 databases in migration fixtures.
+
+- [x] **Step 3: RED then GREEN — the candidate audit reads them**
+
+`_CandidateAuditOffer` carries both facts from the current judgment revision into every audit
+`Leg`, for the judgment-bound set and the conditional market counterfactual alike. Proven by
+four tests: C14 clears only with anchor `pass` plus a `dead` precedent on the excluded face,
+C14 warns without the proof, C5 blocks a bare single on a `fail` anchor as ERROR, C13 warns
+on a two-face expression over a `fail` anchor, and C7 warns on a live excluded-face precedent.
+
+- [x] **Step 4: RED then GREEN — command, editor, and manual**
+
+`CommitMatchJudgmentCommandV2` accepts both under `extra="forbid"` with closed literals; the
+judgment form asks for the anchor state with no preselected default and one precedent row per
+face; the manual documents what each answer costs at the audit gate.

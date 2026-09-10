@@ -3,7 +3,11 @@
 {% block content %}
   <section class="current-step" data-step-kind="{{ task.step.kind }}"
            data-snapshot-token="{{ snapshot_token }}">
-    {% if task.step.kind == "audit_deployment" and task.step.surface_version|default("") == "2" %}
+    {% if task.step.kind == "await_result" and task.step.surface_version|default("") == "2" %}
+      {% include "operator/steps/await_result_v2.html" %}
+    {% elif task.step.kind == "review" and task.step.surface_version|default("") == "2" %}
+      {% include "operator/steps/review_v2.html" %}
+    {% elif task.step.kind == "audit_deployment" and task.step.surface_version|default("") == "2" %}
       {% include "operator/steps/audit_deployment_v2.html" %}
     {% elif task.step.kind == "prepare_evidence" %}
       {% include "operator/steps/prepare_evidence_v2.html" %}

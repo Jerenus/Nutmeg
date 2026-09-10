@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from nutmeg.product.errors import ProductNotFoundError
+from nutmeg.product.operator_contracts import OperatorLane
 from nutmeg.product.operator_runtime import (
     OperatorRuntimeConfig,
     OperatorRuntimeScope,
@@ -41,6 +42,14 @@ def mount_operator_ui(
 ) -> None:
     web_root = Path(__file__).resolve().parent / "web"
     templates = Jinja2Templates(directory=web_root / "templates")
+
+    def workbench_context(**values):
+        return {
+            "workspace": "operator-workbench",
+            "read_only": read_only,
+            "today_href": "/" if mount_root and not read_only else "/operator-next",
+            **values,
+        }
 
     def task_response(request: Request, task):
         token_bytes = bytes.fromhex(task.mutation_token)
@@ -99,7 +108,9 @@ def mount_operator_ui(
         except Exception as error:
             return unexpected_response(request, error)
 
-    if mount_root:
+    v2_at_root = mount_root and not read_only
+
+    if mount_root and not v2_at_root:
         app.add_api_route(
             "/",
             operator_root,
@@ -107,13 +118,142 @@ def mount_operator_ui(
             include_in_schema=False,
         )
 
-    if mount_next:
+    if mount_next or v2_at_root:
+        today_path = "/" if v2_at_root else "/operator-next"
+
+        async def operator_today_page(request: Request):
+            try:
+                today = services.operator_queries.today(as_of=clock())
+                return templates.TemplateResponse(
+                    request=request,
+                    name="operator/today.html",
+                    context=workbench_context(today=today),
+                )
+            except ProductNotFoundError:
+                raise
+            except Exception as error:
+                return unexpected_response(request, error)
+
         app.add_api_route(
-            "/operator-next",
-            operator_root,
+            today_path,
+            operator_today_page,
             methods=["GET"],
             include_in_schema=False,
         )
+
+        @app.get(
+            "/operator-next/audit/{audit_token}",
+            include_in_schema=False,
+        )
+        async def operator_audit_page(request: Request, audit_token: str):
+            try:
+                audit_envelope = services.operator_queries.audit(
+                    audit_token,
+                    as_of=clock(),
+                )
+                return templates.TemplateResponse(
+                    request=request,
+                    name="operator/_audit_details.html",
+                    context=workbench_context(audit_envelope=audit_envelope),
+                )
+            except ProductNotFoundError:
+                raise
+            except Exception as error:
+                return unexpected_response(request, error)
+
+        @app.get("/operator-next/maintenance", include_in_schema=False)
+        async def operator_maintenance_page(request: Request):
+            try:
+                maintenance = services.operator_queries.maintenance(as_of=clock())
+                return templates.TemplateResponse(
+                    request=request,
+                    name="operator/maintenance.html",
+                    context=workbench_context(maintenance=maintenance),
+                )
+            except ProductNotFoundError:
+                raise
+            except Exception as error:
+                return unexpected_response(request, error)
+
+        @app.get("/operator-next/{lane}", include_in_schema=False)
+        async def operator_lane_page(request: Request, lane: OperatorLane):
+            try:
+                lane_view = services.operator_queries.lane(lane, as_of=clock())
+                return templates.TemplateResponse(
+                    request=request,
+                    name="operator/lane.html",
+                    context=workbench_context(lane_view=lane_view),
+                )
+            except ProductNotFoundError:
+                raise
+            except Exception as error:
+                return unexpected_response(request, error)
+
+        @app.get(
+            "/operator-next/{lane}/{business_key}",
+            include_in_schema=False,
+        )
+        async def operator_task_v2_page(
+            request: Request,
+            lane: OperatorLane,
+            business_key: str,
+        ):
+            try:
+                task_v2 = services.operator_queries.task_v2(
+                    lane,
+                    business_key,
+                    as_of=clock(),
+                )
+                return templates.TemplateResponse(
+                    request=request,
+                    name="operator/task_v2.html",
+                    context=workbench_context(task_v2=task_v2),
+                )
+            except ProductNotFoundError:
+                raise
+            except Exception as error:
+                return unexpected_response(request, error)
+
+        @app.get(
+            "/operator-next/{lane}/{business_key}/{work_item_key}",
+            include_in_schema=False,
+        )
+        async def operator_work_item_page(
+            request: Request,
+            lane: OperatorLane,
+            business_key: str,
+            work_item_key: str,
+        ):
+            try:
+                task_v2 = services.operator_queries.work_item_v2(
+                    lane,
+                    business_key,
+                    work_item_key,
+                    as_of=clock(),
+                )
+                return templates.TemplateResponse(
+                    request=request,
+                    name="operator/work_item.html",
+                    context=workbench_context(
+                        task_v2=task_v2,
+                        work_item=task_v2.active_work_item,
+                    ),
+                )
+            except ProductNotFoundError:
+                task_v2 = services.operator_queries.task_v2(
+                    lane,
+                    business_key,
+                    as_of=clock(),
+                )
+                current_key = task_v2.active_work_item.work_item_key
+                if current_key == work_item_key:
+                    raise
+                return RedirectResponse(
+                    f"/operator-next/{lane.value}/{business_key}/{current_key}",
+                    status_code=307,
+                )
+            except Exception as error:
+                return unexpected_response(request, error)
 
     @app.get("/tasks", include_in_schema=False)
     async def operator_tasks_page(request: Request):

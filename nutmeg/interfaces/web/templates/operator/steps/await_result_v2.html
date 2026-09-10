@@ -1,0 +1,187 @@
+<div class="step-heading">
+  <span class="step-kicker">赛果与结算</span>
+  <h1>{{ task.step.title }}</h1>
+  {% if task.step.settlement_state == "not_applicable" %}
+    <p>本期没有实际出票，无需结算。</p>
+  {% elif task.step.result_state in ("ready", "corrected") %}
+    <p>90 分钟赛果已核对，可以核对并发起结算。</p>
+  {% elif task.step.result_state == "conflict" %}
+    <p>三源结果不一致，结算会保持暂停，等待人工修正来源。</p>
+  {% elif task.step.result_state == "missing" %}
+    <p>赛果来源尚未到齐，已取得的结果会保留并继续等待。</p>
+  {% elif task.step.result_state == "postponed" %}
+    <p>存在延期场次，正式赛果产生前不会结算。</p>
+  {% else %}
+    <p>等待权威赛果导入。</p>
+  {% endif %}
+</div>
+
+{% if task.step.result_matches %}
+  <section class="workbench-section" aria-labelledby="result-matches-title">
+    <div class="section-heading">
+      <h2 id="result-matches-title">赛果核对</h2>
+    </div>
+    <div class="result-match-list">
+      {% for match in task.step.result_matches %}
+        <article class="result-match-row">
+          <header>
+            <span>场次 {{ match.official_match_no }}</span>
+            <strong>{{ match.match_label }}</strong>
+            {% if match.result_disposition == "played_90" %}
+              <b>{{ match.score_label }}</b>
+            {% elif match.result_disposition == "official_void" %}
+              <b>官方按无效场处理</b>
+            {% elif match.result_disposition == "postponed" %}
+              <b>比赛延期</b>
+            {% elif match.agreement_state == "conflict" %}
+              <b>三源结果不一致</b>
+            {% else %}
+              <b>3 个来源中已到 {{ match.available_source_count }} 个</b>
+            {% endif %}
+          </header>
+          <ul class="source-readiness-list" aria-label="赛果来源">
+            {% for source in match.sources %}
+              <li>
+                <span>{{ source.source_label }}</span>
+                {% if source.state == "available" %}
+                  <strong>{{ source.result_label or "已取得" }}</strong>
+                {% elif source.state == "invalid" %}
+                  <strong>格式异常</strong>
+                {% else %}
+                  <strong>尚未取得</strong>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% if task.step.prize_state != "not_applicable" %}
+  <section class="workbench-section" aria-labelledby="prize-title">
+    <div class="section-heading"><h2 id="prize-title">官方奖金</h2></div>
+    {% if task.step.prize_state == "ready" %}
+      <p>奖金公告已核对{% if task.step.prize_published_at %}，发布时间 {{ task.step.prize_published_at }}{% endif %}。</p>
+      <dl class="placement-summary">
+        {% for tier in task.step.prize_tiers %}
+          <div>
+            <dt>{{ tier.tier_label }} · {{ tier.required_correct_count }} 场</dt>
+            <dd>每注 ¥{{ "%.2f"|format(tier.payout_minor_per_winning_note / 100) }}</dd>
+          </div>
+        {% endfor %}
+      </dl>
+    {% else %}
+      <p>赛果已到齐，正在等待官方奖金公告。</p>
+    {% endif %}
+  </section>
+{% endif %}
+
+{% if task.step.settlement_state in ("settled", "corrected") %}
+  <section class="workbench-section" aria-labelledby="settlement-title">
+    <div class="section-heading">
+      <h2 id="settlement-title">
+        {% if task.step.settlement_state == "corrected" %}结算已更正{% else %}结算完成{% endif %}
+      </h2>
+      <span>投入 ¥{{ "%.2f"|format(task.step.total_stake_minor / 100) }} · 返奖 ¥{{ "%.2f"|format(task.step.total_payout_minor / 100) }}</span>
+    </div>
+    <p class="settlement-run-status">
+      结算请求已完成 · 已结算 {{ task.step.settled_ticket_count }} / {{ task.step.placed_ticket_count }} 票
+    </p>
+    {% if task.step.last_run and task.step.last_run.skips %}
+      <ul class="settlement-skip-list" aria-label="未结算票据">
+        {% for skip in task.step.last_run.skips %}
+          <li>
+            <strong>{{ skip.ticket_label }}</strong>
+            <span>
+              {% if skip.reason_code == "result_not_ready" %}赛果尚未满足结算条件
+              {% elif skip.reason_code == "prize_not_ready" %}官方奖金尚未发布
+              {% elif skip.reason_code == "placement_integrity_blocked" %}票据与入账记录不一致
+              {% else %}已是当前有效结算版本{% endif %}
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% for ticket in task.step.tickets %}
+      <article class="settlement-ticket">
+        <header>
+          <strong>第 {{ ticket.ticket_number }} 票 · {{ ticket.ticket_kind_label }}</strong>
+          <span>投入 ¥{{ "%.2f"|format(ticket.stake_minor / 100) }} · 返奖 ¥{{ "%.2f"|format(ticket.payout_minor / 100) }}</span>
+        </header>
+        <dl class="settlement-ticket-facts">
+          <div><dt>结算版本</dt><dd>第 {{ ticket.revision_no }} 版{% if ticket.corrected %} · 更正{% endif %}</dd></div>
+          {% if ticket.settlement_method_label %}<div><dt>计算口径</dt><dd>{{ ticket.settlement_method_label }}</dd></div>{% endif %}
+          {% if ticket.rounding_policy_label %}<div><dt>取整口径</dt><dd>{{ ticket.rounding_policy_label }}</dd></div>{% endif %}
+          <div><dt>注数</dt><dd>{{ ticket.distinct_note_count }} 注</dd></div>
+        </dl>
+        {% if ticket.cash_entries %}
+          <ul class="settlement-cash-list" aria-label="结算入账">
+            {% for cash in ticket.cash_entries %}
+              <li>
+                {% if cash.transaction_kind == "payout_reversal" %}
+                  撤销上次返奖 -¥{{ "%.2f"|format((-cash.amount_minor) / 100) }}
+                {% else %}
+                  返奖入账 +¥{{ "%.2f"|format(cash.amount_minor / 100) }}
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        <div class="settlement-note-list">
+          {% for note in ticket.notes %}
+            <section class="settlement-note">
+              <header>
+                <strong>第 {{ note.note_number }} 注 · {{ note.structure_label }}</strong>
+                <span>
+                  {% if note.grade == "won" %}命中{% elif note.grade == "void" %}退回{% else %}未中{% endif %}
+                  · 投入 ¥{{ "%.2f"|format(note.stake_minor / 100) }}
+                  · 返奖 ¥{{ "%.2f"|format(note.payout_minor / 100) }}
+                </span>
+              </header>
+              {% if note.group_label %}<p>{{ note.group_label }}</p>{% endif %}
+              {% if note.prize_label %}<p>{{ note.prize_label }}</p>{% endif %}
+              {% if note.legs %}
+                <div class="table-scroll">
+                  <table>
+                    <thead><tr><th>比赛</th><th>玩法</th><th>选择</th><th>出票赔率</th><th>让球线</th><th>赛果</th><th>结果</th></tr></thead>
+                    <tbody>
+                      {% for leg in note.legs %}
+                        <tr>
+                          <td>{% if leg.official_match_no %}{{ leg.official_match_no }} · {% endif %}{{ leg.match_label }}</td>
+                          <td>{{ leg.market_label }}</td>
+                          <td>{{ leg.selection_label }}</td>
+                          <td>{{ leg.booked_decimal_odds or "固定奖金" }}</td>
+                          <td>{{ leg.settlement_parameter_decimal or "—" }}</td>
+                          <td>{{ leg.result_label }}</td>
+                          <td>{% if leg.grade == "won" %}命中{% elif leg.grade == "void" %}退回{% else %}未中{% endif %}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% endif %}
+            </section>
+          {% endfor %}
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% elif task.step.settlement_state == "queued" %}
+  <p class="waiting-note" data-auto-refresh="waiting">结算请求已进入队列，页面会自动更新。</p>
+{% elif task.step.settlement_state == "prize_waiting" %}
+  <p class="waiting-note">等待官方奖金后即可结算。</p>
+{% elif task.step.settlement_state == "integrity_blocked" %}
+  <p class="waiting-note">票据与入账记录未通过一致性核对，结算已暂停。</p>
+{% elif not read_only and task.step.settlement_command_token %}
+  <form class="operator-form"
+        data-action="request-settlement"
+        data-task-key="{{ task.selected.task_id }}"
+        data-command-token="{{ task.step.settlement_command_token }}">
+    <button class="primary-action" type="submit">开始结算</button>
+    <small class="muted">点击只提交结算请求；系统按已锁定票面和正式赛果确定性计算。</small>
+  </form>
+{% elif read_only and task.step.settlement_state == "not_requested" %}
+  <p class="waiting-note">只读模式不会提交结算请求。</p>
+{% endif %}

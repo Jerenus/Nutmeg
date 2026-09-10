@@ -7,7 +7,14 @@
 <ol class="confirmation-timeline" aria-label="出票确认进度">
   <li class="is-complete">
     <span>1</span>
-    <div><strong>票面与金额已锁定</strong><small>{{ task.step.currency }} {{ "%.2f"|format(task.step.amount) }}</small></div>
+    <div>
+      <strong>票面与金额已锁定</strong>
+      {% if task.step.surface_version|default("1") == "2" %}
+        <small>{% if task.step.currency == "CNY" %}¥{% else %}{{ task.step.currency }} {% endif %}{{ "{:,.2f}".format(task.step.amount_minor / 100) }}</small>
+      {% else %}
+        <small>{{ task.step.currency }} {{ "%.2f"|format(task.step.amount) }}</small>
+      {% endif %}
+    </div>
   </li>
   <li class="{% if task.step.confirmation_state == 'open' %}is-current{% elif task.step.confirmation_state == 'expired' %}is-error{% endif %}">
     <span>2</span>
@@ -16,7 +23,11 @@
       {% if task.step.confirmation_state == "open" %}
         <small>等待你在 Telegram 点击{% if task.step.confirmation_expires_at %}，有效至 {{ task.step.confirmation_expires_at }}{% endif %}</small>
       {% elif task.step.confirmation_state == "expired" %}
-        <small>确认已过期，需要重新发送</small>
+        {% if task.step.surface_version|default("1") == "2" %}
+          <small>确认已过期，按未出票处理</small>
+        {% else %}
+          <small>确认已过期，需要重新发送</small>
+        {% endif %}
       {% else %}
         <small>尚未发送确认按钮</small>
       {% endif %}
@@ -28,7 +39,24 @@
   </li>
 </ol>
 
-{% if not read_only and task.step.confirmation_state in ("not_issued", "expired") %}
+{% if not read_only and task.step.confirmation_state == "not_issued" %}
+  {% if task.step.surface_version|default("1") == "2" %}
+    <form class="operator-form confirmation-form"
+          data-action="request-confirmation"
+          data-task-key="{{ task.step.task_id }}"
+          data-primary-command="true">
+      <button class="primary-action" type="submit">发送 Telegram 本人确认</button>
+      <small class="muted">点击仅发送确认按钮，不代表已经出票或入账。</small>
+    </form>
+  {% else %}
+    <form class="operator-form confirmation-form"
+          data-action="request-telegram-confirmation"
+          data-task-id="{{ task.selected.task_id }}">
+      <button class="primary-action" type="submit">发送 Telegram 本人确认</button>
+      <small class="muted">点击仅发送确认按钮，不代表已经出票或入账。</small>
+    </form>
+  {% endif %}
+{% elif not read_only and task.step.confirmation_state == "expired" and task.step.surface_version|default("1") == "1" %}
   <form class="operator-form confirmation-form"
         data-action="request-telegram-confirmation"
         data-task-id="{{ task.selected.task_id }}">
@@ -37,6 +65,8 @@
   </form>
 {% elif task.step.confirmation_state == "open" %}
   <p class="waiting-note" data-auto-refresh="waiting">页面会自动检查确认状态。</p>
+{% elif task.step.surface_version|default("1") == "2" and task.step.confirmation_state == "expired" %}
+  <p class="waiting-note">确认窗口已经截止，本票没有入账。</p>
 {% else %}
   <p class="waiting-note">只读模式不会发送确认请求。</p>
 {% endif %}

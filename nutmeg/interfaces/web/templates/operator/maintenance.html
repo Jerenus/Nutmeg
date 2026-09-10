@@ -1,0 +1,40 @@
+{% extends "operator/workbench_layout.html" %}
+{% block title %}运行与确认 · Nutmeg{% endblock %}
+{% block content %}
+  <header class="page-heading">
+    <p class="eyebrow">Maintenance</p>
+    <h1>运行与确认</h1>
+    <p>只读检查采集任务与 Telegram 确认链。</p>
+  </header>
+  {% if maintenance.diagnostic_state == "diagnostic_unavailable" %}
+    <section class="recovery-panel" role="status">
+      <h2>诊断暂不可用</h2>
+      <p>{{ maintenance.recovery_label }}</p>
+    </section>
+  {% else %}
+    <section class="maintenance-summary" aria-labelledby="schedule-owner-title">
+      <h2 id="schedule-owner-title">调度归属</h2>
+      <div class="stage-grid">
+        {% for stage in maintenance.stages %}
+          <div class="stage-row">
+            <span>{{ stage.stage.value.replace('_', ' ') }}</span>
+            {% if stage.conflict %}<strong class="status-error">归属冲突</strong>
+            {% elif stage.claim_count == 1 %}<strong class="status-complete">单一归属</strong>
+            {% else %}<strong class="status-waiting">未加载</strong>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+  <section class="maintenance-summary" aria-labelledby="telegram-owner-title">
+    <h2 id="telegram-owner-title">Telegram 出票确认</h2>
+    <dl class="maintenance-facts">
+      <div><dt>确认处理</dt><dd>{{ "可用" if maintenance.telegram_owner.confirmation_available else "不可用" }}</dd></div>
+      <div><dt>插件状态</dt><dd>{{ maintenance.telegram_owner.heartbeat_state }}</dd></div>
+      <div><dt>传输状态</dt><dd>{{ maintenance.telegram_transport.state }}</dd></div>
+    </dl>
+    {% if maintenance.telegram_owner.recovery_label %}
+      <p class="recovery-copy">{{ maintenance.telegram_owner.recovery_label }}</p>
+    {% endif %}
+  </section>
+{% endblock %}

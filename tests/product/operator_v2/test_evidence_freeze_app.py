@@ -22,9 +22,13 @@ from nutmeg.product.operator_contracts import (
     OperatorTaskResponse,
     OperatorTaskState,
     OperatorTaskSummary,
+    OperatorTodayResponseV1,
     OperatorWorklistResponse,
     PrepareEvidenceStep,
     TaskProgressSummary,
+    TodayWorkItemViewV1,
+    WorkItemActionViewV1,
+    WorkItemProgressViewV1,
 )
 from nutmeg.product.operator_runtime import OperatorRuntimeConfig
 from nutmeg.product.wiring import build_product_services
@@ -88,6 +92,34 @@ class _OperatorQueries:
             as_of=as_of,
             selected=self.summary,
             tasks=[self.summary],
+        )
+
+    def today(self, *, as_of: datetime) -> OperatorTodayResponseV1:
+        entry = TodayWorkItemViewV1(
+            lane=OperatorLane.ZUCAI,
+            business_key="26116",
+            task_label="足彩 26116",
+            scope_kind="sale_wave",
+            scope_label="本期 14 场",
+            phase="prepare_evidence",
+            deployment_outcome="pending",
+            next_deadline_at=NOW,
+            progress=WorkItemProgressViewV1(
+                completed_count=1,
+                required_count=1,
+                progress_label="证据已齐全",
+            ),
+            next_action=WorkItemActionViewV1(
+                action_code="freeze_evidence",
+                action_label="冻结证据",
+                enabled=True,
+                recovery_link="/operator-next/zucai/26116",
+            ),
+        )
+        return OperatorTodayResponseV1(
+            as_of=as_of,
+            next_action=entry,
+            entries=[entry],
         )
 
     def task(self, task_id: str, *, as_of: datetime) -> OperatorTaskResponse:
@@ -188,7 +220,8 @@ def test_active_app_mounts_real_workbench_and_dispatches_freeze(tmp_path: Path) 
     )
 
     assert page.status_code == 200
-    assert 'data-step-kind="prepare_evidence"' in page.text
+    assert 'data-testid="today-queue"' in page.text
+    assert "冻结证据" in page.text
     assert "新版工作台为只读预览" not in page.text
     assert response.status_code == 202
     assert response.json()["status"] == "queued"

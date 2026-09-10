@@ -326,6 +326,23 @@ class FaceBundleInput:
     face_codes: tuple[str, ...]
 
 
+ANCHOR_INTEGRITY_STATES = frozenset({"pass", "fail", "symmetric_damage", "unknown"})
+PRECEDENT_STATUSES = frozenset({"alive", "dead"})
+PRECEDENT_FACE_CODES = frozenset({"3", "1", "0"})
+
+
+@dataclass(frozen=True, slots=True)
+class FacePrecedentInput:
+    """One same-venue same-shape precedent and whether its carrier is still alive.
+
+    C7/C14 read this per face; software never infers the verdict.
+    """
+
+    face_code: str
+    precedent_ref: str
+    status: str
+
+
 @dataclass(frozen=True, slots=True)
 class BaselineEnvelopeOfferConstraint:
     official_match_no: str
@@ -421,6 +438,8 @@ class CommitOperatorMatchJudgmentRequest:
     actor_role: ActorRole
     idempotency_key: str
     requested_at: datetime
+    anchor_integrity: str = "unknown"
+    face_precedents: tuple[FacePrecedentInput, ...] = ()
     expected_current_revision_no: int | None = None
 
     def __post_init__(self) -> None:
@@ -4445,6 +4464,22 @@ class OperatorDecisionActions:
         if unknown_rules:
             raise ValueError(f"unknown Rule ID: {sorted(unknown_rules)[0]}")
         _unique(request.evidence_ref_tokens, "judgment evidence refs")
+        if request.anchor_integrity not in ANCHOR_INTEGRITY_STATES:
+            raise ValueError("anchor integrity is outside its closed vocabulary")
+        for precedent in request.face_precedents:
+            if precedent.face_code not in PRECEDENT_FACE_CODES:
+                raise ValueError("face precedent names an unknown face")
+            if precedent.status not in PRECEDENT_STATUSES:
+                raise ValueError("face precedent status is outside its closed vocabulary")
+            _required(precedent.precedent_ref, "face precedent reference")
+        _unique(
+            tuple(
+                f"{precedent.face_code}:{precedent.precedent_ref.strip()}"
+                for precedent in request.face_precedents
+            ),
+            "face precedents",
+            required=False,
+        )
         if not request.expression_bundles:
             raise ValueError("expression face bundles are required")
         bundle_codes = tuple(bundle.bundle_code for bundle in request.expression_bundles)
@@ -4509,6 +4544,15 @@ class OperatorDecisionActions:
             "falsifier": request.falsifier.strip(),
             "rationale": request.rationale.strip(),
             "commitment_tier": request.commitment_tier,
+            "anchor_integrity": request.anchor_integrity,
+            "face_precedents": [
+                {
+                    "face_code": precedent.face_code,
+                    "precedent_ref": precedent.precedent_ref.strip(),
+                    "status": precedent.status,
+                }
+                for precedent in request.face_precedents
+            ],
         }
 
     @staticmethod
@@ -4820,7 +4864,40 @@ class OperatorDecisionActions:
             }
             for index, evidence_ref in enumerate(request.evidence_ref_tokens)
         )
+        # "unknown" + 无先例 = 本场没登记结构事实，读回来就是 unknown/()，
+        # 所以不写空行；C14 照样把没有死亡三证的昂贵排除判成 WARN。
+        anchor_facts = (
+            ()
+            if request.anchor_integrity == "unknown" and not request.face_precedents
+            else (
+                {
+                    "operator_match_judgment_anchor_fact_id": _stable_id(
+                        "judgment-anchor", revision_id
+                    ),
+                    "operator_match_judgment_revision_id": revision_id,
+                    "anchor_integrity": request.anchor_integrity,
+                },
+            )
+        )
+        face_precedents = tuple(
+            {
+                "operator_match_judgment_face_precedent_id": _stable_id(
+                    "judgment-precedent",
+                    revision_id,
+                    precedent.face_code,
+                    precedent.precedent_ref.strip(),
+                ),
+                "operator_match_judgment_revision_id": revision_id,
+                "precedent_index": index,
+                "face_code": precedent.face_code,
+                "precedent_ref": precedent.precedent_ref.strip(),
+                "status": precedent.status,
+            }
+            for index, precedent in enumerate(request.face_precedents)
+        )
         uow.operator_decision.insert_operator_match_judgment_children(
+            anchor_facts=anchor_facts,
+            face_precedents=face_precedents,
             probabilities=probabilities,
             factor_adjustments=tuple(factor_adjustments),
             factor_offsets=tuple(factor_offsets),

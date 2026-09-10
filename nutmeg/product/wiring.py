@@ -14,6 +14,7 @@ from nutmeg.ontology.actions.models import ActorRole, canonical_json
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.kernel import OntologyKernel
 from nutmeg.ontology.operator.result_actions import RegisterZucaiFixedPrizePolicyRequest
+from nutmeg.ontology.operator.review_actions import ShadowReviewTokenCodec
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 from nutmeg.product.actions import ProductActionGateway
@@ -21,6 +22,7 @@ from nutmeg.product.copilot import MatchCopilotService, build_copilot_provider
 from nutmeg.product.errors import ProductNotReadyError
 from nutmeg.product.operator_actions import OperatorActionService
 from nutmeg.product.operator_evidence import OperatorEvidenceService
+from nutmeg.product.operator_maintenance import OperatorMaintenanceProbe
 from nutmeg.product.operator_queries import OperatorQueryService
 from nutmeg.product.operator_runtime import (
     OperatorRuntimeConfig,
@@ -34,6 +36,12 @@ from nutmeg.product.operator_workers import (
     EvidenceFreezeRequestWorker,
     MarketBaselineWorker,
     OperatorInfrastructureWorkers,
+    OperatorProjectionSignals,
+    OperatorReadModelInvalidator,
+    ProductOutboxWorker,
+    ReviewMaterializationWorker,
+    ScoreboardReviewCompletionWorker,
+    TaskSettlementWorker,
     audit_current_candidate,
 )
 from nutmeg.product.queries import ProductQueryService
@@ -58,6 +66,7 @@ class ProductServices:
     copilot: MatchCopilotService | None = None
     tickets: ProductTicketService | None = None
     infrastructure_workers: OperatorInfrastructureWorkers | None = None
+    projection_signals: OperatorProjectionSignals | None = None
 
 
 def _telegram_owner(raw: str | None) -> int | None:
@@ -169,6 +178,7 @@ def _build_operator_infrastructure_workers(
     operator_queries: OperatorQueryService,
     runtime_config: OperatorRuntimeConfig | None,
     data_dir,
+    projection_signals: OperatorProjectionSignals,
 ) -> OperatorInfrastructureWorkers | None:
     if runtime_config is None:
         return None
@@ -181,6 +191,14 @@ def _build_operator_infrastructure_workers(
     common = {
         "data_dir": data_dir,
         "clock": lambda: datetime.now(UTC),
+        "outbox": ProductOutboxWorker(
+            unit_of_work_factory=lambda: OntologyUnitOfWork(kernel.engine),
+            project_event=projection_signals.deliver,
+        ),
+        "read_model": OperatorReadModelInvalidator(
+            unit_of_work_factory=lambda: OntologyUnitOfWork(kernel.engine),
+            project_event=projection_signals.invalidate,
+        ),
     }
     if runtime_config.surface_mode is not OperatorSurfaceMode.ACTIVE:
         return OperatorInfrastructureWorkers(
@@ -213,6 +231,25 @@ def _build_operator_infrastructure_workers(
             lease_duration=timedelta(minutes=5),
         ),
         confirmation_deadlines=confirmation,
+        task_settlement=TaskSettlementWorker(
+            action_service=action_service,
+            result_actions=kernel.result_actions,
+            worker_id="operator-task-settlement",
+            lease_duration=timedelta(minutes=5),
+        ),
+        review_materialization=ReviewMaterializationWorker(
+            action_service=action_service,
+            review_actions=kernel.review_actions,
+            worker_id="operator-review-materialization",
+            lease_duration=timedelta(minutes=5),
+        ),
+        scoreboard_review_completion=ScoreboardReviewCompletionWorker(
+            action_service=action_service,
+            review_actions=kernel.review_actions,
+            scoreboard_path=data_dir / "scoreboard.json",
+            worker_id="operator-scoreboard-review-completion",
+            lease_duration=timedelta(minutes=5),
+        ),
         **common,
     )
 
@@ -260,6 +297,19 @@ def build_product_services(
     kernel.evidence_actions.bind_freeze_gate_resolver(
         operator_evidence.freeze_gate_for_uow
     )
+    owner_chat_id = _telegram_owner(settings.telegram_allowed_chat_ids)
+    maintenance_owner_health = TelegramOwnerHeartbeatService(
+        action_service=ActionService(lambda: OntologyUnitOfWork(kernel.engine)),
+        account_id="nutmeg",
+        owner_instance_id="openclaw-primary",
+        transport_label="openclaw-telegram",
+        owner_mode="openclaw",
+        router_version="ntc-v1",
+        lease_duration=timedelta(seconds=90),
+    )
+    telegram_owner_health = None
+    if not isolated and settings.telegram_bot_token and owner_chat_id is not None:
+        telegram_owner_health = maintenance_owner_health
     operator_queries = OperatorQueryService(
         repository=repository,
         product_queries=queries,
@@ -270,10 +320,16 @@ def build_product_services(
         snapshot_tokens=snapshot_tokens,
         operator_decisions=kernel.decision_actions,
         operator_candidate_auditor=audit_current_candidate,
+        maintenance_probe=OperatorMaintenanceProbe(
+            heartbeat_service=maintenance_owner_health,
+        ),
+        shadow_review_tokens=(
+            ShadowReviewTokenCodec(settings.operator_token_signing_key)
+            if settings.operator_token_signing_key is not None
+            else None
+        ),
     )
-    owner_chat_id = _telegram_owner(settings.telegram_allowed_chat_ids)
     telegram_confirmation = None
-    telegram_owner_health = None
     confirmation_transport_kind = "unavailable"
     if isolated:
         owner_chat_id = 0
@@ -295,15 +351,6 @@ def build_product_services(
             allowed_chat_ids={owner_chat_id},
             now_fn=lambda: datetime.now(UTC),
         )
-        telegram_owner_health = TelegramOwnerHeartbeatService(
-            action_service=ActionService(lambda: OntologyUnitOfWork(kernel.engine)),
-            account_id="nutmeg",
-            owner_instance_id="openclaw-primary",
-            transport_label="openclaw-telegram",
-            owner_mode="openclaw",
-            router_version="ntc-v1",
-            lease_duration=timedelta(seconds=90),
-        )
     operator_actions = OperatorActionService(
         queries=operator_queries,
         action_gateway=actions,
@@ -312,17 +359,28 @@ def build_product_services(
         telegram_owner_health=telegram_owner_health,
         evidence_actions=kernel.evidence_actions,
         decision_actions=kernel.decision_actions,
+        result_actions=kernel.result_actions,
+        review_actions=kernel.review_actions,
+        workflow_actions=kernel.workflow,
         protected_tickets=kernel.protected_tickets,
         snapshot_tokens=snapshot_tokens,
         calibrate=kernel.calibrate,
         repository=repository,
         scoreboard_path=settings.data_dir / "scoreboard.json",
     )
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        projection_signals = OperatorProjectionSignals(
+            delivered_sequence=uow.outbox.consumer_cursor("product_sse_delivery"),
+            invalidated_sequence=uow.outbox.consumer_cursor(
+                "operator_read_model_invalidation"
+            ),
+        )
     infrastructure_workers = _build_operator_infrastructure_workers(
         kernel=kernel,
         operator_queries=operator_queries,
         runtime_config=runtime_config,
         data_dir=settings.data_dir,
+        projection_signals=projection_signals,
     )
     provider = build_copilot_provider(settings)
     return ProductServices(
@@ -348,6 +406,7 @@ def build_product_services(
             actor_id=settings.default_user_id,
         ),
         infrastructure_workers=infrastructure_workers,
+        projection_signals=projection_signals,
     )
 
 

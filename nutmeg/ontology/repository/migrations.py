@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import Connection, Engine, delete, func, insert, inspect, select, text
+from sqlalchemy.schema import CreateIndex, CreateTable
 
 from nutmeg.ontology.errors import MigrationDriftError
 from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
@@ -30,6 +31,7 @@ from nutmeg.ontology.repository import (
     schema_market,
     schema_operator_decision,
     schema_operator_result,
+    schema_operator_review,
     schema_operator_sale,
     schema_reliability,
     schema_scoreboard,
@@ -3053,6 +3055,1500 @@ def _apply_operator_confirmation_ledger(connection: Connection) -> None:
     )
 
 
+def _apply_operator_results_settlement(connection: Connection) -> None:
+    tables = (
+        schema_operator_result.operator_result_set_families,
+        schema_operator_result.zucai_prize_table_revisions,
+        schema_operator_result.zucai_prize_table_tiers,
+        schema_operator_result.operator_result_set_revisions,
+        schema_operator_result.operator_result_match_revisions,
+        schema_operator_result.operator_result_source_receipts,
+        schema_operator_result.operator_outcome_revisions,
+        schema_operator_result.operator_settlement_requests,
+        schema_operator_result.operator_task_settlement_runs,
+        schema_operator_result.operator_task_settlement_skips,
+        schema_operator_result.operator_ticket_settlement_revisions,
+        schema_operator_result.operator_ticket_note_settlements,
+        schema_operator_result.operator_ticket_note_leg_settlements,
+        schema_operator_result.operator_settlement_cash_links,
+    )
+    for table in tables:
+        table.create(connection)
+
+    review_columns = {
+        str(row[1])
+        for row in connection.exec_driver_sql(
+            "PRAGMA table_info(operator_review_eligibility_facts)"
+        ).fetchall()
+    }
+    if "settlement_run_id" not in review_columns:
+        for trigger_name in (
+            "operator_review_eligibility_exact_source",
+            "operator_review_eligibility_facts_no_update",
+            "operator_review_eligibility_facts_no_delete",
+        ):
+            connection.exec_driver_sql(f"DROP TRIGGER IF EXISTS {trigger_name}")
+        for index_row in connection.exec_driver_sql(
+            "PRAGMA index_list(operator_review_eligibility_facts)"
+        ).fetchall():
+            index_name = str(index_row[1])
+            if not index_name.startswith("sqlite_autoindex_"):
+                quoted_name = connection.dialect.identifier_preparer.quote(
+                    index_name
+                )
+                connection.exec_driver_sql(f"DROP INDEX {quoted_name}")
+        connection.exec_driver_sql(
+            "ALTER TABLE operator_review_eligibility_facts "
+            "RENAME TO operator_review_eligibility_facts_v23"
+        )
+        schema_operator_result.operator_review_eligibility_facts.create(connection)
+        connection.exec_driver_sql(
+            """
+            INSERT INTO operator_review_eligibility_facts (
+              review_eligibility_fact_id, action_id, fact_index, terminal_trigger,
+              task_family_id, work_item_id, task_snapshot_hash,
+              no_ticket_revision_id, artifact_terminal_receipt_id, settlement_run_id,
+              market_prior_baseline_revision_id, review_kind, readiness_condition,
+              content_hash, created_at
+            )
+            SELECT
+              review_eligibility_fact_id, action_id, fact_index, terminal_trigger,
+              task_family_id, work_item_id, task_snapshot_hash,
+              no_ticket_revision_id, artifact_terminal_receipt_id, NULL,
+              market_prior_baseline_revision_id, review_kind, readiness_condition,
+              content_hash, created_at
+            FROM operator_review_eligibility_facts_v23
+            """
+        )
+        connection.exec_driver_sql(
+            "DROP TABLE operator_review_eligibility_facts_v23"
+        )
+
+    connection.exec_driver_sql(
+        "DROP TRIGGER IF EXISTS operator_review_eligibility_exact_source"
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_review_eligibility_exact_source
+        BEFORE INSERT ON operator_review_eligibility_facts
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions AS action
+          WHERE action.action_id = NEW.action_id
+            AND action.status IN ('accepted', 'committed')
+            AND (
+              (NEW.terminal_trigger = 'no_ticket'
+               AND EXISTS (
+                 SELECT 1
+                 FROM operator_no_ticket_revisions AS no_ticket
+                 WHERE no_ticket.no_ticket_revision_id = NEW.no_ticket_revision_id
+                   AND no_ticket.action_id = NEW.action_id
+                   AND no_ticket.task_family_id = NEW.task_family_id
+                   AND no_ticket.work_item_id = NEW.work_item_id
+                   AND no_ticket.task_snapshot_hash = NEW.task_snapshot_hash
+               ))
+              OR (NEW.terminal_trigger = 'artifact_terminal'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM operator_artifact_terminal_receipts AS terminal
+                    JOIN operator_artifact_work_item_links AS work_link
+                      ON work_link.ticket_artifact_id = terminal.ticket_artifact_id
+                    WHERE terminal.artifact_terminal_receipt_id =
+                          NEW.artifact_terminal_receipt_id
+                      AND terminal.action_id = NEW.action_id
+                      AND terminal.terminal_reason != 'official_offer_cancelled'
+                      AND work_link.task_family_id = NEW.task_family_id
+                      AND work_link.work_item_id = NEW.work_item_id
+                      AND work_link.task_snapshot_hash = NEW.task_snapshot_hash
+                  ))
+              OR (NEW.terminal_trigger = 'official_cancellation'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM operator_artifact_terminal_receipts AS terminal
+                    JOIN operator_artifact_work_item_links AS work_link
+                      ON work_link.ticket_artifact_id = terminal.ticket_artifact_id
+                    WHERE terminal.artifact_terminal_receipt_id =
+                          NEW.artifact_terminal_receipt_id
+                      AND terminal.action_id = NEW.action_id
+                      AND terminal.terminal_reason = 'official_offer_cancelled'
+                      AND work_link.task_family_id = NEW.task_family_id
+                      AND work_link.work_item_id = NEW.work_item_id
+                      AND work_link.task_snapshot_hash = NEW.task_snapshot_hash
+                  ))
+              OR (NEW.terminal_trigger = 'settlement'
+                  AND action.action_type = 'settle_task'
+                  AND action.actor_role = 'deterministic_system'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM operator_task_settlement_runs AS run
+                    WHERE run.settlement_run_id = NEW.settlement_run_id
+                      AND run.settle_action_id = NEW.action_id
+                      AND run.task_family_id = NEW.task_family_id
+                      AND run.work_item_id = NEW.work_item_id
+                      AND run.work_item_snapshot_hash = NEW.task_snapshot_hash
+                      AND run.settlement_state IN ('settled', 'corrected')
+                      AND run.settled_ticket_count > 0
+                  ))
+            )
+        )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'review eligibility requires its exact creating Action and terminal source'
+          );
+        END
+        """
+    )
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS
+              operator_review_eligibility_facts_no_{operation.lower()}
+            BEFORE {operation} ON operator_review_eligibility_facts
+            BEGIN
+              SELECT RAISE(
+                ABORT,
+                'operator_review_eligibility_facts is append-only'
+              );
+            END
+            """
+        )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS operator_review_eligibility_enqueue_materialization
+        AFTER INSERT ON operator_review_eligibility_facts
+        BEGIN
+          INSERT INTO operator_worker_jobs (
+            worker_job_id, job_kind, source_object_type, source_object_id, state,
+            lease_owner, lease_expires_at, attempt_count, available_at,
+            last_error_code, result_action_id, result_object_type, result_object_id,
+            created_at, updated_at
+          ) VALUES (
+            'review-materialization:' || NEW.review_eligibility_fact_id,
+            'review_materialization', 'operator_review_eligibility_fact',
+            NEW.review_eligibility_fact_id, 'queued', NULL, NULL, 0,
+            NEW.created_at, NULL, NULL, NULL, NULL, NEW.created_at, NEW.created_at
+          );
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        INSERT INTO operator_worker_jobs (
+          worker_job_id, job_kind, source_object_type, source_object_id, state,
+          lease_owner, lease_expires_at, attempt_count, available_at,
+          last_error_code, result_action_id, result_object_type, result_object_id,
+          created_at, updated_at
+        )
+        SELECT
+          'review-materialization:' || fact.review_eligibility_fact_id,
+          'review_materialization', 'operator_review_eligibility_fact',
+          fact.review_eligibility_fact_id, 'queued', NULL, NULL, 0,
+          fact.created_at, NULL, NULL, NULL, NULL, fact.created_at, fact.created_at
+        FROM operator_review_eligibility_facts AS fact
+        WHERE NOT EXISTS (
+          SELECT 1 FROM operator_worker_jobs AS job
+          WHERE job.job_kind = 'review_materialization'
+            AND job.source_object_type = 'operator_review_eligibility_fact'
+            AND job.source_object_id = fact.review_eligibility_fact_id
+        )
+        """
+    )
+
+    for table in tables:
+        for operation in ("UPDATE", "DELETE"):
+            connection.exec_driver_sql(
+                f"""
+                CREATE TRIGGER {table.name}_no_{operation.lower()}
+                BEFORE {operation} ON {table.name}
+                BEGIN
+                  SELECT RAISE(ABORT, '{table.name} is append-only');
+                END
+                """
+            )
+
+    linear_revisions = (
+        (
+            "operator_result_set",
+            "operator_result_set_revisions",
+            "result_set_revision_id",
+            "result_set_family_id",
+            "result_set_family_id = NEW.result_set_family_id "
+            "AND lane = NEW.lane AND business_key = NEW.business_key "
+            "AND task_family_id = NEW.task_family_id",
+        ),
+        (
+            "operator_outcome",
+            "operator_outcome_revisions",
+            "outcome_revision_id",
+            "outcome_family_id",
+            "outcome_family_id = NEW.outcome_family_id "
+            "AND match_id = NEW.match_id",
+        ),
+        (
+            "zucai_prize_table",
+            "zucai_prize_table_revisions",
+            "prize_table_revision_id",
+            "prize_table_family_id",
+            "prize_table_family_id = NEW.prize_table_family_id "
+            "AND issue = NEW.issue AND currency = NEW.currency",
+        ),
+        (
+            "operator_ticket_settlement",
+            "operator_ticket_settlement_revisions",
+            "settlement_revision_id",
+            "settlement_family_id",
+            "settlement_family_id = NEW.settlement_family_id "
+            "AND ticket_id = NEW.ticket_id",
+        ),
+    )
+    for prefix, table_name, id_column, family_column, parent_scope in linear_revisions:
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {prefix}_single_root
+            BEFORE INSERT ON {table_name}
+            WHEN NEW.supersedes_revision_id IS NULL
+              AND EXISTS (
+                SELECT 1 FROM {table_name}
+                WHERE {family_column} = NEW.{family_column}
+                  AND supersedes_revision_id IS NULL
+              )
+            BEGIN
+              SELECT RAISE(ABORT, '{family_column} already has a root revision');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {prefix}_root_revision_no
+            BEFORE INSERT ON {table_name}
+            WHEN NEW.supersedes_revision_id IS NULL AND NEW.revision_no != 1
+            BEGIN
+              SELECT RAISE(ABORT, 'root revision_no must be 1');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {prefix}_linear_child
+            BEFORE INSERT ON {table_name}
+            WHEN NEW.supersedes_revision_id IS NOT NULL
+            BEGIN
+              SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM {table_name} AS parent
+                WHERE parent.{id_column} = NEW.supersedes_revision_id
+                  AND parent.{parent_scope}
+                  AND NEW.revision_no = parent.revision_no + 1
+              ) THEN RAISE(ABORT, 'revision must directly follow its current family leaf') END;
+              SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM {table_name} AS child
+                WHERE child.supersedes_revision_id = NEW.supersedes_revision_id
+              ) THEN RAISE(ABORT, 'revision predecessor already has a child') END;
+            END
+            """
+        )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_result_set_typed_action
+        BEFORE INSERT ON operator_result_set_revisions
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions AS action
+          WHERE action.action_id = NEW.action_id
+            AND action.action_type = 'import_result_evidence_set'
+            AND action.actor_role = 'deterministic_system'
+            AND action.status IN ('accepted', 'committed')
+            AND (
+              NEW.zucai_prize_table_revision_id IS NULL
+              OR EXISTS (
+                SELECT 1
+                FROM zucai_prize_table_revisions AS prize
+                WHERE prize.prize_table_revision_id =
+                      NEW.zucai_prize_table_revision_id
+                  AND prize.action_id = NEW.action_id
+              )
+            )
+        )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'result set and prize table require the same import Action'
+          );
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER zucai_prize_table_typed_action
+        BEFORE INSERT ON zucai_prize_table_revisions
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions
+          WHERE action_id = NEW.action_id
+            AND action_type = 'import_result_evidence_set'
+            AND actor_role = 'deterministic_system'
+            AND status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'prize table requires its deterministic import Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_outcome_typed_action
+        BEFORE INSERT ON operator_outcome_revisions
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions AS action
+          JOIN operator_result_set_revisions AS result_set
+            ON result_set.result_set_revision_id = NEW.result_set_revision_id
+          WHERE action.action_id = NEW.action_id
+            AND action.action_type = 'import_result_evidence_set'
+            AND action.actor_role = 'deterministic_system'
+            AND action.status IN ('accepted', 'committed')
+            AND result_set.action_id = NEW.action_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'Outcome and result set require the same import Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_settlement_request_typed_action
+        BEFORE INSERT ON operator_settlement_requests
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions
+          WHERE action_id = NEW.action_id
+            AND action_type = 'request_settlement'
+            AND actor_role = 'judge_operator'
+            AND status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'settlement request requires its judge Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_settlement_request_action_exact_result
+        BEFORE UPDATE OF status ON actions
+        WHEN NEW.status = 'committed'
+          AND NEW.action_type = 'request_settlement'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM operator_settlement_requests AS request
+            WHERE request.action_id = NEW.action_id
+              AND json_extract(
+                    NEW.payload_json,
+                    '$.result_set_revision_id'
+                  ) = request.result_set_revision_id
+              AND json_extract(
+                    NEW.payload_json,
+                    '$.expected_task_snapshot_hash'
+                  ) = request.task_snapshot_hash
+              AND json_array_length(NEW.result_refs_json) = 1
+              AND json_extract(
+                    NEW.result_refs_json,
+                    '$[0].object_type'
+                  ) = 'operator_settlement_request'
+              AND json_extract(
+                    NEW.result_refs_json,
+                    '$[0].object_id'
+                  ) = request.settlement_request_id
+          )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'request Action requires its exact settlement request result ref'
+          );
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_task_settlement_run_typed_action
+        BEFORE INSERT ON operator_task_settlement_runs
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions AS settle_action
+          JOIN operator_settlement_requests AS request
+            ON request.settlement_request_id = NEW.settlement_request_id
+          JOIN actions AS request_action
+            ON request_action.action_id = NEW.request_action_id
+          WHERE settle_action.action_id = NEW.settle_action_id
+            AND settle_action.action_type = 'settle_task'
+            AND settle_action.actor_role = 'deterministic_system'
+            AND settle_action.status IN ('accepted', 'committed')
+            AND json_extract(
+                  settle_action.payload_json,
+                  '$.settlement_request_id'
+                ) = NEW.settlement_request_id
+            AND request.action_id = NEW.request_action_id
+            AND request_action.action_type = 'request_settlement'
+            AND request_action.actor_role = 'judge_operator'
+            AND request_action.status = 'committed'
+            AND json_array_length(request_action.result_refs_json) = 1
+            AND json_extract(
+                  request_action.result_refs_json,
+                  '$[0].object_type'
+                ) = 'operator_settlement_request'
+            AND json_extract(
+                  request_action.result_refs_json,
+                  '$[0].object_id'
+                ) = NEW.settlement_request_id
+            AND request.task_family_id = NEW.task_family_id
+            AND request.work_item_id = NEW.work_item_id
+            AND request.task_snapshot_hash = NEW.work_item_snapshot_hash
+            AND request.result_set_revision_id = NEW.result_set_revision_id
+            AND request.prize_table_revision_id IS NEW.prize_table_revision_id
+        )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'settlement run requires its exact settlement request and Actions'
+          );
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_ticket_settlement_typed_action
+        BEFORE INSERT ON operator_ticket_settlement_revisions
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions AS action
+          JOIN operator_task_settlement_runs AS run
+            ON run.settlement_run_id = NEW.settlement_run_id
+          WHERE action.action_id = NEW.action_id
+            AND action.action_type = 'settle_task'
+            AND action.actor_role = 'deterministic_system'
+            AND action.status IN ('accepted', 'committed')
+            AND run.settle_action_id = NEW.action_id
+            AND run.result_set_revision_id = NEW.result_set_revision_id
+            AND run.prize_table_revision_id IS NEW.prize_table_revision_id
+        )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'ticket settlement requires its exact settlement run and Action'
+          );
+        END
+        """
+    )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_task_settlement_action_exact_result
+        BEFORE UPDATE OF status ON actions
+        WHEN NEW.status = 'committed'
+          AND NEW.action_type = 'settle_task'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM operator_task_settlement_runs AS run
+            WHERE run.settle_action_id = NEW.action_id
+              AND json_array_length(NEW.result_refs_json) = 1
+              AND json_extract(
+                    NEW.result_refs_json,
+                    '$[0].object_type'
+                  ) = 'operator_task_settlement_run'
+              AND json_extract(
+                    NEW.result_refs_json,
+                    '$[0].object_id'
+                  ) = run.settlement_run_id
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'settle Action requires its exact settlement run result ref');
+        END
+        """
+    )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_result_set_complete_before_commit
+        BEFORE UPDATE OF status ON actions
+        WHEN NEW.status = 'committed'
+          AND NEW.action_type = 'import_result_evidence_set'
+          AND EXISTS (
+            SELECT 1
+            FROM operator_result_set_revisions AS result_set
+            WHERE result_set.action_id = NEW.action_id
+              AND (
+                result_set.match_count != (
+                  SELECT COUNT(*) FROM operator_result_match_revisions AS match_result
+                  WHERE match_result.result_set_revision_id =
+                        result_set.result_set_revision_id
+                )
+                OR result_set.source_receipt_count != (
+                  SELECT COUNT(*)
+                  FROM operator_result_source_receipts AS receipt
+                  JOIN operator_result_match_revisions AS match_result
+                    ON match_result.match_result_revision_id =
+                       receipt.match_result_revision_id
+                  WHERE match_result.result_set_revision_id =
+                        result_set.result_set_revision_id
+                )
+                OR result_set.outcome_count != (
+                  SELECT COUNT(*) FROM operator_outcome_revisions AS outcome
+                  WHERE outcome.result_set_revision_id = result_set.result_set_revision_id
+                )
+              )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'result import child counts do not reconcile');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER zucai_prize_table_complete_before_commit
+        BEFORE UPDATE OF status ON actions
+        WHEN NEW.status = 'committed'
+          AND NEW.action_type = 'import_result_evidence_set'
+          AND EXISTS (
+            SELECT 1
+            FROM zucai_prize_table_revisions AS prize
+            WHERE prize.action_id = NEW.action_id
+              AND prize.tier_count != (
+                SELECT COUNT(*) FROM zucai_prize_table_tiers AS tier
+                WHERE tier.prize_table_revision_id = prize.prize_table_revision_id
+              )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'prize-table tier counts do not reconcile');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_task_settlement_complete_before_commit
+        BEFORE UPDATE OF status ON actions
+        WHEN NEW.status = 'committed'
+          AND NEW.action_type = 'settle_task'
+          AND EXISTS (
+            SELECT 1
+            FROM operator_task_settlement_runs AS run
+            WHERE run.settle_action_id = NEW.action_id
+              AND (
+                run.persisted_settlement_count != (
+                  SELECT COUNT(*) FROM operator_ticket_settlement_revisions AS settlement
+                  WHERE settlement.settlement_run_id = run.settlement_run_id
+                )
+                OR run.persisted_note_grade_count != (
+                  SELECT COUNT(*)
+                  FROM operator_ticket_note_settlements AS note
+                  JOIN operator_ticket_settlement_revisions AS settlement
+                    ON settlement.settlement_revision_id = note.settlement_revision_id
+                  WHERE settlement.settlement_run_id = run.settlement_run_id
+                )
+                OR run.persisted_leg_grade_count != (
+                  SELECT COUNT(*)
+                  FROM operator_ticket_note_leg_settlements AS leg
+                  JOIN operator_ticket_settlement_revisions AS settlement
+                    ON settlement.settlement_revision_id = leg.settlement_revision_id
+                  WHERE settlement.settlement_run_id = run.settlement_run_id
+                )
+                OR run.persisted_cash_count != (
+                  SELECT COUNT(*)
+                  FROM operator_settlement_cash_links AS cash
+                  JOIN operator_ticket_settlement_revisions AS settlement
+                    ON settlement.settlement_revision_id = cash.settlement_revision_id
+                  WHERE settlement.settlement_run_id = run.settlement_run_id
+                )
+                OR (
+                  run.settled_ticket_count > 0
+                  AND 1 != (
+                    SELECT COUNT(*)
+                    FROM operator_review_eligibility_facts AS fact
+                    WHERE fact.settlement_run_id = run.settlement_run_id
+                  )
+                )
+                OR (
+                  run.settled_ticket_count = 0
+                  AND EXISTS (
+                    SELECT 1
+                    FROM operator_review_eligibility_facts AS fact
+                    WHERE fact.settlement_run_id = run.settlement_run_id
+                  )
+                )
+              )
+          )
+        BEGIN
+          SELECT RAISE(
+            ABORT,
+            'settlement children or review eligibility do not reconcile'
+          );
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_settlement_cash_exact_reversal
+        BEFORE INSERT ON operator_settlement_cash_links
+        WHEN NEW.transaction_kind = 'payout_reversal'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM operator_settlement_cash_links AS prior
+            WHERE prior.transaction_id = NEW.reverses_transaction_id
+              AND prior.transaction_kind = 'payout'
+              AND prior.amount_minor = -NEW.amount_minor
+              AND prior.currency = NEW.currency
+              AND prior.settlement_revision_id = (
+                SELECT settlement.supersedes_revision_id
+                FROM operator_ticket_settlement_revisions AS settlement
+                WHERE settlement.settlement_revision_id = NEW.settlement_revision_id
+              )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'payout reversal must negate the direct predecessor payout');
+        END
+        """
+    )
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": actor_role,
+            }
+            for action_type, actor_role in (
+                ("import_result_evidence_set", "deterministic_system"),
+                ("request_settlement", "judge_operator"),
+                ("settle_task", "deterministic_system"),
+            )
+        ],
+    )
+
+
+def _apply_operator_review_scoreboard(connection: Connection) -> None:
+    tables = (
+        schema_operator_review.operator_review_items,
+        schema_operator_review.operator_scoreboard_effect_disposition_revisions,
+        schema_operator_review.operator_scoreboard_review_observation_links,
+        schema_operator_review.operator_scoreboard_review_completion_requests,
+        schema_operator_review.operator_scoreboard_review_completion_receipts,
+    )
+    for table in tables:
+        table.create(connection)
+
+    for table in tables:
+        for operation in ("UPDATE", "DELETE"):
+            connection.exec_driver_sql(
+                f"""
+                CREATE TRIGGER {table.name}_no_{operation.lower()}
+                BEFORE {operation} ON {table.name}
+                BEGIN
+                  SELECT RAISE(ABORT, '{table.name} is append-only');
+                END
+                """
+            )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_review_item_exact_materialization
+        BEFORE INSERT ON operator_review_items
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM operator_review_eligibility_facts AS fact
+          JOIN actions AS action ON action.action_id = NEW.materialized_by_action_id
+          WHERE fact.review_eligibility_fact_id = NEW.review_eligibility_fact_id
+            AND action.action_type = 'materialize_operator_review_item'
+            AND action.actor_role = 'deterministic_system'
+            AND action.status IN ('accepted', 'committed')
+            AND fact.task_family_id = NEW.task_family_id
+            AND fact.work_item_id = NEW.work_item_id
+            AND fact.task_snapshot_hash = NEW.task_snapshot_hash
+            AND fact.review_kind = NEW.review_kind
+            AND fact.market_prior_baseline_revision_id
+                IS NEW.market_prior_baseline_revision_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'review item must derive from its exact eligibility fact');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_disposition_single_root
+        BEFORE INSERT ON operator_scoreboard_effect_disposition_revisions
+        WHEN NEW.supersedes_revision_id IS NULL
+          AND (
+            NEW.revision_no != 1
+            OR EXISTS (
+              SELECT 1
+              FROM operator_scoreboard_effect_disposition_revisions
+              WHERE review_id = NEW.review_id
+                AND supersedes_revision_id IS NULL
+            )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'scoreboard disposition already has a root revision');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_disposition_linear_child
+        BEFORE INSERT ON operator_scoreboard_effect_disposition_revisions
+        WHEN NEW.supersedes_revision_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM operator_scoreboard_effect_disposition_revisions AS parent
+            WHERE parent.disposition_revision_id = NEW.supersedes_revision_id
+              AND parent.family_id = NEW.family_id
+              AND parent.review_id = NEW.review_id
+              AND NEW.revision_no = parent.revision_no + 1
+              AND NOT EXISTS (
+                SELECT 1
+                FROM operator_scoreboard_effect_disposition_revisions AS child
+                WHERE child.supersedes_revision_id = parent.disposition_revision_id
+              )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'scoreboard disposition must directly follow its current leaf');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_disposition_before_completion
+        BEFORE INSERT ON operator_scoreboard_effect_disposition_revisions
+        WHEN EXISTS (
+          SELECT 1 FROM operator_scoreboard_review_completion_receipts
+          WHERE review_id = NEW.review_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'completed review disposition is terminal');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_disposition_typed_action
+        BEFORE INSERT ON operator_scoreboard_effect_disposition_revisions
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions
+          WHERE action_id = NEW.created_by_action_id
+            AND action_type = 'record_scoreboard_effect_disposition'
+            AND actor_role = 'judge_operator'
+            AND status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'scoreboard disposition requires its judge Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_review_observation_exact_action
+        BEFORE INSERT ON operator_scoreboard_review_observation_links
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM operator_scoreboard_effect_disposition_revisions AS disposition
+          JOIN scoreboard_observations AS observation
+            ON observation.scoreboard_observation_id = NEW.scoreboard_observation_id
+          JOIN actions AS action ON action.action_id = NEW.observation_action_id
+          WHERE disposition.disposition_revision_id = NEW.disposition_revision_id
+            AND disposition.review_id = NEW.review_id
+            AND disposition.disposition = 'effect_required'
+            AND EXISTS (
+              SELECT 1 FROM json_each(disposition.required_metric_keys_json)
+              WHERE value = NEW.metric_key
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM operator_scoreboard_effect_disposition_revisions AS child
+              WHERE child.supersedes_revision_id = disposition.disposition_revision_id
+            )
+            AND observation.action_id = NEW.observation_action_id
+            AND observation.metric_key = NEW.metric_key
+            AND action.action_type = 'record_scoreboard_observation'
+            AND action.actor_role = 'judge_operator'
+            AND action.status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'review observation must bind its current effect disposition');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_review_observation_common_hash
+        BEFORE INSERT ON operator_scoreboard_review_observation_links
+        WHEN EXISTS (
+          SELECT 1
+          FROM operator_scoreboard_review_observation_links
+          WHERE disposition_revision_id = NEW.disposition_revision_id
+            AND observed_legacy_sha256 != NEW.observed_legacy_sha256
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'review observations require one common post-update hash');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_review_observation_before_completion
+        BEFORE INSERT ON operator_scoreboard_review_observation_links
+        WHEN EXISTS (
+          SELECT 1 FROM operator_scoreboard_review_completion_receipts
+          WHERE review_id = NEW.review_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'completed review cannot accept observations');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_completion_request_typed_action
+        BEFORE INSERT ON operator_scoreboard_review_completion_requests
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM operator_scoreboard_effect_disposition_revisions AS disposition
+          JOIN actions AS action ON action.action_id = NEW.action_id
+          WHERE disposition.disposition_revision_id = NEW.disposition_revision_id
+            AND disposition.review_id = NEW.review_id
+            AND disposition.disposition = 'effect_required'
+            AND action.action_type = 'request_scoreboard_review_completion'
+            AND action.actor_role = 'judge_operator'
+            AND action.status IN ('accepted', 'committed')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM operator_scoreboard_effect_disposition_revisions AS child
+              WHERE child.supersedes_revision_id = disposition.disposition_revision_id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM operator_scoreboard_review_completion_receipts
+              WHERE review_id = NEW.review_id
+            )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'completion request requires the current effect disposition');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_completion_receipt_exact_source
+        BEFORE INSERT ON operator_scoreboard_review_completion_receipts
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM operator_scoreboard_effect_disposition_revisions AS disposition
+          JOIN actions AS action ON action.action_id = NEW.completed_by_action_id
+          WHERE disposition.disposition_revision_id = NEW.disposition_revision_id
+            AND disposition.review_id = NEW.review_id
+            AND NOT EXISTS (
+              SELECT 1
+              FROM operator_scoreboard_effect_disposition_revisions AS child
+              WHERE child.supersedes_revision_id = disposition.disposition_revision_id
+            )
+            AND (
+              (
+                disposition.disposition = 'no_effect'
+                AND NEW.completion_request_id IS NULL
+                AND action.action_id = disposition.created_by_action_id
+                AND action.action_type = 'record_scoreboard_effect_disposition'
+                AND action.actor_role = 'judge_operator'
+                AND action.status IN ('accepted', 'committed')
+              )
+              OR (
+                disposition.disposition = 'effect_required'
+                AND NEW.completion_request_id IS NOT NULL
+                AND action.action_type = 'complete_scoreboard_review'
+                AND action.actor_role = 'deterministic_system'
+                AND action.status IN ('accepted', 'committed')
+                AND EXISTS (
+                  SELECT 1
+                  FROM operator_scoreboard_review_completion_requests AS request
+                  WHERE request.completion_request_id = NEW.completion_request_id
+                    AND request.review_id = NEW.review_id
+                    AND request.disposition_revision_id = NEW.disposition_revision_id
+                    AND request.shadow_review_id = NEW.shadow_review_id
+                    AND request.shadow_source_high_watermark =
+                        NEW.shadow_source_high_watermark
+                    AND request.compared_legacy_sha256 =
+                        NEW.post_update_legacy_sha256
+                    AND request.observation_action_ids_json =
+                        NEW.observation_action_ids_json
+                )
+              )
+            )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'completion receipt does not match its typed source');
+        END
+        """
+    )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_completion_request_enqueue
+        AFTER INSERT ON operator_scoreboard_review_completion_requests
+        BEGIN
+          INSERT INTO operator_worker_jobs (
+            worker_job_id, job_kind, source_object_type, source_object_id, state,
+            lease_owner, lease_expires_at, attempt_count, available_at,
+            last_error_code, result_action_id, result_object_type, result_object_id,
+            created_at, updated_at
+          ) VALUES (
+            'scoreboard-review-completion:' || NEW.completion_request_id,
+            'scoreboard_review_completion',
+            'operator_scoreboard_review_completion_request',
+            NEW.completion_request_id, 'queued', NULL, NULL, 0,
+            NEW.requested_at, NULL, NULL, NULL, NULL,
+            NEW.requested_at, NEW.requested_at
+          );
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_review_worker_job_source
+        BEFORE INSERT ON operator_worker_jobs
+        WHEN NEW.job_kind = 'review_materialization'
+          AND (
+            NEW.source_object_type != 'operator_review_eligibility_fact'
+            OR NOT EXISTS (
+              SELECT 1 FROM operator_review_eligibility_facts
+              WHERE review_eligibility_fact_id = NEW.source_object_id
+            )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'review materialization job requires its eligibility fact');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_scoreboard_completion_worker_job_source
+        BEFORE INSERT ON operator_worker_jobs
+        WHEN NEW.job_kind = 'scoreboard_review_completion'
+          AND (
+            NEW.source_object_type !=
+                'operator_scoreboard_review_completion_request'
+            OR NOT EXISTS (
+              SELECT 1 FROM operator_scoreboard_review_completion_requests
+              WHERE completion_request_id = NEW.source_object_id
+            )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'scoreboard completion job requires its typed request');
+        END
+        """
+    )
+    worker_result_check = """
+      SELECT CASE WHEN NOT EXISTS (
+        SELECT 1 FROM actions AS action
+        WHERE action.action_id = NEW.result_action_id
+          AND action.status IN ('accepted', 'committed')
+          AND (
+            (
+              NEW.job_kind = 'review_materialization'
+              AND action.action_type = 'materialize_operator_review_item'
+              AND action.actor_role = 'deterministic_system'
+              AND NEW.result_object_type = 'operator_review_item'
+              AND EXISTS (
+                SELECT 1 FROM operator_review_items AS review
+                WHERE review.review_id = NEW.result_object_id
+                  AND review.review_eligibility_fact_id = NEW.source_object_id
+                  AND review.materialized_by_action_id = NEW.result_action_id
+              )
+            )
+            OR (
+              NEW.job_kind = 'scoreboard_review_completion'
+              AND action.action_type = 'complete_scoreboard_review'
+              AND action.actor_role = 'deterministic_system'
+              AND NEW.result_object_type = 'scoreboard_review_completion_receipt'
+              AND EXISTS (
+                SELECT 1
+                FROM operator_scoreboard_review_completion_receipts AS receipt
+                WHERE receipt.completion_receipt_id = NEW.result_object_id
+                  AND receipt.completion_request_id = NEW.source_object_id
+                  AND receipt.completed_by_action_id = NEW.result_action_id
+              )
+            )
+          )
+      ) THEN RAISE(ABORT, 'review worker result does not match its typed Action') END;
+    """
+    for operation in ("INSERT", "UPDATE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER operator_review_worker_result_{operation.lower()}
+            BEFORE {operation} ON operator_worker_jobs
+            WHEN NEW.state = 'completed'
+              AND NEW.job_kind IN (
+                'review_materialization', 'scoreboard_review_completion'
+              )
+            BEGIN
+              {worker_result_check}
+            END
+            """
+        )
+
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": actor_role,
+            }
+            for action_type, actor_role in (
+                ("materialize_operator_review_item", "deterministic_system"),
+                ("record_scoreboard_effect_disposition", "judge_operator"),
+                ("request_scoreboard_review_completion", "judge_operator"),
+                ("complete_scoreboard_review", "deterministic_system"),
+            )
+        ],
+    )
+
+
+# One empty production v19 was initialized from a known pre-commit definition.
+# Its exact schema is gated here and converged transactionally by migration 26.
+_LEGACY_SCHEMA_19_CHECKSUM = (
+    "0f9b22848b47a447e1a18edf03a5eed3a33af4d968c5031c5b7c443307cbe964"
+)
+_CURRENT_SCHEMA_19_CHECKSUM = (
+    "b77216c4f5f250bd5dd2b2e240c31bb0fb262a5664192f37d205604b57e37673"
+)
+_LEGACY_V19_REPAIR_CONTEXT_KEY = "nutmeg_legacy_v19_repair_checksum"
+_V19_TABLES = (
+    schema_operator_decision.operator_evidence_freeze_requests,
+    schema_operator_decision.operator_task_evidence_bundle_revisions,
+    schema_operator_decision.operator_task_evidence_bundle_items,
+    schema_operator_decision.operator_worker_jobs,
+)
+_LEGACY_V19_TRIGGERS = frozenset(
+    {
+        "operator_worker_job_immutable_source",
+        "operator_worker_job_terminal_immutable",
+        "task_evidence_bundle_linear_child",
+        "task_evidence_bundle_root_revision_no",
+        "task_evidence_bundle_single_root",
+    }
+)
+_CURRENT_WORKER_RESULT_CHECK = (
+    "CONSTRAINT ck_operator_worker_job_result_ref CHECK "
+    "((state = 'completed' AND result_action_id IS NOT NULL "
+    "AND result_object_type IS NOT NULL AND result_object_id IS NOT NULL) "
+    "OR (state != 'completed' AND result_action_id IS NULL "
+    "AND result_object_type IS NULL AND result_object_id IS NULL))"
+)
+_LEGACY_WORKER_RESULT_CHECK = (
+    "CONSTRAINT ck_operator_worker_job_result_ref CHECK "
+    "((result_object_type IS NULL) = (result_object_id IS NULL))"
+)
+
+
+def _normalized_schema_sql(value: str) -> str:
+    return " ".join(value.strip().removesuffix(";").split())
+
+
+def _compiled_table_sql(connection: Connection, table) -> str:
+    return str(CreateTable(table).compile(connection))
+
+
+def _replace_schema_fragment(value: str, old: str, new: str) -> str:
+    if value.count(old) != 1:
+        raise MigrationDriftError("legacy migration 19 repair definition drift")
+    return value.replace(old, new)
+
+
+def _legacy_v19_table_sql(connection: Connection) -> dict[str, str]:
+    expected = {table.name: _compiled_table_sql(connection, table) for table in _V19_TABLES}
+    item_name = schema_operator_decision.operator_task_evidence_bundle_items.name
+    expected[item_name] = _replace_schema_fragment(
+        expected[item_name],
+        " ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED",
+        " ON DELETE RESTRICT",
+    )
+    worker_name = schema_operator_decision.operator_worker_jobs.name
+    expected[worker_name] = _replace_schema_fragment(
+        expected[worker_name],
+        _CURRENT_WORKER_RESULT_CHECK,
+        _LEGACY_WORKER_RESULT_CHECK,
+    )
+    return {
+        table_name: _normalized_schema_sql(sql) for table_name, sql in expected.items()
+    }
+
+
+def _current_v19_table_sql(connection: Connection) -> dict[str, str]:
+    return {
+        table.name: _normalized_schema_sql(_compiled_table_sql(connection, table))
+        for table in _V19_TABLES
+    }
+
+
+def _stored_table_sql(connection: Connection, table_name: str) -> str | None:
+    sql = connection.execute(
+        text(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type = 'table' AND name = :table_name"
+        ),
+        {"table_name": table_name},
+    ).scalar_one_or_none()
+    return None if sql is None else _normalized_schema_sql(str(sql))
+
+
+def _explicit_index_sql(connection: Connection, table_name: str) -> frozenset[str]:
+    values = connection.execute(
+        text(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type = 'index' AND tbl_name = :table_name AND sql IS NOT NULL"
+        ),
+        {"table_name": table_name},
+    ).scalars()
+    return frozenset(_normalized_schema_sql(str(value)) for value in values)
+
+
+def _expected_explicit_index_sql(connection: Connection, table) -> frozenset[str]:
+    return frozenset(
+        _normalized_schema_sql(str(CreateIndex(index).compile(connection)))
+        for index in table.indexes
+    )
+
+
+def _v19_trigger_names(connection: Connection) -> frozenset[str]:
+    table_names = tuple(table.name for table in _V19_TABLES)
+    placeholders = ", ".join(f":table_{index}" for index in range(len(table_names)))
+    rows = connection.execute(
+        text(
+            "SELECT name FROM sqlite_master "
+            f"WHERE type = 'trigger' AND tbl_name IN ({placeholders})"
+        ),
+        {f"table_{index}": name for index, name in enumerate(table_names)},
+    ).scalars()
+    return frozenset(str(row) for row in rows)
+
+
+def _legacy_v19_shape_is_exact(
+    connection: Connection,
+    existing: dict[int, str],
+) -> bool:
+    if tuple(sorted(existing)) != tuple(range(1, 20)):
+        return False
+    migration_name = connection.execute(
+        select(schema.schema_migrations.c.name).where(
+            schema.schema_migrations.c.version == 19
+        )
+    ).scalar_one_or_none()
+    if migration_name != "operator_evidence_freeze":
+        return False
+    expected_tables = _legacy_v19_table_sql(connection)
+    for table in _V19_TABLES:
+        if _stored_table_sql(connection, table.name) != expected_tables[table.name]:
+            return False
+        if _explicit_index_sql(connection, table.name) != _expected_explicit_index_sql(
+            connection,
+            table,
+        ):
+            return False
+        quoted_name = connection.dialect.identifier_preparer.quote(table.name)
+        if connection.exec_driver_sql(f"SELECT COUNT(*) FROM {quoted_name}").scalar_one():
+            return False
+
+    permissions = frozenset(
+        (
+            str(row.policy_version_id),
+            str(row.action_type),
+            str(row.actor_role),
+        )
+        for row in connection.execute(
+            select(
+                schema.action_permissions.c.policy_version_id,
+                schema.action_permissions.c.action_type,
+                schema.action_permissions.c.actor_role,
+            ).where(
+                schema.action_permissions.c.action_type.in_(
+                    (
+                        "request_evidence_freeze",
+                        "freeze_evidence_bundle",
+                        "link_operator_task_evidence_freeze",
+                    )
+                )
+            )
+        )
+    )
+    expected_permissions = frozenset(
+        {
+            ("governance-v1", "request_evidence_freeze", "judge_operator"),
+            ("governance-v1", "freeze_evidence_bundle", "deterministic_system"),
+            (
+                "governance-v1",
+                "link_operator_task_evidence_freeze",
+                "deterministic_system",
+            ),
+        }
+    )
+    return permissions == expected_permissions and _v19_trigger_names(
+        connection
+    ) == _LEGACY_V19_TRIGGERS
+
+
+def _mark_exact_legacy_v19_for_repair(
+    connection: Connection,
+    migration: Migration,
+    migrations: tuple[Migration, ...],
+    existing: dict[int, str],
+) -> bool:
+    recorded = existing.get(19)
+    if recorded != _LEGACY_SCHEMA_19_CHECKSUM or migration.version != 19:
+        return False
+    if migration.name != "operator_evidence_freeze":
+        return False
+    if migration.checksum != _CURRENT_SCHEMA_19_CHECKSUM:
+        return False
+    if len(migrations) < 26 or migrations[:26] != MIGRATIONS[:26]:
+        return False
+    if not _legacy_v19_shape_is_exact(connection, existing):
+        return False
+
+    connection.info[_LEGACY_V19_REPAIR_CONTEXT_KEY] = _LEGACY_SCHEMA_19_CHECKSUM
+    connection.execute(
+        text("UPDATE schema_migrations SET checksum = :checksum WHERE version = 19"),
+        {"checksum": migration.checksum},
+    )
+    existing[19] = migration.checksum
+    return True
+
+
+def _rebuild_empty_v19_table(connection: Connection, table) -> None:
+    quoted_name = connection.dialect.identifier_preparer.quote(table.name)
+    if connection.exec_driver_sql(f"SELECT COUNT(*) FROM {quoted_name}").scalar_one():
+        raise MigrationDriftError("migration 26 legacy table is not empty")
+    trigger_sql = tuple(
+        str(value)
+        for value in connection.execute(
+            text(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type = 'trigger' AND tbl_name = :table_name "
+                "ORDER BY name"
+            ),
+            {"table_name": table.name},
+        ).scalars()
+    )
+    connection.exec_driver_sql(f"DROP TABLE {quoted_name}")
+    table.create(connection)
+    for statement in trigger_sql:
+        connection.exec_driver_sql(statement)
+
+
+def _install_missing_v19_triggers(connection: Connection) -> None:
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS operator_evidence_freeze_request_action
+        BEFORE INSERT ON operator_evidence_freeze_requests
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions
+          WHERE action_id = NEW.action_id
+            AND action_type = 'request_evidence_freeze'
+            AND actor_role = 'judge_operator'
+            AND status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'evidence freeze request requires its judge Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS task_evidence_bundle_counts_match_items
+        BEFORE INSERT ON operator_task_evidence_bundle_revisions
+        BEGIN
+          SELECT CASE WHEN NEW.item_count != (
+            SELECT COUNT(*)
+            FROM operator_task_evidence_bundle_items AS item
+            WHERE item.task_evidence_bundle_revision_id = NEW.task_evidence_bundle_revision_id
+          ) OR NEW.bundle_count != (
+            SELECT COUNT(DISTINCT item.evidence_bundle_id)
+            FROM operator_task_evidence_bundle_items AS item
+            WHERE item.task_evidence_bundle_revision_id = NEW.task_evidence_bundle_revision_id
+          ) OR NEW.required_match_count != (
+            SELECT COUNT(DISTINCT item.match_id)
+            FROM operator_task_evidence_bundle_items AS item
+            WHERE item.task_evidence_bundle_revision_id = NEW.task_evidence_bundle_revision_id
+          ) THEN RAISE(ABORT, 'task evidence bundle declared counts do not match items') END;
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS task_evidence_bundle_item_freeze_action
+        BEFORE INSERT ON operator_task_evidence_bundle_items
+        WHEN NOT EXISTS (
+          SELECT 1
+          FROM actions
+          WHERE action_id = NEW.freeze_bundle_action_id
+            AND action_type = 'freeze_evidence_bundle'
+            AND actor_role = 'deterministic_system'
+            AND status = 'committed'
+            AND json_array_length(result_refs_json) = 1
+            AND json_extract(result_refs_json, '$[0].object_type') = 'evidence_bundle'
+            AND json_extract(result_refs_json, '$[0].object_id') = NEW.evidence_bundle_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'bundle item requires a freeze_evidence_bundle Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS task_evidence_bundle_item_after_finalize
+        BEFORE INSERT ON operator_task_evidence_bundle_items
+        WHEN EXISTS (
+          SELECT 1
+          FROM operator_task_evidence_bundle_revisions
+          WHERE task_evidence_bundle_revision_id = NEW.task_evidence_bundle_revision_id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'finalized task evidence bundle items are immutable');
+        END
+        """
+    )
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS
+              operator_evidence_freeze_request_no_{operation.lower()}
+            BEFORE {operation} ON operator_evidence_freeze_requests
+            BEGIN
+              SELECT RAISE(ABORT, 'operator evidence freeze requests are append-only');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS task_evidence_bundle_item_no_{operation.lower()}
+            BEFORE {operation} ON operator_task_evidence_bundle_items
+            BEGIN
+              SELECT RAISE(ABORT, 'task evidence bundle items are append-only');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS task_evidence_bundle_revision_no_{operation.lower()}
+            BEFORE {operation} ON operator_task_evidence_bundle_revisions
+            BEGIN
+              SELECT RAISE(ABORT, 'task evidence bundle revisions are append-only');
+            END
+            """
+        )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS operator_worker_job_terminal_no_delete
+        BEFORE DELETE ON operator_worker_jobs
+        WHEN OLD.state IN ('completed', 'failed')
+        BEGIN
+          SELECT RAISE(ABORT, 'terminal operator worker job is immutable');
+        END
+        """
+    )
+    evidence_freeze_result_check = """
+      SELECT CASE WHEN NOT EXISTS (
+        SELECT 1
+        FROM actions AS action
+        JOIN operator_task_evidence_bundle_revisions AS revision
+          ON revision.link_action_id = action.action_id
+        WHERE action.action_id = NEW.result_action_id
+          AND action.action_type = 'link_operator_task_evidence_freeze'
+          AND action.actor_role = 'deterministic_system'
+          AND NEW.source_object_type = 'operator_evidence_freeze_request'
+          AND NEW.result_object_type = 'task_evidence_bundle_revision'
+          AND revision.task_evidence_bundle_revision_id = NEW.result_object_id
+          AND revision.evidence_freeze_request_id = NEW.source_object_id
+      ) THEN RAISE(ABORT, 'evidence freeze job result does not match its link Action') END;
+    """
+    for operation in ("INSERT", "UPDATE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS
+              operator_worker_job_evidence_freeze_result_{operation.lower()}
+            BEFORE {operation} ON operator_worker_jobs
+            WHEN NEW.state = 'completed' AND NEW.job_kind = 'evidence_freeze'
+            BEGIN
+              {evidence_freeze_result_check}
+            END
+            """
+        )
+
+
+def _apply_operator_evidence_freeze_contract_repair(connection: Connection) -> None:
+    guard_checksum = connection.info.get(_LEGACY_V19_REPAIR_CONTEXT_KEY)
+    if guard_checksum not in (None, _LEGACY_SCHEMA_19_CHECKSUM):
+        raise MigrationDriftError("migration 26 legacy repair context drift")
+
+    actual_tables = {table.name: _stored_table_sql(connection, table.name) for table in _V19_TABLES}
+    current_tables = _current_v19_table_sql(connection)
+    if guard_checksum is not None:
+        if actual_tables != _legacy_v19_table_sql(connection):
+            raise MigrationDriftError("migration 26 legacy schema changed after validation")
+        _rebuild_empty_v19_table(
+            connection,
+            schema_operator_decision.operator_task_evidence_bundle_items,
+        )
+        _rebuild_empty_v19_table(
+            connection,
+            schema_operator_decision.operator_worker_jobs,
+        )
+        actual_tables = {
+            table.name: _stored_table_sql(connection, table.name) for table in _V19_TABLES
+        }
+    if actual_tables != current_tables:
+        raise MigrationDriftError("migration 26 evidence-freeze schema drift")
+
+    _install_missing_v19_triggers(connection)
+
+
+def _apply_operator_projection_cursors(connection: Connection) -> None:
+    schema_workflow.operator_projection_cursors.create(connection)
+
+
+def _apply_operator_judgment_structure_facts(connection: Connection) -> None:
+    """Carry 锚方完整度 and 被排面先例生死 into the judgment layer (C5/C7/C13/C14)."""
+    for table in (
+        schema_operator_decision.operator_match_judgment_anchor_facts,
+        schema_operator_decision.operator_match_judgment_face_precedents,
+    ):
+        table.create(connection)
+    for table_name in (
+        "operator_match_judgment_anchor_facts",
+        "operator_match_judgment_face_precedents",
+    ):
+        for operation in ("UPDATE", "DELETE"):
+            connection.exec_driver_sql(
+                f"""
+                CREATE TRIGGER {table_name}_no_{operation.lower()}
+                BEFORE {operation} ON {table_name}
+                BEGIN
+                  SELECT RAISE(ABORT, '{table_name} is append-only');
+                END
+                """
+            )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {table_name}_no_late_insert
+            BEFORE INSERT ON {table_name}
+            WHEN EXISTS (
+              SELECT 1
+              FROM actions AS action
+              JOIN operator_match_judgment_revisions AS revision
+                ON revision.operator_match_judgment_revision_id =
+                   NEW.operator_match_judgment_revision_id
+              WHERE action.action_id = revision.action_id
+                AND action.status = 'committed'
+            )
+            BEGIN
+              SELECT RAISE(ABORT, '{table_name} is append-only after commit');
+            END
+            """
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -3237,6 +4733,56 @@ MIGRATIONS: tuple[Migration, ...] = (
         ),
         apply=_apply_operator_confirmation_ledger,
     ),
+    Migration(
+        version=24,
+        name="operator_results_settlement",
+        fingerprint=(
+            "three_source_result_revisions+outcomes+official_prize_tables+"
+            "queued_task_settlement+normalized_note_and_leg_grades+"
+            "direct_predecessor_cash_corrections+append_only_business_rows+"
+            "settlement_review_eligibility+atomic_review_queue+"
+            "exact_child_count_reconciliation+exact_parent_action_bindings+"
+            "role_separated_permissions"
+        ),
+        apply=_apply_operator_results_settlement,
+    ),
+    Migration(
+        version=25,
+        name="operator_review_scoreboard",
+        fingerprint=(
+            "review_items+scoreboard_effect_dispositions+observation_links+"
+            "explicit_completion_requests_and_receipts+"
+            "exact_shadow_selection+append_only_rows+role_separated_permissions"
+        ),
+        apply=_apply_operator_review_scoreboard,
+    ),
+    Migration(
+        version=26,
+        name="operator_evidence_freeze_contract_repair",
+        fingerprint=(
+            "exact_legacy_v19_checksum_and_schema_gate+"
+            "deferred_bundle_item_fk+strict_worker_result_refs+"
+            "missing_v19_triggers+transactional_guard"
+        ),
+        apply=_apply_operator_evidence_freeze_contract_repair,
+    ),
+    Migration(
+        version=27,
+        name="operator_projection_cursors",
+        fingerprint=(
+            "independent_monotonic_outbox_delivery_and_read_model_invalidation_cursors"
+        ),
+        apply=_apply_operator_projection_cursors,
+    ),
+    Migration(
+        version=28,
+        name="operator_judgment_structure_facts",
+        fingerprint=(
+            "judgment_anchor_integrity+judgment_face_precedents+"
+            "closed_vocabularies+append_only_children"
+        ),
+        apply=_apply_operator_judgment_structure_facts,
+    ),
 )
 
 
@@ -3262,26 +4808,37 @@ def run_migrations(
     _validate_sequence(migrations)
     applied: list[int] = []
     with engine.begin() as connection:
-        schema.schema_migrations.create(connection, checkfirst=True)
-        existing = _applied_checksums(connection)
-        for migration in migrations:
-            recorded = existing.get(migration.version)
-            if recorded is not None:
-                if recorded != migration.checksum:
-                    raise MigrationDriftError(
-                        f'migration {migration.version} checksum drift'
+        connection.info.pop(_LEGACY_V19_REPAIR_CONTEXT_KEY, None)
+        try:
+            schema.schema_migrations.create(connection, checkfirst=True)
+            existing = _applied_checksums(connection)
+            for migration in migrations:
+                recorded = existing.get(migration.version)
+                if recorded is not None:
+                    if recorded != migration.checksum:
+                        if _mark_exact_legacy_v19_for_repair(
+                            connection,
+                            migration,
+                            migrations,
+                            existing,
+                        ):
+                            continue
+                        raise MigrationDriftError(
+                            f'migration {migration.version} checksum drift'
+                        )
+                    continue
+                migration.apply(connection)
+                connection.execute(
+                    insert(schema.schema_migrations).values(
+                        version=migration.version,
+                        name=migration.name,
+                        checksum=migration.checksum,
+                        applied_at=datetime.now(UTC).isoformat(),
                     )
-                continue
-            migration.apply(connection)
-            connection.execute(
-                insert(schema.schema_migrations).values(
-                    version=migration.version,
-                    name=migration.name,
-                    checksum=migration.checksum,
-                    applied_at=datetime.now(UTC).isoformat(),
                 )
-            )
-            applied.append(migration.version)
+                applied.append(migration.version)
+        finally:
+            connection.info.pop(_LEGACY_V19_REPAIR_CONTEXT_KEY, None)
     return MigrationReport(applied_versions=tuple(applied))
 
 

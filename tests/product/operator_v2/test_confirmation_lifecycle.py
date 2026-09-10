@@ -4,21 +4,25 @@ import hashlib
 import json
 import os
 import subprocess
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from nutmeg.config.settings import AppSettings
+from nutmeg.interfaces.operator_api import mount_operator_api
 from nutmeg.interfaces.product_api import create_product_app
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole, canonical_json
 from nutmeg.ontology.actions.protected_ticket_actions import (
     ConfirmTicketPlacementRequest,
     ProtectedTicketActions,
 )
+from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
 from nutmeg.ontology.errors import IdempotencyConflictError
 from nutmeg.ontology.repository import schema
@@ -29,17 +33,26 @@ from nutmeg.ontology.repository.operator_result import OperatorResultRepository
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 from nutmeg.product import operator_workers
+from nutmeg.product.actions import ProductActionGateway
+from nutmeg.product.operator_actions import OperatorActionService
+from nutmeg.product.operator_contracts import (
+    AuditDeploymentStep,
+    ConfirmationStep,
+    OperatorLane,
+)
 from nutmeg.product.operator_runtime import (
     OperatorRuntimeConfig,
     OperatorRuntimeScope,
     OperatorSurfaceMode,
 )
+from nutmeg.product.operator_tokens import OperatorSnapshotTokenCodec
 from nutmeg.product.wiring import build_product_services
 from nutmeg.services import telegram_ticket_confirmation as confirmation_services
 from nutmeg.services.telegram_ticket_confirmation import (
     TelegramOwnerHeartbeatService,
     TelegramTicketConfirmationService,
 )
+from tests.ontology.operator.test_candidate_actions import _candidate
 from tests.ontology.operator.test_confirmation_cas import _issue
 from tests.ontology.operator.test_no_ticket_actions import (
     AT,
@@ -47,10 +60,25 @@ from tests.ontology.operator.test_no_ticket_actions import (
     _artifact_fixture,
     _clean_candidate_audit,
 )
+from tests.product.operator_v2.test_deployment_replay import (
+    _adjudicate_current_warns,
+    _selected_fixture,
+)
+from tests.product.operator_v2.test_deployment_replay import (
+    _client as _deployment_client,
+)
+from tests.product.operator_v2.test_deployment_replay import (
+    _command as _deployment_command,
+)
+from tests.product.operator_v2.test_judgment_api import KEY
 
 
 class _NoopTelegramClient:
+    def __init__(self) -> None:
+        self.calls = []
+
     def send_message(self, **_kwargs):
+        self.calls.append(_kwargs)
         return None
 
 
@@ -150,6 +178,396 @@ def _replay_workspace(tmp_path: Path, variable: str) -> tuple[Path, Path]:
     workspace = root / "data" / "ontology"
     workspace.mkdir(parents=True, exist_ok=True)
     return root, workspace
+
+
+def _two_ticket_candidate():
+    candidate = _candidate(set_kind="judgment_bound", content_hash="c" * 64)
+    first = candidate.tickets[0]
+    second = replace(
+        first,
+        group_code="002",
+        composition_hash="ticket-" + "d" * 64,
+    )
+    return replace(
+        candidate,
+        tickets=(first, second),
+        metrics=replace(
+            candidate.metrics,
+            ticket_count=2,
+            distinct_note_count=2,
+            paid_note_unit_count=2,
+            stake_minor=400,
+            capital_utilization_decimal="0.020000000000",
+            probability_kind="any_ticket_all_required_legs",
+            objective_probability_decimal="0.640000000000",
+        ),
+    )
+
+
+def _confirmation_api_client(
+    fixture,
+    queries,
+    workspace: Path,
+    *,
+    now: datetime,
+    telegram_client=None,
+):
+    protected = ProtectedTicketActions(
+        fixture.judgment.action_service,
+        ContentAddressedArtifactStore(workspace / "confirmation-artifacts"),
+        operator_decisions=fixture.judgment.decision_actions,
+        operator_candidate_auditor=operator_workers.audit_current_candidate,
+    )
+    transport = telegram_client or _NoopTelegramClient()
+    telegram = TelegramTicketConfirmationService(
+        kernel=SimpleNamespace(
+            engine=fixture.judgment.engine,
+            protected_tickets=protected,
+        ),
+        telegram_client=transport,
+        allowed_chat_ids={111},
+        now_fn=lambda: now,
+    )
+    service = OperatorActionService(
+        queries=queries,
+        action_gateway=ProductActionGateway(
+            SimpleNamespace(
+                workflow=WorkflowActions(fixture.judgment.action_service)
+            ),
+            object(),
+            clock=lambda: now,
+        ),
+        telegram_confirmation=telegram,
+        telegram_owner_chat_id=111,
+        decision_actions=fixture.judgment.decision_actions,
+        protected_tickets=protected,
+        snapshot_tokens=OperatorSnapshotTokenCodec(KEY),
+        clock=lambda: now,
+    )
+    app = FastAPI()
+
+    async def allow(_request) -> None:
+        return None
+
+    mount_operator_api(
+        app,
+        require_mutation_session=allow,
+        operator_actions=service,
+        actor_id="jun",
+    )
+    return TestClient(app), telegram, protected
+
+
+def test_multi_ticket_batch_projects_independent_artifact_confirmation_work_items(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "multi-ticket" / "data" / "ontology"
+    workspace.mkdir(parents=True)
+    fixture, queries, _selection_id = _selected_fixture(
+        workspace,
+        judgment_candidate=_two_ticket_candidate(),
+    )
+    client = _deployment_client(fixture, queries, workspace)
+
+    selected = queries.task("jczq:2026-09-04", as_of=AT + timedelta(seconds=2))
+    assert isinstance(selected.step, AuditDeploymentStep)
+    created = client.post(
+        "/api/v2/operator",
+        json=_deployment_command(
+            selected.step,
+            "create_ticket_batch",
+            candidate_selection_token=selected.step.candidate_selection_token,
+        ),
+    )
+    assert created.status_code == 200, created.text
+    draft = queries.task("jczq:2026-09-04", as_of=AT + timedelta(seconds=2))
+    assert isinstance(draft.step, AuditDeploymentStep)
+    approved_step = _adjudicate_current_warns(client, queries, draft.step)
+    approved = client.post(
+        "/api/v2/operator",
+        json=_deployment_command(
+            approved_step,
+            "approve_ticket_batch",
+            ticket_batch_token=approved_step.ticket_batch_token,
+        ),
+    )
+    assert approved.status_code == 200, approved.text
+
+    detail = queries.task_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        as_of=AT + timedelta(seconds=2),
+    )
+    artifacts = [item for item in detail.work_items if item.scope_kind == "artifact"]
+    assert len(artifacts) == 2
+    assert len({item.work_item_key for item in artifacts}) == 2
+    assert len({item.snapshot_token for item in artifacts}) == 2
+    assert all(item.phase == "await_confirmation" for item in artifacts)
+    assert all(item.deployment_outcome == "pending" for item in artifacts)
+
+    steps = [
+        queries.work_item_v2(
+            OperatorLane.JCZQ,
+            "2026-09-04",
+            item.work_item_key,
+            as_of=AT + timedelta(seconds=2),
+        ).step
+        for item in artifacts
+    ]
+    assert all(isinstance(step, ConfirmationStep) for step in steps)
+    assert {step.amount_minor for step in steps} == {200}
+    assert all(step.confirmation_state == "not_issued" for step in steps)
+    assert len({step.command_token for step in steps}) == 2
+    assert len({step.ticket_artifact_token for step in steps}) == 2
+    assert all(step.ticket_artifact_id is None for step in steps)
+    assert all(
+        "ticket_artifact_id" not in step.model_dump(exclude_none=True)
+        for step in steps
+    )
+
+
+def test_requesting_one_artifact_confirmation_does_not_open_its_sibling(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "independent-confirmation" / "data" / "ontology"
+    workspace.mkdir(parents=True)
+    fixture, queries, _selection_id = _selected_fixture(
+        workspace,
+        judgment_candidate=_two_ticket_candidate(),
+    )
+    deployment_client = _deployment_client(fixture, queries, workspace)
+    selected = queries.task("jczq:2026-09-04", as_of=AT + timedelta(seconds=2))
+    assert isinstance(selected.step, AuditDeploymentStep)
+    created = deployment_client.post(
+        "/api/v2/operator",
+        json=_deployment_command(
+            selected.step,
+            "create_ticket_batch",
+            candidate_selection_token=selected.step.candidate_selection_token,
+        ),
+    )
+    assert created.status_code == 200, created.text
+    draft = queries.task("jczq:2026-09-04", as_of=AT + timedelta(seconds=2))
+    assert isinstance(draft.step, AuditDeploymentStep)
+    approved_step = _adjudicate_current_warns(
+        deployment_client,
+        queries,
+        draft.step,
+    )
+    approved = deployment_client.post(
+        "/api/v2/operator",
+        json=_deployment_command(
+            approved_step,
+            "approve_ticket_batch",
+            ticket_batch_token=approved_step.ticket_batch_token,
+        ),
+    )
+    assert approved.status_code == 200, approved.text
+
+    detail = queries.task_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        as_of=AT + timedelta(seconds=2),
+    )
+    artifacts = [item for item in detail.work_items if item.scope_kind == "artifact"]
+    first_detail = queries.work_item_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        artifacts[0].work_item_key,
+        as_of=AT + timedelta(seconds=2),
+    )
+    first = first_detail.step
+    assert isinstance(first, ConfirmationStep)
+    client, _telegram, _protected_tickets = _confirmation_api_client(
+        fixture,
+        queries,
+        workspace,
+        now=AT + timedelta(seconds=3),
+    )
+    requested = client.post(
+        "/api/v2/operator",
+        json={
+            "schema_version": "2",
+            "kind": "request_confirmation",
+            "expected_snapshot_token": first.command_token,
+            "idempotency_key": "confirmation:independent:first",
+            "task_key": "jczq:2026-09-04",
+            "ticket_artifact_token": first.ticket_artifact_token,
+        },
+    )
+    assert requested.status_code == 202, requested.text
+
+    states = []
+    for item in artifacts:
+        refreshed = queries.work_item_v2(
+            OperatorLane.JCZQ,
+            "2026-09-04",
+            item.work_item_key,
+            as_of=AT + timedelta(seconds=3),
+        )
+        assert isinstance(refreshed.step, ConfirmationStep)
+        states.append(refreshed.step.confirmation_state)
+    assert states == ["open", "not_issued"]
+    with OntologyUnitOfWork(fixture.judgment.engine) as uow:
+        artifact_ids = [
+            link.ticket_artifact_id
+            for link in uow.tickets.artifact_work_item_links_for_task_family(
+                "jczq:2026-09-04",
+                as_of=(AT + timedelta(seconds=3)).isoformat(),
+            )
+        ]
+        heads = [
+            uow.tickets.confirmation_challenge_head(artifact_id)
+            for artifact_id in artifact_ids
+        ]
+    assert sum(head is not None for head in heads) == 1
+
+
+def test_partial_confirmation_keeps_ticket_and_sibling_artifact_independent(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "partial-confirmation" / "data" / "ontology"
+    workspace.mkdir(parents=True)
+    fixture, queries, _selection_id = _selected_fixture(
+        workspace,
+        judgment_candidate=_two_ticket_candidate(),
+    )
+    deployment_client = _deployment_client(fixture, queries, workspace)
+    selected = queries.task("jczq:2026-09-04", as_of=AT + timedelta(seconds=2))
+    assert isinstance(selected.step, AuditDeploymentStep)
+    created = deployment_client.post(
+        "/api/v2/operator",
+        json=_deployment_command(
+            selected.step,
+            "create_ticket_batch",
+            candidate_selection_token=selected.step.candidate_selection_token,
+        ),
+    )
+    assert created.status_code == 200, created.text
+    draft = queries.task("jczq:2026-09-04", as_of=AT + timedelta(seconds=2))
+    assert isinstance(draft.step, AuditDeploymentStep)
+    approved_step = _adjudicate_current_warns(
+        deployment_client,
+        queries,
+        draft.step,
+    )
+    approved = deployment_client.post(
+        "/api/v2/operator",
+        json=_deployment_command(
+            approved_step,
+            "approve_ticket_batch",
+            ticket_batch_token=approved_step.ticket_batch_token,
+        ),
+    )
+    assert approved.status_code == 200, approved.text
+
+    before = queries.task_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        as_of=AT + timedelta(seconds=2),
+    )
+    artifacts = [item for item in before.work_items if item.scope_kind == "artifact"]
+    first = queries.work_item_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        artifacts[0].work_item_key,
+        as_of=AT + timedelta(seconds=2),
+    ).step
+    assert isinstance(first, ConfirmationStep)
+    transport = _NoopTelegramClient()
+    client, telegram, protected = _confirmation_api_client(
+        fixture,
+        queries,
+        workspace,
+        now=AT + timedelta(seconds=3),
+        telegram_client=transport,
+    )
+    requested = client.post(
+        "/api/v2/operator",
+        json={
+            "schema_version": "2",
+            "kind": "request_confirmation",
+            "expected_snapshot_token": first.command_token,
+            "idempotency_key": "confirmation:partial:first",
+            "task_key": "jczq:2026-09-04",
+            "ticket_artifact_token": first.ticket_artifact_token,
+        },
+    )
+    assert requested.status_code == 202, requested.text
+    callback_data = transport.calls[0]["reply_markup"]["inline_keyboard"][0][0][
+        "callback_data"
+    ]
+    ingress = AT + timedelta(seconds=4)
+    owner = TelegramOwnerHeartbeatService(
+        action_service=fixture.judgment.action_service,
+        account_id="nutmeg",
+        owner_instance_id="openclaw-primary",
+        transport_label="openclaw-telegram",
+        owner_mode="openclaw",
+        router_version="ntc-v1",
+        lease_duration=timedelta(seconds=90),
+    )
+    owner.pulse(observed_at=ingress - timedelta(seconds=1))
+    confirmation_services.ingest_openclaw_telegram_update(
+        _update(callback_data=callback_data, ingress_at=ingress),
+        trusted_account_id="nutmeg",
+        owner_instance_id="openclaw-primary",
+        bridge_received_at=ingress + timedelta(seconds=1),
+        heartbeat_service=owner,
+        confirmation_service=telegram,
+    )
+
+    after_callback = queries.task_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        as_of=ingress,
+    )
+    sale_wave = next(
+        item for item in after_callback.work_items if item.scope_kind == "sale_wave"
+    )
+    waiting = [
+        item for item in after_callback.work_items if item.scope_kind == "artifact"
+    ]
+    tickets = [item for item in after_callback.work_items if item.scope_kind == "ticket"]
+    assert sale_wave.deployment_outcome == "partially_placed"
+    assert len(waiting) == 1
+    assert waiting[0].phase == "await_confirmation"
+    assert len(tickets) == 1
+    assert tickets[0].phase == "await_result"
+
+    with OntologyUnitOfWork(fixture.judgment.engine) as uow:
+        open_ids = uow.tickets.open_protected_artifact_ids(limit=10)
+        assert len(open_ids) == 1
+        binding = uow.tickets.protected_artifact_binding(open_ids[0])
+    assert binding is not None
+    cutoff = datetime.fromisoformat(binding.frozen_deadline_at)
+    worker = operator_workers.ConfirmationDeadlineWorker(
+        action_service=fixture.judgment.action_service,
+        protected_tickets=protected,
+        worker_id="operator-confirmation-deadline",
+    )
+    outcomes = worker.run_once(limit=10, as_of=cutoff)
+    assert len(outcomes) == 1
+
+    after_timeout = queries.task_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        as_of=cutoff + timedelta(seconds=1),
+    )
+    sale_wave = next(
+        item for item in after_timeout.work_items if item.scope_kind == "sale_wave"
+    )
+    expired = [
+        item for item in after_timeout.work_items if item.scope_kind == "artifact"
+    ]
+    tickets = [item for item in after_timeout.work_items if item.scope_kind == "ticket"]
+    assert sale_wave.deployment_outcome == "partially_placed"
+    assert [(item.phase, item.deployment_outcome) for item in expired] == [
+        ("complete", "expired")
+    ]
+    assert len(tickets) == 1
+    assert tickets[0].phase == "await_result"
+    assert _callback_counts(fixture.judgment.engine)["ticket"] == 1
 
 
 def test_isolated_callback_replay(
@@ -328,22 +746,73 @@ def test_isolated_timeout_replay(tmp_path: Path) -> None:
     }
 
 
-def test_active_product_services_register_package9_consumers(tmp_path: Path) -> None:
-    data_dir = (tmp_path / "isolated").resolve()
+@pytest.mark.parametrize(
+    ("surface_mode", "expected_names"),
+    [
+        (
+            OperatorSurfaceMode.LEGACY_READ_ONLY,
+            (
+                "ConfirmationDeadlineWorker",
+                "ProductOutboxWorker",
+                "OperatorReadModelInvalidator",
+            ),
+        ),
+        (
+            OperatorSurfaceMode.SHADOW,
+            (
+                "ConfirmationDeadlineWorker",
+                "ProductOutboxWorker",
+                "OperatorReadModelInvalidator",
+            ),
+        ),
+        (
+            OperatorSurfaceMode.ACTIVE,
+            (
+                "EvidenceFreezeRequestWorker",
+                "MarketBaselineWorker",
+                "CandidateGenerationWorker",
+                "ConfirmationDeadlineWorker",
+                "TaskSettlementWorker",
+                "ReviewMaterializationWorker",
+                "ScoreboardReviewCompletionWorker",
+                "ProductOutboxWorker",
+                "OperatorReadModelInvalidator",
+            ),
+        ),
+    ],
+)
+def test_product_services_register_exact_mode_consumers(
+    tmp_path: Path,
+    surface_mode: OperatorSurfaceMode,
+    expected_names: tuple[str, ...],
+) -> None:
     production_dir = (tmp_path / "production").resolve()
+    data_dir = (
+        (tmp_path / "isolated").resolve()
+        if surface_mode is OperatorSurfaceMode.ACTIVE
+        else production_dir
+    )
     settings = AppSettings(
         _env_file=None,
         data_dir=data_dir,
         production_data_dir=production_dir,
-        operator_surface_mode="active",
-        operator_runtime_scope="isolated_candidate",
+        operator_surface_mode=surface_mode.value,
+        operator_runtime_scope=(
+            "isolated_candidate"
+            if surface_mode is OperatorSurfaceMode.ACTIVE
+            else "production"
+        ),
         operator_token_signing_key="isolated-p9-signing-key-32-bytes-min",
     )
     kernel = build_ontology_kernel(settings)
     kernel.initialize()
     runtime = OperatorRuntimeConfig(
-        surface_mode=OperatorSurfaceMode.ACTIVE,
-        runtime_scope=OperatorRuntimeScope.ISOLATED_CANDIDATE,
+        surface_mode=surface_mode,
+        runtime_scope=(
+            OperatorRuntimeScope.ISOLATED_CANDIDATE
+            if surface_mode is OperatorSurfaceMode.ACTIVE
+            else OperatorRuntimeScope.PRODUCTION
+        ),
         data_dir=data_dir,
         production_data_dir=production_dir,
         running_commit="isolated-p9-replay",
@@ -355,12 +824,7 @@ def test_active_product_services_register_package9_consumers(tmp_path: Path) -> 
         services.infrastructure_workers,
         operator_workers.OperatorInfrastructureWorkers,
     )
-    assert services.infrastructure_workers.worker_names == (
-        "EvidenceFreezeRequestWorker",
-        "MarketBaselineWorker",
-        "CandidateGenerationWorker",
-        "ConfirmationDeadlineWorker",
-    )
+    assert services.infrastructure_workers.worker_names == expected_names
 
 
 def test_market_baseline_worker_resolves_work_item_without_existing_baseline(

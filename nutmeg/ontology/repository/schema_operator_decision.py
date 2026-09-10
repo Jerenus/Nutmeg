@@ -1118,6 +1118,67 @@ operator_match_judgment_evidence_refs = Table(
 )
 
 
+# 2026-09-10（migration 28）：C5/C7/C13/C14 需要的两项操作员事实。判断层此前只存概率、
+# 因子、面集合与规则引用，候选审计因此只能用 anchor_integrity="unknown" + 空 precedents
+# 造 Leg——C5 的 ERROR 硬门与 C7/C13 在应用里永远不触发，C14 则在任何被排面 >20% 的候选上
+# 永远亮 WARN。两张表把这两项事实接回判断层，且和判断修订一样只增不改。
+operator_match_judgment_anchor_facts = Table(
+    "operator_match_judgment_anchor_facts",
+    metadata,
+    Column("operator_match_judgment_anchor_fact_id", Text, primary_key=True),
+    Column(
+        "operator_match_judgment_revision_id",
+        Text,
+        ForeignKey(
+            "operator_match_judgment_revisions.operator_match_judgment_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        unique=True,
+    ),
+    Column("anchor_integrity", Text, nullable=False),
+    CheckConstraint(
+        "anchor_integrity IN ('pass', 'fail', 'symmetric_damage', 'unknown')",
+        name="ck_judgment_anchor_integrity",
+    ),
+)
+
+
+operator_match_judgment_face_precedents = Table(
+    "operator_match_judgment_face_precedents",
+    metadata,
+    Column("operator_match_judgment_face_precedent_id", Text, primary_key=True),
+    Column(
+        "operator_match_judgment_revision_id",
+        Text,
+        ForeignKey(
+            "operator_match_judgment_revisions.operator_match_judgment_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    ),
+    Column("precedent_index", Integer, nullable=False),
+    Column("face_code", Text, nullable=False),
+    Column("precedent_ref", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    CheckConstraint("precedent_index >= 0", name="ck_judgment_precedent_index"),
+    CheckConstraint("face_code IN ('3', '1', '0')", name="ck_judgment_precedent_face"),
+    CheckConstraint("status IN ('alive', 'dead')", name="ck_judgment_precedent_status"),
+    UniqueConstraint(
+        "operator_match_judgment_revision_id",
+        "precedent_index",
+        name="uq_judgment_precedent_index",
+    ),
+    UniqueConstraint(
+        "operator_match_judgment_revision_id",
+        "face_code",
+        "precedent_ref",
+        name="uq_judgment_precedent_ref",
+    ),
+)
+
+
 operator_judgment_prescription_revisions = Table(
     "operator_judgment_prescription_revisions",
     metadata,

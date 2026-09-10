@@ -922,3 +922,137 @@ def test_decimal_storage_accepts_canonical_signed_and_unsigned_text(tmp_path: Pa
             ) == "-0.050000000000"
         finally:
             transaction.rollback()
+
+
+STRUCTURE_FACT_TABLES = {
+    "operator_match_judgment_anchor_facts",
+    "operator_match_judgment_face_precedents",
+}
+
+
+def test_migration_28_adds_the_leg_audit_structure_facts(tmp_path: Path) -> None:
+    for name, initial_version in (("fresh", None), ("upgrade", 27)):
+        engine = build_ontology_engine(tmp_path / f"structure-{name}.db")
+        if initial_version is not None:
+            run_migrations(engine, MIGRATIONS[:initial_version])
+        run_migrations(engine, MIGRATIONS)
+
+        inspector = inspect(engine)
+        assert STRUCTURE_FACT_TABLES <= set(inspector.get_table_names())
+        assert {
+            column["name"]
+            for column in inspector.get_columns("operator_match_judgment_anchor_facts")
+        } == {
+            "operator_match_judgment_anchor_fact_id",
+            "operator_match_judgment_revision_id",
+            "anchor_integrity",
+        }
+        assert {
+            column["name"]
+            for column in inspector.get_columns(
+                "operator_match_judgment_face_precedents"
+            )
+        } == {
+            "operator_match_judgment_face_precedent_id",
+            "operator_match_judgment_revision_id",
+            "precedent_index",
+            "face_code",
+            "precedent_ref",
+            "status",
+        }
+        for table_name in STRUCTURE_FACT_TABLES:
+            assert inspector.get_foreign_keys(table_name)
+        with engine.connect() as connection:
+            triggers = set(
+                connection.execute(
+                    text("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+                ).scalars()
+            )
+        assert {
+            f"{table_name}_{suffix}"
+            for table_name in STRUCTURE_FACT_TABLES
+            for suffix in ("no_update", "no_delete", "no_late_insert")
+        } <= triggers
+
+
+def _structure_fact_rows(revision_id: str) -> dict[str, dict[str, object]]:
+    return {
+        "operator_match_judgment_anchor_facts": {
+            "operator_match_judgment_anchor_fact_id": "anchor-fact-1",
+            "operator_match_judgment_revision_id": revision_id,
+            "anchor_integrity": "pass",
+        },
+        "operator_match_judgment_face_precedents": {
+            "operator_match_judgment_face_precedent_id": "face-precedent-1",
+            "operator_match_judgment_revision_id": revision_id,
+            "precedent_index": 0,
+            "face_code": "1",
+            "precedent_ref": "2026-05-12 same venue 1:0",
+            "status": "dead",
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("table_name", "column", "value"),
+    [
+        ("operator_match_judgment_anchor_facts", "anchor_integrity", "solid"),
+        ("operator_match_judgment_face_precedents", "status", "maybe"),
+        ("operator_match_judgment_face_precedents", "face_code", "9"),
+    ],
+)
+def test_structure_facts_reject_values_outside_their_closed_vocabulary(
+    tmp_path: Path,
+    table_name: str,
+    column: str,
+    value: str,
+) -> None:
+    engine = build_ontology_engine(tmp_path / f"closed-{column}-{value}.db")
+    run_migrations(engine, MIGRATIONS)
+
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.exec_driver_sql("PRAGMA defer_foreign_keys=ON")
+            revision_id = _insert_revision(connection, "match_judgment", "closed-vocab")
+            row = _structure_fact_rows(revision_id)[table_name]
+            row[column] = value
+            columns = ", ".join(row)
+            binds = ", ".join(f":{name}" for name in row)
+
+            with pytest.raises(IntegrityError):
+                connection.execute(
+                    text(f"INSERT INTO {table_name} ({columns}) VALUES ({binds})"),
+                    row,
+                )
+        finally:
+            transaction.rollback()
+
+
+def test_one_judgment_revision_carries_at_most_one_anchor_fact(tmp_path: Path) -> None:
+    engine = build_ontology_engine(tmp_path / "anchor-unique.db")
+    run_migrations(engine, MIGRATIONS)
+
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.exec_driver_sql("PRAGMA defer_foreign_keys=ON")
+            revision_id = _insert_revision(connection, "match_judgment", "anchor-unique")
+            row = _structure_fact_rows(revision_id)[
+                "operator_match_judgment_anchor_facts"
+            ]
+            columns = ", ".join(row)
+            binds = ", ".join(f":{name}" for name in row)
+            statement = text(
+                "INSERT INTO operator_match_judgment_anchor_facts "
+                f"({columns}) VALUES ({binds})"
+            )
+            connection.execute(statement, row)
+
+            with pytest.raises(IntegrityError):
+                connection.execute(
+                    statement,
+                    {**row, "operator_match_judgment_anchor_fact_id": "anchor-fact-2"},
+                )
+        finally:
+            transaction.rollback()

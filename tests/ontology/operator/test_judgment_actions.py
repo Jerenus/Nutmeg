@@ -18,6 +18,7 @@ from nutmeg.ontology.operator.decision_actions import (
     CommitOperatorMatchJudgmentRequest,
     FaceBundleInput,
     FaceOffsetInput,
+    FacePrecedentInput,
     FaceProbabilityInput,
     FactorAdjustmentInput,
     FreezeJudgmentPrescriptionRequest,
@@ -495,6 +496,16 @@ def _judgment_request(
     official_offer_revision_id: str = "offer-revision-1",
     role: ActorRole = ActorRole.JUDGE_OPERATOR,
     key: str = "judgment:1",
+    anchor_integrity: str = "pass",
+    # 默认判断买 3+1，被排的客胜 30% 高于 C14 的 20% 阈值，所以默认夹具带齐死亡三证；
+    # 要触发 C14/C7 的测试显式传自己的 face_precedents。
+    face_precedents: tuple[FacePrecedentInput, ...] = (
+        FacePrecedentInput(
+            face_code="0",
+            precedent_ref="2026-05-12 同场地同型 1:0 主胜",
+            status="dead",
+        ),
+    ),
 ) -> CommitOperatorMatchJudgmentRequest:
     return CommitOperatorMatchJudgmentRequest(
         task_evidence_bundle_revision_id=fixture.task_bundle_revision_id,
@@ -523,6 +534,8 @@ def _judgment_request(
         actor_role=role,
         idempotency_key=key,
         requested_at=AT + timedelta(seconds=4),
+        anchor_integrity=anchor_integrity,
+        face_precedents=face_precedents,
         expected_current_revision_no=0,
     )
 
@@ -1400,3 +1413,179 @@ def test_baseline_role_is_system_only_and_human_actions_are_judge_only(
             .where(schema.actions.c.status == "rejected")
         )
     assert denied == 2
+
+
+def test_judgment_stores_the_operator_structure_facts_the_leg_audit_needs(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    baseline_id, envelope_id = _create_baseline_and_envelope(fixture)
+
+    outcome = fixture.decision_actions.commit_operator_match_judgment(
+        _judgment_request(
+            fixture,
+            baseline_id,
+            envelope_id,
+            anchor_integrity="fail",
+            face_precedents=(
+                FacePrecedentInput(
+                    face_code="1",
+                    precedent_ref="2026-05-12 same venue 1:0",
+                    status="dead",
+                ),
+                FacePrecedentInput(
+                    face_code="0",
+                    precedent_ref="2026-04-20 same venue 0:2",
+                    status="alive",
+                ),
+            ),
+        )
+    )
+
+    assert outcome.status is ActionStatus.COMMITTED
+    revision_id = next(
+        ref.object_id
+        for ref in outcome.result_refs
+        if ref.object_type == "operator_match_judgment_revision"
+    )
+    with OntologyUnitOfWork(fixture.engine) as uow:
+        facts = uow.operator_decision.operator_match_judgment_structure_facts(
+            revision_id
+        )
+
+    assert facts.anchor_integrity == "fail"
+    assert facts.face_precedents == (
+        ("1", "2026-05-12 same venue 1:0", "dead"),
+        ("0", "2026-04-20 same venue 0:2", "alive"),
+    )
+
+
+def test_judgment_without_declared_structure_facts_records_unknown_anchor(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    baseline_id, envelope_id = _create_baseline_and_envelope(fixture)
+
+    outcome = fixture.decision_actions.commit_operator_match_judgment(
+        _judgment_request(
+            fixture,
+            baseline_id,
+            envelope_id,
+            anchor_integrity="unknown",
+            face_precedents=(),
+        )
+    )
+
+    revision_id = next(
+        ref.object_id
+        for ref in outcome.result_refs
+        if ref.object_type == "operator_match_judgment_revision"
+    )
+    with OntologyUnitOfWork(fixture.engine) as uow:
+        facts = uow.operator_decision.operator_match_judgment_structure_facts(
+            revision_id
+        )
+
+    assert facts.anchor_integrity == "unknown"
+    assert facts.face_precedents == ()
+
+
+@pytest.mark.parametrize(
+    ("anchor_integrity", "face_precedents"),
+    [
+        ("solid", ()),
+        (
+            "pass",
+            (
+                FacePrecedentInput(
+                    face_code="9", precedent_ref="unknown face", status="dead"
+                ),
+            ),
+        ),
+        (
+            "pass",
+            (
+                FacePrecedentInput(
+                    face_code="1", precedent_ref="same venue", status="maybe"
+                ),
+            ),
+        ),
+        (
+            "pass",
+            (
+                FacePrecedentInput(face_code="1", precedent_ref="  ", status="dead"),
+            ),
+        ),
+        (
+            "pass",
+            (
+                FacePrecedentInput(
+                    face_code="1", precedent_ref="same venue", status="dead"
+                ),
+                FacePrecedentInput(
+                    face_code="1", precedent_ref="same venue", status="alive"
+                ),
+            ),
+        ),
+    ],
+)
+def test_structure_facts_reject_values_the_audit_cannot_read(
+    tmp_path: Path,
+    anchor_integrity: str,
+    face_precedents: tuple[FacePrecedentInput, ...],
+) -> None:
+    fixture = _fixture(tmp_path)
+    baseline_id, envelope_id = _create_baseline_and_envelope(fixture)
+
+    with pytest.raises(ValueError):
+        fixture.decision_actions.commit_operator_match_judgment(
+            _judgment_request(
+                fixture,
+                baseline_id,
+                envelope_id,
+                anchor_integrity=anchor_integrity,
+                face_precedents=face_precedents,
+            )
+        )
+
+
+def test_changing_only_a_structure_fact_creates_a_new_judgment_revision(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    baseline_id, envelope_id = _create_baseline_and_envelope(fixture)
+
+    first = fixture.decision_actions.commit_operator_match_judgment(
+        _judgment_request(fixture, baseline_id, envelope_id, anchor_integrity="pass")
+    )
+    second = fixture.decision_actions.commit_operator_match_judgment(
+        replace(
+            _judgment_request(
+                fixture,
+                baseline_id,
+                envelope_id,
+                anchor_integrity="fail",
+                key="judgment:2",
+            ),
+            expected_current_revision_no=1,
+        )
+    )
+
+    first_id = next(
+        ref.object_id
+        for ref in first.result_refs
+        if ref.object_type == "operator_match_judgment_revision"
+    )
+    second_id = next(
+        ref.object_id
+        for ref in second.result_refs
+        if ref.object_type == "operator_match_judgment_revision"
+    )
+    assert first_id != second_id
+    with OntologyUnitOfWork(fixture.engine) as uow:
+        assert (
+            uow.operator_decision.operator_match_judgment_structure_facts(
+                second_id
+            ).anchor_integrity
+            == "fail"
+        )

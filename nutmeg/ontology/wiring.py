@@ -38,6 +38,7 @@ from nutmeg.ontology.kernel import OntologyKernel
 from nutmeg.ontology.operator.decision_actions import OperatorDecisionActions
 from nutmeg.ontology.operator.evidence_actions import EvidenceActions
 from nutmeg.ontology.operator.result_actions import OperatorResultActions
+from nutmeg.ontology.operator.review_actions import OperatorReviewActions
 from nutmeg.ontology.operator.sale_actions import SaleActions
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository.connection import build_ontology_engine
@@ -108,6 +109,10 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         operator_decisions=decision_actions,
     )
     result_actions = OperatorResultActions(action_service)
+    review_actions = OperatorReviewActions(
+        action_service,
+        shadow_token_signing_key=settings.operator_token_signing_key,
+    )
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -130,4 +135,5 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         evidence_actions=evidence_actions,
         decision_actions=decision_actions,
         result_actions=result_actions,
+        review_actions=review_actions,
     )

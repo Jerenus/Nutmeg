@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
+import threading
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -41,7 +43,13 @@ from nutmeg.ontology.operator.result_actions import (
     CandidateTicketLegInput,
     GenerateTicketCandidateSetRequest,
     OperatorResultActions,
+    SettleTaskRequest,
     TicketCandidateInput,
+)
+from nutmeg.ontology.operator.review_actions import (
+    CompleteScoreboardReviewRequest,
+    MaterializeOperatorReviewItemRequest,
+    OperatorReviewActions,
 )
 from nutmeg.ontology.repository import (
     schema_market,
@@ -71,6 +79,56 @@ _SUPPORTED_SETTLEMENT_MARKETS = {
     "jczq": frozenset({"md-had", "md-hhad", "md-ttg", "md-crs"}),
     "zucai": frozenset({"md-had"}),
 }
+
+
+class OperatorProjectionSignals:
+    """Process-local wakeups backed by durable projection cursors."""
+
+    def __init__(
+        self,
+        *,
+        delivered_sequence: int = 0,
+        invalidated_sequence: int = 0,
+    ) -> None:
+        if delivered_sequence < 0 or invalidated_sequence < 0:
+            raise ValueError("projection sequences must be non-negative")
+        self._condition = threading.Condition()
+        self._delivered_sequence = delivered_sequence
+        self._invalidated_sequence = invalidated_sequence
+
+    @property
+    def delivered_sequence(self) -> int:
+        with self._condition:
+            return self._delivered_sequence
+
+    @property
+    def invalidated_sequence(self) -> int:
+        with self._condition:
+            return self._invalidated_sequence
+
+    def deliver(self, event) -> None:
+        with self._condition:
+            self._delivered_sequence = max(
+                self._delivered_sequence,
+                int(event.sequence),
+            )
+            self._condition.notify_all()
+
+    def invalidate(self, event) -> None:
+        with self._condition:
+            self._invalidated_sequence = max(
+                self._invalidated_sequence,
+                int(event.sequence),
+            )
+
+    def wait_for_delivery(self, *, after: int, timeout_seconds: float) -> bool:
+        if after < 0 or timeout_seconds < 0:
+            raise ValueError("delivery wait bounds must be non-negative")
+        with self._condition:
+            return self._condition.wait_for(
+                lambda: self._delivered_sequence > after,
+                timeout=timeout_seconds,
+            )
 
 
 class OperatorInfrastructureWorkers:
@@ -118,6 +176,8 @@ class OperatorInfrastructureWorkers:
             supplied[name] for name in self._ORDER if supplied[name] is not None
         )
         self._accepting = False
+        self._workers_stopped = False
+        self._workers_closed = False
         self._cycle_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
 
@@ -128,6 +188,8 @@ class OperatorInfrastructureWorkers:
     async def start(self) -> None:
         if self._task is not None:
             return
+        if self._workers_closed:
+            raise RuntimeError("operator infrastructure workers are closed")
         self._accepting = True
         await self._run_cycle()
         self._task = asyncio.create_task(
@@ -137,6 +199,13 @@ class OperatorInfrastructureWorkers:
 
     def stop_accepting(self) -> None:
         self._accepting = False
+        if self._workers_stopped:
+            return
+        self._workers_stopped = True
+        for worker in reversed(self._workers):
+            stop = getattr(worker, "stop_accepting", None)
+            if stop is not None:
+                stop()
 
     async def drain_current_transactions(self) -> None:
         async with self._cycle_lock:
@@ -144,13 +213,23 @@ class OperatorInfrastructureWorkers:
 
     async def close(self) -> None:
         self.stop_accepting()
+        await self.drain_current_transactions()
         task = self._task
         self._task = None
-        if task is None:
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        if self._workers_closed:
             return
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        self._workers_closed = True
+        for worker in reversed(self._workers):
+            close = getattr(worker, "close", None)
+            if close is None:
+                continue
+            result = close()
+            if inspect.isawaitable(result):
+                await result
 
     @asynccontextmanager
     async def lifespan(self, _app):
@@ -181,6 +260,45 @@ class OperatorInfrastructureWorkers:
                 worker.run_once(limit=self._batch_size, as_of=as_of)
 
 
+class _OutboxProjectionWorker:
+    consumer_name: str
+
+    def __init__(self, *, unit_of_work_factory, project_event=None) -> None:
+        self._unit_of_work_factory = unit_of_work_factory
+        self._project_event = project_event or (lambda _event: None)
+
+    def run_once(self, *, limit: int, as_of: datetime):
+        at = _aware(as_of, "as_of").astimezone(UTC)
+        if limit < 1:
+            return ()
+        with self._unit_of_work_factory() as uow:
+            cursor = uow.outbox.consumer_cursor(self.consumer_name)
+            events = tuple(uow.outbox.after(cursor, limit=limit))
+        for event in events:
+            self._project_event(event)
+            with self._unit_of_work_factory() as uow:
+                uow.outbox.advance_consumer_cursor(
+                    self.consumer_name,
+                    expected_sequence=cursor,
+                    next_sequence=event.sequence,
+                    updated_at=at.isoformat(),
+                )
+            cursor = event.sequence
+        return events
+
+
+class ProductOutboxWorker(_OutboxProjectionWorker):
+    """Advance the durable server-delivery cursor over committed outbox rows."""
+
+    consumer_name = "product_sse_delivery"
+
+
+class OperatorReadModelInvalidator(_OutboxProjectionWorker):
+    """Advance the durable invalidation cursor consumed by fresh operator reads."""
+
+    consumer_name = "operator_read_model_invalidation"
+
+
 @dataclass(frozen=True, slots=True)
 class _CandidateAuditOffer:
     official_match_no: str
@@ -189,6 +307,10 @@ class _CandidateAuditOffer:
     prior: tuple[tuple[str, str], ...]
     prescribed_face_bundles: tuple[frozenset[str], ...]
     rule_ids: tuple[str, ...]
+    # 操作员登记的结构事实。C5/C7/C13/C14 只读这两项；缺省的 "unknown"/() 不是
+    # "没问题",而是"没登记"——昂贵排除因此仍然亮 WARN。
+    anchor_integrity: str = "unknown"
+    face_precedents: tuple[tuple[str, str, str], ...] = ()
 
 
 class ConfirmationDeadlineWorker:
@@ -896,6 +1018,9 @@ def _candidate_generation_inputs(uow, generation):
             uow.connection,
             judgment.operator_match_judgment_revision_id,
         )
+        structure_facts = uow.operator_decision.operator_match_judgment_structure_facts(
+            judgment.operator_match_judgment_revision_id
+        )
         judgment_offers.append(
             OfferCandidateInput(
                 **common,
@@ -918,6 +1043,8 @@ def _candidate_generation_inputs(uow, generation):
                 prior=baseline_probabilities,
                 prescribed_face_bundles=prescribed_face_bundles,
                 rule_ids=rule_ids,
+                anchor_integrity=structure_facts.anchor_integrity,
+                face_precedents=structure_facts.face_precedents,
             )
         )
         conditional_audit_offers.append(
@@ -928,6 +1055,8 @@ def _candidate_generation_inputs(uow, generation):
                 prior=baseline_probabilities,
                 prescribed_face_bundles=prescribed_face_bundles,
                 rule_ids=rule_ids,
+                anchor_integrity=structure_facts.anchor_integrity,
+                face_precedents=structure_facts.face_precedents,
             )
         )
 
@@ -1449,6 +1578,8 @@ def _audit_candidate(
                         "draw": float(Decimal(prior["1"])),
                         "away": float(Decimal(prior["0"])),
                     },
+                    anchor_integrity=context.anchor_integrity,
+                    precedents=context.face_precedents,
                 )
             )
             official_numbers.append(context.official_match_no)
@@ -1567,9 +1698,325 @@ def _candidate_ticket_input(ticket) -> CandidateTicketInput:
     )
 
 
+class TaskSettlementWorker:
+    """Claim immutable settlement requests and execute their deterministic Action."""
+
+    def __init__(
+        self,
+        *,
+        action_service: ActionService,
+        result_actions: OperatorResultActions,
+        worker_id: str,
+        lease_duration: timedelta,
+    ) -> None:
+        if not worker_id.strip():
+            raise ValueError("worker_id is required")
+        if lease_duration <= timedelta(0):
+            raise ValueError("lease_duration must be positive")
+        self._action_service = action_service
+        self._result_actions = result_actions
+        self._worker_id = worker_id
+        self._lease_duration = lease_duration
+
+    def run_once(self, *, limit: int, as_of: datetime) -> tuple[ActionOutcome, ...]:
+        cutoff = _aware(as_of, "as_of").astimezone(UTC)
+        if limit < 1:
+            return ()
+        with self._action_service.unit_of_work() as uow:
+            uow.operator_decision.recover_expired_worker_jobs(
+                job_kind="task_settlement",
+                as_of=cutoff.isoformat(),
+            )
+            jobs = uow.operator_decision.claim_worker_jobs(
+                job_kind="task_settlement",
+                lease_owner=self._worker_id,
+                as_of=cutoff.isoformat(),
+                lease_expires_at=(cutoff + self._lease_duration).isoformat(),
+                limit=limit,
+            )
+
+        completed: list[ActionOutcome] = []
+        for job in jobs:
+            try:
+                outcome = self.process_settlement_request(
+                    job.source_object_id,
+                    worker_job_id=job.worker_job_id,
+                    as_of=cutoff,
+                )
+            except Exception as error:
+                with self._action_service.unit_of_work() as uow:
+                    retry_code = _retryable_error_code(error)
+                    if retry_code is None:
+                        uow.operator_decision.fail_worker_job(
+                            worker_job_id=job.worker_job_id,
+                            lease_owner=self._worker_id,
+                            error_code=_terminal_error_code(error),
+                            failed_at=cutoff.isoformat(),
+                        )
+                    else:
+                        delay_seconds = min(2 ** max(job.attempt_count - 1, 0), 300)
+                        uow.operator_decision.requeue_worker_job(
+                            worker_job_id=job.worker_job_id,
+                            lease_owner=self._worker_id,
+                            error_code=retry_code,
+                            available_at=(
+                                cutoff + timedelta(seconds=delay_seconds)
+                            ).isoformat(),
+                            updated_at=cutoff.isoformat(),
+                        )
+                continue
+            completed.append(outcome)
+        return tuple(completed)
+
+    def process_settlement_request(
+        self,
+        settlement_request_id: str,
+        *,
+        worker_job_id: str,
+        as_of: datetime,
+    ) -> ActionOutcome:
+        requested_at = _aware(as_of, "as_of").astimezone(UTC)
+        with self._action_service.unit_of_work() as uow:
+            settlement_request = uow.operator_result.settlement_request(
+                settlement_request_id
+            )
+            result_set = (
+                None
+                if settlement_request is None
+                else uow.operator_result.result_set_revision(
+                    settlement_request.result_set_revision_id
+                )
+            )
+        if settlement_request is None or result_set is None:
+            raise ValueError("settlement request lineage is incomplete")
+        outcome = self._result_actions.settle_task(
+            SettleTaskRequest(
+                settlement_request_id=settlement_request_id,
+                worker_job_id=worker_job_id,
+                lease_owner=self._worker_id,
+                settlement_method_version="operator-task-settlement-v1",
+                rounding_policy_version=(
+                    "cn_sporttery_jczq_v1"
+                    if result_set.lane == "jczq"
+                    else None
+                ),
+                actor_id="system:operator-settlement",
+                actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key=(
+                    "operator-task-settlement:"
+                    + _digest(
+                        {
+                            "settlement_request_id": settlement_request_id,
+                            "result_set_revision_id": (
+                                result_set.result_set_revision_id
+                            ),
+                            "method_version": "operator-task-settlement-v1",
+                        }
+                    )
+                ),
+                requested_at=requested_at,
+            )
+        )
+        if (
+            not outcome.is_success
+            or len(outcome.result_refs) != 1
+            or outcome.result_refs[0].object_type
+            != "operator_task_settlement_run"
+        ):
+            raise ValueError("settle_task Action did not commit one task run")
+        return outcome
+
+
+class ReviewMaterializationWorker:
+    """Materialize durable review eligibility through the typed system Action."""
+
+    def __init__(
+        self,
+        *,
+        action_service: ActionService,
+        review_actions: OperatorReviewActions,
+        worker_id: str,
+        lease_duration: timedelta,
+    ) -> None:
+        if not worker_id.strip():
+            raise ValueError("worker_id is required")
+        if lease_duration <= timedelta(0):
+            raise ValueError("lease_duration must be positive")
+        self._action_service = action_service
+        self._review_actions = review_actions
+        self._worker_id = worker_id
+        self._lease_duration = lease_duration
+
+    def run_once(self, *, limit: int, as_of: datetime) -> tuple[ActionOutcome, ...]:
+        cutoff = _aware(as_of, "as_of").astimezone(UTC)
+        if limit < 1:
+            return ()
+        with self._action_service.unit_of_work() as uow:
+            uow.operator_decision.recover_expired_worker_jobs(
+                job_kind="review_materialization",
+                as_of=cutoff.isoformat(),
+            )
+            jobs = uow.operator_decision.claim_worker_jobs(
+                job_kind="review_materialization",
+                lease_owner=self._worker_id,
+                as_of=cutoff.isoformat(),
+                lease_expires_at=(cutoff + self._lease_duration).isoformat(),
+                limit=limit,
+            )
+
+        completed: list[ActionOutcome] = []
+        for job in jobs:
+            try:
+                outcome = self._review_actions.materialize_operator_review_item(
+                    MaterializeOperatorReviewItemRequest(
+                        review_eligibility_fact_id=job.source_object_id,
+                        worker_job_id=job.worker_job_id,
+                        lease_owner=self._worker_id,
+                        actor_id="system:operator-review-materialization",
+                        actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                        requested_at=cutoff,
+                    )
+                )
+                if (
+                    not outcome.is_success
+                    or len(outcome.result_refs) != 1
+                    or outcome.result_refs[0].object_type != "operator_review_item"
+                ):
+                    raise ValueError(
+                        "materialize_operator_review_item Action did not commit one review"
+                    )
+            except Exception as error:
+                self._record_failure(job, error, cutoff=cutoff)
+                continue
+            completed.append(outcome)
+        return tuple(completed)
+
+    def _record_failure(self, job, error: Exception, *, cutoff: datetime) -> None:
+        with self._action_service.unit_of_work() as uow:
+            retry_code = _retryable_error_code(error)
+            if retry_code is None:
+                uow.operator_decision.fail_worker_job(
+                    worker_job_id=job.worker_job_id,
+                    lease_owner=self._worker_id,
+                    error_code=_terminal_error_code(error),
+                    failed_at=cutoff.isoformat(),
+                )
+                return
+            delay_seconds = min(2 ** max(job.attempt_count - 1, 0), 300)
+            uow.operator_decision.requeue_worker_job(
+                worker_job_id=job.worker_job_id,
+                lease_owner=self._worker_id,
+                error_code=retry_code,
+                available_at=(cutoff + timedelta(seconds=delay_seconds)).isoformat(),
+                updated_at=cutoff.isoformat(),
+            )
+
+
+class ScoreboardReviewCompletionWorker:
+    """Complete explicit review requests against the current legacy authority bytes."""
+
+    def __init__(
+        self,
+        *,
+        action_service: ActionService,
+        review_actions: OperatorReviewActions,
+        scoreboard_path: Path,
+        worker_id: str,
+        lease_duration: timedelta,
+    ) -> None:
+        if not worker_id.strip():
+            raise ValueError("worker_id is required")
+        if lease_duration <= timedelta(0):
+            raise ValueError("lease_duration must be positive")
+        self._action_service = action_service
+        self._review_actions = review_actions
+        self._scoreboard_path = Path(scoreboard_path).resolve()
+        self._worker_id = worker_id
+        self._lease_duration = lease_duration
+
+    def run_once(self, *, limit: int, as_of: datetime) -> tuple[ActionOutcome, ...]:
+        cutoff = _aware(as_of, "as_of").astimezone(UTC)
+        if limit < 1:
+            return ()
+        with self._action_service.unit_of_work() as uow:
+            uow.operator_decision.recover_expired_worker_jobs(
+                job_kind="scoreboard_review_completion",
+                as_of=cutoff.isoformat(),
+            )
+            jobs = uow.operator_decision.claim_worker_jobs(
+                job_kind="scoreboard_review_completion",
+                lease_owner=self._worker_id,
+                as_of=cutoff.isoformat(),
+                lease_expires_at=(cutoff + self._lease_duration).isoformat(),
+                limit=limit,
+            )
+
+        completed: list[ActionOutcome] = []
+        for job in jobs:
+            try:
+                outcome = self._review_actions.complete_scoreboard_review(
+                    CompleteScoreboardReviewRequest(
+                        completion_request_id=job.source_object_id,
+                        worker_job_id=job.worker_job_id,
+                        lease_owner=self._worker_id,
+                        current_legacy_sha256=self._current_legacy_sha256(),
+                        actor_id="system:operator-scoreboard-review-completion",
+                        actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                        requested_at=cutoff,
+                    )
+                )
+                if (
+                    not outcome.is_success
+                    or len(outcome.result_refs) != 1
+                    or outcome.result_refs[0].object_type
+                    != "scoreboard_review_completion_receipt"
+                ):
+                    raise ValueError(
+                        "complete_scoreboard_review Action did not commit one receipt"
+                    )
+            except Exception as error:
+                self._record_failure(job, error, cutoff=cutoff)
+                continue
+            completed.append(outcome)
+        return tuple(completed)
+
+    def _current_legacy_sha256(self) -> str:
+        if not self._scoreboard_path.is_file():
+            raise ValueError("scoreboard authority file does not exist")
+        return hashlib.sha256(self._scoreboard_path.read_bytes()).hexdigest()
+
+    def _record_failure(self, job, error: Exception, *, cutoff: datetime) -> None:
+        with self._action_service.unit_of_work() as uow:
+            retry_code = _retryable_error_code(error)
+            if retry_code is None:
+                uow.operator_decision.fail_worker_job(
+                    worker_job_id=job.worker_job_id,
+                    lease_owner=self._worker_id,
+                    error_code=_terminal_error_code(error),
+                    failed_at=cutoff.isoformat(),
+                )
+                return
+            delay_seconds = min(2 ** max(job.attempt_count - 1, 0), 300)
+            uow.operator_decision.requeue_worker_job(
+                worker_job_id=job.worker_job_id,
+                lease_owner=self._worker_id,
+                error_code=retry_code,
+                available_at=(cutoff + timedelta(seconds=delay_seconds)).isoformat(),
+                updated_at=cutoff.isoformat(),
+            )
+
+
 __all__ = [
     "CandidateGenerationWorker",
+    "ConfirmationDeadlineWorker",
     "EvidenceFreezeRequestWorker",
     "MarketBaselineWorker",
+    "OperatorInfrastructureWorkers",
+    "OperatorProjectionSignals",
+    "OperatorReadModelInvalidator",
+    "ProductOutboxWorker",
+    "ReviewMaterializationWorker",
+    "ScoreboardReviewCompletionWorker",
+    "TaskSettlementWorker",
     "audit_current_candidate",
 ]

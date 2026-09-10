@@ -127,7 +127,11 @@ def _leg(match: dict[str, object], *, mode: str) -> dict[str, object]:
             ["two_way_instability"] if mode == "warn" else []
         ),
         "anchor_integrity": "pass",
-        "precedents": [],
+        # clean/error 腿是裸单,被排面 平 28% > C14 阈值 20%,死亡三证必须齐;
+        # warn 腿买 "31",被排面只剩 客 20%,不触发 C14,保留它原本要测的那条 WARN。
+        "precedents": (
+            [] if mode == "warn" else [["1", "2026-05-12 同场地同型 1:0 主胜", "dead"]]
+        ),
     }
 
 

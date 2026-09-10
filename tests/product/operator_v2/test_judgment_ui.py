@@ -246,3 +246,18 @@ def test_read_only_judgment_surface_contains_no_mutation_form() -> None:
     assert "水晶宫 - 曼彻斯特城" in html
     assert "只读模式" in html
     assert "data-action=" not in html
+
+
+def test_match_judgment_asks_for_the_anchor_and_excluded_face_precedents() -> None:
+    html = _client("match_judgment").get("/tasks/jczq:2026-09-04").text
+
+    for visible in ("锚方结构完整度", "被排面先例", "完整", "有洞", "载体已不在"):
+        assert visible in html
+    assert 'name="anchor_integrity"' in html
+    assert 'value="pass"' in html
+    assert 'value="fail"' in html
+    assert 'value="symmetric_damage"' in html
+    assert 'name="precedent_ref"' in html
+    assert 'name="precedent_status"' in html
+    assert 'data-precedent-face-code="3"' in html
+    assert 'data-precedent-face-code="0"' in html

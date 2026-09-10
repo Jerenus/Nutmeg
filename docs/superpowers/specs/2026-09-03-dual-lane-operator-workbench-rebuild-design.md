@@ -2166,3 +2166,32 @@ object IDs, schema versions, or CLI implementation details:
     through configuration without reversing ontology data;
 14. complete review with `scoreboard.json` still updated by the external governed step, then
     see the matching observation and shadow reconciliation in the Application.
+
+## 19. Addendum 2026-09-10: judgment carries the leg audit's structure facts
+
+Approved by Jun on 2026-09-10 after implementation exposed the gap. §8.3 requires
+`create_ticket_batch` to rerun "the current authoritative leg audit". The authoritative audit
+in `nutmeg/decision/legs_audit.py` reads two operator-authored facts that the judgment layer
+did not carry, so the Application built every audit `Leg` with `anchor_integrity="unknown"`
+and no precedents. The consequences were not cosmetic:
+
+- C5 `broken_anchor_single` is ERROR-grade and blocks approval. It requires an explicit
+  `anchor_integrity == "fail"`, so in the Application it could never fire. The CLI gate was
+  strictly stronger than the surface Jun was being asked to activate.
+- C7 `excluded_face_live_precedent` and C13 `broken_anchor_double` could never fire either.
+- C14 `expensive_exclusion` fired on every candidate that dropped a face worth more than 20%,
+  because its legal exit (anchor `pass` plus a `dead` precedent on that face) was unreachable.
+  Every ticket would have demanded a WARN adjudication, which is how a gate becomes noise.
+
+The judgment therefore records both facts as explicit human input, never inferred:
+
+- `anchor_integrity` in the closed set `pass | fail | symmetric_damage | unknown`;
+- `face_precedents`, each a `(face_code, precedent_ref, alive | dead)` row.
+
+Storage is two additive append-only children of `OperatorMatchJudgmentRevision`
+(`operator_match_judgment_anchor_facts`, `operator_match_judgment_face_precedents`,
+schema 28) bound by the same content hash and typed Action. A judgment that declares
+`unknown` with no precedents stores no rows; readers return `unknown` and an empty tuple, so
+"not declared" and "declared unknown" stay the same fact and C14 still warns. The judgment
+editor asks for both with no preselected default, and every rule keeps reading them only as
+Jun recorded them.

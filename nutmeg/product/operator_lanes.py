@@ -70,6 +70,17 @@ class SaleSlateSnapshot:
     content_hash: str
     offers: tuple[SaleOfferSnapshot, ...]
     source_official: bool = False
+    revision_no: int = 1
+    published_at: datetime | None = None
+    retrieved_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if self.revision_no < 1:
+            raise ValueError("sale slate revision must be positive")
+        if self.published_at is not None:
+            _require_aware(self.published_at, "published_at")
+        if self.retrieved_at is not None:
+            _require_aware(self.retrieved_at, "retrieved_at")
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +129,20 @@ class TodayPriorityFacts:
     evidence_complete: bool
     externally_blocked: bool
     integrity_incident: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleRecoverySnapshot:
+    lane: OperatorLane
+    shanghai_check_date: str
+    last_check_state: str | None
+    last_checked_at: datetime | None
+    last_source_run_state: str | None
+    error_code: str | None
+
+    def __post_init__(self) -> None:
+        if self.last_checked_at is not None:
+            _require_aware(self.last_checked_at, "last_checked_at")
 
 
 class OperatorLaneAdapter(Protocol):
@@ -470,6 +495,7 @@ __all__ = [
     "SaleSlateSnapshot",
     "SaleTaskState",
     "SaleWave",
+    "ScheduleRecoverySnapshot",
     "ScopeKind",
     "TodayPriorityFacts",
     "ZucaiLaneAdapter",

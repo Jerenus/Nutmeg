@@ -1,0 +1,25 @@
+{% if phase == "prepare_evidence" %}
+  {% set status_class = "status-waiting" %}{% set status_icon = "..." %}{% set status_label = "待证据" %}
+{% elif phase == "judge_matches" %}
+  {% set status_class = "status-current" %}{% set status_icon = ">" %}{% set status_label = "裁决中" %}
+{% elif phase == "compare_tickets" %}
+  {% set status_class = "status-current" %}{% set status_icon = "=" %}{% set status_label = "待选票" %}
+{% elif phase == "audit_deployment" %}
+  {% set status_class = "status-current" %}{% set status_icon = "!" %}{% set status_label = "待审计" %}
+{% elif phase == "await_confirmation" %}
+  {% set status_class = "status-waiting" %}{% set status_icon = ">" %}{% set status_label = "待 Telegram 确认" %}
+{% elif phase == "await_result" %}
+  {% set status_class = "status-waiting" %}{% set status_icon = "..." %}{% set status_label = "等待赛果" %}
+{% elif phase == "review" %}
+  {% set status_class = "status-current" %}{% set status_icon = ">" %}{% set status_label = "待复盘" %}
+{% elif phase == "complete" %}
+  {% set status_class = "status-complete" %}{% set status_icon = "OK" %}{% set status_label = "已完成" %}
+{% elif phase == "waiting_schedule" %}
+  {% set status_class = "status-error" %}{% set status_icon = "!" %}{% set status_label = "赛程待恢复" %}
+{% else %}
+  {% set status_class = "status-error" %}{% set status_icon = "!" %}{% set status_label = "需要恢复" %}
+{% endif %}
+<span class="work-status {{ status_class }}">
+  <span class="status-icon" aria-hidden="true">{{ status_icon }}</span>
+  <span>{{ status_label }}</span>
+</span>

@@ -7,17 +7,20 @@ from pathlib import Path
 
 from nutmeg.analytics.calibrate_flow import CalibrateRequest
 from nutmeg.decision.legs_audit import DEVIATION_RULE_IDS
-from nutmeg.ontology.actions.models import ActionStatus, ActorRole, canonical_json
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole, ObjectRef, canonical_json
 from nutmeg.ontology.actions.protected_ticket_actions import (
     ApproveOperatorTicketBatchRequest,
     CreateOperatorTicketBatchRequest,
 )
+from nutmeg.ontology.actions.scoreboard_actions import RecordScoreboardObservationRequest
+from nutmeg.ontology.actions.workflow_actions import GradePredictionRequest
 from nutmeg.ontology.operator.decision_actions import (
     BaselineEnvelopeOfferConstraint,
     BaselineEnvelopeStructureTemplate,
     CommitOperatorMatchJudgmentRequest,
     FaceBundleInput,
     FaceOffsetInput,
+    FacePrecedentInput,
     FaceProbabilityInput,
     FactorAdjustmentInput,
     FreezeJudgmentPrescriptionRequest,
@@ -28,6 +31,12 @@ from nutmeg.ontology.operator.decision_actions import (
     SupersedeNoTicketRequest,
 )
 from nutmeg.ontology.operator.evidence_actions import RequestEvidenceFreezeRequest
+from nutmeg.ontology.operator.result_actions import RequestSettlementRequest
+from nutmeg.ontology.operator.review_actions import (
+    RecordScoreboardEffectDispositionRequest,
+    RecordScoreboardReviewObservationRequest,
+    RequestScoreboardReviewCompletionRequest,
+)
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.contracts import ProductActionRequest, ProductActionResponse
 from nutmeg.product.errors import ProductActionBlockedError
@@ -41,6 +50,7 @@ from nutmeg.product.operator_contracts import (
     SelectTicketVersionCommand,
     TelegramConfirmationDispatch,
 )
+from nutmeg.product.operator_lanes import ScopeKind
 from nutmeg.product.operator_queries import OperatorQueryService
 from nutmeg.product.operator_tokens import (
     OperatorCommandKind,
@@ -48,6 +58,7 @@ from nutmeg.product.operator_tokens import (
     OperatorSnapshotTokenError,
     OperatorSnapshotTokenPayloadV1,
 )
+from nutmeg.product.operator_workbench import operator_work_item_key
 
 
 def _zucai_issue(task_id: str) -> str:
@@ -103,6 +114,9 @@ class OperatorActionService:
         telegram_owner_health=None,
         evidence_actions=None,
         decision_actions=None,
+        result_actions=None,
+        review_actions=None,
+        workflow_actions=None,
         protected_tickets=None,
         snapshot_tokens: OperatorSnapshotTokenCodec | None = None,
         calibrate=None,
@@ -117,6 +131,9 @@ class OperatorActionService:
         self._telegram_owner_health = telegram_owner_health
         self._evidence_actions = evidence_actions
         self._decision_actions = decision_actions
+        self._result_actions = result_actions
+        self._review_actions = review_actions
+        self._workflow_actions = workflow_actions
         self._protected_tickets = protected_tickets
         self._snapshot_tokens = snapshot_tokens
         self._calibrate = calibrate
@@ -353,6 +370,15 @@ class OperatorActionService:
                 evidence_ref_tokens=judgment_evidence_refs,
                 falsifier=command.falsifier,
                 rationale=command.rationale,
+                anchor_integrity=command.anchor_integrity,
+                face_precedents=tuple(
+                    FacePrecedentInput(
+                        face_code=item.face_code,
+                        precedent_ref=item.precedent_ref,
+                        status=item.status,
+                    )
+                    for item in command.face_precedents
+                ),
                 commitment_tier="commit",
                 actor_id=actor_id,
                 actor_role=actor_role,
@@ -843,10 +869,30 @@ class OperatorActionService:
             )
         )
         self._require_committed(outcome, "ticket batch approval")
+        artifact_id = next(
+            (
+                ref.object_id
+                for ref in outcome.result_refs
+                if ref.object_type == "audited_ticket_artifact"
+            ),
+            None,
+        )
+        navigation_href = None
+        if artifact_id is not None:
+            token = self._snapshot_tokens.decode(command.expected_snapshot_token)
+            work_item_key = operator_work_item_key(
+                ScopeKind.ARTIFACT,
+                f"{token.work_item_id}:artifact:{artifact_id}",
+            )
+            lane, _, business_key = command.task_key.partition(":")
+            navigation_href = (
+                f"/operator-next/{lane}/{business_key}/{work_item_key}"
+            )
         return OperatorCommandReceipt(
             command_kind="approve_ticket_batch",
             status="completed",
             task_key=command.task_key,
+            navigation_href=navigation_href,
         )
 
     def adjudicate_audit_warn(
@@ -945,19 +991,27 @@ class OperatorActionService:
         if self._telegram is None or self._owner_chat_id is None:
             raise ProductActionBlockedError("Telegram confirmation is not configured")
         self._require_telegram_owner_available()
-        _task, _step, requested_at = self._deployment_step(
-            command,
-            expected_mode="request_confirmation",
-            expected_kind=OperatorCommandKind.REQUEST_CONFIRMATION,
-            token_attribute="ticket_artifact_token",
-        )
-        artifact_id = self._deployment_ref(
+        if self._snapshot_tokens is None:
+            raise ProductActionBlockedError(
+                "operator confirmation tokens are not configured"
+            )
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.confirmation_request_context(
+            command.task_key,
             command.ticket_artifact_token,
-            command_kind=OperatorCommandKind.REQUEST_CONFIRMATION,
-            prefix="ticket_artifact",
+            as_of=requested_at,
         )
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.REQUEST_CONFIRMATION,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        if command.expected_snapshot_token != context.command_token:
+            raise OperatorSnapshotTokenError("task_snapshot_changed")
         self._telegram.request_confirmation(
-            ticket_artifact_id=artifact_id,
+            ticket_artifact_id=context.ticket_artifact_id,
             chat_id=self._owner_chat_id,
             dry_run=False,
             requested_at=requested_at,
@@ -977,6 +1031,45 @@ class OperatorActionService:
                 "Telegram update owner is unavailable",
                 code=owner_status.blocking_code or "telegram_owner_unavailable",
             )
+
+    def request_settlement(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._result_actions is None or self._snapshot_tokens is None:
+            raise ProductActionBlockedError("settlement request is not configured")
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.settlement_request_context(
+            command.task_key,
+            as_of=requested_at,
+        )
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.REQUEST_SETTLEMENT,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        outcome = self._result_actions.request_settlement(
+            RequestSettlementRequest(
+                result_set_revision_id=context.result_set_revision_id,
+                expected_task_snapshot_hash=context.task_snapshot_hash,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "settlement request")
+        return OperatorCommandReceipt(
+            command_kind="request_settlement",
+            status="queued",
+            task_key=context.task_key,
+        )
 
     @staticmethod
     def _require_committed(outcome, label: str) -> None:
@@ -1173,12 +1266,19 @@ class OperatorActionService:
 
     def grade_prediction(
         self,
-        task_id: str,
-        command: GradePredictionCommand,
+        command_or_task_id,
+        command: GradePredictionCommand | None = None,
         *,
         actor_id: str,
         actor_role: ActorRole,
-    ) -> ProductActionResponse:
+    ) -> OperatorCommandReceipt | ProductActionResponse:
+        if command is None:
+            return self._grade_prediction_v2(
+                command_or_task_id,
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
+        task_id = command_or_task_id
         if actor_role is not ActorRole.JUDGE_OPERATOR:
             raise ProductActionBlockedError("prediction grade requires judge_operator")
         task = self._current_task(task_id, command.expected_snapshot_token)
@@ -1200,6 +1300,261 @@ class OperatorActionService:
             ),
             actor_id=actor_id,
             actor_role=actor_role,
+        )
+
+    def _grade_prediction_v2(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        if self._workflow_actions is None or self._snapshot_tokens is None:
+            raise ProductActionBlockedError("prediction review is not configured")
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._queries.prediction_grade_context(
+            command.task_key,
+            command.expected_snapshot_token,
+            as_of=requested_at,
+        )
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=OperatorCommandKind.GRADE_PREDICTION,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        predictions = dict(context.prediction_refs_by_token)
+        try:
+            prediction_id = predictions[command.prediction_review_token]
+        except KeyError as error:
+            raise OperatorSnapshotTokenError("invalid_request") from error
+        outcome = self._workflow_actions.grade_prediction(
+            GradePredictionRequest(
+                prediction_id=prediction_id,
+                outcome=command.outcome,
+                reason=command.reason,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "prediction grade")
+        return OperatorCommandReceipt(
+            command_kind="grade_prediction",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def _scoreboard_review_context(
+        self,
+        command,
+        *,
+        command_kind: OperatorCommandKind,
+        requested_at: datetime,
+    ):
+        if (
+            self._review_actions is None
+            or self._snapshot_tokens is None
+            or self._repository is None
+        ):
+            raise ProductActionBlockedError("scoreboard review is not configured")
+        projection = self._repository.scoreboard_projection(
+            as_of=requested_at.isoformat()
+        )
+        health = projection.get("health", {})
+        state = health.get("state")
+        if state != "available":
+            code = "projection_stale" if state == "stale" else "projection_unavailable"
+            raise ProductActionBlockedError(
+                "scoreboard projection must be rebuilt before this review action",
+                code=code,
+            )
+        context = self._queries.scoreboard_review_context(
+            command.task_key,
+            command_kind,
+            command.expected_snapshot_token,
+            as_of=requested_at,
+        )
+        self._snapshot_tokens.verify(
+            command.expected_snapshot_token,
+            expected_command_kind=command_kind,
+            current_task_snapshot_hash=context.task_snapshot_hash,
+            current_work_item_id=context.work_item_id,
+            current_dependency_revision_ids=context.dependency_revision_ids,
+        )
+        if command.review_token != context.review_token:
+            raise OperatorSnapshotTokenError("invalid_request")
+        return context
+
+    def _scoreboard_hash(self) -> str:
+        checksum = _sha256_if_present(self._scoreboard_path)
+        if checksum is None:
+            raise ProductActionBlockedError(
+                "legacy scoreboard authority is not available",
+                code="scoreboard_authority_unavailable",
+            )
+        return checksum
+
+    def record_scoreboard_effect_disposition(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._scoreboard_review_context(
+            command,
+            command_kind=OperatorCommandKind.RECORD_SCOREBOARD_EFFECT_DISPOSITION,
+            requested_at=requested_at,
+        )
+        outcome = self._review_actions.record_scoreboard_effect_disposition(
+            RecordScoreboardEffectDispositionRequest(
+                review_id=context.review_id,
+                expected_disposition_revision_id=(context.disposition_revision_id),
+                disposition=command.effect.disposition,
+                required_metric_keys=tuple(command.effect.metric_keys),
+                reason=command.effect.reason,
+                pre_update_legacy_sha256=self._scoreboard_hash(),
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "scoreboard effect disposition")
+        return OperatorCommandReceipt(
+            command_kind="record_scoreboard_effect_disposition",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def record_scoreboard_observation(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._scoreboard_review_context(
+            command,
+            command_kind=OperatorCommandKind.RECORD_SCOREBOARD_OBSERVATION,
+            requested_at=requested_at,
+        )
+        if (
+            context.disposition_revision_id is None
+            or command.disposition_token != context.disposition_token
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        evidence_by_token = dict(context.evidence_refs_by_token)
+        try:
+            evidence_refs = [
+                evidence_by_token[token]
+                for token in command.observation.evidence_ref_tokens
+            ]
+        except KeyError as error:
+            raise OperatorSnapshotTokenError("invalid_request") from error
+        supersedes_id = None
+        if command.observation.supersedes_observation_token is not None:
+            observations_by_token = dict(context.observation_refs_by_token)
+            try:
+                supersedes_id = observations_by_token[
+                    command.observation.supersedes_observation_token
+                ]
+            except KeyError as error:
+                raise OperatorSnapshotTokenError("invalid_request") from error
+        observation = RecordScoreboardObservationRequest(
+            group_key=command.observation.group_key,
+            metric_key=command.observation.metric_key,
+            tally=command.observation.tally,
+            detail=command.observation.detail,
+            status=command.observation.status,
+            numerator=(
+                None
+                if command.observation.numerator_decimal is None
+                else float(command.observation.numerator_decimal)
+            ),
+            denominator=(
+                None
+                if command.observation.denominator_decimal is None
+                else float(command.observation.denominator_decimal)
+            ),
+            value=(
+                None
+                if command.observation.value_decimal is None
+                else float(command.observation.value_decimal)
+            ),
+            unit=command.observation.unit,
+            evidence_refs=[
+                ref if isinstance(ref, ObjectRef) else ObjectRef(*ref)
+                for ref in evidence_refs
+            ],
+            effective_at=_parse_aware(
+                command.observation.effective_at,
+                "observation effective_at",
+            ),
+            supersedes_observation_id=supersedes_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            idempotency_key=command.idempotency_key,
+            requested_at=requested_at,
+        )
+        outcome = self._review_actions.record_scoreboard_review_observation(
+            RecordScoreboardReviewObservationRequest(
+                review_id=context.review_id,
+                expected_disposition_revision_id=(context.disposition_revision_id),
+                observed_legacy_sha256=self._scoreboard_hash(),
+                observation=observation,
+            )
+        )
+        self._require_committed(outcome, "scoreboard review observation")
+        return OperatorCommandReceipt(
+            command_kind="record_scoreboard_observation",
+            status="completed",
+            task_key=context.task_key,
+        )
+
+    def request_scoreboard_review_completion(
+        self,
+        command,
+        *,
+        actor_id: str,
+        actor_role: ActorRole,
+    ) -> OperatorCommandReceipt:
+        self._require_judge(actor_id, actor_role)
+        requested_at = _parse_aware(self._clock(), "operator clock")
+        context = self._scoreboard_review_context(
+            command,
+            command_kind=OperatorCommandKind.REQUEST_SCOREBOARD_REVIEW_COMPLETION,
+            requested_at=requested_at,
+        )
+        if (
+            context.disposition_revision_id is None
+            or command.disposition_token != context.disposition_token
+        ):
+            raise OperatorSnapshotTokenError("invalid_request")
+        outcome = self._review_actions.request_scoreboard_review_completion(
+            RequestScoreboardReviewCompletionRequest(
+                review_id=context.review_id,
+                expected_disposition_revision_id=(context.disposition_revision_id),
+                shadow_review_token=command.shadow_review_token,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                idempotency_key=command.idempotency_key,
+                requested_at=requested_at,
+            )
+        )
+        self._require_committed(outcome, "scoreboard review completion request")
+        return OperatorCommandReceipt(
+            command_kind="request_scoreboard_review_completion",
+            status="queued",
+            task_key=context.task_key,
         )
 
     def _execute_adjudication(

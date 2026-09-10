@@ -129,6 +129,27 @@ class TicketWorkbenchRepository:
         ).mappings()
         return tuple(ArtifactWorkItemLinkRow(**dict(row)) for row in rows)
 
+    def artifact_work_item_links_for_task_family(
+        self,
+        task_family_id: str,
+        *,
+        as_of: str,
+    ) -> tuple[ArtifactWorkItemLinkRow, ...]:
+        rows = self._connection.execute(
+            select(st.operator_artifact_work_item_links)
+            .where(
+                st.operator_artifact_work_item_links.c.task_family_id
+                == task_family_id,
+                func.julianday(st.operator_artifact_work_item_links.c.linked_at)
+                <= func.julianday(as_of),
+            )
+            .order_by(
+                st.operator_artifact_work_item_links.c.linked_at,
+                st.operator_artifact_work_item_links.c.ticket_artifact_id,
+            )
+        ).mappings()
+        return tuple(ArtifactWorkItemLinkRow(**dict(row)) for row in rows)
+
     def insert_protected_artifact_binding(
         self, row: ProtectedArtifactBindingRow
     ) -> None:

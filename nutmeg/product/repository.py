@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, Engine, and_, case, func, or_, select
 
@@ -23,9 +25,75 @@ from nutmeg.ontology.repository import schema_tickets as st
 from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.ontology.repository.outbox import OutboxEventRow, OutboxRepository
 from nutmeg.product.operator_contracts import OperatorLane
-from nutmeg.product.operator_lanes import SaleOfferSnapshot, SaleSlateSnapshot
+from nutmeg.product.operator_lanes import (
+    SaleOfferSnapshot,
+    SaleSlateSnapshot,
+    ScheduleRecoverySnapshot,
+)
 
 LineageTuple = tuple[str, str, str, str, str]
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class MatchReadRow(Mapping[str, object]):
+    """Typed temporal match row with read-only compatibility for legacy readers."""
+
+    match_id: str
+    match_revision_id: str
+    scheduled_at: datetime | str
+    status: str
+    schedule_status: str
+    home_team: str | None
+    away_team: str | None
+    home_team_id: str
+    away_team_id: str
+    home_resolution_status: str
+    away_resolution_status: str
+    competition_id: str | None
+    competition_edition_id: str | None
+    competition: str | None
+    round_label: str | None
+    venue_id: str | None
+
+    def __getitem__(self, key: str) -> object:
+        if key not in self.__dataclass_fields__:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.__dataclass_fields__)
+
+    def __len__(self) -> int:
+        return len(self.__dataclass_fields__)
+
+    @classmethod
+    def from_mapping(cls, row: Mapping[str, object]) -> MatchReadRow:
+        scheduled_at = row["scheduled_at"]
+        if not isinstance(scheduled_at, (datetime, str)):
+            raise ValueError("match scheduled_at must be a datetime or ISO timestamp")
+
+        def optional_text(field: str) -> str | None:
+            value = row[field]
+            return None if value is None else str(value)
+
+        return cls(
+            match_id=str(row["match_id"]),
+            match_revision_id=str(row["match_revision_id"]),
+            scheduled_at=scheduled_at,
+            status=str(row["status"]),
+            schedule_status=str(row["schedule_status"]),
+            home_team=optional_text("home_team"),
+            away_team=optional_text("away_team"),
+            home_team_id=str(row["home_team_id"]),
+            away_team_id=str(row["away_team_id"]),
+            home_resolution_status=str(row["home_resolution_status"]),
+            away_resolution_status=str(row["away_resolution_status"]),
+            competition_id=optional_text("competition_id"),
+            competition_edition_id=optional_text("competition_edition_id"),
+            competition=optional_text("competition"),
+            round_label=optional_text("round_label"),
+            venue_id=optional_text("venue_id"),
+        )
 
 
 class ProductReadRepository:
@@ -137,6 +205,9 @@ class ProductReadRepository:
                     business_key=key[1],
                     slate_revision_id=str(row["slate_revision_id"]),
                     content_hash=str(row["content_hash"]),
+                    revision_no=int(row["revision_no"]),
+                    published_at=datetime.fromisoformat(str(row["published_at"])),
+                    retrieved_at=datetime.fromisoformat(str(row["retrieved_at"])),
                     offers=tuple(
                         SaleOfferSnapshot(
                             official_offer_family_id=str(
@@ -166,6 +237,69 @@ class ProductReadRepository:
                     ),
                 )
             )
+        return tuple(snapshots)
+
+    def operator_schedule_checks(
+        self,
+        *,
+        as_of: str,
+    ) -> tuple[ScheduleRecoverySnapshot, ...]:
+        cutoff = datetime.fromisoformat(as_of)
+        if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+            raise ValueError("operator schedule as_of must be timezone-aware")
+        shanghai_date = cutoff.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        snapshots = []
+        with self._read_connection() as connection:
+            for lane in OperatorLane:
+                row = (
+                    connection.execute(
+                        select(
+                            sos.official_schedule_check_receipts,
+                            schema.source_runs.c.status.label("source_run_status"),
+                        )
+                        .outerjoin(
+                            schema.source_runs,
+                            schema.source_runs.c.source_run_id
+                            == sos.official_schedule_check_receipts.c.source_run_id,
+                        )
+                        .where(
+                            sos.official_schedule_check_receipts.c.lane == lane.value,
+                            sos.official_schedule_check_receipts.c.shanghai_check_date
+                            == shanghai_date,
+                        )
+                        .order_by(
+                            sos.official_schedule_check_receipts.c.checked_at.desc(),
+                            sos.official_schedule_check_receipts.c.schedule_check_id.desc(),
+                        )
+                        .limit(1)
+                    )
+                    .mappings()
+                    .first()
+                )
+                snapshots.append(
+                    ScheduleRecoverySnapshot(
+                        lane=lane,
+                        shanghai_check_date=shanghai_date,
+                        last_check_state=(
+                            None if row is None else str(row["check_state"])
+                        ),
+                        last_checked_at=(
+                            None
+                            if row is None
+                            else datetime.fromisoformat(str(row["checked_at"]))
+                        ),
+                        last_source_run_state=(
+                            None
+                            if row is None or row["source_run_status"] is None
+                            else str(row["source_run_status"])
+                        ),
+                        error_code=(
+                            None
+                            if row is None or row["error_code"] is None
+                            else str(row["error_code"])
+                        ),
+                    )
+                )
         return tuple(snapshots)
 
     @staticmethod
@@ -680,11 +814,11 @@ class ProductReadRepository:
         with self._engine.connect() as connection:
             return [dict(row) for row in connection.execute(statement).mappings().all()]
 
-    def match(self, match_id: str, as_of: str) -> dict | None:
+    def match(self, match_id: str, as_of: str) -> MatchReadRow | None:
         statement = self._match_statement(as_of).where(si.matches.c.match_id == match_id)
         with self._read_connection() as connection:
             row = connection.execute(statement).mappings().first()
-        return dict(row) if row is not None else None
+        return MatchReadRow.from_mapping(row) if row is not None else None
 
     @staticmethod
     def _match_statement(as_of: str):

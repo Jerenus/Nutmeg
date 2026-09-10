@@ -14,6 +14,7 @@ from nutmeg.product.errors import ProductActionBlockedError
 from nutmeg.product.operator_contracts import (
     AuditDeploymentStep,
     ConstructTicketStep,
+    OperatorLane,
     OperatorTaskState,
 )
 from nutmeg.product.operator_tokens import OperatorCommandKind, OperatorSnapshotTokenCodec
@@ -262,6 +263,37 @@ def test_selection_advances_into_current_protected_deployment_surface(
             candidate_token,
             as_of=NOW + timedelta(seconds=2),
         )
+
+
+def test_error_audit_exports_current_override_token_only_through_audit_detail(
+    tmp_path: Path,
+) -> None:
+    fixture = _setup_override_fixture(tmp_path)
+    _seed_task_identity(fixture.candidate_fixture.judgment)
+    queries = _task_queries(
+        fixture.candidate_fixture.judgment,
+        operator_candidate_auditor=_persisted_current_audit,
+    )
+
+    task = queries.task_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        as_of=NOW + timedelta(seconds=11),
+    )
+
+    assert isinstance(task.step, AuditDeploymentStep)
+    assert task.step.audit_state == "error"
+    assert "audit_override_ticket_batch_token" not in task.model_dump(mode="json")
+    assert task.active_work_item.audit_href is not None
+    envelope = queries.audit(
+        task.active_work_item.audit_href.rsplit("/", 1)[-1],
+        as_of=NOW + timedelta(seconds=11),
+    )
+    assert envelope.audit_override_ticket_batch_token == fixture.batch_token
+    context = fixture.actions.ticket_audit_override_context(
+        envelope.audit_override_ticket_batch_token
+    )
+    assert context.ticket_batch_revision_id == fixture.batch_revision_id
 
 
 def test_regenerated_inherited_override_allows_web_approval_mode(

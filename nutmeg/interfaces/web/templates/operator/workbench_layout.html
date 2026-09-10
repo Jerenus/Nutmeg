@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Nutmeg{% endblock %}</title>
+    <link rel="icon" href="/assets/product/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/product/operator.css">
+  </head>
+  <body data-workspace="{{ workspace }}"
+        data-read-only="{{ 'true' if read_only else 'false' }}">
+    <a class="skip-link" href="#main-content">跳到当前任务</a>
+    <header class="workbench-header">
+      <a class="operator-wordmark" href="{{ today_href }}">
+        <img src="/assets/product/favicon.svg" alt="" width="28" height="28">
+        <span>Nutmeg</span>
+      </a>
+      <nav class="workbench-nav" aria-label="主要导航">
+        <a href="{{ today_href }}">Today</a>
+        <a href="/operator-next/zucai">胜负彩</a>
+        <a href="/operator-next/jczq">竞彩</a>
+      </nav>
+      <a class="system-link" href="/operator-next/maintenance">运行状态</a>
+    </header>
+    {% if read_only %}
+      <div class="read-only-band" role="status">只读预览</div>
+    {% endif %}
+    <main id="main-content" class="workbench-main" tabindex="-1">
+      {% block content %}{% endblock %}
+    </main>
+    <p id="action-feedback" aria-live="polite"></p>
+    <script src="/assets/product/operator.js" defer></script>
+  </body>
+</html>

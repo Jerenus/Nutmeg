@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.market import MarketRepository
     from nutmeg.ontology.repository.operator_decision import OperatorDecisionRepository
     from nutmeg.ontology.repository.operator_result import OperatorResultRepository
+    from nutmeg.ontology.repository.operator_review import OperatorReviewRepository
     from nutmeg.ontology.repository.operator_sale import OperatorSaleRepository
     from nutmeg.ontology.repository.outbox import OutboxRepository
     from nutmeg.ontology.repository.reliability import ReliabilityRepository
@@ -150,6 +151,12 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.operator_result import OperatorResultRepository
 
         return OperatorResultRepository(self.connection)
+
+    @property
+    def operator_review(self) -> OperatorReviewRepository:
+        from nutmeg.ontology.repository.operator_review import OperatorReviewRepository
+
+        return OperatorReviewRepository(self.connection)
 
     @property
     def tickets(self) -> TicketWorkbenchRepository:

@@ -210,6 +210,16 @@ class FinanceRepository:
             )
         )
 
+    def ticket(self, ticket_id: str) -> TicketRow | None:
+        row = (
+            self._connection.execute(
+                select(sf.tickets).where(sf.tickets.c.ticket_id == ticket_id)
+            )
+            .mappings()
+            .first()
+        )
+        return None if row is None else TicketRow(**dict(row))
+
     def insert_bet_leg(self, row: BetLegRow) -> None:
         self._connection.execute(
             insert(sf.bet_legs).values(
@@ -262,6 +272,18 @@ class FinanceRepository:
                 currency=row.currency,
             )
         )
+
+    def cash_transaction(self, transaction_id: str) -> CashTransactionRow | None:
+        row = (
+            self._connection.execute(
+                select(sf.cash_transactions).where(
+                    sf.cash_transactions.c.transaction_id == transaction_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return None if row is None else CashTransactionRow(**dict(row))
 
     def ledger_balance(self, account_id: str) -> float:
         value = self._connection.execute(

@@ -10,7 +10,9 @@ from sqlalchemy.exc import OperationalError
 
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.operator.decision_actions import (
+    FaceBundleInput,
     FaceOffsetInput,
+    FacePrecedentInput,
     FaceProbabilityInput,
     FactorAdjustmentInput,
     FreezeJudgmentPrescriptionRequest,
@@ -581,3 +583,208 @@ def test_worker_recovers_only_expired_candidate_generation_lease(tmp_path: Path)
             )
         ).one()
     assert job == ("completed", None, 2)
+
+
+def _structure_fact_fixture(
+    tmp_path: Path,
+    *,
+    anchor_integrity: str,
+    face_precedents: tuple[FacePrecedentInput, ...],
+    expression_bundles: tuple[FaceBundleInput, ...] = (
+        FaceBundleInput(bundle_code="home_draw", face_codes=("3", "1")),
+    ),
+) -> CandidateFixture:
+    """A judgment that drops a face, so the anchor/precedent rules have work to do."""
+    fixture = _fixture(tmp_path)
+    baseline = fixture.decision_actions.freeze_market_prior_baseline(
+        _baseline_request(fixture)
+    )
+    envelope = fixture.decision_actions.record_baseline_envelope(
+        _envelope_request(fixture)
+    )
+    baseline_id = baseline.result_refs[0].object_id
+    envelope_id = envelope.result_refs[0].object_id
+    judgment = fixture.decision_actions.commit_operator_match_judgment(
+        replace(
+            _judgment_request(
+                fixture,
+                baseline_id,
+                envelope_id,
+                anchor_integrity=anchor_integrity,
+                face_precedents=face_precedents,
+            ),
+            expression_bundles=expression_bundles,
+        )
+    )
+    assert judgment.status is ActionStatus.COMMITTED
+    judgment_id = next(
+        ref.object_id
+        for ref in judgment.result_refs
+        if ref.object_type == "operator_match_judgment_revision"
+    )
+    prescription = fixture.decision_actions.freeze_judgment_prescription(
+        FreezeJudgmentPrescriptionRequest(
+            task_evidence_bundle_revision_id=fixture.task_bundle_revision_id,
+            market_prior_baseline_revision_id=baseline_id,
+            baseline_envelope_revision_id=envelope_id,
+            work_item_id=WORK_ITEM_ID,
+            judgment_revision_ids=(judgment_id,),
+            actor_id="jun",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key="structure-facts:prescription",
+            requested_at=AT + timedelta(seconds=5),
+            expected_current_revision_no=0,
+        )
+    )
+    assert prescription.status is ActionStatus.COMMITTED
+    return CandidateFixture(
+        judgment=fixture,
+        result_actions=OperatorResultActions(fixture.action_service),
+        baseline_id=baseline_id,
+        envelope_id=envelope_id,
+        prescription_id=prescription.result_refs[0].object_id,
+    )
+
+
+def _leg_findings(fixture: CandidateFixture) -> set[tuple[str, str]]:
+    with fixture.judgment.engine.connect() as connection:
+        return {
+            (str(row.finding_code), str(row.severity))
+            for row in connection.execute(
+                text(
+                    "SELECT finding.finding_code, finding.severity "
+                    "FROM operator_candidate_audit_findings AS finding "
+                    "JOIN operator_candidates AS candidate "
+                    "USING (candidate_revision_id) "
+                    "JOIN operator_candidate_set_revisions AS candidate_set "
+                    "USING (candidate_set_revision_id) "
+                    "WHERE candidate_set.set_kind = 'judgment_bound' "
+                    "AND finding.audit_kind = 'legs'"
+                )
+            ).all()
+        }
+
+
+def test_leg_audit_reads_the_operator_anchor_and_precedent_facts(
+    tmp_path: Path,
+) -> None:
+    """C14 clears only when Jun recorded the death proofs the rule demands."""
+    fixture = _structure_fact_fixture(
+        tmp_path,
+        anchor_integrity="pass",
+        face_precedents=(
+            FacePrecedentInput(
+                face_code="0",
+                precedent_ref="2026-05-12 same venue 1:0",
+                status="dead",
+            ),
+        ),
+    )
+    _request_generation(fixture)
+
+    completed = _worker(fixture).run_once(limit=1, as_of=AT + timedelta(seconds=7))
+
+    assert len(completed) == 1
+    assert not any(
+        code == "expensive_exclusion" for code, _severity in _leg_findings(fixture)
+    )
+
+
+def test_leg_audit_warns_when_the_expensive_exclusion_has_no_death_proof(
+    tmp_path: Path,
+) -> None:
+    fixture = _structure_fact_fixture(
+        tmp_path,
+        anchor_integrity="pass",
+        face_precedents=(),
+    )
+    _request_generation(fixture)
+
+    _worker(fixture).run_once(limit=1, as_of=AT + timedelta(seconds=7))
+
+    assert ("expensive_exclusion", "WARN") in _leg_findings(fixture)
+
+
+def test_broken_anchor_single_blocks_the_candidate_as_an_audit_error(
+    tmp_path: Path,
+) -> None:
+    """C5 —— 26102 本菲卡：锚方 FAIL 还裸单是 ERROR，不是提醒。"""
+    fixture = _structure_fact_fixture(
+        tmp_path,
+        anchor_integrity="fail",
+        face_precedents=(
+            FacePrecedentInput(
+                face_code="1",
+                precedent_ref="2026-05-12 same venue 1:0",
+                status="dead",
+            ),
+            FacePrecedentInput(
+                face_code="0",
+                precedent_ref="2026-04-20 same venue 2:0",
+                status="dead",
+            ),
+        ),
+        expression_bundles=(
+            FaceBundleInput(bundle_code="home", face_codes=("3",)),
+        ),
+    )
+    _request_generation(fixture)
+
+    _worker(fixture).run_once(limit=1, as_of=AT + timedelta(seconds=7))
+
+    assert ("broken_anchor_single", "ERROR") in _leg_findings(fixture)
+    with fixture.judgment.engine.connect() as connection:
+        partitions = set(
+            connection.execute(
+                text(
+                    "SELECT candidate.partition FROM operator_candidates AS candidate "
+                    "JOIN operator_candidate_set_revisions AS candidate_set "
+                    "USING (candidate_set_revision_id) "
+                    "WHERE candidate_set.set_kind = 'judgment_bound'"
+                )
+            ).scalars()
+        )
+    assert partitions == {"audit_blocked"}
+
+
+def test_live_precedent_on_an_excluded_face_warns_under_rule_r3(
+    tmp_path: Path,
+) -> None:
+    fixture = _structure_fact_fixture(
+        tmp_path,
+        anchor_integrity="pass",
+        face_precedents=(
+            FacePrecedentInput(
+                face_code="0",
+                precedent_ref="2026-05-12 same venue 1:1",
+                status="alive",
+            ),
+        ),
+    )
+    _request_generation(fixture)
+
+    _worker(fixture).run_once(limit=1, as_of=AT + timedelta(seconds=7))
+
+    assert ("excluded_face_live_precedent", "WARN") in _leg_findings(fixture)
+
+
+def test_broken_anchor_double_warns_when_a_face_is_dropped_on_a_holed_anchor(
+    tmp_path: Path,
+) -> None:
+    """C13 —— 26118 场8：锚方有洞的场只许全包或丢整场。"""
+    fixture = _structure_fact_fixture(
+        tmp_path,
+        anchor_integrity="fail",
+        face_precedents=(
+            FacePrecedentInput(
+                face_code="0",
+                precedent_ref="2026-05-12 same venue 1:0",
+                status="dead",
+            ),
+        ),
+    )
+    _request_generation(fixture)
+
+    _worker(fixture).run_once(limit=1, as_of=AT + timedelta(seconds=7))
+
+    assert ("broken_anchor_double", "WARN") in _leg_findings(fixture)

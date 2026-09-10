@@ -43,8 +43,10 @@
   {% elif task.step.audit_state == "error" %}
     <section class="deployment-recovery" aria-labelledby="deployment-recovery-title">
       <h2 id="deployment-recovery-title">当前 ERROR 阻止审批</h2>
-      <p>请在外部终端完成实名裁决，再返回本页重新生成候选：</p>
-      <code>nutmeg decision-audit-legs --user-override --ticket-batch-token &lt;token&gt;</code>
+      <p>请从技术审计取得当前批次命令，在外部终端完成实名裁决，再返回本页。</p>
+      {% if task.active_work_item is defined and task.active_work_item.audit_href %}
+        <a href="{{ task.active_work_item.audit_href }}">打开技术审计</a>
+      {% endif %}
     </section>
   {% elif task.step.mode == "adjudicate_audit_warn" %}
     <form class="operator-form deployment-form" data-action="adjudicate-audit-warn"
@@ -120,4 +122,9 @@
   {% endif %}
 {% endif %}
 
-<a class="quiet-link" href="/tasks/{{ task.selected.task_id }}">刷新当前任务</a>
+{% if task_v2 is defined %}
+  <a class="quiet-link"
+     href="/operator-next/{{ task_v2.lane.value }}/{{ task_v2.business_key }}/{{ task_v2.active_work_item.work_item_key }}">刷新当前任务</a>
+{% else %}
+  <a class="quiet-link" href="/tasks/{{ task.selected.task_id }}">刷新当前任务</a>
+{% endif %}

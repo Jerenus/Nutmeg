@@ -93,9 +93,10 @@ def test_error_audit_has_external_recovery_but_no_web_override_control() -> None
     html = _html(audit_state="error", mode="blocked")
 
     assert "当前 ERROR 阻止审批" in html
-    assert "decision-audit-legs" in html
-    assert "--user-override" in html
-    assert "--ticket-batch-token &lt;token&gt;" in html
+    assert "从技术审计取得当前批次命令" in html
+    assert "decision-audit-legs" not in html
+    assert "--user-override" not in html
+    assert "--ticket-batch-token" not in html
     assert 'data-action="record-ticket-audit-override"' not in html
     assert 'name="audit_error_override"' not in html
     assert 'data-action="approve-ticket-batch"' not in html
@@ -150,7 +151,7 @@ def test_read_only_deployment_has_no_mutation_forms() -> None:
     assert 'data-action="record-no-ticket"' not in html
 
 
-def test_deployment_javascript_refreshes_current_tokens_before_strict_v2_submit() -> None:
+def test_deployment_javascript_refreshes_opaque_v2_tokens_before_strict_submit() -> None:
     script = (
         Path(__file__).parents[3]
         / "nutmeg"
@@ -161,8 +162,13 @@ def test_deployment_javascript_refreshes_current_tokens_before_strict_v2_submit(
         / "operator.js"
     ).read_text(encoding="utf-8")
 
-    assert 'fetch(`/api/v1/operator/tasks/${encodeURIComponent(taskKey)}`' in script
-    assert "taskSnapshotToken(task.mutation_token)" in script
+    task_detail_path = (
+        "/api/v2/operator/tasks/${encodeURIComponent(lane)}/"
+        "${encodeURIComponent(businessKey)}"
+    )
+    assert task_detail_path in script
+    assert "taskSnapshotToken" not in script
+    assert "mutation_token" not in script
     assert 'action === "create-ticket-batch"' in script
     assert 'kind: "create_ticket_batch"' in script
     assert 'action === "adjudicate-audit-warn"' in script

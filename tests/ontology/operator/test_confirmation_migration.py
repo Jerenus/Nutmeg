@@ -92,7 +92,7 @@ def test_migration_23_preserves_v22_challenge_shape_and_adds_confirmation_storag
     assert CONFIRMATION_TABLES.isdisjoint(inspect(engine).get_table_names())
     assert "legacy_expires_at" not in v22_challenge_columns
 
-    run_migrations(engine)
+    run_migrations(engine, MIGRATIONS[:23])
 
     assert migration_status(engine).current_version == 23
     assert CONFIRMATION_TABLES <= set(inspect(engine).get_table_names())
@@ -236,7 +236,14 @@ def _ready_v21_candidate(tmp_path: Path) -> CandidateFixture:
     judgment = _judgment_fixture(tmp_path, migrations=MIGRATIONS[:21])
     baseline_id, envelope_id = _create_baseline_and_envelope(judgment)
     committed = judgment.decision_actions.commit_operator_match_judgment(
-        _judgment_request(judgment, baseline_id, envelope_id)
+        # v21 库还没有 migration 28 的结构事实表；这条腿只为迁移回放供数，不登记结构事实。
+        _judgment_request(
+            judgment,
+            baseline_id,
+            envelope_id,
+            anchor_integrity="unknown",
+            face_precedents=(),
+        )
     )
     judgment_id = next(
         ref.object_id
@@ -386,7 +393,7 @@ def test_migration_23_reconciles_legacy_challenges_into_stable_revisions(
 ) -> None:
     engine, artifact_id, cutoff = _legacy_challenge_upgrade_fixture(tmp_path)
 
-    report = run_migrations(engine)
+    report = run_migrations(engine, MIGRATIONS[:23])
 
     assert report.applied_versions == (23,)
     with engine.connect() as connection:
@@ -428,7 +435,7 @@ def test_migration_23_reconciles_legacy_challenges_into_stable_revisions(
         "challenge_family_id": revisions[1]["challenge_family_id"],
         "revision_no": 2,
     }
-    assert run_migrations(engine).applied_versions == ()
+    assert run_migrations(engine, MIGRATIONS[:23]).applied_versions == ()
 
 
 def test_migration_23_aborts_without_discarding_conflicting_legacy_rows(

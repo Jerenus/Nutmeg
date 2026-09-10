@@ -1,0 +1,35 @@
+{% if entry.kind == "today_work_item_v1" %}
+  <article class="queue-entry{% if primary %} is-primary{% endif %}">
+    <div class="queue-entry-head">
+      {% with phase=entry.phase %}{% include "operator/_status.html" %}{% endwith %}
+      <span class="lane-label">{{ "胜负彩" if entry.lane.value == "zucai" else "竞彩" }}</span>
+    </div>
+    <h2><a href="/operator-next/{{ entry.lane.value }}/{{ entry.business_key }}">{{ entry.task_label }}</a></h2>
+    <p class="queue-scope">{{ entry.scope_label }} · {{ entry.progress.progress_label }}</p>
+    {% if entry.blocking_reason %}
+      <p class="queue-reason">{{ entry.blocking_reason.message }}</p>
+      <small>处理方：{{ entry.blocking_reason.repair_owner }}</small>
+    {% else %}
+      <p class="queue-reason">当前作用：完成这一项后，流程才会进入下一阶段。</p>
+    {% endif %}
+    {% if entry.next_deadline_at %}
+      <p class="queue-time">截止 {{ entry.next_deadline_at.strftime("%m-%d %H:%M") }}</p>
+    {% endif %}
+    <a class="{{ 'primary-link' if primary else 'queue-link' }}"
+       {% if primary %}data-primary-command="true"{% endif %}
+       href="{{ entry.next_action.recovery_link }}">{{ entry.next_action.action_label }}</a>
+  </article>
+{% else %}
+  <article class="queue-entry recovery-entry{% if primary %} is-primary{% endif %}">
+    <div class="queue-entry-head">
+      {% with phase=entry.phase %}{% include "operator/_status.html" %}{% endwith %}
+      <span class="lane-label">{{ "胜负彩" if entry.lane.value == "zucai" else "竞彩" }}</span>
+    </div>
+    <h2>{{ entry.blocking_reason.message }}</h2>
+    <p class="queue-reason">影响：今天的官方比赛任务还不能建立。</p>
+    <small>处理方：{{ entry.blocking_reason.repair_owner }}</small>
+    <a class="{{ 'primary-link' if primary else 'queue-link' }}"
+       {% if primary %}data-primary-command="true"{% endif %}
+       href="{{ entry.next_action.recovery_link }}">{{ entry.next_action.action_label }}</a>
+  </article>
+{% endif %}

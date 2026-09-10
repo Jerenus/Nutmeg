@@ -42,6 +42,11 @@ from nutmeg.product.errors import (
 )
 from nutmeg.product.operator_contracts import (
     GradePredictionCommand,
+    OperatorLane,
+    OperatorLaneResponseV1,
+    OperatorMaintenanceResponseV1,
+    OperatorTaskDetailV1,
+    OperatorTodayResponseV1,
     RecordDeploymentCommand,
     RequestTelegramConfirmationCommand,
     ResolveIssueAdjudicationCommand,
@@ -300,6 +305,48 @@ def create_product_app(
             operator_actions=services.operator_actions,
             actor_id=services.settings.default_user_id,
         )
+
+    if runtime.surface_mode is not OperatorSurfaceMode.LEGACY_READ_ONLY:
+
+        @app.get('/api/v2/operator/today', response_model=OperatorTodayResponseV1)
+        async def operator_today_v2(
+            as_of: Annotated[datetime | None, Query()] = None,
+        ):
+            return services.operator_queries.today(as_of=as_of or now())
+
+        @app.get(
+            '/api/v2/operator/lanes/{lane}',
+            response_model=OperatorLaneResponseV1,
+        )
+        async def operator_lane_v2(
+            lane: OperatorLane,
+            as_of: Annotated[datetime | None, Query()] = None,
+        ):
+            return services.operator_queries.lane(lane, as_of=as_of or now())
+
+        @app.get(
+            '/api/v2/operator/tasks/{lane}/{business_key}',
+            response_model=OperatorTaskDetailV1,
+        )
+        async def operator_task_v2(
+            lane: OperatorLane,
+            business_key: str,
+            as_of: Annotated[datetime | None, Query()] = None,
+        ):
+            return services.operator_queries.task_v2(
+                lane,
+                business_key,
+                as_of=as_of or now(),
+            )
+
+        @app.get(
+            '/api/v2/operator/maintenance',
+            response_model=OperatorMaintenanceResponseV1,
+        )
+        async def operator_maintenance_v2(
+            as_of: Annotated[datetime | None, Query()] = None,
+        ):
+            return services.operator_queries.maintenance(as_of=as_of or now())
 
     @app.get('/api/v1/session')
     async def session() -> JSONResponse:
@@ -638,8 +685,15 @@ def create_product_app(
             last_activity = time.monotonic()
             while True:
                 page = services.queries.events(after=cursor, limit=100)
-                if page.items:
-                    for event in page.items:
+                projection_signals = getattr(services, "projection_signals", None)
+                items = page.items
+                if projection_signals is not None:
+                    delivered = projection_signals.delivered_sequence
+                    items = [
+                        event for event in items if event.sequence <= delivered
+                    ]
+                if items:
+                    for event in items:
                         payload = canonical_json(event.model_dump(mode='json'))
                         yield (
                             f'id: {event.sequence}\n'
@@ -653,7 +707,14 @@ def create_product_app(
                 if time.monotonic() - last_activity >= 15:
                     yield ': heartbeat\n\n'
                     last_activity = time.monotonic()
-                await asyncio.sleep(0.5)
+                if projection_signals is None:
+                    await asyncio.sleep(0.5)
+                else:
+                    await asyncio.to_thread(
+                        projection_signals.wait_for_delivery,
+                        after=cursor,
+                        timeout_seconds=0.5,
+                    )
 
         return StreamingResponse(
             generate(),

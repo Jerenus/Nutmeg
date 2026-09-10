@@ -129,6 +129,7 @@ def test_freeze_command_is_strict_and_queues_only_a_server_owned_judge_request()
         "task_key": "zucai:26116",
         "source_high_watermark": None,
         "projection_high_watermark": None,
+        "navigation_href": "/operator-next/zucai/26116",
     }
     assert len(actions.calls) == 1
     kind, command, actor_id, actor_role = actions.calls[0]
@@ -145,6 +146,34 @@ def test_freeze_command_is_strict_and_queues_only_a_server_owned_judge_request()
         assert rejected.status_code == 422
     assert len(actions.calls) == 1
 
+
+def test_v2_command_receipt_returns_a_same_origin_operator_navigation_href() -> None:
+    response = _client(_Actions()).post(
+        "/api/v2/operator",
+        headers={
+            "Referer": (
+                "http://testserver/operator-next/zucai/26116/"
+                "sale-wave-opaque0001"
+            )
+        },
+        json=_freeze_document(),
+    )
+
+    assert response.status_code == 202
+    assert response.json()["navigation_href"] == (
+        "/operator-next/zucai/26116/sale-wave-opaque0001"
+    )
+
+
+def test_v2_command_receipt_rejects_external_navigation_and_uses_task_page() -> None:
+    response = _client(_Actions()).post(
+        "/api/v2/operator",
+        headers={"Referer": "https://example.invalid/steal"},
+        json=_freeze_document(),
+    )
+
+    assert response.status_code == 202
+    assert response.json()["navigation_href"] == "/operator-next/zucai/26116"
 
 def test_freeze_rejects_cross_command_token_and_unknown_business_fields() -> None:
     client = _client(_Actions())

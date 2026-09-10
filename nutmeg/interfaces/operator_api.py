@@ -1,17 +1,24 @@
 """Strict, closed HTTP boundary for the v2 operator workbench."""
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
+from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.product.contracts import ProductError
 from nutmeg.product.errors import ProductActionBlockedError
 from nutmeg.product.operator_contracts import OperatorCommandReceipt
+from nutmeg.product.operator_recovery import (
+    normalize_recovery_code,
+    recovery_href_for_code,
+)
 from nutmeg.product.operator_tokens import (
     OperatorCommandKind,
     OperatorSnapshotTokenError,
@@ -108,6 +115,14 @@ class RecordBaselineEnvelopeCommandV2(OperatorCommandV2):
     maximum_exhaustive_candidate_count: int = Field(gt=0)
 
 
+class FacePrecedentInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    face_code: Literal["3", "1", "0"]
+    precedent_ref: str = Field(min_length=1, max_length=500)
+    status: Literal["alive", "dead"]
+
+
 class CommitMatchJudgmentCommandV2(OperatorCommandV2):
     kind: Literal[OperatorCommandKind.COMMIT_MATCH_JUDGMENT]
     task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
@@ -120,6 +135,8 @@ class CommitMatchJudgmentCommandV2(OperatorCommandV2):
     evidence_ref_tokens: list[str] = Field(max_length=500)
     falsifier: str = Field(min_length=1, max_length=4000)
     rationale: str = Field(min_length=1, max_length=4000)
+    anchor_integrity: Literal["pass", "fail", "symmetric_damage", "unknown"] = "unknown"
+    face_precedents: list[FacePrecedentInputV2] = Field(default_factory=list, max_length=100)
 
 
 class FreezeJudgmentPrescriptionCommandV2(OperatorCommandV2):
@@ -205,14 +222,130 @@ class RequestConfirmationCommandV2(OperatorCommandV2):
     ticket_artifact_token: str = Field(min_length=1, max_length=8192)
 
 
-class UnavailableOperatorCommandV2(OperatorCommandV2):
-    kind: Literal[
-        OperatorCommandKind.REQUEST_SETTLEMENT,
-        OperatorCommandKind.GRADE_PREDICTION,
-        OperatorCommandKind.RECORD_SCOREBOARD_EFFECT_DISPOSITION,
-        OperatorCommandKind.RECORD_SCOREBOARD_OBSERVATION,
-        OperatorCommandKind.REQUEST_SCOREBOARD_REVIEW_COMPLETION,
-    ]
+class RequestSettlementCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.REQUEST_SETTLEMENT]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+
+
+class GradePredictionCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.GRADE_PREDICTION]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    prediction_review_token: str = Field(min_length=1, max_length=8192)
+    outcome: Literal["hit", "miss", "na"]
+    reason: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_is_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("prediction grade reason is required")
+        return value
+
+
+class ScoreboardEffectDispositionInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    disposition: Literal["effect_required", "no_effect"]
+    metric_keys: list[str] = Field(max_length=500)
+    reason: str = Field(min_length=1, max_length=4000)
+
+    @model_validator(mode="after")
+    def _validate_effect_shape(self):
+        if not self.reason.strip():
+            raise ValueError("scoreboard effect reason is required")
+        if any(not key.strip() or len(key) > 500 for key in self.metric_keys):
+            raise ValueError("scoreboard metric keys must be non-empty and bounded")
+        if self.metric_keys != sorted(set(self.metric_keys)):
+            raise ValueError("scoreboard metric keys must be sorted and unique")
+        if self.disposition == "effect_required" and not self.metric_keys:
+            raise ValueError("effect_required needs at least one metric key")
+        if self.disposition == "no_effect" and self.metric_keys:
+            raise ValueError("no_effect cannot name metric keys")
+        return self
+
+
+class RecordScoreboardEffectDispositionCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.RECORD_SCOREBOARD_EFFECT_DISPOSITION]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    review_token: str = Field(min_length=1, max_length=8192)
+    effect: ScoreboardEffectDispositionInputV2
+
+
+class ScoreboardObservationInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    group_key: str = Field(min_length=1, max_length=500)
+    metric_key: str = Field(min_length=1, max_length=500)
+    tally: str = Field(min_length=1, max_length=500)
+    detail: str = Field(min_length=1, max_length=4000)
+    status: str = Field(min_length=1, max_length=100)
+    numerator_decimal: str | None = Field(
+        default=None,
+        pattern=r"^-?(?:0|[1-9]\d*)(?:\.\d+)?$",
+    )
+    denominator_decimal: str | None = Field(
+        default=None,
+        pattern=r"^(?:0|[1-9]\d*)(?:\.\d+)?$",
+    )
+    value_decimal: str | None = Field(
+        default=None,
+        pattern=r"^-?(?:0|[1-9]\d*)(?:\.\d+)?$",
+    )
+    unit: str | None = Field(default=None, min_length=1, max_length=100)
+    evidence_ref_tokens: list[str] = Field(min_length=1, max_length=500)
+    effective_at: AwareDatetime
+    supersedes_observation_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8192,
+    )
+
+    @model_validator(mode="after")
+    def _validate_observation(self):
+        if any(
+            not value.strip()
+            for value in (
+                self.group_key,
+                self.metric_key,
+                self.tally,
+                self.detail,
+                self.status,
+                *self.evidence_ref_tokens,
+            )
+        ):
+            raise ValueError("scoreboard observation text fields cannot be blank")
+        try:
+            numerator = (
+                None
+                if self.numerator_decimal is None
+                else Decimal(self.numerator_decimal)
+            )
+            denominator = (
+                None
+                if self.denominator_decimal is None
+                else Decimal(self.denominator_decimal)
+            )
+        except InvalidOperation as error:
+            raise ValueError("scoreboard observation decimals must be finite") from error
+        if numerator is not None and denominator is not None and numerator > denominator:
+            raise ValueError("scoreboard numerator cannot exceed denominator")
+        return self
+
+
+class RecordScoreboardObservationCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.RECORD_SCOREBOARD_OBSERVATION]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    review_token: str = Field(min_length=1, max_length=8192)
+    disposition_token: str = Field(min_length=1, max_length=8192)
+    observation: ScoreboardObservationInputV2
+
+
+class RequestScoreboardReviewCompletionCommandV2(OperatorCommandV2):
+    kind: Literal[OperatorCommandKind.REQUEST_SCOREBOARD_REVIEW_COMPLETION]
+    task_key: str = Field(pattern=r"^(?:jczq:\d{4}-\d{2}-\d{2}|zucai:\d{5})$")
+    review_token: str = Field(min_length=1, max_length=8192)
+    disposition_token: str = Field(min_length=1, max_length=8192)
+    shadow_review_token: str = Field(min_length=1, max_length=8192)
 
 
 InstalledOperatorCommandV2 = Annotated[
@@ -228,8 +361,13 @@ InstalledOperatorCommandV2 = Annotated[
     | AdjudicateAuditWarnCommandV2
     | ApproveTicketBatchCommandV2
     | RequestConfirmationCommandV2
+    | RequestSettlementCommandV2
+    | GradePredictionCommandV2
+    | RecordScoreboardEffectDispositionCommandV2
+    | RecordScoreboardObservationCommandV2
+    | RequestScoreboardReviewCompletionCommandV2
     | RebuildScoreboardProjectionCommandV2
-    | UnavailableOperatorCommandV2,
+    ,
     Field(discriminator="kind"),
 ]
 
@@ -247,7 +385,7 @@ def mount_operator_api(
         @app.post("/api/v2/operator")
         async def unavailable_operator_command(
             request: Request,
-            command: OperatorCommandV2,
+            command: InstalledOperatorCommandV2,
         ) -> JSONResponse:
             await require_mutation_session(request)
             error = ProductError(
@@ -353,6 +491,41 @@ def mount_operator_api(
                     actor_role=ActorRole.JUDGE_OPERATOR,
                 )
                 status_code = 202
+            elif isinstance(command, RequestSettlementCommandV2):
+                result = operator_actions.request_settlement(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 202
+            elif isinstance(command, GradePredictionCommandV2):
+                result = operator_actions.grade_prediction(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, RecordScoreboardEffectDispositionCommandV2):
+                result = operator_actions.record_scoreboard_effect_disposition(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, RecordScoreboardObservationCommandV2):
+                result = operator_actions.record_scoreboard_observation(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 200
+            elif isinstance(command, RequestScoreboardReviewCompletionCommandV2):
+                result = operator_actions.request_scoreboard_review_completion(
+                    command,
+                    actor_id=actor_id,
+                    actor_role=ActorRole.JUDGE_OPERATOR,
+                )
+                status_code = 202
             elif isinstance(command, RebuildScoreboardProjectionCommandV2):
                 result = operator_actions.rebuild_scoreboard_projection(
                     command,
@@ -371,13 +544,17 @@ def mount_operator_api(
                     content=error.model_dump(mode="json"),
                 )
         except OperatorSnapshotTokenError as error:
+            recovery_href = recovery_href_for_code(
+                error.code,
+                task_key=getattr(command, "task_key", None),
+            )
             product_error = ProductError(
                 code=error.code,
                 message=str(error),
                 retryable=False,
                 details=(
-                    {"recovery_href": "/operator-next"}
-                    if error.code == "task_snapshot_changed"
+                    {"recovery_href": recovery_href}
+                    if recovery_href is not None
                     else {}
                 ),
             )
@@ -386,16 +563,36 @@ def mount_operator_api(
                 content=product_error.model_dump(mode="json"),
             )
         except ProductActionBlockedError as error:
+            recovery_code = normalize_recovery_code(error.code)
+            recovery_href = recovery_href_for_code(
+                recovery_code,
+                task_key=getattr(command, "task_key", None),
+            )
             product_error = ProductError(
-                code=error.code,
+                code=recovery_code,
                 message=str(error),
                 retryable=True,
+                details=(
+                    {"recovery_href": recovery_href}
+                    if recovery_href is not None
+                    else {}
+                ),
             )
             return JSONResponse(
                 status_code=409,
                 content=product_error.model_dump(mode="json"),
             )
         receipt = OperatorCommandReceipt.model_validate(result)
+        receipt = OperatorCommandReceipt.model_validate(
+            {
+                **receipt.model_dump(mode="python"),
+                "navigation_href": _command_navigation_href(
+                    request,
+                    receipt.task_key,
+                    preferred_href=receipt.navigation_href,
+                ),
+            }
+        )
         return JSONResponse(
             status_code=status_code,
             content=receipt.model_dump(mode="json"),
@@ -407,6 +604,7 @@ __all__ = [
     "ApproveTicketBatchCommandV2",
     "AuditWarnAdjudicationInputV2",
     "CommitMatchJudgmentCommandV2",
+    "FacePrecedentInputV2",
     "CreateTicketBatchCommandV2",
     "FaceBundleInputV2",
     "FaceOffsetInputV2",
@@ -414,16 +612,56 @@ __all__ = [
     "FactorAdjustmentInputV2",
     "FreezeEvidenceCommandV2",
     "FreezeJudgmentPrescriptionCommandV2",
+    "GradePredictionCommandV2",
     "InstalledOperatorCommandV2",
     "OfferConstraintInputV2",
     "OperatorCommandV2",
     "RecordBaselineEnvelopeCommandV2",
     "RecordNoTicketCommandV2",
+    "RecordScoreboardEffectDispositionCommandV2",
+    "RecordScoreboardObservationCommandV2",
     "RebuildScoreboardProjectionCommandV2",
     "RequestCandidateGenerationCommandV2",
     "RequestConfirmationCommandV2",
+    "RequestScoreboardReviewCompletionCommandV2",
+    "RequestSettlementCommandV2",
+    "ScoreboardEffectDispositionInputV2",
+    "ScoreboardObservationInputV2",
     "SelectTicketCandidateCommandV2",
     "StructureTemplateInputV2",
     "SupersedeNoTicketCommandV2",
     "mount_operator_api",
 ]
+_OPERATOR_NAVIGATION_PATH = re.compile(
+    r"^/operator-next(?:$|/maintenance$|/(?:zucai|jczq)(?:/[A-Za-z0-9-]+"
+    r"(?:/[a-z][a-z0-9-]{8,100})?)?)$"
+)
+
+
+def _command_navigation_href(
+    request: Request,
+    task_key: str | None,
+    *,
+    preferred_href: str | None = None,
+) -> str:
+    if preferred_href is not None and _OPERATOR_NAVIGATION_PATH.fullmatch(
+        preferred_href
+    ):
+        return preferred_href
+    referer = request.headers.get("referer")
+    if referer:
+        parsed = urlsplit(referer)
+        request_origin = (request.url.scheme, request.url.netloc)
+        if (
+            (parsed.scheme, parsed.netloc) == request_origin
+            and not parsed.query
+            and not parsed.fragment
+            and _OPERATOR_NAVIGATION_PATH.fullmatch(parsed.path)
+        ):
+            return parsed.path
+
+    if task_key is not None:
+        lane, separator, business_key = task_key.partition(":")
+        if separator and lane in {"jczq", "zucai"} and business_key:
+            return f"/operator-next/{lane}/{quote(business_key, safe='')}"
+    return "/operator-next/maintenance" if task_key is None else "/operator-next"

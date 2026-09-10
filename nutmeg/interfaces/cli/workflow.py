@@ -20,6 +20,8 @@ from nutmeg.ontology.actions.workflow_actions import (
 )
 from nutmeg.ontology.operator.evidence_actions import IngestOperatorEvidenceRequest
 from nutmeg.ontology.operator.evidence_manifest import EvidenceIntakeManifestV1
+from nutmeg.ontology.operator.result_actions import ImportResultEvidenceRequest
+from nutmeg.ontology.operator.result_manifest import ResultEvidenceManifestV1
 from nutmeg.ontology.operator.sale_actions import (
     ImportOfficialSaleSlateRequest,
     OfficialSaleSlateManifestV1,
@@ -268,6 +270,61 @@ def ingest_evidence(
             )
         )
     except (OSError, json.JSONDecodeError, WorkflowOperationError, ValueError) as error:
+        _fail(error)
+
+
+@workflow_app.command("ingest-results")
+def ingest_results(
+    manifest: Path = _MANIFEST_OPTION,
+    data_dir: Path = _DATA_DIR_OPTION,
+) -> None:
+    """Import one strict three-source result manifest through its typed Action."""
+    try:
+        document = json.loads(Path(manifest).expanduser().read_text("utf-8"))
+    except OSError:
+        _fail(WorkflowOperationError("result manifest could not be read"))
+    except json.JSONDecodeError:
+        _fail(WorkflowOperationError("result manifest is not valid JSON"))
+    try:
+        if not isinstance(document, dict):
+            raise WorkflowOperationError("result manifest root must be a JSON object")
+        parsed = ResultEvidenceManifestV1.model_validate(document)
+        kernel = _kernel(data_dir)
+        result = kernel.result_actions.import_result_evidence_set(
+            ImportResultEvidenceRequest(
+                manifest=parsed,
+                importer_version="three-source-result-v1",
+                actor_id="system:result-import",
+                actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key=f"result-evidence-v1:{parsed.manifest_sha256}",
+                requested_at=_now(),
+            )
+        )
+        if not result.outcome.status.is_success or result.result_set is None:
+            raise WorkflowOperationError(
+                result.outcome.error_detail
+                or result.outcome.error_code
+                or "result import rejected"
+            )
+        if parsed.lane == "jczq":
+            prize_table_state = "not_applicable"
+        elif result.prize_table is None:
+            prize_table_state = "waiting"
+        else:
+            prize_table_state = "available"
+        _cli.typer.echo(
+            canonical_json(
+                {
+                    "business_key": parsed.business_key,
+                    "manifest_sha256": parsed.manifest_sha256,
+                    "agreement_counts": result.counts.agreement_counts,
+                    "outcome_count": result.counts.outcome_count,
+                    "prize_table_state": prize_table_state,
+                    "status": result.outcome.status.value,
+                }
+            )
+        )
+    except (WorkflowOperationError, ValueError) as error:
         _fail(error)
 
 

@@ -376,6 +376,18 @@ class OperatorMatchJudgmentRevisionRow:
 
 
 @dataclass(frozen=True, slots=True)
+class OperatorMatchJudgmentStructureFacts:
+    """锚方完整度 + 逐面先例生死：C5/C7/C13/C14 唯一的操作员输入。
+
+    ``face_precedents`` 元素形如 ``(face_code, precedent_ref, "alive" | "dead")``，
+    顺序与操作员登记顺序一致；没有登记过结构事实的历史修订读回 ``unknown`` 与空元组。
+    """
+
+    anchor_integrity: str
+    face_precedents: tuple[tuple[str, str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class JudgmentPrescriptionRevisionRow:
     judgment_prescription_revision_id: str
     judgment_prescription_family_id: str
@@ -746,6 +758,7 @@ class ReviewEligibilityFactRow:
     readiness_condition: str
     content_hash: str
     created_at: str
+    settlement_run_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.interfaces.product_api import create_product_app
+from nutmeg.product.operator_contracts import OperatorTodayResponseV1
 from nutmeg.product.operator_runtime import (
     ApplicationInstanceLease,
     OntologyWriterLease,
@@ -455,6 +456,9 @@ class _EmptyOperatorQueries:
     def worklist(self, *, as_of: datetime):
         return SimpleNamespace(as_of=as_of, selected=None, tasks=[])
 
+    def today(self, *, as_of: datetime) -> OperatorTodayResponseV1:
+        return OperatorTodayResponseV1(as_of=as_of, next_action=None, entries=[])
+
 
 def _runtime_app(tmp_path: Path, *, scope: str, mode: str) -> TestClient:
     production = (tmp_path / "production").resolve()
@@ -614,9 +618,9 @@ def test_shadow_candidate_renders_the_read_only_workbench(tmp_path: Path) -> Non
     response = client.get("/operator-next")
 
     assert response.status_code == 200
-    assert 'data-workspace="operator-tasks"' in response.text
+    assert 'data-workspace="operator-workbench"' in response.text
     assert 'data-read-only="true"' in response.text
-    assert "当前没有待处理任务" in response.text
+    assert "当前没有需要处理的事项" in response.text
     assert "<form" not in response.text
     assert "{" not in response.text
 
@@ -648,6 +652,8 @@ def test_active_v2_known_but_uninstalled_command_fails_closed(tmp_path: Path) ->
             "kind": "freeze_evidence",
             "expected_snapshot_token": token,
             "idempotency_key": "runtime:unavailable:1",
+            "task_key": "zucai:26116",
+            "requirement_revision_token": "opaque-requirement-token",
         },
     )
 
@@ -700,8 +706,7 @@ def test_active_v2_command_envelope_is_closed_and_unavailable_without_handler(
     }
 
     response = client.post("/api/v2/operator", json=command, headers=headers)
-    assert response.status_code == 409
-    assert response.json()["code"] == "command_unavailable"
+    assert response.status_code == 422
 
     assert client.post(
         "/api/v2/operator",

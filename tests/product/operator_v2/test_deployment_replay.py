@@ -23,7 +23,11 @@ from nutmeg.ontology.repository.finance import CashAccountRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.actions import ProductActionGateway
 from nutmeg.product.operator_actions import OperatorActionService
-from nutmeg.product.operator_contracts import AuditDeploymentStep
+from nutmeg.product.operator_contracts import (
+    AuditDeploymentStep,
+    ConfirmationStep,
+    OperatorLane,
+)
 from nutmeg.product.operator_tokens import OperatorCommandKind, OperatorSnapshotTokenCodec
 from nutmeg.product.operator_workers import CandidateGenerationWorker, audit_current_candidate
 from tests.ontology.operator.test_candidate_actions import (
@@ -48,12 +52,16 @@ def _replay_workspace(tmp_path: Path) -> Path:
     return workspace
 
 
-def _selected_fixture(tmp_path: Path):
+def _selected_fixture(tmp_path: Path, *, judgment_candidate=None):
     fixture, queries = _ready_queries(tmp_path)
     requested = fixture.judgment.decision_actions.request_candidate_generation(
         _generation_request(fixture)
     )
-    _generate(fixture, request_id=requested.result_refs[0].object_id)
+    _generate(
+        fixture,
+        request_id=requested.result_refs[0].object_id,
+        judgment_candidate=judgment_candidate,
+    )
     comparison = queries.task("jczq:2026-09-04", as_of=NOW)
     candidate_set = next(
         item for item in comparison.step.candidate_sets if not item.comparison_only
@@ -192,6 +200,7 @@ def test_isolated_artifact_approval_public_api_replay(tmp_path: Path) -> None:
         "task_key": "jczq:2026-09-04",
         "source_high_watermark": None,
         "projection_high_watermark": None,
+        "navigation_href": "/operator-next/jczq/2026-09-04",
     }
     draft = queries.task(
         "jczq:2026-09-04",
@@ -212,6 +221,19 @@ def test_isolated_artifact_approval_public_api_replay(tmp_path: Path) -> None:
     )
 
     assert approved.status_code == 200, approved.text
+    projected = queries.task_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        as_of=NOW + timedelta(seconds=2),
+    )
+    artifact_items = [
+        item for item in projected.work_items if item.scope_kind == "artifact"
+    ]
+    assert len(artifact_items) == 1
+    assert approved.json()["navigation_href"] == (
+        f"/operator-next/jczq/2026-09-04/"
+        f"{artifact_items[0].work_item_key}"
+    )
     with OntologyUnitOfWork(fixture.judgment.engine) as uow:
         assert uow.tickets.count_batches() == 1
         assert uow.tickets.count_artifacts() == 1
@@ -255,10 +277,21 @@ def test_isolated_no_ticket_exact_cutoff_public_api_replay(tmp_path: Path) -> No
         ),
     )
     assert approved.status_code == 200, approved.text
-    ready = queries.task("jczq:2026-09-04", as_of=clock[0])
-    assert isinstance(ready.step, AuditDeploymentStep)
-    assert ready.step.mode == "request_confirmation"
-    assert ready.step.no_ticket_command_token is not None
+    task = queries.task_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        as_of=clock[0],
+    )
+    artifacts = [item for item in task.work_items if item.scope_kind == "artifact"]
+    assert len(artifacts) == 1
+    ready = queries.work_item_v2(
+        OperatorLane.JCZQ,
+        "2026-09-04",
+        artifacts[0].work_item_key,
+        as_of=clock[0],
+    )
+    assert isinstance(ready.step, ConfirmationStep)
+    assert ready.no_ticket is not None
 
     with OntologyUnitOfWork(fixture.judgment.engine) as uow:
         artifact_id = uow.connection.execute(
@@ -276,12 +309,12 @@ def test_isolated_no_ticket_exact_cutoff_public_api_replay(tmp_path: Path) -> No
         json=_command(
             ready.step,
             "record_no_ticket",
-            expected_snapshot_token=ready.step.no_ticket_command_token,
+            expected_snapshot_token=ready.no_ticket.command_token,
             reason_code="operator_discretion",
             reason_basis="operator_judgment",
             reason_text="Jun explicitly closes the still-open scope.",
             rule_tokens=[],
-            comparison_candidate_token=ready.step.comparison_candidate_token,
+            comparison_candidate_token=ready.no_ticket.comparison_candidate_token,
         ),
     )
 

@@ -1,0 +1,70 @@
+{% extends "operator/workbench_layout.html" %}
+{% block title %}技术审计 · Nutmeg{% endblock %}
+{% block content %}
+  <header class="page-heading task-heading">
+    <a class="back-link" href="{{ audit_envelope.return_href }}">返回{{ audit_envelope.work_item_label }}</a>
+    <h1>技术审计</h1>
+    <p>{{ audit_envelope.title }}</p>
+  </header>
+
+  <section aria-labelledby="audit-identity-title">
+    <h2 id="audit-identity-title">对象身份</h2>
+    <dl>
+      <dt>任务</dt>
+      <dd><code>{{ audit_envelope.task_id }}</code></dd>
+      <dt>工作项</dt>
+      <dd><code>{{ audit_envelope.work_item_id }}</code></dd>
+      <dt>任务快照</dt>
+      <dd><code>{{ audit_envelope.task_snapshot_hash }}</code></dd>
+    </dl>
+  </section>
+
+  {% if audit_envelope.audit_override_ticket_batch_token %}
+    <section aria-labelledby="audit-override-title">
+      <h2 id="audit-override-title">ERROR 外部裁决</h2>
+      <p>此命令只适用于当前批次。仍需提供本次审计的 legs 文件，并由 Jun 在终端显式执行。</p>
+      <code>uv run nutmeg decision-audit-legs --legs-file &lt;current-legs-file&gt; --user-override --ticket-batch-token {{ audit_envelope.audit_override_ticket_batch_token }}</code>
+    </section>
+  {% endif %}
+
+  <section aria-labelledby="audit-lineage-title">
+    <h2 id="audit-lineage-title">技术血缘</h2>
+    <ol>
+      {% for item in audit_envelope.lineage %}
+        <li>
+          <strong>{{ item.relation }} · {{ item.object_type }}</strong>
+          <div><code>{{ item.object_id }}</code></div>
+          {% if item.revision_id %}<div>修订 <code>{{ item.revision_id }}</code></div>{% endif %}
+          {% if item.content_hash %}<div>内容哈希 <code>{{ item.content_hash }}</code></div>{% endif %}
+          {% if item.created_by_action_id %}
+            <div>创建 Action <code>{{ item.created_by_action_id }}</code></div>
+          {% endif %}
+          {% if item.source_payload_location %}
+            <div>来源位置 <code>{{ item.source_payload_location }}</code></div>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <section aria-labelledby="audit-projection-title">
+    <h2 id="audit-projection-title">投影水位</h2>
+    <p>{{ audit_envelope.projection.projection_name }} · {{ audit_envelope.projection.state }}</p>
+    <dl>
+      <dt>Action 当前水位</dt>
+      <dd>{{ audit_envelope.projection.current_action_high_watermark }}</dd>
+      {% if audit_envelope.projection.source_action_high_watermark is not none %}
+        <dt>投影来源水位</dt>
+        <dd>{{ audit_envelope.projection.source_action_high_watermark }}</dd>
+      {% endif %}
+      {% if audit_envelope.projection.projection_version %}
+        <dt>投影版本</dt>
+        <dd><code>{{ audit_envelope.projection.projection_version }}</code></dd>
+      {% endif %}
+      {% if audit_envelope.projection.built_at %}
+        <dt>构建时间</dt>
+        <dd>{{ audit_envelope.projection.built_at.strftime("%Y-%m-%d %H:%M:%S") }}</dd>
+      {% endif %}
+    </dl>
+  </section>
+{% endblock %}

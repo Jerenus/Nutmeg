@@ -1,0 +1,287 @@
+{% set primary_command = namespace(used=false) %}
+<div class="step-heading">
+  <span class="step-kicker">赛后复盘</span>
+  <h1>{{ task.step.title }}</h1>
+  {% if task.step.review_kind == "operational_data_availability" %}
+    <p>本期没有形成可结算票据，复盘数据可用性与流程终点。</p>
+  {% else %}
+    <p>正式赛果与结算已固定，逐项完成预测、资金与治理核对。</p>
+  {% endif %}
+</div>
+
+<section class="workbench-section" aria-labelledby="forecast-truth-title">
+  <div class="section-heading">
+    <h2 id="forecast-truth-title">预测真值</h2>
+    <span>{{ task.step.forecast_truth|length }} 项</span>
+  </div>
+  {% if task.step.forecast_truth %}
+    <div class="review-item-list">
+      {% for forecast in task.step.forecast_truth %}
+        <article class="review-item-row">
+          <header>
+            <strong>{{ forecast.title }}</strong>
+            <span>
+              {% if forecast.state == "pending" %}待判定
+              {% elif forecast.state == "hit" %}命中
+              {% elif forecast.state == "miss" %}未命中
+              {% else %}不适用{% endif %}
+            </span>
+          </header>
+          <dl class="review-facts">
+            <div><dt>证伪条件</dt><dd>{{ forecast.falsifier }}</dd></div>
+          </dl>
+          {% if forecast.state == "pending" and forecast.grade_command_token and not read_only %}
+            <form class="operator-form"
+                  {% if not primary_command.used %}data-primary-command="true"{% endif %}
+                  data-action="grade-prediction-v2"
+                  data-task-key="{{ task.selected.task_id }}"
+                  data-command-token="{{ forecast.grade_command_token }}"
+                  data-prediction-token="{{ forecast.prediction_review_token }}">
+              <fieldset class="segmented-control">
+                <legend>判定</legend>
+                <label><input type="radio" name="outcome" value="hit" required> 命中</label>
+                <label><input type="radio" name="outcome" value="miss"> 未命中</label>
+                <label><input type="radio" name="outcome" value="na"> 不适用</label>
+              </fieldset>
+              <label>依据<textarea name="reason" rows="2" required></textarea></label>
+              <button class="{% if not primary_command.used %}primary-action{% else %}secondary-command{% endif %}"
+                      type="submit">提交预测判定</button>
+            </form>
+            {% set primary_command.used = true %}
+          {% endif %}
+        </article>
+      {% endfor %}
+  </div>
+  {% else %}
+    <p class="waiting-note">本期没有待核对的预注册预测。</p>
+  {% endif %}
+</section>
+
+<section class="workbench-section" aria-labelledby="money-ledger-title">
+  <div class="section-heading"><h2 id="money-ledger-title">资金账</h2></div>
+  {% if task.step.money_ledger.state == "not_applicable" %}
+    <p class="waiting-note">本期没有实际出票，资金账不适用。</p>
+  {% else %}
+    <dl class="placement-summary">
+      <div><dt>投入</dt><dd>¥{{ "%.2f"|format(task.step.money_ledger.stake_minor / 100) }}</dd></div>
+      <div><dt>返奖</dt><dd>¥{{ "%.2f"|format(task.step.money_ledger.payout_minor / 100) }}</dd></div>
+      <div>
+        <dt>盈亏</dt>
+        <dd>
+          {% if task.step.money_ledger.pnl_minor >= 0 %}
+            +¥{{ "%.2f"|format(task.step.money_ledger.pnl_minor / 100) }}
+          {% else %}
+            -¥{{ "%.2f"|format((-task.step.money_ledger.pnl_minor) / 100) }}
+          {% endif %}
+        </dd>
+      </div>
+      <div><dt>票数</dt><dd>{{ task.step.money_ledger.ticket_count }}</dd></div>
+    </dl>
+    {% if task.step.money_ledger.state == "corrected" %}
+      <p class="waiting-note">当前金额来自最新结算更正。</p>
+    {% endif %}
+  {% endif %}
+</section>
+
+<section class="workbench-section" aria-labelledby="intervention-quality-title">
+  <div class="section-heading"><h2 id="intervention-quality-title">干预质量</h2></div>
+  {% set intervention = task.step.intervention_quality %}
+  {% if intervention.disposition == "undecided" %}
+    <p class="waiting-note">尚未登记本次复盘是否影响治理记分牌。</p>
+  {% else %}
+    <dl class="review-facts">
+      <div>
+        <dt>治理处置</dt>
+        <dd>{% if intervention.disposition == "effect_required" %}需要更新{% else %}无影响{% endif %}</dd>
+      </div>
+      <div><dt>依据</dt><dd>{{ intervention.reason }}</dd></div>
+      {% if intervention.required_metric_keys %}
+        <div><dt>治理指标</dt><dd>{{ intervention.required_metric_keys|join("、") }}</dd></div>
+      {% endif %}
+    </dl>
+  {% endif %}
+
+  {% if not read_only and intervention.effect_command_token %}
+    <form class="operator-form"
+          {% if not primary_command.used %}data-primary-command="true"{% endif %}
+          data-action="record-scoreboard-effect"
+          data-task-key="{{ task.selected.task_id }}"
+          data-command-token="{{ intervention.effect_command_token }}"
+          data-review-token="{{ intervention.review_token }}">
+      <fieldset class="segmented-control">
+        <legend>记分牌影响</legend>
+        <label><input type="radio" name="disposition" value="effect_required" required> 需要更新</label>
+        <label><input type="radio" name="disposition" value="no_effect"> 无影响</label>
+      </fieldset>
+      <label>指标键<input name="metric_keys" autocomplete="off" placeholder="多个指标用逗号分隔"></label>
+      <label>依据<textarea name="reason" rows="2" required></textarea></label>
+      <button class="{% if not primary_command.used %}primary-action{% else %}secondary-command{% endif %}" type="submit">
+        {% if intervention.disposition == "undecided" %}登记治理处置{% else %}调整治理处置{% endif %}
+      </button>
+    </form>
+    {% set primary_command.used = true %}
+  {% endif %}
+
+  {% if intervention.disposition == "effect_required" %}
+    {% for metric_key in intervention.required_metric_keys %}
+      {% if metric_key not in intervention.linked_metric_keys and not read_only and intervention.observation_command_token %}
+        <form class="operator-form review-observation-form"
+              {% if not primary_command.used %}data-primary-command="true"{% endif %}
+              data-action="record-scoreboard-observation"
+              data-task-key="{{ task.selected.task_id }}"
+              data-command-token="{{ intervention.observation_command_token }}"
+              data-review-token="{{ intervention.review_token }}"
+              data-disposition-token="{{ intervention.disposition_token }}"
+              data-metric-key="{{ metric_key }}">
+          <h3>{{ metric_key }}</h3>
+          <label>累计值<input name="tally" required placeholder="例如 1/3"></label>
+          <label>观察说明<textarea name="detail" rows="2" required></textarea></label>
+          <div class="form-grid">
+            <label>分子<input name="numerator_decimal" inputmode="decimal"></label>
+            <label>分母<input name="denominator_decimal" inputmode="decimal"></label>
+            <label>单值<input name="value_decimal" inputmode="decimal"></label>
+            <label>单位<input name="unit" value="count" required></label>
+          </div>
+          <label>状态
+            <select name="status" required>
+              <option value="formal_manual">正式人工观察</option>
+              <option value="probation">试用观察</option>
+              <option value="active">生效观察</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>证据</legend>
+            {% for evidence in intervention.evidence_options %}
+              <label>
+                <input type="checkbox" name="evidence_ref_token" value="{{ evidence.token }}" checked>
+                {{ evidence.label }}
+              </label>
+            {% endfor %}
+          </fieldset>
+          <button class="{% if not primary_command.used %}primary-action{% else %}secondary-command{% endif %}"
+                  type="submit">提交治理观察</button>
+        </form>
+        {% set primary_command.used = true %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+</section>
+
+<section class="workbench-section" aria-labelledby="review-history-title">
+  <div class="section-heading"><h2 id="review-history-title">审计记录</h2></div>
+
+  <div class="section-heading"><h3>本期裁决</h3></div>
+  {% if task.step.adjudication_history %}
+    <div class="review-item-list">
+      {% for item in task.step.adjudication_history %}
+        <article class="review-item-row">
+          <header>
+            <strong>
+              {% if item.decision == "approve" %}采用
+              {% elif item.decision == "reject" %}拒绝
+              {% elif item.decision == "override" %}覆盖
+              {% elif item.decision == "lock" %}锁定
+              {% elif item.decision == "withdraw" %}撤回
+              {% else %}已裁决{% endif %}
+            </strong>
+            <span>{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+          </header>
+          <dl class="review-facts">
+            <div><dt>依据</dt><dd>{{ item.reason }}</dd></div>
+            <div>
+              <dt>证据处理</dt>
+              <dd>拒绝证据 {{ item.rejected_evidence_count }} 项</dd>
+            </div>
+          </dl>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="waiting-note">本期尚无裁决记录。</p>
+  {% endif %}
+
+  <div class="section-heading"><h3>治理观察</h3></div>
+  {% if task.step.scoreboard_observation_history %}
+    <div class="review-item-list">
+      {% for item in task.step.scoreboard_observation_history %}
+        <article class="review-item-row">
+          <header>
+            <strong>{{ item.metric_key }}</strong>
+            <span>
+              {% if item.status == "formal_manual" %}正式人工观察
+              {% elif item.status == "probation" %}试用观察
+              {% elif item.status == "active" %}生效观察
+              {% else %}已记录{% endif %}
+            </span>
+          </header>
+          <dl class="review-facts">
+            <div><dt>累计</dt><dd>{{ item.tally }}</dd></div>
+            <div><dt>说明</dt><dd>{{ item.detail }}</dd></div>
+            {% if item.numerator_decimal is not none %}
+              <div><dt>分子</dt><dd>{{ item.numerator_decimal }}</dd></div>
+            {% endif %}
+            {% if item.denominator_decimal is not none %}
+              <div><dt>分母</dt><dd>{{ item.denominator_decimal }}</dd></div>
+            {% endif %}
+            {% if item.value_decimal is not none %}
+              <div><dt>单值</dt><dd>{{ item.value_decimal }}</dd></div>
+            {% endif %}
+            {% if item.unit %}<div><dt>单位</dt><dd>{{ item.unit }}</dd></div>{% endif %}
+            <div>
+              <dt>生效时间</dt>
+              <dd>{{ item.effective_at.strftime("%Y-%m-%d %H:%M") }}</dd>
+            </div>
+          </dl>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="waiting-note">本期尚无已绑定的治理观察。</p>
+  {% endif %}
+</section>
+
+<section class="workbench-section" aria-labelledby="completion-gates-title">
+  <div class="section-heading"><h2 id="completion-gates-title">完成条件</h2></div>
+  <ol class="review-gate-list">
+    {% for gate in task.step.completion_gates %}
+      <li data-gate-state="{{ gate.state }}">
+        <strong>{{ gate.label }}</strong>
+        <span>{{ gate.detail }}</span>
+      </li>
+    {% endfor %}
+  </ol>
+  <a class="secondary-link" href="{{ task.step.maintenance_href }}">打开外部维护与恢复</a>
+</section>
+
+{% if intervention.disposition == "effect_required" and not read_only and intervention.completion_command_token %}
+  <section class="workbench-section" aria-labelledby="shadow-review-title">
+    <div class="section-heading"><h2 id="shadow-review-title">影子核对</h2></div>
+    {% if intervention.shadow_options %}
+      <form class="operator-form"
+            {% if not primary_command.used %}data-primary-command="true"{% endif %}
+            data-action="request-scoreboard-review-completion"
+            data-task-key="{{ task.selected.task_id }}"
+            data-command-token="{{ intervention.completion_command_token }}"
+            data-review-token="{{ intervention.review_token }}"
+            data-disposition-token="{{ intervention.disposition_token }}">
+        <fieldset>
+          <legend>选择核对记录</legend>
+          {% for option in intervention.shadow_options %}
+            <label>
+              <input type="radio" name="shadow_review_token" value="{{ option.token }}"
+                     {% if option.state != "ready" %}disabled{% else %}required{% endif %}>
+              {{ option.label }}{% if option.state != "ready" %} · 尚不满足{% endif %}
+            </label>
+          {% endfor %}
+        </fieldset>
+        <button class="{% if not primary_command.used %}primary-action{% else %}secondary-command{% endif %}"
+                type="submit">提交复盘完成请求</button>
+      </form>
+      {% set primary_command.used = true %}
+    {% else %}
+      <p class="waiting-note">尚无可选择的影子核对记录。</p>
+    {% endif %}
+  </section>
+{% endif %}
+
+{% if read_only %}<p class="waiting-note">只读模式不会提交复盘动作。</p>{% endif %}

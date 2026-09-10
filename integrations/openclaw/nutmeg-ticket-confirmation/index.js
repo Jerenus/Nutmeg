@@ -3,9 +3,71 @@ import path from "node:path";
 
 
 const PLUGIN_ID = "nutmeg-ticket-confirmation";
+const PLUGIN_NAME = "Nutmeg Ticket Confirmation";
+const PLUGIN_DESCRIPTION =
+  "Routes owner Telegram placement attestations to the Nutmeg ontology.";
 const CONTRACT_VERSION = "openclaw-telegram-interactive-v1";
 const MAX_OUTPUT_BYTES = 16_384;
 const BRIDGE_TIMEOUT_MS = 10_000;
+// Authoring metadata is zero-tool by design: callbacks must never become model-callable.
+const TOOL_PLUGIN_METADATA_SYMBOL = Symbol.for(
+  "openclaw.plugin-sdk.tool-plugin.metadata",
+);
+const CONFIG_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "projectRoot",
+    "accountId",
+    "ownerInstanceId",
+    "allowedChatIds",
+    "allowedSenderIds",
+  ],
+  properties: {
+    projectRoot: {
+      type: "string",
+      minLength: 1,
+    },
+    accountId: {
+      const: "nutmeg",
+    },
+    ownerInstanceId: {
+      type: "string",
+      minLength: 1,
+      maxLength: 128,
+    },
+    allowedChatIds: {
+      type: "array",
+      minItems: 1,
+      uniqueItems: true,
+      items: {
+        type: "string",
+        pattern: "^-?[0-9]+$",
+      },
+    },
+    allowedSenderIds: {
+      type: "array",
+      minItems: 1,
+      uniqueItems: true,
+      items: {
+        type: "string",
+        pattern: "^[0-9]+$",
+      },
+    },
+    heartbeatIntervalSeconds: {
+      type: "integer",
+      minimum: 10,
+      maximum: 60,
+      default: 30,
+    },
+    leaseSeconds: {
+      type: "integer",
+      minimum: 30,
+      maximum: 300,
+      default: 90,
+    },
+  },
+};
 
 
 function requireConfig(raw) {
@@ -182,9 +244,9 @@ export function createNutmegTicketConfirmationPlugin(dependencies = {}) {
   const runBridge = dependencies.runBridge ?? defaultRunBridge;
   const setIntervalFn = dependencies.setIntervalFn ?? setInterval;
   const clearIntervalFn = dependencies.clearIntervalFn ?? clearInterval;
-  return {
+  const plugin = {
     id: PLUGIN_ID,
-    name: "Nutmeg Ticket Confirmation",
+    name: PLUGIN_NAME,
     register(api) {
       if (api.registrationMode !== "full") return;
       const config = requireConfig(api.pluginConfig);
@@ -284,6 +346,18 @@ export function createNutmegTicketConfirmationPlugin(dependencies = {}) {
       });
     },
   };
+  Object.defineProperty(plugin, TOOL_PLUGIN_METADATA_SYMBOL, {
+    value: {
+      id: PLUGIN_ID,
+      name: PLUGIN_NAME,
+      description: PLUGIN_DESCRIPTION,
+      activation: { onStartup: false },
+      configSchema: CONFIG_SCHEMA,
+      tools: [],
+    },
+    enumerable: false,
+  });
+  return plugin;
 }
 
 
