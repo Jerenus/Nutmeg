@@ -171,4 +171,77 @@ def create_decision_app(*, store: DecisionStore, output_dir) -> FastAPI:
             request, "decision/ledger.html",
             {"title": "账本", "settlements": [s.to_dict() for s in store.load(Settlement)]})
 
+    # ── 实票登记（「没入账 = 没打」的界面入口） ──────────────────────────
+    # 数据根在 output_dir 的上一级:betslips.jsonl 与 scoreboard.json 同级,
+    # 因为票面跨渠道(jczq/renjiu/shengfucai),不属于任何单一渠道目录。
+    def _data_dir() -> Path:
+        return Path(output_dir).parent
+
+    def _betslip_view():
+        from nutmeg.decision.betslip import load_slips
+
+        zh = {"jczq": "竞彩", "renjiu": "任九", "shengfucai": "胜负彩"}
+        slips = load_slips(_data_dir())
+        rows = []
+        for s in sorted(slips, key=lambda x: (x.placed_at, x.slip_id), reverse=True):
+            row = s.to_dict()
+            row["channel_zh"] = zh.get(s.channel, s.channel)
+            rows.append(row)
+        return {
+            "title": "实票登记",
+            "slips": rows,
+            "total_stake": sum(s.stake_yuan for s in slips if s.purchased),
+            "missing_scheme": sum(1 for s in slips if s.purchased and not s.scheme_no),
+        }
+
+    @app.get("/betslips")
+    def betslips_page(request: Request):
+        return templates.TemplateResponse(
+            request, "decision/betslips.html", _betslip_view())
+
+    @app.post("/action/register-betslip")
+    def register_betslip(payload: dict = Body(...)) -> Any:  # noqa: B008
+        from nutmeg.decision.betslip import (
+            BetSlip,
+            BetslipError,
+            SlipLeg,
+            parse_faces_row,
+            register_slip,
+        )
+
+        try:
+            channel = str(payload.get("channel") or "renjiu")
+            if channel == "jczq":
+                # 竞彩串关有过关方式/让球线/多市场,表单撑不住——显式拒绝而不是半途登记
+                # 一张缺腿的票:半张票入账比不入账更糟,复盘时看不出它是残缺的。
+                raise BetslipError("竞彩串关请用 CLI：nutmeg betslip register --channel jczq")
+            faces = parse_faces_row(str(payload.get("faces") or ""))
+            fair_path = Path(output_dir).parent / "zucai" / \
+                f"{payload.get('issue')}-prep-revision.json"
+            fair: dict = {}
+            if fair_path.exists():
+                import json as _json
+                records = _json.loads(fair_path.read_text("utf-8")).get("records") or {}
+                fair = {k: v.get("fair_had") for k, v in records.items()}
+            legs = [
+                SlipLeg(
+                    key=no, market="had",
+                    selections=tuple(
+                        {"3": "home", "1": "draw", "0": "away"}[c] for c in f),
+                    fair=fair.get(no))
+                for no, f in sorted(faces.items(), key=lambda kv: int(kv[0]))
+            ]
+            slip = BetSlip(
+                slip_id=str(payload.get("slip_id") or "").strip(), channel=channel,
+                placed_at=str(payload.get("placed_at") or "").strip(), legs=legs,
+                multiplier=int(payload.get("multiplier") or 1),
+                issue=str(payload.get("issue") or "").strip(),
+                scheme_no=str(payload.get("scheme_no") or "").strip(),
+                purchased=not payload.get("trial"),
+                note=str(payload.get("note") or "").strip(), faces=faces)
+            return {"ok": True, "summary": register_slip(_data_dir(), slip)}
+        except (BetslipError, KeyError, ValueError) as error:
+            # 登记被拒要说清是哪一条纪律拒的——静默失败会让人以为票已入账。
+            return {"ok": False, "error": str(error)}
+
     return app

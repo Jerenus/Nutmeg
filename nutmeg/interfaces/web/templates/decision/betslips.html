@@ -1,0 +1,96 @@
+{% extends "decision/layout.html" %}
+{% block body %}
+<div class="page">
+  <h1 class="serif">实票登记</h1>
+  <p class="lede">
+    登记的是<strong>已经买了的票</strong>——倍数、方案号、试玩/实购、混合过关。
+    宪法第 4 条：<strong>没入账 = 没打</strong>；账空则刹车条款（连续两期全灭→减半）失去输入。
+  </p>
+  <nav class="nav">
+    <a href="/">← 判读工作台</a><a href="/objects">对象浏览器</a>
+    <a href="/ledger">结算账本</a><a href="/calibration">校准台</a>
+  </nav>
+
+  <p id="slipmsg" class="lede" hidden></p>
+
+  {% if missing_scheme %}
+  <p class="warn">⚠️ {{ missing_scheme }} 张票缺方案号——方案号缺失的票在复盘里无法与实票对账。</p>
+  {% endif %}
+
+  <h2>已登记（实购 ¥{{ "{:,}".format(total_stake) }}）</h2>
+  {% if slips %}
+  <table class="otable">
+    <thead><tr>
+      <th>票号</th><th>渠道</th><th>期/日</th><th>注数</th><th>倍数</th>
+      <th>票价</th><th>P(全对)</th><th>方案号</th><th>备注</th>
+    </tr></thead>
+    <tbody>
+    {% for s in slips %}
+      <tr{% if not s.purchased %} class="dev"{% endif %}>
+        <td>{{ s.slip_id }}{% if not s.purchased %} <span class="tag">试玩</span>{% endif %}</td>
+        <td>{{ s.channel_zh }}</td>
+        <td class="num">{{ s.issue or s.placed_at }}</td>
+        <td class="num">{{ s.notes }}</td>
+        <td class="num">×{{ s.multiplier }}</td>
+        <td class="num">¥{{ "{:,}".format(s.stake_yuan) }}</td>
+        <td class="num">{% if s.hit_probability is not none %}{{ "%.2f"|format(s.hit_probability * 100) }}%{% else %}—{% endif %}</td>
+        <td>{{ s.scheme_no or "⚠️待补" }}</td>
+        <td>{{ s.note }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">尚无登记票面——买了票就来这里记一笔，或跑 <code>nutmeg betslip register</code>。</p>
+  {% endif %}
+
+  <h2>登记一张票</h2>
+  <form class="fgroup" id="slipform" onsubmit="return registerSlip(event)">
+    <label class="fglabel">票号 <input name="slip_id" required placeholder="26122-T1"></label>
+    <label class="fglabel">渠道
+      <select name="channel">
+        <option value="renjiu">任九</option>
+        <option value="shengfucai">胜负彩</option>
+        <option value="jczq">竞彩（串关走 CLI）</option>
+      </select>
+    </label>
+    <label class="fglabel">下单日 <input name="placed_at" required placeholder="2026-09-11"></label>
+    <label class="fglabel">期号 <input name="issue" placeholder="26122"></label>
+    <label class="fglabel">倍数 <input name="multiplier" type="number" min="1" value="1"></label>
+    <label class="fglabel">方案号 <input name="scheme_no" placeholder="留空会标⚠️待补"></label>
+    <label class="fglabel">票面
+      <input name="faces" required size="52"
+             placeholder="位置式 14 token：310 10 0 3 … （* = 未选）；或点名式 2·310 3·10">
+    </label>
+    <label class="fglabel">备注 <input name="note" size="40"></label>
+    <label class="fglabel"><input type="checkbox" name="trial" value="1"> 试玩虚拟方案（不计入实购净值）</label>
+    <button class="btn" type="submit">登记</button>
+  </form>
+  <p class="lede">
+    票面解析器拒绝含糊输入：<code>31</code> 与 <code>30</code> 是两个面，
+    位置式少一个 token 就整列错位——所以少 token 会报错而不是猜。
+  </p>
+</div>
+<script>
+function registerSlip(ev) {
+  ev.preventDefault();
+  const f = document.getElementById('slipform');
+  const body = {};
+  for (const el of f.elements) {
+    if (!el.name) continue;
+    body[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+  }
+  const msg = document.getElementById('slipmsg');
+  fetch('/action/register-betslip', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(r => r.json()).then(d => {
+    msg.hidden = false;
+    msg.className = d.ok ? 'lede' : 'warn';
+    msg.textContent = d.ok ? '✅ ' + d.summary : '❌ 登记被拒：' + d.error;
+    if (d.ok) setTimeout(() => location.reload(), 900);
+  });
+  return false;
+}
+</script>
+{% endblock %}
