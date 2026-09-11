@@ -67,3 +67,22 @@ def test_ledger_summary_nets(tmp_path):
         "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", "utf-8")
     txt = ledger_summary(tmp_path)
     assert "+200" in txt
+
+
+def test_ledger_summary_excludes_trial_plans_from_net(tmp_path):
+    """体验/试玩方案登记但不进净值。
+
+    混进合计会污染 `user_exercise_record`，而那条记分正是刹车条款
+    （连续两期全灭→减半）的输入——一张没花钱的票不该影响该不该减注。
+    """
+    from nutmeg.decision.zucai_ticket import ledger_add, ledger_summary
+
+    ledger_add(tmp_path, {"issue": "26122", "kind": "任九", "stake_yuan": 576,
+                          "tickets": 288, "code": "…", "note": "实购"})
+    ledger_add(tmp_path, {"issue": "26122", "kind": "任九", "stake_yuan": 162,
+                          "tickets": 81, "code": "…", "note": "体验方案",
+                          "trial": True})
+    out = ledger_summary(tmp_path, issue="26122")
+    assert "投入 ¥576" in out
+    assert "体验方案 ¥162 不计" in out
+    assert "[体验方案·不计净值]" in out

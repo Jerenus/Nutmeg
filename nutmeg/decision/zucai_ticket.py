@@ -101,11 +101,20 @@ def ledger_summary(zucai_dir, *, issue: str | None = None) -> str:
         rows = [r for r in rows if str(r.get("issue")) == str(issue)]
     out = []
     stake = prize = 0.0
+    trial_stake = 0.0
     for r in rows:
-        stake += r.get("stake_yuan") or 0
-        prize += r.get("prize_yuan") or 0
+        # 体验/试玩方案登记但**不进净值**：混进合计会污染 user_exercise_record，
+        # 而那条记分正是刹车条款（连续两期全灭→减半）的输入。
+        trial = bool(r.get("trial"))
+        if trial:
+            trial_stake += r.get("stake_yuan") or 0
+        else:
+            stake += r.get("stake_yuan") or 0
+            prize += r.get("prize_yuan") or 0
         st = r.get("settled_at") or "未结"
         out.append(f"  {r.get('issue')} {r.get('kind')} ¥{r.get('stake_yuan'):>6,} "
-                   f"hits={r.get('hits')} 派奖 ¥{r.get('prize_yuan') or 0:,.0f} ({st})")
-    out.append(f"合计: 投入 ¥{stake:,.0f} 派奖 ¥{prize:,.0f} 净 {prize-stake:+,.0f}")
+                   f"hits={r.get('hits')} 派奖 ¥{r.get('prize_yuan') or 0:,.0f} ({st})"
+                   + ("  [体验方案·不计净值]" if trial else ""))
+    tail = f"（另有体验方案 ¥{trial_stake:,.0f} 不计）" if trial_stake else ""
+    out.append(f"合计: 投入 ¥{stake:,.0f} 派奖 ¥{prize:,.0f} 净 {prize-stake:+,.0f}{tail}")
     return "\n".join(out)
