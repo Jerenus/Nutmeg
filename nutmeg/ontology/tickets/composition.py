@@ -65,7 +65,11 @@ def compose_batch(
                 message=finding.message,
                 since=finding.since,
             )
+            # INFO 是随票打印的参考表（对位机制 / 排面分级 / ttg 锚），不是治理级 finding：
+            # 票批审计契约只登记 WARN 与 ERROR，INFO 混进来会让整张票批验证失败。
+            # 要读参考表走 `decision-audit-legs` 的输出，不走票批 findings。
             for finding in findings
+            if finding.level != "INFO"
         ),
     )
 

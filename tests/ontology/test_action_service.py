@@ -255,3 +255,37 @@ def test_batch_handler_failure_rolls_back_all_actions_business_rows_and_outbox(
         )
 
     assert _counts(engine) == (0, 0, 0)
+
+
+def test_failed_attempt_does_not_block_a_corrected_retry(tmp_path: Path) -> None:
+    """失败的尝试不得阻挡对它的修正。
+
+    出生事故 2026-09-11：scoreboard 镜像因缺 `--supersedes` 失败，随后每一次**带上**
+    supersedes 的重试都被判为 "idempotency key was reused with a different request"——
+    因为请求哈希检查排在 FAILED 检查之前。结果是唯一能通过的办法变成"改 detail 扰动哈希"，
+    也就是**为了绕过幂等而污染业务内容**。FAILED 行是审计记录，不是对这把键的占有。
+    """
+    service, engine = _service(tmp_path)
+
+    def failing(_uow, _command):
+        raise RuntimeError("missing supersedes")
+
+    with pytest.raises(RuntimeError, match="missing supersedes"):
+        service.execute(_command({"value": "one"}), failing)
+
+    corrected = service.execute(
+        _command({"value": "one", "supersedes": "sbo-1"}),
+        lambda _uow, _command: (ObjectRef("probe", "fixed"),),
+    )
+    assert corrected.status is ActionStatus.COMMITTED
+    with engine.connect() as connection:
+        record = ActionRepository(connection).get_by_idempotency_key("probe:one")
+        assert record is not None and record.status is ActionStatus.COMMITTED
+
+
+def test_committed_outcome_still_blocks_a_different_request(tmp_path: Path) -> None:
+    """已提交的结果仍然占据这把键——放宽只针对 FAILED，不动幂等本身。"""
+    service, _engine = _service(tmp_path)
+    service.execute(_command(), lambda _uow, _command: ())
+    with pytest.raises(IdempotencyConflictError, match="probe:one"):
+        service.execute(_command({"value": "changed"}), lambda _uow, _command: ())

@@ -21,6 +21,9 @@ _ZUCAI_SCHEDULE_SOURCE_FILE_OPTION = _cli.typer.Option(
 _ZUCAI_ODDS_SOURCE_FILE_OPTION = _cli.typer.Option(
     None, "--odds-source-file", help="赔率源文件(离线;省略则需 --live-fetch)")
 _LEGS_AUDIT_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="票面结构 JSON")
+_WITH_LEGS_FILE_OPTION = _cli.typer.Option(
+    [], "--with-legs-file",
+    help="同期其它票面文件；用于 C15 多票共享被排面检查（可重复）")
 _AUDIT_DATA_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
 _DEPLOYMENT_GATE_FILE_OPTION = _cli.typer.Option(
     ..., "--gate-file", help="部署门候选、注金帽与历史窗口 JSON"
@@ -49,7 +52,7 @@ def decision_fetch(
 def decision_fetch_zucai(
     issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26091"),
     zucai_dir: Path = _ZUCAI_DIR_OPTION,
-    slot: str = _cli.typer.Option("afternoon", "--slot", help="afternoon 或 revision"),
+    slot: str = _cli.typer.Option("afternoon", "--slot", help="morning | afternoon | revision"),
     live_fetch: bool = _cli.typer.Option(False, "--live-fetch"),
     schedule_source_url: str | None = _cli.typer.Option(None, "--schedule-source-url"),
     schedule_source_file: Path | None = _ZUCAI_SCHEDULE_SOURCE_FILE_OPTION,
@@ -456,7 +459,8 @@ def decision_web(
 def zucai_prep(
     run_date: str | None = _cli.typer.Option(None, "--run-date", help="YYYY-MM-DD,默认今天"),
     slot: str = _cli.typer.Option(
-        "afternoon", "--slot", help="afternoon(14:00 备料) 或 revision(18:30 位移复核)"),
+        "afternoon", "--slot",
+        help="morning(11:00 早刷新) | afternoon(14:00 备料) | revision(18:30 复核)"),
     issue: str | None = _cli.typer.Option(
         None, "--issue", help="强制期号(手动补跑;省略则自动探测在售期)"),
     zucai_dir: Path = _ZUCAI_DIR_OPTION,
@@ -498,6 +502,7 @@ def decision_audit_legs(
         "--ticket-batch-token",
         help="Web 工位签发的当前票批次 token；ERROR override 必填",
     ),
+    with_legs_file: list[Path] = _WITH_LEGS_FILE_OPTION,
     data_dir: Path = _AUDIT_DATA_DIR_OPTION,
 ) -> None:
     """出票前结构校验:把「用新理由撤掉结构保险」变成非零退出码。
@@ -515,6 +520,7 @@ def decision_audit_legs(
     from nutmeg.decision.legs_audit import (
         audit_legs,
         audit_prescription_deviations,
+        audit_shared_exclusions,
         format_findings,
         has_blocking,
         legs_from_dict,
@@ -537,6 +543,14 @@ def decision_audit_legs(
         *audit_legs(legs_from_dict(payload)),
         *audit_prescription_deviations(payload),
     ]
+    if with_legs_file:
+        # C15 —— 同期多票的共同死点。分散注金不等于分散死点(26118 三票共享 23.2% 全灭)。
+        batch = {str(payload.get("version") or Path(legs_file).stem):
+                 legs_from_dict(payload)}
+        for extra in with_legs_file:
+            other = _json.loads(Path(extra).read_text("utf-8"))
+            batch[str(other.get("version") or Path(extra).stem)] = legs_from_dict(other)
+        findings.extend(audit_shared_exclusions(batch))
     _cli.typer.echo(format_findings(findings, issue=str(payload.get("issue", ""))))
     if has_blocking(findings):
         if user_override:

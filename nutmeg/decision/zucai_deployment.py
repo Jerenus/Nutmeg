@@ -22,6 +22,19 @@ PASS_RATIO_MAX = 0.95
 REDUCE_RATIO_MIN = 2.2
 _TOLERANCE = 1e-12
 
+STRONG_ANCHOR_P = 0.70
+HOT_BOARD_ANCHORS = 5
+"""热板阈值：板面上 fair≥70% 的强锚数 ≥5 时，中位奖金锚零描述力。
+
+实证（scoreboard `deployment_gate_anchor_bias` / `prize_negative_correlation`）：
+26120 六强锚 → 中位锚 ¥4,964 vs 实开 ¥145（高估 34 倍）；
+26121 六强锚 → 中位锚 ¥2,857 vs 实开 ¥14（高估 204 倍）；
+反向的 26113 冷板 → 中位锚 ¥3,113 vs 实开 ¥31,729（低估 10.2 倍）。
+**中位数在两头都错**，因为奖金与当期难度强相关而中位数是全样本的。
+强锚数是**赛前可观测**的难度代理，所以它能在赛前说出中位数说不出的话。
+
+⚠️这仍然是**报告**：不排序、不阻断、不建议空仓（宪法第二序 + 部署门条）。"""
+
 
 class DeploymentGateState(StrEnum):
     PASS = "pass"
@@ -54,6 +67,7 @@ class DeploymentGateResult:
     history_window: int
     history_issues: tuple[str, ...]
     excluded_over_cap: tuple[str, ...]
+    strong_anchor_count: int | None = None
 
     @property
     def exit_code(self) -> int:
@@ -82,6 +96,7 @@ class DeploymentGateResult:
             "history_window": self.history_window,
             "history_issues": list(self.history_issues),
             "excluded_over_cap": list(self.excluded_over_cap),
+            "strong_anchor_count": self.strong_anchor_count,
         }
 
 
@@ -214,7 +229,44 @@ def evaluate_deployment_gate(
         excluded_over_cap=tuple(sorted(
             item.candidate_id for item in candidates if item.stake_yuan > cap
         )),
+        strong_anchor_count=_strong_anchor_count(payload),
     )
+
+
+def _strong_anchor_count(payload: dict) -> int | None:
+    """板面强锚数（fair≥70% 的场次）。显式给 `strong_anchor_count` 优先；
+    否则从 `fair` 逐场推。两者都缺 → None（缺数据不猜，报告里显式写"未给"）。"""
+    explicit = payload.get("strong_anchor_count")
+    if isinstance(explicit, int) and not isinstance(explicit, bool) and explicit >= 0:
+        return explicit
+    fair = payload.get("fair")
+    if not isinstance(fair, dict) or not fair:
+        return None
+    count = 0
+    for row in fair.values():
+        if isinstance(row, dict) and row:
+            values = [v for v in row.values() if isinstance(v, (int, float))]
+            if values and max(values) >= STRONG_ANCHOR_P:
+                count += 1
+    return count
+
+
+def _board_regime_line(result: DeploymentGateResult) -> str:
+    """强锚分档提示。中位锚在热板高估几十倍、在冷板低估十倍——分档把这件事写在赛前。"""
+    n = result.strong_anchor_count
+    if n is None:
+        return ("板面难度: 未给 fair/strong_anchor_count，无法分档；"
+                "中位锚只描述典型夜，不描述本期。")
+    if n >= HOT_BOARD_ANCHORS:
+        return (f"板面难度: **热板**（{n} 个 fair≥{STRONG_ANCHOR_P:.0%} 强锚 ≥"
+                f"{HOT_BOARD_ANCHORS}）。26120/26121 同型实开 ¥145/¥14，"
+                f"中位锚高估 34/204 倍——本期回本倍数请当作**下界**读，"
+                f"帽内复式即使 9/9 也可能亏。")
+    if n <= 2:
+        return (f"板面难度: **冷板候选**（仅 {n} 个强锚）。26118 同型实开 ¥75,521"
+                f"（中位 21 倍）——中位锚在这一档系统性低估。")
+    return (f"板面难度: 中性（{n} 个强锚）。中位锚的描述力在此档最好，"
+            f"但仍只描述典型夜。")
 
 
 def format_deployment_gate(result: DeploymentGateResult) -> str:
@@ -229,6 +281,7 @@ def format_deployment_gate(result: DeploymentGateResult) -> str:
         f"64%返奖等价中奖注数上限: {result.equivalent_max_winning_stakes:,}",
         f"状态: {result.state.value} (exit {result.exit_code})",
     ]
+    lines.append(_board_regime_line(result))
     if result.state is DeploymentGateState.REVIEW:
         lines.append("观察: 历史中位倍数处于 review 区间；出票取舍由 Jun 裁决。")
     elif result.state is DeploymentGateState.REDUCE_OR_EMPTY:

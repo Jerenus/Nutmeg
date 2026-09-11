@@ -1584,6 +1584,11 @@ def _audit_candidate(
             )
             official_numbers.append(context.official_match_no)
         for finding in audit_legs(audit_legs_input):
+            # INFO 是随票打印的参考表（对位机制 / 排面分级 / ttg 锚），不是治理级 finding：
+            # 候选审计契约只登记 WARN 与 ERROR。把 INFO 也塞进去会让每一张带双选的候选
+            # 都因"severity 未注册"而整条动作失败——参考信息不该有阻断能力。
+            if finding.level == "INFO":
+                continue
             official_match_no = (
                 None
                 if finding.match_no is None

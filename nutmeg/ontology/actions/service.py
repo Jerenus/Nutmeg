@@ -68,18 +68,24 @@ class ActionService:
     ) -> ActionOutcome:
         existing = self._lookup(command.idempotency_key)
         if existing is not None:
-            if existing.request_hash != command.request_hash:
+            if existing.status is ActionStatus.FAILED:
+                # A FAILED attempt holds no claim on the key — not even against a
+                # *corrected* retry. Checking the request hash first made a failed
+                # attempt block the fix for it: the 2026-09-11 scoreboard mirror
+                # failed for a missing `--supersedes`, and every retry that added one
+                # was then rejected as "reused with a different request", so the only
+                # way through was to perturb the payload. Keep the audit row under a
+                # derived key and execute the corrected request afresh.
+                with self._unit_of_work_factory() as uow:
+                    uow.actions.release_failed_idempotency_key(
+                        command.idempotency_key, existing.action_id
+                    )
+            elif existing.request_hash != command.request_hash:
                 raise IdempotencyConflictError(
                     f"idempotency key {command.idempotency_key} was reused with a different request"
                 )
-            if existing.status is not ActionStatus.FAILED:
+            else:
                 return ActionRepository.to_outcome(existing)
-            # A FAILED attempt must not satisfy a retry as if it were a result:
-            # keep the audit row under a derived key and execute afresh.
-            with self._unit_of_work_factory() as uow:
-                uow.actions.release_failed_idempotency_key(
-                    command.idempotency_key, existing.action_id
-                )
 
         try:
             with self._unit_of_work_factory() as uow:
@@ -133,7 +139,12 @@ class ActionService:
             existing_by_key = {}
             for command, _handler in batch:
                 existing = uow.actions.get_by_idempotency_key(command.idempotency_key)
-                if existing is not None and existing.request_hash != command.request_hash:
+                if (
+                    existing is not None
+                    and existing.status is not ActionStatus.FAILED
+                    and existing.request_hash != command.request_hash
+                ):
+                    # FAILED rows are audit, not a claim — a corrected retry must pass.
                     raise IdempotencyConflictError(
                         f"idempotency key {command.idempotency_key} was reused with "
                         "a different request"

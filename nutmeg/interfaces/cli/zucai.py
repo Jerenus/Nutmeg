@@ -10,6 +10,23 @@ from __future__ import annotations
 
 import nutmeg.interfaces.cli as _cli
 
+_JUDGMENT_FILE_OPTION = _cli.typer.Option(..., "--judgment-file",
+                                          help="judgment-v1（主循环判读产物）")
+_BUILD_ISSUE_OPTION = _cli.typer.Option(..., "--issue")
+_STORE_IDS_FILE_OPTION = _cli.typer.Option(..., "--store-ids-file")
+_BUILD_FAIR_FILE_OPTION = _cli.typer.Option(..., "--fair-file")
+_MADE_AT_OPTION = _cli.typer.Option(..., "--made-at", help="ISO 判读时刻")
+_BUILD_OUTPUT_DIR_OPTION = _cli.typer.Option(_cli.Path(".nutmeg-data/zucai"),
+                                             "--output-dir")
+_JUDGE_OPTION = _cli.typer.Option("claude", "--judge")
+_CAND_OPTIONS_FILE_OPTION = _cli.typer.Option(
+    ..., "--options-file", help='{"场次":["31","310",""]}；"" = 丢整场')
+_CAND_CHANNEL_OPTION = _cli.typer.Option("renjiu", "--channel")
+_CAND_CAP_OPTION = _cli.typer.Option(None, "--cap-yuan")
+_CAND_BASE_FILE_OPTION = _cli.typer.Option(
+    None, "--base-file", help="给定基准票面则改出单点/两点替换报告")
+_CAND_LIMIT_OPTION = _cli.typer.Option(20, "--limit")
+
 
 @_cli.app.command("zucai-report")
 def zucai_report(
@@ -326,3 +343,78 @@ def zucai_grade(
         )
     for warning in grade.warnings:
         _cli.console.print(f" warning: {warning}")
+
+
+@_cli.app.command("zucai-build-reads")
+def zucai_build_reads(
+    judgment_file: _cli.Path = _JUDGMENT_FILE_OPTION,
+    issue: str = _BUILD_ISSUE_OPTION,
+    store_ids_file: _cli.Path = _STORE_IDS_FILE_OPTION,
+    fair_file: _cli.Path = _BUILD_FAIR_FILE_OPTION,
+    made_at: str = _MADE_AT_OPTION,
+    output_dir: _cli.Path = _BUILD_OUTPUT_DIR_OPTION,
+    judge: str = _JUDGE_OPTION,
+) -> None:
+    """judgment-v1 → reads.json + legs-base.json（只转录与校验词典，不产生判断）。"""
+    import json as _json
+
+    from nutmeg.decision.read_builder import JudgmentError, build, format_warnings
+
+    try:
+        result = build(
+            _json.loads(_cli.Path(judgment_file).read_text("utf-8")),
+            issue=issue,
+            store_ids=_json.loads(_cli.Path(store_ids_file).read_text("utf-8")),
+            fair=_json.loads(_cli.Path(fair_file).read_text("utf-8")),
+            made_at=made_at, judge=judge)
+    except JudgmentError as exc:
+        _cli.typer.echo(f"judgment 结构错误：{exc}")
+        raise _cli.typer.Exit(code=1) from exc
+    out = _cli.Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    reads_path = out / f"{issue}-reads.json"
+    legs_path = out / f"{issue}-legs-base.json"
+    reads_path.write_text(_json.dumps(result.reads, ensure_ascii=False, indent=1),
+                          encoding="utf-8")
+    legs_path.write_text(_json.dumps(result.legs, ensure_ascii=False, indent=1),
+                         encoding="utf-8")
+    _cli.typer.echo(format_warnings(result))
+    _cli.typer.echo(f"  reads → {reads_path}\n  legs  → {legs_path}")
+
+
+@_cli.app.command("zucai-candidates")
+def zucai_candidates(
+    options_file: _cli.Path = _CAND_OPTIONS_FILE_OPTION,
+    fair_file: _cli.Path = _BUILD_FAIR_FILE_OPTION,
+    channel: str = _CAND_CHANNEL_OPTION,
+    cap_yuan: int | None = _CAND_CAP_OPTION,
+    base_file: _cli.Path | None = _CAND_BASE_FILE_OPTION,
+    limit: int = _CAND_LIMIT_OPTION,
+) -> None:
+    """穷举**已声明**的票面空间；排序=帽内 P 降序，这是比较顺序不是推荐。"""
+    import json as _json
+
+    from nutmeg.decision.betslip import BetslipError
+    from nutmeg.decision.candidate_builder import (
+        enumerate_candidates,
+        format_candidates,
+        format_swaps,
+        swap_report,
+        ticket_probability,
+    )
+
+    options = _json.loads(_cli.Path(options_file).read_text("utf-8"))
+    fair = _json.loads(_cli.Path(fair_file).read_text("utf-8"))
+    try:
+        if base_file:
+            base = _json.loads(_cli.Path(base_file).read_text("utf-8"))
+            base = base.get("faces", base)
+            rows = swap_report(base, options, fair, channel=channel)
+            _cli.typer.echo(format_swaps(rows, ticket_probability(base, fair),
+                                         limit=limit))
+            return
+        cands = enumerate_candidates(options, fair, channel=channel, cap_yuan=cap_yuan)
+    except BetslipError as exc:
+        _cli.typer.echo(f"候选穷举错误：{exc}")
+        raise _cli.typer.Exit(code=1) from exc
+    _cli.typer.echo(format_candidates(cands, cap_yuan=cap_yuan, limit=limit))

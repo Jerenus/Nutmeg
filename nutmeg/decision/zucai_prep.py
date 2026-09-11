@@ -257,8 +257,8 @@ def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
 
     zdir, issue = Path(inputs.zucai_dir), inputs.issue
     issue_doc = _load(zdir / f"{issue}-issue.json")
-    odds_name = f"{issue}-odds.json" if inputs.slot == "afternoon" \
-        else f"{issue}-odds-revision.json"
+    odds_name = f"{issue}-odds-revision.json" if inputs.slot == "revision" \
+        else f"{issue}-odds.json"
     odds_doc = _load(zdir / odds_name)
     odds_by_no = {int(r["match_no"]): r for r in odds_doc.get("matches") or []}
 
@@ -464,6 +464,24 @@ class PrepResult:
         return self.status in {"prepared", "no_issue"}
 
 
+SLOT_ORDER = ("morning", "afternoon", "revision")
+"""备料槽位顺序。morning(11:00) 是 2026-09-11 新增的**早刷新**槽。
+
+出生事故 26122：14:00 才第一次刷新盘口，导致当天 8 场判读用的是**前一天(09-10)的
+体彩 HAD**。读判在 14:00 冻结，也就是说冻结用的基线比冻结晚了一天——
+"陈盘"不是数据缺失，是**判读建立在过期价格上**却没人喊。"""
+
+
+def _previous_slot(issue: str, slot: str, zdir: Path) -> str | None:
+    """本 slot 之前最近的、已经落盘的槽位（用于位移 diff 的基线）。"""
+    if slot not in SLOT_ORDER:
+        return None
+    for earlier in reversed(SLOT_ORDER[:SLOT_ORDER.index(slot)]):
+        if (zdir / f"{issue}-prep-{earlier}.json").exists():
+            return earlier
+    return None
+
+
 def _notify(body: str, *, stage: str, business_key: str, attachments=(),
             notification_service=None) -> None:
     from nutmeg.notifications.models import NotificationRequest, semantic_fingerprint
@@ -545,15 +563,15 @@ def run_zucai_prep(
 
     diff_path = None
     line = heartbeat_line(prep, "", today=today)
-    if slot == "revision":
-        base_path = zdir / f"{issue}-prep-afternoon.json"
-        if base_path.exists():
-            diff = diff_prep(_load(base_path), prep)
-            diff_path = zdir / f"{issue}-diff-afternoon-revision.md"
-            diff_path.write_text(render_diff(diff), "utf-8")
-            line += f" ｜ 位移超门槛 {diff['n_moved']} 条"
-        else:
-            line += " ｜ ⚠️无 afternoon 基线,跳过位移 diff"
+    base_slot = _previous_slot(issue, slot, zdir)
+    if base_slot:
+        base_path = zdir / f"{issue}-prep-{base_slot}.json"
+        diff = diff_prep(_load(base_path), prep)
+        diff_path = zdir / f"{issue}-diff-{base_slot}-{slot}.md"
+        diff_path.write_text(render_diff(diff), "utf-8")
+        line += f" ｜ 位移超门槛 {diff['n_moved']} 条(vs {base_slot})"
+    elif slot != SLOT_ORDER[0]:
+        line += " ｜ ⚠️无更早 slot 基线,跳过位移 diff"
 
     if dispatch:
         _notify(line, stage=slot, business_key=f"{issue}-{slot}",

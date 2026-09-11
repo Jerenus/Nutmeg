@@ -976,6 +976,7 @@ def _normalize_date(yyyymmdd: str) -> str:
 # registering every command on the shared ``app`` above. Done last so the package
 # namespace (factories, helpers, options) is fully populated before they load.
 # E402 is expected: registration must run after the namespace is built.
+from nutmeg.interfaces.cli import betslip as betslip  # noqa: E402
 from nutmeg.interfaces.cli import core as core  # noqa: E402
 from nutmeg.interfaces.cli import decision as decision  # noqa: E402
 from nutmeg.interfaces.cli import migration as migration  # noqa: E402

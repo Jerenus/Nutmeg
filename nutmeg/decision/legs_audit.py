@@ -96,6 +96,14 @@ TEAM_TAG_COUNTERS = (
 布吕克 + 26113 场2(赫尔客胜)/场5(埃弗斯贝格 3:2 勒沃)/场10(弗洛西诺内 0:3)——四刀全部
 穿透双选。"""
 
+_C3_FLAT_GAP = 0.01
+"""C3 模态标签噪音带：top1−top2 < 1pp 时「模态面」只是浮点排序的产物，不是市场判断。
+
+26122 场4 纽伦堡 37.0 / 汉诺威 37.8（差 0.8pp）被判 `modal_face_dropped` ERROR——
+但深研本身的结论是「两者差 0.8pp，任何自称能分辨的叙事都是在讲故事」。
+在这个带里把某一面叫作「模态」再据此阻断出票，是让代码假装市场给了方向。
+→ 该带内降为 WARN（仍然记账，但不阻断），并在消息里点明这是平带不是弃模态。"""
+
 _C11_GAP_LO = 0.05
 _C11_GAP_HI = 0.10
 """C11 虚假方向带：top1−top2 落在 [5pp,10pp) 时模态命中率仅 27.8%(n=18)——
@@ -105,6 +113,15 @@ _C11_GAP_HI = 0.10
 _C12_DRAW_LO = 0.29
 _C12_DRAW_HI = 0.32
 _C14_EXCLUSION_P = 0.20
+_C15_SHARED_EXCLUSION_P = 0.20
+"""C15 共享排除：多张票同时排掉同一个 >20% 的面 → 一场杀全部票（组合 WARN）。
+
+26118 三票共享不来梅主胜 23.2%，该面开出，三票同死；26122 四票共享达姆施塔特主胜 34.9%
+与 AZ 裸单。**分散注金不等于分散死点**——票面不同但被排面相同时，组合的真实自由度是 1。"""
+
+_EXCLUSION_TAIL_P = 0.15
+"""独立面效率表的分级线：≤15% 才算「省钱」，15-20% 是灰带，>20% 是买方差（C14）。
+被排面若是 top1（模态面）则不是「排面」而是「翻面」——翻面实证 0/42，另按 C3 处理。"""
 """C14 昂贵排除：被排面 fair>20% 且死亡三证不齐（锚方 PASS + 该面先例 dead）→ WARN。
 26117/26118 六处开出的被排面 fair = 14.8/12.1/23.2/15.5/27.4/(拜仁不胜 17.9)。"""
 """C12 平局低估带：平局 fair 落在 [29%,32%) 时，实开平率 35.7% vs 预期 30.1%(n=14)，
@@ -151,6 +168,45 @@ DEVIATION_RULE_IDS = frozenset({
     "零售信息",
 })
 
+DEVIATION_RULE_ALIASES = {
+    # 2026-09-06 之后 RULEBOOK 新增/改名的条目 → 既有 canonical ID。
+    # 出生事故:26122 构票时按 RULEBOOK 现行条名登记偏离(砍腿序/独立面效率表/死亡三证/
+    # m-四问/旗-响应改革),审计因名字不在 frozenset 里判为"无名偏离"WARN——
+    # **条文改了名字,判据就静默失效了**。别名表让登记按人读的条名写,校验按 canonical 走。
+    "m-四问": "m-单选",
+    "旗-响应改革": "旗-方向性",
+    "死亡三证": "先例≠form",
+    "砍腿序": "8/08铁律",
+    "独立面效率表": "已定价≠免疫",
+    "临场只加面": "已定价≠免疫",
+    "已定价≠可反转": "已定价≠免疫",
+    "崩塌双列": "先例≠form",
+    "四表共振": "处方优先",
+    "四表共振核对": "处方优先",
+    "开季翻车regime": "q-两阶段",
+    "开季翻车 regime": "q-两阶段",
+    "虚假方向带": "k",
+    "平局分层错价": "k",
+    "H2H-拆分布": "先例≠form",
+    "追踪标签": "排面记录",
+    "球队影响因子标签": "排面记录",
+    "conf": "conf",
+}
+"""条名别名 → canonical ID。RULEBOOK 条文改名时只加一行，不动 frozenset。"""
+
+
+def canonical_rule_id(rule_id: str) -> str | None:
+    """把人读的条名规约成 canonical ID；无法规约 → None（仍按无名偏离处理）。"""
+    key = (rule_id or "").strip()
+    if key in DEVIATION_RULE_IDS:
+        return key
+    mapped = DEVIATION_RULE_ALIASES.get(key)
+    if mapped in DEVIATION_RULE_IDS:
+        return mapped
+    squeezed = key.replace(" ", "")
+    mapped = DEVIATION_RULE_ALIASES.get(squeezed)
+    return mapped if mapped in DEVIATION_RULE_IDS else None
+
 
 @dataclass(frozen=True)
 class Leg:
@@ -174,6 +230,12 @@ class Leg:
     tracking_tags: tuple = ()
     # 球队影响因子标签:元素形如 ("home","new_gk");词典 TEAM_TAG_LEXICON;只产 INFO 对位机制
     team_tags: tuple = ()
+    # 牌照四问(2026-09-11 拆③):{"q1_spine":bool,"q2_route":bool,
+    #   "q3a_opponent_scores":bool,"q3b_opponent_takes_points":bool,"q4_no_context_flag":bool}
+    # 缺字段=未答(None),不产 finding;只有显式答 False 才判失分。
+    license_questions: dict | None = None
+    # 体彩 ttg 形状锚是否存在(法乙等无体彩板面的场次为 False → DC 只有固定 ρ,进球带精度下降)
+    ttg_shape_anchor: bool | None = None
 
     @property
     def modal(self) -> str:
@@ -212,7 +274,12 @@ class DeviationRegistration:
 
     @property
     def known_rule_ids(self) -> tuple[str, ...]:
-        return tuple(rule_id for rule_id in self.rule_ids if rule_id in DEVIATION_RULE_IDS)
+        seen: list[str] = []
+        for rule_id in self.rule_ids:
+            canonical = canonical_rule_id(rule_id)
+            if canonical and canonical not in seen:
+                seen.append(canonical)
+        return tuple(seen)
 
 
 def deviation_registrations(payload: dict) -> dict[int, tuple[DeviationRegistration, ...]]:
@@ -320,13 +387,46 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 f"双选的定义是「模态面 + 旗面」，盖不住旗面的双选不是保险。",
                 "26101 场6/场10 双双 2:2"))
 
-        # C3 —— 弃模态面
+        # C3 —— 弃模态面（=翻面）。⚠️2026-09-11 分级：top1−top2 < 1pp 的「模态」是
+        # 浮点排序的产物不是市场判断，该带内降 WARN，不阻断（26122 场4 37.0/37.8）。
         if lg.modal not in lg.faces:
+            if lg.top_gap < _C3_FLAT_GAP:
+                out.append(Finding(
+                    "WARN", "modal_face_dropped_flat", n,
+                    f"场{n} {lg.name}：面集合 `{lg.faces}` 丢掉了名义模态面 "
+                    f"{FACE_ZH[lg.modal]}（{lg.modal_p:.1%}），但 top1−top2 仅 "
+                    f"{lg.top_gap * 100:.1f}pp < 1pp——这是**模态标签噪音带**，"
+                    f"市场并未给出方向，不按弃模态阻断；仍记账以便复盘该带的排面命中率。",
+                    "26122 场4 纽伦堡37.0/汉诺威37.8 差0.8pp(2026-09-11 分级)"))
+            else:
+                out.append(Finding(
+                    "ERROR", "modal_face_dropped", n,
+                    f"场{n} {lg.name}：模态面是 {FACE_ZH[lg.modal]}（{lg.modal_p:.1%}），"
+                    f"但面集合 `{lg.faces}` 把它丢了（top1−top2 "
+                    f"{lg.top_gap * 100:.1f}pp）。这是**翻面**不是排面——翻面三门槛实证 0/42。",
+                    "7/29 实证:弃模态面两次全死(001 让负 / 006 受让胜)"))
+
+        # 独立面效率表 —— 排面分级（INFO,不改动作）。把「排掉哪个面、多贵」摆成一行,
+        # 免得复盘时才发现预算花在 30% 的面上而 20% 的面被整场丢掉(26122 T1)。
+        if len(set(lg.faces)) < 3:
+            ladder = []
+            for f in sorted(set(FACE_KEYS) - set(lg.faces)):
+                p = lg.fair.get(FACE_KEYS[f], 0.0)
+                if f == lg.modal:
+                    grade = "翻面" if lg.top_gap >= _C3_FLAT_GAP else "平带翻面"
+                elif p > _C14_EXCLUSION_P:
+                    grade = "买方差"
+                elif p > _EXCLUSION_TAIL_P:
+                    grade = "灰带"
+                else:
+                    grade = "省钱"
+                ladder.append(f"{FACE_ZH[f]} {p * 100:.1f}%={grade}")
             out.append(Finding(
-                "ERROR", "modal_face_dropped", n,
-                f"场{n} {lg.name}：模态面是 {FACE_ZH[lg.modal]}（{lg.modal_p:.1%}），"
-                f"但面集合 `{lg.faces}` 把它丢了。",
-                "7/29 实证:弃模态面两次全死(001 让负 / 006 受让胜)"))
+                "INFO", "exclusion_ladder", n,
+                f"场{n} {lg.name}：排面分级 " + "、".join(ladder)
+                + f"（≤{_EXCLUSION_TAIL_P * 100:.0f}%省钱 / "
+                  f"≤{_C14_EXCLUSION_P * 100:.0f}%灰带 / 更高=买方差 / 模态面=翻面）。",
+                "2026-09-11 独立面效率表分级(排面≠翻面)"))
 
         # C4 —— conf3 是"有理由但不够硬"的自我说服黑洞
         if single and lg.confidence <= 3:
@@ -343,6 +443,36 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 f"场{n} {lg.name}：锚方结构完整度 FAIL 却裸单。"
                 f"锚越强、未定价的结构漏洞越值钱——fair 高是加倍重视的理由，不是忽略的理由。",
                 "26102 本菲卡 fair 85.8% → 2:2"))
+
+        # 牌照四问③拆分（2026-09-11 入码, probation）：
+        # 「对手有破门机制」与「对手有取分机制」是两件事。26121 巴萨/巴黎/拜仁三条牌照裸单
+        # 的③全部失分在"对手会进球"（三场对手合计进 2 球）却 3/3 兑现；26122 场13 AZ 同型。
+        # → q3a(对手会进球) 只封**零封/让胜**类表达，不封胜负负腿；
+        #   只有 q3b(对手会取分:能拿平或赢) 成立时，裸单才真正被封。
+        lq = lg.license_questions or {}
+        q3a = lq.get("q3a_opponent_scores")
+        q3b = lq.get("q3b_opponent_takes_points")
+        if single and q3b is True:
+            out.append(Finding(
+                "WARN", "license_q3b_opponent_takes_points", n,
+                f"场{n} {lg.name}：牌照四问③b「对手有取分机制」成立却裸单。"
+                f"③b 是真正封牌照的那一半（对手能拿平或赢），不是③a（对手会进球）。",
+                "2026-09-11 四问③拆分(26121 三牌照③a失分仍3/3)"))
+        if single and q3a is True and q3b is False:
+            out.append(Finding(
+                "INFO", "license_q3a_only", n,
+                f"场{n} {lg.name}：四问③仅③a成立（对手会进球、但无取分机制）——"
+                f"该失分只杀**零封/让胜/大胜**类表达，不杀胜负负腿，裸单不因此降级。",
+                "26121 巴萨/巴黎/拜仁 3/3 + 26122 场13 AZ(2026-09-11 入码)"))
+
+        # ttg 形状锚缺失（法乙等无体彩板面场次）：DC 只有固定 ρ 拟合，进球带精度下降。
+        # 不改动作,只在票面上标出来——免得把这些场的进球轴判读当成与其他场同精度。
+        if lg.ttg_shape_anchor is False:
+            out.append(Finding(
+                "INFO", "ttg_shape_degraded", n,
+                f"场{n} {lg.name}：无体彩 ttg 形状锚（板面未对齐），DC 仅固定 ρ 拟合，"
+                f"进球带与让球三路精度下降；该场进球轴结论不与有锚场同权。",
+                "26122 法乙五场无体彩对齐(2026-09-11 标注)"))
 
         # C6 —— 确证级无方向性旗 = "我判不动往哪碎" → 该全包
         if lg.nondirectional_flags and len(set(lg.faces)) < 3:
@@ -533,10 +663,52 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
     return sorted(out, key=lambda f: (order[f.level], f.match_no or 0))
 
 
+def audit_shared_exclusions(tickets: dict[str, list[Leg]]) -> list[Finding]:
+    """C15 —— 多票共享同一个 >20% 被排面（组合 WARN, 2026-09-11 入码, probation）。
+
+    tickets = {票名: [Leg, ...]}。**分散注金不等于分散死点**：票面不同但被排面相同时，
+    组合的真实自由度是 1，一场开出杀全部票。26118 三票共享不来梅主胜 23.2%（开出，三票同死）；
+    26122 四票共享达姆施塔特主胜 34.9% 与 AZ 裸单。
+    """
+    if len(tickets) < 2:
+        return []
+    shared: dict[tuple[int, str], list[str]] = {}
+    meta: dict[tuple[int, str], tuple[str, float]] = {}
+    for name, legs in tickets.items():
+        for lg in legs:
+            if len(set(lg.faces)) >= 3:
+                continue
+            for f in set(FACE_KEYS) - set(lg.faces):
+                p = lg.fair.get(FACE_KEYS[f], 0.0)
+                if p <= _C15_SHARED_EXCLUSION_P:
+                    continue
+                key = (lg.match_no, f)
+                shared.setdefault(key, []).append(name)
+                meta.setdefault(key, (lg.name, p))
+    out: list[Finding] = []
+    for (match_no, face), names in sorted(shared.items()):
+        if len(names) < 2:
+            continue
+        leg_name, p = meta[(match_no, face)]
+        out.append(Finding(
+            "WARN", "shared_exclusion", match_no,
+            f"场{match_no} {leg_name}：{len(names)} 张票共享同一个 >"
+            f"{_C15_SHARED_EXCLUSION_P * 100:.0f}% 被排面 {FACE_ZH[face]} "
+            f"（{p * 100:.1f}%，票：{'/'.join(names)}）。"
+            f"该面开出即同时杀死全部这些票——分散注金不等于分散死点。",
+            "26118 三票共享不来梅23.2%全灭 / 26122 四票共享(2026-09-11 入码)"))
+    return out
+
+
 def format_findings(findings: list[Finding], *, issue: str = "") -> str:
-    if not findings:
+    # INFO 不是发现,是随票打印的参考表(对位机制/排面分级/ttg 锚)。只有 INFO 时仍算通过,
+    # 否则"排面分级"这类纯报告会把干净票面渲染成有问题——校验器的输出必须与它的语义一致。
+    blocking_or_warn = [f for f in findings if f.level != "INFO"]
+    if not blocking_or_warn:
         tag = f"（{issue}）" if issue else ""
-        return f"✅ 出票前结构校验通过{tag}：未发现与已落库教训冲突的结构。"
+        head = f"✅ 出票前结构校验通过{tag}：未发现与已落库教训冲突的结构。"
+        infos = [f"ℹ️ [{f.code}] {f.message}" for f in findings]
+        return "\n".join([head, *infos]) if infos else head
     lines = [f"出票前结构校验{'（' + issue + '）' if issue else ''}："
              f"{sum(1 for f in findings if f.level == 'ERROR')} 个 ERROR / "
              f"{sum(1 for f in findings if f.level == 'WARN')} 个 WARN", ""]
@@ -551,6 +723,31 @@ def has_blocking(findings: list[Finding]) -> bool:
     return any(f.level == "ERROR" for f in findings)
 
 
+def _directional_flags(raw: object) -> tuple[tuple[str, str], ...]:
+    """规约方向性旗入口。
+
+    接受三种写法：`"self_made_tail"`（裸名）/ `["self_made_tail","1"]` / `{"flag":..,"face":..}`。
+    裸名默认指向**平**（"1"）——封闭词典里五面旗有四面机理指平，另一面 shield 也指平，
+    所以默认值不是猜测而是词典本身的形状；要指别的面必须显式写。
+    出生事故：26122 把旗写成裸字符串导致 `audit_legs` 抛 `too many values to unpack`，
+    整个审计门静默退出码 1 却零 findings——**校验器自己崩掉比不校验更危险**。
+    """
+    items: list[tuple[str, str]] = []
+    for x in raw or ():
+        if isinstance(x, str):
+            items.append((x, "1"))
+        elif isinstance(x, dict):
+            items.append((str(x.get("flag") or x.get("name") or ""),
+                          str(x.get("face") or "1")))
+        else:
+            seq = list(x)
+            if len(seq) == 1:
+                items.append((str(seq[0]), "1"))
+            elif len(seq) >= 2:
+                items.append((str(seq[0]), str(seq[1])))
+    return tuple(items)
+
+
 def legs_from_dict(payload: dict) -> list[Leg]:
     """从 JSON 载入。legs 是 {场次号: {...}} 映射。"""
     out = []
@@ -560,7 +757,9 @@ def legs_from_dict(payload: dict) -> list[Leg]:
             fair=v["fair"], confidence=int(v.get("confidence", 0)),
             prior=v.get("prior"),
             adjustment_evidence_tiers=tuple(v.get("adjustment_evidence_tiers", [])),
-            directional_flags=tuple(tuple(x) for x in v.get("directional_flags", [])),
+            directional_flags=_directional_flags(v.get("directional_flags")),
+            license_questions=v.get("license_questions"),
+            ttg_shape_anchor=v.get("ttg_shape_anchor"),
             nondirectional_flags=tuple(v.get("nondirectional_flags", [])),
             anchor_integrity=v.get("anchor_integrity", "unknown"),
             precedents=tuple(tuple(x) for x in v.get("precedents", [])),

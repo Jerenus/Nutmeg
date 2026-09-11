@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -119,11 +120,34 @@ def run_day_regime(run_date: str, output_dir: Path) -> str:
             f"gap警戒 {regime['n_gap_alert']} → day-regime.json(诊断,不进决策)")
 
 
-def run_alias_audit(run_date: str, output_dir) -> str:
-    """别名覆盖审计:未命中 = 该场丢国际欧赔锚(prior 静默退化)。只报告,不改数据。"""
+def run_alias_audit(run_date: str, output_dir, *, propose: bool = True) -> str:
+    """别名覆盖审计:未命中 = 该场丢国际欧赔锚(prior 静默退化)。只报告,不改数据。
+
+    ``propose`` 时顺带把缺口写成提案草稿(不自动应用)。**审计出声但没有下一步动作**,
+    缺口就会一期一期地留着——26122 当天仍有 5 队未命中(哈马费萨/吉达联合/马斯特里/
+    阿尔梅勒/科里蒂巴),而提案器 8 月就已经存在。
+    """
     from nutmeg.decision.alias_audit import audit_day, format_audit
 
-    return format_audit(run_date, audit_day(run_date, output_dir))
+    report = audit_day(run_date, output_dir)
+    line = format_audit(run_date, report)
+    if not propose:
+        return line
+    missing = (report.get("odds_alias") or {}).get("missing_teams") or []
+    if not missing:
+        return line
+    path = Path(output_dir) / "daily" / run_date / "alias-gap.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(
+            {"run_date": run_date,
+             "missing_teams": [r.get("name") for r in missing],
+             "next": "uv run nutmeg decision-alias-propose --run-date "
+                     f"{run_date}（--apply 才写别名表）"},
+            ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        return line
+    return line + f"\n  别名缺口草稿 → {path}（跑 decision-alias-propose 生成候选）"
 
 
 def run_read_ingest(reads_file: Path, output_dir: Path) -> str:

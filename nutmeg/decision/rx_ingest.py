@@ -37,3 +37,25 @@ def map_rx_adjudications(rx: dict, issue: str) -> tuple[list[dict], list[str]]:
             "idempotency_key": f"rx:{issue}:{a['id']}",
         })
     return out, skipped
+
+
+def map_rx_gradings(rx: dict, issue: str) -> tuple[list[dict], list[str]]:
+    """rx 里已判 outcome 的预测 → 批量判定请求；未判的跳过。
+
+    **Why.** rx 用人读的 `P1..Pn`，本体存的是 `prediction-<hex>`；判定前要先去 sqlite 里
+    按 claim 文本对号（26121 就是这么做的，13 条对了两轮）。两套 ID 之间唯一稳定的桥是
+    注册时用的幂等键 `rx:<issue>:<P-id>`——本函数把桥显式化，判断仍留在主循环。
+    """
+    out, skipped = [], []
+    for p in rx.get("predictions") or []:
+        outcome = (p.get("outcome") or "").strip().lower()
+        if outcome not in ("hit", "miss", "na"):
+            skipped.append(f"{p['id']}: 未判定({p.get('outcome')!r})")
+            continue
+        out.append({
+            "rx_id": p["id"],
+            "idempotency_key": f"rx:{issue}:{p['id']}",
+            "outcome": outcome,
+            "reason": p.get("outcome_reason") or p.get("claim", ""),
+        })
+    return out, skipped

@@ -5,6 +5,7 @@ from nutmeg.decision.legs_audit import (
     Leg,
     audit_legs,
     audit_prescription_deviations,
+    audit_shared_exclusions,
     format_findings,
     has_blocking,
     legs_from_dict,
@@ -535,3 +536,112 @@ def test_team_tag_counter_and_off_lexicon():
     msg = next(f.message for f in findings if f.code == "pairing_mechanism")
     assert "low_block_breaker_weak" in msg
     assert not has_blocking(findings)
+
+
+# ── 2026-09-11 审计器纠偏与规则层入码 ──
+
+def test_flat_band_modal_drop_is_warning_not_blocking():
+    """top1−top2 < 1pp 时「模态面」是浮点排序的产物，不是市场判断。
+
+    26122 场4 纽伦堡 37.0 / 汉诺威 37.8（差 0.8pp）：深研自己的结论是"任何自称能分辨
+    的叙事都是在讲故事"，代码却把其中一面叫模态并据此阻断出票——那是让校验器假装
+    市场给了方向。该带内记 WARN（仍入账以便复盘），不阻断。
+    """
+    flat = {"home": 0.370, "draw": 0.252, "away": 0.378}
+    findings = audit_legs([_leg(faces="31", fair=flat, confidence=2)])
+    codes = {f.code for f in findings}
+    assert "modal_face_dropped_flat" in codes
+    assert "modal_face_dropped" not in codes
+    assert not has_blocking(findings)
+
+
+def test_real_modal_drop_still_blocks():
+    """真正的弃模态（gap ≥ 1pp）仍是 ERROR——翻面实证 0/42，分级不是放行。"""
+    findings = audit_legs([_leg(faces="31", fair=FAIR_AWAY, confidence=4)])
+    assert "modal_face_dropped" in {f.code for f in findings}
+    assert has_blocking(findings)
+
+
+def test_exclusion_ladder_grades_faces():
+    """排面分级 INFO：省钱 / 灰带 / 买方差 / 翻面 —— 免得预算花在 30% 的面上。"""
+    fair = {"home": 0.55, "draw": 0.26, "away": 0.19}
+    msg = next(f.message for f in audit_legs([_leg(faces="31", fair=fair)])
+               if f.code == "exclusion_ladder")
+    assert "客胜 19.0%=灰带" in msg
+
+
+def test_directional_flags_accept_bare_string():
+    """旗写成裸字符串不得让校验器崩溃。
+
+    出生事故 26122：`directional_flags: ["anchor_shield_out"]` 让 audit_legs 抛
+    `too many values to unpack`，审计门退出码 1 却零 findings——**校验器自己崩掉
+    比不校验更危险**，因为它看起来像"通过了"。裸名默认指平（词典五面旗机理皆指平）。
+    """
+    payload = {"legs": {"1": {"name": "甲-乙", "faces": "3", "fair": FAIR_HOME,
+                              "confidence": 4,
+                              "directional_flags": ["self_made_tail"]}}}
+    legs = legs_from_dict(payload)
+    assert legs[0].directional_flags == (("self_made_tail", "1"),)
+    assert "flagged_naked_single" in {f.code for f in audit_legs(legs)}
+
+
+def test_deviation_rule_aliases_are_accepted():
+    """条文改名不得让判据静默失效。
+
+    26122 按 RULEBOOK 现行条名（砍腿序/独立面效率表/m-四问）登记偏离，审计因名字不在
+    frozenset 里判为「无名偏离」——规则改了名字，校验就失效了。别名表把人读条名
+    规约到 canonical ID。
+    """
+    payload = {
+        "prescription": {"1": "310"},
+        "legs": {"1": {"name": "甲-乙", "faces": "31", "fair": FAIR_HOME,
+                       "confidence": 4}},
+        "deviation_registry": [{"match_no": 1, "rule_ids": ["砍腿序", "m-四问"],
+                                "reason": "帽内压缩"}],
+    }
+    assert audit_prescription_deviations(payload) == []
+
+
+def test_license_q3_split_only_q3b_blocks():
+    """四问③拆分：③a（对手会进球）不封牌照，③b（对手会取分）才封。
+
+    26121 巴萨/巴黎/拜仁三条牌照裸单的③全部失分在"对手会进球"（三场对手合计进 2 球）
+    却 3/3 兑现；26122 场13 AZ 同型。③a 杀的是零封/让胜腿，不是胜负腿。
+    """
+    q3a_only = _leg(license_questions={"q3a_opponent_scores": True,
+                                       "q3b_opponent_takes_points": False})
+    codes = {f.code for f in audit_legs([q3a_only])}
+    assert "license_q3a_only" in codes
+    assert "license_q3b_opponent_takes_points" not in codes
+
+    q3b = _leg(license_questions={"q3a_opponent_scores": True,
+                                  "q3b_opponent_takes_points": True})
+    assert "license_q3b_opponent_takes_points" in {f.code for f in audit_legs([q3b])}
+
+
+def test_ttg_shape_degraded_is_info():
+    """无体彩板面的场次（法乙五场）DC 只有固定 ρ，进球带精度下降，须在票面上标出来。"""
+    findings = audit_legs([_leg(ttg_shape_anchor=False)])
+    assert "ttg_shape_degraded" in {f.code for f in findings}
+    assert not has_blocking(findings)
+
+
+def test_shared_exclusion_flags_common_death_point():
+    """C15：多票共享同一个 >20% 被排面 = 分散注金没有分散死点。
+
+    26118 三票共享不来梅主胜 23.2%，该面开出三票同死；26122 四张票共享达姆施塔特
+    主胜 34.9%。票面不同但被排面相同时，组合的真实自由度是 1。
+    """
+    fair = {"home": 0.349, "draw": 0.257, "away": 0.394}
+    a = [_leg(match_no=3, faces="10", fair=fair, confidence=2)]
+    b = [_leg(match_no=3, faces="0", fair=fair, confidence=2)]
+    findings = audit_shared_exclusions({"T1": a, "T2": b})
+    assert [f.code for f in findings] == ["shared_exclusion"]
+    assert "34.9%" in findings[0].message and "T1/T2" in findings[0].message
+
+    # 单票不触发；被排面 ≤20% 也不触发（那是"省钱"不是共享死点）
+    assert audit_shared_exclusions({"T1": a}) == []
+    cheap = {"home": 0.60, "draw": 0.25, "away": 0.15}
+    assert audit_shared_exclusions({
+        "T1": [_leg(match_no=5, faces="31", fair=cheap)],
+        "T2": [_leg(match_no=5, faces="31", fair=cheap)]}) == []

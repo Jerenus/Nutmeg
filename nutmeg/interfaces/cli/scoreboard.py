@@ -39,6 +39,11 @@ _EXPECTED_AUTHORITY_VERSION_OPTION = _cli.typer.Option(
 _SOP_FILES_OPTION = _cli.typer.Option(..., "--sop-file")
 _APPROVE_OPTION = _cli.typer.Option(False, "--approve")
 _DESTINATION_OPTION = _cli.typer.Option(..., "--destination")
+_SETTLE_SCOREBOARD_FILE_OPTION = _cli.typer.Option(
+    ..., "--scoreboard-file", help="权威 scoreboard.json（影子期唯一事实源）")
+_SETTLE_METRIC_OPTION = _cli.typer.Option(
+    [], "--metric", help="限定 group/metric（可重复）；省略=全部有改动的指标")
+_SETTLE_DRY_RUN_OPTION = _cli.typer.Option(True, "--dry-run/--no-dry-run")
 
 
 def _at(value: str) -> datetime:
@@ -366,4 +371,156 @@ def scoreboard_verify_export(
             }
         )
     except (OSError, ScoreboardAuthorityError, ValueError) as error:
+        _fail(error)
+
+
+def _current_leaf(kernel, group_key: str, metric_key: str) -> str | None:
+    """该指标当前的叶子观察 id（未被任何观察 supersede 的那一条）。"""
+    from sqlalchemy import text as _text
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        row = uow.connection.execute(_text("""
+            SELECT o.scoreboard_observation_id FROM scoreboard_observations o
+            WHERE o.group_key = :g AND o.metric_key = :m
+              AND NOT EXISTS (SELECT 1 FROM scoreboard_observations x
+                              WHERE x.supersedes_observation_id
+                                    = o.scoreboard_observation_id)
+            ORDER BY o.recorded_at DESC LIMIT 1
+        """), {"g": group_key, "m": metric_key}).fetchone()
+    return row[0] if row else None
+
+
+@scoreboard_app.command("settle-issue")
+def scoreboard_settle_issue(
+    data_dir: Path = _DATA_DIR_OPTION,
+    scoreboard_file: Path = _SETTLE_SCOREBOARD_FILE_OPTION,
+    evidence_type: str = _cli.typer.Option(..., "--evidence-type"),
+    evidence_id: str = _cli.typer.Option(..., "--evidence-id"),
+    effective_at: str = _cli.typer.Option(..., "--effective-at"),
+    requested_at: str = _REQUESTED_AT_OPTION,
+    metric: list[str] = _SETTLE_METRIC_OPTION,
+    dry_run: bool = _SETTLE_DRY_RUN_OPTION,
+    acknowledge_manual_source: bool = _ACKNOWLEDGE_MANUAL_SOURCE_OPTION,
+) -> None:
+    """把 scoreboard.json 的本期改动**一次性**镜像成 observe（自动找 leaf + supersedes）。
+
+    出生事故 2026-09-11：26121 复盘改了 12 个指标，手工镜像跑了三轮才成——第一轮
+    12 条全被 "must supersede the current leaf" 挡下，第二轮补了 supersedes 又被幂等键
+    挡下（失败的尝试占住了键）。**治理动作本身不能比它要治理的事还费劲**，否则影子期
+    双轨就会退化成"只改 JSON 不镜像"，而那是 M5 明令禁止的无声双权威。
+    """
+    try:
+        if not acknowledge_manual_source:
+            raise ScoreboardAuthorityError(
+                "settle-issue requires --acknowledge-manual-source")
+        kernel, resolved = _kernel(data_dir)
+        board = json.loads(Path(scoreboard_file).read_text("utf-8"))
+        wanted = {tuple(m.split("/", 1)) for m in metric} if metric else None
+
+        planned: list[dict[str, object]] = []
+        for group_key, metrics in board.items():
+            if not isinstance(metrics, dict):
+                continue
+            for metric_key, entry in metrics.items():
+                if not isinstance(entry, dict) or "tally" not in entry:
+                    continue
+                if wanted is not None and (group_key, metric_key) not in wanted:
+                    continue
+                leaf = _current_leaf(kernel, group_key, metric_key)
+                detail = str(entry.get("detail", ""))
+                # 只镜像**最新一段** detail：整段重发会让每次复盘的观察越来越长,
+                # 而观察的价值在于"这一期改了什么"。
+                latest = detail.split(" ‖ ")[-1].strip()
+                planned.append({
+                    "group_key": group_key, "metric_key": metric_key,
+                    "tally": str(entry.get("tally", "")), "detail": latest,
+                    "status": str(entry.get("status", "")), "supersedes": leaf,
+                })
+
+        if dry_run:
+            _emit({"mode": "dry_run", "planned": planned,
+                   "targets": {"data_dir": str(resolved)}})
+            return
+
+        results = []
+        for plan in planned:
+            request = RecordScoreboardObservationRequest(
+                group_key=str(plan["group_key"]), metric_key=str(plan["metric_key"]),
+                tally=str(plan["tally"]), detail=str(plan["detail"]),
+                status=str(plan["status"]),
+                numerator=None, denominator=None, value=None, unit=None,
+                evidence_refs=[ObjectRef(evidence_type, evidence_id)],
+                effective_at=_at(effective_at),
+                supersedes_observation_id=plan["supersedes"],
+                actor_id="operator:scoreboard-observation",
+                actor_role=ActorRole.JUDGE_OPERATOR,
+                idempotency_key=(
+                    f"scoreboard:settle:{evidence_id}:{plan['group_key']}:"
+                    f"{plan['metric_key']}:"
+                    f"{hashlib.sha256(str(plan['detail']).encode()).hexdigest()}"),
+                requested_at=_at(requested_at),
+            )
+            outcome = kernel.scoreboard_actions.record_observation(request)
+            results.append({"group_key": plan["group_key"],
+                            "metric_key": plan["metric_key"],
+                            "status": outcome.status.value,
+                            "action_id": outcome.action_id})
+        _emit({"mode": "committed", "mirrored": len(results), "results": results,
+               "targets": {"data_dir": str(resolved)}})
+    except (ScoreboardAuthorityError, ValueError) as error:
+        _fail(error)
+
+
+@scoreboard_app.command("cutover-readiness")
+def scoreboard_cutover_readiness(
+    data_dir: Path = _DATA_DIR_OPTION,
+    scoreboard_file: Path = _SETTLE_SCOREBOARD_FILE_OPTION,
+) -> None:
+    """权威切换前的**只读**体检：还差哪些门、哪些指标还没有观察。
+
+    ⚠️本命令**不切换任何东西**。M5 的权威切换是四道用户行权门（影子对账、SOP 文件、
+    期望版本号、显式 --approve），不能由程序代劳；这里只把"现在离得多远"算清楚，
+    免得影子期因为"不知道还差什么"无限期拖下去——26111 起跑到 26122 已经 12 期，
+    `unexplained` 一直挂着 17 条没人消化。
+    """
+    from sqlalchemy import text as _text
+
+    try:
+        kernel, resolved = _kernel(data_dir)
+        board = json.loads(Path(scoreboard_file).read_text("utf-8"))
+        metrics = {(g, m) for g, rows in board.items() if isinstance(rows, dict)
+                   for m, e in rows.items() if isinstance(e, dict) and "tally" in e}
+        with OntologyUnitOfWork(kernel.engine) as uow:
+            observed = {
+                (row[0], row[1]) for row in uow.connection.execute(_text(
+                    "SELECT DISTINCT group_key, metric_key FROM scoreboard_observations"
+                )).fetchall()
+            }
+            authority = uow.scoreboard.authority()
+            review = uow.scoreboard.latest_shadow_review()
+        missing = sorted(metrics - observed)
+        _emit({
+            "authority_state": authority.state,
+            "authority_version": authority.version,
+            "metrics_in_json": len(metrics),
+            "metrics_with_observation": len(metrics & observed),
+            "metrics_never_observed": [f"{g}/{m}" for g, m in missing],
+            "latest_review": None if review is None else {
+                "review_id": review.scoreboard_shadow_review_id,
+                "status": review.status,
+                "matched": review.matched_count,
+                "unexplained": review.unexplained_count,
+                "manual": review.manual_count,
+                "reviewed_at": review.reviewed_at,
+            },
+            "gates_remaining": [
+                "①每个指标至少一条观察（当前缺 "
+                f"{len(missing)} 个）",
+                "②最近一次 shadow review 的 unexplained 归零或全部显式归类",
+                "③SOP 文件与期望权威版本号由 Jun 给定",
+                "④`scoreboard cutover --approve` 显式行权",
+            ],
+            "targets": {"data_dir": str(resolved)},
+        })
+    except (ScoreboardAuthorityError, ValueError) as error:
         _fail(error)

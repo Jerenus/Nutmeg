@@ -354,3 +354,47 @@ def test_deployment_and_optimizer_select_the_same_fixed_bonus_candidate():
     )
 
     assert deployed.selected_id == optimized["best_within_cap_id"] == "wide"
+
+
+# ── 强锚分档（2026-09-11 入码；报告层，不排序不阻断） ──
+
+def _fair_board(n_strong: int, total: int = 14):
+    strong = {"home": 0.82, "draw": 0.11, "away": 0.07}
+    flat = {"home": 0.37, "draw": 0.25, "away": 0.38}
+    return {str(i + 1): (strong if i < n_strong else flat) for i in range(total)}
+
+
+def test_hot_board_tier_warns_median_anchor_has_no_power():
+    """≥5 强锚 = 热板：中位锚在 26120/26121 高估 34/204 倍，倍数只能当下界读。"""
+    result = evaluate_deployment_gate(_payload(fair=_fair_board(6)), _history())
+    assert result.strong_anchor_count == 6
+    out = format_deployment_gate(result)
+    assert "热板" in out and "下界" in out
+
+
+def test_cold_board_tier_warns_median_underestimates():
+    """≤2 强锚 = 冷板候选：26118 同型实开 ¥75,521，中位锚系统性低估。"""
+    result = evaluate_deployment_gate(_payload(fair=_fair_board(1)), _history())
+    assert result.strong_anchor_count == 1
+    assert "冷板候选" in format_deployment_gate(result)
+
+
+def test_missing_fair_says_so_instead_of_guessing():
+    """缺 fair 不猜档位——伪造一个难度分级比不分级更危险。"""
+    result = evaluate_deployment_gate(_payload(), _history())
+    assert result.strong_anchor_count is None
+    assert "未给" in format_deployment_gate(result)
+
+
+def test_explicit_count_overrides_derivation():
+    result = evaluate_deployment_gate(
+        _payload(fair=_fair_board(1), strong_anchor_count=6), _history())
+    assert result.strong_anchor_count == 6
+
+
+def test_tiering_does_not_change_selection_or_state():
+    """分档是报告：选择与 state 必须与未给 fair 时逐字段一致（宪法第二序不受影响）。"""
+    plain = evaluate_deployment_gate(_payload(), _history())
+    tiered = evaluate_deployment_gate(_payload(fair=_fair_board(6)), _history())
+    assert (tiered.selected_id, tiered.state, tiered.break_even_to_median) == (
+        plain.selected_id, plain.state, plain.break_even_to_median)

@@ -257,7 +257,21 @@ def run_decision_am_v2(
                 lambda: _ingest_zucai_issue(active_kernel, issue, zdir, requested_at),
             )
         )
+        # 身份映射随 sense 落盘:26122 手工反查(按 fair 值)把 3 场挂到了竞彩板的同队
+        # Match 上——同一支队同一天出现在两个板面时,fair 匹配必然抢错身份。
+        steps.append(
+            (
+                "store-ids",
+                lambda: _write_zucai_store_ids(active_kernel, issue, zdir),
+            )
+        )
     return _compose("decision-am", run_date, "数据入库(ontology v2 kernel)", steps)
+
+
+def _write_zucai_store_ids(kernel, issue: str, zucai_dir: Path) -> str:
+    from nutmeg.decision.zucai_identity import write_store_ids
+
+    return write_store_ids(issue, zucai_dir, kernel)
 
 
 def _resolve_read_match_id(kernel, source_match_id: str, reads_file: Path) -> str | None:
