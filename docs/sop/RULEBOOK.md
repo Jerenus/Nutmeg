@@ -110,7 +110,8 @@
 | **C13 broken_anchor_double** | WARN | **死亡三证(c)：锚方完整度 FAIL 且双选排掉一面（2026-09-06 入码，probation）** |
 | **C14 expensive_exclusion** | WARN | **独立面效率表/死亡三证：被排面 fair>20% 且非（锚方 PASS ∧ 该面先例 dead）（2026-09-06 入码，probation）** |
 | **C15 shared_exclusion** | WARN | **独立面效率表：多票共享同一 >20% 被排面（2026-09-11 入码，probation）。26118 三票共享不来梅 23.2% 全灭；26122 四票共享达姆施塔特 34.9% + AZ 裸单** |
-| exclusion_ladder | INFO | 排面分级（省钱/灰带/买方差/翻面），不改动作 |
+| **C15b shared_naked_single** | WARN | 多票共享同一条裸单：报「全部票同时死于此」的概率（26122 四票共享 AZ 裸3，1-1 一场全灭；按 18:30 价至少一场同时杀四票=73.8%。2026-09-12 入码） |
+| exclusion_ladder | INFO | 排面分级（省钱/灰带/买方差/翻面），不改动作。⚠️26122 实证：11.1% 的「省钱」排除与 32.1% 的「买方差」排除同样各杀四票——分级只描述成本，不描述该不该排 |
 | modal_face_dropped_flat | WARN | 模态标签噪音带（top1−top2 <1pp 的弃模态降 WARN） |
 | license_q3b_opponent_takes_points | WARN | 四问③b：对手有取分机制却裸单 |
 | license_q3a_only | INFO | 四问③a 单独成立：只杀零封/让胜腿，不降裸单 |

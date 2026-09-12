@@ -645,3 +645,26 @@ def test_shared_exclusion_flags_common_death_point():
     assert audit_shared_exclusions({
         "T1": [_leg(match_no=5, faces="31", fair=cheap)],
         "T2": [_leg(match_no=5, faces="31", fair=cheap)]}) == []
+
+
+def test_shared_naked_single_is_flagged_regardless_of_price():
+    """C15b：多票共享同一条裸单 = 全日资金只有一件事的自由度。
+
+    26122 四张票在场13 AZ 上都是裸 3；被排掉的平+客合计 17.8%，低于 C15 的 20% 价格
+    门槛，所以 C15 看不见它——然后 1-1 一场杀四票。该报的不是"这个面贵不贵"，
+    而是"全部票同时死于此的概率"。
+    """
+    fair = {"home": 0.822, "draw": 0.112, "away": 0.066}
+    a = [_leg(match_no=13, faces="3", fair=fair, confidence=5)]
+    b = [_leg(match_no=13, faces="3", fair=fair, confidence=5)]
+    findings = audit_shared_exclusions({"T1": a, "T2": b})
+    codes = [f.code for f in findings]
+    assert "shared_naked_single" in codes
+    assert "shared_exclusion" not in codes          # 价格门槛下的旧 C15 确实看不见
+    msg = next(f.message for f in findings if f.code == "shared_naked_single")
+    assert "17.8%" in msg and "T1/T2" in msg
+    # 单票不报；两票在同一场上一裸一双不算"共享裸单"
+    assert audit_shared_exclusions({"T1": a}) == []
+    assert "shared_naked_single" not in {
+        f.code for f in audit_shared_exclusions(
+            {"T1": a, "T2": [_leg(match_no=13, faces="31", fair=fair)]})}

@@ -697,6 +697,29 @@ def audit_shared_exclusions(tickets: dict[str, list[Leg]]) -> list[Finding]:
             f"（{p * 100:.1f}%，票：{'/'.join(names)}）。"
             f"该面开出即同时杀死全部这些票——分散注金不等于分散死点。",
             "26118 三票共享不来梅23.2%全灭 / 26122 四票共享(2026-09-11 入码)"))
+
+    # C15b —— 共享裸单（不看 P）。26122 四张票在场13 AZ 上是同一条裸单：一场平局
+    # (11.1%) 同时杀四票。裸单被排掉的是两个面,合计 P 常常 <20%,C15 的价格门槛看不见它;
+    # 但"四张票押在同一件 82% 的事上"意味着全日资金只有一件事的自由度——
+    # 该报的不是"这个面贵不贵",而是"全部票同时死于此的概率是多少"。
+    naked: dict[int, list[str]] = {}
+    naked_meta: dict[int, tuple[str, float]] = {}
+    for name, legs in tickets.items():
+        for lg in legs:
+            if len(set(lg.faces)) != 1:
+                continue
+            naked.setdefault(lg.match_no, []).append(name)
+            naked_meta.setdefault(lg.match_no, (lg.name, 1.0 - lg.coverage))
+    for match_no, names in sorted(naked.items()):
+        if len(names) < 2:
+            continue
+        leg_name, p_dead = naked_meta[match_no]
+        out.append(Finding(
+            "WARN", "shared_naked_single", match_no,
+            f"场{match_no} {leg_name}：{len(names)} 张票共享同一条裸单"
+            f"（票：{'/'.join(names)}）。该场非正路概率 {p_dead * 100:.1f}% = "
+            f"这些票**同时**死于此的概率；票数再多，在这一场上只有一件事的自由度。",
+            "26122 场13 AZ 82.7 平:四票共享裸单一场全灭(2026-09-12 入码)"))
     return out
 
 
