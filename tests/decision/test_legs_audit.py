@@ -5,6 +5,7 @@ from nutmeg.decision.legs_audit import (
     Leg,
     audit_legs,
     audit_prescription_deviations,
+    audit_read_ticket_consistency,
     audit_shared_exclusions,
     format_findings,
     has_blocking,
@@ -668,3 +669,48 @@ def test_shared_naked_single_is_flagged_regardless_of_price():
     assert "shared_naked_single" not in {
         f.code for f in audit_shared_exclusions(
             {"T1": a, "T2": [_leg(match_no=13, faces="31", fair=fair)]})}
+
+
+# --- 2026-09-13 26123 复盘三条（I1/I2/I4，用户批准入码）---
+
+def test_naked_single_ladder_grades_total_exposure_not_single_face():
+    """I2 —— 裸单排的是两个面。26122 AZ 平 11.1% 被判「省钱」，
+    实际暴露 11.1+6.2=17.3%，一场杀四张票。"""
+    fair = {"home": 0.827, "draw": 0.111, "away": 0.062}
+    ladder = [f for f in audit_legs([_leg(faces="3", fair=fair, confidence=5)])
+              if f.code == "exclusion_ladder"]
+    assert ladder and "裸单总暴露 17.3%=灰带" in ladder[0].message
+    # 双选只排一个面，不打总暴露那一行
+    double = [f for f in audit_legs([_leg(faces="31", fair=fair, confidence=5)])
+              if f.code == "exclusion_ladder"]
+    assert double and "裸单总暴露" not in double[0].message
+
+
+def test_excluded_face_contradicts_pairing_mechanism():
+    """I4 —— 对位机制判出某方破门机制缺席时，受益的是对方取胜面；把它排掉＝与读判相反。
+    26123 场13：米兰 low_block_breaker_weak × 拉齐奥 low_block_home ＝客队机制缺席，
+    构票仍排掉拉齐奥主胜 29.1%。"""
+    fair = {"home": 0.291, "draw": 0.297, "away": 0.412}
+    tags = (("away", "low_block_breaker_weak"), ("home", "low_block_home"))
+    hit = [f for f in audit_legs([_leg(faces="10", fair=fair, team_tags=tags, confidence=3)])
+           if f.code == "excluded_face_contradicts_read"]
+    assert hit and "主胜" in hit[0].message
+    # 盖住受益面就不该报
+    assert not [f for f in audit_legs(
+        [_leg(faces="310", fair=fair, team_tags=tags, confidence=3)])
+        if f.code == "excluded_face_contradicts_read"]
+
+
+def test_read_ticket_inconsistency_blocks_when_four_doubles_defy_the_read():
+    """I1 —— C10/C6 单看都只是 WARN，攒到 4 处就是 8/08 铁律被系统性绕开。
+    26123 F 票六个双选全落在自判「全包或丢」的场次上，17 个 WARN 照样出票。"""
+    legs = [_leg(match_no=i, faces="31",
+                 directional_flags=(("anchor_shield_out", "1"),))
+            for i in range(1, 5)]
+    findings = audit_legs(legs)
+    extra = audit_read_ticket_consistency(findings)
+    assert [f.code for f in extra] == ["read_ticket_inconsistency"]
+    assert extra[0].level == "ERROR"
+    assert has_blocking(findings + extra)
+    # 三处以下不阻断
+    assert not audit_read_ticket_consistency(audit_legs(legs[:3]))

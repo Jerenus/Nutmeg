@@ -130,6 +130,17 @@ _EXCLUSION_TAIL_P = 0.15
 FACE_KEYS = {"3": "home", "1": "draw", "0": "away"}
 FACE_ZH = {"3": "主胜", "1": "平", "0": "客胜"}
 STRONG_ADJUSTMENT_EVIDENCE_TIERS = frozenset({"official", "confirmed_structural"})
+_C17_INCONSISTENCY_N = 4
+"""C17 读判-票面不一致：单票里「读判判为全包或丢、票面却降成双选」的场次数上限。
+26123 F 票六个双选全部落在自判「全包或丢」的场次上（C10×5 + C6×3 共 17 WARN，
+被当成可接受成本照出），两处开出。8/08 铁律说预算压缩唯一合法动作是丢整场——
+达到本阈值即 ERROR，帽内凑不出可盖的九场时空仓是唯一出口。"""
+
+_READ_CONTRADICTION_MARKS = ("机制缺席", "机制相消", "相消", "无破门机制")
+"""I4 读判自相矛盾标记：读判 note 里写了这些词，票面却仍排掉面 → 回读该场（WARN）。
+26123 场13 读判原文「米兰 low_block_breaker_weak × 拉齐奥 low_block_home ＝机制缺席」，
+构票仍排掉拉齐奥主胜 29.1%，赛中 2-0 落后。答案在手里，构票时没回头看。"""
+
 _C8_THRESHOLD = 0.05
 _PROBABILITY_TOLERANCE = 1e-9
 DEVIATION_RULE_IDS = frozenset({
@@ -236,6 +247,8 @@ class Leg:
     license_questions: dict | None = None
     # 体彩 ttg 形状锚是否存在(法乙等无体彩板面的场次为 False → DC 只有固定 ρ,进球带精度下降)
     ttg_shape_anchor: bool | None = None
+    # 该场读判 note 原文；只作 I4 自相矛盾扫描，不参与任何概率计算
+    note: str = ""
 
     @property
     def modal(self) -> str:
@@ -421,12 +434,60 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 else:
                     grade = "省钱"
                 ladder.append(f"{FACE_ZH[f]} {p * 100:.1f}%={grade}")
+            tail = ""
+            if len(set(lg.faces)) == 1:
+                # I2 —— 裸单排的是**两个**面，不能用单面 fair 分级。
+                exposure = 1.0 - lg.coverage
+                grade = ("买方差" if exposure > _C14_EXCLUSION_P
+                         else "灰带" if exposure > _EXCLUSION_TAIL_P else "省钱")
+                tail = (f" ｜ **裸单总暴露 {exposure * 100:.1f}%={grade}**"
+                        f"（裸单按 1−top1 分级：26122 AZ 平 11.1% 被判「省钱」，"
+                        f"实际暴露 11.1+6.2=17.3%，一场杀四票）")
             out.append(Finding(
                 "INFO", "exclusion_ladder", n,
                 f"场{n} {lg.name}：排面分级 " + "、".join(ladder)
                 + f"（≤{_EXCLUSION_TAIL_P * 100:.0f}%省钱 / "
-                  f"≤{_C14_EXCLUSION_P * 100:.0f}%灰带 / 更高=买方差 / 模态面=翻面）。",
-                "2026-09-11 独立面效率表分级(排面≠翻面)"))
+                  f"≤{_C14_EXCLUSION_P * 100:.0f}%灰带 / 更高=买方差 / 模态面=翻面）。"
+                + tail,
+                "2026-09-11 独立面效率表分级(排面≠翻面);2026-09-13 裸单改按总暴露(I2)"))
+
+            # I4 —— 读判自相矛盾。优先用**机器算出来的**对位结论：TEAM_TAG_COUNTERS 判出
+            # 某方破门机制缺席时，受益的是对方的取胜面；把那一面排掉即与自己的读判相反。
+            # 26123 场13 的「机制缺席」只写在对话里、没进 note，靠扫 note 抓不到——
+            # 所以主触发器必须是 team_tags，note 关键词只作兜底。
+            absent = set()
+            tags_by_side = {
+                side: {t for s_, t in lg.team_tags if s_ == side}
+                for side in ("home", "away")
+            }
+            for atk_side, def_side in (("home", "away"), ("away", "home")):
+                for weak, styles, _label in TEAM_TAG_COUNTERS:
+                    if weak in tags_by_side[atk_side] and any(
+                            st in tags_by_side[def_side] for st in styles):
+                        absent.add(atk_side)
+            beneficiary = {"home": "0", "away": "3"}   # 主队机制缺席 → 客胜受益，反之亦然
+            contradicted = sorted(
+                beneficiary[side] for side in absent
+                if beneficiary[side] not in lg.faces)
+            hits = [m for m in _READ_CONTRADICTION_MARKS if m in lg.note]
+            if contradicted:
+                out.append(Finding(
+                    "WARN", "excluded_face_contradicts_read", n,
+                    f"场{n} {lg.name}：对位机制判出 "
+                    f"{'/'.join('主队' if x == 'home' else '客队' for x in sorted(absent))}"
+                    f"破门机制缺席，受益面是 "
+                    f"{'、'.join(FACE_ZH[f] for f in contradicted)}，票面却把它排掉了。"
+                    f"排面与本场读判相反——回读该场对位机制再定。",
+                    "26123 场13:米兰破低位块机制缺席,构票仍排拉齐奥主胜 29.1%(2-0 落后)"))
+            elif hits:
+                dropped = "、".join(
+                    FACE_ZH[f] for f in sorted(set(FACE_KEYS) - set(lg.faces)))
+                out.append(Finding(
+                    "WARN", "excluded_face_contradicts_read", n,
+                    f"场{n} {lg.name}：读判 note 含「{'/'.join(hits)}」，"
+                    f"票面仍排掉 {dropped}。"
+                    f"请回读该场 note 确认被排面不是那条「机制缺席」指向的面。",
+                    "26123 场13:读判写了米兰破低位块机制缺席,构票仍排拉齐奥主胜 29.1%"))
 
         # C4 —— conf3 是"有理由但不够硬"的自我说服黑洞
         if single and lg.confidence <= 3:
@@ -663,6 +724,30 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
     return sorted(out, key=lambda f: (order[f.level], f.match_no or 0))
 
 
+def audit_read_ticket_consistency(findings: list[Finding]) -> list[Finding]:
+    """C17 —— 读判说「全包或丢」、票面却降双选的场次达阈值即 ERROR（2026-09-13 入码）。
+
+    C10(flagged_double_not_full) 与 C6(undecidable_not_full) 各自只是 WARN，单看都能被
+    「这一处可以接受」说服；**26123 F 票把六个双选全放在自判「全包或丢」的场次上**，
+    审计报了 17 个 WARN 照样出票，两处开出。8/08 铁律：预算压缩唯一合法动作是丢整场。
+    """
+    marks = [f for f in findings
+             if f.code in ("flagged_double_not_full", "undecidable_not_full")]
+    if len(marks) < _C17_INCONSISTENCY_N:
+        return []
+    seen: list[int] = []
+    for f in marks:
+        if f.match_no is not None and f.match_no not in seen:
+            seen.append(f.match_no)
+    return [Finding(
+        "ERROR", "read_ticket_inconsistency", None,
+        f"本票 {len(marks)} 处「读判判全包或丢、票面降双选」"
+        f"（场{'/'.join(str(x) for x in sorted(seen))}），达阈值 {_C17_INCONSISTENCY_N}。"
+        f"8/08 铁律——预算压缩唯一合法动作是**丢整场**，不是降双选；"
+        f"帽内凑不出可盖的九场时，空仓是合法且唯一出口。",
+        "26123 F 票六双选全落在自判全包或丢的场次上(17 WARN 照出),场4/场13 开出")]
+
+
 def audit_shared_exclusions(tickets: dict[str, list[Leg]]) -> list[Finding]:
     """C15 —— 多票共享同一个 >20% 被排面（组合 WARN, 2026-09-11 入码, probation）。
 
@@ -783,6 +868,7 @@ def legs_from_dict(payload: dict) -> list[Leg]:
             directional_flags=_directional_flags(v.get("directional_flags")),
             license_questions=v.get("license_questions"),
             ttg_shape_anchor=v.get("ttg_shape_anchor"),
+            note=str(v.get("note", "") or ""),
             nondirectional_flags=tuple(v.get("nondirectional_flags", [])),
             anchor_integrity=v.get("anchor_integrity", "unknown"),
             precedents=tuple(tuple(x) for x in v.get("precedents", [])),

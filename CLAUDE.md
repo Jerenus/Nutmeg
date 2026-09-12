@@ -10,7 +10,7 @@
 
 1. `docs/sop/CONSTITUTION.md` — 宪法：五动词唯一路径、判断字典序（EV 禁入决策层）、两条元原则、注金帽与刹车、数据纪律（禁嘴算/三源制）、裁决协议。
 2. `docs/sop/RUNBOOK.md` — 执行清单：竞彩泳道 A1-A7 / 足彩泳道 B1-B10，含命令与审计门（B0 早刷新 / B4 判读桥 / B4b 候选穷举 / B9c 实票登记）。
-3. `docs/sop/RULEBOOK.md` — 规则注册表：判决表 k/l/m/o/p/q/r/s 各条全文、状态机、战绩指针、audit 代码化映射（C0-C15 + INFO 参考表）。
+3. `docs/sop/RULEBOOK.md` — 规则注册表：判决表 k/l/m/o/p/q/r/s 各条全文、状态机、战绩指针、audit 代码化映射（C0-C17 + INFO 参考表）。
 
 **记分牌单一事实源** = `.nutmeg-data/scoreboard.json`（复盘只改那里，散文引用不复制）。
 **出票硬门** = `uv run nutmeg decision-audit-legs --legs-file <票面>`，默认/AI/无人值守遇 ERROR 即退出码 1，不听论证；仅 Jun 显式 `--user-override` 且 evidence_rejected Adjudication 入账成功后可继续。

@@ -134,6 +134,8 @@ def build(judgment: dict, *, issue: str, store_ids: dict, fair: dict,
             "team_tags": j.get("team_tags") or {"home": [], "away": []},
             "license_questions": j.get("license_questions"),
             "ttg_shape_anchor": j.get("ttg_shape_anchor"),
+            # 读判 note 原样带进 legs：I4 自相矛盾扫描要读它（26123 场13）
+            "note": note,
         }
 
     legs_payload = {

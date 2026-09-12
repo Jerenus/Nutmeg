@@ -520,6 +520,7 @@ def decision_audit_legs(
     from nutmeg.decision.legs_audit import (
         audit_legs,
         audit_prescription_deviations,
+        audit_read_ticket_consistency,
         audit_shared_exclusions,
         format_findings,
         has_blocking,
@@ -543,6 +544,8 @@ def decision_audit_legs(
         *audit_legs(legs_from_dict(payload)),
         *audit_prescription_deviations(payload),
     ]
+    # C17 —— 票面级：读判判「全包或丢」却降双选的场次达阈值即 ERROR（2026-09-13 入码）。
+    findings.extend(audit_read_ticket_consistency(findings))
     if with_legs_file:
         # C15 —— 同期多票的共同死点。分散注金不等于分散死点(26118 三票共享 23.2% 全灭)。
         batch = {str(payload.get("version") or Path(legs_file).stem):
