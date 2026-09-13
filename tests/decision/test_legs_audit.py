@@ -3,6 +3,7 @@ import pytest
 
 from nutmeg.decision.legs_audit import (
     Leg,
+    audit_full_cover_allocation,
     audit_legs,
     audit_prescription_deviations,
     audit_read_ticket_consistency,
@@ -714,3 +715,25 @@ def test_read_ticket_inconsistency_blocks_when_four_doubles_defy_the_read():
     assert has_blocking(findings + extra)
     # 三处以下不阻断
     assert not audit_read_ticket_consistency(audit_legs(legs[:3]))
+
+
+def test_full_cover_slots_follow_excluded_face_not_lowest_top1():
+    """全包名额按被排面 fair 降序，不按 top1 升序。
+    26123：F 票把名额按 top1 最低给了场2(38.2)/场10(40.9)，而场10 最小面 23.9%
+    低于场13 被排面 29.1%——同价换过去 P 更高，实际赛果也证明换了就是 9/9。"""
+    full = _leg(match_no=10, faces="310",
+                fair={"home": 0.409, "draw": 0.239, "away": 0.352})
+    double = _leg(match_no=13, faces="10",
+                  fair={"home": 0.291, "draw": 0.297, "away": 0.412})
+    hit = audit_full_cover_allocation([full, double])
+    assert [f.code for f in hit] == ["full_cover_allocation_dominated"]
+    assert "+5.2pp" in hit[0].message and hit[0].level == "WARN"
+
+
+def test_full_cover_allocation_is_quiet_when_already_optimal():
+    """全包给了最小面更大的那一场 → 无支配交换，不报。"""
+    full = _leg(match_no=2, faces="310",
+                fair={"home": 0.382, "draw": 0.264, "away": 0.354})
+    double = _leg(match_no=3, faces="31",
+                  fair={"home": 0.771, "draw": 0.150, "away": 0.080})
+    assert audit_full_cover_allocation([full, double]) == []

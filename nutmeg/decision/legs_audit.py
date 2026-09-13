@@ -724,6 +724,50 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
     return sorted(out, key=lambda f: (order[f.level], f.match_no or 0))
 
 
+_FULL_COVER_SWAP_EPS = 0.005
+"""全包名额错配的报警门槛（0.5pp）。低于此只是浮点噪音，不值得改票。"""
+
+
+def audit_full_cover_allocation(legs: list[Leg]) -> list[Finding]:
+    """全包名额分配 —— 按**被排面 fair 降序**，不按 top1 升序（2026-09-13 入码）。
+
+    把一场从双选升成全包，买回来的 P 恰好等于**该场被排面的 fair**，与 top1 高低无关。
+    宪法第三序「全包给 top1 最低场」只在各场被排面结构相同时才与它等价；一旦每场选的
+    两面不同就会分叉。**26123 实证**：F 票把两个全包名额按 top1 最低给了场2(38.2)与
+    场10(40.9)，而场10 的最小面只有 23.9%，场4 被排面 24.2%、场13 被排面 29.1%——
+    同价把名额换给场4 即 9/9（P 还高 0.1pp），换给场4+场13 亦 9/9。
+
+    检查是纯算术支配：若某个双选的被排面 > 某个全包场的最小面，交换后票价不变而 P 更高。
+    ⚠️换位后原全包场降为双选可能触发 C9/C10——那时本条不成立，由人裁。
+    """
+    fulls = [lg for lg in legs if len(set(lg.faces)) == 3]
+    doubles = [lg for lg in legs if len(set(lg.faces)) == 2]
+    if not fulls or not doubles:
+        return []
+    best = None
+    for d in doubles:
+        dropped = (set(FACE_KEYS) - set(d.faces)).pop()
+        gain_from = d.fair.get(FACE_KEYS[dropped], 0.0)
+        for f in fulls:
+            cheapest = min(FACE_KEYS, key=lambda x: f.fair.get(FACE_KEYS[x], 0.0))
+            delta = gain_from - f.fair.get(FACE_KEYS[cheapest], 0.0)
+            if delta > _FULL_COVER_SWAP_EPS and (best is None or delta > best[0]):
+                best = (delta, d, dropped, f, cheapest)
+    if best is None:
+        return []
+    delta, d, dropped, f, cheapest = best
+    return [Finding(
+        "WARN", "full_cover_allocation_dominated", d.match_no,
+        f"同价支配票面：把场{f.match_no} {f.name} 的全包名额换给场{d.match_no} {d.name}，"
+        f"票价不变而 P **+{delta * 100:.1f}pp**"
+        f"（场{d.match_no} 被排 {FACE_ZH[dropped]} {d.fair[FACE_KEYS[dropped]] * 100:.1f}% "
+        f"＞ 场{f.match_no} 最小面 {FACE_ZH[cheapest]} "
+        f"{f.fair[FACE_KEYS[cheapest]] * 100:.1f}%）。"
+        f"全包名额按被排面 fair 降序，不按 top1 升序。"
+        f"⚠️换位后场{f.match_no}降双选若触发 C9/C10 则本条不成立，由人裁。",
+        "26123:全包给 top1 最低的场2/场10,同价换给场4 即 9/9(F 实走 8/9,断场4 客 24.2)")]
+
+
 def audit_read_ticket_consistency(findings: list[Finding]) -> list[Finding]:
     """C17 —— 读判说「全包或丢」、票面却降双选的场次达阈值即 ERROR（2026-09-13 入码）。
 

@@ -518,6 +518,7 @@ def decision_audit_legs(
     from nutmeg.config.settings import AppSettings
     from nutmeg.decision.audit_override import AuditOverrideError, record_user_overrides
     from nutmeg.decision.legs_audit import (
+        audit_full_cover_allocation,
         audit_legs,
         audit_prescription_deviations,
         audit_read_ticket_consistency,
@@ -543,6 +544,8 @@ def decision_audit_legs(
     findings = [
         *audit_legs(legs_from_dict(payload)),
         *audit_prescription_deviations(payload),
+        # 全包名额分配 —— 按被排面 fair 降序，不按 top1 升序（2026-09-13 入码）
+        *audit_full_cover_allocation(legs_from_dict(payload)),
     ]
     # C17 —— 票面级：读判判「全包或丢」却降双选的场次达阈值即 ERROR（2026-09-13 入码）。
     findings.extend(audit_read_ticket_consistency(findings))
