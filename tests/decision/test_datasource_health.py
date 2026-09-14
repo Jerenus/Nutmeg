@@ -60,3 +60,17 @@ def test_clv_fill_judges_the_window_not_the_lifetime_backlog():
     check = clv_fill_check(read_time=11, closing=11, lifetime=(2308, 155))
     assert check.ok is True
     assert "2308" in check.detail and "7%" in check.detail
+
+
+def test_zucai_intl_check_reports_alignment_coverage():
+    """足彩链的健康标准与竞彩不同：对不上是常态，不是故障。
+
+    足彩板含竞彩不卖的场（亚运女足、部分葡超/瑞典超），那些场 titan007 板面上根本
+    没有。所以这里不要求 100%，只要求「能对上的都对上了」——即已落盘的国际欧赔
+    份数等于对齐算法在当期板面上能命中的份数。空则红：一场都对不上意味着对齐坏了。
+    """
+    from nutmeg.decision.datasource_health import zucai_intl_check
+
+    assert zucai_intl_check(total=14, priced=10).ok is True
+    assert zucai_intl_check(total=14, priced=0).ok is False
+    assert zucai_intl_check(total=0, priced=0).ok is False

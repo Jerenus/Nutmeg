@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 __all__ = [
     "HealthCheck",
+    "zucai_intl_check",
     "clv_fill_check",
     "coverage_check",
     "freshness_check",
@@ -105,6 +106,25 @@ def clv_fill_check(
     )
 
 
+def zucai_intl_check(*, total: int, priced: int) -> HealthCheck:
+    """足彩国际欧赔的对齐覆盖。
+
+    与竞彩不同,这里**不要求 100%**:足彩板面含竞彩不卖的场次(亚运女足、部分葡超/
+    瑞典超),titan007 的竞彩板上根本没有它们,对不上是事实而非故障。红线只有一条——
+    一场都对不上,那说明对齐坏了(开球时刻口径变了、板面抓空了)。
+    """
+    if total <= 0:
+        return HealthCheck(
+            name="足彩国际欧赔对齐", ok=False, value="0/0", detail="当期无场次,无从判断",
+        )
+    return HealthCheck(
+        name="足彩国际欧赔对齐", ok=priced > 0,
+        value=f"{priced}/{total}",
+        detail="" if priced > 0
+        else "一场都没对上——对齐逻辑或板面抓取出问题(缺席本身是常态,全缺席不是)",
+    )
+
+
 def render_health(run_date: str, checks: list[HealthCheck]) -> str:
     verdict = verdict_of(checks)
     lines = [
@@ -123,7 +143,8 @@ def render_health(run_date: str, checks: list[HealthCheck]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def run_health(run_date: str, output_dir) -> tuple[str, str]:
+def run_health(run_date: str, output_dir, *, issue: str | None = None,
+               zucai_dir=None) -> tuple[str, str]:
     """跑全部检查,写报告。返回 ``(报告路径, 结论)``。
 
     检查项:
@@ -133,7 +154,9 @@ def run_health(run_date: str, output_dir) -> tuple[str, str]:
       4. 微结构可得性(初赔缺失会在这里红——drift 会悄悄退回恒 0)
       5. 当日欧赔快照新鲜度
       6. CLV 填充率(收盘那一抓失手会在这里红;只看近 14 天,见 clv_fill_check)
+      7. 足彩国际欧赔对齐(给了 ``issue``+``zucai_dir`` 才查;缺席常态,全缺席才红)
     """
+    import json
     from datetime import UTC, datetime, timedelta
     from pathlib import Path
 
@@ -235,6 +258,20 @@ def run_health(run_date: str, output_dir) -> tuple[str, str]:
             sum(1 for s in snaps if s.kind == "closing"),
         ),
     ))
+
+    if issue and zucai_dir:
+        zdir = Path(zucai_dir)
+        issue_doc = zdir / f"{issue}-issue.json"
+        intl_doc = zdir / f"{issue}-odds-intl.json"
+        total = priced = 0
+        try:
+            if issue_doc.exists():
+                total = len(json.loads(issue_doc.read_text("utf-8")).get("matches") or [])
+            if intl_doc.exists():
+                priced = len(json.loads(intl_doc.read_text("utf-8")).get("matches") or [])
+        except (OSError, ValueError):
+            total = priced = 0
+        checks.append(zucai_intl_check(total=total, priced=priced))
 
     report = render_health(run_date, checks)
     path = base / "decision" / f"datasource-health-{run_date}.md"

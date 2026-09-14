@@ -62,13 +62,15 @@ def decision_odds_shadow(
 def decision_datasource_health(
     run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
     output_dir: Path = _OUTPUT_DIR_OPTION,
+    issue: str | None = _cli.typer.Option(None, "--issue", help="给了才查足彩链"),
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
 ) -> None:
-    """决策本体 · 数据底座健康度:端点/覆盖/共识家数/初赔/新鲜度/CLV 填充率。
+    """决策本体 · 数据底座健康度:端点/覆盖/共识家数/初赔/新鲜度/CLV 填充率(+足彩对齐)。
 
     结论为 degraded 时退出码 1——供无人值守链路把数据退化变成可见失败。
     """
     from nutmeg.decision.datasource_health import run_health
-    path, verdict = run_health(run_date, output_dir)
+    path, verdict = run_health(run_date, output_dir, issue=issue, zucai_dir=zucai_dir)
     _cli.typer.echo(f"{path} → {verdict}")
     if verdict != "healthy":
         raise _cli.typer.Exit(code=1)
