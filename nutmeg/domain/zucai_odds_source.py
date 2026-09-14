@@ -17,6 +17,7 @@ class ZucaiOddsSyncResult:
     warnings: list[str] = field(default_factory=list)
     source_url: str | None = None
     source_path: str | None = None
+    archive_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
