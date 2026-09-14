@@ -26,6 +26,7 @@
 | B3 | 判读 | 逐场：市场锚→DC→结构完整度→**两队 team_tags（RULEBOOK 球队影响因子标签词典，带证据与失效）→对位机制**→旗→判决表动作；产 P14 处方。**处方票价只作当日难度指数，不是待售票**。**读判在 14:00 备料复核后冻结**（RULEBOOK 临场只加面，probation） |
 | B4 | 落 Read | `uv run nutmeg zucai-build-reads --judgment-file <judgment-v1> --issue <issue> --store-ids-file … --fair-file … --made-at …` → 产 reads.json + legs-base.json（只转录与词典校验，判断在 judgment 里）；再 `decision-read --reads-file …`。每场 note 显式列旗名与动作级；legs 带 `team_tags`/`tracking_tags`/`license_questions`/`ttg_shape_anchor` |
 | B4b | **穷举候选比较** | 先跑 `uv run nutmeg zucai-candidates --options-file <声明空间> --fair-file … [--base-file <基准票面>]`（穷举/单点与两点替换报告），再用 `zucai-optimize --input-file <cand.json>` 固化已选版本；只穷举人已声明的有限票面空间，先保留全部 audit-blocked/over-cap 行，再对 eligible 候选**帽内按 P(全对) 降序**，**同 P 依次按票价升序、内容哈希升序**。**回本线/官方中位倍数只作报告**，**不排序、不阻断、不自动建议空仓**，首行不等于推荐且默认不选择 |
+| B4c | **面集展开（2026-09-14 新增）** | `uv run nutmeg decision-explain-faces --legs-file <legs-base> [--match N] [--out …]`——每场七个面集 × 盖率/被排面档位/裸单总暴露/触发哪些码，**由机器机械展开条文**。⛔它只摊算术：**不排序、不推荐、不裁合法性**，退出码恒 0，不是出票门。死亡三证(a) 机制一证、牌照四问、旗的证据等级留空给主循环填（表末「判断栏」）。**出生事故 2026-09-15**：构 26125 票时把 C14 的「**被排面** fair>20%」口算成「任一面 fair>20%」，场4/场12 两处灰带排除被误锁全包，帽内零 ERROR 解 1,890→0，并支撑了当时的空仓建议 |
 | B5 | **首版构票（一步到位，2026-08-24 用户定）** | 在处方之上**直接完成砍腿后的第一版实票**，不得只交全包清单等用户逐轮压缩：①单选＝牌照/实质单核验（净线优先）；②3进2＝排面活性验尸（先例载体存亡+钱流方向+热度×资讯偏差）后砍第三面；③2进1＝保险性价比表（兑现概率×每元效率）定裸/保；④附**资金使用率报告**（票价 vs 难度、每笔保险买的是哪个面）＋2-3 个备选档位 |
 | B5b | **风险预警与裁决分工** | 翻车场/异常项（改场/夹心/源分歧/终核异动）逐条列出，标注「我已裁决：理由」或「需你裁决：两选项」。**默认我裁**；以下必须上交：翻车场裸单、终核≥2pp异动打在裸单上、用户历史点名过的死法形状 |
 | B5c | **四表共振核对（probation, 2026-09-06）** | 首版实票成型后、审计门前，每一保留场一行四列：①牌照四问 0-4（中轴/正路破门机制/对手破门机制缺席/无情境旗与 C9）②被排面死亡三证 0-3（机制缺席/载体不在/正路 PASS）③崩塌双列（洞在哪侧、中轴哪个位置）④翻车预警名次+先失球走势。**决策矩阵**：四问 4/4 且翻车名次低→裸单；3/4→至多双选，三证 3/3 才排，2/3 且被排面 ≤15% 可排，否则全包或丢；被排面 >20% 且三证 <3→必须全包或丢；洞在正路中轴→禁裸单；多票共享 >20% 被排面→组合 WARN；附被排面按 P 降序的独立面效率表 |
@@ -36,6 +37,14 @@
 | B9c | **实票登记** | 页面：`uv run nutmeg decision-web` → <http://127.0.0.1:8787/betslips>（任九/胜负彩；列表带方案号缺失告警）。CLI：`uv run nutmeg betslip register --slip-id <期-票号> --channel renjiu\|shengfucai\|jczq --placed-at … --faces "<整行或点名式>" --fair-file … --multiplier N --scheme-no <方案号> [--trial]`；竞彩用 `--legs-file` + `--combo 4` / `--combo 2,3`。**方案号缺失会在摘要里喊**——没入账=没打，账空则刹车条款失去输入 |
 | B9b | 晨间夜账校准（多夜期次每夜一次） | `uv run nutmeg zucai-night-calibrate --issue <issue> --date <欧洲比赛日>`（90' 口径，AET/PEN 取 fulltime）；需推送时显式加 `--dispatch-telegram --no-dry-run`；报告供主循环写 rx night 块；af-map 缺映射=显式跳过，禁按队名猜测补 |
 | B10 | 开奖结算 | `betslip settle --results-file <90'三源赛果> [--prize-per-note <官方单注>]`（竞彩按赔率连乘，足彩须给官方单注奖金）；okooo 先行 + 官方 gameNo=90 终核（含任九奖金→奖金模型记分）；ledger settle + rx outcome + scoreboard 更新（含 `tags` 组按追踪标签累计）+ retro memory；预测判定 `workflow grade-rx --rx-file <rx> --issue <issue>` 批量记账（P1..Pn 自动对号到 prediction-hex；判断在主循环，动作只记账）；**影子期双轨**：改完 scoreboard.json 跑 `nutmeg scoreboard settle-issue --scoreboard-file … --evidence-type official_draw --evidence-id <期号> --no-dry-run --acknowledge-manual-source` 一次性镜像（自动找 leaf 与 supersedes；JSON 仍权威，无镜像=违 M5），期末 `nutmeg scoreboard shadow` 对账入证据 |
+
+> **非决策附录 · 候选因子观察仪（不影响票面）**
+> `uv run python scripts/zucai_f2_observe.py record --issue <期>`（**最早一场开球前**跑，开球后整期拒收）
+> → 开奖后 `… grade --issue <期>` 累计进 `experiments/prereg-26126-F2-ledger.json`。
+> 前瞻预注册见 `experiments/prereg-26126-F1c-F2.json`（26126-26137，n≥140 结账）。
+> ⛔**候选档因子不得以任何形式进入判读或票面**：观察仪不写 legs、不进 prep、
+> 不被 B0-B10 任何一步引用；分档常量结账前冻结。本条列在收尾表之前只为「别忘了跑」，
+> **不是决策步骤**。
 
 ## 收尾检查表（每期）
 

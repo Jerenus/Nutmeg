@@ -21,6 +21,10 @@ _ZUCAI_SCHEDULE_SOURCE_FILE_OPTION = _cli.typer.Option(
 _ZUCAI_ODDS_SOURCE_FILE_OPTION = _cli.typer.Option(
     None, "--odds-source-file", help="赔率源文件(离线;省略则需 --live-fetch)")
 _LEGS_AUDIT_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="票面结构 JSON")
+_EXPLAIN_MATCH_OPTION = _cli.typer.Option(
+    None, "--match", help="只展开这些场号；不给＝全部")
+_EXPLAIN_OUT_OPTION = _cli.typer.Option(
+    None, "--out", help="落盘路径；不给＝打到 stdout")
 _WITH_LEGS_FILE_OPTION = _cli.typer.Option(
     [], "--with-legs-file",
     help="同期其它票面文件；用于 C15 多票共享被排面检查（可重复）")
@@ -656,6 +660,46 @@ def decision_audit_legs(
             except (AuditOverrideError, ValueError) as error:
                 _cli.typer.echo(f"❌ user override blocked: {error}")
         raise _cli.typer.Exit(code=1)
+
+
+@_cli.app.command("decision-explain-faces")
+def decision_explain_faces(
+    legs_file: Path = _LEGS_AUDIT_FILE_OPTION,
+    match_no: list[int] = _EXPLAIN_MATCH_OPTION,
+    output: Path | None = _EXPLAIN_OUT_OPTION,
+) -> None:
+    """面集展开：每场七个面集 × 各自触发哪些码。**不是出票门**，退出码恒 0。
+
+    出生事故：2026-09-15 构 26125 票时把 C14 的「**被排面** fair>20%」口算成
+    「任一面 fair>20%」，两场灰带排除被误锁全包，帽内零 ERROR 解 1,890→0，
+    并支撑了当时的空仓建议。宪法「判据必须入代码」此前只用在判据上，没用在
+    **判据的应用**上——本命令补这一刀。
+
+    ⛔它只摊算术。死亡三证够不够、洞能不能被对手吃掉、旗的证据等级到没到，
+    一律留空给判断（表末「判断栏」）。它**不排序、不推荐、不裁合法性**。
+    出票门仍然只有 `decision-audit-legs`。
+    """
+    import json as _json
+
+    from nutmeg.decision.legs_audit import format_face_options, legs_from_dict
+
+    payload = _json.loads(Path(legs_file).read_text("utf-8"))
+    if isinstance(payload, list):
+        _cli.typer.echo("❌ 扁平 legs 数组不含 fair/旗/完整度，无法展开面集。", err=True)
+        raise _cli.typer.Exit(code=2)
+    legs = legs_from_dict(payload)
+    if match_no:
+        wanted = set(match_no)
+        legs = [lg for lg in legs if lg.match_no in wanted]
+    if not legs:
+        _cli.typer.echo("没有可展开的场次。", err=True)
+        raise _cli.typer.Exit(code=2)
+    text = format_face_options(legs, issue=str(payload.get("issue", "")))
+    if output:
+        Path(output).write_text(text + "\n", "utf-8")
+        _cli.typer.echo(f"面集展开 → {output}")
+    else:
+        _cli.typer.echo(text)
 
 
 @_cli.app.command("zucai-optimize")
