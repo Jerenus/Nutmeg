@@ -1,5 +1,6 @@
 """因子生死机制的执行(反积累免疫落地):verdict → Factor 状态转换 + 持久化。"""
 from nutmeg.decision.calibrate import apply_verdicts, seed_factors_if_empty
+from nutmeg.decision.factors import load_seed_factors
 from nutmeg.decision.ontology import Factor, FactorVerdict
 from nutmeg.decision.store import DecisionStore
 
@@ -12,9 +13,10 @@ def _v(fid, rec, n=31):
 
 def test_seed_factors_idempotent(tmp_path):
     s = DecisionStore(tmp_path)
-    assert seed_factors_if_empty(s) == 6
+    seeded = seed_factors_if_empty(s)
+    assert seeded == len(load_seed_factors())
     assert seed_factors_if_empty(s) == 0            # 幂等
-    assert len(s.load(Factor)) == 6
+    assert len(s.load(Factor)) == seeded
 
 
 def test_retire_verdict_sets_status_retired(tmp_path):
