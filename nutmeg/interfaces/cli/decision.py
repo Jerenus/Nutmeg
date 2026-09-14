@@ -48,6 +48,16 @@ def decision_fetch(
     _cli.typer.echo(fetch_day(run_date, output_dir))
 
 
+@_cli.app.command("decision-odds-shadow")
+def decision_odds_shadow(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+) -> None:
+    """决策本体 · 影子期:API-Football vs titan007 国际欧赔对照报告(judgment 不动)。"""
+    from nutmeg.decision.odds_shadow import run_shadow
+    _cli.typer.echo(run_shadow(run_date, output_dir))
+
+
 @_cli.app.command("decision-fetch-zucai")
 def decision_fetch_zucai(
     issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26091"),
