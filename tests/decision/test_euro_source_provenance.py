@@ -156,3 +156,40 @@ def test_apifootball_is_called_only_for_the_matches_titan007_missed(monkeypatch)
     merged, provenance = fetch_mod._default_euro_fetcher(value, "2026-09-14")
     assert called == ["af"]
     assert provenance == {"周一002": "titan007", "周一003": "apifootball"}
+
+
+def test_reconcile_picks_the_latest_closing_snapshot_not_the_last_written():
+    """同场多条 closing 时，CLV 必须用**最接近开球**的那条。
+
+    原实现是 ``{s.match_id: s for s in store.load(...)}``——后写的覆盖先写的，选中
+    的是文件顺序上的最后一条，不是时间上最晚的一条。收盘捕获重跑一次（调度重试、
+    人工补抓）就会产生多条，此时 CLV 参照变成由写入顺序决定，而 CLV 是因子生死的
+    两根轴之一。
+    """
+    from nutmeg.decision.reconcile import latest_closing_by_match
+
+    def _snap(sid: str, taken_at: str) -> MarketSnapshot:
+        return MarketSnapshot(
+            snapshot_id=sid, match_id="M-1", taken_at=taken_at, kind="closing",
+            source="titan007", fair={"had": {"home": 0.5, "draw": 0.3, "away": 0.2}},
+            raw_odds={}, lines={},
+        )
+
+    # 故意让「最晚」不是最后写入的那条
+    snaps = [
+        _snap("S-late", "2026-09-14T23:30:00+08:00"),
+        _snap("S-early", "2026-09-14T20:00:00+08:00"),
+    ]
+    assert latest_closing_by_match(snaps)["M-1"].snapshot_id == "S-late"
+
+
+def test_latest_closing_ignores_read_time_snapshots():
+    from nutmeg.decision.reconcile import latest_closing_by_match
+
+    snaps = [
+        MarketSnapshot(snapshot_id="R", match_id="M-1", taken_at="2026-09-14T23:59:00+08:00",
+                       kind="read_time", source="titan007", fair={}, raw_odds={}, lines={}),
+        MarketSnapshot(snapshot_id="C", match_id="M-1", taken_at="2026-09-14T20:00:00+08:00",
+                       kind="closing", source="titan007", fair={}, raw_odds={}, lines={}),
+    ]
+    assert latest_closing_by_match(snaps)["M-1"].snapshot_id == "C"

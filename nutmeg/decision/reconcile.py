@@ -24,6 +24,26 @@ def read_actual(market: str, outcome_90: str | None, score: str | None) -> str |
     return None
 
 
+def latest_closing_by_match(snapshots) -> dict:
+    """``{match_id: taken_at 最晚的 closing 快照}``。
+
+    同场可以有多条 closing:收盘捕获重跑(调度重试、人工补抓)每次都产一条(快照 id 含
+    taken_at)。CLV 要的是**最接近开球**的那条,即 taken_at 最晚的。
+
+    原实现是 ``{s.match_id: s for s in ...}``,后写的覆盖先写的——选中的是文件顺序上
+    的最后一条,不是时间上最晚的。CLV 是因子生死的两根轴之一,让它由写入顺序决定
+    是不能接受的。``taken_at`` 无法比较的行排在最后(不参与竞争,但没有别的候选时仍可用)。
+    """
+    best: dict = {}
+    for snapshot in snapshots:
+        if snapshot.kind != "closing":
+            continue
+        current = best.get(snapshot.match_id)
+        if current is None or str(snapshot.taken_at or "") > str(current.taken_at or ""):
+            best[snapshot.match_id] = snapshot
+    return best
+
+
 def settle_read(read, *, outcome_90, score, closing) -> Settlement:
     actual = read_actual(read.market, outcome_90, score)
     b = None if actual is None else brier(read.belief, actual)
@@ -213,9 +233,7 @@ def settle_reads_for_matches(store, *, outcomes: dict, settled_at: str) -> int:
     """
     from nutmeg.decision.ontology import MarketSnapshot, Read
 
-    closing_by_match = {
-        s.match_id: s for s in store.load(MarketSnapshot) if s.kind == "closing"
-    }
+    closing_by_match = latest_closing_by_match(store.load(MarketSnapshot))
     n = 0
     for read in store.load(Read):
         oc = outcomes.get(read.match_id)
