@@ -79,7 +79,7 @@ drift 实例（`3085206` Pinnacle）：初赔 `2.07/3.37/3.54` → 即时 `1.71/
 - Create: `tests/test_titan007.py`
 - Create: `nutmeg/data/titan007.py`
 
-- [ ] **Step 1: 落真实板面 fixture**
+- [x] **Step 1: 落真实板面 fixture**
 
 `tests/fixtures/titan007/bf_jc.txt` —— 真实抓取裁剪为 3 场（保留联赛头 + `$` 分隔符 + `!` 行分隔，UTF-8 存盘，解析器负责 GBK 解码所以 fixture 直接喂已解码字符串）：
 
@@ -87,7 +87,7 @@ drift 实例（`3085206` Pinnacle）：初赔 `2.07/3.37/3.54` → 即时 `1.71/
 13^#003db9^2082^芬超,芬超^冠,冠^SubLeague.aspx?SclassID=13!34^#0088FF^2948^意甲,意甲^,^SubLeague.aspx?SclassID=34$3085206^2026,8,14,23,00,00^2026,8,14,23,00,00^0^周一002^13^2082^386^图尔库国际,英特杜古,国际图尔^2226^VPS瓦萨,VPS華沙,瓦萨^0^0^^^0^0^0^0^2^6^2026,8,14,00,00,00^0.75^0!2993786^2026,8,15,00,30,00^2026,8,15,00,30,00^0^周一003^34^2948^1397^科莫,科木,科莫^189^帕尔马,帕爾馬,帕尔马^0^0^^^0^0^0^0^8^16^2026,8,14,00,00,00^1.25^0!2993793^2026,8,15,00,30,00^2026,8,15,00,30,00^0^周一004^34^2948^558^都灵,拖連奴,都灵^174^罗马,羅馬,罗马^0^0^^^0^0^0^0^14^3^2026,8,14,00,00,00^-0.75^0
 ```
 
-- [ ] **Step 2: 写失败测试**
+- [x] **Step 2: 写失败测试**
 
 `tests/test_titan007.py`：
 
@@ -143,12 +143,12 @@ def test_parse_board_rejects_empty_match_section():
         parse_board("13^#003db9^2082^芬超,芬超^,^League.aspx?SclassID=13$")
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `uv run pytest tests/test_titan007.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'nutmeg.data.titan007'`
 
-- [ ] **Step 4: 写实现**
+- [x] **Step 4: 写实现**
 
 `nutmeg/data/titan007.py`：
 
@@ -350,12 +350,12 @@ def parse_board(text: str) -> list[Titan007BoardRow]:
     return rows
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_titan007.py -v`
 Expected: PASS（5 passed）
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add nutmeg/data/titan007.py tests/test_titan007.py tests/fixtures/titan007/bf_jc.txt
@@ -374,7 +374,7 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 - Modify: `tests/test_titan007.py`
 - Modify: `nutmeg/data/titan007.py`
 
-- [ ] **Step 1: 落真实欧赔 fixture**
+- [x] **Step 1: 落真实欧赔 fixture**
 
 `tests/fixtures/titan007/euro_3085206.js` —— 真实抓取裁剪为 6 家（含必须被排除的竞彩官方 + 香港马会，供服务层筛选测试用）：
 
@@ -385,7 +385,7 @@ var game=Array("1129|157603168|Lottery Official|1.55|3.65|4.75|57.11|24.25|18.64
 var gOrder=Array();
 ```
 
-- [ ] **Step 2: 写失败测试**
+- [x] **Step 2: 写失败测试**
 
 追加到 `tests/test_titan007.py`：
 
@@ -433,12 +433,12 @@ def test_parse_euro_odds_rejects_too_few_books():
         parse_euro_odds(thin)
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `uv run pytest tests/test_titan007.py -v`
 Expected: FAIL — `ImportError: cannot import name 'parse_euro_odds'`
 
-- [ ] **Step 4: 写实现**
+- [x] **Step 4: 写实现**
 
 追加到 `nutmeg/data/titan007.py`：
 
@@ -516,12 +516,12 @@ def parse_euro_odds(text: str) -> list[Titan007BookQuote]:
     return quotes
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_titan007.py -v`
 Expected: PASS（10 passed）
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add nutmeg/data/titan007.py tests/test_titan007.py tests/fixtures/titan007/euro_3085206.js
@@ -539,7 +539,7 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 - Modify: `tests/test_titan007.py`
 - Modify: `nutmeg/data/titan007.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 追加到 `tests/test_titan007.py`：
 
@@ -592,12 +592,12 @@ def test_client_raises_on_http_error():
             client.fetch_board()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/test_titan007.py -k client -v`
 Expected: FAIL — `ImportError: cannot import name 'Titan007Client'`
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 追加到 `nutmeg/data/titan007.py`：
 
@@ -657,12 +657,12 @@ class Titan007Client:
         return parse_euro_odds(self._get_text(url, referer=_EURO_REFERER))
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_titan007.py -v`
 Expected: PASS（13 passed）
 
-- [ ] **Step 5: 真网络冒烟（一次性，不入测试套）**
+- [x] **Step 5: 真网络冒烟（一次性，不入测试套）**
 
 ```bash
 uv run python -c "
@@ -676,7 +676,7 @@ with Titan007Client() as c:
 ```
 Expected: 板面 ≥1 场，欧赔 ≥100 家，且列出 Pinnacle/Crown/Lottery Official
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add nutmeg/data/titan007.py tests/test_titan007.py
@@ -694,7 +694,7 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 - Create: `tests/test_jczq_titan007_odds.py`
 - Create: `nutmeg/services/jczq_titan007_odds.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_jczq_titan007_odds.py`：
 
@@ -904,12 +904,12 @@ def test_fair_probability_sums_to_one():
     assert out["周一002"]["match_winner"].independent is True
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/test_jczq_titan007_odds.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'nutmeg.services.jczq_titan007_odds'`
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 `nutmeg/services/jczq_titan007_odds.py`：
 
@@ -1161,17 +1161,17 @@ def collect_bold_odds_titan007_live(
         client.close()
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_jczq_titan007_odds.py -v`
 Expected: PASS（9 passed）
 
-- [ ] **Step 5: 全套回归 + lint**
+- [x] **Step 5: 全套回归 + lint**
 
 Run: `uv run pytest -q && uv run ruff check nutmeg tests`
 Expected: 全绿，无新增 failure
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add nutmeg/services/jczq_titan007_odds.py tests/test_jczq_titan007_odds.py
@@ -1189,7 +1189,7 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 - Create: `tests/decision/test_odds_shadow.py`
 - Create: `nutmeg/decision/odds_shadow.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/decision/test_odds_shadow.py`：
 
@@ -1267,12 +1267,12 @@ def test_report_names_both_coverage_counts_and_the_drift_capability():
 
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/decision/test_odds_shadow.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'nutmeg.decision.odds_shadow'`
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 `nutmeg/decision/odds_shadow.py`：
 
@@ -1477,12 +1477,12 @@ def run_shadow(run_date: str, output_dir) -> str:
     return str(path)
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/decision/test_odds_shadow.py -v`
 Expected: PASS（3 passed）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add nutmeg/decision/odds_shadow.py tests/decision/test_odds_shadow.py
@@ -1499,7 +1499,7 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 **Files:**
 - Modify: `nutmeg/interfaces/cli/decision.py`
 
-- [ ] **Step 1: 加 `decision-odds-shadow` 子命令**
+- [x] **Step 1: 加 `decision-odds-shadow` 子命令**
 
 该文件用 typer（非 argparse），`_OUTPUT_DIR_OPTION` 是既有的共享 Option 常量。在
 `nutmeg/interfaces/cli/decision.py` 的 `decision_fetch`（`:41-48`）之后插入：
@@ -1515,19 +1515,19 @@ def decision_odds_shadow(
     _cli.typer.echo(run_shadow(run_date, output_dir))
 ```
 
-- [ ] **Step 2: 冒烟**
+- [x] **Step 2: 冒烟**
 
 ```bash
 uv run nutmeg decision-odds-shadow --run-date 2026-09-14
 ```
 Expected: 打印报告路径；`cat` 该文件可见两源覆盖率对照表
 
-- [ ] **Step 3: 回归**
+- [x] **Step 3: 回归**
 
 Run: `uv run pytest -q && uv run ruff check nutmeg tests`
 Expected: 全绿
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add nutmeg/interfaces/cli/decision.py
@@ -1547,12 +1547,12 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 - Modify: `tests/decision/test_fetch.py`（若不存在则新建）
 - Modify: `nutmeg/decision/fetch.py`
 
-- [ ] **Step 1: 确认现有测试文件位置**
+- [x] **Step 1: 确认现有测试文件位置**
 
 Run: `ls tests/decision/ | grep -i fetch || echo "无 — 新建 tests/decision/test_fetch.py"`
 Expected: 输出文件名或 "无"
 
-- [ ] **Step 2: 写失败测试**
+- [x] **Step 2: 写失败测试**
 
 追加（或新建）到 `tests/decision/test_fetch.py`：
 
@@ -1595,12 +1595,12 @@ def test_partial_coverage_does_not_overwrite_a_richer_snapshot(tmp_path):
     assert len(kept) == 10, "部分降级不得覆盖更完整的快照"
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `uv run pytest tests/decision/test_fetch.py -k partial_coverage -v`
 Expected: FAIL — `assert 1 == 10`
 
-- [ ] **Step 4: 写实现**
+- [x] **Step 4: 写实现**
 
 在 `nutmeg/decision/fetch.py` 中，把落盘那段从 `if bold_odds:` 改为带地板守卫。在 `fetch_day` 内、`persist_bold_odds_snapshot` 调用之前插入：
 
@@ -1635,12 +1635,12 @@ def _existing_bold_odds_count(run_date: str, output_dir) -> int:
             persist_bold_odds_snapshot(run_date, output_dir, bold_odds)
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `uv run pytest tests/decision/test_fetch.py -v`
 Expected: PASS
 
-- [ ] **Step 6: 回归 + 提交**
+- [x] **Step 6: 回归 + 提交**
 
 ```bash
 uv run pytest -q && uv run ruff check nutmeg tests
@@ -1652,6 +1652,10 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 ```
 
 ---
+
+> **执行状态（2026-09-14）**：Task 1-7 已全部完成并提交于分支
+> `feat/titan007-euro-odds`（7 个 commit）。Task 8 是用户裁决门，**未执行**。
+> 首次影子期报告：`.nutmeg-data/jczq/daily/2026-09-14/odds_shadow.md`。
 
 ## Task 8（用户裁决门 · 不得自行执行）: 切主源
 
