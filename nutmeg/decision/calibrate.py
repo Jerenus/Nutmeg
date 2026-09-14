@@ -180,6 +180,28 @@ def participation_precision(store) -> dict:
     return {"divergent": _bucket(True), "shadow": _bucket(False)}
 
 
+def backfill_missing_seed_factors(store) -> int:
+    """把种子里有、store 里没有的因子补进去(幂等)。返回补入数。
+
+    ``seed_factors_if_empty`` 只在 store 为空时播种,所以**给种子新增因子对已有 store
+    是无效的**——因子躺在 JSON 里,``allowed_factor_ids`` 却拒绝任何引用它的 Read,
+    等于注册了永远用不上(2026-09-14 加 price_drift/book_dispersion/vig_shift 时踩到)。
+
+    **只补缺失,绝不改已有行**:已退休的因子在 store 里状态是 retired,补种不得把它
+    改回 probation——那等于让退休规则自己爬回来,正是 ACTIVE_CAP 与生死机制要防的。
+    """
+    from nutmeg.decision.factors import load_seed_factors
+    from nutmeg.decision.ontology import Factor
+
+    existing = {f.factor_id for f in store.load(Factor)}
+    added = 0
+    for factor in load_seed_factors():
+        if factor.factor_id not in existing:
+            store.upsert(factor)
+            added += 1
+    return added
+
+
 def seed_factors_if_empty(store) -> int:
     """store 无 Factor 时,把种子词典落库(幂等)。返回落库数。"""
     from nutmeg.decision.factors import load_seed_factors

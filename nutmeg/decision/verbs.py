@@ -276,6 +276,7 @@ def run_reconcile_zucai(issue: str, output_dir: Path, settled_at: str,
 def run_calibrate_panel(output_dir: Path, as_of: str) -> str:
     from nutmeg.decision.calibrate import (
         apply_verdicts,
+        backfill_missing_seed_factors,
         participation_precision,
         render_panel,
         run_calibrate,
@@ -286,6 +287,8 @@ def run_calibrate_panel(output_dir: Path, as_of: str) -> str:
     # 幂等纠偏:旧 factors.jsonl 行无 scope(默认 match)→ 按种子对齐(实体层 Task 9)
     from nutmeg.decision.factors import sync_factor_scopes
     sync_factor_scopes(store)
+    # 种子新增的因子补进已有 store——否则它们只躺在 JSON 里,Read 引用会被拒。
+    backfill_missing_seed_factors(store)
     verdicts = run_calibrate(store, as_of=as_of)
     # 反积累免疫落地:把判决执行成 Factor 状态转换(转正/退休)+ 持久化。
     changes = apply_verdicts(store, verdicts)

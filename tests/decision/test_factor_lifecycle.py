@@ -49,3 +49,40 @@ def test_retired_factor_rejected_by_read_validate_after_apply(tmp_path):
     apply_verdicts(s, [_v("fatigue_discount", "retire")])
     allowed = allowed_factor_ids(s.load(Factor))
     assert "fatigue_discount" not in allowed        # 退休后 read 校验即拒
+
+
+def test_new_seed_factors_are_backfilled_into_a_non_empty_store(tmp_path):
+    """种子新增的因子必须能进已有 store，否则是死码。
+
+    ``seed_factors_if_empty`` 只在 store 为空时播种，``sync_factor_scopes`` 只改
+    scope。2026-09-14 加 price_drift/book_dispersion/vig_shift 时就踩到这个洞：
+    三个因子躺在种子 JSON 里，store 没有，于是 ``allowed_factor_ids`` 拒绝任何引用
+    它们的 Read——注册了却永远用不上。
+    """
+    from nutmeg.decision.calibrate import backfill_missing_seed_factors
+    from nutmeg.decision.factors import allowed_factor_ids
+
+    s = DecisionStore(tmp_path)
+    seed = load_seed_factors()
+    for f in seed[:-1]:              # 故意少播最后一个
+        s.upsert(f)
+    assert backfill_missing_seed_factors(s) == 1
+    assert backfill_missing_seed_factors(s) == 0        # 幂等
+    assert allowed_factor_ids(s.load(Factor)) >= {f.factor_id for f in seed}
+
+
+def test_backfill_never_resurrects_a_retired_factor(tmp_path):
+    """已退休的因子留在 store 里且状态是 retired——补种不得把它改回 probation。"""
+    from dataclasses import replace
+
+    from nutmeg.decision.calibrate import backfill_missing_seed_factors
+
+    s = DecisionStore(tmp_path)
+    seed = load_seed_factors()
+    for f in seed:
+        s.upsert(f)
+    dead = replace(seed[0], status="retired", retire_reason="双轴平庸")
+    s.upsert(dead)
+
+    assert backfill_missing_seed_factors(s) == 0        # 它在 store 里，不是缺失
+    assert s.get(Factor, seed[0].factor_id).status == "retired"
