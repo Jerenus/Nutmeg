@@ -30,9 +30,9 @@ titan007 实跑验证：
 
 | 验证项 | 结果 |
 | --- | --- |
-| `jc.titan007.com/xml/bf_jc.txt` | HTTP 200，GBK，2307 B，**24 字段 × 10 行稳定** |
+| `jc.titan007.com/xml/bf_jc.txt` | HTTP 200，UTF-8，2307 B，**24 字段 × 10 行稳定** |
 | 竞彩编号对齐 | **10/10 逐字相同**（周一002…周一012），零别名、零 UTC 换算、零模糊匹配 |
-| `1x2d.titan007.com/{id}.js` | HTTP 200，GBK，137 KB，**27 字段 × 152 行稳定** |
+| `1x2d.titan007.com/{id}.js` | HTTP 200，UTF-8+BOM，137 KB，**27 字段 × 152 行稳定** |
 | 初赔 + 即时赔 | 152/152 行两者俱全 |
 | devig 字段假设 | `fields[6:9] == devig(fields[3:6])` **152/152 验证通过** |
 | 锐盘覆盖 | Pinnacle(177) / Crown(545) / Macauslot(80) / IBCBET(649) / Sbobet(474) / Bet365(281) 全在 |
@@ -61,7 +61,7 @@ drift 实例（`3085206` Pinnacle）：初赔 `2.07/3.37/3.54` → 即时 `1.71/
 
 | 文件 | 职责 |
 | --- | --- |
-| `nutmeg/data/titan007.py`（新建） | HTTP 抓取 + GBK 解码 + 两个纯函数解析器 + 降级响应识别。**零业务语义** |
+| `nutmeg/data/titan007.py`（新建） | HTTP 抓取 + UTF-8 解码 + 两个纯函数解析器 + 降级响应识别。**零业务语义** |
 | `nutmeg/services/jczq_titan007_odds.py`（新建） | 竞彩号对齐 + 开球时间守卫 + 书目筛选 + 组装 `MarketOdds`。drop-in 于 `collect_bold_odds_apifootball` |
 | `nutmeg/decision/odds_shadow.py`（新建） | 影子期：双源同抓、逐场逐路对比 fair、出报告 |
 | `nutmeg/interfaces/cli/decision.py`（改） | 挂 `decision-odds-shadow` 子命令 |
@@ -167,7 +167,15 @@ titan007 用两个免费无配额端点同时解掉三件事：
 2. ``1x2d.titan007.com/{match_id}.js`` —— 该场 152 家博彩的 **初赔 + 即时赔**，含
    Pinnacle / Crown / Macauslot / IBCBET / Sbobet 等去水锚要的锐盘。
 
-两个端点都是 GBK；欧赔 JS 另需欧指列表页 Referer 才正常返回。
+两个端点都是 **UTF-8**（欧赔 JS 带 BOM，板面不带）；欧赔 JS 另需欧指列表页 Referer
+才正常返回。
+
+> **实施期修正（2026-09-14）**：本计划初稿按站点 HTML 的 `<meta charset=gb2312>` 假设
+> 了 GBK，**是错的**。两个数据端点实测 UTF-8 strict 可解；按 GBK + `errors="replace"`
+> 解会在非法字节处错位，而 GBK 尾字节范围覆盖 `0x5E`（正是 `^` 分隔符），错位会凭空
+> 吞掉或伪造字段边界——实测把板面 10 行整齐的 24 字段撕成 `{24:5, 23:4, 22:1}`，队名
+> 全成乱码。客户端因此改为 **utf-8-sig → gb18030 双 strict**，绝不有损解码。Task 3 的
+> 测试相应改用 UTF-8 编码，并新增 `test_client_rejects_an_undecodable_body`。
 
 **绝不猜测 / 绝不假空盘**：解析拿不到最小规模数据一律 ``raise
 Titan007ParseError``，由调用方决定降级——从不返回空值冒充「今天没有盘」。那正是
@@ -525,7 +533,7 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 
 ---
 
-## Task 3: HTTP 客户端（GBK + 浏览器头 + Referer）
+## Task 3: HTTP 客户端（UTF-8 + 浏览器头 + Referer）
 
 **Files:**
 - Modify: `tests/test_titan007.py`

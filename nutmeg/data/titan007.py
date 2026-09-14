@@ -12,7 +12,11 @@ titan007 用两个免费无配额端点同时解掉三件事：
 2. ``1x2d.titan007.com/{match_id}.js`` —— 该场 152 家博彩的 **初赔 + 即时赔**，含
    Pinnacle / Crown / Macauslot / IBCBET / Sbobet 等去水锚要的锐盘。
 
-两个端点都是 GBK；欧赔 JS 另需欧指列表页 Referer 才正常返回。
+两个端点都是 **UTF-8**（欧赔 JS 带 BOM，板面不带）；欧赔 JS 另需欧指列表页 Referer
+才正常返回。站点 HTML 页的 ``<meta charset>`` 写的是 gb2312，会诱导人按 GBK 解——
+**别信**：这两个数据端点实测 UTF-8 strict 可解。按 GBK + ``errors="replace"`` 解会
+静默错位（GBK 尾字节范围含 ``0x5E``，正是 ``^`` 分隔符），实测把板面 10 行的字段数
+从整齐的 24 撕成 ``{24:5, 23:4, 22:1}``，且队名全成乱码。
 
 **绝不猜测 / 绝不假空盘**：解析拿不到最小规模数据一律 ``raise
 Titan007ParseError``，由调用方决定降级——从不返回空值冒充「今天没有盘」。那正是
@@ -28,9 +32,12 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
+import httpx
+
 __all__ = [
     "Titan007BoardRow",
     "Titan007BookQuote",
+    "Titan007Client",
     "Titan007Error",
     "Titan007ParseError",
     "parse_board",
@@ -255,3 +262,71 @@ def parse_euro_odds(text: str) -> list[Titan007BookQuote]:
             f"titan007 欧赔仅解出 {len(quotes)} 家（< {_MIN_EURO_ROWS}）——降级响应，拒绝当作无盘"
         )
     return quotes
+
+
+class Titan007Client:
+    """titan007 抓取器。GBK 解码 + 浏览器 UA + 各端点自己的 Referer。
+
+    ``transport`` 注入用于测试（``httpx.MockTransport``），生产留空走真网络。
+    """
+
+    def __init__(
+        self,
+        *,
+        timeout: float = 20.0,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self._client = httpx.Client(
+            timeout=timeout,
+            transport=transport,
+            headers={"User-Agent": _USER_AGENT},
+            follow_redirects=True,
+        )
+
+    def __enter__(self) -> "Titan007Client":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        self._client.close()
+
+    def _get_text(self, url: str, *, referer: str) -> str:
+        """抓一个端点并解码。
+
+        响应只发 ``text/plain`` 不带 charset，httpx 会猜错，必须显式解。两个端点实测
+        都是 UTF-8（欧赔带 BOM，``utf-8-sig`` 两者通吃）。
+
+        **一律 strict**：宁可炸也不做有损解码。按 GBK/``errors="replace"`` 解会在非法
+        字节处错位，而 GBK 尾字节范围覆盖 ``0x5E``（``^`` 分隔符），错位会凭空吞掉或
+        伪造字段边界——实测把整齐的 24 字段撕成 ``{24:5, 23:4, 22:1}``。那种坏法不报
+        错、只让下游拿到错数据，是最该避免的一类。gb18030 兜底留给站点未来真的改回
+        国标编码，同样 strict。
+        """
+        try:
+            response = self._client.get(url, headers={"Referer": referer})
+        except httpx.HTTPError as exc:
+            raise Titan007Error(f"titan007 抓取失败 {url}: {exc}") from exc
+        if response.status_code != 200:
+            raise Titan007Error(
+                f"titan007 抓取失败 {url}: HTTP {response.status_code}"
+            )
+        body = response.content
+        for encoding in ("utf-8-sig", "gb18030"):
+            try:
+                return body.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        raise Titan007ParseError(
+            f"titan007 响应既非 UTF-8 也非 gb18030 {url}——疑似降级/二进制响应"
+        )
+
+    def fetch_board(self) -> list[Titan007BoardRow]:
+        """当日竞彩板面（竞彩号 ↔ 007 id）。"""
+        return parse_board(self._get_text(_BOARD_URL, referer=_BOARD_REFERER))
+
+    def fetch_euro_odds(self, match_id: str) -> list[Titan007BookQuote]:
+        """某场各家国际欧赔（初赔 + 即时赔）。"""
+        url = _EURO_URL_TEMPLATE.format(match_id=match_id)
+        return parse_euro_odds(self._get_text(url, referer=_EURO_REFERER))

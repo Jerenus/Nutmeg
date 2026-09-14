@@ -5,9 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+import httpx
 import pytest
 
 from nutmeg.data.titan007 import (
+    Titan007Client,
+    Titan007Error,
     Titan007ParseError,
     parse_board,
     parse_euro_odds,
@@ -91,3 +94,68 @@ def test_parse_euro_odds_rejects_too_few_books():
     )
     with pytest.raises(Titan007ParseError):
         parse_euro_odds(thin)
+
+
+def _client_with(handler) -> Titan007Client:
+    return Titan007Client(transport=httpx.MockTransport(handler))
+
+
+def test_client_decodes_utf8_not_gbk():
+    """回归：这两个端点是 UTF-8，不是 GBK（站点 HTML 的 meta 写 gb2312 会诱导人解错）。
+
+    按 GBK + ``errors="replace"`` 解会把队名解成乱码，并因 GBK 尾字节含 ``0x5E``
+    （``^``）而错位撕裂字段边界——实测板面 10 行从 24 字段撕成 ``{24:5,23:4,22:1}``。
+    """
+    body = (
+        "13^x^y^芬超,芬超^,^z$3085206^2026,8,14,23,00,00^2026,8,14,23,00,00^0^周一002"
+        "^13^2082^386^图尔库国际,英特杜古,国际图尔^2226^VPS瓦萨,VPS華沙,瓦萨"
+        "^0^0^^^0^0^0^0^2^6^2026,8,14,00,00,00^0.75^0"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body.encode("utf-8"))
+
+    with _client_with(handler) as client:
+        rows = client.fetch_board()
+    assert rows[0].home_names == ("图尔库国际", "英特杜古", "国际图尔")
+    assert rows[0].away_names == ("VPS瓦萨", "VPS華沙", "瓦萨")
+
+
+def test_client_sends_browser_headers_and_referer():
+    """欧赔 JS 不带欧指列表页 Referer 会被拒。"""
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(request.headers)
+        rows = ",".join(
+            f'"{i}|1|Book{i}|2.0|3.0|4.0|40|30|30|95|2.1|3.1|4.1|40|30|30|95'
+            f'|0.9|0.9|0.9|2026,09-1,13,23,28,00|B*|1|0|0.9|0.9|0.9"'
+            for i in range(6)
+        )
+        body = f"var game=Array({rows});".encode("utf-8-sig")
+        return httpx.Response(200, content=body)
+
+    with _client_with(handler) as client:
+        client.fetch_euro_odds("3085206")
+    assert "Chrome" in seen["user-agent"]
+    assert seen["referer"] == "http://odds.titan007.com/"
+
+
+def test_client_rejects_an_undecodable_body():
+    """既非 UTF-8 也非 gb18030 = 降级/二进制响应，raise 而非有损解码。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"\xff\xfe\x00\x01\x80\x81")
+
+    with _client_with(handler) as client:
+        with pytest.raises(Titan007ParseError):
+            client.fetch_board()
+
+
+def test_client_raises_on_http_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, content=b"")
+
+    with _client_with(handler) as client:
+        with pytest.raises(Titan007Error):
+            client.fetch_board()
