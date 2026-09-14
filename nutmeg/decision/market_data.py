@@ -375,6 +375,9 @@ def euro_snapshot_from_bold_odds(
 
     只取 match_winner 的去水 fair_probability（欧赔已去水，是最 sharp 三路估计），
     作为 had 市场的 fair。空 fair 的场跳过。不产 tags/信号字段（净化不变）。
+    ``raw_odds["had"]`` 带上共识十进制赔率、``micro`` 带上市场微结构(drift/离散度/
+    返还率位移)——后者是换源才拿得到的判据原料,见 ``decision.microstructure``。
+
     收盘快照(kind=closing)与读时锚(kind=read_time)共用本构造器。
 
     ``source_by_match``({竞彩号: 源名})逐场覆盖 ``source``——2026-09-14 换源后
@@ -382,6 +385,7 @@ def euro_snapshot_from_bold_odds(
     喂错血统(``source`` 既进快照 id,又是 ``anchor``/``day_regime`` 的优先级键)。
     缺表或缺项时回落到 ``source``,保持旧行为。
     """
+    from nutmeg.decision.microstructure import market_microstructure
     from nutmeg.decision.ontology import MarketSnapshot
 
     snaps: list = []
@@ -395,7 +399,9 @@ def euro_snapshot_from_bold_odds(
             snapshot_id=_snapshot_id(match_no, taken_at, kind, row_source),
             match_id=f"M-{run_date}-{match_no}",
             taken_at=taken_at, kind=kind, source=row_source,
-            fair={"had": fair}, raw_odds={},
+            fair={"had": fair},
+            raw_odds={"had": dict(getattr(mw, "odds", {}) or {})},
             lines={},
+            micro=market_microstructure(mw),
         ))
     return snaps
