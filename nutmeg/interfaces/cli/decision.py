@@ -98,6 +98,42 @@ def decision_fetch_zucai(
     ))
 
 
+@_cli.app.command("decision-fetch-zucai-intl")
+def decision_fetch_zucai_intl(
+    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26125"),
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+) -> None:
+    """决策本体 · 足彩国际欧赔(titan007):→ <issue>-odds-intl.json。
+
+    **只补充不替换**:500.com 基线 <issue>-odds.json 原样保留。对不上 titan007
+    板面的场次直接缺席(足彩含竞彩不卖的场),不猜、不回填。
+    """
+    import json
+
+    from nutmeg.services.zucai_titan007_odds import (
+        collect_zucai_euro_titan007_live,
+    )
+    issue_path = Path(zucai_dir) / f"{issue}-issue.json"
+    if not issue_path.exists():
+        _cli.typer.echo(f"缺 {issue_path}——先跑 decision-fetch-zucai")
+        raise _cli.typer.Exit(code=1)
+    doc = json.loads(issue_path.read_text(encoding="utf-8"))
+    priced = collect_zucai_euro_titan007_live(doc)
+    total = len(doc.get("matches") or [])
+    if not priced:
+        _cli.typer.echo(f"decision-fetch-zucai-intl {issue}: 0/{total} 场——不落盘")
+        raise _cli.typer.Exit(code=1)
+    out = Path(zucai_dir) / f"{issue}-odds-intl.json"
+    out.write_text(json.dumps({
+        "issue_id": issue,
+        "source": "titan007",
+        "sources": [{"label": "titan007 逐家国际欧赔(锐盘共识,含初赔)",
+                     "url": "http://1x2d.titan007.com/{match_id}.js"}],
+        "matches": [priced[k] for k in sorted(priced)],
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    _cli.typer.echo(f"decision-fetch-zucai-intl {issue}: {len(priced)}/{total} 场 → {out}")
+
+
 @_cli.app.command("decision-sense")
 def decision_sense(
     run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
