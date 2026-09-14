@@ -108,3 +108,87 @@ def test_brief_leaves_the_judgment_table_empty():
     assert "## 判读(待主循环填写)" in md
     assert "| 1 |  |  |  |  |  |" in md          # 空行,不是预填
     assert "候选池,不是结论" in md
+
+
+# --- titan007 国际欧赔并入备料(只补充,不替换 500.com 基线)-----------------------
+
+def _prep_dirs(tmp_path, *, intl: dict | None = None):
+    """最小可跑的 zucai/output 目录。返回 PrepInputs。"""
+    import json
+
+    from nutmeg.decision.zucai_prep import PrepInputs
+
+    zdir = tmp_path / "zucai"
+    zdir.mkdir(parents=True)
+    (zdir / "26125-issue.json").write_text(json.dumps({
+        "issue_id": "26125",
+        "matches": [{"match_no": 1, "competition": "意甲", "home_team": "都灵",
+                     "away_team": "罗马", "kickoff_bj": "2026-09-15 00:30",
+                     "match_date": "2026-09-15"}],
+    }, ensure_ascii=False), encoding="utf-8")
+    (zdir / "26125-odds.json").write_text(json.dumps({
+        "issue_id": "26125",
+        "matches": [{"match_no": 1, "home": 6.0, "draw": 4.3, "away": 1.64}],
+    }, ensure_ascii=False), encoding="utf-8")
+    if intl is not None:
+        (zdir / "26125-odds-intl.json").write_text(
+            json.dumps(intl, ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "jczq"
+    (out / "daily" / "2026-09-14").mkdir(parents=True)
+    return PrepInputs(issue="26125", run_date="2026-09-14", slot="afternoon",
+                      zucai_dir=zdir, output_dir=out)
+
+
+_INTL = {
+    "issue_id": "26125",
+    "matches": [{
+        "match_no": 1,
+        "fair": {"home": 0.162, "draw": 0.226, "away": 0.612},
+        "odds": {"home": 5.9, "draw": 4.2, "away": 1.62},
+        "opening_odds": {"home": 5.2, "draw": 4.0, "away": 1.70},
+        "books": 15,
+        "micro": {"drift_pp": 6.92, "dispersion_pp": 0.95, "payout_delta_pp": 0.61},
+        "jczq_match_no": "周一004",
+        "titan007_match_id": "2993793",
+    }],
+}
+
+
+def test_prep_attaches_international_odds_when_present(tmp_path):
+    from nutmeg.decision.zucai_prep import build_prep
+
+    prep = build_prep(_prep_dirs(tmp_path, intl=_INTL))
+    rec = prep["records"]["1"]
+    assert rec["intl"]["books"] == 15
+    assert rec["intl"]["jczq_match_no"] == "周一004"
+    assert rec["intl"]["micro"]["drift_pp"] == 6.92
+
+
+def test_prep_keeps_the_500com_baseline_as_the_fair_anchor(tmp_path):
+    """国际欧赔是补充,不是替换。
+
+    直接把 fair_had 换成 titan007 会静默改变足彩判读层的输入分布——那属判据变更,
+    须先有证据再由用户裁定,与竞彩换源走同一条规矩。
+    """
+    from nutmeg.decision.zucai_prep import build_prep
+
+    with_intl = build_prep(_prep_dirs(tmp_path / "a", intl=_INTL))
+    without = build_prep(_prep_dirs(tmp_path / "b"))
+    assert with_intl["records"]["1"]["fair_had"] == without["records"]["1"]["fair_had"]
+    assert without["records"]["1"]["intl"] is None
+
+
+def test_prep_runs_unchanged_when_the_intl_file_is_absent(tmp_path):
+    from nutmeg.decision.zucai_prep import build_prep
+
+    prep = build_prep(_prep_dirs(tmp_path))
+    assert prep["records"]["1"]["intl"] is None
+
+
+def test_brief_shows_the_international_consensus_and_its_drift(tmp_path):
+    from nutmeg.decision.zucai_prep import build_prep, render_brief
+
+    brief = render_brief(build_prep(_prep_dirs(tmp_path, intl=_INTL)))
+    assert "国际欧赔" in brief
+    assert "周一004" in brief          # 对齐来源可追
+    assert "6.92" in brief             # drift 可见
