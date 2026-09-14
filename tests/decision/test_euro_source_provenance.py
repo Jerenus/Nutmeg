@@ -89,3 +89,70 @@ def test_unpack_euro_result_accepts_both_shapes():
         {"周一002": {}}, {"周一002": "titan007"},
     )
     assert unpack_euro_result(None) == ({}, {})
+
+
+def test_apifootball_is_not_called_when_titan007_covers_the_board(monkeypatch):
+    """懒备源：titan007 全覆盖时不得唤醒 API-Football。
+
+    ``bold_odds`` 的下游一律只读 ``match_winner``，AF 补的 ``over_under`` 从无消费者；
+    为一份没人读的盘口每天烧掉本就只有 100 次的配额是纯浪费。
+    """
+    from nutmeg.decision import fetch as fetch_mod
+
+    value = {
+        "matchInfoList": [
+            {
+                "businessDate": "2026-09-14",
+                "subMatchList": [
+                    {"matchNumStr": "周一002", "matchStatus": "Selling",
+                     "businessDate": "2026-09-14"},
+                ],
+            }
+        ]
+    }
+    called: list[str] = []
+    monkeypatch.setattr(
+        "nutmeg.services.jczq_titan007_odds.collect_bold_odds_titan007_live",
+        lambda v, run_date: {"周一002": {"match_winner": object()}},
+    )
+    monkeypatch.setattr(
+        "nutmeg.services.jczq_apifootball_odds.collect_bold_odds_apifootball_live",
+        lambda v, run_date: called.append("af") or {},
+    )
+    merged, provenance = fetch_mod._default_euro_fetcher(value, "2026-09-14")
+    assert called == [], "titan007 全覆盖时不该调 API-Football"
+    assert provenance == {"周一002": "titan007"}
+
+
+def test_apifootball_is_called_only_for_the_matches_titan007_missed(monkeypatch):
+    from nutmeg.decision import fetch as fetch_mod
+
+    value = {
+        "matchInfoList": [
+            {
+                "businessDate": "2026-09-14",
+                "subMatchList": [
+                    {"matchNumStr": "周一002", "matchStatus": "Selling",
+                     "businessDate": "2026-09-14"},
+                    {"matchNumStr": "周一003", "matchStatus": "Selling",
+                     "businessDate": "2026-09-14"},
+                    # 次日场：不算今天漏的，不得据此唤醒备源
+                    {"matchNumStr": "周二001", "matchStatus": "Selling",
+                     "businessDate": "2026-09-15"},
+                ],
+            }
+        ]
+    }
+    called: list[str] = []
+    monkeypatch.setattr(
+        "nutmeg.services.jczq_titan007_odds.collect_bold_odds_titan007_live",
+        lambda v, run_date: {"周一002": {"match_winner": object()}},
+    )
+    monkeypatch.setattr(
+        "nutmeg.services.jczq_apifootball_odds.collect_bold_odds_apifootball_live",
+        lambda v, run_date: (called.append("af")
+                             or {"周一003": {"match_winner": object()}}),
+    )
+    merged, provenance = fetch_mod._default_euro_fetcher(value, "2026-09-14")
+    assert called == ["af"]
+    assert provenance == {"周一002": "titan007", "周一003": "apifootball"}
