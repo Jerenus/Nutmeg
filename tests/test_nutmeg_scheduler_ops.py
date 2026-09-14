@@ -271,3 +271,62 @@ def test_operation_failure_summary_redacts_secret_like_values() -> None:
     assert "topsecret" not in summary
     assert "anothersecret" not in summary
     assert "123456:ABC" not in summary
+
+
+# ── verify-close 与 close 的实际产物同步（2026-09-15）─────────────────────
+#
+# `Nutmeg-收盘交付确认`(19:10) 连错 11 次后于 2026-08-25 被禁用，**close 自此无人
+# 审计地跑了三周**。根因是两处都在找早已不存在的东西：
+#   · 产物：close 2026-08-23 之后改产 `decision-report-v2-<date>.md`，
+#     最后一份 PDF 就是 08-23 那天的；verify 仍查 `decision-report-<date>.pdf`
+#   · 通知 kind：close 现在发 `decision.close.report.v2`
+#     (`ontology_adapter.py:629`)；verify 仍查旧的 `decision.close.report`
+# 两处都改为**优先认 v2、兼容旧格式**（历史日期仍要可验）。
+
+
+def test_verify_close_accepts_the_v2_markdown_report(tmp_path, monkeypatch, capsys):
+    run_date = "2026-09-14"
+    day_dir = _write_handoff(tmp_path, run_date)
+    (day_dir / f"decision-report-v2-{run_date}.md").write_text("# 决策日报 v2", "utf-8")
+    seen: list[str] = []
+
+    def _ledger(**kwargs):
+        seen.append(kwargs["kind"])
+        return kwargs["kind"] == "decision.close.report.v2"
+
+    monkeypatch.setattr(ops, "_has_sent_notification", _ledger)
+    ops.verify_close(run_date, tmp_path, tmp_path / "logs")
+    assert "NUTMEG_CLOSE_OK" in capsys.readouterr().out
+    assert "decision.close.report.v2" in seen
+
+
+def test_verify_close_still_accepts_the_legacy_pdf(tmp_path, monkeypatch, capsys):
+    """历史日期（2026-08-23 及以前）仍要可验。"""
+    run_date = "2026-08-21"
+    day_dir = _write_handoff(tmp_path, run_date)
+    (day_dir / f"decision-report-{run_date}.pdf").write_bytes(b"%PDF")
+
+    def _ledger(**kwargs):
+        return kwargs["kind"] == "decision.close.report"
+
+    monkeypatch.setattr(ops, "_has_sent_notification", _ledger)
+    ops.verify_close(run_date, tmp_path, tmp_path / "logs")
+    assert "NUTMEG_CLOSE_OK" in capsys.readouterr().out
+
+
+def test_verify_close_still_fails_when_no_report_exists(tmp_path, monkeypatch):
+    """闸不能因为放宽格式就变成永远通过。"""
+    run_date = "2026-09-14"
+    _write_handoff(tmp_path, run_date)
+    monkeypatch.setattr(ops, "_has_sent_notification", lambda **kwargs: True)
+    with pytest.raises(ops.SchedulerError, match="report"):
+        ops.verify_close(run_date, tmp_path, tmp_path / "logs")
+
+
+def test_verify_close_still_fails_when_the_ledger_has_no_delivery(tmp_path, monkeypatch):
+    run_date = "2026-09-14"
+    day_dir = _write_handoff(tmp_path, run_date)
+    (day_dir / f"decision-report-v2-{run_date}.md").write_text("# 决策日报 v2", "utf-8")
+    monkeypatch.setattr(ops, "_has_sent_notification", lambda **kwargs: False)
+    with pytest.raises(ops.SchedulerError, match="ledger"):
+        ops.verify_close(run_date, tmp_path, tmp_path / "logs")

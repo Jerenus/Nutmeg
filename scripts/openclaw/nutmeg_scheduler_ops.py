@@ -353,22 +353,44 @@ def validate_preclose(run_date: str, output_dir: Path) -> None:
     )
 
 
+def _close_report(run_date: str, output_dir: Path) -> Path | None:
+    """close 的当日报告产物。**优先 v2 markdown，兼容旧 PDF。**
+
+    出生事故：close 自 2026-08-23 之后改产 `decision-report-v2-<date>.md`
+    （最后一份 PDF 就是 08-23 那天的），而本检查一直只认 PDF —— `Nutmeg-收盘交付确认`
+    因此从 08-24 起必然失败，连错 11 次后于 08-25 被禁用，**close 自此无人审计地
+    跑了三周**。历史日期仍要可验，故两种格式都认。
+    """
+    day_dir = output_dir / "daily" / run_date
+    for candidate in (
+        day_dir / f"decision-report-v2-{run_date}.md",
+        day_dir / f"decision-report-{run_date}.pdf",
+    ):
+        if candidate.exists() and candidate.stat().st_size > 0:
+            return candidate
+    return None
+
+
 def verify_close(run_date: str, output_dir: Path, log_dir: Path) -> None:
     _validate_handoff(run_date, output_dir)
-    report = output_dir / "daily" / run_date / f"decision-report-{run_date}.pdf"
-    if not report.exists() or report.stat().st_size == 0:
-        raise SchedulerError(f"missing or empty report: {report}")
+    report = _close_report(run_date, output_dir)
+    if report is None:
+        raise SchedulerError(
+            f"missing or empty report: {output_dir / 'daily' / run_date}/"
+            f"decision-report-v2-{run_date}.md (或旧版 decision-report-{run_date}.pdf)"
+        )
 
     del log_dir
-    if not _has_sent_notification(
-        kind="decision.close.report",
-        business_key=run_date,
-        stage="close",
+    # 通知 kind 同样分了版本：v2 链路发 `decision.close.report.v2`
+    # (`ontology_adapter.py`)，v1 链路发 `decision.close.report` (`report.py`)。
+    if not any(
+        _has_sent_notification(kind=kind, business_key=run_date, stage="close")
+        for kind in ("decision.close.report.v2", "decision.close.report")
     ):
         raise SchedulerError("notification ledger does not confirm close report delivery")
     print(
-        f"NUTMEG_CLOSE_OK run_date={run_date} report_bytes={report.stat().st_size} "
-        "telegram=dispatched"
+        f"NUTMEG_CLOSE_OK run_date={run_date} report={report.name} "
+        f"report_bytes={report.stat().st_size} telegram=dispatched"
     )
 
 
