@@ -159,3 +159,58 @@ def test_client_raises_on_http_error():
     with _client_with(handler) as client:
         with pytest.raises(Titan007Error):
             client.fetch_board()
+
+
+def test_parse_board_takes_the_match_section_of_a_three_section_payload():
+    """历史端点（JcResult.aspx）多一段赛果/SP：``联赛$场次$赛果``。
+
+    只取场次段。若按『第一个 `$` 之后全部』解，场次段末行会和赛果段首行黏成一行，
+    字段数变成 24+11 ——正是加历史支持时踩到的那个坑。
+    """
+    leagues = "36^#FF3333^^英超,英超^,^league.aspx?sclassid=36"
+    match = (
+        "3000460^2026,8,13,17,00,00^2026,8,13,18,06,27^-1^周日001^25^943^200"
+        "^东京绿茵,東京綠茵,东京绿茵^199^千叶市原,千葉市原,千叶市原"
+        "^1^1^0^0^0^0^2^4^19^20^2026,8,13,00,00,00^0.25^0"
+    )
+    results = "2908785^负^3.33^负(-1)^1.73^3^3.90^负负^5.60^1:2^10.50"
+    rows = parse_board(f"{leagues}${match}${results}")
+    assert [r.match_no for r in rows] == ["周日001"]
+    assert rows[0].match_id == "3000460"
+    assert rows[0].kickoff == datetime(2026, 9, 13, 17, 0, 0)
+
+
+def test_client_fetches_a_historical_board_by_date():
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        body = (
+            "36^a^b^英超,英超^,^c$"
+            "3000460^2026,8,13,17,00,00^2026,8,13,18,06,27^-1^周日001^25^943^200"
+            "^东京绿茵,東京綠茵,东京绿茵^199^千叶市原,千葉市原,千叶市原"
+            "^1^1^0^0^0^0^2^4^19^20^2026,8,13,00,00,00^0.25^0$"
+            "2908785^负^3.33^负(-1)^1.73^3^3.90^负负^5.60^1:2^10.50"
+        )
+        return httpx.Response(200, content=body.encode("utf-8"))
+
+    with _client_with(handler) as client:
+        rows = client.fetch_board(run_date="2026-09-13")
+    assert "JcResult.aspx?d=2026-09-13" in seen["url"]
+    assert rows[0].match_no == "周日001"
+
+
+def test_historical_board_may_legitimately_be_empty():
+    """历史端点查未来日/无赛日会合法返回空段——不是降级。
+
+    在售板面为空仍然 raise：那正是 2026-06『WAF 降级响应覆盖完好快照』的形状。
+    """
+    empty = "36^a^b^英超,英超^,^c$$"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=empty.encode("utf-8"))
+
+    with _client_with(handler) as client:
+        assert client.fetch_board(run_date="2026-12-31") == []
+        with pytest.raises(Titan007ParseError):
+            client.fetch_board()

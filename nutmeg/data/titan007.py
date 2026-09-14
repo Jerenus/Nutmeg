@@ -45,6 +45,7 @@ __all__ = [
 ]
 
 _BOARD_URL = "http://jc.titan007.com/xml/bf_jc.txt"
+_BOARD_HISTORY_URL_TEMPLATE = "http://jc.titan007.com/handle/JcResult.aspx?d={run_date}"
 _EURO_URL_TEMPLATE = "http://1x2d.titan007.com/{match_id}.js"
 _BOARD_REFERER = "http://jc.titan007.com/"
 _EURO_REFERER = "http://odds.titan007.com/"
@@ -142,10 +143,16 @@ def _names(raw: str) -> tuple[str, ...]:
     return tuple(seen)
 
 
-def parse_board(text: str) -> list[Titan007BoardRow]:
+def parse_board(text: str, *, allow_empty: bool = False) -> list[Titan007BoardRow]:
     """解 ``bf_jc.txt`` → 板面行。
 
-    形状 ``<联赛块>$<场次>!<场次>!…``；场次 24 字段，关键位：
+    两个端点共用一套行格式，但段数不同，用 ``$`` 分段：
+
+    - 在售板面 ``bf_jc.txt``：``<联赛>$<场次>``（2 段）
+    - 历史板面 ``JcResult.aspx?d=``：``<联赛>$<场次>$<赛果/SP>``（3 段）
+
+    **一律取第 2 段**。若按「第一个 ``$`` 之后全部」取，历史 payload 的场次段末行
+    会和赛果段首行黏成一行（字段数 24+11），整批炸掉。场次 24 字段，关键位：
 
     ===== ==========================================
     下标   含义
@@ -157,13 +164,16 @@ def parse_board(text: str) -> list[Titan007BoardRow]:
     10     客队名 ``简,繁,别名``
     ===== ==========================================
 
-    降级响应（无 ``$``、场次段空、字段数不符）一律 raise。
+    降级响应（无 ``$``、字段数不符）一律 raise。空场次段默认也 raise——在售板面
+    为空正是 2026-06「WAF 降级响应覆盖完好快照」的形状。``allow_empty=True`` 供
+    历史端点用：查未来日/无赛日合法返回空，那时空不是降级。
     """
-    if "$" not in (text or ""):
+    sections = (text or "").split("$")
+    if len(sections) < 2:
         raise Titan007ParseError(
             "titan007 板面响应无 `$` 分隔符——疑似 WAF/错误页，拒绝当作空盘"
         )
-    _, _, match_section = text.partition("$")
+    match_section = sections[1]
     rows: list[Titan007BoardRow] = []
     for chunk in match_section.split("!"):
         if not chunk.strip():
@@ -186,7 +196,7 @@ def parse_board(text: str) -> list[Titan007BoardRow]:
                 away_names=_names(fields[10]),
             )
         )
-    if len(rows) < _MIN_BOARD_ROWS:
+    if not allow_empty and len(rows) < _MIN_BOARD_ROWS:
         raise Titan007ParseError("titan007 板面解出 0 场——降级响应，拒绝当作空盘")
     return rows
 
@@ -322,9 +332,21 @@ class Titan007Client:
             f"titan007 响应既非 UTF-8 也非 gb18030 {url}——疑似降级/二进制响应"
         )
 
-    def fetch_board(self) -> list[Titan007BoardRow]:
-        """当日竞彩板面（竞彩号 ↔ 007 id）。"""
-        return parse_board(self._get_text(_BOARD_URL, referer=_BOARD_REFERER))
+    def fetch_board(self, run_date: str | None = None) -> list[Titan007BoardRow]:
+        """竞彩板面（竞彩号 ↔ 007 id）。
+
+        ``run_date`` 为 ``None`` 取在售板面；给 ``YYYY-MM-DD`` 取该业务日的历史板面
+        （已赛完的场次），供影子期回放与补算历史 CLV。历史 payload 多一段赛果，
+        ``parse_board`` 统一取第 2 段。
+        """
+        if run_date is None:
+            url = _BOARD_URL
+        else:
+            url = _BOARD_HISTORY_URL_TEMPLATE.format(run_date=run_date)
+        return parse_board(
+            self._get_text(url, referer=_BOARD_REFERER),
+            allow_empty=run_date is not None,
+        )
 
     def fetch_euro_odds(self, match_id: str) -> list[Titan007BookQuote]:
         """某场各家国际欧赔（初赔 + 即时赔）。"""
