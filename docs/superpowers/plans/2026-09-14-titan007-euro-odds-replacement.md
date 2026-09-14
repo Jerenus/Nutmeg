@@ -1653,9 +1653,15 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 
 ---
 
-> **执行状态（2026-09-14）**：Task 1-7 已全部完成并提交于分支
-> `feat/titan007-euro-odds`（7 个 commit）。Task 8 是用户裁决门，**未执行**。
-> 首次影子期报告：`.nutmeg-data/jczq/daily/2026-09-14/odds_shadow.md`。
+> **执行状态（2026-09-14 · 已完成）**：Task 1-8 全部完成，分支 `feat/titan007-euro-odds`。
+> 用户于第三轮明确授权「直接开始完整的平替改造工作…直到完成为止」并把顺序交由执行方决定，
+> 故 Task 8 的裁决门以「8 天历史回放」替代「连跑 3 个日历日」，口径选定 `sharp`。
+>
+> 证据：`.nutmeg-data/jczq/decision/odds_backfill.md`（8 天：titan007 127/127，AF 63/127）、
+> `.nutmeg-data/jczq/daily/2026-09-14/odds_shadow.md`（当日双源 fair 差中位 0.44pp）。
+>
+> 终局验证：拿掉 `NUTMEG_API_FOOTBALL_KEY` 后 fetch / capture-closing / sense 三链
+> 全部 11/11 满覆盖运行。
 
 ## Task 8（用户裁决门 · 不得自行执行）: 切主源
 
@@ -1740,6 +1746,6 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 
 | 项 | 说明 |
 | --- | --- |
-| 亚盘 / 大小球 | `vip.titan007.com/AsianOdds_n.aspx`、`OverDown_n.aspx`。两页都加载 `/js/aes.js`，数据疑似 AES 加密，难度与欧赔完全不同量级——需独立勘察后另立计划 |
+| 亚盘 / 大小球 | `vip.titan007.com/AsianOdds_n.aspx`、`OverDown_n.aspx`。实测 OverDown 页 340KB 里既无 `game=Array` 也无任何博彩名，数据另行加载且两页都引 `/js/aes.js`，难度与欧赔不同量级——需独立勘察后另立计划。**但优先级很低**：实测 `bold_odds` 的每一个消费者都只读 `match_winner`，`over_under` 被生产但全仓无消费者 |
 | football-data.co.uk 历史收盘 | 免费 CSV，含 Pinnacle 收盘 + 亚盘（`PAHH`/`PAHA`），2000/01→今。`soccerdata.MatchHistory` 直读，给 CLV 轴真基准。与本计划完全正交，可并行 |
 | 别名链路退役 | 切源稳定后，`jczq_national_team_aliases.json` / `jczq_club_team_aliases.json` / `alias_audit` / `alias_propose` 在欧赔路径上失去唯一用途；退役前须确认 `jczq_match_align` / `sync` 等其他消费者 |
