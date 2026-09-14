@@ -34,6 +34,7 @@ __all__ = [
     "Titan007Error",
     "Titan007ParseError",
     "parse_board",
+    "parse_euro_odds",
 ]
 
 _BOARD_URL = "http://jc.titan007.com/xml/bf_jc.txt"
@@ -181,3 +182,76 @@ def parse_board(text: str) -> list[Titan007BoardRow]:
     if len(rows) < _MIN_BOARD_ROWS:
         raise Titan007ParseError("titan007 板面解出 0 场——降级响应，拒绝当作空盘")
     return rows
+
+
+_OUTCOME_KEYS = ("home", "draw", "away")
+
+
+def _odds_triplet(fields: list[str], start: int) -> dict[str, float] | None:
+    """取 ``fields[start:start+3]`` 为 home/draw/away 十进制赔率；任一不合法返回 None。"""
+    out: dict[str, float] = {}
+    for offset, key in enumerate(_OUTCOME_KEYS):
+        try:
+            value = float(fields[start + offset])
+        except (TypeError, ValueError, IndexError):
+            return None
+        if value <= 1.0:
+            return None
+        out[key] = value
+    return out
+
+
+def parse_euro_odds(text: str) -> list[Titan007BookQuote]:
+    """解 ``1x2d.titan007.com/{id}.js`` 的 ``game=Array(...)`` → 各家报价。
+
+    行 27 字段，实测布局（2026-09-14，152/152 行一致）：
+
+    ====== ==========================================
+    下标    含义
+    ====== ==========================================
+    0       公司 id（稳定，按 id 筛选而非按名字）
+    2       公司英文名
+    3-5     **初赔** 主/平/客
+    6-8     初赔去水概率 %（站点自算；本仓不用，用自己的 ``_devig``）
+    9       初赔返还率 %
+    10-12   **即时赔** 主/平/客
+    13-15   即时去水概率 %
+    16      即时返还率 %
+    20      更新时间
+    21      公司中文名
+    ====== ==========================================
+
+    字段 6-8 与 ``_devig(字段 3-5)`` 的一致性已实测 152/152 通过——可作解析自检的
+    旁证，但本仓一律用自己的 ``_devig`` 保持全局口径统一。
+
+    初赔或即时赔任一不合法的行直接跳过（不猜）。解出书目 < ``_MIN_EURO_ROWS``
+    视为降级响应 → raise。
+    """
+    match = _RE_EURO_GAME_ARRAY.search(text or "")
+    if match is None:
+        raise Titan007ParseError(
+            "titan007 欧赔响应无 `game=Array(...)`——疑似 WAF/错误页，拒绝当作无盘"
+        )
+    quotes: list[Titan007BookQuote] = []
+    for raw_row in _RE_EURO_ROW.findall(match.group(1)):
+        fields = raw_row.split("|")
+        if len(fields) != _EURO_FIELD_COUNT:
+            continue
+        opening = _odds_triplet(fields, 3)
+        current = _odds_triplet(fields, 10)
+        if opening is None or current is None:
+            continue
+        quotes.append(
+            Titan007BookQuote(
+                company_id=fields[0].strip(),
+                company_name=fields[2].strip(),
+                opening=opening,
+                current=current,
+                updated_at=_parse_titan_datetime(fields[20]),
+            )
+        )
+    if len(quotes) < _MIN_EURO_ROWS:
+        raise Titan007ParseError(
+            f"titan007 欧赔仅解出 {len(quotes)} 家（< {_MIN_EURO_ROWS}）——降级响应，拒绝当作无盘"
+        )
+    return quotes
