@@ -1,0 +1,9 @@
+{
+ "style": "ontology",
+ "scale": 1.0,
+ "weights_pp": {
+  "conf4_top1": 12.091790041199316,
+  "lowdraw_third": -8.93997965382451
+ },
+ "cv": "训练窗内部5折按期分折选 scale,未看测试窗"
+}

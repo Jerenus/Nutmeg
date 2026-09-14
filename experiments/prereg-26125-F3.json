@@ -1,0 +1,43 @@
+{
+ "id": "PREREG-F3-top60",
+ "registered_at": "2026-09-14",
+ "policy_file": "experiments/policy-top60-v1.json",
+ "claim": "top1(去水fair最大面) ≥ 60% 的场次，正路兑现率高于价格期望约 +8pp",
+ "evidence_so_far": {
+  "train_26099_26112": {
+   "n": 41,
+   "exp": 0.676,
+   "act": 0.756,
+   "resid_pp": 8.0
+  },
+  "test_26113_26124": {
+   "n": 38,
+   "exp": 0.731,
+   "act": 0.816,
+   "resid_pp": 8.5
+  },
+  "control_top1_below60": {
+   "train_pp": 2.4,
+   "test_pp": -1.1
+  },
+  "paired_out_of_sample": {
+   "wins": 31,
+   "losses": 7,
+   "p_sign": 0.0001,
+   "winrate": 0.816
+  },
+  "applied_weight_pp": 2.83
+ },
+ "why_prereg": "两个窗都已被检视，现有结果不再是真样本外。需要从 26125 起做前瞻 holdout。",
+ "mechanism": "与文献中的 favourite-longshot bias 一致：冷门被系统性高估、热门被低估。有既有机制支撑，先验高于纯数据挖掘。",
+ "falsifier": "26125-26136 共 12 期内，top1≥60 场次的正路残差若 95%CI 上界 < +2pp，则 F3 证伪并从档案剔除。",
+ "stop_rule": "累计 n≥120 时结账；期间不得调整权重、不得改阈值。",
+ "quota_note": "占用「每期只许 1 个新参数进实盘」的配额。在结账前不得再注册其它参数。",
+ "caveats": [
+  "80+ 带 n=14 残差 -5.4pp（与主效应反向），可能存在上界；本次不设上界，留待结账时检验",
+  "conf≥4 在 top1≥60 内的增量样本外仅 +1.5pp（训练窗 +11.5pp），故本 policy 不含 conf 项"
+ ],
+ "tier": "试用 ×0.5（闸 v3 放宽准入后）",
+ "applied_weight_pp_effective": 1.42,
+ "tier_rationale": "方向分 90/100、信息量 31%。信息量<50% 故不给全幅度;>25% 故不止于观察。半幅度=证据只支撑三分之一的诚实表达。"
+}

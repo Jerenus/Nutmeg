@@ -1,0 +1,23 @@
+{
+ "policy_id": "eabc8d3fe2",
+ "regime": "neutral",
+ "style": "market",
+ "policy": {
+  "style": "market",
+  "weights": {},
+  "scale": 0.0,
+  "note": "纯跟市场 belief=prior。永久对照组，不得淘汰——它是我们判断有无 edge 的零点。"
+ },
+ "metrics": {
+  "n": 154,
+  "brier_market": 0.5589167294421844,
+  "brier_policy": 0.5589169124525194,
+  "bss": -3.2743756861464135e-07,
+  "ci95": [
+   -8.375740203625526e-07,
+   0.0
+  ]
+ },
+ "git": "be2ff8d",
+ "at": "2026-09-14T11:53:14"
+}

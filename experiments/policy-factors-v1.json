@@ -1,0 +1,9 @@
+{
+ "style": "ontology",
+ "scale": 1.0,
+ "factors": {
+  "conf4_to_top1_pp": 12.091790041199316,
+  "lowdraw_to_third_pp": -8.93997965382451
+ },
+ "note": "F1 conf>=4→正路(同价格层内+8pp,剂量反应单调);F2 平fair<25→第3面(三个top1层一致为负)"
+}
