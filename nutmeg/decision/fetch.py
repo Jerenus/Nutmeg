@@ -39,6 +39,20 @@ def _default_euro_fetcher(value: dict, run_date: str) -> dict:
     return collect_bold_odds_apifootball_live(value, run_date=run_date)
 
 
+def _existing_bold_odds_count(run_date: str, output_dir) -> int:
+    """已落 ``bold_odds.json`` 的场数;无文件/坏文件按 0(不挡首次落盘)。"""
+    import json
+    from pathlib import Path
+
+    path = Path(output_dir) / "daily" / run_date / "bold_odds.json"
+    if not path.exists():
+        return 0
+    try:
+        return len(json.loads(path.read_text(encoding="utf-8")) or {})
+    except (OSError, ValueError):
+        return 0
+
+
 def fetch_day(
     run_date: str,
     output_dir,
@@ -78,7 +92,17 @@ def fetch_day(
             exc_info=True,
         )
     if bold_odds:
-        persist_bold_odds_snapshot(run_date, output_dir, bold_odds)
+        previous = _existing_bold_odds_count(run_date, output_dir)
+        if len(bold_odds) < previous:
+            # 部分降级:本轮拿到的比上一版还少。宁可留旧快照也不覆盖——这是
+            # 2026-06「WAF 降级响应覆盖完好快照」的同类死法,只是没空到触发
+            # `if bold_odds` 那道门。
+            logger.warning(
+                "decision-fetch %s: 本轮国际欧赔 %d 场 < 已存 %d 场,拒绝覆盖快照",
+                run_date, len(bold_odds), previous,
+            )
+        else:
+            persist_bold_odds_snapshot(run_date, output_dir, bold_odds)
 
     return (
         f"decision-fetch {run_date}: 体彩 {n_matches} 场({source}) "
