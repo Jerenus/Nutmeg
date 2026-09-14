@@ -46,7 +46,7 @@ class MarketSnapshot:
     match_id: str
     taken_at: str
     kind: str                  # read_time | closing
-    source: str                # sporttery | fcom500 | apifootball | okooo_sp
+    source: str                # sporttery | fcom500 | titan007 | apifootball | okooo_sp
     fair: dict[str, dict[str, float]] = field(default_factory=dict)
     raw_odds: dict[str, dict[str, float]] = field(default_factory=dict)
     lines: dict[str, float] = field(default_factory=dict)

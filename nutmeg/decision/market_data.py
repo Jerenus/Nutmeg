@@ -17,8 +17,10 @@ __all__ = [
     "euro_snapshot_from_bold_odds",
     "fair_1x2",
     "fetch_sporttery_value_with_fallback",
+    "load_bold_odds_provenance",
     "load_bold_odds_snapshot",
     "load_sporttery_snapshot",
+    "persist_bold_odds_provenance",
     "persist_bold_odds_snapshot",
     "persist_sporttery_snapshot",
     "snapshots_from_sporttery",
@@ -217,6 +219,39 @@ def persist_bold_odds_snapshot(run_date: str, output_dir, bold_odds: dict) -> No
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
+def persist_bold_odds_provenance(run_date: str, output_dir, provenance: dict) -> None:
+    """把 ``{竞彩号: 源名}`` 落到 ``bold_odds_source.json``,与 ``bold_odds.json`` 并列。
+
+    独立一个文件而不是塞进 bold_odds.json——后者的形状是
+    ``dataclasses.asdict(MarketOdds)``,``load_bold_odds_snapshot`` 按此形状回读,
+    混进非 MarketOdds 的键会破坏 replay 的字节兼容。
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(output_dir) / "daily" / run_date / "bold_odds_source.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(provenance, ensure_ascii=False), encoding="utf-8")
+
+
+def load_bold_odds_provenance(run_date: str, output_dir) -> dict:
+    """读 ``bold_odds_source.json``;缺失返回 ``{}``。
+
+    换源前的历史日子没有这个文件,调用方回落到 ``apifootball``——那些日子的欧赔
+    确实全部来自它,所以回落是事实正确的,不是凑合。
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(output_dir) / "daily" / run_date / "bold_odds_source.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        return {}
+
+
 def load_sporttery_snapshot(run_date: str, output_dir) -> dict | None:
     """Read a persisted Sporttery snapshot; ``None`` when absent."""
     import json
@@ -334,12 +369,18 @@ def snapshots_from_sporttery(
 
 def euro_snapshot_from_bold_odds(
     bold_odds: dict, *, run_date: str, taken_at: str, kind: str, source: str,
+    source_by_match: dict | None = None,
 ) -> list:
     """欧赔 bold_odds（{竞彩号: {market: MarketOdds}}）→ MarketSnapshot 列表。
 
     只取 match_winner 的去水 fair_probability（欧赔已去水，是最 sharp 三路估计），
     作为 had 市场的 fair。空 fair 的场跳过。不产 tags/信号字段（净化不变）。
     收盘快照(kind=closing)与读时锚(kind=read_time)共用本构造器。
+
+    ``source_by_match``({竞彩号: 源名})逐场覆盖 ``source``——2026-09-14 换源后
+    bold_odds 是 titan007(主)+apifootball(补缺)的合并产物,整批贴一个源名会给判断层
+    喂错血统(``source`` 既进快照 id,又是 ``anchor``/``day_regime`` 的优先级键)。
+    缺表或缺项时回落到 ``source``,保持旧行为。
     """
     from nutmeg.decision.ontology import MarketSnapshot
 
@@ -349,10 +390,11 @@ def euro_snapshot_from_bold_odds(
         fair = dict(getattr(mw, "fair_probability", {}) or {}) if mw else {}
         if not fair or abs(sum(fair.values())) < 1e-9:
             continue
+        row_source = (source_by_match or {}).get(match_no) or source
         snaps.append(MarketSnapshot(
-            snapshot_id=_snapshot_id(match_no, taken_at, kind, source),
+            snapshot_id=_snapshot_id(match_no, taken_at, kind, row_source),
             match_id=f"M-{run_date}-{match_no}",
-            taken_at=taken_at, kind=kind, source=source,
+            taken_at=taken_at, kind=kind, source=row_source,
             fair={"had": fair}, raw_odds={},
             lines={},
         ))
