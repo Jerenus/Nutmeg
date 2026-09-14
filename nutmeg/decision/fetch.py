@@ -48,6 +48,22 @@ def _board_match_numbers(value: dict, run_date: str) -> list[tuple[str, str]]:
     return out
 
 
+def _apifootball_fallback_enabled() -> bool:
+    """API-Football 备源开关，**默认关**（用户 2026-09-14 裁定「切」）。
+
+    实测证据：`decision.am` 08:00 跑时 titan007 板面尚未铺开 → 备源被唤醒 →
+    免费档配额早已耗尽 → 每次 HTTP 429（`decision.am.err.log` 自 2026-09-01 起
+    **164 次，一场都没补上**），而当日 17:15 的 OpenClaw 行情刷新拿到 titan007 12/12。
+    既补不上又天天刷屏，故默认关闭；**代码路径保留**，升付费档置
+    ``NUTMEG_JCZQ_APIFOOTBALL_FALLBACK=1`` 即开回。
+    """
+    import os
+
+    return os.environ.get("NUTMEG_JCZQ_APIFOOTBALL_FALLBACK", "").strip() in {
+        "1", "true", "yes", "on",
+    }
+
+
 def _default_euro_fetcher(value: dict, run_date: str) -> tuple[dict, dict]:
     """生产默认:titan007 国际欧赔主源,API-Football 补缺。
 
@@ -80,7 +96,7 @@ def _default_euro_fetcher(value: dict, run_date: str) -> tuple[dict, dict]:
     primary = collect_bold_odds_titan007_live(value, run_date=run_date)
     missing = [no for no, _ in _board_match_numbers(value, run_date) if no not in primary]
     fallback: dict = {}
-    if missing:
+    if missing and _apifootball_fallback_enabled():
         logger.info(
             "decision-fetch: titan007 漏 %d 场 %s,调 API-Football 备源",
             len(missing), missing[:5],
@@ -91,12 +107,24 @@ def _default_euro_fetcher(value: dict, run_date: str) -> tuple[dict, dict]:
             logger.warning(
                 "decision-fetch: API-Football 备源失败,仅用 titan007", exc_info=True
             )
+    elif missing:
+        # 用户 2026-09-14 裁定「切」：备源默认关闭。**漏场要说话**——静默退化成
+        # 「丢国际锚」正是 2026-08-05 别名事故的形状，不能再来一次。
+        logger.warning(
+            "decision-fetch: titan007 漏 %d 场 %s；API-Football 备源已关闭"
+            "（NUTMEG_JCZQ_APIFOOTBALL_FALLBACK=1 可开回）——这些场**无国际锚**",
+            len(missing), missing[:5],
+        )
     merged = merge_bold_odds(primary, fallback)
     provenance = {
         match_no: ("titan007" if match_no in primary else "apifootball")
         for match_no in merged
     }
     return merged, provenance
+
+
+collect_euro_odds_live = _default_euro_fetcher
+"""公开别名：生产的国际欧赔采集入口（titan007 主源，API-Football 备源默认关）。"""
 
 
 def unpack_euro_result(result) -> tuple[dict, dict]:
