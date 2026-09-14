@@ -44,6 +44,9 @@ uv run python scripts/openclaw/nutmeg_scheduler_ops.py --help
   idempotent and does not duplicate reports or Telegram delivery. Settle and
   retry runs refresh the current-day scheduler context afterward.
 - `validate-preclose` checks the frozen handoff and deterministic legs fields.
+- `run-strict --stage close` runs that validation before invoking `decision-close`.
+  A missing or provisional handoff is an upstream failure and can never be
+  converted into an implicit empty ticket.
 - `verify-close` checks the dated PDF and a sent `decision.close.report` in the
   notification ledger; the mutable latest-PDF path and log text are not treated
   as delivery evidence.
@@ -61,6 +64,10 @@ uv run nutmeg notification-retry --notification-id <id>
 
 - Upstream stage failures publish one deduplicated `operations.failure` text
   notification. A later successful rerun publishes one `operations.recovered`.
+  Preclose failures use a short user-safe summary rather than raw paths or stack
+  traces.
+- The bounded 18:40 recovery decision runs only when the 18:20 decision did not
+  produce a frozen handoff. It performs one retry; there is no retry loop.
 - Telegram transport failures do not recursively generate Telegram alerts;
   launchd keeps the nonzero exit and the durable failed delivery attempts.
 - Delivery is at-least-once. An interrupted `sending` attempt becomes

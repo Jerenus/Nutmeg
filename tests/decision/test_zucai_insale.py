@@ -2,6 +2,8 @@
 import json
 from datetime import date
 
+import pytest
+
 from nutmeg.decision.zucai_insale import parse_board, write_snapshots
 
 _HEAD = (
@@ -86,3 +88,35 @@ def test_asian_handicap_is_reference_only(tmp_path):
     odds_doc = json.loads((tmp_path / "26103-odds.json").read_text("utf-8"))
     assert issue_doc["matches"][0]["asian_ref"] == "0.80,平手,0.98"
     assert "asian" not in json.dumps(odds_doc)      # 不进赔率/算术侧
+
+
+def test_morning_slot_writes_the_baseline_odds_file_build_prep_reads(tmp_path):
+    """26123 出生事故:morning 曾写到 -odds-revision.json,而 build_prep 只在
+    slot=='revision' 时读那份 → 11:00 早刷新落盘后备料立刻 FileNotFoundError。"""
+    board = parse_board(_page(), today=date(2026, 8, 11))
+    write_snapshots(board, tmp_path, slot="morning")
+    assert (tmp_path / "26103-odds.json").exists()
+    assert not (tmp_path / "26103-odds-revision.json").exists()
+
+
+def test_explicit_issue_fetches_selected_page_and_preserves_source(tmp_path):
+    from nutmeg.decision.zucai_insale import fetch_and_write
+
+    urls = []
+    page = '<li data-expect="26102">当前第26102期</li>' + _page()
+    def fetcher(url):
+        urls.append(url)
+        return page
+    got = fetch_and_write(tmp_path, issue="26103", fetcher=fetcher)
+    assert urls == ["https://trade.500.com/sfc/?expect=26103"]
+    assert got["issue"] == "26103"
+    doc = json.loads(got["issue_path"].read_text())
+    assert doc["sources"][0]["url"] == urls[0]
+
+
+def test_explicit_issue_mismatch_fails_before_writing(tmp_path):
+    from nutmeg.decision.zucai_insale import fetch_and_write
+
+    with pytest.raises(ValueError, match="26104"):
+        fetch_and_write(tmp_path, issue="26104", fetcher=lambda _: _page())
+    assert list(tmp_path.iterdir()) == []

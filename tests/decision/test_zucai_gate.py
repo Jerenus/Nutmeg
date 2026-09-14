@@ -57,3 +57,12 @@ def test_gate_speaks_in_all_three_states():
 def test_hours_left():
     insale = InsaleIssue("26103", datetime(2026, 8, 11, 22, 0))
     assert insale.hours_left(datetime(2026, 8, 11, 14, 0)) == 8.0
+
+
+def test_selected_issue_takes_priority_over_current_issue_label():
+    page = ('<li data-expect="26123">当前第26123期</li>'
+            '<li class="chked" data-expect="26124">官方在售第26124期</li>'
+            '<span>官方售彩截止时间：09-13 20:30</span>')
+    got = parse_insale(page, today=date(2026, 9, 12))
+    assert got.issue == "26124"
+    assert got.deadline == datetime(2026, 9, 13, 20, 30)

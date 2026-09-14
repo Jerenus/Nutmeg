@@ -112,13 +112,17 @@ def run_strict(
     *,
     operation_state_file: Path = DEFAULT_OPERATION_STATE_FILE,
 ) -> None:
-    command = ["uv", "run", "nutmeg", f"decision-{stage}", "--run-date", run_date,
-               "--output-dir", str(output_dir)]
-    if stage in {"close", "settle"}:
-        command.extend(["--dispatch-telegram", "--no-dry-run"])
-    command.extend(["--format", "json"])
-    result = _run(command)
     try:
+        # A missing decision is an upstream failure, never an implicit abstention.
+        if stage == "close":
+            validate_preclose(run_date, output_dir)
+
+        command = ["uv", "run", "nutmeg", f"decision-{stage}", "--run-date", run_date,
+                   "--output-dir", str(output_dir)]
+        if stage in {"close", "settle"}:
+            command.extend(["--dispatch-telegram", "--no-dry-run"])
+        command.extend(["--format", "json"])
+        result = _run(command)
         _assert_strict_success(result, stage)
         if stage == "am":
             build_context(run_date, output_dir, DEFAULT_LOG_DIR)
@@ -126,7 +130,8 @@ def run_strict(
             build_context(date.today().isoformat(), output_dir, DEFAULT_LOG_DIR)
     except Exception as exc:
         error = exc if isinstance(exc, SchedulerError) else SchedulerError(str(exc))
-        _record_operation_failure(stage, run_date, str(error), operation_state_file)
+        summary = _user_safe_failure_summary(stage, str(error))
+        _record_operation_failure(stage, run_date, summary, operation_state_file)
         if error is exc:
             raise
         raise error from exc
@@ -365,6 +370,20 @@ def verify_close(run_date: str, output_dir: Path, log_dir: Path) -> None:
         f"NUTMEG_CLOSE_OK run_date={run_date} report_bytes={report.stat().st_size} "
         "telegram=dispatched"
     )
+
+
+def _user_safe_failure_summary(stage: str, error: str) -> str:
+    if stage == "close" and any(
+        marker in error
+        for marker in (
+            "nutmeg-handoff.json",
+            "handoff is not frozen",
+            "ready position",
+            "abstain position",
+        )
+    ):
+        return "今日决策未完成，收盘已安全停止；系统未将流程失败记为空仓。"
+    return _safe_summary(error)
 
 
 def _record_operation_failure(

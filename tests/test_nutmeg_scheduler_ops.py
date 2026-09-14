@@ -117,7 +117,64 @@ def test_build_context_aggregates_previous_day(tmp_path):
     assert context["current_day"]["market_total_count"] == 1
 
 
+def test_close_refuses_to_run_without_frozen_handoff(tmp_path, monkeypatch):
+    commands = []
+    events = []
+    monkeypatch.setattr(ops, "_run", lambda command: commands.append(command))
+    monkeypatch.setattr(
+        ops, "_publish_operation_event", lambda **event: events.append(event)
+    )
+
+    with pytest.raises(ops.SchedulerError, match="missing file"):
+        ops.run_strict(
+            "close",
+            "2026-07-17",
+            tmp_path,
+            operation_state_file=tmp_path / "operation-state.json",
+        )
+
+    assert commands == []
+    assert [event["kind"] for event in events] == ["operations.failure"]
+    assert events[0]["summary"] == (
+        "今日决策未完成，收盘已安全停止；系统未将流程失败记为空仓。"
+    )
+
+
+def test_close_runs_after_frozen_handoff(tmp_path, monkeypatch):
+    _write_handoff(
+        tmp_path,
+        "2026-07-17",
+        position="abstain",
+        explicit_empty_reason="No qualified position",
+    )
+    completed = subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout=json.dumps({"status": "succeeded", "steps": []}),
+        stderr="",
+    )
+    commands = []
+    monkeypatch.setattr(ops, "_run", lambda command: commands.append(command) or completed)
+    monkeypatch.setattr(ops, "_publish_operation_event", lambda **event: None)
+
+    ops.run_strict(
+        "close",
+        "2026-07-17",
+        tmp_path,
+        operation_state_file=tmp_path / "operation-state.json",
+    )
+
+    assert len(commands) == 1
+    assert "decision-close" in commands[0]
+
+
 def test_run_strict_uses_structured_failure_and_publishes_event(tmp_path, monkeypatch):
+    _write_handoff(
+        tmp_path,
+        "2026-07-17",
+        position="abstain",
+        explicit_empty_reason="No qualified position",
+    )
     payload = {
         "status": "failed",
         "steps": [
