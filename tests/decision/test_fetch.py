@@ -216,3 +216,52 @@ def test_decision_fetch_zucai_cli(tmp_path, monkeypatch):
     assert (tmp_path / f"{_ISSUE}-issue.json").exists()
     assert (tmp_path / f"{_ISSUE}-odds.json").exists()
     assert _ISSUE in result.output
+
+
+def test_partial_coverage_does_not_overwrite_a_richer_snapshot(tmp_path):
+    """晚间只抓到 2 场，不得覆盖早间已落的 10 场——部分降级是假空盘的变体。"""
+    import json
+
+    from nutmeg.data.fcom500 import MarketOdds
+    from nutmeg.decision.fetch import fetch_day
+
+    def _market() -> MarketOdds:
+        return MarketOdds(
+            odds={"home": 2.0, "draw": 3.4, "away": 4.0},
+            fair_probability={"home": 0.5, "draw": 0.294, "away": 0.206},
+            independent=True,
+        )
+
+    run_date = "2026-09-14"
+    value = {
+        "matchInfoList": [
+            {
+                "businessDate": run_date,
+                "subMatchList": [
+                    {
+                        "matchNumStr": f"周一{i:03d}",
+                        "matchStatus": "Selling",
+                        "businessDate": run_date,
+                    }
+                    for i in range(1, 11)
+                ],
+            }
+        ]
+    }
+    rich = {
+        f"周一{i:03d}": {"match_winner": {"odds": {}, "fair_probability": {}}}
+        for i in range(1, 11)
+    }
+    path = tmp_path / "daily" / run_date / "bold_odds.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(rich, ensure_ascii=False), encoding="utf-8")
+
+    fetch_day(
+        run_date,
+        tmp_path,
+        sporttery_fetcher=lambda: (value, "sporttery"),
+        euro_fetcher=lambda v, d: {"周一002": {"match_winner": _market()}},
+    )
+
+    kept = json.loads(path.read_text(encoding="utf-8"))
+    assert len(kept) == 10, "部分降级不得覆盖更完整的快照"

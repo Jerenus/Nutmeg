@@ -127,9 +127,14 @@ def sense_day(run_date: str, *, output_dir, taken_at: str, store) -> int:
         logger.info("sense resolve 未命中别名表(照常入库,*_id=null): %s",
                     "、".join(sorted(misses)))
     bold = _load_euro_bold_odds(run_date, output_dir)
+    # 血统表按场覆盖源名(2026-09-14 换源后 bold_odds 是 titan007+apifootball 合并
+    # 产物)。换源前的历史日子没有这个文件,回落 apifootball——那些日子的欧赔确实
+    # 全部来自它,回落是事实正确的。
+    from nutmeg.decision.market_data import load_bold_odds_provenance
+    euro_provenance = load_bold_odds_provenance(run_date, output_dir)
     for s in euro_snapshot_from_bold_odds(
         bold, run_date=run_date, taken_at=taken_at,
-        kind="read_time", source="apifootball",
+        kind="read_time", source="apifootball", source_by_match=euro_provenance,
     ):
         # 欧赔快照仍产竞彩号 match_id(队名不在 bold_odds),此处改写为 canonical。
         # 只落今天体彩盘在售场的欧赔锚——bold_odds 常含次日场(跨日竞彩号),

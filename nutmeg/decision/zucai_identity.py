@@ -20,9 +20,9 @@ from nutmeg.decision.identity import canonical_match_id
 
 
 def _prep_records(issue: str, zucai_dir) -> dict:
-    """优先读 revision（18:30 位移复核后的盘），否则读 afternoon。"""
+    """优先读 revision（18:30 位移复核后的盘），其次 afternoon，最后 morning（11:00 早刷新）。"""
     zdir = Path(zucai_dir)
-    for slot in ("revision", "afternoon"):
+    for slot in ("revision", "afternoon", "morning"):
         path = zdir / f"{issue}-prep-{slot}.json"
         if path.exists():
             return json.loads(path.read_text("utf-8")).get("records") or {}

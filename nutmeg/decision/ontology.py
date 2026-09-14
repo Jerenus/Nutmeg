@@ -46,10 +46,13 @@ class MarketSnapshot:
     match_id: str
     taken_at: str
     kind: str                  # read_time | closing
-    source: str                # sporttery | fcom500 | apifootball | okooo_sp
+    source: str                # sporttery | fcom500 | titan007 | apifootball | okooo_sp
     fair: dict[str, dict[str, float]] = field(default_factory=dict)
     raw_odds: dict[str, dict[str, float]] = field(default_factory=dict)
     lines: dict[str, float] = field(default_factory=dict)
+    # 市场微结构(drift/离散度/返还率位移)——2026-09-14 换源后才可得,见
+    # decision.microstructure。存量行无此键,_from_dict 按默认 {} 读回。
+    micro: dict[str, float] = field(default_factory=dict)
 
     @property
     def id(self) -> str:

@@ -48,6 +48,34 @@ def decision_fetch(
     _cli.typer.echo(fetch_day(run_date, output_dir))
 
 
+@_cli.app.command("decision-odds-shadow")
+def decision_odds_shadow(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+) -> None:
+    """决策本体 · 影子期:API-Football vs titan007 国际欧赔对照报告(judgment 不动)。"""
+    from nutmeg.decision.odds_shadow import run_shadow
+    _cli.typer.echo(run_shadow(run_date, output_dir))
+
+
+@_cli.app.command("decision-datasource-health")
+def decision_datasource_health(
+    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    issue: str | None = _cli.typer.Option(None, "--issue", help="给了才查足彩链"),
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+) -> None:
+    """决策本体 · 数据底座健康度:端点/覆盖/共识家数/初赔/新鲜度/CLV 填充率(+足彩对齐)。
+
+    结论为 degraded 时退出码 1——供无人值守链路把数据退化变成可见失败。
+    """
+    from nutmeg.decision.datasource_health import run_health
+    path, verdict = run_health(run_date, output_dir, issue=issue, zucai_dir=zucai_dir)
+    _cli.typer.echo(f"{path} → {verdict}")
+    if verdict != "healthy":
+        raise _cli.typer.Exit(code=1)
+
+
 @_cli.app.command("decision-fetch-zucai")
 def decision_fetch_zucai(
     issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26091"),
@@ -70,6 +98,42 @@ def decision_fetch_zucai(
         odds_source_url=odds_source_url, odds_source_file=odds_source_file,
         run_date=run_date, captured_at=captured_at,
     ))
+
+
+@_cli.app.command("decision-fetch-zucai-intl")
+def decision_fetch_zucai_intl(
+    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26125"),
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+) -> None:
+    """决策本体 · 足彩国际欧赔(titan007):→ <issue>-odds-intl.json。
+
+    **只补充不替换**:500.com 基线 <issue>-odds.json 原样保留。对不上 titan007
+    板面的场次直接缺席(足彩含竞彩不卖的场),不猜、不回填。
+    """
+    import json
+
+    from nutmeg.services.zucai_titan007_odds import (
+        collect_zucai_euro_titan007_live,
+    )
+    issue_path = Path(zucai_dir) / f"{issue}-issue.json"
+    if not issue_path.exists():
+        _cli.typer.echo(f"缺 {issue_path}——先跑 decision-fetch-zucai")
+        raise _cli.typer.Exit(code=1)
+    doc = json.loads(issue_path.read_text(encoding="utf-8"))
+    priced = collect_zucai_euro_titan007_live(doc)
+    total = len(doc.get("matches") or [])
+    if not priced:
+        _cli.typer.echo(f"decision-fetch-zucai-intl {issue}: 0/{total} 场——不落盘")
+        raise _cli.typer.Exit(code=1)
+    out = Path(zucai_dir) / f"{issue}-odds-intl.json"
+    out.write_text(json.dumps({
+        "issue_id": issue,
+        "source": "titan007",
+        "sources": [{"label": "titan007 逐家国际欧赔(锐盘共识,含初赔)",
+                     "url": "http://1x2d.titan007.com/{match_id}.js"}],
+        "matches": [priced[k] for k in sorted(priced)],
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    _cli.typer.echo(f"decision-fetch-zucai-intl {issue}: {len(priced)}/{total} 场 → {out}")
 
 
 @_cli.app.command("decision-sense")
@@ -518,8 +582,10 @@ def decision_audit_legs(
     from nutmeg.config.settings import AppSettings
     from nutmeg.decision.audit_override import AuditOverrideError, record_user_overrides
     from nutmeg.decision.legs_audit import (
+        audit_full_cover_allocation,
         audit_legs,
         audit_prescription_deviations,
+        audit_read_ticket_consistency,
         audit_shared_exclusions,
         format_findings,
         has_blocking,
@@ -542,7 +608,11 @@ def decision_audit_legs(
     findings = [
         *audit_legs(legs_from_dict(payload)),
         *audit_prescription_deviations(payload),
+        # 全包名额分配 —— 按被排面 fair 降序，不按 top1 升序（2026-09-13 入码）
+        *audit_full_cover_allocation(legs_from_dict(payload)),
     ]
+    # C17 —— 票面级：读判判「全包或丢」却降双选的场次达阈值即 ERROR（2026-09-13 入码）。
+    findings.extend(audit_read_ticket_consistency(findings))
     if with_legs_file:
         # C15 —— 同期多票的共同死点。分散注金不等于分散死点(26118 三票共享 23.2% 全灭)。
         batch = {str(payload.get("version") or Path(legs_file).stem):

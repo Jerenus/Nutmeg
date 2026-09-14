@@ -28,15 +28,100 @@ def _default_sporttery_fetcher() -> tuple[dict, str]:
     return fetch_sporttery_value_with_fallback()
 
 
-def _default_euro_fetcher(value: dict, run_date: str) -> dict:
-    """生产默认:API-Football 国际欧赔(``collect_bold_odds_apifootball`` 的生产入口)。
+def _board_match_numbers(value: dict, run_date: str) -> list[tuple[str, str]]:
+    """该业务日在售场次 ``(竞彩号, 业务日)``——判断 titan007 是否漏场的分母。
 
-    无 ``NUTMEG_API_FOOTBALL_KEY`` 时该入口返回空 → 只落体彩快照(优雅降级)。
+    口径必须与 ``jczq_titan007_odds._board_matches`` 一致:一份 sporttery 快照含
+    **多个业务日**,不按 ``businessDate`` 过滤会把次日的场当成今天漏的,白白唤醒备源。
+    """
+    out: list[tuple[str, str]] = []
+    for day in value.get("matchInfoList") or []:
+        for raw in day.get("subMatchList") or []:
+            if str(raw.get("matchStatus") or "").casefold() != "selling":
+                continue
+            business_date = str(raw.get("businessDate") or day.get("businessDate") or "")
+            if run_date and business_date and business_date != run_date:
+                continue
+            match_no = str(raw.get("matchNumStr") or "")
+            if match_no:
+                out.append((match_no, business_date))
+    return out
+
+
+def _default_euro_fetcher(value: dict, run_date: str) -> tuple[dict, dict]:
+    """生产默认:titan007 国际欧赔主源,API-Football 补缺。
+
+    2026-09-14 换源。API-Football Free 档 100 次/天,8 天回放实测覆盖
+    63/127(50%),且不管板面多大都卡在 ~9 场;titan007 免费无配额、同期
+    127/127(100%),并带初赔(API-Football 基础 ``/odds`` 结构性没有,故 drift
+    信号在旧源上恒为 0)。证据见 ``.nutmeg-data/jczq/decision/odds_backfill.md``。
+
+    API-Football 退为**懒备源**:只在 titan007 漏场时才调。此前它每轮必调,而
+    ``bold_odds`` 的下游(``euro_snapshot_from_bold_odds`` / ``intl_odds.parse_bold_odds``
+    / ``odds_shadow``)**一律只读 ``match_winner``**——它补的 ``over_under`` 从来没有
+    消费者。为一份没人读的盘口每天烧掉本就只有 100 次的配额,不值。
+
+    ``merge_bold_odds`` 的语义正是 primary 优先、fallback 只补缺,绝不覆盖。两源都空
+    → 只落体彩快照(优雅降级,与换源前行为一致)。
+
+    返回 ``(bold_odds, {竞彩号: 源名})``。血统必须单独带出来:合并后单看 bold_odds
+    无从知道某场的 ``match_winner`` 是哪个源给的,而 ``MarketSnapshot.source`` 既进
+    快照 id、又是 ``anchor``/``day_regime`` 的优先级键——整批贴一个源名等于给判断层
+    喂错血统。``merge_bold_odds`` 是 primary 优先,所以 primary 里有的场就是 titan007 的。
     """
     from nutmeg.services.jczq_apifootball_odds import (
         collect_bold_odds_apifootball_live,
+        merge_bold_odds,
     )
-    return collect_bold_odds_apifootball_live(value, run_date=run_date)
+    from nutmeg.services.jczq_titan007_odds import (
+        collect_bold_odds_titan007_live,
+    )
+
+    primary = collect_bold_odds_titan007_live(value, run_date=run_date)
+    missing = [no for no, _ in _board_match_numbers(value, run_date) if no not in primary]
+    fallback: dict = {}
+    if missing:
+        logger.info(
+            "decision-fetch: titan007 漏 %d 场 %s,调 API-Football 备源",
+            len(missing), missing[:5],
+        )
+        try:
+            fallback = collect_bold_odds_apifootball_live(value, run_date=run_date)
+        except Exception:  # noqa: BLE001 — 备源失败不拖累主源
+            logger.warning(
+                "decision-fetch: API-Football 备源失败,仅用 titan007", exc_info=True
+            )
+    merged = merge_bold_odds(primary, fallback)
+    provenance = {
+        match_no: ("titan007" if match_no in primary else "apifootball")
+        for match_no in merged
+    }
+    return merged, provenance
+
+
+def unpack_euro_result(result) -> tuple[dict, dict]:
+    """把 euro fetcher 的返回统一成 ``(bold_odds, 血统)``。
+
+    生产 fetcher 回元组;测试/replay 注入的替身回纯 dict——两种都收,免得为了血统
+    去改每一处既有替身。纯 dict 时血统为空,调用方回落到默认源名。
+    """
+    if isinstance(result, tuple):
+        return (result[0] or {}), (result[1] or {})
+    return (result or {}), {}
+
+
+def _existing_bold_odds_count(run_date: str, output_dir) -> int:
+    """已落 ``bold_odds.json`` 的场数;无文件/坏文件按 0(不挡首次落盘)。"""
+    import json
+    from pathlib import Path
+
+    path = Path(output_dir) / "daily" / run_date / "bold_odds.json"
+    if not path.exists():
+        return 0
+    try:
+        return len(json.loads(path.read_text(encoding="utf-8")) or {})
+    except (OSError, ValueError):
+        return 0
 
 
 def fetch_day(
@@ -49,10 +134,12 @@ def fetch_day(
     """抓当日体彩盘口 + 国际欧赔,落到 sense_day 读取的同一目录。返回一行摘要。
 
     ``sporttery_fetcher()`` → ``(value, source)``;``euro_fetcher(value, run_date)``
-    → ``{竞彩号: {market: MarketOdds}}``。二者默认用保留模块真 fetcher,测试/replay
-    注入替身。国际欧赔抓取异常仅降级(不写 bold_odds),体彩快照照落。
+    → ``{竞彩号: {market: MarketOdds}}`` 或 ``(同前, {竞彩号: 源名})``。二者默认用
+    保留模块真 fetcher,测试/replay 注入替身。国际欧赔抓取异常仅降级(不写
+    bold_odds),体彩快照照落。
     """
     from nutmeg.decision.market_data import (
+        persist_bold_odds_provenance,
         persist_bold_odds_snapshot,
         persist_sporttery_snapshot,
     )
@@ -70,15 +157,28 @@ def fetch_day(
     )
 
     bold_odds: dict = {}
+    provenance: dict = {}
     try:
-        bold_odds = euro_fetcher(value, run_date) or {}
+        bold_odds, provenance = unpack_euro_result(euro_fetcher(value, run_date))
     except Exception:  # noqa: BLE001 — 国际 odds optional;降级体彩-only,从不崩
         logger.warning(
             "decision-fetch %s: 国际欧赔抓取失败,退体彩-only", run_date,
             exc_info=True,
         )
     if bold_odds:
-        persist_bold_odds_snapshot(run_date, output_dir, bold_odds)
+        previous = _existing_bold_odds_count(run_date, output_dir)
+        if len(bold_odds) < previous:
+            # 部分降级:本轮拿到的比上一版还少。宁可留旧快照也不覆盖——这是
+            # 2026-06「WAF 降级响应覆盖完好快照」的同类死法,只是没空到触发
+            # `if bold_odds` 那道门。
+            logger.warning(
+                "decision-fetch %s: 本轮国际欧赔 %d 场 < 已存 %d 场,拒绝覆盖快照",
+                run_date, len(bold_odds), previous,
+            )
+        else:
+            persist_bold_odds_snapshot(run_date, output_dir, bold_odds)
+            if provenance:
+                persist_bold_odds_provenance(run_date, output_dir, provenance)
 
     return (
         f"decision-fetch {run_date}: 体彩 {n_matches} 场({source}) "

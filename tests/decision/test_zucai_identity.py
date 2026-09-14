@@ -107,3 +107,14 @@ def test_af_map_keeps_unmapped_visible(prep):
     out = build_af_map("26122", prep, {"1": 1563166})
     assert out["fixtures"] == {"1": 1563166}
     assert out["unmapped"] == ["2"]
+
+
+def test_morning_only_prep_still_yields_store_ids(tmp_path, monkeypatch):
+    """26123 出生事故:只跑过 11:00 早刷新时 store-ids 报"无备料记录"。"""
+    (tmp_path / "26123-prep-morning.json").write_text(json.dumps({"records": {
+        "1": {"name": "维拉-诺丁汉", "match_date": "2026-09-12",
+              "fair_had": {"home": 0.43, "draw": 0.28, "away": 0.29}}}},
+        ensure_ascii=False), encoding="utf-8")
+    _patch(monkeypatch, {}, {})
+    ids = build_store_ids("26123", tmp_path, _FakeKernel())
+    assert set(ids) == {"1"} and ids["1"]["name"] == "维拉-诺丁汉"

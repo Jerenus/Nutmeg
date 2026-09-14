@@ -337,6 +337,7 @@ def _resolve_read_snapshot_id(
     _prefix, snapshot_kind, legacy_provider, _match_no, _captured_at = parts
     provider = {
         "api-football": "intl",
+        "titan007": "intl",
         "apifootball": "intl",
         "intl": "intl",
         "sporttery": "sporttery",

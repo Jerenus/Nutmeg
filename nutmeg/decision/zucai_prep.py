@@ -262,6 +262,21 @@ def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
     odds_doc = _load(zdir / odds_name)
     odds_by_no = {int(r["match_no"]): r for r in odds_doc.get("matches") or []}
 
+    # titan007 国际欧赔(decision-fetch-zucai-intl 的产物)——**只补充不替换**。
+    # 基线 fair_had 仍来自 500.com;直接换掉会静默改变足彩判读层的输入分布,那属
+    # 判据变更,须先有证据再由用户裁定(与竞彩换源同一条规矩)。文件缺失是常态
+    # (没跑过 / 全场对不上 titan007 板面),那时 intl 一律 None。
+    intl_by_no: dict[int, dict] = {}
+    intl_path = zdir / f"{issue}-odds-intl.json"
+    if intl_path.exists():
+        try:
+            intl_by_no = {
+                int(r["match_no"]): r
+                for r in (_load(intl_path).get("matches") or [])
+            }
+        except (OSError, ValueError, KeyError, TypeError):
+            intl_by_no = {}
+
     matches = issue_doc.get("matches") or []
     board_value = load_boards(Path(inputs.output_dir), inputs.run_date, matches)
     rows_by_num = {str(r.get("matchNum")): r for r in board_rows(board_value)}
@@ -280,6 +295,7 @@ def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
         }
         fair = euro_fair(odds_by_no.get(no) or {})
         rec["fair_had"] = {k: round(v, 4) for k, v in fair.items()} if fair else None
+        rec["intl"] = intl_by_no.get(no)
         pools = sporttery_pools(rows_by_num.get(align["mapping"].get(no) or "", {}))
         rec["sporttery_had_date"] = pools["had_date"]
         rec["hhad_line"] = pools["hhad_line"]
@@ -349,6 +365,43 @@ def render_brief(prep: dict) -> str:
         for a in al["ambiguous"]:
             L.append(f"- 场{a['match_no']} {a['home']}-{a['away']}:多个候选 "
                      f"{'/'.join(a['candidates'])}")
+        L.append("")
+
+    intl_rows = [(no, r) for no, r in sorted(prep["records"].items(),
+                                             key=lambda kv: int(kv[0]))
+                 if r.get("intl")]
+    if intl_rows:
+        L.append("## 国际欧赔(titan007 锐盘共识) — 补充口径,基线仍是 500.com")
+        L.append("")
+        L.append("| 场 | 对阵 | 500 基线 fair | 007 fair | 最大差 pp | 开盘位移 pp "
+                 "| 跨家分歧 pp | 家 | 对齐来源 |")
+        L.append("|---|---|---|---|---|---|---|---|---|")
+        for no, rec in intl_rows:
+            intl = rec["intl"]
+            base = rec.get("fair_had") or {}
+            f = intl.get("fair") or {}
+            micro = intl.get("micro") or {}
+            fmt = lambda d: ("/".join(f"{(d.get(k) or 0) * 100:.0f}"    # noqa: E731
+                                      for k in ("home", "draw", "away"))
+                             if d else "—")
+            gap = ("—" if not base or not f else
+                   f"{max(abs((base.get(k) or 0) - (f.get(k) or 0)) for k in f) * 100:.2f}")
+            L.append(
+                f"| {no} | {rec['name']} | {fmt(base)} | {fmt(f)} | {gap} "
+                f"| {micro.get('drift_pp', '—')} | {micro.get('dispersion_pp', '—')} "
+                f"| {intl.get('books', '—')} | {intl.get('jczq_match_no') or '—'} |"
+            )
+        missing = [no for no, r in sorted(prep["records"].items(),
+                                          key=lambda kv: int(kv[0]))
+                   if not r.get("intl")]
+        if missing:
+            L.append("")
+            L.append(f"> 场 {'、'.join(missing)} 无国际共识——足彩含竞彩不卖的场次,"
+                     f"titan007 板面上没有,这些腿仍只有 500.com 单源。")
+        L.append("")
+        L.append("> 开盘位移是**旧源结构性拿不到**的量(API-Football 基础 /odds 无初赔,"
+                 "drift 在那边恒为 0)。方向与阈值未定,三个对应因子在 probation,"
+                 "待双轴校准——**不要拿它当已定判据**。")
         L.append("")
 
     sc = prep["screens"]

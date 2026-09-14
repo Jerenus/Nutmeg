@@ -5,7 +5,9 @@ CLV 两端都用欧赔才自洽:prior=欧赔读时 fair,closing=欧赔收盘 fai
 """
 from __future__ import annotations
 
-_SOURCE_PRIORITY = ("apifootball", "fcom500", "sporttery")
+# titan007 是 2026-09-14 起的国际欧赔主源;apifootball 退为备源但仍在——历史快照
+# 全是它,删掉会让旧日子的国际锚静默消失。顺序 = sharp 程度。
+_SOURCE_PRIORITY = ("titan007", "apifootball", "fcom500", "sporttery")
 
 
 def resolve_prior(snapshots: list, *, market: str):

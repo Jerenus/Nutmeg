@@ -2,13 +2,20 @@
 from nutmeg.decision.factors import ACTIVE_CAP, load_seed_factors
 
 
-def test_seed_has_six_probation_factors():
+def test_seed_is_all_probation_and_its_size_is_a_deliberate_gate():
+    """种子数量是一道刻意的门——ACTIVE_CAP=12 存在就是为了防规则堆积。
+
+    加因子时**要**改这个数字,那一步强迫人正视「又多了一条规则」。但任何因子都不得
+    以 active 出生:活不活由双轴校准说了算。
+    """
     seed = load_seed_factors()
-    assert len(seed) == 6
+    assert len(seed) == 9
     assert all(f.status == "probation" for f in seed)
     ids = {f.factor_id for f in seed}
     assert {"seeding_incentive", "bunker_profile", "lineup_news_gap",
             "league_bias", "market_line_error", "fatigue_discount"} <= ids
+    # 2026-09-14 换源后才可测的三个量(旧源上 drift 恒为 0、离散度/返还率位移算不出)
+    assert {"price_drift", "book_dispersion", "vig_shift"} <= ids
 
 
 def test_seed_factors_carry_born_from():
@@ -41,6 +48,10 @@ def test_seed_factors_carry_scope():
         "league_bias": "league",
         "market_line_error": "match",
         "fatigue_discount": "appearance",
+        # 市场微结构三项都是单场可观测量,不跨场沉淀 → match scope
+        "price_drift": "match",
+        "book_dispersion": "match",
+        "vig_shift": "match",
     }
 
 

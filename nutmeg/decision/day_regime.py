@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from nutmeg.decision.ontology import MarketSnapshot
 
-_SOURCE_PRIORITY = ("apifootball", "fcom500", "sporttery")   # 与 anchor 同序:欧赔最 sharp
+# 与 anchor 同序:欧赔最 sharp。titan007 是 2026-09-14 起的主源,apifootball 保留
+# 在列——历史快照全是它。
+_SOURCE_PRIORITY = ("titan007", "apifootball", "fcom500", "sporttery")
+_EURO_SOURCES = ("titan007", "apifootball", "fcom500")
 _HEAVY_FAV = 0.65      # 重热门阈(fair 最大方向 ≥)
 _TOSSUP = 0.45         # 均势阈(fair 最大方向 <)
 _GAP_ALERT = 0.08      # 欧-体 gap 警戒(分量最大差 ≥,继承 §17 gap 口径)
@@ -41,7 +44,9 @@ def compute_day_regime(store, *, run_date: str) -> dict:
             anchor = next(iter(by_source.values()))
         had = anchor.fair["had"]
         fav_side = max(had, key=had.get)
-        euro = by_source.get("apifootball") or by_source.get("fcom500")
+        euro = next(
+            (by_source[src] for src in _EURO_SOURCES if src in by_source), None
+        )
         spot = by_source.get("sporttery")
         gap = None
         if (euro is not None and spot is not None
