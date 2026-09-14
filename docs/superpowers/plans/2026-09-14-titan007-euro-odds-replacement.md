@@ -1792,18 +1792,30 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 
 ## ⚠️ 本次实施的一个操作事故（留给考古）
 
-执行期间我用了 `git add -A` / `git add -u`，把**当时工作树里不属于本次工作的 26 个文件**
-扫进了三个 commit：
+执行期间我用了 `git add -A` / `git add -u`，把**当时工作树里不属于本次工作的 23 个文件**
+扫进了两个 commit：
 
 | Commit | 误入内容 |
 | --- | --- |
 | `b708193` | 会话开始时的 SOP WIP：`nutmeg_scheduler_ops.py`、`zucai_gate/insale/prep.py`、调度文档及三个测试（8 个） |
 | `24c4dd7` | `docs/sop/PROPOSAL-2026-09-13-*`、两份 plans、`experiments/`（9 个）、`scripts/render_zucai_*.py`、`scripts/zucai_loop.py`（15 个） |
-| `f75348a` | `nutmeg/{domain,services}/zucai_odds_source.py` 及其测试（3 个） |
 
-后两批是**会话进行中由另一个并发进程写入**的文件（足彩 discovery loop）。因此本分支
-**未合并**，停在 `feat/titan007-euro-odds`，备份于 `backup/titan007-premerge`。
-合并前需先处置这 26 个文件的归属。
+第二批是**会话进行中由另一个并发进程写入**的文件（足彩 discovery loop）。
+
+> **归因更正**：最初报为 26 个，并把 `nutmeg/{domain,services}/zucai_odds_source.py`
+> 及其测试算作第三批（`f75348a`）——**错了**。那三个文件在基线 `1ebc20b` 里就已存在，
+> 只是被 loop 改动、又被我的 `-A` 顺手带上。错因是用
+> `git log <range> -- <path> | tail -1` 归因，它给的是**范围内最早触及该文件**的 commit，
+> 不是新增它的 commit。核实方法：`git cat-file -e 1ebc20b:<path>`。
+
+**处置（2026-09-14）**：没有合并被污染的历史。从基线 `1ebc20b` 重建了
+`clean/titan007-euro-odds`——逐个 cherry-pick 23 个 commit、剥离外来路径后以
+`git commit -C` 保留原提交信息，再 `--no-ff` 合入 main（`2cecb58`）。剥离前先把
+SOP WIP 的 patch、`zucai_prep.py` 的那一处、loop 的全部文件导出保全，事后逐项还回
+工作树。验证：干净分支动过 37 个文件、与外来清单交集 **0**、`zucai_prep.py` 里
+SOP 的 `issue=issue` 出现 **0** 次。
+
+被污染的原分支留在 `feat/titan007-euro-odds`，更早的备份在 `backup/titan007-premerge`。
 
 ## 后续阶段（不在本计划内）
 
