@@ -68,3 +68,29 @@ def test_report_names_both_coverage_counts_and_the_drift_capability():
     assert "1/2" in report  # baseline 覆盖
     assert "2/2" in report  # candidate 覆盖
     assert "初赔" in report
+
+
+def test_board_denominator_counts_only_the_run_dates_business_day():
+    """一份 sporttery 快照含多个业务日；分母不过滤就把覆盖率算成三分之一。
+
+    实测 2026-09-12 的快照里有 09-12 的 28 场、09-13 的 24 场、09-14 的 10 场——
+    回放工具初版正是这么把 titan007 的 28/28 报成了 28/62。
+    """
+    from nutmeg.decision.odds_shadow import _board_match_numbers
+
+    value = {
+        "matchInfoList": [
+            {
+                "businessDate": "2026-09-12",
+                "subMatchList": [
+                    {"matchNumStr": "周六001", "matchStatus": "Selling",
+                     "businessDate": "2026-09-12"},
+                    {"matchNumStr": "周日001", "matchStatus": "Selling",
+                     "businessDate": "2026-09-13"},
+                    {"matchNumStr": "周六002", "matchStatus": "Closed",
+                     "businessDate": "2026-09-12"},
+                ],
+            }
+        ]
+    }
+    assert _board_match_numbers(value, "2026-09-12") == ["周六001"]
