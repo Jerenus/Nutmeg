@@ -1742,6 +1742,69 @@ Claude-Session: https://claude.ai/code/session_01SP8EoQijFxYgRxEaPkDSkJ"
 
 ---
 
+---
+
+## Task 9-12（计划外扩张，2026-09-14 用户追加授权后完成）
+
+用户在 Task 8 完成后追加了两轮要求：「根据不同的数据源可能可以看到更多的评判因子…
+完成所有配置文件和代码改造后进行全链路测试，确认数据底座是健康可持续的」以及
+「都合并」（含足彩链）。以下四块因此并入，**不在初版计划内**。
+
+### Task 9: 市场微结构（`nutmeg/decision/microstructure.py`）
+
+`per_book_odds` / `opening_odds` 此前采到即弃——全仓无消费者。新增 `MarketSnapshot.micro`
+（`_from_dict` 缺省容忍，存量 JSONL 向后兼容），逐场带四个量：
+
+| 量 | 旧源状态 |
+| --- | --- |
+| `drift_{home,draw,away}_pp` | **恒为 0**（API-Football 基础 `/odds` 无初赔） |
+| `dispersion_pp` | **算不出**（其逐家报价按路独立聚合，家数可不等） |
+| `payout_delta_pp` | **不可测** |
+| `books` | ~10 家任意盘 → 15 家锐盘 |
+
+**缺测量整键不出，绝不补 0**：「没测」与「测了没动」是两回事，混淆会让判读层把旧源
+日子的静默当成真静默。
+
+对应注册三个 **probation** 因子（`price_drift` / `book_dispersion` / `vig_shift`）。
+**未定阈值与方向**——那必须走双轴校准由样本说话，写进数据层等于绕过生死流程。
+
+### Task 10: 书目口径配置化（`config/odds_books.yaml`）
+
+书目集合决定去水 fair，是判断层输入口径，改它属判据变更，必须可审计可 diff 可被复盘
+引用。每个排除项带理由（竞彩官方=体彩盘本身 / 香港马会=彩池 / Betfair=交易所佣金口径）。
+配置缺失或损坏**抛错而非回落内置默认值**，但惰性加载以免坏文件变成无关命令的 import 崩溃。
+
+### Task 11: 数据底座健康度（`decision-datasource-health`）
+
+七项可变红的检查，degraded 退出码 1。**CLV 填充率只判近 14 天窗口**——全历史比值被换源
+前的存量主导，即使今后每天满格也要几个月才转绿，而一个永远红的检查会被忽略。
+
+### Task 12: 足彩链（`nutmeg/services/zucai_titan007_odds.py`）
+
+竞彩有竞彩号可查表；足彩没有这个键（500.com 在售页不带 titan007 id，titan007 无胜负彩
+板面，`sfc.`/`zc.` 子域实测 404）。故**开球时刻为主键、队名只做消歧、非唯一即丢**。
+26125 实测：纯队名 8/14，加开球时刻主键后 **10/14、0 多解**，未命中的 4 场本就不在竞彩板面。
+
+产出落 `<issue>-odds-intl.json`，**与 500.com 基线并列而非替换**，并在备料 brief 里
+与基线对照呈现——避免重蹈 `over_under` 覆辙（被生产但全仓无消费者）。
+
+---
+
+## ⚠️ 本次实施的一个操作事故（留给考古）
+
+执行期间我用了 `git add -A` / `git add -u`，把**当时工作树里不属于本次工作的 26 个文件**
+扫进了三个 commit：
+
+| Commit | 误入内容 |
+| --- | --- |
+| `b708193` | 会话开始时的 SOP WIP：`nutmeg_scheduler_ops.py`、`zucai_gate/insale/prep.py`、调度文档及三个测试（8 个） |
+| `24c4dd7` | `docs/sop/PROPOSAL-2026-09-13-*`、两份 plans、`experiments/`（9 个）、`scripts/render_zucai_*.py`、`scripts/zucai_loop.py`（15 个） |
+| `f75348a` | `nutmeg/{domain,services}/zucai_odds_source.py` 及其测试（3 个） |
+
+后两批是**会话进行中由另一个并发进程写入**的文件（足彩 discovery loop）。因此本分支
+**未合并**，停在 `feat/titan007-euro-odds`，备份于 `backup/titan007-premerge`。
+合并前需先处置这 26 个文件的归属。
+
 ## 后续阶段（不在本计划内）
 
 | 项 | 说明 |
