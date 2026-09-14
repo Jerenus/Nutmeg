@@ -125,7 +125,16 @@ def test_apifootball_is_not_called_when_titan007_covers_the_board(monkeypatch):
 
 
 def test_apifootball_is_called_only_for_the_matches_titan007_missed(monkeypatch):
+    """漏场唤醒备源 + 血统正确标注 —— **仅在备源被显式开启时**。
+
+    2026-09-14 用户裁定「切」后备源默认关闭（实测 08:00 跑时 titan007 板面未铺开
+    → 每天唤醒 → 免费档配额耗尽 → 自 09-01 起 164 次 429，**一场都没补上**）。
+    本条的两层意图（漏场判定、血统标注）在开关打开时依然成立，故改测 opt-in 路径。
+    默认关闭的行为由 `tests/decision/test_fetch.py` 的三条钉住。
+    """
     from nutmeg.decision import fetch as fetch_mod
+
+    monkeypatch.setenv("NUTMEG_JCZQ_APIFOOTBALL_FALLBACK", "1")
 
     value = {
         "matchInfoList": [
@@ -193,3 +202,40 @@ def test_latest_closing_ignores_read_time_snapshots():
                        kind="closing", source="titan007", fair={}, raw_odds={}, lines={}),
     ]
     assert latest_closing_by_match(snaps)["M-1"].snapshot_id == "C"
+
+
+def test_next_day_match_alone_never_wakes_the_fallback(monkeypatch):
+    """**次日场不算今天漏的。** 一份 sporttery 快照含多个业务日，不按 businessDate
+    过滤会把次日场当成今天的缺口，白白唤醒备源——即使备源被显式开启也不许。
+
+    此前该纪律只写在注释里：原测试中 `周一003` 本就缺失，备源无论如何都会被唤醒，
+    次日场那一条断言实际上从未被执行到。
+    """
+    from nutmeg.decision import fetch as fetch_mod
+
+    monkeypatch.setenv("NUTMEG_JCZQ_APIFOOTBALL_FALLBACK", "1")
+    value = {
+        "matchInfoList": [
+            {
+                "businessDate": "2026-09-14",
+                "subMatchList": [
+                    {"matchNumStr": "周一002", "matchStatus": "Selling",
+                     "businessDate": "2026-09-14"},
+                    {"matchNumStr": "周二001", "matchStatus": "Selling",
+                     "businessDate": "2026-09-15"},
+                ],
+            }
+        ]
+    }
+    called: list[str] = []
+    monkeypatch.setattr(
+        "nutmeg.services.jczq_titan007_odds.collect_bold_odds_titan007_live",
+        lambda v, run_date: {"周一002": {"match_winner": object()}},
+    )
+    monkeypatch.setattr(
+        "nutmeg.services.jczq_apifootball_odds.collect_bold_odds_apifootball_live",
+        lambda v, run_date: called.append("af") or {},
+    )
+    _, provenance = fetch_mod._default_euro_fetcher(value, "2026-09-14")
+    assert called == [], "次日场被当成今天的缺口了"
+    assert provenance == {"周一002": "titan007"}

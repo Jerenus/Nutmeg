@@ -737,3 +737,99 @@ def test_full_cover_allocation_is_quiet_when_already_optimal():
     double = _leg(match_no=3, faces="31",
                   fair={"home": 0.771, "draw": 0.150, "away": 0.080})
     assert audit_full_cover_allocation([full, double]) == []
+
+
+# ── 面集展开（2026-09-14 入码）────────────────────────────────────────────
+
+
+def test_face_options_enumerates_all_seven_sets():
+    from nutmeg.decision.legs_audit import face_options
+
+    opts = face_options(_leg())
+    assert [o.faces for o in opts] == ["3", "1", "0", "31", "30", "10", "310"]
+    assert opts[-1].coverage == pytest.approx(1.0)
+    assert opts[-1].excluded == ()
+
+
+def test_face_options_reuse_the_same_audit_as_the_ticket_gate():
+    """展开必须复用 `audit_legs`，另写一份判定就会与出票门分叉。"""
+    import dataclasses
+
+    from nutmeg.decision.legs_audit import face_options
+
+    leg = _leg(faces="310", directional_flags=(("self_made_tail", "1"),))
+    for opt in face_options(leg):
+        probe = dataclasses.replace(leg, faces=opt.faces)
+        assert {f.code for f in opt.findings} == {f.code for f in audit_legs([probe])}
+
+
+def test_c14_fires_on_the_excluded_face_not_on_any_face():
+    """⭐回归钉：C14 约束的是**被排掉的面**，不是"任一面 fair>20%"。
+
+    出生事故 2026-09-15（26125 构票）：场4 主15.9/平22.6/客61.5，我把 C14 读成
+    「这场有个 22.6% 的面 → 触发 C14 → 只能全包」。实际上双选 `10` 排掉的是
+    主胜 15.9%（灰带），C14 根本不触发。同型错误也发生在场12（排 16.4%）。
+    这一个口算把帽内零 ERROR 解从 1,890 压成 0，并支撑了当时的空仓建议。
+    """
+    from nutmeg.decision.legs_audit import face_options
+
+    fair = {"home": 0.159, "draw": 0.226, "away": 0.615}
+    leg = _leg(fair=fair, anchor_integrity="pass", confidence=4)
+    by_faces = {o.faces: o for o in face_options(leg)}
+
+    # 排掉 15.9% 的灰带面 → 干净（C14 不触发）
+    assert {f.code for f in by_faces["10"].warns} == set()
+    assert by_faces["10"].errors == ()
+    # 排掉 22.6% 的面 → 才是 C14
+    assert "expensive_exclusion" in {f.code for f in by_faces["30"].warns}
+    # 排掉模态面 → C3 翻面，不是 C14 的事
+    assert "modal_face_dropped" in {f.code for f in by_faces["31"].errors}
+
+
+def test_naked_is_graded_by_total_exposure_not_single_face():
+    """裸单排的是**两个**面（26122 AZ：单面 11.1% 判"省钱"，实际暴露 17.3%）。"""
+    from nutmeg.decision.legs_audit import face_options
+
+    fair = {"home": 0.618, "draw": 0.219, "away": 0.164}
+    by_faces = {o.faces: o for o in face_options(_leg(fair=fair))}
+    assert by_faces["3"].naked_exposure == pytest.approx(0.382)
+    assert by_faces["3"].naked_grade == "买方差"
+    assert by_faces["31"].naked_exposure is None
+
+
+def test_judgment_slots_stay_empty_when_unanswered():
+    """机器不许替人填三证与四问 —— 未登记就必须打 `____`。"""
+    from nutmeg.decision.legs_audit import judgment_slots
+
+    slots = dict(judgment_slots(_leg()))
+    mech = next(v for k, v in slots.items() if k.startswith("死亡三证(a)"))
+    assert "____" in mech
+    quad = next(v for k, v in slots.items() if k.startswith("牌照四问"))
+    assert quad.count("____") == 5
+
+
+def test_judgment_slots_echo_what_was_registered():
+    from nutmeg.decision.legs_audit import judgment_slots
+
+    leg = _leg(
+        anchor_integrity="fail",
+        precedents=(("0", "2024-11-03 主场 0:1", "dead"),),
+        license_questions={"q1_spine": True, "q3b_opponent_takes_points": False},
+    )
+    slots = dict(judgment_slots(leg))
+    assert "fail（已登记）" in slots["死亡三证(c) 正路完整度 PASS"]
+    assert "客胜载体已不在阵" in slots["死亡三证(b) 先例载体已不在阵"]
+    quad = next(v for k, v in slots.items() if k.startswith("牌照四问"))
+    assert "①✓" in quad and "③b✗" in quad and quad.count("____") == 3
+
+
+def test_format_face_options_never_ranks_or_recommends():
+    """输出不得含推荐语气 —— 一旦机器说"该选哪个"，判断就被替掉了。"""
+    from nutmeg.decision.legs_audit import format_face_options
+
+    text = format_face_options([_leg()], issue="26125")
+    assert "不是合法性裁决" in text
+    # 免责声明本身含"不推荐"字样，检查正文而非表头。
+    body = "\n".join(ln for ln in text.splitlines() if not ln.startswith(("#", ">")))
+    for word in ("推荐", "建议选", "最优", "应选", "首选"):
+        assert word not in body

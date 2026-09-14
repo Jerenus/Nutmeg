@@ -1,0 +1,9 @@
+{
+ "style": "ontology",
+ "scale": 1.0,
+ "weights_pp": {
+  "conf4_top1": 4.999070662638571
+ },
+ "note": "F1 单因子:conf>=4 → top1 +pp。EB收缩(τ=5pp)。F2(平<25→第3面)因样本外幅度衰减到1/5已剔除。",
+ "validation": "样本外 conf>=4 n=25 残差+8.0pp;剂量反应 conf2 -1.5/conf3 +3.4/conf4 +16.4"
+}

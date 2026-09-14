@@ -1,0 +1,6 @@
+{
+ "style": "market",
+ "weights": {},
+ "scale": 0.0,
+ "note": "纯跟市场 belief=prior。永久对照组，不得淘汰——它是我们判断有无 edge 的零点。"
+}

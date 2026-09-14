@@ -1,0 +1,12 @@
+{
+ "style": "prior_blend",
+ "weights": {
+  "c500": 0.5,
+  "titan007_sharp": 0.5
+ },
+ "note": "两源等权混合作为判读 prior。全样本 n=264 BSS +0.57% CI[+0.01,+1.13]。机制=集成平均降方差(两源误差部分抵消)。纯 titan007 点估计更高(+0.95%)但 CI 含 0。",
+ "sources": {
+  "c500": "500.com 在售页 data-pjgl 去水均值",
+  "titan007_sharp": "titan007 锐盘共识(Pinnacle/Bet365/Macauslot/Crown/SBOBET/IBCBET/William Hill),仅用 updated_at<=kickoff"
+ }
+}

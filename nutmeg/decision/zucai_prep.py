@@ -160,6 +160,84 @@ def euro_fair(odds_row: dict) -> dict | None:
     return devig(raw)
 
 
+BLEND_WEIGHT_TITAN007 = 0.5
+"""两源等权混合的 titan007 占比。
+
+证据(2026-09-15, 双源可比 n=264):
+  500.com 去水均值 Brier 0.5485 / titan007 锐盘当前 0.5433 / titan007 锐盘开盘 0.5553
+  纯 titan007  BSS +0.95%  CI[-0.16, +2.06]  ← 含 0
+  **50/50 混合 BSS +0.57%  CI[+0.01, +1.15]  ← CI 下界 > 0**
+点估计低于纯 titan007 但 CI 更窄——两源误差部分抵消。**机制 = 集成平均降方差**，
+不靠回测说服自己。分窗同号(训练 +0.76% / 测试 +0.38%)，配对 148:116 p=0.056。
+改善集中于 top1 60-75 带(BSS +3.44%, CI[+0.59,+6.74], p=0.0094, 过 Bonferroni)。
+⛔titan007 侧只许用 ``updated_at <= kickoff`` 的报价(泄漏闸)。
+"""
+
+_FACES = ("home", "draw", "away")
+
+BLEND_MAX_DIFF_PP = 0.30
+"""绝对分歧上限：任一路差 >30pp 一律拒绝混合。"""
+BLEND_MAX_DIFF_PP_ON_FLIP = 0.15
+"""模态面不一致时的分歧上限：>15pp 即拒绝。
+
+2026-09-15 实测：26125 场1 的 500.com 给主胜 84.7%、titan007 给客胜 89.2%
+（titan007 侧对齐到了别的比赛）。等权平均得到 44.3/8.8/46.9——**看起来完全
+正常的垃圾**。静默平均两个互相矛盾的源比没有第二个源更危险。
+"""
+
+
+def blend_contradiction(a: dict, b: dict) -> str | None:
+    """两源是否矛盾到不该混合。返回原因字符串或 None。"""
+    diff = max(abs(a[k] - b[k]) for k in _FACES)
+    if diff > BLEND_MAX_DIFF_PP:
+        return "source_contradiction"
+    flip = max(a, key=lambda k: a[k]) != max(b, key=lambda k: b[k])
+    if flip and diff > BLEND_MAX_DIFF_PP_ON_FLIP:
+        return "source_contradiction"
+    return None
+
+
+def blend_fair(a: dict | None, b: dict | None,
+               weight_b: float = BLEND_WEIGHT_TITAN007) -> dict | None:
+    """两源等权混合并重归一。任一源缺失或残缺 → None(不拿半份数据冒充混合)。"""
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return None
+    try:
+        va = {k: float(a[k]) for k in _FACES}
+        vb = {k: float(b[k]) for k in _FACES}
+    except (KeyError, TypeError, ValueError):
+        return None
+    if blend_contradiction(va, vb):
+        return None
+    mixed = {k: (1.0 - weight_b) * va[k] + weight_b * vb[k] for k in _FACES}
+    total = sum(mixed.values())
+    if total <= 0:
+        return None
+    return {k: v / total for k, v in mixed.items()}
+
+
+def attach_blend(rec: dict) -> dict:
+    """给备料记录挂上 ``fair_blend`` / ``fair_source``。
+
+    **不覆盖 ``fair_had``**：500.com 基线原样保留，便于逐期对账与随时回退。
+    """
+    intl = rec.get("intl") or {}
+    intl_fair = intl.get("fair") if isinstance(intl, dict) else None
+    blended = blend_fair(rec.get("fair_had"), intl_fair)
+    rec["fair_blend"] = {k: round(v, 6) for k, v in blended.items()} if blended else None
+    rec["fair_source"] = "blend_500_titan007_5050" if blended else "c500_only"
+    if blended is None and isinstance(rec.get("fair_had"), dict) and isinstance(intl_fair, dict):
+        try:
+            va = {k: float(rec["fair_had"][k]) for k in _FACES}
+            vb = {k: float(intl_fair[k]) for k in _FACES}
+        except (KeyError, TypeError, ValueError):
+            return rec
+        reason = blend_contradiction(va, vb)
+        if reason:
+            rec["blend_blocked"] = reason
+    return rec
+
+
 # ---------------------------------------------------------------------------
 # 机械筛选(纯算术,不含判断)
 # ---------------------------------------------------------------------------
@@ -296,6 +374,7 @@ def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
         fair = euro_fair(odds_by_no.get(no) or {})
         rec["fair_had"] = {k: round(v, 4) for k, v in fair.items()} if fair else None
         rec["intl"] = intl_by_no.get(no)
+        attach_blend(rec)
         pools = sporttery_pools(rows_by_num.get(align["mapping"].get(no) or "", {}))
         rec["sporttery_had_date"] = pools["had_date"]
         rec["hhad_line"] = pools["hhad_line"]
@@ -481,9 +560,124 @@ def render_diff(diff: dict) -> str:
     return "\n".join(L)
 
 
+NO_ISSUE_ALERT_DAYS = 7
+"""无期日静默多少天后才喊一声「可能死了」。
+
+原设计每天推一条 🌙 心跳，理由是「不说话的任务和死掉的任务无法区分」。**那个理由是
+真的，但每天推解决不了它** —— 没人会注意到一条没来的消息；实测 49 条历史推送里
+**20 条（41%）是这种心跳**，纯噪音，且新装 morning agent 后无期日从 2 条变 3 条。
+改为：无期日静默，**连续 7 天没有成功备料才喊一声**。足彩每周 2-4 期，健康时永不触发。"""
+
+
+def _blend_blocked(prep: dict) -> list[str]:
+    """被分歧闸拦下的场号。两源互相矛盾时静默平均比没有第二个源更危险。"""
+    return sorted(
+        (no for no, rec in (prep.get("records") or {}).items()
+         if isinstance(rec, dict) and rec.get("blend_blocked")),
+        key=lambda x: int(x) if str(x).isdigit() else 0,
+    )
+
+
+def prep_message(prep: dict, *, moved: int | None) -> str:
+    """有期日的推送正文。**只放需要动作或属于异常的东西。**
+
+    删掉的两项及其理由（2026-09-14）：
+    - ``判读待主循环`` —— 常量字符串，29/29 条都有，零信息
+    - ``强锚候选 N`` —— 就是 ``top1≥70`` 的计数，闭环已证「本体 90% 是价格的重述」
+      （``corr(λ差, top1)=+0.982``），推它等于把价格念一遍
+    """
+    lines = [f"📋 足彩 {prep['issue']} 备料({prep['slot']}) ｜ {prep['n_matches']} 场"]
+    blocked = _blend_blocked(prep)
+    if blocked:
+        lines.append(
+            f"⛔分歧闸拦下 {len(blocked)} 场：场{'/'.join(blocked)}"
+            f"——两源互相矛盾，该场**勿用混合 prior**")
+    records = prep.get("records") or {}
+    n_blend = sum(1 for r in records.values()
+                  if isinstance(r, dict) and r.get("fair_blend"))
+    if records:
+        lines.append(f"混合 prior 覆盖 {n_blend}/{len(records)}")
+    sc = prep.get("screens") or {}
+    if sc.get("missing_euro_anchor"):
+        lines.append(f"⚠️丢欧赔锚 {len(sc['missing_euro_anchor'])} 场")
+    align = prep.get("alignment") or {}
+    n_align = len(align.get("unmatched") or []) + len(align.get("ambiguous") or [])
+    if n_align:
+        lines.append(f"⚠️体彩未对齐 {n_align} 场（进球轴降权，不与有锚场同权）")
+    if moved:
+        lines.append(f"位移超门槛 {moved} 条")
+    return "\n".join(lines)
+
+
+def touch_liveness(zdir: Path, *, run_date: str, status: str,
+                   issue: str | None = None) -> dict:
+    """记一次「链子活着」。无期日不推送了，静默失败的可见性改由这里承担。"""
+    path = Path(zdir) / "prep-liveness.json"
+    doc = {}
+    if path.exists():
+        try:
+            doc = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError):
+            doc = {}
+    doc["last_run"] = {"run_date": run_date, "status": status, "issue": issue}
+    if status == "prepared":
+        doc["last_prepared"] = {"run_date": run_date, "issue": issue}
+    Path(zdir).mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, ensure_ascii=False, indent=1), "utf-8")
+    return doc
+
+
+def stale_days(zdir: Path, *, today: date) -> int:
+    """距上次**成功备料**多少天。无记录 → 0（新装机不该立刻报警）。"""
+    path = Path(zdir) / "prep-liveness.json"
+    if not path.exists():
+        return 0
+    try:
+        raw = json.loads(path.read_text("utf-8")).get("last_prepared") or {}
+        last = date.fromisoformat(str(raw.get("run_date")))
+    except (OSError, ValueError, TypeError):
+        return 0
+    return max(0, (today - last).days)
+
+
+def no_issue_message(*, stale_days: int) -> str | None:
+    """无期日的推送。**默认不推**；只有长期静默才喊一声。"""
+    if stale_days < NO_ISSUE_ALERT_DAYS:
+        return None
+    return (f"🔕 足彩备料链已连续 {stale_days} 天无成功产出"
+            f"（阈值 {NO_ISSUE_ALERT_DAYS} 天）。请确认 launchd 是否存活："
+            f"`launchctl list | grep nutmeg`")
+
+
+def should_push(prep: dict, *, slot: str, moved: int | None,
+                base_prep: dict | None = None) -> bool:
+    """这一跑要不要推。
+
+    ``revision``（18:30）**无实质异动时静默** —— RUNBOOK B8 已把它降为事实核对，
+    闭环实测晚盘位移在概率层零价值（BSS -0.07%，CI[-0.42,+0.28]）；
+    它每期固定响一声但并不携带判断信息。
+    ``morning``/``afternoon`` 是判读的起点，永远推。
+    """
+    if slot != "revision":
+        return True
+    # ⛔只认**跨 slot 的变化**。未对齐 / 丢锚是板面的**静态属性**，14:00 已经报过，
+    # 18:30 再报一遍正是要消掉的冗余（实测 15 条 revision 推送几乎条条如此）。
+    # 分歧闸同理：**闸的状态变了**才是新消息，一直拦着同一场不是。
+    if moved:
+        return True
+    blocked = _blend_blocked(prep)
+    if base_prep is None:
+        return bool(blocked)
+    return blocked != _blend_blocked(base_prep)
+
+
 def heartbeat_line(prep: dict | None, gate_status: str, *,
                    today: date | None = None) -> str:
-    """Telegram 一行。无期日也发 —— 不说话的任务和死掉的任务无法区分。"""
+    """日志用的一行摘要。**推送正文另走 `prep_message` / `no_issue_message`。**
+
+    日志永远写满（不说话的任务和死掉的任务无法区分，这条对**日志**成立）；
+    Telegram 则按「需要动作才响」过滤。
+    """
     if prep is None:
         return f"🌙 足彩备料 {today or date.today()}:{gate_status}"
     sc = prep["screens"]
@@ -494,7 +688,9 @@ def heartbeat_line(prep: dict | None, gate_status: str, *,
     if prep["alignment"]["unmatched"] or prep["alignment"]["ambiguous"]:
         n = len(prep["alignment"]["unmatched"]) + len(prep["alignment"]["ambiguous"])
         bits.append(f"⚠️未对齐 {n} 场")
-    bits.append(f"强锚候选 {len(sc['strong_anchors'])}")
+    blocked = _blend_blocked(prep)
+    if blocked:
+        bits.append(f"⛔分歧闸 {len(blocked)} 场")
     bits.append("判读待主循环")
     return " ｜ ".join(bits)
 
@@ -564,13 +760,15 @@ def run_zucai_prep(
     dispatch: bool = False,
     gate_fetcher=None,
     notification_service=None,
+    gate_fn=None,
 ) -> PrepResult:
     """备料任务主入口(14:00 afternoon / 18:30 revision)。
 
     门控:``issue`` 显式给出则跳过探测(手动补跑);否则探在售期,今天不是截止日
     就只发心跳。**任何一条路径都会说话** —— 无期、探测失败、抓取失败各有文案。
     """
-    from nutmeg.decision.zucai_gate import gate as gate_fn
+    if gate_fn is None:
+        from nutmeg.decision.zucai_gate import gate as gate_fn
 
     today = date.fromisoformat(run_date) if run_date else date.today()
     run_date = today.isoformat()
@@ -579,22 +777,32 @@ def run_zucai_prep(
         insale, status = gate_fn(today=today, fetcher=gate_fetcher)
         if insale is None:
             line = heartbeat_line(None, status, today=today)
+            touch_liveness(Path(zucai_dir), run_date=run_date, status="gate_failed")
             if dispatch:
+                # 探测失败是**真异常**，照推。
                 _notify(line, stage=f"{slot}.gate-failed", business_key=run_date,
                         notification_service=notification_service)
             return PrepResult(status="gate_failed", summary=line)
         if not insale.is_sale_day(today):
             line = heartbeat_line(None, status, today=today)
+            # 无期日**静默**（41% 的历史噪音来源）。日志照写；静默失败的可见性
+            # 交给 liveness + NO_ISSUE_ALERT_DAYS 阈值告警。
+            days = stale_days(Path(zucai_dir), today=today)
+            touch_liveness(Path(zucai_dir), run_date=run_date, status="no_issue",
+                           issue=insale.issue)
             if dispatch:
-                _notify(line, stage=f"{slot}.no-issue", business_key=run_date,
-                        notification_service=notification_service)
+                alert = no_issue_message(stale_days=days)
+                if alert:
+                    _notify(alert, stage=f"{slot}.stale", business_key=run_date,
+                            notification_service=notification_service)
             return PrepResult(status="no_issue", summary=line, issue=insale.issue)
         issue = insale.issue
 
     if live_fetch:
         from nutmeg.decision.zucai_insale import fetch_and_write
         try:
-            written = fetch_and_write(Path(zucai_dir), slot=slot, today=today)
+            written = fetch_and_write(Path(zucai_dir), slot=slot, today=today,
+                                      issue=issue)
             if written["issue"] != issue:
                 raise ValueError(f"在售期已切换:期望 {issue},实抓 {written['issue']}")
         except Exception as exc:      # noqa: BLE001 — 抓取失败要说话,不要静默
@@ -615,19 +823,26 @@ def run_zucai_prep(
     brief_path.write_text(render_brief(prep), "utf-8")
 
     diff_path = None
+    n_moved: int | None = None
+    base_prep_doc: dict | None = None
     line = heartbeat_line(prep, "", today=today)
     base_slot = _previous_slot(issue, slot, zdir)
     if base_slot:
         base_path = zdir / f"{issue}-prep-{base_slot}.json"
-        diff = diff_prep(_load(base_path), prep)
+        base_prep_doc = _load(base_path)
+        diff = diff_prep(base_prep_doc, prep)
         diff_path = zdir / f"{issue}-diff-{base_slot}-{slot}.md"
         diff_path.write_text(render_diff(diff), "utf-8")
-        line += f" ｜ 位移超门槛 {diff['n_moved']} 条(vs {base_slot})"
+        n_moved = int(diff["n_moved"])
+        line += f" ｜ 位移超门槛 {n_moved} 条(vs {base_slot})"
     elif slot != SLOT_ORDER[0]:
         line += " ｜ ⚠️无更早 slot 基线,跳过位移 diff"
 
-    if dispatch:
-        _notify(line, stage=slot, business_key=f"{issue}-{slot}",
+    touch_liveness(zdir, run_date=run_date, status="prepared", issue=issue)
+    if dispatch and should_push(prep, slot=slot, moved=n_moved,
+                                base_prep=base_prep_doc):
+        _notify(prep_message(prep, moved=n_moved), stage=slot,
+                business_key=f"{issue}-{slot}",
                 notification_service=notification_service)
     return PrepResult(status="prepared", summary=line, issue=issue,
                       prep_path=prep_path, brief_path=brief_path,

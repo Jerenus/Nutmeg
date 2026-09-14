@@ -55,12 +55,13 @@ def _fair(raw: str) -> dict | None:
     return dict(zip(("home", "draw", "away"), [v / total for v in vals], strict=True))
 
 
-def parse_board(html: str, *, today: date | None = None) -> dict | None:
+def parse_board(html: str, *, today: date | None = None,
+                source_url: str = INSALE_URL) -> dict | None:
     """在售页 HTML → {issue, deadline, matches[...]}。任何结构性缺失返回 None。"""
     from nutmeg.decision.zucai_gate import parse_insale
 
     today = today or date.today()
-    insale = parse_insale(html, today=today)
+    insale = parse_insale(html, today=today, source_url=source_url)
     if insale is None:
         return None
     matches = []
@@ -111,8 +112,10 @@ def write_snapshots(board: dict, zucai_dir: Path, *, slot: str = "afternoon") ->
                     | {"asian_ref": m["asian_ref"]}
                     for m in board["matches"]],
     }
-    odds_name = f"{issue}-odds.json" if slot == "afternoon" \
-        else f"{issue}-odds-revision.json"
+    # 与 zucai_prep.build_prep 的读端一致:只有 revision 走 -odds-revision.json,
+    # morning/afternoon 都是当日基线 -odds.json(26123 出生事故:morning 写错文件)
+    odds_name = f"{issue}-odds-revision.json" if slot == "revision" \
+        else f"{issue}-odds.json"
     odds_doc = {
         "issue_id": issue,
         "captured_at": board["captured_at"],
@@ -136,12 +139,18 @@ def write_snapshots(board: dict, zucai_dir: Path, *, slot: str = "afternoon") ->
 
 
 def fetch_and_write(zucai_dir: Path, *, slot: str = "afternoon",
-                    today: date | None = None, fetcher=None) -> dict:
+                    today: date | None = None, fetcher=None,
+                    issue: str | None = None) -> dict:
     """抓在售页 → 落 issue/odds 快照。失败抛异常,由编排层转成可见告警。"""
-    html = (fetcher or _default_fetcher)(INSALE_URL)
-    board = parse_board(html, today=today)
+    if issue is not None and not re.fullmatch(r"[0-9]{5}", issue):
+        raise ValueError(f"Invalid issue: {issue}")
+    source_url = f"{INSALE_URL}?expect={issue}" if issue else INSALE_URL
+    html = (fetcher or _default_fetcher)(source_url)
+    board = parse_board(html, today=today, source_url=source_url)
     if board is None:
         raise ValueError("在售页解析失败(页面结构变化或未满 14 场)")
+    if issue is not None and board["issue"] != issue:
+        raise ValueError(f"Issue mismatch: expected {issue}, got {board['issue']}")
     return write_snapshots(board, zucai_dir, slot=slot)
 
 

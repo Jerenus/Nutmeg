@@ -925,3 +925,206 @@ def legs_from_dict(payload: dict) -> list[Leg]:
             ),
         ))
     return sorted(out, key=lambda lg: lg.match_no)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 面集展开（2026-09-14 入码）—— 把「读条文」这一步从主循环手里拿走
+# ══════════════════════════════════════════════════════════════════════════
+#
+# 出生事故：2026-09-15 构 26125 票时，我把 C14 的「**被排面** fair>20%」在脑子里
+# 读成了「任一面 fair>20%」，于是把场4（主15.4/平21.8/客62.8）与场12（主63.6/
+# 平21.0/客15.4）两场都锁成全包——而这两场的双选实际排掉的都是 15.4% 的灰带面，
+# **C14 根本不触发**。这一个口算错误把帽内零 ERROR 解从 1,890 个压成 0 个，
+# 并直接支撑了我当时"空仓"的建议。
+#
+# 宪法元原则「判据必须入代码」三天来只被用在**判据**上，没被用在**判据的应用**上。
+# 本节补这一刀：面集 × 算术后果由机器机械展开，主循环不再用眼睛读条文。
+#
+# ⛔**本节不判合法性、不排序、不推荐。** 它只回答"选这个面集会触发哪些码"，
+# 那是纯算术；"该不该这么选"要看死亡三证够不够、洞能不能被对手吃掉、旗的证据
+# 等级到没到——那些机器算不出来，必须留空给人填（见 `judgment_slots`）。
+
+_ALL_FACE_SETS: tuple[str, ...] = ("3", "1", "0", "31", "30", "10", "310")
+"""七个非空面集，体彩口径升序（单选三个 → 双选三个 → 全包）。"""
+
+CODE_SHORT: dict[str, str] = {
+    "flagged_naked_single": "C1",
+    "flag_face_uncovered": "C2",
+    "modal_face_dropped": "C3",
+    "low_conf_single": "C4",
+    "broken_anchor_single": "C5",
+    "undecidable_not_full": "C6",
+    "flag_off_lexicon": "C0",
+    "excluded_face_live_precedent": "C7",
+    "pseudo_precision_anchor": "C8",
+    "opening_upset_double": "C9",
+    "flagged_double_not_full": "C10",
+    "false_direction_band": "C11",
+    "draw_underpriced_band": "C12",
+    "broken_anchor_double": "C13",
+    "expensive_exclusion": "C14",
+    "shared_exclusion": "C15",
+    "shared_naked_single": "C15b",
+    "read_ticket_inconsistency": "C17",
+}
+"""审计码 → RULEBOOK §七 的短名。未登记的码原样打印（INFO 参考表多在此列）。"""
+
+_LEVEL_ICON = {"ERROR": "❌", "WARN": "⚠️", "INFO": "ℹ️"}
+
+
+def short_code(code: str) -> str:
+    return CODE_SHORT.get(code, code)
+
+
+def exclusion_grade(p: float, *, is_modal: bool, flat: bool) -> str:
+    """排面≠翻面阶梯。**只描述成本，不描述该不该排**（26122：11.1% 的「省钱」
+    排除与 32.1% 的「买方差」排除同样各杀四票）。"""
+    if is_modal:
+        return "翻面" if not flat else "平带翻面"
+    if p > _C14_EXCLUSION_P:
+        return "买方差"
+    if p > _EXCLUSION_TAIL_P:
+        return "灰带"
+    return "省钱"
+
+
+@dataclass(frozen=True)
+class FaceOption:
+    """一个面集的**算术后果**。不含任何"是否可选"的结论。"""
+
+    faces: str
+    coverage: float
+    excluded: tuple[tuple[str, float, str], ...]   # (面, fair, 档位)
+    naked_exposure: float | None                   # 裸单才有：1−盖率
+    naked_grade: str | None
+    findings: tuple[Finding, ...]
+
+    @property
+    def errors(self) -> tuple[Finding, ...]:
+        return tuple(f for f in self.findings if f.level == "ERROR")
+
+    @property
+    def warns(self) -> tuple[Finding, ...]:
+        return tuple(f for f in self.findings if f.level == "WARN")
+
+
+def face_options(leg: Leg) -> tuple[FaceOption, ...]:
+    """把一条腿的七个面集全部展开，每个跑一遍**同一套** `audit_legs`。
+
+    刻意不另写一份判定逻辑：另写一份就会与出票门分叉，那正是本节要消灭的死法。
+    """
+    import dataclasses
+
+    out: list[FaceOption] = []
+    flat = leg.top_gap < _C3_FLAT_GAP
+    for faces in _ALL_FACE_SETS:
+        probe = dataclasses.replace(leg, faces=faces)
+        excluded = tuple(
+            (f, probe.fair.get(FACE_KEYS[f], 0.0),
+             exclusion_grade(probe.fair.get(FACE_KEYS[f], 0.0),
+                             is_modal=(f == probe.modal), flat=flat))
+            for f in sorted(set(FACE_KEYS) - set(faces))
+        )
+        exposure = 1.0 - probe.coverage if len(set(faces)) == 1 else None
+        out.append(FaceOption(
+            faces=faces,
+            coverage=probe.coverage,
+            excluded=excluded,
+            naked_exposure=exposure,
+            naked_grade=(exclusion_grade(exposure, is_modal=False, flat=flat)
+                         if exposure is not None else None),
+            # 单腿跑：`modal_stack_mismatch` 需 ≥3 条模态裸单，不会在此误触发。
+            findings=tuple(audit_legs([probe])),
+        ))
+    return tuple(out)
+
+
+def judgment_slots(leg: Leg) -> list[tuple[str, str]]:
+    """**机器不填的那几格。** 已登记的原样回显，没登记的打 `____`。
+
+    死亡三证 (a) 机制一证 RULEBOOK 明写「仍靠人工」；(b)(c) 若主循环已登记则回显，
+    回显不等于机器判定——登记本身就是判断的产物。
+    """
+    dead = {f for f, _s, status in leg.precedents if status == "dead"}
+    alive = {f for f, _s, status in leg.precedents if status == "alive"}
+    prec = "、".join(
+        [f"{FACE_ZH[f]}载体已不在阵" for f in sorted(dead)]
+        + [f"{FACE_ZH[f]}载体仍在阵" for f in sorted(alive)]
+    ) or "____（未登记先例）"
+    q = leg.license_questions or {}
+
+    def _q(key: str) -> str:
+        if key not in q or q[key] is None:
+            return "____"
+        return "✓" if q[key] else "✗"
+
+    return [
+        ("死亡三证(a) 对手对着正路**实际**状态无破门机制", "____（RULEBOOK：机制一证仍靠人工）"),
+        ("死亡三证(b) 先例载体已不在阵", prec),
+        ("死亡三证(c) 正路完整度 PASS", f"{leg.anchor_integrity}（已登记）"),
+        ("牌照四问 ①脊柱 ②正路 ③a对手会进球 ③b对手能取分 ④无情境旗",
+         f"①{_q('q1_spine')} ②{_q('q2_route')} ③a{_q('q3a_opponent_scores')} "
+         f"③b{_q('q3b_opponent_takes_points')} ④{_q('q4_no_context_flag')}"),
+    ]
+
+
+def _face_label(faces: str) -> str:
+    return "".join(FACE_ZH[f] for f in faces)
+
+
+def format_face_options(legs: list[Leg], *, issue: str = "") -> str:
+    """「面集 × 算术后果」表。给主循环看的，不是给出票门看的。"""
+    lines: list[str] = [
+        f"# 面集展开{'（' + issue + '）' if issue else ''}"
+        f" —— 算术后果，**不是合法性裁决**",
+        "",
+        "> 机器只摊开「选这个面集会触发哪些码」。三证够不够、洞能不能被吃、旗的证据等级，",
+        "> 留空给判断。本表**不排序、不推荐、不是出票门**（出票门仍是 `decision-audit-legs`）。",
+    ]
+    seen_codes: dict[str, tuple[str, str]] = {}
+    for leg in legs:
+        opts = face_options(leg)
+        fair_txt = " / ".join(
+            f"{FACE_ZH[f]}{leg.fair.get(FACE_KEYS[f], 0.0) * 100:.1f}"
+            for f in ("3", "1", "0")
+        )
+        reg = []
+        d_flags = [f"{name}→{FACE_ZH.get(face, face or '?')}"
+                   for name, face in leg.directional_flags]
+        reg.append(f"方向旗 {'/'.join(d_flags) if d_flags else '—'}")
+        reg.append(f"无方向旗 {'/'.join(leg.nondirectional_flags) or '—'}")
+        reg.append(f"完整度 {leg.anchor_integrity}")
+        reg.append(f"conf {leg.confidence}")
+        if leg.crash_markers:
+            reg.append(f"crash {'/'.join(leg.crash_markers)}")
+        lines += [
+            "",
+            f"## 场{leg.match_no} {leg.name}",
+            f"fair {fair_txt} ｜ 模态 {FACE_ZH[leg.modal]}（{leg.modal_p * 100:.1f}%）"
+            f" ｜ top1−top2 {leg.top_gap * 100:.1f}pp",
+            f"已登记：{' ｜ '.join(reg)}",
+            "",
+            "| 面集 | 盖率 | 被排面（fair=档） | 裸单总暴露 | 算术后果 |",
+            "|---|---|---|---|---|",
+        ]
+        for o in opts:
+            exc = "、".join(f"{FACE_ZH[f]}{p * 100:.1f}%={g}" for f, p, g in o.excluded)
+            naked = (f"**{o.naked_exposure * 100:.1f}%={o.naked_grade}**"
+                     if o.naked_exposure is not None else "—")
+            marks = []
+            for f in o.findings:
+                seen_codes.setdefault(short_code(f.code), (f.level, f.since))
+                marks.append(f"{_LEVEL_ICON[f.level]}{short_code(f.code)}")
+            lines.append(
+                f"| `{o.faces}` {_face_label(o.faces)} | {o.coverage * 100:.1f}% |"
+                f" {exc or '—'} | {naked} | {' '.join(marks) or '无'} |"
+            )
+        lines.append("")
+        lines.append("判断栏（机器不填）：")
+        for label, value in judgment_slots(leg):
+            lines.append(f"- {label}：{value}")
+    if seen_codes:
+        lines += ["", "---", "", "出现过的码："]
+        for code, (level, since) in sorted(seen_codes.items()):
+            lines.append(f"- {_LEVEL_ICON[level]} **{code}** ← {since}")
+    return "\n".join(lines)

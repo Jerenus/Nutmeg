@@ -66,7 +66,8 @@ def _resolve_year(month: int, day: int, today: date) -> int:
 
 def parse_insale(html: str, *, today: date, source_url: str = INSALE_URL) -> InsaleIssue | None:
     """从在售页 HTML 解析当前期号与截止时间。任一缺失返回 None(视为探测失败)。"""
-    m_issue = _CURRENT_ISSUE_RE.search(html) or _CHKED_ISSUE_RE.search(html)
+    # The current-sale label remains on explicitly selected future-issue pages.
+    m_issue = _CHKED_ISSUE_RE.search(html) or _CURRENT_ISSUE_RE.search(html)
     m_dead = _DEADLINE_RE.search(html)
     if not m_issue or not m_dead:
         return None

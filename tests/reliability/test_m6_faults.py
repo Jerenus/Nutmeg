@@ -20,6 +20,11 @@ from nutmeg.product.copilot import (
     ProductCopilotResponseError,
     ProductCopilotUnavailableError,
 )
+from nutmeg.product.operator_runtime import (
+    OperatorRuntimeConfig,
+    OperatorRuntimeScope,
+    OperatorSurfaceMode,
+)
 from nutmeg.product.repository import ProductReadRepository
 from nutmeg.product.wiring import build_product_services
 from nutmeg.reliability import backup as backup_module
@@ -163,7 +168,24 @@ def _duplicate_action(root: Path, _monkeypatch: pytest.MonkeyPatch) -> tuple[str
 
 
 def _sse_disconnect(root: Path, _monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
-    settings = AppSettings(data_dir=root / "data")
+    # SSE 只推送**投影已消费**的事件（`projection_signals.delivered_sequence`，
+    # 2026-09-10 双泳道重构引入的读己所写闸）。推进该游标的 `ProductOutboxWorker`
+    # 只在 `runtime_config` 非空时才被装配，且只活在 `infrastructure_workers.
+    # lifespan` 里。因此本探针必须①带 operator runtime 建 services ②用 `with
+    # TestClient(...)` 触发 lifespan。缺任一条件，流恒为空——
+    # 本测试 2026-08-24 写就、闸 2026-09-10 才加，此后一直红在这里。
+    # ⚠️不要靠删掉那个闸来修：无工人时隐藏事件是**设计意图**，
+    # `tests/product/operator_v2/test_infrastructure_consumers.py` 显式断言了它。
+    data_dir = (root / "data").resolve()
+    production_dir = (root / "production").resolve()
+    settings = AppSettings(
+        _env_file=None,
+        data_dir=data_dir,
+        production_data_dir=production_dir,
+        operator_surface_mode="active",
+        operator_runtime_scope="isolated_candidate",
+        operator_token_signing_key="m6-sse-probe-signing-key-32-bytes!",
+    )
     kernel = build_ontology_kernel(settings)
     kernel.initialize()
     first = kernel.artifact_ingest.ingest(
@@ -179,23 +201,41 @@ def _sse_disconnect(root: Path, _monkeypatch: pytest.MonkeyPatch) -> tuple[str, 
         )
     )
     assert first.status is ActionStatus.COMMITTED
-    client = TestClient(create_product_app(build_product_services(settings), clock=lambda: NOW))
-    cursor = client.get("/api/v1/events?after=0&limit=100").json()["next_cursor"]
-    kernel.artifact_ingest.ingest(
-        ArtifactIngestRequest(
-            content=b"second",
-            content_type="text/plain",
-            source_name="m6-sse",
-            source_type="fixture",
-            actor_id="source:m6-sse",
-            actor_role=ActorRole.CONNECTOR,
-            idempotency_key="m6:fault:sse:second",
-            retrieved_at=NOW,
+    runtime = OperatorRuntimeConfig(
+        surface_mode=OperatorSurfaceMode.ACTIVE,
+        runtime_scope=OperatorRuntimeScope.ISOLATED_CANDIDATE,
+        data_dir=data_dir,
+        production_data_dir=production_dir,
+        running_commit="m6-sse-probe",
+    )
+    services = build_product_services(settings, runtime_config=runtime)
+    assert services.infrastructure_workers is not None, "无工人则无人推进投递游标"
+    app = create_product_app(
+        services,
+        session_secret="m6-sse-probe-session",
+        csrf_secret="m6-sse-probe-csrf",
+        clock=lambda: NOW,
+        runtime_config=runtime,
+    )
+    with TestClient(app) as client:
+        cursor = client.get("/api/v1/events?after=0&limit=100").json()["next_cursor"]
+        kernel.artifact_ingest.ingest(
+            ArtifactIngestRequest(
+                content=b"second",
+                content_type="text/plain",
+                source_name="m6-sse",
+                source_type="fixture",
+                actor_id="source:m6-sse",
+                actor_role=ActorRole.CONNECTOR,
+                idempotency_key="m6:fault:sse:second",
+                retrieved_at=NOW,
+            )
         )
-    )
-    resumed = client.get(
-        f"/api/v1/events/stream?after={cursor}&once=true"
-    )
+        # 条件变量等待，不是 sleep 轮询：后台工人投递到 cursor 之后即返回。
+        assert services.projection_signals.wait_for_delivery(
+            after=cursor, timeout_seconds=10.0
+        ), "投影工人未在 10s 内投递第二条事件"
+        resumed = client.get(f"/api/v1/events/stream?after={cursor}&once=true")
     assert resumed.status_code == 200
     assert f"id: {cursor + 1}" in resumed.text
     assert f"id: {cursor}\n" not in resumed.text

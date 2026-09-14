@@ -1,0 +1,80 @@
+{
+ "id": "PREREG-26126-F1c-F2",
+ "registered_at": "2026-09-14",
+ "window": "26126-26137（12 期）",
+ "why_prereg": "两条都在 2026-09-14 的样本内被看过，现有数字不再是真样本外；且两条的方向都不是预注册机制给出的（F1 的预设机制被证伪、F2 的可部署形式 CI 含 0）。按闸的规矩：只入候选档，前瞻验证前不得进入任何判读或票面。",
+ "candidates": [
+  {
+   "key": "F1c-dispersion-sharpen",
+   "claim": "150+ 家书商的**分歧度**越高，模态面（top1）开出率越高于锐盘共识的期望。",
+   "in_sample": {
+    "n": 339,
+    "issues": 29,
+    "by_quartile_top1_resid_pp": [
+     -5.4,
+     2.2,
+     8.2,
+     6.4
+    ],
+    "survives_top1_control": "四个 top1 档全部同向（高分歧 − 低分歧 = +4.9/+12.7/+12.0/+4.4pp）",
+    "corr_disp_top1": 0.143,
+    "best_sharpen_k": -3.0,
+    "best_bss_pct": 0.25,
+    "ci95_pct": [
+     -0.42,
+     0.88
+    ]
+   },
+   "mechanism_status": "⛔无已验证机制。预注册的『分歧=置信度低→向均匀收缩』被证伪（方向相反）；补测的『陈盘污染』(F1b) 三条预测全部成立但**解释不了本效应**——本效应是对着锐盘共识测的，而锐盘共识已被证明是新鲜的。",
+   "alternative_confound": "效应集中在**书目少**的子集（少书目 −5.4→+11.6pp，多书目 +3.0→+4.7pp），可能是稀薄市场噪音而非分歧度本身。",
+   "falsifier": "12 期累计 n≥140 时，若高分歧档（上四分位）的 top1 残差 95%CI 上界 < +2pp，则 F1c 证伪剔除。",
+   "tier": "候选（只入档，不部署，不进判读）"
+  },
+  {
+   "key": "F2-handicap-line-move",
+   "claim": "让球线的**离散位移**（初盘→终盘中位线）朝主队方向移动 → 主胜面残差为正；改线书商占比 = 承诺强度。",
+   "in_sample": {
+    "n": 339,
+    "issues": 29,
+    "home_resid_by_move_pp": {
+     "向客≤-0.25": -2.6,
+     "不动": -7.2,
+     "向主+0.25": 1.6,
+     "向主≥+0.5": 10.8
+    },
+    "commitment_ladder_top1_resid_pp": [
+     -1.4,
+     1.9,
+     7.4
+    ],
+    "mechanism_check_2_trend": "通过（同向 2/3，跨度 13.4pp ≥ 最大|残差| 10.8pp）",
+    "best_shift_k_pp_per_quarter_line": 3.0,
+    "best_bss_pct": 0.35,
+    "ci95_pct": [
+     -0.41,
+     1.08
+    ]
+   },
+   "mechanism_status": "✅机制预注册且方向正确：改赔率是连续微调、成本近零；**改线是把标的换成另一个离散档位，是一次承诺**。与已证伪的『赔率位移动量』不是同一个量。",
+   "confound_cleared": "非 F3 混杂——固定 top1 档后效应在 [45,60)% 带最强（+6.9pp, n=44），60+ 带仅 +1.4pp；『线不动 −7.2pp』经控制后消失，是档位组合效应。",
+   "residual_risk": "存活的是单格 n=44，与本季已两次栽过的 n=26 小样本同形（位移因子 −13.1pp、两源同错平局带 −9pp，均在扩样后翻号）。",
+   "falsifier": "12 期累计 n≥140 时，若『向主≥+0.5』档主胜残差 95%CI 上界 < +2pp，则 F2 证伪剔除。",
+   "tier": "候选（只入档，不部署，不进判读）"
+  }
+ ],
+ "stop_rule": "两条均在累计 n≥140 时结账；期间不得调整阈值、不得改 k、不得中途看结果改口径。",
+ "quota_note": "F3 仍占用『每期只许 1 个新参数进实盘』的配额；本次两条都是**候选档**，不占配额，也不得以任何形式影响票面。",
+ "data_files": [
+  ".nutmeg-data/zucai/t7-dispersion.json",
+  ".nutmeg-data/zucai/t7-handicap.json",
+  "scripts/zucai_book_dispersion.py",
+  "scripts/zucai_handicap_line.py"
+ ],
+ "instrument": {
+  "script": "scripts/zucai_f2_observe.py",
+  "record": "赛前（最早一场开球前）跑 `uv run python scripts/zucai_f2_observe.py record --issue <期>`；开球后整期拒收",
+  "grade": "开奖后跑 `uv run python scripts/zucai_f2_observe.py grade --issue <期>`，累计进 experiments/prereg-26126-F2-ledger.json",
+  "isolation": "⛔观察仪不写 legs、不进 prep、不被任何判读或构票命令引用——隔离靠『没有调用边』保证，不靠自律。分档 BUCKETS 在结账前是冻结常量。",
+  "plumbing_test": "2026-09-14 17:50 在 26125 首场开球前做过一次活体全链路验证（11/14 对齐、分档正确）。⚠️该观察单**已移出数据目录**：26125 的板面我已深度看过，不是干净前瞻样本，不得入账。"
+ }
+}

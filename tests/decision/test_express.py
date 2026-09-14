@@ -138,3 +138,51 @@ def test_decision_express_cli(tmp_path):
     assert result.exit_code == 0, result.output
     assert "5 票" in result.output
     assert len(DecisionStore(tmp_path / "decision").load(Ticket)) == 5
+
+
+# ── legs 形状闸（2026-09-14 入码）────────────────────────────────────────
+#
+# 出生事故：`com.nutmeg.decision.close` 2026-08-13 19:00 那次跑挂在
+#   by_bucket.setdefault(str(leg.get("bucket") or ""), []).append(leg)
+#   AttributeError: 'str' object has no attribute 'get'
+# 此后该 agent 一直未加载（2026-09-14 退役移除）。根因：`run_express` /
+# `run_decision_express_v2` 都是 `json.loads(...)` 之后**直接喂进来、零形状校验**；
+# 喂进一个 dict（票面结构形状 `{"issue":…,"legs":{…}}`，即 `decision-audit-legs`
+# 的输入）时，迭代 dict 得到的是**字符串键**，于是深处炸一个看不懂的 AttributeError。
+#
+# `decision-audit-legs` 对反向错配（把扁平数组喂给它）早就有具名拒绝
+# （`missing_audit_metadata` + 退出码 1）。本闸补上对称的那一半。
+
+
+def test_ticket_structure_shape_is_rejected_with_a_named_error():
+    """票面结构（dict）误喂给 express → 具名报错并指出该走哪条命令。"""
+    import pytest
+
+    payload = {"issue": "26124", "legs": {"1": {"faces": "31"}, "2": {"faces": "310"}}}
+    with pytest.raises(TypeError) as exc:
+        compose_tickets(payload, load_budget(), channel="jczq", made_at="2026-08-13")
+    message = str(exc.value)
+    assert "decision-audit-legs" in message   # 指路：票面结构归那条命令
+    assert "dict" in message
+
+
+def test_string_element_is_rejected_with_its_index():
+    """元素不是 dict → 报出**第几条腿**，不是深处的 AttributeError。"""
+    import pytest
+
+    with pytest.raises(TypeError) as exc:
+        compose_tickets(
+            [{"match_id": "m1", "market": "had", "selection": "3",
+              "odds": 2.0, "bucket": "main"}, "周一001"],
+            load_budget(), channel="jczq", made_at="2026-08-13")
+    assert "第 2 条" in str(exc.value)
+
+
+def test_valid_flat_array_still_composes(tmp_path):
+    """闸不得误伤正常输入。"""
+    summary = compose_tickets(
+        [{"match_id": "m1", "market": "had", "selection": "3",
+          "odds": 2.0, "bucket": "had_modal"}],
+        load_budget(), channel="jczq", made_at="2026-08-13",
+        store=DecisionStore(tmp_path / "decision"))
+    assert summary["n_tickets"] >= 0

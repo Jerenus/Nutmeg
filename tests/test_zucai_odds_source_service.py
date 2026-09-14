@@ -185,3 +185,43 @@ def test_odds_source_url_requires_live_fetch() -> None:
             output_dir=Path(".nutmeg-data/test"),
             registry_file=Path(".nutmeg-data/test/issues.json"),
         )
+
+
+def test_sync_archives_every_capture_append_only(tmp_path) -> None:
+    """同一 slot 重复抓取必须逐份存档,不得原地覆盖丢失历史。
+
+    位移特征(伤停/战意的无泄漏代理)依赖跨时点快照;2026-09-14 闭环实验发现
+    覆盖写导致每期只剩 2 个同日快照,位移中位数仅 0.5pp,特征无法成立。
+    """
+    service = ZucaiOddsSyncService()
+    out = tmp_path / "zucai"
+    registry = tmp_path / "registry.json"
+
+    first = service.sync(
+        source_file=AFTERNOON,
+        issue_id="26068",
+        slot="afternoon",
+        captured_at="2026-04-26 10:00 CST",
+        output_dir=out,
+        registry_file=registry,
+    )
+    second = service.sync(
+        source_file=AFTERNOON,
+        issue_id="26068",
+        slot="afternoon",
+        captured_at="2026-04-26 16:00 CST",
+        output_dir=out,
+        registry_file=registry,
+    )
+
+    # 规范文件仍是最新一份(既有读端不受影响)
+    canonical = out / "26068-odds.json"
+    assert canonical.exists()
+    assert json.loads(canonical.read_text())["captured_at"] == "2026-04-26 16:00 CST"
+
+    # 存档目录保留了两次抓取
+    archived = sorted((out / "snapshots").glob("26068-odds-*.json"))
+    assert len(archived) == 2, f"append-only 存档缺失: {archived}"
+    stamps = {json.loads(p.read_text())["captured_at"] for p in archived}
+    assert stamps == {"2026-04-26 10:00 CST", "2026-04-26 16:00 CST"}
+    assert first.archive_path != second.archive_path

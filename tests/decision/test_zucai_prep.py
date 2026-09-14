@@ -1,4 +1,6 @@
 # tests/decision/test_zucai_prep.py
+from datetime import datetime
+
 from nutmeg.decision.zucai_prep import (
     align_to_sporttery,
     board_dates,
@@ -192,3 +194,251 @@ def test_brief_shows_the_international_consensus_and_its_drift(tmp_path):
     assert "国际欧赔" in brief
     assert "周一004" in brief          # 对齐来源可追
     assert "6.92" in brief             # drift 可见
+
+
+def test_blend_fair_is_equal_weight_and_renormalised():
+    """两源等权混合 prior。
+
+    证据（2026-09-15，n=264 双源可比样本）：500.com 去水均值 Brier 0.5485、
+    titan007 锐盘当前 0.5433；**50/50 等权混合 BSS +0.57%，CI[+0.01,+1.15]，
+    CI 下界 > 0**，而纯 titan007(+0.95%) 的 CI[-0.16,+2.06] 含 0。
+    机制 = 集成平均降方差（两源误差部分抵消）。
+    """
+    from nutmeg.decision.zucai_prep import blend_fair
+
+    a = {"home": 0.50, "draw": 0.30, "away": 0.20}
+    b = {"home": 0.60, "draw": 0.25, "away": 0.15}
+    out = blend_fair(a, b)
+
+    assert out == {"home": 0.55, "draw": 0.275, "away": 0.175}
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_blend_fair_needs_both_sources():
+    """任一源缺失就不混合——宁可用单源，不许拿半份数据冒充混合。"""
+    from nutmeg.decision.zucai_prep import blend_fair
+
+    a = {"home": 0.5, "draw": 0.3, "away": 0.2}
+    assert blend_fair(a, None) is None
+    assert blend_fair(None, a) is None
+    assert blend_fair(a, {"home": 0.5}) is None
+
+
+def test_prep_record_carries_blend_and_keeps_baseline(tmp_path):
+    """记录里同时留 fair_had(500.com 基线) 与 fair_blend，**不覆盖基线**。"""
+    from nutmeg.decision.zucai_prep import attach_blend
+
+    rec = {"fair_had": {"home": 0.50, "draw": 0.30, "away": 0.20},
+           "intl": {"fair": {"home": 0.60, "draw": 0.25, "away": 0.15}}}
+    attach_blend(rec)
+
+    assert rec["fair_had"] == {"home": 0.50, "draw": 0.30, "away": 0.20}
+    assert rec["fair_blend"] == {"home": 0.55, "draw": 0.275, "away": 0.175}
+    assert rec["fair_source"] == "blend_500_titan007_5050"
+
+
+def test_prep_record_without_intl_has_no_blend(tmp_path):
+    from nutmeg.decision.zucai_prep import attach_blend
+
+    rec = {"fair_had": {"home": 0.5, "draw": 0.3, "away": 0.2}, "intl": None}
+    attach_blend(rec)
+
+    assert rec["fair_blend"] is None
+    assert rec["fair_source"] == "c500_only"
+
+
+def test_blend_refuses_when_sources_contradict():
+    """两源严重分歧 = 大概率对齐错了，**拒绝混合**而不是取平均。
+
+    2026-09-15 实测：26125 场1 的 500.com 给主胜 84.7%、titan007 给客胜 89.2%
+    （titan007 侧对齐到了「中国女足-中国香港女足」）。等权平均得到
+    44.3/8.8/46.9 —— 看起来完全正常的垃圾。静默平均两个互相矛盾的源，
+    正是「假数据比没数据更危险」的那一类。
+    """
+    from nutmeg.decision.zucai_prep import blend_fair
+
+    a = {"home": 0.847, "draw": 0.106, "away": 0.047}
+    b = {"home": 0.038, "draw": 0.071, "away": 0.892}
+    assert blend_fair(a, b) is None, "互相矛盾的两源不得混合"
+
+
+def test_blend_tolerates_ordinary_disagreement():
+    """常规分歧（同一模态面、幅度温和）仍然混合——闸不能把正常样本也挡掉。"""
+    from nutmeg.decision.zucai_prep import blend_fair
+
+    a = {"home": 0.50, "draw": 0.28, "away": 0.22}
+    b = {"home": 0.58, "draw": 0.25, "away": 0.17}
+    out = blend_fair(a, b)
+    assert out is not None
+    assert abs(out["home"] - 0.54) < 1e-6
+
+
+def test_attach_blend_marks_the_contradiction(tmp_path):
+    from nutmeg.decision.zucai_prep import attach_blend
+
+    rec = {"fair_had": {"home": 0.847, "draw": 0.106, "away": 0.047},
+           "intl": {"fair": {"home": 0.038, "draw": 0.071, "away": 0.892}}}
+    attach_blend(rec)
+
+    assert rec["fair_blend"] is None
+    assert rec["fair_source"] == "c500_only"
+    assert rec["blend_blocked"] == "source_contradiction"
+
+
+# ── Telegram 推送与实际功能同步（2026-09-14 用户反馈「一直推送无效信息」）──────
+#
+# 实测 49 条历史推送（zucai.prep + prep-revision 全部日志）：
+#   · 🌙「今日无期」心跳 **20/49 = 41%** —— 纯噪音，且新装 morning agent 后
+#     无期日从 2 条变 3 条
+#   · 「判读待主循环」**29/29** —— 常量字符串，零信息
+#   · 「强锚候选 N」29/29 —— 就是 top1≥70 的计数，闭环已证是**价格重述**
+#   · 「位移超门槛 N」15 条 —— 而闭环实测**晚盘不优于早盘 BSS -0.07%
+#     CI[-0.42,+0.28]**，RUNBOOK B8 早把 18:30 降为事实核对
+# 而真正救命的「分歧闸拦截」从未进过推送：26125 场1 两源 84.7 vs 89.5，
+# 静默平均得到 44/9/47 的垃圾——**那才是当天唯一需要人知道的事**。
+
+
+def _prep(**over):
+    base = {
+        "issue": "26125", "slot": "afternoon", "run_date": "2026-09-14",
+        "captured_at": "2026-09-14T14:00:00", "n_matches": 14,
+        "alignment": {"unmatched": [], "ambiguous": []},
+        "screens": {"strong_anchors": [], "coinflip": [], "missing_euro_anchor": []},
+        "records": {},
+    }
+    base.update(over)
+    return base
+
+
+def test_message_drops_the_constant_and_the_price_restatement():
+    from nutmeg.decision.zucai_prep import prep_message
+
+    prep = _prep(screens={"strong_anchors": [{"match_no": 1}, {"match_no": 2}],
+                          "coinflip": [], "missing_euro_anchor": []})
+    body = prep_message(prep, moved=None)
+    assert "判读待主循环" not in body      # 常量,29/29 出现,零信息
+    assert "强锚候选" not in body          # 价格重述,闭环已证伪
+
+
+def test_message_surfaces_the_blend_gate_block():
+    """分歧闸拦截必须上推——26125 场1 就是靠它没拿到 44/9/47 的垃圾。"""
+    from nutmeg.decision.zucai_prep import prep_message
+
+    prep = _prep(records={
+        "1": {"blend_blocked": "source_contradiction", "fair_source": "c500_only"},
+        "2": {"fair_source": "blend_500_titan007_5050"},
+    })
+    body = prep_message(prep, moved=None)
+    assert "分歧闸" in body and "场1" in body
+
+
+def test_message_keeps_real_precision_losses():
+    from nutmeg.decision.zucai_prep import prep_message
+
+    prep = _prep(alignment={"unmatched": [{"match_no": 3}, {"match_no": 4}],
+                            "ambiguous": []})
+    assert "未对齐 2" in prep_message(prep, moved=None)
+
+
+def test_no_issue_day_is_silent():
+    """41% 的噪音来源：无期日不再推送。"""
+    from nutmeg.decision.zucai_prep import no_issue_message
+
+    assert no_issue_message(stale_days=0) is None
+    assert no_issue_message(stale_days=6) is None
+
+
+def test_long_silence_still_alerts():
+    """静默失败必须仍可见——7/21 那次死了三周没人发现。"""
+    from nutmeg.decision.zucai_prep import NO_ISSUE_ALERT_DAYS, no_issue_message
+
+    body = no_issue_message(stale_days=NO_ISSUE_ALERT_DAYS)
+    assert body is not None and "7" in body
+
+
+def test_revision_slot_is_silent_without_real_change():
+    """RUNBOOK B8 已把 18:30 降为事实核对；无异动就别响。"""
+    from nutmeg.decision.zucai_prep import should_push
+
+    quiet = _prep(slot="revision")
+    assert should_push(quiet, slot="revision", moved=0) is False
+    assert should_push(quiet, slot="revision", moved=3) is True
+    # 分歧闸状态本身就是异动
+    blocked = _prep(slot="revision", records={"1": {"blend_blocked": "x"}})
+    assert should_push(blocked, slot="revision", moved=0) is True
+    # ⛔未对齐是板面**静态属性**，14:00 已报过——不得把 18:30 再叫醒一次。
+    # （26125 有 8 场未对齐，若算异动则 revision 永远会响，等于没做过滤。）
+    static = _prep(slot="revision",
+                   alignment={"unmatched": [{"match_no": i} for i in range(8)],
+                              "ambiguous": []})
+    assert should_push(static, slot="revision", moved=0) is False
+
+
+def test_afternoon_always_speaks():
+    """14:00 是判读的起点，永远推。"""
+    from nutmeg.decision.zucai_prep import should_push
+
+    assert should_push(_prep(), slot="afternoon", moved=0) is True
+    assert should_push(_prep(slot="morning"), slot="morning", moved=0) is True
+
+
+def test_run_prep_is_silent_on_a_no_issue_day(tmp_path):
+    """端到端：无期日跑一趟，日志照写、Telegram 一条不发。"""
+    from nutmeg.decision.zucai_gate import InsaleIssue
+    from nutmeg.decision.zucai_prep import run_zucai_prep
+
+    sent = []
+
+    class _Spy:
+        def publish(self, request):
+            sent.append(request)
+
+    def _gate(**_kw):
+        return (InsaleIssue(issue="26130", deadline=datetime(2026, 9, 20, 22, 0)),
+                "今日无期。下一期 26130 截止 2026-09-20 22:00(6 天后)")
+
+    result = run_zucai_prep(
+        run_date="2026-09-14", slot="afternoon",
+        zucai_dir=tmp_path, output_dir=tmp_path, live_fetch=False,
+        dispatch=True, gate_fetcher=None, notification_service=_Spy(),
+        gate_fn=_gate,
+    )
+    assert result.status == "no_issue"
+    assert "今日无期" in result.summary        # 日志照写
+    assert sent == []                          # Telegram 静默
+
+
+def test_run_prep_still_alerts_after_long_silence(tmp_path):
+    from nutmeg.decision.zucai_gate import InsaleIssue
+    from nutmeg.decision.zucai_prep import (
+        NO_ISSUE_ALERT_DAYS,
+        run_zucai_prep,
+        touch_liveness,
+    )
+
+    sent = []
+
+    class _Spy:
+        def publish(self, request):
+            sent.append(request)
+
+    touch_liveness(tmp_path, run_date="2026-09-01", status="prepared")  # 13 天前
+
+    def _gate(**_kw):
+        return (InsaleIssue(issue="26130", deadline=datetime(2026, 9, 20, 22, 0)), "今日无期")
+
+    run_zucai_prep(run_date="2026-09-14", slot="afternoon", zucai_dir=tmp_path,
+                   output_dir=tmp_path, live_fetch=False, dispatch=True,
+                   notification_service=_Spy(), gate_fn=_gate)
+    assert len(sent) == 1
+    assert str(NO_ISSUE_ALERT_DAYS) in sent[0].body
+
+def test_revision_does_not_repeat_an_unchanged_blend_gate():
+    """闸的**状态变化**才是新消息；一直拦着同一场不是（14:00 已报过）。"""
+    from nutmeg.decision.zucai_prep import should_push
+
+    blocked = _prep(slot="revision", records={"1": {"blend_blocked": "x"}})
+    same = _prep(slot="afternoon", records={"1": {"blend_blocked": "x"}})
+    assert should_push(blocked, slot="revision", moved=0, base_prep=same) is False
+    clean = _prep(slot="afternoon", records={"1": {}})
+    assert should_push(blocked, slot="revision", moved=0, base_prep=clean) is True

@@ -73,10 +73,11 @@ class ZucaiOddsSyncService:
             else f"{resolved_issue_id}-odds-revision.json"
         )
         odds_path = output_path / filename
-        odds_path.write_text(
-            json.dumps(snapshot, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
+        payload = json.dumps(snapshot, ensure_ascii=False, indent=2, default=str)
+        odds_path.write_text(payload, encoding="utf-8")
+        # append-only 存档:每次抓取各留一份,规范文件仍是最新一份。
+        # 位移特征(伤停/战意的无泄漏代理)依赖跨时点快照;原地覆盖会把历史抹掉。
+        archive_path = self._archive_snapshot(output_path, resolved_issue_id, snapshot, payload)
         self._update_registry(
             registry_file=Path(registry_file),
             output_dir=output_path,
@@ -94,6 +95,7 @@ class ZucaiOddsSyncService:
             source_path=str(source_path) if source_path is not None else None,
             parsed_count=len(snapshot["matches"]),
             odds_path=str(odds_path),
+            archive_path=str(archive_path),
             registry_path=str(registry_file),
             warnings=warnings,
         )
@@ -207,6 +209,21 @@ class ZucaiOddsSyncService:
         content = response.content[:max_bytes]
         encoding = response.encoding or "utf-8"
         return content.decode(encoding, errors="replace"), None
+
+    @staticmethod
+    def _archive_snapshot(
+        output_path: Path, issue_id: str, snapshot: dict, payload: str
+    ) -> Path:
+        """把本次抓取原样存进 snapshots/,文件名带采集时刻,永不覆盖。"""
+        snap_dir = output_path / "snapshots"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        stamp = re.sub(r"[^0-9A-Za-z]+", "-", str(snapshot.get("captured_at") or "")).strip("-")
+        if not stamp:
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+        path = snap_dir / f"{issue_id}-odds-{stamp}.json"
+        if not path.exists():
+            path.write_text(payload, encoding="utf-8")
+        return path
 
     def _update_registry(
         self,

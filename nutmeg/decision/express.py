@@ -99,6 +99,32 @@ def compose_tickets(legs, budget=None, *, channel, made_at="", store=None) -> di
     caps = (budget or {}).get(section, {}) or {}
     period_cap = int((budget or {}).get("period_cap_yuan", 0)) or None
 
+    # 0) legs 形状闸 —— 具名拒绝，不让形状错配掉进深处的 AttributeError。
+    #
+    # 出生事故：`com.nutmeg.decision.close` 2026-08-13 19:00 挂在下面那行
+    # `leg.get("bucket")` 上（`AttributeError: 'str' object has no attribute 'get'`），
+    # 此后该 agent 一直未加载，2026-09-14 退役移除。根因是 `run_express` /
+    # `run_decision_express_v2` 都 `json.loads(...)` 后直接喂进来、零校验：喂进
+    # **票面结构 dict**（`{"issue":…,"legs":{…}}`，即 `decision-audit-legs` 的输入）
+    # 时迭代出的是字符串键。`decision-audit-legs` 对反向错配早有具名拒绝
+    # （`missing_audit_metadata`），这里补上对称的一半。
+    if isinstance(legs, dict):
+        raise TypeError(
+            "compose_tickets 需要**投注腿数组** list[dict]，收到的是 dict"
+            f"（顶层键 {sorted(legs)[:5]}）。这看起来是**票面结构**"
+            "（`{issue, legs:{场号:…}}`）——那是 `decision-audit-legs` 的输入，"
+            "不是 express 的。express 要的是 "
+            "`[{match_id, market, selection, odds, bucket}, …]`。")
+    if not isinstance(legs, list | tuple):
+        raise TypeError(
+            f"compose_tickets 需要投注腿数组，收到 {type(legs).__name__}。")
+    for index, leg in enumerate(legs, start=1):
+        if not isinstance(leg, dict):
+            raise TypeError(
+                f"compose_tickets：第 {index} 条腿是 {type(leg).__name__} 而非 dict"
+                f"（{leg!r:.40}）。每条腿须为 "
+                "`{match_id, market, selection, odds, bucket}`。")
+
     # 1) 按 bucket 保序分组
     by_bucket: dict[str, list[dict]] = {}
     for leg in legs:

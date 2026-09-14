@@ -76,12 +76,14 @@ def align_zucai_to_titan007(
             continue
 
         candidates = [row for row in board if row.kickoff == kickoff]
-        if len(candidates) > 1:
-            candidates = [
-                row for row in candidates
-                if _name_hit(match.get("home_team"), row.home_names)
-                or _name_hit(match.get("away_team"), row.away_names)
-            ]
+        # ⛔队名校验对**任意候选数**都必须执行。曾经只在 len>1 时校验,导致
+        # 2026-09-15 实测 26124 场13「阿罗卡-圣克拉」(当日不在竞彩板面)被同为
+        # 01:00 开球的「本菲卡-吉维森特」静默顶包——26111 身份错配同类死法。
+        candidates = [
+            row for row in candidates
+            if _name_hit(match.get("home_team"), row.home_names)
+            or _name_hit(match.get("away_team"), row.away_names)
+        ]
         if len(candidates) != 1:
             logger.info(
                 "zucai-titan007 skip 场%s (%s vs %s @ %s): 候选 %d 个——非唯一即丢",
