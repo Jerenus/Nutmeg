@@ -14,7 +14,8 @@
 2. **有初赔**。``MarketOdds.opening_odds`` 真正被填上，drift 信号不再恒为 0。
 3. **必须筛书**。152 家里既有 Pinnacle/Crown 这样的锐盘，也有 ``Rodeoslot``
    这类噪声盘，更有 **竞彩官方（id 1129）——它就是体彩盘本身**。不排除它，
-   「国际 vs 体彩」的冲突信号会变成体彩跟自己比。
+   「国际 vs 体彩」的冲突信号会变成体彩跟自己比。书目与容差住在
+   ``config/odds_books.yaml``，不在本文件——它们是判断层输入口径。
 
 本模块只出 ``match_winner``。大小球/亚盘住在另外两个 AES 加密的端点，属后续阶段；
 在此之前由 ``merge_bold_odds`` 用 API-Football/500.com 兜底补 ``over_under``。
@@ -25,7 +26,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from nutmeg.data.fcom500 import MarketOdds, _devig
 from nutmeg.data.titan007 import Titan007BoardRow, Titan007BookQuote
@@ -36,63 +37,76 @@ __all__ = [
     "ALL_BOOKS",
     "SHARP_BOOKS",
     "BookSelection",
+    "all_books",
     "collect_bold_odds_titan007",
     "collect_bold_odds_titan007_live",
+    "sharp_books",
 ]
 
 _OUTCOME_KEYS = ("home", "draw", "away")
 
-# 竞彩官方 = 体彩盘本身（自指）；香港马会 = 彩池非庄家盘；Betfair = 交易所（佣金口径
-# 不同）。三者一律不进「国际共识」，与口径无关。
-_EXCLUDED_COMPANY_IDS = frozenset({"1129", "432", "2"})
-
-# 锐盘白名单（公司 id 稳定，按 id 不按名字）。规模（~15 家）刻意贴近 API-Football
-# 原本给到的书目量级，使切源时共识口径的变化尽量只来自「书更好」而非「书更多」。
-_SHARP_COMPANY_IDS = frozenset(
-    {
-        "177",  # Pinnacle
-        "545",  # Crown 皇冠
-        "80",   # Macauslot 澳门
-        "649",  # IBCBET
-        "474",  # Sbobet
-        "281",  # Bet 365
-        "115",  # William Hill
-        "82",   # Ladbrokes
-        "81",   # Vcbet
-        "90",   # Easybets
-        "104",  # Interwetten
-        "16",   # 10BET
-        "18",   # 12bet
-        "976",  # 18Bet
-        "255",  # Bwin
-    }
-)
-
-# 竞彩号每周复用（周一002 每周都有）。对齐时除竞彩号外再验开球时间，超出此容差
-# 即判为对到了别的一期 → 丢场。体彩与 titan007 实测逐分钟一致，容差留给临时改期。
-_KICKOFF_TOLERANCE = timedelta(minutes=30)
-
-# 共识至少要这么多家才算数；不足视为该场无信号（宁可缺席不可用单家冒充共识）。
-_MIN_CONSENSUS_BOOKS = 3
-
 
 @dataclass(frozen=True, slots=True)
 class BookSelection:
-    """一种共识口径：名字 + 判定某家是否入选。"""
+    """一种共识口径：名字 + 判定某家是否入选。
+
+    ``include_ids`` 为 ``None`` 表示「除排除名单外全收」。两份名单都来自
+    ``config/odds_books.yaml``——书目集合决定去水 fair，属判断层输入口径，
+    必须可审计可 diff，不能写死在代码里。
+    """
 
     name: str
-    include_ids: frozenset[str] | None  # None = 除排除名单外全收
+    include_ids: frozenset[str] | None
+    excluded_ids: frozenset[str]
 
     def accepts(self, quote: Titan007BookQuote) -> bool:
-        if quote.company_id in _EXCLUDED_COMPANY_IDS:
+        if quote.company_id in self.excluded_ids:
             return False
         if self.include_ids is None:
             return True
         return quote.company_id in self.include_ids
 
 
-SHARP_BOOKS = BookSelection(name="sharp", include_ids=_SHARP_COMPANY_IDS)
-ALL_BOOKS = BookSelection(name="all", include_ids=None)
+def _config():
+    from nutmeg.config.odds_books import load_odds_books_config
+    return load_odds_books_config()
+
+
+def sharp_books() -> BookSelection:
+    """配置里的锐盘白名单口径（默认）。"""
+    cfg = _config()
+    return BookSelection(
+        name="sharp", include_ids=cfg.sharp_ids, excluded_ids=cfg.excluded_ids
+    )
+
+
+def all_books() -> BookSelection:
+    """除排除名单外全收的口径（影子期对照用）。"""
+    cfg = _config()
+    return BookSelection(name="all", include_ids=None, excluded_ids=cfg.excluded_ids)
+
+
+class _LazySelection:
+    """模块级 ``SHARP_BOOKS`` / ``ALL_BOOKS`` 的惰性代理。
+
+    配置在 import 时读会让「配置损坏」变成 import 崩溃,牵连一整批与欧赔无关的
+    命令;惰性化后只有真正要用共识口径的调用才会碰配置。
+    """
+
+    __slots__ = ("_builder",)
+
+    def __init__(self, builder) -> None:
+        self._builder = builder
+
+    def __getattr__(self, item):
+        return getattr(self._builder(), item)
+
+    def __repr__(self) -> str:
+        return repr(self._builder())
+
+
+SHARP_BOOKS = _LazySelection(sharp_books)
+ALL_BOOKS = _LazySelection(all_books)
 
 
 def _avg(values: list[float]) -> float:
@@ -129,10 +143,11 @@ def _consensus_market(
 ) -> MarketOdds | None:
     """入选书目 → ``MarketOdds``（即时赔为主盘、初赔入 ``opening_odds``）。
 
-    三路任一缺失、或入选不足 ``_MIN_CONSENSUS_BOOKS`` 家 → ``None``（该场无信号）。
+    三路任一缺失、或入选不足配置的 ``min_consensus_books`` 家 → ``None``（该场无
+    信号）——宁可缺席，不可用单家冒充共识。
     """
     chosen = [q for q in quotes if selection.accepts(q)]
-    if len(chosen) < _MIN_CONSENSUS_BOOKS:
+    if len(chosen) < _config().min_consensus_books:
         return None
 
     per_book: dict[str, list[float]] = {k: [] for k in _OUTCOME_KEYS}
@@ -163,7 +178,7 @@ def collect_bold_odds_titan007(
     run_date: str,
     board_fetcher: Callable[[], Iterable[Titan007BoardRow]],
     odds_fetcher: Callable[[str], Iterable[Titan007BookQuote]],
-    books: BookSelection = SHARP_BOOKS,
+    books: BookSelection | None = None,
 ) -> dict[str, dict[str, MarketOdds]]:
     """采集体彩盘各场的 titan007 国际欧赔，键到体彩竞彩号。
 
@@ -175,6 +190,7 @@ def collect_bold_odds_titan007(
     （由 ``fetch_day`` 决定不落盘，保住上一版完好快照）；单场失败 → 仅该场缺席。
     **从不崩。**
     """
+    books = books if books is not None else sharp_books()
     board = _board_matches(value, run_date)
     if not board:
         return {}
@@ -194,7 +210,7 @@ def collect_bold_odds_titan007(
             logger.info("titan007-odds skip %s: titan007 板面无此竞彩号", match_no)
             continue
         drift = abs(row.kickoff - kickoff)
-        if drift > _KICKOFF_TOLERANCE:
+        if drift > _config().kickoff_tolerance:
             logger.warning(
                 "titan007-odds skip %s: 开球时间不符（体彩 %s vs 007 %s）——疑似对到别期",
                 match_no, kickoff, row.kickoff,
@@ -227,7 +243,7 @@ def collect_bold_odds_titan007_live(
     value: dict,
     *,
     run_date: str,
-    books: BookSelection = SHARP_BOOKS,
+    books: BookSelection | None = None,
 ) -> dict[str, dict[str, MarketOdds]]:
     """生产入口：装配真 ``Titan007Client`` 并采集。无 key、无配额。"""
     from nutmeg.data.titan007 import Titan007Client

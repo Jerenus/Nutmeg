@@ -1,0 +1,49 @@
+# 国际欧赔共识的书目口径与对齐容差（titan007 数据源）。
+#
+# 为什么单独成文件：书目集合直接决定去水 fair，是判断层的输入口径，改它属判据变更，
+# 应当能被审计、被 diff、被复盘引用——写死在代码里做不到这些。
+#
+# 公司 id 来自 titan007 `1x2d.titan007.com/{match_id}.js` 的第 0 字段，稳定；
+# 按 id 不按名字（名字有地区后缀变体，如 Ladbrokes / Ladbrokes.au / Ladbrokes.be）。
+
+titan007:
+  # 一律不进「国际共识」，与下面选哪个口径无关。
+  excluded:
+    - id: "1129"
+      name: Lottery Official
+      reason: 竞彩官方盘——它就是体彩盘本身。混进来会让「国际 vs 体彩」的冲突信号变成体彩跟自己比。
+    - id: "432"
+      name: HK Jockey Club
+      reason: 香港马会是彩池（pari-mutuel），赔率由投注量反推，不是庄家报价。
+    - id: "2"
+      name: Betfair
+      reason: 交易所盘，价里不含庄家抽水、含的是佣金，去水口径与庄家盘不可比。
+
+  # 默认口径。规模（15 家）刻意贴近 API-Football 原本给到的书目量级，使换源时共识的
+  # 变化尽量只来自「书更好」而非「书更多」。2026-09-14 实测：sharp 与 all 两口径的
+  # fair 差中位仅 0.3pp，故此选择是低风险的。
+  sharp:
+    - { id: "177", name: Pinnacle }
+    - { id: "545", name: Crown }
+    - { id: "80",  name: Macauslot }
+    - { id: "649", name: IBCBET }
+    - { id: "474", name: Sbobet }
+    - { id: "281", name: Bet 365 }
+    - { id: "115", name: William Hill }
+    - { id: "82",  name: Ladbrokes }
+    - { id: "81",  name: Vcbet }
+    - { id: "90",  name: Easybets }
+    - { id: "104", name: Interwetten }
+    - { id: "16",  name: 10BET }
+    - { id: "18",  name: 12bet }
+    - { id: "976", name: 18Bet }
+    - { id: "255", name: Bwin }
+
+  thresholds:
+    # 共识至少要这么多家才算数；不足视为该场无信号——宁可缺席，不可用单家冒充共识。
+    min_consensus_books: 3
+    # 竞彩号每周复用（周一002 每周都有）。对齐时除竞彩号外再验开球时间，超出此容差
+    # 即判为对到了别的一期 → 丢场。体彩与 titan007 实测逐分钟一致，容差留给临时改期。
+    kickoff_tolerance_minutes: 30
+    # 欧赔页解出的家数低于此值视为降级响应（半截内容/WAF），raise 而非当作「这场没盘」。
+    min_euro_books: 5

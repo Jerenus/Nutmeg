@@ -58,9 +58,19 @@ _USER_AGENT = (
 _BOARD_FIELD_COUNT = 24
 _EURO_FIELD_COUNT = 27
 
-# 解析结果低于此规模视为降级响应（WAF / 错误页 / 半截内容）。
+# 板面解出 0 场视为降级响应（在售板面永远有场）。历史端点另行放行，见 parse_board。
 _MIN_BOARD_ROWS = 1
-_MIN_EURO_ROWS = 5
+
+
+def _min_euro_books() -> int:
+    """欧赔页低于此家数视为降级响应。阈值住在 ``config/odds_books.yaml``——它与
+    共识口径是同一组判断,该一起被审计。配置不可用时回落到 5:本模块是纯数据层,
+    不该因为一份口径文件而整个失能(服务层会在真正用到口径时炸出来)。"""
+    try:
+        from nutmeg.config.odds_books import load_odds_books_config
+        return load_odds_books_config().min_euro_books
+    except Exception:  # noqa: BLE001 — 数据层不因口径文件失能
+        return 5
 
 _RE_EURO_GAME_ARRAY = re.compile(r"game=Array\((.*?)\);", re.S)
 _RE_EURO_ROW = re.compile(r'"([^"]*)"')
@@ -241,8 +251,8 @@ def parse_euro_odds(text: str) -> list[Titan007BookQuote]:
     字段 6-8 与 ``_devig(字段 3-5)`` 的一致性已实测 152/152 通过——可作解析自检的
     旁证，但本仓一律用自己的 ``_devig`` 保持全局口径统一。
 
-    初赔或即时赔任一不合法的行直接跳过（不猜）。解出书目 < ``_MIN_EURO_ROWS``
-    视为降级响应 → raise。
+    初赔或即时赔任一不合法的行直接跳过（不猜）。解出书目低于配置的 ``min_euro_books``
+    视为降级响应 → raise（阈值见 ``config/odds_books.yaml``）。
     """
     match = _RE_EURO_GAME_ARRAY.search(text or "")
     if match is None:
@@ -267,9 +277,10 @@ def parse_euro_odds(text: str) -> list[Titan007BookQuote]:
                 updated_at=_parse_titan_datetime(fields[20]),
             )
         )
-    if len(quotes) < _MIN_EURO_ROWS:
+    minimum = _min_euro_books()
+    if len(quotes) < minimum:
         raise Titan007ParseError(
-            f"titan007 欧赔仅解出 {len(quotes)} 家（< {_MIN_EURO_ROWS}）——降级响应，拒绝当作无盘"
+            f"titan007 欧赔仅解出 {len(quotes)} 家（< {minimum}）——降级响应，拒绝当作无盘"
         )
     return quotes
 
