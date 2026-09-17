@@ -110,7 +110,9 @@
 | **C11 false_direction_band** | WARN | **虚假方向带（gap12∈[5,10)pp 未全包，2026-08-30 入码）** |
 | **C12 draw_underpriced_band** | WARN | **平局分层错价（平 fair∈[29,32)% 未买平，2026-08-30 入码）** |
 | unnamed_prescription_deviation | WARN | 偏离登记（票面 vs 处方须引用命名规则 ID） |
-| `--user-override` | human-only override | ERROR 原样保留为 evidence_rejected Adjudication；AI/无人值守仍阻断 |
+| `--user-override` | human-only override | ERROR 原样保留为 evidence_rejected Adjudication；AI/无人值守仍阻断。**前置文书＝裁决单**（下条） |
+| **裁决单 `decision-adjudicate`** | **文书门（非出票门）** | **2026-09-17 入码。**每条 ERROR 一个裁决位：`accept`（接受门＝这张票不出）／`reject`（驳回＝知情行权）。⛔驳回须附**已登记条名 + 一行理由 + ≥1 条可证伪预测**（claim＋falsifier）——26098/26101/26102/26103 四次撤保险理由一次比一次讲究且全亏，**理由的质量不可自证**。⛔机器绝不预填 `ruling`（判断永不入脚本）。⛔单带 ERROR 集指纹，票面变更即作废。驳回预测自动并入 `<issue>-rx.json`，使 `strict_ruling_vs_override` 自动累样本而非复盘手补 |
+| `deviation_registry` `scope="ticket"` | 票级偏离登记 | **2026-09-17 入码。**C15/C15b/C17 无单一 match_no，此前 `record_user_overrides` 只按 match_no 找登记 → **票级 ERROR 在行权通道里根本无法登记**，连合法出口一并堵死（26128 S333 的 C17 首个真实样本）。门挡住是对的，堵死出口不是设计意图 |
 | modal_stack_mismatch | WARN | 模态组合错配（26103） |
 | **C13 broken_anchor_double** | WARN | **死亡三证(c)：锚方完整度 FAIL 且双选排掉一面（2026-09-06 入码，probation）** |
 | **C14 expensive_exclusion** | WARN | **独立面效率表/死亡三证：被排面 fair>20% 且非（锚方 PASS ∧ 该面先例 dead）（2026-09-06 入码，probation）** |

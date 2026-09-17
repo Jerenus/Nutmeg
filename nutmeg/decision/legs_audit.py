@@ -280,10 +280,11 @@ class Finding:
 
 @dataclass(frozen=True)
 class DeviationRegistration:
-    match_no: int
+    match_no: int | None
     rule_ids: tuple[str, ...]
     reason: str
     user_override: bool = False
+    audit_code: str = ""
 
     @property
     def known_rule_ids(self) -> tuple[str, ...]:
@@ -295,25 +296,53 @@ class DeviationRegistration:
         return tuple(seen)
 
 
+def _registration(item: object) -> DeviationRegistration:
+    if not isinstance(item, dict):
+        raise ValueError("deviation_registry entries must be objects")
+    rule_ids = item.get("rule_ids", [])
+    if not isinstance(rule_ids, list):
+        raise ValueError("deviation_registry rule_ids must be a list")
+    ticket_scope = item.get("scope") == "ticket" or "match_no" not in item
+    return DeviationRegistration(
+        match_no=None if ticket_scope else int(item["match_no"]),
+        rule_ids=tuple(str(rule_id) for rule_id in rule_ids),
+        reason=str(item.get("reason", "")).strip(),
+        user_override=item.get("user_override") is True,
+        audit_code=str(item.get("audit_code", "") or ""),
+    )
+
+
 def deviation_registrations(payload: dict) -> dict[int, tuple[DeviationRegistration, ...]]:
+    """按场号分组的偏离登记。**票级条目不在此列**，见 `ticket_deviation_registrations`。"""
     raw = payload.get("deviation_registry", [])
     if not isinstance(raw, list):
         raise ValueError("deviation_registry must be a list")
     grouped: dict[int, list[DeviationRegistration]] = {}
     for item in raw:
-        if not isinstance(item, dict):
-            raise ValueError("deviation_registry entries must be objects")
-        rule_ids = item.get("rule_ids", [])
-        if not isinstance(rule_ids, list):
-            raise ValueError("deviation_registry rule_ids must be a list")
-        registration = DeviationRegistration(
-            match_no=int(item["match_no"]),
-            rule_ids=tuple(str(rule_id) for rule_id in rule_ids),
-            reason=str(item.get("reason", "")).strip(),
-            user_override=item.get("user_override") is True,
-        )
+        registration = _registration(item)
+        if registration.match_no is None:
+            continue
         grouped.setdefault(registration.match_no, []).append(registration)
     return {match_no: tuple(items) for match_no, items in grouped.items()}
+
+
+def ticket_deviation_registrations(payload: dict) -> tuple[DeviationRegistration, ...]:
+    """票级偏离登记（`scope="ticket"`）。
+
+    出生事故：2026-09-17。C15/C15b/C17 是票面级 ERROR，没有单一 match_no 可挂，
+    而 `record_user_overrides` 只按 match_no 找登记 —— 于是**票级 ERROR 在行权通道里
+    根本无法登记**，26128 的 S333（C17：场1/3/6 四处读判全包却降双）一亮就死在
+    "票级 ERROR 没有可引用的人工偏离登记"。门挡住是对的，但连"知情行权"这条
+    合法出口也一并堵死，不是设计意图。
+    """
+    raw = payload.get("deviation_registry", [])
+    if not isinstance(raw, list):
+        raise ValueError("deviation_registry must be a list")
+    return tuple(
+        registration
+        for registration in (_registration(item) for item in raw)
+        if registration.match_no is None
+    )
 
 
 def _faces(value: object, *, field: str) -> str:
