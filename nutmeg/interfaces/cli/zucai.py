@@ -42,6 +42,12 @@ _INTAKE_MATCH_OPTION = _cli.typer.Option(
     None, "--match", help="只入库这些场号；不给＝全部有研究文件的场")
 _INTAKE_WRITE_OPTION = _cli.typer.Option(
     False, "--write", help="真写入 legs-base；不给＝只预演报告")
+_PREMISE_OUTPUT_DIR_OPTION = _cli.typer.Option(
+    _cli.Path(".nutmeg-data/jczq"), "--output-dir", help="store 根目录")
+_PREMISE_OUT_OPTION = _cli.typer.Option(
+    None, "--out", help="前提卡落盘路径；不给＝打到 stdout")
+_PREMISE_APPLY_OPTION = _cli.typer.Option(
+    False, "--apply", help="真回写 store 画像；不给＝只预演")
 
 
 @_cli.app.command("zucai-report")
@@ -359,6 +365,116 @@ def zucai_grade(
         )
     for warning in grade.warnings:
         _cli.console.print(f" warning: {warning}")
+
+
+@_cli.app.command("zucai-premise-card")
+def zucai_premise_card(
+    issue: str = _BUILD_ISSUE_OPTION,
+    zucai_dir: _cli.Path = _INTAKE_RESEARCH_DIR_OPTION,
+    output_dir: _cli.Path = _PREMISE_OUTPUT_DIR_OPTION,
+    out: _cli.Path | None = _PREMISE_OUT_OPTION,
+) -> None:
+    """派研究前的前提卡：只写 store 里有的，其余明写「本卡未提供」。
+
+    **出生事故 26128**：我给 14 个 agent 的提示里塞了自己记忆里的前提，
+    一期错六条（曼城主帅写成瓜迪奥拉、伯恩茅斯写成 Iraola、贝西克塔斯写成
+    van Bronckhorst，另加桑德兰「刚升班」、考文垂「在英冠」、格拉茨「卫冕冠军」）。
+    写错的前提比不给前提更贵——它给了 agent 一个带锚的起点，而反偏置约束
+    要求它们独立取证。
+
+    ⛔卡上没有的，我不许替 agent 补全。
+    """
+    import json as _json
+
+    from nutmeg.decision.entities import profiles_for_board
+    from nutmeg.decision.premise_card import build_card, format_cards
+    from nutmeg.decision.store import DecisionStore
+
+    issue_doc = _json.loads(
+        (_cli.Path(zucai_dir) / f"{issue}-issue.json").read_text("utf-8")
+    )
+    fair_doc = {}
+    fair_path = _cli.Path(zucai_dir) / f"{issue}-fair.json"
+    if fair_path.exists():
+        fair_doc = _json.loads(fair_path.read_text("utf-8"))
+    matches = issue_doc.get("matches") or []
+    names = [
+        str(m.get(key) or "")
+        for m in matches
+        for key in ("home", "away", "home_team", "away_team")
+    ]
+    store = DecisionStore(_cli.Path(output_dir) / "decision")
+    board = profiles_for_board(store, [], names)
+    profiles = {
+        str(item.get("name") or item.get("id") or ""): item.get("profile_notes") or []
+        for item in (board.get("teams") or [])
+    }
+    cards = []
+    for index, match in enumerate(matches, start=1):
+        no = int(match.get("match_no") or index)
+        entry = fair_doc.get(str(no)) or {}
+        cards.append(build_card(
+            match, match_no=no,
+            fair=entry.get("fair") or entry or {}, profiles=profiles,
+        ))
+    text = format_cards(cards, issue=issue)
+    if out:
+        _cli.Path(out).write_text(text + "\n", "utf-8")
+        _cli.typer.echo(f"前提卡 {len(cards)} 场 → {out}")
+    else:
+        _cli.typer.echo(text)
+
+
+@_cli.app.command("zucai-premise-corrections")
+def zucai_premise_corrections(
+    issue: str = _BUILD_ISSUE_OPTION,
+    research_dir: _cli.Path = _INTAKE_RESEARCH_DIR_OPTION,
+    output_dir: _cli.Path = _PREMISE_OUTPUT_DIR_OPTION,
+    apply_corrections: bool = _PREMISE_APPLY_OPTION,
+) -> None:
+    """把 agent 对前提卡的纠正收上来，回写 store 画像。**纠正不回写＝白纠正。**
+
+    读各场研究 JSON 的 `premise_corrections`（每条需 subject/correct/evidence）。
+    ⛔缺 evidence 的纠正不收——纠正也是证据，无出处的纠正只是换一个人的记忆。
+    """
+    import json as _json
+
+    from nutmeg.decision.entities import add_profile_note
+    from nutmeg.decision.premise_card import collect_corrections
+    from nutmeg.decision.store import DecisionStore
+
+    found = []
+    for path in sorted(_cli.Path(research_dir).glob(f"{issue}-research-m*.json")):
+        found.extend(collect_corrections(_json.loads(path.read_text("utf-8"))))
+    if not found:
+        _cli.typer.echo(
+            f"{issue}: 研究文件里没有 premise_corrections。\n"
+            "（agent 提示里要写明：纠正我的前提时请同时填这个字段，含 evidence）"
+        )
+        return
+    _cli.typer.echo(f"前提纠正 {len(found)} 条：")
+    for correction in found:
+        _cli.typer.echo(correction.render())
+    if not apply_corrections:
+        _cli.typer.echo("\n（预演。加 --apply 才回写 store 画像）")
+        return
+    store = DecisionStore(_cli.Path(output_dir) / "decision")
+    ok = 0
+    for correction in found:
+        try:
+            _cli.typer.echo("  " + add_profile_note(
+                store,
+                team_id=correction.subject if correction.subject_type == "team" else None,
+                league_id=correction.subject if correction.subject_type == "league" else None,
+                key=correction.field,
+                note=correction.correct,
+                evidence=correction.evidence,
+                at=correction.as_of,
+            ))
+            ok += 1
+        except ValueError as exc:
+            _cli.typer.echo(f"  ⚠️ {correction.subject}: {exc}")
+    _cli.typer.echo(f"\n回写 {ok}/{len(found)} 条")
 
 
 @_cli.app.command("zucai-research-intake")
