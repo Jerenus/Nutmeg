@@ -35,6 +35,8 @@ _AUDIT_ZUCAI_LEGS_OPTION = _cli.typer.Option(
 _AUDIT_CHANNEL_MAP_OPTION = _cli.typer.Option(
     None, "--channel-map",
     help="{竞彩 match_id: 足彩场号} 显式映射；身份不许猜（26122）")
+_OPS_OPENCLAW_DB_OPTION = _cli.typer.Option(
+    None, "--openclaw-db", help="OpenClaw sqlite；默认 ~/.openclaw/state/openclaw.sqlite")
 _ADJUDICATE_APPLY_OPTION = _cli.typer.Option(
     None, "--apply", help="填好的裁决单；不给＝签发一张留空的新单")
 _ADJUDICATE_OUT_OPTION = _cli.typer.Option(
@@ -837,6 +839,126 @@ def decision_adjudicate(
         f"\n  uv run nutmeg decision-audit-legs --legs-file {legs_file} "
         "--user-override --ticket-batch-token <Web 工位签发>"
     )
+
+
+@_cli.app.command("ops-status")
+def ops_status(
+    data_dir: Path = _AUDIT_DATA_DIR_OPTION,
+    openclaw_db: Path | None = _OPS_OPENCLAW_DB_OPTION,
+) -> None:
+    """今日状态页：launchd + OpenClaw + 不会自己消失的待办，一屏看全。**只读。**
+
+    出生事故 2026-09-17（我自己踩的）：为判断链路健康，我 `tail` 了
+    `decision.am.err.log`，看见一条 WAF 降级失败就报告「今天 08:00 成功、
+    17:15 又跑出降级」。**两句都错**——那条错误是 9/15 的（文件 mtime 为证），
+    17:15 只是当日数据文件的 mtime。根因是结构不是马虎：`NUTMEG_OK`/
+    `NUTMEG_FAILED` 两行**不带时间戳**，out 与 err 各自追加，launchd 与
+    OpenClaw 又各管一半链路。
+
+    所以本页第一纪律：**每条结局都与它的时间证据并排打印**；拿不到时间
+    就显示「无时间证据」，而不是默认它是今天的。
+    """
+    import json as _json
+    import plistlib
+    import sqlite3
+    import subprocess
+    from datetime import datetime as _datetime
+
+    from nutmeg.decision.ops_status import (
+        CronStatus,
+        PendingItem,
+        agent_status,
+        describe_calendar,
+        format_status,
+    )
+
+    def _read(path: Path) -> tuple[str, _datetime | None]:
+        try:
+            return path.read_text("utf-8", errors="replace")[-4000:], _datetime.fromtimestamp(
+                path.stat().st_mtime
+            )
+        except OSError:
+            return "", None
+
+    loaded: dict[str, str] = {}
+    try:
+        listing = subprocess.run(
+            ["launchctl", "list"], capture_output=True, text=True, timeout=10
+        ).stdout
+        for line in listing.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 3 and parts[2].startswith("com.nutmeg."):
+                loaded[parts[2]] = parts[1]
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    agents = []
+    plist_dir = Path.home() / "Library" / "LaunchAgents"
+    for plist in sorted(plist_dir.glob("com.nutmeg.*.plist")):
+        try:
+            spec = plistlib.loads(plist.read_bytes())
+        except (OSError, ValueError):
+            continue
+        label = str(spec.get("Label") or plist.stem)
+        out_text, out_at = _read(Path(str(spec.get("StandardOutPath") or "")))
+        err_text, err_at = _read(Path(str(spec.get("StandardErrorPath") or "")))
+        schedule = describe_calendar(
+            spec.get("StartCalendarInterval")
+            or (f"每 {int(spec['StartInterval']) // 60} 分钟"
+                if spec.get("StartInterval") else None)
+        )
+        agents.append(agent_status(
+            label, schedule,
+            loaded=label in loaded, last_exit=loaded.get(label, ""),
+            out_text=out_text, out_at=out_at, err_text=err_text, err_at=err_at,
+        ))
+
+    jobs = []
+    db_path = openclaw_db or (Path.home() / ".openclaw" / "state" / "openclaw.sqlite")
+    if db_path.exists():
+        try:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+                for row in conn.execute(
+                    "SELECT name, enabled, schedule_expr, last_run_status, "
+                    "consecutive_errors, last_error FROM cron_jobs "
+                    "WHERE lower(name) LIKE '%nutmeg%' ORDER BY schedule_expr"
+                ):
+                    jobs.append(CronStatus(
+                        name=str(row[0]), enabled=bool(row[1]),
+                        schedule=str(row[2] or ""), last_status=str(row[3] or ""),
+                        consecutive_errors=int(row[4] or 0),
+                        last_error=str(row[5] or ""),
+                    ))
+        except sqlite3.Error as error:
+            jobs = []
+            _cli.typer.echo(f"（OpenClaw 库读不出：{error}）")
+
+    pending = []
+    zucai = Path(data_dir) / "zucai"
+    results_path = zucai / "official-results.json"
+    results = {}
+    if results_path.exists():
+        results = _json.loads(results_path.read_text("utf-8"))
+    ledger = Path(data_dir) / "betslips.jsonl"
+    if ledger.exists():
+        seen = set()
+        for line in ledger.read_text("utf-8").splitlines():
+            if not line.strip():
+                continue
+            slip = _json.loads(line)
+            issue = str(slip.get("issue") or "")
+            if not issue or issue in seen or slip.get("channel") == "jczq":
+                continue
+            seen.add(issue)
+            if issue not in results:
+                pending.append(PendingItem(
+                    "待官方开奖", f"{issue}",
+                    f"票 {slip.get('slip_id')} 已登记，official-results 无该期 —— "
+                    "重跑 `nutmeg zucai-official --issue " + issue + "`",
+                ))
+    _cli.typer.echo(format_status(
+        agents, jobs, pending, today=_datetime.now().date()
+    ))
 
 
 @_cli.app.command("zucai-optimize")
