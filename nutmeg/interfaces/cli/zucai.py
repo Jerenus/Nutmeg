@@ -26,6 +26,28 @@ _CAND_CAP_OPTION = _cli.typer.Option(None, "--cap-yuan")
 _CAND_BASE_FILE_OPTION = _cli.typer.Option(
     None, "--base-file", help="给定基准票面则改出单点/两点替换报告")
 _CAND_LIMIT_OPTION = _cli.typer.Option(20, "--limit")
+_CAND_LEGS_FILE_OPTION = _cli.typer.Option(
+    None, "--legs-file",
+    help="legs-base（带旗/完整度/先例）；给了才给候选贴审计码")
+_CAND_AUDIT_TOP_OPTION = _cli.typer.Option(
+    8, "--audit-top", help="对前 N 个候选跑真审计（含票级码）；0=只做便宜查表")
+_CAND_STRUCTURE_OPTION = _cli.typer.Option(
+    None, "--structure", help="只留这个形状，形如 3/3/3＝3单3双3包")
+_INTAKE_LEGS_FILE_OPTION = _cli.typer.Option(
+    ..., "--legs-file", help="要回填的 legs-base.json")
+_INTAKE_RESEARCH_DIR_OPTION = _cli.typer.Option(
+    _cli.Path(".nutmeg-data/zucai"), "--research-dir",
+    help="存放 <期>-research-m<N>.json 的目录")
+_INTAKE_MATCH_OPTION = _cli.typer.Option(
+    None, "--match", help="只入库这些场号；不给＝全部有研究文件的场")
+_INTAKE_WRITE_OPTION = _cli.typer.Option(
+    False, "--write", help="真写入 legs-base；不给＝只预演报告")
+_PREMISE_OUTPUT_DIR_OPTION = _cli.typer.Option(
+    _cli.Path(".nutmeg-data/jczq"), "--output-dir", help="store 根目录")
+_PREMISE_OUT_OPTION = _cli.typer.Option(
+    None, "--out", help="前提卡落盘路径；不给＝打到 stdout")
+_PREMISE_APPLY_OPTION = _cli.typer.Option(
+    False, "--apply", help="真回写 store 画像；不给＝只预演")
 
 
 @_cli.app.command("zucai-report")
@@ -345,6 +367,177 @@ def zucai_grade(
         _cli.console.print(f" warning: {warning}")
 
 
+@_cli.app.command("zucai-premise-card")
+def zucai_premise_card(
+    issue: str = _BUILD_ISSUE_OPTION,
+    zucai_dir: _cli.Path = _INTAKE_RESEARCH_DIR_OPTION,
+    output_dir: _cli.Path = _PREMISE_OUTPUT_DIR_OPTION,
+    out: _cli.Path | None = _PREMISE_OUT_OPTION,
+) -> None:
+    """派研究前的前提卡：只写 store 里有的，其余明写「本卡未提供」。
+
+    **出生事故 26128**：我给 14 个 agent 的提示里塞了自己记忆里的前提，
+    一期错六条（曼城主帅写成瓜迪奥拉、伯恩茅斯写成 Iraola、贝西克塔斯写成
+    van Bronckhorst，另加桑德兰「刚升班」、考文垂「在英冠」、格拉茨「卫冕冠军」）。
+    写错的前提比不给前提更贵——它给了 agent 一个带锚的起点，而反偏置约束
+    要求它们独立取证。
+
+    ⛔卡上没有的，我不许替 agent 补全。
+    """
+    import json as _json
+
+    from nutmeg.decision.entities import profiles_for_board
+    from nutmeg.decision.premise_card import build_card, format_cards
+    from nutmeg.decision.store import DecisionStore
+
+    issue_doc = _json.loads(
+        (_cli.Path(zucai_dir) / f"{issue}-issue.json").read_text("utf-8")
+    )
+    fair_doc = {}
+    fair_path = _cli.Path(zucai_dir) / f"{issue}-fair.json"
+    if fair_path.exists():
+        fair_doc = _json.loads(fair_path.read_text("utf-8"))
+    matches = issue_doc.get("matches") or []
+    names = [
+        str(m.get(key) or "")
+        for m in matches
+        for key in ("home", "away", "home_team", "away_team")
+    ]
+    store = DecisionStore(_cli.Path(output_dir) / "decision")
+    board = profiles_for_board(store, [], names)
+    profiles = {
+        str(item.get("name") or item.get("id") or ""): item.get("profile_notes") or []
+        for item in (board.get("teams") or [])
+    }
+    cards = []
+    for index, match in enumerate(matches, start=1):
+        no = int(match.get("match_no") or index)
+        entry = fair_doc.get(str(no)) or {}
+        cards.append(build_card(
+            match, match_no=no,
+            fair=entry.get("fair") or entry or {}, profiles=profiles,
+        ))
+    text = format_cards(cards, issue=issue)
+    if out:
+        _cli.Path(out).write_text(text + "\n", "utf-8")
+        _cli.typer.echo(f"前提卡 {len(cards)} 场 → {out}")
+    else:
+        _cli.typer.echo(text)
+
+
+@_cli.app.command("zucai-premise-corrections")
+def zucai_premise_corrections(
+    issue: str = _BUILD_ISSUE_OPTION,
+    research_dir: _cli.Path = _INTAKE_RESEARCH_DIR_OPTION,
+    output_dir: _cli.Path = _PREMISE_OUTPUT_DIR_OPTION,
+    apply_corrections: bool = _PREMISE_APPLY_OPTION,
+) -> None:
+    """把 agent 对前提卡的纠正收上来，回写 store 画像。**纠正不回写＝白纠正。**
+
+    读各场研究 JSON 的 `premise_corrections`（每条需 subject/correct/evidence）。
+    ⛔缺 evidence 的纠正不收——纠正也是证据，无出处的纠正只是换一个人的记忆。
+    """
+    import json as _json
+
+    from nutmeg.decision.entities import add_profile_note
+    from nutmeg.decision.premise_card import collect_corrections
+    from nutmeg.decision.store import DecisionStore
+
+    found = []
+    for path in sorted(_cli.Path(research_dir).glob(f"{issue}-research-m*.json")):
+        found.extend(collect_corrections(_json.loads(path.read_text("utf-8"))))
+    if not found:
+        _cli.typer.echo(
+            f"{issue}: 研究文件里没有 premise_corrections。\n"
+            "（agent 提示里要写明：纠正我的前提时请同时填这个字段，含 evidence）"
+        )
+        return
+    _cli.typer.echo(f"前提纠正 {len(found)} 条：")
+    for correction in found:
+        _cli.typer.echo(correction.render())
+    if not apply_corrections:
+        _cli.typer.echo("\n（预演。加 --apply 才回写 store 画像）")
+        return
+    store = DecisionStore(_cli.Path(output_dir) / "decision")
+    ok = 0
+    for correction in found:
+        try:
+            _cli.typer.echo("  " + add_profile_note(
+                store,
+                team_id=correction.subject if correction.subject_type == "team" else None,
+                league_id=correction.subject if correction.subject_type == "league" else None,
+                key=correction.field,
+                note=correction.correct,
+                evidence=correction.evidence,
+                at=correction.as_of,
+            ))
+            ok += 1
+        except ValueError as exc:
+            _cli.typer.echo(f"  ⚠️ {correction.subject}: {exc}")
+    _cli.typer.echo(f"\n回写 {ok}/{len(found)} 条")
+
+
+@_cli.app.command("zucai-research-intake")
+def zucai_research_intake(
+    issue: str = _BUILD_ISSUE_OPTION,
+    legs_file: _cli.Path = _INTAKE_LEGS_FILE_OPTION,
+    research_dir: _cli.Path = _INTAKE_RESEARCH_DIR_OPTION,
+    match_no: list[int] = _INTAKE_MATCH_OPTION,
+    write: bool = _INTAKE_WRITE_OPTION,
+) -> None:
+    """深研 JSON → legs-base 的入库桥：归一键名、清洗封闭词典、查自相矛盾。
+
+    读 `<research-dir>/<issue>-research-m<N>.json`，把结构字段搬进 legs-base。
+    **只转录与校验，不产生判断**——不改任何一场的 faces、不推断动作。
+
+    三类检查：①**封闭词典**——词典外的旗/标签剥离进 note 并留痕（不阻断出票：
+    agent 自命名的旗若能堵死单选，那不是纪律是瘫痪）；②**结构自相矛盾**——
+    四问④判「无情境旗」却挂着旗、宣告死面而三证不齐，判 ERROR 拒绝写入；
+    ③**定义漂移与编码/正文相反**——三证(c) 逐面不同或与完整度不符、
+    ④②③b 的编码与 summary 极性相反，判 WARN 交人工复核。
+
+    出生事故 26125-26128：14 场研究每期用 /tmp 脚本搬运，零校验。agent 把叙述写进
+    `crash_markers`、三证键名两套并存、26128 场2 的 (c) 在三个面上取了两个值、
+    场7 `q3b=false` 而同一份 summary 写「③b 的答案是『在』」——全靠我肉眼抓。
+    """
+    import json as _json
+
+    from nutmeg.decision.research_intake import format_report, intake
+
+    doc = _json.loads(_cli.Path(legs_file).read_text("utf-8"))
+    legs = doc.get("legs") or {}
+    wanted = set(match_no) if match_no else None
+    results = []
+    for key in sorted(legs, key=int):
+        if wanted is not None and int(key) not in wanted:
+            continue
+        path = _cli.Path(research_dir) / f"{issue}-research-m{key}.json"
+        if not path.exists():
+            continue
+        research = _json.loads(path.read_text("utf-8"))
+        results.append(intake(research, legs[key]))
+    if not results:
+        _cli.typer.echo("没有找到可入库的研究文件。")
+        raise _cli.typer.Exit(code=2)
+    _cli.typer.echo(format_report(results))
+    blocked = [r for r in results if r.blocked]
+    if write:
+        for result in results:
+            if result.blocked:
+                continue
+            legs[str(result.match_no)] = result.leg
+        doc["legs"] = legs
+        _cli.Path(legs_file).write_text(
+            _json.dumps(doc, ensure_ascii=False, indent=1) + "\n", "utf-8"
+        )
+        written = len(results) - len(blocked)
+        _cli.typer.echo(f"\n已写入 {written}/{len(results)} 场 → {legs_file}")
+    else:
+        _cli.typer.echo("\n（预演。加 --write 才写入 legs-base）")
+    if blocked:
+        raise _cli.typer.Exit(code=1)
+
+
 @_cli.app.command("zucai-build-reads")
 def zucai_build_reads(
     judgment_file: _cli.Path = _JUDGMENT_FILE_OPTION,
@@ -390,21 +583,46 @@ def zucai_candidates(
     cap_yuan: int | None = _CAND_CAP_OPTION,
     base_file: _cli.Path | None = _CAND_BASE_FILE_OPTION,
     limit: int = _CAND_LIMIT_OPTION,
+    legs_file: _cli.Path | None = _CAND_LEGS_FILE_OPTION,
+    audit_top: int = _CAND_AUDIT_TOP_OPTION,
+    structure: str | None = _CAND_STRUCTURE_OPTION,
 ) -> None:
-    """穷举**已声明**的票面空间；排序=帽内 P 降序，这是比较顺序不是推荐。"""
+    """穷举**已声明**的票面空间；排序=帽内 P 降序，这是比较顺序不是推荐。
+
+    给了 `--legs-file` 就两段式贴审计码：先用 `face_options` 逐腿查表给全部候选贴
+    腿级码（便宜），再对前 `--audit-top` 个跑**真审计**补票级码（C15/C15b/C17/全包分配）。
+    ⛔ERROR 不剔除候选，也不改排序——行权空间归 `decision-adjudicate`。
+    `--structure 3/3/3` 只保留「3单3双3包」形状：26127 用户的 S333 落在我所有
+    声明空间的缝里（没有一个空间允许「锚场降双×硬币降双」的交叉），形状过滤堵这个缝。
+    """
     import json as _json
 
     from nutmeg.decision.betslip import BetslipError
     from nutmeg.decision.candidate_builder import (
+        audit_candidates,
         enumerate_candidates,
         format_candidates,
         format_swaps,
+        leg_face_codes,
         swap_report,
         ticket_probability,
     )
+    from nutmeg.decision.legs_audit import legs_from_dict
 
     options = _json.loads(_cli.Path(options_file).read_text("utf-8"))
     fair = _json.loads(_cli.Path(fair_file).read_text("utf-8"))
+    shape = None
+    if structure:
+        parts = [p for p in structure.replace("/", " ").split() if p]
+        if len(parts) != 3 or not all(p.isdigit() for p in parts):
+            _cli.typer.echo("--structure 形如 3/3/3（裸单数/双选数/全包数）")
+            raise _cli.typer.Exit(code=2)
+        shape = (int(parts[0]), int(parts[1]), int(parts[2]))
+    base_payload = None
+    leg_codes = None
+    if legs_file:
+        base_payload = _json.loads(_cli.Path(legs_file).read_text("utf-8"))
+        leg_codes = leg_face_codes(legs_from_dict(base_payload))
     try:
         if base_file:
             base = _json.loads(_cli.Path(base_file).read_text("utf-8"))
@@ -413,8 +631,13 @@ def zucai_candidates(
             _cli.typer.echo(format_swaps(rows, ticket_probability(base, fair),
                                          limit=limit))
             return
-        cands = enumerate_candidates(options, fair, channel=channel, cap_yuan=cap_yuan)
+        cands = enumerate_candidates(
+            options, fair, channel=channel, cap_yuan=cap_yuan,
+            leg_codes=leg_codes, structure=shape,
+        )
     except BetslipError as exc:
         _cli.typer.echo(f"候选穷举错误：{exc}")
         raise _cli.typer.Exit(code=1) from exc
+    if base_payload is not None and audit_top > 0:
+        cands = audit_candidates(cands, base_payload, top=audit_top)
     _cli.typer.echo(format_candidates(cands, cap_yuan=cap_yuan, limit=limit))

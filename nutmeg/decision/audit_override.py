@@ -7,6 +7,7 @@ from datetime import datetime
 from nutmeg.decision.legs_audit import (
     Finding,
     deviation_registrations,
+    ticket_deviation_registrations,
 )
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.operator.decision_actions import (
@@ -59,10 +60,31 @@ def record_user_overrides(
             "legs file ERROR set differs from the signed current ticket batch"
         )
     registry = deviation_registrations(payload)
+    ticket_registry = ticket_deviation_registrations(payload)
     prepared: list[TicketAuditOverrideInput] = []
     for finding in context.findings:
         if finding.official_match_no is None:
-            raise AuditOverrideError("票级 ERROR 没有可引用的人工偏离登记")
+            # 票级 ERROR（C15/C15b/C17）挂 scope="ticket" 的登记；
+            # 有同码登记优先，否则退回任一票级登记。
+            candidates = [
+                item
+                for item in ticket_registry
+                if item.user_override and item.reason and item.known_rule_ids
+                and (not item.audit_code or item.audit_code == finding.finding_code)
+            ]
+            if not candidates:
+                raise AuditOverrideError(
+                    f"票级 ERROR（{finding.finding_code}）缺完整 override 登记"
+                    "（需 scope='ticket'、user_override=true、reason、已登记 rule_ids）"
+                )
+            prepared.append(
+                TicketAuditOverrideInput(
+                    finding_token=finding.finding_token,
+                    reason=candidates[0].reason,
+                    rule_ids=candidates[0].known_rule_ids,
+                )
+            )
+            continue
         match_no = int(finding.official_match_no)
         candidates = [
             item

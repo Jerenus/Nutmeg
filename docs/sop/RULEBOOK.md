@@ -39,7 +39,8 @@
 |---|---|---|---|---|
 | **旗-方向性** | 方向性旗（词典封闭：weak_home_draw_trap / league_draw_regime / suspension_breaker_out / self_made_tail / anchor_shield_out）→至少双选盖模态+旗面；fair 高低不得覆盖旗。**2026-08-30 响应升级见旗-响应改革（双选降为 WARN）**，C1 裸单 ERROR 底线不变 | active | 26101 两死实证 | C1/C2 |
 | **旗-响应改革** | 方向性旗的合法响应＝**全包或丢整场**；双选盖旗面（含盖平）降为 WARN（旗只报"脆"不报方向：shield 方向 0/8、26113 四旗指平场零平 P3✗、保险面 10/50≈公允价无增益——盖旗面买不到方向增益，反锁死本可给翻车场的全包预算）。无旗净锚单选牌照不受影响（26113 场6 美因茨 60.8 无旗开 0:0＝牌照严格性的反例护栏） | probation | 2026-08-30 用户批准（26113 复盘）；出生事故＝26113 断 2/5/10 全开未盖第三面而四处平保险全空 | **C10 (WARN)** |
-| **旗-无方向** | 无方向旗（悬置夹心/盘源分歧≥3pp/赛地异常/双向不稳/更衣室）→降格全包 | active | 降格场第3面开出 5/7 | C6 (WARN) |
+| **旗-无方向** | 无方向旗（悬置夹心/盘源分歧≥3pp/赛地异常/双向不稳/更衣室/**信息不对称**）→降格全包。**词典封闭且与方向性旗对称**：词典外的自命名无方向旗既不阻断单选、**也不逼出全包**，只报 C0 待裁 | active | 降格场第3面开出 5/7 | C6 (WARN) / C0 (WARN) |
+| **information_asymmetry** | 一侧信息充分而另一侧近乎零覆盖（对手官方不发伤情/史上首次交手/欧战注册阵容≠联赛阵容）→**分布更宽而非均值更低**，不报方向只报「判不动」，响应＝降格全包或丢整场 | 2026-09-17 Jun 裁定入词典 | 出生事故：26125-26128 深研 agent 连续四期照写此名（26128 场1 申花四人实名缺阵而淡滨尼伤停零覆盖、场3 史上首次交手、场8 托伦斯官网不发伤情），而词典不收，入库桥只能剥离进 note —— **证据每期都在产生却每期都被丢掉**；且入词典后场3/场8「④判 false 却零旗」的自相矛盾同时消失 | C6 (WARN) |
 | **旗-方向纪律** | 旗只预测"脆"不预测方向、**绝不预测比分**；shield 方向 2/12（26118 后，见 scoreboard）、署名比分 4 例后禁用 | active | 26105 整批回归 | — |
 | **r5-牙口** | 挂 shield 必查对手惩罚能力；无牙对手降半档只作保险不作偏移 | active | 奈梅亨4:1/波尔图0:2 | — |
 | **追踪标签** | legs `tracking_tags` 封闭词典（promoted_side / new_spine_pairing / midfield_pivot_absent / post_window_integration / pre_european_rotation）：**不改变审计动作**，只在 B10 复盘按标签累计"正路不胜率/非模态开出率"入 scoreboard `tags` 组；n≥20 且偏离隐含 ≥8pp 才可提案升为旗或标记 | probation | 2026-09-07 立（26118+26119 回填：升班马场非模态 5/9、中轴新组合正路不胜 9/19、后腰缺 5/7、新援≤5天 5/8、欧战前 2/5） | `tracking_tag_off_lexicon` (WARN) |
@@ -86,7 +87,8 @@
 
 | ID | 条文 | 状态 | 战绩/出生 | 代码化 |
 |---|---|---|---|---|
-| **j-传导** | jczq 判读前必查同场足彩期判断；已记录机理必须继承或显式裁定冲突 | active | 7/29 波兹南 −¥210 | — |
+| **j-传导** | jczq 判读前必查同场足彩期判断；已记录机理必须继承或显式裁定冲突 | active | 7/29 波兹南 −¥210；26126 −¥672 | **C18/C18b（2026-09-17 入码）** |
+| **j-立场一致** | 同一场在两条泳道上的**立场**必须一致：足彩**全包或丢**＝「我对这场没有方向判断」→ 竞彩不得押方向玩法（had/hhad/hafu/crs）；足彩双选排掉的面，竞彩不得买回。**进球轴（ttg/bts）不受此条约束**——它不需要 90' 方向落在某一侧 | probation | 26126 实票四张全灭 −¥672：周二005 足彩买 `310` 全包而竞彩押方向，**一场杀 3/3 竞彩票**；周二008 足彩排客胜 18.5%（任九断在此）而竞彩买主胜，同一个判断错误跨渠道各杀一次。C15 只查足彩同期多票，**跨渠道此前无任何码覆盖** | `cross_channel_stance_conflict`(C18) / `cross_channel_excluded_face`(C18b)；身份映射必须人工显式给出（26122 fair 值反查抢错身份），未映射只报 INFO |
 | **g-scope** | league/team 因子必带 scope_key；画像读 store profile_notes | active | 校验强制 | Read 校验 |
 | **f-结构化** | Read 必须结构化 JSON；close/settle 收尾不可跳过 | active | 6/28 丢整日判定 | 流程 |
 | **零售信息** | 体彩 vs 国际两源翻转=真无方向全包；体彩零售独有面有独立信息 | probation | n=1（26109 场2 伊普斯✓） | — |
@@ -110,7 +112,9 @@
 | **C11 false_direction_band** | WARN | **虚假方向带（gap12∈[5,10)pp 未全包，2026-08-30 入码）** |
 | **C12 draw_underpriced_band** | WARN | **平局分层错价（平 fair∈[29,32)% 未买平，2026-08-30 入码）** |
 | unnamed_prescription_deviation | WARN | 偏离登记（票面 vs 处方须引用命名规则 ID） |
-| `--user-override` | human-only override | ERROR 原样保留为 evidence_rejected Adjudication；AI/无人值守仍阻断 |
+| `--user-override` | human-only override | ERROR 原样保留为 evidence_rejected Adjudication；AI/无人值守仍阻断。**前置文书＝裁决单**（下条） |
+| **裁决单 `decision-adjudicate`** | **文书门（非出票门）** | **2026-09-17 入码。**每条 ERROR 一个裁决位：`accept`（接受门＝这张票不出）／`reject`（驳回＝知情行权）。⛔驳回须附**已登记条名 + 一行理由 + ≥1 条可证伪预测**（claim＋falsifier）——26098/26101/26102/26103 四次撤保险理由一次比一次讲究且全亏，**理由的质量不可自证**。⛔机器绝不预填 `ruling`（判断永不入脚本）。⛔单带 ERROR 集指纹，票面变更即作废。驳回预测自动并入 `<issue>-rx.json`，使 `strict_ruling_vs_override` 自动累样本而非复盘手补 |
+| `deviation_registry` `scope="ticket"` | 票级偏离登记 | **2026-09-17 入码。**C15/C15b/C17 无单一 match_no，此前 `record_user_overrides` 只按 match_no 找登记 → **票级 ERROR 在行权通道里根本无法登记**，连合法出口一并堵死（26128 S333 的 C17 首个真实样本）。门挡住是对的，堵死出口不是设计意图 |
 | modal_stack_mismatch | WARN | 模态组合错配（26103） |
 | **C13 broken_anchor_double** | WARN | **死亡三证(c)：锚方完整度 FAIL 且双选排掉一面（2026-09-06 入码，probation）** |
 | **C14 expensive_exclusion** | WARN | **独立面效率表/死亡三证：被排面 fair>20% 且非（锚方 PASS ∧ 该面先例 dead）（2026-09-06 入码，probation）** |
@@ -127,6 +131,10 @@
 | **C17 read_ticket_inconsistency** | ERROR | **读判-票面一致性：单票 ≥4 处「读判判全包或丢、票面降双选」（2026-09-13 入码，probation）。26123 F 票 17 WARN 照出，两处开出** |
 | **excluded_face_contradicts_read** | WARN | **排面不得与对位机制相反：某方破门机制缺席时排掉对方取胜面（2026-09-13 入码，probation）** |
 | **full_cover_allocation_dominated** | WARN | **全包名额分配：存在同价支配票面（2026-09-13 入码，probation）** |
+| **C18 cross_channel_stance_conflict** | WARN | **j-立场一致（2026-09-17 入码，probation）：足彩全包或丢却在竞彩押方向。26126 周二005 一场杀 3/3 竞彩票** |
+| **C18b cross_channel_excluded_face** | WARN | **j-立场一致：竞彩买回足彩票面刚排掉的面（26126 周二008）** |
+| cross_channel_shared_death | INFO | 两条泳道押同一个裸单面＝集中不是分散 |
+| cross_channel_unmapped / cross_channel_face_unstated | INFO | 缺显式身份映射或缺 `face` 字段，该腿未参与 C18——**身份不许猜** |
 | *C16 late_face_swap*（提案） | WARN | 临场只加面：14:00 读判冻结后换被排面 |
 
 ## 已退休/引擎时代常数（禁区，不再复述理由）

@@ -17,6 +17,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+NONDIRECTIONAL_LEXICON = frozenset({
+    "undecided_second_leg", "source_disagreement", "venue_anomaly",
+    "two_way_instability", "dressing_room_turmoil",
+    "information_asymmetry",
+})
+"""无方向旗封闭词典。命中且票面非全包 → C6（`undecidable_not_full`）。
+
+`information_asymmetry` 由 Jun 于 2026-09-17 裁定入词典。它与 C6 的语义天然同构：
+**一侧信息充分而另一侧近乎零覆盖时，分布更宽而不是均值更低**——它不报方向，
+只报"判不动"，合法响应因此是降格全包或丢整场。出生事故：26125-26128 深研 agent
+连续四期照写此名（26128 场1 申花四人实名缺阵而淡滨尼伤停零覆盖、场3 史上首次交手、
+场8 托伦斯官网不发伤情且欧战注册阵容≠联赛阵容），词典不收 → **证据每期都在产生
+却每期都被丢掉**。
+
+⚠️词典的家在本模块（审计门才是执行方），`read_builder` 再导出。
+2026-09-17 之前它只住在 `read_builder` 里，而**审计对无方向旗根本不查词典**——
+任何自命名的字符串都能触发 C6、逼出全包，与「agent 自命名的旗不得堵死出票」
+这条封闭词典的立法意图正好相反。C0 现已对称覆盖两组旗。"""
+
 DIRECTIONAL_LEXICON = frozenset({
     "weak_home_draw_trap", "league_draw_regime", "suspension_breaker_out",
     "self_made_tail", "anchor_shield_out",
@@ -280,10 +299,11 @@ class Finding:
 
 @dataclass(frozen=True)
 class DeviationRegistration:
-    match_no: int
+    match_no: int | None
     rule_ids: tuple[str, ...]
     reason: str
     user_override: bool = False
+    audit_code: str = ""
 
     @property
     def known_rule_ids(self) -> tuple[str, ...]:
@@ -295,25 +315,53 @@ class DeviationRegistration:
         return tuple(seen)
 
 
+def _registration(item: object) -> DeviationRegistration:
+    if not isinstance(item, dict):
+        raise ValueError("deviation_registry entries must be objects")
+    rule_ids = item.get("rule_ids", [])
+    if not isinstance(rule_ids, list):
+        raise ValueError("deviation_registry rule_ids must be a list")
+    ticket_scope = item.get("scope") == "ticket" or "match_no" not in item
+    return DeviationRegistration(
+        match_no=None if ticket_scope else int(item["match_no"]),
+        rule_ids=tuple(str(rule_id) for rule_id in rule_ids),
+        reason=str(item.get("reason", "")).strip(),
+        user_override=item.get("user_override") is True,
+        audit_code=str(item.get("audit_code", "") or ""),
+    )
+
+
 def deviation_registrations(payload: dict) -> dict[int, tuple[DeviationRegistration, ...]]:
+    """按场号分组的偏离登记。**票级条目不在此列**，见 `ticket_deviation_registrations`。"""
     raw = payload.get("deviation_registry", [])
     if not isinstance(raw, list):
         raise ValueError("deviation_registry must be a list")
     grouped: dict[int, list[DeviationRegistration]] = {}
     for item in raw:
-        if not isinstance(item, dict):
-            raise ValueError("deviation_registry entries must be objects")
-        rule_ids = item.get("rule_ids", [])
-        if not isinstance(rule_ids, list):
-            raise ValueError("deviation_registry rule_ids must be a list")
-        registration = DeviationRegistration(
-            match_no=int(item["match_no"]),
-            rule_ids=tuple(str(rule_id) for rule_id in rule_ids),
-            reason=str(item.get("reason", "")).strip(),
-            user_override=item.get("user_override") is True,
-        )
+        registration = _registration(item)
+        if registration.match_no is None:
+            continue
         grouped.setdefault(registration.match_no, []).append(registration)
     return {match_no: tuple(items) for match_no, items in grouped.items()}
+
+
+def ticket_deviation_registrations(payload: dict) -> tuple[DeviationRegistration, ...]:
+    """票级偏离登记（`scope="ticket"`）。
+
+    出生事故：2026-09-17。C15/C15b/C17 是票面级 ERROR，没有单一 match_no 可挂，
+    而 `record_user_overrides` 只按 match_no 找登记 —— 于是**票级 ERROR 在行权通道里
+    根本无法登记**，26128 的 S333（C17：场1/3/6 四处读判全包却降双）一亮就死在
+    "票级 ERROR 没有可引用的人工偏离登记"。门挡住是对的，但连"知情行权"这条
+    合法出口也一并堵死，不是设计意图。
+    """
+    raw = payload.get("deviation_registry", [])
+    if not isinstance(raw, list):
+        raise ValueError("deviation_registry must be a list")
+    return tuple(
+        registration
+        for registration in (_registration(item) for item in raw)
+        if registration.match_no is None
+    )
 
 
 def _faces(value: object, *, field: str) -> str:
@@ -370,13 +418,20 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
 
         in_lex = [f for f, _ in lg.directional_flags if f in DIRECTIONAL_LEXICON]
         off_lex = [f for f, _ in lg.directional_flags if f not in DIRECTIONAL_LEXICON]
+        # 无方向旗同样只认词典内的（2026-09-17 补齐）。此前 C6 直接吃原始列表，
+        # 任何自命名字符串都能逼出全包——与封闭词典的立法意图正好相反。
+        nd_in_lex = [f for f in lg.nondirectional_flags if f in NONDIRECTIONAL_LEXICON]
+        nd_off_lex = [
+            f for f in lg.nondirectional_flags if f not in NONDIRECTIONAL_LEXICON
+        ]
 
         # C0 —— 词典外的自命名旗:记录待裁决,但**不阻断**
-        if off_lex:
+        if off_lex or nd_off_lex:
+            named = "/".join([*off_lex, *nd_off_lex])
             out.append(Finding(
                 "WARN", "flag_off_lexicon", n,
-                f"场{n} {lg.name}：`{'/'.join(off_lex)}` 不在封闭词典内（agent 自命名）。"
-                f"**不阻断单选**，但需判读层显式裁决是否接纳；"
+                f"场{n} {lg.name}：`{named}` 不在封闭词典内（agent 自命名）。"
+                f"**不阻断单选、也不逼出全包**，但需判读层显式裁决是否接纳；"
                 f"若其机理属「领先方可接受平」，26097 已裁定那是机理不是旗。",
                 "26103:agent 自命名旗若能阻断出票,任何 agent 都能凭空堵死单选"))
 
@@ -535,9 +590,9 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 f"进球带与让球三路精度下降；该场进球轴结论不与有锚场同权。",
                 "26122 法乙五场无体彩对齐(2026-09-11 标注)"))
 
-        # C6 —— 确证级无方向性旗 = "我判不动往哪碎" → 该全包
-        if lg.nondirectional_flags and len(set(lg.faces)) < 3:
-            names = "/".join(lg.nondirectional_flags)
+        # C6 —— 确证级无方向性旗 = "我判不动往哪碎" → 该全包（只认词典内的旗）
+        if nd_in_lex and len(set(lg.faces)) < 3:
+            names = "/".join(nd_in_lex)
             out.append(Finding(
                 "WARN", "undecidable_not_full", n,
                 f"场{n} {lg.name}：带无方向性旗（{names}）= 判不动往哪碎，但只买了 "
@@ -871,6 +926,130 @@ def format_findings(findings: list[Finding], *, issue: str = "") -> str:
     return "\n".join(lines)
 
 
+DIRECTIONAL_MARKETS = frozenset({"had", "hhad", "hafu", "crs"})
+"""需要 90' 方向落在某一侧才能兑现的玩法。`ttg`/`bts` 住在进球轴，不在此列。"""
+
+
+def audit_cross_channel(
+    zucai_payload: dict,
+    jczq_legs: list[dict],
+    *,
+    channel_map: dict[str, str],
+) -> list[Finding]:
+    """C18 —— 同一场比赛在两条泳道上的**立场**必须一致（2026-09-17 入码, probation）。
+
+    出生事故 26126（实票四张全灭 −¥672）：周二005 国安-浦项在竞彩被三张票分别押
+    平/让负/让负，**一场杀 3/3**；而同一场在足彩是场1、票面买 `310` 全包——
+    足彩这边判的是「我对这场没有方向判断」，竞彩那边却押了方向。同期周二008
+    阿拉维斯：足彩买 `31` 排掉客胜 18.5%（任九断在此），竞彩两票买主胜，
+    **同一个判断错误跨渠道各杀一次**。
+
+    C15 只查足彩同期多票的共享被排面，**跨渠道同场共享死点此前无任何码覆盖**。
+
+    两条判据：
+    - 足彩**全包或丢**（＝无方向判断）而竞彩押方向玩法 → 立场冲突；
+    - 足彩双选排掉某面，而竞彩**买的正是那个被排面** → 买回自己刚排掉的面。
+
+    ⛔身份不许猜。`channel_map` 必须由人显式给出（26122 用 fair 值反查抢错身份，
+    场2/6/7 因同队也在竞彩板上而张冠李戴）；未映射的腿只报 INFO，不参与判据。
+    """
+    legs = {str(leg.match_no): leg for leg in legs_from_dict(zucai_payload)}
+    findings: list[Finding] = []
+    seen_unmapped: set[str] = set()
+    for leg_dict in jczq_legs:
+        if not isinstance(leg_dict, dict):
+            continue
+        market = str(leg_dict.get("market", "") or "").lower()
+        if market not in DIRECTIONAL_MARKETS:
+            continue
+        match_id = str(leg_dict.get("match_id", "") or "")
+        selection = str(leg_dict.get("selection", "") or "")
+        match_no = channel_map.get(match_id)
+        if match_no is None:
+            if match_id and match_id not in seen_unmapped:
+                seen_unmapped.add(match_id)
+                findings.append(Finding(
+                    "INFO", "cross_channel_unmapped", None,
+                    f"竞彩腿 {match_id} 未在 channel_map 里映射到足彩场次，"
+                    "未参与 C18 —— 身份不许猜，请显式补映射。",
+                    "26122",
+                ))
+            continue
+        leg = legs.get(str(match_no))
+        if leg is None:
+            # 足彩把这场丢了 = 同样是「无方向判断」。
+            findings.append(Finding(
+                "WARN", "cross_channel_stance_conflict", None,
+                f"场{match_no} 足彩**丢整场**（无方向判断），竞彩却押方向"
+                f"（{market} {selection}）。j-传导条：同日同场的判断只有一个。",
+                "26126",
+            ))
+            continue
+        faces = set(leg.faces)
+        if len(faces) == 3:
+            findings.append(Finding(
+                "WARN", "cross_channel_stance_conflict", leg.match_no,
+                f"场{leg.match_no} {leg.name} 足彩买**全包**（＝我对这场没有方向判断），"
+                f"竞彩却押方向（{market} {selection}）。"
+                "26126 周二005 正是此形：足彩全包、竞彩押方向，一场杀 3/3 竞彩票。",
+                "26126",
+            ))
+            continue
+        face = str(leg_dict.get("face", "") or "")
+        if face and face in FACE_KEYS and face not in faces:
+            findings.append(Finding(
+                "WARN", "cross_channel_excluded_face", leg.match_no,
+                f"场{leg.match_no} {leg.name} 足彩票面排掉了面 `{face}`"
+                f"（留 {leg.faces}），竞彩却买它（{market} {selection}）。"
+                "26126 周二008：同一个判断错误跨渠道各杀一次。",
+                "26126",
+            ))
+            continue
+        if face and face in faces and len(faces) == 1:
+            findings.append(Finding(
+                "INFO", "cross_channel_shared_death", leg.match_no,
+                f"场{leg.match_no} {leg.name} 两条泳道押同一个裸单面 `{face}`——"
+                "这是集中不是分散：该场一旦走反，两边同时死。",
+                "26126",
+            ))
+        elif not face:
+            findings.append(Finding(
+                "INFO", "cross_channel_face_unstated", leg.match_no,
+                f"场{leg.match_no} 竞彩腿未声明 `face`（3/1/0），"
+                "无法查「买回自己排掉的面」——请在腿上补 face 字段。",
+                "26126",
+            ))
+    return findings
+
+
+def audit_ticket(
+    payload: dict,
+    *,
+    others: dict[str, list[Leg]] | None = None,
+) -> list[Finding]:
+    """一张票的**完整** finding 集 —— 腿级 + 处方偏离 + 全包分配 + C17（+ C15）。
+
+    单一事实源：出票门（`decision-audit-legs`）、裁决单（`decision-adjudicate`）与
+    候选穷举（`zucai-candidates --legs-file`）必须看见**逐字相同**的 ERROR 集，
+    否则裁决单的指纹永远对不上、候选行报的码与门报的码会分家。
+    `others` = 同期其它票 {票名: [Leg, ...]}，给了才触发 C15 共享被排面。
+    """
+    legs = legs_from_dict(payload)
+    findings = [
+        *audit_legs(legs),
+        *audit_prescription_deviations(payload),
+        # 全包名额分配 —— 按被排面 fair 降序，不按 top1 升序（2026-09-13 入码）
+        *audit_full_cover_allocation(legs),
+    ]
+    # C17 —— 票面级：读判判「全包或丢」却降双选的场次达阈值即 ERROR（2026-09-13 入码）。
+    findings.extend(audit_read_ticket_consistency(findings))
+    if others:
+        # C15 —— 分散注金不等于分散死点（26118 三票共享 23.2% 全灭）。
+        label = str(payload.get("version") or "本票")
+        findings.extend(audit_shared_exclusions({label: legs, **others}))
+    return findings
+
+
 def has_blocking(findings: list[Finding]) -> bool:
     return any(f.level == "ERROR" for f in findings)
 
@@ -966,6 +1145,8 @@ CODE_SHORT: dict[str, str] = {
     "shared_exclusion": "C15",
     "shared_naked_single": "C15b",
     "read_ticket_inconsistency": "C17",
+    "cross_channel_stance_conflict": "C18",
+    "cross_channel_excluded_face": "C18b",
 }
 """审计码 → RULEBOOK §七 的短名。未登记的码原样打印（INFO 参考表多在此列）。"""
 
