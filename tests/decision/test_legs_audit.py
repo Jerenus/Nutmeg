@@ -833,3 +833,98 @@ def test_format_face_options_never_ranks_or_recommends():
     body = "\n".join(ln for ln in text.splitlines() if not ln.startswith(("#", ">")))
     for word in ("推荐", "建议选", "最优", "应选", "首选"):
         assert word not in body
+
+
+# —— C18 跨渠道立场一致性（2026-09-17 入码, probation）————————
+
+def _zucai(faces_by_match):
+    return {
+        "issue": "T",
+        "legs": {
+            no: {
+                "name": f"甲{no}-乙{no}",
+                "faces": faces,
+                "fair": {"home": 0.5, "draw": 0.3, "away": 0.2},
+                "confidence": 4,
+            }
+            for no, faces in faces_by_match.items()
+        },
+    }
+
+
+def _jczq(market="had", face=None, match_id="M-1"):
+    leg = {"match_id": match_id, "market": market, "selection": "主胜", "odds": 1.5}
+    if face:
+        leg["face"] = face
+    return leg
+
+
+def _cross(zucai, jczq, mapping=None):
+    from nutmeg.decision.legs_audit import audit_cross_channel
+
+    return audit_cross_channel(
+        zucai, jczq, channel_map=mapping if mapping is not None else {"M-1": "1"}
+    )
+
+
+def test_full_cover_in_zucai_forbids_a_directional_jczq_bet():
+    """26126 周二005：足彩买 310 全包（＝无方向判断），竞彩押方向，一场杀 3/3。"""
+    findings = _cross(_zucai({"1": "310"}), [_jczq()])
+    assert [f.code for f in findings] == ["cross_channel_stance_conflict"]
+    assert findings[0].level == "WARN"
+
+
+def test_dropped_match_in_zucai_also_forbids_a_directional_bet():
+    findings = _cross(_zucai({"2": "31"}), [_jczq()])
+    assert [f.code for f in findings] == ["cross_channel_stance_conflict"]
+
+
+def test_goal_axis_bet_is_always_allowed():
+    """进球轴不需要 90' 方向落在某一侧——全包场押总进球不构成立场冲突。"""
+    assert _cross(_zucai({"1": "310"}), [_jczq(market="ttg")]) == []
+
+
+def test_buying_back_the_face_the_zucai_ticket_excluded():
+    """26126 周二008：足彩排掉客胜，竞彩买主胜之外的那个被排面。"""
+    findings = _cross(_zucai({"1": "31"}), [_jczq(face="0")])
+    assert [f.code for f in findings] == ["cross_channel_excluded_face"]
+
+
+def test_face_inside_the_kept_set_is_not_a_conflict():
+    findings = _cross(_zucai({"1": "31"}), [_jczq(face="3")])
+    assert [f.code for f in findings] == []
+
+
+def test_shared_naked_single_is_reported_as_concentration_not_conflict():
+    findings = _cross(_zucai({"1": "3"}), [_jczq(face="3")])
+    assert [f.code for f in findings] == ["cross_channel_shared_death"]
+    assert findings[0].level == "INFO"
+
+
+def test_unmapped_leg_is_never_guessed():
+    """身份不许猜：26122 用 fair 值反查抢错身份，场2/6/7 张冠李戴。"""
+    findings = _cross(_zucai({"1": "310"}), [_jczq(match_id="M-别的")], mapping={})
+    assert [f.code for f in findings] == ["cross_channel_unmapped"]
+    assert findings[0].level == "INFO"
+
+
+def test_unmapped_legs_are_reported_once_per_match():
+    findings = _cross(
+        _zucai({"1": "310"}),
+        [_jczq(match_id="M-x"), _jczq(match_id="M-x", market="hhad")],
+        mapping={},
+    )
+    assert len(findings) == 1
+
+
+def test_missing_face_field_asks_for_it_without_blocking():
+    findings = _cross(_zucai({"1": "31"}), [_jczq()])
+    assert [f.code for f in findings] == ["cross_channel_face_unstated"]
+    assert not has_blocking(findings)
+
+
+def test_c18_never_blocks_while_on_probation():
+    findings = _cross(
+        _zucai({"1": "310"}), [_jczq(), _jczq(market="hhad", face="0")]
+    )
+    assert not has_blocking(findings)

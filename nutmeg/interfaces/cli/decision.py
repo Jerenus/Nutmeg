@@ -29,6 +29,12 @@ _WITH_LEGS_FILE_OPTION = _cli.typer.Option(
     [], "--with-legs-file",
     help="同期其它票面文件；用于 C15 多票共享被排面检查（可重复）")
 _AUDIT_DATA_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
+_AUDIT_ZUCAI_LEGS_OPTION = _cli.typer.Option(
+    None, "--zucai-legs-file",
+    help="同日足彩票面；与 --channel-map 一起给才触发 C18 跨渠道立场一致性")
+_AUDIT_CHANNEL_MAP_OPTION = _cli.typer.Option(
+    None, "--channel-map",
+    help="{竞彩 match_id: 足彩场号} 显式映射；身份不许猜（26122）")
 _ADJUDICATE_APPLY_OPTION = _cli.typer.Option(
     None, "--apply", help="填好的裁决单；不给＝签发一张留空的新单")
 _ADJUDICATE_OUT_OPTION = _cli.typer.Option(
@@ -577,6 +583,8 @@ def decision_audit_legs(
         help="Web 工位签发的当前票批次 token；ERROR override 必填",
     ),
     with_legs_file: list[Path] = _WITH_LEGS_FILE_OPTION,
+    zucai_legs_file: Path | None = _AUDIT_ZUCAI_LEGS_OPTION,
+    channel_map_file: Path | None = _AUDIT_CHANNEL_MAP_OPTION,
     data_dir: Path = _AUDIT_DATA_DIR_OPTION,
 ) -> None:
     """出票前结构校验:把「用新理由撤掉结构保险」变成非零退出码。
@@ -598,10 +606,23 @@ def decision_audit_legs(
     # abstain shape and has no structure to audit.
     if isinstance(payload, list):
         if payload:
+            # C18 —— 竞彩腿本身没有 fair/旗/完整度可查，但**同日足彩票面的立场**可查。
+            cross = []
+            if zucai_legs_file and channel_map_file:
+                from nutmeg.decision.legs_audit import audit_cross_channel
+
+                cross = audit_cross_channel(
+                    _json.loads(Path(zucai_legs_file).read_text("utf-8")),
+                    payload,
+                    channel_map=_json.loads(
+                        Path(channel_map_file).read_text("utf-8")
+                    ),
+                )
             _cli.typer.echo(
                 "出票前结构校验：1 个 ERROR\n\n"
                 "❌ [missing_audit_metadata] JCZQ 投注腿数组不含 fair/旗/锚方完整度，"
                 "无法执行结构纪律校验。"
+                + ("\n\n" + format_findings(cross) if cross else "")
             )
             raise _cli.typer.Exit(code=1)
         _cli.typer.echo(format_findings([]))

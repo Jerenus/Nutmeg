@@ -900,6 +900,102 @@ def format_findings(findings: list[Finding], *, issue: str = "") -> str:
     return "\n".join(lines)
 
 
+DIRECTIONAL_MARKETS = frozenset({"had", "hhad", "hafu", "crs"})
+"""需要 90' 方向落在某一侧才能兑现的玩法。`ttg`/`bts` 住在进球轴，不在此列。"""
+
+
+def audit_cross_channel(
+    zucai_payload: dict,
+    jczq_legs: list[dict],
+    *,
+    channel_map: dict[str, str],
+) -> list[Finding]:
+    """C18 —— 同一场比赛在两条泳道上的**立场**必须一致（2026-09-17 入码, probation）。
+
+    出生事故 26126（实票四张全灭 −¥672）：周二005 国安-浦项在竞彩被三张票分别押
+    平/让负/让负，**一场杀 3/3**；而同一场在足彩是场1、票面买 `310` 全包——
+    足彩这边判的是「我对这场没有方向判断」，竞彩那边却押了方向。同期周二008
+    阿拉维斯：足彩买 `31` 排掉客胜 18.5%（任九断在此），竞彩两票买主胜，
+    **同一个判断错误跨渠道各杀一次**。
+
+    C15 只查足彩同期多票的共享被排面，**跨渠道同场共享死点此前无任何码覆盖**。
+
+    两条判据：
+    - 足彩**全包或丢**（＝无方向判断）而竞彩押方向玩法 → 立场冲突；
+    - 足彩双选排掉某面，而竞彩**买的正是那个被排面** → 买回自己刚排掉的面。
+
+    ⛔身份不许猜。`channel_map` 必须由人显式给出（26122 用 fair 值反查抢错身份，
+    场2/6/7 因同队也在竞彩板上而张冠李戴）；未映射的腿只报 INFO，不参与判据。
+    """
+    legs = {str(leg.match_no): leg for leg in legs_from_dict(zucai_payload)}
+    findings: list[Finding] = []
+    seen_unmapped: set[str] = set()
+    for leg_dict in jczq_legs:
+        if not isinstance(leg_dict, dict):
+            continue
+        market = str(leg_dict.get("market", "") or "").lower()
+        if market not in DIRECTIONAL_MARKETS:
+            continue
+        match_id = str(leg_dict.get("match_id", "") or "")
+        selection = str(leg_dict.get("selection", "") or "")
+        match_no = channel_map.get(match_id)
+        if match_no is None:
+            if match_id and match_id not in seen_unmapped:
+                seen_unmapped.add(match_id)
+                findings.append(Finding(
+                    "INFO", "cross_channel_unmapped", None,
+                    f"竞彩腿 {match_id} 未在 channel_map 里映射到足彩场次，"
+                    "未参与 C18 —— 身份不许猜，请显式补映射。",
+                    "26122",
+                ))
+            continue
+        leg = legs.get(str(match_no))
+        if leg is None:
+            # 足彩把这场丢了 = 同样是「无方向判断」。
+            findings.append(Finding(
+                "WARN", "cross_channel_stance_conflict", None,
+                f"场{match_no} 足彩**丢整场**（无方向判断），竞彩却押方向"
+                f"（{market} {selection}）。j-传导条：同日同场的判断只有一个。",
+                "26126",
+            ))
+            continue
+        faces = set(leg.faces)
+        if len(faces) == 3:
+            findings.append(Finding(
+                "WARN", "cross_channel_stance_conflict", leg.match_no,
+                f"场{leg.match_no} {leg.name} 足彩买**全包**（＝我对这场没有方向判断），"
+                f"竞彩却押方向（{market} {selection}）。"
+                "26126 周二005 正是此形：足彩全包、竞彩押方向，一场杀 3/3 竞彩票。",
+                "26126",
+            ))
+            continue
+        face = str(leg_dict.get("face", "") or "")
+        if face and face in FACE_KEYS and face not in faces:
+            findings.append(Finding(
+                "WARN", "cross_channel_excluded_face", leg.match_no,
+                f"场{leg.match_no} {leg.name} 足彩票面排掉了面 `{face}`"
+                f"（留 {leg.faces}），竞彩却买它（{market} {selection}）。"
+                "26126 周二008：同一个判断错误跨渠道各杀一次。",
+                "26126",
+            ))
+            continue
+        if face and face in faces and len(faces) == 1:
+            findings.append(Finding(
+                "INFO", "cross_channel_shared_death", leg.match_no,
+                f"场{leg.match_no} {leg.name} 两条泳道押同一个裸单面 `{face}`——"
+                "这是集中不是分散：该场一旦走反，两边同时死。",
+                "26126",
+            ))
+        elif not face:
+            findings.append(Finding(
+                "INFO", "cross_channel_face_unstated", leg.match_no,
+                f"场{leg.match_no} 竞彩腿未声明 `face`（3/1/0），"
+                "无法查「买回自己排掉的面」——请在腿上补 face 字段。",
+                "26126",
+            ))
+    return findings
+
+
 def audit_ticket(
     payload: dict,
     *,
@@ -1023,6 +1119,8 @@ CODE_SHORT: dict[str, str] = {
     "shared_exclusion": "C15",
     "shared_naked_single": "C15b",
     "read_ticket_inconsistency": "C17",
+    "cross_channel_stance_conflict": "C18",
+    "cross_channel_excluded_face": "C18b",
 }
 """审计码 → RULEBOOK §七 的短名。未登记的码原样打印（INFO 参考表多在此列）。"""
 

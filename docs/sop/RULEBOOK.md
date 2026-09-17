@@ -86,7 +86,8 @@
 
 | ID | 条文 | 状态 | 战绩/出生 | 代码化 |
 |---|---|---|---|---|
-| **j-传导** | jczq 判读前必查同场足彩期判断；已记录机理必须继承或显式裁定冲突 | active | 7/29 波兹南 −¥210 | — |
+| **j-传导** | jczq 判读前必查同场足彩期判断；已记录机理必须继承或显式裁定冲突 | active | 7/29 波兹南 −¥210；26126 −¥672 | **C18/C18b（2026-09-17 入码）** |
+| **j-立场一致** | 同一场在两条泳道上的**立场**必须一致：足彩**全包或丢**＝「我对这场没有方向判断」→ 竞彩不得押方向玩法（had/hhad/hafu/crs）；足彩双选排掉的面，竞彩不得买回。**进球轴（ttg/bts）不受此条约束**——它不需要 90' 方向落在某一侧 | probation | 26126 实票四张全灭 −¥672：周二005 足彩买 `310` 全包而竞彩押方向，**一场杀 3/3 竞彩票**；周二008 足彩排客胜 18.5%（任九断在此）而竞彩买主胜，同一个判断错误跨渠道各杀一次。C15 只查足彩同期多票，**跨渠道此前无任何码覆盖** | `cross_channel_stance_conflict`(C18) / `cross_channel_excluded_face`(C18b)；身份映射必须人工显式给出（26122 fair 值反查抢错身份），未映射只报 INFO |
 | **g-scope** | league/team 因子必带 scope_key；画像读 store profile_notes | active | 校验强制 | Read 校验 |
 | **f-结构化** | Read 必须结构化 JSON；close/settle 收尾不可跳过 | active | 6/28 丢整日判定 | 流程 |
 | **零售信息** | 体彩 vs 国际两源翻转=真无方向全包；体彩零售独有面有独立信息 | probation | n=1（26109 场2 伊普斯✓） | — |
@@ -129,6 +130,10 @@
 | **C17 read_ticket_inconsistency** | ERROR | **读判-票面一致性：单票 ≥4 处「读判判全包或丢、票面降双选」（2026-09-13 入码，probation）。26123 F 票 17 WARN 照出，两处开出** |
 | **excluded_face_contradicts_read** | WARN | **排面不得与对位机制相反：某方破门机制缺席时排掉对方取胜面（2026-09-13 入码，probation）** |
 | **full_cover_allocation_dominated** | WARN | **全包名额分配：存在同价支配票面（2026-09-13 入码，probation）** |
+| **C18 cross_channel_stance_conflict** | WARN | **j-立场一致（2026-09-17 入码，probation）：足彩全包或丢却在竞彩押方向。26126 周二005 一场杀 3/3 竞彩票** |
+| **C18b cross_channel_excluded_face** | WARN | **j-立场一致：竞彩买回足彩票面刚排掉的面（26126 周二008）** |
+| cross_channel_shared_death | INFO | 两条泳道押同一个裸单面＝集中不是分散 |
+| cross_channel_unmapped / cross_channel_face_unstated | INFO | 缺显式身份映射或缺 `face` 字段，该腿未参与 C18——**身份不许猜** |
 | *C16 late_face_swap*（提案） | WARN | 临场只加面：14:00 读判冻结后换被排面 |
 
 ## 已退休/引擎时代常数（禁区，不再复述理由）
