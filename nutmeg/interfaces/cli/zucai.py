@@ -33,6 +33,15 @@ _CAND_AUDIT_TOP_OPTION = _cli.typer.Option(
     8, "--audit-top", help="对前 N 个候选跑真审计（含票级码）；0=只做便宜查表")
 _CAND_STRUCTURE_OPTION = _cli.typer.Option(
     None, "--structure", help="只留这个形状，形如 3/3/3＝3单3双3包")
+_INTAKE_LEGS_FILE_OPTION = _cli.typer.Option(
+    ..., "--legs-file", help="要回填的 legs-base.json")
+_INTAKE_RESEARCH_DIR_OPTION = _cli.typer.Option(
+    _cli.Path(".nutmeg-data/zucai"), "--research-dir",
+    help="存放 <期>-research-m<N>.json 的目录")
+_INTAKE_MATCH_OPTION = _cli.typer.Option(
+    None, "--match", help="只入库这些场号；不给＝全部有研究文件的场")
+_INTAKE_WRITE_OPTION = _cli.typer.Option(
+    False, "--write", help="真写入 legs-base；不给＝只预演报告")
 
 
 @_cli.app.command("zucai-report")
@@ -350,6 +359,67 @@ def zucai_grade(
         )
     for warning in grade.warnings:
         _cli.console.print(f" warning: {warning}")
+
+
+@_cli.app.command("zucai-research-intake")
+def zucai_research_intake(
+    issue: str = _BUILD_ISSUE_OPTION,
+    legs_file: _cli.Path = _INTAKE_LEGS_FILE_OPTION,
+    research_dir: _cli.Path = _INTAKE_RESEARCH_DIR_OPTION,
+    match_no: list[int] = _INTAKE_MATCH_OPTION,
+    write: bool = _INTAKE_WRITE_OPTION,
+) -> None:
+    """深研 JSON → legs-base 的入库桥：归一键名、清洗封闭词典、查自相矛盾。
+
+    读 `<research-dir>/<issue>-research-m<N>.json`，把结构字段搬进 legs-base。
+    **只转录与校验，不产生判断**——不改任何一场的 faces、不推断动作。
+
+    三类检查：①**封闭词典**——词典外的旗/标签剥离进 note 并留痕（不阻断出票：
+    agent 自命名的旗若能堵死单选，那不是纪律是瘫痪）；②**结构自相矛盾**——
+    四问④判「无情境旗」却挂着旗、宣告死面而三证不齐，判 ERROR 拒绝写入；
+    ③**定义漂移与编码/正文相反**——三证(c) 逐面不同或与完整度不符、
+    ④②③b 的编码与 summary 极性相反，判 WARN 交人工复核。
+
+    出生事故 26125-26128：14 场研究每期用 /tmp 脚本搬运，零校验。agent 把叙述写进
+    `crash_markers`、三证键名两套并存、26128 场2 的 (c) 在三个面上取了两个值、
+    场7 `q3b=false` 而同一份 summary 写「③b 的答案是『在』」——全靠我肉眼抓。
+    """
+    import json as _json
+
+    from nutmeg.decision.research_intake import format_report, intake
+
+    doc = _json.loads(_cli.Path(legs_file).read_text("utf-8"))
+    legs = doc.get("legs") or {}
+    wanted = set(match_no) if match_no else None
+    results = []
+    for key in sorted(legs, key=int):
+        if wanted is not None and int(key) not in wanted:
+            continue
+        path = _cli.Path(research_dir) / f"{issue}-research-m{key}.json"
+        if not path.exists():
+            continue
+        research = _json.loads(path.read_text("utf-8"))
+        results.append(intake(research, legs[key]))
+    if not results:
+        _cli.typer.echo("没有找到可入库的研究文件。")
+        raise _cli.typer.Exit(code=2)
+    _cli.typer.echo(format_report(results))
+    blocked = [r for r in results if r.blocked]
+    if write:
+        for result in results:
+            if result.blocked:
+                continue
+            legs[str(result.match_no)] = result.leg
+        doc["legs"] = legs
+        _cli.Path(legs_file).write_text(
+            _json.dumps(doc, ensure_ascii=False, indent=1) + "\n", "utf-8"
+        )
+        written = len(results) - len(blocked)
+        _cli.typer.echo(f"\n已写入 {written}/{len(results)} 场 → {legs_file}")
+    else:
+        _cli.typer.echo("\n（预演。加 --write 才写入 legs-base）")
+    if blocked:
+        raise _cli.typer.Exit(code=1)
 
 
 @_cli.app.command("zucai-build-reads")
