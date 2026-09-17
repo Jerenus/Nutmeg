@@ -17,6 +17,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+NONDIRECTIONAL_LEXICON = frozenset({
+    "undecided_second_leg", "source_disagreement", "venue_anomaly",
+    "two_way_instability", "dressing_room_turmoil",
+    "information_asymmetry",
+})
+"""无方向旗封闭词典。命中且票面非全包 → C6（`undecidable_not_full`）。
+
+`information_asymmetry` 由 Jun 于 2026-09-17 裁定入词典。它与 C6 的语义天然同构：
+**一侧信息充分而另一侧近乎零覆盖时，分布更宽而不是均值更低**——它不报方向，
+只报"判不动"，合法响应因此是降格全包或丢整场。出生事故：26125-26128 深研 agent
+连续四期照写此名（26128 场1 申花四人实名缺阵而淡滨尼伤停零覆盖、场3 史上首次交手、
+场8 托伦斯官网不发伤情且欧战注册阵容≠联赛阵容），词典不收 → **证据每期都在产生
+却每期都被丢掉**。
+
+⚠️词典的家在本模块（审计门才是执行方），`read_builder` 再导出。
+2026-09-17 之前它只住在 `read_builder` 里，而**审计对无方向旗根本不查词典**——
+任何自命名的字符串都能触发 C6、逼出全包，与「agent 自命名的旗不得堵死出票」
+这条封闭词典的立法意图正好相反。C0 现已对称覆盖两组旗。"""
+
 DIRECTIONAL_LEXICON = frozenset({
     "weak_home_draw_trap", "league_draw_regime", "suspension_breaker_out",
     "self_made_tail", "anchor_shield_out",
@@ -399,13 +418,20 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
 
         in_lex = [f for f, _ in lg.directional_flags if f in DIRECTIONAL_LEXICON]
         off_lex = [f for f, _ in lg.directional_flags if f not in DIRECTIONAL_LEXICON]
+        # 无方向旗同样只认词典内的（2026-09-17 补齐）。此前 C6 直接吃原始列表，
+        # 任何自命名字符串都能逼出全包——与封闭词典的立法意图正好相反。
+        nd_in_lex = [f for f in lg.nondirectional_flags if f in NONDIRECTIONAL_LEXICON]
+        nd_off_lex = [
+            f for f in lg.nondirectional_flags if f not in NONDIRECTIONAL_LEXICON
+        ]
 
         # C0 —— 词典外的自命名旗:记录待裁决,但**不阻断**
-        if off_lex:
+        if off_lex or nd_off_lex:
+            named = "/".join([*off_lex, *nd_off_lex])
             out.append(Finding(
                 "WARN", "flag_off_lexicon", n,
-                f"场{n} {lg.name}：`{'/'.join(off_lex)}` 不在封闭词典内（agent 自命名）。"
-                f"**不阻断单选**，但需判读层显式裁决是否接纳；"
+                f"场{n} {lg.name}：`{named}` 不在封闭词典内（agent 自命名）。"
+                f"**不阻断单选、也不逼出全包**，但需判读层显式裁决是否接纳；"
                 f"若其机理属「领先方可接受平」，26097 已裁定那是机理不是旗。",
                 "26103:agent 自命名旗若能阻断出票,任何 agent 都能凭空堵死单选"))
 
@@ -564,9 +590,9 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 f"进球带与让球三路精度下降；该场进球轴结论不与有锚场同权。",
                 "26122 法乙五场无体彩对齐(2026-09-11 标注)"))
 
-        # C6 —— 确证级无方向性旗 = "我判不动往哪碎" → 该全包
-        if lg.nondirectional_flags and len(set(lg.faces)) < 3:
-            names = "/".join(lg.nondirectional_flags)
+        # C6 —— 确证级无方向性旗 = "我判不动往哪碎" → 该全包（只认词典内的旗）
+        if nd_in_lex and len(set(lg.faces)) < 3:
+            names = "/".join(nd_in_lex)
             out.append(Finding(
                 "WARN", "undecidable_not_full", n,
                 f"场{n} {lg.name}：带无方向性旗（{names}）= 判不动往哪碎，但只买了 "

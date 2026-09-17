@@ -22,12 +22,13 @@ from nutmeg.decision.legs_audit import (
     TEAM_TAG_LEXICON,
     TRACKING_TAG_LEXICON,
 )
+from nutmeg.decision.legs_audit import (
+    NONDIRECTIONAL_LEXICON as _NONDIRECTIONAL_LEXICON,
+)
 
 FACE_KEYS = {"3": "home", "1": "draw", "0": "away"}
-NONDIRECTIONAL_LEXICON = frozenset({
-    "undecided_second_leg", "source_disagreement", "venue_anomaly",
-    "two_way_instability", "dressing_room_turmoil",
-})
+# 词典的家在 legs_audit（审计门才是它的执行方）；此处再导出，旧引用不断链。
+NONDIRECTIONAL_LEXICON = _NONDIRECTIONAL_LEXICON
 
 
 class JudgmentError(ValueError):

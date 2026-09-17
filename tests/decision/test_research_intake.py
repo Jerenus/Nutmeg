@@ -74,12 +74,22 @@ def test_off_lexicon_flag_is_stripped_not_blocking():
     """agent 自命名的旗若能堵死出票，那不是纪律是瘫痪（26103 一次冒出三个）。
     但剥离必须留痕，否则等于静默丢证据。"""
     result = intake(
-        _research(nondirectional_flags=["information_asymmetry"]), _leg()
+        _research(nondirectional_flags=["agent_自命名的旗"]), _leg()
     )
     assert result.blocked is False
     assert result.leg["nondirectional_flags"] == []
-    assert "information_asymmetry" in result.leg["note"]
+    assert "agent_自命名的旗" in result.leg["note"]
     assert ("WARN", "nondirectional_flags") in _levels(result)
+
+
+def test_information_asymmetry_survives_since_it_entered_the_lexicon():
+    """2026-09-17 Jun 裁定入词典。此前四期 agent 每期照写而每期被剥离——
+    证据一直在产生却一直被丢掉。"""
+    result = intake(
+        _research(nondirectional_flags=["information_asymmetry"]), _leg()
+    )
+    assert result.leg["nondirectional_flags"] == ["information_asymmetry"]
+    assert "【入库剥离】" not in result.leg["note"]
 
 
 def test_narrative_in_a_tag_slot_is_an_error():
@@ -244,8 +254,8 @@ def test_faces_are_never_touched():
 
 def test_report_lists_every_issue_without_folding():
     results = [
-        intake(_research(nondirectional_flags=["information_asymmetry"]), _leg())
+        intake(_research(nondirectional_flags=["agent_自命名的旗"]), _leg())
     ]
     text = format_report(results)
     assert "1 场" in text
-    assert "information_asymmetry" in text
+    assert "agent_自命名的旗" in text

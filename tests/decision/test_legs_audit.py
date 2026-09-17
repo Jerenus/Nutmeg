@@ -928,3 +928,41 @@ def test_c18_never_blocks_while_on_probation():
         _zucai({"1": "310"}), [_jczq(), _jczq(market="hhad", face="0")]
     )
     assert not has_blocking(findings)
+
+
+# —— 无方向旗的词典对称性（2026-09-17 补齐）——————————
+
+def test_lexicon_nondirectional_flag_forces_full_cover():
+    legs = [_leg(faces="31", nondirectional_flags=("two_way_instability",))]
+    assert "undecidable_not_full" in _codes(legs)
+
+
+def test_information_asymmetry_is_in_the_lexicon():
+    """2026-09-17 Jun 裁定入词典：一侧信息充分而另一侧零覆盖＝分布更宽，
+    不报方向只报「判不动」，与 C6 语义同构。"""
+    legs = [_leg(faces="31", nondirectional_flags=("information_asymmetry",))]
+    assert "undecidable_not_full" in _codes(legs)
+
+
+def test_self_named_nondirectional_flag_cannot_force_full_cover():
+    """立法意图对称：agent 自命名的旗既不许堵死单选，也不许逼出全包。
+    2026-09-17 前 C6 直接吃原始列表，任何字符串都能逼出全包。"""
+    legs = [_leg(faces="31", nondirectional_flags=("我编的一个旗",))]
+    codes = _codes(legs)
+    assert "undecidable_not_full" not in codes
+    assert "flag_off_lexicon" in codes
+
+
+def test_off_lexicon_nondirectional_flag_never_blocks():
+    legs = [_leg(faces="3", nondirectional_flags=("我编的一个旗",))]
+    assert not has_blocking(audit_legs(legs))
+
+
+def test_mixed_flags_keep_only_the_lexicon_one_in_c6():
+    legs = [_leg(faces="31",
+                 nondirectional_flags=("我编的一个旗", "venue_anomaly"))]
+    finding = next(
+        f for f in audit_legs(legs) if f.code == "undecidable_not_full"
+    )
+    assert "venue_anomaly" in finding.message
+    assert "我编的" not in finding.message
