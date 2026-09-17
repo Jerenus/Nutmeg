@@ -900,6 +900,34 @@ def format_findings(findings: list[Finding], *, issue: str = "") -> str:
     return "\n".join(lines)
 
 
+def audit_ticket(
+    payload: dict,
+    *,
+    others: dict[str, list[Leg]] | None = None,
+) -> list[Finding]:
+    """一张票的**完整** finding 集 —— 腿级 + 处方偏离 + 全包分配 + C17（+ C15）。
+
+    单一事实源：出票门（`decision-audit-legs`）、裁决单（`decision-adjudicate`）与
+    候选穷举（`zucai-candidates --legs-file`）必须看见**逐字相同**的 ERROR 集，
+    否则裁决单的指纹永远对不上、候选行报的码与门报的码会分家。
+    `others` = 同期其它票 {票名: [Leg, ...]}，给了才触发 C15 共享被排面。
+    """
+    legs = legs_from_dict(payload)
+    findings = [
+        *audit_legs(legs),
+        *audit_prescription_deviations(payload),
+        # 全包名额分配 —— 按被排面 fair 降序，不按 top1 升序（2026-09-13 入码）
+        *audit_full_cover_allocation(legs),
+    ]
+    # C17 —— 票面级：读判判「全包或丢」却降双选的场次达阈值即 ERROR（2026-09-13 入码）。
+    findings.extend(audit_read_ticket_consistency(findings))
+    if others:
+        # C15 —— 分散注金不等于分散死点（26118 三票共享 23.2% 全灭）。
+        label = str(payload.get("version") or "本票")
+        findings.extend(audit_shared_exclusions({label: legs, **others}))
+    return findings
+
+
 def has_blocking(findings: list[Finding]) -> bool:
     return any(f.level == "ERROR" for f in findings)
 

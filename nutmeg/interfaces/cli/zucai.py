@@ -26,6 +26,13 @@ _CAND_CAP_OPTION = _cli.typer.Option(None, "--cap-yuan")
 _CAND_BASE_FILE_OPTION = _cli.typer.Option(
     None, "--base-file", help="给定基准票面则改出单点/两点替换报告")
 _CAND_LIMIT_OPTION = _cli.typer.Option(20, "--limit")
+_CAND_LEGS_FILE_OPTION = _cli.typer.Option(
+    None, "--legs-file",
+    help="legs-base（带旗/完整度/先例）；给了才给候选贴审计码")
+_CAND_AUDIT_TOP_OPTION = _cli.typer.Option(
+    8, "--audit-top", help="对前 N 个候选跑真审计（含票级码）；0=只做便宜查表")
+_CAND_STRUCTURE_OPTION = _cli.typer.Option(
+    None, "--structure", help="只留这个形状，形如 3/3/3＝3单3双3包")
 
 
 @_cli.app.command("zucai-report")
@@ -390,21 +397,46 @@ def zucai_candidates(
     cap_yuan: int | None = _CAND_CAP_OPTION,
     base_file: _cli.Path | None = _CAND_BASE_FILE_OPTION,
     limit: int = _CAND_LIMIT_OPTION,
+    legs_file: _cli.Path | None = _CAND_LEGS_FILE_OPTION,
+    audit_top: int = _CAND_AUDIT_TOP_OPTION,
+    structure: str | None = _CAND_STRUCTURE_OPTION,
 ) -> None:
-    """穷举**已声明**的票面空间；排序=帽内 P 降序，这是比较顺序不是推荐。"""
+    """穷举**已声明**的票面空间；排序=帽内 P 降序，这是比较顺序不是推荐。
+
+    给了 `--legs-file` 就两段式贴审计码：先用 `face_options` 逐腿查表给全部候选贴
+    腿级码（便宜），再对前 `--audit-top` 个跑**真审计**补票级码（C15/C15b/C17/全包分配）。
+    ⛔ERROR 不剔除候选，也不改排序——行权空间归 `decision-adjudicate`。
+    `--structure 3/3/3` 只保留「3单3双3包」形状：26127 用户的 S333 落在我所有
+    声明空间的缝里（没有一个空间允许「锚场降双×硬币降双」的交叉），形状过滤堵这个缝。
+    """
     import json as _json
 
     from nutmeg.decision.betslip import BetslipError
     from nutmeg.decision.candidate_builder import (
+        audit_candidates,
         enumerate_candidates,
         format_candidates,
         format_swaps,
+        leg_face_codes,
         swap_report,
         ticket_probability,
     )
+    from nutmeg.decision.legs_audit import legs_from_dict
 
     options = _json.loads(_cli.Path(options_file).read_text("utf-8"))
     fair = _json.loads(_cli.Path(fair_file).read_text("utf-8"))
+    shape = None
+    if structure:
+        parts = [p for p in structure.replace("/", " ").split() if p]
+        if len(parts) != 3 or not all(p.isdigit() for p in parts):
+            _cli.typer.echo("--structure 形如 3/3/3（裸单数/双选数/全包数）")
+            raise _cli.typer.Exit(code=2)
+        shape = (int(parts[0]), int(parts[1]), int(parts[2]))
+    base_payload = None
+    leg_codes = None
+    if legs_file:
+        base_payload = _json.loads(_cli.Path(legs_file).read_text("utf-8"))
+        leg_codes = leg_face_codes(legs_from_dict(base_payload))
     try:
         if base_file:
             base = _json.loads(_cli.Path(base_file).read_text("utf-8"))
@@ -413,8 +445,13 @@ def zucai_candidates(
             _cli.typer.echo(format_swaps(rows, ticket_probability(base, fair),
                                          limit=limit))
             return
-        cands = enumerate_candidates(options, fair, channel=channel, cap_yuan=cap_yuan)
+        cands = enumerate_candidates(
+            options, fair, channel=channel, cap_yuan=cap_yuan,
+            leg_codes=leg_codes, structure=shape,
+        )
     except BetslipError as exc:
         _cli.typer.echo(f"候选穷举错误：{exc}")
         raise _cli.typer.Exit(code=1) from exc
+    if base_payload is not None and audit_top > 0:
+        cands = audit_candidates(cands, base_payload, top=audit_top)
     _cli.typer.echo(format_candidates(cands, cap_yuan=cap_yuan, limit=limit))

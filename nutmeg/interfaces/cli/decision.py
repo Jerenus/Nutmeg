@@ -688,33 +688,17 @@ def decision_explain_faces(
 
 
 def _ticket_findings(payload: dict, legs_file: Path, with_legs_file: list[Path]) -> list:
-    """一张票的完整 finding 集（腿级 + 处方偏离 + 全包分配 + C17 + C15 多票）。"""
+    """读文件 → `legs_audit.audit_ticket`（门/裁决单/候选穷举共用的单一事实源）。"""
     import json as _json
 
-    from nutmeg.decision.legs_audit import (
-        audit_full_cover_allocation,
-        audit_legs,
-        audit_prescription_deviations,
-        audit_read_ticket_consistency,
-        audit_shared_exclusions,
-        legs_from_dict,
-    )
+    from nutmeg.decision.legs_audit import audit_ticket, legs_from_dict
 
-    findings = [
-        *audit_legs(legs_from_dict(payload)),
-        *audit_prescription_deviations(payload),
-        *audit_full_cover_allocation(legs_from_dict(payload)),
-    ]
-    findings.extend(audit_read_ticket_consistency(findings))
-    if with_legs_file:
-        batch = {
-            str(payload.get("version") or legs_file.stem): legs_from_dict(payload)
-        }
-        for extra in with_legs_file:
-            other = _json.loads(Path(extra).read_text("utf-8"))
-            batch[str(other.get("version") or Path(extra).stem)] = legs_from_dict(other)
-        findings.extend(audit_shared_exclusions(batch))
-    return findings
+    others = {}
+    for extra in with_legs_file:
+        other = _json.loads(Path(extra).read_text("utf-8"))
+        others[str(other.get("version") or Path(extra).stem)] = legs_from_dict(other)
+    payload = {**payload, "version": payload.get("version") or legs_file.stem}
+    return audit_ticket(payload, others=others or None)
 
 
 @_cli.app.command("decision-adjudicate")
