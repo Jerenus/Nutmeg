@@ -20,10 +20,47 @@ def test_missing_profile_says_so_instead_of_leaving_a_blank():
     """出生事故 26128：我凭记忆填的前提一期错六条（主帅错三个）。
     卡上没有的必须明写「未提供」，不能留白让我顺手补。"""
     card = build_card(MATCH, match_no=11, fair=FAIR, profiles={})
-    assert card.unknown_count == 10
+    assert card.unknown_count == 2
     text = card.render()
     assert UNKNOWN in text
     assert "请独立取证" in text
+
+
+def test_card_always_prints_the_habitual_error_checklist():
+    """常错前提清单与 store 有没有内容无关——沉默时是「从零取证」，
+    有内容时是「重点核实」。"""
+    card = build_card(MATCH, match_no=11, fair=FAIR, profiles={})
+    assert "主帅是谁" in card.render()
+    stocked = build_card(
+        MATCH, match_no=11, fair=FAIR,
+        profiles={"曼彻斯特城": [_note("coach_system_2026_27", "现任主帅 Maresca")]},
+    )
+    assert "主帅是谁" in stocked.render()
+
+
+def test_notes_render_under_their_own_store_keys():
+    """出生事故 2026-09-17：首版把笔记硬塞进我发明的五个字段，
+    而 store 的键是策展式自由命名的——一支有 15 条笔记的队显示成「本卡未提供」，
+    我据此把接线 bug 报成了「store 画像 0/140 覆盖」。"""
+    card = build_card(
+        MATCH, match_no=11, fair=FAIR,
+        profiles={"曼彻斯特城": [
+            _note("coach_system_2026_27", "现任主帅 Maresca"),
+            _note("squad_spine_2026_27", "中轴 Rodri-Gvardiol"),
+        ]},
+    )
+    text = card.render()
+    assert "coach_system_2026_27" in text
+    assert "squad_spine_2026_27" in text
+    assert card.unknown_count == 1   # 只有客队没画像
+
+
+def test_long_note_is_truncated_visibly():
+    card = build_card(
+        MATCH, match_no=11, fair=FAIR,
+        profiles={"曼彻斯特城": [_note("strength_baseline_2026_27", "细节" * 200)]},
+    )
+    assert "…" in card.render()
 
 
 def test_known_premise_carries_tier_and_date():
@@ -58,11 +95,25 @@ def test_both_sides_get_their_own_lines():
     assert any(line.known for line in card.away_lines)
 
 
-def test_card_header_reports_store_coverage():
-    cards = [build_card(MATCH, match_no=11, fair=FAIR, profiles={})]
+def test_card_header_reports_store_coverage_by_side():
+    cards = [
+        build_card(MATCH, match_no=11, fair=FAIR, profiles={}),
+        build_card(
+            MATCH, match_no=12, fair=FAIR,
+            profiles={"曼彻斯特城": [_note("coach_system_2026_27", "Maresca")]},
+        ),
+    ]
     text = format_cards(cards, issue="26128")
-    assert "store 覆盖 0/10 条" in text
+    assert "store 覆盖 1/4 支队、1 条笔记" in text
     assert "卡上没有的，我不许替 agent 补" in text
+
+
+def test_unresolved_leagues_are_named_not_swallowed():
+    text = format_cards(
+        [build_card(MATCH, match_no=11, fair=FAIR, profiles={})],
+        issue="26128", unresolved_leagues=["亚冠联2", "英联杯"],
+    )
+    assert "亚冠联2" in text and "scope_key 无处可挂" in text
 
 
 # —— 纠正回收 ————————————————————————————————————

@@ -402,13 +402,22 @@ def zucai_premise_card(
         str(m.get(key) or "")
         for m in matches
         for key in ("home", "away", "home_team", "away_team")
+        if m.get(key)
     ]
+    competitions = [str(m.get("competition") or "") for m in matches]
     store = DecisionStore(_cli.Path(output_dir) / "decision")
-    board = profiles_for_board(store, [], names)
+    board = profiles_for_board(store, competitions, names)
+    # ⚠️键是 board_name（板面上的队名），不是 name/id —— 取错键会让整张卡
+    # 静默变成「store 全空」，而 store 其实有 213 支队的画像（2026-09-17 实测）。
     profiles = {
-        str(item.get("name") or item.get("id") or ""): item.get("profile_notes") or []
+        str(item.get("board_name") or ""): item.get("profile_notes") or []
         for item in (board.get("teams") or [])
     }
+    unresolved = board.get("unresolved_leagues") or []
+    # profiles_for_board 只报未解析的**联赛**；未解析的球队同样要喊出来，
+    # 否则「这队没画像」与「这名字没对上」长得一模一样。
+    resolved_names = {str(i.get("board_name") or "") for i in (board.get("teams") or [])}
+    missing_teams = [n for n in dict.fromkeys(names) if n not in resolved_names]
     cards = []
     for index, match in enumerate(matches, start=1):
         no = int(match.get("match_no") or index)
@@ -417,7 +426,11 @@ def zucai_premise_card(
             match, match_no=no,
             fair=entry.get("fair") or entry or {}, profiles=profiles,
         ))
-    text = format_cards(cards, issue=issue)
+    text = format_cards(
+        cards, issue=issue,
+        leagues=board.get("leagues") or [], unresolved_leagues=unresolved,
+        unresolved_teams=missing_teams,
+    )
     if out:
         _cli.Path(out).write_text(text + "\n", "utf-8")
         _cli.typer.echo(f"前提卡 {len(cards)} 场 → {out}")
