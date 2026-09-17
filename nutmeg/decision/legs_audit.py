@@ -17,6 +17,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+PRECEDENT_STATUSES = frozenset({"alive", "dead", "none"})
+"""先例状态词典。`none` = **查无先例**，与 `dead`（有先例、载体已不在阵）是两回事。
+
+出生事故 2026-09-17：C14 的豁免写成「锚方 PASS ∧ 该面先例 dead」，而深研 agent
+把"这个面根本没有同型先例"也记成 `dead` —— 26128 场14 原文就是
+`["1", "无——马拉卡纳同型对独立谷不存在 90' 平局先例", "dead"]`，agent 自己还在
+detail 里警告过「这是『无先例可载』而非『载体死亡』，请勿当作强证据使用」。
+于是"查无先例"与"先例载体已死"拿到同一个豁免，**举证责任被反过来了**：
+死亡三证(b) 要的是"载体已不在阵"这个**积极证据**，而"没查到"是证据的缺席。
+
+26127 场3 / 场7 因此被报成干净，而研究说平局才是机制最顺的一面；场7 实开 0-0。"""
+
 NONDIRECTIONAL_LEXICON = frozenset({
     "undecided_second_leg", "source_disagreement", "venue_anomaly",
     "two_way_instability", "dressing_room_turmoil",
@@ -723,12 +735,50 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
         # 26117 开出的被排面是 14.8/12.1,26118 是 23.2/15.5/27.4——>20% 的排除是买方差不是省钱。
         if len(set(lg.faces)) < 3:
             excluded = set(FACE_KEYS) - set(lg.faces)
+            # ⛔只有 status=="dead"（有先例、载体已不在阵）才是死亡三证(b) 的积极证据。
+            # status=="none"（查无先例）是证据的**缺席**，不得换来豁免——2026-09-17 修。
             dead_faces = {f for f, _s, status in lg.precedents if status == "dead"}
+            none_faces = {f for f, _s, status in lg.precedents if status == "none"}
+            alive_faces = {f for f, _s, status in lg.precedents if status == "alive"}
+            # 同一个面同时有 alive 与 dead 先例时，**载体是在阵的**——三证(b) 为假。
+            # 26127 场7 格拉茨平局面 2 alive + 1 dead，旧码凭那条 dead 就给了豁免，
+            # 而研究说平局是三面里机制最顺的一面；实开 0-0。
+            dead_faces -= alive_faces
+            off_status = sorted({
+                str(status) for _f, _s, status in lg.precedents
+                if status not in PRECEDENT_STATUSES
+            })
+            if off_status:
+                out.append(Finding(
+                    "WARN", "precedent_status_off_lexicon", n,
+                    f"场{n} {lg.name}：先例状态 `{'/'.join(off_status)}` 不在词典"
+                    f"（alive/dead/none）。**未知状态不换豁免**——"
+                    f"查无先例请记 `none`，别记 `dead`。",
+                    "2026-09-17:查无先例≠先例已死"))
             costly = [
                 f for f in sorted(excluded)
                 if lg.fair.get(FACE_KEYS[f], 0.0) > _C14_EXCLUSION_P
                 and not (lg.anchor_integrity == "pass" and f in dead_faces)
             ]
+            # 让「豁免被拒」可见：否则这条修复在票面上是静默的。
+            if lg.anchor_integrity == "pass":
+                absent = sorted(f for f in costly if f in none_faces)
+                if absent:
+                    faces = "、".join(FACE_ZH[f] for f in absent)
+                    out.append(Finding(
+                        "INFO", "precedent_absent_not_dead", n,
+                        f"场{n} {lg.name}：{faces} 登记的是**查无先例**（none）而非载体已死，"
+                        f"C14 豁免不成立。死亡三证(b) 要的是「载体已不在阵」这个积极证据，"
+                        f"「没查到」是证据的缺席。",
+                        "26127 场3 平局面「未查到同型先例」被记 dead 换来豁免"))
+                mixed = sorted(f for f in costly if f in alive_faces)
+                if mixed:
+                    faces = "、".join(FACE_ZH[f] for f in mixed)
+                    out.append(Finding(
+                        "INFO", "precedent_alive_overrides_dead", n,
+                        f"场{n} {lg.name}：{faces} 同时登记了 alive 与 dead 先例——"
+                        f"**只要还有一条活载体，三证(b) 就是假的**，C14 豁免不成立。",
+                        "26127 场7 格拉茨平局 2 alive+1 dead 仍被豁免;实开 0-0"))
             if costly:
                 desc = "、".join(
                     f"{FACE_ZH[f]} {lg.fair.get(FACE_KEYS[f], 0.0) * 100:.1f}%" for f in costly)
@@ -1228,9 +1278,12 @@ def judgment_slots(leg: Leg) -> list[tuple[str, str]]:
     """
     dead = {f for f, _s, status in leg.precedents if status == "dead"}
     alive = {f for f, _s, status in leg.precedents if status == "alive"}
+    absent = {f for f, _s, status in leg.precedents if status == "none"}
     prec = "、".join(
         [f"{FACE_ZH[f]}载体已不在阵" for f in sorted(dead)]
         + [f"{FACE_ZH[f]}载体仍在阵" for f in sorted(alive)]
+        # 查无先例单列：它不是三证(b)，把它读成(b) 正是 C14 豁免那个 bug 的由来。
+        + [f"{FACE_ZH[f]}查无先例（非三证b）" for f in sorted(absent)]
     ) or "____（未登记先例）"
     q = leg.license_questions or {}
 

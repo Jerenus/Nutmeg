@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from nutmeg.decision.legs_audit import (
     CRASH_MARKER_LEXICON,
     DIRECTIONAL_LEXICON,
+    PRECEDENT_STATUSES,
     TEAM_TAG_LEXICON,
     TRACKING_TAG_LEXICON,
 )
@@ -301,6 +302,60 @@ def _check_proofs(
             )
 
 
+_NO_PRECEDENT_PROSE = (
+    "无——", "无先例", "不存在", "查无", "没有先例", "无任何",
+    "未查到", "未找到", "无可用", "无同型", "零先例", "无法核实",
+)
+"""「查无先例」的措辞表。真正的 dead 先例描述的是一场**发生过的**比赛
+（"2021 欧联,格拉茨风暴 1-1 平摩纳哥"），不会命中这些词。"""
+
+
+def _check_precedents(
+    raw: object,
+    *,
+    match_no: int,
+    issues: list[IntakeIssue],
+) -> list[list]:
+    """先例三元组 (面, 描述, 状态)。**「查无先例」必须记 `none`，不是 `dead`。**
+
+    出生事故 2026-09-17：agent 把"这个面根本没有同型先例"记成 `dead`
+    （26128 场14：`["1","无——马拉卡纳同型对独立谷不存在 90' 平局先例","dead"]`），
+    而 C14 的豁免看的正是 `dead` —— 于是**证据的缺席被当成了积极证据**。
+    嗅探散文这件事只能发生在这座桥上，绝不能进审计门（门不听论证、也不读散文）。
+    """
+    if raw in (None, ""):
+        return []
+    if not isinstance(raw, list):
+        issues.append(IntakeIssue("ERROR", match_no, "precedents", "必须是数组"))
+        return []
+    out: list[list] = []
+    for item in raw:
+        if not isinstance(item, list | tuple) or len(item) != 3:
+            issues.append(IntakeIssue(
+                "ERROR", match_no, "precedents",
+                f"先例必须是 [面, 描述, 状态] 三元组，实得 {str(item)[:40]}",
+            ))
+            continue
+        face, desc, status = (str(x) for x in item)
+        if status not in PRECEDENT_STATUSES:
+            issues.append(IntakeIssue(
+                "ERROR", match_no, "precedents",
+                f"状态 `{status}` 不在词典（alive/dead/none）",
+            ))
+            continue
+        if status == "dead" and any(k in desc for k in _NO_PRECEDENT_PROSE):
+            issues.append(IntakeIssue(
+                "ERROR", match_no, "precedents",
+                f"「{desc[:28]}…」读起来是**查无先例**却记成 `dead`。"
+                "死亡三证(b) 要的是「载体已不在阵」这个积极证据；"
+                "「没查到」是证据的缺席，请记 `none`——"
+                "记错会让 C14 的昂贵排除豁免凭空成立（26127 场3/场7）",
+            ))
+            continue
+        out.append([face, desc, status])
+    return out
+
+
 def intake(research: dict, leg: dict) -> IntakeResult:
     """一场研究 JSON → 可入库的 leg 字段 + 问题清单。**不改 faces、不产生判断。**"""
     match_no = int(research.get("match_no") or leg.get("match_no") or 0)
@@ -396,7 +451,9 @@ def intake(research: dict, leg: dict) -> IntakeResult:
         "crash_markers": crash,
         "tracking_tags": tracking,
         "team_tags": team_tags,
-        "precedents": [list(p) for p in (research.get("precedents") or [])],
+        "precedents": _check_precedents(
+            research.get("precedents"), match_no=match_no, issues=issues
+        ),
         "license_questions": {key: license_questions.get(key) for key in LICENSE_KEYS},
         "note": note,
         "_nominal": research.get("nominal_favourite") or research.get("anchor_side"),

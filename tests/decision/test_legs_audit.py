@@ -966,3 +966,85 @@ def test_mixed_flags_keep_only_the_lexicon_one_in_c6():
     )
     assert "venue_anomaly" in finding.message
     assert "我编的" not in finding.message
+
+
+# —— C14 豁免：查无先例 ≠ 先例已死（2026-09-17 修）——————————
+
+def _excl(**kw):
+    """被排面 fair 27% > 20% 阈值 → 默认触发 C14。"""
+    base = dict(faces="30", fair={"home": 0.45, "draw": 0.27, "away": 0.28},
+                anchor_integrity="pass")
+    base.update(kw)
+    return _leg(**base)
+
+
+def test_c14_exempts_a_genuinely_dead_precedent():
+    legs = [_excl(precedents=(("1", "上季同型平局，载体已全部离队", "dead"),))]
+    assert "expensive_exclusion" not in _codes(legs)
+
+
+def test_c14_does_not_exempt_an_absent_precedent():
+    """查无先例是**证据的缺席**，不是死亡三证(b) 的积极证据。
+    26127 场3/场7 因此被报干净而研究说平局最顺；场7 实开 0-0。"""
+    legs = [_excl(precedents=(("1", "无——同型对该队不存在平局先例", "none"),))]
+    assert "expensive_exclusion" in _codes(legs)
+
+
+def test_denied_exemption_is_visible_not_silent():
+    legs = [_excl(precedents=(("1", "无——查无同型先例", "none"),))]
+    finding = next(
+        f for f in audit_legs(legs) if f.code == "precedent_absent_not_dead"
+    )
+    assert finding.level == "INFO"
+    assert "查无先例" in finding.message
+
+
+def test_absent_precedent_alone_raises_no_denial_note_when_not_costly():
+    """被排面在阈值以下时本就不触发 C14，也就没有被拒的豁免可报。"""
+    legs = [_excl(fair={"home": 0.60, "draw": 0.12, "away": 0.28},
+                  precedents=(("1", "无——查无同型先例", "none"),))]
+    assert "precedent_absent_not_dead" not in _codes(legs)
+
+
+def test_off_lexicon_precedent_status_never_earns_the_exemption():
+    legs = [_excl(precedents=(("1", "同型平局", "unknown_status"),))]
+    codes = _codes(legs)
+    assert "precedent_status_off_lexicon" in codes
+    assert "expensive_exclusion" in codes
+
+
+def test_absent_precedent_is_shown_apart_in_the_judgment_slots():
+    from nutmeg.decision.legs_audit import judgment_slots
+
+    leg = _excl(precedents=(("1", "无——查无同型先例", "none"),))
+    text = dict(judgment_slots(leg))["死亡三证(b) 先例载体已不在阵"]
+    assert "查无先例" in text
+    assert "载体已不在阵" not in text
+
+
+def test_alive_precedent_vetoes_the_dead_one():
+    """三证(b) 是「载体**已不在阵**」。同一面既有 alive 又有 dead 时载体是在阵的。
+    26127 场7 格拉茨平局面 2 alive + 1 dead，旧码凭那条 dead 给了豁免；实开 0-0。"""
+    legs = [_excl(precedents=(
+        ("1", "2025 同型 0-0 平诺丁汉森林，载体在阵", "alive"),
+        ("1", "2021 同型 1-1 平摩纳哥，载体已散", "dead"),
+    ))]
+    codes = _codes(legs)
+    assert "expensive_exclusion" in codes
+    assert "precedent_alive_overrides_dead" in codes
+
+
+def test_only_dead_precedents_still_exempt():
+    legs = [_excl(precedents=(
+        ("1", "2021 同型平局，载体已散", "dead"),
+        ("1", "2019 同型平局，载体已散", "dead"),
+    ))]
+    assert "expensive_exclusion" not in _codes(legs)
+
+
+def test_alive_precedent_on_another_face_does_not_veto():
+    legs = [_excl(precedents=(
+        ("1", "同型平局，载体已散", "dead"),
+        ("0", "同型客胜，载体在阵", "alive"),
+    ))]
+    assert "expensive_exclusion" not in _codes(legs)

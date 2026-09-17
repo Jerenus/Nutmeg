@@ -117,7 +117,8 @@
 | `deviation_registry` `scope="ticket"` | 票级偏离登记 | **2026-09-17 入码。**C15/C15b/C17 无单一 match_no，此前 `record_user_overrides` 只按 match_no 找登记 → **票级 ERROR 在行权通道里根本无法登记**，连合法出口一并堵死（26128 S333 的 C17 首个真实样本）。门挡住是对的，堵死出口不是设计意图 |
 | modal_stack_mismatch | WARN | 模态组合错配（26103） |
 | **C13 broken_anchor_double** | WARN | **死亡三证(c)：锚方完整度 FAIL 且双选排掉一面（2026-09-06 入码，probation）** |
-| **C14 expensive_exclusion** | WARN | **独立面效率表/死亡三证：被排面 fair>20% 且非（锚方 PASS ∧ 该面先例 dead）（2026-09-06 入码，probation）** |
+| **C14 expensive_exclusion** | WARN | **独立面效率表/死亡三证：被排面 fair>20% 且非（锚方 PASS ∧ 该面先例 dead ∧ 该面无 alive 先例）（2026-09-06 入码；2026-09-17 修两处豁免漏洞）** |
+| **先例状态 alive / dead / none** | 词典封闭 | **2026-09-17 修。**`none`＝**查无先例**，与 `dead`（有先例、载体已不在阵）是两回事。死亡三证(b) 要的是「载体已不在阵」这个**积极证据**，「没查到」是证据的**缺席**——两个漏洞：①agent 把查无先例记成 `dead`（26127 场3「平局面未查到同场地同型可用先例」、场5/场8、26128 场14 共 7/295 条），②同一面**既有 alive 又有 dead** 时旧码凭那条 dead 就给豁免（26127 场7 格拉茨平局 2 alive+1 dead，研究说平局是三面里机制最顺的一面，**实开 0-0**）。修法：`none` 不换豁免；只要还有一条 alive 载体，(b) 即为假。豁免被拒会打 INFO，不静默。⛔审计门**不嗅散文**——「这段话读起来是查无先例」的判断归入库桥（B3b），门只吃结构化状态 | `precedent_absent_not_dead` / `precedent_alive_overrides_dead`(INFO) / `precedent_status_off_lexicon`(WARN) |
 | **C15 shared_exclusion** | WARN | **独立面效率表：多票共享同一 >20% 被排面（2026-09-11 入码，probation）。26118 三票共享不来梅 23.2% 全灭；26122 四票共享达姆施塔特 34.9% + AZ 裸单** |
 | **C15b shared_naked_single** | WARN | 多票共享同一条裸单：报「全部票同时死于此」的概率（26122 四票共享 AZ 裸3，1-1 一场全灭；按 18:30 价至少一场同时杀四票=73.8%。2026-09-12 入码） |
 | exclusion_ladder | INFO | 排面分级（省钱/灰带/买方差/翻面），不改动作。⚠️26122 实证：11.1% 的「省钱」排除与 32.1% 的「买方差」排除同样各杀四票——分级只描述成本，不描述该不该排 |

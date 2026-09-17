@@ -259,3 +259,47 @@ def test_report_lists_every_issue_without_folding():
     text = format_report(results)
     assert "1 场" in text
     assert "agent_自命名的旗" in text
+
+
+# —— 先例状态：查无先例必须记 none（2026-09-17）——————————
+
+def test_no_precedent_prose_tagged_dead_is_refused():
+    """26128 场14 原文：`["1","无——马拉卡纳同型对独立谷不存在 90' 平局先例","dead"]`。
+    记错会让 C14 的昂贵排除豁免凭空成立。"""
+    result = intake(
+        _research(precedents=[["1", "无——同型对该队不存在 90' 平局先例", "dead"]]),
+        _leg(),
+    )
+    assert result.blocked is True
+    assert ("ERROR", "precedents") in _levels(result)
+    assert result.leg["precedents"] == []
+
+
+def test_the_same_prose_tagged_none_is_accepted():
+    result = intake(
+        _research(precedents=[["1", "无——同型对该队不存在 90' 平局先例", "none"]]),
+        _leg(),
+    )
+    assert result.blocked is False
+    assert result.leg["precedents"] == [
+        ["1", "无——同型对该队不存在 90' 平局先例", "none"]
+    ]
+
+
+def test_a_real_dead_precedent_still_passes():
+    result = intake(
+        _research(precedents=[["1", "2020 同型平局，载体已全部离队", "dead"]]),
+        _leg(),
+    )
+    assert result.blocked is False
+    assert result.leg["precedents"][0][2] == "dead"
+
+
+def test_off_lexicon_precedent_status_blocks():
+    result = intake(_research(precedents=[["1", "同型平局", "maybe"]]), _leg())
+    assert result.blocked is True
+
+
+def test_malformed_precedent_tuple_blocks():
+    result = intake(_research(precedents=[["1", "只有两项"]]), _leg())
+    assert result.blocked is True
