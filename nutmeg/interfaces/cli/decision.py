@@ -576,6 +576,13 @@ def _responder_judgments(date: str) -> dict:
     return {e["obj_id"]: e["payload"] for e in state["events"] if e.get("kind") == "judgment"}
 
 
+def _responder_sleep(seconds: float) -> None:
+    """轮询间隔（测试替身在这里换掉，免得真睡）。"""
+    import time
+
+    time.sleep(seconds)
+
+
 def _responder_provider():
     from nutmeg.agents.responder_provider import build_responder_provider
     from nutmeg.config.settings import get_settings
@@ -590,24 +597,33 @@ def workbench_respond(
     output_dir: Path = _OUTPUT_DIR_OPTION,
     zucai_dir: Path = _ZUCAI_DIR_OPTION,
     watch: bool = _cli.typer.Option(False, "--watch", help="常驻,每 15 秒轮询"),
+    idle_exit: int = _cli.typer.Option(
+        240, "--idle-exit",
+        help="连续空转多少次后自动退出(默认 240≈1 小时);0=不退。忘了关不该空跑一夜"),
 ) -> None:
     """追问线程应答器:回答事件流里未回复的 user_message(只解释已落库研究,不判断)。"""
-    import time
-
     from nutmeg.decision.workbench_responder import respond_pending
 
     provider = _responder_provider()
     if provider is None:
         _responder_fail(RuntimeError("未配置 NUTMEG_PORTKEY_API_KEY,应答器不可用"))
         return
+    idle = 0
     while True:
+        # judgments 传 callable：没有待答追问时 respond_pending 根本不会解析它,
+        # 空转的 tick 就不必重建内核(2026-09-18 实测每次 0.02s,纯浪费)。
         n = respond_pending(Path(output_dir), date, provider=provider,
-                            judgments=_responder_judgments(date), issue=issue,
+                            judgments=lambda: _responder_judgments(date), issue=issue,
                             zucai_dir=Path(zucai_dir))
-        _cli.typer.echo(f"workbench-respond {date}: 回复 {n} 条")
+        if n or not watch:
+            _cli.typer.echo(f"workbench-respond {date}: 回复 {n} 条")
         if not watch:
             return
-        time.sleep(15)
+        idle = 0 if n else idle + 1
+        _responder_sleep(15)
+        if idle_exit and idle >= idle_exit:
+            _cli.typer.echo(f"workbench-respond {date}: 空转 {idle} 次,自动退出")
+            return
 
 
 @_cli.app.command("zucai-prep")

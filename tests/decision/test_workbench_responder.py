@@ -111,3 +111,45 @@ def test_cli_once_runs_responder_with_kernel_judgments(monkeypatch, tmp_path):
     r = CliRunner().invoke(app, ["workbench-respond", "--date", d, "--issue", "26129",
                                  "--output-dir", str(tmp_path / "jczq"), "--zucai-dir", str(z)])
     assert r.exit_code == 0 and "回复 1 条" in r.output
+
+
+def test_judgments_may_be_a_callable_and_is_not_resolved_when_nothing_is_pending(tmp_path):
+    """空转的 tick 不许重建内核：没有待答就连判读都不该去查。"""
+    calls = []
+
+    def lazy_judgments():
+        calls.append(1)
+        return _judgments()
+
+    prov = _EchoProvider("解释。（依据：summary）")
+    n = respond_pending(tmp_path, "2026-09-19", provider=prov, judgments=lazy_judgments,
+                        issue="26129", zucai_dir=tmp_path / "zucai")
+    assert n == 0 and calls == []          # 空转：一次都没查
+
+    z = _research(tmp_path)
+    from nutmeg.decision.workbench import append_event
+    append_event(tmp_path, "2026-09-19", {"kind": "user_message", "obj_id": "fr-8", "text": "?"})
+    n = respond_pending(tmp_path, "2026-09-19", provider=prov, judgments=lazy_judgments,
+                        issue="26129", zucai_dir=z)
+    assert n == 1 and calls == [1]         # 有活才查，且只查一次
+
+
+def test_watch_exits_after_the_idle_limit_instead_of_spinning_all_night(monkeypatch, tmp_path):
+    """忘了关不该空跑一夜：连续 N 次无待答就自己退出。"""
+    from typer.testing import CliRunner
+
+    import nutmeg.interfaces.cli.decision as cli_mod
+    from nutmeg.interfaces.cli import app
+
+    ticks = []
+    monkeypatch.setattr(cli_mod, "_responder_sleep", lambda s: ticks.append(s))
+    monkeypatch.setattr(cli_mod, "_responder_judgments", lambda date: _judgments())
+    monkeypatch.setattr(cli_mod, "_responder_provider", lambda: _EchoProvider("x"))
+
+    r = CliRunner().invoke(app, ["workbench-respond", "--date", "2026-09-19",
+                                 "--issue", "26129", "--output-dir", str(tmp_path),
+                                 "--zucai-dir", str(tmp_path / "zucai"),
+                                 "--watch", "--idle-exit", "3"])
+    assert r.exit_code == 0
+    assert len(ticks) == 3                       # 三次空转后退出，不是无限循环
+    assert "空转 3 次" in r.output

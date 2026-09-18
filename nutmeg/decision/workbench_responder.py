@@ -79,11 +79,17 @@ def build_context(obj_id: str, *, judgments: dict[str, dict], issue: str, zucai_
             "research": research or {}, "leg": leg or {}}
 
 
-def respond_pending(output_dir, date: str, *, provider, judgments: dict[str, dict],
+def respond_pending(output_dir, date: str, *, provider, judgments,
                     issue: str, zucai_dir) -> int:
     """回答全部待答追问；返回成功写入的 agent_reply 数。违规回复不写正文，写拒答留痕。"""
+    pending = pending_questions(output_dir, date)
+    if not pending:
+        return 0
+    # ⛔空转的 tick 不许重建内核：judgments 可以是个 callable，有活才解析。
+    if callable(judgments):
+        judgments = judgments()
     done = 0
-    for q in pending_questions(output_dir, date):
+    for q in pending:
         ctx = build_context(q["obj_id"], judgments=judgments, issue=issue, zucai_dir=zucai_dir)
         try:
             text = provider.answer(ctx, str(q.get("text") or ""))
