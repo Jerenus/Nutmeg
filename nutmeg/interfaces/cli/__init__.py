@@ -989,6 +989,7 @@ from nutmeg.interfaces.cli import operations as operations  # noqa: E402
 from nutmeg.interfaces.cli import product as product  # noqa: E402
 from nutmeg.interfaces.cli import psychology as psychology  # noqa: E402
 from nutmeg.interfaces.cli import reliability as reliability  # noqa: E402
+from nutmeg.interfaces.cli import rsi as rsi  # noqa: E402
 from nutmeg.interfaces.cli import scoreboard as scoreboard  # noqa: E402
 from nutmeg.interfaces.cli import telegram as telegram  # noqa: E402
 from nutmeg.interfaces.cli import ticket_confirmation as ticket_confirmation  # noqa: E402
