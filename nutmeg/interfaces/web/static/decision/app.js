@@ -159,6 +159,42 @@
     refreshVcount();
   }
 
+  // ---- verdict: 我的方案（已登记实票，只读；没入账=没打，登记簿里没有就不显示）----
+  var FACE_ZH = { "3": "胜", "1": "平", "0": "负" };
+  function renderSlip(e) {
+    if (verdictEl.querySelector('[data-card="' + e.id + '"]')) return;
+    var p = e.payload || {};
+    var card = el("article", "acard pine slip");
+    card.setAttribute("data-card", e.id || "");
+    var inner = el("div", "inner");
+    var type = el("div", "actype", "我的方案 · 已出票");
+    type.appendChild(el("span", "kind", (p.channel || "") + (p.purchased === false ? " · 试玩" : "")));
+    inner.appendChild(type);
+    inner.appendChild(el("div", "acmatch", p.slip_id || ""));
+    var ph = (p.hit_probability == null) ? "—" : (p.hit_probability * 100).toFixed(2) + "%";
+    inner.appendChild(el("div", "acmarket",
+      (p.notes || 0) + " 注 × " + (p.multiplier || 1) + " = ¥" + (p.stake_yuan || 0) +
+      " · P(全对) " + ph + (p.scheme_no ? "" : " · ⚠️方案号待补")));
+    var meta = el("div", "acmeta");
+    (p.legs || []).forEach(function (lg) {
+      var row = el("div", "row");
+      row.appendChild(el("span", "l", String(lg.key || "")));
+      var v = el("span", "v");
+      var faces = (lg.market === "had" && lg.selections)
+        ? lg.selections.map(function (sel) {
+            return FACE_ZH[{ home: "3", draw: "1", away: "0" }[sel] || sel] || sel; }).join("/")
+        : (lg.market || "") + (lg.line != null ? "[" + lg.line + "]" : "") + " " + (lg.selections || []).join("/");
+      v.appendChild(el("span", "fchip", faces));
+      v.appendChild(document.createTextNode(" " + (lg.name || "") +
+        (lg.coverage != null ? " · 盖 " + (lg.coverage * 100).toFixed(1) + "%" : "")));
+      row.appendChild(v); meta.appendChild(row);
+    });
+    inner.appendChild(meta);
+    card.appendChild(inner);
+    verdictEl.appendChild(card);
+    refreshVcount();
+  }
+
   function removeCard(card) { card.remove(); refreshVcount(); }
   function rejectCard(card, errors) {
     card.classList.add("rejected");
@@ -168,7 +204,7 @@
       el("div", "reason", "被拒：" + errors.join("；")));
   }
   function refreshVcount() {
-    var n = verdictEl.querySelectorAll(".acard").length;
+    var n = verdictEl.querySelectorAll(".acard:not(.slip)").length;  // 我的方案不算「待裁决」
     if (vcountEl) vcountEl.textContent = n;
     if (mvBadge) mvBadge.textContent = n ? String(n) : "";
   }
@@ -346,6 +382,7 @@
       case "day_regime": dayRegime = e.payload || null; break;
       case "read_draft": renderReadDraft(e); break;
       case "legs_proposal": renderLegsProposal(e); break;
+      case "slip": renderSlip(e); break;
       case "view_block": renderViewBlock(e); break;
       case "agent_reply":
       case "user_message":

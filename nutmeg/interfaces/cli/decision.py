@@ -533,7 +533,25 @@ def decision_web(
 
     _warn_if_exposed(host)
     store = DecisionStore(Path(output_dir) / "decision")
-    app = create_decision_app(store=store, output_dir=Path(output_dir))
+    kernel_state = None
+    from nutmeg.config.settings import get_settings
+    if get_settings().ontology_v2:
+        # 读侧与写侧同一个开关：decision-read 写内核，工作台就读内核（不双写）。
+        from datetime import UTC, datetime
+
+        from nutmeg.interfaces.decision_web_kernel import kernel_day_state, slips_for_date
+        from nutmeg.ontology.wiring import build_ontology_kernel
+        from nutmeg.product.repository import ProductReadRepository
+
+        kernel = build_ontology_kernel(get_settings())
+        kernel.initialize()
+        repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
+        data_dir = Path(output_dir).parent          # .nutmeg-data/jczq → .nutmeg-data
+        kernel_state = lambda date: kernel_day_state(  # noqa: E731
+            repository, date, as_of=datetime.now(UTC),
+            slips=slips_for_date(data_dir, data_dir / "zucai", date))
+        _cli.typer.echo("decision-web: 读侧=内核(ontology v2)")
+    app = create_decision_app(store=store, output_dir=Path(output_dir), kernel_state=kernel_state)
     uvicorn.run(app, host=host, port=port)
 
 
