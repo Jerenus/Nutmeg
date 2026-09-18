@@ -226,6 +226,16 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
             {"title": f"回放 {date}", "date": date,
              "events": read_events(output_dir, date)})
 
+    @app.get("/replay.md")
+    def replay_markdown(date: str) -> Any:
+        """同一份回放的 Markdown 形态,直接贴进复盘。"""
+        from fastapi.responses import PlainTextResponse
+
+        from nutmeg.decision.workbench_export import events_to_markdown
+
+        return PlainTextResponse(events_to_markdown(output_dir, date),
+                                 media_type="text/markdown")
+
     @app.get("/objects")
     def objects_page(request: Request):
         from nutmeg.decision.ontology import (

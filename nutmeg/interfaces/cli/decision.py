@@ -1264,3 +1264,23 @@ def zucai_night_calibrate(
     _cli.typer.echo(f"notification: {outcome.status.value}")
     if not outcome.is_success:
         raise _cli.typer.Exit(code=1)
+
+
+_EXPORT_OUT_OPTION = _cli.typer.Option(None, "--out", help="不给则打印到 stdout")
+
+
+@_cli.app.command("workbench-export")
+def workbench_export(
+    date: str = _cli.typer.Option(..., "--date"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    out: Path | None = _EXPORT_OUT_OPTION,
+) -> None:
+    """事件流 → Markdown 复盘底稿(只排版不总结)。"""
+    from nutmeg.decision.workbench_export import events_to_markdown
+
+    md = events_to_markdown(Path(output_dir), date)
+    if out:
+        Path(out).write_text(md, encoding="utf-8")
+        _cli.typer.echo(f"→ {out}")
+    else:
+        _cli.typer.echo(md)
