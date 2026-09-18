@@ -7,6 +7,7 @@ daily/<date>/decisions.jsonl:人的裁决留痕。纯文件 IO + store 调用,�
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 
@@ -78,3 +79,29 @@ def distill_note(output_dir, date: str, *, obj_id: str) -> str:
             parts.append(f"答:{ev['text']}")
     note = " · ".join(parts)
     return note[:280]
+
+
+def _now() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def append_note(output_dir, date: str, *, obj_id: str, text: str) -> int:
+    """人写手记(裁决理由、否决原因、临场观察)——今天说过的话明天还在。"""
+    return append_event(output_dir, date, {
+        "kind": "note", "obj_id": obj_id, "text": text, "at": _now()})
+
+
+def append_candidate(output_dir, date: str, *, obj_id: str, version: str, faces: dict,
+                     notes: int, stake_yuan: int, p_all: float | None,
+                     verdict: str, reason: str = "") -> int:
+    """被考虑过的票面(含被否掉的)。verdict ∈ {considered, rejected, chosen}。
+
+    出生事故 2026-09-18 的 26129:SFC-B→C→D→E 四轮票面迭代只活在聊天窗口,
+    仓库里只剩终版文件,第二天在 app 里什么都看不到。
+    """
+    return append_event(output_dir, date, {
+        "kind": "candidate", "obj_id": obj_id,
+        "payload": {"version": version, "faces": faces, "notes": notes,
+                    "stake_yuan": stake_yuan, "p_all": p_all,
+                    "verdict": verdict, "reason": reason},
+        "at": _now()})
