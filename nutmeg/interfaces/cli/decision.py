@@ -656,6 +656,14 @@ def zucai_prep(
                         ("位移", result.diff_path)):
         if path:
             _cli.typer.echo(f"  {label} → {path}")
+    if result.status == "prepared" and result.issue:
+        # RSI 接线（2026-09-18）：备料完成 → 排当天义务 + 列待办。失败只打印，不影响备料。
+        from datetime import date as _date
+
+        from nutmeg.decision.rsi_wiring import after_prep
+
+        after_prep(issue=result.issue, day=(run_date or _date.today().isoformat()),
+                   data_dir=Path(output_dir).parent)
     if not result.succeeded:
         raise _cli.typer.Exit(code=1)
 

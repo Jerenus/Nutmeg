@@ -128,6 +128,12 @@ def record(issue: str, *, allow_late: bool) -> None:
     path = Z / f"{issue}-f2-observation.json"
     path.write_text(json.dumps(out, ensure_ascii=False, indent=1), "utf-8")
     print(f"观察单 {len(obs)} 场 → {path}")
+    # RSI 接线（2026-09-18）：落盘即登记 F2 义务；失败只打印，不影响观察单。
+    from nutmeg.decision.rsi_wiring import after_observation_artifact
+    after_observation_artifact(exp="F2", duty="f2-observation", issue=issue,
+                               day=(min(kickoffs).date().isoformat() if kickoffs
+                                    else now.date().isoformat()),
+                               artifact=path, n_rows=len(obs), data_dir=Z.parent)
     for name, _ in BUCKETS:
         hit = [n for n, v in obs.items() if v["bucket"] == name]
         if hit:

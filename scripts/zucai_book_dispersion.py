@@ -73,7 +73,19 @@ def _stats(probs: list[dict[str, float]]) -> dict:
     return cell
 
 
-def collect(sleep_s: float, limit: int | None, overwrite: bool = False) -> None:
+def _backfill_issue(issue: str) -> None:
+    """把该期 match_id/fair 从 f2 观察单补进 t7-backfill，让采集仪看得见本期（26129 事故）。"""
+    bf = Z / "t7-backfill.json"
+    t7 = json.load(open(bf)) if bf.exists() else {}
+    if issue in t7:
+        return
+    obs = json.loads((Z / f"{issue}-f2-observation.json").read_text("utf-8"))["observations"]
+    t7[issue] = {no: {"match_id": r["match_id"], "fair": r["fair"]} for no, r in obs.items()}
+    bf.write_text(json.dumps(t7, ensure_ascii=False), "utf-8")
+
+
+def collect(sleep_s: float, limit: int | None, overwrite: bool = False,
+            issue: str | None = None) -> None:
     from nutmeg.data.titan007 import Titan007Client, Titan007Error
 
     t7 = json.load(open(Z / "t7-backfill.json"))
@@ -160,6 +172,13 @@ def collect(sleep_s: float, limit: int | None, overwrite: bool = False) -> None:
     total = sum(len(v) for v in done.values())
     print(f"采集完成：本轮 {fetched} 场，失败 {failed}，无开球时刻丢场 {no_kickoff}，"
           f"赛后报价丢弃 {skipped_stale} 条；累计 {total} 场 → {OUT}")
+    if issue:
+        # RSI 接线（2026-09-18）：采完登记 F1c 义务；失败只打印，不影响采集。
+        from nutmeg.decision.rsi_wiring import after_observation_artifact
+        ko = _kickoffs(issue)
+        day = min(ko.values()).date().isoformat() if ko else datetime.now().date().isoformat()
+        after_observation_artifact(exp="F1c", duty="dispersion-observation", issue=issue, day=day,
+                                   artifact=OUT, n_rows=len(done.get(issue, {})), data_dir=Z.parent)
 
 
 def main() -> None:
@@ -168,8 +187,13 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--overwrite", action="store_true",
                     help="重采并覆盖已有条目（字段升级时用）")
+    ap.add_argument("--issue", default=None,
+                    help="先把该期 match_id（取自 <期>-f2-observation.json）补进 t7-backfill 再采，"
+                         "采完登记 F1c 义务")
     a = ap.parse_args()
-    collect(a.sleep, a.limit, a.overwrite)
+    if a.issue:
+        _backfill_issue(a.issue)
+    collect(a.sleep, a.limit, a.overwrite, issue=a.issue)
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 
 | 步 | 动作 | 命令/门 |
 |---|---|---|
-| B0 | **11:00 早刷新** | `uv run nutmeg zucai-prep --slot morning`（2026-09-11 新增）；产 `<issue>-prep-morning.json/md`。**出生事故 26122：14:00 才首次刷新，当天 8 场判读建立在前一日体彩 HAD 上** |
+| B0 | **11:00 早刷新** | `uv run nutmeg zucai-prep --slot morning`（2026-09-11 新增）；产 `<issue>-prep-morning.json/md`。**出生事故 26122：14:00 才首次刷新，当天 8 场判读建立在前一日体彩 HAD 上**。**备料完成后自动 `rsi schedule` + `rsi due`，并按 due 列出的 instrument 执行**（2026-09-18 起） |
 | B1 | 14:00 备料 | prep 链自动（`zucai-prep`）；产 `<issue>-prep-afternoon.json/md`，判读表留空；位移 diff 自动与**最近的前一个 slot** 比 |
 | B2 | 入 canonical | `decision-am --run-date <开赛业务日> --issue <issue>`（prep 不入 store，必须跑这步）。**顺带落 `<issue>-store-ids.json`**（按 `zucai-canonical` 键查，禁用 fair 值反查——26122 场2/6/7 因同队也在竞彩板上被反查抢错身份） |
 | B2b | v2 外部证据桥（shadow） | 14 场外部采集产严格 `evidence-intake-v1` 后执行 `uv run nutmeg workflow ingest-evidence --manifest <path>`；`operator-evidence-policy-v1` 全门与本命令共同部署前，v2 只作 shadow，不替代现行 B1-B10 |
@@ -62,6 +62,12 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 > ⛔**候选档因子不得以任何形式进入判读或票面**：观察仪不写 legs、不进 prep、
 > 不被 B0-B10 任何一步引用；分档常量结账前冻结。本条列在收尾表之前只为「别忘了跑」，
 > **不是决策步骤**。
+
+> **非决策附录 · RSI 实验对象（2026-09-18）**
+> `uv run nutmeg rsi status` 一屏：每条实验的状态 / n_cum / CI / 距 falsifier / gaps / 下一期义务。
+> 登记 `rsi register experiments/registry/<id>.json`（原件全冻结，改判据＝另立新 exp_id）；
+> `rsi verdict` 由代码按冻结判据判、人不得代判；`rsi deploy` 只许人。重放（`--mode replay` / dream）结果进不了判决。
+> 出生事故：F1c 两次断采（08-14 批处理停在 26124；09-18 19:20 才发现采集仪看不见 26129）——义务从此是对象不是散文。
 
 > **非决策附录 · 统一语料 v2（2026-09-18 用户裁定并入）**
 > `uv run python experiments/corpus_build.py` → `experiments/corpus-v2.json`
