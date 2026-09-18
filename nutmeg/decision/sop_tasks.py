@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from nutmeg.decision.workbench import append_event
+
 
 @dataclass(frozen=True)
 class SopParams:
@@ -82,3 +84,39 @@ def step_by_id(step_id: str) -> SopStep:
         if s.step_id == step_id:
             return s
     raise KeyError(f"未登记的 SOP 步骤: {step_id}")
+
+
+_TAIL_LINES = 12
+
+
+def cli_invoke(argv: list[str]) -> tuple[int, str]:
+    """生产 invoker：进程内跑同一个 typer app（不 subprocess，测试可替身）。"""
+    from typer.testing import CliRunner
+
+    from nutmeg.interfaces.cli import app
+
+    result = CliRunner().invoke(app, argv)
+    return result.exit_code, result.output
+
+
+def run_step(step_id: str, params: SopParams, *, invoke=cli_invoke) -> dict:
+    """跑一步；开始/结束各写一条事件（obj_id=task:<step_id>），返回结果摘要。"""
+    step = step_by_id(step_id)
+    obj = f"task:{step.step_id}"
+    if step.needs_legs and params.legs_file is None:
+        return {"ok": False, "step_id": step.step_id, "error": "该步骤需要 legs_file"}
+    argv = step.argv(params)
+    append_event(params.output_dir, params.date, {
+        "kind": "task_started", "obj_id": obj, "step_id": step.step_id,
+        "label": step.label, "argv": argv,
+        "at": datetime.now().astimezone().isoformat(timespec="seconds")})
+    exit_code, output = invoke(argv)
+    tail = "\n".join(output.strip().splitlines()[-_TAIL_LINES:])
+    ok = exit_code in step.ok_exit_codes
+    append_event(params.output_dir, params.date, {
+        "kind": "task_done" if ok else "task_failed", "obj_id": obj,
+        "step_id": step.step_id, "label": step.label, "exit_code": exit_code,
+        "text": tail,
+        "artifacts": [str(a) for a in step.artifacts(params) if a.exists()],
+        "at": datetime.now().astimezone().isoformat(timespec="seconds")})
+    return {"ok": ok, "step_id": step.step_id, "exit_code": exit_code, "tail": tail}
