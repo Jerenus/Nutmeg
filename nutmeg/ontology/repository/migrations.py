@@ -34,6 +34,7 @@ from nutmeg.ontology.repository import (
     schema_operator_review,
     schema_operator_sale,
     schema_reliability,
+    schema_rsi,
     schema_scoreboard,
     schema_tickets,
     schema_workflow,
@@ -4549,6 +4550,35 @@ def _apply_operator_judgment_structure_facts(connection: Connection) -> None:
         )
 
 
+# 宪法落权限表（不靠自律）：人不能替 falsifier 说话；代码不能把东西推进票面。
+_RSI_PERMISSIONS = (
+    ("rsi_register_experiment", "judge_operator"),
+    ("rsi_schedule_duties", "judge_operator"),
+    ("rsi_schedule_duties", "deterministic_system"),
+    ("rsi_fulfill_duty", "judge_operator"),
+    ("rsi_fulfill_duty", "deterministic_system"),
+    ("rsi_grade_experiment", "judge_operator"),
+    ("rsi_grade_experiment", "deterministic_system"),
+    ("rsi_record_verdict", "deterministic_system"),
+    ("rsi_approve_deployment", "judge_operator"),
+    ("rsi_amend_experiment", "judge_operator"),
+)
+
+
+def _apply_rsi_experiments(connection: Connection) -> None:
+    for table in (
+        schema_rsi.rsi_experiments, schema_rsi.rsi_duties, schema_rsi.rsi_duty_instances,
+        schema_rsi.rsi_observations, schema_rsi.rsi_grades, schema_rsi.rsi_verdicts,
+        schema_rsi.rsi_deployments, schema_rsi.rsi_amendments,
+    ):
+        table.create(connection)
+    connection.execute(
+        insert(schema.action_permissions),
+        [{"policy_version_id": "governance-v1", "action_type": a, "actor_role": r}
+         for a, r in _RSI_PERMISSIONS],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -4782,6 +4812,15 @@ MIGRATIONS: tuple[Migration, ...] = (
             "closed_vocabularies+append_only_children"
         ),
         apply=_apply_operator_judgment_structure_facts,
+    ),
+    Migration(
+        version=29,
+        name="rsi_experiments",
+        fingerprint=(
+            "experiments+duties+duty_instances+observations+grades+verdicts+"
+            "deployments+amendments+verdict_system_only+deploy_human_only"
+        ),
+        apply=_apply_rsi_experiments,
     ),
 )
 
