@@ -32,3 +32,28 @@ def test_markdown_export_is_a_retro_skeleton(tmp_path):
     assert "## 任务" in md and "B6 审计门 · exit=1" in md
     assert "## 追问" in md and "**你**（fr-8）：朗斯不败？" in md and "**判**：平局最被支持。" in md
     assert "## 候选票面" in md and "SFC-D · 已选 · 192 注 ¥384 · P 0.32%" in md
+
+
+def test_markdown_accepts_events_directly_and_reports_judgments(tmp_path):
+    """回放必须能吃内核事件（判读/实票），不是只吃文件流。
+
+    出生事故 2026-09-18：/replay.md 在真 26129 上「实票（无）」——4 张真票和 14 条
+    判读活在内核态里，而导出只读文件流。
+    """
+    events = [
+        {"kind": "judgment", "obj_id": "fr-8",
+         "payload": {"match": "摩纳哥 vs 朗斯", "market": "had"}},
+        {"kind": "slip", "obj_id": "slip:26129-RJ9",
+         "payload": {"slip_id": "26129-RJ9", "notes": 384, "stake_yuan": 768}},
+        {"kind": "user_message", "obj_id": "fr-8", "text": "朗斯不败？"},
+    ]
+    md = events_to_markdown(tmp_path, "2026-09-19", events=events)
+    assert "## 判读" in md and "- 摩纳哥 vs 朗斯（had）" in md
+    assert "## 实票" in md and "26129-RJ9 · 384 注 ¥768" in md
+    assert "**你**（fr-8）：朗斯不败？" in md
+
+
+def test_markdown_still_reads_the_file_stream_when_no_events_given(tmp_path):
+    append_note(tmp_path, "2026-09-19", obj_id="day", text="刹车：¥1000 帽")
+    md = events_to_markdown(tmp_path, "2026-09-19")
+    assert "刹车：¥1000 帽" in md

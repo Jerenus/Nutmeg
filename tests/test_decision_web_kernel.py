@@ -266,3 +266,29 @@ def test_replay_page_tolerates_missing_optional_keys(tmp_path):
     assert r.status_code == 200 and "考虑过" in r.text
     r2 = client.get("/replay?date=2026-09-21")
     assert r2.status_code == 200 and "这一天没有事件" in r2.text
+
+
+def test_replay_merges_kernel_events_not_just_the_file_stream(tmp_path):
+    """真 26129 上 /replay 只显示追问、实票与判读全丢——回放必须走工作台同一份合并流。"""
+    from nutmeg.decision.workbench import append_event
+
+    date = "2026-09-19"
+    append_event(tmp_path, date, {"kind": "user_message", "obj_id": "fr-8", "text": "朗斯不败？"})
+
+    def kernel_state(day: str) -> dict:
+        return {"matches": [], "snapshots": [], "reads": [], "events": [
+            {"kind": "judgment", "obj_id": "fr-8",
+             "payload": {"match": "摩纳哥 vs 朗斯", "market": "had", "belief": {}}},
+            {"kind": "slip", "obj_id": "slip:26129-RJ9",
+             "payload": {"slip_id": "26129-RJ9", "notes": 384, "stake_yuan": 768}}]}
+
+    store = DecisionStore(tmp_path / "decision")
+    client = TestClient(create_decision_app(
+        store=store, output_dir=tmp_path, kernel_state=kernel_state))
+
+    html = client.get(f"/replay?date={date}").text
+    assert "摩纳哥 vs 朗斯" in html and "26129-RJ9" in html and "朗斯不败？" in html
+
+    md = client.get(f"/replay.md?date={date}").text
+    assert "## 判读" in md and "摩纳哥 vs 朗斯" in md
+    assert "## 实票" in md and "26129-RJ9" in md

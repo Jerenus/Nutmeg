@@ -220,11 +220,15 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
     # ── 过程回放（阶段三 Task 3）：讨论变成事件，事件变成回放 ───────────
     @app.get("/replay")
     def replay_page(request: Request, date: str):
-        """当天事件流按 seq 顺序重放。只读，不改写任何东西。"""
+        """当天全过程重放：与工作台同一份合并流（内核判读/实票 + 文件事件）。只读。
+
+        ⚠️只读文件流是不够的——判读与实票活在内核态里，2026-09-18 在真 26129 上
+        表现为回放里「实票（无）」。
+        """
         return templates.TemplateResponse(
             request, "decision/replay.html",
             {"title": f"回放 {date}", "date": date,
-             "events": read_events(output_dir, date)})
+             "events": _day_state(store, output_dir, date, kernel_state)["events"]})
 
     @app.get("/replay.md")
     def replay_markdown(date: str) -> Any:
@@ -233,8 +237,10 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
 
         from nutmeg.decision.workbench_export import events_to_markdown
 
-        return PlainTextResponse(events_to_markdown(output_dir, date),
-                                 media_type="text/markdown")
+        events = _day_state(store, output_dir, date, kernel_state)["events"]
+        return PlainTextResponse(
+            events_to_markdown(output_dir, date, events=events),
+            media_type="text/markdown")
 
     @app.get("/objects")
     def objects_page(request: Request):
