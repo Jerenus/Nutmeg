@@ -21,6 +21,7 @@ from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository import schema_market as sm
 from nutmeg.ontology.repository import schema_operator_sale as sos
+from nutmeg.ontology.repository import schema_rsi as sr
 from nutmeg.ontology.repository import schema_tickets as st
 from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.ontology.repository.outbox import OutboxEventRow, OutboxRepository
@@ -451,6 +452,113 @@ class ProductReadRepository:
         return [
             self._decode_json(row, ("bet_leg_settlement_ids_json",)) for row in rows
         ]
+
+    # ── RSI 实验（阶段②观察界面的读路径；与工作台同一 as_of 口径）──────────
+    def experiments(self, *, as_of: str) -> list[dict]:
+        from nutmeg.ontology.repository.rsi import RsiRepository
+        from nutmeg.ontology.rsi.models import Falsifier, project_status
+
+        with self._engine.connect() as connection:
+            repo = RsiRepository(connection)
+            out: list[dict] = []
+            for e in repo.experiments():
+                if e.created_at > as_of:
+                    continue
+                f = Falsifier.from_dict(e.falsifier)
+                g = repo.latest_grade(e.exp_id, mode="prospective", stratum=f.stratum)
+                v = repo.latest_verdict(e.exp_id)
+                d = repo.latest_deployment(e.exp_id)
+                out.append(
+                    {
+                        "exp_id": e.exp_id,
+                        "claim": e.claim,
+                        "tier": e.tier,
+                        "layer": e.layer,
+                        "population": e.population,
+                        "registered_at": e.registered_at,
+                        "n_min": f.n_min,
+                        "n_cum": g.n_cum if g else 0,
+                        "ci": [g.ci_low_pp, g.ci_high_pp] if g else None,
+                        "distance_to_falsifier_pp": (
+                            g.distance_to_falsifier_pp if g else None
+                        ),
+                        "verdict": v.verdict if v else None,
+                        "deployment": d.decision if d else None,
+                        "gaps": repo.gaps(e.exp_id, now=as_of),
+                        "status": project_status(
+                            n_observations=repo.count_observations(e.exp_id),
+                            latest_prospective_n=g.n_cum if g else 0,
+                            n_min=f.n_min,
+                            latest_verdict=v.verdict if v else None,
+                            latest_deployment=d.decision if d else None,
+                        ),
+                    }
+                )
+            return out
+
+    def experiment_timeline(self, exp_id: str, *, as_of: str) -> list[dict]:
+        """一条实验的全部只追加记录，按时间排成时间线。"""
+        with self._engine.connect() as connection:
+            rows: list[dict] = []
+            e = (
+                connection.execute(
+                    select(sr.rsi_experiments).where(
+                        sr.rsi_experiments.c.exp_id == exp_id
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if e is None or e["created_at"] > as_of:
+                return []
+            rows.append(
+                {
+                    "kind": "registered",
+                    "at": e["created_at"],
+                    "frozen_hash": e["frozen_hash"],
+                }
+            )
+            for t, kind, at in (
+                (sr.rsi_observations, "observation", "captured_at"),
+                (sr.rsi_grades, "grade", "graded_at"),
+                (sr.rsi_verdicts, "verdict", "decided_at"),
+                (sr.rsi_deployments, "deployment", "decided_at"),
+                (sr.rsi_amendments, "amendment", "amended_at"),
+            ):
+                for r in (
+                    connection.execute(
+                        select(t).where(t.c.exp_id == exp_id, t.c[at] <= as_of)
+                    )
+                    .mappings()
+                    .all()
+                ):
+                    rows.append(
+                        {
+                            "kind": kind,
+                            "at": r[at],
+                            **{k: v for k, v in r.items() if k != at},
+                        }
+                    )
+            rows.sort(key=lambda r: (r["at"], r["kind"]))
+            return rows
+
+    def duties_due(self, day: str, *, now: str) -> list[dict]:
+        with self._engine.connect() as connection:
+            t = sr.rsi_duty_instances
+            rows = (
+                connection.execute(
+                    select(t)
+                    .where(
+                        t.c.day == day,
+                        t.c.fulfilled_at.is_(None),
+                        t.c.due_at > now,
+                    )
+                    .order_by(t.c.due_at, t.c.duty_id)
+                )
+                .mappings()
+                .all()
+            )
+            return [dict(r) for r in rows]
 
     def ontology_objects(
         self,
