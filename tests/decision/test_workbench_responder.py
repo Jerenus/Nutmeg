@@ -93,3 +93,21 @@ def test_reply_that_recommends_a_face_is_refused_and_logged(tmp_path):
     last = read_events(tmp_path, d)[-1]
     assert last["kind"] == "agent_reply"
     assert "应答器拒答" in last["text"] and "判断永不入脚本" in last["text"]
+
+
+def test_cli_once_runs_responder_with_kernel_judgments(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    import nutmeg.interfaces.cli.decision as cli_mod
+    from nutmeg.interfaces.cli import app
+
+    monkeypatch.setattr(cli_mod, "_responder_judgments", lambda date: _judgments())
+    monkeypatch.setattr(
+        cli_mod, "_responder_provider", lambda: _EchoProvider("解释。（依据：summary）")
+    )
+    z = _research(tmp_path)
+    d = "2026-09-19"
+    append_event(tmp_path / "jczq", d, {"kind": "user_message", "obj_id": "fr-8", "text": "?"})
+    r = CliRunner().invoke(app, ["workbench-respond", "--date", d, "--issue", "26129",
+                                 "--output-dir", str(tmp_path / "jczq"), "--zucai-dir", str(z)])
+    assert r.exit_code == 0 and "回复 1 条" in r.output

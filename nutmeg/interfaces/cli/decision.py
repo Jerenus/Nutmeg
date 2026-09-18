@@ -555,6 +555,61 @@ def decision_web(
     uvicorn.run(app, host=host, port=port)
 
 
+def _responder_fail(exc: Exception) -> None:
+    _cli.typer.echo(f"workbench-respond error: {exc}")
+    raise _cli.typer.Exit(code=1)
+
+
+def _responder_judgments(date: str) -> dict:
+    """内核当日 judgment payload(obj_id → payload),与工作台同一读侧。"""
+    from datetime import UTC, datetime
+
+    from nutmeg.config.settings import get_settings
+    from nutmeg.interfaces.decision_web_kernel import kernel_day_state
+    from nutmeg.ontology.wiring import build_ontology_kernel
+    from nutmeg.product.repository import ProductReadRepository
+
+    kernel = build_ontology_kernel(get_settings())
+    kernel.initialize()
+    repo = ProductReadRepository(kernel.engine, kernel.paths.analytics)
+    state = kernel_day_state(repo, date, as_of=datetime.now(UTC))
+    return {e["obj_id"]: e["payload"] for e in state["events"] if e.get("kind") == "judgment"}
+
+
+def _responder_provider():
+    from nutmeg.agents.responder_provider import build_responder_provider
+    from nutmeg.config.settings import get_settings
+
+    return build_responder_provider(get_settings())
+
+
+@_cli.app.command("workbench-respond")
+def workbench_respond(
+    date: str = _cli.typer.Option(..., "--date", help="工作台日期(开球日)"),
+    issue: str = _cli.typer.Option(..., "--issue"),
+    output_dir: Path = _OUTPUT_DIR_OPTION,
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
+    watch: bool = _cli.typer.Option(False, "--watch", help="常驻,每 15 秒轮询"),
+) -> None:
+    """追问线程应答器:回答事件流里未回复的 user_message(只解释已落库研究,不判断)。"""
+    import time
+
+    from nutmeg.decision.workbench_responder import respond_pending
+
+    provider = _responder_provider()
+    if provider is None:
+        _responder_fail(RuntimeError("未配置 NUTMEG_PORTKEY_API_KEY,应答器不可用"))
+        return
+    while True:
+        n = respond_pending(Path(output_dir), date, provider=provider,
+                            judgments=_responder_judgments(date), issue=issue,
+                            zucai_dir=Path(zucai_dir))
+        _cli.typer.echo(f"workbench-respond {date}: 回复 {n} 条")
+        if not watch:
+            return
+        time.sleep(15)
+
+
 @_cli.app.command("zucai-prep")
 def zucai_prep(
     run_date: str | None = _cli.typer.Option(None, "--run-date", help="YYYY-MM-DD,默认今天"),
