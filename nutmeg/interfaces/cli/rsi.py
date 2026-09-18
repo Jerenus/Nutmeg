@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import typer
@@ -87,8 +87,22 @@ def _earliest_kickoff(data_dir: Path, issue: str | None) -> str | None:
     if not p.exists():
         return None
     matches = json.loads(p.read_text("utf-8"))["matches"]
-    kos = [m["kickoff_bj"] for m in matches if m.get("kickoff_bj")]
-    return (min(kos) + "+08:00") if kos else None
+    kos = [_normalise_bj(str(m["kickoff_bj"])) for m in matches if m.get("kickoff_bj")]
+    return min(kos) if kos else None
+
+
+_BJ = timezone(timedelta(hours=8))
+
+
+def _normalise_bj(raw: str) -> str:
+    """北京时间字串 → `YYYY-MM-DDTHH:MM:SS+08:00`。
+
+    真 `<issue>-issue.json` 写的是「2026-09-19 00:30」（空格、无秒）；due_at 与 now 在
+    repository 里按字串字典序比较，空格形式会排错位。与 scripts/rsi_migrate_preregs.py::_bj 同口径。
+    """
+    dt = datetime.fromisoformat(raw.strip().replace(" ", "T"))
+    dt = dt.replace(tzinfo=_BJ) if dt.tzinfo is None else dt.astimezone(_BJ)
+    return dt.isoformat(timespec="seconds")
 
 
 @rsi_app.command("register")

@@ -63,3 +63,23 @@ def test_register_twice_is_refused(tmp_path):
     CliRunner().invoke(app, ["rsi", "register", str(doc), "--data-dir", str(d)])
     r = CliRunner().invoke(app, ["rsi", "register", str(doc), "--data-dir", str(d)])
     assert r.exit_code == 1 and "已登记" in r.output
+
+
+def test_schedule_normalises_space_form_kickoff_bj(tmp_path):
+    """真 issue.json 的 kickoff_bj 是「2026-09-19 00:30」（空格、无秒）；due_at 必须落成 ISO，
+    否则与 pending/gaps 里的 ISO now 字串字典序比较会错位。"""
+    d = tmp_path / "data"
+    (d / "zucai").mkdir(parents=True)
+    (d / "zucai" / "26129-issue.json").write_text(json.dumps({"issue_id": "26129", "matches": [
+        {"match_no": 4, "kickoff_bj": "2026-09-19 00:30"},
+        {"match_no": 1, "kickoff_bj": "2026-09-19 03:00"}]}), encoding="utf-8")
+    doc = tmp_path / "F2.json"
+    doc.write_text(json.dumps(DOC), encoding="utf-8")
+    CliRunner().invoke(app, ["rsi", "register", str(doc), "--data-dir", str(d)])
+    r = CliRunner().invoke(app, ["rsi", "schedule", "--day", "2026-09-19", "--issue", "26129",
+                                 "--data-dir", str(d)])
+    assert r.exit_code == 0, r.output
+    assert "2026-09-19T00:30:00+08:00" in r.output
+    r = CliRunner().invoke(app, ["rsi", "due", "--day", "2026-09-19", "--data-dir", str(d),
+                                 "--now", "2026-09-18T20:00:00+08:00"])
+    assert "f2-observation" in r.output and "00:30" in r.output, r.output
