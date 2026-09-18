@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.operator_sale import OperatorSaleRepository
     from nutmeg.ontology.repository.outbox import OutboxRepository
     from nutmeg.ontology.repository.reliability import ReliabilityRepository
+    from nutmeg.ontology.repository.rsi import RsiRepository
     from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
     from nutmeg.ontology.repository.tickets import TicketWorkbenchRepository
     from nutmeg.ontology.repository.workflow import WorkflowRepository
@@ -175,6 +176,12 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.reliability import ReliabilityRepository
 
         return ReliabilityRepository(self.connection)
+
+    @property
+    def rsi(self) -> RsiRepository:
+        from nutmeg.ontology.repository.rsi import RsiRepository
+
+        return RsiRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         lease = self._writer_lease_factory() if self._writer_lease_factory else None
