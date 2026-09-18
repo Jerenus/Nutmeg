@@ -74,12 +74,14 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
         return _day_state(store, output_dir, date, kernel_state)
 
     @app.get("/")
-    def workbench_page(request: Request, date: str = ""):
+    def workbench_page(request: Request, date: str = "", issue: str = ""):
         from datetime import date as _d
         date = date or _d.today().isoformat()
         return templates.TemplateResponse(
             request, "decision/workbench.html",
-            {"title": "判读工作台", "state": _day_state(store, output_dir, date, kernel_state)})
+            {"title": "判读工作台",
+             "state": _day_state(store, output_dir, date, kernel_state),
+             "issue": issue})
 
     from datetime import date as _date
 

@@ -14,6 +14,12 @@
   <button class="theme-toggle" onclick="var r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'">切换主题</button>
 </div>
 
+<div class="sopbar" id="sopbar" data-issue="{{ issue }}" data-date="{{ state.date }}">
+  <span class="sopttl">SOP 泳道 B</span>
+  <input class="field sopissue" id="sop-issue" placeholder="期号 如 26129" value="{{ issue }}" autocomplete="off">
+  <span id="sop-steps"></span>
+</div>
+
 <nav class="mtabs" role="tablist">
   <button class="mtab on" data-col="flow">议程</button>
   <button class="mtab" data-col="stage">舞台</button>

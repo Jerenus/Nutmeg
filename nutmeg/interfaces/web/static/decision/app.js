@@ -372,6 +372,63 @@
     });
   });
 
+  // ---- SOP 任务栏(阶段一):同一条命令,从页面按 -----------------------------
+  var sopSteps = document.getElementById("sop-steps");
+  var sopIssue = document.getElementById("sop-issue");
+  function loadSopSteps() {
+    var issue = ((sopIssue && sopIssue.value) || "").trim();
+    if (!sopSteps || !issue) return;
+    fetch("/api/sop-steps?issue=" + encodeURIComponent(issue) +
+          "&date=" + encodeURIComponent(DATE))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        sopSteps.innerHTML = "";
+        (d.steps || []).forEach(function (s) {
+          var b = el("button", "btn sopstep" + (s.done ? " done" : ""), s.label);
+          b.setAttribute("data-step", s.step_id);
+          b.addEventListener("click", function () {
+            b.disabled = true; b.classList.add("running");
+            post("/action/run-task", {
+              step_id: s.step_id, issue: issue, date: DATE,
+              legs_file: s.needs_legs ? window.prompt("legs 文件路径") : null,
+            }).then(function () {
+              b.disabled = false; b.classList.remove("running"); loadSopSteps();
+            });
+          });
+          sopSteps.appendChild(b);
+        });
+      })
+      .catch(function () { /* 任务栏拉不到不影响判读三栏 */ });
+  }
+  if (sopIssue) { sopIssue.addEventListener("change", loadSopSteps); loadSopSteps(); }
+
+  function renderTaskEvent(e, state) {
+    var id = "task-" + (e.step_id || "");
+    var old = stageEl.querySelector('[data-task="' + id + '"]');
+    if (old) old.remove();
+    var crumb = stageEl.querySelector(".crumb");
+    if (crumb && crumb.textContent.indexOf("选择议程项") >= 0) crumb.remove();
+    var blk = el("div", "vblock task " + state);
+    blk.setAttribute("data-task", id);
+    blk.appendChild(el("div", "vbhead",
+      (e.label || e.step_id || "任务") + " · " +
+      (state === "running" ? "运行中"
+        : state === "done" ? "完成 exit=" + e.exit_code
+          : "失败 exit=" + e.exit_code)));
+    if (e.argv) blk.appendChild(el("div", "mono small", "$ nutmeg " + e.argv.join(" ")));
+    if (e.text) { var pre = el("pre", "tasklog"); pre.textContent = e.text; blk.appendChild(pre); }
+    stageEl.appendChild(blk);
+  }
+
+  // 舞台被 renderDayRegime 清空后重放任务卡(任务不属于某个 obj,不随选中切换)
+  function replayTaskEvents() {
+    allEvents.forEach(function (e) {
+      if (e.kind === "task_started") renderTaskEvent(e, "running");
+      else if (e.kind === "task_done") renderTaskEvent(e, "done");
+      else if (e.kind === "task_failed") renderTaskEvent(e, "failed");
+    });
+  }
+
   // ---- event dispatch + polling -------------------------------------
   function ingest(e) {
     allEvents.push(e);
@@ -384,6 +441,9 @@
       case "legs_proposal": renderLegsProposal(e); break;
       case "slip": renderSlip(e); break;
       case "view_block": renderViewBlock(e); break;
+      case "task_started": renderTaskEvent(e, "running"); break;
+      case "task_done": renderTaskEvent(e, "done"); break;
+      case "task_failed": renderTaskEvent(e, "failed"); break;
       case "agent_reply":
       case "user_message":
         if (e.obj_id === selectedObj) appendTurn(e);
@@ -426,7 +486,7 @@
         if (!flowEl.querySelector(".fitem")) {
           flowEl.appendChild(el("p", "empty", "今日 agent 尚未开工——在终端说「今天的方案」。"));
         }
-        if (!selectedObj) renderDayRegime(); // 未选中→舞台显今日盘面
+        if (!selectedObj) { renderDayRegime(); replayTaskEvents(); } // 未选中→舞台显今日盘面
       })
       .catch(function () { /* 保留服务端渲染的降级视图 */ })
       .finally(function () { setInterval(poll, 2000); });

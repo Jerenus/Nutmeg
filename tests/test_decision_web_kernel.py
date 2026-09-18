@@ -202,3 +202,11 @@ def test_run_task_rejects_unknown_step(tmp_path):
     r = client.post("/action/run-task",
                     json={"step_id": "B99", "issue": "26129", "date": "2026-09-19"})
     assert r.status_code == 400 and "未登记" in r.json()["error"]
+
+
+def test_workbench_page_has_sop_bar_bound_to_issue(tmp_path):
+    store = DecisionStore(tmp_path / "decision")
+    client = TestClient(create_decision_app(store=store, output_dir=tmp_path / "jczq",
+                                            zucai_dir=tmp_path / "zucai"))
+    html = client.get("/?date=2026-09-19&issue=26129").text
+    assert 'id="sopbar"' in html and 'data-issue="26129"' in html
