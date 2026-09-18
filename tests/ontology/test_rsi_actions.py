@@ -6,8 +6,10 @@ import pytest
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.rsi_actions import (
     AmendExperimentRequest,
+    FulfillDutyRequest,
     RegisterExperimentRequest,
     RsiActions,
+    ScheduleDutiesRequest,
 )
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.repository.connection import build_ontology_engine
@@ -89,3 +91,62 @@ def test_amend_appends_but_refuses_to_touch_frozen_fields(tmp_path):
     with OntologyUnitOfWork(engine) as uow:
         assert uow.rsi.experiment("F2").falsifier["threshold_pp"] == 2.0   # 原件不变
         assert len(uow.rsi.amendments("F2")) == 1
+
+
+# ── Task 5: schedule / fulfill ────────────────────────────────────
+
+
+def _registered(tmp_path):
+    actions, engine = _rig(tmp_path)
+    actions.register_experiment(RegisterExperimentRequest(
+        doc=F2_DOC, idempotency_key="reg:F2", requested_at=T0, **HUMAN))
+    return actions, engine
+
+
+def test_schedule_creates_one_instance_per_day_duty_and_is_idempotent(tmp_path):
+    actions, engine = _registered(tmp_path)
+    req = ScheduleDutiesRequest(day="2026-09-19", earliest_kickoff="2026-09-19T00:30:00+08:00",
+                                issue="26129", idempotency_key="sch:2026-09-19", requested_at=T0)
+    assert actions.schedule_duties(req).status is ActionStatus.COMMITTED
+    assert actions.schedule_duties(req).status is ActionStatus.COMMITTED   # 幂等重放
+    with OntologyUnitOfWork(engine) as uow:
+        pend = uow.rsi.pending_duty_instances(day="2026-09-19", now="2026-09-18T20:00:00+08:00")
+        assert [(p.duty_id, p.issue, p.due_at) for p in pend] == [
+            ("F2:f2-observation", "26129", "2026-09-19T00:30:00+08:00")]
+
+
+def test_fulfill_marks_instance_and_writes_prospective_observation(tmp_path):
+    actions, engine = _registered(tmp_path)
+    actions.schedule_duties(ScheduleDutiesRequest(
+        day="2026-09-19", earliest_kickoff="2026-09-19T00:30:00+08:00", issue="26129",
+        idempotency_key="sch:1", requested_at=T0))
+    out = actions.fulfill_duty(FulfillDutyRequest(
+        exp_id="F2", duty_name="f2-observation", day="2026-09-19",
+        artifact_path=".nutmeg-data/zucai/26129-f2-observation.json", artifact_bytes=b"{}",
+        n_rows=10, population_stratum="zucai", judgment_tier_hist={"price_only": 10},
+        captured_at=datetime(2026, 9, 18, 11, 22, 2, tzinfo=UTC),          # 19:22 北京
+        earliest_kickoff="2026-09-19T00:30:00+08:00", idempotency_key="ful:1", requested_at=T0))
+    assert out.status is ActionStatus.COMMITTED
+    with OntologyUnitOfWork(engine) as uow:
+        inst = uow.rsi.duty_instance("F2:f2-observation", "2026-09-19")
+        assert inst.fulfilled_at is not None and len(inst.artifact_hash) == 64
+        obs = uow.rsi.observation("F2:2026-09-19")
+        assert obs.prospective is True and obs.n_rows == 10
+        assert uow.rsi.gaps("F2", now="2026-09-20T00:00:00+08:00") == []
+
+
+def test_late_artifact_is_recorded_as_not_prospective_and_the_day_stays_a_gap(tmp_path):
+    actions, engine = _registered(tmp_path)
+    actions.schedule_duties(ScheduleDutiesRequest(
+        day="2026-09-19", earliest_kickoff="2026-09-19T00:30:00+08:00", issue="26129",
+        idempotency_key="sch:1", requested_at=T0))
+    actions.fulfill_duty(FulfillDutyRequest(
+        exp_id="F2", duty_name="f2-observation", day="2026-09-19",
+        artifact_path="x.json", artifact_bytes=b"{}", n_rows=10, population_stratum="zucai",
+        judgment_tier_hist={"price_only": 10},
+        captured_at=datetime(2026, 9, 18, 17, 0, tzinfo=UTC),               # 01:00 北京，开球后
+        earliest_kickoff="2026-09-19T00:30:00+08:00", idempotency_key="ful:late", requested_at=T0))
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.rsi.observation("F2:2026-09-19").prospective is False
+        # 前瞻窗过了不算：这一天仍是 gap
+        assert uow.rsi.gaps("F2", now="2026-09-20T00:00:00+08:00") == ["2026-09-19"]

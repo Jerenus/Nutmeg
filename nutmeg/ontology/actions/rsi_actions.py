@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,8 +18,10 @@ from nutmeg.ontology.actions.models import ActionCommand, ActionOutcome, ActorRo
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.repository.rsi import (
     AmendmentRow,
+    DutyInstanceRow,
     DutyRow,
     ExperimentRow,
+    ObservationRow,
 )
 from nutmeg.ontology.rsi.models import (
     FROZEN_FIELDS,
@@ -206,5 +209,74 @@ class RsiActions:
                 rule_check=request.rule_check, mechanism_note=request.mechanism_note,
                 amended_at=_iso(request.requested_at)))
             return (ObjectRef("rsi_amendment", aid),)
+
+        return self._svc.execute(command, handler)
+
+    # ── schedule ──────────────────────────────────────────────────
+    def schedule_duties(self, request: ScheduleDutiesRequest) -> ActionOutcome:
+        requested_at = request.requested_at or datetime.now().astimezone()
+        command = ActionCommand.create(
+            action_type="rsi_schedule_duties", actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key or f"rsi-sched:{request.day}",
+            payload={"day": request.day, "earliest_kickoff": request.earliest_kickoff,
+                     "issue": request.issue},
+            requested_at=requested_at)
+
+        def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
+            refs: list[ObjectRef] = []
+            for duty in uow.rsi.all_duties():
+                if duty.scope == "day":
+                    targets = [("", request.earliest_kickoff)]
+                else:
+                    targets = list(request.match_kickoffs.items())
+                for match_id, due_at in targets:
+                    if uow.rsi.duty_instance(duty.duty_id, request.day, match_id) is not None:
+                        continue                       # 已排过：幂等
+                    uow.rsi.insert_duty_instance(DutyInstanceRow(
+                        duty_id=duty.duty_id, day=request.day, match_id=match_id,
+                        issue=request.issue, due_at=due_at, fulfilled_at=None,
+                        artifact_path=None, artifact_hash=None))
+                    refs.append(ObjectRef("rsi_duty_instance", f"{duty.duty_id}@{request.day}"))
+            return tuple(refs)
+
+        return self._svc.execute(command, handler)
+
+    # ── fulfill + observation ─────────────────────────────────────
+    def fulfill_duty(self, request: FulfillDutyRequest) -> ActionOutcome:
+        requested_at = request.requested_at or datetime.now().astimezone()
+        duty_id = f"{request.exp_id}:{request.duty_name}"
+        artifact_hash = hashlib.sha256(request.artifact_bytes).hexdigest()
+        captured = _iso(request.captured_at)
+        # prospective：采样时刻早于当天最早开球（U8-④ 前缀纪律的采样端）
+        prospective = request.captured_at < datetime.fromisoformat(request.earliest_kickoff)
+        command = ActionCommand.create(
+            action_type="rsi_fulfill_duty", actor_id=request.actor_id,
+            actor_role=request.actor_role,
+            idempotency_key=request.idempotency_key or f"rsi-ful:{duty_id}:{request.day}",
+            payload={"duty_id": duty_id, "day": request.day, "artifact_hash": artifact_hash,
+                     "prospective": prospective},
+            requested_at=requested_at)
+
+        def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
+            inst = uow.rsi.duty_instance(duty_id, request.day, request.match_id)
+            if inst is None:
+                raise ValueError(f"{duty_id} 在 {request.day} 没有排过（先 rsi schedule）")
+            # 只有前瞻产物才算履行义务；赛后补的产物留观察记录但这一天仍是 gap
+            if prospective and inst.fulfilled_at is None:
+                uow.rsi.mark_duty_fulfilled(duty_id, request.day, request.match_id,
+                                            fulfilled_at=captured,
+                                            artifact_path=request.artifact_path,
+                                            artifact_hash=artifact_hash)
+            obs_id = f"{request.exp_id}:{request.day}" + (
+                f":{request.match_id}" if request.match_id else "")
+            if uow.rsi.observation(obs_id) is None:      # 同日二次 fulfill 不重复计数
+                uow.rsi.insert_observation(ObservationRow(
+                    observation_id=obs_id, exp_id=request.exp_id, day=request.day,
+                    population_stratum=request.population_stratum, n_rows=request.n_rows,
+                    captured_at=captured, prospective=prospective,
+                    judgment_tier_hist=dict(request.judgment_tier_hist),
+                    artifact_hash=artifact_hash))
+            return (ObjectRef("rsi_observation", obs_id),)
 
         return self._svc.execute(command, handler)
