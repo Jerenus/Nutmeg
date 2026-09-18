@@ -163,7 +163,9 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
                       output_dir=Path(output_dir), legs_file=None)
         return {"issue": issue, "date": date, "steps": [
             {"step_id": s.step_id, "label": s.label, "needs_legs": s.needs_legs,
-             "done": bool(s.artifacts(p)) and all(a.exists() for a in s.artifacts(p))}
+             # 没声明产物的步骤（B4b 只打 stdout）不判定完成，不是「未完成」
+             "done": (all(a.exists() for a in s.artifacts(p))
+                      if s.artifacts(p) else None)}
             for s in STEPS]}
 
     @app.post("/action/run-task")

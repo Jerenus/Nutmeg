@@ -384,7 +384,7 @@
       .then(function (d) {
         sopSteps.innerHTML = "";
         (d.steps || []).forEach(function (s) {
-          var b = el("button", "btn sopstep" + (s.done ? " done" : ""), s.label);
+          var b = el("button", "btn sopstep" + (s.done === true ? " done" : s.done === null ? " nostate" : ""), s.label);
           b.setAttribute("data-step", s.step_id);
           b.addEventListener("click", function () {
             b.disabled = true; b.classList.add("running");
