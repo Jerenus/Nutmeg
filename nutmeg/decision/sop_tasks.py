@@ -68,7 +68,7 @@ STEPS: tuple[SopStep, ...] = (
             lambda p: ["zucai-candidates", "--options-file", str(_z(p, "options.json")),
                        "--fair-file", str(_z(p, "fair.json")),
                        "--legs-file", str(_z(p, "legs-base.json"))],
-            lambda p: [_z(p, "candidates.json")]),
+            lambda p: []),   # ⚠️zucai-candidates 只 echo 到 stdout，不落盘（2026-09-18 核实）
     SopStep("B6_audit", "B6 审计门",
             lambda p: ["decision-audit-legs", "--legs-file", str(p.legs_file)],
             lambda p: [], ok_exit_codes=(0, 1), needs_legs=True),
