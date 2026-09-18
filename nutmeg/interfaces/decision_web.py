@@ -18,7 +18,20 @@ from nutmeg.decision.store import DecisionStore
 from nutmeg.decision.workbench import read_events
 
 
-def _day_state(store: DecisionStore, output_dir, date: str) -> dict[str, Any]:
+def _day_state(store: DecisionStore, output_dir, date: str,
+               kernel_state=None) -> dict[str, Any]:
+    """当日状态。给了 ``kernel_state``（内核读侧，见 decision_web_kernel）时以内核为唯一权威：
+    matches / snapshots / reads 全部来自内核，文件事件（追问线程等）与内核合成的议程项合并。
+    没给则走旧 DecisionStore 路径，一字不变。**不双写、不混读**——M5 禁无声双权威。"""
+    if kernel_state is not None:
+        kernel = kernel_state(date)
+        return {
+            "date": date,
+            "matches": kernel["matches"],
+            "snapshots": kernel["snapshots"],
+            "reads": kernel["reads"],
+            "events": read_events(output_dir, date) + kernel["events"],
+        }
     prefix = f"M-{date}-"
     matches = [m.to_dict() for m in store.load(Match)
                if m.match_id.startswith(prefix)]
@@ -41,17 +54,24 @@ def self_daily(output_dir, date: str) -> Path:
     return Path(output_dir) / "daily" / date
 
 
-def create_decision_app(*, store: DecisionStore, output_dir) -> FastAPI:
+def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
+                        zucai_dir=None, sop_invoke=None) -> FastAPI:
     app = FastAPI(title="Nutmeg 判读工作台")
     web_root = Path(__file__).parent / "web"
     templates = Jinja2Templates(directory=web_root / "templates")
     app.mount("/static", StaticFiles(directory=web_root / "static"), name="static")
+    # 静态资源带 mtime 版本号：2026-09-18 加 renderSlip 后浏览器仍跑旧 app.js，右栏空着——
+    # 硬刷新才出来。没有版本号的 <script src> 等于让用户替我们清缓存。
+    _js = web_root / "static" / "decision" / "app.js"
+    templates.env.globals["asset_v"] = str(int(_js.stat().st_mtime)) if _js.exists() else "0"
     app.state.store = store
     app.state.output_dir = Path(output_dir)
+    # 足彩物料目录：默认与 betslips.jsonl 同级的 .nutmeg-data/zucai（见 decision-web CLI）。
+    app.state.zucai_dir = Path(zucai_dir) if zucai_dir else Path(output_dir).parent / "zucai"
 
     @app.get("/api/workbench")
     def workbench_api(date: str) -> dict:
-        return _day_state(store, output_dir, date)
+        return _day_state(store, output_dir, date, kernel_state)
 
     @app.get("/")
     def workbench_page(request: Request, date: str = ""):
@@ -59,7 +79,7 @@ def create_decision_app(*, store: DecisionStore, output_dir) -> FastAPI:
         date = date or _d.today().isoformat()
         return templates.TemplateResponse(
             request, "decision/workbench.html",
-            {"title": "判读工作台", "state": _day_state(store, output_dir, date)})
+            {"title": "判读工作台", "state": _day_state(store, output_dir, date, kernel_state)})
 
     from datetime import date as _date
 
@@ -131,6 +151,32 @@ def create_decision_app(*, store: DecisionStore, output_dir) -> FastAPI:
         append_user_message(output_dir, date, obj_id=payload["obj_id"],
                             text=payload["text"], at=payload.get("at", ""))
         return {"ok": True}
+
+    # ── SOP 任务栏（阶段一）：同一条命令，从页面按 ──────────────────────
+    @app.get("/api/sop-steps")
+    def sop_steps(issue: str, date: str) -> dict:
+        from nutmeg.decision.sop_tasks import STEPS, SopParams
+
+        p = SopParams(issue=issue, date=date, zucai_dir=app.state.zucai_dir,
+                      output_dir=Path(output_dir), legs_file=None)
+        return {"issue": issue, "date": date, "steps": [
+            {"step_id": s.step_id, "label": s.label, "needs_legs": s.needs_legs,
+             "done": bool(s.artifacts(p)) and all(a.exists() for a in s.artifacts(p))}
+            for s in STEPS]}
+
+    @app.post("/action/run-task")
+    def run_task(payload: dict = Body(...)) -> Any:  # noqa: B008
+        from nutmeg.decision.sop_tasks import SopParams, cli_invoke, run_step
+
+        legs = payload.get("legs_file")
+        p = SopParams(issue=str(payload["issue"]), date=str(payload["date"]),
+                      zucai_dir=app.state.zucai_dir, output_dir=Path(output_dir),
+                      legs_file=Path(legs) if legs else None)
+        try:
+            return run_step(str(payload.get("step_id")), p,
+                            invoke=sop_invoke or cli_invoke)
+        except KeyError as exc:
+            return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
 
     @app.get("/events")
     def events(date: str, since: int = 0) -> dict:
