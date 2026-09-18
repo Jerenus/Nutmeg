@@ -217,6 +217,15 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
         cursor = evs[-1]["seq"] if evs else since
         return {"events": evs, "cursor": cursor}
 
+    # ── 过程回放（阶段三 Task 3）：讨论变成事件，事件变成回放 ───────────
+    @app.get("/replay")
+    def replay_page(request: Request, date: str):
+        """当天事件流按 seq 顺序重放。只读，不改写任何东西。"""
+        return templates.TemplateResponse(
+            request, "decision/replay.html",
+            {"title": f"回放 {date}", "date": date,
+             "events": read_events(output_dir, date)})
+
     @app.get("/objects")
     def objects_page(request: Request):
         from nutmeg.decision.ontology import (

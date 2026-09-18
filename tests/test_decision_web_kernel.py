@@ -225,3 +225,44 @@ def test_note_and_candidate_endpoints_append_events(tmp_path):
     assert r.status_code == 200
     kinds = [e["kind"] for e in client.get(f"/events?date={d}&since=0").json()["events"]]
     assert kinds == ["note", "candidate"]
+
+
+def test_replay_page_orders_all_event_kinds_by_seq(tmp_path):
+    from nutmeg.decision.workbench import append_event
+    d = "2026-09-19"
+    for ev in [
+        {"kind": "task_started", "obj_id": "task:B0_prep_morning",
+         "label": "B0 早刷新", "argv": ["zucai-prep"]},
+        {"kind": "task_done", "obj_id": "task:B0_prep_morning",
+         "label": "B0 早刷新", "exit_code": 0, "text": "备料完成"},
+        {"kind": "user_message", "obj_id": "fr-8", "text": "朗斯不败？"},
+        {"kind": "agent_reply", "obj_id": "fr-8", "text": "平局最被支持。"},
+        {"kind": "candidate", "obj_id": "ticket:26129",
+         "payload": {"version": "SFC-B", "verdict": "rejected", "reason": "三处 C2",
+                     "notes": 128, "stake_yuan": 256, "p_all": 0.0038, "faces": {}}},
+        {"kind": "note", "obj_id": "day", "text": "刹车：¥1000 帽用户裁定"},
+    ]:
+        append_event(tmp_path, d, ev)
+    store = DecisionStore(tmp_path / "decision")
+    html = TestClient(create_decision_app(store=store, output_dir=tmp_path)).get(
+        f"/replay?date={d}").text
+    assert html.index("B0 早刷新") < html.index("朗斯不败？") < html.index("SFC-B") \
+        < html.index("刹车")
+    assert "已否决" in html and "exit=0" in html
+
+
+def test_replay_page_tolerates_missing_optional_keys(tmp_path):
+    """p_all 为 None、缺 at/label 的事件不得让模板炸掉。"""
+    from nutmeg.decision.workbench import append_event
+    d = "2026-09-20"
+    append_event(tmp_path, d, {"kind": "candidate", "obj_id": "ticket:x",
+                               "payload": {"version": "A", "verdict": "considered",
+                                           "notes": 1, "stake_yuan": 2, "p_all": None}})
+    append_event(tmp_path, d, {"kind": "task_started", "obj_id": "task:z"})
+    append_event(tmp_path, d, {"kind": "weird_kind", "obj_id": "q"})
+    store = DecisionStore(tmp_path / "decision")
+    client = TestClient(create_decision_app(store=store, output_dir=tmp_path))
+    r = client.get(f"/replay?date={d}")
+    assert r.status_code == 200 and "考虑过" in r.text
+    r2 = client.get("/replay?date=2026-09-21")
+    assert r2.status_code == 200 and "这一天没有事件" in r2.text
