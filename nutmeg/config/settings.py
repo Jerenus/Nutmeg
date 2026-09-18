@@ -65,6 +65,9 @@ class AppSettings(BaseSettings):
     portkey_base_url: str = 'https://api.portkey.ai/v1'
     portkey_api_key: str | None = Field(default=None, repr=False)
     anthropic_model: str = 'claude-sonnet-4-5'
+    # 追问应答器的模型：None＝不传 --model，继承用户 Claude Code 当前默认模型。
+    # ⚠️别学 anthropic_model 写死 id——那个已经烂在一个过期型号上。
+    responder_model: str | None = None
     agent_synthesis_enabled: bool = False
     openai_base_url: str = 'https://api.openai.com/v1'
     openai_api_key: str | None = Field(
