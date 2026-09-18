@@ -18,17 +18,23 @@ from nutmeg.ontology.actions.models import ActionCommand, ActionOutcome, ActorRo
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.repository.rsi import (
     AmendmentRow,
+    DeploymentRow,
     DutyInstanceRow,
     DutyRow,
     ExperimentRow,
+    GradeRow,
     ObservationRow,
+    VerdictRow,
 )
 from nutmeg.ontology.rsi.models import (
     FROZEN_FIELDS,
+    DeploymentDecision,
     Falsifier,
+    GradeMode,
     Layer,
     Population,
     Tier,
+    Verdict,
     frozen_hash,
     validate_tier_for_layer,
 )
@@ -278,5 +284,108 @@ class RsiActions:
                     judgment_tier_hist=dict(request.judgment_tier_hist),
                     artifact_hash=artifact_hash))
             return (ObjectRef("rsi_observation", obs_id),)
+
+        return self._svc.execute(command, handler)
+
+    # ── grade ─────────────────────────────────────────────────────
+    def grade_experiment(self, request: GradeExperimentRequest) -> ActionOutcome:
+        GradeMode(request.mode)
+        command = ActionCommand.create(
+            action_type="rsi_grade_experiment", actor_id=request.actor_id,
+            actor_role=request.actor_role, idempotency_key=request.idempotency_key,
+            payload={"exp_id": request.exp_id, "mode": request.mode, "stratum": request.stratum,
+                     "n_cum": request.n_cum, "inputs_hash": request.inputs_hash},
+            requested_at=request.requested_at)
+
+        def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
+            exp = uow.rsi.experiment(request.exp_id)
+            if exp is None:
+                raise ValueError(f"{request.exp_id} 未登记")
+            f = Falsifier.from_dict(exp.falsifier)
+            gid = _new_id("rsig")
+            uow.rsi.insert_grade(GradeRow(
+                grade_id=gid, exp_id=request.exp_id, mode=request.mode, stratum=request.stratum,
+                n_cum=request.n_cum, metric=f.metric, metric_value_pp=request.metric_value_pp,
+                ci_low_pp=request.ci_low_pp, ci_high_pp=request.ci_high_pp,
+                distance_to_falsifier_pp=f.distance_pp(ci_low=request.ci_low_pp,
+                                                       ci_high=request.ci_high_pp),
+                cost_axis_pp=request.cost_axis_pp,      # 独立轴，从不与 metric 合成
+                as_of_policy=request.as_of_policy, computed_by=request.computed_by,
+                inputs_hash=request.inputs_hash, graded_at=_iso(request.requested_at)))
+            return (ObjectRef("rsi_grade", gid),)
+
+        return self._svc.execute(command, handler)
+
+    # ── verdict（只许系统；只读 prospective；只读 CI 边界）────────
+    def record_verdict(self, request: RecordVerdictRequest) -> ActionOutcome:
+        command = ActionCommand.create(
+            action_type="rsi_record_verdict", actor_id=request.actor_id,
+            actor_role=request.actor_role, idempotency_key=request.idempotency_key,
+            payload={"exp_id": request.exp_id}, requested_at=request.requested_at)
+
+        def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
+            exp = uow.rsi.experiment(request.exp_id)
+            if exp is None:
+                raise ValueError(f"{request.exp_id} 未登记")
+            f = Falsifier.from_dict(exp.falsifier)
+            primary = uow.rsi.latest_grade(request.exp_id, mode="prospective", stratum=f.stratum)
+            if primary is None:
+                raise ValueError("没有 prospective 档的 grade——重放结果进不了判决")
+            if primary.n_cum < f.n_min:
+                raise ValueError(
+                    f"未到期：n_cum={primary.n_cum}，距 n_min 还差 {f.n_min - primary.n_cum}")
+            verdict = f.evaluate(n_cum=primary.n_cum, ci_low=primary.ci_low_pp,
+                                 ci_high=primary.ci_high_pp)
+            # 分层优先：population=both 时两层符号相反且 CI 不重叠 → 合并层 inconclusive
+            if exp.population == Population.BOTH.value and verdict is Verdict.SURVIVED:
+                z = uow.rsi.latest_grade(request.exp_id, mode="prospective", stratum="zucai")
+                j = uow.rsi.latest_grade(request.exp_id, mode="prospective", stratum="jczq")
+                if z is not None and j is not None:
+                    opposite = (z.metric_value_pp > 0) != (j.metric_value_pp > 0)
+                    disjoint = z.ci_low_pp > j.ci_high_pp or j.ci_low_pp > z.ci_high_pp
+                    if opposite and disjoint:
+                        verdict = Verdict.INCONCLUSIVE
+            vid = _new_id("rsiv")
+            uow.rsi.insert_verdict(VerdictRow(
+                verdict_id=vid, exp_id=request.exp_id, verdict=verdict.value,
+                grade_id=primary.grade_id, criterion_snapshot=dict(exp.falsifier),
+                decided_at=_iso(request.requested_at)))
+            return (ObjectRef("rsi_verdict", vid),)
+
+        return self._svc.execute(command, handler)
+
+    # ── deployment（只许人）──────────────────────────────────────
+    def approve_deployment(self, request: ApproveDeploymentRequest) -> ActionOutcome:
+        decision = DeploymentDecision(request.decision)
+        command = ActionCommand.create(
+            action_type="rsi_approve_deployment", actor_id=request.actor_id,
+            actor_role=request.actor_role, idempotency_key=request.idempotency_key,
+            payload={"exp_id": request.exp_id, "decision": decision.value,
+                     "rule_id": request.rule_id}, requested_at=request.requested_at)
+
+        def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
+            exp = uow.rsi.experiment(request.exp_id)
+            if exp is None:
+                raise ValueError(f"{request.exp_id} 未登记")
+            if not request.reason.strip():
+                raise ValueError("deployment 必须带 reason")
+            if decision is DeploymentDecision.DEPLOY:
+                if exp.layer != Layer.STRUCTURAL.value or exp.tier != Tier.DEPLOY_ELIGIBLE.value:
+                    raise ValueError("只有 structural 层且 deploy_eligible 的实验可上线")
+                v = uow.rsi.latest_verdict(request.exp_id)
+                if v is None or v.verdict != Verdict.SURVIVED.value:
+                    raise ValueError("只有 verdict=survived 的实验可上线")
+                if not request.rule_id:
+                    raise ValueError("deploy 必须指明目标 rule_id")
+            if decision is DeploymentDecision.EXTEND and not request.extend_to_exp_id:
+                raise ValueError("extend 必须给新 exp_id（不许原地延窗）")
+            did = _new_id("rsid")
+            uow.rsi.insert_deployment(DeploymentRow(
+                deployment_id=did, exp_id=request.exp_id, decision=decision.value,
+                rule_id=request.rule_id, reason=request.reason,
+                adjudication_ref=request.adjudication_ref,
+                extend_to_exp_id=request.extend_to_exp_id, actor_id=request.actor_id,
+                decided_at=_iso(request.requested_at)))
+            return (ObjectRef("rsi_deployment", did),)
 
         return self._svc.execute(command, handler)

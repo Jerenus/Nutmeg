@@ -6,7 +6,10 @@ import pytest
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.rsi_actions import (
     AmendExperimentRequest,
+    ApproveDeploymentRequest,
     FulfillDutyRequest,
+    GradeExperimentRequest,
+    RecordVerdictRequest,
     RegisterExperimentRequest,
     RsiActions,
     ScheduleDutiesRequest,
@@ -150,3 +153,92 @@ def test_late_artifact_is_recorded_as_not_prospective_and_the_day_stays_a_gap(tm
         assert uow.rsi.observation("F2:2026-09-19").prospective is False
         # 前瞻窗过了不算：这一天仍是 gap
         assert uow.rsi.gaps("F2", now="2026-09-20T00:00:00+08:00") == ["2026-09-19"]
+
+
+# ── Task 6: grade / verdict / deploy ──────────────────────────────
+
+
+def _grade(exp_id, key, *, mode, n, lo, hi, stratum="zucai", role=ActorRole.DETERMINISTIC_SYSTEM):
+    return GradeExperimentRequest(
+        exp_id=exp_id, mode=mode, stratum=stratum, n_cum=n, metric_value_pp=(lo + hi) / 2,
+        ci_low_pp=lo, ci_high_pp=hi, cost_axis_pp=None, as_of_policy="earliest_kickoff",
+        computed_by="tests@deadbeef", inputs_hash="i" * 64, actor_id="sys:rsi", actor_role=role,
+        idempotency_key=key, requested_at=T0)
+
+
+def test_verdict_refuses_before_n_min_and_ignores_replay_grades(tmp_path):
+    actions, _ = _registered(tmp_path)
+    actions.grade_experiment(_grade("F2", "g:replay", mode="replay", n=300, lo=5.0, hi=9.0))
+    with pytest.raises(ValueError, match="prospective"):
+        actions.record_verdict(RecordVerdictRequest(
+            exp_id="F2", idempotency_key="v:1", requested_at=T0, **SYSTEM))
+    actions.grade_experiment(_grade("F2", "g:p1", mode="prospective", n=120, lo=1.0, hi=4.0))
+    with pytest.raises(ValueError, match="差 20"):
+        actions.record_verdict(RecordVerdictRequest(
+            exp_id="F2", idempotency_key="v:2", requested_at=T0, **SYSTEM))
+
+
+def test_verdict_is_system_only_and_reads_the_ci_bound(tmp_path):
+    actions, engine = _registered(tmp_path)
+    actions.grade_experiment(_grade("F2", "g:p", mode="prospective", n=140, lo=-3.0, hi=1.9))
+    denied = actions.record_verdict(RecordVerdictRequest(
+        exp_id="F2", idempotency_key="v:h", requested_at=T0, **HUMAN))
+    assert denied.status is ActionStatus.REJECTED                     # 人不能替 falsifier 说话
+    ok = actions.record_verdict(RecordVerdictRequest(
+        exp_id="F2", idempotency_key="v:s", requested_at=T0, **SYSTEM))
+    assert ok.status is ActionStatus.COMMITTED
+    with OntologyUnitOfWork(engine) as uow:
+        v = uow.rsi.latest_verdict("F2")
+        assert v.verdict == "falsified" and v.criterion_snapshot["threshold_pp"] == 2.0
+
+
+def test_both_population_disagreeing_strata_make_pooled_inconclusive(tmp_path):
+    actions, engine = _rig(tmp_path)
+    doc = {**F2_DOC, "exp_id": "F6", "population": "both",
+           "falsifier": {**F2_DOC["falsifier"], "stratum": "pooled"}}
+    actions.register_experiment(RegisterExperimentRequest(
+        doc=doc, idempotency_key="reg:F6", requested_at=T0, **HUMAN))
+    actions.grade_experiment(_grade("F6", "g:z", mode="prospective", n=140, lo=3.0, hi=8.0,
+                                    stratum="zucai"))
+    actions.grade_experiment(_grade("F6", "g:j", mode="prospective", n=140, lo=-9.0, hi=-4.0,
+                                    stratum="jczq"))
+    actions.grade_experiment(_grade("F6", "g:p", mode="prospective", n=280, lo=2.5, hi=6.0,
+                                    stratum="pooled"))
+    actions.record_verdict(RecordVerdictRequest(
+        exp_id="F6", idempotency_key="v:6", requested_at=T0, **SYSTEM))
+    with OntologyUnitOfWork(engine) as uow:
+        # 合并层看似 survived，被分层否决
+        assert uow.rsi.latest_verdict("F6").verdict == "inconclusive"
+
+
+def test_deploy_is_human_only_and_gated_by_layer_tier_and_verdict(tmp_path):
+    actions, engine = _rig(tmp_path)
+    doc = {**F2_DOC, "exp_id": "S1", "layer": "structural", "tier": "deploy_eligible"}
+    actions.register_experiment(RegisterExperimentRequest(
+        doc=doc, idempotency_key="reg:S1", requested_at=T0, **HUMAN))
+    dep = lambda key, role, decision="deploy": ApproveDeploymentRequest(  # noqa: E731
+        exp_id="S1", decision=decision, reason="C11 带定位已由前瞻窗证实", rule_id="C11",
+        adjudication_ref=None, extend_to_exp_id=None, idempotency_key=key, requested_at=T0,
+        actor_id="sys:rsi" if role is ActorRole.DETERMINISTIC_SYSTEM else "op:jun", actor_role=role)
+    with pytest.raises(ValueError, match="survived"):                    # 没判决不能上线
+        actions.approve_deployment(dep("d:0", ActorRole.JUDGE_OPERATOR))
+    actions.grade_experiment(_grade("S1", "g:s", mode="prospective", n=140, lo=2.5, hi=9.0))
+    actions.record_verdict(RecordVerdictRequest(
+        exp_id="S1", idempotency_key="v:s1", requested_at=T0, **SYSTEM))
+    sys_out = actions.approve_deployment(dep("d:sys", ActorRole.DETERMINISTIC_SYSTEM))
+    assert sys_out.status is ActionStatus.REJECTED
+    human_out = actions.approve_deployment(dep("d:h", ActorRole.JUDGE_OPERATOR))
+    assert human_out.status is ActionStatus.COMMITTED
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.rsi.latest_deployment("S1").decision == "deploy"
+
+
+def test_judgment_layer_survived_still_cannot_deploy(tmp_path):
+    actions, _ = _registered(tmp_path)                       # F2 是 judgment 层 / observation 档
+    actions.grade_experiment(_grade("F2", "g:f2", mode="prospective", n=140, lo=2.5, hi=9.0))
+    actions.record_verdict(RecordVerdictRequest(
+        exp_id="F2", idempotency_key="v:f2", requested_at=T0, **SYSTEM))
+    with pytest.raises(ValueError, match="structural"):
+        actions.approve_deployment(ApproveDeploymentRequest(
+            exp_id="F2", decision="deploy", reason="想上", rule_id="C11", adjudication_ref=None,
+            extend_to_exp_id=None, idempotency_key="d:f2", requested_at=T0, **HUMAN))
