@@ -1,0 +1,19 @@
+{
+  "exp_id": "F1c",
+  "claim": "150+ 家书商的分歧度越高，模态面（top1）开出率越高于锐盘共识的期望。样本内（n=339/29 期）按分歧度四分位 top1 残差 −5.4/+2.2/+8.2/+6.4pp，四个 top1 档全部同向。",
+  "mechanism": "⛔无已验证机制。预注册的『分歧=置信度低→向均匀收缩』被证伪（方向相反）；补测的『陈盘污染』(F1b) 三条预测成立但解释不了本效应。效应集中在书目少的子集（少书目 −5.4→+11.6pp，多书目 +3.0→+4.7pp），可能是稀薄市场噪音而非分歧度本身。",
+  "tier": "observation", "layer": "judgment", "population": "zucai", "min_tier": "price_only",
+  "window": {"issue_from": "26129", "issue_to": "26140"},
+  "falsifier": {"metric": "top1_resid_pp_high_dispersion_quartile", "stratum": "zucai", "n_min": 140,
+                "bound": "ci_upper", "threshold_pp": 2.0, "direction": "lt_means_falsified"},
+  "stop_rule": "累计 n≥140 结账；阈值/分档/falsifier 不动。窗口起点由 2026-09-18 修正案从 26126 改为 26129（采集仪从未接上，26125–26128 的书商分布已过期不可回补；改窗本身入账：有效样本比 F2 少 3 期）。",
+  "quota_slot": false,
+  "buckets": ["分歧度 Q1", "分歧度 Q2", "分歧度 Q3", "分歧度 Q4"],
+  "rule_ids": [],
+  "source_doc": "experiments/prereg-26126-F1c-F2.json",
+  "registered_at": "2026-09-14",
+  "duties": [{"name": "dispersion-observation", "scope": "day", "deadline_rule": "earliest_kickoff",
+              "instrument": ["uv", "run", "python", "scripts/zucai_book_dispersion.py", "--sleep", "1.5", "--issue", "{issue}"],
+              "artifact_glob": ".nutmeg-data/zucai/t7-dispersion.json",
+              "description": "F1c 书商分歧度观察单（与 F2 观察仪同一时刻、同一泄漏闸；--issue 先把该期 match_id 补进 t7-backfill.json 再采）"}]
+}

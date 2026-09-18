@@ -1,0 +1,19 @@
+{
+  "exp_id": "F2",
+  "claim": "让球线的离散位移（初盘→终盘中位线）朝主队方向移动 → 主胜面残差为正；改线书商占比 = 承诺强度。样本内（n=339/29 期）『向主≥+0.5』档主胜残差 +10.8pp，承诺阶梯 −1.4/+1.9/+7.4pp 单调；存活格仅 n=44，与本季两次翻号的小样本同形。",
+  "mechanism": "机制预注册且方向正确：改赔率是连续微调、成本近零；改线是把标的换成另一个离散档位，是一次承诺。与已证伪的『赔率位移动量』不是同一个量。非 F3 混杂——固定 top1 档后效应在 [45,60)% 带最强，『线不动 −7.2pp』经控制后消失。",
+  "tier": "observation", "layer": "judgment", "population": "zucai", "min_tier": "price_only",
+  "window": {"issue_from": "26126", "issue_to": "26137"},
+  "falsifier": {"metric": "home_resid_pp", "stratum": "zucai", "n_min": 140, "bound": "ci_upper",
+                "threshold_pp": 2.0, "direction": "lt_means_falsified"},
+  "stop_rule": "12 期累计 n≥140 时结账；期间不得调整阈值、不得改 k、不得中途看结果改口径。分档 BUCKETS 在结账前是冻结常量。候选档不占配额，不得以任何形式影响票面。",
+  "quota_slot": false,
+  "buckets": ["向客 ≤-0.25", "不动 0", "向主 +0.25", "向主 ≥+0.5"],
+  "rule_ids": [],
+  "source_doc": "experiments/prereg-26126-F1c-F2.json",
+  "registered_at": "2026-09-14",
+  "duties": [{"name": "f2-observation", "scope": "day", "deadline_rule": "earliest_kickoff",
+              "instrument": ["uv", "run", "python", "scripts/zucai_f2_observe.py", "record", "--issue", "{issue}"],
+              "artifact_glob": ".nutmeg-data/zucai/{issue}-f2-observation.json",
+              "description": "F2 让球线观察单（最早开球前落盘；开球后整期拒收）"}]
+}

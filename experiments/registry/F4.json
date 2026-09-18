@@ -1,0 +1,16 @@
+{
+  "exp_id": "F4",
+  "claim": "F4b 门的代价可量化且稳定：每期 (chosen_p − legal_max_p) 的中位数 ≥ +10pp（26128 首样本 31.41%−6.94%=+24.5pp；26127 严格 max P=23.09%）。F4a 门有事实含量：严格票面赛后存活率应高于其自身 ΣP、行权票面应低于其自身 ΣP——F4a 在结账报告里按 (存活率−ΣP) 之差的 CI 判，先验偏向证伪。",
+  "mechanism": "门是价格纪律：每多一处标记＝在判不动的场次上多排一个更贵的面（26128：31.4%→11.3%→6.9%）。但 2026-09-18 四条闭环（锚方完整度/conf 分档/C6-C10 标记双选/C7 活先例）同时零残差，标签零残差不等于票面结构无关，门的代价也不等于门是错的——必须前瞻。出生事故：此前『帽内零解』只穷举了人声明的票面空间，全空间穷举后 26127/26128 均有前沿解，只有 26126 真零解。",
+  "tier": "observation", "layer": "structural", "population": "zucai", "min_tier": "light_read",
+  "window": {"issue_from": "26129", "issue_to": "26140"},
+  "falsifier": {"metric": "gate_cost_median_pp", "stratum": "zucai", "n_min": 12, "bound": "ci_upper",
+                "threshold_pp": 5.0, "direction": "lt_means_falsified"},
+  "stop_rule": "观察口径，不占配额，不产生任何可部署参数。26140 结账或任一假设累计 n≥12 期；期间不得改帽、不得改 ERROR 集合、不得中途看结果改口径。每期先跑 exp-strict-space.py 出全合法空间地板再谈空仓；严格票面只作对照不作候选。",
+  "quota_slot": false,
+  "buckets": [],
+  "rule_ids": ["C17"],
+  "replay_spec": {"harness": "experiments/exp-strict-space.py", "corpus": ".nutmeg-data/zucai/*-legs-base.json"},
+  "source_doc": "experiments/prereg-26129-F4-gate-cost.json",
+  "registered_at": "2026-09-18"
+}

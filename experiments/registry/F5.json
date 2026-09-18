@@ -1,0 +1,17 @@
+{
+  "exp_id": "F5",
+  "claim": "价格带：F5a top1−top2 落 [10,20)pp 时模态面开出率低于价格期望约 8pp（corpus v2 n=179，−8.0pp，CI[−15.0,−0.9]；足彩 −6.2/竞彩 −9.7）；F5b 去水 fair ≤10% 的面被系统性高估（n=102，−4.8pp，CI[−7.5,−2.1]）。",
+  "mechanism": "F5a 有候选机制无验证：[10,20) 是『市场给了方向但方向不强』的区间，与 C11 同源，但解释不了 [5,10) 无缺陷、≥20 为正——机制不通过只能当候选。F5b 与 favourite-longshot bias 及被排面『无活先例×≤15% 省钱档』R=−6.1pp 同向。⚠️本轮看了 20 个格，2 个 CI 不含 0 正是 α=0.05 的随机期望量级——两条都可能是噪声，这也是必须前瞻的唯一理由。",
+  "tier": "candidate", "layer": "structural", "population": "both", "min_tier": "price_only",
+  "window": {"date_from": "2026-09-19", "n_min": 120},
+  "falsifier": {"metric": "top1_resid_pp_gap12_10_20", "stratum": "pooled", "n_min": 120, "bound": "ci_lower",
+                "threshold_pp": -2.0, "direction": "gt_means_falsified"},
+  "stop_rule": "26129–26140 足彩 + 同期竞彩日板；两条各自累计 n≥120 时结账；期间不得调整分档边界、不得改口径、不得中途看结果改带。F5b 另判：n≥120 时残差 95%CI 上界 < 0 不成立即证伪。⛔任何数字不得进入 legs/prep/判读/票面，结账前只在 corpus-v2 上累计；F5b 即便成立也不是买入信号。",
+  "quota_slot": false,
+  "buckets": ["gap12 [0,5)", "[5,10)", "[10,20)", "[20,+)"],
+  "rule_ids": ["C11"],
+  "dream_ref": "experiments/exp-price-bands.py@2026-09-18",
+  "variants_tried": 20,
+  "source_doc": "experiments/prereg-26129-F5-price-bands.json",
+  "registered_at": "2026-09-18"
+}

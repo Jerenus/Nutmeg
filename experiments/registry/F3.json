@@ -1,0 +1,17 @@
+{
+  "exp_id": "F3",
+  "claim": "policy-top60：top1（去水 fair 最大面）≥60% 的场次，正路兑现率高于价格期望约 +8pp（训练窗 26099–26112 +8.0pp/n=41，测试窗 26113–26124 +8.5pp/n=38；<60 对照 +2.4/−1.1pp）；按固定权重上调（试用 ×0.5，有效 1.42pp）。",
+  "mechanism": "与文献中的 favourite-longshot bias 一致：冷门被系统性高估、热门被低估。有既有机制支撑，先验高于纯数据挖掘。方向分 90/100、信息量 31%：<50% 故不给全幅度，>25% 故不止于观察。",
+  "tier": "deploy_eligible", "layer": "structural", "population": "zucai", "min_tier": "price_only",
+  "window": {"issue_from": "26125", "issue_to": "26136"},
+  "falsifier": {"metric": "top1_ge60_resid_pp", "stratum": "zucai", "n_min": 120, "bound": "ci_upper",
+                "threshold_pp": 2.0, "direction": "lt_means_falsified"},
+  "stop_rule": "累计 n≥120 时结账；期间不得调整权重、不得改阈值。占用『每期只许 1 个新参数进实盘』配额，结账前不得再注册其它参数。80+ 带 n=14 残差 −5.4pp 可能存在上界，本次不设上界，留待结账时检验。",
+  "quota_slot": true,
+  "buckets": [],
+  "rule_ids": [],
+  "replay_spec": {"harness": "scripts/zucai_loop.py::evaluate", "corpus": "experiments/corpus-v2.json",
+                  "policy_file": "experiments/policy-top60-v1.json"},
+  "source_doc": "experiments/prereg-26125-F3.json",
+  "registered_at": "2026-09-14"
+}
