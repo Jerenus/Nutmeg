@@ -341,8 +341,9 @@
   }
   function appendTurn(e) {
     var you = e.kind === "user_message";
+    var who = e.kind === "user_message" ? "你" : e.kind === "note" ? "记" : "判";
     var turn = el("div", "turn " + (you ? "you" : "ai"));
-    turn.appendChild(el("span", "who", you ? "你" : "判"));
+    turn.appendChild(el("span", "who", who));
     turn.appendChild(el("span", "txt", e.text || ""));
     turnsEl.appendChild(turn);
     turnsEl.scrollTop = turnsEl.scrollHeight;
@@ -355,6 +356,36 @@
     appendTurn({ kind: "user_message", obj_id: selectedObj, text: text });
     post("/thread", { date: DATE, obj_id: selectedObj, text: text });
   }
+  // 手记（阶段三）：裁决理由 / 否决原因 / 临场观察 —— 今天说过的话明天还在。
+  var noteEl = document.getElementById("note"), noteSend = document.getElementById("note-send");
+  function sendNote() {
+    var text = (noteEl.value || "").trim();
+    if (!text) return;
+    noteEl.value = "";
+    post("/action/note", { date: DATE, obj_id: selectedObj || "day", text: text });
+  }
+  if (noteSend) noteSend.addEventListener("click", sendNote);
+  if (noteEl) noteEl.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") { ev.preventDefault(); sendNote(); }
+  });
+
+  // 被考虑过的票面（含被否掉的）。出生事故 26129：SFC-B→C→D→E 四轮迭代
+  // 只存在于聊天窗口，第二天在 app 里什么都看不到。
+  function renderCandidate(e) {
+    var p = e.payload || {};
+    if (verdictEl.querySelector('[data-card="cand-' + e.seq + '"]')) return;
+    var card = el("article", "acard slip cand " + (p.verdict || ""));
+    card.setAttribute("data-card", "cand-" + e.seq);
+    var inner = el("div", "inner");
+    inner.appendChild(el("div", "actype", "候选 " + (p.version || "") + " · " +
+      ({ rejected: "已否决", chosen: "已选", considered: "考虑过" }[p.verdict] || p.verdict)));
+    inner.appendChild(el("div", "acmarket", (p.notes || 0) + " 注 ¥" + (p.stake_yuan || 0) +
+      (p.p_all != null ? " · P " + (p.p_all * 100).toFixed(2) + "%" : "")));
+    if (p.reason) inner.appendChild(el("div", "profile-line", p.reason));
+    card.appendChild(inner);
+    verdictEl.appendChild(card);
+  }
+
   if (sendEl) sendEl.addEventListener("click", sendAsk);
   if (askEl) askEl.addEventListener("keydown", function (ev) {
     if (ev.key === "Enter") { ev.preventDefault(); sendAsk(); }
@@ -444,6 +475,11 @@
       case "task_started": renderTaskEvent(e, "running"); break;
       case "task_done": renderTaskEvent(e, "done"); break;
       case "task_failed": renderTaskEvent(e, "failed"); break;
+      case "note":
+        if (e.obj_id === selectedObj || e.obj_id === "day")
+          appendTurn({ kind: "note", text: "📝 " + e.text });
+        break;
+      case "candidate": renderCandidate(e); break;
       case "agent_reply":
       case "user_message":
         if (e.obj_id === selectedObj) appendTurn(e);

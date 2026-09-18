@@ -154,6 +154,33 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
                             text=payload["text"], at=payload.get("at", ""))
         return {"ok": True}
 
+    # ── 人写事件（阶段三）：手记与被考虑过的票面 ───────────────────────
+    # 出生事故 2026-09-18 的 26129:SFC-B→C→D→E 四轮票面迭代与否决理由
+    # 全部只存在于聊天窗口,仓库里只剩终版文件——第二天在 app 里什么都看不到。
+    @app.post("/action/note")
+    def note_post(payload: dict = Body(...)) -> Any:  # noqa: B008
+        from nutmeg.decision.workbench import append_note
+
+        seq = append_note(output_dir, str(payload["date"]),
+                          obj_id=str(payload.get("obj_id") or "day"),
+                          text=str(payload.get("text") or ""))
+        return {"ok": True, "seq": seq}
+
+    @app.post("/action/candidate")
+    def candidate_post(payload: dict = Body(...)) -> Any:  # noqa: B008
+        from nutmeg.decision.workbench import append_candidate
+
+        seq = append_candidate(output_dir, str(payload["date"]),
+                               obj_id=str(payload.get("obj_id") or "ticket"),
+                               version=str(payload.get("version") or ""),
+                               faces=dict(payload.get("faces") or {}),
+                               notes=int(payload.get("notes") or 0),
+                               stake_yuan=int(payload.get("stake_yuan") or 0),
+                               p_all=payload.get("p_all"),
+                               verdict=str(payload.get("verdict") or "considered"),
+                               reason=str(payload.get("reason") or ""))
+        return {"ok": True, "seq": seq}
+
     # ── SOP 任务栏（阶段一）：同一条命令，从页面按 ──────────────────────
     @app.get("/api/sop-steps")
     def sop_steps(issue: str, date: str) -> dict:

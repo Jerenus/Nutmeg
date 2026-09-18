@@ -251,3 +251,4 @@ body{
 .vblock.task .small{font-size:11px; color:var(--faint)}
 .tasklog{font-size:11.5px; white-space:pre-wrap; max-height:220px; overflow:auto; margin:6px 0 0; font-family:ui-monospace,Menlo,monospace; color:var(--sub)}
 .btn.sopstep.nostate{border-style:dashed}   /* 无产物可判定（B4b 只打 stdout） */
+.notebar{margin-bottom:8px}

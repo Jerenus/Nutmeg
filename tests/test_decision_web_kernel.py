@@ -210,3 +210,18 @@ def test_workbench_page_has_sop_bar_bound_to_issue(tmp_path):
                                             zucai_dir=tmp_path / "zucai"))
     html = client.get("/?date=2026-09-19&issue=26129").text
     assert 'id="sopbar"' in html and 'data-issue="26129"' in html
+
+
+def test_note_and_candidate_endpoints_append_events(tmp_path):
+    store = DecisionStore(tmp_path / "decision")
+    client = TestClient(create_decision_app(store=store, output_dir=tmp_path))
+    d = "2026-09-19"
+    r = client.post("/action/note",
+                    json={"date": d, "obj_id": "ticket:26129", "text": "SFC-B 否决"})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    r = client.post("/action/candidate", json={"date": d, "obj_id": "ticket:26129",
+        "version": "SFC-B", "faces": {"1": "30"}, "notes": 128, "stake_yuan": 256,
+        "p_all": 0.0038, "verdict": "rejected", "reason": "三处 C2"})
+    assert r.status_code == 200
+    kinds = [e["kind"] for e in client.get(f"/events?date={d}&since=0").json()["events"]]
+    assert kinds == ["note", "candidate"]
