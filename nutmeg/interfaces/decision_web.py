@@ -225,10 +225,16 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
         ⚠️只读文件流是不够的——判读与实票活在内核态里，2026-09-18 在真 26129 上
         表现为回放里「实票（无）」。
         """
+        events = _day_state(store, output_dir, date, kernel_state)["events"]
+        # 内核事件（判读/实票，无 seq）在先，文件事件按 seq 在后＝当天的真实先后；
+        # attention 是议程项不是过程，回放里只会变成一行裸 kind。
+        events = [e for e in events if e.get("kind") != "attention"]
+        events = ([e for e in events if e.get("seq") is None]
+                  + sorted((e for e in events if e.get("seq") is not None),
+                           key=lambda e: e["seq"]))
         return templates.TemplateResponse(
             request, "decision/replay.html",
-            {"title": f"回放 {date}", "date": date,
-             "events": _day_state(store, output_dir, date, kernel_state)["events"]})
+            {"title": f"回放 {date}", "date": date, "events": events})
 
     @app.get("/replay.md")
     def replay_markdown(date: str) -> Any:

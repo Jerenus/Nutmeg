@@ -292,3 +292,25 @@ def test_replay_merges_kernel_events_not_just_the_file_stream(tmp_path):
     md = client.get(f"/replay.md?date={date}").text
     assert "## 判读" in md and "摩纳哥 vs 朗斯" in md
     assert "## 实票" in md and "26129-RJ9" in md
+
+
+def test_replay_drops_attention_noise_and_puts_committed_reads_first(tmp_path):
+    """回放是时间线：判读在追问之前；attention 是议程项、不是过程，别渲染成裸 kind。"""
+    from nutmeg.decision.workbench import append_event
+
+    date = "2026-09-19"
+    append_event(tmp_path, date, {"kind": "user_message", "obj_id": "fr-8", "text": "朗斯不败？"})
+
+    def kernel_state(day: str) -> dict:
+        return {"matches": [], "snapshots": [], "reads": [], "events": [
+            {"kind": "attention", "obj_id": "fr-8", "match": "摩纳哥 vs 朗斯", "group": "today"},
+            {"kind": "judgment", "obj_id": "fr-8",
+             "payload": {"match": "摩纳哥 vs 朗斯", "market": "had"}}]}
+
+    store = DecisionStore(tmp_path / "decision")
+    client = TestClient(create_decision_app(
+        store=store, output_dir=tmp_path, kernel_state=kernel_state))
+    html = client.get(f"/replay?date={date}").text
+
+    assert "<b>attention" not in html
+    assert html.index("判读入库") < html.index("朗斯不败？")
