@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
+import pytest
 from typer.testing import CliRunner
 
 from nutmeg.config.settings import AppSettings
@@ -72,7 +73,14 @@ def test_cutover_action_requires_valid_zero_side_effect_report(tmp_path) -> None
     service = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
     gate = JczqCutoverGate(service, schema_version=kernel.status().schema_version)
     document = {
+        "day": "2026-09-19",
         "schema_version": kernel.status().schema_version,
+        "board_count": 30,
+        "research_terminal_count": 30,
+        "missing_lineage": [],
+        "odds_band_outcomes": ["10x", "20x", "50x", "100x"],
+        "terminal_kind": "no_ticket",
+        "failures": [],
         "accepted": True,
         "production_delta": {
             "objects": 0,
@@ -98,3 +106,67 @@ def test_cutover_action_requires_valid_zero_side_effect_report(tmp_path) -> None
     assert checked.authority == "legacy_read_only"
     assert approved.authority == "ontology_v2_required"
     assert gate.authority() == "ontology_v2_required"
+
+
+def test_cutover_refuses_report_from_the_wrong_replay_day(tmp_path) -> None:
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    service = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
+    gate = JczqCutoverGate(service, schema_version=kernel.status().schema_version)
+    document = {
+        "day": "2026-09-18",
+        "schema_version": kernel.status().schema_version,
+        "board_count": 30,
+        "research_terminal_count": 30,
+        "missing_lineage": [],
+        "odds_band_outcomes": ["10x", "20x", "50x", "100x"],
+        "terminal_kind": "no_ticket",
+        "failures": [],
+        "accepted": True,
+        "production_delta": {
+            "objects": 0,
+            "money_entries": 0,
+            "dispatches": 0,
+            "prospective_observations": 0,
+        },
+    }
+    document["report_sha256"] = hashlib.sha256(
+        canonical_json(document).encode("utf-8")
+    ).hexdigest()
+    report = tmp_path / "accepted.json"
+    report.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="replay day is not the approved gate day"):
+        gate.check("2026-09-20", report)
+
+
+def test_cutover_revalidates_accepted_report_contract(tmp_path) -> None:
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    service = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
+    gate = JczqCutoverGate(service, schema_version=kernel.status().schema_version)
+    document = {
+        "day": "2026-09-19",
+        "schema_version": kernel.status().schema_version,
+        "board_count": 30,
+        "research_terminal_count": 30,
+        "missing_lineage": ["candidate_set_revisions"],
+        "odds_band_outcomes": [],
+        "terminal_kind": "missing",
+        "failures": [],
+        "accepted": True,
+        "production_delta": {
+            "objects": 0,
+            "money_entries": 0,
+            "dispatches": 0,
+            "prospective_observations": 0,
+        },
+    }
+    document["report_sha256"] = hashlib.sha256(
+        canonical_json(document).encode("utf-8")
+    ).hexdigest()
+    report = tmp_path / "incomplete.json"
+    report.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="replay report is incomplete"):
+        gate.check("2026-09-20", report)

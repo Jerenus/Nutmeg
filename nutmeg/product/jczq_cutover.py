@@ -22,6 +22,8 @@ _ZERO_DELTA = {
     "dispatches": 0,
     "prospective_observations": 0,
 }
+_REPLAY_GATE_DAY = "2026-09-19"
+_REQUIRED_BANDS = ["10x", "20x", "50x", "100x"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +70,17 @@ class JczqCutoverGate:
         expected = _report_hash(document)
         if document.get("report_sha256") != expected:
             raise ValueError("replay report hash is invalid")
+        if document.get("day") != _REPLAY_GATE_DAY:
+            raise ValueError("replay day is not the approved gate day")
+        if (
+            document.get("board_count") != 30
+            or document.get("research_terminal_count") != 30
+            or document.get("missing_lineage") != []
+            or document.get("odds_band_outcomes") != _REQUIRED_BANDS
+            or document.get("terminal_kind") not in {"selected", "no_ticket"}
+            or document.get("failures") != []
+        ):
+            raise ValueError("replay report is incomplete")
         return JczqCutoverReadiness(
             day=day,
             report_sha256=expected,
