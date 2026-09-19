@@ -37,6 +37,7 @@ from nutmeg.ontology.rsi.models import (
     Verdict,
     frozen_hash,
     validate_tier_for_layer,
+    window_contains,
 )
 
 _REQUIRED_DOC_KEYS = ("exp_id", "claim", "mechanism", "tier", "layer", "population", "min_tier",
@@ -232,6 +233,11 @@ class RsiActions:
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
             refs: list[ObjectRef] = []
             for duty in uow.rsi.all_duties():
+                experiment = uow.rsi.experiment(duty.exp_id)
+                if experiment.layer == "structural" and not window_contains(
+                    experiment.window, issue=request.issue, day=request.day
+                ):
+                    continue
                 if duty.scope == "day":
                     targets = [("", request.earliest_kickoff)]
                 else:

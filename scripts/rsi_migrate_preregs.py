@@ -14,6 +14,7 @@ t7-dispersion 不记采样时刻，F1c 的 captured_at 用「最早开球前一�
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -106,6 +107,10 @@ def migrate(*, data_dir: Path, registry_dir: Path, f2_ledger: Path, dispersion_f
         ensure_duties(kernel, doc["exp_id"], doc)
         report["registered"].append(doc["exp_id"])
 
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        duty_material = "\n".join(duty.duty_id for duty in uow.rsi.all_duties())
+    duty_set_hash = hashlib.sha256(duty_material.encode()).hexdigest()[:12]
+
     # 为 26125–26129 排义务（有 issue.json 的期才排：拿不到开球就不造数据）
     scheduled: list[str] = []
     for issue in BACKFILL_ISSUES:
@@ -114,7 +119,8 @@ def migrate(*, data_dir: Path, registry_dir: Path, f2_ledger: Path, dispersion_f
             continue
         day, ko = dk
         kernel.rsi_actions.schedule_duties(ScheduleDutiesRequest(
-            day=day, earliest_kickoff=ko, issue=issue, idempotency_key=f"rsi-migrate-sched:{day}",
+            day=day, earliest_kickoff=ko, issue=issue,
+            idempotency_key=f"rsi-migrate-sched:{day}:{duty_set_hash}",
             requested_at=ts, **SYSTEM))
         scheduled.append(f"{issue}@{day}")
     report["scheduled"] = scheduled

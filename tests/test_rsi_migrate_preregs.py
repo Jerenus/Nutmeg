@@ -74,3 +74,44 @@ def test_migration_ingests_an_ungraded_prospective_f2_observation_file(tmp_path)
                          now="2026-09-19T12:00:00+08:00")
     assert report["F2"] == {"observations": 1, "gaps": []}
     assert report["F1c"]["gaps"] == ["2026-09-19"]
+
+
+def test_new_duty_gets_instances_when_migration_is_rerun(tmp_path):
+    import scripts.rsi_migrate_preregs as mig
+    from nutmeg.config.settings import AppSettings
+    from nutmeg.ontology import build_ontology_kernel
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+    data_dir = tmp_path / "data"
+    (data_dir / "zucai").mkdir(parents=True)
+    (data_dir / "zucai" / "26129-issue.json").write_text(
+        json.dumps(
+            {
+                "issue_id": "26129",
+                "matches": [{"match_no": 1, "kickoff_bj": "2026-09-19 00:30"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    old_registry = tmp_path / "old-registry"
+    old_registry.mkdir()
+    for path in REG.glob("*.json"):
+        doc = json.loads(path.read_text("utf-8"))
+        if path.stem == "F4":
+            doc.pop("duties", None)
+        (old_registry / path.name).write_text(json.dumps(doc), encoding="utf-8")
+    ledger = tmp_path / "ledger.json"
+    ledger.write_text(json.dumps({"issues": {}}), encoding="utf-8")
+    dispersion = tmp_path / "dispersion.json"
+    dispersion.write_text(json.dumps({}), encoding="utf-8")
+    kwargs = {
+        "data_dir": data_dir,
+        "f2_ledger": ledger,
+        "dispersion_file": dispersion,
+        "now": "2026-09-18T20:00:00+08:00",
+    }
+    mig.migrate(registry_dir=old_registry, **kwargs)
+    mig.migrate(registry_dir=REG, **kwargs)
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.rsi.duty_instance("F4:capital-plan", "2026-09-19") is not None

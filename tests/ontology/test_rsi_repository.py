@@ -11,13 +11,13 @@ from nutmeg.ontology.repository.rsi import (
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 
-def _exp(exp_id="F2") -> ExperimentRow:
+def _exp(exp_id="F2", *, layer="judgment") -> ExperimentRow:
     return ExperimentRow(
         exp_id=exp_id,
         claim="c",
         mechanism="m",
         tier="observation",
-        layer="judgment",
+        layer=layer,
         population="zucai",
         min_tier="price_only",
         window={"issue_from": "26126", "issue_to": "26137"},
@@ -92,6 +92,39 @@ def test_experiment_round_trip_and_duty_projection(tmp_path: Path):
         gaps = uow.rsi.gaps("F2", now="2026-09-19T01:00:00+08:00")
         assert gaps == ["2026-09-19"]
         assert uow.rsi.experiment("nope") is None
+
+
+def test_gap_projection_ignores_a_mis_scheduled_issue_outside_the_window(tmp_path: Path):
+    engine = build_ontology_engine(tmp_path / "o.db")
+    run_migrations(engine)
+    with OntologyUnitOfWork(engine) as uow:
+        uow.rsi.insert_experiment(_exp("F4", layer="structural"))
+        uow.rsi.insert_duty(
+            DutyRow(
+                duty_id="F4:capital-plan",
+                exp_id="F4",
+                recurrence="per_day",
+                scope="day",
+                deadline_rule="earliest_kickoff",
+                instrument=[],
+                artifact_glob="x",
+                description="x",
+            )
+        )
+        uow.rsi.insert_duty_instance(
+            DutyInstanceRow(
+                duty_id="F4:capital-plan",
+                day="2026-09-14",
+                match_id="",
+                issue="26125",
+                due_at="2026-09-14T18:00:00+08:00",
+                fulfilled_at=None,
+                artifact_path=None,
+                artifact_hash=None,
+            )
+        )
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.rsi.gaps("F4", now="2026-09-20T00:00:00+08:00") == []
 
 
 def test_observation_insert_and_count(tmp_path: Path):

@@ -118,6 +118,41 @@ def test_schedule_creates_one_instance_per_day_duty_and_is_idempotent(tmp_path):
             ("F2:f2-observation", "26129", "2026-09-19T00:30:00+08:00")]
 
 
+def test_schedule_skips_an_issue_before_the_experiment_window(tmp_path):
+    actions, engine = _rig(tmp_path)
+    doc = {
+        **F2_DOC,
+        "exp_id": "F4",
+        "layer": "structural",
+        "window": {"issue_from": "26129", "issue_to": "26140"},
+        "duties": [
+            {
+                "name": "capital-plan",
+                "scope": "day",
+                "deadline_rule": "earliest_kickoff",
+                "instrument": ["nutmeg", "plan", "commit"],
+                "artifact_glob": "{issue}-capital-plan.txt",
+            }
+        ],
+    }
+    actions.register_experiment(
+        RegisterExperimentRequest(
+            doc=doc, idempotency_key="reg:F4", requested_at=T0, **HUMAN
+        )
+    )
+    actions.schedule_duties(
+        ScheduleDutiesRequest(
+            day="2026-09-14",
+            earliest_kickoff="2026-09-14T18:00:00+08:00",
+            issue="26125",
+            idempotency_key="sch:26125",
+            requested_at=T0,
+        )
+    )
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.rsi.duty_instance("F4:capital-plan", "2026-09-14") is None
+
+
 def test_fulfill_marks_instance_and_writes_prospective_observation(tmp_path):
     actions, engine = _registered(tmp_path)
     actions.schedule_duties(ScheduleDutiesRequest(

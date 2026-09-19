@@ -8,6 +8,7 @@ from sqlalchemy import Connection, func, insert, select
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository import schema_rsi as sr
+from nutmeg.ontology.rsi.models import window_contains
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,18 +276,31 @@ class RsiRepository:
     def gaps(self, exp_id: str, *, now: str) -> list[str]:
         """过了 due_at 仍未落的日期——事实记录，不是罚分。"""
         t, d = sr.rsi_duty_instances, sr.rsi_duties
+        experiment = self.experiment(exp_id)
+        if experiment is None:
+            return []
         rows = (
             self._c.execute(
-                select(t.c.day)
+                select(t)
                 .select_from(t.join(d, t.c.duty_id == d.c.duty_id))
                 .where(d.c.exp_id == exp_id, t.c.fulfilled_at.is_(None), t.c.due_at <= now)
-                .distinct()
                 .order_by(t.c.day)
             )
-            .scalars()
+            .mappings()
             .all()
         )
-        return list(rows)
+        return sorted(
+            {
+                row["day"]
+                for row in rows
+                if experiment.layer != "structural"
+                or window_contains(
+                    experiment.window,
+                    issue=row["issue"],
+                    day=row["day"],
+                )
+            }
+        )
 
     # ── observations ─────────────────────────────────────────────
     def insert_observation(self, row: ObservationRow) -> None:

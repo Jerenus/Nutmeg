@@ -77,6 +77,20 @@ def frozen_hash(doc: dict) -> str:
     return hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest()
 
 
+def window_contains(window: dict, *, issue: str | None, day: str) -> bool:
+    """Return whether a duty target belongs to the experiment's frozen window."""
+    if issue is not None and ("issue_from" in window or "issue_to" in window):
+        if window.get("issue_from") and issue < str(window["issue_from"]):
+            return False
+        if window.get("issue_to") and issue > str(window["issue_to"]):
+            return False
+    if window.get("date_from") and day < str(window["date_from"]):
+        return False
+    if window.get("date_to") and day > str(window["date_to"]):
+        return False
+    return True
+
+
 def validate_tier_for_layer(tier: Tier, layer: Layer) -> None:
     if layer is Layer.JUDGMENT and tier is Tier.DEPLOY_ELIGIBLE:
         raise ValueError("judgment 层实验不可重放，最高只能是 observation，不得 deploy_eligible")
