@@ -62,13 +62,25 @@ source    = "<issue>-research-m<N>.json#death_three_proofs.<face>"
 | 级 | 每场最多收窄 | 触发 |
 |---|---|---|
 | T1 | 2（可裸单） | `license_score == 4 ∧ integrity == pass ∧ crash_markers 为空` |
-| T2 | 1（可双选） | `license_score >= 3 ∧ integrity ∈ {pass, symmetric_damage}`（**2026-09-19 修正**：原写 `== 3`，导致 `score=4 + symmetric_damage → T3` 比 `score=3` 更差——四问满分反因完整度降级，实测确认的非单调）|
+| T2 | 1（可双选） | `license_score >= 3 ∧ integrity ∈ {pass, symmetric_damage} ∧ crash_markers 为空`（**2026-09-19 两次修正**：①原写 `== 3`，导致 `score=4 + symmetric_damage → T3` 比 `score=3` 更差，四问满分反因完整度降级；②改 `>= 3` 后又必须加 `无 crash`，否则「满分+翻车标记」会从 T3 升到 T2，比原状更糟）|
 | T3 | 0（必全包） | 其余 |
 | T4 | 建议丢（仅任九；T3 的子集，建议非强制） | T3 ∧ 三面全 alive ∧ max fair < 0.45（硬币） |
 
 **单个 alive 面可被收窄** ⇔ `d3_count ≥ 2 ∧ fair ≤ 0.15`（B5c 原文「2/3 且被排面 ≤15% 可排」）。`fair > 0.20 ∧ d3_count < 3` 永不可收窄（原文「必须全包」）。15–20% 灰带不可收窄。
 级数上限与面规则同时生效：T1 场也只能收窄满足面规则的面。
 **票级上限（2026-09-19 补）**：全票收窄总数 `TICKET_MAX_NARROWINGS = 3`（与上表同为 RULEBOOK 常量）。它就是 C17 铁律「标记 ≤3」——原型 `exp-strict-space.enumerate_space` 的 `max_marks` 即此。⚠️漏掉它的后果是实测出来的：稠密板前沿点收窄数达 18，这些点在 B6 审计门必触发 C17 ERROR——**前沿提供了必然被拒的票，「人在前沿上挑」这条链就断了**。枚举器必须在 DP 里带票级检查。
+
+#### 4.2.1 票级上限的结构性后果（2026-09-19 实测，非缺陷）
+
+`TICKET_MAX_NARROWINGS = 3` 意味着任九 9 场里最多 3 场能收窄，其余 6 场必须全包。最省的一张票：
+`2³ × 3⁶ = 5,832 注 = ¥11,664`——**远超任何合理帽**。所以：
+
+> **任九的可行结构只能来自第一序（把面判死），不能来自第二序（收窄）。**
+
+帽内有解的唯一路径是 `face_status.state == dead`（死面不计入收窄，它是判断不是结构选择）。
+26129 就是活证：14 场三面全 alive、全板只有 1 个可收窄面 → 任九空前沿，如实。
+⛔空前沿是诚实信号，不是要放宽阈值的理由：没判死任何面 = 判读层没给出判断 = 本就不该下任九。
+要放宽（如任九专用票级上限）必须走 `rsi deploy`，且先有前瞻证据。
 
 ### 4.3 「今日风向」（`plan tiers` 同时产出，只读）
 
