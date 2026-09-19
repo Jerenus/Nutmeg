@@ -1,4 +1,4 @@
-# 审查意见 · 第二轮：每场都必须有判断（R2 / R3 / F8）
+# 审查意见 · 第二轮：每场都必须有判断（R2 / R3 / F8 / F9）
 
 > 审查者：Claude Opus 5，2026-09-19。用户裁定：**每一场比赛都需要有判断，不能因为没有线索就放弃，否则实验的意义就没了。**
 > spec 已更新于提交 `2d33411`：`docs/superpowers/specs/2026-09-19-jczq-board-research-bridge-design.md`（R2/R3）、
@@ -110,14 +110,78 @@ F6 统计「T3 必全包」时会把两类混成一格，样本被污染。实�
 
 ---
 
+## F9 天平位移账（阻塞；用户 2026-09-19 裁定新立）
+
+**数据依据（先看）**：
+```
+446 场判读，belief 拨离 prior 的只有 40 场 = 9.0%
+26110 之后 22 期、308 场 —— 一次都没拨动过
+26129 全部 14 场深研，belief 与 prior 逐场完全相等
+```
+后果：Brier vs 市场恒等于 0——不是没技艺，是**没有表达**；F1c/F2 测的其实是市场结构不是我们的判断力。
+用户的目标是「做天平强弱的判断」，那么**天平被拨动了几次、拨对没有**就必须有账。
+
+**新建** `experiments/registry/F9.json`：
+```json
+{
+  "exp_id": "F9",
+  "claim": "判读层拨动天平（belief ≠ prior）的场次，其 Brier 优于直接跟市场。",
+  "mechanism": "拨动是判读层唯一能表达强弱的通道；若拨动无价值，则整套证据工厂对天平没有贡献，判读层实验测的只是市场结构。",
+  "tier": "observation", "layer": "judgment", "population": "both", "min_tier": "price_only",
+  "window": {"date_from": "2026-09-20", "n_min": 60},
+  "falsifier": {"metric": "brier_delta_vs_market_moved_pp", "stratum": "pooled", "n_min": 60,
+                "bound": "ci_upper", "threshold_pp": 0.0, "direction": "lt_means_falsified"},
+  "stop_rule": "累计拨动场 n>=60 结账；ci_upper < 0 即证伪（拨动是负价值）。拨动数今天是 0，n 要靠以后真的拨动才涨——这正是本实验的意义。",
+  "quota_slot": false,
+  "buckets": [], "rule_ids": [],
+  "source_doc": "docs/superpowers/specs/2026-09-19-zucai-structure-lane-design.md",
+  "registered_at": "2026-09-19",
+  "duties": [{"name": "balance-ledger", "scope": "day", "deadline_rule": "earliest_kickoff",
+              "instrument": ["uv", "run", "nutmeg", "rsi", "balance", "--issue", "{issue}"],
+              "artifact_glob": ".nutmeg-data/zucai/{issue}-balance.json",
+              "description": "F9：每期天平位移账"}]
+}
+```
+
+**实现**：
+1. `nutmeg/decision/balance_ledger.py`（纯函数，零 IO）：
+```python
+BALANCE_MOVE_EPS_PP = 0.05          # 冻结常量；改动走 rsi deploy
+
+def balance_row(read: dict) -> dict:
+    """单条 Read 的天平位移：shift_pp / moved / moved_face。belief 或 prior 缺就 moved=False。"""
+
+def balance_ledger(reads: list[dict], outcomes: dict | None = None) -> dict:
+    """{n_matches, n_moved, moved_pct, mean_abs_shift_pp, max_shift_pp,
+        brier_vs_market_moved, brier_vs_market_all, direction_right_n, direction_wrong_n}
+       outcomes 为 None（未开奖）时后四项为 None。"""
+```
+   Brier 相对市场 = `brier(belief, actual) - brier(prior, actual)`，**负数=比市场好**。
+2. CLI `nutmeg rsi balance --issue <期> [--day <日>]`：读 `<issue>-reads.json`（+ `official-results.json` 若已开奖）
+   → 写 `<issue>-balance.json` → 调 `rsi fulfill --exp F9`。竞彩用 `--day` 读当日 `reads.json`。
+3. 接线：`after_settle` 里在 `rsi grade` 之前先跑一次 `rsi balance`（结算当期就有带赛果的账）。
+4. 观察台全景页 **首屏第一个数字**就是它：`本期天平 n_moved/n_matches · 平均偏移 X.XXpp · 方向 对/错`；
+   无数据时显示「本期天平未拨动（0/14）」——**这个零要显眼，不要藏**。
+
+**补测试**（`tests/decision/test_balance_ledger.py`）：
+- `belief == prior` 逐场 → `n_moved == 0`、`moved_pct == 0.0`、`max_shift_pp == 0.0`；
+- 构造 1 场偏移 6pp 且该面开出 → `direction_right_n == 1`、`brier_vs_market_moved < 0`；
+- 偏移 6pp 但该面没开 → `direction_wrong_n == 1`、`brier_vs_market_moved > 0`；
+- `outcomes=None` → 后四项为 `None` 而不是 0；
+- 真数据冒烟：`balance_ledger(json.load(open('.nutmeg-data/zucai/26129-reads.json')))` → `n_moved == 0, n_matches == 14`。
+
+⛔**F9 只记账不判断**：它不建议该不该拨，只回答「这一期我们有没有说出一句市场没说的话、说对没有」。
+
 ## 完成后
 
 ```bash
 uv run pytest tests/decision/ tests/ontology/ tests/test_cli_research.py tests/test_cli_plan.py \
   tests/test_cli_rsi.py tests/test_rsi_migrate_preregs.py -q
 uv run nutmeg rsi register experiments/registry/F8.json
+uv run nutmeg rsi register experiments/registry/F9.json
+uv run nutmeg rsi balance --issue 26129                  # 应报 0/14 拨动
 uv run nutmeg jczq-build-reads --day 2026-09-19        # reads.json 条数应 == 板面场数(26)
 uv run nutmeg rsi status                                # 应出现 F8
 ```
-把 `reads.json` 的 `judge` 分布（`ai:jczq-analyst` vs `market-anchor` 各几条）贴回报告。
-三条做完再继续阶段三 Task 2。
+把 `reads.json` 的 `judge` 分布与 `rsi balance --issue 26129` 的输出贴回报告。
+**四条**做完再继续阶段三 Task 3。

@@ -912,7 +912,7 @@ def test_real_browser_posts_advance_one_jczq_work_item_to_confirmation(
         submit_and_wait("提交本场并继续", "冻结本轮判断处方")
         submit_and_wait("冻结处方并比较票面", "生成完整候选集")
 
-        submit_and_wait("生成完整候选集", "生成完整候选集")
+        submit_and_wait("生成完整候选集", "完整候选比较")
         comparison_deadline = time.monotonic() + 5
         while (
             page.get_by_role("heading", name="比较候选票", exact=True).count() == 0
