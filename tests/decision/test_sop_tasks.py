@@ -4,10 +4,11 @@ from nutmeg.decision.sop_tasks import STEPS, SopParams, run_step, step_by_id
 from nutmeg.decision.workbench import read_events
 
 
-def test_registry_has_the_eight_deterministic_lane_b_steps_in_runbook_order():
+def test_registry_has_the_deterministic_lane_b_steps_in_runbook_order():
     assert [s.step_id for s in STEPS] == [
         "B0_prep_morning", "B1_prep_afternoon", "B2_canonical", "B3a_premise_card",
-        "B4_build_reads", "B4b_candidates", "B6_audit", "B6b_adjudicate_issue",
+        "B4_build_reads", "B4b_candidates", "B5c_plan_tiers", "B5_plan_frontier",
+        "B6_audit", "B6b_adjudicate_issue", "B9_plan_commit",
     ]
 
 
@@ -80,3 +81,34 @@ def test_step_needing_legs_refuses_without_legs_file(tmp_path):
     inv = _FakeInvoker()
     result = run_step("B6_audit", p, invoke=inv)
     assert result["ok"] is False and inv.calls == [] and "legs_file" in result["error"]
+
+
+def test_plan_steps_are_registered_in_lane_order():
+    ids = [step.step_id for step in STEPS]
+    assert ids.index("B5c_plan_tiers") < ids.index("B5_plan_frontier") < ids.index("B6_audit")
+    assert ids.index("B9_plan_commit") > ids.index("B6b_adjudicate_issue")
+    params = SopParams(
+        issue="26130", date="2026-09-26", zucai_dir=Path("z"), output_dir=Path("o")
+    )
+    assert step_by_id("B5c_plan_tiers").argv(params) == [
+        "plan",
+        "tiers",
+        "--issue",
+        "26130",
+        "--data-dir",
+        "o/..",
+    ]
+    assert step_by_id("B5_plan_frontier").argv(params)[:4] == [
+        "plan",
+        "frontier",
+        "--issue",
+        "26130",
+    ]
+    assert step_by_id("B9_plan_commit").argv(params)[:6] == [
+        "plan",
+        "commit",
+        "--issue",
+        "26130",
+        "--cap-source",
+        "baseline",
+    ]

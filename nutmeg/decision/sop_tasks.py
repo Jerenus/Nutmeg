@@ -5,8 +5,8 @@
 本模块只做两件事：①把每一步描述成 (argv 构造器, 产物路径, 允许的退出码)，
 ②用 typer 的 CliRunner 在进程内调用**同一个** CLI，并把过程写进事件流。
 
-⛔判断永不入脚本：这里没有 B3（深研，需要 agent）、没有 B5（构票是判断）、
-   没有 B6b 的 ruling（只签发空裁决单，ruling 由人填）。
+⛔判断永不入脚本：这里没有 B3（深研，需要 agent）、没有 B5 的人工 choose、
+   没有 B6b 的 ruling（只签发空裁决单，ruling 由人填）。tiers/frontier 只做确定性算术。
 ⛔审计门退出码 1 是「有 ERROR」这个**判决**，不是任务失败——`ok_exit_codes` 里显式列出。
 """
 from __future__ import annotations
@@ -69,6 +69,14 @@ STEPS: tuple[SopStep, ...] = (
                        "--fair-file", str(_z(p, "fair.json")),
                        "--legs-file", str(_z(p, "legs-base.json"))],
             lambda p: []),   # ⚠️zucai-candidates 只 echo 到 stdout，不落盘（2026-09-18 核实）
+    SopStep("B5c_plan_tiers", "B5c 定级+风向",
+            lambda p: ["plan", "tiers", "--issue", p.issue,
+                       "--data-dir", str(p.output_dir / "..")],
+            lambda p: [_z(p, "tiers.json")]),
+    SopStep("B5_plan_frontier", "B5 前沿(任九)",
+            lambda p: ["plan", "frontier", "--issue", p.issue, "--channel", "renjiu",
+                       "--data-dir", str(p.output_dir / "..")],
+            lambda p: [_z(p, "frontier-renjiu.json")]),
     SopStep("B6_audit", "B6 审计门",
             lambda p: ["decision-audit-legs", "--legs-file", str(p.legs_file)],
             lambda p: [], ok_exit_codes=(0, 1), needs_legs=True),
@@ -76,6 +84,10 @@ STEPS: tuple[SopStep, ...] = (
             lambda p: ["decision-adjudicate", "--legs-file", str(p.legs_file),
                        "--out", str(_z(p, "adjudication.json"))],
             lambda p: [_z(p, "adjudication.json")], needs_legs=True),
+    SopStep("B9_plan_commit", "B9 定案(基线帽)",
+            lambda p: ["plan", "commit", "--issue", p.issue, "--cap-source", "baseline",
+                       "--data-dir", str(p.output_dir / "..")],
+            lambda p: [_z(p, "capital-plan.txt")]),
 )
 
 
