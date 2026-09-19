@@ -10,6 +10,7 @@ from sqlalchemy import Connection, exists, func, insert, or_, select, update
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.operator.models import (
     CandidateAuditFindingRow,
+    CandidateBandOutcomeRow,
     CandidateDeadFaceRow,
     CandidateGenerationOverrideLinkRow,
     CandidateMetricRow,
@@ -1712,6 +1713,24 @@ class OperatorResultRepository:
         self._connection.execute(
             insert(sod.operator_candidates).values(**_row_fields(row))
         )
+
+    def insert_candidate_band_outcome(self, row: CandidateBandOutcomeRow) -> None:
+        self._connection.execute(
+            insert(sod.operator_candidate_band_outcomes).values(**_row_fields(row))
+        )
+
+    def candidate_band_outcomes(
+        self, candidate_set_revision_id: str
+    ) -> tuple[CandidateBandOutcomeRow, ...]:
+        rows = self._connection.execute(
+            select(sod.operator_candidate_band_outcomes)
+            .where(
+                sod.operator_candidate_band_outcomes.c.candidate_set_revision_id
+                == candidate_set_revision_id
+            )
+            .order_by(sod.operator_candidate_band_outcomes.c.odds_band)
+        ).mappings()
+        return tuple(CandidateBandOutcomeRow(**dict(row)) for row in rows)
 
     def candidate(self, revision_id: str) -> TicketCandidateRow | None:
         row = (

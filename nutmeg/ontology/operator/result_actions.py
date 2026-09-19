@@ -22,6 +22,7 @@ from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.errors import OptimisticConcurrencyError
 from nutmeg.ontology.operator.models import (
     CandidateAuditFindingRow,
+    CandidateBandOutcomeRow,
     CandidateDeadFaceRow,
     CandidateMetricRow,
     CandidateTicketLegRow,
@@ -209,12 +210,27 @@ class TicketCandidateInput:
     audit_findings: tuple[CandidateAuditFindingInput, ...]
     completed_audit_kinds: tuple[str, ...]
     content_hash: str
+    odds_band: Literal["10x", "20x", "50x", "100x"] | None = None
+    target_odds_min_decimal: str | None = None
+    target_odds_max_decimal: str | None = None
+    combined_decimal_odds: str | None = None
+    parent_candidate_revision_id: str | None = None
+    delta_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateBandOutcomeInput:
+    odds_band: Literal["10x", "20x", "50x", "100x"]
+    status: Literal["candidates", "no_feasible_candidate"]
+    reason_code: str | None
+    candidate_count: int
 
 
 @dataclass(frozen=True, slots=True)
 class CandidateSetInput:
     set_kind: Literal["judgment_bound", "conditional_market_counterfactual"]
     candidates: tuple[TicketCandidateInput, ...]
+    band_outcomes: tuple[CandidateBandOutcomeInput, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1883,6 +1899,11 @@ class OperatorResultActions:
                     set_id=set_id,
                     candidate_set=candidate_set,
                 )
+                self._insert_band_outcomes(
+                    uow,
+                    set_id=set_id,
+                    candidate_set=candidate_set,
+                )
                 refs_by_kind.append(
                     (
                         candidate_set.set_kind,
@@ -2109,6 +2130,38 @@ class OperatorResultActions:
             if candidate.rank != expected_rank:
                 raise ValueError("candidate rank does not match deterministic ordering")
             cls._validate_candidate(uow, generation, envelope, candidate)
+        cls._validate_band_outcomes(candidate_set)
+
+    @staticmethod
+    def _validate_band_outcomes(candidate_set) -> None:
+        has_band_candidates = any(
+            candidate.odds_band is not None for candidate in candidate_set.candidates
+        )
+        if not has_band_candidates and not candidate_set.band_outcomes:
+            return
+        expected_bands = {"10x", "20x", "50x", "100x"}
+        outcomes = {outcome.odds_band: outcome for outcome in candidate_set.band_outcomes}
+        if set(outcomes) != expected_bands or len(outcomes) != len(
+            candidate_set.band_outcomes
+        ):
+            raise ValueError("candidate set requires one outcome for every odds band")
+        counts = {
+            band: sum(
+                candidate.odds_band == band for candidate in candidate_set.candidates
+            )
+            for band in expected_bands
+        }
+        for band, outcome in outcomes.items():
+            if outcome.candidate_count != counts[band]:
+                raise ValueError("candidate band outcome count does not reconcile")
+            if counts[band] > 0:
+                if outcome.status != "candidates" or outcome.reason_code is not None:
+                    raise ValueError("populated odds band must have candidates status")
+            elif (
+                outcome.status != "no_feasible_candidate"
+                or not str(outcome.reason_code or "").strip()
+            ):
+                raise ValueError("empty odds band requires a reason code")
 
     @classmethod
     def _validate_candidate(cls, uow, generation, envelope, candidate) -> None:
@@ -2117,6 +2170,7 @@ class OperatorResultActions:
         if len(candidate.completed_audit_kinds) != len(_AUDIT_KINDS):
             raise ValueError("candidate audit completion kinds must be unique")
         _required(candidate.content_hash, "candidate content_hash")
+        cls._validate_candidate_band(candidate)
         metrics = candidate.metrics
         for name in (
             "ticket_count",
@@ -2168,6 +2222,45 @@ class OperatorResultActions:
             raise ValueError("candidate exceeds the maximum ticket count")
         for ticket in candidate.tickets:
             cls._validate_ticket(uow, generation, envelope, ticket)
+
+    @staticmethod
+    def _validate_candidate_band(candidate) -> None:
+        fields = (
+            candidate.odds_band,
+            candidate.target_odds_min_decimal,
+            candidate.target_odds_max_decimal,
+            candidate.combined_decimal_odds,
+        )
+        if all(value is None for value in fields):
+            if (candidate.parent_candidate_revision_id is None) != (
+                candidate.delta_reason is None
+            ):
+                raise ValueError("candidate parent and delta reason must be paired")
+            return
+        if any(value is None for value in fields):
+            raise ValueError("candidate odds band metadata must be complete")
+        if candidate.odds_band not in {"10x", "20x", "50x", "100x"}:
+            raise ValueError("candidate odds band is not registered")
+        minimum = _decimal(
+            candidate.target_odds_min_decimal,
+            name="target_odds_min_decimal",
+        )
+        maximum = _decimal(
+            candidate.target_odds_max_decimal,
+            name="target_odds_max_decimal",
+        )
+        combined = _decimal(
+            candidate.combined_decimal_odds,
+            name="combined_decimal_odds",
+        )
+        if minimum <= Decimal("1") or not minimum <= combined <= maximum:
+            raise ValueError("candidate combined odds are outside the target interval")
+        if (candidate.parent_candidate_revision_id is None) != (
+            candidate.delta_reason is None
+        ):
+            raise ValueError("candidate parent and delta reason must be paired")
+        if candidate.delta_reason is not None:
+            _required(candidate.delta_reason, "candidate delta_reason")
 
     @staticmethod
     def _validate_finding(finding: CandidateAuditFindingInput) -> None:
@@ -2361,9 +2454,35 @@ class OperatorResultActions:
                     budget_check_completed=1,
                     deployment_report_completed=1,
                     content_hash=candidate.content_hash,
+                    odds_band=candidate.odds_band,
+                    target_odds_min_decimal=candidate.target_odds_min_decimal,
+                    target_odds_max_decimal=candidate.target_odds_max_decimal,
+                    combined_decimal_odds=candidate.combined_decimal_odds,
+                    parent_candidate_revision_id=(
+                        candidate.parent_candidate_revision_id
+                    ),
+                    delta_reason=candidate.delta_reason,
                 )
             )
             cls._insert_candidate_children(uow, candidate_id, candidate)
+
+    @staticmethod
+    def _insert_band_outcomes(uow, *, set_id: str, candidate_set) -> None:
+        for outcome in candidate_set.band_outcomes:
+            uow.operator_result.insert_candidate_band_outcome(
+                CandidateBandOutcomeRow(
+                    candidate_band_outcome_id=_stable_id(
+                        "operator-candidate-band-outcome",
+                        set_id,
+                        outcome.odds_band,
+                    ),
+                    candidate_set_revision_id=set_id,
+                    odds_band=outcome.odds_band,
+                    status=outcome.status,
+                    candidate_count=outcome.candidate_count,
+                    reason_code=outcome.reason_code,
+                )
+            )
 
     @classmethod
     def _insert_candidate_children(cls, uow, candidate_id: str, candidate) -> None:
@@ -2471,6 +2590,7 @@ class OperatorResultActions:
 
 __all__ = [
     "CandidateAuditFindingInput",
+    "CandidateBandOutcomeInput",
     "CandidateDeadFaceInput",
     "CandidateMetricsInput",
     "CandidateSetInput",

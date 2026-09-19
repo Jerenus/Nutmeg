@@ -477,6 +477,22 @@ class TicketCandidateRow:
     budget_check_completed: int
     deployment_report_completed: int
     content_hash: str
+    odds_band: str | None = None
+    target_odds_min_decimal: str | None = None
+    target_odds_max_decimal: str | None = None
+    combined_decimal_odds: str | None = None
+    parent_candidate_revision_id: str | None = None
+    delta_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateBandOutcomeRow:
+    candidate_band_outcome_id: str
+    candidate_set_revision_id: str
+    odds_band: str
+    status: str
+    candidate_count: int
+    reason_code: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -827,6 +843,7 @@ __all__ = [
     "BaselineEnvelopeStructureTemplateRow",
     "BaselineEnvelopeTemplateOfferRow",
     "CandidateAuditFindingRow",
+    "CandidateBandOutcomeRow",
     "CandidateDeadFaceRow",
     "CandidateGenerationRequestRow",
     "CandidateGenerationOverrideLinkRow",

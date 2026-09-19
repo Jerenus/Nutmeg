@@ -19,6 +19,7 @@ from nutmeg.ontology.operator.decision_actions import (
 )
 from nutmeg.ontology.operator.result_actions import (
     CandidateAuditFindingInput,
+    CandidateBandOutcomeInput,
     CandidateDeadFaceInput,
     CandidateMetricsInput,
     CandidateSetInput,
@@ -121,6 +122,9 @@ def _candidate(
     selection_code: str = "3",
     quote_id: str = "quote-3",
     booked_odds: str = "2.500000000000",
+    odds_band: str | None = None,
+    parent_candidate_revision_id: str | None = None,
+    delta_reason: str | None = None,
 ) -> TicketCandidateInput:
     conditional = set_kind == "conditional_market_counterfactual"
     ticket = CandidateTicketInput(
@@ -175,6 +179,21 @@ def _candidate(
             "deployment",
         ),
         content_hash=content_hash,
+        odds_band=odds_band,
+        target_odds_min_decimal=("15.000000000000" if odds_band else None),
+        target_odds_max_decimal=("35.000000000000" if odds_band else None),
+        combined_decimal_odds=("20.000000000000" if odds_band else None),
+        parent_candidate_revision_id=parent_candidate_revision_id,
+        delta_reason=delta_reason,
+    )
+
+
+def _band_outcomes() -> tuple[CandidateBandOutcomeInput, ...]:
+    return (
+        CandidateBandOutcomeInput("10x", "no_feasible_candidate", "empty", 0),
+        CandidateBandOutcomeInput("20x", "candidates", None, 1),
+        CandidateBandOutcomeInput("50x", "no_feasible_candidate", "empty", 0),
+        CandidateBandOutcomeInput("100x", "no_feasible_candidate", "empty", 0),
     )
 
 
@@ -202,6 +221,7 @@ def _generate(
     key: str = "candidate:generate:1",
     judgment_candidate: TicketCandidateInput | None = None,
     conditional_candidate: TicketCandidateInput | None = None,
+    band_outcomes: tuple[CandidateBandOutcomeInput, ...] = (),
     as_of=AT + timedelta(seconds=7),
 ):
     job = _claim_generation_job(fixture, as_of=as_of)
@@ -217,6 +237,7 @@ def _generate(
                             set_kind="judgment_bound", content_hash="a" * 64
                         ),
                     ),
+                    band_outcomes=band_outcomes,
                 ),
                 CandidateSetInput(
                     set_kind="conditional_market_counterfactual",
@@ -227,6 +248,7 @@ def _generate(
                             content_hash="b" * 64,
                         ),
                     ),
+                    band_outcomes=band_outcomes,
                 ),
             ),
             generator_version="operator-candidate-v1",
@@ -238,6 +260,134 @@ def _generate(
             requested_at=as_of + timedelta(seconds=1),
         )
     )
+
+
+def test_generation_persists_odds_band_iteration_and_all_band_outcomes(
+    tmp_path: Path,
+) -> None:
+    fixture = _ready_fixture(tmp_path)
+    request = fixture.judgment.decision_actions.request_candidate_generation(
+        _generation_request(fixture)
+    )
+    judgment = _candidate(
+        set_kind="judgment_bound",
+        content_hash="c" * 64,
+        odds_band="20x",
+        parent_candidate_revision_id="candidate-parent",
+        delta_reason="replace stale away leg",
+    )
+    conditional = _candidate(
+        set_kind="conditional_market_counterfactual",
+        content_hash="d" * 64,
+        odds_band="20x",
+    )
+
+    result = _generate(
+        fixture,
+        request_id=request.result_refs[0].object_id,
+        judgment_candidate=judgment,
+        conditional_candidate=conditional,
+        band_outcomes=_band_outcomes(),
+    )
+
+    assert result.status is ActionStatus.COMMITTED
+    with fixture.judgment.engine.connect() as connection:
+        candidate = connection.execute(
+            text(
+                "SELECT odds_band, target_odds_min_decimal, "
+                "target_odds_max_decimal, combined_decimal_odds, "
+                "parent_candidate_revision_id, delta_reason "
+                "FROM operator_candidates WHERE deployable = 1"
+            )
+        ).one()
+        outcomes = connection.execute(
+            text(
+                "SELECT odds_band, status, candidate_count, reason_code "
+                "FROM operator_candidate_band_outcomes "
+                "WHERE candidate_set_revision_id = ("
+                "SELECT candidate_set_revision_id FROM operator_candidate_set_revisions "
+                "WHERE set_kind = 'judgment_bound') ORDER BY odds_band"
+            )
+        ).all()
+    assert candidate == (
+        "20x",
+        "15.000000000000",
+        "35.000000000000",
+        "20.000000000000",
+        "candidate-parent",
+        "replace stale away leg",
+    )
+    assert outcomes == [
+        ("100x", "no_feasible_candidate", 0, "empty"),
+        ("10x", "no_feasible_candidate", 0, "empty"),
+        ("20x", "candidates", 1, None),
+        ("50x", "no_feasible_candidate", 0, "empty"),
+    ]
+
+
+def test_generation_requires_one_outcome_for_every_odds_band(tmp_path: Path) -> None:
+    fixture = _ready_fixture(tmp_path)
+    request = fixture.judgment.decision_actions.request_candidate_generation(
+        _generation_request(fixture)
+    )
+
+    with pytest.raises(ValueError, match="one outcome for every odds band"):
+        _generate(
+            fixture,
+            request_id=request.result_refs[0].object_id,
+            judgment_candidate=_candidate(
+                set_kind="judgment_bound",
+                content_hash="e" * 64,
+                odds_band="20x",
+            ),
+            conditional_candidate=_candidate(
+                set_kind="conditional_market_counterfactual",
+                content_hash="f" * 64,
+                odds_band="20x",
+            ),
+            band_outcomes=_band_outcomes()[:-1],
+        )
+
+
+def test_generation_rejects_incomplete_odds_band_metadata(tmp_path: Path) -> None:
+    fixture = _ready_fixture(tmp_path)
+    request = fixture.judgment.decision_actions.request_candidate_generation(
+        _generation_request(fixture)
+    )
+    candidate = replace(
+        _candidate(
+            set_kind="judgment_bound",
+            content_hash="e" * 64,
+            odds_band="20x",
+        ),
+        combined_decimal_odds=None,
+    )
+
+    with pytest.raises(ValueError, match="odds band metadata must be complete"):
+        _generate(
+            fixture,
+            request_id=request.result_refs[0].object_id,
+            judgment_candidate=candidate,
+        )
+
+
+def test_generation_requires_parent_and_delta_reason_together(tmp_path: Path) -> None:
+    fixture = _ready_fixture(tmp_path)
+    request = fixture.judgment.decision_actions.request_candidate_generation(
+        _generation_request(fixture)
+    )
+    candidate = _candidate(
+        set_kind="judgment_bound",
+        content_hash="e" * 64,
+        parent_candidate_revision_id="candidate-parent",
+    )
+
+    with pytest.raises(ValueError, match="parent and delta reason must be paired"):
+        _generate(
+            fixture,
+            request_id=request.result_refs[0].object_id,
+            judgment_candidate=candidate,
+        )
 
 
 def test_fixed_prize_policy_registration_is_revisioned_closed_and_role_separated(

@@ -4598,6 +4598,40 @@ def _apply_capital_plans(connection: Connection) -> None:
     )
 
 
+def _apply_jczq_candidate_bands(connection: Connection) -> None:
+    columns = {
+        column["name"]
+        for column in inspect(connection).get_columns("operator_candidates")
+    }
+    additions = {
+        "odds_band": "TEXT NULL",
+        "target_odds_min_decimal": "TEXT NULL",
+        "target_odds_max_decimal": "TEXT NULL",
+        "combined_decimal_odds": "TEXT NULL",
+        "parent_candidate_revision_id": "TEXT NULL",
+        "delta_reason": "TEXT NULL",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE operator_candidates ADD COLUMN {name} {declaration}"
+            )
+    schema_operator_decision.operator_candidate_band_outcomes.create(
+        connection, checkfirst=True
+    )
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS
+              operator_candidate_band_outcomes_no_{operation.lower()}
+            BEFORE {operation} ON operator_candidate_band_outcomes
+            BEGIN
+              SELECT RAISE(ABORT, 'operator_candidate_band_outcomes is append-only');
+            END
+            """
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -4846,6 +4880,15 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="zucai_capital_plans",
         fingerprint="capital_plans+gate_cost+commit_human_only",
         apply=_apply_capital_plans,
+    ),
+    Migration(
+        version=31,
+        name="jczq_candidate_bands",
+        fingerprint=(
+            "candidate_odds_band+target_interval+combined_odds+"
+            "parent_delta_lineage+four_band_outcomes+append_only"
+        ),
+        apply=_apply_jczq_candidate_bands,
     ),
 )
 

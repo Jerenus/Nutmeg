@@ -1507,6 +1507,12 @@ operator_candidates = Table(
     Column("budget_check_completed", Integer, nullable=False),
     Column("deployment_report_completed", Integer, nullable=False),
     Column("content_hash", Text, nullable=False),
+    Column("odds_band", Text, nullable=True),
+    Column("target_odds_min_decimal", Text, nullable=True),
+    Column("target_odds_max_decimal", Text, nullable=True),
+    Column("combined_decimal_odds", Text, nullable=True),
+    Column("parent_candidate_revision_id", Text, nullable=True),
+    Column("delta_reason", Text, nullable=True),
     CheckConstraint("candidate_index >= 0", name="ck_operator_candidate_index"),
     CheckConstraint(
         "partition IN ('eligible', 'audit_blocked', 'over_cap')",
@@ -1531,6 +1537,21 @@ operator_candidates = Table(
         "AND budget_check_completed = 1 AND deployment_report_completed = 1",
         name="ck_operator_candidate_all_audits",
     ),
+    CheckConstraint(
+        "(odds_band IS NULL AND target_odds_min_decimal IS NULL "
+        "AND target_odds_max_decimal IS NULL AND combined_decimal_odds IS NULL) OR "
+        "(odds_band IN ('10x', '20x', '50x', '100x') "
+        "AND target_odds_min_decimal IS NOT NULL "
+        "AND target_odds_max_decimal IS NOT NULL "
+        "AND combined_decimal_odds IS NOT NULL)",
+        name="ck_operator_candidate_odds_band_shape",
+    ),
+    CheckConstraint(
+        "(parent_candidate_revision_id IS NULL AND delta_reason IS NULL) OR "
+        "(parent_candidate_revision_id IS NOT NULL "
+        "AND length(trim(delta_reason)) > 0)",
+        name="ck_operator_candidate_iteration_shape",
+    ),
     UniqueConstraint(
         "candidate_set_revision_id",
         "candidate_index",
@@ -1545,6 +1566,42 @@ operator_candidates = Table(
         "candidate_set_revision_id",
         "content_hash",
         name="uq_operator_candidate_content",
+    ),
+)
+
+
+operator_candidate_band_outcomes = Table(
+    "operator_candidate_band_outcomes",
+    metadata,
+    Column("candidate_band_outcome_id", Text, primary_key=True),
+    Column(
+        "candidate_set_revision_id",
+        Text,
+        ForeignKey(
+            "operator_candidate_set_revisions.candidate_set_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    ),
+    Column("odds_band", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("candidate_count", Integer, nullable=False),
+    Column("reason_code", Text, nullable=True),
+    CheckConstraint(
+        "odds_band IN ('10x', '20x', '50x', '100x')",
+        name="ck_operator_candidate_band_outcome_band",
+    ),
+    CheckConstraint(
+        "(status = 'candidates' AND candidate_count > 0 AND reason_code IS NULL) OR "
+        "(status = 'no_feasible_candidate' AND candidate_count = 0 "
+        "AND length(trim(reason_code)) > 0)",
+        name="ck_operator_candidate_band_outcome_shape",
+    ),
+    UniqueConstraint(
+        "candidate_set_revision_id",
+        "odds_band",
+        name="uq_operator_candidate_band_outcome",
     ),
 )
 
@@ -2297,6 +2354,7 @@ __all__ = [
     "operator_baseline_envelope_structure_templates",
     "operator_baseline_envelope_template_offers",
     "operator_candidate_audit_findings",
+    "operator_candidate_band_outcomes",
     "operator_candidate_dead_faces",
     "operator_candidate_generation_requests",
     "operator_candidate_metrics",
