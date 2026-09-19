@@ -65,18 +65,27 @@ class JczqBoard:
 @dataclass(frozen=True, slots=True)
 class JczqResearchArtifact:
     match_id: str
-    captured_at: datetime
-    source_run_id: str
-    artifact_id: str
+    captured_at: datetime | None
+    source_run_id: str | None
+    artifact_id: str | None
     intake_errors: tuple[str, ...] = ()
     artifact_path: str | None = None
     artifact_bytes: bytes | None = None
 
     def __post_init__(self) -> None:
-        _aware(self.captured_at, "captured_at")
-        for value in (self.match_id, self.source_run_id, self.artifact_id):
-            if not value.strip():
-                raise ValueError("research artifact lineage is required")
+        if self.captured_at is not None:
+            _aware(self.captured_at, "captured_at")
+        if not self.match_id.strip():
+            raise ValueError("research artifact match identity is required")
+        if not self.intake_errors and (
+            self.captured_at is None
+            or self.source_run_id is None
+            or self.artifact_id is None
+        ):
+            raise ValueError("accepted research artifact lineage is required")
+        for value in (self.source_run_id, self.artifact_id):
+            if value is not None and not value.strip():
+                raise ValueError("research artifact lineage must be non-empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,7 +186,7 @@ class JczqBoardWorkflow:
                     ),
                     "captured_at": (
                         _aware(artifact.captured_at, "captured_at").isoformat()
-                        if artifact
+                        if artifact and artifact.captured_at is not None
                         else current_by_match.get(match.match_id).captured_at
                         if current_by_match.get(match.match_id)
                         else None
@@ -224,7 +233,7 @@ class JczqBoardWorkflow:
                 )
                 captured_at = (
                     _aware(artifact.captured_at, "captured_at").isoformat()
-                    if artifact
+                    if artifact and artifact.captured_at is not None
                     else current.captured_at
                     if current
                     else None
@@ -282,6 +291,8 @@ class JczqBoardWorkflow:
                 )
                 refs.append(ObjectRef("jczq_board_research_state", state_id))
                 if status == "researched" and artifact is not None:
+                    if artifact.captured_at is None:
+                        raise ValueError("accepted research artifact capture time is required")
                     r0_targets.append((match, artifact))
             return tuple(refs)
 
@@ -294,6 +305,7 @@ class JczqBoardWorkflow:
             and outcome.action_id == command.action_id
         ):
             for match, artifact in r0_targets:
+                assert artifact.captured_at is not None
                 if _aware(artifact.captured_at, "captured_at") >= _aware(
                     match.kickoff_at, "kickoff_at"
                 ):

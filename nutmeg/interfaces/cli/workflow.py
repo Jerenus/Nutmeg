@@ -35,6 +35,7 @@ from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.jczq_board_workflow import JczqBoardWorkflow
 from nutmeg.product.jczq_compatibility import JczqCompatibilityProjector
 from nutmeg.product.jczq_cutover import JczqCutoverGate
+from nutmeg.product.jczq_replay import JczqReplayRunner
 from nutmeg.product.operator_legacy_import import (
     LegacyOperatorImporter,
     LegacyQuarantineReport,
@@ -50,6 +51,7 @@ _CONTRACT_VERSION_OPTION = _cli.typer.Option(..., "--contract-version")
 _REPLAY_REPORT_OPTION = _cli.typer.Option(..., "--replay-report")
 _APPROVE_OPTION = _cli.typer.Option(False, "--approve")
 _CHECK_ONLY_OPTION = _cli.typer.Option(False, "--check-only")
+_ISOLATED_ROOT_OPTION = _cli.typer.Option(..., "--isolated-root")
 
 
 class WorkflowOperationError(RuntimeError):
@@ -553,6 +555,27 @@ def jczq_project(
     """Regenerate read-only compatibility files from ontology state."""
     try:
         _cli.typer.echo(canonical_json(_jczq_workflow_service(data_dir).project(day)))
+    except (OSError, WorkflowOperationError, ValueError) as error:
+        _fail(error)
+
+
+@workflow_app.command("jczq-replay")
+def jczq_replay(
+    day: str = _cli.typer.Option(..., "--day"),
+    isolated_root: Path = _ISOLATED_ROOT_OPTION,
+    data_dir: Path = _DATA_DIR_OPTION,
+) -> None:
+    """Replay one historical JCZQ day inside an explicit isolated root."""
+    try:
+        report = JczqReplayRunner(
+            source_root=data_dir,
+            isolated_root=isolated_root,
+        ).run(day)
+        _cli.typer.echo(canonical_json(report.to_dict()))
+        if not report.accepted:
+            raise _cli.typer.Exit(code=1)
+    except _cli.typer.Exit:
+        raise
     except (OSError, WorkflowOperationError, ValueError) as error:
         _fail(error)
 
