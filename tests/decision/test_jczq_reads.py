@@ -129,6 +129,24 @@ def test_every_board_match_gets_a_read_even_without_research(tmp_path):
     assert anchor["judgment_tier"] == "price_only"
 
 
+def test_researched_basis_wins_over_a_stale_price_only_tier(tmp_path):
+    root = _day(tmp_path)
+    board_path = root / "daily" / "2026-09-19" / "jczq-legs-base.json"
+    board = json.loads(board_path.read_text(encoding="utf-8"))
+    board["legs"]["周五001"]["judgment_tier"] = "price_only"
+    board_path.write_text(json.dumps(board, ensure_ascii=False), encoding="utf-8")
+    intake_board(day="2026-09-19", jczq_dir=root, write=True)
+
+    [read] = build_jczq_reads(
+        day="2026-09-19",
+        jczq_dir=root,
+        made_at="2026-09-19T12:00:00+08:00",
+    )
+
+    assert read["judge"] == "ai:jczq-analyst"
+    assert read["judgment_tier"] == "deep_research"
+
+
 def test_write_quarantines_intake_errors_and_restores_price_only(tmp_path):
     root = _day(tmp_path)
     day_dir = root / "daily" / "2026-09-19"

@@ -82,9 +82,16 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
     )
     reads: list[dict] = []
     for code, leg in board["legs"].items():
+        face_status = leg.get("face_status") or {}
+        researched_basis = bool(face_status) and all(
+            row.get("basis") == "researched" for row in face_status.values()
+        )
         researched = (
-            leg.get("judgment_tier") == "deep_research"
-            and "face_status" in leg
+            bool(face_status)
+            and (
+                leg.get("judgment_tier") == "deep_research"
+                or researched_basis
+            )
         )
         prior = dict(leg["fair"])
         if researched:
