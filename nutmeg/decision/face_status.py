@@ -37,8 +37,17 @@ def derive_faces(face_status: dict) -> str:
     return "".join(FACE_DIGIT[face] for face in FACES if face_status[face]["state"] == "alive")
 
 
-def attach_face_status(leg: dict, research: dict, *, source: str) -> dict:
+def attach_face_status(
+    leg: dict,
+    research: dict,
+    *,
+    source: str,
+    basis: str | None = None,
+) -> dict:
     """Attach face status in place and require any written faces to match it."""
+    resolved_basis = basis or ("researched" if research else "default")
+    if resolved_basis not in {"researched", "default"}:
+        raise FaceStatusError(f"unknown face_status basis: {resolved_basis}")
     death_three_proofs = (research or {}).get("death_three_proofs") or {}
     never = set(leg.get("never_faces") or [])
     out: dict[str, dict] = {}
@@ -64,6 +73,7 @@ def attach_face_status(leg: dict, research: dict, *, source: str) -> dict:
             "proofs": proofs,
             "precedent": _precedent_status(leg, face),
             "source": f"{source}#death_three_proofs.{face}",
+            "basis": resolved_basis,
         }
 
     derived = derive_faces(out)

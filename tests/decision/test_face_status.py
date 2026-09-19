@@ -67,6 +67,21 @@ def test_missing_proofs_mean_alive_burden_is_on_death():
     assert all(value["state"] == "alive" for value in leg["face_status"].values())
 
 
+def test_face_status_records_default_or_researched_basis():
+    default_leg = _leg()
+    attach_face_status(default_leg, {}, source="default")
+    assert {row["basis"] for row in default_leg["face_status"].values()} == {"default"}
+
+    researched_leg = _leg()
+    attach_face_status(researched_leg, _research(), source="research.json")
+    assert {row["basis"] for row in researched_leg["face_status"].values()} == {
+        "researched"
+    }
+    assert derive_faces(default_leg["face_status"]) == derive_faces(
+        researched_leg["face_status"]
+    )
+
+
 def test_never_only_from_explicit_declaration_not_from_no_precedent():
     leg = _leg(faces="310", precedents=[["0", "查无先例", "none"]])
     attach_face_status(leg, _research(), source="x")

@@ -116,6 +116,16 @@ window.Observe = (function () {
         cards.replaceChildren();
         if (!data.experiments.length) cards.appendChild(element("p", "obs-muted", "暂无实验"));
         data.experiments.forEach(function (item) { cards.appendChild(experimentCard(item)); });
+        var balance = document.querySelector(selectors.balance);
+        if (balance && data.balance) {
+          var moved = Number(data.balance.n_moved || 0);
+          var total = Number(data.balance.n_matches || 0);
+          var prefix = moved === 0 ? "本期天平未拨动（0/" + total + "）" : "本期天平 " + moved + "/" + total + " 拨动";
+          var mean = Number(data.balance.mean_abs_shift_pp || 0).toFixed(2);
+          var right = data.balance.direction_right_n == null ? "--" : data.balance.direction_right_n;
+          var wrong = data.balance.direction_wrong_n == null ? "--" : data.balance.direction_wrong_n;
+          balance.textContent = prefix + " · 平均偏移 " + mean + "pp · 方向 " + right + "/" + wrong;
+        }
         if (data.wind) {
           document.querySelector(selectors.wind).textContent = "今日风向 " + (data.wind.regime || "--") + " · 各级 " + JSON.stringify(data.wind.tiers || {}) + " · 建议帽档 " + (data.wind.cap_band || "--");
         }

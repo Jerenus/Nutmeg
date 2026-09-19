@@ -9,10 +9,11 @@
     <div><p class="obs-kicker">TODAY / READ ONLY</p><h1>判断系统正在学什么</h1></div>
     <p>实验状态、样本距离、缺口与当期义务，共用同一时点快照。</p>
   </section>
+  <section class="obs-balance" id="balance">本期天平暂无账</section>
   <section class="obs-band" id="wind"><span class="obs-muted">今日未定级</span></section>
   <section class="obs-duties" id="duties"><div class="obs-section-title">义务日历</div></section>
   <section class="obs-grid" id="cards" aria-live="polite"></section>
   <p class="obs-error" id="errors" hidden></p>
 </main>
 {% endblock %}
-{% block observe_script %}<script>Observe.panorama({cards:"#cards",wind:"#wind",duties:"#duties",errors:"#errors"});</script>{% endblock %}
+{% block observe_script %}<script>Observe.panorama({cards:"#cards",balance:"#balance",wind:"#wind",duties:"#duties",errors:"#errors"});</script>{% endblock %}

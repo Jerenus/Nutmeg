@@ -111,7 +111,8 @@ def _active_experiments(data_dir: Path) -> list[str]:
     return [r["exp_id"] for r in rows if r.get("status") in ("observing", "graded")]
 
 
-def after_settle(*, day: str, data_dir: Path, invoke: Invoker = _cli_invoke,
+def after_settle(*, day: str, data_dir: Path, issue: str | None = None,
+                 invoke: Invoker = _cli_invoke,
                  experiments: Iterable[str] | None = None) -> dict[str, str]:
     """结算跑完（非 dry-run）：每条在观察中的实验 grade 一次；grade 成功再试 verdict。
 
@@ -125,6 +126,13 @@ def after_settle(*, day: str, data_dir: Path, invoke: Invoker = _cli_invoke,
     except Exception as exc:  # noqa: BLE001 —— 读不到本体也不能拖垮结算
         print(f"⚠️rsi 结算接线未成功（不影响主任务）：读实验列表失败 {exc!r}"[-600:])
         return report
+    balance_argv = ["rsi", "balance"]
+    balance_argv.extend(["--issue", issue] if issue else ["--day", day])
+    balance_argv.extend(["--data-dir", str(data_dir)])
+    try:
+        invoke(balance_argv)
+    except Exception as exc:  # noqa: BLE001 - the ledger is still a settle sidecar
+        print(f"⚠️rsi 天平账未成功（不影响主任务）：{exc!r}"[-600:])
     for exp in exp_ids:
         try:
             rc, out = invoke(["rsi", "grade", "--exp", exp, "--mode", "prospective",

@@ -8,11 +8,13 @@ REG = Path("experiments/registry")
 
 def test_all_registry_docs_load_and_keep_their_original_registration_dates():
     docs = {p.stem: load_registry_doc(p) for p in sorted(REG.glob("*.json"))}
-    assert set(docs) == {"F1c", "F2", "F3", "F4", "F5", "R0"}
+    assert set(docs) == {"F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0"}
     assert docs["F2"]["registered_at"] == "2026-09-14"
     assert docs["F1c"]["registered_at"] == "2026-09-14"
     assert docs["F4"]["registered_at"] == "2026-09-18"
     assert docs["F5"]["registered_at"] == "2026-09-18"
+    assert docs["F8"]["registered_at"] == "2026-09-19"
+    assert docs["F9"]["registered_at"] == "2026-09-19"
     # 在跑的窗口不重新索引（U9-②）
     assert docs["F2"]["window"] == {"issue_from": "26126", "issue_to": "26137"}
     assert docs["F1c"]["window"] == {"issue_from": "26129", "issue_to": "26140"}
@@ -47,7 +49,7 @@ def test_migration_script_backfills_observations_and_marks_f1c_gaps(tmp_path, mo
     report = mig.migrate(data_dir=d, registry_dir=REG, f2_ledger=tmp_path / "ledger.json",
                          dispersion_file=tmp_path / "t7-dispersion.json",
                          now="2026-09-18T20:00:00+08:00")
-    assert report["registered"] == ["F1c", "F2", "F3", "F4", "F5", "R0"]
+    assert report["registered"] == ["F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0"]
     assert report["F2"]["observations"] == 3
     assert report["F1c"]["observations"] == 1
     # 26125 没有 issue.json 时不造数据

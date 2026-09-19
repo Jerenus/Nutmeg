@@ -109,6 +109,8 @@ def _fake_invoke(calls, replies):
     """按 argv[1]（grade/verdict）回放 (exit_code, output)。"""
     def invoke(argv):
         calls.append(argv)
+        if argv[1] == "balance":
+            return 0, "F9 天平 0/14 拨动"
         return replies[argv[1]]
     return invoke
 
@@ -122,14 +124,41 @@ def test_after_settle_grades_then_verdicts_each_observing_experiment(tmp_path):
             "verdict": (1, "rsi error: 未到期：n_cum=10，距 n_min 还差 130"),
         }))
     assert report == {"F2": "not_due"}
-    assert [c[:2] for c in calls] == [["rsi", "grade"], ["rsi", "verdict"]]
-    grade = calls[0]
+    assert [c[:2] for c in calls] == [
+        ["rsi", "balance"],
+        ["rsi", "grade"],
+        ["rsi", "verdict"],
+    ]
+    grade = calls[1]
     assert "--exp" in grade and "F2" in grade
     assert grade[grade.index("--mode") + 1] == "prospective"
     assert grade[grade.index("--data-dir") + 1] == str(tmp_path)
-    verdict = calls[1]
+    verdict = calls[2]
     assert verdict[verdict.index("--exp") + 1] == "F2"
     assert verdict[verdict.index("--data-dir") + 1] == str(tmp_path)
+
+
+def test_after_settle_records_balance_before_grading(tmp_path):
+    calls = []
+
+    def invoke(argv):
+        calls.append(argv)
+        if argv[1] == "balance":
+            return 0, "F9 天平 0/14 拨动"
+        if argv[1] == "grade":
+            return 1, "尚未接入"
+        raise AssertionError(argv)
+
+    after_settle(
+        day="2026-09-19",
+        issue="26129",
+        data_dir=tmp_path,
+        experiments=["F8"],
+        invoke=invoke,
+    )
+
+    assert calls[0][:4] == ["rsi", "balance", "--issue", "26129"]
+    assert calls[1][:2] == ["rsi", "grade"]
 
 
 def test_after_settle_skips_experiments_without_an_adapter(tmp_path):
@@ -141,7 +170,7 @@ def test_after_settle_skips_experiments_without_an_adapter(tmp_path):
             "verdict": (0, "should never be called"),
         }))
     assert report == {"F5": "skipped_no_adapter"}
-    assert [c[:2] for c in calls] == [["rsi", "grade"]]
+    assert [c[:2] for c in calls] == [["rsi", "balance"], ["rsi", "grade"]]
 
 
 def test_after_settle_records_a_verdict_when_due(tmp_path):
@@ -153,7 +182,11 @@ def test_after_settle_records_a_verdict_when_due(tmp_path):
             "verdict": (0, "F2 → falsified（判据快照 ...）"),
         }))
     assert report == {"F2": "verdict_recorded"}
-    assert [c[:2] for c in calls] == [["rsi", "grade"], ["rsi", "verdict"]]
+    assert [c[:2] for c in calls] == [
+        ["rsi", "balance"],
+        ["rsi", "grade"],
+        ["rsi", "verdict"],
+    ]
 
 
 def test_after_settle_never_raises_into_caller(tmp_path, capsys):

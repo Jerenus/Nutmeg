@@ -5,8 +5,10 @@ import pytest
 from nutmeg.decision.rsi_grading import (
     GradeResult,
     LeakError,
+    ResidualCI,
     bootstrap_residual_pp,
     c14_line_harness,
+    death_proof_threshold_harness,
     dream,
     grade_f2_prospective,
     grade_f4,
@@ -97,3 +99,28 @@ def test_c14_line_harness_only_scores_excluded_faces_under_the_line():
     ]
     assert c14_line_harness(rows, {"line": 0.15}).n == 2
     assert c14_line_harness(rows, {"line": 0.25}).n == 3
+
+
+def test_death_proof_threshold_variants_expand_the_dead_face_set_monotonically():
+    rows = [
+        {
+            "fair": {"home": 0.70, "draw": 0.20, "away": 0.10},
+            "_d3": {
+                "home": {"a": False, "b": False, "c": True},
+                "draw": {"a": True, "b": True, "c": False},
+                "away": {"a": True, "b": True, "c": True},
+            },
+            "actual": "home",
+        }
+    ]
+    variants = [
+        {"proofs": 3, "max_fair": 1.0},
+        {"proofs": 2, "max_fair": 0.10},
+        {"proofs": 2, "max_fair": 0.20},
+    ]
+
+    table = dream(rows, death_proof_threshold_harness, variants=variants)
+
+    assert table["variants_tried"] == 3
+    assert sorted(row["n"] for row in table["ranked"]) == [1, 1, 2]
+    assert death_proof_threshold_harness([], variants[0]) == ResidualCI(0, 0, 0, 0)

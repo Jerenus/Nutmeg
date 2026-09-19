@@ -1,4 +1,11 @@
-from nutmeg.decision.observe_views import candidate_dag, day_view, experiment_card
+import json
+
+from nutmeg.decision.observe_views import (
+    balance_for_issue,
+    candidate_dag,
+    day_view,
+    experiment_card,
+)
 
 
 def test_experiment_card_derives_progress_ci_bar_and_gap_heat():
@@ -129,3 +136,19 @@ def test_day_view_degrades_gracefully_without_plan_or_tree():
     assert view["judgments"] == [
         {"obj_id": "fr-1", "match": "A vs B", "market": "had"}
     ]
+
+
+def test_balance_for_issue_reads_the_visible_zero_move_ledger(tmp_path):
+    payload = {
+        "issue": "26129",
+        "n_matches": 14,
+        "n_moved": 0,
+        "mean_abs_shift_pp": 0.0,
+        "direction_right_n": None,
+        "direction_wrong_n": None,
+    }
+    (tmp_path / "26129-balance.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+
+    assert balance_for_issue(tmp_path, "26129") == payload

@@ -1,0 +1,33 @@
+{
+  "exp_id": "F8",
+  "claim": "死亡三证要求 3/3 的门槛过严，使第一序几乎不产生结构；放宽到「两证 + 被排面 fair ≤ X%」不会让被排面兑现率显著变差。",
+  "mechanism": "三证齐是 26118 之后立的高标准，本意是防「崩塌叙述越完整越不崩」。但全历史 294 个面只判死 10 个(3.4%)，26122-26126/26129 五期为 0，而 26129 那 14 场是全部深研过的——门槛高到任九恒空前沿（票级上限 3 下最省 2³×3⁶=5,832 注）。",
+  "tier": "candidate",
+  "layer": "structural",
+  "population": "zucai",
+  "min_tier": "deep_research",
+  "window": {"date_from": "2026-09-20", "n_min": 120},
+  "falsifier": {
+    "metric": "excluded_face_hit_resid_pp",
+    "stratum": "zucai",
+    "n_min": 120,
+    "bound": "ci_upper",
+    "threshold_pp": 2.0,
+    "direction": "gt_means_falsified"
+  },
+  "stop_rule": "放宽档的被排面兑现率 ci_upper 高于现行档 +2pp 即证伪（说明放宽会多杀活面）。⛔在此之前不得改三证定义。",
+  "quota_slot": false,
+  "buckets": ["三证 3/3（现行）", "两证 + fair≤10%", "两证 + fair≤15%"],
+  "rule_ids": ["C14"],
+  "replay_spec": {
+    "harness": "nutmeg.decision.rsi_grading:death_proof_threshold_harness",
+    "corpus": ".nutmeg-data/zucai/*-legs-base.json",
+    "variants": [
+      {"proofs": 3, "max_fair": 1.0},
+      {"proofs": 2, "max_fair": 0.10},
+      {"proofs": 2, "max_fair": 0.15}
+    ]
+  },
+  "source_doc": "docs/superpowers/specs/2026-09-19-zucai-structure-lane-design.md",
+  "registered_at": "2026-09-19"
+}

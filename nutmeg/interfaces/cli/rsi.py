@@ -35,6 +35,7 @@ _DATA_DIR = typer.Option(Path(".nutmeg-data"), "--data-dir")
 _EXP = typer.Option(..., "--exp")
 _EXP_OPT = typer.Option(None, "--exp")
 _DAY = typer.Option(..., "--day")
+_DAY_OPT = typer.Option(None, "--day")
 _ISSUE = typer.Option(None, "--issue")
 _NOW = typer.Option(None, "--now", help="测试用；默认当前时刻")
 _DUTY = typer.Option(..., "--duty")
@@ -203,6 +204,109 @@ def fulfill(exp: str = _EXP, duty: str = _DUTY, day: str = _DAY, artifact: Path 
     prospective = captured < datetime.fromisoformat(ko)
     typer.echo(f"已登记 {exp}/{duty}@{day}  n_rows={n_rows}  "
                f"{'前瞻' if prospective else '⚠️非前瞻（该日仍是 gap）'}")
+
+
+def _official_zucai_outcomes(data_dir: Path, issue: str, reads: list[dict]) -> dict | None:
+    path = data_dir / "zucai" / "official-results.json"
+    if not path.exists():
+        return None
+    result = json.loads(path.read_text(encoding="utf-8")).get(issue)
+    if not isinstance(result, str):
+        return None
+    face = {"3": "home", "1": "draw", "0": "away"}
+    codes = result.split()
+    outcomes = {
+        str(read.get("match_id") or read.get("read_id")): face[codes[index]]
+        for index, read in enumerate(reads)
+        if index < len(codes) and codes[index] in face
+    }
+    return outcomes or None
+
+
+@rsi_app.command("balance")
+def balance(
+    issue: str | None = _ISSUE,
+    day: str | None = _DAY_OPT,
+    data_dir: Path = _DATA_DIR,
+) -> None:
+    """Write the F9 movement ledger, then register its daily duty artifact."""
+    from collections import Counter
+
+    from nutmeg.decision.balance_ledger import balance_ledger
+
+    if issue:
+        reads_path = data_dir / "zucai" / f"{issue}-reads.json"
+        artifact = data_dir / "zucai" / f"{issue}-balance.json"
+        kickoff = _earliest_kickoff(data_dir, issue)
+        resolved_day = day or (kickoff[:10] if kickoff else None)
+        stratum = "zucai"
+    elif day:
+        day_dir = data_dir / "jczq" / "daily" / day
+        reads_path = day_dir / "reads.json"
+        artifact = day_dir / "balance.json"
+        kickoffs = _jczq_match_kickoffs(data_dir, day)
+        kickoff = min(kickoffs.values()) if kickoffs else None
+        resolved_day = day
+        stratum = "jczq"
+    else:
+        _fail("需要 --issue 或 --day")
+    if not reads_path.exists():
+        _fail(f"reads 不存在：{reads_path}")
+    if kickoff is None or resolved_day is None:
+        _fail("找不到最早开球，无法登记 F9 duty")
+
+    reads = json.loads(reads_path.read_text(encoding="utf-8"))
+    outcomes = _official_zucai_outcomes(data_dir, issue, reads) if issue else None
+    ledger = balance_ledger(reads, outcomes=outcomes)
+    payload = {"issue": issue, "day": resolved_day, **ledger}
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
+
+    k = _kernel(data_dir)
+    now = _now()
+    _run(
+        k.rsi_actions.schedule_duties,
+        ScheduleDutiesRequest(
+            day=resolved_day,
+            earliest_kickoff=kickoff,
+            issue=issue,
+            idempotency_key=f"rsi-balance-sched:{issue or resolved_day}",
+            requested_at=now,
+            **_SYSTEM,
+        ),
+    )
+    raw = artifact.read_bytes()
+    tier_hist = dict(
+        Counter(str(read.get("judgment_tier") or "price_only") for read in reads)
+    )
+    _run(
+        k.rsi_actions.fulfill_duty,
+        FulfillDutyRequest(
+            exp_id="F9",
+            duty_name="balance-ledger",
+            day=resolved_day,
+            artifact_path=str(artifact),
+            artifact_bytes=raw,
+            n_rows=len(reads),
+            population_stratum=stratum,
+            judgment_tier_hist=tier_hist,
+            captured_at=now,
+            earliest_kickoff=kickoff,
+            idempotency_key=f"rsi-ful:F9:balance-ledger:{resolved_day}",
+            requested_at=now,
+            **_SYSTEM,
+        ),
+    )
+    right = ledger["direction_right_n"]
+    wrong = ledger["direction_wrong_n"]
+    direction = "未开奖" if right is None else f"方向 {right}/{wrong}"
+    typer.echo(
+        f"F9 天平 {ledger['n_moved']}/{ledger['n_matches']} 拨动 · "
+        f"平均偏移 {ledger['mean_abs_shift_pp']:.2f}pp · {direction}\n"
+        f"  → {artifact}"
+    )
 
 
 @rsi_app.command("grade")

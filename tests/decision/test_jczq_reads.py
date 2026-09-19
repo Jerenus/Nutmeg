@@ -71,6 +71,7 @@ def test_intake_backfills_labels_and_face_status_by_code(tmp_path):
     assert leg["confidence"] == 3
     assert leg["anchor_integrity"] == "pass"
     assert leg["face_status"]["away"]["state"] == "dead"
+    assert leg["face_status"]["away"]["basis"] == "researched"
     assert leg["faces"] == "31"
 
 
@@ -91,6 +92,41 @@ def test_build_reads_marks_ai_judge_and_deep_tier(tmp_path):
     assert reads[0]["judgment_tier"] == "deep_research"
     assert abs(sum(reads[0]["belief"].values()) - 1) < 1e-9
     assert reads[0]["belief"]["away"] == 0.0
+
+
+def test_every_board_match_gets_a_read_even_without_research(tmp_path):
+    root = _day(tmp_path)
+    board_path = root / "daily" / "2026-09-19" / "jczq-legs-base.json"
+    board = json.loads(board_path.read_text(encoding="utf-8"))
+    for index in (2, 3):
+        board["legs"][f"周五00{index}"] = {
+            "match_id": f"m-{index}",
+            "name": f"T{index}A-T{index}B",
+            "competition": "x",
+            "kickoff_bj": "2026-09-20T04:00:00+08:00",
+            "fair": {"home": 0.5, "draw": 0.3, "away": 0.2},
+            "hhad_line": None,
+            "judgment_tier": "price_only",
+            "faces": "310",
+        }
+    board_path.write_text(json.dumps(board, ensure_ascii=False), encoding="utf-8")
+    intake_board(day="2026-09-19", jczq_dir=root, write=True)
+
+    reads = build_jczq_reads(
+        day="2026-09-19",
+        jczq_dir=root,
+        made_at="2026-09-19T12:00:00+08:00",
+    )
+
+    assert len(reads) == 3
+    researched = [read for read in reads if read["judge"] == "ai:jczq-analyst"]
+    anchored = [read for read in reads if read["judge"] == "market-anchor"]
+    assert len(researched) == 1 and len(anchored) == 2
+    assert all(read["status"] == "draft" for read in reads)
+    anchor = anchored[0]
+    assert anchor["belief"] == anchor["prior"]
+    assert anchor["confidence"] == 1
+    assert anchor["judgment_tier"] == "price_only"
 
 
 def test_write_quarantines_intake_errors_and_restores_price_only(tmp_path):

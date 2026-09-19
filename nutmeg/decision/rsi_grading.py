@@ -150,6 +150,41 @@ def c14_line_harness(rows: Sequence[dict], variant: dict) -> ResidualCI:
     return bootstrap_residual_pp(residual_rows, face="excluded")
 
 
+def death_proof_threshold_harness(
+    rows: Sequence[dict], variant: dict
+) -> ResidualCI:
+    """Score every face that a frozen death-proof threshold would exclude."""
+    required = int(variant["proofs"])
+    max_fair = float(variant["max_fair"])
+    actual_face = {"3": "home", "1": "draw", "0": "away"}
+    residual_rows: list[dict] = []
+    for row in rows:
+        actual = actual_face.get(str(row.get("actual")), str(row.get("actual")))
+        d3 = row.get("_d3") or {}
+        face_status = row.get("face_status") or {}
+        for face, fair in (row.get("fair") or {}).items():
+            proof_doc = d3.get(face) or (face_status.get(face) or {}).get("proofs") or {}
+            proof_count = sum(
+                bool(proof_doc.get(key, proof_doc.get(long_key, False)))
+                for key, long_key in (
+                    ("a", "a_no_scoring_mechanism"),
+                    ("b", "b_precedent_carrier_gone"),
+                    ("c", "c_anchor_pass"),
+                )
+            )
+            if proof_count < required or float(fair) > max_fair:
+                continue
+            residual_rows.append(
+                {
+                    "fair": {"excluded": float(fair)},
+                    "actual": "excluded" if actual == face else "covered",
+                }
+            )
+    if not residual_rows:
+        return ResidualCI(0, 0.0, 0.0, 0.0)
+    return bootstrap_residual_pp(residual_rows, face="excluded")
+
+
 Harness = Callable[[Sequence[dict], dict], ResidualCI]
 
 

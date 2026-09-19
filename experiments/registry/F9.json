@@ -1,0 +1,34 @@
+{
+  "exp_id": "F9",
+  "claim": "判读层拨动天平（belief ≠ prior）的场次，其 Brier 优于直接跟市场。",
+  "mechanism": "拨动是判读层唯一能表达强弱的通道；若拨动无价值，则整套证据工厂对天平没有贡献，判读层实验测的只是市场结构。",
+  "tier": "observation",
+  "layer": "judgment",
+  "population": "both",
+  "min_tier": "price_only",
+  "window": {"date_from": "2026-09-20", "n_min": 60},
+  "falsifier": {
+    "metric": "brier_delta_vs_market_moved_pp",
+    "stratum": "pooled",
+    "n_min": 60,
+    "bound": "ci_upper",
+    "threshold_pp": 0.0,
+    "direction": "lt_means_falsified"
+  },
+  "stop_rule": "累计拨动场 n>=60 结账；ci_upper < 0 即证伪（拨动是负价值）。拨动数今天是 0，n 要靠以后真的拨动才涨——这正是本实验的意义。",
+  "quota_slot": false,
+  "buckets": [],
+  "rule_ids": [],
+  "source_doc": "docs/superpowers/specs/2026-09-19-zucai-structure-lane-design.md",
+  "registered_at": "2026-09-19",
+  "duties": [
+    {
+      "name": "balance-ledger",
+      "scope": "day",
+      "deadline_rule": "earliest_kickoff",
+      "instrument": ["uv", "run", "nutmeg", "rsi", "balance", "--issue", "{issue}"],
+      "artifact_glob": ".nutmeg-data/zucai/{issue}-balance.json",
+      "description": "F9：每期天平位移账"
+    }
+  ]
+}

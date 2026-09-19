@@ -113,3 +113,13 @@ def wind_for_day(zucai_dir: Path, issue: str | None) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8")).get("wind")
+
+
+def balance_for_issue(zucai_dir: Path, issue: str | None) -> dict | None:
+    """Read one F9 ledger; absence is a normal independent empty state."""
+    if not issue:
+        return None
+    path = Path(zucai_dir) / f"{issue}-balance.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))

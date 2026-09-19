@@ -155,3 +155,45 @@ def test_dream_ranks_variants_and_prints_variants_tried(tmp_path):
     result = CliRunner().invoke(app, ["rsi", "dream", "--family", str(family)])
     assert result.exit_code == 0
     assert "variants_tried=2" in result.output and "进不了判决" in result.output
+
+
+def test_balance_writes_issue_ledger_and_fulfills_f9(tmp_path):
+    data_dir = _data_dir(tmp_path)
+    reads = [
+        {
+            "read_id": f"r-{index}",
+            "match_id": f"m-{index}",
+            "prior": {"home": 0.4, "draw": 0.3, "away": 0.3},
+            "belief": {"home": 0.4, "draw": 0.3, "away": 0.3},
+        }
+        for index in range(2)
+    ]
+    (data_dir / "zucai" / "26129-reads.json").write_text(
+        json.dumps(reads), encoding="utf-8"
+    )
+    runner = CliRunner()
+    registered = runner.invoke(
+        app,
+        [
+            "rsi",
+            "register",
+            "experiments/registry/F9.json",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert registered.exit_code == 0, registered.output
+
+    result = runner.invoke(
+        app, ["rsi", "balance", "--issue", "26129", "--data-dir", str(data_dir)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "0/2 拨动" in result.output
+    artifact = data_dir / "zucai" / "26129-balance.json"
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    assert payload["issue"] == "26129"
+    assert payload["n_matches"] == 2 and payload["n_moved"] == 0
+    status = runner.invoke(app, ["rsi", "status", "--exp", "F9", "--data-dir", str(data_dir)])
+    assert status.exit_code == 0
+    assert "observing" in status.output

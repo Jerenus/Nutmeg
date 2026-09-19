@@ -20,6 +20,7 @@
 .obs-lead.compact{margin-bottom:18px}.obs-lead h1{font-family:"Songti SC","Noto Serif SC",serif;font-size:30px;line-height:1.25;margin:2px 0 0;letter-spacing:0}
 .obs-lead>p{max-width:440px;color:var(--sub);font-size:13px;margin:0 0 4px;text-align:right}
 .obs-kicker{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.14em;color:var(--obs-cyan);font-weight:700;margin:0}
+.obs-balance{margin-bottom:14px;padding:15px 18px;border-left:4px solid var(--obs-amber);background:var(--card);font-family:ui-monospace,Menlo,monospace;font-size:18px;font-weight:800;color:var(--ink);box-shadow:var(--obs-shadow)}
 .obs-band{display:flex;align-items:center;min-height:66px;padding:14px 18px;margin-bottom:14px;background:var(--ink);color:var(--card);border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px;overflow:hidden}
 .obs-band .obs-muted{color:var(--faint)}
 .obs-duties,.obs-panel,.obs-freeze{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:16px 18px;box-shadow:var(--obs-shadow)}

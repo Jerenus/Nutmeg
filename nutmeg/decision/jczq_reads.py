@@ -47,7 +47,12 @@ def intake_board(*, day: str, jczq_dir: Path, write: bool) -> dict:
         candidate = result.leg
         candidate.pop("faces", None)
         try:
-            attach_face_status(candidate, research, source=research_path.name)
+            attach_face_status(
+                candidate,
+                research,
+                source=research_path.name,
+                basis="researched",
+            )
         except FaceStatusError as exc:
             failed[code] = [str(exc)]
             continue
@@ -77,34 +82,53 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
     )
     reads: list[dict] = []
     for code, leg in board["legs"].items():
-        if leg.get("judgment_tier") != "deep_research" or "face_status" not in leg:
-            continue
-        alive = [face for face in FACES if leg["face_status"][face]["state"] == "alive"]
-        mass = sum(float(leg["fair"][face]) for face in alive)
-        if mass <= 0:
-            raise ValueError(f"{code} 没有可归一的活面")
-        belief = {
-            face: float(leg["fair"][face]) / mass if face in alive else 0.0
-            for face in FACES
-        }
+        researched = (
+            leg.get("judgment_tier") == "deep_research"
+            and "face_status" in leg
+        )
+        prior = dict(leg["fair"])
+        if researched:
+            alive = [
+                face
+                for face in FACES
+                if leg["face_status"][face]["state"] == "alive"
+            ]
+            mass = sum(float(leg["fair"][face]) for face in alive)
+            if mass <= 0:
+                raise ValueError(f"{code} 没有可归一的活面")
+            belief = {
+                face: float(leg["fair"][face]) / mass if face in alive else 0.0
+                for face in FACES
+            }
+        else:
+            # 「跟市场」是宪法 §2 的明文判断：无命名理由即市场锚定。
+            # 它是可被 Brier 评分的陈述，不是判断缺席；强度只决定结构。
+            belief = dict(prior)
+        judge = "ai:jczq-analyst" if researched else "market-anchor"
+        read_source = "ai" if researched else "market-anchor"
+        tier = "deep_research" if researched else "price_only"
         reads.append(
             {
-                "read_id": f"R-ai-jczq-{day}-{code}-had",
+                "read_id": f"R-{read_source}-jczq-{day}-{code}-had",
                 "match_id": leg["match_id"],
                 "snapshot_id": leg.get("snapshot_id"),
                 "made_at": made_at,
-                "judge": "ai:jczq-analyst",
+                "judge": judge,
                 "market": "had",
-                "prior": dict(leg["fair"]),
+                "prior": prior,
                 "belief": belief,
                 "factors": [],
-                "falsifier": f"{code}: 被排死面开出则记录三证失效",
-                "confidence": leg.get("confidence", 3),
+                "falsifier": (
+                    f"{code}: 被排死面开出则记录三证失效"
+                    if researched
+                    else f"{code}: 市场锚定按赛果计 Brier"
+                ),
+                "confidence": leg.get("confidence", 3) if researched else 1,
                 "shadow": False,
-                "note": f"[{code}|{leg['name']}|deep_research] {leg.get('note', '')}",
+                "note": f"[{code}|{leg['name']}|{tier}] {leg.get('note', '')}",
                 "status": "draft",
                 "commitment_tier": "lean",
-                "judgment_tier": "deep_research",
+                "judgment_tier": tier,
                 "flags": {
                     "directional": leg.get("directional_flags", []),
                     "nondirectional": leg.get("nondirectional_flags", []),

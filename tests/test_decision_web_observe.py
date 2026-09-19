@@ -12,6 +12,7 @@ def _app(tmp_path, *, kernel_state=None, repo=None):
             output_dir=tmp_path,
             kernel_state=kernel_state,
             observe_repo=repo,
+            zucai_dir=tmp_path / "zucai",
         )
     )
 
@@ -68,6 +69,14 @@ class _Repo:
 
 
 def test_api_observe_returns_cards_duties_and_null_wind_when_absent(tmp_path):
+    zucai_dir = tmp_path / "zucai"
+    zucai_dir.mkdir()
+    (zucai_dir / "26130-balance.json").write_text(
+        '{"issue":"26130","n_matches":14,"n_moved":0,'
+        '"mean_abs_shift_pp":0.0,"direction_right_n":null,'
+        '"direction_wrong_n":null}',
+        encoding="utf-8",
+    )
     client = _app(tmp_path, repo=_Repo())
 
     response = client.get("/api/observe")
@@ -77,6 +86,8 @@ def test_api_observe_returns_cards_duties_and_null_wind_when_absent(tmp_path):
     assert body["experiments"][0]["exp_id"] == "F2"
     assert body["experiments"][0]["gap_count"] == 1
     assert body["wind"] is None
+    assert body["balance"]["n_moved"] == 0
+    assert body["balance"]["n_matches"] == 14
     assert body["duties_today"][0]["duty_id"].startswith("F2")
 
 
@@ -147,6 +158,10 @@ def test_pages_render_read_only_with_pinned_echarts_and_nav_link(tmp_path):
 
     assert 'href="/observe"' in client.get("/?date=2026-09-19").text
     assert "今日未定级" in client.get("/observe").text
+    assert "本期天平" in client.get("/observe").text
+
+    script = client.get("/static/decision/observe.js").text
+    assert "本期天平未拨动" in script
 
 
 def test_day_page_has_independent_empty_state_copy(tmp_path):

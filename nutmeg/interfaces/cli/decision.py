@@ -491,7 +491,11 @@ def decision_settle(
         # (+到期则 verdict)。失败只打印，不影响结算。dry-run 不碰本体。
         from nutmeg.decision import rsi_wiring
 
-        rsi_wiring.after_settle(day=run_date, data_dir=Path(output_dir).parent)
+        rsi_wiring.after_settle(
+            day=run_date,
+            issue=issue,
+            data_dir=Path(output_dir).parent,
+        )
     if not getattr(result, "succeeded", True):
         raise _cli.typer.Exit(code=1)
 

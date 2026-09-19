@@ -421,14 +421,11 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
                 )
             else:
                 dropped_factors += 1
-        is_ai_draft = (
-            payload.get("status") == "draft"
-            and str(payload.get("judge") or "").startswith("ai:")
-        )
-        request_type = DraftForecastRequest if is_ai_draft else CommitForecastRequest
-        action = forecasts.draft_forecast if is_ai_draft else forecasts.commit_forecast
-        actor_id = str(payload.get("judge")) if is_ai_draft else "judge:owner"
-        actor_role = ActorRole.AI_ANALYST if is_ai_draft else ActorRole.JUDGE_OPERATOR
+        is_draft = payload.get("status") == "draft"
+        request_type = DraftForecastRequest if is_draft else CommitForecastRequest
+        action = forecasts.draft_forecast if is_draft else forecasts.commit_forecast
+        actor_id = str(payload.get("judge")) if is_draft else "judge:owner"
+        actor_role = ActorRole.AI_ANALYST if is_draft else ActorRole.JUDGE_OPERATOR
         try:
             outcome = action(
                 request_type(

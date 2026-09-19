@@ -224,7 +224,12 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
         return {"events": evs, "cursor": cursor}
 
     # ── RSI 观察台：只读 API，每块数据各自降级 ─────────────────────────
-    from nutmeg.decision.observe_views import day_view, experiment_card, wind_for_day
+    from nutmeg.decision.observe_views import (
+        balance_for_issue,
+        day_view,
+        experiment_card,
+        wind_for_day,
+    )
 
     def _safe(fn, default, errors: list[str]):
         try:
@@ -268,12 +273,16 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
         wind = _safe(
             lambda: wind_for_day(app.state.zucai_dir, issue), None, errors
         )
+        balance = _safe(
+            lambda: balance_for_issue(app.state.zucai_dir, issue), None, errors
+        )
         return {
             "as_of": now,
             "experiments": cards,
             "duties_today": duties_today,
             "duties_tomorrow": duties_tomorrow,
             "wind": wind,
+            "balance": balance,
             "errors": errors,
         }
 
