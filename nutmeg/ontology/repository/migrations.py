@@ -4735,6 +4735,17 @@ def _apply_jczq_dream_rsi_alignment(connection: Connection) -> None:
         )
 
 
+def _apply_jczq_ontology_cutover(connection: Connection) -> None:
+    connection.execute(
+        insert(schema.action_permissions),
+        {
+            "policy_version_id": "governance-v1",
+            "action_type": "approve_jczq_ontology_cutover",
+            "actor_role": "judge_operator",
+        },
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -5007,6 +5018,12 @@ MIGRATIONS: tuple[Migration, ...] = (
             "typed_rsi_fulfillment"
         ),
         apply=_apply_jczq_dream_rsi_alignment,
+    ),
+    Migration(
+        version=34,
+        name="jczq_ontology_cutover",
+        fingerprint="accepted_replay_hash+zero_side_effect_gate+judge_only_authority",
+        apply=_apply_jczq_ontology_cutover,
     ),
 )
 

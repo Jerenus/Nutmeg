@@ -41,6 +41,22 @@ def test_router_builds_popular_matches_command() -> None:
     ]
 
 
+def test_router_calls_the_same_jczq_status_workflow() -> None:
+    router = _load_router()
+
+    request = router.parse_request(["jczq-status", "--day", "2026-09-20"])
+
+    assert router.build_command(request) == [
+        "uv",
+        "run",
+        "nutmeg",
+        "workflow",
+        "jczq-status",
+        "--day",
+        "2026-09-20",
+    ]
+
+
 def test_router_rejects_unknown_actions() -> None:
     router = _load_router()
 

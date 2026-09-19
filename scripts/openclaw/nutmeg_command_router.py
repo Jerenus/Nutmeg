@@ -45,6 +45,7 @@ SUPPORTED_ACTIONS = {
     "operator-sale-ingest",
     "operator-schedule-check",
     "operator-evidence-ingest",
+    "jczq-status",
 }
 
 LEAGUE_RE = re.compile(r"^[a-z0-9_-]{1,24}$")
@@ -334,6 +335,8 @@ def build_command(request: RouterRequest) -> list[str]:
             "--manifest",
             options.manifest,
         ]
+    if action == "jczq-status":
+        return [*base, "workflow", "jczq-status", "--day", options.day]
 
     raise RouterError(f"Unsupported action `{action}`.")
 
@@ -544,6 +547,9 @@ def _build_parser() -> argparse.ArgumentParser:
         operator_manifest.add_argument("--manifest", required=True)
         operator_manifest.add_argument("--contract-version", required=True)
 
+    jczq_status = subparsers.add_parser("jczq-status")
+    jczq_status.add_argument("--day", required=True)
+
     return parser
 
 
@@ -597,6 +603,7 @@ def _validate_options(options: argparse.Namespace) -> None:
         "overrides_file",
         "provider",
         "date",
+        "day",
         "revision_text",
     ]:
         if hasattr(options, attr) and getattr(options, attr) is not None:

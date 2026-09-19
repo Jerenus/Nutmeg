@@ -98,6 +98,25 @@ class ActionRepository:
             )
         return self._connection.execute(query).scalar_one()
 
+    def latest_committed(self, action_type: str) -> ActionRecord | None:
+        row = (
+            self._connection.execute(
+                select(schema.actions)
+                .where(
+                    schema.actions.c.action_type == action_type,
+                    schema.actions.c.status == ActionStatus.COMMITTED.value,
+                )
+                .order_by(
+                    schema.actions.c.committed_at.desc(),
+                    schema.actions.c.action_id.desc(),
+                )
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        return None if row is None else self._to_record(row)
+
     def count_committed_snapshot_matches(
         self,
         match_ids: Collection[str],
