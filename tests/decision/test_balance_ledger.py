@@ -58,6 +58,15 @@ def test_unsettled_ledger_keeps_outcome_metrics_unknown():
     assert ledger["direction_wrong_n"] is None
 
 
+def test_ledger_hash_changes_when_outcomes_arrive():
+    read = _read(belief={"home": 0.46, "draw": 0.27, "away": 0.27})
+
+    before = balance_ledger([read], outcomes=None)
+    after = balance_ledger([read], outcomes={"m1": "home"})
+
+    assert before != after
+
+
 def test_real_26129_reads_have_zero_moves():
     path = Path(".nutmeg-data/zucai/26129-reads.json")
     reads = json.loads(path.read_text(encoding="utf-8"))

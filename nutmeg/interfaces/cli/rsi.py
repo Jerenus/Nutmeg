@@ -258,6 +258,9 @@ def balance(
     reads = json.loads(reads_path.read_text(encoding="utf-8"))
     outcomes = _official_zucai_outcomes(data_dir, issue, reads) if issue else None
     ledger = balance_ledger(reads, outcomes=outcomes)
+    ledger_hash = hashlib.sha256(
+        json.dumps(ledger, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:16]
     payload = {"issue": issue, "day": resolved_day, **ledger}
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text(
@@ -294,7 +297,9 @@ def balance(
             judgment_tier_hist=tier_hist,
             captured_at=now,
             earliest_kickoff=kickoff,
-            idempotency_key=f"rsi-ful:F9:balance-ledger:{resolved_day}",
+            idempotency_key=(
+                f"rsi-ful:F9:balance-ledger:v2:{resolved_day}:{ledger_hash}"
+            ),
             requested_at=now,
             **_SYSTEM,
         ),

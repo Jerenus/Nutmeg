@@ -280,9 +280,15 @@ class RsiActions:
                                             fulfilled_at=captured,
                                             artifact_path=request.artifact_path,
                                             artifact_hash=artifact_hash)
-            obs_id = f"{request.exp_id}:{request.day}" + (
+            obs_base = f"{request.exp_id}:{request.day}" + (
                 f":{request.match_id}" if request.match_id else "")
-            if uow.rsi.observation(obs_id) is None:      # 同日二次 fulfill 不重复计数
+            existing = uow.rsi.observation(obs_base)
+            obs_id = (
+                obs_base
+                if existing is None or existing.artifact_hash == artifact_hash
+                else f"{obs_base}:{artifact_hash[:16]}"
+            )
+            if uow.rsi.observation(obs_id) is None:  # 同日同内容不重复；内容变化留版本
                 uow.rsi.insert_observation(ObservationRow(
                     observation_id=obs_id, exp_id=request.exp_id, day=request.day,
                     population_stratum=request.population_stratum, n_rows=request.n_rows,

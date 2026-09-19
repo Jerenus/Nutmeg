@@ -1,4 +1,6 @@
 import json
+import sqlite3
+from hashlib import sha256
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -197,3 +199,63 @@ def test_balance_writes_issue_ledger_and_fulfills_f9(tmp_path):
     status = runner.invoke(app, ["rsi", "status", "--exp", "F9", "--data-dir", str(data_dir)])
     assert status.exit_code == 0
     assert "observing" in status.output
+
+
+def test_balance_can_be_rerun_after_results_arrive(tmp_path):
+    data_dir = _data_dir(tmp_path)
+    reads = [
+        {
+            "read_id": "r-1",
+            "match_id": "m-1",
+            "prior": {"home": 0.4, "draw": 0.3, "away": 0.3},
+            "belief": {"home": 0.46, "draw": 0.27, "away": 0.27},
+        }
+    ]
+    (data_dir / "zucai" / "26129-reads.json").write_text(
+        json.dumps(reads), encoding="utf-8"
+    )
+    runner = CliRunner()
+    registered = runner.invoke(
+        app,
+        [
+            "rsi",
+            "register",
+            "experiments/registry/F9.json",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert registered.exit_code == 0, registered.output
+
+    before = runner.invoke(
+        app, ["rsi", "balance", "--issue", "26129", "--data-dir", str(data_dir)]
+    )
+    assert before.exit_code == 0, before.output
+    (data_dir / "zucai" / "official-results.json").write_text(
+        json.dumps({"26129": "3"}), encoding="utf-8"
+    )
+
+    after = runner.invoke(
+        app, ["rsi", "balance", "--issue", "26129", "--data-dir", str(data_dir)]
+    )
+
+    assert after.exit_code == 0, after.output
+    payload = json.loads(
+        (data_dir / "zucai" / "26129-balance.json").read_text(encoding="utf-8")
+    )
+    assert payload["brier_vs_market_all"] is not None
+    assert payload["direction_right_n"] == 1
+    artifact_hash = sha256(
+        (data_dir / "zucai" / "26129-balance.json").read_bytes()
+    ).hexdigest()
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        hashes = connection.execute(
+            "SELECT artifact_hash FROM rsi_observations WHERE exp_id = 'F9'"
+        ).fetchall()
+        keys = connection.execute(
+            "SELECT idempotency_key FROM actions "
+            "WHERE idempotency_key LIKE 'rsi-ful:F9:balance-ledger:%'"
+        ).fetchall()
+    assert len(hashes) == 2
+    assert (artifact_hash,) in hashes
+    assert any(":balance-ledger:v2:2026-09-19:" in key for (key,) in keys)

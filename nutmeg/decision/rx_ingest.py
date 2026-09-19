@@ -5,17 +5,22 @@ _RESOLVED_MARKS = ("已裁", "行权", "已复核", "终版", "已定")
 
 
 def map_rx_predictions(rx: dict, issue: str) -> list[dict]:
-    out = []
+    out_by_claim: dict[str, dict] = {}
     for p in rx.get("predictions") or []:
-        out.append({
+        claim = p["claim"]
+        if claim in out_by_claim:
+            out_by_claim[claim]["alias_ids"].append(p["id"])
+            continue
+        out_by_claim[claim] = {
             "match_id": None,
             "subject_type": "issue",
             "subject_id": issue,
-            "claim": p["claim"],
+            "claim": claim,
             "falsifier": p["falsifier"],
             "idempotency_key": f"rx:{issue}:{p['id']}",
-        })
-    return out
+            "alias_ids": [p["id"]],
+        }
+    return list(out_by_claim.values())
 
 
 def map_rx_adjudications(rx: dict, issue: str) -> tuple[list[dict], list[str]]:

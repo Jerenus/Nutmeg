@@ -368,7 +368,9 @@ def register_rx(
         kernel = _kernel(data_dir)
         rx = json.loads(Path(rx_file).expanduser().read_text("utf-8"))
         now = _now()
-        for req in map_rx_predictions(rx, issue):
+        for mapped in map_rx_predictions(rx, issue):
+            req = dict(mapped)
+            alias_ids = req.pop("alias_ids")
             outcome = kernel.workflow.register_prediction(
                 RegisterPredictionRequest(
                     **req,
@@ -377,7 +379,10 @@ def register_rx(
                     requested_at=now,
                 )
             )
-            _cli.typer.echo(f"{req['idempotency_key']}: {outcome.status.value}")
+            aliases = f" aliases={','.join(alias_ids)}" if len(alias_ids) > 1 else ""
+            _cli.typer.echo(
+                f"{req['idempotency_key']}: {outcome.status.value}{aliases}"
+            )
         adjs, skipped = map_rx_adjudications(rx, issue)
         for req in adjs:
             outcome = kernel.workflow.record_adjudication(

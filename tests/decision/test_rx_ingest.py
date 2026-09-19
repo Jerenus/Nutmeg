@@ -28,6 +28,23 @@ def test_map_predictions_are_issue_scoped():
     assert reqs[0]["claim"] == "悬置持平4场至少2平"
 
 
+def test_map_predictions_deduplicates_claims_and_preserves_alias_ids():
+    rx = {
+        "predictions": [
+            {"id": "S1", "claim": "同一断言", "falsifier": "不成立"},
+            {"id": "P5", "claim": "同一断言", "falsifier": "不成立"},
+            {"id": "P6", "claim": "另一断言", "falsifier": "不成立"},
+        ]
+    }
+
+    reqs = map_rx_predictions(rx, "26129")
+
+    assert len(reqs) == 2
+    assert reqs[0]["idempotency_key"] == "rx:26129:S1"
+    assert reqs[0]["alias_ids"] == ["S1", "P5"]
+    assert reqs[1]["alias_ids"] == ["P6"]
+
+
 def test_map_adjudications_resolved_only():
     reqs, skipped = map_rx_adjudications(RX, "26111")
     assert [r["idempotency_key"] for r in reqs] == ["rx:26111:ADJ-2", "rx:26111:ADJ-8"]
