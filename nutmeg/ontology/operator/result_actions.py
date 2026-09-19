@@ -231,6 +231,8 @@ class CandidateSetInput:
     set_kind: Literal["judgment_bound", "conditional_market_counterfactual"]
     candidates: tuple[TicketCandidateInput, ...]
     band_outcomes: tuple[CandidateBandOutcomeInput, ...] = ()
+    change_delta: dict[str, object] | None = None
+    rationale: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1831,6 +1833,16 @@ class OperatorResultActions:
                     work_item_id=generation.work_item_id,
                     set_kind=candidate_set.set_kind,
                 )
+                if current is None:
+                    if (
+                        candidate_set.change_delta is not None
+                        or candidate_set.rationale is not None
+                    ):
+                        raise ValueError("root candidate set must not declare iteration delta")
+                elif not candidate_set.change_delta or not (
+                    candidate_set.rationale and candidate_set.rationale.strip()
+                ):
+                    raise ValueError("candidate set revision requires change delta and rationale")
                 revision_no = 1 if current is None else current.revision_no + 1
                 family_id = _stable_id(
                     "operator-candidate-set-family",
@@ -1843,6 +1855,8 @@ class OperatorResultActions:
                     "dependency_fingerprint": generation.dependency_fingerprint,
                     "set_kind": candidate_set.set_kind,
                     "generator_version": request.generator_version,
+                    "change_delta": candidate_set.change_delta,
+                    "rationale": candidate_set.rationale,
                     "candidates": [asdict(item) for item in candidate_set.candidates],
                     "band_outcomes": [
                         asdict(item) for item in candidate_set.band_outcomes
@@ -1892,6 +1906,12 @@ class OperatorResultActions:
                         eligible_count=counts["eligible"],
                         audit_blocked_count=counts["audit_blocked"],
                         over_cap_count=counts["over_cap"],
+                        change_delta=candidate_set.change_delta,
+                        rationale=(
+                            candidate_set.rationale.strip()
+                            if candidate_set.rationale is not None
+                            else None
+                        ),
                         content_hash=set_hash,
                         action_id=action_command.action_id,
                         created_at=_utc(request.requested_at),

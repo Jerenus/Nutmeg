@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 
-from sqlalchemy import Connection, and_, func, insert, or_, select, update
+from sqlalchemy import Connection, and_, exists, func, insert, or_, select, update
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.operator.models import (
@@ -62,22 +62,40 @@ class OperatorDecisionRepository:
         row: JczqBoardResearchStateRow,
     ) -> None:
         self._connection.execute(
-            insert(sod.operator_jczq_board_research_states).values(**_row_fields(row))
+            insert(sod.operator_jczq_board_research_state_revisions).values(
+                **_row_fields(row)
+            )
         )
 
     def jczq_board_research_states(
         self,
         business_date: str,
     ) -> tuple[JczqBoardResearchStateRow, ...]:
+        revisions = sod.operator_jczq_board_research_state_revisions
+        children = revisions.alias("jczq_board_research_children")
         rows = self._connection.execute(
-            select(sod.operator_jczq_board_research_states)
+            select(revisions)
             .where(
-                sod.operator_jczq_board_research_states.c.business_date
-                == business_date
+                revisions.c.business_date == business_date,
+                ~exists(
+                    select(1).where(
+                        children.c.supersedes_revision_id
+                        == revisions.c.board_research_state_id
+                    )
+                ),
             )
-            .order_by(sod.operator_jczq_board_research_states.c.official_match_no)
+            .order_by(revisions.c.official_match_no)
         ).mappings()
         return tuple(JczqBoardResearchStateRow(**dict(row)) for row in rows)
+
+    def current_jczq_board_research_state(
+        self,
+        *,
+        business_date: str,
+        match_id: str,
+    ) -> JczqBoardResearchStateRow | None:
+        rows = self.jczq_board_research_states(business_date)
+        return next((row for row in rows if row.match_id == match_id), None)
 
     def insert_candidate_generation_request(
         self, row: CandidateGenerationRequestRow

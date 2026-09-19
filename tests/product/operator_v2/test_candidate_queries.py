@@ -313,6 +313,8 @@ def test_regenerated_inherited_override_allows_web_approval_mode(
         request_id=generation_request_id,
         key="candidate:query:override-regeneration",
         judgment_candidate=_audit_blocked_candidate(),
+        change_delta={"trigger": "audit_override"},
+        rationale="regenerate after committed audit override",
         as_of=JUDGMENT_AT + timedelta(seconds=12),
     )
     with OntologyUnitOfWork(fixture.engine) as uow:

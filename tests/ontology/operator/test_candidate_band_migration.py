@@ -12,7 +12,7 @@ def test_candidate_band_schema_is_additive_and_idempotent(tmp_path):
 
     assert 31 in first.applied_versions
     assert second.applied_versions == ()
-    assert migration_status(engine).current_version == 32
+    assert migration_status(engine).current_version == 33
     inspector = inspect(engine)
     columns = {
         column["name"] for column in inspector.get_columns("operator_candidates")
@@ -25,4 +25,9 @@ def test_candidate_band_schema_is_additive_and_idempotent(tmp_path):
         "parent_candidate_revision_id",
         "delta_reason",
     } <= columns
+    set_columns = {
+        column["name"]
+        for column in inspector.get_columns("operator_candidate_set_revisions")
+    }
+    assert {"change_delta_json", "rationale"} <= set_columns
     assert "operator_candidate_band_outcomes" in inspector.get_table_names()

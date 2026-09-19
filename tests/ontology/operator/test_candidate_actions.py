@@ -229,6 +229,8 @@ def _generate(
     judgment_candidate: TicketCandidateInput | None = None,
     conditional_candidate: TicketCandidateInput | None = None,
     band_outcomes: tuple[CandidateBandOutcomeInput, ...] = (),
+    change_delta: dict[str, object] | None = None,
+    rationale: str | None = None,
     as_of=AT + timedelta(seconds=7),
 ):
     job = _claim_generation_job(fixture, as_of=as_of)
@@ -245,6 +247,8 @@ def _generate(
                         ),
                     ),
                     band_outcomes=band_outcomes,
+                    change_delta=change_delta,
+                    rationale=rationale,
                 ),
                 CandidateSetInput(
                     set_kind="conditional_market_counterfactual",
@@ -256,6 +260,8 @@ def _generate(
                         ),
                     ),
                     band_outcomes=band_outcomes,
+                    change_delta=change_delta,
+                    rationale=rationale,
                 ),
             ),
             generator_version="operator-candidate-v1",
@@ -741,6 +747,54 @@ def test_generation_atomically_persists_both_sets_full_composition_and_job_resul
     ]
     assert job[0:3] == ("completed", result.action_id, "ticket_candidate_set_revision")
     assert job[3] in {ref.object_id for ref in result.result_refs}
+
+
+def test_candidate_set_revision_owns_dream_parent_and_delta(tmp_path: Path) -> None:
+    fixture = _ready_fixture(tmp_path)
+    first_request = fixture.judgment.decision_actions.request_candidate_generation(
+        _generation_request(fixture)
+    )
+    _generate(fixture, request_id=first_request.result_refs[0].object_id)
+    second_request = fixture.judgment.decision_actions.request_candidate_generation(
+        _generation_request(
+            fixture,
+            key="candidate:request:2",
+            expected_revision=1,
+        )
+    )
+
+    _generate(
+        fixture,
+        request_id=second_request.result_refs[0].object_id,
+        key="candidate:generate:2",
+        change_delta={"replace_leg": "001"},
+        rationale="remove shared exposure",
+        as_of=AT + timedelta(seconds=9),
+    )
+
+    with fixture.judgment.engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT candidate_set_revision_id, revision_no, supersedes_revision_id, "
+                "change_delta_json, rationale "
+                "FROM operator_candidate_set_revisions "
+                "WHERE set_kind = 'judgment_bound' ORDER BY revision_no"
+            )
+        ).mappings().all()
+        candidate_lineage = connection.execute(
+            text(
+                "SELECT parent_candidate_revision_id, delta_reason "
+                "FROM operator_candidates ORDER BY candidate_revision_id"
+            )
+        ).all()
+
+    assert rows[0]["supersedes_revision_id"] is None
+    assert rows[0]["change_delta_json"] is None
+    assert rows[0]["rationale"] is None
+    assert rows[1]["supersedes_revision_id"] == rows[0]["candidate_set_revision_id"]
+    assert rows[1]["change_delta_json"] == '{"replace_leg":"001"}'
+    assert rows[1]["rationale"] == "remove shared exposure"
+    assert all(row == (None, None) for row in candidate_lineage)
 
 
 def test_generation_rejects_an_active_quote_not_frozen_in_the_baseline(

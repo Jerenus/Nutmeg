@@ -460,6 +460,8 @@ class TicketCandidateSetRevisionRow:
     content_hash: str
     action_id: str
     created_at: str
+    change_delta: dict[str, object] | None = None
+    rationale: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,6 +500,9 @@ class CandidateBandOutcomeRow:
 @dataclass(frozen=True, slots=True)
 class JczqBoardResearchStateRow:
     board_research_state_id: str
+    board_research_family_id: str
+    revision_no: int
+    supersedes_revision_id: str | None
     business_date: str
     match_id: str
     official_match_no: str

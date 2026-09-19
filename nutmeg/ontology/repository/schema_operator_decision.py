@@ -1445,6 +1445,8 @@ operator_candidate_set_revisions = Table(
     Column("eligible_count", Integer, nullable=False),
     Column("audit_blocked_count", Integer, nullable=False),
     Column("over_cap_count", Integer, nullable=False),
+    Column("change_delta_json", Text, nullable=True),
+    Column("rationale", Text, nullable=True),
     Column("content_hash", Text, nullable=False),
     Column(
         "action_id",
@@ -1468,6 +1470,13 @@ operator_candidate_set_revisions = Table(
         "AND audit_blocked_count >= 0 AND over_cap_count >= 0 "
         "AND candidate_count = eligible_count + audit_blocked_count + over_cap_count",
         name="ck_operator_candidate_set_counts",
+    ),
+    CheckConstraint(
+        "(supersedes_revision_id IS NULL AND change_delta_json IS NULL "
+        "AND rationale IS NULL) OR "
+        "(supersedes_revision_id IS NOT NULL AND change_delta_json IS NOT NULL "
+        "AND length(trim(rationale)) > 0)",
+        name="ck_operator_candidate_set_iteration_shape",
     ),
     UniqueConstraint(
         "candidate_set_family_id",
@@ -1659,6 +1668,70 @@ operator_jczq_board_research_states = Table(
         "business_date",
         "official_match_no",
         name="uq_operator_jczq_board_research_number",
+    ),
+)
+
+
+operator_jczq_board_research_state_revisions = Table(
+    "operator_jczq_board_research_state_revisions",
+    metadata,
+    Column("board_research_state_id", Text, primary_key=True),
+    Column("board_research_family_id", Text, nullable=False, index=True),
+    Column("revision_no", Integer, nullable=False),
+    Column(
+        "supersedes_revision_id",
+        Text,
+        ForeignKey(
+            "operator_jczq_board_research_state_revisions.board_research_state_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    ),
+    Column("business_date", Text, nullable=False, index=True),
+    Column("match_id", Text, nullable=False),
+    Column("official_match_no", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column(
+        "source_run_id",
+        Text,
+        ForeignKey("source_runs.source_run_id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column(
+        "artifact_id",
+        Text,
+        ForeignKey("source_artifacts.artifact_id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("captured_at", Text, nullable=True),
+    Column("kickoff_at", Text, nullable=False),
+    Column("historical_replay", Integer, nullable=False),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("created_at", Text, nullable=False),
+    CheckConstraint("revision_no >= 1", name="ck_jczq_board_research_revision_no"),
+    CheckConstraint(
+        "status IN ('researched', 'price_only', 'rejected')",
+        name="ck_jczq_board_research_revision_status",
+    ),
+    CheckConstraint(
+        "(status = 'researched' AND source_run_id IS NOT NULL "
+        "AND artifact_id IS NOT NULL AND captured_at IS NOT NULL) OR "
+        "status IN ('price_only', 'rejected')",
+        name="ck_jczq_board_research_revision_lineage",
+    ),
+    CheckConstraint(
+        "historical_replay IN (0, 1)",
+        name="ck_jczq_board_research_revision_replay",
+    ),
+    UniqueConstraint(
+        "board_research_family_id",
+        "revision_no",
+        name="uq_jczq_board_research_family_revision",
     ),
 )
 
@@ -2413,6 +2486,7 @@ __all__ = [
     "operator_candidate_audit_findings",
     "operator_candidate_band_outcomes",
     "operator_jczq_board_research_states",
+    "operator_jczq_board_research_state_revisions",
     "operator_candidate_dead_faces",
     "operator_candidate_generation_requests",
     "operator_candidate_metrics",

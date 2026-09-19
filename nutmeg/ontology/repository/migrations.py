@@ -4658,6 +4658,83 @@ def _apply_jczq_board_research_states(connection: Connection) -> None:
     )
 
 
+def _apply_jczq_dream_rsi_alignment(connection: Connection) -> None:
+    columns = {
+        column["name"]
+        for column in inspect(connection).get_columns("operator_candidate_set_revisions")
+    }
+    additions = {
+        "change_delta_json": "TEXT NULL",
+        "rationale": "TEXT NULL",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE operator_candidate_set_revisions "
+                f"ADD COLUMN {name} {declaration}"
+            )
+    schema_operator_decision.operator_jczq_board_research_state_revisions.create(
+        connection,
+        checkfirst=True,
+    )
+    revision_table = (
+        schema_operator_decision.operator_jczq_board_research_state_revisions
+    )
+    old_states = connection.execute(
+        select(schema_operator_decision.operator_jczq_board_research_states)
+    ).mappings()
+    for old_state in old_states:
+        state_id = str(old_state["board_research_state_id"])
+        exists_in_revisions = connection.scalar(
+            select(func.count())
+            .select_from(revision_table)
+            .where(revision_table.c.board_research_state_id == state_id)
+        )
+        if exists_in_revisions:
+            continue
+        family_material = json.dumps(
+            [old_state["business_date"], old_state["match_id"]],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        family_id = "jczq-board-research-family-" + hashlib.sha256(
+            family_material.encode("utf-8")
+        ).hexdigest()
+        connection.execute(
+            insert(revision_table).values(
+                board_research_state_id=state_id,
+                board_research_family_id=family_id,
+                revision_no=1,
+                supersedes_revision_id=None,
+                business_date=old_state["business_date"],
+                match_id=old_state["match_id"],
+                official_match_no=old_state["official_match_no"],
+                status=old_state["status"],
+                source_run_id=old_state["source_run_id"],
+                artifact_id=old_state["artifact_id"],
+                captured_at=old_state["captured_at"],
+                kickoff_at=old_state["kickoff_at"],
+                historical_replay=old_state["historical_replay"],
+                action_id=old_state["action_id"],
+                created_at=old_state["created_at"],
+            )
+        )
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS
+              operator_jczq_board_research_state_revisions_no_{operation.lower()}
+            BEFORE {operation} ON operator_jczq_board_research_state_revisions
+            BEGIN
+              SELECT RAISE(
+                ABORT,
+                'operator_jczq_board_research_state_revisions is append-only'
+              );
+            END
+            """
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -4921,6 +4998,15 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="jczq_board_research_states",
         fingerprint="explicit_board_terminal_states+append_only+replay_semantics",
         apply=_apply_jczq_board_research_states,
+    ),
+    Migration(
+        version=33,
+        name="jczq_dream_rsi_alignment",
+        fingerprint=(
+            "candidate_set_change_delta+rationale+revisioned_board_research+"
+            "typed_rsi_fulfillment"
+        ),
+        apply=_apply_jczq_dream_rsi_alignment,
     ),
 )
 

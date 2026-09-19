@@ -16,6 +16,7 @@ from nutmeg.ontology.actions.models import (
     ObjectRef,
     canonical_json,
 )
+from nutmeg.ontology.actions.rsi_actions import FulfillDutyRequest
 from nutmeg.ontology.actions.workflow_actions import CreateAgentProposalRequest
 from nutmeg.ontology.operator.models import JczqBoardResearchStateRow
 from nutmeg.product.operator_contracts import (
@@ -68,6 +69,8 @@ class JczqResearchArtifact:
     source_run_id: str
     artifact_id: str
     intake_errors: tuple[str, ...] = ()
+    artifact_path: str | None = None
+    artifact_bytes: bytes | None = None
 
     def __post_init__(self) -> None:
         _aware(self.captured_at, "captured_at")
@@ -86,8 +89,8 @@ class JczqForecastDraft:
     origin: str
 
 
-class _R0Recorder(Protocol):
-    def fulfill(self, match_id: str) -> None: ...
+class _R0Actions(Protocol):
+    def fulfill_duty(self, request: FulfillDutyRequest): ...
 
 
 class _ProposalWriter(Protocol):
@@ -99,13 +102,13 @@ class JczqBoardWorkflow:
         self,
         action_service,
         *,
-        r0_recorder: _R0Recorder | None = None,
+        r0_actions: _R0Actions | None = None,
         proposal_writer: _ProposalWriter | None = None,
         operator_actions=None,
         clock=None,
     ) -> None:
         self._action_service = action_service
-        self._r0_recorder = r0_recorder
+        self._r0_actions = r0_actions
         self._proposal_writer = proposal_writer
         self._operator_actions = operator_actions
         self._clock = clock or (lambda: datetime.now(UTC))
@@ -128,11 +131,20 @@ class JczqBoardWorkflow:
         if set(by_match) - known:
             raise ValueError("research artifact references a match outside the board")
         now = _aware(self._clock(), "clock")
+        with self._action_service.unit_of_work() as uow:
+            current_by_match = {
+                row.match_id: row
+                for row in uow.operator_decision.jczq_board_research_states(
+                    board.business_date
+                )
+            }
         states = []
         for match in board.matches:
             artifact = by_match.get(match.match_id)
             status = (
-                "price_only"
+                current_by_match[match.match_id].status
+                if artifact is None and match.match_id in current_by_match
+                else "price_only"
                 if artifact is None
                 else "rejected"
                 if artifact.intake_errors
@@ -147,11 +159,25 @@ class JczqBoardWorkflow:
                     "match_id": match.match_id,
                     "official_match_no": match.official_match_no,
                     "status": status,
-                    "source_run_id": artifact.source_run_id if artifact else None,
-                    "artifact_id": artifact.artifact_id if artifact else None,
+                    "source_run_id": (
+                        artifact.source_run_id
+                        if artifact
+                        else current_by_match.get(match.match_id).source_run_id
+                        if current_by_match.get(match.match_id)
+                        else None
+                    ),
+                    "artifact_id": (
+                        artifact.artifact_id
+                        if artifact
+                        else current_by_match.get(match.match_id).artifact_id
+                        if current_by_match.get(match.match_id)
+                        else None
+                    ),
                     "captured_at": (
                         _aware(artifact.captured_at, "captured_at").isoformat()
                         if artifact
+                        else current_by_match.get(match.match_id).captured_at
+                        if current_by_match.get(match.match_id)
                         else None
                     ),
                     "kickoff_at": _aware(match.kickoff_at, "kickoff_at").isoformat(),
@@ -163,33 +189,89 @@ class JczqBoardWorkflow:
             action_type="reconcile_jczq_board_research",
             actor_id=actor_id,
             actor_role=actor_role,
-            idempotency_key=f"jczq-board:{board.business_date}:research",
+            idempotency_key=(
+                f"jczq-board:{board.business_date}:research:"
+                f"{hashlib.sha256(canonical_json(payload).encode('utf-8')).hexdigest()}"
+            ),
             payload=payload,
             requested_at=now,
         )
 
+        r0_targets: list[tuple[JczqBoardMatch, JczqResearchArtifact]] = []
+
         def handler(uow, committed_command):
             refs = []
             for match, artifact, status in states:
-                state_id = _stable_id(
-                    "jczq-board-research",
+                current = uow.operator_decision.current_jczq_board_research_state(
+                    business_date=board.business_date,
+                    match_id=match.match_id,
+                )
+                source_run_id = (
+                    artifact.source_run_id
+                    if artifact
+                    else current.source_run_id
+                    if current
+                    else None
+                )
+                artifact_id = (
+                    artifact.artifact_id
+                    if artifact
+                    else current.artifact_id
+                    if current
+                    else None
+                )
+                captured_at = (
+                    _aware(artifact.captured_at, "captured_at").isoformat()
+                    if artifact
+                    else current.captured_at
+                    if current
+                    else None
+                )
+                if current is not None and (
+                    current.status,
+                    current.source_run_id,
+                    current.artifact_id,
+                    current.captured_at,
+                    current.historical_replay,
+                ) == (
+                    status,
+                    source_run_id,
+                    artifact_id,
+                    captured_at,
+                    int(historical_replay),
+                ):
+                    refs.append(
+                        ObjectRef("jczq_board_research_state", current.board_research_state_id)
+                    )
+                    continue
+                family_id = _stable_id(
+                    "jczq-board-research-family",
                     board.business_date,
                     match.match_id,
+                )
+                revision_no = 1 if current is None else current.revision_no + 1
+                state_id = _stable_id(
+                    "jczq-board-research",
+                    family_id,
+                    revision_no,
+                    status,
+                    artifact_id,
                 )
                 uow.operator_decision.insert_jczq_board_research_state(
                     JczqBoardResearchStateRow(
                         board_research_state_id=state_id,
+                        board_research_family_id=family_id,
+                        revision_no=revision_no,
+                        supersedes_revision_id=(
+                            None if current is None else current.board_research_state_id
+                        ),
                         business_date=board.business_date,
                         match_id=match.match_id,
                         official_match_no=match.official_match_no,
                         status=status,
-                        source_run_id=artifact.source_run_id if artifact else None,
-                        artifact_id=artifact.artifact_id if artifact else None,
-                        captured_at=(
-                            _aware(artifact.captured_at, "captured_at").isoformat()
-                            if artifact
-                            else None
-                        ),
+                        source_run_id=source_run_id,
+                        artifact_id=artifact_id,
+                        captured_at=captured_at,
                         kickoff_at=_aware(match.kickoff_at, "kickoff_at").isoformat(),
                         historical_replay=int(historical_replay),
                         action_id=committed_command.action_id,
@@ -197,24 +279,49 @@ class JczqBoardWorkflow:
                     )
                 )
                 refs.append(ObjectRef("jczq_board_research_state", state_id))
+                if status == "researched" and artifact is not None:
+                    r0_targets.append((match, artifact))
             return tuple(refs)
 
         outcome = self._action_service.execute(command, handler)
         if outcome.status is not ActionStatus.COMMITTED:
             raise ValueError("JCZQ board research reconciliation did not commit")
         if (
-            self._r0_recorder is not None
+            self._r0_actions is not None
             and not historical_replay
             and outcome.action_id == command.action_id
         ):
-            for match, artifact, status in states:
-                if (
-                    status == "researched"
-                    and artifact is not None
-                    and _aware(artifact.captured_at, "captured_at")
-                    < _aware(match.kickoff_at, "kickoff_at")
+            for match, artifact in r0_targets:
+                if _aware(artifact.captured_at, "captured_at") >= _aware(
+                    match.kickoff_at, "kickoff_at"
                 ):
-                    self._r0_recorder.fulfill(match.match_id)
+                    continue
+                if artifact.artifact_path is None or artifact.artifact_bytes is None:
+                    raise ValueError("R0 fulfillment requires artifact path and bytes")
+                self._r0_actions.fulfill_duty(
+                    FulfillDutyRequest(
+                        exp_id="R0",
+                        duty_name="match-research",
+                        day=board.business_date,
+                        artifact_path=artifact.artifact_path,
+                        artifact_bytes=artifact.artifact_bytes,
+                        n_rows=1,
+                        population_stratum="jczq",
+                        judgment_tier_hist={"deep_research": 1},
+                        captured_at=artifact.captured_at,
+                        earliest_kickoff=match.kickoff_at.isoformat(),
+                        match_id=match.match_id,
+                        actor_id="system:jczq-board",
+                        actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                        idempotency_key=_stable_id(
+                            "rsi-r0-fulfillment",
+                            board.business_date,
+                            match.match_id,
+                            artifact.artifact_id,
+                        ),
+                        requested_at=now,
+                    )
+                )
         return self.progress(board.business_date)
 
     def progress(self, business_date: str) -> JczqBoardProgressV1:

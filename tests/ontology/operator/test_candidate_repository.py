@@ -81,6 +81,10 @@ def _candidate_set(
         content_hash=f"hash-{revision_id}",
         action_id=f"action-{revision_id}",
         created_at=AT,
+        change_delta=(
+            {"supersedes": supersedes} if supersedes is not None else None
+        ),
+        rationale=("fixture revision" if supersedes is not None else None),
     )
 
 

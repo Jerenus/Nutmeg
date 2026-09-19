@@ -549,6 +549,11 @@ def test_isolated_override_cli_regeneration_replay(tmp_path: Path, monkeypatch) 
             set_kind="judgment_bound",
         )
         assert candidate_set is not None
+        assert candidate_set.revision_no == 2
+        assert candidate_set.supersedes_revision_id is not None
+        assert candidate_set.change_delta is not None
+        assert candidate_set.change_delta["trigger"] == "audit_override"
+        assert candidate_set.rationale == "regenerate after committed audit override"
         regenerated_candidate = uow.operator_result.candidates_for_set(
             candidate_set.candidate_set_revision_id
         )[0]

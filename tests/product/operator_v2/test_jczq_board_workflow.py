@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import insert, text
 
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.repository import schema
@@ -23,8 +23,16 @@ class _R0Recorder:
     def __init__(self) -> None:
         self.matches: list[str] = []
 
-    def fulfill(self, match_id: str) -> None:
-        self.matches.append(match_id)
+    def fulfill_duty(self, request) -> None:
+        self.matches.append(request.match_id)
+
+
+class _R0Actions:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def fulfill_duty(self, request):
+        self.requests.append(request)
 
 
 class _ProposalWriter:
@@ -84,7 +92,7 @@ def test_board_persists_one_explicit_research_terminal_state_per_match(
     r0 = _R0Recorder()
     workflow = JczqBoardWorkflow(
         fixture.action_service,
-        r0_recorder=r0,
+        r0_actions=r0,
     )
     board = _board(30)
     artifacts = tuple(
@@ -94,6 +102,8 @@ def test_board_persists_one_explicit_research_terminal_state_per_match(
             source_run_id=f"board-run-{index}",
             artifact_id=f"board-artifact-{index}",
             intake_errors=(() if index <= 25 else ("invalid",)),
+            artifact_path=f"artifacts/board-artifact-{index}.json",
+            artifact_bytes=b"{}",
         )
         for index in range(1, 28)
     )
@@ -133,7 +143,7 @@ def test_post_kickoff_artifact_cannot_create_prospective_forecast(tmp_path) -> N
 def test_rejected_intake_never_records_r0_fulfillment(tmp_path) -> None:
     fixture = _fixture(tmp_path)
     r0 = _R0Recorder()
-    workflow = JczqBoardWorkflow(fixture.action_service, r0_recorder=r0)
+    workflow = JczqBoardWorkflow(fixture.action_service, r0_actions=r0)
     board = _board(1)
     artifacts = (
         JczqResearchArtifact(
@@ -160,7 +170,7 @@ def test_rejected_intake_never_records_r0_fulfillment(tmp_path) -> None:
 def test_board_action_replay_does_not_duplicate_r0_fulfillment(tmp_path) -> None:
     fixture = _fixture(tmp_path)
     r0 = _R0Recorder()
-    workflow = JczqBoardWorkflow(fixture.action_service, r0_recorder=r0)
+    workflow = JczqBoardWorkflow(fixture.action_service, r0_actions=r0)
     board = _board(1)
     artifacts = (
         JczqResearchArtifact(
@@ -168,6 +178,8 @@ def test_board_action_replay_does_not_duplicate_r0_fulfillment(tmp_path) -> None
             captured_at=AT,
             source_run_id="board-run-1",
             artifact_id="board-artifact-1",
+            artifact_path="artifacts/board-artifact-1.json",
+            artifact_bytes=b"{}",
         ),
     )
     _seed_artifacts(fixture, artifacts)
@@ -177,3 +189,81 @@ def test_board_action_replay_does_not_duplicate_r0_fulfillment(tmp_path) -> None
 
     assert first == replay
     assert r0.matches == ["match-1"]
+
+
+def test_price_only_research_state_can_be_superseded_before_kickoff(tmp_path) -> None:
+    fixture = _fixture(tmp_path)
+    workflow = JczqBoardWorkflow(fixture.action_service)
+    board = _board(1)
+
+    first = workflow.intake_board(board, (), historical_replay=False)
+    artifact = JczqResearchArtifact(
+        match_id="match-1",
+        captured_at=AT,
+        source_run_id="board-run-1",
+        artifact_id="board-artifact-1",
+    )
+    _seed_artifacts(fixture, (artifact,))
+    second = workflow.intake_board(board, (artifact,), historical_replay=False)
+
+    assert (first.price_only, first.researched) == (1, 0)
+    assert (second.price_only, second.researched) == (0, 1)
+    with fixture.engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT revision_no, status, supersedes_revision_id "
+                "FROM operator_jczq_board_research_state_revisions "
+                "ORDER BY revision_no"
+            )
+        ).all()
+    assert rows[0] == (1, "price_only", None)
+    assert rows[1][0:2] == (2, "researched")
+    assert rows[1][2] is not None
+
+
+def test_incremental_reconcile_does_not_downgrade_researched_state(tmp_path) -> None:
+    fixture = _fixture(tmp_path)
+    workflow = JczqBoardWorkflow(fixture.action_service)
+    board = _board(1)
+    artifact = JczqResearchArtifact(
+        match_id="match-1",
+        captured_at=AT,
+        source_run_id="board-run-1",
+        artifact_id="board-artifact-1",
+    )
+    _seed_artifacts(fixture, (artifact,))
+
+    first = workflow.intake_board(board, (artifact,), historical_replay=False)
+    second = workflow.intake_board(board, (), historical_replay=False)
+
+    assert first.researched == second.researched == 1
+    with fixture.engine.connect() as connection:
+        count = connection.scalar(
+            text("SELECT COUNT(*) FROM operator_jczq_board_research_state_revisions")
+        )
+    assert count == 1
+
+
+def test_researched_state_requests_r0_through_typed_action_api(tmp_path) -> None:
+    fixture = _fixture(tmp_path)
+    r0 = _R0Actions()
+    workflow = JczqBoardWorkflow(fixture.action_service, r0_actions=r0)
+    board = _board(1)
+    artifact = JczqResearchArtifact(
+        match_id="match-1",
+        captured_at=AT,
+        source_run_id="board-run-1",
+        artifact_id="board-artifact-1",
+        artifact_path="artifacts/board-artifact-1.json",
+        artifact_bytes=b"{}",
+    )
+    _seed_artifacts(fixture, (artifact,))
+
+    workflow.intake_board(board, (artifact,), historical_replay=False)
+
+    assert len(r0.requests) == 1
+    request = r0.requests[0]
+    assert request.exp_id == "R0"
+    assert request.duty_name == "match-research"
+    assert request.match_id == "match-1"
+    assert request.artifact_path == "artifacts/board-artifact-1.json"

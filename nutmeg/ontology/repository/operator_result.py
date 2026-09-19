@@ -1630,8 +1630,13 @@ class OperatorResultRepository:
     def insert_candidate_set_revision(
         self, row: TicketCandidateSetRevisionRow
     ) -> None:
+        values = _row_fields(row)
+        change_delta = values.pop("change_delta")
+        values["change_delta_json"] = (
+            canonical_json(change_delta) if change_delta is not None else None
+        )
         self._connection.execute(
-            insert(sod.operator_candidate_set_revisions).values(**_row_fields(row))
+            insert(sod.operator_candidate_set_revisions).values(**values)
         )
 
     def candidate_set_revision(
@@ -1647,7 +1652,7 @@ class OperatorResultRepository:
             .mappings()
             .first()
         )
-        return TicketCandidateSetRevisionRow(**dict(row)) if row is not None else None
+        return _candidate_set_revision_row(row) if row is not None else None
 
     def candidate_sets_for_request(
         self, generation_request_id: str
@@ -1660,7 +1665,7 @@ class OperatorResultRepository:
             )
             .order_by(sod.operator_candidate_set_revisions.c.set_kind)
         ).mappings()
-        return tuple(TicketCandidateSetRevisionRow(**dict(row)) for row in rows)
+        return tuple(_candidate_set_revision_row(row) for row in rows)
 
     def candidate_set_for_request(
         self,
@@ -1679,7 +1684,7 @@ class OperatorResultRepository:
             .mappings()
             .first()
         )
-        return TicketCandidateSetRevisionRow(**dict(row)) if row is not None else None
+        return _candidate_set_revision_row(row) if row is not None else None
 
     def current_candidate_set(
         self,
@@ -1707,7 +1712,7 @@ class OperatorResultRepository:
             .mappings()
             .first()
         )
-        return TicketCandidateSetRevisionRow(**dict(row)) if row is not None else None
+        return _candidate_set_revision_row(row) if row is not None else None
 
     def insert_candidate(self, row: TicketCandidateRow) -> None:
         self._connection.execute(
@@ -1867,6 +1872,13 @@ class OperatorResultRepository:
 
 def _row_fields(row) -> dict[str, object]:
     return {name: getattr(row, name) for name in row.__dataclass_fields__}
+
+
+def _candidate_set_revision_row(row) -> TicketCandidateSetRevisionRow:
+    values = dict(row)
+    encoded = values.pop("change_delta_json")
+    values["change_delta"] = json.loads(encoded) if encoded is not None else None
+    return TicketCandidateSetRevisionRow(**values)
 
 
 def _ticket_audit_override_row(row) -> TicketAuditOverrideReceiptRow:

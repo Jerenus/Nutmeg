@@ -835,6 +835,20 @@ class CandidateGenerationWorker:
                 uow,
                 generation,
             )
+            override_links = uow.operator_result.candidate_generation_override_links(
+                generation_request_id
+            )
+            current_sets = {
+                set_kind: uow.operator_result.current_candidate_set(
+                    task_family_id=generation.task_family_id,
+                    work_item_id=generation.work_item_id,
+                    set_kind=set_kind,
+                )
+                for set_kind in (
+                    "judgment_bound",
+                    "conditional_market_counterfactual",
+                )
+            }
 
         generator_version = (
             "operator-candidate-v2-bands"
@@ -862,7 +876,38 @@ class CandidateGenerationWorker:
                             capital_cap_minor=capital_cap_minor,
                         )
                     ),
-                )
+                ),
+                change_delta=(
+                    None
+                    if current_sets[set_kind] is None
+                    else {
+                        "trigger": (
+                            "audit_override"
+                            if override_links
+                            else "dependency_revision"
+                        ),
+                        "generation_request_id": generation_request_id,
+                        "dependency_fingerprint": generation.dependency_fingerprint,
+                        **(
+                            {
+                                "override_receipt_ids": [
+                                    link.override_receipt_id for link in override_links
+                                ]
+                            }
+                            if override_links
+                            else {}
+                        ),
+                    }
+                ),
+                rationale=(
+                    None
+                    if current_sets[set_kind] is None
+                    else (
+                        "regenerate after committed audit override"
+                        if override_links
+                        else "regenerate after dependency revision"
+                    )
+                ),
             )
             for set_kind, inputs, audit_offers in (
                 ("judgment_bound", judgment_inputs, judgment_audit_offers),
@@ -1628,7 +1673,12 @@ def _audit_candidate(
     return tuple(findings)
 
 
-def _candidate_set_input(result) -> CandidateSetInput:
+def _candidate_set_input(
+    result,
+    *,
+    change_delta: dict[str, object] | None = None,
+    rationale: str | None = None,
+) -> CandidateSetInput:
     by_band = getattr(result, "by_band", {})
     return CandidateSetInput(
         set_kind=result.set_kind,
@@ -1642,6 +1692,8 @@ def _candidate_set_input(result) -> CandidateSetInput:
             )
             for band, outcome in by_band.items()
         ),
+        change_delta=change_delta,
+        rationale=rationale,
     )
 
 

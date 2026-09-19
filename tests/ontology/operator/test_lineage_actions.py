@@ -927,6 +927,8 @@ def test_operator_approval_requires_regeneration_and_inherits_exact_overrides(
         request_id=generation_request_id,
         key="candidate:generate:override",
         judgment_candidate=_audit_blocked_candidate(),
+        change_delta={"trigger": "audit_override"},
+        rationale="regenerate after committed audit override",
         as_of=AT + timedelta(seconds=12),
     )
     assert regenerated.status is ActionStatus.COMMITTED
