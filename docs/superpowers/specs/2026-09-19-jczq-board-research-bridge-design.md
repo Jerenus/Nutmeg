@@ -6,7 +6,7 @@
 ## 0. 一句话
 
 让竞彩当日板的**每一场**在没有聊天窗口的情况下也能得到结构化深研与判读，成为 RSI 层的合法样本（U9/U10）；
-研到哪一层如实记 `judgment_tier`，研不到的场不假装。
+研到哪一层如实记 `judgment_tier`；**研不到的场也必须有判断**——「跟市场」是宪法默认的判断，不是判断的缺席（R2）。
 
 ## 1. 出生事故
 
@@ -24,9 +24,18 @@
 
 ## 3. 对象与文件
 
-- **板面 legs-base**：`.nutmeg-data/jczq/daily/<day>/jczq-legs-base.json`，键 = 板面代码（`周五001`），每场：`match_id`（内核）、`name`、`competition`、`kickoff_bj`、`fair`（bold_odds 去水）、`hhad_line`、`judgment_tier ∈ {price_only, deep_research}`（本桥不产 `light_read`——没有研究就没有判断，不造中间态）、研究成功后再加 `face_status`（复用专项的 `attach_face_status`）与 intake 回填的标签。
+- **`face_status.basis ∈ {researched, default}`（R3）**：`researched` = 有研究产物并通过 intake；`default` = 没研究、按「字段缺失 = alive」兜底。
+  ⛔两者字段此前完全一样，F6 统计「T3 必全包」时会把「研究过、机制上杀不掉任何面」与「压根没看」混成一类，样本被污染。
+  实验按 `basis` 分层，不许合并。
+- **板面 legs-base**：`.nutmeg-data/jczq/daily/<day>/jczq-legs-base.json`，键 = 板面代码（`周五001`），每场：`match_id`（内核）、`name`、`competition`、`kickoff_bj`、`fair`（bold_odds 去水）、`hhad_line`、`judgment_tier ∈ {price_only, deep_research}`（本桥不产 `light_read`——研究要么通过 intake 要么没有，不造中间态；但**没研究 ≠ 没判断**，见 R2：price_only 的场出「跟市场」Read）、研究成功后再加 `face_status`（复用专项的 `attach_face_status`）与 intake 回填的标签。
 - **研究产物**：`.nutmeg-data/jczq/daily/<day>/research-<code>.json`，schema 与足彩研究 JSON 完全一致（`name / summary / confidence / anchor_integrity / hole_location / license_questions / death_three_proofs / directional_flags / nondirectional_flags / crash_markers / precedents / schedule / market_snapshot`），intake 用同一套校验。
-- **草稿 Read**：研究成功 → `jczq-build-reads --day` 产 `reads.json` → `decision-read` 写内核 ForecastRevision，`judge = "ai:jczq-analyst"`，状态 **draft**；工作台既有 `approve-read / reject-read` 是人的门。样本行带 `approved` 布尔；实验登记时可声明 `require_approved`。
+- **每场都出 Read（2026-09-19 用户裁定 R2，最重要的一条）**：`jczq-build-reads --day` 为**板上每一场**产一条 Read，不论研没研到。
+  - 研到的场：`judge = "ai:jczq-analyst"`、状态 **draft**、`belief` 来自 `face_status`（活面按 fair 归一）、`judgment_tier = deep_research`；工作台既有 `approve-read / reject-read` 是人的门。
+  - 没研到的场（预算/开球/拒收）：`judge = "market-anchor"`、状态 **draft**、`belief = prior`（跟市场）、`confidence = 1`、`judgment_tier = price_only`。
+  - ⛔**「跟市场」是判断，不是判断的缺席**——宪法 §2 推论明文：「市场锚定（无命名理由＝跟市场）」。它是一句可被 Brier 评分的可证伪陈述。
+  - **出生事故 2026-09-19**：首次真跑后板上 26 场只有 1 场有 Read，25 场被预算挡掉的比赛**一条判断都没有**，对判读层实验永远零贡献——U9 说「场 × 渠道为总体」，实际入样 1/26。
+    判断永远存在，变的是**强度**；强度决定结构（能不能收窄），不决定要不要判。实验要的是全样本。
+  - 样本行带 `approved` 布尔；实验登记时可声明 `require_approved` 与 `min_tier` 做分层。
 - **覆盖率实验 R0**（observation / judgment 层 / population=jczq / min_tier=price_only）：唯一目的是让「每场深研」成为 **duty**——`scope=match, deadline_rule=match_kickoff, instrument=["uv","run","nutmeg","research","run","--day","{day}","--code","{code}"]`。研不到的场自然成 gap，覆盖率有账。
 
 ## 4. headless 深研运行器
@@ -62,9 +71,10 @@
 
 - 运行器：假 `claude` 可执行（脚本）→ 幂等跳过已研场；预算 N=2 时第 3 场 `skipped_budget`；开球已过 `skipped_past_kickoff`；非法 JSON → `.rejected.json` 且 legs 仍 `price_only`；每场调用 `rsi fulfill` 的 argv 正确。
 - intake by code：同一套 ERROR（confidence 缺失、三证不齐宣告死亡）在 code 键上生效；成功后 `face_status` 存在且 `faces` 派生。
-- build-reads：reads 的 `judge == "ai:jczq-analyst"`、每场一条、`judgment_tier == "deep_research"`。
+- build-reads（R2）：**板上每场都有且只有一条 Read**；研到的 `judge == "ai:jczq-analyst"` 且 `judgment_tier == "deep_research"`；没研到的 `judge == "market-anchor"`、`belief == prior`、`confidence == 1`、`judgment_tier == "price_only"`；两者 `status` 均为 draft。
+- basis 分层（R3）：研究通过的 leg `face_status[*].basis == "researched"`；没研究的 leg 若有 face_status 则为 `"default"`；两者不得在同一实验格里合并。
 - R0 duty：`rsi schedule --day` 为板上每场生成 `duty_instance(match_id)`；未研的场过开球后成 gap。
 
 ## 8. 出口条件
 
-某一天 `decision-am` 之后无人操作，`research run --day` 跑完：板上 ≥ 预算内每场都有 `research-<code>.json` 或明确的跳过原因；`rsi status` 里 R0 显示当天 observation 与 gaps；工作台里每场有一条 ai 草稿 Read 等待 approve；corpus v2 重建后竞彩带标签行数从 84 显著上升。
+某一天 `decision-am` 之后无人操作，`research run --day` 跑完：板上 ≥ 预算内每场都有 `research-<code>.json` 或明确的跳过原因；`rsi status` 里 R0 显示当天 observation 与 gaps；工作台里**板上每一场**都有一条草稿 Read 等待 approve（研到的 `ai:jczq-analyst`、没研到的 `market-anchor`）；`reads.json` 条数 == 板面场数；corpus v2 重建后竞彩带标签行数从 84 显著上升。
