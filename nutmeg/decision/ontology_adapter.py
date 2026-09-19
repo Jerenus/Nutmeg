@@ -690,26 +690,34 @@ def run_decision_close_v2(
     dry_run: bool = True,
     notification_service=None,
 ):
-    """close on the kernel: capture-closing (CLV) → express legs → tickets → report."""
-    from pathlib import Path as _Path
+    """Close only after a complete formal terminal decision exists in ontology."""
 
     from nutmeg.decision.verbs import _compose, _now_iso
+    from nutmeg.ontology.actions.service import ActionService
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+    from nutmeg.product.jczq_board_workflow import JczqBoardWorkflow
 
     active_kernel = kernel if kernel is not None else _default_kernel()
     requested_at = datetime.fromisoformat(_now_iso())
-    legs_path = _Path(output_dir) / "daily" / run_date / "legs.json"
 
-    def _express() -> str:
-        if legs_path.exists():
-            return run_decision_express_v2(legs_path, output_dir, kernel=active_kernel)
-        return f"decision-express-v2: 无 daily/{run_date}/legs.json → 空票(合法)"
+    def _require_terminal() -> str:
+        workflow = JczqBoardWorkflow(
+            ActionService(lambda: OntologyUnitOfWork(active_kernel.engine))
+        )
+        terminal = workflow.require_terminal_state(run_date)
+        if not terminal.audit_complete:
+            raise ValueError("ontology terminal decision is missing or incomplete")
+        return (
+            f"ontology terminal {terminal.kind}: "
+            f"{terminal.selection_revision_id or terminal.no_ticket_revision_id}"
+        )
 
     steps = [
+        ("terminal-gate", _require_terminal),
         (
             "capture-closing",
             lambda: _capture_closing_v2(active_kernel, run_date, output_dir, requested_at),
         ),
-        ("express", _express),
         (
             "report",
             lambda: _report_v2(

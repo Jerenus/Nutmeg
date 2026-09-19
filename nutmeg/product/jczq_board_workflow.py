@@ -405,13 +405,27 @@ class JczqBoardWorkflow:
             raise ValueError("terminal decision is not unique")
         if selections:
             selection = selections[0]
+            with self._action_service.unit_of_work() as uow:
+                candidate = uow.operator_result.candidate(selection.candidate_revision_id)
+            if candidate is None:
+                raise ValueError("terminal selection candidate is missing")
+            audit_complete = (
+                candidate.partition == "eligible"
+                and candidate.deployable == 1
+                and candidate.leg_audit_completed == 1
+                and candidate.prescription_audit_completed == 1
+                and candidate.budget_check_completed == 1
+                and candidate.deployment_report_completed == 1
+            )
+            if not audit_complete:
+                raise ValueError("terminal decision audit is incomplete")
             return JczqDecisionTerminalV1(
                 business_date=business_date,
                 kind="selected",
                 selection_revision_id=selection.candidate_selection_id,
                 no_ticket_revision_id=None,
                 candidate_set_revision_id=selection.candidate_set_revision_id,
-                audit_complete=True,
+                audit_complete=audit_complete,
             )
         no_ticket = no_tickets[0]
         return JczqDecisionTerminalV1(

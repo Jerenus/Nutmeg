@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.ontology_adapter import (
     run_decision_am_v2,
+    run_decision_close_v2,
     run_decision_express_v2,
     run_decision_read_v2,
     run_decision_settle_v2,
@@ -97,6 +98,28 @@ def test_empty_legs_is_empty_slate(tmp_path: Path) -> None:
     kernel, _match_id, output_dir = _kernel_with_read(tmp_path)
     msg = run_decision_express_v2(_write_legs(output_dir, []), output_dir, kernel=kernel)
     assert "0 票" in msg and "空仓合法" in msg
+    assert kernel.status().ticket_count == 0
+
+
+def test_manual_legs_file_cannot_drive_close_without_ontology_terminal(tmp_path: Path) -> None:
+    kernel, match_id, output_dir = _kernel_with_read(tmp_path)
+    _write_legs(
+        output_dir,
+        [
+            {
+                "match_id": match_id,
+                "market": "had",
+                "selection": "home",
+                "odds": 2.10,
+                "bucket": "main",
+            }
+        ],
+    )
+
+    result = run_decision_close_v2(DATE, output_dir, kernel=kernel)
+
+    assert not result.succeeded
+    assert "terminal decision is missing" in str(result)
     assert kernel.status().ticket_count == 0
 
 

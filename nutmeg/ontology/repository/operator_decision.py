@@ -1097,6 +1097,27 @@ class OperatorDecisionRepository:
         )
         return OperatorMatchJudgmentRevisionRow(**dict(row)) if row is not None else None
 
+    def current_operator_match_judgments_for_task_family(
+        self, task_family_id: str
+    ) -> tuple[OperatorMatchJudgmentRevisionRow, ...]:
+        judgments = sod.operator_match_judgment_revisions
+        newer = judgments.alias("newer_operator_match_judgment")
+        rows = self._connection.execute(
+            select(judgments)
+            .where(
+                judgments.c.task_family_id == task_family_id,
+                ~select(newer.c.operator_match_judgment_revision_id)
+                .where(
+                    newer.c.operator_match_judgment_family_id
+                    == judgments.c.operator_match_judgment_family_id,
+                    newer.c.revision_no > judgments.c.revision_no,
+                )
+                .exists(),
+            )
+            .order_by(judgments.c.match_id, judgments.c.market_definition_id)
+        ).mappings()
+        return tuple(OperatorMatchJudgmentRevisionRow(**dict(row)) for row in rows)
+
     def current_judgment_count(self, task_bundle_revision_id: str) -> int:
         latest = (
             select(
