@@ -1,4 +1,5 @@
 import json
+import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -146,3 +147,25 @@ def test_invalid_json_is_rejected_once_and_leg_stays_price_only(tmp_path):
     day_dir = root / "daily" / "2026-09-19"
     assert (day_dir / "research-周五001.rejected.json").exists()
     assert not (day_dir / "research-周五001.json").exists()
+
+
+def test_runner_honours_concurrency_limit(tmp_path):
+    root = _board(tmp_path, n=2)
+    barrier = threading.Barrier(2)
+
+    def concurrent(system, brief):
+        barrier.wait(timeout=2)
+        return 0, GOOD
+
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=root,
+        data_dir=tmp_path,
+        claude=concurrent,
+        fulfill=lambda argv: (0, ""),
+        profile=lambda match_id: {},
+        budget=2,
+        concurrency=2,
+    )
+
+    assert [row["status"] for row in report["matches"]] == ["done", "done"]

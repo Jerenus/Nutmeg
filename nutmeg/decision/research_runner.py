@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -95,6 +96,37 @@ def _validate(text: str) -> dict:
     return doc
 
 
+def _research_one(*, prompt: str, brief: str, claude: Claude) -> dict:
+    started = time.monotonic()
+    last_text = ""
+    last_error = ""
+    attempts = 0
+    for _attempt in range(1, MAX_ATTEMPTS + 1):
+        attempts += 1
+        try:
+            return_code, text = claude(prompt, brief)
+            last_text = text
+            if return_code != 0:
+                raise ValueError(f"claude 退出码 {return_code}")
+            research = _validate(text)
+        except (Exception, json.JSONDecodeError) as exc:  # noqa: BLE001
+            last_error = str(exc)
+            continue
+        return {
+            "status": "done",
+            "research": research,
+            "seconds": round(time.monotonic() - started, 1),
+            "attempts": attempts,
+        }
+    return {
+        "status": "rejected",
+        "raw_output": last_text,
+        "error": last_error,
+        "seconds": round(time.monotonic() - started, 1),
+        "attempts": attempts,
+    }
+
+
 def run_day(
     *,
     day: str,
@@ -105,6 +137,7 @@ def run_day(
     profile: Profile = _empty_profile,
     budget: int = RESEARCH_DAILY_BUDGET,
     code: str | None = None,
+    concurrency: int = 2,
 ) -> dict:
     day_dir = Path(jczq_dir) / "daily" / day
     board_path = day_dir / "jczq-legs-base.json"
@@ -114,20 +147,26 @@ def run_day(
     if code is not None:
         order = [value for value in order if value == code]
 
+    if concurrency < 1:
+        raise ValueError("concurrency 必须 >= 1")
     prompt = system_prompt()
     used = 0
-    rows: list[dict] = []
+    rows_by_code: dict[str, dict] = {}
+    pending: list[tuple[str, dict, str]] = []
     for board_code in order:
         leg = legs[board_code]
         output = day_dir / f"research-{board_code}.json"
         if output.exists():
-            rows.append({"code": board_code, "status": "skipped_done"})
+            rows_by_code[board_code] = {"code": board_code, "status": "skipped_done"}
             continue
         if datetime.fromisoformat(leg["kickoff_bj"]) <= datetime.now(BJ):
-            rows.append({"code": board_code, "status": "skipped_past_kickoff"})
+            rows_by_code[board_code] = {
+                "code": board_code,
+                "status": "skipped_past_kickoff",
+            }
             continue
         if used >= budget:
-            rows.append({"code": board_code, "status": "skipped_budget"})
+            rows_by_code[board_code] = {"code": board_code, "status": "skipped_budget"}
             continue
 
         used += 1
@@ -136,28 +175,24 @@ def run_day(
             leg=leg,
             profile_notes=profile(leg["match_id"]),
         )
-        started = time.monotonic()
-        status = "rejected"
-        last_text = ""
-        last_error = ""
-        attempts = 0
-        for _attempt in range(1, MAX_ATTEMPTS + 1):
-            attempts += 1
-            return_code, text = claude(prompt, brief)
-            last_text = text
-            try:
-                if return_code != 0:
-                    raise ValueError(f"claude 退出码 {return_code}")
-                research = _validate(text)
-            except (ValueError, TypeError, json.JSONDecodeError) as exc:
-                last_error = str(exc)
-                continue
+        pending.append((board_code, leg, brief))
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = [
+            pool.submit(_research_one, prompt=prompt, brief=brief, claude=claude)
+            for _board_code, _leg, brief in pending
+        ]
+        results = [future.result() for future in futures]
+
+    for (board_code, leg, _brief), result in zip(pending, results, strict=True):
+        output = day_dir / f"research-{board_code}.json"
+        if result["status"] == "done":
+            research = result.pop("research")
             research["captured_at"] = datetime.now(BJ).isoformat(timespec="seconds")
             output.write_text(
                 json.dumps(research, ensure_ascii=False, indent=1), encoding="utf-8"
             )
             leg["judgment_tier"] = "deep_research"
-            status = "done"
             fulfill(
                 [
                     "rsi",
@@ -180,31 +215,32 @@ def run_day(
                     str(data_dir),
                 ]
             )
-            break
-
-        if status == "rejected":
+        else:
             rejected = {
                 "code": board_code,
-                "attempts": attempts,
-                "error": last_error,
-                "raw_output": last_text,
+                "attempts": result["attempts"],
+                "error": result["error"],
+                "raw_output": result["raw_output"],
             }
             (day_dir / f"research-{board_code}.rejected.json").write_text(
                 json.dumps(rejected, ensure_ascii=False, indent=1), encoding="utf-8"
             )
-        rows.append(
-            {
-                "code": board_code,
-                "status": status,
-                "seconds": round(time.monotonic() - started, 1),
-                "attempts": attempts,
-            }
-        )
+        rows_by_code[board_code] = {
+            "code": board_code,
+            "status": result["status"],
+            "seconds": result["seconds"],
+            "attempts": result["attempts"],
+        }
 
     board_path.write_text(
         json.dumps(board, ensure_ascii=False, indent=1), encoding="utf-8"
     )
-    report = {"day": day, "budget": budget, "matches": rows}
+    report = {
+        "day": day,
+        "budget": budget,
+        "concurrency": concurrency,
+        "matches": [rows_by_code[board_code] for board_code in order],
+    }
     (day_dir / f"research-run-{day}.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8"
     )

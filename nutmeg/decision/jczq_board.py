@@ -34,6 +34,8 @@ def build_board_legs(*, day: str, matches: list[dict], jczq_dir: Path) -> dict:
         legs[code] = {
             "match_id": match["match_id"],
             "name": f"{match['home_team']}-{match['away_team']}",
+            "home_team": match["home_team"],
+            "away_team": match["away_team"],
             "competition": match.get("competition"),
             "kickoff_bj": _to_beijing(match["scheduled_at"]),
             "fair": devig(odds),

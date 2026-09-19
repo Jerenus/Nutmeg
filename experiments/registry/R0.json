@@ -1,0 +1,34 @@
+{
+ "exp_id": "R0",
+ "claim": "竞彩全板每场都有前瞻深研（覆盖率）；未研场如实为 gap。",
+ "mechanism": "覆盖率不是假设，是义务账；它让 U10 有账可查。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "jczq",
+ "min_tier": "price_only",
+ "window": {"date_from": "2026-09-20", "n_min": 200},
+ "falsifier": {
+  "metric": "coverage_pct",
+  "stratum": "jczq",
+  "n_min": 200,
+  "bound": "ci_lower",
+  "threshold_pp": 80.0,
+  "direction": "lt_means_falsified"
+ },
+ "stop_rule": "累计 200 场结账；覆盖率 CI 下界 < 80% 即证伪（说明预算/流程不够）。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "source_doc": "docs/superpowers/specs/2026-09-19-jczq-board-research-bridge-design.md",
+ "registered_at": "2026-09-19",
+ "duties": [
+  {
+   "name": "match-research",
+   "scope": "match",
+   "deadline_rule": "match_kickoff",
+   "instrument": ["uv", "run", "nutmeg", "research", "run", "--day", "{day}"],
+   "artifact_glob": ".nutmeg-data/jczq/daily/{day}/research-*.json",
+   "description": "每场 headless 深研；开球前落"
+  }
+ ]
+}

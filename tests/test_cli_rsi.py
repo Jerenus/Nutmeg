@@ -85,6 +85,51 @@ def test_schedule_normalises_space_form_kickoff_bj(tmp_path):
     assert "f2-observation" in r.output and "00:30" in r.output, r.output
 
 
+def test_schedule_and_fulfill_per_match_jczq_duty(tmp_path):
+    data_dir = tmp_path / "data"
+    day_dir = data_dir / "jczq" / "daily" / "2026-09-19"
+    day_dir.mkdir(parents=True)
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps(
+            {
+                "day": "2026-09-19",
+                "legs": {
+                    "周五001": {
+                        "match_id": "match-1",
+                        "kickoff_bj": "2099-01-01T20:00:00+08:00",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    doc = tmp_path / "R0.json"
+    doc.write_text(
+        Path("experiments/registry/R0.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    registered = runner.invoke(
+        app, ["rsi", "register", str(doc), "--data-dir", str(data_dir)]
+    )
+    assert registered.exit_code == 0
+    scheduled = runner.invoke(
+        app, ["rsi", "schedule", "--day", "2026-09-19", "--data-dir", str(data_dir)]
+    )
+    assert scheduled.exit_code == 0, scheduled.output
+    artifact = day_dir / "research-周五001.json"
+    artifact.write_text("{}", encoding="utf-8")
+    fulfilled = runner.invoke(
+        app,
+        [
+            "rsi", "fulfill", "--exp", "R0", "--duty", "match-research",
+            "--day", "2026-09-19", "--match", "match-1", "--artifact", str(artifact),
+            "--n-rows", "1", "--stratum", "jczq", "--data-dir", str(data_dir),
+        ],
+    )
+    assert fulfilled.exit_code == 0, fulfilled.output
+
+
 def test_dream_ranks_variants_and_prints_variants_tried(tmp_path):
     corpus = tmp_path / "c.json"
     corpus.write_text(

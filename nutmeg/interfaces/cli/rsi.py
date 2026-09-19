@@ -41,6 +41,7 @@ _DUTY = typer.Option(..., "--duty")
 _ARTIFACT = typer.Option(..., "--artifact")
 _N_ROWS = typer.Option(..., "--n-rows")
 _STRATUM = typer.Option("zucai", "--stratum")
+_MATCH = typer.Option("", "--match")
 _MODE = typer.Option("prospective", "--mode")
 _REASON = typer.Option(..., "--reason")
 _RULE = typer.Option(None, "--rule")
@@ -95,6 +96,18 @@ def _earliest_kickoff(data_dir: Path, issue: str | None) -> str | None:
     return min(kos) if kos else None
 
 
+def _jczq_match_kickoffs(data_dir: Path, day: str) -> dict[str, str]:
+    path = data_dir / "jczq" / "daily" / day / "jczq-legs-base.json"
+    if not path.exists():
+        return {}
+    legs = json.loads(path.read_text(encoding="utf-8")).get("legs") or {}
+    return {
+        str(leg["match_id"]): _normalise_bj(str(leg["kickoff_bj"]))
+        for leg in legs.values()
+        if leg.get("match_id") and leg.get("kickoff_bj")
+    }
+
+
 _BJ = timezone(timedelta(hours=8))
 
 
@@ -135,11 +148,15 @@ def register(doc_path: Path, data_dir: Path = _DATA_DIR) -> None:
 def schedule(day: str = _DAY, issue: str | None = _ISSUE, data_dir: Path = _DATA_DIR) -> None:
     """为当天所有 observing 实验的 duty 生成实例（系统；备料链调）。"""
     k = _kernel(data_dir)
+    match_kickoffs = _jczq_match_kickoffs(data_dir, day) if issue is None else {}
     ko = _earliest_kickoff(data_dir, issue)
+    if ko is None and match_kickoffs:
+        ko = min(match_kickoffs.values())
     if ko is None:
-        _fail(f"{day} 找不到最早开球（需要 zucai/{issue}-issue.json）")
+        _fail(f"{day} 找不到最早开球（需要足彩 issue 或竞彩 legs-base）")
     _run(k.rsi_actions.schedule_duties, ScheduleDutiesRequest(
-        day=day, earliest_kickoff=ko, issue=issue, idempotency_key=f"rsi-sched:{day}",
+        day=day, earliest_kickoff=ko, issue=issue, match_kickoffs=match_kickoffs,
+        idempotency_key=f"rsi-sched:{day}:{issue or 'jczq'}",
         requested_at=_now(), **_SYSTEM))
     typer.echo(f"已排 {day} 的义务，截止 {ko}")
 
@@ -166,18 +183,22 @@ def due(day: str = _DAY, data_dir: Path = _DATA_DIR, now: str | None = _NOW) -> 
 @rsi_app.command("fulfill")
 def fulfill(exp: str = _EXP, duty: str = _DUTY, day: str = _DAY, artifact: Path = _ARTIFACT,
             n_rows: int = _N_ROWS, stratum: str = _STRATUM, issue: str | None = _ISSUE,
-            data_dir: Path = _DATA_DIR) -> None:
+            match: str = _MATCH, data_dir: Path = _DATA_DIR) -> None:
     """观察仪产物落盘后登记（系统）。采样时刻取产物文件 mtime。"""
     k = _kernel(data_dir)
     ko = _earliest_kickoff(data_dir, issue)
+    if match:
+        ko = _jczq_match_kickoffs(data_dir, day).get(match)
     if ko is None:
-        _fail("需要 --issue 以解析最早开球（前瞻性判定依赖它）")
+        _fail("需要 --issue 或 --match 以解析开球（前瞻性判定依赖它）")
     raw = artifact.read_bytes()
     captured = datetime.fromtimestamp(artifact.stat().st_mtime).astimezone()
     _run(k.rsi_actions.fulfill_duty, FulfillDutyRequest(
         exp_id=exp, duty_name=duty, day=day, artifact_path=str(artifact), artifact_bytes=raw,
-        n_rows=n_rows, population_stratum=stratum, judgment_tier_hist={"price_only": n_rows},
-        captured_at=captured, earliest_kickoff=ko, idempotency_key=f"rsi-ful:{exp}:{duty}:{day}",
+        n_rows=n_rows, population_stratum=stratum,
+        judgment_tier_hist={"deep_research" if match else "price_only": n_rows},
+        captured_at=captured, earliest_kickoff=ko, match_id=match,
+        idempotency_key=f"rsi-ful:{exp}:{duty}:{day}:{match}",
         requested_at=_now(), **_SYSTEM))
     prospective = captured < datetime.fromisoformat(ko)
     typer.echo(f"已登记 {exp}/{duty}@{day}  n_rows={n_rows}  "

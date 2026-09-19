@@ -43,6 +43,12 @@ def after_prep(*, issue: str, day: str, data_dir: Path, invoke: Invoker = _cli_i
     invoke(["rsi", "due", "--day", day, "--data-dir", str(data_dir)])
 
 
+def after_am(*, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None:
+    """Build the JCZQ research board, then schedule its per-match duties."""
+    invoke(["research", "board", "--day", day, "--data-dir", str(data_dir)])
+    invoke(["rsi", "schedule", "--day", day, "--data-dir", str(data_dir)])
+
+
 def after_observation_artifact(*, exp: str, duty: str, issue: str, day: str, artifact: Path,
                                n_rows: int, data_dir: Path,
                                invoke: Invoker = _cli_invoke) -> None:

@@ -990,6 +990,7 @@ from nutmeg.interfaces.cli import plan as plan  # noqa: E402
 from nutmeg.interfaces.cli import product as product  # noqa: E402
 from nutmeg.interfaces.cli import psychology as psychology  # noqa: E402
 from nutmeg.interfaces.cli import reliability as reliability  # noqa: E402
+from nutmeg.interfaces.cli import research as research  # noqa: E402
 from nutmeg.interfaces.cli import rsi as rsi  # noqa: E402
 from nutmeg.interfaces.cli import scoreboard as scoreboard  # noqa: E402
 from nutmeg.interfaces.cli import telegram as telegram  # noqa: E402

@@ -420,6 +420,9 @@ def decision_am(
     _emit_result(result, format=format)
     if not getattr(result, "succeeded", True):
         raise _cli.typer.Exit(code=1)
+    from nutmeg.decision.rsi_wiring import after_am
+
+    after_am(day=run_date, data_dir=Path(output_dir).parent)
 
 
 @_cli.app.command("decision-close")

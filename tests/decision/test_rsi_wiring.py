@@ -2,7 +2,12 @@
 结算跑完 → rsi grade (+verdict)。用假 invoker 验参数。"""
 from datetime import datetime
 
-from nutmeg.decision.rsi_wiring import after_observation_artifact, after_prep, after_settle
+from nutmeg.decision.rsi_wiring import (
+    after_am,
+    after_observation_artifact,
+    after_prep,
+    after_settle,
+)
 
 
 def test_after_prep_schedules_then_lists_due(tmp_path):
@@ -11,6 +16,48 @@ def test_after_prep_schedules_then_lists_due(tmp_path):
                invoke=lambda argv: calls.append(argv) or (0, ""))
     assert calls[0][:2] == ["rsi", "schedule"] and "--issue" in calls[0] and "26129" in calls[0]
     assert calls[1][:2] == ["rsi", "due"]
+
+
+def test_after_am_builds_research_board_then_schedules_match_duties(tmp_path):
+    calls = []
+    after_am(day="2026-09-19", data_dir=tmp_path,
+             invoke=lambda argv: calls.append(argv) or (0, ""))
+    assert [call[:2] for call in calls] == [["research", "board"], ["rsi", "schedule"]]
+
+
+def test_decision_am_calls_research_wiring_after_success(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    import nutmeg.config.settings as settings_module
+    import nutmeg.interfaces.cli as cli
+    from nutmeg.decision.verbs import DecisionWorkflowResult
+
+    monkeypatch.delenv("NUTMEG_ONTOLOGY_V2", raising=False)
+    settings_module.get_settings.cache_clear()
+    monkeypatch.setattr(
+        "nutmeg.decision.verbs.run_decision_am",
+        lambda run_date, output_dir, **kwargs: DecisionWorkflowResult(
+            "decision-am", run_date, (), "stub"
+        ),
+    )
+    hits = []
+    monkeypatch.setattr(
+        "nutmeg.decision.rsi_wiring.after_am", lambda **kwargs: hits.append(kwargs)
+    )
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "decision-am",
+            "--run-date",
+            "2026-09-19",
+            "--output-dir",
+            str(tmp_path / "jczq"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert hits == [{"day": "2026-09-19", "data_dir": tmp_path}]
 
 
 def test_after_observation_artifact_fulfills_with_row_count(tmp_path):
