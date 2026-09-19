@@ -476,6 +476,7 @@ class ProductReadRepository:
                         "layer": e.layer,
                         "population": e.population,
                         "registered_at": e.registered_at,
+                        "falsifier": e.falsifier,
                         "n_min": f.n_min,
                         "n_cum": g.n_cum if g else 0,
                         "ci": [g.ci_low_pp, g.ci_high_pp] if g else None,
@@ -495,6 +496,13 @@ class ProductReadRepository:
                     }
                 )
             return out
+
+    def latest_capital_plan(self, issue: str):
+        """Return the latest append-only capital plan without opening a write UOW."""
+        from nutmeg.ontology.repository.capital import CapitalRepository
+
+        with self._read_connection() as connection:
+            return CapitalRepository(connection).latest_plan(issue)
 
     def experiment_timeline(self, exp_id: str, *, as_of: str) -> list[dict]:
         """一条实验的全部只追加记录，按时间排成时间线。"""

@@ -69,6 +69,7 @@ def test_experiments_timeline_and_duties_due(tmp_path: Path):
     repo = ProductReadRepository(engine)
     exps = repo.experiments(as_of="2026-09-18T21:00:00+08:00")
     assert [e["exp_id"] for e in exps] == ["F2"] and exps[0]["status"] == "registered"
+    assert exps[0]["falsifier"]["threshold_pp"] == 2.0
     tl = repo.experiment_timeline("F2", as_of="2026-09-18T21:00:00+08:00")
     assert tl[0]["kind"] == "registered" and tl[0]["at"] == "2026-09-18T20:00:00+08:00"
     due = repo.duties_due("2026-09-19", now="2026-09-18T21:00:00+08:00")

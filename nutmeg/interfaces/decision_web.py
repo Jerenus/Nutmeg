@@ -55,7 +55,7 @@ def self_daily(output_dir, date: str) -> Path:
 
 
 def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
-                        zucai_dir=None, sop_invoke=None) -> FastAPI:
+                        zucai_dir=None, sop_invoke=None, observe_repo=None) -> FastAPI:
     app = FastAPI(title="Nutmeg 判读工作台")
     web_root = Path(__file__).parent / "web"
     templates = Jinja2Templates(directory=web_root / "templates")
@@ -218,6 +218,110 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
         evs = read_events(output_dir, date, since=since)
         cursor = evs[-1]["seq"] if evs else since
         return {"events": evs, "cursor": cursor}
+
+    # ── RSI 观察台：只读 API，每块数据各自降级 ─────────────────────────
+    from nutmeg.decision.observe_views import day_view, experiment_card, wind_for_day
+
+    def _safe(fn, default, errors: list[str]):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 -- 观察台不能因单块缺失而整页失败
+            errors.append(str(exc))
+            return default
+
+    @app.get("/api/observe")
+    def api_observe(as_of: str | None = None, day: str | None = None) -> dict:
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+
+        now_dt = datetime.now(ZoneInfo("Asia/Shanghai"))
+        now = as_of or now_dt.isoformat(timespec="seconds")
+        today = day or now_dt.date().isoformat()
+        tomorrow = (
+            datetime.fromisoformat(today).date() + timedelta(days=1)
+        ).isoformat()
+        errors: list[str] = []
+        rows = (
+            _safe(lambda: observe_repo.experiments(as_of=now), [], errors)
+            if observe_repo
+            else []
+        )
+        cards = [experiment_card(row, row.get("falsifier") or {}) for row in rows]
+        duties_today = (
+            _safe(lambda: observe_repo.duties_due(today, now=now), [], errors)
+            if observe_repo
+            else []
+        )
+        duties_tomorrow = (
+            _safe(lambda: observe_repo.duties_due(tomorrow, now=now), [], errors)
+            if observe_repo
+            else []
+        )
+        issue = next(
+            (duty.get("issue") for duty in duties_today if duty.get("issue")),
+            None,
+        )
+        wind = _safe(
+            lambda: wind_for_day(app.state.zucai_dir, issue), None, errors
+        )
+        return {
+            "as_of": now,
+            "experiments": cards,
+            "duties_today": duties_today,
+            "duties_tomorrow": duties_tomorrow,
+            "wind": wind,
+            "errors": errors,
+        }
+
+    @app.get("/api/observe/exp/{exp_id}")
+    def api_observe_exp(exp_id: str, as_of: str | None = None) -> list:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        now = as_of or datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(
+            timespec="seconds"
+        )
+        errors: list[str] = []
+        return (
+            _safe(
+                lambda: observe_repo.experiment_timeline(exp_id, as_of=now),
+                [],
+                errors,
+            )
+            if observe_repo
+            else []
+        )
+
+    @app.get("/api/observe/day/{date}")
+    def api_observe_day(date: str) -> dict:
+        from dataclasses import asdict, is_dataclass
+
+        errors: list[str] = []
+        state = _safe(
+            lambda: _day_state(store, output_dir, date, kernel_state),
+            {"events": []},
+            errors,
+        )
+        events = state.get("events", [])
+        issue = next(
+            (
+                str(event.get("obj_id", "")).split(":")[-1]
+                for event in events
+                if event.get("kind") == "candidate"
+                and str(event.get("obj_id", "")).startswith("ticket:")
+            ),
+            None,
+        )
+        plan = (
+            _safe(lambda: observe_repo.latest_capital_plan(issue), None, errors)
+            if observe_repo and issue
+            else None
+        )
+        if plan is not None and not isinstance(plan, dict):
+            plan = asdict(plan) if is_dataclass(plan) else dict(plan)
+        view = day_view(events=events, plan=plan)
+        view["errors"] = errors
+        return view
 
     # ── 过程回放（阶段三 Task 3）：讨论变成事件，事件变成回放 ───────────
     @app.get("/replay")
