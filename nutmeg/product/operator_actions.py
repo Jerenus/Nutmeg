@@ -117,6 +117,7 @@ class OperatorActionService:
         result_actions=None,
         review_actions=None,
         workflow_actions=None,
+        jczq_board_workflow=None,
         protected_tickets=None,
         snapshot_tokens: OperatorSnapshotTokenCodec | None = None,
         calibrate=None,
@@ -134,6 +135,7 @@ class OperatorActionService:
         self._result_actions = result_actions
         self._review_actions = review_actions
         self._workflow_actions = workflow_actions
+        self._jczq_board_workflow = jczq_board_workflow
         self._protected_tickets = protected_tickets
         self._snapshot_tokens = snapshot_tokens
         self._calibrate = calibrate
@@ -152,6 +154,42 @@ class OperatorActionService:
     @property
     def decision_actions(self):
         return self._decision_actions
+
+    def intake_jczq_board(
+        self,
+        board,
+        artifacts,
+        *,
+        historical_replay: bool,
+        actor_id: str,
+        actor_role: ActorRole,
+    ):
+        if self._jczq_board_workflow is None:
+            raise ProductActionBlockedError("JCZQ board workflow is not configured")
+        if actor_role is not ActorRole.DETERMINISTIC_SYSTEM:
+            raise ProductActionBlockedError(
+                "JCZQ board intake requires deterministic_system"
+            )
+        return self._jczq_board_workflow.intake_board(
+            board,
+            artifacts,
+            historical_replay=historical_replay,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+
+    def propose_jczq_forecasts(
+        self,
+        drafts,
+        *,
+        historical_replay: bool,
+    ):
+        if self._jczq_board_workflow is None:
+            raise ProductActionBlockedError("JCZQ board workflow is not configured")
+        return self._jczq_board_workflow.propose_forecasts(
+            drafts,
+            historical_replay=historical_replay,
+        )
 
     @staticmethod
     def _require_judge(actor_id: str, actor_role: ActorRole) -> None:

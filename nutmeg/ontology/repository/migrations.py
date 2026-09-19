@@ -4632,6 +4632,32 @@ def _apply_jczq_candidate_bands(connection: Connection) -> None:
         )
 
 
+def _apply_jczq_board_research_states(connection: Connection) -> None:
+    schema_operator_decision.operator_jczq_board_research_states.create(
+        connection,
+        checkfirst=True,
+    )
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS
+              operator_jczq_board_research_states_no_{operation.lower()}
+            BEFORE {operation} ON operator_jczq_board_research_states
+            BEGIN
+              SELECT RAISE(ABORT, 'operator_jczq_board_research_states is append-only');
+            END
+            """
+        )
+    connection.execute(
+        insert(schema.action_permissions),
+        {
+            "policy_version_id": "governance-v1",
+            "action_type": "reconcile_jczq_board_research",
+            "actor_role": "deterministic_system",
+        },
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -4889,6 +4915,12 @@ MIGRATIONS: tuple[Migration, ...] = (
             "parent_delta_lineage+four_band_outcomes+append_only"
         ),
         apply=_apply_jczq_candidate_bands,
+    ),
+    Migration(
+        version=32,
+        name="jczq_board_research_states",
+        fingerprint="explicit_board_terminal_states+append_only+replay_semantics",
+        apply=_apply_jczq_board_research_states,
     ),
 )
 

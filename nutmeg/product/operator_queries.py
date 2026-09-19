@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
@@ -63,6 +64,7 @@ from nutmeg.product.operator_contracts import (
     DeploymentCandidateSummary,
     DeploymentRuleOption,
     EvidenceFieldSummary,
+    JczqBoardProgressV1,
     JudgeMatchesStep,
     JudgmentFaceBundleView,
     JudgmentFaceView,
@@ -654,6 +656,19 @@ class OperatorQueryService:
         if self._maintenance_probe is None:
             raise ProductNotFoundError("operator maintenance diagnostic is unavailable")
         return self._maintenance_probe.read(as_of=cutoff)
+
+    def jczq_board_progress(self, business_date: str) -> JczqBoardProgressV1:
+        with self._decision_uow() as uow:
+            rows = uow.operator_decision.jczq_board_research_states(business_date)
+        counts = Counter(row.status for row in rows)
+        return JczqBoardProgressV1(
+            business_date=business_date,
+            total=len(rows),
+            researched=counts.get("researched", 0),
+            rejected=counts.get("rejected", 0),
+            price_only=counts.get("price_only", 0),
+            match_ids=[row.match_id for row in rows],
+        )
 
     def evidence_freeze_context(self, task_key: str, *, as_of: datetime):
         if self._operator_evidence is None:

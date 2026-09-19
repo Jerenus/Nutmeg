@@ -1606,6 +1606,63 @@ operator_candidate_band_outcomes = Table(
 )
 
 
+operator_jczq_board_research_states = Table(
+    "operator_jczq_board_research_states",
+    metadata,
+    Column("board_research_state_id", Text, primary_key=True),
+    Column("business_date", Text, nullable=False, index=True),
+    Column("match_id", Text, nullable=False),
+    Column("official_match_no", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column(
+        "source_run_id",
+        Text,
+        ForeignKey("source_runs.source_run_id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column(
+        "artifact_id",
+        Text,
+        ForeignKey("source_artifacts.artifact_id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("captured_at", Text, nullable=True),
+    Column("kickoff_at", Text, nullable=False),
+    Column("historical_replay", Integer, nullable=False),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("created_at", Text, nullable=False),
+    CheckConstraint(
+        "status IN ('researched', 'price_only', 'rejected')",
+        name="ck_operator_jczq_board_research_status",
+    ),
+    CheckConstraint(
+        "(status = 'researched' AND source_run_id IS NOT NULL "
+        "AND artifact_id IS NOT NULL AND captured_at IS NOT NULL) OR "
+        "status IN ('price_only', 'rejected')",
+        name="ck_operator_jczq_board_research_lineage",
+    ),
+    CheckConstraint(
+        "historical_replay IN (0, 1)",
+        name="ck_operator_jczq_board_research_replay",
+    ),
+    UniqueConstraint(
+        "business_date",
+        "match_id",
+        name="uq_operator_jczq_board_research_match",
+    ),
+    UniqueConstraint(
+        "business_date",
+        "official_match_no",
+        name="uq_operator_jczq_board_research_number",
+    ),
+)
+
+
 operator_candidate_metrics = Table(
     "operator_candidate_metrics",
     metadata,
@@ -2355,6 +2412,7 @@ __all__ = [
     "operator_baseline_envelope_template_offers",
     "operator_candidate_audit_findings",
     "operator_candidate_band_outcomes",
+    "operator_jczq_board_research_states",
     "operator_candidate_dead_faces",
     "operator_candidate_generation_requests",
     "operator_candidate_metrics",

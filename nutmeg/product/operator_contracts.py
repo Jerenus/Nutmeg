@@ -914,6 +914,24 @@ class CandidateBandOutcomeView(StrictOperatorContract):
         return self
 
 
+class JczqBoardProgressV1(VersionedOperatorContract):
+    kind: Literal["jczq_board_progress_v1"] = "jczq_board_progress_v1"
+    business_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    total: int = Field(ge=0)
+    researched: int = Field(ge=0)
+    rejected: int = Field(ge=0)
+    price_only: int = Field(ge=0)
+    match_ids: list[str]
+
+    @model_validator(mode="after")
+    def _validate_reconciliation(self) -> "JczqBoardProgressV1":
+        if self.total != self.researched + self.rejected + self.price_only:
+            raise ValueError("board terminal-state counts do not reconcile")
+        if self.total != len(self.match_ids) or len(set(self.match_ids)) != self.total:
+            raise ValueError("board terminal-state match ids do not reconcile")
+        return self
+
+
 class CandidateSetComparisonView(StrictOperatorContract):
     label: str = Field(min_length=1, max_length=200)
     comparison_only: bool

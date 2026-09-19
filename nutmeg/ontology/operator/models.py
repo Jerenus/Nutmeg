@@ -496,6 +496,22 @@ class CandidateBandOutcomeRow:
 
 
 @dataclass(frozen=True, slots=True)
+class JczqBoardResearchStateRow:
+    board_research_state_id: str
+    business_date: str
+    match_id: str
+    official_match_no: str
+    status: str
+    source_run_id: str | None
+    artifact_id: str | None
+    captured_at: str | None
+    kickoff_at: str
+    historical_replay: int
+    action_id: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
 class CandidateMetricRow:
     candidate_metric_id: str
     candidate_revision_id: str
@@ -844,6 +860,7 @@ __all__ = [
     "BaselineEnvelopeTemplateOfferRow",
     "CandidateAuditFindingRow",
     "CandidateBandOutcomeRow",
+    "JczqBoardResearchStateRow",
     "CandidateDeadFaceRow",
     "CandidateGenerationRequestRow",
     "CandidateGenerationOverrideLinkRow",

@@ -22,6 +22,7 @@ from nutmeg.ontology.operator.models import (
     EvidenceIntakeObjectRow,
     EvidenceIntakeReceiptRow,
     FrozenEvidenceBundleActionRow,
+    JczqBoardResearchStateRow,
     JudgmentPrescriptionItemRow,
     JudgmentPrescriptionRevisionRow,
     MarketPriorBaselineProbabilityRow,
@@ -55,6 +56,28 @@ _EVIDENCE_SOURCE_KINDS = frozenset(
 class OperatorDecisionRepository:
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
+
+    def insert_jczq_board_research_state(
+        self,
+        row: JczqBoardResearchStateRow,
+    ) -> None:
+        self._connection.execute(
+            insert(sod.operator_jczq_board_research_states).values(**_row_fields(row))
+        )
+
+    def jczq_board_research_states(
+        self,
+        business_date: str,
+    ) -> tuple[JczqBoardResearchStateRow, ...]:
+        rows = self._connection.execute(
+            select(sod.operator_jczq_board_research_states)
+            .where(
+                sod.operator_jczq_board_research_states.c.business_date
+                == business_date
+            )
+            .order_by(sod.operator_jczq_board_research_states.c.official_match_no)
+        ).mappings()
+        return tuple(JczqBoardResearchStateRow(**dict(row)) for row in rows)
 
     def insert_candidate_generation_request(
         self, row: CandidateGenerationRequestRow
