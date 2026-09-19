@@ -986,6 +986,7 @@ from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402
 from nutmeg.interfaces.cli import ontology_evidence as ontology_evidence  # noqa: E402
 from nutmeg.interfaces.cli import ontology_ingest as ontology_ingest  # noqa: E402
 from nutmeg.interfaces.cli import operations as operations  # noqa: E402
+from nutmeg.interfaces.cli import plan as plan  # noqa: E402
 from nutmeg.interfaces.cli import product as product  # noqa: E402
 from nutmeg.interfaces.cli import psychology as psychology  # noqa: E402
 from nutmeg.interfaces.cli import reliability as reliability  # noqa: E402
