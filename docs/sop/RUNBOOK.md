@@ -16,10 +16,10 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 
 | 步 | 动作 | 命令/门 |
 |---|---|---|
-| A1 | 数据入库+市场基线 | `uv run nutmeg decision-am --run-date $(date +%Y-%m-%d) --output-dir .nutmeg-data/jczq`；看 alias-audit 输出，未命中=该场丢国际锚 |
+| A1 | 数据入库+市场基线 | `uv run nutmeg decision-am --run-date $(date +%Y-%m-%d) --output-dir .nutmeg-data/jczq`；看 alias-audit 输出，未命中=该场丢国际锚。成功后自动 `research board` + `rsi schedule`，为板上每场生成 R0 duty |
 | A1b | v2 外部证据桥（shadow） | 外部采集产严格 `evidence-intake-v1` 后执行 `uv run nutmeg workflow ingest-evidence --manifest <path>`；`operator-evidence-policy-v1` 全门与本命令共同部署前，v2 只作 shadow，不替代现行 A1-A7 |
-| A2 | 判读 | 深度请求→每场并行派 `jczq-match-analyst`（七阶段）；否则主循环直判。每场落到判决表四级之一 |
-| A3 | 落 Read | `decision-read --reads-file …`（结构化 JSON；因子必须在词典内；league/team 因子带 scope_key） |
+| A2 | 判读 | `uv run nutmeg research run --day $(date +%Y-%m-%d)`（headless，预算 40 场/日，按开球排队；研不到如实保留 `price_only`）→ `uv run nutmeg research intake --day $(date +%Y-%m-%d) --write`；每场落到实际 `judgment_tier`，不得补造中间态 |
+| A3 | 落 Read | `uv run nutmeg jczq-build-reads --day $(date +%Y-%m-%d)` → `uv run nutmeg decision-read --reads-file .nutmeg-data/jczq/daily/$(date +%Y-%m-%d)/reads.json --output-dir .nutmeg-data/jczq`；AI 产物只落 draft，仍由工作台 approve/reject |
 | A4 | 构票 | 写 legs.json（含 flags/anchor_integrity/**precedents**/`tracking_tags` 追踪标签） |
 | A5 | **审计门** | `uv run nutmeg decision-audit-legs --legs-file …` — 默认/AI/无人值守遇 ERROR=退出码1不许出票；仅 Jun 显式 `--user-override` 且登记 reason/rule ID、evidence_rejected Adjudication 入账成功后可继续；WARN 逐条显式裁决入账 |
 | A6 | 出票 | `decision-close --run-date … --dispatch-telegram --no-dry-run`；空 legs=空票合法 |
@@ -68,6 +68,8 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 > 登记 `rsi register experiments/registry/<id>.json`（原件全冻结，改判据＝另立新 exp_id）；
 > `rsi verdict` 由代码按冻结判据判、人不得代判；`rsi deploy` 只许人。重放（`--mode replay` / dream）结果进不了判决。
 > 出生事故：F1c 两次断采（08-14 批处理停在 26124；09-18 19:20 才发现采集仪看不见 26129）——义务从此是对象不是散文。
+> **R0 竞彩全板覆盖率义务**：`scope=match`，每场截止各自开球；`research run` 成功即逐场 fulfill，
+> 未研、预算外、开球后启动或拒收的场都保留为 gap，不以 `price_only` 冒充深研。
 
 > **非决策附录 · 统一语料 v2（2026-09-18 用户裁定并入）**
 > `uv run python experiments/corpus_build.py` → `experiments/corpus-v2.json`
