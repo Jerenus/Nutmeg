@@ -701,6 +701,27 @@ class OperatorResultRepository:
         )
         return None if row is None else _task_settlement_run_row(row)
 
+    def latest_task_settlement_run_for_task_family(
+        self, task_family_id: str
+    ) -> TaskSettlementRunRow | None:
+        row = (
+            self._connection.execute(
+                select(sor.operator_task_settlement_runs)
+                .where(
+                    sor.operator_task_settlement_runs.c.task_family_id
+                    == task_family_id
+                )
+                .order_by(
+                    sor.operator_task_settlement_runs.c.completed_at.desc(),
+                    sor.operator_task_settlement_runs.c.settlement_run_id.desc(),
+                )
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        return None if row is None else _task_settlement_run_row(row)
+
     def insert_task_settlement_skip(self, row: TaskSettlementSkipRow) -> None:
         self._connection.execute(
             insert(sor.operator_task_settlement_skips).values(**_row_fields(row))

@@ -105,12 +105,14 @@ class JczqBoardWorkflow:
         r0_actions: _R0Actions | None = None,
         proposal_writer: _ProposalWriter | None = None,
         operator_actions=None,
+        learning_coordinator=None,
         clock=None,
     ) -> None:
         self._action_service = action_service
         self._r0_actions = r0_actions
         self._proposal_writer = proposal_writer
         self._operator_actions = operator_actions
+        self._learning_coordinator = learning_coordinator
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def intake_board(
@@ -444,6 +446,21 @@ class JczqBoardWorkflow:
             command,
             actor_id=actor_id,
             actor_role=actor_role,
+        )
+
+    def settle_and_project(
+        self,
+        business_date: str,
+        *,
+        historical_replay: bool,
+        issue: str | None = None,
+    ):
+        if self._learning_coordinator is None:
+            raise ValueError("learning coordinator is not configured")
+        return self._learning_coordinator.settle_and_project(
+            business_date,
+            historical_replay=historical_replay,
+            issue=issue,
         )
 
 

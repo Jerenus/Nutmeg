@@ -113,7 +113,8 @@ def _active_experiments(data_dir: Path) -> list[str]:
 
 def after_settle(*, day: str, data_dir: Path, issue: str | None = None,
                  invoke: Invoker = _cli_invoke,
-                 experiments: Iterable[str] | None = None) -> dict[str, str]:
+                 experiments: Iterable[str] | None = None,
+                 historical_replay: bool = False) -> dict[str, str]:
     """结算跑完（非 dry-run）：每条在观察中的实验 grade 一次；grade 成功再试 verdict。
 
     spec 2026-09-18 §8.1 第 3 项。返回 {exp_id: 状态}，状态 ∈
@@ -121,6 +122,9 @@ def after_settle(*, day: str, data_dir: Path, issue: str | None = None,
     `尚未接入`（无结账适配器）与 `未到期` 都是预期结果，不是失败。永不向上抛。
     """
     report: dict[str, str] = {}
+    if historical_replay:
+        exp_ids = list(experiments) if experiments is not None else []
+        return {exp_id: "replay_excluded" for exp_id in exp_ids}
     try:
         exp_ids = list(experiments) if experiments is not None else _active_experiments(data_dir)
     except Exception as exc:  # noqa: BLE001 —— 读不到本体也不能拖垮结算

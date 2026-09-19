@@ -201,6 +201,25 @@ def test_after_settle_never_raises_into_caller(tmp_path, capsys):
     assert "rsi" in capsys.readouterr().out
 
 
+def test_after_settle_historical_replay_never_calls_prospective_actions(tmp_path):
+    calls = []
+
+    report = after_settle(
+        day="2026-09-19",
+        data_dir=tmp_path,
+        experiments=["R0", "F5", "F9"],
+        historical_replay=True,
+        invoke=lambda argv: calls.append(argv) or (0, ""),
+    )
+
+    assert report == {
+        "R0": "replay_excluded",
+        "F5": "replay_excluded",
+        "F9": "replay_excluded",
+    }
+    assert calls == []
+
+
 # ---- decision-settle 的挂钩：只有 --no-dry-run 才碰 RSI ----
 
 def _spy_after_settle(monkeypatch):
