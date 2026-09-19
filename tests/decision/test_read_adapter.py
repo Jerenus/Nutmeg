@@ -47,6 +47,28 @@ def test_read_v2_commits_forecast(tmp_path: Path) -> None:
     assert kernel.status().forecast_count == 1
 
 
+def test_ai_read_v2_writes_a_draft_forecast(tmp_path: Path) -> None:
+    kernel, match_id, output_dir = _kernel_with_match(tmp_path)
+    reads = [{
+        "read_id": "r-ai-draft", "match_id": match_id, "snapshot_id": None,
+        "market": "had", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
+        "belief": {"home": 0.5, "draw": 0.3, "away": 0.2}, "factors": [],
+        "made_at": "2026-07-19T15:00:00+08:00", "judge": "ai:jczq-analyst",
+        "status": "draft",
+    }]
+    reads_file = output_dir / "reads-ai-draft.json"
+    reads_file.write_text(json.dumps(reads), encoding="utf-8")
+
+    msg = run_decision_read_v2(reads_file, output_dir, kernel=kernel)
+
+    assert "摄取 1/1" in msg
+    assert kernel.status().forecast_count == 0
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        series_id = uow.decision.ensure_series(match_id, "md-had")
+        assert uow.decision.current_committed_revision(series_id) is None
+        assert uow.decision.max_revision_no(series_id) == 1
+
+
 def test_read_v2_resolves_legacy_canonical_match_id(tmp_path: Path) -> None:
     kernel, match_id, output_dir = _kernel_with_match(tmp_path)
     legacy_match_id = canonical_match_id("哈马比", "AIK", DATE)

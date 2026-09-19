@@ -363,6 +363,7 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
     """
     from nutmeg.ontology.actions.forecast_actions import (
         CommitForecastRequest,
+        DraftForecastRequest,
         FactorInput,
         ForecastActions,
     )
@@ -420,9 +421,17 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
                 )
             else:
                 dropped_factors += 1
+        is_ai_draft = (
+            payload.get("status") == "draft"
+            and str(payload.get("judge") or "").startswith("ai:")
+        )
+        request_type = DraftForecastRequest if is_ai_draft else CommitForecastRequest
+        action = forecasts.draft_forecast if is_ai_draft else forecasts.commit_forecast
+        actor_id = str(payload.get("judge")) if is_ai_draft else "judge:owner"
+        actor_role = ActorRole.AI_ANALYST if is_ai_draft else ActorRole.JUDGE_OPERATOR
         try:
-            outcome = forecasts.commit_forecast(
-                CommitForecastRequest(
+            outcome = action(
+                request_type(
                     match_id=match_id,
                     market_definition_id=market,
                     decision_session_id=None,
@@ -433,8 +442,8 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
                     evidence_bundle_id=None,
                     prior_snapshot_id=prior_snapshot_id,
                     falsifier=payload.get("falsifier"),
-                    actor_id="judge:owner",
-                    actor_role=ActorRole.JUDGE_OPERATOR,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
                     idempotency_key=f"read:{read_id}",
                     requested_at=datetime.fromisoformat(payload["made_at"]),
                 )
