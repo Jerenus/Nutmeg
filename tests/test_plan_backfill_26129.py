@@ -1,6 +1,10 @@
 import json
 
+from nutmeg.config.settings import AppSettings
 from nutmeg.decision.workbench import read_events
+from nutmeg.ontology import build_ontology_kernel
+from nutmeg.ontology.repository.capital import CapitalPlanRow
+from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 
 def test_backfill_writes_tree_plan_and_two_adjudications(tmp_path):
@@ -81,8 +85,54 @@ def test_backfill_writes_tree_plan_and_two_adjudications(tmp_path):
     assert parents["SFC-B"] is None
     assert report["plan"]["cap_source"] == "override"
     assert report["plan"]["caps"]["renjiu"] == 1000
-    assert report["adjudications"] == [
+    assert set(report["adjudications"]) == {
         "override-renjiu-1000-26129",
         "standing-renjiu-1200",
-    ]
+    }
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir.resolve()))
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        for adjudication_id in report["adjudications"].values():
+            assert uow.workflow.get_adjudication(adjudication_id).adjudication_id == adjudication_id
+        plan = uow.capital.latest_plan("26129")
+        assert plan.adjudication_ref == report["adjudications"]["override-renjiu-1000-26129"]
     assert report["plan"]["chosen"][0]["slip_id"] == "26129-RJ9"
+
+
+def test_backfill_supersedes_a_legacy_plan_with_a_subject_ref(tmp_path):
+    import scripts.plan_backfill_26129 as backfill_module
+
+    data_dir = tmp_path
+    (data_dir / "zucai").mkdir()
+    (data_dir / "jczq").mkdir()
+    (data_dir / "betslips.jsonl").write_text("", encoding="utf-8")
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir.resolve()))
+    kernel.initialize()
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        uow.capital.insert_plan(
+            CapitalPlanRow(
+                plan_id="zcp-legacy",
+                issue="26129",
+                day="2026-09-19",
+                supersedes=None,
+                cap_source="override",
+                adjudication_ref="override-renjiu-1000-26129",
+                caps={"renjiu": 1000, "shengfucai": 500, "total": 1500},
+                jczq_used_today=0,
+                frontier_refs={},
+                max_p_matrix=0.1609,
+                max_p_strict=None,
+                chosen_p=0.161188,
+                gate_cost_pp=None,
+                chosen=[],
+                verdict_refs=["override-renjiu-1000-26129"],
+                actor_id="operator:legacy",
+                committed_at="2026-09-19T09:00:00+08:00",
+            )
+        )
+
+    report = backfill_module.backfill(data_dir=data_dir)
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        plan = uow.capital.latest_plan("26129")
+        assert plan.supersedes == "zcp-legacy"
+        assert plan.adjudication_ref == report["adjudications"]["override-renjiu-1000-26129"]
+        assert len(uow.capital.plans("26129")) == 2

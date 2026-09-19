@@ -7,6 +7,10 @@ import pytest
 from nutmeg.ontology.actions.capital_actions import CapitalActions, CommitCapitalPlanRequest
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.actions.workflow_actions import (
+    RecordAdjudicationRequest,
+    WorkflowActions,
+)
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.migrations import migration_status, run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -73,9 +77,33 @@ def test_commit_is_human_only_and_records_gate_cost(tmp_path):
 
 
 def test_override_requires_an_adjudication_and_caps_are_enforced(tmp_path):
-    actions, _ = _rig(tmp_path)
+    actions, engine = _rig(tmp_path)
     with pytest.raises(ValueError, match="adjudication"):
         actions.commit_capital_plan(_req("c:o", cap_source="override"))
+    with pytest.raises(ValueError, match="adjudication_ref"):
+        actions.commit_capital_plan(
+            _req("c:missing", cap_source="override", adjudication_ref="adj-missing")
+        )
+    adjudication = WorkflowActions(
+        ActionService(lambda: OntologyUnitOfWork(engine))
+    ).record_adjudication(
+        RecordAdjudicationRequest(
+            subject_type="capital_cap",
+            subject_id="override-26130",
+            decision="override",
+            reason="operator override",
+            evidence_rejected=[],
+            alternative={"cap_yuan": 400},
+            supersedes_adjudication_id=None,
+            idempotency_key="adj:override-26130",
+            requested_at=T0,
+            **HUMAN,
+        )
+    )
+    adjudication_id = adjudication.result_refs[0].object_id
+    assert actions.commit_capital_plan(
+        _req("c:valid", cap_source="override", adjudication_ref=adjudication_id)
+    ).status is ActionStatus.COMMITTED
     with pytest.raises(ValueError, match="renjiu"):
         actions.commit_capital_plan(
             _req(

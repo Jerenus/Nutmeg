@@ -5,6 +5,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlalchemy.exc import NoResultFound
+
 from nutmeg.decision.capital_rules import validate_caps
 from nutmeg.ontology.actions.models import ActionCommand, ActionOutcome, ActorRole, ObjectRef
 from nutmeg.ontology.actions.service import ActionService
@@ -64,6 +66,13 @@ class CapitalActions:
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
+            if request.cap_source == "override":
+                try:
+                    uow.workflow.get_adjudication(request.adjudication_ref)
+                except NoResultFound as exc:
+                    raise ValueError(
+                        "adjudication_ref does not reference an adjudication"
+                    ) from exc
             if request.supersedes and not any(
                 plan.plan_id == request.supersedes
                 for plan in uow.capital.plans(request.issue)

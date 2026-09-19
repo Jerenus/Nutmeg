@@ -91,8 +91,8 @@ def backfill(*, data_dir: Path) -> dict:
             reason=(reason if has_recorded_faces else reason + "（faces 当时只在聊天里，未记录）"),
         )
 
-    adjudication_ids = []
-    for adjudication_id, reason, alternative in (
+    adjudication_ids = {}
+    for subject_id, reason, alternative in (
         (
             "override-renjiu-1000-26129",
             "用户 2026-09-18 裁定：选9 成本控制在 ¥1,000 以内（覆盖 ¥400 基线与刹车）",
@@ -107,20 +107,20 @@ def backfill(*, data_dir: Path) -> dict:
         outcome = kernel.workflow.record_adjudication(
             RecordAdjudicationRequest(
                 subject_type="capital_cap",
-                subject_id=adjudication_id,
+                subject_id=subject_id,
                 decision="override",
                 reason=reason,
                 evidence_rejected=[],
                 alternative=alternative,
                 supersedes_adjudication_id=None,
-                idempotency_key=f"adj:{adjudication_id}",
+                idempotency_key=f"adj:{subject_id}",
                 requested_at=now,
                 **HUMAN,
             )
         )
         if outcome.status is not ActionStatus.COMMITTED:
-            raise RuntimeError(f"adjudication {adjudication_id} rejected: {outcome.error_detail}")
-        adjudication_ids.append(adjudication_id)
+            raise RuntimeError(f"adjudication {subject_id} rejected: {outcome.error_detail}")
+        adjudication_ids[subject_id] = outcome.result_refs[0].object_id
 
     jczq_used = sum(
         int(slip.get("stake_yuan") or 0)
@@ -154,13 +154,14 @@ def backfill(*, data_dir: Path) -> dict:
     frontier_refs, max_p_matrix, max_p_strict = _frontier_values(data_dir)
     with OntologyUnitOfWork(kernel.engine) as uow:
         existing_plan = uow.capital.latest_plan(ISSUE)
-    if existing_plan is None:
+    override_ref = adjudication_ids["override-renjiu-1000-26129"]
+    if existing_plan is None or existing_plan.adjudication_ref != override_ref:
         outcome = kernel.capital_actions.commit_capital_plan(
             CommitCapitalPlanRequest(
                 issue=ISSUE,
                 day=DAY,
                 cap_source="override",
-                adjudication_ref="override-renjiu-1000-26129",
+                adjudication_ref=override_ref,
                 caps={"renjiu": 1000, "shengfucai": 500, "total": 1500},
                 jczq_used_today=jczq_used,
                 frontier_refs=frontier_refs,
@@ -168,9 +169,13 @@ def backfill(*, data_dir: Path) -> dict:
                 max_p_strict=max_p_strict,
                 chosen_p=0.161188,
                 chosen=chosen,
-                verdict_refs=["override-renjiu-1000-26129"],
-                supersedes=None,
-                idempotency_key=f"zcp:{ISSUE}:backfill",
+                verdict_refs=list(adjudication_ids.values()),
+                supersedes=existing_plan.plan_id if existing_plan else None,
+                idempotency_key=(
+                    f"zcp:{ISSUE}:backfill:adjudication-ref-v2"
+                    if existing_plan
+                    else f"zcp:{ISSUE}:backfill"
+                ),
                 requested_at=now,
                 **HUMAN,
             )
