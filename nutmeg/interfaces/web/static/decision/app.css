@@ -69,6 +69,7 @@ body{
 .sse.stale{color:var(--faint)} .sse.stale .b{background:var(--line-2)}
 .theme-toggle{border:1px solid var(--line-2); background:var(--card); color:var(--sub); border-radius:7px; padding:4px 10px; font-size:12px; cursor:pointer; font-family:inherit}
 .theme-toggle:hover{color:var(--ink); border-color:var(--pine)}
+.topbar a.theme-toggle{text-decoration:none; line-height:1.6}
 
 /* ============ 3-COL BODY ============ */
 .wbbody{display:grid; grid-template-columns:262px 1fr 328px; min-height:calc(100vh - 190px)}

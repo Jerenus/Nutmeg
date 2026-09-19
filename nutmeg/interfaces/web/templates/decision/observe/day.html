@@ -1,0 +1,18 @@
+{% extends "decision/observe/layout.html" %}
+{% block body %}
+<header class="obs-topbar">
+  <div><span class="obs-mark">{{ date }}</span><strong>当日过程</strong><span class="obs-sub">候选树与资金方案</span></div>
+  <nav class="obs-nav"><a href="/observe">观察台</a><a href="/">工作台</a></nav>
+</header>
+<main class="obs-main">
+  <section class="obs-lead compact"><div><p class="obs-kicker">PROCESS / {{ date }}</p><h1>从结构到实票</h1></div></section>
+  <section class="obs-panel"><div class="obs-section-title">候选树</div><div class="obs-tree" id="day-tree">今日无候选树</div></section>
+  <section class="obs-day-grid">
+    <article class="obs-panel"><div class="obs-section-title">资金方案</div><div id="day-plan">未定案</div></article>
+    <article class="obs-panel"><div class="obs-section-title">实票入账</div><div id="day-slips">当日暂无实票</div></article>
+    <article class="obs-panel"><div class="obs-section-title">判读入库</div><div id="day-judgments">当日暂无判读</div></article>
+  </section>
+  <p class="obs-error" id="day-errors" hidden></p>
+</main>
+{% endblock %}
+{% block observe_script %}<script>Observe.day({tree:"#day-tree",plan:"#day-plan",slips:"#day-slips",judgments:"#day-judgments",errors:"#day-errors"},{{ date | tojson }});</script>{% endblock %}

@@ -126,3 +126,34 @@ def test_observe_api_is_read_only_and_survives_repo_errors(tmp_path):
     assert response.json()["experiments"] == []
     assert "kernel down" in response.json()["errors"][0]
     assert client.post("/api/observe").status_code == 405
+
+
+def test_pages_render_read_only_with_pinned_echarts_and_nav_link(tmp_path):
+    client = _app(tmp_path, repo=_Repo())
+
+    for path in ("/observe", "/observe/exp/F2", "/observe/day/2026-09-19"):
+        html = client.get(path).text
+        assert "cdnjs.cloudflare.com/ajax/libs/echarts/5.5.1/echarts.min.js" in html
+        assert "<form" not in html
+        assert "method=\"post\"" not in html.lower()
+        assert "/static/decision/app.js" not in html
+        assert "/static/decision/observe.js" in html
+
+    script = client.get("/static/decision/observe.js").text
+    assert "fetch(" in script
+    assert "POST" not in script
+    assert "typeof echarts" in script
+    assert "图表引擎暂不可用" in script
+
+    assert 'href="/observe"' in client.get("/?date=2026-09-19").text
+    assert "今日未定级" in client.get("/observe").text
+
+
+def test_day_page_has_independent_empty_state_copy(tmp_path):
+    client = _app(tmp_path, repo=_Repo())
+
+    html = client.get("/observe/day/2026-09-19").text
+
+    assert "今日无候选树" in html
+    assert "未定案" in html
+    assert "当日暂无实票" in html

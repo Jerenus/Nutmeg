@@ -62,8 +62,12 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
     app.mount("/static", StaticFiles(directory=web_root / "static"), name="static")
     # 静态资源带 mtime 版本号：2026-09-18 加 renderSlip 后浏览器仍跑旧 app.js，右栏空着——
     # 硬刷新才出来。没有版本号的 <script src> 等于让用户替我们清缓存。
-    _js = web_root / "static" / "decision" / "app.js"
-    templates.env.globals["asset_v"] = str(int(_js.stat().st_mtime)) if _js.exists() else "0"
+    _assets = [
+        web_root / "static" / "decision" / name
+        for name in ("app.js", "observe.js", "observe.css")
+    ]
+    _mtimes = [asset.stat().st_mtime for asset in _assets if asset.exists()]
+    templates.env.globals["asset_v"] = str(int(max(_mtimes))) if _mtimes else "0"
     app.state.store = store
     app.state.output_dir = Path(output_dir)
     # 足彩物料目录：默认与 betslips.jsonl 同级的 .nutmeg-data/zucai（见 decision-web CLI）。
@@ -322,6 +326,30 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
         view = day_view(events=events, plan=plan)
         view["errors"] = errors
         return view
+
+    @app.get("/observe")
+    def observe_page(request: Request):
+        return templates.TemplateResponse(
+            request,
+            "decision/observe/panorama.html",
+            {"title": "RSI 观察台"},
+        )
+
+    @app.get("/observe/exp/{exp_id}")
+    def observe_exp_page(request: Request, exp_id: str):
+        return templates.TemplateResponse(
+            request,
+            "decision/observe/exp.html",
+            {"title": f"实验 {exp_id}", "exp_id": exp_id},
+        )
+
+    @app.get("/observe/day/{date}")
+    def observe_day_page(request: Request, date: str):
+        return templates.TemplateResponse(
+            request,
+            "decision/observe/day.html",
+            {"title": f"过程 {date}", "date": date},
+        )
 
     # ── 过程回放（阶段三 Task 3）：讨论变成事件，事件变成回放 ───────────
     @app.get("/replay")

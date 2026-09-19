@@ -72,6 +72,7 @@ def test_experiments_timeline_and_duties_due(tmp_path: Path):
     assert exps[0]["falsifier"]["threshold_pp"] == 2.0
     tl = repo.experiment_timeline("F2", as_of="2026-09-18T21:00:00+08:00")
     assert tl[0]["kind"] == "registered" and tl[0]["at"] == "2026-09-18T20:00:00+08:00"
+    assert tl[0]["falsifier"]["threshold_pp"] == 2.0
     due = repo.duties_due("2026-09-19", now="2026-09-18T21:00:00+08:00")
     assert [d["duty_id"] for d in due] == ["F2:obs"]
     assert repo.experiments(as_of="2026-09-18T19:00:00+08:00") == []  # 登记之前看不见

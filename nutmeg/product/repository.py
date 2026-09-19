@@ -523,6 +523,8 @@ class ProductReadRepository:
                 {
                     "kind": "registered",
                     "at": e["created_at"],
+                    "claim": e["claim"],
+                    "falsifier": json.loads(e["falsifier_json"]),
                     "frozen_hash": e["frozen_hash"],
                 }
             )

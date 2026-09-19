@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }} · Nutmeg</title>
+<link rel="stylesheet" href="/static/decision/app.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/observe.css?v={{ asset_v }}">
+</head><body class="observe-shell">
+{% block body %}{% endblock %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.1/echarts.min.js"></script>
+<script src="/static/decision/observe.js?v={{ asset_v }}"></script>
+{% block observe_script %}{% endblock %}
+</body></html>

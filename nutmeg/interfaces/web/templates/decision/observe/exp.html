@@ -1,0 +1,14 @@
+{% extends "decision/observe/layout.html" %}
+{% block body %}
+<header class="obs-topbar">
+  <div><span class="obs-mark">{{ exp_id }}</span><strong>实验一生</strong><span class="obs-sub">只读时间线</span></div>
+  <nav class="obs-nav"><a href="/observe">观察台</a><a href="/">工作台</a></nav>
+</header>
+<main class="obs-main">
+  <section class="obs-lead compact"><div><p class="obs-kicker">EXPERIMENT / {{ exp_id }}</p><h1>从登记到裁决</h1></div></section>
+  <section class="obs-freeze" id="freeze"><span class="obs-muted">冻结判据载入中</span></section>
+  <section class="obs-panel"><div class="obs-section-title">置信区间演化</div><div class="obs-life-chart" id="life-chart"></div></section>
+  <section class="obs-panel"><div class="obs-section-title">追加时间线</div><div class="obs-timeline" id="life-list"><p class="obs-muted">暂无时间线</p></div></section>
+</main>
+{% endblock %}
+{% block observe_script %}<script>Observe.life({chart:"#life-chart",list:"#life-list",freeze:"#freeze"},{{ exp_id | tojson }});</script>{% endblock %}
