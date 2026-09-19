@@ -117,9 +117,23 @@ def wind_for_day(zucai_dir: Path, issue: str | None) -> dict | None:
 
 def balance_for_issue(zucai_dir: Path, issue: str | None) -> dict | None:
     """Read one F9 ledger; absence is a normal independent empty state."""
-    if not issue:
-        return None
-    path = Path(zucai_dir) / f"{issue}-balance.json"
+    root = Path(zucai_dir)
+    if issue:
+        path = root / f"{issue}-balance.json"
+    else:
+        ledgers = [
+            path
+            for path in root.glob("*-balance.json")
+            if path.stem.removesuffix("-balance").isdigit()
+        ]
+        if not ledgers:
+            return None
+        path = max(
+            ledgers,
+            key=lambda candidate: int(
+                candidate.stem.removesuffix("-balance")
+            ),
+        )
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))

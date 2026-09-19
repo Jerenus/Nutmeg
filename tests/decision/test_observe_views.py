@@ -152,3 +152,16 @@ def test_balance_for_issue_reads_the_visible_zero_move_ledger(tmp_path):
     )
 
     assert balance_for_issue(tmp_path, "26129") == payload
+
+
+def test_balance_for_issue_falls_back_to_latest_ledger_without_a_due_issue(tmp_path):
+    older = {"issue": "26128", "n_matches": 14, "n_moved": 2}
+    latest = {"issue": "26129", "n_matches": 14, "n_moved": 0}
+    (tmp_path / "26128-balance.json").write_text(
+        json.dumps(older), encoding="utf-8"
+    )
+    (tmp_path / "26129-balance.json").write_text(
+        json.dumps(latest), encoding="utf-8"
+    )
+
+    assert balance_for_issue(tmp_path, None) == latest

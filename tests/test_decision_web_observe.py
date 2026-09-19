@@ -68,6 +68,11 @@ class _Repo:
         return None
 
 
+class _RepoWithoutDueDuty(_Repo):
+    def duties_due(self, day, *, now):
+        return []
+
+
 def test_api_observe_returns_cards_duties_and_null_wind_when_absent(tmp_path):
     zucai_dir = tmp_path / "zucai"
     zucai_dir.mkdir()
@@ -89,6 +94,24 @@ def test_api_observe_returns_cards_duties_and_null_wind_when_absent(tmp_path):
     assert body["balance"]["n_moved"] == 0
     assert body["balance"]["n_matches"] == 14
     assert body["duties_today"][0]["duty_id"].startswith("F2")
+
+
+def test_api_observe_shows_latest_balance_when_no_duty_is_current(tmp_path):
+    zucai_dir = tmp_path / "zucai"
+    zucai_dir.mkdir()
+    (zucai_dir / "26129-balance.json").write_text(
+        '{"issue":"26129","n_matches":14,"n_moved":0,'
+        '"mean_abs_shift_pp":0.0,"direction_right_n":null,'
+        '"direction_wrong_n":null}',
+        encoding="utf-8",
+    )
+    client = _app(tmp_path, repo=_RepoWithoutDueDuty())
+
+    body = client.get("/api/observe").json()
+
+    assert body["duties_today"] == []
+    assert body["balance"]["issue"] == "26129"
+    assert body["balance"]["n_moved"] == 0
 
 
 def test_api_observe_exp_and_day(tmp_path):
