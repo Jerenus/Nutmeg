@@ -1556,6 +1556,43 @@ def _audit_candidate(
         )
         for match_no, market_id in sorted(unsupported)
     )
+    if len(draft.tickets) > 1:
+        ticket_legs = [
+            {
+                (leg.official_match_no, leg.market_definition_id): frozenset(
+                    leg.selection_codes
+                )
+                for leg in ticket.legs
+            }
+            for ticket in draft.tickets
+        ]
+        common_keys = set.intersection(*(set(legs) for legs in ticket_legs))
+        for match_no, market_id in sorted(common_keys):
+            if market_id not in {"md-had", "md-hhad"}:
+                continue
+            covered = set().union(*(legs[(match_no, market_id)] for legs in ticket_legs))
+            for dead_face in sorted({"3", "1", "0"} - covered):
+                findings.append(
+                    CandidateAuditFinding(
+                        finding_id="cross-ticket-exposure-"
+                        + _digest(
+                            [
+                                draft.composition_hash,
+                                match_no,
+                                market_id,
+                                dead_face,
+                            ]
+                        ),
+                        code="shared_dead_face_exposure",
+                        severity="WARN",
+                        message=(
+                            f"all tickets share dead face {dead_face} at {match_no} "
+                            f"{market_id}"
+                        ),
+                        audit_kind="deployment",
+                        official_match_no=match_no,
+                    )
+                )
     if draft.stake_minor > capital_cap_minor:
         findings.append(
             CandidateAuditFinding(

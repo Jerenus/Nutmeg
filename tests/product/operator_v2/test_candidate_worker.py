@@ -20,6 +20,11 @@ from nutmeg.ontology.operator.decision_actions import (
 from nutmeg.ontology.operator.result_actions import OperatorResultActions
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product import operator_workers as operator_worker_module
+from nutmeg.product.operator_candidates import (
+    CandidateDraft,
+    CandidateTicket,
+    CandidateTicketLeg,
+)
 from nutmeg.product.operator_workers import CandidateGenerationWorker
 from tests.ontology.operator.test_candidate_actions import (
     CandidateFixture,
@@ -34,6 +39,52 @@ from tests.ontology.operator.test_judgment_actions import (
     _fixture,
     _judgment_request,
 )
+
+
+def test_candidate_audit_records_shared_dead_face_across_tickets() -> None:
+    leg = CandidateTicketLeg(
+        official_offer_revision_id="offer-1",
+        official_match_no="001",
+        match_id="match-1",
+        market_definition_id="md-had",
+        selection_codes=("3", "1"),
+        quote_ids=("quote-3", "quote-1"),
+        booked_decimal_odds=("2.000000000000", "3.000000000000"),
+        settlement_parameter_decimal=None,
+    )
+    tickets = tuple(
+        CandidateTicket(
+            ticket_kind="jczq_pass",
+            structure_code=f"single-{index}",
+            group_code=None,
+            currency="CNY",
+            unit_stake_minor=200,
+            unit_count=1,
+            stake_minor=200,
+            fixed_prize_policy_revision_id=None,
+            legs=(leg,),
+            composition_hash=str(index) * 64,
+        )
+        for index in (1, 2)
+    )
+
+    findings = operator_worker_module._audit_candidate(
+        CandidateDraft(
+            tickets=tickets,
+            stake_minor=400,
+            composition_hash="d" * 64,
+        ),
+        lane="jczq",
+        offers=(),
+        capital_cap_minor=10_000,
+    )
+
+    shared = [item for item in findings if item.code == "shared_dead_face_exposure"]
+    assert len(shared) == 1
+    assert shared[0].severity == "WARN"
+    assert shared[0].audit_kind == "deployment"
+    assert shared[0].official_match_no == "001"
+    assert "0" in shared[0].message
 
 
 def _ready_fixture_with_cap(
