@@ -23,6 +23,7 @@ from nutmeg.ontology.errors import MigrationDriftError
 from nutmeg.ontology.identity.models import EntityType, TeamKind, mint_id
 from nutmeg.ontology.repository import (
     schema,
+    schema_capital,
     schema_context,
     schema_decision,
     schema_evidence,
@@ -4579,6 +4580,24 @@ def _apply_rsi_experiments(connection: Connection) -> None:
     )
 
 
+_CAPITAL_PERMISSIONS = (("zucai_commit_capital_plan", "judge_operator"),)
+
+
+def _apply_capital_plans(connection: Connection) -> None:
+    schema_capital.zucai_capital_plans.create(connection)
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": actor_role,
+            }
+            for action_type, actor_role in _CAPITAL_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -4821,6 +4840,12 @@ MIGRATIONS: tuple[Migration, ...] = (
             "deployments+amendments+verdict_system_only+deploy_human_only"
         ),
         apply=_apply_rsi_experiments,
+    ),
+    Migration(
+        version=30,
+        name="zucai_capital_plans",
+        fingerprint="capital_plans+gate_cost+commit_human_only",
+        apply=_apply_capital_plans,
     ),
 )
 

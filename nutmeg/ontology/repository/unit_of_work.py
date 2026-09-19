@@ -18,6 +18,7 @@ from sqlalchemy import Connection, Engine
 if TYPE_CHECKING:
     from nutmeg.ontology.repository.actions import ActionRepository
     from nutmeg.ontology.repository.artifacts import ArtifactRepository
+    from nutmeg.ontology.repository.capital import CapitalRepository
     from nutmeg.ontology.repository.context import ContextRepository
     from nutmeg.ontology.repository.decision import DecisionRepository
     from nutmeg.ontology.repository.evidence import EvidenceRepository
@@ -182,6 +183,12 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.rsi import RsiRepository
 
         return RsiRepository(self.connection)
+
+    @property
+    def capital(self) -> CapitalRepository:
+        from nutmeg.ontology.repository.capital import CapitalRepository
+
+        return CapitalRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         lease = self._writer_lease_factory() if self._writer_lease_factory else None

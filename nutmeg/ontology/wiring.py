@@ -12,6 +12,7 @@ from __future__ import annotations
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
 from nutmeg.ontology.actions.bundle_actions import BundleActions
+from nutmeg.ontology.actions.capital_actions import CapitalActions
 from nutmeg.ontology.actions.claim_actions import ClaimActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.factor_actions import FactorActions
@@ -96,6 +97,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     scoreboard_actions = ScoreboardActions(action_service)
     reliability_actions = ReliabilityActions(action_service)
     rsi_actions = RsiActions(action_service)
+    capital_actions = CapitalActions(action_service)
     decision_actions = OperatorDecisionActions(
         action_service,
         audit_token_signing_key=settings.operator_token_signing_key,
@@ -134,6 +136,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         scoreboard_actions=scoreboard_actions,
         reliability_actions=reliability_actions,
         rsi_actions=rsi_actions,
+        capital_actions=capital_actions,
         sale_actions=sale_actions,
         evidence_actions=evidence_actions,
         decision_actions=decision_actions,
