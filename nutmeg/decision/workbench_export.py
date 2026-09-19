@@ -42,7 +42,10 @@ def events_to_markdown(output_dir, date: str, *, events=None) -> str:
             p = e.get("payload") or {}
             pa = p.get("p_all")
             verdict = p.get("verdict")
-            row = (f"- {p.get('version')} · {_VERDICT_ZH.get(verdict, verdict)}"
+            lineage = p.get("version")
+            if p.get("parent_version"):
+                lineage = f"{lineage} ← {p.get('parent_version')}"
+            row = (f"- {lineage} · {_VERDICT_ZH.get(verdict, verdict)}"
                    f" · {p.get('notes')} 注 ¥{p.get('stake_yuan')}")
             if pa is not None:
                 row += f" · P {pa * 100:.2f}%"

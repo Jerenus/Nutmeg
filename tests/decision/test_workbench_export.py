@@ -57,3 +57,20 @@ def test_markdown_still_reads_the_file_stream_when_no_events_given(tmp_path):
     append_note(tmp_path, "2026-09-19", obj_id="day", text="刹车：¥1000 帽")
     md = events_to_markdown(tmp_path, "2026-09-19")
     assert "刹车：¥1000 帽" in md
+
+
+def test_candidate_carries_parent_version_and_export_shows_the_edge(tmp_path):
+    """26129 的 SFC-B→C→D→E 四轮只活在聊天窗口——候选必须挂 parent_version 成树，回放才能重走。"""
+    d = "2026-09-19"
+    append_candidate(tmp_path, d, obj_id="ticket:26129", version="SFC-B", faces={}, notes=128,
+                     stake_yuan=256, p_all=0.0038, verdict="rejected", reason="三处 C2")
+    append_candidate(tmp_path, d, obj_id="ticket:26129", version="SFC-C", parent_version="SFC-B",
+                     faces={}, notes=160, stake_yuan=320, p_all=0.0035, verdict="rejected",
+                     reason="裸单还有一条 <50%")
+    root, child = read_events(tmp_path, d)
+    assert root["payload"]["parent_version"] is None
+    assert child["payload"]["parent_version"] == "SFC-B"
+    md = events_to_markdown(tmp_path, d)
+    assert "- SFC-B · 已否决 · 128 注 ¥256" in md
+    assert "SFC-B ←" not in md
+    assert "- SFC-C ← SFC-B · 已否决 · 160 注 ¥320 · P 0.35%" in md

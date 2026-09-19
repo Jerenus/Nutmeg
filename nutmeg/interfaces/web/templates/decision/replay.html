@@ -21,7 +21,7 @@
     {%- elif e.get("kind") == "user_message" %}<b>你 · {{ e.get("obj_id") }}</b> {{ e.get("text") or "" }}
     {%- elif e.get("kind") == "agent_reply" %}<b>判 · {{ e.get("obj_id") }}</b> {{ e.get("text") or "" }}
     {%- elif e.get("kind") == "note" %}<b>📝 手记 · {{ e.get("obj_id") }}</b> {{ e.get("text") or "" }}
-    {%- elif e.get("kind") == "candidate" %}<b>候选 {{ p.get("version") or "" }} · {{ {"rejected": "已否决", "chosen": "已选", "considered": "考虑过"}.get(p.get("verdict"), p.get("verdict")) }}</b>
+    {%- elif e.get("kind") == "candidate" %}<b>候选 {{ p.get("version") or "" }}{% if p.get("parent_version") %} ← {{ p.get("parent_version") }}{% endif %} · {{ {"rejected": "已否决", "chosen": "已选", "considered": "考虑过"}.get(p.get("verdict"), p.get("verdict")) }}</b>
       {{ p.get("notes") or 0 }} 注 ¥{{ p.get("stake_yuan") or 0 }}{% if p.get("p_all") is not none %} · P {{ "%.2f" | format(p.get("p_all") * 100) }}%{% endif %}{% if p.get("reason") %} — {{ p.get("reason") }}{% endif %}
     {%- elif e.get("kind") == "slip" %}<b>🎫 实票 {{ p.get("slip_id") or "" }}</b> {{ p.get("notes") or 0 }} 注 ¥{{ p.get("stake_yuan") or 0 }}
     {%- elif e.get("kind") == "judgment" %}<b>判读入库 · {{ p.get("match") or e.get("obj_id") }}</b>

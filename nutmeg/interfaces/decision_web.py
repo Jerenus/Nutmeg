@@ -178,7 +178,9 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
                                stake_yuan=int(payload.get("stake_yuan") or 0),
                                p_all=payload.get("p_all"),
                                verdict=str(payload.get("verdict") or "considered"),
-                               reason=str(payload.get("reason") or ""))
+                               reason=str(payload.get("reason") or ""),
+                               parent_version=(str(payload["parent_version"])
+                                               if payload.get("parent_version") else None))
         return {"ok": True, "seq": seq}
 
     # ── SOP 任务栏（阶段一）：同一条命令，从页面按 ──────────────────────

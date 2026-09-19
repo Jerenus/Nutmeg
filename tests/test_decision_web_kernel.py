@@ -223,8 +223,17 @@ def test_note_and_candidate_endpoints_append_events(tmp_path):
         "version": "SFC-B", "faces": {"1": "30"}, "notes": 128, "stake_yuan": 256,
         "p_all": 0.0038, "verdict": "rejected", "reason": "三处 C2"})
     assert r.status_code == 200
-    kinds = [e["kind"] for e in client.get(f"/events?date={d}&since=0").json()["events"]]
-    assert kinds == ["note", "candidate"]
+    r = client.post("/action/candidate", json={"date": d, "obj_id": "ticket:26129",
+        "version": "SFC-C", "parent_version": "SFC-B", "faces": {"1": "30"}, "notes": 160,
+        "stake_yuan": 320, "p_all": 0.0035, "verdict": "rejected", "reason": "还剩一条裸单"})
+    assert r.status_code == 200
+    evs = client.get(f"/events?date={d}&since=0").json()["events"]
+    assert [e["kind"] for e in evs] == ["note", "candidate", "candidate"]
+    assert evs[1]["payload"]["parent_version"] is None
+    assert evs[2]["payload"]["parent_version"] == "SFC-B"
+    html = client.get(f"/replay?date={d}").text
+    assert "SFC-C" in html and "← SFC-B" in html
+    assert "SFC-B ←" not in html
 
 
 def test_replay_page_orders_all_event_kinds_by_seq(tmp_path):

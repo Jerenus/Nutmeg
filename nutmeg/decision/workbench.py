@@ -93,15 +93,20 @@ def append_note(output_dir, date: str, *, obj_id: str, text: str) -> int:
 
 def append_candidate(output_dir, date: str, *, obj_id: str, version: str, faces: dict,
                      notes: int, stake_yuan: int, p_all: float | None,
-                     verdict: str, reason: str = "") -> int:
+                     verdict: str, reason: str = "",
+                     parent_version: str | None = None) -> int:
     """被考虑过的票面(含被否掉的)。verdict ∈ {considered, rejected, chosen}。
 
     出生事故 2026-09-18 的 26129:SFC-B→C→D→E 四轮票面迭代只活在聊天窗口,
     仓库里只剩终版文件,第二天在 app 里什么都看不到。
+
+    parent_version 把候选串成树(SFC-C ← SFC-B):一天的票面迭代才能按边重走,
+    而不是一张平铺清单。根候选留 None。
     """
     return append_event(output_dir, date, {
         "kind": "candidate", "obj_id": obj_id,
-        "payload": {"version": version, "faces": faces, "notes": notes,
+        "payload": {"version": version, "parent_version": parent_version,
+                    "faces": faces, "notes": notes,
                     "stake_yuan": stake_yuan, "p_all": p_all,
                     "verdict": verdict, "reason": reason},
         "at": _now()})

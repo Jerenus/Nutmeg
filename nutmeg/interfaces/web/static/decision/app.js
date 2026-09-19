@@ -377,7 +377,8 @@
     var card = el("article", "acard slip cand " + (p.verdict || ""));
     card.setAttribute("data-card", "cand-" + e.seq);
     var inner = el("div", "inner");
-    inner.appendChild(el("div", "actype", "候选 " + (p.version || "") + " · " +
+    var lineage = (p.version || "") + (p.parent_version ? " ← " + p.parent_version : "");
+    inner.appendChild(el("div", "actype", "候选 " + lineage + " · " +
       ({ rejected: "已否决", chosen: "已选", considered: "考虑过" }[p.verdict] || p.verdict)));
     inner.appendChild(el("div", "acmarket", (p.notes || 0) + " 注 ¥" + (p.stake_yuan || 0) +
       (p.p_all != null ? " · P " + (p.p_all * 100).toFixed(2) + "%" : "")));
