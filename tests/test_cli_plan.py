@@ -138,3 +138,123 @@ def test_frontier_refuses_legs_without_face_status(tmp_path):
         ],
     )
     assert out.exit_code == 1 and "face_status" in out.output
+
+
+def _slips(tmp_path, rows):
+    (tmp_path / "betslips.jsonl").write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_commit_baseline_then_status_shows_unregistered_ticket(tmp_path):
+    data_dir = _data_dir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(
+        app, ["plan", "tiers", "--issue", "26130", "--data-dir", str(data_dir)]
+    )
+    runner.invoke(
+        app,
+        [
+            "plan",
+            "frontier",
+            "--issue",
+            "26130",
+            "--channel",
+            "renjiu",
+            "--cap",
+            "400",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    runner.invoke(
+        app,
+        [
+            "plan",
+            "choose",
+            "--issue",
+            "26130",
+            "--channel",
+            "renjiu",
+            "--point",
+            "0",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    _slips(
+        data_dir,
+        [{"slip_id": "26130-JC-A", "channel": "jczq", "stake_yuan": 100, "issue": None}],
+    )
+    out = runner.invoke(
+        app,
+        [
+            "plan",
+            "commit",
+            "--issue",
+            "26130",
+            "--cap-source",
+            "baseline",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert out.exit_code == 0, out.output
+    assert "gate_cost" in out.output and "竞彩已登记 ¥100" in out.output
+    out = runner.invoke(
+        app, ["plan", "status", "--issue", "26130", "--data-dir", str(data_dir)]
+    )
+    assert out.exit_code == 0 and "没入账=没打" in out.output
+
+
+def test_commit_override_without_adjudication_exits_one(tmp_path):
+    data_dir = _data_dir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(
+        app, ["plan", "tiers", "--issue", "26130", "--data-dir", str(data_dir)]
+    )
+    runner.invoke(
+        app,
+        [
+            "plan",
+            "frontier",
+            "--issue",
+            "26130",
+            "--channel",
+            "renjiu",
+            "--cap",
+            "1200",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    runner.invoke(
+        app,
+        [
+            "plan",
+            "choose",
+            "--issue",
+            "26130",
+            "--channel",
+            "renjiu",
+            "--point",
+            "0",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    out = runner.invoke(
+        app,
+        [
+            "plan",
+            "commit",
+            "--issue",
+            "26130",
+            "--cap-source",
+            "override",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert out.exit_code == 1 and "adjudication" in out.output
