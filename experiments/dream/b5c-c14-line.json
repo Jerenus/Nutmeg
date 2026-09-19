@@ -1,0 +1,6 @@
+{
+  "harness": "nutmeg.decision.rsi_grading:c14_line_harness",
+  "corpus": "experiments/corpus-v2.json",
+  "variants": [{"line": 0.12}, {"line": 0.15}, {"line": 0.18}],
+  "note": "C14 cheap-line candidates; replay only, never a verdict; winner needs a prospective experiment"
+}

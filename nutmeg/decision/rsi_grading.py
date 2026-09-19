@@ -91,6 +91,65 @@ def grade_f2_prospective(*, ledger_path: Path, zucai_dir: Path, primary_bucket: 
                        computed_by=computed_by)
 
 
+def grade_f4(plans: Sequence[dict], *, seed: int = 7, boots: int = 4000) -> GradeResult:
+    """Bootstrap the median gate cost across plans with a defined strict floor."""
+    values = [
+        float(plan["gate_cost_pp"])
+        for plan in plans
+        if plan.get("gate_cost_pp") is not None
+    ]
+    if not values:
+        return GradeResult(
+            stratum="zucai",
+            n_cum=0,
+            metric_value_pp=0.0,
+            ci_low_pp=0.0,
+            ci_high_pp=0.0,
+            cost_axis_pp=None,
+            as_of_policy="per_issue_plan",
+            inputs_hash=inputs_hash(b""),
+            computed_by="nutmeg.decision.rsi_grading.grade_f4",
+        )
+    rng = random.Random(seed)
+    median = statistics.median(values)
+    medians = sorted(
+        statistics.median(rng.choice(values) for _ in values) for _ in range(boots)
+    )
+    raw = json.dumps(sorted(values), separators=(",", ":")).encode()
+    return GradeResult(
+        stratum="zucai",
+        n_cum=len(values),
+        metric_value_pp=median,
+        ci_low_pp=medians[int(0.025 * boots)],
+        ci_high_pp=medians[int(0.975 * boots) - 1],
+        cost_axis_pp=None,
+        as_of_policy="per_issue_plan",
+        inputs_hash=inputs_hash(raw),
+        computed_by="nutmeg.decision.rsi_grading.grade_f4",
+    )
+
+
+def c14_line_harness(rows: Sequence[dict], variant: dict) -> ResidualCI:
+    """Score the least-likely face when its fair probability is within the variant line."""
+    line = float(variant["line"])
+    actual_face = {"3": "home", "1": "draw", "0": "away"}
+    residual_rows = []
+    for row in rows:
+        face = min(row["fair"], key=lambda key: row["fair"][key])
+        if float(row["fair"][face]) > line:
+            continue
+        actual = actual_face.get(str(row["actual"]), str(row["actual"]))
+        residual_rows.append(
+            {
+                "fair": {"excluded": row["fair"][face]},
+                "actual": "excluded" if actual == face else "covered",
+            }
+        )
+    if not residual_rows:
+        return ResidualCI(0, 0.0, 0.0, 0.0)
+    return bootstrap_residual_pp(residual_rows, face="excluded")
+
+
 Harness = Callable[[Sequence[dict], dict], ResidualCI]
 
 

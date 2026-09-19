@@ -252,6 +252,11 @@ def commit(
         _fail(f"权限拒绝：{outcome.error_detail}")
     with OntologyUnitOfWork(kernel.engine) as uow:
         plan = uow.capital.latest_plan(issue)
+    from nutmeg.decision.rsi_wiring import after_capital_plan
+
+    after_capital_plan(
+        exp="F4", issue=issue, day=day, plan_id=plan.plan_id, data_dir=data_dir
+    )
     gate_cost = "None" if plan.gate_cost_pp is None else f"{plan.gate_cost_pp:+.2f}pp"
     typer.echo(
         f"{issue} 定案 {plan.plan_id} · {cap_source} · 足彩帽 ¥{caps['total']}"

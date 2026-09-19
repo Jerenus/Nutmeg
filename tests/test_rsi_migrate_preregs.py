@@ -19,10 +19,13 @@ def test_all_five_registry_docs_load_and_keep_their_original_registration_dates(
     # 每份都指回旧文件
     for d in docs.values():
         assert Path(d["source_doc"]).exists(), d["source_doc"]
-    # F1c/F2 各带一条按日义务；F4/F5 是观察档、无采集义务
+    # F1c/F2 各带一条按日义务；结构专项接线后 F4 由资金方案 commit 产观察。
     assert [x["name"] for x in docs["F2"]["duties"]] == ["f2-observation"]
     assert [x["name"] for x in docs["F1c"]["duties"]] == ["dispersion-observation"]
-    assert docs["F4"]["tier"] == "observation" and not docs["F4"].get("duties")
+    assert docs["F4"]["tier"] == "observation"
+    assert [(x["name"], x["scope"]) for x in docs["F4"]["duties"]] == [
+        ("capital-plan", "day")
+    ]
 
 
 def test_migration_script_backfills_observations_and_marks_f1c_gaps(tmp_path, monkeypatch):

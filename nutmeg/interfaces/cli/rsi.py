@@ -51,6 +51,10 @@ _WHAT = typer.Option(..., "--what")
 _WHY = typer.Option(..., "--why")
 _RULE_CHECK = typer.Option("", "--rule-check")
 _MECHANISM_NOTE = typer.Option(None, "--mechanism-note")
+_FAMILY = typer.Option(..., "--family", help="{harness, corpus, variants[]}")
+_REGISTER_WINNER = typer.Option(
+    False, "--register-winner", help="write a candidate registry draft for the winner"
+)
 _HUMAN = dict(actor_id="operator:rsi", actor_role=ActorRole.JUDGE_OPERATOR)
 _SYSTEM = dict(actor_id="system:rsi", actor_role=ActorRole.DETERMINISTIC_SYSTEM)
 
@@ -182,7 +186,7 @@ def fulfill(exp: str = _EXP, duty: str = _DUTY, day: str = _DAY, artifact: Path 
 
 @rsi_app.command("grade")
 def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR) -> None:
-    """跑该实验的结账适配器并落 grade（系统）。当前实现 F2；其它实验由 replay_spec.harness 指定。"""
+    """Run an experiment's deterministic grading adapter."""
     from nutmeg.decision.rsi_grading import LeakError, grade_f2_prospective
 
     k = _kernel(data_dir)
@@ -190,13 +194,26 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR) -> Non
         e = uow.rsi.experiment(exp)
     if e is None:
         _fail(f"{exp} 未登记")
-    if exp != "F2":
-        _fail(f"{exp} 的结账适配器尚未接入（replay_spec.harness={e.replay_spec})；本任务只接 F2")
-    try:
-        g = grade_f2_prospective(ledger_path=Path("experiments/prereg-26126-F2-ledger.json"),
-                                 zucai_dir=data_dir / "zucai", primary_bucket=e.buckets[-1])
-    except LeakError as exc:
-        _fail(f"泄漏拒收：{exc}")
+    if exp == "F2":
+        try:
+            g = grade_f2_prospective(
+                ledger_path=Path("experiments/prereg-26126-F2-ledger.json"),
+                zucai_dir=data_dir / "zucai",
+                primary_bucket=e.buckets[-1],
+            )
+        except LeakError as exc:
+            _fail(f"泄漏拒收：{exc}")
+    elif exp == "F4":
+        from nutmeg.decision.rsi_grading import grade_f4
+
+        with OntologyUnitOfWork(k.engine) as uow:
+            plans = [
+                {"issue": plan.issue, "gate_cost_pp": plan.gate_cost_pp}
+                for plan in uow.capital.all_latest()
+            ]
+        g = grade_f4(plans)
+    else:
+        _fail(f"{exp} 的结账适配器尚未接入（replay_spec.harness={e.replay_spec})")
     _run(k.rsi_actions.grade_experiment, GradeExperimentRequest(
         exp_id=exp, mode=mode, stratum=g.stratum, n_cum=g.n_cum, metric_value_pp=g.metric_value_pp,
         ci_low_pp=g.ci_low_pp, ci_high_pp=g.ci_high_pp, cost_axis_pp=g.cost_axis_pp,
@@ -206,6 +223,49 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR) -> Non
     f = Falsifier.from_dict(e.falsifier)
     typer.echo(f"{exp} [{mode}] n={g.n_cum}  残差 {g.metric_value_pp:+.2f}pp  "
                f"CI[{g.ci_low_pp:+.2f}, {g.ci_high_pp:+.2f}]  距 n_min {max(0, f.n_min - g.n_cum)}")
+
+
+@rsi_app.command("dream")
+def dream_cmd(
+    family: Path = _FAMILY,
+    register_winner: bool = _REGISTER_WINNER,
+) -> None:
+    """Replay and rank a variant family without producing a verdict."""
+    import importlib
+
+    from nutmeg.decision.rsi_grading import dream
+
+    family_doc = json.loads(family.read_text("utf-8"))
+    module_name, function_name = family_doc["harness"].split(":")
+    harness = getattr(importlib.import_module(module_name), function_name)
+    corpus_doc = json.loads(Path(family_doc["corpus"]).read_text("utf-8"))
+    corpus = corpus_doc["rows"] if isinstance(corpus_doc, dict) else corpus_doc
+    table = dream(corpus, harness, variants=family_doc["variants"])
+    typer.echo(f"dream · variants_tried={table['variants_tried']} · {table['note']}")
+    for row in table["ranked"]:
+        typer.echo(
+            f"  {row['variant']}  n={row['n']}  {row['value_pp']:+.2f}pp  "
+            f"CI[{row['ci_low_pp']:+.2f},{row['ci_high_pp']:+.2f}]"
+        )
+    if register_winner and table["ranked"]:
+        winner = table["ranked"][0]
+        draft = family.with_suffix(".winner.json")
+        draft.write_text(
+            json.dumps(
+                {
+                    "dream_ref": str(family),
+                    "variants_tried": table["variants_tried"],
+                    "winner": winner["variant"],
+                    "tier": "candidate",
+                    "layer": "structural",
+                    "note": "draft: add claim/falsifier/window before rsi register",
+                },
+                ensure_ascii=False,
+                indent=1,
+            ),
+            encoding="utf-8",
+        )
+        typer.echo(f"  winner draft -> {draft}")
 
 
 @rsi_app.command("verdict")

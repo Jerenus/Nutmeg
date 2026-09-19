@@ -49,6 +49,41 @@ def after_observation_artifact(*, exp: str, duty: str, issue: str, day: str, art
             "--artifact", str(artifact), "--n-rows", str(n_rows), "--data-dir", str(data_dir)])
 
 
+def after_capital_plan(
+    *,
+    exp: str,
+    issue: str,
+    day: str,
+    plan_id: str,
+    data_dir: Path,
+    invoke: Invoker = _cli_invoke,
+) -> None:
+    """Register one F4 observation after a capital plan commits."""
+    artifact = Path(data_dir) / "zucai" / f"{issue}-capital-plan.txt"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(plan_id + "\n", encoding="utf-8")
+    invoke(
+        [
+            "rsi",
+            "fulfill",
+            "--exp",
+            exp,
+            "--duty",
+            "capital-plan",
+            "--day",
+            day,
+            "--issue",
+            issue,
+            "--artifact",
+            str(artifact),
+            "--n-rows",
+            "1",
+            "--data-dir",
+            str(data_dir),
+        ]
+    )
+
+
 def _active_experiments(data_dir: Path) -> list[str]:
     """从本体读 status ∈ {observing, graded} 的实验 id（结算后该结账的那些）。"""
     from datetime import UTC, datetime

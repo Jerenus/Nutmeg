@@ -27,6 +27,7 @@ from nutmeg.ontology.actions.rsi_actions import (
     RegisterExperimentRequest,
     ScheduleDutiesRequest,
 )
+from nutmeg.ontology.repository.rsi import DutyRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 BJ = timezone(timedelta(hours=8))
@@ -64,6 +65,28 @@ def _approx_capture_before(ko_iso: str) -> datetime:
     return cand
 
 
+def ensure_duties(kernel, exp_id: str, doc: dict) -> None:
+    """Backfill newly declared non-frozen duties for an already registered experiment."""
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        existing = {duty.duty_id for duty in uow.rsi.duties(exp_id)}
+        for duty in doc.get("duties") or []:
+            duty_id = f"{exp_id}:{duty['name']}"
+            if duty_id in existing:
+                continue
+            uow.rsi.insert_duty(
+                DutyRow(
+                    duty_id=duty_id,
+                    exp_id=exp_id,
+                    recurrence="per_day",
+                    scope=duty.get("scope", "day"),
+                    deadline_rule=duty["deadline_rule"],
+                    instrument=list(duty["instrument"]),
+                    artifact_glob=duty["artifact_glob"],
+                    description=duty.get("description", ""),
+                )
+            )
+
+
 def migrate(*, data_dir: Path, registry_dir: Path, f2_ledger: Path, dispersion_file: Path,
             now: str) -> dict:
     kernel = build_ontology_kernel(AppSettings(data_dir=Path(data_dir).resolve()))
@@ -80,6 +103,7 @@ def migrate(*, data_dir: Path, registry_dir: Path, f2_ledger: Path, dispersion_f
             kernel.rsi_actions.register_experiment(RegisterExperimentRequest(
                 doc=doc, idempotency_key=f"rsi-migrate-reg:{doc['exp_id']}",
                 requested_at=ts, **HUMAN))
+        ensure_duties(kernel, doc["exp_id"], doc)
         report["registered"].append(doc["exp_id"])
 
     # 为 26125–26129 排义务（有 issue.json 的期才排：拿不到开球就不造数据）

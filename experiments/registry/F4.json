@@ -11,6 +11,10 @@
   "buckets": [],
   "rule_ids": ["C17"],
   "replay_spec": {"harness": "experiments/exp-strict-space.py", "corpus": ".nutmeg-data/zucai/*-legs-base.json"},
+  "duties": [{"name": "capital-plan", "scope": "day", "deadline_rule": "earliest_kickoff",
+              "instrument": ["uv", "run", "nutmeg", "plan", "commit", "--issue", "{issue}"],
+              "artifact_glob": ".nutmeg-data/zucai/{issue}-capital-plan.txt",
+              "description": "F4: observe each committed capital plan"}],
   "source_doc": "experiments/prereg-26129-F4-gate-cost.json",
   "registered_at": "2026-09-18"
 }

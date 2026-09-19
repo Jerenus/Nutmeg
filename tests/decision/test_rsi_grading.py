@@ -6,8 +6,10 @@ from nutmeg.decision.rsi_grading import (
     GradeResult,
     LeakError,
     bootstrap_residual_pp,
+    c14_line_harness,
     dream,
     grade_f2_prospective,
+    grade_f4,
     inputs_hash,
 )
 
@@ -67,3 +69,31 @@ def test_dream_ranks_variants_and_reports_how_many_were_tried():
     assert table["variants_tried"] == 3
     assert table["ranked"][0]["variant"] == {"band": (0, 12)}          # 最正残差排第一
     assert all("ci_low_pp" in r for r in table["ranked"])
+
+
+def test_grade_f4_bootstraps_the_median_gate_cost_over_plans():
+    plans = [
+        {"issue": issue, "gate_cost_pp": gate}
+        for issue, gate in (
+            ("26129", 24.5),
+            ("26130", 8.0),
+            ("26131", 12.0),
+            ("26132", None),
+            ("26133", 6.0),
+        )
+    ]
+    grade = grade_f4(plans)
+    assert grade.n_cum == 4 and grade.stratum == "zucai"
+    assert grade.as_of_policy == "per_issue_plan"
+    assert grade.ci_low_pp <= grade.metric_value_pp <= grade.ci_high_pp
+    assert 6.0 <= grade.metric_value_pp <= 24.5
+
+
+def test_c14_line_harness_only_scores_excluded_faces_under_the_line():
+    rows = [
+        {"fair": {"home": 0.7, "draw": 0.2, "away": 0.10}, "actual": "home"},
+        {"fair": {"home": 0.7, "draw": 0.2, "away": 0.10}, "actual": "away"},
+        {"fair": {"home": 0.5, "draw": 0.3, "away": 0.20}, "actual": "home"},
+    ]
+    assert c14_line_harness(rows, {"line": 0.15}).n == 2
+    assert c14_line_harness(rows, {"line": 0.25}).n == 3

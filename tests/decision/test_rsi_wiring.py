@@ -21,6 +21,22 @@ def test_after_observation_artifact_fulfills_with_row_count(tmp_path):
     assert calls[0][:2] == ["rsi", "fulfill"] and "--n-rows" in calls[0] and "2" in calls[0]
 
 
+def test_after_capital_plan_fulfills_f4_with_the_plan_hash(tmp_path):
+    from nutmeg.decision.rsi_wiring import after_capital_plan
+
+    calls = []
+    after_capital_plan(
+        exp="F4",
+        issue="26130",
+        day="2026-09-26",
+        plan_id="zcp-abc",
+        data_dir=tmp_path,
+        invoke=lambda argv: calls.append(argv) or (0, ""),
+    )
+    assert calls[0][:4] == ["rsi", "fulfill", "--exp", "F4"]
+    assert "--artifact" in calls[0]
+
+
 def test_cli_invoke_never_raises_on_failure(tmp_path, capsys):
     """登记失败只打印警告并返回非零——绝不能让备料链/观察仪的主任务跟着失败。"""
     from nutmeg.decision.rsi_wiring import _cli_invoke
@@ -65,13 +81,12 @@ def test_after_settle_grades_then_verdicts_each_observing_experiment(tmp_path):
 def test_after_settle_skips_experiments_without_an_adapter(tmp_path):
     calls = []
     report = after_settle(
-        day="2026-09-19", data_dir=tmp_path, experiments=["F4"],
+        day="2026-09-19", data_dir=tmp_path, experiments=["F5"],
         invoke=_fake_invoke(calls, {
-            "grade": (1, "rsi error: F4 的结账适配器尚未接入（replay_spec.harness=...）；"
-                         "本任务只接 F2"),
+            "grade": (1, "rsi error: F5 的结账适配器尚未接入（replay_spec.harness=...）"),
             "verdict": (0, "should never be called"),
         }))
-    assert report == {"F4": "skipped_no_adapter"}
+    assert report == {"F5": "skipped_no_adapter"}
     assert [c[:2] for c in calls] == [["rsi", "grade"]]
 
 
