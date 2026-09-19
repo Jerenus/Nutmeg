@@ -2091,8 +2091,8 @@ class OperatorResultActions:
                 "candidate set changed after generation was requested"
             )
         for candidate_set in request.candidate_sets:
-            if not candidate_set.candidates:
-                raise ValueError("candidate sets cannot be empty")
+            if not candidate_set.candidates and not candidate_set.band_outcomes:
+                raise ValueError("candidate sets require candidates or band outcomes")
             cls._validate_candidate_set(uow, generation, envelope, candidate_set)
 
     @classmethod

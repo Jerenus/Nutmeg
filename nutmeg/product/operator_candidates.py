@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import ROUND_CEILING, ROUND_HALF_EVEN, Decimal, InvalidOperation, localcontext
 from itertools import combinations, product
 from math import comb
@@ -19,6 +19,12 @@ _QUANTUM = Decimal("0.000000000001")
 _ZERO = Decimal("0")
 _ONE = Decimal("1")
 _FACE_ORDER = {"3": 0, "1": 1, "0": 2}
+ODDS_BAND_INTERVALS: tuple[tuple[str, Decimal, Decimal], ...] = (
+    ("10x", Decimal("8"), Decimal("15")),
+    ("20x", Decimal("15"), Decimal("35")),
+    ("50x", Decimal("35"), Decimal("75")),
+    ("100x", Decimal("75"), Decimal("150")),
+)
 
 
 class CandidateSpaceLimitError(ValueError):
@@ -383,6 +389,12 @@ class CandidateComparison:
     break_even_to_median_decimal: str | None
     audit_findings: tuple[CandidateAuditFinding, ...]
     content_hash: str
+    odds_band: str | None = None
+    target_odds_min_decimal: str | None = None
+    target_odds_max_decimal: str | None = None
+    combined_decimal_odds: str | None = None
+    parent_candidate_revision_id: str | None = None
+    delta_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -391,6 +403,26 @@ class CandidateGenerationResult:
     comparison_only: bool
     calculated_candidate_count: int
     candidates: tuple[CandidateComparison, ...]
+    selected_candidate_hash: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateBandResult:
+    odds_band: str
+    target_odds_min_decimal: str
+    target_odds_max_decimal: str
+    status: str
+    reason_code: str | None
+    candidates: tuple[CandidateComparison, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BandCandidateGenerationResult:
+    set_kind: str
+    comparison_only: bool
+    calculated_candidate_count: int
+    candidates: tuple[CandidateComparison, ...]
+    by_band: Mapping[str, CandidateBandResult]
     selected_candidate_hash: str | None = None
 
 
@@ -492,6 +524,103 @@ def enumerate_candidates(
         comparison_only=set_kind == "conditional_market_counterfactual",
         calculated_candidate_count=calculated_count,
         candidates=ordered,
+    )
+
+
+def enumerate_band_candidates(
+    inputs: CandidateGenerationInput,
+    *,
+    set_kind: str = "judgment_bound",
+    generator_version: str = "operator-candidate-v2-bands",
+    audit_candidate: Callable[[CandidateDraft], Sequence[CandidateAuditFinding]]
+    | None = None,
+) -> BandCandidateGenerationResult:
+    """Enumerate JCZQ candidates and classify auditable single-ticket odds bands."""
+    if inputs.lane != "jczq":
+        raise ValueError("odds-band candidate generation requires the JCZQ lane")
+    base = enumerate_candidates(
+        inputs,
+        set_kind=set_kind,
+        generator_version=generator_version,
+        audit_candidate=audit_candidate,
+    )
+    candidates_by_band: dict[str, list[CandidateComparison]] = {
+        band: [] for band, _minimum, _maximum in ODDS_BAND_INTERVALS
+    }
+    outside: list[CandidateComparison] = []
+    for candidate in base.candidates:
+        combined = _candidate_combined_odds(candidate)
+        interval = _odds_band_interval(combined) if combined is not None else None
+        if interval is None:
+            outside.append(candidate)
+            continue
+        band, minimum, maximum = interval
+        candidates_by_band[band].append(
+            replace(
+                candidate,
+                odds_band=band,
+                target_odds_min_decimal=_decimal_text(minimum),
+                target_odds_max_decimal=_decimal_text(maximum),
+                combined_decimal_odds=_decimal_text(combined),
+            )
+        )
+
+    banded = [
+        candidate
+        for band, _minimum, _maximum in ODDS_BAND_INTERVALS
+        for candidate in candidates_by_band[band]
+    ]
+    retained = banded + (outside if base.comparison_only else [])
+    ordered = _ordered_candidates(retained)
+    ordered_by_hash = {candidate.content_hash: candidate for candidate in ordered}
+    by_band = {
+        band: CandidateBandResult(
+            odds_band=band,
+            target_odds_min_decimal=_decimal_text(minimum),
+            target_odds_max_decimal=_decimal_text(maximum),
+            status="candidates" if candidates_by_band[band] else "no_feasible_candidate",
+            reason_code=None if candidates_by_band[band] else "candidate_space_empty",
+            candidates=tuple(
+                ordered_by_hash[candidate.content_hash]
+                for candidate in candidates_by_band[band]
+            ),
+        )
+        for band, minimum, maximum in ODDS_BAND_INTERVALS
+    }
+    return BandCandidateGenerationResult(
+        set_kind=base.set_kind,
+        comparison_only=base.comparison_only,
+        calculated_candidate_count=base.calculated_candidate_count,
+        candidates=ordered,
+        by_band=by_band,
+    )
+
+
+def _candidate_combined_odds(candidate: CandidateComparison) -> Decimal | None:
+    if len(candidate.tickets) != 1:
+        return None
+    combined = _ONE
+    for leg in candidate.tickets[0].legs:
+        if len(leg.selection_codes) != 1 or len(leg.booked_decimal_odds) != 1:
+            return None
+        combined *= _decimal_string(
+            leg.booked_decimal_odds[0],
+            "booked odds",
+            positive=True,
+        )
+    return _quantized(combined)
+
+
+def _odds_band_interval(
+    combined: Decimal,
+) -> tuple[str, Decimal, Decimal] | None:
+    return next(
+        (
+            (band, minimum, maximum)
+            for band, minimum, maximum in ODDS_BAND_INTERVALS
+            if minimum <= combined < maximum
+        ),
+        None,
     )
 
 
@@ -941,13 +1070,21 @@ def _ordered_candidates(
                 break_even_to_median_decimal=candidate.break_even_to_median_decimal,
                 audit_findings=candidate.audit_findings,
                 content_hash=candidate.content_hash,
+                odds_band=candidate.odds_band,
+                target_odds_min_decimal=candidate.target_odds_min_decimal,
+                target_odds_max_decimal=candidate.target_odds_max_decimal,
+                combined_decimal_odds=candidate.combined_decimal_odds,
+                parent_candidate_revision_id=candidate.parent_candidate_revision_id,
+                delta_reason=candidate.delta_reason,
             )
         )
     return tuple(result)
 
 
 __all__ = [
+    "BandCandidateGenerationResult",
     "CandidateAuditFinding",
+    "CandidateBandResult",
     "CandidateComparison",
     "CandidateGenerationInput",
     "CandidateGenerationResult",
@@ -957,6 +1094,8 @@ __all__ = [
     "CandidateTicketLeg",
     "FaceBundleOption",
     "OfferCandidateInput",
+    "ODDS_BAND_INTERVALS",
+    "enumerate_band_candidates",
     "enumerate_candidates",
     "union_probability",
 ]

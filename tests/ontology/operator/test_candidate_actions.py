@@ -197,6 +197,13 @@ def _band_outcomes() -> tuple[CandidateBandOutcomeInput, ...]:
     )
 
 
+def _empty_band_outcomes() -> tuple[CandidateBandOutcomeInput, ...]:
+    return tuple(
+        CandidateBandOutcomeInput(band, "no_feasible_candidate", "empty", 0)
+        for band in ("10x", "20x", "50x", "100x")
+    )
+
+
 def _claim_generation_job(
     fixture: CandidateFixture,
     *,
@@ -388,6 +395,48 @@ def test_generation_requires_parent_and_delta_reason_together(tmp_path: Path) ->
             request_id=request.result_refs[0].object_id,
             judgment_candidate=candidate,
         )
+
+
+def test_generation_allows_explicitly_empty_four_band_sets(tmp_path: Path) -> None:
+    fixture = _ready_fixture(tmp_path)
+    requested = fixture.judgment.decision_actions.request_candidate_generation(
+        _generation_request(fixture)
+    )
+    job = _claim_generation_job(fixture)
+
+    result = fixture.result_actions.generate_ticket_candidate_set(
+        GenerateTicketCandidateSetRequest(
+            generation_request_id=requested.result_refs[0].object_id,
+            candidate_sets=tuple(
+                CandidateSetInput(
+                    set_kind=set_kind,
+                    candidates=(),
+                    band_outcomes=_empty_band_outcomes(),
+                )
+                for set_kind in (
+                    "judgment_bound",
+                    "conditional_market_counterfactual",
+                )
+            ),
+            generator_version="operator-candidate-v2-bands",
+            worker_job_id=job.worker_job_id,
+            lease_owner="candidate-worker",
+            actor_id="system:operator-candidates",
+            actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+            idempotency_key="candidate:generate:empty-bands",
+            requested_at=AT + timedelta(seconds=8),
+        )
+    )
+
+    assert result.status is ActionStatus.COMMITTED
+    with fixture.judgment.engine.connect() as connection:
+        counts = connection.execute(
+            text(
+                "SELECT candidate_count FROM operator_candidate_set_revisions "
+                "ORDER BY set_kind"
+            )
+        ).scalars().all()
+    assert counts == [0, 0]
 
 
 def test_fixed_prize_policy_registration_is_revisioned_closed_and_role_separated(

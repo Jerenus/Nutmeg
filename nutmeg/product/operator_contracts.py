@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -844,6 +845,24 @@ class CandidateComparisonView(StrictOperatorContract):
         max_length=500,
     )
     market_difference: str | None = Field(default=None, max_length=500)
+    odds_band: Literal["10x", "20x", "50x", "100x"] | None = None
+    target_odds_min_decimal: str | None = Field(
+        default=None,
+        pattern=r"^\d+\.\d{12}$",
+    )
+    target_odds_max_decimal: str | None = Field(
+        default=None,
+        pattern=r"^\d+\.\d{12}$",
+    )
+    combined_decimal_odds: str | None = Field(
+        default=None,
+        pattern=r"^\d+\.\d{12}$",
+    )
+    parent_candidate_revision_id: str | None = Field(
+        default=None,
+        min_length=1,
+    )
+    delta_reason: str | None = Field(default=None, min_length=1, max_length=500)
 
     @model_validator(mode="after")
     def _validate_partition(self) -> "CandidateComparisonView":
@@ -858,16 +877,69 @@ class CandidateComparisonView(StrictOperatorContract):
             raise ValueError("over-cap candidates cannot be selected")
         if self.selectable != (self.candidate_token is not None):
             raise ValueError("only selectable candidates receive a selection token")
+        band_values = (
+            self.odds_band,
+            self.target_odds_min_decimal,
+            self.target_odds_max_decimal,
+            self.combined_decimal_odds,
+        )
+        if any(value is not None for value in band_values) and any(
+            value is None for value in band_values
+        ):
+            raise ValueError("candidate odds band metadata must be complete")
+        if self.odds_band is not None:
+            minimum = Decimal(self.target_odds_min_decimal or "0")
+            maximum = Decimal(self.target_odds_max_decimal or "0")
+            combined = Decimal(self.combined_decimal_odds or "0")
+            if not minimum <= combined < maximum:
+                raise ValueError("candidate combined odds are outside the target interval")
+        if (self.parent_candidate_revision_id is None) != (self.delta_reason is None):
+            raise ValueError("candidate parent and delta reason must be paired")
+        return self
+
+
+class CandidateBandOutcomeView(StrictOperatorContract):
+    odds_band: Literal["10x", "20x", "50x", "100x"]
+    status: Literal["candidates", "no_feasible_candidate"]
+    candidate_count: int = Field(ge=0)
+    reason_code: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _validate_outcome(self) -> "CandidateBandOutcomeView":
+        if self.status == "candidates":
+            if self.candidate_count < 1 or self.reason_code is not None:
+                raise ValueError("populated odds band must report candidates")
+        elif self.candidate_count != 0 or self.reason_code is None:
+            raise ValueError("empty odds band requires a reason code")
         return self
 
 
 class CandidateSetComparisonView(StrictOperatorContract):
     label: str = Field(min_length=1, max_length=200)
     comparison_only: bool
-    candidates: list[CandidateComparisonView] = Field(min_length=1)
+    candidates: list[CandidateComparisonView]
+    band_outcomes: list[CandidateBandOutcomeView] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_comparison_only(self) -> "CandidateSetComparisonView":
+        if self.band_outcomes:
+            expected = {"10x", "20x", "50x", "100x"}
+            if (
+                {outcome.odds_band for outcome in self.band_outcomes} != expected
+                or len(self.band_outcomes) != len(expected)
+            ):
+                raise ValueError("candidate set requires one outcome for every odds band")
+            counts = {
+                band: sum(candidate.odds_band == band for candidate in self.candidates)
+                for band in expected
+            }
+            if any(
+                outcome.candidate_count != counts[outcome.odds_band]
+                for outcome in self.band_outcomes
+            ):
+                raise ValueError("candidate band outcome count does not reconcile")
+        elif not self.candidates:
+            raise ValueError("candidate set requires candidates or band outcomes")
         if self.comparison_only and any(
             candidate.selectable
             or candidate.deployable
