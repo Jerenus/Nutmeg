@@ -184,14 +184,17 @@ def backfill(*, data_dir: Path) -> dict:
             raise RuntimeError(f"capital plan rejected: {outcome.error_detail}")
     with OntologyUnitOfWork(kernel.engine) as uow:
         plan = uow.capital.latest_plan(ISSUE)
-    after_capital_plan(
-        exp="F4",
-        issue=ISSUE,
-        day=DAY,
-        plan_id=plan.plan_id,
-        data_dir=data_dir,
-        captured_at=datetime.fromisoformat("2026-09-18T20:00:00+08:00"),
-    )
+        f4_instance = uow.rsi.duty_instance("F4:capital-plan", DAY)
+        f4_observation = uow.rsi.observation(f"F4:{DAY}")
+    if f4_instance is not None and f4_observation is None:
+        after_capital_plan(
+            exp="F4",
+            issue=ISSUE,
+            day=DAY,
+            plan_id=plan.plan_id,
+            data_dir=data_dir,
+            captured_at=datetime.fromisoformat("2026-09-18T20:00:00+08:00"),
+        )
     return {
         "plan": {
             "plan_id": plan.plan_id,

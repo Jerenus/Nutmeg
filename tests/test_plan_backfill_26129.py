@@ -7,7 +7,7 @@ from nutmeg.ontology.repository.capital import CapitalPlanRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 
-def test_backfill_writes_tree_plan_and_two_adjudications(tmp_path):
+def test_backfill_writes_tree_plan_and_two_adjudications(tmp_path, capsys):
     import scripts.plan_backfill_26129 as backfill_module
 
     data_dir = tmp_path
@@ -70,6 +70,7 @@ def test_backfill_writes_tree_plan_and_two_adjudications(tmp_path):
         encoding="utf-8",
     )
     report = backfill_module.backfill(data_dir=data_dir)
+    assert "rsi 接线未成功" not in capsys.readouterr().out
     events = [
         event
         for event in read_events(data_dir / "jczq", "2026-09-19")
