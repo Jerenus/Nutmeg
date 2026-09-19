@@ -4,7 +4,7 @@
 
 **Goal:** Make ontology v2 the sole authority for the daily JCZQ A2-A7 workflow, with durable research history, committed per-match judgments, four odds-band candidate iteration, audited selection/no-ticket terminal state, settlement learning, and an isolated 2026-09-19 replay gate.
 
-**Architecture:** Add small coordination and projection modules around the existing operator Actions; do not duplicate evidence, Forecast, candidate, audit, selection, placement, or settlement rules. Preserve the two canonical candidate set kinds and add odds-band metadata to candidates. Make every legacy JSON file an ontology-derived compatibility view and gate authority cutover behind an isolated replay report.
+**Architecture:** Add small coordination and projection modules around the existing operator and RSI Actions; do not duplicate evidence, Forecast, experiment, candidate, audit, selection, placement, or settlement rules. Preserve the two canonical candidate set kinds, put Dream-RSI parent/delta lineage on Candidate Set Revisions, and add odds-band metadata to candidates. Make every legacy JSON file an ontology-derived compatibility view and gate authority cutover behind an isolated replay report.
 
 **Tech Stack:** Python 3.12, Typer, SQLAlchemy/SQLite migrations, Pydantic product contracts, pytest, Ruff, existing Nutmeg ontology/operator Actions.
 
@@ -120,7 +120,7 @@ git add nutmeg/decision/research_ledger.py nutmeg/decision/research_runner.py nu
 git commit -m "feat(research): preserve immutable JCZQ run history"
 ```
 
-### Task 2: Candidate odds-band and iteration ontology
+### Task 2: Candidate odds-band and Dream-RSI iteration ontology
 
 **Files:**
 - Modify: `nutmeg/ontology/operator/models.py`
@@ -134,20 +134,24 @@ git commit -m "feat(research): preserve immutable JCZQ run history"
 - [ ] **Step 1: Write failing migration and Action tests**
 
 ```python
-def test_candidate_persists_odds_band_and_parent_delta(kernel):
+def test_candidate_persists_odds_band_and_set_revision_persists_parent_delta(kernel):
     outcome = generate_candidates(
         kernel,
         candidate=_candidate(
             odds_band="20x",
             combined_decimal_odds="19.800000000000",
-            parent_candidate_revision_id="candidate-parent",
-            delta_reason="replace stale away leg",
         ),
+        supersedes_candidate_set_revision_id="candidate-set-parent",
+        change_delta={"replace_leg": "周六029"},
+        rationale="replace stale away leg",
     )
     row = candidate_row(kernel, outcome.result_refs[0].object_id)
     assert row.odds_band == "20x"
     assert row.combined_decimal_odds == "19.800000000000"
-    assert row.parent_candidate_revision_id == "candidate-parent"
+    revision = current_candidate_set_revision(kernel, row.candidate_set_revision_id)
+    assert revision.supersedes_revision_id == "candidate-set-parent"
+    assert revision.change_delta == {"replace_leg": "周六029"}
+    assert revision.rationale == "replace stale away leg"
 
 
 def test_generation_requires_one_outcome_for_every_band(kernel):
@@ -173,9 +177,15 @@ class TicketCandidateInput:
     target_odds_min_decimal: str
     target_odds_max_decimal: str
     combined_decimal_odds: str
-    parent_candidate_revision_id: str | None
-    delta_reason: str | None
     # existing fields remain unchanged
+
+@dataclass(frozen=True, slots=True)
+class CandidateSetInput:
+    set_kind: Literal["judgment_bound", "conditional_market_counterfactual"]
+    supersedes_candidate_set_revision_id: str | None
+    change_delta: dict[str, object] | None
+    rationale: str | None
+    candidates: tuple[TicketCandidateInput, ...]
 
 @dataclass(frozen=True, slots=True)
 class CandidateBandOutcomeInput:
@@ -184,9 +194,12 @@ class CandidateBandOutcomeInput:
     reason_code: str | None
 ```
 
-Add nullable columns for imported historical candidates and require populated
-values in new Actions. Add one unique band-outcome row per
-`candidate_set_revision_id, odds_band`.
+Add nullable odds-band columns for imported historical candidates. Add
+`change_delta_json` and `rationale` to Candidate Set Revisions and validate them
+with the existing `supersedes_revision_id`: roots have none of the three;
+revisions require all three. Existing candidate-level parent/delta columns from
+migration 31 remain readable for compatibility but new Actions leave them null.
+Add one unique band-outcome row per `candidate_set_revision_id, odds_band`.
 
 - [ ] **Step 4: Run GREEN tests and migration drift checks**
 
@@ -267,7 +280,7 @@ git add nutmeg/product/operator_candidates.py nutmeg/product/operator_contracts.
 git commit -m "feat(product): generate four audited JCZQ odds bands"
 ```
 
-### Task 4: Board terminal states and A2-A3 orchestration
+### Task 4: Revisioned board states, RSI Action fulfillment, and A2-A3 orchestration
 
 **Files:**
 - Create: `nutmeg/product/jczq_board_workflow.py`
@@ -293,6 +306,22 @@ def test_post_kickoff_artifact_cannot_create_prospective_forecast(workflow):
 def test_rejected_intake_never_records_r0_fulfillment(workflow, rsi_repo):
     workflow.intake_board(_board(1), [_rejected_artifact()])
     assert rsi_repo.fulfillments(exp_id="R0") == ()
+
+
+def test_price_only_state_can_be_superseded_before_kickoff(workflow):
+    first = workflow.intake_board(_board(1), [])
+    second = workflow.intake_board(_board(1), [_accepted_artifact()])
+    assert first.matches[0].status == "price_only"
+    assert second.matches[0].status == "researched"
+    assert second.matches[0].revision_no == 2
+    assert second.matches[0].supersedes_revision_id == first.matches[0].revision_id
+
+
+def test_r0_fulfillment_is_a_typed_rsi_action(workflow, action_repo):
+    workflow.intake_board(_board(1), [_accepted_artifact()])
+    actions = action_repo.by_type("rsi_fulfill_duty")
+    assert len(actions) == 1
+    assert actions[0].status == "committed"
 ```
 
 - [ ] **Step 2: Run RED tests**
@@ -312,12 +341,15 @@ class JczqBoardWorkflow:
 ```
 
 Use SourceRun/Artifact, evidence freeze, AgentProposal/draft Forecast,
-Adjudication, and `commit_match_judgment`. Persist explicit researched,
-price-only, and rejected outcomes; do not infer them from missing rows. The
+Adjudication, and `commit_match_judgment`. Persist researched, price-only, and
+rejected outcomes as append-only revisions with family, revision number, and
+supersession fields; do not infer them from missing rows. Replace the product
+`R0Recorder` callback with the existing `RsiActions.fulfill_duty` request so the
+duty and Observation share RSI's prospective/gap/idempotency semantics. The
 `intake_board` method returns counts only after `total == len(board.matches)`;
 `propose_forecasts` rejects post-kickoff prospective input before creating an
-AgentProposal; `progress` reads persisted terminal rows and reconciles their
-match ids against the current slate.
+AgentProposal; `progress` reads only current revisions and reconciles their match
+ids against the current slate.
 
 - [ ] **Step 4: Run GREEN and existing judgment tests**
 

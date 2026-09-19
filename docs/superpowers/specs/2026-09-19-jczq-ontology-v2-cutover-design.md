@@ -79,6 +79,33 @@ Each band records:
 This preserves the M4 contract while making four-band opportunity discovery
 durable and replayable.
 
+### 2.4 Dream-RSI inheritance
+
+This cutover extends, and does not replace, the approved RSI architecture in
+`2026-09-18-rsi-experiment-persistence-design.md` and the consolidated
+`2026-09-19-rsi-transformation-archive.md`.
+
+- RSI remains a governance layer. It receives observations through RSI typed
+  Actions and does not create Forecasts, candidate sets, or tickets.
+- Judgment experiments remain prospective-only observation experiments.
+  Historical replay may exercise their adapters but cannot fulfill a duty,
+  increment prospective `n`, or support a verdict.
+- Structural discovery uses append-only revision trees. The authoritative
+  parent and delta belong to the Candidate Set Revision; individual candidate
+  rows retain content identity and membership but do not define the tree.
+- Prefix visibility is enforced at the source boundary. Evidence captured at or
+  after the applicable kickoff remains durable but cannot acquire prospective
+  eligibility.
+- Experiment duties, observations, grades, verdicts, and deployments continue
+  through the existing RSI Actions. Product orchestration may request those
+  Actions but may not emulate them with callbacks or direct repository writes.
+- The constitution's lexicographic objective remains authoritative. Odds bands
+  are requested ticket payout-multiple intervals and never become an EV score or
+  a weighted optimization objective.
+
+These constraints are release gates, not implementation guidance that may be
+relaxed locally.
+
 ## 3. A2-A7 Workflow
 
 ### 3.1 A2: research and evidence intake
@@ -86,7 +113,7 @@ durable and replayable.
 Inputs are the official board snapshot, market snapshot, per-match research
 artifacts, true capture times, and source hashes.
 
-Every board match receives exactly one explicit research terminal state:
+Every board match has exactly one **current** explicit research terminal state:
 
 - `researched` when canonical intake accepts the research artifact;
 - `price_only` when no accepted research exists before the cutoff; or
@@ -94,7 +121,16 @@ Every board match receives exactly one explicit research terminal state:
 
 Accepted artifacts become SourceRun/Artifact and EvidenceBundle lineage.
 Canonical intake runs before R0 fulfillment. An intake ERROR cannot create an
-R0 fulfillment and cannot enter a Forecast.
+R0 fulfillment and cannot enter a Forecast. R0 fulfillment must use the existing
+`rsi_fulfill_duty` Action, which atomically records duty fulfillment and an
+Observation under the RSI eligibility rules. A product callback or direct RSI
+repository write is not a valid fulfillment.
+
+Research states are append-only revisions. A pre-kickoff `price_only` or
+`rejected` revision may be superseded by a later accepted artifact, while the
+old revision remains queryable. The current revision is selected by family and
+revision number; uniqueness of `(business_date, match_id)` applies to the
+current projection, not to the immutable revision history.
 
 A2 is complete only when the board count reconciles exactly with its terminal
 states and every accepted artifact is traceable to its source and capture time.
@@ -127,7 +163,9 @@ kinds and materializes the four odds bands inside them.
 
 Any changed leg, market, selection, multiplier, or exposure creates a new
 Candidate Set Revision. Revisions are append-only and record their parent,
-change delta, rationale, candidate hashes, and dependency fingerprint.
+change delta, rationale, candidate hashes, and dependency fingerprint. The
+Candidate Set Revision is the discovery-tree node required by Dream-RSI;
+candidate rows do not substitute for set-level lineage.
 
 A4 is complete only when every odds band contains at least one candidate or an
 explicit `no_feasible_candidate` outcome. Candidates mentioned only in chat do
@@ -234,8 +272,10 @@ Reuse current result, settlement, review, and RSI Actions. Add only the missing
 JCZQ coordination that connects committed Forecasts and terminal decisions to
 their post-result observations.
 
-Experiment eligibility derives from time semantics and replay status. It is not
-inferred from a file's presence or modification time.
+Experiment eligibility derives from source capture time, the applicable kickoff,
+RSI duty state, and replay mode. It is not inferred from a file's presence or
+modification time. The coordinator calls RSI Actions and never writes
+fulfillments or observations through a product-local adapter.
 
 ## 5. Historical Replay
 
