@@ -564,11 +564,13 @@ def zucai_build_reads(
     """judgment-v1 → reads.json + legs-base.json（只转录与校验词典，不产生判断）。"""
     import json as _json
 
+    from nutmeg.decision.face_status import FaceStatusError, attach_face_status
     from nutmeg.decision.read_builder import JudgmentError, build, format_warnings
 
+    judgment = _json.loads(_cli.Path(judgment_file).read_text("utf-8"))
     try:
         result = build(
-            _json.loads(_cli.Path(judgment_file).read_text("utf-8")),
+            judgment,
             issue=issue,
             store_ids=_json.loads(_cli.Path(store_ids_file).read_text("utf-8")),
             fair=_json.loads(_cli.Path(fair_file).read_text("utf-8")),
@@ -580,6 +582,18 @@ def zucai_build_reads(
     out.mkdir(parents=True, exist_ok=True)
     reads_path = out / f"{issue}-reads.json"
     legs_path = out / f"{issue}-legs-base.json"
+    research_dir = _cli.Path(store_ids_file).parent
+    for no, leg in result.legs["legs"].items():
+        research_path = research_dir / f"{issue}-research-m{no}.json"
+        research = (_json.loads(research_path.read_text("utf-8"))
+                    if research_path.exists() else {})
+        if "never_faces" in judgment[no]:
+            leg["never_faces"] = judgment[no]["never_faces"]
+        try:
+            attach_face_status(leg, research, source=research_path.name)
+        except FaceStatusError as exc:
+            _cli.typer.echo(f"场{no}: {exc}")
+            raise _cli.typer.Exit(code=1) from exc
     reads_path.write_text(_json.dumps(result.reads, ensure_ascii=False, indent=1),
                           encoding="utf-8")
     legs_path.write_text(_json.dumps(result.legs, ensure_ascii=False, indent=1),
