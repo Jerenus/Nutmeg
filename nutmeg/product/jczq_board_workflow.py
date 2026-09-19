@@ -18,7 +18,10 @@ from nutmeg.ontology.actions.models import (
 )
 from nutmeg.ontology.actions.workflow_actions import CreateAgentProposalRequest
 from nutmeg.ontology.operator.models import JczqBoardResearchStateRow
-from nutmeg.product.operator_contracts import JczqBoardProgressV1
+from nutmeg.product.operator_contracts import (
+    JczqBoardProgressV1,
+    JczqDecisionTerminalV1,
+)
 
 
 def _aware(value: datetime, name: str) -> datetime:
@@ -272,6 +275,46 @@ class JczqBoardWorkflow:
                 )
             )
         return tuple(results)
+
+    def require_terminal_state(self, business_date: str) -> JczqDecisionTerminalV1:
+        task_family_id = f"jczq:{business_date}"
+        with self._action_service.unit_of_work() as uow:
+            selections = (
+                uow.operator_decision.current_candidate_selections_for_task_family(
+                    task_family_id
+                )
+            )
+            no_tickets = tuple(
+                row
+                for row in uow.operator_result.current_no_ticket_revisions_for_task_family(
+                    task_family_id
+                )
+                if row.deployment_outcome != "reopened"
+            )
+        terminal_count = len(selections) + len(no_tickets)
+        if terminal_count == 0:
+            raise ValueError("terminal decision is missing")
+        if terminal_count != 1:
+            raise ValueError("terminal decision is not unique")
+        if selections:
+            selection = selections[0]
+            return JczqDecisionTerminalV1(
+                business_date=business_date,
+                kind="selected",
+                selection_revision_id=selection.candidate_selection_id,
+                no_ticket_revision_id=None,
+                candidate_set_revision_id=selection.candidate_set_revision_id,
+                audit_complete=True,
+            )
+        no_ticket = no_tickets[0]
+        return JczqDecisionTerminalV1(
+            business_date=business_date,
+            kind="no_ticket",
+            selection_revision_id=None,
+            no_ticket_revision_id=no_ticket.no_ticket_revision_id,
+            candidate_set_revision_id=None,
+            audit_complete=True,
+        )
 
     def commit_judgment(self, command, *, actor_id: str, actor_role: ActorRole):
         if self._operator_actions is None:

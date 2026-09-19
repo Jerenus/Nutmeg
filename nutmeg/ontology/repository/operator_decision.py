@@ -161,6 +161,26 @@ class OperatorDecisionRepository:
         )
         return CandidateSelectionRow(**dict(row)) if row is not None else None
 
+    def current_candidate_selections_for_task_family(
+        self,
+        task_family_id: str,
+    ) -> tuple[CandidateSelectionRow, ...]:
+        selections = sod.operator_candidate_selections
+        newer = selections.alias("newer_candidate_selection")
+        rows = self._connection.execute(
+            select(selections).where(
+                selections.c.task_family_id == task_family_id,
+                ~select(newer.c.candidate_selection_id)
+                .where(
+                    newer.c.task_family_id == selections.c.task_family_id,
+                    newer.c.work_item_id == selections.c.work_item_id,
+                    newer.c.revision_no > selections.c.revision_no,
+                )
+                .exists(),
+            )
+        ).mappings()
+        return tuple(CandidateSelectionRow(**dict(row)) for row in rows)
+
     def insert_evidence_intake_receipt(self, row: EvidenceIntakeReceiptRow) -> None:
         values = _row_fields(row)
         values["source_retrieval_ids_json"] = canonical_json(

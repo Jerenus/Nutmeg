@@ -932,6 +932,32 @@ class JczqBoardProgressV1(VersionedOperatorContract):
         return self
 
 
+class JczqDecisionTerminalV1(VersionedOperatorContract):
+    kind: Literal["selected", "no_ticket"]
+    business_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    selection_revision_id: str | None = None
+    no_ticket_revision_id: str | None = None
+    candidate_set_revision_id: str | None = None
+    audit_complete: bool
+
+    @model_validator(mode="after")
+    def _validate_terminal(self) -> "JczqDecisionTerminalV1":
+        if self.kind == "selected":
+            if (
+                self.selection_revision_id is None
+                or self.candidate_set_revision_id is None
+                or self.no_ticket_revision_id is not None
+            ):
+                raise ValueError("selected terminal lineage is incomplete")
+        elif (
+            self.no_ticket_revision_id is None
+            or self.selection_revision_id is not None
+            or self.candidate_set_revision_id is not None
+        ):
+            raise ValueError("no-ticket terminal lineage is incomplete")
+        return self
+
+
 class CandidateSetComparisonView(StrictOperatorContract):
     label: str = Field(min_length=1, max_length=200)
     comparison_only: bool
