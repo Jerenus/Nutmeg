@@ -130,6 +130,34 @@ def _worker(fixture: CandidateFixture, *, worker_id: str = "candidate-worker", a
     )
 
 
+def test_banded_jczq_worker_persists_all_four_outcomes_per_set(tmp_path: Path) -> None:
+    fixture = _ready_fixture_with_cap(tmp_path, capital_cap_minor=20_000)
+    _request_generation(fixture)
+    worker = CandidateGenerationWorker(
+        action_service=fixture.judgment.action_service,
+        result_actions=fixture.result_actions,
+        worker_id="candidate-band-worker",
+        lease_duration=timedelta(minutes=5),
+        banded_jczq=True,
+    )
+
+    completed = worker.run_once(limit=1, as_of=AT + timedelta(seconds=7))
+
+    assert len(completed) == 1
+    with fixture.judgment.engine.connect() as connection:
+        outcomes = connection.execute(
+            text(
+                "SELECT candidate_set.set_kind, band.odds_band, band.status "
+                "FROM operator_candidate_band_outcomes AS band "
+                "JOIN operator_candidate_set_revisions AS candidate_set "
+                "USING (candidate_set_revision_id) "
+                "ORDER BY candidate_set.set_kind, band.odds_band"
+            )
+        ).all()
+    assert len(outcomes) == 8
+    assert {row[1] for row in outcomes} == {"10x", "20x", "50x", "100x"}
+
+
 def _request_generation(fixture: CandidateFixture):
     return fixture.judgment.decision_actions.request_candidate_generation(
         _generation_request(fixture)

@@ -229,6 +229,7 @@ def _build_operator_infrastructure_workers(
             result_actions=kernel.result_actions,
             worker_id="operator-candidate-generation",
             lease_duration=timedelta(minutes=5),
+            banded_jczq=True,
         ),
         confirmation_deadlines=confirmation,
         task_settlement=TaskSettlementWorker(

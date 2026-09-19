@@ -1844,6 +1844,9 @@ class OperatorResultActions:
                     "set_kind": candidate_set.set_kind,
                     "generator_version": request.generator_version,
                     "candidates": [asdict(item) for item in candidate_set.candidates],
+                    "band_outcomes": [
+                        asdict(item) for item in candidate_set.band_outcomes
+                    ],
                 }
                 set_hash = _content_hash(set_document)
                 set_id = _stable_id(

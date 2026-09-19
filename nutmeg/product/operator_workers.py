@@ -36,6 +36,7 @@ from nutmeg.ontology.operator.evidence_actions import (
 )
 from nutmeg.ontology.operator.result_actions import (
     CandidateAuditFindingInput,
+    CandidateBandOutcomeInput,
     CandidateDeadFaceInput,
     CandidateMetricsInput,
     CandidateSetInput,
@@ -67,6 +68,7 @@ from nutmeg.product.operator_candidates import (
     CandidateTicketLeg,
     FaceBundleOption,
     OfferCandidateInput,
+    enumerate_band_candidates,
     enumerate_candidates,
 )
 from nutmeg.product.operator_runtime import OntologyWriterLease
@@ -738,6 +740,7 @@ class CandidateGenerationWorker:
         result_actions: OperatorResultActions,
         worker_id: str,
         lease_duration: timedelta,
+        banded_jczq: bool = False,
     ) -> None:
         if not worker_id.strip():
             raise ValueError("worker_id is required")
@@ -747,6 +750,7 @@ class CandidateGenerationWorker:
         self._result_actions = result_actions
         self._worker_id = worker_id
         self._lease_duration = lease_duration
+        self._banded_jczq = banded_jczq
 
     def run_once(self, *, limit: int, as_of: datetime) -> tuple[ActionOutcome, ...]:
         cutoff = _aware(as_of, "as_of").astimezone(UTC)
@@ -832,12 +836,21 @@ class CandidateGenerationWorker:
                 generation,
             )
 
+        generator_version = (
+            "operator-candidate-v2-bands"
+            if self._banded_jczq
+            else _CANDIDATE_GENERATOR_VERSION
+        )
         candidate_sets = tuple(
             _candidate_set_input(
-                enumerate_candidates(
+                (
+                    enumerate_band_candidates
+                    if self._banded_jczq and inputs.lane == "jczq"
+                    else enumerate_candidates
+                )(
                     inputs,
                     set_kind=set_kind,
-                    generator_version=_CANDIDATE_GENERATOR_VERSION,
+                    generator_version=generator_version,
                     audit_candidate=(
                         lambda draft,
                         lane=inputs.lane,
@@ -864,7 +877,7 @@ class CandidateGenerationWorker:
             GenerateTicketCandidateSetRequest(
                 generation_request_id=generation_request_id,
                 candidate_sets=candidate_sets,
-                generator_version=_CANDIDATE_GENERATOR_VERSION,
+                generator_version=generator_version,
                 worker_job_id=worker_job_id,
                 lease_owner=self._worker_id,
                 actor_id="system:operator-candidates",
@@ -875,7 +888,7 @@ class CandidateGenerationWorker:
                         {
                             "generation_request_id": generation_request_id,
                             "request_content_hash": generation.content_hash,
-                            "generator_version": _CANDIDATE_GENERATOR_VERSION,
+                            "generator_version": generator_version,
                         }
                     )
                 ),
@@ -1616,9 +1629,19 @@ def _audit_candidate(
 
 
 def _candidate_set_input(result) -> CandidateSetInput:
+    by_band = getattr(result, "by_band", {})
     return CandidateSetInput(
         set_kind=result.set_kind,
         candidates=tuple(_ticket_candidate_input(item) for item in result.candidates),
+        band_outcomes=tuple(
+            CandidateBandOutcomeInput(
+                odds_band=band,
+                status=outcome.status,
+                reason_code=outcome.reason_code,
+                candidate_count=len(outcome.candidates),
+            )
+            for band, outcome in by_band.items()
+        ),
     )
 
 
@@ -1667,6 +1690,12 @@ def _ticket_candidate_input(candidate: CandidateComparison) -> TicketCandidateIn
             "deployment",
         ),
         content_hash=candidate.content_hash,
+        odds_band=candidate.odds_band,
+        target_odds_min_decimal=candidate.target_odds_min_decimal,
+        target_odds_max_decimal=candidate.target_odds_max_decimal,
+        combined_decimal_odds=candidate.combined_decimal_odds,
+        parent_candidate_revision_id=candidate.parent_candidate_revision_id,
+        delta_reason=candidate.delta_reason,
     )
 
 
