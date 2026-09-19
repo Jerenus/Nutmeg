@@ -5,7 +5,7 @@
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 提示词开始 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-你是在 Nutmeg 仓库（中国体彩竞彩足球 + 传统足彩的判断/复盘系统，Python 3.13，`uv` 管理依赖，pytest + ruff）里执行既定实施计划的工程师。你的任务是**按计划逐任务实施，直到全部 10 个任务完成并通过验收**。你不做设计决定；设计已由用户批准并写在 spec 里。遇到 spec 与代码冲突，以 spec 为准并在报告里指出；遇到 spec 没说的，选最小改动并记录。
+你是在 Nutmeg 仓库（中国体彩竞彩足球 + 传统足彩的判断/复盘系统，Python 3.13，`uv` 管理依赖，pytest + ruff）里执行既定实施计划的工程师。你的任务是**按计划逐任务实施，直到三个阶段共 20 个任务全部完成并通过验收**（阶段一专项 10 任务 → 阶段二深研桥 6 任务 → 阶段三观察台 4 任务）。你不做设计决定；设计已由用户批准并写在 spec 里。遇到 spec 与代码冲突，以 spec 为准并在报告里指出；遇到 spec 没说的，选最小改动并记录。
 
 ## 0. 先读什么（顺序不能变）
 
@@ -78,6 +78,19 @@ git log --oneline 5c1e936..HEAD
 ```
 
 spec §9 的出口条件是最终标准：`plan tiers → frontier → choose → commit` 全程无需聊天窗口；`plan status` 显示 26129 的 override 方案与 RJ9/SFC 两票已入账（方案号待补属正常）；`/replay?date=2026-09-19`（启动 `uv run nutmeg decision-web` 后访问 `http://127.0.0.1:8787/replay?date=2026-09-19`）能看到 SFC-B → C → D → E 的父子链。
+
+## 3b. 第二、三阶段（专项 10 任务全部验收通过后才开始，顺序不能变）
+
+**阶段二 · 竞彩全板深研桥**：spec `docs/superpowers/specs/2026-09-19-jczq-board-research-bridge-design.md`，计划 `docs/superpowers/plans/2026-09-19-jczq-board-research-bridge.md`（Task 1–6）。
+- 运行器的 `claude` 调用**只用假 runner 测试**；唯一允许的真运行是 Task 6 里明写的 `research run --day <今天> --budget 2`（两场），跑前确认 `.env` 已 source、`claude --version` 可用。
+- 真形状要先看再写映射：`sporttery_markets.json`（match_id→板面代码）、`.nutmeg-data/zucai/26129-reads.json`（Read 键名）。计划里写明了看什么。
+- 验收：`uv run pytest tests/decision/test_jczq_board.py tests/decision/test_research_prompt.py tests/decision/test_research_runner.py tests/decision/test_jczq_reads.py tests/test_cli_research.py tests/decision/test_research_intake.py -q`；`uv run nutmeg rsi status` 里出现 R0；贴 `research-run-<day>.json`。
+
+**阶段三 · RSI 观察台（只读）**：spec `docs/superpowers/specs/2026-09-19-rsi-observatory-design.md`，计划 `docs/superpowers/plans/2026-09-19-rsi-observatory.md`（Task 1–4）。
+- 页面零写操作：测试里断言没有 `<form` 与 POST；ECharts 固定 `5.5.1`，只从 cdnjs 加载。
+- 验收：`uv run pytest tests/decision/test_observe_views.py tests/test_decision_web_observe.py -q`；起 `uv run nutmeg decision-web --port 8799`，`curl -s http://127.0.0.1:8799/api/observe | python -m json.tool | head -40` 贴出来（应有 F1c/F2/F3/F4/F5/R0 六张卡，F1c 四个 gap）；`curl -s http://127.0.0.1:8799/api/observe/day/2026-09-19` 里 `tree.edges` 含 SFC-B→SFC-C。
+
+三个阶段的提交总数与 sha 列表放进最终报告（`git log --oneline 5c1e936..HEAD`）。
 
 ## 4. 最终报告格式
 
