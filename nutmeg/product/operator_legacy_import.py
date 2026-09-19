@@ -630,7 +630,7 @@ def _validated_rx(
     adjudication_rows, skipped = map_rx_adjudications(raw, rx.issue)
     prediction_requests = tuple(
         RegisterPredictionRequest(
-            **row,
+            **{key: value for key, value in row.items() if key != "alias_ids"},
             actor_id="operator:jun",
             actor_role=ActorRole.JUDGE_OPERATOR,
             requested_at=recorded_at,
