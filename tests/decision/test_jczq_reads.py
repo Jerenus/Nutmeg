@@ -91,3 +91,31 @@ def test_build_reads_marks_ai_judge_and_deep_tier(tmp_path):
     assert reads[0]["judgment_tier"] == "deep_research"
     assert abs(sum(reads[0]["belief"].values()) - 1) < 1e-9
     assert reads[0]["belief"]["away"] == 0.0
+
+
+def test_write_quarantines_intake_errors_and_restores_price_only(tmp_path):
+    root = _day(tmp_path)
+    day_dir = root / "daily" / "2026-09-19"
+    invalid = {**RESEARCH, "crash_markers": ["叙述误入标签位" * 20]}
+    research_path = day_dir / "research-周五001.json"
+    research_path.write_text(json.dumps(invalid, ensure_ascii=False), encoding="utf-8")
+    run_report_path = day_dir / "research-run-2026-09-19.json"
+    run_report_path.write_text(
+        json.dumps(
+            {"day": "2026-09-19", "matches": [{"code": "周五001", "status": "done"}]}
+        ),
+        encoding="utf-8",
+    )
+
+    report = intake_board(day="2026-09-19", jczq_dir=root, write=True)
+
+    assert "周五001" in report["failed"]
+    board = json.loads((day_dir / "jczq-legs-base.json").read_text(encoding="utf-8"))
+    assert board["legs"]["周五001"]["judgment_tier"] == "price_only"
+    assert not research_path.exists()
+    rejected = json.loads(
+        (day_dir / "research-周五001.rejected.json").read_text(encoding="utf-8")
+    )
+    assert rejected["research"]["crash_markers"] == invalid["crash_markers"]
+    run_report = json.loads(run_report_path.read_text(encoding="utf-8"))
+    assert run_report["matches"][0]["status"] == "rejected"

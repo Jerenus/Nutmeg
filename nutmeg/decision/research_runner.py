@@ -71,7 +71,9 @@ def _empty_profile(_match_id: str) -> dict:
     return {}
 
 
-def _validate(text: str) -> dict:
+def _validate(text: str, leg: dict) -> dict:
+    from nutmeg.decision.research_intake import intake
+
     doc = json.loads(text)
     if not isinstance(doc, dict):
         raise ValueError("research output must be a JSON object")
@@ -93,10 +95,14 @@ def _validate(text: str) -> dict:
         )
         if count < 3:
             raise ValueError(f"{face} 宣告 dead 但三证 {count}/3")
+    intake_result = intake(doc, dict(leg))
+    errors = [issue.message for issue in intake_result.issues if issue.level == "ERROR"]
+    if errors:
+        raise ValueError("research intake ERROR: " + "; ".join(errors))
     return doc
 
 
-def _research_one(*, prompt: str, brief: str, claude: Claude) -> dict:
+def _research_one(*, prompt: str, brief: str, leg: dict, claude: Claude) -> dict:
     started = time.monotonic()
     last_text = ""
     last_error = ""
@@ -108,8 +114,8 @@ def _research_one(*, prompt: str, brief: str, claude: Claude) -> dict:
             last_text = text
             if return_code != 0:
                 raise ValueError(f"claude 退出码 {return_code}")
-            research = _validate(text)
-        except (Exception, json.JSONDecodeError) as exc:  # noqa: BLE001
+            research = _validate(text, leg)
+        except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
             continue
         return {
@@ -179,8 +185,8 @@ def run_day(
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = [
-            pool.submit(_research_one, prompt=prompt, brief=brief, claude=claude)
-            for _board_code, _leg, brief in pending
+            pool.submit(_research_one, prompt=prompt, brief=brief, leg=leg, claude=claude)
+            for _board_code, leg, brief in pending
         ]
         results = [future.result() for future in futures]
 

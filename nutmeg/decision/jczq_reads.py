@@ -25,6 +25,24 @@ def intake_board(*, day: str, jczq_dir: Path, write: bool) -> dict:
         errors = [issue.message for issue in result.issues if issue.level == "ERROR"]
         if errors:
             failed[code] = errors
+            if write:
+                original_leg["judgment_tier"] = "price_only"
+                original_leg.pop("face_status", None)
+                rejected_path = day_dir / f"research-{code}.rejected.json"
+                rejected_path.write_text(
+                    json.dumps(
+                        {
+                            "code": code,
+                            "status": "rejected",
+                            "errors": errors,
+                            "research": research,
+                        },
+                        ensure_ascii=False,
+                        indent=1,
+                    ),
+                    encoding="utf-8",
+                )
+                research_path.unlink()
             continue
         candidate = result.leg
         candidate.pop("faces", None)
@@ -39,6 +57,16 @@ def intake_board(*, day: str, jczq_dir: Path, write: bool) -> dict:
         board_path.write_text(
             json.dumps(board, ensure_ascii=False, indent=1), encoding="utf-8"
         )
+        run_report_path = day_dir / f"research-run-{day}.json"
+        if run_report_path.exists() and failed:
+            run_report = json.loads(run_report_path.read_text(encoding="utf-8"))
+            for row in run_report.get("matches") or []:
+                if row.get("code") in failed:
+                    row["status"] = "rejected"
+                    row["intake_errors"] = failed[row["code"]]
+            run_report_path.write_text(
+                json.dumps(run_report, ensure_ascii=False, indent=1), encoding="utf-8"
+            )
     return {"ok": ok, "failed": failed}
 
 

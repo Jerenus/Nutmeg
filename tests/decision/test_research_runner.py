@@ -149,6 +149,30 @@ def test_invalid_json_is_rejected_once_and_leg_stays_price_only(tmp_path):
     assert not (day_dir / "research-周五001.json").exists()
 
 
+def test_intake_error_is_rejected_before_fulfill(tmp_path):
+    root = _board(tmp_path, n=1)
+    invalid = json.loads(GOOD)
+    invalid["crash_markers"] = ["这是一整段被错误写进标签位的叙述" * 8]
+    fulfills = []
+
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=root,
+        data_dir=tmp_path,
+        claude=lambda system, brief: (0, json.dumps(invalid, ensure_ascii=False)),
+        fulfill=lambda argv: fulfills.append(argv) or (0, ""),
+        profile=lambda match_id: {},
+        budget=1,
+    )
+
+    assert report["matches"][0]["status"] == "rejected"
+    assert fulfills == []
+    day_dir = root / "daily" / "2026-09-19"
+    board = json.loads((day_dir / "jczq-legs-base.json").read_text(encoding="utf-8"))
+    assert board["legs"]["周五001"]["judgment_tier"] == "price_only"
+    assert not (day_dir / "research-周五001.json").exists()
+
+
 def test_runner_honours_concurrency_limit(tmp_path):
     root = _board(tmp_path, n=2)
     barrier = threading.Barrier(2)
