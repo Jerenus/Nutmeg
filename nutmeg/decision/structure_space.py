@@ -8,6 +8,7 @@ import json
 from nutmeg.decision.structure_tiers import (
     C14_CHEAP_LINE,
     C14_VARIANCE_LINE,
+    TICKET_MAX_NARROWINGS,
     TIER_MAX_NARROWINGS,
     narrowable_faces,
     tier_of,
@@ -119,7 +120,7 @@ def enumerate_frontier(
                         notes * len(faces),
                         narrowings + len(alive_sets[match_no]) - len(faces),
                     )
-                    if cell[0] > cap_notes:
+                    if cell[0] > cap_notes or cell[1] > TICKET_MAX_NARROWINGS:
                         continue
                     value = (probability * coverage, chosen + ((match_no, faces),))
                     current = next_states.get(cell)

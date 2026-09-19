@@ -57,6 +57,12 @@ def test_tiers_follow_the_b5c_matrix():
     assert tier_of(_leg(lq=LQ3, fair=(0.40, 0.30, 0.30), integrity="fail")) == "T4"
 
 
+def test_tier_is_monotonic_in_license_score():
+    assert tier_of(_leg(lq=LQ4, integrity="symmetric_damage")) == "T2"
+    assert tier_of(_leg(lq=LQ4)) == "T1"
+    assert tier_of(_leg(lq=LQ4, crash=["opening_new_coach_debut"])) == "T3"
+
+
 def test_narrowable_face_needs_two_proofs_and_cheap_price():
     leg = _leg(fair=(0.6, 0.25, 0.15), d3={"away": 2})
     assert narrowable_faces(leg) == ["away"]

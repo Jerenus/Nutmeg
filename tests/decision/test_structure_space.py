@@ -79,6 +79,21 @@ def test_frontier_is_deterministic_bounded_by_cap_and_reports_shape():
     )
 
 
+def test_frontier_respects_the_ticket_level_narrowing_cap():
+    legs = {
+        str(i): _leg(
+            (0.14, 0.14, 0.72),
+            d3={"home": 2, "draw": 2},
+            dead=("away",),
+        )
+        for i in range(1, 15)
+    }
+    for cap in (400, 1200):
+        frontier = enumerate_frontier(legs, channel="renjiu", cap_yuan=cap, mode="matrix")
+        assert frontier["points"], f"cap={cap} should not have an empty frontier"
+        assert max(len(point["narrowings"]) for point in frontier["points"]) <= 3
+
+
 def test_shengfucai_covers_all_fourteen_and_empty_frontier_is_none_not_error():
     legs = {
         str(i): _leg((0.4, 0.3, 0.3), lq=LQ3, integrity="fail") for i in range(1, 15)

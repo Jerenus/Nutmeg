@@ -8,6 +8,7 @@ C14_CHEAP_LINE = 0.15
 C14_VARIANCE_LINE = 0.20
 NARROW_MIN_PROOFS = 2
 TIER_MAX_NARROWINGS = {"T1": 2, "T2": 1, "T3": 0, "T4": 0}
+TICKET_MAX_NARROWINGS = 3
 COIN_TOP1 = 0.45
 HOT_TOP1 = 0.60
 COLD_DRAW = 0.29
@@ -37,7 +38,11 @@ def tier_of(leg: dict) -> str:
     integrity = str(leg.get("anchor_integrity") or "").lower()
     if score == 4 and integrity == "pass" and not leg.get("crash_markers"):
         return "T1"
-    if score == 3 and integrity in ("pass", "symmetric_damage"):
+    if (
+        score >= 3
+        and integrity in ("pass", "symmetric_damage")
+        and not leg.get("crash_markers")
+    ):
         return "T2"
     fair = leg.get("fair") or {}
     if len(_alive(leg)) == 3 and fair and max(float(value) for value in fair.values()) < COIN_TOP1:
