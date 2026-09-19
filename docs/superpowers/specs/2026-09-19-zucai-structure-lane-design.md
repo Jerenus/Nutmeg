@@ -62,12 +62,13 @@ source    = "<issue>-research-m<N>.json#death_three_proofs.<face>"
 | 级 | 每场最多收窄 | 触发 |
 |---|---|---|
 | T1 | 2（可裸单） | `license_score == 4 ∧ integrity == pass ∧ crash_markers 为空` |
-| T2 | 1（可双选） | `license_score == 3 ∧ integrity ∈ {pass, symmetric_damage}` |
+| T2 | 1（可双选） | `license_score >= 3 ∧ integrity ∈ {pass, symmetric_damage}`（**2026-09-19 修正**：原写 `== 3`，导致 `score=4 + symmetric_damage → T3` 比 `score=3` 更差——四问满分反因完整度降级，实测确认的非单调）|
 | T3 | 0（必全包） | 其余 |
 | T4 | 建议丢（仅任九；T3 的子集，建议非强制） | T3 ∧ 三面全 alive ∧ max fair < 0.45（硬币） |
 
 **单个 alive 面可被收窄** ⇔ `d3_count ≥ 2 ∧ fair ≤ 0.15`（B5c 原文「2/3 且被排面 ≤15% 可排」）。`fair > 0.20 ∧ d3_count < 3` 永不可收窄（原文「必须全包」）。15–20% 灰带不可收窄。
 级数上限与面规则同时生效：T1 场也只能收窄满足面规则的面。
+**票级上限（2026-09-19 补）**：全票收窄总数 `TICKET_MAX_NARROWINGS = 3`（与上表同为 RULEBOOK 常量）。它就是 C17 铁律「标记 ≤3」——原型 `exp-strict-space.enumerate_space` 的 `max_marks` 即此。⚠️漏掉它的后果是实测出来的：稠密板前沿点收窄数达 18，这些点在 B6 审计门必触发 C17 ERROR——**前沿提供了必然被拒的票，「人在前沿上挑」这条链就断了**。枚举器必须在 DP 里带票级检查。
 
 ### 4.3 「今日风向」（`plan tiers` 同时产出，只读）
 
@@ -82,7 +83,7 @@ source    = "<issue>-research-m<N>.json#death_three_proofs.<face>"
 - **矩阵模式**（操作空间）：上述规则。
 - **strict 模式**（宪法地板，只算 max P 供 F4）：盖全部 alive 或丢。
 算术：P(全对) = ∏ Σ fair(盖面)；注数 = ∏ |盖面|；票价 = 注数 × 2。
-Pareto 前沿：帽内每个 (注数, 收窄数) 格保留 P 最大者（沿用 `exp-strict-space.enumerate_space` 的 DP）。
+Pareto 前沿：帽内每个 (注数, 收窄数) 格保留 P 最大者（沿用 `exp-strict-space.enumerate_space` 的 DP）；**收窄数 > `TICKET_MAX_NARROWINGS` 的状态直接剪掉**。
 `frontier_hash = sha256(legs-base 字节 + channel + cap + mode + tiers 字节)`；同输入同输出。
 第三序 = 前沿默认排序 key：等 P 时全包给 top1 最低的场；全包名额按被排面 fair 降序（26123 规则，F7 测它）。
 输出 `<issue>-frontier-<channel>.json`：`{frontier_hash, channel, mode, cap_yuan, max_p, strict_max_p, points:[{k, faces, notes, stake_yuan, p_all, shape, narrowings:[{match_no, excluded_face, fair, d3_count, c14_band}]}]}`；空前沿 `max_p = None`。
@@ -145,6 +146,8 @@ Pareto 前沿：帽内每个 (注数, 收窄数) 格保留 P 最大者（沿用 
 
 - face_status：dead 无 3/3 → ERROR；`precedent=none` 不得推出 never；faces ≠ 派生 → ERROR；字段缺失 = alive。
 - 定级：T1–T4 各一例；边界 fair 0.15 / 0.20 归属写死；灰带不可收窄。
+- 定级单调：`score=4 + symmetric_damage` → T2（不得因完整度把满分降到 T3）；`score=4 + pass + 无 crash` → T1；`score=4 + crash` → T3。
+- 票级上限：稠密板（每场 2 个可收窄面、全 T1）前沿里 `max(len(p['narrowings'])) <= 3`。
 - 枚举：T3 场任何前沿点无收窄；T1 场收窄 ≤2 且每面满足面规则；strict 三活只出全包/丢；同输入 `frontier_hash` 相同；空前沿 `max_p=None`；无 `face_status` → 拒绝。
 - 资金方案：override 无裁决 → 拒；renjiu > 1200 → 拒；total > 1600 → 拒；日帽扣竞彩已用；`deterministic_system` 调 commit → REJECTED；重定案 `supersedes`。
 - 门代价：`gate_cost_pp` 算式；strict 空解 → None 且 F4 不计。
