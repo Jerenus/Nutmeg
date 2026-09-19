@@ -5,6 +5,7 @@
 ## 每日先看一眼：状态页
 
 `uv run nutmeg ops-status` —— launchd + OpenClaw + 不会自己消失的待办，一屏看全，**只读**。
+<http://127.0.0.1:8787/observe> —— RSI 实验全景（只读）；`/observe/day/<date>` 看当天候选树与资金方案。
 **出生事故 2026-09-17**：为判断链路健康，我 `tail` 了 `decision.am.err.log`，看见一条 WAF 降级
 失败就报告「今天 08:00 成功、17:15 又跑出降级」——**两句都错**，那条错误是 9/15 的（文件 mtime 为证），
 17:15 只是当日数据文件的 mtime。根因是结构不是马虎：`NUTMEG_OK`/`NUTMEG_FAILED` 两行**不带时间戳**，
