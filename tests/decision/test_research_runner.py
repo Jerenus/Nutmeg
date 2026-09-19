@@ -85,6 +85,14 @@ def test_runs_each_match_once_and_writes_products_and_fulfills(tmp_path):
         budget=10,
     )
     assert [row["status"] for row in second["matches"]] == ["skipped_done"] * 3
+    daily = json.loads(
+        (root / "daily" / "2026-09-19" / "research-run-2026-09-19.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert daily["run_count"] == 2
+    assert len(daily["runs"]) == 2
+    assert {row["status"] for row in daily["matches"]} == {"done", "skipped_done"}
 
 
 def test_budget_and_past_kickoff_are_recorded_not_faked(tmp_path):

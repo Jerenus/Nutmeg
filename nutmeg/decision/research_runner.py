@@ -9,8 +9,10 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from nutmeg.decision.research_ledger import ResearchRunLedger
 from nutmeg.decision.research_prompt import render_brief, system_prompt
 
 BJ = ZoneInfo("Asia/Shanghai")
@@ -144,7 +146,10 @@ def run_day(
     budget: int = RESEARCH_DAILY_BUDGET,
     code: str | None = None,
     concurrency: int = 2,
+    run_id: str | None = None,
 ) -> dict:
+    started_at = datetime.now(BJ)
+    resolved_run_id = run_id or f"rr-{uuid4().hex}"
     day_dir = Path(jczq_dir) / "daily" / day
     board_path = day_dir / "jczq-legs-base.json"
     board = json.loads(board_path.read_text(encoding="utf-8"))
@@ -242,12 +247,16 @@ def run_day(
         json.dumps(board, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     report = {
+        "run_id": resolved_run_id,
+        "idempotency_key": f"research-run:{day}:{resolved_run_id}",
         "day": day,
         "budget": budget,
         "concurrency": concurrency,
+        "started_at": started_at.isoformat(timespec="seconds"),
+        "finished_at": datetime.now(BJ).isoformat(timespec="seconds"),
         "matches": [rows_by_code[board_code] for board_code in order],
     }
-    (day_dir / f"research-run-{day}.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8"
-    )
+    ledger = ResearchRunLedger(day_dir)
+    ledger.append(report)
+    ledger.write_daily_projection(day_dir / f"research-run-{day}.json")
     return report
