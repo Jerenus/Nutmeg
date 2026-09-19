@@ -31,6 +31,15 @@ def _legs(issue: str, data_dir: Path) -> dict:
     return json.loads(path.read_text("utf-8"))["legs"]
 
 
+def _candidate_versions(data_dir: Path, day: str, issue: str) -> set[str]:
+    return {
+        str(event["payload"]["version"])
+        for event in read_events(Path(data_dir) / "jczq", day)
+        if event.get("kind") == "candidate"
+        and event.get("obj_id") == f"ticket:{issue}"
+    }
+
+
 def run_tiers(*, issue: str, data_dir: Path) -> dict:
     legs = _legs(issue, data_dir)
     tiers = {match_no: tier_of(leg) for match_no, leg in legs.items()}
@@ -42,18 +51,21 @@ def run_tiers(*, issue: str, data_dir: Path) -> dict:
     (_zucai(data_dir) / f"{issue}-tiers.json").write_text(
         json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8"
     )
-    append_candidate(
-        Path(data_dir) / "jczq",
-        _day_of(issue, data_dir),
-        obj_id=f"ticket:{issue}",
-        version=f"tiers@{tiers_hash}",
-        faces={},
-        notes=0,
-        stake_yuan=0,
-        p_all=None,
-        verdict="considered",
-        reason=f"wind {wind['regime']} · {wind['tiers']}",
-    )
+    day = _day_of(issue, data_dir)
+    version = f"tiers@{tiers_hash}"
+    if version not in _candidate_versions(data_dir, day, issue):
+        append_candidate(
+            Path(data_dir) / "jczq",
+            day,
+            obj_id=f"ticket:{issue}",
+            version=version,
+            faces={},
+            notes=0,
+            stake_yuan=0,
+            p_all=None,
+            verdict="considered",
+            reason=f"wind {wind['regime']} · {wind['tiers']}",
+        )
     return doc
 
 
@@ -73,12 +85,16 @@ def run_frontier(*, issue: str, channel: str, cap_yuan: int, data_dir: Path) -> 
         json.dumps(frontier, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     day = _day_of(issue, data_dir)
+    existing_versions = _candidate_versions(data_dir, day, issue)
     for point in frontier["points"]:
+        version = f"frontier#{point['k']}@¥{cap_yuan}"
+        if version in existing_versions:
+            continue
         append_candidate(
             Path(data_dir) / "jczq",
             day,
             obj_id=f"ticket:{issue}",
-            version=f"frontier#{point['k']}@¥{cap_yuan}",
+            version=version,
             parent_version=f"tiers@{tiers_hash}",
             faces=point["faces"],
             notes=point["notes"],
@@ -90,6 +106,7 @@ def run_frontier(*, issue: str, channel: str, cap_yuan: int, data_dir: Path) -> 
                 f"narrowings {len(point['narrowings'])}"
             ),
         )
+        existing_versions.add(version)
     return frontier
 
 

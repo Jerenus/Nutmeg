@@ -90,6 +90,24 @@ def test_frontier_writes_points_as_children_of_tiers_root(tmp_path):
     assert all(event["payload"]["verdict"] == "considered" for event in children)
 
 
+def test_tiers_and_frontier_do_not_duplicate_candidate_versions(tmp_path):
+    data_dir = _data_dir(tmp_path)
+    run_tiers(issue="26130", data_dir=data_dir)
+    run_tiers(issue="26130", data_dir=data_dir)
+    run_frontier(issue="26130", channel="renjiu", cap_yuan=400, data_dir=data_dir)
+    run_frontier(issue="26130", channel="renjiu", cap_yuan=400, data_dir=data_dir)
+    versions = [
+        event["payload"]["version"]
+        for event in read_events(data_dir / "jczq", "2026-09-26")
+        if event["kind"] == "candidate"
+    ]
+    assert len([version for version in versions if version.startswith("tiers@")]) == 1
+    frontier_versions = [
+        version for version in versions if version.startswith("frontier#")
+    ]
+    assert frontier_versions and len(frontier_versions) == len(set(frontier_versions))
+
+
 def test_choose_writes_legs_file_and_hangs_node_under_the_point(tmp_path):
     data_dir = _data_dir(tmp_path)
     run_tiers(issue="26130", data_dir=data_dir)
