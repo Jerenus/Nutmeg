@@ -28,6 +28,9 @@ Python 3.13，`uv` 管依赖，pytest + ruff，有 pre-commit）里执行一项*
 - `"zucai"` → 读 `.nutmeg-data/zucai/<issue>-store-ids.json`，返回 `{match_id, match_no, source:"zucai"}`
 - `"both"` → **按 match_id 取并集**（不是假设 zucai ⊆ jczq）。同一 match_id 两边都有时保留一条并标 `source:"both"`。
 ⛔必须真取并集：26130 有 2 场、26131 有 6 场足彩比赛在体彩板面上未对齐，包含关系不恒成立。
+⛔**`day` 是业务日不是自然日**：26131 的 14 场里有 6 场在 09-21 凌晨开球，但全部属于 `daily/2026-09-20/` 这一个板面。**以板面文件所在目录名为准，不得按 kickoff 日期重新分桶。**
+⛔**`issue` 可能为 None**（足彩不保证每天开期）：`both` 在此情况下**静默降级为 `jczq`**，不得抛错。
+⛔**任何位置不得出现常数 30**：板面场数是变量，仓内只有 2 天样本，30 是 n=2 的观察不是常态。
 测试：`tests/decision/test_rsi_population.py`，用 26130（2 场未对齐）与 26131（6 场未对齐）的真实文件做夹具，
 断言 `both` 的场数 = |jczq ∪ zucai| 且不等于 |jczq|。
 
