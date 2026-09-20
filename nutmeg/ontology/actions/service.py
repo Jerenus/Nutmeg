@@ -91,6 +91,11 @@ class ActionService:
         """Open the same governed UOW used by Actions for typed result hydration."""
         return self._unit_of_work_factory()
 
+    def bind_replay(self, context: ReplayActionContext) -> ActionService:
+        if self._replay_context is not None and self._replay_context != context:
+            raise PermissionDeniedError("nested caller cannot replace the bound replay run id")
+        return ActionService(self._unit_of_work_factory, replay_context=context)
+
     def execute(
         self,
         command: ActionCommand,
@@ -269,9 +274,10 @@ class ActionService:
         run = uow.replay.get(context.replay_run_id)
         database_identity = str(Path(uow.connection.engine.url.database).resolve())
         command_date = command.payload.get("business_date")
+        if run is not None and run.status != "running":
+            raise _ReplayBindingError("historical replay run is not active")
         if (
             run is None
-            or run.status != "running"
             or run.business_date != context.business_date
             or run.isolated_database_identity != context.isolated_database_identity
             or database_identity != context.isolated_database_identity

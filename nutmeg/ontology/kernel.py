@@ -22,6 +22,7 @@ from nutmeg.ontology.actions.factor_actions import FactorActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
 from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
+from nutmeg.ontology.actions.replay_actions import ReplayActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
@@ -146,6 +147,7 @@ class OntologyKernel:
         protected_tickets: ProtectedTicketActions,
         scoreboard_actions: ScoreboardActions,
         reliability_actions: ReliabilityActions,
+        replay_actions: ReplayActions,
         rsi_actions: RsiActions,
         capital_actions: CapitalActions,
         sale_actions: SaleActions,
@@ -171,6 +173,7 @@ class OntologyKernel:
         self.protected_tickets = protected_tickets
         self.scoreboard_actions = scoreboard_actions
         self.reliability_actions = reliability_actions
+        self.replay_actions = replay_actions
         self.rsi_actions = rsi_actions
         self.capital_actions = capital_actions
         self.sale_actions = sale_actions

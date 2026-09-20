@@ -4777,6 +4777,20 @@ def _apply_historical_replay_authority(connection: Connection) -> None:
             for action_type in replay_action_types
         ],
     )
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": "deterministic_system",
+            }
+            for action_type in (
+                "start_historical_replay",
+                "finish_historical_replay",
+            )
+        ],
+    )
     action_columns = {
         column['name'] for column in inspect(connection).get_columns('actions')
     }

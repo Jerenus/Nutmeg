@@ -24,6 +24,7 @@ from nutmeg.ontology.actions.outcome_actions import OutcomeActions
 from nutmeg.ontology.actions.person_actions import PersonActions
 from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
 from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
+from nutmeg.ontology.actions.replay_actions import ReplayActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.service import ActionService, ReplayActionContext
@@ -96,6 +97,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     workflow = WorkflowActions(action_service)
     scoreboard_actions = ScoreboardActions(action_service)
     reliability_actions = ReliabilityActions(action_service)
+    replay_actions = ReplayActions(action_service)
     rsi_actions = RsiActions(action_service)
     capital_actions = CapitalActions(action_service)
     decision_actions = OperatorDecisionActions(
@@ -135,6 +137,7 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         protected_tickets=protected_tickets,
         scoreboard_actions=scoreboard_actions,
         reliability_actions=reliability_actions,
+        replay_actions=replay_actions,
         rsi_actions=rsi_actions,
         capital_actions=capital_actions,
         sale_actions=sale_actions,
