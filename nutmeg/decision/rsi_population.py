@@ -47,15 +47,16 @@ def matches_for_population(
 ) -> list[dict]:
     """Return the business day's matches for one frozen experiment population."""
     data_dir = Path(data_dir)
+    if population not in {"jczq", "zucai", "both"}:
+        raise ValueError(f"未知 population: {population}")
+    if data_dir.joinpath(f"replay-input-manifest-{day}.json").exists():
+        return []
     if population == "jczq":
         return _jczq_matches(day=day, data_dir=data_dir)
     if population == "zucai":
         if issue is None:
             return []
         return _zucai_matches(issue=issue, data_dir=data_dir)
-    if population != "both":
-        raise ValueError(f"未知 population: {population}")
-
     jczq = _jczq_matches(day=day, data_dir=data_dir)
     if issue is None:
         return jczq

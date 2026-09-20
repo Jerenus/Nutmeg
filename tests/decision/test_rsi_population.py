@@ -91,6 +91,26 @@ def test_both_without_an_issue_degrades_to_jczq():
     )
 
 
+def test_historical_replay_root_has_no_prospective_match_population(tmp_path):
+    day = "2026-09-19"
+    day_dir = tmp_path / "jczq" / "daily" / day
+    day_dir.mkdir(parents=True)
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps({"legs": {"周六001": {"match_id": "replay-match"}}}),
+        encoding="utf-8",
+    )
+    tmp_path.joinpath(f"replay-input-manifest-{day}.json").write_text(
+        "{}", encoding="utf-8"
+    )
+
+    assert matches_for_population(
+        "jczq", day=day, issue=None, data_dir=tmp_path
+    ) == []
+    assert matches_for_population(
+        "both", day=day, issue=None, data_dir=tmp_path
+    ) == []
+
+
 def test_unknown_population_is_rejected():
     with pytest.raises(ValueError, match="population"):
         matches_for_population(
