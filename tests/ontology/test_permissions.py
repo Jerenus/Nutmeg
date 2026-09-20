@@ -34,9 +34,16 @@ def test_replay_adjudicator_has_only_judgment_chain_permissions(tmp_path: Path) 
     run_migrations(engine)
     with engine.connect() as connection:
         guard = PermissionGuard(connection)
-        guard.assert_allowed(
-            "governance-v1", "record_no_ticket", ActorRole.REPLAY_ADJUDICATOR
-        )
+        for action_type in (
+            "request_evidence_freeze",
+            "record_baseline_envelope",
+            "commit_operator_match_judgment",
+            "register_prediction",
+            "record_no_ticket",
+        ):
+            guard.assert_allowed(
+                "governance-v1", action_type, ActorRole.REPLAY_ADJUDICATOR
+            )
         for action_type in (
             "confirm_ticket_placement",
             "record_cash_transaction",

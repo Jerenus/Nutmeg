@@ -441,6 +441,7 @@ class CommitOperatorMatchJudgmentRequest:
     anchor_integrity: str = "unknown"
     face_precedents: tuple[FacePrecedentInput, ...] = ()
     expected_current_revision_no: int | None = None
+    expected_current_forecast_revision_no: int | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -460,6 +461,7 @@ class CommitOperatorMatchJudgmentRequest:
             _required(getattr(self, name), name)
         _aware(self.requested_at, "requested_at")
         _validate_revision_type(self.expected_current_revision_no)
+        _validate_revision_type(self.expected_current_forecast_revision_no)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2122,6 +2124,11 @@ class OperatorDecisionActions:
         self._validate_probability_simplexes(prior, belief)
         self._validate_judgment_collections(request)
         policy_version = self._bundle_policy(request.task_evidence_bundle_revision_id)
+        forecast_revision_no = (
+            request.expected_current_revision_no
+            if request.expected_current_forecast_revision_no is None
+            else request.expected_current_forecast_revision_no
+        )
         command = ActionCommand.create(
             action_type="commit_operator_match_judgment",
             actor_id=request.actor_id,
@@ -2131,10 +2138,10 @@ class OperatorDecisionActions:
             policy_version=policy_version,
             expected_versions=(
                 None
-                if request.expected_current_revision_no is None
+                if forecast_revision_no is None
                 else {
                     f"forecast:{request.match_id}:{request.market_definition_id}": (
-                        request.expected_current_revision_no
+                        forecast_revision_no
                     )
                 }
             ),
@@ -2213,7 +2220,7 @@ class OperatorDecisionActions:
                 idempotency_key=f"{request.idempotency_key}:forecast-child",
                 requested_at=request.requested_at,
                 information_cutoff_at=bundle.information_cutoff_at,
-                expected_current_revision_no=request.expected_current_revision_no,
+                expected_current_revision_no=forecast_revision_no,
             )
             forecast_ref = commit_forecast_in_uow(
                 uow,

@@ -193,6 +193,7 @@ def test_exact_legacy_schema_19_upgrades_atomically_through_repair_migration(
     run_migrations(canonical_engine, MIGRATIONS[:19])
 
     report = run_migrations(engine, MIGRATIONS)
+    run_migrations(canonical_engine, MIGRATIONS)
 
     assert MIGRATIONS[18].checksum == CURRENT_SCHEMA_19_CHECKSUM
     head_version = MIGRATIONS[-1].version

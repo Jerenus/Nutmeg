@@ -4750,6 +4750,7 @@ def _apply_historical_replay_authority(connection: Connection) -> None:
     schema.historical_replay_runs.create(connection, checkfirst=True)
     replay_action_types = (
         "build_market_snapshot",
+        "commit_operator_match_judgment",
         "commit_forecast",
         "create_agent_proposal",
         "freeze_evidence_bundle",
@@ -4760,9 +4761,12 @@ def _apply_historical_replay_authority(connection: Connection) -> None:
         "ingest_artifact",
         "reconcile_jczq_board_research",
         "record_adjudication",
+        "record_baseline_envelope",
         "record_no_ticket",
         "record_outcome",
+        "register_prediction",
         "request_candidate_generation",
+        "request_evidence_freeze",
         "resolve_agent_proposal",
         "rsi_grade_experiment",
     )
@@ -4804,6 +4808,146 @@ def _apply_historical_replay_authority(connection: Connection) -> None:
             "ALTER TABLE actions ADD COLUMN replay_run_id TEXT NULL "
             "REFERENCES historical_replay_runs(replay_run_id) ON DELETE RESTRICT"
         )
+
+    replay_judge_condition = """
+      (
+        actor_role = 'judge_operator' OR
+        (
+          actor_role = 'replay_adjudicator' AND
+          historical_replay = 1 AND
+          replay_run_id IS NOT NULL
+        )
+      )
+    """
+    replay_judgment_triggers = (
+        (
+            "operator_evidence_freeze_request_action",
+            "operator_evidence_freeze_requests",
+            "action_type = 'request_evidence_freeze'",
+            "evidence freeze request requires its judge Action",
+        ),
+        (
+            "baseline_envelope_typed_action",
+            "operator_baseline_envelope_revisions",
+            "action_type = 'record_baseline_envelope'",
+            "operator_baseline_envelope_revisions requires its typed Action",
+        ),
+        (
+            "operator_match_judgment_typed_action",
+            "operator_match_judgment_revisions",
+            "action_type = 'commit_operator_match_judgment'",
+            "operator_match_judgment_revisions requires its typed Action",
+        ),
+        (
+            "judgment_prescription_typed_action",
+            "operator_judgment_prescription_revisions",
+            "action_type = 'freeze_judgment_prescription'",
+            "operator_judgment_prescription_revisions requires its typed Action",
+        ),
+        (
+            "candidate_generation_request_typed_action",
+            "operator_candidate_generation_requests",
+            "action_type IN ('request_candidate_generation', 'record_ticket_audit_override')",
+            "operator_candidate_generation_requests requires its typed Action",
+        ),
+    )
+    for trigger_name, table_name, action_check, error_message in (
+        replay_judgment_triggers
+    ):
+        connection.exec_driver_sql(f"DROP TRIGGER IF EXISTS {trigger_name}")
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {trigger_name}
+            BEFORE INSERT ON {table_name}
+            WHEN NOT EXISTS (
+              SELECT 1 FROM actions
+              WHERE action_id = NEW.action_id
+                AND {action_check}
+                AND {replay_judge_condition}
+                AND status IN ('accepted', 'committed')
+            )
+            BEGIN
+              SELECT RAISE(ABORT, '{error_message}');
+            END
+            """
+        )
+
+    connection.exec_driver_sql("DROP TRIGGER IF EXISTS operator_no_ticket_typed_action")
+    connection.exec_driver_sql(
+        f"""
+        CREATE TRIGGER operator_no_ticket_typed_action
+        BEFORE INSERT ON operator_no_ticket_revisions
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions
+          WHERE action_id = NEW.action_id
+            AND {replay_judge_condition}
+            AND status IN ('accepted', 'committed')
+            AND (
+              (NEW.supersedes_revision_id IS NULL
+               AND action_type = 'record_no_ticket')
+              OR (NEW.supersedes_revision_id IS NOT NULL
+                  AND action_type = 'supersede_no_ticket')
+            )
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'operator no-ticket revision requires its typed Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        "DROP TRIGGER IF EXISTS operator_no_ticket_command_typed_action"
+    )
+    connection.exec_driver_sql(
+        f"""
+        CREATE TRIGGER operator_no_ticket_command_typed_action
+        BEFORE INSERT ON operator_no_ticket_command_receipts
+        WHEN NOT EXISTS (
+          SELECT 1 FROM actions
+          WHERE action_id = NEW.action_id
+            AND action_type = NEW.command_kind
+            AND {replay_judge_condition}
+            AND status IN ('accepted', 'committed')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'operator no-ticket receipt requires its typed Action');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        "DROP TRIGGER IF EXISTS operator_candidate_generation_job_source"
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER operator_candidate_generation_job_source
+        BEFORE INSERT ON operator_worker_jobs
+        WHEN NEW.job_kind = 'candidate_generation'
+          AND (
+            NEW.source_object_type != 'operator_candidate_generation_request'
+            OR NOT EXISTS (
+              SELECT 1
+              FROM operator_candidate_generation_requests AS request
+              JOIN actions AS action ON action.action_id = request.action_id
+              WHERE request.generation_request_id = NEW.source_object_id
+                AND action.action_type IN (
+                  'request_candidate_generation',
+                  'record_ticket_audit_override'
+                )
+                AND (
+                  action.actor_role = 'judge_operator' OR
+                  (
+                    action.actor_role = 'replay_adjudicator' AND
+                    action.historical_replay = 1 AND
+                    action.replay_run_id IS NOT NULL
+                  )
+                )
+                AND action.status IN ('accepted', 'committed')
+            )
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'candidate generation job requires its typed request');
+        END
+        """
+    )
 
     for operation in ('INSERT', 'UPDATE'):
         connection.exec_driver_sql(

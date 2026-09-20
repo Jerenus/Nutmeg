@@ -64,3 +64,15 @@ def test_missing_time_on_accepted_research_is_rejected(tmp_path: Path) -> None:
     _write(source / "research-周六001.json", {"summary": "no time"})
     with pytest.raises(ValueError, match="semantic timestamp missing"):
         freeze_replay_inputs(source, tmp_path / "frozen")
+
+
+def test_research_run_metadata_is_not_treated_as_match_evidence(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    _write(source / "research-run-2026-09-19.json", {"status": "complete"})
+
+    manifest = freeze_replay_inputs(source, tmp_path / "frozen")
+
+    assert all(
+        entry.relative_path != "research-run-2026-09-19.json"
+        for entry in manifest.entries
+    )

@@ -26,7 +26,7 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 | A6 | 出票 | 先记录唯一正式终态（Selection 或 `record_no_ticket`）；`decision-close` 只认本体 terminal，`legs.json`/handoff 不能授权 close。真实出票与 Telegram 派发仍须 Jun 当次确认 |
 | A7 | 次日结算 | 通过正式 result/settlement/review Actions 结算；no-ticket 资金结算为 0 但 Forecast 仍进入复盘。historical replay 永不增加 prospective R0/F5/F9 样本 |
 
-切换门：`uv run nutmeg workflow jczq-cutover --day <next-day> --replay-report <report> --check-only` 只检查；只有隔离 replay accepted、schema 一致、生产对象/资金/派发/prospective observation 四项增量均为 0 后，才可由 Jun 显式改用 `--approve`。切换后 legacy 三文件永久只读投影，故障时 fail-closed，不恢复旧写权威。
+切换门：`uv run nutmeg workflow jczq-cutover --day <next-day> --replay-report <report> --check-only` 只检查；accepted replay **只证明门检条件成立，不授权切权，也不得自动改用 `--approve`**。只有隔离 replay accepted、schema 一致、生产对象/资金/派发/prospective observation 四项增量均为 0，且 Jun 在当次操作中重新明确批准后，才可单独执行 `--approve`。切换后 legacy 三文件永久只读投影，故障时 fail-closed，不恢复旧写权威。
 
 ## 泳道 B：传统足彩（胜负彩/任九）
 

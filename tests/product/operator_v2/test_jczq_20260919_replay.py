@@ -10,7 +10,12 @@ from nutmeg.interfaces.cli import app
 from nutmeg.product.jczq_replay import JczqReplayRunner, _load_board, _production_counts
 
 
-def _write_source_day(root: Path, *, count: int = 30) -> None:
+def _write_source_day(
+    root: Path,
+    *,
+    count: int = 30,
+    include_results: bool = False,
+) -> None:
     day_root = root / "jczq" / "daily" / "2026-09-19"
     day_root.mkdir(parents=True)
     matches = []
@@ -48,14 +53,33 @@ def _write_source_day(root: Path, *, count: int = 30) -> None:
         encoding="utf-8",
     )
     (day_root / "reads.json").write_text(json.dumps(reads), encoding="utf-8")
-    (day_root / "research-周六001.json").write_text(
-        json.dumps({"captured_at": "2026-09-19T11:03:42+08:00"}),
-        encoding="utf-8",
-    )
+    accepted_indexes = tuple(index for index in range(1, count + 1) if index != 2)[:25]
+    for index in accepted_indexes:
+        (day_root / f"research-周六{index:03d}.json").write_text(
+            json.dumps({"captured_at": "2026-09-19T11:03:42+08:00"}),
+            encoding="utf-8",
+        )
     (day_root / "research-周六002.rejected.json").write_text(
         json.dumps({"error": "canonical intake rejected"}),
         encoding="utf-8",
     )
+    if include_results:
+        (day_root / "results.json").write_text(
+            json.dumps(
+                {
+                    "captured_at": "2026-09-20T12:00:00+08:00",
+                    "results": [
+                        {
+                            "match_id": f"jczq-sporttery-{2_000_000 + index}",
+                            "score_90": "0-1" if index == 1 else "2-1",
+                            "status": "final",
+                        }
+                        for index in range(1, count + 1)
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
 
 
 def test_replay_refuses_the_production_ontology_path(tmp_path) -> None:
@@ -67,7 +91,7 @@ def test_replay_refuses_the_production_ontology_path(tmp_path) -> None:
         JczqReplayRunner(source_root=source, isolated_root=source).run("2026-09-19")
 
 
-def test_replay_materializes_all_board_terminals_but_blocks_missing_v2_lineage(
+def test_replay_completes_a2_to_a6_but_blocks_missing_authoritative_results(
     tmp_path,
 ) -> None:
     source = tmp_path / "production"
@@ -81,17 +105,16 @@ def test_replay_materializes_all_board_terminals_but_blocks_missing_v2_lineage(
     assert report.board_count == 30
     assert report.research_terminal_count == 30
     assert report.research_status_counts == {
-        "researched": 1,
+        "researched": 25,
         "rejected": 1,
-        "price_only": 28,
+        "price_only": 4,
     }
-    assert report.missing_lineage == (
-        "candidate_set_revisions",
-        "candidate_audits",
-        "terminal_decision",
-    )
-    assert report.odds_band_outcomes == ()
-    assert report.terminal_kind == "missing"
+    assert report.missing_lineage == ()
+    assert report.odds_band_outcomes == ("10x", "20x", "50x", "100x")
+    assert report.terminal_kind == "no_ticket"
+    assert report.run_status == "failed"
+    assert report.authoritative_result_count == 0
+    assert "authoritative_results_missing" in report.failures
     assert report.production_delta == {
         "objects": 0,
         "money_entries": 0,
@@ -105,6 +128,60 @@ def test_replay_materializes_all_board_terminals_but_blocks_missing_v2_lineage(
         (isolated / "replay-2026-09-19.json").read_text(encoding="utf-8")
     )
     assert saved == report.to_dict()
+
+
+def test_replay_finishes_accepted_from_derived_a2_to_a7_state(tmp_path) -> None:
+    source = tmp_path / "production"
+    isolated = tmp_path / "isolated"
+    _write_source_day(source, include_results=True)
+
+    report = JczqReplayRunner(source_root=source, isolated_root=isolated).run(
+        "2026-09-19"
+    )
+
+    assert report.accepted is True
+    assert report.run_status == "accepted"
+    assert report.source_manifest_hash
+    assert report.isolated_database_identity == str(
+        (isolated / "ontology" / "ontology.db").resolve()
+    )
+    assert report.adjudication_branch_counts == {
+        "approve": 28,
+        "revise": 1,
+        "reject": 1,
+    }
+    assert report.committed_forecast_count == 30
+    assert report.evidence_lineage_count == 30
+    assert set(report.candidate_set_revision_ids) == {
+        "judgment_bound",
+        "conditional_market_counterfactual",
+    }
+    assert len(report.structured_band_outcomes) == 8
+    assert report.no_ticket_revision_id
+    assert report.authoritative_result_count == 30
+    assert report.replay_prediction_count == 30
+    assert report.replay_score_count == 30
+    assert report.rsi_statuses == {
+        "R0": "replay_excluded",
+        "F5": "replay_excluded",
+        "F9": "replay_excluded",
+    }
+    assert report.quarantined_gaps == (
+        "research-周六002.rejected.json:rejected_research_capture_time_missing",
+    )
+    assert report.failures == ()
+    import sqlite3
+
+    connection = sqlite3.connect(report.isolated_database_identity)
+    try:
+        published_at, retrieved_at = connection.execute(
+            "SELECT published_at, retrieved_at FROM artifact_retrievals "
+            "WHERE source_type = 'official_result'"
+        ).fetchone()
+    finally:
+        connection.close()
+    assert published_at is None
+    assert retrieved_at == "2026-09-20T12:00:00+08:00"
 
 
 def test_replay_cli_writes_report_and_fails_closed_on_incomplete_lineage(tmp_path) -> None:
@@ -161,9 +238,9 @@ def test_replay_selects_only_the_requested_business_date_group(tmp_path) -> None
     assert report.board_count == 30
     assert report.research_terminal_count == 30
     assert report.research_status_counts == {
-        "researched": 1,
+        "researched": 25,
         "rejected": 1,
-        "price_only": 28,
+        "price_only": 4,
     }
 
 

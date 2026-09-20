@@ -17,6 +17,7 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.ontology import build_ontology_kernel
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.actions.replay_actions import (
+    FinishHistoricalReplayRequest,
     ReplayActions,
     StartHistoricalReplayRequest,
 )
@@ -38,6 +39,7 @@ from nutmeg.product.jczq_replay_adjudication import (
     ReplayAdjudicator,
 )
 from nutmeg.product.jczq_replay_inputs import ReplayInputManifest, freeze_replay_inputs
+from nutmeg.product.jczq_replay_workflow import run_replay_results, run_replay_workflow
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _ZERO_DELTA = MappingProxyType(
@@ -65,13 +67,33 @@ class JczqReplayReport:
     replay_run_id: str
     day: str
     schema_version: int
+    run_status: str
+    source_manifest_hash: str
+    isolated_database_identity: str
     board_count: int
     research_terminal_count: int
     research_status_counts: dict[str, int]
     missing_lineage: tuple[str, ...]
     odds_band_outcomes: tuple[str, ...]
+    replay_action_counts: dict[str, int]
+    adjudication_branch_counts: dict[str, int]
+    committed_forecast_count: int
+    evidence_lineage_count: int
+    judgment_prescription_revision_id: str | None
+    candidate_set_revision_ids: tuple[str, ...]
+    structured_band_outcomes: tuple[dict[str, object], ...]
+    audit_complete: bool
     terminal_kind: str
+    no_ticket_revision_id: str | None
+    authoritative_result_count: int
+    replay_prediction_count: int
+    replay_score_count: int
+    rsi_statuses: dict[str, str]
+    quarantined_gaps: tuple[str, ...]
+    production_before_fingerprint: str
+    production_after_fingerprint: str
     production_delta: dict[str, int]
+    protected_replay_counts: dict[str, int]
     failures: tuple[str, ...]
     accepted: bool
     report_sha256: str
@@ -81,13 +103,37 @@ class JczqReplayReport:
             "replay_run_id": self.replay_run_id,
             "day": self.day,
             "schema_version": self.schema_version,
+            "run_status": self.run_status,
+            "source_manifest_hash": self.source_manifest_hash,
+            "isolated_database_identity": self.isolated_database_identity,
             "board_count": self.board_count,
             "research_terminal_count": self.research_terminal_count,
             "research_status_counts": dict(self.research_status_counts),
             "missing_lineage": list(self.missing_lineage),
             "odds_band_outcomes": list(self.odds_band_outcomes),
+            "replay_action_counts": dict(self.replay_action_counts),
+            "adjudication_branch_counts": dict(self.adjudication_branch_counts),
+            "committed_forecast_count": self.committed_forecast_count,
+            "evidence_lineage_count": self.evidence_lineage_count,
+            "judgment_prescription_revision_id": (
+                self.judgment_prescription_revision_id
+            ),
+            "candidate_set_revision_ids": list(self.candidate_set_revision_ids),
+            "structured_band_outcomes": [
+                dict(outcome) for outcome in self.structured_band_outcomes
+            ],
+            "audit_complete": self.audit_complete,
             "terminal_kind": self.terminal_kind,
+            "no_ticket_revision_id": self.no_ticket_revision_id,
+            "authoritative_result_count": self.authoritative_result_count,
+            "replay_prediction_count": self.replay_prediction_count,
+            "replay_score_count": self.replay_score_count,
+            "rsi_statuses": dict(self.rsi_statuses),
+            "quarantined_gaps": list(self.quarantined_gaps),
+            "production_before_fingerprint": self.production_before_fingerprint,
+            "production_after_fingerprint": self.production_after_fingerprint,
             "production_delta": dict(self.production_delta),
+            "protected_replay_counts": dict(self.protected_replay_counts),
             "failures": list(self.failures),
             "accepted": self.accepted,
             "report_sha256": self.report_sha256,
@@ -107,8 +153,8 @@ class JczqReplayRunner:
         if isolated_db == production_db:
             raise ValueError("isolated ontology path equals production ontology path")
 
-        production_before = _tree_fingerprint(self._source_root / "ontology")
         production_counts_before = _production_counts(self._source_root / "ontology")
+        production_before = _tree_fingerprint(self._source_root / "ontology")
         manifest = self._copy_inputs(day)
         manifest.verify()
         day_root = Path(manifest.root)
@@ -148,6 +194,16 @@ class JczqReplayRunner:
             for match in board.matches:
                 uow.identity.insert_match_minimal(match.match_id)
         observation_ids = _seed_research_sources(kernel, artifacts)
+        observation_ids.update(
+            _seed_official_market_observations(
+                kernel,
+                replay_run_id=replay_run_id,
+                board=board,
+                day_root=day_root,
+                manifest=manifest,
+                existing_observation_ids=observation_ids,
+            )
+        )
         action_service = base_action_service.bind_replay(
             ReplayActionContext(replay_run_id, day, str(isolated_db))
         )
@@ -163,6 +219,24 @@ class JczqReplayRunner:
             kernel=kernel,
             observation_ids=observation_ids,
         )
+        run_replay_workflow(
+            action_service,
+            kernel=kernel,
+            replay_run_id=replay_run_id,
+            day=day,
+            day_root=day_root,
+            manifest=manifest,
+            board=board,
+            observation_ids=observation_ids,
+        )
+        run_replay_results(
+            action_service,
+            kernel=kernel,
+            replay_run_id=replay_run_id,
+            day_root=day_root,
+            manifest=manifest,
+            board=board,
+        )
 
         missing_lineage, bands, terminal_kind = _lineage_status(
             kernel,
@@ -170,6 +244,7 @@ class JczqReplayRunner:
             day,
             before=lineage_before,
         )
+        metrics = _derive_replay_metrics(isolated_db, replay_run_id)
         failures = tuple((*board_failures, *artifact_failures))
         if progress.total != len(board.matches):
             failures += ("board_research_terminal_count_mismatch",)
@@ -177,9 +252,23 @@ class JczqReplayRunner:
             failures += tuple(f"missing_lineage:{item}" for item in missing_lineage)
         if tuple(bands) != _REQUIRED_BANDS:
             failures += ("four_odds_band_outcomes_incomplete",)
+        if metrics["committed_forecast_count"] != len(board.matches):
+            failures += ("committed_forecast_coverage_incomplete",)
+        if metrics["evidence_lineage_count"] != len(board.matches):
+            failures += ("forecast_evidence_lineage_incomplete",)
+        if len(metrics["structured_band_outcomes"]) != 2 * len(_REQUIRED_BANDS):
+            failures += ("structured_band_outcomes_incomplete",)
+        if metrics["authoritative_result_count"] != len(board.matches):
+            failures += ("authoritative_results_missing",)
+        if metrics["replay_prediction_count"] != len(board.matches):
+            failures += ("replay_prediction_coverage_incomplete",)
+        if metrics["replay_score_count"] != len(board.matches):
+            failures += ("replay_score_coverage_incomplete",)
+        if any(metrics["protected_replay_counts"].values()):
+            failures += ("protected_replay_side_effect_detected",)
 
-        production_after = _tree_fingerprint(self._source_root / "ontology")
         production_counts_after = _production_counts(self._source_root / "ontology")
+        production_after = _tree_fingerprint(self._source_root / "ontology")
         production_delta = {
             key: production_counts_after[key] - production_counts_before[key]
             for key in _ZERO_DELTA
@@ -189,11 +278,24 @@ class JczqReplayRunner:
         if any(production_delta.values()):
             failures += ("production_side_effect_count_changed_during_replay",)
 
-        accepted = not failures and terminal_kind in {"selected", "no_ticket"}
+        accepted = not failures and terminal_kind == "no_ticket"
+        run_status = "accepted" if accepted else "failed"
+        rsi_statuses = {
+            experiment: (
+                "replay_excluded" if metrics["authoritative_result_count"] else "replay_gap"
+            )
+            for experiment in ("R0", "F5", "F9")
+        }
+        quarantined_gaps = tuple(
+            f"{item.relative_path}:{item.reason}" for item in manifest.quarantined
+        )
         payload: dict[str, object] = {
             "replay_run_id": replay_run_id,
             "day": day,
             "schema_version": kernel.status().schema_version,
+            "run_status": run_status,
+            "source_manifest_hash": manifest.manifest_hash,
+            "isolated_database_identity": str(isolated_db),
             "board_count": len(board.matches),
             "research_terminal_count": progress.total,
             "research_status_counts": {
@@ -203,23 +305,80 @@ class JczqReplayRunner:
             },
             "missing_lineage": list(missing_lineage),
             "odds_band_outcomes": list(bands),
+            "replay_action_counts": metrics["replay_action_counts"],
+            "adjudication_branch_counts": metrics["adjudication_branch_counts"],
+            "committed_forecast_count": metrics["committed_forecast_count"],
+            "evidence_lineage_count": metrics["evidence_lineage_count"],
+            "judgment_prescription_revision_id": metrics[
+                "judgment_prescription_revision_id"
+            ],
+            "candidate_set_revision_ids": metrics["candidate_set_revision_ids"],
+            "structured_band_outcomes": metrics["structured_band_outcomes"],
+            "audit_complete": metrics["audit_complete"],
             "terminal_kind": terminal_kind,
+            "no_ticket_revision_id": metrics["no_ticket_revision_id"],
+            "authoritative_result_count": metrics["authoritative_result_count"],
+            "replay_prediction_count": metrics["replay_prediction_count"],
+            "replay_score_count": metrics["replay_score_count"],
+            "rsi_statuses": rsi_statuses,
+            "quarantined_gaps": list(quarantined_gaps),
+            "production_before_fingerprint": production_before,
+            "production_after_fingerprint": production_after,
             "production_delta": production_delta,
+            "protected_replay_counts": metrics["protected_replay_counts"],
             "failures": list(failures),
             "accepted": accepted,
         }
         report_hash = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+        ReplayActions(base_action_service).finish(
+            FinishHistoricalReplayRequest(
+                replay_run_id=replay_run_id,
+                business_date=day,
+                isolated_database_identity=str(isolated_db),
+                status=run_status,
+                production_after={
+                    "tree_fingerprint": production_after,
+                    "protected_counts": production_counts_after,
+                },
+                report_sha256=report_hash,
+                failure_codes=failures,
+                idempotency_key=f"historical-replay:finish:{replay_run_id}",
+                requested_at=datetime.now(_SHANGHAI),
+            )
+        )
         report = JczqReplayReport(
             replay_run_id=str(payload["replay_run_id"]),
             day=day,
             schema_version=int(payload["schema_version"]),
+            run_status=run_status,
+            source_manifest_hash=manifest.manifest_hash,
+            isolated_database_identity=str(isolated_db),
             board_count=len(board.matches),
             research_terminal_count=progress.total,
             research_status_counts=dict(payload["research_status_counts"]),
             missing_lineage=missing_lineage,
             odds_band_outcomes=bands,
+            replay_action_counts=dict(metrics["replay_action_counts"]),
+            adjudication_branch_counts=dict(metrics["adjudication_branch_counts"]),
+            committed_forecast_count=int(metrics["committed_forecast_count"]),
+            evidence_lineage_count=int(metrics["evidence_lineage_count"]),
+            judgment_prescription_revision_id=metrics[
+                "judgment_prescription_revision_id"
+            ],
+            candidate_set_revision_ids=tuple(metrics["candidate_set_revision_ids"]),
+            structured_band_outcomes=tuple(metrics["structured_band_outcomes"]),
+            audit_complete=bool(metrics["audit_complete"]),
             terminal_kind=terminal_kind,
+            no_ticket_revision_id=metrics["no_ticket_revision_id"],
+            authoritative_result_count=int(metrics["authoritative_result_count"]),
+            replay_prediction_count=int(metrics["replay_prediction_count"]),
+            replay_score_count=int(metrics["replay_score_count"]),
+            rsi_statuses=rsi_statuses,
+            quarantined_gaps=quarantined_gaps,
+            production_before_fingerprint=production_before,
+            production_after_fingerprint=production_after,
             production_delta=production_delta,
+            protected_replay_counts=dict(metrics["protected_replay_counts"]),
             failures=failures,
             accepted=accepted,
             report_sha256=report_hash,
@@ -234,7 +393,13 @@ class JczqReplayRunner:
             raise ValueError(f"JCZQ source day is missing: {day}")
         destination = self._isolated_root / "jczq" / "daily" / day
         destination.parent.mkdir(parents=True, exist_ok=True)
-        return freeze_replay_inputs(source, destination)
+        manifest = freeze_replay_inputs(source, destination)
+        manifest_path = self._isolated_root / f"replay-input-manifest-{day}.json"
+        manifest_path.write_text(
+            canonical_json(manifest.to_dict()) + "\n",
+            encoding="utf-8",
+        )
+        return manifest
 
 
 def _tree_fingerprint(root: Path) -> str:
@@ -281,6 +446,141 @@ def _production_counts(root: Path) -> dict[str, int]:
             "prospective_observations": count(
                 "rsi_observations", "WHERE prospective = 1"
             ),
+        }
+    finally:
+        connection.close()
+
+
+def _derive_replay_metrics(database: Path, replay_run_id: str) -> dict[str, object]:
+    connection = sqlite3.connect(f"file:{database.resolve()}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        action_counts = {
+            str(row["action_type"]): int(row["count"])
+            for row in connection.execute(
+                "SELECT action_type, COUNT(*) AS count FROM actions "
+                "WHERE historical_replay = 1 AND replay_run_id = ? "
+                "AND action_type != 'finish_historical_replay' "
+                "GROUP BY action_type ORDER BY action_type",
+                (replay_run_id,),
+            )
+        }
+        branch_counts = {branch: 0 for branch in ("approve", "revise", "reject")}
+        for row in connection.execute(
+            "SELECT decision, COUNT(*) AS count FROM adjudications "
+            "WHERE decision IN ('approve', 'revise', 'reject') "
+            "GROUP BY decision"
+        ):
+            branch_counts[str(row["decision"])] = int(row["count"])
+
+        current_forecasts = """
+            SELECT forecast_revision_id, forecast_series_id, evidence_bundle_id
+            FROM forecast_revisions AS current
+            WHERE status = 'committed'
+              AND NOT EXISTS (
+                SELECT 1 FROM forecast_revisions AS newer
+                WHERE newer.forecast_series_id = current.forecast_series_id
+                  AND newer.revision_no > current.revision_no
+              )
+        """
+        committed_forecast_count = int(
+            connection.execute(
+                f"SELECT COUNT(*) FROM ({current_forecasts})"
+            ).fetchone()[0]
+        )
+        evidence_lineage_count = int(
+            connection.execute(
+                f"""
+                SELECT COUNT(DISTINCT forecasts.forecast_series_id)
+                FROM ({current_forecasts}) AS forecasts
+                JOIN evidence_bundle_items AS items
+                  ON items.evidence_bundle_id = forecasts.evidence_bundle_id
+                JOIN observation_sources AS sources
+                  ON sources.observation_id = items.observation_id
+                JOIN artifact_retrievals AS retrievals
+                  ON retrievals.artifact_retrieval_id = sources.artifact_retrieval_id
+                JOIN source_runs AS runs
+                  ON runs.source_run_id = retrievals.source_run_id
+                WHERE runs.status = 'succeeded'
+                """
+            ).fetchone()[0]
+        )
+        prescription_row = connection.execute(
+            "SELECT judgment_prescription_revision_id "
+            "FROM operator_judgment_prescription_revisions "
+            "ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        candidate_set_rows = tuple(
+            connection.execute(
+                "SELECT candidate_set_revision_id, set_kind "
+                "FROM operator_candidate_set_revisions ORDER BY set_kind"
+            ).fetchall()
+        )
+        structured_band_outcomes = tuple(
+            {
+                "candidate_set_revision_id": str(row["candidate_set_revision_id"]),
+                "set_kind": str(row["set_kind"]),
+                "odds_band": str(row["odds_band"]),
+                "status": str(row["status"]),
+                "candidate_count": int(row["candidate_count"]),
+                "reason_code": row["reason_code"],
+            }
+            for row in connection.execute(
+                "SELECT sets.candidate_set_revision_id, sets.set_kind, "
+                "bands.odds_band, bands.status, bands.candidate_count, "
+                "bands.reason_code FROM operator_candidate_band_outcomes AS bands "
+                "JOIN operator_candidate_set_revisions AS sets "
+                "ON sets.candidate_set_revision_id = bands.candidate_set_revision_id "
+                "ORDER BY sets.set_kind, bands.odds_band"
+            )
+        )
+        no_ticket_row = connection.execute(
+            "SELECT no_ticket_revision_id FROM operator_no_ticket_revisions "
+            "WHERE deployment_outcome = 'no_ticket' ORDER BY recorded_at DESC LIMIT 1"
+        ).fetchone()
+
+        def count(table: str, where: str = "", parameters: tuple[object, ...] = ()) -> int:
+            return int(
+                connection.execute(
+                    f'SELECT COUNT(*) FROM "{table}" {where}', parameters
+                ).fetchone()[0]
+            )
+
+        protected_counts = {
+            "ticket_placements": count("ticket_placements"),
+            "cash_transactions": count("cash_transactions"),
+            "ticket_confirmations": count("ticket_confirmation_challenges"),
+            "rsi_observations": count("rsi_observations"),
+            "rsi_grades": count("rsi_grades"),
+            "rsi_verdicts": count("rsi_verdicts"),
+            "rsi_deployments": count("rsi_deployments"),
+        }
+        return {
+            "replay_action_counts": action_counts,
+            "adjudication_branch_counts": branch_counts,
+            "committed_forecast_count": committed_forecast_count,
+            "evidence_lineage_count": evidence_lineage_count,
+            "judgment_prescription_revision_id": (
+                None if prescription_row is None else str(prescription_row[0])
+            ),
+            "candidate_set_revision_ids": tuple(
+                str(row["set_kind"]) for row in candidate_set_rows
+            ),
+            "structured_band_outcomes": structured_band_outcomes,
+            "audit_complete": (
+                len(candidate_set_rows) == 2
+                and len(structured_band_outcomes) == 2 * len(_REQUIRED_BANDS)
+            ),
+            "no_ticket_revision_id": (
+                None if no_ticket_row is None else str(no_ticket_row[0])
+            ),
+            "authoritative_result_count": count("match_outcomes"),
+            "replay_prediction_count": count("predictions"),
+            "replay_score_count": count(
+                "predictions",
+                "WHERE status IN ('confirmed', 'refuted') AND outcome IS NOT NULL",
+            ),
+            "protected_replay_counts": protected_counts,
         }
     finally:
         connection.close()
@@ -395,9 +695,7 @@ def _load_research_artifacts(
         artifact_id = (
             None
             if captured_at is None
-            else _stable_id(
-                "replay-artifact", board.business_date, path.name, _sha256(data)
-            )
+            else _stable_id("replay-artifact", _sha256(data))
         )
         artifacts.append(
             JczqResearchArtifact(
@@ -453,7 +751,11 @@ def _seed_research_sources(
                     content_hash=_sha256(artifact.artifact_bytes or b""),
                 )
             )
-            retrieval_id = _stable_id("replay-retrieval", artifact.artifact_id)
+            retrieval_id = _stable_id(
+                "replay-retrieval",
+                artifact.artifact_id,
+                artifact.source_run_id,
+            )
             uow.artifacts.insert_retrieval(
                 ArtifactRetrievalRow(
                     artifact_retrieval_id=retrieval_id,
@@ -469,7 +771,11 @@ def _seed_research_sources(
                     status="stored",
                 )
             )
-            observation_id = _stable_id("replay-observation", artifact.artifact_id)
+            observation_id = _stable_id(
+                "replay-observation",
+                artifact.match_id,
+                retrieval_id,
+            )
             uow.evidence.insert_observation(
                 ObservationRow(
                     observation_id=observation_id,
@@ -490,6 +796,91 @@ def _seed_research_sources(
             )
             observation_ids[artifact.match_id] = observation_id
     return observation_ids
+
+
+def _seed_official_market_observations(
+    kernel,
+    *,
+    replay_run_id: str,
+    board: JczqBoard,
+    day_root: Path,
+    manifest: ReplayInputManifest,
+    existing_observation_ids: dict[str, str],
+) -> dict[str, str]:
+    entry = manifest.entry("sporttery_markets.json")
+    if entry.semantic_timestamp is None:
+        raise ValueError("official market update time is missing")
+    observed_at = _aware_semantic_time(entry.semantic_timestamp).isoformat()
+    source_run_id = _stable_id("replay-market-source", replay_run_id)
+    artifact_id = _stable_id("replay-artifact", entry.sha256)
+    retrieval_id = _stable_id("replay-market-retrieval", replay_run_id)
+    board_path = day_root / "sporttery_markets.json"
+    board_bytes = board_path.read_bytes()
+    seeded: dict[str, str] = {}
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        uow.connection.execute(
+            insert(schema.source_runs).prefix_with("OR IGNORE").values(
+                source_run_id=source_run_id,
+                source_name="sporttery_historical_replay",
+                source_type="official_sale_schedule",
+                started_at=observed_at,
+                finished_at=observed_at,
+                status="succeeded",
+                error_code=None,
+                error_detail=None,
+            )
+        )
+        uow.connection.execute(
+            insert(schema.source_artifacts).prefix_with("OR IGNORE").values(
+                artifact_id=artifact_id,
+                first_recorded_at=observed_at,
+                content_type="application/json",
+                storage_path=str(board_path),
+                byte_size=len(board_bytes),
+                content_hash=entry.sha256,
+            )
+        )
+        uow.artifacts.insert_retrieval(
+            ArtifactRetrievalRow(
+                artifact_retrieval_id=retrieval_id,
+                artifact_id=artifact_id,
+                source_run_id=source_run_id,
+                source_name="sporttery_historical_replay",
+                source_type="official_sale_schedule",
+                reported_content_type="application/json",
+                canonical_url=None,
+                requested_url=None,
+                published_at=observed_at,
+                retrieved_at=observed_at,
+                status="stored",
+            )
+        )
+        for match in board.matches:
+            if match.match_id in existing_observation_ids:
+                continue
+            observation_id = _stable_id(
+                "replay-market-observation", replay_run_id, match.match_id
+            )
+            uow.evidence.insert_observation(
+                ObservationRow(
+                    observation_id=observation_id,
+                    observation_type="official_market_anchor",
+                    subject_type="match",
+                    subject_id=match.match_id,
+                    scope_match_id=match.match_id,
+                    value={"historical_replay": True, "market_anchor": True},
+                    schema_version="1",
+                    valid_from=observed_at,
+                    valid_to=None,
+                    observed_at=observed_at,
+                    recorded_at=observed_at,
+                    verification_method=VerificationMethod.OFFICIAL.value,
+                    quality={},
+                ),
+                (retrieval_id,),
+            )
+            seeded[match.match_id] = observation_id
+    return seeded
 
 
 def _aware_semantic_time(value: str) -> datetime:

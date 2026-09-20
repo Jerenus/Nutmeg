@@ -71,6 +71,21 @@ class ReplayInputManifest:
         }
         return _sha256(canonical_json(material).encode("utf-8"))
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "manifest_hash": self.manifest_hash,
+            "entries": [
+                entry.to_dict()
+                for entry in sorted(self.entries, key=lambda item: item.relative_path)
+            ],
+            "quarantined": [
+                item.to_dict()
+                for item in sorted(
+                    self.quarantined, key=lambda item: item.relative_path
+                )
+            ],
+        }
+
     def entry(self, relative_path: str) -> ReplayInputEntry:
         for entry in self.entries:
             if entry.relative_path == relative_path:
@@ -102,6 +117,8 @@ def _input_kind(path: Path) -> str | None:
         return "read"
     if name == "jczq-legs-base.json":
         return "identity"
+    if name.startswith("research-run-"):
+        return None
     if name.startswith("research-") and name.endswith(".json"):
         return "research"
     if "result" in name and name.endswith(".json"):
