@@ -6,6 +6,44 @@ from nutmeg.decision.rsi_prereg import load_registry_doc
 REG = Path("experiments/registry")
 
 
+def test_ensure_duties_syncs_a_changed_non_frozen_definition(tmp_path):
+    from datetime import UTC, datetime
+
+    from nutmeg.config.settings import AppSettings
+    from nutmeg.ontology import build_ontology_kernel
+    from nutmeg.ontology.actions.models import ActorRole
+    from nutmeg.ontology.actions.rsi_actions import RegisterExperimentRequest
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+    from scripts.rsi_migrate_preregs import ensure_duties
+
+    kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
+    kernel.initialize()
+    old_doc = load_registry_doc(REG / "F9.json")
+    old_doc["duties"][0] = {
+        **old_doc["duties"][0],
+        "scope": "day",
+        "deadline_rule": "earliest_kickoff",
+        "instrument": ["uv", "run", "nutmeg", "rsi", "balance", "--issue", "{issue}"],
+    }
+    kernel.rsi_actions.register_experiment(
+        RegisterExperimentRequest(
+            doc=old_doc,
+            actor_id="operator:test",
+            actor_role=ActorRole.JUDGE_OPERATOR,
+            idempotency_key="register-old-f9-duty",
+            requested_at=datetime(2026, 9, 20, tzinfo=UTC),
+        )
+    )
+
+    ensure_duties(kernel, "F9", load_registry_doc(REG / "F9.json"))
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        duty = uow.rsi.duties("F9")[0]
+    assert duty.scope == "match"
+    assert duty.deadline_rule == "match_kickoff"
+    assert duty.instrument[-2:] == ["--day", "{day}"]
+
+
 def test_all_registry_docs_load_and_keep_their_original_registration_dates():
     docs = {p.stem: load_registry_doc(p) for p in sorted(REG.glob("*.json"))}
     assert set(docs) == {"F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0"}

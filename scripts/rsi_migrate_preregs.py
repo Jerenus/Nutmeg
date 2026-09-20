@@ -72,20 +72,20 @@ def ensure_duties(kernel, exp_id: str, doc: dict) -> None:
         existing = {duty.duty_id for duty in uow.rsi.duties(exp_id)}
         for duty in doc.get("duties") or []:
             duty_id = f"{exp_id}:{duty['name']}"
-            if duty_id in existing:
-                continue
-            uow.rsi.insert_duty(
-                DutyRow(
-                    duty_id=duty_id,
-                    exp_id=exp_id,
-                    recurrence="per_day",
-                    scope=duty.get("scope", "day"),
-                    deadline_rule=duty["deadline_rule"],
-                    instrument=list(duty["instrument"]),
-                    artifact_glob=duty["artifact_glob"],
-                    description=duty.get("description", ""),
-                )
+            row = DutyRow(
+                duty_id=duty_id,
+                exp_id=exp_id,
+                recurrence="per_day",
+                scope=duty.get("scope", "day"),
+                deadline_rule=duty["deadline_rule"],
+                instrument=list(duty["instrument"]),
+                artifact_glob=duty["artifact_glob"],
+                description=duty.get("description", ""),
             )
+            if duty_id in existing:
+                uow.rsi.update_duty_definition(row)
+            else:
+                uow.rsi.insert_duty(row)
 
 
 def migrate(*, data_dir: Path, registry_dir: Path, f2_ledger: Path, dispersion_file: Path,

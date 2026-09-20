@@ -190,6 +190,20 @@ class RsiRepository:
         v["instrument_json"] = canonical_json(v.pop("instrument"))
         self._c.execute(insert(sr.rsi_duties).values(**v))
 
+    def update_duty_definition(self, row: DutyRow) -> None:
+        self._c.execute(
+            sr.rsi_duties.update()
+            .where(sr.rsi_duties.c.duty_id == row.duty_id)
+            .values(
+                recurrence=row.recurrence,
+                scope=row.scope,
+                deadline_rule=row.deadline_rule,
+                instrument_json=canonical_json(row.instrument),
+                artifact_glob=row.artifact_glob,
+                description=row.description,
+            )
+        )
+
     def duties(self, exp_id: str) -> list[DutyRow]:
         t = sr.rsi_duties
         rows = (
