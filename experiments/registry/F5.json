@@ -21,6 +21,7 @@
       "deadline_rule": "match_kickoff",
       "instrument": ["TODO", "price-band-observation", "--day", "{day}"],
       "artifact_glob": ".nutmeg-data/jczq/daily/{day}/price-band-*.json",
+      "status": "pending_instrument",
       "description": "F5：并集逐场价格带观察；采集器待实现"
     }
   ]

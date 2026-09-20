@@ -192,7 +192,8 @@ class RsiActions:
                     duty_id=duty_id, exp_id=doc["exp_id"], recurrence="per_day",
                     scope=d.get("scope", "day"), deadline_rule=d["deadline_rule"],
                     instrument=list(d["instrument"]), artifact_glob=d["artifact_glob"],
-                    description=d.get("description", "")))
+                    description=d.get("description", ""),
+                    status=d.get("status", "active")))
                 refs.append(ObjectRef("rsi_duty", duty_id))
             return tuple(refs)
 
@@ -235,6 +236,8 @@ class RsiActions:
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
             refs: list[ObjectRef] = []
             for duty in uow.rsi.all_duties():
+                if duty.status == "pending_instrument":
+                    continue
                 experiment = uow.rsi.experiment(duty.exp_id)
                 if experiment.layer == "structural" and not window_contains(
                     experiment.window, issue=request.issue, day=request.day

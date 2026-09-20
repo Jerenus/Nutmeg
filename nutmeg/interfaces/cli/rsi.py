@@ -179,6 +179,7 @@ def _duty_schedule_context(kernel) -> tuple[set[str], str]:
             "deadline_rule": duty.deadline_rule,
             "instrument": duty.instrument,
             "artifact_glob": duty.artifact_glob,
+            "status": duty.status,
             "population": experiments[duty.exp_id].population,
         }
         for duty in duties
@@ -744,3 +745,11 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
             if gaps:
                 line += f"  gaps={gaps}"
             typer.echo(line)
+        pending = [
+            duty
+            for duty in uow.rsi.all_duties()
+            if duty.status == "pending_instrument"
+            and (exp is None or duty.exp_id == exp)
+        ]
+        for duty in pending:
+            typer.echo(f"pending: {duty.duty_id}（待实现采集器）")

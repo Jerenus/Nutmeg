@@ -45,6 +45,7 @@ class DutyRow:
     instrument: list
     artifact_glob: str
     description: str
+    status: str = "active"
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +202,7 @@ class RsiRepository:
                 instrument_json=canonical_json(row.instrument),
                 artifact_glob=row.artifact_glob,
                 description=row.description,
+                status=row.status,
             )
         )
 
@@ -221,6 +223,7 @@ class RsiRepository:
                 instrument=json.loads(r["instrument_json"]),
                 artifact_glob=r["artifact_glob"],
                 description=r["description"],
+                status=r["status"],
             )
             for r in rows
         ]
@@ -290,11 +293,17 @@ class RsiRepository:
 
     def pending_duty_instances(self, *, day: str, now: str) -> list[DutyInstanceRow]:
         """当天还没落、且还没过期的义务。"""
-        t = sr.rsi_duty_instances
+        t, d = sr.rsi_duty_instances, sr.rsi_duties
         rows = (
             self._c.execute(
                 select(t)
-                .where(t.c.day == day, t.c.fulfilled_at.is_(None), t.c.due_at > now)
+                .select_from(t.join(d, t.c.duty_id == d.c.duty_id))
+                .where(
+                    t.c.day == day,
+                    t.c.fulfilled_at.is_(None),
+                    t.c.due_at > now,
+                    d.c.status == "active",
+                )
                 .order_by(t.c.due_at, t.c.duty_id)
             )
             .mappings()
@@ -325,7 +334,12 @@ class RsiRepository:
             self._c.execute(
                 select(t)
                 .select_from(t.join(d, t.c.duty_id == d.c.duty_id))
-                .where(d.c.exp_id == exp_id, t.c.fulfilled_at.is_(None), t.c.due_at <= now)
+                .where(
+                    d.c.exp_id == exp_id,
+                    d.c.status == "active",
+                    t.c.fulfilled_at.is_(None),
+                    t.c.due_at <= now,
+                )
                 .order_by(t.c.day)
             )
             .mappings()

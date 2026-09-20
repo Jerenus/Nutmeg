@@ -1,5 +1,6 @@
 # tests/decision/test_rsi_prereg.py
 import json
+from copy import deepcopy
 
 import pytest
 
@@ -49,3 +50,28 @@ def test_render_instrument_fills_placeholders():
     assert argv == ["python", "x.py", "--issue", "26129", "--day", "2026-09-19"]
     with pytest.raises(ValueError, match="issue"):
         render_instrument(["--issue", "{issue}"], issue=None, day="2026-09-19")
+
+
+def test_pending_instrument_duty_allows_todo_without_placeholder(tmp_path):
+    doc = deepcopy(GOOD)
+    doc["duties"][0] = {
+        **doc["duties"][0],
+        "status": "pending_instrument",
+        "instrument": ["TODO"],
+    }
+    path = tmp_path / "pending.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    loaded = load_registry_doc(path)
+
+    assert loaded["duties"][0]["status"] == "pending_instrument"
+
+
+def test_unknown_duty_status_is_rejected(tmp_path):
+    doc = deepcopy(GOOD)
+    doc["duties"][0]["status"] = "blocked"
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="duty.status"):
+        load_registry_doc(path)

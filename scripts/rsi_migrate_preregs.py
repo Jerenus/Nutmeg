@@ -81,6 +81,7 @@ def ensure_duties(kernel, exp_id: str, doc: dict) -> None:
                 instrument=list(duty["instrument"]),
                 artifact_glob=duty["artifact_glob"],
                 description=duty.get("description", ""),
+                status=duty.get("status", "active"),
             )
             if duty_id in existing:
                 uow.rsi.update_duty_definition(row)

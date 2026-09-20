@@ -4580,6 +4580,22 @@ def _apply_rsi_experiments(connection: Connection) -> None:
     )
 
 
+def _apply_rsi_pending_instruments(connection: Connection) -> None:
+    columns = {column["name"] for column in inspect(connection).get_columns("rsi_duties")}
+    if "status" not in columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE rsi_duties ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"
+        )
+    connection.exec_driver_sql(
+        "UPDATE rsi_duties SET status='pending_instrument' "
+        "WHERE duty_id='F5:price-band-observation'"
+    )
+    connection.exec_driver_sql(
+        "DELETE FROM rsi_duty_instances "
+        "WHERE duty_id='F5:price-band-observation' AND fulfilled_at IS NULL"
+    )
+
+
 _CAPITAL_PERMISSIONS = (("zucai_commit_capital_plan", "judge_operator"),)
 
 
@@ -5298,6 +5314,12 @@ MIGRATIONS: tuple[Migration, ...] = (
             "historical_replay_runs+action_replay_pair+append_only_run_transition"
         ),
         apply=_apply_historical_replay_authority,
+    ),
+    Migration(
+        version=36,
+        name="rsi_pending_instruments",
+        fingerprint="duty_status+pending_schedule_exclusion+preserve_fulfilled_cleanup",
+        apply=_apply_rsi_pending_instruments,
     ),
 )
 

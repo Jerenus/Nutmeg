@@ -39,6 +39,7 @@ rsi_duties = Table(
     Column("instrument_json", Text, nullable=False),     # argv，{issue}/{day} 占位
     Column("artifact_glob", Text, nullable=False),
     Column("description", Text, nullable=False),
+    Column("status", Text, nullable=False, server_default="active"),
 )
 
 rsi_duty_instances = Table(

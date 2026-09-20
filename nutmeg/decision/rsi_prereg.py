@@ -16,6 +16,7 @@ _REQUIRED = ("exp_id", "claim", "mechanism", "tier", "layer", "population", "min
 _DUTY_REQUIRED = ("name", "scope", "deadline_rule", "instrument", "artifact_glob")
 _DEADLINE_RULES = ("earliest_kickoff", "match_kickoff")
 _SCOPES = ("day", "match")
+_DUTY_STATUSES = ("active", "pending_instrument")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -44,6 +45,11 @@ def load_registry_doc(path: Path) -> dict:
             raise ValueError(f"deadline_rule 必须是 {_DEADLINE_RULES}")
         if d["scope"] not in _SCOPES:
             raise ValueError(f"duty.scope 必须是 {_SCOPES}")
+        status = d.get("status", "active")
+        if status not in _DUTY_STATUSES:
+            raise ValueError(f"duty.status 必须是 {_DUTY_STATUSES}")
+        if status == "pending_instrument" and d["instrument"] and d["instrument"][0] == "TODO":
+            continue
         if not d["instrument"] or not any("{issue}" in a or "{day}" in a for a in d["instrument"]):
             raise ValueError("instrument 必须含 {issue} 或 {day} 占位，否则每天跑的是同一条命令")
     return doc

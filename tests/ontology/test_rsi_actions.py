@@ -118,6 +118,41 @@ def test_schedule_creates_one_instance_per_day_duty_and_is_idempotent(tmp_path):
             ("F2:f2-observation", "26129", "2026-09-19T00:30:00+08:00")]
 
 
+def test_schedule_skips_pending_instrument_duties(tmp_path):
+    actions, engine = _rig(tmp_path)
+    doc = {
+        **F2_DOC,
+        "exp_id": "F5",
+        "duties": [
+            {
+                **F2_DOC["duties"][0],
+                "name": "price-band-observation",
+                "status": "pending_instrument",
+                "instrument": ["TODO"],
+            }
+        ],
+    }
+    actions.register_experiment(
+        RegisterExperimentRequest(
+            doc=doc, idempotency_key="reg:F5", requested_at=T0, **HUMAN
+        )
+    )
+
+    actions.schedule_duties(
+        ScheduleDutiesRequest(
+            day="2026-09-19",
+            earliest_kickoff="2026-09-19T00:30:00+08:00",
+            issue="26129",
+            idempotency_key="sch:F5",
+            requested_at=T0,
+        )
+    )
+
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.rsi.duty_instance("F5:price-band-observation", "2026-09-19") is None
+        assert uow.rsi.duties("F5")[0].status == "pending_instrument"
+
+
 def test_schedule_skips_an_issue_before_the_experiment_window(tmp_path):
     actions, engine = _rig(tmp_path)
     doc = {
