@@ -34,6 +34,10 @@ Python 3.13，`uv` 管依赖，pytest + ruff，有 pre-commit）里执行一项*
 测试：`tests/decision/test_rsi_population.py`，用 26130（2 场未对齐）与 26131（6 场未对齐）的真实文件做夹具，
 断言 `both` 的场数 = |jczq ∪ zucai| 且不等于 |jczq|。
 
+**T1 补充（2026-09-20 追加，实施 T2 前必须先做）**
+`8788954` 的 T1 实现正确，但返回行的**字段不齐**：jczq 行有 `code` 无 `match_no`，zucai 独有行有 `match_no` 无 `code`。T2 若用 `code` 或 `match_no` 构造 duty id 会 KeyError。
+⇒ **统一契约**：每行必须同时含 `match_id`（必填）、`code`（无则 `None`）、`match_no`（无则 `None`）、`source ∈ {jczq, zucai, both}`。duty id 一律用 `match_id`，不得用 `code`/`match_no`。补测试断言四个键恒存在。
+
 **T2 · schedule 按 population 展开 match 级 duty**
 改 `rsi schedule`：对任何 `scope=match` 的 duty，用 T1 的函数决定对象集合（现状只有 R0 硬编码走竞彩板面）。
 R0 的行为必须**逐字节不变**（回归测试）。
