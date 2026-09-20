@@ -117,6 +117,45 @@ def test_lexicon_members_survive_untouched():
     assert result.issues == [] or all(i.level == "WARN" for i in result.issues)
 
 
+def test_uncontrolled_hole_location_warns_without_blocking_or_rewriting():
+    hole = {
+        "unit": "midfield",
+        "side": "hosts",
+        "priced_in": False,
+        "detail": "原样保留",
+    }
+    result = intake(_research(hole_location=hole), _leg())
+
+    assert result.blocked is False
+    assert result.leg["_hole"] == hole
+    assert [
+        (issue.level, issue.field)
+        for issue in result.issues
+        if issue.field == "hole_location_uncontrolled"
+    ] == [
+        ("WARN", "hole_location_uncontrolled"),
+        ("WARN", "hole_location_uncontrolled"),
+    ]
+
+
+def test_controlled_hole_location_is_silent():
+    result = intake(
+        _research(
+            hole_location={
+                "unit": "creation",
+                "side": "away",
+                "priced_in": True,
+                "detail": "组织核缺阵",
+            }
+        ),
+        _leg(),
+    )
+
+    assert not any(
+        issue.field == "hole_location_uncontrolled" for issue in result.issues
+    )
+
+
 def test_bare_directional_flag_gets_the_default_face():
     result = intake(_research(directional_flags=["anchor_shield_out"]), _leg())
     assert result.leg["directional_flags"] == [["anchor_shield_out", "1"]]

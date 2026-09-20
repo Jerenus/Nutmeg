@@ -46,6 +46,10 @@ LICENSE_KEYS = (
     "q4_no_context_flag",
 )
 PROOF_KEYS = ("a", "b", "c")
+HOLE_LOCATION_UNITS = frozenset(
+    {"attack", "creation", "spine", "defense", "goalkeeper", "both", "none"}
+)
+HOLE_LOCATION_SIDES = frozenset({"home", "away", "both", "none"})
 MAX_TAG_LEN = 48
 """词典项都是短 snake_case 名；超过这个长度的几乎一定是叙述被写进了标签位。"""
 
@@ -109,6 +113,29 @@ def normalize_proofs(raw: object) -> dict[str, dict[str, object]]:
 
 def proof_count(proofs: dict[str, object]) -> int:
     return sum(1 for key in PROOF_KEYS if proofs.get(key) is True)
+
+
+def _check_hole_location(
+    raw: object,
+    *,
+    match_no: int,
+    issues: list[IntakeIssue],
+) -> None:
+    hole = raw if isinstance(raw, dict) else {}
+    for key, allowed in (
+        ("unit", HOLE_LOCATION_UNITS),
+        ("side", HOLE_LOCATION_SIDES),
+    ):
+        value = hole.get(key)
+        if value not in allowed:
+            issues.append(
+                IntakeIssue(
+                    "WARN",
+                    match_no,
+                    "hole_location_uncontrolled",
+                    f"hole_location.{key} `{value}` 不在闭合值域 {sorted(allowed)}",
+                )
+            )
 
 
 def _sanitize_tags(
@@ -436,6 +463,9 @@ def intake(research: dict, leg: dict) -> IntakeResult:
     _check_proofs(
         proofs, anchor_integrity, research.get("structurally_dead_face"),
         match_no=match_no, issues=issues,
+    )
+    _check_hole_location(
+        research.get("hole_location"), match_no=match_no, issues=issues
     )
 
     note = str(research.get("summary", "") or "")[:400]

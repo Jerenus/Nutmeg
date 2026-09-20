@@ -11,7 +11,9 @@ RESEARCH_JSON_CONTRACT = """
 ## 输出契约（硬约束）
 只输出 JSON，不要任何前后缀文字。字段与足彩研究 JSON 完全一致：
 {"name": str, "summary": str, "confidence": 1-5, "anchor_side": "home|away|none",
- "anchor_integrity": "pass|fail|symmetric_damage", "hole_location": {...},
+ "anchor_integrity": "pass|fail|symmetric_damage",
+ "hole_location": {"unit": "attack|creation|spine|defense|goalkeeper|both|none",
+     "side": "home|away|both|none", "priced_in": bool, "detail": str},
  "license_questions": {"q1_spine": bool, "q2_route": bool, "q3a_opponent_scores": bool,
                        "q3b_opponent_takes_points": bool, "q4_no_context_flag": bool},
  "death_three_proofs": {"home"|"draw"|"away": {"a_no_scoring_mechanism": bool,
@@ -21,6 +23,9 @@ RESEARCH_JSON_CONTRACT = """
  "crash_markers": [str], "precedents": [["3|1|0", str, "alive|dead|none"]],
  "schedule": {...}, "market_snapshot": {...}}
 宣告 dead 必须三证 3/3；查无先例记 none，不得当 dead。数字只许引用简报给你的或你查到的实盘。
+hole_location 语义绑定：attack = 破门端（中锋/射手）缺；creation = 组织端（前腰/组织核）缺；
+spine = 后腰屏障格缺；defense = 中卫对缺；goalkeeper = 门将缺；
+both = 攻防两端同时缺（对称崩塌）；none = 无结构性洞。
 """.strip()
 
 

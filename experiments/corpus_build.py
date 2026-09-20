@@ -136,6 +136,9 @@ def _research_labels(doc: dict | None) -> dict | None:
     """
     if not isinstance(doc, dict) or not doc:
         return None
+    hole = doc.get("hole_location")
+    if not isinstance(hole, dict):
+        hole = {}
     return dict(
         anchor_integrity=doc.get("anchor_integrity"),
         directional_flags=[f[0] for f in (doc.get("directional_flags") or [])],
@@ -155,10 +158,9 @@ def _research_labels(doc: dict | None) -> dict | None:
             }
             for face, blk in (doc.get("death_three_proofs") or {}).items()
         },
-        # ⛔ hole_location 暂不入语料：2026-09-20 实测 55 份产物里出现 11 种以上不同
-        # key 组合（最常见的 {anchor,detail,opponent} 只占 28/55），是自由散文不是变量。
-        # 画像①判「能赢 vs 只能进球」全靠这一格，须先在 research_prompt 里给受控词典
-        # （attack / defense / spine / goalkeeper / both）再接线，否则聚不成可统计量。
+        hole_location_unit=hole.get("unit"),
+        hole_location_side=hole.get("side"),
+        hole_location_priced_in=hole.get("priced_in"),
         anchor_side=doc.get("anchor_side"),
         label_source="research",
     )

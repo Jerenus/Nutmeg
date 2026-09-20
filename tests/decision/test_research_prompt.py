@@ -14,6 +14,22 @@ def test_system_prompt_carries_agent_body_and_json_contract():
     assert RESEARCH_JSON_CONTRACT in prompt
 
 
+def test_research_contract_defines_controlled_hole_location_vocabulary():
+    assert '"unit": "attack|creation|spine|defense|goalkeeper|both|none"' in RESEARCH_JSON_CONTRACT
+    assert '"side": "home|away|both|none"' in RESEARCH_JSON_CONTRACT
+    assert '"priced_in": bool' in RESEARCH_JSON_CONTRACT
+    for meaning in (
+        "attack = 破门端",
+        "creation = 组织端",
+        "spine = 后腰屏障格",
+        "defense = 中卫对",
+        "goalkeeper = 门将",
+        "both = 攻防两端同时缺",
+        "none = 无结构性洞",
+    ):
+        assert meaning in RESEARCH_JSON_CONTRACT
+
+
 def test_brief_contains_fair_line_and_kickoff_only_from_inputs():
     leg = {
         "name": "A-B",
