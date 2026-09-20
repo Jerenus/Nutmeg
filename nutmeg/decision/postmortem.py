@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from nutmeg.decision.legs_audit import exclusion_grade
 
 _FACES = ("3", "1", "0")
 _FACE_NAMES = {"3": "home", "1": "draw", "0": "away"}
+BJ = ZoneInfo("Asia/Shanghai")
 
 
 def _load(path: Path, default):
@@ -66,13 +68,12 @@ def _prior(
     *,
     actual: str,
     fair: dict,
-    excluded: bool,
     research: dict,
     leg: dict,
 ) -> dict:
     fair_pp = _fair_pp(fair, actual)
     tier = None
-    if excluded and fair_pp is not None:
+    if fair_pp is not None:
         fair_values = {
             face: _fair_pp(fair, face) for face in _FACES
         }
@@ -132,14 +133,13 @@ def _row(
         "match_no": match_no,
         "actual": actual,
         "call_kind": kind,
-        "called_faces": faces,
+        "called_faces": faces or None,
         "hit": actual in faces if has_call else None,
         "excluded_faces": excluded if has_call else [],
         "actual_was_excluded": actual not in faces if has_call else None,
         "actual_face_prior": _prior(
             actual=actual,
             fair=fair,
-            excluded=has_call and actual not in faces,
             research=research,
             leg=leg,
         ),
@@ -170,7 +170,7 @@ def postmortem_candidate_count(*, day: str, issue: str | None, data_dir: Path) -
 def postmortem_rows(*, day: str, issue: str | None, data_dir: Path) -> list[dict]:
     """Return settled rows only; absent fields remain ``None``."""
     data_dir = Path(data_dir)
-    computed_at = datetime.now(UTC).isoformat(timespec="seconds")
+    computed_at = datetime.now(BJ).isoformat(timespec="seconds")
     if issue:
         zdir = data_dir / "zucai"
         calls = _load(zdir / f"{issue}-calls.json", {})
@@ -227,7 +227,7 @@ def postmortem_rows(*, day: str, issue: str | None, data_dir: Path) -> list[dict
                 code=code,
                 match_no=None,
                 actual=actual,
-                call=leg,
+                call={},
                 fair=leg.get("fair") or {},
                 research=research,
                 leg=leg,

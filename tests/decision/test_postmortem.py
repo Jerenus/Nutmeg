@@ -59,18 +59,18 @@ def _jczq_day(tmp_path):
     return data
 
 
-def test_postmortem_rows_derives_excluded_actual_prior_without_judgment(tmp_path):
+def test_jczq_postmortem_keeps_actual_prior_without_inventing_a_call(tmp_path):
     rows = postmortem_rows(day="2026-09-19", issue=None, data_dir=_jczq_day(tmp_path))
 
     assert len(rows) == 1
     row = rows[0]
     assert row["match_id"] == "match-1"
     assert row["actual"] == "0"
-    assert row["call_kind"] == "exclude"
-    assert row["called_faces"] == "31"
-    assert row["hit"] is False
-    assert row["excluded_faces"] == ["0"]
-    assert row["actual_was_excluded"] is True
+    assert row["call_kind"] == "none"
+    assert row["called_faces"] is None
+    assert row["hit"] is None
+    assert row["excluded_faces"] == []
+    assert row["actual_was_excluded"] is None
     assert row["actual_face_prior"] == {
         "fair_pp": 20.0,
         "exclusion_tier": "灰带",
@@ -79,6 +79,7 @@ def test_postmortem_rows_derives_excluded_actual_prior_without_judgment(tmp_path
     }
     assert row["hole_location_unit"] == "attack"
     assert row["source"] == "research"
+    assert row["computed_at"].endswith("+08:00")
 
 
 def test_postmortem_cli_writes_settled_rows_and_reports_pending(tmp_path):
@@ -100,7 +101,7 @@ def test_postmortem_cli_writes_settled_rows_and_reports_pending(tmp_path):
     assert json.loads(artifact.read_text(encoding="utf-8"))["actual"] == "0"
 
 
-def test_missing_call_does_not_invent_an_exclusion(tmp_path):
+def test_missing_call_keeps_call_null_but_still_derives_actual_face_prior(tmp_path):
     data = _jczq_day(tmp_path)
     results_path = data / "jczq" / "jc-results.json"
     results = json.loads(results_path.read_text(encoding="utf-8"))
@@ -119,7 +120,7 @@ def test_missing_call_does_not_invent_an_exclusion(tmp_path):
 
     assert row["call_kind"] == "none"
     assert row["actual_was_excluded"] is None
-    assert row["actual_face_prior"]["exclusion_tier"] is None
+    assert row["actual_face_prior"]["exclusion_tier"] == "买方差"
 
 
 def test_zucai_postmortem_uses_calls_fair_and_official_results(tmp_path):
