@@ -45,6 +45,8 @@ Z = os.path.join(ROOT, ".nutmeg-data", "zucai")
 J = os.path.join(ROOT, ".nutmeg-data", "jczq")
 KEY = {"home": "3", "draw": "1", "away": "0"}
 _DUP_TOL = 0.015
+_HOLE_UNITS = {"attack", "creation", "spine", "defense", "goalkeeper", "both", "none"}
+_HOLE_SIDES = {"home", "away", "both", "none"}
 
 
 def _load(path, default=None):
@@ -146,6 +148,12 @@ def _research_labels(doc: dict | None) -> dict | None:
     hole = doc.get("hole_location")
     if not isinstance(hole, dict):
         hole = {}
+    controlled_hole = (
+        {"unit", "side", "priced_in", "detail"} <= set(hole)
+        and hole.get("unit") in _HOLE_UNITS
+        and hole.get("side") in _HOLE_SIDES
+        and isinstance(hole.get("priced_in"), bool)
+    )
     return dict(
         anchor_integrity=doc.get("anchor_integrity"),
         directional_flags=[f[0] for f in (doc.get("directional_flags") or [])],
@@ -165,9 +173,9 @@ def _research_labels(doc: dict | None) -> dict | None:
             }
             for face, blk in (doc.get("death_three_proofs") or {}).items()
         },
-        hole_location_unit=hole.get("unit"),
-        hole_location_side=hole.get("side"),
-        hole_location_priced_in=hole.get("priced_in"),
+        hole_location_unit=hole.get("unit") if controlled_hole else None,
+        hole_location_side=hole.get("side") if controlled_hole else None,
+        hole_location_priced_in=hole.get("priced_in") if controlled_hole else None,
         anchor_side=doc.get("anchor_side"),
         label_source="research",
     )

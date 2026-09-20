@@ -38,6 +38,22 @@ def test_research_labels_does_not_guess_legacy_hole_location():
     assert labels["hole_location_priced_in"] is None
 
 
+def test_research_labels_does_not_admit_legacy_free_text_unit_as_controlled():
+    labels = corpus_build._research_labels(
+        {
+            "hole_location": {
+                "unit": "defensive_spine_plus_midfield_pivot",
+                "names": ["legacy player"],
+                "priced": "partly priced",
+            }
+        }
+    )
+
+    assert labels["hole_location_unit"] is None
+    assert labels["hole_location_side"] is None
+    assert labels["hole_location_priced_in"] is None
+
+
 def test_postmortem_labels_are_merged_as_fifth_source():
     labels = {"anchor_integrity": "pass"}
     postmortem = {
