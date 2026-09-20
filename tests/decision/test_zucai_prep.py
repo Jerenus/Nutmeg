@@ -55,6 +55,18 @@ def test_alignment_flags_ambiguity_instead_of_guessing():
     assert got["mapping"] == {} and got["ambiguous"][0]["candidates"] == ["1", "2"]
 
 
+def test_alignment_prefers_explicit_channel_map_over_team_names():
+    """跨泳道身份已有显式映射时，不再让队名别名决定是否丢锚。"""
+    got = align_to_sporttery(
+        [_zm(4, "富勒姆", "曼联")],
+        _board([_row(7020, "富勒姆", "曼彻斯特联")]),
+        resolve=lambda _n: None,
+        explicit_mapping={4: "7020"},
+    )
+    assert got["mapping"] == {4: "7020"}
+    assert got["unmatched"] == []
+
+
 def test_board_dates_span_neighbouring_business_days():
     """深夜场的体彩业务日会落在前一天,只读 run_date 那一份会漏。"""
     dates = board_dates("2026-08-09", [_zm(1, "a", "b", date="2026-08-10")])
@@ -185,6 +197,32 @@ def test_prep_runs_unchanged_when_the_intl_file_is_absent(tmp_path):
 
     prep = build_prep(_prep_dirs(tmp_path))
     assert prep["records"]["1"]["intl"] is None
+
+
+def test_prep_uses_explicit_cross_channel_identity_before_team_names(tmp_path):
+    import json
+
+    from nutmeg.decision.zucai_prep import build_prep
+
+    inputs = _prep_dirs(tmp_path)
+    inputs.zucai_dir.joinpath("26125-channel-map.json").write_text(
+        json.dumps({"jczq-match-1": 1}), encoding="utf-8"
+    )
+    daily = inputs.output_dir / "daily" / inputs.run_date
+    daily.joinpath("jczq-legs-base.json").write_text(
+        json.dumps({"legs": {"周日020": {"match_id": "jczq-match-1"}}}),
+        encoding="utf-8",
+    )
+    daily.joinpath("sporttery_markets.json").write_text(
+        json.dumps(_board([{**_row(7020, "完全不同", "仍然不同"),
+                            "matchNumStr": "周日020"}])),
+        encoding="utf-8",
+    )
+
+    prep = build_prep(inputs)
+
+    assert prep["records"]["1"]["sporttery_match_num"] == "7020"
+    assert prep["alignment"] == {"unmatched": [], "ambiguous": []}
 
 
 def test_brief_shows_the_international_consensus_and_its_drift(tmp_path):
@@ -340,6 +378,27 @@ def test_message_keeps_real_precision_losses():
     assert "未对齐 2" in prep_message(prep, moved=None)
 
 
+def test_message_calls_out_missing_international_collection():
+    from nutmeg.decision.zucai_prep import prep_message
+
+    prep = _prep(
+        intl_status="not_collected",
+        records={"1": {"fair_had": {"home": 0.5, "draw": 0.3, "away": 0.2}}},
+    )
+    body = prep_message(prep, moved=None)
+    assert "混合 prior 未采集" in body
+    assert "混合 prior 覆盖 0/1" not in body
+
+
+def test_message_calls_out_failed_international_collection():
+    from nutmeg.decision.zucai_prep import prep_message
+
+    prep = _prep(intl_status="fetch_failed", records={"1": {}})
+    body = prep_message(prep, moved=None)
+    assert "混合 prior 采集失败" in body
+    assert "混合 prior 覆盖 0/1" not in body
+
+
 def test_no_issue_day_is_silent():
     """41% 的噪音来源：无期日不再推送。"""
     from nutmeg.decision.zucai_prep import no_issue_message
@@ -406,6 +465,36 @@ def test_run_prep_is_silent_on_a_no_issue_day(tmp_path):
     assert result.status == "no_issue"
     assert "今日无期" in result.summary        # 日志照写
     assert sent == []                          # Telegram 静默
+
+
+def test_live_prep_collects_international_prior_before_building(tmp_path, monkeypatch):
+    import json
+
+    from nutmeg.decision.zucai_prep import run_zucai_prep
+
+    inputs = _prep_dirs(tmp_path)
+    monkeypatch.setattr(
+        "nutmeg.decision.zucai_insale.fetch_and_write",
+        lambda *_args, **_kwargs: {"issue": "26125"},
+    )
+
+    result = run_zucai_prep(
+        run_date=inputs.run_date,
+        slot="afternoon",
+        issue="26125",
+        zucai_dir=inputs.zucai_dir,
+        output_dir=inputs.output_dir,
+        live_fetch=True,
+        intl_fetcher=lambda _doc: {1: _INTL["matches"][0]},
+    )
+
+    intl = json.loads(
+        inputs.zucai_dir.joinpath("26125-odds-intl.json").read_text("utf-8")
+    )
+    prep = json.loads(result.prep_path.read_text("utf-8"))
+    assert len(intl["matches"]) == 1
+    assert prep["intl_status"] == "available"
+    assert prep["records"]["1"]["fair_blend"] is not None
 
 
 def test_run_prep_still_alerts_after_long_silence(tmp_path):

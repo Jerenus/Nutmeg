@@ -92,7 +92,8 @@ def _same_team(zname: str, bname: str, resolve) -> bool:
 
 
 def align_to_sporttery(zucai_matches: list[dict], sporttery_value: dict,
-                       *, resolve=None) -> dict:
+                       *, resolve=None,
+                       explicit_mapping: dict[int, str] | None = None) -> dict:
     """{match_no: matchNum} + 未对齐清单。
 
     未对齐 = 该场拿不到体彩 ttg 形状约束(DC 只能固定 ρ 拟),也拿不到让球线。
@@ -106,9 +107,15 @@ def align_to_sporttery(zucai_matches: list[dict], sporttery_value: dict,
     mapping: dict[int, str] = {}
     unmatched: list[dict] = []
     ambiguous: list[dict] = []
+    explicit_mapping = explicit_mapping or {}
     for zm in zucai_matches:
         no = int(zm.get("match_no") or 0)
         home, away = zm.get("home_team") or "", zm.get("away_team") or ""
+        explicit_num = explicit_mapping.get(no)
+        if explicit_num is not None:
+            if any(str(r.get("matchNum")) == str(explicit_num) for r in rows):
+                mapping[no] = str(explicit_num)
+                continue
         cands = [r for r in rows
                  if _same_team(home, r.get("homeTeamAllName")
                                or r.get("homeTeamAbbName") or "", resolve)
@@ -292,6 +299,7 @@ class PrepInputs:
     slot: str
     zucai_dir: Path
     output_dir: Path
+    intl_status: str | None = None
 
 
 def _load(path: Path) -> dict:
@@ -329,6 +337,36 @@ def load_boards(output_dir: Path, run_date: str, matches: list[dict]) -> dict:
     return {"matchInfoList": [{"subMatchList": merged}]}
 
 
+def load_explicit_channel_mapping(
+    *, issue: str, run_date: str, zucai_dir: Path, output_dir: Path,
+    board_value: dict,
+) -> dict[int, str]:
+    """Resolve the human-recorded channel map to exact sporttery match numbers."""
+    channel_path = Path(zucai_dir) / f"{issue}-channel-map.json"
+    legs_path = Path(output_dir) / "daily" / run_date / "jczq-legs-base.json"
+    if not channel_path.exists() or not legs_path.exists():
+        return {}
+    try:
+        channel_map = _load(channel_path)
+        legs = _load(legs_path).get("legs") or {}
+    except (OSError, ValueError, TypeError):
+        return {}
+    match_num_by_code = {
+        str(row.get("matchNumStr")): str(row.get("matchNum"))
+        for row in board_rows(board_value)
+        if row.get("matchNumStr") and row.get("matchNum") is not None
+    }
+    out: dict[int, str] = {}
+    for code, leg in legs.items():
+        if not isinstance(leg, dict):
+            continue
+        match_no = channel_map.get(str(leg.get("match_id")))
+        match_num = match_num_by_code.get(str(code))
+        if match_no is not None and match_num is not None:
+            out[int(match_no)] = match_num
+    return out
+
+
 def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
     """组装备料包。读已落盘的 issue/odds/体彩板面,不打网。"""
     from nutmeg.decision.dcfit import fit_match
@@ -346,7 +384,8 @@ def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
     # (没跑过 / 全场对不上 titan007 板面),那时 intl 一律 None。
     intl_by_no: dict[int, dict] = {}
     intl_path = zdir / f"{issue}-odds-intl.json"
-    if intl_path.exists():
+    use_intl_file = inputs.intl_status not in {"fetch_empty", "fetch_failed"}
+    if intl_path.exists() and use_intl_file:
         try:
             intl_by_no = {
                 int(r["match_no"]): r
@@ -358,7 +397,16 @@ def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
     matches = issue_doc.get("matches") or []
     board_value = load_boards(Path(inputs.output_dir), inputs.run_date, matches)
     rows_by_num = {str(r.get("matchNum")): r for r in board_rows(board_value)}
-    align = align_to_sporttery(matches, board_value)
+    explicit_mapping = load_explicit_channel_mapping(
+        issue=issue,
+        run_date=inputs.run_date,
+        zucai_dir=zdir,
+        output_dir=Path(inputs.output_dir),
+        board_value=board_value,
+    )
+    align = align_to_sporttery(
+        matches, board_value, explicit_mapping=explicit_mapping
+    )
 
     records: dict[str, dict] = {}
     for zm in matches:
@@ -391,6 +439,10 @@ def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
         "slot": inputs.slot,
         "captured_at": captured_at or datetime.now().isoformat(timespec="seconds"),
         "n_matches": len(matches),
+        "intl_status": (
+            inputs.intl_status
+            or ("available" if intl_path.exists() else "not_collected")
+        ),
         "alignment": {"unmatched": align["unmatched"], "ambiguous": align["ambiguous"]},
         "records": records,
         "screens": screens(records),
@@ -595,7 +647,14 @@ def prep_message(prep: dict, *, moved: int | None) -> str:
     records = prep.get("records") or {}
     n_blend = sum(1 for r in records.values()
                   if isinstance(r, dict) and r.get("fair_blend"))
-    if records:
+    intl_status = prep.get("intl_status")
+    if records and intl_status == "not_collected":
+        lines.append("⚠️混合 prior 未采集（当前使用 500.com 单源）")
+    elif records and intl_status == "fetch_failed":
+        lines.append("⚠️混合 prior 采集失败（当前使用 500.com 单源）")
+    elif records and intl_status == "fetch_empty":
+        lines.append("⚠️混合 prior 采集 0 场（当前使用 500.com 单源）")
+    elif records:
         lines.append(f"混合 prior 覆盖 {n_blend}/{len(records)}")
     sc = prep.get("screens") or {}
     if sc.get("missing_euro_anchor"):
@@ -759,6 +818,7 @@ def run_zucai_prep(
     live_fetch: bool = True,
     dispatch: bool = False,
     gate_fetcher=None,
+    intl_fetcher=None,
     notification_service=None,
     gate_fn=None,
 ) -> PrepResult:
@@ -798,6 +858,7 @@ def run_zucai_prep(
             return PrepResult(status="no_issue", summary=line, issue=insale.issue)
         issue = insale.issue
 
+    intl_status: str | None = None
     if live_fetch:
         from nutmeg.decision.zucai_insale import fetch_and_write
         try:
@@ -812,9 +873,39 @@ def run_zucai_prep(
                         notification_service=notification_service)
             return PrepResult(status="fetch_failed", summary=line, issue=issue)
 
+        if intl_fetcher is None:
+            from nutmeg.services.zucai_titan007_odds import (
+                collect_zucai_euro_titan007_live,
+            )
+
+            intl_fetcher = collect_zucai_euro_titan007_live
+        try:
+            issue_doc = _load(Path(zucai_dir) / f"{issue}-issue.json")
+            priced = intl_fetcher(issue_doc)
+            if priced:
+                Path(zucai_dir, f"{issue}-odds-intl.json").write_text(
+                    json.dumps(
+                        {
+                            "issue_id": issue,
+                            "source": "titan007",
+                            "captured_at": datetime.now().isoformat(timespec="seconds"),
+                            "matches": [priced[k] for k in sorted(priced)],
+                        },
+                        ensure_ascii=False,
+                        indent=1,
+                    ),
+                    "utf-8",
+                )
+                intl_status = "available"
+            else:
+                intl_status = "fetch_empty"
+        except Exception:  # noqa: BLE001 - optional source must not kill base prep
+            intl_status = "fetch_failed"
+
     prep = build_prep(PrepInputs(issue=issue, run_date=run_date, slot=slot,
                                  zucai_dir=Path(zucai_dir),
-                                 output_dir=Path(output_dir)))
+                                 output_dir=Path(output_dir),
+                                 intl_status=intl_status))
     zdir = Path(zucai_dir)
     zdir.mkdir(parents=True, exist_ok=True)
     prep_path = zdir / f"{issue}-prep-{slot}.json"
