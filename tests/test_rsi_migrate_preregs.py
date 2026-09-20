@@ -28,6 +28,9 @@ def test_all_registry_docs_load_and_keep_their_original_registration_dates():
     assert [(x["name"], x["scope"]) for x in docs["F4"]["duties"]] == [
         ("capital-plan", "day")
     ]
+    assert [(x["name"], x["scope"], x["deadline_rule"]) for x in docs["F5"]["duties"]] == [
+        ("price-band-observation", "match", "match_kickoff")
+    ]
 
 
 def test_migration_script_backfills_observations_and_marks_f1c_gaps(tmp_path, monkeypatch):
