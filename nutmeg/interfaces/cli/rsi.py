@@ -289,45 +289,107 @@ def balance(
     day: str | None = _DAY_OPT,
     data_dir: Path = _DATA_DIR,
 ) -> None:
-    """Write the F9 movement ledger, then register its daily duty artifact."""
-    from collections import Counter
+    """Write and fulfill one F9 balance row per match in the frozen population."""
+    from nutmeg.decision.balance_ledger import balance_ledger, balance_row
+    from nutmeg.decision.rsi_population import matches_for_population
 
-    from nutmeg.decision.balance_ledger import balance_ledger
-
-    if issue:
-        reads_path = data_dir / "zucai" / f"{issue}-reads.json"
-        artifact = data_dir / "zucai" / f"{issue}-balance.json"
-        kickoff = _earliest_kickoff(data_dir, issue)
-        resolved_day = day or (kickoff[:10] if kickoff else None)
-        stratum = "zucai"
-    elif day:
-        day_dir = data_dir / "jczq" / "daily" / day
-        reads_path = day_dir / "reads.json"
-        artifact = day_dir / "balance.json"
-        kickoffs = _jczq_match_kickoffs(data_dir, day)
-        kickoff = min(kickoffs.values()) if kickoffs else None
-        resolved_day = day
-        stratum = "jczq"
-    else:
+    if issue is None and day is None:
         _fail("需要 --issue 或 --day")
-    if not reads_path.exists():
-        _fail(f"reads 不存在：{reads_path}")
-    if kickoff is None or resolved_day is None:
+    k = _kernel(data_dir)
+    kickoff = _earliest_kickoff(data_dir, issue)
+    resolved_day = day or (kickoff[:10] if kickoff else None)
+    if resolved_day is None:
         _fail("找不到最早开球，无法登记 F9 duty")
 
-    reads = json.loads(reads_path.read_text(encoding="utf-8"))
-    outcomes = _official_zucai_outcomes(data_dir, issue, reads) if issue else None
-    ledger = balance_ledger(reads, outcomes=outcomes)
+    if issue is None:
+        with OntologyUnitOfWork(k.engine) as uow:
+            scheduled = uow.rsi.duty_instances_for_day(
+                "F9:balance-ledger", resolved_day
+            )
+        scheduled_issues = {row.issue for row in scheduled if row.issue}
+        if len(scheduled_issues) > 1:
+            _fail(f"{resolved_day} 的 F9 duty 绑定了多个 issue")
+        issue = next(iter(scheduled_issues), None)
+
+    day_dir = data_dir / "jczq" / "daily" / resolved_day
+    jczq_reads_path = day_dir / "reads.json"
+    zucai_reads_path = data_dir / "zucai" / f"{issue}-reads.json" if issue else None
+    jczq_reads = (
+        json.loads(jczq_reads_path.read_text(encoding="utf-8"))
+        if jczq_reads_path.exists()
+        else []
+    )
+    zucai_reads = (
+        json.loads(zucai_reads_path.read_text(encoding="utf-8"))
+        if zucai_reads_path is not None and zucai_reads_path.exists()
+        else []
+    )
+    if not jczq_reads and not zucai_reads:
+        _fail(f"reads 不存在：{jczq_reads_path}")
+
+    population_kickoffs = _population_match_kickoffs(
+        data_dir,
+        day=resolved_day,
+        issue=issue,
+        populations={"both"},
+    )
+    kickoffs = population_kickoffs["both"]
+    if not kickoffs:
+        _fail("找不到逐场开球，无法登记 F9 duty")
+    kickoff = min(kickoffs.values())
+
+    read_by_match = {
+        str(read["match_id"]): read
+        for read in zucai_reads
+        if read.get("match_id")
+    }
+    read_by_match.update(
+        {
+            str(read["match_id"]): read
+            for read in jczq_reads
+            if read.get("match_id")
+        }
+    )
+    rows: list[dict] = []
+    selected_reads: list[dict] = []
+    for target in matches_for_population(
+        "both", day=resolved_day, issue=issue, data_dir=data_dir
+    ):
+        match_id = target["match_id"]
+        read = read_by_match.get(match_id)
+        if read is None or match_id not in kickoffs:
+            continue
+        selected_reads.append(read)
+        rows.append(
+            {
+                **target,
+                "prior": read.get("prior"),
+                "belief": read.get("belief"),
+                "judgment_tier": read.get("judgment_tier") or "price_only",
+                **balance_row(read),
+            }
+        )
+    if not rows:
+        _fail("并集场次没有可登记的 Read")
+
+    outcomes = (
+        _official_zucai_outcomes(data_dir, issue, zucai_reads) if issue else None
+    )
+    ledger = balance_ledger(selected_reads, outcomes=outcomes)
     ledger_hash = hashlib.sha256(
-        json.dumps(ledger, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        json.dumps(
+            {"rows": rows, "ledger": ledger},
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
     ).hexdigest()[:16]
-    payload = {"issue": issue, "day": resolved_day, **ledger}
+    payload = {"issue": issue, "day": resolved_day, "rows": rows, **ledger}
+    artifact = day_dir / "balance.json"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text(
         json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8"
     )
 
-    k = _kernel(data_dir)
     now = _now()
     _run(
         k.rsi_actions.schedule_duties,
@@ -335,35 +397,39 @@ def balance(
             day=resolved_day,
             earliest_kickoff=kickoff,
             issue=issue,
+            match_kickoffs=_jczq_match_kickoffs(data_dir, resolved_day),
+            population_match_kickoffs=population_kickoffs,
             idempotency_key=f"rsi-balance-sched:{issue or resolved_day}",
             requested_at=now,
             **_SYSTEM,
         ),
     )
     raw = artifact.read_bytes()
-    tier_hist = dict(
-        Counter(str(read.get("judgment_tier") or "price_only") for read in reads)
-    )
-    _run(
-        k.rsi_actions.fulfill_duty,
-        FulfillDutyRequest(
-            exp_id="F9",
-            duty_name="balance-ledger",
-            day=resolved_day,
-            artifact_path=str(artifact),
-            artifact_bytes=raw,
-            n_rows=len(reads),
-            population_stratum=stratum,
-            judgment_tier_hist=tier_hist,
-            captured_at=now,
-            earliest_kickoff=kickoff,
-            idempotency_key=(
-                f"rsi-ful:F9:balance-ledger:v2:{resolved_day}:{ledger_hash}"
+    for row in rows:
+        match_id = row["match_id"]
+        tier = str(row["judgment_tier"])
+        _run(
+            k.rsi_actions.fulfill_duty,
+            FulfillDutyRequest(
+                exp_id="F9",
+                duty_name="balance-ledger",
+                day=resolved_day,
+                artifact_path=str(artifact),
+                artifact_bytes=raw,
+                n_rows=1,
+                population_stratum="pooled",
+                judgment_tier_hist={tier: 1},
+                captured_at=now,
+                earliest_kickoff=kickoffs[match_id],
+                match_id=match_id,
+                idempotency_key=(
+                    "rsi-ful:F9:balance-ledger:v3:"
+                    f"{resolved_day}:{match_id}:{ledger_hash}"
+                ),
+                requested_at=now,
+                **_SYSTEM,
             ),
-            requested_at=now,
-            **_SYSTEM,
-        ),
-    )
+        )
     right = ledger["direction_right_n"]
     wrong = ledger["direction_wrong_n"]
     direction = "未开奖" if right is None else f"方向 {right}/{wrong}"

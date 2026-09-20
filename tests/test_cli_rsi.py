@@ -28,6 +28,34 @@ def _data_dir(tmp_path: Path) -> Path:
     (d / "zucai" / "26129-issue.json").write_text(json.dumps({"issue_id": "26129", "matches": [
         {"match_no": 4, "kickoff_bj": "2026-09-19T00:30:00"},
         {"match_no": 1, "kickoff_bj": "2026-09-19T03:00:00"}]}), encoding="utf-8")
+    (d / "zucai" / "26129-store-ids.json").write_text(
+        json.dumps(
+            {
+                "4": {"match_no": 4, "match_id": "m-0"},
+                "1": {"match_no": 1, "match_id": "m-1"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    day_dir = d / "jczq" / "daily" / "2026-09-19"
+    day_dir.mkdir(parents=True)
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps(
+            {
+                "legs": {
+                    "周五001": {
+                        "match_id": "m-0",
+                        "kickoff_bj": "2026-09-19T00:30:00+08:00",
+                    },
+                    "周五002": {
+                        "match_id": "m-1",
+                        "kickoff_bj": "2026-09-19T03:00:00+08:00",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     return d
 
 
@@ -278,7 +306,7 @@ def test_balance_writes_issue_ledger_and_fulfills_f9(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "0/2 拨动" in result.output
-    artifact = data_dir / "zucai" / "26129-balance.json"
+    artifact = data_dir / "jczq" / "daily" / "2026-09-19" / "balance.json"
     payload = json.loads(artifact.read_text(encoding="utf-8"))
     assert payload["issue"] == "26129"
     assert payload["n_matches"] == 2 and payload["n_moved"] == 0
@@ -327,12 +355,16 @@ def test_balance_can_be_rerun_after_results_arrive(tmp_path):
 
     assert after.exit_code == 0, after.output
     payload = json.loads(
-        (data_dir / "zucai" / "26129-balance.json").read_text(encoding="utf-8")
+        (
+            data_dir / "jczq" / "daily" / "2026-09-19" / "balance.json"
+        ).read_text(encoding="utf-8")
     )
     assert payload["brier_vs_market_all"] is not None
     assert payload["direction_right_n"] == 1
     artifact_hash = sha256(
-        (data_dir / "zucai" / "26129-balance.json").read_bytes()
+        (
+            data_dir / "jczq" / "daily" / "2026-09-19" / "balance.json"
+        ).read_bytes()
     ).hexdigest()
     with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
         hashes = connection.execute(
@@ -344,4 +376,132 @@ def test_balance_can_be_rerun_after_results_arrive(tmp_path):
         ).fetchall()
     assert len(hashes) == 2
     assert (artifact_hash,) in hashes
-    assert any(":balance-ledger:v2:2026-09-19:" in key for (key,) in keys)
+    assert any(":balance-ledger:v3:2026-09-19:" in key for (key,) in keys)
+
+
+def test_balance_day_records_one_f9_observation_per_union_match(tmp_path):
+    data_dir = tmp_path / "data"
+    day = "2026-09-20"
+    day_dir = data_dir / "jczq" / "daily" / day
+    zucai_dir = data_dir / "zucai"
+    day_dir.mkdir(parents=True)
+    zucai_dir.mkdir()
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps(
+            {
+                "legs": {
+                    "周日001": {
+                        "match_id": "shared",
+                        "kickoff_bj": "2099-09-20T20:00:00+08:00",
+                    },
+                    "周日002": {
+                        "match_id": "jczq-only",
+                        "kickoff_bj": "2099-09-20T21:00:00+08:00",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    day_dir.joinpath("reads.json").write_text(
+        json.dumps(
+            [
+                {
+                    "match_id": "shared",
+                    "prior": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                    "belief": {"home": 0.45, "draw": 0.28, "away": 0.27},
+                },
+                {
+                    "match_id": "jczq-only",
+                    "prior": {"home": 0.3, "draw": 0.3, "away": 0.4},
+                    "belief": {"home": 0.3, "draw": 0.3, "away": 0.4},
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    zucai_dir.joinpath("26131-store-ids.json").write_text(
+        json.dumps(
+            {
+                "1": {"match_id": "shared", "match_no": 1},
+                "2": {"match_id": "zucai-only", "match_no": 2},
+            }
+        ),
+        encoding="utf-8",
+    )
+    zucai_dir.joinpath("26131-issue.json").write_text(
+        json.dumps(
+            {
+                "matches": [
+                    {"match_no": 1, "kickoff_bj": "2099-09-20 20:00"},
+                    {"match_no": 2, "kickoff_bj": "2099-09-20 22:00"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    zucai_dir.joinpath("26131-reads.json").write_text(
+        json.dumps(
+            [
+                {
+                    "match_id": "shared",
+                    "prior": {"home": 0.1, "draw": 0.2, "away": 0.7},
+                    "belief": {"home": 0.1, "draw": 0.2, "away": 0.7},
+                },
+                {
+                    "match_id": "zucai-only",
+                    "prior": {"home": 0.2, "draw": 0.3, "away": 0.5},
+                    "belief": {"home": 0.18, "draw": 0.3, "away": 0.52},
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    registered = runner.invoke(
+        app,
+        [
+            "rsi",
+            "register",
+            "experiments/registry/F9.json",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert registered.exit_code == 0, registered.output
+    scheduled = runner.invoke(
+        app,
+        [
+            "rsi",
+            "schedule",
+            "--day",
+            day,
+            "--issue",
+            "26131",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert scheduled.exit_code == 0, scheduled.output
+
+    result = runner.invoke(
+        app, ["rsi", "balance", "--day", day, "--data-dir", str(data_dir)]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(day_dir.joinpath("balance.json").read_text("utf-8"))
+    assert [row["match_id"] for row in payload["rows"]] == [
+        "shared",
+        "jczq-only",
+        "zucai-only",
+    ]
+    assert payload["rows"][0]["prior"]["home"] == 0.4
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        assert connection.execute(
+            "SELECT COUNT(*), SUM(n_rows) FROM rsi_observations WHERE exp_id = 'F9'"
+        ).fetchone() == (3, 3)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM rsi_duty_instances "
+            "WHERE duty_id = 'F9:balance-ledger' AND fulfilled_at IS NOT NULL"
+        ).fetchone() == (3,)

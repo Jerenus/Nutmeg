@@ -273,6 +273,19 @@ class RsiRepository:
         )
         return [DutyInstanceRow(**dict(r)) for r in rows]
 
+    def duty_instances_for_day(self, duty_id: str, day: str) -> list[DutyInstanceRow]:
+        t = sr.rsi_duty_instances
+        rows = (
+            self._c.execute(
+                select(t)
+                .where(t.c.duty_id == duty_id, t.c.day == day)
+                .order_by(t.c.match_id)
+            )
+            .mappings()
+            .all()
+        )
+        return [DutyInstanceRow(**dict(row)) for row in rows]
+
     def gaps(self, exp_id: str, *, now: str) -> list[str]:
         """过了 due_at 仍未落的日期——事实记录，不是罚分。"""
         t, d = sr.rsi_duty_instances, sr.rsi_duties

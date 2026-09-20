@@ -24,11 +24,11 @@
   "duties": [
     {
       "name": "balance-ledger",
-      "scope": "day",
-      "deadline_rule": "earliest_kickoff",
-      "instrument": ["uv", "run", "nutmeg", "rsi", "balance", "--issue", "{issue}"],
-      "artifact_glob": ".nutmeg-data/zucai/{issue}-balance.json",
-      "description": "F9：每期天平位移账"
+      "scope": "match",
+      "deadline_rule": "match_kickoff",
+      "instrument": ["uv", "run", "nutmeg", "rsi", "balance", "--day", "{day}"],
+      "artifact_glob": ".nutmeg-data/jczq/daily/{day}/balance.json",
+      "description": "F9：并集逐场天平位移账"
     }
   ]
 }
