@@ -593,6 +593,26 @@ def balance(
     )
 
 
+@rsi_app.command("price-band")
+def price_band(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
+    """Write one mechanical opening-to-current price observation per JCZQ match."""
+    from nutmeg.decision.price_band import write_price_band_artifacts
+
+    _kernel(data_dir)
+    try:
+        report = write_price_band_artifacts(
+            day=day,
+            data_dir=data_dir,
+            captured_at=_now().isoformat(timespec="seconds"),
+        )
+    except ValueError as exc:
+        _fail(str(exc))
+    typer.echo(
+        f"price-band {day}: written={report['written']} "
+        f"missing_opening={report['missing_opening']}"
+    )
+
+
 @rsi_app.command("grade")
 def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR) -> None:
     """Run an experiment's deterministic grading adapter."""

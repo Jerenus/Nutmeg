@@ -4596,6 +4596,14 @@ def _apply_rsi_pending_instruments(connection: Connection) -> None:
     )
 
 
+def _apply_rsi_price_band_instrument(connection: Connection) -> None:
+    connection.exec_driver_sql(
+        "UPDATE rsi_duties SET status='active', "
+        "instrument_json='[\"uv\",\"run\",\"nutmeg\",\"rsi\",\"price-band\","
+        "\"--day\",\"{day}\"]' WHERE duty_id='F5:price-band-observation'"
+    )
+
+
 _CAPITAL_PERMISSIONS = (("zucai_commit_capital_plan", "judge_operator"),)
 
 
@@ -5320,6 +5328,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="rsi_pending_instruments",
         fingerprint="duty_status+pending_schedule_exclusion+preserve_fulfilled_cleanup",
         apply=_apply_rsi_pending_instruments,
+    ),
+    Migration(
+        version=37,
+        name="rsi_price_band_instrument",
+        fingerprint="activate_f5_price_band_instrument+preserve_duty_instances",
+        apply=_apply_rsi_price_band_instrument,
     ),
 )
 

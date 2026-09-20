@@ -19,9 +19,9 @@
       "name": "price-band-observation",
       "scope": "match",
       "deadline_rule": "match_kickoff",
-      "instrument": ["TODO", "price-band-observation", "--day", "{day}"],
+      "instrument": ["uv", "run", "nutmeg", "rsi", "price-band", "--day", "{day}"],
       "artifact_glob": ".nutmeg-data/jczq/daily/{day}/price-band-*.json",
-      "status": "pending_instrument",
+      "status": "active",
       "description": "F5：并集逐场价格带观察；采集器待实现"
     }
   ]

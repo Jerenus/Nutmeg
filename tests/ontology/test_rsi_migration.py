@@ -11,7 +11,7 @@ from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 def test_v29_creates_rsi_tables_and_seeds_constitutional_permissions(tmp_path: Path):
     engine = build_ontology_engine(tmp_path / "ontology.db")
-    run_migrations(engine)
+    run_migrations(engine, MIGRATIONS[:36])
     assert migration_status(engine).current_version >= 29
     names = set(inspect(engine).get_table_names())
     for t in ("rsi_experiments", "rsi_duties", "rsi_duty_instances", "rsi_observations",
@@ -65,7 +65,7 @@ def test_pending_instrument_migration_keeps_fulfilled_and_removes_unfulfilled(tm
                 )
             )
 
-    run_migrations(engine)
+    run_migrations(engine, MIGRATIONS[:36])
 
     with OntologyUnitOfWork(engine) as uow:
         duty = uow.rsi.duties("F5")[0]
@@ -74,3 +74,50 @@ def test_pending_instrument_migration_keeps_fulfilled_and_removes_unfulfilled(tm
         assert [(row.match_id, row.fulfilled_at is not None) for row in rows] == [
             ("keep", True)
         ]
+
+
+def test_price_band_instrument_migration_activates_f5_without_deleting_instances(tmp_path):
+    engine = build_ontology_engine(tmp_path / "ontology.db")
+    run_migrations(engine, MIGRATIONS[:36])
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO rsi_experiments "
+            "(exp_id,claim,mechanism,tier,layer,population,min_tier,window_json,"
+            "falsifier_json,stop_rule,quota_slot,buckets_json,rule_ids_json,source_doc,"
+            "registered_at,frozen_hash,created_at) VALUES "
+            "('F5','c','m','candidate','structural','both','price_only','{}','{}','s',"
+            "0,'[]','[]','x','2026-09-18','h','2026-09-18')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO rsi_duties "
+            "(duty_id,exp_id,recurrence,scope,deadline_rule,instrument_json,artifact_glob,"
+            "description,status) VALUES "
+            "('F5:price-band-observation','F5','per_day','match','match_kickoff',"
+            "'[\"TODO\"]','x','x','pending_instrument')"
+        )
+    with OntologyUnitOfWork(engine) as uow:
+        for match_id, fulfilled_at in (("keep", "2026-09-19T01:00:00+08:00"), ("open", None)):
+            uow.rsi.insert_duty_instance(
+                DutyInstanceRow(
+                    duty_id="F5:price-band-observation",
+                    day="2026-09-19",
+                    match_id=match_id,
+                    issue=None,
+                    due_at="2026-09-19T00:30:00+08:00",
+                    fulfilled_at=fulfilled_at,
+                    artifact_path="x" if fulfilled_at else None,
+                    artifact_hash="h" if fulfilled_at else None,
+                )
+            )
+
+    run_migrations(engine)
+
+    with OntologyUnitOfWork(engine) as uow:
+        duty = uow.rsi.duties("F5")[0]
+        assert duty.status == "active"
+        assert duty.instrument == [
+            "uv", "run", "nutmeg", "rsi", "price-band", "--day", "{day}"
+        ]
+        assert [row.match_id for row in uow.rsi.duty_instances_for_day(
+            duty.duty_id, "2026-09-19"
+        )] == ["keep", "open"]

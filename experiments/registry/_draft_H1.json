@@ -1,0 +1,33 @@
+{
+  "exp_id": "H1",
+  "claim": "开盘位移 drift_pp 分桶后，模态面实开率相对 fair 的残差存在超出 N0 噪音地板的系统性偏离。",
+  "mechanism": "drift 是钱的方向而不是模型的方向；若 effect 不能超过 N0，则人性面在当前可得数据中不可分离。",
+  "tier": "observation",
+  "layer": "judgment",
+  "population": "both",
+  "min_tier": "price_only",
+  "window": {"date_from": "TBD", "n_min": 1},
+  "falsifier": {
+    "metric": "drift_bucket_modal_face_resid_pp",
+    "stratum": "pooled",
+    "n_min": 1,
+    "criterion": "effect.verdict == above_floor",
+    "reference": "N0"
+  },
+  "stop_rule": "仅当 effect 在相同 n、相同统计量、固定 seed 的 N0 置换检验中为 above_floor 才成立；不使用预设 pp 阈值。",
+  "quota_slot": false,
+  "buckets": [],
+  "rule_ids": [],
+  "source_doc": "docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md",
+  "registered_at": "2026-09-20",
+  "duties": [
+    {
+      "name": "price-band-observation",
+      "scope": "match",
+      "deadline_rule": "match_kickoff",
+      "instrument": ["uv", "run", "nutmeg", "rsi", "price-band", "--day", "{day}"],
+      "artifact_glob": ".nutmeg-data/jczq/daily/{day}/price-band-*.json",
+      "description": "H1：逐场开盘至当前价格位移观察"
+    }
+  ]
+}
