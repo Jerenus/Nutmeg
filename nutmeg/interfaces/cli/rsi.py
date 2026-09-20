@@ -109,6 +109,52 @@ def _jczq_match_kickoffs(data_dir: Path, day: str) -> dict[str, str]:
     }
 
 
+def _zucai_match_kickoffs(data_dir: Path, issue: str | None) -> dict[str, str]:
+    if issue is None:
+        return {}
+    issue_path = data_dir / "zucai" / f"{issue}-issue.json"
+    ids_path = data_dir / "zucai" / f"{issue}-store-ids.json"
+    if not issue_path.exists() or not ids_path.exists():
+        return {}
+    matches = json.loads(issue_path.read_text(encoding="utf-8")).get("matches") or []
+    kickoff_by_no = {
+        int(match["match_no"]): _normalise_bj(str(match["kickoff_bj"]))
+        for match in matches
+        if match.get("match_no") is not None and match.get("kickoff_bj")
+    }
+    payload = json.loads(ids_path.read_text(encoding="utf-8"))
+    rows = payload.values() if isinstance(payload, dict) else payload
+    return {
+        str(row["match_id"]): kickoff_by_no[int(row["match_no"])]
+        for row in rows
+        if row.get("match_id") and int(row["match_no"]) in kickoff_by_no
+    }
+
+
+def _population_match_kickoffs(
+    data_dir: Path,
+    *,
+    day: str,
+    issue: str | None,
+    populations: set[str],
+) -> dict[str, dict[str, str]]:
+    from nutmeg.decision.rsi_population import matches_for_population
+
+    jczq = _jczq_match_kickoffs(data_dir, day)
+    zucai = _zucai_match_kickoffs(data_dir, issue)
+    kickoff_by_match = {**zucai, **jczq}
+    return {
+        population: {
+            row["match_id"]: kickoff_by_match[row["match_id"]]
+            for row in matches_for_population(
+                population, day=day, issue=issue, data_dir=data_dir
+            )
+            if row["match_id"] in kickoff_by_match
+        }
+        for population in populations
+    }
+
+
 _BJ = timezone(timedelta(hours=8))
 
 
@@ -155,8 +201,22 @@ def schedule(day: str = _DAY, issue: str | None = _ISSUE, data_dir: Path = _DATA
         ko = min(match_kickoffs.values())
     if ko is None:
         _fail(f"{day} 找不到最早开球（需要足彩 issue 或竞彩 legs-base）")
+    with OntologyUnitOfWork(k.engine) as uow:
+        populations = {
+            experiment.population
+            for duty in uow.rsi.all_duties()
+            if duty.scope == "match"
+            if (experiment := uow.rsi.experiment(duty.exp_id)) is not None
+        }
+    population_match_kickoffs = _population_match_kickoffs(
+        data_dir,
+        day=day,
+        issue=issue,
+        populations=populations,
+    )
     _run(k.rsi_actions.schedule_duties, ScheduleDutiesRequest(
         day=day, earliest_kickoff=ko, issue=issue, match_kickoffs=match_kickoffs,
+        population_match_kickoffs=population_match_kickoffs,
         idempotency_key=f"rsi-sched:{day}:{issue or 'jczq'}",
         requested_at=_now(), **_SYSTEM))
     typer.echo(f"已排 {day} 的义务，截止 {ko}")

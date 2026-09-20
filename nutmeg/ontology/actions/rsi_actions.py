@@ -82,6 +82,7 @@ class ScheduleDutiesRequest:
     earliest_kickoff: str                     # 当天两板最早开球 ISO
     issue: str | None                         # 足彩期号（有则填，供 {issue} 占位）
     match_kickoffs: dict = field(default_factory=dict)   # match_id → kickoff ISO（scope=match 用）
+    population_match_kickoffs: dict = field(default_factory=dict)
     actor_id: str = "sys:rsi"
     actor_role: ActorRole = ActorRole.DETERMINISTIC_SYSTEM
     idempotency_key: str = ""
@@ -241,7 +242,10 @@ class RsiActions:
                 if duty.scope == "day":
                     targets = [("", request.earliest_kickoff)]
                 else:
-                    targets = list(request.match_kickoffs.items())
+                    match_kickoffs = request.population_match_kickoffs.get(
+                        experiment.population, request.match_kickoffs
+                    )
+                    targets = list(match_kickoffs.items())
                 for match_id, due_at in targets:
                     if uow.rsi.duty_instance(duty.duty_id, request.day, match_id) is not None:
                         continue                       # 已排过：幂等

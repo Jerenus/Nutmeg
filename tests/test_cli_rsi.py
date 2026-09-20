@@ -132,6 +132,92 @@ def test_schedule_and_fulfill_per_match_jczq_duty(tmp_path):
     assert fulfilled.exit_code == 0, fulfilled.output
 
 
+def test_schedule_expands_each_match_duty_by_its_population(tmp_path):
+    data_dir = tmp_path / "data"
+    day = "2026-09-19"
+    day_dir = data_dir / "jczq" / "daily" / day
+    zucai_dir = data_dir / "zucai"
+    day_dir.mkdir(parents=True)
+    zucai_dir.mkdir()
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps(
+            {
+                "legs": {
+                    "周五001": {
+                        "match_id": "shared",
+                        "kickoff_bj": "2026-09-19T20:00:00+08:00",
+                    },
+                    "周五002": {
+                        "match_id": "jczq-only",
+                        "kickoff_bj": "2026-09-19T21:00:00+08:00",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    zucai_dir.joinpath("26130-store-ids.json").write_text(
+        json.dumps(
+            {
+                "1": {"match_id": "shared", "match_no": 1},
+                "2": {"match_id": "zucai-only", "match_no": 2},
+            }
+        ),
+        encoding="utf-8",
+    )
+    zucai_dir.joinpath("26130-issue.json").write_text(
+        json.dumps(
+            {
+                "matches": [
+                    {"match_no": 1, "kickoff_bj": "2026-09-19 20:00"},
+                    {"match_no": 2, "kickoff_bj": "2026-09-19 22:00"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    r0_path = tmp_path / "R0.json"
+    r0_doc = json.loads(Path("experiments/registry/R0.json").read_text("utf-8"))
+    r0_path.write_text(json.dumps(r0_doc), encoding="utf-8")
+    both_path = tmp_path / "BOTH.json"
+    both_doc = {**r0_doc, "exp_id": "BOTH", "population": "both"}
+    both_path.write_text(json.dumps(both_doc), encoding="utf-8")
+
+    runner = CliRunner()
+    for path in (r0_path, both_path):
+        registered = runner.invoke(
+            app, ["rsi", "register", str(path), "--data-dir", str(data_dir)]
+        )
+        assert registered.exit_code == 0, registered.output
+    scheduled = runner.invoke(
+        app,
+        [
+            "rsi",
+            "schedule",
+            "--day",
+            day,
+            "--issue",
+            "26130",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert scheduled.exit_code == 0, scheduled.output
+
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        rows = connection.execute(
+            "SELECT duty_id, match_id, due_at FROM rsi_duty_instances "
+            "ORDER BY duty_id, match_id"
+        ).fetchall()
+    assert rows == [
+        ("BOTH:match-research", "jczq-only", "2026-09-19T21:00:00+08:00"),
+        ("BOTH:match-research", "shared", "2026-09-19T20:00:00+08:00"),
+        ("BOTH:match-research", "zucai-only", "2026-09-19T22:00:00+08:00"),
+        ("R0:match-research", "jczq-only", "2026-09-19T21:00:00+08:00"),
+        ("R0:match-research", "shared", "2026-09-19T20:00:00+08:00"),
+    ]
+
+
 def test_dream_ranks_variants_and_prints_variants_tried(tmp_path):
     corpus = tmp_path / "c.json"
     corpus.write_text(
