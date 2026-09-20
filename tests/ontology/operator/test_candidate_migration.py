@@ -355,7 +355,9 @@ def test_migration_registers_closed_candidate_permissions_and_crs_aggregates(
     assert permissions == {
         ("register_zucai_fixed_prize_policy", "deterministic_system"),
         ("request_candidate_generation", "judge_operator"),
+        ("request_candidate_generation", "replay_adjudicator"),
         ("generate_ticket_candidate_set", "deterministic_system"),
+        ("generate_ticket_candidate_set", "replay_adjudicator"),
         ("select_ticket_candidate", "judge_operator"),
     }
     assert crs["win_other"] == ("sel-crs-win-other", 1)

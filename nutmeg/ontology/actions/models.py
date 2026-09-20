@@ -27,6 +27,7 @@ class ActorRole(StrEnum):
     AI_ANALYST = 'ai_analyst'
     JUDGE_OPERATOR = 'judge_operator'
     DETERMINISTIC_SYSTEM = 'deterministic_system'
+    REPLAY_ADJUDICATOR = 'replay_adjudicator'
 
 
 class ActionStatus(StrEnum):

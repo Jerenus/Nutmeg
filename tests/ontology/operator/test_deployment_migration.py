@@ -219,6 +219,7 @@ def test_migration_22_permissions_are_judge_only_and_add_no_confirmation_authori
     assert permissions == {
         ("record_ticket_audit_override", "judge_operator"),
         ("record_no_ticket", "judge_operator"),
+        ("record_no_ticket", "replay_adjudicator"),
         ("supersede_no_ticket", "judge_operator"),
     }
 

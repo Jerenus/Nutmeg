@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
+from nutmeg.ontology.actions import service as action_service_module
 from nutmeg.ontology.actions.models import ActionCommand, ActionStatus, ActorRole, ObjectRef
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.errors import IdempotencyConflictError, PermissionDeniedError
@@ -34,6 +35,56 @@ def _command(
         idempotency_key=key,
         payload=payload or {"value": "one"},
         requested_at=datetime(2026, 7, 21, 8, tzinfo=UTC),
+    )
+
+
+def _running_replay_service(tmp_path: Path) -> tuple[ActionService, object, str]:
+    assert hasattr(action_service_module, "ReplayActionContext")
+    ReplayActionContext = action_service_module.ReplayActionContext
+    service, engine = _service(tmp_path)
+    database_identity = str(Path(engine.url.database).resolve())
+    with OntologyUnitOfWork(engine) as uow:
+        from nutmeg.ontology.repository.replay import HistoricalReplayRunRecord
+
+        uow.replay.insert_running(
+            HistoricalReplayRunRecord(
+                replay_run_id="replay-1",
+                business_date="2026-09-19",
+                source_root_fingerprint="source",
+                source_manifest_hash="manifest",
+                isolated_database_identity=database_identity,
+                schema_version=35,
+                status="running",
+                started_at="2026-09-20T00:00:00+00:00",
+                finished_at=None,
+                production_before={},
+                production_after=None,
+                report_sha256=None,
+                failure_codes=(),
+            )
+        )
+    return (
+        ActionService(
+            lambda: OntologyUnitOfWork(engine),
+            replay_context=ReplayActionContext(
+                replay_run_id="replay-1",
+                business_date="2026-09-19",
+                isolated_database_identity=database_identity,
+            ),
+        ),
+        engine,
+        database_identity,
+    )
+
+
+def _replay_command(*, key: str = "replay:one", action_type: str = "record_no_ticket"):
+    return ActionCommand.create(
+        action_type=action_type,
+        actor_id="replay:replay-1:adjudicator",
+        actor_role=ActorRole.REPLAY_ADJUDICATOR,
+        idempotency_key=key,
+        payload={"business_date": "2026-09-19"},
+        requested_at=datetime(2026, 9, 19, 8, tzinfo=UTC),
     )
 
 
@@ -289,3 +340,97 @@ def test_committed_outcome_still_blocks_a_different_request(tmp_path: Path) -> N
     service.execute(_command(), lambda _uow, _command: ())
     with pytest.raises(IdempotencyConflictError, match="probe:one"):
         service.execute(_command({"value": "changed"}), lambda _uow, _command: ())
+
+
+def test_production_service_rejects_replay_adjudicator_before_permission_lookup(
+    tmp_path: Path,
+) -> None:
+    service, _engine = _service(tmp_path)
+    with pytest.raises(PermissionDeniedError, match="replay-bound"):
+        service.execute(_replay_command(), lambda _uow, _command: ())
+
+
+def test_replay_service_stamps_single_and_batch_commands(tmp_path: Path) -> None:
+    service, engine, _identity = _running_replay_service(tmp_path)
+    seen: list[ActionCommand] = []
+
+    def handler(_uow, command):
+        seen.append(command)
+        return ()
+
+    service.execute(_replay_command(), handler)
+    service.execute_batch(
+        (
+            (_replay_command(key="replay:batch:one"), handler),
+            (_replay_command(key="replay:batch:two"), handler),
+        )
+    )
+
+    assert len(seen) == 3
+    assert all(command.historical_replay for command in seen)
+    assert {command.replay_run_id for command in seen} == {"replay-1"}
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text("SELECT historical_replay, replay_run_id FROM actions")
+        ).all()
+    assert rows == [(1, "replay-1")] * 3
+
+
+def test_replay_service_rejects_conflicting_nested_run_id(tmp_path: Path) -> None:
+    service, _engine, _identity = _running_replay_service(tmp_path)
+    command = ActionCommand.create(
+        action_type="record_no_ticket",
+        actor_id="replay:other:adjudicator",
+        actor_role=ActorRole.REPLAY_ADJUDICATOR,
+        idempotency_key="replay:conflict",
+        payload={"business_date": "2026-09-19"},
+        requested_at=datetime(2026, 9, 19, 8, tzinfo=UTC),
+        historical_replay=True,
+        replay_run_id="other",
+    )
+    with pytest.raises(PermissionDeniedError, match="replace.*run id"):
+        service.execute(command, lambda _uow, _command: ())
+
+
+@pytest.mark.parametrize(
+    "action_type",
+    [
+        "confirm_ticket_placement",
+        "record_cash_transaction",
+        "issue_ticket_confirmation",
+        "rsi_fulfill_duty",
+        "rsi_approve_deployment",
+        "approve_jczq_ontology_cutover",
+    ],
+)
+def test_replay_service_rejects_protected_actions_before_permission_lookup(
+    tmp_path: Path, action_type: str
+) -> None:
+    service, _engine, _identity = _running_replay_service(tmp_path)
+    with pytest.raises(PermissionDeniedError, match="protected action"):
+        service.execute(
+            _replay_command(key=f"replay:protected:{action_type}", action_type=action_type),
+            lambda _uow, _command: (),
+        )
+
+
+def test_replay_service_validates_run_date_status_and_database_identity(
+    tmp_path: Path,
+) -> None:
+    _service_instance, engine, identity = _running_replay_service(tmp_path)
+    assert hasattr(action_service_module, "ReplayActionContext")
+    ReplayActionContext = action_service_module.ReplayActionContext
+    contexts = (
+        ReplayActionContext("missing", "2026-09-19", identity),
+        ReplayActionContext("replay-1", "2026-09-20", identity),
+        ReplayActionContext("replay-1", "2026-09-19", identity + ".other"),
+    )
+    for index, context in enumerate(contexts):
+        service = ActionService(
+            lambda: OntologyUnitOfWork(engine), replay_context=context
+        )
+        with pytest.raises(PermissionDeniedError, match="replay run"):
+            service.execute(
+                _replay_command(key=f"replay:invalid:{index}"),
+                lambda _uow, _command: (),
+            )

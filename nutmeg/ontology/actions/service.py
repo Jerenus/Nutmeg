@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy.exc import IntegrityError, OperationalError
 
@@ -29,6 +31,7 @@ from nutmeg.ontology.actions.models import (
     ActionCommand,
     ActionOutcome,
     ActionStatus,
+    ActorRole,
     ObjectRef,
 )
 from nutmeg.ontology.actions.permissions import PermissionGuard
@@ -41,6 +44,29 @@ ActionBatchItem = tuple[ActionCommand, ActionHandler]
 
 UnitOfWorkFactory = Callable[[], OntologyUnitOfWork]
 
+
+@dataclass(frozen=True, slots=True)
+class ReplayActionContext:
+    replay_run_id: str
+    business_date: str
+    isolated_database_identity: str
+
+
+_REPLAY_PROTECTED_ACTIONS = frozenset(
+    {
+        "approve_jczq_ontology_cutover",
+        "confirm_ticket_placement",
+        "issue_ticket_confirmation",
+        "record_cash_transaction",
+        "rsi_approve_deployment",
+        "rsi_fulfill_duty",
+    }
+)
+
+
+class _ReplayBindingError(PermissionDeniedError):
+    """A replay envelope that cannot be safely persisted against its claimed run."""
+
 # Backoff for looking up a concurrent same-key winner after a unique/lock race.
 _RACE_RETRY_DELAYS = (0.01, 0.02, 0.03, 0.04, 0.05)
 
@@ -52,8 +78,14 @@ def _is_same_key_race(error: Exception) -> bool:
 
 
 class ActionService:
-    def __init__(self, unit_of_work_factory: UnitOfWorkFactory) -> None:
+    def __init__(
+        self,
+        unit_of_work_factory: UnitOfWorkFactory,
+        *,
+        replay_context: ReplayActionContext | None = None,
+    ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
+        self._replay_context = replay_context
 
     def unit_of_work(self):
         """Open the same governed UOW used by Actions for typed result hydration."""
@@ -66,6 +98,7 @@ class ActionService:
         *,
         acquire_write_lock: bool = False,
     ) -> ActionOutcome:
+        command = self._bind_replay_command(command)
         existing = self._lookup(command.idempotency_key)
         if existing is not None:
             if existing.status is ActionStatus.FAILED:
@@ -91,6 +124,7 @@ class ActionService:
             with self._unit_of_work_factory() as uow:
                 if acquire_write_lock:
                     uow.acquire_write_lock()
+                self._validate_replay_run(uow, command)
                 PermissionGuard(uow.connection).assert_allowed(
                     command.policy_version, command.action_type, command.actor_role
                 )
@@ -102,6 +136,8 @@ class ActionService:
                 uow.outbox.append_for_action(
                     command, ActionStatus.COMMITTED, result_refs, committed_at
                 )
+        except _ReplayBindingError:
+            raise
         except PermissionDeniedError as error:
             return self._audit_terminal(
                 command, ActionStatus.REJECTED, "permission_denied", str(error)
@@ -130,7 +166,10 @@ class ActionService:
 
     def execute_batch(self, items: Iterable[ActionBatchItem]) -> tuple[ActionOutcome, ...]:
         """Preflight and atomically commit a related batch of Actions."""
-        batch = tuple(items)
+        batch = tuple(
+            (self._bind_replay_command(command), handler)
+            for command, handler in items
+        )
         if not batch:
             return ()
         self._assert_distinct_batch_keys(batch)
@@ -153,6 +192,7 @@ class ActionService:
 
             guard = PermissionGuard(uow.connection)
             for command, _handler in batch:
+                self._validate_replay_run(uow, command)
                 guard.assert_allowed(
                     command.policy_version,
                     command.action_type,
@@ -191,6 +231,53 @@ class ActionService:
                     )
                 )
         return tuple(outcomes)
+
+    def _bind_replay_command(self, command: ActionCommand) -> ActionCommand:
+        context = self._replay_context
+        if context is None:
+            if command.actor_role is ActorRole.REPLAY_ADJUDICATOR:
+                raise PermissionDeniedError(
+                    "replay_adjudicator requires a replay-bound Action service"
+                )
+            return command
+        if command.action_type in _REPLAY_PROTECTED_ACTIONS:
+            raise PermissionDeniedError(
+                f"protected action {command.action_type} is forbidden in historical replay"
+            )
+        if command.replay_run_id not in (None, context.replay_run_id):
+            raise PermissionDeniedError("nested caller cannot replace the bound replay run id")
+        return ActionCommand.create(
+            action_type=command.action_type,
+            actor_id=command.actor_id,
+            actor_role=command.actor_role,
+            idempotency_key=command.idempotency_key,
+            payload=command.payload,
+            requested_at=datetime.fromisoformat(command.requested_at),
+            expected_versions=command.expected_versions,
+            policy_version=command.policy_version,
+            action_id=command.action_id,
+            historical_replay=True,
+            replay_run_id=context.replay_run_id,
+        )
+
+    def _validate_replay_run(
+        self, uow: OntologyUnitOfWork, command: ActionCommand
+    ) -> None:
+        context = self._replay_context
+        if context is None:
+            return
+        run = uow.replay.get(context.replay_run_id)
+        database_identity = str(Path(uow.connection.engine.url.database).resolve())
+        command_date = command.payload.get("business_date")
+        if (
+            run is None
+            or run.status != "running"
+            or run.business_date != context.business_date
+            or run.isolated_database_identity != context.isolated_database_identity
+            or database_identity != context.isolated_database_identity
+            or (command_date is not None and command_date != context.business_date)
+        ):
+            raise _ReplayBindingError("replay run binding is invalid")
 
     @staticmethod
     def _assert_distinct_batch_keys(batch: tuple[ActionBatchItem, ...]) -> None:

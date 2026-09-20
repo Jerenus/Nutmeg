@@ -26,7 +26,7 @@ from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActi
 from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
-from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.actions.service import ActionService, ReplayActionContext
 from nutmeg.ontology.actions.session_actions import SessionActions
 from nutmeg.ontology.actions.ticket_actions import TicketActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
@@ -142,4 +142,16 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         decision_actions=decision_actions,
         result_actions=result_actions,
         review_actions=review_actions,
+    )
+
+
+def build_replay_action_service(
+    settings: AppSettings,
+    context: ReplayActionContext,
+) -> ActionService:
+    """Build an Action service explicitly bound to one isolated replay run."""
+    engine = build_ontology_engine(settings.ontology_db_path)
+    return ActionService(
+        lambda: OntologyUnitOfWork(engine),
+        replay_context=context,
     )

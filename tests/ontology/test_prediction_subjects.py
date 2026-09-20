@@ -55,13 +55,13 @@ def test_migration_15_is_idempotent(tmp_path: Path) -> None:
     assert {"subject_type", "subject_id", "match_id"} <= cols
 
 
-def test_grade_permission_granted_to_judge_only(tmp_path: Path) -> None:
+def test_grade_permission_granted_to_judge_and_replay_adjudicator(tmp_path: Path) -> None:
     engine = _engine(tmp_path)
     with engine.connect() as conn:
         rows = conn.exec_driver_sql(
             "SELECT actor_role FROM action_permissions WHERE action_type='grade_prediction'"
         ).fetchall()
-    assert {r[0] for r in rows} == {"judge_operator"}
+    assert {r[0] for r in rows} == {"judge_operator", "replay_adjudicator"}
 
 
 def _actions(tmp_path: Path):

@@ -483,6 +483,7 @@ def test_result_permissions_separate_import_request_and_execution(tmp_path: Path
 
     assert permissions == {
         ("import_result_evidence_set", "deterministic_system"),
+        ("import_result_evidence_set", "replay_adjudicator"),
         ("request_settlement", "judge_operator"),
         ("settle_task", "deterministic_system"),
     }

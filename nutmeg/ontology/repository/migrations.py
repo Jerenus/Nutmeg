@@ -4748,6 +4748,35 @@ def _apply_jczq_ontology_cutover(connection: Connection) -> None:
 
 def _apply_historical_replay_authority(connection: Connection) -> None:
     schema.historical_replay_runs.create(connection, checkfirst=True)
+    replay_action_types = (
+        "build_market_snapshot",
+        "commit_forecast",
+        "create_agent_proposal",
+        "freeze_evidence_bundle",
+        "freeze_judgment_prescription",
+        "generate_ticket_candidate_set",
+        "grade_prediction",
+        "import_result_evidence_set",
+        "ingest_artifact",
+        "reconcile_jczq_board_research",
+        "record_adjudication",
+        "record_no_ticket",
+        "record_outcome",
+        "request_candidate_generation",
+        "resolve_agent_proposal",
+        "rsi_grade_experiment",
+    )
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {
+                "policy_version_id": "governance-v1",
+                "action_type": action_type,
+                "actor_role": "replay_adjudicator",
+            }
+            for action_type in replay_action_types
+        ],
+    )
     action_columns = {
         column['name'] for column in inspect(connection).get_columns('actions')
     }
