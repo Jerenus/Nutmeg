@@ -64,7 +64,7 @@ def test_register_schedule_due_status_round_trip(tmp_path):
     d = _data_dir(tmp_path)
     doc = tmp_path / "F2.json"
     doc.write_text(json.dumps(DOC), encoding="utf-8")
-    r = CliRunner().invoke(app, ["rsi", "register", str(doc), "--data-dir", str(d)])
+    r = CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d)])
     assert r.exit_code == 0, r.output
     assert "F2" in r.output and "frozen" in r.output
     r = CliRunner().invoke(app, ["rsi", "schedule", "--day", "2026-09-19", "--issue", "26129",
@@ -82,7 +82,7 @@ def test_verdict_before_n_min_exits_nonzero_with_the_shortfall(tmp_path):
     d = _data_dir(tmp_path)
     doc = tmp_path / "F2.json"
     doc.write_text(json.dumps(DOC), encoding="utf-8")
-    CliRunner().invoke(app, ["rsi", "register", str(doc), "--data-dir", str(d)])
+    CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d)])
     r = CliRunner().invoke(app, ["rsi", "verdict", "--exp", "F2", "--data-dir", str(d)])
     assert r.exit_code == 1 and "prospective" in r.output
 
@@ -91,8 +91,8 @@ def test_register_twice_is_refused(tmp_path):
     d = _data_dir(tmp_path)
     doc = tmp_path / "F2.json"
     doc.write_text(json.dumps(DOC), encoding="utf-8")
-    CliRunner().invoke(app, ["rsi", "register", str(doc), "--data-dir", str(d)])
-    r = CliRunner().invoke(app, ["rsi", "register", str(doc), "--data-dir", str(d)])
+    CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d)])
+    r = CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d)])
     assert r.exit_code == 1 and "已登记" in r.output
 
 
@@ -102,7 +102,7 @@ def test_register_can_fork_a_new_population_into_a_new_registry_doc(tmp_path):
     source.write_text(json.dumps(DOC), encoding="utf-8")
     runner = CliRunner()
     assert runner.invoke(
-        app, ["rsi", "register", str(source), "--data-dir", str(data_dir)]
+        app, ["rsi", "register", "--by", "Jun", str(source), "--data-dir", str(data_dir)]
     ).exit_code == 0
     target = tmp_path / "F2j.json"
 
@@ -110,7 +110,7 @@ def test_register_can_fork_a_new_population_into_a_new_registry_doc(tmp_path):
         app,
         [
             "rsi",
-            "register",
+            "register", "--by", "Jun",
             str(target),
             "--fork-from",
             "F2",
@@ -146,7 +146,7 @@ def test_register_refuses_to_fork_an_experiment_with_a_verdict(tmp_path):
     source.write_text(json.dumps(DOC), encoding="utf-8")
     runner = CliRunner()
     assert runner.invoke(
-        app, ["rsi", "register", str(source), "--data-dir", str(data_dir)]
+        app, ["rsi", "register", "--by", "Jun", str(source), "--data-dir", str(data_dir)]
     ).exit_code == 0
     kernel = build_ontology_kernel(AppSettings(data_dir=data_dir.resolve()))
     kernel.initialize()
@@ -186,7 +186,7 @@ def test_register_refuses_to_fork_an_experiment_with_a_verdict(tmp_path):
         app,
         [
             "rsi",
-            "register",
+            "register", "--by", "Jun",
             str(target),
             "--fork-from",
             "F2",
@@ -214,7 +214,7 @@ def test_schedule_normalises_space_form_kickoff_bj(tmp_path):
         {"match_no": 1, "kickoff_bj": "2026-09-19 03:00"}]}), encoding="utf-8")
     doc = tmp_path / "F2.json"
     doc.write_text(json.dumps(DOC), encoding="utf-8")
-    CliRunner().invoke(app, ["rsi", "register", str(doc), "--data-dir", str(d)])
+    CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d)])
     r = CliRunner().invoke(app, ["rsi", "schedule", "--day", "2026-09-19", "--issue", "26129",
                                  "--data-dir", str(d)])
     assert r.exit_code == 0, r.output
@@ -249,7 +249,7 @@ def test_schedule_and_fulfill_per_match_jczq_duty(tmp_path):
     )
     runner = CliRunner()
     registered = runner.invoke(
-        app, ["rsi", "register", str(doc), "--data-dir", str(data_dir)]
+        app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(data_dir)]
     )
     assert registered.exit_code == 0
     scheduled = runner.invoke(
@@ -298,7 +298,7 @@ def test_due_without_issue_lists_issue_bound_duties_instead_of_failing(tmp_path)
     doc.write_text(json.dumps(DOC), encoding="utf-8")
     runner = CliRunner()
     assert runner.invoke(
-        app, ["rsi", "register", str(doc), "--data-dir", str(data_dir)]
+        app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(data_dir)]
     ).exit_code == 0
     scheduled = runner.invoke(
         app, ["rsi", "schedule", "--day", day, "--data-dir", str(data_dir)]
@@ -377,7 +377,7 @@ def test_schedule_expands_each_match_duty_by_its_population(tmp_path):
 
     runner = CliRunner()
     registered = runner.invoke(
-        app, ["rsi", "register", str(r0_path), "--data-dir", str(data_dir)]
+        app, ["rsi", "register", "--by", "Jun", str(r0_path), "--data-dir", str(data_dir)]
     )
     assert registered.exit_code == 0, registered.output
     first_schedule = runner.invoke(
@@ -395,7 +395,7 @@ def test_schedule_expands_each_match_duty_by_its_population(tmp_path):
     )
     assert first_schedule.exit_code == 0, first_schedule.output
     registered = runner.invoke(
-        app, ["rsi", "register", str(both_path), "--data-dir", str(data_dir)]
+        app, ["rsi", "register", "--by", "Jun", str(both_path), "--data-dir", str(data_dir)]
     )
     assert registered.exit_code == 0, registered.output
     scheduled = runner.invoke(
@@ -446,7 +446,7 @@ def test_reschedule_rebuilds_unfulfilled_instances_and_preserves_fulfilled(
             encoding="utf-8",
         )
         registered = runner.invoke(
-            app, ["rsi", "register", str(doc_path), "--data-dir", str(data_dir)]
+            app, ["rsi", "register", "--by", "Jun", str(doc_path), "--data-dir", str(data_dir)]
         )
         assert registered.exit_code == 0, registered.output
 
@@ -602,7 +602,7 @@ def test_balance_writes_issue_ledger_and_fulfills_f9(tmp_path):
         app,
         [
             "rsi",
-            "register",
+            "register", "--by", "Jun",
             "experiments/registry/F9.json",
             "--data-dir",
             str(data_dir),
@@ -643,7 +643,7 @@ def test_balance_can_be_rerun_after_results_arrive(tmp_path):
         app,
         [
             "rsi",
-            "register",
+            "register", "--by", "Jun",
             "experiments/registry/F9.json",
             "--data-dir",
             str(data_dir),
@@ -777,7 +777,7 @@ def test_balance_day_records_one_f9_observation_per_union_match(tmp_path):
         app,
         [
             "rsi",
-            "register",
+            "register", "--by", "Jun",
             "experiments/registry/F9.json",
             "--data-dir",
             str(data_dir),

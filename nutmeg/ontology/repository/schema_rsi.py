@@ -27,6 +27,7 @@ rsi_experiments = Table(
     Column("registered_at", Text, nullable=False),      # 原登记日，不是摄入日
     Column("frozen_hash", Text, nullable=False),
     Column("created_at", Text, nullable=False),
+    Column("acted_by", Text, nullable=False, server_default="unattributed"),
 )
 
 rsi_duties = Table(
@@ -108,6 +109,7 @@ rsi_deployments = Table(
     Column("extend_to_exp_id", Text, nullable=True),
     Column("actor_id", Text, nullable=False),
     Column("decided_at", Text, nullable=False),
+    Column("acted_by", Text, nullable=False, server_default="unattributed"),
 )
 
 rsi_amendments = Table(
@@ -119,4 +121,5 @@ rsi_amendments = Table(
     Column("rule_check", Text, nullable=False),
     Column("mechanism_note", Text, nullable=True),
     Column("amended_at", Text, nullable=False),
+    Column("acted_by", Text, nullable=False, server_default="unattributed"),
 )

@@ -53,6 +53,7 @@ _WHAT = typer.Option(..., "--what")
 _WHY = typer.Option(..., "--why")
 _RULE_CHECK = typer.Option("", "--rule-check")
 _MECHANISM_NOTE = typer.Option(None, "--mechanism-note")
+_BY = typer.Option(..., "--by")
 _FAMILY = typer.Option(..., "--family", help="{harness, corpus, variants[]}")
 _FORK_FROM = typer.Option(None, "--fork-from")
 _POPULATION = typer.Option(None, "--population")
@@ -280,6 +281,7 @@ def _fork_registry_doc(
 @rsi_app.command("register")
 def register(
     doc_path: Path,
+    by: str = _BY,
     data_dir: Path = _DATA_DIR,
     fork_from: str | None = _FORK_FROM,
     population: str | None = _POPULATION,
@@ -310,7 +312,8 @@ def register(
     # 不能被幂等重放吞成成功。
     now = _now()
     _run(k.rsi_actions.register_experiment, RegisterExperimentRequest(
-        doc=doc, idempotency_key=f"rsi-reg:{doc['exp_id']}:{now.isoformat()}",
+        doc=doc, acted_by=by,
+        idempotency_key=f"rsi-reg:{doc['exp_id']}:{now.isoformat()}",
         requested_at=now, **_HUMAN))
     with OntologyUnitOfWork(k.engine) as uow:
         e = uow.rsi.experiment(doc["exp_id"])
@@ -712,25 +715,28 @@ def verdict(exp: str = _EXP, data_dir: Path = _DATA_DIR) -> None:
 @rsi_app.command("deploy")
 def deploy(exp: str = _EXP, reason: str = _REASON, rule: str | None = _RULE, hold: bool = _HOLD,
            retire: bool = _RETIRE, extend: str | None = _EXTEND,
+           by: str = _BY,
            data_dir: Path = _DATA_DIR) -> None:
     """上线 / 搁置 / 废止 / 延续（只许人）。"""
     decision = "hold" if hold else "retire" if retire else "extend" if extend else "deploy"
     k = _kernel(data_dir)
     _run(k.rsi_actions.approve_deployment, ApproveDeploymentRequest(
         exp_id=exp, decision=decision, reason=reason, rule_id=rule, adjudication_ref=None,
-        extend_to_exp_id=extend, idempotency_key=f"rsi-deploy:{exp}:{decision}:{_now().date()}",
+        extend_to_exp_id=extend, acted_by=by,
+        idempotency_key=f"rsi-deploy:{exp}:{decision}:{_now().date()}",
         requested_at=_now(), **_HUMAN))
     typer.echo(f"{exp} → {decision}" + (f" (rule {rule})" if rule else ""))
 
 
 @rsi_app.command("amend")
 def amend(exp: str = _EXP, what: str = _WHAT, why: str = _WHY, rule_check: str = _RULE_CHECK,
-          mechanism_note: str | None = _MECHANISM_NOTE, data_dir: Path = _DATA_DIR) -> None:
+          mechanism_note: str | None = _MECHANISM_NOTE, by: str = _BY,
+          data_dir: Path = _DATA_DIR) -> None:
     """追加修正案（人）。碰冻结字段的修改不走这里——另立新实验。"""
     k = _kernel(data_dir)
     _run(k.rsi_actions.amend_experiment, AmendExperimentRequest(
         exp_id=exp, what=what, why=why, rule_check=rule_check, mechanism_note=mechanism_note,
-        touches={},
+        touches={}, acted_by=by,
         idempotency_key=f"rsi-amend:{exp}:{hashlib.sha256(what.encode()).hexdigest()[:12]}",
         requested_at=_now(), **_HUMAN))
     typer.echo(f"{exp} 修正案已追加")

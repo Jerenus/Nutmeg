@@ -28,6 +28,7 @@ def test_ensure_duties_syncs_a_changed_non_frozen_definition(tmp_path):
     kernel.rsi_actions.register_experiment(
         RegisterExperimentRequest(
             doc=old_doc,
+            acted_by="Jun",
             actor_id="operator:test",
             actor_role=ActorRole.JUDGE_OPERATOR,
             idempotency_key="register-old-f9-duty",
@@ -45,7 +46,11 @@ def test_ensure_duties_syncs_a_changed_non_frozen_definition(tmp_path):
 
 
 def test_all_registry_docs_load_and_keep_their_original_registration_dates():
-    docs = {p.stem: load_registry_doc(p) for p in sorted(REG.glob("*.json"))}
+    docs = {
+        p.stem: load_registry_doc(p)
+        for p in sorted(REG.glob("*.json"))
+        if not p.name.startswith("_draft_")
+    }
     assert set(docs) == {"F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0"}
     assert docs["F2"]["registered_at"] == "2026-09-14"
     assert docs["F1c"]["registered_at"] == "2026-09-14"

@@ -30,6 +30,7 @@ def test_status_lists_pending_instrument_separately_from_gaps(tmp_path):
     kernel.rsi_actions.register_experiment(
         RegisterExperimentRequest(
             doc=doc,
+            acted_by="Jun",
             actor_id="op:jun",
             actor_role=ActorRole.JUDGE_OPERATOR,
             idempotency_key="reg:F5",

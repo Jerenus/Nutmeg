@@ -4604,6 +4604,16 @@ def _apply_rsi_price_band_instrument(connection: Connection) -> None:
     )
 
 
+def _apply_rsi_human_attribution(connection: Connection) -> None:
+    for table_name in ("rsi_experiments", "rsi_amendments", "rsi_deployments"):
+        columns = {column["name"] for column in inspect(connection).get_columns(table_name)}
+        if "acted_by" not in columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE {table_name} ADD COLUMN acted_by TEXT NOT NULL "
+                "DEFAULT 'unattributed'"
+            )
+
+
 _CAPITAL_PERMISSIONS = (("zucai_commit_capital_plan", "judge_operator"),)
 
 
@@ -5334,6 +5344,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="rsi_price_band_instrument",
         fingerprint="activate_f5_price_band_instrument+preserve_duty_instances",
         apply=_apply_rsi_price_band_instrument,
+    ),
+    Migration(
+        version=38,
+        name="rsi_human_attribution",
+        fingerprint="acted_by_on_register_amend_deploy+historical_unattributed",
+        apply=_apply_rsi_human_attribution,
     ),
 )
 

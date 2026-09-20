@@ -33,6 +33,7 @@ class ExperimentRow:
     registered_at: str
     frozen_hash: str
     created_at: str
+    acted_by: str = "unattributed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +114,7 @@ class DeploymentRow:
     extend_to_exp_id: str | None
     actor_id: str
     decided_at: str
+    acted_by: str = "unattributed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +126,7 @@ class AmendmentRow:
     rule_check: str
     mechanism_note: str | None
     amended_at: str
+    acted_by: str = "unattributed"
 
 
 _GRADE_PP_FIELDS = ("metric_value_pp", "ci_low_pp", "ci_high_pp", "distance_to_falsifier_pp")
@@ -183,6 +186,7 @@ class RsiRepository:
             registered_at=r["registered_at"],
             frozen_hash=r["frozen_hash"],
             created_at=r["created_at"],
+            acted_by=r["acted_by"],
         )
 
     # ── duties ───────────────────────────────────────────────────

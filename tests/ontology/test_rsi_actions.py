@@ -20,7 +20,7 @@ from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 T0 = datetime(2026, 9, 18, 12, tzinfo=UTC)
-HUMAN = dict(actor_id="op:jun", actor_role=ActorRole.JUDGE_OPERATOR)
+HUMAN = dict(actor_id="op:jun", actor_role=ActorRole.JUDGE_OPERATOR, acted_by="Jun")
 SYSTEM = dict(actor_id="sys:rsi", actor_role=ActorRole.DETERMINISTIC_SYSTEM)
 
 F2_DOC = {
@@ -65,7 +65,8 @@ def test_register_twice_is_refused_and_system_cannot_register(tmp_path):
         actions.register_experiment(RegisterExperimentRequest(
             doc=F2_DOC, idempotency_key="reg:F2:again", requested_at=T0, **HUMAN))
     denied = actions.register_experiment(RegisterExperimentRequest(
-        doc={**F2_DOC, "exp_id": "F9"}, idempotency_key="reg:F9", requested_at=T0, **SYSTEM))
+        doc={**F2_DOC, "exp_id": "F9"}, acted_by="system",
+        idempotency_key="reg:F9", requested_at=T0, **SYSTEM))
     assert denied.status is ActionStatus.REJECTED
 
 
@@ -252,7 +253,8 @@ def test_verdict_is_system_only_and_reads_the_ci_bound(tmp_path):
     actions, engine = _registered(tmp_path)
     actions.grade_experiment(_grade("F2", "g:p", mode="prospective", n=140, lo=-3.0, hi=1.9))
     denied = actions.record_verdict(RecordVerdictRequest(
-        exp_id="F2", idempotency_key="v:h", requested_at=T0, **HUMAN))
+        exp_id="F2", idempotency_key="v:h", requested_at=T0,
+        actor_id="op:jun", actor_role=ActorRole.JUDGE_OPERATOR))
     assert denied.status is ActionStatus.REJECTED                     # 人不能替 falsifier 说话
     ok = actions.record_verdict(RecordVerdictRequest(
         exp_id="F2", idempotency_key="v:s", requested_at=T0, **SYSTEM))
@@ -289,7 +291,8 @@ def test_deploy_is_human_only_and_gated_by_layer_tier_and_verdict(tmp_path):
     dep = lambda key, role, decision="deploy": ApproveDeploymentRequest(  # noqa: E731
         exp_id="S1", decision=decision, reason="C11 带定位已由前瞻窗证实", rule_id="C11",
         adjudication_ref=None, extend_to_exp_id=None, idempotency_key=key, requested_at=T0,
-        actor_id="sys:rsi" if role is ActorRole.DETERMINISTIC_SYSTEM else "op:jun", actor_role=role)
+        actor_id="sys:rsi" if role is ActorRole.DETERMINISTIC_SYSTEM else "op:jun",
+        actor_role=role, acted_by="system" if role is ActorRole.DETERMINISTIC_SYSTEM else "Jun")
     with pytest.raises(ValueError, match="survived"):                    # 没判决不能上线
         actions.approve_deployment(dep("d:0", ActorRole.JUDGE_OPERATOR))
     actions.grade_experiment(_grade("S1", "g:s", mode="prospective", n=140, lo=2.5, hi=9.0))

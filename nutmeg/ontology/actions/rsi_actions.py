@@ -44,6 +44,17 @@ from nutmeg.ontology.rsi.models import (
 _REQUIRED_DOC_KEYS = ("exp_id", "claim", "mechanism", "tier", "layer", "population", "min_tier",
                       "window", "falsifier", "stop_rule", "quota_slot", "source_doc",
                       "registered_at")
+_FORBIDDEN_HUMAN_IDENTIFIERS = {
+    "", "ai", "claude", "gpt", "codex", "assistant", "system", "auto"
+}
+_HUMAN_IDENTIFIER_ERROR = "--by 必须是人的标识；这三条动作按 RSI 设计只许人执行"
+
+
+def _human_identifier(value: str) -> str:
+    normalized = value.strip()
+    if normalized.casefold() in _FORBIDDEN_HUMAN_IDENTIFIERS:
+        raise ValueError(_HUMAN_IDENTIFIER_ERROR)
+    return normalized
 
 
 def _iso(dt: datetime) -> str:
@@ -57,6 +68,7 @@ def _new_id(prefix: str) -> str:
 @dataclass(frozen=True, slots=True)
 class RegisterExperimentRequest:
     doc: dict
+    acted_by: str
     actor_id: str
     actor_role: ActorRole
     idempotency_key: str
@@ -71,6 +83,7 @@ class AmendExperimentRequest:
     rule_check: str
     mechanism_note: str | None
     touches: dict            # 想改的字段 → 值；命中 FROZEN_FIELDS 一律拒绝
+    acted_by: str
     actor_id: str
     actor_role: ActorRole
     idempotency_key: str
@@ -145,6 +158,7 @@ class ApproveDeploymentRequest:
     rule_id: str | None
     adjudication_ref: str | None
     extend_to_exp_id: str | None
+    acted_by: str
     actor_id: str
     actor_role: ActorRole
     idempotency_key: str
@@ -169,10 +183,11 @@ class RsiActions:
         command = ActionCommand.create(
             action_type="rsi_register_experiment", actor_id=request.actor_id,
             actor_role=request.actor_role, idempotency_key=request.idempotency_key,
-            payload={"exp_id": doc["exp_id"], "frozen_hash": fh},
+            payload={"exp_id": doc["exp_id"], "frozen_hash": fh, "acted_by": request.acted_by},
             requested_at=request.requested_at)
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
+            acted_by = _human_identifier(request.acted_by)
             if uow.rsi.experiment(doc["exp_id"]) is not None:
                 raise ValueError(f"{doc['exp_id']} 已登记；要改用 amend，要换判据另立新 exp_id")
             uow.rsi.insert_experiment(ExperimentRow(
@@ -184,7 +199,7 @@ class RsiActions:
                 rule_ids=list(doc.get("rule_ids") or []), replay_spec=doc.get("replay_spec"),
                 dream_ref=doc.get("dream_ref"), variants_tried=doc.get("variants_tried"),
                 source_doc=doc["source_doc"], registered_at=doc["registered_at"],
-                frozen_hash=fh, created_at=_iso(request.requested_at)))
+                frozen_hash=fh, created_at=_iso(request.requested_at), acted_by=acted_by))
             refs = [ObjectRef("rsi_experiment", doc["exp_id"])]
             for d in doc.get("duties") or []:
                 duty_id = f"{doc['exp_id']}:{d['name']}"
@@ -207,17 +222,19 @@ class RsiActions:
         command = ActionCommand.create(
             action_type="rsi_amend_experiment", actor_id=request.actor_id,
             actor_role=request.actor_role, idempotency_key=request.idempotency_key,
-            payload={"exp_id": request.exp_id, "what": request.what},
+            payload={"exp_id": request.exp_id, "what": request.what,
+                     "acted_by": request.acted_by},
             requested_at=request.requested_at)
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
+            acted_by = _human_identifier(request.acted_by)
             if uow.rsi.experiment(request.exp_id) is None:
                 raise ValueError(f"{request.exp_id} 未登记")
             aid = _new_id("rsiam")
             uow.rsi.insert_amendment(AmendmentRow(
                 amendment_id=aid, exp_id=request.exp_id, what=request.what, why=request.why,
                 rule_check=request.rule_check, mechanism_note=request.mechanism_note,
-                amended_at=_iso(request.requested_at)))
+                amended_at=_iso(request.requested_at), acted_by=acted_by))
             return (ObjectRef("rsi_amendment", aid),)
 
         return self._svc.execute(command, handler)
@@ -386,9 +403,11 @@ class RsiActions:
             action_type="rsi_approve_deployment", actor_id=request.actor_id,
             actor_role=request.actor_role, idempotency_key=request.idempotency_key,
             payload={"exp_id": request.exp_id, "decision": decision.value,
-                     "rule_id": request.rule_id}, requested_at=request.requested_at)
+                     "rule_id": request.rule_id, "acted_by": request.acted_by},
+            requested_at=request.requested_at)
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
+            acted_by = _human_identifier(request.acted_by)
             exp = uow.rsi.experiment(request.exp_id)
             if exp is None:
                 raise ValueError(f"{request.exp_id} 未登记")
@@ -410,7 +429,7 @@ class RsiActions:
                 rule_id=request.rule_id, reason=request.reason,
                 adjudication_ref=request.adjudication_ref,
                 extend_to_exp_id=request.extend_to_exp_id, actor_id=request.actor_id,
-                decided_at=_iso(request.requested_at)))
+                decided_at=_iso(request.requested_at), acted_by=acted_by))
             return (ObjectRef("rsi_deployment", did),)
 
         return self._svc.execute(command, handler)

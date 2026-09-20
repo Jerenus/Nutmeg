@@ -32,7 +32,11 @@ from nutmeg.ontology.repository.rsi import DutyRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 BJ = timezone(timedelta(hours=8))
-HUMAN = dict(actor_id="operator:rsi-migrate", actor_role=ActorRole.JUDGE_OPERATOR)
+HUMAN = dict(
+    actor_id="operator:rsi-migrate",
+    actor_role=ActorRole.JUDGE_OPERATOR,
+    acted_by="unattributed",
+)
 SYSTEM = dict(actor_id="system:rsi-migrate", actor_role=ActorRole.DETERMINISTIC_SYSTEM)
 BACKFILL_ISSUES = ("26125", "26126", "26127", "26128", "26129")
 F1C_WINDOW_FROM = "26129"
@@ -98,6 +102,8 @@ def migrate(*, data_dir: Path, registry_dir: Path, f2_ledger: Path, dispersion_f
     report: dict = {"registered": []}
 
     for p in sorted(registry_dir.glob("*.json")):
+        if p.name.startswith("_draft_"):
+            continue
         doc = load_registry_doc(p)
         with OntologyUnitOfWork(kernel.engine) as uow:
             already = uow.rsi.experiment(doc["exp_id"]) is not None
