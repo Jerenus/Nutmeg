@@ -1,4 +1,4 @@
-"""RSI 实验对象的表。全部只追加：没有任何一张表有可改写的 status 列，状态是投影。"""
+"""RSI 实验对象表；无可改写 status，状态由事实记录投影。"""
 from __future__ import annotations
 
 from sqlalchemy import Column, ForeignKey, Integer, PrimaryKeyConstraint, Table, Text

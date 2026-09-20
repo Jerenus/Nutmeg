@@ -158,6 +158,9 @@ def _population_match_kickoffs(
     }
 
 
+_SCHEDULE_SEMANTICS = "reconcile-unfulfilled-v1"
+
+
 def _duty_schedule_context(kernel) -> tuple[set[str], str]:
     with OntologyUnitOfWork(kernel.engine) as uow:
         duties = uow.rsi.all_duties()
@@ -182,7 +185,11 @@ def _duty_schedule_context(kernel) -> tuple[set[str], str]:
         if experiments[duty.exp_id] is not None
     ]
     fingerprint = hashlib.sha256(
-        json.dumps(material, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        json.dumps(
+            {"semantics": _SCHEDULE_SEMANTICS, "duties": material},
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
     ).hexdigest()[:12]
     return populations, fingerprint
 

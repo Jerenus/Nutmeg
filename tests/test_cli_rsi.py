@@ -6,6 +6,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from nutmeg.interfaces.cli import app
+from nutmeg.interfaces.cli import rsi as rsi_cli
 
 DOC = {
     "exp_id": "F2", "claim": "c", "mechanism": "m", "tier": "observation", "layer": "judgment",
@@ -417,6 +418,135 @@ def test_schedule_expands_each_match_duty_by_its_population(tmp_path):
         ("R0:match-research", "jczq-only", "2026-09-19T21:00:00+08:00"),
         ("R0:match-research", "shared", "2026-09-19T20:00:00+08:00"),
     ]
+
+
+def test_reschedule_rebuilds_unfulfilled_instances_and_preserves_fulfilled(
+    tmp_path, monkeypatch
+):
+    data_dir = _data_dir(tmp_path)
+    day = "2026-09-19"
+    base = json.loads(Path("experiments/registry/R0.json").read_text("utf-8"))
+    day_duty = {
+        **base["duties"][0],
+        "scope": "day",
+        "deadline_rule": "earliest_kickoff",
+    }
+    runner = CliRunner()
+    for exp_id in ("DROP", "KEEP"):
+        doc_path = tmp_path / f"{exp_id}.json"
+        doc_path.write_text(
+            json.dumps({**base, "exp_id": exp_id, "duties": [day_duty]}),
+            encoding="utf-8",
+        )
+        registered = runner.invoke(
+            app, ["rsi", "register", str(doc_path), "--data-dir", str(data_dir)]
+        )
+        assert registered.exit_code == 0, registered.output
+
+    first = runner.invoke(
+        app,
+        [
+            "rsi",
+            "schedule",
+            "--day",
+            day,
+            "--issue",
+            "26129",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert first.exit_code == 0, first.output
+
+    db_path = data_dir / "ontology" / "ontology.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE rsi_duty_instances SET fulfilled_at = ?, artifact_path = ?, "
+            "artifact_hash = ? WHERE duty_id = ? AND day = ? AND match_id = ''",
+            (
+                "2026-09-18T12:00:00+08:00",
+                "kept.json",
+                "a" * 64,
+                "KEEP:match-research",
+                day,
+            ),
+        )
+        connection.execute(
+            "UPDATE rsi_duties SET scope = 'match', "
+            "deadline_rule = 'match_kickoff' WHERE exp_id IN ('DROP', 'KEEP')"
+        )
+
+    monkeypatch.setattr(rsi_cli, "_SCHEDULE_SEMANTICS", "legacy", raising=False)
+    second = runner.invoke(
+        app,
+        [
+            "rsi",
+            "schedule",
+            "--day",
+            day,
+            "--issue",
+            "26129",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert second.exit_code == 0, second.output
+
+    # Simulate an already-committed schedule Action from before reconciliation
+    # existed. A semantic revision must execute the handler again, not replay it.
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "INSERT INTO rsi_duty_instances "
+            "(duty_id, day, match_id, due_at, issue, fulfilled_at, artifact_path, "
+            "artifact_hash) VALUES (?, ?, '', ?, ?, NULL, NULL, NULL)",
+            (
+                "DROP:match-research",
+                day,
+                "2026-09-19T00:30:00+08:00",
+                "26129",
+            ),
+        )
+
+    monkeypatch.setattr(
+        rsi_cli, "_SCHEDULE_SEMANTICS", "reconcile-unfulfilled-v1", raising=False
+    )
+    third = runner.invoke(
+        app,
+        [
+            "rsi",
+            "schedule",
+            "--day",
+            day,
+            "--issue",
+            "26129",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert third.exit_code == 0, third.output
+
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute(
+            "SELECT duty_id, match_id, fulfilled_at, artifact_path FROM "
+            "rsi_duty_instances WHERE duty_id LIKE 'DROP:%' OR duty_id LIKE 'KEEP:%' "
+            "ORDER BY duty_id, match_id"
+        ).fetchall()
+        observation_count = connection.execute(
+            "SELECT COUNT(*) FROM rsi_observations"
+        ).fetchone()[0]
+    assert rows == [
+        ("DROP:match-research", "m-0", None, None),
+        ("DROP:match-research", "m-1", None, None),
+        (
+            "KEEP:match-research",
+            "",
+            "2026-09-18T12:00:00+08:00",
+            "kept.json",
+        ),
+        ("KEEP:match-research", "m-0", None, None),
+        ("KEEP:match-research", "m-1", None, None),
+    ]
+    assert observation_count == 0
 
 
 def test_dream_ranks_variants_and_prints_variants_tried(tmp_path):

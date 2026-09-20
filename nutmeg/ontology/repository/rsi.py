@@ -1,10 +1,10 @@
-"""RSI 实验对象的仓库。只 insert + select；状态由 projection 函数从行里算。"""
+"""RSI 实验对象仓库；状态由 projection 函数从事实记录计算。"""
 from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
 
-from sqlalchemy import Connection, func, insert, select
+from sqlalchemy import Connection, delete, func, insert, select
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository import schema_rsi as sr
@@ -234,6 +234,21 @@ class RsiRepository:
 
     def insert_duty_instance(self, row: DutyInstanceRow) -> None:
         self._c.execute(insert(sr.rsi_duty_instances).values(**asdict(row)))
+
+    def delete_unfulfilled_duty_instances_except(
+        self, duty_id: str, day: str, match_ids: set[str]
+    ) -> int:
+        """Remove stale schedule placeholders while preserving fulfilled evidence."""
+        t = sr.rsi_duty_instances
+        statement = delete(t).where(
+            t.c.duty_id == duty_id,
+            t.c.day == day,
+            t.c.fulfilled_at.is_(None),
+        )
+        if match_ids:
+            statement = statement.where(t.c.match_id.not_in(sorted(match_ids)))
+        result = self._c.execute(statement)
+        return int(result.rowcount or 0)
 
     def duty_instance(
         self, duty_id: str, day: str, match_id: str = ""

@@ -5,7 +5,8 @@
 - rsi_record_verdict：只许 deterministic_system（人不能替 falsifier 说话）
 - 其余两者皆可。
 
-所有写入只追加；状态是 nutmeg.ontology.rsi.models.project_status 的投影。
+实验事实只追加；schedule 可清理尚未履行的过时实例，已履行证据永不删除。
+状态是 nutmeg.ontology.rsi.models.project_status 的投影。
 """
 from __future__ import annotations
 
@@ -246,6 +247,11 @@ class RsiActions:
                         experiment.population, request.match_kickoffs
                     )
                     targets = list(match_kickoffs.items())
+                uow.rsi.delete_unfulfilled_duty_instances_except(
+                    duty.duty_id,
+                    request.day,
+                    {match_id for match_id, _ in targets},
+                )
                 for match_id, due_at in targets:
                     if uow.rsi.duty_instance(duty.duty_id, request.day, match_id) is not None:
                         continue                       # 已排过：幂等
