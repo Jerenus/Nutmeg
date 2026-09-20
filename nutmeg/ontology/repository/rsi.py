@@ -369,6 +369,16 @@ class RsiRepository:
             ).scalar_one()
         )
 
+    def prospective_n_rows(self, exp_id: str) -> int:
+        t = sr.rsi_observations
+        return int(
+            self._c.execute(
+                select(func.coalesce(func.sum(t.c.n_rows), 0)).where(
+                    t.c.exp_id == exp_id, t.c.prospective == 1
+                )
+            ).scalar_one()
+        )
+
     # ── grades / verdicts / deployments / amendments ─────────────
     def insert_grade(self, row: GradeRow) -> None:
         v = asdict(row)

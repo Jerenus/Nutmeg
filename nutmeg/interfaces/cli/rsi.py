@@ -712,7 +712,10 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
                                 latest_verdict=v.verdict if v else None,
                                 latest_deployment=d.decision if d else None)
             gaps = uow.rsi.gaps(e.exp_id, now=now_iso)
-            line = f"{e.exp_id:6} {st:13} n={g.n_cum if g else 0:>4}/{f.n_min}"
+            display_n = g.n_cum if g else 0
+            if e.exp_id == "F9":
+                display_n = uow.rsi.prospective_n_rows(e.exp_id)
+            line = f"{e.exp_id:6} {st:13} n={display_n:>4}/{f.n_min}"
             if g:
                 line += (f"  CI[{g.ci_low_pp:+.1f},{g.ci_high_pp:+.1f}]"
                          f" 距falsifier {g.distance_to_falsifier_pp:+.1f}pp")

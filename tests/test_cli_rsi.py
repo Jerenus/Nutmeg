@@ -678,3 +678,8 @@ def test_balance_day_records_one_f9_observation_per_union_match(tmp_path):
             "SELECT COUNT(*) FROM rsi_duty_instances "
             "WHERE duty_id = 'F9:balance-ledger' AND fulfilled_at IS NOT NULL"
         ).fetchone() == (3,)
+    status = runner.invoke(
+        app, ["rsi", "status", "--exp", "F9", "--data-dir", str(data_dir)]
+    )
+    assert status.exit_code == 0
+    assert "n=   3/60" in status.output
