@@ -247,3 +247,142 @@ GPT 交回后我逐条核这些，不听论证只看输出：
 | 8 | 已 fulfill 未删 | 清理前后 `select count(*) ... where fulfilled_at is not null` | 删已 fulfill＝销毁样本 |
 | 9 | 无插值 | 搜 T5 产物里的默认值/填充值 | 假数据比没数据坏 |
 | 10 | 定时器真在跑 | `launchctl list \| grep nutmeg` 自己跑一遍 | 别照子代理报的结果信 |
+
+---
+
+# 追加交接 · T9（2026-09-21）
+
+> T1-T8 已全部竣工验收通过（含 GPT 自查修复的 T1/T2/T4/T5 四处）。
+> 本节是竣工后新发现的一个 bug，走同一条交接链。
+
+━━━━━━━━━━━━━━━━━━━━━━━━ 提示词开始 ━━━━━━━━━━━━━━━━━━━━━━━━
+
+接着上一轮的测量层改造做 T9，设计写在
+`docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md` 的
+**§9「追加 · T9：观测 stratum 由注册表决定」**，先读那一节。
+
+T1-T8 已验收通过，不要回头改它们。
+
+## 事故
+
+你的 T7 采集器工作正常，但 F5 的 n 永远不会涨：
+
+```
+盘上 price-band 产物 : 30 份
+F5 观测行            : 30 条，n_rows 合计 30
+已 fulfill 实例      : 24 / 30
+rsi status           : F5  n = 0 / 120        ⛔
+```
+
+根因 `nutmeg/interfaces/cli/rsi.py:44`：
+
+```python
+_STRATUM = typer.Option("zucai", "--stratum")
+```
+
+`rsi fulfill` 把调用方传入的 stratum 直接写进 `population_stratum`（rsi.py:397），
+而 `rsi status` 算 n 时按注册表 `falsifier.stratum` 匹配。
+F5 的 `falsifier.stratum = "pooled"`，30 条观测全写成 `"jczq"` —— 一条都对不上。
+
+三个调用方各写各的，前两个是**恰好**对上不是**保证**对上：
+
+| 调用方 | 传什么 | falsifier.stratum | 结果 |
+|---|---|---|---|
+| research_runner.py:229 | `--stratum jczq` | R0 = jczq | 恰好对上 |
+| rsi.py:576（F9 balance） | 硬编码 "pooled" | F9 = pooled | 恰好对上 |
+| F5 的 fulfill | jczq | F5 = pooled | ⛔ 永远 n=0 |
+
+映射规则其实已经在代码里（rsi.py:238：`"pooled" if population == "both" else population`），
+只是用在 fork 路径，没用在 fulfill 路径。
+
+## 这是同一个病的第三次
+
+1. F9 首日：stratum 对但 n_rows=0、按实例数增长 → 零赛果下显示 n=44/60
+2. as-built §4.4：验收条件可被"让数字好看"满足
+3. **本次：n_rows 对但 stratum 错 → 采一年样本 n 仍为 0**
+
+共同形状：**观测写进去了、却不计数、而且没有任何地方报警。**
+前两次修的是"别让它虚高"，这次要修的是"别让它虚低" —— 两个方向都必须有声音。
+
+## 要做的四件事
+
+**① stratum 不再由调用方决定**
+`fulfill_duty` 从已登记实验反查 `falsifier.stratum`，作为 `population_stratum` 的唯一来源。
+`--stratum` 保留但降级为断言：传了且与注册表不一致 → 报错
+`ValueError: --stratum {传入} 与 {exp} 注册的 falsifier.stratum={注册值} 不一致`。
+⛔不得静默采用任一方。
+
+**② 孤儿观测必须发声**（本条是这次真正的价值）
+`rsi status` 增加一行，列出存在但不计入 n 的观测：
+
+```
+orphan: F5 30 条观测 stratum=jczq，而 falsifier.stratum=pooled（不计入 n）
+```
+
+判据：`observation.population_stratum != experiment.falsifier.stratum`。
+前两次事故都是靠人盯出来的，第三次要靠系统自己喊。
+
+**③ 修复既有的 30 条**
+迁移只改 `population_stratum` 一个字段，且只改与注册表不符的行。
+迁移说明里写清「这是标签订正，不是观测重写」，并记录改动条数。
+⛔不得删除任何观测行；⛔不得改 n_rows / captured_at / prospective / artifact_hash。
+
+**④ 不做的事**
+不改任何 falsifier 阈值、不改 F5 的冻结面、不补跑任何采集器、
+不把那 6 条 `prospective=0` 的行改成前瞻 —— 它们的 due_at 是 13:00/16:00×2/18:00/18:30×2，
+全部早于采集时刻，是开球后才采的，系统判得对。真实前瞻覆盖就是 24/30。
+
+## 红线（沿用上一轮，逐条仍然有效）
+
+- ⛔不得修改 F1c / F2 / F3 / F8 的任何字段
+- ⛔不得执行 `nutmeg rsi register` / `amend` / `deploy`（现在 --by 必填，只许人）
+- ⛔不得改判读逻辑、票面逻辑、audit 码表
+- ⛔不得为了让任何 n 增长而改代码 —— 本次 F5 的 n 应该变成 **24**，不是 30；
+  若你做出了 30，说明把那 6 条回溯行也算进去了，那是错的
+- ⛔`git add` 只用显式路径，绝不用 -A / -u
+- ⚠️仓里有并发写入；动 git 前先 git status
+- ⚠️`git commit | tail` 会吞退出码，必须单独 echo $?
+
+## 验收（逐条跑，原样贴进报告）
+
+```
+uv run pytest tests/ -q
+uv run ruff check nutmeg/ tests/ experiments/ scripts/
+uv run nutmeg rsi status                      # F5 n=24/120；orphan 行消失
+git diff --stat experiments/registry/         # 必须为空
+uv run python -c "import sqlite3;c=sqlite3.connect('.nutmeg-data/ontology/ontology.db');\
+print('obs',c.execute('select count(*) from rsi_observations').fetchone()[0],\
+'verdicts',c.execute('select count(*) from rsi_verdicts').fetchone()[0],\
+'deployments',c.execute('select count(*) from rsi_deployments').fetchone()[0])"
+```
+
+出口条件（对照 spec §9.4 的 B1-B6）：
+1. F5 n = **24**/120（不是 0，也不是 30）
+2. orphan 行消失；人为造一条错 stratum 观测则它出现
+3. `--stratum` 传不一致的值 → 报错退出且不写库
+4. R0 仍 30/200、F2 仍 11/140，逐字未变
+5. `rsi_observations` 总行数修复前后相等
+6. 那 6 条仍是 prospective=0
+7. verdicts / deployments 仍为 0
+
+报告里请写明你发现的任何 spec 与现实不符之处。上一轮四处设计错误全靠实跑暴露，
+这次大概率还有。
+
+提交信息末尾加：
+```
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+```
+
+━━━━━━━━━━━━━━━━━━━━━━━━ 提示词结束 ━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 我的 T9 监管清单
+
+| # | 核什么 | 怎么核 |
+|---|---|---|
+| 1 | F5 n 是 24 不是 30 | `rsi status`；30 说明把 6 条回溯行算进了前瞻 |
+| 2 | 观测没被删 | 修复前后 `count(*) from rsi_observations` 相等 |
+| 3 | 只改了 stratum 一列 | 抽一条观测比对 n_rows/captured_at/prospective/artifact_hash |
+| 4 | 断言真的会拦 | 自己传一个错 stratum 试，确认报错且不写库 |
+| 5 | orphan 行是活的 | 人为造一条错 stratum 观测，确认它出现 |
+| 6 | 其余实验 n 未动 | R0 30/200、F2 11/140 |
+| 7 | registry 零改动 | `git diff --stat experiments/registry/` 为空 |

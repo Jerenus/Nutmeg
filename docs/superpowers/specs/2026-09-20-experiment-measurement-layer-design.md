@@ -293,3 +293,90 @@ def register(doc_path, data_dir, fork_from, population, window_from) -> None:
 | A6 | `hole_location` 词典 | 新产物 `unit` 全部落在闭合值域；历史产物 `unit=None` 而**不是被猜成某个值** |
 | A7 | `decision-postmortem` | 在一个已结算日上产出，且 `actual_was_excluded=true` 的行带齐三元组 |
 | A8 | T5 诊断报告 | 明确回答「历史可否回补」，若不可回补则如实写明，**无插值** |
+
+---
+
+# 追加 · T9：观测 stratum 由注册表决定（2026-09-21 立）
+
+> 本节在 T1-T8 全部竣工后追加。触发事故：F5 采集器跑通、30 份产物落盘、24 条实例
+> fulfill 成功，而 `rsi status` 显示 **n=0/120**。
+
+## 9.1 事故
+
+```
+盘上 price-band 产物 : 30 份
+F5 观测行            : 30 条，n_rows 合计 30
+已 fulfill 实例      : 24 / 30
+rsi status           : F5  n = 0 / 120        ⛔
+```
+
+根因在 `nutmeg/interfaces/cli/rsi.py:44`：
+
+```python
+_STRATUM = typer.Option("zucai", "--stratum")
+```
+
+`rsi fulfill` 把 **调用方传入的 stratum** 直接写进 `population_stratum`（`rsi.py:397`），
+默认值还是 `"zucai"`。而 `rsi status` 算 n 时按 **注册表 `falsifier.stratum`** 匹配。
+F5 的 `falsifier.stratum = "pooled"`，30 条观测却全写成 `"jczq"` —— **一条都对不上。**
+
+三个调用方各写各的：
+
+| 调用方 | 传什么 | 实验的 falsifier.stratum | 结果 |
+|---|---|---|---|
+| `research_runner.py:229` | `--stratum jczq` | R0 = `jczq` | ✅ 恰好对上 |
+| `rsi.py:576`（F9 balance） | 硬编码 `"pooled"` | F9 = `pooled` | ✅ 恰好对上 |
+| F5 的 fulfill | `jczq` | F5 = `pooled` | ⛔ 永远 n=0 |
+
+**前两个是"恰好对上"，不是"保证对上"。** 映射规则其实已经存在于代码里
+（`rsi.py:238`：`"pooled" if population == "both" else population`），但只用在 fork 路径，
+没有用在 fulfill 路径。
+
+## 9.2 这是同一个病的第三次
+
+| 次序 | 形态 | 后果 |
+|---|---|---|
+| 1 | F9 首日：stratum 对（pooled），但 `n_rows=0`、按实例数增长 | 零赛果下显示 n=44/60 |
+| 2 | as-built §4.4：验收条件可被"让数字好看"满足 | 同上的立法层根因 |
+| 3 | **F5 本次：`n_rows` 对，但 stratum 错** | 采一年样本 n 仍为 0 |
+
+共同形状：**观测写进去了，却不计数，而且没有任何地方报警。**
+前两次修的是"别让它虚高"，这次要修的是"别让它虚低"——**两个方向都必须有声音。**
+
+## 9.3 设计
+
+**① stratum 不再由调用方决定**
+`fulfill_duty` 从已登记实验反查 `falsifier.stratum` 作为 `population_stratum` 的唯一来源。
+`--stratum` 保留但降级为**断言**：传了且与注册表不一致 → 直接报错，
+`ValueError: --stratum {传入} 与 {exp} 注册的 falsifier.stratum={注册值} 不一致`。
+⛔不得静默采用任一方。
+
+**② 孤儿观测必须发声**
+`rsi status` 增加一行，列出**存在但不计入 n** 的观测：
+
+```
+orphan: F5 30 条观测 stratum=jczq，而 falsifier.stratum=pooled（不计入 n）
+```
+
+这是本条的真正价值 —— 前两次事故都是靠人盯出来的，第三次要靠系统自己喊。
+判据：`observation.population_stratum != experiment.falsifier.stratum` 即孤儿。
+
+**③ 修复既有的 30 条**
+迁移只改 `population_stratum` 一个字段，且**只改与注册表不符的行**，其余字段不动。
+记录改动条数并在迁移说明里写清「这是标签订正，不是观测重写」。
+⛔不得删除任何观测行；⛔不得改 `n_rows` / `captured_at` / `prospective` / `artifact_hash`。
+
+**④ 不做的事**
+不改任何 `falsifier` 阈值、不改 F5 的冻结面、不补跑任何采集器、
+不把那 6 条 `prospective=0` 的行改成前瞻（它们是开球后采的，系统判得对）。
+
+## 9.4 验收
+
+| # | 检验 | 通过标准 |
+|---|---|---|
+| B1 | `rsi status` | F5 的 n 由 0 变为**实际计数**（应为 24，即 prospective 的那些） |
+| B2 | 孤儿行 | 修复后 `orphan:` 行消失；人为造一条错 stratum 观测则它出现 |
+| B3 | `--stratum` 断言 | 传不一致的值 → 报错退出，不写库 |
+| B4 | 其余实验 n 不变 | R0 30/200、F2 11/140 与修复前**逐字一致** |
+| B5 | 观测未被删 | `select count(*) from rsi_observations` 修复前后相等 |
+| B6 | 那 6 条仍是 prospective=0 | 未被顺手"修正" |
