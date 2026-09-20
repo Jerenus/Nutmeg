@@ -75,6 +75,15 @@ def intake_board(*, day: str, jczq_dir: Path, write: bool) -> dict:
     return {"ok": ok, "failed": failed}
 
 
+def _rev(made_at: str) -> str:
+    """草稿 Read 的版本后缀（HHMM）。
+
+    同一天多次落 Read 内容会变，键不变会撞幂等冲突（2026-09-19 早/午两版）。
+    """
+    digits = "".join(ch for ch in made_at if ch.isdigit())
+    return digits[8:12] if len(digits) >= 12 else "0000"
+
+
 def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
     day_dir = Path(jczq_dir) / "daily" / day
     board = json.loads(
@@ -116,7 +125,7 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
         tier = "deep_research" if researched else "price_only"
         reads.append(
             {
-                "read_id": f"R-{read_source}-jczq-{day}-{code}-had",
+                "read_id": f"R-{read_source}-jczq-{day}-{code}-had-{_rev(made_at)}",
                 "match_id": leg["match_id"],
                 "snapshot_id": leg.get("snapshot_id"),
                 "made_at": made_at,
