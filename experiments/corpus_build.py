@@ -40,13 +40,16 @@ import json
 import os
 import re
 
+from nutmeg.decision.research_intake import (
+    HOLE_LOCATION_SIDES,
+    HOLE_LOCATION_UNITS,
+)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 Z = os.path.join(ROOT, ".nutmeg-data", "zucai")
 J = os.path.join(ROOT, ".nutmeg-data", "jczq")
 KEY = {"home": "3", "draw": "1", "away": "0"}
 _DUP_TOL = 0.015
-_HOLE_UNITS = {"attack", "creation", "spine", "defense", "goalkeeper", "both", "none"}
-_HOLE_SIDES = {"home", "away", "both", "none"}
 
 
 def _load(path, default=None):
@@ -150,8 +153,8 @@ def _research_labels(doc: dict | None) -> dict | None:
         hole = {}
     controlled_hole = (
         {"unit", "side", "priced_in", "detail"} <= set(hole)
-        and hole.get("unit") in _HOLE_UNITS
-        and hole.get("side") in _HOLE_SIDES
+        and hole.get("unit") in HOLE_LOCATION_UNITS
+        and hole.get("side") in HOLE_LOCATION_SIDES
         and isinstance(hole.get("priced_in"), bool)
     )
     return dict(
