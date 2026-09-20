@@ -158,7 +158,7 @@ def _population_match_kickoffs(
     }
 
 
-_SCHEDULE_SEMANTICS = "reconcile-unfulfilled-v1"
+_SCHEDULE_SEMANTICS = "explicit-cross-channel-identity-v2"
 
 
 def _duty_schedule_context(kernel) -> tuple[set[str], str]:
@@ -409,11 +409,19 @@ def _official_zucai_outcomes(data_dir: Path, issue: str, reads: list[dict]) -> d
         return None
     face = {"3": "home", "1": "draw", "0": "away"}
     codes = result.split()
-    outcomes = {
-        str(read.get("match_id") or read.get("read_id")): face[codes[index]]
-        for index, read in enumerate(reads)
-        if index < len(codes) and codes[index] in face
-    }
+    outcomes: dict[str, str] = {}
+    for index, read in enumerate(reads):
+        if index >= len(codes) or codes[index] not in face:
+            continue
+        actual = face[codes[index]]
+        for key in (
+            read.get("match_id"),
+            read.get("read_id"),
+            read.get("match_no"),
+            index + 1,
+        ):
+            if key is not None:
+                outcomes[str(key)] = actual
     return outcomes or None
 
 
@@ -493,7 +501,7 @@ def balance(
         read = read_by_match.get(match_id)
         if read is None or match_id not in kickoffs:
             continue
-        selected_reads.append(read)
+        selected_reads.append({**read, "match_no": target.get("match_no")})
         rows.append(
             {
                 **target,
@@ -542,9 +550,16 @@ def balance(
         ),
     )
     raw = artifact.read_bytes()
-    for row in rows:
+    for row, read in zip(rows, selected_reads, strict=True):
         match_id = row["match_id"]
         tier = str(row["judgment_tier"])
+        actual = None
+        if outcomes is not None:
+            for key in (read.get("match_id"), read.get("match_no")):
+                if key is not None and str(key) in outcomes:
+                    actual = outcomes[str(key)]
+                    break
+        qualified_n = int(bool(row["moved"] and actual is not None))
         _run(
             k.rsi_actions.fulfill_duty,
             FulfillDutyRequest(
@@ -553,7 +568,7 @@ def balance(
                 day=resolved_day,
                 artifact_path=str(artifact),
                 artifact_bytes=raw,
-                n_rows=1,
+                n_rows=qualified_n,
                 population_stratum="pooled",
                 judgment_tier_hist={tier: 1},
                 captured_at=now,
@@ -720,8 +735,8 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
                                 latest_deployment=d.decision if d else None)
             gaps = uow.rsi.gaps(e.exp_id, now=now_iso)
             display_n = g.n_cum if g else 0
-            if e.exp_id == "F9":
-                display_n = uow.rsi.prospective_n_rows(e.exp_id)
+            if e.exp_id in {"F9", "R0"}:
+                display_n = uow.rsi.prospective_n_rows(e.exp_id, window=e.window)
             line = f"{e.exp_id:6} {st:13} n={display_n:>4}/{f.n_min}"
             if g:
                 line += (f"  CI[{g.ci_low_pp:+.1f},{g.ci_high_pp:+.1f}]"

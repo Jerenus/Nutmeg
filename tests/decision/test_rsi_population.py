@@ -8,22 +8,29 @@ from nutmeg.decision.rsi_population import matches_for_population
 DATA_DIR = Path(".nutmeg-data")
 
 
-@pytest.mark.parametrize(
-    ("day", "issue"),
-    [("2026-09-19", "26130"), ("2026-09-20", "26131")],
-)
-def test_both_is_the_real_match_id_union_for_recorded_boards(day, issue):
+def test_both_uses_explicit_channel_map_for_recorded_26131_board():
+    day = "2026-09-20"
+    issue = "26131"
     jczq = matches_for_population("jczq", day=day, issue=issue, data_dir=DATA_DIR)
     zucai = matches_for_population("zucai", day=day, issue=issue, data_dir=DATA_DIR)
     both = matches_for_population("both", day=day, issue=issue, data_dir=DATA_DIR)
 
-    jczq_ids = {row["match_id"] for row in jczq}
-    zucai_ids = {row["match_id"] for row in zucai}
-    both_ids = {row["match_id"] for row in both}
+    assert len(jczq) == 30
+    assert len(zucai) == 14
+    assert len(both) == 30
+    assert sum(row["source"] == "both" for row in both) == 14
+    assert not any(row.get("unmapped") for row in both)
 
-    assert both_ids == jczq_ids | zucai_ids
-    assert len(both) == len(both_ids)
-    assert len(both) != len(jczq)
+
+def test_both_respects_existing_explicit_26130_channel_map():
+    day = "2026-09-19"
+    issue = "26130"
+    jczq = matches_for_population("jczq", day=day, issue=issue, data_dir=DATA_DIR)
+    both = matches_for_population("both", day=day, issue=issue, data_dir=DATA_DIR)
+
+    assert len(both) == len(jczq)
+    assert sum(row["source"] == "both" for row in both) == 14
+    assert not any(row.get("unmapped") for row in both)
 
 
 def test_both_marks_shared_match_once(tmp_path):
@@ -52,13 +59,23 @@ def test_both_marks_shared_match_once(tmp_path):
         ),
         encoding="utf-8",
     )
+    zucai_dir.joinpath("26131-channel-map.json").write_text(
+        json.dumps({"shared": 1}), encoding="utf-8"
+    )
 
     result = matches_for_population(
         "both", day=day, issue="26131", data_dir=tmp_path
     )
 
     assert all(
-        set(row) == {"match_id", "code", "match_no", "source"}
+        set(row) == {
+            "match_id",
+            "code",
+            "match_no",
+            "canonical_id",
+            "source",
+            "unmapped",
+        }
         for row in result
     )
     assert result == [
@@ -66,19 +83,25 @@ def test_both_marks_shared_match_once(tmp_path):
             "match_id": "shared",
             "code": "周日001",
             "match_no": 1,
+            "canonical_id": None,
             "source": "both",
+            "unmapped": False,
         },
         {
             "match_id": "jczq-only",
             "code": "周日002",
             "match_no": None,
+            "canonical_id": None,
             "source": "jczq",
+            "unmapped": False,
         },
         {
             "match_id": "zucai-only",
             "code": None,
             "match_no": 2,
+            "canonical_id": None,
             "source": "zucai",
+            "unmapped": True,
         },
     ]
 

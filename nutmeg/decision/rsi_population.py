@@ -17,7 +17,9 @@ def _jczq_matches(*, day: str, data_dir: Path) -> list[dict]:
             "match_id": str(leg["match_id"]),
             "code": str(code),
             "match_no": None,
+            "canonical_id": None,
             "source": "jczq",
+            "unmapped": False,
         }
         for code, leg in entries
     ]
@@ -32,7 +34,9 @@ def _zucai_matches(*, issue: str, data_dir: Path) -> list[dict]:
             "match_id": str(row["match_id"]),
             "code": None,
             "match_no": int(row["match_no"]),
+            "canonical_id": row.get("canonical_id"),
             "source": "zucai",
+            "unmapped": False,
         }
         for row in rows
     ]
@@ -62,11 +66,26 @@ def matches_for_population(
         return jczq
     zucai = _zucai_matches(issue=issue, data_dir=data_dir)
     by_match_id = {row["match_id"]: row for row in jczq}
+    channel_map_path = data_dir / "zucai" / f"{issue}-channel-map.json"
+    channel_map = (
+        json.loads(channel_map_path.read_text(encoding="utf-8"))
+        if channel_map_path.exists()
+        else {}
+    )
+    jczq_by_match_no = {
+        int(match_no): by_match_id[match_id]
+        for match_id, match_no in channel_map.items()
+        if match_id in by_match_id
+    }
     for row in zucai:
-        existing = by_match_id.get(row["match_id"])
+        existing = jczq_by_match_no.get(row["match_no"]) or by_match_id.get(
+            row["match_id"]
+        )
         if existing is None:
+            row["unmapped"] = True
             by_match_id[row["match_id"]] = row
         else:
             existing["match_no"] = row["match_no"]
+            existing["canonical_id"] = row["canonical_id"]
             existing["source"] = "both"
     return list(by_match_id.values())

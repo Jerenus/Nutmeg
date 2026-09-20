@@ -335,11 +335,12 @@ class RsiRepository:
             {
                 row["day"]
                 for row in rows
-                if experiment.layer != "structural"
+                if (
+                    not ({"date_from", "date_to"} & experiment.window.keys())
+                    and experiment.layer != "structural"
+                )
                 or window_contains(
-                    experiment.window,
-                    issue=row["issue"],
-                    day=row["day"],
+                    experiment.window, issue=row["issue"], day=row["day"]
                 )
             }
         )
@@ -384,13 +385,17 @@ class RsiRepository:
             ).scalar_one()
         )
 
-    def prospective_n_rows(self, exp_id: str) -> int:
+    def prospective_n_rows(self, exp_id: str, *, window: dict | None = None) -> int:
         t = sr.rsi_observations
+        conditions = [t.c.exp_id == exp_id, t.c.prospective == 1]
+        if window is not None:
+            if window.get("date_from"):
+                conditions.append(t.c.day >= str(window["date_from"]))
+            if window.get("date_to"):
+                conditions.append(t.c.day <= str(window["date_to"]))
         return int(
             self._c.execute(
-                select(func.coalesce(func.sum(t.c.n_rows), 0)).where(
-                    t.c.exp_id == exp_id, t.c.prospective == 1
-                )
+                select(func.coalesce(func.sum(t.c.n_rows), 0)).where(*conditions)
             ).scalar_one()
         )
 

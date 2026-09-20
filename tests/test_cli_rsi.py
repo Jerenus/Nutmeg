@@ -267,6 +267,13 @@ def test_schedule_and_fulfill_per_match_jczq_duty(tmp_path):
         ],
     )
     assert fulfilled.exit_code == 0, fulfilled.output
+    status = runner.invoke(
+        app, ["rsi", "status", "--exp", "R0", "--data-dir", str(data_dir)]
+    )
+    assert status.exit_code == 0, status.output
+    # R0's frozen window starts on 2026-09-20, so this older observation is
+    # retained as evidence but cannot enter the prospective sample count.
+    assert "n=   0/200" in status.output
 
 
 def test_due_without_issue_lists_issue_bound_duties_instead_of_failing(tmp_path):
@@ -673,11 +680,15 @@ def test_balance_can_be_rerun_after_results_arrive(tmp_path):
         hashes = connection.execute(
             "SELECT artifact_hash FROM rsi_observations WHERE exp_id = 'F9'"
         ).fetchall()
+        n_rows = connection.execute(
+            "SELECT SUM(n_rows) FROM rsi_observations WHERE exp_id = 'F9'"
+        ).fetchone()[0]
         keys = connection.execute(
             "SELECT idempotency_key FROM actions "
             "WHERE idempotency_key LIKE 'rsi-ful:F9:balance-ledger:%'"
         ).fetchall()
     assert len(hashes) == 2
+    assert n_rows == 1
     assert (artifact_hash,) in hashes
     assert any(":balance-ledger:v3:2026-09-19:" in key for (key,) in keys)
 
@@ -803,7 +814,7 @@ def test_balance_day_records_one_f9_observation_per_union_match(tmp_path):
     with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
         assert connection.execute(
             "SELECT COUNT(*), SUM(n_rows) FROM rsi_observations WHERE exp_id = 'F9'"
-        ).fetchone() == (3, 3)
+        ).fetchone() == (3, 0)
         assert connection.execute(
             "SELECT COUNT(*) FROM rsi_duty_instances "
             "WHERE duty_id = 'F9:balance-ledger' AND fulfilled_at IS NOT NULL"
@@ -812,4 +823,4 @@ def test_balance_day_records_one_f9_observation_per_union_match(tmp_path):
         app, ["rsi", "status", "--exp", "F9", "--data-dir", str(data_dir)]
     )
     assert status.exit_code == 0
-    assert "n=   3/60" in status.output
+    assert "n=   0/60" in status.output
