@@ -48,6 +48,14 @@ F9 的 `population` 本来就是 `both`、`stratum` 本来就是 `pooled`，这�
 population 已是 `both` 不动。duty 名 `price-band-observation`，instrument 由你按 F5 的 claim 决定采什么，
 若现有脚本不足以采，**只写 duty 与 artifact_glob，采集器留 TODO 并在报告里说明**，不要为了填满而发明指标。
 
+**T4b · 修 `rsi due` 的 issue 硬绑（已实测复现的 bug，优先级高于 T5）**
+`nutmeg rsi due` 只接 `--day`，没有 `--issue`；而 F2/F1c/F9/F4 的 duty instrument 里都有 `{issue}` 占位符。
+`rsi_prereg.render_instrument` 在 `issue is None` 时直接 `raise ValueError`，于是**只要注册表里存在任何 issue 绑定义务，整个 due 清单就打不开**。
+实测复现：`uv run nutmeg rsi due --day 2026-09-20` → `ValueError: 该 instrument 需要 issue，但当天没有足彩期`。
+这条今天 08:30 已在 B0 备料链里无声失败过一次（日志：『⚠️rsi 接线未成功（不影响主任务）』）。
+修法：①`rsi due` 增加可选 `--issue`；②未给 issue 时，含 `{issue}` 的义务**照常列出但把命令标成 `<需 --issue>` 并在行尾注明**，不得整条清单抛错；③`after_prep` 调用处把当天 issue 传进去。
+测试：`tests/test_cli_rsi.py` 增加「无 issue 时 due 不抛错且仍列出全部义务」用例。
+
 **T5 · 姊妹实验登记器**
 `rsi register` 增加 `--fork-from <exp_id> --population <p> --window-from <x>`：
 复制原件 claim/mechanism/falsifier 文本，只换 `exp_id`/`population`/`falsifier.stratum`/`window`，
