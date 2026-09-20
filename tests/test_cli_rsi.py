@@ -95,6 +95,114 @@ def test_register_twice_is_refused(tmp_path):
     assert r.exit_code == 1 and "已登记" in r.output
 
 
+def test_register_can_fork_a_new_population_into_a_new_registry_doc(tmp_path):
+    data_dir = _data_dir(tmp_path)
+    source = tmp_path / "F2.json"
+    source.write_text(json.dumps(DOC), encoding="utf-8")
+    runner = CliRunner()
+    assert runner.invoke(
+        app, ["rsi", "register", str(source), "--data-dir", str(data_dir)]
+    ).exit_code == 0
+    target = tmp_path / "F2j.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "rsi",
+            "register",
+            str(target),
+            "--fork-from",
+            "F2",
+            "--population",
+            "jczq",
+            "--window-from",
+            "2026-09-20",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    fork = json.loads(target.read_text(encoding="utf-8"))
+    assert fork["exp_id"] == "F2j" and fork["forked_from"] == "F2"
+    assert fork["claim"] == DOC["claim"] and fork["mechanism"] == DOC["mechanism"]
+    assert fork["falsifier"] == {**DOC["falsifier"], "stratum": "jczq"}
+    assert fork["window"] == {"date_from": "2026-09-20", "n_min": 140}
+    status = runner.invoke(
+        app, ["rsi", "status", "--exp", "F2j", "--data-dir", str(data_dir)]
+    )
+    assert status.exit_code == 0 and "F2j" in status.output
+
+
+def test_register_refuses_to_fork_an_experiment_with_a_verdict(tmp_path):
+    from nutmeg.config.settings import AppSettings
+    from nutmeg.ontology import build_ontology_kernel
+    from nutmeg.ontology.repository.rsi import GradeRow, VerdictRow
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+    data_dir = _data_dir(tmp_path)
+    source = tmp_path / "F2.json"
+    source.write_text(json.dumps(DOC), encoding="utf-8")
+    runner = CliRunner()
+    assert runner.invoke(
+        app, ["rsi", "register", str(source), "--data-dir", str(data_dir)]
+    ).exit_code == 0
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir.resolve()))
+    kernel.initialize()
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        uow.rsi.insert_grade(
+            GradeRow(
+                grade_id="grade-settled",
+                exp_id="F2",
+                mode="prospective",
+                stratum="zucai",
+                n_cum=140,
+                metric="home_resid_pp",
+                metric_value_pp=0,
+                ci_low_pp=-1,
+                ci_high_pp=1,
+                distance_to_falsifier_pp=0,
+                cost_axis_pp=None,
+                as_of_policy="test",
+                computed_by="test",
+                inputs_hash="test",
+                graded_at="2026-09-20T12:00:00+08:00",
+            )
+        )
+        uow.rsi.insert_verdict(
+            VerdictRow(
+                verdict_id="verdict-settled",
+                exp_id="F2",
+                verdict="inconclusive",
+                grade_id="grade-settled",
+                criterion_snapshot={},
+                decided_at="2026-09-20T12:01:00+08:00",
+            )
+        )
+
+    target = tmp_path / "F2j.json"
+    result = runner.invoke(
+        app,
+        [
+            "rsi",
+            "register",
+            str(target),
+            "--fork-from",
+            "F2",
+            "--population",
+            "jczq",
+            "--window-from",
+            "2026-09-20",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "已结账" in result.output
+    assert not target.exists()
+
+
 def test_schedule_normalises_space_form_kickoff_bj(tmp_path):
     """真 issue.json 的 kickoff_bj 是「2026-09-19 00:30」（空格、无秒）；due_at 必须落成 ISO，
     否则与 pending/gaps 里的 ISO now 字串字典序比较会错位。"""

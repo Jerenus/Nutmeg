@@ -54,6 +54,9 @@ _WHY = typer.Option(..., "--why")
 _RULE_CHECK = typer.Option("", "--rule-check")
 _MECHANISM_NOTE = typer.Option(None, "--mechanism-note")
 _FAMILY = typer.Option(..., "--family", help="{harness, corpus, variants[]}")
+_FORK_FROM = typer.Option(None, "--fork-from")
+_POPULATION = typer.Option(None, "--population")
+_WINDOW_FROM = typer.Option(None, "--window-from")
 _REGISTER_WINNER = typer.Option(
     False, "--register-winner", help="write a candidate registry draft for the winner"
 )
@@ -169,16 +172,103 @@ def _normalise_bj(raw: str) -> str:
     return dt.isoformat(timespec="seconds")
 
 
+def _fork_registry_doc(
+    *,
+    kernel,
+    target_path: Path,
+    fork_from: str,
+    population: str,
+    window_from: str,
+) -> dict:
+    from nutmeg.ontology.rsi.models import Population
+
+    Population(population)
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        source = uow.rsi.experiment(fork_from)
+        if source is None:
+            raise ValueError(f"{fork_from} 未登记")
+        if uow.rsi.latest_verdict(fork_from) is not None:
+            raise ValueError(f"{fork_from} 已结账，不得 fork")
+        duties = uow.rsi.duties(fork_from)
+    if target_path.exists():
+        raise ValueError(f"目标原件已存在：{target_path}")
+    try:
+        datetime.strptime(window_from, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("--window-from 必须是 YYYY-MM-DD") from exc
+    falsifier = {**source.falsifier}
+    falsifier["stratum"] = "pooled" if population == "both" else population
+    doc = {
+        "exp_id": target_path.stem,
+        "claim": source.claim,
+        "mechanism": source.mechanism,
+        "tier": source.tier,
+        "layer": source.layer,
+        "population": population,
+        "min_tier": source.min_tier,
+        "window": {"date_from": window_from, "n_min": falsifier["n_min"]},
+        "falsifier": falsifier,
+        "stop_rule": source.stop_rule,
+        "quota_slot": source.quota_slot,
+        "buckets": source.buckets,
+        "rule_ids": source.rule_ids,
+        "source_doc": source.source_doc,
+        "registered_at": source.registered_at,
+        "forked_from": fork_from,
+        "duties": [
+            {
+                "name": duty.duty_id.split(":", 1)[1],
+                "scope": duty.scope,
+                "deadline_rule": duty.deadline_rule,
+                "instrument": duty.instrument,
+                "artifact_glob": duty.artifact_glob,
+                "description": duty.description,
+            }
+            for duty in duties
+        ],
+    }
+    if source.replay_spec is not None:
+        doc["replay_spec"] = source.replay_spec
+    if source.dream_ref is not None:
+        doc["dream_ref"] = source.dream_ref
+    if source.variants_tried is not None:
+        doc["variants_tried"] = source.variants_tried
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(
+        json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return doc
+
+
 @rsi_app.command("register")
-def register(doc_path: Path, data_dir: Path = _DATA_DIR) -> None:
+def register(
+    doc_path: Path,
+    data_dir: Path = _DATA_DIR,
+    fork_from: str | None = _FORK_FROM,
+    population: str | None = _POPULATION,
+    window_from: str | None = _WINDOW_FROM,
+) -> None:
     """摄入登记原件（人）。同一 exp_id 二次登记拒绝。"""
     from nutmeg.decision.rsi_prereg import load_registry_doc
 
+    k = _kernel(data_dir)
     try:
+        fork_values = (fork_from, population, window_from)
+        if any(value is not None for value in fork_values):
+            if not all(value is not None for value in fork_values):
+                raise ValueError(
+                    "fork 模式必须同时提供 --fork-from/--population/--window-from"
+                )
+            _fork_registry_doc(
+                kernel=k,
+                target_path=doc_path,
+                fork_from=str(fork_from),
+                population=str(population),
+                window_from=str(window_from),
+            )
         doc = load_registry_doc(doc_path)
     except ValueError as exc:
         _fail(str(exc))
-    k = _kernel(data_dir)
     # 键上调用时刻而非文件 mtime：同一原件二次登记必须落到 handler 的「已登记」拒绝，
     # 不能被幂等重放吞成成功。
     now = _now()
