@@ -276,6 +276,142 @@ def test_schedule_and_fulfill_per_match_jczq_duty(tmp_path):
     assert "n=   0/200" in status.output
 
 
+def _prepare_f5_match_duty(tmp_path):
+    data_dir = tmp_path / "data"
+    day = "2026-09-20"
+    day_dir = data_dir / "jczq" / "daily" / day
+    day_dir.mkdir(parents=True)
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps(
+            {
+                "legs": {
+                    "周日001": {
+                        "match_id": "match-f5",
+                        "kickoff_bj": "2099-09-20T20:00:00+08:00",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    registered = runner.invoke(
+        app,
+        [
+            "rsi",
+            "register",
+            "--by",
+            "Jun",
+            "experiments/registry/F5.json",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert registered.exit_code == 0, registered.output
+    scheduled = runner.invoke(
+        app, ["rsi", "schedule", "--day", day, "--data-dir", str(data_dir)]
+    )
+    assert scheduled.exit_code == 0, scheduled.output
+    artifact = day_dir / "price-band-match-f5.json"
+    artifact.write_text("{}", encoding="utf-8")
+    return data_dir, day, artifact, runner
+
+
+def test_fulfill_uses_registered_falsifier_stratum_and_status_counts_it(tmp_path):
+    data_dir, day, artifact, runner = _prepare_f5_match_duty(tmp_path)
+
+    fulfilled = runner.invoke(
+        app,
+        [
+            "rsi",
+            "fulfill",
+            "--exp",
+            "F5",
+            "--duty",
+            "price-band-observation",
+            "--day",
+            day,
+            "--match",
+            "match-f5",
+            "--artifact",
+            str(artifact),
+            "--n-rows",
+            "1",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+
+    assert fulfilled.exit_code == 0, fulfilled.output
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        assert connection.execute(
+            "SELECT population_stratum FROM rsi_observations WHERE exp_id='F5'"
+        ).fetchone() == ("pooled",)
+    status = runner.invoke(
+        app, ["rsi", "status", "--exp", "F5", "--data-dir", str(data_dir)]
+    )
+    assert status.exit_code == 0, status.output
+    assert "n=   1/120" in status.output
+    assert "orphan:" not in status.output
+
+
+def test_fulfill_rejects_mismatched_stratum_without_writing_observation(tmp_path):
+    data_dir, day, artifact, runner = _prepare_f5_match_duty(tmp_path)
+
+    fulfilled = runner.invoke(
+        app,
+        [
+            "rsi",
+            "fulfill",
+            "--exp",
+            "F5",
+            "--duty",
+            "price-band-observation",
+            "--day",
+            day,
+            "--match",
+            "match-f5",
+            "--artifact",
+            str(artifact),
+            "--n-rows",
+            "1",
+            "--stratum",
+            "jczq",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+
+    assert fulfilled.exit_code == 1
+    assert "--stratum jczq 与 F5 注册的 falsifier.stratum=pooled 不一致" in fulfilled.output
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM rsi_observations WHERE exp_id='F5'"
+        ).fetchone() == (0,)
+
+
+def test_status_reports_observations_with_a_non_registered_stratum(tmp_path):
+    data_dir, day, _artifact, runner = _prepare_f5_match_duty(tmp_path)
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        connection.execute(
+            "INSERT INTO rsi_observations "
+            "(observation_id, exp_id, day, population_stratum, n_rows, captured_at, "
+            "prospective, judgment_tier_hist_json, artifact_hash) "
+            "VALUES ('orphan-f5', 'F5', ?, 'jczq', 1, ?, 1, '{}', ?)",
+            (day, "2026-09-20T12:00:00+08:00", "a" * 64),
+        )
+
+    status = runner.invoke(
+        app, ["rsi", "status", "--exp", "F5", "--data-dir", str(data_dir)]
+    )
+
+    assert status.exit_code == 0, status.output
+    assert (
+        "orphan: F5 1 条观测 stratum=jczq，而 falsifier.stratum=pooled（不计入 n）"
+        in status.output
+    )
+
+
 def test_due_without_issue_lists_issue_bound_duties_instead_of_failing(tmp_path):
     data_dir = tmp_path / "data"
     day = "2026-09-19"

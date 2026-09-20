@@ -41,7 +41,7 @@ _NOW = typer.Option(None, "--now", help="测试用；默认当前时刻")
 _DUTY = typer.Option(..., "--duty")
 _ARTIFACT = typer.Option(..., "--artifact")
 _N_ROWS = typer.Option(..., "--n-rows")
-_STRATUM = typer.Option("zucai", "--stratum")
+_STRATUM = typer.Option(None, "--stratum")
 _MATCH = typer.Option("", "--match")
 _MODE = typer.Option("prospective", "--mode")
 _REASON = typer.Option(..., "--reason")
@@ -381,7 +381,7 @@ def due(
 
 @rsi_app.command("fulfill")
 def fulfill(exp: str = _EXP, duty: str = _DUTY, day: str = _DAY, artifact: Path = _ARTIFACT,
-            n_rows: int = _N_ROWS, stratum: str = _STRATUM, issue: str | None = _ISSUE,
+            n_rows: int = _N_ROWS, stratum: str | None = _STRATUM, issue: str | None = _ISSUE,
             match: str = _MATCH, data_dir: Path = _DATA_DIR) -> None:
     """观察仪产物落盘后登记（系统）。采样时刻取产物文件 mtime。"""
     k = _kernel(data_dir)
@@ -762,8 +762,10 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
                                 latest_deployment=d.decision if d else None)
             gaps = uow.rsi.gaps(e.exp_id, now=now_iso)
             display_n = g.n_cum if g else 0
-            if e.exp_id in {"F9", "R0"}:
-                display_n = uow.rsi.prospective_n_rows(e.exp_id, window=e.window)
+            if e.exp_id in {"F5", "F9", "R0"}:
+                display_n = uow.rsi.prospective_n_rows(
+                    e.exp_id, window=e.window, stratum=f.stratum
+                )
             line = f"{e.exp_id:6} {st:13} n={display_n:>4}/{f.n_min}"
             if g:
                 line += (f"  CI[{g.ci_low_pp:+.1f},{g.ci_high_pp:+.1f}]"
@@ -771,6 +773,17 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
             if gaps:
                 line += f"  gaps={gaps}"
             typer.echo(line)
+            orphan_counts: dict[str, int] = {}
+            for observation in uow.rsi.observations(e.exp_id):
+                if observation.population_stratum == f.stratum:
+                    continue
+                actual = observation.population_stratum
+                orphan_counts[actual] = orphan_counts.get(actual, 0) + 1
+            for actual, count in sorted(orphan_counts.items()):
+                typer.echo(
+                    f"orphan: {e.exp_id} {count} 条观测 stratum={actual}，而 "
+                    f"falsifier.stratum={f.stratum}（不计入 n）"
+                )
         pending = [
             duty
             for duty in uow.rsi.all_duties()

@@ -403,9 +403,17 @@ class RsiRepository:
             ).scalar_one()
         )
 
-    def prospective_n_rows(self, exp_id: str, *, window: dict | None = None) -> int:
+    def prospective_n_rows(
+        self,
+        exp_id: str,
+        *,
+        window: dict | None = None,
+        stratum: str | None = None,
+    ) -> int:
         t = sr.rsi_observations
         conditions = [t.c.exp_id == exp_id, t.c.prospective == 1]
+        if stratum is not None:
+            conditions.append(t.c.population_stratum == stratum)
         if window is not None:
             if window.get("date_from"):
                 conditions.append(t.c.day >= str(window["date_from"]))

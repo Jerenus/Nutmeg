@@ -4614,6 +4614,33 @@ def _apply_rsi_human_attribution(connection: Connection) -> None:
             )
 
 
+def _apply_rsi_observation_stratum_labels(connection: Connection) -> None:
+    """Correct observation labels from frozen experiment falsifiers.
+
+    This is a label correction, not an observation rewrite: only
+    ``population_stratum`` changes, and only when it disagrees with the registered
+    experiment. Row count and every measured field remain untouched.
+    """
+    experiments = connection.execute(
+        select(
+            schema_rsi.rsi_experiments.c.exp_id,
+            schema_rsi.rsi_experiments.c.falsifier_json,
+        )
+    ).all()
+    for exp_id, falsifier_json in experiments:
+        expected = json.loads(falsifier_json).get("stratum")
+        if expected is None:
+            continue
+        connection.execute(
+            schema_rsi.rsi_observations.update()
+            .where(
+                schema_rsi.rsi_observations.c.exp_id == exp_id,
+                schema_rsi.rsi_observations.c.population_stratum != expected,
+            )
+            .values(population_stratum=expected)
+        )
+
+
 _CAPITAL_PERMISSIONS = (("zucai_commit_capital_plan", "judge_operator"),)
 
 
@@ -5350,6 +5377,15 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="rsi_human_attribution",
         fingerprint="acted_by_on_register_amend_deploy+historical_unattributed",
         apply=_apply_rsi_human_attribution,
+    ),
+    Migration(
+        version=39,
+        name="rsi_observation_stratum_labels",
+        fingerprint=(
+            "correct_mismatched_observation_stratum_from_frozen_falsifier+"
+            "labels_only+preserve_observation_rows_and_measurements"
+        ),
+        apply=_apply_rsi_observation_stratum_labels,
     ),
 )
 

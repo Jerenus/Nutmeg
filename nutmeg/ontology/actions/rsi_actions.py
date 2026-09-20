@@ -111,7 +111,7 @@ class FulfillDutyRequest:
     artifact_path: str
     artifact_bytes: bytes
     n_rows: int
-    population_stratum: str
+    population_stratum: str | None
     judgment_tier_hist: dict
     captured_at: datetime
     earliest_kickoff: str
@@ -301,6 +301,18 @@ class RsiActions:
             requested_at=requested_at)
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
+            experiment = uow.rsi.experiment(request.exp_id)
+            if experiment is None:
+                raise ValueError(f"{request.exp_id} 未登记")
+            registered_stratum = Falsifier.from_dict(experiment.falsifier).stratum
+            if (
+                request.population_stratum is not None
+                and request.population_stratum != registered_stratum
+            ):
+                raise ValueError(
+                    f"--stratum {request.population_stratum} 与 {request.exp_id} 注册的 "
+                    f"falsifier.stratum={registered_stratum} 不一致"
+                )
             inst = uow.rsi.duty_instance(duty_id, request.day, request.match_id)
             if inst is None:
                 raise ValueError(f"{duty_id} 在 {request.day} 没有排过（先 rsi schedule）")
@@ -321,7 +333,7 @@ class RsiActions:
             if uow.rsi.observation(obs_id) is None:  # 同日同内容不重复；内容变化留版本
                 uow.rsi.insert_observation(ObservationRow(
                     observation_id=obs_id, exp_id=request.exp_id, day=request.day,
-                    population_stratum=request.population_stratum, n_rows=request.n_rows,
+                    population_stratum=registered_stratum, n_rows=request.n_rows,
                     captured_at=captured, prospective=prospective,
                     judgment_tier_hist=dict(request.judgment_tier_hist),
                     artifact_hash=artifact_hash))
