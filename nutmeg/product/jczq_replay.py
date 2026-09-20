@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,7 +16,11 @@ from sqlalchemy import insert
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology import build_ontology_kernel
 from nutmeg.ontology.actions.models import canonical_json
-from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.actions.replay_actions import (
+    ReplayActions,
+    StartHistoricalReplayRequest,
+)
+from nutmeg.ontology.actions.service import ActionService, ReplayActionContext
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.jczq_board_workflow import (
@@ -26,6 +29,7 @@ from nutmeg.product.jczq_board_workflow import (
     JczqBoardWorkflow,
     JczqResearchArtifact,
 )
+from nutmeg.product.jczq_replay_inputs import ReplayInputManifest, freeze_replay_inputs
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _ZERO_DELTA = MappingProxyType(
@@ -97,10 +101,34 @@ class JczqReplayRunner:
 
         production_before = _tree_fingerprint(self._source_root / "ontology")
         production_counts_before = _production_counts(self._source_root / "ontology")
-        day_root = self._copy_inputs(day)
-        self._copy_ontology_if_needed()
+        manifest = self._copy_inputs(day)
+        manifest.verify()
+        day_root = Path(manifest.root)
         kernel = build_ontology_kernel(AppSettings(data_dir=self._isolated_root))
         kernel.initialize()
+        replay_run_id = _stable_id(
+            "jczq-replay", day, production_before, manifest.manifest_hash
+        )
+        base_action_service = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
+        ReplayActions(base_action_service).start(
+            StartHistoricalReplayRequest(
+                replay_run_id=replay_run_id,
+                business_date=day,
+                source_root_fingerprint=_tree_fingerprint(
+                    self._source_root / "jczq" / "daily" / day
+                ),
+                source_manifest_hash=manifest.manifest_hash,
+                isolated_database_identity=str(isolated_db),
+                production_database_identity=str(production_db),
+                schema_version=kernel.status().schema_version,
+                production_before={
+                    "tree_fingerprint": production_before,
+                    "protected_counts": production_counts_before,
+                },
+                idempotency_key=f"historical-replay:start:{replay_run_id}",
+                requested_at=datetime.now(_SHANGHAI),
+            )
+        )
 
         board, board_failures = _load_board(
             day_root / "sporttery_markets.json",
@@ -109,7 +137,9 @@ class JczqReplayRunner:
         )
         artifacts, artifact_failures = _load_research_artifacts(day_root, board)
         _seed_research_sources(kernel, artifacts)
-        action_service = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
+        action_service = base_action_service.bind_replay(
+            ReplayActionContext(replay_run_id, day, str(isolated_db))
+        )
         workflow = JczqBoardWorkflow(action_service)
         lineage_before = _lineage_snapshot(kernel, workflow, day)
         progress = workflow.intake_board(board, artifacts, historical_replay=True)
@@ -141,7 +171,7 @@ class JczqReplayRunner:
 
         accepted = not failures and terminal_kind in {"selected", "no_ticket"}
         payload: dict[str, object] = {
-            "replay_run_id": _stable_id("jczq-replay", day, production_before),
+            "replay_run_id": replay_run_id,
             "day": day,
             "schema_version": kernel.status().schema_version,
             "board_count": len(board.matches),
@@ -178,21 +208,13 @@ class JczqReplayRunner:
         output.write_text(canonical_json(report.to_dict()) + "\n", encoding="utf-8")
         return report
 
-    def _copy_inputs(self, day: str) -> Path:
+    def _copy_inputs(self, day: str) -> ReplayInputManifest:
         source = self._source_root / "jczq" / "daily" / day
         if not source.is_dir():
             raise ValueError(f"JCZQ source day is missing: {day}")
         destination = self._isolated_root / "jczq" / "daily" / day
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source, destination, dirs_exist_ok=True)
-        return destination
-
-    def _copy_ontology_if_needed(self) -> None:
-        source = self._source_root / "ontology"
-        destination = self._isolated_root / "ontology"
-        if destination.exists() or not source.exists():
-            return
-        shutil.copytree(source, destination)
+        return freeze_replay_inputs(source, destination)
 
 
 def _tree_fingerprint(root: Path) -> str:
@@ -340,7 +362,8 @@ def _load_research_artifacts(
         captured_text = document.get("captured_at")
         captured_at = None
         if not isinstance(captured_text, str):
-            failures.append(f"research_capture_time_missing:{match.official_match_no}")
+            if path != rejected:
+                failures.append(f"research_capture_time_missing:{match.official_match_no}")
         else:
             captured_at = datetime.fromisoformat(captured_text)
             if captured_at.tzinfo is None:

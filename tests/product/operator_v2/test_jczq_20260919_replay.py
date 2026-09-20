@@ -99,7 +99,7 @@ def test_replay_materializes_all_board_terminals_but_blocks_missing_v2_lineage(
         "prospective_observations": 0,
     }
     assert report.accepted is False
-    assert "research_capture_time_missing:周六002" in report.failures
+    assert "research_capture_time_missing:周六002" not in report.failures
     assert len(report.report_sha256) == 64
     saved = json.loads(
         (isolated / "replay-2026-09-19.json").read_text(encoding="utf-8")
