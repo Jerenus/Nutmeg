@@ -95,6 +95,12 @@ def zucai_rows() -> list[dict]:
         if issue not in results:
             continue
         out = results[issue].split()
+        postmortems = _load(f"{Z}/{issue}-postmortem.json", []) or []
+        postmortem_by_match = {
+            int(row["match_no"]): row
+            for row in postmortems
+            if isinstance(row, dict) and row.get("match_no") is not None
+        }
         dates, xids = _issue_dates(issue), _cross_ids(issue)
         legs = (_load(f"{Z}/{issue}-legs-base.json", {}) or {}).get("legs") or {}
         for n in range(1, 15):
@@ -123,6 +129,7 @@ def zucai_rows() -> list[dict]:
                     crash_markers=lg.get("crash_markers") or [],
                     tracking_tags=lg.get("tracking_tags") or [],
                     precedents=[[x[0], x[2]] for x in (lg.get("precedents") or []) if len(x) >= 3])
+            row["labels"] = _merge_postmortem(row["labels"], postmortem_by_match.get(n))
             rows.append(row)
     return rows
 
@@ -166,6 +173,12 @@ def _research_labels(doc: dict | None) -> dict | None:
     )
 
 
+def _merge_postmortem(labels: dict | None, postmortem: dict | None) -> dict | None:
+    if not postmortem:
+        return labels
+    return {**(labels or {}), "postmortem": postmortem}
+
+
 def jczq_rows() -> list[dict]:
     results = _load(f"{J}/jc-results.json", {}) or {}
     rows: list[dict] = []
@@ -183,11 +196,12 @@ def jczq_rows() -> list[dict]:
             gh, ga = got["ft_home"], got["ft_away"]
             actual = "3" if gh > ga else ("0" if ga > gh else "1")
             research = _load(f"{J}/daily/{date}/research-{jno}.json", {}) or {}
+            postmortem = _load(f"{J}/daily/{date}/postmortem-{jno}.json", {}) or {}
             rows.append(dict(
                 src="jczq", key=f"{date}-{jno}", issue=None, match_no=jno, date=date,
                 name=None, fair=fair, belief=fair, fair_source="bold_odds", actual=actual,
                 conf=research.get("confidence"), belief_moved=False,
-                labels=_research_labels(research),
+                labels=_merge_postmortem(_research_labels(research), postmortem),
                 titan007_id=str(got.get("match_id") or "") or None, jczq_no=jno,
                 books=mw.get("bookmaker_count"), opening_odds=mw.get("opening_odds"),
                 goals=[gh, ga], ht=[got.get("ht_home"), got.get("ht_away")]))

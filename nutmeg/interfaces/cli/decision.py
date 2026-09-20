@@ -29,6 +29,8 @@ _WITH_LEGS_FILE_OPTION = _cli.typer.Option(
     [], "--with-legs-file",
     help="同期其它票面文件；用于 C15 多票共享被排面检查（可重复）")
 _AUDIT_DATA_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
+_POSTMORTEM_DAY_OPTION = _cli.typer.Option(..., "--day", help="业务日 YYYY-MM-DD")
+_POSTMORTEM_ISSUE_OPTION = _cli.typer.Option(None, "--issue", help="可选传统足彩期号")
 _AUDIT_ZUCAI_LEGS_OPTION = _cli.typer.Option(
     None, "--zucai-legs-file",
     help="同日足彩票面；与 --channel-map 一起给才触发 C18 跨渠道立场一致性")
@@ -54,6 +56,35 @@ _OFFICIAL_HISTORY_FILE_OPTION = _cli.typer.Option(
 _ZUCAI_OPTIMIZER_INPUT_OPTION = _cli.typer.Option(
     ..., "--input-file", help="候选版本与 fair JSON"
 )
+
+
+@_cli.app.command("decision-postmortem")
+def decision_postmortem(
+    day: str = _POSTMORTEM_DAY_OPTION,
+    issue: str | None = _POSTMORTEM_ISSUE_OPTION,
+    data_dir: Path = _AUDIT_DATA_DIR_OPTION,
+) -> None:
+    """从冻结判断产物与赛果机械生成逐场判后记录。"""
+    import json
+
+    from nutmeg.decision.postmortem import postmortem_candidate_count, postmortem_rows
+
+    rows = postmortem_rows(day=day, issue=issue, data_dir=data_dir)
+    if issue:
+        out = data_dir / "zucai" / f"{issue}-postmortem.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    else:
+        out_dir = data_dir / "jczq" / "daily" / day
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for row in rows:
+            out = out_dir / f"postmortem-{row['code']}.json"
+            out.write_text(json.dumps(row, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    pending = postmortem_candidate_count(day=day, issue=issue, data_dir=data_dir) - len(rows)
+    _cli.typer.echo(
+        f"decision-postmortem {day} issue={issue or '-'} "
+        f"written={len(rows)} pending={pending}"
+    )
 
 
 @_cli.app.command("decision-fetch")
