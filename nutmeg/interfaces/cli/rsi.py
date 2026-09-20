@@ -223,7 +223,12 @@ def schedule(day: str = _DAY, issue: str | None = _ISSUE, data_dir: Path = _DATA
 
 
 @rsi_app.command("due")
-def due(day: str = _DAY, data_dir: Path = _DATA_DIR, now: str | None = _NOW) -> None:
+def due(
+    day: str = _DAY,
+    issue: str | None = _ISSUE,
+    data_dir: Path = _DATA_DIR,
+    now: str | None = _NOW,
+) -> None:
     """列出当天还没落的义务：几点前、跑哪条命令。"""
     from nutmeg.decision.rsi_prereg import render_instrument
 
@@ -237,8 +242,15 @@ def due(day: str = _DAY, data_dir: Path = _DATA_DIR, now: str | None = _NOW) -> 
         return
     for p in pend:
         d = duties[p.duty_id]
-        argv = render_instrument(d.instrument, issue=p.issue, day=day)
-        typer.echo(f"{p.due_at}  {p.duty_id}\n    $ {' '.join(argv)}")
+        resolved_issue = issue or p.issue
+        if resolved_issue is None and any("{issue}" in arg for arg in d.instrument):
+            command = "<需 --issue> " + " ".join(d.instrument)
+            note = "  # 需 --issue"
+        else:
+            argv = render_instrument(d.instrument, issue=resolved_issue, day=day)
+            command = " ".join(argv)
+            note = ""
+        typer.echo(f"{p.due_at}  {p.duty_id}\n    $ {command}{note}")
 
 
 @rsi_app.command("fulfill")

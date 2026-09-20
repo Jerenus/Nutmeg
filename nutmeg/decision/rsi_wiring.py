@@ -40,7 +40,18 @@ def _cli_invoke(argv: list[str]) -> tuple[int, str]:
 def after_prep(*, issue: str, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None:
     """备料链跑完：为当天排义务，并把待办（几点前跑哪条 instrument）打到终端。"""
     invoke(["rsi", "schedule", "--day", day, "--issue", issue, "--data-dir", str(data_dir)])
-    invoke(["rsi", "due", "--day", day, "--data-dir", str(data_dir)])
+    invoke(
+        [
+            "rsi",
+            "due",
+            "--day",
+            day,
+            "--data-dir",
+            str(data_dir),
+            "--issue",
+            issue,
+        ]
+    )
 
 
 def after_am(*, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None:

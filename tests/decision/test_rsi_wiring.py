@@ -15,7 +15,7 @@ def test_after_prep_schedules_then_lists_due(tmp_path):
     after_prep(issue="26129", day="2026-09-19", data_dir=tmp_path,
                invoke=lambda argv: calls.append(argv) or (0, ""))
     assert calls[0][:2] == ["rsi", "schedule"] and "--issue" in calls[0] and "26129" in calls[0]
-    assert calls[1][:2] == ["rsi", "due"]
+    assert calls[1][:2] == ["rsi", "due"] and calls[1][-2:] == ["--issue", "26129"]
 
 
 def test_after_am_builds_research_board_then_schedules_match_duties(tmp_path):

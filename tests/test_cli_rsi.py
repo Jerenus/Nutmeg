@@ -160,6 +160,54 @@ def test_schedule_and_fulfill_per_match_jczq_duty(tmp_path):
     assert fulfilled.exit_code == 0, fulfilled.output
 
 
+def test_due_without_issue_lists_issue_bound_duties_instead_of_failing(tmp_path):
+    data_dir = tmp_path / "data"
+    day = "2026-09-19"
+    day_dir = data_dir / "jczq" / "daily" / day
+    day_dir.mkdir(parents=True)
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps(
+            {
+                "legs": {
+                    "周五001": {
+                        "match_id": "match-1",
+                        "kickoff_bj": "2099-09-19T20:00:00+08:00",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    doc = tmp_path / "F2.json"
+    doc.write_text(json.dumps(DOC), encoding="utf-8")
+    runner = CliRunner()
+    assert runner.invoke(
+        app, ["rsi", "register", str(doc), "--data-dir", str(data_dir)]
+    ).exit_code == 0
+    scheduled = runner.invoke(
+        app, ["rsi", "schedule", "--day", day, "--data-dir", str(data_dir)]
+    )
+    assert scheduled.exit_code == 0, scheduled.output
+
+    result = runner.invoke(
+        app,
+        [
+            "rsi",
+            "due",
+            "--day",
+            day,
+            "--data-dir",
+            str(data_dir),
+            "--now",
+            "2026-09-18T20:00:00+08:00",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "F2:f2-observation" in result.output
+    assert "<需 --issue>" in result.output
+
+
 def test_schedule_expands_each_match_duty_by_its_population(tmp_path):
     data_dir = tmp_path / "data"
     day = "2026-09-19"
