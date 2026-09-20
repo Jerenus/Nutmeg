@@ -4746,6 +4746,85 @@ def _apply_jczq_ontology_cutover(connection: Connection) -> None:
     )
 
 
+def _apply_historical_replay_authority(connection: Connection) -> None:
+    schema.historical_replay_runs.create(connection, checkfirst=True)
+    action_columns = {
+        column['name'] for column in inspect(connection).get_columns('actions')
+    }
+    if 'historical_replay' not in action_columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE actions ADD COLUMN historical_replay "
+            "INTEGER NOT NULL DEFAULT 0"
+        )
+    if 'replay_run_id' not in action_columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE actions ADD COLUMN replay_run_id TEXT NULL "
+            "REFERENCES historical_replay_runs(replay_run_id) ON DELETE RESTRICT"
+        )
+
+    for operation in ('INSERT', 'UPDATE'):
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS actions_historical_replay_pair_{operation.lower()}
+            BEFORE {operation} ON actions
+            WHEN NOT (
+              (NEW.historical_replay = 0 AND NEW.replay_run_id IS NULL) OR
+              (NEW.historical_replay = 1 AND NEW.replay_run_id IS NOT NULL)
+            )
+            BEGIN
+              SELECT RAISE(ABORT, 'historical replay provenance pair is invalid');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS actions_replay_run_reference_{operation.lower()}
+            BEFORE {operation} ON actions
+            WHEN NEW.replay_run_id IS NOT NULL AND NOT EXISTS (
+              SELECT 1 FROM historical_replay_runs
+              WHERE replay_run_id = NEW.replay_run_id
+            )
+            BEGIN
+              SELECT RAISE(ABORT, 'historical replay run does not exist');
+            END
+            """
+        )
+
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS historical_replay_runs_no_delete
+        BEFORE DELETE ON historical_replay_runs
+        BEGIN
+          SELECT RAISE(ABORT, 'historical replay runs are append-only');
+        END
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS historical_replay_runs_guard_update
+        BEFORE UPDATE ON historical_replay_runs
+        WHEN NOT (
+          OLD.status = 'running' AND
+          NEW.status IN ('accepted', 'failed') AND
+          NEW.replay_run_id = OLD.replay_run_id AND
+          NEW.business_date = OLD.business_date AND
+          NEW.source_root_fingerprint = OLD.source_root_fingerprint AND
+          NEW.source_manifest_hash = OLD.source_manifest_hash AND
+          NEW.isolated_database_identity = OLD.isolated_database_identity AND
+          NEW.schema_version = OLD.schema_version AND
+          NEW.started_at = OLD.started_at AND
+          NEW.production_before_json = OLD.production_before_json AND
+          OLD.finished_at IS NULL AND
+          OLD.production_after_json IS NULL AND
+          OLD.report_sha256 IS NULL
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'historical replay run transition is invalid');
+        END
+        """
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -5024,6 +5103,14 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="jczq_ontology_cutover",
         fingerprint="accepted_replay_hash+zero_side_effect_gate+judge_only_authority",
         apply=_apply_jczq_ontology_cutover,
+    ),
+    Migration(
+        version=35,
+        name="historical_replay_authority",
+        fingerprint=(
+            "historical_replay_runs+action_replay_pair+append_only_run_transition"
+        ),
+        apply=_apply_historical_replay_authority,
     ),
 )
 

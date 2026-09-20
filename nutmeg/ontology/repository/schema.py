@@ -69,6 +69,22 @@ actions = Table(
     Column('error_code', Text, nullable=True),
     Column('error_detail', Text, nullable=True),
     Column('committed_at', Text, nullable=True),
+    Column(
+        'historical_replay',
+        Integer,
+        nullable=False,
+        server_default=text('0'),
+    ),
+    Column(
+        'replay_run_id',
+        Text,
+        nullable=True,
+    ),
+    CheckConstraint(
+        "(historical_replay = 0 AND replay_run_id IS NULL) OR "
+        "(historical_replay = 1 AND replay_run_id IS NOT NULL)",
+        name='ck_actions_historical_replay_pair',
+    ),
 )
 
 action_permissions = Table(
@@ -83,6 +99,35 @@ action_permissions = Table(
     Column('action_type', Text, nullable=False),
     Column('actor_role', Text, nullable=False),
     PrimaryKeyConstraint('policy_version_id', 'action_type', 'actor_role'),
+)
+
+historical_replay_runs = Table(
+    'historical_replay_runs',
+    metadata,
+    Column('replay_run_id', Text, primary_key=True),
+    Column('business_date', Text, nullable=False),
+    Column('source_root_fingerprint', Text, nullable=False),
+    Column('source_manifest_hash', Text, nullable=False),
+    Column('isolated_database_identity', Text, nullable=False),
+    Column('schema_version', Integer, nullable=False),
+    Column('status', Text, nullable=False),
+    Column('started_at', Text, nullable=False),
+    Column('finished_at', Text, nullable=True),
+    Column('production_before_json', Text, nullable=False),
+    Column('production_after_json', Text, nullable=True),
+    Column('report_sha256', Text, nullable=True),
+    Column('failure_codes_json', Text, nullable=False, server_default=text("'[]'")),
+    CheckConstraint(
+        "status IN ('running', 'accepted', 'failed')",
+        name='ck_historical_replay_runs_status',
+    ),
+    CheckConstraint('schema_version >= 1', name='ck_historical_replay_schema_version'),
+    UniqueConstraint(
+        'business_date',
+        'source_manifest_hash',
+        'isolated_database_identity',
+        name='uq_historical_replay_identity',
+    ),
 )
 
 source_runs = Table(
