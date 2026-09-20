@@ -1,0 +1,24 @@
+{
+  "exp_id": "N0",
+  "claim": "在给定样本量与统计量下，判断因子效应必须超出固定 seed 的标签置换噪音地板，才可称为可区分信号。",
+  "mechanism": "随机重排标签保留结果与价格残差分布，只破坏标签和残差的对应关系；其 2.5%–97.5% 分位数定义可复现的零分布。",
+  "tier": "observation",
+  "layer": "judgment",
+  "population": "both",
+  "min_tier": "price_only",
+  "window": {"date_from": "TBD", "n_min": 1},
+  "falsifier": {
+    "metric": "permutation_effect_vs_floor_margin_pp",
+    "stratum": "pooled",
+    "n_min": 1,
+    "bound": "ci_upper",
+    "threshold_pp": 0.0,
+    "direction": "lt_means_falsified"
+  },
+  "stop_rule": "固定 seed=20260920、n_perm=1000；只报告 effect 是否 above_floor，不修改既有规则或阈值。",
+  "quota_slot": false,
+  "buckets": [],
+  "rule_ids": [],
+  "source_doc": "docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md",
+  "registered_at": "2026-09-20"
+}
