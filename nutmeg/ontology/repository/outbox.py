@@ -50,6 +50,8 @@ class OutboxRepository:
                 payload_json=canonical_json(
                     {
                         'action_type': command.action_type,
+                        'historical_replay': command.historical_replay,
+                        'replay_run_id': command.replay_run_id,
                         'status': status.value,
                         'result_refs': [ref.to_dict() for ref in result_refs],
                     }

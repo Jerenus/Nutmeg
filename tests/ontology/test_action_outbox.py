@@ -49,6 +49,8 @@ def test_committed_action_and_event_share_transaction(tmp_path: Path) -> None:
     assert events[0].object_id == "1"
     assert events[0].payload == {
         "action_type": "ingest_artifact",
+        "historical_replay": False,
+        "replay_run_id": None,
         "result_refs": [{"object_id": "1", "object_type": "probe"}],
         "status": "committed",
     }

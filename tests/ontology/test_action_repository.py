@@ -4,6 +4,7 @@ from pathlib import Path
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.models import ActionCommand, ActionStatus, ActorRole
 from nutmeg.ontology.repository.actions import ActionRepository
+from nutmeg.ontology.repository.replay import HistoricalReplayRunRecord
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 
@@ -103,3 +104,42 @@ def test_count_snapshot_matches_uses_distinct_action_payload_truth(tmp_path: Pat
         assert uow.actions.count_committed_snapshot_matches(
             {"match-a", "match-b"}, provider="zucai", snapshot_kind="read_time"
         ) == 2
+
+
+def test_action_repository_round_trips_replay_provenance(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        uow.replay.insert_running(
+            HistoricalReplayRunRecord(
+                replay_run_id="replay-20260919-a",
+                business_date="2026-09-19",
+                source_root_fingerprint="source",
+                source_manifest_hash="manifest",
+                isolated_database_identity="/isolated/ontology.db",
+                schema_version=35,
+                status="running",
+                started_at=AT.isoformat(),
+                finished_at=None,
+                production_before={},
+                production_after=None,
+                report_sha256=None,
+                failure_codes=(),
+            )
+        )
+        command = ActionCommand.create(
+            action_type="ingest_artifact",
+            actor_id="source:test",
+            actor_role=ActorRole.CONNECTOR,
+            idempotency_key="artifact:replay",
+            payload={},
+            requested_at=AT,
+            historical_replay=True,
+            replay_run_id="replay-20260919-a",
+        )
+        uow.actions.insert_accepted(command)
+
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        stored = uow.actions.get_by_idempotency_key("artifact:replay")
+    assert stored is not None
+    assert stored.historical_replay is True
+    assert stored.replay_run_id == "replay-20260919-a"

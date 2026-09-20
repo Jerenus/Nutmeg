@@ -68,3 +68,39 @@ def test_object_ref_and_status_contract() -> None:
     assert ref.to_dict() == {"object_type": "source_artifact", "object_id": "sha256:abc"}
     assert ActionStatus.COMMITTED.is_success is True
     assert ActionStatus.FAILED.is_success is False
+
+
+def test_replay_provenance_is_paired_and_part_of_the_request_hash() -> None:
+    now = datetime(2026, 9, 20, 8, tzinfo=UTC)
+    production = ActionCommand.create(
+        action_type="ingest_artifact",
+        actor_id="source:test",
+        actor_role=ActorRole.CONNECTOR,
+        idempotency_key="artifact:production",
+        payload={},
+        requested_at=now,
+    )
+    replay = ActionCommand.create(
+        action_type="ingest_artifact",
+        actor_id="source:test",
+        actor_role=ActorRole.CONNECTOR,
+        idempotency_key="artifact:replay",
+        payload={},
+        requested_at=now,
+        historical_replay=True,
+        replay_run_id="replay-20260919-a",
+    )
+
+    assert production.historical_replay is False
+    assert production.replay_run_id is None
+    assert replay.request_hash != production.request_hash
+    with pytest.raises(ValueError, match="replay provenance fields must be paired"):
+        ActionCommand.create(
+            action_type="ingest_artifact",
+            actor_id="source:test",
+            actor_role=ActorRole.CONNECTOR,
+            idempotency_key="artifact:invalid",
+            payload={},
+            requested_at=now,
+            historical_replay=True,
+        )

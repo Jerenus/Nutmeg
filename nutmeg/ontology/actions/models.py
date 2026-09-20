@@ -65,6 +65,8 @@ class ActionCommand:
     payload: dict[str, object]
     expected_versions: dict[str, int]
     policy_version: str
+    historical_replay: bool
+    replay_run_id: str | None
     request_hash: str
 
     @classmethod
@@ -80,11 +82,15 @@ class ActionCommand:
         expected_versions: dict[str, int] | None = None,
         policy_version: str = DEFAULT_POLICY_VERSION,
         action_id: str | None = None,
+        historical_replay: bool = False,
+        replay_run_id: str | None = None,
     ) -> ActionCommand:
         if requested_at.tzinfo is None or requested_at.utcoffset() is None:
             raise ValueError('requested_at must be timezone-aware')
         if not idempotency_key or not idempotency_key.strip():
             raise ValueError('idempotency_key is required')
+        if historical_replay != (replay_run_id is not None):
+            raise ValueError('replay provenance fields must be paired')
 
         normalized_versions: dict[str, int] = {}
         for key, value in (expected_versions or {}).items():
@@ -100,6 +106,8 @@ class ActionCommand:
             'expected_versions': normalized_versions,
             'payload': normalized_payload,
             'policy_version': policy_version,
+            'historical_replay': historical_replay,
+            'replay_run_id': replay_run_id,
         }
         request_hash = hashlib.sha256(
             canonical_json(request_material).encode('utf-8')
@@ -115,6 +123,8 @@ class ActionCommand:
             payload=normalized_payload,
             expected_versions=normalized_versions,
             policy_version=policy_version,
+            historical_replay=historical_replay,
+            replay_run_id=replay_run_id,
             request_hash=request_hash,
         )
 

@@ -37,6 +37,8 @@ class ActionRecord:
     expected_versions: dict[str, int]
     payload: dict[str, object]
     policy_version: str
+    historical_replay: bool
+    replay_run_id: str | None
     status: ActionStatus
     result_refs: tuple[ObjectRef, ...]
     error_code: str | None
@@ -159,6 +161,8 @@ class ActionRepository:
                 error_code=None,
                 error_detail=None,
                 committed_at=None,
+                historical_replay=int(command.historical_replay),
+                replay_run_id=command.replay_run_id,
             )
         )
 
@@ -202,6 +206,8 @@ class ActionRepository:
                 error_code=error_code,
                 error_detail=error_detail,
                 committed_at=None,
+                historical_replay=int(command.historical_replay),
+                replay_run_id=command.replay_run_id,
             )
         )
 
@@ -230,6 +236,8 @@ class ActionRepository:
             expected_versions=json.loads(row['expected_versions_json']),
             payload=json.loads(row['payload_json']),
             policy_version=row['policy_version'],
+            historical_replay=bool(row['historical_replay']),
+            replay_run_id=row['replay_run_id'],
             status=ActionStatus(row['status']),
             result_refs=tuple(
                 ObjectRef(item['object_type'], item['object_id'])
