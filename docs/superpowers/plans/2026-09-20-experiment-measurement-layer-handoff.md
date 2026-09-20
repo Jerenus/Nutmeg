@@ -386,3 +386,114 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 | 5 | orphan 行是活的 | 人为造一条错 stratum 观测，确认它出现 |
 | 6 | 其余实验 n 未动 | R0 30/200、F2 11/140 |
 | 7 | registry 零改动 | `git diff --stat experiments/registry/` 为空 |
+
+---
+
+# 追加交接 · T10（2026-09-21）
+
+━━━━━━━━━━━━━━━━━━━━━━━━ 提示词开始 ━━━━━━━━━━━━━━━━━━━━━━━━
+
+接着做 T10，设计在
+`docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md` 的 **§10**，先读那节。
+T1-T9 已验收通过，不要回头改。
+
+## 事故
+
+2026-09-20 当日六条 duty 里**只有一条有定时器**（F2）。其余全靠人记得跑：
+
+```
+R0   30/30   人手动跑深研
+F5   24/30   GPT 手动跑了一次（18:42），6 条已过开球
+F9    6/30   01:00 才补跑 → 24 场前瞻资格永久丢失
+F1c   0/1    无人跑（连续 5 天 gap）
+F4    0/1    无人跑
+```
+
+根因：`rsi due` 会准确告诉你「几点前、跑哪条命令」，但**系统里没有任何东西去跑它**。
+duty 的 `instrument` 本来就是可执行 argv，却只被当作给人看的提示字符串。
+
+而 `scope=match` + `match_kickoff` 的 duty 天然不能靠一次性定时器覆盖 ——
+09-20 的开球从 13:00 排到次日 06:30，单次运行只能覆盖「运行时刻之后才开球」的那部分。
+
+## 要做的四件事
+
+**① `nutmeg rsi sweep --day <day> [--issue <issue>]`**
+复用 `due` 的同一份计算，逐条渲染 instrument 并执行：
+- 跳过 `status == "pending_instrument"`；跳过已 fulfill 的实例
+- 已过 deadline 的**不执行**，计入 `expired`，stderr 打
+  `⚠️DUTY_EXPIRED: <exp>:<duty> <n> 条已过开球（前瞻资格已失）`
+- 报告 `ran / skipped_fulfilled / skipped_pending / expired / failed`
+- 幂等：靠既有 `rsi-ful:{exp}:{duty}:{day}:{match}` 幂等键，⛔不得绕过它
+
+⛔安全边界：只执行 `argv[0] in {"uv"}`；`argv[0] == "TODO"` 拒绝并计 `skipped_pending`；
+其他 argv[0] **报错**不静默跳过。注册表是人写的，但执行器不得成为任意命令入口。
+
+**② 定时器**
+`com.nutmeg.rsi.sweep.plist`，**每小时整点**跑 `rsi sweep`。
+开球分布 13:00–06:30，逐小时扫把「运行 → 开球」窗口压到 ≤1 小时。
+⛔不要做"开球前 N 分钟精确触发"——那要为每场注册一个定时器，脆且难查。
+装完跑 `launchctl list | grep nutmeg` 贴输出，别照记忆假设它在跑。
+
+**③ `--day` 缺省取业务日不是自然日**
+凌晨 00:00–07:00 仍属前一业务日（26131 有 6 场在 09-21 凌晨开球，但属 `daily/2026-09-20/`）。
+⛔按自然日取会让凌晨那几场的 duty 找不到实例。
+
+**④ 不做的事**
+- 不改任何 duty 的 `deadline_rule` / `scope`
+- ⛔**不给已过期的实例补采** —— 补了也是 `prospective=0`、不涨 n，只制造"已完成"的假象
+- 不动 F2 现有的 `zucai.f2-observe`
+
+## 红线（沿用前几轮，逐条仍有效）
+
+- ⛔不得修改 F1c / F2 / F3 / F8 的任何字段；`git diff --stat experiments/registry/` 应为空
+- ⛔不得执行 `nutmeg rsi register` / `amend` / `deploy`
+- ⛔不得改判读逻辑、票面逻辑、audit 码表
+- ⛔**不得为了让任何 n 或"已完成数"变好看而补采过期实例**
+- ⛔`git add` 只用显式路径，绝不用 -A / -u
+- ⚠️`git commit | tail` 会吞退出码，必须单独 `echo $?`
+
+## 验收（逐条跑，原样贴进报告）
+
+```
+uv run pytest tests/ -q
+uv run ruff check nutmeg/ tests/ experiments/ scripts/
+uv run nutmeg rsi sweep --day 2026-09-19        # 应全部 expired，一条都不执行
+uv run nutmeg rsi sweep --day <今天>             # 记下 ran 数
+uv run nutmeg rsi sweep --day <今天>             # 第二次应全部 skipped_fulfilled
+uv run nutmeg rsi status
+launchctl list | grep nutmeg
+uv run python -c "import sqlite3;c=sqlite3.connect('.nutmeg-data/ontology/ontology.db');\
+print('obs',c.execute('select count(*) from rsi_observations').fetchone()[0],\
+'ful',c.execute('select count(*) from rsi_duty_instances where fulfilled_at is not null').fetchone()[0],\
+'verdicts',c.execute('select count(*) from rsi_verdicts').fetchone()[0])"
+```
+
+出口条件（对照 spec §10.4 的 C1-C7）：
+1. 对已完成日 sweep → 全 `expired`，零执行
+2. 连跑两次 → 第二次全 `skipped_fulfilled`，观测行数不变
+3. `TODO` instrument → `skipped_pending`
+4. 非 `uv` 开头 → 报错，不静默跳过
+5. 凌晨跑 → `--day` 解析为前一业务日
+6. `launchctl list` 出现 `com.nutmeg.rsi.sweep`
+7. 观测行只增不减；已 fulfill 一条未删；verdicts 仍为 0
+
+报告里写明你发现的任何 spec 与现实不符之处。
+
+提交信息末尾加：
+```
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+```
+
+━━━━━━━━━━━━━━━━━━━━━━━━ 提示词结束 ━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 我的 T10 监管清单
+
+| # | 核什么 | 怎么核 |
+|---|---|---|
+| 1 | 没有补采过期实例 | 对 09-19 sweep 后，该日 fulfilled 数**不变** |
+| 2 | 幂等真的成立 | 连跑两次，`rsi_observations` 行数相等 |
+| 3 | 执行器不是任意命令入口 | 造一条 `argv[0]="bash"` 的 duty，确认报错 |
+| 4 | 业务日解析 | 凌晨时刻跑，确认取前一业务日 |
+| 5 | 定时器真在跑 | 自己跑 `launchctl list`，不信报告 |
+| 6 | expired 有声音 | 确认 stderr 真打 `DUTY_EXPIRED`，不是只记在报告里 |
+| 7 | registry 零改动 | `git diff --stat experiments/registry/` |

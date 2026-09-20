@@ -380,3 +380,80 @@ orphan: F5 30 条观测 stratum=jczq，而 falsifier.stratum=pooled（不计入 
 | B4 | 其余实验 n 不变 | R0 30/200、F2 11/140 与修复前**逐字一致** |
 | B5 | 观测未被删 | `select count(*) from rsi_observations` 修复前后相等 |
 | B6 | 那 6 条仍是 prospective=0 | 未被顺手"修正" |
+
+---
+
+# 追加 · T10：义务台账要有执行器（2026-09-21 立）
+
+## 10.1 事故
+
+2026-09-20 当日义务完成度：
+
+| 实验 | duty scope | deadline | 实例 | 已采 | 怎么采的 |
+|---|---|---|---|---|---|
+| R0 | match | match_kickoff | 30 | 30 | **人手动跑** |
+| F5 | match | match_kickoff | 30 | 24 | **GPT 手动跑一次**（18:42），6 条已过开球 |
+| F9 | match | match_kickoff | 30 | **6** | **01:00 才补跑**，24 场前瞻资格永久丢失 |
+| F1c | day | earliest_kickoff | 1 | 0 | 无人跑（已连续 5 天 gap） |
+| F4 | day | earliest_kickoff | 1 | 0 | 无人跑 |
+| F2 | day | earliest_kickoff | 1 | 1 | ✅ `com.nutmeg.zucai.f2-observe` |
+
+**六条 duty 里只有一条有定时器。** 其余五条全靠人记得跑，今天因此永久丢了 F9 的 24 场。
+
+## 10.2 根因：台账有，执行器没有
+
+`rsi due` 会准确告诉你「几点前、跑哪条命令」，但**系统里没有任何东西去跑它**。
+duty 的 `instrument` 字段本来就是一条可执行 argv，却只被当作给人看的提示字符串。
+
+而 `scope=match` + `deadline=match_kickoff` 的 duty **天然不能靠一次性定时器覆盖**：
+2026-09-20 的开球时刻从 13:00 一直排到次日 06:30，任何单次运行都只能覆盖
+「运行时刻之后才开球」的那部分。F5 在 18:42 跑了一次，就只拿到 24/30。
+
+## 10.3 设计
+
+**① 新增 `nutmeg rsi sweep --day <day> [--issue <issue>]`**
+
+读 `due` 的同一份计算结果，逐条**渲染 instrument 并执行**：
+
+- 跳过 `status == "pending_instrument"` 的 duty
+- 跳过已 fulfill 的实例
+- 已过 deadline 的条目**不执行**，计入 `expired` 并在 stderr 打
+  `⚠️DUTY_EXPIRED: <exp>:<duty> <n> 条已过开球（前瞻资格已失）`
+- 逐条报告 `ran / skipped_fulfilled / skipped_pending / expired / failed`
+- **幂等**：同一条 duty 实例重复 sweep 不重复采（fulfill 的幂等键
+  `rsi-ful:{exp}:{duty}:{day}:{match}` 已保证，sweep 不得绕过它）
+
+⛔**安全边界**：只执行 `argv[0] in {"uv"}` 的 instrument；`argv[0] == "TODO"` 一律拒绝并
+计入 `skipped_pending`。注册表是人写的，但执行器不得成为任意命令入口。
+
+**② 两个定时器**
+
+| plist | 频率 | 跑什么 |
+|---|---|---|
+| `com.nutmeg.rsi.sweep.plist` | **每小时整点** | `rsi sweep --day <今天业务日>` |
+| （沿用 `zucai.prep-morning`） | 每日 | 其中追加 `rsi schedule`，保证实例先于 sweep 存在 |
+
+每小时是因为开球分布在 13:00–06:30，逐小时扫可以把「运行时刻 → 开球」的窗口压到 ≤1 小时。
+⛔不要改成"开球前 N 分钟精确触发"——那需要为每场比赛注册一个定时器，脆且难查。
+
+**③ 业务日解析**
+sweep 的 `--day` 缺省取**业务日**，不是自然日：凌晨 00:00–07:00 之间仍属前一个业务日
+（26131 有 6 场在 09-21 凌晨开球但属 `daily/2026-09-20/`）。
+⛔按自然日取会让凌晨那几场的 duty 找不到实例。
+
+**④ 不做的事**
+- 不改任何 duty 的 `deadline_rule` / `scope`
+- 不给已过期的实例补采（补了也是 `prospective=0`，不涨 n；补采只会制造"已完成"的假象）
+- 不改 F2 现有的 `zucai.f2-observe` 定时器
+
+## 10.4 验收
+
+| # | 检验 | 通过标准 |
+|---|---|---|
+| C1 | `rsi sweep --day <某已完成日>` | 全部报 `expired`，**一条都不执行** |
+| C2 | 重复 sweep 两次 | 第二次全报 `skipped_fulfilled`，观测行数不变 |
+| C3 | `argv[0]=="TODO"` | 报 `skipped_pending`，不尝试执行 |
+| C4 | 非 `uv` 开头的 instrument | 拒绝执行并报错，不静默跳过 |
+| C5 | 凌晨跑 | `--day` 缺省解析为前一业务日 |
+| C6 | `launchctl list \| grep nutmeg` | 出现 `com.nutmeg.rsi.sweep` |
+| C7 | 观测/实例未被破坏 | sweep 前后 `rsi_observations` 行数只增不减；已 fulfill 一条未删 |
