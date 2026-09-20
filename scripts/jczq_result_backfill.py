@@ -26,7 +26,9 @@ import argparse
 import json
 import os
 import time
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -60,12 +62,13 @@ def parse_day(text: str) -> dict[str, dict]:
     return out
 
 
-def collect(sleep_s: float) -> None:
+def collect(sleep_s: float, *, today: date | None = None) -> int:
     dates = sorted(d for d in os.listdir(DAILY)
                    if (DAILY / d / "sporttery_markets.json").exists())
     done = json.load(open(OUT)) if OUT.exists() else {}
     client = httpx.Client(headers=HEADERS, timeout=20.0)
     fetched = failed = 0
+    messages: list[str] = []
     try:
         for d in dates:
             if d in done:
@@ -76,10 +79,10 @@ def collect(sleep_s: float) -> None:
                 day = parse_day(r.content.decode("utf-8", "replace"))
             except Exception as exc:      # noqa: BLE001 报告,不静默(假空盘死法)
                 failed += 1
-                print(f"  ✗ {d}: {type(exc).__name__} {exc}")
+                messages.append(f"  ✗ {d}: {type(exc).__name__} {exc}")
                 continue
             if not day:
-                print(f"  · {d}: 板面空（无竞彩赛事或已过期）")
+                messages.append(f"  · {d}: 板面空（无竞彩赛事或已过期）")
             done[d] = day
             fetched += 1
             time.sleep(sleep_s)
@@ -87,10 +90,23 @@ def collect(sleep_s: float) -> None:
         client.close()
         OUT.write_text(json.dumps(done, ensure_ascii=False), "utf-8")
     n = sum(len(v) for v in done.values())
+    valid_dates = []
+    for raw in done:
+        try:
+            valid_dates.append(date.fromisoformat(raw))
+        except ValueError:
+            continue
+    current_day = today or datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    lag = (current_day - max(valid_dates)).days if valid_dates else None
+    if lag is not None and lag > 2:
+        print(f"⚠️RESULTS_STALE: latest={max(valid_dates).isoformat()} lag={lag}d")
+    for message in messages:
+        print(message)
     print(f"赛果回填：本轮 {fetched} 天，失败 {failed}；累计 {len(done)} 天 / {n} 场 → {OUT}")
+    return 2 if lag is not None and lag > 2 else 0
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--sleep", type=float, default=0.3)
-    collect(ap.parse_args().sleep)
+    raise SystemExit(collect(ap.parse_args().sleep))
