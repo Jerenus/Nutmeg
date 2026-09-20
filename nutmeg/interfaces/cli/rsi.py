@@ -158,6 +158,35 @@ def _population_match_kickoffs(
     }
 
 
+def _duty_schedule_context(kernel) -> tuple[set[str], str]:
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        duties = uow.rsi.all_duties()
+        experiments = {
+            duty.exp_id: uow.rsi.experiment(duty.exp_id) for duty in duties
+        }
+    populations = {
+        experiments[duty.exp_id].population
+        for duty in duties
+        if duty.scope == "match" and experiments[duty.exp_id] is not None
+    }
+    material = [
+        {
+            "duty_id": duty.duty_id,
+            "scope": duty.scope,
+            "deadline_rule": duty.deadline_rule,
+            "instrument": duty.instrument,
+            "artifact_glob": duty.artifact_glob,
+            "population": experiments[duty.exp_id].population,
+        }
+        for duty in duties
+        if experiments[duty.exp_id] is not None
+    ]
+    fingerprint = hashlib.sha256(
+        json.dumps(material, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:12]
+    return populations, fingerprint
+
+
 _BJ = timezone(timedelta(hours=8))
 
 
@@ -291,13 +320,7 @@ def schedule(day: str = _DAY, issue: str | None = _ISSUE, data_dir: Path = _DATA
         ko = min(match_kickoffs.values())
     if ko is None:
         _fail(f"{day} 找不到最早开球（需要足彩 issue 或竞彩 legs-base）")
-    with OntologyUnitOfWork(k.engine) as uow:
-        populations = {
-            experiment.population
-            for duty in uow.rsi.all_duties()
-            if duty.scope == "match"
-            if (experiment := uow.rsi.experiment(duty.exp_id)) is not None
-        }
+    populations, duty_fingerprint = _duty_schedule_context(k)
     population_match_kickoffs = _population_match_kickoffs(
         data_dir,
         day=day,
@@ -307,7 +330,9 @@ def schedule(day: str = _DAY, issue: str | None = _ISSUE, data_dir: Path = _DATA
     _run(k.rsi_actions.schedule_duties, ScheduleDutiesRequest(
         day=day, earliest_kickoff=ko, issue=issue, match_kickoffs=match_kickoffs,
         population_match_kickoffs=population_match_kickoffs,
-        idempotency_key=f"rsi-sched:{day}:{issue or 'jczq'}",
+        idempotency_key=(
+            f"rsi-sched:{day}:{issue or 'jczq'}:{duty_fingerprint}"
+        ),
         requested_at=_now(), **_SYSTEM))
     typer.echo(f"已排 {day} 的义务，截止 {ko}")
 
@@ -493,6 +518,7 @@ def balance(
     )
 
     now = _now()
+    _, duty_fingerprint = _duty_schedule_context(k)
     _run(
         k.rsi_actions.schedule_duties,
         ScheduleDutiesRequest(
@@ -501,7 +527,9 @@ def balance(
             issue=issue,
             match_kickoffs=_jczq_match_kickoffs(data_dir, resolved_day),
             population_match_kickoffs=population_kickoffs,
-            idempotency_key=f"rsi-balance-sched:{issue or resolved_day}",
+            idempotency_key=(
+                f"rsi-balance-sched:{issue or resolved_day}:{duty_fingerprint}"
+            ),
             requested_at=now,
             **_SYSTEM,
         ),

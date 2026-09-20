@@ -368,11 +368,28 @@ def test_schedule_expands_each_match_duty_by_its_population(tmp_path):
     both_path.write_text(json.dumps(both_doc), encoding="utf-8")
 
     runner = CliRunner()
-    for path in (r0_path, both_path):
-        registered = runner.invoke(
-            app, ["rsi", "register", str(path), "--data-dir", str(data_dir)]
-        )
-        assert registered.exit_code == 0, registered.output
+    registered = runner.invoke(
+        app, ["rsi", "register", str(r0_path), "--data-dir", str(data_dir)]
+    )
+    assert registered.exit_code == 0, registered.output
+    first_schedule = runner.invoke(
+        app,
+        [
+            "rsi",
+            "schedule",
+            "--day",
+            day,
+            "--issue",
+            "26130",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert first_schedule.exit_code == 0, first_schedule.output
+    registered = runner.invoke(
+        app, ["rsi", "register", str(both_path), "--data-dir", str(data_dir)]
+    )
+    assert registered.exit_code == 0, registered.output
     scheduled = runner.invoke(
         app,
         [
