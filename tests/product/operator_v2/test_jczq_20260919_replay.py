@@ -36,6 +36,7 @@ def _write_source_day(root: Path, *, count: int = 30) -> None:
     (day_root / "sporttery_markets.json").write_text(
         json.dumps(
             {
+                "lastUpdateTime": "2026-09-19 11:00:00",
                 "matchInfoList": [
                     {
                         "businessDate": "2026-09-19",
@@ -48,7 +49,7 @@ def _write_source_day(root: Path, *, count: int = 30) -> None:
     )
     (day_root / "reads.json").write_text(json.dumps(reads), encoding="utf-8")
     (day_root / "research-周六001.json").write_text(
-        json.dumps({"captured_at": "2026-09-19T12:03:42+08:00"}),
+        json.dumps({"captured_at": "2026-09-19T11:03:42+08:00"}),
         encoding="utf-8",
     )
     (day_root / "research-周六002.rejected.json").write_text(
@@ -85,7 +86,6 @@ def test_replay_materializes_all_board_terminals_but_blocks_missing_v2_lineage(
         "price_only": 28,
     }
     assert report.missing_lineage == (
-        "committed_forecast_revisions",
         "candidate_set_revisions",
         "candidate_audits",
         "terminal_decision",

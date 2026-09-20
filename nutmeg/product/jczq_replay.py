@@ -21,13 +21,21 @@ from nutmeg.ontology.actions.replay_actions import (
     StartHistoricalReplayRequest,
 )
 from nutmeg.ontology.actions.service import ActionService, ReplayActionContext
+from nutmeg.ontology.evidence.models import VerificationMethod
 from nutmeg.ontology.repository import schema
+from nutmeg.ontology.repository.artifacts import ArtifactRetrievalRow
+from nutmeg.ontology.repository.evidence import ObservationRow
+from nutmeg.ontology.repository.market import SnapshotRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.product.jczq_board_workflow import (
     JczqBoard,
     JczqBoardMatch,
     JczqBoardWorkflow,
     JczqResearchArtifact,
+)
+from nutmeg.product.jczq_replay_adjudication import (
+    ReplayAdjudicationInput,
+    ReplayAdjudicator,
 )
 from nutmeg.product.jczq_replay_inputs import ReplayInputManifest, freeze_replay_inputs
 
@@ -136,13 +144,25 @@ class JczqReplayRunner:
             identity_path=day_root / "jczq-legs-base.json",
         )
         artifacts, artifact_failures = _load_research_artifacts(day_root, board)
-        _seed_research_sources(kernel, artifacts)
+        with OntologyUnitOfWork(kernel.engine) as uow:
+            for match in board.matches:
+                uow.identity.insert_match_minimal(match.match_id)
+        observation_ids = _seed_research_sources(kernel, artifacts)
         action_service = base_action_service.bind_replay(
             ReplayActionContext(replay_run_id, day, str(isolated_db))
         )
         workflow = JczqBoardWorkflow(action_service)
         lineage_before = _lineage_snapshot(kernel, workflow, day)
         progress = workflow.intake_board(board, artifacts, historical_replay=True)
+        _run_replay_adjudication(
+            action_service,
+            replay_run_id=replay_run_id,
+            board=board,
+            day_root=day_root,
+            manifest=manifest,
+            kernel=kernel,
+            observation_ids=observation_ids,
+        )
 
         missing_lineage, bands, terminal_kind = _lineage_status(
             kernel,
@@ -399,8 +419,11 @@ def _load_research_artifacts(
     return tuple(artifacts), tuple(failures)
 
 
-def _seed_research_sources(kernel, artifacts: tuple[JczqResearchArtifact, ...]) -> None:
-    with kernel.engine.begin() as connection:
+def _seed_research_sources(
+    kernel, artifacts: tuple[JczqResearchArtifact, ...]
+) -> dict[str, str]:
+    observation_ids: dict[str, str] = {}
+    with OntologyUnitOfWork(kernel.engine) as uow:
         for artifact in artifacts:
             if (
                 artifact.captured_at is None
@@ -408,7 +431,7 @@ def _seed_research_sources(kernel, artifacts: tuple[JczqResearchArtifact, ...]) 
                 or artifact.artifact_id is None
             ):
                 continue
-            connection.execute(
+            uow.connection.execute(
                 insert(schema.source_runs).prefix_with("OR IGNORE").values(
                     source_run_id=artifact.source_run_id,
                     source_name="jczq_historical_replay",
@@ -420,7 +443,7 @@ def _seed_research_sources(kernel, artifacts: tuple[JczqResearchArtifact, ...]) 
                     error_detail=None,
                 )
             )
-            connection.execute(
+            uow.connection.execute(
                 insert(schema.source_artifacts).prefix_with("OR IGNORE").values(
                     artifact_id=artifact.artifact_id,
                     first_recorded_at=artifact.captured_at.isoformat(),
@@ -430,6 +453,134 @@ def _seed_research_sources(kernel, artifacts: tuple[JczqResearchArtifact, ...]) 
                     content_hash=_sha256(artifact.artifact_bytes or b""),
                 )
             )
+            retrieval_id = _stable_id("replay-retrieval", artifact.artifact_id)
+            uow.artifacts.insert_retrieval(
+                ArtifactRetrievalRow(
+                    artifact_retrieval_id=retrieval_id,
+                    artifact_id=artifact.artifact_id,
+                    source_run_id=artifact.source_run_id,
+                    source_name="jczq_historical_replay",
+                    source_type="credible_media",
+                    reported_content_type="application/json",
+                    canonical_url=None,
+                    requested_url=None,
+                    published_at=artifact.captured_at.isoformat(),
+                    retrieved_at=artifact.captured_at.isoformat(),
+                    status="stored",
+                )
+            )
+            observation_id = _stable_id("replay-observation", artifact.artifact_id)
+            uow.evidence.insert_observation(
+                ObservationRow(
+                    observation_id=observation_id,
+                    observation_type="historical_research",
+                    subject_type="match",
+                    subject_id=artifact.match_id,
+                    scope_match_id=artifact.match_id,
+                    value={"historical_replay": True},
+                    schema_version="1",
+                    valid_from=artifact.captured_at.isoformat(),
+                    valid_to=None,
+                    observed_at=artifact.captured_at.isoformat(),
+                    recorded_at=artifact.captured_at.isoformat(),
+                    verification_method=VerificationMethod.CORROBORATED.value,
+                    quality={},
+                ),
+                (retrieval_id,),
+            )
+            observation_ids[artifact.match_id] = observation_id
+    return observation_ids
+
+
+def _aware_semantic_time(value: str) -> datetime:
+    normalized = value.replace(" ", "T")
+    parsed = datetime.fromisoformat(normalized)
+    return parsed.replace(tzinfo=_SHANGHAI) if parsed.tzinfo is None else parsed
+
+
+def _run_replay_adjudication(
+    action_service: ActionService,
+    *,
+    replay_run_id: str,
+    board: JczqBoard,
+    day_root: Path,
+    manifest: ReplayInputManifest,
+    kernel,
+    observation_ids: dict[str, str],
+) -> None:
+    reads = _load_json(day_root / "reads.json")
+    if not isinstance(reads, list) or len(reads) != len(board.matches):
+        raise ValueError("historical replay Reads do not cover the board")
+    market_time_text = manifest.entry("sporttery_markets.json").semantic_timestamp
+    if market_time_text is None:
+        raise ValueError("official market update time is missing")
+    market_time = _aware_semantic_time(market_time_text)
+    by_match_id = {match.match_id: match for match in board.matches}
+    prepared: list[ReplayAdjudicationInput] = []
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        for index, raw in enumerate(reads):
+            if not isinstance(raw, dict):
+                raise ValueError("historical replay Read must be an object")
+            match = by_match_id.get(str(raw.get("match_id"))) or board.matches[index]
+            made_at = datetime.fromisoformat(str(raw["made_at"]))
+            prior = {
+                str(key): float(value)
+                for key, value in dict(
+                    raw.get("prior")
+                    or {"home": 1 / 3, "draw": 1 / 3, "away": 1 / 3}
+                ).items()
+            }
+            belief = {
+                str(key): float(value)
+                for key, value in dict(raw.get("belief") or prior).items()
+            }
+            snapshot_id = _stable_id(
+                "replay-market-snapshot", replay_run_id, match.match_id
+            )
+            uow.market.insert_snapshot(
+                SnapshotRow(
+                    market_snapshot_id=snapshot_id,
+                    match_id=match.match_id,
+                    market_definition_id="md-had",
+                    snapshot_kind="historical_replay_cutoff",
+                    as_of=market_time.isoformat(),
+                    fair_distribution=prior,
+                    devig_method="source_read_prior",
+                    method_version="1",
+                    source_coverage={"manifest": manifest.manifest_hash},
+                    freshness={},
+                    disagreement={},
+                )
+            )
+            observation_id = observation_ids.get(match.match_id)
+            citations = (
+                ({"object_type": "observation", "object_id": observation_id},)
+                if observation_id is not None
+                else ({"object_type": "market_snapshot", "object_id": snapshot_id},)
+            )
+            branch = "reject" if index == 0 else "revise" if index == 1 else "approve"
+            prepared.append(
+                ReplayAdjudicationInput(
+                    read_id=str(raw.get("read_id") or f"read-{index + 1}"),
+                    match_id=match.match_id,
+                    made_at=made_at,
+                    origin=str(raw.get("judge") or "historical-read"),
+                    branch=branch,
+                    reason=f"historical replay fixture branch: {branch}",
+                    market_definition_id="md-had",
+                    market_snapshot_id=snapshot_id,
+                    prior_distribution=prior,
+                    belief_distribution=belief,
+                    revised_belief_distribution=prior,
+                    citation_refs=citations,
+                    candidate_observation_ids=(
+                        () if observation_id is None else (observation_id,)
+                    ),
+                )
+            )
+    ReplayAdjudicator(action_service, replay_run_id=replay_run_id).adjudicate(
+        tuple(prepared)
+    )
 
 
 @dataclass(frozen=True, slots=True)
