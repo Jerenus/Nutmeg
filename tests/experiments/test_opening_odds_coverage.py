@@ -42,11 +42,11 @@ def test_diagnoses_missing_opening_odds_by_source_without_filling_values(tmp_pat
 
     assert report["total"] == {"matches": 3, "covered": 1, "missing": 2}
     assert report["by_source"] == {
-        "apifootball": {
+        "unknown": {
             "matches": 1,
             "covered": 0,
             "missing": 1,
-            "missing_reason": "source_no_opening_odds",
+            "missing_reason": "provenance_missing",
         },
         "titan007": {
             "matches": 2,
@@ -56,9 +56,14 @@ def test_diagnoses_missing_opening_odds_by_source_without_filling_values(tmp_pat
         },
     }
     assert report["answers"]["missing_cause"] == (
-        "API-Football 源头不提供开盘价；支持开盘价的来源若缺失则记为采集缺失。"
+        "缺失样本均无来源溯源记录，无法判定是当时未抓还是源头不提供。"
     )
-    assert report["answers"]["historical_retrievable"] is True
+    assert report["answers"]["historical_retrievable"] is None
+    assert report["answers"]["historical_retrieval_status"] == "未测定"
+    assert report["answers"]["historical_retrieval_test_required"] == [
+        "对一个过去日期调用 Titan007 历史欧赔端点，检查是否仍返回初赔。",
+        "对同一过去日期调用 500.com 历史欧赔端点，检查是否仍返回初赔。",
+    ]
     assert report["answers"]["backfill_performed"] is False
 
 

@@ -33,7 +33,7 @@ def _missing_reason(source: str) -> str:
         return "source_no_opening_odds"
     if source == "titan007":
         return "capture_missing"
-    return "source_provenance_missing"
+    return "provenance_missing"
 
 
 def coverage_report(daily_dir: Path, *, days: int = 30) -> dict:
@@ -51,9 +51,7 @@ def coverage_report(daily_dir: Path, *, days: int = 30) -> dict:
         provenance = _load_json(provenance_path)
         covered = 0
         for code, market in sorted(markets.items()):
-            # Pre-cutover snapshots have no provenance file; repository policy records
-            # that their international odds came from API-Football.
-            source = str(provenance.get(code) or "apifootball")
+            source = str(provenance.get(code) or "unknown")
             present = _has_opening(market)
             counts = source_counts[source]
             counts["matches"] += 1
@@ -90,13 +88,17 @@ def coverage_report(daily_dir: Path, *, days: int = 30) -> dict:
         },
         "answers": {
             "missing_cause": (
-                "API-Football 源头不提供开盘价；支持开盘价的来源若缺失则记为采集缺失。"
+                "缺失样本均无来源溯源记录，无法判定是当时未抓还是源头不提供。"
             ),
-            "historical_retrievable": True,
+            "historical_retrievable": None,
+            "historical_retrieval_status": "未测定",
             "historical_retrieval_basis": (
-                "Titan007 历史竞彩板可重新解析 match_id，逐场欧赔端点仍提供 opening；"
-                "可取不等于已回补。"
+                "现有快照不能证明历史端点现在仍返回初赔，必须实测后才能下结论。"
             ),
+            "historical_retrieval_test_required": [
+                "对一个过去日期调用 Titan007 历史欧赔端点，检查是否仍返回初赔。",
+                "对同一过去日期调用 500.com 历史欧赔端点，检查是否仍返回初赔。",
+            ],
             "backfill_performed": False,
             "data_policy": "未插值、未用即时赔率替代开盘赔率、未填默认值。",
         },
