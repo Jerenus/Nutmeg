@@ -59,6 +59,8 @@ population 已是 `both` 不动。duty 名 `price-band-observation`，instrument
 修法：①`rsi due` 增加可选 `--issue`；②未给 issue 时，含 `{issue}` 的义务**照常列出但把命令标成 `<需 --issue>` 并在行尾注明**，不得整条清单抛错；③`after_prep` 调用处把当天 issue 传进去。
 测试：`tests/test_cli_rsi.py` 增加「无 issue 时 due 不抛错且仍列出全部义务」用例。
 
+⛔**T2/T3/T4 必须同时满足 RUNBOOK A7 的隔离条款**：「historical replay 永不增加 prospective R0/F5/F9 样本」（2026-09-20 由 `25ad896` 写入）。扩采样只对**真实前瞻日**生效；`jczq_replay*` 路径产生的场次**不得**进入 F9/F5/R0 的 n。实现时在 `matches_for_population` 或 fulfill 入口加显式隔离，并补一个断言 replay 场次不计入的测试。
+
 **T5 · 姊妹实验登记器**
 `rsi register` 增加 `--fork-from <exp_id> --population <p> --window-from <x>`：
 复制原件 claim/mechanism/falsifier 文本，只换 `exp_id`/`population`/`falsifier.stratum`/`window`，
