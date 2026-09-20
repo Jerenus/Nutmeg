@@ -16,6 +16,7 @@ def _jczq_matches(*, day: str, data_dir: Path) -> list[dict]:
         {
             "match_id": str(leg["match_id"]),
             "code": str(code),
+            "match_no": None,
             "source": "jczq",
         }
         for code, leg in entries
@@ -29,6 +30,7 @@ def _zucai_matches(*, issue: str, data_dir: Path) -> list[dict]:
     return [
         {
             "match_id": str(row["match_id"]),
+            "code": None,
             "match_no": int(row["match_no"]),
             "source": "zucai",
         }
@@ -64,5 +66,6 @@ def matches_for_population(
         if existing is None:
             by_match_id[row["match_id"]] = row
         else:
+            existing["match_no"] = row["match_no"]
             existing["source"] = "both"
     return list(by_match_id.values())

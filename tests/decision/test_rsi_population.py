@@ -57,10 +57,29 @@ def test_both_marks_shared_match_once(tmp_path):
         "both", day=day, issue="26131", data_dir=tmp_path
     )
 
+    assert all(
+        set(row) == {"match_id", "code", "match_no", "source"}
+        for row in result
+    )
     assert result == [
-        {"match_id": "shared", "code": "周日001", "source": "both"},
-        {"match_id": "jczq-only", "code": "周日002", "source": "jczq"},
-        {"match_id": "zucai-only", "match_no": 2, "source": "zucai"},
+        {
+            "match_id": "shared",
+            "code": "周日001",
+            "match_no": 1,
+            "source": "both",
+        },
+        {
+            "match_id": "jczq-only",
+            "code": "周日002",
+            "match_no": None,
+            "source": "jczq",
+        },
+        {
+            "match_id": "zucai-only",
+            "code": None,
+            "match_no": 2,
+            "source": "zucai",
+        },
     ]
 
 
