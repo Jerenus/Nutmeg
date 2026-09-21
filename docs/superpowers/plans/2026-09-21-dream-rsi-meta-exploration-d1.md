@@ -555,7 +555,7 @@ git commit -m "feat(ontology): add discovery foundation schema"
 - Modify: `nutmeg/ontology/repository/unit_of_work.py`
 - Test: `tests/ontology/test_discovery_repository.py`
 
-- [ ] **Step 1: Write failing repository round-trip tests**
+- [x] **Step 1: Write failing repository round-trip tests**
 
 ```python
 # tests/ontology/test_discovery_repository.py
@@ -605,13 +605,13 @@ Add the following exact repository cases to the same file:
 | `test_deployment_and_brake_round_trip` | deployed event with fallback, then brake event | latest deployment remains durable and latest brake names the same fallback |
 | `test_duplicate_ordinals_are_rejected` | duplicate world sequence, node visibility, replay round, and candidate index | each insert raises `IntegrityError`; original row is unchanged |
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `uv run pytest tests/ontology/test_discovery_repository.py -v`
 
 Expected: FAIL because `repository.discovery` does not exist.
 
-- [ ] **Step 3: Implement frozen repository row types**
+- [x] **Step 3: Implement frozen repository row types**
 
 In `nutmeg/ontology/repository/discovery.py`, create frozen slot dataclasses named:
 
@@ -639,7 +639,7 @@ PolicyBrakeEventRow
 
 Fields must match Task 2 columns, with decoded JSON represented as `dict`, `list`, or `tuple`, boolean integers hydrated as `bool`, and no repository-generated defaults.
 
-- [ ] **Step 4: Implement explicit inserts and reads**
+- [x] **Step 4: Implement explicit inserts and reads**
 
 Implement one `insert_<record>` method per row type. Add these exact reads:
 
@@ -670,7 +670,7 @@ Implement one `insert_<record>` method per row type. Add these exact reads:
 
 Use `canonical_json` for every JSON column and `json.loads` on hydration. Ordering is always explicit: event sequence, node creation sequence, parent index, replay round, tournament candidate/world index, then stable ID as final tie-break. `world_state` must call `project_world_state`; do not store a status column.
 
-- [ ] **Step 5: Expose the repository on the Unit of Work**
+- [x] **Step 5: Expose the repository on the Unit of Work**
 
 Add the TYPE_CHECKING import and property:
 
@@ -682,7 +682,7 @@ def discovery(self) -> DiscoveryRepository:
     return DiscoveryRepository(self.connection)
 ```
 
-- [ ] **Step 6: Run repository tests and verify GREEN**
+- [x] **Step 6: Run repository tests and verify GREEN**
 
 Run: `uv run pytest tests/ontology/test_discovery_repository.py -v`
 
