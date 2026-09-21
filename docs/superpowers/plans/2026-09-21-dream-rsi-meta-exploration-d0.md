@@ -629,19 +629,19 @@ git commit -m "docs(discovery): record D0 as-built boundary"
 **Files:**
 - Verify only; no new files.
 
-- [ ] **Step 1: Run focused discovery tests**
+- [x] **Step 1: Run focused discovery tests**
 
 Run: `uv run pytest tests/discovery/test_contracts.py -v`
 
 Expected: all tests pass.
 
-- [ ] **Step 2: Run affected existing candidate tests**
+- [x] **Step 2: Run affected existing candidate tests**
 
 Run: `uv run pytest tests/product/operator_v2/test_candidates.py tests/product/operator_v2/test_candidate_bands.py tests/decision/test_candidate_builder.py -q`
 
 Expected: all tests pass; D0 has not changed candidate behavior.
 
-- [ ] **Step 3: Run lint and repository diff checks**
+- [x] **Step 3: Run lint and repository diff checks**
 
 Run: `uv run ruff check nutmeg/discovery tests/discovery`
 
@@ -651,13 +651,13 @@ Run: `git diff --check`
 
 Expected: no output and exit code 0.
 
-- [ ] **Step 4: Prove D0 did not write runtime state**
+- [x] **Step 4: Prove D0 did not write runtime state**
 
 Run: `git status --short .nutmeg-data experiments/attempts.log experiments/corpus-v2.json`
 
 Expected: no D0-created changes. Pre-existing unrelated changes must be documented and left untouched rather than reset.
 
-- [ ] **Step 5: Record final command evidence in the D0 evidence file and commit**
+- [x] **Step 5: Record final command evidence in the D0 evidence file and commit**
 
 Append a `## Verification` table containing command, UTC timestamp, exit code, and concise result for Steps 1-4. Then commit only the evidence file:
 

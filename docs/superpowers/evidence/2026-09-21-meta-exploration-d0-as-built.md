@@ -52,3 +52,15 @@ Canonical SHA-256 values from `nutmeg.discovery.contracts.canonical_hash`:
 D1 may begin only after both artifacts parse strictly, their canonical hashes are
 recorded here, the complete focused test file and affected candidate tests pass,
 and Jun reviews and approves this evidence. D0 does not grant runtime authority.
+
+## Verification
+
+Commands run on 2026-09-21, UTC; recorded at 08:22:47Z.
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `uv run pytest tests/discovery/test_contracts.py -v` | 0 | 7 passed |
+| `uv run pytest tests/product/operator_v2/test_candidates.py tests/product/operator_v2/test_candidate_bands.py tests/decision/test_candidate_builder.py -q` | 0 | 44 passed |
+| `uv run ruff check nutmeg/discovery tests/discovery` | 0 | All checks passed |
+| `git diff --check` | 0 | No whitespace errors |
+| `git status --short .nutmeg-data experiments/attempts.log experiments/corpus-v2.json` | 0 | No `.nutmeg-data` changes; `attempts.log` and `corpus-v2.json` were modified before D0 and remain untouched by D0 |
