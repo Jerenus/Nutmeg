@@ -88,6 +88,15 @@ class DiscoveryGovernanceActions:
             payload=payload,
         )
 
+    @staticmethod
+    def _approved_selection_contract():
+        from nutmeg.discovery.contracts import load_pilot_contract
+        from nutmeg.discovery.selection_contract import load_selection_contract
+
+        root = Path(__file__).resolve().parents[3] / "experiments/discovery"
+        pilot = load_pilot_contract(root / "structural-candidate-v1.contract.json")
+        return load_selection_contract(root / "structural-selection-v1.contract.json", pilot)
+
     def create_tournament(self, request: CreatePolicyTournamentRequest) -> ActionOutcome:
         command = self._command(
             "create_policy_tournament",
@@ -157,6 +166,15 @@ class DiscoveryGovernanceActions:
                 or tournament.evaluator_revision != pilot.evaluator.revision
             ):
                 raise ValueError("tournament conflicts with frozen pilot evaluator or archive")
+            from nutmeg.discovery.contracts import canonical_hash as contract_hash
+
+            selection = self._approved_selection_contract()
+            if (
+                contract.get("selection_contract_hash") != contract_hash(selection)
+                or tournament.aggregation_revision != selection.aggregation_revision
+                or tournament.evaluator_revision != selection.evaluator_revision
+            ):
+                raise ValueError("tournament selection contract hash or revision is unapproved")
             for row in request.candidates:
                 if row.policy_tournament_id != tournament.policy_tournament_id:
                     raise ValueError("candidate belongs to another tournament")
@@ -212,7 +230,15 @@ class DiscoveryGovernanceActions:
             {
                 "candidate_set_hash": tournament.candidate_set_hash,
                 "world_pool_manifest_hash": tournament.world_pool_manifest_hash,
-                "results": [asdict(row) for row in results],
+                "selection_contract_hash": tournament.decision_contract.get(
+                    "selection_contract_hash"
+                ),
+                "results": [
+                    asdict(row)
+                    for row in sorted(
+                        results, key=lambda item: (item.policy_revision_id, item.world_id)
+                    )
+                ],
                 "winner": winner,
             }
         )
@@ -286,6 +312,29 @@ class DiscoveryGovernanceActions:
                 r.disqualified for r in request.results if r.policy_revision_id == winner
             ):
                 raise ValueError("winner must be a registered non-disqualified candidate")
+            from nutmeg.discovery.tournament_selector import SelectionCell, select_winner
+
+            roles = {row.world_id: row for row in worlds}
+            selection = select_winner(
+                self._approved_selection_contract(),
+                tournament.incumbent_policy_revision_id,
+                tuple(row.policy_revision_id for row in candidates),
+                tuple(
+                    SelectionCell(
+                        policy_revision_id=row.policy_revision_id,
+                        world_id=row.world_id,
+                        pool_role=roles[row.world_id].pool_role,
+                        strata=tuple(roles[row.world_id].stratum_labels.get("labels", ())),
+                        score_vector=row.score_vector,
+                        disqualified=row.disqualified,
+                        exclusion_reason=row.exclusion_reason,
+                        trace_hash=row.trace_hash,
+                    )
+                    for row in request.results
+                ),
+            )
+            if winner != selection.winner_policy_revision_id:
+                raise ValueError("selection derived winner differs from supplied completion")
             if request.completion.reproduction_hash != self.selection_proof(
                 tournament, request.results, winner
             ):

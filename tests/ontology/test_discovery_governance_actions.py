@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
+from nutmeg.discovery.contracts import canonical_hash as contract_hash
+from nutmeg.discovery.contracts import load_pilot_contract
+from nutmeg.discovery.selection_contract import load_selection_contract
 from nutmeg.ontology.actions.discovery_governance_actions import (
     ApprovePolicyDeploymentRequest,
     CreatePolicyTournamentRequest,
@@ -33,12 +37,18 @@ from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from tests.ontology.test_discovery_repository import _event, _policy, _record, _world
 
 T0 = datetime(2026, 9, 21, 8, tzinfo=UTC)
+ROOT = Path(__file__).resolve().parents[2]
+PILOT = load_pilot_contract(ROOT / "experiments/discovery/structural-candidate-v1.contract.json")
+SELECTION = load_selection_contract(
+    ROOT / "experiments/discovery/structural-selection-v1.contract.json", PILOT
+)
 CONTRACT = {
     "evaluator_revision": "structural-candidate-evaluator-v1",
-    "aggregation_revision": "structural-aggregation-v1",
+    "aggregation_revision": SELECTION.aggregation_revision,
+    "selection_contract_hash": contract_hash(SELECTION),
     "tie_rule": "incumbent",
     "archive_rule": {"capacity": 12, "max_per_lineage": 3},
-    "minimum_materiality": 0.01,
+    "minimum_materiality": 1,
     "lexicographic_tiers": [
         "safety_isolation",
         "validity",
@@ -205,6 +215,21 @@ def test_create_tournament_cannot_override_frozen_pilot_evaluator_or_archive(tmp
         assert uow.discovery.tournament("t-1") is None
 
 
+def test_create_tournament_rejects_unapproved_selection_contract_hash(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    request = _create_request()
+    modified = replace(
+        request.tournament,
+        decision_contract={**CONTRACT, "selection_contract_hash": "wrong-hash"},
+    )
+
+    with pytest.raises(ValueError, match="selection contract"):
+        actions.create_tournament(replace(request, tournament=modified))
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament("t-1") is None
+
+
 def test_create_tournament_rejects_unsealed_or_duplicate_worlds(tmp_path):
     actions, engine = _rig(tmp_path)
     _seed(engine, sealed=False)
@@ -253,7 +278,17 @@ def _finish_request(*, results=None, archives=None, winner="policy-1", **changes
                 policy_tournament_id="t-1",
                 policy_revision_id=policy_id,
                 world_id=world_id,
-                score_vector={"safety": 1, "quality": 2},
+                score_vector={
+                    "invariant_violation_count": "0",
+                    "invalid_selected_count": "0",
+                    "eligible_band_count": "1",
+                    "best_objective_probability_by_band": {"10x": "0.5"},
+                    "distinct_valid_candidate_count_capped": "2",
+                    "failure_recovery_rate": "1",
+                    "node_count": "2",
+                    "wall_seconds": "1",
+                    "effective_parallelism": "1",
+                },
             )
             for policy_id in ("policy-1", "policy-2")
             for world_id in ("world-1", "world-2")
@@ -275,13 +310,8 @@ def _finish_request(*, results=None, archives=None, winner="policy-1", **changes
             ),
         )
     )
-    proof = canonical_hash(
-        {
-            "candidate_set_hash": _create_request().tournament.candidate_set_hash,
-            "world_pool_manifest_hash": _create_request().tournament.world_pool_manifest_hash,
-            "results": [asdict(r) for r in results],
-            "winner": winner,
-        }
+    proof = DiscoveryGovernanceActions.selection_proof(
+        _create_request().tournament, results, winner
     )
     return FinishPolicyTournamentRequest(
         tournament_id="t-1",
@@ -330,6 +360,29 @@ def test_finish_tournament_separates_winner_from_archive_admission(tmp_path):
         assert uow.discovery.latest_archive_decision("policy-2").disposition == "stepping_stone"
         assert uow.discovery.latest_deployment("family-1") is None
         assert [e.world_id for e in uow.discovery.exposed_holdouts("family-1")] == ["world-2"]
+
+
+def test_finish_rejects_self_consistent_proof_for_unearned_winner(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    request = _finish_request(winner="policy-2", archives=())
+
+    with pytest.raises(ValueError, match="derived winner|selection"):
+        actions.finish_tournament(request)
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament_completion("t-1") is None
+
+
+def test_selection_proof_is_independent_of_matrix_row_order():
+    tournament = _create_request().tournament
+    results = _finish_request().results
+
+    assert DiscoveryGovernanceActions.selection_proof(
+        tournament, results, "policy-1"
+    ) == DiscoveryGovernanceActions.selection_proof(
+        tournament, tuple(reversed(results)), "policy-1"
+    )
 
 
 def test_disqualified_policy_cannot_enter_archive(tmp_path):
