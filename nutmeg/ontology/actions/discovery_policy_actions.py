@@ -81,20 +81,15 @@ class DiscoveryPolicyActions:
         )
 
         def handler(uow, cmd):
-            from nutmeg.discovery.contracts import BaselinePolicyArtifact
+            from nutmeg.discovery.baseline_variants import load_policy_artifact
 
             policy = request.policy
             if canonical_hash(request.artifact) != policy.source_artifact_hash:
                 raise ValueError("policy source artifact hash mismatch")
             if not isinstance(request.artifact.get("schema_version"), str):
                 raise ValueError("policy artifact requires a schema version")
-            allowed = set(BaselinePolicyArtifact.model_fields) | {"configuration", "parameters"}
-            if unexpected := set(request.artifact) - allowed:
-                raise ValueError(
-                    f"unsupported or frozen policy artifact fields: {sorted(unexpected)}"
-                )
             if request.artifact.get("generator_family") == "baseline":
-                baseline = BaselinePolicyArtifact.model_validate(request.artifact)
+                baseline = load_policy_artifact(request.artifact)
                 if (
                     baseline.policy_revision_id != policy.policy_revision_id
                     or baseline.family != policy.family
@@ -102,6 +97,17 @@ class DiscoveryPolicyActions:
                     or baseline.constraints_version != policy.constraints_version
                 ):
                     raise ValueError("baseline policy artifact and revision disagree")
+            else:
+                from nutmeg.discovery.contracts import BaselinePolicyArtifact
+
+                allowed = set(BaselinePolicyArtifact.model_fields) | {
+                    "configuration",
+                    "parameters",
+                }
+                if unexpected := set(request.artifact) - allowed:
+                    raise ValueError(
+                        f"unsupported or frozen policy artifact fields: {sorted(unexpected)}"
+                    )
             validate_change_surfaces(tuple(ChangeSurface(s) for s in policy.change_surfaces))
             if not policy.validation_result.get("valid"):
                 raise ValueError("policy validation did not pass")

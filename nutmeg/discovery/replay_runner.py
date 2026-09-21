@@ -10,6 +10,10 @@ from typing import Mapping
 
 from sqlalchemy import Engine
 
+from nutmeg.discovery.baseline_variants import (
+    DeterministicBaselineVariantArtifact,
+    PolicyArtifact,
+)
 from nutmeg.discovery.contracts import (
     BaselinePolicyArtifact,
     PilotContract,
@@ -82,9 +86,40 @@ def baseline_decision(step, observation: Observation) -> ContinueBatch | Stop:
     raise ValueError("unsupported baseline policy step")
 
 
+def policy_decision(
+    policy: PolicyArtifact, round_number: int, observation: Observation
+) -> ContinueBatch | Stop:
+    if isinstance(policy, BaselinePolicyArtifact):
+        step = next((item for item in policy.steps if item.round == round_number), None)
+        if step is None:
+            raise ValueError("baseline policy round is missing")
+        return baseline_decision(step, observation)
+    if isinstance(policy, DeterministicBaselineVariantArtifact):
+        if round_number == 1:
+            available = tuple(
+                template
+                for template in policy.template_order
+                if template in observation.legal_template_ids
+            )[: policy.batch_limit]
+            if available:
+                return ContinueBatch(
+                    tuple(Continue(observation.frontier_node_ids[0], (item,)) for item in available)
+                )
+        if round_number == 2:
+            return Stop(_select(observation))
+        raise ValueError("baseline variant round is missing")
+    raise ValueError("unsupported policy artifact")
+
+
+def _policy_rounds(policy: PolicyArtifact) -> tuple[int, ...]:
+    if isinstance(policy, BaselinePolicyArtifact):
+        return tuple(step.round for step in policy.steps)
+    return (1, 2)
+
+
 def _trace(
     tree: SealedTree,
-    policy: BaselinePolicyArtifact,
+    policy: PolicyArtifact,
     pilot: PilotContract,
     replay: PolicyReplayRunRow,
     requested_at: datetime,
@@ -95,8 +130,8 @@ def _trace(
     costs = {"attempts": 0, "wall_ms": 0, "candidate_generation_count": 0}
     failures: list[str] = []
     terminal = None
-    for step in policy.steps:
-        decision = baseline_decision(step, observation)
+    for round_number in _policy_rounds(policy):
+        decision = policy_decision(policy, round_number, observation)
         if isinstance(decision, ContinueBatch):
             actions = decision
             before = observation
@@ -130,7 +165,7 @@ def _trace(
                         {"visible_node_ids": list(before.visible_node_ids)}
                     ),
                     policy_state_hash=policy_state_hash(
-                        {"schema_version": "1", "round": step.round}
+                        {"schema_version": "1", "round": round_number}
                     ),
                     requested_actions=requested,
                     accepted_actions=accepted,
@@ -197,7 +232,7 @@ def run_online_baseline(
     engine: Engine,
     shadow_database: Path,
     source_database: Path,
-    policy: BaselinePolicyArtifact,
+    policy: PolicyArtifact,
     requested_at: datetime,
     fixture_only: bool = False,
     generation_request_id: str | None = None,
@@ -220,8 +255,8 @@ def run_online_baseline(
     )
     observation = environment.reset()
     terminal = None
-    for step in policy.steps:
-        decision = baseline_decision(step, observation)
+    for round_number in _policy_rounds(policy):
+        decision = policy_decision(policy, round_number, observation)
         if isinstance(decision, ContinueBatch):
             observation = environment.continue_batch(decision).observation
         else:
@@ -236,7 +271,7 @@ def run_online_baseline(
 def run_registered_replay(
     engine: Engine,
     world_id: str,
-    policy: BaselinePolicyArtifact,
+    policy: PolicyArtifact,
     pilot: PilotContract,
     *,
     seed: int,
