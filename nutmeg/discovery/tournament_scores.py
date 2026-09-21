@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Mapping
 
+from nutmeg.discovery.sealed_tree import SealedTree
+from nutmeg.ontology.repository.discovery import PolicyReplayCompletionRow, PolicyReplayRoundRow
+
 
 @dataclass(frozen=True, slots=True)
 class ReplayCellEvidence:
@@ -126,3 +129,57 @@ def score_replay(evidence: ReplayCellEvidence) -> ScoredCell:
         "failure_codes": list(evidence.failure_codes),
     }
     return ScoredCell(score, disqualified, reason)
+
+
+def score_sealed_replay(
+    tree: SealedTree,
+    rounds: tuple[PolicyReplayRoundRow, ...],
+    completion: PolicyReplayCompletionRow,
+) -> ScoredCell:
+    """Rebuild the cell from immutable replay and its verified sealed source."""
+    visible = {node_id for row in rounds for node_id in row.revealed_node_ids}
+    selected = tuple(completion.selected_node_ids)
+    invalid = any(
+        node_id not in visible
+        or node_id not in tree.evaluations
+        or not tree.evaluations[node_id].selectable
+        for node_id in selected
+    )
+    attempts = completion.budget_used.get("attempts")
+    wall_ms = completion.budget_used.get("wall_ms")
+    generated = completion.budget_used.get("candidate_generation_count")
+    node_by_id = {node.node_id: node for node in tree.nodes}
+    retries = sum(
+        bool(node_by_id[node_id].retry_of_node_id) for node_id in visible if node_id in node_by_id
+    )
+    useful_branches = sum(len(row.accepted_actions) for row in rounds)
+    return score_replay(
+        ReplayCellEvidence(
+            trace_hash=completion.trace_hash,
+            expected_trace_hash=completion.trace_hash,
+            selected_evaluations=tuple(
+                tree.evaluations[node_id].result
+                for node_id in selected
+                if node_id in tree.evaluations
+            ),
+            node_count=attempts,
+            rounds=len(rounds),
+            retries=retries,
+            wall_seconds=None if wall_ms is None else str(Decimal(str(wall_ms)) / 1000),
+            candidate_generation_count=generated,
+            effective_parallelism=(
+                None if not rounds else str(Decimal(useful_branches) / len(rounds))
+            ),
+            failure_codes=tuple(completion.failure_codes),
+            branch_unavailable=any(
+                item.get("reason") == "branch_unavailable"
+                for row in rounds
+                for item in row.rejected_actions
+            ),
+            invalid_selected=invalid,
+            permission_breach="permission_breach" in completion.failure_codes,
+            protected_action="protected_action" in completion.failure_codes,
+            leakage="leakage" in completion.failure_codes,
+            unused_budget={},
+        )
+    )

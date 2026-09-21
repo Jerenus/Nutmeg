@@ -186,12 +186,43 @@ class DiscoveryGovernanceActions:
             exposed = {
                 row.world_id for row in uow.discovery.exposed_holdouts(tournament.policy_family)
             }
+
+            def cluster_key(world):
+                key = (
+                    world.business_date,
+                    world.input_manifest.get("task_snapshot_hash"),
+                    world.input_manifest.get("slate_revision_id"),
+                )
+                if not all(key):
+                    raise ValueError("tournament world is missing derivative cluster identity")
+                return key
+
+            exposed_clusters = {cluster_key(uow.discovery.world(world_id)) for world_id in exposed}
+            from nutmeg.discovery.sealed_tree import SealedTree
+            from nutmeg.discovery.world_pool import (
+                WorldPoolInput,
+                WorldReadinessFacts,
+                assess_baseline_readiness,
+                freeze_world_pool,
+            )
+
+            replays = sd.policy_replay_runs
+            seen_clusters = set()
+            pool_inputs = []
+            readiness_facts = []
             for row in request.worlds:
                 if row.policy_tournament_id != tournament.policy_tournament_id:
                     raise ValueError("world belongs to another tournament")
                 world = uow.discovery.world(row.world_id)
                 if world is None or uow.discovery.world_state(row.world_id) != "sealed":
                     raise ValueError("tournament requires sealed worlds")
+                expected_labels = sorted(f"{key}:{value}" for key, value in world.strata.items())
+                if row.stratum_labels != {"labels": expected_labels}:
+                    raise ValueError("tournament stratum labels differ from sealed world")
+                cluster = cluster_key(world)
+                if cluster in seen_clusters:
+                    raise ValueError("duplicate derivative cluster in tournament world pool")
+                seen_clusters.add(cluster)
                 cutoff = datetime.fromisoformat(world.cutoff_at)
                 development = datetime.fromisoformat(tournament.development_cutoff_at)
                 holdout = datetime.fromisoformat(tournament.holdout_cutoff_at)
@@ -201,6 +232,8 @@ class DiscoveryGovernanceActions:
                     raise ValueError("holdout world is outside frozen temporal window")
                 if row.pool_role == "holdout" and row.world_id in exposed:
                     raise ValueError("exposed holdout cannot be reused as hidden holdout")
+                if row.pool_role == "holdout" and cluster in exposed_clusters:
+                    raise ValueError("exposed holdout cluster cannot be reused as hidden holdout")
                 if row.pool_role not in {"development", "holdout"}:
                     raise ValueError("unrecognized tournament world pool role")
                 if world.evaluator_revision != tournament.evaluator_revision:
@@ -213,6 +246,88 @@ class DiscoveryGovernanceActions:
                     for candidate in request.candidates
                 ):
                     raise ValueError("tournament world is incompatible with candidate policies")
+                nodes = uow.discovery.nodes_for_world(row.world_id)
+                SealedTree.from_rows(
+                    world,
+                    nodes,
+                    uow.discovery.world_events(row.world_id),
+                    {
+                        node.node_id: evaluation
+                        for node in nodes
+                        if (evaluation := uow.discovery.latest_node_evaluation(node.node_id))
+                        is not None
+                    },
+                )
+                continuations = {
+                    canonical_json(node.continuation_action)
+                    for node in nodes
+                    if node.parent_node_id == world.root_node_id
+                    and node.continuation_action.get("operator") != "stop"
+                }
+                replay_ids = (
+                    uow.connection.execute(
+                        select(replays.c.policy_replay_run_id)
+                        .join(
+                            sd.policy_replay_completions,
+                            sd.policy_replay_completions.c.policy_replay_run_id
+                            == replays.c.policy_replay_run_id,
+                        )
+                        .where(
+                            replays.c.world_id == world.world_id,
+                            replays.c.policy_revision_id == tournament.incumbent_policy_revision_id,
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                requested = 0
+                unavailable = 0
+                for replay_id in replay_ids:
+                    for replay_round in uow.discovery.policy_replay_rounds(replay_id):
+                        requested += len(replay_round.requested_actions)
+                        unavailable += sum(
+                            item.get("reason") == "branch_unavailable"
+                            for item in replay_round.rejected_actions
+                        )
+                pool_inputs.append(
+                    WorldPoolInput(
+                        world_id=world.world_id,
+                        business_date=world.business_date,
+                        cutoff_at=world.cutoff_at,
+                        task_snapshot_hash=cluster[1],
+                        slate_revision_id=cluster[2],
+                        task_family=world.task_family,
+                        evaluator_revision=world.evaluator_revision,
+                        strata=tuple(f"{key}:{value}" for key, value in world.strata.items()),
+                        sealed=True,
+                        manifest_valid=True,
+                        failed_or_no_solution=any(
+                            node.execution_status in {"failed", "no_solution"} for node in nodes
+                        ),
+                    )
+                )
+                readiness_facts.append(
+                    WorldReadinessFacts(
+                        world_id=world.world_id,
+                        distinct_legal_continuations=len(continuations),
+                        incumbent_replay_available=bool(replay_ids),
+                        requested_continuations=requested,
+                        unavailable_continuations=unavailable,
+                    )
+                )
+            try:
+                pool = freeze_world_pool(
+                    tuple(pool_inputs),
+                    development_cutoff=tournament.development_cutoff_at,
+                    holdout_cutoff=tournament.holdout_cutoff_at,
+                    required_strata=pilot.readiness.required_strata,
+                    exposed_cluster_keys=tuple(exposed_clusters),
+                )
+                readiness = assess_baseline_readiness(pool, tuple(readiness_facts), pilot)
+            except ValueError as exc:
+                raise ValueError(f"baseline readiness world pool rejected: {exc}") from exc
+            if not readiness.ready:
+                raise ValueError(f"baseline readiness failed: {', '.join(readiness.reasons)}")
             uow.discovery.insert_tournament(replace(tournament, action_id=cmd.action_id))
             for row in request.candidates:
                 uow.discovery.insert_tournament_candidate(row)
@@ -305,6 +420,57 @@ class DiscoveryGovernanceActions:
                 for r in request.results
             ):
                 raise ValueError("tournament matrix has invalid exclusion or owner")
+            replays = sd.policy_replay_runs
+            completions = sd.policy_replay_completions
+            from nutmeg.discovery.sealed_tree import SealedTree
+            from nutmeg.discovery.tournament_scores import score_sealed_replay
+
+            trees = {}
+            for row in request.results:
+                matched = (
+                    uow.connection.execute(
+                        select(replays.c.policy_replay_run_id)
+                        .join(
+                            completions,
+                            completions.c.policy_replay_run_id == replays.c.policy_replay_run_id,
+                        )
+                        .where(
+                            replays.c.policy_revision_id == row.policy_revision_id,
+                            replays.c.world_id == row.world_id,
+                            completions.c.trace_hash == row.trace_hash,
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                if len(matched) != 1:
+                    raise ValueError("tournament result needs exactly one persisted replay trace")
+                if row.world_id not in trees:
+                    world = uow.discovery.world(row.world_id)
+                    nodes = uow.discovery.nodes_for_world(row.world_id)
+                    trees[row.world_id] = SealedTree.from_rows(
+                        world,
+                        nodes,
+                        uow.discovery.world_events(row.world_id),
+                        {
+                            node.node_id: evaluation
+                            for node in nodes
+                            if (evaluation := uow.discovery.latest_node_evaluation(node.node_id))
+                            is not None
+                        },
+                    )
+                replay_id = matched[0]
+                score = score_sealed_replay(
+                    trees[row.world_id],
+                    uow.discovery.policy_replay_rounds(replay_id),
+                    uow.discovery.policy_replay_completion(replay_id),
+                )
+                if (
+                    score.score_vector != row.score_vector
+                    or score.disqualified != row.disqualified
+                    or score.exclusion_reason != row.exclusion_reason
+                ):
+                    raise ValueError("tournament score differs from persisted replay evidence")
             winner = request.completion.winner_policy_revision_id
             if request.completion.policy_tournament_id != request.tournament_id:
                 raise ValueError("completion belongs to another tournament")
@@ -340,6 +506,12 @@ class DiscoveryGovernanceActions:
             ):
                 raise ValueError("selection proof reproduction hash mismatch")
             archive = tournament.decision_contract["archive_rule"]
+            from nutmeg.discovery.contracts import load_pilot_contract
+
+            pilot = load_pilot_contract(
+                Path(__file__).resolve().parents[3]
+                / "experiments/discovery/structural-candidate-v1.contract.json"
+            )
             active_archive = self._active_archive_ids(uow, tournament.policy_family)
             bad_policies = {r.policy_revision_id for r in request.results if r.disqualified}
             admitted = set()
@@ -355,6 +527,18 @@ class DiscoveryGovernanceActions:
                     row.policy_revision_id == winner or not row.reason_code or not row.evidence
                 ):
                     raise ValueError("archive stepping stone is not an evidence-backed nonwinner")
+                if disposition is ArchiveDisposition.STEPPING_STONE and (
+                    row.reason_code not in pilot.archive.admission_reasons
+                    or not set(row.diversity_descriptors) & set(pilot.archive.diversity_descriptors)
+                ):
+                    raise ValueError("archive reason or diversity descriptor is not approved")
+                if disposition is ArchiveDisposition.STEPPING_STONE:
+                    for existing_id in active_archive:
+                        existing = uow.discovery.latest_archive_decision(existing_id)
+                        if existing is not None and (
+                            existing.diversity_descriptors == row.diversity_descriptors
+                        ):
+                            raise ValueError("archive rejects dominated behavioral clone")
                 if row.policy_revision_id in admitted:
                     raise ValueError("duplicate archive decision")
                 admitted.add(row.policy_revision_id)

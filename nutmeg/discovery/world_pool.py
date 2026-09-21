@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from nutmeg.discovery.contracts import PilotContract
 from nutmeg.ontology.discovery.models import canonical_hash
 
 
@@ -40,6 +41,80 @@ class FrozenWorldPool:
     manifest_hash: str
 
 
+@dataclass(frozen=True, slots=True)
+class WorldReadinessFacts:
+    world_id: str
+    distinct_legal_continuations: int
+    incumbent_replay_available: bool
+    requested_continuations: int
+    unavailable_continuations: int
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineReadinessReport:
+    ready: bool
+    reasons: tuple[str, ...]
+    metrics: dict[str, object]
+
+
+def assess_baseline_readiness(
+    pool: FrozenWorldPool,
+    facts: tuple[WorldReadinessFacts, ...],
+    pilot: PilotContract,
+) -> BaselineReadinessReport:
+    """Fail closed on missing coverage; duplicate clusters count only once."""
+    if len(facts) != len(pool.worlds) or {item.world_id for item in facts} != {
+        world.world_id for world in pool.worlds
+    }:
+        raise ValueError("readiness facts must cover every frozen world exactly once")
+    if any(
+        item.distinct_legal_continuations < 0
+        or item.requested_continuations < 0
+        or not 0 <= item.unavailable_continuations <= item.requested_continuations
+        for item in facts
+    ):
+        raise ValueError("readiness counts must be nonnegative and consistent")
+    gate = pilot.readiness.record_to_baseline
+    dates = {world.cluster_key[0] for world in pool.worlds}
+    multiple = sum(item.distinct_legal_continuations >= 2 for item in facts)
+    attempts = sum(item.requested_continuations for item in facts)
+    unavailable = sum(item.unavailable_continuations for item in facts)
+    multi_fraction = multiple / len(facts) if facts else 0
+    unavailable_rate = unavailable / attempts if attempts else 1
+    strata_counts = {
+        label: sum(label in world.strata for world in pool.worlds)
+        for label in pilot.readiness.required_strata
+    }
+    metrics = {
+        "sealed_world_count": len(pool.worlds),
+        "independent_business_dates": len(dates),
+        "effective_sample_size": pool.effective_cluster_count,
+        "manifest_completeness": 1.0,
+        "multi_alternative_fraction": multi_fraction,
+        "branch_unavailable_rate": unavailable_rate,
+        "failed_or_degraded_worlds": sum(world.failed_or_no_solution for world in pool.worlds),
+        "strata_counts": strata_counts,
+    }
+    reasons = []
+    if len(pool.worlds) < gate.min_sealed_worlds:
+        reasons.append("sealed_world_count")
+    if len(dates) < gate.min_independent_business_dates:
+        reasons.append("independent_business_dates")
+    if pool.effective_cluster_count < gate.min_effective_sample_size:
+        reasons.append("effective_sample_size")
+    if any(not item.incumbent_replay_available for item in facts):
+        reasons.append("incumbent_replay_missing")
+    if multi_fraction < gate.min_multi_alternative_fraction:
+        reasons.append("multi_alternative_fraction")
+    if unavailable_rate > gate.max_branch_unavailable_rate:
+        reasons.append("branch_unavailable_rate")
+    if metrics["failed_or_degraded_worlds"] < gate.min_failed_or_degraded_worlds:
+        reasons.append("failed_or_degraded_worlds")
+    if any(count < gate.min_worlds_per_required_stratum for count in strata_counts.values()):
+        reasons.append("stratum_coverage")
+    return BaselineReadinessReport(not reasons, tuple(reasons), metrics)
+
+
 def freeze_world_pool(
     worlds: tuple[WorldPoolInput, ...],
     *,
@@ -47,6 +122,7 @@ def freeze_world_pool(
     holdout_cutoff: str,
     required_strata: tuple[str, ...],
     exposed_holdout_ids: tuple[str, ...] = (),
+    exposed_cluster_keys: tuple[tuple[str, str, str], ...] = (),
 ) -> FrozenWorldPool:
     development_at = datetime.fromisoformat(development_cutoff)
     holdout_at = datetime.fromisoformat(holdout_cutoff)
@@ -78,13 +154,15 @@ def freeze_world_pool(
         else:
             exclusions.append((world.world_id, "after_holdout_cutoff"))
             continue
-        if role == "holdout" and world.world_id in exposed:
-            raise ValueError("exposed holdout cannot be reused as hidden holdout")
         cluster = (
             world.business_date,
             world.task_snapshot_hash,
             world.slate_revision_id,
         )
+        if role == "holdout" and world.world_id in exposed:
+            raise ValueError("exposed holdout cannot be reused as hidden holdout")
+        if role == "holdout" and cluster in exposed_cluster_keys:
+            raise ValueError("exposed holdout cluster cannot be reused under another world ID")
         if cluster in clusters:
             exclusions.append((world.world_id, "duplicate_cluster"))
             continue

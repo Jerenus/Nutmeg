@@ -116,6 +116,18 @@ def _wins_role(
     return False
 
 
+def _no_worse_role(
+    contract: SelectionContract,
+    baseline: tuple[SelectionCell, ...],
+    challenger: tuple[SelectionCell, ...],
+) -> bool:
+    return all(
+        _compare(_metric(baseline, field.name), _metric(challenger, field.name), field) >= 0
+        for tier in contract.within_tier
+        for field in tier.fields
+    )
+
+
 def _worst_stratum_safe(
     contract: SelectionContract,
     cells: tuple[SelectionCell, ...],
@@ -167,12 +179,16 @@ def select_winner(
     ):
         raise ValueError("tournament requires one registered incumbent")
     world_roles: dict[str, str] = {}
+    world_strata: dict[str, tuple[str, ...]] = {}
     for cell in cells:
         if cell.pool_role not in {"development", "holdout"} or (
             cell.world_id in world_roles and world_roles[cell.world_id] != cell.pool_role
         ):
             raise ValueError("tournament matrix has invalid world role")
+        if cell.world_id in world_strata and world_strata[cell.world_id] != cell.strata:
+            raise ValueError("tournament matrix world strata differ across policies")
         world_roles[cell.world_id] = cell.pool_role
+        world_strata[cell.world_id] = cell.strata
     expected = {(policy, world) for policy in candidate_ids for world in world_roles}
     actual = {(cell.policy_revision_id, cell.world_id) for cell in cells}
     if (
@@ -185,6 +201,36 @@ def select_winner(
     disqualified: dict[str, str] = {}
     comparisons: dict[str, str] = {}
     for policy_id in candidate_ids:
+        safety = next(
+            (
+                cell
+                for cell in ordered
+                if cell.policy_revision_id == policy_id
+                and (
+                    (value := _number(cell.score_vector.get("invariant_violation_count"))) is None
+                    or value > 0
+                )
+            ),
+            None,
+        )
+        if safety is not None:
+            disqualified[policy_id] = "safety_isolation"
+            continue
+        validity = next(
+            (
+                cell
+                for cell in ordered
+                if cell.policy_revision_id == policy_id
+                and (
+                    (value := _number(cell.score_vector.get("invalid_selected_count"))) is None
+                    or value > 0
+                )
+            ),
+            None,
+        )
+        if validity is not None:
+            disqualified[policy_id] = "invalid_selected"
+            continue
         invalid = next(
             (
                 cell
@@ -216,7 +262,7 @@ def select_winner(
             current_hold = _role_cells(ordered, winner, "holdout")
             if winner == incumbent_policy_revision_id or (
                 _wins_role(contract, current_dev, candidate_dev)
-                and _wins_role(contract, current_hold, candidate_hold)
+                and _no_worse_role(contract, current_hold, candidate_hold)
             ):
                 winner = candidate_id
                 comparisons[candidate_id] = "selected"

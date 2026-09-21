@@ -172,3 +172,58 @@ def test_best_of_multiple_challengers_wins_independent_of_candidate_order():
         (*cells, *stronger),
     )
     assert result.winner_policy_revision_id == "stronger"
+
+
+def test_stronger_development_with_equal_holdout_beats_first_challenger():
+    cells = _matrix()
+    stronger = tuple(
+        replace(
+            cell,
+            policy_revision_id="stronger",
+            trace_hash=f"stronger:{cell.world_id}",
+            score_vector=_vector(3 if cell.pool_role == "development" else 2),
+        )
+        for cell in cells
+        if cell.policy_revision_id == "challenger"
+    )
+
+    result = select_winner(
+        CONTRACT,
+        "incumbent",
+        ("incumbent", "challenger", "stronger"),
+        (*cells, *stronger),
+    )
+    assert result.winner_policy_revision_id == "stronger"
+
+
+def test_safety_violation_score_cannot_be_hidden_by_false_disqualified_flag():
+    cells = tuple(
+        replace(cell, score_vector=_vector(2, invariant_violation_count="1"))
+        if cell.policy_revision_id == "challenger"
+        else cell
+        for cell in _matrix()
+    )
+
+    result = _select(cells)
+    assert result.winner_policy_revision_id == "incumbent"
+    assert result.disqualification_reasons["challenger"] == "safety_isolation"
+
+
+def test_invalid_selected_score_disqualifies_even_with_false_flag():
+    cells = tuple(
+        replace(cell, score_vector=_vector(2, invalid_selected_count="1"))
+        if cell.policy_revision_id == "challenger"
+        else cell
+        for cell in _matrix()
+    )
+
+    assert _select(cells).disqualification_reasons["challenger"] == "invalid_selected"
+
+
+def test_world_strata_cannot_change_between_policy_cells():
+    import pytest
+
+    cells = _matrix()
+    altered = replace(cells[1], strata=("board_size:large",))
+    with pytest.raises(ValueError, match="strata"):
+        _select((cells[0], altered, *cells[2:]))

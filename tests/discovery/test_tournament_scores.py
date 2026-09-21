@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from nutmeg.discovery.tournament_scores import ReplayCellEvidence, score_replay
+from nutmeg.discovery.sealed_tree import SealedTree
+from nutmeg.discovery.tournament_scores import (
+    ReplayCellEvidence,
+    score_replay,
+    score_sealed_replay,
+)
+from nutmeg.ontology.repository.discovery import PolicyReplayCompletionRow, PolicyReplayRoundRow
+from tests.discovery.test_sealed_tree import _source
+from tests.ontology.test_discovery_repository import _record
 
 
 def _evidence(**changes: object) -> ReplayCellEvidence:
@@ -97,3 +105,25 @@ def test_quality_probability_outside_probability_range_is_invalid():
     )
 
     assert (result.disqualified, result.exclusion_reason) == (True, "invalid_output")
+
+
+def test_retry_attempts_do_not_inflate_useful_parallelism():
+    world, nodes, event, evaluations = _source()
+    tree = SealedTree.from_rows(world, nodes, (event,), evaluations)
+    rounds = (
+        _record(
+            PolicyReplayRoundRow,
+            revealed_node_ids=["child"],
+            accepted_actions=[{"continuation_action": {"template_ids": ["T1"]}}],
+            rejected_actions=[],
+        ),
+    )
+    completion = _record(
+        PolicyReplayCompletionRow,
+        selected_node_ids=["child"],
+        budget_used={"attempts": 2, "wall_ms": 1000, "candidate_generation_count": 5},
+        failure_codes=[],
+    )
+    # A retry is serial work, not an additional useful concurrent branch.
+    result = score_sealed_replay(tree, rounds, completion)
+    assert result.score_vector["effective_parallelism"] == "1"

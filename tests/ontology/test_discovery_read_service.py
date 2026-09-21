@@ -12,7 +12,7 @@ from tests.ontology.test_discovery_governance_actions import (
     _finished,
     _rig,
 )
-from tests.ontology.test_discovery_repository import _node, _policy, _record
+from tests.ontology.test_discovery_repository import _policy, _record
 
 
 def test_kernel_exposes_three_discovery_action_facades_and_counts(tmp_path):
@@ -45,8 +45,8 @@ def test_status_projection_returns_incumbent_tournament_world_and_rollback(tmp_p
     assert state.incumbent_policy_revision_id == "policy-1"
     assert state.active_deployment_state == "shadow"
     assert state.latest_tournament_id == "t-1"
-    assert state.latest_world_id == "world-2"
-    assert state.sealed_world_count == 2
+    assert state.latest_world_id == "world-extra-28"
+    assert state.sealed_world_count == 30
     assert state.exposed_holdout_count == 1
     assert state.rollback_policy_revision_id == "policy-2"
 
@@ -54,13 +54,12 @@ def test_status_projection_returns_incumbent_tournament_world_and_rollback(tmp_p
 def test_world_detail_orders_nodes_by_visibility_and_never_exposes_hidden_children(tmp_path):
     actions, engine = _rig(tmp_path)
     _finished(actions, engine)
-    with OntologyUnitOfWork(engine) as uow:
-        uow.discovery.insert_node(_node("root", 1, world_id="world-1", visibility_sequence=1))
-        uow.discovery.insert_node(
-            _node("child", 2, world_id="world-1", parent_node_id="root", visibility_sequence=2)
-        )
     detail = DiscoveryReadService(engine).world_detail("world-1")
-    assert [node["node_id"] for node in detail["nodes"]] == ["root", "child"]
+    assert [node["node_id"] for node in detail["nodes"]] == [
+        "world-1:root",
+        "world-1:child",
+        "world-1:second",
+    ]
     assert "unrecorded" not in str(detail)
     with pytest.raises(KeyError):
         DiscoveryReadService(engine).world_detail("missing")
@@ -96,3 +95,16 @@ def test_tournament_detail_decodes_archive_evidence(tmp_path):
     detail = DiscoveryReadService(engine).tournament_detail("t-1")
     assert detail["completion"]["winner_policy_revision_id"] == "policy-1"
     assert detail["archive_decisions"][0]["evidence"] == {"valid": True}
+
+
+def test_tournament_detail_exposes_frozen_contract_hash_and_exposure_slice(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _finished(actions, engine)
+    detail = DiscoveryReadService(engine).tournament_detail("t-1")
+
+    assert len(detail["results"]) == 60
+    assert (
+        detail["selection_contract_hash"]
+        == detail["tournament"]["decision_contract"]["selection_contract_hash"]
+    )
+    assert detail["exposed_holdout_world_ids"] == ["world-2"]

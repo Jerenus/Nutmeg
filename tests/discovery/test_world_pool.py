@@ -4,7 +4,18 @@ from dataclasses import replace
 
 import pytest
 
-from nutmeg.discovery.world_pool import WorldPoolInput, freeze_world_pool
+from nutmeg.discovery.contracts import load_pilot_contract
+from nutmeg.discovery.world_pool import (
+    WorldPoolInput,
+    WorldReadinessFacts,
+    assess_baseline_readiness,
+    freeze_world_pool,
+)
+
+PILOT = load_pilot_contract(
+    __import__("pathlib").Path(__file__).resolve().parents[2]
+    / "experiments/discovery/structural-candidate-v1.contract.json"
+)
 
 
 def _world(world_id: str, day: int, **changes) -> WorldPoolInput:
@@ -49,7 +60,7 @@ def test_freeze_world_pool_rejects_unsealed_invalid_or_exposed_holdout():
     ):
         with pytest.raises(ValueError, match=reason):
             freeze_world_pool(
-        (_world("dev", 10, **changed), _world("holdout", 21)),
+                (_world("dev", 10, **changed), _world("holdout", 21)),
                 development_cutoff="2026-09-15T23:59:59+00:00",
                 holdout_cutoff="2026-09-21T23:59:59+00:00",
                 required_strata=("board_size:small", "board_size:medium"),
@@ -105,3 +116,66 @@ def test_freeze_world_pool_rejects_incompatible_family_or_evaluator():
             holdout_cutoff="2026-09-21T23:59:59+00:00",
             required_strata=("board_size:small", "board_size:medium"),
         )
+
+
+def test_exposed_holdout_cluster_cannot_return_under_a_new_world_id():
+    exposed_cluster = ("2026-09-21", "snapshot-21", "slate-21")
+    with pytest.raises(ValueError, match="exposed.*cluster"):
+        freeze_world_pool(
+            (_world("dev", 10), _world("new-world-id", 21)),
+            development_cutoff="2026-09-15T23:59:59+00:00",
+            holdout_cutoff="2026-09-21T23:59:59+00:00",
+            required_strata=("board_size:small", "board_size:medium"),
+            exposed_cluster_keys=(exposed_cluster,),
+        )
+
+
+def test_record_to_baseline_readiness_requires_effective_dates_and_replay():
+    worlds = tuple(
+        _world(
+            f"world-{day}",
+            day,
+            strata=(f"board_size:{('small', 'medium', 'large')[day % 3]}",),
+        )
+        for day in range(1, 31)
+    )
+    pool = freeze_world_pool(
+        worlds,
+        development_cutoff="2026-09-20T23:59:59+00:00",
+        holdout_cutoff="2026-09-30T23:59:59+00:00",
+        required_strata=PILOT.readiness.required_strata,
+    )
+    facts = tuple(
+        WorldReadinessFacts(
+            world_id=world.world_id,
+            distinct_legal_continuations=2,
+            incumbent_replay_available=True,
+            requested_continuations=2,
+            unavailable_continuations=0,
+        )
+        for world in pool.worlds
+    )
+
+    assert assess_baseline_readiness(pool, facts, PILOT).ready is True
+    missing_replay = (*facts[:-1], replace(facts[-1], incumbent_replay_available=False))
+    report = assess_baseline_readiness(pool, missing_replay, PILOT)
+    assert report.ready is False
+    assert "incumbent_replay_missing" in report.reasons
+
+
+def test_record_to_baseline_readiness_cannot_count_duplicate_dates_as_independent():
+    worlds = (
+        _world("dev", 10),
+        _world("holdout", 21),
+    )
+    pool = freeze_world_pool(
+        worlds,
+        development_cutoff="2026-09-15T23:59:59+00:00",
+        holdout_cutoff="2026-09-21T23:59:59+00:00",
+        required_strata=("board_size:small", "board_size:medium"),
+    )
+    facts = tuple(WorldReadinessFacts(w.world_id, 2, True, 1, 0) for w in pool.worlds)
+    report = assess_baseline_readiness(pool, facts, PILOT)
+    assert report.ready is False
+    assert "sealed_world_count" in report.reasons
+    assert "independent_business_dates" in report.reasons

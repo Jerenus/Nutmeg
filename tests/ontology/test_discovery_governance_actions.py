@@ -16,6 +16,7 @@ from nutmeg.ontology.actions.discovery_governance_actions import (
     FinishPolicyTournamentRequest,
     TripPolicyBrakeRequest,
 )
+from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.discovery.models import canonical_hash
@@ -23,9 +24,13 @@ from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.discovery import (
     ArchiveDecisionRow,
     DiscoveryRunRow,
+    NodeEvaluationRow,
     PolicyBrakeEventRow,
     PolicyDeploymentRow,
     PolicyParentLinkRow,
+    PolicyReplayCompletionRow,
+    PolicyReplayRoundRow,
+    PolicyReplayRunRow,
     TournamentCandidateRow,
     TournamentCompletionRow,
     TournamentResultRow,
@@ -34,13 +39,18 @@ from nutmeg.ontology.repository.discovery import (
 )
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from tests.ontology.test_discovery_repository import _event, _policy, _record, _world
+from tests.ontology.test_discovery_repository import _event, _node, _policy, _record, _world
 
 T0 = datetime(2026, 9, 21, 8, tzinfo=UTC)
 ROOT = Path(__file__).resolve().parents[2]
 PILOT = load_pilot_contract(ROOT / "experiments/discovery/structural-candidate-v1.contract.json")
 SELECTION = load_selection_contract(
     ROOT / "experiments/discovery/structural-selection-v1.contract.json", PILOT
+)
+FIXTURE_WORLDS = (
+    ("world-1", "2026-09-20"),
+    ("world-2", "2026-09-21"),
+    *((f"world-extra-{day:02d}", f"2026-08-{day:02d}") for day in range(1, 29)),
 )
 CONTRACT = {
     "evaluator_revision": "structural-candidate-evaluator-v1",
@@ -76,26 +86,147 @@ def _seed(engine, *, sealed=True):
                     compatible_world_families=["structural_candidate_audit"],
                 )
             )
-        for world_id, day in (("world-1", "2026-09-20"), ("world-2", "2026-09-21")):
-            uow.discovery.insert_world(
-                replace(
-                    _world(),
-                    world_id=world_id,
-                    business_date=day,
-                    cutoff_at=f"{day}T07:00:00+00:00",
-                )
+        for world_index, (world_id, day) in enumerate(FIXTURE_WORLDS):
+            manifest = {
+                "references": [],
+                "task_snapshot_hash": f"snap-{day}",
+                "slate_revision_id": "s1",
+                "template_ids": ["T1"],
+            }
+            world = replace(
+                _world(),
+                world_id=world_id,
+                business_date=day,
+                cutoff_at=f"{day}T07:00:00+00:00",
+                strata={"board_size": ("small", "medium", "large")[world_index % 3]},
+                input_manifest=manifest,
+                input_manifest_hash=canonical_hash(manifest),
+                root_node_id=f"{world_id}:root",
             )
+            uow.discovery.insert_world(world)
             uow.discovery.insert_world_event(
                 replace(
                     _event(1, "created"), world_id=world_id, world_event_id=f"{world_id}:created"
                 )
             )
             if sealed:
-                uow.discovery.insert_world_event(
-                    replace(
-                        _event(2, "sealed"), world_id=world_id, world_event_id=f"{world_id}:sealed"
+                root = replace(
+                    _node(f"{world_id}:root", 1),
+                    world_id=world_id,
+                    parent_node_id=None,
+                    artifact_manifest=manifest,
+                    artifact_manifest_hash=canonical_hash(manifest),
+                    finished_at=f"{day}T07:00:00+00:00",
+                )
+                artifact = {"candidates": [f"{world_id}:candidate"]}
+                child = replace(
+                    _node(f"{world_id}:child", 2),
+                    world_id=world_id,
+                    parent_node_id=root.node_id,
+                    continuation_action={
+                        "operator": "enumerate_template_shard",
+                        "template_ids": ["T1"],
+                    },
+                    artifact_manifest=artifact,
+                    artifact_manifest_hash=canonical_hash(artifact),
+                    execution_status="complete",
+                    finished_at=f"{day}T07:00:00+00:00",
+                )
+                uow.discovery.insert_node(root)
+                uow.discovery.insert_node(child)
+                second_artifact = {"candidates": [f"{world_id}:other"]}
+                second = replace(
+                    child,
+                    node_id=f"{world_id}:second",
+                    creation_sequence=3,
+                    visibility_sequence=3,
+                    sibling_order=2,
+                    continuation_action={
+                        "operator": "enumerate_template_shard",
+                        "template_ids": ["T2"],
+                    },
+                    artifact_manifest=second_artifact,
+                    artifact_manifest_hash=canonical_hash(second_artifact),
+                )
+                uow.discovery.insert_node(second)
+                uow.discovery.insert_node_evaluation(
+                    _record(
+                        NodeEvaluationRow,
+                        node_evaluation_id=f"{world_id}:evaluation",
+                        node_id=child.node_id,
+                        evaluator_revision=world.evaluator_revision,
+                        result={
+                            "eligible_band_count": 1,
+                            "best_objective_probability_by_band": {"10x": "0.5"},
+                            "distinct_valid_candidate_count_capped": 2,
+                        },
+                        selectable=True,
+                        evaluated_at=f"{day}T07:01:00+00:00",
                     )
                 )
+                uow.discovery.insert_node_evaluation(
+                    _record(
+                        NodeEvaluationRow,
+                        node_evaluation_id=f"{world_id}:other-evaluation",
+                        node_id=second.node_id,
+                        evaluator_revision=world.evaluator_revision,
+                        result={
+                            "eligible_band_count": 1,
+                            "best_objective_probability_by_band": {"10x": "0.5"},
+                            "distinct_valid_candidate_count_capped": 2,
+                        },
+                        selectable=True,
+                        evaluated_at=f"{day}T07:01:00+00:00",
+                    )
+                )
+                uow.discovery.insert_world_event(
+                    replace(
+                        _event(2, "sealed"),
+                        world_id=world_id,
+                        world_event_id=f"{world_id}:sealed",
+                        occurred_at=f"{day}T07:02:00+00:00",
+                        manifest_hash=DiscoveryWorldActions.seal_manifest(
+                            world, (root, child, second)
+                        ),
+                    )
+                )
+                for policy_id in ("policy-1", "policy-2"):
+                    replay_id = f"replay:{policy_id}:{world_id}"
+                    uow.discovery.insert_policy_replay(
+                        _record(
+                            PolicyReplayRunRow,
+                            policy_replay_run_id=replay_id,
+                            policy_revision_id=policy_id,
+                            world_id=world_id,
+                        )
+                    )
+                    uow.discovery.insert_policy_replay_completion(
+                        _record(
+                            PolicyReplayCompletionRow,
+                            policy_replay_run_id=replay_id,
+                            trace_hash=f"trace:{policy_id}:{world_id}",
+                            selected_node_ids=[child.node_id],
+                            budget_used={
+                                "attempts": 1,
+                                "wall_ms": 1000,
+                                "candidate_generation_count": 5,
+                            },
+                            failure_codes=[],
+                        )
+                    )
+                    uow.discovery.insert_policy_replay_round(
+                        _record(
+                            PolicyReplayRoundRow,
+                            policy_replay_run_id=replay_id,
+                            round_no=1,
+                            revealed_node_ids=[child.node_id],
+                            accepted_actions=[{"revealed_node_ids": [child.node_id]}],
+                            requested_actions=[
+                                {"template_ids": ["T1"]},
+                                {"template_ids": ["T2"]},
+                            ],
+                        )
+                    )
 
 
 def _create_request(*, candidates=None, worlds=None, tournament_id="t-1", **changes):
@@ -122,23 +253,18 @@ def _create_request(*, candidates=None, worlds=None, tournament_id="t-1", **chan
     worlds = (
         worlds
         if worlds is not None
-        else (
+        else tuple(
             _record(
                 TournamentWorldRow,
                 policy_tournament_id=tournament_id,
-                world_index=0,
-                world_id="world-1",
-                pool_role="development",
-                stratum_labels={},
-            ),
-            _record(
-                TournamentWorldRow,
-                policy_tournament_id=tournament_id,
-                world_index=1,
-                world_id="world-2",
-                pool_role="holdout",
-                stratum_labels={},
-            ),
+                world_index=index,
+                world_id=world_id,
+                pool_role="holdout" if world_id == "world-2" else "development",
+                stratum_labels={
+                    "labels": [f"board_size:{('small', 'medium', 'large')[index % 3]}"],
+                },
+            )
+            for index, (world_id, _day) in enumerate(FIXTURE_WORLDS)
         )
     )
     tournament = _record(
@@ -176,6 +302,16 @@ def test_create_tournament_requires_incumbent_in_frozen_candidates(tmp_path):
         )
         with pytest.raises(ValueError, match="incumbent"):
             actions.create_tournament(bad)
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament("t-1") is None
+
+
+def test_create_tournament_refuses_two_worlds_below_frozen_readiness_gate(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+
+    with pytest.raises(ValueError, match="baseline readiness"):
+        actions.create_tournament(_create_request(worlds=_create_request().worlds[:2]))
     with OntologyUnitOfWork(engine) as uow:
         assert uow.discovery.tournament("t-1") is None
 
@@ -246,6 +382,66 @@ def test_create_tournament_rejects_unsealed_or_duplicate_worlds(tmp_path):
         actions.create_tournament(_create_request(worlds=(request.worlds[0], duplicate)))
 
 
+def test_create_tournament_rejects_tampered_sealed_manifest(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    with OntologyUnitOfWork(engine) as uow:
+        source = uow.discovery.world("world-2")
+        manifest = {**source.input_manifest, "task_snapshot_hash": "other-snapshot"}
+        uow.discovery.insert_world(
+            replace(
+                source,
+                world_id="world-3",
+                business_date="2026-09-19",
+                input_manifest=manifest,
+                input_manifest_hash=canonical_hash(manifest),
+                root_node_id="missing-root",
+            )
+        )
+        uow.discovery.insert_world_event(
+            replace(_event(1, "created"), world_id="world-3", world_event_id="world-3:created")
+        )
+        uow.discovery.insert_world_event(
+            replace(_event(2, "sealed"), world_id="world-3", world_event_id="world-3:sealed")
+        )
+    request = _create_request()
+    worlds = (request.worlds[0], replace(request.worlds[1], world_id="world-3"))
+
+    with pytest.raises(ValueError, match="sealed manifest"):
+        actions.create_tournament(
+            replace(
+                request,
+                worlds=worlds,
+                tournament=replace(
+                    request.tournament,
+                    world_pool_manifest_hash=canonical_hash([asdict(w) for w in worlds]),
+                ),
+            )
+        )
+
+
+def test_create_tournament_cannot_relabel_world_stratum(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    request = _create_request()
+    worlds = (
+        replace(request.worlds[0], stratum_labels={"labels": ["board_size:large"]}),
+        *request.worlds[1:],
+    )
+
+    with pytest.raises(ValueError, match="stratum labels"):
+        actions.create_tournament(
+            replace(
+                request,
+                worlds=worlds,
+                tournament=replace(
+                    request.tournament,
+                    world_pool_manifest_hash=canonical_hash([asdict(w) for w in worlds]),
+                ),
+            )
+        )
+
+
 def test_create_tournament_rejects_exposed_world_as_hidden_holdout(tmp_path):
     actions, engine = _rig(tmp_path)
     _seed(engine)
@@ -268,6 +464,45 @@ def test_create_tournament_rejects_exposed_world_as_hidden_holdout(tmp_path):
         )
 
 
+def test_create_tournament_rejects_exposed_derivative_cluster(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_tournament(_create_request().tournament)
+        from nutmeg.ontology.repository.discovery import HoldoutExposureRow
+
+        uow.discovery.insert_holdout_exposure(
+            _record(
+                HoldoutExposureRow,
+                holdout_exposure_id="exposure-2",
+                policy_tournament_id="t-1",
+                policy_family="family-1",
+                world_id="world-2",
+            )
+        )
+        uow.discovery.insert_world(replace(uow.discovery.world("world-2"), world_id="world-3"))
+        uow.discovery.insert_world_event(
+            replace(_event(1, "created"), world_id="world-3", world_event_id="world-3:created")
+        )
+        uow.discovery.insert_world_event(
+            replace(_event(2, "sealed"), world_id="world-3", world_event_id="world-3:sealed")
+        )
+    request = _create_request(tournament_id="t-2", idempotency_key="tournament:derivative")
+    worlds = (request.worlds[0], replace(request.worlds[1], world_id="world-3"))
+
+    with pytest.raises(ValueError, match="exposed.*cluster"):
+        actions.create_tournament(
+            replace(
+                request,
+                worlds=worlds,
+                tournament=replace(
+                    request.tournament,
+                    world_pool_manifest_hash=canonical_hash([asdict(w) for w in worlds]),
+                ),
+            )
+        )
+
+
 def _finish_request(*, results=None, archives=None, winner="policy-1", **changes):
     results = (
         results
@@ -285,13 +520,19 @@ def _finish_request(*, results=None, archives=None, winner="policy-1", **changes
                     "best_objective_probability_by_band": {"10x": "0.5"},
                     "distinct_valid_candidate_count_capped": "2",
                     "failure_recovery_rate": "1",
-                    "node_count": "2",
+                    "node_count": "1",
                     "wall_seconds": "1",
                     "effective_parallelism": "1",
+                    "rounds": "1",
+                    "retry_count": "0",
+                    "candidate_generation_count": "5",
+                    "unused_budget": {},
+                    "failure_codes": [],
                 },
+                trace_hash=f"trace:{policy_id}:{world_id}",
             )
             for policy_id in ("policy-1", "policy-2")
-            for world_id in ("world-1", "world-2")
+            for world_id, _day in FIXTURE_WORLDS
         )
     )
     archives = (
@@ -374,6 +615,53 @@ def test_finish_rejects_self_consistent_proof_for_unearned_winner(tmp_path):
         assert uow.discovery.tournament_completion("t-1") is None
 
 
+def test_finish_rejects_result_trace_without_matching_persisted_replay(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    rows = _finish_request().results
+    forged = (replace(rows[0], trace_hash="forged-trace"), *rows[1:])
+
+    with pytest.raises(ValueError, match="replay trace"):
+        actions.finish_tournament(_finish_request(results=forged))
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament_completion("t-1") is None
+
+
+def test_finish_rejects_arbitrary_quality_score_for_existing_trace(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    rows = _finish_request().results
+    forged = (
+        replace(rows[0], score_vector={**rows[0].score_vector, "eligible_band_count": "999"}),
+        *rows[1:],
+    )
+
+    with pytest.raises(ValueError, match="score|replay evidence"):
+        actions.finish_tournament(_finish_request(results=forged))
+
+
+def test_finish_rejects_ambiguous_replays_for_one_cell(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    with OntologyUnitOfWork(engine) as uow:
+        replay = uow.discovery.policy_replay("replay:policy-1:world-1")
+        completion = uow.discovery.policy_replay_completion(replay.policy_replay_run_id)
+        uow.discovery.insert_policy_replay(
+            replace(replay, policy_replay_run_id="replay:duplicate", action_id="duplicate-action")
+        )
+        uow.discovery.insert_policy_replay_completion(
+            replace(
+                completion, policy_replay_run_id="replay:duplicate", action_id="duplicate-action"
+            )
+        )
+
+    with pytest.raises(ValueError, match="exactly one.*replay trace"):
+        actions.finish_tournament(_finish_request())
+
+
 def test_selection_proof_is_independent_of_matrix_row_order():
     tournament = _create_request().tournament
     results = _finish_request().results
@@ -385,16 +673,20 @@ def test_selection_proof_is_independent_of_matrix_row_order():
     )
 
 
-def test_disqualified_policy_cannot_enter_archive(tmp_path):
+def test_disqualification_flag_without_replay_evidence_cannot_enter_archive(tmp_path):
     actions, engine = _rig(tmp_path)
     _seed(engine)
     actions.create_tournament(_create_request())
     request = _finish_request()
-    disqualified = replace(request.results[2], disqualified=True, exclusion_reason="invalid")
     bad = _finish_request(
-        results=(request.results[0], request.results[1], disqualified, request.results[3])
+        results=tuple(
+            replace(row, disqualified=True, exclusion_reason="invalid")
+            if row.policy_revision_id == "policy-2" and row.world_id == "world-1"
+            else row
+            for row in request.results
+        )
     )
-    with pytest.raises(ValueError, match="disqualified"):
+    with pytest.raises(ValueError, match="replay evidence"):
         actions.finish_tournament(bad)
     with OntologyUnitOfWork(engine) as uow:
         assert uow.discovery.tournament_completion("t-1") is None
@@ -430,6 +722,7 @@ def test_archive_limit_counts_existing_admissions_in_same_lineage(tmp_path):
                     _finish_request().archive_decisions[0],
                     archive_decision_id=f"old-{index}",
                     policy_revision_id=f"policy-{index}",
+                    diversity_descriptors={"action_histogram": [0] * index + [1]},
                 )
             )
     with pytest.raises(ValueError, match="lineage"):
@@ -445,6 +738,31 @@ def test_winner_cannot_be_labeled_stepping_stone(tmp_path):
     bad_archive = replace(_finish_request().archive_decisions[0], policy_revision_id="policy-1")
     with pytest.raises(ValueError, match="stepping stone"):
         actions.finish_tournament(_finish_request(archives=(bad_archive,)))
+
+
+def test_archive_rejects_reason_not_in_frozen_pilot(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    bad = replace(_finish_request().archive_decisions[0], reason_code="ticket_profit")
+
+    with pytest.raises(ValueError, match="archive reason"):
+        actions.finish_tournament(_finish_request(archives=(bad,)))
+
+
+def test_archive_rejects_duplicate_behavior_descriptor(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_policy(replace(_policy("policy-3"), validation_result={"valid": True}))
+        old = _finish_request().archive_decisions[0]
+        uow.discovery.insert_archive_decision(
+            replace(old, archive_decision_id="old-3", policy_revision_id="policy-3")
+        )
+
+    with pytest.raises(ValueError, match="clone|diversity"):
+        actions.finish_tournament(_finish_request())
 
 
 def _deployment_request(decision="shadow", policy_id="policy-1", **changes):

@@ -60,11 +60,12 @@ class DiscoveryReadService:
                         ),
                         sealed=True,
                         manifest_complete=complete,
-                    alternative_count=sum(
-                        node.continuation_action is not None
-                        and node.continuation_action.get("operator") == "enumerate_template_shard"
-                        for node in nodes[1:]
-                    ),
+                        alternative_count=sum(
+                            node.continuation_action is not None
+                            and node.continuation_action.get("operator")
+                            == "enumerate_template_shard"
+                            for node in nodes[1:]
+                        ),
                         failed_or_degraded=any(
                             node.execution_status == "failed" or bool(node.diagnostic_codes)
                             for node in nodes[1:]
@@ -209,6 +210,14 @@ class DiscoveryReadService:
                     asdict(row) for row in repository.tournament_results(policy_tournament_id)
                 ],
                 "completion": asdict(completion) if completion else None,
+                "selection_contract_hash": tournament.decision_contract.get(
+                    "selection_contract_hash"
+                ),
+                "exposed_holdout_world_ids": sorted(
+                    row.world_id
+                    for row in repository.exposed_holdouts(tournament.policy_family)
+                    if row.policy_tournament_id == policy_tournament_id
+                ),
                 "archive_decisions": [
                     asdict(row)
                     for row in repository.archive_decisions_for_tournament(policy_tournament_id)
