@@ -1,0 +1,122 @@
+{
+  "schema_version": "1",
+  "pilot_id": "structural-candidate-v1",
+  "task_family": "structural_candidate_audit",
+  "lane": "jczq",
+  "mode": "shadow_only",
+  "authoritative_workflow": {
+    "generator": "nutmeg.product.operator_candidates:enumerate_band_candidates",
+    "candidate_set_kind": "judgment_bound",
+    "generator_version": "operator-candidate-v2-bands",
+    "audit_policy_source": "candidate_set.audit_policy_version"
+  },
+  "operator_grammar": [
+    {
+      "name": "enumerate_template_shard",
+      "parameters": [
+        "template_ids"
+      ]
+    },
+    {
+      "name": "stop",
+      "parameters": [
+        "selected_node_ids",
+        "reason"
+      ]
+    }
+  ],
+  "evaluator": {
+    "revision": "structural-candidate-evaluator-v1",
+    "lexicographic_tiers": [
+      "safety_isolation",
+      "validity",
+      "discovery_quality",
+      "robustness",
+      "cost",
+      "parallel_efficiency"
+    ],
+    "quality_fields": [
+      "eligible_band_count",
+      "best_objective_probability_by_band",
+      "distinct_valid_candidate_count_capped"
+    ],
+    "candidate_count_cap_per_band": 20
+  },
+  "readiness": {
+    "record_to_baseline": {
+      "min_sealed_worlds": 30,
+      "min_independent_business_dates": 20,
+      "min_effective_sample_size": 24,
+      "min_manifest_completeness": 1.0,
+      "min_multi_alternative_fraction": 0.8,
+      "min_action_overlap": 0.0,
+      "max_branch_unavailable_rate": 0.4,
+      "min_failed_or_degraded_worlds": 0,
+      "min_worlds_per_required_stratum": 0
+    },
+    "baseline_to_optimizer": {
+      "min_sealed_worlds": 60,
+      "min_independent_business_dates": 40,
+      "min_effective_sample_size": 48,
+      "min_manifest_completeness": 1.0,
+      "min_multi_alternative_fraction": 0.85,
+      "min_action_overlap": 0.7,
+      "max_branch_unavailable_rate": 0.25,
+      "min_failed_or_degraded_worlds": 3,
+      "min_worlds_per_required_stratum": 8
+    },
+    "required_strata": [
+      "board_size:small",
+      "board_size:medium",
+      "board_size:large"
+    ],
+    "duplicate_cluster_key": [
+      "business_date",
+      "task_snapshot_hash",
+      "slate_revision_id"
+    ]
+  },
+  "archive": {
+    "capacity": 12,
+    "max_per_lineage": 3,
+    "diversity_descriptors": [
+      "action_histogram",
+      "stop_depth",
+      "selected_band_coverage",
+      "stratum_strengths"
+    ],
+    "admission_reasons": [
+      "behavioral_coverage",
+      "underrepresented_stratum",
+      "novel_legal_trajectory"
+    ],
+    "minimum_action_jaccard_distance": 0.2,
+    "eviction_order": [
+      "disqualified",
+      "irreproducible",
+      "dominated_clone",
+      "oldest"
+    ]
+  },
+  "budgets": {
+    "max_rounds": 4,
+    "max_nodes": 32,
+    "max_concurrency": 4,
+    "max_wall_seconds": 120,
+    "max_candidate_generation_count": 50000
+  },
+  "frozen_surfaces": [
+    "model_weights",
+    "evaluator_code",
+    "action_permissions",
+    "ontology_handlers",
+    "football_rules",
+    "audit_rules",
+    "funds_actions"
+  ],
+  "protected_actions": [
+    "confirm_ticket_placement",
+    "record_cash_transaction",
+    "rsi_approve_deployment"
+  ]
+}

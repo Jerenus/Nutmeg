@@ -408,7 +408,7 @@ git commit -m "feat(discovery): define frozen pilot contracts"
 - Create: `experiments/discovery/structural-candidate-v1.contract.json`
 - Modify: `tests/discovery/test_contracts.py`
 
-- [ ] **Step 1: Add a failing repository-artifact test**
+- [x] **Step 1: Add a failing repository-artifact test**
 
 ```python
 # append to tests/discovery/test_contracts.py
@@ -430,13 +430,13 @@ def test_repository_pilot_contract_is_strict_and_shadow_only():
     assert len(canonical_hash(contract)) == 64
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/discovery/test_contracts.py::test_repository_pilot_contract_is_strict_and_shadow_only -v`
 
 Expected: FAIL with `FileNotFoundError`.
 
-- [ ] **Step 3: Add the frozen pilot artifact**
+- [x] **Step 3: Add the frozen pilot artifact**
 
 Create `experiments/discovery/structural-candidate-v1.contract.json` with exactly the `_pilot()` document from Task 1, formatted as two-space JSON with a trailing newline. Do not add comments or local paths. The frozen decisions are:
 
@@ -448,13 +448,13 @@ Create `experiments/discovery/structural-candidate-v1.contract.json` with exactl
 - archive capacity is 12 with at most three policies per lineage;
 - all operation remains shadow-only.
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: `uv run pytest tests/discovery/test_contracts.py::test_repository_pilot_contract_is_strict_and_shadow_only -v`
 
 Expected: `1 passed`.
 
-- [ ] **Step 5: Commit the pilot contract**
+- [x] **Step 5: Commit the pilot contract**
 
 ```bash
 git add experiments/discovery/structural-candidate-v1.contract.json tests/discovery/test_contracts.py

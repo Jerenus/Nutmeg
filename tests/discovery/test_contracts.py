@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -12,6 +13,8 @@ from nutmeg.discovery.contracts import (
     load_baseline_policy,
     load_pilot_contract,
 )
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _pilot() -> dict[str, object]:
@@ -199,3 +202,16 @@ def test_canonical_hash_is_stable_and_changes_with_semantics(tmp_path):
     path = tmp_path / "policy.json"
     path.write_text(json.dumps(_policy()), encoding="utf-8")
     assert load_baseline_policy(path).policy_revision_id == "structural-baseline-v1"
+
+
+def test_repository_pilot_contract_is_strict_and_shadow_only():
+    contract = load_pilot_contract(
+        ROOT / "experiments/discovery/structural-candidate-v1.contract.json"
+    )
+    assert contract.mode == "shadow_only"
+    assert contract.authoritative_workflow.candidate_set_kind == "judgment_bound"
+    assert contract.readiness.record_to_baseline.min_sealed_worlds == 30
+    assert contract.readiness.baseline_to_optimizer.min_sealed_worlds == 60
+    assert "model_weights" in contract.frozen_surfaces
+    assert "record_cash_transaction" in contract.protected_actions
+    assert len(canonical_hash(contract)) == 64
