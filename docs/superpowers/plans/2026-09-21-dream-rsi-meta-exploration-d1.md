@@ -52,7 +52,7 @@ D1 may accept fully formed records through typed Actions for contract testing, b
 - Create: `nutmeg/ontology/discovery/models.py`
 - Test: `tests/ontology/test_discovery_models.py`
 
-- [ ] **Step 1: Write failing tests for enums, hashes, and state projection**
+- [x] **Step 1: Write failing tests for enums, hashes, and state projection**
 
 ```python
 # tests/ontology/test_discovery_models.py
@@ -106,13 +106,13 @@ def test_archive_is_not_deployment_and_lifecycle_is_conservative():
     ) == "shadow"
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/ontology/test_discovery_models.py -v`
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'nutmeg.ontology.discovery'`.
 
-- [ ] **Step 3: Implement the pure model layer**
+- [x] **Step 3: Implement the pure model layer**
 
 ```python
 # nutmeg/ontology/discovery/models.py
@@ -235,13 +235,13 @@ from nutmeg.ontology.discovery.models import DiscoveryStatus
 __all__ = ["DiscoveryStatus"]
 ```
 
-- [ ] **Step 4: Run the test and verify GREEN**
+- [x] **Step 4: Run the test and verify GREEN**
 
 Run: `uv run pytest tests/ontology/test_discovery_models.py -v`
 
 Expected: `4 passed`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/ontology/discovery/__init__.py nutmeg/ontology/discovery/models.py tests/ontology/test_discovery_models.py
@@ -257,7 +257,7 @@ git commit -m "feat(ontology): define discovery domain models"
 - Modify: `nutmeg/ontology/repository/migrations.py`
 - Test: `tests/ontology/test_discovery_migration.py`
 
-- [ ] **Step 1: Write the failing migration tests**
+- [x] **Step 1: Write the failing migration tests**
 
 ```python
 # tests/ontology/test_discovery_migration.py
@@ -328,13 +328,13 @@ def test_discovery_base_rows_are_append_only(tmp_path):
             )
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `uv run pytest tests/ontology/test_discovery_migration.py -v`
 
 Expected: FAIL because migration 40 and discovery tables do not exist.
 
-- [ ] **Step 3: Define the normalized tables**
+- [x] **Step 3: Define the normalized tables**
 
 In `nutmeg/ontology/repository/schema_discovery.py`, declare the 19 tables named in `EXPECTED_TABLES` against shared `metadata`. Use `Text` for canonical JSON and ISO timestamps, `Integer` for ordinal/count/boolean fields, and these keys:
 
@@ -468,7 +468,7 @@ constraints for `(world_id, sequence_no)`, `(world_id, creation_sequence)`,
 same-family, and temporal relationships that cannot be represented by a single foreign
 key.
 
-- [ ] **Step 4: Add migration 40 and role permissions**
+- [x] **Step 4: Add migration 40 and role permissions**
 
 Import `schema_discovery` in `migrations.py`, add `_apply_discovery_foundation`, and append exactly:
 
@@ -533,13 +533,13 @@ def _apply_discovery_foundation(connection: Connection) -> None:
 
 Append `Migration(version=40, name="discovery_foundation", fingerprint="discovery_six_families+append_only_events+holdout_exposure+role_separated_permissions", apply=_apply_discovery_foundation)` after version 39. Never edit fingerprints 1-39.
 
-- [ ] **Step 5: Run migration tests and verify GREEN**
+- [x] **Step 5: Run migration tests and verify GREEN**
 
 Run: `uv run pytest tests/ontology/test_discovery_migration.py tests/ontology/test_migrations.py -v`
 
 Expected: all tests pass and schema high-water mark is 40.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/ontology/repository/schema_discovery.py nutmeg/ontology/repository/migrations.py tests/ontology/test_discovery_migration.py
