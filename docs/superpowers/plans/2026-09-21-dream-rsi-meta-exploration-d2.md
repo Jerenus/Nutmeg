@@ -8,6 +8,12 @@
 
 **Tech Stack:** Python 3.13, Pydantic v2, SQLAlchemy Core, Ontology v2 ActionService, pytest, Ruff. Governing spec: `docs/superpowers/specs/2026-09-21-dream-rsi-meta-exploration-v1-design.md` sections 9.2, 11.4, 13, and 18.A.
 
+**As-built checkpoint (2026-09-21):** D2 code and temporary-store acceptance checks
+are delivered in `docs/superpowers/evidence/2026-09-21-meta-exploration-d2-online-recorder.md`.
+The checklist below is the original execution recipe; the evidence records the
+shared-function and commit-granularity differences. No prospective run occurred.
+Jun's D2 evidence review remains required before D3 implementation.
+
 ---
 
 ## Boundaries and entry gate

@@ -273,11 +273,15 @@ class DiscoveryWorldActions:
 
     @staticmethod
     def seal_manifest(world: WorldRow, nodes: tuple[NodeRow, ...]) -> str:
+        # Action IDs audit the write, but are not part of the deterministic tree content.
         return canonical_hash(
             {
                 "world_id": world.world_id,
                 "input_manifest_hash": world.input_manifest_hash,
-                "nodes": [asdict(node) for node in nodes],
+                "nodes": [
+                    {key: value for key, value in asdict(node).items() if key != "action_id"}
+                    for node in nodes
+                ],
             }
         )
 

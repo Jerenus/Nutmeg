@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
 
 from sqlalchemy import Engine, select
 
-from nutmeg.ontology.discovery.models import DiscoveryStatus
+from nutmeg.ontology.discovery.models import DiscoveryStatus, canonical_hash
 from nutmeg.ontology.repository import schema_discovery as sd
 from nutmeg.ontology.repository.discovery import DiscoveryRepository
 
@@ -14,6 +15,63 @@ from nutmeg.ontology.repository.discovery import DiscoveryRepository
 class DiscoveryReadService:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
+
+    def readiness(self):
+        from nutmeg.discovery.contracts import load_pilot_contract
+        from nutmeg.discovery.readiness import CoverageWorld, assess_readiness
+        from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
+
+        pilot = load_pilot_contract(
+            Path(__file__).resolve().parents[3]
+            / "experiments/discovery/structural-candidate-v1.contract.json"
+        )
+        with self._engine.connect() as connection:
+            repository = DiscoveryRepository(connection)
+            ids = connection.execute(
+                select(sd.discovery_worlds.c.world_id).where(
+                    sd.discovery_worlds.c.task_family == pilot.task_family,
+                    sd.discovery_worlds.c.provenance_mode == "prospective_online",
+                )
+            ).scalars()
+            worlds = []
+            for world_id in ids:
+                if repository.world_state(world_id) != "sealed":
+                    continue
+                world = repository.world(world_id)
+                nodes = repository.nodes_for_world(world_id)
+                events = repository.world_events(world_id)
+                manifest = world.input_manifest
+                complete = (
+                    bool(events)
+                    and events[-1].manifest_hash
+                    == DiscoveryWorldActions.seal_manifest(world, nodes)
+                    and world.input_manifest_hash == canonical_hash(manifest)
+                    and bool(manifest.get("task_snapshot_hash"))
+                    and bool(manifest.get("slate_revision_id"))
+                )
+                worlds.append(
+                    CoverageWorld(
+                        world_id=world_id,
+                        business_date=world.business_date,
+                        task_snapshot_hash=str(manifest.get("task_snapshot_hash") or ""),
+                        slate_revision_id=str(manifest.get("slate_revision_id") or ""),
+                        strata=tuple(
+                            sorted(f"{key}:{value}" for key, value in world.strata.items())
+                        ),
+                        sealed=True,
+                        manifest_complete=complete,
+                    alternative_count=sum(
+                        node.continuation_action is not None
+                        and node.continuation_action.get("operator") == "enumerate_template_shard"
+                        for node in nodes[1:]
+                    ),
+                        failed_or_degraded=any(
+                            node.execution_status == "failed" or bool(node.diagnostic_codes)
+                            for node in nodes[1:]
+                        ),
+                    )
+                )
+        return assess_readiness(tuple(worlds), pilot.readiness)
 
     def status(self, policy_family: str) -> DiscoveryStatus:
         with self._engine.connect() as connection:

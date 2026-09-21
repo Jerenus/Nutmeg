@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
@@ -94,3 +95,81 @@ def test_discovery_status_does_not_migrate_old_schema(tmp_path):
     assert result.exit_code == 1
     assert "schema 40 is required" in result.output
     assert database.read_bytes() == before
+
+
+def test_discovery_readiness_empty_store_is_read_only(tmp_path):
+    data_dir = tmp_path / "missing"
+    result = runner.invoke(app, ["discovery", "readiness", "--data-dir", str(data_dir)])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["mode"] == "record_only"
+    assert payload["metrics"]["branch_unavailable_rate"]["status"] == "unknown"
+    assert not data_dir.exists()
+
+
+def test_shadow_run_requires_separate_approval_without_creating_stores(tmp_path):
+    source = tmp_path / "source.db"
+    shadow = tmp_path / "shadow.db"
+    result = runner.invoke(
+        app,
+        [
+            "discovery",
+            "shadow-run",
+            "--source-db",
+            str(source),
+            "--shadow-db",
+            str(shadow),
+            "--generation-request-id",
+            "request-1",
+            "--cutoff-at",
+            "2026-09-21T07:00:00+00:00",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "approval" in result.output.lower()
+    assert not source.exists()
+    assert not shadow.exists()
+
+
+def test_shadow_run_rejects_mismatched_scope_without_creating_store(tmp_path):
+    source = tmp_path / "source.db"
+    shadow = tmp_path / "shadow.db"
+    approval = tmp_path / "approval.json"
+    approval.write_text(json.dumps({
+        "approval_id": "approval-1", "approved_by": "op:jun",
+        "approved_at": "2026-09-21T06:00:00+00:00",
+        "scope": {"source_db": "different"},
+    }))
+    result = runner.invoke(app, [
+        "discovery", "shadow-run", "--source-db", str(source),
+        "--shadow-db", str(shadow), "--generation-request-id", "request-1",
+        "--cutoff-at", "2026-09-21T07:00:00+00:00", "--approval-file", str(approval),
+    ])
+    assert result.exit_code == 1
+    assert "scope" in result.output
+    assert not source.exists()
+    assert not shadow.exists()
+
+
+def test_shadow_run_rejects_expired_prospective_cutoff(tmp_path):
+    source = tmp_path / "source.db"
+    shadow = tmp_path / "shadow.db"
+    approval = tmp_path / "approval.json"
+    cutoff = "2026-09-04T07:00:00+00:00"
+    approval.write_text(json.dumps({
+        "approval_id": "fixture-only", "approved_by": "fixture-operator",
+        "approved_at": "2026-09-04T06:00:00+00:00",
+        "scope": {
+            "source_db": str(source.resolve()), "shadow_db": str(shadow.resolve()),
+            "generation_request_id": "request-1", "cutoff_at": cutoff,
+            "policy_revision_id": "structural-baseline-v1",
+        },
+    }))
+    result = runner.invoke(app, [
+        "discovery", "shadow-run", "--source-db", str(source),
+        "--shadow-db", str(shadow), "--generation-request-id", "request-1",
+        "--cutoff-at", cutoff, "--approval-file", str(approval),
+    ])
+    assert result.exit_code == 1
+    assert "expired" in result.output
+    assert not source.exists() and not shadow.exists()
