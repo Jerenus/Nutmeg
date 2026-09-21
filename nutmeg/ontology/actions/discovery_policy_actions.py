@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 
-from nutmeg.discovery.contracts import BaselinePolicyArtifact
 from nutmeg.ontology.actions.models import ActionCommand, ActionOutcome, ActorRole, ObjectRef
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.discovery.models import (
@@ -82,6 +81,8 @@ class DiscoveryPolicyActions:
         )
 
         def handler(uow, cmd):
+            from nutmeg.discovery.contracts import BaselinePolicyArtifact
+
             policy = request.policy
             if canonical_hash(request.artifact) != policy.source_artifact_hash:
                 raise ValueError("policy source artifact hash mismatch")

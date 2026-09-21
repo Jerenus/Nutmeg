@@ -7,8 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from nutmeg.discovery.contracts import canonical_hash as contract_hash
-from nutmeg.discovery.contracts import load_pilot_contract
 from nutmeg.ontology.actions.models import ActionCommand, ActionOutcome, ActorRole, ObjectRef
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.discovery.models import ProvenanceMode, canonical_hash
@@ -120,6 +118,9 @@ class DiscoveryWorldActions:
         )
 
         def handler(uow, cmd):
+            from nutmeg.discovery.contracts import canonical_hash as contract_hash
+            from nutmeg.discovery.contracts import load_pilot_contract
+
             world, root = request.world, request.root
             if canonical_hash(world.input_manifest) != world.input_manifest_hash:
                 raise ValueError("world input manifest hash mismatch")

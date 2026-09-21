@@ -1055,7 +1055,7 @@ git commit -m "feat(ontology): expose discovery projections"
 - Modify: `nutmeg/interfaces/cli/__init__.py`
 - Test: `tests/test_cli_discovery.py`
 
-- [ ] **Step 1: Write failing CLI tests**
+- [x] **Step 1: Write failing CLI tests**
 
 ```python
 # tests/test_cli_discovery.py
@@ -1083,45 +1083,66 @@ def test_discovery_show_unknown_object_fails_without_mutation(tmp_path):
 
 Add an end-to-end test that initializes a temporary kernel, registers the D0 baseline policy through the operator Action, creates one shadow world through the deterministic Action, and verifies `discovery status` displays it. Do not invoke generation, replay, tournament ranking, or deployment.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `uv run pytest tests/test_cli_discovery.py -v`
 
 Expected: FAIL because the `discovery` command group does not exist.
 
-- [ ] **Step 3: Implement the read-only command group**
+- [x] **Step 3: Implement the read-only command group**
 
 ```python
 # nutmeg/interfaces/cli/discovery.py
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
+from urllib.parse import quote
 
 import typer
+from sqlalchemy import create_engine
 
 import nutmeg.interfaces.cli as _cli
-from nutmeg.config.settings import AppSettings
+from nutmeg.ontology.discovery.models import DiscoveryStatus
+from nutmeg.ontology.discovery.read_service import DiscoveryReadService
+from nutmeg.ontology.paths import OntologyPaths
 
 discovery_app = typer.Typer(help="Discovery Harness governed state (read-only in D1)")
 _cli.app.add_typer(discovery_app, name="discovery")
+DATA_DIR_OPTION = typer.Option(Path(".nutmeg-data"), "--data-dir")
 
 
-def _kernel(data_dir: Path):
-    kernel = _cli.build_ontology_kernel(AppSettings(data_dir=data_dir.resolve()))
-    kernel.initialize()
-    return kernel
+def _service(data_dir: Path) -> DiscoveryReadService | None:
+    database = OntologyPaths.from_data_dir(data_dir.resolve()).database
+    if not database.is_file():
+        return None
+    uri = f"file:{quote(str(database), safe='/')}?mode=ro"
+    with sqlite3.connect(uri, uri=True) as connection:
+        try:
+            version = connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+        except sqlite3.OperationalError:
+            version = None
+    if version is None or version < 40:
+        typer.echo("discovery error: ontology schema 40 is required", err=True)
+        raise typer.Exit(code=1)
+    return DiscoveryReadService(create_engine(
+        "sqlite+pysqlite://", creator=lambda: sqlite3.connect(uri, uri=True)
+    ))
 
 
 @discovery_app.command("status")
 def status(
     policy_family: str = typer.Option("structural_candidate_exploration", "--family"),
-    data_dir: Path = typer.Option(Path(".nutmeg-data"), "--data-dir"),
+    data_dir: Path = DATA_DIR_OPTION,
 ) -> None:
-    state = _kernel(data_dir).discovery_read.status(policy_family)
+    service = _service(data_dir)
+    state = (service.status(policy_family) if service is not None else
+             DiscoveryStatus(None, None, None, None, 0, 0, None))
     typer.echo(f"incumbent: {state.incumbent_policy_revision_id or 'none'}")
     typer.echo(f"deployment: {state.active_deployment_state or 'none'}")
     typer.echo(f"latest tournament: {state.latest_tournament_id or 'none'}")
+    typer.echo(f"latest world: {state.latest_world_id or 'none'}")
     typer.echo(f"sealed worlds: {state.sealed_world_count}")
     typer.echo(f"exposed holdouts: {state.exposed_holdout_count}")
     typer.echo(f"rollback: {state.rollback_policy_revision_id or 'none'}")
@@ -1131,9 +1152,9 @@ def status(
 def show(
     kind: str = typer.Option(..., "--kind"),
     object_id: str = typer.Option(..., "--id"),
-    data_dir: Path = typer.Option(Path(".nutmeg-data"), "--data-dir"),
+    data_dir: Path = DATA_DIR_OPTION,
 ) -> None:
-    service = _kernel(data_dir).discovery_read
+    service = _service(data_dir)
     readers = {
         "world": service.world_detail,
         "policy": service.policy_lineage,
@@ -1141,6 +1162,9 @@ def show(
     }
     if kind not in readers:
         typer.echo("discovery error: kind must be world, policy, or tournament")
+        raise typer.Exit(code=1)
+    if service is None:
+        typer.echo(f"discovery error: {kind} {object_id} not found")
         raise typer.Exit(code=1)
     try:
         payload = readers[kind](object_id)
@@ -1158,7 +1182,7 @@ from nutmeg.interfaces.cli import discovery as discovery  # noqa: E402
 
 No mutating CLI command is added in D1; tests and later harness code call typed facades directly.
 
-- [ ] **Step 4: Run CLI tests and verify GREEN**
+- [x] **Step 4: Run CLI tests and verify GREEN**
 
 Run: `uv run pytest tests/test_cli_discovery.py -v`
 

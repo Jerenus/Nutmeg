@@ -979,6 +979,7 @@ def _normalize_date(yyyymmdd: str) -> str:
 from nutmeg.interfaces.cli import betslip as betslip  # noqa: E402
 from nutmeg.interfaces.cli import core as core  # noqa: E402
 from nutmeg.interfaces.cli import decision as decision  # noqa: E402
+from nutmeg.interfaces.cli import discovery as discovery  # noqa: E402
 from nutmeg.interfaces.cli import migration as migration  # noqa: E402
 from nutmeg.interfaces.cli import notifications as notifications  # noqa: E402
 from nutmeg.interfaces.cli import odds as odds  # noqa: E402
