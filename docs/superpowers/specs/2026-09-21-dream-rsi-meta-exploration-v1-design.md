@@ -2,7 +2,7 @@
 
 Date: 2026-09-21
 
-Status: Architecture approved; written specification awaiting operator review
+Status: Revised architecture awaiting operator review
 
 Owner: Nutmeg operator workflow
 
@@ -27,7 +27,10 @@ Human gate = shadow/canary/deploy/rollback authority
 The system is complete only when the same exploration policy can operate against both
 an online environment and a prefix-only replay environment, candidates are compared
 against the incumbent on frozen historical worlds, and a replay winner must still pass
-prospective shadow before human deployment.
+prospective shadow before human deployment. Candidate generation is pluggable but
+bounded: v1 starts with deterministic baselines and a small evolutionary archive,
+while tree search and workflow-program optimizers remain gated extensions. Model
+weights, evaluators, permissions, and football rules stay frozen.
 
 ## 2. Purpose
 
@@ -62,6 +65,27 @@ Primary external references reviewed for this design:
 - project explanation: <https://www.dream-rsi.com/#idea>
 - paper: <https://www.dream-rsi.com/assets/dream-rsi.pdf>
 - public repository: <https://github.com/zhengkid/Dream-RSI>
+
+Additional mechanism references reviewed for the revised design:
+
+- [ADAS](https://github.com/ShengranHu/ADAS) and
+  [AFlow](https://github.com/FoundationAgents/AFlow): constrained generation and
+  search over agent/workflow structures;
+- [Darwin Godel Machine](https://github.com/jennyzzt/dgm) and
+  [AlphaEvolve](https://deepmind.google/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/):
+  lineage-aware archives, executable candidates, frozen evaluators, and retention of
+  useful stepping stones;
+- [DSPy](https://github.com/stanfordnlp/dspy) and
+  [Trace](https://github.com/microsoft/Trace): local optimization of declared
+  prompt/operator surfaces from execution traces;
+- [Agent Lightning](https://github.com/microsoft/agent-lightning) and
+  [SEAL](https://github.com/Continual-Intelligence/SEAL): trajectory learning and
+  model-weight adaptation, retained as out-of-scope comparators rather than v1
+  dependencies.
+
+Nutmeg borrows interfaces and governance patterns from these systems, not their full
+optimization loops. The Discovery Harness owns evaluation discipline; no external
+optimizer may redefine the world, evaluator, permissions, holdout, or deployment gate.
 
 The mechanisms carried forward are:
 
@@ -134,6 +158,14 @@ but neither object becomes a DiscoveryNode merely because it has a parent link.
 - prefix-only replay of sealed trees;
 - deterministic policy tournament with temporal holdout and stratified reporting;
 - a constrained policy-development boundary;
+- a pluggable candidate-generator contract with deterministic baseline and bounded
+  evolutionary-archive implementations;
+- a lineage/diversity archive that may retain non-winning stepping-stone policies
+  without granting them deployment eligibility;
+- explicit change-surface classes for exploration policy, closed workflow operators,
+  and frozen model weights;
+- data-coverage gates that separate record-only, baseline-comparison, and optimizer
+  operation;
 - human-approved shadow, canary, deployment, and rollback;
 - a single pilot adapter for structural candidate generation and deterministic audit;
 - status, lineage, diagnostics, and export sufficient to reproduce a tournament.
@@ -150,6 +182,11 @@ but neither object becomes a DiscoveryNode merely because it has a parent link.
   access;
 - replacing the current RSI experiment lifecycle;
 - declaring any existing F-series experiment successful or complete.
+- unrestricted prompt/workflow mutation, self-modifying harness code, or model-weight
+  training;
+- treating novelty, archive admission, or optimizer output as deployment evidence;
+- launching MCTS or another high-branching optimizer before its registered coverage
+  and resource gates pass.
 
 ## 6. Architecture
 
@@ -246,11 +283,16 @@ A policy revision is executable decision logic constrained to the exploration AP
 
 Required attributes:
 
-- `policy_revision_id`, family, parent revision, source and artifact hash;
+- `policy_revision_id`, family, parent revisions, source and artifact hash;
 - policy interface version and constraints version;
 - creation actor/source, rationale, and declared change summary;
+- generator family/revision, parent set, mutation/operator descriptors, and generation
+  trace hash;
 - deterministic configuration and random-seed policy;
 - compatible world families and maximum resource permissions;
+- declared change-surface class and novelty/diversity descriptors;
+- archive disposition (`incumbent`, `challenger`, `stepping_stone`, `rejected`, or
+  `retired`) with the decision evidence reference;
 - validation result and lifecycle projection.
 
 Invariants:
@@ -260,6 +302,9 @@ Invariants:
 - A policy may return only legal exploration actions.
 - The model, evaluator, task definition, Action permissions, and business rules are not
   editable through a policy revision.
+- Archive status grants no execution or deployment authority.
+- A policy with more than one parent must preserve all parent links; selecting one
+  display parent must not erase its actual generation lineage.
 - Exactly one deployed incumbent may exist per policy family and scope.
 
 ### 7.4 PolicyReplayRun
@@ -288,11 +333,13 @@ A tournament compares a frozen candidate set on a frozen world pool.
 
 Required attributes:
 
-- tournament ID, policy family, incumbent, challengers, and candidate-set hash;
+- tournament ID, policy family, incumbent, challengers, candidate-generator revisions,
+  and candidate-set hash;
 - frozen world-pool manifest and temporal train/holdout boundary;
 - evaluator/aggregation revisions and lexicographic decision contract;
 - per-policy, per-world results; stratum summaries; exclusion reasons;
-- winner, ties, disqualification reasons, and complete reproduction hash.
+- winner, ties, disqualification reasons, archive admission decisions, and complete
+  reproduction hash.
 
 Invariants:
 
@@ -302,6 +349,8 @@ Invariants:
 - Ties resolve to the incumbent unless the frozen contract defines an objective,
   non-performance tie-break that was registered before evaluation.
 - A tournament winner is not automatically deployed.
+- A non-winning policy may be admitted only as a stepping stone under the frozen
+  archive contract; it is never represented as the tournament winner.
 
 ### 7.6 PolicyDeployment
 
@@ -342,8 +391,8 @@ The minimum v1 Action set is:
 | `register_policy_revision` | operator | Admit an immutable candidate policy artifact |
 | `start_policy_replay` | deterministic system | Create isolated policy-world replay envelope |
 | `finish_policy_replay` | deterministic system | Commit trace, score, and stop reason |
-| `create_policy_tournament` | operator | Freeze candidates, worlds, and evaluation contract |
-| `finish_policy_tournament` | deterministic system | Commit results and computed winner |
+| `create_policy_tournament` | operator | Freeze candidates, generator revisions, worlds, and evaluation contract |
+| `finish_policy_tournament` | deterministic system | Commit results, winner, archive decisions, and holdout exposure |
 | `approve_policy_deployment` | operator only | Shadow, canary, deploy, hold, rollback, or retire |
 | `trip_policy_brake` | deterministic system | Stop a policy and restore only its recorded approved fallback |
 
@@ -440,21 +489,69 @@ undeclared resources are disqualified, not repaired during scoring.
 
 ### 10.1 Candidate policy generation
 
-One policy-development round consumes only:
+Every optimizer implements one candidate-generator contract:
+
+```text
+generate(GenerationContext) -> list[PolicyCandidate]
+```
+
+`GenerationContext` contains only:
 
 - the incumbent policy and its declared source artifact;
+- explicitly eligible archive policies and their lineage/diversity descriptors;
 - development-world traces and evaluator diagnostics;
 - the policy interface and constraint version;
 - the maximum candidate count and development budget fixed before the round.
 
-It produces zero or more immutable challenger revisions, each with a parent, rationale,
-and change summary. The unchanged incumbent is inserted into the candidate set by the
-tournament service, not left to the development agent's discretion.
+The result contains zero or more immutable challenger revisions, each with complete
+parentage, generator provenance, rationale, declared change surface, and change
+summary. The tournament service validates and registers these artifacts. It inserts
+the unchanged incumbent itself rather than leaving incumbent inclusion to the
+generator.
 
-The policy developer cannot read the time-forward holdout, prospective shadow results,
-hidden replay nodes, or tournament results from the round it is currently generating.
-Candidate generation stops before tournament execution; candidates cannot be patched
-after seeing their scores. A later change is a new policy revision and a new tournament.
+The generator cannot read the time-forward holdout, prospective shadow results, hidden
+replay nodes, or tournament results from the round it is currently generating.
+Generation stops before tournament execution; candidates cannot be patched after
+seeing their scores. A later change is a new policy revision and a new tournament.
+
+The interface admits these generator families without binding the harness to one:
+
+- `baseline`: operator-authored or deterministic rule variants used first;
+- `bounded_evolution`: mutation/recombination over eligible archive policies within a
+  closed grammar and a preregistered candidate budget;
+- `workflow_search`: AFlow/ADAS-style search over approved operator compositions;
+- `tree_search`: MCTS or another look-ahead generator over policy revisions.
+
+v1 must implement `baseline` and may enable `bounded_evolution` only after the data
+readiness gate in section 11.4 passes. `workflow_search` and `tree_search` are contract
+compatibility targets, not D0-D7 delivery requirements. Generator family is never a
+ranking advantage; all candidates face the same tournament and deployment gates.
+
+### 10.2 Change-surface classes
+
+Every candidate declares every surface it changes:
+
+1. **Exploration policy**: branch priority, continue/stop logic, batching, concurrency,
+   budget allocation, and deterministic state within the policy contract.
+2. **Closed workflow/operator surface**: selection or parameterization of approved
+   continuation operators and prompt/configuration slots enumerated by the pilot
+   contract.
+3. **Model weights or executable system surface**: model training, arbitrary code,
+   evaluator logic, Action permissions, ontology handlers, or business rules.
+
+v1 permits class 1 and only the preregistered subset of class 2. Class 3 is frozen and
+requires a separate future specification, evidence regime, and approval. A mixed
+candidate touching a frozen surface is rejected before replay rather than partially
+accepted.
+
+### 10.3 Generator reproducibility and budgets
+
+Each generation round freezes the generator artifact, input manifest, random seeds,
+parent pool, candidate cap, compute/cost limit, and timeout. Candidate-generation cost
+is reported separately from policy execution cost so a cheap tournament policy cannot
+hide an expensive search process. Repeating a deterministic generator round must
+reproduce the same candidate artifact hashes; stochastic generators must reproduce the
+same distribution contract and exact seeded run.
 
 ## 11. Evaluation and tournament selection
 
@@ -501,7 +598,31 @@ The tournament world pool must:
 - prevent duplicate or derivative worlds from silently overweighting one event;
 - retain failed and no-solution worlds rather than selecting only successful history.
 
-### 11.4 Selection rule
+### 11.4 Data readiness and coverage gates
+
+The harness advances through three evidence modes:
+
+1. **Record-only**: collect and seal online trees; no optimizer ranking or policy
+   promotion claim is allowed.
+2. **Baseline-comparison**: compare the incumbent only with preregistered deterministic
+   baselines after replay integrity and minimum coverage pass.
+3. **Optimizer-enabled**: permit bounded evolution only after branch/action overlap,
+   temporal coverage, required strata, failure/degraded cases, and replay availability
+   meet a stricter registered gate.
+
+The pilot contract must freeze numeric thresholds for both transitions before D2
+collects its first world. The readiness report includes at least: sealed-world count,
+independent business dates, required-stratum counts, fraction of worlds with multiple
+recorded legal alternatives, action overlap with the incumbent, unavailable-branch
+rate, failed/degraded-world count, manifest completeness, and estimated effective
+sample size after duplicate/derivative clustering.
+
+A failed gate keeps the system in its current mode. More calendar time, raw duplicate
+worlds, or an operator-requested tournament cannot waive coverage. Only a new approved
+pilot-contract revision may change thresholds, and it applies prospectively rather
+than retroactively legitimizing a completed search.
+
+### 11.5 Selection rule
 
 A challenger wins only if it:
 
@@ -513,6 +634,24 @@ A challenger wins only if it:
 
 Otherwise the incumbent remains the winner. This is a conservative replay guarantee,
 not a claim that future online performance cannot regress.
+
+### 11.6 Lineage and diversity archive
+
+The archive is a governed projection over ExplorationPolicyRevision lineage and
+PolicyTournament admission events, not a seventh mutable source of truth. Tournament
+completion may retain a bounded set of non-winning policies as
+`stepping_stone` revisions when they add preregistered behavioral coverage, improve a
+specific underrepresented stratum without violating a higher tier, or provide a novel
+legal search trajectory. Archive admission is a separate decision from tournament
+selection and cannot change the winner.
+
+The archive contract freezes capacity, diversity descriptors, per-lineage caps,
+admission thresholds, eviction rules, and which archived policies may become parents
+in a later generation round. Safety-disqualified, leakage-tainted, invalid, or
+irreproducible policies are never retained. Dominated clones are evicted before unique
+stepping stones. Archive membership provides generation eligibility only; every child
+must be registered and evaluated from scratch, and only a tournament winner may enter
+prospective shadow.
 
 ## 12. Prospective deployment loop
 
@@ -541,14 +680,28 @@ policy.
 
 Each newly sealed online world increments the eligible historical pool but does not
 silently modify an existing tournament. A new tournament receives a new frozen world
-manifest and runs only when its registered cadence condition is met, such as a minimum
-count of new worlds or an operator-requested review.
+manifest and runs only when its registered information trigger is met. The trigger is
+based on effective new worlds, added branch/action coverage, changed failure evidence,
+or a material stratum shift; it is not a daily or weekly timer. An operator may request
+a readiness review at any time but cannot bypass a failed data gate.
 
 Every round reports changes in discovery quality, nodes used, decision rounds,
 effective parallelism, failure recovery, solution diversity, stratum coverage, and
 policy behavior relative to its parent. Material drift without clear quality gain is a
-hold signal, not evidence of improvement. The cadence may become more conservative as
-the world pool grows; it may not reuse a holdout as hidden development data.
+hold signal, not evidence of improvement. Duplicate and derivative worlds count toward
+storage but not as independent trigger evidence.
+
+Each generation/tournament cycle uses an exposure ledger. Once holdout outcomes are
+revealed, that slice is labeled exposed and can enter a later development pool only
+after a strictly newer time-forward holdout has been sealed and frozen. It can never
+again serve as hidden holdout for that policy lineage. Prospective shadow worlds for a
+candidate remain excluded from that candidate's promotion evidence until the shadow
+window closes. These rules prevent repeated tournaments from converting the same
+small history into apparent progress.
+
+The cadence becomes more conservative as optimizer freedom, archive size, or world
+heterogeneity grows. Repeated rounds without effective new evidence are blocked rather
+than treated as iteration.
 
 ## 13. v1 pilot: structural candidate discovery and audit
 
@@ -640,6 +793,13 @@ The operator must be able to answer without reading raw tables:
 - How did challenger and incumbent compare on every world and stratum?
 - Did any candidate fail leakage, permission, audit, or robustness gates?
 - Which new online worlds have entered the historical pool since the last deployment?
+- Which data-readiness mode is active, which threshold is blocking the next mode, and
+  how many effective rather than raw worlds were added?
+- Which generator produced each policy, which parent lineage it used, and what did the
+  generation round cost?
+- Which non-winners remain as stepping stones, why were they admitted, and when will
+  archive capacity or eviction rules remove them?
+- Which holdout slices have been exposed and which newer slice is currently protected?
 
 The default view is an operational timeline and comparison table. A graph view is
 optional; the ontology is not justified by graph visualization.
@@ -677,6 +837,21 @@ optional; the ontology is not justified by graph visualization.
 - **FR-015**: The system must retain the previous incumbent, trip the automatic brake
   only on preregistered hard conditions, and support governed rollback disposition at
   the next safe boundary.
+- **FR-016**: Candidate generators must share one bounded input/output contract and
+  record generator revision, parentage, seeds, budget, trace, and generation cost.
+- **FR-017**: Every candidate must declare one or more change-surface classes; any
+  candidate touching model weights, executable system code, evaluators, permissions,
+  ontology handlers, or business rules must be rejected in v1.
+- **FR-018**: Optimizer execution must remain disabled until the preregistered coverage
+  gate passes; duplicate or derivative worlds must not inflate effective sample size.
+- **FR-019**: Tournament selection and archive admission must be separate results; a
+  stepping-stone policy must receive no deployment authority or winner status.
+- **FR-020**: The archive must enforce frozen capacity, lineage, diversity, admission,
+  and eviction rules and exclude every disqualified or irreproducible policy.
+- **FR-021**: Every cycle must maintain a holdout-exposure ledger and use a strictly
+  newer protected holdout before an exposed slice can enter later development.
+- **FR-022**: Tournament cadence must be triggered by effective new information or an
+  operator readiness review and must block repeated optimization without new evidence.
 
 ## 18. Acceptance scenarios
 
@@ -728,6 +903,32 @@ evaluated, then `trip_policy_brake` stops new canary runs, the deployment's reco
 incumbent is restored for the next safe boundary, and both states remain visible in
 history. The braked policy cannot resume without a new human Action.
 
+### I. Optimizer readiness
+
+Given sealed worlds that do not meet the registered action-overlap or effective-sample
+threshold, when bounded evolution is requested, then no candidates are generated, the
+readiness report names the failed metrics, and record-only or baseline mode continues.
+
+### J. Stepping-stone retention
+
+Given a safe challenger that does not beat the incumbent but covers an underrepresented
+stratum under the frozen archive rule, when the tournament finishes, then the
+incumbent remains winner and the challenger may be retained only as a non-deployable
+stepping stone with its admission reason and lineage recorded.
+
+### K. Frozen-surface rejection
+
+Given a generated candidate that changes a model weight, evaluator, Action permission,
+or business rule, when candidate validation runs, then the candidate is rejected before
+replay and cannot enter the archive.
+
+### L. Holdout rotation
+
+Given a holdout whose results were exposed in a completed tournament, when a later
+generation round uses that slice for development, then the new tournament is accepted
+only if a strictly newer sealed holdout was frozen first; reuse of the exposed slice as
+hidden holdout is rejected.
+
 ## 19. Measurable success criteria
 
 - **SC-001**: One real structural pilot world can be recorded online, sealed, and
@@ -750,6 +951,18 @@ history. The braked policy cannot resume without a new human Action.
   evidence is rejected in all tests.
 - **SC-010**: The operator can identify the incumbent, latest tournament basis,
   prospective status, and rollback target from one status view.
+- **SC-011**: Every candidate can be traced to one frozen generator round, complete
+  parent lineage, exact changed surfaces, and separately measured generation cost.
+- **SC-012**: Across readiness tests, 100% of optimizer requests below the frozen
+  coverage threshold are blocked and report the same deterministic failed metrics.
+- **SC-013**: Archive tests retain eligible complementary policies up to the configured
+  capacity, evict dominated clones deterministically, and retain zero disqualified or
+  irreproducible policies.
+- **SC-014**: Every completed tournament identifies all exposed holdout slices, and no
+  subsequent tournament reuses an exposed slice as hidden holdout.
+- **SC-015**: Repeating a generation round from the same manifest and seed reproduces
+  candidate hashes, parent links, and generation trace for deterministic and seeded
+  generator fixtures.
 
 ## 20. Delivery sequence
 
@@ -757,21 +970,29 @@ Implementation is divided into independently reviewable milestones:
 
 1. **D0 - As-built and contract lock**: approve this spec; record the current RSI and
    replay gaps; wrap the current fixed exploration behavior as the baseline incumbent;
-   freeze the pilot task and evaluator contract.
+   freeze the pilot task, evaluator, change-surface grammar, coverage thresholds,
+   archive rules, and baseline generator contract.
 2. **D1 - Ontology foundation**: add the six object families, typed Actions,
-   permissions, projections, and immutable manifests. No harness execution yet.
+   permissions, projections, generator/lineage metadata, archive disposition, holdout
+   exposure ledger, and immutable manifests. No harness execution yet.
 3. **D2 - Online recorder**: run the incumbent against the structural pilot in shadow
-   and seal discovery trees. Existing behavior remains authoritative.
+   and seal discovery trees. Publish readiness metrics after each effective new world;
+   existing behavior remains authoritative.
 4. **D3 - Prefix replay**: implement the common environment contract and replay only
    recorded children; prove visibility and production isolation.
 5. **D4 - Tournament**: add incumbent-mandatory candidate comparison, temporal holdout,
-   strata, lexicographic selection, and reproducible reports.
-6. **D5 - Constrained policy development**: admit candidate policy revisions while
-   freezing task agent, evaluator, permissions, and business rules.
+   exposure tracking, strata, lexicographic selection, archive decisions, and
+   reproducible reports. Run only deterministic baseline candidates at first.
+6. **D5 - Constrained policy development**: implement the common candidate-generator
+   interface and separately metered generation. Admit bounded evolutionary generation
+   only after the optimizer coverage gate passes; workflow search and MCTS remain
+   disabled compatibility targets. Freeze task agent, model weights, evaluator,
+   permissions, and business rules throughout.
 7. **D6 - Prospective promotion**: run replay winners in shadow, then permit
    human-approved canary/deploy/rollback for the pilot scope only.
 8. **D7 - Recursive operation**: each new sealed online world extends the historical
-   pool; rerun tournaments on a declared cadence and monitor drift.
+   pool; rerun tournaments only on effective-information triggers, rotate holdouts,
+   maintain the bounded archive, and monitor drift.
 
 No milestone may be collapsed into a direct production cutover. Each milestone gets a
 separate implementation plan, tests, evidence, and review gate.
@@ -798,6 +1019,12 @@ separate implementation plan, tests, evidence, and review gate.
 - Resource cost can be measured consistently enough to compare runs; uncertain cost is
   represented as missing/estimated and cannot silently become zero.
 - The first policy family controls exploration only, not football probability or funds.
+- The pilot can expose enough closed, legal continuation alternatives to measure
+  branch/action overlap; until it does, operation remains record-only.
+- Numeric readiness and archive thresholds are pilot-contract data frozen at D0, not
+  optimizer-controlled values and not waivable tournament parameters.
+- Baseline and bounded-evolution generators can share one contract even though only the
+  baseline is required before the optimizer data gate passes.
 
 ## 23. Supersession and authority
 
