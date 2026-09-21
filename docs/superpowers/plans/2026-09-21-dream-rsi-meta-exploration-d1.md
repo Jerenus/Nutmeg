@@ -1202,7 +1202,7 @@ git commit -m "feat(cli): expose discovery foundation status"
 **Files:**
 - Verify only; create no production state.
 
-- [ ] **Step 1: Run the complete discovery suite**
+- [x] **Step 1: Run the complete discovery suite**
 
 Run:
 
@@ -1221,7 +1221,7 @@ uv run pytest \
 
 Expected: all tests pass.
 
-- [ ] **Step 2: Run shared Ontology regression tests**
+- [x] **Step 2: Run shared Ontology regression tests**
 
 Run:
 
@@ -1239,7 +1239,7 @@ uv run pytest \
 
 Expected: all tests pass.
 
-- [ ] **Step 3: Run protected business-flow regressions**
+- [x] **Step 3: Run protected business-flow regressions**
 
 Run:
 
@@ -1254,7 +1254,7 @@ uv run pytest \
 
 Expected: all tests pass, proving D1 did not change candidate, ticket, or RSI behavior.
 
-- [ ] **Step 4: Run lint and formatting checks**
+- [x] **Step 4: Run lint and formatting checks**
 
 Run:
 
@@ -1279,7 +1279,7 @@ Run: `git diff --check`
 
 Expected: no output and exit code 0.
 
-- [ ] **Step 5: Prove no harness or production mutation occurred**
+- [x] **Step 5: Prove no harness or production mutation occurred**
 
 Run: `git status --short .nutmeg-data experiments/attempts.log experiments/corpus-v2.json`
 
