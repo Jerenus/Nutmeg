@@ -41,7 +41,7 @@ The next milestone consumes the frozen artifact hashes. D0 therefore completes o
 - Create: `tests/discovery/__init__.py`
 - Test: `tests/discovery/test_contracts.py`
 
-- [ ] **Step 1: Write the failing tests for strict loading and cross-field invariants**
+- [x] **Step 1: Write the failing tests for strict loading and cross-field invariants**
 
 ```python
 # tests/discovery/test_contracts.py
@@ -205,13 +205,13 @@ def test_canonical_hash_is_stable_and_changes_with_semantics(tmp_path):
     assert load_baseline_policy(path).policy_revision_id == "structural-baseline-v1"
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run: `uv run pytest tests/discovery/test_contracts.py -v`
 
 Expected: collection fails with `ModuleNotFoundError: No module named 'nutmeg.discovery'`.
 
-- [ ] **Step 3: Implement strict contract models and canonical hashing**
+- [x] **Step 3: Implement strict contract models and canonical hashing**
 
 ```python
 # nutmeg/discovery/__init__.py
@@ -387,13 +387,13 @@ def load_baseline_policy(path: Path) -> BaselinePolicyArtifact:
 # tests/discovery/__init__.py
 ```
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [x] **Step 4: Run the focused tests and verify GREEN**
 
 Run: `uv run pytest tests/discovery/test_contracts.py -v`
 
 Expected: `4 passed`.
 
-- [ ] **Step 5: Commit the contract model**
+- [x] **Step 5: Commit the contract model**
 
 ```bash
 git add nutmeg/discovery/__init__.py nutmeg/discovery/contracts.py tests/discovery/__init__.py tests/discovery/test_contracts.py
