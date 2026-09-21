@@ -318,6 +318,18 @@ class DiscoveryRepository:
             "ArchiveDecisionRow", self._connection.execute(query).mappings().first()
         )
 
+    def archive_decisions_for_tournament(
+        self, policy_tournament_id: str
+    ) -> tuple[ArchiveDecisionRow, ...]:
+        return self._list(
+            "ArchiveDecisionRow",
+            "policy_archive_decisions",
+            "policy_tournament_id",
+            policy_tournament_id,
+            "decided_at",
+            "archive_decision_id",
+        )
+
     def exposed_holdouts(self, policy_family: str) -> tuple[HoldoutExposureRow, ...]:
         return self._list(
             "HoldoutExposureRow",

@@ -17,6 +17,9 @@ from sqlalchemy import Engine, func, select
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
 from nutmeg.ontology.actions.capital_actions import CapitalActions
 from nutmeg.ontology.actions.claim_actions import ClaimActions
+from nutmeg.ontology.actions.discovery_governance_actions import DiscoveryGovernanceActions
+from nutmeg.ontology.actions.discovery_policy_actions import DiscoveryPolicyActions
+from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.factor_actions import FactorActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
@@ -27,6 +30,7 @@ from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.decision.read_flow import DecisionReadService
+from nutmeg.ontology.discovery.read_service import DiscoveryReadService
 from nutmeg.ontology.finance.express_flow import ExpressService
 from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
@@ -40,6 +44,7 @@ from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.artifacts import ArtifactRepository
 from nutmeg.ontology.repository.decision import DecisionRepository
+from nutmeg.ontology.repository.discovery import DiscoveryRepository
 from nutmeg.ontology.repository.evidence import EvidenceRepository
 from nutmeg.ontology.repository.finance import FinanceRepository
 from nutmeg.ontology.repository.identity import IdentityRepository
@@ -90,6 +95,12 @@ class OntologyKernelStatus:
     scoreboard_authority_state: str
     reliability_evidence_count: int
     release_approval_count: int
+    discovery_world_count: int
+    discovery_node_count: int
+    exploration_policy_revision_count: int
+    policy_replay_run_count: int
+    policy_tournament_count: int
+    policy_deployment_count: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -123,6 +134,12 @@ class OntologyKernelStatus:
             "scoreboard_authority_state": self.scoreboard_authority_state,
             "reliability_evidence_count": self.reliability_evidence_count,
             "release_approval_count": self.release_approval_count,
+            "discovery_world_count": self.discovery_world_count,
+            "discovery_node_count": self.discovery_node_count,
+            "exploration_policy_revision_count": self.exploration_policy_revision_count,
+            "policy_replay_run_count": self.policy_replay_run_count,
+            "policy_tournament_count": self.policy_tournament_count,
+            "policy_deployment_count": self.policy_deployment_count,
         }
 
 
@@ -149,6 +166,10 @@ class OntologyKernel:
         reliability_actions: ReliabilityActions,
         replay_actions: ReplayActions,
         rsi_actions: RsiActions,
+        discovery_world_actions: DiscoveryWorldActions,
+        discovery_policy_actions: DiscoveryPolicyActions,
+        discovery_governance_actions: DiscoveryGovernanceActions,
+        discovery_read: DiscoveryReadService,
         capital_actions: CapitalActions,
         sale_actions: SaleActions,
         evidence_actions: EvidenceActions,
@@ -175,6 +196,10 @@ class OntologyKernel:
         self.reliability_actions = reliability_actions
         self.replay_actions = replay_actions
         self.rsi_actions = rsi_actions
+        self.discovery_world_actions = discovery_world_actions
+        self.discovery_policy_actions = discovery_policy_actions
+        self.discovery_governance_actions = discovery_governance_actions
+        self.discovery_read = discovery_read
         self.capital_actions = capital_actions
         self.sale_actions = sale_actions
         self.evidence_actions = evidence_actions
@@ -227,6 +252,12 @@ class OntologyKernel:
                 scoreboard_authority_state="uninitialized",
                 reliability_evidence_count=0,
                 release_approval_count=0,
+                discovery_world_count=0,
+                discovery_node_count=0,
+                exploration_policy_revision_count=0,
+                policy_replay_run_count=0,
+                policy_tournament_count=0,
+                policy_deployment_count=0,
             )
 
         migration = migration_status(self._engine)
@@ -282,6 +313,17 @@ class OntologyKernel:
             else:
                 reliability_evidence_count = 0
                 release_approval_count = 0
+            if 40 in applied:
+                discovery_counts = DiscoveryRepository(connection).counts()
+            else:
+                discovery_counts = {
+                    "discovery_world_count": 0,
+                    "discovery_node_count": 0,
+                    "exploration_policy_revision_count": 0,
+                    "policy_replay_run_count": 0,
+                    "policy_tournament_count": 0,
+                    "policy_deployment_count": 0,
+                }
         from nutmeg.analytics.substrate import projection_counts
 
         counts = projection_counts(self._paths.analytics)
@@ -317,4 +359,5 @@ class OntologyKernel:
             scoreboard_authority_state=scoreboard_authority_state,
             reliability_evidence_count=reliability_evidence_count,
             release_approval_count=release_approval_count,
+            **discovery_counts,
         )

@@ -980,7 +980,7 @@ git commit -m "feat(ontology): govern discovery tournament deployment"
 - Test: `tests/ontology/test_discovery_read_service.py`
 - Modify: `tests/ontology/test_kernel.py`
 
-- [ ] **Step 1: Write failing wiring and projection tests**
+- [x] **Step 1: Write failing wiring and projection tests**
 
 Implement this exact test matrix:
 
@@ -993,13 +993,13 @@ Implement this exact test matrix:
 
 The empty-kernel case must return zeros and `None`, not create rows or infer an incumbent.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `uv run pytest tests/ontology/test_discovery_read_service.py tests/ontology/test_kernel.py -v`
 
 Expected: FAIL because the discovery facades/read service are not wired.
 
-- [ ] **Step 3: Implement `DiscoveryReadService`**
+- [x] **Step 3: Implement `DiscoveryReadService`**
 
 Expose only read methods: `status(policy_family) -> DiscoveryStatus`,
 `world_detail(world_id) -> dict[str, object]`,
@@ -1009,7 +1009,7 @@ one SQLAlchemy `Engine` and stores it as `_engine`.
 
 `status` reports the latest human-approved incumbent, latest tournament basis, latest world, sealed count, exposure count, and rollback target. `world_detail` returns only durable stored nodes ordered by visibility; it does not calculate legal actions or reveal any node not already in that world. `policy_lineage` keeps generator parents, archive disposition, tournament winner status, and deployment state as separate fields.
 
-- [ ] **Step 4: Wire facades and kernel counts**
+- [x] **Step 4: Wire facades and kernel counts**
 
 In `wiring.py`, instantiate and inject:
 
@@ -1033,7 +1033,7 @@ policy_deployment_count
 
 When migration 40 is absent, all six counts are zero. When present, populate them from `DiscoveryRepository.counts()`.
 
-- [ ] **Step 5: Run tests and verify GREEN**
+- [x] **Step 5: Run tests and verify GREEN**
 
 Run: `uv run pytest tests/ontology/test_discovery_read_service.py tests/ontology/test_kernel.py tests/ontology/test_kernel_e2e.py -v`
 
