@@ -20,6 +20,16 @@ from sqlalchemy.exc import OperationalError as SqlAlchemyOperationalError
 
 from nutmeg.discovery.contracts import canonical_hash as contract_hash
 from nutmeg.discovery.contracts import load_pilot_contract
+from nutmeg.discovery.environment import (
+    ContinueBatch,
+    Observation,
+    RevealedNode,
+    StepResult,
+    Stop,
+    TerminalObservation,
+    legal_actions,
+    validate_action,
+)
 from nutmeg.discovery.online_adapter import ShardExecution, execute_template_shard
 from nutmeg.discovery.online_inputs import (
     StructuralInputSnapshot,
@@ -81,13 +91,9 @@ def _source_fingerprint(database: Path) -> str:
         for name in tables:
             digest.update(name.encode("utf-8"))
             table_identifier = '"' + name.replace('"', '""') + '"'
-            columns = connection.execute(
-                f"PRAGMA table_info({table_identifier})"
-            ).fetchall()
+            columns = connection.execute(f"PRAGMA table_info({table_identifier})").fetchall()
             order = ", ".join('"' + column[1].replace('"', '""') + '"' for column in columns)
-            for row in connection.execute(
-                f"SELECT * FROM {table_identifier} ORDER BY {order}"
-            ):
+            for row in connection.execute(f"SELECT * FROM {table_identifier} ORDER BY {order}"):
                 digest.update(repr(row).encode("utf-8"))
     return digest.hexdigest()
 
@@ -116,11 +122,14 @@ def _failed_shard(snapshot, template_id, diagnostics, *, wall_ms=None) -> ShardE
     }
     digest = canonical_hash(artifact)
     return ShardExecution(
-        template_ids=(template_id,), status="failed",
-        artifact_manifest={**artifact, "content_hash": digest}, artifact_hash=digest,
+        template_ids=(template_id,),
+        status="failed",
+        artifact_manifest={**artifact, "content_hash": digest},
+        artifact_hash=digest,
         diagnostic_codes=diagnostics,
         resource_cost={"wall_ms": wall_ms, "candidate_generation_count": None},
-        evaluation=None, selectable=False,
+        evaluation=None,
+        selectable=False,
     )
 
 
@@ -156,7 +165,9 @@ def run_shard_isolated(
             return results.get(timeout=max(0, timeout_seconds - (monotonic() - started)))
         except queue.Empty:
             return _failed_shard(
-                snapshot, template_id, ("timeout",),
+                snapshot,
+                template_id,
+                ("timeout",),
                 wall_ms=max(1, round((monotonic() - started) * 1000)),
             )
     finally:
@@ -196,7 +207,7 @@ def _run_shard(snapshot, template_id, pilot) -> ShardExecution:
         return _failed_shard(snapshot, template_id, ("adapter_crash", type(exc).__name__))
 
 
-def record_shadow_world(
+def _validate_recording(
     snapshot: StructuralInputSnapshot,
     *,
     engine: Engine,
@@ -207,7 +218,7 @@ def record_shadow_world(
     fixture_only: bool = False,
     generation_request_id: str | None = None,
     approval: Mapping[str, object] | None = None,
-) -> RecordedWorld:
+) -> tuple[object, dict[str, object], str]:
     if shadow_database.resolve() == source_database.resolve():
         raise ValueError("source and shadow stores must be distinct")
     if requested_at.tzinfo is None or requested_at.utcoffset() is None:
@@ -287,6 +298,20 @@ def record_shadow_world(
         raise ValueError("frozen input manifest mismatch")
     if len(snapshot.template_ids) + 2 > pilot.budgets.max_nodes:
         raise ValueError("world exceeds frozen node budget")
+    return pilot, manifest, before
+
+
+def _create_world_and_run(
+    snapshot: StructuralInputSnapshot,
+    *,
+    engine: Engine,
+    shadow_database: Path,
+    policy_revision_id: str,
+    requested_at: datetime,
+    pilot,
+    manifest: dict[str, object],
+    fixture_only: bool,
+) -> tuple[str, str, str, DiscoveryWorldActions]:
     world_id = (
         f"discovery-world-{canonical_hash([snapshot.manifest_hash, policy_revision_id])[:24]}"
     )
@@ -367,6 +392,43 @@ def record_shadow_world(
             )
         )
     )
+    return world_id, root_id, run_id, actions
+
+
+def record_shadow_world(
+    snapshot: StructuralInputSnapshot,
+    *,
+    engine: Engine,
+    shadow_database: Path,
+    source_database: Path,
+    policy_revision_id: str,
+    requested_at: datetime,
+    fixture_only: bool = False,
+    generation_request_id: str | None = None,
+    approval: Mapping[str, object] | None = None,
+) -> RecordedWorld:
+    pilot, manifest, before = _validate_recording(
+        snapshot,
+        engine=engine,
+        shadow_database=shadow_database,
+        source_database=source_database,
+        policy_revision_id=policy_revision_id,
+        requested_at=requested_at,
+        fixture_only=fixture_only,
+        generation_request_id=generation_request_id,
+        approval=approval,
+    )
+    world_id, root_id, run_id, actions = _create_world_and_run(
+        snapshot,
+        engine=engine,
+        shadow_database=shadow_database,
+        policy_revision_id=policy_revision_id,
+        requested_at=requested_at,
+        pilot=pilot,
+        manifest=manifest,
+        fixture_only=fixture_only,
+    )
+    created_at = requested_at.isoformat()
 
     # Work is done outside all Action transactions. Visibility is assigned in
     # frozen template order, never in worker completion order.
@@ -376,7 +438,9 @@ def record_shadow_world(
         if fixture_only:
             return _run_shard(snapshot, template_id, pilot)
         return run_shard_isolated(
-            snapshot, template_id, pilot,
+            snapshot,
+            template_id,
+            pilot,
             timeout_seconds=max(0, deadline - monotonic()),
         )
 
@@ -453,8 +517,10 @@ def record_shadow_world(
                         continue
                     score = Decimal(probability)
                     previous = best_by_band.get(band)
-                    if previous is None or score > previous[0] or (
-                        score == previous[0] and node_id < previous[1]
+                    if (
+                        previous is None
+                        or score > previous[0]
+                        or (score == previous[0] and node_id < previous[1])
                     ):
                         best_by_band[band] = (score, node_id)
         if (
@@ -467,7 +533,8 @@ def record_shadow_world(
             and sum(
                 recorded.resource_cost.get("candidate_generation_count") or 0
                 for _shard, recorded, _parent in attempts[: position + 1]
-            ) < pilot.budgets.max_candidate_generation_count
+            )
+            < pilot.budgets.max_candidate_generation_count
         ):
             attempts.insert(position + 1, (template_id, execute(template_id), node_id))
         position += 1
@@ -484,9 +551,13 @@ def record_shadow_world(
     unknown_cost = any(cost is None for cost in costs)
     wall_exhausted = sum(cost or 0 for cost in costs) > pilot.budgets.max_wall_seconds * 1000
     stop_reason = (
-        "unknown_cost" if unknown_cost else
-        "wall_budget_exhausted" if wall_exhausted else
-        "best_audit_clean_node_per_band" if selected else "no_solution"
+        "unknown_cost"
+        if unknown_cost
+        else "wall_budget_exhausted"
+        if wall_exhausted
+        else "best_audit_clean_node_per_band"
+        if selected
+        else "no_solution"
     )
     stop_manifest = {
         "selected_node_ids": selected,
@@ -518,11 +589,17 @@ def record_shadow_world(
         visibility_sequence=stop_sequence,
         action_id="pending",
     )
-    _commit_attempt(actions.record_node, RecordDiscoveryNodeRequest(
-        node=stop, evaluation=None,
-        actor_id="sys:discovery", actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-        idempotency_key=f"{world_id}:stop", requested_at=requested_at,
-    ))
+    _commit_attempt(
+        actions.record_node,
+        RecordDiscoveryNodeRequest(
+            node=stop,
+            evaluation=None,
+            actor_id="sys:discovery",
+            actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+            idempotency_key=f"{world_id}:stop",
+            requested_at=requested_at,
+        ),
+    )
     with OntologyUnitOfWork(engine) as uow:
         persisted = uow.discovery.world(world_id)
         nodes = uow.discovery.nodes_for_world(world_id)
@@ -532,9 +609,13 @@ def record_shadow_world(
             SealDiscoveryWorldRequest(
                 world_id=world_id,
                 terminal_reason=(
-                    "budget_exhausted" if wall_exhausted and selected else
-                    "unknown_cost" if unknown_cost and selected else
-                    "policy_stop" if selected else "no_solution"
+                    "budget_exhausted"
+                    if wall_exhausted and selected
+                    else "unknown_cost"
+                    if unknown_cost and selected
+                    else "policy_stop"
+                    if selected
+                    else "no_solution"
                 ),
                 sealed_manifest_hash=seal_hash,
                 actor_id="sys:discovery",
@@ -545,3 +626,342 @@ def record_shadow_world(
         )
     )
     return RecordedWorld(world_id, seal_hash, tuple(selected))
+
+
+class OnlineRecordingEnvironment:
+    """Incremental D2 shadow execution behind the shared D3 policy interface."""
+
+    def __init__(
+        self,
+        snapshot: StructuralInputSnapshot,
+        *,
+        engine: Engine,
+        shadow_database: Path,
+        source_database: Path,
+        policy_revision_id: str,
+        requested_at: datetime,
+        fixture_only: bool = False,
+        generation_request_id: str | None = None,
+        approval: Mapping[str, object] | None = None,
+    ) -> None:
+        self._snapshot = snapshot
+        self._engine = engine
+        self._shadow_database = shadow_database
+        self._source_database = source_database
+        self._policy_revision_id = policy_revision_id
+        self._requested_at = requested_at
+        self._fixture_only = fixture_only
+        self._generation_request_id = generation_request_id
+        self._approval = approval
+        self._world_id: str | None = None
+        self._visible: list[str] = []
+        self._used: set[tuple[str, tuple[str, ...]]] = set()
+        self._rounds = 0
+        self._attempts = 0
+        self._candidate_count = 0
+        self._deadline = 0.0
+        self._terminal = False
+
+    def reset(self) -> Observation:
+        if self._world_id is not None:
+            raise ValueError("online world already started")
+        self._pilot, manifest, self._source_before = _validate_recording(
+            self._snapshot,
+            engine=self._engine,
+            shadow_database=self._shadow_database,
+            source_database=self._source_database,
+            policy_revision_id=self._policy_revision_id,
+            requested_at=self._requested_at,
+            fixture_only=self._fixture_only,
+            generation_request_id=self._generation_request_id,
+            approval=self._approval,
+        )
+        self._world_id, self._root_id, self._run_id, self._actions = _create_world_and_run(
+            self._snapshot,
+            engine=self._engine,
+            shadow_database=self._shadow_database,
+            policy_revision_id=self._policy_revision_id,
+            requested_at=self._requested_at,
+            pilot=self._pilot,
+            manifest=manifest,
+            fixture_only=self._fixture_only,
+        )
+        self._visible = [self._root_id]
+        self._deadline = monotonic() + self._pilot.budgets.max_wall_seconds
+        return self.observation()
+
+    def observation(self) -> Observation:
+        if self._world_id is None:
+            raise ValueError("online world has not started")
+        with OntologyUnitOfWork(self._engine) as uow:
+            nodes = {node.node_id: node for node in uow.discovery.nodes_for_world(self._world_id)}
+            evaluations = {
+                node_id: evaluation
+                for node_id in self._visible
+                if (evaluation := uow.discovery.latest_node_evaluation(node_id)) is not None
+            }
+        return Observation(
+            world_id=self._world_id,
+            visible_node_ids=tuple(self._visible),
+            frontier_node_ids=tuple(
+                node_id for node_id in self._visible if nodes[node_id].frontier_eligible
+            ),
+            selectable_node_ids=tuple(
+                node_id
+                for node_id in self._visible
+                if node_id in evaluations and evaluations[node_id].selectable
+            ),
+            legal_template_ids=tuple(self._snapshot.template_ids),
+            remaining_rounds=self._pilot.budgets.max_rounds - self._rounds,
+            remaining_nodes=self._pilot.budgets.max_nodes - 2 - self._attempts,
+            max_concurrency=self._pilot.budgets.max_concurrency,
+            task_family=self._pilot.task_family,
+            lane=self._pilot.lane,
+            business_date=self._snapshot.business_date,
+            remaining_wall_ms=max(0, round((self._deadline - monotonic()) * 1000)),
+            remaining_candidate_generation_count=(
+                max(0, self._pilot.budgets.max_candidate_generation_count - self._candidate_count)
+                if self._candidate_count is not None
+                else None
+            ),
+            revealed_nodes=tuple(
+                RevealedNode(
+                    node_id=node_id,
+                    execution_status=nodes[node_id].execution_status,
+                    quality_by_band=tuple(
+                        sorted(
+                            (str(band), str(score))
+                            for band, score in (
+                                evaluations[node_id].result.get(
+                                    "best_objective_probability_by_band", {}
+                                )
+                                if node_id in evaluations
+                                else {}
+                            ).items()
+                            if score is not None
+                        )
+                    ),
+                    artifact_manifest_hash=nodes[node_id].artifact_manifest_hash,
+                    diagnostic_codes=tuple(nodes[node_id].diagnostic_codes),
+                    resource_cost=tuple(
+                        sorted(
+                            (key, str(value) if value is not None else None)
+                            for key, value in (nodes[node_id].resource_cost or {}).items()
+                        )
+                    ),
+                )
+                for node_id in self._visible
+                if node_id != self._root_id
+            ),
+        )
+
+    def legal_actions(self) -> tuple:
+        return legal_actions(self.observation())
+
+    def continue_batch(self, action: ContinueBatch) -> StepResult:
+        if self._terminal:
+            raise ValueError("online world is terminal")
+        items = validate_action(self.observation(), action, self._pilot)
+        if any(len(item.template_ids) != 1 for item in items):
+            raise ValueError("online shard continuation requires a single template")
+        if any((item.node_id, item.template_ids) in self._used for item in items):
+            raise ValueError("continuation was already consumed")
+        if monotonic() >= self._deadline:
+            raise ValueError("online wall budget exhausted")
+
+        def execute(item):
+            if self._fixture_only:
+                return _run_shard(self._snapshot, item.template_ids[0], self._pilot)
+            return run_shard_isolated(
+                self._snapshot,
+                item.template_ids[0],
+                self._pilot,
+                timeout_seconds=max(0, self._deadline - monotonic()),
+            )
+
+        with ThreadPoolExecutor(max_workers=len(items)) as executor:
+            results = tuple(executor.map(execute, items))
+        attempts = [(item, result, None) for item, result in zip(items, results, strict=True)]
+        with OntologyUnitOfWork(self._engine) as uow:
+            recorded_nodes = uow.discovery.nodes_for_world(self._world_id)
+        parents = {node.node_id: node for node in recorded_nodes}
+        sibling_counts = {
+            parent.node_id: sum(node.parent_node_id == parent.node_id for node in recorded_nodes)
+            for parent in parents.values()
+        }
+        revealed: list[str] = []
+        failures: list[str] = []
+        wall_ms: int | None = 0
+        position = 0
+        while position < len(attempts):
+            item, result, retry_of = attempts[position]
+            sequence = self._attempts + 2
+            node_id = f"{self._world_id}:attempt:{self._attempts + 1}"
+            now = self._requested_at.isoformat()
+            sibling_counts[item.node_id] += 1
+            node = NodeRow(
+                node_id=node_id,
+                world_id=self._world_id,
+                discovery_run_id=self._run_id,
+                parent_node_id=item.node_id,
+                depth=parents[item.node_id].depth + 1,
+                sibling_order=sibling_counts[item.node_id],
+                creation_sequence=sequence,
+                continuation_action={
+                    "operator": item.operator,
+                    "template_ids": list(item.template_ids),
+                },
+                policy_decision={
+                    "policy_revision_id": self._policy_revision_id,
+                    "round": self._rounds + 1,
+                },
+                artifact_manifest_hash=canonical_hash(result.artifact_manifest),
+                artifact_manifest=result.artifact_manifest,
+                business_refs=[asdict(reference) for reference in self._snapshot.references],
+                execution_status="failed" if result.status == "failed" else "complete",
+                diagnostic_codes=list(result.diagnostic_codes),
+                started_at=now,
+                finished_at=now,
+                latency_ms=result.resource_cost.get("wall_ms"),
+                resource_cost=result.resource_cost,
+                retry_of_node_id=retry_of,
+                terminal_reason=result.status,
+                frontier_eligible=result.selectable,
+                visibility_sequence=sequence,
+                action_id="pending",
+            )
+            common = dict(
+                node=node,
+                actor_id="sys:discovery",
+                actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key=f"{self._world_id}:node:{sequence}",
+                requested_at=self._requested_at,
+            )
+            if result.status == "failed":
+                _commit_attempt(
+                    self._actions.record_failure, RecordDiscoveryFailureRequest(**common)
+                )
+                failures.extend(result.diagnostic_codes)
+            else:
+                evaluation = NodeEvaluationRow(
+                    node_evaluation_id=f"{node_id}:evaluation",
+                    node_id=node_id,
+                    revision_no=1,
+                    supersedes_evaluation_id=None,
+                    evaluator_revision=self._pilot.evaluator.revision,
+                    result=result.evaluation or {},
+                    selectable=result.selectable,
+                    evaluated_at=now,
+                    action_id="pending",
+                )
+                _commit_attempt(
+                    self._actions.record_node,
+                    RecordDiscoveryNodeRequest(evaluation=evaluation, **common),
+                )
+            self._used.add((item.node_id, item.template_ids))
+            self._attempts += 1
+            revealed.append(node_id)
+            count = result.resource_cost.get("candidate_generation_count")
+            if count is None:
+                self._candidate_count = None
+            elif self._candidate_count is not None:
+                self._candidate_count += count
+            cost = result.resource_cost.get("wall_ms")
+            wall_ms = wall_ms + cost if wall_ms is not None and isinstance(cost, int) else None
+            if (
+                result.status == "failed"
+                and retry_of is None
+                and set(result.diagnostic_codes) & {"adapter_crash", "adapter_error", "timeout"}
+                and self._candidate_count is not None
+                and self._candidate_count < self._pilot.budgets.max_candidate_generation_count
+                and self._attempts + len(attempts) - position - 1
+                < self._pilot.budgets.max_nodes - 2
+                and monotonic() < self._deadline
+            ):
+                attempts.insert(position + 1, (item, execute(item), node_id))
+            position += 1
+        self._visible.extend(revealed)
+        self._rounds += 1
+        if self._candidate_count is not None and (
+            self._candidate_count > self._pilot.budgets.max_candidate_generation_count
+        ):
+            raise ValueError("candidate budget exceeded; shadow world remains unsealed")
+        return StepResult(
+            self.observation(),
+            tuple(revealed),
+            tuple(failures),
+            {"attempts": len(attempts), "wall_ms": wall_ms},
+        )
+
+    def stop(self, action: Stop) -> TerminalObservation:
+        if self._terminal:
+            raise ValueError("online world is terminal")
+        validate_action(self.observation(), action, self._pilot)
+        if _source_fingerprint(self._source_database) != self._source_before:
+            raise ValueError("protected source changed during shadow recording; sealing blocked")
+        with OntologyUnitOfWork(self._engine) as uow:
+            recorded = uow.discovery.nodes_for_world(self._world_id)
+        sequence = len(recorded) + 1
+        now = self._requested_at.isoformat()
+        manifest = {"selected_node_ids": list(action.selected_node_ids), "reason": action.reason}
+        stop = NodeRow(
+            node_id=f"{self._world_id}:stop",
+            world_id=self._world_id,
+            discovery_run_id=self._run_id,
+            parent_node_id=self._root_id,
+            depth=1,
+            sibling_order=sequence - 1,
+            creation_sequence=sequence,
+            continuation_action={
+                "operator": "stop",
+                "selected_node_ids": list(action.selected_node_ids),
+            },
+            policy_decision={
+                "policy_revision_id": self._policy_revision_id,
+                "round": self._rounds + 1,
+            },
+            artifact_manifest_hash=canonical_hash(manifest),
+            artifact_manifest=manifest,
+            business_refs=[],
+            execution_status="complete",
+            diagnostic_codes=[],
+            started_at=now,
+            finished_at=now,
+            latency_ms=0,
+            resource_cost={"wall_ms": 0, "candidate_generation_count": 0},
+            retry_of_node_id=None,
+            terminal_reason=action.reason,
+            frontier_eligible=False,
+            visibility_sequence=sequence,
+            action_id="pending",
+        )
+        _commit_attempt(
+            self._actions.record_node,
+            RecordDiscoveryNodeRequest(
+                node=stop,
+                evaluation=None,
+                actor_id="sys:discovery",
+                actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key=f"{self._world_id}:stop",
+                requested_at=self._requested_at,
+            ),
+        )
+        with OntologyUnitOfWork(self._engine) as uow:
+            world = uow.discovery.world(self._world_id)
+            nodes = uow.discovery.nodes_for_world(self._world_id)
+        seal_hash = self._actions.seal_manifest(world, nodes)
+        _committed(
+            self._actions.seal_world(
+                SealDiscoveryWorldRequest(
+                    world_id=self._world_id,
+                    terminal_reason=action.reason if action.selected_node_ids else "no_solution",
+                    sealed_manifest_hash=seal_hash,
+                    actor_id="sys:discovery",
+                    actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                    idempotency_key=f"{self._world_id}:seal",
+                    requested_at=self._requested_at,
+                )
+            )
+        )
+        self._terminal = True
+        return TerminalObservation(action.reason, action.selected_node_ids)

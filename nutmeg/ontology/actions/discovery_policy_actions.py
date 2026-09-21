@@ -156,6 +156,10 @@ class DiscoveryPolicyActions:
                 raise ValueError("policy replay requires a compatible world")
             if replay.evaluator_revision != world.evaluator_revision:
                 raise ValueError("policy replay evaluator differs from sealed world")
+            from nutmeg.discovery.environment import COST_POLICY_REVISION
+
+            if replay.cost_policy_revision != COST_POLICY_REVISION:
+                raise ValueError("policy replay cost policy is not frozen")
             if canonical_hash(request.initial_observation) != replay.initial_observation_hash:
                 raise ValueError("initial observation hash mismatch")
             if request.initial_observation.get("visible_node_ids") != [world.root_node_id]:
@@ -172,13 +176,24 @@ class DiscoveryPolicyActions:
         replay: PolicyReplayRunRow,
         rounds: tuple[PolicyReplayRoundRow, ...],
         completion: PolicyReplayCompletionRow,
+        *,
+        source_seal_hash: str | None = None,
     ) -> dict[str, object]:
         return {
+            "schema_version": "2",
             "policy_revision_id": replay.policy_revision_id,
             "world_id": replay.world_id,
+            "source_seal_hash": source_seal_hash,
+            "initial_observation_hash": replay.initial_observation_hash,
+            "evaluator_revision": replay.evaluator_revision,
+            "cost_policy_revision": replay.cost_policy_revision,
+            "random_seed": replay.random_seed,
             "rounds": [asdict(row) for row in rounds],
             "stop_reason": completion.stop_reason,
             "selected_node_ids": list(completion.selected_node_ids),
+            "budget_used": completion.budget_used,
+            "failure_codes": completion.failure_codes,
+            "aggregate_outcome": completion.aggregate_outcome,
         }
 
     def finish_replay(self, request: FinishPolicyReplayRequest) -> ActionOutcome:
@@ -202,12 +217,110 @@ class DiscoveryPolicyActions:
             if request.completion.policy_replay_run_id != request.replay_run_id:
                 raise ValueError("replay completion belongs to another run")
             ReplayStopReason(request.completion.stop_reason)
+            policy = uow.discovery.policy(replay.policy_revision_id)
             nodes = {node.node_id: node for node in uow.discovery.nodes_for_world(world.world_id)}
+            seal_events = uow.discovery.world_events(world.world_id)
+            if not seal_events or seal_events[-1].event_kind != "sealed":
+                raise ValueError("replay source has no seal event")
+            from nutmeg.discovery.sealed_tree import SealedTree
+
+            sealed_nodes = tuple(nodes.values())
+            try:
+                source = SealedTree.from_rows(
+                    world,
+                    sealed_nodes,
+                    seal_events,
+                    {
+                        node.node_id: evaluation
+                        for node in sealed_nodes
+                        if (evaluation := uow.discovery.latest_node_evaluation(node.node_id))
+                        is not None
+                    },
+                )
+            except ValueError as exc:
+                raise ValueError(f"sealed manifest invalid: {exc}") from exc
             visible = {world.root_node_id}
+            visible_order = [world.root_node_id]
+            charged_attempts = 0
+            charged_wall_ms: int | None = 0
+            charged_candidates: int | None = 0
+            observed_failures: list[str] = []
             for number, item in enumerate(request.rounds, start=1):
                 if item.policy_replay_run_id != request.replay_run_id or item.round_no != number:
                     raise ValueError("replay rounds must be contiguous and belong to run")
+                if item.observation_hash != canonical_hash({"visible_node_ids": visible_order}):
+                    raise ValueError("policy replay observation hash mismatch")
+                if policy.generator_family == "baseline":
+                    from nutmeg.discovery.environment import policy_state_hash
+
+                    expected_state = policy_state_hash({"schema_version": "1", "round": number})
+                    if item.policy_state_hash != expected_state:
+                        raise ValueError("baseline policy state hash mismatch")
                 revealed = set()
+                accepted_ids = [
+                    node_id
+                    for action in item.accepted_actions
+                    for node_id in action.get("revealed_node_ids", [action.get("revealed_node_id")])
+                ]
+                if accepted_ids != item.revealed_node_ids:
+                    raise ValueError("accepted action and revealed child sequence mismatch")
+                if any(
+                    {
+                        key: value
+                        for key, value in action.items()
+                        if key not in {"revealed_node_id", "revealed_node_ids"}
+                    }
+                    not in item.requested_actions
+                    for action in item.accepted_actions
+                ):
+                    raise ValueError("accepted action was not requested")
+                for requested in item.requested_actions:
+                    if not isinstance(requested, dict):
+                        raise ValueError("requested action must be structured")
+                    chain = source.children_for(
+                        requested.get("parent_node_id", ""),
+                        requested.get("continuation_action", {}),
+                    )
+                    charged_attempts += len(chain) or 1
+                    if not chain:
+                        charged_wall_ms = None
+                        charged_candidates = None
+                        observed_failures.append("branch_unavailable")
+                    for node in chain:
+                        wall_ms = (node.resource_cost or {}).get("wall_ms")
+                        if charged_wall_ms is not None and isinstance(wall_ms, int):
+                            charged_wall_ms += wall_ms
+                        else:
+                            charged_wall_ms = None
+                        count = (node.resource_cost or {}).get("candidate_generation_count")
+                        if charged_candidates is not None and isinstance(count, int):
+                            charged_candidates += count
+                        else:
+                            charged_candidates = None
+                        if node.execution_status == "failed":
+                            observed_failures.extend(node.diagnostic_codes)
+                matched = set()
+                for action in item.accepted_actions:
+                    if not isinstance(action, dict):
+                        raise ValueError("accepted action must be structured")
+                    parent_id = action.get("parent_node_id")
+                    child_ids = tuple(
+                        action.get("revealed_node_ids", [action.get("revealed_node_id")])
+                    )
+                    if (
+                        parent_id not in visible
+                        or not nodes[parent_id].frontier_eligible
+                        or child_ids
+                        != tuple(
+                            node.node_id
+                            for node in source.children_for(
+                                parent_id, action.get("continuation_action", {})
+                            )
+                        )
+                        or any(node_id in matched for node_id in child_ids)
+                    ):
+                        raise ValueError("accepted action does not match recorded continuation")
+                    matched.update(child_ids)
                 for node_id in item.revealed_node_ids:
                     node = nodes.get(node_id)
                     if node is None or node.parent_node_id not in visible:
@@ -216,10 +329,32 @@ class DiscoveryPolicyActions:
                         raise ValueError("replay revealed a node twice")
                     revealed.add(node_id)
                 visible.update(revealed)
+                visible_order.extend(item.revealed_node_ids)
             if any(node_id not in visible for node_id in request.completion.selected_node_ids):
                 raise ValueError("replay selected an unrevealed node")
+            if any(
+                node_id not in source.evaluations
+                or not source.evaluations[node_id].selectable
+                for node_id in request.completion.selected_node_ids
+            ):
+                raise ValueError("replay selected a nonselectable node")
             if (
-                canonical_hash(self.trace_document(replay, request.rounds, request.completion))
+                request.completion.budget_used.get("attempts") != charged_attempts
+                or request.completion.budget_used.get("wall_ms") != charged_wall_ms
+                or request.completion.budget_used.get("candidate_generation_count")
+                != charged_candidates
+                or request.completion.failure_codes != observed_failures
+            ):
+                raise ValueError("replay budget or failure accounting mismatch")
+            if (
+                canonical_hash(
+                    self.trace_document(
+                        replay,
+                        request.rounds,
+                        request.completion,
+                        source_seal_hash=seal_events[-1].manifest_hash,
+                    )
+                )
                 != request.completion.trace_hash
             ):
                 raise ValueError("policy replay trace hash mismatch")

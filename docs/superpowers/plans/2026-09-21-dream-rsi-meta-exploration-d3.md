@@ -10,6 +10,19 @@
 
 ---
 
+## As-built checkpoint (2026-09-21)
+
+Tasks 1-4 have fixture-level implementations and tests. Task 5's focused,
+protected, lint and full-suite verification passed; see
+`docs/superpowers/evidence/2026-09-21-meta-exploration-d3-prefix-replay.md`.
+Its real-world replay and SC-001 gate remain open because D2 produced no real
+sealed prospective world. The optional Task 4 outbound invocation monkeypatch
+is not claimed, although the replay constructor accepts no executable adapter.
+Linked D2 retries are the narrow exception to Task 2's duplicate-key rejection:
+only contiguous failed-attempt chains with explicit `retry_of_node_id` are valid.
+No D4 work is authorized until the D3 evidence review gate and D4 numerical
+selection-contract review are satisfied.
+
 ## Entry and authority
 
 - Review D2 evidence and verify at least one sealed, reproducible D2 shadow tree before a representative replay. Synthetic sealed fixtures suffice for tests, not for SC-001's real-world claim.
