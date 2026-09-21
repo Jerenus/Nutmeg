@@ -703,7 +703,7 @@ git commit -m "feat(ontology): persist discovery object families"
 - Create: `nutmeg/ontology/actions/discovery_world_actions.py`
 - Test: `tests/ontology/test_discovery_world_actions.py`
 
-- [ ] **Step 1: Write failing Action tests**
+- [x] **Step 1: Write failing Action tests**
 
 Create a `_rig(tmp_path)` fixture using `run_migrations`, `ActionService`, and
 `DiscoveryWorldActions`, then implement this exact matrix:
@@ -722,13 +722,13 @@ Create a `_rig(tmp_path)` fixture using `run_migrations`, `ActionService`, and
 
 Use D0 artifact hashes loaded through `nutmeg.discovery.contracts`. Assert every committed Action has both business refs and an outbox event.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `uv run pytest tests/ontology/test_discovery_world_actions.py -v`
 
 Expected: FAIL because `DiscoveryWorldActions` does not exist.
 
-- [ ] **Step 3: Define immutable request DTOs**
+- [x] **Step 3: Define immutable request DTOs**
 
 In `discovery_world_actions.py`, add frozen slot dataclasses:
 
@@ -742,7 +742,7 @@ SealDiscoveryWorldRequest
 
 Every request includes `actor_id`, `actor_role`, `idempotency_key`, and timezone-aware `requested_at`. Create-world includes the full world manifest plus a root-node manifest. Record-node includes parent/run/policy decision, artifact and cost payloads, optional evaluator result, and exact visibility/creation ordinals. Seal includes `world_id`, `terminal_reason`, and `sealed_manifest_hash`.
 
-- [ ] **Step 4: Implement the five Action handlers**
+- [x] **Step 4: Implement the five Action handlers**
 
 Use these exact action names and invariants:
 
@@ -784,7 +784,7 @@ Create returns refs for `discovery_world` and its root `discovery_node`; start r
 `discovery_run`; record/failure return `discovery_node` plus `node_evaluation` only
 when one was inserted; seal returns `discovery_world_event`.
 
-- [ ] **Step 5: Run Action tests and verify GREEN**
+- [x] **Step 5: Run Action tests and verify GREEN**
 
 Run: `uv run pytest tests/ontology/test_discovery_world_actions.py tests/ontology/test_action_outbox.py -v`
 
