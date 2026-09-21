@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Deterministic permutation floor for judgment-factor residual effects."""
+
 from __future__ import annotations
 
 import argparse
@@ -19,9 +20,7 @@ def _slope_pp(xs: list[float], residuals: list[float]) -> float:
     denominator = sum((value - x_mean) ** 2 for value in xs)
     if denominator == 0:
         raise ValueError("factor 至少两个不同取值")
-    numerator = sum(
-        (x - x_mean) * (y - y_mean) for x, y in zip(xs, residuals, strict=True)
-    )
+    numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, residuals, strict=True))
     return 100.0 * numerator / denominator
 
 
@@ -70,13 +69,13 @@ def permutation_floor(
     extreme = sum(abs(value) >= abs(observed) for value in null)
     return {
         "n": len(usable),
+        "provable_n": sum(row.get("provably_prospective") is True for row in usable),
+        "unproven_n": sum(row.get("provably_prospective") is not True for row in usable),
         "observed_pp": round(observed, 6),
         "floor_p2_5": round(low, 6),
         "floor_p97_5": round(high, 6),
         "p_value": round((extreme + 1) / (n_perm + 1), 6),
-        "verdict": (
-            "above_floor" if observed < low or observed > high else "indistinguishable"
-        ),
+        "verdict": ("above_floor" if observed < low or observed > high else "indistinguishable"),
         "seed": seed,
         "n_perm": n_perm,
     }
@@ -108,6 +107,7 @@ def _c7_rows(rows: list[dict]) -> list[dict]:
                         "factor": int(any(value in {"alive", "live"} for value in statuses)),
                         "face_hit": int(row.get("actual") == code),
                         "fair": fair[face],
+                        "provably_prospective": row.get("provably_prospective"),
                     }
                 )
     return output
@@ -127,6 +127,7 @@ def _anchor_rows(rows: list[dict]) -> list[dict]:
                 "factor": int(integrity == "pass"),
                 "face_hit": int(row.get("actual") == _FACE_CODE[face]),
                 "fair": fair[face],
+                "provably_prospective": row.get("provably_prospective"),
             }
         )
     return output
@@ -151,6 +152,7 @@ def _death_proof_rows(rows: list[dict]) -> list[dict]:
                     "factor": count,
                     "face_hit": int(row.get("actual") == _FACE_CODE[face]),
                     "fair": fair[face],
+                    "provably_prospective": row.get("provably_prospective"),
                 }
             )
     return output
@@ -172,30 +174,60 @@ _FACTORS = {
 }
 
 
+def analyze(
+    rows: list[dict],
+    *,
+    factor: str,
+    include_unproven: bool = False,
+    n_perm: int = 1000,
+    seed: int = DEFAULT_SEED,
+) -> dict:
+    """Run one factor with the prospective proof gate closed by default."""
+    build_rows, rule = _FACTORS[factor]
+    admitted = (
+        rows
+        if include_unproven
+        else [row for row in rows if row.get("provably_prospective") is True]
+    )
+    result = permutation_floor(
+        build_rows(admitted),
+        "factor",
+        "face_hit_rate_resid_pp",
+        n_perm=n_perm,
+        seed=seed,
+    )
+    return {
+        "factor": factor,
+        "factor_rule": rule,
+        "statistic": "face_hit_rate_resid_pp",
+        "sample_mode": "all" if include_unproven else "only-provable",
+        **result,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--factor", required=True, choices=sorted(_FACTORS))
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--n-perm", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument(
+        "--include-unproven",
+        action="store_true",
+        help="include rows that cannot prove the judgment predates kickoff",
+    )
     args = parser.parse_args()
 
-    build_rows, rule = _FACTORS[args.factor]
-    result = permutation_floor(
-        build_rows(_load_corpus(args.corpus)),
-        "factor",
-        "face_hit_rate_resid_pp",
+    result = analyze(
+        _load_corpus(args.corpus),
+        factor=args.factor,
+        include_unproven=args.include_unproven,
         n_perm=args.n_perm,
         seed=args.seed,
     )
     print(
         json.dumps(
-            {
-                "factor": args.factor,
-                "factor_rule": rule,
-                "statistic": "face_hit_rate_resid_pp",
-                **result,
-            },
+            result,
             ensure_ascii=False,
             sort_keys=True,
         )

@@ -42,19 +42,13 @@ def _jczq_day(tmp_path):
             "directional_flags": [["anchor_shield_out", "1"]],
             "nondirectional_flags": ["two_way_instability"],
             "hole_location": {"unit": "attack"},
-            "death_three_proofs": {
-                "away": {"proof_count": "2/3", "verdict": "alive"}
-            },
+            "death_three_proofs": {"away": {"proof_count": "2/3", "verdict": "alive"}},
             "precedents": [["0", "same shape", "dead"]],
         },
     )
     _write(
         data / "jczq" / "jc-results.json",
-        {
-            "2026-09-19": {
-                "周六001": {"match_id": "100", "ft_home": 0, "ft_away": 1}
-            }
-        },
+        {"2026-09-19": {"周六001": {"match_id": "100", "ft_home": 0, "ft_away": 1}}},
     )
     return data
 
@@ -80,6 +74,26 @@ def test_jczq_postmortem_keeps_actual_prior_without_inventing_a_call(tmp_path):
     assert row["hole_location_unit"] == "attack"
     assert row["source"] == "research"
     assert row["computed_at"].endswith("+08:00")
+    assert row["provably_prospective"] is None
+    assert row["judged_at_source"] is None
+
+
+def test_jczq_postmortem_marks_research_captured_before_kickoff_as_provable(tmp_path):
+    data = _jczq_day(tmp_path)
+    day_dir = data / "jczq" / "daily" / "2026-09-19"
+    research_path = day_dir / "research-周六001.json"
+    research = json.loads(research_path.read_text(encoding="utf-8"))
+    research["captured_at"] = "2026-09-19T19:59:00+08:00"
+    research_path.write_text(json.dumps(research), encoding="utf-8")
+    board_path = day_dir / "jczq-legs-base.json"
+    board = json.loads(board_path.read_text(encoding="utf-8"))
+    board["legs"]["周六001"]["kickoff_bj"] = "2026-09-19T20:00:00+08:00"
+    board_path.write_text(json.dumps(board), encoding="utf-8")
+
+    row = postmortem_rows(day="2026-09-19", issue=None, data_dir=data)[0]
+
+    assert row["provably_prospective"] is True
+    assert row["judged_at_source"] == "research.captured_at"
 
 
 def test_postmortem_cli_writes_settled_rows_and_reports_pending(tmp_path):
@@ -156,3 +170,33 @@ def test_zucai_postmortem_uses_calls_fair_and_official_results(tmp_path):
     assert rows[0]["actual_was_excluded"] is True
     assert rows[0]["actual_face_prior"]["death_proof_count"] == "2/3"
     assert rows[0]["actual_face_prior"]["precedent_status"] == "alive"
+    assert rows[0]["provably_prospective"] is None
+    assert rows[0]["judged_at_source"] is None
+
+
+def test_zucai_postmortem_uses_calls_meta_as_weak_fallback(tmp_path):
+    data = tmp_path / "data"
+    z = data / "zucai"
+    _write(z / "official-results.json", {"26129": "0"})
+    _write(
+        z / "26129-calls.json",
+        {
+            "_meta": {
+                "built_at": "2026-09-19T19:59:00+08:00",
+                "built_at_source": "file_mtime",
+                "evidence_grade": "weak",
+            },
+            "1": {"kind": "single", "faces": "3"},
+        },
+    )
+    _write(z / "26129-fair.json", {"1": {"home": 0.5, "draw": 0.3, "away": 0.2}})
+    _write(z / "26129-legs-base.json", {"legs": {"1": {"match_id": "zc-1"}}})
+    _write(
+        z / "26129-issue.json",
+        {"matches": [{"match_no": 1, "kickoff_bj": "2026-09-19T20:00:00+08:00"}]},
+    )
+
+    row = postmortem_rows(day="2026-09-19", issue="26129", data_dir=data)[0]
+
+    assert row["provably_prospective"] is True
+    assert row["judged_at_source"] == "calls._meta.built_at:file_mtime:weak"

@@ -32,6 +32,7 @@ C12（平局错价带 n=14）这两条**在跑的规则**，各自只有十几�
 用法：
     uv run python experiments/corpus_build.py --out experiments/corpus-v2.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,6 +41,7 @@ import json
 import os
 import re
 
+from nutmeg.decision.prospective import prospective_fields as _prospective_fields
 from nutmeg.decision.research_intake import (
     HOLE_LOCATION_SIDES,
     HOLE_LOCATION_UNITS,
@@ -61,15 +63,39 @@ def _load(path, default=None):
 
 def _issue_dates(issue: str) -> dict[int, str]:
     doc = _load(f"{Z}/{issue}-issue.json", {}) or {}
-    return {m["match_no"]: m.get("match_date") or (m.get("kickoff_bj") or "")[:10]
-            for m in doc.get("matches", [])}
+    return {
+        m["match_no"]: m.get("match_date") or (m.get("kickoff_bj") or "")[:10]
+        for m in doc.get("matches", [])
+    }
+
+
+def _issue_kickoffs(issue: str) -> dict[int, str | None]:
+    doc = _load(f"{Z}/{issue}-issue.json", {}) or {}
+    return {
+        m["match_no"]: m.get("kickoff_bj")
+        for m in doc.get("matches", [])
+        if m.get("match_no") is not None
+    }
+
+
+def _calls_time_source(meta: object) -> tuple[object, str | None]:
+    if not isinstance(meta, dict) or not meta.get("built_at"):
+        return None, None
+    source = str(meta.get("built_at_source") or "unknown")
+    grade = str(meta.get("evidence_grade") or "unknown")
+    return meta["built_at"], f"calls._meta.built_at:{source}:{grade}"
 
 
 def _cross_ids(issue: str) -> dict[int, dict]:
     doc = _load(f"{Z}/{issue}-odds-intl.json", {}) or {}
-    return {m["match_no"]: {"titan007_id": m.get("titan007_match_id"),
-                            "jczq_no": m.get("jczq_match_no")}
-            for m in doc.get("matches", []) if m.get("match_no")}
+    return {
+        m["match_no"]: {
+            "titan007_id": m.get("titan007_match_id"),
+            "jczq_no": m.get("jczq_match_no"),
+        }
+        for m in doc.get("matches", [])
+        if m.get("match_no")
+    }
 
 
 def zucai_rows() -> list[dict]:
@@ -82,8 +108,9 @@ def zucai_rows() -> list[dict]:
         if not isinstance(doc, list):
             continue
         for i, r in enumerate(doc):
-            m = (re.search(r"-(\d{2})-had", r.get("read_id", ""))
-                 or re.search(r"场(\d+)", r.get("note", "")))
+            m = re.search(r"-(\d{2})-had", r.get("read_id", "")) or re.search(
+                r"场(\d+)", r.get("note", "")
+            )
             n = int(m.group(1)) if m else i + 1
             if n > 14:
                 continue
@@ -93,9 +120,11 @@ def zucai_rows() -> list[dict]:
                 reads_prior[(issue, n)] = (r["prior"], r.get("belief") or r["prior"])
 
     rows: list[dict] = []
-    issues = sorted({re.match(r".*/(\d{5})-", p).group(1)
-                     for p in glob.glob(f"{Z}/*-legs-base.json")}
-                    | {i for i, _ in reads_conf} | {i for i, _ in reads_prior})
+    issues = sorted(
+        {re.match(r".*/(\d{5})-", p).group(1) for p in glob.glob(f"{Z}/*-legs-base.json")}
+        | {i for i, _ in reads_conf}
+        | {i for i, _ in reads_prior}
+    )
     for issue in issues:
         if issue not in results:
             continue
@@ -106,8 +135,10 @@ def zucai_rows() -> list[dict]:
             for row in postmortems
             if isinstance(row, dict) and row.get("match_no") is not None
         }
-        dates, xids = _issue_dates(issue), _cross_ids(issue)
+        dates, kickoffs, xids = _issue_dates(issue), _issue_kickoffs(issue), _cross_ids(issue)
         legs = (_load(f"{Z}/{issue}-legs-base.json", {}) or {}).get("legs") or {}
+        calls = _load(f"{Z}/{issue}-calls.json", {}) or {}
+        calls_time, calls_source = _calls_time_source(calls.get("_meta"))
         for n in range(1, 15):
             lg = legs.get(str(n)) if isinstance(legs, dict) else None
             fair = (lg or {}).get("fair") or {}
@@ -115,16 +146,35 @@ def zucai_rows() -> list[dict]:
             if not fair and (issue, n) in reads_prior:
                 fair, src = reads_prior[(issue, n)][0], "reads.prior"
             if not fair or out[n - 1] not in ("3", "1", "0"):
-                continue                      # `*` = 该场作废/延期，官方串里留的占位
+                continue  # `*` = 该场作废/延期，官方串里留的占位
             prior, belief = reads_prior.get((issue, n), (fair, fair))
             row = dict(
-                src="zucai", key=f"{issue}-{n}", issue=issue, match_no=n,
-                date=dates.get(n), name=(lg or {}).get("name"),
-                fair=fair, belief=belief, fair_source=src, actual=out[n - 1],
+                src="zucai",
+                key=f"{issue}-{n}",
+                issue=issue,
+                match_no=n,
+                date=dates.get(n),
+                name=(lg or {}).get("name"),
+                fair=fair,
+                belief=belief,
+                fair_source=src,
+                actual=out[n - 1],
                 conf=(lg or {}).get("confidence", reads_conf.get((issue, n))),
                 belief_moved=any(abs(prior.get(k, 0) - belief.get(k, 0)) > 1e-6 for k in prior),
-                labels=None)
+                labels=None,
+            )
             row.update(xids.get(n, {}))
+            judged_at = (lg or {}).get("judged_at") or calls_time
+            judged_at_source = (
+                "legs-base.legs[n].judged_at" if (lg or {}).get("judged_at") else calls_source
+            )
+            row.update(
+                _prospective_fields(
+                    judged_at=judged_at,
+                    kickoff_bj=kickoffs.get(n),
+                    judged_at_source=judged_at_source,
+                )
+            )
             if lg:
                 row["labels"] = dict(
                     anchor_integrity=lg.get("anchor_integrity"),
@@ -133,7 +183,8 @@ def zucai_rows() -> list[dict]:
                     license_questions=lg.get("license_questions") or {},
                     crash_markers=lg.get("crash_markers") or [],
                     tracking_tags=lg.get("tracking_tags") or [],
-                    precedents=[[x[0], x[2]] for x in (lg.get("precedents") or []) if len(x) >= 3])
+                    precedents=[[x[0], x[2]] for x in (lg.get("precedents") or []) if len(x) >= 3],
+                )
             row["labels"] = _merge_postmortem(row["labels"], postmortem_by_match.get(n))
             rows.append(row)
     return rows
@@ -194,7 +245,10 @@ def jczq_rows() -> list[dict]:
     results = _load(f"{J}/jc-results.json", {}) or {}
     rows: list[dict] = []
     for date in sorted(os.listdir(f"{J}/daily")):
-        bold = _load(f"{J}/daily/{date}/bold_odds.json", {}) or {}
+        day_dir = f"{J}/daily/{date}"
+        bold = _load(f"{day_dir}/bold_odds.json", {}) or {}
+        board = _load(f"{day_dir}/jczq-legs-base.json", {}) or {}
+        board_legs = board.get("legs") if isinstance(board, dict) else {}
         day = results.get(date) or {}
         if not bold or not day:
             continue
@@ -206,16 +260,46 @@ def jczq_rows() -> list[dict]:
                 continue
             gh, ga = got["ft_home"], got["ft_away"]
             actual = "3" if gh > ga else ("0" if ga > gh else "1")
-            research = _load(f"{J}/daily/{date}/research-{jno}.json", {}) or {}
-            postmortem = _load(f"{J}/daily/{date}/postmortem-{jno}.json", {}) or {}
-            rows.append(dict(
-                src="jczq", key=f"{date}-{jno}", issue=None, match_no=jno, date=date,
-                name=None, fair=fair, belief=fair, fair_source="bold_odds", actual=actual,
-                conf=research.get("confidence"), belief_moved=False,
+            research = _load(f"{day_dir}/research-{jno}.json", {}) or {}
+            postmortem = _load(f"{day_dir}/postmortem-{jno}.json", {}) or {}
+            leg = (board_legs or {}).get(jno) or {}
+            row = dict(
+                src="jczq",
+                key=f"{date}-{jno}",
+                issue=None,
+                match_no=jno,
+                date=date,
+                name=None,
+                fair=fair,
+                belief=fair,
+                fair_source="bold_odds",
+                actual=actual,
+                conf=research.get("confidence"),
+                belief_moved=False,
                 labels=_merge_postmortem(_research_labels(research), postmortem),
-                titan007_id=str(got.get("match_id") or "") or None, jczq_no=jno,
-                books=mw.get("bookmaker_count"), opening_odds=mw.get("opening_odds"),
-                goals=[gh, ga], ht=[got.get("ht_home"), got.get("ht_away")]))
+                titan007_id=str(got.get("match_id") or "") or None,
+                jczq_no=jno,
+                books=mw.get("bookmaker_count"),
+                opening_odds=mw.get("opening_odds"),
+                goals=[gh, ga],
+                ht=[got.get("ht_home"), got.get("ht_away")],
+            )
+            judged_at = research.get("captured_at") or leg.get("judged_at")
+            source = (
+                "research.captured_at"
+                if research.get("captured_at")
+                else "legs-base.legs[n].judged_at"
+                if leg.get("judged_at")
+                else None
+            )
+            row.update(
+                _prospective_fields(
+                    judged_at=judged_at,
+                    kickoff_bj=research.get("kickoff_bj") or leg.get("kickoff_bj"),
+                    judged_at_source=source,
+                )
+            )
+            rows.append(row)
     return rows
 
 
@@ -233,8 +317,10 @@ def dedupe(zc: list[dict], jc: list[dict]) -> tuple[list[dict], int]:
             continue
         near = False
         for z in zbyday.get(r["date"], []):
-            if all(abs(r["fair"].get(k, 0) - z["fair"].get(k, 0)) <= _DUP_TOL
-                   for k in ("home", "draw", "away")):
+            if all(
+                abs(r["fair"].get(k, 0) - z["fair"].get(k, 0)) <= _DUP_TOL
+                for k in ("home", "draw", "away")
+            ):
                 near = True
                 break
         if near:
@@ -252,13 +338,23 @@ def main() -> None:
     rows, dropped = dedupe(zc, jc)
     labeled = [r for r in rows if r.get("labels")]
     moved = [r for r in rows if r.get("belief_moved")]
-    json.dump({"built_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
-               "n": len(rows), "rows": rows}, open(args.out, "w", encoding="utf-8"),
-              ensure_ascii=False)
-    print(f"语料 v2：{len(rows)} 行  = 足彩 {len(zc)}（{len(set(r['issue'] for r in zc))} 期）"
-          f" + 竞彩 {len(rows) - len(zc)}（去重丢弃 {dropped} 行重叠）")
-    print(f"  带判读标签（旗/完整度/牌照/先例）：{len(labeled)} 行"
-          f"（{len(set(r['issue'] for r in labeled))} 期）")
+    json.dump(
+        {
+            "built_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+            "n": len(rows),
+            "rows": rows,
+        },
+        open(args.out, "w", encoding="utf-8"),
+        ensure_ascii=False,
+    )
+    print(
+        f"语料 v2：{len(rows)} 行  = 足彩 {len(zc)}（{len(set(r['issue'] for r in zc))} 期）"
+        f" + 竞彩 {len(rows) - len(zc)}（去重丢弃 {dropped} 行重叠）"
+    )
+    print(
+        f"  带判读标签（旗/完整度/牌照/先例）：{len(labeled)} 行"
+        f"（{len(set(r['issue'] for r in labeled))} 期）"
+    )
     print(f"  belief≠prior 的判读移动：{len(moved)} 行")
     print(f"  写入 {args.out}")
 

@@ -1,4 +1,5 @@
 """Mechanical per-match postmortem rows from frozen pre-match artifacts."""
+
 from __future__ import annotations
 
 import json
@@ -7,6 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from nutmeg.decision.legs_audit import exclusion_grade
+from nutmeg.decision.prospective import prospective_fields
 
 _FACES = ("3", "1", "0")
 _FACE_NAMES = {"3": "home", "1": "draw", "0": "away"}
@@ -74,9 +76,7 @@ def _prior(
     fair_pp = _fair_pp(fair, actual)
     tier = None
     if fair_pp is not None:
-        fair_values = {
-            face: _fair_pp(fair, face) for face in _FACES
-        }
+        fair_values = {face: _fair_pp(fair, face) for face in _FACES}
         numeric = {face: value for face, value in fair_values.items() if value is not None}
         modal = max(numeric, key=numeric.get) if numeric else None
         tier = exclusion_grade(fair_pp / 100, is_modal=actual == modal, flat=False)
@@ -114,6 +114,7 @@ def _row(
     leg: dict,
     source: str,
     computed_at: str,
+    prospective: dict,
 ) -> dict:
     faces = str(call.get("faces") or call.get("face") or "")
     excluded = [face for face in _FACES if face not in faces]
@@ -155,6 +156,7 @@ def _row(
         "drift_pp": drift,
         "source": source,
         "computed_at": computed_at,
+        **prospective,
     }
 
 
@@ -179,9 +181,16 @@ def postmortem_rows(*, day: str, issue: str | None, data_dir: Path) -> list[dict
         calls = _load(zdir / f"{issue}-calls.json", {})
         fair_doc = _load(zdir / f"{issue}-fair.json", {})
         legs_doc = _load(zdir / f"{issue}-legs-base.json", {})
+        issue_doc = _load(zdir / f"{issue}-issue.json", {})
         results = _load(zdir / "official-results.json", {}).get(issue)
         outcomes = results.split() if isinstance(results, str) else []
         legs = legs_doc.get("legs") if isinstance(legs_doc, dict) else {}
+        kickoffs = {
+            int(match["match_no"]): match.get("kickoff_bj")
+            for match in issue_doc.get("matches", [])
+            if isinstance(match, dict) and match.get("match_no") is not None
+        }
+        calls_meta = calls.get("_meta") if isinstance(calls.get("_meta"), dict) else {}
         rows = []
         # `_` 开头的键是文件级元数据（如 `_meta.built_at` 的时间证据），不是场次
         numbered = {k: v for k, v in calls.items() if not str(k).startswith("_")}
@@ -190,11 +199,18 @@ def postmortem_rows(*, day: str, issue: str | None, data_dir: Path) -> list[dict
             if match_no > len(outcomes) or outcomes[match_no - 1] not in _FACES:
                 continue
             leg = (legs or {}).get(raw_no) or {}
+            judged_at = leg.get("judged_at") or calls_meta.get("built_at")
+            if leg.get("judged_at"):
+                judged_at_source = "legs-base.legs[n].judged_at"
+            elif calls_meta.get("built_at"):
+                built_at_source = str(calls_meta.get("built_at_source") or "unknown")
+                grade = str(calls_meta.get("evidence_grade") or "unknown")
+                judged_at_source = f"calls._meta.built_at:{built_at_source}:{grade}"
+            else:
+                judged_at_source = None
             rows.append(
                 _row(
-                    match_id=(
-                        str(leg["match_id"]) if leg.get("match_id") is not None else None
-                    ),
+                    match_id=(str(leg["match_id"]) if leg.get("match_id") is not None else None),
                     day=day,
                     issue=issue,
                     code=None,
@@ -206,6 +222,11 @@ def postmortem_rows(*, day: str, issue: str | None, data_dir: Path) -> list[dict
                     leg=leg,
                     source="legs-base",
                     computed_at=computed_at,
+                    prospective=prospective_fields(
+                        judged_at=judged_at,
+                        kickoff_bj=kickoffs.get(match_no),
+                        judged_at_source=judged_at_source,
+                    ),
                 )
             )
         return rows
@@ -220,6 +241,14 @@ def postmortem_rows(*, day: str, issue: str | None, data_dir: Path) -> list[dict
         if actual is None:
             continue
         research = _load(day_dir / f"research-{code}.json", {})
+        judged_at = research.get("captured_at") or leg.get("judged_at")
+        judged_at_source = (
+            "research.captured_at"
+            if research.get("captured_at")
+            else "legs-base.legs[n].judged_at"
+            if leg.get("judged_at")
+            else None
+        )
         rows.append(
             _row(
                 match_id=(
@@ -238,6 +267,11 @@ def postmortem_rows(*, day: str, issue: str | None, data_dir: Path) -> list[dict
                 leg=leg,
                 source="research" if research else "legs-base",
                 computed_at=computed_at,
+                prospective=prospective_fields(
+                    judged_at=judged_at,
+                    kickoff_bj=research.get("kickoff_bj") or leg.get("kickoff_bj"),
+                    judged_at_source=judged_at_source,
+                ),
             )
         )
     return rows
