@@ -73,7 +73,7 @@ def test_migration_39_corrects_only_observation_stratum_labels(tmp_path: Path):
         observations = uow.rsi.observations("F5") + uow.rsi.observations("R0")
         before = {row.observation_id: row for row in observations}
 
-    report = run_migrations(engine)
+    report = run_migrations(engine, MIGRATIONS[:39])
 
     assert report.applied_versions == (39,)
     assert migration_status(engine).current_version == 39

@@ -12,7 +12,7 @@ def test_candidate_band_schema_is_additive_and_idempotent(tmp_path):
 
     assert 31 in first.applied_versions
     assert second.applied_versions == ()
-    assert migration_status(engine).current_version == 39
+    assert migration_status(engine).current_version == 40
     inspector = inspect(engine)
     columns = {
         column["name"] for column in inspector.get_columns("operator_candidates")

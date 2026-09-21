@@ -26,6 +26,7 @@ from nutmeg.ontology.repository import (
     schema_capital,
     schema_context,
     schema_decision,
+    schema_discovery,
     schema_evidence,
     schema_finance,
     schema_identity,
@@ -5073,6 +5074,42 @@ def _apply_historical_replay_authority(connection: Connection) -> None:
     )
 
 
+_DISCOVERY_PERMISSIONS = (
+    ("create_discovery_world", "judge_operator"),
+    ("create_discovery_world", "deterministic_system"),
+    ("start_discovery_run", "deterministic_system"),
+    ("record_discovery_node", "deterministic_system"),
+    ("record_discovery_failure", "deterministic_system"),
+    ("seal_discovery_world", "deterministic_system"),
+    ("register_policy_revision", "judge_operator"),
+    ("start_policy_replay", "deterministic_system"),
+    ("finish_policy_replay", "deterministic_system"),
+    ("create_policy_tournament", "judge_operator"),
+    ("finish_policy_tournament", "deterministic_system"),
+    ("approve_policy_deployment", "judge_operator"),
+    ("trip_policy_brake", "deterministic_system"),
+)
+
+
+def _apply_discovery_foundation(connection: Connection) -> None:
+    for name in schema_discovery.TABLE_KEYS:
+        table = getattr(schema_discovery, name)
+        table.create(connection)
+        for operation in ("UPDATE", "DELETE"):
+            connection.exec_driver_sql(
+                f"CREATE TRIGGER {name}_no_{operation.lower()} "
+                f"BEFORE {operation} ON {name} BEGIN "
+                f"SELECT RAISE(ABORT, '{name} is append-only'); END"
+            )
+    connection.execute(
+        insert(schema.action_permissions),
+        [
+            {"policy_version_id": "governance-v1", "action_type": action, "actor_role": role}
+            for action, role in _DISCOVERY_PERMISSIONS
+        ],
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -5386,6 +5423,15 @@ MIGRATIONS: tuple[Migration, ...] = (
             "labels_only+preserve_observation_rows_and_measurements"
         ),
         apply=_apply_rsi_observation_stratum_labels,
+    ),
+    Migration(
+        version=40,
+        name="discovery_foundation",
+        fingerprint=(
+            "discovery_six_families+append_only_events+holdout_exposure+"
+            "role_separated_permissions"
+        ),
+        apply=_apply_discovery_foundation,
     ),
 )
 
