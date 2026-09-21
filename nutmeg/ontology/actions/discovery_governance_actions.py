@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -392,6 +393,29 @@ class DiscoveryGovernanceActions:
             if disposition not in {"rejected", "retired"}
         }
 
+    @staticmethod
+    def _action_jaccard_distance(left: object, right: object) -> Decimal | None:
+        if not isinstance(left, list) or not isinstance(right, list):
+            return None
+        if (
+            not left
+            or not right
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in (*left, *right)
+            )
+        ):
+            raise ValueError("archive action histogram must be nonnegative counts")
+        size = max(len(left), len(right))
+        a = left + [0] * (size - len(left))
+        b = right + [0] * (size - len(right))
+        union = sum(max(x, y) for x, y in zip(a, b, strict=True))
+        if not union:
+            raise ValueError("archive action histogram must contain observed actions")
+        return Decimal(1) - Decimal(sum(min(x, y) for x, y in zip(a, b, strict=True))) / Decimal(
+            union
+        )
+
     def finish_tournament(self, request: FinishPolicyTournamentRequest) -> ActionOutcome:
         command = self._command(
             "finish_policy_tournament",
@@ -515,14 +539,20 @@ class DiscoveryGovernanceActions:
             active_archive = self._active_archive_ids(uow, tournament.policy_family)
             bad_policies = {r.policy_revision_id for r in request.results if r.disqualified}
             admitted = set()
+            retirements = []
             for row in request.archive_decisions:
                 disposition = ArchiveDisposition(row.disposition)
-                if (
-                    row.policy_tournament_id != request.tournament_id
-                    or row.policy_revision_id not in {p.policy_revision_id for p in candidates}
-                    or row.policy_revision_id in bad_policies
+                candidate_ids = {p.policy_revision_id for p in candidates}
+                if row.policy_tournament_id != request.tournament_id or (
+                    disposition is not ArchiveDisposition.RETIRED
+                    and (
+                        row.policy_revision_id not in candidate_ids
+                        or row.policy_revision_id in bad_policies
+                    )
                 ):
                     raise ValueError("disqualified or foreign policy cannot enter archive")
+                if disposition is ArchiveDisposition.RETIRED:
+                    retirements.append(row)
                 if disposition is ArchiveDisposition.STEPPING_STONE and (
                     row.policy_revision_id == winner or not row.reason_code or not row.evidence
                 ):
@@ -539,14 +569,79 @@ class DiscoveryGovernanceActions:
                             existing.diversity_descriptors == row.diversity_descriptors
                         ):
                             raise ValueError("archive rejects dominated behavioral clone")
+                        if existing is not None:
+                            distance = self._action_jaccard_distance(
+                                row.diversity_descriptors.get("action_histogram"),
+                                existing.diversity_descriptors.get("action_histogram"),
+                            )
+                            if distance is not None and distance < Decimal(
+                                str(pilot.archive.minimum_action_jaccard_distance)
+                            ):
+                                raise ValueError("archive action Jaccard diversity below minimum")
                 if row.policy_revision_id in admitted:
                     raise ValueError("duplicate archive decision")
                 admitted.add(row.policy_revision_id)
-            all_admitted = active_archive | {
+            new_admissions = {
                 row.policy_revision_id
                 for row in request.archive_decisions
                 if row.disposition not in {"rejected", "retired"}
             }
+            if retirements:
+                required_retirements = max(
+                    0, len(active_archive | new_admissions) - archive["capacity"]
+                )
+                if len(retirements) != required_retirements:
+                    raise ValueError("archive may retire exactly the members needed for capacity")
+                archive_rows = sd.policy_archive_decisions
+                policies = sd.exploration_policy_revisions
+                ordered = (
+                    uow.connection.execute(
+                        select(archive_rows.c.policy_revision_id)
+                        .join(
+                            policies,
+                            policies.c.policy_revision_id == archive_rows.c.policy_revision_id,
+                        )
+                        .where(policies.c.family == tournament.policy_family)
+                        .order_by(archive_rows.c.decided_at, archive_rows.c.archive_decision_id)
+                    )
+                    .scalars()
+                    .all()
+                )
+                if len(active_archive) < archive["capacity"] or not new_admissions:
+                    raise ValueError("archive retirement requires a full archive and new admission")
+                remaining = active_archive.copy()
+                for row in retirements:
+                    duplicate_id = row.evidence.get("duplicate_of")
+                    existing = uow.discovery.latest_archive_decision(row.policy_revision_id)
+                    duplicate = (
+                        uow.discovery.latest_archive_decision(duplicate_id)
+                        if duplicate_id
+                        else None
+                    )
+                    clones = [
+                        policy_id
+                        for policy_id in ordered
+                        if policy_id in remaining
+                        and (other := uow.discovery.latest_archive_decision(policy_id)) is not None
+                        and existing is not None
+                        and other.diversity_descriptors == existing.diversity_descriptors
+                    ]
+                    if (
+                        row.policy_revision_id not in remaining
+                        or row.policy_revision_id in candidate_ids
+                        or row.reason_code != "dominated_clone"
+                        or duplicate_id == row.policy_revision_id
+                        or duplicate_id not in remaining
+                        or duplicate is None
+                        or existing is None
+                        or duplicate.diversity_descriptors != existing.diversity_descriptors
+                        or not clones
+                        or row.policy_revision_id != clones[0]
+                    ):
+                        raise ValueError("archive retirement must evict oldest dominated clone")
+                    remaining.remove(row.policy_revision_id)
+                active_archive = remaining
+            all_admitted = active_archive | new_admissions
             if len(all_admitted) > archive["capacity"]:
                 raise ValueError("archive capacity exceeded")
             for policy_id in all_admitted:

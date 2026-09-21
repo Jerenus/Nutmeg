@@ -108,3 +108,7 @@ def test_tournament_detail_exposes_frozen_contract_hash_and_exposure_slice(tmp_p
         == detail["tournament"]["decision_contract"]["selection_contract_hash"]
     )
     assert detail["exposed_holdout_world_ids"] == ["world-2"]
+    assert detail["holdout_period"] == {"from": "2026-09-21", "through": "2026-09-21"}
+    assert detail["comparison_reasons"]["policy-2"] == "development_not_materially_better"
+    assert detail["worst_stratum"]["max_decline"] == "0"
+    assert detail["stratum_summary"]["board_size:small"]["policy-1"]["eligible_band_count"] == "1"

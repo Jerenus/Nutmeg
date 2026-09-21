@@ -765,6 +765,148 @@ def test_archive_rejects_duplicate_behavior_descriptor(tmp_path):
         actions.finish_tournament(_finish_request())
 
 
+def test_archive_rejects_behavior_below_frozen_jaccard_distance(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    original = _finish_request().archive_decisions[0]
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_policy(replace(_policy("policy-3"), validation_result={"valid": True}))
+        uow.discovery.insert_archive_decision(
+            replace(
+                original,
+                archive_decision_id="existing-near-clone",
+                policy_revision_id="policy-3",
+                diversity_descriptors={"action_histogram": [10, 10]},
+            )
+        )
+    near_clone = replace(original, diversity_descriptors={"action_histogram": [11, 10]})
+    with pytest.raises(ValueError, match="Jaccard|diversity"):
+        actions.finish_tournament(_finish_request(archives=(near_clone,)))
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament_completion("t-1") is None
+
+
+def test_full_archive_retires_oldest_dominated_clone_atomically(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    original = _finish_request().archive_decisions[0]
+    with OntologyUnitOfWork(engine) as uow:
+        for index in range(3, 15):
+            policy_id = f"policy-{index}"
+            uow.discovery.insert_policy(
+                replace(_policy(policy_id), validation_result={"valid": True})
+            )
+            uow.discovery.insert_archive_decision(
+                replace(
+                    original,
+                    archive_decision_id=f"existing-{index}",
+                    policy_revision_id=policy_id,
+                    diversity_descriptors={
+                        "action_histogram": [1, 0] if index in (3, 4) else [0] * index + [1]
+                    },
+                )
+            )
+    new = replace(original, diversity_descriptors={"action_histogram": [1, 1]})
+    retired = replace(
+        original,
+        archive_decision_id="retire-oldest-clone",
+        policy_revision_id="policy-3",
+        disposition="retired",
+        reason_code="dominated_clone",
+        evidence={"duplicate_of": "policy-4"},
+    )
+    assert (
+        actions.finish_tournament(_finish_request(archives=(new, retired))).status
+        is ActionStatus.COMMITTED
+    )
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.latest_archive_decision("policy-3").disposition == "retired"
+        assert uow.discovery.latest_archive_decision("policy-2").disposition == "stepping_stone"
+        assert len(actions._active_archive_ids(uow, "family-1")) == 12
+
+
+@pytest.mark.parametrize(
+    ("policy_id", "duplicate_id"),
+    [("policy-4", "policy-3"), ("policy-5", "policy-4"), ("policy-3", "policy-3")],
+)
+def test_archive_retirement_rejects_nonoldest_or_nonclone(tmp_path, policy_id, duplicate_id):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    original = _finish_request().archive_decisions[0]
+    distinct = replace(original, diversity_descriptors={"action_histogram": [0] * 20 + [1]})
+    with OntologyUnitOfWork(engine) as uow:
+        for index in range(3, 15):
+            uow.discovery.insert_policy(
+                replace(_policy(f"policy-{index}"), validation_result={"valid": True})
+            )
+            uow.discovery.insert_archive_decision(
+                replace(
+                    original,
+                    archive_decision_id=f"existing-{index}",
+                    policy_revision_id=f"policy-{index}",
+                    diversity_descriptors={
+                        "action_histogram": [1, 0] if index in (3, 4) else [index]
+                    },
+                )
+            )
+    retirement = replace(
+        original,
+        archive_decision_id="invalid-retirement",
+        policy_revision_id=policy_id,
+        disposition="retired",
+        reason_code="dominated_clone",
+        evidence={"duplicate_of": duplicate_id},
+    )
+    with pytest.raises(ValueError, match="oldest dominated clone"):
+        actions.finish_tournament(_finish_request(archives=(distinct, retirement)))
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament_completion("t-1") is None
+        assert uow.discovery.latest_archive_decision(policy_id).disposition == "stepping_stone"
+        assert uow.discovery.exposed_holdouts("family-1") == ()
+
+
+def test_archive_retirement_cannot_remove_more_members_than_needed(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    actions.create_tournament(_create_request())
+    original = _finish_request().archive_decisions[0]
+    distinct = replace(original, diversity_descriptors={"action_histogram": [0] * 20 + [1]})
+    with OntologyUnitOfWork(engine) as uow:
+        for index in range(3, 15):
+            uow.discovery.insert_policy(
+                replace(_policy(f"policy-{index}"), validation_result={"valid": True})
+            )
+            uow.discovery.insert_archive_decision(
+                replace(
+                    original,
+                    archive_decision_id=f"existing-{index}",
+                    policy_revision_id=f"policy-{index}",
+                    diversity_descriptors={
+                        "action_histogram": [1, 0] if index in (3, 4, 5) else [index]
+                    },
+                )
+            )
+    retirements = tuple(
+        replace(
+            original,
+            archive_decision_id=f"retire-{index}",
+            policy_revision_id=f"policy-{index}",
+            disposition="retired",
+            reason_code="dominated_clone",
+            evidence={"duplicate_of": f"policy-{index + 1}"},
+        )
+        for index in (3, 4)
+    )
+    with pytest.raises(ValueError, match="exactly the members needed for capacity"):
+        actions.finish_tournament(_finish_request(archives=(distinct, *retirements)))
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament_completion("t-1") is None
+        assert uow.discovery.latest_archive_decision("policy-3").disposition == "stepping_stone"
+
+
 def _deployment_request(decision="shadow", policy_id="policy-1", **changes):
     row = _record(
         PolicyDeploymentRow,

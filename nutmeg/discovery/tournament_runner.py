@@ -7,6 +7,10 @@ from datetime import datetime
 
 from sqlalchemy import Engine, select
 
+from nutmeg.discovery.baseline_variants import PolicyArtifact
+from nutmeg.discovery.contracts import PilotContract
+from nutmeg.discovery.contracts import canonical_hash as contract_hash
+from nutmeg.discovery.replay_runner import ReplayResult, run_registered_replay
 from nutmeg.discovery.sealed_tree import SealedTree
 from nutmeg.discovery.tournament_scores import score_sealed_replay
 from nutmeg.discovery.tournament_selector import SelectionCell, select_winner
@@ -27,6 +31,70 @@ class PreparedTournament:
     winner_policy_revision_id: str
     proof_hash: str
     disqualification_reasons: dict[str, str]
+
+
+def ensure_registered_replays(
+    engine: Engine,
+    world_ids: tuple[str, ...],
+    policies: tuple[PolicyArtifact, ...],
+    pilot: PilotContract,
+    *,
+    seed: int,
+    requested_at: datetime,
+) -> tuple[ReplayResult, ...]:
+    """Explicitly prepare D3 facts before the operator freezes a tournament."""
+    if (
+        not world_ids
+        or not policies
+        or len(set(world_ids)) != len(world_ids)
+        or len({policy.policy_revision_id for policy in policies}) != len(policies)
+    ):
+        raise ValueError("replay preparation requires unique worlds and policies")
+    pending = []
+    prepared = []
+    with OntologyUnitOfWork(engine) as uow:
+        for world_id in sorted(world_ids):
+            world = uow.discovery.world(world_id)
+            if world is None or uow.discovery.world_state(world_id) != "sealed":
+                raise ValueError("replay preparation requires sealed worlds")
+            for policy in sorted(policies, key=lambda item: item.policy_revision_id):
+                registered = uow.discovery.policy(policy.policy_revision_id)
+                if (
+                    registered is None
+                    or registered.source_artifact_hash != contract_hash(policy)
+                    or world.task_family not in registered.compatible_world_families
+                ):
+                    raise ValueError("replay preparation requires matching registered policy")
+                rows = (
+                    uow.connection.execute(
+                        select(sd.policy_replay_runs.c.policy_replay_run_id).where(
+                            sd.policy_replay_runs.c.world_id == world_id,
+                            sd.policy_replay_runs.c.policy_revision_id == policy.policy_revision_id,
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                if len(rows) > 1 or (
+                    rows and uow.discovery.policy_replay_completion(rows[0]) is None
+                ):
+                    raise ValueError("replay preparation found duplicate or incomplete replay")
+                if rows:
+                    completion = uow.discovery.policy_replay_completion(rows[0])
+                    prepared.append(
+                        ReplayResult(
+                            rows[0], completion.trace_hash, tuple(completion.selected_node_ids)
+                        )
+                    )
+                else:
+                    pending.append((world_id, policy))
+    for world_id, policy in pending:
+        prepared.append(
+            run_registered_replay(
+                engine, world_id, policy, pilot, seed=seed, requested_at=requested_at
+            )
+        )
+    return tuple(sorted(prepared, key=lambda item: item.policy_replay_run_id))
 
 
 def prepare_tournament(engine: Engine, tournament_id: str) -> PreparedTournament:

@@ -198,18 +198,69 @@ class DiscoveryReadService:
             if tournament is None:
                 raise KeyError(policy_tournament_id)
             completion = repository.tournament_completion(policy_tournament_id)
+            worlds = repository.tournament_worlds(policy_tournament_id)
+            results = repository.tournament_results(policy_tournament_id)
+            selection = None
+            stratum_summary = {}
+            worst_stratum = None
+            if completion:
+                from nutmeg.discovery.tournament_selector import (
+                    SelectionCell,
+                    select_winner,
+                    summarize_strata,
+                )
+                from nutmeg.ontology.actions.discovery_governance_actions import (
+                    DiscoveryGovernanceActions,
+                )
+
+                contract = DiscoveryGovernanceActions._approved_selection_contract()
+                roles = {row.world_id: row for row in worlds}
+                cells = tuple(
+                    SelectionCell(
+                        policy_revision_id=row.policy_revision_id,
+                        world_id=row.world_id,
+                        pool_role=roles[row.world_id].pool_role,
+                        strata=tuple(roles[row.world_id].stratum_labels["labels"]),
+                        score_vector=row.score_vector,
+                        disqualified=row.disqualified,
+                        exclusion_reason=row.exclusion_reason,
+                        trace_hash=row.trace_hash,
+                    )
+                    for row in results
+                )
+                selection = select_winner(
+                    contract,
+                    tournament.incumbent_policy_revision_id,
+                    tuple(
+                        row.policy_revision_id
+                        for row in repository.tournament_candidates(policy_tournament_id)
+                    ),
+                    cells,
+                )
+                stratum_summary = summarize_strata(contract, cells)
+                worst_stratum = {
+                    "labels": list(contract.worst_stratum.strata),
+                    "max_decline": str(contract.worst_stratum.max_decline),
+                }
+            holdout_dates = sorted(
+                repository.world(row.world_id).business_date
+                for row in worlds
+                if row.pool_role == "holdout"
+            )
             return {
                 "tournament": asdict(tournament),
                 "candidates": [
                     asdict(row) for row in repository.tournament_candidates(policy_tournament_id)
                 ],
-                "worlds": [
-                    asdict(row) for row in repository.tournament_worlds(policy_tournament_id)
-                ],
-                "results": [
-                    asdict(row) for row in repository.tournament_results(policy_tournament_id)
-                ],
+                "worlds": [asdict(row) for row in worlds],
+                "results": [asdict(row) for row in results],
                 "completion": asdict(completion) if completion else None,
+                "holdout_period": {"from": holdout_dates[0], "through": holdout_dates[-1]}
+                if holdout_dates
+                else None,
+                "comparison_reasons": selection.comparison_reasons if selection else {},
+                "worst_stratum": worst_stratum,
+                "stratum_summary": stratum_summary,
                 "selection_contract_hash": tournament.decision_contract.get(
                     "selection_contract_hash"
                 ),

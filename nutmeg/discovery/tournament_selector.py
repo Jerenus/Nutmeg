@@ -64,6 +64,33 @@ def _metric(cells: tuple[SelectionCell, ...], field: str) -> Decimal | dict[str,
     return sum(numbers) / len(numbers)
 
 
+def summarize_strata(
+    contract: SelectionContract, cells: tuple[SelectionCell, ...]
+) -> dict[str, dict[str, dict[str, str | dict[str, str] | None]]]:
+    quality = next(tier for tier in contract.within_tier if tier.tier == "discovery_quality")
+    summary = {}
+    for label in sorted({label for cell in cells for label in cell.strata}):
+        summary[label] = {}
+        for policy_id in sorted({cell.policy_revision_id for cell in cells}):
+            scoped = tuple(
+                cell
+                for cell in cells
+                if cell.policy_revision_id == policy_id and label in cell.strata
+            )
+            metrics = {}
+            for field in quality.fields:
+                value = _metric(scoped, field.name)
+                metrics[field.name] = (
+                    {band: str(number) for band, number in value.items()}
+                    if isinstance(value, dict)
+                    else str(value)
+                    if value is not None
+                    else None
+                )
+            summary[label][policy_id] = metrics
+    return summary
+
+
 def _compare(
     incumbent: Decimal | dict[str, Decimal] | None,
     challenger: Decimal | dict[str, Decimal] | None,
