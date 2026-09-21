@@ -5146,6 +5146,33 @@ def _apply_discovery_promotion(connection: Connection) -> None:
     ))
 
 
+def _apply_discovery_receipts(connection: Connection) -> None:
+    table = schema_discovery_promotion.protected_shadow_receipts
+    table.create(connection)
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"CREATE TRIGGER protected_shadow_receipts_no_{operation.lower()} "
+            f"BEFORE {operation} ON protected_shadow_receipts BEGIN "
+            "SELECT RAISE(ABORT, 'protected_shadow_receipts is append-only'); END"
+        )
+
+
+def _apply_discovery_scope_reviews(connection: Connection) -> None:
+    table = schema_discovery_promotion.policy_scope_reviews
+    table.create(connection)
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"CREATE TRIGGER policy_scope_reviews_no_{operation.lower()} "
+            f"BEFORE {operation} ON policy_scope_reviews BEGIN "
+            "SELECT RAISE(ABORT, 'policy_scope_reviews is append-only'); END"
+        )
+    connection.execute(insert(schema.action_permissions).values(
+        policy_version_id="governance-v1",
+        action_type="approve_pilot_scope_contract",
+        actor_role="judge_operator",
+    ))
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -5480,6 +5507,18 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="discovery_prospective_shadow_windows",
         fingerprint="append_only_preregistered_windows+human_only",
         apply=_apply_discovery_promotion,
+    ),
+    Migration(
+        version=43,
+        name="discovery_protected_shadow_receipts",
+        fingerprint="append_only_seal_action_protected_before_after_receipts",
+        apply=_apply_discovery_receipts,
+    ),
+    Migration(
+        version=44,
+        name="discovery_reviewed_pilot_scopes",
+        fingerprint="human_only_immutable_external_reviewed_scope_contracts",
+        apply=_apply_discovery_scope_reviews,
     ),
 )
 

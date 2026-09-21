@@ -68,6 +68,27 @@ def test_online_environment_rejects_unattested_run_before_world_create(tmp_path)
         assert uow.discovery.world(world_id) is None
 
 
+def test_authoritative_lineage_is_bound_into_new_world(tmp_path):
+    from nutmeg.discovery.deployment_runtime import Controller
+
+    engine = _rig(tmp_path)
+    controller = Controller("structural-baseline-v1", "canary", True, "a" * 64, "dep-1")
+    online = OnlineRecordingEnvironment(
+        _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
+        source_database=tmp_path / "business.db",
+        policy_revision_id="structural-baseline-v1",
+        requested_at=datetime(2026, 9, 21, 7, 1, tzinfo=UTC), fixture_only=True,
+        controller=controller,
+    )
+    root = online.reset()
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.world(root.world_id).input_manifest["policy_lineage"] == {
+            "policy_revision_id": "structural-baseline-v1",
+            "scope_contract_hash": "a" * 64,
+            "policy_deployment_id": "dep-1",
+        }
+
+
 def test_online_environment_rejects_multi_template_action_without_truncation(tmp_path):
     online = _online(tmp_path)
     root = online.reset().visible_node_ids[0]
@@ -112,7 +133,11 @@ def test_online_environment_records_transient_retry_as_linked_attempt(tmp_path, 
         )
 
     monkeypatch.setattr("nutmeg.discovery.online_recorder._run_shard", flaky)
+    observed = []
+    monkeypatch.setattr("nutmeg.discovery.brake_monitor.monitor_committed_fact",
+                        lambda _engine, action_id: observed.append(action_id))
     result = online.continue_batch(ContinueBatch((Continue(root, (template,)),)))
+    assert len(observed) == 1
     assert len(calls) == 2
     assert len(result.revealed_node_ids) == 2
     assert result.charged_cost["attempts"] == 2

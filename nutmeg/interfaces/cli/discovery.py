@@ -60,6 +60,9 @@ def _read_service(
     if promotion and version < 42:
         typer.echo("discovery error: promotion unavailable; migration 42 required", err=True)
         raise typer.Exit(code=1)
+    if promotion and version < 43:
+        typer.echo("discovery error: promotion unavailable; migration 43 required", err=True)
+        raise typer.Exit(code=1)
     engine = create_engine("sqlite+pysqlite://", creator=lambda: sqlite3.connect(uri, uri=True))
     return DiscoveryReadService(engine)
 
@@ -196,7 +199,18 @@ def promotion(
         else {
             "incumbent": None,
             "replay_winner": None,
+            "latest_tournament_id": None,
+            "latest_tournament_proof_hash": None,
             "shadow_windows": [],
+            "scoped_deployments": [],
+            "shadow_window_end": None,
+            "shadow_effective_world_count": 0,
+            "scope_hash": None,
+            "scope_approval_ref": None,
+            "effective_boundary": None,
+            "rollback_target": None,
+            "brake_conditions": None,
+            "pending_shadow": False,
             "deployment": None,
             "brake": None,
             "control_available": False,

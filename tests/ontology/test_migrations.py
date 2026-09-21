@@ -60,7 +60,7 @@ def test_schema_35_adds_historical_replay_authority_and_action_pair_guard(
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine)
 
-    assert migration_status(engine).current_version == 42
+    assert migration_status(engine).current_version == 44
     assert "historical_replay_runs" in inspect(engine).get_table_names()
     action_columns = {column["name"] for column in inspect(engine).get_columns("actions")}
     assert {"historical_replay", "replay_run_id"} <= action_columns

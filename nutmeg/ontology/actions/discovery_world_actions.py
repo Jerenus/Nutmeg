@@ -91,6 +91,7 @@ class SealDiscoveryWorldRequest:
     actor_role: ActorRole
     idempotency_key: str
     requested_at: datetime
+    protected_receipt: dict[str, str] | None = None
 
 
 class DiscoveryWorldActions:
@@ -174,6 +175,40 @@ class DiscoveryWorldActions:
                 raise ValueError("run requires a validated registered policy")
             if world.task_family not in policy.compatible_world_families:
                 raise ValueError("policy is incompatible with world family")
+            if (world.provenance_mode == "prospective_online"
+                and run.environment_mode == "shadow"
+                and run.policy_revision_id != "structural-baseline-v1"):
+                from sqlalchemy import select
+
+                from nutmeg.ontology.repository import schema_discovery_promotion as sp
+
+                windows = uow.connection.execute(select(sp.policy_shadow_windows).where(
+                    sp.policy_shadow_windows.c.policy_revision_id == run.policy_revision_id
+                )).mappings().all()
+                authorized = False
+                braked = False
+                for raw in windows:
+                    window = uow.discovery.shadow_window(raw["policy_shadow_window_id"])
+                    shadow = uow.discovery.latest_deployment_for_scope(policy.family, window.scope)
+                    if (shadow is not None and shadow.policy_revision_id == run.policy_revision_id
+                        and uow.discovery.latest_brake(shadow.policy_deployment_id) is not None):
+                        braked = True
+                    if (shadow is not None and shadow.decision == "shadow"
+                        and shadow.policy_revision_id == run.policy_revision_id
+                        and shadow.evidence_refs.get("shadow_window_id")
+                        == window.policy_shadow_window_id
+                        and uow.discovery.latest_brake(shadow.policy_deployment_id) is None
+                        and datetime.fromisoformat(window.start_at)
+                        <= datetime.fromisoformat(world.cutoff_at)
+                        <= datetime.fromisoformat(window.end_at)
+                        and datetime.fromisoformat(shadow.decided_at)
+                        < datetime.fromisoformat(world.cutoff_at)):
+                        authorized = True
+                        break
+                if not authorized:
+                    if braked:
+                        raise ValueError("braked challenger cannot start a new run")
+                    raise ValueError("challenger shadow requires prior human-authorized window")
             uow.discovery.insert_run(replace(run, action_id=cmd.action_id))
             events = uow.discovery.world_events(run.world_id)
             uow.discovery.insert_world_event(
@@ -293,6 +328,7 @@ class DiscoveryWorldActions:
                 "world_id": request.world_id,
                 "terminal_reason": request.terminal_reason,
                 "sealed_manifest_hash": request.sealed_manifest_hash,
+                "protected_receipt": request.protected_receipt,
             },
         )
 
@@ -321,6 +357,20 @@ class DiscoveryWorldActions:
                 raise ValueError("seal requires a selectable terminal or explicit no_solution")
             if self.seal_manifest(world, nodes) != request.sealed_manifest_hash:
                 raise ValueError("sealed manifest hash mismatch")
+            if request.protected_receipt is not None:
+                from nutmeg.discovery.promotion_evidence import valid_protected_receipt
+
+                run = uow.discovery.run(f"{world.world_id}:run")
+                if (run is None or not valid_protected_receipt(
+                    request.protected_receipt, world.world_id, run.policy_revision_id
+                )):
+                    raise ValueError("invalid protected shadow receipt")
+                uow.discovery.insert_protected_receipt({
+                    key: request.protected_receipt[key] for key in (
+                        "world_id", "schema_version", "policy_revision_id", "before_hash",
+                        "after_hash", "receipt_hash"
+                    )
+                } | {"action_id": cmd.action_id})
             event = _event(
                 world.world_id,
                 len(uow.discovery.world_events(world.world_id)) + 1,

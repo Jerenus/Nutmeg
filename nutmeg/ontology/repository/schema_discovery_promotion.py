@@ -31,3 +31,24 @@ policy_shadow_windows = Table(
     Column("created_at", Text, nullable=False),
     Column("action_id", Text, ForeignKey("actions.action_id"), nullable=False),
 )
+
+protected_shadow_receipts = Table(
+    "protected_shadow_receipts", metadata,
+    Column("world_id", Text, ForeignKey("discovery_worlds.world_id"), primary_key=True),
+    Column("schema_version", Text, nullable=False),
+    Column("policy_revision_id", Text, nullable=False),
+    Column("before_hash", Text, nullable=False),
+    Column("after_hash", Text, nullable=False),
+    Column("receipt_hash", Text, nullable=False),
+    Column("action_id", Text, ForeignKey("actions.action_id"), nullable=False),
+)
+
+policy_scope_reviews = Table(
+    "policy_scope_reviews", metadata,
+    Column("scope_contract_hash", Text, primary_key=True),
+    Column("contract_json", Text, nullable=False),
+    Column("approval_ref", Text, nullable=False, unique=True),
+    Column("human_actor_id", Text, nullable=False),
+    Column("approved_at", Text, nullable=False),
+    Column("action_id", Text, ForeignKey("actions.action_id"), nullable=False),
+)

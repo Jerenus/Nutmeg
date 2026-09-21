@@ -171,6 +171,9 @@ def test_real_source_fixture_seals_shadow_without_business_mutation(tmp_path):
     )
     assert _source_fingerprint(source_db) == before
     with OntologyUnitOfWork(shadow_engine) as uow:
+        receipt = uow.discovery.protected_receipt(result.world_id)
+        assert receipt["before_hash"] == receipt["after_hash"] == before
+        assert receipt["policy_revision_id"] == "structural-baseline-v1"
         assert uow.discovery.world_state(result.world_id) == "sealed"
         assert len(uow.discovery.nodes_for_world(result.world_id)) >= 3
         assert uow.discovery.world(result.world_id).provenance_mode == "historical_replay_source"
@@ -520,7 +523,9 @@ def test_total_candidate_budget_exhaustion_preserves_unsealed_attempt(tmp_path, 
         digest = canonical_hash([_snapshot().manifest_hash, "structural-baseline-v1"])
         world_id = f"discovery-world-{digest[:24]}"
         assert uow.discovery.world_state(world_id) == "running"
-        assert len(uow.discovery.nodes_for_world(world_id)) == 2
+        nodes = uow.discovery.nodes_for_world(world_id)
+        assert len(nodes) == 3
+        assert nodes[-1].diagnostic_codes == ["resource_overrun"]
 
 
 def test_changed_source_preserves_unsealed_diagnostics(tmp_path, monkeypatch):
@@ -543,7 +548,9 @@ def test_changed_source_preserves_unsealed_diagnostics(tmp_path, monkeypatch):
         digest = canonical_hash([_snapshot().manifest_hash, "structural-baseline-v1"])
         world_id = f"discovery-world-{digest[:24]}"
         assert uow.discovery.world_state(world_id) == "running"
-        assert len(uow.discovery.nodes_for_world(world_id)) == 2
+        nodes = uow.discovery.nodes_for_world(world_id)
+        assert len(nodes) == 3
+        assert nodes[-1].diagnostic_codes == ["protected_mutation"]
 
 
 def test_same_frozen_execution_has_same_sealed_hash_across_shadow_stores(tmp_path, monkeypatch):

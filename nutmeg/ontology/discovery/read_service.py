@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import Engine, select
 
+from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.discovery.models import DiscoveryStatus, canonical_hash
 from nutmeg.ontology.repository import schema_discovery as sd
 from nutmeg.ontology.repository import schema_discovery_promotion as sp
@@ -37,8 +39,56 @@ class DiscoveryReadService:
             windows = [asdict(repo.shadow_window(wid)) for wid in window_ids]
             deployment = repo.latest_deployment(policy_family)
             brake = repo.latest_brake(deployment.policy_deployment_id) if deployment else None
+            scoped = {}
+            for deployment_id in connection.execute(
+                select(sd.policy_deployments.c.policy_deployment_id)
+                .where(sd.policy_deployments.c.policy_family == policy_family)
+                .order_by(sd.policy_deployments.c.decided_at.desc(),
+                          sd.policy_deployments.c.policy_deployment_id.desc())
+            ).scalars():
+                event = repo.deployment(deployment_id)
+                key = canonical_json(event.scope)
+                if key not in scoped:
+                    scoped[key] = asdict(event)
+            active_window = (
+                repo.shadow_window(windows[0]["policy_shadow_window_id"]) if windows else None
+            )
+            effective_count = 0
+            if active_window and tournament_id:
+                from nutmeg.discovery.promotion_evidence import evaluate_shadow_window
+
+                world_ids = connection.execute(
+                    select(sd.discovery_runs.c.world_id).where(
+                        sd.discovery_runs.c.policy_revision_id == active_window.policy_revision_id,
+                        sd.discovery_runs.c.environment_mode == "shadow",
+                    )
+                ).scalars()
+                eligible_worlds = tuple(
+                    world for world_id in world_ids
+                    if (world := repo.world(world_id)) is not None
+                    and repo.world_state(world_id) == "sealed"
+                )
+                receipts = {
+                    world.world_id: {key: value for key, value in repo.protected_receipt(
+                        world.world_id
+                    ).items() if key != "action_id"}
+                    for world in eligible_worlds if repo.protected_receipt(world.world_id)
+                }
+                effective_count = evaluate_shadow_window(
+                    active_window, repo.tournament(tournament_id), eligible_worlds,
+                    now=datetime.now(UTC), policy_revision_id=active_window.policy_revision_id,
+                    excluded_world_ids={
+                        item.world_id for item in repo.tournament_worlds(tournament_id)
+                    }, receipts=receipts,
+                ).effective_world_count
+            refs = deployment.evidence_refs if deployment and isinstance(
+                deployment.evidence_refs, dict
+            ) else {}
             return {
                 "latest_tournament_id": tournament_id,
+                "latest_tournament_proof_hash": (
+                    completion.reproduction_hash if completion else None
+                ),
                 "replay_winner": completion.winner_policy_revision_id if completion else None,
                 "incumbent": brake.restored_policy_revision_id
                 if brake
@@ -48,6 +98,15 @@ class DiscoveryReadService:
                     else None
                 ),
                 "shadow_windows": windows,
+                "scoped_deployments": list(scoped.values()),
+                "shadow_window_end": active_window.end_at if active_window else None,
+                "shadow_effective_world_count": effective_count,
+                "scope_hash": refs.get("scope_contract_hash"),
+                "scope_approval_ref": refs.get("scope_approval_ref"),
+                "effective_boundary": deployment.effective_boundary if deployment else None,
+                "rollback_target": deployment.rollback_policy_revision_id if deployment else None,
+                "brake_conditions": deployment.brake_conditions if deployment else None,
+                "pending_shadow": bool(deployment and deployment.decision == "shadow"),
                 "deployment": asdict(deployment) if deployment else None,
                 "brake": asdict(brake) if brake else None,
                 "pending_human_disposition": brake is not None,

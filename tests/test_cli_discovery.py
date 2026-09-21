@@ -70,6 +70,20 @@ def test_promotion_status_on_schema_41_is_read_only_and_explicit(tmp_path):
     assert database.read_bytes() == before
 
 
+def test_promotion_on_schema_42_requires_receipts_without_migrating(tmp_path):
+    data_dir = tmp_path / "old"
+    database = OntologyPaths.from_data_dir(data_dir).database
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE schema_migrations (version INTEGER)")
+        connection.execute("INSERT INTO schema_migrations VALUES (42)")
+    before = database.read_bytes()
+    result = runner.invoke(app, ["discovery", "promotion", "--data-dir", str(data_dir)])
+    assert result.exit_code == 1
+    assert "migration 43 required" in result.output
+    assert database.read_bytes() == before
+
+
 def test_promotion_on_empty_store_is_read_only(tmp_path):
     data_dir = tmp_path / "absent"
     result = runner.invoke(app, ["discovery", "promotion", "--data-dir", str(data_dir)])

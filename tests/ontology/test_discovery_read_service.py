@@ -51,6 +51,42 @@ def test_status_projection_returns_incumbent_tournament_world_and_rollback(tmp_p
     assert state.rollback_policy_revision_id == "policy-2"
 
 
+def test_promotion_projection_exposes_proof_and_pending_scope_without_authority(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _finished(actions, engine)
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_deployment(_deployment_request("shadow").deployment)
+    state = DiscoveryReadService(engine).promotion("family-1")
+    assert state["latest_tournament_proof_hash"]
+    assert state["scope_hash"] is None
+    assert state["effective_boundary"]
+    assert state["rollback_target"] == "policy-2"
+    assert state["shadow_effective_world_count"] == 0
+    assert state["control_available"] is False
+    assert state["scoped_deployments"][0]["policy_deployment_id"] == "dep-1"
+    assert state["scope_approval_ref"] is None
+    assert state["brake_conditions"] == {"conditions": ["drift"]}
+    assert state["pending_shadow"] is True
+
+
+def test_scope_exposure_counts_persisted_world_lineage_not_caller_claim(tmp_path):
+    from dataclasses import replace
+
+    from nutmeg.ontology.repository.discovery import DiscoveryRepository
+    from tests.ontology.test_discovery_repository import _world
+
+    _actions, engine = _rig(tmp_path)
+    with OntologyUnitOfWork(engine) as uow:
+        for index in range(2):
+            uow.discovery.insert_world(replace(_world(), world_id=f"exposure-{index}",
+                input_manifest={"policy_lineage": {"policy_deployment_id": "dep-1"}},
+                provenance_mode="prospective_online"))
+    with engine.connect() as connection:
+        repo = DiscoveryRepository(connection)
+        assert repo.scope_exposure("dep-1") == 2
+        assert repo.scope_exposure("another") == 0
+
+
 def test_world_detail_orders_nodes_by_visibility_and_never_exposes_hidden_children(tmp_path):
     actions, engine = _rig(tmp_path)
     _finished(actions, engine)

@@ -64,11 +64,24 @@ class ApprovePolicyDeploymentRequest:
     actor_role: ActorRole
     idempotency_key: str
     requested_at: datetime
+    reviewed_scope_hash: str | None = None
+    scope_approval_ref: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class PreregisterPolicyShadowWindowRequest:
     window: PolicyShadowWindowRow
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovePilotScopeRequest:
+    contract: dict
+    reviewed_hash: str
+    approval_ref: str
     actor_id: str
     actor_role: ActorRole
     idempotency_key: str
@@ -107,6 +120,34 @@ class DiscoveryGovernanceActions:
         root = Path(__file__).resolve().parents[3] / "experiments/discovery"
         pilot = load_pilot_contract(root / "structural-candidate-v1.contract.json")
         return load_selection_contract(root / "structural-selection-v1.contract.json", pilot)
+
+    def approve_pilot_scope(self, request: ApprovePilotScopeRequest) -> ActionOutcome:
+        command = self._command("approve_pilot_scope_contract", request, {
+            "contract": request.contract, "reviewed_hash": request.reviewed_hash,
+            "approval_ref": request.approval_ref,
+        })
+
+        def handler(uow, cmd):
+            from nutmeg.discovery.pilot_scope import validate_control_scope
+
+            scope = request.contract.get("scope", {})
+            contract = validate_control_scope(
+                scope, request.contract, reviewed_hash=request.reviewed_hash,
+                approval_ref=request.approval_ref,
+            )
+            if not request.actor_id.startswith("op:"):
+                raise ValueError("scope approval requires identified human operator")
+            uow.discovery.insert_scope_review({
+                "scope_contract_hash": request.reviewed_hash,
+                "contract_json": canonical_json(contract.model_dump(mode="json")),
+                "approval_ref": request.approval_ref,
+                "human_actor_id": request.actor_id,
+                "approved_at": cmd.requested_at,
+                "action_id": cmd.action_id,
+            })
+            return (ObjectRef("policy_scope_review", request.reviewed_hash),)
+
+        return self._svc.execute(command, handler, acquire_write_lock=True)
 
     def create_tournament(self, request: CreatePolicyTournamentRequest) -> ActionOutcome:
         command = self._command(
@@ -776,6 +817,14 @@ class DiscoveryGovernanceActions:
                     or completion.winner_policy_revision_id != policy.policy_revision_id
                 ):
                     raise ValueError("deployment requires latest tournament winner")
+            previous = uow.discovery.latest_deployment_for_scope(policy.family, deployment.scope)
+            if deployment.supersedes_deployment_id != (
+                previous.policy_deployment_id if previous is not None else None
+            ):
+                raise ValueError("deployment must supersede latest scoped human event")
+            if (previous is not None and datetime.fromisoformat(deployment.decided_at)
+                <= datetime.fromisoformat(previous.decided_at)):
+                raise ValueError("scoped successor must have newer decision time")
             if decision is DeploymentDecision.SHADOW:
                 from nutmeg.ontology.discovery.models import canonical_hash
 
@@ -794,12 +843,10 @@ class DiscoveryGovernanceActions:
                     or request.requested_at >= datetime.fromisoformat(window.start_at)
                 ):
                     raise ValueError("shadow requires preregistered shadow window")
-            previous = uow.discovery.latest_deployment_for_scope(policy.family, deployment.scope)
-            if deployment.supersedes_deployment_id and (
-                previous is None
-                or deployment.supersedes_deployment_id != previous.policy_deployment_id
-            ):
-                raise ValueError("deployment must supersede latest human event")
+                if set(deployment.brake_conditions.get("conditions", ())) != set(
+                    window.invariant_codes
+                ):
+                    raise ValueError("shadow brake invariants differ from preregistered window")
             if (
                 decision is DeploymentDecision.DEPLOY
                 and previous is not None
@@ -838,7 +885,8 @@ class DiscoveryGovernanceActions:
                 raise ValueError("deploy requires recorded rollback fallback")
             if decision in {DeploymentDecision.CANARY, DeploymentDecision.DEPLOY}:
                 prior_approval = uow.connection.execute(
-                    select(sd.policy_deployments.c.policy_deployment_id)
+                    select(sd.policy_deployments.c.policy_deployment_id,
+                           sd.policy_deployments.c.decided_at)
                     .where(
                         sd.policy_deployments.c.policy_family == policy.family,
                         sd.policy_deployments.c.scope_json == canonical_json(deployment.scope),
@@ -846,14 +894,19 @@ class DiscoveryGovernanceActions:
                         == deployment.rollback_policy_revision_id,
                         sd.policy_deployments.c.decision.in_(("shadow", "canary", "deploy")),
                     )
+                    .order_by(sd.policy_deployments.c.decided_at.desc())
                     .limit(1)
                 ).first()
                 if (
                     deployment.rollback_policy_revision_id == deployment.policy_revision_id
                     or prior_approval is None
+                    or prior_approval.decided_at >= deployment.decided_at
                 ):
                     raise ValueError("canary/deploy requires a distinct human-approved fallback")
-                from nutmeg.discovery.promotion_evidence import evaluate_shadow_window
+                from nutmeg.discovery.promotion_evidence import (
+                    evaluate_shadow_window,
+                    valid_protected_receipt,
+                )
                 from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
                 from nutmeg.ontology.discovery.models import canonical_hash
 
@@ -883,12 +936,16 @@ class DiscoveryGovernanceActions:
                     .where(
                         runs.c.policy_revision_id == policy.policy_revision_id,
                         runs.c.environment_mode == "shadow",
-                        worlds.c.provenance_mode == "prospective_online",
                     )
                 ).scalars()
                 sealed = []
+                invalid_window_world = False
                 for world_id in rows:
                     world = uow.discovery.world(world_id)
+                    if datetime.fromisoformat(world.cutoff_at) < datetime.fromisoformat(
+                        window.start_at
+                    ):
+                        continue
                     events = uow.discovery.world_events(world_id)
                     nodes = uow.discovery.nodes_for_world(world_id)
                     if (
@@ -897,17 +954,34 @@ class DiscoveryGovernanceActions:
                         and events[-1].manifest_hash
                         == DiscoveryWorldActions.seal_manifest(world, nodes)
                         and world.input_manifest_hash == canonical_hash(world.input_manifest)
-                        and world.input_manifest.get("protected_source_before_hash")
-                        == world.input_manifest.get("protected_source_after_hash")
-                        and world.input_manifest.get("protected_source_before_hash")
+                        and uow.discovery.protected_receipt(world_id) is not None
                     ):
                         sealed.append(world)
+                    else:
+                        invalid_window_world = True
+                if invalid_window_world:
+                    raise ValueError("canary/deploy rejects unsealed or altered shadow world")
+                receipts = {}
+                for world in sealed:
+                    receipt = uow.discovery.protected_receipt(world.world_id)
+                    if valid_protected_receipt({key: receipt[key] for key in (
+                        "schema_version", "world_id", "policy_revision_id",
+                        "before_hash", "after_hash", "receipt_hash"
+                    )}, world.world_id, policy.policy_revision_id):
+                        receipts[world.world_id] = {
+                            key: receipt[key] for key in (
+                                "schema_version", "world_id", "policy_revision_id",
+                                "before_hash", "after_hash", "receipt_hash"
+                            ) if key in receipt
+                        }
                 eligibility = evaluate_shadow_window(
                     window,
                     tournament,
                     sealed,
                     now=request.requested_at,
                     excluded_world_ids=prior_worlds,
+                    policy_revision_id=policy.policy_revision_id,
+                    receipts=receipts,
                 )
                 if not eligibility.eligible_for_canary:
                     raise ValueError(
@@ -916,7 +990,28 @@ class DiscoveryGovernanceActions:
                     )
                 from nutmeg.discovery.pilot_scope import validate_control_scope
 
-                validate_control_scope(deployment.scope, {"mode": "shadow_only"})
+                refs = deployment.evidence_refs or {}
+                contract = validate_control_scope(
+                    deployment.scope, refs.get("scope_contract", {}),
+                    reviewed_hash=request.reviewed_scope_hash,
+                    approval_ref=request.scope_approval_ref,
+                )
+                review = uow.discovery.scope_review(request.reviewed_scope_hash)
+                if (review is None or review["contract"] != contract.model_dump(mode="json")
+                    or review["approval_ref"] != request.scope_approval_ref
+                    or refs.get("scope_review_action_id") != review["action_id"]
+                    or datetime.fromisoformat(review["approved_at"])
+                    >= request.requested_at):
+                    raise ValueError("separate human-reviewed scope approval is required")
+                if (refs.get("scope_contract_hash") != request.reviewed_scope_hash
+                    or refs.get("scope_approval_ref") != request.scope_approval_ref
+                    or contract.effective_boundary != deployment.effective_boundary
+                    or contract.fallback_policy_revision_id
+                    != deployment.rollback_policy_revision_id
+                    or set(deployment.brake_conditions.get("conditions", ()))
+                    != set(contract.brake_codes)
+                    or request.requested_at >= datetime.fromisoformat(contract.effective_boundary)):
+                    raise ValueError("deployment differs from reviewed prospective scope")
             uow.discovery.insert_deployment(replace(deployment, action_id=cmd.action_id))
             return (ObjectRef("policy_deployment", deployment.policy_deployment_id),)
 
@@ -952,6 +1047,37 @@ class DiscoveryGovernanceActions:
                 raise ValueError("brake can only restore recorded approved fallback")
             if brake.condition_code not in deployment.brake_conditions.get("conditions", []):
                 raise ValueError("brake condition is not in frozen contract")
+            if brake.condition_code in {
+                "permission_leak", "audit_invalidation", "protected_mutation",
+                "resource_overrun", "manifest_breach",
+            } and not isinstance(brake.evidence, dict):
+                raise ValueError("brake requires committed diagnostic evidence")
+            if brake.condition_code in {
+                "permission_leak", "audit_invalidation", "protected_mutation",
+                "resource_overrun", "manifest_breach",
+            } and "action_id" not in brake.evidence:
+                raise ValueError("brake requires committed diagnostic evidence")
+            if isinstance(brake.evidence, dict) and "action_id" in brake.evidence:
+                from nutmeg.ontology.repository import schema
+
+                source = uow.connection.execute(select(schema.actions).where(
+                    schema.actions.c.action_id == brake.evidence["action_id"],
+                    schema.actions.c.status == "committed",
+                    schema.actions.c.action_type == "record_discovery_failure",
+                )).mappings().first()
+                node_raw = uow.connection.execute(select(sd.discovery_nodes).where(
+                    sd.discovery_nodes.c.action_id == brake.evidence["action_id"],
+                )).mappings().first()
+                if source is None or node_raw is None:
+                    raise ValueError("brake requires committed diagnostic fact")
+                node = uow.discovery.node(node_raw["node_id"])
+                run = uow.discovery.run(node.discovery_run_id)
+                if (brake.evidence != {
+                    "action_id": source["action_id"], "request_hash": source["request_hash"],
+                    "node_id": node.node_id,
+                } or run.policy_revision_id != deployment.policy_revision_id
+                    or brake.condition_code not in node.diagnostic_codes):
+                    raise ValueError("brake evidence does not match registered committed fact")
             uow.discovery.insert_brake(replace(brake, action_id=cmd.action_id))
             return (ObjectRef("policy_brake_event", brake.policy_brake_event_id),)
 

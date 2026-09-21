@@ -991,6 +991,7 @@ def test_shadow_requires_human_preregistered_future_window(tmp_path):
         shadow,
         deployment=replace(
             shadow.deployment,
+            brake_conditions={"conditions": ["permission_leak"]},
             evidence_refs={
                 "shadow_window_id": "window-1",
                 "shadow_window_hash": canonical_hash(
@@ -1000,6 +1001,80 @@ def test_shadow_requires_human_preregistered_future_window(tmp_path):
         ),
     )
     assert actions.approve_deployment(shadow).status is ActionStatus.COMMITTED
+
+
+def test_shadow_cannot_weaken_preregistered_invariants(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _finished(actions, engine)
+    window = _record(
+        PolicyShadowWindowRow, policy_shadow_window_id="window-1",
+        policy_family="family-1", scope={"pilot": "structural"},
+        policy_revision_id="policy-1", policy_tournament_id="t-1",
+        start_at="2026-09-22T00:00:00+00:00", end_at="2026-09-25T00:00:00+00:00",
+        minimum_independent_worlds=1, invariant_codes=["permission_leak"],
+        human_actor_id="Jun", acted_by="Jun", created_at=T0.isoformat(),
+    )
+    actions.preregister_shadow_window(PreregisterPolicyShadowWindowRequest(
+        window, "op:jun", ActorRole.JUDGE_OPERATOR, "window:weak", T0,
+    ))
+    with OntologyUnitOfWork(engine) as uow:
+        stored = uow.discovery.shadow_window("window-1")
+    request = _deployment_request(deployment=replace(
+        _deployment_request().deployment,
+        evidence_refs={"shadow_window_id": "window-1", "shadow_window_hash": canonical_hash(
+            {k: v for k, v in asdict(stored).items() if k != "action_id"}
+        )}, brake_conditions={"conditions": ["drift"]},
+    ))
+    with pytest.raises(ValueError, match="invariant"):
+        actions.approve_deployment(request)
+
+
+def test_challenger_shadow_run_requires_authorized_window(tmp_path):
+    from nutmeg.ontology.actions.discovery_world_actions import StartDiscoveryRunRequest
+
+    actions, engine = _rig(tmp_path)
+    _seed(engine, sealed=False)
+    run = _record(DiscoveryRunRow, discovery_run_id="candidate-run",
+                  world_id="world-1", policy_revision_id="policy-2",
+                  environment_mode="shadow")
+    with pytest.raises(ValueError, match="prior human-authorized window"):
+        DiscoveryWorldActions(ActionService(lambda: OntologyUnitOfWork(engine))).start_run(
+            StartDiscoveryRunRequest(run, "sys:discovery", ActorRole.DETERMINISTIC_SYSTEM,
+                                     "challenger:unauthorized", T0))
+
+
+def test_braked_challenger_cannot_start_new_shadow_run(tmp_path):
+    from nutmeg.ontology.actions.discovery_world_actions import StartDiscoveryRunRequest
+
+    actions, engine = _rig(tmp_path)
+    _finished(actions, engine)
+    with OntologyUnitOfWork(engine) as uow:
+        evidence_action_id = uow.discovery.tournament("t-1").action_id
+        uow.discovery.insert_world(replace(_world(), world_id="prospective",
+            cutoff_at="2026-09-23T07:00:00+00:00"))
+        uow.discovery.insert_world_event(replace(_event(1, "created"),
+            world_id="prospective", world_event_id="prospective:created"))
+        uow.discovery.insert_shadow_window(_record(
+            PolicyShadowWindowRow, policy_shadow_window_id="window-1",
+            policy_family="family-1", scope={"pilot": "structural"},
+            policy_revision_id="policy-1", policy_tournament_id="t-1",
+            start_at="2026-09-22T00:00:00+00:00", end_at="2026-09-25T00:00:00+00:00",
+            minimum_independent_worlds=1, invariant_codes=["permission_leak"],
+            action_id=evidence_action_id,
+        ))
+        uow.discovery.insert_deployment(replace(
+            _deployment_request("shadow").deployment,
+            evidence_refs={"shadow_window_id": "window-1"},
+            action_id=evidence_action_id,
+        ))
+        uow.discovery.insert_brake(replace(_brake_request().brake,
+                                           action_id=evidence_action_id))
+    run = _record(DiscoveryRunRow, discovery_run_id="braked-run", world_id="prospective",
+                  policy_revision_id="policy-1", environment_mode="shadow")
+    with pytest.raises(ValueError, match="braked"):
+        DiscoveryWorldActions(ActionService(lambda: OntologyUnitOfWork(engine))).start_run(
+            StartDiscoveryRunRequest(run, "sys:test", ActorRole.DETERMINISTIC_SYSTEM,
+                                     "braked:run", datetime(2026, 9, 23, tzinfo=UTC)))
 
 
 def test_shadow_window_rejects_nonhuman_late_and_stale_tournament(tmp_path):
@@ -1035,12 +1110,34 @@ def test_only_one_deployed_incumbent_exists_per_family_scope(tmp_path):
     _finished(actions, engine)
     with OntologyUnitOfWork(engine) as uow:
         uow.discovery.insert_deployment(_deployment_request("deploy").deployment)
-    with pytest.raises(ValueError, match="active deployed incumbent"):
+    with pytest.raises(ValueError, match="supersede"):
         actions.approve_deployment(
             _deployment_request(
                 "deploy", deployment_id="dep-2", idempotency_key="deployment:second"
             )
         )
+
+
+def test_shadow_update_requires_latest_scoped_predecessor(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _finished(actions, engine)
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_deployment(_deployment_request("shadow").deployment)
+    with pytest.raises(ValueError, match="supersede"):
+        actions.approve_deployment(_deployment_request("shadow", deployment_id="dep-next",
+                            idempotency_key="shadow:stale"))
+
+
+def test_scoped_successor_must_be_newer_than_predecessor(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _finished(actions, engine)
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_deployment(_deployment_request("hold").deployment)
+    row = replace(_deployment_request("hold", deployment_id="dep-next").deployment,
+                  supersedes_deployment_id="dep-1")
+    with pytest.raises(ValueError, match="newer"):
+        actions.approve_deployment(_deployment_request("hold", deployment_id="dep-next",
+                            idempotency_key="hold:backdated", deployment=row))
 
 
 def test_deployment_uniqueness_checks_same_scope_even_when_other_scope_is_newer(tmp_path):
@@ -1072,7 +1169,7 @@ def test_deployment_uniqueness_checks_same_scope_even_when_other_scope_is_newer(
                 environment_mode="shadow",
             )
         )
-    with pytest.raises(ValueError, match="active deployed incumbent"):
+    with pytest.raises(ValueError, match="supersede"):
         actions.approve_deployment(
             _deployment_request(
                 "deploy", deployment_id="dep-new", idempotency_key="deploy:same-scope"
@@ -1136,7 +1233,7 @@ def test_deploy_with_fresh_shadow_and_fallback_still_requires_reviewed_scope(tmp
             )
         )
     request = _deployment_request("deploy", deployment_id="dep-deployed")
-    with pytest.raises(ValueError, match="closed prospective shadow window"):
+    with pytest.raises(ValueError, match="supersede"):
         actions.approve_deployment(request)
     with OntologyUnitOfWork(engine) as uow:
         deployed = uow.discovery.latest_deployment_for_scope("family-1", {"pilot": "structural"})
@@ -1174,6 +1271,42 @@ def test_deterministic_brake_only_restores_recorded_approved_fallback(tmp_path):
         assert uow.discovery.latest_brake("dep-1").restored_policy_revision_id == "policy-2"
 
 
+def test_d6_brake_cannot_use_unverified_self_report(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _finished(actions, engine)
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_deployment(replace(
+            _deployment_request("deploy").deployment,
+            brake_conditions={"conditions": ["permission_leak"]},
+        ))
+    request = _brake_request()
+    with pytest.raises(ValueError, match="committed diagnostic"):
+        actions.trip_brake(replace(request, brake=replace(
+            request.brake, condition_code="permission_leak", evidence={"measured": True}
+        )))
+
+
+def test_scope_review_action_denies_nonhuman_and_unreviewed_hash(tmp_path):
+    from nutmeg.ontology.actions.discovery_governance_actions import ApprovePilotScopeRequest
+    from tests.discovery.test_pilot_scope import _contract
+
+    actions, engine = _rig(tmp_path)
+    contract = _contract()
+    request = ApprovePilotScopeRequest(
+        contract=contract, reviewed_hash="0" * 64, approval_ref=contract["approval_ref"],
+        actor_id="op:jun", actor_role=ActorRole.JUDGE_OPERATOR,
+        idempotency_key="scope:wrong", requested_at=T0,
+    )
+    with pytest.raises(ValueError, match="reviewed prospective scope"):
+        actions.approve_pilot_scope(request)
+    assert actions.approve_pilot_scope(replace(
+        request, reviewed_hash=canonical_hash(contract), actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+        idempotency_key="scope:system",
+    )).status is ActionStatus.REJECTED
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.scope_review(canonical_hash(contract)) is None
+
+
 def test_braked_policy_cannot_resume_without_new_human_action(tmp_path):
     actions, engine = _rig(tmp_path)
     _finished(actions, engine)
@@ -1197,8 +1330,9 @@ def test_braked_policy_cannot_resume_without_new_human_action(tmp_path):
                 "hold",
                 deployment_id="dep-2",
                 deployment=replace(
-                    _deployment_request("hold", deployment_id="dep-2").deployment,
-                    supersedes_deployment_id="dep-1",
+                        _deployment_request("hold", deployment_id="dep-2").deployment,
+                        supersedes_deployment_id="dep-1",
+                        decided_at=T0.isoformat(),
                 ),
                 idempotency_key="resume:operator",
             )

@@ -223,6 +223,37 @@ class DiscoveryRepository:
             "PolicyShadowWindowRow", "policy_shadow_windows", "policy_shadow_window_id", window_id
         )
 
+    def protected_receipt(self, world_id: str) -> dict | None:
+        row = self._connection.execute(
+            select(sp.protected_shadow_receipts).where(
+                sp.protected_shadow_receipts.c.world_id == world_id
+            )
+        ).mappings().first()
+        return dict(row) if row else None
+
+    def insert_protected_receipt(self, receipt: dict) -> None:
+        self._connection.execute(insert(sp.protected_shadow_receipts).values(**receipt))
+
+    def scope_review(self, scope_contract_hash: str) -> dict | None:
+        row = self._connection.execute(select(sp.policy_scope_reviews).where(
+            sp.policy_scope_reviews.c.scope_contract_hash == scope_contract_hash
+        )).mappings().first()
+        if not row:
+            return None
+        return {**row, "contract": json.loads(row["contract_json"])}
+
+    def scope_exposure(self, deployment_id: str) -> int:
+        worlds = sd.discovery_worlds
+        return self._connection.execute(select(func.count()).where(
+            worlds.c.provenance_mode == "prospective_online",
+            func.json_extract(
+                worlds.c.input_manifest_json, "$.policy_lineage.policy_deployment_id"
+            ) == deployment_id,
+        )).scalar_one()
+
+    def insert_scope_review(self, review: dict) -> None:
+        self._connection.execute(insert(sp.policy_scope_reviews).values(**review))
+
     def insert_brake(self, row: PolicyBrakeEventRow) -> None:
         self._insert("policy_brake_events", row)
 

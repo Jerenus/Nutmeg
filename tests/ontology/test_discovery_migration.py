@@ -8,6 +8,8 @@ from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.migrations import migration_status, run_migrations
 
 EXPECTED_TABLES = {
+    "protected_shadow_receipts",
+    "policy_scope_reviews",
     "discovery_worlds",
     "discovery_world_events",
     "discovery_runs",
@@ -33,7 +35,7 @@ EXPECTED_TABLES = {
 def test_migration_40_creates_discovery_tables_and_permissions(tmp_path):
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine)
-    assert migration_status(engine).current_version == 42
+    assert migration_status(engine).current_version == 44
     assert EXPECTED_TABLES <= set(inspect(engine).get_table_names())
     with engine.connect() as connection:
         rows = connection.exec_driver_sql(

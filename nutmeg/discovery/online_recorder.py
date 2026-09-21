@@ -103,14 +103,43 @@ def _committed(outcome) -> None:
         raise ValueError(f"shadow Action did not commit: {outcome.status}")
 
 
-def _commit_attempt(fn, request) -> None:
+def _commit_attempt(fn, request):
     for attempt in range(2):
         try:
-            _committed(fn(request))
-            return
+            outcome = fn(request)
+            _committed(outcome)
+            return outcome
         except (sqlite3.OperationalError, SqlAlchemyOperationalError):
             if attempt:
                 raise
+
+
+def _record_hard_invariant(engine, actions, *, world_id: str, root_id: str,
+                           run_id: str, policy_revision_id: str,
+                           requested_at: datetime, code: str, artifact: dict) -> None:
+    with OntologyUnitOfWork(engine) as uow:
+        nodes = uow.discovery.nodes_for_world(world_id)
+    sequence = len(nodes) + 1
+    node = NodeRow(
+        node_id=f"{world_id}:invariant:{sequence}", world_id=world_id,
+        discovery_run_id=run_id, parent_node_id=root_id, depth=1,
+        sibling_order=sequence - 1, creation_sequence=sequence,
+        continuation_action={"operator": "stop"},
+        policy_decision={"policy_revision_id": policy_revision_id},
+        artifact_manifest_hash=canonical_hash(artifact), artifact_manifest=artifact,
+        business_refs=[], execution_status="failed", diagnostic_codes=[code],
+        started_at=requested_at.isoformat(), finished_at=requested_at.isoformat(),
+        latency_ms=0, resource_cost={"wall_ms": 0}, retry_of_node_id=None,
+        terminal_reason=code, frontier_eligible=False,
+        visibility_sequence=sequence, action_id="pending",
+    )
+    outcome = _commit_attempt(actions.record_failure, RecordDiscoveryFailureRequest(
+        node=node, actor_id="sys:discovery", actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+        idempotency_key=f"{world_id}:invariant:{sequence}", requested_at=requested_at,
+    ))
+    from nutmeg.discovery.brake_monitor import monitor_committed_fact
+
+    monitor_committed_fact(engine, outcome.action_id)
 
 
 def _failed_shard(snapshot, template_id, diagnostics, *, wall_ms=None) -> ShardExecution:
@@ -264,10 +293,10 @@ def _validate_recording(
             Path(__file__).resolve().parents[2]
             / "experiments/discovery/structural-baseline-v1.policy.json"
         )
-        if (
-            policy is None
-            or policy.created_by != approval["approved_by"]
-            or not policy.validation_result.get("valid")
+        if policy is None or not policy.validation_result.get("valid"):
+            raise ValueError("approval requires validated registered policy")
+        if policy_revision_id == "structural-baseline-v1" and (
+            policy.created_by != approval["approved_by"]
             or policy.source_artifact_hash != contract_hash(load_baseline_policy(baseline_path))
         ):
             raise ValueError("approval operator must own the registered baseline")
@@ -291,8 +320,8 @@ def _validate_recording(
     ):
         raise ValueError("shadow engine must point to the declared shadow store")
     pilot = load_pilot_contract(_PILOT_PATH)
-    if pilot.mode != "shadow_only" or policy_revision_id != "structural-baseline-v1":
-        raise ValueError("D2 only records the frozen shadow baseline")
+    if pilot.mode != "shadow_only":
+        raise ValueError("D2 recorder must remain isolated shadow-only")
     manifest = snapshot_payload(snapshot)
     if canonical_hash(manifest) != snapshot.manifest_hash:
         raise ValueError("frozen input manifest mismatch")
@@ -311,8 +340,14 @@ def _create_world_and_run(
     pilot,
     manifest: dict[str, object],
     fixture_only: bool,
+    policy_lineage: dict[str, str] | None = None,
 ) -> tuple[str, str, str, DiscoveryWorldActions]:
+    if policy_lineage:
+        manifest = {**manifest, "policy_lineage": policy_lineage}
     world_id = (
+        f"discovery-world-{canonical_hash([snapshot.manifest_hash, policy_revision_id,
+                                          policy_lineage])[:24]}"
+        if policy_lineage else
         f"discovery-world-{canonical_hash([snapshot.manifest_hash, policy_revision_id])[:24]}"
     )
     root_id, run_id = f"{world_id}:root", f"{world_id}:run"
@@ -494,7 +529,12 @@ def record_shadow_world(
             requested_at=requested_at,
         )
         if result.status == "failed":
-            _commit_attempt(actions.record_failure, RecordDiscoveryFailureRequest(**common))
+            outcome = _commit_attempt(
+                actions.record_failure, RecordDiscoveryFailureRequest(**common)
+            )
+            from nutmeg.discovery.brake_monitor import monitor_committed_fact
+
+            monitor_committed_fact(engine, outcome.action_id)
         else:
             evaluation = NodeEvaluationRow(
                 node_evaluation_id=f"{node_id}:evaluation",
@@ -544,8 +584,19 @@ def record_shadow_world(
         for _template_id, result, _parent in attempts
     )
     if known_candidates > pilot.budgets.max_candidate_generation_count:
+        _record_hard_invariant(
+            engine, actions, world_id=world_id, root_id=root_id, run_id=run_id,
+            policy_revision_id=policy_revision_id, requested_at=requested_at,
+            code="resource_overrun", artifact={"candidate_generation_count": known_candidates},
+        )
         raise ValueError("candidate budget exceeded; shadow world remains unsealed")
-    if _source_fingerprint(source_database) != before:
+    after = _source_fingerprint(source_database)
+    if after != before:
+        _record_hard_invariant(
+            engine, actions, world_id=world_id, root_id=root_id, run_id=run_id,
+            policy_revision_id=policy_revision_id, requested_at=requested_at,
+            code="protected_mutation", artifact={"before_hash": before, "after_hash": after},
+        )
         raise ValueError("protected source changed during shadow recording; sealing blocked")
     costs = [result.resource_cost.get("wall_ms") for _template_id, result, _parent in attempts]
     unknown_cost = any(cost is None for cost in costs)
@@ -604,6 +655,8 @@ def record_shadow_world(
         persisted = uow.discovery.world(world_id)
         nodes = uow.discovery.nodes_for_world(world_id)
     seal_hash = actions.seal_manifest(persisted, nodes)
+    from nutmeg.discovery.promotion_evidence import protected_receipt
+
     _committed(
         actions.seal_world(
             SealDiscoveryWorldRequest(
@@ -622,6 +675,9 @@ def record_shadow_world(
                 actor_role=ActorRole.DETERMINISTIC_SYSTEM,
                 idempotency_key=f"{world_id}:seal",
                 requested_at=requested_at,
+                protected_receipt=protected_receipt(
+                    before, _source_fingerprint(source_database), world_id, policy_revision_id
+                ),
             )
         )
     )
@@ -643,6 +699,7 @@ class OnlineRecordingEnvironment:
         fixture_only: bool = False,
         generation_request_id: str | None = None,
         approval: Mapping[str, object] | None = None,
+        controller=None,
     ) -> None:
         self._snapshot = snapshot
         self._engine = engine
@@ -653,6 +710,7 @@ class OnlineRecordingEnvironment:
         self._fixture_only = fixture_only
         self._generation_request_id = generation_request_id
         self._approval = approval
+        self._controller = controller
         self._world_id: str | None = None
         self._visible: list[str] = []
         self._used: set[tuple[str, tuple[str, ...]]] = set()
@@ -676,6 +734,15 @@ class OnlineRecordingEnvironment:
             generation_request_id=self._generation_request_id,
             approval=self._approval,
         )
+        lineage = None
+        if self._controller is not None:
+            from nutmeg.discovery.deployment_runtime import policy_lineage
+
+            if not self._fixture_only:
+                raise ValueError("live controller requires separate reviewed runtime binding")
+            lineage = policy_lineage(self._controller)
+            if lineage["policy_revision_id"] != self._policy_revision_id:
+                raise ValueError("controller policy differs from recording policy")
         self._world_id, self._root_id, self._run_id, self._actions = _create_world_and_run(
             self._snapshot,
             engine=self._engine,
@@ -685,6 +752,7 @@ class OnlineRecordingEnvironment:
             pilot=self._pilot,
             manifest=manifest,
             fixture_only=self._fixture_only,
+            policy_lineage=lineage,
         )
         self._visible = [self._root_id]
         self._deadline = monotonic() + self._pilot.budgets.max_wall_seconds
@@ -838,9 +906,12 @@ class OnlineRecordingEnvironment:
                 requested_at=self._requested_at,
             )
             if result.status == "failed":
-                _commit_attempt(
+                outcome = _commit_attempt(
                     self._actions.record_failure, RecordDiscoveryFailureRequest(**common)
                 )
+                from nutmeg.discovery.brake_monitor import monitor_committed_fact
+
+                monitor_committed_fact(self._engine, outcome.action_id)
                 failures.extend(result.diagnostic_codes)
             else:
                 evaluation = NodeEvaluationRow(
@@ -885,6 +956,12 @@ class OnlineRecordingEnvironment:
         if self._candidate_count is not None and (
             self._candidate_count > self._pilot.budgets.max_candidate_generation_count
         ):
+            _record_hard_invariant(
+                self._engine, self._actions, world_id=self._world_id, root_id=self._root_id,
+                run_id=self._run_id, policy_revision_id=self._policy_revision_id,
+                requested_at=self._requested_at, code="resource_overrun",
+                artifact={"candidate_generation_count": self._candidate_count},
+            )
             raise ValueError("candidate budget exceeded; shadow world remains unsealed")
         return StepResult(
             self.observation(),
@@ -897,7 +974,14 @@ class OnlineRecordingEnvironment:
         if self._terminal:
             raise ValueError("online world is terminal")
         validate_action(self.observation(), action, self._pilot)
-        if _source_fingerprint(self._source_database) != self._source_before:
+        after = _source_fingerprint(self._source_database)
+        if after != self._source_before:
+            _record_hard_invariant(
+                self._engine, self._actions, world_id=self._world_id, root_id=self._root_id,
+                run_id=self._run_id, policy_revision_id=self._policy_revision_id,
+                requested_at=self._requested_at, code="protected_mutation",
+                artifact={"before_hash": self._source_before, "after_hash": after},
+            )
             raise ValueError("protected source changed during shadow recording; sealing blocked")
         with OntologyUnitOfWork(self._engine) as uow:
             recorded = uow.discovery.nodes_for_world(self._world_id)
@@ -950,6 +1034,8 @@ class OnlineRecordingEnvironment:
             world = uow.discovery.world(self._world_id)
             nodes = uow.discovery.nodes_for_world(self._world_id)
         seal_hash = self._actions.seal_manifest(world, nodes)
+        from nutmeg.discovery.promotion_evidence import protected_receipt
+
         _committed(
             self._actions.seal_world(
                 SealDiscoveryWorldRequest(
@@ -960,6 +1046,10 @@ class OnlineRecordingEnvironment:
                     actor_role=ActorRole.DETERMINISTIC_SYSTEM,
                     idempotency_key=f"{self._world_id}:seal",
                     requested_at=self._requested_at,
+                    protected_receipt=protected_receipt(
+                        self._source_before, _source_fingerprint(self._source_database),
+                        self._world_id, self._policy_revision_id,
+                    ),
                 )
             )
         )
