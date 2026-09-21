@@ -1,4 +1,6 @@
 import json
+import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -6,6 +8,7 @@ from typer.testing import CliRunner
 
 from nutmeg.decision.price_band import write_price_band_artifacts
 from nutmeg.interfaces.cli import app
+from nutmeg.interfaces.cli import rsi as rsi_cli
 
 
 def _snapshot(day_dir: Path) -> None:
@@ -80,3 +83,50 @@ def test_cli_price_band_reports_written_artifacts(tmp_path: Path):
 
     assert result.exit_code == 0, result.output
     assert "price-band 2026-09-20: written=1 missing_opening=0" in result.output
+
+
+def test_cli_price_band_fulfills_scheduled_match_duty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    day = "2026-09-20"
+    day_dir = tmp_path / "jczq" / "daily" / day
+    _snapshot(day_dir)
+    monkeypatch.setattr(
+        rsi_cli,
+        "_now",
+        lambda: datetime.fromisoformat("2026-09-20T12:00:00+08:00"),
+    )
+    runner = CliRunner()
+    registered = runner.invoke(
+        app,
+        [
+            "rsi",
+            "register",
+            "--by",
+            "Jun",
+            "experiments/registry/F5.json",
+            "--data-dir",
+            str(tmp_path),
+        ],
+    )
+    assert registered.exit_code == 0, registered.output
+    scheduled = runner.invoke(
+        app, ["rsi", "schedule", "--day", day, "--data-dir", str(tmp_path)]
+    )
+    assert scheduled.exit_code == 0, scheduled.output
+
+    result = runner.invoke(
+        app,
+        ["rsi", "price-band", "--day", day, "--data-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    with sqlite3.connect(tmp_path / "ontology" / "ontology.db") as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM rsi_duty_instances "
+            "WHERE duty_id='F5:price-band-observation' AND fulfilled_at IS NOT NULL"
+        ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT COUNT(*), SUM(n_rows), MIN(population_stratum) "
+            "FROM rsi_observations WHERE exp_id='F5'"
+        ).fetchone() == (1, 1, "pooled")

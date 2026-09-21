@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -73,6 +74,13 @@ def _kernel(data_dir: Path):
 
 def _now() -> datetime:
     return datetime.now().astimezone()
+
+
+def _business_day(at: datetime) -> str:
+    local = at.astimezone(_BJ)
+    if local.hour < 7:
+        local -= timedelta(days=1)
+    return local.date().isoformat()
 
 
 def _fail(msg: str) -> None:
@@ -360,9 +368,17 @@ def due(
 
     k = _kernel(data_dir)
     now_iso = now or _now().isoformat(timespec="seconds")
-    with OntologyUnitOfWork(k.engine) as uow:
-        pend = uow.rsi.pending_duty_instances(day=day, now=now_iso)
-        duties = {d.duty_id: d for d in uow.rsi.all_duties()}
+    duties, instances = _duty_ledger(k, day)
+    pend = sorted(
+        (
+            row
+            for row in instances
+            if row.fulfilled_at is None
+            and row.due_at > now_iso
+            and duties[row.duty_id].status == "active"
+        ),
+        key=lambda row: (row.due_at, row.duty_id),
+    )
     if not pend:
         typer.echo(f"{day}：无待办义务")
         return
@@ -377,6 +393,130 @@ def due(
             command = " ".join(argv)
             note = ""
         typer.echo(f"{p.due_at}  {p.duty_id}\n    $ {command}{note}")
+
+
+def _duty_ledger(kernel, day: str):
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        duties = {duty.duty_id: duty for duty in uow.rsi.all_duties()}
+        instances = [
+            row
+            for duty_id in duties
+            for row in uow.rsi.duty_instances_for_day(duty_id, day)
+        ]
+    return duties, instances
+
+
+@rsi_app.command("sweep")
+def sweep(
+    day: str | None = _DAY_OPT,
+    issue: str | None = _ISSUE,
+    data_dir: Path = _DATA_DIR,
+    now: str | None = _NOW,
+) -> None:
+    """Run due RSI instruments without backfilling expired duty instances."""
+    from nutmeg.decision.rsi_prereg import render_instrument
+
+    k = _kernel(data_dir)
+    now_iso = now or _now().isoformat(timespec="seconds")
+    resolved_day = day or _business_day(datetime.fromisoformat(now_iso))
+    counts = {
+        "ran": 0,
+        "skipped_fulfilled": 0,
+        "skipped_pending": 0,
+        "expired": 0,
+        "failed": 0,
+    }
+    had_error = False
+    duties, day_instances = _duty_ledger(k, resolved_day)
+    instances = {
+        duty_id: [row for row in day_instances if row.duty_id == duty_id]
+        for duty_id in duties
+    }
+
+    for duty in duties.values():
+        rows = instances[duty.duty_id]
+        fulfilled = [row for row in rows if row.fulfilled_at is not None]
+        open_rows = [row for row in rows if row.fulfilled_at is None]
+        counts["skipped_fulfilled"] += len(fulfilled)
+        if duty.status == "pending_instrument" or (
+            duty.instrument and duty.instrument[0] == "TODO"
+        ):
+            counts["skipped_pending"] += len(open_rows)
+            continue
+
+        expired = [row for row in open_rows if row.due_at <= now_iso]
+        runnable = [row for row in open_rows if row.due_at > now_iso]
+        if expired:
+            counts["expired"] += len(expired)
+            typer.echo(
+                f"⚠️DUTY_EXPIRED: {duty.duty_id} {len(expired)} 条已过开球"
+                "（前瞻资格已失）",
+                err=True,
+            )
+        if not runnable:
+            continue
+        if not duty.instrument or duty.instrument[0] != "uv":
+            counts["failed"] += len(runnable)
+            had_error = True
+            typer.echo(
+                f"UNSAFE_INSTRUMENT: {duty.duty_id} 只允许 argv[0]=uv",
+                err=True,
+            )
+            continue
+
+        row_issues = {row.issue for row in runnable if row.issue}
+        resolved_issue = issue or (next(iter(row_issues)) if len(row_issues) == 1 else None)
+        if len(row_issues) > 1 and issue is None:
+            counts["failed"] += len(runnable)
+            had_error = True
+            typer.echo(f"rsi error: {duty.duty_id} 同日绑定多个 issue", err=True)
+            continue
+        try:
+            argv = render_instrument(
+                duty.instrument, issue=resolved_issue, day=resolved_day
+            )
+        except ValueError as exc:
+            counts["failed"] += len(runnable)
+            had_error = True
+            typer.echo(f"rsi error: {duty.duty_id}: {exc}", err=True)
+            continue
+        completed = subprocess.run(argv, capture_output=True, text=True, check=False)
+        if completed.stdout:
+            typer.echo(completed.stdout.rstrip())
+        if completed.stderr:
+            typer.echo(completed.stderr.rstrip(), err=True)
+        if completed.returncode != 0:
+            counts["failed"] += len(runnable)
+            had_error = True
+            typer.echo(
+                f"rsi error: {duty.duty_id} instrument exit={completed.returncode}",
+                err=True,
+            )
+            continue
+        with OntologyUnitOfWork(k.engine) as uow:
+            after = [
+                uow.rsi.duty_instance(row.duty_id, row.day, row.match_id)
+                for row in runnable
+            ]
+        fulfilled_now = sum(
+            row is not None and row.fulfilled_at is not None for row in after
+        )
+        not_fulfilled = len(runnable) - fulfilled_now
+        counts["ran"] += fulfilled_now
+        if not_fulfilled:
+            counts["failed"] += not_fulfilled
+            had_error = True
+            typer.echo(
+                f"DUTY_NOT_FULFILLED: {duty.duty_id} {not_fulfilled} 条命令成功但未登记",
+                err=True,
+            )
+
+    typer.echo(
+        f"{resolved_day} sweep: "
+        + " ".join(f"{key}={value}" for key, value in counts.items())
+    )
+    if had_error:
+        raise typer.Exit(code=1)
 
 
 @rsi_app.command("fulfill")
@@ -601,15 +741,52 @@ def price_band(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
     """Write one mechanical opening-to-current price observation per JCZQ match."""
     from nutmeg.decision.price_band import write_price_band_artifacts
 
-    _kernel(data_dir)
+    k = _kernel(data_dir)
+    captured = _now()
     try:
         report = write_price_band_artifacts(
             day=day,
             data_dir=data_dir,
-            captured_at=_now().isoformat(timespec="seconds"),
+            captured_at=captured.isoformat(timespec="seconds"),
         )
     except ValueError as exc:
         _fail(str(exc))
+    kickoffs = _jczq_match_kickoffs(data_dir, day)
+    day_dir = data_dir / "jczq" / "daily" / day
+    for artifact in sorted(day_dir.glob("price-band-*.json")):
+        payload = json.loads(artifact.read_text(encoding="utf-8"))
+        match_id = str(payload.get("match_id") or "")
+        kickoff = kickoffs.get(match_id)
+        if not match_id or kickoff is None:
+            continue
+        with OntologyUnitOfWork(k.engine) as uow:
+            instance = uow.rsi.duty_instance(
+                "F5:price-band-observation", day, match_id
+            )
+        if instance is None or instance.fulfilled_at is not None:
+            continue
+        raw = artifact.read_bytes()
+        _run(
+            k.rsi_actions.fulfill_duty,
+            FulfillDutyRequest(
+                exp_id="F5",
+                duty_name="price-band-observation",
+                day=day,
+                artifact_path=str(artifact),
+                artifact_bytes=raw,
+                n_rows=1,
+                population_stratum=None,
+                judgment_tier_hist={"price_only": 1},
+                captured_at=captured,
+                earliest_kickoff=kickoff,
+                match_id=match_id,
+                idempotency_key=(
+                    f"rsi-ful:F5:price-band-observation:{day}:{match_id}"
+                ),
+                requested_at=captured,
+                **_SYSTEM,
+            ),
+        )
     typer.echo(
         f"price-band {day}: written={report['written']} "
         f"missing_opening={report['missing_opening']}"
