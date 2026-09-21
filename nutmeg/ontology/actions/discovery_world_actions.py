@@ -209,6 +209,11 @@ class DiscoveryWorldActions:
             or node.policy_decision.get("policy_revision_id") != run.policy_revision_id
         ):
             raise ValueError("node policy decision does not match run")
+        if (
+            node.artifact_manifest is not None
+            and canonical_hash(node.artifact_manifest) != node.artifact_manifest_hash
+        ):
+            raise ValueError("node artifact manifest hash mismatch")
         cutoff = datetime.fromisoformat(world.cutoff_at)
         if cutoff.tzinfo is None or cutoff.utcoffset() is None:
             raise ValueError("world cutoff must be timezone-aware")
@@ -239,11 +244,6 @@ class DiscoveryWorldActions:
         def handler(uow, cmd):
             node = request.node
             self._validate_node(uow, node)
-            if (
-                node.artifact_manifest is not None
-                and canonical_hash(node.artifact_manifest) != node.artifact_manifest_hash
-            ):
-                raise ValueError("node artifact manifest hash mismatch")
             uow.discovery.insert_node(replace(node, action_id=cmd.action_id))
             refs = [ObjectRef("discovery_node", node.node_id)]
             if request.evaluation:

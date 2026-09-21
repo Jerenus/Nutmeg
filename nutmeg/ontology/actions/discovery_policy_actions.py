@@ -160,8 +160,8 @@ class DiscoveryPolicyActions:
                 raise ValueError("initial observation hash mismatch")
             if request.initial_observation.get("visible_node_ids") != [world.root_node_id]:
                 raise ValueError("initial observation must expose only the root")
-            if any(key in request.initial_observation for key in ("hidden_node_ids", "children")):
-                raise ValueError("initial observation exposes hidden nodes")
+            if set(request.initial_observation) != {"visible_node_ids"}:
+                raise ValueError("initial observation contains unfrozen visibility metadata")
             uow.discovery.insert_policy_replay(replace(replay, action_id=cmd.action_id))
             return (ObjectRef("policy_replay_run", replay.policy_replay_run_id),)
 

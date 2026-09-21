@@ -39,7 +39,14 @@ CONTRACT = {
     "tie_rule": "incumbent",
     "archive_rule": {"capacity": 12, "max_per_lineage": 3},
     "minimum_materiality": 0.01,
-    "lexicographic_tiers": ["safety", "quality"],
+    "lexicographic_tiers": [
+        "safety_isolation",
+        "validity",
+        "discovery_quality",
+        "robustness",
+        "cost",
+        "parallel_efficiency",
+    ],
 }
 
 
@@ -159,6 +166,41 @@ def test_create_tournament_requires_incumbent_in_frozen_candidates(tmp_path):
         )
         with pytest.raises(ValueError, match="incumbent"):
             actions.create_tournament(bad)
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament("t-1") is None
+
+
+def test_create_tournament_rejects_invalid_registered_candidate(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_policy(
+            replace(_policy("policy-invalid"), validation_result={"valid": False})
+        )
+    candidate = replace(_create_request().candidates[1], policy_revision_id="policy-invalid")
+    request = _create_request(candidates=(_create_request().candidates[0], candidate))
+    with pytest.raises(ValueError, match="validated"):
+        actions.create_tournament(request)
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament("t-1") is None
+
+
+def test_create_tournament_cannot_override_frozen_pilot_evaluator_or_archive(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    request = _create_request()
+    for key, value in (
+        ("archive_rule", {"capacity": 999, "max_per_lineage": 3}),
+        ("lexicographic_tiers", ["cost", "safety_isolation"]),
+    ):
+        modified = replace(
+            request.tournament,
+            decision_contract={**request.tournament.decision_contract, key: value},
+        )
+        with pytest.raises(ValueError, match="frozen pilot"):
+            actions.create_tournament(
+                replace(request, tournament=modified, idempotency_key=f"tournament:override:{key}")
+            )
     with OntologyUnitOfWork(engine) as uow:
         assert uow.discovery.tournament("t-1") is None
 

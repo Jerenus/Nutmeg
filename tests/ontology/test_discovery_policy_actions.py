@@ -178,6 +178,26 @@ def test_start_replay_requires_sealed_world_and_valid_policy(tmp_path):
     assert actions.start_replay(_replay_request()).status is ActionStatus.COMMITTED
 
 
+def test_start_replay_rejects_unfrozen_extra_visibility_metadata(tmp_path):
+    actions, engine = _rig(tmp_path)
+    actions.register_policy(_registration())
+    _world_with_tree(engine)
+    request = _replay_request()
+    observation = {"visible_node_ids": ["node-root"], "unrevealed_trace": ["a1"]}
+    with pytest.raises(ValueError, match="initial observation"):
+        actions.start_replay(
+            replace(
+                request,
+                initial_observation=observation,
+                replay=replace(
+                    request.replay, initial_observation_hash=canonical_hash(observation)
+                ),
+            )
+        )
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.policy_replay("replay-1") is None
+
+
 def _finish_request(rounds, *, selected=("a",), trace_hash=None):
     trace = {
         "policy_revision_id": "policy-1",

@@ -688,7 +688,7 @@ Run: `uv run pytest tests/ontology/test_discovery_repository.py -v`
 
 Expected: all repository cases pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/ontology/repository/discovery.py nutmeg/ontology/repository/unit_of_work.py tests/ontology/test_discovery_repository.py
@@ -790,7 +790,7 @@ Run: `uv run pytest tests/ontology/test_discovery_world_actions.py tests/ontolog
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/ontology/actions/discovery_world_actions.py tests/ontology/test_discovery_world_actions.py
@@ -879,7 +879,7 @@ Run: `uv run pytest tests/ontology/test_discovery_policy_actions.py tests/ontolo
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/ontology/actions/discovery_policy_actions.py nutmeg/ontology/actions/service.py tests/ontology/test_discovery_policy_actions.py
@@ -962,7 +962,7 @@ Run: `uv run pytest tests/ontology/test_discovery_governance_actions.py tests/on
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/ontology/actions/discovery_governance_actions.py tests/ontology/test_discovery_governance_actions.py
@@ -1039,7 +1039,7 @@ Run: `uv run pytest tests/ontology/test_discovery_read_service.py tests/ontology
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/ontology/discovery/read_service.py nutmeg/ontology/wiring.py nutmeg/ontology/kernel.py tests/ontology/test_discovery_read_service.py tests/ontology/test_kernel.py
@@ -1188,7 +1188,7 @@ Run: `uv run pytest tests/test_cli_discovery.py -v`
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/interfaces/cli/discovery.py nutmeg/interfaces/cli/__init__.py tests/test_cli_discovery.py

@@ -216,6 +216,29 @@ def test_record_failure_charges_cost_and_has_no_selectable_evaluation(tmp_path):
         assert uow.discovery.latest_node_evaluation("node-child") is None
 
 
+def test_record_failure_rejects_tampered_artifact_manifest(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _running(actions, engine)
+    node = replace(
+        _node_request(status="failed").node,
+        diagnostic_codes=["timeout"],
+        frontier_eligible=False,
+        artifact_manifest={"tampered": True},
+    )
+    with pytest.raises(ValueError, match="artifact manifest hash mismatch"):
+        actions.record_failure(
+            RecordDiscoveryFailureRequest(
+                node=node,
+                actor_id="sys:discovery",
+                actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key="node:tampered",
+                requested_at=T0,
+            )
+        )
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.node("node-child") is None
+
+
 def test_retry_is_new_node_and_preserves_failed_node(tmp_path):
     actions, engine = _rig(tmp_path)
     _running(actions, engine)

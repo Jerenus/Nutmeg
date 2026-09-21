@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
+from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -143,12 +144,27 @@ class DiscoveryGovernanceActions:
                 or "minimum_materiality" not in contract
             ):
                 raise ValueError("tournament decision contract is incomplete")
+            from nutmeg.discovery.contracts import load_pilot_contract
+
+            pilot = load_pilot_contract(
+                Path(__file__).resolve().parents[3]
+                / "experiments/discovery/structural-candidate-v1.contract.json"
+            )
+            if (
+                contract["lexicographic_tiers"] != list(pilot.evaluator.lexicographic_tiers)
+                or contract["archive_rule"].get("capacity") != pilot.archive.capacity
+                or contract["archive_rule"].get("max_per_lineage") != pilot.archive.max_per_lineage
+                or tournament.evaluator_revision != pilot.evaluator.revision
+            ):
+                raise ValueError("tournament conflicts with frozen pilot evaluator or archive")
             for row in request.candidates:
                 if row.policy_tournament_id != tournament.policy_tournament_id:
                     raise ValueError("candidate belongs to another tournament")
                 policy = uow.discovery.policy(row.policy_revision_id)
                 if policy is None or policy.family != tournament.policy_family:
                     raise ValueError("candidate policy family mismatch")
+                if not policy.validation_result.get("valid"):
+                    raise ValueError("tournament candidates must be validated policies")
             exposed = {
                 row.world_id for row in uow.discovery.exposed_holdouts(tournament.policy_family)
             }
@@ -171,6 +187,14 @@ class DiscoveryGovernanceActions:
                     raise ValueError("unrecognized tournament world pool role")
                 if world.evaluator_revision != tournament.evaluator_revision:
                     raise ValueError("world evaluator differs from tournament")
+                if any(
+                    world.task_family
+                    not in uow.discovery.policy(
+                        candidate.policy_revision_id
+                    ).compatible_world_families
+                    for candidate in request.candidates
+                ):
+                    raise ValueError("tournament world is incompatible with candidate policies")
             uow.discovery.insert_tournament(replace(tournament, action_id=cmd.action_id))
             for row in request.candidates:
                 uow.discovery.insert_tournament_candidate(row)
