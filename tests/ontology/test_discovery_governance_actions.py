@@ -14,6 +14,7 @@ from nutmeg.ontology.actions.discovery_governance_actions import (
     CreatePolicyTournamentRequest,
     DiscoveryGovernanceActions,
     FinishPolicyTournamentRequest,
+    PreregisterPolicyShadowWindowRequest,
     TripPolicyBrakeRequest,
 )
 from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
@@ -31,6 +32,7 @@ from nutmeg.ontology.repository.discovery import (
     PolicyReplayCompletionRow,
     PolicyReplayRoundRow,
     PolicyReplayRunRow,
+    PolicyShadowWindowRow,
     TournamentCandidateRow,
     TournamentCompletionRow,
     TournamentResultRow,
@@ -944,12 +946,88 @@ def test_only_operator_can_approve_shadow_canary_deploy_hold_rollback_retire(tmp
 def test_replay_winner_without_fresh_shadow_can_only_receive_shadow_decision(tmp_path):
     actions, engine = _rig(tmp_path)
     _finished(actions, engine)
-    assert actions.approve_deployment(_deployment_request()).status is ActionStatus.COMMITTED
+    with pytest.raises(ValueError, match="preregistered shadow window"):
+        actions.approve_deployment(_deployment_request())
     for decision in ("canary", "deploy"):
         with pytest.raises(ValueError, match="fresh prospective shadow"):
             actions.approve_deployment(
                 _deployment_request(decision, deployment_id=f"dep-{decision}")
             )
+
+
+def test_shadow_requires_human_preregistered_future_window(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _finished(actions, engine)
+    with pytest.raises(ValueError, match="preregistered shadow window"):
+        actions.approve_deployment(_deployment_request())
+    window = _record(
+        PolicyShadowWindowRow,
+        policy_shadow_window_id="window-1",
+        policy_family="family-1",
+        scope={"pilot": "structural"},
+        policy_revision_id="policy-1",
+        policy_tournament_id="t-1",
+        start_at="2026-09-22T00:00:00+00:00",
+        end_at="2026-09-25T00:00:00+00:00",
+        minimum_independent_worlds=2,
+        invariant_codes=["permission_leak"],
+        human_actor_id="Jun",
+        acted_by="Jun",
+        created_at=T0.isoformat(),
+    )
+    request = PreregisterPolicyShadowWindowRequest(
+        window=window,
+        actor_id="op:jun",
+        actor_role=ActorRole.JUDGE_OPERATOR,
+        idempotency_key="window:1",
+        requested_at=T0,
+    )
+    assert actions.preregister_shadow_window(request).status is ActionStatus.COMMITTED
+    with OntologyUnitOfWork(engine) as uow:
+        stored = uow.discovery.shadow_window("window-1")
+        assert stored.policy_revision_id == "policy-1"
+    shadow = _deployment_request()
+    shadow = replace(
+        shadow,
+        deployment=replace(
+            shadow.deployment,
+            evidence_refs={
+                "shadow_window_id": "window-1",
+                "shadow_window_hash": canonical_hash(
+                    {k: v for k, v in asdict(stored).items() if k != "action_id"}
+                ),
+            },
+        ),
+    )
+    assert actions.approve_deployment(shadow).status is ActionStatus.COMMITTED
+
+
+def test_shadow_window_rejects_nonhuman_late_and_stale_tournament(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _finished(actions, engine)
+    window = _record(
+        PolicyShadowWindowRow, policy_shadow_window_id="window-1",
+        policy_family="family-1", scope={"pilot": "structural"},
+        policy_revision_id="policy-1", policy_tournament_id="t-1",
+        start_at="2026-09-22T00:00:00+00:00", end_at="2026-09-25T00:00:00+00:00",
+        minimum_independent_worlds=2, invariant_codes=["permission_leak"],
+        human_actor_id="Jun", acted_by="Jun", created_at=T0.isoformat(),
+    )
+    request = PreregisterPolicyShadowWindowRequest(
+        window, "op:jun", ActorRole.DETERMINISTIC_SYSTEM, "window:nonhuman", T0,
+    )
+    assert actions.preregister_shadow_window(request).status is ActionStatus.REJECTED
+    request = replace(request, actor_role=ActorRole.JUDGE_OPERATOR,
+                      idempotency_key="window:late",
+                      window=replace(window, start_at=T0.isoformat()))
+    with pytest.raises(ValueError, match="future ordered cutoffs"):
+        actions.preregister_shadow_window(request)
+    request = replace(request, idempotency_key="window:stale",
+                      window=replace(window, policy_tournament_id="other"))
+    with pytest.raises(ValueError, match="latest tournament winner"):
+        actions.preregister_shadow_window(request)
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.shadow_window("window-1") is None
 
 
 def test_only_one_deployed_incumbent_exists_per_family_scope(tmp_path):
@@ -1027,7 +1105,7 @@ def test_deploy_requires_previously_human_approved_fallback(tmp_path):
         actions.approve_deployment(_deployment_request("deploy"))
 
 
-def test_deploy_with_fresh_shadow_and_approved_fallback_records_brake_target(tmp_path):
+def test_deploy_with_fresh_shadow_and_fallback_still_requires_reviewed_scope(tmp_path):
     actions, engine = _rig(tmp_path)
     _finished(actions, engine)
     with OntologyUnitOfWork(engine) as uow:
@@ -1058,11 +1136,11 @@ def test_deploy_with_fresh_shadow_and_approved_fallback_records_brake_target(tmp
             )
         )
     request = _deployment_request("deploy", deployment_id="dep-deployed")
-    assert actions.approve_deployment(request).status is ActionStatus.COMMITTED
+    with pytest.raises(ValueError, match="closed prospective shadow window"):
+        actions.approve_deployment(request)
     with OntologyUnitOfWork(engine) as uow:
         deployed = uow.discovery.latest_deployment_for_scope("family-1", {"pilot": "structural"})
-        assert deployed.policy_deployment_id == "dep-deployed"
-        assert deployed.rollback_policy_revision_id == "policy-2"
+        assert deployed.policy_deployment_id == "dep-fallback"
 
 
 def _brake_request(*, restored="policy-2", **changes):

@@ -34,7 +34,7 @@
 
 **Files:** Create `nutmeg/discovery/promotion_evidence.py`, `nutmeg/ontology/repository/schema_discovery_promotion.py`; modify migrations/repository/governance Action; test `tests/discovery/test_promotion_evidence.py`, `tests/ontology/test_discovery_migration.py`, `tests/ontology/test_discovery_governance_actions.py`.
 
-- [ ] **Step 1 (RED):** Test window with explicit family/scope/candidate/approved winner/tournament ID, start/end cutoffs, minimum effective independent worlds and invariant checks; reject shadow run before human Action, after cutoff, using tournament/development world, duplicate derivative world, replay source or unsealed world. A window still open is ineligible.
+- [ ] **Step 1 (RED):** Test window with explicit family/scope/candidate/approved winner/tournament ID, start/end cutoffs, minimum effective independent worlds and invariant checks; reject shadow run before human Action, after cutoff, using tournament/development world, duplicate derivative world, replay source or unsealed world. A window still open is ineligible. (Partial: window, open, duplicate and replay-source tests; D2 challenger runner not wired.)
 
 ```python
 def test_replay_winner_without_new_sealed_shadow_cannot_promote(window, tournament):
@@ -43,16 +43,16 @@ def test_replay_winner_without_new_sealed_shadow_cannot_promote(window, tourname
     assert "fresh_prospective_world" in result.blocking_codes
 ```
 
-- [ ] **Step 2:** Run `uv run pytest tests/discovery/test_promotion_evidence.py -q`; expected missing-module failure.
-- [ ] **Step 3 (GREEN):** Add migration 42 with a `policy_shadow_windows` append-only table and human-only `preregister_policy_shadow_window` permission/Action. Freeze family, scope, tournament, candidate, future start/end cutoff, minimum independent worlds and hard invariant codes before the first shadow run; record the window hash in D1 `PolicyDeploymentRow.evidence_refs`. Compute eligibility from actual D2 sealed `prospective_online` worlds and protected-table fingerprints. No replay grade counts as a prospective sample.
+- [x] **Step 2:** Run `uv run pytest tests/discovery/test_promotion_evidence.py -q`; expected missing-module failure.
+- [ ] **Step 3 (GREEN):** Add migration 42 with a `policy_shadow_windows` append-only table and human-only `preregister_policy_shadow_window` permission/Action. Freeze family, scope, tournament, candidate, future start/end cutoff, minimum independent worlds and hard invariant codes before the first shadow run; record the window hash in D1 `PolicyDeploymentRow.evidence_refs`. Compute eligibility from actual D2 sealed `prospective_online` worlds and protected-table fingerprints. No replay grade counts as a prospective sample. (Partial: D2 does not persist fingerprint receipt or authorize challenger runs.)
 - [ ] **Step 4:** Re-run tests; include AI/deterministic actor denial, altered/late evidence and optimistic concurrency cases; commit.
 
 ### Task 2: Separate shadow authority from pilot control authority
 
 **Files:** Create `nutmeg/discovery/pilot_scope.py`; modify `nutmeg/ontology/actions/discovery_governance_actions.py`; tests `tests/discovery/test_pilot_scope.py`, `tests/ontology/test_discovery_governance_actions.py`.
 
-- [ ] **Step 1 (RED):** `shadow` permits isolated recording only; `canary`/`deploy` on D0 `shadow_only` without a reviewed scope revision must reject. Scope may name only structural candidate exploration, explicit board/task family, capped exposure and safe effective boundary; unknown/expanded scope, protected Action grant, weaker brake or unapproved fallback rejects.
-- [ ] **Step 2:** Run focused tests red.
+- [ ] **Step 1 (RED):** `shadow` permits isolated recording only; `canary`/`deploy` on D0 `shadow_only` without a reviewed scope revision must reject. Scope may name only structural candidate exploration, explicit board/task family, capped exposure and safe effective boundary; unknown/expanded scope, protected Action grant, weaker brake or unapproved fallback rejects. (Partial: rejection covered; no reviewed revision exists.)
+- [x] **Step 2:** Run focused tests red.
 - [ ] **Step 3 (GREEN):** Add strict scope revision hash referenced from `PolicyDeploymentRow.scope` and `evidence_refs`; require human actor/role, approved window evidence and earlier distinct human-approved fallback in the same scope at Action time. Leave production control disabled until Jun explicitly approves the new scope contract, then use only its enumerated structural operations.
 - [ ] **Step 4:** Re-run governance and permission regressions; commit schema/validation and tests; request human scope approval separately from any run.
 
@@ -60,7 +60,7 @@ def test_replay_winner_without_new_sealed_shadow_cannot_promote(window, tourname
 
 **Files:** Create `nutmeg/discovery/deployment_runtime.py`; test `tests/discovery/test_deployment_runtime.py`.
 
-- [ ] **Step 1 (RED):** After a human `shadow` decision, authoritative workflow remains unchanged. `canary` activates only at the approved future business boundary for in-scope boards and within exposure cap. `deploy` supersedes exactly one prior event, and out-of-scope boards continue the existing controller. Concurrent decisions cannot yield two incumbents.
+- [ ] **Step 1 (RED):** After a human `shadow` decision, authoritative workflow remains unchanged. `canary` activates only at the approved future business boundary for in-scope boards and within exposure cap. `deploy` supersedes exactly one prior event, and out-of-scope boards continue the existing controller. Concurrent decisions cannot yield two incumbents. (Partial: shadow, brake and future boundary denial covered.)
 
 ```python
 def test_shadow_never_controls_business_workflow(runtime, shadow_event, board):
@@ -69,7 +69,7 @@ def test_shadow_never_controls_business_workflow(runtime, shadow_event, board):
     assert controller.mode == "shadow"
 ```
 
-- [ ] **Step 2:** Run `uv run pytest tests/discovery/test_deployment_runtime.py -q`; expected missing-module failure.
+- [x] **Step 2:** Run `uv run pytest tests/discovery/test_deployment_runtime.py -q`; expected missing-module failure.
 - [ ] **Step 3 (GREEN):** Resolve deployment from D1 latest event **for the exact scope**, check brake and effective boundary before starting each new run, bind policy revision and scope hash into world/run lineage; never infer authority from archive status or replay winner. Verify the existing candidate/ticket workflow remains the authority outside an explicitly approved canary/deploy scope.
 - [ ] **Step 4:** Re-run tests and protected ticket/RSI regressions; commit.
 
@@ -77,7 +77,7 @@ def test_shadow_never_controls_business_workflow(runtime, shadow_event, board):
 
 **Files:** Create `nutmeg/discovery/brake_monitor.py`; modify `nutmeg/ontology/actions/discovery_governance_actions.py` to enforce registered condition evidence; test `tests/discovery/test_brake_monitor.py`, `tests/ontology/test_discovery_governance_actions.py`.
 
-- [ ] **Step 1 (RED):** A registered permission leak, audit invalidation, protected-table mutation, resource overrun or manifest breach stops new policy runs, records one `trip_policy_brake` Action and restores only the deployment's previously human-approved fallback at the next safe boundary. A nonregistered condition cannot choose a target; repeated brake is idempotent.
+- [ ] **Step 1 (RED):** A registered permission leak, audit invalidation, protected-table mutation, resource overrun or manifest breach stops new policy runs, records one `trip_policy_brake` Action and restores only the deployment's previously human-approved fallback at the next safe boundary. A nonregistered condition cannot choose a target; repeated brake is idempotent. (Partial: registered code/evidence selector and read-only brake fallback; no event-to-Action wiring.)
 - [ ] **Step 2:** Run focused tests red. Implement event-driven monitor consuming committed facts (not policy self-report) and invoke the D1 brake Action with deterministic-system actor, exact condition code and evidence hash. Re-run green.
 - [ ] **Step 3:** Assert a braked candidate cannot resume or expand scope without a **new** human Action; human rollback/hold/retire preserves history. Commit.
 
@@ -85,7 +85,7 @@ def test_shadow_never_controls_business_workflow(runtime, shadow_event, board):
 
 **Files:** Modify `nutmeg/ontology/discovery/read_service.py`, `nutmeg/interfaces/cli/discovery.py`; test `tests/test_cli_discovery.py`.
 
-- [ ] **Step 1 (RED):** Status distinguishes replay winner, human-authorized shadow, current scoped canary/deploy, braked fallback and pending human disposition; reports latest tournament proof, shadow window end/effective count, scope hash and rollback target. Read-only query neither initializes nor migrates an empty store.
+- [ ] **Step 1 (RED):** Status distinguishes replay winner, human-authorized shadow, current scoped canary/deploy, braked fallback and pending human disposition; reports latest tournament proof, shadow window end/effective count, scope hash and rollback target. Read-only query neither initializes nor migrates an empty store. (Partial: read-only promotion view and old-schema denial; effective count/scope proof absent.)
 - [ ] **Step 2:** Run `uv run pytest tests/test_cli_discovery.py -q` red; implement read-only projections. A schema-40/41 store reports "promotion unavailable; migration 42 required" without query-time migration. Re-run green. Commit.
 - [ ] **Step 3:** Run `uv run pytest tests/discovery tests/ontology/test_discovery_governance_actions.py tests/ontology/test_protected_ticket_actions.py tests/ontology/test_rsi_actions.py tests/test_cli_discovery.py -q`, `uv run ruff check nutmeg/discovery nutmeg/ontology/actions/discovery_governance_actions.py nutmeg/ontology/discovery/read_service.py nutmeg/interfaces/cli/discovery.py tests/discovery tests/test_cli_discovery.py`, `git diff --check`, `uv run pytest -q`. Record exact results.
 - [ ] **Step 4:** Verify promotion denial and automatic brake with temporary stores; compare protected business hashes. Do **not** perform live canary/deploy/rollback without separate human approval. Record contract revision, scope, shadow evidence, fallback and gate denials in D6 evidence; commit D6 files and request Jun's review before D7 implementation.

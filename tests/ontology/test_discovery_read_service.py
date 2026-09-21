@@ -42,7 +42,7 @@ def test_status_projection_returns_incumbent_tournament_world_and_rollback(tmp_p
         uow.discovery.insert_deployment(_deployment_request("shadow").deployment)
     service = DiscoveryReadService(engine)
     state = service.status("family-1")
-    assert state.incumbent_policy_revision_id == "policy-1"
+    assert state.incumbent_policy_revision_id is None
     assert state.active_deployment_state == "shadow"
     assert state.latest_tournament_id == "t-1"
     assert state.latest_world_id == "world-extra-28"

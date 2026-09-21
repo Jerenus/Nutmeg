@@ -9,12 +9,50 @@ from sqlalchemy import Engine, select
 
 from nutmeg.ontology.discovery.models import DiscoveryStatus, canonical_hash
 from nutmeg.ontology.repository import schema_discovery as sd
+from nutmeg.ontology.repository import schema_discovery_promotion as sp
 from nutmeg.ontology.repository.discovery import DiscoveryRepository
 
 
 class DiscoveryReadService:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
+
+    def promotion(self, policy_family: str) -> dict[str, object]:
+        with self._engine.connect() as connection:
+            repo = DiscoveryRepository(connection)
+            tournament_ids = connection.execute(
+                select(sd.policy_tournaments.c.policy_tournament_id)
+                .where(sd.policy_tournaments.c.policy_family == policy_family)
+                .order_by(sd.policy_tournaments.c.created_at.desc())
+            ).scalars()
+            tournament_id = next(
+                (tid for tid in tournament_ids if repo.tournament_completion(tid)), None
+            )
+            completion = repo.tournament_completion(tournament_id) if tournament_id else None
+            window_ids = connection.execute(
+                select(sp.policy_shadow_windows.c.policy_shadow_window_id)
+                .where(sp.policy_shadow_windows.c.policy_family == policy_family)
+                .order_by(sp.policy_shadow_windows.c.created_at.desc())
+            ).scalars()
+            windows = [asdict(repo.shadow_window(wid)) for wid in window_ids]
+            deployment = repo.latest_deployment(policy_family)
+            brake = repo.latest_brake(deployment.policy_deployment_id) if deployment else None
+            return {
+                "latest_tournament_id": tournament_id,
+                "replay_winner": completion.winner_policy_revision_id if completion else None,
+                "incumbent": brake.restored_policy_revision_id
+                if brake
+                else (
+                    deployment.policy_revision_id
+                    if deployment and deployment.decision in {"canary", "deploy"}
+                    else None
+                ),
+                "shadow_windows": windows,
+                "deployment": asdict(deployment) if deployment else None,
+                "brake": asdict(brake) if brake else None,
+                "pending_human_disposition": brake is not None,
+                "control_available": False,
+            }
 
     def readiness(self):
         from nutmeg.discovery.contracts import load_pilot_contract
@@ -161,7 +199,7 @@ class DiscoveryReadService:
                 brake.restored_policy_revision_id
                 if brake
                 else deployment.policy_revision_id
-                if deployment and deployment.decision in {"shadow", "canary", "deploy"}
+                if deployment and deployment.decision in {"canary", "deploy"}
                 else None
             )
             return DiscoveryStatus(

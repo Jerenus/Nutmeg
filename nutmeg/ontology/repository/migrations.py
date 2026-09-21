@@ -28,6 +28,7 @@ from nutmeg.ontology.repository import (
     schema_decision,
     schema_discovery,
     schema_discovery_generation,
+    schema_discovery_promotion,
     schema_evidence,
     schema_finance,
     schema_identity,
@@ -5129,6 +5130,22 @@ def _apply_discovery_generation(connection: Connection) -> None:
     )
 
 
+def _apply_discovery_promotion(connection: Connection) -> None:
+    table = schema_discovery_promotion.policy_shadow_windows
+    table.create(connection)
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"CREATE TRIGGER policy_shadow_windows_no_{operation.lower()} "
+            f"BEFORE {operation} ON policy_shadow_windows BEGIN "
+            "SELECT RAISE(ABORT, 'policy_shadow_windows is append-only'); END"
+        )
+    connection.execute(insert(schema.action_permissions).values(
+        policy_version_id="governance-v1",
+        action_type="preregister_policy_shadow_window",
+        actor_role="judge_operator",
+    ))
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -5457,6 +5474,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="discovery_generation_rounds",
         fingerprint="append_only_round_receipts+deterministic_recorder_permission",
         apply=_apply_discovery_generation,
+    ),
+    Migration(
+        version=42,
+        name="discovery_prospective_shadow_windows",
+        fingerprint="append_only_preregistered_windows+human_only",
+        apply=_apply_discovery_promotion,
     ),
 )
 

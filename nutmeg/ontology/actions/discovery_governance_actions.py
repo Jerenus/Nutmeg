@@ -25,6 +25,7 @@ from nutmeg.ontology.repository.discovery import (
     HoldoutExposureRow,
     PolicyBrakeEventRow,
     PolicyDeploymentRow,
+    PolicyShadowWindowRow,
     TournamentCandidateRow,
     TournamentCompletionRow,
     TournamentResultRow,
@@ -59,6 +60,15 @@ class FinishPolicyTournamentRequest:
 @dataclass(frozen=True, slots=True)
 class ApprovePolicyDeploymentRequest:
     deployment: PolicyDeploymentRow
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PreregisterPolicyShadowWindowRequest:
+    window: PolicyShadowWindowRow
     actor_id: str
     actor_role: ActorRole
     idempotency_key: str
@@ -691,6 +701,49 @@ class DiscoveryGovernanceActions:
                 return uow.discovery.tournament(tournament_id), completion
         return None, None
 
+    def preregister_shadow_window(
+        self, request: PreregisterPolicyShadowWindowRequest
+    ) -> ActionOutcome:
+        command = self._command(
+            "preregister_policy_shadow_window", request, {"window": asdict(request.window)}
+        )
+
+        def handler(uow, cmd):
+            window = request.window
+            tournament, completion = self._latest_winning_tournament(uow, window.policy_family)
+            if (
+                tournament is None
+                or completion.winner_policy_revision_id != window.policy_revision_id
+                or tournament.policy_tournament_id != window.policy_tournament_id
+            ):
+                raise ValueError("shadow window requires latest tournament winner")
+            policy = uow.discovery.policy(window.policy_revision_id)
+            if policy is None or policy.family != window.policy_family:
+                raise ValueError("shadow window family mismatch")
+            start, end = (
+                datetime.fromisoformat(window.start_at),
+                datetime.fromisoformat(window.end_at),
+            )
+            holdout = datetime.fromisoformat(tournament.holdout_cutoff_at)
+            if (
+                any(value.tzinfo is None for value in (start, end, holdout))
+                or not max(request.requested_at, holdout) < start < end
+                or window.minimum_independent_worlds < 1
+            ):
+                raise ValueError("shadow window must be preregistered with future ordered cutoffs")
+            if (
+                not window.human_actor_id
+                or not window.acted_by
+                or window.acted_by != window.human_actor_id
+                or not window.scope
+                or not window.invariant_codes
+            ):
+                raise ValueError("shadow window requires human identity, scope and invariants")
+            uow.discovery.insert_shadow_window(replace(window, action_id=cmd.action_id))
+            return (ObjectRef("policy_shadow_window", window.policy_shadow_window_id),)
+
+        return self._svc.execute(command, handler, acquire_write_lock=True)
+
     def approve_deployment(self, request: ApprovePolicyDeploymentRequest) -> ActionOutcome:
         command = self._command(
             "approve_policy_deployment",
@@ -723,6 +776,24 @@ class DiscoveryGovernanceActions:
                     or completion.winner_policy_revision_id != policy.policy_revision_id
                 ):
                     raise ValueError("deployment requires latest tournament winner")
+            if decision is DeploymentDecision.SHADOW:
+                from nutmeg.ontology.discovery.models import canonical_hash
+
+                refs = deployment.evidence_refs or {}
+                window = uow.discovery.shadow_window(refs.get("shadow_window_id", ""))
+                if (
+                    window is None
+                    or window.policy_family != policy.family
+                    or window.policy_revision_id != policy.policy_revision_id
+                    or window.policy_tournament_id != tournament.policy_tournament_id
+                    or window.scope != deployment.scope
+                    or refs.get("shadow_window_hash")
+                    != canonical_hash(
+                        {key: value for key, value in asdict(window).items() if key != "action_id"}
+                    )
+                    or request.requested_at >= datetime.fromisoformat(window.start_at)
+                ):
+                    raise ValueError("shadow requires preregistered shadow window")
             previous = uow.discovery.latest_deployment_for_scope(policy.family, deployment.scope)
             if deployment.supersedes_deployment_id and (
                 previous is None
@@ -782,6 +853,70 @@ class DiscoveryGovernanceActions:
                     or prior_approval is None
                 ):
                     raise ValueError("canary/deploy requires a distinct human-approved fallback")
+                from nutmeg.discovery.promotion_evidence import evaluate_shadow_window
+                from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
+                from nutmeg.ontology.discovery.models import canonical_hash
+
+                refs = deployment.evidence_refs or {}
+                window = uow.discovery.shadow_window(refs.get("shadow_window_id", ""))
+                shadow = uow.discovery.deployment(refs.get("shadow_deployment_id", ""))
+                if (
+                    window is None
+                    or shadow is None
+                    or shadow.decision != "shadow"
+                    or shadow.policy_revision_id != policy.policy_revision_id
+                    or shadow.scope != deployment.scope
+                    or window.scope != deployment.scope
+                    or window.policy_tournament_id != tournament.policy_tournament_id
+                    or window.policy_revision_id != policy.policy_revision_id
+                    or shadow.evidence_refs.get("shadow_window_id")
+                    != window.policy_shadow_window_id
+                    or refs.get("shadow_window_hash")
+                    != canonical_hash(
+                        {key: value for key, value in asdict(window).items() if key != "action_id"}
+                    )
+                ):
+                    raise ValueError("canary/deploy requires closed prospective shadow window")
+                rows = uow.connection.execute(
+                    select(worlds.c.world_id)
+                    .join(runs, runs.c.world_id == worlds.c.world_id)
+                    .where(
+                        runs.c.policy_revision_id == policy.policy_revision_id,
+                        runs.c.environment_mode == "shadow",
+                        worlds.c.provenance_mode == "prospective_online",
+                    )
+                ).scalars()
+                sealed = []
+                for world_id in rows:
+                    world = uow.discovery.world(world_id)
+                    events = uow.discovery.world_events(world_id)
+                    nodes = uow.discovery.nodes_for_world(world_id)
+                    if (
+                        world.cutoff_at > shadow.decided_at
+                        and uow.discovery.world_state(world_id) == "sealed"
+                        and events[-1].manifest_hash
+                        == DiscoveryWorldActions.seal_manifest(world, nodes)
+                        and world.input_manifest_hash == canonical_hash(world.input_manifest)
+                        and world.input_manifest.get("protected_source_before_hash")
+                        == world.input_manifest.get("protected_source_after_hash")
+                        and world.input_manifest.get("protected_source_before_hash")
+                    ):
+                        sealed.append(world)
+                eligibility = evaluate_shadow_window(
+                    window,
+                    tournament,
+                    sealed,
+                    now=request.requested_at,
+                    excluded_world_ids=prior_worlds,
+                )
+                if not eligibility.eligible_for_canary:
+                    raise ValueError(
+                        "canary/deploy requires closed prospective shadow window: "
+                        + ", ".join(eligibility.blocking_codes)
+                    )
+                from nutmeg.discovery.pilot_scope import validate_control_scope
+
+                validate_control_scope(deployment.scope, {"mode": "shadow_only"})
             uow.discovery.insert_deployment(replace(deployment, action_id=cmd.action_id))
             return (ObjectRef("policy_deployment", deployment.policy_deployment_id),)
 

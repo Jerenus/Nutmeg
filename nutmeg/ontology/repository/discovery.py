@@ -11,6 +11,7 @@ from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.discovery.models import WorldEventKind, project_world_state
 from nutmeg.ontology.repository import schema_discovery as sd
 from nutmeg.ontology.repository import schema_discovery_generation as sg
+from nutmeg.ontology.repository import schema_discovery_promotion as sp
 
 
 def _record_type(name: str, table_name: str):
@@ -49,6 +50,12 @@ ArchiveDecisionRow = _record_type("ArchiveDecisionRow", "policy_archive_decision
 HoldoutExposureRow = _record_type("HoldoutExposureRow", "policy_holdout_exposures")
 PolicyDeploymentRow = _record_type("PolicyDeploymentRow", "policy_deployments")
 PolicyBrakeEventRow = _record_type("PolicyBrakeEventRow", "policy_brake_events")
+PolicyShadowWindowRow = make_dataclass(
+    "PolicyShadowWindowRow",
+    [(column.name.removesuffix("_json"), object) for column in sp.policy_shadow_windows.columns],
+    frozen=True,
+    slots=True,
+)
 PolicyGenerationRoundRow = make_dataclass(
     "PolicyGenerationRoundRow",
     [(column.name.removesuffix("_json"), object) for column in sg.policy_generation_rounds.columns],
@@ -79,6 +86,7 @@ _ROW_TYPES = {
         PolicyDeploymentRow,
         PolicyBrakeEventRow,
         PolicyGenerationRoundRow,
+        PolicyShadowWindowRow,
     )
 }
 
@@ -91,7 +99,7 @@ class DiscoveryRepository:
 
     def _insert(self, table_name: str, record: object) -> None:
         values = asdict(record)
-        table = getattr(sg if table_name == "policy_generation_rounds" else sd, table_name)
+        table = getattr(self._schema(table_name), table_name)
         encoded = {}
         for column in table.columns:
             field = (
@@ -104,6 +112,14 @@ class DiscoveryRepository:
                 value = int(value)
             encoded[column.name] = value
         self._connection.execute(insert(table).values(**encoded))
+
+    @staticmethod
+    def _schema(table_name: str):
+        if table_name == "policy_generation_rounds":
+            return sg
+        if table_name == "policy_shadow_windows":
+            return sp
+        return sd
 
     @staticmethod
     def _decode(class_name: str, row):
@@ -122,14 +138,14 @@ class DiscoveryRepository:
         return _ROW_TYPES[class_name](**values)
 
     def _get(self, class_name: str, table_name: str, key: str, value: str):
-        table = getattr(sg if table_name == "policy_generation_rounds" else sd, table_name)
+        table = getattr(self._schema(table_name), table_name)
         row = (
             self._connection.execute(select(table).where(table.c[key] == value)).mappings().first()
         )
         return self._decode(class_name, row)
 
     def _list(self, class_name: str, table_name: str, key: str, value: str, *order: str):
-        table = getattr(sg if table_name == "policy_generation_rounds" else sd, table_name)
+        table = getattr(self._schema(table_name), table_name)
         query = (
             select(table).where(table.c[key] == value).order_by(*(table.c[item] for item in order))
         )
@@ -198,6 +214,14 @@ class DiscoveryRepository:
 
     def insert_deployment(self, row: PolicyDeploymentRow) -> None:
         self._insert("policy_deployments", row)
+
+    def insert_shadow_window(self, row: PolicyShadowWindowRow) -> None:
+        self._insert("policy_shadow_windows", row)
+
+    def shadow_window(self, window_id: str) -> PolicyShadowWindowRow | None:
+        return self._get(
+            "PolicyShadowWindowRow", "policy_shadow_windows", "policy_shadow_window_id", window_id
+        )
 
     def insert_brake(self, row: PolicyBrakeEventRow) -> None:
         self._insert("policy_brake_events", row)

@@ -40,7 +40,9 @@ def _database(data_dir: Path) -> Path:
     return OntologyPaths.from_data_dir(data_dir.resolve()).database
 
 
-def _read_service(database: Path, *, generation: bool = False) -> DiscoveryReadService:
+def _read_service(
+    database: Path, *, generation: bool = False, promotion: bool = False
+) -> DiscoveryReadService:
     uri = f"file:{quote(str(database), safe='/')}?mode=ro"
     with sqlite3.connect(uri, uri=True) as connection:
         try:
@@ -54,6 +56,9 @@ def _read_service(database: Path, *, generation: bool = False) -> DiscoveryReadS
         raise typer.Exit(code=1)
     if generation and version < 41:
         typer.echo("discovery error: generation unavailable; migration 41 required", err=True)
+        raise typer.Exit(code=1)
+    if promotion and version < 42:
+        typer.echo("discovery error: promotion unavailable; migration 42 required", err=True)
         raise typer.Exit(code=1)
     engine = create_engine("sqlite+pysqlite://", creator=lambda: sqlite3.connect(uri, uri=True))
     return DiscoveryReadService(engine)
@@ -177,6 +182,27 @@ def status(
     typer.echo(f"sealed worlds: {state.sealed_world_count}")
     typer.echo(f"exposed holdouts: {state.exposed_holdout_count}")
     typer.echo(f"rollback: {state.rollback_policy_revision_id or 'none'}")
+
+
+@discovery_app.command("promotion")
+def promotion(
+    policy_family: str = typer.Option("structural_candidate_exploration", "--family"),
+    data_dir: Path = DATA_DIR_OPTION,
+) -> None:
+    database = _database(data_dir)
+    state = (
+        _read_service(database, promotion=True).promotion(policy_family)
+        if database.is_file()
+        else {
+            "incumbent": None,
+            "replay_winner": None,
+            "shadow_windows": [],
+            "deployment": None,
+            "brake": None,
+            "control_available": False,
+        }
+    )
+    typer.echo(json.dumps(state, ensure_ascii=False, sort_keys=True))
 
 
 @discovery_app.command("show")

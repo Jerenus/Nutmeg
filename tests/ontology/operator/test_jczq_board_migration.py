@@ -17,7 +17,7 @@ def test_jczq_board_research_state_schema_is_additive_and_append_only(tmp_path):
 
     assert 32 in first.applied_versions
     assert second.applied_versions == ()
-    assert migration_status(engine).current_version == 41
+    assert migration_status(engine).current_version == 42
     assert "operator_jczq_board_research_states" in inspect(engine).get_table_names()
     with engine.begin() as connection:
         permission = connection.scalar(

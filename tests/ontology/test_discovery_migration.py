@@ -33,7 +33,7 @@ EXPECTED_TABLES = {
 def test_migration_40_creates_discovery_tables_and_permissions(tmp_path):
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine)
-    assert migration_status(engine).current_version == 41
+    assert migration_status(engine).current_version == 42
     assert EXPECTED_TABLES <= set(inspect(engine).get_table_names())
     with engine.connect() as connection:
         rows = connection.exec_driver_sql(
@@ -61,6 +61,22 @@ def test_generation_round_migration_is_append_only_and_role_separated(tmp_path):
             .all()
         )
     assert roles == ["deterministic_system"]
+
+
+def test_promotion_window_migration_is_append_only_and_human_only(tmp_path):
+    engine = build_ontology_engine(tmp_path / "ontology.db")
+    run_migrations(engine)
+    assert "policy_shadow_windows" in inspect(engine).get_table_names()
+    with engine.connect() as connection:
+        roles = (
+            connection.exec_driver_sql(
+                "SELECT actor_role FROM action_permissions "
+                "WHERE action_type='preregister_policy_shadow_window'"
+            )
+            .scalars()
+            .all()
+        )
+    assert roles == ["judge_operator"]
 
 
 def test_discovery_base_rows_are_append_only(tmp_path):

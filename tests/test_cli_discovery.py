@@ -56,6 +56,28 @@ def test_generation_show_on_schema_40_is_read_only_and_explicit(tmp_path):
     assert database.read_bytes() == before
 
 
+def test_promotion_status_on_schema_41_is_read_only_and_explicit(tmp_path):
+    data_dir = tmp_path / "old"
+    database = OntologyPaths.from_data_dir(data_dir).database
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE schema_migrations (version INTEGER)")
+        connection.execute("INSERT INTO schema_migrations VALUES (41)")
+    before = database.read_bytes()
+    result = runner.invoke(app, ["discovery", "promotion", "--data-dir", str(data_dir)])
+    assert result.exit_code == 1
+    assert "promotion unavailable; migration 42 required" in result.output
+    assert database.read_bytes() == before
+
+
+def test_promotion_on_empty_store_is_read_only(tmp_path):
+    data_dir = tmp_path / "absent"
+    result = runner.invoke(app, ["discovery", "promotion", "--data-dir", str(data_dir)])
+    assert result.exit_code == 0
+    assert "incumbent" in result.output
+    assert not data_dir.exists()
+
+
 def test_generation_show_reports_receipt_without_mutation(tmp_path):
     from datetime import UTC, datetime
 
