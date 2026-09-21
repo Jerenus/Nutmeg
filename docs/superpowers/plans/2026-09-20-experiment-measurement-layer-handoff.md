@@ -497,3 +497,191 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 | 5 | 定时器真在跑 | 自己跑 `launchctl list`，不信报告 |
 | 6 | expired 有声音 | 确认 stderr 真打 `DUTY_EXPIRED`，不是只记在报告里 |
 | 7 | registry 零改动 | `git diff --stat experiments/registry/` |
+
+---
+
+# 追加交接 · T11 / T12（2026-09-21）
+
+> 两项独立，可并行，各自独立提交。设计分别在
+> `docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md` §12（T12）
+> 与本节内嵌（T11）。T1-T10 已验收通过，不要回头改。
+
+━━━━━━━━━━━━━━━━━━━━ T11 提示词开始 ━━━━━━━━━━━━━━━━━━━━
+
+在 Nutmeg 仓库（`/Users/jz71/Projects/Nutmeg`，Python 3.13，uv，pytest + ruff，有 pre-commit）
+做一项已批准的工程改造：**T11 · 深研失败的退避与预算保护**。
+你不做设计决定；遇到与代码冲突以本提示词为准并在报告中指出。
+
+## 事故
+
+2026-09-21 实测，`nutmeg rsi sweep` 每小时跑一次，其中 R0 的 `research run`：
+
+```
+周一001 rejected 443.9s
+DUTY_NOT_FULFILLED: R0:match-research 1 条命令成功但未登记
+research-周一001.rejected.json:
+    attempts: 2
+    error:  claude 退出码 1
+    raw:    Error: Reached max turns (12)
+```
+
+`nutmeg/decision/research_runner.py` 的 `run_day` 跳过条件是
+**`research-<code>.json` 存在**。而失败写的是 `research-<code>.rejected.json` ——
+文件名不同，所以下一次 sweep 把它当"没做过"重跑一遍。
+
+代价（今天只有 1 场，30 场的日子会成倍放大）：
+- 每小时空转 ~7.4 分钟
+- 吃掉 `RESEARCH_DAILY_BUDGET = 40` 的日预算，**真正没研过的场次反而排不上**
+- 失败原因是 `Reached max turns (12)` —— 确定性失败，
+  同样的 prompt、同样的 turn 预算，`MAX_ATTEMPTS = 2` 的第二次必然撞同一堵墙
+
+## 要做的五件事
+
+**① `.rejected.json` 也算"已尝试"**
+`run_day` 的跳过判定同时看 `research-<code>.json` 与 `research-<code>.rejected.json`。
+
+**② 退避而不是无限重试**
+`rejected.json` 增加跨调用累计字段：`attempts_total`、`last_attempt_at`、`next_retry_after`。
+退避：第 1 次失败后 1 小时可重试，第 2 次后 4 小时，第 3 次起当天不再重试。
+未到 `next_retry_after` 的场次记 `skipped_backoff`，**不计入预算**。
+
+**③ 确定性失败直接标 permanent**
+`raw_output` 含 `Reached max turns` 或 `claude 退出码` 且两次 attempt 错误相同
+→ 写 `permanent: true`，当天不再重试，记 `skipped_permanent`。
+⛔判据只看这两类确定性特征；网络/超时类错误**仍按退避重试**，不得一并标死。
+
+**④ 预算按尝试扣，不按成功扣**
+`RESEARCH_DAILY_BUDGET` 的消耗改为每次**实际发起**的 attempt 各扣 1
+（现在是每场扣 1，失败场次可以反复吃）。
+报告里分别给 `used_attempts` 与 `written`。
+
+**⑤ `MAX_ATTEMPTS` 的第二次要有区别**
+同一场的第二次 attempt 若第一次是 `Reached max turns`，
+**不要原样重发**——这是本条的要点：要么不重试（走③），要么换更窄的 brief。
+⛔不得只是把 `--max-turns` 调大了事：那是把预算问题换成另一个预算问题，
+且会让本来就超时的场次跑更久。选哪条在报告里说明理由。
+
+## 红线
+
+- ⛔不得改判读逻辑、票面逻辑、audit 码表
+- ⛔不得改任何 `experiments/registry/*.json`；`git diff --stat experiments/registry/` 应为空
+- ⛔不得执行 `nutmeg rsi register` / `amend` / `deploy`
+- ⛔不得删除任何既有 `research-*.json` 或 `*.rejected.json`
+- ⛔`git add` 只用显式路径，绝不用 `-A` / `-u`
+- ⚠️`git commit | tail` 会吞退出码，必须单独 `echo $?`
+- ⚠️`.nutmeg-data/` 在 `.gitignore` 里
+
+## 验收（逐条跑，原样贴进报告）
+
+```
+uv run pytest tests/ -q
+uv run ruff check nutmeg/ tests/ experiments/ scripts/
+uv run nutmeg rsi sweep --day 2026-09-21        # 同一场不得再次发起深研
+cat .nutmeg-data/jczq/daily/2026-09-21/research-周一001.rejected.json
+git diff --stat experiments/registry/            # 必须为空
+```
+
+出口条件：
+1. 连跑两次 sweep，第二次对已 rejected 的场次报 `skipped_backoff` 或 `skipped_permanent`，
+   **不发起新的 claude 调用**（用耗时证明：第二次应是秒级，不是 400+ 秒）
+2. `rejected.json` 带 `attempts_total` / `last_attempt_at`，且跨调用累计
+3. 网络类错误仍会重试（给一个测试）
+4. 预算报告分 `used_attempts` 与 `written`
+5. 既有 research 产物一份未删
+
+报告里写明你为⑤选了哪条路线及理由，以及发现的任何与现实不符之处。
+
+提交信息末尾加：
+```
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+```
+
+━━━━━━━━━━━━━━━━━━━━ T11 提示词结束 ━━━━━━━━━━━━━━━━━━━━
+
+
+━━━━━━━━━━━━━━━━━━━━ T12 提示词开始 ━━━━━━━━━━━━━━━━━━━━
+
+做 T12，设计在
+`docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md` 的 **§12**，先读那节。
+T1-T10 已验收通过，不要回头改。
+
+## 背景（一句话）
+
+用户裁定：**判断和答案必须独立出现，结果只用于闭环回填**。
+盘点后发现这条纪律在 RSI 观测层是真的（`prospective` 自动判定 + `LeakError` 拒收），
+**在语料层完全没有**——`corpus_build` 不看任何时间戳。
+
+实测：语料 1027 行 / 带标签 126 行 / **可证事前只有 12 行**。
+而 N0 在 2026-09-20 报的三个 `indistinguishable` 结论（n=282 / 98 / 27）
+用的正是那 126 行里**不可证的 114 行**。
+
+时间戳已在 `7f1c210` 补上（`read_builder` 落 `judged_at` / `built_at`，
+`26131-calls.json` 落 `_meta.built_at` 并标 `evidence_grade=weak`）。
+**T12 做的是下游怎么用它们。**
+
+## 要做的五件事（细节见 spec §12.3）
+
+**①** `corpus_build` 每行加 `provably_prospective`（true / false / **null**）与 `judged_at_source`。
+判断时刻按来源取：research 的 `captured_at` → legs-base 的 `legs[n].judged_at` →
+calls 的 `_meta.built_at`（按其自报的 `built_at_source` 记 evidence_grade）。
+⛔**取不到一律 null，不得默认 true；历史 114 行不得追认。**
+
+**②** `noise_floor.py` 默认 `--only-provable`（只吃 `provably_prospective == true`）；
+`--include-unproven` 才放开，且输出必须带 `provable_n` / `unproven_n`。
+⛔任何时候不得只报一个 `n` 而不说它的构成。
+
+**③** `postmortem` 每行加同名字段，口径与①一致。
+
+**④** 重跑 N0 三个因子，**严格档与全量档并排贴进报告**。
+⛔不得只报好看的那一档。严格档 n 会很小（可能 12 甚至更少），照报。
+
+**⑤ 不做的事**：不改任何 falsifier；⛔**不得碰 RSI 侧已有的 prospective 判定**
+（`rsi_actions.py:293` 那一侧是对的）；不回填任何历史行；
+⛔不得因为严格档 n 太小就放宽判据。
+
+## 红线
+
+- ⛔不得修改 F1c / F2 / F3 / F8 的任何字段；`git diff --stat experiments/registry/` 应为空
+- ⛔不得执行 `nutmeg rsi register` / `amend` / `deploy`
+- ⛔不得改判读逻辑、票面逻辑、audit 码表
+- ⛔**不得为了让严格档 n 变大而放宽 provably_prospective 的判定**
+- ⛔`git add` 只用显式路径，绝不用 `-A` / `-u`
+- ⚠️`git commit | tail` 会吞退出码
+
+## 验收（对照 spec §12.4 的 D1-D7，原样贴输出）
+
+```
+uv run pytest tests/ -q
+uv run ruff check nutmeg/ tests/ experiments/ scripts/
+uv run python experiments/corpus_build.py --out experiments/corpus-v2.json
+uv run python -c "import json,collections;d=json.load(open('experiments/corpus-v2.json'))['rows'];\
+print(collections.Counter((r.get('provably_prospective'), (r.get('labels') or {}).get('label_source')) for r in d if r.get('labels')))"
+uv run python experiments/noise_floor.py --factor c7_live_precedent
+uv run python experiments/noise_floor.py --factor c7_live_precedent --include-unproven
+uv run python -c "import sqlite3,collections;c=sqlite3.connect('.nutmeg-data/ontology/ontology.db');\
+print(collections.Counter(r[0] for r in c.execute('select prospective from rsi_observations')))"
+```
+
+出口条件：
+1. 每行有 `provably_prospective` ∈ {true,false,null} 与 `judged_at_source`
+2. 09-19 之前的足彩行为 **null**（不是 true）
+3. 09-19 那 12 行竞彩 research 为 **true**，且 `captured_at < kickoff_bj` 可复算
+4. `noise_floor` 不带参数时只用严格档
+5. `--include-unproven` 输出带 `provable_n` / `unproven_n`
+6. 三因子双档并排报告
+7. `rsi_observations.prospective` 分布与改造前逐条一致（138 前瞻 / 34 回溯）
+
+━━━━━━━━━━━━━━━━━━━━ T12 提示词结束 ━━━━━━━━━━━━━━━━━━━━
+
+## 我的 T11 / T12 监管清单
+
+| # | 核什么 | 怎么核 |
+|---|---|---|
+| 1 | T11 真的没重发 | 连跑两次 sweep，第二次**耗时秒级**（不是 400+ 秒） |
+| 2 | T11 没把网络错误标死 | 看 permanent 判据只认 max-turns / 退出码两类 |
+| 3 | T11 没删产物 | `.rejected.json` 与 `research-*.json` 数量只增不减 |
+| 4 | T12 历史没被追认 | 抽查 26128 之前的足彩行，`provably_prospective` 必须是 `null` |
+| 5 | T12 门禁默认关严 | 不带参数跑 noise_floor，确认 n 掉到个位/十几 |
+| 6 | T12 双档都报了 | 报告里严格档与全量档并排，不是只有好看那档 |
+| 7 | RSI 侧没被动 | `rsi_observations.prospective` 仍是 138/34 |
+| 8 | registry 零改动 | 两项都跑 `git diff --stat experiments/registry/` |

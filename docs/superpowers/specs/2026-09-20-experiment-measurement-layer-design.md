@@ -457,3 +457,99 @@ sweep 的 `--day` 缺省取**业务日**，不是自然日：凌晨 00:00–07:0
 | C5 | 凌晨跑 | `--day` 缺省解析为前一业务日 |
 | C6 | `launchctl list \| grep nutmeg` | 出现 `com.nutmeg.rsi.sweep` |
 | C7 | 观测/实例未被破坏 | sweep 前后 `rsi_observations` 行数只增不减；已 fulfill 一条未删 |
+
+---
+
+# 追加 · T12：语料的前瞻可证性门禁（2026-09-21 立）
+
+## 12.1 问题
+
+用户 2026-09-21 裁定：
+
+> 「我们需要保留数据在当时的状态，而不是用最新的结果去引导（**判断和答案需要独立出现**），
+> 结果只是用来做闭环实验的回填。」
+
+盘点后发现这条纪律**只有一半成立**：
+
+| 层 | 隔离状况 |
+|---|---|
+| RSI 观测层 | ✅ 真的有。`rsi_actions.py:293` 按 `captured_at < earliest_kickoff` 自动判 `prospective`；`grade_f2_prospective` 有 `LeakError`，采样晚于开球即**拒收并点名期号**；`verdict` 只读 prospective 档 |
+| 语料层 | ⛔ **完全没有**。`corpus_build` 不看任何时间戳，带标签的行一律等价对待 |
+
+实测（2026-09-21）：
+
+```
+语料 1027 行
+  ├ 有赛果             1027
+  ├ 有赛果 + 有标签      126
+  └ 其中可证事前          12     ← 全是 2026-09-19 的竞彩 research 产物
+```
+
+`research-*.json` 55/58 可证事前（`captured_at` × `kickoff_bj`），
+而足彩侧 114 行取自 `legs-base.json`，**当时无逐腿时间戳**。
+
+> 📌 时间戳已于 `7f1c210` 补上：`read_builder` 给 legs 每腿落 `judged_at`、文件级落 `built_at`；
+> `26131-calls.json` 补了 `_meta.built_at` 但显式标 `built_at_source=file_mtime` / `evidence_grade=weak`。
+> **T12 要做的是下游怎么用这些时间戳。**
+
+## 12.2 为什么这件事比它看起来重要
+
+N0 在 2026-09-20 报的三个结论（`c7_live_precedent` n=282 / `anchor_integrity` n=98 /
+`death_proof_count` n=27，全部 `indistinguishable`）**用的正是那 126 行里不可证的 114 行**。
+方向大概率仍成立（幅度确实小），但严格按本纪律，**可用样本是 12 不是 282**。
+
+一个测「真信息还是噪音」的工具，自己的输入若不能证明无泄漏，它报的地板就不可信。
+
+## 12.3 设计
+
+**① 语料行加 `provably_prospective`**
+
+`corpus_build` 对每行计算三态：
+
+```
+true   —— 判断时刻可取到，且 < 该场开球
+false  —— 判断时刻可取到，且 >= 该场开球（泄漏，必须显式可见）
+null   —— 取不到判断时刻
+```
+
+判断时刻按来源取，**并记 `judged_at_source` 说明来自哪一级证据**：
+
+| 来源 | 字段 | evidence_grade |
+|---|---|---|
+| research 产物 | `captured_at` | strong |
+| legs-base（`7f1c210` 之后） | `legs[n].judged_at` | strong |
+| calls.json `_meta` | `built_at` + `built_at_source` | 按文件自报，`file_mtime` 记 weak |
+| 以上皆无 | — | `null` |
+
+⛔**取不到一律 `null`，不得默认成 `true`。** 历史 114 行**不得追认**。
+
+**② `noise_floor` 默认只吃可证事前的行**
+
+- 缺省 `--only-provable`（默认开）：只用 `provably_prospective == true`
+- `--include-unproven` 才放开；放开时**输出里必须带 `provable_n` / `unproven_n` 两个计数**
+- ⛔输出里任何时候都不得只报一个 `n` 而不说它的构成
+
+**③ `postmortem` 落 `provably_prospective`**
+逐场判后落档每行加同名字段，口径与①一致。它是「判断 × 赛果」配对的主产线，
+这个字段决定该行能否进严格档。
+
+**④ 重跑 N0 并双档报告**
+对三个既有因子各出两份：严格档（only-provable）与全量档，并排贴进报告。
+⛔**不得只报好看的那一档**；两档都报，让读的人自己看差距。
+
+**⑤ 不做的事**
+- 不改任何 falsifier / 不改 RSI 侧已有的 prospective 判定（那一侧是对的，别动）
+- 不回填、不追认任何历史行的判断时刻
+- 不因为严格档 n 太小就放宽判据
+
+## 12.4 验收
+
+| # | 检验 | 通过标准 |
+|---|---|---|
+| D1 | 语料字段 | 每行有 `provably_prospective` ∈ {true,false,null} 与 `judged_at_source` |
+| D2 | 历史未被追认 | 09-19 之前的足彩行 `provably_prospective` 为 `null`，**不是 true** |
+| D3 | 竞彩 research 行 | 09-19 那 12 行为 `true`（`captured_at < kickoff_bj` 可复算） |
+| D4 | 默认门禁 | `noise_floor.py` 不带参数时只用严格档 |
+| D5 | 计数透明 | `--include-unproven` 的输出带 `provable_n` / `unproven_n` |
+| D6 | 双档报告 | 三因子各两档并排，严格档 n 小也照报 |
+| D7 | RSI 侧未动 | `rsi_observations.prospective` 分布与改造前逐条一致 |
