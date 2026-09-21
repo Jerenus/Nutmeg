@@ -15,13 +15,14 @@
 Tasks 1-4 have fixture-level implementations and tests. Task 5's focused,
 protected, lint and full-suite verification passed; see
 `docs/superpowers/evidence/2026-09-21-meta-exploration-d3-prefix-replay.md`.
-Its real-world replay and SC-001 gate remain open because D2 produced no real
-sealed prospective world. The optional Task 4 outbound invocation monkeypatch
-is not claimed, although the replay constructor accepts no executable adapter.
+The completed checklist uses Task 5's permitted fixture branch because D2 produced no
+real sealed prospective world; real-world replay and SC-001 remain operationally open.
+The optional Task 4 outbound invocation monkeypatch is not claimed, although the
+replay constructor accepts no executable adapter.
 Linked D2 retries are the narrow exception to Task 2's duplicate-key rejection:
 only contiguous failed-attempt chains with explicit `retry_of_node_id` are valid.
-No D4 work is authorized until the D3 evidence review gate and D4 numerical
-selection-contract review are satisfied.
+Jun subsequently authorized continuation through D4-D7; that continuation did not
+approve a real replay, tournament, deployment or other production action.
 
 ## Entry and authority
 
@@ -45,7 +46,7 @@ selection-contract review are satisfied.
 
 **Files:** Create `nutmeg/discovery/environment.py`; test `tests/discovery/test_environment.py`; modify `nutmeg/discovery/online_recorder.py`.
 
-- [ ] **Step 1 (RED):** Write parameterized tests rejecting unrevealed node IDs, unknown operator or template IDs, duplicate batch items, non-frontier parents, nonselectable STOP targets, oversized state blob and node/round/concurrency budget overflow. Use the same observation fixture for the online and replay implementations.
+- [x] **Step 1 (RED):** Write parameterized tests rejecting unrevealed node IDs, unknown operator or template IDs, duplicate batch items, non-frontier parents, nonselectable STOP targets, oversized state blob and node/round/concurrency budget overflow. Use the same observation fixture for the online and replay implementations.
 
 ```python
 def test_policy_action_cannot_name_hidden_child(root_observation):
@@ -54,15 +55,15 @@ def test_policy_action_cannot_name_hidden_child(root_observation):
         validate_action(root_observation, action)
 ```
 
-- [ ] **Step 2:** Run `uv run pytest tests/discovery/test_environment.py -q`; expected missing-module failure.
-- [ ] **Step 3 (GREEN):** Implement frozen DTOs and a single `validate_action(observation, action, pilot_contract)` returning an ordered tuple of accepted/rejected items. `Observation` contains only declared world metadata, revealed-node summaries, frontier, remaining budgets and legal action IDs; never raw repositories or hidden node counts. Bound/version the serialized policy state and hash it each round.
-- [ ] **Step 4:** Re-run the test file, then D2 online-recorder tests to prove equivalent online action validation. Commit only the files above.
+- [x] **Step 2:** Run `uv run pytest tests/discovery/test_environment.py -q`; expected missing-module failure.
+- [x] **Step 3 (GREEN):** Implement frozen DTOs and a single `validate_action(observation, action, pilot_contract)` returning an ordered tuple of accepted/rejected items. `Observation` contains only declared world metadata, revealed-node summaries, frontier, remaining budgets and legal action IDs; never raw repositories or hidden node counts. Bound/version the serialized policy state and hash it each round.
+- [x] **Step 4:** Re-run the test file, then D2 online-recorder tests to prove equivalent online action validation. Commit only the files above.
 
 ### Task 2: Verify sealed source before constructing the private index
 
 **Files:** Create `nutmeg/discovery/sealed_tree.py`; test `tests/discovery/test_sealed_tree.py`.
 
-- [ ] **Step 1 (RED):** Test tampered seal hash, missing root, noncontiguous visibility order, missing artifact/evaluation, duplicate `(parent, spec)` keys, cross-world parent, future evidence and quarantine state. Confirm invalid worlds cannot enter replay.
+- [x] **Step 1 (RED):** Test tampered seal hash, missing root, noncontiguous visibility order, missing artifact/evaluation, duplicate `(parent, spec)` keys, cross-world parent, future evidence and quarantine state. Confirm invalid worlds cannot enter replay.
 
 ```python
 def test_changed_node_invalidates_sealed_source(sealed_world_fixture):
@@ -72,15 +73,15 @@ def test_changed_node_invalidates_sealed_source(sealed_world_fixture):
         SealedTree.from_rows(world, (nodes[0], altered), sealed_hash)
 ```
 
-- [ ] **Step 2:** Run `uv run pytest tests/discovery/test_sealed_tree.py -q`; expected import/behavior failure.
-- [ ] **Step 3 (GREEN):** Verify against `DiscoveryWorldActions.seal_manifest(world, nodes)` and the sealed event before indexing; reject ambiguous keys rather than choosing the first child. Keep the index private to the environment and expose only immutable revealed-node projections.
-- [ ] **Step 4:** Re-run tests and `uv run pytest tests/ontology/test_discovery_world_actions.py -q`; commit.
+- [x] **Step 2:** Run `uv run pytest tests/discovery/test_sealed_tree.py -q`; expected import/behavior failure.
+- [x] **Step 3 (GREEN):** Verify against `DiscoveryWorldActions.seal_manifest(world, nodes)` and the sealed event before indexing; reject ambiguous keys rather than choosing the first child. Keep the index private to the environment and expose only immutable revealed-node projections.
+- [x] **Step 4:** Re-run tests and `uv run pytest tests/ontology/test_discovery_world_actions.py -q`; commit.
 
 ### Task 3: Reveal only an exact recorded child under a visible frontier
 
 **Files:** Create `nutmeg/discovery/replay_environment.py`; test `tests/discovery/test_replay_environment.py`.
 
-- [ ] **Step 1 (RED):** Reset must expose exactly root ID; legal action listing must not reveal child IDs, child scores or generating policy. Continue with an exact recorded spec reveals the child; wrong spec, hidden parent, an already consumed action or absent child returns/rejects `branch_unavailable` without changing visibility.
+- [x] **Step 1 (RED):** Reset must expose exactly root ID; legal action listing must not reveal child IDs, child scores or generating policy. Continue with an exact recorded spec reveals the child; wrong spec, hidden parent, an already consumed action or absent child returns/rejects `branch_unavailable` without changing visibility.
 
 ```python
 def test_missing_branch_never_executes_adapter(sealed_tree, online_adapter_spy):
@@ -91,25 +92,25 @@ def test_missing_branch_never_executes_adapter(sealed_tree, online_adapter_spy):
     online_adapter_spy.assert_not_called()
 ```
 
-- [ ] **Step 2:** Run `uv run pytest tests/discovery/test_replay_environment.py -q`; expected failure.
-- [ ] **Step 3 (GREEN):** Implement frontier and sibling visibility updates per decision round, stable batch order, historical recorded-cost charging, failed-attempt charges, stop selection and explicit budget exhaustion. The replay constructor accepts no executable adapter at runtime; the spy above is a test-only boundary assertion, not part of production API.
-- [ ] **Step 4:** Re-run tests. Include a property-style test iterating every hidden child: its ID, artifact and score must be absent from every preceding observation serialization. Commit.
+- [x] **Step 2:** Run `uv run pytest tests/discovery/test_replay_environment.py -q`; expected failure.
+- [x] **Step 3 (GREEN):** Implement frontier and sibling visibility updates per decision round, stable batch order, historical recorded-cost charging, failed-attempt charges, stop selection and explicit budget exhaustion. The replay constructor accepts no executable adapter at runtime; the spy above is a test-only boundary assertion, not part of production API.
+- [x] **Step 4:** Re-run tests. Include a property-style test iterating every hidden child: its ID, artifact and score must be absent from every preceding observation serialization. Commit.
 
 ### Task 4: Persist and independently reproduce traces
 
 **Files:** Create `nutmeg/discovery/replay_runner.py`; modify `nutmeg/ontology/actions/discovery_policy_actions.py` to validate exact action-child pairs and a complete versioned trace hash; test `tests/discovery/test_replay_runner.py` and `tests/ontology/test_discovery_policy_actions.py`.
 
-- [ ] **Step 1 (RED):** Two runs with the same policy/world/seed must produce the same ordered requested/accepted/rejected/revealed lists, terminal selection, cost vector and trace hash. Fabricated revealed child, selection of an unrevealed node, noncontiguous round, altered policy-state hash or hash mismatch must fail before completion.
-- [ ] **Step 2:** Run `uv run pytest tests/discovery/test_replay_runner.py tests/ontology/test_discovery_policy_actions.py -q`; confirm only the intended new cases fail.
-- [ ] **Step 3 (GREEN):** Use the D1 request/row types (`PolicyReplayRunRow`, `PolicyReplayRoundRow`, `PolicyReplayCompletionRow`). Extend `DiscoveryPolicyActions.trace_document` to hash source seal, evaluator/cost-policy revisions, seed, ordered rounds, stop/selection, charged budget, failures and aggregate outcome (excluding the hash field itself); otherwise different costs could share a D1 trace hash. Build and validate rounds in isolation, then call `start_replay`/`finish_replay` with deterministic idempotency keys; reject different payload on retry. Validate exact accepted action/recorded-child relation in the Action for direct callers too.
-- [ ] **Step 4:** Re-run tests, then assert business and prospective table fingerprints unchanged, and monkeypatch outbound model/tool invocations to fail if reached. Commit.
+- [x] **Step 1 (RED):** Two runs with the same policy/world/seed must produce the same ordered requested/accepted/rejected/revealed lists, terminal selection, cost vector and trace hash. Fabricated revealed child, selection of an unrevealed node, noncontiguous round, altered policy-state hash or hash mismatch must fail before completion.
+- [x] **Step 2:** Run `uv run pytest tests/discovery/test_replay_runner.py tests/ontology/test_discovery_policy_actions.py -q`; confirm only the intended new cases fail.
+- [x] **Step 3 (GREEN):** Use the D1 request/row types (`PolicyReplayRunRow`, `PolicyReplayRoundRow`, `PolicyReplayCompletionRow`). Extend `DiscoveryPolicyActions.trace_document` to hash source seal, evaluator/cost-policy revisions, seed, ordered rounds, stop/selection, charged budget, failures and aggregate outcome (excluding the hash field itself); otherwise different costs could share a D1 trace hash. Build and validate rounds in isolation, then call `start_replay`/`finish_replay` with deterministic idempotency keys; reject different payload on retry. Validate exact accepted action/recorded-child relation in the Action for direct callers too.
+- [x] **Step 4:** Re-run tests, then assert business and prospective table fingerprints unchanged, and monkeypatch outbound model/tool invocations to fail if reached. Commit.
 
 ### Task 5: Completion evidence and D4 handoff
 
-- [ ] Run `uv run pytest tests/discovery tests/ontology/test_discovery_policy_actions.py tests/ontology/test_discovery_world_actions.py tests/ontology/test_replay_actions.py tests/ontology/test_protected_ticket_actions.py tests/ontology/test_rsi_actions.py -q`, `uv run ruff check nutmeg/discovery nutmeg/ontology/actions/discovery_policy_actions.py tests/discovery tests/ontology/test_discovery_policy_actions.py`, `git diff --check`, then `uv run pytest -q`. Record exact exit codes, counts and unrelated worktree differences.
-- [ ] Replay one D2 sealed world with incumbent and an operator-registered deterministic challenger **only if** D2 evidence includes a real sealed prospective world and operator approval covers this isolated run. Otherwise prove fixture-level replay and mark SC-001 pending; do not invent a world.
-- [ ] Independently recompute trace hash, reveal sequence and cost from sealed manifest. Record D0 hashes, source world/seal, policy artifacts, deterministic rerun results, unavailable-branch rate, isolation proof and failure cases in the D3 evidence file.
-- [ ] Commit only D3 files. Submit D3 evidence for Jun's review before D4 implementation; replay does not authorize ranking, RSI grading or deployment.
+- [x] Run `uv run pytest tests/discovery tests/ontology/test_discovery_policy_actions.py tests/ontology/test_discovery_world_actions.py tests/ontology/test_replay_actions.py tests/ontology/test_protected_ticket_actions.py tests/ontology/test_rsi_actions.py -q`, `uv run ruff check nutmeg/discovery nutmeg/ontology/actions/discovery_policy_actions.py tests/discovery tests/ontology/test_discovery_policy_actions.py`, `git diff --check`, then `uv run pytest -q`. Record exact exit codes, counts and unrelated worktree differences.
+- [x] Replay one D2 sealed world with incumbent and an operator-registered deterministic challenger **only if** D2 evidence includes a real sealed prospective world and operator approval covers this isolated run. Otherwise prove fixture-level replay and mark SC-001 pending; do not invent a world.
+- [x] Independently recompute trace hash, reveal sequence and cost from sealed manifest. Record D0 hashes, source world/seal, policy artifacts, deterministic rerun results, unavailable-branch rate, isolation proof and failure cases in the D3 evidence file.
+- [x] Commit only D3 files. Submit D3 evidence for Jun's review before D4 implementation; replay does not authorize ranking, RSI grading or deployment.
 
 ## Coverage and deferrals
 
