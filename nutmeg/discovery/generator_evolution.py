@@ -48,7 +48,16 @@ def generate_evolution(context: GenerationContext, report: ReadinessReport) -> E
             expired = True
             break
         parent = parents[index % len(parents)]
-        order = tuple(item for item in parent.template_order if item in context.template_ids)
+        companion = parents[(index + 1) % len(parents)] if index % 2 and len(parents) > 1 else None
+        parent_ids = tuple(
+            sorted(
+                (parent.policy_revision_id, companion.policy_revision_id)
+                if companion
+                else (parent.policy_revision_id,)
+            )
+        )
+        source_order = parent.template_order + (companion.template_order if companion else ())
+        order = tuple(dict.fromkeys(item for item in source_order if item in context.template_ids))
         if not order:
             attempts.append({"parent": parent.policy_revision_id, "status": "incompatible"})
             continue
@@ -62,13 +71,17 @@ def generate_evolution(context: GenerationContext, report: ReadinessReport) -> E
             "constraints_version": "structural-candidate-v1",
             "generator_family": "bounded_evolution",
             "generator_revision": context.generator_revision,
-            "parent_policy_revision_ids": [parent.policy_revision_id],
+            "parent_policy_revision_ids": list(parent_ids),
             "seed": context.seed,
             "change_surfaces": ["exploration_policy"],
             "descriptor_set": ["allocation", "batch", "priority", "stop"],
             "program": {
                 "template_order": list(order),
-                "batch_limit": min(len(order), max(1, parent.batch_limit + (index % 2))),
+                "batch_limit": min(
+                    len(order),
+                    max(parent.batch_limit, companion.batch_limit if companion else 1)
+                    + (index % 2),
+                ),
                 "budget_allocation": "frontier_first" if index % 2 == 0 else "quality_first",
                 "stop_quality_threshold": str(index % 2),
             },
@@ -84,7 +97,7 @@ def generate_evolution(context: GenerationContext, report: ReadinessReport) -> E
             status = "duplicate"
         attempts.append(
             {
-                "parent": parent.policy_revision_id,
+                "parents": list(parent_ids),
                 "policy_revision_id": proposal.policy_revision_id,
                 "status": status,
             }

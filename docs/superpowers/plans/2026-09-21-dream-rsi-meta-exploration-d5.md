@@ -34,7 +34,7 @@
 
 **Files:** Create `nutmeg/discovery/generation_contracts.py`; test `tests/discovery/test_generation_contracts.py`.
 
-- [ ] **Step 1 (RED):** Test allowed changes to shard priority, batch limit, budget allocation and STOP threshold only. Reject unknown fields, Python code/import, prompt text outside registered slots, model/evaluator/Action/football surface, undeclared resource, parent mismatch, unsorted duplicate parent, and program state exceeding the frozen size bound.
+- [x] **Step 1 (RED):** Test allowed changes to shard priority, batch limit, budget allocation and STOP threshold only. Reject unknown fields, Python code/import, prompt text outside registered slots, model/evaluator/Action/football surface, undeclared resource, parent mismatch, unsorted duplicate parent, and program state exceeding the frozen size bound.
 
 ```python
 def test_frozen_surface_is_rejected_before_replay(program_document):
@@ -42,33 +42,33 @@ def test_frozen_surface_is_rejected_before_replay(program_document):
         PolicyProgramArtifact.model_validate({**program_document, "model_weights": {"x": 1}})
 ```
 
-- [ ] **Step 2:** Run `uv run pytest tests/discovery/test_generation_contracts.py -q`; expected missing-module failure.
-- [ ] **Step 3 (GREEN):** Implement strict Pydantic models with explicit `schema_version`, `policy_revision_id`, ordered complete `parent_policy_revision_ids`, `generator_family`, `generator_revision`, seed, constraint revision, `change_surfaces`, a closed `program`, descriptor set and deterministic canonical hash. The interpreter maps that program to D3 `ContinueBatch`/`Stop`, not arbitrary calls.
-- [ ] **Step 4:** Re-run tests; add a test that serialization/hash are deterministic across repeated validations. Commit.
+- [x] **Step 2:** Run `uv run pytest tests/discovery/test_generation_contracts.py -q`; expected missing-module failure.
+- [x] **Step 3 (GREEN):** Implement strict Pydantic models with explicit `schema_version`, `policy_revision_id`, ordered complete `parent_policy_revision_ids`, `generator_family`, `generator_revision`, seed, constraint revision, `change_surfaces`, a closed `program`, descriptor set and deterministic canonical hash. The interpreter maps that program to D3 `ContinueBatch`/`Stop`, not arbitrary calls.
+- [x] **Step 4:** Re-run tests; add a test that serialization/hash are deterministic across repeated validations. Commit.
 
 ### Task 2: Record an empty or successful generation round durably
 
 **Files:** Create `nutmeg/ontology/repository/schema_discovery_generation.py`; modify `nutmeg/ontology/repository/migrations.py`, `discovery.py`, `nutmeg/ontology/actions/discovery_policy_actions.py`; tests `tests/ontology/test_discovery_migration.py`, `test_discovery_policy_actions.py`, `test_permissions.py`.
 
-- [ ] **Step 1 (RED):** Test append-only round schema with round ID, development pool hash, eligible parent IDs, generator artifact hash, seed, candidate cap, compute budget, timeout, measured generation cost, status, ordered candidate hashes and trace hash. Assert an empty round is recorded, UPDATE/DELETE fail, AI/operator cannot masquerade as deterministic recorder, and Action+outbox commit atomically.
-- [ ] **Step 2:** Run the migration and Action tests red.
-- [ ] **Step 3 (GREEN):** Add migration 41 that creates only the new table, append-only triggers and the `record_policy_generation_round` permission for `deterministic_system`. Add one typed Action using `ActionService`. Validate source world IDs are development-only and frozen, and freeze input manifest **before** running generation. Do not edit `schema_discovery.TABLE_KEYS`, migration 40, D1 historical rows or read-only CLI schema automatically.
-- [ ] **Step 4:** Re-run new tests plus `uv run pytest tests/ontology/test_migrations.py tests/ontology/test_permissions.py -q`; commit.
+- [x] **Step 1 (RED):** Test append-only round schema with round ID, development pool hash, eligible parent IDs, generator artifact hash, seed, candidate cap, compute budget, timeout, measured generation cost, status, ordered candidate hashes and trace hash. Assert an empty round is recorded, UPDATE/DELETE fail, AI/operator cannot masquerade as deterministic recorder, and Action+outbox commit atomically.
+- [x] **Step 2:** Run the migration and Action tests red.
+- [x] **Step 3 (GREEN):** Add migration 41 that creates only the new table, append-only triggers and the `record_policy_generation_round` permission for `deterministic_system`. Add one typed Action using `ActionService`. Validate source world IDs are development-only and frozen, and freeze input manifest **before** running generation. Do not edit `schema_discovery.TABLE_KEYS`, migration 40, D1 historical rows or read-only CLI schema automatically.
+- [x] **Step 4:** Re-run new tests plus `uv run pytest tests/ontology/test_migrations.py tests/ontology/test_permissions.py -q`; commit.
 
 ### Task 3: Deterministic baseline proposal generator
 
 **Files:** Create `nutmeg/discovery/generator_baseline.py`; test `tests/discovery/test_generator_baseline.py`.
 
-- [ ] **Step 1 (RED):** Same manifest/seed yields same ordered proposal hashes and zero hidden holdout accesses; cap and time budget yield explicit truncation/timeout receipts and charged generation cost. No proposal claims incumbent role or writes `exploration_policy_revisions`.
-- [ ] **Step 2:** Run `uv run pytest tests/discovery/test_generator_baseline.py -q`; expected missing-module failure.
-- [ ] **Step 3 (GREEN):** Generate only enumerated legal D4 `DeterministicBaselineVariantArtifact` variants under D0 grammar, deduplicate by content hash, and persist the round receipt from Task 2. Keep generation cost separate from later D3 execution cost; D5 `PolicyProgramArtifact` is reserved for bounded evolution.
-- [ ] **Step 4:** Re-run tests and register one proposal through operator `DiscoveryPolicyActions.register_policy` in a temporary store; commit.
+- [x] **Step 1 (RED):** Same manifest/seed yields same ordered proposal hashes and zero hidden holdout accesses; cap and time budget yield explicit truncation/timeout receipts and charged generation cost. No proposal claims incumbent role or writes `exploration_policy_revisions`.
+- [x] **Step 2:** Run `uv run pytest tests/discovery/test_generator_baseline.py -q`; expected missing-module failure.
+- [x] **Step 3 (GREEN):** Generate only enumerated legal D4 `DeterministicBaselineVariantArtifact` variants under D0 grammar, deduplicate by content hash, and persist the round receipt from Task 2. Keep generation cost separate from later D3 execution cost; D5 `PolicyProgramArtifact` is reserved for bounded evolution.
+- [x] **Step 4:** Re-run tests and register one proposal through operator `DiscoveryPolicyActions.register_policy` in a temporary store; commit.
 
 ### Task 4: Bounded seeded evolution behind fail-closed readiness
 
 **Files:** Create `nutmeg/discovery/generator_evolution.py`, `nutmeg/discovery/generation_service.py`; test `tests/discovery/test_generator_evolution.py`, `test_generation_service.py`.
 
-- [ ] **Step 1 (RED):** With 59 sealed worlds, insufficient overlap, duplicate-inflated sample, missing failed/degraded strata or unknown D3 unavailable-branch rate, assert generator was never called and response names all failed metrics. Direct import/API invocation must enforce the same gate. Exposed hidden holdout and open prospective shadow worlds never appear in `GenerationContext`.
+- [x] **Step 1 (RED):** With 59 sealed worlds, insufficient overlap, duplicate-inflated sample, missing failed/degraded strata or unknown D3 unavailable-branch rate, assert generator was never called and response names all failed metrics. Direct import/API invocation must enforce the same gate. Exposed hidden holdout and open prospective shadow worlds never appear in `GenerationContext`.
 
 ```python
 def test_optimizer_is_not_invoked_below_gate(service, generator_spy, report):
@@ -78,18 +78,18 @@ def test_optimizer_is_not_invoked_below_gate(service, generator_spy, report):
     generator_spy.assert_not_called()
 ```
 
-- [ ] **Step 2:** Run focused tests red.
-- [ ] **Step 3 (GREEN):** Filter parents to eligible `incumbent`/non-disqualified archive policies under D0 capacity/per-lineage rules; stable seeded mutation/recombination within closed AST; freeze pool, descriptors, budget and generator revision. Enforce candidate/time/cost caps during the loop, not only after it. Save every attempt/timeout and selected proposals in the round trace.
-- [ ] **Step 4:** Re-run with a passing synthetic gate fixture twice and compare exact hashes, lineage links, receipt cost and seed. Add negative tests for frozen-surface payloads and unsupported `workflow_search`/`tree_search`. Commit.
+- [x] **Step 2:** Run focused tests red.
+- [x] **Step 3 (GREEN):** Filter parents to eligible `incumbent`/non-disqualified archive policies under D0 capacity/per-lineage rules; stable seeded mutation/recombination within closed AST; freeze pool, descriptors, budget and generator revision. Enforce candidate/time/cost caps during the loop, not only after it. Save every attempt/timeout and selected proposals in the round trace.
+- [x] **Step 4:** Re-run with a passing synthetic gate fixture twice and compare exact hashes, lineage links, receipt cost and seed. Add negative tests for frozen-surface payloads and unsupported `workflow_search`/`tree_search`. Commit.
 
 ### Task 5: Validate admission and reproduce through D3/D4
 
 **Files:** Modify `nutmeg/ontology/actions/discovery_policy_actions.py`, `nutmeg/discovery/replay_runner.py`, read-only projections/CLI; tests `tests/ontology/test_discovery_policy_actions.py`, `tests/discovery/test_replay_runner.py`, `tests/test_cli_discovery.py`.
 
-- [ ] **Step 1 (RED):** Operator registration must verify round receipt, exact candidate artifact hash, ordered parent IDs, allowed surfaces and compatible family; bind `PolicyRevisionRow.generation_input_manifest_hash` and `generation_trace_hash` to the append-only round and store its ID in validated `generator_descriptors`. Generated result without operator Action is not replay-eligible. A registered proposal's D3 replay uses only observation passed by environment; no background memory, filesystem/network read or Action call.
-- [ ] **Step 2:** Run tests red. Extend the policy Action and declarative interpreter; expose generator family/revision, seed, parent lineage, generation trace/cost, archive eligibility and source round in read-only detail. For stores at schema 40, return an explicit "generation unavailable; migration 41 required" read state rather than migrating during a query. Run tests green; commit.
-- [ ] **Step 3:** Run `uv run pytest tests/discovery tests/ontology/test_discovery_policy_actions.py tests/ontology/test_discovery_governance_actions.py tests/ontology/test_permissions.py tests/ontology/test_migrations.py tests/test_cli_discovery.py -q`, `uv run ruff check nutmeg/discovery nutmeg/ontology/actions/discovery_policy_actions.py nutmeg/ontology/repository tests/discovery tests/ontology/test_discovery_policy_actions.py tests/test_cli_discovery.py`, `git diff --check`, `uv run pytest -q`. Record counts and unrelated failures.
-- [ ] **Step 4:** On a temporary store reproduce a seeded generator round and verify its output hash/parent/seed/cost. Do not claim optimizer readiness from synthetic fixtures. Write D5 evidence, commit D5 paths only, submit for Jun's review before D6 implementation.
+- [x] **Step 1 (RED):** Operator registration must verify round receipt, exact candidate artifact hash, ordered parent IDs, allowed surfaces and compatible family; bind `PolicyRevisionRow.generation_input_manifest_hash` and `generation_trace_hash` to the append-only round and store its ID in validated `generator_descriptors`. Generated result without operator Action is not replay-eligible. A registered proposal's D3 replay uses only observation passed by environment; no background memory, filesystem/network read or Action call.
+- [x] **Step 2:** Run tests red. Extend the policy Action and declarative interpreter; expose generator family/revision, seed, parent lineage, generation trace/cost, archive eligibility and source round in read-only detail. For stores at schema 40, return an explicit "generation unavailable; migration 41 required" read state rather than migrating during a query. Run tests green; commit.
+- [x] **Step 3:** Run `uv run pytest tests/discovery tests/ontology/test_discovery_policy_actions.py tests/ontology/test_discovery_governance_actions.py tests/ontology/test_permissions.py tests/ontology/test_migrations.py tests/test_cli_discovery.py -q`, `uv run ruff check nutmeg/discovery nutmeg/ontology/actions/discovery_policy_actions.py nutmeg/ontology/repository tests/discovery tests/ontology/test_discovery_policy_actions.py tests/test_cli_discovery.py`, `git diff --check`, `uv run pytest -q`. Record counts and unrelated failures.
+- [x] **Step 4:** On a temporary store reproduce a seeded generator round and verify its output hash/parent/seed/cost. Do not claim optimizer readiness from synthetic fixtures. Write D5 evidence, commit D5 paths only, submit for Jun's review before D6 implementation.
 
 ## Coverage
 

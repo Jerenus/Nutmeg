@@ -80,6 +80,37 @@ def test_seeded_evolution_reproduces_hashes_parentage_trace_and_budget():
     assert first.status == "truncated"
 
 
+def test_two_eligible_parents_can_recombine_with_complete_ordered_lineage():
+    from nutmeg.discovery.generation_contracts import EligibleParent
+
+    context = _context().model_copy(
+        update={
+            "template_ids": ("1x1", "2x1", "3x1"),
+            "eligible_parents": (
+                EligibleParent(
+                    policy_revision_id="parent-a",
+                    disposition="incumbent",
+                    lineage_root="parent-a",
+                    template_order=("1x1", "2x1"),
+                    batch_limit=1,
+                ),
+                EligibleParent(
+                    policy_revision_id="parent-b",
+                    disposition="stepping_stone",
+                    lineage_root="parent-b",
+                    template_order=("3x1", "2x1"),
+                    batch_limit=2,
+                ),
+            ),
+        }
+    )
+    first = generate_evolution(context, _ready())
+    assert first == generate_evolution(context, _ready())
+    child = first.proposals[1]
+    assert child.parent_policy_revision_ids == ("parent-a", "parent-b")
+    assert set(child.program.template_order) == {"1x1", "2x1", "3x1"}
+
+
 def test_evolution_stops_at_real_deadline_and_charges_attempt(monkeypatch):
     import nutmeg.discovery.generator_evolution as generator_module
 
