@@ -1,0 +1,31 @@
+{
+  "schema_version": "1",
+  "policy_revision_id": "structural-baseline-v1",
+  "family": "structural_candidate_exploration",
+  "interface_version": "discovery-policy-v1",
+  "constraints_version": "structural-candidate-v1",
+  "generator_family": "baseline",
+  "change_surfaces": [
+    "exploration_policy"
+  ],
+  "random_seed_policy": {
+    "kind": "none",
+    "deterministic": true
+  },
+  "compatible_world_families": [
+    "structural_candidate_audit"
+  ],
+  "steps": [
+    {
+      "round": 1,
+      "action": "continue_batch",
+      "selector": "all_template_shards"
+    },
+    {
+      "round": 2,
+      "action": "stop",
+      "selector": "best_audit_clean_node_per_band"
+    }
+  ],
+  "rationale": "Represent current bounded exhaustive generation as the incumbent."
+}

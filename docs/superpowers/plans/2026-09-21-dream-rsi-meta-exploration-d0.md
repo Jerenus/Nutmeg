@@ -469,7 +469,7 @@ git commit -m "docs(discovery): freeze structural pilot contract"
 - Create: `experiments/discovery/structural-baseline-v1.policy.json`
 - Modify: `tests/discovery/test_contracts.py`
 
-- [ ] **Step 1: Add a failing baseline-artifact test**
+- [x] **Step 1: Add a failing baseline-artifact test**
 
 ```python
 # append to tests/discovery/test_contracts.py
@@ -486,23 +486,23 @@ def test_repository_baseline_is_deterministic_and_contract_compatible():
     assert len(canonical_hash(policy)) == 64
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/discovery/test_contracts.py::test_repository_baseline_is_deterministic_and_contract_compatible -v`
 
 Expected: FAIL with `FileNotFoundError`.
 
-- [ ] **Step 3: Add the baseline policy artifact**
+- [x] **Step 3: Add the baseline policy artifact**
 
 Create `experiments/discovery/structural-baseline-v1.policy.json` with exactly the `_policy()` document from Task 1, formatted as two-space JSON with a trailing newline. This artifact wraps current behavior without running it: round one requests every approved template shard in deterministic order, and round two stops with the best audit-clean node per odds band. It contains no model, network, Action, deployment, or funds authority.
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: `uv run pytest tests/discovery/test_contracts.py::test_repository_baseline_is_deterministic_and_contract_compatible -v`
 
 Expected: `1 passed`.
 
-- [ ] **Step 5: Commit the incumbent artifact**
+- [x] **Step 5: Commit the incumbent artifact**
 
 ```bash
 git add experiments/discovery/structural-baseline-v1.policy.json tests/discovery/test_contracts.py

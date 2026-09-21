@@ -215,3 +215,16 @@ def test_repository_pilot_contract_is_strict_and_shadow_only():
     assert "model_weights" in contract.frozen_surfaces
     assert "record_cash_transaction" in contract.protected_actions
     assert len(canonical_hash(contract)) == 64
+
+
+def test_repository_baseline_is_deterministic_and_contract_compatible():
+    pilot = load_pilot_contract(
+        ROOT / "experiments/discovery/structural-candidate-v1.contract.json"
+    )
+    policy = load_baseline_policy(
+        ROOT / "experiments/discovery/structural-baseline-v1.policy.json"
+    )
+    assert policy.constraints_version == pilot.pilot_id
+    assert policy.random_seed_policy == {"kind": "none", "deterministic": True}
+    assert [step.action for step in policy.steps] == ["continue_batch", "stop"]
+    assert len(canonical_hash(policy)) == 64
