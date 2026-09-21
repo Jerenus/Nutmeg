@@ -112,3 +112,44 @@ def test_tournament_detail_exposes_frozen_contract_hash_and_exposure_slice(tmp_p
     assert detail["comparison_reasons"]["policy-2"] == "development_not_materially_better"
     assert detail["worst_stratum"]["max_decline"] == "0"
     assert detail["stratum_summary"]["board_size:small"]["policy-1"]["eligible_band_count"] == "1"
+
+
+def test_readiness_uses_only_completed_d3_replay_metrics(tmp_path):
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from nutmeg.discovery.contracts import load_baseline_policy, load_pilot_contract
+    from nutmeg.discovery.online_recorder import record_shadow_world
+    from nutmeg.discovery.replay_runner import run_registered_replay
+    from tests.discovery.test_online_adapter import _snapshot
+    from tests.discovery.test_online_recorder import _rig as online_rig
+
+    engine = online_rig(tmp_path)
+    root = Path(__file__).resolve().parents[2] / "experiments/discovery"
+    policy = load_baseline_policy(root / "structural-baseline-v1.policy.json")
+    pilot = load_pilot_contract(root / "structural-candidate-v1.contract.json")
+    recorded = record_shadow_world(
+        _snapshot(),
+        engine=engine,
+        shadow_database=tmp_path / "shadow.db",
+        source_database=tmp_path / "business.db",
+        policy_revision_id=policy.policy_revision_id,
+        requested_at=datetime(2026, 9, 21, tzinfo=UTC),
+        fixture_only=True,
+    )
+    before = DiscoveryReadService(engine).readiness()
+    assert before.metrics["branch_unavailable_rate"].status == "unknown"
+    run_registered_replay(
+        engine,
+        recorded.world_id,
+        policy,
+        pilot,
+        seed=7,
+        requested_at=datetime(2026, 9, 21, tzinfo=UTC),
+    )
+    after = DiscoveryReadService(engine).readiness()
+    # Fixture-only worlds are historical sources; a completed replay cannot turn
+    # synthetic coverage into operational readiness.
+    assert after.metrics["sealed_worlds"].observed == 0
+    assert after.metrics["replay_integrity"].status == "unknown"
+    assert after.metrics["branch_unavailable_rate"].status == "unknown"

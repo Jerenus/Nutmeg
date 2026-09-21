@@ -14,6 +14,7 @@ from nutmeg.ontology.discovery.models import (
     validate_change_surfaces,
 )
 from nutmeg.ontology.repository.discovery import (
+    PolicyGenerationRoundRow,
     PolicyParentLinkRow,
     PolicyReplayCompletionRow,
     PolicyReplayRoundRow,
@@ -27,6 +28,15 @@ class RegisterPolicyRevisionRequest:
     policy: PolicyRevisionRow
     artifact: dict[str, object]
     parent_policy_revision_ids: tuple[str, ...]
+    actor_id: str
+    actor_role: ActorRole
+    idempotency_key: str
+    requested_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class RecordPolicyGenerationRoundRequest:
+    round: PolicyGenerationRoundRow
     actor_id: str
     actor_role: ActorRole
     idempotency_key: str
@@ -69,6 +79,103 @@ class DiscoveryPolicyActions:
             payload=payload,
         )
 
+    def record_generation_round(self, request: RecordPolicyGenerationRoundRequest) -> ActionOutcome:
+        command = self._command(
+            "record_policy_generation_round", request, {"round": asdict(request.round)}
+        )
+
+        def handler(uow, cmd):
+            row = request.round
+            if row.generator_family not in {"baseline", "bounded_evolution"}:
+                raise ValueError("unsupported generator family")
+            if row.status not in {"blocked", "complete", "truncated", "timeout"}:
+                raise ValueError("unsupported generation status")
+            if row.seed < 0 or min(row.candidate_cap, row.compute_budget, row.timeout_seconds) < 1:
+                raise ValueError("generation budget must be positive")
+            if row.generator_artifact_hash != canonical_hash({"revision": row.generator_revision}):
+                raise ValueError("generator artifact hash mismatch")
+            if row.input_manifest_hash != canonical_hash(row.input_manifest):
+                raise ValueError("generation input manifest hash mismatch")
+            if row.trace_hash != canonical_hash(row.trace):
+                raise ValueError("generation trace hash mismatch")
+            if row.eligible_parent_ids != row.input_manifest.get("eligible_parent_ids"):
+                raise ValueError("generation parent pool differs from frozen manifest")
+            if row.generator_revision != row.input_manifest.get("generator_revision"):
+                raise ValueError("generator revision differs from frozen manifest")
+            proposals = row.trace.get("proposals")
+            attempts = row.trace.get("attempts")
+            if (
+                not isinstance(attempts, list)
+                or row.generation_cost != {"attempts": len(attempts)}
+                or len(attempts) > row.compute_budget
+                or (isinstance(proposals, list) and len(proposals) > row.candidate_cap)
+            ):
+                raise ValueError("generation cost or attempt budget differs from trace")
+            if not isinstance(proposals, list) or row.candidate_hashes != [
+                canonical_hash(item) for item in proposals
+            ]:
+                raise ValueError("candidate hashes differ from trace proposals")
+            if len(row.candidate_hashes) != len(set(row.candidate_hashes)):
+                raise ValueError("duplicate candidate artifact hash")
+            if any(
+                not isinstance(item, dict)
+                or item.get("policy_revision_id")
+                not in {
+                    attempt.get("policy_revision_id")
+                    for attempt in attempts
+                    if isinstance(attempt, dict) and attempt.get("status") == "proposed"
+                }
+                for item in proposals
+            ):
+                raise ValueError("proposal has no successful generation attempt")
+            if row.status == "blocked" and row.candidate_hashes:
+                raise ValueError("blocked generation cannot emit candidates")
+            worlds = row.input_manifest.get("development_worlds")
+            if not isinstance(worlds, list):
+                raise ValueError("development worlds must be frozen")
+            if row.eligible_parent_ids != sorted(set(row.eligible_parent_ids)):
+                raise ValueError("eligible parents must be sorted and unique")
+            for parent_id in row.eligible_parent_ids:
+                parent = uow.discovery.policy(parent_id)
+                if parent is None or not parent.validation_result.get("valid"):
+                    raise ValueError("eligible parent must be a registered valid policy")
+            for entry in worlds:
+                if not isinstance(entry, dict) or set(entry) != {"world_id", "seal_hash"}:
+                    raise ValueError("invalid development world manifest")
+                world_id = entry["world_id"]
+                world = uow.discovery.world(world_id)
+                cutoff = row.input_manifest.get("development_cutoff")
+                if world is not None and (not isinstance(cutoff, str) or world.cutoff_at > cutoff):
+                    raise ValueError("development cutoff excludes holdout world")
+                events = uow.discovery.world_events(world_id)
+                if (
+                    uow.discovery.world_state(world_id) != "sealed"
+                    or not events
+                    or events[-1].manifest_hash != entry["seal_hash"]
+                ):
+                    raise ValueError("sealed development world required")
+                from nutmeg.discovery.sealed_tree import SealedTree
+
+                nodes = uow.discovery.nodes_for_world(world_id)
+                try:
+                    SealedTree.from_rows(
+                        world,
+                        nodes,
+                        events,
+                        {
+                            node.node_id: evaluation
+                            for node in nodes
+                            if (evaluation := uow.discovery.latest_node_evaluation(node.node_id))
+                            is not None
+                        },
+                    )
+                except ValueError as exc:
+                    raise ValueError(f"development seal manifest invalid: {exc}") from exc
+            uow.discovery.insert_generation_round(replace(row, action_id=cmd.action_id))
+            return (ObjectRef("policy_generation_round", row.generation_round_id),)
+
+        return self._svc.execute(command, handler, acquire_write_lock=True)
+
     def register_policy(self, request: RegisterPolicyRevisionRequest) -> ActionOutcome:
         command = self._command(
             "register_policy_revision",
@@ -97,7 +204,7 @@ class DiscoveryPolicyActions:
                     or baseline.constraints_version != policy.constraints_version
                 ):
                     raise ValueError("baseline policy artifact and revision disagree")
-            else:
+            elif request.artifact.get("generator_family") != "bounded_evolution":
                 from nutmeg.discovery.contracts import BaselinePolicyArtifact
 
                 allowed = set(BaselinePolicyArtifact.model_fields) | {
@@ -108,6 +215,39 @@ class DiscoveryPolicyActions:
                     raise ValueError(
                         f"unsupported or frozen policy artifact fields: {sorted(unexpected)}"
                     )
+            if (
+                policy.generator_family == "bounded_evolution"
+                or policy.generator_revision == "baseline-v1"
+                or policy.generator_descriptors.get("generation_round_id")
+            ):
+                artifact = load_policy_artifact(request.artifact)
+                round_id = policy.generator_descriptors.get("generation_round_id")
+                round_row = (
+                    uow.discovery.generation_round(round_id) if isinstance(round_id, str) else None
+                )
+                if round_row is None or round_row.status == "blocked":
+                    raise ValueError("generated policy requires a recorded generation round")
+                if (
+                    canonical_hash(request.artifact) not in round_row.candidate_hashes
+                    or request.artifact not in round_row.trace["proposals"]
+                    or artifact.policy_revision_id != policy.policy_revision_id
+                    or artifact.generator_family != policy.generator_family
+                    or policy.generator_revision != round_row.generator_revision
+                    or policy.generation_input_manifest_hash != round_row.input_manifest_hash
+                    or policy.generation_trace_hash != round_row.trace_hash
+                    or policy.generation_cost != round_row.generation_cost
+                    or tuple(request.parent_policy_revision_ids)
+                    != (
+                        tuple(artifact.parent_policy_revision_ids)
+                        if hasattr(artifact, "parent_policy_revision_ids")
+                        else tuple(round_row.eligible_parent_ids)
+                    )
+                    or not set(request.parent_policy_revision_ids).issubset(
+                        round_row.eligible_parent_ids
+                    )
+                    or tuple(policy.change_surfaces) != artifact.change_surfaces
+                ):
+                    raise ValueError("generated policy does not match frozen round receipt")
             validate_change_surfaces(tuple(ChangeSurface(s) for s in policy.change_surfaces))
             if not policy.validation_result.get("valid"):
                 raise ValueError("policy validation did not pass")
@@ -339,8 +479,7 @@ class DiscoveryPolicyActions:
             if any(node_id not in visible for node_id in request.completion.selected_node_ids):
                 raise ValueError("replay selected an unrevealed node")
             if any(
-                node_id not in source.evaluations
-                or not source.evaluations[node_id].selectable
+                node_id not in source.evaluations or not source.evaluations[node_id].selectable
                 for node_id in request.completion.selected_node_ids
             ):
                 raise ValueError("replay selected a nonselectable node")

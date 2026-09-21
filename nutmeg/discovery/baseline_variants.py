@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from nutmeg.discovery.contracts import BaselinePolicyArtifact, FrozenContract
+from nutmeg.discovery.generation_contracts import PolicyProgramArtifact
 from nutmeg.ontology.discovery.models import canonical_hash
 
 
@@ -43,7 +44,9 @@ class DeterministicBaselineVariantArtifact(FrozenContract):
         return self
 
 
-PolicyArtifact = BaselinePolicyArtifact | DeterministicBaselineVariantArtifact
+PolicyArtifact = (
+    BaselinePolicyArtifact | DeterministicBaselineVariantArtifact | PolicyProgramArtifact
+)
 
 
 def load_policy_artifact(document: object) -> PolicyArtifact:
@@ -51,4 +54,6 @@ def load_policy_artifact(document: object) -> PolicyArtifact:
         raise ValueError("policy artifact must be an object")
     if document.get("policy_revision_id") == "structural-baseline-v1":
         return BaselinePolicyArtifact.model_validate(document)
+    if document.get("generator_family") == "bounded_evolution":
+        return PolicyProgramArtifact.model_validate(document)
     return DeterministicBaselineVariantArtifact.model_validate(document)

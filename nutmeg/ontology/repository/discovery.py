@@ -10,6 +10,7 @@ from sqlalchemy import Connection, func, insert, select
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.discovery.models import WorldEventKind, project_world_state
 from nutmeg.ontology.repository import schema_discovery as sd
+from nutmeg.ontology.repository import schema_discovery_generation as sg
 
 
 def _record_type(name: str, table_name: str):
@@ -48,6 +49,12 @@ ArchiveDecisionRow = _record_type("ArchiveDecisionRow", "policy_archive_decision
 HoldoutExposureRow = _record_type("HoldoutExposureRow", "policy_holdout_exposures")
 PolicyDeploymentRow = _record_type("PolicyDeploymentRow", "policy_deployments")
 PolicyBrakeEventRow = _record_type("PolicyBrakeEventRow", "policy_brake_events")
+PolicyGenerationRoundRow = make_dataclass(
+    "PolicyGenerationRoundRow",
+    [(column.name.removesuffix("_json"), object) for column in sg.policy_generation_rounds.columns],
+    frozen=True,
+    slots=True,
+)
 
 _ROW_TYPES = {
     row_type.__name__: row_type
@@ -71,6 +78,7 @@ _ROW_TYPES = {
         HoldoutExposureRow,
         PolicyDeploymentRow,
         PolicyBrakeEventRow,
+        PolicyGenerationRoundRow,
     )
 }
 
@@ -83,7 +91,7 @@ class DiscoveryRepository:
 
     def _insert(self, table_name: str, record: object) -> None:
         values = asdict(record)
-        table = getattr(sd, table_name)
+        table = getattr(sg if table_name == "policy_generation_rounds" else sd, table_name)
         encoded = {}
         for column in table.columns:
             field = (
@@ -114,14 +122,14 @@ class DiscoveryRepository:
         return _ROW_TYPES[class_name](**values)
 
     def _get(self, class_name: str, table_name: str, key: str, value: str):
-        table = getattr(sd, table_name)
+        table = getattr(sg if table_name == "policy_generation_rounds" else sd, table_name)
         row = (
             self._connection.execute(select(table).where(table.c[key] == value)).mappings().first()
         )
         return self._decode(class_name, row)
 
     def _list(self, class_name: str, table_name: str, key: str, value: str, *order: str):
-        table = getattr(sd, table_name)
+        table = getattr(sg if table_name == "policy_generation_rounds" else sd, table_name)
         query = (
             select(table).where(table.c[key] == value).order_by(*(table.c[item] for item in order))
         )
@@ -146,6 +154,14 @@ class DiscoveryRepository:
 
     def insert_policy(self, row: PolicyRevisionRow) -> None:
         self._insert("exploration_policy_revisions", row)
+
+    def insert_generation_round(self, row: PolicyGenerationRoundRow) -> None:
+        self._insert("policy_generation_rounds", row)
+
+    def generation_round(self, round_id: str) -> PolicyGenerationRoundRow | None:
+        return self._get(
+            "PolicyGenerationRoundRow", "policy_generation_rounds", "generation_round_id", round_id
+        )
 
     def insert_policy_parent_link(self, row: PolicyParentLinkRow) -> None:
         self._insert("exploration_policy_parent_links", row)

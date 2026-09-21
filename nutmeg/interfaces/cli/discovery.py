@@ -40,7 +40,7 @@ def _database(data_dir: Path) -> Path:
     return OntologyPaths.from_data_dir(data_dir.resolve()).database
 
 
-def _read_service(database: Path) -> DiscoveryReadService:
+def _read_service(database: Path, *, generation: bool = False) -> DiscoveryReadService:
     uri = f"file:{quote(str(database), safe='/')}?mode=ro"
     with sqlite3.connect(uri, uri=True) as connection:
         try:
@@ -51,6 +51,9 @@ def _read_service(database: Path) -> DiscoveryReadService:
         typer.echo(
             "discovery error: ontology schema 40 is required; run the approved migration", err=True
         )
+        raise typer.Exit(code=1)
+    if generation and version < 41:
+        typer.echo("discovery error: generation unavailable; migration 41 required", err=True)
         raise typer.Exit(code=1)
     engine = create_engine("sqlite+pysqlite://", creator=lambda: sqlite3.connect(uri, uri=True))
     return DiscoveryReadService(engine)
@@ -186,15 +189,18 @@ def show(
         "world": "world_detail",
         "policy": "policy_lineage",
         "tournament": "tournament_detail",
+        "generation": "generation_detail",
     }
     if kind not in readers:
-        typer.echo("discovery error: kind must be world, policy, or tournament", err=True)
+        typer.echo(
+            "discovery error: kind must be world, policy, tournament, or generation", err=True
+        )
         raise typer.Exit(code=1)
     database = _database(data_dir)
     if not database.is_file():
         typer.echo(f"discovery error: {kind} {object_id} not found", err=True)
         raise typer.Exit(code=1)
-    service = _read_service(database)
+    service = _read_service(database, generation=kind in {"generation", "policy"})
     try:
         payload = getattr(service, readers[kind])(object_id)
     except KeyError:

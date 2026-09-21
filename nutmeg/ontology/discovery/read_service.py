@@ -18,7 +18,7 @@ class DiscoveryReadService:
 
     def readiness(self):
         from nutmeg.discovery.contracts import load_pilot_contract
-        from nutmeg.discovery.readiness import CoverageWorld, assess_readiness
+        from nutmeg.discovery.readiness import CoverageWorld, ReplayMetrics, assess_readiness
         from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
 
         pilot = load_pilot_contract(
@@ -34,6 +34,9 @@ class DiscoveryReadService:
                 )
             ).scalars()
             worlds = []
+            completed_replays = 0
+            requested_actions = 0
+            rejected_actions = 0
             for world_id in ids:
                 if repository.world_state(world_id) != "sealed":
                     continue
@@ -72,7 +75,46 @@ class DiscoveryReadService:
                         ),
                     )
                 )
-        return assess_readiness(tuple(worlds), pilot.readiness)
+                replay_runs = connection.execute(
+                    select(sd.policy_replay_runs.c.policy_replay_run_id)
+                    .where(
+                        sd.policy_replay_runs.c.world_id == world_id,
+                        sd.policy_replay_runs.c.policy_revision_id == "structural-baseline-v1",
+                    )
+                    .order_by(sd.policy_replay_runs.c.policy_replay_run_id)
+                ).scalars()
+                for replay_id in replay_runs:
+                    replay = repository.policy_replay(replay_id)
+                    completion = repository.policy_replay_completion(replay_id)
+                    rounds = repository.policy_replay_rounds(replay_id)
+                    if not completion or not rounds:
+                        continue
+                    from nutmeg.ontology.actions.discovery_policy_actions import (
+                        DiscoveryPolicyActions,
+                    )
+
+                    if completion.trace_hash != canonical_hash(
+                        DiscoveryPolicyActions.trace_document(
+                            replay, rounds, completion, source_seal_hash=events[-1].manifest_hash
+                        )
+                    ):
+                        continue
+                    completed_replays += 1
+                    requested_actions += sum(len(item.requested_actions) for item in rounds)
+                    rejected_actions += sum(len(item.rejected_actions) for item in rounds)
+                    break
+        replay_metrics = None
+        if worlds and completed_replays == len(worlds):
+            replay_metrics = ReplayMetrics(
+                integrity_proven=True,
+                action_overlap=(requested_actions - rejected_actions) / requested_actions
+                if requested_actions
+                else None,
+                branch_unavailable_rate=rejected_actions / requested_actions
+                if requested_actions
+                else None,
+            )
+        return assess_readiness(tuple(worlds), pilot.readiness, replay_metrics)
 
     def status(self, policy_family: str) -> DiscoveryStatus:
         with self._engine.connect() as connection:
@@ -182,6 +224,12 @@ class DiscoveryReadService:
                 "generator_family": policy.generator_family,
                 "generator_revision": policy.generator_revision,
                 "parents": list(repository.policy_parents(policy_revision_id)),
+                "source_generation_round": (
+                    asdict(round_row)
+                    if (round_id := policy.generator_descriptors.get("generation_round_id"))
+                    and (round_row := repository.generation_round(round_id))
+                    else None
+                ),
                 "archive_disposition": archive.disposition if archive else None,
                 "tournament_winner": winner,
                 "deployment_state": (
@@ -190,6 +238,13 @@ class DiscoveryReadService:
                     else None
                 ),
             }
+
+    def generation_detail(self, generation_round_id: str) -> dict[str, object]:
+        with self._engine.connect() as connection:
+            row = DiscoveryRepository(connection).generation_round(generation_round_id)
+            if row is None:
+                raise KeyError(generation_round_id)
+            return asdict(row)
 
     def tournament_detail(self, policy_tournament_id: str) -> dict[str, object]:
         with self._engine.connect() as connection:

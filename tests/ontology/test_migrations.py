@@ -22,10 +22,14 @@ def test_migrations_apply_once_and_seed_governance_policy(tmp_path: Path) -> Non
     assert first.applied_versions == (1, 2)
     assert second.applied_versions == ()
     assert migration_status(engine).current_version == 2
-    assert {"actions", "policy_versions", "action_permissions", "source_runs",
-            "source_artifacts", "artifact_retrievals"} <= set(
-                inspect(engine).get_table_names()
-            )
+    assert {
+        "actions",
+        "policy_versions",
+        "action_permissions",
+        "source_runs",
+        "source_artifacts",
+        "artifact_retrievals",
+    } <= set(inspect(engine).get_table_names())
     with engine.connect() as connection:
         assert connection.execute(select(policy_versions.c.policy_version_id)).scalar_one() == (
             "governance-v1"
@@ -56,11 +60,9 @@ def test_schema_35_adds_historical_replay_authority_and_action_pair_guard(
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine)
 
-    assert migration_status(engine).current_version == 40
+    assert migration_status(engine).current_version == 41
     assert "historical_replay_runs" in inspect(engine).get_table_names()
-    action_columns = {
-        column["name"] for column in inspect(engine).get_columns("actions")
-    }
+    action_columns = {column["name"] for column in inspect(engine).get_columns("actions")}
     assert {"historical_replay", "replay_run_id"} <= action_columns
 
     base_values = {

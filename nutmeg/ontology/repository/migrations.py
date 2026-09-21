@@ -27,6 +27,7 @@ from nutmeg.ontology.repository import (
     schema_context,
     schema_decision,
     schema_discovery,
+    schema_discovery_generation,
     schema_evidence,
     schema_finance,
     schema_identity,
@@ -5110,6 +5111,24 @@ def _apply_discovery_foundation(connection: Connection) -> None:
     )
 
 
+def _apply_discovery_generation(connection: Connection) -> None:
+    table = schema_discovery_generation.policy_generation_rounds
+    table.create(connection)
+    for operation in ("UPDATE", "DELETE"):
+        connection.exec_driver_sql(
+            f"CREATE TRIGGER policy_generation_rounds_no_{operation.lower()} "
+            f"BEFORE {operation} ON policy_generation_rounds BEGIN "
+            "SELECT RAISE(ABORT, 'policy_generation_rounds is append-only'); END"
+        )
+    connection.execute(
+        insert(schema.action_permissions).values(
+            policy_version_id="governance-v1",
+            action_type="record_policy_generation_round",
+            actor_role="deterministic_system",
+        )
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -5432,6 +5451,12 @@ MIGRATIONS: tuple[Migration, ...] = (
             "role_separated_permissions"
         ),
         apply=_apply_discovery_foundation,
+    ),
+    Migration(
+        version=41,
+        name="discovery_generation_rounds",
+        fingerprint="append_only_round_receipts+deterministic_recorder_permission",
+        apply=_apply_discovery_generation,
     ),
 )
 

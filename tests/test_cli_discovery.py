@@ -40,6 +40,65 @@ def test_discovery_show_unknown_object_fails_without_mutation(tmp_path):
     assert not data_dir.exists()
 
 
+def test_generation_show_on_schema_40_is_read_only_and_explicit(tmp_path):
+    data_dir = tmp_path / "old"
+    database = OntologyPaths.from_data_dir(data_dir).database
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE schema_migrations (version INTEGER)")
+        connection.execute("INSERT INTO schema_migrations VALUES (40)")
+    before = database.read_bytes()
+    result = runner.invoke(
+        app, ["discovery", "show", "--kind", "generation", "--id", "r", "--data-dir", str(data_dir)]
+    )
+    assert result.exit_code == 1
+    assert "migration 41 required" in result.output
+    assert database.read_bytes() == before
+
+
+def test_generation_show_reports_receipt_without_mutation(tmp_path):
+    from datetime import UTC, datetime
+
+    from nutmeg.ontology.actions.discovery_policy_actions import RecordPolicyGenerationRoundRequest
+    from nutmeg.ontology.actions.models import ActorRole
+    from tests.ontology.test_discovery_generation_actions import _round
+
+    data_dir = tmp_path / "data"
+    kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
+    kernel.initialize()
+    receipt = kernel.discovery_policy_actions.record_generation_round(
+        RecordPolicyGenerationRoundRequest(
+            _round(),
+            "sys:generator",
+            ActorRole.DETERMINISTIC_SYSTEM,
+            "generation:show",
+            datetime(2026, 9, 22, tzinfo=UTC),
+        )
+    )
+    assert receipt.status is ActionStatus.COMMITTED
+    database = OntologyPaths.from_data_dir(data_dir).database
+    before = database.read_bytes()
+    result = runner.invoke(
+        app,
+        [
+            "discovery",
+            "show",
+            "--kind",
+            "generation",
+            "--id",
+            "round-1",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["generation_cost"] == {"attempts": 0}
+    assert payload["candidate_hashes"] == []
+    assert payload["trace_hash"] == canonical_hash({"attempts": [], "proposals": []})
+    assert database.read_bytes() == before
+
+
 def test_discovery_status_reads_registered_policy_and_shadow_world(tmp_path):
     data_dir = tmp_path / "data"
     kernel = build_ontology_kernel(AppSettings(data_dir=data_dir))
@@ -135,16 +194,33 @@ def test_shadow_run_rejects_mismatched_scope_without_creating_store(tmp_path):
     source = tmp_path / "source.db"
     shadow = tmp_path / "shadow.db"
     approval = tmp_path / "approval.json"
-    approval.write_text(json.dumps({
-        "approval_id": "approval-1", "approved_by": "op:jun",
-        "approved_at": "2026-09-21T06:00:00+00:00",
-        "scope": {"source_db": "different"},
-    }))
-    result = runner.invoke(app, [
-        "discovery", "shadow-run", "--source-db", str(source),
-        "--shadow-db", str(shadow), "--generation-request-id", "request-1",
-        "--cutoff-at", "2026-09-21T07:00:00+00:00", "--approval-file", str(approval),
-    ])
+    approval.write_text(
+        json.dumps(
+            {
+                "approval_id": "approval-1",
+                "approved_by": "op:jun",
+                "approved_at": "2026-09-21T06:00:00+00:00",
+                "scope": {"source_db": "different"},
+            }
+        )
+    )
+    result = runner.invoke(
+        app,
+        [
+            "discovery",
+            "shadow-run",
+            "--source-db",
+            str(source),
+            "--shadow-db",
+            str(shadow),
+            "--generation-request-id",
+            "request-1",
+            "--cutoff-at",
+            "2026-09-21T07:00:00+00:00",
+            "--approval-file",
+            str(approval),
+        ],
+    )
     assert result.exit_code == 1
     assert "scope" in result.output
     assert not source.exists()
@@ -156,20 +232,39 @@ def test_shadow_run_rejects_expired_prospective_cutoff(tmp_path):
     shadow = tmp_path / "shadow.db"
     approval = tmp_path / "approval.json"
     cutoff = "2026-09-04T07:00:00+00:00"
-    approval.write_text(json.dumps({
-        "approval_id": "fixture-only", "approved_by": "fixture-operator",
-        "approved_at": "2026-09-04T06:00:00+00:00",
-        "scope": {
-            "source_db": str(source.resolve()), "shadow_db": str(shadow.resolve()),
-            "generation_request_id": "request-1", "cutoff_at": cutoff,
-            "policy_revision_id": "structural-baseline-v1",
-        },
-    }))
-    result = runner.invoke(app, [
-        "discovery", "shadow-run", "--source-db", str(source),
-        "--shadow-db", str(shadow), "--generation-request-id", "request-1",
-        "--cutoff-at", cutoff, "--approval-file", str(approval),
-    ])
+    approval.write_text(
+        json.dumps(
+            {
+                "approval_id": "fixture-only",
+                "approved_by": "fixture-operator",
+                "approved_at": "2026-09-04T06:00:00+00:00",
+                "scope": {
+                    "source_db": str(source.resolve()),
+                    "shadow_db": str(shadow.resolve()),
+                    "generation_request_id": "request-1",
+                    "cutoff_at": cutoff,
+                    "policy_revision_id": "structural-baseline-v1",
+                },
+            }
+        )
+    )
+    result = runner.invoke(
+        app,
+        [
+            "discovery",
+            "shadow-run",
+            "--source-db",
+            str(source),
+            "--shadow-db",
+            str(shadow),
+            "--generation-request-id",
+            "request-1",
+            "--cutoff-at",
+            cutoff,
+            "--approval-file",
+            str(approval),
+        ],
+    )
     assert result.exit_code == 1
     assert "expired" in result.output
     assert not source.exists() and not shadow.exists()

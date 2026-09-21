@@ -29,6 +29,7 @@ from nutmeg.discovery.environment import (
     Stop,
     policy_state_hash,
 )
+from nutmeg.discovery.generation_contracts import PolicyProgramArtifact
 from nutmeg.discovery.online_inputs import StructuralInputSnapshot
 from nutmeg.discovery.online_recorder import OnlineRecordingEnvironment, RecordedWorld
 from nutmeg.discovery.replay_environment import ReplayEnvironment
@@ -108,6 +109,46 @@ def policy_decision(
         if round_number == 2:
             return Stop(_select(observation))
         raise ValueError("baseline variant round is missing")
+    if isinstance(policy, PolicyProgramArtifact):
+        program = policy.program
+        selected = _select(observation)
+        if selected and any(
+            Decimal(score) >= program.stop_quality_threshold
+            for node in observation.revealed_nodes
+            if node.node_id in selected
+            for _band, score in node.quality_by_band
+        ):
+            return Stop(selected)
+        if round_number == 1 and observation.frontier_node_ids:
+            frontier = observation.frontier_node_ids[0]
+            if program.budget_allocation == "quality_first":
+                ranked = sorted(
+                    (
+                        node
+                        for node in observation.revealed_nodes
+                        if node.node_id in observation.frontier_node_ids
+                    ),
+                    key=lambda node: (
+                        -max(
+                            (Decimal(value) for _, value in node.quality_by_band),
+                            default=Decimal(0),
+                        ),
+                        node.node_id,
+                    ),
+                )
+                if ranked:
+                    frontier = ranked[0].node_id
+            available = tuple(
+                t for t in program.template_order if t in observation.legal_template_ids
+            )
+            available = available[
+                : min(program.batch_limit, observation.max_concurrency, observation.remaining_nodes)
+            ]
+            if available:
+                return ContinueBatch(tuple(Continue(frontier, (t,)) for t in available))
+        if round_number in (1, 2):
+            return Stop(selected)
+        raise ValueError("program policy round is missing")
     raise ValueError("unsupported policy artifact")
 
 
