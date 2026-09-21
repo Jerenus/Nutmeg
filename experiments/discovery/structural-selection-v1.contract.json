@@ -1,0 +1,75 @@
+{
+  "schema_version": "1",
+  "contract_id": "structural-selection-v1",
+  "evaluator_revision": "structural-candidate-evaluator-v1",
+  "aggregation_revision": "structural-selection-aggregation-v1",
+  "lexicographic_tiers": [
+    "safety_isolation",
+    "validity",
+    "discovery_quality",
+    "robustness",
+    "cost",
+    "parallel_efficiency"
+  ],
+  "quality_fields": [
+    "eligible_band_count",
+    "best_objective_probability_by_band",
+    "distinct_valid_candidate_count_capped"
+  ],
+  "cluster_weighting": "equal_independent_cluster",
+  "development_holdout_rule": "separate_time_forward",
+  "within_tier": [
+    {
+      "tier": "safety_isolation",
+      "fields": [
+        {"name": "invariant_violation_count", "direction": "min", "materiality": "0"}
+      ]
+    },
+    {
+      "tier": "validity",
+      "fields": [
+        {"name": "invalid_selected_count", "direction": "min", "materiality": "0"}
+      ]
+    },
+    {
+      "tier": "discovery_quality",
+      "fields": [
+        {"name": "eligible_band_count", "direction": "max", "materiality": "1"},
+        {"name": "best_objective_probability_by_band", "direction": "max", "materiality": "0.001"},
+        {"name": "distinct_valid_candidate_count_capped", "direction": "max", "materiality": "1"}
+      ]
+    },
+    {
+      "tier": "robustness",
+      "fields": [
+        {"name": "failure_recovery_rate", "direction": "max", "materiality": "0.001"}
+      ]
+    },
+    {
+      "tier": "cost",
+      "fields": [
+        {"name": "node_count", "direction": "min", "materiality": "1"},
+        {"name": "wall_seconds", "direction": "min", "materiality": "0.001"}
+      ]
+    },
+    {
+      "tier": "parallel_efficiency",
+      "fields": [
+        {"name": "effective_parallelism", "direction": "max", "materiality": "0.001"}
+      ]
+    }
+  ],
+  "missing_value_rule": "explicit_unknown_cannot_win_tier",
+  "tie_rule": "incumbent",
+  "cost_units": {
+    "node_count": "attempt_nodes",
+    "candidate_generation_count": "generated_candidates",
+    "wall_seconds": "seconds",
+    "retry_count": "attempt_nodes"
+  },
+  "failure_penalty": "disqualify_safety_else_explicit_robustness_failure",
+  "worst_stratum": {
+    "strata": ["board_size:small", "board_size:medium", "board_size:large"],
+    "max_decline": "0"
+  }
+}

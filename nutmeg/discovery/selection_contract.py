@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -57,6 +59,22 @@ class SelectionContract(FrozenContract):
         }
         if set(self.cost_units) != expected_cost_units:
             raise ValueError("every declared cost unit is required")
+        expected_fields = {
+            "safety_isolation": (("invariant_violation_count", "min"),),
+            "validity": (("invalid_selected_count", "min"),),
+            "discovery_quality": (
+                ("eligible_band_count", "max"),
+                ("best_objective_probability_by_band", "max"),
+                ("distinct_valid_candidate_count_capped", "max"),
+            ),
+            "robustness": (("failure_recovery_rate", "max"),),
+            "cost": (("node_count", "min"), ("wall_seconds", "min")),
+            "parallel_efficiency": (("effective_parallelism", "max"),),
+        }
+        for tier in self.within_tier:
+            actual = tuple((field.name, field.direction) for field in tier.fields)
+            if actual != expected_fields.get(tier.tier):
+                raise ValueError(f"{tier.tier} comparison fields or directions differ")
         discovery = next(item for item in self.within_tier if item.tier == "discovery_quality")
         if tuple(field.name for field in discovery.fields) != self.quality_fields:
             raise ValueError("discovery-quality fields must match the frozen quality order")
@@ -76,3 +94,9 @@ class SelectionContract(FrozenContract):
         if contract.worst_stratum.strata != pilot.readiness.required_strata:
             raise ValueError("selection worst strata differ from frozen pilot strata")
         return contract
+
+
+def load_selection_contract(path: Path, pilot: PilotContract) -> SelectionContract:
+    return SelectionContract.model_validate_with_pilot(
+        json.loads(path.read_text(encoding="utf-8")), pilot
+    )

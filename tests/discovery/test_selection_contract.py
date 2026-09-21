@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from nutmeg.discovery.contracts import canonical_hash, load_pilot_contract
-from nutmeg.discovery.selection_contract import SelectionContract
+from nutmeg.discovery.selection_contract import SelectionContract, load_selection_contract
 
 ROOT = Path(__file__).resolve().parents[2]
 PILOT = load_pilot_contract(
@@ -152,4 +152,54 @@ def test_selection_contract_requires_declared_cost_units_and_worst_strata():
                 },
             },
             PILOT,
+        )
+
+
+def test_frozen_selection_artifact_matches_declared_comparator():
+    contract = load_selection_contract(
+        ROOT / "experiments/discovery/structural-selection-v1.contract.json", PILOT
+    )
+
+    assert contract.model_dump(mode="json") == SelectionContract.model_validate_with_pilot(
+        _document(), PILOT
+    ).model_dump(mode="json")
+    assert contract.within_tier[2].fields[0].materiality == Decimal("1")
+    assert contract.within_tier[2].fields[1].materiality == Decimal("0.001")
+    assert contract.worst_stratum.max_decline == Decimal("0")
+
+
+def test_selection_contract_rejects_undeclared_or_duplicate_comparison_fields():
+    document = _document()
+    tiers = list(document["within_tier"])
+    safety = dict(tiers[0])
+    safety["fields"] = [
+        {"name": "permission_breach_count", "direction": "min", "materiality": "0"}
+    ]
+    tiers[0] = safety
+    with pytest.raises(ValueError, match="safety_isolation"):
+        SelectionContract.model_validate_with_pilot(
+            {**document, "within_tier": tiers}, PILOT
+        )
+
+    tiers = list(document["within_tier"])
+    quality = dict(tiers[2])
+    quality["fields"] = [*quality["fields"], quality["fields"][0]]
+    tiers[2] = quality
+    with pytest.raises(ValueError, match="discovery_quality"):
+        SelectionContract.model_validate_with_pilot(
+            {**document, "within_tier": tiers}, PILOT
+        )
+
+
+def test_selection_contract_rejects_nonfinite_materiality():
+    document = _document()
+    tiers = list(document["within_tier"])
+    quality = dict(tiers[2])
+    fields = list(quality["fields"])
+    fields[0] = {**fields[0], "materiality": "Infinity"}
+    quality["fields"] = fields
+    tiers[2] = quality
+    with pytest.raises(ValueError, match="finite"):
+        SelectionContract.model_validate_with_pilot(
+            {**document, "within_tier": tiers}, PILOT
         )
