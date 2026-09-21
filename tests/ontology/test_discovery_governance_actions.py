@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from nutmeg.discovery.contracts import canonical_hash as contract_hash
 from nutmeg.discovery.contracts import load_pilot_contract
@@ -78,7 +79,7 @@ def _rig(tmp_path):
     return DiscoveryGovernanceActions(ActionService(lambda: OntologyUnitOfWork(engine))), engine
 
 
-def _seed(engine, *, sealed=True):
+def _seed(engine, *, sealed=True, expanded_world_ids=(), missing_evaluation_world_ids=()):
     with OntologyUnitOfWork(engine) as uow:
         for policy_id in ("policy-1", "policy-2"):
             uow.discovery.insert_policy(
@@ -151,21 +152,22 @@ def _seed(engine, *, sealed=True):
                     artifact_manifest_hash=canonical_hash(second_artifact),
                 )
                 uow.discovery.insert_node(second)
-                uow.discovery.insert_node_evaluation(
-                    _record(
-                        NodeEvaluationRow,
-                        node_evaluation_id=f"{world_id}:evaluation",
-                        node_id=child.node_id,
-                        evaluator_revision=world.evaluator_revision,
-                        result={
-                            "eligible_band_count": 1,
-                            "best_objective_probability_by_band": {"10x": "0.5"},
-                            "distinct_valid_candidate_count_capped": 2,
-                        },
-                        selectable=True,
-                        evaluated_at=f"{day}T07:01:00+00:00",
+                if world_id not in missing_evaluation_world_ids:
+                    uow.discovery.insert_node_evaluation(
+                        _record(
+                            NodeEvaluationRow,
+                            node_evaluation_id=f"{world_id}:evaluation",
+                            node_id=child.node_id,
+                            evaluator_revision=world.evaluator_revision,
+                            result={
+                                "eligible_band_count": 1,
+                                "best_objective_probability_by_band": {"10x": "0.5"},
+                                "distinct_valid_candidate_count_capped": 2,
+                            },
+                            selectable=True,
+                            evaluated_at=f"{day}T07:01:00+00:00",
+                        )
                     )
-                )
                 uow.discovery.insert_node_evaluation(
                     _record(
                         NodeEvaluationRow,
@@ -209,7 +211,7 @@ def _seed(engine, *, sealed=True):
                             trace_hash=f"trace:{policy_id}:{world_id}",
                             selected_node_ids=[child.node_id],
                             budget_used={
-                                "attempts": 1,
+                                "attempts": 2 if world_id in expanded_world_ids else 1,
                                 "wall_ms": 1000,
                                 "candidate_generation_count": 5,
                             },
@@ -466,6 +468,43 @@ def test_create_tournament_rejects_exposed_world_as_hidden_holdout(tmp_path):
         )
 
 
+def test_direct_create_rejects_exposed_development_without_newer_hidden_holdout(tmp_path):
+    actions, engine = _rig(tmp_path)
+    _seed(engine)
+    from nutmeg.ontology.repository.discovery import HoldoutExposureRow
+
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_tournament(_create_request().tournament)
+        uow.discovery.insert_holdout_exposure(
+            _record(
+                HoldoutExposureRow,
+                holdout_exposure_id="exposure-dev",
+                policy_tournament_id="t-1",
+                policy_family="family-1",
+                world_id="world-1",
+            )
+        )
+    request = _create_request(tournament_id="t-2", idempotency_key="tournament:rotation")
+    # The second cutoff is later than the development world's cutoff, but not
+    # later than the completed tournament's protected holdout cutoff.
+    old = replace(_create_request().tournament, holdout_cutoff_at="2026-09-22T00:00:00+00:00")
+    with OntologyUnitOfWork(engine) as uow:
+        uow.discovery.insert_tournament(replace(old, policy_tournament_id="t-prior"))
+        uow.discovery.insert_holdout_exposure(
+            _record(
+                HoldoutExposureRow,
+                holdout_exposure_id="exposure-prior",
+                policy_tournament_id="t-prior",
+                policy_family="family-1",
+                world_id="world-1",
+            )
+        )
+    with pytest.raises(ValueError, match="strictly newer"):
+        actions.create_tournament(request)
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament("t-2") is None
+
+
 def test_create_tournament_rejects_exposed_derivative_cluster(tmp_path):
     actions, engine = _rig(tmp_path)
     _seed(engine)
@@ -603,6 +642,145 @@ def test_finish_tournament_separates_winner_from_archive_admission(tmp_path):
         assert uow.discovery.latest_archive_decision("policy-2").disposition == "stepping_stone"
         assert uow.discovery.latest_deployment("family-1") is None
         assert [e.world_id for e in uow.discovery.exposed_holdouts("family-1")] == ["world-2"]
+
+
+def test_two_temporary_cycles_preserve_first_tournament_and_rotate_exposure(
+    tmp_path,
+    monkeypatch,
+):
+    import sys
+
+    from nutmeg.discovery.iteration_readiness import review_new_information
+    from nutmeg.discovery.readiness import CoverageWorld
+    from nutmeg.ontology.repository import schema
+    from nutmeg.ontology.repository import schema_discovery as sd
+
+    new_worlds = tuple((f"world-new-{day}", f"2026-09-{day}") for day in (22, 23, 24))
+    monkeypatch.setattr(sys.modules[__name__], "FIXTURE_WORLDS", (*FIXTURE_WORLDS, *new_worlds))
+    actions, engine = _rig(tmp_path)
+    _seed(engine, expanded_world_ids={world_id for world_id, _day in new_worlds})
+    first = _create_request()
+    first_worlds = first.worlds[:-3]
+    first = replace(
+        first,
+        worlds=first_worlds,
+        tournament=replace(
+            first.tournament,
+            world_pool_manifest_hash=canonical_hash([asdict(item) for item in first_worlds]),
+        ),
+    )
+    assert actions.create_tournament(first).status is ActionStatus.COMMITTED
+    original = _finish_request(archives=())
+    first_results = tuple(
+        item
+        for item in original.results
+        if item.world_id not in {world_id for world_id, _day in new_worlds}
+    )
+    original = replace(
+        original,
+        results=first_results,
+        completion=replace(
+            original.completion,
+            reproduction_hash=actions.selection_proof(first.tournament, first_results, "policy-1"),
+        ),
+    )
+    assert actions.finish_tournament(original).status is ActionStatus.COMMITTED
+
+    old = tuple(
+        CoverageWorld(world_id, day, f"snap-{day}", "s1", (), True, True, 2, False)
+        for world_id, day in FIXTURE_WORLDS[:-3]
+    )
+    incoming = tuple(
+        CoverageWorld(world_id, day, f"snap-{day}", "s1", (), True, True, 2, False)
+        for world_id, day in new_worlds
+    )
+    assert review_new_information(old, incoming, min_clusters=3).effective_new_clusters == 3
+
+    second = _create_request(tournament_id="t-2", idempotency_key="cycle:2")
+    second_worlds = tuple(
+        replace(item, pool_role="holdout" if item.world_id == "world-new-24" else "development")
+        for item in second.worlds
+    )
+    second = replace(
+        second,
+        worlds=second_worlds,
+        tournament=replace(
+            second.tournament,
+            development_cutoff_at="2026-09-23T23:59:59+00:00",
+            holdout_cutoff_at="2026-09-24T23:59:59+00:00",
+            world_pool_manifest_hash=canonical_hash([asdict(item) for item in second_worlds]),
+        ),
+    )
+    assert actions.create_tournament(second).status is ActionStatus.COMMITTED
+    results = tuple(
+        replace(
+            item,
+            policy_tournament_id="t-2",
+            score_vector={
+                **item.score_vector,
+                "node_count": "2"
+                if item.world_id in {world_id for world_id, _day in new_worlds}
+                else "1",
+            },
+        )
+        for item in _finish_request().results
+    )
+    second_finish = _finish_request(archives=())
+    second_finish = replace(
+        second_finish,
+        tournament_id="t-2",
+        results=results,
+        idempotency_key="cycle:2:finish",
+        completion=replace(
+            second_finish.completion,
+            policy_tournament_id="t-2",
+            reproduction_hash=actions.selection_proof(second.tournament, results, "policy-1"),
+        ),
+    )
+    assert actions.finish_tournament(second_finish).status is ActionStatus.COMMITTED
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.tournament("t-1") == first.tournament.__class__(
+            **{**asdict(first.tournament), "action_id": uow.discovery.tournament("t-1").action_id}
+        )
+        assert uow.discovery.tournament_completion("t-1").reproduction_hash == (
+            original.completion.reproduction_hash
+        )
+        assert {item.world_id for item in uow.discovery.exposed_holdouts("family-1")} == {
+            "world-2",
+            "world-new-24",
+        }
+        assert uow.discovery.latest_deployment("family-1") is None
+        protected = uow.connection.execute(
+            select(sd.policy_deployments.c.policy_deployment_id)
+        ).all()
+        assert protected == []
+        protected_types = {
+            "confirm_ticket_placement",
+            "record_cash_transaction",
+            "rsi_approve_deployment",
+            "approve_policy_deployment",
+            "trip_policy_brake",
+        }
+        assert not protected_types.intersection(
+            uow.connection.execute(select(schema.actions.c.action_type)).scalars().all()
+        )
+    from nutmeg.ontology.discovery.read_service import DiscoveryReadService
+
+    timeline = DiscoveryReadService(engine).iteration("family-1")
+    assert timeline["effective_new_clusters"] == 0
+    assert timeline["drift"]["state"] == "hold_for_review"
+    assert timeline["exposed_holdout_ids"] == ["world-2", "world-new-24"]
+    assert timeline["protected_holdout_ids"] == ["world-new-24"]
+    assert timeline["policy_lineage"]["policy-1"] == []
+
+
+def test_iteration_projection_does_not_count_invalid_sealed_tree(tmp_path):
+    from nutmeg.ontology.discovery.read_service import DiscoveryReadService
+
+    _actions, engine = _rig(tmp_path)
+    _seed(engine, missing_evaluation_world_ids={"world-1"})
+    report = DiscoveryReadService(engine).iteration("family-1")
+    assert report["effective_new_clusters"] == len(FIXTURE_WORLDS) - 1
 
 
 def test_finish_rejects_self_consistent_proof_for_unearned_winner(tmp_path):
@@ -1007,24 +1185,43 @@ def test_shadow_cannot_weaken_preregistered_invariants(tmp_path):
     actions, engine = _rig(tmp_path)
     _finished(actions, engine)
     window = _record(
-        PolicyShadowWindowRow, policy_shadow_window_id="window-1",
-        policy_family="family-1", scope={"pilot": "structural"},
-        policy_revision_id="policy-1", policy_tournament_id="t-1",
-        start_at="2026-09-22T00:00:00+00:00", end_at="2026-09-25T00:00:00+00:00",
-        minimum_independent_worlds=1, invariant_codes=["permission_leak"],
-        human_actor_id="Jun", acted_by="Jun", created_at=T0.isoformat(),
+        PolicyShadowWindowRow,
+        policy_shadow_window_id="window-1",
+        policy_family="family-1",
+        scope={"pilot": "structural"},
+        policy_revision_id="policy-1",
+        policy_tournament_id="t-1",
+        start_at="2026-09-22T00:00:00+00:00",
+        end_at="2026-09-25T00:00:00+00:00",
+        minimum_independent_worlds=1,
+        invariant_codes=["permission_leak"],
+        human_actor_id="Jun",
+        acted_by="Jun",
+        created_at=T0.isoformat(),
     )
-    actions.preregister_shadow_window(PreregisterPolicyShadowWindowRequest(
-        window, "op:jun", ActorRole.JUDGE_OPERATOR, "window:weak", T0,
-    ))
+    actions.preregister_shadow_window(
+        PreregisterPolicyShadowWindowRequest(
+            window,
+            "op:jun",
+            ActorRole.JUDGE_OPERATOR,
+            "window:weak",
+            T0,
+        )
+    )
     with OntologyUnitOfWork(engine) as uow:
         stored = uow.discovery.shadow_window("window-1")
-    request = _deployment_request(deployment=replace(
-        _deployment_request().deployment,
-        evidence_refs={"shadow_window_id": "window-1", "shadow_window_hash": canonical_hash(
-            {k: v for k, v in asdict(stored).items() if k != "action_id"}
-        )}, brake_conditions={"conditions": ["drift"]},
-    ))
+    request = _deployment_request(
+        deployment=replace(
+            _deployment_request().deployment,
+            evidence_refs={
+                "shadow_window_id": "window-1",
+                "shadow_window_hash": canonical_hash(
+                    {k: v for k, v in asdict(stored).items() if k != "action_id"}
+                ),
+            },
+            brake_conditions={"conditions": ["drift"]},
+        )
+    )
     with pytest.raises(ValueError, match="invariant"):
         actions.approve_deployment(request)
 
@@ -1034,13 +1231,19 @@ def test_challenger_shadow_run_requires_authorized_window(tmp_path):
 
     actions, engine = _rig(tmp_path)
     _seed(engine, sealed=False)
-    run = _record(DiscoveryRunRow, discovery_run_id="candidate-run",
-                  world_id="world-1", policy_revision_id="policy-2",
-                  environment_mode="shadow")
+    run = _record(
+        DiscoveryRunRow,
+        discovery_run_id="candidate-run",
+        world_id="world-1",
+        policy_revision_id="policy-2",
+        environment_mode="shadow",
+    )
     with pytest.raises(ValueError, match="prior human-authorized window"):
         DiscoveryWorldActions(ActionService(lambda: OntologyUnitOfWork(engine))).start_run(
-            StartDiscoveryRunRequest(run, "sys:discovery", ActorRole.DETERMINISTIC_SYSTEM,
-                                     "challenger:unauthorized", T0))
+            StartDiscoveryRunRequest(
+                run, "sys:discovery", ActorRole.DETERMINISTIC_SYSTEM, "challenger:unauthorized", T0
+            )
+        )
 
 
 def test_braked_challenger_cannot_start_new_shadow_run(tmp_path):
@@ -1050,55 +1253,95 @@ def test_braked_challenger_cannot_start_new_shadow_run(tmp_path):
     _finished(actions, engine)
     with OntologyUnitOfWork(engine) as uow:
         evidence_action_id = uow.discovery.tournament("t-1").action_id
-        uow.discovery.insert_world(replace(_world(), world_id="prospective",
-            cutoff_at="2026-09-23T07:00:00+00:00"))
-        uow.discovery.insert_world_event(replace(_event(1, "created"),
-            world_id="prospective", world_event_id="prospective:created"))
-        uow.discovery.insert_shadow_window(_record(
-            PolicyShadowWindowRow, policy_shadow_window_id="window-1",
-            policy_family="family-1", scope={"pilot": "structural"},
-            policy_revision_id="policy-1", policy_tournament_id="t-1",
-            start_at="2026-09-22T00:00:00+00:00", end_at="2026-09-25T00:00:00+00:00",
-            minimum_independent_worlds=1, invariant_codes=["permission_leak"],
-            action_id=evidence_action_id,
-        ))
-        uow.discovery.insert_deployment(replace(
-            _deployment_request("shadow").deployment,
-            evidence_refs={"shadow_window_id": "window-1"},
-            action_id=evidence_action_id,
-        ))
-        uow.discovery.insert_brake(replace(_brake_request().brake,
-                                           action_id=evidence_action_id))
-    run = _record(DiscoveryRunRow, discovery_run_id="braked-run", world_id="prospective",
-                  policy_revision_id="policy-1", environment_mode="shadow")
+        uow.discovery.insert_world(
+            replace(_world(), world_id="prospective", cutoff_at="2026-09-23T07:00:00+00:00")
+        )
+        uow.discovery.insert_world_event(
+            replace(
+                _event(1, "created"), world_id="prospective", world_event_id="prospective:created"
+            )
+        )
+        uow.discovery.insert_shadow_window(
+            _record(
+                PolicyShadowWindowRow,
+                policy_shadow_window_id="window-1",
+                policy_family="family-1",
+                scope={"pilot": "structural"},
+                policy_revision_id="policy-1",
+                policy_tournament_id="t-1",
+                start_at="2026-09-22T00:00:00+00:00",
+                end_at="2026-09-25T00:00:00+00:00",
+                minimum_independent_worlds=1,
+                invariant_codes=["permission_leak"],
+                action_id=evidence_action_id,
+            )
+        )
+        uow.discovery.insert_deployment(
+            replace(
+                _deployment_request("shadow").deployment,
+                evidence_refs={"shadow_window_id": "window-1"},
+                action_id=evidence_action_id,
+            )
+        )
+        uow.discovery.insert_brake(replace(_brake_request().brake, action_id=evidence_action_id))
+    run = _record(
+        DiscoveryRunRow,
+        discovery_run_id="braked-run",
+        world_id="prospective",
+        policy_revision_id="policy-1",
+        environment_mode="shadow",
+    )
     with pytest.raises(ValueError, match="braked"):
         DiscoveryWorldActions(ActionService(lambda: OntologyUnitOfWork(engine))).start_run(
-            StartDiscoveryRunRequest(run, "sys:test", ActorRole.DETERMINISTIC_SYSTEM,
-                                     "braked:run", datetime(2026, 9, 23, tzinfo=UTC)))
+            StartDiscoveryRunRequest(
+                run,
+                "sys:test",
+                ActorRole.DETERMINISTIC_SYSTEM,
+                "braked:run",
+                datetime(2026, 9, 23, tzinfo=UTC),
+            )
+        )
 
 
 def test_shadow_window_rejects_nonhuman_late_and_stale_tournament(tmp_path):
     actions, engine = _rig(tmp_path)
     _finished(actions, engine)
     window = _record(
-        PolicyShadowWindowRow, policy_shadow_window_id="window-1",
-        policy_family="family-1", scope={"pilot": "structural"},
-        policy_revision_id="policy-1", policy_tournament_id="t-1",
-        start_at="2026-09-22T00:00:00+00:00", end_at="2026-09-25T00:00:00+00:00",
-        minimum_independent_worlds=2, invariant_codes=["permission_leak"],
-        human_actor_id="Jun", acted_by="Jun", created_at=T0.isoformat(),
+        PolicyShadowWindowRow,
+        policy_shadow_window_id="window-1",
+        policy_family="family-1",
+        scope={"pilot": "structural"},
+        policy_revision_id="policy-1",
+        policy_tournament_id="t-1",
+        start_at="2026-09-22T00:00:00+00:00",
+        end_at="2026-09-25T00:00:00+00:00",
+        minimum_independent_worlds=2,
+        invariant_codes=["permission_leak"],
+        human_actor_id="Jun",
+        acted_by="Jun",
+        created_at=T0.isoformat(),
     )
     request = PreregisterPolicyShadowWindowRequest(
-        window, "op:jun", ActorRole.DETERMINISTIC_SYSTEM, "window:nonhuman", T0,
+        window,
+        "op:jun",
+        ActorRole.DETERMINISTIC_SYSTEM,
+        "window:nonhuman",
+        T0,
     )
     assert actions.preregister_shadow_window(request).status is ActionStatus.REJECTED
-    request = replace(request, actor_role=ActorRole.JUDGE_OPERATOR,
-                      idempotency_key="window:late",
-                      window=replace(window, start_at=T0.isoformat()))
+    request = replace(
+        request,
+        actor_role=ActorRole.JUDGE_OPERATOR,
+        idempotency_key="window:late",
+        window=replace(window, start_at=T0.isoformat()),
+    )
     with pytest.raises(ValueError, match="future ordered cutoffs"):
         actions.preregister_shadow_window(request)
-    request = replace(request, idempotency_key="window:stale",
-                      window=replace(window, policy_tournament_id="other"))
+    request = replace(
+        request,
+        idempotency_key="window:stale",
+        window=replace(window, policy_tournament_id="other"),
+    )
     with pytest.raises(ValueError, match="latest tournament winner"):
         actions.preregister_shadow_window(request)
     with OntologyUnitOfWork(engine) as uow:
@@ -1124,8 +1367,9 @@ def test_shadow_update_requires_latest_scoped_predecessor(tmp_path):
     with OntologyUnitOfWork(engine) as uow:
         uow.discovery.insert_deployment(_deployment_request("shadow").deployment)
     with pytest.raises(ValueError, match="supersede"):
-        actions.approve_deployment(_deployment_request("shadow", deployment_id="dep-next",
-                            idempotency_key="shadow:stale"))
+        actions.approve_deployment(
+            _deployment_request("shadow", deployment_id="dep-next", idempotency_key="shadow:stale")
+        )
 
 
 def test_scoped_successor_must_be_newer_than_predecessor(tmp_path):
@@ -1133,11 +1377,16 @@ def test_scoped_successor_must_be_newer_than_predecessor(tmp_path):
     _finished(actions, engine)
     with OntologyUnitOfWork(engine) as uow:
         uow.discovery.insert_deployment(_deployment_request("hold").deployment)
-    row = replace(_deployment_request("hold", deployment_id="dep-next").deployment,
-                  supersedes_deployment_id="dep-1")
+    row = replace(
+        _deployment_request("hold", deployment_id="dep-next").deployment,
+        supersedes_deployment_id="dep-1",
+    )
     with pytest.raises(ValueError, match="newer"):
-        actions.approve_deployment(_deployment_request("hold", deployment_id="dep-next",
-                            idempotency_key="hold:backdated", deployment=row))
+        actions.approve_deployment(
+            _deployment_request(
+                "hold", deployment_id="dep-next", idempotency_key="hold:backdated", deployment=row
+            )
+        )
 
 
 def test_deployment_uniqueness_checks_same_scope_even_when_other_scope_is_newer(tmp_path):
@@ -1275,15 +1524,22 @@ def test_d6_brake_cannot_use_unverified_self_report(tmp_path):
     actions, engine = _rig(tmp_path)
     _finished(actions, engine)
     with OntologyUnitOfWork(engine) as uow:
-        uow.discovery.insert_deployment(replace(
-            _deployment_request("deploy").deployment,
-            brake_conditions={"conditions": ["permission_leak"]},
-        ))
+        uow.discovery.insert_deployment(
+            replace(
+                _deployment_request("deploy").deployment,
+                brake_conditions={"conditions": ["permission_leak"]},
+            )
+        )
     request = _brake_request()
     with pytest.raises(ValueError, match="committed diagnostic"):
-        actions.trip_brake(replace(request, brake=replace(
-            request.brake, condition_code="permission_leak", evidence={"measured": True}
-        )))
+        actions.trip_brake(
+            replace(
+                request,
+                brake=replace(
+                    request.brake, condition_code="permission_leak", evidence={"measured": True}
+                ),
+            )
+        )
 
 
 def test_scope_review_action_denies_nonhuman_and_unreviewed_hash(tmp_path):
@@ -1293,16 +1549,27 @@ def test_scope_review_action_denies_nonhuman_and_unreviewed_hash(tmp_path):
     actions, engine = _rig(tmp_path)
     contract = _contract()
     request = ApprovePilotScopeRequest(
-        contract=contract, reviewed_hash="0" * 64, approval_ref=contract["approval_ref"],
-        actor_id="op:jun", actor_role=ActorRole.JUDGE_OPERATOR,
-        idempotency_key="scope:wrong", requested_at=T0,
+        contract=contract,
+        reviewed_hash="0" * 64,
+        approval_ref=contract["approval_ref"],
+        actor_id="op:jun",
+        actor_role=ActorRole.JUDGE_OPERATOR,
+        idempotency_key="scope:wrong",
+        requested_at=T0,
     )
     with pytest.raises(ValueError, match="reviewed prospective scope"):
         actions.approve_pilot_scope(request)
-    assert actions.approve_pilot_scope(replace(
-        request, reviewed_hash=canonical_hash(contract), actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-        idempotency_key="scope:system",
-    )).status is ActionStatus.REJECTED
+    assert (
+        actions.approve_pilot_scope(
+            replace(
+                request,
+                reviewed_hash=canonical_hash(contract),
+                actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+                idempotency_key="scope:system",
+            )
+        ).status
+        is ActionStatus.REJECTED
+    )
     with OntologyUnitOfWork(engine) as uow:
         assert uow.discovery.scope_review(canonical_hash(contract)) is None
 
@@ -1330,9 +1597,9 @@ def test_braked_policy_cannot_resume_without_new_human_action(tmp_path):
                 "hold",
                 deployment_id="dep-2",
                 deployment=replace(
-                        _deployment_request("hold", deployment_id="dep-2").deployment,
-                        supersedes_deployment_id="dep-1",
-                        decided_at=T0.isoformat(),
+                    _deployment_request("hold", deployment_id="dep-2").deployment,
+                    supersedes_deployment_id="dep-1",
+                    decided_at=T0.isoformat(),
                 ),
                 idempotency_key="resume:operator",
             )

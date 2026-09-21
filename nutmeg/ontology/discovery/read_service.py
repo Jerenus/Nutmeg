@@ -19,6 +19,272 @@ class DiscoveryReadService:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
+    def iteration(self, policy_family: str) -> dict[str, object]:
+        """Project recorded history, never request or enqueue a human Action."""
+        from nutmeg.discovery.contracts import load_pilot_contract
+        from nutmeg.discovery.drift_monitor import DriftSample, assess_drift
+        from nutmeg.discovery.iteration_contract import (
+            load_iteration_contract,
+            proposed_contract_hash,
+        )
+        from nutmeg.discovery.iteration_readiness import review_new_information
+        from nutmeg.discovery.readiness import CoverageWorld
+
+        root = Path(__file__).resolve().parents[3] / "experiments/discovery"
+        pilot = load_pilot_contract(root / "structural-candidate-v1.contract.json")
+        contract = load_iteration_contract(root / "structural-iteration-v1.contract.json", pilot)
+        state = self.status(policy_family)
+        readiness = self.readiness()
+        with self._engine.connect() as connection:
+            repository = DiscoveryRepository(connection)
+            previous_ids = set()
+            latest_completed_at = None
+            timeline = []
+            tournament_rows = connection.execute(
+                select(sd.policy_tournaments.c.policy_tournament_id)
+                .where(sd.policy_tournaments.c.policy_family == policy_family)
+                .order_by(
+                    sd.policy_tournaments.c.created_at, sd.policy_tournaments.c.policy_tournament_id
+                )
+            ).scalars()
+            for tournament_id in tournament_rows:
+                completion = repository.tournament_completion(tournament_id)
+                worlds = repository.tournament_worlds(tournament_id)
+                timeline.append(
+                    {
+                        "tournament_id": tournament_id,
+                        "completed": completion is not None,
+                        "winner_id": completion.winner_policy_revision_id if completion else None,
+                        "world_pool_manifest_hash": repository.tournament(
+                            tournament_id
+                        ).world_pool_manifest_hash,
+                        "holdout_ids": sorted(
+                            item.world_id for item in worlds if item.pool_role == "holdout"
+                        ),
+                    }
+                )
+                if completion:
+                    previous_ids.update(item.world_id for item in worlds)
+                    latest_completed_at = completion.finished_at
+            exposures = repository.exposed_holdouts(policy_family)
+            ids = connection.execute(
+                select(sd.discovery_worlds.c.world_id).where(
+                    sd.discovery_worlds.c.task_family == pilot.task_family,
+                    sd.discovery_worlds.c.provenance_mode == "prospective_online",
+                )
+            ).scalars()
+            coverage = []
+            action_sets: dict[str, set[str]] = {}
+            for world_id in ids:
+                world = repository.world(world_id)
+                if repository.world_state(world_id) != "sealed":
+                    continue
+                manifest = world.input_manifest
+                events = repository.world_events(world_id)
+                from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
+
+                nodes = repository.nodes_for_world(world_id)
+                action_sets[world_id] = {
+                    canonical_json(node.continuation_action)
+                    for node in nodes
+                    if isinstance(node.continuation_action, dict)
+                    and node.continuation_action.get("operator") != "stop"
+                }
+                valid = (
+                    bool(events)
+                    and events[-1].manifest_hash
+                    == (DiscoveryWorldActions.seal_manifest(world, nodes))
+                    and world.input_manifest_hash == canonical_hash(manifest)
+                )
+                if valid:
+                    from nutmeg.discovery.sealed_tree import SealedTree
+
+                    try:
+                        SealedTree.from_rows(
+                            world,
+                            nodes,
+                            events,
+                            {
+                                node.node_id: evaluation
+                                for node in nodes
+                                if (evaluation := repository.latest_node_evaluation(node.node_id))
+                                is not None
+                            },
+                        )
+                    except ValueError:
+                        valid = False
+                coverage.append(
+                    CoverageWorld(
+                        world_id,
+                        world.business_date,
+                        str(manifest.get("task_snapshot_hash") or ""),
+                        str(manifest.get("slate_revision_id") or ""),
+                        tuple(sorted(f"{key}:{value}" for key, value in world.strata.items())),
+                        True,
+                        valid,
+                        len(nodes) - 1,
+                        any(node.execution_status in {"failed", "no_solution"} for node in nodes),
+                    )
+                )
+            archived = (
+                connection.execute(
+                    select(sd.policy_archive_decisions.c.policy_revision_id)
+                    .join(
+                        sd.exploration_policy_revisions,
+                        sd.exploration_policy_revisions.c.policy_revision_id
+                        == sd.policy_archive_decisions.c.policy_revision_id,
+                    )
+                    .where(sd.exploration_policy_revisions.c.family == policy_family)
+                )
+                .scalars()
+                .all()
+            )
+            active = sorted(
+                policy_id
+                for policy_id in set(archived)
+                if (decision := repository.latest_archive_decision(policy_id)) is not None
+                and decision.disposition == "stepping_stone"
+            )
+            policy_ids = (
+                connection.execute(
+                    select(sd.exploration_policy_revisions.c.policy_revision_id).where(
+                        sd.exploration_policy_revisions.c.family == policy_family
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            lineage = {
+                policy_id: list(repository.policy_parents(policy_id))
+                for policy_id in sorted(policy_ids)
+            }
+            drift = {"state": "unavailable"}
+            completed_ids = [item["tournament_id"] for item in timeline if item["completed"]]
+            if len(completed_ids) >= 2:
+                earlier_id, later_id = completed_ids[-2:]
+                earlier_world_ids = {
+                    item.world_id for item in repository.tournament_worlds(earlier_id)
+                }
+                later = repository.tournament(later_id)
+                policy_id = later.incumbent_policy_revision_id
+
+                def samples(tournament_id: str, allowed_ids: set[str]) -> tuple[DriftSample, ...]:
+                    items = []
+                    for result in repository.tournament_results(tournament_id):
+                        if (
+                            result.policy_revision_id != policy_id
+                            or result.world_id not in allowed_ids
+                        ):
+                            continue
+                        world = repository.world(result.world_id)
+                        vector = result.score_vector
+                        items.append(
+                            DriftSample(
+                                result.world_id,
+                                canonical_json(world.strata),
+                                float(vector["eligible_band_count"]),
+                                int(vector["node_count"]),
+                                int(vector["rounds"]),
+                                float(vector["effective_parallelism"]),
+                                float(vector["failure_recovery_rate"]),
+                                int(vector["distinct_valid_candidate_count_capped"]),
+                                next(iter(vector.get("failure_codes", ())), None),
+                                (
+                                    float(vector["eligible_band_count"]),
+                                    max(
+                                        (
+                                            float(value)
+                                            for value in vector[
+                                                "best_objective_probability_by_band"
+                                            ].values()
+                                            if value is not None
+                                        ),
+                                        default=0.0,
+                                    ),
+                                    float(vector["distinct_valid_candidate_count_capped"]),
+                                ),
+                            )
+                        )
+                    return tuple(sorted(items, key=lambda item: item.world_id))
+
+                previous_samples = samples(earlier_id, earlier_world_ids)
+                current_samples = samples(
+                    later_id,
+                    {item.world_id for item in repository.tournament_worlds(later_id)}
+                    - earlier_world_ids,
+                )
+                deployment = repository.latest_deployment(policy_family)
+                codes = (
+                    tuple(deployment.brake_conditions.get("conditions", ())) if deployment else ()
+                )
+                drift = asdict(
+                    assess_drift(
+                        previous_samples,
+                        current_samples,
+                        min_samples=contract.min_drift_sample_clusters,
+                        material_quality_gain=contract.min_material_quality_gain,
+                        max_branch_growth_without_gain=contract.max_branch_growth_without_gain,
+                        worst_stratum_max_decline=contract.worst_stratum_max_decline,
+                        registered_hard_invariants=codes,
+                    )
+                )
+        report = review_new_information(
+            tuple(item for item in coverage if item.world_id in previous_ids),
+            tuple(item for item in coverage if item.world_id not in previous_ids),
+            min_clusters=contract.min_effective_new_clusters,
+            previous_actions=tuple(
+                sorted(
+                    set().union(
+                        *(
+                            action_sets.get(item.world_id, set())
+                            for item in coverage
+                            if item.world_id in previous_ids
+                        )
+                    )
+                )
+            ),
+            new_actions=tuple(
+                sorted(
+                    set().union(
+                        *(
+                            action_sets.get(item.world_id, set())
+                            for item in coverage
+                            if item.world_id not in previous_ids
+                        )
+                    )
+                )
+            ),
+            action_worlds={
+                world_id: tuple(sorted(actions)) for world_id, actions in action_sets.items()
+            },
+            min_action_coverage_delta=contract.min_action_coverage_delta,
+            min_failure_case_delta=contract.min_failure_case_delta,
+            min_stratum_count_delta=contract.min_stratum_count_delta,
+            readiness=readiness,
+            previous_completed_at=latest_completed_at,
+            reviewed_at=datetime.now(UTC).isoformat(),
+            min_days_between_rounds=contract.min_days_between_rounds,
+        )
+        return {
+            "contract_status": contract.approval_status,
+            "proposed_contract_hash": proposed_contract_hash(contract),
+            "runtime_authority": False,
+            "incumbent": state.incumbent_policy_revision_id,
+            "latest_tournament_id": state.latest_tournament_id,
+            "tournaments": timeline,
+            "data_mode": readiness.mode,
+            "raw_new_worlds": report.raw_new_worlds,
+            "effective_new_clusters": report.effective_new_clusters,
+            "excluded_duplicates": report.duplicate_world_ids,
+            "trigger_blocks": report.blocking_reasons,
+            "exposed_holdout_ids": sorted({item.world_id for item in exposures}),
+            "protected_holdout_ids": timeline[-1]["holdout_ids"] if timeline else [],
+            "policy_lineage": lineage,
+            "archive": {"active_ids": active, "capacity": pilot.archive.capacity},
+            "drift": drift,
+            "pending_human_approval": True,
+        }
+
     def promotion(self, policy_family: str) -> dict[str, object]:
         with self._engine.connect() as connection:
             repo = DiscoveryRepository(connection)
@@ -43,8 +309,10 @@ class DiscoveryReadService:
             for deployment_id in connection.execute(
                 select(sd.policy_deployments.c.policy_deployment_id)
                 .where(sd.policy_deployments.c.policy_family == policy_family)
-                .order_by(sd.policy_deployments.c.decided_at.desc(),
-                          sd.policy_deployments.c.policy_deployment_id.desc())
+                .order_by(
+                    sd.policy_deployments.c.decided_at.desc(),
+                    sd.policy_deployments.c.policy_deployment_id.desc(),
+                )
             ).scalars():
                 event = repo.deployment(deployment_id)
                 key = canonical_json(event.scope)
@@ -64,26 +332,36 @@ class DiscoveryReadService:
                     )
                 ).scalars()
                 eligible_worlds = tuple(
-                    world for world_id in world_ids
+                    world
+                    for world_id in world_ids
                     if (world := repo.world(world_id)) is not None
                     and repo.world_state(world_id) == "sealed"
                 )
                 receipts = {
-                    world.world_id: {key: value for key, value in repo.protected_receipt(
-                        world.world_id
-                    ).items() if key != "action_id"}
-                    for world in eligible_worlds if repo.protected_receipt(world.world_id)
+                    world.world_id: {
+                        key: value
+                        for key, value in repo.protected_receipt(world.world_id).items()
+                        if key != "action_id"
+                    }
+                    for world in eligible_worlds
+                    if repo.protected_receipt(world.world_id)
                 }
                 effective_count = evaluate_shadow_window(
-                    active_window, repo.tournament(tournament_id), eligible_worlds,
-                    now=datetime.now(UTC), policy_revision_id=active_window.policy_revision_id,
+                    active_window,
+                    repo.tournament(tournament_id),
+                    eligible_worlds,
+                    now=datetime.now(UTC),
+                    policy_revision_id=active_window.policy_revision_id,
                     excluded_world_ids={
                         item.world_id for item in repo.tournament_worlds(tournament_id)
-                    }, receipts=receipts,
+                    },
+                    receipts=receipts,
                 ).effective_world_count
-            refs = deployment.evidence_refs if deployment and isinstance(
-                deployment.evidence_refs, dict
-            ) else {}
+            refs = (
+                deployment.evidence_refs
+                if deployment and isinstance(deployment.evidence_refs, dict)
+                else {}
+            )
             return {
                 "latest_tournament_id": tournament_id,
                 "latest_tournament_proof_hash": (

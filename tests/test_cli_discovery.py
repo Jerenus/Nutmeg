@@ -20,6 +20,35 @@ from tests.ontology.test_discovery_world_actions import _request
 runner = CliRunner()
 
 
+def test_iteration_timeline_is_read_only_on_empty_old_and_current_stores(tmp_path):
+    absent = tmp_path / "absent"
+    result = runner.invoke(app, ["discovery", "iteration", "--data-dir", str(absent)])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["contract_status"] == "proposed_unapproved"
+    assert not absent.exists()
+
+    old = tmp_path / "old"
+    database = OntologyPaths.from_data_dir(old).database
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE schema_migrations (version INTEGER)")
+        connection.execute("INSERT INTO schema_migrations VALUES (39)")
+    before = database.read_bytes()
+    result = runner.invoke(app, ["discovery", "iteration", "--data-dir", str(old)])
+    assert result.exit_code == 1
+    assert database.read_bytes() == before
+
+    current = tmp_path / "current"
+    kernel = build_ontology_kernel(AppSettings(data_dir=current))
+    kernel.initialize()
+    database = OntologyPaths.from_data_dir(current).database
+    before = database.read_bytes()
+    result = runner.invoke(app, ["discovery", "iteration", "--data-dir", str(current)])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["effective_new_clusters"] == 0
+    assert database.read_bytes() == before
+
+
 def test_discovery_status_is_read_only_and_empty_on_fresh_store(tmp_path):
     data_dir = tmp_path / "absent"
     result = runner.invoke(app, ["discovery", "status", "--data-dir", str(data_dir)])

@@ -1,0 +1,20 @@
+{
+  "schema_version": "1",
+  "contract_id": "structural-iteration-v1",
+  "approval_status": "proposed_unapproved",
+  "duplicate_cluster_key": ["business_date", "task_snapshot_hash", "slate_revision_id"],
+  "holdout_rotation": "sealed_strictly_newer_unexposed_cluster",
+  "archive_capacity": 12,
+  "max_per_lineage": 3,
+  "minimum_action_jaccard_distance": 0.2,
+  "min_effective_new_clusters": 3,
+  "min_days_between_rounds": 2,
+  "min_action_coverage_delta": 1,
+  "min_failure_case_delta": 1,
+  "min_stratum_count_delta": 1,
+  "min_drift_sample_clusters": 3,
+  "min_material_quality_gain": 0.05,
+  "max_branch_growth_without_gain": 0.2,
+  "worst_stratum_max_decline": 0.1,
+  "hard_invariant_codes": ["protected_source_mutation", "resource_overrun"]
+}

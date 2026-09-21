@@ -219,6 +219,37 @@ def promotion(
     typer.echo(json.dumps(state, ensure_ascii=False, sort_keys=True))
 
 
+@discovery_app.command("iteration")
+def iteration(
+    policy_family: str = typer.Option("structural_candidate_exploration", "--family"),
+    data_dir: Path = DATA_DIR_OPTION,
+) -> None:
+    """Show the proposed recursive-operation timeline without authorizing a cycle."""
+    database = _database(data_dir)
+    if database.is_file():
+        state = _read_service(database, generation=True).iteration(policy_family)
+    else:
+        state = {
+            "contract_status": "proposed_unapproved",
+            "runtime_authority": False,
+            "incumbent": None,
+            "latest_tournament_id": None,
+            "tournaments": [],
+            "data_mode": "record_only",
+            "raw_new_worlds": 0,
+            "effective_new_clusters": 0,
+            "excluded_duplicates": [],
+            "trigger_blocks": ["no_store", "contract_unapproved"],
+            "exposed_holdout_ids": [],
+            "protected_holdout_ids": [],
+            "policy_lineage": {},
+            "archive": {"active_ids": [], "capacity": 12},
+            "drift": "unavailable",
+            "pending_human_approval": True,
+        }
+    typer.echo(json.dumps(state, ensure_ascii=False, sort_keys=True))
+
+
 @discovery_app.command("show")
 def show(
     kind: str = typer.Option(..., "--kind"),
