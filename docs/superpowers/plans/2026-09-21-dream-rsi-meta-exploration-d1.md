@@ -1285,7 +1285,7 @@ Run: `git status --short .nutmeg-data experiments/attempts.log experiments/corpu
 
 Expected: no D1-created changes. Preserve and report any pre-existing unrelated worktree changes.
 
-- [ ] **Step 6: Commit final D1 verification evidence**
+- [x] **Step 6: Commit final D1 verification evidence**
 
 Create `docs/superpowers/evidence/2026-09-21-meta-exploration-d1-foundation.md` containing:
 
