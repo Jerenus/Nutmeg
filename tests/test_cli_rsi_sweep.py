@@ -9,7 +9,11 @@ from nutmeg.interfaces.cli import app
 from nutmeg.interfaces.cli import rsi as rsi_cli
 
 
-def _prepare_duty(tmp_path: Path, *, instrument: list[str]) -> tuple[Path, str, CliRunner]:
+def _prepare_duty(
+    tmp_path: Path,
+    *,
+    instrument: list[str],
+) -> tuple[Path, str, CliRunner]:
     day = "2099-09-19"
     data_dir = tmp_path / "data"
     zucai_dir = data_dir / "zucai"
@@ -115,6 +119,76 @@ def test_sweep_does_not_execute_expired_duty(tmp_path: Path):
     assert result.exit_code == 0, result.output
     assert "DUTY_EXPIRED: S1:sample 1" in result.stderr
     assert "ran=0" in result.output and "expired=1" in result.output
+    assert "failed=0" in result.output
+
+
+def test_sweep_skips_issue_instrument_when_day_has_no_zucai_issue(tmp_path: Path):
+    data_dir, day, runner = _prepare_duty(
+        tmp_path,
+        instrument=["uv", "run", "false", "--issue", "{issue}"],
+    )
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        connection.execute(
+            "UPDATE rsi_duty_instances SET issue=NULL WHERE duty_id='S1:sample'"
+        )
+
+    result = runner.invoke(
+        app,
+        [
+            "rsi",
+            "sweep",
+            "--day",
+            day,
+            "--now",
+            "2099-09-19T12:00:00+08:00",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "DUTY_NOT_READY: S1:sample: 当天没有足彩期" in result.output
+    assert "skipped_not_ready=1" in result.output
+    assert "failed=0" in result.output
+
+
+def test_sweep_skips_balance_instrument_until_reads_exist(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    data_dir, day, runner = _prepare_duty(
+        tmp_path,
+        instrument=[
+            "uv",
+            "run",
+            "nutmeg",
+            "rsi",
+            "balance",
+            "--day",
+            "{day}",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "rsi",
+            "sweep",
+            "--day",
+            day,
+            "--issue",
+            "99199",
+            "--now",
+            "2099-09-19T12:00:00+08:00",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "DUTY_NOT_READY: S1:sample: reads 尚未落盘" in result.output
+    assert "skipped_not_ready=1" in result.output
+    assert "failed=0" in result.output
 
 
 def test_sweep_rejects_non_uv_instrument(tmp_path: Path):

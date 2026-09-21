@@ -406,6 +406,18 @@ def _duty_ledger(kernel, day: str):
     return duties, instances
 
 
+def _is_balance_instrument(argv: list[str]) -> bool:
+    return argv[:5] == ["uv", "run", "nutmeg", "rsi", "balance"]
+
+
+def _balance_reads_ready(
+    data_dir: Path, *, day: str, issue: str | None
+) -> bool:
+    jczq_reads = data_dir / "jczq" / "daily" / day / "reads.json"
+    zucai_reads = data_dir / "zucai" / f"{issue}-reads.json" if issue else None
+    return jczq_reads.exists() or (zucai_reads is not None and zucai_reads.exists())
+
+
 @rsi_app.command("sweep")
 def sweep(
     day: str | None = _DAY_OPT,
@@ -423,10 +435,10 @@ def sweep(
         "ran": 0,
         "skipped_fulfilled": 0,
         "skipped_pending": 0,
+        "skipped_not_ready": 0,
         "expired": 0,
         "failed": 0,
     }
-    had_error = False
     duties, day_instances = _duty_ledger(k, resolved_day)
     instances = {
         duty_id: [row for row in day_instances if row.duty_id == duty_id]
@@ -457,7 +469,6 @@ def sweep(
             continue
         if not duty.instrument or duty.instrument[0] != "uv":
             counts["failed"] += len(runnable)
-            had_error = True
             typer.echo(
                 f"UNSAFE_INSTRUMENT: {duty.duty_id} 只允许 argv[0]=uv",
                 err=True,
@@ -468,8 +479,14 @@ def sweep(
         resolved_issue = issue or (next(iter(row_issues)) if len(row_issues) == 1 else None)
         if len(row_issues) > 1 and issue is None:
             counts["failed"] += len(runnable)
-            had_error = True
             typer.echo(f"rsi error: {duty.duty_id} 同日绑定多个 issue", err=True)
+            continue
+        if resolved_issue is None and any("{issue}" in arg for arg in duty.instrument):
+            counts["skipped_not_ready"] += len(runnable)
+            typer.echo(
+                f"DUTY_NOT_READY: {duty.duty_id}: 当天没有足彩期",
+                err=True,
+            )
             continue
         try:
             argv = render_instrument(
@@ -477,8 +494,16 @@ def sweep(
             )
         except ValueError as exc:
             counts["failed"] += len(runnable)
-            had_error = True
             typer.echo(f"rsi error: {duty.duty_id}: {exc}", err=True)
+            continue
+        if _is_balance_instrument(argv) and not _balance_reads_ready(
+            data_dir, day=resolved_day, issue=resolved_issue
+        ):
+            counts["skipped_not_ready"] += len(runnable)
+            typer.echo(
+                f"DUTY_NOT_READY: {duty.duty_id}: reads 尚未落盘",
+                err=True,
+            )
             continue
         completed = subprocess.run(argv, capture_output=True, text=True, check=False)
         if completed.stdout:
@@ -487,7 +512,6 @@ def sweep(
             typer.echo(completed.stderr.rstrip(), err=True)
         if completed.returncode != 0:
             counts["failed"] += len(runnable)
-            had_error = True
             typer.echo(
                 f"rsi error: {duty.duty_id} instrument exit={completed.returncode}",
                 err=True,
@@ -505,7 +529,6 @@ def sweep(
         counts["ran"] += fulfilled_now
         if not_fulfilled:
             counts["failed"] += not_fulfilled
-            had_error = True
             typer.echo(
                 f"DUTY_NOT_FULFILLED: {duty.duty_id} {not_fulfilled} 条命令成功但未登记",
                 err=True,
@@ -515,7 +538,7 @@ def sweep(
         f"{resolved_day} sweep: "
         + " ".join(f"{key}={value}" for key, value in counts.items())
     )
-    if had_error:
+    if counts["failed"] > 0:
         raise typer.Exit(code=1)
 
 
