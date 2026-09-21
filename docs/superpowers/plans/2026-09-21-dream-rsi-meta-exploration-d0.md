@@ -517,7 +517,7 @@ git commit -m "docs(discovery): freeze baseline incumbent"
 - Create: `docs/superpowers/evidence/2026-09-21-meta-exploration-d0-as-built.md`
 - Modify: `tests/discovery/test_contracts.py`
 
-- [ ] **Step 1: Add a failing evidence-contract test**
+- [x] **Step 1: Add a failing evidence-contract test**
 
 ```python
 # append to tests/discovery/test_contracts.py
@@ -533,13 +533,13 @@ def test_d0_evidence_names_every_retained_boundary_and_gap():
         assert required in text
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/discovery/test_contracts.py::test_d0_evidence_names_every_retained_boundary_and_gap -v`
 
 Expected: FAIL with `FileNotFoundError`.
 
-- [ ] **Step 3: Write the as-built/gap matrix**
+- [x] **Step 3: Write the as-built/gap matrix**
 
 Create `docs/superpowers/evidence/2026-09-21-meta-exploration-d0-as-built.md` with these sections and concrete entries:
 
@@ -599,7 +599,7 @@ recorded here, the complete focused test file passes, and Jun approves this evid
 
 After the file exists, run the hash command in Step 4 and replace the single instruction line under **Frozen artifacts** with the two actual hashes. This is not a placeholder: the values are generated from the committed semantic JSON by the project loader.
 
-- [ ] **Step 4: Generate and record the canonical hashes**
+- [x] **Step 4: Generate and record the canonical hashes**
 
 Run:
 
@@ -609,13 +609,13 @@ uv run python -c 'from pathlib import Path; from nutmeg.discovery.contracts impo
 
 Expected: two labels followed by distinct 64-character lowercase hexadecimal hashes. Insert those exact values into the evidence document using `apply_patch`.
 
-- [ ] **Step 5: Run the evidence test and verify GREEN**
+- [x] **Step 5: Run the evidence test and verify GREEN**
 
 Run: `uv run pytest tests/discovery/test_contracts.py::test_d0_evidence_names_every_retained_boundary_and_gap -v`
 
 Expected: `1 passed`.
 
-- [ ] **Step 6: Commit D0 evidence**
+- [x] **Step 6: Commit D0 evidence**
 
 ```bash
 git add docs/superpowers/evidence/2026-09-21-meta-exploration-d0-as-built.md tests/discovery/test_contracts.py

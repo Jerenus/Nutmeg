@@ -228,3 +228,20 @@ def test_repository_baseline_is_deterministic_and_contract_compatible():
     assert policy.random_seed_policy == {"kind": "none", "deterministic": True}
     assert [step.action for step in policy.steps] == ["continue_batch", "stop"]
     assert len(canonical_hash(policy)) == 64
+
+
+def test_d0_evidence_names_every_retained_boundary_and_gap():
+    text = (
+        ROOT / "docs/superpowers/evidence/2026-09-21-meta-exploration-d0-as-built.md"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "ActionService",
+        "OntologyUnitOfWork",
+        "enumerate_band_candidates",
+        "Candidate Set Revision",
+        "Historical Replay Run",
+        "Discovery Tree",
+        "No harness execution in D0",
+        "D1 entry gate",
+    ):
+        assert required in text
