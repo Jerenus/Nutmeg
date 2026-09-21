@@ -60,6 +60,8 @@ _REPLAY_PROTECTED_ACTIONS = frozenset(
         "record_cash_transaction",
         "rsi_approve_deployment",
         "rsi_fulfill_duty",
+        "approve_policy_deployment",
+        "trip_policy_brake",
     }
 )
 

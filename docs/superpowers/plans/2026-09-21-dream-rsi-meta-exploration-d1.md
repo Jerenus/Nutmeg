@@ -806,7 +806,7 @@ git commit -m "feat(ontology): govern discovery world actions"
 - Modify: `nutmeg/ontology/actions/service.py`
 - Test: `tests/ontology/test_discovery_policy_actions.py`
 
-- [ ] **Step 1: Write failing policy and replay tests**
+- [x] **Step 1: Write failing policy and replay tests**
 
 Implement this exact test matrix:
 
@@ -823,13 +823,13 @@ Implement this exact test matrix:
 
 The hidden-child test must create a sealed tree `root -> a -> a1` and `root -> b`, then submit a round revealing `a1` before `a`; expect `ValueError("unrevealed parent")` and zero completion rows.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `uv run pytest tests/ontology/test_discovery_policy_actions.py -v`
 
 Expected: FAIL because `DiscoveryPolicyActions` does not exist.
 
-- [ ] **Step 3: Define request DTOs and handlers**
+- [x] **Step 3: Define request DTOs and handlers**
 
 Create frozen requests `RegisterPolicyRevisionRequest`, `StartPolicyReplayRequest`, and `FinishPolicyReplayRequest`. Use exact Action names `register_policy_revision`, `start_policy_replay`, and `finish_policy_replay`.
 
@@ -862,7 +862,7 @@ if canonical_hash(trace_document) != request.trace_hash:
 
 After validation, atomically insert rounds and one completion row. No code path calls online adapters or alters world/node rows.
 
-- [ ] **Step 4: Add discovery deployment to replay-protected Actions**
+- [x] **Step 4: Add discovery deployment to replay-protected Actions**
 
 Extend `_REPLAY_PROTECTED_ACTIONS` in `actions/service.py` with:
 
@@ -873,7 +873,7 @@ Extend `_REPLAY_PROTECTED_ACTIONS` in `actions/service.py` with:
 
 This is defense in depth; migration permissions still deny `replay_adjudicator` for both.
 
-- [ ] **Step 5: Run tests and verify GREEN**
+- [x] **Step 5: Run tests and verify GREEN**
 
 Run: `uv run pytest tests/ontology/test_discovery_policy_actions.py tests/ontology/test_replay_actions.py tests/ontology/test_action_service.py -v`
 
