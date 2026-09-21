@@ -410,6 +410,22 @@ def _is_balance_instrument(argv: list[str]) -> bool:
     return argv[:5] == ["uv", "run", "nutmeg", "rsi", "balance"]
 
 
+def _research_deferred_count(argv: list[str], stdout: str) -> int:
+    if argv[:5] != ["uv", "run", "nutmeg", "research", "run"]:
+        return 0
+    deferred = {
+        "skipped_backoff",
+        "skipped_permanent",
+        "skipped_retry_limit",
+        "skipped_budget",
+    }
+    return sum(
+        len(parts) >= 2 and parts[1] in deferred
+        for line in stdout.splitlines()
+        if (parts := line.strip().split())
+    )
+
+
 def _balance_reads_ready(
     data_dir: Path, *, day: str, issue: str | None
 ) -> bool:
@@ -527,6 +543,12 @@ def sweep(
         )
         not_fulfilled = len(runnable) - fulfilled_now
         counts["ran"] += fulfilled_now
+        deferred = min(
+            not_fulfilled, _research_deferred_count(argv, completed.stdout)
+        )
+        if deferred:
+            counts["skipped_not_ready"] += deferred
+            not_fulfilled -= deferred
         if not_fulfilled:
             counts["failed"] += not_fulfilled
             typer.echo(

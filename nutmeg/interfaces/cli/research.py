@@ -124,6 +124,9 @@ def run(
     for row in report["matches"]:
         suffix = f" {row['seconds']}s" if "seconds" in row else ""
         typer.echo(f"  {row['code']} {row['status']}{suffix}")
+    typer.echo(
+        f"used_attempts={report['used_attempts']} written={report['written']}"
+    )
 
 
 @research_app.command("intake")

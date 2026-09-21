@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -339,3 +340,43 @@ def test_sweep_reports_successful_command_that_did_not_fulfill_as_failed(
     assert result.exit_code == 1
     assert "DUTY_NOT_FULFILLED: S1:sample 1" in result.output
     assert "ran=0" in result.output and "failed=1" in result.output
+
+
+def test_sweep_treats_research_backoff_as_deferred_not_failed(
+    tmp_path: Path, monkeypatch
+):
+    data_dir, day, runner = _prepare_duty(
+        tmp_path,
+        instrument=["uv", "run", "nutmeg", "research", "run", "--day", "{day}"],
+    )
+    monkeypatch.setattr(
+        rsi_cli.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="  周五001 skipped_backoff\nused_attempts=0 written=0\n",
+            stderr="",
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "rsi",
+            "sweep",
+            "--day",
+            day,
+            "--issue",
+            "99199",
+            "--now",
+            "2099-09-19T12:00:00+08:00",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "skipped_backoff" in result.output
+    assert "skipped_not_ready=1" in result.output
+    assert "failed=0" in result.output
