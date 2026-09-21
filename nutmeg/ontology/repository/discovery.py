@@ -340,6 +340,31 @@ class DiscoveryRepository:
             "PolicyDeploymentRow", self._connection.execute(query).mappings().first()
         )
 
+    def deployment(self, policy_deployment_id: str) -> PolicyDeploymentRow | None:
+        return self._get(
+            "PolicyDeploymentRow",
+            "policy_deployments",
+            "policy_deployment_id",
+            policy_deployment_id,
+        )
+
+    def latest_deployment_for_scope(
+        self, policy_family: str, scope: dict[str, object]
+    ) -> PolicyDeploymentRow | None:
+        table = sd.policy_deployments
+        query = (
+            select(table)
+            .where(
+                table.c.policy_family == policy_family,
+                table.c.scope_json == canonical_json(scope),
+            )
+            .order_by(table.c.decided_at.desc(), table.c.policy_deployment_id.desc())
+            .limit(1)
+        )
+        return self._decode(
+            "PolicyDeploymentRow", self._connection.execute(query).mappings().first()
+        )
+
     def latest_brake(self, policy_deployment_id: str) -> PolicyBrakeEventRow | None:
         table = sd.policy_brake_events
         query = (

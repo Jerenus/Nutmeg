@@ -894,7 +894,7 @@ git commit -m "feat(ontology): govern discovery policies and replay traces"
 - Create: `nutmeg/ontology/actions/discovery_governance_actions.py`
 - Test: `tests/ontology/test_discovery_governance_actions.py`
 
-- [ ] **Step 1: Write failing governance tests**
+- [x] **Step 1: Write failing governance tests**
 
 Implement this exact test matrix:
 
@@ -912,13 +912,13 @@ Implement this exact test matrix:
 | `test_deterministic_brake_only_restores_recorded_approved_fallback` | alternate fallback fails; recorded fallback commits |
 | `test_braked_policy_cannot_resume_without_new_human_action` | deterministic resume fails; operator superseding event commits |
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `uv run pytest tests/ontology/test_discovery_governance_actions.py -v`
 
 Expected: FAIL because `DiscoveryGovernanceActions` does not exist.
 
-- [ ] **Step 3: Implement tournament creation and completion**
+- [x] **Step 3: Implement tournament creation and completion**
 
 Define `CreatePolicyTournamentRequest` and `FinishPolicyTournamentRequest`. Creation uses `acquire_write_lock=True` and validates:
 
@@ -933,11 +933,13 @@ Completion validates a result or explicit exclusion for every candidate/world pa
 
 D1 treats `finish_policy_tournament` as a governed persistence boundary, not as proof
 that ranking was computed correctly. It additionally requires the winner to be a
-registered, non-disqualified candidate and stores a `selection_proof_hash`. D4 owns the
-deterministic aggregation implementation that produces that proof before this Action
-is used operationally.
+registered, non-disqualified candidate. Its `reproduction_hash` stores the hash of the
+frozen selection-proof document (candidate/world manifests, matrix, exclusions, and
+declared winner); the D1 schema has no separate `selection_proof_hash` column. D4 owns
+the deterministic aggregation implementation that checks the proof and ranking before
+this Action is used operationally.
 
-- [ ] **Step 4: Implement human deployment and deterministic brake**
+- [x] **Step 4: Implement human deployment and deterministic brake**
 
 Define `ApprovePolicyDeploymentRequest` and `TripPolicyBrakeRequest` with exact Actions `approve_policy_deployment` and `trip_policy_brake`.
 
@@ -954,7 +956,7 @@ all decisions: ticket/dispatch/funds/public-output permissions remain absent
 
 Brake checks that the named deployment is active, the condition code is in its frozen brake contract, and `restored_policy_revision_id` equals its recorded rollback target. It inserts one brake event; it cannot choose another policy, expand scope, or resume the tripped policy.
 
-- [ ] **Step 5: Run governance tests and verify GREEN**
+- [x] **Step 5: Run governance tests and verify GREEN**
 
 Run: `uv run pytest tests/ontology/test_discovery_governance_actions.py tests/ontology/test_permissions.py -v`
 
