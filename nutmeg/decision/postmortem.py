@@ -161,7 +161,10 @@ def _row(
 def postmortem_candidate_count(*, day: str, issue: str | None, data_dir: Path) -> int:
     if issue:
         calls = _load(data_dir / "zucai" / f"{issue}-calls.json", {})
-        return len(calls) if isinstance(calls, dict) else 0
+        if not isinstance(calls, dict):
+            return 0
+        # 与 postmortem_rows 保持同一口径：`_` 开头是文件级元数据，不是场次
+        return sum(1 for key in calls if not str(key).startswith("_"))
     board = _load(data_dir / "jczq" / "daily" / day / "jczq-legs-base.json", {})
     legs = board.get("legs") if isinstance(board, dict) else {}
     return len(legs) if isinstance(legs, dict) else 0
@@ -180,7 +183,9 @@ def postmortem_rows(*, day: str, issue: str | None, data_dir: Path) -> list[dict
         outcomes = results.split() if isinstance(results, str) else []
         legs = legs_doc.get("legs") if isinstance(legs_doc, dict) else {}
         rows = []
-        for raw_no, call in sorted(calls.items(), key=lambda item: int(item[0])):
+        # `_` 开头的键是文件级元数据（如 `_meta.built_at` 的时间证据），不是场次
+        numbered = {k: v for k, v in calls.items() if not str(k).startswith("_")}
+        for raw_no, call in sorted(numbered.items(), key=lambda item: int(item[0])):
             match_no = int(raw_no)
             if match_no > len(outcomes) or outcomes[match_no - 1] not in _FACES:
                 continue

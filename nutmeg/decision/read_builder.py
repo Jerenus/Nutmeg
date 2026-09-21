@@ -137,10 +137,15 @@ def build(judgment: dict, *, issue: str, store_ids: dict, fair: dict,
             "ttg_shape_anchor": j.get("ttg_shape_anchor"),
             # 读判 note 原样带进 legs：I4 自相矛盾扫描要读它（26123 场13）
             "note": note,
+            # 判断时刻：没有它，「判断早于赛果」就只是一句自我声明而非可验证事实。
+            # 下游用 judged_at < kickoff 判 provably_prospective；取不到一律记 null，
+            # ⛔不得默认成 true（2026-09-21 立：语料 126 行带标签，仅 12 行可证事前）。
+            "judged_at": made_at,
         }
 
     legs_payload = {
         "issue": issue,
+        "built_at": made_at,
         "version": "base_处方P14（read_builder 生成）",
         "prescription": prescription,
         "deviation_registry": [],
