@@ -685,3 +685,107 @@ print(collections.Counter(r[0] for r in c.execute('select prospective from rsi_o
 | 6 | T12 双档都报了 | 报告里严格档与全量档并排，不是只有好看那档 |
 | 7 | RSI 侧没被动 | `rsi_observations.prospective` 仍是 138/34 |
 | 8 | registry 零改动 | 两项都跑 `git diff --stat experiments/registry/` |
+
+---
+
+# 追加交接 · T13（2026-09-21）
+
+━━━━━━━━━━━━━━━━━━━━ T13 提示词开始 ━━━━━━━━━━━━━━━━━━━━
+
+做 T13，设计在
+`docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md` 的 **§13**，先读那节。
+T1-T12 已验收通过，不要回头改。
+
+## 目标（一句话）
+
+**建一条从测量回到权重的通路。** 现在 RULEBOOK 有 **19 条 audit 码在指挥出票**，
+而 `noise_floor` 只认识 **3 个因子**——十六条判据从未被自己的战绩检验过。
+本任务只建通路，⛔**不动任何一个现有权重**。
+
+## 要做的四件事
+
+**① `experiments/factors.json` 因子注册表**
+19 条 audit 码逐条归属，字段见 spec §13.3①。
+最关键的是 `layer` 三分，先分层再测量：
+
+- `fact` —— 宪法第一序事实层否决位（C7 在 2026-09-18 改写后属此、C3 弃模态属此）。
+  ⛔**不得对它做概率检验并据此提议改权重**。测量只记录，不驱动。
+- `probability` —— 声称能预测赛果的（C11 虚假方向带、C12 平局低估带等）。这些是要迭代的。
+- `expression` —— 只约束表达形式、不声称预测（C17 一致性、C6 降格）。不进因子表，但要注明理由。
+
+⚠️分错层是本任务唯一会造成实质损害的地方：
+把 `fact` 拿去做概率检验 = 重演 C7 在 2026-09-18 之前的错误；
+把 `probability` 免检 = 维持现在十六条的状态。拿不准的标 `probability` 并在报告里点名，由人裁。
+
+**② 权重变更规则——必须先注册、后看数据**
+
+```
+eligible ⇔ n >= n_min ∧ verdict == "above_floor"（N0 严格档）∧ 分窗符号一致
+  eligible                              → proposed = 点估计，截断进 weight_band
+  n >= n_min 且 indistinguishable       → proposed = 0   ← 证伪路径，归零也是成功的迭代
+  其余                                   → 维持
+```
+
+⛔**这条规则的提交必须早于任何 propose 产物的提交**（验收会查 `git log` 顺序）。
+理由：C7 的分窗塌方（训练 +12.0pp → 测试 −0.7pp）是事后才发现的；
+规则若后写，就会被数据形状带着走。
+
+**③ `nutmeg rsi weights propose --factor <id>`**
+产出提案：n / 效应 / 地板 / 分窗 / 建议新权重 / 依据。
+⛔**它不写权重**。改权重只能由人跑 `rsi deploy --by <人>`。
+
+**④ 不做的事**
+- ⛔不改任何现有权重，`current_weight_pp` 跑完必须一个没变
+- ⛔不对 `fact` 层因子提议改动
+- ⛔n 不够的因子**不许从表里删掉**——n 不够就是它当前的状态，要看得见
+
+## 红线（沿用前几轮）
+
+- ⛔不得修改 F1c / F2 / F3 / F8 的任何字段；`git diff --stat experiments/registry/` 应为空
+- ⛔不得执行 `nutmeg rsi register` / `amend` / `deploy`
+- ⛔不得改判读逻辑、票面逻辑、**audit 码表本身**（`legs_audit.py` 一行不动）
+- ⛔不得为了让某个因子"可迭代"而调 n_min 或放宽地板
+- ⛔`git add` 只用显式路径，绝不用 `-A` / `-u`
+- ⚠️`git commit | tail` 会吞退出码
+
+## 验收（对照 spec §13.4 的 E1-E6，原样贴输出）
+
+```
+uv run pytest tests/ -q
+uv run ruff check nutmeg/ tests/ experiments/ scripts/
+uv run python -c "import json;d=json.load(open('experiments/factors.json'));\
+import collections;print(collections.Counter(f['layer'] for f in d['factors']));print(len(d['factors']),'个因子')"
+uv run nutmeg rsi weights propose --factor c11_false_direction_band
+uv run nutmeg rsi weights propose --factor c7_live_precedent      # 应拒绝：fact 层
+git log --oneline -- experiments/factors.json | tail -3           # 规则提交须早于 propose 产物
+git diff --stat experiments/registry/
+```
+
+出口条件：
+1. 19 条 audit 码逐条有归属（进表或标 expression 并注明理由）
+2. C7 标 `fact`；C11 / C12 标 `probability`
+3. 变更规则的提交时间早于任何 propose 产物
+4. propose 跑完 `current_weight_pp` 一个未变
+5. 构造一个 n 够但 indistinguishable 的因子 → 提议为 **0**，不是"维持"
+6. 大多数因子会是"n 不够、维持"——照实输出
+
+报告里写明：你把哪几条标成了 `fact`、哪几条拿不准，以及理由。
+
+提交信息末尾加：
+```
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+```
+
+━━━━━━━━━━━━━━━━━━━━ T13 提示词结束 ━━━━━━━━━━━━━━━━━━━━
+
+## 我的 T13 监管清单
+
+| # | 核什么 | 怎么核 |
+|---|---|---|
+| 1 | 分层没搞错 | C7 必须是 `fact`；任何 `fact` 层因子跑 propose 必须被拒 |
+| 2 | 规则先于数据 | `git log` 查两个提交的先后，不看它怎么说 |
+| 3 | 权重真没动 | propose 前后 diff `factors.json` 的 `current_weight_pp` |
+| 4 | 证伪路径通 | 亲手构造 n 够但 indistinguishable 的因子，确认提议 0 |
+| 5 | 没藏难看的 | 因子表里应有大量"n 不够"，若全是漂亮结论就是筛过了 |
+| 6 | 覆盖完整 | 19 条码逐条点名，缺一条就退 |
+| 7 | audit 码表未动 | `git diff nutmeg/decision/legs_audit.py` 为空 |
