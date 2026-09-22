@@ -155,3 +155,330 @@ def test_prospective_fields_exposes_leak_and_keeps_missing_time_unknown():
         "judged_at_source": "legs-base.legs[n].judged_at",
     }
     assert unknown == {"provably_prospective": None, "judged_at_source": None}
+
+
+def test_judgment_entries_recognise_every_known_era_shape():
+    numeric = {"1": {"action": "310", "confidence": 2, "note": "n1"}, "made_at": "x"}
+    entries, source = corpus_build._judgment_entries(numeric)
+    assert source == "judgment[match_no]" and entries[1]["action"] == "310"
+
+    judgments = {"judgments": {"3": {"picks": "1/0", "confidence": 3, "reason": "r"}}}
+    entries, source = corpus_build._judgment_entries(judgments)
+    assert source == "judgment.judgments" and entries[3]["picks"] == "1/0"
+
+    decisions = {"decisions": [{"match_no": "2", "ticket": "31", "conf": "3"}]}
+    entries, source = corpus_build._judgment_entries(decisions)
+    assert source == "judgment.decisions" and entries[2]["ticket"] == "31"
+
+    matches = {"matches": [{"match_no": "1", "pick": "310", "flags": ["a"]}]}
+    entries, source = corpus_build._judgment_entries(matches)
+    assert source == "judgment.matches" and entries[1]["flags"] == ["a"]
+
+    picks = {"picks": [{"match_no": 1, "selection": "3", "anchor_fair_had": {"3": 0.6}}]}
+    entries, source = corpus_build._judgment_entries(picks)
+    assert source == "judgment.picks" and entries[1]["selection"] == "3"
+
+    prose = {"board": "一段散文", "made_at": "2026-07-26"}
+    assert corpus_build._judgment_entries(prose) == ({}, None)
+    assert corpus_build._judgment_entries([1, 2]) == ({}, None)
+
+
+def test_judgment_lane_adds_call_note_labels_but_never_prospective_proof(tmp_path, monkeypatch):
+    root = tmp_path / "zucai"
+    root.mkdir()
+    (root / "official-results.json").write_text(json.dumps({"26099": "3 1"}), encoding="utf-8")
+    (root / "26099-issue.json").write_text(
+        json.dumps(
+            {
+                "matches": [
+                    {"match_no": 1, "match_date": "2026-08-02", "kickoff_bj": "2026-08-02 20:00"},
+                    {"match_no": 2, "match_date": "2026-08-02", "kickoff_bj": "2026-08-02 22:00"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "26099-reads.json").write_text(
+        json.dumps(
+            [
+                {"read_id": "26099-01-had", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2}},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (root / "26099-judgment.json").write_text(
+        json.dumps(
+            {
+                "made_at": "2026-08-02T09:54:00+08:00",
+                "matches": [
+                    {
+                        "match_no": "1",
+                        "pick": "310",
+                        "primary": "0",
+                        "confidence": "2",
+                        "flags": ["weak_home_draw_trap"],
+                        "note": "top1<45且有无方向旗，强制全包。",
+                    },
+                    {
+                        "match_no": "2",
+                        "pick": "3",
+                        "confidence": "4",
+                        "anchor_fair_had": {"3": 0.7, "1": 0.2, "0": 0.1},
+                        "reason": "只有 judgment 有价格的场",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(corpus_build, "Z", str(root))
+
+    rows = {row["match_no"]: row for row in corpus_build.zucai_rows()}
+
+    assert rows[1]["call"] == "310"
+    assert rows[1]["conf"] == 2
+    assert rows[1]["note"].startswith("top1<45")
+    assert rows[1]["labels"]["judgment"]["flags"] == ["weak_home_draw_trap"]
+    assert rows[1]["labels"]["judgment"]["_source"] == "judgment.matches"
+    assert rows[1]["judged_at_declared"] == "2026-08-02T09:54:00+08:00"
+    assert rows[1]["provably_prospective"] is None
+    assert rows[1]["fair_source"] == "reads.prior"
+    # a match with no reads/legs price is admitted only through the declared anchor fair
+    assert rows[2]["fair_source"] == "judgment.anchor_fair_had"
+    assert rows[2]["fair"] == {"home": 0.7, "draw": 0.2, "away": 0.1}
+    assert rows[2]["actual"] == "1"
+
+
+def _write(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def test_jczq_rows_use_closing_odds_only_when_no_read_time_price(tmp_path, monkeypatch):
+    root = tmp_path / "jczq"
+    _write(
+        root / "jc-results.json",
+        {
+            "2026-09-19": {
+                "周六001": {"match_id": "1", "ft_home": 1, "ft_away": 0},
+                "周六002": {"match_id": "2", "ft_home": 0, "ft_away": 0},
+                "周六003": {"match_id": "3", "ft_home": 0, "ft_away": 2},
+            },
+            "2026-09-20": {"周六004": {"match_id": "4", "ft_home": 2, "ft_away": 1}},
+        },
+    )
+    fair = {"home": 0.5, "draw": 0.3, "away": 0.2}
+    _write(
+        root / "daily" / "2026-09-19" / "bold_odds.json",
+        {
+            "周六001": {"match_winner": {"fair_probability": fair, "bookmaker_count": 3}},
+            "周六004": {"match_winner": {"fair_probability": fair, "bookmaker_count": 3}},
+        },
+    )
+    closing_entry = {
+        "match_id": "2",
+        "fetched_at": "2026-09-22T04:00:00+00:00",
+        "source": "titan007_history",
+        "book_count": 40,
+        "updated_at_min": "2026-09-17T10:00:00",
+        "updated_at_max": "2026-09-19T19:50:00",
+        "sharp": {
+            "odds": {"home": 2.0, "draw": 3.4, "away": 3.6},
+            "fair_probability": {"home": 0.45, "draw": 0.3, "away": 0.25},
+            "opening_odds": {"home": 2.1, "draw": 3.3, "away": 3.5},
+            "bookmaker_count": 5,
+        },
+        "all": {
+            "fair_probability": {"home": 0.46, "draw": 0.3, "away": 0.24},
+            "bookmaker_count": 40,
+        },
+        "per_book": [],
+    }
+    _write(
+        root / "daily" / "2026-09-19" / "closing_odds.json",
+        {
+            "周六001": {**closing_entry, "match_id": "1"},
+            "周六002": closing_entry,
+            "周六003": {"match_id": "3", "unavailable": "too few books"},
+        },
+    )
+    monkeypatch.setattr(corpus_build, "J", str(root))
+
+    rows = {row["key"]: row for row in corpus_build.jczq_rows()}
+
+    # read-time price wins and the closing block is attached alongside it
+    assert rows["2026-09-19-周六001"]["fair_kind"] == "read_time"
+    assert rows["2026-09-19-周六001"]["closing"]["sharp_fair"]["home"] == 0.45
+    # no read-time price: the sharp closing fair becomes the price, marked as such
+    assert rows["2026-09-19-周六002"]["fair_kind"] == "closing"
+    assert rows["2026-09-19-周六002"]["fair_source"] == "titan007_closing"
+    assert rows["2026-09-19-周六002"]["fair"]["home"] == 0.45
+    # unavailable closing entry and no bold price → no row, never a guessed price
+    assert "2026-09-19-周六003" not in rows
+    # a late-night match keyed on the next calendar day's result page still finds the
+    # previous day's board price
+    assert rows["2026-09-20-周六004"]["fair_kind"] == "read_time"
+
+
+def _kernel_fixture(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "ontology.db"
+    con = sqlite3.connect(db)
+    con.executescript(
+        """
+        create table forecast_series(
+            forecast_series_id text, match_id text, market_definition_id text);
+        create table forecast_revisions(forecast_revision_id text, forecast_series_id text,
+            revision_no int, status text, made_at text, information_cutoff_at text,
+            prior_distribution_json text, belief_distribution_json text, commitment_tier text,
+            actor_id text, model_name text, evidence_coverage text, evidence_quality text,
+            falsifier text);
+        create table matches(match_id text, current_revision_id text);
+        create table match_revisions(match_revision_id text, match_id text, scheduled_at text);
+        create table match_outcomes(match_id text, score_90 text, status text);
+        create table external_identifiers(entity_id text, entity_type text, provider text,
+            external_id text);
+        create table market_quotes(match_id text, market_definition_id text, provider text,
+            captured_at text, selection_id text, decimal_odds real, quote_status text);
+        """
+    )
+    prior = json.dumps({"home": 0.5, "draw": 0.3, "away": 0.2})
+    belief = json.dumps({"home": 0.55, "draw": 0.27, "away": 0.18})
+    rows = [
+        # m1: kernel outcome, two sporttery snapshots before kickoff, one after (ignored)
+        ("m1", "s1", "M-2026-09-19-甲-乙", "zucai-canonical", "2-0"),
+        # m2: no kernel outcome; resolved through the zucai issue file
+        ("m2", "s2", "M-2026-09-19-丙-丁", "zucai-canonical", None),
+        # m3: no kernel outcome; resolved through the jczq board via sporttery id
+        ("m3", "s3", "777", "sporttery", None),
+        # m4: nothing resolves → dropped
+        ("m4", "s4", "M-2026-09-19-戊-己", "import", None),
+    ]
+    for match_id, series, ext, provider, score in rows:
+        con.execute("insert into forecast_series values (?,?,?)", (series, match_id, "md-had"))
+        con.execute(
+            "insert into forecast_revisions values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (f"fr-{match_id}-1", series, 1, "committed", "2026-09-18T10:00:00+00:00", None,
+             prior, prior, "commit", "ai", "model", "0.8", "0.7", "fal"),
+        )
+        con.execute(
+            "insert into forecast_revisions values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (f"fr-{match_id}-2", series, 2, "committed", "2026-09-19T10:00:00+00:00", None,
+             prior, belief, "commit", "ai", "model", "0.8", "0.7", "fal"),
+        )
+        con.execute("insert into matches values (?,?)", (match_id, f"rev-{match_id}"))
+        con.execute(
+            "insert into match_revisions values (?,?,?)",
+            (f"rev-{match_id}", match_id, "2026-09-19T20:00:00+08:00"),
+        )
+        con.execute(
+            "insert into external_identifiers values (?,?,?,?)", (match_id, "match", provider, ext)
+        )
+        if score:
+            con.execute("insert into match_outcomes values (?,?,?)", (match_id, score, "final"))
+    for captured, odds in (
+        ("2026-09-18T08:00:00+08:00", (2.0, 3.3, 3.8)),
+        ("2026-09-19T18:00:00+08:00", (1.9, 3.4, 4.0)),
+        ("2026-09-19T21:00:00+08:00", (1.5, 3.9, 5.0)),
+    ):
+        for sel, price in zip(("sel-had-home", "sel-had-draw", "sel-had-away"), odds, strict=True):
+            con.execute(
+                "insert into market_quotes values (?,?,?,?,?,?,?)",
+                ("m1", "md-had", "sporttery", captured, sel, price, "active"),
+            )
+    con.commit()
+    con.close()
+    return db
+
+
+def test_kernel_rows_join_outcomes_quotes_and_prove_prospective(tmp_path, monkeypatch):
+    db = _kernel_fixture(tmp_path)
+    zroot, jroot = tmp_path / "zucai", tmp_path / "jczq"
+    _write(zroot / "official-results.json", {"26130": "3 1"})
+    _write(
+        zroot / "26130-issue.json",
+        {
+            "matches": [
+                {"match_no": "1", "match_date": "2026-09-19", "home_team": "丙", "away_team": "丁"},
+                {"match_no": "2", "match_date": "2026-09-19", "home_team": "庚", "away_team": "辛"},
+            ]
+        },
+    )
+    _write(
+        jroot / "jc-results.json",
+        {"2026-09-19": {"周六009": {"match_id": "t9", "ft_home": 0, "ft_away": 1}}},
+    )
+    _write(
+        jroot / "daily" / "2026-09-19" / "sporttery_markets.json",
+        {
+            "matchInfoList": [
+                {
+                    "subMatchList": [
+                        {
+                            "matchId": "777",
+                            "matchNumStr": "周六009",
+                            "businessDate": "2026-09-19",
+                            "matchDate": "2026-09-19",
+                            "homeTeamAbbName": "壬",
+                            "awayTeamAbbName": "癸",
+                        }
+                    ]
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(corpus_build, "Z", str(zroot))
+    monkeypatch.setattr(corpus_build, "J", str(jroot))
+
+    rows = {row["kernel"]["match_id"]: row for row in corpus_build.kernel_rows(str(db))}
+
+    assert set(rows) == {"m1", "m2", "m3"}
+    m1 = rows["m1"]
+    assert m1["actual"] == "3" and m1["kernel"]["outcome_source"] == "match_outcomes"
+    assert m1["kernel"]["revision_no"] == 2  # latest committed revision per match
+    assert m1["belief_moved"] is True
+    assert m1["provably_prospective"] is True
+    assert m1["judged_at_source"] == "ontology.forecast_revisions.made_at"
+    assert m1["quotes"]["sporttery"]["n_snapshots"] == 2  # post-kickoff snapshot excluded
+    assert m1["quotes"]["sporttery"]["closing"]["home"] == 1.9
+    assert m1["name"] == "甲 vs 乙"
+    m2 = rows["m2"]
+    assert m2["actual"] == "3" and m2["kernel"]["outcome_source"] == "official-results"
+    assert (m2["issue"], m2["match_no"]) == ("26130", 1)
+    m3 = rows["m3"]
+    assert m3["actual"] == "0" and m3["kernel"]["outcome_source"] == "jc-results"
+    assert (m3["jczq_date"], m3["jczq_no"], m3["titan007_id"]) == ("2026-09-19", "周六009", "t9")
+
+
+def test_attach_kernel_prefers_keys_then_same_or_adjacent_day_fair_and_keeps_row_flag():
+    fair = {"home": 0.5, "draw": 0.3, "away": 0.2}
+    zucai = {"src": "zucai", "key": "26130-1", "issue": "26130", "match_no": 1,
+             "date": "2026-09-19",
+             "fair": fair, "provably_prospective": None}
+    jczq = {"src": "jczq", "key": "2026-09-19-周六009", "date": "2026-09-19", "fair": fair}
+    late = {"src": "jczq", "key": "2026-09-19-周六010", "date": "2026-09-19",
+            "fair": {"home": 0.3, "draw": 0.3, "away": 0.4}}
+    kernel = [
+        {"src": "kernel", "key": "kernel-m2", "issue": "26130", "match_no": 1, "date": "2026-09-19",
+         "fair": fair, "belief": fair, "kernel": {"match_id": "m2"}, "quotes": {},
+         "provably_prospective": True},
+        {"src": "kernel", "key": "kernel-m3", "jczq_no": "周六009", "jczq_date": "2026-09-19",
+         "date": "2026-09-20", "fair": {"home": 0.1, "draw": 0.1, "away": 0.8}, "belief": fair,
+         "kernel": {"match_id": "m3"}, "quotes": {}, "provably_prospective": True},
+        {"src": "kernel", "key": "kernel-m5", "date": "2026-09-20",
+         "fair": {"home": 0.31, "draw": 0.3, "away": 0.39}, "belief": fair,
+         "kernel": {"match_id": "m5"}, "quotes": {}, "provably_prospective": False},
+        {"src": "kernel", "key": "kernel-m6", "date": "2026-09-19",
+         "fair": {"home": 0.9, "draw": 0.05, "away": 0.05}, "belief": fair,
+         "kernel": {"match_id": "m6"}, "quotes": {}, "provably_prospective": True},
+    ]
+
+    rows, attached = corpus_build.attach_kernel([zucai, jczq, late], kernel)
+
+    assert attached == 3
+    assert zucai["kernel"]["match_id"] == "m2" and zucai["provably_prospective"] is None
+    assert zucai["kernel_provably_prospective"] is True
+    assert jczq["kernel"]["match_id"] == "m3"  # business-day key beats calendar date
+    assert late["kernel"]["match_id"] == "m5"  # adjacent-day fair match
+    assert [r["key"] for r in rows if r["src"] == "kernel"] == ["kernel-m6"]
