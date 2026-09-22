@@ -10,6 +10,7 @@
     4. verdict_due        对每个实验尝试 `rsi verdict`；「未到期」是预期状态不是失败
     5. factor_propose     `rsi weights propose --all --log`（从不写权重）
     6. hyp                `zucai_loop hyp --corpus v2 --log`（假设批次证伪）
+    6b. factor_search     `zucai_loop search --corpus v2`（训练窗搜、测试窗验，自报噪音上限）
     7. team_strength      客观实力指标重建
     8. scoreboard         记分牌散文 → 结构化计数
     9. report             写 `.nutmeg-data/analytics/rsi-loop/<date>.json|.md` 与 `latest.md`
@@ -39,6 +40,7 @@ STEP_ORDER = (
     "verdict_due",
     "factor_propose",
     "hyp",
+    "factor_search",
     "team_strength",
     "scoreboard",
 )
@@ -122,6 +124,12 @@ def _latest_issue(corpus_path: Path) -> str | None:
     return issues[-1] if issues else None
 
 
+def _days_before(day: str, days: int) -> str:
+    from datetime import date, timedelta
+
+    return (date.fromisoformat(day) - timedelta(days=days)).isoformat()
+
+
 def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
     """每一步要跑的子进程命令；`rsi loop --dry-run` 打印这个。"""
     uv = ["uv", "run"]
@@ -151,6 +159,11 @@ def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
         "hyp": [
             [*uv, "python", "scripts/zucai_loop.py", "hyp", "--corpus", "v2",
              "--cut", cut, "--log"],
+        ],
+        "factor_search": [
+            # 训练窗/测试窗按日期切：测试窗 = 最近 30 天；多重比较由脚本自报期望最大|z|
+            [*uv, "python", "scripts/zucai_loop.py", "search", "--corpus", "v2",
+             "--cut", _days_before(ctx.date, 30)],
         ],
         "team_strength": [
             [*uv, "python", "experiments/team_strength.py", "build",
