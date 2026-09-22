@@ -198,3 +198,122 @@ def dream(corpus: Sequence[dict], harness: Harness, *, variants: Sequence[dict])
     ranked.sort(key=lambda r: (-r["value_pp"], -r["n"]))
     return {"variants_tried": len(variants), "ranked": ranked,
             "note": "重放结果只产候选，进不了判决（verdict 只读 prospective 档）"}
+
+
+# ── 前瞻结账适配器（2026-09-22 接入 F3 / F5 / F9）────────────────────────────
+# 三者都只读语料 v2 的行，按登记原件的 window 过滤，永不回补窗前样本（T12）。
+# F3：足彩 issue_from..issue_to，top1≥60% 的模态面残差（stratum=zucai）。
+# F5：date_from 起两泳道，gap12∈[10,20)pp 的模态面残差（stratum=pooled；另按泳道各出一档）。
+# F9：date_from 起 belief≠prior 的行，市场 Brier − 判读 Brier（pp，正=判读更好）。
+
+_FACE = {"home": "3", "draw": "1", "away": "0"}
+
+
+def _modal(fair: dict) -> str:
+    return max(fair, key=fair.get)
+
+
+def _rows_hash(rows: Sequence[dict]) -> str:
+    raw = json.dumps(
+        [(r.get("key"), r.get("actual"), r.get("fair"), r.get("belief")) for r in rows],
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode()
+    return inputs_hash(raw)
+
+
+def _in_issue_window(row: dict, window: dict) -> bool:
+    issue = str(row.get("issue") or "")
+    return bool(issue) and window.get("issue_from", "") <= issue <= window.get("issue_to", "99999")
+
+
+def _in_date_window(row: dict, window: dict) -> bool:
+    day = str(row.get("date") or "")
+    return bool(day) and day >= str(window.get("date_from", ""))
+
+
+def _residual_grade(rows: Sequence[dict], *, stratum: str, computed_by: str,
+                    as_of_policy: str) -> GradeResult:
+    modal_rows = [
+        {"actual": r["actual"], "fair": {"m": r["fair"][_modal(r["fair"])]}, "m": _modal(r["fair"])}
+        for r in rows
+    ]
+    resid_rows = [
+        {"actual": "m" if r["actual"] == _FACE[r["m"]] else "x", "fair": {"m": r["fair"]["m"]}}
+        for r in modal_rows
+    ]
+    ci = bootstrap_residual_pp(resid_rows, face="m")
+    return GradeResult(stratum=stratum, n_cum=ci.n, metric_value_pp=ci.value_pp,
+                       ci_low_pp=ci.ci_low_pp, ci_high_pp=ci.ci_high_pp, cost_axis_pp=None,
+                       as_of_policy=as_of_policy, inputs_hash=_rows_hash(rows),
+                       computed_by=computed_by)
+
+
+def _priced(rows: Sequence[dict]) -> list[dict]:
+    return [r for r in rows if len(r.get("fair") or {}) == 3 and r.get("actual") in _FACE.values()]
+
+
+def grade_f3_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
+    """F3 policy-top60：窗内足彩行、top1≥60% → 模态面残差。"""
+    selected = [
+        r for r in _priced(rows)
+        if r.get("src") == "zucai" and _in_issue_window(r, window)
+        and r["fair"][_modal(r["fair"])] >= 0.60
+    ]
+    return _residual_grade(selected, stratum="zucai",
+                           computed_by="nutmeg.decision.rsi_grading.grade_f3_prospective",
+                           as_of_policy="registry_window_issue")
+
+
+def grade_f5_prospective(rows: Sequence[dict], *, window: dict,
+                         stratum: str = "pooled") -> GradeResult:
+    """F5a 价格带：窗内、gap12∈[10,20)pp → 模态面残差。stratum=pooled|zucai|jczq。"""
+    selected = []
+    for r in _priced(rows):
+        if not _in_date_window(r, window):
+            continue
+        if stratum != "pooled" and r.get("src") != stratum:
+            continue
+        ordered = sorted(r["fair"].values(), reverse=True)
+        gap = ordered[0] - ordered[1]
+        if 0.10 <= gap < 0.20:
+            selected.append(r)
+    return _residual_grade(selected, stratum=stratum,
+                           computed_by="nutmeg.decision.rsi_grading.grade_f5_prospective",
+                           as_of_policy="registry_window_date")
+
+
+def _brier(dist: dict, actual: str) -> float:
+    return sum((float(dist.get(face, 0.0)) - (1.0 if code == actual else 0.0)) ** 2
+               for face, code in _FACE.items())
+
+
+def grade_f9_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                         boots: int = 4000) -> GradeResult:
+    """F9 判读增量：窗内 belief≠prior 的行，(市场 Brier − 判读 Brier)×100，正=判读更好。"""
+    selected = [
+        r for r in _priced(rows)
+        if _in_date_window(r, window)
+        and r.get("belief_moved")
+        and len(r.get("belief") or {}) == 3
+    ]
+    deltas = [(_brier(r["fair"], r["actual"]) - _brier(r["belief"], r["actual"])) * 100
+              for r in selected]
+    n = len(deltas)
+    if n == 0:
+        return GradeResult(stratum="pooled", n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0,
+                           ci_high_pp=0.0, cost_axis_pp=None, as_of_policy="registry_window_date",
+                           inputs_hash=_rows_hash(selected),
+                           computed_by="nutmeg.decision.rsi_grading.grade_f9_prospective")
+    rng = random.Random(seed)
+    point = statistics.fmean(deltas)
+    means = sorted(statistics.fmean(rng.choice(deltas) for _ in deltas) for _ in range(boots))
+    lo, hi = means[int(0.025 * boots)], means[int(0.975 * boots) - 1]
+    return GradeResult(stratum="pooled", n_cum=n, metric_value_pp=point,
+                       ci_low_pp=lo, ci_high_pp=hi,
+                       cost_axis_pp=None, as_of_policy="registry_window_date",
+                       inputs_hash=_rows_hash(selected),
+                       computed_by="nutmeg.decision.rsi_grading.grade_f9_prospective")
+
+
+PROSPECTIVE_ADAPTERS = {"F3": grade_f3_prospective, "F5": grade_f5_prospective,
+                        "F9": grade_f9_prospective}

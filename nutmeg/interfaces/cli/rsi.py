@@ -83,6 +83,14 @@ def _business_day(at: datetime) -> str:
     return local.date().isoformat()
 
 
+_CORPUS_V2 = Path(__file__).resolve().parents[3] / "experiments" / "corpus-v2.json"
+
+
+def _corpus_rows(path: Path | None = None) -> list[dict]:
+    doc = json.loads((path or _CORPUS_V2).read_text("utf-8"))
+    return doc["rows"] if isinstance(doc, dict) else doc
+
+
 def _fail(msg: str) -> None:
     typer.echo(f"rsi error: {msg}")
     raise typer.Exit(code=1)
@@ -841,7 +849,11 @@ def price_band(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
 @rsi_app.command("grade")
 def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR) -> None:
     """Run an experiment's deterministic grading adapter."""
-    from nutmeg.decision.rsi_grading import LeakError, grade_f2_prospective
+    from nutmeg.decision.rsi_grading import (
+        PROSPECTIVE_ADAPTERS,
+        LeakError,
+        grade_f2_prospective,
+    )
 
     k = _kernel(data_dir)
     with OntologyUnitOfWork(k.engine) as uow:
@@ -866,14 +878,24 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR) -> Non
                 for plan in uow.capital.all_latest()
             ]
         g = grade_f4(plans)
+    elif exp in PROSPECTIVE_ADAPTERS:
+        rows = _corpus_rows()
+        g = PROSPECTIVE_ADAPTERS[exp](rows, window=e.window)
     else:
         _fail(f"{exp} 的结账适配器尚未接入（replay_spec.harness={e.replay_spec})")
-    _run(k.rsi_actions.grade_experiment, GradeExperimentRequest(
-        exp_id=exp, mode=mode, stratum=g.stratum, n_cum=g.n_cum, metric_value_pp=g.metric_value_pp,
-        ci_low_pp=g.ci_low_pp, ci_high_pp=g.ci_high_pp, cost_axis_pp=g.cost_axis_pp,
-        as_of_policy=g.as_of_policy, computed_by=g.computed_by, inputs_hash=g.inputs_hash,
-        idempotency_key=f"rsi-grade:{exp}:{mode}:{g.inputs_hash[:16]}",
-        requested_at=_now(), **_SYSTEM))
+    from nutmeg.ontology.errors import IdempotencyConflictError
+
+    try:
+        _run(k.rsi_actions.grade_experiment, GradeExperimentRequest(
+            exp_id=exp, mode=mode, stratum=g.stratum, n_cum=g.n_cum,
+            metric_value_pp=g.metric_value_pp, ci_low_pp=g.ci_low_pp, ci_high_pp=g.ci_high_pp,
+            cost_axis_pp=g.cost_axis_pp, as_of_policy=g.as_of_policy, computed_by=g.computed_by,
+            inputs_hash=g.inputs_hash,
+            idempotency_key=f"rsi-grade:{exp}:{mode}:{g.inputs_hash[:16]}",
+            requested_at=_now(), **_SYSTEM))
+    except IdempotencyConflictError:
+        # 同一份输入已结过账（键=inputs_hash）：每日闭环重跑时这是常态，不是冲突。
+        typer.echo(f"{exp} [{mode}] 输入未变（{g.inputs_hash[:16]}），沿用已有 grade")
     f = Falsifier.from_dict(e.falsifier)
     typer.echo(f"{exp} [{mode}] n={g.n_cum}  残差 {g.metric_value_pp:+.2f}pp  "
                f"CI[{g.ci_low_pp:+.2f}, {g.ci_high_pp:+.2f}]  距 n_min {max(0, f.n_min - g.n_cum)}")
@@ -1026,6 +1048,61 @@ def weights_propose(
                 f"verdict={strict.get('verdict')}",
                 f"{item['decision']} → {item['proposed_weight_pp']}pp (not written)",
             )
+
+
+_L_DATE = typer.Option(None, "--date", help="报告日期，默认今天")
+_L_FORCE = typer.Option(False, "--force", help="同日已有报告也重跑")
+_L_SKIP = typer.Option(None, "--skip", help="跳过的步骤名，可重复")
+_L_DRY = typer.Option(False, "--dry-run", help="只打印每步命令，不执行")
+
+
+@rsi_app.command("loop")
+def loop(
+    date: str | None = _L_DATE,
+    force: bool = _L_FORCE,
+    skip: list[str] | None = _L_SKIP,
+    dry_run: bool = _L_DRY,
+    data_dir: Path = _DATA_DIR,
+) -> None:
+    """每日闭环：补采 → 语料 → 前瞻结账 → 判决 → 因子提案 → 假设 → 实力 → 记分牌 → 报告。
+
+    只编排、只追加：不写权重、不改规则、不登记、不部署；人类动作只进报告。
+    """
+    from nutmeg.decision.rsi_loop import (
+        STEP_ORDER,
+        LoopContext,
+        default_runner,
+        planned_commands,
+        run_loop,
+    )
+
+    unknown = sorted(set(skip or ()) - set(STEP_ORDER))
+    if unknown:
+        _fail(f"未知步骤 {unknown}；可用：{', '.join(STEP_ORDER)}")
+    ctx = LoopContext(
+        root=Path(__file__).resolve().parents[3],
+        data_dir=Path(data_dir).expanduser().resolve(),
+        date=date or _now().date().isoformat(),
+        runner=default_runner,
+        skip=frozenset(skip or ()),
+    )
+    if dry_run:
+        for name, commands in planned_commands(ctx).items():
+            flag = "skip" if name in ctx.skip else "run"
+            typer.echo(f"[{flag}] {name}")
+            for cmd in commands:
+                typer.echo("    " + " ".join(cmd))
+        return
+    report = run_loop(ctx, force=force)
+    if report is None:
+        typer.echo(f"{ctx.date} 已有报告，跳过（--force 重跑）：{ctx.out_dir / f'{ctx.date}.md'}")
+        return
+    typer.echo(f"RSI 闭环 {report.date}：{len(report.steps)} 步，失败 {len(report.failed_steps)}")
+    for action in report.human_actions:
+        typer.echo(f"  待人：{action}")
+    typer.echo(f"报告 {ctx.out_dir / (report.date + '.md')}")
+    if report.failed_steps:
+        raise typer.Exit(code=1)
 
 
 @rsi_app.command("status")
