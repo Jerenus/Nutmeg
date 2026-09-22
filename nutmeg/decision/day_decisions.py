@@ -5,12 +5,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from nutmeg.decision.day_paths import DECISIONS, day_dir, jczq_day_dir
 
 DEFAULT_EMPTY = "空仓"
+_BJ = timezone(timedelta(hours=8))
 
 
 def _decided_reads(data_dir: Path, date: str) -> set[str]:
@@ -35,10 +36,14 @@ def _status(deadline: str | None, done: bool, now: datetime) -> str:
         return "done"
     if deadline:
         try:
-            if datetime.fromisoformat(deadline) <= now:
-                return "expired"
+            parsed = datetime.fromisoformat(deadline)
         except ValueError:
-            pass
+            parsed = None
+        if parsed is not None:
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=_BJ)
+            if parsed <= now:
+                return "expired"
     return "open"
 
 
