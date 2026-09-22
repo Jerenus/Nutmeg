@@ -135,3 +135,10 @@ def test_render_and_write_brief(tmp_path: Path):
     assert "只解释已产生的判断" in md
     path = write_brief(data, "2026-09-23", brief)
     assert path.name == "brief.json" and (path.parent / "brief.md").exists()
+
+
+def test_cards_carry_audit_of_three_default_expressions(tmp_path: Path):
+    data, root = _fixture(tmp_path)
+    brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
+    audit = brief["jczq"]["matches"][0]["audit"]
+    assert set(audit) == {"naked", "double", "full"} and audit["full"]["faces"] == "310"

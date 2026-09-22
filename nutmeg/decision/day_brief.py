@@ -8,6 +8,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from nutmeg.decision.day_audit import audit_defaults
 from nutmeg.decision.day_paths import BRIEF, BRIEF_MD, day_dir, jczq_day_dir, zucai_dir
 
 MOVE_EPS_PP = 0.05
@@ -149,6 +150,7 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
             "read": read,
             "ladder": _ladder(read),
         })
+        cards[-1]["audit"] = audit_defaults(cards[-1])
     counts = {
         "matches": len(cards),
         "deep_research": sum(1 for c in cards
