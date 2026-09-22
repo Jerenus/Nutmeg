@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/jz71/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>Label</key>
+	<string>com.nutmeg.day.brief</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/zsh</string>
+		<string>-lc</string>
+		<string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; /opt/homebrew/bin/uv run nutmeg day run --job brief --data-dir /Users/jz71/Projects/Nutmeg/.nutmeg-data</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/day.brief.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/day.brief.out.log</string>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>12</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>14</integer>
+			<key>Minute</key>
+			<integer>20</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>18</integer>
+			<key>Minute</key>
+			<integer>35</integer>
+		</dict>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/jz71/Projects/Nutmeg</string>
+</dict>
+</plist>
