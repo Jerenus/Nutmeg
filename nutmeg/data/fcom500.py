@@ -572,12 +572,12 @@ def _safe_parse_page(client: Fcom500Client, url: str, parser) -> MarketOdds | No
 
 
 def collect_bold_odds(client: Fcom500Client) -> dict[str, dict[str, MarketOdds]]:
-    """Collect the bold engine's 国际 odds as raw ``MarketOdds`` per match.
+    """Collect 国际 odds as raw ``MarketOdds`` per match (``bold_odds`` shape).
 
     Returns ``{match_no: {"match_winner": MarketOdds, "over_under": MarketOdds}}``.
     Unlike ``Fcom500OddsProvider`` (which maps to domain ``MarketOddsSnapshot``
     and drops opening/per-book odds), this keeps the raw ``MarketOdds`` so the
-    bold engine's drift + dispersion signals have their inputs. Any page
+    drift + dispersion signals downstream have their inputs. Any page
     fetch/parse failure degrades that match/market — never crashes.
     """
     try:

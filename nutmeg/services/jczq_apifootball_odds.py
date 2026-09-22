@@ -6,7 +6,7 @@
 
     {match_no: {"match_winner": MarketOdds, "over_under": MarketOdds}}
 
-因此对 tiered 引擎是 drop-in——只换数据源槽位，不动任何选腿逻辑。
+因此对下游消费者是 drop-in——只换数据源槽位，不动任何判读逻辑。
 
 对齐：体彩竞彩盘用中文国家队名（荷兰/法国…），API-Football 用英文。本模块：
 

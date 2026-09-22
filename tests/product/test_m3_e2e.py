@@ -369,12 +369,14 @@ def test_disabled_copilot_preserves_deterministic_query_and_human_action(
 
 
 def test_m3_operations_docs_define_ai_and_human_authority_boundaries() -> None:
-    readme = Path("README.md").read_text(encoding="utf-8")
+    m3_operations = Path("docs/nutmeg-intelligence-os-m3-operations.md").read_text(
+        encoding="utf-8"
+    )
     operations = Path("docs/ontology-kernel-operations.md").read_text(
         encoding="utf-8"
     )
     hook = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
-    combined = readme + operations
+    combined = m3_operations + operations
 
     for required in (
         "Intelligence OS (M3 match investigation)",

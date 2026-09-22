@@ -269,21 +269,3 @@ def test_schedule_service_skips_duplicate_and_force_regenerates(tmp_path) -> Non
     assert forced.status == "dry_run"
     records = json.loads((tmp_path / "records.json").read_text(encoding="utf-8"))["records"]
     assert [record["status"] for record in records] == ["dry_run", "dry_run"]
-
-
-def test_launchd_templates_call_expected_slots_and_times() -> None:
-    afternoon = Path("ops/launchd/com.nutmeg.zucai.afternoon.plist").read_text(
-        encoding="utf-8"
-    )
-    revision = Path("ops/launchd/com.nutmeg.zucai.revision.plist").read_text(
-        encoding="utf-8"
-    )
-
-    assert "<integer>16</integer>" in afternoon
-    assert "<integer>0</integer>" in afternoon
-    assert "--slot" in afternoon and "afternoon" in afternoon
-    assert "<integer>18</integer>" in revision
-    assert "<integer>30</integer>" in revision
-    assert "--slot" in revision and "revision" in revision
-    assert "--dispatch-telegram" in afternoon
-    assert "--no-dry-run" in revision

@@ -17,7 +17,6 @@ def doctor(format: str = _cli.typer.Option("text", "--format", help="text or jso
     _cli.ensure_storage_paths(settings)
     _cli.create_analytics_schema(settings)
     bridge = _cli.inspect_superpowers_bridge(_cli.Path.cwd())
-    harness = _cli.inspect_harness(_cli.Path.cwd())
     trace_context = _cli.build_trace_context(settings, settings.default_user_id)
     session = _cli._build_state_session()
     try:
@@ -57,7 +56,6 @@ def doctor(format: str = _cli.typer.Option("text", "--format", help="text or jso
             "langsmith_project": trace_context.project,
         },
         "workflow": bridge.to_dict(),
-        "harness": harness.to_dict(),
         "latest_sync": _cli.asdict(latest_sync) if latest_sync else None,
     }
     if format == "json":
@@ -79,9 +77,6 @@ def doctor(format: str = _cli.typer.Option("text", "--format", help="text or jso
         f"langsmith={'yes' if trace_context.enabled else 'no'}"
     )
     _cli.console.print(f"superpowers bridge verdict={bridge.verdict}")
-    _cli.console.print(
-        f"harness: {harness.passing_features}/{harness.total_features} feature checks passing"
-    )
     _cli.console.print(
         f"ontology: initialized={ontology_status.initialized} "
         f"schema={ontology_status.schema_version} integrity={ontology_status.integrity_check}"

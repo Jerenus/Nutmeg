@@ -63,13 +63,12 @@ def _stub_context_providers(monkeypatch) -> None:
     )
 
 
-def test_doctor_reports_ready_workflow_and_harness() -> None:
+def test_doctor_reports_ready_workflow() -> None:
     result = runner.invoke(app, ["doctor", "--format", "json"])
     payload = json.loads(result.stdout)
 
     assert result.exit_code == 0
     assert payload["workflow"]["verdict"] == "READY"
-    assert payload["harness"]["feature_list_present"] is True
     assert payload["app"]["default_user_id"] == "owner"
 
 

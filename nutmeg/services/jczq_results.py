@@ -1,9 +1,7 @@
-"""okooo 赛果抓取 —— live 复盘（jczq-tiered-review / jczq-bold-review）共用。
+"""okooo 赛果抓取 —— 决策本体 settle/复盘链共用的结果 provider。
 
-spec §33（2026-06-04）：从退役的 ``jczq_review`` 模块剥离出来。原 ``jczq_review``
-（v1 generator 复盘服务）已删除，但其中的 okooo 结果 provider 是引擎无关的共享件，
-tiered/bold 两条 live 复盘链都借它抓比分 + 各池实际结果。此模块只含抓取/解析，
-不含任何 v1 选腿/评分逻辑。
+引擎无关的共享件：只含抓取/解析（比分 + 各池实际结果），不含任何选腿/评分逻辑。
+消费者：``nutmeg.decision.verbs`` 与 ``nutmeg.decision.ontology_adapter``。
 """
 
 from __future__ import annotations

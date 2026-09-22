@@ -49,7 +49,6 @@ from nutmeg.interfaces.bot import (
 from nutmeg.notifications.wiring import build_notification_service
 from nutmeg.observability.langsmith import build_trace_context, traced_operation
 from nutmeg.ontology import build_ontology_kernel
-from nutmeg.process.harness import inspect_harness
 from nutmeg.process.superpowers import inspect_superpowers_bridge
 from nutmeg.services.analysis import AnalysisService, InsufficientEvidenceError
 from nutmeg.services.evals import EvalDatasetNotFoundError, EvalService
