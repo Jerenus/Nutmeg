@@ -78,6 +78,19 @@
 
 回归：`tests/experiments/test_corpus_build.py` 12 个用例通过；`noise_floor` 三因子在严格档的 n 与改动前逐字相同（33/110/66）；`exp-price-bands --src jczq` 在 1,007 行上跑通；`zucai_loop eval --corpus v2` 读入 1,578 行。
 
+### 7.4 漏读扫描与修复（2026-09-22 晚）
+
+按文件名模式全盘扫了 `.nutmeg-data/zucai` 与 `jczq/daily`，构建器此前不读而有用的四类已接入：
+
+| 文件 | 数量 | 接法 | 效果 |
+| --- | --- | --- | --- |
+| `<期>-judgment-v1.json` | 3 期 | `judgment.json` 缺时的回退 | 26129 的 14 条 call/note 入库，call 行 90→132 |
+| `<期>-research-m<N>.json` | 7 期 91 份 | 与竞彩深研同构，legs-base 标签优先、research 补三证/洞位/anchor_side；`proofs_met` 归一成 `proof_count`；`researched_at` 只存信息位 | 带死亡三证的足彩行 0→70 |
+| `<期>-reads-fix.json` | 2 期 | 同 read_id 覆盖原 Read | 26119 两场用修正版 |
+| `daily/<日>/reads.json` + `judgment-reads.json` | 14 + 11 天 | 按竞彩号取最晚一条 had Read 的 belief/conf/note | 竞彩 belief≠prior 0→63 行，全语料 32→95 |
+
+**没接、有理由**：`<期>-rx.json`（27 期）是预测台账不是逐场出手；`outcomes.json`/`fair.json` 已有等价来源；`predictions.json`/`judgment-answers.json` 是 7 月旧世界杯口径。26125 有 7 份 research 但没有任何价格文件，仍无行。T12 门复核：26128 之前足彩行 `provably_prospective` 仍全为 null。
+
 ## 5. 要扩样本就补这几处（都是 A/B 类，零泄漏）
 
 1. ~~`corpus_build.py` 新增 lane：`judgment.json`~~ 已落地（§4b）。

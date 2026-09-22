@@ -170,7 +170,11 @@ def _judgment_entries(doc: object) -> tuple[dict[int, dict], str | None]:
 
 
 def _judgment_calls(issue: str) -> tuple[dict[int, dict], dict]:
-    doc = _load(f"{Z}/{issue}-judgment.json", {}) or {}
+    doc = (
+        _load(f"{Z}/{issue}-judgment.json", {})
+        or _load(f"{Z}/{issue}-judgment-v1.json", {})
+        or {}
+    )
     entries, source = _judgment_entries(doc)
     meta = {
         "source": source,
@@ -209,6 +213,11 @@ def zucai_rows() -> list[dict]:
         doc = _load(p, [])
         if not isinstance(doc, list):
             continue
+        # `<issue>-reads-fix.json`：同 read_id 的修正版覆盖原 Read（2026-09-22 接入）
+        fixes = _load(f"{Z}/{issue}-reads-fix.json", []) or []
+        if isinstance(fixes, list) and fixes:
+            by_id = {r.get("read_id"): r for r in fixes if isinstance(r, dict)}
+            doc = [by_id.get(r.get("read_id"), r) for r in doc]
         for i, r in enumerate(doc):
             m = re.search(r"-(\d{2})-had", r.get("read_id", "")) or re.search(
                 r"场(\d+)", r.get("note", "")
@@ -301,6 +310,20 @@ def zucai_rows() -> list[dict]:
                     tracking_tags=lg.get("tracking_tags") or [],
                     precedents=[[x[0], x[2]] for x in (lg.get("precedents") or []) if len(x) >= 3],
                 )
+            research = _load(f"{Z}/{issue}-research-m{n}.json", {}) or {}
+            research_labels = _research_labels(research)
+            if research_labels:
+                # 足彩逐场深研（`<issue>-research-m<n>.json`，2026-09-22 接入，7 期 91 份）：
+                # 与竞彩深研同构。legs-base 的旗/完整度优先，research 补它没有的
+                # 死亡三证 / 洞位 / anchor_side；`researched_at` 只存信息位，不进前瞻证明。
+                base = row["labels"] or {}
+                kept = {k: v for k, v in base.items() if v not in (None, [], {})}
+                merged = {**research_labels, **kept}
+                merged["label_source"] = "legs+research" if base else "research"
+                merged["researched_at"] = research.get("researched_at")
+                row["labels"] = merged
+                if row.get("conf") is None and research.get("confidence") is not None:
+                    row["conf"] = research.get("confidence")
             if jd:
                 # Declared `made_at` is kept as information only. The file is mutable and
                 # several were edited after kickoff, so it never feeds `provably_prospective`.
@@ -323,6 +346,8 @@ def _research_labels(doc: dict | None) -> dict | None:
     """
     if not isinstance(doc, dict) or not doc:
         return None
+    if not isinstance(doc.get("death_three_proofs"), dict):
+        doc = {**doc, "death_three_proofs": {}}
     hole = doc.get("hole_location")
     if not isinstance(hole, dict):
         hole = {}
@@ -343,13 +368,22 @@ def _research_labels(doc: dict | None) -> dict | None:
         # ↓ research 独有，legs-base 没有
         death_three_proofs={
             face: {
-                "proof_count": (blk or {}).get("proof_count"),
+                "proof_count": (
+                    (blk or {}).get("proof_count")
+                    if (blk or {}).get("proof_count") is not None
+                    else (
+                        f"{(blk or {}).get('proofs_met')}/3"
+                        if isinstance((blk or {}).get("proofs_met"), int)
+                        else None
+                    )
+                ),
                 "verdict": (blk or {}).get("verdict"),
                 "a": (blk or {}).get("a_no_scoring_mechanism"),
                 "b": (blk or {}).get("b_precedent_carrier_gone"),
                 "c": (blk or {}).get("c_anchor_pass"),
             }
             for face, blk in (doc.get("death_three_proofs") or {}).items()
+            if isinstance(blk, dict)
         },
         hole_location_unit=hole.get("unit") if controlled_hole else None,
         hole_location_side=hole.get("side") if controlled_hole else None,
@@ -406,11 +440,30 @@ def jczq_rows() -> list[dict]:
         closing = _load(f"{day_dir}/closing_odds.json", {}) or {}
         return bold, (board.get("legs") if isinstance(board, dict) else {}) or {}, closing
 
+    def _day_reads(date: str) -> dict[str, dict]:
+        """`reads.json` + `judgment-reads.json`（2026-09-22 接入）：按竞彩号取最晚一条 had Read。"""
+        out: dict[str, dict] = {}
+        for name in ("reads.json", "judgment-reads.json"):
+            for r in _load(f"{J}/daily/{date}/{name}", []) or []:
+                if not isinstance(r, dict) or not r.get("prior"):
+                    continue
+                if r.get("market") not in (None, "had") and "had" not in str(r.get("read_id", "")):
+                    continue
+                m = re.search(r"(周[一二三四五六日]\d{3})", str(r.get("read_id", "")))
+                if not m:
+                    continue
+                code = m.group(1)
+                newer = str(r.get("made_at") or "") > str(out.get(code, {}).get("made_at") or "")
+                if code not in out or newer:
+                    out[code] = r
+        return out
+
     for date in sorted(results):
         day = results.get(date) or {}
         if not day:
             continue
         bold, board_legs, closing = _day_files(date)
+        reads = _day_reads(date)
         prev = (
             __import__("datetime").date.fromisoformat(date) - __import__("datetime").timedelta(1)
         ).isoformat()
@@ -436,6 +489,10 @@ def jczq_rows() -> list[dict]:
             research = _load(f"{day_dir}/research-{jno}.json", {}) or {}
             postmortem = _load(f"{day_dir}/postmortem-{jno}.json", {}) or {}
             leg = board_legs.get(jno) or prev_legs.get(jno) or {}
+            read = reads.get(jno) or {}
+            belief = read.get("belief") or fair
+            if len(belief) != 3:
+                belief = fair
             row = dict(
                 src="jczq",
                 key=f"{date}-{jno}",
@@ -444,12 +501,15 @@ def jczq_rows() -> list[dict]:
                 date=date,
                 name=None,
                 fair=fair,
-                belief=fair,
+                belief=belief,
                 fair_source=fair_source,
                 fair_kind=fair_kind,
                 actual=actual,
-                conf=research.get("confidence"),
-                belief_moved=False,
+                conf=research.get("confidence", read.get("confidence")),
+                belief_moved=any(abs(fair.get(k, 0) - belief.get(k, 0)) > 1e-6 for k in fair),
+                note=str(read.get("note") or ""),
+                read_id=read.get("read_id"),
+                read_made_at=read.get("made_at"),
                 labels=_merge_postmortem(_research_labels(research), postmortem),
                 titan007_id=str(got.get("match_id") or "") or None,
                 jczq_no=jno,

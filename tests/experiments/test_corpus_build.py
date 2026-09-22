@@ -482,3 +482,97 @@ def test_attach_kernel_prefers_keys_then_same_or_adjacent_day_fair_and_keeps_row
     assert jczq["kernel"]["match_id"] == "m3"  # business-day key beats calendar date
     assert late["kernel"]["match_id"] == "m5"  # adjacent-day fair match
     assert [r["key"] for r in rows if r["src"] == "kernel"] == ["kernel-m6"]
+
+
+def test_zucai_lane_reads_judgment_v1_research_and_reads_fix(tmp_path, monkeypatch):
+    root = tmp_path / "zucai"
+    root.mkdir()
+    _write(root / "official-results.json", {"26129": "3 1"})
+    _write(
+        root / "26129-issue.json",
+        {"matches": [
+            {"match_no": 1, "match_date": "2026-09-19", "kickoff_bj": "2026-09-19 20:00"},
+            {"match_no": 2, "match_date": "2026-09-19", "kickoff_bj": "2026-09-19 22:00"},
+        ]},
+    )
+    _write(
+        root / "26129-reads.json",
+        [
+            {"read_id": "26129-01-had", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
+             "confidence": 2},
+            {"read_id": "26129-02-had", "prior": {"home": 0.2, "draw": 0.3, "away": 0.5},
+             "confidence": 2},
+        ],
+    )
+    # a corrected read for match 2 overrides the original by read_id
+    _write(
+        root / "26129-reads-fix.json",
+        [{"read_id": "26129-02-had", "prior": {"home": 0.25, "draw": 0.3, "away": 0.45},
+          "confidence": 4}],
+    )
+    # judgment-v1 naming variant is accepted when judgment.json is absent
+    _write(root / "26129-judgment-v1.json", {"1": {"action": "31", "confidence": 3, "note": "n"}})
+    # zucai per-match research with the proofs_met / legacy hole_location shape
+    _write(
+        root / "26129-research-m1.json",
+        {
+            "researched_at": "2026-09-19T10:00:00+08:00",
+            "anchor_integrity": "fail",
+            "directional_flags": [],
+            "death_three_proofs": {
+                "away": {"proofs_met": 2, "verdict": "dead"},
+                "draw": "prose-only block",
+            },
+            "hole_location": {"opponent": "defense", "anchor": "midfield"},
+            "confidence": 3,
+        },
+    )
+    monkeypatch.setattr(corpus_build, "Z", str(root))
+
+    rows = {row["match_no"]: row for row in corpus_build.zucai_rows()}
+
+    assert rows[1]["call"] == "31" and rows[1]["note"] == "n"
+    labels = rows[1]["labels"]
+    assert labels["label_source"] == "research"
+    assert labels["death_three_proofs"]["away"]["proof_count"] == "2/3"
+    assert "draw" not in labels["death_three_proofs"]
+    assert labels["hole_location_unit"] is None  # legacy shape never guessed
+    assert labels["researched_at"] == "2026-09-19T10:00:00+08:00"
+    assert rows[1]["provably_prospective"] is None  # research time is information only
+    assert rows[2]["fair"] == {"home": 0.25, "draw": 0.3, "away": 0.45}
+    assert rows[2]["conf"] == 4
+
+
+def test_jczq_rows_take_belief_conf_and_note_from_latest_day_read(tmp_path, monkeypatch):
+    root = tmp_path / "jczq"
+    _write(
+        root / "jc-results.json",
+        {"2026-09-20": {"周日001": {"match_id": "1", "ft_home": 1, "ft_away": 0}}},
+    )
+    fair = {"home": 0.5, "draw": 0.3, "away": 0.2}
+    _write(root / "daily" / "2026-09-20" / "bold_odds.json",
+           {"周日001": {"match_winner": {"fair_probability": fair}}})
+    _write(
+        root / "daily" / "2026-09-20" / "reads.json",
+        [
+            {"read_id": "R-ai-jczq-2026-09-20-周日001-had-0900",
+             "made_at": "2026-09-20T09:00:00+08:00",
+             "prior": fair, "belief": {"home": 0.55, "draw": 0.27, "away": 0.18},
+             "confidence": 3, "note": "early"},
+            {"read_id": "R-ai-jczq-2026-09-20-周日001-had-1206",
+             "made_at": "2026-09-20T12:06:00+08:00",
+             "prior": fair, "belief": {"home": 0.6, "draw": 0.25, "away": 0.15},
+             "confidence": 4, "note": "later"},
+            {"read_id": "R-ai-jczq-2026-09-20-周日001-ttg-1206",
+             "made_at": "2026-09-20T12:07:00+08:00",
+             "prior": fair, "belief": fair, "market": "ttg"},
+        ],
+    )
+    monkeypatch.setattr(corpus_build, "J", str(root))
+
+    row = corpus_build.jczq_rows()[0]
+
+    assert row["belief"] == {"home": 0.6, "draw": 0.25, "away": 0.15}
+    assert row["belief_moved"] is True and row["conf"] == 4 and row["note"] == "later"
+    assert row["read_id"].endswith("had-1206")
+    assert row["provably_prospective"] is None  # read time does not feed the strict gate
