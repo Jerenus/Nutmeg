@@ -54,3 +54,18 @@ def test_day_note_rejects_empty_text(tmp_path: Path):
     client, _ = _client(tmp_path)
     r = client.post("/action/day-note", json={"date": "2026-09-23", "text": "  "})
     assert r.status_code == 400
+
+
+def test_day_page_has_every_block_and_links_back(tmp_path: Path):
+    client, _ = _client(tmp_path)
+    html = client.get("/day/2026-09-23").text
+    for block in ("day-status", "day-retro", "day-jczq", "day-zucai", "day-rsi",
+                  "day-decisions", "day-session", "day-talk"):
+        assert f'id="{block}"' in html
+    assert "/static/decision/day.css" in html
+    assert 'href="/observe"' in html and 'href="/betslips"' in html
+
+
+def test_workbench_topbar_links_to_day(tmp_path: Path):
+    client, _ = _client(tmp_path)
+    assert 'href="/day"' in client.get("/").text

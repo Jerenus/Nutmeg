@@ -1,0 +1,19 @@
+.day-nav a { margin-left: 12px; color: inherit; opacity: .8; }
+.day-block { margin: 18px 0; padding: 14px 16px; border: 1px solid rgba(127,127,127,.25); border-radius: 12px; }
+.day-block h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: .04em; opacity: .75; }
+.day-pre { white-space: pre-wrap; font: 12px/1.5 ui-monospace, Menlo, monospace; max-height: 260px; overflow: auto; }
+.day-row { display: grid; grid-template-columns: 1.6fr 1fr 1fr 2.4fr; gap: 8px; padding: 6px 0; border-top: 1px dashed rgba(127,127,127,.25); font-size: 13px; }
+.day-row.alarm { color: #c0392b; }
+.day-row.ok { opacity: .85; }
+.day-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.day-card { border: 1px solid rgba(127,127,127,.3); border-radius: 10px; padding: 10px 12px; }
+.day-card h3 { margin: 0 0 6px; font-size: 14px; }
+.day-card .day-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: rgba(127,127,127,.18); margin-right: 6px; }
+.day-card details summary { cursor: pointer; font-size: 12px; opacity: .8; }
+.day-card pre { font: 11px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; max-height: 220px; overflow: auto; }
+.day-decision { display: flex; gap: 10px; align-items: baseline; padding: 5px 0; font-size: 13px; }
+.day-decision .due { font: 12px ui-monospace, Menlo, monospace; opacity: .8; }
+.day-decision.expired { opacity: .5; text-decoration: line-through; }
+.day-talk-input { display: flex; gap: 8px; margin-top: 8px; }
+.day-talk-input input { flex: 1; padding: 6px 8px; }
+@media (max-width: 640px) { .day-row { grid-template-columns: 1fr 1fr; } }

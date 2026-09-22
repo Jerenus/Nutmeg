@@ -1,7 +1,24 @@
 {% extends "decision/observe/layout.html" %}
 {% block body %}
-<header class="obs-topbar"><div><span class="obs-mark">DAY</span><strong>当日 {{ date }}</strong></div>
-<a class="obs-back" href="/">工作台</a></header>
-<main class="obs-main" id="day" data-date="{{ date }}"></main>
+<link rel="stylesheet" href="/static/decision/day.css?v={{ asset_v }}">
+<header class="obs-topbar">
+  <div><span class="obs-mark">DAY</span><strong>当日 {{ date }}</strong><span class="obs-sub">先跑完、再对话</span></div>
+  <nav class="day-nav"><a href="/observe">观察台</a><a href="/betslips">实票</a><a href="/">工作台</a></nav>
+</header>
+<main class="obs-main" id="day" data-date="{{ date }}">
+  <section class="day-block" id="day-status"><h2>状态条</h2><div class="day-body"></div></section>
+  <section class="day-block" id="day-decisions"><h2>待人决定</h2><div class="day-body"></div></section>
+  <section class="day-block" id="day-retro"><h2>昨日</h2><pre class="day-body day-pre"></pre></section>
+  <section class="day-block" id="day-jczq"><h2>竞彩板</h2><div class="day-body day-cards"></div></section>
+  <section class="day-block" id="day-zucai"><h2>足彩期</h2><div class="day-body"></div></section>
+  <section class="day-block" id="day-rsi"><h2>RSI</h2><div class="day-body"></div></section>
+  <section class="day-block" id="day-session"><h2>会话入口</h2><div class="day-body"></div></section>
+  <section class="day-block" id="day-talk"><h2>讨论</h2><div class="day-body"></div>
+    <div class="day-talk-input"><input id="day-talk-obj" placeholder="对象（如 周三001）">
+      <input id="day-talk-text" placeholder="一句话，回车发送"><button id="day-talk-send">记入</button></div>
+  </section>
+  <p class="obs-error" id="day-errors" hidden></p>
+</main>
 <script src="/static/decision/day.js?v={{ asset_v }}"></script>
+<script>Day.mount("#day");</script>
 {% endblock %}
