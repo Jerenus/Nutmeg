@@ -10,6 +10,9 @@ from nutmeg.decision.brief_prompt import LOGIC_SYSTEM_PROMPT, render_logic_input
 
 Claude = Callable[[str, str], tuple[int, str]]
 LOGIC_DAILY_BUDGET = 40
+MIN_CITES = 2
+MAX_SENTENCES = 8
+"""提示要求 ≤6 句；超过 8 句视为没听话，拒收（宁缺毋滥，被拒的场页面照样显示原因）。"""
 
 
 def _claude_cli(prompt: str, stdin: str) -> tuple[int, str]:
@@ -80,9 +83,14 @@ def _one(card: dict, factors: list[dict], claude: Claude) -> dict:
     bad = validate_cites(cites, card, factors)
     if bad or not cites:
         return {"status": "rejected", "reason": "cites 不存在: " + ", ".join(bad or ["<空>"])}
+    if len(cites) < MIN_CITES:
+        return {"status": "rejected", "reason": f"cites 少于 {MIN_CITES} 条"}
     logic = str(doc.get("logic") or "").strip()
     if not logic:
         return {"status": "rejected", "reason": "logic 为空"}
+    sentences = [x for x in logic.replace("！", "。").replace("？", "。").split("。") if x.strip()]
+    if len(sentences) > MAX_SENTENCES:
+        return {"status": "rejected", "reason": f"超过 {MAX_SENTENCES} 句（{len(sentences)}）"}
     return {"status": "ok", "text": logic, "cites": list(cites), "author": "claude -p"}
 
 

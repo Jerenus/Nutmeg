@@ -17,7 +17,9 @@ LOGIC_SYSTEM_PROMPT = """你是 Nutmeg 当日报告的撰稿人。你收到一�
 
 硬约束：
 - 不新增任何判断、不建议买什么、不改 belief、不给概率。
-- 每一句必须能指回输入里的字段。输出 JSON：
+- 篇幅：最多 6 句，每句不超过 60 个汉字；正文用中文说人话（「锚方完整度」「书商分歧」），
+  不要在正文里写 market.fair、labels.xxx 这类字段路径——字段路径只放进 cites。
+- 每一句必须能指回输入里的字段；cites 至少 3 条。输出 JSON：
   {"code": "<场次代码>", "logic": "<3–6 句>", "cites": ["<点路径>", ...]}
   点路径以输入 JSON 的键为准，例如 "market.drift_pp"、"read.moved_pp"、
   "labels.anchor_integrity"、"audit.naked.blocking"、"factors.0.decision"。

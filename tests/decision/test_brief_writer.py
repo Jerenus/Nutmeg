@@ -69,3 +69,14 @@ def test_write_logic_handles_nonzero_exit_and_invalid_json():
     claude2 = lambda prompt, stdin: (0, "not json")  # noqa: E731
     out2 = write_logic(BRIEF, claude=claude2, budget=5)
     assert out2["jczq"]["matches"][0]["logic"]["status"] == "rejected"
+
+
+
+def test_write_logic_rejects_too_few_cites_and_too_many_sentences():
+    few = json.dumps({"code": "周三001", "logic": "一句。", "cites": ["market.drift_pp"]})
+    out = write_logic(BRIEF, claude=lambda p, s: (0, few), budget=1)
+    assert out["jczq"]["matches"][0]["logic"]["reason"] == "cites 少于 2 条"
+    long = json.dumps({"code": "周三001", "logic": "句。" * 9,
+                       "cites": ["market.drift_pp", "read.moved_pp"]})
+    out = write_logic(BRIEF, claude=lambda p, s: (0, long), budget=1)
+    assert out["jczq"]["matches"][0]["logic"]["reason"].startswith("超过 8 句")

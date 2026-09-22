@@ -43,12 +43,24 @@ def due_broadcasts(decisions: list[dict], *, now: datetime, sent: set[str]) -> l
 
 
 def render_broadcast(b: Broadcast) -> str:
-    d = b.decision
-    return (
-        f"⏰ 剩 {b.minutes_left} 分（截止 {d['deadline'][11:16]}）\n"
-        f"{d['subject']}\n未定则默认：{d['default_action']}\n"
-        f"（Nutmeg 只播报时间，不代下单；回复或打开 /day 处理）"
-    )
+    return render_group([b])
+
+
+def render_group(group: list[Broadcast]) -> str:
+    """同一截止、同一窗口的多条决定合成一条播报（2026-09-22 首跑三场 02:00 各发一条）。"""
+    head = group[0]
+    lines = [f"⏰ 剩 {head.minutes_left} 分（截止 {head.decision['deadline'][11:16]}）"]
+    for b in group:
+        lines.append(f"· {b.decision['subject']}\n  未定则默认：{b.decision['default_action']}")
+    lines.append("（Nutmeg 只播报时间，不代下单；回复或打开 /day 处理）")
+    return "\n".join(lines)
+
+
+def group_due(due: list[Broadcast]) -> list[list[Broadcast]]:
+    groups: dict[tuple[str, str], list[Broadcast]] = {}
+    for b in due:
+        groups.setdefault((str(b.decision.get("deadline")), b.window), []).append(b)
+    return list(groups.values())
 
 
 def read_sent(data_dir: Path | str, date: str) -> set[str]:
@@ -69,20 +81,21 @@ def send_all(
     path = day_dir(data_dir, date) / BROADCASTS
     path.parent.mkdir(parents=True, exist_ok=True)
     report = {"sent": [], "failed": []}
-    for b in due_broadcasts(decisions, now=now, sent=sent_keys):
+    for group in group_due(due_broadcasts(decisions, now=now, sent=sent_keys)):
         try:
-            sender(render_broadcast(b))
+            sender(render_group(group))
         except Exception:  # noqa: BLE001 — 发送失败下一轮再试
-            report["failed"].append(b.key)
+            report["failed"].extend(b.key for b in group)
             continue
         with path.open("a", encoding="utf-8") as fh:
-            row = {
-                "key": b.key,
-                "at": now.isoformat(timespec="seconds"),
-                "minutes_left": b.minutes_left,
-            }
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        report["sent"].append(b.key)
+            for b in group:
+                row = {
+                    "key": b.key,
+                    "at": now.isoformat(timespec="seconds"),
+                    "minutes_left": b.minutes_left,
+                }
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        report["sent"].extend(b.key for b in group)
     return report
 
 

@@ -54,3 +54,19 @@ def test_send_all_records_sent_keys_and_survives_sender_errors(tmp_path: Path):
     log_path = tmp_path / "daily" / "2026-09-23" / "broadcasts.jsonl"
     rows = log_path.read_text(encoding="utf-8").splitlines()
     assert json.loads(rows[0])["key"] == "read:周三010@T30"
+
+
+
+def test_same_deadline_decisions_are_sent_as_one_message(tmp_path: Path):
+    sent: list[str] = []
+    dec = [
+        {"id": "read:a", "kind": "approve_read", "subject": "A vs B", "status": "open",
+         "deadline": "2026-09-23T02:00:00+08:00", "default_action": "跟市场"},
+        {"id": "read:b", "kind": "approve_read", "subject": "C vs D", "status": "open",
+         "deadline": "2026-09-23T02:00:00+08:00", "default_action": "跟市场"},
+    ]
+    now = datetime(2026, 9, 23, 1, 35, tzinfo=BJ)
+    report = send_all(dec, data_dir=tmp_path, date="2026-09-22", now=now, sender=sent.append)
+    assert len(sent) == 1 and "A vs B" in sent[0] and "C vs D" in sent[0]
+    assert report["sent"] == ["read:a@T30", "read:b@T30"]
+    assert read_sent(tmp_path, "2026-09-22") == {"read:a@T30", "read:b@T30"}

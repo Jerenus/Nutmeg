@@ -117,7 +117,7 @@ def test_brief_job_with_logic_uses_injected_claude(tmp_path: Path):
         "周三001": {"match_id": "m", "name": "A vs B", "kickoff_bj": "2026-09-23T19:30:00+08:00",
                    "fair": {"home": 0.5, "draw": 0.3, "away": 0.2}}}}), encoding="utf-8")
     ctx.claude = lambda p, s: (0, json.dumps({"code": "周三001", "logic": "fair 定面。",
-                                              "cites": ["market.fair"]}))
+                                              "cites": ["market.fair", "labels.judgment_tier"]}))
     rec = run_job(ctx, "brief", with_logic=True)
     out = day_dir(ctx.data_dir, "2026-09-23")
     brief = json.loads((out / "brief.json").read_text(encoding="utf-8"))
