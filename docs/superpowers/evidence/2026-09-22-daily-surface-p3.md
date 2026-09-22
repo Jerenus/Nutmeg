@@ -28,7 +28,11 @@ $ plutil -lint ops/launchd/com.nutmeg.day.*.plist ops/launchd/com.nutmeg.jczq.re
 
 同一截止的多条决定会发多条播报（今天三条 02:00 的 Read 各一条）；下一版按截止分组合并成一条。
 
-## 装载（Jun 的门，本文不执行）
+## 装载（Jun 2026-09-23 00:1x 批准并已执行）
+
+`launchctl list | grep nutmeg` → 12 个已装载（新增 day.settle 09:45 / jczq.research 10:00 / day.brief 12:00·14:20·18:35 / day.broadcast 每 10 分）。day.settle 从 07:30 改到 09:45，因为它依赖 09:30 的赛果回填。
+
+原装载命令：
 
 ```bash
 for p in day.settle jczq.research day.brief day.broadcast; do
