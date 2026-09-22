@@ -964,6 +964,70 @@ def amend(exp: str = _EXP, what: str = _WHAT, why: str = _WHY, rule_check: str =
     typer.echo(f"{exp} 修正案已追加")
 
 
+weights_app = typer.Typer(help="T13 因子权重通路：只出提案，不写权重（改权重仍只许 rsi deploy）")
+rsi_app.add_typer(weights_app, name="weights")
+
+
+def _factor_registry():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[3] / "experiments" / "factor_registry.py"
+    spec = importlib.util.spec_from_file_location("factor_registry", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+_W_FACTOR = typer.Option(None, "--factor", help="因子 id；不给则 --all")
+_W_ALL = typer.Option(False, "--all")
+_W_CORPUS = typer.Option(None, "--corpus", help="默认 experiments/corpus-v2.json")
+_W_NPERM = typer.Option(1000, "--n-perm")
+_W_LOG = typer.Option(False, "--log", help="追加结论到 experiments/attempts.log")
+
+
+@weights_app.command("propose")
+def weights_propose(
+    factor: str | None = _W_FACTOR,
+    all_factors: bool = _W_ALL,
+    corpus: Path | None = _W_CORPUS,
+    n_perm: int = _W_NPERM,
+    log: bool = _W_LOG,
+) -> None:
+    """按冻结的变更规则对因子出提案（propose_change / propose_zero / hold）。⛔不写权重。"""
+    if not factor and not all_factors:
+        _fail("需要 --factor <id> 或 --all")
+    registry_mod = _factor_registry()
+    registry = registry_mod.load_registry()
+    problems = registry_mod.validate(registry)
+    if problems:
+        _fail("因子注册表无效：" + "; ".join(problems))
+    from experiments.noise_floor import _load_corpus
+
+    rows = _load_corpus(corpus or registry_mod.ROOT / "experiments" / "corpus-v2.json")
+    ids = [f["factor_id"] for f in registry["factors"]] if all_factors else [factor]
+    if factor and factor not in {f["factor_id"] for f in registry["factors"]}:
+        _fail(f"未登记的因子 {factor}")
+    before = registry_mod.REGISTRY.read_bytes()
+    outputs = [registry_mod.propose(registry, fid, rows, n_perm=n_perm) for fid in ids]
+    if registry_mod.REGISTRY.read_bytes() != before:
+        _fail("propose 改动了注册表——这不该发生")
+    for item in outputs:
+        typer.echo(json.dumps(item, ensure_ascii=False, sort_keys=True))
+    if log:
+        from experiments.attempts import log_attempt
+
+        for item in outputs:
+            strict = item["strict"]
+            log_attempt(
+                f"rsi weights propose {item['factor_id']}",
+                f"strict n={strict['n']} n_min={item.get('n_min')} n_perm={n_perm}",
+                f"obs={strict.get('observed_pp')}pp p={strict.get('p_value')} "
+                f"verdict={strict.get('verdict')}",
+                f"{item['decision']} → {item['proposed_weight_pp']}pp (not written)",
+            )
+
+
 @rsi_app.command("status")
 def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
     """一屏：状态 / n_cum / CI / 距 falsifier / gaps / 下一期义务。"""

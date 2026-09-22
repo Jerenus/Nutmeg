@@ -134,12 +134,16 @@
 
 "证伪"在这里的含义是"效应小于本样本能检出的最小效应"，不是"效应为零"。call 类假设只有 29/16/13 行，因为 90 条出手里大多数是全包。
 
-### 7.3 未做 / 留在工作树
+### 7.3 续做（2026-09-22 15:00 后）
 
-- `experiments/exp-label-residuals.py` 仍直接读 legs 文件，看不到判读 lane 的 90 行；改读语料是下一步。
-- `scripts/zucai_loop.py` 的 `annotate` / call 假设 / `--log` 与 Jun 未提交的 `load_corpus_v2` 在同一文件，未单独提交。
-- `nutmeg rsi weights propose` 的 CLI 别名未做，功能在 `experiments/factor_registry.py propose`。
-- 分层拿不准的三处（C1/C2、C5/C13、C14）在 `factors.json` 的 `layer_uncertain_for_jun`。
+| 项 | 结果 |
+| --- | --- |
+| `exp-label-residuals.py --corpus` | anchor / conf 两项改吃语料：完整度 n 70→151，conf n 428→488。conf=4 在 86 行上 R=+10.2pp CI[+1.3,+19.1]，是唯一 CI 不含 0 的档，但置换地板严格档 conf_level 仍 indistinguishable（n=40）。marks / precedent 需要票面腿文件，仍直读 legs |
+| R7 复盘行 | `decision-postmortem` 对 12 个有 reads 的竞彩日 + 8 期有 legs 的足彩跑完（20/20 成功）；语料里带 `postmortem` 的行 14→42。26129/26130 的足彩复盘为空，因为这两期没有 `calls.json` |
+| R6 严格空间 | 26121–26131 十期：零解 6/10；有解的 4 期最高 P 解赛后 4/4 全断，解集断率 100/99/82/100%。已落 attempts.log；不改 F4 阈值 |
+| `nutmeg rsi weights propose` | 已接到 `rsi` 组（`--factor/--all/--corpus/--n-perm/--log`），复用 `experiments/factor_registry.py`，跑完校验注册表字节未变 |
+
+仍在工作树未提交：`scripts/zucai_loop.py`（与 Jun 未提交的 `load_corpus_v2` 同文件）、`experiments/exp-label-residuals.py` 与 `exp-price-bands.py`（Jun 的未跟踪文件，各改了一处）、`experiments/attempts.log`（只追加）。分层拿不准的三处（C1/C2、C5/C13、C14）在 `factors.json` 的 `layer_uncertain_for_jun`。
 
 ## 6. 数据缺口（有判读无赛果 / 有赛果无判读）
 
