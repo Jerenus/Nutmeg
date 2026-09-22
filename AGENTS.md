@@ -72,7 +72,7 @@ project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg
 ### 知识层
 
 - 实体画像：store 的 League/Team `profile_notes`（`nutmeg decision-profile`），不靠 chat 记忆。
-- 决策本体设计：`docs/superpowers/specs/2026-07-06-decision-ontology-design.md`；运营序列 `docs/decision-shadow-run-runbook.md`。
+- 决策本体设计：`docs/superpowers/specs/2026-07-06-decision-ontology-design.md`。
 
 ### 历史警戒
 

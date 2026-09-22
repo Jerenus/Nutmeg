@@ -38,7 +38,7 @@ uv run nutmeg rsi loop                   # 每日闭环（launchd 10:45 已自�
 | `ops/launchd/` | 全部 plist；装载是 Jun 的行权门 |
 | `tests/` | `uv run pytest`（pre-commit 会跑 product 子集） |
 | `docs/sop/` | 宪法 / 执行清单 / 规则注册表 |
-| `docs/superpowers/` | `specs/`（设计）、`plans/`（实施清单）、`evidence/`（验收证据） |
+| `docs/superpowers/` | `specs/`（设计，描述现役系统）、`plans/`（**只放未完成**的实施清单，完成后删除、由 evidence 承接）、`evidence/`（验收证据） |
 | `.nutmeg-data/` | 运行数据（gitignored）：`scoreboard.json` 记分牌单一事实源、`jczq/daily/<日>/`、`zucai/`、`ontology/`、`analytics/` |
 
 ## 开发

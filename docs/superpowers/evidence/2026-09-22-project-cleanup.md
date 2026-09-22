@@ -25,28 +25,20 @@
 `com.nutmeg.zucai.prep-morning.plist`；`com.nutmeg.rsi.sweep.plist` 更新为已装载版本（多 `PATH` 环境变量）。
 现在 `ops/launchd/` 十个 plist 里八个已装载且一致，`decision.close/settle` 两个未装载（close 的死因 09-14 已修，是否复启是 Jun 的门）。
 
-## 2. 分类器拒绝、留给 Jun 一行命令的
+## 2. 第二轮（Jun 2026-09-22 裁定：没用的文档都可以清，只维护可追踪与有明确功能关系的）
 
-自动模式分类器把下面几组 `git rm` 判为「不可逆本地破坏」（其实都是跟踪文件，可从 git 取回）。
-它们同样满足零引用，命令原样可跑：
-
-```bash
-# 旧引擎叙述文档 7 篇 + 一张 563KB 死系统图 + 一份原始粘贴
-git rm docs/superpowers/reliability-gates.md docs/wc-research-netherlands-sweden-2026-06-20.md \
-  docs/jczq-decision-chain-critique.md docs/jczq-decision-framework.md \
-  docs/jczq-decision-skeleton.md docs/jczq-decision-skeleton.png docs/jczq-refactor-roadmap.md \
-  docs/integrations/openclaw-botfather-commands.txt
-# Spec Kit（2026-04/05，261 文件 1.4MB）与 17 个无人链接的 speckit-* 技能
-git rm -r .specify .agents/skills/speckit-*
-```
-
-`.claude/skills`、根 `skills/`、`.kiro/skills`、`skills-lock.json` 都只链接 9 个通用开发技能，不含 speckit。
+- 补上第一轮被分类器拦下的：7 篇旧引擎叙述文档 + 死系统图 + 原始粘贴；`.specify/`（261 文件）；17 个无人链接的 speckit-* 技能。
+- **`docs/superpowers/plans/` 改为只放未完成的实施清单**：删 69 份已并入 main 或已有 evidence 的计划（07 月 15、08 月 22、09 月 32）。
+  保留：`2026-08-12-l3-asymmetric-autonomy-roadmap.md`（路线图）、`2026-08-23-memory-ontology-sop-redesign.md`（CLAUDE/AGENTS 指针）、
+  `2026-09-13-impact-magnitude-three-term.md`（状态未明）。README 已写明这条约定。
+- 删两份「未采纳」提案 spec（07-07 实体层、08-12 Tie/流量/规则三层）；删两份已完成的一次性 runbook
+  （`decision-shadow-run-runbook.md`、`ontology-kernel-v2-cutover-runbook.md`），CLAUDE.md / AGENTS.md 同步去掉指针。
+- 根 `memory/` 是 Codex 会话笔记：加入 `.gitignore`，11 个误跟踪文件 `git rm --cached`（磁盘保留）。
 
 ## 3. 需要 Jun 裁决的（我没动）
 
 | 项 | 现状 | 建议 |
 | --- | --- | --- |
-| 根 `memory/`（22 文件） | 11 个 4–7 月的已跟踪，11 个 9 月的未跟踪，不在 `.gitignore` | 它是 Codex 的会话笔记：加 `memory/` 到 `.gitignore` 并 `git rm --cached memory/*.md`，或全部跟踪；二选一 |
 | 未跟踪文件 16 个 | `experiments/exp-{label-residuals,price-bands,strict-space}.py`、3 个 `prereg-*.json`、`scripts/render_zucai_26113/26116*.py`、`docs/sop/PROPOSAL-2026-09-13-intent-ontology.md`、`docs/superpowers/plans/2026-08-28-codex-dev-handoff.md` | `prereg-26126-F2-ledger.json` 是代码默认路径（`cli/rsi.py`、`rsi_migrate_preregs.py`），丢了 F2 工具断——要么提交，要么把默认路径改到 `.nutmeg-data/`；三个 exp 脚本的结论已进 evidence，可删；两个 render 脚本同 §1 一次性；两份文档看是否还要 |
 | `experiments/corpus-v2.json`（2.6MB） | 跟踪且每天被闭环重建 | 跟踪的好处是 tag 能复现实验样本；代价是每次提交都 churn。保留现状或改 gitignore，二选一 |
 | `.nutmeg-data/archive/`（210MB） | 6 个内核 db 快照 + `20260721-…-v2-freeze/`（97MB，含 zucai html 源的完整重复） | 数据不进 git，删除不可逆：保留最近两个 pre-schema 快照，其余移到仓外 |
