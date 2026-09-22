@@ -428,6 +428,46 @@ def test_transient_failure_retry_is_a_new_linked_attempt(tmp_path, monkeypatch):
         assert nodes[2].execution_status == "complete"
 
 
+def test_timeout_with_unknown_cost_still_gets_one_linked_retry(tmp_path, monkeypatch):
+    """Isolated-mode timeouts and crashes report no candidate count; they must still retry."""
+    engine = _rig(tmp_path)
+    calls = []
+    manifest = _artifact({"status": "recovered"})
+
+    def flaky(_snapshot, template_ids, **_kwargs):
+        calls.append(template_ids)
+        if len(calls) == 1:
+            return ShardExecution(
+                template_ids=template_ids, status="failed",
+                artifact_manifest=_artifact({"status": "timeout"}),
+                artifact_hash=canonical_hash({"status": "timeout"}),
+                diagnostic_codes=("timeout",),
+                resource_cost={"wall_ms": 5, "candidate_generation_count": None},
+                evaluation=None, selectable=False,
+            )
+        return ShardExecution(
+            template_ids=template_ids, status="no_solution", artifact_manifest=manifest,
+            artifact_hash=manifest["content_hash"],
+            diagnostic_codes=("no_feasible_candidate",),
+            resource_cost={"wall_ms": 1, "candidate_generation_count": 2},
+            evaluation={}, selectable=False,
+        )
+
+    monkeypatch.setattr("nutmeg.discovery.online_recorder.execute_template_shard", flaky)
+    recorded = record_shadow_world(
+        _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
+        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        requested_at=T0, fixture_only=True,
+    )
+    assert len(calls) == 2
+    with OntologyUnitOfWork(engine) as uow:
+        nodes = uow.discovery.nodes_for_world(recorded.world_id)
+        assert nodes[1].execution_status == "failed"
+        assert nodes[1].resource_cost["candidate_generation_count"] is None
+        assert nodes[2].retry_of_node_id == nodes[1].node_id
+        assert nodes[2].execution_status == "complete"
+
+
 def test_lost_node_commit_response_retries_without_duplicate_execution(tmp_path, monkeypatch):
     from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
 

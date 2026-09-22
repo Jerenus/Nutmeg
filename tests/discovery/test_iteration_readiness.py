@@ -49,6 +49,44 @@ def test_unapproved_contract_never_authorizes_runtime_round():
     assert "contract_unapproved" in report.blocking_reasons
 
 
+def test_validated_approved_contract_lifts_only_the_approval_block():
+    from pathlib import Path
+
+    from nutmeg.discovery.contracts import load_pilot_contract
+    from nutmeg.discovery.iteration_contract import load_iteration_contract
+
+    root = Path(__file__).resolve().parents[2] / "experiments/discovery"
+    contract = load_iteration_contract(
+        root / "structural-iteration-v1.contract.json",
+        load_pilot_contract(root / "structural-candidate-v1.contract.json"),
+    )
+    assert contract.approved
+    report = review_new_information(
+        (),
+        (world("new"),),
+        min_clusters=1,
+        replay=ReplayMetrics(True, 0.8, 0.0),
+        readiness=ReadinessReport("optimizer_eligible", {}, {}, ()),
+        contract=contract,
+    )
+    assert "contract_unapproved" not in report.blocking_reasons
+    assert report.ready_for_operator_tournament_request
+    blocked = review_new_information(
+        (), (world("new"),), min_clusters=1, replay=None, readiness=None, contract=contract
+    )
+    assert "contract_unapproved" not in blocked.blocking_reasons
+    assert not blocked.ready_for_operator_tournament_request
+    unapproved = review_new_information(
+        (),
+        (world("new"),),
+        min_clusters=1,
+        replay=ReplayMetrics(True, 0.8, 0.0),
+        readiness=ReadinessReport("optimizer_eligible", {}, {}, ()),
+        contract=contract.proposed_form(),
+    )
+    assert "contract_unapproved" in unapproved.blocking_reasons
+
+
 def test_caller_cannot_assert_contract_approval():
     import pytest
 

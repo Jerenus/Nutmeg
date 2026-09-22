@@ -62,7 +62,15 @@ def assess_baseline_readiness(
     facts: tuple[WorldReadinessFacts, ...],
     pilot: PilotContract,
 ) -> BaselineReadinessReport:
-    """Fail closed on missing coverage; duplicate clusters count only once."""
+    """Record-to-baseline gate over a frozen pool.
+
+    Delegates to the single readiness computation in `nutmeg.discovery.readiness`
+    so the tournament Action and the operator projection cannot disagree. Fails
+    closed: a missing incumbent replay or zero requested continuations leaves the
+    replay metrics unknown, and unknown never passes.
+    """
+    from nutmeg.discovery.readiness import CoverageWorld, ReplayMetrics, assess_readiness
+
     if len(facts) != len(pool.worlds) or {item.world_id for item in facts} != {
         world.world_id for world in pool.worlds
     }:
@@ -74,45 +82,33 @@ def assess_baseline_readiness(
         for item in facts
     ):
         raise ValueError("readiness counts must be nonnegative and consistent")
-    gate = pilot.readiness.record_to_baseline
-    dates = {world.cluster_key[0] for world in pool.worlds}
-    multiple = sum(item.distinct_legal_continuations >= 2 for item in facts)
-    attempts = sum(item.requested_continuations for item in facts)
+    facts_by_id = {item.world_id: item for item in facts}
+    coverage = tuple(
+        CoverageWorld(
+            world_id=world.world_id,
+            business_date=world.cluster_key[0],
+            task_snapshot_hash=world.cluster_key[1],
+            slate_revision_id=world.cluster_key[2],
+            strata=world.strata,
+            sealed=True,
+            manifest_complete=True,
+            alternative_count=facts_by_id[world.world_id].distinct_legal_continuations,
+            failed_or_degraded=world.failed_or_no_solution,
+        )
+        for world in pool.worlds
+    )
+    requested = sum(item.requested_continuations for item in facts)
     unavailable = sum(item.unavailable_continuations for item in facts)
-    multi_fraction = multiple / len(facts) if facts else 0
-    unavailable_rate = unavailable / attempts if attempts else 1
-    strata_counts = {
-        label: sum(label in world.strata for world in pool.worlds)
-        for label in pilot.readiness.required_strata
-    }
-    metrics = {
-        "sealed_world_count": len(pool.worlds),
-        "independent_business_dates": len(dates),
-        "effective_sample_size": pool.effective_cluster_count,
-        "manifest_completeness": 1.0,
-        "multi_alternative_fraction": multi_fraction,
-        "branch_unavailable_rate": unavailable_rate,
-        "failed_or_degraded_worlds": sum(world.failed_or_no_solution for world in pool.worlds),
-        "strata_counts": strata_counts,
-    }
-    reasons = []
-    if len(pool.worlds) < gate.min_sealed_worlds:
-        reasons.append("sealed_world_count")
-    if len(dates) < gate.min_independent_business_dates:
-        reasons.append("independent_business_dates")
-    if pool.effective_cluster_count < gate.min_effective_sample_size:
-        reasons.append("effective_sample_size")
-    if any(not item.incumbent_replay_available for item in facts):
-        reasons.append("incumbent_replay_missing")
-    if multi_fraction < gate.min_multi_alternative_fraction:
-        reasons.append("multi_alternative_fraction")
-    if unavailable_rate > gate.max_branch_unavailable_rate:
-        reasons.append("branch_unavailable_rate")
-    if metrics["failed_or_degraded_worlds"] < gate.min_failed_or_degraded_worlds:
-        reasons.append("failed_or_degraded_worlds")
-    if any(count < gate.min_worlds_per_required_stratum for count in strata_counts.values()):
-        reasons.append("stratum_coverage")
-    return BaselineReadinessReport(not reasons, tuple(reasons), metrics)
+    replay = ReplayMetrics(
+        integrity_proven=all(item.incumbent_replay_available for item in facts),
+        action_overlap=(requested - unavailable) / requested if requested else None,
+        branch_unavailable_rate=unavailable / requested if requested else None,
+    )
+    report = assess_readiness(coverage, pilot.readiness, replay)
+    reasons = tuple(
+        sorted(key for key, metric in report.metrics.items() if metric.status != "pass")
+    )
+    return BaselineReadinessReport(not reasons, reasons, dict(report.metrics))
 
 
 def freeze_world_pool(

@@ -160,7 +160,7 @@ def test_record_to_baseline_readiness_requires_effective_dates_and_replay():
     missing_replay = (*facts[:-1], replace(facts[-1], incumbent_replay_available=False))
     report = assess_baseline_readiness(pool, missing_replay, PILOT)
     assert report.ready is False
-    assert "incumbent_replay_missing" in report.reasons
+    assert "replay_integrity" in report.reasons
 
 
 def test_record_to_baseline_readiness_cannot_count_duplicate_dates_as_independent():
@@ -177,5 +177,5 @@ def test_record_to_baseline_readiness_cannot_count_duplicate_dates_as_independen
     facts = tuple(WorldReadinessFacts(w.world_id, 2, True, 1, 0) for w in pool.worlds)
     report = assess_baseline_readiness(pool, facts, PILOT)
     assert report.ready is False
-    assert "sealed_world_count" in report.reasons
+    assert "sealed_worlds" in report.reasons
     assert "independent_business_dates" in report.reasons

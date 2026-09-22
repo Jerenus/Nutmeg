@@ -46,9 +46,9 @@ def test_calendar_alone_cannot_trigger_round(contract_document):
 
 - [x] **Step 2:** Run `uv run pytest tests/discovery/test_iteration_contract.py -q`; expected missing-module failure.
 - [x] **Step 3a (GREEN):** Implement strict schema and an immutable proposed artifact with exact cluster/action/failure/stratum thresholds, drift tolerances, holdout freshness and maximum repeat frequency; use D0's duplicate key and archive capacity unchanged. No retroactive effect on completed rounds.
-- [ ] **Step 3b (operational gate):** Get Jun's approval of exact numbers/hash **before** first operational trigger.
+- [x] **Step 3b (operational gate):** Get Jun's approval of exact numbers/hash **before** first operational trigger. Approved 2026-09-22 with the numbers unchanged (see `docs/superpowers/evidence/2026-09-22-meta-exploration-d4-d7-review.md`).
 - [x] **Step 4a:** Re-run tests and record the **proposed, unapproved** hash in D7 evidence.
-- [ ] **Step 4b (operational gate):** Record an approved hash only after actual operator approval.
+- [x] **Step 4b (operational gate):** Record an approved hash only after actual operator approval. The approval is recorded inside `experiments/discovery/structural-iteration-v1.contract.json` and bound to proposed hash `bda3be2d…8f23b`; `tests/discovery/test_iteration_contract.py` rejects any number change without a new approval.
 
 ### Task 2: Count effective information rather than raw worlds
 

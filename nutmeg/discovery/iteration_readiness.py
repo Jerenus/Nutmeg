@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 from nutmeg.discovery.readiness import CoverageWorld, ReadinessReport, ReplayMetrics
+
+if TYPE_CHECKING:
+    from nutmeg.discovery.iteration_contract import IterationContract
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +41,7 @@ def review_new_information(
     previous_completed_at: str | None = None,
     reviewed_at: str | None = None,
     min_days_between_rounds: int = 0,
+    contract: IterationContract | None = None,
 ) -> InformationReport:
     if (
         min_clusters < 1
@@ -122,7 +127,9 @@ def review_new_information(
         or (any(metric.status != "pass" for metric in readiness.optimizer_metrics.values()))
     ):
         reasons.append("optimizer_coverage")
-    reasons.append("contract_unapproved")
+    # Approval is read from the validated artifact only; a caller cannot assert it.
+    if contract is None or not contract.approved:
+        reasons.append("contract_unapproved")
     return InformationReport(
         len(incoming),
         len(effective),

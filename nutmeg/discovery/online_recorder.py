@@ -567,7 +567,6 @@ def record_shadow_world(
             result.status == "failed"
             and retry_of is None
             and set(result.diagnostic_codes) & {"adapter_crash", "adapter_error", "timeout"}
-            and result.resource_cost.get("candidate_generation_count") is not None
             and len(attempts) + 2 < pilot.budgets.max_nodes
             and monotonic() < deadline
             and sum(

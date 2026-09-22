@@ -705,6 +705,13 @@ than treated as iteration.
 
 ## 13. v1 pilot: structural candidate discovery and audit
 
+> **2026-09-22 restatement.** The review of D0-D7 found this pilot structurally
+> degenerate (depth-1 trees, exhaustive incumbent, so a challenger can only tie on
+> quality and win on cost). Its objective is restated as end-to-end process proof
+> plus cost pruning in
+> `2026-09-22-dream-rsi-pilot-cost-pruning-restatement.md`, which is authoritative
+> for what this pilot may claim. Sections 13.1-13.4 below are unchanged.
+
 ### 13.1 Why this pilot
 
 The first pilot is the structural candidate-generation/audit layer because it has:

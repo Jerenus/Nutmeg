@@ -24,7 +24,12 @@ def test_iteration_timeline_is_read_only_on_empty_old_and_current_stores(tmp_pat
     absent = tmp_path / "absent"
     result = runner.invoke(app, ["discovery", "iteration", "--data-dir", str(absent)])
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["contract_status"] == "proposed_unapproved"
+    payload = json.loads(result.output)
+    assert payload["contract_status"] == "approved"
+    assert payload["pending_human_approval"] is False
+    assert payload["runtime_authority"] is False
+    assert "contract_unapproved" not in payload["trigger_blocks"]
+    assert "no_store" in payload["trigger_blocks"]
     assert not absent.exists()
 
     old = tmp_path / "old"
@@ -332,4 +337,108 @@ def test_shadow_run_rejects_expired_prospective_cutoff(tmp_path):
     )
     assert result.exit_code == 1
     assert "expired" in result.output
+    assert not source.exists() and not shadow.exists()
+
+
+def test_register_baseline_creates_shadow_store_and_registers_incumbent(tmp_path):
+    data_dir = tmp_path / "shadow"
+    result = runner.invoke(
+        app, ["discovery", "register-baseline", "--data-dir", str(data_dir), "--by", "op:jun"]
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    artifact = load_baseline_policy(
+        Path(__file__).resolve().parents[1]
+        / "experiments/discovery/structural-baseline-v1.policy.json"
+    )
+    assert payload["policy_revision_id"] == "structural-baseline-v1"
+    assert payload["source_artifact_hash"] == canonical_hash(artifact.model_dump(mode="json"))
+    status = runner.invoke(app, ["discovery", "status", "--data-dir", str(data_dir)])
+    assert status.exit_code == 0, status.output
+    assert "incumbent: none" in status.output
+    shown = runner.invoke(
+        app,
+        [
+            "discovery", "show", "--kind", "policy", "--id", "structural-baseline-v1",
+            "--data-dir", str(data_dir),
+        ],
+    )
+    assert shown.exit_code == 0, shown.output
+    policy = json.loads(shown.output)["policy"]
+    assert policy["created_by"] == "op:jun"
+    assert policy["validation_result"]["valid"] is True
+    assert policy["generator_family"] == "baseline"
+    again = runner.invoke(
+        app, ["discovery", "register-baseline", "--data-dir", str(data_dir), "--by", "op:jun"]
+    )
+    assert again.exit_code in {0, 1}, again.output
+    if again.exit_code == 1:
+        assert "already registered" in again.output
+
+
+def test_register_baseline_refuses_production_data_directory(monkeypatch, tmp_path):
+    import nutmeg.interfaces.cli.discovery as discovery_cli
+
+    production = tmp_path / "prod-data"
+    production.mkdir()
+    monkeypatch.setattr(discovery_cli, "PRODUCTION_DATA_DIR", production)
+    result = runner.invoke(
+        app, ["discovery", "register-baseline", "--data-dir", str(production), "--by", "op:jun"]
+    )
+    assert result.exit_code == 1
+    assert "production data directory" in result.output
+    assert not (production / "ontology").exists()
+
+
+class _FrozenDatetime:
+    """Pin `now` so the prospective-cutoff window check does not depend on wall time."""
+
+    from datetime import datetime as _real
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls._real(2026, 9, 22, 8, 0, tzinfo=tz)
+
+    @classmethod
+    def fromisoformat(cls, value):
+        return cls._real.fromisoformat(value)
+
+
+def test_shadow_run_refuses_shadow_store_inside_production_data_directory(monkeypatch, tmp_path):
+    import nutmeg.interfaces.cli.discovery as discovery_cli
+
+    production = tmp_path / "prod-data"
+    (production / "ontology").mkdir(parents=True)
+    source = production / "ontology" / "ontology.db"
+    shadow = production / "archive" / "shadow.db"
+    monkeypatch.setattr(discovery_cli, "PRODUCTION_DATA_DIR", production)
+    monkeypatch.setattr(discovery_cli, "datetime", _FrozenDatetime)
+    cutoff = "2026-09-22T07:00:00+00:00"
+    approval = tmp_path / "approval.json"
+    approval.write_text(
+        json.dumps(
+            {
+                "approval_id": "approval-1",
+                "approved_by": "op:jun",
+                "approved_at": "2026-09-22T06:00:00+00:00",
+                "scope": {
+                    "source_db": str(source.resolve()),
+                    "shadow_db": str(shadow.resolve()),
+                    "generation_request_id": "request-1",
+                    "cutoff_at": cutoff,
+                    "policy_revision_id": "structural-baseline-v1",
+                },
+            }
+        )
+    )
+    result = runner.invoke(
+        app,
+        [
+            "discovery", "shadow-run", "--source-db", str(source), "--shadow-db", str(shadow),
+            "--generation-request-id", "request-1", "--cutoff-at", cutoff,
+            "--approval-file", str(approval),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "production data directory" in result.output
     assert not source.exists() and not shadow.exists()

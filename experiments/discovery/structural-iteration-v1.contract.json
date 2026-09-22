@@ -1,7 +1,11 @@
 {
   "schema_version": "1",
   "contract_id": "structural-iteration-v1",
-  "approval_status": "proposed_unapproved",
+  "approval_status": "approved",
+  "approved_by": "op:jun",
+  "approved_at": "2026-09-22T11:20:00+08:00",
+  "approval_ref": "chat 2026-09-22, Jun on Fable review item 5; numbers unchanged from the D7 proposal",
+  "approves_proposed_hash": "bda3be2dd7b4545bb0323453346564474c2bfa08e17872349302979f81e8f23b",
   "duplicate_cluster_key": ["business_date", "task_snapshot_hash", "slate_revision_id"],
   "holdout_rotation": "sealed_strictly_newer_unexposed_cluster",
   "archive_capacity": 12,

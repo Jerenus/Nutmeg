@@ -24,6 +24,7 @@ class DiscoveryReadService:
         from nutmeg.discovery.contracts import load_pilot_contract
         from nutmeg.discovery.drift_monitor import DriftSample, assess_drift
         from nutmeg.discovery.iteration_contract import (
+            approved_contract_hash,
             load_iteration_contract,
             proposed_contract_hash,
         )
@@ -264,10 +265,15 @@ class DiscoveryReadService:
             previous_completed_at=latest_completed_at,
             reviewed_at=datetime.now(UTC).isoformat(),
             min_days_between_rounds=contract.min_days_between_rounds,
+            contract=contract,
         )
         return {
             "contract_status": contract.approval_status,
             "proposed_contract_hash": proposed_contract_hash(contract),
+            "approved_contract_hash": (
+                approved_contract_hash(contract) if contract.approved else None
+            ),
+            "approval_ref": contract.approval_ref,
             "runtime_authority": False,
             "incumbent": state.incumbent_policy_revision_id,
             "latest_tournament_id": state.latest_tournament_id,
@@ -282,7 +288,7 @@ class DiscoveryReadService:
             "policy_lineage": lineage,
             "archive": {"active_ids": active, "capacity": pilot.archive.capacity},
             "drift": drift,
-            "pending_human_approval": True,
+            "pending_human_approval": not contract.approved,
         }
 
     def promotion(self, policy_family: str) -> dict[str, object]:
