@@ -1,0 +1,11 @@
+{% extends "decision/observe/layout.html" %}
+{% block body %}
+<header class="obs-topbar"><div><span class="obs-mark">RSI</span><strong>规则变更时间线</strong></div>
+<nav><a class="obs-back" href="/observe">观察台</a></nav></header>
+<main class="obs-main"><section class="obs-panel">
+<p class="obs-kicker">RULEBOOK / factors.json / CONSTITUTION 的每次提交；每条变更都应能挂到一条实验或判决</p>
+<table class="obs-table"><tr><th>时间</th><th>文件</th><th>提交</th><th>主题</th></tr>
+{% for r in rows %}<tr><td>{{ r.at[:16] }}</td><td>{{ r.file }}</td><td><code>{{ r.sha }}</code></td><td>{{ r.subject }}</td></tr>{% endfor %}
+{% if not rows %}<tr><td colspan="4" class="obs-muted">无记录（git 不可用或文件未变过）</td></tr>{% endif %}
+</table></section></main>
+{% endblock %}

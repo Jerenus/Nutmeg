@@ -1,0 +1,16 @@
+{% extends "decision/observe/layout.html" %}
+{% block body %}
+<header class="obs-topbar"><div><span class="obs-mark">RSI</span><strong>因子提案史</strong></div>
+<nav><a class="obs-back" href="/observe">观察台</a></nav></header>
+<main class="obs-main">
+{% for f in hist.factors %}
+<section class="obs-panel"><h3>{{ f.factor_id }} <span class="obs-muted">{{ f.layer }} · 现 {{ f.current_weight_pp }}pp · {{ f.rule_name }}</span></h3>
+<table class="obs-table"><tr><th>时间</th><th>参数</th><th>结果</th><th>结论</th></tr>
+{% for a in f.attempts %}<tr><td>{{ a.ts }}</td><td>{{ a.params }}</td><td>{{ a.result }}</td><td>{{ a.conclusion }}</td></tr>{% endfor %}
+{% if not f.attempts %}<tr><td colspan="4" class="obs-muted">尚无提案记录</td></tr>{% endif %}
+</table></section>
+{% endfor %}
+<section class="obs-panel"><h3>其它尝试（假设批次 / 搜索）</h3>
+<table class="obs-table">{% for a in hist.other_attempts[-40:] %}<tr><td>{{ a.ts }}</td><td>{{ a.experiment }}</td><td>{{ a.result }}</td><td>{{ a.conclusion }}</td></tr>{% endfor %}</table></section>
+</main>
+{% endblock %}

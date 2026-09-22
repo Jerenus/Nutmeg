@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from nutmeg.decision.observe_history import factor_history, rule_changes, run_git, trace_day
 from nutmeg.decision.ontology import MarketSnapshot, Match
 from nutmeg.decision.store import DecisionStore
 from nutmeg.decision.workbench import read_events
@@ -67,7 +68,7 @@ def _launchctl_list() -> str:
 
 def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
                         zucai_dir=None, sop_invoke=None, observe_repo=None,
-                        data_dir=None, launchctl=None) -> FastAPI:
+                        data_dir=None, launchctl=None, git=None) -> FastAPI:
     app = FastAPI(title="Nutmeg 判读工作台")
     web_root = Path(__file__).parent / "web"
     templates = Jinja2Templates(directory=web_root / "templates")
@@ -87,6 +88,8 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
     # 当日页（设计 2026-09-22-daily-operator-surface §7）：数据根默认 output_dir 的上一级。
     app.state.data_dir = Path(data_dir) if data_dir else Path(output_dir).parent
     app.state.launchctl = launchctl or _launchctl_list
+    # 历史三页（设计 §10）：git log 可注入，测试不碰真仓。
+    app.state.git = git or run_git
 
     @app.get("/api/workbench")
     def workbench_api(date: str) -> dict:
@@ -356,7 +359,7 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
         return templates.TemplateResponse(
             request,
             "decision/observe/panorama.html",
-            {"title": "RSI 观察台"},
+            {"title": "RSI 观察台", "today": _today()},
         )
 
     @app.get("/observe/exp/{exp_id}")
@@ -414,6 +417,38 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
                           text=text, obj=str(payload.get("obj") or ""),
                           at=datetime.now().astimezone().isoformat(timespec="seconds"))
         return {"ok": True, "seq": len(read_discussion(app.state.data_dir, date))}
+
+    # ── 历史三页（P5 设计 §10）：规则变更 / 因子提案史 / 昨日追溯，只读零写 ──
+    _root = Path(__file__).resolve().parents[2]
+
+    @app.get("/api/observe/rules")
+    def observe_rules_api() -> list[dict]:
+        return rule_changes(_root, git=app.state.git)
+
+    @app.get("/api/observe/factors")
+    def observe_factors_api() -> dict:
+        return factor_history(_root)
+
+    @app.get("/api/observe/trace/{date}")
+    def observe_trace_api(date: str) -> dict:
+        return trace_day(app.state.data_dir, date)
+
+    @app.get("/observe/rules")
+    def observe_rules_page(request: Request):
+        return templates.TemplateResponse(request, "decision/observe/rules.html",
+                                          {"title": "规则变更",
+                                           "rows": rule_changes(_root, git=app.state.git)})
+
+    @app.get("/observe/factors")
+    def observe_factors_page(request: Request):
+        return templates.TemplateResponse(request, "decision/observe/factors.html",
+                                          {"title": "因子提案史", "hist": factor_history(_root)})
+
+    @app.get("/observe/trace/{date}")
+    def observe_trace_page(request: Request, date: str):
+        return templates.TemplateResponse(request, "decision/observe/trace.html",
+                                          {"title": f"追溯 {date}",
+                                           "tr": trace_day(app.state.data_dir, date)})
 
     # ── 过程回放（阶段三 Task 3）：讨论变成事件，事件变成回放 ───────────
     @app.get("/replay")

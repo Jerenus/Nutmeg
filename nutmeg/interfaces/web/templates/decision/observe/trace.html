@@ -1,0 +1,15 @@
+{% extends "decision/observe/layout.html" %}
+{% block body %}
+<header class="obs-topbar"><div><span class="obs-mark">RSI</span><strong>追溯 {{ tr.date }}</strong><span class="obs-sub">昨天哪条实验本可以改变哪场</span></div>
+<nav><a class="obs-back" href="/observe">观察台</a></nav></header>
+<main class="obs-main">
+<section class="obs-panel"><p>已结账 {{ tr.summary.graded }} 场 · Read 对 {{ tr.summary.read_right }} · 市场对 {{ tr.summary.market_right }} · 拨动 {{ tr.summary.moved }} 场，拨对 {{ tr.summary.moved_helped }}</p>
+<table class="obs-table"><tr><th>场</th><th>阶梯</th><th>judge</th><th>市场面</th><th>判断面</th><th>开出</th><th>Read</th><th>拨动</th></tr>
+{% for m in tr.matches %}<tr><td>{{ m.code }} {{ m.name }}</td><td>{{ m.ladder }}</td><td>{{ m.judge or "—" }}</td><td>{{ m.prior_top or "—" }}</td><td>{{ m.belief_top or "—" }}</td><td>{{ m.outcome or "未结" }}</td>
+<td>{% if m.read_right is none %}—{% elif m.read_right %}✓{% else %}✗{% endif %}</td><td>{% if m.moved_helped is none %}—{% elif m.moved_helped %}✓{% else %}✗{% endif %}</td></tr>{% endfor %}
+</table></section>
+<section class="obs-panel"><h3>当天未到判决期的实验</h3>
+<ul>{% for e in tr.not_due %}<li><a href="/observe/exp/{{ e.exp }}">{{ e.exp }}</a> — {{ e.line }}</li>{% endfor %}</ul>
+{% if not tr.not_due %}<p class="obs-muted">无（或当天闭环报告缺席）</p>{% endif %}
+</section></main>
+{% endblock %}
