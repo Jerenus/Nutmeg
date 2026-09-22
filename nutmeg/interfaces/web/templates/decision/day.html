@@ -1,0 +1,7 @@
+{% extends "decision/observe/layout.html" %}
+{% block body %}
+<header class="obs-topbar"><div><span class="obs-mark">DAY</span><strong>当日 {{ date }}</strong></div>
+<a class="obs-back" href="/">工作台</a></header>
+<main class="obs-main" id="day" data-date="{{ date }}"></main>
+<script src="/static/decision/day.js?v={{ asset_v }}"></script>
+{% endblock %}

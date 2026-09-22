@@ -602,6 +602,7 @@ def decision_web(
         output_dir=Path(output_dir),
         kernel_state=kernel_state,
         observe_repo=observe_repo,
+        data_dir=Path(output_dir).parent,
     )
     uvicorn.run(app, host=host, port=port)
 

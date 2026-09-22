@@ -6,6 +6,7 @@ ingest_reads/compose_tickets 的既有校验,零旁门。仿 client_web.py 模�
 """
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -54,8 +55,19 @@ def self_daily(output_dir, date: str) -> Path:
     return Path(output_dir) / "daily" / date
 
 
+def _launchctl_list() -> str:
+    import subprocess
+
+    try:
+        return subprocess.run(["launchctl", "list"], capture_output=True, text=True,
+                              check=False).stdout
+    except OSError:
+        return ""
+
+
 def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
-                        zucai_dir=None, sop_invoke=None, observe_repo=None) -> FastAPI:
+                        zucai_dir=None, sop_invoke=None, observe_repo=None,
+                        data_dir=None, launchctl=None) -> FastAPI:
     app = FastAPI(title="Nutmeg 判读工作台")
     web_root = Path(__file__).parent / "web"
     templates = Jinja2Templates(directory=web_root / "templates")
@@ -64,7 +76,7 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
     # 硬刷新才出来。没有版本号的 <script src> 等于让用户替我们清缓存。
     _assets = [
         web_root / "static" / "decision" / name
-        for name in ("app.js", "observe.js", "observe.css")
+        for name in ("app.js", "observe.js", "observe.css", "day.js")
     ]
     _mtimes = [asset.stat().st_mtime for asset in _assets if asset.exists()]
     templates.env.globals["asset_v"] = str(int(max(_mtimes))) if _mtimes else "0"
@@ -72,6 +84,9 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
     app.state.output_dir = Path(output_dir)
     # 足彩物料目录：默认与 betslips.jsonl 同级的 .nutmeg-data/zucai（见 decision-web CLI）。
     app.state.zucai_dir = Path(zucai_dir) if zucai_dir else Path(output_dir).parent / "zucai"
+    # 当日页（设计 2026-09-22-daily-operator-surface §7）：数据根默认 output_dir 的上一级。
+    app.state.data_dir = Path(data_dir) if data_dir else Path(output_dir).parent
+    app.state.launchctl = launchctl or _launchctl_list
 
     @app.get("/api/workbench")
     def workbench_api(date: str) -> dict:
@@ -359,6 +374,46 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
             "decision/observe/day.html",
             {"title": f"过程 {date}", "date": date},
         )
+
+    # ── 当日页：先跑完、再对话 ────────────────────────────────────────────
+    # 别名：本工厂里 `day_view` 已绑定 observe_views.day_view（api_observe_day 在请求时闭包读它），
+    # 同名再导入会把观察台那条路由也改指到当日页视图。
+    from fastapi.responses import RedirectResponse
+
+    from nutmeg.decision.day_session import append_discussion, read_discussion
+    from nutmeg.decision.day_view import day_view as day_page_view
+
+    def _day_payload(date: str) -> dict:
+        root = Path(__file__).resolve().parents[2]
+        return day_page_view(
+            data_dir=app.state.data_dir, date=date,
+            plists_dir=root / "ops" / "launchd", logs_dir=app.state.data_dir / "logs",
+            launchctl_text=app.state.launchctl(), today=_date.today(),
+        )
+
+    @app.get("/day")
+    def day_root():
+        return RedirectResponse(url=f"/day/{_today()}", status_code=307)
+
+    @app.get("/day/{date}")
+    def day_page(request: Request, date: str):
+        return templates.TemplateResponse(request, "decision/day.html",
+                                          {"title": f"当日 {date}", "date": date})
+
+    @app.get("/api/day/{date}")
+    def day_api(date: str) -> dict:
+        return _day_payload(date)
+
+    @app.post("/action/day-note")
+    def day_note(payload: dict = Body(...)) -> Any:  # noqa: B008
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return JSONResponse({"ok": False, "error": "text 为空"}, status_code=400)
+        date = str(payload.get("date") or _today())
+        append_discussion(app.state.data_dir, date, who=str(payload.get("who") or "jun"),
+                          text=text, obj=str(payload.get("obj") or ""),
+                          at=datetime.now().astimezone().isoformat(timespec="seconds"))
+        return {"ok": True, "seq": len(read_discussion(app.state.data_dir, date))}
 
     # ── 过程回放（阶段三 Task 3）：讨论变成事件，事件变成回放 ───────────
     @app.get("/replay")
