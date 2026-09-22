@@ -23,6 +23,7 @@ _FORCE = typer.Option(False, "--force", help="settle 已有 retro.md 也重跑")
 _DRY = typer.Option(False, "--dry-run", help="只打印子进程命令，不执行、不写时间线")
 _NOW = typer.Option(None, "--now", help="测试用 ISO 时刻（覆盖当前时间）")
 _WITH_LOGIC = typer.Option(False, "--with-logic", help="逻辑层：每场一次无联网 claude -p")
+_OUT = typer.Option(Path("site"), "--out", help="静态站输出目录（gitignored）")
 
 
 def _now() -> datetime:
@@ -104,3 +105,18 @@ def note(text: str = typer.Option(..., "--text"), obj: str = typer.Option("", "-
     path = append_discussion(ctx.data_dir, ctx.date, who=who, text=text, obj=obj,
                              at=_now().isoformat(timespec="seconds"))
     typer.echo(f"记入 {path}")
+
+
+@day_app.command("publish")
+def publish(date: str | None = _DATE, data_dir: Path = _DATA_DIR, out: Path = _OUT) -> None:
+    """对外只读导出：site/<日>/index.html + index/method/record。含禁用文本即失败。"""
+    from nutmeg.decision.day_publish import PublishError, publish_day
+
+    ctx = _ctx(date, data_dir)
+    try:
+        report = publish_day(data_dir=ctx.data_dir, root=ctx.root, date=ctx.date, out_dir=Path(out))
+    except PublishError as exc:
+        typer.echo(f"day error: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"published {report['date']} pages={report['pages']} "
+              f"matches={report['matches']} → {out}")

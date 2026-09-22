@@ -68,3 +68,13 @@ def test_day_run_brief_with_logic_flag_is_accepted(tmp_path: Path, monkeypatch):
     r = runner.invoke(app, ["day", "run", "--job", "brief", "--date", "2026-09-23",
                             "--data-dir", str(data), "--with-logic"])
     assert r.exit_code == 0, r.output
+
+
+def test_day_publish_writes_site(tmp_path: Path):
+    data = _data(tmp_path)
+    runner.invoke(app, ["day", "run", "--job", "brief", "--date", "2026-09-23",
+                        "--data-dir", str(data)])
+    r = runner.invoke(app, ["day", "publish", "--date", "2026-09-23", "--data-dir", str(data),
+                            "--out", str(tmp_path / "site")])
+    assert r.exit_code == 0, r.output
+    assert (tmp_path / "site" / "2026-09-23" / "index.html").exists() and "pages=4" in r.output

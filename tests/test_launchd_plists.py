@@ -7,7 +7,9 @@ EXPECTED = {
     "com.nutmeg.jczq.research": (
         "10:00", "research run --day", "research intake --day", "jczq-build-reads --day",
     ),
-    "com.nutmeg.day.brief": ("12:00,14:20,18:35", "day run --job brief", "--with-logic"),
+    "com.nutmeg.day.brief": (
+        "12:00,14:20,18:35", "day run --job brief", "--with-logic", "day publish",
+    ),
     "com.nutmeg.day.broadcast": ("every 600s", "day run --job broadcast"),
     "com.nutmeg.rsi.loop": ("10:45", "rsi loop"),
 }
