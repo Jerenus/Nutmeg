@@ -74,6 +74,103 @@ def _iso(value) -> str | None:
     return value.isoformat(timespec="seconds") if value is not None else None
 
 
+def _fetch_entry(client: Titan007Client, match_id: str, sleep_s: float) -> tuple[dict, bool]:
+    """One titan007 Euro-odds fetch → stored entry; second value = success."""
+    fetched_at = datetime.now(UTC).isoformat(timespec="seconds")
+    try:
+        quotes = list(client.fetch_euro_odds(match_id))
+    except Titan007Error as exc:
+        time.sleep(sleep_s)
+        return {
+            "match_id": match_id,
+            "fetched_at": fetched_at,
+            "source": "titan007_history",
+            "unavailable": str(exc)[:160],
+        }, False
+    stamps = [q.updated_at for q in quotes if q.updated_at is not None]
+    entry = {
+        "match_id": match_id,
+        "fetched_at": fetched_at,
+        "source": "titan007_history",
+        "book_count": len(quotes),
+        "updated_at_min": _iso(min(stamps)) if stamps else None,
+        "updated_at_max": _iso(max(stamps)) if stamps else None,
+        "sharp": _market_dict(_consensus_market(quotes, sharp_books())),
+        "all": _market_dict(_consensus_market(quotes, all_books())),
+        "per_book": [
+            {
+                "company_id": q.company_id,
+                "company_name": q.company_name,
+                "opening": q.opening,
+                "current": q.current,
+                "updated_at": _iso(q.updated_at),
+            }
+            for q in quotes
+        ],
+    }
+    time.sleep(sleep_s)
+    return entry, True
+
+
+def collect_zucai(
+    *,
+    zucai_dir: Path,
+    sleep_s: float,
+    limit: int | None,
+    issues: list[str] | None,
+    dry_run: bool,
+    client: Titan007Client | None = None,
+) -> dict[str, int]:
+    """足彩期次：`<issue>-odds-intl.json` 里带 titan007 id 的场次 → `<issue>-closing-odds.json`。
+
+    这是标签最全的样本（legs-base 126 行）此前唯一缺的东西：书商数、初赔、终赔。
+    """
+    stats = {"issues": 0, "fetched": 0, "skipped": 0, "unavailable": 0, "no_match_id": 0}
+    own_client = client is None
+    client = client or Titan007Client()
+    try:
+        for path in sorted(zucai_dir.glob("*-odds-intl.json")):
+            issue = path.name[:5]
+            if issues and issue not in issues:
+                continue
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            target = zucai_dir / f"{issue}-closing-odds.json"
+            existing = {}
+            if target.exists():
+                try:
+                    existing = json.loads(target.read_text(encoding="utf-8"))
+                except ValueError:
+                    existing = {}
+            changed = False
+            for m in doc.get("matches") or []:
+                if limit is not None and stats["fetched"] + stats["unavailable"] >= limit:
+                    break
+                no = str(m.get("match_no") or "")
+                match_id = str(m.get("titan007_match_id") or "").strip()
+                if not no or not match_id:
+                    stats["no_match_id"] += 1
+                    continue
+                if no in existing:
+                    stats["skipped"] += 1
+                    continue
+                if dry_run:
+                    stats["fetched"] += 1
+                    continue
+                entry, ok = _fetch_entry(client, match_id, sleep_s)
+                existing[no] = entry
+                stats["fetched" if ok else "unavailable"] += 1
+                changed = True
+            if changed and not dry_run:
+                _write_atomic(target, existing)
+                stats["issues"] += 1
+            if limit is not None and stats["fetched"] + stats["unavailable"] >= limit:
+                break
+    finally:
+        if own_client:
+            client.close()
+    return stats
+
+
 def collect(
     *,
     data_dir: Path,
@@ -113,44 +210,10 @@ def collect(
                 if dry_run:
                     stats["fetched"] += 1
                     continue
-                fetched_at = datetime.now(UTC).isoformat(timespec="seconds")
-                try:
-                    quotes = list(client.fetch_euro_odds(match_id))
-                except Titan007Error as exc:
-                    existing[code] = {
-                        "match_id": match_id,
-                        "fetched_at": fetched_at,
-                        "source": "titan007_history",
-                        "unavailable": str(exc)[:160],
-                    }
-                    stats["unavailable"] += 1
-                    changed = True
-                    time.sleep(sleep_s)
-                    continue
-                stamps = [q.updated_at for q in quotes if q.updated_at is not None]
-                existing[code] = {
-                    "match_id": match_id,
-                    "fetched_at": fetched_at,
-                    "source": "titan007_history",
-                    "book_count": len(quotes),
-                    "updated_at_min": _iso(min(stamps)) if stamps else None,
-                    "updated_at_max": _iso(max(stamps)) if stamps else None,
-                    "sharp": _market_dict(_consensus_market(quotes, sharp_books())),
-                    "all": _market_dict(_consensus_market(quotes, all_books())),
-                    "per_book": [
-                        {
-                            "company_id": q.company_id,
-                            "company_name": q.company_name,
-                            "opening": q.opening,
-                            "current": q.current,
-                            "updated_at": _iso(q.updated_at),
-                        }
-                        for q in quotes
-                    ],
-                }
-                stats["fetched"] += 1
+                entry, ok = _fetch_entry(client, match_id, sleep_s)
+                existing[code] = entry
+                stats["fetched" if ok else "unavailable"] += 1
                 changed = True
-                time.sleep(sleep_s)
             if changed and not dry_run:
                 _write_atomic(path, existing)
                 stats["days"] += 1
@@ -169,7 +232,19 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=None, help="stop after N network fetches")
     ap.add_argument("--dates", nargs="*", default=None)
     ap.add_argument("--dry-run", action="store_true", help="count work without fetching")
+    ap.add_argument(
+        "--zucai", action="store_true",
+        help="collect for 足彩 issues from <issue>-odds-intl.json instead of the JCZQ board",
+    )
+    ap.add_argument("--zucai-dir", default=str(ROOT / ".nutmeg-data" / "zucai"))
     args = ap.parse_args()
+    if args.zucai:
+        stats = collect_zucai(
+            zucai_dir=Path(args.zucai_dir), sleep_s=args.sleep, limit=args.limit,
+            issues=args.dates, dry_run=args.dry_run,
+        )
+        print(json.dumps(stats, ensure_ascii=False))
+        return 0
     stats = collect(
         data_dir=Path(args.data_dir),
         sleep_s=args.sleep,

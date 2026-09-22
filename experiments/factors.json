@@ -1,0 +1,269 @@
+{
+  "schema_version": "1",
+  "registered_at": "2026-09-22",
+  "source_doc": "docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md#13",
+  "note": "T13 ①因子注册表。每条在跑的审计码逐条归属：layer=fact 只记录不驱动；layer=probability 才做概率检验并可被 propose 提议改权重；layer=expression 不进因子表但要注明理由。⛔本文件不改任何现有权重：所有 current_weight_pp 都是 0.0，因为生产里从没有数值权重，判据都是 WARN/ERROR 级动作。改权重只能由人 `rsi deploy --by <人>`。",
+  "weight_change_rule": {
+    "frozen_at": "2026-09-22",
+    "applies_to_layer": "probability",
+    "n_min": 60,
+    "requires_verdict": "above_floor",
+    "sample_mode": "only-provable",
+    "split_window": "train_and_test_same_sign",
+    "eligible": "n >= n_min AND verdict == above_floor AND train/test signs agree",
+    "proposal_if_eligible": "point estimate (observed_pp) clipped into weight_band",
+    "proposal_if_indistinguishable_with_enough_n": 0.0,
+    "otherwise": "hold (no change)",
+    "writer": "human only via rsi deploy; propose never writes",
+    "n_unit_caveat": "n 按 row_builder 产出的行计：面级因子（c7_live_precedent / death_proof_count）一场出多行，n 会高估独立样本数；提案里必须连同来源场次数一起看。"
+  },
+  "default_weight_band_pp": [
+    -15.0,
+    15.0
+  ],
+  "factors": [
+    {
+      "factor_id": "c7_live_precedent",
+      "rule_codes": [
+        "C7"
+      ],
+      "rule_name": "excluded_face_live_precedent / r3-双证",
+      "layer": "fact",
+      "claim": "活先例＝机制活的积极证据；带活先例的面只能盖住或丢整场。2026-09-18 改写后不再声称该面更容易开。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        0.0,
+        0.0
+      ],
+      "row_builder": "experiments.noise_floor:_c7_rows",
+      "measure_only": true,
+      "last_measured": null
+    },
+    {
+      "factor_id": "anchor_integrity",
+      "rule_codes": [
+        "C5",
+        "C13"
+      ],
+      "rule_name": "broken_anchor_single / broken_anchor_double / m-单选③ / 死亡三证(c)",
+      "layer": "probability",
+      "claim": "锚方完整度 PASS 的模态面更容易兑现。2026-09-18 n=70 与 09-14 n=42 两次均归零。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_anchor_rows",
+      "last_measured": null,
+      "note": "RULEBOOK 已把动作改作表达约束，但立论仍是概率性的，所以留在 probability 层继续测；测出 0 就是证伪路径。"
+    },
+    {
+      "factor_id": "death_proof_count",
+      "rule_codes": [
+        "C14"
+      ],
+      "rule_name": "死亡三证 / expensive_exclusion 的三证豁免",
+      "layer": "probability",
+      "claim": "三证越齐的被排面越不容易开出（proof_count 0..3 与开出率负相关）。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_death_proof_rows",
+      "last_measured": null
+    },
+    {
+      "factor_id": "directional_flag_nonmodal",
+      "rule_codes": [
+        "C1",
+        "C2"
+      ],
+      "rule_name": "flagged_naked_single / flag_face_uncovered / 旗-方向性",
+      "layer": "probability",
+      "claim": "带方向性旗的场次非模态面更容易开出（旗只报脆不报方向，所以目标是非模态而不是旗面）。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_directional_flag_rows",
+      "last_measured": null,
+      "layer_uncertain": "C1 的动作（裸单 ERROR）是否只是表达约束、还是仍在声称预测，由 Jun 裁；09-14 实测旗指面 −7.8pp（n=27）"
+    },
+    {
+      "factor_id": "nondirectional_flag_third_face",
+      "rule_codes": [
+        "C6",
+        "C0"
+      ],
+      "rule_name": "undecidable_not_full / 旗-无方向 / 8-08 铁律",
+      "layer": "probability",
+      "claim": "带无方向旗的场次第三面更容易开出（RULEBOOK 战绩 5/7）。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_nondirectional_flag_rows",
+      "last_measured": null,
+      "note": "C0 词典封闭本身是 expression；这里测的是 C6 的立论。"
+    },
+    {
+      "factor_id": "crash_marker_modal",
+      "rule_codes": [
+        "C9"
+      ],
+      "rule_name": "opening_upset_double / 开季翻车 regime",
+      "layer": "probability",
+      "claim": "开季窗升班马/换帅首秀场次模态面兑现率低于价格（四把开季刀全穿双选）。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_crash_marker_rows",
+      "last_measured": null
+    },
+    {
+      "factor_id": "conf_level",
+      "rule_codes": [
+        "C4"
+      ],
+      "rule_name": "low_conf_single / conf",
+      "layer": "probability",
+      "claim": "conf 越高模态面兑现率越高（原立论未控价；控价后各档 CI 含 0）。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_conf_rows",
+      "last_measured": null
+    },
+    {
+      "factor_id": "false_direction_band",
+      "rule_codes": [
+        "C11"
+      ],
+      "rule_name": "false_direction_band / 虚假方向带",
+      "layer": "probability",
+      "claim": "gap12∈[5,10)pp 的场次模态面兑现率低于价格（27.8% n=18 立法）。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_false_direction_rows",
+      "last_measured": null
+    },
+    {
+      "factor_id": "draw_underpriced_band",
+      "rule_codes": [
+        "C12"
+      ],
+      "rule_name": "draw_underpriced_band / 平局分层错价",
+      "layer": "probability",
+      "claim": "平局 fair∈[29,32)% 的场次实开平高于价格（+5.6pp n=14 立法）。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_draw_band_rows",
+      "last_measured": null
+    },
+    {
+      "factor_id": "belief_offset_anchor",
+      "rule_codes": [
+        "C8"
+      ],
+      "rule_name": "pseudo_precision_anchor / 伪精确锚定",
+      "layer": "probability",
+      "claim": "净偏移≥5pp 的判读（belief 离开 prior）所指面兑现率高于价格；无强证据锚的偏移则不高于。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_belief_offset_rows",
+      "last_measured": null,
+      "note": "语料里 belief_moved 只有 32 行，会长期处于 n 不够；照实输出，不删。"
+    },
+    {
+      "factor_id": "modal_face_dropped",
+      "rule_codes": [
+        "C3"
+      ],
+      "rule_name": "modal_face_dropped / 处方优先 / 弃模态",
+      "layer": "fact",
+      "claim": "宪法第一序：弃模态面是事实层否决位，不由价格残差背书。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        0.0,
+        0.0
+      ],
+      "row_builder": null,
+      "measure_only": true,
+      "last_measured": null
+    }
+  ],
+  "expression_rules": [
+    {
+      "rule_codes": [
+        "C0"
+      ],
+      "rule_name": "flag_off_lexicon",
+      "reason": "词典封闭是表达约束；不声称预测。C6 的立论由 nondirectional_flag_third_face 测。"
+    },
+    {
+      "rule_codes": [
+        "C10"
+      ],
+      "rule_name": "flagged_double_not_full / 旗-响应改革",
+      "reason": "只规定方向旗场的合法响应（全包或丢）；其立论「盖旗面买不到方向增益」已由 shield 方向 0/8 与 09-14 表证伪，不再作预测。"
+    },
+    {
+      "rule_codes": [
+        "C14"
+      ],
+      "rule_name": "expensive_exclusion / 排面≠翻面阶梯",
+      "reason": "2026-09-14 闭环改写：>20% 被排面的开出率就是价格本身（R_excl=−2.3pp CI 含 0），本条是成本算术不是预测；三证豁免的预测部分由 death_proof_count 测。"
+    },
+    {
+      "rule_codes": [
+        "C15",
+        "C15b"
+      ],
+      "rule_name": "shared_exclusion / shared_naked_single",
+      "reason": "多票组合的共同死点算术，不声称预测。"
+    },
+    {
+      "rule_codes": [
+        "C17"
+      ],
+      "rule_name": "read_ticket_inconsistency",
+      "reason": "2026-09-18 闭环：标记腿断腿率差全由价格解释（n=223），本条是价格纪律，不是「第三面更容易开」（n=130 已证伪）。"
+    },
+    {
+      "rule_codes": [
+        "C18",
+        "C18b"
+      ],
+      "rule_name": "cross_channel_stance_conflict / cross_channel_excluded_face",
+      "reason": "跨渠道立场一致性约束，不声称预测。"
+    },
+    {
+      "rule_codes": [
+        "C16"
+      ],
+      "rule_name": "late_face_swap（提案，未入码）",
+      "reason": "临场只加面是流程约束；0/2 战绩不足以立概率因子。"
+    }
+  ],
+  "layer_uncertain_for_jun": [
+    "directional_flag_nonmodal (C1/C2)：动作是表达约束还是仍在声称预测",
+    "anchor_integrity (C5/C13)：RULEBOOK 已改作表达约束但立论是概率性的，暂留 probability 继续测",
+    "C14 归 expression：若 Jun 认为「>20% 被排面」仍是预测性判据，改回 probability 并用 death_proof_count 之外的独立 row_builder"
+  ]
+}

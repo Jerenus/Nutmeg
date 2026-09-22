@@ -87,6 +87,60 @@
 5. F3/F5/F8/F9 的结账适配器；没有它们，任何前瞻样本都闭不了环。
 6. T13 权重写回通路。
 
+## 7. 准备工作补齐（2026-09-22 下午，Jun 批准五项全做）
+
+| 项 | 落点 | 状态 |
+| --- | --- | --- |
+| 1 因子注册表（T13 ①②③） | `experiments/factors.json` + `experiments/factor_registry.py validate/propose` | 20 条审计码逐条归属：11 个因子（2 fact / 9 probability）+ 7 组 expression 各带理由；变更规则先冻结（n_min=60、严格档 above_floor、分窗同号）；`propose` 从不写权重，E4/E5 有测试 |
+| 2 假设批次 | `scripts/zucai_loop.py hyp --corpus v2 --cut 26131 --log` | 11 条假设（新增 3 条基于实际出手 call 的：排掉面开出 / 单选开出 / 双选开出），结论已落 attempts.log |
+| 2b 补采 | `scripts/titan007_closing_backfill.py --zucai` | 4 期 47 场有 titan id 的足彩场次拿到终盘与书商数；36 条带标签行首次有价格细节 |
+| 3 测量脚本吃新样本 | `experiments/noise_floor.py` 3→10 个因子，`row_flags` 合并 legs-base / judgment / research 三处标签；`zucai_loop.annotate` 优先用结构化标签再退回 note 解析 | 严格档 n 不够时报 `insufficient` 而不是抛错 |
+| 4 记分牌解析器 | `experiments/scoreboard_parse.py` → `experiments/scoreboard-tallies.json` | 40 条链解出 26 条可机读（n / hits / R / CI / MDE80 / 判定），期号对不再误读成分数 |
+| 5 记账统一口 | `experiments/attempts.py:log_attempt` | `noise_floor --log`、`factor_registry propose --log`、`zucai_loop hyp --log` 共用一个追加点，格式不变 |
+
+### 7.1 因子提案首跑（严格档=只收可证前瞻行；n_perm=1000）
+
+| 因子 | 层 | 严格 n | 观测 pp | p | 提案 |
+| --- | --- | --- | --- | --- | --- |
+| c7_live_precedent | fact | 110 | −9.9 | 0.28 | record_only |
+| anchor_integrity | probability | 33 | −10.3 | 0.56 | hold（n<60） |
+| death_proof_count | probability | 66（面级） | +11.8 | 0.29 | propose_zero |
+| directional_flag_nonmodal | probability | 40 | −3.3 | 0.86 | hold |
+| nondirectional_flag_third_face | probability | 40 | +22.1 | 0.13 | hold |
+| crash_marker_modal | probability | 40 | 无 | 无 | hold（insufficient） |
+| conf_level | probability | 40 | −9.4 | 0.47 | hold |
+| false_direction_band | probability | 100 | +14.0 | 0.48 | propose_zero |
+| draw_underpriced_band | probability | 100 | −4.7 | 0.73 | propose_zero |
+| belief_offset_anchor | probability | 2 | 无 | 无 | hold（insufficient） |
+| modal_face_dropped | fact | 0 | 未测 | 无 | record_only |
+
+三条 `propose_zero` 的现权重本来就是 0，所以它们是"确认零"而不是改动；C11/C12 的立法样本（n=18 / n=14）在 1,578 行上没有重现。面级因子的 n 高估独立样本数，注册表里已写明这条 caveat。
+
+### 7.2 假设批次 1 结果（全语料 1,578 行；标签类只在有标签的行上）
+
+| 假设 | n | 残差 | 95% CI | 判定 |
+| --- | --- | --- | --- | --- |
+| call:排掉面→开出 | 29 | −12.0pp | [−26.6, +3.2] | 欠功效 |
+| call:单选→开出 | 16 | +17.6pp | [−4.0, +38.7] | 欠功效 |
+| call:双选→开出 | 13 | +5.2pp | [−14.3, +21.2] | 证伪 |
+| 方向旗→非模态 | 76 | −2.8pp | [−13.7, +8.4] | 证伪 |
+| 方向旗→开平 | 76 | +0.2pp | [−9.6, +9.9] | 证伪 |
+| 无方向旗→非模态 | 65 | −5.1pp | [−17.3, +6.9] | 证伪 |
+| C6:无方向旗→第3面 | 65 | −1.8pp | [−11.3, +8.3] | 证伪 |
+| 锚方FAIL→正路 | 69 | +1.7pp | [−9.4, +12.9] | 证伪 |
+| 锚方PASS→正路 | 61 | −11.6pp | [−23.5, −0.2] | 反向确认（CI 上沿贴 0；置换地板判 indistinguishable，两口径不一致，不据此改规则） |
+| C9崩盘标记→正路 | 11 | −0.5pp | [−27.5, +26.7] | 证伪 |
+| 基线:全语料→正路 | 1578 | +1.5pp | [−0.9, +3.7] | 证伪 |
+
+"证伪"在这里的含义是"效应小于本样本能检出的最小效应"，不是"效应为零"。call 类假设只有 29/16/13 行，因为 90 条出手里大多数是全包。
+
+### 7.3 未做 / 留在工作树
+
+- `experiments/exp-label-residuals.py` 仍直接读 legs 文件，看不到判读 lane 的 90 行；改读语料是下一步。
+- `scripts/zucai_loop.py` 的 `annotate` / call 假设 / `--log` 与 Jun 未提交的 `load_corpus_v2` 在同一文件，未单独提交。
+- `nutmeg rsi weights propose` 的 CLI 别名未做，功能在 `experiments/factor_registry.py propose`。
+- 分层拿不准的三处（C1/C2、C5/C13、C14）在 `factors.json` 的 `layer_uncertain_for_jun`。
+
 ## 6. 数据缺口（有判读无赛果 / 有赛果无判读）
 
 - 26125/26127/26128 有 legs 无 reads；336 行 reads.prior 无结构标签；`belief_moved` 仅 28 行。

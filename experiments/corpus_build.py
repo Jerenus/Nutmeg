@@ -247,6 +247,7 @@ def zucai_rows() -> list[dict]:
         calls = _load(f"{Z}/{issue}-calls.json", {}) or {}
         calls_time, calls_source = _calls_time_source(calls.get("_meta"))
         judgments, judgment_meta = _judgment_calls(issue)
+        closing_by_no = _load(f"{Z}/{issue}-closing-odds.json", {}) or {}
         for n in range(1, 15):
             lg = legs.get(str(n)) if isinstance(legs, dict) else None
             jd = judgments.get(n) or {}
@@ -275,6 +276,8 @@ def zucai_rows() -> list[dict]:
                 labels=None,
                 call=jd.get("call"),
                 note=jd.get("note") or "",
+                fair_kind="read_time",
+                closing=_closing_block(closing_by_no.get(str(n))),
             )
             row.update(xids.get(n, {}))
             judged_at = (lg or {}).get("judged_at") or calls_time
