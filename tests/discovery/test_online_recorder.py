@@ -302,7 +302,8 @@ def test_backdated_request_cannot_make_historical_input_prospective(tmp_path):
         )
 
 
-def test_forged_source_identity_cannot_claim_prospective_world(tmp_path):
+def test_forged_source_identity_cannot_claim_prospective_world(tmp_path, monkeypatch):
+    monkeypatch.setattr("nutmeg.discovery.online_recorder._utcnow", lambda: T0)
     engine = _rig(tmp_path)
     forged = _freeze(source_identity=str((tmp_path / "business.db").resolve()))
     with pytest.raises(ValueError, match="source request"):
@@ -315,6 +316,7 @@ def test_forged_source_identity_cannot_claim_prospective_world(tmp_path):
 
 
 def test_source_change_during_verification_fails_before_world_create(tmp_path, monkeypatch):
+    monkeypatch.setattr("nutmeg.discovery.online_recorder._utcnow", lambda: T0)
     engine = _rig(tmp_path)
     source = tmp_path / "business.db"
     snapshot = _freeze(source_identity=str(source.resolve()))

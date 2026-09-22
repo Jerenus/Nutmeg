@@ -68,6 +68,11 @@ class RecordedWorld:
     selected_node_ids: tuple[str, ...]
 
 
+
+def _utcnow() -> datetime:
+    """Wall clock for approval freshness; tests freeze it."""
+    return datetime.now(UTC)
+
 def board_size_stratum(offer_count: int) -> str:
     if offer_count <= 4:
         return "small"
@@ -271,7 +276,7 @@ def _validate_recording(
             cutoff = datetime.fromisoformat(snapshot.cutoff_at)
         except (KeyError, ValueError) as exc:
             raise ValueError("approval time is invalid") from exc
-        now = datetime.now(UTC)
+        now = _utcnow()
         if (
             not approval.get("approval_id")
             or not approval.get("approved_by")
