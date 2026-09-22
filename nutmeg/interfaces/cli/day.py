@@ -11,43 +11,59 @@ import typer
 
 import nutmeg.interfaces.cli as _cli
 
-day_app = typer.Typer(help="每日对象 daily/<日>：settle / brief / session 作业、状态、讨论")
+day_app = typer.Typer(
+    help="每日对象 daily/<日>：settle / brief / session / results / broadcast 作业、状态、讨论"
+)
 _cli.app.add_typer(day_app, name="day")
 
 _DATE = typer.Option(None, "--date", help="业务日 YYYY-MM-DD，默认今天")
 _DATA_DIR = typer.Option(Path(".nutmeg-data"), "--data-dir")
-_JOB = typer.Option(..., "--job", help="settle | brief | session")
+_JOB = typer.Option(..., "--job", help="settle | brief | session | results | broadcast")
 _FORCE = typer.Option(False, "--force", help="settle 已有 retro.md 也重跑")
 _DRY = typer.Option(False, "--dry-run", help="只打印子进程命令，不执行、不写时间线")
+_NOW = typer.Option(None, "--now", help="测试用 ISO 时刻（覆盖当前时间）")
 
 
 def _now() -> datetime:
     return datetime.now().astimezone()
 
 
-def _ctx(date: str | None, data_dir: Path):
+def _ctx(date: str | None, data_dir: Path, now: str | None = None):
     from nutmeg.decision.day_runner import DayContext, default_runner
 
+    now_fn = (lambda: datetime.fromisoformat(now)) if now else _now
     return DayContext(
         root=Path(__file__).resolve().parents[3],
         data_dir=Path(data_dir).expanduser().resolve(),
-        date=date or _now().date().isoformat(),
+        date=date or now_fn().date().isoformat(),
         runner=default_runner,
-        now=_now,
+        now=now_fn,
     )
 
 
 @day_app.command("run")
 def run(job: str = _JOB, date: str | None = _DATE, data_dir: Path = _DATA_DIR,
-        force: bool = _FORCE, dry_run: bool = _DRY) -> None:
+        force: bool = _FORCE, dry_run: bool = _DRY, now: str | None = _NOW) -> None:
     """跑一个作业并把结果追加到 daily/<日>/timeline.json。"""
+    import json
+
     from nutmeg.decision.day_runner import JOBS, planned_commands, run_job
 
     if job not in JOBS:
         typer.echo(f"day error: 未知作业 {job!r}；可用：{', '.join(JOBS)}")
         raise typer.Exit(code=1)
-    ctx = _ctx(date, data_dir)
+    ctx = _ctx(date, data_dir, now)
     if dry_run:
+        if job == "broadcast":
+            from nutmeg.decision.day_broadcast import due_broadcasts, read_sent, render_broadcast
+
+            dec_path = ctx.out_dir / "decisions.json"
+            decisions = (json.loads(dec_path.read_text(encoding="utf-8"))
+                         if dec_path.exists() else [])
+            sent = read_sent(ctx.data_dir, ctx.date)
+            for b in due_broadcasts(decisions, now=ctx.now(), sent=sent):
+                typer.echo(render_broadcast(b) + "\n---")
+            return
         for cmd in planned_commands(ctx, job):
             typer.echo("    " + " ".join(cmd))
         if job != "settle":

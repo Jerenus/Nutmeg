@@ -46,3 +46,17 @@ def test_day_run_rejects_unknown_job(tmp_path: Path):
         app, ["day", "run", "--job", "deploy", "--data-dir", str(_data(tmp_path))]
     )
     assert result.exit_code == 1 and "未知作业" in result.output
+
+
+def test_day_broadcast_dry_run_prints_text_without_sending(tmp_path: Path):
+    data = _data(tmp_path)
+    out = data / "daily" / "2026-09-23"
+    out.mkdir(parents=True)
+    (out / "decisions.json").write_text(json.dumps([{
+        "id": "plan:26132", "kind": "plan_choose_commit", "subject": "定案", "status": "open",
+        "deadline": "2099-01-01T21:00:00+08:00", "default_action": "空仓"}]), encoding="utf-8")
+    r = runner.invoke(app, ["day", "run", "--job", "broadcast", "--date", "2026-09-23",
+                            "--data-dir", str(data), "--dry-run", "--now",
+                            "2099-01-01T20:45:00+08:00"])
+    assert r.exit_code == 0 and "剩 15 分" in r.output and "空仓" in r.output
+    assert not (out / "broadcasts.jsonl").exists()

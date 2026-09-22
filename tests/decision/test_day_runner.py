@@ -1,6 +1,7 @@
 import json
 import subprocess
 from datetime import datetime, timedelta, timezone
+from datetime import datetime as _dt
 from pathlib import Path
 
 from nutmeg.decision.day_paths import RESULTS_90, day_dir
@@ -36,7 +37,7 @@ def _ctx(tmp_path: Path, log) -> DayContext:
 
 def test_jobs_and_planned_settle_commands(tmp_path: Path):
     ctx = _ctx(tmp_path, [])
-    assert JOBS == ("settle", "brief", "session")
+    assert JOBS == ("settle", "brief", "session", "results", "broadcast")
     cmds = planned_commands(ctx, "settle")
     assert cmds[0][:4] == ["uv", "run", "nutmeg", "workbench-export"] and "2026-09-22" in cmds[0]
     assert not any("betslip" in c for c in cmds)  # no results-90.json yet
@@ -81,3 +82,29 @@ def test_session_job_requires_brief_first(tmp_path: Path):
     assert rec.exit == 1 and "brief.json" in rec.summary
     run_job(ctx, "brief")
     assert run_job(ctx, "session").exit == 0
+
+
+def test_results_job_writes_results_90_and_settle_then_picks_it_up(tmp_path: Path):
+    log: list[list[str]] = []
+    ctx = _ctx(tmp_path, log)
+    (ctx.data_dir / "jczq" / "jc-results.json").write_text(
+        json.dumps({"2026-09-22": {"周二001": {"match_id": "1", "ft_home": 1, "ft_away": 0}}}),
+        encoding="utf-8")
+    rec = run_job(ctx, "results")
+    assert rec.exit == 0 and "written=1" in rec.summary
+    assert any("betslip" in c for c in planned_commands(ctx, "settle"))
+
+
+def test_broadcast_job_uses_injected_sender(tmp_path: Path):
+    sent: list[str] = []
+    ctx = _ctx(tmp_path, [])
+    ctx.sender = sent.append
+    ctx.now = lambda: _dt(2026, 9, 23, 19, 5, tzinfo=BJ)
+    out = day_dir(ctx.data_dir, "2026-09-23")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "decisions.json").write_text(json.dumps([{
+        "id": "read:周三001", "kind": "approve_read", "subject": "A vs B", "status": "open",
+        "deadline": "2026-09-23T19:30:00+08:00", "default_action": "跟市场"}]), encoding="utf-8")
+    rec = run_job(ctx, "broadcast")
+    assert rec.exit == 0 and sent and "剩 25 分" in sent[0] and "sent=1" in rec.summary
+    assert run_job(ctx, "broadcast").summary.endswith("sent=0 failed=0")  # deduplicated

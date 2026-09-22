@@ -22,7 +22,7 @@ from nutmeg.decision.day_timeline import JobRecord, append_job, read_timeline
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
 Now = Callable[[], datetime]
 
-JOBS = ("settle", "brief", "session")
+JOBS = ("settle", "brief", "session", "results", "broadcast")
 
 
 @dataclass
@@ -32,6 +32,7 @@ class DayContext:
     date: str
     runner: Runner
     now: Now
+    sender: Callable[[str], None] | None = None
 
     @property
     def out_dir(self) -> Path:
@@ -126,6 +127,27 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False) -> JobRecord:
             evidence = str(ctx.out_dir / BRIEF)
         except Exception as exc:  # noqa: BLE001 — 只留痕不抛
             summary, exit_code = f"brief 异常: {exc!r}"[:300], 1
+    elif job == "results":
+        from nutmeg.decision.day_results import bridge_results
+
+        report = bridge_results(data_dir=ctx.data_dir, date=ctx.date)
+        summary = (f"results 源 {report['source_day']} written={report['written']} "
+                   f"missing={len(report['missing'])}")
+        exit_code = 0
+        evidence = str(ctx.out_dir / RESULTS_90) if report["written"] else None
+    elif job == "broadcast":
+        from nutmeg.decision.day_broadcast import send_all, telegram_sender
+
+        dec_path = ctx.out_dir / DECISIONS
+        decisions = json.loads(dec_path.read_text(encoding="utf-8")) if dec_path.exists() else []
+        try:
+            sender = ctx.sender or telegram_sender()
+            report = send_all(decisions, data_dir=ctx.data_dir, date=ctx.date, now=ctx.now(),
+                              sender=sender)
+            summary = f"broadcast sent={len(report['sent'])} failed={len(report['failed'])}"
+            exit_code = 1 if report["failed"] else 0
+        except RuntimeError as exc:  # telegram 未配置
+            summary, exit_code = f"broadcast 未发：{exc}", 1
     else:
         summary, exit_code = _session_only(ctx)
     record = JobRecord(job=job, planned_at=planned, started_at=started_at,
