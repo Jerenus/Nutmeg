@@ -263,6 +263,10 @@ def render_brief_md(brief: dict) -> str:
             f"{m['research']['status']} | "
             f"{read.get('judge') or '—'}/{read.get('status') or '—'} | {m['ladder']} |"
         )
+    logic_lines = [f"- **{m['code']}** {m['logic']['text']}" for m in brief["jczq"]["matches"]
+                   if isinstance(m.get("logic"), dict) and m["logic"].get("status") == "ok"]
+    if logic_lines:
+        lines += ["", "### 为什么落在这一格（claude -p 撰稿，只解释不判断）", ""] + logic_lines
     z = brief["zucai"]
     lines += ["", f"## 传统足彩 {z['issue'] or '（无在售期）'}", ""]
     if z["issue"]:

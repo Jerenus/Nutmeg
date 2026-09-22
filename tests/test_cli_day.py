@@ -60,3 +60,11 @@ def test_day_broadcast_dry_run_prints_text_without_sending(tmp_path: Path):
                             "2099-01-01T20:45:00+08:00"])
     assert r.exit_code == 0 and "剩 15 分" in r.output and "空仓" in r.output
     assert not (out / "broadcasts.jsonl").exists()
+
+
+def test_day_run_brief_with_logic_flag_is_accepted(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("nutmeg.decision.brief_writer._claude_cli", lambda p, s: (1, ""))
+    data = _data(tmp_path)
+    r = runner.invoke(app, ["day", "run", "--job", "brief", "--date", "2026-09-23",
+                            "--data-dir", str(data), "--with-logic"])
+    assert r.exit_code == 0, r.output

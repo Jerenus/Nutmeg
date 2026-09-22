@@ -53,7 +53,12 @@ window.Day = (function () {
       " · 位移 " + (mk.drift_pp == null ? "—" : mk.drift_pp + "pp") + " · 分歧 " + (mk.book_disagreement_pp == null ? "—" : mk.book_disagreement_pp + "pp") +
       " · 终盘 " + (mk.closing_books || "—") + " 书"));
     if (m.read) c.appendChild(el("p", null, "Read 拨动 " + m.read.moved_pp + "pp · conf " + (m.read.confidence == null ? "—" : m.read.confidence)));
-    if (m.logic) c.appendChild(el("p", "day-logic", m.logic));
+    if (m.logic && m.logic.status === "ok") c.appendChild(el("p", "day-logic", m.logic.text));
+    else if (m.logic) c.appendChild(el("p", "obs-muted", "逻辑层 " + m.logic.status + (m.logic.reason ? "：" + m.logic.reason : "")));
+    if (m.audit && !m.audit.error) ["naked", "double", "full"].forEach(function (k) {
+      var a = m.audit[k]; if (!a) return;
+      badges.appendChild(el("span", "day-badge" + (a.blocking ? " alarm" : ""), k + " " + a.faces + (a.blocking ? " ✗" : " ✓")));
+    });
     var d = el("details"); d.appendChild(el("summary", null, "标签 / 实力 / 研究摘要"));
     var pre = el("pre"); pre.textContent = JSON.stringify({ labels: m.labels, strength: m.strength, research: m.research }, null, 1);
     d.appendChild(pre); c.appendChild(d);

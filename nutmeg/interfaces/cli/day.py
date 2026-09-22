@@ -22,6 +22,7 @@ _JOB = typer.Option(..., "--job", help="settle | brief | session | results | bro
 _FORCE = typer.Option(False, "--force", help="settle 已有 retro.md 也重跑")
 _DRY = typer.Option(False, "--dry-run", help="只打印子进程命令，不执行、不写时间线")
 _NOW = typer.Option(None, "--now", help="测试用 ISO 时刻（覆盖当前时间）")
+_WITH_LOGIC = typer.Option(False, "--with-logic", help="逻辑层：每场一次无联网 claude -p")
 
 
 def _now() -> datetime:
@@ -43,7 +44,8 @@ def _ctx(date: str | None, data_dir: Path, now: str | None = None):
 
 @day_app.command("run")
 def run(job: str = _JOB, date: str | None = _DATE, data_dir: Path = _DATA_DIR,
-        force: bool = _FORCE, dry_run: bool = _DRY, now: str | None = _NOW) -> None:
+        force: bool = _FORCE, dry_run: bool = _DRY, now: str | None = _NOW,
+        with_logic: bool = _WITH_LOGIC) -> None:
     """跑一个作业并把结果追加到 daily/<日>/timeline.json。"""
     import json
 
@@ -69,7 +71,7 @@ def run(job: str = _JOB, date: str | None = _DATE, data_dir: Path = _DATA_DIR,
         if job != "settle":
             typer.echo(f"    [{job}] 纯 Python 作业，不起子进程")
         return
-    record = run_job(ctx, job, force=force)
+    record = run_job(ctx, job, force=force, with_logic=with_logic)
     typer.echo(f"day {ctx.date} {job}: {record.summary} (exit={record.exit})")
     for row in record.commands:
         typer.echo(f"    [{row['exit']}] {row['cmd'][:80]} · {row['tail'][:120]}")

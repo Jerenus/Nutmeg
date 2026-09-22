@@ -108,3 +108,18 @@ def test_broadcast_job_uses_injected_sender(tmp_path: Path):
     rec = run_job(ctx, "broadcast")
     assert rec.exit == 0 and sent and "剩 25 分" in sent[0] and "sent=1" in rec.summary
     assert run_job(ctx, "broadcast").summary.endswith("sent=0 failed=0")  # deduplicated
+
+
+def test_brief_job_with_logic_uses_injected_claude(tmp_path: Path):
+    ctx = _ctx(tmp_path, [])
+    day = ctx.data_dir / "jczq" / "daily" / "2026-09-23"
+    (day / "jczq-legs-base.json").write_text(json.dumps({"day": "2026-09-23", "legs": {
+        "周三001": {"match_id": "m", "name": "A vs B", "kickoff_bj": "2026-09-23T19:30:00+08:00",
+                   "fair": {"home": 0.5, "draw": 0.3, "away": 0.2}}}}), encoding="utf-8")
+    ctx.claude = lambda p, s: (0, json.dumps({"code": "周三001", "logic": "fair 定面。",
+                                              "cites": ["market.fair"]}))
+    rec = run_job(ctx, "brief", with_logic=True)
+    out = day_dir(ctx.data_dir, "2026-09-23")
+    brief = json.loads((out / "brief.json").read_text(encoding="utf-8"))
+    assert rec.exit == 0 and brief["jczq"]["matches"][0]["logic"]["status"] == "ok"
+    assert "fair 定面。" in (out / "brief.md").read_text(encoding="utf-8")

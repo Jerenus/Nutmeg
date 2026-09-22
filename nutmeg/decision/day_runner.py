@@ -21,6 +21,7 @@ from nutmeg.decision.day_timeline import JobRecord, append_job, read_timeline
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
 Now = Callable[[], datetime]
+Claude = Callable[[str, str], tuple[int, str]]
 
 JOBS = ("settle", "brief", "session", "results", "broadcast")
 
@@ -33,6 +34,7 @@ class DayContext:
     runner: Runner
     now: Now
     sender: Callable[[str], None] | None = None
+    claude: Claude | None = None
 
     @property
     def out_dir(self) -> Path:
@@ -81,8 +83,12 @@ def _run_commands(ctx: DayContext, cmds: list[list[str]]) -> tuple[list[dict], i
     return rows, exit_code
 
 
-def _brief_pipeline(ctx: DayContext) -> str:
+def _brief_pipeline(ctx: DayContext, with_logic: bool = False) -> str:
     brief = compile_brief(data_dir=ctx.data_dir, date=ctx.date, root=ctx.root, now=ctx.now())
+    if with_logic:
+        from nutmeg.decision.brief_writer import _claude_cli, write_logic
+
+        brief = write_logic(brief, claude=ctx.claude or _claude_cli)
     write_brief(ctx.data_dir, ctx.date, brief)
     timeline = read_timeline(ctx.data_dir, ctx.date)
     decisions = build_decisions(brief, timeline, data_dir=ctx.data_dir, now=ctx.now())
@@ -105,7 +111,8 @@ def _session_only(ctx: DayContext) -> tuple[str, int]:
     return "session.md 重渲染", 0
 
 
-def run_job(ctx: DayContext, job: str, *, force: bool = False) -> JobRecord:
+def run_job(ctx: DayContext, job: str, *, force: bool = False,
+            with_logic: bool = False) -> JobRecord:
     if job not in JOBS:
         raise ValueError(f"unknown job {job!r}; JOBS={JOBS}")
     planned = ctx.now().isoformat(timespec="seconds")
@@ -123,7 +130,7 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False) -> JobRecord:
             evidence = str(retro) if retro.exists() else None
     elif job == "brief":
         try:
-            summary, exit_code = _brief_pipeline(ctx), 0
+            summary, exit_code = _brief_pipeline(ctx, with_logic), 0
             evidence = str(ctx.out_dir / BRIEF)
         except Exception as exc:  # noqa: BLE001 — 只留痕不抛
             summary, exit_code = f"brief 异常: {exc!r}"[:300], 1
