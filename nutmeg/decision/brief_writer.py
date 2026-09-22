@@ -1,0 +1,100 @@
+"""逻辑层撰稿器：每场一次无联网 `claude -p`，输出 JSON，cites 逐一校验（设计 §6.3、§9）。"""
+from __future__ import annotations
+
+import json
+import subprocess
+import tempfile
+from collections.abc import Callable
+
+from nutmeg.decision.brief_prompt import LOGIC_SYSTEM_PROMPT, render_logic_input
+
+Claude = Callable[[str, str], tuple[int, str]]
+LOGIC_DAILY_BUDGET = 40
+
+
+def _claude_cli(prompt: str, stdin: str) -> tuple[int, str]:
+    argv = ["claude", "-p", "--system-prompt", prompt, "--allowedTools", "", "--max-turns", "1",
+            "--output-format", "text"]
+    with tempfile.TemporaryDirectory() as neutral:
+        proc = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=300,
+                               cwd=neutral, check=False)
+    return proc.returncode, proc.stdout
+
+
+def _strip_fence(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+    return text.strip()
+
+
+def resolve_path(obj, path: str):
+    cur = obj
+    for part in path.split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        elif isinstance(cur, list) and part.isdigit() and int(part) < len(cur):
+            cur = cur[int(part)]
+        else:
+            return None
+    return cur
+
+
+def validate_cites(cites: list, card: dict, factors: list[dict]) -> list[str]:
+    scope = {**card, "factors": factors}
+    bad = []
+    for cite in cites:
+        if not isinstance(cite, str):
+            bad.append(str(cite))
+        elif resolve_path(scope, cite) is None and not _exists(scope, cite):
+            bad.append(str(cite))
+    return bad
+
+
+def _exists(scope, path: str) -> bool:
+    """`resolve_path` 把值为 None/False 的字段也返回 None/False；存在性单独判。"""
+    cur = scope
+    for part in path.split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        elif isinstance(cur, list) and part.isdigit() and int(part) < len(cur):
+            cur = cur[int(part)]
+        else:
+            return False
+    return True
+
+
+def _one(card: dict, factors: list[dict], claude: Claude) -> dict:
+    code, text = claude(LOGIC_SYSTEM_PROMPT, render_logic_input(card, factors))
+    if code != 0:
+        return {"status": "not_generated", "reason": f"claude exit {code}"}
+    try:
+        doc = json.loads(_strip_fence(text))
+    except ValueError:
+        return {"status": "rejected", "reason": "非法 JSON"}
+    if not isinstance(doc, dict) or doc.get("code") != card.get("code"):
+        return {"status": "rejected", "reason": "code 不匹配"}
+    cites = doc.get("cites") or []
+    bad = validate_cites(cites, card, factors)
+    if bad or not cites:
+        return {"status": "rejected", "reason": "cites 不存在: " + ", ".join(bad or ["<空>"])}
+    logic = str(doc.get("logic") or "").strip()
+    if not logic:
+        return {"status": "rejected", "reason": "logic 为空"}
+    return {"status": "ok", "text": logic, "cites": list(cites), "author": "claude -p"}
+
+
+def write_logic(
+    brief: dict, *, claude: Claude = _claude_cli, budget: int = LOGIC_DAILY_BUDGET
+) -> dict:
+    """返回带 `logic` 字段的 brief 副本。超预算的场 `not_generated/budget`。不改其它字段。"""
+    factors = brief.get("factors") or []
+    matches = []
+    for i, card in enumerate(brief.get("jczq", {}).get("matches", [])):
+        card = dict(card)
+        card["logic"] = (_one(card, factors, claude) if i < budget
+                          else {"status": "not_generated", "reason": "budget"})
+        matches.append(card)
+    return {**brief, "jczq": {**brief["jczq"], "matches": matches}}
