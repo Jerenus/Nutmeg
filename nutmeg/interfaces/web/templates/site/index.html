@@ -1,0 +1,3 @@
+{% extends "layout.html" %}{% block title %}Nutmeg 日报{% endblock %}
+{% block body %}<h1>Nutmeg 日报</h1><p><a href="/{{ v.date }}/index.html">最新：{{ v.date }}</a></p>
+<ul>{% for d in days|reverse %}<li><a href="/{{ d }}/index.html">{{ d }}</a></li>{% endfor %}</ul>{% endblock %}

@@ -1,0 +1,6 @@
+{% extends "layout.html" %}{% block title %}战绩{% endblock %}
+{% block body %}<h1>战绩与判据存亡</h1>
+<p class="mute">来自记分牌的机器可读链：{{ v.record.coverage.machine_readable }}/{{ v.record.coverage.chains }}。证伪的判据照登。</p>
+<table><tr><th>判据链</th><th>n</th><th>期</th><th>残差 pp</th><th>CI 含 0</th><th>判决</th></tr>
+{% for c in v.record.chains %}<tr><td>{{ c.name }}</td><td>{{ c.n }}</td><td>{{ c.issues }}</td><td>{{ c.R_pp }}</td><td>{{ "是" if c.ci_contains_zero else "否" }}</td><td>{{ c.verdict }}</td></tr>{% endfor %}
+</table>{% endblock %}

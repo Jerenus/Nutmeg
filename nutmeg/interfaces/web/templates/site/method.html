@@ -1,0 +1,14 @@
+{% extends "layout.html" %}{% block title %}方法{% endblock %}
+{% block body %}<h1>方法</h1>
+<h2>判断的字典序</h2><ol><li>事实层定面：机制三态（活 / 死 / 从不），死必有三证。</li><li>P 层定结构：帽内最大化命中概率；期望值不进决策层。</li><li>奖池只破平局。</li></ol>
+<h2>表达阶梯</h2><p>跟市场 → 偏移 → 降格 → 翻面；每一格都要过审计门，翻面需三门槛。</p>
+<h2>判断如何自我修正（RSI）</h2>
+<figure><svg viewBox="0 0 720 140" role="img" aria-label="每日闭环：终盘补采到记分牌解析九步，判决与部署由人">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"/></marker></defs>
+{% set steps = ["终盘补采","语料重建","前瞻结账","判决到期","因子提案","假设批次","因子搜索","实力指数","记分牌"] %}
+{% for s in steps %}<rect x="{{ 10 + loop.index0*78 }}" y="40" width="70" height="36" rx="6" fill="none" stroke="currentColor"/><text x="{{ 45 + loop.index0*78 }}" y="63" font-size="11" text-anchor="middle" fill="currentColor">{{ s }}</text>
+{% if not loop.last %}<line x1="{{ 80 + loop.index0*78 }}" y1="58" x2="{{ 88 + loop.index0*78 }}" y2="58" stroke="currentColor" marker-end="url(#a)"/>{% endif %}{% endfor %}
+<text x="360" y="120" font-size="12" text-anchor="middle" fill="currentColor">判决只由系统出，部署与规则修改只由人做；提案从不直接改权重</text></svg>
+<figcaption>每日闭环九步与人的门。</figcaption></figure>
+<p>每条判据都是一个实验：登记 → 观察 → 结账 → 判决（证伪 / 存活）→ 只有存活且到期才可能由人部署。</p>
+{% endblock %}

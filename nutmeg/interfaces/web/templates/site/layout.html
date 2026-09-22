@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Nutmeg{% endblock %}</title>
+<style>
+:root{color-scheme:light dark;--fg:#1c1c1c;--bg:#fbfaf7;--mute:#6b6b6b;--line:rgba(127,127,127,.3)}
+@media(prefers-color-scheme:dark){:root{--fg:#ecebe7;--bg:#141414;--mute:#a3a3a3}}
+body{margin:0;padding:20px 16px;font:14px/1.6 system-ui,-apple-system,"PingFang SC",sans-serif;color:var(--fg);background:var(--bg);max-width:960px;margin-inline:auto}
+nav a{margin-right:14px;color:inherit}h1{font-size:22px;margin:.4em 0}h2{font-size:16px;margin:1.4em 0 .5em;opacity:.8}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}.mute{color:var(--mute)}.badge{display:inline-block;padding:1px 8px;border-radius:999px;background:rgba(127,127,127,.18);font-size:11px;margin-right:6px}
+</style></head><body>
+<nav><a href="/index.html">今日</a><a href="/record.html">战绩</a><a href="/method.html">方法</a></nav>
+{% block body %}{% endblock %}
+<p class="mute">本站只呈现判断过程与结果；不构成购买建议；亏损与空仓如实显示。</p>
+</body></html>

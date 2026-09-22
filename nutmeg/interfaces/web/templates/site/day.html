@@ -1,0 +1,15 @@
+{% extends "layout.html" %}{% block title %}当日 {{ v.date }}{% endblock %}
+{% block body %}
+<h1>当日报告 · {{ v.date }}</h1>
+<p class="mute">生成 {{ v.generated_at }} · 竞彩 {{ v.counts.matches }} 场（深研 {{ v.counts.deep_research }}）· 待人决定 {{ v.decisions.open }}/{{ v.decisions.total }} · 默认动作：空仓</p>
+<h2>竞彩</h2>
+{% for m in v.matches %}<div class="card"><strong>{{ m.code }} {{ m.name }}</strong> <span class="mute">{{ m.competition }} · {{ m.kickoff }}</span><br>
+<span class="badge">{{ m.ladder }}</span><span class="badge">{{ m.tier }}</span><span class="badge">研究 {{ m.research_status }}</span>{% if m.prospective is false %}<span class="badge">非前瞻</span>{% endif %}
+{% for k, e in m.expressions.items() %}<span class="badge">{{ k }} {{ e }}</span>{% endfor %}
+<div>fair {% if m.fair %}{{ (m.fair.home*100)|round|int }}/{{ (m.fair.draw*100)|round|int }}/{{ (m.fair.away*100)|round|int }}{% else %}—{% endif %} · 位移 {{ m.drift_pp if m.drift_pp is not none else "—" }}pp · {{ m.judge or "无 Read" }}{% if m.confidence %} conf {{ m.confidence }}{% endif %}</div>
+{% if m.logic %}<p>{{ m.logic }}</p>{% else %}<p class="mute">逻辑层未生成</p>{% endif %}</div>{% endfor %}
+{% if not v.matches %}<p class="mute">今日无板面</p>{% endif %}
+<h2>传统足彩 {{ v.zucai.issue or "" }}</h2>
+{% if v.zucai.issue %}<p>截止 {{ v.zucai.sale_deadline }} · 风向 {{ v.zucai.wind }} · 前沿点 {{ v.zucai.frontier_points }} · {{ v.zucai.plan_status }}（未定案＝空仓）</p>{% else %}<p class="mute">无在售期</p>{% endif %}
+<h2>系统在验证什么</h2><p>今日 RSI 待人决定 {{ v.rsi_pending }} 条；实验状态见方法页。</p>
+{% endblock %}
