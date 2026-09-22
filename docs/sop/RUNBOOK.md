@@ -1,6 +1,6 @@
 # RUNBOOK — 每日执行清单（两条泳道；命令可直接复制）
 
-> 只写"做什么"，不写"为什么"。为什么见 RULEBOOK 对应条目。launchd 的 am/close/settle 仍禁用，全部手动。
+> 只写"做什么"，不写"为什么"。为什么见 RULEBOOK 对应条目。launchd：am 08:00 自动；close 仍手动；settle 由 `com.nutmeg.day.settle` 07:30 承担（装载后，见 `docs/ops/2026-09-20-scheduled-dataflows.md`）。
 
 ## 每日先看一眼：状态页
 
