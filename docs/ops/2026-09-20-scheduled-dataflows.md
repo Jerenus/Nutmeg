@@ -13,10 +13,10 @@
 | `com.nutmeg.zucai.f2-observe` | 08:00-23:45 每 15 分钟 | F2 让球线前瞻观察 | 前瞻窗永久缺样，过开球后不能回补 |
 | `com.nutmeg.rsi.loop` | 10:45 | 每日闭环：终盘补采 → 语料重建 → 前瞻结账 → 判决到期 → 因子提案 → 假设批次 → 因子搜索 → 实力指数 → 记分牌解析 → `analytics/rsi-loop/latest.md` | 判决与提案停在前一天；`--force` 可当天重跑 |
 | `com.nutmeg.rsi.sweep` | 每小时 :00 | 兑现到期的 RSI 义务仪器 | 义务过期成 gap，事后不能回补 |
-| `com.nutmeg.day.settle`（待装载） | 07:30 | `day run --job results` + `--job settle`：昨日赛果桥 → 实票结算 / rx 判定 / 复盘草稿 `daily/<日>/retro.md` | 昨日复盘草稿与实票结算缺；`/day` 昨日块空 |
-| `com.nutmeg.jczq.research`（待装载） | 10:00 | `research run` → `intake --write` → `jczq-build-reads`：全板每场深研与草稿 Read | 板上只剩 market-anchor 草稿；判读层实验零贡献 |
-| `com.nutmeg.day.brief`（待装载） | 12:00 / 14:20 / 18:35 | `day run --job brief`：日报 v1/v2/v3、待人决定、会话包 | `/day` 与 `/today` 读到旧报告 |
-| `com.nutmeg.day.broadcast`（待装载） | 每 10 分钟 | 截止前 30/10 分钟 Telegram 播报，明写默认空仓 | 截止无人提醒（26130 复发） |
+| `com.nutmeg.day.settle` | 09:45（须在 09:30 赛果回填之后） | `day run --job results` + `--job settle`：昨日赛果桥 → 实票结算 / rx 判定 / 复盘草稿 `daily/<日>/retro.md` | 昨日复盘草稿与实票结算缺；`/day` 昨日块空 |
+| `com.nutmeg.jczq.research` | 10:00 | `research run` → `intake --write` → `jczq-build-reads`：全板每场深研与草稿 Read | 板上只剩 market-anchor 草稿；判读层实验零贡献 |
+| `com.nutmeg.day.brief` | 12:00 / 14:20 / 18:35 | `day run --job brief`：日报 v1/v2/v3、待人决定、会话包 | `/day` 与 `/today` 读到旧报告 |
+| `com.nutmeg.day.broadcast` | 每 10 分钟 | 截止前 30/10 分钟 Telegram 播报，明写默认空仓 | 截止无人提醒（26130 复发） |
 
 排障先查 `launchctl list | grep nutmeg`，再查 `.nutmeg-data/logs/*.out.log` 与
 `*.err.log`。赛果回填 stdout 首行出现 `⚠️RESULTS_STALE` 时，按退出码 2 处理，

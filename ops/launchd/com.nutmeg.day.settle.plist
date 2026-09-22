@@ -21,10 +21,7 @@
 	<string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/day.settle.out.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
-		<key>Hour</key>
-		<integer>7</integer>
-		<key>Minute</key>
-		<integer>30</integer>
+		<key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer>
 	</dict>
 	<key>WorkingDirectory</key>
 	<string>/Users/jz71/Projects/Nutmeg</string>

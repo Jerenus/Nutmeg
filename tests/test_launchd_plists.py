@@ -3,7 +3,7 @@ from pathlib import Path
 
 PLISTS = Path("ops/launchd")
 EXPECTED = {
-    "com.nutmeg.day.settle": ("07:30", "day run --job results", "day run --job settle"),
+    "com.nutmeg.day.settle": ("09:45", "day run --job results", "day run --job settle"),
     "com.nutmeg.jczq.research": (
         "10:00", "research run --day", "research intake --day", "jczq-build-reads --day",
     ),
