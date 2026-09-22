@@ -69,6 +69,11 @@ project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg
 - "胜负彩 / 任九 / 26xxx 期方案" → RUNBOOK 泳道 B
 - "深度分析 / 混合投注 / X 串 Y / 审核我的方案" → 七阶段深研（`docs/jczq-mixed-bet-judge-process.md`，每场并行派深研 agent（Claude 侧为 jczq-match-analyst））
 
+## /today 会话入口（Codex 同规）
+
+对话前先读 `.nutmeg-data/daily/<日>/session.md` 与 `decisions.json`；不重跑已完成作业；从待人决定开始；
+每轮末尾报最近截止与剩余分钟并明写默认动作（空仓）；讨论用 `nutmeg day note` 落盘。全文见 `.claude/commands/today.md`。
+
 ### 知识层
 
 - 实体画像：store 的 League/Team `profile_notes`（`nutmeg decision-profile`），不靠 chat 记忆。

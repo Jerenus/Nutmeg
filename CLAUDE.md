@@ -20,6 +20,7 @@
 - "今天的 jczq 方案 / 今天竞彩怎么打 / 出今天的票 / today's bets" → RUNBOOK 泳道 A
 - "胜负彩 / 任九 / 26xxx 期方案" → RUNBOOK 泳道 B
 - "深度分析 / 混合投注 / X 串 Y / 审核我的方案" → 七阶段深研（`docs/jczq-mixed-bet-judge-process.md`，每场并行派 `jczq-match-analyst`）
+- "/today / 今天的结论 / 从今天开始" → 读 daily/<日>/session.md（`.claude/commands/today.md`）
 
 ## 知识层
 
