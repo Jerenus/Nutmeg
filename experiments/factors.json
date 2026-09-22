@@ -206,6 +206,54 @@
       "row_builder": null,
       "measure_only": true,
       "last_measured": null
+    },
+    {
+      "factor_id": "weakness_tag_side",
+      "rule_codes": [],
+      "rule_name": "情境层候选：封闭词典球队弱点标签（squad_in_flux/makeshift_fullback/rotation_risk…）",
+      "layer": "probability",
+      "claim": "带弱点标签的一方兑现率低于其价格。首读 110 场：方向反过来，带标签方超价 +5 到 +16pp，说明弱点被过度定价或是噪声。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_weakness_tag_rows",
+      "last_measured": null,
+      "note": "2026-09-22 由 Jun 提出「不同联赛/对手下的战意」；战意不是结构化字段，先以标签、轮换风险、休息天数三个可观察代理进入。"
+    },
+    {
+      "factor_id": "hole_unpriced_side",
+      "rule_codes": [],
+      "rule_name": "情境层候选：洞是否已被市场定价（研究 hole_location.priced_in）",
+      "layer": "probability",
+      "claim": "未定价的洞使该方兑现率低于价格，已定价的洞不再有效应。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_hole_unpriced_rows",
+      "last_measured": null,
+      "note": "8/08 铁律的可测形式：已定价≠免疫只对表达约束成立；概率层上这一项若为零，就是铁律的正面证据。"
+    },
+    {
+      "factor_id": "anchor_side_integrity",
+      "rule_codes": [
+        "C5",
+        "C13"
+      ],
+      "rule_name": "锚方完整度（按锚方胜，而非模态面）",
+      "layer": "probability",
+      "claim": "锚方完整度 PASS 时锚方兑现高于价格。首读 110 场：PASS −13pp、FAIL +5.5pp，与 09-18 闭环同向。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.noise_floor:_anchor_side_rows",
+      "last_measured": null,
+      "note": "与 anchor_integrity（模态面口径）并列，锚方口径更贴 RULEBOOK m-单选③ 的原意。"
     }
   ],
   "expression_rules": [

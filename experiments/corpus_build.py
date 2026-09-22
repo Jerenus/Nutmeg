@@ -363,7 +363,6 @@ def _research_labels(doc: dict | None) -> dict | None:
         nondirectional_flags=doc.get("nondirectional_flags") or [],
         license_questions=doc.get("license_questions") or {},
         crash_markers=doc.get("crash_markers") or [],
-        tracking_tags=[],
         precedents=[[x[0], x[2]] for x in (doc.get("precedents") or []) if len(x) >= 3],
         # ↓ research 独有，legs-base 没有
         death_three_proofs={
@@ -389,8 +388,39 @@ def _research_labels(doc: dict | None) -> dict | None:
         hole_location_side=hole.get("side") if controlled_hole else None,
         hole_location_priced_in=hole.get("priced_in") if controlled_hole else None,
         anchor_side=doc.get("anchor_side"),
+        # 情境/战意层（2026-09-22 接入，只转录不判断）：封闭词典的球队标签、追踪标签、
+        # 轮换风险与休息天数。战意本身不是结构化字段，只以这些可观察代理进入。
+        team_tags=_team_tags(doc.get("team_tags")),
+        tracking_tags=[_tag_name(t) for t in (doc.get("tracking_tags") or []) if _tag_name(t)],
+        rotation_risk=_schedule_field(doc, "rotation_risk"),
+        rest_days=_schedule_field(doc, "rest_days"),
         label_source="research",
     )
+
+
+def _team_tags(tags: object) -> dict:
+    if not isinstance(tags, dict):
+        return {}
+    return {
+        side: [_tag_name(t) for t in (tags.get(side) or []) if _tag_name(t)]
+        for side in ("home", "away")
+    }
+
+
+def _schedule_field(doc: dict, key: str):
+    schedule = doc.get("schedule")
+    return schedule.get(key) if isinstance(schedule, dict) else None
+
+
+def _tag_name(tag: object) -> str | None:
+    if isinstance(tag, str):
+        return tag
+    if isinstance(tag, dict):
+        value = tag.get("tag") or tag.get("name")
+        return str(value) if value else None
+    if isinstance(tag, (list, tuple)) and tag and isinstance(tag[0], str):
+        return tag[0]
+    return None
 
 
 def _merge_postmortem(labels: dict | None, postmortem: dict | None) -> dict | None:

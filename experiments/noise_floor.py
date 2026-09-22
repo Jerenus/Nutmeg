@@ -343,6 +343,76 @@ def _belief_offset_rows(rows: list[dict]) -> list[dict]:
     return output
 
 
+WEAKNESS_TAGS = frozenset(
+    {
+        "buildup_fragile", "finishing_broken", "high_line_exposed", "late_collapse",
+        "low_block_breaker_weak", "makeshift_fullback", "new_cb_pairing", "new_gk",
+        "no_natural_striker", "pivot_absent", "rotation_risk", "set_piece_weak",
+        "squad_in_flux", "coach_first_games", "dressing_room_noise",
+    }
+)
+
+
+def _side_rows(rows: list[dict], pick) -> list[dict]:
+    """Team-side factor: for each side with a label block, factor = pick(labels, side)
+    (None → skip); outcome = that side won; expected = that side's fair."""
+    output: list[dict] = []
+    for row in rows:
+        labels = row.get("labels") or {}
+        fair = row.get("fair") or {}
+        if not labels or len(fair) != 3:
+            continue
+        for side in ("home", "away"):
+            value = pick(labels, side)
+            if value is None:
+                continue
+            output.append(
+                {
+                    "factor": value,
+                    "face_hit": int(row.get("actual") == _FACE_CODE[side]),
+                    "fair": fair[side],
+                    "provably_prospective": row.get("provably_prospective"),
+                }
+            )
+    return output
+
+
+def _weakness_tag_rows(rows: list[dict]) -> list[dict]:
+    """Rows with team_tags on either side; factor = 1 when this side carries any
+    weakness tag from the closed lexicon."""
+    def pick(labels, side):
+        tags = labels.get("team_tags")
+        if not isinstance(tags, dict) or not any(tags.get(s) for s in ("home", "away")):
+            return None
+        return int(bool(set(tags.get(side) or []) & WEAKNESS_TAGS))
+    return _side_rows(rows, pick)
+
+
+def _hole_unpriced_rows(rows: list[dict]) -> list[dict]:
+    """Rows with a controlled hole_location; factor = 1 for the side that carries an
+    unpriced hole, 0 for the side that carries a priced hole; sides without a hole skip."""
+    def pick(labels, side):
+        unit, hole_side, priced = (
+            labels.get("hole_location_unit"), labels.get("hole_location_side"),
+            labels.get("hole_location_priced_in"),
+        )
+        if unit in (None, "none") or hole_side not in (side, "both") or priced is None:
+            return None
+        return int(not priced)
+    return _side_rows(rows, pick)
+
+
+def _anchor_side_rows(rows: list[dict]) -> list[dict]:
+    """Anchor side only: factor = integrity pass(1)/fail(0); outcome = anchor side won."""
+    def pick(labels, side):
+        if labels.get("anchor_side") != side:
+            return None
+        if labels.get("anchor_integrity") not in ("pass", "fail"):
+            return None
+        return int(labels["anchor_integrity"] == "pass")
+    return _side_rows(rows, pick)
+
+
 _FACTORS = {
     "c7_live_precedent": (
         _c7_rows,
@@ -383,6 +453,18 @@ _FACTORS = {
     "belief_offset_anchor": (
         _belief_offset_rows,
         "belief-moved rows; offset >= 5pp on belief modal face = 1; outcome = that face",
+    ),
+    "weakness_tag_side": (
+        _weakness_tag_rows,
+        "side-level; any closed-lexicon weakness team_tag on this side = 1; outcome = side won",
+    ),
+    "hole_unpriced_side": (
+        _hole_unpriced_rows,
+        "side carrying a controlled hole; unpriced = 1, priced = 0; outcome = side won",
+    ),
+    "anchor_side_integrity": (
+        _anchor_side_rows,
+        "anchor side only; integrity pass = 1 / fail = 0; outcome = anchor side won",
     ),
 }
 
