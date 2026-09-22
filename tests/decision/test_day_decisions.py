@@ -63,3 +63,10 @@ def test_write_decisions(tmp_path: Path):
     path = write_decisions(tmp_path, "2026-09-23", rows)
     assert path.name == "decisions.json"
     assert json.loads(path.read_text(encoding="utf-8"))[0]["id"]
+
+
+def test_failed_job_is_dropped_once_a_later_run_succeeds(tmp_path: Path):
+    timeline = [{"job": "brief", "exit": 1, "summary": "boom"},
+                {"job": "brief", "exit": 0, "summary": "ok"}]
+    ids = {r["id"] for r in build_decisions(_brief(), timeline, data_dir=tmp_path, now=NOW)}
+    assert "job:brief" not in ids

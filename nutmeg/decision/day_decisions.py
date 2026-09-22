@@ -82,7 +82,10 @@ def build_decisions(
             "deadline": None, "default_action": "看 latest.md 后决定是否 --force 重跑",
             "status": "open", "source": "rsi-loop",
         })
-    for job in timeline:
+    latest_per_job: dict[str, dict] = {}
+    for job in timeline:  # 只看每个作业最近一次；早先失败、后来成功的不再列
+        latest_per_job[str(job.get("job"))] = job
+    for job in latest_per_job.values():
         if job.get("exit", 0) != 0:
             rows.append({"id": f"job:{job['job']}", "kind": "failed_job",
                          "subject": f"day 作业 {job['job']} 失败：{job.get('summary', '')[:120]}",
