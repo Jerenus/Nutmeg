@@ -1,0 +1,88 @@
+"""`nutmeg day`：每日对象 daily/<日>/ —— 先跑完、再对话。
+
+设计：docs/superpowers/specs/2026-09-22-daily-operator-surface-design.md
+"""
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+
+import typer
+
+import nutmeg.interfaces.cli as _cli
+
+day_app = typer.Typer(help="每日对象 daily/<日>：settle / brief / session 作业、状态、讨论")
+_cli.app.add_typer(day_app, name="day")
+
+_DATE = typer.Option(None, "--date", help="业务日 YYYY-MM-DD，默认今天")
+_DATA_DIR = typer.Option(Path(".nutmeg-data"), "--data-dir")
+_JOB = typer.Option(..., "--job", help="settle | brief | session")
+_FORCE = typer.Option(False, "--force", help="settle 已有 retro.md 也重跑")
+_DRY = typer.Option(False, "--dry-run", help="只打印子进程命令，不执行、不写时间线")
+
+
+def _now() -> datetime:
+    return datetime.now().astimezone()
+
+
+def _ctx(date: str | None, data_dir: Path):
+    from nutmeg.decision.day_runner import DayContext, default_runner
+
+    return DayContext(
+        root=Path(__file__).resolve().parents[3],
+        data_dir=Path(data_dir).expanduser().resolve(),
+        date=date or _now().date().isoformat(),
+        runner=default_runner,
+        now=_now,
+    )
+
+
+@day_app.command("run")
+def run(job: str = _JOB, date: str | None = _DATE, data_dir: Path = _DATA_DIR,
+        force: bool = _FORCE, dry_run: bool = _DRY) -> None:
+    """跑一个作业并把结果追加到 daily/<日>/timeline.json。"""
+    from nutmeg.decision.day_runner import JOBS, planned_commands, run_job
+
+    if job not in JOBS:
+        typer.echo(f"day error: 未知作业 {job!r}；可用：{', '.join(JOBS)}")
+        raise typer.Exit(code=1)
+    ctx = _ctx(date, data_dir)
+    if dry_run:
+        for cmd in planned_commands(ctx, job):
+            typer.echo("    " + " ".join(cmd))
+        if job != "settle":
+            typer.echo(f"    [{job}] 纯 Python 作业，不起子进程")
+        return
+    record = run_job(ctx, job, force=force)
+    typer.echo(f"day {ctx.date} {job}: {record.summary} (exit={record.exit})")
+    for row in record.commands:
+        typer.echo(f"    [{row['exit']}] {row['cmd'][:80]} · {row['tail'][:120]}")
+    if record.exit != 0:
+        raise typer.Exit(code=1)
+
+
+@day_app.command("status")
+def status(date: str | None = _DATE, data_dir: Path = _DATA_DIR) -> None:
+    """打印当日时间线（每行带时间证据）。"""
+    from nutmeg.decision.day_timeline import read_timeline
+
+    ctx = _ctx(date, data_dir)
+    rows = read_timeline(ctx.data_dir, ctx.date)
+    if not rows:
+        typer.echo(f"{ctx.date}: 尚无作业记录（{ctx.out_dir}）")
+        return
+    for r in rows:
+        typer.echo(f"{r['finished_at']}  {r['job']:8} exit={r['exit']}  {r['summary'][:100]}")
+
+
+@day_app.command("note")
+def note(text: str = typer.Option(..., "--text"), obj: str = typer.Option("", "--obj"),
+         who: str = typer.Option("jun", "--who"), date: str | None = _DATE,
+         data_dir: Path = _DATA_DIR) -> None:
+    """把一句讨论追加进 daily/<日>/discussion.jsonl（页面同步显示）。"""
+    from nutmeg.decision.day_session import append_discussion
+
+    ctx = _ctx(date, data_dir)
+    path = append_discussion(ctx.data_dir, ctx.date, who=who, text=text, obj=obj,
+                             at=_now().isoformat(timespec="seconds"))
+    typer.echo(f"记入 {path}")
