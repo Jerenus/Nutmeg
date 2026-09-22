@@ -1,0 +1,137 @@
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from nutmeg.decision.day_brief import compile_brief, current_issue, render_brief_md, write_brief
+
+BJ = timezone(timedelta(hours=8))
+NOW = datetime(2026, 9, 23, 12, 0, tzinfo=BJ)
+
+
+def _w(path: Path, doc) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+
+
+def _fixture(tmp_path: Path) -> tuple[Path, Path]:
+    data = tmp_path / "data"
+    root = tmp_path / "root"
+    day = data / "jczq" / "daily" / "2026-09-23"
+    _w(day / "jczq-legs-base.json", {"day": "2026-09-23", "legs": {
+        "周三001": {
+            "match_id": "match-a", "name": "阿森纳 vs 切尔西", "competition": "英超",
+            "kickoff_bj": "2026-09-23T19:30:00+08:00", "home_team": "阿森纳", "away_team": "切尔西",
+            "fair": {"home": 0.52, "draw": 0.26, "away": 0.22}, "hhad_line": -1,
+            "judgment_tier": "deep_research", "face_status": {"3": {"status": "alive"}},
+            "anchor_integrity": "pass", "confidence": 4,
+            "license_questions": {"q1_spine": True}, "directional_flags": [],
+            "nondirectional_flags": ["information_asymmetry"], "crash_markers": [],
+            "precedents": [], "team_tags": [], "tracking_tags": [],
+        },
+        "周三002": {
+            "match_id": "match-b", "name": "热刺 vs 富勒姆", "competition": "英超",
+            "kickoff_bj": "2026-09-23T22:00:00+08:00", "home_team": "热刺", "away_team": "富勒姆",
+            "fair": {"home": 0.45, "draw": 0.28, "away": 0.27}, "hhad_line": -1,
+            "judgment_tier": "price_only",
+        },
+    }})
+    _w(day / "reads.json", [
+        {"read_id": "read-1", "match_id": "match-a", "judge": "ai:jczq-analyst", "status": "draft",
+         "judgment_tier": "deep_research", "confidence": 4,
+         "prior": {"home": 0.52, "draw": 0.26, "away": 0.22},
+         "belief": {"home": 0.58, "draw": 0.24, "away": 0.18}},
+        {"read_id": "read-2", "match_id": "match-b", "judge": "market-anchor", "status": "draft",
+         "judgment_tier": "price_only", "confidence": 1,
+         "prior": {"home": 0.45, "draw": 0.28, "away": 0.27},
+         "belief": {"home": 0.45, "draw": 0.28, "away": 0.27}},
+    ])
+    _w(day / "research-周三001.json", {"summary": "阿森纳主力齐整",
+                                      "captured_at": "2026-09-23T10:20:00+08:00",
+                                      "anchor_side": "home", "hole_location": None,
+                                      "schedule": {"rotation_risk": "low", "rest_days": 6}})
+    _w(day / "research-run-2026-09-23.json", {"day": "2026-09-23", "matches": [
+        {"code": "周三001", "status": "done"}, {"code": "周三002", "status": "skipped_budget"}]})
+    _w(day / "price-band-周三001.json", {"fair_open": {"home": 0.50}, "fair_now": {"home": 0.52},
+                                        "drift_pp": 2.0, "book_disagreement_pp": 1.1})
+    _w(day / "closing_odds.json", {"周三001": {"book_count": 9,
+                                              "updated_at_max": "2026-09-23T11:00:00+08:00"}})
+    _w(data / "analytics" / "team_strength.json", {"teams": {
+        "阿森纳": {"n": 6, "record": "5-1-0", "resid_shrunk": 0.4, "market_strength": 0.61,
+                "last5_resid": 0.3}}})
+    _w(data / "analytics" / "rsi-loop" / "2026-09-23.json", {
+        "human_actions": ["因子 C11：propose_zero"], "failed_steps": [],
+        "proposals": [{"factor_id": "C11", "decision": "propose_zero"}], "verdicts": [],
+        "grades": []})
+    _w(data / "zucai" / "26132-issue.json", {"issue_id": "26132",
+                                             "sale_deadline": "2026-09-23T21:00:00+08:00"})
+    _w(data / "zucai" / "26132-prep-morning.json", {"issue": "26132", "slot": "morning",
+                                                   "captured_at": "2026-09-23T11:00:00+08:00",
+                                                   "n_matches": 14})
+    _w(data / "zucai" / "26132-tiers.json", {"issue": "26132", "tiers": {"1": "T1"},
+                                             "wind": {"regime": "hot"}, "tiers_hash": "abc"})
+    _w(data / "zucai" / "26132-frontier-renjiu.json", {"strict_max_p": 0.02, "points": [
+        {"k": 0, "p_all": 0.05, "notes": 8, "stake_yuan": 16, "shape": "9x1", "narrowings": []}]})
+    _w(root / "experiments" / "factors.json", {"factors": [
+        {"factor_id": "C11", "layer": "probability", "current_weight_pp": 0,
+         "rule_name": "价格带"}]})
+    return data, root
+
+
+def test_current_issue_prefers_issue_whose_deadline_is_ahead(tmp_path: Path):
+    data, _ = _fixture(tmp_path)
+    (data / "zucai" / "26131-issue.json").write_text(
+        json.dumps({"issue_id": "26131", "sale_deadline": "2026-09-20T21:00:00+08:00"}),
+        encoding="utf-8")
+    assert current_issue(data / "zucai", now=NOW) == "26132"
+
+
+def test_compile_brief_joins_every_source_into_cards(tmp_path: Path):
+    data, root = _fixture(tmp_path)
+    brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
+    cards = {c["code"]: c for c in brief["jczq"]["matches"]}
+    a = cards["周三001"]
+    assert a["market"]["drift_pp"] == 2.0 and a["market"]["closing_books"] == 9
+    assert a["strength"]["home"]["record"] == "5-1-0" and a["strength"]["away"] is None
+    assert a["research"]["status"] == "done" and a["research"]["prospective"] is True
+    assert a["read"]["judge"] == "ai:jczq-analyst" and a["read"]["moved_pp"] == 6.0
+    assert a["ladder"] == "偏移"
+    b = cards["周三002"]
+    assert b["research"]["status"] == "skipped_budget" and b["ladder"] == "跟市场"
+    assert brief["jczq"]["counts"] == {"matches": 2, "deep_research": 1, "price_only": 1,
+                                       "drafts": 2}
+    assert brief["zucai"]["issue"] == "26132"
+    assert brief["zucai"]["sale_deadline"].startswith("2026-09-23T21:00")
+    assert brief["zucai"]["tiers"]["wind"]["regime"] == "hot"
+    assert brief["zucai"]["frontier"]["renjiu"]["points"][0]["p_all"] == 0.05
+    assert brief["rsi"]["human_actions"] == ["因子 C11：propose_zero"]
+    assert brief["factors"][0] == {"factor_id": "C11", "layer": "probability",
+                                   "current_weight_pp": 0, "rule_name": "价格带",
+                                   "decision": "propose_zero"}
+    assert brief["errors"] == []
+
+
+def test_compile_brief_degrades_block_by_block(tmp_path: Path):
+    brief = compile_brief(data_dir=tmp_path / "none", date="2026-09-23", root=tmp_path, now=NOW)
+    assert brief["jczq"]["matches"] == [] and brief["zucai"]["issue"] is None
+    assert brief["rsi"] is None and brief["factors"] == []
+    assert any("jczq-legs-base.json" in e for e in brief["errors"])
+
+
+def test_research_after_kickoff_is_not_prospective(tmp_path: Path):
+    data, root = _fixture(tmp_path)
+    p = data / "jczq" / "daily" / "2026-09-23" / "research-周三001.json"
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    doc["captured_at"] = "2026-09-23T20:00:00+08:00"
+    p.write_text(json.dumps(doc), encoding="utf-8")
+    brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
+    assert brief["jczq"]["matches"][0]["research"]["prospective"] is False
+
+
+def test_render_and_write_brief(tmp_path: Path):
+    data, root = _fixture(tmp_path)
+    brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
+    md = render_brief_md(brief)
+    assert "# 当日报告 · 2026-09-23" in md and "周三001" in md and "26132" in md
+    assert "只解释已产生的判断" in md
+    path = write_brief(data, "2026-09-23", brief)
+    assert path.name == "brief.json" and (path.parent / "brief.md").exists()
