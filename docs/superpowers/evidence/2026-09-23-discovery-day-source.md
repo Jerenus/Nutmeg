@@ -36,6 +36,6 @@
 
 时机：shadow 库 `~/nutmeg-shadow` 封存世界为 0，无任何 sealed manifest 引用旧 hash，代价为零。已登记 baseline 的 `validation_result.pilot_contract_hash` 仍是旧值——只作信息记录，没有任何校验读它（录制器只比对 policy 的 `source_artifact_hash`，世界封存时重新盖当前 pilot hash）。删测试 9 条（全部只驱动已删的数据库源），加拒绝旧绑定测试 1 条；全量 3032 通过。
 
-## 后续（spec §5）
+## 后续（spec §5）——已于 2026-09-23 提前完成
 
-首个真实世界封存后：退役 operator_v2 内核残余（`product/jczq_*`、`operator_{contracts,lanes,artifacts,legacy_import}`、`workflow jczq-*`），把生成器与审计器搬进 `nutmeg/discovery/`，契约 `authoritative_workflow.generator` 走 D7 修订重冻结。
+operator_v2 内核残余三批全部退役（6e11560 / fa7d24a，见 `evidence/2026-09-22-project-cleanup.md` §5.4）；生成器与审计器已在 `nutmeg/discovery/`；契约重冻结见上节。首个真实世界仍待一块 ≥2 场 had 的板。

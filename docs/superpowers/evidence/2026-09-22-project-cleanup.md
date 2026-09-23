@@ -85,3 +85,14 @@ Jun 选 A：8788 应用连同 product 级联退役（1189f48，169 文件 ≈5.9
 - 顺带发现两处，留 Jun 裁：
   - `services/jczq_value_wiring.build_jczq_value_bridge` 只剩测试引用（CLI 只用 zucai wiring；`zucai_value_wiring` 还从它导 `season_for_date`）——可把 `season_for_date` 挪到 zucai wiring 后退役整个模块。
   - **CLV 轴的收盘快照入库已死**：内核 `market_snapshots` 最后一条 `closing` 是 2026-08-23（`read_time` 到今天 4,143 条）。唯一入库函数 `ontology_adapter._capture_closing_v2` 找的是 `bold_odds_closing.json`，而每日目录里实际落的是 `closing_odds.json`，且 v2 close 路径已删——函数只被 `tests/decision/test_closing_report_adapter.py` 养着。`analytics/{forecast,factor}_projection` 读 `closing_fair` 算 CLV，因此 08-23 后 CLV 恒空。选项：(a) `day.settle` 09:45 顺手把前一日 `closing_odds.json` 按 `snapshot_kind="closing"` 入库（改文件名即可复活）；(b) 接受 CLV 只在 titan007 终盘语料里算，删掉该函数与测试。
+
+### 5.4 operator_v2 残余批次 2–3（2026-09-23，同日完成）
+
+- **批次 2**（6e11560）：生成器 `product/operator_candidates` → `discovery/candidates.py`（逐字）；审计器 `_audit_candidate` 等 → `discovery/audit.py`；数据库输入源整体删除（`read_structural_input{,_from_database}`、`--source-db`、录制器 `source_kind`），`--source-day` 成唯一输入；试点契约 `generator` 重冻结（hash `842c96bc…` → `d468ca51…`，shadow 库 0 封存世界，零代价；详见 `evidence/2026-09-23-discovery-day-source.md`）。全量 3032。
+- **批次 3**（fa7d24a）：`product/operator_{workers,contracts,lanes}`（≈4,400 行）与只测它们的 6 个测试文件；`repository.py` 删两个无调用方的 slate/schedule 读法。本体 operator 测试改为直接调 Action（`tests/ontology/operator/action_drivers.py`），26111 足彩谱系夹具独立成 `zucai_replay_lineage.py`，候选审计测试搬到 `tests/discovery/test_audit.py`；`nutmeg/ontology/operator` 覆盖率前后同为 91%。全量 2981。
+- `nutmeg/product/` 只剩 `repository.py`（`ProductReadRepository`，rsi/research/decision CLI 在用）与 `operator_runtime.py`（`OntologyWriterLease`）。
+- **风险实录**：launchd 从工作树跑，批次 2 编辑中途 14:26 的 `day.broadcast` 撞到半迁移的 import 退出 1；下一轮 10 分钟后自愈，当天两条截止播报（13:05/13:25）已在此前发出。教训：大迁移期间要么先 `launchctl unload` 相关 job，要么在 worktree 里做。
+- **批次 3 子代理点出的三处，留 Jun 裁**：
+  1. `ProtectedTicketActions.bind_operator_candidate_auditor` / `_operator_current_audit` 钩子在生产里没人绑（唯一实现 `audit_current_candidate` 随 worker 删除）——要么把它重建在 `discovery/audit.py` 并接线，要么退役钩子。
+  2. 四个本体 Action 现在零生产调用方：`generate_ticket_candidate_set`、`settle_task`、`freeze_market_prior_baseline`、`link_operator_task_evidence_freeze`——按「不因测试而活」规则是下一批候选，但它们是内核 handler，先确认是否在未来规划（足彩结算 `settle_task` 与实票登记链有关系）。
+  3. 丢掉一条覆盖：hhad 结算线从基线进入候选票腿的 worker 胶水（基线半段仍有测试）。
