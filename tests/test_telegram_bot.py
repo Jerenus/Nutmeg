@@ -464,7 +464,7 @@ def test_bot_handles_renjiu_natural_language() -> None:
             }
 
     workflow = StubRenjiuWorkflow()
-    adapter = BotAdapter(workflow=None, renjiu_workflow=workflow)
+    adapter = BotAdapter(renjiu_workflow=workflow)
 
     for message in ["今天任九方案", "做今天的14选9", "today's renjiu plan"]:
         response = adapter.handle_message(message)

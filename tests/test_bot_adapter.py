@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-
 import pytest
 
-from nutmeg.agents.router import QueryIntent
-from nutmeg.agents.workflow import MatchAnalysisAgentResult
-from nutmeg.domain.analysis import AnalysisEvidenceSummary, AnalysisJudgment, FixtureAnalysisResult
-from nutmeg.domain.fixtures import sample_fixtures
-from nutmeg.interfaces.bot.adapter import BotAdapter, UnsupportedBotCommandError, parse_bot_message
+from nutmeg.interfaces.bot.adapter import (
+    RETIRED_BRIEF_TEXT,
+    BotAdapter,
+    UnsupportedBotCommandError,
+    parse_bot_message,
+)
 
 
 def test_parse_bot_message_supports_brief_command() -> None:
@@ -41,91 +40,50 @@ def test_parse_bot_message_rejects_unsupported_or_incomplete_messages() -> None:
         parse_bot_message("/brief epl-001")
 
 
-def test_bot_adapter_renders_match_brief_response() -> None:
-    fixture = sample_fixtures("epl")[0]
-
-    class StubWorkflow:
-        def run(self, *, fixture_id: str, query: str):
-            return MatchAnalysisAgentResult(
-                fixture_id=fixture_id,
-                query=query,
-                status="succeeded",
-                nodes=["classify_intent", "analyze_match", "synthesize_result"],
-                executor="deterministic",
-                generated_synthesis="Lean Arsenal pre-match. Confidence: medium.",
-                analysis=FixtureAnalysisResult(
-                    fixture=fixture,
-                    intent=QueryIntent.DECISIONAL,
-                    query=query,
-                    evidence=AnalysisEvidenceSummary(
-                        tactical_summary=["Arsenal can press high."],
-                        snapshot_summary=["Arsenal squad edge."],
-                        odds_summary=["Market fair view leans Arsenal."],
-                        market_shape_summary=[],
-                        caveats=["Derby variance remains elevated."],
-                    ),
-                    judgment=AnalysisJudgment(
-                        verdict="Lean Arsenal pre-match.",
-                        core_reasons=["Pressing edge"],
-                        counterargument="Tottenham transition threat remains live.",
-                        confidence="medium",
-                    ),
-                    conflict_state="aligned",
-                    generated_at=fixture.kickoff_at,
-                ),
-            )
-
-    adapter = BotAdapter(workflow=StubWorkflow())
-    response = adapter.handle_message("/brief epl-001 Should I back Arsenal?")
+def test_bot_adapter_answers_brief_with_retired_notice() -> None:
+    response = BotAdapter().handle_message("/brief epl-001 Should I back Arsenal?")
 
     assert response.status == "succeeded"
-    assert "Arsenal vs Tottenham Hotspur" in response.text
-    assert "Lean Arsenal pre-match." in response.text
-    assert "Confidence: medium" in response.text
-    assert "Pressing edge" in response.text
-    assert "Derby variance remains elevated." in response.text
-    assert "classify_intent -> analyze_match -> synthesize_result" in response.text
+    assert response.text == RETIRED_BRIEF_TEXT
+    assert "已退役" in response.text
+    assert response.payload["mode"] == "retired"
     assert response.payload["fixture_id"] == "epl-001"
+    assert response.payload["sections"] == {}
+    assert response.error is None
 
 
-def test_bot_adapter_returns_failure_response_for_workflow_errors() -> None:
-    class StubWorkflow:
-        def run(self, *, fixture_id: str, query: str):
-            return MatchAnalysisAgentResult(
-                fixture_id=fixture_id,
-                query=query,
-                status="failed",
-                nodes=["classify_intent", "analyze_match"],
-                error="Not enough evidence for a direct call.",
-            )
+def test_bot_adapter_brief_does_not_invoke_fallback_provider() -> None:
+    class StubFallback:
+        def respond(self, message: str, *, error: str | None = None) -> str:  # pragma: no cover
+            raise AssertionError("fallback should not run for a retired /brief")
 
-    response = BotAdapter(workflow=StubWorkflow()).handle_message(
+    response = BotAdapter(fallback_provider=StubFallback()).handle_message(
         "/brief epl-001 Should I back Arsenal?"
     )
 
+    assert response.payload["mode"] == "retired"
+
+
+def test_bot_adapter_returns_failure_for_unsupported_without_fallback() -> None:
+    response = BotAdapter().handle_message("/odds epl-001")
+
     assert response.status == "failed"
-    assert response.error == "Not enough evidence for a direct call."
-    assert "Not enough evidence for a direct call." in response.text
-    assert asdict(response)["payload"]["sections"] == {}
+    assert response.error is not None
+    assert "Unsupported bot command" in response.text
+    assert response.payload["sections"] == {}
 
 
 def test_bot_adapter_uses_fallback_for_unsupported_natural_language() -> None:
-    class StubWorkflow:
-        def run(self, *, fixture_id: str, query: str):  # pragma: no cover
-            raise AssertionError("workflow should not run for unsupported natural language")
-
     class StubFallback:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str | None]] = []
 
         def respond(self, message: str, *, error: str | None = None) -> str:
             self.calls.append((message, error))
-            return "今晚优先看热门比赛列表，然后用 /brief fixture_id 提问。"
+            return "今晚优先看热门比赛列表，然后用 /renjiu 拿方案。"
 
     fallback = StubFallback()
-    response = BotAdapter(workflow=StubWorkflow(), fallback_provider=fallback).handle_message(
-        "今天有哪些热门比赛？"
-    )
+    response = BotAdapter(fallback_provider=fallback).handle_message("今天有哪些热门比赛？")
 
     assert response.status == "succeeded"
     assert "热门比赛列表" in response.text
@@ -139,24 +97,25 @@ def test_bot_adapter_uses_fallback_for_unsupported_natural_language() -> None:
 
 
 def test_bot_adapter_start_returns_deterministic_help_without_fallback() -> None:
-    class StubWorkflow:
-        def run(self, *, fixture_id: str, query: str):  # pragma: no cover
-            raise AssertionError("workflow should not run for /start")
-
-    response = BotAdapter(workflow=StubWorkflow()).handle_message("/start")
+    response = BotAdapter().handle_message("/start")
 
     assert response.status == "succeeded"
-    assert "/brief <fixture_id> <query>" in response.text
-    assert "popular-matches" in response.text
+    assert "/jczq" in response.text
+    assert "/renjiu" in response.text
     assert "telegram-bot-run" in response.text
+    assert "popular-matches" not in response.text
     assert response.payload["mode"] == "help"
 
 
-def test_bot_adapter_routes_jczq_daily_revision_to_workflow() -> None:
-    class StubBriefWorkflow:
-        def run(self, *, fixture_id: str, query: str):  # pragma: no cover
-            raise AssertionError("brief workflow should not run for /jczq")
+def test_bot_adapter_reports_unconfigured_jczq_workflow() -> None:
+    response = BotAdapter().handle_message("/jczq")
 
+    assert response.status == "failed"
+    assert response.payload["mode"] == "jczq_daily"
+    assert "not configured" in response.text
+
+
+def test_bot_adapter_routes_jczq_daily_revision_to_workflow() -> None:
     class StubJczqWorkflow:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str | None]] = []
@@ -170,9 +129,7 @@ def test_bot_adapter_routes_jczq_daily_revision_to_workflow() -> None:
             }
 
     workflow = StubJczqWorkflow()
-    response = BotAdapter(workflow=StubBriefWorkflow(), jczq_workflow=workflow).handle_message(
-        "/jczq revise 规避大众盘口"
-    )
+    response = BotAdapter(jczq_workflow=workflow).handle_message("/jczq revise 规避大众盘口")
 
     assert response.status == "succeeded"
     assert "规避大众盘口" in response.text
@@ -181,10 +138,6 @@ def test_bot_adapter_routes_jczq_daily_revision_to_workflow() -> None:
 
 
 def test_bot_adapter_routes_jczq_natural_language_revision_to_workflow() -> None:
-    class StubBriefWorkflow:
-        def run(self, *, fixture_id: str, query: str):  # pragma: no cover
-            raise AssertionError("brief workflow should not run for JCZQ natural language")
-
     class StubJczqWorkflow:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str | None]] = []
@@ -198,7 +151,7 @@ def test_bot_adapter_routes_jczq_natural_language_revision_to_workflow() -> None
             }
 
     workflow = StubJczqWorkflow()
-    response = BotAdapter(workflow=StubBriefWorkflow(), jczq_workflow=workflow).handle_message(
+    response = BotAdapter(jczq_workflow=workflow).handle_message(
         "今天竞彩不要比分，提高到100倍，规避大众盘口"
     )
 
@@ -208,10 +161,6 @@ def test_bot_adapter_routes_jczq_natural_language_revision_to_workflow() -> None
 
 
 def test_bot_adapter_routes_jczq_natural_language_final_to_workflow() -> None:
-    class StubBriefWorkflow:
-        def run(self, *, fixture_id: str, query: str):  # pragma: no cover
-            raise AssertionError("brief workflow should not run for JCZQ final")
-
     class StubJczqWorkflow:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str | None]] = []
@@ -225,9 +174,7 @@ def test_bot_adapter_routes_jczq_natural_language_final_to_workflow() -> None:
             }
 
     workflow = StubJczqWorkflow()
-    response = BotAdapter(workflow=StubBriefWorkflow(), jczq_workflow=workflow).handle_message(
-        "把今天竞彩足球最终方案发我"
-    )
+    response = BotAdapter(jczq_workflow=workflow).handle_message("把今天竞彩足球最终方案发我")
 
     assert response.status == "succeeded"
     assert workflow.calls == [("final", None)]

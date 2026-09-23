@@ -6,7 +6,6 @@ from typing import Any
 import httpx
 
 from nutmeg.config.settings import AppSettings
-from nutmeg.domain.analysis import FixtureAnalysisResult
 
 
 class PortkeySynthesisError(RuntimeError):
@@ -49,12 +48,13 @@ class OpenAiBotFallbackProvider:
                     {
                         'role': 'system',
                         'content': (
-                            'You are Nutmeg, a private football analysis bot. '
+                            'You are Nutmeg, a private football betting operations bot. '
                             'Reply in the user language, be concise, and do not invent '
-                            'live match facts. If the user asks for matches, explain how '
-                            'to use `popular-matches` and `/brief <fixture_id> <query>`. '
-                            'If a deterministic Nutmeg command failed, explain the failure '
-                            'and give the next actionable command.'
+                            'live match facts. If the user asks for plans, explain how '
+                            'to use `/jczq`, `/renjiu`, or the local `nutmeg today` / '
+                            'decision-web surfaces. If a deterministic Nutmeg command '
+                            'failed, explain the failure and give the next actionable '
+                            'command.'
                         ),
                     },
                     {
@@ -80,9 +80,9 @@ class OpenAiBotFallbackProvider:
             'operator_message': message,
             'deterministic_error': error,
             'available_commands': [
-                'popular-matches --league epl --days 3',
-                '/brief <fixture_id> <query>',
-                'today-briefs --sort popularity',
+                '/jczq',
+                '/jczq revise <想法>',
+                '/renjiu',
             ],
         }
         return json.dumps(payload, ensure_ascii=False, sort_keys=True)
@@ -114,6 +114,13 @@ class OpenAiBotFallbackProvider:
 
 
 class PortkeySynthesisProvider:
+    """Portkey chat-completions client.
+
+    The v0 match-brief ``synthesize()`` path was retired on 2026-09-23; the
+    class stays because ``services.psychology.io.PortkeyLLMCompleter`` reuses
+    its configured ``_client`` / ``_api_key`` / ``_model`` / ``_extract_text``.
+    """
+
     def __init__(
         self,
         *,
@@ -131,65 +138,6 @@ class PortkeySynthesisProvider:
     def close(self) -> None:
         if self._owns_client:
             self._client.close()
-
-    def synthesize(self, analysis: FixtureAnalysisResult) -> str:
-        response = self._client.post(
-            '/chat/completions',
-            headers={
-                'authorization': f'Bearer {self._api_key}',
-                'content-type': 'application/json',
-            },
-            json={
-                'model': self._model,
-                'messages': [
-                    {
-                        'role': 'system',
-                        'content': (
-                            'You are Nutmeg. Write concise football analysis grounded only '
-                            'in the provided deterministic evidence. You must mention the '
-                            'deterministic verdict and confidence exactly.'
-                        ),
-                    },
-                    {
-                        'role': 'user',
-                        'content': self._analysis_prompt(analysis),
-                    },
-                ],
-                'temperature': 0.2,
-            },
-        )
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise PortkeySynthesisError(
-                f'Portkey synthesis request failed ({response.status_code}).'
-            ) from exc
-        text = self._extract_text(response.json())
-        if not text:
-            raise PortkeySynthesisError('Portkey did not return synthesis text.')
-        return text
-
-    def _analysis_prompt(self, analysis: FixtureAnalysisResult) -> str:
-        payload: dict[str, Any] = {
-            'fixture': {
-                'fixture_id': analysis.fixture.fixture_id,
-                'home_team': analysis.fixture.home_team,
-                'away_team': analysis.fixture.away_team,
-            },
-            'query': analysis.query,
-            'verdict': analysis.judgment.verdict,
-            'confidence': analysis.judgment.confidence,
-            'core_reasons': analysis.judgment.core_reasons,
-            'counterargument': analysis.judgment.counterargument,
-            'evidence': {
-                'tactical': analysis.evidence.tactical_summary,
-                'snapshot': analysis.evidence.snapshot_summary,
-                'odds': analysis.evidence.odds_summary,
-                'market_shape': analysis.evidence.market_shape_summary,
-                'caveats': analysis.evidence.caveats,
-            },
-        }
-        return json.dumps(payload, ensure_ascii=True, sort_keys=True)
 
     def _extract_text(self, payload: Any) -> str | None:
         if not isinstance(payload, dict):

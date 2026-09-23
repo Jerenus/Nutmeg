@@ -122,7 +122,6 @@ def test_bot_runner_installs_handler_only_for_current_kernel(
         telegram_bot_token="telegram-secret",
         telegram_allowed_chat_ids="111",
     )
-    monkeypatch.setattr(cli_module, "build_agent_workflow", lambda: (None, None))
 
     healthy = cli_module.build_telegram_bot_runner(healthy_settings)
     unhealthy = cli_module.build_telegram_bot_runner(unhealthy_settings)

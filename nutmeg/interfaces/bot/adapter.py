@@ -85,18 +85,25 @@ def parse_bot_message(text: str) -> BotCommand:
     )
 
 
+RETIRED_BRIEF_TEXT = "该功能已退役，请用 /today 或 decision-web。"
+
+
 class BotAdapter:
+    """Telegram command router for the bot.
+
+    The v0 match-brief analysis stack (``/brief <fixture_id> <query>``) was
+    retired on 2026-09-23; that intent now gets a fixed "retired" reply. The
+    adapter keeps ``/jczq``, ``/renjiu`` (plus their natural-language forms),
+    help, and the optional LLM fallback for unsupported messages.
+    """
+
     def __init__(
         self,
         *,
-        workflow,
-        payload_builder=None,
         fallback_provider=None,
         jczq_workflow=None,
         renjiu_workflow=None,
     ) -> None:
-        self._workflow = workflow
-        self._payload_builder = payload_builder or _default_payload_builder
         self._fallback_provider = fallback_provider
         self._jczq_workflow = jczq_workflow
         self._renjiu_workflow = renjiu_workflow
@@ -131,15 +138,20 @@ class BotAdapter:
             return self._handle_jczq(command)
         if command.name == "renjiu":
             return self._handle_renjiu(command)
+        return self._retired_brief_response(command)
 
-        result = self._workflow.run(fixture_id=command.fixture_id, query=command.query)
-        payload = self._payload_builder(result)
-        if result.status == "failed":
-            error = str(payload.get("error") or result.error or "Bot command failed.")
-            if self._fallback_provider is not None:
-                return self._fallback_response(command.raw_text, error=error)
-            return BotResponse(status="failed", text=error, payload=payload, error=error)
-        return BotResponse(status="succeeded", text=self._render_brief(payload), payload=payload)
+    def _retired_brief_response(self, command: BotCommand) -> BotResponse:
+        return BotResponse(
+            status="succeeded",
+            text=RETIRED_BRIEF_TEXT,
+            payload={
+                "status": "succeeded",
+                "mode": "retired",
+                "fixture_id": command.fixture_id,
+                "query": command.query,
+                "sections": {},
+            },
+        )
 
     def _handle_jczq(self, command: BotCommand) -> BotResponse:
         if self._jczq_workflow is None:
@@ -206,39 +218,6 @@ class BotAdapter:
                 "sections": {},
             },
         )
-
-    def _render_brief(self, payload: dict[str, Any]) -> str:
-        fixture = payload.get("fixture") or {}
-        judgment = payload.get("judgment") or {}
-        sections = payload.get("sections") or {}
-        agent = payload.get("agent") or {}
-        lines = [
-            f"Match Brief: {fixture.get('home_team')} vs {fixture.get('away_team')}",
-            f"Verdict: {judgment.get('verdict')}",
-            f"Confidence: {judgment.get('confidence')}",
-        ]
-        self._extend_section(lines, "Core reasons", sections.get("core_reasons") or [])
-        self._extend_section(lines, "Tactical evidence", sections.get("tactical_evidence") or [])
-        self._extend_section(lines, "Market evidence", sections.get("market_evidence") or [])
-        self._extend_section(lines, "Caveats", sections.get("caveats") or [])
-        if payload.get("generated_synthesis"):
-            lines.extend(["Generated synthesis:", str(payload["generated_synthesis"])])
-        nodes = agent.get("nodes") or []
-        if nodes:
-            lines.append(f"Agent nodes: {' -> '.join(nodes)}")
-        return "\n".join(lines)
-
-    def _extend_section(self, lines: list[str], title: str, items: list[str]) -> None:
-        if not items:
-            return
-        lines.append(f"{title}:")
-        lines.extend(f"- {item}" for item in items)
-
-
-def _default_payload_builder(result) -> dict[str, Any]:
-    from nutmeg.interfaces.cli import build_match_brief_payload
-
-    return build_match_brief_payload(result)
 
 
 def _is_help_message(text: str) -> bool:
@@ -348,11 +327,10 @@ def _help_text() -> str:
     return "\n".join(
         [
             "Nutmeg bot is online.",
-            "Use `/brief <fixture_id> <query>` for a match brief.",
             "Use `/jczq` for today’s dynamic竞彩足球 plan, `/jczq revise <想法>` to recalc.",
             "Use `今天任九方案` or `/renjiu` for today's three-tier 任选9 plan.",
-            "Find candidates locally with `popular-matches --league epl --days 3`.",
-            "For ranked daily candidates use `today-briefs --sort popularity`.",
+            "Ticket confirmations arrive as inline buttons; tap to confirm or reject.",
+            "The match brief (`/brief`) was retired — use `/today` or decision-web.",
             "This bot replies only when `telegram-bot-run` is running locally.",
         ]
     )

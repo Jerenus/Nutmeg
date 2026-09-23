@@ -1,6 +1,6 @@
 # ruff: noqa: F401 — this package ``__init__`` is the CLI namespace hub: imports,
 # factories, helpers and option singletons defined here are referenced by the
-# subsystem command modules (``zucai``/``telegram``/``odds``/...) via ``_cli.<name>``.
+# subsystem command modules (``zucai``/``telegram``/``decision``/...) via ``_cli.<name>``.
 """Nutmeg CLI package.
 
 ``cli.py`` was split into this package, organised by subsystem, with **no**
@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,13 +25,12 @@ import typer
 from rich.console import Console
 from sqlalchemy.orm import Session
 
-from nutmeg.agents.llm_provider import build_bot_fallback_provider, build_synthesis_provider
-from nutmeg.agents.workflow import MatchAnalysisAgentWorkflow
+from nutmeg.agents.llm_provider import build_bot_fallback_provider
 from nutmeg.config.settings import AppSettings, get_settings
-from nutmeg.data.api_football import ApiFootballClient, ApiFootballError
+from nutmeg.data.api_football import ApiFootballClient
 from nutmeg.data.open_meteo import OpenMeteoClient
 from nutmeg.data.soccerdata_client import SoccerDataClient
-from nutmeg.data.the_odds_api import TheOddsApiClient, TheOddsApiError
+from nutmeg.data.the_odds_api import TheOddsApiClient
 from nutmeg.data.transfermarkt import TransfermarktDataset
 from nutmeg.domain.odds import OddsProvider
 from nutmeg.interfaces.bot import (
@@ -43,12 +41,8 @@ from nutmeg.interfaces.bot import (
     TelegramPollingDaemon,
 )
 from nutmeg.notifications.wiring import build_notification_service
-from nutmeg.observability.langsmith import traced_operation
 from nutmeg.ontology import build_ontology_kernel
-from nutmeg.services.analysis import AnalysisService
-from nutmeg.services.evals import EvalDatasetNotFoundError, EvalService
-from nutmeg.services.odds import OddsFixtureNotFoundError, OddsSnapshotService
-from nutmeg.services.players import PlayerProfileService
+from nutmeg.services.odds import OddsSnapshotService
 from nutmeg.services.snapshot import FixtureSnapshotService
 from nutmeg.services.value import ValueBoardService
 from nutmeg.services.zucai import ZucaiValidationError, ZucaiWorkflowService
@@ -78,10 +72,6 @@ from nutmeg.storage.odds_repository import (
     DuckDbOddsEventRepository,
     DuckDbOddsHistoryRepository,
     DuckDbOddsProviderHealthRepository,
-)
-from nutmeg.storage.prediction_repository import (
-    PredictionNotFoundError,
-    SqlAlchemyPredictionRepository,
 )
 from nutmeg.storage.reference_repository import DuckDbReferenceRepository
 
@@ -147,37 +137,6 @@ def _build_state_session() -> Session:
     return Session(engine)
 
 
-def build_snapshot_service() -> tuple[FixtureSnapshotService, Session]:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    session = _build_state_session()
-    fixture_repository = DuckDbFixtureRepository(settings)
-    reference_repository = DuckDbReferenceRepository(settings)
-    weather_client = OpenMeteoClient(
-        geocoding_base_url=settings.open_meteo_geocoding_base_url,
-        weather_base_url=settings.open_meteo_weather_base_url,
-        reference_repository=reference_repository,
-    )
-    soccerdata_client = SoccerDataClient(database_path=settings.analytics_db_path)
-    transfermarkt_dataset = TransfermarktDataset(database_path=settings.analytics_db_path)
-    api_context_client = ApiFootballClient(
-        base_url=settings.api_football_base_url,
-        api_key=settings.api_football_key,
-    )
-    return (
-        FixtureSnapshotService(
-            fixture_repository=fixture_repository,
-            soccerdata_client=soccerdata_client,
-            transfermarkt_dataset=transfermarkt_dataset,
-            api_context_client=api_context_client,
-            reference_repository=reference_repository,
-            weather_client=weather_client,
-        ),
-        session,
-    )
-
-
 def build_odds_provider_client(
     settings,
     *,
@@ -209,28 +168,6 @@ def build_odds_provider_client(
             health_repository=DuckDbOddsProviderHealthRepository(settings),
         )
     raise ValueError(f"Unsupported odds provider `{settings.odds_provider}`.")
-
-
-def build_odds_service() -> tuple[OddsSnapshotService, Session]:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    session = _build_state_session()
-    fixture_repository = DuckDbFixtureRepository(settings)
-    odds_client = build_odds_provider_client(
-        settings,
-        fixture_repository=fixture_repository,
-        event_repository=DuckDbOddsEventRepository(settings),
-    )
-    odds_history_repository = DuckDbOddsHistoryRepository(settings)
-    return (
-        OddsSnapshotService(
-            fixture_repository=fixture_repository,
-            odds_client=odds_client,
-            odds_history_repository=odds_history_repository,
-        ),
-        session,
-    )
 
 
 def build_value_board_service() -> tuple[ValueBoardService, Session]:
@@ -276,29 +213,6 @@ def build_value_board_service() -> tuple[ValueBoardService, Session]:
     )
 
 
-def build_player_profile_service() -> tuple[PlayerProfileService, Session]:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    session = _build_state_session()
-    return (
-        PlayerProfileService(
-            database_path=settings.analytics_db_path,
-            reference_repository=DuckDbReferenceRepository(settings),
-        ),
-        session,
-    )
-
-
-def build_eval_service() -> EvalService:
-    return EvalService(dataset_dir=Path("nutmeg/evals"))
-
-
-def build_prediction_repository() -> tuple[SqlAlchemyPredictionRepository, Session]:
-    session = _build_state_session()
-    return SqlAlchemyPredictionRepository(session), session
-
-
 def build_zucai_workflow_service() -> ZucaiWorkflowService:
     settings = get_settings()
     ensure_storage_paths(settings)
@@ -329,24 +243,6 @@ def build_zucai_odds_sync_service() -> ZucaiOddsSyncService:
     return ZucaiOddsSyncService()
 
 
-def build_analysis_service() -> tuple[AnalysisService, Session | None]:
-    snapshot_service, session = build_snapshot_service()
-    odds_service, _ = build_odds_service()
-    return AnalysisService(snapshot_service=snapshot_service, odds_service=odds_service), session
-
-
-def build_agent_workflow() -> tuple[MatchAnalysisAgentWorkflow, Session | None]:
-    settings = get_settings()
-    analysis_service, session = build_analysis_service()
-    return (
-        MatchAnalysisAgentWorkflow(
-            analysis_service=analysis_service,
-            synthesis_provider=build_synthesis_provider(settings),
-        ),
-        session,
-    )
-
-
 def _build_zucai_value_bridge_for_daily(run_date: str):
     """Assemble the live value bridge for the Zucai daily report, or None.
 
@@ -365,53 +261,6 @@ def _build_zucai_value_bridge_for_daily(run_date: str):
     except Exception:  # noqa: BLE001 — degrade, never crash the daily report
         logger.warning("zucai value bridge wiring failed — degrading", exc_info=True)
         return None
-
-
-def build_match_brief_payload(result) -> dict[str, object]:
-    analysis = result.analysis
-    if result.status != "succeeded" or analysis is None:
-        return {
-            "fixture_id": result.fixture_id,
-            "query": result.query,
-            "status": result.status,
-            "fixture": None,
-            "judgment": None,
-            "evidence": None,
-            "agent": {
-                "executor": result.executor,
-                "nodes": result.nodes,
-            },
-            "generated_synthesis": result.generated_synthesis,
-            "sections": {},
-            "error": result.error or "Match brief could not be generated.",
-        }
-
-    evidence = analysis.evidence
-    sections = {
-        "core_reasons": analysis.judgment.core_reasons,
-        "snapshot_summary": evidence.snapshot_summary,
-        "tactical_evidence": evidence.tactical_summary,
-        "market_evidence": [*evidence.odds_summary, *evidence.market_shape_summary],
-        "caveats": evidence.caveats,
-    }
-    return {
-        "fixture_id": result.fixture_id,
-        "query": result.query,
-        "status": result.status,
-        "fixture": asdict(analysis.fixture),
-        "judgment": asdict(analysis.judgment),
-        "evidence": asdict(evidence),
-        "intent": analysis.intent.value,
-        "conflict_state": analysis.conflict_state,
-        "generated_at": analysis.generated_at.isoformat(),
-        "agent": {
-            "executor": result.executor,
-            "nodes": result.nodes,
-        },
-        "generated_synthesis": result.generated_synthesis,
-        "sections": sections,
-        "error": result.error,
-    }
 
 
 def parse_telegram_allowed_chat_ids(raw_value: str | None) -> set[int]:
@@ -446,7 +295,6 @@ def build_telegram_bot_runner(settings) -> TelegramBotRunner:
     allowed_chat_ids = parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
     if not allowed_chat_ids:
         raise ValueError("NUTMEG_TELEGRAM_ALLOWED_CHAT_IDS is not configured.")
-    workflow, _session = build_agent_workflow()
     client = TelegramBotClient(
         token=settings.telegram_bot_token,
         base_url=settings.telegram_api_base_url,
@@ -472,12 +320,12 @@ def build_telegram_bot_runner(settings) -> TelegramBotRunner:
     return TelegramBotRunner(
         client=client,
         bot_adapter=BotAdapter(
-            workflow=workflow,
-            payload_builder=build_match_brief_payload,
             fallback_provider=build_bot_fallback_provider(settings),
             # M2 cutover: the v1 Poisson daily advisor (jczq_daily) was retired,
             # so the bot no longer wires a jczq_workflow — BotAdapter degrades
-            # `/jczq` to a "not configured" reply. renjiu handling stays.
+            # `/jczq` to a "not configured" reply. The v0 match-brief analysis
+            # stack (`/brief`) was retired on 2026-09-23; the adapter answers it
+            # with a fixed "retired" reply. renjiu handling stays.
             renjiu_workflow=ZucaiRenjiuBotWorkflow(
                 service=build_zucai_renjiu_daily_service(),
                 dry_run=False,
@@ -618,7 +466,6 @@ from nutmeg.interfaces.cli import decision as decision  # noqa: E402
 from nutmeg.interfaces.cli import discovery as discovery  # noqa: E402
 from nutmeg.interfaces.cli import migration as migration  # noqa: E402
 from nutmeg.interfaces.cli import notifications as notifications  # noqa: E402
-from nutmeg.interfaces.cli import odds as odds  # noqa: E402
 from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402
 from nutmeg.interfaces.cli import ontology_evidence as ontology_evidence  # noqa: E402
 from nutmeg.interfaces.cli import ontology_ingest as ontology_ingest  # noqa: E402
