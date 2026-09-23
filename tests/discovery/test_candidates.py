@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from nutmeg.product.operator_candidates import (
+from nutmeg.discovery.candidates import (
     CandidateGenerationInput,
     CandidateSpaceLimitError,
     CandidateStructureTemplate,
@@ -581,6 +581,7 @@ def test_zucai_candidate_forbids_settlement_line() -> None:
 def test_26111_u864_family_replays_exact_recorded_probabilities() -> None:
     fixture_path = (
         Path(__file__).parents[1]
+        / "product"
         / "fixtures"
         / "operator"
         / "26111-u864-candidates.json"

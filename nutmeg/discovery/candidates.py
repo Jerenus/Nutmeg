@@ -2,6 +2,8 @@
 
 The caller supplies every offer, market, face bundle, and structure option. This module
 only enumerates that finite space and calculates exact comparison metrics.
+
+Moved verbatim from ``nutmeg.product.operator_candidates`` on 2026-09-23.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from nutmeg.product.operator_candidates import (
+from nutmeg.discovery.candidates import (
     CandidateGenerationInput,
     CandidateStructureTemplate,
     FaceBundleOption,

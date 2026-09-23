@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import multiprocessing
 import queue
 import sqlite3
@@ -13,13 +12,13 @@ from decimal import Decimal
 from pathlib import Path
 from time import monotonic
 from typing import Callable, Mapping
-from urllib.parse import quote
 
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError as SqlAlchemyOperationalError
 
 from nutmeg.discovery.contracts import canonical_hash as contract_hash
 from nutmeg.discovery.contracts import load_pilot_contract
+from nutmeg.discovery.day_inputs import day_fingerprint, read_structural_input_from_day
 from nutmeg.discovery.environment import (
     ContinueBatch,
     Observation,
@@ -31,11 +30,7 @@ from nutmeg.discovery.environment import (
     validate_action,
 )
 from nutmeg.discovery.online_adapter import ShardExecution, execute_template_shard
-from nutmeg.discovery.online_inputs import (
-    StructuralInputSnapshot,
-    read_structural_input_from_database,
-    snapshot_payload,
-)
+from nutmeg.discovery.online_inputs import StructuralInputSnapshot, snapshot_payload
 from nutmeg.ontology.actions.discovery_world_actions import (
     CreateDiscoveryWorldRequest,
     DiscoveryWorldActions,
@@ -81,40 +76,13 @@ def board_size_stratum(offer_count: int) -> str:
     return "large"
 
 
-def _source_fingerprint(database: Path) -> str:
-    if not database.is_file():
-        raise ValueError("source database does not exist")
-    uri = f"file:{quote(str(database.resolve()), safe='/')}?mode=ro"
-    digest = hashlib.sha256()
-    with sqlite3.connect(uri, uri=True) as connection:
-        connection.execute("PRAGMA query_only=ON")
-        tables = sorted(
-            name
-            for (name,) in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            if not name.startswith("sqlite_")
-        )
-        for name in tables:
-            digest.update(name.encode("utf-8"))
-            table_identifier = '"' + name.replace('"', '""') + '"'
-            columns = connection.execute(f"PRAGMA table_info({table_identifier})").fetchall()
-            order = ", ".join('"' + column[1].replace('"', '""') + '"' for column in columns)
-            for row in connection.execute(f"SELECT * FROM {table_identifier} ORDER BY {order}"):
-                digest.update(repr(row).encode("utf-8"))
-    return digest.hexdigest()
+def _fingerprint(source: Path) -> str:
+    """``source`` is a day directory (``<jczq_dir>/daily/<day>``): the only input source."""
+    return day_fingerprint(source)
 
 
-def _fingerprint(source: Path, source_kind: str) -> str:
-    if source_kind == "day":
-        from nutmeg.discovery.day_inputs import day_fingerprint
-
-        return day_fingerprint(source)
-    return _source_fingerprint(source)
-
-
-def _source_identity(source: Path, source_kind: str) -> str:
-    if source_kind == "day":
-        return f"day:{source.resolve()}"
-    return str(source.resolve())
+def _source_identity(source: Path) -> str:
+    return f"day:{source.resolve()}"
 
 
 def _committed(outcome) -> None:
@@ -266,15 +234,17 @@ def _validate_recording(
     fixture_only: bool = False,
     generation_request_id: str | None = None,
     approval: Mapping[str, object] | None = None,
-    source_kind: str = "database",
 ) -> tuple[object, dict[str, object], str]:
+    """``source_database`` is the day directory ``<jczq_dir>/daily/<day>``.
+
+    The name is kept for the frozen ``source_db`` approval-scope key and for the many
+    fixture-only callers that pass an inert path.
+    """
     if shadow_database.resolve() == source_database.resolve():
         raise ValueError("source and shadow stores must be distinct")
     if requested_at.tzinfo is None or requested_at.utcoffset() is None:
         raise ValueError("recording requires a timezone-aware time")
-    if not fixture_only and snapshot.source_identity != _source_identity(
-        source_database, source_kind
-    ):
+    if not fixture_only and snapshot.source_identity != _source_identity(source_database):
         raise ValueError("prospective world requires an attested source snapshot")
     if not fixture_only:
         if approval is None:
@@ -322,28 +292,21 @@ def _validate_recording(
             or policy.source_artifact_hash != contract_hash(load_baseline_policy(baseline_path))
         ):
             raise ValueError("approval operator must own the registered baseline")
-    before = _fingerprint(source_database, source_kind)
+    before = _fingerprint(source_database)
     if not fixture_only:
         if not generation_request_id:
             raise ValueError("prospective world requires a source request")
         try:
-            if source_kind == "day":
-                from nutmeg.discovery.day_inputs import read_structural_input_from_day
-
-                verified = read_structural_input_from_day(
-                    source_database.parent.parent,
-                    source_database.name,
-                    cutoff_at=snapshot.cutoff_at,
-                )
-            else:
-                verified = read_structural_input_from_database(
-                    source_database, generation_request_id, cutoff_at=snapshot.cutoff_at
-                )
+            verified = read_structural_input_from_day(
+                source_database.parent.parent,
+                source_database.name,
+                cutoff_at=snapshot.cutoff_at,
+            )
         except Exception as exc:
             raise ValueError("source request cannot be independently verified") from exc
         if verified.manifest_hash != snapshot.manifest_hash:
             raise ValueError("source request snapshot differs from frozen input")
-        if _fingerprint(source_database, source_kind) != before:
+        if _fingerprint(source_database) != before:
             raise ValueError("protected source changed during snapshot verification")
     if (
         engine.url.database is None
@@ -472,7 +435,6 @@ def record_shadow_world(
     fixture_only: bool = False,
     generation_request_id: str | None = None,
     approval: Mapping[str, object] | None = None,
-    source_kind: str = "database",
 ) -> RecordedWorld:
     pilot, manifest, before = _validate_recording(
         snapshot,
@@ -484,7 +446,6 @@ def record_shadow_world(
         fixture_only=fixture_only,
         generation_request_id=generation_request_id,
         approval=approval,
-        source_kind=source_kind,
     )
     world_id, root_id, run_id, actions = _create_world_and_run(
         snapshot,
@@ -622,7 +583,7 @@ def record_shadow_world(
             code="resource_overrun", artifact={"candidate_generation_count": known_candidates},
         )
         raise ValueError("candidate budget exceeded; shadow world remains unsealed")
-    after = _fingerprint(source_database, source_kind)
+    after = _fingerprint(source_database)
     if after != before:
         _record_hard_invariant(
             engine, actions, world_id=world_id, root_id=root_id, run_id=run_id,
@@ -708,7 +669,7 @@ def record_shadow_world(
                 idempotency_key=f"{world_id}:seal",
                 requested_at=requested_at,
                 protected_receipt=protected_receipt(
-                    before, _fingerprint(source_database, source_kind), world_id,
+                    before, _fingerprint(source_database), world_id,
                     policy_revision_id,
                 ),
             )
@@ -733,13 +694,11 @@ class OnlineRecordingEnvironment:
         generation_request_id: str | None = None,
         approval: Mapping[str, object] | None = None,
         controller=None,
-        source_kind: str = "database",
     ) -> None:
         self._snapshot = snapshot
         self._engine = engine
         self._shadow_database = shadow_database
         self._source_database = source_database
-        self._source_kind = source_kind
         self._policy_revision_id = policy_revision_id
         self._requested_at = requested_at
         self._fixture_only = fixture_only
@@ -768,7 +727,6 @@ class OnlineRecordingEnvironment:
             fixture_only=self._fixture_only,
             generation_request_id=self._generation_request_id,
             approval=self._approval,
-            source_kind=self._source_kind,
         )
         lineage = None
         if self._controller is not None:
@@ -1010,7 +968,7 @@ class OnlineRecordingEnvironment:
         if self._terminal:
             raise ValueError("online world is terminal")
         validate_action(self.observation(), action, self._pilot)
-        after = _fingerprint(self._source_database, self._source_kind)
+        after = _fingerprint(self._source_database)
         if after != self._source_before:
             _record_hard_invariant(
                 self._engine, self._actions, world_id=self._world_id, root_id=self._root_id,
@@ -1084,7 +1042,7 @@ class OnlineRecordingEnvironment:
                     requested_at=self._requested_at,
                     protected_receipt=protected_receipt(
                         self._source_before,
-                        _fingerprint(self._source_database, self._source_kind),
+                        _fingerprint(self._source_database),
                         self._world_id, self._policy_revision_id,
                     ),
                 )

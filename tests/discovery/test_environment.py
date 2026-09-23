@@ -88,7 +88,7 @@ def test_replay_and_online_expose_legal_actions_only_from_visible_frontier(tmp_p
         _snapshot(),
         engine=_rig(tmp_path),
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id="structural-baseline-v1",
         requested_at=T0,
         fixture_only=True,

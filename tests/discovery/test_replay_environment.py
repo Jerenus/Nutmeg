@@ -168,7 +168,7 @@ def test_d2_recorded_fixture_is_a_valid_replay_source(tmp_path):
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id="structural-baseline-v1",
         requested_at=T0,
         fixture_only=True,

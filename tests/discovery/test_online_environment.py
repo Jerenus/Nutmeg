@@ -17,7 +17,7 @@ def _online(tmp_path, *, fixture_only=True):
         _snapshot(),
         engine=_rig(tmp_path),
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id="structural-baseline-v1",
         requested_at=datetime(2026, 9, 21, 7, 1, tzinfo=UTC),
         fixture_only=fixture_only,
@@ -31,7 +31,7 @@ def test_online_environment_executes_only_after_visible_continuation(tmp_path):
         snapshot,
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id="structural-baseline-v1",
         requested_at=datetime(2026, 9, 21, 7, 1, tzinfo=UTC),
         fixture_only=True,
@@ -75,7 +75,7 @@ def test_authoritative_lineage_is_bound_into_new_world(tmp_path):
     controller = Controller("structural-baseline-v1", "canary", True, "a" * 64, "dep-1")
     online = OnlineRecordingEnvironment(
         _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id="structural-baseline-v1",
         requested_at=datetime(2026, 9, 21, 7, 1, tzinfo=UTC), fixture_only=True,
         controller=controller,
@@ -149,9 +149,9 @@ def test_online_environment_records_transient_retry_as_linked_attempt(tmp_path, 
 def test_online_retry_reserves_node_budget_for_remaining_batch_items(tmp_path, monkeypatch):
     from dataclasses import replace
 
+    from nutmeg.discovery.candidates import CandidateStructureTemplate
     from nutmeg.discovery.online_adapter import ShardExecution
     from nutmeg.discovery.online_inputs import freeze_structural_input
-    from nutmeg.product.operator_candidates import CandidateStructureTemplate
     from tests.discovery.test_online_inputs import _references
 
     base = _snapshot()
@@ -174,7 +174,7 @@ def test_online_retry_reserves_node_budget_for_remaining_batch_items(tmp_path, m
     )
     online = OnlineRecordingEnvironment(
         snapshot, engine=_rig(tmp_path), shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
         requested_at=datetime(2026, 9, 21, 7, 1, tzinfo=UTC), fixture_only=True,
     )
     root = online.reset().visible_node_ids[0]

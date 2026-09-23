@@ -23,6 +23,19 @@
 
 `tests/discovery` 231 + `tests/test_cli_discovery.py` 20 通过（含 day 源两条录制测试与三条 CLI 测试）；ruff 干净。
 
+## 契约重冻结（2026-09-23，spec §5 提前执行）
+
+生成器与审计器已搬进 `nutmeg/discovery/`：`candidates.py`（原 `product/operator_candidates.py` 逐字）与 `audit.py`（`_audit_candidate` / `_CandidateAuditOffer` / `_SUPPORTED_SETTLEMENT_MARKETS` / `_CANDIDATE_AUDIT_POLICY_VERSION` / `_digest`）。数据库输入源（`read_structural_input{,_from_database}`、`--source-db`、`source_kind`）整体删除，day 源成为唯一输入。
+
+试点契约 `authoritative_workflow.generator` 重冻结（无 shim，旧字符串在 `PilotContract` 里直接被拒）：
+
+| | generator | pilot_contract_hash |
+| --- | --- | --- |
+| 旧 | `nutmeg.product.operator_candidates:enumerate_band_candidates` | `842c96bce8745ff2ae6b2249ab7d8c5e1771fc7d693581952db01863d029f08f` |
+| 新 | `nutmeg.discovery.candidates:enumerate_band_candidates` | `d468ca51b721710fc5f4aab70b875f860887a0732439cdd7faa7504caa2bfb60` |
+
+时机：shadow 库 `~/nutmeg-shadow` 封存世界为 0，无任何 sealed manifest 引用旧 hash，代价为零。已登记 baseline 的 `validation_result.pilot_contract_hash` 仍是旧值——只作信息记录，没有任何校验读它（录制器只比对 policy 的 `source_artifact_hash`，世界封存时重新盖当前 pilot hash）。删测试 9 条（全部只驱动已删的数据库源），加拒绝旧绑定测试 1 条；全量 3032 通过。
+
 ## 后续（spec §5）
 
 首个真实世界封存后：退役 operator_v2 内核残余（`product/jczq_*`、`operator_{contracts,lanes,artifacts,legacy_import}`、`workflow jczq-*`），把生成器与审计器搬进 `nutmeg/discovery/`，契约 `authoritative_workflow.generator` 走 D7 修订重冻结。

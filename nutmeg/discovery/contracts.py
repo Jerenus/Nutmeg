@@ -16,7 +16,7 @@ class FrozenContract(BaseModel):
 
 class WorkflowBinding(FrozenContract):
     generator: Literal[
-        "nutmeg.product.operator_candidates:enumerate_band_candidates"
+        "nutmeg.discovery.candidates:enumerate_band_candidates"
     ]
     candidate_set_kind: Literal["judgment_bound"]
     generator_version: Literal["operator-candidate-v2-bands"]

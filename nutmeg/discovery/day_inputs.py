@@ -1,7 +1,7 @@
 """Discovery 世界输入 · day 源：从当天决策泳道三份文件冻结 StructuralInputSnapshot。
 
 设计：docs/superpowers/specs/2026-09-23-discovery-day-source-design.md §2。
-不读内核、不写任何文件；面码以生成器口径为准（``operator_candidates._FACE_ORDER`` = 3/1/0）。
+不读内核、不写任何文件；面码以生成器口径为准（``candidates._FACE_ORDER`` = 3/1/0）。
 """
 
 from __future__ import annotations
@@ -12,14 +12,14 @@ from datetime import timedelta, timezone
 from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import Path
 
-from nutmeg.discovery.online_inputs import StructuralInputSnapshot, freeze_structural_input
-from nutmeg.product.operator_candidates import (
+from nutmeg.discovery.audit import _CANDIDATE_AUDIT_POLICY_VERSION, _CandidateAuditOffer
+from nutmeg.discovery.candidates import (
     CandidateGenerationInput,
     CandidateStructureTemplate,
     FaceBundleOption,
     OfferCandidateInput,
 )
-from nutmeg.product.operator_workers import _CANDIDATE_AUDIT_POLICY_VERSION, _CandidateAuditOffer
+from nutmeg.discovery.online_inputs import StructuralInputSnapshot, freeze_structural_input
 
 BJ = timezone(timedelta(hours=8))
 FACE_CODE = {"home": "3", "draw": "1", "away": "0"}  # 生成器面码 3/1/0

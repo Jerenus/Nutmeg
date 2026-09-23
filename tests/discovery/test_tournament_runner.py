@@ -29,7 +29,7 @@ def test_explicit_replay_preparation_persists_missing_cells_once(tmp_path):
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id=policy.policy_revision_id,
         requested_at=T0,
         fixture_only=True,

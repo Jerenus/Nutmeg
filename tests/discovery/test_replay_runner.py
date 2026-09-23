@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from nutmeg.discovery.contracts import load_baseline_policy, load_pilot_contract
-from nutmeg.discovery.online_recorder import _source_fingerprint, record_shadow_world
+from nutmeg.discovery.day_inputs import day_fingerprint
+from nutmeg.discovery.online_recorder import record_shadow_world
 from nutmeg.discovery.replay_runner import run_online_baseline, run_registered_replay
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from tests.discovery.test_online_adapter import _snapshot
@@ -25,7 +26,7 @@ def test_registered_baseline_replay_persists_and_reproduces_isolated_trace(tmp_p
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id=POLICY.policy_revision_id,
         requested_at=T0,
         fixture_only=True,
@@ -35,14 +36,14 @@ def test_registered_baseline_replay_persists_and_reproduces_isolated_trace(tmp_p
             uow.discovery.world(recorded.world_id),
             uow.discovery.nodes_for_world(recorded.world_id),
         )
-    business_before = _source_fingerprint(tmp_path / "business.db")
+    source_before = day_fingerprint(tmp_path / "day-source")
     first = run_registered_replay(engine, recorded.world_id, POLICY, PILOT, seed=7, requested_at=T0)
     second = run_registered_replay(
         engine, recorded.world_id, POLICY, PILOT, seed=7, requested_at=T0
     )
     assert first.trace_hash == second.trace_hash
     assert first.selected_node_ids == second.selected_node_ids
-    assert _source_fingerprint(tmp_path / "business.db") == business_before
+    assert day_fingerprint(tmp_path / "day-source") == source_before
     with OntologyUnitOfWork(engine) as uow:
         assert len(uow.discovery.policy_replay_rounds(first.policy_replay_run_id)) == 1
         assert (
@@ -110,7 +111,7 @@ def test_registered_program_replays_sealed_fixture_without_live_work(tmp_path):
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id=POLICY.policy_revision_id,
         requested_at=T0,
         fixture_only=True,
@@ -210,7 +211,7 @@ def test_same_baseline_policy_operates_online_and_replay(tmp_path):
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy=POLICY,
         requested_at=T0,
         fixture_only=True,
@@ -249,7 +250,7 @@ def test_runner_replays_d2_linked_retry_without_synthesizing_branch(tmp_path, mo
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id=POLICY.policy_revision_id,
         requested_at=T0,
         fixture_only=True,

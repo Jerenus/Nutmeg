@@ -8,6 +8,12 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
+from nutmeg.discovery import audit as discovery_audit
+from nutmeg.discovery.candidates import (
+    CandidateDraft,
+    CandidateTicket,
+    CandidateTicketLeg,
+)
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.operator.decision_actions import (
     FaceBundleInput,
@@ -19,12 +25,6 @@ from nutmeg.ontology.operator.decision_actions import (
 )
 from nutmeg.ontology.operator.result_actions import OperatorResultActions
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product import operator_workers as operator_worker_module
-from nutmeg.product.operator_candidates import (
-    CandidateDraft,
-    CandidateTicket,
-    CandidateTicketLeg,
-)
 from nutmeg.product.operator_workers import CandidateGenerationWorker
 from tests.ontology.operator.test_candidate_actions import (
     CandidateFixture,
@@ -68,7 +68,7 @@ def test_candidate_audit_records_shared_dead_face_across_tickets() -> None:
         for index in (1, 2)
     )
 
-    findings = operator_worker_module._audit_candidate(
+    findings = discovery_audit._audit_candidate(
         CandidateDraft(
             tickets=tickets,
             stake_minor=400,
@@ -345,7 +345,7 @@ def test_worker_persists_deployment_audit_findings_for_every_candidate(
     fixture = _ready_fixture(tmp_path)
     _request_generation(fixture)
     monkeypatch.setitem(
-        operator_worker_module._SUPPORTED_SETTLEMENT_MARKETS,
+        discovery_audit._SUPPORTED_SETTLEMENT_MARKETS,
         "jczq",
         frozenset(),
     )

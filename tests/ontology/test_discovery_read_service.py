@@ -168,7 +168,7 @@ def test_readiness_uses_only_completed_d3_replay_metrics(tmp_path):
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id=policy.policy_revision_id,
         requested_at=datetime(2026, 9, 21, tzinfo=UTC),
         fixture_only=True,

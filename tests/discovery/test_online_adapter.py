@@ -4,15 +4,15 @@ from dataclasses import replace
 
 import pytest
 
-from nutmeg.discovery.online_adapter import execute_template_shard
-from nutmeg.discovery.online_inputs import freeze_structural_input
-from nutmeg.product.operator_candidates import (
+from nutmeg.discovery.audit import _CandidateAuditOffer
+from nutmeg.discovery.candidates import (
     CandidateAuditFinding,
     CandidateSpaceLimitError,
     CandidateStructureTemplate,
     enumerate_band_candidates,
 )
-from nutmeg.product.operator_workers import _CandidateAuditOffer
+from nutmeg.discovery.online_adapter import execute_template_shard
+from nutmeg.discovery.online_inputs import freeze_structural_input
 from tests.discovery.test_online_inputs import _freeze, _references
 
 

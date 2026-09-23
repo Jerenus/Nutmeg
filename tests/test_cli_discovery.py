@@ -237,31 +237,33 @@ def test_discovery_readiness_empty_store_is_read_only(tmp_path):
 
 
 def test_shadow_run_requires_separate_approval_without_creating_stores(tmp_path):
-    source = tmp_path / "source.db"
+    jczq = tmp_path / "jczq"
+    day = "2026-09-21"
     shadow = tmp_path / "shadow.db"
     result = runner.invoke(
         app,
         [
             "discovery",
             "shadow-run",
-            "--source-db",
-            str(source),
+            "--source-day",
+            day,
+            "--jczq-dir",
+            str(jczq),
             "--shadow-db",
             str(shadow),
-            "--generation-request-id",
-            "request-1",
             "--cutoff-at",
             "2026-09-21T07:00:00+00:00",
         ],
     )
     assert result.exit_code != 0
     assert "approval" in result.output.lower()
-    assert not source.exists()
+    assert not jczq.exists()
     assert not shadow.exists()
 
 
 def test_shadow_run_rejects_mismatched_scope_without_creating_store(tmp_path):
-    source = tmp_path / "source.db"
+    jczq = tmp_path / "jczq"
+    day = "2026-09-21"
     shadow = tmp_path / "shadow.db"
     approval = tmp_path / "approval.json"
     approval.write_text(
@@ -279,12 +281,12 @@ def test_shadow_run_rejects_mismatched_scope_without_creating_store(tmp_path):
         [
             "discovery",
             "shadow-run",
-            "--source-db",
-            str(source),
+            "--source-day",
+            day,
+            "--jczq-dir",
+            str(jczq),
             "--shadow-db",
             str(shadow),
-            "--generation-request-id",
-            "request-1",
             "--cutoff-at",
             "2026-09-21T07:00:00+00:00",
             "--approval-file",
@@ -293,12 +295,14 @@ def test_shadow_run_rejects_mismatched_scope_without_creating_store(tmp_path):
     )
     assert result.exit_code == 1
     assert "scope" in result.output
-    assert not source.exists()
+    assert not jczq.exists()
     assert not shadow.exists()
 
 
 def test_shadow_run_rejects_expired_prospective_cutoff(tmp_path):
-    source = tmp_path / "source.db"
+    jczq = tmp_path / "jczq"
+    day = "2026-09-04"
+    source = jczq / "daily" / day
     shadow = tmp_path / "shadow.db"
     approval = tmp_path / "approval.json"
     cutoff = "2026-09-04T07:00:00+00:00"
@@ -311,7 +315,7 @@ def test_shadow_run_rejects_expired_prospective_cutoff(tmp_path):
                 "scope": {
                     "source_db": str(source.resolve()),
                     "shadow_db": str(shadow.resolve()),
-                    "generation_request_id": "request-1",
+                    "generation_request_id": f"day:{day}",
                     "cutoff_at": cutoff,
                     "policy_revision_id": "structural-baseline-v1",
                 },
@@ -323,12 +327,12 @@ def test_shadow_run_rejects_expired_prospective_cutoff(tmp_path):
         [
             "discovery",
             "shadow-run",
-            "--source-db",
-            str(source),
+            "--source-day",
+            day,
+            "--jczq-dir",
+            str(jczq),
             "--shadow-db",
             str(shadow),
-            "--generation-request-id",
-            "request-1",
             "--cutoff-at",
             cutoff,
             "--approval-file",
@@ -337,7 +341,7 @@ def test_shadow_run_rejects_expired_prospective_cutoff(tmp_path):
     )
     assert result.exit_code == 1
     assert "expired" in result.output
-    assert not source.exists() and not shadow.exists()
+    assert not jczq.exists() and not shadow.exists()
 
 
 def test_register_baseline_creates_shadow_store_and_registers_incumbent(tmp_path):
@@ -409,7 +413,9 @@ def test_shadow_run_refuses_shadow_store_inside_production_data_directory(monkey
 
     production = tmp_path / "prod-data"
     (production / "ontology").mkdir(parents=True)
-    source = production / "ontology" / "ontology.db"
+    jczq = production / "jczq"
+    day = "2026-09-22"
+    source = jczq / "daily" / day
     shadow = production / "archive" / "shadow.db"
     monkeypatch.setattr(discovery_cli, "PRODUCTION_DATA_DIR", production)
     monkeypatch.setattr(discovery_cli, "datetime", _FrozenDatetime)
@@ -424,7 +430,7 @@ def test_shadow_run_refuses_shadow_store_inside_production_data_directory(monkey
                 "scope": {
                     "source_db": str(source.resolve()),
                     "shadow_db": str(shadow.resolve()),
-                    "generation_request_id": "request-1",
+                    "generation_request_id": f"day:{day}",
                     "cutoff_at": cutoff,
                     "policy_revision_id": "structural-baseline-v1",
                 },
@@ -434,9 +440,9 @@ def test_shadow_run_refuses_shadow_store_inside_production_data_directory(monkey
     result = runner.invoke(
         app,
         [
-            "discovery", "shadow-run", "--source-db", str(source), "--shadow-db", str(shadow),
-            "--generation-request-id", "request-1", "--cutoff-at", cutoff,
-            "--approval-file", str(approval),
+            "discovery", "shadow-run", "--source-day", day, "--jczq-dir", str(jczq),
+            "--shadow-db", str(shadow),
+            "--cutoff-at", cutoff, "--approval-file", str(approval),
         ],
     )
     assert result.exit_code == 1
@@ -523,25 +529,6 @@ def test_shadow_run_source_day_records_a_sealed_world(tmp_path):
     assert f"latest world: {payload['world_id']}" in status.output
 
 
-def test_shadow_run_rejects_both_source_db_and_source_day(tmp_path):
-    source = tmp_path / "source.db"
-    shadow = tmp_path / "shadow.db"
-    approval = tmp_path / "approval.json"
-    approval.write_text("{}", encoding="utf-8")
-    result = runner.invoke(
-        app,
-        [
-            "discovery", "shadow-run", "--source-db", str(source), "--source-day", "2026-09-23",
-            "--jczq-dir", str(tmp_path / "jczq"), "--shadow-db", str(shadow),
-            "--generation-request-id", "request-1", "--cutoff-at", "2026-09-23T04:00:00+00:00",
-            "--approval-file", str(approval),
-        ],
-    )
-    assert result.exit_code == 1
-    assert "exactly one" in result.output and "二选一" in result.output
-    assert not source.exists() and not shadow.exists()
-
-
 def test_shadow_run_requires_a_source(tmp_path):
     shadow = tmp_path / "shadow.db"
     approval = tmp_path / "approval.json"
@@ -553,6 +540,7 @@ def test_shadow_run_requires_a_source(tmp_path):
             "--cutoff-at", "2026-09-23T04:00:00+00:00", "--approval-file", str(approval),
         ],
     )
-    assert result.exit_code == 1
-    assert "exactly one" in result.output
+    assert result.exit_code != 0
+    assert "--source-day" in result.output
+    assert "missing option" in result.output.lower()
     assert not shadow.exists()

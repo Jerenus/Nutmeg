@@ -162,7 +162,7 @@ def test_registered_variant_replay_is_reproducible_on_sealed_fixture(tmp_path):
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id="structural-baseline-v1",
         requested_at=T0,
         fixture_only=True,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from dataclasses import asdict, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -13,7 +13,6 @@ from nutmeg.discovery.contracts import load_baseline_policy
 from nutmeg.discovery.online_adapter import ShardExecution
 from nutmeg.discovery.online_inputs import freeze_structural_input
 from nutmeg.discovery.online_recorder import (
-    _source_fingerprint,
     board_size_stratum,
     record_shadow_world,
     run_shard_isolated,
@@ -31,12 +30,6 @@ from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from tests.discovery.test_online_adapter import _snapshot
 from tests.discovery.test_online_inputs import _freeze, _references
-from tests.ontology.operator.test_candidate_actions import (
-    _generate,
-    _generation_request,
-    _ready_fixture,
-)
-from tests.ontology.operator.test_judgment_actions import AT
 from tests.ontology.test_discovery_repository import _policy
 
 BASELINE_PATH = (
@@ -48,8 +41,6 @@ T0 = datetime(2026, 9, 21, 7, 1, tzinfo=UTC)
 def _rig(tmp_path):
     engine = build_ontology_engine(tmp_path / "shadow.db")
     run_migrations(engine)
-    with sqlite3.connect(tmp_path / "business.db") as connection:
-        connection.execute("CREATE TABLE protected (id INTEGER PRIMARY KEY)")
     baseline = load_baseline_policy(BASELINE_PATH)
     policy = replace(
         _policy(baseline.policy_revision_id),
@@ -134,58 +125,13 @@ def test_isolated_shard_returns_frozen_result_without_database_access():
     assert result.artifact_manifest["shard"] == "1x1"
 
 
-def test_source_fingerprint_handles_quoted_table_names(tmp_path):
-    database = tmp_path / "source.db"
-    with sqlite3.connect(database) as connection:
-        connection.execute('CREATE TABLE "protected""table" (value TEXT)')
-        connection.execute('INSERT INTO "protected""table" VALUES (\'initial\')')
-    before = _source_fingerprint(database)
-    with sqlite3.connect(database) as connection:
-        connection.execute('UPDATE "protected""table" SET value = \'changed\'')
-    assert _source_fingerprint(database) != before
-
-
-def test_real_source_fixture_seals_shadow_without_business_mutation(tmp_path):
-    business_dir = tmp_path / "business"
-    business_dir.mkdir()
-    fixture = _ready_fixture(business_dir)
-    request = fixture.judgment.decision_actions.request_candidate_generation(
-        _generation_request(fixture)
-    )
-    request_id = request.result_refs[0].object_id
-    _generate(fixture, request_id=request_id)
-    source_db = business_dir / "ontology.db"
-    from nutmeg.discovery.online_inputs import read_structural_input_from_database
-
-    snapshot = read_structural_input_from_database(
-        source_db, request_id, cutoff_at=(AT + timedelta(seconds=10)).isoformat()
-    )
-    shadow_dir = tmp_path / "shadow"
-    shadow_dir.mkdir()
-    shadow_engine = _rig(shadow_dir)
-    before = _source_fingerprint(source_db)
-    result = record_shadow_world(
-        snapshot, engine=shadow_engine, shadow_database=shadow_dir / "shadow.db",
-        source_database=source_db, policy_revision_id="structural-baseline-v1",
-        requested_at=AT + timedelta(seconds=11), fixture_only=True,
-    )
-    assert _source_fingerprint(source_db) == before
-    with OntologyUnitOfWork(shadow_engine) as uow:
-        receipt = uow.discovery.protected_receipt(result.world_id)
-        assert receipt["before_hash"] == receipt["after_hash"] == before
-        assert receipt["policy_revision_id"] == "structural-baseline-v1"
-        assert uow.discovery.world_state(result.world_id) == "sealed"
-        assert len(uow.discovery.nodes_for_world(result.world_id)) >= 3
-        assert uow.discovery.world(result.world_id).provenance_mode == "historical_replay_source"
-
-
 def test_shadow_world_seals_complete_ordered_lineage(tmp_path):
     engine = _rig(tmp_path)
     result = record_shadow_world(
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id="structural-baseline-v1",
         requested_at=T0,
         fixture_only=True,
@@ -236,7 +182,7 @@ def test_unattested_fixture_cannot_claim_prospective_world(tmp_path):
             _snapshot(),
             engine=engine,
             shadow_database=tmp_path / "shadow.db",
-            source_database=tmp_path / "business.db",
+            source_database=tmp_path / "day-source",
             policy_revision_id="structural-baseline-v1",
             requested_at=T0,
         )
@@ -244,11 +190,11 @@ def test_unattested_fixture_cannot_claim_prospective_world(tmp_path):
 
 def test_attested_source_still_requires_explicit_approved_scope(tmp_path):
     engine = _rig(tmp_path)
-    snapshot = _freeze(source_identity=str((tmp_path / "business.db").resolve()))
+    snapshot = _freeze(source_identity=f"day:{(tmp_path / 'day-source').resolve()}")
     with pytest.raises(ValueError, match="approval"):
         record_shadow_world(
             snapshot, engine=engine, shadow_database=tmp_path / "shadow.db",
-            source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+            source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
             generation_request_id="request-1", requested_at=T0,
         )
 
@@ -267,8 +213,8 @@ def _approval(source, shadow):
 
 def test_approval_scope_must_match_exact_source_and_request(tmp_path):
     engine = _rig(tmp_path)
-    source = tmp_path / "business.db"
-    snapshot = _freeze(source_identity=str(source.resolve()))
+    source = tmp_path / "day-source"
+    snapshot = _freeze(source_identity=f"day:{source.resolve()}")
     approval = _approval(source, tmp_path / "shadow.db")
     approval["scope"]["generation_request_id"] = "different"
     with pytest.raises(ValueError, match="approval scope"):
@@ -281,14 +227,14 @@ def test_approval_scope_must_match_exact_source_and_request(tmp_path):
 
 def test_backdated_request_cannot_make_historical_input_prospective(tmp_path):
     engine = _rig(tmp_path)
-    source = tmp_path / "business.db"
+    source = tmp_path / "day-source"
     cutoff = "2026-09-04T07:00:00+00:00"
     references = tuple(
         {**reference, "captured_at": "2026-09-04T06:00:00+00:00"}
         for reference in _references()
     )
     snapshot = _freeze(
-        references=references, cutoff_at=cutoff, source_identity=str(source.resolve())
+        references=references, cutoff_at=cutoff, source_identity=f"day:{source.resolve()}"
     )
     approval = _approval(source, tmp_path / "shadow.db")
     approval["scope"]["cutoff_at"] = cutoff
@@ -305,37 +251,37 @@ def test_backdated_request_cannot_make_historical_input_prospective(tmp_path):
 def test_forged_source_identity_cannot_claim_prospective_world(tmp_path, monkeypatch):
     monkeypatch.setattr("nutmeg.discovery.online_recorder._utcnow", lambda: T0)
     engine = _rig(tmp_path)
-    forged = _freeze(source_identity=str((tmp_path / "business.db").resolve()))
+    forged = _freeze(source_identity=f"day:{(tmp_path / 'day-source').resolve()}")
     with pytest.raises(ValueError, match="source request"):
         record_shadow_world(
             forged, engine=engine, shadow_database=tmp_path / "shadow.db",
-            source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+            source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
             generation_request_id="request-1", requested_at=T0,
-            approval=_approval(tmp_path / "business.db", tmp_path / "shadow.db"),
+            approval=_approval(tmp_path / "day-source", tmp_path / "shadow.db"),
         )
 
 
 def test_source_change_during_verification_fails_before_world_create(tmp_path, monkeypatch):
-    monkeypatch.setattr("nutmeg.discovery.online_recorder._utcnow", lambda: T0)
-    engine = _rig(tmp_path)
-    source = tmp_path / "business.db"
-    snapshot = _freeze(source_identity=str(source.resolve()))
+    from tests.discovery.test_day_inputs import DAY
+
+    engine, _jczq, day_dir, snapshot, approval, now = _day_rig(tmp_path, monkeypatch)
 
     def change_source(*_args, **_kwargs):
-        with sqlite3.connect(source) as connection:
-            connection.execute("INSERT INTO protected (id) VALUES (1)")
+        (day_dir / "reads.json").write_text(
+            (day_dir / "reads.json").read_text(encoding="utf-8") + "\n", encoding="utf-8"
+        )
         return snapshot
 
     monkeypatch.setattr(
-        "nutmeg.discovery.online_recorder.read_structural_input_from_database",
+        "nutmeg.discovery.online_recorder.read_structural_input_from_day",
         change_source,
     )
     with pytest.raises(ValueError, match="protected source changed"):
         record_shadow_world(
             snapshot, engine=engine, shadow_database=tmp_path / "shadow.db",
-            source_database=source, policy_revision_id="structural-baseline-v1",
-            generation_request_id="request-1", requested_at=T0,
-            approval=_approval(source, tmp_path / "shadow.db"),
+            source_database=day_dir, policy_revision_id="structural-baseline-v1",
+            generation_request_id=f"day:{DAY}", requested_at=now,
+            approval=approval,
         )
     with OntologyUnitOfWork(engine) as uow:
         assert uow.discovery.counts()["discovery_world_count"] == 0
@@ -360,7 +306,7 @@ def test_failed_attempt_is_durable_and_no_solution_seals(tmp_path, monkeypatch):
         _snapshot(),
         engine=engine,
         shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db",
+        source_database=tmp_path / "day-source",
         policy_revision_id="structural-baseline-v1",
         requested_at=T0,
         fixture_only=True,
@@ -380,7 +326,7 @@ def test_adapter_crash_is_recorded_as_failed_attempt(tmp_path, monkeypatch):
     monkeypatch.setattr("nutmeg.discovery.online_recorder.execute_template_shard", crash)
     recorded = record_shadow_world(
         _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
         requested_at=T0, fixture_only=True,
     )
     with OntologyUnitOfWork(engine) as uow:
@@ -418,7 +364,7 @@ def test_transient_failure_retry_is_a_new_linked_attempt(tmp_path, monkeypatch):
     monkeypatch.setattr("nutmeg.discovery.online_recorder.execute_template_shard", flaky)
     recorded = record_shadow_world(
         _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
         requested_at=T0, fixture_only=True,
     )
     assert len(calls) == 2
@@ -458,7 +404,7 @@ def test_timeout_with_unknown_cost_still_gets_one_linked_retry(tmp_path, monkeyp
     monkeypatch.setattr("nutmeg.discovery.online_recorder.execute_template_shard", flaky)
     recorded = record_shadow_world(
         _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
         requested_at=T0, fixture_only=True,
     )
     assert len(calls) == 2
@@ -487,7 +433,7 @@ def test_lost_node_commit_response_retries_without_duplicate_execution(tmp_path,
     monkeypatch.setattr(DiscoveryWorldActions, "record_node", lost_response)
     recorded = record_shadow_world(
         _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
         requested_at=T0, fixture_only=True,
     )
     assert len([node_id for node_id in calls if node_id.endswith(":attempt:1")]) == 2
@@ -509,7 +455,7 @@ def test_invalid_adapter_artifact_is_failed_not_selectable(tmp_path, monkeypatch
     )
     recorded = record_shadow_world(
         _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
         requested_at=T0, fixture_only=True,
     )
     with OntologyUnitOfWork(engine) as uow:
@@ -534,7 +480,7 @@ def test_exhausted_wall_budget_is_recorded_in_stop_reason(tmp_path, monkeypatch)
     )
     recorded = record_shadow_world(
         _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
         requested_at=T0, fixture_only=True,
     )
     with OntologyUnitOfWork(engine) as uow:
@@ -558,7 +504,7 @@ def test_total_candidate_budget_exhaustion_preserves_unsealed_attempt(tmp_path, 
     with pytest.raises(ValueError, match="candidate budget"):
         record_shadow_world(
             _snapshot(), engine=engine, shadow_database=tmp_path / "shadow.db",
-            source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+            source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
             requested_at=T0, fixture_only=True,
         )
     with OntologyUnitOfWork(engine) as uow:
@@ -575,13 +521,13 @@ def test_changed_source_preserves_unsealed_diagnostics(tmp_path, monkeypatch):
     from nutmeg.discovery import online_recorder
 
     checks = iter(("before", "after"))
-    monkeypatch.setattr(online_recorder, "_source_fingerprint", lambda _path: next(checks))
+    monkeypatch.setattr(online_recorder, "day_fingerprint", lambda _path: next(checks))
     with pytest.raises(ValueError, match="protected source changed"):
         record_shadow_world(
             _snapshot(),
             engine=engine,
             shadow_database=tmp_path / "shadow.db",
-            source_database=tmp_path / "business.db",
+            source_database=tmp_path / "day-source",
             policy_revision_id="structural-baseline-v1",
             requested_at=T0,
             fixture_only=True,
@@ -614,14 +560,14 @@ def test_same_frozen_execution_has_same_sealed_hash_across_shadow_stores(tmp_pat
         engine = _rig(folder)
         results.append(record_shadow_world(
             _snapshot(), engine=engine, shadow_database=folder / "shadow.db",
-            source_database=folder / "business.db", policy_revision_id="structural-baseline-v1",
+            source_database=folder / "day-source", policy_revision_id="structural-baseline-v1",
             requested_at=T0, fixture_only=True,
         ).sealed_manifest_hash)
     assert results[0] == results[1]
 
 
 def test_completion_order_does_not_change_visibility_order(tmp_path, monkeypatch):
-    from nutmeg.product.operator_candidates import CandidateStructureTemplate
+    from nutmeg.discovery.candidates import CandidateStructureTemplate
 
     base = _snapshot()
     second = CandidateStructureTemplate(
@@ -659,7 +605,7 @@ def test_completion_order_does_not_change_visibility_order(tmp_path, monkeypatch
     engine = _rig(tmp_path)
     result = record_shadow_world(
         snapshot, engine=engine, shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
         requested_at=T0, fixture_only=True,
     )
     with OntologyUnitOfWork(engine) as uow:
@@ -672,7 +618,7 @@ def test_completion_order_does_not_change_visibility_order(tmp_path, monkeypatch
 
 
 def test_stop_selects_best_clean_node_for_each_band(tmp_path, monkeypatch):
-    from nutmeg.product.operator_candidates import CandidateStructureTemplate
+    from nutmeg.discovery.candidates import CandidateStructureTemplate
 
     base = _snapshot()
     second = CandidateStructureTemplate(
@@ -704,7 +650,7 @@ def test_stop_selects_best_clean_node_for_each_band(tmp_path, monkeypatch):
     engine = _rig(tmp_path)
     recorded = record_shadow_world(
         snapshot, engine=engine, shadow_database=tmp_path / "shadow.db",
-        source_database=tmp_path / "business.db", policy_revision_id="structural-baseline-v1",
+        source_database=tmp_path / "day-source", policy_revision_id="structural-baseline-v1",
         requested_at=T0, fixture_only=True,
     )
     assert recorded.selected_node_ids == (f"{recorded.world_id}:attempt:2",)
@@ -748,7 +694,6 @@ def test_day_source_records_a_world_and_reverifies_files(tmp_path, monkeypatch):
         snapshot, engine=engine, shadow_database=tmp_path / "shadow.db",
         source_database=day_dir, policy_revision_id="structural-baseline-v1",
         generation_request_id=f"day:{DAY}", requested_at=now, approval=approval,
-        source_kind="day",
     )
     assert world.world_id and world.sealed_manifest_hash
     assert day_fingerprint(day_dir) == before  # production directory was not written
@@ -777,14 +722,13 @@ def test_day_source_rejects_changed_files(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "nutmeg.discovery.day_inputs.read_structural_input_from_day", changed_read
+        "nutmeg.discovery.online_recorder.read_structural_input_from_day", changed_read
     )
     with pytest.raises(ValueError, match="source request snapshot differs"):
         record_shadow_world(
             snapshot, engine=engine, shadow_database=tmp_path / "shadow.db",
             source_database=day_dir, policy_revision_id="structural-baseline-v1",
             generation_request_id=f"day:{DAY}", requested_at=now, approval=approval,
-            source_kind="day",
         )
     with OntologyUnitOfWork(engine) as uow:
         assert uow.discovery.counts()["discovery_world_count"] == 0

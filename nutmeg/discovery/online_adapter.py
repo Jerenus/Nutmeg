@@ -6,15 +6,15 @@ from dataclasses import dataclass, replace
 from time import monotonic_ns
 from typing import Callable
 
-from nutmeg.discovery.contracts import PilotContract
-from nutmeg.discovery.online_inputs import StructuralInputSnapshot, snapshot_payload
-from nutmeg.ontology.discovery.models import canonical_hash
-from nutmeg.product.operator_candidates import (
+from nutmeg.discovery.audit import _audit_candidate
+from nutmeg.discovery.candidates import (
     BandCandidateGenerationResult,
     CandidateSpaceLimitError,
     enumerate_band_candidates,
 )
-from nutmeg.product.operator_workers import _audit_candidate
+from nutmeg.discovery.contracts import PilotContract
+from nutmeg.discovery.online_inputs import StructuralInputSnapshot, snapshot_payload
+from nutmeg.ontology.discovery.models import canonical_hash
 
 
 @dataclass(frozen=True, slots=True)

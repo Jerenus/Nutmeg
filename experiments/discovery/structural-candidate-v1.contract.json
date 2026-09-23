@@ -5,7 +5,7 @@
   "lane": "jczq",
   "mode": "shadow_only",
   "authoritative_workflow": {
-    "generator": "nutmeg.product.operator_candidates:enumerate_band_candidates",
+    "generator": "nutmeg.discovery.candidates:enumerate_band_candidates",
     "candidate_set_kind": "judgment_bound",
     "generator_version": "operator-candidate-v2-bands",
     "audit_policy_source": "candidate_set.audit_policy_version"

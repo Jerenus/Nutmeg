@@ -25,7 +25,7 @@ def _pilot() -> dict[str, object]:
         "lane": "jczq",
         "mode": "shadow_only",
         "authoritative_workflow": {
-            "generator": "nutmeg.product.operator_candidates:enumerate_band_candidates",
+            "generator": "nutmeg.discovery.candidates:enumerate_band_candidates",
             "candidate_set_kind": "judgment_bound",
             "generator_version": "operator-candidate-v2-bands",
             "audit_policy_source": "candidate_set.audit_policy_version",
@@ -169,6 +169,19 @@ def test_contracts_reject_unknown_fields_and_non_shadow_mode(tmp_path):
     path.write_text(json.dumps(bad), encoding="utf-8")
     with pytest.raises(ValidationError, match="shadow_only"):
         load_pilot_contract(path)
+
+
+def test_retired_operator_v2_generator_binding_is_rejected():
+    """The generator moved to nutmeg.discovery.candidates; the old path is not a shim."""
+    retired = {
+        **_pilot(),
+        "authoritative_workflow": {
+            **_pilot()["authoritative_workflow"],
+            "generator": "nutmeg.product.operator_candidates:enumerate_band_candidates",
+        },
+    }
+    with pytest.raises(ValidationError, match="nutmeg.discovery.candidates"):
+        PilotContract.model_validate(retired)
 
 
 def test_optimizer_gate_is_stricter_than_baseline_gate():
