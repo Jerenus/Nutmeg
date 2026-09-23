@@ -36,8 +36,6 @@
 顺带暴露：重跑时 `rsi fulfill --exp R0` 撞幂等键（同日同场第二次兑现被拒），与「rsi schedule 同日幂等」是同一族 bug，待修。
 
 
-2026-09-22 的四场已过开球，不能回放（T12）。今天 10:00 `com.nutmeg.jczq.research` 会用新契约跑 2026-09-23 板面；补记：每场 `stance` 原文、`reads.json` 里首条 `belief ≠ prior`、被 max turns 重试的场的 `attempt_errors`。
-
 ## 未做
 
 足彩泳道 `judgment-v1.json` 与本 schema 合流（它已有 `action / prescription / belief / adjustment_evidence_tiers`）。
