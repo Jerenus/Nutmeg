@@ -22,6 +22,7 @@ from nutmeg.discovery.contracts import (
     load_baseline_policy,
     load_pilot_contract,
 )
+from nutmeg.discovery.day_inputs import read_structural_input_from_day
 from nutmeg.discovery.iteration_contract import load_iteration_contract
 from nutmeg.discovery.online_inputs import read_structural_input_from_database
 from nutmeg.discovery.online_recorder import record_shadow_world
@@ -39,9 +40,15 @@ discovery_app = typer.Typer(
 )
 _cli.app.add_typer(discovery_app, name="discovery")
 DATA_DIR_OPTION = typer.Option(Path(".nutmeg-data"), "--data-dir")
-SOURCE_DB_OPTION = typer.Option(..., "--source-db")
+SOURCE_DB_OPTION = typer.Option(
+    None, "--source-db", help="operator_v2 kernel store to freeze (with --generation-request-id)"
+)
+SOURCE_DAY_OPTION = typer.Option(
+    None, "--source-day", help="business day YYYY-MM-DD under <jczq-dir>/daily/ to freeze"
+)
+JCZQ_DIR_OPTION = typer.Option(Path(".nutmeg-data/jczq"), "--jczq-dir")
 SHADOW_DB_OPTION = typer.Option(..., "--shadow-db")
-GENERATION_REQUEST_OPTION = typer.Option(..., "--generation-request-id")
+GENERATION_REQUEST_OPTION = typer.Option(None, "--generation-request-id")
 CUTOFF_OPTION = typer.Option(..., "--cutoff-at")
 APPROVAL_FILE_OPTION = typer.Option(..., "--approval-file")
 BY_OPTION = typer.Option(..., "--by", help="human operator identity recorded as created_by")
@@ -204,20 +211,42 @@ def register_baseline(by: str = BY_OPTION, data_dir: Path = DATA_DIR_OPTION) -> 
 
 @discovery_app.command("shadow-run")
 def shadow_run(
-    source_db: Path = SOURCE_DB_OPTION,
+    source_db: Path | None = SOURCE_DB_OPTION,
+    source_day: str | None = SOURCE_DAY_OPTION,
+    jczq_dir: Path = JCZQ_DIR_OPTION,
     shadow_db: Path = SHADOW_DB_OPTION,
-    generation_request_id: str = GENERATION_REQUEST_OPTION,
+    generation_request_id: str | None = GENERATION_REQUEST_OPTION,
     cutoff_at: str = CUTOFF_OPTION,
     approval_file: Path = APPROVAL_FILE_OPTION,
 ) -> None:
-    """Record one separately approved, pre-registered baseline in a shadow store."""
+    """Record one separately approved, pre-registered baseline in a shadow store.
+
+    The frozen input comes from exactly one source: `--source-db` (an operator_v2
+    kernel store, with `--generation-request-id`) or `--source-day` (the day's
+    decision-lane files under `<jczq-dir>/daily/<day>/`).
+    """
+    if (source_db is None) == (source_day is None):
+        typer.echo(
+            "discovery error: exactly one of --source-db / --source-day is required (二选一)",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    if source_db is not None and not generation_request_id:
+        typer.echo("discovery error: --source-db requires --generation-request-id", err=True)
+        raise typer.Exit(code=1)
     if not approval_file.is_file():
         typer.echo("discovery error: separate approval file is required", err=True)
         raise typer.Exit(code=1)
     try:
+        if source_day is not None:
+            source: Path = jczq_dir / "daily" / source_day
+            generation_request_id = f"day:{source_day}"
+        else:
+            assert source_db is not None
+            source = source_db
         approval = json.loads(approval_file.read_text(encoding="utf-8"))
         expected_scope = {
-            "source_db": str(source_db.resolve()),
+            "source_db": str(source.resolve()),
             "shadow_db": str(shadow_db.resolve()),
             "generation_request_id": generation_request_id,
             "cutoff_at": cutoff_at,
@@ -240,10 +269,13 @@ def shadow_run(
             raise ValueError("approval and cutoff must be prospective and timezone-aware")
         if datetime.now(UTC) - cutoff > timedelta(hours=24):
             raise ValueError("prospective cutoff expired; historical backfill is forbidden")
-        if source_db.resolve() == shadow_db.resolve():
+        if source.resolve() == shadow_db.resolve():
             raise ValueError("source and shadow stores must be distinct")
         reject_production_store(shadow_db)
-        if not source_db.is_file() or not shadow_db.is_file():
+        if source_day is not None:
+            if not source.is_dir() or not shadow_db.is_file():
+                raise ValueError("a pre-existing day directory and shadow database are required")
+        elif not source.is_file() or not shadow_db.is_file():
             raise ValueError("both pre-existing databases are required")
         service = _read_service(shadow_db)
         policy = service.policy_lineage("structural-baseline-v1")["policy"]
@@ -254,16 +286,20 @@ def shadow_run(
             or not policy["validation_result"].get("valid")
         ):
             raise ValueError("approved baseline is not operator-registered")
-        snapshot = read_structural_input_from_database(
-            source_db, generation_request_id, cutoff_at=cutoff_at
-        )
+        if source_day is not None:
+            snapshot = read_structural_input_from_day(jczq_dir, source_day, cutoff_at=cutoff_at)
+        else:
+            snapshot = read_structural_input_from_database(
+                source, generation_request_id, cutoff_at=cutoff_at
+            )
         engine = build_ontology_engine(shadow_db)
         try:
             result = record_shadow_world(
                 snapshot,
                 engine=engine,
                 shadow_database=shadow_db,
-                source_database=source_db,
+                source_database=source,
+                source_kind="day" if source_day is not None else "database",
                 policy_revision_id="structural-baseline-v1",
                 generation_request_id=generation_request_id,
                 requested_at=datetime.now(UTC),

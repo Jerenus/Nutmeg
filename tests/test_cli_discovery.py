@@ -442,3 +442,117 @@ def test_shadow_run_refuses_shadow_store_inside_production_data_directory(monkey
     assert result.exit_code == 1
     assert "production data directory" in result.output
     assert not source.exists() and not shadow.exists()
+
+
+def _prospective_day_fixture(tmp_path):
+    """Build today's day directory with reads/quotes captured a few minutes ago (BJT).
+
+    `shadow-run` checks `cutoff <= now` and `approved_at <= cutoff` against the real wall
+    clock, so the fixture must sit on today's business day with every reference (reads,
+    quotes and the board file's mtime) captured before a cutoff of `now - 1 minute`.
+    """
+    import os
+    from datetime import UTC, datetime, timedelta, timezone
+
+    from tests.discovery.test_day_inputs import _day
+
+    bj = timezone(timedelta(hours=8))
+    now = datetime.now(UTC)
+    captured = (now - timedelta(minutes=3)).astimezone(bj).replace(microsecond=0)
+    day = captured.strftime("%Y-%m-%d")
+    jczq = _day(
+        tmp_path,
+        day=day,
+        made_at=captured.isoformat(),
+        quote_date=day,
+        quote_time=captured.strftime("%H:%M:%S"),
+    )
+    day_dir = jczq / "daily" / day
+    for name in ("jczq-legs-base.json", "reads.json", "sporttery_markets.json"):
+        os.utime(day_dir / name, (captured.timestamp(), captured.timestamp()))
+    cutoff = (now - timedelta(minutes=1)).replace(microsecond=0)
+    approved_at = (now - timedelta(minutes=2)).replace(microsecond=0)
+    return jczq, day, day_dir, cutoff.isoformat(), approved_at.isoformat()
+
+
+def test_shadow_run_source_day_records_a_sealed_world(tmp_path):
+    from nutmeg.discovery.day_inputs import day_fingerprint
+
+    jczq, day, day_dir, cutoff, approved_at = _prospective_day_fixture(tmp_path)
+    shadow_dir = tmp_path / "shadow"
+    registered = runner.invoke(
+        app, ["discovery", "register-baseline", "--data-dir", str(shadow_dir), "--by", "op:jun"]
+    )
+    assert registered.exit_code == 0, registered.output
+    shadow_db = OntologyPaths.from_data_dir(shadow_dir).database
+    approval = tmp_path / "approval.json"
+    approval.write_text(
+        json.dumps(
+            {
+                "approval_id": "approval-day-1",
+                "approved_by": "op:jun",
+                "approved_at": approved_at,
+                "scope": {
+                    "source_db": str(day_dir.resolve()),
+                    "shadow_db": str(shadow_db.resolve()),
+                    "generation_request_id": f"day:{day}",
+                    "cutoff_at": cutoff,
+                    "policy_revision_id": "structural-baseline-v1",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = day_fingerprint(day_dir)
+    result = runner.invoke(
+        app,
+        [
+            "discovery", "shadow-run", "--source-day", day, "--jczq-dir", str(jczq),
+            "--shadow-db", str(shadow_db), "--cutoff-at", cutoff,
+            "--approval-file", str(approval),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["world_id"] and payload["sealed_manifest_hash"]
+    assert payload["approval_id"] == "approval-day-1"
+    assert day_fingerprint(day_dir) == before  # the day's files were not written
+    status = runner.invoke(app, ["discovery", "status", "--data-dir", str(shadow_dir)])
+    assert status.exit_code == 0, status.output
+    assert "sealed worlds: 1" in status.output
+    assert f"latest world: {payload['world_id']}" in status.output
+
+
+def test_shadow_run_rejects_both_source_db_and_source_day(tmp_path):
+    source = tmp_path / "source.db"
+    shadow = tmp_path / "shadow.db"
+    approval = tmp_path / "approval.json"
+    approval.write_text("{}", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "discovery", "shadow-run", "--source-db", str(source), "--source-day", "2026-09-23",
+            "--jczq-dir", str(tmp_path / "jczq"), "--shadow-db", str(shadow),
+            "--generation-request-id", "request-1", "--cutoff-at", "2026-09-23T04:00:00+00:00",
+            "--approval-file", str(approval),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "exactly one" in result.output and "二选一" in result.output
+    assert not source.exists() and not shadow.exists()
+
+
+def test_shadow_run_requires_a_source(tmp_path):
+    shadow = tmp_path / "shadow.db"
+    approval = tmp_path / "approval.json"
+    approval.write_text("{}", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "discovery", "shadow-run", "--shadow-db", str(shadow),
+            "--cutoff-at", "2026-09-23T04:00:00+00:00", "--approval-file", str(approval),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "exactly one" in result.output
+    assert not shadow.exists()

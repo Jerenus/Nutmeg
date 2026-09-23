@@ -17,9 +17,24 @@ def _write(path: Path, doc) -> None:
     path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
 
 
-def _day(tmp_path: Path, *, n: int = 3) -> Path:
+def _day(
+    tmp_path: Path,
+    *,
+    n: int = 3,
+    day: str = DAY,
+    made_at: str | None = None,
+    quote_date: str | None = None,
+    quote_time: str = "08:00:00",
+) -> Path:
+    """Build `<tmp>/jczq/daily/<day>/` with reads made at 10:00+08 and quotes at 08:00+08.
+
+    `day`, `made_at`, `quote_date` and `quote_time` let callers move the fixture to
+    another business day (the CLI test uses today's date so its wall-clock checks pass).
+    """
     jczq = tmp_path / "jczq"
-    d = jczq / "daily" / DAY
+    d = jczq / "daily" / day
+    made_at = made_at or f"{day}T10:00:00+08:00"
+    quote_date = quote_date or day
     codes = [f"周三{i:03d}" for i in range(1, n + 1)]
     legs = {}
     reads = []
@@ -28,7 +43,7 @@ def _day(tmp_path: Path, *, n: int = 3) -> Path:
         legs[code] = {
             "match_id": f"m-{i}",
             "name": f"A{i}-B{i}",
-            "kickoff_bj": f"{DAY}T19:30:00+08:00",
+            "kickoff_bj": f"{day}T19:30:00+08:00",
             "fair": {"home": 0.5, "draw": 0.28, "away": 0.22},
             "faces": "31",
             "stance": {"face": "3", "structure": "double", "cover": "1", "faces": "31"},
@@ -37,10 +52,10 @@ def _day(tmp_path: Path, *, n: int = 3) -> Path:
         }
         reads.append(
             {
-                "read_id": f"R-ai-jczq-{DAY}-{code}-had-1000",
+                "read_id": f"R-ai-jczq-{day}-{code}-had-1000",
                 "match_id": f"m-{i}",
                 "status": "draft",
-                "made_at": f"{DAY}T10:00:00+08:00",
+                "made_at": made_at,
                 "prior": {"home": 0.5, "draw": 0.28, "away": 0.22},
                 "belief": {"home": 0.56, "draw": 0.26, "away": 0.18},
             }
@@ -53,16 +68,16 @@ def _day(tmp_path: Path, *, n: int = 3) -> Path:
                     "h": "1.95",
                     "d": "2.90",
                     "a": "3.68",
-                    "updateDate": DAY,
-                    "updateTime": "08:00:00",
+                    "updateDate": quote_date,
+                    "updateTime": quote_time,
                 },
             }
         )
-    _write(d / "jczq-legs-base.json", {"day": DAY, "legs": legs})
+    _write(d / "jczq-legs-base.json", {"day": day, "legs": legs})
     _write(d / "reads.json", reads)
     _write(
         d / "sporttery_markets.json",
-        {"matchInfoList": [{"businessDate": DAY, "subMatchList": subs}]},
+        {"matchInfoList": [{"businessDate": day, "subMatchList": subs}]},
     )
     return jczq
 
