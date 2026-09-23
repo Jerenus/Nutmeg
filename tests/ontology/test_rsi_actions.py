@@ -1,3 +1,4 @@
+import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -315,3 +316,37 @@ def test_judgment_layer_survived_still_cannot_deploy(tmp_path):
         actions.approve_deployment(ApproveDeploymentRequest(
             exp_id="F2", decision="deploy", reason="想上", rule_id="C11", adjudication_ref=None,
             extend_to_exp_id=None, idempotency_key="d:f2", requested_at=T0, **HUMAN))
+
+
+# ── 同日重做：观测版本链 ───────────────────────────────────────────
+
+
+def _fulfil_f2(actions, content: bytes, key: str, minute: int):
+    return actions.fulfill_duty(FulfillDutyRequest(
+        exp_id="F2", duty_name="f2-observation", day="2026-09-19",
+        artifact_path="x.json", artifact_bytes=content, n_rows=10,
+        population_stratum="zucai", judgment_tier_hist={"price_only": 10},
+        captured_at=datetime(2026, 9, 18, 11, minute, tzinfo=UTC),
+        earliest_kickoff="2026-09-19T00:30:00+08:00", idempotency_key=key,
+        requested_at=T0))
+
+
+def test_refulfilling_with_new_content_supersedes_and_counts_only_the_tip(tmp_path):
+    actions, engine = _registered(tmp_path)
+    actions.schedule_duties(ScheduleDutiesRequest(
+        day="2026-09-19", earliest_kickoff="2026-09-19T00:30:00+08:00", issue="26129",
+        idempotency_key="sch:1", requested_at=T0))
+    assert _fulfil_f2(actions, b"A", "ful:a", 1).status is ActionStatus.COMMITTED
+    assert _fulfil_f2(actions, b"B", "ful:b", 2).status is ActionStatus.COMMITTED
+    assert _fulfil_f2(actions, b"A", "ful:a2", 3).status is ActionStatus.COMMITTED
+    # 回到 B 的内容：B 那一行已存在，重新成为链尾而不是再插一行
+    assert _fulfil_f2(actions, b"B", "ful:b2", 4).status is ActionStatus.COMMITTED
+    hash_b = hashlib.sha256(b"B").hexdigest()
+    with OntologyUnitOfWork(engine) as uow:
+        rows = uow.rsi.observations("F2")
+        active = [row for row in rows if row.superseded_by is None]
+        assert len(rows) == 2                     # A 与 B 各一行，回到 A 时复用 base 行
+        assert [row.artifact_hash for row in active] == [hash_b]
+        assert uow.rsi.count_observations("F2") == 1
+        assert uow.rsi.prospective_n_rows("F2", stratum="zucai") == 10
+        assert uow.rsi.duty_instance("F2:f2-observation", "2026-09-19").artifact_hash == hash_b

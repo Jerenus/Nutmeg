@@ -121,3 +121,31 @@ def test_price_band_instrument_migration_activates_f5_without_deleting_instances
         assert [row.match_id for row in uow.rsi.duty_instances_for_day(
             duty.duty_id, "2026-09-19"
         )] == ["keep", "open"]
+
+
+def test_v45_adds_observation_supersession_and_leaves_existing_rows_active(tmp_path: Path):
+    engine = build_ontology_engine(tmp_path / "ontology.db")
+    run_migrations(engine, MIGRATIONS[:44])
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO rsi_experiments "
+            "(exp_id,claim,mechanism,tier,layer,population,min_tier,window_json,"
+            "falsifier_json,stop_rule,quota_slot,buckets_json,rule_ids_json,source_doc,"
+            "registered_at,frozen_hash,created_at) VALUES "
+            "('R0','c','m','observation','judgment','jczq','price_only','{}',"
+            "'{\"stratum\":\"jczq\"}','s',0,'[]','[]','d','2026-09-19','f','2026-09-19')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO rsi_observations (observation_id,exp_id,day,population_stratum,"
+            "n_rows,captured_at,prospective,judgment_tier_hist_json,artifact_hash) VALUES "
+            "('R0:2026-09-20:m','R0','2026-09-20','jczq',1,'2026-09-20T10:00:00+08:00',1,"
+            "'{}','a')"
+        )
+    report = run_migrations(engine, MIGRATIONS[:45])
+    assert report.applied_versions == (45,)
+    columns = {c["name"] for c in inspect(engine).get_columns("rsi_observations")}
+    assert "superseded_by" in columns
+    with OntologyUnitOfWork(engine) as uow:
+        row = uow.rsi.observation("R0:2026-09-20:m")
+        assert row.superseded_by is None
+        assert uow.rsi.count_observations("R0") == 1

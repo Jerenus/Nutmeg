@@ -4644,6 +4644,22 @@ def _apply_rsi_observation_stratum_labels(connection: Connection) -> None:
         )
 
 
+def _apply_rsi_observation_supersession(connection: Connection) -> None:
+    """Let a redone artifact supersede the earlier observation of the same duty.
+
+    Additive only: ``superseded_by`` is NULL for every existing row, so nothing
+    already counted changes. A re-fulfilment with different content inserts a new
+    row and points the earlier one at it; counts read only rows with NULL here.
+    """
+    columns = {
+        column["name"] for column in inspect(connection).get_columns("rsi_observations")
+    }
+    if "superseded_by" not in columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE rsi_observations ADD COLUMN superseded_by TEXT NULL"
+        )
+
+
 _CAPITAL_PERMISSIONS = (("zucai_commit_capital_plan", "judge_operator"),)
 
 
@@ -5519,6 +5535,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="discovery_reviewed_pilot_scopes",
         fingerprint="human_only_immutable_external_reviewed_scope_contracts",
         apply=_apply_discovery_scope_reviews,
+    ),
+    Migration(
+        version=45,
+        name="rsi_observation_supersession",
+        fingerprint="additive_superseded_by+existing_rows_stay_active",
+        apply=_apply_rsi_observation_supersession,
     ),
 )
 

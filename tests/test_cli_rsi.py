@@ -960,3 +960,144 @@ def test_balance_day_records_one_f9_observation_per_union_match(tmp_path):
     )
     assert status.exit_code == 0
     assert "n=   0/60" in status.output
+
+
+# ── 同日重做：再履行必须成功，不能被幂等键顶回去 ──────────────────────────
+
+
+def _prepare_r0_match_duty(tmp_path, *, day="2026-09-20", matches=None):
+    data_dir = tmp_path / "data"
+    day_dir = data_dir / "jczq" / "daily" / day
+    day_dir.mkdir(parents=True)
+    matches = matches or {"周日001": ("match-r0", "2099-09-20T20:00:00+08:00")}
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps(
+            {
+                "legs": {
+                    code: {"match_id": match_id, "kickoff_bj": kickoff}
+                    for code, (match_id, kickoff) in matches.items()
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    registered = runner.invoke(
+        app,
+        ["rsi", "register", "--by", "Jun", "experiments/registry/R0.json",
+         "--data-dir", str(data_dir)],
+    )
+    assert registered.exit_code == 0, registered.output
+    scheduled = runner.invoke(
+        app, ["rsi", "schedule", "--day", day, "--data-dir", str(data_dir)]
+    )
+    assert scheduled.exit_code == 0, scheduled.output
+    return data_dir, day_dir, runner
+
+
+def _fulfill_r0(runner, data_dir, day, match_id, artifact):
+    return runner.invoke(
+        app,
+        [
+            "rsi", "fulfill", "--exp", "R0", "--duty", "match-research",
+            "--day", day, "--match", match_id, "--artifact", str(artifact),
+            "--n-rows", "1", "--stratum", "jczq", "--data-dir", str(data_dir),
+        ],
+    )
+
+
+def test_fulfill_redone_artifact_supersedes_the_earlier_observation(tmp_path):
+    """研究被驳回后重做：第二次履行必须登记，旧观测标记 superseded，n 不翻倍。"""
+    data_dir, day_dir, runner = _prepare_r0_match_duty(tmp_path)
+    artifact = day_dir / "research-周日001.json"
+    artifact.write_text('{"stance": "first"}', encoding="utf-8")
+    first = _fulfill_r0(runner, data_dir, "2026-09-20", "match-r0", artifact)
+    assert first.exit_code == 0, first.output
+
+    artifact.write_text('{"stance": "redone"}', encoding="utf-8")
+    second = _fulfill_r0(runner, data_dir, "2026-09-20", "match-r0", artifact)
+    assert second.exit_code == 0, second.output
+    assert "已登记" in second.output
+
+    redone_hash = sha256(artifact.read_bytes()).hexdigest()
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        rows = connection.execute(
+            "SELECT observation_id, artifact_hash, superseded_by FROM rsi_observations "
+            "WHERE exp_id = 'R0' ORDER BY captured_at, observation_id"
+        ).fetchall()
+        instance = connection.execute(
+            "SELECT artifact_hash FROM rsi_duty_instances "
+            "WHERE duty_id = 'R0:match-research' AND match_id = 'match-r0'"
+        ).fetchone()
+    assert len(rows) == 2
+    base, latest = rows
+    assert base[0] == "R0:2026-09-20:match-r0"
+    assert latest[1] == redone_hash and latest[2] is None
+    assert base[2] == latest[0]            # 旧观测指向新观测
+    assert instance == (redone_hash,)     # 义务实例指向最新产物
+
+    status = runner.invoke(
+        app, ["rsi", "status", "--exp", "R0", "--data-dir", str(data_dir)]
+    )
+    assert status.exit_code == 0, status.output
+    assert "n=   1/200" in status.output   # 只数最新版本，不是 2
+
+
+def test_fulfill_identical_artifact_twice_is_a_no_op(tmp_path):
+    data_dir, day_dir, runner = _prepare_r0_match_duty(tmp_path)
+    artifact = day_dir / "research-周日001.json"
+    artifact.write_text('{"stance": "same"}', encoding="utf-8")
+    first = _fulfill_r0(runner, data_dir, "2026-09-20", "match-r0", artifact)
+    assert first.exit_code == 0, first.output
+    second = _fulfill_r0(runner, data_dir, "2026-09-20", "match-r0", artifact)
+    assert second.exit_code == 0, second.output
+
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        observations = connection.execute(
+            "SELECT COUNT(*) FROM rsi_observations WHERE exp_id = 'R0'"
+        ).fetchone()[0]
+        actions = connection.execute(
+            "SELECT COUNT(*) FROM actions WHERE idempotency_key LIKE "
+            "'rsi-ful:R0:match-research:2026-09-20:match-r0%'"
+        ).fetchone()[0]
+    assert observations == 1
+    assert actions == 1
+
+
+def test_schedule_twice_same_day_is_a_no_op_and_a_grown_board_reschedules(tmp_path):
+    """同日重排不冲突；板面新增更早开球的场次后重排要把新场排进去，不重复旧场。"""
+    day = "2026-09-20"
+    data_dir, day_dir, runner = _prepare_r0_match_duty(tmp_path, day=day)
+    again = runner.invoke(
+        app, ["rsi", "schedule", "--day", day, "--data-dir", str(data_dir)]
+    )
+    assert again.exit_code == 0, again.output
+
+    # 2026-09-22 的死法：板面后来加了周二001，最早开球变了 → 同键异请求 → 冲突
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps(
+            {
+                "legs": {
+                    "周日001": {"match_id": "match-r0",
+                               "kickoff_bj": "2099-09-20T20:00:00+08:00"},
+                    "周日002": {"match_id": "match-early",
+                               "kickoff_bj": "2099-09-20T18:00:00+08:00"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    grown = runner.invoke(
+        app, ["rsi", "schedule", "--day", day, "--data-dir", str(data_dir)]
+    )
+    assert grown.exit_code == 0, grown.output
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        rows = connection.execute(
+            "SELECT match_id, due_at FROM rsi_duty_instances "
+            "WHERE duty_id = 'R0:match-research' AND day = ? ORDER BY match_id",
+            (day,),
+        ).fetchall()
+    assert rows == [
+        ("match-early", "2099-09-20T18:00:00+08:00"),
+        ("match-r0", "2099-09-20T20:00:00+08:00"),
+    ]

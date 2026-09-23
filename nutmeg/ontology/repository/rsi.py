@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 
-from sqlalchemy import Connection, delete, func, insert, select
+from sqlalchemy import Connection, delete, func, insert, select, update
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository import schema_rsi as sr
@@ -72,6 +72,7 @@ class ObservationRow:
     prospective: bool
     judgment_tier_hist: dict
     artifact_hash: str
+    superseded_by: str | None = None      # 指向取代它的观测；NULL = 当前有效版本
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,8 +283,8 @@ class RsiRepository:
         artifact_path: str,
         artifact_hash: str,
     ) -> None:
-        # 唯一的 UPDATE：只填 instance 行上原本为空的 fulfilled_* 列（spec §4），
-        # 其余八张表全部只追加。
+        # 两个 UPDATE 之一：填 instance 行的 fulfilled_* 列（spec §4；同日重做时
+        # 指向最新前瞻产物）。另一个是观测的 superseded_by 前向指针；测量字段永不改写。
         t = sr.rsi_duty_instances
         self._c.execute(
             t.update()
@@ -395,11 +396,32 @@ class RsiRepository:
         )
         return [self.observation(i) for i in ids]  # type: ignore[misc]
 
+    def set_observation_superseded_by(
+        self, observation_id: str, superseded_by: str | None
+    ) -> None:
+        t = sr.rsi_observations
+        self._c.execute(
+            update(t)
+            .where(t.c.observation_id == observation_id)
+            .values(superseded_by=superseded_by)
+        )
+
+    def latest_observation_version(self, observation_id: str) -> ObservationRow | None:
+        """Follow the supersession chain from ``observation_id`` to its current tip."""
+        row = self.observation(observation_id)
+        seen: set[str] = set()
+        while row is not None and row.superseded_by and row.observation_id not in seen:
+            seen.add(row.observation_id)
+            row = self.observation(row.superseded_by)
+        return row
+
     def count_observations(self, exp_id: str) -> int:
         t = sr.rsi_observations
         return int(
             self._c.execute(
-                select(func.count()).select_from(t).where(t.c.exp_id == exp_id)
+                select(func.count())
+                .select_from(t)
+                .where(t.c.exp_id == exp_id, t.c.superseded_by.is_(None))
             ).scalar_one()
         )
 
@@ -411,7 +433,11 @@ class RsiRepository:
         stratum: str | None = None,
     ) -> int:
         t = sr.rsi_observations
-        conditions = [t.c.exp_id == exp_id, t.c.prospective == 1]
+        conditions = [
+            t.c.exp_id == exp_id,
+            t.c.prospective == 1,
+            t.c.superseded_by.is_(None),
+        ]
         if stratum is not None:
             conditions.append(t.c.population_stratum == stratum)
         if window is not None:

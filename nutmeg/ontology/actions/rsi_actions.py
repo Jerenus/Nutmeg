@@ -247,7 +247,13 @@ class RsiActions:
             actor_role=request.actor_role,
             idempotency_key=request.idempotency_key or f"rsi-sched:{request.day}",
             payload={"day": request.day, "earliest_kickoff": request.earliest_kickoff,
-                     "issue": request.issue},
+                     "issue": request.issue,
+                     "match_kickoffs": dict(request.match_kickoffs),
+                     "population_match_kickoffs": {
+                         population: dict(kickoffs)
+                         for population, kickoffs
+                         in request.population_match_kickoffs.items()
+                     }},
             requested_at=requested_at)
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
@@ -292,10 +298,15 @@ class RsiActions:
         captured = _iso(request.captured_at)
         # prospective：采样时刻早于当天最早开球（U8-④ 前缀纪律的采样端）
         prospective = request.captured_at < datetime.fromisoformat(request.earliest_kickoff)
+        # 键带产物 hash：同日重做（研究被驳回后重跑）是新请求而不是「同键异请求」冲突；
+        # 字节相同的重放才走幂等 no-op。
+        default_key = (
+            f"rsi-ful:{duty_id}:{request.day}:{request.match_id}:{artifact_hash[:16]}"
+        )
         command = ActionCommand.create(
             action_type="rsi_fulfill_duty", actor_id=request.actor_id,
             actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key or f"rsi-ful:{duty_id}:{request.day}",
+            idempotency_key=request.idempotency_key or default_key,
             payload={"duty_id": duty_id, "day": request.day, "artifact_hash": artifact_hash,
                      "prospective": prospective},
             requested_at=requested_at)
@@ -316,27 +327,43 @@ class RsiActions:
             inst = uow.rsi.duty_instance(duty_id, request.day, request.match_id)
             if inst is None:
                 raise ValueError(f"{duty_id} 在 {request.day} 没有排过（先 rsi schedule）")
-            # 只有前瞻产物才算履行义务；赛后补的产物留观察记录但这一天仍是 gap
-            if prospective and inst.fulfilled_at is None:
+            # 只有前瞻产物才算履行义务；赛后补的产物留观察记录但这一天仍是 gap。
+            # 同日重做且仍前瞻：实例改指最新产物（旧版本留在观测链里）。
+            if prospective and (
+                inst.fulfilled_at is None or inst.artifact_hash != artifact_hash
+            ):
                 uow.rsi.mark_duty_fulfilled(duty_id, request.day, request.match_id,
                                             fulfilled_at=captured,
                                             artifact_path=request.artifact_path,
                                             artifact_hash=artifact_hash)
             obs_base = f"{request.exp_id}:{request.day}" + (
                 f":{request.match_id}" if request.match_id else "")
-            existing = uow.rsi.observation(obs_base)
-            obs_id = (
-                obs_base
-                if existing is None or existing.artifact_hash == artifact_hash
-                else f"{obs_base}:{artifact_hash[:16]}"
+            base = uow.rsi.observation(obs_base)
+            tip = uow.rsi.latest_observation_version(obs_base)
+            if tip is not None and tip.artifact_hash == artifact_hash:
+                return (ObjectRef("rsi_observation", tip.observation_id),)   # 同内容：no-op
+            # 同内容的早先版本（含 base 行）已存在 → 那一行重新成为链尾，不再插一行
+            same_content = next(
+                (
+                    row
+                    for row in (base, uow.rsi.observation(f"{obs_base}:{artifact_hash[:16]}"))
+                    if row is not None and row.artifact_hash == artifact_hash
+                ),
+                None,
             )
-            if uow.rsi.observation(obs_id) is None:  # 同日同内容不重复；内容变化留版本
+            if same_content is not None:
+                obs_id = same_content.observation_id
+                uow.rsi.set_observation_superseded_by(obs_id, None)
+            else:                                    # 内容变化：新版本一行
+                obs_id = obs_base if base is None else f"{obs_base}:{artifact_hash[:16]}"
                 uow.rsi.insert_observation(ObservationRow(
                     observation_id=obs_id, exp_id=request.exp_id, day=request.day,
                     population_stratum=registered_stratum, n_rows=request.n_rows,
                     captured_at=captured, prospective=prospective,
                     judgment_tier_hist=dict(request.judgment_tier_hist),
                     artifact_hash=artifact_hash))
+            if tip is not None:                      # 旧链尾指向新版本；只有链尾计入 n
+                uow.rsi.set_observation_superseded_by(tip.observation_id, obs_id)
             return (ObjectRef("rsi_observation", obs_id),)
 
         return self._svc.execute(command, handler)

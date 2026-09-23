@@ -178,6 +178,24 @@ def _population_match_kickoffs(
 _SCHEDULE_SEMANTICS = "explicit-cross-channel-identity-v2"
 
 
+def _schedule_targets_fingerprint(
+    earliest_kickoff: str, match_kickoffs: dict, population_match_kickoffs: dict
+) -> str:
+    """同日板面变了（新增场次/最早开球位移）就是新请求：键上带目标集指纹。
+
+    2026-09-22 的死法：after_am 在 00:00 用当时的板面排过一次；周二001 后来才进板，
+    最早开球位移 → 同键异请求 → IdempotencyConflictError，R0 义务排不进去。
+    """
+    material = {
+        "earliest_kickoff": earliest_kickoff,
+        "match_kickoffs": match_kickoffs,
+        "population_match_kickoffs": population_match_kickoffs,
+    }
+    return hashlib.sha256(
+        json.dumps(material, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:12]
+
+
 def _duty_schedule_context(kernel) -> tuple[set[str], str]:
     with OntologyUnitOfWork(kernel.engine) as uow:
         duties = uow.rsi.all_duties()
@@ -358,7 +376,8 @@ def schedule(day: str = _DAY, issue: str | None = _ISSUE, data_dir: Path = _DATA
         day=day, earliest_kickoff=ko, issue=issue, match_kickoffs=match_kickoffs,
         population_match_kickoffs=population_match_kickoffs,
         idempotency_key=(
-            f"rsi-sched:{day}:{issue or 'jczq'}:{duty_fingerprint}"
+            f"rsi-sched:{day}:{issue or 'jczq'}:{duty_fingerprint}:"
+            + _schedule_targets_fingerprint(ko, match_kickoffs, population_match_kickoffs)
         ),
         requested_at=_now(), **_SYSTEM))
     typer.echo(f"已排 {day} 的义务，截止 {ko}")
@@ -590,7 +609,11 @@ def fulfill(exp: str = _EXP, duty: str = _DUTY, day: str = _DAY, artifact: Path 
         n_rows=n_rows, population_stratum=stratum,
         judgment_tier_hist={"deep_research" if match else "price_only": n_rows},
         captured_at=captured, earliest_kickoff=ko, match_id=match,
-        idempotency_key=f"rsi-ful:{exp}:{duty}:{day}:{match}",
+        # 键带产物 hash：研究被驳回后重做是新请求（旧观测被取代），字节相同才是 no-op
+        idempotency_key=(
+            f"rsi-ful:{exp}:{duty}:{day}:{match}:"
+            f"{hashlib.sha256(raw).hexdigest()[:16]}"
+        ),
         requested_at=_now(), **_SYSTEM))
     prospective = captured < datetime.fromisoformat(ko)
     typer.echo(f"已登记 {exp}/{duty}@{day}  n_rows={n_rows}  "
@@ -731,16 +754,20 @@ def balance(
 
     now = _now()
     _, duty_fingerprint = _duty_schedule_context(k)
+    balance_match_kickoffs = _jczq_match_kickoffs(data_dir, resolved_day)
     _run(
         k.rsi_actions.schedule_duties,
         ScheduleDutiesRequest(
             day=resolved_day,
             earliest_kickoff=kickoff,
             issue=issue,
-            match_kickoffs=_jczq_match_kickoffs(data_dir, resolved_day),
+            match_kickoffs=balance_match_kickoffs,
             population_match_kickoffs=population_kickoffs,
             idempotency_key=(
-                f"rsi-balance-sched:{issue or resolved_day}:{duty_fingerprint}"
+                f"rsi-balance-sched:{issue or resolved_day}:{duty_fingerprint}:"
+                + _schedule_targets_fingerprint(
+                    kickoff, balance_match_kickoffs, population_kickoffs
+                )
             ),
             requested_at=now,
             **_SYSTEM,
@@ -834,7 +861,8 @@ def price_band(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
                 earliest_kickoff=kickoff,
                 match_id=match_id,
                 idempotency_key=(
-                    f"rsi-ful:F5:price-band-observation:{day}:{match_id}"
+                    f"rsi-ful:F5:price-band-observation:{day}:{match_id}:"
+                    f"{hashlib.sha256(raw).hexdigest()[:16]}"
                 ),
                 requested_at=captured,
                 **_SYSTEM,

@@ -67,6 +67,8 @@ rsi_observations = Table(
     Column("prospective", Integer, nullable=False),
     Column("judgment_tier_hist_json", Text, nullable=False),
     Column("artifact_hash", Text, nullable=False),
+    # 同一 (exp, day, match) 重做产物时，旧观测指向新观测；只有 NULL 的才计入 n
+    Column("superseded_by", Text, nullable=True),
 )
 
 rsi_grades = Table(
