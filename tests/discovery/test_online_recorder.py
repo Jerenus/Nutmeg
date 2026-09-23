@@ -712,3 +712,79 @@ def test_stop_selects_best_clean_node_for_each_band(tmp_path, monkeypatch):
         assert uow.discovery.nodes_for_world(recorded.world_id)[-1].artifact_manifest[
             "selected_node_ids"
         ] == list(recorded.selected_node_ids)
+
+
+def _day_rig(tmp_path, monkeypatch):
+    """Day-directory source frozen at a deterministic clock (fixture files are 2026-09-23)."""
+    import os
+
+    from nutmeg.discovery.day_inputs import read_structural_input_from_day
+    from tests.discovery.test_day_inputs import DAY, _day
+
+    now = datetime(2026, 9, 23, 4, 1, tzinfo=UTC)
+    cutoff = datetime(2026, 9, 23, 4, 0, tzinfo=UTC)
+    monkeypatch.setattr("nutmeg.discovery.online_recorder._utcnow", lambda: now)
+    engine = _rig(tmp_path)
+    jczq = _day(tmp_path)
+    day_dir = jczq / "daily" / DAY
+    # The board file's mtime is a reference captured_at; pin it below the cutoff.
+    board_mtime = datetime(2026, 9, 23, 2, 30, tzinfo=UTC).timestamp()
+    os.utime(day_dir / "jczq-legs-base.json", (board_mtime, board_mtime))
+    snapshot = read_structural_input_from_day(jczq, DAY, cutoff_at=cutoff.isoformat())
+    approval = _approval(day_dir, tmp_path / "shadow.db")
+    approval["approved_at"] = "2026-09-23T03:59:00+00:00"
+    approval["scope"]["cutoff_at"] = cutoff.isoformat()
+    approval["scope"]["generation_request_id"] = f"day:{DAY}"
+    return engine, jczq, day_dir, snapshot, approval, now
+
+
+def test_day_source_records_a_world_and_reverifies_files(tmp_path, monkeypatch):
+    from nutmeg.discovery.day_inputs import day_fingerprint
+    from tests.discovery.test_day_inputs import DAY
+
+    engine, _jczq, day_dir, snapshot, approval, now = _day_rig(tmp_path, monkeypatch)
+    before = day_fingerprint(day_dir)
+    world = record_shadow_world(
+        snapshot, engine=engine, shadow_database=tmp_path / "shadow.db",
+        source_database=day_dir, policy_revision_id="structural-baseline-v1",
+        generation_request_id=f"day:{DAY}", requested_at=now, approval=approval,
+        source_kind="day",
+    )
+    assert world.world_id and world.sealed_manifest_hash
+    assert day_fingerprint(day_dir) == before  # production directory was not written
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.world_state(world.world_id) == "sealed"
+        assert uow.discovery.world(world.world_id).input_manifest_hash == snapshot.manifest_hash
+        receipt = uow.discovery.protected_receipt(world.world_id)
+        assert receipt["before_hash"] == receipt["after_hash"] == before
+
+
+def test_day_source_rejects_changed_files(tmp_path, monkeypatch):
+    import json
+
+    from nutmeg.discovery.day_inputs import read_structural_input_from_day
+    from tests.discovery.test_day_inputs import DAY
+
+    engine, jczq, day_dir, snapshot, approval, now = _day_rig(tmp_path, monkeypatch)
+
+    def changed_read(jczq_dir, day, *, cutoff_at, max_templates=4):
+        reads_path = day_dir / "reads.json"
+        reads = json.loads(reads_path.read_text(encoding="utf-8"))
+        reads[0]["belief"] = {"home": 0.40, "draw": 0.30, "away": 0.30}
+        reads_path.write_text(json.dumps(reads), encoding="utf-8")
+        return read_structural_input_from_day(
+            jczq_dir, day, cutoff_at=cutoff_at, max_templates=max_templates
+        )
+
+    monkeypatch.setattr(
+        "nutmeg.discovery.day_inputs.read_structural_input_from_day", changed_read
+    )
+    with pytest.raises(ValueError, match="source request snapshot differs"):
+        record_shadow_world(
+            snapshot, engine=engine, shadow_database=tmp_path / "shadow.db",
+            source_database=day_dir, policy_revision_id="structural-baseline-v1",
+            generation_request_id=f"day:{DAY}", requested_at=now, approval=approval,
+            source_kind="day",
+        )
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.discovery.counts()["discovery_world_count"] == 0
