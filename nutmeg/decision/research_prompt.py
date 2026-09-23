@@ -21,7 +21,24 @@ RESEARCH_JSON_CONTRACT = """
      "verdict": "alive|dead", "detail": str}},
  "directional_flags": [[flag, "3|1|0"]], "nondirectional_flags": [str],
  "crash_markers": [str], "precedents": [["3|1|0", str, "alive|dead|none"]],
- "schedule": {...}, "market_snapshot": {...}}
+ "schedule": {...}, "market_snapshot": {...},
+ "stance": {"face": "3|1|0", "structure": "single|double|full", "cover": "3|1|0|null",
+     "confidence": 1-5, "falsifier": "一句赛后可核验的作废条件",
+     "why_not_market": "none|tilt_evidence|structure",
+     "tilt": null | {"face": "3|1|0", "expires_if": str,
+         "evidence": [{"tier": "official|confirmed_structural|inferred|will",
+                       "kind": "absence_official|suspension|goalkeeper_change|"
+                               "anchor_integrity_fail|lineup_confirmed|venue_anomaly|"
+                               "precedent_carrier|rotation_confirmed|"
+                               "schedule_congestion|motivation_dead_rubber",
+                       "pp": 0-8, "source": str, "captured_at": "ISO"}]},
+     "alt_face": "3|1|0|null", "market_read": "agree|overpriced|underpriced|null"}}
+表态块必答：每场押一个面 + 一个表达档 + 一句作废条件；
+跟市场也要填（why_not_market=none, tilt=null）。
+tilt 只在有 A/B 类证据时给：official 4–8pp、confirmed_structural 3–6pp、
+inferred 0–2pp、will 0–2pp 且只许朝平；
+净偏移 <5pp 会被机器归零；无官宣封顶 10pp、有官宣 15pp；开球后采集的证据作废。
+stance.confidence 必须等于顶层 confidence。
 宣告 dead 必须三证 3/3；查无先例记 none，不得当 dead。数字只许引用简报给你的或你查到的实盘。
 hole_location 语义绑定：attack = 破门端（中锋/射手）缺；creation = 组织端（前腰/组织核）缺；
 spine = 后腰屏障格缺；defense = 中卫对缺；goalkeeper = 门将缺；

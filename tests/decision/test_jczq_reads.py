@@ -2,6 +2,18 @@ import json
 
 from nutmeg.decision.jczq_reads import build_jczq_reads, intake_board
 
+STANCE = {
+    "face": "3",
+    "structure": "double",
+    "cover": "1",
+    "confidence": 3,
+    "falsifier": "客队首发若有主力门将则本判断作废",
+    "why_not_market": "structure",
+    "tilt": None,
+    "alt_face": "1",
+    "market_read": "agree",
+}
+
 RESEARCH = {
     "name": "A-B",
     "summary": "s",
@@ -29,6 +41,7 @@ RESEARCH = {
     "nondirectional_flags": [],
     "crash_markers": [],
     "precedents": [],
+    "stance": STANCE,
 }
 
 
@@ -173,3 +186,54 @@ def test_write_quarantines_intake_errors_and_restores_price_only(tmp_path):
     assert rejected["research"]["crash_markers"] == invalid["crash_markers"]
     run_report = json.loads(run_report_path.read_text(encoding="utf-8"))
     assert run_report["matches"][0]["status"] == "rejected"
+
+
+def test_intake_writes_stance_and_derived_faces(tmp_path):
+    root = _day(tmp_path)
+    day_dir = root / "daily" / "2026-09-19"
+    research = {**RESEARCH, "stance": STANCE}
+    (day_dir / "research-周五001.json").write_text(
+        json.dumps(research, ensure_ascii=False), encoding="utf-8"
+    )
+
+    report = intake_board(day="2026-09-19", jczq_dir=root, write=True)
+
+    assert report["ok"] == ["周五001"]
+    leg = json.loads((day_dir / "jczq-legs-base.json").read_text(encoding="utf-8"))[
+        "legs"
+    ]["周五001"]
+    assert leg["stance"]["faces"] == "31"
+    assert leg["faces"] == "31"
+
+
+def test_intake_rejects_stance_covering_a_dead_face(tmp_path):
+    root = _day(tmp_path)
+    day_dir = root / "daily" / "2026-09-19"
+    research = {**RESEARCH, "stance": {**STANCE, "cover": "0"}}  # away 已判死
+    (day_dir / "research-周五001.json").write_text(
+        json.dumps(research, ensure_ascii=False), encoding="utf-8"
+    )
+
+    report = intake_board(day="2026-09-19", jczq_dir=root, write=True)
+
+    assert "周五001" in report["failed"]
+    assert any("已判死" in message for message in report["failed"]["周五001"])
+    board = json.loads((day_dir / "jczq-legs-base.json").read_text(encoding="utf-8"))
+    assert board["legs"]["周五001"]["judgment_tier"] == "price_only"
+    assert "face_status" not in board["legs"]["周五001"]
+    assert not (day_dir / "research-周五001.json").exists()
+    assert (day_dir / "research-周五001.rejected.json").exists()
+
+
+def test_intake_without_stance_is_rejected(tmp_path):
+    root = _day(tmp_path)
+    day_dir = root / "daily" / "2026-09-19"
+    research = {key: value for key, value in RESEARCH.items() if key != "stance"}
+    (day_dir / "research-周五001.json").write_text(
+        json.dumps(research, ensure_ascii=False), encoding="utf-8"
+    )
+
+    report = intake_board(day="2026-09-19", jczq_dir=root, write=False)
+
+    assert any("stance" in message for message in report["failed"].get("周五001", []))
+    assert (day_dir / "research-周五001.json").exists()

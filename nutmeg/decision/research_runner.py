@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from nutmeg.decision.research_ledger import ResearchRunLedger
 from nutmeg.decision.research_prompt import render_brief, system_prompt
+from nutmeg.decision.stance import validate_stance
 
 BJ = ZoneInfo("Asia/Shanghai")
 RESEARCH_DAILY_BUDGET = 40
@@ -43,6 +44,7 @@ _REQUIRED = (
     "nondirectional_flags",
     "crash_markers",
     "precedents",
+    "stance",
 )
 
 
@@ -112,6 +114,13 @@ def _validate(text: str, leg: dict) -> dict:
         )
         if count < 3:
             raise ValueError(f"{face} 宣告 dead 但三证 {count}/3")
+    _norm, stance_issues = validate_stance(
+        doc.get("stance"),
+        confidence=doc.get("confidence"),
+        death_three_proofs=doc.get("death_three_proofs") or {},
+    )
+    if stance_issues:
+        raise ValueError("stance: " + "; ".join(i.message for i in stance_issues))
     intake_result = intake(doc, dict(leg))
     errors = [issue.message for issue in intake_result.issues if issue.level == "ERROR"]
     if errors:

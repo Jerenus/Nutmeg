@@ -6,8 +6,32 @@ from pathlib import Path
 
 from nutmeg.decision.face_status import FaceStatusError, attach_face_status
 from nutmeg.decision.research_intake import intake
+from nutmeg.decision.stance import validate_stance
 
 FACES = ("home", "draw", "away")
+
+
+def _quarantine(
+    leg: dict, research_path: Path, code: str, errors: list[str], research: dict
+) -> None:
+    """研究被拒：腿降回 price_only、写 .rejected.json、删研究文件。"""
+    leg["judgment_tier"] = "price_only"
+    leg.pop("face_status", None)
+    rejected_path = research_path.with_name(f"research-{code}.rejected.json")
+    rejected_path.write_text(
+        json.dumps(
+            {
+                "code": code,
+                "status": "rejected",
+                "errors": errors,
+                "research": research,
+            },
+            ensure_ascii=False,
+            indent=1,
+        ),
+        encoding="utf-8",
+    )
+    research_path.unlink()
 
 
 def intake_board(*, day: str, jczq_dir: Path, write: bool) -> dict:
@@ -26,23 +50,7 @@ def intake_board(*, day: str, jczq_dir: Path, write: bool) -> dict:
         if errors:
             failed[code] = errors
             if write:
-                original_leg["judgment_tier"] = "price_only"
-                original_leg.pop("face_status", None)
-                rejected_path = day_dir / f"research-{code}.rejected.json"
-                rejected_path.write_text(
-                    json.dumps(
-                        {
-                            "code": code,
-                            "status": "rejected",
-                            "errors": errors,
-                            "research": research,
-                        },
-                        ensure_ascii=False,
-                        indent=1,
-                    ),
-                    encoding="utf-8",
-                )
-                research_path.unlink()
+                _quarantine(original_leg, research_path, code, errors, research)
             continue
         candidate = result.leg
         candidate.pop("faces", None)
@@ -56,6 +64,21 @@ def intake_board(*, day: str, jczq_dir: Path, write: bool) -> dict:
         except FaceStatusError as exc:
             failed[code] = [str(exc)]
             continue
+        # 表态块：面集合不得含已判死的面；派生 faces 覆盖 face_status 推出的活面集合
+        # （validate_stance 已拒绝含死面的集合，所以此处写 faces 与 face_status 不冲突）
+        norm, stance_issues = validate_stance(
+            research.get("stance"),
+            confidence=research.get("confidence"),
+            death_three_proofs=research.get("death_three_proofs") or {},
+        )
+        if stance_issues:
+            errors = [f"stance.{i.field}: {i.message}" for i in stance_issues]
+            failed[code] = errors
+            if write:
+                _quarantine(original_leg, research_path, code, errors, research)
+            continue
+        candidate["stance"] = norm
+        candidate["faces"] = norm["faces"]
         board["legs"][code] = candidate
         ok.append(code)
     if write:

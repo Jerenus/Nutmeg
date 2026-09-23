@@ -3,6 +3,8 @@ import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from nutmeg.decision.research_runner import RESEARCH_DAILY_BUDGET, run_day
 
 BJ = ZoneInfo("Asia/Shanghai")
@@ -24,6 +26,17 @@ GOOD = json.dumps(
         "nondirectional_flags": [],
         "crash_markers": [],
         "precedents": [],
+        "stance": {
+            "face": "3",
+            "structure": "double",
+            "cover": "1",
+            "confidence": 3,
+            "falsifier": "客队首发若有主力门将则本判断作废",
+            "why_not_market": "none",
+            "tilt": None,
+            "alt_face": "1",
+            "market_read": "agree",
+        },
     },
     ensure_ascii=False,
 )
@@ -455,3 +468,15 @@ def test_budget_is_consumed_by_actual_attempts_not_matches(tmp_path):
     assert report["written"] == 0
     assert [row["status"] for row in report["matches"]] == ["rejected", "rejected"]
     assert all(row["attempts"] == 1 for row in report["matches"])
+
+
+def test_missing_stance_is_rejected_by_validate(tmp_path):
+    from nutmeg.decision.research_runner import _validate
+
+    doc = json.loads(GOOD)
+    doc.pop("stance")
+    with pytest.raises(ValueError, match="stance"):
+        _validate(
+            json.dumps(doc, ensure_ascii=False),
+            {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}, "match_no": 1},
+        )
