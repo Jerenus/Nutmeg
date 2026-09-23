@@ -23,7 +23,7 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 | A3 | 落判读 | `uv run nutmeg jczq-build-reads --day $(date +%Y-%m-%d)` 生成 `reads.json` → `uv run nutmeg decision-read --reads-file …` 提交 ForecastRevision。（operator_v2 板工作流及其 `workflow jczq-project` 投影已于 2026-09-23 退役） |
 | A4 | 构票 | 工作台从正式 Judgment Prescription 生成两类 Candidate Set；`judgment_bound` 内逐档记录 10x/20x/50x/100x 候选或 `no_feasible_candidate`，每次迭代必须有 parent/delta/rationale |
 | A5 | **审计门** | `uv run nutmeg decision-audit-legs --legs-file …` — 默认/AI/无人值守遇 ERROR=退出码1不许出票；仅 Jun 显式 `--user-override` 且登记 reason/rule ID、evidence_rejected Adjudication 入账成功后可继续；WARN 逐条显式裁决入账 |
-| A6 | 出票 | 先记录唯一正式终态（Selection 或 `record_no_ticket`）；`decision-close` 只认本体 terminal，`legs.json`/handoff 不能授权 close。真实出票与 Telegram 派发仍须 Jun 当次确认 |
+| A6 | 出票 | A5 门通过后把票面写到 `daily/<日>/legs.json`；`decision-close` 只读该文件做 express + 日报（无文件即空票，编排不自造腿；operator_v2 的本体 terminal 门已于 2026-09-23 退役）。真实出票与 Telegram 派发仍须 Jun 当次确认；实票入账走 B9c 的 `betslip register --channel jczq --legs-file …` |
 | A7 | 次日结算 | 通过正式 result/settlement/review Actions 结算；no-ticket 资金结算为 0 但 Forecast 仍进入复盘。historical replay 永不增加 prospective R0/F5/F9 样本 |
 
 切换门：operator_v2 的 `workflow jczq-replay` / `jczq-cutover` 切换门已于 2026-09-23 随板工作流一并退役；`decision-close` 固定走旧路径，出票授权仍只来自 A5 审计门 + Jun 当次确认。

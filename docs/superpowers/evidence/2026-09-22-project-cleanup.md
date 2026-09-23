@@ -75,3 +75,13 @@ Jun 选 A：8788 应用连同 product 级联退役（1189f48，169 文件 ≈5.9
 8788 应用（`nutmeg app` + `nutmeg/product/operator_*` ≈ 27,500 行 + 30,000 行测试）**与 Discovery 试点的 operator_v2 输入是同一条写入链**：
 生成请求 / 候选集只由网页端 `POST /api/v2/operator` 与其 worker 写入，仓里没有任何 CLI 生产者；官方在售清单 manifest 也没有生产者；生产库这些表至今 0 行。
 「退役 8788」与「Discovery 用 active 输入」不能同时成立，见本轮汇报。
+
+### 5.3 第四轮（2026-09-23，Jun：「1，2，3，4 现在都能开始了」）
+
+- **`rsi fulfill` / `rsi schedule` 同日幂等修复**（3fedd5e）：`rsi_observations.superseded_by`（迁移 45）；同日同场第二次兑现改为「取代」而非撞键；fulfil 键含 artifact hash16，schedule 键含目标指纹——同输入重跑仍是 no-op，输入变了才是新动作。
+- **operator_v2 残余批次 1**（5dac531）：`product/jczq_{board_workflow,compatibility,cutover,replay,replay_adjudication,replay_inputs,replay_workflow}`、`operator_artifacts`、`operator_legacy_import` 与 10 个测试文件；`decision-close` 不再有 v2 路径（`run_decision_close_v2` 删除）；`workflow jczq-*` 命令退役；RUNBOOK A1b/A3/A6 改写。
+- **`nutmeg odds` 命令组与 v0 bot 分析栈**（82a39b7）：`cli/odds.py`、`agents/{router,workflow}`、`services/{analysis,evals,players}`、`domain/{analysis,evals,players}`、`storage/prediction_repository`、`models/scoring`、`evals/` 与 7 个测试文件；bot `/brief` 回「已退役」。保留 snapshot/odds/value 链（足彩 value bridge 用 `ValueBoardService`）。
+- 三批合并树全量 3040 通过；每批按显式路径分别提交。
+- 顺带发现两处，留 Jun 裁：
+  - `services/jczq_value_wiring.build_jczq_value_bridge` 只剩测试引用（CLI 只用 zucai wiring；`zucai_value_wiring` 还从它导 `season_for_date`）——可把 `season_for_date` 挪到 zucai wiring 后退役整个模块。
+  - **CLV 轴的收盘快照入库已死**：内核 `market_snapshots` 最后一条 `closing` 是 2026-08-23（`read_time` 到今天 4,143 条）。唯一入库函数 `ontology_adapter._capture_closing_v2` 找的是 `bold_odds_closing.json`，而每日目录里实际落的是 `closing_odds.json`，且 v2 close 路径已删——函数只被 `tests/decision/test_closing_report_adapter.py` 养着。`analytics/{forecast,factor}_projection` 读 `closing_fair` 算 CLV，因此 08-23 后 CLV 恒空。选项：(a) `day.settle` 09:45 顺手把前一日 `closing_odds.json` 按 `snapshot_kind="closing"` 入库（改文件名即可复活）；(b) 接受 CLV 只在 titan007 终盘语料里算，删掉该函数与测试。
