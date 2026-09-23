@@ -123,3 +123,20 @@ def test_brief_job_with_logic_uses_injected_claude(tmp_path: Path):
     brief = json.loads((out / "brief.json").read_text(encoding="utf-8"))
     assert rec.exit == 0 and brief["jczq"]["matches"][0]["logic"]["status"] == "ok"
     assert "fair 定面。" in (out / "brief.md").read_text(encoding="utf-8")
+
+
+def test_brief_refresh_without_logic_carries_the_previous_explanation(tmp_path: Path):
+    ctx = _ctx(tmp_path, [])
+    day = ctx.data_dir / "jczq" / "daily" / "2026-09-23"
+    (day / "jczq-legs-base.json").write_text(json.dumps({"day": "2026-09-23", "legs": {
+        "周三001": {"match_id": "m", "name": "A vs B", "kickoff_bj": "2026-09-23T19:30:00+08:00",
+                   "fair": {"home": 0.5, "draw": 0.3, "away": 0.2}}}}), encoding="utf-8")
+    ctx.claude = lambda p, s: (0, json.dumps({"code": "周三001", "logic": "fair 定面。",
+                                              "cites": ["market.fair", "labels.judgment_tier"]}))
+    assert run_job(ctx, "brief", with_logic=True).exit == 0
+    out = day_dir(ctx.data_dir, "2026-09-23")
+    assert run_job(ctx, "brief").exit == 0                      # 14:20-style refresh
+    brief = json.loads((out / "brief.json").read_text(encoding="utf-8"))
+    logic = brief["jczq"]["matches"][0]["logic"]
+    assert logic["status"] == "ok" and logic["carried"] is True
+    assert "fair 定面。" in (out / "brief.md").read_text(encoding="utf-8")

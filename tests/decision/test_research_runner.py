@@ -83,6 +83,12 @@ def test_runs_each_match_once_and_writes_products_and_fulfills(tmp_path):
     assert [row["status"] for row in report["matches"]] == ["done"] * 3
     assert len(calls) == 3
     assert (root / "daily" / "2026-09-19" / "research-周五001.json").exists()
+    # 模型是 RSI 的实验变量：产物与运行记录都要带模型标签（注入的 claude → "default"）
+    written = json.loads(
+        (root / "daily" / "2026-09-19" / "research-周五001.json").read_text(encoding="utf-8")
+    )
+    assert written["model"] == "default"
+    assert all(row["model"] == "default" for row in report["matches"])
     assert all(
         argv[:4] == ["rsi", "fulfill", "--exp", "R0"] and "--match" in argv
         for argv in fulfills

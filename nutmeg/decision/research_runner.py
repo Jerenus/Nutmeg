@@ -13,6 +13,7 @@ from threading import Lock
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from nutmeg.decision.claude_models import model_argv, model_label, research_model
 from nutmeg.decision.research_ledger import ResearchRunLedger
 from nutmeg.decision.research_prompt import render_brief, system_prompt
 from nutmeg.decision.stance import validate_stance
@@ -52,6 +53,7 @@ def _claude_cli(prompt: str, brief: str) -> tuple[int, str]:
     argv = [
         "claude",
         "-p",
+        *model_argv(research_model()),
         "--system-prompt",
         prompt,
         "--allowedTools",
@@ -374,6 +376,7 @@ def run_day(
         ]
         results = [future.result() for future in futures]
 
+    model_used = model_label(research_model() if claude is _claude_cli else None)
     written = 0
     for (board_code, leg, _brief, previous_attempts), result in zip(
         runnable, results, strict=True
@@ -383,6 +386,7 @@ def run_day(
             written += 1
             research = result.pop("research")
             research["captured_at"] = current_time().isoformat(timespec="seconds")
+            research["model"] = model_used
             output.write_text(
                 json.dumps(research, ensure_ascii=False, indent=1), encoding="utf-8"
             )
@@ -453,6 +457,7 @@ def run_day(
             "status": result["status"],
             "seconds": result["seconds"],
             "attempts": result["attempts"],
+            "model": model_used,
         }
 
     board_path.write_text(

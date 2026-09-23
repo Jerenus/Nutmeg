@@ -200,3 +200,15 @@ RSI 长期可视化（帮助学习与找瑕疵）在 `/observe` 上加三页，�
 | Q4 | 8788 `nutmeg app` 的去留 | 冻结两周后退役 |
 | Q5 | 对外先用 artifact 还是直接静态托管 | 先 artifact |
 | Q6 | 播报默认动作是否一律「空仓」 | 是（宪法：空仓是对着数字做的选择） |
+
+## 13. 定时 `claude -p` 的模型分档（2026-09-23 Jun 裁定）
+
+定时链里只有两处调模型，其余作业零 LLM：
+
+| 调用 | 性质 | 模型 | 设置 |
+| --- | --- | --- | --- |
+| 逻辑层（`day.brief` 12:00，每场 1 轮无工具） | 把卡片字段说成人话，cites 逐条校验、超 8 句拒收——质量由校验器兜底 | **sonnet**（实测 31s/场、说人话；haiku 64–70s/场且往正文漏字段名） | `NUTMEG_MODEL_LOGIC` |
+| 深研（`jczq.research` 10:00，每场 ≤12 轮带检索） | 产出 stance / tilt / falsifier，宪法里唯一允许判断进入的口子 | **不降级**：空串＝不传 `--model`，继承 Claude Code 默认（opus） | `NUTMEG_MODEL_RESEARCH` |
+
+实际模型名写进 brief 卡片 `logic.model` 与 `research-*.json` / 运行记录的 `model`：模型是 RSI 的实验变量，换模型的样本必须能被记分牌分层。
+不带 `--with-logic` 的刷新（14:20 / 18:35）沿用上一版 `logic`（`carry_logic`），但只在 stance / read / ladder / labels / market 全部未变时；变了宁可丢，不带过期解释。

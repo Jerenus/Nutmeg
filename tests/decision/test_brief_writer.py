@@ -1,6 +1,6 @@
 import json
 
-from nutmeg.decision.brief_writer import resolve_path, validate_cites, write_logic
+from nutmeg.decision.brief_writer import carry_logic, resolve_path, validate_cites, write_logic
 
 CARD = {
     "code": "周三001", "name": "A vs B",
@@ -54,12 +54,14 @@ def test_write_logic_accepts_valid_and_rejects_bad_cites_and_respects_budget():
     assert m1["logic"] == {
         "status": "ok", "text": "锚方完整度 pass 定了面；位移 +2pp。",
         "cites": ["labels.anchor_integrity", "market.drift_pp"], "author": "claude -p",
+        "model": "default",
     }
     assert m2["logic"]["status"] == "rejected"
     assert "market.nope" in m2["logic"]["reason"]
     assert claude.calls == ["周三001", "周三002"]
     limited = write_logic(BRIEF, claude=_fake_claude({"周三001": ok, "周三002": bad}), budget=1)
-    assert limited["jczq"]["matches"][1]["logic"] == {"status": "not_generated", "reason": "budget"}
+    assert limited["jczq"]["matches"][1]["logic"] == {
+        "status": "not_generated", "reason": "budget", "model": "default"}
 
 
 def test_write_logic_handles_nonzero_exit_and_invalid_json():
@@ -80,3 +82,30 @@ def test_write_logic_rejects_too_few_cites_and_too_many_sentences():
                        "cites": ["market.drift_pp", "read.moved_pp"]})
     out = write_logic(BRIEF, claude=lambda p, s: (0, long), budget=1)
     assert out["jczq"]["matches"][0]["logic"]["reason"].startswith("超过 8 句")
+
+
+def test_write_logic_stamps_the_model_label_on_every_card():
+    ok = json.dumps({"code": "周三001", "logic": "fair 定面。", "cites": ["market.fair", "ladder"]})
+    out = write_logic({**BRIEF, "jczq": {"matches": [CARD], "counts": {}}},
+                      claude=lambda p, s: (0, ok), budget=5, model="haiku")
+    assert out["jczq"]["matches"][0]["logic"]["model"] == "haiku"
+    unlabeled = write_logic({**BRIEF, "jczq": {"matches": [CARD], "counts": {}}},
+                            claude=lambda p, s: (0, ok), budget=0)
+    assert unlabeled["jczq"]["matches"][0]["logic"] == {
+        "status": "not_generated", "reason": "budget", "model": "default"}
+
+
+def test_carry_logic_keeps_previous_explanation_only_when_inputs_are_unchanged():
+    logic = {"status": "ok", "text": "fair 定面。", "cites": ["market.fair"], "model": "haiku"}
+    previous = {"jczq": {"matches": [{**CARD, "logic": logic},
+                                     {**CARD, "code": "周三002", "logic": logic}]}}
+    fresh = {**BRIEF, "jczq": {"matches": [
+        dict(CARD),                                     # unchanged → carried
+        {**CARD, "code": "周三002", "ladder": "翻面"},   # ladder changed → dropped
+    ], "counts": {}}}
+    out = carry_logic(fresh, previous)
+    m1, m2 = out["jczq"]["matches"]
+    assert m1["logic"] == {**logic, "carried": True}
+    assert "logic" not in m2
+    assert carry_logic(fresh, None) == fresh
+    assert carry_logic(fresh, {"jczq": {"matches": []}}) == fresh

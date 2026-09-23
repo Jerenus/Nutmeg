@@ -68,6 +68,14 @@ class AppSettings(BaseSettings):
     # 追问应答器的模型：None＝不传 --model，继承用户 Claude Code 当前默认模型。
     # ⚠️别学 anthropic_model 写死 id——那个已经烂在一个过期型号上。
     responder_model: str | None = None
+    # 定时 claude -p 的模型分档（2026-09-23 Jun 裁定）：
+    #   逻辑层只把卡片字段说成人话、cites 逐条校验兜底 → 便宜模型；
+    #   深研产出 stance/tilt/falsifier，是判断层 → 空串＝不传 --model，
+    #   继承 Claude Code 默认（opus）。
+    # 实际用的模型名会写进 brief 卡片 logic.model 与 research-*.json 的 model，供记分牌按模型分层。
+    #   实测 2026-09-23：haiku 64–70s/场且往正文里漏字段名，sonnet 31s/场、说人话 → 默认 sonnet。
+    model_logic: str = 'sonnet'
+    model_research: str = ''
     agent_synthesis_enabled: bool = False
     openai_base_url: str = 'https://api.openai.com/v1'
     openai_api_key: str | None = Field(

@@ -7,6 +7,7 @@ import tempfile
 from collections.abc import Callable
 
 from nutmeg.decision.brief_prompt import LOGIC_SYSTEM_PROMPT, render_logic_input
+from nutmeg.decision.claude_models import logic_model, model_argv, model_label
 
 Claude = Callable[[str, str], tuple[int, str]]
 LOGIC_DAILY_BUDGET = 40
@@ -16,8 +17,8 @@ MAX_SENTENCES = 8
 
 
 def _claude_cli(prompt: str, stdin: str) -> tuple[int, str]:
-    argv = ["claude", "-p", "--system-prompt", prompt, "--allowedTools", "", "--max-turns", "1",
-            "--output-format", "text"]
+    argv = ["claude", "-p", *model_argv(logic_model()), "--system-prompt", prompt,
+            "--allowedTools", "", "--max-turns", "1", "--output-format", "text"]
     with tempfile.TemporaryDirectory() as neutral:
         proc = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=300,
                                cwd=neutral, check=False)
@@ -95,14 +96,43 @@ def _one(card: dict, factors: list[dict], claude: Claude) -> dict:
 
 
 def write_logic(
-    brief: dict, *, claude: Claude = _claude_cli, budget: int = LOGIC_DAILY_BUDGET
+    brief: dict, *, claude: Claude = _claude_cli, budget: int = LOGIC_DAILY_BUDGET,
+    model: str | None = None,
 ) -> dict:
-    """返回带 `logic` 字段的 brief 副本。超预算的场 `not_generated/budget`。不改其它字段。"""
+    """返回带 `logic` 字段的 brief 副本。超预算的场 `not_generated/budget`。不改其它字段。
+
+    `model` 只作标注（写进 `logic.model`），真正传给 claude 的模型由 `claude` 可调用对象决定；
+    默认 `_claude_cli` 用 settings.model_logic。"""
     factors = brief.get("factors") or []
+    label = model_label(model if model is not None else (
+        logic_model() if claude is _claude_cli else None))
     matches = []
     for i, card in enumerate(brief.get("jczq", {}).get("matches", [])):
         card = dict(card)
         card["logic"] = (_one(card, factors, claude) if i < budget
                           else {"status": "not_generated", "reason": "budget"})
+        card["logic"]["model"] = label
+        matches.append(card)
+    return {**brief, "jczq": {**brief["jczq"], "matches": matches}}
+
+
+_LOGIC_INPUTS = ("stance", "read", "ladder", "labels", "market")
+
+
+def carry_logic(brief: dict, previous: dict | None) -> dict:
+    """不重算逻辑层的刷新：沿用上一版 `logic`，但只在解释所依据的输入没变时。
+
+    14:20/18:35 的刷新不带 --with-logic，若整份重写会把 12:00 的解释丢掉（2026-09-23 实发）。
+    表态 / Read / 阶梯 / 标签 / 市场任一变了，旧解释可能已失效——宁可丢，也不带着过期解释。"""
+    if not previous:
+        return brief
+    old = {m.get("code"): m for m in previous.get("jczq", {}).get("matches", [])
+           if isinstance(m, dict)}
+    matches = []
+    for card in brief.get("jczq", {}).get("matches", []):
+        prev = old.get(card.get("code"))
+        if (prev and isinstance(prev.get("logic"), dict) and "logic" not in card
+                and all(prev.get(k) == card.get(k) for k in _LOGIC_INPUTS)):
+            card = {**card, "logic": {**prev["logic"], "carried": True}}
         matches.append(card)
     return {**brief, "jczq": {**brief["jczq"], "matches": matches}}

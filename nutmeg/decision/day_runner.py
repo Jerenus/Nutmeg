@@ -89,6 +89,10 @@ def _brief_pipeline(ctx: DayContext, with_logic: bool = False) -> str:
         from nutmeg.decision.brief_writer import _claude_cli, write_logic
 
         brief = write_logic(brief, claude=ctx.claude or _claude_cli)
+    else:
+        from nutmeg.decision.brief_writer import carry_logic
+
+        brief = carry_logic(brief, _read_json(ctx.out_dir / BRIEF))
     write_brief(ctx.data_dir, ctx.date, brief)
     timeline = read_timeline(ctx.data_dir, ctx.date)
     decisions = build_decisions(brief, timeline, data_dir=ctx.data_dir, now=ctx.now())
@@ -97,6 +101,14 @@ def _brief_pipeline(ctx: DayContext, with_logic: bool = False) -> str:
     n_open = sum(1 for d in decisions if d["status"] == "open")
     return (f"brief {brief['jczq']['counts']['matches']} 场 · 待人 {n_open} · "
             f"缺席输入 {len(brief['errors'])}")
+
+
+def _read_json(path: Path) -> dict | None:
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
 
 
 def _session_only(ctx: DayContext) -> tuple[str, int]:
