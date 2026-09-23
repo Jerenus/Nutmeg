@@ -541,12 +541,6 @@ def test_override_failure_rolls_back_every_business_row(
         ) == 0
 
 
-def test_web_contract_exposes_no_error_override_command() -> None:
-    from nutmeg.interfaces import operator_api
-
-    assert not hasattr(operator_api, "RecordTicketAuditOverrideCommandV2")
-
-
 def _selected_candidate_fixture(tmp_path: Path):
     fixture = _ready_fixture(tmp_path)
     requested = fixture.judgment.decision_actions.request_candidate_generation(

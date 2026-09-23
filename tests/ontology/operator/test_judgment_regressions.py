@@ -5,7 +5,6 @@ import re
 from dataclasses import fields, replace
 from datetime import timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
@@ -18,9 +17,6 @@ from nutmeg.ontology.operator.decision_actions import (
     FreezeJudgmentPrescriptionRequest,
 )
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product.errors import ProductActionBlockedError
-from nutmeg.product.operator_queries import OperatorQueryService
-from nutmeg.product.operator_tokens import OperatorSnapshotTokenCodec
 from nutmeg.product.operator_workers import MarketBaselineWorker
 from tests.ontology.operator.test_judgment_actions import (
     AT,
@@ -336,71 +332,6 @@ def test_prescription_rejects_a_stale_expected_revision(tmp_path: Path) -> None:
 
     with pytest.raises(OptimisticConcurrencyError):
         fixture.decision_actions.freeze_judgment_prescription(stale_request)
-
-
-def test_superseded_envelope_invalidates_progress_and_prescription_context(
-    tmp_path: Path,
-) -> None:
-    fixture = _fixture(tmp_path)
-    baseline_id, envelope_a = _create_baseline_and_envelope(fixture)
-    judgment_id = _commit_judgment(
-        fixture,
-        baseline_id,
-        envelope_a,
-        key="judgment:before-envelope-change",
-        expected_revision_no=0,
-        rationale="Bound to envelope A.",
-    )
-    prescription = fixture.decision_actions.freeze_judgment_prescription(
-        _prescription_request(
-            fixture,
-            baseline_id,
-            envelope_a,
-            (judgment_id,),
-            key="prescription:before-envelope-change",
-            expected_revision_no=0,
-        )
-    )
-    prescription_id = _result_id(
-        prescription,
-        "judgment_prescription_revision",
-    )
-    envelope_b = fixture.decision_actions.record_baseline_envelope(
-        _with_expected_revision(
-            replace(
-                _envelope_request(fixture, key="envelope:superseding"),
-                capital_cap_minor=18000,
-            ),
-            1,
-        )
-    )
-    assert _result_id(envelope_b, "baseline_envelope_revision") != envelope_a
-
-    assert fixture.decision_actions.committed_judgment_progress(
-        fixture.task_bundle_revision_id
-    ) == (0, 1)
-    queries = OperatorQueryService(
-        repository=SimpleNamespace(),
-        product_queries=SimpleNamespace(),
-        official_history_provider=lambda: [],
-        clock=lambda: AT + timedelta(seconds=30),
-        unit_of_work_factory=lambda: OntologyUnitOfWork(fixture.engine),
-        snapshot_tokens=OperatorSnapshotTokenCodec(b"j" * 32),
-    )
-    with pytest.raises(ProductActionBlockedError, match="current committed judgment"):
-        queries.judgment_prescription_context(
-            "jczq:2026-09-04",
-            as_of=AT + timedelta(seconds=30),
-        )
-    with fixture.engine.connect() as connection:
-        historical_count = connection.scalar(
-            text(
-                "SELECT COUNT(*) FROM operator_judgment_prescription_revisions "
-                "WHERE judgment_prescription_revision_id = :revision_id"
-            ),
-            {"revision_id": prescription_id},
-        )
-    assert historical_count == 1
 
 
 def test_envelope_revision_chain_allows_semantic_a_b_a(tmp_path: Path) -> None:

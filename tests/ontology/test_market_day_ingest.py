@@ -9,7 +9,6 @@ from nutmeg.ontology.ingest.market_day import MarketDayIngestRequest
 from nutmeg.ontology.repository import schema, schema_market
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
-from nutmeg.product.operator_evidence import _market_source_kinds
 from nutmeg.product.repository import ProductReadRepository
 
 SPORTTERY = {"matchInfoList": [{"businessDate": "2026-07-19", "subMatchList": [
@@ -105,7 +104,8 @@ def test_sporttery_snapshot_as_of_is_retrieval_time_not_kickoff(tmp_path: Path) 
         "md-had",
         retrieved_at.isoformat(),
     )
-    assert _market_source_kinds(timeline) == ("sporttery_official",)
+    assert timeline["as_of"] == retrieved_at.isoformat()
+    assert {lineage["source_name"] for lineage in timeline["quote_lineage"]} == {"sporttery"}
 
 
 def test_unchanged_market_payload_records_a_new_retrieval_time(tmp_path: Path) -> None:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 from sqlalchemy import text
 
@@ -36,15 +35,9 @@ from nutmeg.ontology.repository.evidence import ObservationRow
 from nutmeg.ontology.repository.market import QuoteRow, SnapshotRow
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product.operator_actions import OperatorActionService
-from nutmeg.product.operator_contracts import ConstructTicketStep
-from nutmeg.product.operator_queries import OperatorQueryService
-from nutmeg.product.operator_tokens import OperatorSnapshotTokenCodec
 from nutmeg.product.operator_workers import (
-    CandidateGenerationWorker,
     EvidenceFreezeRequestWorker,
 )
-from nutmeg.product.repository import ProductReadRepository
 
 AT = datetime(2026, 9, 4, 8, tzinfo=UTC)
 NOW = AT + timedelta(hours=1)
@@ -423,104 +416,3 @@ def _prepare_decision_lineage(tmp_path: Path):
     assert policy.status is ActionStatus.COMMITTED
     assert prescription.status is ActionStatus.COMMITTED
     return engine, action_service, decision_actions, result_actions, document
-
-
-def _candidate_faces(candidate) -> dict[str, str]:
-    labels = (
-        candidate.composition.singles
-        + candidate.composition.doubles
-        + candidate.composition.full_covers
-    )
-    return {
-        label.split(" · ", 1)[0].removeprefix("场 "): label.split(" · ", 1)[1]
-        for label in labels
-    }
-
-
-def test_26111_public_request_worker_persistence_and_query_replay(tmp_path: Path) -> None:
-    engine, action_service, decision_actions, result_actions, document = (
-        _prepare_decision_lineage(tmp_path)
-    )
-    queries = OperatorQueryService(
-        repository=ProductReadRepository(engine),
-        product_queries=SimpleNamespace(),
-        official_history_provider=lambda: [],
-        clock=lambda: NOW,
-        unit_of_work_factory=lambda: OntologyUnitOfWork(engine),
-        snapshot_tokens=OperatorSnapshotTokenCodec(TOKEN_KEY),
-    )
-    product_actions = OperatorActionService(
-        queries=queries,
-        action_gateway=SimpleNamespace(),
-        decision_actions=decision_actions,
-        snapshot_tokens=OperatorSnapshotTokenCodec(TOKEN_KEY),
-        clock=lambda: NOW,
-    )
-    before = queries.task(TASK_KEY, as_of=NOW)
-    assert isinstance(before.step, ConstructTicketStep)
-    assert before.step.mode == "candidate_request"
-
-    receipt = product_actions.request_candidate_generation(
-        SimpleNamespace(
-            task_key=TASK_KEY,
-            expected_snapshot_token=before.step.request_generation_token,
-            market_prior_baseline_token=before.step.market_prior_baseline_token,
-            baseline_envelope_token=before.step.baseline_envelope_token,
-            judgment_prescription_token=before.step.judgment_prescription_token,
-            idempotency_key="26111:public-candidate-request",
-        ),
-        actor_id="jun",
-        actor_role=ActorRole.JUDGE_OPERATOR,
-    )
-    assert receipt.status == "queued"
-
-    completed = CandidateGenerationWorker(
-        action_service=action_service,
-        result_actions=result_actions,
-        worker_id="26111-candidate-worker",
-        lease_duration=timedelta(minutes=5),
-    ).run_once(limit=1, as_of=NOW + timedelta(seconds=1))
-    assert len(completed) == 1
-
-    after = queries.task(TASK_KEY, as_of=NOW + timedelta(seconds=2))
-    assert isinstance(after.step, ConstructTicketStep)
-    assert after.step.mode == "candidate_comparison"
-    judgment_set = next(
-        candidate_set
-        for candidate_set in after.step.candidate_sets
-        if not candidate_set.comparison_only
-    )
-    by_faces = {
-        frozenset(_candidate_faces(candidate).items()): candidate
-        for candidate in judgment_set.candidates
-    }
-    for version in document["versions"]:
-        candidate = by_faces[frozenset(version["faces"].items())]
-        assert candidate.stake_minor == version["stake_minor"]
-        assert (
-            candidate.objective_probability_decimal
-            == version["objective_probability_decimal"]
-        )
-    assert after.step.selection_completed is False
-    with engine.connect() as connection:
-        assert connection.execute(
-            text(
-                "SELECT set_kind, candidate_count FROM "
-                "operator_candidate_set_revisions ORDER BY set_kind"
-            )
-        ).all() == [
-            ("conditional_market_counterfactual", 8),
-            ("judgment_bound", 8),
-        ]
-        assert connection.scalar(
-            text(
-                "SELECT COUNT(*) FROM actions WHERE action_type = "
-                "'request_candidate_generation' AND status = 'committed'"
-            )
-        ) == 1
-        assert connection.execute(
-            text(
-                "SELECT state, result_object_type FROM operator_worker_jobs "
-                "WHERE job_kind = 'candidate_generation'"
-            )
-        ).one() == ("completed", "ticket_candidate_set_revision")

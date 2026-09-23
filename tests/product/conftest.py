@@ -48,14 +48,6 @@ class SeededProduct:
     settings: AppSettings
 
 
-@dataclass(frozen=True, slots=True)
-class ProductTestServices:
-    kernel: object
-    queries: object
-    actions: object
-    settings: AppSettings
-
-
 @pytest.fixture
 def seeded_product(tmp_path: Path) -> SeededProduct:
     settings = AppSettings(data_dir=tmp_path / "data")
@@ -513,58 +505,3 @@ def m3_seeded_product(m2_seeded_product: SeededProduct) -> SeededProduct:
             )
         )
     return m2_seeded_product
-
-
-@pytest.fixture
-def product_services(seeded_product: SeededProduct):
-    from nutmeg.product.actions import ProductActionGateway
-    from nutmeg.product.queries import ProductQueryService
-    from nutmeg.product.repository import ProductReadRepository
-
-    repository = ProductReadRepository(seeded_product.kernel.engine)
-    return ProductTestServices(
-        kernel=seeded_product.kernel,
-        queries=ProductQueryService(repository, seeded_product.kernel),
-        actions=ProductActionGateway(
-            seeded_product.kernel, repository, clock=lambda: seeded_product.clock
-        ),
-        settings=seeded_product.settings,
-    )
-
-
-@pytest.fixture
-def m2_product_services(m2_seeded_product: SeededProduct):
-    from nutmeg.product.actions import ProductActionGateway
-    from nutmeg.product.queries import ProductQueryService
-    from nutmeg.product.repository import ProductReadRepository
-
-    repository = ProductReadRepository(m2_seeded_product.kernel.engine)
-    return ProductTestServices(
-        kernel=m2_seeded_product.kernel,
-        queries=ProductQueryService(repository, m2_seeded_product.kernel),
-        actions=ProductActionGateway(
-            m2_seeded_product.kernel,
-            repository,
-            clock=lambda: m2_seeded_product.clock,
-        ),
-        settings=m2_seeded_product.settings,
-    )
-
-
-@pytest.fixture
-def m3_product_services(m3_seeded_product: SeededProduct):
-    from nutmeg.product.actions import ProductActionGateway
-    from nutmeg.product.queries import ProductQueryService
-    from nutmeg.product.repository import ProductReadRepository
-
-    repository = ProductReadRepository(m3_seeded_product.kernel.engine)
-    return ProductTestServices(
-        kernel=m3_seeded_product.kernel,
-        queries=ProductQueryService(repository, m3_seeded_product.kernel),
-        actions=ProductActionGateway(
-            m3_seeded_product.kernel,
-            repository,
-            clock=lambda: m3_seeded_product.clock + timedelta(hours=1),
-        ),
-        settings=m3_seeded_product.settings,
-    )

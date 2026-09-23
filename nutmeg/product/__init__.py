@@ -1,13 +1,6 @@
-"""Versioned product contracts above Ontology Kernel v2."""
+"""Operator lane contracts and workflows above Ontology Kernel v2."""
 from __future__ import annotations
 
-from nutmeg.product.contracts import (
-    ProductActionRequest,
-    ProductActionResponse,
-    ProductError,
-    ReadinessLevel,
-    ReadinessState,
-)
 from nutmeg.product.operator_contracts import (
     AuditDeploymentStep,
     AwaitResultStep,
@@ -45,7 +38,6 @@ from nutmeg.product.operator_contracts import (
     VersionedOperatorContract,
     WaitingDataStep,
 )
-from nutmeg.product.wiring import ProductServices, build_product_services
 
 __all__ = [
     'AuditDeploymentStep',
@@ -70,12 +62,6 @@ __all__ = [
     'PrepareStep',
     'PrescriptionDeviationCommand',
     'PrescriptionDifferenceSummary',
-    'ProductActionRequest',
-    'ProductActionResponse',
-    'ProductError',
-    'ProductServices',
-    'ReadinessLevel',
-    'ReadinessState',
     'RecordDeploymentCommand',
     'RequestTelegramConfirmationCommand',
     'ResolveIssueAdjudicationCommand',
@@ -89,5 +75,4 @@ __all__ = [
     'TicketVersionSummary',
     'VersionedOperatorContract',
     'WaitingDataStep',
-    'build_product_services',
 ]

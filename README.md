@@ -25,14 +25,11 @@ uv run nutmeg rsi status                 # RSI 实验唯一事实源
 uv run nutmeg rsi loop                   # 每日闭环（launchd 10:45 已自动跑）→ .nutmeg-data/analytics/rsi-loop/latest.md
 ```
 
-`uv run nutmeg app`（8788）是九工作区的本体工作台，仍处 `legacy_read_only`，
-手册见 `docs/application-operator-manual.md`。
-
 ## 目录
 
 | 路径 | 内容 |
 | --- | --- |
-| `nutmeg/` | 包：`decision/`（五动词、判读、审计门、RSI）、`ontology/`（SQLite 内核 + typed Actions）、`discovery/`（Harness）、`product/`（工作台）、`interfaces/`（CLI / web / bot）、`data/` `services/`（采集） |
+| `nutmeg/` | 包：`decision/`（五动词、判读、审计门、RSI）、`ontology/`（SQLite 内核 + typed Actions）、`discovery/`（Harness）、`product/`（竞彩/足彩泳道、候选生成、回放工作流）、`interfaces/`（CLI / web / bot）、`data/` `services/`（采集） |
 | `experiments/` | 语料 v2、因子注册表 `factors.json`、实验登记 `registry/`、Harness 契约 `discovery/`、`attempts.log` |
 | `scripts/` | 定时器与采集器（`openclaw/`、结果回填、终盘采集、F2 观察仪、足彩 discovery loop）；ruff 不作质量门 |
 | `ops/launchd/` | 全部 plist；装载是 Jun 的行权门 |

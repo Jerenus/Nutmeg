@@ -8,13 +8,13 @@ import pytest
 
 from nutmeg.product.jczq_board_workflow import JczqBoardWorkflow
 from nutmeg.product.jczq_compatibility import JczqCompatibilityProjector
-from tests.product.operator_v2.test_deployment_replay import _selected_fixture
+from tests.ontology.operator.test_lineage_actions import _selected_candidate_fixture
 
 
 def test_projection_contains_source_revision_ids(tmp_path) -> None:
     workspace = tmp_path / "ontology"
     workspace.mkdir()
-    fixture, _queries, selection_id = _selected_fixture(workspace)
+    fixture, selection_id, _candidate, _ticket = _selected_candidate_fixture(workspace)
     output_dir = tmp_path / "jczq"
     projector = JczqCompatibilityProjector(
         fixture.judgment.action_service,
