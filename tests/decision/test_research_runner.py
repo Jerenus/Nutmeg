@@ -203,7 +203,9 @@ def test_runner_honours_concurrency_limit(tmp_path):
     assert [row["status"] for row in report["matches"]] == ["done", "done"]
 
 
-def test_max_turns_is_permanent_without_resending_same_brief(tmp_path):
+def test_max_turns_retries_once_with_marker_then_is_permanent(tmp_path):
+    from nutmeg.decision.research_runner import RETRY_MARKER
+
     root = _board(tmp_path, n=1)
     calls = []
     now = datetime(2026, 9, 19, 10, 0, tzinfo=BJ)
@@ -221,12 +223,14 @@ def test_max_turns_is_permanent_without_resending_same_brief(tmp_path):
         now=lambda: now,
     )
 
-    assert len(calls) == 1
-    assert report["used_attempts"] == 1
+    assert len(calls) == 2
+    assert RETRY_MARKER not in calls[0]
+    assert RETRY_MARKER in calls[1]
+    assert report["used_attempts"] == 2
     assert report["written"] == 0
     rejected_path = root / "daily" / "2026-09-19" / "research-周五001.rejected.json"
     rejected = json.loads(rejected_path.read_text(encoding="utf-8"))
-    assert rejected["attempts_total"] == 1
+    assert rejected["attempts_total"] == 2
     assert rejected["last_attempt_at"] == now.isoformat(timespec="seconds")
     assert rejected["next_retry_after"] is None
     assert rejected["permanent"] is True
@@ -245,6 +249,35 @@ def test_max_turns_is_permanent_without_resending_same_brief(tmp_path):
     assert second["matches"][0]["status"] == "skipped_permanent"
     assert second["used_attempts"] == 0
     assert second_calls == []
+
+
+def test_max_turns_then_success_on_marked_retry(tmp_path):
+    from nutmeg.decision.research_runner import RETRY_MARKER
+
+    root = _board(tmp_path, n=1)
+
+    def claude(system, brief):
+        if RETRY_MARKER in brief:
+            return 0, GOOD
+        return 1, "Error: Reached max turns (12)"
+
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=root,
+        data_dir=tmp_path,
+        claude=claude,
+        fulfill=lambda argv: (0, ""),
+        profile=lambda match_id: {},
+        budget=10,
+        now=lambda: datetime(2026, 9, 19, 10, 0, tzinfo=BJ),
+    )
+
+    assert report["matches"][0]["status"] == "done"
+    assert report["used_attempts"] == 2
+    assert report["written"] == 1
+    day_dir = root / "daily" / "2026-09-19"
+    assert (day_dir / "research-周五001.json").exists()
+    assert not (day_dir / "research-周五001.rejected.json").exists()
 
 
 def test_network_failure_retries_then_obeys_cross_call_backoff(tmp_path):

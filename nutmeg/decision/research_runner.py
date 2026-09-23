@@ -19,6 +19,13 @@ from nutmeg.decision.research_prompt import render_brief, system_prompt
 BJ = ZoneInfo("Asia/Shanghai")
 RESEARCH_DAILY_BUDGET = 40
 MAX_ATTEMPTS = 2
+RETRY_MARKER = "⚠️RETRY-AFTER-MAX-TURNS"
+RETRY_MAX_TURNS = "24"
+RETRY_NOTE = (
+    f"\n\n{RETRY_MARKER}：上一次在 12 轮内没有产出 JSON。"
+    "这次：最多 4 次检索，然后必须输出契约 JSON；"
+    "查不到的字段写「未证实」，不要继续搜。"
+)
 
 Claude = Callable[[str, str], tuple[int, str]]
 Fulfill = Callable[[list[str]], tuple[int, str]]
@@ -48,7 +55,7 @@ def _claude_cli(prompt: str, brief: str) -> tuple[int, str]:
         "--allowedTools",
         "WebSearch,WebFetch",
         "--max-turns",
-        "12",
+        RETRY_MAX_TURNS if RETRY_MARKER in brief else "12",
         "--output-format",
         "text",
     ]
@@ -141,8 +148,13 @@ def _research_one(
             last_error = str(exc)
             error_signatures.append(f"{last_error}\n{last_text.strip()}")
             if "Reached max turns" in last_text:
-                permanent = True
-                break
+                if RETRY_MARKER in brief:
+                    # 带标记的重试仍撞 max turns → 永久
+                    permanent = True
+                    break
+                # 第一次撞 max turns：带标记、放宽轮数再试一次
+                brief = brief + RETRY_NOTE
+                continue
             if (
                 len(error_signatures) >= 2
                 and error_signatures[-1] == error_signatures[-2]
@@ -192,7 +204,9 @@ def _load_rejected(path: Path) -> dict:
     permanent = bool(document.get("permanent", False))
     attempt_errors = list(document.get("attempt_errors") or [])
     if "Reached max turns" in str(document.get("raw_output", "")):
-        permanent = True
+        # 旧记录里 attempts_total == 1 的 max-turns 拒绝仍允许带标记重试一次
+        if attempts_total >= 2:
+            permanent = True
     elif (
         len(attempt_errors) >= 2
         and attempt_errors[-1] == attempt_errors[-2]
