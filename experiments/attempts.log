@@ -197,3 +197,28 @@
 2026-09-22T17:11 | hyp 锚方PASS→正路 | corpus=v2 cut=26131 n=61 | R=-11.6pp CI[-23.5,-0.2] MDE80=16.7pp | ⭐反向确认
 2026-09-22T17:11 | hyp C9崩盘标记→正路 | corpus=v2 cut=26131 n=14 | R=-0.3pp CI[-23.1,+22.5] MDE80=34.3pp | 证伪
 2026-09-22T17:11 | hyp 基线:全语料→正路 | corpus=v2 cut=26131 n=1578 | R=+1.5pp CI[-0.9,+3.7] MDE80=3.4pp | 证伪
+2026-09-23T10:45 | rsi weights propose c7_live_precedent | strict n=117 n_min=None n_perm=1000 | obs=-5.77262pp p=0.492507 verdict=indistinguishable | record_only → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose anchor_integrity | strict n=35 n_min=60 n_perm=1000 | obs=-5.600048pp p=0.746254 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose death_proof_count | strict n=132 n_min=60 n_perm=1000 | obs=6.510926pp p=0.287712 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose directional_flag_nonmodal | strict n=44 n_min=60 n_perm=1000 | obs=-2.983905pp p=0.861139 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose nondirectional_flag_third_face | strict n=44 n_min=60 n_perm=1000 | obs=13.802909pp p=0.32967 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose crash_marker_modal | strict n=44 n_min=60 n_perm=1000 | obs=57.811705pp p=0.225774 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose conf_level | strict n=44 n_min=60 n_perm=1000 | obs=-11.358295pp p=0.306693 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose false_direction_band | strict n=104 n_min=60 n_perm=1000 | obs=11.911785pp p=0.572428 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose draw_underpriced_band | strict n=104 n_min=60 n_perm=1000 | obs=-3.37617pp p=0.839161 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose belief_offset_anchor | strict n=14 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient | hold → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose modal_face_dropped | strict n=0 n_min=None n_perm=1000 | obs=Nonepp p=None verdict=not_measured | record_only → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose weakness_tag_side | strict n=36 n_min=60 n_perm=1000 | obs=32.666599pp p=0.117882 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose hole_unpriced_side | strict n=4 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient | hold → 0.0pp (not written)
+2026-09-23T10:45 | rsi weights propose anchor_side_integrity | strict n=35 n_min=60 n_perm=1000 | obs=-5.634562pp p=0.743257 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-23T10:45 | hyp call:排掉面→开出 | corpus=v2 cut=26131 n=29 | R=-12.0pp CI[-26.6,+3.2] MDE80=21.1pp | 欠功效
+2026-09-23T10:45 | hyp call:单选→开出 | corpus=v2 cut=26131 n=16 | R=+17.6pp CI[-4.0,+38.7] MDE80=31.7pp | 欠功效
+2026-09-23T10:45 | hyp call:双选→开出 | corpus=v2 cut=26131 n=13 | R=+5.2pp CI[-14.3,+21.2] MDE80=26.7pp | 证伪
+2026-09-23T10:45 | hyp 方向旗→非模态 | corpus=v2 cut=26131 n=90 | R=-4.3pp CI[-14.7,+6.1] MDE80=14.7pp | 证伪
+2026-09-23T10:45 | hyp 方向旗→开平 | corpus=v2 cut=26131 n=90 | R=+0.7pp CI[-8.2,+10.0] MDE80=13.0pp | 证伪
+2026-09-23T10:45 | hyp 无方向旗→非模态 | corpus=v2 cut=26131 n=77 | R=-6.6pp CI[-17.7,+4.2] MDE80=15.7pp | 证伪
+2026-09-23T10:45 | hyp C6:无方向旗→第3面 | corpus=v2 cut=26131 n=77 | R=-1.1pp CI[-10.3,+8.3] MDE80=13.2pp | 证伪
+2026-09-23T10:45 | hyp 锚方FAIL→正路 | corpus=v2 cut=26131 n=69 | R=+1.7pp CI[-9.4,+12.9] MDE80=16.1pp | 证伪
+2026-09-23T10:45 | hyp 锚方PASS→正路 | corpus=v2 cut=26131 n=63 | R=-10.2pp CI[-21.9,+1.0] MDE80=16.4pp | 欠功效
+2026-09-23T10:45 | hyp C9崩盘标记→正路 | corpus=v2 cut=26131 n=15 | R=+3.5pp CI[-19.5,+25.9] MDE80=33.7pp | 证伪
+2026-09-23T10:45 | hyp 基线:全语料→正路 | corpus=v2 cut=26131 n=1582 | R=+1.6pp CI[-0.8,+3.9] MDE80=3.4pp | 证伪

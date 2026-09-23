@@ -21,7 +21,20 @@
 - `validate_stance` 的 cover 检查在 `face` 本身非法时不会触发（计划的条件漏了 `face not in FACES`）。
 - Task 4 测试断言 `belief.home − prior.home == 0.06` 忽略了死面归一：+6pp 后再把 away 清零归一，home 实为 0.756。
 
-## 真实首跑（待补）
+## 真实首跑（2026-09-23 11:11 补记）
+
+08:00 由 `decision.am` 链起的深研早于表态契约提交（08:20），两份研究没有 `stance`，10:00 的 intake 把它们隔离（`stance.stance: 缺 stance 表态块`）——守则起作用。11:08 手动重跑 `research run → intake --write → jczq-build-reads → day brief --with-logic`：
+
+| 场 | stance | falsifier |
+| --- | --- | --- |
+| 周三001 中国-阿联酋 | 押 3 · double(31) · conf 2 · why_not_market=none | 若中国 90 分钟输给阿联酋，则本判读作废；若开出平局，只有平局对冲这一腿命中 |
+| 周三002 日本-? | 押 3 · single · conf 3 · why_not_market=none | 若 90 分钟日本未胜，或日本首发轮换超过 8 人且半场仍未领先，则本判断作废 |
+
+两场都是「跟市场」但**写下来了**：面、档、作废条件齐全；无 A/B 类证据故无 tilt，`belief == prior` 是选择而非默认。Read 的 `commitment_tier` 分别 lean / commit。
+逻辑层（新提示词）两场都 `ok`，说人话、≤6 句、字段名只在 cites。
+
+顺带暴露：重跑时 `rsi fulfill --exp R0` 撞幂等键（同日同场第二次兑现被拒），与「rsi schedule 同日幂等」是同一族 bug，待修。
+
 
 2026-09-22 的四场已过开球，不能回放（T12）。今天 10:00 `com.nutmeg.jczq.research` 会用新契约跑 2026-09-23 板面；补记：每场 `stance` 原文、`reads.json` 里首条 `belief ≠ prior`、被 max turns 重试的场的 `attempt_errors`。
 
