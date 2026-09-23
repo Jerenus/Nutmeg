@@ -67,3 +67,133 @@
 2026-09-14T18:35 | 第二处脱节 | 混合prior+分歧闸进了生产代码,但今天14:00跑出的备料无 fair_blend/fair_source | 重建验证:10/14混合+分歧闸拦下场1——代码是好的,14:00文件是旧代码写的 | 无活bug;新推送已把闸上推
 2026-09-14T18:55 | ⭐竞彩国际欧赔切源收尾(用户裁定「切」) | 查实:代码早已 titan007主/AF备;今日血统12-12全titan007 | 残留=08:00时titan007板面未铺开→唤醒AF备源→配额耗尽每次429(09-01起164次,一场没补上) | AF备源默认关,env可开回;TDD 3测试
 2026-09-14T18:55 | ⚠️发现 OpenClaw 另管4个Nutmeg任务 | SCHEDULER-ROSTER: 08:20/17:15/17:30/18:35;bold_odds 其实是17:15那个写的(10天全17:15) | roster 仍把已死的 close(19:00)/settle(08:10) 列为在跑;且「七个任务出错都发Telegram」=噪音的另一半 | 未动,待用户裁
+2026-09-16T12:50 | ⭐26125+26126 复盘 | 26125未入账(空仓,纸面A_324走8/9断场2裸单);26126实票四张全灭-¥672(任九8/9断场11被排面18.5%) | 事前登记 26125 8/11中 / 26126 6/13中;官方赛果回填至103期 | 见 scoreboard
+2026-09-16T12:50 | ⚠️F3 前瞻对照组异常 | 押注带 n=15 +6.4pp，对照带 top1<60 n=13 **+16.4pp** | F3 立身之本是「效应只在≥60」，前瞻头两期未复现特异性 | 窗内不得调参;prereg 缺对照组判据,结账须并看
+2026-09-16T12:50 | ⭐跨渠道共享死点(新) | 周二005 国安-浦项单场杀竞彩3/3票;该场足彩买310全包=判为无判断力 | j-传导反向违规:足彩说不可判,竞彩押方向;C15只管足彩同期多票 | 新链入 scoreboard
+2026-09-17T08:20 | ⭐26127 复盘(两源临时串,官方待核) | 试玩USER_576 9/9;S333/U2/O5/O1 全9/9;S342断场7(0-0)/零ERROR¥288断场2 | 判断层7/10(P3/P4/P5脆锚翻车全证伪);票面层4/4+1NA | 严格裁决=空仓第三期
+2026-09-17T08:20 | ⚠️脆锚≠翻车 | 26127 FAIL锚6/11+③b锚8 全部正路;26126 FAIL 6/7 | anchor_fail_inverted 累计再强化;FAIL/③b正确禁裸但不预测非模态 | 规则缺regime维度:hot板上锚场全包=买确定性
+2026-09-17T08:20 | ⭐F3前瞻第三期 | 押注带+27.3pp 对照-5.6pp→特异性首次复现 | 累计n=21 押注+12.4/对照+8.0 差+4.4pp | 窗内不调参,进度21/120
+2026-09-17T08:20 | 码vs本体分歧实证 | 场7:03/场3:03 码报干净,研究判平局最强 | 场7 开0-0,S342正死于此 | C14『查无先例=先例已死』豁免是漏洞,待入码修
+2026-09-17T08:20 | F2前瞻账 | 26126+26127 n=23;主格(向主≥+0.5) n=8 残差+2.6pp | 早期无判决力 | 继续累计
+2026-09-18T10:00 | ⭐26128 复盘(API-Football 单源,官方待核) | 实票 S333 ¥432 断场3(克里特主胜12.6%,C17已点名场1/3/6);三候选同死一腿 | 赛后验尸:霍芬海姆没轮换/21射5正/控球67%输0-2=尾部不是漏判;同价反事实全是 P-负(31.4→26.9) | 板面 零平局13场(期望2.80)、模态9/13(+1.38场)、hot四连
+2026-09-18T10:00 | ⛔锚方完整度零预测力 | n=70(5期 legs-base×官方赛果):fail R=+0.0pp / pass R=-6.8pp;26126/27/28 三期 FAIL≥PASS | 26124「PASS 5/6 vs FAIL 3/8=最强单因子」是两期噪声,记忆条已标取代 | 合法用途只剩牌照门(禁裸),而 C5 立论因此失去残差支撑
+2026-09-18T10:00 | ⛔conf 分档零残差 | 语料 n=428 reads×赛果:conf2 -2.4/conf3 -3.9/conf4 +3.8/conf5 -8.7,各档 CI 含0;同价格带内 conf3 反而 > conf4 | C4 的「conf4 69%>conf2 50%>conf3 32%」是**未控价格的原始命中率** | ERROR 级 C4 立论待改写(prereg-F4 前瞻)
+2026-09-18T10:00 | ⛔C6/C10 标记双选:差全由价格解释 | 去重(期×场×面集)n=223:标记腿实断20.1% vs 价格22.9%(R=-2.8),未标记14.1% vs 18.4%(R=-4.3),差 +1.5pp | 原始 +8.3pp CI[+3.7,+12.9] 是「标记场的被排面更贵」(22.9 vs 18.4) | C17 立论改写为价格纪律,动作不变
+2026-09-18T10:00 | ⛔C7 活先例分窗不过 | 355条被排面里67条带活先例:全体 R=+2.7pp CI[-7.7,+13.1];训练窗(≤26117)+12.0 → 测试窗(≥26118)-0.7 | 最扎眼的 C7×省钱档 n=9 R=+22.0pp 也塌(训练 n=2 +86.4 → 测试 n=7 +3.6) | 与已证伪的被排面链同形;C7 维持 WARN,立论改挂宪法第一序
+2026-09-18T10:05 | ⭐⭐更正「严格空间帽内零解」 | 生产码 face_options 穷举全合法空间:26127 ¥400 有33,745前沿解 maxP=23.09%;26128 ¥400 有120个 maxP=6.06%/¥432 有624个 maxP=6.94%;两张 maxP 票面真审计 0 ERROR | 只有 26126 是真零解;根因=B4b 按设计只穷举**已声明**空间,报告未区分声明空间与合法空间 | 门的代价量化:31.41%(实票)→11.32%(腿级ERROR)→6.94%(+C17);新脚本 exp-strict-space.py
+2026-09-18T10:05 | ⭐新前瞻 prereg-26129-F4(门的代价) | 每期记 legal_max_p / legal_max_p_no_c17 / chosen_p + 赛后两条存活;F4a 检门有无事实含量,F4b 检代价是否≥10pp | 观察口径,不占配额(F3 仍占);26129-26140 结账 | 四条闭环零残差 vs 门的代价,两边都不足以判决→必须前瞻
+2026-09-18T10:05 | F3 前瞻第四期 | 26128 押注带(top1≥60) +5.8pp n=5 / 对照带 +13.6pp n=8;累计 n=34/120 | 四期里对照带三期跑赢押注带,特异性只复现1次 | 窗内不调参;结账时必须并看对照带
+2026-09-18T10:05 | ⚠️26127/26128 没跑 B4 | 无 judgment-v1/无 reads.json → prescription 全占位310、11条 unnamed_prescription_deviation 噪音、语料停在26126/334场 | 「处方14/14」连续记录两期无法评分;无 rx → 零条事前可证伪预测 | 语料断供发生在两条前瞻实验正在累样本的时候
+2026-09-18T10:20 | ⭐语料 v2 落地(用户裁定:legs-base 入语料 + 并入竞彩板) | experiments/corpus_build.py:足彩406(32期,legs-base 的 fair+标签,跳过B4也有)+竞彩532(daily/bold_odds×jc-results,去重丢弃67行重叠)=938行;zucai_loop 加 --corpus v2(按日期切窗,v1 行为不变) | 竞彩那532场绝大多数没下过注=无选择偏差的价格样本;带判读标签仍只有70行(5期) | 价格带类检验可吃全部938,标签类只能吃70;⛔F2/F3/F4 前瞻窗不得用本语料回补
+2026-09-18T10:20 | ⭐C11 的带定错了位置(扩样本首个结论) | gap12∈[5,10) 原立 n=18 判「模态命中最低27.8%」;n=938 实测该带 R=+4.0pp 无缺陷,而 **gap12∈[10,20) R=-8.0pp CI[-15.0,-0.9] n=179** | 两条泳道独立同向:足彩-6.2pp(n=87)/竞彩-9.7pp(n=92) | 候选档,须前瞻注册后才可动 C11;⚠️本轮看了19个格,Bonferroni 后不显著
+2026-09-18T10:20 | ⭐冷面高估(≤10%)两泳道同向 | 最小面<10%:实开2.0% vs 价格6.8%,R=-4.8pp CI[-7.5,-2.1] n=102(足彩0/35,竞彩3.0%/67) | 与 exp-label-residuals 的「对照×省钱档 R=-6.1pp」同向 | 给「省钱档排除是安全的」第一个有功效的支撑;但C7 那9条带活先例的例外仍未被证伪也未被证实
+2026-09-18T10:20 | C12 扩样本未复现 | 平 fair∈[29,32) 原立 n=14 +5.6pp;n=85 实测 R=+4.1pp CI[-6.0,+14.2];分泳道 足彩+0.1(n=33)/竞彩+6.6(n=52) | 同号但足彩侧归零 | 维持 probation,不加码
+2026-09-18T10:20 | F3 在 v2 语料上的读数 | 价格带口径:押注带≥60 R=+5.4pp CI[+0.3,+10.4](n=277) vs 对照带 -0.4pp(n=662);分泳道 足彩+8.1/竞彩+3.6 | BSS 口径:policy-top60 在 v2 上 train+0.14%/test+0.23%,CI 仍含0(v1 上 +0.38/+0.28) | ⛔历史复检,不入 F3 前瞻账;竞彩侧点估计小一半=回归均值的正常形状
+2026-09-18T10:20 | 语料 v2 的三条 sanity | policy-contrarian(反向带权) train -0.91% CI[-1.79,-0.08]=方向结构正确;policy-bands-v1(足彩<26113 拟合) 在 v2 上 -0.12%/-0.02%=不跨泳道泛化 | 接线正确性的反证 | bands 类权重不可跨泳道搬运
+2026-09-18T10:32 | ⭐26128 收尾(场14 FT 1-1) | 官方串 `3 0 3 3 0 3 3 0 0 0 3 3 0 1` 入 official-results;F2 grade 累计 n=33/140(主格 向主≥+0.5 n=10 R=+9.0pp);betslip settle: S333 7/9 −¥432;记分牌逐链更新 + 影子镜像 71 条(17+54,补了6条缺 status 的链) | 模态9/14 Σtop1 8.32(+0.68);平局仅1场vs期望2.99;先进球方13/14、半场领先方12/12;shield旗指平0/5 | 第二个死点=场14 conf3裸单开平:研究原文写「平局面没有死,是本场最大的正路风险」,C4 ERROR+③b WARN 都报了——识别≠行动
+2026-09-18T10:32 | ⚠️单源坏 tick 差点定案 | API-Football 10:09 报场14 0-2、10:10 自己回到 0-1,终场 1-1 | 我在上一条汇报里已按 0-2 说了「完场即定」,当场更正 | 三源制不是形式:结算前 status 必须是 FT/AET/PEN 且取 score.fulltime
+2026-09-18T10:32 | ⚠️settle-issue 幂等键坑复现 | 首跑因 6 条链缺 status 在中途失败,已成功的17条占住键;重跑整体即 IdempotencyConflictError | 解法=按已镜像 metric 反查后用 --metric 只补剩余54条 | 该坑正是该命令 docstring 里记的 26121 出生事故,未修;建议 settle-issue 先做 status 预检再提交
+2026-09-18T11:40 | ⭐修掉 decision-alias-propose 的真 bug(自 09-14 起一调用就崩) | 根因=run_propose 里 `from nutmeg.services.jczq_apifootball_odds import fetch_fixtures_by_date`,那个名字在 09-14 竞彩国际欧赔切源(titan007主/AF备)时被删;改走生产客户端 ApiFootballClient.fetch_fixtures_by_date 并在本地转回提案器要的原始形状 | 没被测到=tests/decision/test_alias_propose.py 只测注入 fixtures 的纯函数 propose_for_board,run_propose 的取数路径零覆盖 | 修后首跑:缺口8队→4条提案全部写入(德尔瓦耶/达姆施塔/兰斯/海尔蒙特),2场双边未解析如实报出
+2026-09-18T11:40 | ⚠️别名自愈只走竞彩板,足彩缩写补不上 | 26129 前提卡 12 支队别名未命中(布里斯/沃特福/马格德/沃尔夫/达姆施/西班人/摩纳哥/朗斯/蒙彼利/格罗宁/萨堡/奥斯KF);applied 的 4 条是竞彩缩写(达姆施塔≠达姆施、蒙彼利埃≠蒙彼利),足彩侧一条没补上 | alias_propose 读的是 .nutmeg-data/jczq/daily/<date> 板面,足彩 issue 的队名从不进它的缺口列表 | 提案:缺口来源加足彩 issue.json;或在 norm_team 层做缩写归并。未修,待裁
+2026-09-18T11:20 | ⚠️B3b 入库桥缺两道容错(26129 实测) | ①场3 研究 JSON 有未转义内嵌双引号 → `zucai-research-intake` 直接抛 JSONDecodeError 原始 traceback,不说是哪个文件;②我的任务书漏了 `confidence`,8 份研究全部因「缺 confidence」被判 ERROR 拒绝写入 | 前者已用状态机脚本修好(只改引号转义);后者是我的 prompt bug——conf 本就是 Read 层属性,应由主循环给,不该要求 agent 出 | 提案:入库桥对单文件解析失败降为该场 ERROR 并点名文件;conf 缺失降 WARN 并留空给主循环填
+2026-09-18T11:20 | ⭐入库桥当场抓到三条真错(它的立身之本) | 场6/场9 四问④判「无情境旗」却挂着旗(直接矛盾);场9 把「2022-08-30 第戎 0-2 阿纳西…」这条**查无先例**记成 `dead`——正是 2026-09-17 修的那个漏洞的复发形态 | 26125-26128 四期靠肉眼搬运时这三条都会漏过去 | 桥值回票价的第一期
+2026-09-18T11:25 | ⚠️入库桥两条误报(与真错并存,须分开读) | ①场9 `precedent_absent_not_dead` 误报:被点名那条 2022-08-30 第戎0-2阿纳西是**真先例且载体已不在**(正确 dead),桥的散文探测器咬的是理由里的「不可得/无可用跨季统计」;②场6/场9 「④判 true 却挂着旗」把**方向性旗**也算进去了,而 m-四问④ 的定义是**无方向情境旗 + crash_markers** | 场6 仍是真错(它挂了 crash_marker opening_promoted_vs_paper),场9 只挂 league_draw_regime(方向旗)→④=true 合法 | 提案:该检查只数 nondirectional_flags+crash_markers;散文探测器只在**该条先例文本自身**含「查无/未找到」时触发,不扫理由段
+2026-09-18T11:40 | ⭐修 B3b 入库桥两条误报(生产码+测试) | ①④ 原来数 `dflags or ndflags`,把**方向性旗**也算进四问④→26129 场5/场9 两份合规研究被拒收;按 RULEBOOK m-四问 改为只数**无方向情境旗 + crash_markers**;②先例散文探测器原来「描述里出现任一查无措辞即判误记」,26129 场9 一条真先例(2022-08-30 第戎0-2阿纳西)因**载体死亡理由**里写了「不可得/无可用」被误判;改判据=先看描述里有没有一场真发生过的比赛(年月+比分),有则 dead 合法 | 旧测试 test_q4_true_while_flags_present 断言的是错口径,已替换为三条(方向旗合法/无方向旗矛盾/crash_marker 矛盾)+两条先例(真先例存活/26128 场14 原始事故仍被拦) | 14 场重跑:ERROR 从 4 条降到 1 条,剩下的场6 是**真矛盾**;误报把真错淹没才是这条修的理由
+2026-09-18T16:20 | ⭐判读工作台读侧接内核(用户裁定「以后真能用」) | 出生事故:decision-read 在 NUTMEG_ONTOLOGY_V2=1 下写内核 ForecastRevision,decision_web.py 仍读旧 DecisionStore(reads.jsonl 末条 2026-08-24)→工作台从 8/24 起看不见任何新 Read,26129 入库 14/14 页面仍「今日 agent 尚未开工」 | 新 nutmeg/interfaces/decision_web_kernel.py:kernel_day_state()=board_matches(上海日界)+latest_snapshot(md-had)+forecasts_for_match(committed)→旧模板形状,并合成 attention+judgment 事件;create_decision_app(kernel_state=);CLI 按 settings.ontology_v2 注入(读写同一开关,不双写) | 4 新测试+14 旧测试绿,ruff 净;实测 /api/workbench?date=2026-09-19 → 28 场/14 Read/14 议程,点开拜仁-柏林联中栏渲染 90/7/4 跟市场+falsifier。未做:approve/reject/objects/calibration/ledger 仍读旧 store(动作侧下一刀);内核无 confidence 字段→页面显示 conf?
+2026-09-18T16:55 | ⭐工作台右栏「我的方案」(用户问:右侧能显示我的方案吗) | 数据源=betslips 登记簿(没入账=没打,页面同样不显示):kernel_day_state(slips=) 合成 `slip` 事件,app.js renderSlip 只读卡(票号/渠道/注×倍/票价/P(全对)/逐腿面集+盖率/方案号待补),不算进「待裁决」计数;slips_for_date 按 <issue>-issue.json 的 match_date 挑当日期次;CLI 注入 | 出生事故:加完 renderSlip 浏览器仍跑旧 app.js,右栏空着,硬刷新才出——静态资源无版本号;已给 app.js/app.css 加 ?v=mtime 并加测试 | 6 新测试+14 旧测试绿;实测 2026-09-19 右栏出 4 张票(RJ9 ¥768 16.12% / SFC ¥256 0.13% / JC-A4 / JC-B3)
+2026-09-18T16:55 | 追问线程的另一头是人 | 用户在页面提问「朗斯不败逻辑更成立？」→ user_message 落盘但无应答器,agent_reply 只有写入工具没有进程监听 | 我在终端手写 agent_reply(seq=2)回进事件流;提案:workbench-respond 应答器(只解释已落库研究,不产生新读判) | 待用户裁
+2026-09-21T01:02 | 存量样本统一 loop 消费 | corpus-v2=1027 去重场(足彩448/竞彩579),136 日期或期次,标签126,belief 原始异动28 | discovery/process replay 身份;不增加 prospective RSI n | 统一重建并实跑价格带/标签残差/噪声底线/dream/策略样本外评估
+2026-09-21T01:02 | F1c/F2 历史机制复检 | F1c n=362,Q1/Q4 top1残差 -6.0/+6.9pp,但分歧收缩最优k=0且BSS=0;F2 n=352,向主>=+0.5 n=34 R=+10.8pp,位移策略最优BSS+0.31% CI[-0.47,+1.07] | 两者方向/机制可作候选筛选,F1c无可部署增益,F2不过闸 | 仅 discovery,不回填 F1c/F2 前瞻账
+2026-09-21T01:02 | F3/F5 价格作用复检 | F3 >=60 n=303 R=+5.1pp CI[+0.3,+9.9],policy-top60 测试窗BSS+0.21% CI[-0.04,+0.46];F5a gap12[10,20) n=197 R=-5.8pp CI[-12.6,+1.0];F5b 最小面<10% n=115 R=-5.0pp CI[-7.4,-2.6],两泳道同向 | F3残差方向稳但策略增益未过闸;F5a随扩样CI重新含0;F5b仍是当前最稳价格候选 | 不改规则/阈值,继续 prospective
+2026-09-21T01:02 | F8/结构层存量复检 | C7/anchor/death-proof permutation floor 均 indistinguishable(p=.346/.191/.894);death-proof可计算仅n=24;C14 dream 0.15线排名第一 n=219 R=-1.28pp CI[-4.56,+2.54] | 结构标签仍欠功效,只够排错与候选排序,不足以支持放宽死亡三证 | 不登记winner,不改audit
+2026-09-21T01:02 | F9 历史判读增量复检 | corpus 原始 belief!=prior 28,按生产 move>0.05pp 口径有效n=27(另1条仅0.03pp);平均 Brier delta=-1.735pp CI[-4.651,+1.210],改善14/伤害13,上调面命中9/18 | 点估计改善但CI跨0,且真实表达样本过薄 | 仅 historical discovery;F9 prospective n保持0
+2026-09-22T14:36 | factor propose c7_live_precedent | strict n=110 n_min=None n_perm=1000 | obs=-9.867094pp p=0.280719 verdict=indistinguishable windows=None | record_only → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose anchor_integrity | strict n=33 n_min=60 n_perm=1000 | obs=-10.324517pp p=0.559441 verdict=indistinguishable windows=False | hold → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose death_proof_count | strict n=66 n_min=60 n_perm=1000 | obs=11.773457pp p=0.286713 verdict=indistinguishable windows=False | propose_zero → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose directional_flag_nonmodal | strict n=40 n_min=60 n_perm=1000 | obs=-3.29898pp p=0.855145 verdict=indistinguishable windows=False | hold → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose nondirectional_flag_third_face | strict n=40 n_min=60 n_perm=1000 | obs=22.062188pp p=0.134865 verdict=indistinguishable windows=False | hold → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose crash_marker_modal | strict n=40 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient windows=False | hold → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose conf_level | strict n=40 n_min=60 n_perm=1000 | obs=-9.386223pp p=0.467532 verdict=indistinguishable windows=False | hold → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose false_direction_band | strict n=100 n_min=60 n_perm=1000 | obs=13.978502pp p=0.478521 verdict=indistinguishable windows=False | propose_zero → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose draw_underpriced_band | strict n=100 n_min=60 n_perm=1000 | obs=-4.743719pp p=0.725275 verdict=indistinguishable windows=True | propose_zero → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose belief_offset_anchor | strict n=2 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient windows=False | hold → proposed 0.0pp (not written)
+2026-09-22T14:36 | factor propose modal_face_dropped | strict n=0 n_min=None n_perm=1000 | obs=Nonepp p=None verdict=not_measured windows=None | record_only → proposed 0.0pp (not written)
+2026-09-22T14:36 | hyp call:排掉面→开出 | corpus=v2 cut=26131 n=29 | R=-12.0pp CI[-26.6,+3.2] MDE80=21.1pp | 欠功效
+2026-09-22T14:36 | hyp call:单选→开出 | corpus=v2 cut=26131 n=16 | R=+17.6pp CI[-4.0,+38.7] MDE80=31.7pp | 欠功效
+2026-09-22T14:36 | hyp call:双选→开出 | corpus=v2 cut=26131 n=13 | R=+5.2pp CI[-14.3,+21.2] MDE80=26.7pp | 证伪
+2026-09-22T14:36 | hyp 方向旗→非模态 | corpus=v2 cut=26131 n=76 | R=-2.8pp CI[-13.7,+8.4] MDE80=16.0pp | 证伪
+2026-09-22T14:36 | hyp 方向旗→开平 | corpus=v2 cut=26131 n=76 | R=+0.2pp CI[-9.6,+9.9] MDE80=14.1pp | 证伪
+2026-09-22T14:36 | hyp 无方向旗→非模态 | corpus=v2 cut=26131 n=65 | R=-5.1pp CI[-17.3,+6.9] MDE80=17.2pp | 证伪
+2026-09-22T14:36 | hyp C6:无方向旗→第3面 | corpus=v2 cut=26131 n=65 | R=-1.8pp CI[-11.3,+8.3] MDE80=14.2pp | 证伪
+2026-09-22T14:36 | hyp 锚方FAIL→正路 | corpus=v2 cut=26131 n=69 | R=+1.7pp CI[-9.4,+12.9] MDE80=16.1pp | 证伪
+2026-09-22T14:36 | hyp 锚方PASS→正路 | corpus=v2 cut=26131 n=61 | R=-11.6pp CI[-23.5,-0.2] MDE80=16.7pp | ⭐反向确认
+2026-09-22T14:36 | hyp C9崩盘标记→正路 | corpus=v2 cut=26131 n=11 | R=-0.5pp CI[-27.5,+26.7] MDE80=41.2pp | 证伪
+2026-09-22T14:36 | hyp 基线:全语料→正路 | corpus=v2 cut=26131 n=1578 | R=+1.5pp CI[-0.9,+3.7] MDE80=3.4pp | 证伪
+2026-09-22T15:12 | exp-strict-space R6 十期复算 | issues=26121-26131(缺26125) cap=200注 | 严格空间零解 6/10(26121/22/23/26/29/30);有解 4 期 Pareto 解 328/33745/120/334 个, max P 20.5/23.1/6.1/13.3%, 赛后最高P解 4/4 全断, 解集断率 100/99/82/100% | 严格空仓是规则性质不是空间选择;F4 门代价样本 +4 期,不改阈值
+2026-09-22T15:57 | team_strength 市场外超额表现能否预测 | since=2026-05-01 两队各≥3场历史 n=511 因子=主队累计残差-客队累计残差 目标=主胜相对p(主胜) | 全体斜率+0.84pp p=0.750;训练窗-0.12pp p=0.964;测试窗+2.08pp p=0.609 全 indistinguishable;分档 差>+0.3 R=-1.3pp(n=170) 差<-0.3 R=-3.1pp(n=184) | 本赛季相对市场的超额表现对下一场零预测力;终盘已把状态定价;指标只作决策辅助不作因子
+2026-09-22T16:38 | rsi weights propose c7_live_precedent | strict n=110 n_min=None n_perm=1000 | obs=-9.867094pp p=0.280719 verdict=indistinguishable | record_only → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose anchor_integrity | strict n=33 n_min=60 n_perm=1000 | obs=-10.324517pp p=0.559441 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose death_proof_count | strict n=66 n_min=60 n_perm=1000 | obs=11.773457pp p=0.286713 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose directional_flag_nonmodal | strict n=40 n_min=60 n_perm=1000 | obs=-3.29898pp p=0.855145 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose nondirectional_flag_third_face | strict n=40 n_min=60 n_perm=1000 | obs=22.062188pp p=0.134865 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose crash_marker_modal | strict n=40 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient | hold → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose conf_level | strict n=40 n_min=60 n_perm=1000 | obs=-9.386223pp p=0.467532 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose false_direction_band | strict n=100 n_min=60 n_perm=1000 | obs=13.978502pp p=0.478521 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose draw_underpriced_band | strict n=100 n_min=60 n_perm=1000 | obs=-4.743719pp p=0.725275 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose belief_offset_anchor | strict n=2 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient | hold → 0.0pp (not written)
+2026-09-22T16:38 | rsi weights propose modal_face_dropped | strict n=0 n_min=None n_perm=1000 | obs=Nonepp p=None verdict=not_measured | record_only → 0.0pp (not written)
+2026-09-22T16:38 | hyp call:排掉面→开出 | corpus=v2 cut=26131 n=29 | R=-12.0pp CI[-26.6,+3.2] MDE80=21.1pp | 欠功效
+2026-09-22T16:38 | hyp call:单选→开出 | corpus=v2 cut=26131 n=16 | R=+17.6pp CI[-4.0,+38.7] MDE80=31.7pp | 欠功效
+2026-09-22T16:38 | hyp call:双选→开出 | corpus=v2 cut=26131 n=13 | R=+5.2pp CI[-14.3,+21.2] MDE80=26.7pp | 证伪
+2026-09-22T16:38 | hyp 方向旗→非模态 | corpus=v2 cut=26131 n=76 | R=-2.8pp CI[-13.7,+8.4] MDE80=16.0pp | 证伪
+2026-09-22T16:38 | hyp 方向旗→开平 | corpus=v2 cut=26131 n=76 | R=+0.2pp CI[-9.6,+9.9] MDE80=14.1pp | 证伪
+2026-09-22T16:38 | hyp 无方向旗→非模态 | corpus=v2 cut=26131 n=65 | R=-5.1pp CI[-17.3,+6.9] MDE80=17.2pp | 证伪
+2026-09-22T16:38 | hyp C6:无方向旗→第3面 | corpus=v2 cut=26131 n=65 | R=-1.8pp CI[-11.3,+8.3] MDE80=14.2pp | 证伪
+2026-09-22T16:38 | hyp 锚方FAIL→正路 | corpus=v2 cut=26131 n=69 | R=+1.7pp CI[-9.4,+12.9] MDE80=16.1pp | 证伪
+2026-09-22T16:38 | hyp 锚方PASS→正路 | corpus=v2 cut=26131 n=61 | R=-11.6pp CI[-23.5,-0.2] MDE80=16.7pp | ⭐反向确认
+2026-09-22T16:38 | hyp C9崩盘标记→正路 | corpus=v2 cut=26131 n=11 | R=-0.5pp CI[-27.5,+26.7] MDE80=41.2pp | 证伪
+2026-09-22T16:38 | hyp 基线:全语料→正路 | corpus=v2 cut=26131 n=1578 | R=+1.5pp CI[-0.9,+3.7] MDE80=3.4pp | 证伪
+2026-09-22T16:39 | rsi weights propose c7_live_precedent | strict n=110 n_min=None n_perm=1000 | obs=-9.867094pp p=0.280719 verdict=indistinguishable | record_only → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose anchor_integrity | strict n=33 n_min=60 n_perm=1000 | obs=-10.324517pp p=0.559441 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose death_proof_count | strict n=66 n_min=60 n_perm=1000 | obs=11.773457pp p=0.286713 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose directional_flag_nonmodal | strict n=40 n_min=60 n_perm=1000 | obs=-3.29898pp p=0.855145 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose nondirectional_flag_third_face | strict n=40 n_min=60 n_perm=1000 | obs=22.062188pp p=0.134865 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose crash_marker_modal | strict n=40 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient | hold → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose conf_level | strict n=40 n_min=60 n_perm=1000 | obs=-9.386223pp p=0.467532 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose false_direction_band | strict n=100 n_min=60 n_perm=1000 | obs=13.978502pp p=0.478521 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose draw_underpriced_band | strict n=100 n_min=60 n_perm=1000 | obs=-4.743719pp p=0.725275 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose belief_offset_anchor | strict n=2 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient | hold → 0.0pp (not written)
+2026-09-22T16:39 | rsi weights propose modal_face_dropped | strict n=0 n_min=None n_perm=1000 | obs=Nonepp p=None verdict=not_measured | record_only → 0.0pp (not written)
+2026-09-22T16:39 | hyp call:排掉面→开出 | corpus=v2 cut=26131 n=29 | R=-12.0pp CI[-26.6,+3.2] MDE80=21.1pp | 欠功效
+2026-09-22T16:39 | hyp call:单选→开出 | corpus=v2 cut=26131 n=16 | R=+17.6pp CI[-4.0,+38.7] MDE80=31.7pp | 欠功效
+2026-09-22T16:39 | hyp call:双选→开出 | corpus=v2 cut=26131 n=13 | R=+5.2pp CI[-14.3,+21.2] MDE80=26.7pp | 证伪
+2026-09-22T16:39 | hyp 方向旗→非模态 | corpus=v2 cut=26131 n=76 | R=-2.8pp CI[-13.7,+8.4] MDE80=16.0pp | 证伪
+2026-09-22T16:39 | hyp 方向旗→开平 | corpus=v2 cut=26131 n=76 | R=+0.2pp CI[-9.6,+9.9] MDE80=14.1pp | 证伪
+2026-09-22T16:39 | hyp 无方向旗→非模态 | corpus=v2 cut=26131 n=65 | R=-5.1pp CI[-17.3,+6.9] MDE80=17.2pp | 证伪
+2026-09-22T16:39 | hyp C6:无方向旗→第3面 | corpus=v2 cut=26131 n=65 | R=-1.8pp CI[-11.3,+8.3] MDE80=14.2pp | 证伪
+2026-09-22T16:39 | hyp 锚方FAIL→正路 | corpus=v2 cut=26131 n=69 | R=+1.7pp CI[-9.4,+12.9] MDE80=16.1pp | 证伪
+2026-09-22T16:39 | hyp 锚方PASS→正路 | corpus=v2 cut=26131 n=61 | R=-11.6pp CI[-23.5,-0.2] MDE80=16.7pp | ⭐反向确认
+2026-09-22T16:39 | hyp C9崩盘标记→正路 | corpus=v2 cut=26131 n=11 | R=-0.5pp CI[-27.5,+26.7] MDE80=41.2pp | 证伪
+2026-09-22T16:39 | hyp 基线:全语料→正路 | corpus=v2 cut=26131 n=1578 | R=+1.5pp CI[-0.9,+3.7] MDE80=3.4pp | 证伪
+2026-09-22T17:11 | rsi weights propose c7_live_precedent | strict n=110 n_min=None n_perm=1000 | obs=-9.867094pp p=0.280719 verdict=indistinguishable | record_only → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose anchor_integrity | strict n=33 n_min=60 n_perm=1000 | obs=-10.324517pp p=0.559441 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose death_proof_count | strict n=120 n_min=60 n_perm=1000 | obs=5.177911pp p=0.410589 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose directional_flag_nonmodal | strict n=40 n_min=60 n_perm=1000 | obs=-3.29898pp p=0.855145 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose nondirectional_flag_third_face | strict n=40 n_min=60 n_perm=1000 | obs=22.062188pp p=0.134865 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose crash_marker_modal | strict n=40 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient | hold → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose conf_level | strict n=40 n_min=60 n_perm=1000 | obs=-9.386223pp p=0.467532 verdict=indistinguishable | hold → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose false_direction_band | strict n=100 n_min=60 n_perm=1000 | obs=13.978502pp p=0.478521 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose draw_underpriced_band | strict n=100 n_min=60 n_perm=1000 | obs=-4.743719pp p=0.725275 verdict=indistinguishable | propose_zero → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose belief_offset_anchor | strict n=14 n_min=60 n_perm=1000 | obs=Nonepp p=None verdict=insufficient | hold → 0.0pp (not written)
+2026-09-22T17:11 | rsi weights propose modal_face_dropped | strict n=0 n_min=None n_perm=1000 | obs=Nonepp p=None verdict=not_measured | record_only → 0.0pp (not written)
+2026-09-22T17:11 | hyp call:排掉面→开出 | corpus=v2 cut=26131 n=29 | R=-12.0pp CI[-26.6,+3.2] MDE80=21.1pp | 欠功效
+2026-09-22T17:11 | hyp call:单选→开出 | corpus=v2 cut=26131 n=16 | R=+17.6pp CI[-4.0,+38.7] MDE80=31.7pp | 欠功效
+2026-09-22T17:11 | hyp call:双选→开出 | corpus=v2 cut=26131 n=13 | R=+5.2pp CI[-14.3,+21.2] MDE80=26.7pp | 证伪
+2026-09-22T17:11 | hyp 方向旗→非模态 | corpus=v2 cut=26131 n=88 | R=-3.4pp CI[-13.7,+7.0] MDE80=14.9pp | 证伪
+2026-09-22T17:11 | hyp 方向旗→开平 | corpus=v2 cut=26131 n=88 | R=+1.2pp CI[-8.0,+10.8] MDE80=13.2pp | 证伪
+2026-09-22T17:11 | hyp 无方向旗→非模态 | corpus=v2 cut=26131 n=73 | R=-4.4pp CI[-15.7,+6.8] MDE80=16.3pp | 证伪
+2026-09-22T17:11 | hyp C6:无方向旗→第3面 | corpus=v2 cut=26131 n=73 | R=-0.1pp CI[-9.2,+9.5] MDE80=13.9pp | 证伪
+2026-09-22T17:11 | hyp 锚方FAIL→正路 | corpus=v2 cut=26131 n=69 | R=+1.7pp CI[-9.4,+12.9] MDE80=16.1pp | 证伪
+2026-09-22T17:11 | hyp 锚方PASS→正路 | corpus=v2 cut=26131 n=61 | R=-11.6pp CI[-23.5,-0.2] MDE80=16.7pp | ⭐反向确认
+2026-09-22T17:11 | hyp C9崩盘标记→正路 | corpus=v2 cut=26131 n=14 | R=-0.3pp CI[-23.1,+22.5] MDE80=34.3pp | 证伪
+2026-09-22T17:11 | hyp 基线:全语料→正路 | corpus=v2 cut=26131 n=1578 | R=+1.5pp CI[-0.9,+3.7] MDE80=3.4pp | 证伪

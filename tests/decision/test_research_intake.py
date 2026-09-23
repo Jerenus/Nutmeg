@@ -170,13 +170,62 @@ def test_directional_flag_pointing_at_a_bogus_face_is_an_error():
 
 # —— 结构自相矛盾 ————————————————————————————————
 
-def test_q4_true_while_flags_present_is_a_contradiction():
-    """四问④『无情境旗』与旗行直接矛盾——这是纯机械可判的。"""
-    research = _research()
+def test_q4_true_with_only_a_directional_flag_is_legal():
+    """④ 只数**情境旗**：方向性旗归 C1/C2/C10 管，不进四问④。
+
+    2026-09-18 之前这里断言的是「挂任何旗 + ④=true 即 ERROR」，
+    于是 26129 场5（只挂 anchor_shield_out）与场9（只挂 league_draw_regime）
+    两份合规研究被拒收，而同期场6 的**真矛盾**混在这两条误报里一起被无视。
+    RULEBOOK m-四问 的条文是「情境旗（无方向旗）与 crash_markers 同样封牌照」。
+    """
+    research = _research()                       # 只带一条方向性旗
+    research["license_questions"]["q4_no_context_flag"] = True
+    result = intake(research, _leg())
+    assert result.blocked is False
+    assert ("ERROR", "license_questions") not in _levels(result)
+
+
+def test_q4_true_while_a_context_flag_is_present_is_a_contradiction():
+    """挂着**无方向**情境旗却判 ④=true —— 这才是纯机械可判的矛盾。"""
+    research = _research(nondirectional_flags=["two_way_instability"])
     research["license_questions"]["q4_no_context_flag"] = True
     result = intake(research, _leg())
     assert result.blocked is True
     assert ("ERROR", "license_questions") in _levels(result)
+
+
+def test_q4_true_while_a_crash_marker_is_present_is_a_contradiction():
+    """crash_markers 与情境旗同样封牌照（26129 场6 的真错）。"""
+    research = _research(crash_markers=["opening_promoted_vs_paper"])
+    research["license_questions"]["q4_no_context_flag"] = True
+    result = intake(research, _leg())
+    assert result.blocked is True
+    assert ("ERROR", "license_questions") in _levels(result)
+
+
+def test_dead_precedent_with_a_real_match_survives_its_carrier_reason():
+    """先例里有**真发生过的比赛**（年月+比分）→ `dead` 合法，哪怕理由里写了「不可得」。
+
+    26129 场9 的真实样本：载体死亡的理由文本里出现「跨季同口径名单不可得/无可用
+    跨季球员统计」，旧判据按措辞把整条先例误判成「查无先例」。
+    """
+    research = _research(precedents=[[
+        "3",
+        "2022-08-30 法乙 第戎 0-2 阿纳西（第戎主场）。载体判定：前提卡明确"
+        "「跨季同口径名单不可得/无可用跨季球员统计」，承载该结果的球员已全部不在",
+        "dead",
+    ]])
+    result = intake(research, _leg())
+    assert ("ERROR", "precedents") not in _levels(result)
+
+
+def test_dead_precedent_without_any_real_match_is_still_caught():
+    """真正的「查无先例」记成 dead 仍然要拦（26128 场14 的原始事故）。"""
+    research = _research(precedents=[[
+        "1", "无——马拉卡纳同型对独立谷不存在 90' 平局先例", "dead",
+    ]])
+    result = intake(research, _leg())
+    assert ("ERROR", "precedents") in _levels(result)
 
 
 def test_dead_face_without_three_proofs_is_an_error():

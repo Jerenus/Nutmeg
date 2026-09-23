@@ -241,17 +241,28 @@ def _check_license(
     *,
     match_no: int,
     issues: list[IntakeIssue],
+    crash: list | None = None,
 ) -> None:
-    has_flag = bool(dflags) or bool(ndflags)
+    """④ 只数**情境旗**。
+
+    出生事故 2026-09-18（26129）：本检查原来是 `bool(dflags) or bool(ndflags)`，
+    把**方向性旗**也算进 ④，于是场5（只挂 anchor_shield_out）与场9（只挂
+    league_draw_regime）两份完全合规的研究被判 ERROR 拒绝写入。RULEBOOK m-四问 的
+    条文是：「情境旗（轮换/场地/次回合等**无方向旗**）与 **crash_markers**
+    （C9 开季升班马/换帅刀）同样封牌照」——方向性旗归 C1/C2/C10 管，不进 ④。
+    按错的口径，场6 的真矛盾（挂着 `opening_promoted_vs_paper` 却判 ④=true）
+    反而和两条误报混在一起，人就会开始整批无视这条 ERROR。
+    """
+    has_context = bool(ndflags) or bool(crash or [])
     q4 = license_questions.get("q4_no_context_flag")
-    if q4 is True and has_flag:
+    if q4 is True and has_context:
         issues.append(
             IntakeIssue(
                 "ERROR", match_no, "license_questions",
-                "④『无情境旗』判 true，但本场挂着旗 —— 四问④与旗行直接矛盾",
+                "④『无情境旗』判 true，但本场挂着情境旗/崩盘标记 —— 四问④与旗行直接矛盾",
             )
         )
-    if q4 is False and not has_flag:
+    if q4 is False and not has_context:
         issues.append(
             IntakeIssue(
                 "WARN", match_no, "license_questions",
@@ -337,6 +348,30 @@ _NO_PRECEDENT_PROSE = (
 （"2021 欧联,格拉茨风暴 1-1 平摩纳哥"），不会命中这些词。"""
 
 
+_MATCH_EVIDENCE = re.compile(r"\d{4}[-年./]\d{1,2}")
+"""一场**发生过的**比赛至少带得出年月。"""
+
+_SCORE_EVIDENCE = re.compile(r"\d+\s*[-:：]\s*\d+")
+
+
+def _reads_as_absent(desc: str) -> bool:
+    """这条先例描述的是「查无先例」还是「有先例但载体已不在」？
+
+    出生事故 2026-09-18（26129 场9）：原判据是「描述里出现过任一『查无』措辞」，
+    于是这条**真先例**被误判——
+    `["3", "2022-08-30 法乙 第戎 0-2 阿纳西（第戎主场）。载体判定：…前提卡明确
+    「跨季同口径名单不可得/无可用跨季球员统计」，承载该结果的第戎球员已全部不在", "dead"]`
+    ——命中的是**载体死亡理由**里的「不可得/无可用」，不是先例本身。
+    误报会连累真错（同一期场6 的 ④ 矛盾）一起被整批无视。
+
+    改判据：先看这条描述里有没有**一场真发生过的比赛**（年月 + 比分）。
+    有 → 它就是先例，`dead` 合法；没有 → 再看措辞是否属于「查无」。
+    """
+    if _MATCH_EVIDENCE.search(desc) and _SCORE_EVIDENCE.search(desc):
+        return False
+    return any(k in desc for k in _NO_PRECEDENT_PROSE)
+
+
 def _check_precedents(
     raw: object,
     *,
@@ -370,7 +405,7 @@ def _check_precedents(
                 f"状态 `{status}` 不在词典（alive/dead/none）",
             ))
             continue
-        if status == "dead" and any(k in desc for k in _NO_PRECEDENT_PROSE):
+        if status == "dead" and _reads_as_absent(desc):
             issues.append(IntakeIssue(
                 "ERROR", match_no, "precedents",
                 f"「{desc[:28]}…」读起来是**查无先例**却记成 `dead`。"
@@ -456,7 +491,7 @@ def intake(research: dict, leg: dict) -> IntakeResult:
     ) + " " + str(license_questions.get("notes", "") or "")
     _check_license(
         license_questions, dflags, ndflags, prose,
-        match_no=match_no, issues=issues,
+        match_no=match_no, issues=issues, crash=crash,
     )
 
     proofs = normalize_proofs(research.get("death_three_proofs"))

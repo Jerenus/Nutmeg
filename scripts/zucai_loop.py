@@ -71,6 +71,34 @@ def load_corpus():
     return rows
 
 
+CORPUS_V2 = os.path.join(ROOT, "experiments", "corpus-v2.json")
+
+
+def load_corpus_v2():
+    """语料 v2 —— 两条泳道合并（`experiments/corpus_build.py` 产）。
+
+    出生事故 2026-09-18：v1 只吃 `*-reads.json`，于是 26125/26127/26128 三期跳过 B4
+    就等于判断没发生过；且 v1 里 `belief≠prior` 只有 8.9%、最后一次移动停在 26110，
+    BSS 恒等于 0 不是没技艺是没表达。v2 改吃 `legs-base` 的 fair（跳过 B4 也有）
+    并并入**竞彩日板**——那 500 多场绝大多数没下过注，是无选择偏差的价格样本。
+
+    ⛔行的 `iss` 在竞彩侧是日期，窗口切分统一按 `date`（见 main 的 `--cut`）。
+    ⛔前瞻预注册（F2/F3/F4）不得用本语料回补样本。
+    """
+    doc = json.load(open(CORPUS_V2, encoding="utf-8"))
+    rows = []
+    for r in doc["rows"]:
+        prior = dict(r["fair"])
+        rows.append({"iss": r["issue"] or r["date"], "no": str(r["match_no"]),
+                     "date": r["date"], "src": r["src"],
+                     "prior": prior, "belief": dict(r.get("belief") or prior),
+                     "actual": IDX[r["actual"]], "conf": r.get("conf"),
+                     "labels": r.get("labels"), "note": r.get("note") or "",
+                     "call": r.get("call")})
+    rows.sort(key=lambda d: (d["date"], str(d["iss"]), d["no"]))
+    return rows
+
+
 def brier(dist, actual):
     return sum((dist[k] - (1.0 if k == actual else 0.0)) ** 2 for k in FACES)
 
@@ -172,10 +200,23 @@ def main():
     ap.add_argument("files", nargs="*")
     ap.add_argument("--policy")
     ap.add_argument("--cut", default="26113")
+    ap.add_argument("--corpus", choices=["v1", "v2"], default="v1",
+                    help="v1=只吃 reads.json（历史口径）；v2=legs-base + 竞彩日板合并语料")
+    ap.add_argument("--log", action="store_true",
+                    help="hyp: 追加结论到 experiments/attempts.log")
     a = ap.parse_args()
-    rows = load_corpus()
-    tr = [d for d in rows if d["iss"] < a.cut]
-    te = [d for d in rows if d["iss"] >= a.cut]
+    if a.corpus == "v2":
+        rows = load_corpus_v2()
+        cut = a.cut
+        if re.fullmatch(r"\d{5}", cut):        # 期号 → 该期最早比赛日
+            dates = [d["date"] for d in rows if str(d["iss"]) == cut]
+            cut = min(dates) if dates else "2026-08-01"
+        tr = [d for d in rows if d["date"] < cut]
+        te = [d for d in rows if d["date"] >= cut]
+    else:
+        rows = load_corpus()
+        tr = [d for d in rows if d["iss"] < a.cut]
+        te = [d for d in rows if d["iss"] >= a.cut]
 
     if a.cmd == "corpus":
         moved = sum(1 for d in rows if any(abs(d['prior'][k] - d['belief'][k]) > 1e-9 for k in FACES))  # noqa: E501
@@ -183,6 +224,12 @@ def main():
               f"[{rows[0]['iss']}..{rows[-1]['iss']}]")
         print(f"判读移动分布: {moved} 场 ({moved/len(rows)*100:.1f}%)")
         print(f"训练窗(<{a.cut}) {len(tr)} 场 / 测试窗 {len(te)} 场")
+        if a.corpus == "v2":
+            import collections as _c
+            by = _c.Counter(d["src"] for d in rows)
+            lab = sum(1 for d in rows if d.get("labels"))
+            print(f"泳道构成: {dict(by)}；带判读标签 {lab} 场"
+                  f"（标签类检验只能吃这 {lab} 场，价格带类检验可吃全部）")
         print("现状判读 BSS:", f"{evaluate(rows,
             {'weights': {}})['bss']*100:+.2f}% (belief=prior 时恒为0)")
     elif a.cmd == "fit":
@@ -283,7 +330,29 @@ def main():
             print(f"  {k:<8} {c:>4} / {tot} ({c/tot*100:.0f}%)")
     elif a.cmd == "hyp":
         for d in rows:
-            d["ann"] = parse_note(d["note"])
+            d["ann"] = annotate(d)
+
+        def _call_faces(d):
+            c = d.get("call")
+            return set(c) & {"3", "1", "0"} if isinstance(c, str) else set()
+
+        _CODE = {"home": "3", "draw": "1", "away": "0"}
+
+        def _excluded(d):
+            """call 排掉的面（双选/单选才有）：(排掉面 fair 之和, 开出∈排掉面)。"""
+            faces = _call_faces(d)
+            if not faces or len(faces) >= 3:
+                return None
+            gone = {k for k, v in _CODE.items() if v not in faces}
+            gone_codes = {_CODE[k] for k in gone}
+            return (sum(d["prior"][k] for k in gone), int(_CODE[d["actual"]] in gone_codes))
+
+        def _call_hit(d):
+            faces = _call_faces(d)
+            if not faces:
+                return None
+            return (sum(v for k, v in d["prior"].items() if _CODE[k] in faces),
+                    int(_CODE[d["actual"]] in faces))
 
         def t1(d):
             return max(d["prior"], key=d["prior"].get)
@@ -297,7 +366,12 @@ def main():
             "开平": lambda d: (d["prior"]["draw"], int(d["actual"] == "draw")),
             "第3面": lambda d: (d["prior"][t3(d)], int(d["actual"] == t3(d))),
         }
+        T["排掉面开出"] = _excluded
+        T["出手面开出"] = _call_hit
         HYPS = [
+            ("call:排掉面→开出", lambda d: _excluded(d) is not None, "排掉面开出"),
+            ("call:单选→开出", lambda d: len(_call_faces(d)) == 1, "出手面开出"),
+            ("call:双选→开出", lambda d: len(_call_faces(d)) == 2, "出手面开出"),
             ("方向旗→非模态", lambda d: bool(d["ann"]["dir_flags"]), "非模态"),
             ("方向旗→开平", lambda d: bool(d["ann"]["dir_flags"]), "开平"),
             ("无方向旗→非模态", lambda d: bool(d["ann"]["nondir_flags"]), "非模态"),
@@ -310,14 +384,29 @@ def main():
         print(f"{'假设':<24}{'n':>5}{'期望':>8}{'实际':>8}{'残差':>9}"
               f"{'95%CI':>17}{'MDE80':>8}  判定")  # noqa: E501
         print("-" * 92)
+        results_hyp = []
         for name, sel, tk in HYPS:
-            r = falsify(rows, name, sel, T[tk])
+            target = T[tk]
+
+            def _sel(d, sel=sel, target=target):
+                return sel(d) and target(d) is not None
+
+            r = falsify(rows, name, _sel, target)
+            results_hyp.append(r)
             if r.get("verdict") == "样本不足":
                 print(f"{name:<24}{r['n']:>5}   样本不足")
                 continue
             print(f"{name:<24}{r['n']:>5}{r['exp']*100:7.1f}%{r['act']*100:7.1f}%"
                   f"{r['R']*100:+8.1f}pp  [{r['ci'][0]*100:+5.1f},{r['ci'][1]*100:+5.1f}]"
                   f"{r['mde80']*100:7.1f}pp  {r['verdict']}")  # noqa: E501
+        if a.log:
+            from experiments.attempts import log_attempt
+            for r in results_hyp:
+                if r.get("verdict") == "样本不足":
+                    continue
+                log_attempt(f"hyp {r['name']}", f"corpus={a.corpus} cut={a.cut} n={r['n']}",
+                            f"R={r['R']*100:+.1f}pp CI[{r['ci'][0]*100:+.1f},{r['ci'][1]*100:+.1f}] MDE80={r['mde80']*100:.1f}pp",  # noqa: E501
+                            r["verdict"])
     elif a.cmd == "regime":
         reg = issue_regimes(rows)
         cnt = collections.Counter(reg.values())
@@ -600,6 +689,46 @@ CRASH_FLAGS = frozenset({"opening_promoted_vs_paper", "opening_new_coach_debut"}
 REGIME_FLAGS = frozenset({"league_draw_regime"})
 
 
+def _label_names(values) -> set:
+    out = set()
+    for item in values or []:
+        if isinstance(item, str):
+            out.add(item)
+        elif isinstance(item, (list, tuple)) and item and isinstance(item[0], str):
+            out.add(item[0])
+    return out
+
+
+def annotate(d: dict) -> dict:
+    """结构化标注：语料 v2 行优先用 `labels`（legs-base / judgment 文件的旗与完整度），
+    没有标签的行退回 `parse_note`。两者都按封闭词典过滤，词典外一律不算。"""
+    labels = d.get("labels") or {}
+    if not labels:
+        return parse_note(d.get("note", ""))
+    judgment = labels.get("judgment") or {}
+    raw = (
+        _label_names(labels.get("directional_flags"))
+        | _label_names(labels.get("nondirectional_flags"))
+        | _label_names(labels.get("crash_markers"))
+        | _label_names(judgment.get("directional_flags"))
+        | _label_names(judgment.get("nondirectional_flags"))
+        | _label_names(judgment.get("crash_markers"))
+        | _label_names(judgment.get("flags"))
+    )
+    integ = labels.get("anchor_integrity") or judgment.get("anchor_integrity")
+    if integ not in ("pass", "fail"):
+        integ = parse_note(d.get("note", "")).get("integrity")
+    return {
+        "dir_flags": sorted(raw & DIR_FLAGS),
+        "nondir_flags": sorted(raw & NONDIR_FLAGS),
+        "crash_flags": sorted(raw & CRASH_FLAGS),
+        "regime_flags": sorted(raw & REGIME_FLAGS),
+        "integrity": integ,
+        "q4": None,
+        "annotated": True,
+    }
+
+
 def parse_note(note: str) -> dict:
     """从 reads.note 抽结构化标注。缺失一律返回 None，不猜。"""
     n = note or ""
@@ -663,7 +792,7 @@ def features(d):
     v = p[t1]
     srt = sorted(p.values(), reverse=True)
     gap = srt[0] - srt[1]
-    a = d.get("ann") or parse_note(d["note"])
+    a = d.get("ann") or annotate(d)
     conf = d.get("conf")
     f = {
         f"价_top1_{_band_top(v)}": True,
@@ -680,6 +809,20 @@ def features(d):
         "标_双旗齐发": bool(a["dir_flags"]) and bool(a["nondir_flags"]),
         "标_零旗": a["annotated"] and not a["dir_flags"] and not a["nondir_flags"],
     }
+    # 情境层（2026-09-22 接入）：研究产物里的球队弱点标签 / 轮换风险 / 追踪标签 / 锚方口径
+    L = d.get("labels") or {}
+    tags = L.get("team_tags") or {}
+    modal_side = t1
+    if isinstance(tags, dict) and any(tags.get(s) for s in ("home", "away")):
+        f["情_模态方带弱点标签"] = bool(tags.get(modal_side))
+        f["情_对手带弱点标签"] = any(tags.get(s) for s in ("home", "away") if s != modal_side)
+    if L.get("rotation_risk"):
+        f["情_轮换风险已记"] = True
+    if L.get("tracking_tags"):
+        f["情_追踪标签"] = True
+    if L.get("anchor_side") in ("home", "away") and L.get("anchor_integrity") in ("pass", "fail"):
+        f[f"情_锚方完整度{L['anchor_integrity'].upper()}"] = True
+        f["情_锚方=模态方"] = L["anchor_side"] == modal_side
     return {k: bool(x) for k, x in f.items() if x}
 
 

@@ -83,6 +83,38 @@ def apply_proposals(proposals: list[dict], alias_path=ALIAS_FILE) -> list[str]:
     return lines
 
 
+def _fetch_day_fixtures(run_date: str) -> list[dict]:
+    """当日全联赛 fixtures → `propose_for_board` 要的 `{teams:{home:{name},away:{name}}}` 形状。
+
+    出生事故 2026-09-18：本函数原来是
+    `from nutmeg.services.jczq_apifootball_odds import fetch_fixtures_by_date`，
+    而那个名字在 2026-09-14 竞彩国际欧赔切源（titan007 主 / AF 备）时被删掉了，
+    `decision-alias-propose` 从那天起**一调用就 ImportError**。没被测到是因为
+    `tests/decision/test_alias_propose.py` 只测注入 fixtures 的纯函数
+    `propose_for_board`，`run_propose` 的取数路径一行覆盖都没有。
+    改用生产客户端 `ApiFootballClient.fetch_fixtures_by_date`（返回 `Fixture` 领域对象），
+    在这里转回提案器要的原始形状 —— 转换只做名字，不猜任何东西。
+    """
+    from datetime import date as _date
+
+    from nutmeg.config.settings import get_settings
+    from nutmeg.data.api_football import ApiFootballClient
+
+    settings = get_settings()
+    key = (settings.api_football_key or "").strip()
+    if not key:                      # 与采集侧同一契约：无 key 优雅降级，不崩
+        return []
+    client = ApiFootballClient(base_url=settings.api_football_base_url, api_key=key)
+    try:
+        batch = client.fetch_fixtures_by_date(_date.fromisoformat(run_date))
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+    return [{"teams": {"home": {"name": f.home_team}, "away": {"name": f.away_team}}}
+            for f in batch.fixtures]
+
+
 def run_propose(run_date: str, output_dir, *, apply: bool = False,
                 fixtures: list[dict] | None = None) -> str:
     """CLI 胶水：读当日板面 audit 缺口 → 拉当日 fixtures → 提案（可选写入）。"""
@@ -112,8 +144,7 @@ def run_propose(run_date: str, output_dir, *, apply: bool = False,
     resolved = {cn: en for cn, en in resolved.items() if norm_team(cn) not in norm_missing}
 
     if fixtures is None:
-        from nutmeg.services.jczq_apifootball_odds import fetch_fixtures_by_date
-        fixtures = fetch_fixtures_by_date(run_date)
+        fixtures = _fetch_day_fixtures(run_date)
 
     got = propose_for_board(board, resolved, fixtures)
     lines = [f"{run_date}: 缺口 {len(missing)} 队 | 提案 {len(got['proposals'])} 条"
