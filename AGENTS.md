@@ -51,6 +51,7 @@ project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg
 
 > 本节与 `CLAUDE.md` 是**同一份指令的两个 harness 副本**，改一处必须同步另一处。
 > 正文已迁移至 SOP 三件套；设计依据 `docs/superpowers/plans/2026-08-23-memory-ontology-sop-redesign.md`。
+> 下面的 SOP 指针段与 `CLAUDE.md` 共享，改动必须两处同步；本文件上方的 OpenClaw 会话契约只在这里维护。
 
 ### ⛔ 行动前置（不可跳过）
 

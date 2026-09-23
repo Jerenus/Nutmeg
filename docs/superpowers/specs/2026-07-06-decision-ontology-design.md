@@ -1,6 +1,6 @@
 # Nutmeg 决策本体系统 — 第一性原理重设计（最终设计）
 
-> 2026-07-06 定稿。替代全部旧功能层方法（tiered/bold/rules/themes/conflict 引擎）。
+> 2026-07-06 定稿。替代切换前的全部旧功能层方法（旧引擎已于 2026-07-07 删除）。
 > 设计过程：brainstorming 五问定骨架 → 外部对标校验（Palantir Ontology / Halawi NeurIPS
 > 2024 / Starlizard CLV / Metaculus 记分）→ 本体重构。实现计划另出（writing-plans）。
 
@@ -166,7 +166,7 @@ Metaculus Baseline-score 的直译。
 - 转正/退休：n≥30 后看双轴——CLV 命中 >55% 且 brier_delta<0 → active；
   双轴皆平庸 → watch 一期；再平庸 → **retired（词典移除，Read 校验即拒绝）**。
 - **词典有上限（≤12 个 active）**：新因子转正若超限，必须先退休最弱者——
-  结构性防规则堆积（Rules A-J → R1-R28 坟场的免疫机制）。
+  结构性防规则堆积（对旧规则集无限膨胀、最终成坟场的免疫机制）。
 - **scope_key 级诊断性子判决（2026-07-07 实体层增补）**：Read 引用带 scope_key 时
   calibrate 额外产 `factor_id@scope_key` 子判决（recommendation=diagnostic，面板分行
   如"league_bias@swe-allsvenskan 7/9"）。**生死判决仍在 factor 级**（n≥30 反 churn 不变）
@@ -231,9 +231,8 @@ judge_ledger 演进为 reconcile+calibrate 的前身（对账纪律/幂等/补�
   现 SOP 继续跑。
 - **M1（并行，→7/19）**：每日判读同时落新本体（Read/Ticket）；okooo 收盘快照开始积累
   ——CLV 轴从第一天就有数据。
-- **M2（7/19 后切换）**：CLAUDE.md/AGENTS.md SOP 重写指向五动词；tiered/bold 残余
-  + 33 信号符号 + jczq_market_kernel（被 decision/market_data 取代）删除；launchd
-  改挂 decision-* 命令。
+- **M2（7/19 后切换）**：CLAUDE.md/AGENTS.md SOP 重写指向五动词；旧引擎残余与信号符号
+  删除（市场数据由 decision/market_data 承接）；launchd 改挂 decision-* 命令。
 - **范围外**：telegram-bot advisor / match-brief / jczq_web 等客户端工具的存废是
   独立产品决策（roadmap Tier D3 悬而未决），本设计不处置。
 
@@ -266,88 +265,4 @@ WAF 降级不覆盖快照（6/11）｜字符串 schema 不丢整日（6/28）｜
 
 ---
 
-## 附录 A · 符号处置清单（权威版，2026-07-06 从 `nutmeg/services/jczq_market_kernel.py` AST 实测生成）
-
-> ✅ **2026-07-07 执行完毕**：A.1 在用 12 基元（7 去水/解析 + 5 快照 I/O，含闭包
-> `_f`/`_RE_CRS_KEY`）物理迁入 `nutmeg/decision/market_data.py`；kernel 及 A.2/A.3
-> 全部删除（未用的 17 个 A.1 符号随文件消亡；`jczq_bold_markets` 同葬）。
-> 注：`nutmeg/services/jczq.py` 非孤儿——`fetch_sporttery_value_with_fallback`
-> 生产依赖，保留。
-
-实施 M0 时按此清单执行，**不要重新推导**（本会话已验证过依赖闭包）。
-
-### A.1 迁入 `nutmeg/decision/market_data.py`（29 个，零 KILL 依赖，可直接搬）
-
-```
-常量/标签: OUTCOMES, MARKETS, MARKET_LABELS, OUTCOME_LABELS, HARD_LABEL,
-          _RE_CRS_KEY, _CRS_OTHER_LABELS, _TTG_LABELS, _HHAD_LABELS
-去水数学:  _devig_map, _fair_from_odds, _tc_vig, _clip01, _f, _signed_float
-盘口解析:  _had_from_pool, _ttg_from_pool, _crs_from_pool, _ttg_bucket_goals,
-          _crs_pick_label, _market_pick_label
-类型:     BoldMatch(见 A.2 净化说明), GradedLeg
-快照 I/O:  fetch_sporttery_value_with_fallback, persist_sporttery_snapshot,
-          persist_bold_odds_snapshot, load_sporttery_snapshot, load_bold_odds_snapshot
-结算:     grade_leg
-```
-
-### A.2 过渡符号（3 个，带 KILL 依赖，**不迁入**；净化后替代）
-
-| 符号 | 污染点 | 处置 |
-|---|---|---|
-| `BoldLeg` | 携带 `boldness` 字段（引擎世界观入侵类型） | 不迁；新系统 Ticket.legs 自带 schema；M1 期间留在旧 kernel 供 tiered 用 |
-| `bold_leg_for_market` | 用 LEG_ODDS_MIN/MAX 门槛 + market_boldness | 同上，M1 过渡；express 直接构造 Ticket legs |
-| `bold_matches_from_sporttery` | 调 `_strong_favorite_tags`（heat tags 进 BoldMatch） | **迁入时做净化版** `matches_from_sporttery`：同解析逻辑，删 tags/信号字段（M0 的唯一手术点，需对照测试） |
-
-### A.3 M2 处死清单（48 个，随 tiered 引擎一起删，Read 层结构性禁止 import）
-
-```
-信号打分: MARKET_SIGNALS, conflict_score, contrarian_score, drift_score,
-  dispersion_score, heat_score, internal_conflict, external_conflict_ttg,
-  _crs_internal_conflict, _market_signal_scores, _generic_contrarian,
-  _market_outcomes, _match_uncertainty, _is_draw_lean, _strong_favorite_tags,
-  MatchSignals, PoolSignals, compute_pool_signals
-权重/常量: WEIGHT_CONFLICT, WEIGHT_CONTRARIAN, WEIGHT_DRIFT, WEIGHT_DISPERSION,
-  WEIGHT_HEAT, _SIGNAL_WEIGHTS, DRIFT_GAIN, DISPERSION_GAIN, HEAT_VIG_GAIN,
-  HEAT_TAG, HEAT_TAGS, CHAOS_SCALE, ANCHOR_GAP_THRESHOLD, LEG_ODDS_MIN, LEG_ODDS_MAX
-boldness: boldness, market_boldness
-chaos:    day_chaos, chaos_band
-主题:     THEME_DRAW, THEME_SCORE, THEME_HANDICAP, THEME_GOALS, THEME_MIXED,
-  _MARKET_THEME, _THEME_SCRIPTS, ticket_theme, MIN_THEME_LEGS_FOR_RETIREMENT,
-  RetiredTheme, retired_themes_with_stats
-```
-
-## 附录 B · 实施交接上下文（新 session 从这里开始，无需本会话记忆）
-
-### B.1 仓库现状（截至 commit `177f012`，分支 `research/tunisia-japan-2026-06-20`）
-
-- **种子位置**：`nutmeg/services/jczq_market_kernel.py`（29+3+48 混装，按附录 A 拆）；
-  `nutmeg/services/worldcup/judge_ledger.py`（对账/幂等/pending 补扫/hhad 按线评分，全部
-  2026-07-06 修好并有回归测试，演进为 reconcile+calibrate）。
-- **已删除**（不要试图引用）：`jczq_bold_combos` / `jczq_bold_review` / `jczq_second_leg`
-  及其测试与 CLI 命令；3 个退役 launchd（daily-bold / bold-review-8am / daily-review-8am，
-  plist 备份在 `.nutmeg-data/launchd-backups/`）。
-- **仍在跑的 launchd（M1 期间不得打断）**：daily-tiered、daily-today、tiered-review-8am、
-  wc-refresh-18、wc-report-20、wc-review-8am。世界杯窗口至 2026-07-19。
-- **测试基线**：699 passed / ruff 全绿 / pre-commit 已装（ruff + decision 子集）。
-  （1051 是 M2 删旧引擎测试前的历史数字；2026-07-07 kernel 下葬 + 大扫除后新基线 699。）
-- **本会话关键 commit**：`9683e0e`(对账修复) `2f8f612`(¥400框架) `2f1489a`(路线图)
-  `fc12621`(R1内核抽取) `57cba59`(bold删除) `0479d07`(D3证伪) `177f012`(本设计)。
-
-### B.2 必读文件（按序）
-
-1. 本 spec（全部设计决策在此，含依据）。
-2. `docs/jczq-refactor-roadmap.md` — 旧系统处置边界（尤其 Tier D3 证伪：jczq_daily/
-   conflict/intelligence/debate/web 是**活客户端底座**，未经用户产品决策不得删）。
-3. `CLAUDE.md`「判读层硬约束 a-f」+「注金框架」节 — Read 校验与预算闸直接继承。
-4. `docs/jczq-mixed-bet-judge-process.md` — 判读七阶段（Read 动词的操作程序前身）。
-5. memory `jczq-7-06-system-retro` — 记分牌证据与全部教训出处。
-
-### B.3 实施顺序约定
-
-M0 起手式 = 调用 **writing-plans** skill 基于本 spec 出实现计划；实现遵循
-test-driven-development skill；每步跑 `uv run pytest -q` + 收尾用项目 verify skill
-（`.claude/skills/verify`，含 replay/reconcile 端到端配方）。**M1 并行期间现 SOP 照跑，
-新系统只增不改；M2（7/19 后）才动 CLAUDE.md/AGENTS.md 与 launchd。**
-
-> 关联：`docs/jczq-refactor-roadmap.md`（旧系统处置）· memory `jczq-7-06-system-retro`
-> （记分牌证据）· 对标来源见 2026-07-06 会话（Palantir/Halawi/Starlizard/Metaculus）。
+> 附录 A（符号处置清单）与附录 B（M0 实施交接）为 2026-07 切换期的一次性材料，已于 2026-09-23 移除；原文见 tag `v0.4.0`。

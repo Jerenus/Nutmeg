@@ -6,7 +6,7 @@
 ## 1. 唯一路径
 
 **决策本体五动词**：sense → read → express → reconcile → calibrate。
-2026-07-07 M2 切换后旧引擎（tiered/bold/Poisson/worldcup）全灭，一律忽略其规则叙事。
+2026-07-07 M2 切换前的旧引擎及其规则叙事已全部废止，一律忽略。
 触发短语（任一即执行 RUNBOOK 对应泳道）："今天的 jczq 方案 / 今天竞彩怎么打 / 出今天的票 / today's bets"→竞彩泳道；"胜负彩 / 任九 / 26xxx期"→足彩泳道。
 
 ## 2. 判断的宪法（字典序，低序永不上溯）

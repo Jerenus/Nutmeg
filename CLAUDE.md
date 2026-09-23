@@ -1,6 +1,6 @@
 # CLAUDE.md — Nutmeg 项目指令（Claude Code 读这份；GPT/Codex 读 AGENTS.md）
 
-> 本文件与 `AGENTS.md` 是**同一份指令的两个 harness 副本**，改一处必须同步另一处。
+> 本文件与 `AGENTS.md` 共享同一段 SOP 指针（行动前置 / 触发短语 / 知识层 / 历史警戒 / today），改动这段必须两处同步；`AGENTS.md` 另含 OpenClaw 会话契约，只在那边维护。
 > 2026-08-23 起本文件只做指针层；正文在 SOP 三件套（见下）。设计依据：
 > `docs/superpowers/plans/2026-08-23-memory-ontology-sop-redesign.md`。
 

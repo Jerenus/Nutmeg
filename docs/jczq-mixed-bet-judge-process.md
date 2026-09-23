@@ -2,10 +2,9 @@
 
 > ⚠️ **命令面注记（2026-07-07 M2）**：命令面已于 2026-07-07 迁到决策本体五动词
 > （decision-am/read/close/settle），本文命令以 CLAUDE.md「JCZQ 每日决策 SOP」为准；
-> 文中残留的旧引擎叙述（jczq-today §A 票面 / bold-review 等）均为历史语境，引擎已删。
+> 文中的历史账文件（`bold_odds.json` 之外的旧产物）来自已退役的旧引擎，只作教训数据源。
 >
-> 这是 Nutmeg JCZQ **评判员/创作层**的可复制 runbook，迭代自 `docs/jczq-decision-skeleton.md`
-> （那份只覆盖已删的引擎层）。落地于 2026-06-21（西/沙·比/伊·乌/佛·新/埃 四场 MD2 全程边做边纠错）。
+> 这是 Nutmeg JCZQ **评判员/创作层**的可复制 runbook。落地于 2026-06-21（西/沙·比/伊·乌/佛·新/埃 四场 MD2 全程边做边纠错）。
 >
 > **定位**：本流程是决策本体判读步骤（CLAUDE.md SOP 步骤 2）的**深研展开**。
 > 世界杯窗口（2026-06-11~07-19）或用户要"深度分析/混合投注组合"时**默认进入**。
@@ -21,7 +20,7 @@
   挖最弱的那条腿（用新的工具调用取证）→ 诚实纠错 → 重判**。今天的质量（西班牙打穿辨析、比利时实证
   打脸、埃及让负修正、状态≠战意）全来自这些来回回合，**不是任何单个脚本/agent 一次产出的**。
 - **工具/脚本/agent 只做三件支撑**，判断永远不烤进脚本：
-  1. **取现有数据**：体彩子盘 / `bold_odds.json` / `bold-review.json`（历史账，bold-review 引擎已删不再产出）/ 快照（用当前 fetch 函数）。
+  1. **取现有数据**：体彩子盘 / `bold_odds.json`（国际去水 fair）/ 快照（用当前 fetch 函数）。
   2. **采集外部信息**：WebSearch/WebFetch + `jczq-match-analyst` agent（模型主动调用拿新鲜事实）。
   3. **确定性算术**：组合赔率 × 命中 × 期望——**只为执行"禁嘴算"纪律**，不是替代判断。
 - **模型用最新版**：主循环 + 派出的 agent 都跑最新/最强 Claude（agent frontmatter `model: opus`），
@@ -94,8 +93,7 @@
     进球轴表达=模态单点+小额（比分腿历史命中仅 6%），串关腿仍用高命中桶。
 
 ### Phase 4 · 失败教训过滤 + 人性
-- 扫近 `bold-review.json` 的**腿级按玩法命中率**（`bold_tickets[].legs[]` 的 market/hit）
-  （历史账，bold-review 引擎已删不再产出——存量文件仍是失败教训数据源）。
+- 扫记分牌与语料 v2 的**腿级按玩法命中率**（`experiments/corpus-v2.json`、`.nutmeg-data/scoreboard.json`）。
 - 套用硬教训（见"失败教训"节）。
 - **盘口=大众心理镜子**：value 在大众偏好的反面。
 - ⚠️ **教训的适用范围要对准生成过程（2026-07-06）**："平局收割 0/67"是**引擎平局串票**的
@@ -181,11 +179,10 @@
 
 ## 失败教训（硬数据，必读——**注意每条属于哪一层**，别跨层错配）
 
-### 引擎串票层（大胆/tiered 冷腿组合）
+### 高赔串票层（2026-05 至 07 历史账，产出引擎已退役）
 - **大胆/高赔串：整票命中 0/38（38 张全输）；大胆腿 29/205 ≈ 14%。** "3 条冷腿堆 100x+"必死。
 - 主题全 0：平局收割 0/67、全市场混搭 1/48、黑马让球 0/36、冷门比分梦 0/28（截至 7/05 跨版本累计）。
 - 腿级按玩法：**让球 15%（让平为主）> 比分 6%（命中是 1-1 闷平）> 胜平负冷门 0/23 > 总进球 0/5**。
-- 引擎 v2 档位（5/25-7/05 补结后）：**A 2/17 回款 201/385、B 0/14、D 0/2、E 0/7**——B/D/E 纯方差实证，A 有微弱结构信号。
 - 推论：高赔不是不能中，但要押"让平/闷平比分/晚破/小球"这些被大众低估的，**别堆冷腿、别押冷门正路**。
 
 ### 判读层（评判员 predictions/意见票，6/22-7/04 记分牌 2026-07-06 重建）
@@ -206,10 +203,9 @@
 | 体彩全玩法子盘 | `SportteryJczqCalculatorProvider().fetch()` (WAF-aware) |
 | 国际去水 fair | `daily/<date>/bold_odds.json` |
 | 逐场深研 | `jczq-match-analyst` agent（web，每场一个，并行） |
-| 失败教训腿级数据 | `daily/<date>/bold-review.json` 的 `bold_tickets[].legs[]`（历史账，bold-review 引擎已删不再产出） |
+| 失败教训腿级数据 | `experiments/corpus-v2.json`（语料 v2）与 `.nutmeg-data/scoreboard.json` |
 | 手机 PDF | reportlab + `NutmegCJK` + 112mm 窄竖版（自包含在 `nutmeg/decision/report.py`） |
 | 推送 | `TelegramBotClient.send_document` |
 | 落库 | `decision-read`（Read → reads.jsonl）/ `daily/<date>/legs.json` / decision-close PDF |
 
-> 关联：`CLAUDE.md` / `AGENTS.md` SOP · `docs/jczq-decision-skeleton.md`（引擎层骨架）·
-> `docs/jczq-decision-chain-critique.md`（根因）· spec §30 校准纪律。
+> 关联：`CLAUDE.md` / `AGENTS.md` SOP · `docs/sop/RULEBOOK.md`。
