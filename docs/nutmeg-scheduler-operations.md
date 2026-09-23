@@ -1,7 +1,9 @@
 # Nutmeg Scheduler Operations
 
 The scheduler keeps deterministic project commands separate from model-driven
-judgment. LaunchAgents own the official morning, settlement, and close stages;
+judgment. The `com.nutmeg.decision.am` LaunchAgent owns the official morning
+stage; settlement belongs to `com.nutmeg.day.settle` and closing odds come from
+the rsi loop's titan007 backfill (see `docs/ops/2026-09-20-scheduled-dataflows.md`).
 OpenClaw owns discussion, judgment, retries, and validation around them.
 
 ## Daily Handoff
@@ -35,21 +37,15 @@ The Nutmeg agent writes `daily/<date>/nutmeg-handoff.json` before close:
 uv run python scripts/openclaw/nutmeg_scheduler_ops.py --help
 ```
 
-- `run-strict` runs an existing daily stage with `--format json` and returns
-  nonzero when a structured sub-step or required delivery fails. It no longer
-  searches human-readable output for success markers. The AM stage also writes
-  a compact `daily/<date>/scheduler-context.json` for agent use.
+- `run-strict --stage am` runs `decision-am` with `--format json` and returns
+  nonzero when a structured sub-step fails. It does not search human-readable
+  output for success markers. On success it writes a compact
+  `daily/<date>/scheduler-context.json` for agent use and prints `NUTMEG_OK`;
+  on failure it prints `NUTMEG_FAILED` and publishes one `operations.failure`
+  notification.
 - `build-context` can regenerate that bounded context without rerunning AM.
-- `retry-settlement` reruns only `decision-reconcile` for D-1/D-2, so it is
-  idempotent and does not duplicate reports or Telegram delivery. Settle and
-  retry runs refresh the current-day scheduler context afterward.
-- `validate-preclose` checks the frozen handoff and deterministic legs fields.
-- `run-strict --stage close` runs that validation before invoking `decision-close`.
-  A missing or provisional handoff is an upstream failure and can never be
-  converted into an implicit empty ticket.
-- `verify-close` checks the dated PDF and a sent `decision.close.report` in the
-  notification ledger; the mutable latest-PDF path and log text are not treated
-  as delivery evidence.
+- The retired `close` / `settle` stages (`retry-settlement`, `validate-preclose`,
+  `verify-close`) were removed on 2026-09-23 together with their LaunchAgents.
 
 ## Delivery Failures
 

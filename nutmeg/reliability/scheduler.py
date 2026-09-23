@@ -16,14 +16,6 @@ _STAGES = {
         "label": "com.nutmeg.decision.am",
         "calendar": {"Hour": 8, "Minute": 0},
     },
-    "close": {
-        "label": "com.nutmeg.decision.close",
-        "calendar": {"Hour": 19, "Minute": 0},
-    },
-    "settle": {
-        "label": "com.nutmeg.decision.settle",
-        "calendar": {"Hour": 8, "Minute": 10},
-    },
 }
 _LABEL_TO_STAGE = {
     str(spec["label"]): stage for stage, spec in _STAGES.items()
@@ -229,7 +221,7 @@ def inspect_scheduler_authority(
             loaded_labels=loaded_labels,
             project_root=project_root,
         )
-        for stage in ("am", "close", "settle")
+        for stage in _STAGES
     }
     issues.extend(issue for report in stages.values() for issue in report.issues)
     if not ontology_v2:

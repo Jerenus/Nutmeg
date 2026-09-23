@@ -14,16 +14,8 @@ from nutmeg.ontology.wiring import build_ontology_kernel
 from nutmeg.reliability.scheduler import inspect_scheduler_authority
 
 NOW = datetime(2026, 8, 24, 12, tzinfo=UTC)
-LABELS = {
-    "am": "com.nutmeg.decision.am",
-    "close": "com.nutmeg.decision.close",
-    "settle": "com.nutmeg.decision.settle",
-}
-CALENDARS = {
-    "am": {"Hour": 8, "Minute": 0},
-    "close": {"Hour": 19, "Minute": 0},
-    "settle": {"Hour": 8, "Minute": 10},
-}
+LABELS = {"am": "com.nutmeg.decision.am"}
+CALENDARS = {"am": {"Hour": 8, "Minute": 0}}
 
 
 def _kernel(tmp_path: Path, *, ontology_authority: bool = True):
@@ -60,9 +52,8 @@ def _plist_document(root: Path, stage: str) -> dict[str, object]:
 
 
 def _write_plists(root: Path, documents=None) -> list[Path]:
-    documents = documents or {
-        stage: _plist_document(root, stage) for stage in LABELS
-    }
+    if documents is None:
+        documents = {stage: _plist_document(root, stage) for stage in LABELS}
     output = root / "plist-fixtures"
     output.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -120,7 +111,7 @@ def test_scheduler_review_passes_exact_read_only_authority_contract(
     assert report.candidate_commit == "abc123"
     assert report.ontology_v2 is True
     assert report.scoreboard_authority == "ontology"
-    assert tuple(report.stages) == ("am", "close", "settle")
+    assert tuple(report.stages) == ("am",)
     assert all(stage.configured and stage.loaded for stage in report.stages.values())
     evidence = report.to_evidence_report()
     assert evidence["checks"] and all(evidence["checks"].values())
@@ -132,13 +123,13 @@ def test_scheduler_review_passes_exact_read_only_authority_contract(
 @pytest.mark.parametrize(
     ("case", "expected_code"),
     [
-        ("missing_stage", "missing_stage:settle"),
+        ("missing_stage", "missing_stage:am"),
         ("duplicate_stage", "duplicate_stage:am"),
-        ("wrong_root", "wrong_working_directory:close"),
-        ("wrong_argument", "wrong_stage_argument:settle"),
+        ("wrong_root", "wrong_working_directory:am"),
+        ("wrong_argument", "wrong_stage_argument:am"),
         ("missing_calendar", "missing_calendar:am"),
-        ("missing_log", "invalid_log_path:close"),
-        ("unloaded", "stage_unloaded:settle"),
+        ("missing_log", "invalid_log_path:am"),
+        ("unloaded", "stage_unloaded:am"),
         ("ontology_false", "ontology_v2_disabled"),
         ("legacy_authority", "scoreboard_authority_not_ontology"),
         ("incomplete_sop", "sop_authority_incomplete"),
@@ -152,24 +143,20 @@ def test_scheduler_review_blocks_each_authority_drift(
     kernel = _kernel(tmp_path, ontology_authority=case != "legacy_authority")
     documents = {stage: _plist_document(project_root, stage) for stage in LABELS}
     if case == "missing_stage":
-        del documents["settle"]
+        del documents["am"]
     elif case == "duplicate_stage":
         documents["am-copy"] = deepcopy(documents["am"])
     elif case == "wrong_root":
-        documents["close"]["WorkingDirectory"] = str(tmp_path / "wrong")
+        documents["am"]["WorkingDirectory"] = str(tmp_path / "wrong")
     elif case == "wrong_argument":
-        documents["settle"]["ProgramArguments"][-1] = "run-strict --stage am"
+        documents["am"]["ProgramArguments"][-1] = "run-strict --stage close"
     elif case == "missing_calendar":
         del documents["am"]["StartCalendarInterval"]
     elif case == "missing_log":
-        del documents["close"]["StandardErrorPath"]
+        del documents["am"]["StandardErrorPath"]
     runtime = _runtime(
         project_root,
-        loaded=(
-            [LABELS["am"], LABELS["close"]]
-            if case == "unloaded"
-            else list(LABELS.values())
-        ),
+        loaded=[] if case == "unloaded" else list(LABELS.values()),
         ontology_v2=case != "ontology_false",
     )
     sop_paths = _sop(tmp_path)

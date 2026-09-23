@@ -68,8 +68,6 @@ The runtime report is an operator-supplied JSON snapshot with schema
 uv run nutmeg reliability scheduler-review \
   --data-dir /absolute/isolated-data \
   --plist /absolute/com.nutmeg.decision.am.plist \
-  --plist /absolute/com.nutmeg.decision.close.plist \
-  --plist /absolute/com.nutmeg.decision.settle.plist \
   --runtime-report /absolute/runtime.json \
   --sop-file /absolute/CONSTITUTION.md \
   --sop-file /absolute/RUNBOOK.md \

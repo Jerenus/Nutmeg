@@ -60,10 +60,6 @@ def _seed_release_details(kernel) -> None:
             "checks": {
                 "am_configured": True,
                 "am_loaded": True,
-                "close_configured": True,
-                "close_loaded": True,
-                "settle_configured": True,
-                "settle_loaded": True,
                 "ontology_v2": True,
                 "scoreboard_authority": True,
                 "sop_authority": True,
@@ -74,8 +70,6 @@ def _seed_release_details(kernel) -> None:
                 "sop_ready": True,
                 "stages": [
                     {"stage": "am", "configured": True, "loaded": True},
-                    {"stage": "close", "configured": True, "loaded": True},
-                    {"stage": "settle", "configured": True, "loaded": True},
                 ],
                 "secret": "must-not-leak",
             },
@@ -204,8 +198,8 @@ def test_release_route_reaches_green_fixture_without_client_arithmetic(
         "ontology_v2": True,
         "scoreboard_authority": "ontology",
         "sop_ready": True,
-        "configured_stages": 3,
-        "loaded_stages": 3,
+        "configured_stages": 1,
+        "loaded_stages": 1,
     }
     assert payload["backup_restore"]["sqlite_integrity"] == "ok"
     assert payload["backup_restore"]["schema_version"] == 14

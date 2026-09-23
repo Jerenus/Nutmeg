@@ -44,8 +44,6 @@ _OPENCLAW_NAMES = {
 }
 _LAUNCHD_STAGES = {
     "com.nutmeg.decision.am": OperatorStage.JCZQ_AM,
-    "com.nutmeg.decision.close": OperatorStage.JCZQ_CLOSE,
-    "com.nutmeg.decision.settle": OperatorStage.JCZQ_SETTLE,
     "com.nutmeg.zucai.prep": OperatorStage.ZUCAI_PREP,
     "com.nutmeg.zucai.prep-revision": OperatorStage.ZUCAI_PREP_REVISION,
     "com.nutmeg.zucai.afternoon": OperatorStage.ZUCAI_AFTERNOON,

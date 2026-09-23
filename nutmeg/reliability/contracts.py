@@ -234,10 +234,6 @@ CHECK_REPORT_SPECS: dict[str, tuple[str, frozenset[str]]] = {
             {
                 "am_configured",
                 "am_loaded",
-                "close_configured",
-                "close_loaded",
-                "settle_configured",
-                "settle_loaded",
                 "ontology_v2",
                 "scoreboard_authority",
                 "sop_authority",

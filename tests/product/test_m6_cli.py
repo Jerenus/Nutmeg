@@ -208,11 +208,7 @@ def test_scheduler_review_cli_records_sanitized_failed_evidence(tmp_path: Path) 
             {
                 "schema_version": "scheduler-runtime-v1",
                 "candidate_commit": "abc123",
-                "loaded_labels": [
-                    "com.nutmeg.decision.am",
-                    "com.nutmeg.decision.close",
-                    "com.nutmeg.decision.settle",
-                ],
+                "loaded_labels": ["com.nutmeg.decision.am"],
                 "effective_environment": {
                     "NUTMEG_ONTOLOGY_V2": "1",
                     "SECRET": "must-not-leak",
@@ -226,11 +222,7 @@ def test_scheduler_review_cli_records_sanitized_failed_evidence(tmp_path: Path) 
     project_root = tmp_path / "project"
     plist_root = tmp_path / "plists"
     plist_root.mkdir()
-    labels = {
-        "am": ("com.nutmeg.decision.am", 8, 0),
-        "close": ("com.nutmeg.decision.close", 19, 0),
-        "settle": ("com.nutmeg.decision.settle", 8, 10),
-    }
+    labels = {"am": ("com.nutmeg.decision.am", 8, 0)}
     plist_paths = []
     for stage, (label, hour, minute) in labels.items():
         path = plist_root / f"{label}.plist"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic guardrails around Nutmeg's scheduled decision pipeline."""
+"""Deterministic guardrails around Nutmeg's scheduled AM decision stage."""
 
 from __future__ import annotations
 
@@ -17,8 +17,6 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = ROOT / ".nutmeg-data" / "jczq"
 DEFAULT_LOG_DIR = ROOT / ".nutmeg-data" / "logs"
 DEFAULT_OPERATION_STATE_FILE = ROOT / ".nutmeg-data" / "state" / "scheduler-operation-events.json"
-VALID_MARKETS = {"had", "hhad", "crs", "ttg"}
-VALID_BUCKETS = {"main", "hedge", "draw", "parlay"}
 
 
 class SchedulerError(RuntimeError):
@@ -100,11 +98,6 @@ def _assert_strict_success(
     return payload
 
 
-def _assert_plain_success(result: subprocess.CompletedProcess[str], stage: str) -> None:
-    if result.returncode != 0:
-        raise SchedulerError(f"{stage} failed: exit={result.returncode}")
-
-
 def run_strict(
     stage: str,
     run_date: str,
@@ -113,48 +106,19 @@ def run_strict(
     operation_state_file: Path = DEFAULT_OPERATION_STATE_FILE,
 ) -> None:
     try:
-        # A missing decision is an upstream failure, never an implicit abstention.
-        if stage == "close":
-            validate_preclose(run_date, output_dir)
-
         command = ["uv", "run", "nutmeg", f"decision-{stage}", "--run-date", run_date,
-                   "--output-dir", str(output_dir)]
-        if stage in {"close", "settle"}:
-            command.extend(["--dispatch-telegram", "--no-dry-run"])
-        command.extend(["--format", "json"])
+                   "--output-dir", str(output_dir), "--format", "json"]
         result = _run(command)
         _assert_strict_success(result, stage)
-        if stage == "am":
-            build_context(run_date, output_dir, DEFAULT_LOG_DIR)
-        elif stage == "settle":
-            build_context(date.today().isoformat(), output_dir, DEFAULT_LOG_DIR)
+        build_context(run_date, output_dir, DEFAULT_LOG_DIR)
     except Exception as exc:
         error = exc if isinstance(exc, SchedulerError) else SchedulerError(str(exc))
-        summary = _user_safe_failure_summary(stage, str(error))
-        _record_operation_failure(stage, run_date, summary, operation_state_file)
+        _record_operation_failure(stage, run_date, _safe_summary(str(error)), operation_state_file)
         if error is exc:
             raise
         raise error from exc
     _record_operation_success(stage, run_date, operation_state_file)
     print(f"NUTMEG_OK stage={stage} run_date={run_date}")
-
-
-def retry_settlement(days: list[int], output_dir: Path) -> None:
-    settled_at = datetime.now().astimezone().isoformat(timespec="seconds")
-    completed: list[str] = []
-    for days_ago in days:
-        run_date = (date.today() - timedelta(days=days_ago)).isoformat()
-        command = [
-            "uv", "run", "nutmeg", "decision-reconcile",
-            "--run-date", run_date,
-            "--output-dir", str(output_dir),
-            "--settled-at", settled_at,
-        ]
-        result = _run(command)
-        _assert_plain_success(result, f"reconcile-{run_date}")
-        completed.append(run_date)
-    build_context(date.today().isoformat(), output_dir, DEFAULT_LOG_DIR)
-    print(f"NUTMEG_OK settlement_retry={','.join(completed)} dispatch=false")
 
 
 def build_context(run_date: str, output_dir: Path, log_dir: Path) -> Path:
@@ -281,133 +245,6 @@ def build_context(run_date: str, output_dir: Path, log_dir: Path) -> Path:
     return context_path
 
 
-def _validate_handoff(run_date: str, output_dir: Path) -> tuple[dict[str, Any], Path]:
-    day_dir = output_dir / "daily" / run_date
-    handoff_path = day_dir / "nutmeg-handoff.json"
-    handoff = _read_json(handoff_path)
-    if not isinstance(handoff, dict):
-        raise SchedulerError("nutmeg-handoff.json must be an object")
-    if handoff.get("run_date") != run_date:
-        raise SchedulerError("handoff run_date does not match the scheduled date")
-    if handoff.get("status") != "frozen":
-        raise SchedulerError("handoff is not frozen")
-    if handoff.get("position") not in {"ready", "abstain"}:
-        raise SchedulerError("handoff position must be ready or abstain")
-    if not str(handoff.get("summary", "")).strip():
-        raise SchedulerError("handoff summary is required")
-    return handoff, day_dir
-
-
-def _validate_legs(legs: Any) -> list[str]:
-    if not isinstance(legs, list):
-        raise SchedulerError("legs.json must contain an array")
-    errors: list[str] = []
-    seen: set[tuple[Any, ...]] = set()
-    for index, leg in enumerate(legs):
-        label = f"legs[{index}]"
-        if not isinstance(leg, dict):
-            errors.append(f"{label} must be an object")
-            continue
-        for field in ("match_id", "market", "selection", "odds", "bucket"):
-            if leg.get(field) in (None, ""):
-                errors.append(f"{label}.{field} is required")
-        market = leg.get("market")
-        if market not in VALID_MARKETS:
-            errors.append(f"{label}.market is invalid")
-        if leg.get("bucket") not in VALID_BUCKETS:
-            errors.append(f"{label}.bucket is invalid")
-        try:
-            if float(leg.get("odds", 0)) <= 1:
-                errors.append(f"{label}.odds must be greater than 1")
-        except (TypeError, ValueError):
-            errors.append(f"{label}.odds must be numeric")
-        if market == "hhad" and not isinstance(leg.get("line"), (int, float)):
-            errors.append(f"{label}.line is required for hhad")
-        key = (leg.get("match_id"), market, leg.get("selection"), leg.get("bucket"))
-        if key in seen:
-            errors.append(f"{label} duplicates another leg")
-        seen.add(key)
-    return errors
-
-
-def validate_preclose(run_date: str, output_dir: Path) -> None:
-    handoff, day_dir = _validate_handoff(run_date, output_dir)
-    position = handoff["position"]
-    legs_path = day_dir / "legs.json"
-    legs = _read_json(legs_path) if legs_path.exists() else []
-    errors = _validate_legs(legs)
-
-    if position == "ready" and not legs:
-        errors.append("ready position requires at least one leg")
-    if position == "abstain":
-        if legs:
-            errors.append("abstain position requires an empty or absent legs.json")
-        if not str(handoff.get("explicit_empty_reason", "")).strip():
-            errors.append("abstain position requires explicit_empty_reason")
-
-    if errors:
-        raise SchedulerError("; ".join(errors))
-    print(
-        f"NUTMEG_GATE_OK run_date={run_date} position={position} "
-        f"legs={len(legs)} status=frozen"
-    )
-
-
-def _close_report(run_date: str, output_dir: Path) -> Path | None:
-    """close 的当日报告产物。**优先 v2 markdown，兼容旧 PDF。**
-
-    出生事故：close 自 2026-08-23 之后改产 `decision-report-v2-<date>.md`
-    （最后一份 PDF 就是 08-23 那天的），而本检查一直只认 PDF —— `Nutmeg-收盘交付确认`
-    因此从 08-24 起必然失败，连错 11 次后于 08-25 被禁用，**close 自此无人审计地
-    跑了三周**。历史日期仍要可验，故两种格式都认。
-    """
-    day_dir = output_dir / "daily" / run_date
-    for candidate in (
-        day_dir / f"decision-report-v2-{run_date}.md",
-        day_dir / f"decision-report-{run_date}.pdf",
-    ):
-        if candidate.exists() and candidate.stat().st_size > 0:
-            return candidate
-    return None
-
-
-def verify_close(run_date: str, output_dir: Path, log_dir: Path) -> None:
-    _validate_handoff(run_date, output_dir)
-    report = _close_report(run_date, output_dir)
-    if report is None:
-        raise SchedulerError(
-            f"missing or empty report: {output_dir / 'daily' / run_date}/"
-            f"decision-report-v2-{run_date}.md (或旧版 decision-report-{run_date}.pdf)"
-        )
-
-    del log_dir
-    # 通知 kind 同样分了版本：v2 链路发 `decision.close.report.v2`
-    # (`ontology_adapter.py`)，v1 链路发 `decision.close.report` (`report.py`)。
-    if not any(
-        _has_sent_notification(kind=kind, business_key=run_date, stage="close")
-        for kind in ("decision.close.report.v2", "decision.close.report")
-    ):
-        raise SchedulerError("notification ledger does not confirm close report delivery")
-    print(
-        f"NUTMEG_CLOSE_OK run_date={run_date} report={report.name} "
-        f"report_bytes={report.stat().st_size} telegram=dispatched"
-    )
-
-
-def _user_safe_failure_summary(stage: str, error: str) -> str:
-    if stage == "close" and any(
-        marker in error
-        for marker in (
-            "nutmeg-handoff.json",
-            "handoff is not frozen",
-            "ready position",
-            "abstain position",
-        )
-    ):
-        return "今日决策未完成，收盘已安全停止；系统未将流程失败记为空仓。"
-    return _safe_summary(error)
-
-
 def _record_operation_failure(
     stage: str,
     run_date: str,
@@ -468,23 +305,6 @@ def _publish_operation_event(
     return build_notification_service().publish(request)
 
 
-def _has_sent_notification(*, kind: str, business_key: str, stage: str) -> bool:
-    from datetime import UTC, datetime
-
-    from nutmeg.notifications.wiring import build_notification_service
-
-    notifications = build_notification_service().repository.list_recent(
-        datetime(2000, 1, 1, tzinfo=UTC)
-    )
-    return any(
-        item.kind == kind
-        and item.business_key == business_key
-        and item.stage == stage
-        and item.status.value == "sent"
-        for item in notifications
-    )
-
-
 def _load_operation_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -524,18 +344,8 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="action", required=True)
 
     strict = subparsers.add_parser("run-strict")
-    strict.add_argument("--stage", choices=("am", "close", "settle"), required=True)
+    strict.add_argument("--stage", choices=("am",), required=True)
     strict.add_argument("--run-date")
-
-    retry = subparsers.add_parser("retry-settlement")
-    retry.add_argument("--days", type=int, nargs="+", default=[1, 2])
-
-    preclose = subparsers.add_parser("validate-preclose")
-    preclose.add_argument("--run-date")
-
-    close = subparsers.add_parser("verify-close")
-    close.add_argument("--run-date")
-    close.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIR)
 
     context = subparsers.add_parser("build-context")
     context.add_argument("--run-date")
@@ -549,12 +359,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.action == "run-strict":
             run_strict(args.stage, _run_date(args.run_date), output_dir)
-        elif args.action == "retry-settlement":
-            retry_settlement(args.days, output_dir)
-        elif args.action == "validate-preclose":
-            validate_preclose(_run_date(args.run_date), output_dir)
-        elif args.action == "verify-close":
-            verify_close(_run_date(args.run_date), output_dir, args.log_dir.resolve())
         elif args.action == "build-context":
             build_context(_run_date(args.run_date), output_dir, args.log_dir.resolve())
     except SchedulerError as exc:

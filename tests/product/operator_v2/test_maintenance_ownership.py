@@ -36,8 +36,6 @@ OPENCLAW_TELEGRAM_ARGV = [
 ]
 LAUNCHD_LABELS = (
     "com.nutmeg.decision.am",
-    "com.nutmeg.decision.close",
-    "com.nutmeg.decision.settle",
     "com.nutmeg.zucai.prep",
     "com.nutmeg.zucai.prep-revision",
     "com.nutmeg.zucai.afternoon",
@@ -291,8 +289,6 @@ def test_closed_openclaw_registry_maps_exact_names_and_normalized_argv(
     ("label", "stage"),
     [
         ("com.nutmeg.decision.am", OperatorStage.JCZQ_AM),
-        ("com.nutmeg.decision.close", OperatorStage.JCZQ_CLOSE),
-        ("com.nutmeg.decision.settle", OperatorStage.JCZQ_SETTLE),
         ("com.nutmeg.zucai.prep", OperatorStage.ZUCAI_PREP),
         ("com.nutmeg.zucai.prep-revision", OperatorStage.ZUCAI_PREP_REVISION),
         ("com.nutmeg.zucai.afternoon", OperatorStage.ZUCAI_AFTERNOON),
