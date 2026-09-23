@@ -6,7 +6,7 @@ from pathlib import Path
 
 from nutmeg.decision.face_status import FaceStatusError, attach_face_status
 from nutmeg.decision.research_intake import intake
-from nutmeg.decision.stance import validate_stance
+from nutmeg.decision.stance import apply_tilt, validate_stance
 
 FACES = ("home", "draw", "away")
 
@@ -143,6 +143,30 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
             # 「跟市场」是宪法 §2 的明文判断：无命名理由即市场锚定。
             # 它是可被 Brier 评分的陈述，不是判断缺席；强度只决定结构。
             belief = dict(prior)
+        # 表态块：有 tilt 则走 l 条拨动算术；三证判死的面优先于拨动——
+        # 拨动作用在 prior 上，再把死面清零并在活面上归一。
+        stance = leg.get("stance") if researched else None
+        tilt_info: dict = {}
+        if stance:
+            result = apply_tilt(
+                prior, stance.get("tilt"), kickoff=leg.get("kickoff_bj")
+            )
+            if not result.zeroed:
+                tilted = {
+                    face: (result.belief[face] if face in alive else 0.0)
+                    for face in FACES
+                }
+                tilted_mass = sum(tilted.values()) or 1.0
+                belief = {face: value / tilted_mass for face, value in tilted.items()}
+            tilt_info = {
+                "tilt_applied_pp": result.applied_pp,
+                "tilt_zeroed": result.zeroed,
+                "tilt_reason": result.reason,
+            }
+        commitment = {"single": "commit", "double": "lean", "full": "cover"}.get(
+            (stance or {}).get("structure"), "lean"
+        )
+        tilt_applied = bool(stance) and not tilt_info.get("tilt_zeroed", True)
         judge = "ai:jczq-analyst" if researched else "market-anchor"
         read_source = "ai" if researched else "market-anchor"
         tier = "deep_research" if researched else "price_only"
@@ -158,20 +182,32 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
                 "belief": belief,
                 "factors": [],
                 "falsifier": (
-                    f"{code}: 被排死面开出则记录三证失效"
-                    if researched
-                    else f"{code}: 市场锚定按赛果计 Brier"
+                    stance["falsifier"]
+                    if stance
+                    else (
+                        f"{code}: 被排死面开出则记录三证失效"
+                        if researched
+                        else f"{code}: 市场锚定按赛果计 Brier"
+                    )
                 ),
-                "confidence": leg.get("confidence", 3) if researched else 1,
+                "confidence": (
+                    stance["confidence"]
+                    if stance
+                    else (leg.get("confidence", 3) if researched else 1)
+                ),
                 "shadow": False,
                 "note": f"[{code}|{leg['name']}|{tier}] {leg.get('note', '')}",
                 "status": "draft",
-                "commitment_tier": "lean",
+                "commitment_tier": commitment,
                 "judgment_tier": tier,
                 "flags": {
                     "directional": leg.get("directional_flags", []),
                     "nondirectional": leg.get("nondirectional_flags", []),
                 },
+                "stance": {**stance, **tilt_info} if stance else None,
+                "adjustment_evidence_tiers": (
+                    list(result.tiers) if tilt_applied else []
+                ),
             }
         )
     (day_dir / "reads.json").write_text(

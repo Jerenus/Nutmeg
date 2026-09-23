@@ -237,3 +237,76 @@ def test_intake_without_stance_is_rejected(tmp_path):
 
     assert any("stance" in message for message in report["failed"].get("周五001", []))
     assert (day_dir / "research-周五001.json").exists()
+
+
+def test_reads_take_belief_from_tilt_and_carry_stance(tmp_path):
+    root = _day(tmp_path)
+    tilt = {
+        "face": "3",
+        "expires_if": "X 出场则撤回",
+        "evidence": [
+            {
+                "tier": "official",
+                "kind": "absence_official",
+                "pp": 6,
+                "source": "club",
+                "captured_at": "2026-09-19T10:00:00+08:00",
+            }
+        ],
+    }
+    research = {
+        **RESEARCH,
+        "stance": {**STANCE, "why_not_market": "tilt_evidence", "tilt": tilt},
+    }
+    (root / "daily" / "2026-09-19" / "research-周五001.json").write_text(
+        json.dumps(research, ensure_ascii=False), encoding="utf-8"
+    )
+    intake_board(day="2026-09-19", jczq_dir=root, write=True)
+
+    reads = build_jczq_reads(
+        day="2026-09-19", jczq_dir=root, made_at="2026-09-19T12:00:00+08:00"
+    )
+
+    r = reads[0]
+    # 拨动 +6pp 作用在 prior 上（home 0.60→0.66，其余按比例缩：draw 0.2125 / away 0.1275），
+    # 再把三证判死的 away 清零并在活面上归一：home 0.66/0.8725 = 0.756。
+    assert round(r["belief"]["home"], 3) == 0.756
+    assert r["belief"]["away"] == 0.0
+    assert abs(sum(r["belief"].values()) - 1) < 1e-9
+    assert r["adjustment_evidence_tiers"] == ["official"]
+    assert r["falsifier"] == STANCE["falsifier"] and r["confidence"] == 3
+    assert r["commitment_tier"] == "lean" and r["stance"]["faces"] == "31"
+    assert r["stance"]["tilt_applied_pp"] == 6 and r["stance"]["tilt_zeroed"] is False
+
+
+def test_reads_zero_small_tilt_and_keep_alive_normalisation(tmp_path):
+    root = _day(tmp_path)
+    tilt = {
+        "face": "3",
+        "expires_if": "",
+        "evidence": [
+            {
+                "tier": "inferred",
+                "kind": "rotation_confirmed",
+                "pp": 2,
+                "source": "s",
+                "captured_at": "2026-09-19T10:00:00+08:00",
+            }
+        ],
+    }
+    research = {
+        **RESEARCH,
+        "stance": {**STANCE, "why_not_market": "tilt_evidence", "tilt": tilt},
+    }
+    (root / "daily" / "2026-09-19" / "research-周五001.json").write_text(
+        json.dumps(research, ensure_ascii=False), encoding="utf-8"
+    )
+    intake_board(day="2026-09-19", jczq_dir=root, write=True)
+
+    r = build_jczq_reads(
+        day="2026-09-19", jczq_dir=root, made_at="2026-09-19T12:00:00+08:00"
+    )[0]
+
+    assert r["belief"]["away"] == 0.0  # away 判死 → 活面归一仍生效
+    assert r["stance"]["tilt_zeroed"] is True and "归零" in r["stance"]["tilt_reason"]
+    assert r["adjustment_evidence_tiers"] == []
