@@ -120,10 +120,15 @@ def test_current_day_is_not_sealed_until_all_board_results_exist(
     monkeypatch.setattr(backfill, "OUT", out)
     monkeypatch.setattr(backfill.httpx, "Client", _StaticClient)
 
-    assert backfill.collect(0, today=date(2026, 9, 20)) == 2
+    assert backfill.collect(0, today=date(2026, 9, 20)) == 0  # 当天未踢完不是故障
 
     stored = json.loads(out.read_text(encoding="utf-8"))
     assert "2026-09-20" not in stored
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "ℹ️RESULTS_PENDING: today=2026-09-20(1/30)"
+    )
+    # 同一块板放到「昨天」就是真的未齐：退出 2
+    assert backfill.collect(0, today=date(2026, 9, 21)) == 2
     assert capsys.readouterr().out.splitlines()[0] == (
         "⚠️RESULTS_STALE: incomplete=2026-09-20(1/30)"
     )

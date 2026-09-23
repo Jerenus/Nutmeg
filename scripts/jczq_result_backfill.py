@@ -163,15 +163,22 @@ def collect(sleep_s: float, *, today: date | None = None) -> int:
         if not board_codes <= set(stored):
             present = observed_counts.get(raw, len(board_codes & set(stored)))
             incomplete.append((raw, present, len(board_codes)))
+    # 今天的板面还没踢完不是故障：只作 PENDING 提示（退出 0）；昨天及更早未齐才是 STALE（退出 2）。
+    # 2026-09-23 之前每天 09:30 都因当日 0/N 报退出码 2，把状态条常年染红。
+    stale_days = [row for row in incomplete if row[0] != current_day.isoformat()]
+    pending_days = [row for row in incomplete if row[0] == current_day.isoformat()]
     if lag is not None and lag > 2:
         print(f"⚠️RESULTS_STALE: latest={max(valid_dates).isoformat()} lag={lag}d")
-    elif incomplete:
-        detail = ",".join(f"{d}({present}/{total})" for d, present, total in incomplete)
+    elif stale_days:
+        detail = ",".join(f"{d}({present}/{total})" for d, present, total in stale_days)
         print(f"⚠️RESULTS_STALE: incomplete={detail}")
+    elif pending_days:
+        detail = ",".join(f"{d}({present}/{total})" for d, present, total in pending_days)
+        print(f"ℹ️RESULTS_PENDING: today={detail}")
     for message in messages:
         print(message)
     print(f"赛果回填：本轮 {fetched} 天，失败 {failed}；累计 {len(done)} 天 / {n} 场 → {OUT}")
-    return 2 if (lag is not None and lag > 2) or incomplete else 0
+    return 2 if (lag is not None and lag > 2) or stale_days else 0
 
 
 if __name__ == "__main__":
