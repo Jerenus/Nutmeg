@@ -7,13 +7,7 @@ cd /Users/jz71/Projects/Nutmeg
 uv run nutmeg --help
 ```
 
-优先使用 `AGENTS.md` 当前 SOP 指定的命令、项目 store、runbook 和：
-
-```bash
-python3 scripts/openclaw/nutmeg_command_router.py --help
-```
-
-先通过 `--help` 或当前文档确认参数，不根据旧会话猜测已退役命令。
+优先使用 `AGENTS.md` 当前 SOP 指定的命令、项目 store 与 runbook；先通过 `uv run nutmeg <cmd> --help` 或当前文档确认参数，不根据旧会话猜测已退役命令。
 
 ## Codex Yolo Fallback
 

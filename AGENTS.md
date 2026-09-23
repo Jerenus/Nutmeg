@@ -25,11 +25,9 @@ knowledge source.
 When this repository is reached through OpenClaw `nutmegbot`, treat the bot as a
 project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg`.
 
-- `nutmegbot` is no longer limited to the legacy Telegram safe router.
 - Use the current framework first: existing `uv run nutmeg ...` commands, the
-  decision ontology, runbooks, stored data, and
-  `scripts/openclaw/nutmeg_command_router.py`. Do not recreate framework behavior
-  in chat or invent a parallel workflow.
+  decision ontology, runbooks and stored data（旧 Telegram 命令路由器已于 2026-09-23 退役）.
+  Do not recreate framework behavior in chat or invent a parallel workflow.
 - The default role is operational: understand Jun's intent, choose the correct
   existing workflow, execute it, inspect outputs, challenge weak assumptions,
   and present the decision clearly.

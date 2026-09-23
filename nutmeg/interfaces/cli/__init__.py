@@ -1,6 +1,6 @@
 # ruff: noqa: F401 — this package ``__init__`` is the CLI namespace hub: imports,
 # factories, helpers and option singletons defined here are referenced by the
-# subsystem command modules (``core``/``jczq``/``zucai``/...) via ``_cli.<name>``.
+# subsystem command modules (``zucai``/``telegram``/``odds``/...) via ``_cli.<name>``.
 """Nutmeg CLI package.
 
 ``cli.py`` was split into this package, organised by subsystem, with **no**
@@ -15,12 +15,9 @@ factory on the ``cli`` package is observed by the commands exactly as before.
 """
 from __future__ import annotations
 
-import io
 import json
 import logging
-import sys
 import time
-from contextlib import redirect_stdout
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,12 +27,11 @@ from rich.console import Console
 from sqlalchemy.orm import Session
 
 from nutmeg.agents.llm_provider import build_bot_fallback_provider, build_synthesis_provider
-from nutmeg.agents.router import classify_intent
-from nutmeg.agents.workflow import LANGGRAPH_AVAILABLE, MatchAnalysisAgentWorkflow
+from nutmeg.agents.workflow import MatchAnalysisAgentWorkflow
 from nutmeg.config.settings import AppSettings, get_settings
 from nutmeg.data.api_football import ApiFootballClient, ApiFootballError
 from nutmeg.data.open_meteo import OpenMeteoClient
-from nutmeg.data.soccerdata_client import SoccerDataClient, SoccerDataError
+from nutmeg.data.soccerdata_client import SoccerDataClient
 from nutmeg.data.the_odds_api import TheOddsApiClient, TheOddsApiError
 from nutmeg.data.transfermarkt import TransfermarktDataset
 from nutmeg.domain.odds import OddsProvider
@@ -47,22 +43,13 @@ from nutmeg.interfaces.bot import (
     TelegramPollingDaemon,
 )
 from nutmeg.notifications.wiring import build_notification_service
-from nutmeg.observability.langsmith import build_trace_context, traced_operation
+from nutmeg.observability.langsmith import traced_operation
 from nutmeg.ontology import build_ontology_kernel
-from nutmeg.process.superpowers import inspect_superpowers_bridge
-from nutmeg.services.analysis import AnalysisService, InsufficientEvidenceError
+from nutmeg.services.analysis import AnalysisService
 from nutmeg.services.evals import EvalDatasetNotFoundError, EvalService
-from nutmeg.services.event_data import EventTacticalModelService
-from nutmeg.services.fixtures import FixtureService
-from nutmeg.services.information import FixtureInformationService, LiveInformationProvider
-from nutmeg.services.materialization import MaterializationService
 from nutmeg.services.odds import OddsFixtureNotFoundError, OddsSnapshotService
-from nutmeg.services.operations import DailyOperatorService
 from nutmeg.services.players import PlayerProfileService
-from nutmeg.services.popularity import MatchPopularityRanker, RankedFixture
-from nutmeg.services.snapshot import FixtureNotFoundError, FixtureSnapshotService
-from nutmeg.services.sync import FixtureSyncService
-from nutmeg.services.tactics import TacticalVisualService
+from nutmeg.services.snapshot import FixtureSnapshotService
 from nutmeg.services.value import ValueBoardService
 from nutmeg.services.zucai import ZucaiValidationError, ZucaiWorkflowService
 from nutmeg.services.zucai_odds_source import (
@@ -86,7 +73,6 @@ from nutmeg.storage.bootstrap import (
     create_state_schema,
     ensure_storage_paths,
 )
-from nutmeg.storage.client_state_repository import SqlAlchemyClientStateRepository
 from nutmeg.storage.fixture_repository import DuckDbFixtureRepository
 from nutmeg.storage.odds_repository import (
     DuckDbOddsEventRepository,
@@ -98,28 +84,12 @@ from nutmeg.storage.prediction_repository import (
     SqlAlchemyPredictionRepository,
 )
 from nutmeg.storage.reference_repository import DuckDbReferenceRepository
-from nutmeg.storage.sync_run_repository import SqlAlchemySyncRunRepository
 
 app = typer.Typer(help="Nutmeg CLI foundation")
 console = Console()
-LEAGUE_FILTER_OPTION = typer.Option(None, "--league")
-DAYS_OPTION = typer.Option(None, "--days")
-TIMEZONE_OPTION = typer.Option(None, "--timezone")
 TELEGRAM_OFFSET_FILE_OPTION = typer.Option(None, "--offset-file")
 TELEGRAM_NO_OFFSET_FILE_OPTION = typer.Option(False, "--no-offset-file")
-TACTICAL_OUTPUT_DIR_OPTION = typer.Option(None, "--output-dir")
 ALERT_PREFERENCE_OPTION = typer.Option(None, "--alert-preference")
-EVENT_DATA_EVENTS_FILE_OPTION = typer.Option(None, "--events-file")
-INFORMATION_SOURCES_FILE_OPTION = typer.Option(None, "--sources-file")
-INFORMATION_SOURCES_CONFIG_OPTION = typer.Option(None, "--sources-config")
-INFORMATION_CACHE_DIR_OPTION = typer.Option(None, "--cache-dir")
-INFORMATION_LIVE_FETCH_OPTION = typer.Option(False, "--live-fetch")
-INFORMATION_CACHE_TTL_OPTION = typer.Option(900, "--cache-ttl-seconds")
-INFORMATION_TIMEOUT_OPTION = typer.Option(3.0, "--timeout-seconds")
-INFORMATION_MAX_BYTES_OPTION = typer.Option(262_144, "--max-bytes")
-CLIENT_INFORMATION_SOURCES_CONFIG_OPTION = typer.Option(None, "--information-sources-config")
-CLIENT_INFORMATION_CACHE_DIR_OPTION = typer.Option(None, "--information-cache-dir")
-CLIENT_INFORMATION_LIVE_FETCH_OPTION = typer.Option(False, "--live-information-fetch")
 ZUCAI_ISSUE_ID_OPTION = typer.Option(None, "--issue-id")
 ZUCAI_ISSUE_FILE_OPTION = typer.Option(None, "--issue-file")
 ZUCAI_ODDS_FILE_OPTION = typer.Option(None, "--odds-file")
@@ -177,29 +147,6 @@ def _build_state_session() -> Session:
     return Session(engine)
 
 
-def build_fixture_service() -> tuple[FixtureService, Session]:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    session = _build_state_session()
-    repository = DuckDbFixtureRepository(settings)
-    return FixtureService(repository), session
-
-
-def build_sync_service() -> tuple[FixtureSyncService, Session]:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    session = _build_state_session()
-    fixture_repository = DuckDbFixtureRepository(settings)
-    sync_run_repository = SqlAlchemySyncRunRepository(session)
-    api_client = ApiFootballClient(
-        base_url=settings.api_football_base_url,
-        api_key=settings.api_football_key,
-    )
-    return FixtureSyncService(fixture_repository, sync_run_repository, api_client), session
-
-
 def build_snapshot_service() -> tuple[FixtureSnapshotService, Session]:
     settings = get_settings()
     ensure_storage_paths(settings)
@@ -226,20 +173,6 @@ def build_snapshot_service() -> tuple[FixtureSnapshotService, Session]:
             api_context_client=api_context_client,
             reference_repository=reference_repository,
             weather_client=weather_client,
-        ),
-        session,
-    )
-
-
-def build_materialization_service() -> tuple[MaterializationService, Session]:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    session = _build_state_session()
-    return (
-        MaterializationService(
-            transfermarkt_dataset=TransfermarktDataset(database_path=settings.analytics_db_path),
-            soccerdata_client=SoccerDataClient(database_path=settings.analytics_db_path),
         ),
         session,
     )
@@ -366,91 +299,6 @@ def build_prediction_repository() -> tuple[SqlAlchemyPredictionRepository, Sessi
     return SqlAlchemyPredictionRepository(session), session
 
 
-def build_daily_operator_service() -> tuple[DailyOperatorService, Session]:
-    settings = get_settings()
-    ensure_storage_paths(settings)
-    create_analytics_schema(settings)
-    session = _build_state_session()
-    fixture_repository = DuckDbFixtureRepository(settings)
-    reference_repository = DuckDbReferenceRepository(settings)
-    weather_client = OpenMeteoClient(
-        geocoding_base_url=settings.open_meteo_geocoding_base_url,
-        weather_base_url=settings.open_meteo_weather_base_url,
-        reference_repository=reference_repository,
-    )
-    snapshot_service = FixtureSnapshotService(
-        fixture_repository=fixture_repository,
-        soccerdata_client=SoccerDataClient(database_path=settings.analytics_db_path),
-        transfermarkt_dataset=TransfermarktDataset(database_path=settings.analytics_db_path),
-        api_context_client=ApiFootballClient(
-            base_url=settings.api_football_base_url,
-            api_key=settings.api_football_key,
-        ),
-        reference_repository=reference_repository,
-        weather_client=weather_client,
-    )
-    odds_client = build_odds_provider_client(
-        settings,
-        fixture_repository=fixture_repository,
-        event_repository=DuckDbOddsEventRepository(settings),
-    )
-    odds_service = OddsSnapshotService(
-        fixture_repository=fixture_repository,
-        odds_client=odds_client,
-        odds_history_repository=DuckDbOddsHistoryRepository(settings),
-    )
-    analysis_service = AnalysisService(
-        snapshot_service=snapshot_service,
-        odds_service=odds_service,
-    )
-    telegram_sender = None
-    telegram_chat_ids: list[int] = []
-    if settings.telegram_bot_token:
-        telegram_sender = TelegramBotClient(
-            token=settings.telegram_bot_token,
-            base_url=settings.telegram_api_base_url,
-        )
-        telegram_chat_ids = sorted(
-            parse_telegram_allowed_chat_ids(settings.telegram_allowed_chat_ids)
-        )
-    return (
-        DailyOperatorService(
-            fixture_service=FixtureService(fixture_repository),
-            popularity_ranker=MatchPopularityRanker(),
-            value_board_service=ValueBoardService(
-                fixture_repository=fixture_repository,
-                snapshot_service=snapshot_service,
-                odds_service=odds_service,
-            ),
-            sync_service=FixtureSyncService(
-                fixture_repository,
-                SqlAlchemySyncRunRepository(session),
-                ApiFootballClient(
-                    base_url=settings.api_football_base_url,
-                    api_key=settings.api_football_key,
-                ),
-            ),
-            workflow=MatchAnalysisAgentWorkflow(
-                analysis_service=analysis_service,
-                synthesis_provider=build_synthesis_provider(settings),
-            ),
-            telegram_sender=telegram_sender,
-            telegram_chat_ids=telegram_chat_ids,
-            timezone=settings.sync_timezone,
-        ),
-        session,
-    )
-
-
-def build_tactical_visual_service() -> tuple[TacticalVisualService, Session]:
-    snapshot_service, session = build_snapshot_service()
-    return TacticalVisualService(snapshot_service=snapshot_service), session
-
-
-def build_event_tactical_model_service() -> EventTacticalModelService:
-    return EventTacticalModelService()
-
-
 def build_zucai_workflow_service() -> ZucaiWorkflowService:
     settings = get_settings()
     ensure_storage_paths(settings)
@@ -479,32 +327,6 @@ def build_zucai_source_sync_service() -> ZucaiSourceSyncService:
 
 def build_zucai_odds_sync_service() -> ZucaiOddsSyncService:
     return ZucaiOddsSyncService()
-
-
-def build_fixture_information_service() -> FixtureInformationService:
-    return FixtureInformationService()
-
-
-def build_live_fixture_information_service(
-    *,
-    manifest_path: Path,
-    cache_dir: Path | None = None,
-    live_fetch: bool = False,
-    cache_ttl_seconds: int = 900,
-    timeout_seconds: float = 3.0,
-    max_bytes: int = 262_144,
-) -> FixtureInformationService:
-    resolved_cache_dir = cache_dir or Path(".nutmeg-data") / "information-cache"
-    return FixtureInformationService(
-        provider=LiveInformationProvider(
-            manifest_path=manifest_path,
-            cache_dir=resolved_cache_dir,
-            live_fetch=live_fetch,
-            default_cache_ttl_seconds=cache_ttl_seconds,
-            default_timeout_seconds=timeout_seconds,
-            default_max_bytes=max_bytes,
-        )
-    )
 
 
 def build_analysis_service() -> tuple[AnalysisService, Session | None]:
@@ -543,183 +365,6 @@ def _build_zucai_value_bridge_for_daily(run_date: str):
     except Exception:  # noqa: BLE001 — degrade, never crash the daily report
         logger.warning("zucai value bridge wiring failed — degrading", exc_info=True)
         return None
-
-
-def _provider_health_payload(settings, odds_provider: str) -> dict[str, object] | None:
-    if odds_provider != "the-odds-api":
-        return None
-    create_analytics_schema(settings)
-    latest = DuckDbOddsProviderHealthRepository(settings).get_latest(odds_provider)
-    if latest is None:
-        return None
-    return {
-        "cache_hits": latest.cache_hits,
-        "cache_misses": latest.cache_misses,
-        "reconcile_attempts": latest.reconcile_attempts,
-        "reconcile_failures": latest.reconcile_failures,
-        "stale_refresh_attempts": latest.stale_refresh_attempts,
-        "stale_refresh_successes": latest.stale_refresh_successes,
-        "last_event_id": latest.last_event_id,
-        "last_error": latest.last_error,
-        "updated_at": latest.updated_at.isoformat() if latest.updated_at else None,
-    }
-
-
-def build_agent_status_payload(settings) -> dict[str, object]:
-    odds_provider = settings.odds_provider.strip().casefold()
-    odds_configured = (
-        bool(settings.api_football_key)
-        if odds_provider == "api-football"
-        else bool(settings.the_odds_api_key)
-        if odds_provider == "the-odds-api"
-        else False
-    )
-    return {
-        "agent": {
-            "executor": "langgraph" if LANGGRAPH_AVAILABLE else "deterministic",
-            "langgraph_available": LANGGRAPH_AVAILABLE,
-        },
-        "synthesis": {
-            "enabled": settings.agent_synthesis_enabled,
-            "configured": bool(settings.agent_synthesis_enabled and settings.portkey_api_key),
-            "provider": "portkey",
-            "model": settings.anthropic_model,
-        },
-        "bot_fallback": {
-            "enabled": settings.bot_llm_fallback_enabled,
-            "configured": bool(settings.bot_llm_fallback_enabled and settings.openai_api_key),
-            "provider": "openai",
-            "model": settings.bot_llm_fallback_model,
-        },
-        "odds_provider": {
-            "name": odds_provider,
-            "configured": odds_configured,
-            "health_metrics_available": odds_provider == "the-odds-api",
-            "health": _provider_health_payload(settings, odds_provider),
-        },
-    }
-
-
-def build_today_briefs_payload(
-    *,
-    league: str,
-    days: int,
-    limit: int,
-    demo: bool,
-    briefs: bool,
-    query: str,
-    fixtures,
-    workflow=None,
-    sort: str = "kickoff",
-) -> dict[str, object]:
-    selected = _select_fixture_candidates(fixtures=list(fixtures), limit=limit, sort=sort)
-    items: list[dict[str, object]] = []
-    for fixture, ranked_fixture in selected:
-        item = _fixture_candidate_payload(fixture, query=query, ranked_fixture=ranked_fixture)
-        if briefs and workflow is not None:
-            try:
-                result = workflow.run(fixture_id=fixture.fixture_id, query=query)
-                item["brief"] = build_match_brief_payload(result)
-            except Exception as exc:
-                item["brief"] = {
-                    "fixture_id": fixture.fixture_id,
-                    "query": query,
-                    "status": "failed",
-                    "sections": {},
-                    "error": str(exc),
-                }
-        items.append(item)
-
-    empty_reason = None
-    if not items:
-        empty_reason = "No local fixtures available. Run fixtures-sync or use --demo."
-    return {
-        "league": league,
-        "days": days,
-        "limit": limit,
-        "demo": demo,
-        "briefs_requested": briefs,
-        "query": query,
-        "sort": sort,
-        "items": items,
-        "empty_reason": empty_reason,
-    }
-
-
-def build_popular_matches_payload(
-    *,
-    league: str,
-    days: int,
-    limit: int,
-    demo: bool,
-    query: str,
-    fixtures,
-) -> dict[str, object]:
-    ranked = MatchPopularityRanker().rank(list(fixtures), limit=limit)
-    items = [
-        _fixture_candidate_payload(
-            ranked_fixture.fixture,
-            query=query,
-            ranked_fixture=ranked_fixture,
-        )
-        for ranked_fixture in ranked
-    ]
-    empty_reason = None
-    if not items:
-        empty_reason = "No local fixtures available. Run fixtures-sync or use --demo."
-    return {
-        "league": league,
-        "days": days,
-        "limit": limit,
-        "demo": demo,
-        "query": query,
-        "sort": "popularity",
-        "items": items,
-        "empty_reason": empty_reason,
-    }
-
-
-def _select_fixture_candidates(
-    *,
-    fixtures,
-    limit: int,
-    sort: str,
-) -> list[tuple[object, RankedFixture | None]]:
-    if sort == "kickoff":
-        return [(fixture, None) for fixture in fixtures[:limit]]
-    if sort == "popularity":
-        return [
-            (ranked_fixture.fixture, ranked_fixture)
-            for ranked_fixture in MatchPopularityRanker().rank(fixtures, limit=limit)
-        ]
-    raise ValueError("sort must be `kickoff` or `popularity`.")
-
-
-def _fixture_candidate_payload(
-    fixture,
-    *,
-    query: str,
-    ranked_fixture: RankedFixture | None,
-) -> dict[str, object]:
-    item: dict[str, object] = {
-        "fixture": asdict(fixture),
-        "fixture_id": fixture.fixture_id,
-        "league": fixture.league_code,
-        "kickoff_at": fixture.kickoff_at.isoformat(),
-        "home_team": fixture.home_team,
-        "away_team": fixture.away_team,
-        "venue": fixture.venue,
-        "status": fixture.status.value,
-        "suggested_bot_message": f"/brief {fixture.fixture_id} {query}",
-    }
-    if ranked_fixture is not None:
-        item["rank"] = ranked_fixture.rank
-        item["popularity"] = {
-            "score": ranked_fixture.popularity.score,
-            "tier": ranked_fixture.popularity.tier,
-            "reasons": list(ranked_fixture.popularity.reasons),
-        }
-    return item
 
 
 def build_match_brief_payload(result) -> dict[str, object]:
@@ -767,14 +412,6 @@ def build_match_brief_payload(result) -> dict[str, object]:
         "sections": sections,
         "error": result.error,
     }
-
-
-def _print_brief_list(title: str, items: list[str]) -> None:
-    if not items:
-        return
-    console.print(f"{title}:")
-    for item in items:
-        console.print(f" - {item}")
 
 
 def parse_telegram_allowed_chat_ids(raw_value: str | None) -> set[int]:
@@ -976,7 +613,6 @@ def _normalize_date(yyyymmdd: str) -> str:
 # namespace (factories, helpers, options) is fully populated before they load.
 # E402 is expected: registration must run after the namespace is built.
 from nutmeg.interfaces.cli import betslip as betslip  # noqa: E402
-from nutmeg.interfaces.cli import core as core  # noqa: E402
 from nutmeg.interfaces.cli import day as day  # noqa: E402
 from nutmeg.interfaces.cli import decision as decision  # noqa: E402
 from nutmeg.interfaces.cli import discovery as discovery  # noqa: E402
@@ -986,7 +622,6 @@ from nutmeg.interfaces.cli import odds as odds  # noqa: E402
 from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402
 from nutmeg.interfaces.cli import ontology_evidence as ontology_evidence  # noqa: E402
 from nutmeg.interfaces.cli import ontology_ingest as ontology_ingest  # noqa: E402
-from nutmeg.interfaces.cli import operations as operations  # noqa: E402
 from nutmeg.interfaces.cli import plan as plan  # noqa: E402
 from nutmeg.interfaces.cli import product as product  # noqa: E402
 from nutmeg.interfaces.cli import psychology as psychology  # noqa: E402

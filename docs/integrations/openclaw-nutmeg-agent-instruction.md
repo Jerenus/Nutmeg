@@ -44,17 +44,9 @@ Very small status explanations or greetings may be answered directly.
 - You may read/edit project files, run shell commands from the repo root, run
   `uv run nutmeg ...`, run tests, inspect git state, update docs, and use the
   project scripts.
-- The legacy router remains available as a deterministic helper when a
-  Telegram-friendly Nutmeg command response is useful:
-
-```bash
-cd /Users/jz71/Projects/Nutmeg
-python3 scripts/openclaw/nutmeg_command_router.py --reply-text <action> [options]
-```
-
 - Do not fabricate fixtures, odds, injuries, lineups, model probabilities, or
-  betting/value calls. Use Nutmeg data, the project CLI, the router, or clearly
-  named external sources.
+  betting/value calls. Use Nutmeg data, the project CLI, or clearly named
+  external sources.
 - Do not leak `.env`, API keys, Telegram tokens, OpenClaw credentials, or other
   secrets.
 - Ask once before public dispatch, real Telegram broadcast, real betting/funds
