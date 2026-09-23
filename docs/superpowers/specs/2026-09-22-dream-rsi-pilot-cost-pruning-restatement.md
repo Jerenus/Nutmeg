@@ -79,3 +79,7 @@ Either of these would restore the recursion's payoff term and is out of scope fo
   state that matters), or
 - a shard space too large for the incumbent to enumerate under budget, so that
   policies genuinely choose which regions to explore.
+
+## 7. Input source changed to the decision lane (2026-09-23)
+
+Jun ruled option A: the 8788 operator app and its operator_v2 write path are retired. The world input now comes from the day's decision-lane files (`jczq-legs-base.json` + `reads.json` + `sporttery_markets.json`) via `nutmeg discovery shadow-run --source-day`; see `docs/superpowers/specs/2026-09-23-discovery-day-source-design.md`. The pilot contract, evaluator and baseline are unchanged; `authoritative_workflow.generator` will be re-frozen through a D7 revision once the generator moves out of `nutmeg/product`.

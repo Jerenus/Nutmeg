@@ -66,7 +66,11 @@
 - **文档清扫**（c4dedd9）：宪法、判读流程、决策本体设计 spec 不再出现旧引擎名；CLAUDE.md 的「两份同步」改为「共享 SOP 指针段同步」。
 - **赛果回填误报**（8550c66）：当天未踢完 → `RESULTS_PENDING` 退出 0；昨天及更早未齐才 `RESULTS_STALE` 退出 2。
 
-### 5.1 未执行、需要裁决的冲突
+### 5.1 已裁：方案 A（2026-09-23）
+
+Jun 选 A：8788 应用连同 product 级联退役（1189f48，169 文件 ≈5.97 万行）；Discovery 输入改接决策泳道三份文件（`specs/2026-09-23-discovery-day-source-design.md`，证据 `evidence/2026-09-23-discovery-day-source.md`）。`nutmeg odds` 与 Telegram bot 的 v0 分析栈未裁，保留。
+
+### 5.2 原冲突记录
 
 8788 应用（`nutmeg app` + `nutmeg/product/operator_*` ≈ 27,500 行 + 30,000 行测试）**与 Discovery 试点的 operator_v2 输入是同一条写入链**：
 生成请求 / 候选集只由网页端 `POST /api/v2/operator` 与其 worker 写入，仓里没有任何 CLI 生产者；官方在售清单 manifest 也没有生产者；生产库这些表至今 0 行。
