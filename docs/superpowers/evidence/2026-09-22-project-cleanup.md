@@ -55,3 +55,19 @@
 - `uv run python -m compileall -q nutmeg scripts experiments` 通过。
 - `uv run ruff check .` 只剩 3 条，全在 Jun 未跟踪的 `exp-price-bands.py` / `exp-strict-space.py`。
 - 全量 `uv run pytest` 结果见提交信息。
+
+## 5. 第三轮（Jun 2026-09-23 裁定：不在未来规划中的都退役；不需要的备份删掉；最终版本进 git）
+
+- **进 git**：另一会话未提交的 intake（④只数情境旗、先例查无正则）、别名提案、`zucai_loop` 上下文特征、`attempts.log`、三份 prereg 与 F2 台账（代码默认路径）——`a4e…` 之前的 `chore: land pending session work`。
+- **删未跟踪一次性文件 7 个**（3 个 exp 脚本、2 个 render 脚本、intent-ontology 提案、codex 交接稿）。
+- **运行数据备份**：`.nutmeg-data` 501MB → 328MB。删 0721 只读冻结（97MB，含 zucai html 源全套重复）、pre-schema14、m2-legacy、pre-ligue1、v28/pre-v15/pre-v16 内核快照、launchd 旧备份、回放 v2–v4、两个 `.bak`、0 字节 `ontology.sqlite`。保留最近两个内核快照（09-19 pre-v34、09-20 pre-f9）与回放 v5。
+- **退役 v0 EPL 命令通道**（c8a56ff，≈9,900 行）：`operations.py`/`core.py` 的 17 条命令、只服务它们的 services/domain/storage/process 模块、Spec Kit doctor 桥、旧 OpenClaw 命令路由器与其手册。`make init`/`doctor` 改用 `nutmeg ontology status`。保留：Telegram bot 的 match-brief 路径、`nutmeg odds`、所有活泳道导入的模块。
+- **退役 decision.close/settle 定时链**（75bd5d0）：两个 plist、调度脚本的 close/settle 分支与 11 个测试、`reliability` 的阶段枚举；`scripts/lineup_collector.py` 零引用删除。
+- **文档清扫**（c4dedd9）：宪法、判读流程、决策本体设计 spec 不再出现旧引擎名；CLAUDE.md 的「两份同步」改为「共享 SOP 指针段同步」。
+- **赛果回填误报**（8550c66）：当天未踢完 → `RESULTS_PENDING` 退出 0；昨天及更早未齐才 `RESULTS_STALE` 退出 2。
+
+### 5.1 未执行、需要裁决的冲突
+
+8788 应用（`nutmeg app` + `nutmeg/product/operator_*` ≈ 27,500 行 + 30,000 行测试）**与 Discovery 试点的 operator_v2 输入是同一条写入链**：
+生成请求 / 候选集只由网页端 `POST /api/v2/operator` 与其 worker 写入，仓里没有任何 CLI 生产者；官方在售清单 manifest 也没有生产者；生产库这些表至今 0 行。
+「退役 8788」与「Discovery 用 active 输入」不能同时成立，见本轮汇报。
