@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import Path
 
@@ -107,7 +107,10 @@ def read_structural_input_from_day(
     legs = json.loads(board_bytes)["legs"]
     reads = {r["match_id"]: r for r in json.loads(reads_bytes) if isinstance(r, dict)}
     quotes = _had_quotes(json.loads(markets_bytes))
-    board_captured = datetime.fromtimestamp(board_path.stat().st_mtime, tz=BJ)
+    # 处方的采集时刻 = 最晚一条 Read 的 made_at（表态与 Read 同一次落盘），不用文件 mtime：
+    # mtime 跟墙钟走，会让同一份输入在 cutoff 过后突然「超过 cutoff」。
+    made_ats = sorted(str(r.get("made_at") or "") for r in reads.values() if r.get("made_at"))
+    board_captured = made_ats[-1] if made_ats else f"{day}T00:00:00+08:00"
 
     offers, audits, refs = [], [], []
     for code, leg in sorted(legs.items()):
@@ -171,7 +174,7 @@ def read_structural_input_from_day(
             "kind": "prescription",
             "id": f"{day}:legs-base",
             "source_revision": _sha(board_bytes),
-            "captured_at": board_captured.isoformat(timespec="seconds"),
+            "captured_at": board_captured,
         }
     )
     codes = tuple(o.official_match_no for o in offers)
