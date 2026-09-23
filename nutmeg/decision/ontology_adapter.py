@@ -7,9 +7,10 @@ Actions (``market_day_ingest``) rather than the append-only JSONL store.
 
 ``decision-am`` is cut over first: it is the data-base verb (ingest market snapshots),
 with **no money and no push**. In the kernel the market snapshot *is* the market
-baseline, so the old JSONL "backfill shadow" step is unnecessary. close/settle follow as
-their own builds. The result is a ``DecisionWorkflowResult`` so the CLI renders it
-identically to the old path.
+baseline, so the old JSONL "backfill shadow" step is unnecessary. ``decision-settle``
+follows as its own build. ``decision-close`` stays on the legacy path: its kernel-backed
+variant gated on the operator_v2 board workflow, retired 2026-09-23. The result is a
+``DecisionWorkflowResult`` so the CLI renders it identically to the old path.
 """
 
 from __future__ import annotations
@@ -679,59 +680,6 @@ def _capture_closing_v2(kernel, run_date: str, output_dir, requested_at) -> str:
         )
     )
     return f"decision-capture-closing-v2 {run_date}: 收盘快照 {result.snapshots} 条"
-
-
-def run_decision_close_v2(
-    run_date: str,
-    output_dir,
-    *,
-    kernel=None,
-    dispatch: bool = False,
-    dry_run: bool = True,
-    notification_service=None,
-):
-    """Close only after a complete formal terminal decision exists in ontology."""
-
-    from nutmeg.decision.verbs import _compose, _now_iso
-    from nutmeg.ontology.actions.service import ActionService
-    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-    from nutmeg.product.jczq_board_workflow import JczqBoardWorkflow
-
-    active_kernel = kernel if kernel is not None else _default_kernel()
-    requested_at = datetime.fromisoformat(_now_iso())
-
-    def _require_terminal() -> str:
-        workflow = JczqBoardWorkflow(
-            ActionService(lambda: OntologyUnitOfWork(active_kernel.engine))
-        )
-        terminal = workflow.require_terminal_state(run_date)
-        if not terminal.audit_complete:
-            raise ValueError("ontology terminal decision is missing or incomplete")
-        return (
-            f"ontology terminal {terminal.kind}: "
-            f"{terminal.selection_revision_id or terminal.no_ticket_revision_id}"
-        )
-
-    steps = [
-        ("terminal-gate", _require_terminal),
-        (
-            "capture-closing",
-            lambda: _capture_closing_v2(active_kernel, run_date, output_dir, requested_at),
-        ),
-        (
-            "report",
-            lambda: _report_v2(
-                active_kernel,
-                run_date,
-                output_dir,
-                "close",
-                dispatch,
-                dry_run,
-                notification_service,
-            ),
-        ),
-    ]
-    return _compose("decision-close", run_date, "出票(ontology v2 kernel)", steps)
 
 
 def _normalize_score(value: object) -> str | None:

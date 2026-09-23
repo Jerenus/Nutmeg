@@ -18,15 +18,15 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 | 步 | 动作 | 命令/门 |
 |---|---|---|
 | A1 | 数据入库+市场基线 | `uv run nutmeg decision-am --run-date $(date +%Y-%m-%d) --output-dir .nutmeg-data/jczq`；看 alias-audit 输出，未命中=该场丢国际锚。成功后自动 `research board` + `rsi schedule`，为板上每场生成 R0 duty |
-| A1b | v2 外部证据桥 | 外部采集产严格 `evidence-intake-v1` 后执行 `uv run nutmeg workflow ingest-evidence --manifest <path>`；用 `uv run nutmeg workflow jczq-status --day <date>` 核对 30 场显式研究终态 |
+| A1b | v2 外部证据桥 | 外部采集产严格 `evidence-intake-v1` 后执行 `uv run nutmeg workflow ingest-evidence --manifest <path>`。（`workflow jczq-status` 所属的 operator_v2 板工作流已于 2026-09-23 退役，研究终态核对改看 `research intake` 输出） |
 | A2 | 判读 | `uv run nutmeg research run --day $(date +%Y-%m-%d)`（headless，预算 40 场/日，按开球排队；研不到如实保留 `price_only`）→ `uv run nutmeg research intake --day $(date +%Y-%m-%d) --write`；每场落到实际 `judgment_tier`，不得补造中间态 |
-| A3 | 落判读 | AI 只提交 draft；工作台逐场 approve/revise/reject，通过正式 Action 提交 ForecastRevision 与 Judgment。`reads.json` 只由 `uv run nutmeg workflow jczq-project --day <date>` 单向生成，不得反向驱动判读 |
+| A3 | 落判读 | `uv run nutmeg jczq-build-reads --day $(date +%Y-%m-%d)` 生成 `reads.json` → `uv run nutmeg decision-read --reads-file …` 提交 ForecastRevision。（operator_v2 板工作流及其 `workflow jczq-project` 投影已于 2026-09-23 退役） |
 | A4 | 构票 | 工作台从正式 Judgment Prescription 生成两类 Candidate Set；`judgment_bound` 内逐档记录 10x/20x/50x/100x 候选或 `no_feasible_candidate`，每次迭代必须有 parent/delta/rationale |
 | A5 | **审计门** | `uv run nutmeg decision-audit-legs --legs-file …` — 默认/AI/无人值守遇 ERROR=退出码1不许出票；仅 Jun 显式 `--user-override` 且登记 reason/rule ID、evidence_rejected Adjudication 入账成功后可继续；WARN 逐条显式裁决入账 |
 | A6 | 出票 | 先记录唯一正式终态（Selection 或 `record_no_ticket`）；`decision-close` 只认本体 terminal，`legs.json`/handoff 不能授权 close。真实出票与 Telegram 派发仍须 Jun 当次确认 |
 | A7 | 次日结算 | 通过正式 result/settlement/review Actions 结算；no-ticket 资金结算为 0 但 Forecast 仍进入复盘。historical replay 永不增加 prospective R0/F5/F9 样本 |
 
-切换门：`uv run nutmeg workflow jczq-cutover --day <next-day> --replay-report <report> --check-only` 只检查；accepted replay **只证明门检条件成立，不授权切权，也不得自动改用 `--approve`**。只有隔离 replay accepted、schema 一致、生产对象/资金/派发/prospective observation 四项增量均为 0，且 Jun 在当次操作中重新明确批准后，才可单独执行 `--approve`。切换后 legacy 三文件永久只读投影，故障时 fail-closed，不恢复旧写权威。
+切换门：operator_v2 的 `workflow jczq-replay` / `jczq-cutover` 切换门已于 2026-09-23 随板工作流一并退役；`decision-close` 固定走旧路径，出票授权仍只来自 A5 审计门 + Jun 当次确认。
 
 ## 泳道 B：传统足彩（胜负彩/任九）
 

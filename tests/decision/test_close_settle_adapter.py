@@ -6,7 +6,6 @@ from typer.testing import CliRunner
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.ontology_adapter import (
     run_decision_am_v2,
-    run_decision_close_v2,
     run_decision_express_v2,
     run_decision_read_v2,
     run_decision_settle_v2,
@@ -101,28 +100,6 @@ def test_empty_legs_is_empty_slate(tmp_path: Path) -> None:
     assert kernel.status().ticket_count == 0
 
 
-def test_manual_legs_file_cannot_drive_close_without_ontology_terminal(tmp_path: Path) -> None:
-    kernel, match_id, output_dir = _kernel_with_read(tmp_path)
-    _write_legs(
-        output_dir,
-        [
-            {
-                "match_id": match_id,
-                "market": "had",
-                "selection": "home",
-                "odds": 2.10,
-                "bucket": "main",
-            }
-        ],
-    )
-
-    result = run_decision_close_v2(DATE, output_dir, kernel=kernel)
-
-    assert not result.succeeded
-    assert "terminal decision is missing" in str(result)
-    assert kernel.status().ticket_count == 0
-
-
 def test_settle_v2_settles_and_calibrates(tmp_path: Path) -> None:
     kernel, match_id, output_dir = _kernel_with_read(tmp_path)
     legs = [{"match_id": match_id, "market": "had", "selection": "home",
@@ -143,16 +120,16 @@ def test_settle_v2_settles_and_calibrates(tmp_path: Path) -> None:
         assert uow.finance.ledger_balance("acct-jczq") > staked  # payout raised the ledger
 
 
-def test_flag_routes_close_and_settle(tmp_path: Path, monkeypatch) -> None:
+def test_flag_routes_settle_only_and_close_stays_legacy(tmp_path: Path, monkeypatch) -> None:
     import nutmeg.config.settings as settings_module
     import nutmeg.interfaces.cli as cli
     from nutmeg.decision.verbs import DecisionWorkflowResult
 
-    hit = {"close": 0, "settle": 0}
+    hit = {"close_legacy": 0, "settle": 0}
     monkeypatch.setattr(
-        "nutmeg.decision.ontology_adapter.run_decision_close_v2",
-        lambda rd, od, **k: (hit.__setitem__("close", 1)
-                             or DecisionWorkflowResult("decision-close", rd, (), "v2")))
+        "nutmeg.decision.verbs.run_decision_close",
+        lambda rd, od, **k: (hit.__setitem__("close_legacy", 1)
+                             or DecisionWorkflowResult("decision-close", rd, (), "legacy")))
     monkeypatch.setattr(
         "nutmeg.decision.ontology_adapter.run_decision_settle_v2",
         lambda rd, od, **k: (hit.__setitem__("settle", 1)
@@ -165,6 +142,8 @@ def test_flag_routes_close_and_settle(tmp_path: Path, monkeypatch) -> None:
                                        "--output-dir", str(tmp_path)]).exit_code == 0
         assert runner.invoke(cli.app, ["decision-settle", "--run-date", DATE,
                                        "--output-dir", str(tmp_path)]).exit_code == 0
-        assert hit == {"close": 1, "settle": 1}   # flag on -> both money verbs routed to v2
+        # flag on -> settle routed to v2; close has no v2 path since the operator_v2
+        # board workflow was retired (2026-09-23) and always runs the legacy verb
+        assert hit == {"close_legacy": 1, "settle": 1}
     finally:
         settings_module.get_settings.cache_clear()

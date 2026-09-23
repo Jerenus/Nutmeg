@@ -468,19 +468,14 @@ def decision_close(
 
     express legs 来自主循环 Claude 判读(daily/<date>/legs.json,无则空票)。
 
-    NUTMEG_ONTOLOGY_V2=1 时改走 kernel-backed close(ontology_adapter);否则旧路径不变。
+    不受 NUTMEG_ONTOLOGY_V2 影响:kernel-backed close 依赖 operator_v2 板工作流,已于
+    2026-09-23 退役,此命令固定走旧路径。
     """
-    from nutmeg.config.settings import get_settings
+    from nutmeg.decision.verbs import run_decision_close
 
-    if get_settings().ontology_v2:
-        from nutmeg.decision.ontology_adapter import run_decision_close_v2
-        result = run_decision_close_v2(
-            run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run)
-    else:
-        from nutmeg.decision.verbs import run_decision_close
-        result = run_decision_close(
-            run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run
-        )
+    result = run_decision_close(
+        run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run
+    )
     _emit_result(result, format=format)
     if not getattr(result, "succeeded", True):
         raise _cli.typer.Exit(code=1)

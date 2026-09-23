@@ -13,7 +13,6 @@ import nutmeg.interfaces.cli as _cli
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.rx_ingest import map_rx_adjudications, map_rx_predictions
 from nutmeg.ontology.actions.models import ActorRole, canonical_json
-from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.actions.workflow_actions import (
     GradePredictionRequest,
     RecordAdjudicationRequest,
@@ -31,15 +30,6 @@ from nutmeg.ontology.operator.sale_actions import (
     RecordOfficialScheduleCheckRequest,
 )
 from nutmeg.ontology.repository import schema_operator_sale as sos
-from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product.jczq_board_workflow import JczqBoardWorkflow
-from nutmeg.product.jczq_compatibility import JczqCompatibilityProjector
-from nutmeg.product.jczq_cutover import JczqCutoverGate
-from nutmeg.product.jczq_replay import JczqReplayRunner
-from nutmeg.product.operator_legacy_import import (
-    LegacyOperatorImporter,
-    LegacyQuarantineReport,
-)
 
 workflow_app = _cli.typer.Typer(help="rx 对象化与预测判定")
 _cli.app.add_typer(workflow_app, name="workflow")
@@ -48,10 +38,6 @@ _DATA_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
 _RX_FILE_OPTION = _cli.typer.Option(..., "--rx-file")
 _MANIFEST_OPTION = _cli.typer.Option(..., "--manifest")
 _CONTRACT_VERSION_OPTION = _cli.typer.Option(..., "--contract-version")
-_REPLAY_REPORT_OPTION = _cli.typer.Option(..., "--replay-report")
-_APPROVE_OPTION = _cli.typer.Option(False, "--approve")
-_CHECK_ONLY_OPTION = _cli.typer.Option(False, "--check-only")
-_ISOLATED_ROOT_OPTION = _cli.typer.Option(..., "--isolated-root")
 
 
 class WorkflowOperationError(RuntimeError):
@@ -74,57 +60,6 @@ def _fail(error: Exception) -> None:
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
-
-class _JczqWorkflowService:
-    def __init__(self, kernel, data_dir: Path) -> None:
-        self._kernel = kernel
-        self._data_dir = Path(data_dir)
-        self._actions = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
-        self._board = JczqBoardWorkflow(self._actions)
-        self._cutover = JczqCutoverGate(
-            self._actions,
-            schema_version=kernel.status().schema_version,
-        )
-
-    def status(self, day: str) -> dict[str, object]:
-        progress = self._board.progress(day)
-        try:
-            terminal_kind = self._board.require_terminal_state(day).kind
-        except ValueError:
-            terminal_kind = None
-        return {
-            "business_date": day,
-            "authority": self._cutover.authority(),
-            "research": progress.model_dump(mode="json"),
-            "terminal_kind": terminal_kind,
-        }
-
-    def project(self, day: str) -> dict[str, object]:
-        projection = JczqCompatibilityProjector(
-            self._actions,
-            output_dir=self._data_dir / "jczq",
-        ).export_day(day)
-        return {
-            "business_date": day,
-            "read_count": len(projection.reads),
-            "leg_count": len(projection.legs),
-            "handoff": projection.handoff,
-        }
-
-    def cutover(self, day: str, replay_report: Path, *, approve: bool):
-        if approve:
-            return self._cutover.approve(
-                day,
-                replay_report,
-                actor_id="operator:jun",
-            )
-        return self._cutover.check(day, replay_report)
-
-
-def _jczq_workflow_service(data_dir: Path):
-    resolved = Path(data_dir).expanduser().resolve()
-    return _JczqWorkflowService(_kernel(resolved), resolved)
 
 
 def _manifest_document(
@@ -390,34 +325,6 @@ def ingest_results(
         _fail(error)
 
 
-@workflow_app.command("import-legacy-operator")
-def import_legacy_operator(
-    manifest: Path = _MANIFEST_OPTION,
-    contract_version: str = _CONTRACT_VERSION_OPTION,
-    data_dir: Path = _DATA_DIR_OPTION,
-    imported_at: str | None = _cli.typer.Option(None, "--imported-at"),
-) -> None:
-    """Import one explicitly versioned legacy artifact as replay-only data."""
-    try:
-        at = datetime.fromisoformat(imported_at) if imported_at is not None else _now()
-        kernel = _kernel(data_dir)
-        result = LegacyOperatorImporter(
-            artifact_ingest=kernel.artifact_ingest,
-            workflow=kernel.workflow,
-        ).import_path(
-            manifest,
-            contract_version=contract_version,
-            imported_at=at,
-        )
-        _cli.typer.echo(canonical_json(result.model_dump(mode="json")))
-        if isinstance(result, LegacyQuarantineReport):
-            raise _cli.typer.Exit(code=1)
-    except _cli.typer.Exit:
-        raise
-    except (OSError, json.JSONDecodeError, WorkflowOperationError, ValueError) as error:
-        _fail(error)
-
-
 @workflow_app.command("register-rx")
 def register_rx(
     rx_file: Path = _RX_FILE_OPTION,
@@ -532,74 +439,4 @@ def grade_rx(
         for line in skipped:
             _cli.typer.echo(f"跳过 {line}")
     except (WorkflowOperationError, ValueError) as error:
-        _fail(error)
-
-
-@workflow_app.command("jczq-status")
-def jczq_status(
-    day: str = _cli.typer.Option(..., "--day"),
-    data_dir: Path = _DATA_DIR_OPTION,
-) -> None:
-    """Show the ontology-backed JCZQ board and authority state."""
-    try:
-        _cli.typer.echo(canonical_json(_jczq_workflow_service(data_dir).status(day)))
-    except (OSError, WorkflowOperationError, ValueError) as error:
-        _fail(error)
-
-
-@workflow_app.command("jczq-project")
-def jczq_project(
-    day: str = _cli.typer.Option(..., "--day"),
-    data_dir: Path = _DATA_DIR_OPTION,
-) -> None:
-    """Regenerate read-only compatibility files from ontology state."""
-    try:
-        _cli.typer.echo(canonical_json(_jczq_workflow_service(data_dir).project(day)))
-    except (OSError, WorkflowOperationError, ValueError) as error:
-        _fail(error)
-
-
-@workflow_app.command("jczq-replay")
-def jczq_replay(
-    day: str = _cli.typer.Option(..., "--day"),
-    isolated_root: Path = _ISOLATED_ROOT_OPTION,
-    data_dir: Path = _DATA_DIR_OPTION,
-) -> None:
-    """Replay one historical JCZQ day inside an explicit isolated root."""
-    try:
-        report = JczqReplayRunner(
-            source_root=data_dir,
-            isolated_root=isolated_root,
-        ).run(day)
-        _cli.typer.echo(canonical_json(report.to_dict()))
-        if not report.accepted:
-            raise _cli.typer.Exit(code=1)
-    except _cli.typer.Exit:
-        raise
-    except (OSError, WorkflowOperationError, ValueError) as error:
-        _fail(error)
-
-
-@workflow_app.command("jczq-cutover")
-def jczq_cutover(
-    day: str = _cli.typer.Option(..., "--day"),
-    replay_report: Path = _REPLAY_REPORT_OPTION,
-    approve: bool = _APPROVE_OPTION,
-    check_only: bool = _CHECK_ONLY_OPTION,
-    data_dir: Path = _DATA_DIR_OPTION,
-) -> None:
-    """Verify replay readiness or explicitly switch JCZQ to ontology v2."""
-    try:
-        if approve == check_only:
-            raise WorkflowOperationError("choose exactly one of --approve or --check-only")
-        preflight = json.loads(replay_report.expanduser().read_text("utf-8"))
-        if not isinstance(preflight, dict) or preflight.get("accepted") is not True:
-            raise WorkflowOperationError("accepted replay is required")
-        result = _jczq_workflow_service(data_dir).cutover(
-            day,
-            replay_report,
-            approve=approve,
-        )
-        _cli.typer.echo(canonical_json(result.to_dict()))
-    except (OSError, json.JSONDecodeError, WorkflowOperationError, ValueError) as error:
         _fail(error)
