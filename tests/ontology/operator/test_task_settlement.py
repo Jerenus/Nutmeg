@@ -57,7 +57,11 @@ from nutmeg.ontology.repository import schema_tickets as st
 from nutmeg.ontology.repository.finance import CashAccountRow, FinanceRepository
 from nutmeg.ontology.repository.operator_result import OperatorResultRepository
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product.operator_workers import CandidateGenerationWorker, TaskSettlementWorker
+from tests.ontology.operator.action_drivers import (
+    claim_worker_jobs,
+    drive_task_settlement,
+    settle_task,
+)
 from tests.ontology.operator.test_confirmation_cas import (
     _attestation,
     _issue,
@@ -76,17 +80,18 @@ from tests.ontology.operator.test_result_ingest import (
     _parsed_manifest,
     _setup_actions,
 )
-from tests.product.operator_v2.test_candidate_replay import (
+from tests.ontology.operator.zucai_replay_lineage import (
     AT as ZUCAI_AT,
 )
-from tests.product.operator_v2.test_candidate_replay import (
+from tests.ontology.operator.zucai_replay_lineage import (
     SUPPORT_PRIOR,
     _prepare_decision_lineage,
+    generate_zucai_candidate_sets,
 )
-from tests.product.operator_v2.test_candidate_replay import (
+from tests.ontology.operator.zucai_replay_lineage import (
     TASK_KEY as ZUCAI_TASK_KEY,
 )
-from tests.product.operator_v2.test_candidate_replay import (
+from tests.ontology.operator.zucai_replay_lineage import (
     WORK_ITEM_ID as ZUCAI_WORK_ITEM_ID,
 )
 
@@ -895,14 +900,16 @@ def _place_generated_zucai_ticket(
         )
     )
     assert generation.status is ActionStatus.COMMITTED
-    generated = CandidateGenerationWorker(
+    generate_zucai_candidate_sets(
         action_service=action_service,
         result_actions=result_actions,
-        worker_id=f"zucai-{ticket_kind}-settlement-candidate-worker",
-        lease_duration=timedelta(minutes=5),
-    ).run_once(limit=1, as_of=ZUCAI_AT + timedelta(minutes=11))
-    assert len(generated) == 1
-    assert generated[0].status is ActionStatus.COMMITTED
+        document=document,
+        generation_request_id=generation.result_refs[0].object_id,
+        fixed_prize_policy_revision_id=policy.fixed_prize_policy_revision_id,
+        ticket_kind=ticket_kind,
+        lease_owner=f"zucai-{ticket_kind}-settlement-candidate-worker",
+        as_of=ZUCAI_AT + timedelta(minutes=11),
+    )
 
     with OntologyUnitOfWork(engine) as uow:
         candidate_set = uow.operator_result.current_candidate_set(
@@ -1397,12 +1404,12 @@ def test_placed_renjiu_ticket_settles_only_nine_bound_legs_and_counts_void(
             requested_at=AT + timedelta(minutes=1),
         )
     )
-    completed = TaskSettlementWorker(
+    completed = drive_task_settlement(
         action_service=action_service,
         result_actions=result_actions,
-        worker_id="zucai-settlement-worker",
-        lease_duration=timedelta(minutes=5),
-    ).run_once(limit=1, as_of=AT + timedelta(minutes=2))
+        lease_owner="zucai-settlement-worker",
+        as_of=AT + timedelta(minutes=2),
+    )
 
     assert requested.status is ActionStatus.COMMITTED
     assert len(completed) == 1
@@ -1512,12 +1519,12 @@ def test_placed_sfc_ticket_uses_exact_first_second_or_lost_tier(
             requested_at=AT + timedelta(minutes=1),
         )
     )
-    completed = TaskSettlementWorker(
+    completed = drive_task_settlement(
         action_service=action_service,
         result_actions=result_actions,
-        worker_id="zucai-sfc-settlement-worker",
-        lease_duration=timedelta(minutes=5),
-    ).run_once(limit=1, as_of=AT + timedelta(minutes=2))
+        lease_owner="zucai-sfc-settlement-worker",
+        as_of=AT + timedelta(minutes=2),
+    )
 
     assert requested.status is ActionStatus.COMMITTED
     assert len(completed) == 1
@@ -1639,21 +1646,25 @@ def test_zucai_persisted_invariant_mismatch_aborts_the_complete_run(
             requested_at=AT + timedelta(minutes=1),
         )
     )
-    completed = TaskSettlementWorker(
-        action_service=action_service,
-        result_actions=result_actions,
-        worker_id="zucai-sfc-invariant-worker",
-        lease_duration=timedelta(minutes=5),
-    ).run_once(limit=1, as_of=AT + timedelta(minutes=2))
+    job = claim_worker_jobs(
+        action_service,
+        job_kind="task_settlement",
+        lease_owner="zucai-sfc-invariant-worker",
+        as_of=AT + timedelta(minutes=2),
+    )[0]
+
+    with pytest.raises(ValueError):
+        settle_task(
+            action_service=action_service,
+            result_actions=result_actions,
+            settlement_request_id=requested.result_refs[0].object_id,
+            worker_job_id=job.worker_job_id,
+            lease_owner="zucai-sfc-invariant-worker",
+            as_of=AT + timedelta(minutes=2),
+        )
 
     assert requested.status is ActionStatus.COMMITTED
-    assert completed == ()
     with engine.connect() as connection:
-        job = connection.execute(
-            select(sod.operator_worker_jobs).where(
-                sod.operator_worker_jobs.c.job_kind == "task_settlement"
-            )
-        ).mappings().one()
         business_counts = tuple(
             connection.scalar(select(func.count()).select_from(table))
             for table in (
@@ -1671,10 +1682,6 @@ def test_zucai_persisted_invariant_mismatch_aborts_the_complete_run(
             .select_from(sf.cash_transactions)
             .where(sf.cash_transactions.c.kind != "stake")
         )
-    assert (job["state"], job["last_error_code"]) == (
-        "failed",
-        "invariant_failure",
-    )
     assert business_counts == (0, 0, 0, 0, 0, 0, 0)
     assert non_stake_cash == 0
 
@@ -1864,12 +1871,12 @@ def test_partially_settled_task_still_appends_one_settlement_eligibility(
         one_placed_and_one_broken,
     )
     requested = actions.request_settlement(_settlement_request(result_set))
-    completed = TaskSettlementWorker(
+    completed = drive_task_settlement(
         action_service=ActionService(lambda: OntologyUnitOfWork(engine)),
         result_actions=actions,
-        worker_id="settlement-worker",
-        lease_duration=timedelta(minutes=5),
-    ).run_once(limit=1, as_of=AT + timedelta(minutes=2))
+        lease_owner="settlement-worker",
+        as_of=AT + timedelta(minutes=2),
+    )
 
     assert requested.status is ActionStatus.COMMITTED
     assert len(completed) == 1
@@ -2254,12 +2261,12 @@ def test_settlement_worker_claims_request_and_commits_exactly_one_run(
     actions, engine, result_set = _placed_result_set(tmp_path)
     requested = actions.request_settlement(_settlement_request(result_set))
 
-    completed = TaskSettlementWorker(
+    completed = drive_task_settlement(
         action_service=ActionService(lambda: OntologyUnitOfWork(engine)),
         result_actions=actions,
-        worker_id="settlement-worker",
-        lease_duration=timedelta(minutes=5),
-    ).run_once(limit=1, as_of=AT + timedelta(minutes=2))
+        lease_owner="settlement-worker",
+        as_of=AT + timedelta(minutes=2),
+    )
 
     assert requested.status is ActionStatus.COMMITTED
     assert len(completed) == 1

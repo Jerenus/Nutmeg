@@ -39,7 +39,12 @@ from nutmeg.ontology.repository.evidence import ObservationRow
 from nutmeg.ontology.repository.market import QuoteRow, SnapshotRow
 from nutmeg.ontology.repository.migrations import MIGRATIONS, run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product.operator_workers import EvidenceFreezeRequestWorker, MarketBaselineWorker
+from tests.ontology.operator.action_drivers import (
+    claim_worker_jobs,
+    drive_evidence_freeze,
+    drive_market_baseline,
+    freeze_market_baseline,
+)
 
 AT = datetime(2026, 9, 4, 8, tzinfo=UTC)
 WORK_ITEM_ID = "jczq:2026-09-04:wave:current"
@@ -391,14 +396,13 @@ def _fixture(
             requested_at=AT,
         )
     )
-    worker = EvidenceFreezeRequestWorker(
+    linked = drive_evidence_freeze(
         action_service=action_service,
         evidence_actions=evidence_actions,
         bundle_actions=BundleActions(action_service),
-        worker_id="evidence-worker",
-        lease_duration=timedelta(minutes=5),
+        lease_owner="evidence-worker",
+        as_of=AT + timedelta(seconds=1),
     )
-    linked = worker.run_once(limit=1, as_of=AT + timedelta(seconds=1))
     assert requested.status is ActionStatus.COMMITTED
     assert len(linked) == 1
     task_bundle_revision_id = linked[0].result_refs[0].object_id
@@ -716,7 +720,7 @@ def test_envelope_rejects_zero_cap_before_persisting_a_revision(tmp_path: Path) 
         ) == 0
 
 
-def test_market_baseline_worker_waits_for_committed_link_then_binds_result(
+def test_market_baseline_rejects_an_uncommitted_task_evidence_link(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path)
@@ -730,15 +734,24 @@ def test_market_baseline_worker_waits_for_committed_link_then_binds_result(
             ),
             {"revision_id": fixture.task_bundle_revision_id},
         )
-    worker = MarketBaselineWorker(
-        action_service=fixture.action_service,
-        decision_actions=fixture.decision_actions,
-        worker_id="baseline-worker",
-        lease_duration=timedelta(minutes=5),
-        work_item_id_resolver=lambda _revision_id: WORK_ITEM_ID,
-    )
+    job = claim_worker_jobs(
+        fixture.action_service,
+        job_kind="market_baseline",
+        lease_owner="baseline-worker",
+        as_of=AT + timedelta(seconds=5),
+    )[0]
 
-    assert worker.run_once(limit=1, as_of=AT + timedelta(seconds=5)) == ()
+    with pytest.raises(ValueError):
+        freeze_market_baseline(
+            action_service=fixture.action_service,
+            decision_actions=fixture.decision_actions,
+            task_evidence_bundle_revision_id=fixture.task_bundle_revision_id,
+            work_item_id=WORK_ITEM_ID,
+            worker_job_id=job.worker_job_id,
+            lease_owner="baseline-worker",
+            as_of=AT + timedelta(seconds=5),
+        )
+
     with fixture.engine.connect() as connection:
         assert connection.scalar(
             text(
@@ -747,22 +760,22 @@ def test_market_baseline_worker_waits_for_committed_link_then_binds_result(
         ) == 0
 
 
-def test_market_baseline_worker_completes_job_with_exact_action_result(
+def test_market_baseline_action_completes_its_job_with_the_exact_result(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path)
-    worker = MarketBaselineWorker(
+
+    completed = drive_market_baseline(
         action_service=fixture.action_service,
         decision_actions=fixture.decision_actions,
-        worker_id="baseline-worker",
-        lease_duration=timedelta(minutes=5),
-        work_item_id_resolver=lambda _revision_id: WORK_ITEM_ID,
+        work_item_id=WORK_ITEM_ID,
+        lease_owner="baseline-worker",
+        as_of=AT + timedelta(seconds=5),
     )
-
-    completed = worker.run_once(limit=1, as_of=AT + timedelta(seconds=5))
 
     assert len(completed) == 1
     result = completed[0]
+    assert result.status is ActionStatus.COMMITTED
     with OntologyUnitOfWork(fixture.engine) as uow:
         job = uow.operator_decision.worker_job_for_source(
             job_kind="market_baseline",
@@ -776,7 +789,7 @@ def test_market_baseline_worker_completes_job_with_exact_action_result(
     assert job.result_object_id == result.result_refs[0].object_id
 
 
-def test_market_baseline_worker_takeover_is_idempotent_across_worker_ids(
+def test_market_baseline_takeover_is_idempotent_across_lease_owners(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path)
@@ -789,16 +802,18 @@ def test_market_baseline_worker_takeover_is_idempotent_across_worker_ids(
             limit=1,
         )
     assert len(claimed) == 1
-    worker = MarketBaselineWorker(
-        action_service=fixture.action_service,
-        decision_actions=fixture.decision_actions,
-        worker_id="replacement-worker",
-        lease_duration=timedelta(minutes=5),
-        work_item_id_resolver=lambda _revision_id: WORK_ITEM_ID,
-    )
 
-    assert worker.run_once(limit=1, as_of=AT + timedelta(seconds=5)) == ()
-    completed = worker.run_once(limit=1, as_of=AT + timedelta(seconds=7))
+    def run(at):
+        return drive_market_baseline(
+            action_service=fixture.action_service,
+            decision_actions=fixture.decision_actions,
+            work_item_id=WORK_ITEM_ID,
+            lease_owner="replacement-worker",
+            as_of=at,
+        )
+
+    assert run(AT + timedelta(seconds=5)) == ()
+    completed = run(AT + timedelta(seconds=7))
 
     assert len(completed) == 1
     with fixture.engine.connect() as connection:
@@ -824,27 +839,35 @@ def test_market_baseline_job_completion_failure_rolls_back_action_and_rows(
             "operator_worker_jobs WHEN NEW.state = 'completed' BEGIN "
             "SELECT RAISE(ABORT, 'forced baseline completion failure'); END"
         )
-    worker = MarketBaselineWorker(
-        action_service=fixture.action_service,
-        decision_actions=fixture.decision_actions,
-        worker_id="baseline-worker",
-        lease_duration=timedelta(minutes=5),
-        work_item_id_resolver=lambda _revision_id: WORK_ITEM_ID,
-    )
+    job = claim_worker_jobs(
+        fixture.action_service,
+        job_kind="market_baseline",
+        lease_owner="baseline-worker",
+        as_of=AT + timedelta(seconds=5),
+    )[0]
 
-    assert worker.run_once(limit=1, as_of=AT + timedelta(seconds=5)) == ()
+    with pytest.raises(Exception, match="forced baseline completion failure"):
+        freeze_market_baseline(
+            action_service=fixture.action_service,
+            decision_actions=fixture.decision_actions,
+            task_evidence_bundle_revision_id=fixture.task_bundle_revision_id,
+            work_item_id=WORK_ITEM_ID,
+            worker_job_id=job.worker_job_id,
+            lease_owner="baseline-worker",
+            as_of=AT + timedelta(seconds=5),
+        )
 
     with fixture.engine.connect() as connection:
         assert connection.scalar(
             text("SELECT COUNT(*) FROM operator_market_prior_baseline_revisions")
         ) == 0
-        job = connection.execute(
+        assert connection.scalar(
             text(
-                "SELECT state, last_error_code FROM operator_worker_jobs "
-                "WHERE job_kind = 'market_baseline'"
+                "SELECT COUNT(*) FROM actions "
+                "WHERE action_type = 'freeze_market_prior_baseline' "
+                "AND status = 'committed'"
             )
-        ).one()
-    assert job == ("failed", "invariant_failure")
+        ) == 0
 
 
 def test_zero_delta_judgment_atomically_commits_forecast_and_link(tmp_path: Path) -> None:
@@ -1286,13 +1309,13 @@ def test_superseded_task_bundle_blocks_old_judgment_dependencies(tmp_path: Path)
             requested_at=AT + timedelta(seconds=5),
         )
     )
-    EvidenceFreezeRequestWorker(
+    drive_evidence_freeze(
         action_service=fixture.action_service,
         evidence_actions=fixture.evidence_actions,
         bundle_actions=BundleActions(fixture.action_service),
-        worker_id="evidence-worker-2",
-        lease_duration=timedelta(minutes=5),
-    ).run_once(limit=1, as_of=AT + timedelta(seconds=6))
+        lease_owner="evidence-worker-2",
+        as_of=AT + timedelta(seconds=6),
+    )
 
     with pytest.raises(ValueError, match="stale|superseded"):
         fixture.decision_actions.commit_operator_match_judgment(

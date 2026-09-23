@@ -9,7 +9,6 @@ from nutmeg.discovery.candidates import (
     OfferCandidateInput,
     enumerate_band_candidates,
 )
-from nutmeg.product.operator_contracts import CandidateSetComparisonView
 
 
 def _input_with_combined_odds(odds: str) -> CandidateGenerationInput:
@@ -95,21 +94,3 @@ def test_outside_band_candidate_is_retained_only_for_counterfactual_comparison()
     assert counterfactual.candidates[0].odds_band is None
     assert counterfactual.candidates[0].deployable is False
 
-
-def test_contract_allows_explicit_all_empty_band_outcomes() -> None:
-    view = CandidateSetComparisonView(
-        label="judgment bands",
-        comparison_only=False,
-        candidates=[],
-        band_outcomes=[
-            {
-                "odds_band": band,
-                "status": "no_feasible_candidate",
-                "candidate_count": 0,
-                "reason_code": "candidate_space_empty",
-            }
-            for band in ("10x", "20x", "50x", "100x")
-        ],
-    )
-
-    assert len(view.band_outcomes) == 4

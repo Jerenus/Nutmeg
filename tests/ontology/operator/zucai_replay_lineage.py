@@ -1,11 +1,28 @@
+"""The checked-in 26111 zucai decision lineage, replayed for settlement tests.
+
+Inlined from the retired ``tests/product/operator_v2/test_candidate_replay``
+helper on 2026-09-23 when ``nutmeg.product.operator_workers`` was deleted; the
+evidence freeze and candidate generation now drive their typed Actions
+directly instead of going through a background worker.
+"""
+
 from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import Path
 
 from sqlalchemy import text
 
+from nutmeg.discovery.audit import _audit_candidate, _CandidateAuditOffer
+from nutmeg.discovery.candidates import (
+    CandidateGenerationInput,
+    CandidateStructureTemplate,
+    FaceBundleOption,
+    OfferCandidateInput,
+    enumerate_candidates,
+)
 from nutmeg.ontology.actions.bundle_actions import BundleActions
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.service import ActionService
@@ -27,16 +44,25 @@ from nutmeg.ontology.operator.evidence_actions import (
     RequestEvidenceFreezeRequest,
 )
 from nutmeg.ontology.operator.result_actions import (
+    CandidateAuditFindingInput,
+    CandidateDeadFaceInput,
+    CandidateMetricsInput,
+    CandidateSetInput,
+    CandidateTicketInput,
+    CandidateTicketLegInput,
+    GenerateTicketCandidateSetRequest,
     OperatorResultActions,
     RegisterZucaiFixedPrizePolicyRequest,
+    TicketCandidateInput,
 )
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.evidence import ObservationRow
 from nutmeg.ontology.repository.market import QuoteRow, SnapshotRow
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product.operator_workers import (
-    EvidenceFreezeRequestWorker,
+from tests.ontology.operator.action_drivers import (
+    claim_worker_jobs,
+    drive_evidence_freeze,
 )
 
 AT = datetime(2026, 9, 4, 8, tzinfo=UTC)
@@ -54,7 +80,8 @@ SUPPORT_PRIOR = {
 
 def _fixture_document() -> dict[str, object]:
     path = (
-        Path(__file__).parents[1]
+        Path(__file__).parents[2]
+        / "product"
         / "fixtures"
         / "operator"
         / "26111-u864-candidates.json"
@@ -251,14 +278,13 @@ def _freeze_task(engine, probabilities: dict[str, dict[str, str]]):
             requested_at=AT,
         )
     )
-    worker = EvidenceFreezeRequestWorker(
+    linked = drive_evidence_freeze(
         action_service=action_service,
         evidence_actions=evidence_actions,
         bundle_actions=BundleActions(action_service),
-        worker_id="26111-evidence-worker",
-        lease_duration=timedelta(minutes=5),
+        lease_owner="26111-evidence-worker",
+        as_of=AT + timedelta(seconds=1),
     )
-    linked = worker.run_once(limit=1, as_of=AT + timedelta(seconds=1))
     assert requested.status is ActionStatus.COMMITTED
     assert len(linked) == 1
     return action_service, linked[0].result_refs[0].object_id
@@ -416,3 +442,296 @@ def _prepare_decision_lineage(tmp_path: Path):
     assert policy.status is ActionStatus.COMMITTED
     assert prescription.status is ActionStatus.COMMITTED
     return engine, action_service, decision_actions, result_actions, document
+
+
+def _canonical_probability(value: object) -> str:
+    return format(
+        Decimal(str(value)).quantize(Decimal("0.000000000001"), rounding=ROUND_HALF_EVEN),
+        ".12f",
+    )
+
+
+def _offer_probabilities(document, number: str) -> tuple[tuple[str, str], ...]:
+    probabilities = document["probabilities"]
+    prior = probabilities.get(number, SUPPORT_PRIOR)
+    return tuple(
+        (face, _canonical_probability(value)) for face, value in prior.items()
+    )
+
+
+def _renjiu_offer_shape(document):
+    """Faces and omission flags exactly as `_prepare_decision_lineage` froze them."""
+    versions = document["versions"]
+    selected = tuple(document["probabilities"])
+    shape = {}
+    for number in range(1, 15):
+        key = str(number)
+        faces = tuple(
+            dict.fromkeys(
+                version["faces"][key] for version in versions if key in version["faces"]
+            )
+        ) or ("3",)
+        shape[key] = (faces, key not in selected)
+    return shape, selected
+
+
+def _sfc_offer_shape(document):
+    """The single modal face per match `_replace_with_sfc_decision_lineage` froze."""
+    probabilities = document["probabilities"]
+    shape = {}
+    for number in range(1, 15):
+        key = str(number)
+        prior = probabilities.get(key, SUPPORT_PRIOR)
+        modal = max(prior, key=lambda face: Decimal(prior[face]))
+        shape[key] = ((modal,), False)
+    return shape, tuple(str(number) for number in range(1, 15))
+
+
+def _candidate_generation_input(
+    document,
+    *,
+    ticket_kind: str,
+    unit_stake_minor: int,
+    fixed_prize_policy_revision_id: str,
+):
+    if ticket_kind == "renjiu":
+        shape, selected = _renjiu_offer_shape(document)
+        template = CandidateStructureTemplate(
+            kind="zucai_group",
+            structure_code="renjiu-u864-family",
+            eligible_official_match_nos=selected,
+            pass_size=None,
+            required_offer_count=9,
+            maximum_groups=1,
+        )
+        capital_cap_minor = int(document["capital_cap_minor"])
+        maximum_exhaustive_candidate_count = 8
+    elif ticket_kind == "sfc":
+        shape, numbers = _sfc_offer_shape(document)
+        template = CandidateStructureTemplate(
+            kind="zucai_group",
+            structure_code="sfc-14",
+            eligible_official_match_nos=numbers,
+            pass_size=None,
+            required_offer_count=14,
+            maximum_groups=1,
+        )
+        capital_cap_minor = 200
+        maximum_exhaustive_candidate_count = 1
+    else:
+        raise ValueError(f"unsupported zucai replay ticket kind: {ticket_kind}")
+
+    offers = []
+    audit_offers = []
+    for number in range(1, 15):
+        key = str(number)
+        faces, omission_allowed = shape[key]
+        bundles = tuple(
+            FaceBundleOption(bundle_code=f"faces-{item}", face_codes=tuple(item))
+            for item in faces
+        )
+        probabilities = _offer_probabilities(document, key)
+        offers.append(
+            OfferCandidateInput(
+                official_match_no=key,
+                official_offer_revision_id=f"offer-{number}",
+                match_id=f"match-{number}",
+                market_definition_id="md-had",
+                probabilities=probabilities,
+                allowed_face_bundles=bundles,
+                omission_allowed=omission_allowed,
+                quote_ids_by_face=(),
+                booked_decimal_odds_by_face=(),
+                settlement_parameter_decimal=None,
+            )
+        )
+        audit_offers.append(
+            _CandidateAuditOffer(
+                official_match_no=key,
+                market_definition_id="md-had",
+                belief=probabilities,
+                prior=probabilities,
+                prescribed_face_bundles=tuple(
+                    frozenset(bundle.face_codes) for bundle in bundles
+                ),
+                rule_ids=("k",),
+                anchor_integrity="unknown",
+                face_precedents=(),
+            )
+        )
+    return (
+        CandidateGenerationInput(
+            lane="zucai",
+            ticket_kind=ticket_kind,
+            currency="CNY",
+            capital_cap_minor=capital_cap_minor,
+            unit_stake_minor=unit_stake_minor,
+            maximum_ticket_count=1,
+            maximum_exhaustive_candidate_count=maximum_exhaustive_candidate_count,
+            offers=tuple(offers),
+            templates=(template,),
+            fixed_prize_policy_revision_id=fixed_prize_policy_revision_id,
+        ),
+        tuple(audit_offers),
+    )
+
+
+def _candidate_ticket_input(ticket) -> CandidateTicketInput:
+    legs = []
+    for leg in ticket.legs:
+        for index, selection_code in enumerate(leg.selection_codes):
+            legs.append(
+                CandidateTicketLegInput(
+                    official_offer_revision_id=leg.official_offer_revision_id,
+                    match_id=leg.match_id,
+                    market_definition_id=leg.market_definition_id,
+                    selection_code=selection_code,
+                    quote_id=(leg.quote_ids[index] if leg.quote_ids else None),
+                    booked_decimal_odds=(
+                        leg.booked_decimal_odds[index]
+                        if leg.booked_decimal_odds
+                        else None
+                    ),
+                    settlement_parameter_decimal=leg.settlement_parameter_decimal,
+                )
+            )
+    return CandidateTicketInput(
+        ticket_kind=ticket.ticket_kind,
+        structure_code=ticket.structure_code,
+        group_code=ticket.group_code,
+        currency=ticket.currency,
+        unit_stake_minor=ticket.unit_stake_minor,
+        unit_count=ticket.unit_count,
+        stake_minor=ticket.stake_minor,
+        composition_hash=ticket.composition_hash,
+        fixed_prize_policy_revision_id=ticket.fixed_prize_policy_revision_id,
+        legs=tuple(legs),
+    )
+
+
+def _ticket_candidate_input(candidate) -> TicketCandidateInput:
+    return TicketCandidateInput(
+        partition=candidate.partition,
+        rank=candidate.rank,
+        deployable=candidate.deployable,
+        tickets=tuple(_candidate_ticket_input(ticket) for ticket in candidate.tickets),
+        metrics=CandidateMetricsInput(
+            currency=candidate.tickets[0].currency,
+            ticket_count=candidate.ticket_count,
+            distinct_note_count=candidate.distinct_note_count,
+            paid_note_unit_count=candidate.paid_note_unit_count,
+            stake_minor=candidate.stake_minor,
+            capital_utilization_decimal=candidate.cap_utilization_decimal,
+            probability_kind=candidate.probability_kind,
+            objective_probability_decimal=candidate.objective_probability_decimal,
+            expected_broken_legs_decimal=candidate.expected_broken_legs_decimal,
+            break_even_bonus_minor=candidate.break_even_bonus_minor,
+            break_even_to_official_median_decimal=(
+                candidate.break_even_to_median_decimal
+            ),
+        ),
+        common_dead_faces=tuple(
+            CandidateDeadFaceInput(official_match_no=match_no, face_code=face)
+            for match_no, faces in candidate.common_dead_faces
+            for face in faces
+        ),
+        audit_findings=tuple(
+            CandidateAuditFindingInput(
+                finding_id=finding.finding_id,
+                audit_kind=finding.audit_kind,
+                code=finding.code,
+                severity=finding.severity,
+                message=finding.message,
+                official_match_no=finding.official_match_no,
+                rule_id=finding.rule_id,
+            )
+            for finding in candidate.audit_findings
+        ),
+        completed_audit_kinds=(
+            "legs",
+            "prescription_difference",
+            "budget",
+            "deployment",
+        ),
+        content_hash=candidate.content_hash,
+        odds_band=candidate.odds_band,
+        target_odds_min_decimal=candidate.target_odds_min_decimal,
+        target_odds_max_decimal=candidate.target_odds_max_decimal,
+        combined_decimal_odds=candidate.combined_decimal_odds,
+        parent_candidate_revision_id=candidate.parent_candidate_revision_id,
+        delta_reason=candidate.delta_reason,
+    )
+
+
+def generate_zucai_candidate_sets(
+    *,
+    action_service,
+    result_actions,
+    document,
+    generation_request_id: str,
+    fixed_prize_policy_revision_id: str,
+    ticket_kind: str,
+    lease_owner: str,
+    as_of: datetime,
+):
+    """Enumerate both comparison sets and commit them through the typed Action.
+
+    Replaces `CandidateGenerationWorker`: the enumeration and audit are the live
+    `nutmeg.discovery` code, and `generate_ticket_candidate_set` is the live
+    Action; only the worker's lease bookkeeping is gone.
+    """
+    job = claim_worker_jobs(
+        action_service,
+        job_kind="candidate_generation",
+        lease_owner=lease_owner,
+        as_of=as_of,
+    )[0]
+    with action_service.unit_of_work() as uow:
+        policy = uow.operator_result.fixed_prize_policy_revision(
+            fixed_prize_policy_revision_id
+        )
+    assert policy is not None
+    inputs, audit_offers = _candidate_generation_input(
+        document,
+        ticket_kind=ticket_kind,
+        unit_stake_minor=policy.standard_unit_stake_minor,
+        fixed_prize_policy_revision_id=fixed_prize_policy_revision_id,
+    )
+    candidate_sets = tuple(
+        CandidateSetInput(
+            set_kind=set_kind,
+            candidates=tuple(
+                _ticket_candidate_input(candidate)
+                for candidate in enumerate_candidates(
+                    inputs,
+                    set_kind=set_kind,
+                    generator_version="operator-candidate-v1",
+                    audit_candidate=lambda draft: _audit_candidate(
+                        draft,
+                        lane=inputs.lane,
+                        offers=audit_offers,
+                        capital_cap_minor=inputs.capital_cap_minor,
+                    ),
+                ).candidates
+            ),
+            band_outcomes=(),
+            change_delta=None,
+            rationale=None,
+        )
+        for set_kind in ("judgment_bound", "conditional_market_counterfactual")
+    )
+    outcome = result_actions.generate_ticket_candidate_set(
+        GenerateTicketCandidateSetRequest(
+            generation_request_id=generation_request_id,
+            candidate_sets=candidate_sets,
+            generator_version="operator-candidate-v1",
+            worker_job_id=job.worker_job_id,
+            lease_owner=lease_owner,
+            actor_id="system:operator-candidates",
+            actor_role=ActorRole.DETERMINISTIC_SYSTEM,
+            idempotency_key=f"26111:{ticket_kind}:candidate-generation",
+            requested_at=as_of,
+        )
+    )
+    assert outcome.status is ActionStatus.COMMITTED
+    return outcome

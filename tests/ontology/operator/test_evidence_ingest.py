@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -8,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import func, insert, select, update
 
-from nutmeg.ontology.actions.models import ActionStatus, ActorRole
+from nutmeg.ontology.actions.models import ActionStatus, ActorRole, canonical_json
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.operator.evidence_actions import (
     EvidenceActions,
@@ -29,34 +30,38 @@ from nutmeg.ontology.repository.evidence import EvidenceRepository, ObservationR
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.operator_decision import OperatorDecisionRepository
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product.operator_contracts import OperatorLane
-from nutmeg.product.operator_lanes import SaleOfferSnapshot, SaleSlateSnapshot, task_snapshot_hash
 
 AT = datetime(2026, 9, 4, 2, tzinfo=UTC)
 
 
 def _expected_task_snapshot_hash() -> str:
-    return task_snapshot_hash(
-        SaleSlateSnapshot(
-            lane=OperatorLane.JCZQ,
-            business_key="2026-09-04",
-            slate_revision_id="slate-1",
-            content_hash="c" * 64,
-            offers=(
-                SaleOfferSnapshot(
-                    official_offer_family_id="offer-family-1",
-                    official_offer_revision_id="offer-revision-1",
-                    match_id="match-1",
-                    official_match_no="周五001",
-                    market_definition_ids=("md-had",),
-                    sale_opens_at=datetime(2026, 9, 4, 0, tzinfo=UTC),
-                    sale_deadline_at=datetime(2026, 9, 4, 12, tzinfo=UTC),
-                    source_status="on_sale",
-                ),
-            ),
-        ),
-        datetime(2026, 9, 4, 2, tzinfo=UTC),
-    )
+    """Independent restatement of the task-snapshot document the Action hashes.
+
+    Kept deliberately hand-rolled: if `EvidenceActions._task_snapshot_hash`
+    silently changes shape, this cross-check has to fail rather than follow.
+    """
+    document = {
+        "lane": "jczq",
+        "business_key": "2026-09-04",
+        "slate_revision_id": "slate-1",
+        "slate_content_hash": "c" * 64,
+        "offers": [
+            {
+                "official_offer_family_id": "offer-family-1",
+                "official_offer_revision_id": "offer-revision-1",
+                "match_id": "match-1",
+                "official_match_no": "周五001",
+                "market_definition_ids": ["md-had"],
+                "sale_opens_at": datetime(2026, 9, 4, 0, tzinfo=UTC).isoformat(),
+                "sale_deadline_at": datetime(2026, 9, 4, 12, tzinfo=UTC).isoformat(),
+                "source_status": "on_sale",
+                # AT (02:00Z) sits between opening and deadline.
+                "derived_state": "open",
+            }
+        ],
+        "no_ticket_closures": [],
+    }
+    return hashlib.sha256(canonical_json(document).encode("utf-8")).hexdigest()
 
 
 def _manifest() -> dict[str, object]:

@@ -16,8 +16,10 @@ from nutmeg.ontology.operator.decision_actions import (
     FactorAdjustmentInput,
     FreezeJudgmentPrescriptionRequest,
 )
-from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product.operator_workers import MarketBaselineWorker
+from tests.ontology.operator.action_drivers import (
+    claim_worker_jobs,
+    freeze_market_baseline,
+)
 from tests.ontology.operator.test_judgment_actions import (
     AT,
     WORK_ITEM_ID,
@@ -648,7 +650,7 @@ def test_unknown_factor_scope_kind_is_rejected(
         ("conflict", "evidence_conflict"),
     ),
 )
-def test_market_baseline_worker_persists_stable_terminal_error_codes(
+def test_market_baseline_action_raises_stable_terminal_error_codes(
     tmp_path: Path,
     market_state: str,
     expected_error_code: str,
@@ -659,24 +661,25 @@ def test_market_baseline_worker_persists_stable_terminal_error_codes(
     )
     if market_state == "stale":
         _insert_superseding_slate(fixture)
-    worker = MarketBaselineWorker(
-        action_service=fixture.action_service,
-        decision_actions=fixture.decision_actions,
-        worker_id=f"baseline-worker-{market_state}",
-        lease_duration=timedelta(minutes=5),
-        work_item_id_resolver=lambda _revision_id: WORK_ITEM_ID,
-    )
+    job = claim_worker_jobs(
+        fixture.action_service,
+        job_kind="market_baseline",
+        lease_owner=f"baseline-worker-{market_state}",
+        as_of=AT + timedelta(seconds=30),
+    )[0]
 
-    assert worker.run_once(limit=1, as_of=AT + timedelta(seconds=30)) == ()
-    with OntologyUnitOfWork(fixture.engine) as uow:
-        job = uow.operator_decision.worker_job_for_source(
-            job_kind="market_baseline",
-            source_object_type="task_evidence_bundle_revision",
-            source_object_id=fixture.task_bundle_revision_id,
+    with pytest.raises(Exception) as raised:
+        freeze_market_baseline(
+            action_service=fixture.action_service,
+            decision_actions=fixture.decision_actions,
+            task_evidence_bundle_revision_id=fixture.task_bundle_revision_id,
+            work_item_id=WORK_ITEM_ID,
+            worker_job_id=job.worker_job_id,
+            lease_owner=f"baseline-worker-{market_state}",
+            as_of=AT + timedelta(seconds=30),
         )
-    assert job is not None
-    assert job.state == "failed"
-    assert job.last_error_code == expected_error_code
+
+    assert getattr(raised.value, "code", None) == expected_error_code
     with fixture.engine.connect() as connection:
         baseline_count = connection.scalar(
             text("SELECT COUNT(*) FROM operator_market_prior_baseline_revisions")

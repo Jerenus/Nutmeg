@@ -12,6 +12,7 @@ from sqlalchemy.exc import OperationalError
 from nutmeg.ontology.actions.bundle_actions import BundleActions, FreezeBundleRequest
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.errors import OptimisticConcurrencyError
 from nutmeg.ontology.operator.evidence_actions import (
     EvidenceActions,
     EvidenceFreezeGate,
@@ -25,7 +26,11 @@ from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.operator_decision import OperatorDecisionRepository
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-from nutmeg.product.operator_workers import EvidenceFreezeRequestWorker
+from tests.ontology.operator.action_drivers import (
+    claim_worker_jobs,
+    drive_evidence_freeze,
+    freeze_task_evidence,
+)
 
 AT = datetime(2026, 9, 4, 8, tzinfo=UTC)
 
@@ -383,21 +388,23 @@ def test_link_rejects_non_bundle_action_or_unreconciled_declared_count(
         ) == 0
 
 
-def test_worker_runs_public_bundle_and_link_actions_then_binds_terminal_job(
+def test_public_bundle_and_link_actions_bind_the_terminal_source_job(
     tmp_path: Path,
 ) -> None:
     actions, service, engine, _calls = _setup(tmp_path)
     requested = actions.request_evidence_freeze(_request("freeze-request:worker"))
-    worker = EvidenceFreezeRequestWorker(
-        action_service=service,
-        evidence_actions=actions,
-        bundle_actions=BundleActions(service),
-        worker_id="worker-1",
-        lease_duration=timedelta(minutes=5),
-    )
 
-    outcomes = worker.run_once(limit=1, as_of=AT + timedelta(seconds=10))
-    replay = worker.run_once(limit=1, as_of=AT + timedelta(seconds=20))
+    def run(at):
+        return drive_evidence_freeze(
+            action_service=service,
+            evidence_actions=actions,
+            bundle_actions=BundleActions(service),
+            lease_owner="worker-1",
+            as_of=at,
+        )
+
+    outcomes = run(AT + timedelta(seconds=10))
+    replay = run(AT + timedelta(seconds=20))
 
     assert len(outcomes) == 1
     assert outcomes[0].action_type == "link_operator_task_evidence_freeze"
@@ -435,16 +442,18 @@ def test_new_evidence_preserves_old_bundle_and_explicit_refreeze_appends_child(
 
     service = ActionService(lambda: OntologyUnitOfWork(engine))
     actions = EvidenceActions(service, freeze_gate_resolver=resolve_gate)
-    worker = EvidenceFreezeRequestWorker(
-        action_service=service,
-        evidence_actions=actions,
-        bundle_actions=BundleActions(service),
-        worker_id="worker-refreeze",
-        lease_duration=timedelta(minutes=5),
-    )
+
+    def run(at):
+        return drive_evidence_freeze(
+            action_service=service,
+            evidence_actions=actions,
+            bundle_actions=BundleActions(service),
+            lease_owner="worker-refreeze",
+            as_of=at,
+        )
 
     actions.request_evidence_freeze(_request("freeze-request:revision-1"))
-    first = worker.run_once(limit=1, as_of=AT + timedelta(seconds=10))[0]
+    first = run(AT + timedelta(seconds=10))[0]
     first_revision_id = first.result_refs[0].object_id
     with engine.connect() as connection:
         first_row_before = connection.execute(
@@ -479,7 +488,7 @@ def test_new_evidence_preserves_old_bundle_and_explicit_refreeze_appends_child(
             requested_at=AT + timedelta(seconds=20),
         )
     )
-    second = worker.run_once(limit=1, as_of=AT + timedelta(seconds=30))[0]
+    second = run(AT + timedelta(seconds=30))[0]
     second_revision_id = second.result_refs[0].object_id
 
     with engine.connect() as connection:
@@ -569,77 +578,9 @@ def test_link_and_source_job_completion_share_one_action_transaction(
     assert source_job["state"] == "leased"
 
 
-def test_sqlite_contention_requeues_worker_job_with_bounded_backoff(
+def test_freeze_plan_rechecks_the_current_gate_at_execution_time(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actions, service, engine, _calls = _setup(tmp_path)
-    requested = actions.request_evidence_freeze(_request("freeze-request:retryable"))
-    worker = EvidenceFreezeRequestWorker(
-        action_service=service,
-        evidence_actions=actions,
-        bundle_actions=BundleActions(service),
-        worker_id="worker-retry",
-        lease_duration=timedelta(minutes=5),
-    )
-
-    def locked(*_args, **_kwargs):
-        raise OperationalError(
-            "worker step",
-            {},
-            sqlite3.OperationalError("database is locked"),
-        )
-
-    monkeypatch.setattr(worker, "process_evidence_freeze_request", locked)
-
-    assert worker.run_once(limit=1, as_of=AT + timedelta(seconds=10)) == ()
-
-    with engine.connect() as connection:
-        job = connection.execute(
-            select(sod.operator_worker_jobs).where(
-                sod.operator_worker_jobs.c.source_object_id
-                == requested.result_refs[0].object_id
-            )
-        ).mappings().one()
-    assert job["state"] == "queued"
-    assert job["lease_owner"] is None
-    assert job["last_error_code"] == "sqlite_contention"
-    assert datetime.fromisoformat(job["available_at"]) > AT + timedelta(seconds=10)
-
-
-def test_validation_failure_is_visible_and_terminal(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    actions, service, engine, _calls = _setup(tmp_path)
-    requested = actions.request_evidence_freeze(_request("freeze-request:terminal"))
-    worker = EvidenceFreezeRequestWorker(
-        action_service=service,
-        evidence_actions=actions,
-        bundle_actions=BundleActions(service),
-        worker_id="worker-terminal",
-        lease_duration=timedelta(minutes=5),
-    )
-
-    def invalid(*_args, **_kwargs):
-        raise ValueError("evidence gate changed before freeze")
-
-    monkeypatch.setattr(worker, "process_evidence_freeze_request", invalid)
-
-    assert worker.run_once(limit=1, as_of=AT + timedelta(seconds=10)) == ()
-
-    with engine.connect() as connection:
-        job = connection.execute(
-            select(sod.operator_worker_jobs).where(
-                sod.operator_worker_jobs.c.source_object_id
-                == requested.result_refs[0].object_id
-            )
-        ).mappings().one()
-    assert job["state"] == "failed"
-    assert job["last_error_code"] == "invariant_failure"
-
-
-def test_worker_rechecks_current_gate_at_execution_time(tmp_path: Path) -> None:
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine)
     _seed_slate(engine)
@@ -654,54 +595,46 @@ def test_worker_rechecks_current_gate_at_execution_time(tmp_path: Path) -> None:
     service = ActionService(lambda: OntologyUnitOfWork(engine))
     actions = EvidenceActions(service, freeze_gate_resolver=resolve_gate)
     requested = actions.request_evidence_freeze(_request("freeze-request:execution-time"))
-    worker = EvidenceFreezeRequestWorker(
-        action_service=service,
-        evidence_actions=actions,
-        bundle_actions=BundleActions(service),
-        worker_id="worker-current-gate",
-        lease_duration=timedelta(minutes=5),
+    request_id = requested.result_refs[0].object_id
+    claim_worker_jobs(
+        service,
+        job_kind="evidence_freeze",
+        lease_owner="worker-current-gate",
+        as_of=AT + timedelta(seconds=10),
     )
 
-    assert worker.run_once(limit=1, as_of=AT + timedelta(seconds=10)) == ()
+    with pytest.raises(
+        OptimisticConcurrencyError,
+        match="evidence gate changed before freeze",
+    ):
+        freeze_task_evidence(
+            action_service=service,
+            evidence_actions=actions,
+            bundle_actions=BundleActions(service),
+            request_id=request_id,
+            lease_owner="worker-current-gate",
+            as_of=AT + timedelta(seconds=10),
+        )
 
     with engine.connect() as connection:
-        job = connection.execute(
-            select(sod.operator_worker_jobs).where(
-                sod.operator_worker_jobs.c.source_object_id
-                == requested.result_refs[0].object_id
-            )
-        ).mappings().one()
         freeze_actions = connection.scalar(
             select(func.count())
             .select_from(schema.actions)
             .where(schema.actions.c.action_type == "freeze_evidence_bundle")
         )
     assert seen_as_of == [AT, AT + timedelta(seconds=10)]
-    assert job["state"] == "failed"
-    assert job["last_error_code"] == "stale_dependency"
     assert freeze_actions == 0
 
 
-def test_retry_takeover_reuses_bundle_action_across_worker_ids(
+def test_retry_takeover_reuses_bundle_action_across_lease_owners(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     actions, service, engine, _calls = _setup(tmp_path)
-    actions.request_evidence_freeze(_request("freeze-request:worker-takeover"))
-    first = EvidenceFreezeRequestWorker(
-        action_service=service,
-        evidence_actions=actions,
-        bundle_actions=BundleActions(service),
-        worker_id="worker-first",
-        lease_duration=timedelta(minutes=5),
+    requested = actions.request_evidence_freeze(
+        _request("freeze-request:worker-takeover")
     )
-    second = EvidenceFreezeRequestWorker(
-        action_service=service,
-        evidence_actions=actions,
-        bundle_actions=BundleActions(service),
-        worker_id="worker-second",
-        lease_duration=timedelta(minutes=5),
-    )
+    request_id = requested.result_refs[0].object_id
     original_link = actions.link_operator_task_evidence_freeze
 
     def interrupted_link(*_args, **_kwargs):
@@ -712,10 +645,38 @@ def test_retry_takeover_reuses_bundle_action_across_worker_ids(
         )
 
     monkeypatch.setattr(actions, "link_operator_task_evidence_freeze", interrupted_link)
-    assert first.run_once(limit=1, as_of=AT + timedelta(seconds=10)) == ()
+    job = claim_worker_jobs(
+        service,
+        job_kind="evidence_freeze",
+        lease_owner="worker-first",
+        as_of=AT + timedelta(seconds=10),
+    )[0]
+    with pytest.raises(OperationalError):
+        freeze_task_evidence(
+            action_service=service,
+            evidence_actions=actions,
+            bundle_actions=BundleActions(service),
+            request_id=request_id,
+            lease_owner="worker-first",
+            as_of=AT + timedelta(seconds=10),
+        )
     monkeypatch.setattr(actions, "link_operator_task_evidence_freeze", original_link)
+    with OntologyUnitOfWork(engine) as uow:
+        uow.operator_decision.requeue_worker_job(
+            worker_job_id=job.worker_job_id,
+            lease_owner="worker-first",
+            error_code="sqlite_contention",
+            available_at=(AT + timedelta(seconds=11)).isoformat(),
+            updated_at=(AT + timedelta(seconds=10)).isoformat(),
+        )
 
-    outcomes = second.run_once(limit=1, as_of=AT + timedelta(seconds=12))
+    outcomes = drive_evidence_freeze(
+        action_service=service,
+        evidence_actions=actions,
+        bundle_actions=BundleActions(service),
+        lease_owner="worker-second",
+        as_of=AT + timedelta(seconds=12),
+    )
 
     assert len(outcomes) == 1
     assert outcomes[0].status is ActionStatus.COMMITTED

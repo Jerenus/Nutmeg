@@ -6,10 +6,8 @@ import json
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, Engine, and_, case, func, or_, select
 
@@ -20,17 +18,10 @@ from nutmeg.ontology.repository import schema_evidence as se
 from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository import schema_market as sm
-from nutmeg.ontology.repository import schema_operator_sale as sos
 from nutmeg.ontology.repository import schema_rsi as sr
 from nutmeg.ontology.repository import schema_tickets as st
 from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.ontology.repository.outbox import OutboxEventRow, OutboxRepository
-from nutmeg.product.operator_contracts import OperatorLane
-from nutmeg.product.operator_lanes import (
-    SaleOfferSnapshot,
-    SaleSlateSnapshot,
-    ScheduleRecoverySnapshot,
-)
 
 LineageTuple = tuple[str, str, str, str, str]
 
@@ -123,203 +114,6 @@ class ProductReadRepository:
             return
         with self._engine.connect() as connection:
             yield connection
-
-    def operator_sale_slates(self, *, as_of: str) -> tuple[SaleSlateSnapshot, ...]:
-        cutoff = datetime.fromisoformat(as_of)
-        if cutoff.tzinfo is None or cutoff.utcoffset() is None:
-            raise ValueError("operator sale as_of must be timezone-aware")
-        cutoff = cutoff.astimezone(UTC)
-        with self._read_connection() as connection:
-            rows = connection.execute(
-                select(sos.official_sale_slate_revisions).order_by(
-                    sos.official_sale_slate_revisions.c.lane,
-                    sos.official_sale_slate_revisions.c.business_key,
-                    sos.official_sale_slate_revisions.c.revision_no,
-                )
-            ).mappings()
-            current: dict[tuple[str, str], dict] = {}
-            for row in rows:
-                valid_from = datetime.fromisoformat(str(row["valid_from"]))
-                if valid_from.tzinfo is None or valid_from.utcoffset() is None:
-                    raise ValueError("official sale valid_from must be timezone-aware")
-                if valid_from.astimezone(UTC) <= cutoff:
-                    current[(str(row["lane"]), str(row["business_key"]))] = dict(row)
-            if not current:
-                return ()
-            slate_ids = [str(row["slate_revision_id"]) for row in current.values()]
-            offer_rows = (
-                connection.execute(
-                    select(sos.official_offer_revisions).where(
-                        sos.official_offer_revisions.c.slate_revision_id.in_(slate_ids)
-                    )
-                )
-                .mappings()
-                .all()
-            )
-            source_rows = (
-                connection.execute(
-                    select(
-                        sos.official_sale_slate_revisions.c.slate_revision_id,
-                        schema.artifact_retrievals.c.source_name,
-                        schema.artifact_retrievals.c.source_type,
-                        schema.artifact_retrievals.c.status.label("retrieval_status"),
-                        schema.artifact_retrievals.c.reported_content_type,
-                        schema.artifact_retrievals.c.canonical_url,
-                        schema.source_runs.c.source_name.label("run_source_name"),
-                        schema.source_runs.c.source_type.label("run_source_type"),
-                        schema.source_runs.c.status.label("run_status"),
-                    )
-                    .select_from(
-                        sos.official_sale_slate_revisions.outerjoin(
-                            schema.artifact_retrievals,
-                            sos.official_sale_slate_revisions.c.source_artifact_retrieval_id
-                            == schema.artifact_retrievals.c.artifact_retrieval_id,
-                        ).outerjoin(
-                            schema.source_runs,
-                            schema.artifact_retrievals.c.source_run_id
-                            == schema.source_runs.c.source_run_id,
-                        )
-                    )
-                    .where(
-                        sos.official_sale_slate_revisions.c.slate_revision_id.in_(slate_ids)
-                    )
-                )
-                .mappings()
-                .all()
-            )
-        offers_by_slate: dict[str, list[dict]] = {slate_id: [] for slate_id in slate_ids}
-        for row in offer_rows:
-            offers_by_slate[str(row["slate_revision_id"])].append(dict(row))
-        source_official_by_slate = {
-            str(row["slate_revision_id"]): self._is_official_sale_source(row)
-            for row in source_rows
-        }
-        snapshots = []
-        for key, row in sorted(current.items()):
-            offer_values = sorted(
-                offers_by_slate[str(row["slate_revision_id"])],
-                key=lambda item: self._official_match_order(str(item["official_match_no"])),
-            )
-            snapshots.append(
-                SaleSlateSnapshot(
-                    lane=OperatorLane(key[0]),
-                    business_key=key[1],
-                    slate_revision_id=str(row["slate_revision_id"]),
-                    content_hash=str(row["content_hash"]),
-                    revision_no=int(row["revision_no"]),
-                    published_at=datetime.fromisoformat(str(row["published_at"])),
-                    retrieved_at=datetime.fromisoformat(str(row["retrieved_at"])),
-                    offers=tuple(
-                        SaleOfferSnapshot(
-                            official_offer_family_id=str(
-                                offer["official_offer_family_id"]
-                            ),
-                            official_offer_revision_id=str(
-                                offer["official_offer_revision_id"]
-                            ),
-                            match_id=str(offer["match_id"]),
-                            official_match_no=str(offer["official_match_no"]),
-                            market_definition_ids=tuple(
-                                json.loads(str(offer["market_definition_ids_json"]))
-                            ),
-                            sale_opens_at=datetime.fromisoformat(
-                                str(offer["sale_opens_at"])
-                            ),
-                            sale_deadline_at=datetime.fromisoformat(
-                                str(offer["sale_deadline_at"])
-                            ),
-                            source_status=str(offer["status"]),
-                        )
-                        for offer in offer_values
-                    ),
-                    source_official=source_official_by_slate.get(
-                        str(row["slate_revision_id"]),
-                        False,
-                    ),
-                )
-            )
-        return tuple(snapshots)
-
-    def operator_schedule_checks(
-        self,
-        *,
-        as_of: str,
-    ) -> tuple[ScheduleRecoverySnapshot, ...]:
-        cutoff = datetime.fromisoformat(as_of)
-        if cutoff.tzinfo is None or cutoff.utcoffset() is None:
-            raise ValueError("operator schedule as_of must be timezone-aware")
-        shanghai_date = cutoff.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
-        snapshots = []
-        with self._read_connection() as connection:
-            for lane in OperatorLane:
-                row = (
-                    connection.execute(
-                        select(
-                            sos.official_schedule_check_receipts,
-                            schema.source_runs.c.status.label("source_run_status"),
-                        )
-                        .outerjoin(
-                            schema.source_runs,
-                            schema.source_runs.c.source_run_id
-                            == sos.official_schedule_check_receipts.c.source_run_id,
-                        )
-                        .where(
-                            sos.official_schedule_check_receipts.c.lane == lane.value,
-                            sos.official_schedule_check_receipts.c.shanghai_check_date
-                            == shanghai_date,
-                        )
-                        .order_by(
-                            sos.official_schedule_check_receipts.c.checked_at.desc(),
-                            sos.official_schedule_check_receipts.c.schedule_check_id.desc(),
-                        )
-                        .limit(1)
-                    )
-                    .mappings()
-                    .first()
-                )
-                snapshots.append(
-                    ScheduleRecoverySnapshot(
-                        lane=lane,
-                        shanghai_check_date=shanghai_date,
-                        last_check_state=(
-                            None if row is None else str(row["check_state"])
-                        ),
-                        last_checked_at=(
-                            None
-                            if row is None
-                            else datetime.fromisoformat(str(row["checked_at"]))
-                        ),
-                        last_source_run_state=(
-                            None
-                            if row is None or row["source_run_status"] is None
-                            else str(row["source_run_status"])
-                        ),
-                        error_code=(
-                            None
-                            if row is None or row["error_code"] is None
-                            else str(row["error_code"])
-                        ),
-                    )
-                )
-        return tuple(snapshots)
-
-    @staticmethod
-    def _is_official_sale_source(row) -> bool:
-        hostname = urlsplit(str(row["canonical_url"] or "")).hostname or ""
-        return (
-            row["source_name"] == "sporttery"
-            and row["source_type"] == "official_sale_schedule"
-            and row["retrieval_status"] == "stored"
-            and row["reported_content_type"] == "application/json"
-            and (hostname == "sporttery.cn" or hostname.endswith(".sporttery.cn"))
-            and row["run_source_name"] == "sporttery"
-            and row["run_source_type"] == "official_schedule"
-            and row["run_status"] == "succeeded"
-        )
-
-    @staticmethod
-    def _official_match_order(value: str) -> tuple[int, int | str]:
-        return (0, int(value)) if value.isdigit() else (1, value)
 
     def scoreboard_projection(self, *, as_of: str) -> dict:
         result = self._projection_rows("scoreboard_metrics", as_of=as_of)

@@ -28,7 +28,6 @@ from nutmeg.ontology.operator.result_actions import CandidateAuditFindingInput
 from nutmeg.ontology.repository.finance import CashAccountRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.tickets.models import TicketLegDraft
-from nutmeg.product.operator_workers import audit_current_candidate
 from tests.ontology.operator.test_candidate_actions import (
     _candidate,
     _generate,
@@ -629,7 +628,7 @@ def test_operator_materialization_reruns_all_current_authoritative_audits(
     observed: list[CurrentOperatorCandidateAudit] = []
 
     def current_auditor(uow, selected):
-        audit = audit_current_candidate(uow, selected)
+        audit = _persisted_current_audit(uow, selected)
         observed.append(audit)
         return audit
 

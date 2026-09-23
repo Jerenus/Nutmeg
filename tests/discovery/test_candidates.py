@@ -488,6 +488,43 @@ def test_conditional_set_keeps_three_way_partition_but_is_not_deployable() -> No
     assert result.selected_candidate_hash is None
 
 
+def test_over_cap_candidates_are_kept_unranked_instead_of_being_hidden() -> None:
+    """26098 —— 超帽的候选必须留在集合里排在最后，不许静默丢掉。"""
+    inputs = _generation_input(
+        lane="jczq",
+        ticket_kind="jczq_pass",
+        offers=(
+            _offer(
+                "1",
+                ("home", ("3",)),
+                ("home-draw", ("3", "1")),
+            ),
+        ),
+        templates=(
+            CandidateStructureTemplate(
+                kind="jczq_pass",
+                structure_code="1x1",
+                eligible_official_match_nos=("1",),
+                required_offer_count=1,
+                maximum_groups=1,
+                pass_size=1,
+            ),
+        ),
+        capital_cap_minor=300,
+        maximum_exhaustive_candidate_count=10,
+    )
+
+    result = enumerate_candidates(inputs)
+
+    assert [
+        (candidate.partition, candidate.rank, candidate.deployable, candidate.stake_minor)
+        for candidate in result.candidates
+    ] == [
+        ("eligible", 1, True, 200),
+        ("over_cap", None, False, 400),
+    ]
+
+
 def test_candidate_order_is_probability_then_stake_then_hash() -> None:
     inputs = _generation_input(
         lane="jczq",
