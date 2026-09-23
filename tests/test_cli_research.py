@@ -55,6 +55,11 @@ def test_research_board_run_intake_build_reads_pipeline(tmp_path, monkeypatch):
             "nondirectional_flags": [],
             "crash_markers": [],
             "precedents": [],
+            "stance": {
+                "face": "3", "structure": "double", "cover": "1", "confidence": 3,
+                "falsifier": "客队首发若有主力门将则本判断作废",
+                "why_not_market": "none", "tilt": None, "alt_face": "1", "market_read": "agree",
+            },
         }
     )
     monkeypatch.setattr(mod, "_claude", lambda system, brief: (0, good))
