@@ -69,7 +69,11 @@ def _argmax(p: dict | None) -> str | None:
 
 
 def _ladder(read: dict | None) -> str:
-    """判决表阶梯位置，只从 belief/prior 算得出来的三档；降格需要 confidence 变化史，不在此推断。"""
+    """判决表阶梯位置，只从 belief/prior 算得出来的三档；降格需要 confidence 变化史，不在此推断。
+
+    stance 存在且 why_not_market == "none" 且未拨（moved_pp <= MOVE_EPS_PP）时落在下面
+    `moved_pp` 分支即得 "跟市场"——既有逻辑已覆盖，这里不需要额外读 stance。
+    """
     if read is None:
         return "未判"
     if read["moved_pp"] <= MOVE_EPS_PP:
@@ -130,6 +134,7 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
                 "status": raw_read.get("status"), "judgment_tier": raw_read.get("judgment_tier"),
                 "confidence": raw_read.get("confidence"), "prior": prior, "belief": belief,
                 "moved_pp": _pp(prior, belief),
+                "tiers": raw_read.get("adjustment_evidence_tiers") or [],
             }
         cards.append({
             "code": code, "name": leg.get("name"), "competition": leg.get("competition"),
@@ -148,6 +153,7 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
             "research": _research(day, code, run_status, leg.get("kickoff_bj")),
             "labels": {k: leg.get(k) for k in LABEL_KEYS},
             "read": read,
+            "stance": raw_read.get("stance") if raw_read else None,
             "ladder": _ladder(read),
         })
         cards[-1]["audit"] = audit_defaults(cards[-1])
@@ -245,6 +251,12 @@ def _fmt_fair(fair: dict | None) -> str:
     return "/".join(f"{float(fair.get(k, 0)) * 100:.0f}" for k in FACES)
 
 
+def _fmt_stance(stance: dict | None) -> str:
+    if not stance or not stance.get("face"):
+        return "—"
+    return f"押{stance['face']}·{stance.get('faces') or stance['face']}"
+
+
 def render_brief_md(brief: dict) -> str:
     lines = [f"# 当日报告 · {brief['date']}", "",
              f"生成 {brief['generated_at']} · 事实层与判断层为机器编译；"
@@ -252,8 +264,8 @@ def render_brief_md(brief: dict) -> str:
     c = brief["jczq"]["counts"]
     lines += [f"## 竞彩 {c['matches']} 场（深研 {c['deep_research']} / 跟市场 {c['price_only']}"
               f" / 草稿 Read {c['drafts']}）", "",
-              "| 场 | 开球 | 对阵 | fair 3/1/0 | 位移pp | 研究 | Read | 阶梯 |",
-              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+              "| 场 | 开球 | 对阵 | fair 3/1/0 | 位移pp | 研究 | Read | 表态 | 阶梯 |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for m in brief["jczq"]["matches"]:
         read = m["read"] or {}
         drift = m["market"]["drift_pp"]
@@ -261,7 +273,8 @@ def render_brief_md(brief: dict) -> str:
             f"| {m['code']} | {(m['kickoff_bj'] or '')[11:16]} | {m['name']} | "
             f"{_fmt_fair(m['market']['fair'])} | {drift if drift is not None else '—'} | "
             f"{m['research']['status']} | "
-            f"{read.get('judge') or '—'}/{read.get('status') or '—'} | {m['ladder']} |"
+            f"{read.get('judge') or '—'}/{read.get('status') or '—'} | "
+            f"{_fmt_stance(m.get('stance'))} | {m['ladder']} |"
         )
     logic_lines = [f"- **{m['code']}** {m['logic']['text']}" for m in brief["jczq"]["matches"]
                    if isinstance(m.get("logic"), dict) and m["logic"].get("status") == "ok"]

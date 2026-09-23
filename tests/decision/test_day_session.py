@@ -22,6 +22,7 @@ def test_render_session_md_is_compact_and_starts_from_decisions():
                     "research": {"status": "done"},
                     "read": {"judge": "ai:jczq-analyst", "status": "draft", "moved_pp": 6.0},
                     "labels": {"judgment_tier": "deep_research"},
+                    "stance": {"faces": "31", "face": "3", "why_not_market": "none"},
                 }
             ],
             "counts": {"matches": 1, "deep_research": 1, "price_only": 0, "drafts": 1},
@@ -54,7 +55,8 @@ def test_render_session_md_is_compact_and_starts_from_decisions():
     md = render_session_md(brief, decisions, timeline)
     assert md.startswith("# 会话入口 · 2026-09-23")
     assert "## 待人决定（从这里开始）" in md and "read:周三001" in md and "19:30" in md
-    assert "brief ✓" in md and "周三001 A vs B · 偏移 · 6.0pp" in md
+    assert "brief ✓" in md and "周三001 A vs B · 押3·31 · 偏移 · 6.0pp" in md
+    assert "押3·31" in md
     assert "不重跑已完成作业" in md
     assert len(md) < 4000
 

@@ -39,7 +39,11 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path]:
         {"read_id": "read-1", "match_id": "match-a", "judge": "ai:jczq-analyst", "status": "draft",
          "judgment_tier": "deep_research", "confidence": 4,
          "prior": {"home": 0.52, "draw": 0.26, "away": 0.22},
-         "belief": {"home": 0.58, "draw": 0.24, "away": 0.18}},
+         "belief": {"home": 0.58, "draw": 0.24, "away": 0.18},
+         "stance": {"face": "3", "structure": "double", "cover": "1", "faces": "31",
+                    "why_not_market": "tilt_evidence", "tilt_applied_pp": 6,
+                    "tilt_zeroed": False, "tilt_reason": "拨 6pp 向 3", "falsifier": "…"},
+         "adjustment_evidence_tiers": ["official"]},
         {"read_id": "read-2", "match_id": "match-b", "judge": "market-anchor", "status": "draft",
          "judgment_tier": "price_only", "confidence": 1,
          "prior": {"home": 0.45, "draw": 0.28, "away": 0.27},
@@ -135,6 +139,16 @@ def test_render_and_write_brief(tmp_path: Path):
     assert "只解释已产生的判断" in md
     path = write_brief(data, "2026-09-23", brief)
     assert path.name == "brief.json" and (path.parent / "brief.md").exists()
+
+
+def test_card_carries_stance_and_md_shows_it(tmp_path: Path):
+    data, root = _fixture(tmp_path)
+    brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
+    a = brief["jczq"]["matches"][0]
+    assert a["stance"]["faces"] == "31" and a["stance"]["tilt_applied_pp"] == 6
+    assert a["read"]["tiers"] == ["official"]
+    md = render_brief_md(brief)
+    assert "押3·31" in md
 
 
 def test_cards_carry_audit_of_three_default_expressions(tmp_path: Path):

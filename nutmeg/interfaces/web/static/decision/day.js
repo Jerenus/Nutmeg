@@ -47,12 +47,14 @@ window.Day = (function () {
     [m.ladder, (m.labels || {}).judgment_tier, "研究 " + (m.research || {}).status,
      m.read ? (m.read.judge + "/" + m.read.status) : "无 Read"].forEach(function (t) { badges.appendChild(el("span", "day-badge", t)); });
     if (m.research && m.research.prospective === false) badges.appendChild(el("span", "day-badge alarm", "not_prospective"));
+    if (m.stance) badges.appendChild(el("span", "day-badge", "押 " + m.stance.face + " · " + m.stance.structure + "(" + m.stance.faces + ")"));
     c.appendChild(badges);
     var mk = m.market || {}, f = mk.fair || {};
     c.appendChild(el("p", null, "fair " + [f.home, f.draw, f.away].map(function (x) { return x == null ? "—" : Math.round(x * 100); }).join("/") +
       " · 位移 " + (mk.drift_pp == null ? "—" : mk.drift_pp + "pp") + " · 分歧 " + (mk.book_disagreement_pp == null ? "—" : mk.book_disagreement_pp + "pp") +
       " · 终盘 " + (mk.closing_books || "—") + " 书"));
     if (m.read) c.appendChild(el("p", null, "Read 拨动 " + m.read.moved_pp + "pp · conf " + (m.read.confidence == null ? "—" : m.read.confidence)));
+    if (m.stance && m.stance.tilt_reason) c.appendChild(el("p", "obs-muted", "拨动：" + m.stance.tilt_reason));
     if (m.logic && m.logic.status === "ok") c.appendChild(el("p", "day-logic", m.logic.text));
     else if (m.logic) c.appendChild(el("p", "obs-muted", "逻辑层 " + m.logic.status + (m.logic.reason ? "：" + m.logic.reason : "")));
     if (m.audit && !m.audit.error) ["naked", "double", "full"].forEach(function (k) {

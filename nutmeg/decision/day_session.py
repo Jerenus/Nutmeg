@@ -13,6 +13,12 @@ def _hm(iso: str | None) -> str:
     return (iso or "")[11:16] or "—"
 
 
+def _fmt_stance(stance: dict | None) -> str:
+    if not stance or not stance.get("face"):
+        return "未表态"
+    return f"押{stance['face']}·{stance.get('faces') or stance['face']}"
+
+
 def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) -> str:
     rule = "规则：不重跑已完成作业；先看失败；对话从待人决定开始；每轮末尾报最近截止与剩余分钟。"
     lines = [f"# 会话入口 · {brief['date']}", "", rule, "", "## 作业", ""]
@@ -37,7 +43,8 @@ def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) 
     for m in brief["jczq"]["matches"]:
         read = m.get("read") or {}
         lines.append(
-            f"- {m['code']} {m.get('name')} · {m.get('ladder')} · {read.get('moved_pp', 0)}pp · "
+            f"- {m['code']} {m.get('name')} · {_fmt_stance(m.get('stance'))} · "
+            f"{m.get('ladder')} · {read.get('moved_pp', 0)}pp · "
             f"{_hm(m.get('kickoff_bj'))} · 研究 {m['research']['status']} · "
             f"Read {read.get('judge') or '—'}/{read.get('status') or '—'}"
         )
