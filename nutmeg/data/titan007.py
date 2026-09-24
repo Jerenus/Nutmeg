@@ -42,11 +42,13 @@ __all__ = [
     "Titan007ParseError",
     "parse_board",
     "parse_euro_odds",
+    "parse_schedule",
 ]
 
 _BOARD_URL = "http://jc.titan007.com/xml/bf_jc.txt"
 _BOARD_HISTORY_URL_TEMPLATE = "http://jc.titan007.com/handle/JcResult.aspx?d={run_date}"
 _EURO_URL_TEMPLATE = "http://1x2d.titan007.com/{match_id}.js"
+_SCHEDULE_URL_TEMPLATE = "http://bf.titan007.com/football/Next_{yyyymmdd}.htm"
 _BOARD_REFERER = "http://jc.titan007.com/"
 _EURO_REFERER = "http://odds.titan007.com/"
 _USER_AGENT = (
@@ -211,6 +213,58 @@ def parse_board(text: str, *, allow_empty: bool = False) -> list[Titan007BoardRo
     return rows
 
 
+_SCHEDULE_ROW = re.compile(r"<tr [^>]*sId='(\d+)'[^>]*>(.*?)</tr>", re.S)
+_SCHEDULE_CELL = re.compile(r"<td[^>]*>(.*?)</td>", re.S)
+_SCHEDULE_KICKOFF = re.compile(r"(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})")
+
+
+def _schedule_text(cell: str) -> str:
+    """去标签、去排名 ``[15]`` / ``[中超8]``、去 ``&nbsp;``。"""
+    text = re.sub(r"<[^>]+>", "", cell)
+    text = re.sub(r"\[[^\]]*\]", "", text)
+    return text.replace("&nbsp;", "").strip()
+
+
+def parse_schedule(text: str, *, page_date: str) -> list[Titan007BoardRow]:
+    """解 ``Next_YYYYMMDD.htm`` → 当天**全部**赛程行（不只竞彩在售）。
+
+    足彩一期跨三天、还含竞彩不卖的联赛；竞彩板 ``bf_jc.txt`` 只有在售场，足彩借它
+    对齐时周五场/冷门联赛整场拿不到国际盘（2026-09-24 26132 8/14 缺席）。这页每行带
+    titan007 ``sId``，欧赔端点按 id 查，与竞彩号无关。
+
+    行格式（实测）：``<tr ... sId='2981429'>``，单元格 0 联赛 / 1 ``9-26 02:45``（北京，
+    无年份）/ 3 主队（带 ``[排名]``）/ 5 客队。页日期之后的凌晨场也挂在本页。
+    ``match_no`` 置空——不是竞彩场。没有赛程表 → raise（降级页不许当作无赛）。
+    """
+    if "table_live" not in (text or ""):
+        raise Titan007ParseError("titan007 赛程页无 table_live——疑似 WAF/错误页，拒绝当作无赛")
+    base = datetime.fromisoformat(page_date)
+    rows: list[Titan007BoardRow] = []
+    for match in _SCHEDULE_ROW.finditer(text):
+        cells = [_schedule_text(c) for c in _SCHEDULE_CELL.findall(match.group(2))]
+        if len(cells) < 6:
+            continue
+        when = _SCHEDULE_KICKOFF.search(cells[1])
+        if when is None or not cells[3] or not cells[5]:
+            continue
+        month, day, hour, minute = (int(g) for g in when.groups())
+        year = base.year + (1 if month < base.month - 6 else -1 if month > base.month + 6 else 0)
+        try:
+            kickoff = datetime(year, month, day, hour, minute)
+        except ValueError:
+            continue
+        rows.append(
+            Titan007BoardRow(
+                match_id=match.group(1),
+                match_no="",
+                kickoff=kickoff,
+                home_names=(cells[3],),
+                away_names=(cells[5],),
+            )
+        )
+    return rows
+
+
 _OUTCOME_KEYS = ("home", "draw", "away")
 
 
@@ -358,6 +412,11 @@ class Titan007Client:
             self._get_text(url, referer=_BOARD_REFERER),
             allow_empty=run_date is not None,
         )
+
+    def fetch_schedule(self, day: str) -> list[Titan007BoardRow]:
+        """某日全部赛程（``YYYY-MM-DD``），行带 titan007 id、无竞彩号。"""
+        url = _SCHEDULE_URL_TEMPLATE.format(yyyymmdd=day.replace("-", ""))
+        return parse_schedule(self._get_text(url, referer=_BOARD_REFERER), page_date=day)
 
     def fetch_euro_odds(self, match_id: str) -> list[Titan007BookQuote]:
         """某场各家国际欧赔（初赔 + 即时赔）。"""

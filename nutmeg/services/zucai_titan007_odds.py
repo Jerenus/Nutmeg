@@ -23,8 +23,9 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable, Iterable
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from nutmeg.data.titan007 import Titan007BoardRow, Titan007BookQuote
 
@@ -55,6 +56,51 @@ def _name_hit(needle: str, names: Iterable[str]) -> bool:
     return False
 
 
+def _in_order(short: str, long: str) -> bool:
+    """``吉国民`` ⊂ ``吉达国民``：短名每个字按序出现在长名里（足彩缩写的常见形）。"""
+    it = iter(long)
+    return all(ch in it for ch in short)
+
+
+_YOUTH = re.compile(r"U\d{2}|女|后备|青年|预备")
+
+
+def _hit_strength(needle: str, names: Iterable[str]) -> int:
+    """2=强（双向子串 / ≥3 字按序），1=弱（2 字按序），0=不中。"""
+    if _name_hit(needle, names):
+        return 2
+    target = _norm(needle)
+    best = 0
+    for name in names or ():
+        other = _norm(name)
+        short, long = sorted((target, other), key=len)
+        if len(short) >= 2 and _in_order(short, long):
+            best = max(best, 2 if len(short) >= 3 else 1)
+    return best
+
+
+def _schedule_candidates(match: dict, rows: list[Titan007BoardRow]) -> list[Titan007BoardRow]:
+    """赛程页行（整天全部赛事，无竞彩号）的认场规则。
+
+    - 青年/女足行先剔除（除非足彩名本身就是）——同刻的「意大利U21」不许顶包「意大利」。
+    - 任一边强命中即入围；两边都只弱命中也入围（``萨堡``→``萨普斯堡`` 这种两字缩写
+      单独太松）。译名常只差一边：赫塔费/赫塔菲、托林斯/杜连斯。
+    - 多个入围 → 只留两边都中的；仍不唯一由调用方丢场。
+    """
+    home, away = match.get("home_team") or "", match.get("away_team") or ""
+    youth_ok = bool(_YOUTH.search(home + away))
+    scored = []
+    for row in rows:
+        if not youth_ok and any(_YOUTH.search(n) for n in row.home_names + row.away_names):
+            continue
+        h, a = _hit_strength(home, row.home_names), _hit_strength(away, row.away_names)
+        if h == 2 or a == 2 or (h and a):
+            scored.append((row, bool(h and a)))
+    if len(scored) > 1:
+        scored = [pair for pair in scored if pair[1]]
+    return [row for row, _both in scored]
+
+
 def align_zucai_to_titan007(
     matches: list[dict], board: list[Titan007BoardRow]
 ) -> dict[int, Titan007BoardRow]:
@@ -79,11 +125,17 @@ def align_zucai_to_titan007(
         # ⛔队名校验对**任意候选数**都必须执行。曾经只在 len>1 时校验,导致
         # 2026-09-15 实测 26124 场13「阿罗卡-圣克拉」(当日不在竞彩板面)被同为
         # 01:00 开球的「本菲卡-吉维森特」静默顶包——26111 身份错配同类死法。
-        candidates = [
+        board_rows = [
             row for row in candidates
-            if _name_hit(match.get("home_team"), row.home_names)
-            or _name_hit(match.get("away_team"), row.away_names)
+            if row.match_no and (
+                _name_hit(match.get("home_team"), row.home_names)
+                or _name_hit(match.get("away_team"), row.away_names)
+            )
         ]
+        # 竞彩板行（有竞彩号）优先；只有板上没有时才看整日赛程页。
+        candidates = board_rows or _schedule_candidates(
+            match, [row for row in candidates if not row.match_no]
+        )
         if len(candidates) != 1:
             logger.info(
                 "zucai-titan007 skip 场%s (%s vs %s @ %s): 候选 %d 个——非唯一即丢",
@@ -95,12 +147,46 @@ def align_zucai_to_titan007(
     return out
 
 
+def _schedule_rows(
+    matches: list[dict],
+    fetcher: Callable[[str], Iterable[Titan007BoardRow]],
+    *,
+    known: set[str],
+) -> list[Titan007BoardRow]:
+    """足彩各场开球日 + 前一天的整日赛程页（凌晨场挂在前一天页上），按 id 去重。
+
+    竞彩板上已有的 id 不再加：同一场两行会让对齐判成多解而丢场。
+    """
+    days: set[str] = set()
+    for match in matches:
+        try:
+            kickoff = datetime.fromisoformat(_norm(str(match.get("kickoff_bj") or "")))
+        except ValueError:
+            continue
+        days.add(kickoff.date().isoformat())
+        days.add((kickoff.date() - timedelta(days=1)).isoformat())
+    out: list[Titan007BoardRow] = []
+    seen = set(known)
+    for day in sorted(days):
+        try:
+            rows = list(fetcher(day))
+        except Exception:  # noqa: BLE001 — 单日失败只少这一天
+            logger.warning("zucai-titan007: 赛程页 %s 抓取失败", day, exc_info=True)
+            continue
+        for row in rows:
+            if row.match_id not in seen:
+                seen.add(row.match_id)
+                out.append(row)
+    return out
+
+
 def collect_zucai_euro_titan007(
     issue_doc: dict,
     *,
     board_fetcher: Callable[[], Iterable[Titan007BoardRow]],
     odds_fetcher: Callable[[str], Iterable[Titan007BookQuote]],
     books=None,
+    schedule_fetcher: Callable[[str], Iterable[Titan007BoardRow]] | None = None,
 ) -> dict[int, dict]:
     """``{足彩场号: {fair, odds, opening_odds, micro, books, 对齐来源}}``。
 
@@ -118,7 +204,13 @@ def collect_zucai_euro_titan007(
     try:
         board = list(board_fetcher())
     except Exception:  # noqa: BLE001 — 降级，从不崩
-        logger.warning("zucai-titan007: 板面抓取失败，本轮无国际欧赔", exc_info=True)
+        logger.warning("zucai-titan007: 竞彩板面抓取失败", exc_info=True)
+        board = []
+    if schedule_fetcher is not None:
+        board.extend(_schedule_rows(matches, schedule_fetcher,
+                                    known={row.match_id for row in board}))
+    if not board:
+        logger.warning("zucai-titan007: 板面与赛程页都拿不到，本轮无国际欧赔")
         return {}
 
     aligned = align_zucai_to_titan007(matches, board)
@@ -143,8 +235,9 @@ def collect_zucai_euro_titan007(
             "opening_odds": dict(market.opening_odds),
             "books": market.bookmaker_count,
             "micro": market_microstructure(market),
-            "jczq_match_no": row.match_no,
+            "jczq_match_no": row.match_no or None,
             "titan007_match_id": row.match_id,
+            "align_source": "jc_board" if row.match_no else "schedule",
         }
     return out
 
@@ -160,6 +253,7 @@ def collect_zucai_euro_titan007_live(issue_doc: dict, *, books=None) -> dict[int
             board_fetcher=client.fetch_board,
             odds_fetcher=client.fetch_euro_odds,
             books=books,
+            schedule_fetcher=client.fetch_schedule,
         )
     finally:
         client.close()

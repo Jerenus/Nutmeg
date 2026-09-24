@@ -214,3 +214,61 @@ def test_historical_board_may_legitimately_be_empty():
         assert client.fetch_board(run_date="2026-12-31") == []
         with pytest.raises(Titan007ParseError):
             client.fetch_board()
+
+
+def test_parse_schedule_reads_every_fixture_of_the_day_with_its_titan_id():
+    from nutmeg.data.titan007 import parse_schedule
+
+    text = (FIXTURES / "next_20260925.htm").read_text(encoding="utf-8")
+    rows = parse_schedule(text, page_date="2026-09-25")
+
+    by_id = {row.match_id: row for row in rows}
+    italy = by_id["2981429"]
+    assert italy.match_no == ""                       # 不在竞彩板上：没有竞彩号
+    assert italy.kickoff == datetime(2026, 9, 26, 2, 45)   # 页日期跨夜
+    assert italy.home_names == ("意大利",) and italy.away_names == ("比利时",)
+    assert by_id["2981479"].away_names == ("波黑",)
+    assert len(rows) == 4
+
+
+def test_parse_schedule_rolls_the_year_over_at_new_year():
+    from nutmeg.data.titan007 import parse_schedule
+
+    row = (
+        "<table id='table_live'><tr sId='1'><td>英超</td><td>1-1 02:00</td><td></td>"
+        "<td>阿森纳</td><td>-</td><td>切尔西</td></tr></table>"
+    )
+    assert parse_schedule(row, page_date="2026-12-31")[0].kickoff == datetime(2027, 1, 1, 2, 0)
+
+
+def test_parse_schedule_strips_league_rank_tags_from_team_names():
+    from nutmeg.data.titan007 import parse_schedule
+
+    row = (
+        "<table id='table_live'><tr sId='3069059'><td>亚冠二</td><td>9-17 20:15</td><td></td>"
+        "<td><span><font>[中超8]</font></span>上海申花</td><td>-</td>"
+        "<td>淡滨尼流浪者<span><font>[新加坡联4]</font></span></td></tr></table>"
+    )
+    parsed = parse_schedule(row, page_date="2026-09-17")[0]
+    assert (parsed.home_names, parsed.away_names) == (("上海申花",), ("淡滨尼流浪者",))
+
+
+def test_parse_schedule_rejects_a_page_without_the_fixture_table():
+    from nutmeg.data.titan007 import parse_schedule
+
+    with pytest.raises(Titan007ParseError):
+        parse_schedule("<html>访问受限</html>", page_date="2026-09-25")
+
+
+def test_client_fetches_the_schedule_page_by_date():
+    seen: dict[str, str] = {}
+    body = (FIXTURES / "next_20260925.htm").read_text(encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, content=body.encode("gb18030"))
+
+    with _client_with(handler) as client:
+        rows = client.fetch_schedule("2026-09-25")
+    assert seen["url"].endswith("/football/Next_20260925.htm")
+    assert {row.match_id for row in rows} >= {"2981429", "2981479"}
