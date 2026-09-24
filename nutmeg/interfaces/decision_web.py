@@ -6,6 +6,7 @@ ingest_reads/compose_tickets 的既有校验,零旁门。仿 client_web.py 模�
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -77,7 +78,7 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
     # 硬刷新才出来。没有版本号的 <script src> 等于让用户替我们清缓存。
     _assets = [
         web_root / "static" / "decision" / name
-        for name in ("app.js", "observe.js", "observe.css", "day.js")
+        for name in ("app.js", "observe.js", "observe.css", "day.js", "runs.js", "runs.css")
     ]
     _mtimes = [asset.stat().st_mtime for asset in _assets if asset.exists()]
     templates.env.globals["asset_v"] = str(int(max(_mtimes))) if _mtimes else "0"
@@ -417,6 +418,55 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
                           text=text, obj=str(payload.get("obj") or ""),
                           at=datetime.now().astimezone().isoformat(timespec="seconds"))
         return {"ok": True, "seq": len(read_discussion(app.state.data_dir, date))}
+
+    # ── 作业进度页：每天一页，定时作业的计划 vs 实到 + 当日产物（只读零写）──────
+    import re as _re
+
+    from fastapi import HTTPException
+
+    from nutmeg.decision.day_runs import day_runs
+
+    app.state.runs_plists = Path(__file__).resolve().parents[2] / "ops" / "launchd"
+    _PREVIEW_SUFFIXES = {".md", ".json", ".txt", ".log", ".jsonl"}
+
+    def _check_date(date: str) -> str:
+        if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            raise HTTPException(status_code=404, detail="日期格式应为 YYYY-MM-DD")
+        return date
+
+    @app.get("/runs")
+    def runs_root(request: Request):
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(url=f"/runs/{_today()}{query}", status_code=307)
+
+    @app.get("/runs/{date}")
+    def runs_page(request: Request, date: str):
+        return templates.TemplateResponse(request, "decision/runs.html",
+                                          {"title": f"作业进度 {_check_date(date)}",
+                                           "date": date})
+
+    @app.get("/api/runs/{date}")
+    def runs_api(date: str) -> dict:
+        return day_runs(data_dir=app.state.data_dir, plists_dir=app.state.runs_plists,
+                        day=_check_date(date), now=datetime.now())
+
+    @app.get("/api/runs-file")
+    def runs_file(path: str) -> dict:
+        """产物预览：只读数据根下的文本产物，不许跳出去。"""
+        root = app.state.data_dir.resolve()
+        target = (root / path).resolve()
+        if root not in target.parents or target.suffix not in _PREVIEW_SUFFIXES:
+            raise HTTPException(status_code=403, detail="只能预览数据目录里的文本产物")
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="文件不存在")
+        raw = target.read_text(encoding="utf-8", errors="replace")
+        if target.suffix == ".json":
+            try:
+                raw = json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
+            except ValueError:
+                pass
+        limit = 60_000
+        return {"path": path, "text": raw[:limit], "truncated": len(raw) > limit}
 
     # ── 历史三页（P5 设计 §10）：规则变更 / 因子提案史 / 昨日追溯，只读零写 ──
     _root = Path(__file__).resolve().parents[2]

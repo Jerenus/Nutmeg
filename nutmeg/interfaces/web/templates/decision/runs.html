@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }} · Nutmeg</title>
+<link rel="stylesheet" href="/static/decision/app.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/runs.css?v={{ asset_v }}">
+</head><body class="rn-shell">
+<header class="rn-top">
+  <a class="rn-brand" href="/runs">作业进度</a>
+  <nav class="rn-links" aria-label="其它页面">
+    <a href="/day/{{ date }}">当日</a><a href="/observe">观察台</a><a href="/">工作台</a>
+  </nav>
+</header>
+
+<main class="rn" id="runs" data-date="{{ date }}">
+  <section class="rn-head">
+    <div class="rn-date">
+      <h1 id="rn-title">{{ date }}</h1>
+      <span id="rn-weekday"></span>
+    </div>
+    <p class="rn-summary" id="rn-summary">正在读取当天的作业记录。</p>
+  </section>
+
+  <nav class="rn-days" aria-label="选择日期">
+    <a class="rn-step" id="rn-prev" aria-label="前一天">‹</a>
+    <div class="rn-day-strip" id="rn-days"></div>
+    <a class="rn-step" id="rn-next" aria-label="后一天">›</a>
+    <label class="rn-pick"><span class="sr-only">跳到日期</span>
+      <input type="date" id="rn-date-input"></label>
+  </nav>
+
+  <div class="rn-filters" role="group" aria-label="筛选">
+    <div class="rn-filter" data-filter="lane"><span class="rn-filter-name">泳道</span></div>
+    <div class="rn-filter" data-filter="status"><span class="rn-filter-name">状态</span></div>
+  </div>
+
+  <section class="rn-chart" aria-label="全天运行图">
+    <div class="rn-chart-scroll"><div class="rn-grid" id="rn-grid"></div></div>
+    <p class="rn-legend" id="rn-legend"></p>
+  </section>
+
+  <section class="rn-section">
+    <h2>运行清单</h2>
+    <ol class="rn-list" id="rn-list"></ol>
+    <p class="rn-empty" id="rn-list-empty" hidden>筛选后没有符合条件的运行。换一个状态或泳道试试。</p>
+  </section>
+
+  <section class="rn-section">
+    <h2>当日成果</h2>
+    <div class="rn-out" id="rn-out"></div>
+  </section>
+
+  <p class="rn-errors" id="rn-errors" hidden></p>
+</main>
+
+<dialog class="rn-preview" id="rn-preview">
+  <header><code id="rn-preview-path"></code>
+    <button type="button" class="rn-close" id="rn-preview-close">关闭</button></header>
+  <pre id="rn-preview-text"></pre>
+</dialog>
+
+<script src="/static/decision/runs.js?v={{ asset_v }}"></script>
+<script>Runs.mount(document.getElementById("runs"));</script>
+</body></html>
