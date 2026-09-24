@@ -37,6 +37,14 @@ def zucai_snapshots(matches, odds: dict, *, issue: str, dates: dict,
     return snaps
 
 
+def _is_intl_odds(path) -> bool:
+    """`-odds-intl.json` 是 titan007 国际盘（2026-09-22 起由 decision-fetch-zucai-intl 落盘），
+    结构是 fair 不是 500.com 三赔率；它常与 `-odds.json` 同一分钟落盘甚至更新，
+    按 mtime 取「最新槽」会把它当成体彩赔率 → 14 场全 no_odds、内核 0 快照、store-ids 全空
+    （2026-09-24 26132 实发；26127 起每期身份未对上疑同因）。"""
+    return "-odds-intl" in path.name
+
+
 def _default_loader(issue: str, output_dir):
     """从已存 zucai 快照读 (matches, odds, dates)。replay 优先,不打网。
 
@@ -77,7 +85,7 @@ def _default_loader(issue: str, output_dir):
         if no is not None and date:
             dates[no] = str(date)
 
-    odds_files = list(base.glob(f"{issue}-odds*.json"))
+    odds_files = [p for p in base.glob(f"{issue}-odds*.json") if not _is_intl_odds(p)]
     if not odds_files:
         raise FileNotFoundError(f"zucai odds 快照缺失: {base}/{issue}-odds*.json")
     latest = max(odds_files, key=lambda p: p.stat().st_mtime)

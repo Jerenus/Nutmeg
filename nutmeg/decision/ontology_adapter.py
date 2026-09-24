@@ -114,8 +114,10 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
         artifact_ingest=kernel.artifact_ingest,
         snapshot_probe=_snapshot_probe,
     )
+    from nutmeg.decision.sense_zucai import _is_intl_odds
+
     odds_path = max(
-        Path(zucai_dir).glob(f"{issue}-odds*.json"),
+        (p for p in Path(zucai_dir).glob(f"{issue}-odds*.json") if not _is_intl_odds(p)),
         key=lambda path: path.stat().st_mtime,
     )
     odds_value = json.loads(odds_path.read_text(encoding="utf-8"))

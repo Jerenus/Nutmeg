@@ -131,6 +131,28 @@ def test_default_loader_picks_latest_odds_slot(tmp_path):
     assert odds[1] == {"home": 1.5, "draw": 4.0, "away": 6.0}   # 取最新槽
 
 
+def test_default_loader_ignores_newer_intl_odds_file(tmp_path):
+    """2026-09-24 26132：titan007 国际盘 `-odds-intl.json`（fair 结构）比体彩 `-odds.json` 新，
+    按 mtime 取「最新槽」把它当成赔率 → 14 场 no_odds、内核 0 快照、store-ids 全空。"""
+    import json as _json
+    import os
+
+    from nutmeg.decision.sense_zucai import _default_loader
+
+    (tmp_path / "26132-issue.json").write_text(_json.dumps({"matches": [
+        {"match_no": 1, "competition": "友谊赛", "home_team": "中国", "away_team": "马尔代",
+         "match_date": "2026-09-24"}]}), encoding="utf-8")
+    real = tmp_path / "26132-odds.json"
+    _write_odds(real, [{"match_no": 1, "home": 1.07, "draw": 21.0, "away": 57.5}])
+    intl = tmp_path / "26132-odds-intl.json"
+    intl.write_text(_json.dumps({"issue_id": "26132", "matches": [
+        {"match_no": 1, "fair": {"home": 0.93, "draw": 0.05, "away": 0.02}}]}), encoding="utf-8")
+    os.utime(real, (1, 1))          # 体彩盘更旧
+    os.utime(intl, (2_000_000_000, 2_000_000_000))   # 国际盘更新
+    _, odds, _ = _default_loader("26132", tmp_path)
+    assert odds[1] == {"home": 1.07, "draw": 21.0, "away": 57.5}
+
+
 def test_default_loader_missing_files_raise(tmp_path):
     from nutmeg.decision.sense_zucai import _default_loader
 
