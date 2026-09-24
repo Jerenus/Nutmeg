@@ -479,6 +479,7 @@ def sweep(
         "skipped_fulfilled": 0,
         "skipped_pending": 0,
         "skipped_not_ready": 0,
+        "skipped_manual": 0,
         "expired": 0,
         "failed": 0,
     }
@@ -497,6 +498,10 @@ def sweep(
             duty.instrument and duty.instrument[0] == "TODO"
         ):
             counts["skipped_pending"] += len(open_rows)
+            continue
+        if duty.status == "manual":
+            # 人做的动作（F4=plan commit）：只排不跑，履行走该命令自己的钩子。
+            counts["skipped_manual"] += len(open_rows)
             continue
 
         expired = [row for row in open_rows if row.due_at <= now_iso]

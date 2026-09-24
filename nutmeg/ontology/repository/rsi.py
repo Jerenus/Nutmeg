@@ -243,6 +243,22 @@ class RsiRepository:
     def insert_duty_instance(self, row: DutyInstanceRow) -> None:
         self._c.execute(insert(sr.rsi_duty_instances).values(**asdict(row)))
 
+    def bind_duty_instance_issue(
+        self, duty_id: str, day: str, match_id: str, *, issue: str, due_at: str
+    ) -> None:
+        t = sr.rsi_duty_instances
+        self._c.execute(
+            t.update()
+            .where(
+                t.c.duty_id == duty_id,
+                t.c.day == day,
+                t.c.match_id == match_id,
+                t.c.issue.is_(None),
+                t.c.fulfilled_at.is_(None),
+            )
+            .values(issue=issue, due_at=due_at)
+        )
+
     def delete_unfulfilled_duty_instances_except(
         self, duty_id: str, day: str, match_ids: set[str]
     ) -> int:

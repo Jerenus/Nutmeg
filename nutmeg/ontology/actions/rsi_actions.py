@@ -279,7 +279,15 @@ class RsiActions:
                     {match_id for match_id, _ in targets},
                 )
                 for match_id, due_at in targets:
-                    if uow.rsi.duty_instance(duty.duty_id, request.day, match_id) is not None:
+                    existing = uow.rsi.duty_instance(duty.duty_id, request.day, match_id)
+                    if existing is not None:
+                        # 同日先按竞彩排（issue=None）再按足彩期排：日级行已被竞彩那次占住，
+                        # 这里把期号和该期的截止补上（2026-09-24 F4 整天 issue=NULL）。
+                        if (duty.scope == "day" and request.issue and existing.issue is None
+                                and existing.fulfilled_at is None):
+                            uow.rsi.bind_duty_instance_issue(
+                                duty.duty_id, request.day, match_id,
+                                issue=request.issue, due_at=due_at)
                         continue                       # 已排过：幂等
                     uow.rsi.insert_duty_instance(DutyInstanceRow(
                         duty_id=duty.duty_id, day=request.day, match_id=match_id,

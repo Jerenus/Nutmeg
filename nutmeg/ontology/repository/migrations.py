@@ -4660,6 +4660,16 @@ def _apply_rsi_observation_supersession(connection: Connection) -> None:
         )
 
 
+def _apply_rsi_manual_capital_plan(connection: Connection) -> None:
+    """F4 的仪器是 ``plan commit``：定案是人做的，sweep 不得代跑。
+
+    实例照排（漏一天仍记 gap），履行只走 plan commit 自带的 after_capital_plan 钩子。
+    """
+    connection.exec_driver_sql(
+        "UPDATE rsi_duties SET status='manual' WHERE duty_id='F4:capital-plan'"
+    )
+
+
 _CAPITAL_PERMISSIONS = (("zucai_commit_capital_plan", "judge_operator"),)
 
 
@@ -5541,6 +5551,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="rsi_observation_supersession",
         fingerprint="additive_superseded_by+existing_rows_stay_active",
         apply=_apply_rsi_observation_supersession,
+    ),
+    Migration(
+        version=46,
+        name="rsi_manual_capital_plan",
+        fingerprint="f4_capital_plan_manual+sweep_never_runs_plan_commit",
+        apply=_apply_rsi_manual_capital_plan,
     ),
 )
 

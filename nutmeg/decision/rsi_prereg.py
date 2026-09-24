@@ -16,7 +16,7 @@ _REQUIRED = ("exp_id", "claim", "mechanism", "tier", "layer", "population", "min
 _DUTY_REQUIRED = ("name", "scope", "deadline_rule", "instrument", "artifact_glob")
 _DEADLINE_RULES = ("earliest_kickoff", "match_kickoff")
 _SCOPES = ("day", "match")
-_DUTY_STATUSES = ("active", "pending_instrument")
+_DUTY_STATUSES = ("active", "pending_instrument", "manual")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 

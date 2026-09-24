@@ -120,6 +120,35 @@ def test_schedule_creates_one_instance_per_day_duty_and_is_idempotent(tmp_path):
             ("F2:f2-observation", "26129", "2026-09-19T00:30:00+08:00")]
 
 
+def test_issue_schedule_binds_the_day_row_left_issueless_by_the_jczq_schedule(tmp_path):
+    # 2026-09-24：同日先按竞彩排（issue=None、截止=竞彩最早开球 18:05）再按 26132 排，
+    # 第二次看到行已存在就跳过 → F4 整天 issue=NULL，sweep 报「当天没有足彩期」。
+    actions, engine = _registered(tmp_path)
+    actions.schedule_duties(ScheduleDutiesRequest(
+        day="2026-09-19", earliest_kickoff="2026-09-19T18:05:00+08:00", issue=None,
+        idempotency_key="sch:jczq", requested_at=T0))
+    actions.schedule_duties(ScheduleDutiesRequest(
+        day="2026-09-19", earliest_kickoff="2026-09-19T19:35:00+08:00", issue="26129",
+        idempotency_key="sch:26129", requested_at=T0))
+    with OntologyUnitOfWork(engine) as uow:
+        row = uow.rsi.duty_instance("F2:f2-observation", "2026-09-19")
+        assert (row.issue, row.due_at) == ("26129", "2026-09-19T19:35:00+08:00")
+
+
+def test_schedule_keeps_manual_duties_scheduled(tmp_path):
+    actions, engine = _rig(tmp_path)
+    doc = {**F2_DOC, "exp_id": "F4",
+           "duties": [{**F2_DOC["duties"][0], "name": "capital-plan", "status": "manual"}]}
+    actions.register_experiment(RegisterExperimentRequest(
+        doc=doc, idempotency_key="reg:F4", requested_at=T0, **HUMAN))
+    actions.schedule_duties(ScheduleDutiesRequest(
+        day="2026-09-19", earliest_kickoff="2026-09-19T00:30:00+08:00", issue="26129",
+        idempotency_key="sch:F4", requested_at=T0))
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.rsi.duty_instance("F4:capital-plan", "2026-09-19") is not None
+        assert uow.rsi.duties("F4")[0].status == "manual"
+
+
 def test_schedule_skips_pending_instrument_duties(tmp_path):
     actions, engine = _rig(tmp_path)
     doc = {

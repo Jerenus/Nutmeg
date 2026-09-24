@@ -149,3 +149,29 @@ def test_v45_adds_observation_supersession_and_leaves_existing_rows_active(tmp_p
         row = uow.rsi.observation("R0:2026-09-20:m")
         assert row.superseded_by is None
         assert uow.rsi.count_observations("R0") == 1
+
+
+def test_v46_marks_f4_capital_plan_manual(tmp_path: Path):
+    engine = build_ontology_engine(tmp_path / "ontology.db")
+    run_migrations(engine, MIGRATIONS[:45])
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO rsi_experiments "
+            "(exp_id,claim,mechanism,tier,layer,population,min_tier,window_json,"
+            "falsifier_json,stop_rule,quota_slot,buckets_json,rule_ids_json,source_doc,"
+            "registered_at,frozen_hash,created_at) VALUES "
+            "('F4','c','m','candidate','structural','zucai','price_only','{}','{}','s',"
+            "0,'[]','[]','x','2026-09-18','h','2026-09-18')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO rsi_duties "
+            "(duty_id,exp_id,recurrence,scope,deadline_rule,instrument_json,artifact_glob,"
+            "description,status) VALUES "
+            "('F4:capital-plan','F4','per_day','day','earliest_kickoff',"
+            "'[\"uv\",\"run\",\"nutmeg\",\"plan\",\"commit\",\"--issue\",\"{issue}\"]',"
+            "'x','x','active')"
+        )
+    report = run_migrations(engine, MIGRATIONS[:46])
+    assert report.applied_versions == (46,)
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.rsi.duties("F4")[0].status == "manual"

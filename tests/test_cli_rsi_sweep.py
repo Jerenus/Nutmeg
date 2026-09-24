@@ -247,6 +247,37 @@ def test_sweep_skips_pending_instrument(tmp_path: Path):
     assert "ran=0" in result.output and "skipped_pending=1" in result.output
 
 
+def test_sweep_does_not_run_manual_duty(tmp_path: Path):
+    # F4 的仪器是 `plan commit`：定案是人做的，sweep 不得代跑；履行走 plan commit 的钩子。
+    data_dir, day, runner = _prepare_duty(
+        tmp_path, instrument=["uv", "run", "false", "--issue", "{issue}"]
+    )
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        connection.execute(
+            "UPDATE rsi_duties SET status='manual' WHERE duty_id='S1:sample'"
+        )
+
+    result = runner.invoke(
+        app,
+        [
+            "rsi",
+            "sweep",
+            "--day",
+            day,
+            "--issue",
+            "99199",
+            "--now",
+            "2099-09-19T12:00:00+08:00",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "ran=0" in result.output and "skipped_manual=1" in result.output
+    assert "failed=0" in result.output
+
+
 def test_sweep_defaults_to_business_day(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         rsi_cli,
