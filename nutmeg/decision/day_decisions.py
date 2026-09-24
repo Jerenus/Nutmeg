@@ -65,11 +65,15 @@ def build_decisions(
         })
     z = brief.get("zucai") or {}
     if z.get("issue") and z.get("tiers") and z.get("plan") is None:
+        # 实票已登记（betslip register）＝这期已经定了，不再播报「未定则空仓」
+        from nutmeg.decision.betslip import load_slips
+
+        purchased = bool(load_slips(Path(data_dir), issue=str(z["issue"])))
         rows.append({
             "id": f"plan:{z['issue']}", "kind": "plan_choose_commit",
             "subject": f"{z['issue']} 在前沿上选点并定案（plan choose → commit）",
             "deadline": z.get("sale_deadline"), "default_action": DEFAULT_EMPTY,
-            "status": _status(z.get("sale_deadline"), False, now), "source": "zucai",
+            "status": _status(z.get("sale_deadline"), purchased, now), "source": "zucai",
         })
     rsi = brief.get("rsi") or {}
     for i, action in enumerate(rsi.get("human_actions") or []):

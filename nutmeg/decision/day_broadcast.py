@@ -7,12 +7,13 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from nutmeg.decision.day_paths import BROADCASTS, day_dir
 
 Sender = Callable[[str], None]
+_BJ = timezone(timedelta(hours=8))
 WINDOWS = (("T30", 30, 10), ("T10", 10, 0))
 """(标签, 上界含, 下界不含)：剩余分钟 ∈ (下界, 上界] 触发。"""
 
@@ -34,6 +35,10 @@ def due_broadcasts(decisions: list[dict], *, now: datetime, sent: set[str]) -> l
             deadline = datetime.fromisoformat(d["deadline"])
         except ValueError:
             continue
+        if deadline.tzinfo is None:
+            # 足彩 sale_deadline 是「2026-09-24 19:05」这种无时区的北京时间（2026-09-24 实发：
+            # 与带时区的 now 相减抛 TypeError，整个广播作业退出 1，截止播报差点不发）
+            deadline = deadline.replace(tzinfo=_BJ)
         left = int((deadline - now).total_seconds() // 60)
         for label, hi, lo in WINDOWS:
             key = f"{d['id']}@{label}"

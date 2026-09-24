@@ -70,3 +70,16 @@ def test_same_deadline_decisions_are_sent_as_one_message(tmp_path: Path):
     assert len(sent) == 1 and "A vs B" in sent[0] and "C vs D" in sent[0]
     assert report["sent"] == ["read:a@T30", "read:b@T30"]
     assert read_sent(tmp_path, "2026-09-22") == {"read:a@T30", "read:b@T30"}
+
+
+def test_naive_zucai_deadline_is_read_as_beijing_time():
+    """2026-09-24：plan:26132 的 deadline 无时区，曾让广播作业 TypeError。"""
+    from datetime import datetime, timedelta, timezone
+
+    from nutmeg.decision.day_broadcast import due_broadcasts
+
+    bj = timezone(timedelta(hours=8))
+    d = {"id": "plan:26132", "status": "open", "deadline": "2026-09-24 19:05",
+         "subject": "26132", "default_action": "空仓"}
+    due = due_broadcasts([d], now=datetime(2026, 9, 24, 18, 40, tzinfo=bj), sent=set())
+    assert [b.window for b in due] == ["T30"] and due[0].minutes_left == 25
