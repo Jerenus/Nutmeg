@@ -822,21 +822,55 @@ def balance(
 
 
 @rsi_app.command("price-band")
-def price_band(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
-    """Write one mechanical opening-to-current price observation per JCZQ match."""
-    from nutmeg.decision.price_band import write_price_band_artifacts
+def price_band(
+    day: str = _DAY, issue: str | None = _ISSUE, data_dir: Path = _DATA_DIR
+) -> None:
+    """Write one mechanical opening-to-current price observation per match (JCZQ + 足彩)."""
+    from nutmeg.decision.price_band import (
+        write_price_band_artifacts,
+        write_zucai_price_band_artifacts,
+    )
 
     k = _kernel(data_dir)
     captured = _now()
+    if issue is None:
+        # sweep 只渲染 --day：足彩期号从当天已排的 F5 实例里取（schedule --issue 写进去的）
+        with OntologyUnitOfWork(k.engine) as uow:
+            rows = uow.rsi.duty_instances_for_day("F5:price-band-observation", day)
+        issues = sorted({row.issue for row in rows if row.issue})
+    else:
+        issues = [issue]
+    lines: list[str] = []
     try:
         report = write_price_band_artifacts(
             day=day,
             data_dir=data_dir,
             captured_at=captured.isoformat(timespec="seconds"),
         )
+        lines.append(
+            f"price-band {day}: written={report['written']} "
+            f"missing_opening={report['missing_opening']}"
+        )
     except ValueError as exc:
-        _fail(str(exc))
+        if not issues:
+            _fail(str(exc))
+        lines.append(f"price-band {day}: 竞彩跳过（{exc}）")
     kickoffs = _jczq_match_kickoffs(data_dir, day)
+    for one in issues:
+        try:
+            z = write_zucai_price_band_artifacts(
+                issue=one,
+                day=day,
+                data_dir=data_dir,
+                captured_at=captured.isoformat(timespec="seconds"),
+            )
+        except ValueError as exc:
+            _fail(str(exc))
+        lines.append(
+            f"price-band {one}: written={z['written']} "
+            f"missing_opening={z['missing_opening']}"
+        )
+        kickoffs = {**_zucai_match_kickoffs(data_dir, one), **kickoffs}
     day_dir = data_dir / "jczq" / "daily" / day
     for artifact in sorted(day_dir.glob("price-band-*.json")):
         payload = json.loads(artifact.read_text(encoding="utf-8"))
@@ -873,10 +907,8 @@ def price_band(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
                 **_SYSTEM,
             ),
         )
-    typer.echo(
-        f"price-band {day}: written={report['written']} "
-        f"missing_opening={report['missing_opening']}"
-    )
+    for line in lines:
+        typer.echo(line)
 
 
 @rsi_app.command("grade")
