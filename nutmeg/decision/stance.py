@@ -138,12 +138,20 @@ def validate_stance(stance, *, confidence, death_three_proofs) -> tuple[dict, li
             issues, "why_not_market",
             f"why_not_market `{why}` 不是 none/tilt_evidence/structure",
         )
+    # why_not_market 是 tilt 与三证的派生标签：自相矛盾时按事实改标签并留痕，
+    # 不整份驳回（2026-09-26 周六006/010/015 各丢一份深研）。
+    normalized: list[str] = []
     if why == "tilt_evidence" and not tilt:
-        _add_error(issues, "tilt", "why_not_market=tilt_evidence 但没有 tilt")
-    if why != "tilt_evidence" and tilt:
-        _add_error(issues, "tilt", "给了 tilt 就必须 why_not_market=tilt_evidence")
+        normalized.append("why_not_market tilt_evidence→none（没有 tilt）")
+        why = "none"
+    if why in ("none", "structure") and tilt:
+        normalized.append(f"why_not_market {why}→tilt_evidence（给了 tilt）")
+        why = "tilt_evidence"
     if why == "structure" and not dead:
-        _add_error(issues, "why_not_market", "why_not_market=structure 但没有面被判死（三证）")
+        normalized.append(
+            "why_not_market structure→none（没有面被判死，strength-v2 下三证不再是前提）"
+        )
+        why = "none"
     faces = stance_faces(stance) if face in FACES and structure in STRUCTURES else ""
     if faces and dead & set(faces):
         _add_error(
@@ -191,7 +199,7 @@ def validate_stance(stance, *, confidence, death_three_proofs) -> tuple[dict, li
         "face": face, "structure": structure, "cover": str(cover) if cover is not None else None,
         "confidence": conf, "falsifier": falsifier, "why_not_market": why,
         "tilt": tilt if isinstance(tilt, dict) else None, "alt_face": alt, "market_read": mr,
-        "faces": faces, "tiers": tiers,
+        "faces": faces, "tiers": tiers, "normalized": normalized,
     }
     return norm, issues
 

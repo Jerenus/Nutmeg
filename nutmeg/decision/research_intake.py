@@ -167,10 +167,11 @@ def _sanitize_tags(
             continue
         text = str(item).strip()
         if len(text) > MAX_TAG_LEN:
+            # 叙述已原样剥离进 note，不再整份驳回（strength-v2，2026-09-26 周六006/013）
             issues.append(
                 IntakeIssue(
-                    "ERROR", match_no, label,
-                    f"标签位写进了叙述（{len(text)} 字）：{text[:40]}…",
+                    "WARN", match_no, label,
+                    f"标签位写进了叙述（{len(text)} 字）→ 已剥离进 note：{text[:40]}…",
                 )
             )
             stripped.append(f"{label}: {text[:200]}")

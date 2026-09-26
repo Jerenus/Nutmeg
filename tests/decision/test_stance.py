@@ -23,6 +23,7 @@ def test_stance_faces_orders_by_sporttery_convention():
 def test_validate_accepts_market_follow_and_normalises():
     norm, issues = validate_stance(_stance(), confidence=3, death_three_proofs={})
     assert issues == [] and norm["faces"] == "31" and norm["tilt"] is None
+    assert norm["normalized"] == []
 
 
 def test_validate_flags_enum_cover_confidence_and_falsifier():
@@ -33,13 +34,23 @@ def test_validate_flags_enum_cover_confidence_and_falsifier():
     assert all(i.level == "ERROR" for i in issues)
 
 
-def test_validate_requires_tilt_and_why_to_agree_and_forbids_dead_faces():
-    _, issues = validate_stance(_stance(why_not_market="tilt_evidence"), confidence=3,
-                                death_three_proofs={})
-    assert any("tilt" in i.message for i in issues)
-    _, issues = validate_stance(_stance(why_not_market="structure"), confidence=3,
-                                death_three_proofs={})
-    assert any("没有面被判死" in i.message for i in issues)
+def test_validate_normalises_why_not_market_against_the_tilt_and_forbids_dead_faces():
+    """why_not_market 是 tilt/三证的派生标签；自相矛盾时改标签并留痕，不整份驳回
+    （2026-09-26 周六006/010/015 因此丢了整份深研）。"""
+    norm, issues = validate_stance(_stance(why_not_market="tilt_evidence"), confidence=3,
+                                   death_three_proofs={})
+    assert issues == [] and norm["why_not_market"] == "none"
+    assert norm["normalized"] == ["why_not_market tilt_evidence→none（没有 tilt）"]
+    norm, issues = validate_stance(_stance(why_not_market="structure"), confidence=3,
+                                   death_three_proofs={})
+    assert issues == [] and norm["why_not_market"] == "none"
+    assert "没有面被判死" in norm["normalized"][0]
+    tilt = {"face": "1", "expires_if": "x", "evidence": [
+        {"tier": "inferred", "kind": "style_matchup", "pp": 2, "source": "s",
+         "captured_at": "2026-09-26T10:00:00+08:00"}]}
+    norm, issues = validate_stance(_stance(why_not_market="none", tilt=tilt), confidence=3,
+                                   death_three_proofs={})
+    assert issues == [] and norm["why_not_market"] == "tilt_evidence"
     _, issues = validate_stance(_stance(structure="double", face="3", cover="0"), confidence=3,
                                 death_three_proofs=DEAD_AWAY)
     assert any("已判死" in i.message for i in issues)

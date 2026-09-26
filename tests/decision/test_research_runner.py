@@ -179,7 +179,7 @@ def test_invalid_json_is_rejected_once_and_leg_stays_price_only(tmp_path):
 def test_intake_error_is_rejected_before_fulfill(tmp_path):
     root = _board(tmp_path, n=1)
     invalid = json.loads(GOOD)
-    invalid["crash_markers"] = ["这是一整段被错误写进标签位的叙述" * 8]
+    invalid["crash_markers"] = [["标签位", "写进了嵌套结构"]]
     fulfills = []
 
     report = run_day(
@@ -486,3 +486,18 @@ def test_missing_stance_is_rejected_by_validate(tmp_path):
             json.dumps(doc, ensure_ascii=False),
             {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}, "match_no": 1},
         )
+
+
+@pytest.mark.parametrize("wrap", [
+    "先说明：我查了几篇前瞻，下面按契约出判读。\n\n{doc}",
+    "```json\n{doc}\n```\n补充说明：伤停未证实。",
+    "{doc}\n\n{doc}",
+])
+def test_validate_takes_the_first_json_object_out_of_chatter(wrap):
+    from nutmeg.decision.research_runner import _validate
+
+    doc = _validate(
+        wrap.replace("{doc}", GOOD),
+        {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}, "match_no": 1},
+    )
+    assert doc["name"] == "A-B"

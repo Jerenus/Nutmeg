@@ -92,14 +92,15 @@ def test_information_asymmetry_survives_since_it_entered_the_lexicon():
     assert "【入库剥离】" not in result.leg["note"]
 
 
-def test_narrative_in_a_tag_slot_is_an_error():
-    """26125-26128 反复出现：agent 把整段叙述写进 crash_markers。"""
+def test_narrative_in_a_tag_slot_is_stripped_not_blocking():
+    """26125-26128 反复出现：agent 把整段叙述写进 crash_markers。
+    strength-v2（2026-09-26）起剥离进 note 记 WARN，不再整份驳回。"""
     result = intake(
         _research(crash_markers=["这场的崩塌通道是中卫板凳归零叠加三天轮转" * 3]),
         _leg(),
     )
-    assert result.blocked is True
-    assert ("ERROR", "crash_markers") in _levels(result)
+    assert ("WARN", "crash_markers") in _levels(result)
+    assert ("ERROR", "crash_markers") not in _levels(result)
     assert result.leg["crash_markers"] == []
 
 
@@ -405,3 +406,13 @@ def test_intake_transcribes_research_stance_and_strength_balance():
     assert leg["research_stance"] == {"face": "3", "structure": "double", "cover": "1",
                                       "confidence": 3}
     assert leg["strength_balance"] == balance
+
+
+def test_overlong_crash_marker_is_stripped_into_note_as_a_warning():
+    """标签位写叙述：内容已剥离进 note，不再整份驳回（周六006/013 2026-09-26）。"""
+    long = ("观察项（不挂旗）：大分7轮4平、除4-1那场外6场只进2球。"
+            "这是n=7的产出统计，没到挂旗的证据等级")
+    result = intake(_research(crash_markers=[long]), _leg())
+    assert ("WARN", "crash_markers") in _levels(result)
+    assert ("ERROR", "crash_markers") not in _levels(result)
+    assert "大分7轮4平" in result.leg["note"]

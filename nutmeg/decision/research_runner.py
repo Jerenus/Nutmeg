@@ -89,13 +89,13 @@ def _empty_profile(_match_id: str) -> dict:
 def _validate(text: str, leg: dict) -> dict:
     from nutmeg.decision.research_intake import intake
 
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        # 模型偶尔把 JSON 包在 ```json 围栏里（周六007 因此整份被拒），剥掉围栏再解析
-        stripped = stripped.split("\n", 1)[1] if "\n" in stripped else stripped[3:]
-        if stripped.rstrip().endswith("```"):
-            stripped = stripped.rstrip()[:-3]
-    doc = json.loads(stripped)
+    # 模型会在 JSON 前后加说明、围栏，偶尔输出两份（周六007/010/014 因此整份被拒）：
+    # 取第一个完整 JSON 对象；找不到 `{` 时按原文解析以保留原报错
+    start = text.find("{")
+    if start < 0:
+        doc = json.loads(text)
+    else:
+        doc, _end = json.JSONDecoder().raw_decode(text, start)
     if not isinstance(doc, dict):
         raise ValueError("research output must be a JSON object")
     missing = [key for key in _REQUIRED if key not in doc]

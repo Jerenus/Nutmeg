@@ -163,7 +163,7 @@ def test_researched_basis_wins_over_a_stale_price_only_tier(tmp_path):
 def test_write_quarantines_intake_errors_and_restores_price_only(tmp_path):
     root = _day(tmp_path)
     day_dir = root / "daily" / "2026-09-19"
-    invalid = {**RESEARCH, "crash_markers": ["叙述误入标签位" * 20]}
+    invalid = {**RESEARCH, "crash_markers": [["嵌套", "误入标签位"]]}
     research_path = day_dir / "research-周五001.json"
     research_path.write_text(json.dumps(invalid, ensure_ascii=False), encoding="utf-8")
     run_report_path = day_dir / "research-run-2026-09-19.json"
