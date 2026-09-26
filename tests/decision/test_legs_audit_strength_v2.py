@@ -38,3 +38,22 @@ def test_naked_single_against_research_cover_is_a_gate():
     assert not any(f.code == "research_cover_naked" for f in audit_legs([researched_single]))
     covered = _leg(faces="31", research_stance={"face": "3", "structure": "double", "cover": "1"})
     assert not any(f.code == "research_cover_naked" for f in audit_legs([covered]))
+
+
+def _payload(channel):
+    leg = {"name": "A-B", "faces": "3", "fair": FAIR, "confidence": 3, "anchor_integrity": "pass",
+           "directional_flags": [["anchor_shield_out", "1"]],
+           "research_stance": {"face": "3", "structure": "double", "cover": "1"}}
+    return {"issue": "26133", "channel": channel, "legs": {"1": leg}}
+
+
+def test_shengfucai_bold_singles_turn_c1_and_c19_into_logged_hints():
+    # Jun 2026-09-26：胜负彩小仓位、大胆单选（含翻车面、单平），只有很不确定才双选。
+    from nutmeg.decision.legs_audit import audit_ticket
+
+    sfc = audit_ticket(_payload("shengfucai"))
+    assert not has_blocking(sfc)
+    bold = [f for f in sfc if f.code in ("flagged_naked_single", "research_cover_naked")]
+    assert len(bold) == 2 and all(f.level == "WARN" and "胜负彩大胆单选" in f.message
+                                  for f in bold)
+    assert has_blocking(audit_ticket(_payload("renjiu")))

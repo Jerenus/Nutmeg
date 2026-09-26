@@ -158,3 +158,9 @@ def test_belief_frontier_ignores_the_b5c_narrowing_caps():
     assert out["n_points"] >= 1 and out["points"][0]["shape"]["singles"] == 9
     matrix = enumerate_frontier(legs, channel="renjiu", cap_yuan=2, mode="matrix")
     assert matrix["n_points"] == 0                               # 旧矩阵：T3 只许全包
+
+
+def test_belief_mode_allows_bold_singles_on_shengfucai():
+    leg = _v2((0.6, 0.25, 0.15), structure="double", flags=(("anchor_shield_out", "1"),))
+    assert any(len(f) == 1 for f, _ in cover_options(leg, mode="belief", channel="shengfucai"))
+    assert not any(len(f) == 1 for f, _ in cover_options(leg, mode="belief", channel="renjiu"))

@@ -15,7 +15,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 PRECEDENT_STATUSES = frozenset({"alive", "dead", "none"})
 """先例状态词典。`none` = **查无先例**，与 `dead`（有先例、载体已不在阵）是两回事。
@@ -1114,7 +1114,23 @@ def audit_ticket(
         # C15 —— 分散注金不等于分散死点（26118 三票共享 23.2% 全灭）。
         label = str(payload.get("version") or "本票")
         findings.extend(audit_shared_exclusions({label: legs, **others}))
-    return findings
+    return apply_channel_policy(findings, str(payload.get("channel") or ""))
+
+
+SFC_BOLD_CODES = frozenset({"flagged_naked_single", "research_cover_naked"})
+SFC_BOLD_NOTE = "【胜负彩大胆单选（Jun 2026-09-26）降为提示】"
+
+
+def apply_channel_policy(findings: list[Finding], channel: str) -> list[Finding]:
+    """渠道规则。胜负彩＝小仓位博命中：Jun 2026-09-26 定「大胆单选（含翻车面、单平），
+    只有很不确定才双选」——C1/C19 在胜负彩上降为 WARN，照样记账供复盘。任九/竞彩不变。"""
+    if channel != "shengfucai":
+        return findings
+    return [
+        replace(f, level="WARN", message=SFC_BOLD_NOTE + f.message)
+        if f.code in SFC_BOLD_CODES and f.level == "ERROR" else f
+        for f in findings
+    ]
 
 
 def has_blocking(findings: list[Finding]) -> bool:

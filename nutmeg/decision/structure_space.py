@@ -34,15 +34,18 @@ def _faces_str(faces: list[str]) -> str:
     return "".join(DIGIT[face] for face in FACES if face in faces)
 
 
-def _naked_single_allowed(leg: dict) -> bool:
-    """strength-v2 的两道硬门：C1 方向旗裸单、C19 研究要保险却裸单。"""
+def _naked_single_allowed(leg: dict, channel: str | None = None) -> bool:
+    """strength-v2 的两道硬门：C1 方向旗裸单、C19 研究要保险却裸单。
+    胜负彩例外（Jun 2026-09-26：小仓位大胆单选）——两道门在该渠道降为提示。"""
+    if channel == "shengfucai":
+        return True
     if leg.get("directional_flags"):
         return False
     structure = str((leg.get("research_stance") or {}).get("structure") or "single")
     return structure == "single"
 
 
-def cover_options(leg: dict, *, mode: str) -> list[tuple[str, float]]:
+def cover_options(leg: dict, *, mode: str, channel: str | None = None) -> list[tuple[str, float]]:
     if mode not in ("matrix", "strict", "belief"):
         raise ValueError("mode must be belief, matrix or strict")
     alive = _alive(leg)
@@ -52,7 +55,7 @@ def cover_options(leg: dict, *, mode: str) -> list[tuple[str, float]]:
     if mode == "belief":
         # strength-v2（2026-09-26）：覆盖率用判断概率（legs.fair＝belief），
         # 全部活面子集都是选项；只有硬门能拿掉一个选项。
-        min_size = 1 if _naked_single_allowed(leg) else 2
+        min_size = 1 if _naked_single_allowed(leg, channel) else 2
         return [
             (_faces_str(list(keep)), sum(float(fair[face]) for face in keep))
             for size in range(len(alive), min_size - 1, -1)
@@ -116,7 +119,10 @@ def enumerate_frontier(
         raise ValueError("channel must be renjiu or shengfucai")
     cap_notes = cap_yuan // 2
     ordered = sorted(legs, key=int)
-    options = {match_no: cover_options(legs[match_no], mode=mode) for match_no in ordered}
+    options = {
+        match_no: cover_options(legs[match_no], mode=mode, channel=channel)
+        for match_no in ordered
+    }
     alive_sets = {match_no: _alive(legs[match_no]) for match_no in ordered}
     combos = (
         itertools.combinations(ordered, RENJIU_PICK)
