@@ -1,0 +1,18 @@
+{
+ "exp_id": "F10",
+ "claim": "并集池（足彩+竞彩）里市场模态面概率 ∈[60,80)% 的场次，模态面实开率高于市场概率（热门被低估）。",
+ "mechanism": "favourite-longshot bias。F3（2026-09-14，仅足彩 ≥60%）是同一假设的先行登记，本实验不是新发现，而是把检验扩到并集池、上界收在 80%（历史 80–90% 档只有 +2.0pp、90%+ 为 −14pp）。事前依据：语料 v2 历史 60–80% 模态面 n=378 实开 74.9% vs 市场 68.1%（+6.8pp，粗算 95% 区间约 +2~+11），系对十余个概率档单次扫描所得，有多重比较风险，故只作事前登记、不进票面。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "price_only",
+ "window": {"date_from": "2026-09-27", "n_min": 150},
+ "falsifier": {"metric": "modal_60_80_resid_pp", "stratum": "pooled", "n_min": 150,
+               "bound": "ci_lower", "threshold_pp": 0.0, "direction": "lt_means_falsified"},
+ "stop_rule": "累计 150 场结账；CI 下界 < 0 即证伪（热门低估在前瞻样本上不成立）。期间不改档位、不接入票面。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "source_doc": "docs/superpowers/evidence/2026-09-27-rule-diet.md",
+ "registered_at": "2026-09-27"
+}

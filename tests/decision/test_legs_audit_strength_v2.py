@@ -1,5 +1,9 @@
-"""strength-v2（2026-09-26 Jun 批准）：立论被闭环证伪的码降为 WARN；只留有死亡记录的硬门。"""
-from nutmeg.decision.legs_audit import Leg, audit_legs, has_blocking
+"""规则瘦身（Jun 2026-09-27：只保留有正向实证的规则）。
+
+判断类规则全部按 T13 / 研究表态实测降级：与置换基线分不开的降为 INFO（记录），
+唯一方向偏正但样本不足的 C19 为 WARN；没有任何判断类规则拦截出票。
+结构算术类（弃模态面、多票共享死点）保留原级别。"""
+from nutmeg.decision.legs_audit import Leg, audit_legs, audit_ticket, has_blocking
 
 FAIR = {"home": 0.62, "draw": 0.22, "away": 0.16}
 
@@ -15,45 +19,40 @@ def _levels(legs):
     return {f.code: f.level for f in audit_legs(legs)}
 
 
-def test_falsified_rules_are_hints_not_gates():
+def test_rules_without_positive_evidence_are_records_not_warnings():
     levels = _levels([_leg(confidence=3), _leg(match_no=2, anchor_integrity="fail")])
-    assert levels["low_conf_single"] == "WARN"
-    assert levels["broken_anchor_single"] == "WARN"
-    assert _levels([_leg(faces="10")])["modal_face_dropped"] == "WARN"
+    assert levels["low_conf_single"] == "INFO"
+    assert levels["broken_anchor_single"] == "INFO"
     flagged_double = _leg(faces="30", directional_flags=(("anchor_shield_out", "1"),))
-    assert _levels([flagged_double])["flag_face_uncovered"] == "WARN"
+    assert _levels([flagged_double])["flag_face_uncovered"] == "INFO"
 
 
-def test_flagged_naked_single_is_still_a_gate():
+def test_structural_arithmetic_keeps_its_level():
+    assert _levels([_leg(faces="10")])["modal_face_dropped"] == "WARN"
+
+
+def test_flagged_naked_single_no_longer_blocks():
     legs = [_leg(directional_flags=(("anchor_shield_out", "1"),))]
-    assert _levels(legs)["flagged_naked_single"] == "ERROR" and has_blocking(audit_legs(legs))
+    finding = next(f for f in audit_legs(legs) if f.code == "flagged_naked_single")
+    assert finding.level == "INFO" and "n=61" in finding.message
+    assert not has_blocking(audit_legs(legs))
 
 
-def test_naked_single_against_research_cover_is_a_gate():
+def test_research_cover_naked_is_an_unproven_warning():
     naked = _leg(research_stance={"face": "3", "structure": "double", "cover": "1",
                                   "confidence": 3})
-    findings = audit_legs([naked])
-    assert any(f.code == "research_cover_naked" and f.level == "ERROR" for f in findings)
+    finding = next(f for f in audit_legs([naked]) if f.code == "research_cover_naked")
+    assert finding.level == "WARN" and "n=33" in finding.message
     researched_single = _leg(research_stance={"face": "3", "structure": "single"})
     assert not any(f.code == "research_cover_naked" for f in audit_legs([researched_single]))
     covered = _leg(faces="31", research_stance={"face": "3", "structure": "double", "cover": "1"})
     assert not any(f.code == "research_cover_naked" for f in audit_legs([covered]))
 
 
-def _payload(channel):
+def test_no_channel_is_blocked_by_judgment_rules_anymore():
     leg = {"name": "A-B", "faces": "3", "fair": FAIR, "confidence": 3, "anchor_integrity": "pass",
            "directional_flags": [["anchor_shield_out", "1"]],
            "research_stance": {"face": "3", "structure": "double", "cover": "1"}}
-    return {"issue": "26133", "channel": channel, "legs": {"1": leg}}
-
-
-def test_shengfucai_bold_singles_turn_c1_and_c19_into_logged_hints():
-    # Jun 2026-09-26：胜负彩小仓位、大胆单选（含翻车面、单平），只有很不确定才双选。
-    from nutmeg.decision.legs_audit import audit_ticket
-
-    sfc = audit_ticket(_payload("shengfucai"))
-    assert not has_blocking(sfc)
-    bold = [f for f in sfc if f.code in ("flagged_naked_single", "research_cover_naked")]
-    assert len(bold) == 2 and all(f.level == "WARN" and "胜负彩大胆单选" in f.message
-                                  for f in bold)
-    assert has_blocking(audit_ticket(_payload("renjiu")))
+    for channel in ("shengfucai", "renjiu", "jczq"):
+        assert not has_blocking(audit_ticket({"issue": "26133", "channel": channel,
+                                              "legs": {"1": leg}}))

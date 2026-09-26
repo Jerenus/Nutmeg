@@ -17,7 +17,7 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 
 ## 泳道 A：竞彩（JCZQ 日常）
 
-> **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ 帽内按**判断概率**最大化 P → 审计门**只拦硬门 ERROR**（C1 方向旗裸单、C19 研究建议保险却裸单），其余码是提示、只记账。规则分类见 RULEBOOK「〇、规则三分表」。
+> **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ 帽内按**判断概率**最大化 P → 审计门**无判断类拦截**（2026-09-27 规则瘦身：判断类规则无一有正向实证，C1 降为记录、C19 降为未证实提示），只记账。见 RULEBOOK「〇、规则实证表」。
 
 | 步 | 动作 | 命令/门 |
 |---|---|---|
@@ -25,7 +25,7 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 | A1b | v2 外部证据桥 | 外部采集产严格 `evidence-intake-v1` 后执行 `uv run nutmeg workflow ingest-evidence --manifest <path>`。（`workflow jczq-status` 所属的 operator_v2 板工作流已于 2026-09-23 退役，研究终态核对改看 `research intake` 输出） |
 | A2 | 判读 | `uv run nutmeg research run --day $(date +%Y-%m-%d)`（headless，预算 40 场/日，按开球排队；研不到如实保留 `price_only`）→ `uv run nutmeg research intake --day $(date +%Y-%m-%d) --write`；每场落到实际 `judgment_tier`，不得补造中间态 |
 | A3 | 落判读 | `uv run nutmeg jczq-build-reads --day $(date +%Y-%m-%d)` 生成 `reads.json` → `uv run nutmeg decision-read --reads-file …` 提交 ForecastRevision。（operator_v2 板工作流及其 `workflow jczq-project` 投影已于 2026-09-23 退役） |
-| A4 | 构票 | 工作台从正式 Judgment Prescription 生成两类 Candidate Set；`judgment_bound` 内逐档记录 10x/20x/50x/100x 候选或 `no_feasible_candidate`，每次迭代必须有 parent/delta/rationale |
+| A4 | 构票（只放判断腿，2026-09-27） | `uv run nutmeg jczq-combos --day $(date +%Y-%m-%d)`：腿＝深研过且未开球的场次；玩法＝胜平负单/双选 + 由判断概率拟合的让球单选；**不含总进球、不按 10/20/50/100 倍凑腿**；按判断概率排序并报每元回报。用户要求赔率档位时，逐条标明哪些腿没有判断成分 |
 | A5 | **审计门** | `uv run nutmeg decision-audit-legs --legs-file …` — 默认/AI/无人值守遇 ERROR=退出码1不许出票；仅 Jun 显式 `--user-override` 且登记 reason/rule ID、evidence_rejected Adjudication 入账成功后可继续；**WARN 是提示，只记账**（strength-v2） |
 | A6 | 出票 | A5 门通过后把票面写到 `daily/<日>/legs.json`；`decision-close` 只读该文件做 express + 日报（无文件即空票，编排不自造腿；operator_v2 的本体 terminal 门已于 2026-09-23 退役）。真实出票与 Telegram 派发仍须 Jun 当次确认；实票入账走 B9c 的 `betslip register --channel jczq --legs-file …` |
 | A7 | 次日结算 | 通过正式 result/settlement/review Actions 结算；no-ticket 资金结算为 0 但 Forecast 仍进入复盘。historical replay 永不增加 prospective R0/F5/F9 样本 |
@@ -34,7 +34,7 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 
 ## 泳道 B：传统足彩（胜负彩/任九）
 
-> **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ `plan frontier`（belief 模式：判断概率 + 硬门）出前沿，B5c 矩阵与 strict 地板只作旧规则对照 → 审计门**只拦硬门 ERROR**（C1 方向旗裸单、C19 研究建议保险却裸单），其余码是提示、只记账。规则分类见 RULEBOOK「〇、规则三分表」。
+> **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ `plan frontier`（belief 模式：纯判断概率，任何腿都可裸单，保险给谁由 P 算）出前沿，B5c 矩阵与 strict 地板只作旧规则对照 → 审计门**无判断类拦截**（2026-09-27 规则瘦身；胜负彩大胆单选渠道规则随之退休），只记账。见 RULEBOOK「〇、规则实证表」。多张票同期出：同一个没把握的裸单不得出现在每一张里（C15b 报出全部票同死于该场的概率）。
 
 > **页面按钮＝同一条命令（2026-09-18 起）**：`uv run nutmeg decision-web` → 顶部 SOP 任务栏按期号列出 B0/B1/B2/B3a/B4/B4b/B5c/B5/B6/B6b/B9 十一步，点一下＝进程内跑本表同一条 CLI，`task_started/task_done/task_failed` 进当日 `workbench.jsonl`。
 > ⛔按钮里没有 B3 深研（要 agent）、B5 的人工 choose、B6b 的 ruling（人填）——那是设计，不是缺功能。

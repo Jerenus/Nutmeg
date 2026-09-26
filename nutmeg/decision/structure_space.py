@@ -35,14 +35,14 @@ def _faces_str(faces: list[str]) -> str:
 
 
 def _naked_single_allowed(leg: dict, channel: str | None = None) -> bool:
-    """strength-v2 的两道硬门：C1 方向旗裸单、C19 研究要保险却裸单。
-    胜负彩例外（Jun 2026-09-26：小仓位大胆单选）——两道门在该渠道降为提示。"""
-    if channel == "shengfucai":
-        return True
-    if leg.get("directional_flags"):
-        return False
-    structure = str((leg.get("research_stance") or {}).get("structure") or "single")
-    return structure == "single"
+    """规则瘦身（Jun 2026-09-27）：判断类规则无一有正向实证，C1/C19 不再是门。
+
+    belief 模式里裸单与否只由帽内 P 最大化决定——判断已经在 belief 里，
+    保险该给谁由「哪一面的判断概率最高」算出来，不由旗或研究的结构建议定。
+    `leg`/`channel` 保留在签名里，供将来有实证的门接回。
+    """
+    del leg, channel
+    return True
 
 
 def cover_options(leg: dict, *, mode: str, channel: str | None = None) -> list[tuple[str, float]]:

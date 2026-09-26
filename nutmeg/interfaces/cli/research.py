@@ -187,3 +187,30 @@ def jczq_build_reads(
         f"{day} 草稿 Read {len(reads)} 条 → daily/{day}/reads.json"
         "（下一步 decision-read --reads-file）"
     )
+
+
+@_cli.app.command("jczq-combos")
+def jczq_combos(
+    day: str = _DAY,
+    jczq_dir: Path = _JCZQ_DIR,
+    max_legs: int = typer.Option(4, "--max-legs", min=2),
+    max_notes: int = typer.Option(4, "--max-notes", min=1),
+    top: int = typer.Option(10, "--top", min=1),
+) -> None:
+    """竞彩只放判断腿（Jun 2026-09-27）：深研过的未开球场次，按判断概率排序，不设赔率目标。"""
+    from nutmeg.decision.jczq_combos import enumerate_combos, judgment_legs
+
+    legs = judgment_legs(day=day, jczq_dir=jczq_dir,
+                         now=datetime.now().astimezone().isoformat(timespec="seconds"))
+    typer.echo(f"{day} 判断腿 {len(legs)} 条（仅深研且未开球；无总进球腿）")
+    for leg in legs:
+        b, p = leg["belief"], leg["prior"]
+        moved = max(abs(b[k] - p[k]) for k in b) * 100
+        typer.echo(f"  {leg['code']} {leg['name']} 判断 主{b['home']*100:.1f}/平{b['draw']*100:.1f}"
+                   f"/客{b['away']*100:.1f}（偏离市场 {moved:.1f}pp）")
+    for combo in enumerate_combos(legs, max_legs=max_legs, max_notes=max_notes, top=top):
+        text = " + ".join(
+            f"{leg['code']}{'让' + leg['line'] if leg['market'] == 'hhad' else ''}:{leg['faces']}"
+            for leg in combo["legs"])
+        typer.echo(f"P={combo['p']*100:5.1f}%  {combo['notes']}注  全中赔率≈{combo['odds']:.2f}"
+                   f"  每元回报≈{combo['return_per_yuan']:.2f}  {text}")

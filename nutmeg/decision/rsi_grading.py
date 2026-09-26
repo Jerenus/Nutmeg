@@ -315,5 +315,57 @@ def grade_f9_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                        computed_by="nutmeg.decision.rsi_grading.grade_f9_prospective")
 
 
+def grade_f10_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
+    """F10 热门低估（2026-09-27 登记）：窗内两渠道、模态面市场概率 ∈[60,80)% → 模态面残差。
+    事前依据：语料 v2 历史 n=378 实开 74.9% vs 市场 68.1%（单次扫描，需前瞻复现）。"""
+    selected = [
+        r for r in _priced(rows)
+        if _in_date_window(r, window) and 0.60 <= r["fair"][_modal(r["fair"])] < 0.80
+    ]
+    return _residual_grade(selected, stratum="pooled",
+                           computed_by="nutmeg.decision.rsi_grading.grade_f10_prospective",
+                           as_of_policy="registry_window_date")
+
+
+def grade_f11_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                          boots: int = 4000) -> GradeResult:
+    """F11 研究的保险点名能否识别热门翻车（2026-09-27 登记）。
+
+    窗内、模态面 ≥55% 且带研究表态的行；翻车残差 = 1{模态面没开} − (1 − 模态 fair)。
+    指标 = 研究要保险（double/full）组残差均值 − 研究单选组残差均值（pp）；正=点名有识别力。
+    """
+    groups: dict[str, list[float]] = {"insure": [], "single": []}
+    selected: list[dict] = []
+    for r in _priced(rows):
+        if not _in_date_window(r, window):
+            continue
+        modal = _modal(r["fair"])
+        if r["fair"][modal] < 0.55:
+            continue
+        structure = str((r.get("labels") or {}).get("stance_structure") or "")
+        if structure not in ("single", "double", "full"):
+            continue
+        crashed = 1.0 if r["actual"] != _FACE[modal] else 0.0
+        groups["single" if structure == "single" else "insure"].append(
+            crashed - (1.0 - r["fair"][modal]))
+        selected.append(r)
+    n = len(selected)
+    kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
+                  inputs_hash=_rows_hash(selected),
+                  computed_by="nutmeg.decision.rsi_grading.grade_f11_prospective")
+    if not groups["insure"] or not groups["single"]:
+        return GradeResult(n_cum=n, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
+    point = (statistics.fmean(groups["insure"]) - statistics.fmean(groups["single"])) * 100
+    rng = random.Random(seed)
+    diffs = sorted(
+        (statistics.fmean(rng.choice(groups["insure"]) for _ in groups["insure"])
+         - statistics.fmean(rng.choice(groups["single"]) for _ in groups["single"])) * 100
+        for _ in range(boots)
+    )
+    return GradeResult(n_cum=n, metric_value_pp=point, ci_low_pp=diffs[int(0.025 * boots)],
+                       ci_high_pp=diffs[int(0.975 * boots) - 1], **kwargs)
+
+
 PROSPECTIVE_ADAPTERS = {"F3": grade_f3_prospective, "F5": grade_f5_prospective,
-                        "F9": grade_f9_prospective}
+                        "F9": grade_f9_prospective, "F10": grade_f10_prospective,
+                        "F11": grade_f11_prospective}

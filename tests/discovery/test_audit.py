@@ -24,6 +24,15 @@ from nutmeg.discovery.candidates import (
 
 # 与 tests/ontology/operator/test_judgment_actions.py 的 PRIOR 同值：主 40 / 平 30 / 客 30。
 # 被排的第三面 30% > C14 的 20% 阈值，所以默认排面就是"昂贵排除"。
+
+@pytest.fixture(autouse=True)
+def _rule_levels_before_diet(monkeypatch):
+    """本文件测规则的检测逻辑与 ERROR/WARN 通道机制本身；2026-09-27 规则瘦身按实证
+    重定级是另一层（见 test_legs_audit_strength_v2），这里关掉以保持机制可测。"""
+    from nutmeg.decision import legs_audit
+
+    monkeypatch.setattr(legs_audit, "EVIDENCE_POLICY", {})
+
 PRIOR = (
     ("3", "0.400000000000"),
     ("1", "0.300000000000"),

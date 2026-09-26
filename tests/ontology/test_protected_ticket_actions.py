@@ -21,6 +21,15 @@ from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.tickets.models import TicketLegDraft
 from nutmeg.ontology.wiring import build_ontology_kernel
 
+
+@pytest.fixture(autouse=True)
+def _rule_levels_before_diet(monkeypatch):
+    """本文件测规则的检测逻辑与 ERROR/WARN 通道机制本身；2026-09-27 规则瘦身按实证
+    重定级是另一层（见 test_legs_audit_strength_v2），这里关掉以保持机制可测。"""
+    from nutmeg.decision import legs_audit
+
+    monkeypatch.setattr(legs_audit, "EVIDENCE_POLICY", {})
+
 AT = datetime(2026, 8, 24, 10, tzinfo=UTC)
 DEADLINE = datetime(2026, 8, 24, 12, tzinfo=UTC)
 PRIOR = {"home": 0.6, "draw": 0.25, "away": 0.15}

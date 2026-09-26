@@ -138,15 +138,14 @@ def _v2(fair, *, structure="double", flags=(), dead=()):
     return leg
 
 
-def test_belief_mode_offers_every_alive_subset_but_gates_naked_singles():
+def test_belief_mode_offers_every_alive_subset_and_lets_p_decide_singles():
+    """规则瘦身（2026-09-27）：C1/C19 无正向实证，不再禁止裸单；只有判死的面不可买。"""
     opts = dict(cover_options(_v2((0.6, 0.25, 0.15), structure="single"), mode="belief"))
     assert set(opts) == {"310", "31", "30", "10", "3", "1", "0"}
     assert round(opts["31"], 6) == 0.85
-    gated = dict(cover_options(_v2((0.6, 0.25, 0.15), structure="double"), mode="belief"))
-    assert not any(len(faces) == 1 for faces in gated)          # C19：研究要保险
-    flagged = dict(cover_options(_v2((0.6, 0.25, 0.15), structure="single",
-                                     flags=(("anchor_shield_out", "1"),)), mode="belief"))
-    assert not any(len(faces) == 1 for faces in flagged)        # C1：方向旗
+    for leg in (_v2((0.6, 0.25, 0.15), structure="double"),
+                _v2((0.6, 0.25, 0.15), structure="single", flags=(("anchor_shield_out", "1"),))):
+        assert "3" in dict(cover_options(leg, mode="belief"))
     no_dead = dict(cover_options(_v2((0.6, 0.25, 0.15), structure="single", dead=("away",)),
                                  mode="belief"))
     assert all("0" not in faces for faces in no_dead)
@@ -160,7 +159,7 @@ def test_belief_frontier_ignores_the_b5c_narrowing_caps():
     assert matrix["n_points"] == 0                               # 旧矩阵：T3 只许全包
 
 
-def test_belief_mode_allows_bold_singles_on_shengfucai():
+def test_belief_mode_treats_every_channel_alike():
     leg = _v2((0.6, 0.25, 0.15), structure="double", flags=(("anchor_shield_out", "1"),))
-    assert any(len(f) == 1 for f, _ in cover_options(leg, mode="belief", channel="shengfucai"))
-    assert not any(len(f) == 1 for f, _ in cover_options(leg, mode="belief", channel="renjiu"))
+    for channel in ("shengfucai", "renjiu"):
+        assert any(len(f) == 1 for f, _ in cover_options(leg, mode="belief", channel=channel))

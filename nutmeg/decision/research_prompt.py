@@ -40,7 +40,9 @@ RESEARCH_JSON_CONTRACT = """
   "events": [{"event": str, "side": "home|away", "direction": "up|down",
               "grade": "minor|moderate|major", "pp": int, "priced_in": bool, "source": str}]}
 强弱天平必答（strength-v2）：判断目标是两队本场最终强度对比；赔率只作噪声识别与情绪参考，
-已被位移吸收的事件不重复计。underdog_path 为 real/strong 时 stance 至少 double 盖住它。
+已被位移吸收的事件不重复计。
+underdog_path 的强度用 tilt/shift 落到概率上（认为被低估几 pp 就拨几 pp）；
+stance.structure 只是建议，票面结构由下游按判断概率在预算内决定（规则瘦身 2026-09-27）。
 tilt 可用多面 shift {"3":pp,"1":pp,"0":pp}（和为 0）；tier 另有 state（本场状态 0–3pp）。
 表态块必答：每场押一个面 + 一个表达档 + 一句作废条件；
 跟市场也要填（why_not_market=none, tilt=null）。

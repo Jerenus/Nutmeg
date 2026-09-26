@@ -13,6 +13,15 @@ from nutmeg.decision.legs_audit import (
     legs_from_dict,
 )
 
+
+@pytest.fixture(autouse=True)
+def _rule_levels_before_diet(monkeypatch):
+    """本文件测规则的检测逻辑与 ERROR/WARN 通道机制本身；2026-09-27 规则瘦身按实证
+    重定级是另一层（见 test_legs_audit_strength_v2），这里关掉以保持机制可测。"""
+    from nutmeg.decision import legs_audit
+
+    monkeypatch.setattr(legs_audit, "EVIDENCE_POLICY", {})
+
 FAIR_HOME = {"home": 0.66, "draw": 0.20, "away": 0.14}     # 模态 = 主
 FAIR_AWAY = {"home": 0.25, "draw": 0.30, "away": 0.45}     # 模态 = 客
 

@@ -1,0 +1,18 @@
+{
+ "exp_id": "F11",
+ "claim": "深研对市场模态面 ≥55% 的热门点名要保险（stance double/full）时，该热门翻车率（相对市场）高于研究判单选的热门。",
+ "mechanism": "项目把「识别翻车」当首要目标，但迄今所有翻车信号（锚方完整度、方向旗、开季刀、活先例）在 T13 上都与置换基线分不开。研究表态是唯一方向偏正的信号：历史 n=19 热门里要保险组翻车残差 +17.8pp、单选组 −12.3pp，区间极宽。本实验检验这是否为真识别力。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "deep_research",
+ "window": {"date_from": "2026-09-27", "n_min": 80},
+ "falsifier": {"metric": "crash_resid_insure_minus_single_pp", "stratum": "pooled", "n_min": 80,
+               "bound": "ci_lower", "threshold_pp": 0.0, "direction": "lt_means_falsified"},
+ "stop_rule": "累计 80 场（两组合计）结账；差值 CI 下界 < 0 即证伪：研究的保险点名没有翻车识别力，C19 永久退休，项目的翻车识别目标在现有方法下视为不可达。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": ["C19"],
+ "source_doc": "docs/superpowers/evidence/2026-09-27-rule-diet.md",
+ "registered_at": "2026-09-27"
+}

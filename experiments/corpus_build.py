@@ -394,6 +394,10 @@ def _research_labels(doc: dict | None) -> dict | None:
         tracking_tags=[_tag_name(t) for t in (doc.get("tracking_tags") or []) if _tag_name(t)],
         rotation_risk=_schedule_field(doc, "rotation_risk"),
         rest_days=_schedule_field(doc, "rest_days"),
+        # 研究表态（2026-09-27 接入，F11：研究的保险点名能否识别热门翻车）
+        stance_face=(doc.get("stance") or {}).get("face"),
+        stance_structure=(doc.get("stance") or {}).get("structure"),
+        stance_cover=(doc.get("stance") or {}).get("cover"),
         label_source="research",
     )
 

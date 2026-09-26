@@ -843,7 +843,7 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 "26103 自查:9 条模态期望仅中 5.13"))
 
     order = {"ERROR": 0, "WARN": 1, "INFO": 2}
-    return sorted(out, key=lambda f: (order[f.level], f.match_no or 0))
+    return sorted(apply_evidence_policy(out), key=lambda f: (order[f.level], f.match_no or 0))
 
 
 _FULL_COVER_SWAP_EPS = 0.005
@@ -1114,7 +1114,59 @@ def audit_ticket(
         # C15 —— 分散注金不等于分散死点（26118 三票共享 23.2% 全灭）。
         label = str(payload.get("version") or "本票")
         findings.extend(audit_shared_exclusions({label: legs, **others}))
-    return apply_channel_policy(findings, str(payload.get("channel") or ""))
+    return apply_evidence_policy(
+        apply_channel_policy(findings, str(payload.get("channel") or ""))
+    )
+
+
+_NULL_T13 = "【规则瘦身 2026-09-27：T13 严格样本与置换基线分不开，降为记录】"
+_UNPROVEN = "【规则瘦身 2026-09-27：未证实（样本不足），降为记录】"
+_NO_EVIDENCE = "【规则瘦身 2026-09-27：从未被量化，降为记录】"
+EVIDENCE_POLICY: dict[str, tuple[str, str]] = {
+    # 判断类规则按实证定级（Jun 2026-09-27：只保留有正向实证的规则）。
+    # 依据 = `nutmeg rsi weights propose --all`（T13 因子，严格=可证前瞻样本）
+    # 与研究表态实测（scratchpad stance_eval，2026-09-27）。没有一条达到正向实证：
+    "flagged_naked_single": ("INFO", _NULL_T13 + "C1 directional_flag_nonmodal n=61 p=0.68。"),
+    "flag_face_uncovered": ("INFO", _NULL_T13 + "C2 directional_flag_nonmodal n=61。"),
+    "low_conf_single": ("INFO", _NULL_T13 + "C4 conf_level n=61 p=0.20。"),
+    "broken_anchor_single": ("INFO", _UNPROVEN + "C5 anchor_integrity n=47（全样本 −11pp）。"),
+    "broken_anchor_double": ("INFO", _UNPROVEN + "C13 anchor_integrity n=47。"),
+    "undecidable_not_full": ("INFO", _NULL_T13 + "C6 nondirectional_flag_third_face n=61。"),
+    "flagged_double_not_full": ("INFO", _NULL_T13 + "C10 方向/无方向旗均无差异。"),
+    "excluded_face_live_precedent": ("INFO", _NULL_T13 + "C7 c7_live_precedent n=142 p=0.95。"),
+    "pseudo_precision_anchor": ("INFO", _UNPROVEN + "C8 belief_offset_anchor n=21。"),
+    "opening_upset_double": ("INFO", _NULL_T13 + "C9 crash_marker_modal n=61。"),
+    "false_direction_band": ("INFO", _NULL_T13 + "C11 n=121 p=0.59。"),
+    "draw_underpriced_band": ("INFO", _NULL_T13 + "C12 n=121 p=0.95。"),
+    "expensive_exclusion": ("INFO", _NULL_T13 + "C14 death_proof_count n=182 p=0.26。"),
+    "read_ticket_inconsistency": ("INFO", _NULL_T13 + "C17「第三面更易开」n=130 已证伪。"),
+    "license_q3b_opponent_takes_points": ("INFO", _NO_EVIDENCE),
+    "unnamed_prescription_deviation": ("INFO", _NO_EVIDENCE),
+    "flag_off_lexicon": ("INFO", "【数据卫生】"),
+    "crash_marker_off_lexicon": ("INFO", "【数据卫生】"),
+    "precedent_status_off_lexicon": ("INFO", "【数据卫生】"),
+    "team_tag_off_lexicon": ("INFO", "【数据卫生】"),
+    "tracking_tag_off_lexicon": ("INFO", "【数据卫生】"),
+    # C19 唯一方向偏正：研究点名的保险面实开 33.3% vs 市场 26.9%（n=33，+6.4±15.1pp）
+    "research_cover_naked": ("WARN", "【规则瘦身 2026-09-27：未证实（n=33，保险面 +6.4±15.1pp），"
+                                     "不再拦截，照样记账】"),
+    # 保留原级别的是结构算术/自洽类：弃模态面、全包分配、多票共享死点（C15）、跨渠道矛盾（C18）。
+}
+
+
+def apply_evidence_policy(findings: list[Finding],
+                          policy: dict[str, tuple[str, str]] | None = None) -> list[Finding]:
+    """按实证重定级。只降不升；已带说明的不重复加前缀。"""
+    table = EVIDENCE_POLICY if policy is None else policy
+    rank = {"INFO": 0, "WARN": 1, "ERROR": 2}
+    out: list[Finding] = []
+    for f in findings:
+        level, note = table.get(f.code, (f.level, ""))
+        if rank[level] < rank[f.level]:
+            f = replace(f, level=level,
+                        message=f.message if f.message.startswith(note) else note + f.message)
+        out.append(f)
+    return out
 
 
 SFC_BOLD_CODES = frozenset({"flagged_naked_single", "research_cover_naked"})

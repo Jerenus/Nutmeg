@@ -124,3 +124,30 @@ def test_death_proof_threshold_variants_expand_the_dead_face_set_monotonically()
     assert table["variants_tried"] == 3
     assert sorted(row["n"] for row in table["ranked"]) == [1, 1, 2]
     assert death_proof_threshold_harness([], variants[0]) == ResidualCI(0, 0, 0, 0)
+
+
+def _row(date, fair, actual, structure=None):
+    labels = {"stance_structure": structure} if structure else {}
+    return {"src": "jczq", "date": date, "fair": fair, "actual": actual, "labels": labels}
+
+
+def test_f10_grades_the_modal_face_of_60_to_80_favourites_inside_the_window():
+    from nutmeg.decision.rsi_grading import grade_f10_prospective
+
+    fav = {"home": 0.70, "draw": 0.20, "away": 0.10}
+    rows = [_row("2026-09-27", fav, "3"), _row("2026-09-27", fav, "1"),
+            _row("2026-09-26", fav, "3"),                                  # 窗外
+            _row("2026-09-27", {"home": 0.5, "draw": 0.3, "away": 0.2}, "3")]  # 档外
+    g = grade_f10_prospective(rows, window={"date_from": "2026-09-27"})
+    assert g.n_cum == 2 and round(g.metric_value_pp, 6) == round((0.5 - 0.70) * 100, 6)
+
+
+def test_f11_compares_favourite_crash_residual_by_research_insurance_call():
+    from nutmeg.decision.rsi_grading import grade_f11_prospective
+
+    fav = {"home": 0.60, "draw": 0.25, "away": 0.15}
+    rows = [_row("2026-09-27", fav, "1", "double"), _row("2026-09-27", fav, "0", "double"),
+            _row("2026-09-27", fav, "3", "single"), _row("2026-09-27", fav, "3", "single")]
+    g = grade_f11_prospective(rows, window={"date_from": "2026-09-27"})
+    # 翻车残差：保险组 (1−0.40) 均值 0.60，单选组 (0−0.40) 均值 −0.40 → 差 100pp
+    assert g.n_cum == 4 and round(g.metric_value_pp, 6) == 100.0
