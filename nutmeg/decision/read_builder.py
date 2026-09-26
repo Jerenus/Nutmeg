@@ -75,7 +75,8 @@ def build(judgment: dict, *, issue: str, store_ids: dict, fair: dict,
 
         prior = fair[no]
         belief = j.get("belief") or prior
-        if belief is not prior and belief != prior:
+        if belief is not prior and belief != prior and not j.get("adjustment_evidence_tiers"):
+            # strength-v2：偏移是常态；只有没写证据等级的偏移才提示
             warnings.append(f"场{no} belief≠prior（净偏移须在 judgment 里带证据等级）")
 
         dflags = [(f, "1") if isinstance(f, str) else tuple(f)

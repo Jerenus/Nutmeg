@@ -84,3 +84,12 @@ def test_belief_offset_is_flagged_for_evidence_review():
     j["1"]["belief"] = {"home": 0.55, "draw": 0.25, "away": 0.20}
     r = build(j, issue="26122", store_ids=IDS, fair=FAIR, made_at="t")
     assert any("belief≠prior" in w for w in r.warnings)
+
+
+def test_belief_offset_with_evidence_tiers_is_not_flagged():
+    """strength-v2：偏移是常态；带了证据等级的偏移不再报警，没带的才报。"""
+    j = _judgment()
+    j["1"]["belief"] = {"home": 0.55, "draw": 0.25, "away": 0.20}
+    j["1"]["adjustment_evidence_tiers"] = ["inferred", "state"]
+    r = build(j, issue="26122", store_ids=IDS, fair=FAIR, made_at="t")
+    assert not any("belief≠prior" in w for w in r.warnings)
