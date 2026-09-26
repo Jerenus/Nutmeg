@@ -1,4 +1,5 @@
 # tests/decision/test_zucai_prep.py
+import json
 from datetime import datetime
 
 from nutmeg.decision.zucai_prep import (
@@ -531,3 +532,27 @@ def test_revision_does_not_repeat_an_unchanged_blend_gate():
     assert should_push(blocked, slot="revision", moved=0, base_prep=same) is False
     clean = _prep(slot="afternoon", records={"1": {}})
     assert should_push(blocked, slot="revision", moved=0, base_prep=clean) is True
+
+
+def test_auto_channel_map_turns_prep_alignment_into_jczq_match_ids(tmp_path):
+    from nutmeg.decision.zucai_prep import write_auto_channel_map
+
+    out = tmp_path / "jczq"
+    day_dir = out / "daily" / "2026-09-26"
+    day_dir.mkdir(parents=True)
+    (day_dir / "sporttery_markets.json").write_text(json.dumps({"matchInfoList": [
+        {"subMatchList": [{"matchNum": 6008, "matchNumStr": "周六008"},
+                          {"matchNum": 6012, "matchNumStr": "周六012"}]}]}), encoding="utf-8")
+    (day_dir / "jczq-legs-base.json").write_text(json.dumps({"legs": {
+        "周六008": {"match_id": "m-008"}, "周六012": {"match_id": "m-012"}}}), encoding="utf-8")
+    zdir = tmp_path / "zucai"
+    zdir.mkdir()
+    prep = {"issue": "26133", "run_date": "2026-09-26", "records": {
+        "1": {"sporttery_match_num": None, "match_date": "2026-09-27"},
+        "2": {"sporttery_match_num": "6008", "match_date": "2026-09-26"},
+        "3": {"sporttery_match_num": "6012", "match_date": "2026-09-26"}}}
+
+    path = write_auto_channel_map(prep, zucai_dir=zdir, output_dir=out)
+
+    assert json.loads(path.read_text(encoding="utf-8")) == {"m-008": 2, "m-012": 3}
+    assert not (zdir / "26133-channel-map.json").exists()   # 人工表不碰

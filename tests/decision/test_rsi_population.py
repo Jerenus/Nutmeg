@@ -139,3 +139,23 @@ def test_unknown_population_is_rejected():
         matches_for_population(
             "unknown", day="2026-09-20", issue=None, data_dir=DATA_DIR
         )
+
+
+def test_both_falls_back_to_the_prep_auto_channel_map(tmp_path):
+    """26132/26133 没有人工对号表，F9 并集把同一场算了两次（2026-09-26 39 场里 7 场重复）。"""
+    day = "2026-09-26"
+    day_dir = tmp_path / "jczq" / "daily" / day
+    zucai_dir = tmp_path / "zucai"
+    day_dir.mkdir(parents=True)
+    zucai_dir.mkdir()
+    day_dir.joinpath("jczq-legs-base.json").write_text(json.dumps(
+        {"legs": {"周六008": {"match_id": "jczq-008"}}}), encoding="utf-8")
+    zucai_dir.joinpath("26133-store-ids.json").write_text(json.dumps(
+        {"2": {"match_id": "zucai-2", "match_no": 2}}), encoding="utf-8")
+    zucai_dir.joinpath("26133-channel-map.auto.json").write_text(
+        json.dumps({"jczq-008": 2}), encoding="utf-8")
+
+    result = matches_for_population("both", day=day, issue="26133", data_dir=tmp_path)
+
+    assert [(row["match_id"], row["match_no"], row["source"]) for row in result] == [
+        ("jczq-008", 2, "both")]

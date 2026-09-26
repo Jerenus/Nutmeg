@@ -367,6 +367,37 @@ def load_explicit_channel_mapping(
     return out
 
 
+def write_auto_channel_map(prep: dict, *, zucai_dir: Path, output_dir: Path) -> Path | None:
+    """备料对齐（足彩场号 → 体彩 matchNum）→ `{issue}-channel-map.auto.json`
+    （竞彩 match_id → 足彩场号），供并集池去重。人工 `{issue}-channel-map.json` 不碰。
+
+    26132/26133 没人写人工表，F9 并集把 7 场同一比赛算了两次（2026-09-26）。
+    """
+    records = prep.get("records") or {}
+    matches = [{"match_date": rec.get("match_date")} for rec in records.values()]
+    match_id_by_num: dict[str, str] = {}
+    for day in board_dates(str(prep.get("run_date")), matches):
+        day_dir = Path(output_dir) / "daily" / day
+        board_path, legs_path = day_dir / "sporttery_markets.json", day_dir / "jczq-legs-base.json"
+        if not board_path.exists() or not legs_path.exists():
+            continue
+        legs = _load(legs_path).get("legs") or {}
+        for row in board_rows(_load(board_path)):
+            leg = legs.get(str(row.get("matchNumStr")))
+            if isinstance(leg, dict) and leg.get("match_id") and row.get("matchNum") is not None:
+                match_id_by_num[str(row["matchNum"])] = str(leg["match_id"])
+    out = {
+        match_id_by_num[str(rec["sporttery_match_num"])]: int(no)
+        for no, rec in records.items()
+        if rec.get("sporttery_match_num") and str(rec["sporttery_match_num"]) in match_id_by_num
+    }
+    if not out:
+        return None
+    path = Path(zucai_dir) / f"{prep['issue']}-channel-map.auto.json"
+    path.write_text(json.dumps(out, ensure_ascii=False, indent=1), "utf-8")
+    return path
+
+
 def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
     """组装备料包。读已落盘的 issue/odds/体彩板面,不打网。"""
     from nutmeg.decision.dcfit import fit_match
@@ -912,6 +943,7 @@ def run_zucai_prep(
     brief_path = zdir / f"{issue}-prep-{slot}.md"
     prep_path.write_text(json.dumps(prep, ensure_ascii=False, indent=1), "utf-8")
     brief_path.write_text(render_brief(prep), "utf-8")
+    write_auto_channel_map(prep, zucai_dir=zdir, output_dir=Path(output_dir))
 
     diff_path = None
     n_moved: int | None = None
