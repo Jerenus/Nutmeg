@@ -22,7 +22,10 @@ def test_after_am_builds_research_board_then_schedules_match_duties(tmp_path):
     calls = []
     after_am(day="2026-09-19", data_dir=tmp_path,
              invoke=lambda argv: calls.append(argv) or (0, ""))
-    assert [call[:2] for call in calls] == [["research", "board"], ["rsi", "schedule"]]
+    assert [call[:2] for call in calls[:2]] == [["research", "board"], ["rsi", "schedule"]]
+    # 刷新后立即入库+重建 Read：新上板的场次当场有 Read，F9 才能在开球前履约（2026-09-26）
+    assert calls[2][:2] == ["research", "intake"] and "--write" in calls[2]
+    assert calls[3][0] == "jczq-build-reads"
 
 
 def test_decision_am_calls_research_wiring_after_success(tmp_path, monkeypatch):

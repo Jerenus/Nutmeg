@@ -340,6 +340,9 @@ def run_day(
         )
         pending.append((board_code, leg, brief, attempts_total))
 
+    # 预算先给今天还没试过的场次，再给重试（稳定排序：同类内仍按开球先后）；
+    # 否则白天的格式重试会把晚上新上板的场次饿死（2026-09-26 024/025）
+    pending.sort(key=lambda item: item[3] > 0)
     runnable = pending[:available_attempts]
     for board_code, _leg, _brief, _attempts_total in pending[available_attempts:]:
         rows_by_code[board_code] = {"code": board_code, "status": "skipped_budget"}

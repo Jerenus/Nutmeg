@@ -127,6 +127,18 @@ def run(
     typer.echo(
         f"used_attempts={report['used_attempts']} written={report['written']}"
     )
+    if report["written"]:
+        # 定时 sweep 只跑 `research run`：新研究落盘后若不重建 Read，F9 读不到该场、
+        # 义务永远履约不了（2026-09-26 017–025 全漏）
+        from nutmeg.decision.jczq_reads import build_jczq_reads, intake_board
+
+        intake_board(day=day, jczq_dir=jczq_dir, write=True)
+        reads = build_jczq_reads(
+            day=day,
+            jczq_dir=jczq_dir,
+            made_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        )
+        typer.echo(f"已入库并重建 Read {len(reads)} 条")
 
 
 @research_app.command("intake")

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 from nutmeg.decision.face_status import FaceStatusError, attach_face_status
@@ -112,8 +113,22 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
     board = json.loads(
         (day_dir / "jczq-legs-base.json").read_text(encoding="utf-8")
     )
+    reads_path = day_dir / "reads.json"
+    previous_by_match = {
+        read["match_id"]: read
+        for read in (
+            json.loads(reads_path.read_text(encoding="utf-8")) if reads_path.exists() else []
+        )
+        if read.get("match_id")
+    }
+    built_at = datetime.fromisoformat(made_at)
     reads: list[dict] = []
     for code, leg in board["legs"].items():
+        # 已开球：保留赛前最后一版 Read，不用赛后价格/赛后改判重算（语料与 F9 的前瞻性）
+        previous = previous_by_match.get(leg["match_id"])
+        if previous is not None and datetime.fromisoformat(leg["kickoff_bj"]) <= built_at:
+            reads.append(previous)
+            continue
         face_status = leg.get("face_status") or {}
         researched_basis = bool(face_status) and all(
             row.get("basis") == "researched" for row in face_status.values()

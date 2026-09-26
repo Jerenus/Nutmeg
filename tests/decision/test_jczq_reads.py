@@ -311,3 +311,32 @@ def test_reads_express_small_tilt_and_keep_alive_normalisation(tmp_path):
     # strength-v2（2026-09-26）：2pp 的推断级偏移如实表达，不再归零
     assert r["stance"]["tilt_zeroed"] is False and r["stance"]["tilt_applied_pp"] == 2
     assert r["adjustment_evidence_tiers"] == ["inferred"]
+
+
+def test_rebuild_keeps_the_read_of_a_match_that_already_kicked_off(tmp_path):
+    """开球后重建不许改写该场的 Read（赛后价格会混进语料/F9，2026-09-26 17:15 刷新后）。"""
+    root = _day(tmp_path)
+    day_dir = root / "daily" / "2026-09-19"
+    intake_board(day="2026-09-19", jczq_dir=root, write=True)
+    [before] = build_jczq_reads(day="2026-09-19", jczq_dir=root,
+                                made_at="2026-09-19T20:00:00+08:00")
+    board = json.loads((day_dir / "jczq-legs-base.json").read_text(encoding="utf-8"))
+    board["legs"]["周五001"]["fair"] = {"home": 0.7, "draw": 0.2, "away": 0.1}
+    (day_dir / "jczq-legs-base.json").write_text(json.dumps(board), encoding="utf-8")
+
+    [after] = build_jczq_reads(day="2026-09-19", jczq_dir=root,
+                               made_at="2026-09-20T04:00:00+08:00")
+
+    assert after == before
+
+
+def test_rebuild_before_kickoff_still_refreshes_the_read(tmp_path):
+    root = _day(tmp_path)
+    intake_board(day="2026-09-19", jczq_dir=root, write=True)
+    [before] = build_jczq_reads(day="2026-09-19", jczq_dir=root,
+                                made_at="2026-09-19T20:00:00+08:00")
+
+    [after] = build_jczq_reads(day="2026-09-19", jczq_dir=root,
+                               made_at="2026-09-19T21:00:00+08:00")
+
+    assert after["read_id"] != before["read_id"]

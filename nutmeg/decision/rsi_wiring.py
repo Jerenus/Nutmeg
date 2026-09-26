@@ -58,6 +58,10 @@ def after_am(*, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None
     """Build the JCZQ research board, then schedule its per-match duties."""
     invoke(["research", "board", "--day", day, "--data-dir", str(data_dir)])
     invoke(["rsi", "schedule", "--day", day, "--data-dir", str(data_dir)])
+    # 当天重跑（17:15 刷新）会有新上板场次：立即入库并重建 Read，F9 才能在开球前履约
+    jczq_dir = str(Path(data_dir) / "jczq")
+    invoke(["research", "intake", "--day", day, "--jczq-dir", jczq_dir, "--write"])
+    invoke(["jczq-build-reads", "--day", day, "--jczq-dir", jczq_dir])
 
 
 def after_observation_artifact(*, exp: str, duty: str, issue: str, day: str, artifact: Path,

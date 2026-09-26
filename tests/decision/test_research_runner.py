@@ -501,3 +501,29 @@ def test_validate_takes_the_first_json_object_out_of_chatter(wrap):
         {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}, "match_no": 1},
     )
     assert doc["name"] == "A-B"
+
+
+def test_never_attempted_matches_get_the_budget_before_retries(tmp_path):
+    """晚上新上板的场次不能被白天的重试饿死（2026-09-26 024/025 skipped_budget）。"""
+    root = _board(tmp_path, n=2)
+    day_dir = root / "daily" / "2026-09-19"
+    (day_dir / "research-周五001.rejected.json").write_text(json.dumps({
+        "code": "周五001", "attempts_total": 1, "permanent": False,
+        "last_attempt_at": (datetime.now(BJ) - timedelta(hours=6)).isoformat(),
+        "attempt_errors": ["not json"], "error": "not json", "raw_output": "x",
+    }), encoding="utf-8")
+    briefs = []
+
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=root,
+        data_dir=tmp_path,
+        claude=lambda system, brief: briefs.append(brief) or (0, GOOD),
+        fulfill=lambda argv: (0, ""),
+        profile=lambda match_id: {},
+        budget=1,
+        concurrency=1,
+    )
+
+    status = {row["code"]: row["status"] for row in report["matches"]}
+    assert status == {"周五001": "skipped_budget", "周五002": "done"}
