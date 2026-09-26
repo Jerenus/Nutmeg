@@ -25,9 +25,10 @@ def test_audit_defaults_returns_codes_per_expression():
                for f in out["naked"]["findings"])
 
 
-def test_broken_anchor_naked_single_is_blocking():
+def test_broken_anchor_naked_single_is_a_hint_not_a_gate():
+    # strength-v2（2026-09-26）：锚方完整度 n=70 零预测力 → C5 降为提示
     out = audit_defaults(_card(anchor_integrity="fail"))
-    assert out["naked"]["blocking"] is True
+    assert out["naked"]["blocking"] is False
     assert any(f["code"] == "broken_anchor_single" for f in out["naked"]["findings"])
 
 

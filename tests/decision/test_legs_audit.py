@@ -557,11 +557,11 @@ def test_flat_band_modal_drop_is_warning_not_blocking():
     assert not has_blocking(findings)
 
 
-def test_real_modal_drop_still_blocks():
-    """真正的弃模态（gap ≥ 1pp）仍是 ERROR——翻面实证 0/42，分级不是放行。"""
+def test_real_modal_drop_is_flagged_as_a_hint():
+    """strength-v2：弃模态（翻面）降为 WARN——强弱判断可以翻面，但必须被看见。"""
     findings = audit_legs([_leg(faces="31", fair=FAIR_AWAY, confidence=4)])
-    assert "modal_face_dropped" in {f.code for f in findings}
-    assert has_blocking(findings)
+    assert ("modal_face_dropped", "WARN") in {(f.code, f.level) for f in findings}
+    assert not has_blocking(findings)
 
 
 def test_exclusion_ladder_grades_faces():
@@ -711,8 +711,7 @@ def test_read_ticket_inconsistency_blocks_when_four_doubles_defy_the_read():
     findings = audit_legs(legs)
     extra = audit_read_ticket_consistency(findings)
     assert [f.code for f in extra] == ["read_ticket_inconsistency"]
-    assert extra[0].level == "ERROR"
-    assert has_blocking(findings + extra)
+    assert extra[0].level == "WARN"  # strength-v2：C17 立论已证伪，降为提示
     # 三处以下不阻断
     assert not audit_read_ticket_consistency(audit_legs(legs[:3]))
 
@@ -783,7 +782,7 @@ def test_c14_fires_on_the_excluded_face_not_on_any_face():
     # 排掉 22.6% 的面 → 才是 C14
     assert "expensive_exclusion" in {f.code for f in by_faces["30"].warns}
     # 排掉模态面 → C3 翻面，不是 C14 的事
-    assert "modal_face_dropped" in {f.code for f in by_faces["31"].errors}
+    assert "modal_face_dropped" in {f.code for f in by_faces["31"].warns}
 
 
 def test_naked_is_graded_by_total_exposure_not_single_face():

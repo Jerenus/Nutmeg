@@ -282,7 +282,7 @@ def _approve_request(
 def test_audit_error_cannot_be_overridden_or_approved(tmp_path: Path) -> None:
     kernel, forecast_id = _setup(tmp_path)
     created = kernel.protected_tickets.create_ticket_batch(
-        _create_request(_leg(forecast_id, confidence=3))
+        _create_request(_leg(forecast_id, directional_flags=(("anchor_shield_out", "1"),)))
     )
     draft = _created_row(kernel, created)
     assert draft is not None

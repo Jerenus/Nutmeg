@@ -16,7 +16,6 @@ import re
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date as _date
 from datetime import datetime
 from pathlib import Path
 
@@ -164,9 +163,7 @@ def _prep(slot: str, log_name: str) -> Callable[[Path, str], list[Run]]:
     def read(data_dir: Path, day: str) -> list[Run]:
         zdir = data_dir / "zucai"
         for path in sorted(zdir.glob(f"*-prep-{slot}.json"), reverse=True):
-            at = _mtime(path)
-            if at is None or abs((at.date() - _date.fromisoformat(day)).days) > 1:
-                continue
+            # 只认文件里的 run_date；按 mtime 预筛会让回看历史日（或测试）随今天日期漂移
             doc = _json(path, {}) or {}
             if doc.get("run_date") != day:
                 continue

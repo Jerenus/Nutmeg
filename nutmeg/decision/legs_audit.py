@@ -48,6 +48,9 @@ NONDIRECTIONAL_LEXICON = frozenset({
 任何自命名的字符串都能触发 C6、逼出全包，与「agent 自命名的旗不得堵死出票」
 这条封闭词典的立法意图正好相反。C0 现已对称覆盖两组旗。"""
 
+V2 = "【strength-v2 降为提示】"
+"""2026-09-26 Jun 批准的 strength-v2：立论已被闭环证伪的码降为 WARN，只作提示不阻断。"""
+
 DIRECTIONAL_LEXICON = frozenset({
     "weak_home_draw_trap", "league_draw_regime", "suspension_breaker_out",
     "self_made_tail", "anchor_shield_out",
@@ -280,6 +283,8 @@ class Leg:
     ttg_shape_anchor: bool | None = None
     # 该场读判 note 原文；只作 I4 自相矛盾扫描，不参与任何概率计算
     note: str = ""
+    # strength-v2：深研表态 {face, structure, cover, confidence}；C19 用
+    research_stance: dict | None = None
 
     @property
     def modal(self) -> str:
@@ -456,14 +461,26 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                 f"m 条——任何方向性旗（无论强弱）→ 至少双选，**fair 高低不得覆盖旗**。",
                 "26098 / 26101(−¥972) / 26102(−¥1,408) / 26103 自查"))
 
+        # C19 —— 研究点名要保险却裸单（strength-v2 硬门，2026-09-26 立）。
+        rs = lg.research_stance or {}
+        if single and str(rs.get("structure") or "") in ("double", "full"):
+            cover = rs.get("cover")
+            hint = f"（研究给的是 {rs.get('structure')}" + (
+                f"，保险面 {FACE_ZH.get(str(cover), cover)}）" if cover else "）")
+            out.append(Finding(
+                "ERROR", "research_cover_naked", n,
+                f"场{n} {lg.name}：深研建议保险{hint}，票面却裸单 `{lg.faces}`。"
+                f"研究原文点名了风险而票面不买它——这是三次实票死法的同一个形状。",
+                "26128 场14 / 26132 场2 巴西 1-1 / 26132 场11 波兰 0-0"))
+
         # C2 —— 旗面必须被盖住，否则双选等于没买保险
         missing = {f for fl, f in lg.directional_flags
                    if fl in DIRECTIONAL_LEXICON and f} - set(lg.faces)
         if in_lex and missing and not single:
             faces = "/".join(FACE_ZH[f] for f in sorted(missing))
             out.append(Finding(
-                "ERROR", "flag_face_uncovered", n,
-                f"场{n} {lg.name}：方向性旗指向 {faces}，但面集合 `{lg.faces}` 没盖住它。"
+                "WARN", "flag_face_uncovered", n,
+                f"{V2}场{n} {lg.name}：方向性旗指向 {faces}，但面集合 `{lg.faces}` 没盖住它。"
                 f"双选的定义是「模态面 + 旗面」，盖不住旗面的双选不是保险。",
                 "26101 场6/场10 双双 2:2"))
 
@@ -480,8 +497,8 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
                     "26122 场4 纽伦堡37.0/汉诺威37.8 差0.8pp(2026-09-11 分级)"))
             else:
                 out.append(Finding(
-                    "ERROR", "modal_face_dropped", n,
-                    f"场{n} {lg.name}：模态面是 {FACE_ZH[lg.modal]}（{lg.modal_p:.1%}），"
+                    "WARN", "modal_face_dropped", n,
+                    f"{V2}场{n} {lg.name}：模态面是 {FACE_ZH[lg.modal]}（{lg.modal_p:.1%}），"
                     f"但面集合 `{lg.faces}` 把它丢了（top1−top2 "
                     f"{lg.top_gap * 100:.1f}pp）。这是**翻面**不是排面——翻面三门槛实证 0/42。",
                     "7/29 实证:弃模态面两次全死(001 让负 / 006 受让胜)"))
@@ -559,16 +576,16 @@ def audit_legs(legs: list[Leg]) -> list[Finding]:
         # C4 —— conf3 是"有理由但不够硬"的自我说服黑洞
         if single and lg.confidence <= 3:
             out.append(Finding(
-                "ERROR", "low_conf_single", n,
-                f"场{n} {lg.name}：conf{lg.confidence} 裸单。"
+                "WARN", "low_conf_single", n,
+                f"{V2}场{n} {lg.name}：conf{lg.confidence} 裸单。"
                 f"实证 conf4 69% > conf2 50% > **conf3 32%**。",
                 "判决表 m 条"))
 
         # C5 —— 锚方结构 FAIL 还裸单，就是 26102 本菲卡
         if single and lg.anchor_integrity == "fail":
             out.append(Finding(
-                "ERROR", "broken_anchor_single", n,
-                f"场{n} {lg.name}：锚方结构完整度 FAIL 却裸单。"
+                "WARN", "broken_anchor_single", n,
+                f"{V2}场{n} {lg.name}：锚方结构完整度 FAIL 却裸单。"
                 f"锚越强、未定价的结构漏洞越值钱——fair 高是加倍重视的理由，不是忽略的理由。",
                 "26102 本菲卡 fair 85.8% → 2:2"))
 
@@ -889,8 +906,8 @@ def audit_read_ticket_consistency(findings: list[Finding]) -> list[Finding]:
         if f.match_no is not None and f.match_no not in seen:
             seen.append(f.match_no)
     return [Finding(
-        "ERROR", "read_ticket_inconsistency", None,
-        f"本票 {len(marks)} 处「读判判全包或丢、票面降双选」"
+        "WARN", "read_ticket_inconsistency", None,
+        f"{V2}本票 {len(marks)} 处「读判判全包或丢、票面降双选」"
         f"（场{'/'.join(str(x) for x in sorted(seen))}），达阈值 {_C17_INCONSISTENCY_N}。"
         f"8/08 铁律——预算压缩唯一合法动作是**丢整场**，不是降双选；"
         f"帽内凑不出可盖的九场时，空仓是合法且唯一出口。",
@@ -1142,6 +1159,7 @@ def legs_from_dict(payload: dict) -> list[Leg]:
             license_questions=v.get("license_questions"),
             ttg_shape_anchor=v.get("ttg_shape_anchor"),
             note=str(v.get("note", "") or ""),
+            research_stance=v.get("research_stance"),
             nondirectional_flags=tuple(v.get("nondirectional_flags", [])),
             anchor_integrity=v.get("anchor_integrity", "unknown"),
             precedents=tuple(tuple(x) for x in v.get("precedents", [])),

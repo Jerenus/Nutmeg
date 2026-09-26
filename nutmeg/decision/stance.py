@@ -12,14 +12,23 @@ FACES = ("3", "1", "0")
 FACE_KEY = {"3": "home", "1": "draw", "0": "away"}
 STRUCTURES = ("single", "double", "full")
 WHY = ("none", "tilt_evidence", "structure")
-TIER_PP = {"official": (4, 8), "confirmed_structural": (3, 6), "inferred": (0, 2), "will": (0, 2)}
-"""RULEBOOK l-权重表：官宣 4–8 / 确证结构 3–6 / 推断 0–2 / 战意 0–2（只许朝平）。"""
+TIER_PP = {"official": (4, 8), "confirmed_structural": (3, 6), "inferred": (0, 2), "will": (0, 2),
+           "state": (0, 3)}
+"""RULEBOOK l-权重表：官宣 4–8 / 确证结构 3–6 / 推断 0–2 / 战意 0–2（只许朝平）/ 本场状态 0–3。
+
+`state` 由 strength-v2（2026-09-26 Jun 批准）加入：判断目标改为两队本场强度对比，
+状态不再一律 0pp，但只许小幅（≤3pp），并须写明是本场的状态而非长期战绩。"""
 TILT_KIND_LEXICON = frozenset({
     "absence_official", "suspension", "goalkeeper_change", "anchor_integrity_fail",
     "lineup_confirmed", "venue_anomaly", "precedent_carrier", "rotation_confirmed",
     "schedule_congestion", "motivation_dead_rubber",
+    # strength-v2：强弱天平的事件类别
+    "style_matchup", "underdog_path", "form_state", "travel_fatigue", "coach_debut",
+    "pitch_condition", "squad_depth", "priced_drift",
 })
-ZERO_BELOW_PP = 5
+ZERO_BELOW_PP = 0
+"""strength-v2 起不再归零：<5pp 的真实利好利空如实表达（旧值 5，2026-09-26 退休）。
+归零让深研每期都『同意市场』，belief≡prior，判断力从未被表达也无从测量。"""
 CAP_WITH_OFFICIAL_PP = 15
 CAP_WITHOUT_OFFICIAL_PP = 10
 MIN_FALSIFIER_CHARS = 8
@@ -71,6 +80,24 @@ def _parse(value) -> datetime | None:
 
 def _add_error(issues: list[StanceIssue], field: str, msg: str) -> None:
     issues.append(StanceIssue("ERROR", field, msg))
+
+
+def _validate_shift(shift, issues: list[StanceIssue]) -> str:
+    """多面位移 {"3":pp,"1":pp,"0":pp}：整数、和为 0、不全为 0。返回获益最多的面。"""
+    if not isinstance(shift, dict) or not shift or not set(map(str, shift)) <= set(FACES):
+        _add_error(issues, "tilt.shift", f"shift 必须是 {{3/1/0: pp}}，实得 `{shift}`")
+        return ""
+    try:
+        values = {str(k): int(v) for k, v in shift.items()}
+    except (TypeError, ValueError):
+        _add_error(issues, "tilt.shift", "shift 的 pp 必须是整数")
+        return ""
+    if sum(values.values()) != 0:
+        _add_error(issues, "tilt.shift", f"shift 各面之和必须为 0，实得 {sum(values.values())}")
+    if not any(values.values()):
+        _add_error(issues, "tilt.shift", "shift 全为 0——跟市场请用 tilt=null")
+        return ""
+    return max(values, key=values.get)
 
 
 def validate_stance(stance, *, confidence, death_three_proofs) -> tuple[dict, list[StanceIssue]]:
@@ -125,9 +152,13 @@ def validate_stance(stance, *, confidence, death_three_proofs) -> tuple[dict, li
         )
     tiers: list[str] = []
     if isinstance(tilt, dict):
-        tface = str(tilt.get("face"))
-        if tface not in FACES:
-            _add_error(issues, "tilt.face", f"tilt.face `{tface}` 不是 3/1/0")
+        shift = tilt.get("shift")
+        if shift is not None:
+            tface = _validate_shift(shift, issues)
+        else:
+            tface = str(tilt.get("face"))
+            if tface not in FACES:
+                _add_error(issues, "tilt.face", f"tilt.face `{tface}` 不是 3/1/0")
         evidence = tilt.get("evidence") or []
         if not evidence:
             _add_error(issues, "tilt.evidence", "tilt 至少要一条证据")
@@ -179,7 +210,9 @@ def apply_tilt(prior: dict, tilt: dict | None, *, kickoff: str | None = None) ->
         kept.append(e)
         tiers.append(str(e.get("tier")))
     net = sum(int(e.get("pp") or 0) for e in kept)
-    if net < ZERO_BELOW_PP:
+    if tilt.get("shift") is not None:
+        return _apply_shift(prior, tilt["shift"], kept=kept, dropped=dropped, tiers=tiers)
+    if net <= ZERO_BELOW_PP:
         why = f"净偏移 {net}pp <{ZERO_BELOW_PP}pp 归零跟市场" + (
             f"（{dropped} 条证据在开球后，作废）" if dropped else ""
         )
@@ -195,4 +228,24 @@ def apply_tilt(prior: dict, tilt: dict | None, *, kickoff: str | None = None) ->
     reason = f"拨 {applied}pp 向 {tilt['face']}" + (
         f"（上限 {cap}pp 截断自 {net}pp）" if applied < net else ""
     )
+    return TiltResult(belief, applied, False, reason, tiers)
+
+
+def _apply_shift(prior: dict, shift: dict, *, kept: list, dropped: int,
+                 tiers: list[str]) -> TiltResult:
+    """strength-v2 多面位移：belief = prior + shift/100；单面幅度超上限则整体等比缩放。"""
+    if not kept:
+        why = "无有效证据，归零跟市场" + (f"（{dropped} 条证据在开球后，作废）" if dropped else "")
+        return TiltResult(dict(prior), 0, True, why, tiers)
+    values = {FACE_KEY[str(k)]: int(v) for k, v in shift.items()}
+    peak = max(abs(v) for v in values.values())
+    cap = CAP_WITH_OFFICIAL_PP if "official" in tiers else CAP_WITHOUT_OFFICIAL_PP
+    scale = min(1.0, cap / peak) if peak else 1.0
+    raw = {k: min(0.98, max(0.01, prior[k] + scale * values.get(k, 0) / 100)) for k in prior}
+    total = sum(raw.values())
+    belief = {k: v / total for k, v in raw.items()}
+    applied = round(peak * scale)
+    reason = "多面位移 " + " ".join(
+        f"{d}{scale * values.get(FACE_KEY[d], 0):+.1f}" for d in FACES
+    ) + (f"（单面上限 {cap}pp 截断自 {peak}pp）" if scale < 1 else "")
     return TiltResult(belief, applied, False, reason, tiers)

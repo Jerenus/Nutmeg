@@ -224,8 +224,8 @@ def test_leg_audit_warns_when_the_expensive_exclusion_has_no_death_proof() -> No
     assert ("expensive_exclusion", "WARN") in _leg_findings(findings)
 
 
-def test_broken_anchor_single_blocks_the_candidate_as_an_audit_error() -> None:
-    """C5 —— 26102 本菲卡：锚方 FAIL 还裸单是 ERROR，不是提醒。"""
+def test_broken_anchor_single_is_recorded_as_a_hint() -> None:
+    """C5 —— strength-v2 起降为提示（锚方完整度 n=70 零预测力），仍要被记下。"""
     findings = _audit_candidate(
         _draft(_ticket((_leg(selection_codes=("3",)),))),
         lane="jczq",
@@ -242,7 +242,7 @@ def test_broken_anchor_single_blocks_the_candidate_as_an_audit_error() -> None:
         capital_cap_minor=10_000,
     )
 
-    assert ("broken_anchor_single", "ERROR") in _leg_findings(findings)
+    assert ("broken_anchor_single", "WARN") in _leg_findings(findings)
 
 
 def test_live_precedent_on_an_excluded_face_warns_under_rule_r3() -> None:
@@ -278,8 +278,8 @@ def test_broken_anchor_double_warns_when_a_face_is_dropped_on_a_holed_anchor() -
     assert ("broken_anchor_double", "WARN") in _leg_findings(findings)
 
 
-def test_dropping_the_modal_face_is_an_error_that_blocks_the_candidate() -> None:
-    """The leg audit runs before ordering: an ERROR partitions the candidate away."""
+def test_dropping_the_modal_face_is_a_hint_that_keeps_the_candidate() -> None:
+    """strength-v2: a modal drop is a WARN — the candidate stays eligible and ranked."""
     audit_offer = _audit_offer(belief=DROPPED_MODAL_BELIEF)
     findings = _audit_candidate(
         _draft(_ticket((_leg(),))),
@@ -287,7 +287,7 @@ def test_dropping_the_modal_face_is_an_error_that_blocks_the_candidate() -> None
         offers=(audit_offer,),
         capital_cap_minor=10_000,
     )
-    assert ("modal_face_dropped", "ERROR") in _leg_findings(findings)
+    assert ("modal_face_dropped", "WARN") in _leg_findings(findings)
     assert [
         item.official_match_no
         for item in findings
@@ -346,5 +346,5 @@ def test_dropping_the_modal_face_is_an_error_that_blocks_the_candidate() -> None
         ),
     )
 
-    assert [candidate.partition for candidate in result.candidates] == ["audit_blocked"]
-    assert all(candidate.rank is None for candidate in result.candidates)
+    assert [candidate.partition for candidate in result.candidates] == ["eligible"]
+    assert all(candidate.rank is not None for candidate in result.candidates)

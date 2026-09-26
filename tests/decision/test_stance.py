@@ -62,12 +62,14 @@ def test_validate_tilt_rules_tier_range_kind_lexicon_and_will_only_toward_draw()
     assert any("made_up_kind" in m for m in msgs)
 
 
-def test_apply_tilt_zeroes_below_5pp_caps_and_drops_post_kickoff_evidence():
+def test_apply_tilt_expresses_small_moves_caps_and_drops_post_kickoff_evidence():
+    # strength-v2（2026-09-26）：<5pp 不再归零——小而真实的利好利空如实表达。
     ev = lambda tier, pp, at="2026-09-23T10:00:00+08:00": {  # noqa: E731
         "tier": tier, "kind": "absence_official", "pp": pp, "source": "s", "captured_at": at}
     small = {"face": "3", "expires_if": "", "evidence": [ev("inferred", 2), ev("inferred", 2)]}
     r = apply_tilt(PRIOR, small, kickoff="2026-09-23T19:30:00+08:00")
-    assert r.zeroed and r.applied_pp == 0 and r.belief == PRIOR and "归零" in r.reason
+    assert not r.zeroed and r.applied_pp == 4
+    assert round(r.belief["home"], 2) == 0.56 and round(sum(r.belief.values()), 6) == 1.0
     big = {"face": "3", "expires_if": "",
            "evidence": [ev("official", 8), ev("confirmed_structural", 6), ev("inferred", 2)]}
     r = apply_tilt(PRIOR, big, kickoff="2026-09-23T19:30:00+08:00")
@@ -83,3 +85,36 @@ def test_apply_tilt_zeroes_below_5pp_caps_and_drops_post_kickoff_evidence():
     nooff = {"face": "1", "expires_if": "",
              "evidence": [ev("confirmed_structural", 6), ev("confirmed_structural", 6)]}
     assert apply_tilt(PRIOR, nooff).applied_pp == 10  # 无官宣封顶 10
+
+
+def _ev(tier="inferred", kind="style_matchup", pp=2):
+    return {"tier": tier, "kind": kind, "pp": pp, "source": "s",
+            "captured_at": "2026-09-23T10:00:00+08:00"}
+
+
+def test_apply_tilt_shift_moves_several_faces_and_keeps_the_sum():
+    tilt = {"shift": {"3": -1, "1": 3, "0": -2}, "expires_if": "",
+            "evidence": [_ev(pp=2), _ev(tier="state", kind="form_state", pp=1)]}
+    r = apply_tilt(PRIOR, tilt)
+    assert not r.zeroed and r.applied_pp == 3
+    expected = {"home": 0.51, "draw": 0.29, "away": 0.20}
+    assert {k: round(v, 4) for k, v in r.belief.items()} == expected
+
+
+def test_apply_tilt_shift_is_capped_per_face_without_official_evidence():
+    tilt = {"shift": {"3": 14, "1": -7, "0": -7}, "expires_if": "", "evidence": [_ev(pp=2)]}
+    r = apply_tilt(PRIOR, tilt)
+    assert r.applied_pp == 10 and "截断" in r.reason
+    assert round(r.belief["home"], 4) == 0.62 and round(sum(r.belief.values()), 6) == 1.0
+
+
+def test_validate_shift_must_sum_to_zero_and_use_the_strength_lexicon():
+    good = {"shift": {"3": 2, "1": -1, "0": -1}, "expires_if": "",
+            "evidence": [_ev(kind="underdog_path"), _ev(tier="state", kind="form_state", pp=3)]}
+    _, issues = validate_stance(_stance(why_not_market="tilt_evidence", tilt=good), confidence=3,
+                                death_three_proofs={})
+    assert issues == []
+    bad = {"shift": {"3": 2, "1": 0, "0": 0}, "expires_if": "", "evidence": [_ev()]}
+    _, issues = validate_stance(_stance(why_not_market="tilt_evidence", tilt=bad), confidence=3,
+                                death_three_proofs={})
+    assert any("shift" in i.message and "0" in i.message for i in issues)

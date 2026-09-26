@@ -93,11 +93,11 @@ def test_findings_are_normalized_without_losing_rule_provenance() -> None:
     )
 
     finding = next(item for item in result.findings if item.code == "low_conf_single")
-    assert finding.level == "ERROR"
+    assert finding.level == "WARN"  # strength-v2：C4 降为提示
     assert finding.match_no == 1
     assert "conf3" in finding.message
     assert finding.since == "判决表 m 条"
-    assert result.has_blocking is True
+    assert result.has_blocking is False  # 提示不阻断
 
 
 def test_canonical_digest_is_mapping_order_independent_and_materially_sensitive() -> None:

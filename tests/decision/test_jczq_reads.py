@@ -279,7 +279,7 @@ def test_reads_take_belief_from_tilt_and_carry_stance(tmp_path):
     assert r["stance"]["tilt_applied_pp"] == 6 and r["stance"]["tilt_zeroed"] is False
 
 
-def test_reads_zero_small_tilt_and_keep_alive_normalisation(tmp_path):
+def test_reads_express_small_tilt_and_keep_alive_normalisation(tmp_path):
     root = _day(tmp_path)
     tilt = {
         "face": "3",
@@ -308,5 +308,6 @@ def test_reads_zero_small_tilt_and_keep_alive_normalisation(tmp_path):
     )[0]
 
     assert r["belief"]["away"] == 0.0  # away 判死 → 活面归一仍生效
-    assert r["stance"]["tilt_zeroed"] is True and "归零" in r["stance"]["tilt_reason"]
-    assert r["adjustment_evidence_tiers"] == []
+    # strength-v2（2026-09-26）：2pp 的推断级偏移如实表达，不再归零
+    assert r["stance"]["tilt_zeroed"] is False and r["stance"]["tilt_applied_pp"] == 2
+    assert r["adjustment_evidence_tiers"] == ["inferred"]

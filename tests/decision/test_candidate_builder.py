@@ -150,10 +150,11 @@ def test_real_audit_adds_ticket_level_codes_the_cheap_table_cannot_see():
         payload["legs"][match_no]["nondirectional_flags"] = ["two_way_instability"]
     options = {str(i): ["31"] for i in range(1, 10)}
     candidates = enumerate_candidates(options, FAIR, leg_codes=_codes())
-    assert "C17" not in candidates[0].error_codes
     audited = audit_candidates(candidates, payload, top=1)
     assert audited[0].audited is True
-    assert "C17" in audited[0].error_codes
+    # strength-v2：C17 降为 WARN——票级码仍只有真审计看得见，体现为 WARN 数增加
+    assert "C17" not in audited[0].error_codes
+    assert audited[0].warn_count > candidates[0].warn_count
 
 
 def test_audit_top_leaves_the_rest_cheap():
