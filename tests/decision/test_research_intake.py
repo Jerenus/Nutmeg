@@ -391,3 +391,17 @@ def test_off_lexicon_precedent_status_blocks():
 def test_malformed_precedent_tuple_blocks():
     result = intake(_research(precedents=[["1", "只有两项"]]), _leg())
     assert result.blocked is True
+
+
+def test_intake_transcribes_research_stance_and_strength_balance():
+    balance = {"verdict": "home_edge", "underdog_path": {"side": "away", "exists": True,
+                                                        "routes": ["定位球"], "strength": "weak"}}
+    research = _research(
+        stance={"face": "3", "structure": "double", "cover": "1", "confidence": 3,
+                "falsifier": "客队 90 分钟赢球则作废"},
+        strength_balance=balance,
+    )
+    leg = intake(research, _leg()).leg
+    assert leg["research_stance"] == {"face": "3", "structure": "double", "cover": "1",
+                                      "confidence": 3}
+    assert leg["strength_balance"] == balance

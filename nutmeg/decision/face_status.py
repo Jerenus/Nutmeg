@@ -78,9 +78,18 @@ def attach_face_status(
 
     derived = derive_faces(out)
     written = str(leg.get("faces") or "")
-    if written and set(written) != set(derived):
-        raise FaceStatusError(f"written faces={written!r} disagree with derived faces={derived!r}")
+    bought_dead = set(written) - set(derived)
+    if bought_dead:
+        raise FaceStatusError(
+            f"written faces={written!r} buy dead/never faces {sorted(bought_dead)} "
+            f"(alive={derived!r})"
+        )
     leg["face_status"] = out
     leg["_d3"] = d3
-    leg["faces"] = derived
+    # strength-v2（2026-09-26）：活面集是事实层，不再强制票面；收窄是第二序的表达，
+    # 保留书面面集并记下两者的差，供复盘看「排掉的活面」开出率。
+    if written and set(written) != set(derived):
+        leg["faces_vs_alive"] = {"written": written, "alive": derived}
+    else:
+        leg["faces"] = derived
     return out

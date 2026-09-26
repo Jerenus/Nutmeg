@@ -126,3 +126,35 @@ def test_third_order_sort_key_prefers_full_cover_on_lowest_top1_among_equal_p():
         "top1": {"1": 0.40, "2": 0.70},
     }
     assert third_order_key(a) < third_order_key(b)
+
+
+# —— strength-v2 belief 模式（2026-09-26）————————————————————————————
+
+
+def _v2(fair, *, structure="double", flags=(), dead=()):
+    leg = _leg(fair, lq=LQ3, integrity="fail", dead=dead)
+    leg["research_stance"] = {"face": "3", "structure": structure, "cover": "1"}
+    leg["directional_flags"] = [list(f) for f in flags]
+    return leg
+
+
+def test_belief_mode_offers_every_alive_subset_but_gates_naked_singles():
+    opts = dict(cover_options(_v2((0.6, 0.25, 0.15), structure="single"), mode="belief"))
+    assert set(opts) == {"310", "31", "30", "10", "3", "1", "0"}
+    assert round(opts["31"], 6) == 0.85
+    gated = dict(cover_options(_v2((0.6, 0.25, 0.15), structure="double"), mode="belief"))
+    assert not any(len(faces) == 1 for faces in gated)          # C19：研究要保险
+    flagged = dict(cover_options(_v2((0.6, 0.25, 0.15), structure="single",
+                                     flags=(("anchor_shield_out", "1"),)), mode="belief"))
+    assert not any(len(faces) == 1 for faces in flagged)        # C1：方向旗
+    no_dead = dict(cover_options(_v2((0.6, 0.25, 0.15), structure="single", dead=("away",)),
+                                 mode="belief"))
+    assert all("0" not in faces for faces in no_dead)
+
+
+def test_belief_frontier_ignores_the_b5c_narrowing_caps():
+    legs = {str(i): _v2((0.6, 0.25, 0.15), structure="single") for i in range(1, 10)}
+    out = enumerate_frontier(legs, channel="renjiu", cap_yuan=2, mode="belief")
+    assert out["n_points"] >= 1 and out["points"][0]["shape"]["singles"] == 9
+    matrix = enumerate_frontier(legs, channel="renjiu", cap_yuan=2, mode="matrix")
+    assert matrix["n_points"] == 0                               # 旧矩阵：T3 只许全包

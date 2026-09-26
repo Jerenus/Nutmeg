@@ -110,12 +110,13 @@ def frontier(
     max_probability = (
         "空前沿" if result["max_p"] is None else f"{result['max_p'] * 100:.2f}%"
     )
-    strict_probability = (
-        "空" if result["strict_max_p"] is None else f"{result['strict_max_p'] * 100:.2f}%"
-    )
+    def _pct(value):
+        return "空" if value is None else f"{value * 100:.2f}%"
+
     typer.echo(
-        f"{issue} {channel} ¥{cap_yuan}：前沿 {result['n_points']} 点 · "
-        f"帽内 max P {max_probability} · strict 地板 {strict_probability}"
+        f"{issue} {channel} ¥{cap_yuan}：前沿 {result['n_points']} 点（判断概率 + 硬门）· "
+        f"帽内 max P {max_probability} ｜ 旧规则对照：B5c 矩阵 "
+        f"{_pct(result.get('matrix_max_p'))} · strict 地板 {_pct(result['strict_max_p'])}"
     )
     for point in result["points"][:12]:
         faces = " ".join(

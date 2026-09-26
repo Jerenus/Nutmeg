@@ -92,7 +92,15 @@ def test_never_only_from_explicit_declaration_not_from_no_precedent():
     assert leg2["face_status"]["away"]["state"] == "never"
 
 
-def test_hand_written_faces_that_disagree_with_derivation_are_an_error():
-    leg = _leg(faces="3")
-    with pytest.raises(FaceStatusError, match="faces"):
-        attach_face_status(leg, _research(), source="x")
+def test_written_faces_narrower_than_alive_are_kept_and_recorded():
+    # strength-v2：事实层面集（活面）不再强制票面；票面收窄是第二序的表达。
+    leg = _leg(faces="31")
+    attach_face_status(leg, _research(), source="x")
+    assert leg["faces"] == "31"
+    assert leg["faces_vs_alive"] == {"written": "31", "alive": "310"}
+
+
+def test_buying_a_dead_face_is_still_a_contradiction():
+    leg = _leg(faces="310")
+    with pytest.raises(FaceStatusError, match="dead"):
+        attach_face_status(leg, _research(away=_PROOFS_DEAD), source="x")

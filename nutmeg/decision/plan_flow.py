@@ -75,10 +75,14 @@ def run_frontier(*, issue: str, channel: str, cap_yuan: int, data_dir: Path) -> 
         raise FileNotFoundError(f"{tiers_path.name} is missing; run plan tiers first")
     tiers_hash = json.loads(tiers_path.read_text("utf-8"))["tiers_hash"]
     legs = _legs(issue, data_dir)
+    # strength-v2（2026-09-26）：前沿按判断概率 + 硬门（belief）；旧 B5c 矩阵与
+    # strict 地板只作对照报告，不再决定能不能出票。
     frontier = enumerate_frontier(
-        legs, channel=channel, cap_yuan=cap_yuan, mode="matrix"
+        legs, channel=channel, cap_yuan=cap_yuan, mode="belief"
     )
+    matrix = enumerate_frontier(legs, channel=channel, cap_yuan=cap_yuan, mode="matrix")
     strict = enumerate_frontier(legs, channel=channel, cap_yuan=cap_yuan, mode="strict")
+    frontier["matrix_max_p"] = matrix["max_p"]
     frontier["strict_max_p"] = strict["max_p"]
     frontier["tiers_hash"] = tiers_hash
     (_zucai(data_dir) / f"{issue}-frontier-{channel}.json").write_text(

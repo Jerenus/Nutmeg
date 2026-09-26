@@ -418,6 +418,12 @@ def _check_precedents(
     return out
 
 
+def _research_stance(stance: object) -> dict | None:
+    if not isinstance(stance, dict):
+        return None
+    return {key: stance.get(key) for key in ("face", "structure", "cover", "confidence")}
+
+
 def intake(research: dict, leg: dict) -> IntakeResult:
     """一场研究 JSON → 可入库的 leg 字段 + 问题清单。**不改 faces、不产生判断。**"""
     match_no = int(research.get("match_no") or leg.get("match_no") or 0)
@@ -525,6 +531,9 @@ def intake(research: dict, leg: dict) -> IntakeResult:
         "_dead_face": research.get("structurally_dead_face"),
         "_hole": research.get("hole_location"),
         "_d3": proofs,
+        # strength-v2：深研表态（C19 用）与强弱天平（原样转录，判断在主循环）
+        "research_stance": _research_stance(research.get("stance")),
+        "strength_balance": research.get("strength_balance"),
     }
     return IntakeResult(match_no=match_no, leg=merged, issues=issues, stripped=stripped)
 
