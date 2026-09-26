@@ -38,7 +38,13 @@ def _cli_invoke(argv: list[str]) -> tuple[int, str]:
 
 
 def after_prep(*, issue: str, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None:
-    """备料链跑完：为当天排义务，并把待办（几点前跑哪条 instrument）打到终端。"""
+    """备料链跑完：带期号入本体（产 store-ids，足彩场次才能进并集池）→ 排义务 → 列待办。
+
+    decision-am 成功后会自己走 after_am（研究板面 + 排义务 + 并集池刷新）。
+    """
+    invoke(["decision-am", "--run-date", day, "--issue", issue,
+            "--output-dir", str(Path(data_dir) / "jczq"),
+            "--zucai-dir", str(Path(data_dir) / "zucai")])
     invoke(["rsi", "schedule", "--day", day, "--issue", issue, "--data-dir", str(data_dir)])
     invoke(
         [
@@ -58,10 +64,9 @@ def after_am(*, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None
     """Build the JCZQ research board, then schedule its per-match duties."""
     invoke(["research", "board", "--day", day, "--data-dir", str(data_dir)])
     invoke(["rsi", "schedule", "--day", day, "--data-dir", str(data_dir)])
-    # 当天重跑（17:15 刷新）会有新上板场次：立即入库并重建 Read，F9 才能在开球前履约
-    jczq_dir = str(Path(data_dir) / "jczq")
-    invoke(["research", "intake", "--day", day, "--jczq-dir", jczq_dir, "--write"])
-    invoke(["jczq-build-reads", "--day", day, "--jczq-dir", jczq_dir])
+    # 并集池刷新（2026-09-27）：竞彩入库+重建 Read、足彩表态转录 Read、未开球的交本体。
+    # 当天重跑（17:15 刷新）会有新上板场次，F9 要在开球前履约
+    invoke(["research", "refresh", "--day", day, "--data-dir", str(data_dir)])
 
 
 def after_observation_artifact(*, exp: str, duty: str, issue: str, day: str, artifact: Path,

@@ -130,15 +130,29 @@ def run(
     if report["written"]:
         # 定时 sweep 只跑 `research run`：新研究落盘后若不重建 Read，F9 读不到该场、
         # 义务永远履约不了（2026-09-26 017–025 全漏）
-        from nutmeg.decision.jczq_reads import build_jczq_reads, intake_board
+        _refresh(day, data_dir)
 
-        intake_board(day=day, jczq_dir=jczq_dir, write=True)
-        reads = build_jczq_reads(
-            day=day,
-            jczq_dir=jczq_dir,
-            made_at=datetime.now().astimezone().isoformat(timespec="seconds"),
-        )
-        typer.echo(f"已入库并重建 Read {len(reads)} 条")
+
+def _refresh(day: str, data_dir: Path) -> None:
+    from nutmeg.decision.pool import refresh_day
+    from nutmeg.decision.rsi_wiring import _cli_invoke
+
+    summary = refresh_day(
+        day=day,
+        data_dir=Path(data_dir),
+        made_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        submit=lambda path: _cli_invoke(["decision-read", "--reads-file", str(path)]),
+    )
+    jczq = summary["jczq"] or {"reads": 0, "submitted": 0}
+    typer.echo(f"并集池刷新：竞彩 Read {jczq['reads']} 条（交本体 {jczq['submitted']}）")
+    for issue, row in summary["zucai"].items():
+        typer.echo(f"  足彩 {issue}：Read {row['reads']} 条（交本体 {row['submitted']}）")
+
+
+@research_app.command("refresh")
+def refresh(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
+    """并集样本池刷新（Jun 2026-09-27）：两渠道重建 Read，未开球场次自动交本体。"""
+    _refresh(day, data_dir)
 
 
 @research_app.command("intake")

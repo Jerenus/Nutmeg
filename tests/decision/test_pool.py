@@ -49,3 +49,30 @@ def test_pool_skips_an_issue_without_store_ids(tmp_path):
     (zdir / "26133-store-ids.json").unlink()
 
     assert zucai_pool_entries(day="2026-09-26", data_dir=tmp_path) == []
+
+
+def test_refresh_day_builds_zucai_reads_and_submits_only_unmapped_unstarted(tmp_path):
+    from nutmeg.decision.pool import refresh_day
+
+    zdir = tmp_path / "zucai"
+    _issue(zdir)
+    for no in ("1", "2"):
+        ids = json.loads((zdir / "26133-store-ids.json").read_text(encoding="utf-8"))
+        ids[no]["snapshot_id"] = f"s-{no}"
+        ids[no]["name"] = "x-y"
+        (zdir / "26133-store-ids.json").write_text(json.dumps(ids), encoding="utf-8")
+    (zdir / "26133-channel-map.auto.json").write_text(json.dumps({"jczq-008": 2}),
+                                                      encoding="utf-8")
+    sent = []
+
+    def submit(path):
+        sent.extend(r["match_id"] for r in json.loads(path.read_text(encoding="utf-8")))
+        return 0, "ok"
+
+    summary = refresh_day(day="2026-09-26", data_dir=tmp_path,
+                          made_at="2026-09-26T14:15:00+08:00", submit=submit)
+
+    reads = json.loads((zdir / "26133-reads.json").read_text(encoding="utf-8"))
+    assert [r["match_id"] for r in reads] == ["z-1", "z-2"]
+    assert sent == ["z-1"]          # 场2 已对到竞彩：由竞彩那条进本体，不重复建序列
+    assert summary["zucai"] == {"26133": {"reads": 2, "submitted": 1}}

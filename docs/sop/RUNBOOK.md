@@ -13,6 +13,8 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 并排打印**；拿不到时间就显示「无时间证据」，拿不到标记就显示「无标记」并退回退出码，
 一律不默认它是今天的、不假装它成功。首跑即发现 `Nutmeg-早间复盘对齐`（08:20）**连败 5 次**无人察觉。
 
+> **并集样本池（2026-09-27 起，Jun 定）**：每天的分析样本池 = 当天截止的传统足彩期次（优先）∪ 竞彩板面，按对号表去重（人工 `{issue}-channel-map.json` 优先，缺则备料自动落 `.auto`）。`research run` 队列取并集：未试过优先 → 足彩独有场次优先 → 开球先后；足彩独有场次的研究写 `zucai/{issue}-research-m{n}.json`，登记 R1。研究有新产出、17:15 刷新、足彩备料之后都跑 `uv run nutmeg research refresh --day <日>`：竞彩入库重建 Read、足彩由研究表态自动转录 Read（judge=`ai-pool`；主循环 judgment-v1 永远优先）、**未开球且内容有变的 Read 自动交本体**（开球后一律不交）。足彩备料完成会自动带期号跑 `decision-am --issue`（产 store-ids），足彩场次才进得了池。预算仍 40 次/天。
+
 ## 泳道 A：竞彩（JCZQ 日常）
 
 > **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ 帽内按**判断概率**最大化 P → 审计门**只拦硬门 ERROR**（C1 方向旗裸单、C19 研究建议保险却裸单），其余码是提示、只记账。规则分类见 RULEBOOK「〇、规则三分表」。
@@ -80,6 +82,7 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 > 出生事故：F1c 两次断采（08-14 批处理停在 26124；09-18 19:20 才发现采集仪看不见 26129）——义务从此是对象不是散文。
 > **R0 竞彩全板覆盖率义务**：`scope=match`，每场截止各自开球；`research run` 成功即逐场 fulfill，
 > 未研、预算外、开球后启动或拒收的场都保留为 gap，不以 `price_only` 冒充深研。
+> **R1 并集池覆盖率义务**（2026-09-27 起）：population=both，同一条 `research run`；足彩独有场次只有 R1 义务。R0 冻结不动。
 
 > **非决策附录 · 统一语料 v2（2026-09-18 用户裁定并入）**
 > `uv run python experiments/corpus_build.py` → `experiments/corpus-v2.json`

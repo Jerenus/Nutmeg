@@ -14,18 +14,19 @@ def test_after_prep_schedules_then_lists_due(tmp_path):
     calls = []
     after_prep(issue="26129", day="2026-09-19", data_dir=tmp_path,
                invoke=lambda argv: calls.append(argv) or (0, ""))
-    assert calls[0][:2] == ["rsi", "schedule"] and "--issue" in calls[0] and "26129" in calls[0]
-    assert calls[1][:2] == ["rsi", "due"] and calls[1][-2:] == ["--issue", "26129"]
+    # 带期号入本体才有 store-ids，足彩场次才能进并集池（2026-09-27）
+    assert calls[0][:3] == ["decision-am", "--run-date", "2026-09-19"] and "26129" in calls[0]
+    assert calls[1][:2] == ["rsi", "schedule"] and "--issue" in calls[1] and "26129" in calls[1]
+    assert calls[2][:2] == ["rsi", "due"] and calls[2][-2:] == ["--issue", "26129"]
 
 
 def test_after_am_builds_research_board_then_schedules_match_duties(tmp_path):
     calls = []
     after_am(day="2026-09-19", data_dir=tmp_path,
              invoke=lambda argv: calls.append(argv) or (0, ""))
-    assert [call[:2] for call in calls[:2]] == [["research", "board"], ["rsi", "schedule"]]
-    # 刷新后立即入库+重建 Read：新上板的场次当场有 Read，F9 才能在开球前履约（2026-09-26）
-    assert calls[2][:2] == ["research", "intake"] and "--write" in calls[2]
-    assert calls[3][0] == "jczq-build-reads"
+    # 刷新后立即重建两渠道 Read：新上板的场次当场有 Read，F9 才能在开球前履约（2026-09-26）
+    assert [call[:2] for call in calls] == [
+        ["research", "board"], ["rsi", "schedule"], ["research", "refresh"]]
 
 
 def test_decision_am_calls_research_wiring_after_success(tmp_path, monkeypatch):

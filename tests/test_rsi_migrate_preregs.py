@@ -51,7 +51,9 @@ def test_all_registry_docs_load_and_keep_their_original_registration_dates():
         for p in sorted(REG.glob("*.json"))
         if not p.name.startswith("_draft_")
     }
-    assert set(docs) == {"F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0"}
+    assert set(docs) == {"F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0", "R1"}
+    # R1：并集样本池深研覆盖（Jun 2026-09-27），R0 冻结不动
+    assert (docs["R1"]["registered_at"], docs["R1"]["population"]) == ("2026-09-27", "both")
     assert docs["F2"]["registered_at"] == "2026-09-14"
     assert docs["F1c"]["registered_at"] == "2026-09-14"
     assert docs["F4"]["registered_at"] == "2026-09-18"
@@ -95,7 +97,7 @@ def test_migration_script_backfills_observations_and_marks_f1c_gaps(tmp_path, mo
     report = mig.migrate(data_dir=d, registry_dir=REG, f2_ledger=tmp_path / "ledger.json",
                          dispersion_file=tmp_path / "t7-dispersion.json",
                          now="2026-09-18T20:00:00+08:00")
-    assert report["registered"] == ["F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0"]
+    assert report["registered"] == ["F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0", "R1"]
     assert report["F2"]["observations"] == 3
     assert report["F1c"]["observations"] == 1
     # 26125 没有 issue.json 时不造数据
