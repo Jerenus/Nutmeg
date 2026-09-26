@@ -48,7 +48,8 @@ def _require(cond: bool, msg: str) -> None:
 
 
 def build(judgment: dict, *, issue: str, store_ids: dict, fair: dict,
-          made_at: str, judge: str = "claude") -> BuildResult:
+          made_at: str, judge: str = "claude", revision: int | None = None,
+          only: set[str] | None = None) -> BuildResult:
     """judgment-v1 → (reads, legs)。
 
     `judgment` = {场次: {action, confidence, directional_flags, nondirectional_flags,
@@ -108,7 +109,8 @@ def build(judgment: dict, *, issue: str, store_ids: dict, fair: dict,
                 f"|三证:{j.get('proofs', '')}] {j.get('note', '')}")
 
         reads.append({
-            "read_id": f"R-{judge}-zucai-{issue}-{int(no):02d}-had",
+            "read_id": f"R-{judge}-zucai-{issue}-{int(no):02d}-had"
+                       + (f"-r{revision}" if revision else ""),
             "match_id": sid["match_id"], "snapshot_id": sid["snapshot_id"],
             "made_at": made_at, "judge": judge, "market": "had",
             "prior": prior, "belief": belief,
@@ -152,6 +154,10 @@ def build(judgment: dict, *, issue: str, store_ids: dict, fair: dict,
         "deviation_registry": [],
         "legs": legs,
     }
+    if only is not None:
+        # 修订某几场的判断：只发这些场次的 Read（legs 仍写全，供审计与前沿）
+        keep = {f"-{int(no):02d}-had" for no in only}
+        reads = [r for r in reads if any(k in r["read_id"] for k in keep)]
     return BuildResult(reads=reads, legs=legs_payload, warnings=warnings)
 
 

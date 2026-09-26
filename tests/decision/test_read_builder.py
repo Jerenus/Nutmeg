@@ -93,3 +93,12 @@ def test_belief_offset_with_evidence_tiers_is_not_flagged():
     j["1"]["adjustment_evidence_tiers"] = ["inferred", "state"]
     r = build(j, issue="26122", store_ids=IDS, fair=FAIR, made_at="t")
     assert not any("belief≠prior" in w for w in r.warnings)
+
+
+def test_revision_suffixes_read_ids_and_only_limits_the_reads_emitted():
+    """修订一场判断：新版本带 -rN，只发改动的场次；legs 仍写全。"""
+    j = _judgment()
+    r = build(j, issue="26122", store_ids=IDS, fair=FAIR, made_at="t",
+              revision=2, only={"1"})
+    assert [x["read_id"] for x in r.reads] == ["R-claude-zucai-26122-01-had-r2"]
+    assert set(r.legs["legs"]) == set(j)

@@ -560,6 +560,8 @@ def zucai_build_reads(
     made_at: str = _MADE_AT_OPTION,
     output_dir: _cli.Path = _BUILD_OUTPUT_DIR_OPTION,
     judge: str = _JUDGE_OPTION,
+    revision: int = _cli.typer.Option(0, "--revision", help="判断修订号：Read ID 加 -rN（0=首版）"),
+    only: str = _cli.typer.Option("", "--only", help="只发这些场次的 Read，如 11 或 3,11"),
 ) -> None:
     """judgment-v1 → reads.json + legs-base.json（只转录与校验词典，不产生判断）。"""
     import json as _json
@@ -574,7 +576,8 @@ def zucai_build_reads(
             issue=issue,
             store_ids=_json.loads(_cli.Path(store_ids_file).read_text("utf-8")),
             fair=_json.loads(_cli.Path(fair_file).read_text("utf-8")),
-            made_at=made_at, judge=judge)
+            made_at=made_at, judge=judge, revision=revision or None,
+            only={x.strip() for x in only.split(",") if x.strip()} or None)
     except JudgmentError as exc:
         _cli.typer.echo(f"judgment 结构错误：{exc}")
         raise _cli.typer.Exit(code=1) from exc
