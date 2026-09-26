@@ -15,6 +15,8 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 
 ## 泳道 A：竞彩（JCZQ 日常）
 
+> **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ 帽内按**判断概率**最大化 P → 审计门**只拦硬门 ERROR**（C1 方向旗裸单、C19 研究建议保险却裸单），其余码是提示、只记账。规则分类见 RULEBOOK「〇、规则三分表」。
+
 | 步 | 动作 | 命令/门 |
 |---|---|---|
 | A1 | 数据入库+市场基线 | `uv run nutmeg decision-am --run-date $(date +%Y-%m-%d) --output-dir .nutmeg-data/jczq`；看 alias-audit 输出，未命中=该场丢国际锚。成功后自动 `research board` + `rsi schedule`，为板上每场生成 R0 duty |
@@ -22,13 +24,15 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 | A2 | 判读 | `uv run nutmeg research run --day $(date +%Y-%m-%d)`（headless，预算 40 场/日，按开球排队；研不到如实保留 `price_only`）→ `uv run nutmeg research intake --day $(date +%Y-%m-%d) --write`；每场落到实际 `judgment_tier`，不得补造中间态 |
 | A3 | 落判读 | `uv run nutmeg jczq-build-reads --day $(date +%Y-%m-%d)` 生成 `reads.json` → `uv run nutmeg decision-read --reads-file …` 提交 ForecastRevision。（operator_v2 板工作流及其 `workflow jczq-project` 投影已于 2026-09-23 退役） |
 | A4 | 构票 | 工作台从正式 Judgment Prescription 生成两类 Candidate Set；`judgment_bound` 内逐档记录 10x/20x/50x/100x 候选或 `no_feasible_candidate`，每次迭代必须有 parent/delta/rationale |
-| A5 | **审计门** | `uv run nutmeg decision-audit-legs --legs-file …` — 默认/AI/无人值守遇 ERROR=退出码1不许出票；仅 Jun 显式 `--user-override` 且登记 reason/rule ID、evidence_rejected Adjudication 入账成功后可继续；WARN 逐条显式裁决入账 |
+| A5 | **审计门** | `uv run nutmeg decision-audit-legs --legs-file …` — 默认/AI/无人值守遇 ERROR=退出码1不许出票；仅 Jun 显式 `--user-override` 且登记 reason/rule ID、evidence_rejected Adjudication 入账成功后可继续；**WARN 是提示，只记账**（strength-v2） |
 | A6 | 出票 | A5 门通过后把票面写到 `daily/<日>/legs.json`；`decision-close` 只读该文件做 express + 日报（无文件即空票，编排不自造腿；operator_v2 的本体 terminal 门已于 2026-09-23 退役）。真实出票与 Telegram 派发仍须 Jun 当次确认；实票入账走 B9c 的 `betslip register --channel jczq --legs-file …` |
 | A7 | 次日结算 | 通过正式 result/settlement/review Actions 结算；no-ticket 资金结算为 0 但 Forecast 仍进入复盘。historical replay 永不增加 prospective R0/F5/F9 样本 |
 
 切换门：operator_v2 的 `workflow jczq-replay` / `jczq-cutover` 切换门已于 2026-09-23 随板工作流一并退役；`decision-close` 固定走旧路径，出票授权仍只来自 A5 审计门 + Jun 当次确认。
 
 ## 泳道 B：传统足彩（胜负彩/任九）
+
+> **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ `plan frontier`（belief 模式：判断概率 + 硬门）出前沿，B5c 矩阵与 strict 地板只作旧规则对照 → 审计门**只拦硬门 ERROR**（C1 方向旗裸单、C19 研究建议保险却裸单），其余码是提示、只记账。规则分类见 RULEBOOK「〇、规则三分表」。
 
 > **页面按钮＝同一条命令（2026-09-18 起）**：`uv run nutmeg decision-web` → 顶部 SOP 任务栏按期号列出 B0/B1/B2/B3a/B4/B4b/B5c/B5/B6/B6b/B9 十一步，点一下＝进程内跑本表同一条 CLI，`task_started/task_done/task_failed` 进当日 `workbench.jsonl`。
 > ⛔按钮里没有 B3 深研（要 agent）、B5 的人工 choose、B6b 的 ruling（人填）——那是设计，不是缺功能。
@@ -51,7 +55,7 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 | B4c | **面集展开（2026-09-14 新增）** | `uv run nutmeg decision-explain-faces --legs-file <legs-base> [--match N] [--out …]`——每场七个面集 × 盖率/被排面档位/裸单总暴露/触发哪些码，**由机器机械展开条文**。⛔它只摊算术：**不排序、不推荐、不裁合法性**，退出码恒 0，不是出票门。死亡三证(a) 机制一证、牌照四问、旗的证据等级留空给主循环填（表末「判断栏」）。**出生事故 2026-09-15**：构 26125 票时把 C14 的「**被排面** fair>20%」口算成「任一面 fair>20%」，场4/场12 两处灰带排除被误锁全包，帽内零 ERROR 解 1,890→0，并支撑了当时的空仓建议 |
 | B5 | **首版构票（一步到位，2026-08-24 用户定）** | **先 `plan tiers` → `plan frontier` → `plan choose`（2026-09-19 起，票面只从前沿上来）**。在处方之上**直接完成砍腿后的第一版实票**，不得只交全包清单等用户逐轮压缩：①单选＝牌照/实质单核验（净线优先）；②3进2＝排面活性验尸（先例载体存亡+钱流方向+热度×资讯偏差）后砍第三面；③2进1＝保险性价比表（兑现概率×每元效率）定裸/保；④附**资金使用率报告**（票价 vs 难度、每笔保险买的是哪个面）＋2-3 个备选档位。**每一版被考虑过的票面（含被否掉的）用 `POST /action/candidate` 或 `append_candidate()` 进事件流，否决理由进 `note`；事后 `uv run nutmeg workbench-export --date <开球日>` 出复盘底稿、`/replay?date=` 看时间线**——出生事故 26129：SFC-B/C/D/E 四轮迭代与「平局是不是太少」的曲线只活在聊天窗口，仓里只剩终版文件，第二天在 app 里什么都看不到 |
 | B5b | **风险预警与裁决分工** | 翻车场/异常项（改场/夹心/源分歧/终核异动）逐条列出，标注「我已裁决：理由」或「需你裁决：两选项」。**默认我裁**；以下必须上交：翻车场裸单、终核≥2pp异动打在裸单上、用户历史点名过的死法形状 |
-| B5c | **四表共振核对（probation, 2026-09-06）** | 首版实票成型后、审计门前，每一保留场一行四列：①牌照四问 0-4（中轴/正路破门机制/对手破门机制缺席/无情境旗与 C9）②被排面死亡三证 0-3（机制缺席/载体不在/正路 PASS）③崩塌双列（洞在哪侧、中轴哪个位置）④翻车预警名次+先失球走势。**决策矩阵**：四问 4/4 且翻车名次低→裸单；3/4→至多双选，三证 3/3 才排，2/3 且被排面 ≤15% 可排，否则全包或丢；被排面 >20% 且三证 <3→必须全包或丢；洞在正路中轴→禁裸单；多票共享 >20% 被排面→组合 WARN；附被排面按 P 降序的独立面效率表 |
+| B5c | **四表共振核对（probation, 2026-09-06；strength-v2 起降为参考，不再是出票前提）** | 首版实票成型后、审计门前，每一保留场一行四列：①牌照四问 0-4（中轴/正路破门机制/对手破门机制缺席/无情境旗与 C9）②被排面死亡三证 0-3（机制缺席/载体不在/正路 PASS）③崩塌双列（洞在哪侧、中轴哪个位置）④翻车预警名次+先失球走势。**决策矩阵**：四问 4/4 且翻车名次低→裸单；3/4→至多双选，三证 3/3 才排，2/3 且被排面 ≤15% 可排，否则全包或丢；被排面 >20% 且三证 <3→必须全包或丢；洞在正路中轴→禁裸单；多票共享 >20% 被排面→组合 WARN；附被排面按 P 降序的独立面效率表 |
 | B6 | **审计门** | 同 A5；**同期多票必须一起跑**：`decision-audit-legs --legs-file <票1> --with-legs-file <票2> …` 才会触发 C15 共享被排面检查（分散注金不等于分散死点）|
 | B6b | **裁决单（2026-09-17 新增）** | 仅当 B6 有 ERROR 且**打算行权**时走这步。①签发：`uv run nutmeg decision-adjudicate --legs-file <票面> --out <裁决单>`——机器把每条 ERROR 摊成一个裁决位，`ruling`/`reason`/`rule_ids`/`predictions` **四栏全部留空**（判断永不入脚本）。②人填 `ruling=accept\|reject`。③落文书：`--apply <裁决单>`——写回 `deviation_registry`，驳回预测并入 `<issue>-rx.json`。⛔**驳回必须附可证伪预测**（claim+falsifier）与**已登记条名**：26098/26101/26102/26103 四次撤保险，理由一次比一次讲究且全亏，**理由的质量不可自证**，能自证的只有事后可判真假的断言。⛔**接受门 = 这张票不出**，`--apply` 拒绝为它落文书（8/08 铁律：合法动作是丢整场）。⛔裁决单带 ERROR 集指纹，签发后票面被改过即作废。⛔**它不是门也不放宽门**——落完文书仍须 `decision-audit-legs --user-override --ticket-batch-token <Web 工位签发>`。**出生事故**：热板四连 26125-26128 严格裁决全部空仓而同期行权形状 8/9、8/9、9/9（⚠️**2026-09-18 更正**：「全部空仓」里只有 26126 是真零解，26127/26128 的全合法空间都有零 ERROR 解，只是 max P 被压到 23.09%/6.94%——见 B4b），「洞已定价≠翻车」这条本体结论**没有可累积的出口**；且票级 ERROR（C15/C15b/C17）此前在行权通道里根本无法登记（26128 S333 的 C17 首次撞上），现由 `scope="ticket"` 登记承接 |
 | B7 | rx 预注册 | `<issue>-rx.json`：终版票+待裁刀+可证伪预测（含奖金模型分支检验）；落盘后 `uv run nutmeg workflow register-rx --rx-file <issue>-rx.json --issue <issue>`（幂等，裁决后重跑补录已决 ADJ）。**B6b 驳回预测已自动并入本文件**，此处只补票面级与奖金模型分支 |

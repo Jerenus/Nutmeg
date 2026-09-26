@@ -33,11 +33,20 @@ RESEARCH_JSON_CONTRACT = """
                                "schedule_congestion|motivation_dead_rubber",
                        "pp": 0-8, "source": str, "captured_at": "ISO"}]},
      "alt_face": "3|1|0|null", "market_read": "agree|overpriced|underpriced|null"}}
+"strength_balance": {"verdict": "home_clear|home_edge|even|away_edge|away_clear",
+  "home_state": str, "away_state": str, "style_matchup": str, "tactical_scenarios": [str],
+  "underdog_path": {"side": "home|away", "exists": bool, "routes": [str],
+                    "strength": "none|weak|real|strong"},
+  "events": [{"event": str, "side": "home|away", "direction": "up|down",
+              "grade": "minor|moderate|major", "pp": int, "priced_in": bool, "source": str}]}
+强弱天平必答（strength-v2）：判断目标是两队本场最终强度对比；赔率只作噪声识别与情绪参考，
+已被位移吸收的事件不重复计。underdog_path 为 real/strong 时 stance 至少 double 盖住它。
+tilt 可用多面 shift {"3":pp,"1":pp,"0":pp}（和为 0）；tier 另有 state（本场状态 0–3pp）。
 表态块必答：每场押一个面 + 一个表达档 + 一句作废条件；
 跟市场也要填（why_not_market=none, tilt=null）。
 tilt 只在有 A/B 类证据时给：official 4–8pp、confirmed_structural 3–6pp、
 inferred 0–2pp、will 0–2pp 且只许朝平；
-净偏移 <5pp 会被机器归零；无官宣封顶 10pp、有官宣 15pp；开球后采集的证据作废。
+小偏移如实表达（不再归零）；单面封顶无官宣 10pp、有官宣 15pp；开球后采集的证据作废。
 stance.confidence 必须等于顶层 confidence。
 宣告 dead 必须三证 3/3；查无先例记 none，不得当 dead。数字只许引用简报给你的或你查到的实盘。
 hole_location 语义绑定：attack = 破门端（中锋/射手）缺；creation = 组织端（前腰/组织核）缺；

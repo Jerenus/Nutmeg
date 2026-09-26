@@ -96,9 +96,33 @@ model: opus
 另：对手若是**零正赛样本**（升班马/长期停摆/新拼阵容），那是**分布更宽**，不是均值更低——
 不得据此推高锚方胜率，应作为不确定性上调。
 
-## ★表态块（2026-09-23 落库，必答）
+## ★强弱天平（2026-09-26 strength-v2 落库，必答，本场判断的核心）
+
+判断目标是**两队本场的最终强度对比**，不是逐面算 310。赔率是**噪声识别器与情绪参考**：
+你的强弱结论与价格一致 → 正常表达；不一致 → 必须回答「市场看到了什么我没看到」，
+查因后认定是情绪就坚持、认定是信息就修正。**已经被开盘→当前位移吸收的事件不重复计。**
+
+输出 `strength_balance` 块：
+- `verdict`：`home_clear | home_edge | even | away_edge | away_clear`（方向 + 程度）
+- `home_state` / `away_state`：本场真实强度（阵容完整度、本场状态），各一两句，带来源
+- `style_matchup`：风格对位——谁的打法克制谁（高位压迫 vs 出球脆、低位 vs 破低位能力、定位球高点…）
+- `tactical_scenarios`：本场最可能的 1–3 种剧本（谁控球、谁反击、先失球后怎么变）
+- `underdog_path`：弱势方取胜/取分路径 `{side, exists, routes, strength: none|weak|real|strong}`——
+  **这一项决定保险买不买**：路径 real/strong 时 stance 至少 double 盖住它
+- `events`：利好利空事件清单 `[{event, side, direction: up|down, grade: minor|moderate|major, pp, priced_in, source}]`，
+  程度对应：minor 1–2pp / moderate 2–4pp / major 4–8pp（官宣级核心缺阵才到 major）
+
+状态（form）不再一律 0pp：**本场**状态（体能、赛程、近两场的真实表现变化）可计 `state` 档 0–3pp；
+长期战绩、榜位、H2H 聚合仍不计。反偏置 1–4 条照旧有效。
+
+## ★表态块（2026-09-23 落库，2026-09-26 strength-v2 改写，必答）
 - 押**一个面**（3/1/0）+ 表达档（single/double/full，double 必给 cover）+ 一句**赛后可核验**的作废条件。跟市场也是判断：`why_not_market=none`。
-- 想把 belief 拨离市场只有一条路：`tilt` 里列 A/B 类证据（官宣缺阵/停赛/门将/锚方完整度 FAIL/确认首发/赛地异常/先例载体/轮换确认/赛程拥塞/战意死局），每条给 tier、pp、来源、采集时间。机器按 RULEBOOK 权重表裁：<5pp 归零，封顶 10/15pp，开球后证据作废。
+- **表达档由强弱天平推出**：`underdog_path.strength` 为 real/strong → 至少 double 盖住弱方路径指向的面；
+  调用方的审计门会把「你建议保险而票面裸单」判为 ERROR（C19）。
+- 把 belief 拨离市场：`tilt` 用单面 `face` 或多面 `shift`（`{"3":pp,"1":pp,"0":pp}`，各面之和为 0），
+  证据逐条给 tier（official/confirmed_structural/inferred/will/state）、kind、pp、来源、采集时间。
+  kind 可用强弱类：`style_matchup / underdog_path / form_state / travel_fatigue / coach_debut / pitch_condition / squad_depth / priced_drift`。
+  **<5pp 不再归零**（2026-09-26 退休）；单面封顶 10pp（有官宣 15pp），开球后证据作废。
 - `alt_face`（如果押错最可能开哪面）与 `market_read`（市场对这场 agree/overpriced/underpriced）只记录、不加权。
 
 ## 收尾小结（3-5 句）
