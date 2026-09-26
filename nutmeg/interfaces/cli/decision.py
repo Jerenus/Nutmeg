@@ -1150,6 +1150,7 @@ def zucai_official(
     from nutmeg.decision.zucai_official import (
         fetch_official,
         format_draw,
+        record_official_result,
     )
     from nutmeg.decision.zucai_official import (
         settle_ledger as _settle,
@@ -1163,6 +1164,7 @@ def zucai_official(
         _cli.typer.echo(f"⚠️ {issue} 尚未开奖(官方列表未出现)——不可当作赛果为空")
         raise _cli.typer.Exit(code=1)
     _cli.typer.echo(format_draw(draw))
+    _cli.typer.echo(f"  赛果串 → {record_official_result(draw, zucai_dir)}")
     if write_outcomes:
         _cli.typer.echo(f"  outcomes → {_write(draw, zucai_dir)}")
     if settle_ledger:

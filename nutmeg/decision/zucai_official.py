@@ -209,6 +209,19 @@ def write_outcomes(draw: OfficialDraw, zucai_dir) -> Path:
     return path
 
 
+def record_official_result(draw: OfficialDraw, zucai_dir) -> Path:
+    """把本期 90' 赛果串并入 official-results.json（{期号: "3 1 0 ..."}，幂等）。
+
+    rsi balance / postmortem / ops-status 都读这份；v0.4.0 清理删掉了唯一的写手，
+    26132 因此开奖后 F9 仍读不到赛果（2026-09-26）。
+    """
+    path = Path(zucai_dir) / "official-results.json"
+    doc = json.loads(path.read_text("utf-8")) if path.exists() else {}
+    doc[str(draw.issue)] = " ".join(draw.results[str(i)] for i in range(1, 15))
+    path.write_text(json.dumps(doc, ensure_ascii=False, indent=1, sort_keys=True), "utf-8")
+    return path
+
+
 def ticket_hits(faces: dict, results: dict) -> tuple[int, int]:
     """复式票命中数。faces={场次: "31"...}；返回 (命中腿数, 总腿数)。
 

@@ -8,6 +8,7 @@ from nutmeg.decision.zucai_official import (
     fetch_renjiu_history,
     parse_draw,
     parse_renjiu_history_item,
+    record_official_result,
     settle_ledger,
     ticket_hits,
     write_outcomes,
@@ -144,6 +145,25 @@ def test_write_outcomes_matches_reconcile_schema(tmp_path):
     doc = json.loads(p.read_text("utf-8"))
     assert doc["results"]["5"] == "1"       # verbs._zucai_outcomes 读 results:{no:code}
     assert "90分钟" in doc["source"]
+
+
+def test_record_official_result_upserts_the_draw_string(tmp_path):
+    (tmp_path / "official-results.json").write_text(
+        json.dumps({"26101": "3 3 3 3 3 3 3 3 3 3 3 3 3 3"}), "utf-8")
+    d = parse_draw(_ITEM)
+
+    record_official_result(d, tmp_path)
+    record_official_result(d, tmp_path)
+
+    doc = json.loads((tmp_path / "official-results.json").read_text("utf-8"))
+    assert doc == {"26101": "3 3 3 3 3 3 3 3 3 3 3 3 3 3",
+                   "26102": "3 0 3 3 1 3 1 3 0 0 1 3 1 0"}
+
+
+def test_record_official_result_creates_the_file(tmp_path):
+    record_official_result(parse_draw(_ITEM), tmp_path)
+    doc = json.loads((tmp_path / "official-results.json").read_text("utf-8"))
+    assert doc["26102"].split()[4] == "1"
 
 
 def test_settle_ledger_is_idempotent(tmp_path):

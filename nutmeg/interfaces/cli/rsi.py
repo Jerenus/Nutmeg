@@ -752,10 +752,13 @@ def balance(
     ).hexdigest()[:16]
     payload = {"issue": issue, "day": resolved_day, "rows": rows, **ledger}
     artifact = day_dir / "balance.json"
+    text = json.dumps(payload, ensure_ascii=False, indent=1)
+    if artifact.exists() and artifact.read_text(encoding="utf-8") == text:
+        # 同内容重跑：幂等键只含账本 hash，而 captured_at 每次不同，重登记会撞键
+        typer.echo(f"F9 天平无变化（已登记）\n  → {artifact}")
+        return
     artifact.parent.mkdir(parents=True, exist_ok=True)
-    artifact.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8"
-    )
+    artifact.write_text(text, encoding="utf-8")
 
     now = _now()
     _, duty_fingerprint = _duty_schedule_context(k)

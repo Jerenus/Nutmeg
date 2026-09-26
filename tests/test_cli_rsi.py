@@ -761,6 +761,26 @@ def test_balance_writes_issue_ledger_and_fulfills_f9(tmp_path):
     assert "observing" in status.output
 
 
+def test_balance_rerun_with_unchanged_ledger_is_a_no_op(tmp_path):
+    data_dir = _data_dir(tmp_path)
+    reads = [{"read_id": "r-1", "match_id": "m-1",
+              "prior": {"home": 0.4, "draw": 0.3, "away": 0.3},
+              "belief": {"home": 0.4, "draw": 0.3, "away": 0.3}}]
+    (data_dir / "zucai" / "26129-reads.json").write_text(json.dumps(reads), encoding="utf-8")
+    runner = CliRunner()
+    registered = runner.invoke(app, ["rsi", "register", "--by", "Jun",
+                                     "experiments/registry/F9.json", "--data-dir", str(data_dir)])
+    assert registered.exit_code == 0, registered.output
+    argv = ["rsi", "balance", "--issue", "26129", "--data-dir", str(data_dir)]
+
+    first = runner.invoke(app, argv)
+    again = runner.invoke(app, argv)
+
+    assert first.exit_code == 0, first.output
+    assert again.exit_code == 0, again.output
+    assert "无变化" in again.output
+
+
 def test_balance_can_be_rerun_after_results_arrive(tmp_path):
     data_dir = _data_dir(tmp_path)
     reads = [
