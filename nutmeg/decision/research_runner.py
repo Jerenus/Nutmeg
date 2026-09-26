@@ -271,6 +271,23 @@ def run_day(
     order = sorted(legs, key=lambda value: (legs[value]["kickoff_bj"], value))
     if code is not None:
         order = [value for value in order if value == code]
+    entries = [
+        {"key": value, "leg": legs[value], "zucai": False,
+         "output": day_dir / f"research-{value}.json",
+         "rejected": day_dir / f"research-{value}.rejected.json"}
+        for value in order
+    ]
+    if code is None:
+        # 并集样本池（Jun 2026-09-27）：当天截止足彩期次里不在竞彩板上的场次也研究，且优先
+        from nutmeg.decision.pool import zucai_pool_entries
+
+        entries += [
+            {**entry, "zucai": True}
+            for entry in sorted(
+                zucai_pool_entries(day=day, data_dir=Path(data_dir)),
+                key=lambda entry: (entry["leg"]["kickoff_bj"], entry["key"]),
+            )
+        ]
 
     if concurrency < 1:
         raise ValueError("concurrency 必须 >= 1")
@@ -292,14 +309,13 @@ def run_day(
             return True
 
     rows_by_code: dict[str, dict] = {}
-    pending: list[tuple[str, dict, str, int]] = []
-    for board_code in order:
-        leg = legs[board_code]
-        output = day_dir / f"research-{board_code}.json"
+    pending: list[tuple[str, dict, str, int, dict]] = []
+    for entry in entries:
+        board_code, leg, output = entry["key"], entry["leg"], entry["output"]
         if output.exists():
             rows_by_code[board_code] = {"code": board_code, "status": "skipped_done"}
             continue
-        rejected_path = day_dir / f"research-{board_code}.rejected.json"
+        rejected_path = entry["rejected"]
         attempts_total = 0
         if rejected_path.exists():
             rejected = _load_rejected(rejected_path)
@@ -338,13 +354,14 @@ def run_day(
             leg=leg,
             profile_notes=profile(leg["match_id"]),
         )
-        pending.append((board_code, leg, brief, attempts_total))
+        pending.append((board_code, leg, brief, attempts_total, entry))
 
     # 预算先给今天还没试过的场次，再给重试（稳定排序：同类内仍按开球先后）；
     # 否则白天的格式重试会把晚上新上板的场次饿死（2026-09-26 024/025）
-    pending.sort(key=lambda item: item[3] > 0)
+    # 足彩优先（Jun 2026-09-27）：同为未试过时足彩独有场次排在竞彩前
+    pending.sort(key=lambda item: (item[3] > 0, not item[4]["zucai"]))
     runnable = pending[:available_attempts]
-    for board_code, _leg, _brief, _attempts_total in pending[available_attempts:]:
+    for board_code, _leg, _brief, _attempts_total, _entry in pending[available_attempts:]:
         rows_by_code[board_code] = {"code": board_code, "status": "skipped_budget"}
 
     reserved_attempts = len(runnable)
@@ -375,16 +392,16 @@ def run_day(
                 claim_attempt=reserved_claim(),
                 max_attempts=min(MAX_ATTEMPTS, 3 - attempts_total),
             )
-            for _board_code, leg, brief, attempts_total in runnable
+            for _board_code, leg, brief, attempts_total, _entry in runnable
         ]
         results = [future.result() for future in futures]
 
     model_used = model_label(research_model() if claude is _claude_cli else None)
     written = 0
-    for (board_code, leg, _brief, previous_attempts), result in zip(
+    for (board_code, leg, _brief, previous_attempts, entry), result in zip(
         runnable, results, strict=True
     ):
-        output = day_dir / f"research-{board_code}.json"
+        output = entry["output"]
         if result["status"] == "done":
             written += 1
             research = result.pop("research")
@@ -394,32 +411,35 @@ def run_day(
                 json.dumps(research, ensure_ascii=False, indent=1), encoding="utf-8"
             )
             leg["judgment_tier"] = "deep_research"
-            fulfill(
-                [
-                    "rsi",
-                    "fulfill",
-                    "--exp",
-                    "R0",
-                    "--duty",
-                    "match-research",
-                    "--day",
-                    day,
-                    "--match",
-                    leg["match_id"],
-                    "--artifact",
-                    str(output),
-                    "--n-rows",
-                    "1",
-                    "--stratum",
-                    "jczq",
-                    "--data-dir",
-                    str(data_dir),
-                ]
-            )
+            # R0 冻结只量竞彩；R1 量并集池（足彩独有场次只有 R1）
+            targets = [("R1", "pooled")] if entry["zucai"] else [("R0", "jczq"), ("R1", "pooled")]
+            for exp, stratum in targets:
+                fulfill(
+                    [
+                        "rsi",
+                        "fulfill",
+                        "--exp",
+                        exp,
+                        "--duty",
+                        "match-research",
+                        "--day",
+                        day,
+                        "--match",
+                        leg["match_id"],
+                        "--artifact",
+                        str(output),
+                        "--n-rows",
+                        "1",
+                        "--stratum",
+                        stratum,
+                        "--data-dir",
+                        str(data_dir),
+                    ]
+                )
         elif result["status"] == "rejected":
             last_attempt_at = current_time()
             attempts_total = previous_attempts + result["attempts"]
-            rejected_path = day_dir / f"research-{board_code}.rejected.json"
+            rejected_path = entry["rejected"]
             previous_errors: list[str] = []
             if rejected_path.exists():
                 previous_document = json.loads(
@@ -452,7 +472,7 @@ def run_day(
                 "error": result["error"],
                 "raw_output": result["raw_output"],
             }
-            (day_dir / f"research-{board_code}.rejected.json").write_text(
+            rejected_path.write_text(
                 json.dumps(rejected, ensure_ascii=False, indent=1), encoding="utf-8"
             )
         rows_by_code[board_code] = {
@@ -476,7 +496,7 @@ def run_day(
         "concurrency": concurrency,
         "started_at": started_at.isoformat(timespec="seconds"),
         "finished_at": current_time().isoformat(timespec="seconds"),
-        "matches": [rows_by_code[board_code] for board_code in order],
+        "matches": [rows_by_code[entry["key"]] for entry in entries],
     }
     ledger.append(report)
     ledger.write_daily_projection(day_dir / f"research-run-{day}.json")

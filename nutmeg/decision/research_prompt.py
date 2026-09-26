@@ -64,7 +64,8 @@ def render_brief(*, code: str, leg: dict, profile_notes: dict) -> str:
     fair = leg["fair"]
     line = leg.get("hhad_line")
     lines = [
-        f"# 竞彩 {code} · {leg['name']}（{leg.get('competition')}）",
+        (f"# {code}" if code.startswith("足彩") else f"# 竞彩 {code}")
+        + f" · {leg['name']}（{leg.get('competition')}）",
         f"开球（北京）{leg['kickoff_bj']}",
         (
             "去水 fair 主/平/客 = "

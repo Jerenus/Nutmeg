@@ -90,7 +90,7 @@ def test_runs_each_match_once_and_writes_products_and_fulfills(tmp_path):
     assert written["model"] == "default"
     assert all(row["model"] == "default" for row in report["matches"])
     assert all(
-        argv[:4] == ["rsi", "fulfill", "--exp", "R0"] and "--match" in argv
+        argv[:3] == ["rsi", "fulfill", "--exp"] and argv[3] in {"R0", "R1"} and "--match" in argv
         for argv in fulfills
     )
 
@@ -527,3 +527,36 @@ def test_never_attempted_matches_get_the_budget_before_retries(tmp_path):
 
     status = {row["code"]: row["status"] for row in report["matches"]}
     assert status == {"周五001": "skipped_budget", "周五002": "done"}
+
+
+def test_zucai_only_matches_are_researched_first_and_land_in_the_zucai_dir(tmp_path):
+    """并集样本池（Jun 2026-09-27）：当天截止足彩里不在竞彩板上的场次先研究。"""
+    root = _board(tmp_path, n=1)
+    zdir = tmp_path / "zucai"
+    zdir.mkdir()
+    kickoff = (datetime.now(BJ) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M")
+    (zdir / "26133-issue.json").write_text(json.dumps({
+        "issue_id": "26133", "sale_deadline": "2026-09-19 20:30",
+        "matches": [{"match_no": 1, "competition": "友谊赛", "home_team": "中国",
+                     "away_team": "新西兰", "kickoff_bj": kickoff}]}, ensure_ascii=False),
+        encoding="utf-8")
+    (zdir / "26133-store-ids.json").write_text(json.dumps({"1": {
+        "match_no": 1, "match_id": "z-1", "fair": {"home": 0.36, "draw": 0.28, "away": 0.36}}}),
+        encoding="utf-8")
+    fulfills = []
+
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=root,
+        data_dir=tmp_path,
+        claude=lambda system, brief: (0, GOOD),
+        fulfill=lambda argv: fulfills.append(argv) or (0, ""),
+        profile=lambda match_id: {},
+        budget=1,
+        concurrency=1,
+    )
+
+    status = {row["code"]: row["status"] for row in report["matches"]}
+    assert status == {"周五001": "skipped_budget", "足彩26133-01": "done"}
+    assert (zdir / "26133-research-m1.json").exists()
+    assert [argv[3] for argv in fulfills] == ["R1"]
