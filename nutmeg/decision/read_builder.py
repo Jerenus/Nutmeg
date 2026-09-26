@@ -168,3 +168,17 @@ def format_warnings(result: BuildResult) -> str:
         return head + "；词典校验全过。"
     return "\n".join([head + f"；{len(result.warnings)} 条词典/偏移提示：",
                       *(f"  ⚠️ {w}" for w in result.warnings)])
+
+
+def _match_key(read_id: str) -> str:
+    """R-{judge}-zucai-{issue}-{NN}-had[-rN] → 去掉修订后缀的场次键。"""
+    base, sep, tail = read_id.rpartition("-r")
+    return base if sep and tail.isdigit() else read_id
+
+
+def merge_reads(existing: list[dict], revised: list[dict]) -> list[dict]:
+    """把修订版 Read 合并进整期 reads：同一场用修订版替换，其余保持原样与顺序。"""
+    by_key = {_match_key(r["read_id"]): r for r in revised}
+    out = [by_key.pop(_match_key(r["read_id"]), r) for r in existing]
+    return out + list(by_key.values())
+

@@ -102,3 +102,15 @@ def test_revision_suffixes_read_ids_and_only_limits_the_reads_emitted():
               revision=2, only={"1"})
     assert [x["read_id"] for x in r.reads] == ["R-claude-zucai-26122-01-had-r2"]
     assert set(r.legs["legs"]) == set(j)
+
+
+def test_merge_reads_replaces_revised_matches_and_keeps_the_rest():
+    """--only 只发修订场次；写回时必须合并，否则整期其它场的判断从 reads 文件里消失。"""
+    from nutmeg.decision.read_builder import merge_reads
+
+    old = [{"read_id": "R-j-zucai-26133-01-had", "belief": 1},
+           {"read_id": "R-j-zucai-26133-02-had", "belief": 2}]
+    new = [{"read_id": "R-j-zucai-26133-02-had-r2", "belief": 22}]
+    merged = merge_reads(old, new)
+    assert [r["read_id"] for r in merged] == ["R-j-zucai-26133-01-had", "R-j-zucai-26133-02-had-r2"]
+    assert merged[1]["belief"] == 22

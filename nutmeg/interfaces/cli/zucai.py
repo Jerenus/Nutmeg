@@ -597,7 +597,14 @@ def zucai_build_reads(
         except FaceStatusError as exc:
             _cli.typer.echo(f"场{no}: {exc}")
             raise _cli.typer.Exit(code=1) from exc
-    reads_path.write_text(_json.dumps(result.reads, ensure_ascii=False, indent=1),
+    reads_out = result.reads
+    if only and reads_path.exists():
+        # 修订只发改动场次：合并进整期 reads，不覆盖（2026-09-26 事故：--only 把
+        # 26133-reads.json 压成 1 条，语料 v2 与 F9 只剩这一场的判断）
+        from nutmeg.decision.read_builder import merge_reads
+
+        reads_out = merge_reads(_json.loads(reads_path.read_text("utf-8")), result.reads)
+    reads_path.write_text(_json.dumps(reads_out, ensure_ascii=False, indent=1),
                           encoding="utf-8")
     legs_path.write_text(_json.dumps(result.legs, ensure_ascii=False, indent=1),
                          encoding="utf-8")
