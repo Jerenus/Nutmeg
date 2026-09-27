@@ -445,6 +445,18 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
                                           {"title": f"作业进度 {_check_date(date)}",
                                            "date": date})
 
+    @app.get("/verdict/{date}")
+    def verdict_page(date: str):
+        """当日判决参考页：优先给定时生成的静态页；没有就现场生成一版。"""
+        from fastapi.responses import HTMLResponse
+
+        from nutmeg.decision.verdict_page import write_verdict
+
+        path = Path(app.state.data_dir) / "jczq" / "daily" / date / "verdict.html"
+        if not path.exists():
+            path = write_verdict(day=date, data_dir=Path(app.state.data_dir))
+        return HTMLResponse(path.read_text(encoding="utf-8"))
+
     @app.get("/api/runs/{date}")
     def runs_api(date: str) -> dict:
         return day_runs(data_dir=app.state.data_dir, plists_dir=app.state.runs_plists,

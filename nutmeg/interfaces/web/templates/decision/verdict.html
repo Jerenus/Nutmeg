@@ -1,0 +1,171 @@
+{%- set VERDICT = {"home_clear": "主队明显强", "home_edge": "主队略强", "even": "均势",
+                  "away_edge": "客队略强", "away_clear": "客队明显强"} -%}
+{%- set PATH = {"none": "不成立", "weak": "弱", "real": "成立", "strong": "强"} -%}
+{%- macro bars(r) -%}
+  {%- set f = r.final or r.prior -%}
+  <div class="vd-bar" role="img" aria-label="判断 主{{ f|pct('home') }} 平{{ f|pct('draw') }} 客{{ f|pct('away') }}">
+    <span class="h" style="width:{{ f.home*100 }}%"></span><span class="d" style="width:{{ f.draw*100 }}%"></span><span class="a" style="width:{{ f.away*100 }}%"></span>
+    <i class="mk" style="left:{{ r.prior.home*100 }}%"></i><i class="mk" style="left:{{ (r.prior.home+r.prior.draw)*100 }}%"></i>
+  </div>
+  <table class="vd-p">
+    <thead><tr><th></th><th>主</th><th>平</th><th>客</th></tr></thead>
+    <tbody>
+      <tr><td>市场</td><td>{{ r.prior|pct('home') }}</td><td>{{ r.prior|pct('draw') }}</td><td>{{ r.prior|pct('away') }}</td></tr>
+      {%- if r.research %}<tr class="rs"><td>研究原判</td><td>{{ r.research.belief|pct('home') }}</td><td>{{ r.research.belief|pct('draw') }}</td><td>{{ r.research.belief|pct('away') }}</td></tr>{% endif %}
+      <tr class="fn"><td>终判</td><td>{{ f|pct('home') }}</td><td>{{ f|pct('draw') }}</td><td>{{ f|pct('away') }}</td></tr>
+    </tbody>
+  </table>
+{%- endmacro -%}
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>判决参考 {{ day }}</title>
+<style>
+:root{--canvas:#E9EDE7;--card:#FDFEFC;--sink:#EEF2EC;--ink:#1B2620;--sub:#5C6B63;--faint:#8A968D;
+--pine:#1F5C46;--pine-soft:#E3EDE7;--cinnabar:#B23A2C;--cinnabar-soft:#F6E7E3;--gold:#8A6F2F;--gold-soft:#F0EAD9;
+--line:#D7DFD6;--line-2:#C6D0C4;--h:#1F5C46;--d:#A99E7E;--a:#5E6F86}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--canvas:#0B120E;--card:#161F1A;--sink:#111A15;--ink:#DEE6DE;--sub:#93A398;--faint:#6A7A70;
+--pine:#5BBA93;--pine-soft:#17281F;--cinnabar:#E0705A;--cinnabar-soft:#361D18;--gold:#C9A85C;--gold-soft:#2A2415;--line:#25322B;--line-2:#314138;--h:#4E9E7E;--d:#8C825F;--a:#6B7F9A}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.65 -apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+.vd{width:min(980px,calc(100% - 32px));margin:0 auto;padding:36px 0 90px}
+h1,h2,h3{font-family:"Songti SC","Noto Serif SC","STSong",serif;font-weight:700;margin:0}
+.vd-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;margin-bottom:10px}
+.vd-head h1{font-size:40px;line-height:1.1}
+.vd-head .ed{font-size:15px;color:var(--sub)}
+.vd-lede{margin:0 0 28px;max-width:720px;color:var(--sub)}
+.vd-lede b{color:var(--ink);font-variant-numeric:tabular-nums}
+section{margin-top:34px}
+h2{font-size:22px;margin-bottom:12px}
+.vd-note{margin:-6px 0 14px;color:var(--faint);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:12px}
+.card.hot{border-left:3px solid var(--cinnabar)}
+.card h3{font-size:17px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+.card h3 small{font-family:inherit;font-weight:400;font-size:13px;color:var(--sub);font-variant-numeric:tabular-nums}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 10px}
+.tag{font-size:12px;padding:1px 9px;border-radius:10px;background:var(--sink);color:var(--sub)}
+.tag.red{background:var(--cinnabar-soft);color:var(--cinnabar)}
+.tag.gold{background:var(--gold-soft);color:var(--gold)}
+.tag.pine{background:var(--pine-soft);color:var(--pine)}
+.vd-bar{position:relative;display:flex;height:10px;border-radius:5px;overflow:hidden;margin:6px 0 10px;background:var(--sink)}
+.vd-bar span{display:block;height:100%}
+.vd-bar .h{background:var(--h)}.vd-bar .d{background:var(--d)}.vd-bar .a{background:var(--a)}
+.vd-bar .mk{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.55}
+.vd-p{border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:13px}
+.vd-p th,.vd-p td{padding:2px 14px 2px 0;text-align:right;color:var(--sub);font-weight:400}
+.vd-p td:first-child,.vd-p th:first-child{text-align:left;padding-right:18px}
+.vd-p tr.rs td{color:var(--gold)}
+.vd-p tr.fn td{color:var(--ink);font-weight:600}
+.facts{margin:10px 0 0;padding:0;list-style:none;font-size:14px}
+.facts li{margin:3px 0;color:var(--sub)}
+.facts li b{color:var(--ink);font-weight:600}
+.why{margin:10px 0 0;padding:10px 12px;background:var(--cinnabar-soft);border-radius:8px;font-size:14px}
+details{margin-top:8px;font-size:14px;color:var(--sub)}
+summary{cursor:pointer;color:var(--pine)}
+table.list{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+table.list th,table.list td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.list th{font-weight:600;color:var(--sub);font-size:13px;background:var(--sink)}
+.empty{padding:14px 18px;background:var(--card);border:1px dashed var(--line-2);border-radius:10px;color:var(--sub)}
+.foot{margin-top:40px;color:var(--faint);font-size:12px}
+@media (max-width:640px){.vd-head h1{font-size:30px}.vd-p th,.vd-p td{padding-right:8px}}
+</style></head><body>
+<main class="vd">
+  <header class="vd-head">
+    <h1>{{ day }} 判决参考</h1>
+    <span class="ed">{{ edition }} · 生成于 {{ generated_at }}</span>
+  </header>
+  <p class="vd-lede">
+    今天池子 <b>{{ counts.matches }}</b> 场（未开赛 <b>{{ counts.upcoming }}</b>），有深研 <b>{{ counts.researched }}</b> 场；
+    终判偏离市场 ≥2pp 的 <b>{{ counts.moved }}</b> 场；主循环改判了研究的 <b>{{ counts.overrides }}</b> 场，两份研究打架的 <b>{{ counts.disagreements }}</b> 场。
+    页面只搬运系统数据与算术，不替你判断。
+  </p>
+
+  <section>
+    <h2>需要你裁决</h2>
+    <p class="vd-note">研究原判被主循环改动过、或同一场两份研究结论不同的场次。方向上的改变通常只会从这里来。</p>
+    {% for r in review %}
+    <article class="card hot">
+      <h3>{{ r.key }} {{ r.name or "" }}{% if r.kickoff %}<small>{{ r.kickoff[5:16]|replace("T"," ") }} 开球</small>{% endif %}</h3>
+      <div class="tags">
+        {% if r.override %}<span class="tag red">主循环改判</span>{% endif %}
+        {% if r.disagreement %}<span class="tag red">研究打架</span>{% endif %}
+        {% if r.outcome %}<span class="tag">赛果 {{ r.outcome }}</span>{% endif %}
+      </div>
+      {{ bars(r) }}
+      {% if r.override %}<div class="why"><b>改判理由：</b>{{ r.note }}</div>{% endif %}
+      {% if r.disagreement %}<ul class="facts"><li><b>另一份研究（{{ r.paired.key }}）：</b>{{ r.disagreement|join("；") }}</li></ul>{% endif %}
+    </article>
+    {% else %}
+    <div class="empty">本版没有被改判或互相打架的研究信号。</div>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>竞彩逐场</h2>
+    <p class="vd-note">按开球时间。竖线是市场价的分界；金色一行是研究原判，加粗是终判。</p>
+    {% for r in jczq %}
+    <article class="card{% if r.override or r.disagreement %} hot{% endif %}">
+      <h3>{{ r.key }} {{ r.name or "" }}<small>{{ (r.kickoff or "")[5:16]|replace("T"," ") }}</small></h3>
+      <div class="tags">
+        {% if not r.research %}<span class="tag">无深研·跟市场</span>{% endif %}
+        {% if r.research and r.research.verdict %}<span class="tag pine">{{ VERDICT.get(r.research.verdict, r.research.verdict) }}</span>{% endif %}
+        {% if r.research and r.research.underdog %}<span class="tag">弱方路径 {{ PATH.get(r.research.underdog, r.research.underdog) }}</span>{% endif %}
+        {% for k, v in (r.drift or {}).items() %}{% if v|abs >= 1.5 %}<span class="tag gold">开盘至今 {{ {"home":"主","draw":"平","away":"客"}[k] }}{{ "%+.1f"|format(v) }}pp</span>{% endif %}{% endfor %}
+        {% if r.outcome %}<span class="tag">赛果 {{ r.outcome }}</span>{% endif %}
+      </div>
+      {{ bars(r) }}
+      {% if r.research %}
+      <ul class="facts">
+        {% if r.research.evidence %}<li><b>研究拨动依据：</b>{{ r.research.evidence|join("，") }}</li>{% endif %}
+        {% if r.research.routes %}<li><b>弱方路径：</b>{{ r.research.routes|join("；") }}</li>{% endif %}
+        {% if r.research.unpriced %}<li><b>研究标为未定价：</b>{{ r.research.unpriced|join("；") }}</li>{% endif %}
+        {% if r.research.flags %}<li><b>旗（仅记录）：</b>{{ r.research.flags|join(" ") }}</li>{% endif %}
+        {% if r.research.falsifier %}<li><b>作废条件：</b>{{ r.research.falsifier }}</li>{% endif %}
+        <li><b>研究建议的表达：</b>{{ r.research.face }} / {{ r.research.structure }}（建议，不是门）</li>
+      </ul>
+      {% if r.research.summary %}<details><summary>研究摘要</summary><p>{{ r.research.summary }}…</p></details>{% endif %}
+      {% endif %}
+    </article>
+    {% else %}
+    <div class="empty">今天还没有竞彩场次入板。</div>
+    {% endfor %}
+  </section>
+
+  {% if zucai %}
+  <section>
+    <h2>足彩独有场次</h2>
+    <p class="vd-note">当天截止期次里不在竞彩板上的场次；已对到竞彩的场次在上面，不重复。</p>
+    <table class="list"><thead><tr><th>场次</th><th>市场 主/平/客</th><th>终判</th><th>研究</th><th>赛果</th></tr></thead><tbody>
+    {% for r in zucai %}<tr><td>{{ r.key }} {{ r.name or "" }}</td>
+      <td>{{ r.prior|pct('home') }} / {{ r.prior|pct('draw') }} / {{ r.prior|pct('away') }}</td>
+      <td>{% if r.final %}{{ r.final|pct('home') }} / {{ r.final|pct('draw') }} / {{ r.final|pct('away') }}{% else %}—{% endif %}</td>
+      <td>{% if r.research %}{{ VERDICT.get(r.research.verdict, r.research.verdict or "—") }}{% else %}无深研{% endif %}</td>
+      <td>{{ r.outcome or "待" }}</td></tr>{% endfor %}
+    </tbody></table>
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>竞彩判断腿组合</h2>
+    <p class="vd-note">只用深研过、未开赛的场次；不含总进球，不按赔率档凑腿；按判断概率排序。每元回报 &lt; 1 说明扣掉返奖后判断没有优势。</p>
+    {% if no_edge %}<div class="empty">本版所有判断腿都等于市场价：没有超出价格的判断，组合只是按市场概率排序。</div>{% endif %}
+    {% if combos %}
+    <table class="list"><thead><tr><th>判断概率</th><th>注数</th><th>全中赔率</th><th>每元回报</th><th>腿</th></tr></thead><tbody>
+    {% for c in combos %}<tr><td>{{ "%.1f"|format(c.p*100) }}%</td><td>{{ c.notes }}</td><td>{{ "%.2f"|format(c.odds) }}</td><td>{{ "%.2f"|format(c.return_per_yuan) }}</td>
+      <td>{% for leg in c.legs %}{{ leg.code }}{% if leg.market == "hhad" %} 让{{ leg.line }}{% endif %} {{ leg.faces }}{% if not loop.last %} + {% endif %}{% endfor %}</td></tr>{% endfor %}
+    </tbody></table>
+    {% elif not no_edge %}<div class="empty">可用的判断腿不足两条。</div>{% endif %}
+  </section>
+
+  <section>
+    <h2>判断力账本</h2>
+    <p class="vd-note">这些数决定项目有没有判断力，不由彩票命中决定。</p>
+    <ul class="facts">
+      <li><b>主循环改判账：</b>已开赛 {{ ledger.scored }} 场，改判得失合计 {{ "%+.2f"|format(ledger.gain) }}（Brier×100，正=改判帮了忙），待赛 {{ ledger.pending }} 场{% if ledger.worst %}；最差一次 {{ ledger.worst[0] }}（{{ "%+.2f"|format(ledger.worst[1]) }}）{% endif %}</li>
+      {% for line in experiments %}<li><b>{{ line.split()[0] }}</b> {{ line.split(None, 1)[1] }}</li>{% endfor %}
+    </ul>
+  </section>
+
+  <p class="foot">数据：jczq-legs-base / reads / research-* / overrides.jsonl / price-band / sporttery 板面；足彩：store-ids / reads / research-m*。页面由 `nutmeg research verdict` 生成，主版 12:30、晚版 18:45 自动刷新。</p>
+</main>
+</body></html>

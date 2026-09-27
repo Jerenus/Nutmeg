@@ -79,6 +79,10 @@ def _research_view(doc: dict, prior: dict, ledger_row: dict | None) -> dict:
                      if isinstance(e, dict) and e.get("priced_in") is False],
         "flags": [f[0] if isinstance(f, list) else f for f in doc.get("directional_flags") or []]
         + list(doc.get("nondirectional_flags") or []),
+        "summary": str(doc.get("summary") or "")[:260],
+        "falsifier": stance.get("falsifier"),
+        "routes": [str(x)[:40] for x in (sb.get("underdog_path") or {}).get("routes") or []][:3],
+        "confidence": doc.get("confidence"),
     }
 
 

@@ -244,6 +244,22 @@ def _first_day(pattern: str) -> Callable[[Path], str | None]:
 
 _TIMELINE_SINCE = _first_day("daily/*/timeline.json")
 
+
+def _verdict_runs(data_dir: Path, day: str) -> list[Run]:
+    log = data_dir / "jczq" / "daily" / day / "verdict-log.jsonl"
+    try:
+        lines = log.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        row = json.loads(line)
+        out.append(Run(at=str(row.get("at", ""))[11:16], status="ok",
+                       summary=f"{row.get('edition')}：{row.get('matches')} 场，改判 "
+                               f"{row.get('overrides')}，打架 {row.get('disagreements')}",
+                       evidence=_rel(log.with_name("verdict.html"), data_dir)))
+    return out
+
 JOBS: dict[str, JobSpec] = {
     "com.nutmeg.decision.am": JobSpec(
         "竞彩早刷新", "jczq", "抓当天竞彩板面和赔率快照", _am),
@@ -274,6 +290,10 @@ JOBS: dict[str, JobSpec] = {
         "让球线观察", "zucai", "开球前记录足彩让球线", _f2_observe),
     "com.nutmeg.rsi.sweep": JobSpec(
         "义务巡检", "rsi", "补跑到期的 RSI 观察义务", _sweep, day_starts="07:00"),
+    "com.nutmeg.day.verdict": JobSpec(
+        "判决参考页", "system", "主版 12:30 / 晚版 18:45：刷新判断并生成当日判决参考页",
+        lambda data_dir, day: _verdict_runs(data_dir, day),
+        since=_first_day("jczq/daily/*/verdict-log.jsonl")),
     "com.nutmeg.day.broadcast": JobSpec(
         "截止播报", "system", "截止前 30 分、10 分提醒", _timeline_runs("broadcast"),
         since=_TIMELINE_SINCE),

@@ -17,6 +17,8 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 
 > **信号留存与人工裁决（2026-09-27 起，Jun 定）**：研究原件**只读**——主循环改判一律 `uv run nutmeg research override --day <日> --code <场次> --note "<理由>" (--market | --tilt-json '<tilt>')`，记进当日 `overrides.jsonl`（原拨动、终拨动、两个判断分布、理由、时间），入库时叠加；**禁止手改 research-*.json**。每次 `research refresh` 自动重写 `daily/<日>/signals.md`（也可 `uv run nutmeg research signals --day <日>`）：置顶「主循环改判了研究的信号」「同场两份研究打架」，其余按信号强度排；有赛果后给研究原判 vs 终判的 Brier（改判得失）。证据采集时间由系统盖，研究员自填的留作 `captured_at_declared`。
 
+> **当日判决参考页（2026-09-27 起，Jun 定）**：`com.nutmeg.day.verdict` 每天 **12:30 主版**（08:00 入板 + 上午研究 + 足彩截止日 11:00 备料后的足彩研究都已落）与 **18:45 晚版**（17:15 加场 + 18:00 研究 + 18:30 足彩复核之后，赶在 19:00 后主要开球与足彩停售前）自动 `research refresh` + `research verdict`，产 `daily/<日>/verdict.html`（本地 `http://127.0.0.1:8787/verdict/<日>`）。页面置顶「需要你裁决」（主循环改判 / 两份研究打架），逐场给市场·研究原判·终判三行与证据，附判断腿组合与判断力账本。主循环会话中复核改判后，重跑 `uv run nutmeg research verdict --day <日>` 刷新。
+
 ## 泳道 A：竞彩（JCZQ 日常）
 
 > **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ 帽内按**判断概率**最大化 P → 审计门**无判断类拦截**（2026-09-27 规则瘦身：判断类规则无一有正向实证，C1 降为记录、C19 降为未证实提示），只记账。见 RULEBOOK「〇、规则实证表」。

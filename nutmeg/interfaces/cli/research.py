@@ -256,3 +256,13 @@ def override(
         at=datetime.now().astimezone().isoformat(timespec="seconds"),
         judge="claude-main-loop", prior=prior)
     typer.echo(f"已记改判 {code}：研究原判 {row['research_belief']} → 终判 {row['final_belief']}")
+
+
+@research_app.command("verdict")
+def verdict(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
+    """当日判决参考页（Jun 2026-09-27）：主版 12:30 / 晚版 18:45 自动生成，供人工最终裁决。"""
+    from nutmeg.decision.rsi_wiring import _cli_invoke
+    from nutmeg.decision.verdict_page import write_verdict
+
+    path = write_verdict(day=day, data_dir=Path(data_dir), invoke=_cli_invoke)
+    typer.echo(f"判决参考页 → {path}")
