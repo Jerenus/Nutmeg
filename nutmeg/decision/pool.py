@@ -112,4 +112,11 @@ def refresh_day(*, day: str, data_dir: Path, made_at: str,
                                 state_path=zucai_dir / f"{issue}-kernel-submitted.json",
                                 now=made_at, submit=submit)
         summary["zucai"][issue] = {"reads": len(reads), "submitted": len(sent)}
+    try:
+        # 信号面板随每次刷新重写：人工裁决看的永远是最新一版（Jun 2026-09-27）
+        from nutmeg.decision.signals import write_signals
+
+        summary["signals"] = str(write_signals(day=day, data_dir=data_dir))
+    except Exception as exc:  # noqa: BLE001 —— 面板是旁支，失败不能挡住 Read 与本体提交
+        summary["signals_error"] = repr(exc)
     return summary

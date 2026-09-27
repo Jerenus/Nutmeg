@@ -15,6 +15,8 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 
 > **并集样本池（2026-09-27 起，Jun 定）**：每天的分析样本池 = 当天截止的传统足彩期次（优先）∪ 竞彩板面，按对号表去重（人工 `{issue}-channel-map.json` 优先，缺则备料自动落 `.auto`）。`research run` 队列取并集：未试过优先 → 足彩独有场次优先 → 开球先后；足彩独有场次的研究写 `zucai/{issue}-research-m{n}.json`，登记 R1。研究有新产出、17:15 刷新、足彩备料之后都跑 `uv run nutmeg research refresh --day <日>`：竞彩入库重建 Read、足彩由研究表态自动转录 Read（judge=`ai-pool`；主循环 judgment-v1 永远优先）、**未开球且内容有变的 Read 自动交本体**（开球后一律不交）。足彩备料完成会自动带期号跑 `decision-am --issue`（产 store-ids），足彩场次才进得了池。预算仍 40 次/天。
 
+> **信号留存与人工裁决（2026-09-27 起，Jun 定）**：研究原件**只读**——主循环改判一律 `uv run nutmeg research override --day <日> --code <场次> --note "<理由>" (--market | --tilt-json '<tilt>')`，记进当日 `overrides.jsonl`（原拨动、终拨动、两个判断分布、理由、时间），入库时叠加；**禁止手改 research-*.json**。每次 `research refresh` 自动重写 `daily/<日>/signals.md`（也可 `uv run nutmeg research signals --day <日>`）：置顶「主循环改判了研究的信号」「同场两份研究打架」，其余按信号强度排；有赛果后给研究原判 vs 终判的 Brier（改判得失）。证据采集时间由系统盖，研究员自填的留作 `captured_at_declared`。
+
 ## 泳道 A：竞彩（JCZQ 日常）
 
 > **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ 帽内按**判断概率**最大化 P → 审计门**无判断类拦截**（2026-09-27 规则瘦身：判断类规则无一有正向实证，C1 降为记录、C19 降为未证实提示），只记账。见 RULEBOOK「〇、规则实证表」。

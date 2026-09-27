@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from nutmeg.decision.face_status import FaceStatusError, attach_face_status
+from nutmeg.decision.overrides import effective_research
 from nutmeg.decision.research_intake import intake
 from nutmeg.decision.stance import apply_tilt, validate_stance
 
@@ -45,7 +46,8 @@ def intake_board(*, day: str, jczq_dir: Path, write: bool) -> dict:
         research_path = day_dir / f"research-{code}.json"
         if not research_path.exists():
             continue
-        research = json.loads(research_path.read_text(encoding="utf-8"))
+        # 研究原件只读；主循环改判从 overrides.jsonl 叠加（2026-09-27）
+        research = effective_research(research_path)
         result = intake(research, dict(original_leg))
         errors = [issue.message for issue in result.issues if issue.level == "ERROR"]
         if errors:

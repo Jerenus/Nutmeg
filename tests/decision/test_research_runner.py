@@ -560,3 +560,22 @@ def test_zucai_only_matches_are_researched_first_and_land_in_the_zucai_dir(tmp_p
     assert status == {"周五001": "skipped_budget", "足彩26133-01": "done"}
     assert (zdir / "26133-research-m1.json").exists()
     assert [argv[3] for argv in fulfills] == ["R1"]
+
+
+def test_evidence_timestamps_are_stamped_by_the_system(tmp_path):
+    root = _board(tmp_path, n=1)
+    doc = json.loads(GOOD)
+    doc["stance"] = {**doc["stance"], "why_not_market": "tilt_evidence", "tilt": {
+        "face": "1", "expires_if": "x", "evidence": [
+            {"tier": "inferred", "kind": "style_matchup", "pp": 1, "source": "s",
+             "captured_at": "2099-01-01T00:00:00+08:00"}]}}
+
+    run_day(day="2026-09-19", jczq_dir=root, data_dir=tmp_path,
+            claude=lambda system, brief: (0, json.dumps(doc, ensure_ascii=False)),
+            fulfill=lambda argv: (0, ""), profile=lambda match_id: {}, budget=1)
+
+    written = json.loads((root / "daily" / "2026-09-19" / "research-周五001.json")
+                         .read_text(encoding="utf-8"))
+    [evidence] = written["stance"]["tilt"]["evidence"]
+    assert evidence["captured_at"] == written["captured_at"]
+    assert evidence["captured_at_declared"] == "2099-01-01T00:00:00+08:00"

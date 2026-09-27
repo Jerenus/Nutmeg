@@ -406,6 +406,13 @@ def run_day(
             written += 1
             research = result.pop("research")
             research["captured_at"] = current_time().isoformat(timespec="seconds")
+            # 证据时间由系统盖（2026-09-27）：研究员自填的采集时刻不可信（26133 场4 研究
+            # 08:19 落盘，证据却写 12:00）；原值留在 captured_at_declared
+            tilt = (research.get("stance") or {}).get("tilt")
+            for evidence in (tilt or {}).get("evidence") or []:
+                if isinstance(evidence, dict):
+                    evidence["captured_at_declared"] = evidence.get("captured_at")
+                    evidence["captured_at"] = research["captured_at"]
             research["model"] = model_used
             output.write_text(
                 json.dumps(research, ensure_ascii=False, indent=1), encoding="utf-8"

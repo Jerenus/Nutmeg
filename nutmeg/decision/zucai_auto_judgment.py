@@ -16,6 +16,7 @@ import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from nutmeg.decision.overrides import effective_research
 from nutmeg.decision.read_builder import build
 from nutmeg.decision.stance import apply_tilt, validate_stance
 
@@ -103,7 +104,7 @@ def auto_judgment(*, issue: str, data_dir: Path) -> dict:
         prior = dict(ids["fair"])
         kickoff = _kickoff(kickoffs[no]).isoformat() if kickoffs.get(no) else None
         path = _research_path(zucai_dir, issue, no, mapped, jczq_research)
-        entry = _from_research(_load(path), prior, kickoff) if path else None
+        entry = _from_research(effective_research(path), prior, kickoff) if path else None
         judgment[no] = entry or {
             "action": "310", "prescription": "310", "confidence": 1,
             "belief": prior, "adjustment_evidence_tiers": [],

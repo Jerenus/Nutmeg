@@ -214,3 +214,45 @@ def jczq_combos(
             for leg in combo["legs"])
         typer.echo(f"P={combo['p']*100:5.1f}%  {combo['notes']}注  全中赔率≈{combo['odds']:.2f}"
                    f"  每元回报≈{combo['return_per_yuan']:.2f}  {text}")
+
+
+@research_app.command("signals")
+def signals(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
+    """信号面板（Jun 2026-09-27）：研究原判、主循环改判、两渠道研究分歧、未定价事件、改判得失。"""
+    from nutmeg.decision.signals import write_signals
+
+    path = write_signals(day=day, data_dir=Path(data_dir))
+    typer.echo(path.read_text(encoding="utf-8"))
+    typer.echo(f"→ {path}")
+
+
+@research_app.command("override")
+def override(
+    day: str = _DAY,
+    code: str = typer.Option(..., "--code", help="竞彩编号如 周日003，或足彩 26133-04"),
+    note: str = typer.Option(..., "--note", help="改判理由（必填）"),
+    market: bool = typer.Option(False, "--market", help="回到市场（不拨动）"),
+    tilt_json: str | None = typer.Option(None, "--tilt-json", help="新的 tilt JSON"),
+    data_dir: Path = _DATA_DIR,
+) -> None:
+    """主循环改判：记进 overrides.jsonl，研究原件不动（2026-09-27）。"""
+    from nutmeg.decision.overrides import record_override
+
+    if market == (tilt_json is not None):
+        raise typer.BadParameter("--market 与 --tilt-json 二选一")
+    if "-" in code and code[:5].isdigit():
+        issue, no = code.split("-", 1)
+        zdir = Path(data_dir) / "zucai"
+        path = zdir / f"{issue}-research-m{int(no)}.json"
+        prior = json.loads((zdir / f"{issue}-store-ids.json").read_text("utf-8"))[
+            str(int(no))]["fair"]
+    else:
+        day_dir = Path(data_dir) / "jczq" / "daily" / day
+        path = day_dir / f"research-{code}.json"
+        prior = json.loads((day_dir / "jczq-legs-base.json").read_text("utf-8"))["legs"][
+            code]["fair"]
+    row = record_override(
+        path, tilt=None if market else json.loads(tilt_json), note=note,
+        at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        judge="claude-main-loop", prior=prior)
+    typer.echo(f"已记改判 {code}：研究原判 {row['research_belief']} → 终判 {row['final_belief']}")
