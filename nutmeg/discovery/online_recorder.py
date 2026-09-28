@@ -31,6 +31,7 @@ from nutmeg.discovery.environment import (
 )
 from nutmeg.discovery.online_adapter import ShardExecution, execute_template_shard
 from nutmeg.discovery.online_inputs import StructuralInputSnapshot, snapshot_payload
+from nutmeg.discovery.standing_approval import approval_references
 from nutmeg.ontology.actions.discovery_world_actions import (
     CreateDiscoveryWorldRequest,
     DiscoveryWorldActions,
@@ -301,6 +302,7 @@ def _validate_recording(
                 source_database.parent.parent,
                 source_database.name,
                 cutoff_at=snapshot.cutoff_at,
+                extra_references=approval_references(approval or {}),
             )
         except Exception as exc:
             raise ValueError("source request cannot be independently verified") from exc

@@ -712,13 +712,14 @@ def test_day_source_rejects_changed_files(tmp_path, monkeypatch):
 
     engine, jczq, day_dir, snapshot, approval, now = _day_rig(tmp_path, monkeypatch)
 
-    def changed_read(jczq_dir, day, *, cutoff_at, max_templates=4):
+    def changed_read(jczq_dir, day, *, cutoff_at, max_templates=4, extra_references=()):
         reads_path = day_dir / "reads.json"
         reads = json.loads(reads_path.read_text(encoding="utf-8"))
         reads[0]["belief"] = {"home": 0.40, "draw": 0.30, "away": 0.30}
         reads_path.write_text(json.dumps(reads), encoding="utf-8")
         return read_structural_input_from_day(
-            jczq_dir, day, cutoff_at=cutoff_at, max_templates=max_templates
+            jczq_dir, day, cutoff_at=cutoff_at, max_templates=max_templates,
+            extra_references=extra_references,
         )
 
     monkeypatch.setattr(
