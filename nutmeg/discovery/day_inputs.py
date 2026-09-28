@@ -37,12 +37,42 @@ def day_source_identity(jczq_dir: Path | str, day: str) -> str:
     return f"day:{(Path(jczq_dir) / 'daily' / day).resolve()}"
 
 
+def _betslips_path(day_dir: Path) -> Path:
+    """`<data>/jczq/daily/<日>` → `<data>/betslips.jsonl`（实票登记簿，全渠道单一文件）。"""
+    return Path(day_dir).resolve().parents[2] / "betslips.jsonl"
+
+
+def day_tickets(day_dir: Path) -> dict:
+    """截止时刻的当天实际票面：主循环出票文件 legs.json + 登记簿里当天的竞彩实票。"""
+    day_dir = Path(day_dir)
+    legs_path = day_dir / "legs.json"
+    legs = json.loads(legs_path.read_text(encoding="utf-8")) if legs_path.exists() else None
+    slips: list[dict] = []
+    book = _betslips_path(day_dir)
+    if book.exists():
+        for line in book.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            same_day = str(row.get("placed_at") or "")[:10] == day_dir.name
+            if row.get("channel") == "jczq" and same_day:
+                slips.append(row)
+    slips.sort(key=lambda row: str(row.get("slip_id")))
+    return {"day": day_dir.name, "legs_json": legs, "betslips": slips}
+
+
+def tickets_digest(tickets: dict) -> str:
+    return _sha(json.dumps(tickets, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+
+
 def day_fingerprint(day_dir: Path) -> str:
     h = hashlib.sha256()
     for name in SOURCE_FILES:
         p = Path(day_dir) / name
         h.update(name.encode())
         h.update(p.read_bytes() if p.exists() else b"<missing>")
+    h.update(b"tickets")
+    h.update(tickets_digest(day_tickets(day_dir)).encode())
     return h.hexdigest()
 
 
@@ -110,6 +140,7 @@ def read_structural_input_from_day(
     *,
     cutoff_at: str,
     max_templates: int = 4,
+    extra_references: tuple[dict, ...] = (),
 ) -> StructuralInputSnapshot:
     day_dir = Path(jczq_dir) / "daily" / day
     board_path = day_dir / "jczq-legs-base.json"
@@ -205,6 +236,16 @@ def read_structural_input_from_day(
             "captured_at": board_captured,
         }
     )
+    tickets = day_tickets(day_dir)
+    refs.append(
+        {
+            "kind": "ticket",
+            "id": f"{day}:tickets",
+            "source_revision": tickets_digest(tickets),
+            "captured_at": cutoff_at,
+        }
+    )
+    refs.extend(dict(reference) for reference in extra_references)
     codes = tuple(o.official_match_no for o in offers)
     templates = tuple(
         CandidateStructureTemplate(

@@ -7,7 +7,9 @@ from nutmeg.discovery.day_inputs import (
     DayBoardTooSmall,
     day_fingerprint,
     day_source_identity,
+    day_tickets,
     read_structural_input_from_day,
+    tickets_digest,
 )
 
 DAY = "2026-09-23"
@@ -100,7 +102,7 @@ def test_snapshot_maps_board_reads_and_quotes(tmp_path: Path):
     assert {b.bundle_code for b in ci.offers[0].allowed_face_bundles} >= {"31"}
     assert snap.template_ids == ("pass-2-1", "pass-3-1")  # 3 场 → N=2..3
     kinds = {r.kind for r in snap.references}
-    assert kinds == {"forecast", "prescription", "quote"}
+    assert kinds == {"forecast", "prescription", "quote", "ticket"}
     assert sum(1 for r in snap.references if r.kind == "forecast") == 3
     assert snap.business_date == DAY and snap.slate_revision_id.startswith(f"day:{DAY}:")
     assert snap.source_identity == day_source_identity(jczq, DAY)
@@ -179,3 +181,56 @@ def test_fewer_than_two_unstarted_matches_is_a_named_skip(tmp_path: Path):
     jczq = _day(tmp_path, n=3)
     with pytest.raises(DayBoardTooSmall):
         read_structural_input_from_day(jczq, DAY, cutoff_at=f"{NEXT_DAY}T03:00:00+08:00")
+
+
+CUT = f"{DAY}T12:00:00+08:00"
+
+
+def test_ticket_reference_hashes_legs_file_and_same_day_jczq_slips(tmp_path: Path):
+    jczq = _day(tmp_path)
+    d = jczq / "daily" / DAY
+    empty = read_structural_input_from_day(jczq, DAY, cutoff_at=CUT)
+    (d / "legs.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "betslips.jsonl").write_text(
+        json.dumps({"slip_id": "X", "channel": "jczq", "placed_at": DAY}) + "\n"
+        + json.dumps({"slip_id": "Y", "channel": "jczq", "placed_at": "2026-09-22"}) + "\n"
+        + json.dumps({"slip_id": "Z", "channel": "renjiu", "placed_at": DAY}) + "\n",
+        encoding="utf-8",
+    )
+    snap = read_structural_input_from_day(jczq, DAY, cutoff_at=CUT)
+    ref = next(r for r in snap.references if r.kind == "ticket")
+    assert ref.id == f"{DAY}:tickets" and ref.captured_at == CUT
+    assert ref.source_revision == tickets_digest(day_tickets(d))
+    before = next(r for r in empty.references if r.kind == "ticket").source_revision
+    assert ref.source_revision != before
+    tickets = day_tickets(d)
+    assert tickets["legs_json"] == [] and [s["slip_id"] for s in tickets["betslips"]] == ["X"]
+
+
+def test_fingerprint_moves_with_same_day_jczq_slips_only(tmp_path: Path):
+    jczq = _day(tmp_path)
+    d = jczq / "daily" / DAY
+    book = tmp_path / "betslips.jsonl"
+    book.write_text(
+        json.dumps({"slip_id": "Y", "channel": "jczq", "placed_at": "2026-09-22"}) + "\n",
+        encoding="utf-8",
+    )
+    before = day_fingerprint(d)
+    with book.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"slip_id": "W", "channel": "jczq", "placed_at": "2026-09-21"}) + "\n")
+    assert day_fingerprint(d) == before
+    with book.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"slip_id": "X", "channel": "jczq", "placed_at": DAY}) + "\n")
+    assert day_fingerprint(d) != before
+
+
+def test_extra_references_enter_the_manifest(tmp_path: Path):
+    jczq = _day(tmp_path)
+    extra = (
+        {"kind": "approval", "id": "standing-x", "source_revision": "abc",
+         "captured_at": f"{DAY}T09:00:00+08:00"},
+    )
+    with_ref = read_structural_input_from_day(jczq, DAY, cutoff_at=CUT, extra_references=extra)
+    plain = read_structural_input_from_day(jczq, DAY, cutoff_at=CUT)
+    assert any(r.kind == "approval" and r.id == "standing-x" for r in with_ref.references)
+    assert with_ref.manifest_hash != plain.manifest_hash
