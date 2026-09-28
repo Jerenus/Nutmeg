@@ -42,7 +42,7 @@ def _world() -> WorldRow:
         input_manifest={"snapshot": "b" * 64},
         pilot_contract_hash="c" * 64,
         legal_action_schema={"operators": ["stop"]},
-        evaluator_revision="structural-candidate-evaluator-v1",
+        evaluator_revision="structural-candidate-evaluator-v2",
         resource_budget={"max_nodes": 32},
         cutoff_at="2026-09-21T07:00:00+00:00",
         provenance_mode="prospective_online",

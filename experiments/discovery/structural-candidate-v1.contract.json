@@ -26,7 +26,7 @@
     }
   ],
   "evaluator": {
-    "revision": "structural-candidate-evaluator-v1",
+    "revision": "structural-candidate-evaluator-v2",
     "lexicographic_tiers": [
       "safety_isolation",
       "validity",

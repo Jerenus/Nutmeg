@@ -19,7 +19,7 @@ def _document() -> dict[str, object]:
     return {
         "schema_version": "1",
         "contract_id": "structural-selection-v1",
-        "evaluator_revision": "structural-candidate-evaluator-v1",
+        "evaluator_revision": "structural-candidate-evaluator-v2",
         "aggregation_revision": "structural-selection-aggregation-v1",
         "lexicographic_tiers": list(PILOT.evaluator.lexicographic_tiers),
         "quality_fields": list(PILOT.evaluator.quality_fields),

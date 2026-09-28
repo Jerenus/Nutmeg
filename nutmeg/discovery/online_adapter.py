@@ -94,46 +94,44 @@ def execute_template_shard(
         if not isinstance(result, BandCandidateGenerationResult):
             raise ValueError("candidate generation result is invalid")
         generated_count = result.calculated_candidate_count
-        if any(
-            len(band.candidates) > contract.evaluator.candidate_count_cap_per_band
-            for band in result.by_band.values()
-        ):
-            status, diagnostics = "failed", ("over_cap",)
-        else:
-            selectable_candidates = tuple(
-                item
-                for item in result.candidates
-                if item.deployable
-                and not any(finding.severity == "ERROR" for finding in item.audit_findings)
-            )
-            selectable = bool(selectable_candidates)
-            valid_hashes = {item.content_hash for item in selectable_candidates}
-            status = "complete" if selectable else "no_solution"
-            diagnostics = () if selectable else ("no_feasible_candidate",)
-            evaluation = {
-                "eligible_band_count": sum(
-                    any(item.content_hash in valid_hashes for item in band.candidates)
-                    for band in result.by_band.values()
-                ),
-                "best_objective_probability_by_band": {
-                    band: max(
-                        (
-                            item.objective_probability_decimal
-                            for item in outcome.candidates
-                            if item.content_hash in valid_hashes
-                        ),
-                        default=None,
-                    )
-                    for band, outcome in sorted(result.by_band.items())
-                },
-                "distinct_valid_candidate_count_capped": min(
-                    len(selectable_candidates), contract.evaluator.candidate_count_cap_per_band
-                ),
-            }
-            payload["candidate_hashes"] = [item.content_hash for item in result.candidates]
-            payload["band_status"] = {
-                band: outcome.status for band, outcome in sorted(result.by_band.items())
-            }
+        # 评估器 v2（Jun 2026-09-28）：每档超过上限只记数，不再整片判 over_cap。
+        payload["band_candidate_counts"] = {
+            band: len(outcome.candidates) for band, outcome in sorted(result.by_band.items())
+        }
+        selectable_candidates = tuple(
+            item
+            for item in result.candidates
+            if item.deployable
+            and not any(finding.severity == "ERROR" for finding in item.audit_findings)
+        )
+        selectable = bool(selectable_candidates)
+        valid_hashes = {item.content_hash for item in selectable_candidates}
+        status = "complete" if selectable else "no_solution"
+        diagnostics = () if selectable else ("no_feasible_candidate",)
+        evaluation = {
+            "eligible_band_count": sum(
+                any(item.content_hash in valid_hashes for item in band.candidates)
+                for band in result.by_band.values()
+            ),
+            "best_objective_probability_by_band": {
+                band: max(
+                    (
+                        item.objective_probability_decimal
+                        for item in outcome.candidates
+                        if item.content_hash in valid_hashes
+                    ),
+                    default=None,
+                )
+                for band, outcome in sorted(result.by_band.items())
+            },
+            "distinct_valid_candidate_count_capped": min(
+                len(selectable_candidates), contract.evaluator.candidate_count_cap_per_band
+            ),
+        }
+        payload["candidate_hashes"] = [item.content_hash for item in result.candidates]
+        payload["band_status"] = {
+            band: outcome.status for band, outcome in sorted(result.by_band.items())
+        }
     except CandidateSpaceLimitError:
         diagnostics = ("candidate_space_over_cap",)
     except Exception as exc:

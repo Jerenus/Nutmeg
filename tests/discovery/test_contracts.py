@@ -35,7 +35,7 @@ def _pilot() -> dict[str, object]:
             {"name": "stop", "parameters": ["selected_node_ids", "reason"]},
         ],
         "evaluator": {
-            "revision": "structural-candidate-evaluator-v1",
+            "revision": "structural-candidate-evaluator-v2",
             "lexicographic_tiers": [
                 "safety_isolation",
                 "validity",
@@ -258,3 +258,15 @@ def test_d0_evidence_names_every_retained_boundary_and_gap():
         "D1 entry gate",
     ):
         assert required in text
+
+
+def test_shipped_pilot_and_selection_contracts_use_evaluator_v2():
+    from nutmeg.discovery.contracts import EVALUATOR_REVISION
+    from nutmeg.discovery.selection_contract import load_selection_contract
+
+    root = ROOT / "experiments/discovery"
+    pilot = load_pilot_contract(root / "structural-candidate-v1.contract.json")
+    selection = load_selection_contract(root / "structural-selection-v1.contract.json", pilot)
+    assert EVALUATOR_REVISION == "structural-candidate-evaluator-v2"
+    assert pilot.evaluator.revision == EVALUATOR_REVISION
+    assert selection.evaluator_revision == EVALUATOR_REVISION

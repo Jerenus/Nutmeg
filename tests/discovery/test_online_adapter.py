@@ -94,17 +94,23 @@ def test_global_candidate_budget_is_passed_to_pure_enumerator():
     assert seen == [3]
 
 
-def test_over_cap_is_explicit_failure_with_cost():
+def test_band_over_cap_is_evaluated_not_failed_under_evaluator_v2():
+    """v2（Jun 2026-09-28）：每档候选超过上限不再整片判 over_cap；质量字段只看有效候选的
+    最高 P、有候选的档数、按上限封顶的计数，与 v1 数值相同。"""
+
     def too_many(inputs, **kwargs):
         result = enumerate_band_candidates(inputs, **kwargs)
         band = result.by_band["10x"]
         many = replace(band, candidates=band.candidates * 21)
         return replace(result, by_band={**result.by_band, "10x": many})
 
+    plain = execute_template_shard(_snapshot(), ("1x1",))
     result = execute_template_shard(_snapshot(), ("1x1",), enumerate_fn=too_many)
-    assert result.status == "failed"
-    assert result.diagnostic_codes == ("over_cap",)
-    assert result.resource_cost["wall_ms"] >= 0
+    assert "over_cap" not in result.diagnostic_codes
+    assert result.status == plain.status
+    assert result.evaluation == plain.evaluation
+    counts = result.artifact_manifest["band_candidate_counts"]
+    assert counts["10x"] == 21 * plain.artifact_manifest["band_candidate_counts"]["10x"] > 0
 
 
 def test_candidate_space_limit_is_not_silently_treated_as_empty():

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from nutmeg.discovery.contracts import PilotContract
+from nutmeg.discovery.contracts import EVALUATOR_REVISION, PilotContract
 from nutmeg.ontology.discovery.models import canonical_hash
 
 
@@ -132,7 +132,7 @@ def freeze_world_pool(
         raise ValueError("world pool requires manifest-valid worlds")
     if any(
         world.task_family != "structural_candidate_audit"
-        or world.evaluator_revision != "structural-candidate-evaluator-v1"
+        or world.evaluator_revision != EVALUATOR_REVISION
         for world in worlds
     ):
         raise ValueError("world family or evaluator is incompatible")

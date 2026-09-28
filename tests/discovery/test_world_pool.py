@@ -26,7 +26,7 @@ def _world(world_id: str, day: int, **changes) -> WorldPoolInput:
         task_snapshot_hash=f"snapshot-{day}",
         slate_revision_id=f"slate-{day}",
         task_family="structural_candidate_audit",
-        evaluator_revision="structural-candidate-evaluator-v1",
+        evaluator_revision="structural-candidate-evaluator-v2",
         strata=(f"board_size:{'small' if day % 2 else 'medium'}",),
         sealed=True,
         manifest_valid=True,

@@ -203,7 +203,7 @@ def _replay_request():
         replay=_record(
             PolicyReplayRunRow,
             policy_replay_run_id="replay-1",
-            evaluator_revision="structural-candidate-evaluator-v1",
+            evaluator_revision="structural-candidate-evaluator-v2",
             cost_policy_revision="structural-cost-v1",
             initial_observation_hash=canonical_hash({"visible_node_ids": ["node-root"]}),
         ),

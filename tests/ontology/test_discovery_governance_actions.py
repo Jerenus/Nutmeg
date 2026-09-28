@@ -56,7 +56,7 @@ FIXTURE_WORLDS = (
     *((f"world-extra-{day:02d}", f"2026-08-{day:02d}") for day in range(1, 29)),
 )
 CONTRACT = {
-    "evaluator_revision": "structural-candidate-evaluator-v1",
+    "evaluator_revision": "structural-candidate-evaluator-v2",
     "aggregation_revision": SELECTION.aggregation_revision,
     "selection_contract_hash": contract_hash(SELECTION),
     "tie_rule": "incumbent",

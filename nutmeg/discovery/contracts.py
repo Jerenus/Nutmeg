@@ -23,13 +23,19 @@ class WorkflowBinding(FrozenContract):
     audit_policy_source: Literal["candidate_set.audit_policy_version"]
 
 
+EVALUATOR_REVISION = "structural-candidate-evaluator-v2"
+"""v2（Jun 2026-09-28）：每档候选超过 `candidate_count_cap_per_band` 不再整片判 over_cap
+失败。三个质量字段只看有效候选的最高 P、有候选的档数、按上限封顶的计数，数值与 v1 相同；
+v1 让每个真实 day 源世界（每档几百个候选）都成了失败世界。"""
+
+
 class OperatorSpec(FrozenContract):
     name: Literal["enumerate_template_shard", "stop"]
     parameters: tuple[str, ...]
 
 
 class EvaluatorContract(FrozenContract):
-    revision: Literal["structural-candidate-evaluator-v1"]
+    revision: Literal["structural-candidate-evaluator-v2"]
     lexicographic_tiers: tuple[str, ...]
     quality_fields: tuple[str, ...]
     candidate_count_cap_per_band: int = Field(ge=1)

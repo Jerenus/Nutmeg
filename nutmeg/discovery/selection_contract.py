@@ -31,7 +31,7 @@ class WorstStratumRule(FrozenContract):
 class SelectionContract(FrozenContract):
     schema_version: Literal["1"]
     contract_id: Literal["structural-selection-v1"]
-    evaluator_revision: Literal["structural-candidate-evaluator-v1"]
+    evaluator_revision: Literal["structural-candidate-evaluator-v2"]
     aggregation_revision: Literal["structural-selection-aggregation-v1"]
     lexicographic_tiers: tuple[str, ...]
     quality_fields: tuple[str, ...]
