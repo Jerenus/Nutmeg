@@ -167,3 +167,30 @@ def test_quality_ignores_audit_blocked_candidate_even_if_its_probability_is_high
     result = execute_template_shard(_snapshot(), ("1x1",), enumerate_fn=include_blocked)
     assert result.evaluation["best_objective_probability_by_band"]["10x"] != "0.990000000000"
     assert result.evaluation["distinct_valid_candidate_count_capped"] == 1
+
+
+def test_best_candidates_by_band_match_the_shard_evaluation():
+    from decimal import Decimal
+    from pathlib import Path
+
+    from nutmeg.discovery.contracts import load_pilot_contract
+    from nutmeg.discovery.online_adapter import best_candidates_by_band
+
+    pilot = load_pilot_contract(
+        Path(__file__).resolve().parents[2]
+        / "experiments/discovery/structural-candidate-v1.contract.json"
+    )
+    snapshot = _snapshot()
+    shard = execute_template_shard(snapshot, ("1x1",), pilot=pilot)
+    best = best_candidates_by_band(snapshot, pilot=pilot)
+    expected = {
+        band: value
+        for band, value in (shard.evaluation or {}).get(
+            "best_objective_probability_by_band", {}
+        ).items()
+        if value is not None
+    }
+    assert set(best) == set(expected)
+    for band, candidate in best.items():
+        assert Decimal(candidate.objective_probability_decimal) == Decimal(expected[band])
+        assert candidate.deployable

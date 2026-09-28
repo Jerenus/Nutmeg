@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from decimal import Decimal
 from time import monotonic_ns
 from typing import Callable
 
@@ -27,6 +28,73 @@ class ShardExecution:
     resource_cost: dict[str, int | None]
     evaluation: dict[str, object] | None
     selectable: bool
+
+
+def _shard_inputs(snapshot, template_ids, contract, candidate_count_limit):
+    return replace(
+        snapshot.candidate_input,
+        templates=tuple(
+            template
+            for template in snapshot.candidate_input.templates
+            if template.structure_code in template_ids
+        ),
+        maximum_exhaustive_candidate_count=min(
+            snapshot.candidate_input.maximum_exhaustive_candidate_count,
+            contract.budgets.max_candidate_generation_count,
+            candidate_count_limit or contract.budgets.max_candidate_generation_count,
+        ),
+    )
+
+
+def _enumerate_shard(snapshot, inputs, enumerate_fn):
+    return enumerate_fn(
+        inputs,
+        set_kind="judgment_bound",
+        generator_version="operator-candidate-v2-bands",
+        audit_candidate=lambda draft: _audit_candidate(
+            draft,
+            lane=inputs.lane,
+            offers=snapshot.audit_offers,
+            capital_cap_minor=inputs.capital_cap_minor,
+        ),
+    )
+
+
+def _valid(candidate) -> bool:
+    return candidate.deployable and not any(
+        finding.severity == "ERROR" for finding in candidate.audit_findings
+    )
+
+
+def _rank_key(candidate) -> tuple:
+    return (
+        -Decimal(candidate.objective_probability_decimal),
+        candidate.stake_minor,
+        candidate.content_hash,
+    )
+
+
+def best_candidates_by_band(snapshot: StructuralInputSnapshot, *, pilot: PilotContract) -> dict:
+    """每个赔率档里 P 最高的有效候选：与分片同一枚举、同一审计、同一分片预算。
+
+    世界只存候选哈希；夜间报告用它给次日对照留下「世界各档最优」的票面内容。
+    超过分片预算的模板跳过（与分片 `candidate_space_over_cap` 同口径）。
+    """
+    limit = pilot.budgets.max_candidate_generation_count // len(snapshot.template_ids)
+    best: dict[str, object] = {}
+    for template_id in snapshot.template_ids:
+        inputs = _shard_inputs(snapshot, (template_id,), pilot, limit)
+        try:
+            result = _enumerate_shard(snapshot, inputs, enumerate_band_candidates)
+        except CandidateSpaceLimitError:
+            continue
+        for band, outcome in result.by_band.items():
+            for candidate in outcome.candidates:
+                if _valid(candidate) and (
+                    band not in best or _rank_key(candidate) < _rank_key(best[band])
+                ):
+                    best[band] = candidate
+    return dict(sorted(best.items()))
 
 
 def execute_template_shard(
@@ -56,19 +124,7 @@ def execute_template_shard(
         Path(__file__).resolve().parents[2]
         / "experiments/discovery/structural-candidate-v1.contract.json"
     )
-    inputs = replace(
-        snapshot.candidate_input,
-        templates=tuple(
-            template
-            for template in snapshot.candidate_input.templates
-            if template.structure_code in template_ids
-        ),
-        maximum_exhaustive_candidate_count=min(
-            snapshot.candidate_input.maximum_exhaustive_candidate_count,
-            contract.budgets.max_candidate_generation_count,
-            candidate_count_limit or contract.budgets.max_candidate_generation_count,
-        ),
-    )
+    inputs = _shard_inputs(snapshot, template_ids, contract, candidate_count_limit)
     started = monotonic_ns()
     status = "failed"
     diagnostics: tuple[str, ...] = ()
@@ -80,17 +136,7 @@ def execute_template_shard(
         "template_ids": template_ids,
     }
     try:
-        result = enumerate_fn(
-            inputs,
-            set_kind="judgment_bound",
-            generator_version="operator-candidate-v2-bands",
-            audit_candidate=lambda draft: _audit_candidate(
-                draft,
-                lane=inputs.lane,
-                offers=snapshot.audit_offers,
-                capital_cap_minor=inputs.capital_cap_minor,
-            ),
-        )
+        result = _enumerate_shard(snapshot, inputs, enumerate_fn)
         if not isinstance(result, BandCandidateGenerationResult):
             raise ValueError("candidate generation result is invalid")
         generated_count = result.calculated_candidate_count
@@ -98,12 +144,7 @@ def execute_template_shard(
         payload["band_candidate_counts"] = {
             band: len(outcome.candidates) for band, outcome in sorted(result.by_band.items())
         }
-        selectable_candidates = tuple(
-            item
-            for item in result.candidates
-            if item.deployable
-            and not any(finding.severity == "ERROR" for finding in item.audit_findings)
-        )
+        selectable_candidates = tuple(item for item in result.candidates if _valid(item))
         selectable = bool(selectable_candidates)
         valid_hashes = {item.content_hash for item in selectable_candidates}
         status = "complete" if selectable else "no_solution"
