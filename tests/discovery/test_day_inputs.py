@@ -4,12 +4,14 @@ from pathlib import Path
 import pytest
 
 from nutmeg.discovery.day_inputs import (
+    DayBoardTooSmall,
     day_fingerprint,
     day_source_identity,
     read_structural_input_from_day,
 )
 
 DAY = "2026-09-23"
+NEXT_DAY = "2026-09-24"
 
 
 def _write(path: Path, doc) -> None:
@@ -25,15 +27,21 @@ def _day(
     made_at: str | None = None,
     quote_date: str | None = None,
     quote_time: str = "08:00:00",
+    kickoff: str | None = None,
 ) -> Path:
     """Build `<tmp>/jczq/daily/<day>/` with reads made at 10:00+08 and quotes at 08:00+08.
 
     `day`, `made_at`, `quote_date` and `quote_time` let callers move the fixture to
     another business day (the CLI test uses today's date so its wall-clock checks pass).
     """
+    from datetime import date as _date
+    from datetime import timedelta as _timedelta
+
     jczq = tmp_path / "jczq"
     d = jczq / "daily" / day
     made_at = made_at or f"{day}T10:00:00+08:00"
+    next_day = (_date.fromisoformat(day) + _timedelta(days=1)).isoformat()
+    kickoff = kickoff or f"{next_day}T02:45:00+08:00"
     quote_date = quote_date or day
     codes = [f"周三{i:03d}" for i in range(1, n + 1)]
     legs = {}
@@ -43,7 +51,7 @@ def _day(
         legs[code] = {
             "match_id": f"m-{i}",
             "name": f"A{i}-B{i}",
-            "kickoff_bj": f"{day}T19:30:00+08:00",
+            "kickoff_bj": kickoff,
             "fair": {"home": 0.5, "draw": 0.28, "away": 0.22},
             "faces": "31",
             "stance": {"face": "3", "structure": "double", "cover": "1", "faces": "31"},
@@ -132,3 +140,42 @@ def test_audit_offers_prescribe_bundle_singles_and_omission_with_a_named_rule(tm
     expected = {frozenset("31"), frozenset(), frozenset("3"), frozenset("1")}
     assert set(offer.prescribed_face_bundles) == expected
     assert offer.rule_ids == ("stance",)
+
+
+def test_matches_kicked_off_by_cutoff_are_excluded_and_recorded(tmp_path: Path):
+    jczq = _day(tmp_path, n=4)
+    board_path = jczq / "daily" / DAY / "jczq-legs-base.json"
+    board = json.loads(board_path.read_text(encoding="utf-8"))
+    board["legs"]["周三001"]["kickoff_bj"] = f"{DAY}T11:00:00+08:00"
+    board_path.write_text(json.dumps(board, ensure_ascii=False), encoding="utf-8")
+    snap = read_structural_input_from_day(jczq, DAY, cutoff_at=f"{DAY}T12:00:00+08:00")
+    codes = [offer.official_match_no for offer in snap.candidate_input.offers]
+    assert codes == ["周三002", "周三003", "周三004"]
+    excluded = [r for r in snap.references if r.kind == "excluded_started"]
+    assert [(r.id, r.captured_at) for r in excluded] == [("周三001", f"{DAY}T11:00:00+08:00")]
+
+
+def test_kickoff_falls_back_to_sporttery_time_and_unknown_is_excluded(tmp_path: Path):
+    jczq = _day(tmp_path, n=4)
+    d = jczq / "daily" / DAY
+    board = json.loads((d / "jczq-legs-base.json").read_text(encoding="utf-8"))
+    for leg in board["legs"].values():
+        leg.pop("kickoff_bj")
+    (d / "jczq-legs-base.json").write_text(json.dumps(board, ensure_ascii=False), encoding="utf-8")
+    markets = json.loads((d / "sporttery_markets.json").read_text(encoding="utf-8"))
+    subs = markets["matchInfoList"][0]["subMatchList"]
+    for sub, clock in zip(subs[:3], ("11:30:00", "20:00:00", "21:00:00"), strict=True):
+        sub["matchDate"], sub["matchTime"] = DAY, clock
+    (d / "sporttery_markets.json").write_text(
+        json.dumps(markets, ensure_ascii=False), encoding="utf-8"
+    )
+    snap = read_structural_input_from_day(jczq, DAY, cutoff_at=f"{DAY}T12:00:00+08:00")
+    assert [o.official_match_no for o in snap.candidate_input.offers] == ["周三002", "周三003"]
+    excluded = {r.id: r.source_revision for r in snap.references if r.kind == "excluded_started"}
+    assert excluded == {"周三001": f"kickoff:{DAY}T11:30:00+08:00", "周三004": "kickoff:unknown"}
+
+
+def test_fewer_than_two_unstarted_matches_is_a_named_skip(tmp_path: Path):
+    jczq = _day(tmp_path, n=3)
+    with pytest.raises(DayBoardTooSmall):
+        read_structural_input_from_day(jczq, DAY, cutoff_at=f"{NEXT_DAY}T03:00:00+08:00")

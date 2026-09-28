@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import Path
 
@@ -63,14 +63,26 @@ def _probabilities(values: dict) -> tuple[tuple[str, str], ...]:
     return tuple((FACE_CODE[key], format(quantized[key], "f")) for key in _FACE_KEYS)
 
 
-def _had_quotes(markets: dict) -> dict[str, dict]:
-    out = {}
-    for block in markets.get("matchInfoList") or []:
-        for sub in block.get("subMatchList") or []:
-            had = sub.get("had") or {}
-            if sub.get("matchNumStr") and had.get("h"):
-                out[sub["matchNumStr"]] = had
-    return out
+class DayBoardTooSmall(ValueError):
+    """截止时刻未开球、且同时有 Read 与体彩 had 报价的场次不足两场（夜间作业记为跳过）。"""
+
+
+def _market_rows(markets: dict) -> dict[str, dict]:
+    return {
+        sub["matchNumStr"]: sub
+        for block in markets.get("matchInfoList") or []
+        for sub in block.get("subMatchList") or []
+        if sub.get("matchNumStr")
+    }
+
+
+def _kickoff_at(leg: dict, row: dict) -> datetime | None:
+    """板面 `kickoff_bj` 优先，其次体彩 matchDate+matchTime；都没有 → None（按已开球排除）。"""
+    if leg.get("kickoff_bj"):
+        return datetime.fromisoformat(str(leg["kickoff_bj"]))
+    if row.get("matchDate") and row.get("matchTime"):
+        return datetime.fromisoformat(f"{row['matchDate']}T{row['matchTime']}+08:00")
+    return None
 
 
 def _face_bundles(faces: str) -> tuple[FaceBundleOption, ...]:
@@ -106,7 +118,8 @@ def read_structural_input_from_day(
     markets_bytes = (day_dir / "sporttery_markets.json").read_bytes()
     legs = json.loads(board_bytes)["legs"]
     reads = {r["match_id"]: r for r in json.loads(reads_bytes) if isinstance(r, dict)}
-    quotes = _had_quotes(json.loads(markets_bytes))
+    cutoff = datetime.fromisoformat(cutoff_at)
+    rows = _market_rows(json.loads(markets_bytes))
     # 处方的采集时刻 = 最晚一条 Read 的 made_at（表态与 Read 同一次落盘），不用文件 mtime：
     # mtime 跟墙钟走，会让同一份输入在 cutoff 过后突然「超过 cutoff」。
     made_ats = sorted(str(r.get("made_at") or "") for r in reads.values() if r.get("made_at"))
@@ -115,8 +128,21 @@ def read_structural_input_from_day(
     offers, audits, refs = [], [], []
     for code, leg in sorted(legs.items()):
         read = reads.get(leg.get("match_id"))
-        had = quotes.get(code)
-        if not read or not had:
+        row = rows.get(code) or {}
+        had = row.get("had") or {}
+        if not read or not had.get("h"):
+            continue
+        kickoff = _kickoff_at(leg, row)
+        if kickoff is None or kickoff <= cutoff:
+            # 前瞻纪律：截止时已开球（或开球时刻不明）的场不进世界，留引用说明为什么少了
+            refs.append(
+                {
+                    "kind": "excluded_started",
+                    "id": code,
+                    "source_revision": f"kickoff:{kickoff.isoformat() if kickoff else 'unknown'}",
+                    "captured_at": (kickoff or cutoff).isoformat(),
+                }
+            )
             continue
         faces = str(leg.get("faces") or "310")
         belief = _probabilities(read["belief"])
@@ -168,7 +194,9 @@ def read_structural_input_from_day(
                 {"kind": "quote", "id": qid, "source_revision": had_sha, "captured_at": captured}
             )
     if not offers:
-        raise ValueError("day source has no match with both a Read and sporttery odds")
+        raise DayBoardTooSmall(
+            "day source has no unstarted match with both a Read and sporttery odds"
+        )
     refs.append(
         {
             "kind": "prescription",
@@ -190,7 +218,9 @@ def read_structural_input_from_day(
         for n in range(2, min(len(codes), 1 + max_templates) + 1)
     )
     if not templates:
-        raise ValueError("day source needs at least two matches for a pass template")
+        raise DayBoardTooSmall(
+            "day source needs at least two unstarted matches for a pass template"
+        )
     candidate_input = CandidateGenerationInput(
         lane="jczq",
         ticket_kind="jczq_pass",
