@@ -205,3 +205,20 @@ def test_days_before_a_job_went_live_are_inactive_not_missing(tmp_path: Path):
 
     assert _job(before, "day.settle")["slots"][0]["status"] == "inactive"
     assert _job(after, "day.settle")["slots"][0]["status"] == "missing"
+
+
+def test_dream_job_reads_its_timeline_rows(tmp_path: Path):
+    from nutmeg.decision.day_runs import JOBS
+
+    spec = JOBS["com.nutmeg.day.dream"]
+    report = "/Users/x/nutmeg-shadow/reports/2026-09-24.json"
+    _timeline(tmp_path, [
+        _row("brief", "12:00", "12:01"),
+        {**_row("dream", "20:30", "20:31", summary="dream recorded discovery-world-x"),
+         "evidence_path": report},
+    ])
+    runs = spec.evidence(tmp_path, DAY)
+    assert [(r.at, r.status, r.slot, r.evidence) for r in runs] == [
+        ("20:31", "ok", "20:30", report)
+    ]
+    assert spec.lane == "rsi"

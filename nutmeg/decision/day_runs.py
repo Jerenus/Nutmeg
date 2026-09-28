@@ -27,7 +27,8 @@ STATUS_TEXT = {
     "missing": "没跑", "upcoming": "未到", "unknown": "无记录", "inactive": "未上线",
 }
 _FREQUENT_MIN_SLOTS = 12
-_TIMELINE_JOB = {"day.settle": "settle", "day.brief": "brief", "day.broadcast": "broadcast"}
+_TIMELINE_JOB = {"day.settle": "settle", "day.brief": "brief", "day.broadcast": "broadcast",
+                 "day.dream": "dream"}
 
 
 @dataclass(frozen=True)
@@ -297,6 +298,9 @@ JOBS: dict[str, JobSpec] = {
     "com.nutmeg.day.broadcast": JobSpec(
         "截止播报", "system", "截止前 30 分、10 分提醒", _timeline_runs("broadcast"),
         since=_TIMELINE_SINCE),
+    "com.nutmeg.day.dream": JobSpec(
+        "Dream 夜间录制", "rsi", "常设批准下冻结当晚未开球场次与实际票面，录一个影子世界",
+        _timeline_runs("dream"), since=_TIMELINE_SINCE),
 }
 
 
