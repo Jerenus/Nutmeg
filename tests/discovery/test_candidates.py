@@ -681,3 +681,100 @@ def test_26111_u864_family_replays_exact_recorded_probabilities() -> None:
             candidate.objective_probability_decimal
             == version["objective_probability_decimal"]
         )
+
+
+def _reference_batches(inputs: CandidateGenerationInput) -> list[tuple[str, ...]]:
+    """2026-09-28 之前的物化：先 combinations(全部原子票) 再按模板组数过滤。"""
+    from itertools import combinations as _combinations
+
+    from nutmeg.discovery.candidates import _enumerate_atomic_tickets
+
+    by_number = {offer.official_match_no: offer for offer in inputs.offers}
+    atomic = _enumerate_atomic_tickets(inputs, by_number)
+    limits = {template.structure_code: template.maximum_groups for template in inputs.templates}
+    batches: list[tuple[str, ...]] = []
+    for size in range(1, min(inputs.maximum_ticket_count, len(atomic)) + 1):
+        for batch in _combinations(atomic, size):
+            counts: dict[str, int] = {}
+            for ticket in batch:
+                counts[ticket.structure_code] = counts.get(ticket.structure_code, 0) + 1
+            if all(counts[code] <= limits[code] for code in counts):
+                batches.append(tuple(ticket.composition_hash for ticket in batch))
+    return sorted(batches)
+
+
+def _two_template_inputs(*, groups: int, tickets: int) -> CandidateGenerationInput:
+    offers = tuple(
+        _offer(str(index), ("31", ("3", "1")), ("3", ("3",)), omission_allowed=True)
+        for index in range(1, 4)
+    )
+    templates = tuple(
+        CandidateStructureTemplate(
+            kind="jczq_pass",
+            structure_code=f"pass-{size}-1",
+            eligible_official_match_nos=("1", "2", "3"),
+            required_offer_count=size,
+            maximum_groups=groups,
+            pass_size=size,
+        )
+        for size in (2, 3)
+    )
+    return _generation_input(
+        lane="jczq",
+        ticket_kind="jczq_pass",
+        offers=offers,
+        templates=templates,
+        capital_cap_minor=1_000_000,
+        maximum_ticket_count=tickets,
+        maximum_exhaustive_candidate_count=100_000,
+    )
+
+
+@pytest.mark.parametrize(("groups", "tickets"), [(1, 1), (1, 2), (2, 2), (2, 3)])
+def test_materialized_batches_equal_the_filter_after_reference(groups, tickets) -> None:
+    inputs = _two_template_inputs(groups=groups, tickets=tickets)
+    result = enumerate_candidates(inputs)
+    produced = sorted(
+        tuple(ticket.composition_hash for ticket in candidate.tickets)
+        for candidate in result.candidates
+    )
+    assert produced == _reference_batches(inputs)
+    assert len(produced) == result.calculated_candidate_count
+
+
+def test_real_board_shape_materializes_without_walking_every_combination() -> None:
+    """2026-09-28：7 场、pass-2-1、maximum_ticket_count=20 → 207 个候选；旧循环永远跑不完。"""
+    import time
+
+    faces = ("30", "10", "310", "30", "31", "31", "10")
+    offers = tuple(
+        _offer(
+            str(index),
+            (code, tuple(code)),
+            *((face, (face,)) for face in code),
+            omission_allowed=True,
+        )
+        for index, code in enumerate(faces, start=1)
+    )
+    template = CandidateStructureTemplate(
+        kind="jczq_pass",
+        structure_code="pass-2-1",
+        eligible_official_match_nos=tuple(str(index) for index in range(1, 8)),
+        required_offer_count=2,
+        maximum_groups=1,
+        pass_size=2,
+    )
+    inputs = _generation_input(
+        lane="jczq",
+        ticket_kind="jczq_pass",
+        offers=offers,
+        templates=(template,),
+        capital_cap_minor=200_000,
+        maximum_ticket_count=20,
+        maximum_exhaustive_candidate_count=50_000,
+    )
+    started = time.monotonic()
+    result = enumerate_candidates(inputs)
+    assert result.calculated_candidate_count == 207
+    assert len(result.candidates) == 207
+    assert time.monotonic() - started < 10

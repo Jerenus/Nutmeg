@@ -9,7 +9,7 @@ Moved verbatim from ``nutmeg.product.operator_candidates`` on 2026-09-23.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import ROUND_CEILING, ROUND_HALF_EVEN, Decimal, InvalidOperation, localcontext
 from itertools import combinations, product
@@ -506,10 +506,10 @@ def enumerate_candidates(
         raise RuntimeError("candidate enumeration count did not reconcile")
     drafts = tuple(
         _candidate_draft(batch)
-        for size in range(1, maximum_batch_size + 1)
-        for batch in combinations(atomic, size)
-        if _batch_respects_group_limits(batch, inputs.templates)
+        for batch in _limited_batches(atomic, inputs.templates, maximum_batch_size)
     )
+    if len(drafts) != calculated_count:
+        raise RuntimeError("candidate batch count did not reconcile")
     comparisons = tuple(
         _compare_candidate(
             draft,
@@ -678,17 +678,34 @@ def _calculated_candidate_count(
     )
 
 
-def _batch_respects_group_limits(
-    batch: Sequence[CandidateTicket],
+def _limited_batches(
+    atomic: Sequence[CandidateTicket],
     templates: Sequence[CandidateStructureTemplate],
-) -> bool:
+    maximum_batch_size: int,
+) -> Iterator[tuple[CandidateTicket, ...]]:
+    """只物化 `_calculated_candidate_count` 数过的那个空间。
+
+    每个模板贡献自己原子票里的 0…maximum_groups 张；批内保持全局原子序，草稿与哈希
+    与旧的「先全组合再过滤」逐字相同。2026-09-28 出生事故：旧循环对 207 张原子票做
+    combinations(≤20) 再过滤，首个真实世界四个分片全部超时。
+    """
     limits = {template.structure_code: template.maximum_groups for template in templates}
-    counts: dict[str, int] = {}
-    for ticket in batch:
-        counts[ticket.structure_code] = counts.get(ticket.structure_code, 0) + 1
-        if counts[ticket.structure_code] > limits[ticket.structure_code]:
-            return False
-    return True
+    position = {ticket.composition_hash: index for index, ticket in enumerate(atomic)}
+    buckets: dict[str, list[CandidateTicket]] = {}
+    for ticket in atomic:
+        buckets.setdefault(ticket.structure_code, []).append(ticket)
+    choices = [
+        [
+            chosen
+            for size in range(min(limits[code], len(bucket)) + 1)
+            for chosen in combinations(bucket, size)
+        ]
+        for code, bucket in buckets.items()
+    ]
+    for parts in product(*choices):
+        batch = [ticket for part in parts for ticket in part]
+        if 1 <= len(batch) <= maximum_batch_size:
+            yield tuple(sorted(batch, key=lambda ticket: position[ticket.composition_hash]))
 
 
 def _template_offers(
