@@ -84,3 +84,35 @@ def test_run_loop_is_idempotent_per_day_unless_forced(tmp_path):
     assert first is not None
     assert run_loop(ctx) is None and len(log) == calls_after_first
     assert run_loop(ctx, force=True) is not None and len(log) > calls_after_first
+
+
+def test_dream_compare_step_reports_yesterday_and_expiry_countdown(tmp_path):
+    log: list[list[str]] = []
+    ctx = _ctx(tmp_path, log)
+    base = ctx.runner
+
+    def runner(cmd):
+        if "compare" in cmd:
+            log.append(list(cmd))
+            payload = {
+                "day": "2026-09-21",
+                "status": "settled",
+                "rows": [{"kind": "decision_rule", "status": "settled", "hit": True,
+                          "pnl_per_yuan": 0.4, "p_belief": 0.52}],
+                "summary": {"n_days": 3, "kinds": {},
+                            "actual_minus_rule": {"n": 3, "mean": -0.2, "ci95": None}},
+                "standing_days_left": 5,
+            }
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(payload) + "\n", "")
+        return base(cmd)
+
+    ctx.runner = runner
+    plan = planned_commands(ctx)
+    assert STEP_ORDER[-1] == "dream_compare"
+    assert plan["dream_compare"][0][2:6] == ["nutmeg", "discovery", "compare", "--day"]
+    assert "2026-09-21" in plan["dream_compare"][0]
+    report = run_loop(ctx)
+    assert report.dream["day"] == "2026-09-21"
+    assert any("常设批准" in a and "5" in a for a in report.human_actions)
+    md = (ctx.out_dir / "2026-09-22.md").read_text(encoding="utf-8")
+    assert "## Dream 对照" in md and "decision_rule" in md and "−0.2000" in md
