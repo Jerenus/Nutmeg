@@ -67,9 +67,10 @@ def run(job: str = _JOB, date: str | None = _DATE, data_dir: Path = _DATA_DIR,
             for b in due_broadcasts(decisions, now=ctx.now(), sent=sent):
                 typer.echo(render_broadcast(b) + "\n---")
             return
-        for cmd in planned_commands(ctx, job):
+        planned = planned_commands(ctx, job)
+        for cmd in planned:
             typer.echo("    " + " ".join(cmd))
-        if job != "settle":
+        if not planned and job != "settle":
             typer.echo(f"    [{job}] 纯 Python 作业，不起子进程")
         return
     record = run_job(ctx, job, force=force, with_logic=with_logic)

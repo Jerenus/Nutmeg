@@ -179,3 +179,11 @@ def test_dream_job_failure_keeps_the_exit_code(tmp_path: Path):
     )
     rec = run_job(ctx, "dream")
     assert rec.exit == 1 and rec.summary == "dream failed shadow_store_missing"
+
+
+def test_dream_job_plans_the_nightly_subprocess_it_runs(tmp_path: Path):
+    ctx = _ctx(tmp_path, [])
+    assert planned_commands(ctx, "dream") == [[
+        "uv", "run", "nutmeg", "discovery", "nightly", "--day", "2026-09-23",
+        "--jczq-dir", str(ctx.data_dir / "jczq"),
+    ]]

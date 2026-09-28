@@ -55,9 +55,12 @@ def _tail(text: str, lines: int = 3) -> str:
 
 
 def planned_commands(ctx: DayContext, job: str) -> list[list[str]]:
+    uv = ["uv", "run", "nutmeg"]
+    if job == "dream":
+        return [[*uv, "discovery", "nightly", "--day", ctx.date,
+                 "--jczq-dir", str(ctx.data_dir / "jczq")]]
     if job != "settle":
         return []
-    uv = ["uv", "run", "nutmeg"]
     data = ["--data-dir", str(ctx.data_dir)]
     cmds = [[*uv, "workbench-export", "--date", _yesterday(ctx.date),
              "--output-dir", str(ctx.data_dir / "jczq"), "--out", str(ctx.out_dir / RETRO)]]
@@ -173,8 +176,7 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
             summary, exit_code = f"broadcast 未发：{exc}", 1
     elif job == "dream":
         # 夜间 Dream 录制（常设批准至 2026-10-31）：跳过/无解是数据，只有基础设施错误退出 1
-        cmd = ["uv", "run", "nutmeg", "discovery", "nightly", "--day", ctx.date,
-               "--jczq-dir", str(ctx.data_dir / "jczq")]
+        cmd = planned_commands(ctx, "dream")[0]
         proc = ctx.runner(cmd)
         commands = [{"cmd": " ".join(cmd[2:]), "exit": proc.returncode,
                      "tail": _tail((proc.stdout or "") + (proc.stderr or ""))}]
