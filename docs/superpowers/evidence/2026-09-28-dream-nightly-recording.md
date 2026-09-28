@@ -44,6 +44,10 @@ sha256 `ad9feb639fdf02a552a5a3f40a70275132a64dd4864b680d8724c66d3771a26e`；`app
 - 分支逐任务 TDD，每个任务先见红再见绿；`tests/discovery` 全绿。
 - worktree 里 `tests/decision` 有 3 个用例按相对路径读生产 `.nutmeg-data`（`test_rsi_population` ×2、`test_balance_ledger::test_real_26129_reads_have_zero_moves`），worktree 无此目录故失败；它们与本改动无关，Task 10/11 提交时跳过了 `pytest-touched-decision` 钩子，合并后在 main 上补跑（见 §6）。
 
-## 6. 合并与装载
+## 6. 合并与装载（2026-09-29）
 
-见合并后的补记。
+- worktree 全量测试首跑抓出一个真问题：运行页要求 `ops/launchd` 下每个 plist 都登记证据来源，`com.nutmeg.day.dream` 没登记 → `592b286` 补登记（取当日 timeline 的 `dream` 行）。
+- `git merge --ff-only feat/dream-nightly`（main 81535cf → 592b286）；main 上全量测试无失败，关键组 357 passed（含 worktree 里读不到生产数据的 3 个用例与运行页用例）。
+- 端到端（main，生产默认值，07:52）：`discovery nightly --dry-run` → `skipped outside_window`（常设批准加载、剩 32 天）；`discovery compare --day 2026-09-28` → `no_world`。
+- `eb7c1d0`：`day run --job dream --dry-run` 原先误报「纯 Python 作业」，改为打印 nightly 子进程命令。
+- 装载：`cp ops/launchd/com.nutmeg.day.dream.plist ~/Library/LaunchAgents/ && launchctl load …`；`launchctl list` 出现 `com.nutmeg.day.dream`，与源 plist 字节一致。首跑 = 2026-09-29 20:30。
