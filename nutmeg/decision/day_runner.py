@@ -153,6 +153,10 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
         summary = (f"results 源 {report['source_day']} written={report['written']} "
                    f"missing={len(report['missing'])}")
         exit_code = 0
+        if report.get("unsealed"):
+            # 回填要整板踢完才封存；缺一场这一天就进不了 results-90（2026-09-27 静默 0 场）。
+            summary += "｜⚠️源日有板但赛果未封存（jc-results 无此日），票与改判账未结"
+            exit_code = 1
         evidence = str(ctx.out_dir / RESULTS_90) if report["written"] else None
     elif job == "broadcast":
         from nutmeg.decision.day_broadcast import send_all, telegram_sender

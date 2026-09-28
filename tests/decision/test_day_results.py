@@ -19,7 +19,8 @@ def test_bridge_results_writes_results_90_for_yesterday(tmp_path: Path):
     results_path = data / "daily" / "2026-09-23" / "results-90.json"
     doc = json.loads(results_path.read_text(encoding="utf-8"))
     assert doc == {"周二001": {"outcome_90": "3", "goals_h": 2, "goals_a": 0}}
-    assert report == {"source_day": "2026-09-22", "written": 1, "missing": ["周二002"]}
+    assert report == {"source_day": "2026-09-22", "written": 1, "missing": ["周二002"],
+                      "unsealed": False}
 
 
 def test_bridge_results_without_source_day_writes_nothing(tmp_path: Path):
@@ -27,5 +28,6 @@ def test_bridge_results_without_source_day_writes_nothing(tmp_path: Path):
     (data / "jczq").mkdir(parents=True)
     (data / "jczq" / "jc-results.json").write_text("{}", encoding="utf-8")
     report = bridge_results(data_dir=data, date="2026-09-23")
-    assert report == {"source_day": "2026-09-22", "written": 0, "missing": []}
+    assert report == {"source_day": "2026-09-22", "written": 0, "missing": [],
+                      "unsealed": False}
     assert not (data / "daily" / "2026-09-23" / "results-90.json").exists()

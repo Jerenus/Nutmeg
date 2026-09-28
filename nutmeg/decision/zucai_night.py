@@ -118,7 +118,8 @@ def render_report(issue: str, date: str, results: dict[str, dict],
     for t in tickets:
         st = ticket_partial_status(t["faces"], codes)
         state = "存活" if st["alive"] else f"已死(断腿 {','.join(st['dead'])})"
-        lines.append(f"{t['id']}: {state} | 已中 {','.join(st['hit']) or '-'}"
+        tid = t.get("id") or t.get("slip_id") or "?"
+        lines.append(f"{tid}: {state} | 已中 {','.join(st['hit']) or '-'}"
                      f" | 未决 {','.join(st['undecided']) or '-'}")
     lines.extend(skipped)
     return "\n".join(lines)

@@ -604,7 +604,8 @@ def fulfill(exp: str = _EXP, duty: str = _DUTY, day: str = _DAY, artifact: Path 
     k = _kernel(data_dir)
     ko = _earliest_kickoff(data_dir, issue)
     if match:
-        ko = _jczq_match_kickoffs(data_dir, day).get(match)
+        ko = (_jczq_match_kickoffs(data_dir, day).get(match)
+              or _zucai_match_kickoffs(data_dir, issue).get(match))
     if ko is None:
         _fail("需要 --issue 或 --match 以解析开球（前瞻性判定依赖它）")
     raw = artifact.read_bytes()

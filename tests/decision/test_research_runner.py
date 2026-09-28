@@ -560,6 +560,37 @@ def test_zucai_only_matches_are_researched_first_and_land_in_the_zucai_dir(tmp_p
     assert status == {"周五001": "skipped_budget", "足彩26133-01": "done"}
     assert (zdir / "26133-research-m1.json").exists()
     assert [argv[3] for argv in fulfills] == ["R1"]
+    assert fulfills[0][-2:] == ["--issue", "26133"]   # 足彩场次凭期号查开球
+
+
+def test_zucai_pool_still_runs_when_the_jczq_board_failed_to_load(tmp_path):
+    """2026-09-28 出生事故：08:00 体彩 WAF 降级，当天没有 jczq-legs-base.json →
+    run_day 读板直接 FileNotFoundError，足彩 26134 十四场一场都研究不了。"""
+    zdir = tmp_path / "zucai"
+    zdir.mkdir()
+    kickoff = (datetime.now(BJ) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M")
+    (zdir / "26134-issue.json").write_text(json.dumps({
+        "issue_id": "26134", "sale_deadline": "2026-09-19 22:00",
+        "matches": [{"match_no": 1, "competition": "欧国联", "home_team": "亚美尼",
+                     "away_team": "黑山", "kickoff_bj": kickoff}]}, ensure_ascii=False),
+        encoding="utf-8")
+    (zdir / "26134-store-ids.json").write_text(json.dumps({"1": {
+        "match_no": 1, "match_id": "z-1", "fair": {"home": 0.33, "draw": 0.30, "away": 0.37}}}),
+        encoding="utf-8")
+
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=tmp_path,
+        data_dir=tmp_path,
+        claude=lambda system, brief: (0, GOOD),
+        fulfill=lambda argv: (0, ""),
+        profile=lambda match_id: {},
+        budget=1,
+        concurrency=1,
+    )
+
+    assert {row["code"]: row["status"] for row in report["matches"]} == {"足彩26134-01": "done"}
+    assert (zdir / "26134-research-m1.json").exists()
 
 
 def test_evidence_timestamps_are_stamped_by_the_system(tmp_path):

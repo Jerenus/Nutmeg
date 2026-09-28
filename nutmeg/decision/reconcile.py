@@ -62,6 +62,9 @@ def settle_read(read, *, outcome_90, score, closing) -> Settlement:
     )
 
 
+_SFC_OUTCOME = {"3": "home", "1": "draw", "0": "away"}
+
+
 def settle_ticket_leg(*, market: str, pick: str, line: float | None,
                       outcome_90: str | None, goals_h: int | None,
                       goals_a: int | None) -> str | None:
@@ -73,6 +76,8 @@ def settle_ticket_leg(*, market: str, pick: str, line: float | None,
     """
     if not pick:
         return None
+    # results-90.json(day.results 桥)用 3/1/0 写 outcome_90;这里统一成 home/draw/away。
+    outcome_90 = _SFC_OUTCOME.get(outcome_90, outcome_90)
     if market in ("had", "hhad"):
         if pick not in ("home", "draw", "away") or outcome_90 is None:
             return None

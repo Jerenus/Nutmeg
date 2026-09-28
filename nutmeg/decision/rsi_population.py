@@ -9,6 +9,9 @@ from pathlib import Path
 
 def _jczq_matches(*, day: str, data_dir: Path) -> list[dict]:
     path = data_dir / "jczq" / "daily" / day / "jczq-legs-base.json"
+    if not path.exists():
+        # 竞彩板没入库（WAF 降级）＝当天竞彩没有可排的场；不许连带足彩并集池排不上（2026-09-28）
+        return []
     payload = json.loads(path.read_text(encoding="utf-8"))
     legs = payload.get("legs") or {}
     entries = legs.items() if isinstance(legs, Mapping) else enumerate(legs, start=1)

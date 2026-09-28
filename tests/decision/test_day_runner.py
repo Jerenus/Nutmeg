@@ -140,3 +140,15 @@ def test_brief_refresh_without_logic_carries_the_previous_explanation(tmp_path: 
     logic = brief["jczq"]["matches"][0]["logic"]
     assert logic["status"] == "ok" and logic["carried"] is True
     assert "fair 定面。" in (out / "brief.md").read_text(encoding="utf-8")
+
+
+def test_results_job_fails_loudly_when_yesterdays_board_is_unsealed(tmp_path: Path):
+    """2026-09-27 出生事故：9/26 板 25 场缺 1 场，回填不封存 → results 报 written=0 missing=0
+    且退出 0，状态页一片绿，而 9/26 三张竞彩票和改判账全都没结。"""
+    ctx = _ctx(tmp_path, [])
+    (ctx.data_dir / "jczq" / "jc-results.json").write_text("{}", encoding="utf-8")
+    board = ctx.data_dir / "jczq" / "daily" / "2026-09-22"
+    board.mkdir(parents=True)
+    (board / "sporttery_markets.json").write_text("{}", encoding="utf-8")
+    rec = run_job(ctx, "results")
+    assert rec.exit == 1 and "未封存" in rec.summary

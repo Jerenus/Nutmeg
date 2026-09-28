@@ -159,3 +159,15 @@ def test_both_falls_back_to_the_prep_auto_channel_map(tmp_path):
 
     assert [(row["match_id"], row["match_no"], row["source"]) for row in result] == [
         ("jczq-008", 2, "both")]
+
+
+def test_both_still_lists_zucai_matches_when_the_jczq_board_is_missing(tmp_path):
+    """2026-09-28：08:00 体彩 WAF 降级没有竞彩板，rsi schedule 读板 FileNotFoundError，
+    连带足彩 26134 的 R1 义务一条都排不上。"""
+    zucai_dir = tmp_path / "zucai"
+    zucai_dir.mkdir()
+    (zucai_dir / "26134-store-ids.json").write_text(json.dumps({
+        "1": {"match_no": 1, "match_id": "z-1", "canonical_id": "M-1"}}), encoding="utf-8")
+    both = matches_for_population("both", day="2026-09-28", issue="26134", data_dir=tmp_path)
+    assert [row["match_id"] for row in both] == ["z-1"]
+    assert matches_for_population("jczq", day="2026-09-28", issue=None, data_dir=tmp_path) == []

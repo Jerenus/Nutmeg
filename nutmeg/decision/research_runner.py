@@ -266,8 +266,10 @@ def run_day(
     resolved_run_id = run_id or f"rr-{uuid4().hex}"
     day_dir = Path(jczq_dir) / "daily" / day
     board_path = day_dir / "jczq-legs-base.json"
-    board = json.loads(board_path.read_text(encoding="utf-8"))
-    legs = board["legs"]
+    # 竞彩板没入库（08:00 WAF 降级）不该连带足彩并集池一场都研究不了（2026-09-28）。
+    board = (json.loads(board_path.read_text(encoding="utf-8"))
+             if board_path.exists() else None)
+    legs = board["legs"] if board else {}
     order = sorted(legs, key=lambda value: (legs[value]["kickoff_bj"], value))
     if code is not None:
         order = [value for value in order if value == code]
@@ -441,6 +443,8 @@ def run_day(
                         stratum,
                         "--data-dir",
                         str(data_dir),
+                        # 足彩独有场次不在竞彩板上，rsi 只能凭期号查开球（2026-09-28 R1 全拒）
+                        *(["--issue", entry["issue"]] if entry["zucai"] else []),
                     ]
                 )
         elif result["status"] == "rejected":
@@ -490,9 +494,10 @@ def run_day(
             "model": model_used,
         }
 
-    board_path.write_text(
-        json.dumps(board, ensure_ascii=False, indent=1), encoding="utf-8"
-    )
+    if board is not None:
+        board_path.write_text(
+            json.dumps(board, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
     report = {
         "run_id": resolved_run_id,
         "idempotency_key": f"research-run:{day}:{resolved_run_id}",

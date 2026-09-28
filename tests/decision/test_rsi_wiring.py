@@ -44,6 +44,14 @@ def test_decision_am_calls_research_wiring_after_success(tmp_path, monkeypatch):
             "decision-am", run_date, (), "stub"
         ),
     )
+    # .env 里的 NUTMEG_ONTOLOGY_V2=1 会被 settings 读到，delenv 挡不住 → 两条路径都桩掉；
+    # 否则本测试真去抓体彩，WAF 降级的早上就红（2026-09-28）
+    monkeypatch.setattr(
+        "nutmeg.decision.ontology_adapter.run_decision_am_v2",
+        lambda run_date, output_dir, **kwargs: DecisionWorkflowResult(
+            "decision-am", run_date, (), "stub"
+        ),
+    )
     hits = []
     monkeypatch.setattr(
         "nutmeg.decision.rsi_wiring.after_am", lambda **kwargs: hits.append(kwargs)

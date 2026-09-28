@@ -416,3 +416,12 @@ def test_overlong_crash_marker_is_stripped_into_note_as_a_warning():
     assert ("WARN", "crash_markers") in _levels(result)
     assert ("ERROR", "crash_markers") not in _levels(result)
     assert "大分7轮4平" in result.leg["note"]
+
+
+def test_match_no_falls_back_to_the_file_key_when_research_omits_it():
+    """2026-09-28 出生事故：并集池 headless 研究不写 match_no，入库桥把 13 场全记成场0，
+    写回时一个覆盖一个，legs-base 多出一条「场0」，其余 13 场的 research_stance 全丢。"""
+    research = _research()
+    research.pop("match_no")
+    assert intake(research, _leg(), match_no=8).match_no == 8
+    assert intake(_research(), _leg(), match_no=8).match_no == 7   # 研究自带的优先

@@ -59,11 +59,10 @@ def _profile_lookup(jczq_dir: Path, day: str):
     from nutmeg.decision.entities import profiles_for_board
     from nutmeg.decision.store import DecisionStore
 
-    board = json.loads(
-        (Path(jczq_dir) / "daily" / day / "jczq-legs-base.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    board_path = Path(jczq_dir) / "daily" / day / "jczq-legs-base.json"
+    # 竞彩板缺（WAF 降级）时足彩并集池照样要研究：没有板就没有竞彩画像可查（2026-09-28）。
+    board = (json.loads(board_path.read_text(encoding="utf-8"))
+             if board_path.exists() else {"legs": {}})
     legs = list(board["legs"].values())
     teams = [team for leg in legs for team in (leg.get("home_team"), leg.get("away_team")) if team]
     profiles = profiles_for_board(

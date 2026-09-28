@@ -40,4 +40,6 @@ def bridge_results(*, data_dir: Path, date: str) -> dict:
         target = day_dir(data_dir, date) / RESULTS_90
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
-    return {"source_day": source_day, "written": len(out), "missing": missing}
+    board = Path(data_dir) / "jczq" / "daily" / source_day / "sporttery_markets.json"
+    return {"source_day": source_day, "written": len(out), "missing": missing,
+            "unsealed": board.exists() and not table}

@@ -425,9 +425,12 @@ def _research_stance(stance: object) -> dict | None:
     return {key: stance.get(key) for key in ("face", "structure", "cover", "confidence")}
 
 
-def intake(research: dict, leg: dict) -> IntakeResult:
-    """一场研究 JSON → 可入库的 leg 字段 + 问题清单。**不改 faces、不产生判断。**"""
-    match_no = int(research.get("match_no") or leg.get("match_no") or 0)
+def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeResult:
+    """一场研究 JSON → 可入库的 leg 字段 + 问题清单。**不改 faces、不产生判断。**
+
+    `match_no` 是调用方从文件名 `-m<N>` 得到的场次：并集池 headless 研究不写 match_no
+    （2026-09-28 全记成场0、写回互相覆盖），此时用它兜底。"""
+    match_no = int(research.get("match_no") or leg.get("match_no") or match_no or 0)
     issues: list[IntakeIssue] = []
     stripped: list[str] = []
 

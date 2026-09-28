@@ -528,7 +528,7 @@ def zucai_research_intake(
         if not path.exists():
             continue
         research = _json.loads(path.read_text("utf-8"))
-        results.append(intake(research, legs[key]))
+        results.append(intake(research, legs[key], match_no=int(key)))
     if not results:
         _cli.typer.echo("没有找到可入库的研究文件。")
         raise _cli.typer.Exit(code=2)
