@@ -1,0 +1,19 @@
+{
+ "exp_id": "F12",
+ "status_note": "草案（2026-09-28 主循环起草，未登记）。登记须 Jun 执行 `uv run nutmeg rsi register experiments/registry/F12.json --by Jun`，并先补 rsi_grading 的 grade_f12_prospective；在那之前靠 rx 预测的 rule_tags「同组交叉」记账累计样本。",
+ "claim": "小组赛/联赛阶段，按同组上一轮交叉赛果（xG/射门相对赛前价格的超常或欠佳）拨动的面，实开率高于市场给的概率。",
+ "mechanism": "同组四队上一轮交叉对阵时，每队相对赛前价格的表现给出一次同尺度的强度更新；市场开盘后的位移常被比分和名气主导（26133 荷兰 +11pp 偏情绪、德国 −4.4pp 主要是伤停），对 xG 层面的强弱排序吸收不足。首个样本：26133 同组交叉判『荷兰比德国稳、希腊有赢球路径』，德国 0-1 希腊、荷兰 2-1 客胜。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "deep_research",
+ "window": {"date_from": "2026-09-28", "n_min": 40},
+ "falsifier": {"metric": "group_cross_tilted_face_resid_pp", "stratum": "pooled", "n_min": 40,
+               "bound": "ci_lower", "threshold_pp": 0.0, "direction": "lt_means_falsified"},
+ "stop_rule": "累计 40 个被同组交叉拨动的面结账；拨动面实开率减市场概率的 CI 下界 < 0 即证伪：同组交叉不作拨动证据，只留作研究背景。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "source_doc": "docs/sop/RUNBOOK.md#B5a",
+ "registered_at": null
+}

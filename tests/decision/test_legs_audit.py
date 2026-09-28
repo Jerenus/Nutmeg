@@ -681,6 +681,24 @@ def test_shared_naked_single_is_flagged_regardless_of_price():
             {"T1": a, "T2": [_leg(match_no=13, faces="31", fair=fair)]})}
 
 
+def test_shared_naked_singles_report_joint_death_probability():
+    """C15b 联合：26133 两票在场4(冰岛 74.5)/场13(德国 67.3) 上都是裸 3，按场各报一条，
+    没人把两条乘起来——两票同死于共享裸单的概率≈51%，第二张票几乎没买到独立存活。
+    (2026-09-28 入码)"""
+    f4 = {"home": 0.745, "draw": 0.168, "away": 0.087}
+    f13 = {"home": 0.673, "draw": 0.189, "away": 0.138}
+    t1 = [_leg(match_no=4, faces="3", fair=f4), _leg(match_no=13, faces="3", fair=f13)]
+    t2 = [_leg(match_no=4, faces="3", fair=f4), _leg(match_no=13, faces="3", fair=f13)]
+    findings = audit_shared_exclusions({"R9": t1, "SFC": t2})
+    joint = [f for f in findings if f.code == "shared_naked_joint"]
+    assert len(joint) == 1 and joint[0].level == "WARN" and joint[0].match_no is None
+    # 1 − 0.745×0.673 = 49.9%
+    assert "49.9%" in joint[0].message and "场4/场13" in joint[0].message
+    # 只有一条共享裸单时，联合＝单场，不重复报
+    single = audit_shared_exclusions({"R9": t1[:1], "SFC": t2[:1]})
+    assert "shared_naked_joint" not in {f.code for f in single}
+
+
 # --- 2026-09-13 26123 复盘三条（I1/I2/I4，用户批准入码）---
 
 def test_naked_single_ladder_grades_total_exposure_not_single_face():

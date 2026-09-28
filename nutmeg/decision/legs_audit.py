@@ -971,6 +971,18 @@ def audit_shared_exclusions(tickets: dict[str, list[Leg]]) -> list[Finding]:
             f"（票：{'/'.join(names)}）。该场非正路概率 {p_dead * 100:.1f}% = "
             f"这些票**同时**死于此的概率；票数再多，在这一场上只有一件事的自由度。",
             "26122 场13 AZ 82.7 平:四票共享裸单一场全灭(2026-09-12 入码)"))
+    # 联合：按场各报一条时没人把它们乘起来。26133 两票共享场4/场13 裸3，两条一起断两票。
+    shared = sorted(no for no, names in naked.items() if len(names) >= 2)
+    if len(shared) >= 2:
+        alive = 1.0
+        for no in shared:
+            alive *= 1.0 - naked_meta[no][1]
+        out.append(Finding(
+            "WARN", "shared_naked_joint", None,
+            f"共享裸单 {len(shared)} 条（{'/'.join(f'场{no}' for no in shared)}）："
+            f"至少一条非正路、从而这些票**一起**死的概率 {(1.0 - alive) * 100:.1f}%。"
+            f"多出的票只在其余场上买到独立存活。",
+            "26133 两票共享场4/场13 裸3 同死 −¥816(2026-09-28 入码)"))
     return out
 
 
@@ -1280,6 +1292,7 @@ CODE_SHORT: dict[str, str] = {
     "expensive_exclusion": "C14",
     "shared_exclusion": "C15",
     "shared_naked_single": "C15b",
+    "shared_naked_joint": "C15b",
     "read_ticket_inconsistency": "C17",
     "cross_channel_stance_conflict": "C18",
     "cross_channel_excluded_face": "C18b",
