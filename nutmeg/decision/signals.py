@@ -160,12 +160,15 @@ def build_signals(*, day: str, data_dir: Path) -> list[dict]:
         by_no = {int(no): mid for mid, no in channel.items()}
         official = ((_load(zucai_dir / "official-results.json", {}) or {}).get(issue) or "").split()
         zreads = {r.get("match_id"): r for r in _load(zucai_dir / f"{issue}-reads.json", []) or []}
+        # 足彩独有场次的主循环改判记在 zucai/overrides.jsonl（2026-09-28 起进面板与改判账）
+        zledger = {r["research"]: r for r in load_overrides(zucai_dir)}
         for no, ids in sorted(store.items(), key=lambda kv: int(kv[0])):
             prior = dict(ids.get("fair") or {})
             doc = _research_doc(zucai_dir / f"{issue}-research-m{no}.json")
             if not prior or len(prior) < 3:
                 continue
-            view = _research_view(doc, prior, None) if doc else None
+            zrow = zledger.get(f"{issue}-research-m{no}.json")
+            view = _research_view(doc, prior, zrow) if doc else None
             jczq_row = by_match_id.get(by_no.get(int(no), ""))
             if jczq_row is not None:
                 jczq_row["paired"] = {"key": f"足彩{issue}-{int(no):02d}", "research": view}
@@ -176,8 +179,8 @@ def build_signals(*, day: str, data_dir: Path) -> list[dict]:
             rows.append({
                 "key": f"足彩{issue}-{int(no):02d}", "name": ids.get("name"), "kickoff": None,
                 "prior": prior, "drift": None, "research": view,
-                "final": read.get("belief"), "override": None,
-                "note": _ruling_note(doc),
+                "final": read.get("belief"), "override": zrow,
+                "note": zrow["note"] if zrow else _ruling_note(doc),
                 "paired": None, "disagreement": [],
                 "outcome": official[int(no) - 1] if len(official) >= int(no) else None,
             })

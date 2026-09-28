@@ -63,3 +63,22 @@ def test_signals_pair_both_channels_and_flag_the_disagreement(tmp_path):
     assert any(r["key"] == "足彩26133-01" for r in rows)            # 足彩独有场次也进面板
     text = render_signals(rows, day=DAY)
     assert "主循环改判了研究的信号" in text and "同场两份研究打架" in text
+
+
+def test_zucai_only_override_enters_the_panel_and_the_ledger(tmp_path):
+    """2026-09-28：足彩独有场次的主循环改判写在 zucai/overrides.jsonl，面板只读竞彩目录，
+    改判账因此永远量不到足彩改判的得失。"""
+    root = _setup(tmp_path)
+    zdir = root / "zucai"
+    _write(zdir / "26133-research-m1.json", {"name": "中国-新西兰", "confidence": 2,
+                                             "stance": {"face": "0", "structure": "double"}})
+    record_override(zdir / "26133-research-m1.json",
+                    tilt={"face": "1", "expires_if": "x", "evidence": [
+                        {"tier": "state", "kind": "form_state", "pp": 2, "source": "s",
+                         "captured_at": "2026-09-26T09:00:00+08:00"}]},
+                    note="同组交叉", at="2026-09-26T10:00:00+08:00", judge="claude",
+                    prior={"home": 0.36, "draw": 0.28, "away": 0.36})
+    rows = build_signals(day=DAY, data_dir=root)
+    china = next(r for r in rows if r["key"] == "足彩26133-01")
+    assert china["override"]["note"] == "同组交叉"
+    assert "同组交叉" in render_signals(rows, day=DAY)
