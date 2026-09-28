@@ -18,7 +18,7 @@ _cli.app.add_typer(day_app, name="day")
 
 _DATE = typer.Option(None, "--date", help="业务日 YYYY-MM-DD，默认今天")
 _DATA_DIR = typer.Option(Path(".nutmeg-data"), "--data-dir")
-_JOB = typer.Option(..., "--job", help="settle | brief | session | results | broadcast")
+_JOB = typer.Option(..., "--job", help="settle | brief | session | results | broadcast | dream")
 _FORCE = typer.Option(False, "--force", help="settle 已有 retro.md 也重跑")
 _DRY = typer.Option(False, "--dry-run", help="只打印子进程命令，不执行、不写时间线")
 _NOW = typer.Option(None, "--now", help="测试用 ISO 时刻（覆盖当前时间）")
