@@ -44,6 +44,8 @@ Jun 下午批准「开始跑」，因工具故障拖到 21:42 才录。7 场入�
 - 冻结面声明：评估器代码不动；试点契约按函数路径引用生成器，契约哈希不变；`generator_version` 不变。修复前录下的 09-28 超时世界保留原样——它是真实的 failed/degraded 世界（optimizer 门本来就要求 ≥3 个这类世界），不删、不重录。
 - 修复后若 7 场板四个分片仍超过 120 s，**不静默调参**：停下交 Jun 裁契约修订（D7 流程）。
 
+**评估器 v2（Jun 2026-09-28 批，实施时发现）**：P0 修复后 7 场真实板面四分片 0.0–0.9 s 就跑完，但全部被 v1 的「每档超过 `candidate_count_cap_per_band`=20 即整片 over_cap 失败」判死——真实板面每档有几十到几百个候选，v1 这条上限是按 operator_v2 的小候选集设计的。v2 去掉整片失败，只在 artifact 里记 `band_candidate_counts`；三个质量字段只读有效候选的最高 P、有有效候选的档数、按 20 封顶的计数，数值与 v1 相同。`EVALUATOR_REVISION` 升到 `structural-candidate-evaluator-v2`，试点契约与选择契约随之重冻结（锦标赛 0 个，零存量代价）；09-28 超时世界留在 v1 下，世界池按评估器版本把它排除。
+
 ### 3.2 P1 day 源：开球过滤 + 票面引用（`nutmeg/discovery/day_inputs.py`）
 
 - **开球过滤**：体彩 `matchDate + matchTime`（北京时间）≤ `cutoff_at` 的场次不进 `offers`。被排除的场次各记一条引用 `kind="excluded_started"`，`id=<场次>`，`captured_at=<开球时刻>`（必然 ≤ cutoff，能过现有引用校验），世界里看得到「为什么少了这几场」。
@@ -140,13 +142,15 @@ Jun 下午批准「开始跑」，因工具故障拖到 21:42 才录。7 场入�
 
 **时机**：RSI 闭环（10:45）新增步骤 `dream_compare`，排在 09:45 `day run --job results` 之后；对象是前一业务日的夜间世界。
 
+**对照料在录制时算（实施修订）**：B 行与 C 行不在次日重跑，而是录制当晚用同一冻结快照算好——`offer_book`（每场 belief/prior/赔率）、`decision_rule_best`、`band_best`（`online_adapter.best_candidates_by_band`，与分片同一枚举、审计、预算）——连同冻结票面一起写进 `~/nutmeg-shadow/reports/<日>.json`，与世界 `manifest_hash` 绑定；次日 `discovery compare` 只读报告、`results-90.json` 与实票登记簿。
+
 **四行口径**（P 一律用世界 manifest 里 cutoff 时刻的 belief 与赔率，不读事后文件）：
 
 | 行 | 内容 | P 与回报 |
 |---|---|---|
 | A 实际出票 | 该业务日每张 `purchased=True` 的竞彩实票 | P_belief：腿全在世界 offers 内时按 belief 连乘；有腿在世界外（开球被排除、让球/总进球玩法）→ `outside_world`，只记实际结果不给 P。每张另标 `frozen_at_cutoff`：内容哈希是否等于 20:30 冻结的票面引用 |
 | B 决策规则最优 | 世界 offers 上的胜平负 2–4 串、≤4 注组合中，**全中每元回报 >1** 的 P_belief 最大者（与 `jczq-combos` 同一算术，复用其枚举函数） | 已知缺口：不含单关（manifest 不带单关开售信息） |
-| C 世界各档最优 | 每档（10x/20x/50x/100x）P 最高的审计通过候选 | 在冻结 snapshot 上重跑纯分片函数恢复候选内容（确定性）；世界非 `policy_stop` 时该行为空 |
+| C 世界各档最优 | 每档（10x/20x/50x/100x）P 最高的审计通过候选 | 录制当晚在冻结快照上用与分片相同的枚举恢复候选内容，写进报告；某档无有效候选则该行缺 |
 | D 空仓 | — | 回报 0 |
 
 **结算**：

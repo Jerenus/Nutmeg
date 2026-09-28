@@ -1,0 +1,19 @@
+{
+ "approval_id": "standing-dream-nightly-2026-10",
+ "kind": "standing",
+ "approved_by": "op:jun",
+ "approved_at": "2026-09-29T07:48:32+08:00",
+ "valid_from": "2026-09-29T07:48:32+08:00",
+ "valid_until": "2026-10-31T23:59:59+08:00",
+ "revoked_at": null,
+ "scope_template": {
+  "source_kind": "day",
+  "jczq_dir": "/Users/jz71/Projects/Nutmeg/.nutmeg-data/jczq",
+  "shadow_db": "/Users/jz71/nutmeg-shadow/ontology/ontology.db",
+  "policy_revision_id": "structural-baseline-v1",
+  "generation_request_pattern": "day:{business_date}",
+  "cutoff_window_bjt": ["20:00", "23:59"],
+  "max_worlds_per_business_date": 1
+ },
+ "note": "Jun 2026-09-28 聊天：「以上全写成设计，常批准先实验到10.31日」；撤销＝填 revoked_at 或删文件"
+}
