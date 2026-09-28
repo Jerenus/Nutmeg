@@ -544,3 +544,122 @@ def test_shadow_run_requires_a_source(tmp_path):
     assert "--source-day" in result.output
     assert "missing option" in result.output.lower()
     assert not shadow.exists()
+
+
+def _standing_file(tmp_path, jczq, shadow_db):
+    from datetime import UTC, datetime, timedelta
+
+    approved = (datetime.now(UTC) - timedelta(hours=1)).replace(microsecond=0).isoformat()
+    path = tmp_path / "standing.json"
+    path.write_text(
+        json.dumps(
+            {
+                "approval_id": "standing-cli",
+                "kind": "standing",
+                "approved_by": "op:jun",
+                "approved_at": approved,
+                "valid_from": approved,
+                "valid_until": (datetime.now(UTC) + timedelta(days=30)).isoformat(),
+                "revoked_at": None,
+                "scope_template": {
+                    "source_kind": "day",
+                    "jczq_dir": str(jczq),
+                    "shadow_db": str(shadow_db),
+                    "policy_revision_id": "structural-baseline-v1",
+                    "generation_request_pattern": "day:{business_date}",
+                    "cutoff_window_bjt": ["00:00", "23:59"],
+                    "max_worlds_per_business_date": 1,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_nightly_records_one_world_under_a_standing_approval_then_skips(tmp_path):
+    jczq, day, _day_dir, _cutoff, _approved = _prospective_day_fixture(tmp_path)
+    shadow_dir = tmp_path / "shadow"
+    registered = runner.invoke(
+        app, ["discovery", "register-baseline", "--data-dir", str(shadow_dir), "--by", "op:jun"]
+    )
+    assert registered.exit_code == 0, registered.output
+    shadow_db = OntologyPaths.from_data_dir(shadow_dir).database
+    standing = _standing_file(tmp_path, jczq, shadow_db)
+    args = [
+        "discovery", "nightly", "--day", day, "--jczq-dir", str(jczq),
+        "--shadow-db", str(shadow_db), "--standing-approval", str(standing),
+        "--reports-dir", str(tmp_path / "reports"), "--tickets-dir", str(tmp_path / "tickets"),
+    ]
+    first = runner.invoke(app, args)
+    assert first.exit_code == 0, first.output
+    payload = json.loads(first.stdout.strip().splitlines()[-1])
+    assert payload["status"] == "recorded" and payload["world_id"], payload
+    status = runner.invoke(app, ["discovery", "status", "--data-dir", str(shadow_dir)])
+    assert "sealed worlds: 1" in status.output
+    second = runner.invoke(app, args)
+    assert second.exit_code == 0
+    assert json.loads(second.stdout.strip().splitlines()[-1])["reason"] == "already_recorded"
+
+
+def test_nightly_refuses_a_shadow_store_inside_production(monkeypatch, tmp_path):
+    import nutmeg.interfaces.cli.discovery as discovery_cli
+
+    production = tmp_path / "prod-data"
+    (production / "ontology").mkdir(parents=True)
+    monkeypatch.setattr(discovery_cli, "PRODUCTION_DATA_DIR", production)
+    result = runner.invoke(
+        app,
+        ["discovery", "nightly", "--day", "2026-09-29",
+         "--shadow-db", str(production / "ontology" / "ontology.db")],
+    )
+    assert result.exit_code == 1 and "production data directory" in result.output
+
+
+def test_compare_scores_a_recorded_night_and_appends_the_ledger_once(tmp_path):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    book = {
+        "A": {"belief": {"3": 0.5, "1": 0.3, "0": 0.2}, "odds": {"3": 1.8, "1": 3.2, "0": 4.5}},
+        "C": {"belief": {"3": 0.7, "1": 0.2, "0": 0.1}, "odds": {"3": 1.3, "1": 4.6, "0": 8.0}},
+    }
+    (reports / "2026-09-29.json").write_text(
+        json.dumps(
+            {
+                "day": "2026-09-29", "status": "recorded", "world_id": "w", "manifest_hash": "m",
+                "offer_book": book, "band_best": {}, "ticket_snapshot": {"betslips": []},
+                "decision_rule_best": {
+                    "legs": [{"code": "A", "faces": "3"}, {"code": "C", "faces": "3"}],
+                    "p_belief": 0.35, "notes": 1, "modal_return_per_yuan": 2.34,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    data = tmp_path / "data"
+    results = data / "daily" / "2026-09-30" / "results-90.json"
+    results.parent.mkdir(parents=True)
+    results.write_text(
+        json.dumps({"A": {"outcome_90": "3"}, "C": {"outcome_90": "1"}}), encoding="utf-8"
+    )
+    args = ["discovery", "compare", "--day", "2026-09-29", "--data-dir", str(data),
+            "--reports-dir", str(reports)]
+    first = runner.invoke(app, args)
+    assert first.exit_code == 0, first.output
+    out = json.loads(first.stdout.strip().splitlines()[-1])
+    assert out["status"] == "settled"
+    assert {row["kind"] for row in out["rows"]} == {"decision_rule", "empty"}
+    assert out["summary"]["n_days"] == 1
+    runner.invoke(app, args)
+    ledger = data / "analytics" / "dream-compare" / "ledger.jsonl"
+    assert len(ledger.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_compare_without_a_recorded_night_is_a_quiet_no_world(tmp_path):
+    result = runner.invoke(
+        app,
+        ["discovery", "compare", "--day", "2026-09-29", "--data-dir", str(tmp_path / "data"),
+         "--reports-dir", str(tmp_path / "reports")],
+    )
+    assert result.exit_code == 0
+    assert json.loads(result.stdout.strip().splitlines()[-1])["status"] == "no_world"

@@ -406,3 +406,126 @@ def show(
         typer.echo(f"discovery error: {kind} {object_id} not found", err=True)
         raise typer.Exit(code=1) from None
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+SHADOW_HOME = Path.home() / "nutmeg-shadow"
+NIGHT_DAY_OPTION = typer.Option(None, "--day", help="业务日 YYYY-MM-DD，默认北京时间今天")
+NIGHT_SHADOW_DB_OPTION = typer.Option(SHADOW_HOME / "ontology" / "ontology.db", "--shadow-db")
+STANDING_OPTION = typer.Option(None, "--standing-approval")
+REPORTS_DIR_OPTION = typer.Option(SHADOW_HOME / "reports", "--reports-dir")
+TICKETS_DIR_OPTION = typer.Option(SHADOW_HOME / "tickets", "--tickets-dir")
+NIGHT_DRY_RUN_OPTION = typer.Option(
+    False, "--dry-run", help="只打印将冻结的场次与批准校验，不写影子库"
+)
+COMPARE_DAY_OPTION = typer.Option(..., "--day", help="录制业务日 YYYY-MM-DD")
+
+
+def _bj_today() -> str:
+    from nutmeg.discovery.standing_approval import BJ
+
+    return datetime.now(BJ).date().isoformat()
+
+
+@discovery_app.command("nightly")
+def nightly(
+    day: str | None = NIGHT_DAY_OPTION,
+    jczq_dir: Path = JCZQ_DIR_OPTION,
+    shadow_db: Path = NIGHT_SHADOW_DB_OPTION,
+    standing_approval: Path | None = STANDING_OPTION,
+    reports_dir: Path = REPORTS_DIR_OPTION,
+    tickets_dir: Path = TICKETS_DIR_OPTION,
+    dry_run: bool = NIGHT_DRY_RUN_OPTION,
+) -> None:
+    """常设批准下录一晚的 day 源世界（Jun 2026-09-28，至 10-31）。"""
+    from nutmeg.discovery.nightly import run_nightly
+    from nutmeg.discovery.standing_approval import DEFAULT_STANDING_PATH
+
+    try:
+        reject_production_store(shadow_db)
+    except ValueError as exc:
+        typer.echo(f"discovery error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    result = run_nightly(
+        day=day or _bj_today(),
+        jczq_dir=jczq_dir,
+        shadow_db=shadow_db,
+        standing_path=standing_approval or DEFAULT_STANDING_PATH,
+        reports_dir=reports_dir,
+        tickets_dir=tickets_dir,
+        now=lambda: datetime.now(UTC),
+        dry_run=dry_run,
+    )
+    keys = ("day", "world_id", "offers", "excluded", "cutoff_at", "standing_approval", "detail")
+    summary = {
+        "status": result.status,
+        "reason": result.reason,
+        "report": str(result.report_path) if result.report_path else None,
+        **{key: result.payload[key] for key in keys if key in result.payload},
+    }
+    typer.echo(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+    raise typer.Exit(code=result.exit_code)
+
+
+@discovery_app.command("compare")
+def compare(
+    day: str = COMPARE_DAY_OPTION,
+    data_dir: Path = DATA_DIR_OPTION,
+    reports_dir: Path = REPORTS_DIR_OPTION,
+) -> None:
+    """次日对照：实际出票 / 决策规则最优 / 世界各档最优 / 空仓（只报告）。"""
+    from datetime import date as _date
+
+    from nutmeg.decision.betslip import load_slips
+    from nutmeg.discovery.dream_compare import compare_day, summarize
+    from nutmeg.discovery.standing_approval import (
+        DEFAULT_STANDING_PATH,
+        StandingApprovalError,
+        days_left,
+        load_standing_approval,
+    )
+
+    report_path = reports_dir / f"{day}.json"
+    report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else None
+    try:
+        left = days_left(load_standing_approval(DEFAULT_STANDING_PATH), datetime.now(UTC))
+    except StandingApprovalError:
+        left = None
+    if not report or report.get("status") != "recorded":
+        reason = (report or {}).get("reason") or (report or {}).get("status")
+        typer.echo(
+            json.dumps(
+                {"day": day, "status": "no_world", "reason": reason, "standing_days_left": left},
+                ensure_ascii=False,
+            )
+        )
+        return
+    next_day = (_date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    results_path = data_dir / "daily" / next_day / "results-90.json"
+    results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.exists() else {}
+    slips = [
+        slip
+        for slip in load_slips(data_dir, channel="jczq")
+        if slip.purchased and str(slip.placed_at)[:10] == day
+    ]
+    scored = compare_day(report, results, slips)
+    out_dir = data_dir / "analytics" / "dream-compare"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"{day}.json").write_text(
+        json.dumps(scored, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
+    ledger = out_dir / "ledger.jsonl"
+    rows = (
+        [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines() if line]
+        if ledger.exists()
+        else []
+    )
+    if scored["status"] == "settled" and all(row["day"] != day for row in rows):
+        with ledger.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(scored, ensure_ascii=False) + "\n")
+        rows.append(scored)
+    typer.echo(
+        json.dumps(
+            {**scored, "summary": summarize(rows), "standing_days_left": left},
+            ensure_ascii=False,
+        )
+    )
