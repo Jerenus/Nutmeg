@@ -596,6 +596,20 @@ def sweep(
         raise typer.Exit(code=1)
 
 
+def _day_scoped_duty_day(k, duty_id: str, day: str, issue: str) -> str:
+    """日级义务排在备料业务日（停售日），观察仪却按「最早开球日」登记——期次首场
+    过了午夜就对不上（2026-09-28 26134 首场 9/29 00:00：F2/F1c 整天「命令成功但
+    未登记」）。给定日查不到时按期号找；期号唯一对到一天才改用它，否则照旧报错。"""
+    with OntologyUnitOfWork(k.engine) as uow:
+        if uow.rsi.duty_instance(duty_id, day) is not None:
+            return day
+        days = uow.rsi.day_scoped_days_for_issue(duty_id, issue)
+    if len(days) == 1:
+        typer.echo(f"ℹ️{duty_id} 按期号 {issue} 对到业务日 {days[0]}（传入 {day}）")
+        return days[0]
+    return day
+
+
 @rsi_app.command("fulfill")
 def fulfill(exp: str = _EXP, duty: str = _DUTY, day: str = _DAY, artifact: Path = _ARTIFACT,
             n_rows: int = _N_ROWS, stratum: str | None = _STRATUM, issue: str | None = _ISSUE,
@@ -608,6 +622,8 @@ def fulfill(exp: str = _EXP, duty: str = _DUTY, day: str = _DAY, artifact: Path 
               or _zucai_match_kickoffs(data_dir, issue).get(match))
     if ko is None:
         _fail("需要 --issue 或 --match 以解析开球（前瞻性判定依赖它）")
+    if not match and issue:
+        day = _day_scoped_duty_day(k, f"{exp}:{duty}", day, issue)
     raw = artifact.read_bytes()
     captured = datetime.fromtimestamp(artifact.stat().st_mtime).astimezone()
     _run(k.rsi_actions.fulfill_duty, FulfillDutyRequest(

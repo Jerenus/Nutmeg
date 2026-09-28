@@ -60,6 +60,29 @@ def zucai_pool_entries(*, day: str, data_dir: Path) -> list[dict]:
     return entries
 
 
+def reusable_zucai_research(*, day: str, data_dir: Path, jczq_dir: Path) -> dict[str, Path]:
+    """竞彩 match_id → 已落盘的足彩研究（经对号表认定为同一场比赛）。
+
+    设计是「重叠场次走竞彩研究」，但竞彩板晚开售时足彩会先研究完这些场次
+    （2026-09-28：08:03 足彩研究、11:01 开售、11:04 竞彩又把 6 场研究一遍）。
+    有足彩研究的重叠场次，竞彩一侧复用它、不再调用模型。身份只认对号表，不猜。
+    """
+    from nutmeg.decision.zucai_prep import ensure_auto_channel_map
+
+    zucai_dir = Path(data_dir) / "zucai"
+    out: dict[str, Path] = {}
+    for issue in _day_issues(zucai_dir, day):
+        map_path = ensure_auto_channel_map(
+            issue=issue, run_date=day, zucai_dir=zucai_dir, output_dir=Path(jczq_dir))
+        if map_path is None:
+            continue
+        for match_id, no in json.loads(map_path.read_text(encoding="utf-8")).items():
+            research = zucai_dir / f"{issue}-research-m{int(no)}.json"
+            if research.exists():
+                out[str(match_id)] = research
+    return out
+
+
 def _day_issues(zucai_dir: Path, day: str) -> list[str]:
     out = []
     for issue_path in sorted(zucai_dir.glob("*-issue.json")):

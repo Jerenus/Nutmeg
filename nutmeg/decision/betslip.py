@@ -265,7 +265,13 @@ class SlipSettlement:
 
 
 def _leg_result(leg: SlipLeg, result: dict) -> tuple[str | None, bool | None]:
-    """→ (实际结果键, 本腿是否命中)；赛果缺或 pick 不可规约 → (None, None) pending。"""
+    """→ (实际结果键, 本腿是否命中)；赛果缺或 pick 不可规约 → (None, None) pending。
+
+    `{"void": true}` = 体彩按取消处理（延期超 36 小时等）：本腿算中、赔率按 1 计。
+    2026-09-26 周六019 纽约红牛-圣路易城因天气延期到 10/1，赛果源永远等不到这场。
+    """
+    if result.get("void"):
+        return "void", True
     actual = settle_ticket_leg(
         market=leg.market,
         pick=normalize_selection(leg.market, leg.selections[0]) if leg.selections else "",
@@ -280,6 +286,17 @@ def _leg_result(leg: SlipLeg, result: dict) -> tuple[str | None, bool | None]:
     return actual, actual in picks
 
 
+def _winning_odds(leg: SlipLeg, actual: str | None) -> float:
+    """命中那个选项自己的赔率。旧逻辑一律取 `odds[0]`：一腿双选（如 0928 J1 周一008
+    平 2.87 / 负 2.45）开出第二个选项时，派奖会按第一个选项的赔率多算。"""
+    if actual == "void":
+        return 1.0
+    picks = [normalize_selection(leg.market, s) for s in leg.selections]
+    if actual in picks and len(leg.odds) == len(picks):
+        return float(leg.odds[picks.index(actual)])
+    return float(leg.odds[0]) if leg.odds else 0.0
+
+
 def settle_slip(slip: BetSlip, results: dict[str, dict], *,
                 prize_per_note: float | None = None) -> SlipSettlement:
     """按 90' 三源赛果结算一张票。
@@ -290,9 +307,12 @@ def settle_slip(slip: BetSlip, results: dict[str, dict], *,
     """
     detail: list[str] = []
     status: dict[str, bool | None] = {}
+    won_odds: dict[str, float] = {}
     for lg in slip.legs:
         actual, hit = _leg_result(lg, results.get(lg.key, {}))
         status[lg.key] = hit
+        if hit:
+            won_odds[lg.key] = _winning_odds(lg, actual)
         mark = "?" if hit is None else ("✓" if hit else "✗")
         detail.append(
             f"{mark} {lg.key} {lg.name} {lg.market}"
@@ -316,8 +336,7 @@ def settle_slip(slip: BetSlip, results: dict[str, dict], *,
                     continue
                 if all(marks):
                     combos_won += 1
-                    odds = _product([slip.legs[i].odds[0] for i in combo
-                                     if slip.legs[i].odds] or [0])
+                    odds = _product([won_odds[slip.legs[i].key] for i in combo])
                     payout += odds * PRICE_PER_NOTE * slip.multiplier
         if undecided:
             payout = None

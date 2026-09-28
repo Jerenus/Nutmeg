@@ -110,6 +110,38 @@ class SportteryJczqCalculatorProvider:
         return value
 
 
+SPORTTERY_JCZQ_MATCH_LIST_API = (
+    "https://webapi.sporttery.cn/gateway/uniform/football/getMatchListV1.qry?clientCode=3001"
+)
+
+
+class SportteryMatchListProvider:
+    """赛程列表（含未开售的 Define 场次）。只用来诊断计算器为什么空，不出盘口。
+
+    2026-09-28 出生事故：周一板 11:01 才开售，08:00 计算器返回无 matchInfoList 的
+    正常成功响应，被报成「WAF 降级」，诊断方向整个走错。
+    """
+
+    def __init__(self, *, timeout_seconds: float = 20.0) -> None:
+        self._timeout_seconds = timeout_seconds
+
+    def fetch(self) -> dict[str, Any]:
+        try:
+            response = httpx.get(
+                SPORTTERY_JCZQ_MATCH_LIST_API,
+                headers={"Referer": SPORTTERY_JCZQ_PAGE, **SPORTTERY_BROWSER_HEADERS},
+                timeout=self._timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise JczqProviderError(f"Sporttery match list fetch failed: {exc}") from exc
+        value = payload.get("value")
+        if str(payload.get("errorCode")) != "0" or not isinstance(value, dict):
+            raise JczqProviderError("Sporttery match list API error")
+        return value
+
+
 class SampleJczqCalculatorProvider:
     source_api = "sample://nutmeg/jczq/mixed-calculator-20260426.json"
     source_page = SPORTTERY_JCZQ_PAGE

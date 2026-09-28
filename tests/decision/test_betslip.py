@@ -229,3 +229,30 @@ def test_p_any_combo_is_exact_not_sum_of_combos():
                    legs=legs, combo_sizes=(2, 3))
     assert slip.p_any_combo == pytest.approx(0.5)
     assert slip.hit_probability == pytest.approx(0.125)   # P(全对) 是另一个数
+
+
+def test_double_selection_leg_pays_the_odds_of_the_face_that_came_in():
+    """0928 J1 周一008 平 2.87 / 负 2.45：开出负时旧逻辑按 odds[0]=2.87 多算派奖。"""
+    legs = [
+        SlipLeg(key="a", market="had", selections=("home",), odds=(2.58,)),
+        SlipLeg(key="b", market="had", selections=("draw", "away"), odds=(2.87, 2.45)),
+    ]
+    slip = BetSlip(slip_id="J1", channel="jczq", placed_at="2026-09-28",
+                   legs=legs, multiplier=25, combo_sizes=(2,))
+    s = settle_slip(slip, {"a": {"outcome_90": "home", "goals_h": 1, "goals_a": 0},
+                           "b": {"outcome_90": "away", "goals_h": 0, "goals_a": 1}})
+    assert s.payout_yuan == pytest.approx(2.58 * 2.45 * 2 * 25)
+
+
+def test_void_leg_settles_at_odds_one():
+    """体彩按取消处理的场次（0926 周六019 纽约红牛-圣路易城天气延期）本腿按赔率 1 计。"""
+    legs = [
+        SlipLeg(key="周六019", market="had", selections=("away",), odds=(1.68,)),
+        SlipLeg(key="b", market="had", selections=("home",), odds=(2.0,)),
+    ]
+    slip = BetSlip(slip_id="J2", channel="jczq", placed_at="2026-09-26",
+                   legs=legs, multiplier=5, combo_sizes=(2,))
+    s = settle_slip(slip, {"周六019": {"void": True},
+                           "b": {"outcome_90": "home", "goals_h": 1, "goals_a": 0}})
+    assert s.pending_legs == 0
+    assert s.payout_yuan == pytest.approx(1.0 * 2.0 * 2 * 5)

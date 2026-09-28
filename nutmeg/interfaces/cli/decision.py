@@ -777,6 +777,15 @@ def decision_audit_legs(
     # + C17 票面级读判一致性 + C15 多票共享死点 —— 与 `decision-adjudicate` 同源，
     # 两个命令看到的 ERROR 集必须逐字一致，否则裁决单的指纹永远对不上。
     findings = _ticket_findings(payload, Path(legs_file), with_legs_file)
+    if zucai_legs_file and channel_map_file:
+        # C18 —— 竞彩字典票面（腿带 match_id）也要查同日足彩立场（2026-09-28 前无通路）
+        from nutmeg.decision.legs_audit import audit_cross_channel, jczq_legs_from_board_dict
+
+        findings = [*findings, *audit_cross_channel(
+            _json.loads(Path(zucai_legs_file).read_text("utf-8")),
+            jczq_legs_from_board_dict(payload),
+            channel_map=_json.loads(Path(channel_map_file).read_text("utf-8")),
+        )]
     _cli.typer.echo(format_findings(findings, issue=str(payload.get("issue", ""))))
     if has_blocking(findings):
         if user_override:
@@ -858,12 +867,13 @@ def _ticket_findings(payload: dict, legs_file: Path, with_legs_file: list[Path])
     """读文件 → `legs_audit.audit_ticket`（门/裁决单/候选穷举共用的单一事实源）。"""
     import json as _json
 
-    from nutmeg.decision.legs_audit import audit_ticket, legs_from_dict
+    from nutmeg.decision.legs_audit import audit_ticket, legs_from_dict, unique_ticket_label
 
-    others = {}
+    others: dict = {}
     for extra in with_legs_file:
         other = _json.loads(Path(extra).read_text("utf-8"))
-        others[str(other.get("version") or Path(extra).stem)] = legs_from_dict(other)
+        name = str(other.get("version") or Path(extra).stem)
+        others[unique_ticket_label(name, others)] = legs_from_dict(other)
     payload = {**payload, "version": payload.get("version") or legs_file.stem}
     return audit_ticket(payload, others=others or None)
 

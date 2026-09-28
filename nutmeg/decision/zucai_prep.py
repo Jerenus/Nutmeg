@@ -398,6 +398,40 @@ def write_auto_channel_map(prep: dict, *, zucai_dir: Path, output_dir: Path) -> 
     return path
 
 
+def ensure_auto_channel_map(*, issue: str, run_date: str, zucai_dir: Path,
+                            output_dir: Path) -> Path | None:
+    """没有任何对号表时，按**当前**体彩板面补落 `.auto`（对齐逻辑与备料同一函数）。
+
+    2026-09-28 出生事故：周一板 11:01 才开售，11:00 早间备料看不到板面、没落对号表，
+    直到 14:00 下午备料才有——11:04 的研究落在空档里，把足彩 08:03 已研究的 6 场
+    按竞彩编号又研究了一遍。人工表或已有 `.auto` 一律不覆盖。
+    """
+    zdir = Path(zucai_dir)
+    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
+        if (zdir / name).exists():
+            return zdir / name
+    issue_path = zdir / f"{issue}-issue.json"
+    if not issue_path.exists():
+        return None
+    matches = _load(issue_path).get("matches") or []
+    board_value = load_boards(Path(output_dir), run_date, matches)
+    if not board_rows(board_value):
+        return None
+    mapping = align_to_sporttery(matches, board_value)["mapping"]
+    prep = {
+        "issue": issue,
+        "run_date": run_date,
+        "records": {
+            str(m["match_no"]): {
+                "match_date": m.get("match_date"),
+                "sporttery_match_num": mapping.get(int(m["match_no"])),
+            }
+            for m in matches
+        },
+    }
+    return write_auto_channel_map(prep, zucai_dir=zdir, output_dir=Path(output_dir))
+
+
 def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
     """组装备料包。读已落盘的 issue/odds/体彩板面,不打网。"""
     from nutmeg.decision.dcfit import fit_match

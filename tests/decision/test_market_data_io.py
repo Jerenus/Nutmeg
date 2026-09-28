@@ -48,12 +48,42 @@ class _StubFcomClient:
         return _board_html()
 
 
-def _patch_fallback_deps(monkeypatch, *, provider, fcom_client=_StubFcomClient):
+class _StubListProvider:
+    def __init__(self, *, statuses=None, error: Exception | None = None):
+        self._statuses = statuses or []
+        self._error = error
+
+    def fetch(self) -> dict:
+        if self._error is not None:
+            raise self._error
+        return {"matchInfoList": [{"subMatchList": [
+            {"matchStatus": s} for s in self._statuses]}]}
+
+
+class _SequenceProvider:
+    """每次 fetch 依次吐一个值——模拟开售后计算器 0/1/1 的抖动。"""
+
+    def __init__(self, values):
+        self._values = list(values)
+        self.calls = 0
+
+    def fetch(self) -> dict:
+        self.calls += 1
+        return self._values.pop(0)
+
+
+def _patch_fallback_deps(monkeypatch, *, provider, fcom_client=_StubFcomClient,
+                         listing=None):
     monkeypatch.setattr(
         "nutmeg.services.jczq.SportteryJczqCalculatorProvider",
         lambda: provider,
     )
     monkeypatch.setattr("nutmeg.data.fcom500.Fcom500Client", fcom_client)
+    monkeypatch.setattr(
+        "nutmeg.services.jczq.SportteryMatchListProvider",
+        lambda: listing or _StubListProvider(error=JczqProviderError("list 403")),
+    )
+    monkeypatch.setattr(market_data, "_sleep", lambda seconds: None)
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +134,47 @@ def test_fallback_failure_reraises_primary_error(monkeypatch) -> None:
         fcom_client=_DeadFcomClient,
     )
     with pytest.raises(JczqProviderError, match="403 primary"):
+        market_data.fetch_sporttery_value_with_fallback()
+
+
+def test_empty_calculator_retries_until_sale_cache_settles(monkeypatch) -> None:
+    # 2026-09-28 11:01 开售后五池计算器间歇返回空：重试即可，不该落到备源或报 WAF
+    healthy = {"matchInfoList": [{"businessDate": "2026-09-28", "subMatchList": []}]}
+    provider = _SequenceProvider([{"vtoolsConfig": {}}, healthy])
+    _patch_fallback_deps(monkeypatch, provider=provider)
+    value, source = market_data.fetch_sporttery_value_with_fallback()
+    assert (source, value, provider.calls) == ("sporttery", healthy, 2)
+
+
+def test_empty_calculator_before_sale_is_not_labelled_waf(monkeypatch) -> None:
+    class _EmptyFcomClient(_StubFcomClient):
+        def get(self, url: str) -> str:
+            return "<html></html>"
+
+    _patch_fallback_deps(
+        monkeypatch,
+        provider=_StubProvider(value={"vtoolsConfig": {}}),
+        fcom_client=_EmptyFcomClient,
+        listing=_StubListProvider(statuses=["Selling"] + ["Define"] * 8),
+    )
+    with pytest.raises(JczqProviderError) as info:
+        market_data.fetch_sporttery_value_with_fallback()
+    message = str(info.value)
+    assert "WAF block" in message and "not a" in message
+    assert "1 Selling / 8 not yet on sale" in message
+
+
+def test_empty_calculator_and_dead_match_list_keeps_waf_label(monkeypatch) -> None:
+    class _EmptyFcomClient(_StubFcomClient):
+        def get(self, url: str) -> str:
+            return "<html></html>"
+
+    _patch_fallback_deps(
+        monkeypatch,
+        provider=_StubProvider(value={"vtoolsConfig": {}}),
+        fcom_client=_EmptyFcomClient,
+    )
+    with pytest.raises(JczqProviderError, match="degraded/WAF"):
         market_data.fetch_sporttery_value_with_fallback()
 
 

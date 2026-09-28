@@ -1101,6 +1101,34 @@ def audit_cross_channel(
     return findings
 
 
+def unique_ticket_label(name: str, taken) -> str:
+    """同名票不许合并：从 legs-base 复制出来的票面 `version` 相同，旧逻辑按名入字典，
+    后一张静默覆盖前一张，C15/C15b 看到的票比实际少（2026-09-28：三张票被并成一张，
+    改名后才查出 78.2% 的联合同死）。"""
+    label, n = name, 2
+    while label in taken:
+        label, n = f"{name}#{n}", n + 1
+    return label
+
+
+def jczq_legs_from_board_dict(payload: dict) -> list[dict]:
+    """竞彩字典票面（腿带 `match_id` 与 `faces`）→ C18 吃的胜平负投注腿。
+
+    C18 原先只在扁平数组路径里跑，而扁平数组一律报 missing_audit_metadata ERROR；
+    字典路径又不跑 C18——跨渠道检查在 CLI 上没有任何能走通的路（2026-09-28）。
+    """
+    selection = {"3": "home", "1": "draw", "0": "away"}
+    out: list[dict] = []
+    for leg in (payload.get("legs") or {}).values():
+        if not isinstance(leg, dict) or not leg.get("match_id"):
+            continue
+        for face in str(leg.get("faces") or ""):
+            if face in selection:
+                out.append({"market": "had", "match_id": leg["match_id"],
+                            "selection": selection[face], "face": face})
+    return out
+
+
 def audit_ticket(
     payload: dict,
     *,
@@ -1125,7 +1153,10 @@ def audit_ticket(
     if others:
         # C15 —— 分散注金不等于分散死点（26118 三票共享 23.2% 全灭）。
         label = str(payload.get("version") or "本票")
-        findings.extend(audit_shared_exclusions({label: legs, **others}))
+        tickets = {label: legs}
+        for name, other_legs in others.items():
+            tickets[unique_ticket_label(name, tickets)] = other_legs
+        findings.extend(audit_shared_exclusions(tickets))
     return apply_evidence_policy(
         apply_channel_policy(findings, str(payload.get("channel") or ""))
     )

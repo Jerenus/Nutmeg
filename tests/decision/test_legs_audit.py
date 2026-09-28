@@ -1074,3 +1074,77 @@ def test_alive_precedent_on_another_face_does_not_veto():
         ("0", "同型客胜，载体在阵", "alive"),
     ))]
     assert "expensive_exclusion" not in _codes(legs)
+
+
+# ── 2026-09-28：同名票静默合并 / C18 在 CLI 上无通路 ──
+
+def test_same_version_tickets_are_not_merged_in_the_shared_death_check():
+    """三张票都从 legs-base 复制、version 相同 → 旧逻辑按名入字典，只剩一张，
+    C15b 一条都不报；改名后才查出 78.2% 的联合同死。"""
+    from nutmeg.decision.legs_audit import audit_ticket
+
+    payload = {"issue": "26134", "version": "26134-legs-base", "legs": {
+        "9": {"name": "捷克-英格兰", "faces": "0", "confidence": 3,
+              "fair": {"home": 0.13, "draw": 0.20, "away": 0.67}}}}
+    other = legs_from_dict(payload)
+    codes = {f.code for f in audit_ticket(payload, others={"26134-legs-base": other})}
+    assert "shared_naked_single" in codes
+
+
+def test_cli_tickets_with_duplicate_versions_are_all_audited(tmp_path):
+    import json
+
+    from typer.testing import CliRunner
+
+    from nutmeg.interfaces.cli import app
+
+    doc = {"issue": "26134", "version": "26134-legs-base", "legs": {
+        "9": {"name": "捷克-英格兰", "faces": "0", "confidence": 3,
+              "fair": {"home": 0.13, "draw": 0.20, "away": 0.67}}}}
+    paths = []
+    for name in ("a", "b", "c"):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        paths.append(str(path))
+    result = CliRunner().invoke(app, [
+        "decision-audit-legs", "--legs-file", paths[0],
+        "--with-legs-file", paths[1], "--with-legs-file", paths[2]])
+    assert "3 张票共享同一条裸单" in result.stdout
+
+
+def test_board_dict_legs_expand_to_one_bet_per_face():
+    from nutmeg.decision.legs_audit import jczq_legs_from_board_dict
+
+    payload = {"legs": {"5": {"match_id": "M-5", "faces": "30"},
+                        "9": {"name": "足彩腿没有 match_id", "faces": "3"}}}
+    assert jczq_legs_from_board_dict(payload) == [
+        {"market": "had", "match_id": "M-5", "selection": "home", "face": "3"},
+        {"market": "had", "match_id": "M-5", "selection": "away", "face": "0"},
+    ]
+
+
+def test_cli_runs_c18_for_a_jczq_board_dict_ticket(tmp_path):
+    """2026-09-28：J1 候选（005:30 + 007:30）对足彩 A 票的跨渠道检查只能手调函数。"""
+    import json
+
+    from typer.testing import CliRunner
+
+    from nutmeg.interfaces.cli import app
+
+    jczq = tmp_path / "jczq.json"
+    jczq.write_text(json.dumps({"day": "2026-09-28", "legs": {"5": {
+        "match_id": "M-5", "name": "比利时-法国", "faces": "30", "confidence": 2,
+        "fair": {"home": 0.27, "draw": 0.25, "away": 0.48}}}}, ensure_ascii=False),
+        encoding="utf-8")
+    zucai = tmp_path / "zucai.json"
+    zucai.write_text(json.dumps({"issue": "26134", "legs": {"3": {
+        "name": "比利时-法国", "faces": "0", "confidence": 2,
+        "fair": {"home": 0.27, "draw": 0.25, "away": 0.48}}}}, ensure_ascii=False),
+        encoding="utf-8")
+    cmap = tmp_path / "map.json"
+    cmap.write_text(json.dumps({"M-5": 3}), encoding="utf-8")
+    result = CliRunner().invoke(app, [
+        "decision-audit-legs", "--legs-file", str(jczq),
+        "--zucai-legs-file", str(zucai), "--channel-map", str(cmap)])
+    assert result.exit_code == 0
+    assert "cross_channel_excluded_face" in result.stdout

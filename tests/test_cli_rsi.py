@@ -1121,3 +1121,36 @@ def test_schedule_twice_same_day_is_a_no_op_and_a_grown_board_reschedules(tmp_pa
         ("match-early", "2099-09-20T18:00:00+08:00"),
         ("match-r0", "2099-09-20T20:00:00+08:00"),
     ]
+
+
+def test_day_duty_fulfilled_with_kickoff_day_resolves_to_the_scheduled_business_day(tmp_path):
+    """2026-09-28：义务按备料业务日（停售日）排，观察仪按最早开球日登记；26134 首场
+    9/29 00:00 → F2/F1c 整天「命令成功但未登记」。按期号唯一对到的那天登记。"""
+    d = _data_dir(tmp_path)
+    doc = tmp_path / "F2.json"
+    doc.write_text(json.dumps(DOC), encoding="utf-8")
+    runner = CliRunner()
+    assert runner.invoke(app, ["rsi", "register", "--by", "Jun", str(doc),
+                               "--data-dir", str(d)]).exit_code == 0
+    r = runner.invoke(app, ["rsi", "schedule", "--day", "2026-09-18", "--issue", "26129",
+                            "--data-dir", str(d)])
+    assert r.exit_code == 0, r.output
+    artifact = d / "zucai" / "26129-f2-observation.json"
+    artifact.write_text("{}", encoding="utf-8")
+    import os
+    from datetime import datetime
+
+    before_kickoff = datetime.fromisoformat("2026-09-18T20:00:00+08:00").timestamp()
+    os.utime(artifact, (before_kickoff, before_kickoff))   # 前瞻：采样早于首场开球
+
+    r = runner.invoke(app, ["rsi", "fulfill", "--exp", "F2", "--duty", "f2-observation",
+                            "--day", "2026-09-19", "--issue", "26129",
+                            "--artifact", str(artifact), "--n-rows", "0",
+                            "--data-dir", str(d)])
+
+    assert r.exit_code == 0, r.output
+    assert "业务日 2026-09-18" in r.output
+    with sqlite3.connect(d / "ontology" / "ontology.db") as connection:
+        assert connection.execute(
+            "SELECT day FROM rsi_duty_instances WHERE duty_id='F2:f2-observation' "
+            "AND fulfilled_at IS NOT NULL").fetchall() == [("2026-09-18",)]

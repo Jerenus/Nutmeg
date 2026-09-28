@@ -593,6 +593,84 @@ def test_zucai_pool_still_runs_when_the_jczq_board_failed_to_load(tmp_path):
     assert (zdir / "26134-research-m1.json").exists()
 
 
+def _overlap_issue(tmp_path, *, with_research=True):
+    """足彩 26133 场1 = 竞彩 周五001（同一场比赛），足彩那边已研究完。"""
+    zdir = tmp_path / "zucai"
+    zdir.mkdir()
+    kickoff = (datetime.now(BJ) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M")
+    (zdir / "26133-issue.json").write_text(json.dumps({
+        "issue_id": "26133", "sale_deadline": "2026-09-19 22:00",
+        "matches": [{"match_no": 1, "competition": "欧国联", "home_team": "中国",
+                     "away_team": "新西兰", "kickoff_bj": kickoff,
+                     "match_date": "2026-09-19"}]}, ensure_ascii=False), encoding="utf-8")
+    (zdir / "26133-store-ids.json").write_text(json.dumps({"1": {
+        "match_no": 1, "match_id": "z-1", "fair": {"home": 0.36, "draw": 0.28, "away": 0.36}}}),
+        encoding="utf-8")
+    if with_research:
+        (zdir / "26133-research-m1.json").write_text(GOOD, encoding="utf-8")
+    return zdir
+
+
+def _run(tmp_path, root, calls, fulfills, **kwargs):
+    return run_day(
+        day="2026-09-19", jczq_dir=root, data_dir=tmp_path,
+        claude=lambda system, brief: (calls.append(brief) or (0, GOOD)),
+        fulfill=lambda argv: fulfills.append(argv) or (0, ""),
+        profile=lambda match_id: {}, budget=5, concurrency=1, **kwargs)
+
+
+def test_board_match_reuses_zucai_research_instead_of_researching_twice(tmp_path):
+    """2026-09-28 出生事故：足彩 08:03 已研究 6 场，11:01 竞彩开售后 11:04 又按竞彩编号
+    研究一遍——同一场比赛花两次预算。经对号表认定同场的，竞彩一侧直接复用。"""
+    root = _board(tmp_path, n=1)
+    zdir = _overlap_issue(tmp_path)
+    (zdir / "26133-channel-map.json").write_text(json.dumps({"m-1": 1}), encoding="utf-8")
+    calls, fulfills = [], []
+
+    report = _run(tmp_path, root, calls, fulfills)
+
+    assert {row["code"]: row["status"] for row in report["matches"]} == {"周五001": "reused_zucai"}
+    assert calls == [] and report["used_attempts"] == 0
+    written = json.loads((root / "daily" / "2026-09-19" / "research-周五001.json")
+                         .read_text(encoding="utf-8"))
+    assert written["reused_from"].endswith("26133-research-m1.json")
+    # 只补 R0：R1 并集池里这场已由足彩研究计过
+    assert [argv[3] for argv in fulfills] == ["R0"]
+
+
+def test_code_can_target_a_zucai_only_match(tmp_path):
+    """2026-09-28：`--code 足彩26134-14` 只匹配竞彩板，反而把足彩池整个跳过。"""
+    root = _board(tmp_path, n=1)
+    _overlap_issue(tmp_path, with_research=False)
+    calls, fulfills = [], []
+
+    report = _run(tmp_path, root, calls, fulfills, code="足彩26133-01")
+
+    assert {row["code"]: row["status"] for row in report["matches"]} == {"足彩26133-01": "done"}
+    assert len(calls) == 1
+
+
+def test_missing_channel_map_is_built_from_the_live_board_before_reuse(tmp_path):
+    """11:00 早间备料时板面还没开售、没有对号表；研究时板面已在，就地按备料同一
+    对齐函数补落 `.auto`，再据此复用——身份不靠 fair 反查。"""
+    root = _board(tmp_path, n=1)
+    zdir = _overlap_issue(tmp_path)
+    (root / "daily" / "2026-09-19" / "sporttery_markets.json").write_text(json.dumps({
+        "matchInfoList": [{"businessDate": "2026-09-19", "subMatchList": [{
+            "matchNum": 5001, "matchNumStr": "周五001", "businessDate": "2026-09-19",
+            "homeTeamAllName": "中国", "homeTeamAbbName": "中国",
+            "awayTeamAllName": "新西兰", "awayTeamAbbName": "新西兰"}]}]},
+        ensure_ascii=False), encoding="utf-8")
+    calls, fulfills = [], []
+
+    report = _run(tmp_path, root, calls, fulfills)
+
+    assert json.loads((zdir / "26133-channel-map.auto.json").read_text(encoding="utf-8")) \
+        == {"m-1": 1}
+    assert {row["code"]: row["status"] for row in report["matches"]} == {"周五001": "reused_zucai"}
+    assert calls == []
+
+
 def test_evidence_timestamps_are_stamped_by_the_system(tmp_path):
     root = _board(tmp_path, n=1)
     doc = json.loads(GOOD)

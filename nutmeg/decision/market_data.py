@@ -121,6 +121,39 @@ def _crs_from_pool(pool: dict) -> dict[str, float]:
 # decision-am/close 的抓取与回放底座)。
 # ---------------------------------------------------------------------------
 
+_EMPTY_RETRIES = 3
+_EMPTY_RETRY_SECONDS = 20.0
+
+
+def _sleep(seconds: float) -> None:
+    import time
+
+    time.sleep(seconds)
+
+
+def _diagnose_empty_calculator() -> str:
+    """计算器空壳的原因：未开售 / 上游缓存抖动 / 真 WAF。只读赛程接口，不猜。
+
+    赛程接口也拿不到时才沿用「degraded/WAF」——那才是真正看不见板面的情形。
+    """
+    import nutmeg.services.jczq as jczq_service
+
+    try:
+        listing = jczq_service.SportteryMatchListProvider().fetch()
+    except jczq_service.JczqProviderError:
+        return "Sporttery returned no matchInfoList (degraded/WAF response)"
+    statuses = [
+        str(sub.get("matchStatus") or "")
+        for block in listing.get("matchInfoList") or []
+        for sub in block.get("subMatchList") or []
+    ]
+    selling = statuses.count("Selling")
+    # 两个数都报、不二选一：9/28 09:26 列表里还挂着一场前一业务日的 Selling 遗留，
+    # 按「selling==0 才算未开售」会把真正的未开售误判成缓存抖动。
+    return (f"Sporttery calculator empty (not a WAF block): match list "
+            f"{selling} Selling / {len(statuses) - selling} not yet on sale")
+
+
 def fetch_sporttery_value_with_fallback() -> tuple[dict, str]:
     """体彩盘面抓取：sporttery 主源 → trade.500.com 备源（spec 2026-06-11）。
 
@@ -135,19 +168,23 @@ def fetch_sporttery_value_with_fallback() -> tuple[dict, str]:
     import nutmeg.services.jczq as jczq_service
 
     logger = logging.getLogger(__name__)
-    primary_error: Exception
-    try:
-        fetched = jczq_service.SportteryJczqCalculatorProvider().fetch()
+    primary_error: Exception | None = None
+    # 空壳先短重试：开售后数分钟内五池计算器会间歇返回空（2026-09-28 11:01 开售后实测 0/1/1）。
+    for attempt in range(1, _EMPTY_RETRIES + 1):
+        try:
+            fetched = jczq_service.SportteryJczqCalculatorProvider().fetch()
+        except jczq_service.JczqProviderError as exc:
+            primary_error = exc
+            logger.warning("sporttery 主源失败（%s），尝试 500.com 备源", exc)
+            break
         value = fetched.get("value") if "value" in fetched else fetched
         if value.get("matchInfoList"):
             return value, "sporttery"
-        primary_error = jczq_service.JczqProviderError(
-            "Sporttery returned no matchInfoList (degraded/WAF response)"
-        )
-        logger.warning("sporttery 主源返回空壳（无 matchInfoList），尝试 500.com 备源")
-    except jczq_service.JczqProviderError as exc:
-        primary_error = exc
-        logger.warning("sporttery 主源失败（%s），尝试 500.com 备源", exc)
+        if attempt < _EMPTY_RETRIES:
+            _sleep(_EMPTY_RETRY_SECONDS)
+    if primary_error is None:
+        primary_error = jczq_service.JczqProviderError(_diagnose_empty_calculator())
+        logger.warning("sporttery 主源空壳：%s；尝试 500.com 备源", primary_error)
 
     try:
         import nutmeg.data.fcom500 as fcom500

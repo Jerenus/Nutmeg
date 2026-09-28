@@ -247,6 +247,18 @@ def _used_attempts(run: dict) -> int:
     return sum(int(row.get("attempts", 0)) for row in run.get("matches", []))
 
 
+def _fulfill_research(fulfill: Fulfill, *, exp: str, stratum: str, day: str,
+                      match_id: str, artifact: Path, data_dir: Path | str,
+                      issue: str | None) -> None:
+    fulfill([
+        "rsi", "fulfill", "--exp", exp, "--duty", "match-research",
+        "--day", day, "--match", match_id, "--artifact", str(artifact),
+        "--n-rows", "1", "--stratum", stratum, "--data-dir", str(data_dir),
+        # 足彩独有场次不在竞彩板上，rsi 只能凭期号查开球（2026-09-28 R1 全拒）
+        *(["--issue", issue] if issue else []),
+    ])
+
+
 def run_day(
     *,
     day: str,
@@ -279,17 +291,22 @@ def run_day(
          "rejected": day_dir / f"research-{value}.rejected.json"}
         for value in order
     ]
-    if code is None:
-        # 并集样本池（Jun 2026-09-27）：当天截止足彩期次里不在竞彩板上的场次也研究，且优先
-        from nutmeg.decision.pool import zucai_pool_entries
+    # 并集样本池（Jun 2026-09-27）：当天截止足彩期次里不在竞彩板上的场次也研究，且优先
+    from nutmeg.decision.pool import reusable_zucai_research, zucai_pool_entries
 
-        entries += [
-            {**entry, "zucai": True}
-            for entry in sorted(
-                zucai_pool_entries(day=day, data_dir=Path(data_dir)),
-                key=lambda entry: (entry["leg"]["kickoff_bj"], entry["key"]),
-            )
-        ]
+    # 竞彩板晚开售时对号表要在这里补生成，足彩池才能去掉重叠场次（2026-09-28）
+    reusable = (reusable_zucai_research(day=day, data_dir=Path(data_dir),
+                                        jczq_dir=Path(jczq_dir))
+                if board is not None else {})
+    # `--code` 同样点得到足彩独有场次（2026-09-28 前它会把整个足彩池跳过）
+    entries += [
+        {**entry, "zucai": True}
+        for entry in sorted(
+            zucai_pool_entries(day=day, data_dir=Path(data_dir)),
+            key=lambda entry: (entry["leg"]["kickoff_bj"], entry["key"]),
+        )
+        if code is None or entry["key"] == code
+    ]
 
     if concurrency < 1:
         raise ValueError("concurrency 必须 >= 1")
@@ -316,6 +333,19 @@ def run_day(
         board_code, leg, output = entry["key"], entry["leg"], entry["output"]
         if output.exists():
             rows_by_code[board_code] = {"code": board_code, "status": "skipped_done"}
+            continue
+        reuse = None if entry["zucai"] else reusable.get(str(leg["match_id"]))
+        if reuse is not None:
+            research = json.loads(reuse.read_text(encoding="utf-8"))
+            research["reused_from"] = str(reuse)
+            output.write_text(json.dumps(research, ensure_ascii=False, indent=1),
+                              encoding="utf-8")
+            leg["judgment_tier"] = "deep_research"
+            # 只补 R0：R1 并集池里这场已由足彩研究计过一次，再记就是重复计数
+            _fulfill_research(fulfill, exp="R0", stratum="jczq", day=day,
+                              match_id=leg["match_id"], artifact=output,
+                              data_dir=data_dir, issue=None)
+            rows_by_code[board_code] = {"code": board_code, "status": "reused_zucai"}
             continue
         rejected_path = entry["rejected"]
         attempts_total = 0
@@ -423,30 +453,10 @@ def run_day(
             # R0 冻结只量竞彩；R1 量并集池（足彩独有场次只有 R1）
             targets = [("R1", "pooled")] if entry["zucai"] else [("R0", "jczq"), ("R1", "pooled")]
             for exp, stratum in targets:
-                fulfill(
-                    [
-                        "rsi",
-                        "fulfill",
-                        "--exp",
-                        exp,
-                        "--duty",
-                        "match-research",
-                        "--day",
-                        day,
-                        "--match",
-                        leg["match_id"],
-                        "--artifact",
-                        str(output),
-                        "--n-rows",
-                        "1",
-                        "--stratum",
-                        stratum,
-                        "--data-dir",
-                        str(data_dir),
-                        # 足彩独有场次不在竞彩板上，rsi 只能凭期号查开球（2026-09-28 R1 全拒）
-                        *(["--issue", entry["issue"]] if entry["zucai"] else []),
-                    ]
-                )
+                _fulfill_research(fulfill, exp=exp, stratum=stratum, day=day,
+                                  match_id=leg["match_id"], artifact=output,
+                                  data_dir=data_dir,
+                                  issue=entry["issue"] if entry["zucai"] else None)
         elif result["status"] == "rejected":
             last_attempt_at = current_time()
             attempts_total = previous_attempts + result["attempts"]

@@ -332,6 +332,17 @@ class RsiRepository:
         )
         return [DutyInstanceRow(**dict(r)) for r in rows]
 
+    def day_scoped_days_for_issue(self, duty_id: str, issue: str) -> list[str]:
+        """某期号绑定的日级义务排在哪些业务日（match_id 为空的行）。"""
+        t = sr.rsi_duty_instances
+        rows = self._c.execute(
+            select(t.c.day)
+            .where(t.c.duty_id == duty_id, t.c.issue == issue, t.c.match_id == "")
+            .distinct()
+            .order_by(t.c.day)
+        ).all()
+        return [str(row[0]) for row in rows]
+
     def duty_instances_for_day(self, duty_id: str, day: str) -> list[DutyInstanceRow]:
         t = sr.rsi_duty_instances
         rows = (
