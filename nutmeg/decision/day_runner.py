@@ -24,6 +24,7 @@ Now = Callable[[], datetime]
 Claude = Callable[[str, str], tuple[int, str]]
 
 JOBS = ("settle", "brief", "session", "results", "broadcast", "dream")
+RESULTS_LOOKBACK_DAYS = 3  # 赛果桥追补：美洲晚场 09:45 常未封存，回看三天补缺（2026-09-30）
 
 
 @dataclass
@@ -86,11 +87,10 @@ def _run_commands(ctx: DayContext, cmds: list[list[str]]) -> tuple[list[dict], i
     return rows, exit_code
 
 
-def _encode_retro(ctx: DayContext) -> str:
-    """复盘编码器（2026-09-30）：昨天板面的实票与判断记分进 scoreboard；无赛果只留痕。"""
+def _encode_retro(ctx: DayContext, day: str) -> str:
+    """复盘编码器（2026-09-30）：板面日 day 的实票与判断记分进 scoreboard；无赛果只留痕。"""
     from nutmeg.decision.retro_encoder import encode_jczq_day
 
-    day = _yesterday(ctx.date)
     try:
         out = encode_jczq_day(ctx.data_dir, day, now=ctx.now().isoformat(timespec="seconds"))
     except Exception as exc:  # noqa: BLE001 — 只留痕不抛
@@ -149,6 +149,7 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
     started_at = ctx.now().isoformat(timespec="seconds")
     commands: list[dict] = []
     evidence: str | None = None
+    exit_code = 0
     if job == "settle":
         retro = ctx.out_dir / RETRO
         if retro.exists() and not force:
@@ -157,7 +158,7 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
             commands, exit_code = _run_commands(ctx, planned_commands(ctx, "settle"))
             failed = [" ".join(c["cmd"].split(" ")[1:3]) for c in commands if c["exit"] != 0]
             summary = "settle 完成" if not failed else "失败: " + ", ".join(failed)
-            summary += _encode_retro(ctx)
+            summary += _encode_retro(ctx, _yesterday(ctx.date))
             evidence = str(retro) if retro.exists() else None
     elif job == "brief":
         try:
@@ -168,15 +169,26 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
     elif job == "results":
         from nutmeg.decision.day_results import bridge_results
 
-        report = bridge_results(data_dir=ctx.data_dir, date=ctx.date)
-        summary = (f"results 源 {report['source_day']} written={report['written']} "
-                   f"missing={len(report['missing'])}")
-        exit_code = 0
-        if report.get("unsealed"):
-            # 回填要整板踢完才封存；缺一场这一天就进不了 results-90（2026-09-27 静默 0 场）。
-            summary += "｜⚠️源日有板但赛果未封存（jc-results 无此日），票与改判账未结"
-            exit_code = 1
-        evidence = str(ctx.out_dir / RESULTS_90) if report["written"] else None
+        parts: list[str] = []
+        for back in range(1, RESULTS_LOOKBACK_DAYS + 1):
+            target = (_date.fromisoformat(ctx.date) - timedelta(days=back - 1)).isoformat()
+            if back > 1 and (day_dir(ctx.data_dir, target) / RESULTS_90).exists():
+                continue  # 追补只补缺的
+            report = bridge_results(data_dir=ctx.data_dir, date=target)
+            if back > 1 and not report["written"] and not report.get("unsealed"):
+                continue  # 更早的日子既无板也无赛果：不是问题
+            line = (f"源 {report['source_day']} written={report['written']} "
+                    f"missing={len(report['missing'])}")
+            if report.get("unsealed"):
+                # 回填要整板踢完才封存；缺一场这一天就进不了 results-90（2026-09-27 静默 0 场）。
+                line += "｜⚠️源日有板但赛果未封存（jc-results 无此日），票与改判账未结"
+                exit_code = 1
+            if report["written"]:
+                line += _encode_retro(ctx, report["source_day"])
+                if back == 1:
+                    evidence = str(ctx.out_dir / RESULTS_90)
+            parts.append(line)
+        summary = "results " + "；".join(parts)
     elif job == "broadcast":
         from nutmeg.decision.day_broadcast import send_all, telegram_sender
 

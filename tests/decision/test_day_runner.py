@@ -204,3 +204,20 @@ def test_settle_job_encodes_yesterdays_board_into_the_scoreboard(tmp_path: Path)
     assert "复盘编码 jczq-2026-09-22：0 票" in rec.summary and "1 场" in rec.summary
     sb = json.loads((ctx.data_dir / "scoreboard.json").read_text(encoding="utf-8"))
     assert sb["balance_ledger"]["jczq-20260922"]["n_matches"] == 1
+
+
+def test_results_job_catches_up_unbridged_days_and_skips_done_ones(tmp_path: Path):
+    """09-30 出生事故：09-29 板 15/15 到下午才封存，09:45 那次只桥『昨天』，之后再没人补。"""
+    ctx = _ctx(tmp_path, [])
+    (ctx.data_dir / "jczq" / "jc-results.json").write_text(json.dumps({
+        "2026-09-22": {"周二001": {"ft_home": 1, "ft_away": 0}},
+        "2026-09-21": {"周一001": {"ft_home": 0, "ft_away": 2}},
+    }), encoding="utf-8")
+    rec = run_job(ctx, "results")
+    assert rec.exit == 0
+    assert "源 2026-09-22 written=1" in rec.summary and "源 2026-09-21 written=1" in rec.summary
+    assert (day_dir(ctx.data_dir, "2026-09-23") / RESULTS_90).exists()
+    assert (day_dir(ctx.data_dir, "2026-09-22") / RESULTS_90).exists()
+    assert "复盘编码 jczq-2026-09-21" in rec.summary
+    again = run_job(ctx, "results")
+    assert "源 2026-09-22" in again.summary and "源 2026-09-21" not in again.summary

@@ -445,6 +445,9 @@ def _research_deferred_count(argv: list[str], stdout: str) -> int:
         "skipped_permanent",
         "skipped_retry_limit",
         "skipped_budget",
+        # 已研过 / 入库拒收：义务留作 gap，不该每小时报成命令失败（2026-09-30）
+        "skipped_done",
+        "rejected",
     }
     return sum(
         len(parts) >= 2 and parts[1] in deferred
@@ -489,7 +492,12 @@ def sweep(
         for duty_id in duties
     }
 
-    for duty in duties.values():
+    def _err(message: str) -> None:
+        typer.echo(f"[{now_iso}] {message}", err=True)
+
+    # F1c 的采集器读 F2 的观察单：F2 先跑（2026-09-29 F1c 两次因文件未生成而崩）
+    ordered = sorted(duties.values(), key=lambda d: (not d.duty_id.startswith("F2:"), d.duty_id))
+    for duty in ordered:
         rows = instances[duty.duty_id]
         fulfilled = [row for row in rows if row.fulfilled_at is not None]
         open_rows = [row for row in rows if row.fulfilled_at is None]
@@ -508,33 +516,27 @@ def sweep(
         runnable = [row for row in open_rows if row.due_at > now_iso]
         if expired:
             counts["expired"] += len(expired)
-            typer.echo(
+            _err(
                 f"⚠️DUTY_EXPIRED: {duty.duty_id} {len(expired)} 条已过开球"
-                "（前瞻资格已失）",
-                err=True,
-            )
+                "（前瞻资格已失）")
         if not runnable:
             continue
         if not duty.instrument or duty.instrument[0] != "uv":
             counts["failed"] += len(runnable)
-            typer.echo(
-                f"UNSAFE_INSTRUMENT: {duty.duty_id} 只允许 argv[0]=uv",
-                err=True,
-            )
+            _err(
+                f"UNSAFE_INSTRUMENT: {duty.duty_id} 只允许 argv[0]=uv")
             continue
 
         row_issues = {row.issue for row in runnable if row.issue}
         resolved_issue = issue or (next(iter(row_issues)) if len(row_issues) == 1 else None)
         if len(row_issues) > 1 and issue is None:
             counts["failed"] += len(runnable)
-            typer.echo(f"rsi error: {duty.duty_id} 同日绑定多个 issue", err=True)
+            _err(f"rsi error: {duty.duty_id} 同日绑定多个 issue")
             continue
         if resolved_issue is None and any("{issue}" in arg for arg in duty.instrument):
             counts["skipped_not_ready"] += len(runnable)
-            typer.echo(
-                f"DUTY_NOT_READY: {duty.duty_id}: 当天没有足彩期",
-                err=True,
-            )
+            _err(
+                f"DUTY_NOT_READY: {duty.duty_id}: 当天没有足彩期")
             continue
         try:
             argv = render_instrument(
@@ -542,28 +544,24 @@ def sweep(
             )
         except ValueError as exc:
             counts["failed"] += len(runnable)
-            typer.echo(f"rsi error: {duty.duty_id}: {exc}", err=True)
+            _err(f"rsi error: {duty.duty_id}: {exc}")
             continue
         if _is_balance_instrument(argv) and not _balance_reads_ready(
             data_dir, day=resolved_day, issue=resolved_issue
         ):
             counts["skipped_not_ready"] += len(runnable)
-            typer.echo(
-                f"DUTY_NOT_READY: {duty.duty_id}: reads 尚未落盘",
-                err=True,
-            )
+            _err(
+                f"DUTY_NOT_READY: {duty.duty_id}: reads 尚未落盘")
             continue
         completed = subprocess.run(argv, capture_output=True, text=True, check=False)
         if completed.stdout:
             typer.echo(completed.stdout.rstrip())
         if completed.stderr:
-            typer.echo(completed.stderr.rstrip(), err=True)
+            _err(completed.stderr.rstrip())
         if completed.returncode != 0:
             counts["failed"] += len(runnable)
-            typer.echo(
-                f"rsi error: {duty.duty_id} instrument exit={completed.returncode}",
-                err=True,
-            )
+            _err(
+                f"rsi error: {duty.duty_id} instrument exit={completed.returncode}")
             continue
         with OntologyUnitOfWork(k.engine) as uow:
             after = [
@@ -583,10 +581,8 @@ def sweep(
             not_fulfilled -= deferred
         if not_fulfilled:
             counts["failed"] += not_fulfilled
-            typer.echo(
-                f"DUTY_NOT_FULFILLED: {duty.duty_id} {not_fulfilled} 条命令成功但未登记",
-                err=True,
-            )
+            _err(
+                f"DUTY_NOT_FULFILLED: {duty.duty_id} {not_fulfilled} 条命令成功但未登记")
 
     typer.echo(
         f"{resolved_day} sweep: "
