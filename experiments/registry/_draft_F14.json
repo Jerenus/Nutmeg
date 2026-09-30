@@ -1,0 +1,29 @@
+{
+ "exp_id": "F14",
+ "claim": "深研的表态面集合（single/double）命中率高于该集合的市场覆盖率 Σfair——结构判断（哪些面活着）有价值，即便程度判断（拨几个 pp）没有。",
+ "mechanism": "09-28 竞彩 8 场 + 09-29 8 场，研究表态面 16/16 全对，而拨动净负、市场 Brier 两天最好；F9 n=25 −0.74pp CI 含 0。若结构命中率真高于覆盖率，研究预算应只买结构；若不高于，深研对票面无增益。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "deep_research",
+ "window": {
+  "date_from": "2026-10-01",
+  "n_min": 60
+ },
+ "falsifier": {
+  "metric": "stance_faces_resid_pp",
+  "stratum": "pooled",
+  "n_min": 60,
+  "bound": "ci_lower",
+  "threshold_pp": 0.0,
+  "direction": "lt_means_falsified"
+ },
+ "stop_rule": "累计 60 场结账；命中 − 覆盖率 的 CI 下界 ≤ 0 即证伪（表态面不比价格准）。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [
+  "stance"
+ ],
+ "source_doc": ".nutmeg-data/scoreboard.json balance_ledger/jczq-20260928, jczq-20260929",
+ "registered_at": null
+}

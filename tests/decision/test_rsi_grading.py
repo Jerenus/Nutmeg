@@ -173,3 +173,22 @@ def test_f13_selects_failed_anchors_with_a_collapse_narrative_tilted_against():
             row("3", date="2026-09-30")]       # 窗外
     g = grade_f13_prospective(rows, window={"date_from": "2026-10-01"})
     assert g.n_cum == 2 and round(g.metric_value_pp, 6) == round((0.5 - 0.60) * 100, 6)
+
+
+def test_f14_scores_stance_face_sets_against_their_market_coverage():
+    from nutmeg.decision.rsi_grading import grade_f14_prospective
+
+    fair = {"home": 0.50, "draw": 0.30, "away": 0.20}
+
+    def row(actual, structure, face="3", cover="1", date="2026-10-02"):
+        return {"src": "jczq", "date": date, "fair": fair, "actual": actual,
+                "labels": {"stance_structure": structure, "stance_face": face,
+                           "stance_cover": cover}}
+
+    rows = [row("3", "double"),                 # 31 命中，覆盖 0.80 → +0.20
+            row("0", "double"),                 # 31 未中 → −0.80
+            row("3", "single"),                 # 3 命中，覆盖 0.50 → +0.50
+            row("3", "full"),                   # 全包不算选择
+            row("3", "double", date="2026-09-30")]  # 窗外
+    g = grade_f14_prospective(rows, window={"date_from": "2026-10-01"})
+    assert g.n_cum == 3 and round(g.metric_value_pp, 6) == round((0.20 - 0.80 + 0.50) / 3 * 100, 6)

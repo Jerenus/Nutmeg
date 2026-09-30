@@ -286,9 +286,10 @@ def test_reads_express_small_tilt_and_keep_alive_normalisation(tmp_path):
         "expires_if": "",
         "evidence": [
             {
-                "tier": "inferred",
+                # 2026-09-30：拨动须含官宣/确证结构级锚，否则归零
+                "tier": "confirmed_structural",
                 "kind": "rotation_confirmed",
-                "pp": 2,
+                "pp": 3,
                 "source": "s",
                 "captured_at": "2026-09-19T10:00:00+08:00",
             }
@@ -309,8 +310,8 @@ def test_reads_express_small_tilt_and_keep_alive_normalisation(tmp_path):
 
     assert r["belief"]["away"] == 0.0  # away 判死 → 活面归一仍生效
     # strength-v2（2026-09-26）：2pp 的推断级偏移如实表达，不再归零
-    assert r["stance"]["tilt_zeroed"] is False and r["stance"]["tilt_applied_pp"] == 2
-    assert r["adjustment_evidence_tiers"] == ["inferred"]
+    assert r["stance"]["tilt_zeroed"] is False and r["stance"]["tilt_applied_pp"] == 3
+    assert r["adjustment_evidence_tiers"] == ["confirmed_structural"]
 
 
 def test_rebuild_keeps_the_read_of_a_match_that_already_kicked_off(tmp_path):

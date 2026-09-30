@@ -77,10 +77,11 @@ def test_apply_tilt_expresses_small_moves_caps_and_drops_post_kickoff_evidence()
     # strength-v2（2026-09-26）：<5pp 不再归零——小而真实的利好利空如实表达。
     ev = lambda tier, pp, at="2026-09-23T10:00:00+08:00": {  # noqa: E731
         "tier": tier, "kind": "absence_official", "pp": pp, "source": "s", "captured_at": at}
-    small = {"face": "3", "expires_if": "", "evidence": [ev("inferred", 2), ev("inferred", 2)]}
+    small = {"face": "3", "expires_if": "",
+             "evidence": [ev("confirmed_structural", 3), ev("inferred", 2)]}
     r = apply_tilt(PRIOR, small, kickoff="2026-09-23T19:30:00+08:00")
-    assert not r.zeroed and r.applied_pp == 4
-    assert round(r.belief["home"], 2) == 0.56 and round(sum(r.belief.values()), 6) == 1.0
+    assert not r.zeroed and r.applied_pp == 5
+    assert round(r.belief["home"], 2) == 0.57 and round(sum(r.belief.values()), 6) == 1.0
     big = {"face": "3", "expires_if": "",
            "evidence": [ev("official", 8), ev("confirmed_structural", 6), ev("inferred", 2)]}
     r = apply_tilt(PRIOR, big, kickoff="2026-09-23T19:30:00+08:00")
@@ -105,7 +106,8 @@ def _ev(tier="inferred", kind="style_matchup", pp=2):
 
 def test_apply_tilt_shift_moves_several_faces_and_keeps_the_sum():
     tilt = {"shift": {"3": -1, "1": 3, "0": -2}, "expires_if": "",
-            "evidence": [_ev(pp=2), _ev(tier="state", kind="form_state", pp=1)]}
+            "evidence": [_ev(tier="confirmed_structural", kind="lineup_confirmed", pp=3),
+                         _ev(tier="state", kind="form_state", pp=1)]}
     r = apply_tilt(PRIOR, tilt)
     assert not r.zeroed and r.applied_pp == 3
     expected = {"home": 0.51, "draw": 0.29, "away": 0.20}
@@ -123,20 +125,32 @@ def test_apply_tilt_shift_is_capped_per_face_without_official_evidence():
 
 def test_shift_peak_cannot_exceed_the_evidence_budget():
     """Jun 2026-09-30：shift 是研究自由写的数字，峰值不得超过证据能支撑的 pp。"""
-    tilt = {"shift": {"3": 4, "1": -2, "0": -2}, "expires_if": "", "evidence": [_ev(pp=2)]}
+    tilt = {"shift": {"3": 4, "1": -2, "0": -2}, "expires_if": "",
+            "evidence": [_ev(tier="confirmed_structural", kind="absence_official", pp=3)]}
     r = apply_tilt(PRIOR, tilt)
-    assert r.applied_pp == 2 and "证据预算 2pp" in r.reason
-    assert round(r.belief["home"], 4) == 0.54
+    assert r.applied_pp == 3 and "证据预算 3pp" in r.reason
+    assert round(r.belief["home"], 4) == 0.55
 
 
 def test_form_state_evidence_counts_at_most_one_pp():
     """同组交叉/单场状态 每条最多 1pp：09-28 三处 form_state 拨动 2pp 全反。"""
     state2 = _ev(tier="state", kind="form_state", pp=2)
+    anchor = _ev(tier="confirmed_structural", kind="absence_official", pp=3)
+    r = apply_tilt(PRIOR, {"shift": {"3": 5, "1": -3, "0": -2}, "expires_if": "",
+                           "evidence": [anchor, state2]})
+    assert r.applied_pp == 4 and "证据预算 4pp" in r.reason   # 3 + form_state 只计 1
+    face_only = apply_tilt(PRIOR, {"face": "3", "expires_if": "", "evidence": [anchor, state2]})
+    assert face_only.applied_pp == 4
+
+
+def test_tilt_without_official_or_structural_evidence_is_zeroed():
+    """Jun 2026-09-30：状态/推断级证据只能写进研究，不能挪 belief。"""
     r = apply_tilt(PRIOR, {"shift": {"3": 2, "1": -1, "0": -1}, "expires_if": "",
-                           "evidence": [state2]})
-    assert r.applied_pp == 1 and "证据预算 1pp" in r.reason
-    face_only = apply_tilt(PRIOR, {"face": "3", "expires_if": "", "evidence": [state2, _ev(pp=2)]})
-    assert face_only.applied_pp == 3  # 2pp 推断 + form_state 只计 1
+                           "evidence": [_ev(pp=2), _ev(tier="state", kind="form_state", pp=1)]})
+    assert r.zeroed and r.applied_pp == 0 and "无官宣/确证结构级证据" in r.reason
+    assert r.belief == PRIOR and r.tiers == ["inferred", "state"]
+    face_only = apply_tilt(PRIOR, {"face": "1", "expires_if": "", "evidence": [_ev(pp=2)]})
+    assert face_only.zeroed
 
 
 def test_validate_shift_must_sum_to_zero_and_use_the_strength_lexicon():

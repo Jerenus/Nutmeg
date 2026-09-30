@@ -412,4 +412,42 @@ PROSPECTIVE_ADAPTERS = {"F3": grade_f3_prospective, "F5": grade_f5_prospective,
                         "F11": grade_f11_prospective}
 # 草案适配器：Jun `rsi register experiments/registry/_draft_F13.json` 后，把 F13 加进
 # PROSPECTIVE_ADAPTERS 与 rsi_loop.GRADED_EXPERIMENTS（适配器名须与登记实验一一对应）。
-DRAFT_ADAPTERS = {"F13": grade_f13_prospective}
+def _stance_faces(labels: dict) -> set[str]:
+    structure = str(labels.get("stance_structure") or "")
+    face, cover = str(labels.get("stance_face") or ""), str(labels.get("stance_cover") or "")
+    if structure == "single" and face in _FACE.values():
+        return {face}
+    if structure == "double" and face in _FACE.values() and cover in _FACE.values():
+        return {face, cover}
+    return set()
+
+
+def grade_f14_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                          boots: int = 4000) -> GradeResult:
+    """F14 结构命中率（草案 2026-09-30，Jun 登记后生效）：深研表态面集合（single/double）
+    命中 − 该集合的市场覆盖率 Σfair（pp）。09-28/29 表态面 16/16 对而拨动净负——
+    结构判断是不是真的比价格准，要前瞻数。"""
+    resid: list[float] = []
+    selected: list[dict] = []
+    for r in _priced(rows):
+        if not _in_date_window(r, window):
+            continue
+        faces = _stance_faces(r.get("labels") or {})
+        if not faces:
+            continue
+        coverage = sum(float(r["fair"][k]) for k, code in _FACE.items() if code in faces)
+        resid.append((1.0 if r["actual"] in faces else 0.0) - coverage)
+        selected.append(r)
+    kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
+                  inputs_hash=_rows_hash(selected),
+                  computed_by="nutmeg.decision.rsi_grading.grade_f14_prospective")
+    if not resid:
+        return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
+    rng = random.Random(seed)
+    means = sorted(statistics.fmean(rng.choice(resid) for _ in resid) * 100 for _ in range(boots))
+    return GradeResult(n_cum=len(resid), metric_value_pp=statistics.fmean(resid) * 100,
+                       ci_low_pp=means[int(0.025 * boots)],
+                       ci_high_pp=means[int(0.975 * boots) - 1], **kwargs)
+
+
+DRAFT_ADAPTERS = {"F13": grade_f13_prospective, "F14": grade_f14_prospective}

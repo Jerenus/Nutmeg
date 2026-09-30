@@ -32,6 +32,10 @@ ZERO_BELOW_PP = 0
 CAP_WITH_OFFICIAL_PP = 15
 CAP_WITHOUT_OFFICIAL_PP = 10
 KIND_PP_CAP = {"form_state": 1}
+ANCHOR_TIERS = frozenset({"official", "confirmed_structural"})
+"""拨动至少要一条官宣或确证结构级证据做锚，否则归零跟市场（Jun 2026-09-30）。
+09-28/09-29 两天：研究表态面 8/8 对，但全部拨动（状态/推断级）净负，市场 Brier 最好；
+F9 n=25 −0.74pp CI 含 0。结构判断有价值，程度判断没有——把预算留给结构。"""
 """单场状态 / 同组交叉（form_state）每条最多计 1pp（Jun 2026-09-30）。
 出生事故：09-28 三处同组交叉拨动（004/005/足彩03）全反，09-29 012 冰岛再反——n=1 的 xG
 对比一场能挪 3pp。多面位移的峰值也不得超过证据预算（Σ 计入 pp），否则 shift 是自由写的数字。"""
@@ -228,6 +232,11 @@ def apply_tilt(prior: dict, tilt: dict | None, *, kickoff: str | None = None) ->
             continue
         kept.append(e)
         tiers.append(str(e.get("tier")))
+    if kept and not (set(tiers) & ANCHOR_TIERS):
+        why = "无官宣/确证结构级证据做锚：拨动归零跟市场（2026-09-30）" + (
+            f"（{dropped} 条证据在开球后，作废）" if dropped else ""
+        )
+        return TiltResult(dict(prior), 0, True, why, tiers)
     net = _evidence_budget(kept)
     if tilt.get("shift") is not None:
         return _apply_shift(prior, tilt["shift"], kept=kept, dropped=dropped, tiers=tiers)
