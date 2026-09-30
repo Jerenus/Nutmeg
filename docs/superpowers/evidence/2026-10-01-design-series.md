@@ -30,7 +30,16 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 
 **事实**：同一场的判断住在 5–6 份文件里（研究原件 / overrides.jsonl / legs-base.stance / reads.json / 内核 forecast_revisions / 足彩 judgment-v1+belief-v2），靠 `research refresh` 互相重建；26133 冰岛 +7 原判被覆盖、09-28 combos 与 reads belief 不一致、F9 每小时报「reads 尚未落盘」都是同一个病。
 
-**动作**：spec `docs/superpowers/specs/2026-10-01-single-judgment-truth-design.md`——内核 ForecastRevision 是唯一可写的判断（intake → `kind=research`，override → `kind=override, supersedes`），其余文件改为 `judgment project` 投影；分片 P0 只读投影（跑一周比对）→ P1 override 入内核 → P2 研究入库直落内核 → P3 足彩并轨 → P4 退役 jsonl/belief-v2/build-reads。**这是大重构，未动任何写路径**；Jun 看过 spec 后再按 writing-plans 出 P0 计划。第 5 条的 `ForecastActions.draft/revise/withdraw` 零调用正是因为这条还没接——瘦身时不许删。
+**动作**：spec `docs/superpowers/specs/2026-10-01-single-judgment-truth-design.md`——内核 ForecastRevision 是唯一可写的判断（intake → `kind=research`，override → `kind=override, supersedes`），其余文件改为 `judgment project` 投影；分片 P0 只读投影（跑一周比对）→ P1 override 入内核 → P2 研究入库直落内核 → P3 足彩并轨 → P4 退役 jsonl/build-reads。第 5 条的 `ForecastActions.draft/revise/withdraw` 零调用正是因为这条还没接——瘦身时不许删。
+
+**P0/P1 落地（2026-10-01 01:10–03:30，Jun 批准 spec 后）**：计划 `docs/superpowers/plans/2026-10-01-single-judgment-truth-p0-p1.md`，五个提交：
+- `f34d4f0` schema 47：`forecast_revisions` 加 `kind / board_key / judgment_json`（PRAGMA 守卫的 ALTER + board_key 索引）；`DraftForecastRequest/CommitForecastRequest` 带三字段；草稿链记 `supersedes`＝序列最新 revision。
+- `e88164e` 每条 Read 自报 `kind`（research / override / market / manual）、`board_key`（`jczq:<日>` / `zucai:<期>`）、`code`；有改判账的竞彩腿 `kind=override` 并带 `override.{at,note,judge}`；`decision-read` 把整条 Read 存进 `judgment_json`。
+- `c250a2f` `nutmeg judgment project --day|--issue`：每序列最高 revision → `reads.projected.json`；与 `reads.json` 按 match_id 对齐 → `judgment-projection.json`（一致 / 同判断新版本 / 分歧 / 仅内核 / 仅文件；足彩已对到竞彩的场次跳过）。
+- `722e9f2` `research refresh` 每块板附一行投影比对（失败不挡刷新）；`research override` 记账后立刻 refresh（足彩按期次截止日），改判当场成为内核里的新 revision。
+- 冒烟：`research refresh --day 2026-09-30` → 「投影 0 条｜文件 2 条」——schema 47 之前交的 revision 没有 board_key，属预期；**第一批可投影的 revision 在 10-01 10:00 研究链刷新后出现**，10:45 闭环报告前可用 `nutmeg judgment project --day 2026-10-01` 验收。
+- 勘察修正已写进 spec 头部：内核原无 kind/stance 列；`belief-v2.json` 无人读写（spec 表格删）；`plan frontier` 实读 legs-base `fair`（足彩 `fair`＝belief）。
+- **一周门槛**：2026-10-01 → 10-08 每天的 `judgment-projection.json` 分歧为零，才出 P2 计划；任何分歧先查再改判。
 
 ## 5. 内核瘦身（2026-10-01 03:20，清单已出，执行待 Jun 批）
 

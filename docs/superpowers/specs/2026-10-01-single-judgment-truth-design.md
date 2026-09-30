@@ -1,6 +1,8 @@
 # 判断唯一事实（内核 ForecastRevision 为源，文件为投影）· 设计
 
-日期：2026-10-01 ｜ 状态：设计系列第 2 条，Jun 已批准方向（「都很重要，按顺序逐条处理」）；本文是 spec，实施分片待 Jun 看过后按 writing-plans 出计划 ｜ 依赖：本体内核 ForecastRevision / `decision-read` / `research refresh`
+日期：2026-10-01 ｜ 状态：Jun 已批准 spec（10-01 01:10）；**P0/P1 已落地**（计划 `docs/superpowers/plans/2026-10-01-single-judgment-truth-p0-p1.md`，schema 47），P2–P4 待 P0 比对满一周（≥ 2026-10-08）零分歧后出计划 ｜ 依赖：本体内核 ForecastRevision / `decision-read` / `research refresh`
+
+> **勘察修正（2026-10-01 01:40）**：内核 `forecast_revisions` 原本没有 kind/note/stance 列，表态只住文件——P0 先给 revision 加 `kind / board_key / judgment_json` 三列装下整条 Read；`belief-v2.json` 经勘察在代码里既无写者也无读者（下表已删），`plan frontier` 实读 `<issue>-legs-base.json` 的 `fair`（足彩 `fair` 语义＝belief，竞彩 `fair`＝市场 prior，P3 并轨时要一并正名）；jczq Read 以 draft 入库（`ai:jczq-analyst`），足彩以 committed 入库（`judge:owner`）。
 
 ## 0. 一句话
 
@@ -22,7 +24,7 @@
 | `jczq-legs-base.json`（stance/faces/标签） | `research intake` | combos、审计门、Dream day 源、语料 v2 |
 | `reads.json` | `jczq-build-reads` | `decision-read`（→内核）、combos、F9、Dream、复盘编码器 |
 | 内核 `forecast_revisions` | `decision-read` | 结算/校准（Brier/CLV）、`current_committed_revision`（Ticket 入账） |
-| 足彩 `judgment-v1.json` / `belief-v2.json` / `<issue>-reads.json` | 主循环 / 自动转录 / build-reads | plan frontier、签字页、审计门 |
+| 足彩 `judgment-v1.json`（手写）/ `<issue>-reads.json`（zucai-build-reads / build_auto_reads）/ `<issue>-legs-base.json`（`fair`＝belief） | 主循环 / 自动转录 / build-reads | auto_judgment、betslip 诊断、复盘编码器、语料；plan frontier/audit 读 legs-base |
 
 ## 3. 目标形态
 
@@ -33,11 +35,11 @@
 
 ## 4. 分片（每片独立可用、可回滚）
 
-1. **P0 只读投影**：新增 `judgment project`，从内核生成与今日 `reads.json` 字节等价的文件；跑一周与现有文件比对（差异即 bug 清单）。不改任何写路径。
-2. **P1 override 入内核**：`research override` 除写 jsonl 外同时写 revision；信号面板改读内核；jsonl 保留只读。
-3. **P2 研究入库直落内核**：`research intake` 直接产 revision；`jczq-build-reads`/`decision-read` 合并为投影。
-4. **P3 足彩并轨**：`judgment-v1`/`belief-v2` 由投影生成；`plan frontier`、签字页改读投影。
-5. **P4 退役**：删 `overrides.jsonl` 写路径、`belief-v2`、`jczq-build-reads`；义务改看内核。
+1. **P0 只读投影 ✅（2026-10-01，schema 47）**：revision 加 `kind/board_key/judgment_json`；每条 Read 自报 `kind/board_key/code`；`decision-read` 存整条；`nutmeg judgment project` 按 `board_key` 取每序列最高 revision 投影回列表，与 `reads.json` 以 match_id 对齐比对（同判断换版本号不算分歧）；`research refresh` 每次落 `judgment-projection.json`。不改写路径。
+2. **P1 override 入内核 ✅**：`research override` 记账后立刻 refresh → 重入库 → 该 Read `kind=override`（带 `override.note`）→ 交本体成为新 revision（draft 链记 `supersedes`）。jsonl 仍是文件侧的传输带，P4 才退。
+3. **P2 研究入库直落内核**：`research intake` 直接产 revision；`jczq-build-reads`/`decision-read` 合并为投影。门槛：P0 比对连续 7 天分歧为零。
+4. **P3 足彩并轨**：`judgment-v1` 与 `<issue>-legs-base.fair` 由投影生成；`plan frontier`/审计门改读投影；`fair` 语义正名。
+5. **P4 退役**：删 `overrides.jsonl` 写路径、`jczq-build-reads`；义务改看内核。
 
 ## 5. 不做
 
