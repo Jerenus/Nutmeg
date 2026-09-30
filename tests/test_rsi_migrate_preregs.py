@@ -51,7 +51,10 @@ def test_all_registry_docs_load_and_keep_their_original_registration_dates():
         for p in sorted(REG.glob("*.json"))
         if not p.name.startswith("_draft_")
     }
-    assert set(docs) == {"F1c", "F10", "F11", "F2", "F3", "F4", "F5", "F8", "F9", "R0", "R1"}
+    assert set(docs) == {"F1c", "F10", "F11", "F13", "F14", "F2", "F3", "F4", "F5", "F8", "F9",
+                         "R0", "R1"}
+    # F13/F14：2026-09-30 登记（崩塌叙事锚方 / 表态面集合命中率）
+    assert docs["F13"]["registered_at"] == docs["F14"]["registered_at"] == "2026-09-30"
     # R1：并集样本池深研覆盖（Jun 2026-09-27），R0 冻结不动
     assert (docs["R1"]["registered_at"], docs["R1"]["population"]) == ("2026-09-27", "both")
     assert docs["F2"]["registered_at"] == "2026-09-14"
@@ -98,7 +101,7 @@ def test_migration_script_backfills_observations_and_marks_f1c_gaps(tmp_path, mo
                          dispersion_file=tmp_path / "t7-dispersion.json",
                          now="2026-09-18T20:00:00+08:00")
     assert report["registered"] == [
-        "F10", "F11", "F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0", "R1"]
+        "F10", "F11", "F13", "F14", "F1c", "F2", "F3", "F4", "F5", "F8", "F9", "R0", "R1"]
     assert report["F2"]["observations"] == 3
     assert report["F1c"]["observations"] == 1
     # 26125 没有 issue.json 时不造数据
