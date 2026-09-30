@@ -133,8 +133,22 @@ def betslip_register(
             from nutmeg.decision.ledger_writeback import summary_line
 
             _cli.typer.echo("   " + summary_line(slip.diagnosis["kernel"]))
+        _cli.typer.echo("   " + _brake_line(data_dir, placed_at))
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
+
+
+def _brake_line(data_dir: Path, placed_at: str) -> str:
+    """月度止损状态（宪法 §4，2026-10-01）：只打印，不阻断——登记是事实。"""
+    from datetime import date as _date
+
+    from nutmeg.decision.bankroll import brake_state, status_line
+
+    try:
+        when = _date.fromisoformat(placed_at)
+    except ValueError:
+        when = _date.today()
+    return status_line(brake_state(data_dir, when))
 
 
 @betslip_app.command("preview")
@@ -161,6 +175,7 @@ def betslip_preview(
                         + (f"｜P(全对)={p * 100:.2f}%" if p is not None else ""))
         for line in diag.get("lines", []):
             _cli.typer.echo("   " + line)
+        _cli.typer.echo("   " + _brake_line(data_dir, placed_at))
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
 

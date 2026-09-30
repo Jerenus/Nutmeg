@@ -113,6 +113,9 @@ def frontier(
     def _pct(value):
         return "空" if value is None else f"{value * 100:.2f}%"
 
+    from nutmeg.decision.bankroll import brake_state, status_line
+
+    typer.echo("刹车：" + status_line(brake_state(data_dir, datetime.now().date())))
     typer.echo(
         f"{issue} {channel} ¥{cap_yuan}：前沿 {result['n_points']} 点（判断概率 + 硬门）· "
         f"帽内 max P {max_probability} ｜ 旧规则对照：B5c 矩阵 "
