@@ -118,9 +118,21 @@ def betslip_register(
         slip = _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
                            multiplier, issue, scheme_no, trial, note)
         slip.diagnosis = _diagnose(slip, data_dir)
+        if slip.channel == "jczq" and slip.purchased:
+            # 实票入账到本体（2026-10-01）：登记是事实，内核是镜像；镜像失败不挡登记
+            from nutmeg.decision.ledger_writeback import writeback_jczq_slip
+
+            try:
+                slip.diagnosis["kernel"] = writeback_jczq_slip(slip, data_dir=data_dir)
+            except Exception as exc:  # noqa: BLE001 — 内核不可用时留痕不抛
+                slip.diagnosis["kernel"] = {"status": "error", "error": repr(exc)[:200]}
         _cli.typer.echo(register_slip(data_dir, slip))
         for line in slip.diagnosis.get("lines", []):
             _cli.typer.echo("   " + line)
+        if slip.diagnosis.get("kernel"):
+            from nutmeg.decision.ledger_writeback import summary_line
+
+            _cli.typer.echo("   " + summary_line(slip.diagnosis["kernel"]))
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
 
