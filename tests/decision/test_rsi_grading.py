@@ -151,3 +151,25 @@ def test_f11_compares_favourite_crash_residual_by_research_insurance_call():
     g = grade_f11_prospective(rows, window={"date_from": "2026-09-27"})
     # 翻车残差：保险组 (1−0.40) 均值 0.60，单选组 (0−0.40) 均值 −0.40 → 差 100pp
     assert g.n_cum == 4 and round(g.metric_value_pp, 6) == 100.0
+
+
+def test_f13_selects_failed_anchors_with_a_collapse_narrative_tilted_against():
+    from nutmeg.decision.rsi_grading import grade_f13_prospective
+
+    fair = {"home": 0.60, "draw": 0.25, "away": 0.15}
+
+    def row(actual, *, integrity="fail", flags=("dressing_room_turmoil",), belief_home=0.56,
+            date="2026-10-02"):
+        return {"src": "jczq", "date": date, "fair": fair, "actual": actual,
+                "belief": {"home": belief_home, "draw": 0.25 + (0.60 - belief_home),
+                           "away": 0.15},
+                "labels": {"anchor_side": "home", "anchor_integrity": integrity,
+                           "nondirectional_flags": list(flags), "crash_markers": []}}
+
+    rows = [row("3"), row("0"),
+            row("3", integrity="pass"),        # 完整度 PASS：没有崩塌叙事
+            row("3", flags=()),                # 无旗无标记
+            row("3", belief_home=0.60),        # 没拨离锚方
+            row("3", date="2026-09-30")]       # 窗外
+    g = grade_f13_prospective(rows, window={"date_from": "2026-10-01"})
+    assert g.n_cum == 2 and round(g.metric_value_pp, 6) == round((0.5 - 0.60) * 100, 6)

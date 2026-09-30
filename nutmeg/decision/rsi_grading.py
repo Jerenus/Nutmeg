@@ -366,6 +366,50 @@ def grade_f11_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                        ci_high_pp=diffs[int(0.975 * boots) - 1], **kwargs)
 
 
+COLLAPSE_FLAGS = frozenset({"dressing_room_turmoil", "coach_debut"})
+
+
+def _anchor_residual_grade(rows: Sequence[dict], *, computed_by: str) -> GradeResult:
+    resid_rows = [
+        {"actual": "m" if r["actual"] == _FACE[r["_anchor"]] else "x",
+         "fair": {"m": r["fair"][r["_anchor"]]}}
+        for r in rows
+    ]
+    ci = bootstrap_residual_pp(resid_rows, face="m")
+    return GradeResult(stratum="pooled", n_cum=ci.n, metric_value_pp=ci.value_pp,
+                       ci_low_pp=ci.ci_low_pp, ci_high_pp=ci.ci_high_pp, cost_axis_pp=None,
+                       as_of_policy="registry_window_date", inputs_hash=_rows_hash(rows),
+                       computed_by=computed_by)
+
+
+def grade_f13_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
+    """F13 崩塌叙事完整的锚方（草案 2026-09-30，Jun 登记后生效）。
+
+    窗内、锚方完整度 FAIL、带崩塌叙事（更衣室/换帅无方向旗或 crash_markers）、且 belief 把锚方
+    拨低 ≥1.5pp 的行；指标 = 锚方实开 − 市场锚方概率（pp）。画像③：越完整越不崩 ⇒ 期望 ≥0。
+    """
+    selected: list[dict] = []
+    for r in _priced(rows):
+        if not _in_date_window(r, window):
+            continue
+        labels = r.get("labels") or {}
+        anchor = labels.get("anchor_side")
+        if anchor not in _FACE or labels.get("anchor_integrity") != "fail":
+            continue
+        flags = set(labels.get("nondirectional_flags") or [])
+        if not (flags & COLLAPSE_FLAGS) and not labels.get("crash_markers"):
+            continue
+        belief = r.get("belief") or {}
+        if anchor not in belief or float(belief[anchor]) > float(r["fair"][anchor]) - 0.015:
+            continue
+        selected.append({**r, "_anchor": anchor})
+    return _anchor_residual_grade(
+        selected, computed_by="nutmeg.decision.rsi_grading.grade_f13_prospective")
+
+
 PROSPECTIVE_ADAPTERS = {"F3": grade_f3_prospective, "F5": grade_f5_prospective,
                         "F9": grade_f9_prospective, "F10": grade_f10_prospective,
                         "F11": grade_f11_prospective}
+# 草案适配器：Jun `rsi register experiments/registry/_draft_F13.json` 后，把 F13 加进
+# PROSPECTIVE_ADAPTERS 与 rsi_loop.GRADED_EXPERIMENTS（适配器名须与登记实验一一对应）。
+DRAFT_ADAPTERS = {"F13": grade_f13_prospective}

@@ -1,0 +1,29 @@
+{
+ "exp_id": "F13",
+ "claim": "研究给锚方写了完整崩塌叙事（锚方完整度 FAIL + 更衣室/换帅无方向旗或 crash_markers）并把 belief 拨离锚方 ≥1.5pp 的场次，锚方实开率不低于市场隐含（画像③：崩塌故事越完整越不崩）。",
+ "mechanism": "26122 画像③立；2026-09-28 意大利（更衣室旗+砍 10 人+首秀被嘘+0-2 → 客场 1-4）、同夜罗马尼亚-波黑重演，n=3 同向、零前瞻。若成立：崩塌叙事只授权保险，不授权反向拨动；若证伪：叙事可作方向证据。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "deep_research",
+ "window": {
+  "date_from": "2026-10-01",
+  "n_min": 40
+ },
+ "falsifier": {
+  "metric": "anchor_resid_collapse_narrative_pp",
+  "stratum": "pooled",
+  "n_min": 40,
+  "bound": "ci_upper",
+  "threshold_pp": 0.0,
+  "direction": "lt_means_falsified"
+ },
+ "stop_rule": "累计 40 场结账；锚方残差 CI 上界 < 0 即证伪（叙事完整的锚方确实更常崩）；CI 下界 > 0 则画像③成立，崩塌叙事禁作反向拨动证据。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [
+  "collapse_narrative_not_collapsing"
+ ],
+ "source_doc": ".nutmeg-data/scoreboard.json chains/collapse_narrative_not_collapsing",
+ "registered_at": null
+}
