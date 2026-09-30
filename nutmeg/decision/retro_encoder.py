@@ -24,6 +24,11 @@ CODE_OF = {"home": "3", "draw": "1", "away": "0"}
 HUMAN_FIELDS = ("key", "board", "note", "judgment", "rx")
 
 
+def jczq_key(date: str) -> str:
+    """记分牌里竞彩日的键沿用 `jczq-20260926` 写法（无横杠）。"""
+    return f"jczq-{date.replace('-', '')}"
+
+
 def _read_json(path: Path, default=None):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -147,9 +152,9 @@ def encode_jczq_day(data_dir: Path, date: str, *, scoreboard_path: Path | None =
         "net": round(sum(r["payout"] for r in settled) - sum(r["stake"] for r in settled), 2),
         "encoded_at": now or "",
     }
-    _merge(sb.setdefault("tickets", {}), f"jczq-{date}", facts)
+    _merge(sb.setdefault("tickets", {}), jczq_key(date), facts)
     brier = board_brier(data_dir, date, results)
-    _merge(sb.setdefault("balance_ledger", {}), f"jczq-{date}",
+    _merge(sb.setdefault("balance_ledger", {}), jczq_key(date),
            {k: v for k, v in brier.items() if k != "per_match"} | {"encoded_at": now or ""})
     sb["updated_at"] = now or sb.get("updated_at")
     path.write_text(json.dumps(sb, ensure_ascii=False, indent=1), encoding="utf-8")

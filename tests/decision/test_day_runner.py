@@ -203,4 +203,4 @@ def test_settle_job_encodes_yesterdays_board_into_the_scoreboard(tmp_path: Path)
     rec = run_job(ctx, "settle")
     assert "复盘编码 jczq-2026-09-22：0 票" in rec.summary and "1 场" in rec.summary
     sb = json.loads((ctx.data_dir / "scoreboard.json").read_text(encoding="utf-8"))
-    assert sb["balance_ledger"]["jczq-2026-09-22"]["n_matches"] == 1
+    assert sb["balance_ledger"]["jczq-20260922"]["n_matches"] == 1

@@ -9,6 +9,7 @@ from nutmeg.decision.retro_encoder import (
 )
 
 DAY = "2026-09-28"
+KEY = "jczq-20260928"
 
 
 def _write(path: Path, doc) -> None:
@@ -48,7 +49,7 @@ def _fixture(tmp_path: Path) -> Path:
          "combo_sizes": [2], "purchased": False, "legs": []},
     ]) + "\n")
     _write(data / "scoreboard.json", {
-        "tickets": {f"jczq-{DAY}": {"key": "人写的判断，不许被覆盖", "stake": 999}},
+        "tickets": {KEY: {"key": "人写的判断，不许被覆盖", "stake": 999}},
         "balance_ledger": {}, "updated_at": "old",
     })
     return data
@@ -59,21 +60,21 @@ def test_encode_jczq_day_writes_facts_and_keeps_human_fields(tmp_path: Path):
     summary = encode_jczq_day(data, DAY, now="2026-09-29T09:45:00+08:00")
     assert summary["slips"] == 2 and summary["n_matches"] == 2
     sb = json.loads((data / "scoreboard.json").read_text(encoding="utf-8"))
-    ticket = sb["tickets"][f"jczq-{DAY}"]
+    ticket = sb["tickets"][KEY]
     assert ticket["key"] == "人写的判断，不许被覆盖"
     assert ticket["draw"] == "0 3" and ticket["stake"] == 50 + 20
     by_id = {row["id"]: row for row in ticket["slips"]}
     assert by_id["J4"]["dead_legs"] == ["周一004"] and by_id["J4"]["payout"] == 0
     assert by_id["J9"]["pending_legs"] == ["周一009"] and by_id["J9"]["payout"] is None
     assert ticket["payout"] == 0 and ticket["net"] == -50          # 未结票不进净值
-    ledger = sb["balance_ledger"][f"jczq-{DAY}"]
+    ledger = sb["balance_ledger"][KEY]
     assert ledger["n_matches"] == 2 and ledger["n_deep"] == 2 and ledger["n_moved_final"] == 1
     assert ledger["market_brier"] < ledger["final_brier"] < ledger["research_brier"]
     assert "per_match" not in ledger and sb["updated_at"] == "2026-09-29T09:45:00+08:00"
     again = encode_jczq_day(data, DAY, now="later")
     assert again == summary | {}  # 幂等：同输入同事实
     assert json.loads((data / "scoreboard.json").read_text(encoding="utf-8"))["tickets"][
-        f"jczq-{DAY}"]["key"] == "人写的判断，不许被覆盖"
+        KEY]["key"] == "人写的判断，不许被覆盖"
 
 
 def test_encode_returns_none_without_results_and_falls_back_to_jc_results(tmp_path: Path):
