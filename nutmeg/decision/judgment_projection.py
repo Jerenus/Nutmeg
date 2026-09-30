@@ -1,0 +1,136 @@
+"""判断唯一事实 P0（2026-10-01）：从内核投影一块板的 Read 列表，并与文件比对。
+
+投影规则：`board_key` 下每个 forecast_series 取 revision_no 最高的一条，它的 `judgment_json`
+就是那条 Read；竞彩按编号字典序、足彩按场号数值序排。比对以 match_id 对齐：read_id 不同
+但 prior/belief/stance/judge/档 相同算「同判断新版本号」（定时重建每次换后缀），不算分歧；
+这五个字段有一个不同才算分歧。一周（≥2026-10-08）分歧为零，P2 才把写路径搬进内核。
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from pathlib import Path
+
+REPORT = "judgment-projection.json"
+PROJECTED = "reads.projected.json"
+_KEYS = ("prior", "belief", "stance", "judge", "commitment_tier")
+
+
+def project_board(kernel, board_key: str) -> list[dict]:
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+
+    latest: dict[str, tuple[int, dict]] = {}
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        for row in uow.decision.iter_board_revisions(board_key):
+            if row.judgment is None:
+                continue
+            best = latest.get(row.forecast_series_id)
+            if best is None or row.revision_no > best[0]:
+                latest[row.forecast_series_id] = (row.revision_no, dict(row.judgment))
+    reads = [judgment for _, judgment in latest.values()]
+    if board_key.startswith("zucai:"):
+        return sorted(reads, key=lambda r: int(str(r.get("code") or 0)))
+    return sorted(reads, key=lambda r: str(r.get("code") or ""))
+
+
+def compare(projected: list[dict], file_reads: list[dict], *,
+            skip_match_ids: tuple[str, ...] | list[str] = ()) -> dict:
+    skip = set(skip_match_ids)
+    by_k = {r["match_id"]: r for r in projected if r.get("match_id")}
+    by_f = {r["match_id"]: r for r in file_reads
+            if r.get("match_id") and r["match_id"] not in skip}
+    identical: list[str] = []
+    same_judgment: list[dict] = []
+    mismatch: list[dict] = []
+    for mid in sorted(by_k.keys() & by_f.keys()):
+        k, f = by_k[mid], by_f[mid]
+        if k == f:
+            identical.append(mid)
+        elif all(k.get(key) == f.get(key) for key in _KEYS):
+            same_judgment.append({"match_id": mid, "code": f.get("code") or k.get("code"),
+                                  "kernel": k.get("read_id"), "file": f.get("read_id")})
+        else:
+            mismatch.append({
+                "match_id": mid, "code": f.get("code") or k.get("code"),
+                "kernel": {key: k.get(key) for key in _KEYS},
+                "file": {key: f.get(key) for key in _KEYS},
+            })
+    return {
+        "projected": len(projected), "file": len(by_f), "identical": len(identical),
+        "same_judgment_new_version": same_judgment, "mismatch": mismatch,
+        "only_in_kernel": sorted(by_k.keys() - by_f.keys()),
+        "only_in_file": sorted(by_f.keys() - by_k.keys()),
+        "skipped_mapped": sorted(skip),
+    }
+
+
+def summary_line(result: dict) -> str:
+    return (f"投影 {result['projected']} 条｜文件 {result['file']} 条｜一致 {result['identical']}"
+            f"｜同判断新版本 {len(result['same_judgment_new_version'])}"
+            f"｜分歧 {len(result['mismatch'])}｜仅内核 {len(result['only_in_kernel'])}"
+            f"｜仅文件 {len(result['only_in_file'])}")
+
+
+def write_report(directory: Path, *, projected: list[dict], result: dict, board_key: str,
+                 at: str, prefix: str = "") -> Path:
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{prefix}{PROJECTED}").write_text(
+        json.dumps(projected, ensure_ascii=False, indent=1), encoding="utf-8")
+    path = directory / f"{prefix}{REPORT}"
+    path.write_text(json.dumps({"board_key": board_key, "at": at, **result},
+                               ensure_ascii=False, indent=1), encoding="utf-8")
+    return path
+
+
+def _mapped_match_ids(zucai_dir: Path, issue: str) -> list[str]:
+    """已对到竞彩的足彩场次：同一场由竞彩那条 Read 进本体，足彩投影里不算缺失。"""
+    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
+        path = zucai_dir / name
+        if path.exists():
+            try:
+                return sorted(json.loads(path.read_text(encoding="utf-8")).keys())
+            except (OSError, ValueError):
+                return []
+    return []
+
+
+def _kernel(data_dir: Path):
+    from nutmeg.config.settings import AppSettings
+    from nutmeg.ontology import build_ontology_kernel
+
+    kernel = build_ontology_kernel(AppSettings(data_dir=Path(data_dir).resolve()))
+    kernel.initialize()
+    return kernel
+
+
+def run_projection(data_dir: Path, *, day: str | None = None, issue: str | None = None,
+                   kernel=None, at: str | None = None, write: bool = True) -> dict:
+    """一块板的投影 + 比对（+ 落报告）。`day` 走竞彩板，`issue` 走足彩期，二选一。"""
+    data_dir = Path(data_dir)
+    if bool(day) == bool(issue):
+        raise ValueError("--day 与 --issue 二选一")
+    if issue:
+        board_key = f"zucai:{issue}"
+        directory = data_dir / "zucai"
+        reads_path = directory / f"{issue}-reads.json"
+        prefix = f"{issue}-"
+        skip = _mapped_match_ids(directory, issue)
+    else:
+        board_key = f"jczq:{day}"
+        directory = data_dir / "jczq" / "daily" / str(day)
+        reads_path = directory / "reads.json"
+        prefix = ""
+        skip = []
+    active = kernel if kernel is not None else _kernel(data_dir)
+    projected = project_board(active, board_key)
+    try:
+        file_reads = json.loads(reads_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        file_reads = []
+    result = compare(projected, file_reads, skip_match_ids=skip)
+    stamp = at or datetime.now().astimezone().isoformat(timespec="seconds")
+    report = (write_report(directory, projected=projected, result=result, board_key=board_key,
+                           at=stamp, prefix=prefix) if write else None)
+    return {"board_key": board_key, "projected": projected, "result": result,
+            "report": report, "line": summary_line(result)}

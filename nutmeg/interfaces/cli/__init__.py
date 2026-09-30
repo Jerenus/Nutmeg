@@ -464,6 +464,7 @@ from nutmeg.interfaces.cli import betslip as betslip  # noqa: E402
 from nutmeg.interfaces.cli import day as day  # noqa: E402
 from nutmeg.interfaces.cli import decision as decision  # noqa: E402
 from nutmeg.interfaces.cli import discovery as discovery  # noqa: E402
+from nutmeg.interfaces.cli import judgment as judgment  # noqa: E402
 from nutmeg.interfaces.cli import migration as migration  # noqa: E402
 from nutmeg.interfaces.cli import notifications as notifications  # noqa: E402
 from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402
