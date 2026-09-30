@@ -195,8 +195,16 @@ def validate_stance(stance, *, confidence, death_three_proofs) -> tuple[dict, li
                 pp = int(e.get("pp"))
             except (TypeError, ValueError):
                 pp = -1
-            if not lo <= pp <= hi:
-                _add_error(issues, f"tilt.evidence.{i}", f"{tier} 的 pp {pp} 不在 [{lo},{hi}]")
+            if pp < 0:
+                _add_error(issues, f"tilt.evidence.{i}", "pp 必须是非负整数")
+            elif pp > hi:
+                # 格式问题不该废掉整份深研（周一001、26134-14 各因此被拒两次，2026-09-30）
+                normalized.append(f"tilt.evidence.{i} {tier} pp {pp}→{hi}（封顶到 [{lo},{hi}]）")
+                e["pp"] = pp = hi
+            elif pp < lo:
+                normalized.append(
+                    f"tilt.evidence.{i} {tier} pp {pp} 低于该层下限 {lo}，按写入值计（不拒收）"
+                )
             if tier == "will" and tface != "1":
                 _add_error(issues, f"tilt.evidence.{i}", "will（战意）只许朝平，tilt.face 必须是 1")
             if kind not in TILT_KIND_LEXICON:

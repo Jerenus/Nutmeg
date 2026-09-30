@@ -65,10 +65,12 @@ def test_validate_tilt_rules_tier_range_kind_lexicon_and_will_only_toward_draw()
         {"tier": "inferred", "kind": "made_up_kind", "pp": 1, "source": "x",
          "captured_at": "2026-09-23T10:00:00+08:00"},
     ]}
-    _, issues = validate_stance(_stance(why_not_market="tilt_evidence", tilt=tilt), confidence=3,
-                                death_three_proofs={})
+    norm, issues = validate_stance(_stance(why_not_market="tilt_evidence", tilt=tilt),
+                                   confidence=3, death_three_proofs={})
     msgs = [i.message for i in issues]
-    assert any("pp 9" in m and "official" in m for m in msgs)
+    # 2026-09-30：pp 超区间夹到上限并留痕，不再整份拒收（周一001/26134-14 各被拒两次）
+    assert not any("pp 9" in m for m in msgs)
+    assert any("official pp 9→8" in n for n in norm["normalized"])
     assert any("will" in m and "朝平" in m for m in msgs)
     assert any("made_up_kind" in m for m in msgs)
 

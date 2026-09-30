@@ -77,6 +77,11 @@ def render_brief(*, code: str, leg: dict, profile_notes: dict) -> str:
         f"让球线 {line}" if line is not None else "让球线 无",
         f"主队画像：{profile_notes.get('home') or '（无）'}",
         f"客队画像：{profile_notes.get('away') or '（无）'}",
+        # 前提核实（2026-09-30）：09-28 研究把巴雷拉写成「可用」、伊萨克写成「齐整」，
+        # 两条都能一次检索证伪——画像和名气都不是事实，主帅/名单/级别位次/欧战路径必须独立核实
+        "必须独立核实（画像未提供或与你查到的事实相悖时以你查到的为准）："
+        "现任主帅、本窗实际名单与官宣缺阵、联赛级别与位次、欧战/杯赛路径；"
+        "不要按球队名气默认主力齐整。画像里被你证伪的前提，在 summary 首句写「前提纠正：…」。",
         "只研究这一场；按输出契约只回 JSON。",
     ]
     return "\n".join(lines)
