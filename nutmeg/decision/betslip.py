@@ -346,7 +346,8 @@ def settle_slip(slip: BetSlip, results: dict[str, dict], *,
         faces_hit = all(v for v in status.values() if v is not None)
         if prize_per_note is not None and settled == len(slip.legs):
             combos_total = slip.notes
-            combos_won = slip.notes if faces_hit else 0
+            # 复式只有与开奖串完全一致的那一注中奖（2026-09-30：R9-324 曾被算成 162 注全中）
+            combos_won = 1 if faces_hit else 0
             payout = round(prize_per_note * combos_won * slip.multiplier, 2)
 
     pnl = None if payout is None else round(payout - slip.stake_yuan, 2)

@@ -192,6 +192,26 @@ def test_zucai_settlement_needs_official_prize():
     assert paid.payout_yuan == pytest.approx(14.0 * 1 * 50)
 
 
+def test_zucai_multi_selection_slip_wins_exactly_one_note_per_hit():
+    """复式票中奖只有一注（与开奖串完全一致的那注），不是全部注数。
+    26134-R9-324：162 注 9/9，官方任九 ¥217 → 派奖 ¥217，不是 ¥35,154。"""
+    faces = {"1": "310", "2": "310", "3": "310", "4": "310", "8": "31",
+             "9": "0", "11": "3", "12": "3", "13": "3"}
+    sel = {"3": ("home",), "1": ("draw",), "0": ("away",),
+           "310": ("home", "draw", "away"), "31": ("home", "draw")}
+    legs = [SlipLeg(key=k, market="had", selections=sel[f]) for k, f in faces.items()]
+    slip = BetSlip(slip_id="R9-324", channel="renjiu", placed_at="2026-09-28",
+                   legs=legs, faces=faces)
+    assert slip.notes == 162
+    outcome = {"1": "away", "2": "draw", "3": "away", "4": "draw", "8": "draw",
+               "9": "away", "11": "home", "12": "home", "13": "home"}
+    res = {k: {"outcome_90": o, "goals_h": 1, "goals_a": 0} for k, o in outcome.items()}
+    paid = settle_slip(slip, res, prize_per_note=217.0)
+    assert paid.combos_total == 162 and paid.combos_won == 1
+    assert paid.payout_yuan == pytest.approx(217.0)
+    assert paid.pnl_yuan == pytest.approx(217.0 - 324)
+
+
 # ── 登记簿 ──
 
 def test_register_is_idempotent_by_slip_id(tmp_path):
