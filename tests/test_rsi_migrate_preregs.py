@@ -68,7 +68,8 @@ def test_all_registry_docs_load_and_keep_their_original_registration_dates():
     assert docs["F1c"]["window"] == {"issue_from": "26129", "issue_to": "26140"}
     # 每份都指回旧文件
     for d in docs.values():
-        assert Path(d["source_doc"]).exists(), d["source_doc"]
+        # 原件冻结不改；source_doc 允许「文件 + 空格 + 片段」（F13/F14 指向 scoreboard 的键）
+        assert Path(d["source_doc"].split(" ")[0]).exists(), d["source_doc"]
     # F1c/F2 各带一条按日义务；结构专项接线后 F4 由资金方案 commit 产观察。
     assert [x["name"] for x in docs["F2"]["duties"]] == ["f2-observation"]
     assert [x["name"] for x in docs["F1c"]["duties"]] == ["dispersion-observation"]
