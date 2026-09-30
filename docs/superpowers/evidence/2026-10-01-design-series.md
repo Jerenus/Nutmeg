@@ -57,7 +57,15 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 - **S1 不是零风险**：operator_* 78 表上挂着 5 个 `actions` 表的 `BEFORE UPDATE` 触发器（引用 operator 表；SQLite 编译语句时检查触发器体，删表不删触发器＝每次 Action 提交炸）；三条活路径写它们——`decision-audit-legs --user-override`（写 `operator_ticket_audit_override_receipts` + `adjudications`，宪法的行权入账）、`workflow ingest-evidence/ingest-results`、Telegram bot 的 `confirm_ticket_placement/mark_ticket_shadow`（无 launchd，代码活）；备份校验（`reliability/backup.py` 数全部 metadata 表）与 `ontology guarded-init` 行数守卫会拒绝掉表；~20 个迁移测试断言这些表存在；`ProtectedTicketActions` 2,198 行连着 `telegram_ticket_confirmation` 服务与 bot handler。**这是一个专项工作日，不是夜里顺手的事。**
 - 其余「零调用」逐条核：`RsiActions.grade_experiment/record_verdict` 是活的（rsi loop 子进程调 CLI），`amend/approve_deployment` 是人用的 CLI；`DiscoveryWorldActions.record_node/record_failure` 是夜录活路径；`prepare_record_adjudication/prepare_register_prediction` 是 `workflow register-rx` 的活路径；`FactorActions` 是因子生死设计的一部分（analytics 测试在用）；`EntityActions.merge_entity`/`BudgetActions` 被 product/analytics 测试夹具用着；`TicketActions.record_cash_transaction` 名字被 Dream 契约哈希绑定。
 - **今晚真正可删的只有四处**：`ReplayActions`（kernel/wiring 挂着、无调用）+ `wiring.build_replay_action_service`；`OutcomeActions.correct_outcome`（赛果更正走 jc-results 回填重跑结算）；`WorkflowActions.record_flag_instance/link_precedent` 及两个 Request（Flag/Precedent 入账从未接线，记分牌是事实源）；`ClaimActions.verify/dispute/retract`（`sop_tasks.py`/`cli/decision.py`/`product/repository.py` 有字符串引用，要一并清）。迁移里的权限行留着无害。
-- **动作**：上述四处的删除脚本（`git rm` 两个文件 + 四个模块的定点删改 + 两个测试改写）在本会话被权限分类器拦下（删文件＝「修改共享资源」），**未执行，工作树干净**。Jun 明早一句「删」我再跑（约 20 分钟，跑 tests/ontology 验证）；operator_*/ProtectedTicketActions 专项另排日期，前置是把 `--user-override` 的入账改成只写 `adjudications`。
+- **动作**：上述四处的删除脚本首次被会话权限分类器拦下；Jun 02:05 明确「需要删除就直接删除」后执行，`ff5e8d7`：删 `ReplayActions` 模块与测试、`wiring.build_replay_action_service`、`kernel.replay_actions`；删 `OutcomeActions.correct_outcome`（`_write_outcome` 不再有 correcting 分支）；删 `WorkflowActions.record_flag_instance/link_precedent` 与两个 Request；删 `ClaimActions.verify/dispute/retract/_adjudicate` 与 `ClaimAdjudicationRequest`；四个测试改写/删除。表与权限行留着（空表无害）。tests/ontology + tests/analytics 全绿。**operator_*/ProtectedTicketActions 专项**另排日期：前置是把 `decision-audit-legs --user-override` 的入账改成只写 `adjudications`，再按上面的触发器/活路径/守卫/测试清单一次迁移。
+
+## 9. 收尾清点（2026-10-01 02:20）
+
+- **B3a/B4b 出生事故**：RUNBOOK 里剩下的两段事故全文迁进 `INCIDENTS.md`（`6acc34a`），格子只留指针。
+- **RSI sweep「命令成功但未登记」**：最近日志里只剩 F2/F1c（26134 首场跨午夜的期次日对不上，`_day_scoped_duty_day` 已修）与 R0（研究被格式检疫拒收 → 命令退出 0 但义务未履约 → 记 failed、下一小时重试，这是设计不是 bug）；F9 的「reads 尚未落盘」已不复现。不改码。
+- **`experiments/` 三个文件长期脏**（`attempts.log`/`corpus-v2.json`/`scoreboard-tallies.json` 由 rsi loop/语料采集写）：每次提交 pre-commit 都要 stash/还原它们，是 09-14 那次 `-A` 事故的温床。两条路给 Jun 选：① 10:45 loop 末尾自动 `git add` 这三个文件提交一次（实验产物有版本可追）；② 移出版本控制（`.gitignore`）只留在磁盘。我倾向 ①。
+- **仍待 Jun 裁的旧项**（不是今晚的）：CLV 收盘入库已死待裁；Dream 首个真实世界需 ≥2 场 had；26135 减半事前登记已在。
+- **第 2 条 P2–P4**：按 Jun「按实际情况处理」＝按 spec 自己的门槛——10-01→10-08 每天 `judgment-projection.json` 分歧为零再出 P2 计划；期间不动写路径。
 
 ## 6. 身份解析（2026-10-01 03:40 ✅）
 
