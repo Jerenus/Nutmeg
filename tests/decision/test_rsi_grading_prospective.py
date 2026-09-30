@@ -64,4 +64,5 @@ def test_f9_brier_delta_is_positive_when_belief_beats_market_and_zero_without_mo
 
 
 def test_adapter_registry_names_match_experiments():
-    assert set(PROSPECTIVE_ADAPTERS) == {"F3", "F5", "F9", "F10", "F11"}
+    # 2026-09-30：F13（崩塌叙事锚方）、F14（表态面集合命中率）登记并接入
+    assert set(PROSPECTIVE_ADAPTERS) == {"F3", "F5", "F9", "F10", "F11", "F13", "F14"}

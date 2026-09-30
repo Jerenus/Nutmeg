@@ -46,7 +46,8 @@ STEP_ORDER = (
     "scoreboard",
     "dream_compare",
 )
-GRADED_EXPERIMENTS = ("F2", "F3", "F4", "F5", "F9")
+# 有前瞻适配器的登记实验都进闭环（F10/F11 2026-09-27 登记后一直没被结账，2026-09-30 补入）
+GRADED_EXPERIMENTS = ("F2", "F3", "F4", "F5", "F9", "F10", "F11", "F13", "F14")
 NOT_DUE_MARKERS = ("未到期", "没有 prospective 档", "重放结果进不了判决")
 
 

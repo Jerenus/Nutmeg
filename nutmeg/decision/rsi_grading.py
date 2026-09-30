@@ -383,7 +383,7 @@ def _anchor_residual_grade(rows: Sequence[dict], *, computed_by: str) -> GradeRe
 
 
 def grade_f13_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
-    """F13 崩塌叙事完整的锚方（草案 2026-09-30，Jun 登记后生效）。
+    """F13 崩塌叙事完整的锚方（2026-09-30 登记）。
 
     窗内、锚方完整度 FAIL、带崩塌叙事（更衣室/换帅无方向旗或 crash_markers）、且 belief 把锚方
     拨低 ≥1.5pp 的行；指标 = 锚方实开 − 市场锚方概率（pp）。画像③：越完整越不崩 ⇒ 期望 ≥0。
@@ -410,8 +410,6 @@ def grade_f13_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
 PROSPECTIVE_ADAPTERS = {"F3": grade_f3_prospective, "F5": grade_f5_prospective,
                         "F9": grade_f9_prospective, "F10": grade_f10_prospective,
                         "F11": grade_f11_prospective}
-# 草案适配器：Jun `rsi register experiments/registry/_draft_F13.json` 后，把 F13 加进
-# PROSPECTIVE_ADAPTERS 与 rsi_loop.GRADED_EXPERIMENTS（适配器名须与登记实验一一对应）。
 def _stance_faces(labels: dict) -> set[str]:
     structure = str(labels.get("stance_structure") or "")
     face, cover = str(labels.get("stance_face") or ""), str(labels.get("stance_cover") or "")
@@ -424,7 +422,7 @@ def _stance_faces(labels: dict) -> set[str]:
 
 def grade_f14_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                           boots: int = 4000) -> GradeResult:
-    """F14 结构命中率（草案 2026-09-30，Jun 登记后生效）：深研表态面集合（single/double）
+    """F14 结构命中率（2026-09-30 登记）：深研表态面集合（single/double）
     命中 − 该集合的市场覆盖率 Σfair（pp）。09-28/29 表态面 16/16 对而拨动净负——
     结构判断是不是真的比价格准，要前瞻数。"""
     resid: list[float] = []
@@ -450,4 +448,4 @@ def grade_f14_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                        ci_high_pp=means[int(0.975 * boots) - 1], **kwargs)
 
 
-DRAFT_ADAPTERS = {"F13": grade_f13_prospective, "F14": grade_f14_prospective}
+PROSPECTIVE_ADAPTERS.update({"F13": grade_f13_prospective, "F14": grade_f14_prospective})

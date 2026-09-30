@@ -25,5 +25,6 @@
   "collapse_narrative_not_collapsing"
  ],
  "source_doc": ".nutmeg-data/scoreboard.json chains/collapse_narrative_not_collapsing",
- "registered_at": null
+ "registered_at": "2026-09-30",
+ "approval_note": "Jun 2026-09-30 聊天：「可以，都要完成」「可以，你帮我收尾」——登记动作由主循环代执行，决定人 Jun"
 }
