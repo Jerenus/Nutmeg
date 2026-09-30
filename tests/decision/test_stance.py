@@ -113,10 +113,30 @@ def test_apply_tilt_shift_moves_several_faces_and_keeps_the_sum():
 
 
 def test_apply_tilt_shift_is_capped_per_face_without_official_evidence():
-    tilt = {"shift": {"3": 14, "1": -7, "0": -7}, "expires_if": "", "evidence": [_ev(pp=2)]}
+    evidence = [_ev(tier="confirmed_structural", kind="absence_official", pp=6),
+                _ev(tier="confirmed_structural", kind="goalkeeper_change", pp=6), _ev(pp=2)]
+    tilt = {"shift": {"3": 14, "1": -7, "0": -7}, "expires_if": "", "evidence": evidence}
     r = apply_tilt(PRIOR, tilt)
-    assert r.applied_pp == 10 and "截断" in r.reason
+    assert r.applied_pp == 10 and "单面上限" in r.reason
     assert round(r.belief["home"], 4) == 0.62 and round(sum(r.belief.values()), 6) == 1.0
+
+
+def test_shift_peak_cannot_exceed_the_evidence_budget():
+    """Jun 2026-09-30：shift 是研究自由写的数字，峰值不得超过证据能支撑的 pp。"""
+    tilt = {"shift": {"3": 4, "1": -2, "0": -2}, "expires_if": "", "evidence": [_ev(pp=2)]}
+    r = apply_tilt(PRIOR, tilt)
+    assert r.applied_pp == 2 and "证据预算 2pp" in r.reason
+    assert round(r.belief["home"], 4) == 0.54
+
+
+def test_form_state_evidence_counts_at_most_one_pp():
+    """同组交叉/单场状态 每条最多 1pp：09-28 三处 form_state 拨动 2pp 全反。"""
+    state2 = _ev(tier="state", kind="form_state", pp=2)
+    r = apply_tilt(PRIOR, {"shift": {"3": 2, "1": -1, "0": -1}, "expires_if": "",
+                           "evidence": [state2]})
+    assert r.applied_pp == 1 and "证据预算 1pp" in r.reason
+    face_only = apply_tilt(PRIOR, {"face": "3", "expires_if": "", "evidence": [state2, _ev(pp=2)]})
+    assert face_only.applied_pp == 3  # 2pp 推断 + form_state 只计 1
 
 
 def test_validate_shift_must_sum_to_zero_and_use_the_strength_lexicon():

@@ -31,6 +31,17 @@ ZERO_BELOW_PP = 0
 归零让深研每期都『同意市场』，belief≡prior，判断力从未被表达也无从测量。"""
 CAP_WITH_OFFICIAL_PP = 15
 CAP_WITHOUT_OFFICIAL_PP = 10
+KIND_PP_CAP = {"form_state": 1}
+"""单场状态 / 同组交叉（form_state）每条最多计 1pp（Jun 2026-09-30）。
+出生事故：09-28 三处同组交叉拨动（004/005/足彩03）全反，09-29 012 冰岛再反——n=1 的 xG
+对比一场能挪 3pp。多面位移的峰值也不得超过证据预算（Σ 计入 pp），否则 shift 是自由写的数字。"""
+
+
+def _evidence_budget(evidence: list[dict]) -> int:
+    return sum(
+        min(int(e.get("pp") or 0), KIND_PP_CAP.get(str(e.get("kind")), int(e.get("pp") or 0)))
+        for e in evidence
+    )
 MIN_FALSIFIER_CHARS = 8
 _BJ = timezone(timedelta(hours=8))
 
@@ -217,7 +228,7 @@ def apply_tilt(prior: dict, tilt: dict | None, *, kickoff: str | None = None) ->
             continue
         kept.append(e)
         tiers.append(str(e.get("tier")))
-    net = sum(int(e.get("pp") or 0) for e in kept)
+    net = _evidence_budget(kept)
     if tilt.get("shift") is not None:
         return _apply_shift(prior, tilt["shift"], kept=kept, dropped=dropped, tiers=tiers)
     if net <= ZERO_BELOW_PP:
@@ -248,12 +259,20 @@ def _apply_shift(prior: dict, shift: dict, *, kept: list, dropped: int,
     values = {FACE_KEY[str(k)]: int(v) for k, v in shift.items()}
     peak = max(abs(v) for v in values.values())
     cap = CAP_WITH_OFFICIAL_PP if "official" in tiers else CAP_WITHOUT_OFFICIAL_PP
-    scale = min(1.0, cap / peak) if peak else 1.0
+    budget = _evidence_budget(kept)
+    limit = min(cap, budget)
+    scale = min(1.0, limit / peak) if peak else 1.0
     raw = {k: min(0.98, max(0.01, prior[k] + scale * values.get(k, 0) / 100)) for k in prior}
     total = sum(raw.values())
     belief = {k: v / total for k, v in raw.items()}
     applied = round(peak * scale)
+    if scale < 1 and budget < cap:
+        note = f"（证据预算 {budget}pp 截断自 {peak}pp）"
+    elif scale < 1:
+        note = f"（单面上限 {cap}pp 截断自 {peak}pp）"
+    else:
+        note = ""
     reason = "多面位移 " + " ".join(
         f"{d}{scale * values.get(FACE_KEY[d], 0):+.1f}" for d in FACES
-    ) + (f"（单面上限 {cap}pp 截断自 {peak}pp）" if scale < 1 else "")
+    ) + note
     return TiltResult(belief, applied, False, reason, tiers)

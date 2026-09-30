@@ -100,7 +100,15 @@ def betslip_register(
             combo_sizes=tuple(int(c) for c in combo.split(",")) if combo else (),
             issue=issue, scheme_no=scheme_no, purchased=not trial, note=note,
             faces=face_map)
+        # 登记即诊断（2026-09-30）：共享裸单与对照处方，只记录不阻断
+        from nutmeg.decision.betslip import load_slips
+        from nutmeg.decision.betslip_diagnosis import diagnose, peers, prescription_for
+
+        slip.diagnosis = diagnose(slip, peers(slip, load_slips(data_dir)),
+                                  prescription_for(slip, data_dir))
         _cli.typer.echo(register_slip(data_dir, slip))
+        for line in slip.diagnosis.get("lines", []):
+            _cli.typer.echo("   " + line)
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
 

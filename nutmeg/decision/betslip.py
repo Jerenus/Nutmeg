@@ -172,6 +172,7 @@ class BetSlip:
     purchased: bool = True                # False = 试玩虚拟方案（不进净值）
     note: str = ""
     faces: dict[str, str] = field(default_factory=dict)   # 足彩票面（渲染与结算用）
+    diagnosis: dict = field(default_factory=dict)         # 登记即诊断（共享裸单/对照处方，只记录）
 
     # -- 算术 ------------------------------------------------------------
     @property
@@ -244,6 +245,7 @@ class BetSlip:
             purchased=bool(payload.get("purchased", True)),
             note=str(payload.get("note", "")),
             faces=dict(payload.get("faces", {})),
+            diagnosis=dict(payload.get("diagnosis") or {}),
         )
 
 

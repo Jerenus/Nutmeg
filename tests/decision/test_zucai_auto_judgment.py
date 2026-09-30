@@ -43,7 +43,8 @@ def test_auto_judgment_transcribes_research_and_anchors_the_rest_to_market(tmp_p
 
     researched, bare = judgment["1"], judgment["2"]
     assert researched["action"] == "31" and researched["confidence"] == 3
-    assert round(researched["belief"]["home"], 4) == 0.52
+    # form_state 每条只计 1pp（2026-09-30）：shift +2 被证据预算压到 +1
+    assert round(researched["belief"]["home"], 4) == 0.51
     assert researched["adjustment_evidence_tiers"] == ["state"]
     assert researched["source"] == "research"
     assert bare["action"] == "310" and bare["belief"] == {"home": 0.5, "draw": 0.3, "away": 0.2}
