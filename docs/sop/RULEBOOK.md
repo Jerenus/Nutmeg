@@ -118,7 +118,7 @@
 |---|---|---|---|---|
 | **j-传导** | jczq 判读前必查同场足彩期判断；已记录机理必须继承或显式裁定冲突 | active | 7/29 波兹南 −¥210；26126 −¥672 | **C18/C18b（2026-09-17 入码）** |
 | **j-立场一致** | 同一场在两条泳道上的**立场**必须一致：足彩**全包或丢**＝「我对这场没有方向判断」→ 竞彩不得押方向玩法（had/hhad/hafu/crs）；足彩双选排掉的面，竞彩不得买回。**进球轴（ttg/bts）不受此条约束**——它不需要 90' 方向落在某一侧 | probation | 26126 实票四张全灭 −¥672：周二005 足彩买 `310` 全包而竞彩押方向，**一场杀 3/3 竞彩票**；周二008 足彩排客胜 18.5%（任九断在此）而竞彩买主胜，同一个判断错误跨渠道各杀一次。C15 只查足彩同期多票，**跨渠道此前无任何码覆盖** | `cross_channel_stance_conflict`(C18) / `cross_channel_excluded_face`(C18b)；身份映射必须人工显式给出（26122 fair 值反查抢错身份），未映射只报 INFO |
-| **g-scope** | league/team 因子必带 scope_key；画像读 store profile_notes | active | 校验强制 | Read 校验 |
+| **g-scope** | league/team 因子必带 scope_key；画像读 store profile_notes。**身份脊柱（2026-10-01）**：一场比赛只有一个 canonical 键＝内核 `match_id`；竞彩编号（`jczq/daily/<日>/jczq-legs-base.json`）、足彩场号（`<issue>-channel-map(.auto).json`）、titan007/500 id（`jc-results` 行内 `match_id`）都是它的别名，跨渠道/跨源对齐只走别名表，**任一环缺失=显式跳过，不按队名或 fair 值反查**（26122 反查抢错身份；af-map/API-Football 夜账路径已退役） | active | 校验强制 | Read 校验；`zucai-night-calibrate`、C18 跨渠道、ledger writeback |
 | **f-结构化** | Read 必须结构化 JSON；close/settle 收尾不可跳过 | active | 6/28 丢整日判定 | 流程 |
 | **零售信息** | 体彩 vs 国际两源翻转=真无方向全包；体彩零售独有面有独立信息 | probation | n=1（26109 场2 伊普斯✓） | — |
 | **ttg 形状锚缺失** | 无体彩板面的场次（法乙等）DC 只有固定 ρ 拟合，进球带与让球三路精度下降；legs 写 `ttg_shape_anchor:false`，该场进球轴结论**不与有锚场同权** | probation | 2026-09-11 立（26122 法乙五场无体彩对齐，而判读表把它们与有锚场并列） | `ttg_shape_degraded`(INFO) |

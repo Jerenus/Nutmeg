@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from nutmeg.decision.zucai_identity import build_af_map, build_store_ids, write_store_ids
+from nutmeg.decision.zucai_identity import build_store_ids, write_store_ids
 
 
 class _FakeIdentity:
@@ -100,13 +100,6 @@ def test_revision_prep_wins_over_afternoon(prep, monkeypatch):
     _patch(monkeypatch, {}, {})
     ids = build_store_ids("26122", prep, _FakeKernel())
     assert set(ids) == {"1"} and ids["1"]["name"] == "改过-对阵"
-
-
-def test_af_map_keeps_unmapped_visible(prep):
-    """af-map 缺映射必须缺着——夜账校准的既有纪律是显式跳过、禁按队名猜测补。"""
-    out = build_af_map("26122", prep, {"1": 1563166})
-    assert out["fixtures"] == {"1": 1563166}
-    assert out["unmapped"] == ["2"]
 
 
 def test_morning_only_prep_still_yields_store_ids(tmp_path, monkeypatch):

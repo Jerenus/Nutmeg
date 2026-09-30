@@ -4,8 +4,8 @@ from hashlib import sha256
 from typer.testing import CliRunner
 
 from nutmeg.decision.zucai_night import (
-    fetch_af_day,
-    load_af_map,
+    board_results,
+    load_channel_map,
     night_results,
     render_report,
     result_code,
@@ -17,53 +17,63 @@ from nutmeg.interfaces.cli import app
 
 
 def test_result_code_home_win():
-    assert result_code(4, 1) == "3"
+    assert result_code(2, 1) == "3"
 
 
 def test_result_code_draw():
-    assert result_code(1, 1) == "1"
+    assert result_code(0, 0) == "1"
 
 
 def test_result_code_away_win():
-    assert result_code(1, 2) == "0"
+    assert result_code(0, 3) == "0"
 
 
-def test_load_af_map(tmp_path):
-    (tmp_path / "26111-af-map.json").write_text(json.dumps(
-        {"issue": "26111", "fixtures": {"3": 1234501, "4": 1234502}}), "utf-8")
-    assert load_af_map(tmp_path, "26111") == {"3": 1234501, "4": 1234502}
+_MID = {"3": "match-aaa", "5": "match-bbb", "7": "match-ccc"}
 
 
-def test_load_af_map_missing_file_is_empty(tmp_path):
-    assert load_af_map(tmp_path, "26111") == {}
+def test_load_channel_map_prefers_manual_table_and_inverts(tmp_path):
+    (tmp_path / "26111-channel-map.auto.json").write_text(json.dumps(
+        {"match-aaa": "3", "match-zzz": "9"}), "utf-8")
+    (tmp_path / "26111-channel-map.json").write_text(json.dumps(
+        {"match-aaa": 3, "match-bbb": "5"}), "utf-8")
+    assert load_channel_map(tmp_path, "26111") == {"3": "match-aaa", "5": "match-bbb"}
 
 
-def _af_payload():
-    return {"response": [
-        {"fixture": {"id": 1234503, "status": {"short": "AET"}},
-         "teams": {"home": {"name": "Celje"}, "away": {"name": "Slovan Bratislava"}},
-         "score": {"fulltime": {"home": 1, "away": 1}}},
-        {"fixture": {"id": 1234501, "status": {"short": "FT"}},
-         "teams": {"home": {"name": "AEK Athens FC"}, "away": {"name": "Levski Sofia"}},
-         "score": {"fulltime": {"home": 4, "away": 0}}},
-    ]}
+def test_load_channel_map_falls_back_to_auto_then_empty(tmp_path):
+    assert load_channel_map(tmp_path, "26111") == {}
+    (tmp_path / "26111-channel-map.auto.json").write_text(json.dumps({"match-aaa": "3"}), "utf-8")
+    assert load_channel_map(tmp_path, "26111") == {"3": "match-aaa"}
 
 
-def test_fetch_af_day_uses_fulltime_and_status(monkeypatch):
-    monkeypatch.setenv("NUTMEG_API_FOOTBALL_BASE_URL", "https://af.example")
-    monkeypatch.setenv("NUTMEG_API_FOOTBALL_KEY", "k")
-    seen = {}
+def _data_dir(tmp_path):
+    data = tmp_path / "data"
+    day = data / "jczq" / "daily" / "2026-08-26"
+    day.mkdir(parents=True)
+    (data / "zucai").mkdir()
+    day.joinpath("jczq-legs-base.json").write_text(json.dumps({"legs": {
+        "周三001": {"match_id": "match-aaa", "home_team": "雅典", "away_team": "索斯基"},
+        "周三002": {"match_id": "match-bbb", "home_team": "采列", "away_team": "布拉迪"},
+        "周三003": {"match_id": "match-ccc", "home_team": "萨茨堡", "away_team": "布兰"},
+        "周三004": {"home_team": "无身份", "away_team": "队"},
+    }}), "utf-8")
+    (data / "jczq" / "jc-results.json").write_text(json.dumps({"2026-08-26": {
+        "周三001": {"ft_home": 4, "ft_away": 0},
+        "周三002": {"ft_home": 1, "ft_away": 1},          # 加时 2-1 不在 90' 口径里
+        "周三003": {"ft_home": None, "ft_away": None},    # 未完赛
+        "周三004": {"ft_home": 2, "ft_away": 0},
+    }}), "utf-8")
+    return data
 
-    def fake_fetcher(url, headers):
-        seen["url"], seen["headers"] = url, headers
-        return _af_payload()
 
-    fixtures = fetch_af_day("2026-08-26", fetcher=fake_fetcher)
-    assert seen["url"] == "https://af.example/fixtures?date=2026-08-26"
-    assert seen["headers"] == {"x-apisports-key": "k"}
-    assert fixtures[1234503] == {"status": "AET", "ft_home": 1, "ft_away": 1,
-                                 "home": "Celje", "away": "Slovan Bratislava"}
-    assert fixtures[1234501]["ft_home"] == 4
+def test_board_results_joins_legs_base_identity_with_jc_results(tmp_path):
+    data = _data_dir(tmp_path)
+    board = board_results(data, "2026-08-26")
+    assert board["match-aaa"] == {"code": "3", "ft": "4-0", "jc_code": "周三001",
+                                  "home": "雅典", "away": "索斯基"}
+    assert board["match-bbb"]["code"] == "1"
+    assert "match-ccc" not in board                       # 缺终场不进表
+    assert len(board) == 2                                # 无 match_id 的腿不猜身份
+    assert board_results(data, "2026-08-27") == {}
 
 
 _MATCHES = [
@@ -72,83 +82,74 @@ _MATCHES = [
     {"match_no": 7, "home_team": "萨茨堡", "away_team": "米亚尔"},
     {"match_no": 8, "home_team": "比尔森", "away_team": "红星"},
 ]
-_FIXTURES = {
-    1234501: {"status": "FT", "ft_home": 4, "ft_away": 0,
-              "home": "AEK Athens FC", "away": "Levski Sofia"},
-    1234503: {"status": "AET", "ft_home": 1, "ft_away": 1,
-              "home": "Celje", "away": "Slovan Bratislava"},
-    1234507: {"status": "NS", "ft_home": None, "ft_away": None,
-              "home": "Salzburg", "away": "Brann"},
+_BOARD = {
+    "match-aaa": {"code": "3", "ft": "4-0", "jc_code": "周三001", "home": "雅典", "away": "索斯基"},
+    "match-bbb": {"code": "1", "ft": "1-1", "jc_code": "周三002", "home": "采列", "away": "布拉迪"},
 }
 
 
 def test_night_results_codes_and_skips():
-    af_map = {"3": 1234501, "5": 1234503, "7": 1234507}
-    results, skipped = night_results(_MATCHES, af_map, _FIXTURES)
+    results, skipped = night_results(_MATCHES, _MID, _BOARD)
     assert results["3"]["code"] == "3" and results["3"]["ft"] == "4-0"
-    assert results["5"]["code"] == "1"          # AET 取 90' 1-1 = 平
-    assert "7" not in results                    # 未完赛
-    assert any("场7" in s and "NS" in s for s in skipped)
+    assert results["3"]["match_id"] == "match-aaa"
+    assert results["5"]["code"] == "1"
+    assert "7" not in results                    # 有身份、板面日无终场
+    assert any("场7" in s and "无终场" in s for s in skipped)
     assert any("场8" in s and "无映射" in s for s in skipped)
 
 
 def test_ticket_partial_status_alive_and_dead():
-    faces = {"3": "31", "4": "31", "5": "310", "7": "3"}
-    codes = {"3": "3", "4": "0", "5": "1"}      # 场7 未赛
-    st = ticket_partial_status(faces, codes)
-    assert st["dead"] == ["4"]                   # 双31 漏客胜
-    assert st["hit"] == ["3", "5"]
-    assert st["undecided"] == ["7"]
-    assert st["alive"] is False
+    codes = {"3": "3", "5": "1"}
+    alive = ticket_partial_status({"3": "31", "5": "310", "7": "3"}, codes)
+    assert alive == {"alive": True, "hit": ["3", "5"], "dead": [], "undecided": ["7"]}
+    dead = ticket_partial_status({"3": "0", "5": "1"}, codes)
+    assert dead["alive"] is False and dead["dead"] == ["3"] and dead["hit"] == ["5"]
 
 
 def test_ticket_partial_status_all_alive():
-    st = ticket_partial_status({"3": "31", "12": "31"}, {"3": "3", "12": "3"})
-    assert st["alive"] is True and st["dead"] == [] and st["undecided"] == []
+    st = ticket_partial_status({"3": "3"}, {"3": "3"})
+    assert st["alive"] and st["undecided"] == []
 
 
 def test_render_report_lines():
-    results = {"3": {"code": "3", "ft": "4-0", "home": "AEK Athens FC",
-                     "away": "Levski Sofia", "status": "FT"},
-               "5": {"code": "1", "ft": "1-1", "home": "Celje",
-                     "away": "Slovan Bratislava", "status": "AET"}}
-    tickets = [{"id": "R9", "faces": {"3": "31", "5": "310", "7": "3"}}]
-    text = render_report("26111", "2026-08-26", results, ["场8: af-map 无映射"], tickets)
-    assert "场3 AEK Athens FC vs Levski Sofia: 4-0(90') → 3" in text
-    assert "AET" in text                        # 加时场标注口径来源
-    assert "R9: 存活 | 已中 3,5 | 未决 7" in text
-    assert "场8: af-map 无映射" in text
+    results = {"3": {**_BOARD["match-aaa"], "match_id": "match-aaa"}}
+    report = render_report("26111", "2026-08-26", results, ["场8: channel-map 无映射"],
+                           [{"id": "R9", "faces": {"3": "31", "8": "3"}}])
+    assert report.splitlines()[0].startswith("== 26111 夜间校准 2026-08-26 (jc-results")
+    assert "场3 雅典 vs 索斯基: 4-0(90') → 3 [周三001]" in report
+    assert "R9: 存活 | 已中 3 | 未决 8" in report
+    assert report.splitlines()[-1] == "场8: channel-map 无映射"
 
 
-def test_run_night_calibrate_end_to_end(tmp_path, monkeypatch):
-    monkeypatch.setenv("NUTMEG_API_FOOTBALL_BASE_URL", "https://af.example")
-    monkeypatch.setenv("NUTMEG_API_FOOTBALL_KEY", "k")
-    (tmp_path / "26111-issue.json").write_text(json.dumps({"issue_id": "26111", "matches": [
+def test_run_night_calibrate_end_to_end(tmp_path):
+    data = _data_dir(tmp_path)
+    zucai = data / "zucai"
+    (zucai / "26111-issue.json").write_text(json.dumps({"issue_id": "26111", "matches": [
         {"match_no": 3, "home_team": "雅典", "away_team": "索斯基"},
-        {"match_no": 5, "home_team": "采列", "away_team": "布拉迪"}]}), "utf-8")
-    (tmp_path / "26111-af-map.json").write_text(json.dumps(
-        {"issue": "26111", "fixtures": {"3": 1234501, "5": 1234503}}), "utf-8")
-    (tmp_path / "26111-final-tickets.json").write_text(json.dumps({"issue": "26111", "tickets": [
-        {"id": "R9", "kind": "任九", "faces": {"3": "31", "5": "310"}}]}), "utf-8")
+        {"match_no": 5, "home_team": "采列", "away_team": "布拉迪"},
+        {"match_no": 7, "home_team": "萨茨堡", "away_team": "米亚尔"}]}), "utf-8")
+    (zucai / "26111-channel-map.json").write_text(json.dumps(
+        {"match-aaa": "3", "match-bbb": "5", "match-ccc": "7"}), "utf-8")
+    (zucai / "26111-final-tickets.json").write_text(json.dumps({"issue": "26111", "tickets": [
+        {"id": "R9", "kind": "任九", "faces": {"3": "31", "5": "310", "7": "3"}}]}), "utf-8")
 
-    report = run_night_calibrate("26111", "2026-08-26", tmp_path,
-                                 fetcher=lambda url, headers: _af_payload())
-    assert "R9: 存活" in report
-    snap = json.loads((tmp_path / "26111-night-2026-08-26-af.json").read_text("utf-8"))
-    assert snap["results"]["3"]["code"] == "3"
-    assert snap["source"].startswith("API-Football")
+    report = run_night_calibrate("26111", "2026-08-26", zucai)   # data_dir 默认 = zucai 的父目录
+    assert "R9: 存活 | 已中 3,5 | 未决 7" in report
+    assert "场7" in report and "无终场" in report
+    snap = json.loads((zucai / "26111-night-2026-08-26-jc.json").read_text("utf-8"))
+    assert snap["results"]["3"]["code"] == "3" and snap["results"]["5"]["jc_code"] == "周三002"
+    assert snap["source"].startswith("jczq/jc-results.json[2026-08-26]")
+    assert not list(zucai.glob("*-af.json"))
 
 
-def test_run_night_calibrate_no_tickets_file(tmp_path, monkeypatch):
-    monkeypatch.setenv("NUTMEG_API_FOOTBALL_BASE_URL", "https://af.example")
-    monkeypatch.setenv("NUTMEG_API_FOOTBALL_KEY", "k")
-    (tmp_path / "26111-issue.json").write_text(json.dumps({"issue_id": "26111", "matches": [
+def test_run_night_calibrate_no_tickets_file(tmp_path):
+    data = _data_dir(tmp_path)
+    zucai = data / "zucai"
+    (zucai / "26111-issue.json").write_text(json.dumps({"issue_id": "26111", "matches": [
         {"match_no": 3, "home_team": "雅典", "away_team": "索斯基"}]}), "utf-8")
-    (tmp_path / "26111-af-map.json").write_text(json.dumps(
-        {"issue": "26111", "fixtures": {"3": 1234501}}), "utf-8")
-    report = run_night_calibrate("26111", "2026-08-26", tmp_path,
-                                 fetcher=lambda url, headers: _af_payload())
-    assert "场3" in report            # 无票文件仍出彩果，不报错
+    (zucai / "26111-channel-map.auto.json").write_text(json.dumps({"match-aaa": "3"}), "utf-8")
+    report = run_night_calibrate("26111", "2026-08-26", zucai, data_dir=data)
+    assert "场3" in report and "→ 3" in report      # 无票文件仍出彩果，不报错
 
 
 class _NotificationOutcome:

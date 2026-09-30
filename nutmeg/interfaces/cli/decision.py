@@ -1278,12 +1278,12 @@ def zucai_night_calibrate(
     issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26111"),
     date: str = _cli.typer.Option(
         ..., "--date",
-        help="欧洲比赛日 YYYY-MM-DD(API-Football date 口径,北京凌晨场取前一天)"),
+        help="竞彩板面日 YYYY-MM-DD(jc-results 的键;北京凌晨场归前一天板面)"),
     zucai_dir: Path = _ZUCAI_DIR_OPTION,
     dispatch_telegram: bool = _cli.typer.Option(False, "--dispatch-telegram"),
     dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run"),
 ):
-    """夜间结果校准:抓当日完赛→90'彩果→票面存活报告(不写 rx/scoreboard)。"""
+    """夜间结果校准:板面日 jc-results→身份链→90'彩果→票面存活(不写 rx/scoreboard)。"""
     import hashlib
 
     from nutmeg.notifications.models import NotificationRequest
