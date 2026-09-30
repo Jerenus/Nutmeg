@@ -187,3 +187,20 @@ def test_dream_job_plans_the_nightly_subprocess_it_runs(tmp_path: Path):
         "uv", "run", "nutmeg", "discovery", "nightly", "--day", "2026-09-23",
         "--jczq-dir", str(ctx.data_dir / "jczq"),
     ]]
+
+
+def test_settle_job_encodes_yesterdays_board_into_the_scoreboard(tmp_path: Path):
+    ctx = _ctx(tmp_path, [])
+    (ctx.out_dir / RESULTS_90).parent.mkdir(parents=True, exist_ok=True)
+    (ctx.out_dir / RESULTS_90).write_text(
+        json.dumps({"周一004": {"outcome_90": "0", "goals_h": 1, "goals_a": 4}}), encoding="utf-8")
+    reads = ctx.data_dir / "jczq" / "daily" / "2026-09-22" / "reads.json"
+    reads.parent.mkdir(parents=True, exist_ok=True)
+    reads.write_text(json.dumps([{
+        "note": "[周一004|土耳其-意大利|deep_research] …", "judgment_tier": "deep_research",
+        "prior": {"home": 0.357, "draw": 0.270, "away": 0.373},
+        "belief": {"home": 0.377, "draw": 0.280, "away": 0.343}}]), encoding="utf-8")
+    rec = run_job(ctx, "settle")
+    assert "复盘编码 jczq-2026-09-22：0 票" in rec.summary and "1 场" in rec.summary
+    sb = json.loads((ctx.data_dir / "scoreboard.json").read_text(encoding="utf-8"))
+    assert sb["balance_ledger"]["jczq-2026-09-22"]["n_matches"] == 1

@@ -112,7 +112,7 @@ out 与 err 各自追加，launchd 与 OpenClaw 各管一半链路。状态页�
 
 ## 收尾检查表（每期）
 
-- [ ] scoreboard.json 更新（连锁/牌照/保险兑现/裁决记分）
+- [ ] scoreboard.json 更新（连锁/牌照/保险兑现/裁决记分）——**事实部分由复盘编码器写**：竞彩随 09:45 `day.settle` 自动（`tickets/jczq-<日>` 断腿/注金/派奖、`balance_ledger/jczq-<日>` 市场/研究/终判 Brier）；足彩开奖后 `uv run nutmeg retro encode --issue <期> --prize-per-note <官方单注>`（`key`/`board`/`note` 人写字段不会被覆盖）
 - [ ] rx 每条预测标 outcome（✓/✗/NA+falsifier 执行）
 - [ ] 被取代的记忆条目标记/归档
 - [ ] 新联赛上线三步：别名表→实体种子（name_zh 精确=leagueAbbName）→sync+audit

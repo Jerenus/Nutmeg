@@ -86,6 +86,21 @@ def _run_commands(ctx: DayContext, cmds: list[list[str]]) -> tuple[list[dict], i
     return rows, exit_code
 
 
+def _encode_retro(ctx: DayContext) -> str:
+    """复盘编码器（2026-09-30）：昨天板面的实票与判断记分进 scoreboard；无赛果只留痕。"""
+    from nutmeg.decision.retro_encoder import encode_jczq_day
+
+    day = _yesterday(ctx.date)
+    try:
+        out = encode_jczq_day(ctx.data_dir, day, now=ctx.now().isoformat(timespec="seconds"))
+    except Exception as exc:  # noqa: BLE001 — 只留痕不抛
+        return f"｜复盘编码失败 {exc!r}"[:200]
+    if out is None:
+        return f"｜复盘编码 jczq-{day}：无赛果"
+    return (f"｜复盘编码 jczq-{day}：{out['slips']} 票 净 {out['net']}，{out['n_matches']} 场 "
+            f"Brier 市场 {out['market_brier']} / 终判 {out['final_brier']}")
+
+
 def _brief_pipeline(ctx: DayContext, with_logic: bool = False) -> str:
     brief = compile_brief(data_dir=ctx.data_dir, date=ctx.date, root=ctx.root, now=ctx.now())
     if with_logic:
@@ -142,6 +157,7 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
             commands, exit_code = _run_commands(ctx, planned_commands(ctx, "settle"))
             failed = [" ".join(c["cmd"].split(" ")[1:3]) for c in commands if c["exit"] != 0]
             summary = "settle 完成" if not failed else "失败: " + ", ".join(failed)
+            summary += _encode_retro(ctx)
             evidence = str(retro) if retro.exists() else None
     elif job == "brief":
         try:
