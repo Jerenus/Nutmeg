@@ -7,9 +7,7 @@ from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.actions.workflow_actions import (
     CreateAgentProposalRequest,
-    LinkPrecedentRequest,
     RecordAdjudicationRequest,
-    RecordFlagInstanceRequest,
     RegisterPredictionRequest,
     ResolveAgentProposalRequest,
     WorkflowActions,
@@ -259,24 +257,10 @@ def test_stale_proposal_resolution_is_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_flag_prediction_and_precedent_are_typed_and_governed(tmp_path: Path) -> None:
+def test_prediction_is_typed_and_governed(tmp_path: Path) -> None:
+    """flag/precedent 入账 2026-10-01 随内核瘦身退役（记分牌是唯一事实源）；预测登记仍是活路径。"""
     workflow, engine = _setup(tmp_path)
 
-    flag = workflow.record_flag_instance(
-        RecordFlagInstanceRequest(
-            flag_type="lineup_uncertainty",
-            match_id="match-1",
-            direction="away",
-            strength=0.7,
-            evidence_refs=[{"object_type": "observation", "object_id": "obs-1"}],
-            predicted_face="away_shortens",
-            status="active",
-            actor_id="system:rules",
-            actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-            idempotency_key="flag:1",
-            requested_at=AT,
-        )
-    )
     prediction = workflow.register_prediction(
         RegisterPredictionRequest(
             match_id="match-1",
@@ -290,62 +274,9 @@ def test_flag_prediction_and_precedent_are_typed_and_governed(tmp_path: Path) ->
             requested_at=AT,
         )
     )
-    precedent = workflow.link_precedent(
-        LinkPrecedentRequest(
-            subject_type="match",
-            subject_id="match-1",
-            precedent_match_id="match-precedent",
-            scope="same_competition",
-            evidence_refs=[{"object_type": "claim", "object_id": "claim-9"}],
-            actor_id="operator:owner",
-            actor_role=ActorRole.JUDGE_OPERATOR,
-            idempotency_key="precedent:1",
-            requested_at=AT,
-        )
-    )
 
-    assert {flag.status, prediction.status, precedent.status} == {
-        ActionStatus.COMMITTED
-    }
+    assert prediction.status is ActionStatus.COMMITTED
     with OntologyUnitOfWork(engine) as uow:
-        assert uow.workflow.get_flag_instance(flag.result_refs[0].object_id).strength == 0.7
-        prediction_row = uow.workflow.get_prediction(
-            prediction.result_refs[0].object_id
-        )
+        prediction_row = uow.workflow.get_prediction(prediction.result_refs[0].object_id)
         assert prediction_row.status is PredictionStatus.PENDING
         assert prediction_row.outcome is None
-        assert (
-            uow.workflow.get_precedent_link(precedent.result_refs[0].object_id).scope
-            == "same_competition"
-        )
-
-    denied_flag = workflow.record_flag_instance(
-        RecordFlagInstanceRequest(
-            flag_type="manual_note",
-            match_id="match-1",
-            direction=None,
-            strength=0.2,
-            evidence_refs=[],
-            predicted_face=None,
-            status="active",
-            actor_id="model:analyst",
-            actor_role=ActorRole.AI_ANALYST,
-            idempotency_key="flag:denied",
-            requested_at=AT,
-        )
-    )
-    denied_precedent = workflow.link_precedent(
-        LinkPrecedentRequest(
-            subject_type="match",
-            subject_id="match-1",
-            precedent_match_id="match-precedent",
-            scope="same_shape",
-            evidence_refs=[],
-            actor_id="model:analyst",
-            actor_role=ActorRole.AI_ANALYST,
-            idempotency_key="precedent:denied",
-            requested_at=AT,
-        )
-    )
-    assert denied_flag.status is ActionStatus.REJECTED
-    assert denied_precedent.status is ActionStatus.REJECTED

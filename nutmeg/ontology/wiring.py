@@ -27,10 +27,9 @@ from nutmeg.ontology.actions.outcome_actions import OutcomeActions
 from nutmeg.ontology.actions.person_actions import PersonActions
 from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
 from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
-from nutmeg.ontology.actions.replay_actions import ReplayActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
-from nutmeg.ontology.actions.service import ActionService, ReplayActionContext
+from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.actions.session_actions import SessionActions
 from nutmeg.ontology.actions.ticket_actions import TicketActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
@@ -101,7 +100,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     workflow = WorkflowActions(action_service)
     scoreboard_actions = ScoreboardActions(action_service)
     reliability_actions = ReliabilityActions(action_service)
-    replay_actions = ReplayActions(action_service)
     rsi_actions = RsiActions(action_service)
     discovery_world_actions = DiscoveryWorldActions(action_service)
     discovery_policy_actions = DiscoveryPolicyActions(action_service)
@@ -145,7 +143,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         protected_tickets=protected_tickets,
         scoreboard_actions=scoreboard_actions,
         reliability_actions=reliability_actions,
-        replay_actions=replay_actions,
         rsi_actions=rsi_actions,
         discovery_world_actions=discovery_world_actions,
         discovery_policy_actions=discovery_policy_actions,
@@ -157,16 +154,4 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         decision_actions=decision_actions,
         result_actions=result_actions,
         review_actions=review_actions,
-    )
-
-
-def build_replay_action_service(
-    settings: AppSettings,
-    context: ReplayActionContext,
-) -> ActionService:
-    """Build an Action service explicitly bound to one isolated replay run."""
-    engine = build_ontology_engine(settings.ontology_db_path)
-    return ActionService(
-        lambda: OntologyUnitOfWork(engine),
-        replay_context=context,
     )

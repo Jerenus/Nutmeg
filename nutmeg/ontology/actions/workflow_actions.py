@@ -15,8 +15,6 @@ from nutmeg.ontology.actions.service import ActionBatchItem, ActionService
 from nutmeg.ontology.workflow.models import (
     AdjudicationRow,
     AgentProposalRow,
-    FlagInstanceRow,
-    PrecedentLinkRow,
     PredictionRow,
     PredictionStatus,
     ProposalStatus,
@@ -76,24 +74,6 @@ def insert_adjudication_in_uow(
 
 
 @dataclass(frozen=True, slots=True)
-class RecordFlagInstanceRequest:
-    flag_type: str
-    match_id: str
-    direction: str | None
-    strength: float
-    evidence_refs: list[dict[str, str]]
-    predicted_face: str | None
-    status: str
-    actor_id: str
-    actor_role: ActorRole
-    idempotency_key: str
-    requested_at: datetime
-
-    def __post_init__(self) -> None:
-        _require_aware(self.requested_at)
-
-
-@dataclass(frozen=True, slots=True)
 class RegisterPredictionRequest:
     match_id: str | None
     subject_type: str
@@ -138,22 +118,6 @@ class GradePredictionRequest:
             raise ValueError('outcome must be hit, miss, or na')
         if not self.reason.strip():
             raise ValueError('grade reason is required')
-
-
-@dataclass(frozen=True, slots=True)
-class LinkPrecedentRequest:
-    subject_type: str
-    subject_id: str
-    precedent_match_id: str
-    scope: str
-    evidence_refs: list[dict[str, str]]
-    actor_id: str
-    actor_role: ActorRole
-    idempotency_key: str
-    requested_at: datetime
-
-    def __post_init__(self) -> None:
-        _require_aware(self.requested_at)
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,42 +194,6 @@ class WorkflowActions:
 
         return command, handler
 
-    def record_flag_instance(
-        self, request: RecordFlagInstanceRequest
-    ) -> ActionOutcome:
-        command = self._command(
-            'record_flag_instance',
-            request,
-            {
-                'flag_type': request.flag_type,
-                'match_id': request.match_id,
-                'direction': request.direction,
-                'strength': request.strength,
-                'evidence_refs': request.evidence_refs,
-                'predicted_face': request.predicted_face,
-                'status': request.status,
-            },
-        )
-
-        def handler(uow, _command) -> tuple[ObjectRef, ...]:
-            flag_instance_id = mint_workflow_id('flag')
-            uow.workflow.insert_flag_instance(
-                FlagInstanceRow(
-                    flag_instance_id=flag_instance_id,
-                    flag_type=request.flag_type,
-                    match_id=request.match_id,
-                    direction=request.direction,
-                    strength=request.strength,
-                    evidence_refs=list(request.evidence_refs),
-                    predicted_face=request.predicted_face,
-                    status=request.status,
-                    created_at=self._at(request),
-                )
-            )
-            return (ObjectRef('flag_instance', flag_instance_id),)
-
-        return self._action_service.execute(command, handler)
-
     def register_prediction(
         self, request: RegisterPredictionRequest
     ) -> ActionOutcome:
@@ -339,36 +267,6 @@ class WorkflowActions:
                 self._at(request),
             )
             return (ObjectRef('prediction', request.prediction_id),)
-
-        return self._action_service.execute(command, handler)
-
-    def link_precedent(self, request: LinkPrecedentRequest) -> ActionOutcome:
-        command = self._command(
-            'link_precedent',
-            request,
-            {
-                'subject_type': request.subject_type,
-                'subject_id': request.subject_id,
-                'precedent_match_id': request.precedent_match_id,
-                'scope': request.scope,
-                'evidence_refs': request.evidence_refs,
-            },
-        )
-
-        def handler(uow, _command) -> tuple[ObjectRef, ...]:
-            precedent_link_id = mint_workflow_id('precedent')
-            uow.workflow.insert_precedent_link(
-                PrecedentLinkRow(
-                    precedent_link_id=precedent_link_id,
-                    subject_type=request.subject_type,
-                    subject_id=request.subject_id,
-                    precedent_match_id=request.precedent_match_id,
-                    scope=request.scope,
-                    evidence_refs=list(request.evidence_refs),
-                    created_at=self._at(request),
-                )
-            )
-            return (ObjectRef('precedent_link', precedent_link_id),)
 
         return self._action_service.execute(command, handler)
 

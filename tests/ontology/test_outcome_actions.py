@@ -64,17 +64,16 @@ def _approve_home_ticket(svc: ActionService, fr_id: str) -> str:
     return next(r.object_id for r in approved.result_refs if r.object_type == "ticket")
 
 
-def test_record_and_correct_outcome(tmp_path: Path) -> None:
+def test_record_outcome_persists_the_90_minute_score(tmp_path: Path) -> None:
+    """correct_outcome 2026-10-01 随内核瘦身退役（赛果更正走 jc-results 回填重跑结算）。"""
     engine, svc, _fr = _setup(tmp_path)
     outcomes = OutcomeActions(svc)
     assert outcomes.record_outcome(_record("o:1", "2-1")).status is ActionStatus.COMMITTED
-    outcomes.correct_outcome(_record("o:2", "1-1"))
     with OntologyUnitOfWork(engine) as uow:
         current = uow.finance.current_outcome("match-1")
-        assert current.version == 2
-        assert current.score_90 == "1-1"
-        assert current.supersedes_outcome_id is not None
-        assert uow.finance.max_outcome_version("match-1") == 2   # both versions kept
+        assert current.version == 1
+        assert current.score_90 == "2-1"
+        assert current.supersedes_outcome_id is None
 
 
 def test_connector_record_rejected(tmp_path: Path) -> None:

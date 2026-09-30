@@ -92,9 +92,6 @@ class OutcomeActions:
     def record_outcome(self, request: RecordOutcomeRequest) -> ActionOutcome:
         return self._write_outcome(request, 'record_outcome', correcting=False)
 
-    def correct_outcome(self, request: RecordOutcomeRequest) -> ActionOutcome:
-        return self._write_outcome(request, 'correct_outcome', correcting=True)
-
     def _write_outcome(
         self, request: RecordOutcomeRequest, action_type: str, correcting: bool
     ) -> ActionOutcome:
@@ -109,11 +106,8 @@ class OutcomeActions:
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
             at = request.requested_at.astimezone(UTC).isoformat()
-            current = uow.finance.current_outcome(request.match_id)
-            if correcting and current is None:
-                raise ValueError('no outcome to correct')
             version = uow.finance.max_outcome_version(request.match_id) + 1
-            supersedes = current.outcome_id if correcting and current is not None else None
+            supersedes = None
             outcome_id = mint_finance_id('mo')
             uow.finance.insert_outcome(
                 OutcomeRow(

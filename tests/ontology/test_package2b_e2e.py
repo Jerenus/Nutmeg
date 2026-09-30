@@ -5,11 +5,10 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
 from nutmeg.ontology.actions.claim_actions import (
     ClaimActions,
-    ClaimAdjudicationRequest,
     EvidenceSpanInput,
     ExtractClaimRequest,
 )
-from nutmeg.ontology.actions.models import ActionStatus, ActorRole
+from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
@@ -46,20 +45,8 @@ def test_conflicting_claims_coexist_and_ai_cannot_verify(tmp_path: Path) -> None
         # both provisional claims coexist — no auto-overwrite
         assert len(uow.evidence.claims_for("person", "p")) == 2
 
-    # AI cannot verify its own claim
-    denied = claims.verify_claim(ClaimAdjudicationRequest(
-        claim_id=c_out, actor_id="model:x", actor_role=ActorRole.AI_EXTRACTOR,
-        idempotency_key="v:denied", requested_at=datetime(2026, 7, 19, 10, tzinfo=UTC)))
-    assert denied.status is ActionStatus.REJECTED
-
-    # operator verifies one; status trail is replayable, the other is untouched
-    ok = claims.verify_claim(ClaimAdjudicationRequest(
-        claim_id=c_out, actor_id="op:owner", actor_role=ActorRole.JUDGE_OPERATOR,
-        idempotency_key="v:ok", requested_at=datetime(2026, 7, 19, 10, tzinfo=UTC)))
-    assert ok.status is ActionStatus.COMMITTED
+    # 裁决动作（verify/dispute/retract）2026-10-01 随内核瘦身退役：两条 claim 都停在 provisional
     with OntologyUnitOfWork(kernel.engine) as uow:
-        assert uow.evidence.claim_status(c_out) == "verified"
-        assert uow.evidence.claim_status_history(c_out) == [
-            (None, "provisional"), ("provisional", "verified"),
-        ]
+        assert uow.evidence.claim_status(c_out) == "provisional"
+        assert uow.evidence.claim_status_history(c_out) == [(None, "provisional")]
         assert kernel.status().claim_count == 2
