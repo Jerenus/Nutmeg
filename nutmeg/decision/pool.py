@@ -95,11 +95,23 @@ def _day_issues(zucai_dir: Path, day: str) -> list[str]:
     return out
 
 
+def _project(project, summary_row: dict, **board) -> None:
+    """判断唯一事实 P0：刷新后把内核投影与文件比对一行写进摘要；比对是旁支，失败不挡刷新。"""
+    if project is None:
+        return
+    try:
+        summary_row["projection"] = project(**board)["line"]
+    except Exception as exc:  # noqa: BLE001
+        summary_row["projection_error"] = repr(exc)[:300]
+
+
 def refresh_day(*, day: str, data_dir: Path, made_at: str,
-                submit: Callable[[Path], tuple[int, str]]) -> dict:
+                submit: Callable[[Path], tuple[int, str]],
+                project: Callable[..., dict] | None = None) -> dict:
     """并集池刷新：竞彩入库+重建 Read、足彩表态转录 Read，再把未开球场次交本体。
 
     足彩里已对到竞彩的场次不交本体——同一场由竞彩那条 Read 进本体，不另建一条序列。
+    `project(day=…)` / `project(issue=…)` 给出时，每块板刷新后附一行内核 vs 文件比对。
     """
     from nutmeg.decision.jczq_reads import build_jczq_reads, intake_board
     from nutmeg.decision.kernel_submit import submit_unstarted
@@ -119,6 +131,7 @@ def refresh_day(*, day: str, data_dir: Path, made_at: str,
                                 state_path=day_dir / "kernel-submitted.json",
                                 now=made_at, submit=submit)
         summary["jczq"] = {"reads": len(reads), "submitted": len(sent)}
+        _project(project, summary["jczq"], day=day)
     zucai_dir = data_dir / "zucai"
     for issue in _day_issues(zucai_dir, day):
         reads = build_auto_reads(issue=issue, data_dir=data_dir, made_at=made_at)
@@ -135,6 +148,7 @@ def refresh_day(*, day: str, data_dir: Path, made_at: str,
                                 state_path=zucai_dir / f"{issue}-kernel-submitted.json",
                                 now=made_at, submit=submit)
         summary["zucai"][issue] = {"reads": len(reads), "submitted": len(sent)}
+        _project(project, summary["zucai"][issue], issue=issue)
     try:
         # 信号面板随每次刷新重写：人工裁决看的永远是最新一版（Jun 2026-09-27）
         from nutmeg.decision.signals import write_signals

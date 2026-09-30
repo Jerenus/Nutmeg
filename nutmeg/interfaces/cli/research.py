@@ -133,6 +133,7 @@ def run(
 
 
 def _refresh(day: str, data_dir: Path) -> None:
+    from nutmeg.decision.judgment_projection import run_projection
     from nutmeg.decision.pool import refresh_day
     from nutmeg.decision.rsi_wiring import _cli_invoke
 
@@ -141,11 +142,22 @@ def _refresh(day: str, data_dir: Path) -> None:
         data_dir=Path(data_dir),
         made_at=datetime.now().astimezone().isoformat(timespec="seconds"),
         submit=lambda path: _cli_invoke(["decision-read", "--reads-file", str(path)]),
+        # 判断唯一事实 P0：每次刷新后落内核 vs 文件比对（judgment-projection.json）
+        project=lambda **board: run_projection(Path(data_dir), **board),
     )
     jczq = summary["jczq"] or {"reads": 0, "submitted": 0}
     typer.echo(f"并集池刷新：竞彩 Read {jczq['reads']} 条（交本体 {jczq['submitted']}）")
+    _echo_projection(jczq, indent="  ")
     for issue, row in summary["zucai"].items():
         typer.echo(f"  足彩 {issue}：Read {row['reads']} 条（交本体 {row['submitted']}）")
+        _echo_projection(row, indent="    ")
+
+
+def _echo_projection(row: dict, *, indent: str) -> None:
+    if row.get("projection"):
+        typer.echo(f"{indent}投影比对：{row['projection']}")
+    if row.get("projection_error"):
+        typer.echo(f"{indent}⚠️投影比对失败（不影响刷新）：{row['projection_error']}")
 
 
 @research_app.command("refresh")
@@ -234,17 +246,21 @@ def override(
     tilt_json: str | None = typer.Option(None, "--tilt-json", help="新的 tilt JSON"),
     data_dir: Path = _DATA_DIR,
 ) -> None:
-    """主循环改判：记进 overrides.jsonl，研究原件不动（2026-09-27）。"""
+    """主循环改判：记进 overrides.jsonl，研究原件不动（2026-09-27）；记完立刻刷新，
+    改判随即成为内核里一条 kind=override 的新 revision（判断唯一事实 P1，2026-10-01）。"""
     from nutmeg.decision.overrides import record_override
 
     if market == (tilt_json is not None):
         raise typer.BadParameter("--market 与 --tilt-json 二选一")
+    refresh_for = day
     if "-" in code and code[:5].isdigit():
         issue, no = code.split("-", 1)
         zdir = Path(data_dir) / "zucai"
         path = zdir / f"{issue}-research-m{int(no)}.json"
         prior = json.loads((zdir / f"{issue}-store-ids.json").read_text("utf-8"))[
             str(int(no))]["fair"]
+        issue_doc = json.loads((zdir / f"{issue}-issue.json").read_text("utf-8"))
+        refresh_for = str(issue_doc.get("sale_deadline") or "")[:10] or day
     else:
         day_dir = Path(data_dir) / "jczq" / "daily" / day
         path = day_dir / f"research-{code}.json"
@@ -255,6 +271,7 @@ def override(
         at=datetime.now().astimezone().isoformat(timespec="seconds"),
         judge="claude-main-loop", prior=prior)
     typer.echo(f"已记改判 {code}：研究原判 {row['research_belief']} → 终判 {row['final_belief']}")
+    _refresh(refresh_for, data_dir)
 
 
 @research_app.command("verdict")

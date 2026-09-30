@@ -132,3 +132,30 @@ def test_r0_registry_doc_declares_a_per_match_duty():
     assert duty["scope"] == "match"
     assert duty["deadline_rule"] == "match_kickoff"
     assert "{day}" in " ".join(duty["instrument"])
+
+
+def test_override_records_the_ruling_and_refreshes_immediately(tmp_path, monkeypatch):
+    """判断唯一事实 P1：改判记账后立刻刷新，改判成为内核里的新 revision。"""
+    import nutmeg.interfaces.cli.research as mod
+
+    day_dir = tmp_path / "jczq" / "daily" / "2026-09-19"
+    day_dir.mkdir(parents=True)
+    (day_dir / "jczq-legs-base.json").write_text(json.dumps({"day": "2026-09-19", "legs": {
+        "周五001": {"match_id": "m-1", "name": "A-B", "kickoff_bj": "2026-09-20T03:00:00+08:00",
+                  "fair": {"home": 0.6, "draw": 0.25, "away": 0.15},
+                  "judgment_tier": "deep_research", "faces": "310"}}}), encoding="utf-8")
+    (day_dir / "research-周五001.json").write_text(json.dumps(
+        {"name": "A-B", "stance": {"face": "3", "tilt": {"shift": {"3": 3, "1": 0, "0": -3}}}}),
+        encoding="utf-8")
+    refreshed = []
+    monkeypatch.setattr(mod, "_refresh", lambda day, data_dir: refreshed.append((day, data_dir)))
+
+    result = CliRunner().invoke(app, [
+        "research", "override", "--day", "2026-09-19", "--code", "周五001", "--market",
+        "--note", "锚方证据不足，回到市场", "--data-dir", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    [row] = [json.loads(line) for line in
+             (day_dir / "overrides.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert row["tilt"] is None and row["note"] == "锚方证据不足，回到市场"
+    assert refreshed == [("2026-09-19", tmp_path)]
