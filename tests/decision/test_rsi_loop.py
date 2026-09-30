@@ -64,12 +64,13 @@ def test_run_loop_classifies_not_due_failed_and_collects_human_actions(tmp_path)
     assert report.failed_steps == ["team_strength"]
     assert by_name["grade_prospective"].status == "ok"
     assert report.proposals[0]["decision"] == "propose_zero"
-    assert any("draw_underpriced_band" in a for a in report.human_actions)
+    assert report.quiet_factors == ["draw_underpriced_band"]   # 建议 0、现值 0：不进待人清单
+    assert not any("draw_underpriced_band" in a for a in report.human_actions)
     assert any("团队" not in a and "步骤失败" in a for a in report.human_actions)
     out = ctx.out_dir
     assert (out / "2026-09-22.json").exists() and (out / "latest.md").exists()
     md = (out / "2026-09-22.md").read_text(encoding="utf-8")
-    assert "待人决定" in md and "propose_zero" in md
+    assert "待人决定" in md and "propose_zero" in md and "不需动作" in md
     assert "改权重、改规则、登记实验、部署全部由人执行" in md
     # never touched: no command edits factors.json / RULEBOOK / registry
     joined = "\n".join(" ".join(c) for c in log)

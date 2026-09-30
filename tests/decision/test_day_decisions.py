@@ -34,7 +34,7 @@ def test_build_decisions_lists_reads_plan_rsi_and_failures_with_deadlines(tmp_pa
         "id": "read:周三001", "kind": "approve_read",
         "subject": "周三001 A vs B（ai:jczq-analyst 草稿）",
         "deadline": "2026-09-23T19:30:00+08:00", "default_action": "草稿不入库＝跟市场",
-        "status": "open", "source": "reads.json",
+        "status": "open", "source": "reads.json", "auto_default": True,
     }
     assert by_id["read:周三002"]["status"] == "expired"
     assert "read:周三003" not in by_id

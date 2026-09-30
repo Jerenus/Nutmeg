@@ -62,6 +62,8 @@ def build_decisions(
             "deadline": m.get("kickoff_bj"), "default_action": "草稿不入库＝跟市场",
             "status": _status(m.get("kickoff_bj"), str(read.get("read_id")) in decided, now),
             "source": "reads.json",
+            # 默认动作就是合法结局：不算「等人」（2026-09-30 降噪，此前每天 12–18 项待人）
+            "auto_default": True,
         })
     z = brief.get("zucai") or {}
     if z.get("issue") and z.get("tiers") and z.get("plan") is None:

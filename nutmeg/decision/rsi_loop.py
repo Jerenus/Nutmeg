@@ -71,6 +71,7 @@ class LoopReport:
     human_actions: list[str]
     failed_steps: list[str]
     dream: dict = field(default_factory=dict)
+    quiet_factors: list[str] = field(default_factory=list)  # propose_zero 且现值已为 0：不需动作
 
     def to_dict(self) -> dict:
         return {
@@ -255,13 +256,17 @@ def _collect(
                     actions.append(
                         f"Dream 常设批准还剩 {left} 天到期（2026-10-31）→ 续期/撤销/改窗口由 Jun 裁"
                     )
+    quiet: list[str] = []
     for p in proposals:
+        if p["decision"] == "propose_zero" and not p["current_weight_pp"]:
+            quiet.append(p["factor_id"])  # 建议 0、现值 0：照着做什么都不会变（2026-09-30 降噪）
+            continue
         if p["decision"] in ("propose_change", "propose_zero"):
             actions.append(
                 f"因子 {p['factor_id']}：{p['decision']} → 建议 {p['proposed_weight_pp']}pp"
                 f"（现 {p['current_weight_pp']}pp，严格 n={p['strict_n']}）；改权重只许 rsi deploy"
             )
-    return proposals, grades, verdicts, actions, dream
+    return proposals, grades, verdicts, actions, dream, quiet
 
 
 def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
@@ -278,7 +283,7 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
             steps.append(StepResult(name, "skipped", 0.0, "skipped by --skip"))
             continue
         steps.append(_run_step(ctx, name, plan[name]))
-    proposals, grades, verdicts, actions, dream = _collect(steps)
+    proposals, grades, verdicts, actions, dream, quiet = _collect(steps)
     failed = [s.name for s in steps if s.status == "failed"]
     if failed:
         actions.append(f"步骤失败需人看：{', '.join(failed)}")
@@ -286,7 +291,7 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
         date=ctx.date, started_at=started,
         finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
         steps=steps, proposals=proposals, grades=grades, verdicts=verdicts,
-        human_actions=actions, failed_steps=failed, dream=dream,
+        human_actions=actions, failed_steps=failed, dream=dream, quiet_factors=quiet,
     )
     write_report(report, ctx.out_dir)
     return report
@@ -299,6 +304,11 @@ def render_markdown(report: LoopReport) -> str:
     lines += [f"- {a}" for a in report.human_actions] or [
         "- 无。所有提案为 hold / 只记录；判决未到期。"
     ]
+    if report.quiet_factors:
+        lines.append(
+            f"- （另有 {len(report.quiet_factors)} 个因子 propose_zero 且现值已为 0，不需动作："
+            f"{', '.join(report.quiet_factors)}）"
+        )
     lines += ["", "## 步骤", "", "| 步 | 状态 | 秒 | 摘要 |", "| --- | --- | --- | --- |"]
     lines += [f"| {s.name} | {s.status} | {s.seconds} | {s.summary[:160]} |" for s in report.steps]
     if report.grades:

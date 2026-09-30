@@ -116,7 +116,7 @@ def _brief_pipeline(ctx: DayContext, with_logic: bool = False) -> str:
     decisions = build_decisions(brief, timeline, data_dir=ctx.data_dir, now=ctx.now())
     write_decisions(ctx.data_dir, ctx.date, decisions)
     write_session(ctx.data_dir, ctx.date, render_session_md(brief, decisions, timeline))
-    n_open = sum(1 for d in decisions if d["status"] == "open")
+    n_open = sum(1 for d in decisions if d["status"] == "open" and not d.get("auto_default"))
     return (f"brief {brief['jczq']['counts']['matches']} 场 · 待人 {n_open} · "
             f"缺席输入 {len(brief['errors'])}")
 

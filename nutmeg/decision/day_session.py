@@ -33,11 +33,15 @@ def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) 
 
     lines += [_job_line(j, r) for j, r in seen.items()] or ["- 今日尚无作业记录"]
     lines += ["", "## 待人决定（从这里开始）", ""]
-    open_rows = [d for d in decisions if d.get("status") == "open"]
+    open_rows = [d for d in decisions if d.get("status") == "open" and not d.get("auto_default")]
+    auto_rows = [d for d in decisions if d.get("status") == "open" and d.get("auto_default")]
     lines += [
         f"- [{d['id']}] {d['subject']} · 截止 {_hm(d.get('deadline'))} · 默认 {d['default_action']}"
         for d in open_rows
     ] or ["- 无"]
+    if auto_rows:
+        lines.append(f"- （{len(auto_rows)} 条 Read 草稿按默认跟市场，不需动作；"
+                     "要改判在终端说「今天的方案」）")
     c = brief["jczq"]["counts"]
     lines += ["", f"## 竞彩 {c.get('matches', 0)} 场（深研 {c.get('deep_research', 0)}）", ""]
     for m in brief["jczq"]["matches"]:
