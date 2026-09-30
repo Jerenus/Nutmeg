@@ -446,6 +446,10 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
                     actor_role=actor_role,
                     idempotency_key=f"read:{read_id}",
                     requested_at=datetime.fromisoformat(payload["made_at"]),
+                    # 判断唯一事实 P0：整条 Read 随 revision 入库，文件成为投影
+                    kind=payload.get("kind"),
+                    board_key=payload.get("board_key"),
+                    judgment=payload,
                 )
             )
         except (ValueError, KeyError) as error:

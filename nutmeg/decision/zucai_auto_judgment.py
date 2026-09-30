@@ -139,10 +139,15 @@ def build_auto_reads(*, issue: str, data_dir: Path, made_at: str) -> list[dict]:
         judge=JUDGE, revision=revision,
     ).reads if rebuild else []
     by_match = dict(existing)
+    kinds = {"main_loop": "manual", "research": "research", "market_anchor": "market"}
     for read in fresh:
-        read["judgment_tier"] = judgment[
-            next(no for no in rebuild if store[no]["match_id"] == read["match_id"])
-        ]["source"]
+        no = next(no for no in rebuild if store[no]["match_id"] == read["match_id"])
+        source = judgment[no]["source"]
+        read["judgment_tier"] = source
+        # 判断唯一事实 P0：Read 自报板与种类，内核按 board_key 投影
+        read["code"] = str(no)
+        read["board_key"] = f"zucai:{issue}"
+        read["kind"] = kinds.get(source, source)
         by_match[read["match_id"]] = read
     order = [store[no]["match_id"] for no in sorted(store, key=int)]
     reads = [by_match[mid] for mid in order if mid in by_match]

@@ -341,3 +341,40 @@ def test_rebuild_before_kickoff_still_refreshes_the_read(tmp_path):
                                made_at="2026-09-19T21:00:00+08:00")
 
     assert after["read_id"] != before["read_id"]
+
+
+def test_reads_carry_kind_board_key_code_and_override_marks_kind(tmp_path):
+    """判断唯一事实 P0/P1：Read 自报 kind/board_key/code；有改判账即 kind=override。"""
+    from nutmeg.decision.overrides import record_override
+
+    root = _day(tmp_path)
+    day_dir = root / "daily" / "2026-09-19"
+    board = json.loads((day_dir / "jczq-legs-base.json").read_text(encoding="utf-8"))
+    board["legs"]["周五002"] = {
+        "match_id": "m-2", "name": "C-D", "competition": "x",
+        "kickoff_bj": "2026-09-20T03:00:00+08:00",
+        "fair": {"home": 0.4, "draw": 0.3, "away": 0.3}, "hhad_line": None,
+        "judgment_tier": "price_only", "faces": "310",
+    }
+    (day_dir / "jczq-legs-base.json").write_text(json.dumps(board), encoding="utf-8")
+    intake_board(day="2026-09-19", jczq_dir=root, write=True)
+
+    reads = build_jczq_reads(day="2026-09-19", jczq_dir=root,
+                             made_at="2026-09-19T14:00:00+08:00")
+
+    researched, market = reads
+    assert (researched["kind"], researched["board_key"], researched["code"]) == (
+        "research", "jczq:2026-09-19", "周五001")
+    assert researched["override"] is None
+    assert (market["kind"], market["code"]) == ("market", "周五002")
+
+    record_override(day_dir / "research-周五001.json", tilt=None, note="回到市场",
+                    at="2026-09-19T14:30:00+08:00", judge="claude-main-loop",
+                    prior={"home": 0.6, "draw": 0.25, "away": 0.15})
+    intake_board(day="2026-09-19", jczq_dir=root, write=True)
+    reads = build_jczq_reads(day="2026-09-19", jczq_dir=root,
+                             made_at="2026-09-19T14:31:00+08:00")
+
+    assert reads[0]["kind"] == "override"
+    assert reads[0]["override"] == {"at": "2026-09-19T14:30:00+08:00", "note": "回到市场",
+                                    "judge": "claude-main-loop"}

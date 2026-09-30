@@ -81,3 +81,16 @@ def test_auto_reads_keep_main_loop_and_started_reads(tmp_path):
     assert by_match["z-2"]["judge"] == "ai-pool"
     assert by_match["z-2"]["read_id"].endswith("-02-had-r1415")
     assert json.loads((zdir / "26133-reads.json").read_text(encoding="utf-8")) == reads
+
+
+def test_auto_reads_name_kind_board_key_and_code(tmp_path):
+    """判断唯一事实 P0：足彩 Read 自报 kind/board_key/code，内核按 board_key 投影。"""
+    zdir = _issue(tmp_path, n=2)
+    _research(zdir, 1)
+
+    reads = build_auto_reads(issue="26133", data_dir=tmp_path,
+                             made_at="2026-09-26T14:15:00+08:00")
+
+    by_no = {read["code"]: read for read in reads}
+    assert by_no["1"]["kind"] == "research" and by_no["2"]["kind"] == "market"
+    assert {read["board_key"] for read in reads} == {"zucai:26133"}

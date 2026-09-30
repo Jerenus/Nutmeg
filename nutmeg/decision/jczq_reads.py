@@ -111,10 +111,14 @@ def _rev(made_at: str) -> str:
 
 
 def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
+    from nutmeg.decision.overrides import load_overrides
+
     day_dir = Path(jczq_dir) / "daily" / day
     board = json.loads(
         (day_dir / "jczq-legs-base.json").read_text(encoding="utf-8")
     )
+    # 改判账：有一行就把这条 Read 标成 kind=override（判断唯一事实 P1：改判＝新 revision）
+    overrides = {row["research"]: row for row in load_overrides(day_dir)}
     reads_path = day_dir / "reads.json"
     previous_by_match = {
         read["match_id"]: read
@@ -187,10 +191,20 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
         judge = "ai:jczq-analyst" if researched else "market-anchor"
         read_source = "ai" if researched else "market-anchor"
         tier = "deep_research" if researched else "price_only"
+        override = overrides.get(f"research-{code}.json") if researched else None
         reads.append(
             {
                 "read_id": f"R-{read_source}-jczq-{day}-{code}-had-{_rev(made_at)}",
                 "match_id": leg["match_id"],
+                "code": code,
+                "board_key": f"jczq:{day}",
+                "kind": (
+                    "override" if override else ("research" if researched else "market")
+                ),
+                "override": (
+                    {key: override.get(key) for key in ("at", "note", "judge")}
+                    if override else None
+                ),
                 "snapshot_id": leg.get("snapshot_id"),
                 "made_at": made_at,
                 "judge": judge,

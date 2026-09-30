@@ -183,3 +183,27 @@ def test_read_v2_rejects_unmapped_market(tmp_path: Path) -> None:
     msg = run_decision_read_v2(reads_file, output_dir, kernel=kernel)
     assert "摄取 0/1" in msg and "rX:unmapped_market" in msg
     assert kernel.status().forecast_count == 0
+
+
+def test_read_v2_stores_the_whole_read_as_judgment_payload(tmp_path: Path) -> None:
+    """判断唯一事实 P0：revision 装下整条 Read（kind/board_key/judgment_json）。"""
+    kernel, match_id, output_dir = _kernel_with_match(tmp_path)
+    read = {
+        "read_id": "R-ai-jczq-2026-07-19-周日001-had-1500", "match_id": match_id,
+        "snapshot_id": None, "market": "had", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
+        "belief": {"home": 0.55, "draw": 0.3, "away": 0.15}, "factors": [],
+        "made_at": "2026-07-19T15:00:00+08:00", "judge": "ai:jczq-analyst", "status": "draft",
+        "code": "周日001", "board_key": "jczq:2026-07-19", "kind": "research",
+        "stance": {"face": "3", "structure": "single"},
+        "note": "[周日001|哈马比-AIK|deep_research]",
+    }
+    reads_file = output_dir / "reads-payload.json"
+    reads_file.write_text(json.dumps([read], ensure_ascii=False), encoding="utf-8")
+
+    msg = run_decision_read_v2(reads_file, output_dir, kernel=kernel)
+
+    assert "摄取 1/1" in msg
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        [row] = list(uow.decision.iter_board_revisions("jczq:2026-07-19"))
+    assert row.kind == "research" and row.judgment == read
+    assert row.belief_distribution == read["belief"]
