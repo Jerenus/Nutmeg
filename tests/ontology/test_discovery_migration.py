@@ -35,7 +35,7 @@ EXPECTED_TABLES = {
 def test_migration_40_creates_discovery_tables_and_permissions(tmp_path):
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine)
-    assert migration_status(engine).current_version == 46
+    assert migration_status(engine).current_version == 47
     assert EXPECTED_TABLES <= set(inspect(engine).get_table_names())
     with engine.connect() as connection:
         rows = connection.exec_driver_sql(

@@ -51,6 +51,9 @@ class DraftForecastRequest:
     requested_at: datetime
     information_cutoff_at: str | None = None
     expected_current_revision_no: int | None = None
+    kind: str | None = None          # research|override|market|manual（schema 47）
+    board_key: str | None = None     # jczq:<日> | zucai:<期>
+    judgment: dict | None = None     # 整条 Read；不进 payload（备注抖动不该撞幂等）
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +74,9 @@ class CommitForecastRequest:
     requested_at: datetime
     information_cutoff_at: str | None = None
     expected_current_revision_no: int | None = None
+    kind: str | None = None          # research|override|market|manual（schema 47）
+    board_key: str | None = None     # jczq:<日> | zucai:<期>
+    judgment: dict | None = None     # 整条 Read；不进 payload（备注抖动不该撞幂等）
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +122,8 @@ class ForecastActions:
                 'prior_snapshot_id': request.prior_snapshot_id,
                 'information_cutoff_at': request.information_cutoff_at,
                 'falsifier': request.falsifier,
+                'kind': request.kind,
+                'board_key': request.board_key,
             },
             requested_at=request.requested_at,
             expected_versions=_forecast_expected_versions(request),
@@ -125,12 +133,16 @@ class ForecastActions:
             series_id = uow.decision.ensure_series(
                 request.match_id, request.market_definition_id
             )
-            revision_no = uow.decision.max_revision_no(series_id) + 1
+            previous = uow.decision.latest_revision(series_id)
+            revision_no = (previous.revision_no if previous else 0) + 1
             revision_id = mint_decision_id('fr')
+            # 草稿链也记 supersedes：改判＝新 revision，历史全在（判断唯一事实 P1）
             uow.decision.insert_revision(
                 _revision_row(
                     request, revision_id, series_id, revision_no,
-                    ForecastStatus.DRAFT.value, None, command.policy_version,
+                    ForecastStatus.DRAFT.value,
+                    previous.forecast_revision_id if previous else None,
+                    command.policy_version,
                 )
             )
             _insert_factor_applications(uow, revision_id, request.factors)
@@ -193,6 +205,8 @@ class ForecastActions:
                 'prior_snapshot_id': request.prior_snapshot_id,
                 'information_cutoff_at': request.information_cutoff_at,
                 'falsifier': request.falsifier,
+                'kind': request.kind,
+                'board_key': request.board_key,
             },
             requested_at=request.requested_at,
             expected_versions=_forecast_expected_versions(request),
@@ -297,6 +311,9 @@ def _revision_row(
         evidence_quality=None,
         forecast_stability=None,
         supersedes_revision_id=supersedes_revision_id,
+        kind=request.kind,
+        board_key=request.board_key,
+        judgment=request.judgment,
     )
 
 

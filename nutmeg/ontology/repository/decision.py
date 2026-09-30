@@ -67,6 +67,9 @@ class ForecastRevisionRow:
     evidence_quality: float | None
     forecast_stability: float | None
     supersedes_revision_id: str | None
+    kind: str | None = None          # research|override|market|manual（schema 47）
+    board_key: str | None = None     # jczq:<日> | zucai:<期>
+    judgment: dict | None = None     # 提交时的整条 Read（投影源）
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +181,11 @@ class DecisionRepository:
                 evidence_quality=row.evidence_quality,
                 forecast_stability=row.forecast_stability,
                 supersedes_revision_id=row.supersedes_revision_id,
+                kind=row.kind,
+                board_key=row.board_key,
+                judgment_json=(
+                    canonical_json(row.judgment) if row.judgment is not None else None
+                ),
             )
         )
 
@@ -195,6 +203,33 @@ class DecisionRepository:
             )
         ).scalar_one_or_none()
         return int(value) if value is not None else 0
+
+    def latest_revision(self, forecast_series_id: str) -> ForecastRevisionRow | None:
+        """序列里 revision_no 最高的一条，不问状态（草稿链的 supersedes 目标）。"""
+        row = (
+            self._connection.execute(
+                select(sd.forecast_revisions)
+                .where(sd.forecast_revisions.c.forecast_series_id == forecast_series_id)
+                .order_by(sd.forecast_revisions.c.revision_no.desc())
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        return self._to_revision(row) if row is not None else None
+
+    def iter_board_revisions(self, board_key: str):
+        """一块板（jczq:<日> / zucai:<期>）的全部 revision，按序列、版本号升序。"""
+        rows = self._connection.execute(
+            select(sd.forecast_revisions)
+            .where(sd.forecast_revisions.c.board_key == board_key)
+            .order_by(
+                sd.forecast_revisions.c.forecast_series_id,
+                sd.forecast_revisions.c.revision_no,
+            )
+        ).mappings()
+        for row in rows:
+            yield self._to_revision(row)
 
     def current_committed_revision(self, forecast_series_id: str) -> ForecastRevisionRow | None:
         row = (
@@ -434,4 +469,7 @@ class DecisionRepository:
             evidence_quality=row['evidence_quality'],
             forecast_stability=row['forecast_stability'],
             supersedes_revision_id=row['supersedes_revision_id'],
+            kind=row['kind'],
+            board_key=row['board_key'],
+            judgment=json.loads(row['judgment_json']) if row['judgment_json'] else None,
         )

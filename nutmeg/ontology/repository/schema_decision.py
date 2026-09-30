@@ -101,6 +101,10 @@ forecast_revisions = Table(
     Column('evidence_quality', Float, nullable=True),
     Column('forecast_stability', Float, nullable=True),
     Column('supersedes_revision_id', Text, nullable=True),
+    # 判断唯一事实 P0（schema 47）：revision 装下整条 Read，文件只是它的投影
+    Column('kind', Text, nullable=True),            # research|override|market|manual
+    Column('board_key', Text, nullable=True, index=True),  # jczq:<日> | zucai:<期>
+    Column('judgment_json', Text, nullable=True),   # 提交时的整条 Read
     UniqueConstraint('forecast_series_id', 'revision_no', name='uq_forecast_revisions_series_no'),
 )
 

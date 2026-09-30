@@ -4670,6 +4670,26 @@ def _apply_rsi_manual_capital_plan(connection: Connection) -> None:
     )
 
 
+def _apply_forecast_judgment_payload(connection: Connection) -> None:
+    """判断唯一事实 P0（2026-10-01）：revision 装下整条 Read。
+
+    ``kind`` 记这条判断是研究转录/主循环改判/市场锚定/人工；``board_key`` 记它属于哪块板
+    （``jczq:<日>`` / ``zucai:<期>``），投影按它取；``judgment_json`` 是提交时的整条 Read。
+    新库由 Table 定义直接带列，这里只补旧库（PRAGMA 守卫）。
+    """
+    columns = {
+        row[1]
+        for row in connection.exec_driver_sql('PRAGMA table_info(forecast_revisions)').fetchall()
+    }
+    for name in ("kind", "board_key", "judgment_json"):
+        if name not in columns:
+            connection.exec_driver_sql(f'ALTER TABLE forecast_revisions ADD COLUMN {name} TEXT')
+    connection.exec_driver_sql(
+        'CREATE INDEX IF NOT EXISTS ix_forecast_revisions_board_key '
+        'ON forecast_revisions (board_key)'
+    )
+
+
 _CAPITAL_PERMISSIONS = (("zucai_commit_capital_plan", "judge_operator"),)
 
 
@@ -5557,6 +5577,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         name="rsi_manual_capital_plan",
         fingerprint="f4_capital_plan_manual+sweep_never_runs_plan_commit",
         apply=_apply_rsi_manual_capital_plan,
+    ),
+    Migration(
+        version=47,
+        name="forecast_judgment_payload",
+        fingerprint="additive_kind+board_key+judgment_json+board_index",
+        apply=_apply_forecast_judgment_payload,
     ),
 )
 
