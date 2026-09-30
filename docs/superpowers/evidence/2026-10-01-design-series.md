@@ -50,7 +50,14 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 - `ForecastActions.draft/revise/withdraw`——**第 2 条要用，保留**；
 - `RsiActions.amend/grade/record_verdict/approve_deployment`、`FactorActions.propose/apply_factor_status`、`BudgetActions.change_budget_policy`、`EntityActions.merge_entity`、`OutcomeActions.correct_outcome`、`TicketActions.record_cash_transaction`——各有一个「应该走内核但实际走文件」的对应物，逐个裁。
 
-**分片提案**（每片一次迁移 + 一次备份，`.nutmeg-data/archive/` 已有三份历史库）：S1 删 operator_* 77 表 + ProtectedTicketActions（两条都已退役，零风险）；S2 discovery_*/policy_* 20 表二选一——要么 Dream harness 改写内核，要么删表（我倾向删：文件即事实、`discovery compare` 已闭环）；S3 Workflow/Claim 路径 vs scoreboard.json 二选一（宪法说记分牌是单一事实源 → 删内核侧）；S4 逐条裁剩余 10 个方法。**没动一行代码**：删表是不可逆迁移，等 Jun 一句「S1 开工」。
+**分片提案（03:20，已被下面的勘察推翻，留作记录）**：S1 删 operator_* 77 表 + ProtectedTicketActions（「零风险」）；S2 删 discovery_*/policy_* 20 表；S3 Workflow/Claim vs scoreboard；S4 逐条。
+
+**勘察修正（03:50，Jun 01:10 批准「按新想法调整」后做的全量检索：表/触发器/调用点/测试）——我 03:20 的两个判断是错的：**
+- **S2 取消**：discovery_*/policy_* 不是死表。Dream 夜录（`nutmeg discovery nightly`）写的是 `~/nutmeg-shadow/ontology/ontology.db`——同一套迁移建出的影子库（`reject_production_store` 禁止写生产库），`policy_versions` 还是每个 Action 的权限 FK 目标。生产库这些表为空是设计。删表＝夜录明晚就坏。
+- **S1 不是零风险**：operator_* 78 表上挂着 5 个 `actions` 表的 `BEFORE UPDATE` 触发器（引用 operator 表；SQLite 编译语句时检查触发器体，删表不删触发器＝每次 Action 提交炸）；三条活路径写它们——`decision-audit-legs --user-override`（写 `operator_ticket_audit_override_receipts` + `adjudications`，宪法的行权入账）、`workflow ingest-evidence/ingest-results`、Telegram bot 的 `confirm_ticket_placement/mark_ticket_shadow`（无 launchd，代码活）；备份校验（`reliability/backup.py` 数全部 metadata 表）与 `ontology guarded-init` 行数守卫会拒绝掉表；~20 个迁移测试断言这些表存在；`ProtectedTicketActions` 2,198 行连着 `telegram_ticket_confirmation` 服务与 bot handler。**这是一个专项工作日，不是夜里顺手的事。**
+- 其余「零调用」逐条核：`RsiActions.grade_experiment/record_verdict` 是活的（rsi loop 子进程调 CLI），`amend/approve_deployment` 是人用的 CLI；`DiscoveryWorldActions.record_node/record_failure` 是夜录活路径；`prepare_record_adjudication/prepare_register_prediction` 是 `workflow register-rx` 的活路径；`FactorActions` 是因子生死设计的一部分（analytics 测试在用）；`EntityActions.merge_entity`/`BudgetActions` 被 product/analytics 测试夹具用着；`TicketActions.record_cash_transaction` 名字被 Dream 契约哈希绑定。
+- **今晚真正可删的只有四处**：`ReplayActions`（kernel/wiring 挂着、无调用）+ `wiring.build_replay_action_service`；`OutcomeActions.correct_outcome`（赛果更正走 jc-results 回填重跑结算）；`WorkflowActions.record_flag_instance/link_precedent` 及两个 Request（Flag/Precedent 入账从未接线，记分牌是事实源）；`ClaimActions.verify/dispute/retract`（`sop_tasks.py`/`cli/decision.py`/`product/repository.py` 有字符串引用，要一并清）。迁移里的权限行留着无害。
+- **动作**：上述四处的删除脚本（`git rm` 两个文件 + 四个模块的定点删改 + 两个测试改写）在本会话被权限分类器拦下（删文件＝「修改共享资源」），**未执行，工作树干净**。Jun 明早一句「删」我再跑（约 20 分钟，跑 tests/ontology 验证）；operator_*/ProtectedTicketActions 专项另排日期，前置是把 `--user-override` 的入账改成只写 `adjudications`。
 
 ## 6. 身份解析（2026-10-01 03:40 ✅）
 
