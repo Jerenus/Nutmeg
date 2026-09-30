@@ -8,7 +8,6 @@ from typer.testing import CliRunner
 
 import nutmeg.decision.verbs as verbs
 from nutmeg.decision.report import DecisionReportResult
-from nutmeg.decision.verbs import DecisionStepResult, DecisionWorkflowResult
 from nutmeg.interfaces.cli import app
 
 runner = CliRunner()
@@ -54,39 +53,6 @@ def test_decision_am_no_issue_skips_zucai(tmp_path, monkeypatch):
 
 # --- close ------------------------------------------------------------------
 
-def test_decision_close_order_and_dispatch_passthrough(tmp_path, monkeypatch):
-    calls: list[str] = []
-    seen: dict = {}
-    # legs.json 存在 → express 被调用
-    legs = tmp_path / "daily" / _DATE / "legs.json"
-    legs.parent.mkdir(parents=True)
-    legs.write_text("[]", encoding="utf-8")
-    monkeypatch.setattr(verbs, "run_capture_closing", _recorder(calls, "capture"))
-    monkeypatch.setattr(verbs, "run_express", _recorder(calls, "express"))
-
-    def _report(rd, od, *, dispatch_telegram, dry_run, stage):
-        calls.append("report")
-        seen.update(dispatch=dispatch_telegram, dry_run=dry_run, stage=stage)
-        return DecisionReportResult.success(rd, stage, tmp_path / "report.pdf", 10)
-
-    monkeypatch.setattr(verbs, "run_report", _report)
-    verbs.run_decision_close(_DATE, tmp_path, dispatch=True, dry_run=False)
-    assert calls == ["capture", "express", "report"]
-    assert seen == {"dispatch": True, "dry_run": False, "stage": "close"}
-
-
-def test_decision_close_no_legs_yields_empty_ticket(tmp_path, monkeypatch):
-    calls: list[str] = []
-    monkeypatch.setattr(verbs, "run_capture_closing", _recorder(calls, "capture"))
-    monkeypatch.setattr(verbs, "run_express", _recorder(calls, "express"))
-    monkeypatch.setattr(verbs, "run_report", _recorder(calls, "report"))
-    out = verbs.run_decision_close(_DATE, tmp_path, dispatch=False)   # 无 legs.json
-    assert "express" not in calls                # Claude 未插判读票 → 不调 express
-    assert calls == ["capture", "report"]
-    assert "空票" in out
-
-
-# --- settle -----------------------------------------------------------------
 
 def test_decision_settle_order_and_dispatch(tmp_path, monkeypatch):
     calls: list[str] = []
@@ -131,21 +97,6 @@ def test_decision_am_cli(tmp_path, monkeypatch):
     assert seen["rd"] == _DATE and seen["issue"] == "26091"
 
 
-def test_decision_close_cli_passes_flags(tmp_path, monkeypatch):
-    seen: dict = {}
-
-    def _fake(rd, od, *, dispatch, dry_run):
-        seen.update(dispatch=dispatch, dry_run=dry_run)
-        return "close-ok"
-
-    monkeypatch.setattr(verbs, "run_decision_close", _fake)
-    r = runner.invoke(app, ["decision-close", "--run-date", _DATE,
-                            "--output-dir", str(tmp_path),
-                            "--dispatch-telegram", "--no-dry-run"])
-    assert r.exit_code == 0, r.output
-    assert seen == {"dispatch": True, "dry_run": False}
-
-
 def test_decision_settle_cli_defaults_dry_run(tmp_path, monkeypatch):
     seen: dict = {}
 
@@ -158,34 +109,3 @@ def test_decision_settle_cli_defaults_dry_run(tmp_path, monkeypatch):
                             "--output-dir", str(tmp_path)])
     assert r.exit_code == 0, r.output
     assert seen == {"dispatch": False, "dry_run": True}    # 默认 dry-run,不推
-
-
-def test_decision_close_cli_json_failure_exits_nonzero(tmp_path, monkeypatch):
-    result_value = DecisionWorkflowResult(
-        name="decision-close",
-        run_date=_DATE,
-        steps=(
-            DecisionStepResult(
-                label="report",
-                status="failed",
-                message="Telegram delivery failed",
-            ),
-        ),
-    )
-    monkeypatch.setattr(verbs, "run_decision_close", lambda *args, **kwargs: result_value)
-
-    result = runner.invoke(
-        app,
-        [
-            "decision-close",
-            "--run-date",
-            _DATE,
-            "--output-dir",
-            str(tmp_path),
-            "--format",
-            "json",
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert '"status": "failed"' in result.output

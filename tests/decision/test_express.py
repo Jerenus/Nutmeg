@@ -123,37 +123,6 @@ def test_hit_prob_none_when_leg_prob_missing():
     assert all(t["computed_hit_prob"] is None for t in s["tickets"])
 
 
-def test_decision_express_cli(tmp_path):
-    import json
-
-    from typer.testing import CliRunner
-
-    from nutmeg.interfaces.cli import app
-
-    legs_file = tmp_path / "legs.json"
-    legs_file.write_text(json.dumps(_LEGS), encoding="utf-8")
-    result = CliRunner().invoke(app, [
-        "decision-express", "--legs-file", str(legs_file),
-        "--channel", "jczq", "--output-dir", str(tmp_path), "--made-at", "t"])
-    assert result.exit_code == 0, result.output
-    assert "5 票" in result.output
-    assert len(DecisionStore(tmp_path / "decision").load(Ticket)) == 5
-
-
-# ── legs 形状闸（2026-09-14 入码）────────────────────────────────────────
-#
-# 出生事故：`com.nutmeg.decision.close` 2026-08-13 19:00 那次跑挂在
-#   by_bucket.setdefault(str(leg.get("bucket") or ""), []).append(leg)
-#   AttributeError: 'str' object has no attribute 'get'
-# 此后该 agent 一直未加载（2026-09-14 退役移除）。根因：`run_express` /
-# `run_decision_express_v2` 都是 `json.loads(...)` 之后**直接喂进来、零形状校验**；
-# 喂进一个 dict（票面结构形状 `{"issue":…,"legs":{…}}`，即 `decision-audit-legs`
-# 的输入）时，迭代 dict 得到的是**字符串键**，于是深处炸一个看不懂的 AttributeError。
-#
-# `decision-audit-legs` 对反向错配（把扁平数组喂给它）早就有具名拒绝
-# （`missing_audit_metadata` + 退出码 1）。本闸补上对称的那一半。
-
-
 def test_ticket_structure_shape_is_rejected_with_a_named_error():
     """票面结构（dict）误喂给 express → 具名报错并指出该走哪条命令。"""
     import pytest

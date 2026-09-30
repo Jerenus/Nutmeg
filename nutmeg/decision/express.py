@@ -206,20 +206,3 @@ def compose_tickets(legs, budget=None, *, channel, made_at="", store=None) -> di
         "tickets": summary_tickets,
         "by_bucket": by_bucket_summary,
     }
-
-
-def run_express(legs_file, channel: str, output_dir, made_at: str) -> str:
-    """CLI 胶水:读 legs JSON → compose_tickets → 幂等落 store → 一行摘要。"""
-    from pathlib import Path
-
-    from nutmeg.decision.store import DecisionStore
-
-    legs = json.loads(Path(legs_file).read_text(encoding="utf-8"))
-    store = DecisionStore(Path(output_dir) / "decision")
-    summary = compose_tickets(legs, load_budget(), channel=channel,
-                              made_at=made_at, store=store)
-    msg = (f"decision-express {channel}: {summary['n_tickets']} 票 / "
-           f"总注 ¥{summary['total_stake_yuan']}")
-    if summary["scaled"]:
-        msg += "(超 ¥400 硬顶已按比例缩)"
-    return msg

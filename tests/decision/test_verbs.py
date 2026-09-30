@@ -12,11 +12,12 @@ def test_decision_sense_command_registered():
     assert "run-date" in result.output.lower() or "date" in result.output.lower()
 
 
-def test_all_five_verbs_registered():
+def test_judgment_verbs_registered_and_express_retired():
     result = runner.invoke(app, ["--help"])
-    for verb in ["decision-sense", "decision-read", "decision-express",
-                 "decision-reconcile", "decision-calibrate"]:
+    for verb in ["decision-sense", "decision-read", "decision-reconcile", "decision-calibrate"]:
         assert verb in result.output
+    # 2026-10-01：真票走 betslip register 入账，机器出票路径退役
+    assert "decision-express" not in result.output and "decision-close" not in result.output
 
 
 def test_run_sense_seeds_entities_even_without_snapshot(tmp_path):

@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-from typer.testing import CliRunner
-
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.ontology_adapter import (
     run_decision_am_v2,
@@ -118,32 +116,3 @@ def test_settle_v2_settles_and_calibrates(tmp_path: Path) -> None:
     assert status.scorecard_count >= 3                          # calibrate ran
     with OntologyUnitOfWork(kernel.engine) as uow:
         assert uow.finance.ledger_balance("acct-jczq") > staked  # payout raised the ledger
-
-
-def test_flag_routes_settle_only_and_close_stays_legacy(tmp_path: Path, monkeypatch) -> None:
-    import nutmeg.config.settings as settings_module
-    import nutmeg.interfaces.cli as cli
-    from nutmeg.decision.verbs import DecisionWorkflowResult
-
-    hit = {"close_legacy": 0, "settle": 0}
-    monkeypatch.setattr(
-        "nutmeg.decision.verbs.run_decision_close",
-        lambda rd, od, **k: (hit.__setitem__("close_legacy", 1)
-                             or DecisionWorkflowResult("decision-close", rd, (), "legacy")))
-    monkeypatch.setattr(
-        "nutmeg.decision.ontology_adapter.run_decision_settle_v2",
-        lambda rd, od, **k: (hit.__setitem__("settle", 1)
-                             or DecisionWorkflowResult("decision-settle", rd, (), "v2")))
-    monkeypatch.setenv("NUTMEG_ONTOLOGY_V2", "1")
-    settings_module.get_settings.cache_clear()
-    try:
-        runner = CliRunner()
-        assert runner.invoke(cli.app, ["decision-close", "--run-date", DATE,
-                                       "--output-dir", str(tmp_path)]).exit_code == 0
-        assert runner.invoke(cli.app, ["decision-settle", "--run-date", DATE,
-                                       "--output-dir", str(tmp_path)]).exit_code == 0
-        # flag on -> settle routed to v2; close has no v2 path since the operator_v2
-        # board workflow was retired (2026-09-23) and always runs the legacy verb
-        assert hit == {"close_legacy": 1, "settle": 1}
-    finally:
-        settings_module.get_settings.cache_clear()

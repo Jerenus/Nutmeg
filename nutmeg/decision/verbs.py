@@ -14,7 +14,6 @@ from typing import Any
 # 日循环编排复用阶段一新增的自立动词(fetch/express/report)。在此 import 为模块级名,
 # 令编排以裸名调用 → 测试可统一 monkeypatch 本模块属性断言调用顺序。三模块顶层 import
 # 都很轻(reportlab/体彩 client 均惰性 import),且都不反向 import verbs,无环。
-from nutmeg.decision.express import run_express
 from nutmeg.decision.fetch import fetch_day, fetch_zucai
 from nutmeg.decision.report import DecisionReportResult, run_report
 
@@ -378,33 +377,6 @@ def run_decision_am(
     return _compose(
         "decision-am", run_date, "数据入库+市场基线(编排不含判读)", steps
     )
-
-
-def _express_step(run_date: str, output_dir, stamp: str) -> str:
-    """close 的出票步:legs 来自主循环 Claude 判读(daily/<date>/legs.json)。无则空票(合法)。"""
-    legs_path = Path(output_dir) / "daily" / run_date / "legs.json"
-    if legs_path.exists():
-        return run_express(legs_path, "jczq", output_dir, stamp)
-    return (f"decision-express: 无 daily/{run_date}/legs.json"
-            "(主循环 Claude 未插判读票)→ 空票(合法)")
-
-
-def run_decision_close(run_date: str, output_dir, *, dispatch: bool = False,
-                       dry_run: bool = True) -> DecisionWorkflowResult:
-    """日循环 · 收盘段(close):收盘捕获 + 出票 + 推日报。capture-closing → express → report。
-
-    ⚠️ express 的 legs 是**主循环 Claude 判读产物**——close 读 daily/<date>/legs.json,
-    无该文件即空票(编排不自造腿)。``dispatch``/``dry_run`` 透传给 report(推送闸)。
-    """
-    stamp = _now_iso()
-    steps = [
-        ("capture-closing", lambda: run_capture_closing(run_date, output_dir, stamp)),
-        ("express", lambda: _express_step(run_date, output_dir, stamp)),
-        ("report", lambda: run_report(run_date, output_dir,
-                                      dispatch_telegram=dispatch, dry_run=dry_run,
-                                      stage="close")),
-    ]
-    return _compose("decision-close", run_date, "收盘+出票+推日报", steps)
 
 
 def run_decision_settle(run_date: str, output_dir, *, dispatch: bool = False,

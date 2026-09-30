@@ -349,21 +349,6 @@ def decision_capture_closing(
     _cli.typer.echo(run_capture_closing(run_date, output_dir, taken_at))
 
 
-@_cli.app.command("decision-express")
-def decision_express(
-    legs_file: Path = _LEGS_FILE_OPTION,
-    channel: str = _cli.typer.Option("jczq", "--channel", help="jczq | shengfucai | renjiu"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    made_at: str = _cli.typer.Option(..., "--made-at", help="ISO 时刻"),
-) -> None:
-    """决策本体 · 动词三:已声明投注腿 → Ticket(¥400 框架预算/串关算术)。
-
-    legs = 主循环 Claude 判读产物(结构化 JSON 数组);express 只做确定性算术,不判玩法。
-    """
-    from nutmeg.decision.express import run_express
-    _cli.typer.echo(run_express(legs_file, channel, output_dir, made_at))
-
-
 @_cli.app.command("decision-report")
 def decision_report(
     date: str = _cli.typer.Option(..., "--date", help="YYYY-MM-DD"),
@@ -454,31 +439,6 @@ def decision_am(
     from nutmeg.decision.rsi_wiring import after_am
 
     after_am(day=run_date, data_dir=Path(output_dir).parent)
-
-
-@_cli.app.command("decision-close")
-def decision_close(
-    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    dispatch_telegram: bool = _cli.typer.Option(False, "--dispatch-telegram"),
-    dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run"),
-    format: str = _cli.typer.Option("text", "--format", help="text or json"),
-) -> None:
-    """决策本体 · 日循环收盘段:capture-closing → express → report。
-
-    express legs 来自主循环 Claude 判读(daily/<date>/legs.json,无则空票)。
-
-    不受 NUTMEG_ONTOLOGY_V2 影响:kernel-backed close 依赖 operator_v2 板工作流,已于
-    2026-09-23 退役,此命令固定走旧路径。
-    """
-    from nutmeg.decision.verbs import run_decision_close
-
-    result = run_decision_close(
-        run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run
-    )
-    _emit_result(result, format=format)
-    if not getattr(result, "succeeded", True):
-        raise _cli.typer.Exit(code=1)
 
 
 @_cli.app.command("decision-settle")
