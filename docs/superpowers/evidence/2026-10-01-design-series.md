@@ -32,7 +32,7 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 
 **动作**：spec `docs/superpowers/specs/2026-10-01-single-judgment-truth-design.md`——内核 ForecastRevision 是唯一可写的判断（intake → `kind=research`，override → `kind=override, supersedes`），其余文件改为 `judgment project` 投影；分片 P0 只读投影（跑一周比对）→ P1 override 入内核 → P2 研究入库直落内核 → P3 足彩并轨 → P4 退役 jsonl/build-reads。第 5 条的 `ForecastActions.draft/revise/withdraw` 零调用正是因为这条还没接——瘦身时不许删。
 
-**P0/P1 落地（2026-10-01 01:10–03:30，Jun 批准 spec 后）**：计划 `docs/superpowers/plans/2026-10-01-single-judgment-truth-p0-p1.md`，五个提交：
+**P0/P1 落地（2026-10-01 01:10–01:50，Jun 批准 spec 后）**：计划 `docs/superpowers/plans/2026-10-01-single-judgment-truth-p0-p1.md`，五个提交：
 - `f34d4f0` schema 47：`forecast_revisions` 加 `kind / board_key / judgment_json`（PRAGMA 守卫的 ALTER + board_key 索引）；`DraftForecastRequest/CommitForecastRequest` 带三字段；草稿链记 `supersedes`＝序列最新 revision。
 - `e88164e` 每条 Read 自报 `kind`（research / override / market / manual）、`board_key`（`jczq:<日>` / `zucai:<期>`）、`code`；有改判账的竞彩腿 `kind=override` 并带 `override.{at,note,judge}`；`decision-read` 把整条 Read 存进 `judgment_json`。
 - `c250a2f` `nutmeg judgment project --day|--issue`：每序列最高 revision → `reads.projected.json`；与 `reads.json` 按 match_id 对齐 → `judgment-projection.json`（一致 / 同判断新版本 / 分歧 / 仅内核 / 仅文件；足彩已对到竞彩的场次跳过）。
@@ -52,7 +52,7 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 
 **分片提案（03:20，已被下面的勘察推翻，留作记录）**：S1 删 operator_* 77 表 + ProtectedTicketActions（「零风险」）；S2 删 discovery_*/policy_* 20 表；S3 Workflow/Claim vs scoreboard；S4 逐条。
 
-**勘察修正（03:50，Jun 01:10 批准「按新想法调整」后做的全量检索：表/触发器/调用点/测试）——我 03:20 的两个判断是错的：**
+**勘察修正（01:45，Jun 01:10 批准「按新想法调整」后做的全量检索：表/触发器/调用点/测试）——我上面那份分片提案的两个判断是错的：**
 - **S2 取消**：discovery_*/policy_* 不是死表。Dream 夜录（`nutmeg discovery nightly`）写的是 `~/nutmeg-shadow/ontology/ontology.db`——同一套迁移建出的影子库（`reject_production_store` 禁止写生产库），`policy_versions` 还是每个 Action 的权限 FK 目标。生产库这些表为空是设计。删表＝夜录明晚就坏。
 - **S1 不是零风险**：operator_* 78 表上挂着 5 个 `actions` 表的 `BEFORE UPDATE` 触发器（引用 operator 表；SQLite 编译语句时检查触发器体，删表不删触发器＝每次 Action 提交炸）；三条活路径写它们——`decision-audit-legs --user-override`（写 `operator_ticket_audit_override_receipts` + `adjudications`，宪法的行权入账）、`workflow ingest-evidence/ingest-results`、Telegram bot 的 `confirm_ticket_placement/mark_ticket_shadow`（无 launchd，代码活）；备份校验（`reliability/backup.py` 数全部 metadata 表）与 `ontology guarded-init` 行数守卫会拒绝掉表；~20 个迁移测试断言这些表存在；`ProtectedTicketActions` 2,198 行连着 `telegram_ticket_confirmation` 服务与 bot handler。**这是一个专项工作日，不是夜里顺手的事。**
 - 其余「零调用」逐条核：`RsiActions.grade_experiment/record_verdict` 是活的（rsi loop 子进程调 CLI），`amend/approve_deployment` 是人用的 CLI；`DiscoveryWorldActions.record_node/record_failure` 是夜录活路径；`prepare_record_adjudication/prepare_register_prediction` 是 `workflow register-rx` 的活路径；`FactorActions` 是因子生死设计的一部分（analytics 测试在用）；`EntityActions.merge_entity`/`BudgetActions` 被 product/analytics 测试夹具用着；`TicketActions.record_cash_transaction` 名字被 Dream 契约哈希绑定。
