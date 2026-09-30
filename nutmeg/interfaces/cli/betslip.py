@@ -48,6 +48,53 @@ def _fail(exc: Exception) -> None:
     raise _cli.typer.Exit(code=1)
 
 
+def _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo, multiplier,
+                issue, scheme_no, trial, note):
+    from nutmeg.decision.betslip import BetSlip, BetslipError, SlipLeg, parse_faces_row
+
+    legs: list[SlipLeg] = []
+    face_map: dict[str, str] = {}
+    if channel == "jczq":
+        if not legs_file:
+            raise BetslipError("竞彩票须给 --legs-file")
+        raw = json.loads(Path(legs_file).read_text("utf-8"))
+        legs = [SlipLeg(
+            key=str(x["key"]), name=x.get("name", ""),
+            market=x.get("market", "had"), line=x.get("line"),
+            selections=tuple(x.get("selections", ())),
+            odds=tuple(x.get("odds", ())), fair=x.get("fair")) for x in raw]
+    else:
+        if not faces:
+            raise BetslipError("足彩票须给 --faces")
+        face_map = parse_faces_row(faces)
+        fair = json.loads(Path(fair_file).read_text("utf-8")) if fair_file else {}
+        legs = [SlipLeg(
+            key=no, market="had",
+            selections=tuple({"3": "home", "1": "draw", "0": "away"}[c] for c in f),
+            fair=fair.get(no)) for no, f in sorted(face_map.items(), key=lambda kv: int(kv[0]))]
+    return BetSlip(
+        slip_id=slip_id, channel=channel, placed_at=placed_at, legs=legs,
+        multiplier=multiplier,
+        combo_sizes=tuple(int(c) for c in combo.split(",")) if combo else (),
+        issue=issue, scheme_no=scheme_no, purchased=not trial, note=note,
+        faces=face_map)
+
+
+def _diagnose(slip, data_dir):
+    """登记即诊断（2026-09-30）：共享裸单（含跨渠道）与对照处方，只记录不阻断。"""
+    from nutmeg.decision.betslip import load_slips
+    from nutmeg.decision.betslip_diagnosis import (
+        cross_translators,
+        diagnose,
+        peers,
+        prescription_for,
+    )
+
+    slips = load_slips(data_dir)
+    cross = cross_translators(slip, slips, data_dir)
+    return diagnose(slip, peers(slip, slips, cross), prescription_for(slip, data_dir), cross)
+
+
 @betslip_app.command("register")
 def betslip_register(
     slip_id: str = _SLIP_ID,
@@ -65,49 +112,42 @@ def betslip_register(
     data_dir: Path = _DATA_DIR,
 ) -> None:
     """登记一张已买的票（幂等，同 slip_id 覆盖）。"""
-    from nutmeg.decision.betslip import (
-        BetSlip,
-        BetslipError,
-        SlipLeg,
-        parse_faces_row,
-        register_slip,
-    )
+    from nutmeg.decision.betslip import BetslipError, register_slip
 
     try:
-        legs: list[SlipLeg] = []
-        face_map: dict[str, str] = {}
-        if channel == "jczq":
-            if not legs_file:
-                raise BetslipError("竞彩票须给 --legs-file")
-            raw = json.loads(Path(legs_file).read_text("utf-8"))
-            legs = [SlipLeg(
-                key=str(x["key"]), name=x.get("name", ""),
-                market=x.get("market", "had"), line=x.get("line"),
-                selections=tuple(x.get("selections", ())),
-                odds=tuple(x.get("odds", ())), fair=x.get("fair")) for x in raw]
-        else:
-            if not faces:
-                raise BetslipError("足彩票须给 --faces")
-            face_map = parse_faces_row(faces)
-            fair = json.loads(Path(fair_file).read_text("utf-8")) if fair_file else {}
-            legs = [SlipLeg(
-                key=no, market="had",
-                selections=tuple({"3": "home", "1": "draw", "0": "away"}[c] for c in f),
-                fair=fair.get(no)) for no, f in sorted(face_map.items(), key=lambda kv: int(kv[0]))]
-        slip = BetSlip(
-            slip_id=slip_id, channel=channel, placed_at=placed_at, legs=legs,
-            multiplier=multiplier,
-            combo_sizes=tuple(int(c) for c in combo.split(",")) if combo else (),
-            issue=issue, scheme_no=scheme_no, purchased=not trial, note=note,
-            faces=face_map)
-        # 登记即诊断（2026-09-30）：共享裸单与对照处方，只记录不阻断
-        from nutmeg.decision.betslip import load_slips
-        from nutmeg.decision.betslip_diagnosis import diagnose, peers, prescription_for
-
-        slip.diagnosis = diagnose(slip, peers(slip, load_slips(data_dir)),
-                                  prescription_for(slip, data_dir))
+        slip = _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
+                           multiplier, issue, scheme_no, trial, note)
+        slip.diagnosis = _diagnose(slip, data_dir)
         _cli.typer.echo(register_slip(data_dir, slip))
         for line in slip.diagnosis.get("lines", []):
+            _cli.typer.echo("   " + line)
+    except (BetslipError, KeyError, ValueError) as exc:
+        _fail(exc)
+
+
+@betslip_app.command("preview")
+def betslip_preview(
+    channel: str = _CHANNEL_REQ,
+    placed_at: str = _PLACED_AT,
+    faces: str | None = _FACES,
+    legs_file: Path | None = _LEGS_FILE,
+    fair_file: Path | None = _FAIR_FILE,
+    combo: str | None = _COMBO,
+    multiplier: int = _MULTIPLIER,
+    issue: str = _ISSUE_OPT,
+    data_dir: Path = _DATA_DIR,
+) -> None:
+    """买之前先看：同一张票的注数/P/共享裸单/对照处方，不登记、不写盘（2026-09-30）。"""
+    from nutmeg.decision.betslip import BetslipError
+
+    try:
+        slip = _build_slip("preview", channel, placed_at, faces, legs_file, fair_file, combo,
+                           multiplier, issue, "", False, "")
+        diag = _diagnose(slip, data_dir)
+        p = slip.hit_probability
+        _cli.typer.echo(f"预览 {channel} {slip.notes} 注 × {multiplier} 倍 = ¥{slip.stake_yuan:,}"
+                        + (f"｜P(全对)={p * 100:.2f}%" if p is not None else ""))
+        for line in diag.get("lines", []):
             _cli.typer.echo("   " + line)
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)

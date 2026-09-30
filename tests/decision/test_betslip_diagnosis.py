@@ -108,3 +108,53 @@ def test_register_persists_the_diagnosis_on_the_slip(tmp_path: Path):
     stored = {s.slip_id: s for s in load_slips(tmp_path)}
     assert stored["J2"].diagnosis["shared_naked"][0]["slip_ids"] == ["J1", "J2"]
     assert stored["J1"].diagnosis == {}
+
+
+def _cross_fixture(tmp_path: Path) -> Path:
+    data = tmp_path / "data"
+    day = data / "jczq" / "daily" / "2026-09-28"
+    day.mkdir(parents=True)
+    (day / "jczq-legs-base.json").write_text(json.dumps({"day": "2026-09-28", "legs": {
+        "周一004": {"match_id": "match-turkey", "faces": "310"},
+        "周一005": {"match_id": "match-belgium", "faces": "30"}}}), encoding="utf-8")
+    zdir = data / "zucai"
+    zdir.mkdir()
+    (zdir / "26134-channel-map.auto.json").write_text(
+        json.dumps({"match-turkey": 7, "match-belgium": 3}), encoding="utf-8")
+    return data
+
+
+def test_cross_channel_shared_naked_leg_is_found_through_the_channel_map(tmp_path: Path):
+    from nutmeg.decision.betslip_diagnosis import cross_translators
+
+    data = _cross_fixture(tmp_path)
+    turkey_j = _leg("周一004", ("home",), FAIR_004)
+    zucai = BetSlip(slip_id="26134-R9-144", channel="renjiu", placed_at="2026-09-28",
+                    issue="26134", faces={"7": "3", "3": "31"},
+                    legs=[SlipLeg(key="7", market="had", selections=("home",)),
+                          SlipLeg(key="3", market="had", selections=("home", "draw"))])
+    jczq = _jczq("J5", [turkey_j, _leg("周一005", ("home",), FAIR_005)])
+    slips = [zucai, jczq]
+    cross = cross_translators(jczq, slips, data)
+    assert cross == {"26134-R9-144": {"7": "周一004", "3": "周一005"}}
+    others = peers(jczq, slips, cross)
+    assert [o.slip_id for o in others] == ["26134-R9-144"]
+    shared = shared_naked_legs(jczq, others, cross)
+    assert [(r["key"], r["slip_ids"]) for r in shared] == [("周一004", ["26134-R9-144", "J5"])]
+    # 反向：足彩票看到竞彩票
+    back = cross_translators(zucai, slips, data)
+    assert back == {"J5": {"周一004": "7", "周一005": "3"}}
+    shared_back = shared_naked_legs(zucai, peers(zucai, slips, back), back)
+    assert [(r["key"], r["slip_ids"]) for r in shared_back] == [("7", ["26134-R9-144", "J5"])]
+
+
+def test_cross_channel_needs_an_explicit_map(tmp_path: Path):
+    from nutmeg.decision.betslip_diagnosis import cross_translators
+
+    data = tmp_path / "empty"
+    data.mkdir()
+    jczq = _jczq("J5", [_leg("周一004", ("home",), FAIR_004)])
+    zucai = BetSlip(slip_id="Z", channel="renjiu", placed_at="2026-09-28", issue="26134",
+                    legs=[SlipLeg(key="7", market="had", selections=("home",))])
+    assert cross_translators(jczq, [zucai], data) == {}
+    assert peers(jczq, [zucai]) == []

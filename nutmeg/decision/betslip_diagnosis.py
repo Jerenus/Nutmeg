@@ -27,8 +27,56 @@ def _faces(leg: SlipLeg) -> str:
     return "".join(f for f in FACE_ORDER if f in chosen)
 
 
-def peers(slip: BetSlip, slips: list[BetSlip]) -> list[BetSlip]:
-    """同一盘面上的其它实购票：竞彩＝同下单日，足彩＝同期号（任九与胜负彩互为同伴）。"""
+def _read_json(path: Path, default=None):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def _channel_map(data_dir: Path, issue: str) -> dict[str, str]:
+    """{竞彩 match_id: 足彩场号}；人工 `<issue>-channel-map.json` 优先，缺则 `.auto`。"""
+    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
+        doc = _read_json(Path(data_dir) / "zucai" / name)
+        if doc:
+            return {str(k): str(v) for k, v in doc.items()}
+    return {}
+
+
+def _code_of_match(data_dir: Path, day: str) -> dict[str, str]:
+    doc = _read_json(Path(data_dir) / "jczq" / "daily" / day / "jczq-legs-base.json") or {}
+    return {str(leg.get("match_id")): code for code, leg in (doc.get("legs") or {}).items()}
+
+
+def cross_translators(slip: BetSlip, slips: list[BetSlip], data_dir: Path) -> dict[str, dict]:
+    """跨渠道同伴：{其它票 slip_id: {它的腿 key → 本票的 key}}，只靠 channel-map 显式映射，
+    映射不到的腿不比（身份不许猜，26122）。09-28 土耳其主同时是竞彩五票与足彩两票的死点。"""
+    out: dict[str, dict] = {}
+    if slip.channel == "jczq":
+        code_of = _code_of_match(data_dir, str(slip.placed_at)[:10])
+        for other in slips:
+            if other.channel not in ZUCAI_CHANNELS or not other.purchased or not other.issue:
+                continue
+            trans = {no: code_of[mid] for mid, no in _channel_map(data_dir, other.issue).items()
+                     if mid in code_of}
+            if trans:
+                out[other.slip_id] = trans
+    else:
+        cmap = _channel_map(data_dir, slip.issue)
+        for other in slips:
+            if other.channel != "jczq" or not other.purchased:
+                continue
+            code_of = _code_of_match(data_dir, str(other.placed_at)[:10])
+            trans = {code_of[mid]: no for mid, no in cmap.items() if mid in code_of}
+            if trans:
+                out[other.slip_id] = trans
+    return out
+
+
+def peers(slip: BetSlip, slips: list[BetSlip],
+          cross: dict[str, dict] | None = None) -> list[BetSlip]:
+    """同一盘面上的其它实购票：竞彩＝同下单日，足彩＝同期号（任九与胜负彩互为同伴）；
+    `cross` 里有翻译表的跨渠道票也算同伴。"""
     out = []
     for other in slips:
         if other.slip_id == slip.slip_id or not other.purchased:
@@ -37,7 +85,7 @@ def peers(slip: BetSlip, slips: list[BetSlip]) -> list[BetSlip]:
             same = other.channel == "jczq" and str(other.placed_at)[:10] == str(slip.placed_at)[:10]
         else:
             same = other.channel in ZUCAI_CHANNELS and other.issue == slip.issue
-        if same:
+        if same or (cross and other.slip_id in cross):
             out.append(other)
     return out
 
@@ -49,14 +97,21 @@ def _naked(leg: SlipLeg) -> tuple | None:
                                                                  str(leg.selections[0])))
 
 
-def shared_naked_legs(slip: BetSlip, others: list[BetSlip]) -> list[dict]:
-    """本票的单选腿里，哪些在别的票上也是同一个单选。"""
+def shared_naked_legs(slip: BetSlip, others: list[BetSlip],
+                      cross: dict[str, dict] | None = None) -> list[dict]:
+    """本票的单选腿里，哪些在别的票上也是同一个单选；跨渠道票的 key 先按翻译表换算。"""
     index: dict[tuple, list[str]] = {}
     for other in others:
+        trans = (cross or {}).get(other.slip_id)
         for leg in other.legs:
             key = _naked(leg)
-            if key is not None:
-                index.setdefault(key, []).append(other.slip_id)
+            if key is None:
+                continue
+            if trans is not None:
+                if leg.key not in trans:
+                    continue
+                key = (trans[leg.key], *key[1:])
+            index.setdefault(key, []).append(other.slip_id)
     shared = []
     for leg in slip.legs:
         key = _naked(leg)
@@ -126,8 +181,9 @@ def narrowing(slip: BetSlip, prescription: dict[str, str]) -> dict:
     return out
 
 
-def diagnose(slip: BetSlip, others: list[BetSlip], prescription: dict[str, str]) -> dict:
-    shared = shared_naked_legs(slip, others)
+def diagnose(slip: BetSlip, others: list[BetSlip], prescription: dict[str, str],
+             cross: dict[str, dict] | None = None) -> dict:
+    shared = shared_naked_legs(slip, others, cross)
     joint = joint_death(shared)
     narrow = narrowing(slip, prescription)
     lines = []
