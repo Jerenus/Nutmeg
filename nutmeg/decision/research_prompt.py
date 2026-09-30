@@ -46,9 +46,11 @@ stance.structure 只是建议，票面结构由下游按判断概率在预算内
 tilt 可用多面 shift {"3":pp,"1":pp,"0":pp}（和为 0）；tier 另有 state（本场状态 0–3pp）。
 表态块必答：每场押一个面 + 一个表达档 + 一句作废条件；
 跟市场也要填（why_not_market=none, tilt=null）。
-tilt 只在有 A/B 类证据时给：official 4–8pp、confirmed_structural 3–6pp、
-inferred 0–2pp、will 0–2pp 且只许朝平；
-小偏移如实表达（不再归零）；单面封顶无官宣 10pp、有官宣 15pp；开球后采集的证据作废。
+结构优先（2026-10-01）：先把表态面集合（single/double/full）、三证、完整度、弱方路径判清——
+这是下游唯一按票面结账的判断（F14）。tilt **只在**有 official（官宣 4–8pp）或
+confirmed_structural（确证结构 3–6pp）证据时给；只有 state/inferred/will 级证据时 tilt=null
+（下游会整体归零，写了也是噪音）；form_state 每条最多计 1pp；shift 峰值不得超过证据 pp 之和；
+will 0–2pp 且只许朝平；单面封顶无官宣 10pp、有官宣 15pp；开球后采集的证据作废。
 stance.confidence 必须等于顶层 confidence。
 宣告 dead 必须三证 3/3；查无先例记 none，不得当 dead。数字只许引用简报给你的或你查到的实盘。
 hole_location 语义绑定：attack = 破门端（中锋/射手）缺；creation = 组织端（前腰/组织核）缺；

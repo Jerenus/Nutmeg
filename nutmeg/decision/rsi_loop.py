@@ -48,6 +48,9 @@ STEP_ORDER = (
 )
 # 有前瞻适配器的登记实验都进闭环（F10/F11 2026-09-27 登记后一直没被结账，2026-09-30 补入）
 GRADED_EXPERIMENTS = ("F2", "F3", "F4", "F5", "F9", "F10", "F11", "F13", "F14")
+# 主指标（2026-10-01 评估换轴）：结构与决策——F14 表态面集合 vs 市场覆盖、Dream 对照账、F10 热门带；
+# F9（程度判断）等降为次指标：每天 8–15 场的 Brier 差在赛季内分不开噪声。
+PRIMARY_EXPERIMENTS = ("F14", "F10")
 NOT_DUE_MARKERS = ("未到期", "没有 prospective 档", "重放结果进不了判决")
 
 
@@ -298,6 +301,11 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
     return report
 
 
+def _grade_exp(grade: dict) -> str:
+    parts = str(grade.get("cmd") or "").split()
+    return parts[parts.index("--exp") + 1] if "--exp" in parts else ""
+
+
 def render_markdown(report: LoopReport) -> str:
     lines = [f"# RSI 闭环 · {report.date}", "",
              f"开始 {report.started_at} · 结束 {report.finished_at} · "
@@ -313,7 +321,19 @@ def render_markdown(report: LoopReport) -> str:
     lines += ["", "## 步骤", "", "| 步 | 状态 | 秒 | 摘要 |", "| --- | --- | --- | --- |"]
     lines += [f"| {s.name} | {s.status} | {s.seconds} | {s.summary[:160]} |" for s in report.steps]
     if report.grades:
-        lines += ["", "## 前瞻结账", ""] + [f"- {g['line']}" for g in report.grades]
+        primary = [g for g in report.grades if _grade_exp(g) in PRIMARY_EXPERIMENTS]
+        secondary = [g for g in report.grades if _grade_exp(g) not in PRIMARY_EXPERIMENTS]
+        lines += ["", "## 前瞻结账", "", "### 主指标（结构与决策）", ""]
+        lines += [f"- {g['line']}" for g in primary] or ["- （F14/F10 尚无结账）"]
+        summary = (report.dream or {}).get("summary") or {}
+        diff = summary.get("actual_minus_rule") or {}
+        if summary:
+            mean = diff.get("mean")
+            mean_text = "—" if mean is None else f"{mean:+.4f}".replace("-", "−")
+            ci = f" CI{diff['ci95']}" if diff.get("ci95") else "（n<20 不给区间）"
+            lines.append(f"- Dream 对照账 {summary.get('n_days')} 天："
+                         f"实际−规则最优 日均每元 {mean_text}{ci}")
+        lines += ["", "### 次指标（程度判断）", ""] + [f"- {g['line']}" for g in secondary]
     if report.verdicts:
         lines += ["", "## 判决", ""] + [f"- [{v['status']}] {v['line']}" for v in report.verdicts]
     if report.proposals:

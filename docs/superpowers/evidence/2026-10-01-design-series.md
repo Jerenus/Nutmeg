@@ -19,3 +19,9 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 - `nutmeg/decision/ledger_writeback.py`：`betslip register` 把每张竞彩实票展开成注、用 express 同一条内核路径（`kernel.express.approve_for_match`）写成 Ticket，幂等键 `betslip:<slip_id>:<note>`；没有已提交 Read/选项/真实赔率的注跳过并计数，混合过关如实报 unsupported；内核不可用不挡登记。足彩实票不进内核（内核市场是竞彩口径），账在 betslips/scoreboard。
 - 退役：CLI `decision-express`、`decision-close`、`ticket-confirmation`；`verbs.run_decision_close`/`_express_step`、`express.run_express`；OpenClaw 桥脚本；对应测试。保留 `compose_tickets`（内核 composition 仍用）与内核 `ProtectedTicketActions`/表（第 5 条内核审计再定）。
 - RUNBOOK A6 改为真实路径，B9 去掉 Telegram 二段确认，头部 close 标退役。
+
+## 4. 评估指标换轴（2026-10-01 02:00）
+
+**事实**：F9（belief vs 市场 Brier）n=25 才 ±2pp 区间；每天 8–15 场，赛季内分不开。而两天 16/16 的表态面、Dream 对照的「实际 vs 规则最优 vs 空仓」、F10 首结账 +24pp（CI 不含 0）才是有信息量的轴。
+
+**动作**：闭环报告「前瞻结账」分主指标（F14、F10、Dream 对照账）与次指标（F9 等）；简报 RSI 节加「主指标」一行；研究契约改为「结构优先、无锚不拨动」（与 `apply_tilt` 的锚归零一致，避免研究继续写会被归零的拨动）；宪法与 CLAUDE/AGENTS 指针同步「判断力主指标」措辞。样本速率本身受赛程限制，研究预算不是瓶颈，未改预算。
