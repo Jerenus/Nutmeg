@@ -12,12 +12,19 @@ from nutmeg.gym.policy import Ctx, register
 FACE_SETS = ("3", "1", "0", "31", "30", "10")
 
 
-def belief_of(m: JczqMatch, ctx: Ctx) -> dict[str, float]:
+def belief_of(m: JczqMatch, ctx: Ctx) -> dict[str, float] | None:
     if ctx.belief_source == "closing" and m.closing_fair:
         return dict(m.closing_fair)
     if ctx.belief_source == "read" and m.read_belief:
         return dict(m.read_belief)
-    return m.belief_market
+    return m.belief_any
+
+
+def price_of(m: JczqMatch, face: str, belief: dict[str, float]) -> float:
+    """可买价；历史板没有三面全价 → 用 1/p 占位（只用于排序，派奖按开奖 SP）。"""
+    if len(m.had) == 3:
+        return m.had[face]
+    return round(1 / max(belief[FACE_OF[face]], 1e-6), 3)
 
 
 # enumerate_combos 是 C(n,k)×6^k 的全枚举：20 场板 k=4 近 300 万种，先按最大面裁到 8 场
@@ -31,6 +38,8 @@ def combo_legs(board: JczqBoard, ctx: Ctx, *, faces_filter=None, match_filter=No
         if match_filter and not match_filter(m):
             continue
         belief = belief_of(m, ctx)
+        if belief is None:
+            continue
         options = []
         for faces in FACE_SETS:
             if faces_filter and not faces_filter(m, faces, belief):
@@ -38,10 +47,11 @@ def combo_legs(board: JczqBoard, ctx: Ctx, *, faces_filter=None, match_filter=No
             modal = max(faces, key=lambda f: belief[FACE_OF[f]])
             options.append({"market": "had", "faces": faces,
                             "p": sum(belief[FACE_OF[f]] for f in faces),
-                            "odds": [m.had[f] for f in faces], "modal_odds": m.had[modal]})
+                            "odds": [price_of(m, f, belief) for f in faces],
+                            "modal_odds": price_of(m, modal, belief)})
         if options:
             legs.append({"code": code, "name": m.name, "kickoff": m.kickoff_bj,
-                         "belief": belief, "prior": m.belief_market, "options": options})
+                         "belief": belief, "prior": m.belief_any, "options": options})
     # 帽内 max P 的腿几乎只来自最大面最高的场：按最大面降序裁到 max_matches 场再枚举
     legs.sort(key=lambda leg: -max(leg["belief"].values()))
     return legs[:max_matches]
@@ -98,8 +108,8 @@ class JczqEvFilter:
 
     def decide(self, board: JczqBoard, ctx: Ctx) -> list[BetSlip]:
         def positive_ev(m: JczqMatch, faces: str, belief: dict) -> bool:
-            if len(faces) != 1 or not m.closing_fair:
-                return False
+            if len(faces) != 1 or not m.closing_fair or len(m.had) != 3:
+                return False                      # 历史板没有三面价，EV 过滤无从算
             return m.closing_fair[FACE_OF[faces]] * m.had[faces] > 1.0
 
         legs = combo_legs(board, ctx, faces_filter=positive_ev)
@@ -119,12 +129,12 @@ class JczqFavPairs:
 
     def decide(self, board: JczqBoard, ctx: Ctx) -> list[BetSlip]:
         def is_fav(m: JczqMatch) -> bool:
-            fair = m.closing_fair or m.belief_market
-            return max(fair.values()) >= self.threshold
+            fair = m.closing_fair or m.belief_any
+            return bool(fair) and max(fair.values()) >= self.threshold
 
         def fav_face_only(m: JczqMatch, faces: str, belief: dict) -> bool:
-            fair = m.closing_fair or m.belief_market
-            return len(faces) == 1 and FACE_OF[faces] == max(fair, key=fair.get)
+            fair = m.closing_fair or m.belief_any
+            return bool(fair) and len(faces) == 1 and FACE_OF[faces] == max(fair, key=fair.get)
 
         legs = combo_legs(board, ctx, faces_filter=fav_face_only, match_filter=is_fav)
         if len(legs) < 2:

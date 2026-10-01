@@ -92,3 +92,23 @@ def test_settle_jczq_hafu_uses_half_time_score(tmp_path: Path) -> None:
     s = settle_slip(hit, results_only)
     # 半场平全场胜 → "dh"，命中第一个选项（赔率 4.0）
     assert s.won_legs == 2 and s.payout_yuan == pytest.approx(4.0 * 1.85 * 2)
+
+
+def test_history_board_settles_by_draw_sp_and_rejects_singles(tmp_path: Path) -> None:
+    from tests.gym.test_board import _history_data
+
+    board = load_jczq_board(_history_data(tmp_path), "2025-12-14", allow_history=True)
+    single = _jczq_slip([("周日001", "had", None, ["home"], [])], combo=(1,))
+    assert check_jczq_legal(single, board) == "single_not_allowed:history"
+    pair = _jczq_slip([("周日001", "had", None, ["home"], []),
+                       ("周日002", "had", None, ["draw"], [])], combo=(2,))
+    assert check_jczq_legal(pair, board) is None
+    s = settle_jczq(pair, board)
+    assert s.pending_legs == 1 and s.payout_yuan is None          # 周日002 无 SP → 未结
+    both = _jczq_slip([("周日001", "had", None, ["home", "draw"], []),
+                       ("周日003", "had", None, ["home"], [])], combo=(2,))
+    s2 = settle_jczq(both, board)
+    assert s2.won_legs == 2 and s2.payout_yuan == pytest.approx(1.45 * 1.3 * 2)
+    miss = _jczq_slip([("周日001", "had", None, ["draw"], []),
+                       ("周日003", "had", None, ["home"], [])], combo=(2,))
+    assert settle_jczq(miss, board).payout_yuan == 0.0

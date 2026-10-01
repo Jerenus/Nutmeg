@@ -17,6 +17,8 @@ _BELIEF = _cli.typer.Option("market", "--belief", help="market | closing | read"
 _CAP_JCZQ = _cli.typer.Option(400, "--cap-jczq")
 _CAP_ZUCAI = _cli.typer.Option(400, "--cap-zucai")
 _OUT = _cli.typer.Option(None, "--out", help="输出目录（ledger.jsonl / summary.json / report.md）")
+_HISTORY = _cli.typer.Option(False, "--history",
+                             help="并入 jc-history 的 SP 历史板（终盘作 belief、开奖 SP 派奖）")
 
 
 @gym_app.command("prizes-cache")
@@ -56,6 +58,7 @@ def gym_run(
     cap_jczq: int = _CAP_JCZQ,
     cap_zucai: int = _CAP_ZUCAI,
     out: Path | None = _OUT,
+    history: bool = _HISTORY,
     data_dir: Path = _DATA_DIR,
 ) -> None:
     """在历史板面/期次上回放策略，打印账表。"""
@@ -70,7 +73,7 @@ def gym_run(
         _cli.typer.echo(f"gym error: 未登记的策略 {unknown}；已登记：{names()}")
         raise _cli.typer.Exit(code=2)
     data_dir = Path(data_dir)
-    days = [d for d in list_days(data_dir)
+    days = [d for d in list_days(data_dir, include_history=history)
             if (not date_from or d >= date_from) and (not date_to or d <= date_to)]
     issues = []
     for issue in list_issues(data_dir):
@@ -78,7 +81,8 @@ def gym_run(
         if (not date_from or key >= date_from) and (not date_to or key <= date_to):
             issues.append(issue)
     run_id = out.name if out else datetime.now().strftime("gym-%Y%m%d-%H%M")
-    ctx = Ctx(cap_jczq_day=cap_jczq, cap_zucai_slip=cap_zucai, belief_source=belief)
+    ctx = Ctx(cap_jczq_day=cap_jczq, cap_zucai_slip=cap_zucai, belief_source=belief,
+              extra={"history": history})
     result = run_gym(data_dir=data_dir, policies=policies, days=days, issues=issues, ctx=ctx,
                      out_dir=out, run_id=run_id)
     text = render(result)

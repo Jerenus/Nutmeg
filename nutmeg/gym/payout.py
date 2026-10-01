@@ -23,6 +23,12 @@ def check_jczq_legal(slip: BetSlip, board: JczqBoard) -> str | None:
     sizes = tuple(slip.combo_sizes or (len(slip.legs),))
     if any(m < 1 or m > 8 or m > len(slip.legs) for m in sizes):
         return "bad_combo_size"
+    if board.source == "history_sp":
+        if 1 in sizes:
+            return "single_not_allowed:history"
+        if any(leg.market != "had" for leg in slip.legs):
+            return "history_board_had_only"
+        return None
     if 1 in sizes:
         for leg in slip.legs:
             match = board.lookup(leg.key)
@@ -32,7 +38,61 @@ def check_jczq_legal(slip: BetSlip, board: JczqBoard) -> str | None:
 
 
 def settle_jczq(slip: BetSlip, board: JczqBoard) -> SlipSettlement:
+    if board.source == "history_sp":
+        return settle_sp(slip, board)
     return settle_slip(slip, board.results)
+
+
+_SP_FACE = {"胜": "home", "平": "draw", "负": "away"}
+
+
+def settle_sp(slip: BetSlip, board: JczqBoard) -> SlipSettlement:
+    """历史板派奖：只有开奖面的 SP——腿中＝所选含开奖面，赔率＝该面 SP；任一腿缺 SP → pending。"""
+    from itertools import combinations
+
+    status: dict[str, bool | None] = {}
+    odds: dict[str, float] = {}
+    detail: list[str] = []
+    for leg in slip.legs:
+        m = board.lookup(leg.key)
+        sp = ((m.sp or {}).get("had") if m else None) or {}
+        face = _SP_FACE.get(str(sp.get("outcome") or ""))
+        price = sp.get("odds")
+        if face is None or price is None:
+            status[leg.key] = None
+            detail.append(f"? {leg.key} 无开奖 SP")
+            continue
+        hit = face in set(leg.selections)
+        status[leg.key] = hit
+        if hit:
+            odds[leg.key] = float(price)
+        mark = "✓" if hit else "✗"
+        detail.append(f"{mark} {leg.key} {'/'.join(leg.selections)} → {face}@{price}")
+    idx = list(range(len(slip.legs)))
+    combos_total = combos_won = 0
+    payout = 0.0
+    undecided = False
+    for m in (slip.combo_sizes or (len(slip.legs),)):
+        for combo in combinations(idx, m):
+            combos_total += 1
+            marks = [status[slip.legs[i].key] for i in combo]
+            if any(v is None for v in marks):
+                undecided = True
+                continue
+            if all(marks):
+                combos_won += 1
+                product = 1.0
+                for i in combo:
+                    product *= odds[slip.legs[i].key]
+                payout += product * 2 * slip.multiplier
+    settled = sum(1 for v in status.values() if v is not None)
+    won = sum(1 for v in status.values() if v)
+    final = None if undecided else round(payout, 2)
+    return SlipSettlement(slip_id=slip.slip_id, settled_legs=settled,
+                          pending_legs=len(slip.legs) - settled, won_legs=won,
+                          combos_total=combos_total, combos_won=combos_won, payout_yuan=final,
+                          pnl_yuan=(final - slip.stake_yuan) if final is not None else None,
+                          detail=detail)
 
 
 def zucai_winning_notes(faces: dict[str, str], results: dict[str, str], *,

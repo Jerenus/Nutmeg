@@ -179,8 +179,10 @@ def collect(
     dates: list[str] | None,
     dry_run: bool,
     client: Titan007Client | None = None,
+    results_file: Path | None = None,
 ) -> dict[str, int]:
-    results = json.loads((data_dir / "jc-results.json").read_text(encoding="utf-8"))
+    # 历史扩容（2026-10-01）：也可按 jc-history.json 的 titan007 id 抓终盘
+    results = json.loads((results_file or data_dir / "jc-results.json").read_text(encoding="utf-8"))
     stats = {"days": 0, "fetched": 0, "skipped": 0, "unavailable": 0, "no_match_id": 0}
     own_client = client is None
     client = client or Titan007Client()
@@ -230,6 +232,8 @@ def main() -> int:
     ap.add_argument("--data-dir", default=str(ROOT / ".nutmeg-data" / "jczq"))
     ap.add_argument("--sleep", type=float, default=0.3)
     ap.add_argument("--limit", type=int, default=None, help="stop after N network fetches")
+    ap.add_argument("--results-file", default=None,
+                    help="赛果源（默认 <data-dir>/jc-results.json；历史扩容用 jc-history.json）")
     ap.add_argument("--dates", nargs="*", default=None)
     ap.add_argument("--dry-run", action="store_true", help="count work without fetching")
     ap.add_argument(
@@ -251,6 +255,7 @@ def main() -> int:
         limit=args.limit,
         dates=args.dates,
         dry_run=args.dry_run,
+        results_file=Path(args.results_file) if args.results_file else None,
     )
     print(json.dumps(stats, ensure_ascii=False))
     return 0

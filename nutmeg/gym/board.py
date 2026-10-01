@@ -44,12 +44,20 @@ class JczqMatch:
     single_allowed: dict[str, bool]        # {"had": bool, "hhad": bool, …}
     closing_fair: dict[str, float] | None  # titan007 sharp fair（开球时刻；home/draw/away）
     read_belief: dict[str, float] | None   # 仅 provably_prospective 的研究 belief
+    sp: dict | None = None                 # 历史板：开奖 SP（只有开出那个面的赔率）
 
     @property
     def belief_market(self) -> dict[str, float]:
         if len(self.had) != 3:
             raise ValueError(f"{self.code} 无 had 价")
         return {FACE_OF[k]: v for k, v in devig(self.had).items()}
+
+    @property
+    def belief_any(self) -> dict[str, float] | None:
+        """能当 belief 用的市场分布：有 had 价用 had，否则用终盘；都没有 → None。"""
+        if len(self.had) == 3:
+            return self.belief_market
+        return dict(self.closing_fair) if self.closing_fair else None
 
 
 @dataclass(frozen=True)
@@ -59,6 +67,7 @@ class JczqBoard:
     extra: dict[str, JczqMatch] = field(default_factory=dict)   # 只供结算：早场补录 + 次日场
     results: dict[str, dict] = field(default_factory=dict)      # {code: {outcome_90, goals, ht}}
     allup: dict[str, list[str]] = field(default_factory=dict)   # {pool: 允许的过关方式}
+    source: str = "snapshot"                             # snapshot | history_sp
 
     def lookup(self, code: str) -> JczqMatch | None:
         return self.matches.get(code) or self.extra.get(code)
@@ -176,10 +185,44 @@ def _result_row(results_doc: dict, business_date: str, code: str) -> dict | None
     return out
 
 
-def load_jczq_board(data_dir: Path, day: str) -> JczqBoard:
+_SP_FACE = {"胜": "home", "平": "draw", "负": "away"}
+
+
+def load_history_board(data_dir: Path, day: str) -> JczqBoard:
+    """历史板（假期迭代 #5）：`jc-history.json[day]` 的赛果 + 开奖 SP，终盘作 belief。
+
+    没有三面全价：策略只能用终盘当 belief，派奖按开奖 SP；单关一律视为不开。"""
+    data_dir = Path(data_dir)
+    history = (_read(data_dir / "jczq" / "jc-history.json", {}) or {}).get(day)
+    if not history:
+        raise FileNotFoundError(f"{day} 无历史板")
+    closing = _read(data_dir / "jczq" / "daily" / day / "closing_odds.json", {}) or {}
+    matches: dict[str, JczqMatch] = {}
+    results: dict[str, dict] = {}
+    for code, rec in history.items():
+        sharp = (closing.get(code) or {}).get("sharp") or {}
+        sp = rec.get("sp") or None
+        matches[code] = JczqMatch(
+            code=code, business_date=day, name=f"{rec.get('home', '')}-{rec.get('away', '')}",
+            league="", kickoff_bj=None, selling=True, had={}, hhad=None, ttg=None, crs=None,
+            single_allowed={}, closing_fair=sharp.get("fair_probability") or None,
+            read_belief=None, sp=sp,
+        )
+        if rec.get("ft_home") is not None and rec.get("ft_away") is not None:
+            row = {"outcome_90": _outcome(int(rec["ft_home"]), int(rec["ft_away"])),
+                   "goals_h": int(rec["ft_home"]), "goals_a": int(rec["ft_away"])}
+            if rec.get("ht_home") is not None and rec.get("ht_away") is not None:
+                row["ht_h"], row["ht_a"] = int(rec["ht_home"]), int(rec["ht_away"])
+            results[code] = row
+    return JczqBoard(day=day, matches=matches, results=results, source="history_sp")
+
+
+def load_jczq_board(data_dir: Path, day: str, *, allow_history: bool = False) -> JczqBoard:
     data_dir = Path(data_dir)
     rows, doc = _snapshot_rows(data_dir, day)
     if not doc:
+        if allow_history:
+            return load_history_board(data_dir, day)
         raise FileNotFoundError(f"{day} 无板面快照")
     closing = _read(data_dir / "jczq" / "daily" / day / "closing_odds.json", {}) or {}
     results_doc = _read(data_dir / "jczq" / "jc-results.json", {}) or {}
@@ -259,15 +302,19 @@ def load_zucai_issue(data_dir: Path, issue: str) -> ZucaiIssue:
                       matches=matches, results=prize["results"] if prize else None, prizes=prize)
 
 
-def list_days(data_dir: Path) -> list[str]:
-    """有体彩快照且有赛果的板面日。"""
+def list_days(data_dir: Path, *, include_history: bool = False) -> list[str]:
+    """有体彩快照且有赛果的板面日；`include_history` 再并入只有 jc-history 的日子（SP 板）。"""
     data_dir = Path(data_dir)
     results = _read(data_dir / "jczq" / "jc-results.json", {}) or {}
     root = data_dir / "jczq" / "daily"
-    if not root.exists():
-        return []
-    return sorted(d.name for d in root.iterdir()
-                  if (d / "sporttery_markets.json").exists() and d.name in results)
+    days = set()
+    if root.exists():
+        days = {d.name for d in root.iterdir()
+                if (d / "sporttery_markets.json").exists() and d.name in results}
+    if include_history:
+        history = _read(data_dir / "jczq" / "jc-history.json", {}) or {}
+        days |= {d for d, rows in history.items() if rows and d not in days}
+    return sorted(days)
 
 
 def list_issues(data_dir: Path) -> list[str]:

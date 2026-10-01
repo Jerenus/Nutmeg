@@ -154,3 +154,38 @@ def test_board_marks_registered_void_matches(tmp_path: Path) -> None:
     board = load_jczq_board(data, DAY)
     assert board.results["周六002"] == {"void": True}
     assert board.results["周六001"]["outcome_90"] == "home"      # 有赛果的不受影响
+
+
+def _history_data(tmp_path: Path) -> Path:
+    data = tmp_path / "data"
+    (data / "jczq" / "daily" / "2025-12-14").mkdir(parents=True)
+    (data / "jczq" / "jc-history.json").write_text(json.dumps({"2025-12-14": {
+        "周日001": {"match_id": "1", "ft_home": 2, "ft_away": 0, "ht_home": 1, "ht_away": 0,
+                  "line": "-1", "home": "A", "away": "B",
+                  "sp": {"had": {"outcome": "胜", "odds": 1.45},
+                         "hhad": {"outcome": "平", "line": -1.0, "odds": 3.1}}},
+        "周日002": {"match_id": "2", "ft_home": 0, "ft_away": 0, "home": "C", "away": "D",
+                  "sp": None},
+        "周日003": {"match_id": "3", "ft_home": 1, "ft_away": 0, "home": "E", "away": "F",
+                  "sp": {"had": {"outcome": "胜", "odds": 1.3}}}}}), encoding="utf-8")
+    (data / "jczq" / "daily" / "2025-12-14" / "closing_odds.json").write_text(json.dumps({
+        "周日001": {"sharp": {"fair_probability": {"home": 0.74, "draw": 0.16, "away": 0.10}}},
+        "周日003": {"sharp": {"fair_probability": {"home": 0.80, "draw": 0.12, "away": 0.08}}}}),
+        encoding="utf-8")
+    return data
+
+
+def test_history_board_uses_closing_as_belief_and_sp_for_settlement(tmp_path: Path) -> None:
+    data = _history_data(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        load_jczq_board(data, "2025-12-14")                      # 没有快照、未允许历史板
+    board = load_jczq_board(data, "2025-12-14", allow_history=True)
+
+    assert board.source == "history_sp" and set(board.matches) == {"周日001", "周日002", "周日003"}
+    m = board.matches["周日001"]
+    assert m.had == {} and m.belief_any == {"home": 0.74, "draw": 0.16, "away": 0.10}
+    assert m.sp["had"] == {"outcome": "胜", "odds": 1.45}
+    assert board.matches["周日002"].belief_any is None            # 无终盘 → 策略跳过
+    assert board.results["周日001"] == {"outcome_90": "home", "goals_h": 2, "goals_a": 0,
+                                       "ht_h": 1, "ht_a": 0}
+    assert list_days(data) == [] and list_days(data, include_history=True) == ["2025-12-14"]

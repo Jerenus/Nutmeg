@@ -45,8 +45,11 @@ def _month(key: str) -> str:
 
 def jczq_regime(board: JczqBoard) -> str:
     """当日 ≥0.70 热门场数：0 / 1 / 2+。"""
-    n = sum(1 for m in board.matches.values()
-            if max((m.closing_fair or m.belief_market).values()) >= FAV)
+    n = 0
+    for m in board.matches.values():
+        fair = m.closing_fair or m.belief_any
+        if fair and max(fair.values()) >= FAV:
+            n += 1
     return "fav0" if n == 0 else ("fav1" if n == 1 else "fav2+")
 
 
@@ -71,7 +74,8 @@ def run_gym(*, data_dir: Path, policies: list[str], days: list[str] | None = Non
     ctx = Ctx(cap_jczq_day=base.cap_jczq_day, cap_zucai_slip=base.cap_zucai_slip,
               belief_source=base.belief_source, seed=base.seed,
               extra={**base.extra, "data_dir": data_dir})
-    days = days if days is not None else list_days(data_dir)
+    include_history = bool(ctx.extra.get("history"))
+    days = days if days is not None else list_days(data_dir, include_history=include_history)
     issues = issues if issues is not None else list_issues(data_dir)
     result = GymResult(run_id=run_id, policies=list(policies), days=list(days), issues=list(issues))
     month_net: dict[tuple[str, str], float] = {}
@@ -88,7 +92,7 @@ def run_gym(*, data_dir: Path, policies: list[str], days: list[str] | None = Non
     events: list[tuple[str, int, object]] = []
     for day in days:
         try:
-            events.append((day, 0, load_jczq_board(data_dir, day)))
+            events.append((day, 0, load_jczq_board(data_dir, day, allow_history=include_history)))
         except FileNotFoundError:
             result.skipped["jczq_no_board"] = result.skipped.get("jczq_no_board", 0) + 1
     loaded: list[ZucaiIssue] = []

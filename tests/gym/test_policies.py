@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from nutmeg.gym.board import load_jczq_board, load_zucai_issue
-from nutmeg.gym.payout import check_jczq_legal
+from nutmeg.gym.payout import check_jczq_legal, settle_jczq
 from nutmeg.gym.policy import Ctx, get, names
 from tests.gym.test_board import DAY, _jczq_day, _match, _zucai_issue
 
@@ -103,3 +105,15 @@ def test_zucai_prescription_and_real_replay_from_files(tmp_path: Path) -> None:
     assert [s.slip_id for s in real_zucai] == ["R-26127"]            # 试玩票不回放
     board = load_jczq_board(_jczq_day(tmp_path), DAY)
     assert [s.slip_id for s in get("real").decide(board.visible(), ctx)] == ["20260920-J1"]
+
+
+def test_fav_pairs_runs_on_history_boards_with_closing_belief(tmp_path: Path) -> None:
+    from tests.gym.test_board import _history_data
+
+    data = _history_data(tmp_path)
+    board = load_jczq_board(data, "2025-12-14", allow_history=True)
+
+    [slip] = get("jczq_fav_pairs").decide(board.visible(), Ctx())
+    assert {leg.key for leg in slip.legs} == {"周日001", "周日003"}
+    assert check_jczq_legal(slip, board) is None
+    assert settle_jczq(slip, board).payout_yuan == pytest.approx(1.45 * 1.3 * 2)
