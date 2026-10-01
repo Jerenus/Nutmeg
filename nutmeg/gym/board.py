@@ -230,6 +230,13 @@ def load_jczq_board(data_dir: Path, day: str, *, allow_history: bool = False) ->
         raise FileNotFoundError(f"{day} 无板面快照")
     closing = _read(data_dir / "jczq" / "daily" / day / "closing_odds.json", {}) or {}
     results_doc = _read(data_dir / "jczq" / "jc-results.json", {}) or {}
+    # 赛果缺口用 jc-history（同一 titan007 源）补：每日回填只封存板面码，偶有漏场
+    history_doc = _read(data_dir / "jczq" / "jc-history.json", {}) or {}
+    if history_doc:
+        merged: dict[str, dict] = {}
+        for key in set(results_doc) | set(history_doc):
+            merged[key] = {**(history_doc.get(key) or {}), **(results_doc.get(key) or {})}
+        results_doc = merged
     prev_day = (_date.fromisoformat(day) - timedelta(days=1)).isoformat()
     prev_rows, _ = _snapshot_rows(data_dir, prev_day)
 

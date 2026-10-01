@@ -190,3 +190,15 @@ def test_history_board_uses_closing_as_belief_and_sp_for_settlement(tmp_path: Pa
     assert board.results["周日001"] == {"outcome_90": "home", "goals_h": 2, "goals_a": 0,
                                        "ht_h": 1, "ht_a": 0}
     assert list_days(data) == [] and list_days(data, include_history=True) == ["2025-12-14"]
+
+
+def test_snapshot_board_fills_result_gaps_from_jc_history(tmp_path: Path) -> None:
+    data = _jczq_day(tmp_path)
+    (data / "jczq" / "jc-history.json").write_text(json.dumps({DAY: {
+        "周六002": {"match_id": "2", "ft_home": 3, "ft_away": 1, "ht_home": 1, "ht_away": 1,
+                  "sp": {"had": {"outcome": "胜", "odds": 1.6}}}}}), encoding="utf-8")
+    board = load_jczq_board(data, DAY)
+    assert board.source == "snapshot"
+    assert board.results["周六001"]["goals_h"] == 2                 # jc-results 优先
+    assert board.results["周六002"] == {"outcome_90": "home", "goals_h": 3, "goals_a": 1,
+                                       "ht_h": 1, "ht_a": 1}       # 缺口由 jc-history 补
