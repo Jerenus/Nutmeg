@@ -63,6 +63,12 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 - **今晚真正可删的只有四处**：`ReplayActions`（kernel/wiring 挂着、无调用）+ `wiring.build_replay_action_service`；`OutcomeActions.correct_outcome`（赛果更正走 jc-results 回填重跑结算）；`WorkflowActions.record_flag_instance/link_precedent` 及两个 Request（Flag/Precedent 入账从未接线，记分牌是事实源）；`ClaimActions.verify/dispute/retract`（`sop_tasks.py`/`cli/decision.py`/`product/repository.py` 有字符串引用，要一并清）。迁移里的权限行留着无害。
 - **动作**：上述四处的删除脚本首次被会话权限分类器拦下；Jun 02:05 明确「需要删除就直接删除」后执行，`ff5e8d7`：删 `ReplayActions` 模块与测试、`wiring.build_replay_action_service`、`kernel.replay_actions`；删 `OutcomeActions.correct_outcome`（`_write_outcome` 不再有 correcting 分支）；删 `WorkflowActions.record_flag_instance/link_precedent` 与两个 Request；删 `ClaimActions.verify/dispute/retract/_adjudicate` 与 `ClaimAdjudicationRequest`；四个测试改写/删除。表与权限行留着（空表无害）。tests/ontology + tests/analytics 全绿。**operator_*/ProtectedTicketActions 专项**另排日期：前置是把 `decision-audit-legs --user-override` 的入账改成只写 `adjudications`，再按上面的触发器/活路径/守卫/测试清单一次迁移。
 
+## 10. 定位转向（2026-10-01 14:40，Jun「同意这个定位」）
+
+**事实**：假期迭代把 gym 跑到 403 天：帽内 max-P −20%（CI 不含 0，三赛段一致）、大热两两上赛季 −18.8%、换终盘 belief 无差、实力模型 null；5 个月里 belief≈市场（F9）。**没有任何策略族在样本外 ROI 为正且 CI 不含 0。** 继续让机器当最终决策者，按 403 天的账 ¥400/日约每月 −¥1,500–2,500。
+
+**决定**（主循环建议、Jun 同意）：机器＝风控官 + 账房 + 实验员，人＝下注者。每日：机器出初判与解读（不出票）→ Jun 出方案 → 机器审票（`betslip preview`：⛔V1 期望回报率 < 0.5、⛔V2 与已购票共享裸单、⚠️V3 倍投/重注；有 ⛔ 退出码 1）→ 讨论定案 → 登记。探索预算 ≤¥30/日只给预登记实验；工程进入维护模式。落地：`nutmeg/decision/review.py`（`1ae8557`）、宪法头注/§4/§6、RUNBOOK A4/A4b/B5、RULEBOOK §八。RSI 模式保留——它是对的认识论，错的是把它当盈利机器。
+
 ## 9. 收尾清点（2026-10-01 02:20）
 
 - **B3a/B4b 出生事故**：RUNBOOK 里剩下的两段事故全文迁进 `INCIDENTS.md`（`6acc34a`），格子只留指针。
