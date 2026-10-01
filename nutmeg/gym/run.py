@@ -85,38 +85,12 @@ def run_gym(*, data_dir: Path, policies: list[str], days: list[str] | None = Non
             k = (row["policy"], _month(row["key"]))
             month_net[k] = month_net.get(k, 0.0) + row["net"]
 
+    events: list[tuple[str, int, object]] = []
     for day in days:
         try:
-            board = load_jczq_board(data_dir, day)
+            events.append((day, 0, load_jczq_board(data_dir, day)))
         except FileNotFoundError:
             result.skipped["jczq_no_board"] = result.skipped.get("jczq_no_board", 0) + 1
-            continue
-        regime = jczq_regime(board)
-        for name in policies:
-            pol = get(name)
-            if "jczq" not in pol.channels:
-                continue
-            forced = tripped(name, day)
-            if forced:
-                # 止损空仓也要留痕，否则报告里的「止损空仓日」永远是 0
-                book({"key": day, "channel": "jczq", "policy": name, "regime": regime,
-                      "slip_id": None, "stake": None, "payout": None, "net": None,
-                      "legal": None, "forced_flat": True})
-                continue
-            slips = pol.decide(board.visible(), ctx)
-            for slip in slips:
-                reason = check_jczq_legal(slip, board)
-                if reason:
-                    book({"key": day, "channel": "jczq", "policy": name, "regime": regime,
-                          "slip_id": slip.slip_id, "stake": None, "payout": None, "net": None,
-                          "legal": reason, "forced_flat": forced})
-                    continue
-                s = settle_jczq(slip, board)
-                payout = s.payout_yuan
-                book({"key": day, "channel": "jczq", "policy": name, "regime": regime,
-                      "slip_id": slip.slip_id, "stake": slip.stake_yuan, "payout": payout,
-                      "net": (payout - slip.stake_yuan) if payout is not None else None,
-                      "legal": None, "pending_legs": s.pending_legs, "forced_flat": forced})
     loaded: list[ZucaiIssue] = []
     for issue in issues:
         try:
@@ -125,27 +99,14 @@ def run_gym(*, data_dir: Path, policies: list[str], days: list[str] | None = Non
             result.skipped["zucai_no_issue"] = result.skipped.get("zucai_no_issue", 0) + 1
     regimes = zucai_regimes(loaded)
     for zi in loaded:
-        key = (zi.sale_deadline or zi.issue)[:10]
-        for name in policies:
-            pol = get(name)
-            if not ({"renjiu", "shengfucai"} & set(pol.channels)):
-                continue
-            forced = tripped(name, key)
-            if forced:
-                book({"key": key, "issue": zi.issue, "channel": "zucai", "policy": name,
-                      "regime": regimes.get(zi.issue), "slip_id": None, "stake": None,
-                      "payout": None, "net": None, "legal": None, "forced_flat": True})
-                continue
-            slips = pol.decide(zi.visible(), ctx)
-            for slip in slips:
-                s = settle_zucai(slip, zi)
-                payout = s.get("payout")
-                book({"key": key, "issue": zi.issue, "channel": slip.channel, "policy": name,
-                      "regime": regimes.get(zi.issue), "slip_id": slip.slip_id,
-                      "stake": s.get("stake"), "payout": payout,
-                      "net": (payout - s["stake"]) if payout is not None else None,
-                      "legal": None, "skipped": s.get("skipped_reason"), "forced_flat": forced,
-                      "first_notes": s.get("first_notes"), "second_notes": s.get("second_notes")})
+        events.append(((zi.sale_deadline or zi.issue)[:10], 1, zi))
+    # 按真实时间线走：月度止损必须按日期触发，不能先跑完所有竞彩日再跑足彩
+    for key, _, obj in sorted(events, key=lambda e: (e[0], e[1])):
+        if isinstance(obj, JczqBoard):
+            _run_jczq_day(obj, policies, ctx, tripped=tripped, book=book)
+        else:
+            _run_zucai_issue(obj, key, policies, ctx, tripped=tripped, book=book,
+                             regime=regimes.get(obj.issue))
     for name in policies:
         rows = [r for r in result.ledger if r["policy"] == name]
         result.per_policy[name] = summarize(rows, seed=ctx.seed)
@@ -161,6 +122,56 @@ def run_gym(*, data_dir: Path, policies: list[str], days: list[str] | None = Non
     if out_dir is not None:
         write_result(result, Path(out_dir))
     return result
+
+
+def _run_jczq_day(board: JczqBoard, policies: list[str], ctx: Ctx, *, tripped, book) -> None:
+    day = board.day
+    regime = jczq_regime(board)
+    for name in policies:
+        pol = get(name)
+        if "jczq" not in pol.channels:
+            continue
+        if tripped(name, day):
+            # 止损空仓也要留痕，否则报告里的「止损空仓日」永远是 0
+            book({"key": day, "channel": "jczq", "policy": name, "regime": regime,
+                  "slip_id": None, "stake": None, "payout": None, "net": None,
+                  "legal": None, "forced_flat": True})
+            continue
+        for slip in pol.decide(board.visible(), ctx):
+            reason = check_jczq_legal(slip, board)
+            if reason:
+                book({"key": day, "channel": "jczq", "policy": name, "regime": regime,
+                      "slip_id": slip.slip_id, "stake": None, "payout": None, "net": None,
+                      "legal": reason, "forced_flat": False})
+                continue
+            s = settle_jczq(slip, board)
+            payout = s.payout_yuan
+            book({"key": day, "channel": "jczq", "policy": name, "regime": regime,
+                  "slip_id": slip.slip_id, "stake": slip.stake_yuan, "payout": payout,
+                  "net": (payout - slip.stake_yuan) if payout is not None else None,
+                  "legal": None, "pending_legs": s.pending_legs, "forced_flat": False})
+
+
+def _run_zucai_issue(zi: ZucaiIssue, key: str, policies: list[str], ctx: Ctx, *, tripped, book,
+                     regime: str | None) -> None:
+    for name in policies:
+        pol = get(name)
+        if not ({"renjiu", "shengfucai"} & set(pol.channels)):
+            continue
+        if tripped(name, key):
+            book({"key": key, "issue": zi.issue, "channel": "zucai", "policy": name,
+                  "regime": regime, "slip_id": None, "stake": None, "payout": None,
+                  "net": None, "legal": None, "forced_flat": True})
+            continue
+        for slip in pol.decide(zi.visible(), ctx):
+            s = settle_zucai(slip, zi)
+            payout = s.get("payout")
+            book({"key": key, "issue": zi.issue, "channel": slip.channel, "policy": name,
+                  "regime": regime, "slip_id": slip.slip_id, "stake": s.get("stake"),
+                  "payout": payout,
+                  "net": (payout - s["stake"]) if payout is not None else None,
+                  "legal": None, "skipped": s.get("skipped_reason"), "forced_flat": False,
+                  "first_notes": s.get("first_notes"), "second_notes": s.get("second_notes")})
 
 
 def summarize(rows: list[dict], *, boots: int = 2000, seed: int = 7) -> dict:

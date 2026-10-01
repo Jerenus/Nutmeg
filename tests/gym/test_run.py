@@ -15,6 +15,8 @@ def _two_days(tmp_path: Path) -> Path:
     src = data / "jczq" / "daily" / DAY
     dst = data / "jczq" / "daily" / "2026-09-21"
     shutil.copytree(src, dst)
+    snap = dst / "sporttery_markets.json"      # 复制的板要属于 09-21：businessDate/matchDate 一起改
+    snap.write_text(snap.read_text(encoding="utf-8").replace(DAY, "2026-09-21"), encoding="utf-8")
     results = json.loads((data / "jczq" / "jc-results.json").read_text(encoding="utf-8"))
     results["2026-09-21"] = results[DAY]
     (data / "jczq" / "jc-results.json").write_text(json.dumps(results), encoding="utf-8")
@@ -88,3 +90,10 @@ def test_summarize_and_drawdown_math() -> None:
     assert s["keys"] == 2 and s["net"] == -2.0 and s["stake"] == 30 and s["illegal"] == 1
     assert s["max_drawdown"] == -7.0 and s["ci"][0] <= s["net"] <= s["ci"][1]   # d1 +5, d2 −7
     assert max_drawdown([5, -8, 1]) == -8.0 and max_drawdown([]) == 0.0          # 峰 5 → 谷 −3
+
+
+def test_events_run_in_date_order_across_channels(tmp_path: Path) -> None:
+    data = _two_days(tmp_path)                 # 足彩 26127 截止 09-16，竞彩 09-20 / 09-21
+    result = run_gym(data_dir=data, policies=["zucai_max_p", "jczq_max_p"], run_id="t")
+    keys = [r["key"] for r in result.ledger]
+    assert keys == sorted(keys) and keys[0] == "2026-09-16" and keys[-1] == "2026-09-21"
