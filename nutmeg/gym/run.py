@@ -97,7 +97,13 @@ def run_gym(*, data_dir: Path, policies: list[str], days: list[str] | None = Non
             if "jczq" not in pol.channels:
                 continue
             forced = tripped(name, day)
-            slips = [] if forced else pol.decide(board.visible(), ctx)
+            if forced:
+                # 止损空仓也要留痕，否则报告里的「止损空仓日」永远是 0
+                book({"key": day, "channel": "jczq", "policy": name, "regime": regime,
+                      "slip_id": None, "stake": None, "payout": None, "net": None,
+                      "legal": None, "forced_flat": True})
+                continue
+            slips = pol.decide(board.visible(), ctx)
             for slip in slips:
                 reason = check_jczq_legal(slip, board)
                 if reason:
@@ -125,7 +131,12 @@ def run_gym(*, data_dir: Path, policies: list[str], days: list[str] | None = Non
             if not ({"renjiu", "shengfucai"} & set(pol.channels)):
                 continue
             forced = tripped(name, key)
-            slips = [] if forced else pol.decide(zi.visible(), ctx)
+            if forced:
+                book({"key": key, "issue": zi.issue, "channel": "zucai", "policy": name,
+                      "regime": regimes.get(zi.issue), "slip_id": None, "stake": None,
+                      "payout": None, "net": None, "legal": None, "forced_flat": True})
+                continue
+            slips = pol.decide(zi.visible(), ctx)
             for slip in slips:
                 s = settle_zucai(slip, zi)
                 payout = s.get("payout")
@@ -153,6 +164,7 @@ def run_gym(*, data_dir: Path, policies: list[str], days: list[str] | None = Non
 
 
 def summarize(rows: list[dict], *, boots: int = 2000, seed: int = 7) -> dict:
+    rows = [r for r in rows if not r.get("forced_flat")] + [r for r in rows if r.get("forced_flat")]
     settled = [r for r in rows if r.get("net") is not None]
     by_key: dict[str, float] = {}
     for r in settled:
@@ -173,7 +185,8 @@ def summarize(rows: list[dict], *, boots: int = 2000, seed: int = 7) -> dict:
         "ci": [round(ci[0], 2), round(ci[1], 2)], "p_positive": round(p_pos, 3),
         "max_drawdown": round(max_drawdown(daily), 2),
         "illegal": sum(1 for r in rows if r.get("legal")),
-        "pending": sum(1 for r in rows if r.get("net") is None and not r.get("legal")),
+        "pending": sum(1 for r in rows if r.get("net") is None and not r.get("legal")
+                       and not r.get("forced_flat")),
         "forced_flat_keys": len({r["key"] for r in rows if r.get("forced_flat")}),
     }
 

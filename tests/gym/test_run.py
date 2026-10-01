@@ -73,9 +73,10 @@ def test_brake_forces_flat_after_a_3000_month(tmp_path: Path) -> None:
 
     rows = [r for r in result.ledger if r["policy"] == "_test_lose_big"]
     assert rows[0]["key"] == DAY and rows[0]["net"] == -3000 and rows[0]["forced_flat"] is False
-    assert len(rows) == 1                                   # 第二天被止损空仓，没有票
-    assert result.per_policy["_test_lose_big"]["net"] == -3000
-    assert result.per_policy["_test_lose_big"]["max_drawdown"] == -3000
+    assert len(rows) == 2 and rows[1]["forced_flat"] is True and rows[1]["slip_id"] is None
+    summary = result.per_policy["_test_lose_big"]
+    assert summary["net"] == -3000 and summary["max_drawdown"] == -3000
+    assert summary["forced_flat_keys"] == 1 and summary["pending"] == 0
 
 
 def test_summarize_and_drawdown_math() -> None:
