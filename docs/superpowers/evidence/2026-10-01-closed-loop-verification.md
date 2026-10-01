@@ -12,11 +12,12 @@ Jun 2026-10-01：「一二三四都处理完成后开始五六的规划和实现
 | 6 | launchd 任务 | `launchctl list \| grep nutmeg` | 14/14 已装载；`decision.am`/`jczq.research` 今日退出码 1 = 国庆板面空（`Sporttery calculator empty, not a WAF block`），属预期 | 10-01 13:27 |
 | 7 | 10:45 loop 新末尾步 | `git log -1 -- experiments/corpus-v2.json` | `3e353a2 chore(experiments): loop outputs 2026-10-01` 自动提交成功，工作树此后干净 | 10-01 10:45 |
 | 8 | F15/G1 结账走通 | `uv run nutmeg rsi grade --exp F15/G1 --mode prospective` | 两条 n=0（窗口 10-02 起），`rsi status` 可见 | 10-01 12:1x |
-| 9 | 终盘历史回填（#5） | `scripts/jczq_history_backfill.py` + `titan007_closing_backfill.py --results-file jc-history.json` | 赛果+SP：290 天 / 4,516 场全带 SP（1 分 49 秒）；终盘回填进行中（~3 天/分钟） | 10-01 13:28 |
+| 9 | 终盘历史回填（#5） | `scripts/jczq_history_backfill.py` + `titan007_closing_backfill.py --results-file jc-history.json` | 赛果+SP：290 天 / 4,516 场全带 SP（1 分 49 秒）；终盘 4,515/4,516 带 sharp fair（38 分 46 秒）；本赛季 SP 也抓齐，17:00 价 vs SP 无系统偏差（\|Δ\| 中位 2.4%） | 10-01 14:01 |
+| 10 | 整赛季 SP 回放 | `nutmeg gym run --history --from 2025-08-01 --to 2026-05-17 …` / `--to 2026-09-30` | 267 天 60 秒；403 天 ~2 分钟；max_p −16.4%/−20.0%、fav_pairs −18.8%/−10.4%（evidence/2026-10-01-history-expansion.md） | 10-01 14:1x |
+| 11 | 本赛季锦标赛复跑（赛果缺口补齐后） | 同 #3 | 数字不变（max_p −789/−28.0%，未结 11→8） | 10-01 13:4x |
 
 ## 待验（需要真实板面或到期才能跑）
 
 - **10-02 08:00–10:45 早间链**：`decision-am` 抓到板 → `research run` → `intake` → `jczq-build-reads`（现在＝建 Read → 交本体 → 投影覆盖 `reads.json`）→ 10:45 loop（F10–F15/G1 结账 + Dream 对照账 + `commit_outputs`）。验收点：`daily/<日>/reads.json` 每条带 `kind/board_key/code`；`judgment-projection.json` 分歧 0；`nutmeg judgment project --day <日>` 投影条数 = 板面场数。
 - **10-01 20:30 Dream 夜录**：板面空则 `DayBoardTooSmall` 跳过属预期；有板的第一天看 `~/nutmeg-shadow/reports/<日>.json`。
-- **整赛季 SP 回放**：终盘回填完成后 `nutmeg gym run --history --from 2025-08-01 --to 2026-05-17 --policy flat,jczq_max_p,jczq_fav_pairs`。
 - **10-02 前置片**：`decision-audit-legs --user-override` 入账只写 `adjudications`；**10-09** operator_* 退役专项（分支）。
