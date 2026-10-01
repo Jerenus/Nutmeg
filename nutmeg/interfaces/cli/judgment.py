@@ -44,3 +44,32 @@ def judgment_project(
         _cli.typer.echo(f"   仅内核（文件已删或重建）：{len(result['only_in_kernel'])} 场")
     if out["report"]:
         _cli.typer.echo(f"→ {out['report']}")
+
+
+_BRIEF_WRITE = _cli.typer.Option(False, "--write", help="同时写 judgment-brief.md 到板面目录")
+
+
+@judgment_app.command("brief")
+def judgment_brief(
+    day: str | None = _DAY,
+    issue: str | None = _ISSUE,
+    data_dir: Path = _DATA_DIR,
+    write: bool = _BRIEF_WRITE,
+) -> None:
+    """初判与解读（2026-10-01 定位：机器出初判不出票）：每场一行，市场/判断/表态/种类/大热/旗。"""
+    from nutmeg.decision.judgment_brief import jczq_brief, render_jczq, render_zucai, zucai_brief
+
+    if bool(day) == bool(issue):
+        _cli.typer.echo("judgment error: --day 与 --issue 二选一")
+        raise _cli.typer.Exit(code=2)
+    if day:
+        text = render_jczq(jczq_brief(data_dir, day))
+        target = Path(data_dir) / "jczq" / "daily" / day / "judgment-brief.md"
+    else:
+        text = render_zucai(zucai_brief(data_dir, str(issue)))
+        target = Path(data_dir) / "zucai" / f"{issue}-judgment-brief.md"
+    _cli.typer.echo(text)
+    if write:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        _cli.typer.echo(f"→ {target}")
