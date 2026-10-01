@@ -80,7 +80,7 @@ def test_zucai_brief_reads_legs_base_and_judgment_v1(tmp_path: Path) -> None:
     assert row["market"] == "62/22/16" and row["belief"] == "72/18/10" and row["faces"] == "3"
     assert row["action"] == "3" and row["stance"] == "单 3（信心4）"
     assert row["fav"] == ""                                   # 大热按市场 prior 0.62 < 0.70
-    assert "任九帽内 max-P" in render_zucai(brief)
+    assert "足彩初稿不省略" in render_zucai(brief)
 
 
 def test_cli_brief_prints_and_writes(tmp_path: Path) -> None:

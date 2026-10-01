@@ -5,10 +5,16 @@
 - V1 期望回报率 < 0.5——"中了也亏"的帽内 max-P 形状（任九 −58%、竞彩 max-P −20%，CI 不含 0）；
 - V2 与已购票共享裸单——假分散（26122 联死 73.8%、26133 ≈60%、09-28 五票同死 004）。
 V3 倍投/重注只警告（证据不够硬：26121 ×50 中过一次）。
+
+足彩的期望回报用**奖金模型**（`scripts/zucai_prize_model.py`，2026-10-01）：任九奖金与板面意外度
+corr 0.95、log(prize)=a+b·S 且 b≈1——市场口径下任何票面形状的期望回报都≈返奖率，差别只在
+「判断溢价」Π_i Σ_{A_i} q/p（判断概率 q 与市场 p 不同的面）。全局中位数口径会把热板票高估十倍
+（帽内 max-P 42 期中 11 次，中时奖金中位 ¥215 vs 全局中位 ¥4,098）。
 """
 from __future__ import annotations
 
 import json
+import math
 import statistics
 from itertools import combinations
 from pathlib import Path
@@ -20,6 +26,9 @@ VETO_RATIO = 0.5
 WARN_RATIO = 0.65
 WARN_MULTIPLIER = 10
 WARN_STAKE_SHARE = 0.5          # 单票 > 日帽一半
+FACES = ("home", "draw", "away")
+BOARD_MATCHES = 14
+ZUCAI = ("renjiu", "shengfucai")
 
 
 def prize_medians(data_dir: Path) -> dict[str, float | None]:
@@ -37,6 +46,29 @@ def prize_medians(data_dir: Path) -> dict[str, float | None]:
             "shengfucai": statistics.median(sfc) if sfc else None}
 
 
+def prize_model(data_dir: Path) -> dict[str, dict]:
+    """→ {renjiu: {median, a, b, resid_sd, n}, shengfucai: {…}}。
+
+    有 `zucai/prize-model.json`（`scripts/zucai_prize_model.py --write`）时带系数；
+    没有就只有中位数，V1 退回中位数口径并在文案里标明。
+    """
+    medians = prize_medians(data_dir)
+    out: dict[str, dict] = {ch: {"median": medians[ch]} for ch in ZUCAI}
+    path = Path(data_dir) / "zucai" / "prize-model.json"
+    try:
+        channels = json.loads(path.read_text(encoding="utf-8")).get("channels") or {}
+    except (OSError, ValueError):
+        return out
+    for ch, row in channels.items():
+        if ch not in out or not all(k in row for k in ("a", "b", "resid_sd")):
+            continue
+        out[ch].update({"a": float(row["a"]), "b": float(row["b"]),
+                        "resid_sd": float(row["resid_sd"]), "n": int(row.get("n") or 0)})
+        if out[ch]["median"] is None and row.get("prize_median"):
+            out[ch]["median"] = float(row["prize_median"])
+    return out
+
+
 def _modal_odds(leg: SlipLeg) -> float | None:
     """所选面里概率最高那面的赔率（缺 fair/odds → None）。"""
     if not leg.fair or not leg.odds or len(leg.odds) != len(leg.selections):
@@ -50,14 +82,60 @@ def _modal_odds(leg: SlipLeg) -> float | None:
     return best
 
 
-def expected_return_ratio(slip: BetSlip, *, prize_median: dict[str, float | None]) -> float | None:
-    """E[派奖]/投入。竞彩：每串 P(全中)×模态赔率连乘；足彩：P(全对)×奖金中位数。缺数据 → None。"""
-    if slip.channel in ("renjiu", "shengfucai"):
+def zucai_return(slip: BetSlip, *, model: dict[str, dict],
+                 market: dict[str, dict] | None = None) -> dict | None:
+    """足彩期望回报（奖金模型）。
+
+    E[奖金·1{中}] = e^{a+sd²/2} · Π_i Σ_{ω∈A_i} q_i(ω)·p_i(ω)^{−b}：q = 判断概率（腿的 fair），
+    p = 市场概率（`market[no]`，缺则取 q），未选的场 A_i = 三面（市场分布缺则按均匀 1/3）。
+    → {ratio（判断口径）, ratio_market（q=p 时）, premium（二者之比）, basis: "model"}；
+    没有系数 → {ratio: P(全对)×中位数/投入, basis: "median"}；缺数据 → None。
+    """
+    coeffs = model.get(slip.channel) or {}
+    stake = slip.stake_yuan
+    if not stake:
+        return None
+    if "a" not in coeffs:
         p = slip.hit_probability
-        prize = prize_median.get(slip.channel)
-        if p is None or prize is None or not slip.stake_yuan:
+        median = coeffs.get("median")
+        if p is None or median is None:
             return None
-        return round(p * prize * slip.multiplier / slip.stake_yuan, 3)
+        return {"ratio": round(p * median * slip.multiplier / stake, 3), "basis": "median"}
+    a, b, sd = coeffs["a"], coeffs["b"], coeffs["resid_sd"]
+    market = market or {}
+    belief_term = market_term = 1.0
+    covered: set[str] = set()
+    for leg in slip.legs:
+        if leg.market != "had" or not leg.fair:
+            return None
+        keys = list(dict.fromkeys(normalize_selection("had", s) for s in leg.selections))
+        if any(k is None for k in keys):
+            return None
+        q, p = leg.fair, market.get(leg.key) or leg.fair
+        covered.add(leg.key)
+        belief_term *= sum(float(q[k]) * float(p[k]) ** (-b) for k in keys)
+        market_term *= sum(float(p[k]) ** (1 - b) for k in keys)
+    free = 1.0
+    seen = 0
+    for no, p in market.items():
+        if no in covered or seen >= BOARD_MATCHES - len(covered):
+            continue
+        free *= sum(float(p[f]) ** (1 - b) for f in FACES)
+        seen += 1
+    free *= (3 ** b) ** max(0, BOARD_MATCHES - len(covered) - seen)
+    base = math.exp(a + sd * sd / 2) * free * slip.multiplier / stake
+    ratio, ratio_market = base * belief_term, base * market_term
+    return {"ratio": round(ratio, 3), "ratio_market": round(ratio_market, 3),
+            "premium": round(ratio / ratio_market, 3) if ratio_market else None,
+            "basis": "model"}
+
+
+def expected_return_ratio(slip: BetSlip, *, prize_model: dict[str, dict],
+                          market: dict[str, dict] | None = None) -> float | None:
+    """E[派奖]/投入。竞彩：每串 P(全中)×模态赔率连乘；足彩：奖金模型（见 `zucai_return`）。"""
+    if slip.channel in ZUCAI:
+        out = zucai_return(slip, model=prize_model, market=market)
+        return None if out is None else out["ratio"]
     covs = [leg.coverage for leg in slip.legs]
     odds = [_modal_odds(leg) for leg in slip.legs]
     if not covs or any(c is None for c in covs) or any(o is None for o in odds):
@@ -75,23 +153,37 @@ def expected_return_ratio(slip: BetSlip, *, prize_median: dict[str, float | None
     return round(ev / slip.stake_yuan, 3) if slip.stake_yuan else None
 
 
-def review(slip: BetSlip, diagnosis: dict, *, prize_median: dict[str, float | None],
-           cap_day: int = 400) -> dict:
-    """→ {ratio, verdicts: [{code, level, text}], vetoed: bool, lines: [str]}。"""
+def _v1_text(ratio: float, detail: dict | None) -> str:
+    text = f"期望回报率 {ratio:.2f}"
+    if detail and detail.get("basis") == "model":
+        text += (f"（市场口径 {detail['ratio_market']:.2f} × 判断溢价 {detail['premium']:.2f}；"
+                 "奖金模型）")
+    elif detail and detail.get("basis") == "median":
+        text += "（奖金中位数口径，热板会高估；跑 scripts/zucai_prize_model.py --write）"
+    return text
+
+
+def review(slip: BetSlip, diagnosis: dict, *, prize_model: dict[str, dict],
+           cap_day: int = 400, market: dict[str, dict] | None = None) -> dict:
+    """→ {ratio, detail, verdicts: [{code, level, text}], vetoed: bool, lines: [str]}。"""
     verdicts: list[dict] = []
-    ratio = expected_return_ratio(slip, prize_median=prize_median)
+    detail = zucai_return(slip, model=prize_model, market=market) \
+        if slip.channel in ZUCAI else None
+    ratio = (detail["ratio"] if detail else None) if slip.channel in ZUCAI \
+        else expected_return_ratio(slip, prize_model=prize_model)
     if ratio is None:
         verdicts.append({"code": "V1", "level": "info",
                          "text": "期望回报率缺数据（腿缺 fair/赔率或无奖金缓存），V1 未检"})
     elif ratio < VETO_RATIO:
         verdicts.append({"code": "V1", "level": "veto",
-                         "text": f"期望回报率 {ratio:.2f} < {VETO_RATIO}：中了也亏的帽内 max-P 形状"
+                         "text": _v1_text(ratio, detail) + f" < {VETO_RATIO}：中了也亏的形状"
                                  "（403 天回放 max-P −20%、任九 −58%）"})
     elif ratio < WARN_RATIO:
         verdicts.append({"code": "V1", "level": "warn",
-                         "text": f"期望回报率 {ratio:.2f}（抽水基准约 0.64–0.86），偏向大热堆叠"})
+                         "text": _v1_text(ratio, detail)
+                                 + "（抽水基准约 0.64–0.86），偏向大热堆叠"})
     else:
-        verdicts.append({"code": "V1", "level": "info", "text": f"期望回报率 {ratio:.2f}"})
+        verdicts.append({"code": "V1", "level": "info", "text": _v1_text(ratio, detail)})
     shared = diagnosis.get("shared_naked") or []
     if shared:
         keys = "、".join(f"{r['key']}{r['face']}" for r in shared)
@@ -111,4 +203,5 @@ def review(slip: BetSlip, diagnosis: dict, *, prize_median: dict[str, float | No
     lines = [f"{mark[v['level']]}{v['code']} {v['text']}" for v in verdicts]
     verdict = "**否决**（改票后再审）" if vetoed else "可出（人定，机器只否决已知坏结构）"
     lines.append("审票结论：" + verdict)
-    return {"ratio": ratio, "verdicts": verdicts, "vetoed": vetoed, "lines": lines}
+    return {"ratio": ratio, "detail": detail, "verdicts": verdicts, "vetoed": vetoed,
+            "lines": lines}

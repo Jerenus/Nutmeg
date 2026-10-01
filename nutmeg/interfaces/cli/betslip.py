@@ -48,8 +48,33 @@ def _fail(exc: Exception) -> None:
     raise _cli.typer.Exit(code=1)
 
 
+def _issue_fair(issue: str, data_dir: Path) -> dict:
+    """足彩票没给 --fair-file 时：legs-base 的 fair（=判断概率）当每腿 fair（2026-10-01）。"""
+    if not issue:
+        return {}
+    try:
+        doc = json.loads((Path(data_dir) / "zucai" / f"{issue}-legs-base.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    legs = doc.get("legs") or {}
+    return {no: leg["fair"] for no, leg in legs.items() if leg.get("fair")}
+
+
+def _issue_market(issue: str, data_dir: Path) -> dict:
+    """legs-base 的 prior（=市场分布），给审票的奖金模型算判断溢价；缺 prior 用 fair。"""
+    if not issue:
+        return {}
+    try:
+        doc = json.loads((Path(data_dir) / "zucai" / f"{issue}-legs-base.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    legs = doc.get("legs") or {}
+    return {no: (leg.get("prior") or leg.get("fair")) for no, leg in legs.items()
+            if leg.get("prior") or leg.get("fair")}
+
+
 def _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo, multiplier,
-                issue, scheme_no, trial, note):
+                issue, scheme_no, trial, note, data_dir=Path(".nutmeg-data")):
     from nutmeg.decision.betslip import BetSlip, BetslipError, SlipLeg, parse_faces_row
 
     legs: list[SlipLeg] = []
@@ -67,7 +92,8 @@ def _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
         if not faces:
             raise BetslipError("足彩票须给 --faces")
         face_map = parse_faces_row(faces)
-        fair = json.loads(Path(fair_file).read_text("utf-8")) if fair_file else {}
+        fair = (json.loads(Path(fair_file).read_text("utf-8")) if fair_file
+                else _issue_fair(issue, data_dir))
         legs = [SlipLeg(
             key=no, market="had",
             selections=tuple({"3": "home", "1": "draw", "0": "away"}[c] for c in f),
@@ -116,7 +142,7 @@ def betslip_register(
 
     try:
         slip = _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
-                           multiplier, issue, scheme_no, trial, note)
+                           multiplier, issue, scheme_no, trial, note, data_dir)
         slip.diagnosis = _diagnose(slip, data_dir)
         if slip.channel == "jczq" and slip.purchased:
             # 实票入账到本体（2026-10-01）：登记是事实，内核是镜像；镜像失败不挡登记
@@ -170,7 +196,7 @@ def betslip_preview(
 
     try:
         slip = _build_slip("preview", channel, placed_at, faces, legs_file, fair_file, combo,
-                           multiplier, issue, "", False, "")
+                           multiplier, issue, "", False, "", data_dir)
         diag = _diagnose(slip, data_dir)
         p = slip.hit_probability
         _cli.typer.echo(f"预览 {channel} {slip.notes} 注 × {multiplier} 倍 = ¥{slip.stake_yuan:,}"
@@ -189,9 +215,10 @@ def betslip_preview(
 
 def _review_lines(slip, diagnosis: dict, data_dir: Path) -> list[str]:
     """审票（2026-10-01 定位）：V1 期望回报率 / V2 共享裸单 否决，V3 倍投警告。"""
-    from nutmeg.decision.review import prize_medians, review
+    from nutmeg.decision.review import prize_model, review
 
-    return review(slip, diagnosis, prize_median=prize_medians(data_dir))["lines"]
+    market = _issue_market(slip.issue, data_dir) if slip.channel != "jczq" else None
+    return review(slip, diagnosis, prize_model=prize_model(data_dir), market=market)["lines"]
 
 
 @betslip_app.command("list")

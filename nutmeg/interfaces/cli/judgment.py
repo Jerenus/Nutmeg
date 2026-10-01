@@ -55,8 +55,10 @@ def judgment_brief(
     issue: str | None = _ISSUE,
     data_dir: Path = _DATA_DIR,
     write: bool = _BRIEF_WRITE,
+    cap: int = _cli.typer.Option(400, "--cap", help="足彩初稿注金帽（元）"),
 ) -> None:
-    """初判与解读（2026-10-01 定位：机器出初判不出票）：每场一行，市场/判断/表态/种类/大热/旗。"""
+    """初判与解读（2026-10-01 定位）：每场一行，市场/判断/表态/种类/大热/旗。竞彩不出票；
+    足彩附机器初稿（Jun：传统足彩的初稿不能省略），`--write` 同时落 draft 文件。"""
     from nutmeg.decision.judgment_brief import jczq_brief, render_jczq, render_zucai, zucai_brief
 
     if bool(day) == bool(issue):
@@ -66,10 +68,37 @@ def judgment_brief(
         text = render_jczq(jczq_brief(data_dir, day))
         target = Path(data_dir) / "jczq" / "daily" / day / "judgment-brief.md"
     else:
-        text = render_zucai(zucai_brief(data_dir, str(issue)))
+        text = render_zucai(zucai_brief(data_dir, str(issue))) + "\n" + _draft_text(
+            data_dir, str(issue), cap, write)
         target = Path(data_dir) / "zucai" / f"{issue}-judgment-brief.md"
     _cli.typer.echo(text)
     if write:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
         _cli.typer.echo(f"→ {target}")
+
+
+_CAP = _cli.typer.Option(400, "--cap", help="初稿注金帽（元）；刹车档自动取一半")
+
+
+def _draft_text(data_dir: Path, issue: str, cap: int, write: bool) -> str:
+    from nutmeg.decision.zucai_draft import build_draft, render_draft
+
+    try:
+        return render_draft(build_draft(data_dir, issue, cap_yuan=cap, write=write))
+    except FileNotFoundError as exc:
+        return f"# 足彩初稿 · {issue}：未出——{exc}\n"
+
+
+@judgment_app.command("draft")
+def judgment_draft(
+    issue: str = _cli.typer.Option(..., "--issue", help="足彩期号 如 26135"),
+    cap: int = _CAP,
+    data_dir: Path = _DATA_DIR,
+    write: bool = _WRITE,
+) -> None:
+    """足彩初稿（处方忠实：只丢场不降档；附刹车档与帽内 max-P 对照；初稿自己过审票）。
+
+    落 `<期>-draft.json/.md` 与 `<期>-legs-draft-<channel>.json`，候选进工作台时间线。
+    """
+    _cli.typer.echo(_draft_text(data_dir, issue, cap, write))

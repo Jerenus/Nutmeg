@@ -163,7 +163,8 @@ def render_zucai(brief: dict) -> str:
     for r in brief["rows"]:
         lines.append(f"| {r['no']} | {r['name']} | {r['market']} | {r['belief']} | {r['faces']} "
                      f"| {r['action']} | {r['stance']} | {r['fav']} | {r['flags']} | {r['note']} |")
-    lines += ["", "> 任九帽内 max-P 形状 403 天回放 −58%（38 期中 8 期、全在热板）；"
-                  "处方面只是机器的判断面集合，不是票。方案由人出，机器审票"
-                  "（`betslip preview --faces … --issue …`）。"]
+    lines += ["", "> 处方面 = 机器的判断面集合；**足彩初稿不省略**（Jun 2026-10-01）：机器按"
+                  "处方忠实规则出首版票面（见下「足彩初稿」，`nutmeg judgment draft --issue`），"
+                  "Jun 改票 → `betslip preview --faces … --issue …` 审票 → 讨论定案 → 登记。"
+                  "帽内 max-P 形状 403 天回放 −58%，只作对照。"]
     return "\n".join(lines) + "\n"
