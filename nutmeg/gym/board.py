@@ -198,23 +198,27 @@ def load_history_board(data_dir: Path, day: str) -> JczqBoard:
         raise FileNotFoundError(f"{day} 无历史板")
     closing = _read(data_dir / "jczq" / "daily" / day / "closing_odds.json", {}) or {}
     matches: dict[str, JczqMatch] = {}
+    extra: dict[str, JczqMatch] = {}
     results: dict[str, dict] = {}
     for code, rec in history.items():
         sharp = (closing.get(code) or {}).get("sharp") or {}
         sp = rec.get("sp") or None
-        matches[code] = JczqMatch(
+        # 体彩对大热门常只开让球不开胜平负：没有胜平负 SP 的场＝当天没卖 had，不进策略视野
+        had_sold = bool(((sp or {}).get("had") or {}).get("odds"))
+        match = JczqMatch(
             code=code, business_date=day, name=f"{rec.get('home', '')}-{rec.get('away', '')}",
-            league="", kickoff_bj=None, selling=True, had={}, hhad=None, ttg=None, crs=None,
+            league="", kickoff_bj=None, selling=had_sold, had={}, hhad=None, ttg=None, crs=None,
             single_allowed={}, closing_fair=sharp.get("fair_probability") or None,
             read_belief=None, sp=sp,
         )
+        (matches if had_sold else extra)[code] = match
         if rec.get("ft_home") is not None and rec.get("ft_away") is not None:
             row = {"outcome_90": _outcome(int(rec["ft_home"]), int(rec["ft_away"])),
                    "goals_h": int(rec["ft_home"]), "goals_a": int(rec["ft_away"])}
             if rec.get("ht_home") is not None and rec.get("ht_away") is not None:
                 row["ht_h"], row["ht_a"] = int(rec["ht_home"]), int(rec["ht_away"])
             results[code] = row
-    return JczqBoard(day=day, matches=matches, results=results, source="history_sp")
+    return JczqBoard(day=day, matches=matches, extra=extra, results=results, source="history_sp")
 
 
 def load_jczq_board(data_dir: Path, day: str, *, allow_history: bool = False) -> JczqBoard:

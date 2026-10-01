@@ -181,11 +181,12 @@ def test_history_board_uses_closing_as_belief_and_sp_for_settlement(tmp_path: Pa
         load_jczq_board(data, "2025-12-14")                      # 没有快照、未允许历史板
     board = load_jczq_board(data, "2025-12-14", allow_history=True)
 
-    assert board.source == "history_sp" and set(board.matches) == {"周日001", "周日002", "周日003"}
+    assert board.source == "history_sp" and set(board.matches) == {"周日001", "周日003"}
+    assert "周日002" in board.extra and board.lookup("周日002").selling is False   # 没卖胜平负
     m = board.matches["周日001"]
     assert m.had == {} and m.belief_any == {"home": 0.74, "draw": 0.16, "away": 0.10}
     assert m.sp["had"] == {"outcome": "胜", "odds": 1.45}
-    assert board.matches["周日002"].belief_any is None            # 无终盘 → 策略跳过
+    assert board.extra["周日002"].belief_any is None              # 无终盘
     assert board.results["周日001"] == {"outcome_90": "home", "goals_h": 2, "goals_a": 0,
                                        "ht_h": 1, "ht_a": 0}
     assert list_days(data) == [] and list_days(data, include_history=True) == ["2025-12-14"]
