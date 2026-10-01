@@ -235,7 +235,12 @@ def load_jczq_board(data_dir: Path, day: str, *, allow_history: bool = False) ->
     if history_doc:
         merged: dict[str, dict] = {}
         for key in set(results_doc) | set(history_doc):
-            merged[key] = {**(history_doc.get(key) or {}), **(results_doc.get(key) or {})}
+            day_rows: dict[str, dict] = {}
+            for code in set(results_doc.get(key) or {}) | set(history_doc.get(key) or {}):
+                hist = (history_doc.get(key) or {}).get(code) or {}
+                live = (results_doc.get(key) or {}).get(code) or {}
+                day_rows[code] = {**hist, **{k: v for k, v in live.items() if v is not None}}
+            merged[key] = day_rows
         results_doc = merged
     prev_day = (_date.fromisoformat(day) - timedelta(days=1)).isoformat()
     prev_rows, _ = _snapshot_rows(data_dir, prev_day)
