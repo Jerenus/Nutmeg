@@ -20,7 +20,12 @@ def belief_of(m: JczqMatch, ctx: Ctx) -> dict[str, float]:
     return m.belief_market
 
 
-def combo_legs(board: JczqBoard, ctx: Ctx, *, faces_filter=None, match_filter=None) -> list[dict]:
+# enumerate_combos 是 C(n,k)×6^k 的全枚举：20 场板 k=4 近 300 万种，先按最大面裁到 8 场
+MAX_LEGS_CONSIDERED = 8
+
+
+def combo_legs(board: JczqBoard, ctx: Ctx, *, faces_filter=None, match_filter=None,
+               max_matches: int = MAX_LEGS_CONSIDERED) -> list[dict]:
     legs: list[dict] = []
     for code, m in sorted(board.matches.items()):
         if match_filter and not match_filter(m):
@@ -37,7 +42,9 @@ def combo_legs(board: JczqBoard, ctx: Ctx, *, faces_filter=None, match_filter=No
         if options:
             legs.append({"code": code, "name": m.name, "kickoff": m.kickoff_bj,
                          "belief": belief, "prior": m.belief_market, "options": options})
-    return legs
+    # 帽内 max P 的腿几乎只来自最大面最高的场：按最大面降序裁到 max_matches 场再枚举
+    legs.sort(key=lambda leg: -max(leg["belief"].values()))
+    return legs[:max_matches]
 
 
 def to_slip(day: str, combo: dict, *, tag: str) -> BetSlip:
