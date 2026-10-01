@@ -83,26 +83,47 @@ def test_default_audit_keeps_errors_blocking_and_writes_no_adjudication(tmp_path
         assert uow.workflow.count_adjudications() == 0
 
 
-def test_user_override_requires_a_signed_ticket_batch_token(tmp_path):
+def test_user_override_writes_one_adjudication_per_error_without_a_token(tmp_path):
+    """2026-10-01 前置片：行权只写 Adjudication，不再需要 operator 票批 token。"""
     kernel, data_dir, legs_file = _setup(tmp_path)
 
     result = _invoke(data_dir, legs_file, override=True)
 
-    assert result.exit_code == 1
-    assert "--ticket-batch-token" in result.stdout
+    assert result.exit_code == 0, result.stdout
+    assert "user override 已入账：1 个 ERROR -> 1 条 Adjudication" in result.stdout
     with OntologyUnitOfWork(kernel.engine) as uow:
-        assert uow.workflow.count_adjudications() == 0
+        assert uow.workflow.count_adjudications() == 1
+        [adj] = uow.workflow.iter_adjudications()
+    assert adj.subject_id == "26111:12" and adj.decision == "evidence_rejected"
+    assert adj.evidence_rejected[0]["code"] == "flagged_naked_single"
+    assert adj.alternative["rule_ids"] and adj.alternative["faces"] == "3"
+    # 同日再跑同一票：幂等，不重复入账
+    again = _invoke(data_dir, legs_file, override=True)
+    assert again.exit_code == 0
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.workflow.count_adjudications() == 1
 
 
-def test_user_override_without_batch_token_stays_blocked_before_registration(tmp_path):
+def test_user_override_with_incomplete_registration_stays_blocked_and_writes_nothing(tmp_path):
     kernel, data_dir, legs_file = _setup(tmp_path, complete_override=False)
 
     result = _invoke(data_dir, legs_file, override=True)
 
     assert result.exit_code == 1
-    assert "--ticket-batch-token" in result.stdout
+    assert "缺完整 override 登记" in result.stdout
     with OntologyUnitOfWork(kernel.engine) as uow:
         assert uow.workflow.count_adjudications() == 0
+
+
+def test_ticket_batch_token_is_accepted_but_ignored(tmp_path):
+    kernel, data_dir, legs_file = _setup(tmp_path)
+
+    result = _invoke(data_dir, legs_file, override=True, ticket_batch_token="stale-token")
+
+    assert result.exit_code == 0, result.stdout
+    assert "已不再需要" in result.stdout
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        assert uow.workflow.count_adjudications() == 1
 
 
 def test_user_override_prevalidates_all_matches_before_any_action(tmp_path):

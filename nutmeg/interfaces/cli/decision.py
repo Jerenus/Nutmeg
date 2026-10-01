@@ -704,7 +704,10 @@ def decision_audit_legs(
     from datetime import datetime as _datetime
 
     from nutmeg.config.settings import AppSettings
-    from nutmeg.decision.audit_override import AuditOverrideError, record_user_overrides
+    from nutmeg.decision.audit_override import (
+        AuditOverrideError,
+        record_user_override_adjudications,
+    )
     from nutmeg.decision.legs_audit import format_findings, has_blocking
 
     payload = _json.loads(Path(legs_file).read_text("utf-8"))
@@ -750,10 +753,9 @@ def decision_audit_legs(
     if has_blocking(findings):
         if user_override:
             try:
-                if ticket_batch_token is None or not ticket_batch_token.strip():
-                    raise AuditOverrideError(
-                        "--user-override requires --ticket-batch-token"
-                    )
+                if ticket_batch_token:
+                    _cli.typer.echo("ℹ️ --ticket-batch-token 已不再需要"
+                                    "（2026-10-01 行权只写 Adjudication），忽略")
                 kernel = _cli.build_ontology_kernel(
                     AppSettings(data_dir=Path(data_dir).expanduser().resolve())
                 )
@@ -766,11 +768,10 @@ def decision_audit_legs(
                     raise AuditOverrideError(
                         "ontology must be initialized, healthy, and current"
                     )
-                result = record_user_overrides(
+                result = record_user_override_adjudications(
                     payload,
                     findings,
-                    decision_actions=kernel.decision_actions,
-                    ticket_batch_token=ticket_batch_token,
+                    workflow=kernel.workflow,
                     requested_at=_datetime.now(_UTC),
                 )
                 _cli.typer.echo(
