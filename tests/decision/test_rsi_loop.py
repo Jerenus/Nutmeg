@@ -49,7 +49,8 @@ def test_planned_commands_cover_every_step_and_use_latest_issue(tmp_path):
     plan = planned_commands(ctx)
     assert tuple(plan) == STEP_ORDER
     assert any("--cut" in c and "26131" in c for c in plan["hyp"])
-    assert all(c[:2] == ["uv", "run"] for step in plan.values() for c in step)
+    assert all(c[:2] == ["uv", "run"] for name, step in plan.items() for c in step
+               if name != "commit_outputs")        # 末尾的 git 提交步是 bash -c
 
 
 def test_run_loop_classifies_not_due_failed_and_collects_human_actions(tmp_path):
@@ -110,7 +111,7 @@ def test_dream_compare_step_reports_yesterday_and_expiry_countdown(tmp_path):
 
     ctx.runner = runner
     plan = planned_commands(ctx)
-    assert STEP_ORDER[-1] == "dream_compare"
+    assert STEP_ORDER[-2] == "dream_compare"
     assert plan["dream_compare"][0][2:6] == ["nutmeg", "discovery", "compare", "--day"]
     assert "2026-09-21" in plan["dream_compare"][0]
     report = run_loop(ctx)
@@ -118,3 +119,19 @@ def test_dream_compare_step_reports_yesterday_and_expiry_countdown(tmp_path):
     assert any("常设批准" in a and "5" in a for a in report.human_actions)
     md = (ctx.out_dir / "2026-09-22.md").read_text(encoding="utf-8")
     assert "## Dream 对照" in md and "decision_rule" in md and "−0.2000" in md
+
+
+def test_commit_outputs_step_commits_only_the_loop_files_without_hooks(tmp_path):
+    """Jun 2026-10-01：loop 末尾自动提交自己写的三个仓内文件；没变化静默、不跑 pre-commit。"""
+    from nutmeg.decision.rsi_loop import LOOP_OUTPUT_PATHS, STEP_ORDER, planned_commands
+
+    plan = planned_commands(_ctx(tmp_path, []))
+
+    assert STEP_ORDER[-1] == "commit_outputs"
+    [cmd] = plan["commit_outputs"]
+    assert cmd[:2] == ["bash", "-c"]
+    script = cmd[2]
+    assert "git status --porcelain --" in script and "git commit --no-verify" in script
+    assert all(path in script for path in LOOP_OUTPUT_PATHS)
+    assert "experiments/corpus-v2.json" in LOOP_OUTPUT_PATHS
+    assert "-- experiments/attempts.log" in script          # pathspec 提交，不碰别人暂存的

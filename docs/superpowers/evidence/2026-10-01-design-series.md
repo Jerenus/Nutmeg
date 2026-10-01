@@ -65,6 +65,8 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 - **RSI sweep「命令成功但未登记」**：最近日志里只剩 F2/F1c（26134 首场跨午夜的期次日对不上，`_day_scoped_duty_day` 已修）与 R0（研究被格式检疫拒收 → 命令退出 0 但义务未履约 → 记 failed、下一小时重试，这是设计不是 bug）；F9 的「reads 尚未落盘」已不复现。不改码。
 - **`experiments/` 三个文件长期脏**（`attempts.log`/`corpus-v2.json`/`scoreboard-tallies.json` 由 rsi loop/语料采集写）：每次提交 pre-commit 都要 stash/还原它们，是 09-14 那次 `-A` 事故的温床。两条路给 Jun 选：① 10:45 loop 末尾自动 `git add` 这三个文件提交一次（实验产物有版本可追）；② 移出版本控制（`.gitignore`）只留在磁盘。我倾向 ①。
 - **仍待 Jun 裁的旧项**（不是今晚的）：CLV 收盘入库已死待裁；Dream 首个真实世界需 ≥2 场 had；26135 减半事前登记已在。
+
+**Jun 07:55 两条裁决**：① `experiments/` 三文件 → 采纳「loop 末尾自动提交」；② operator_* 专项 Jun 说「不清楚，替我裁决」→ 主循环定：**2026-10-09（周四）专项日**，在分支 `kernel/operator-retirement` 上做，15:45 结算后合并；**前置片 10-02**（早间链后）：`decision-audit-legs --user-override` 的入账改为只写 `adjudications`，不再碰 `operator_ticket_audit_override_receipts/candidate_generation_requests`。选周四的理由：离 P0 一周门槛（10-08）最近、能把 P2 计划和内核迁移错开；分支做的理由：迁移 + 触发器 + ~20 个测试改动不该暴露给每 10 分钟的 broadcast 与 10:45 loop。可撤销。
 - **第 2 条 P2–P4**：按 Jun「按实际情况处理」＝按 spec 自己的门槛——10-01→10-08 每天 `judgment-projection.json` 分歧为零再出 P2 计划；期间不动写路径。
 
 ## 6. 身份解析（2026-10-01 03:40 ✅）
