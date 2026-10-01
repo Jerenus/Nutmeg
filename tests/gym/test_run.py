@@ -85,5 +85,5 @@ def test_summarize_and_drawdown_math() -> None:
             {"key": "d3", "stake": 10, "net": None, "policy": "p", "legal": "single_not_allowed:x"}]
     s = summarize(rows)
     assert s["keys"] == 2 and s["net"] == -2.0 and s["stake"] == 30 and s["illegal"] == 1
-    assert s["max_drawdown"] == -8.0 and s["ci"][0] <= s["net"] <= s["ci"][1]
-    assert max_drawdown([5, -8, 1]) == -8.0 and max_drawdown([]) == 0.0   # 峰 5 → 谷 −3
+    assert s["max_drawdown"] == -7.0 and s["ci"][0] <= s["net"] <= s["ci"][1]   # d1 +5, d2 −7
+    assert max_drawdown([5, -8, 1]) == -8.0 and max_drawdown([]) == 0.0          # 峰 5 → 谷 −3
