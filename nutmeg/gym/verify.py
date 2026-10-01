@@ -22,10 +22,17 @@ def verify_real(data_dir: Path, *, scoreboard_path: Path | None = None) -> dict:
     rows = [r for r in result.ledger if r["policy"] == "real"]
     unsupported = [r for r in rows if r.get("legal") or r.get("skipped") or r.get("net") is None]
     settled = [r for r in rows if r.get("net") is not None]
+    # 记分牌把带期号标签的竞彩票折进期次键（26129-JC-*）——这里照同一规则折
+    issue_of = {s.slip_id: str(s.issue) for s in slips if s.channel == "jczq" and s.issue}
     gym_by_key: dict[str, float] = {}
+    key_date: dict[str, str] = {}
     for r in settled:
-        key = f"jczq-{r['key'].replace('-', '')}" if r["channel"] == "jczq" else r["issue"]
+        if r["channel"] == "jczq":
+            key = issue_of.get(r["slip_id"]) or f"jczq-{r['key'].replace('-', '')}"
+        else:
+            key = r["issue"]
         gym_by_key[key] = gym_by_key.get(key, 0.0) + r["net"]
+        key_date[key] = min(key_date.get(key, r["key"]), r["key"])
     try:
         sb_path = scoreboard_path or data_dir / "scoreboard.json"
         board = json.loads(sb_path.read_text(encoding="utf-8"))
@@ -39,6 +46,14 @@ def verify_real(data_dir: Path, *, scoreboard_path: Path | None = None) -> dict:
                            "diff": (round(gym_by_key[key] - sb, 2) if isinstance(sb, int | float)
                                     else None)})
     compared = [c for c in comparison if c["diff"] is not None]
+    # 记分牌覆盖期：从它最早的键起算；期内 gym 全部真票净额必须等于记分牌 tickets 合计
+    sb_nets = {k: v.get("net") for k, v in tickets.items()
+               if isinstance(v, dict) and isinstance(v.get("net"), int | float)}
+    sb_dates = [key_date[k] for k in sb_nets if k in key_date]
+    period_from = min(sb_dates) if sb_dates else None
+    period_gym = round(sum(n for k, n in gym_by_key.items()
+                           if period_from and key_date[k] >= period_from), 2)
+    period_sb = round(sum(sb_nets.values()), 2)
     return {
         "slips": len(slips), "settled": len(settled), "unsupported": unsupported,
         "comparison": comparison,
@@ -46,6 +61,9 @@ def verify_real(data_dir: Path, *, scoreboard_path: Path | None = None) -> dict:
         "scoreboard_total": round(sum(c["scoreboard_net"] for c in compared), 2),
         "total_diff_on_compared": round(sum(c["diff"] for c in compared), 2),
         "uncompared_keys": [c["key"] for c in comparison if c["diff"] is None],
+        "period_from": period_from, "period_gym_total": period_gym,
+        "period_scoreboard_total": period_sb,
+        "period_diff": round(period_gym - period_sb, 2) if period_from else None,
     }
 
 
@@ -59,7 +77,11 @@ def render_verify(out: dict) -> str:
         lines.append(f"| {c['key']} | {c['gym_net']:+,.0f} | {sb} | {diff} |")
     lines.append(f"合计：gym {out['gym_total']:+,.0f}；"
                  f"记分牌（可比键）{out['scoreboard_total']:+,.0f}；"
-                 f"可比键总差 {out['total_diff_on_compared']:+,.0f}")
+                 f"可比键总差 {out['total_diff_on_compared']:+,.0f}（键折算不同不算错）")
+    if out.get("period_from"):
+        lines.append(f"**记分牌覆盖期（≥{out['period_from']}）合计：gym "
+                     f"{out['period_gym_total']:+,.0f} vs 记分牌 "
+                     f"{out['period_scoreboard_total']:+,.0f}，差 {out['period_diff']:+,.0f}**")
     for r in out["unsupported"]:
         why = r.get("legal") or r.get("skipped") or "pending"
         lines.append(f"  ⚠️ {r['slip_id']} {r['channel']} {r['key']}：{why}")

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,9 @@ def test_jczq_legality_requires_two_legs_unless_single_open(tmp_path: Path) -> N
     assert check_jczq_legal(_jczq_slip([("周六009", "had", None, ["home"], [2.0])]), board) \
         == "unknown_leg:周六009"
     assert check_jczq_legal(_jczq_slip([("周六001", "hafu", None, ["hh"], [5.0])]), board) \
-        == "unsupported_market:hafu"
+        == "single_not_allowed:周六001"                    # 夹具没有 HAFU 池
+    assert check_jczq_legal(_jczq_slip([("周六001", "foo", None, ["x"], [5.0])]), board) \
+        == "unsupported_market:foo"
 
 
 def test_settle_jczq_pays_odds_product_times_two_per_note(tmp_path: Path) -> None:
@@ -71,3 +74,21 @@ def test_settle_zucai_pays_official_prize_per_winning_note(tmp_path: Path) -> No
                     faces={"1": "3"})
     assert settle_zucai(short, issue)["skipped_reason"].startswith("renjiu_needs_9")
     assert settle_zucai(renjiu, issue.visible())["skipped_reason"] == "no_official_prize"
+
+
+def test_settle_jczq_hafu_uses_half_time_score(tmp_path: Path) -> None:
+    data = _jczq_day(tmp_path)
+    results = json.loads((data / "jczq" / "jc-results.json").read_text(encoding="utf-8"))
+    results[DAY]["周六001"] = {"match_id": "1", "ft_home": 2, "ft_away": 0, "ht_home": 0,
+                              "ht_away": 0}
+    (data / "jczq" / "jc-results.json").write_text(json.dumps(results), encoding="utf-8")
+    board = load_jczq_board(data, DAY)
+    hit = _jczq_slip([("周六001", "hafu", None, ["平胜", "胜胜"], [4.0, 1.9]),
+                      ("周六002", "had", None, ["home"], [1.85])], combo=(2,))
+    results_only = {**board.results, "周六002": {"outcome_90": "home", "goals_h": 1,
+                                                 "goals_a": 0}}
+    from nutmeg.decision.betslip import settle_slip
+
+    s = settle_slip(hit, results_only)
+    # 半场平全场胜 → "dh"，命中第一个选项（赔率 4.0）
+    assert s.won_legs == 2 and s.payout_yuan == pytest.approx(4.0 * 1.85 * 2)

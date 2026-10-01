@@ -67,7 +67,8 @@ def test_jczq_board_only_exposes_pre_kickoff_information(tmp_path: Path) -> None
     data = _jczq_day(tmp_path)
     board = load_jczq_board(data, DAY)
 
-    assert set(board.matches) == {"周六001", "周六002"}          # Closed 的场不进板
+    assert set(board.matches) == {"周六001", "周六002"}          # Closed 的场不进策略视野
+    assert set(board.extra) == {"周六003"} and board.lookup("周六003").selling is False
     m = board.matches["周六001"]
     assert m.had == {"3": 1.85, "1": 3.4, "0": 3.9}
     assert m.hhad == {"line": -1.0, "3": 5.75, "1": 4.25, "0": 1.39}
@@ -82,7 +83,41 @@ def test_jczq_board_only_exposes_pre_kickoff_information(tmp_path: Path) -> None
     assert board.allup["had"] == ["2x1", "3x1", "Single"]
 
     vis = board.visible()
-    assert vis.results == {} and vis.matches is board.matches
+    assert vis.results == {} and vis.extra == {} and vis.matches is board.matches
+
+
+def test_board_backfills_early_kickoffs_from_the_previous_snapshot_and_keeps_next_day_rows(
+    tmp_path: Path,
+) -> None:
+    data = _jczq_day(tmp_path)
+    prev = data / "jczq" / "daily" / "2026-09-19"
+    prev.mkdir()
+    early = _match("周六000", single=1, had=("1.50", "4.00", "6.00"))
+    early["businessDate"] = DAY
+    nxt = _match("周日001", single=0, had=("2.00", "3.30", "3.60"))
+    nxt["businessDate"] = "2026-09-21"
+    (prev / "sporttery_markets.json").write_text(json.dumps({"matchInfoList": [
+        {"businessDate": "2026-09-19", "subMatchList": [early]}]}, ensure_ascii=False),
+        encoding="utf-8")
+    today = json.loads((data / "jczq" / "daily" / DAY / "sporttery_markets.json")
+                       .read_text(encoding="utf-8"))
+    today["matchInfoList"].append({"businessDate": "2026-09-21", "subMatchList": [nxt]})
+    (data / "jczq" / "daily" / DAY / "sporttery_markets.json").write_text(
+        json.dumps(today, ensure_ascii=False), encoding="utf-8")
+    results = json.loads((data / "jczq" / "jc-results.json").read_text(encoding="utf-8"))
+    results[DAY]["周六000"] = {"match_id": "0", "ft_home": 1, "ft_away": 1, "ht_home": 0,
+                              "ht_away": 1}
+    results["2026-09-21"] = {"周日001": {"match_id": "9", "ft_home": 0, "ft_away": 2}}
+    (data / "jczq" / "jc-results.json").write_text(json.dumps(results), encoding="utf-8")
+
+    board = load_jczq_board(data, DAY)
+
+    assert "周六000" not in board.matches and board.lookup("周六000").had["3"] == 1.5
+    assert board.lookup("周日001").business_date == "2026-09-21"
+    assert board.results["周六000"] == {"outcome_90": "draw", "goals_h": 1, "goals_a": 1,
+                                       "ht_h": 0, "ht_a": 1}
+    assert board.results["周日001"]["outcome_90"] == "away"
+    assert "周日001" not in board.visible().extra
 
 
 def test_zucai_issue_devigs_raw_odds_and_carries_prizes(tmp_path: Path) -> None:
@@ -110,3 +145,12 @@ def test_list_days_and_issues_skip_incomplete(tmp_path: Path) -> None:
     assert list_issues(data) == ["26127"]
     with pytest.raises(FileNotFoundError):
         load_jczq_board(data, "2026-09-22")
+
+
+def test_board_marks_registered_void_matches(tmp_path: Path) -> None:
+    data = _jczq_day(tmp_path)
+    (data / "jczq" / "void-matches.json").write_text(json.dumps({DAY: ["周六002"]}),
+                                                     encoding="utf-8")
+    board = load_jczq_board(data, DAY)
+    assert board.results["周六002"] == {"void": True}
+    assert board.results["周六001"]["outcome_90"] == "home"      # 有赛果的不受影响

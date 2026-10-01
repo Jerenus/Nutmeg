@@ -14,9 +14,9 @@ def check_jczq_legal(slip: BetSlip, board: JczqBoard) -> str | None:
     if not slip.legs:
         return "no_legs"
     for leg in slip.legs:
-        if leg.key not in board.matches:
+        if board.lookup(leg.key) is None:
             return f"unknown_leg:{leg.key}"
-        if leg.market not in ("had", "hhad", "ttg", "crs"):
+        if leg.market not in ("had", "hhad", "ttg", "crs", "hafu"):
             return f"unsupported_market:{leg.market}"
         if not leg.selections:
             return f"no_selection:{leg.key}"
@@ -25,7 +25,8 @@ def check_jczq_legal(slip: BetSlip, board: JczqBoard) -> str | None:
         return "bad_combo_size"
     if 1 in sizes:
         for leg in slip.legs:
-            if not board.matches[leg.key].single_allowed.get(leg.market, False):
+            match = board.lookup(leg.key)
+            if not match.single_allowed.get(leg.market, False):
                 return f"single_not_allowed:{leg.key}"
     return None
 

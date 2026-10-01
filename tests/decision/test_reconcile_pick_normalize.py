@@ -115,3 +115,16 @@ def test_settle_tickets_mixed_market_parlay(tmp_path):
     assert n == 1
     s = store.settlement_for("ticket", "T-mix")
     assert s.hit is True and s.pnl_yuan == round(60 * 3.35 * 1.55 - 60, 2)
+
+
+def test_hafu_selection_normalizes_chinese_pairs_and_codes():
+    from nutmeg.decision.reconcile import normalize_selection, settle_ticket_leg
+
+    assert normalize_selection("hafu", "胜胜") == "hh"
+    assert normalize_selection("hafu", "负胜·逆转") == "ah"
+    assert normalize_selection("hafu", "DH") == "dh"
+    assert normalize_selection("hafu", "胜") is None
+    assert settle_ticket_leg(market="hafu", pick="dh", line=None, outcome_90="home", goals_h=2,
+                             goals_a=0, ht_h=0, ht_a=0) == "dh"
+    assert settle_ticket_leg(market="hafu", pick="dh", line=None, outcome_90="home", goals_h=2,
+                             goals_a=0) is None                      # 缺半场比分 → pending

@@ -67,7 +67,8 @@ _SFC_OUTCOME = {"3": "home", "1": "draw", "0": "away"}
 
 def settle_ticket_leg(*, market: str, pick: str, line: float | None,
                       outcome_90: str | None, goals_h: int | None,
-                      goals_a: int | None) -> str | None:
+                      goals_a: int | None, ht_h: int | None = None,
+                      ht_a: int | None = None) -> str | None:
     """票面腿实际结果(继承 judge_ledger._grade_ticket_outcome 全部 7/06 修复)。
 
     had=胜平负;hhad=90' 净胜球+让球线(line=None → pending);ttg=总进球桶(7=7+ 封顶,
@@ -99,6 +100,29 @@ def settle_ticket_leg(*, market: str, pick: str, line: float | None,
         return str(min(goals_h + goals_a, 7))
     if market == "crs":
         return f"{goals_h}:{goals_a}"
+    if market == "hafu":
+        # 半全场：半场胜平负 + 全场胜平负，键如 "hd"（半场主胜、全场平）；缺半场比分 → pending
+        if ht_h is None or ht_a is None:
+            return None
+        return _HAFU_SYMBOL[_outcome_of(ht_h, ht_a)] + _HAFU_SYMBOL[_outcome_of(goals_h, goals_a)]
+    return None
+
+
+_HAFU_SYMBOL = {"home": "h", "draw": "d", "away": "a"}
+_HAFU_CN = {"胜": "h", "平": "d", "负": "a"}
+
+
+def _outcome_of(gh: int, ga: int) -> str:
+    return "home" if gh > ga else ("draw" if gh == ga else "away")
+
+
+def normalize_hafu(selection: str | None) -> str | None:
+    """"胜胜"/"负平"/"hh"/"ad" → "hh".."aa"；不可规约 → None。"""
+    s = (selection or "").strip().replace("・", "·").split("·", 1)[0].strip()
+    if len(s) == 2 and all(c in _HAFU_CN for c in s):
+        return _HAFU_CN[s[0]] + _HAFU_CN[s[1]]
+    if len(s) == 2 and all(c in "hda" for c in s.lower()):
+        return s.lower()
     return None
 
 
@@ -131,6 +155,8 @@ def normalize_selection(market: str, selection: str | None) -> str | None:
     """
     if market in ("had", "hhad"):
         return normalize_pick(selection)
+    if market == "hafu":
+        return normalize_hafu(selection)
     head = ((selection or "").strip().replace("：", ":").replace("・", "·")
             .split("·", 1)[0].strip())
     if market == "ttg":

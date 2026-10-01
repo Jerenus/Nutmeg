@@ -35,12 +35,15 @@ def gym_prizes_cache(
 
 @gym_app.command("verify")
 def gym_verify(data_dir: Path = _DATA_DIR) -> None:
-    """验收门：真票回放净额 vs 记分牌。可比键总差 > ¥1 → 退出码 1。"""
+    """验收门：真票回放净额 vs 记分牌。覆盖期合计差 > ¥1 或有未结/非法票 → 退出码 1。"""
     from nutmeg.gym.verify import render_verify, verify_real
 
     out = verify_real(Path(data_dir))
     _cli.typer.echo(render_verify(out))
-    if abs(out["total_diff_on_compared"]) > 1:
+    diff = out["period_diff"]
+    if diff is None:
+        diff = out["total_diff_on_compared"]
+    if abs(diff) > 1 or out["unsupported"]:
         raise _cli.typer.Exit(code=1)
 
 

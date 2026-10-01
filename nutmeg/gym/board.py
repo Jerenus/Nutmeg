@@ -1,17 +1,21 @@
 """历史板面/期次：只装"下单时刻可得"的信息；赛果与奖金只给结算器。
 
-竞彩：每天一份 17:00 体彩快照（含次日场次，按 businessDate 归到各自的板）＝假设 17:00 下单；
-终盘（titan007 sharp）是开球时刻的价，只许作 belief 源，不许作可买价格。
+竞彩：每天一份 17:00 体彩快照（含次日/后日场次）。板面日 D 的"策略可见"场＝D 快照里
+businessDate==D 且仍在售（Selling、有 had 价）的场＝假设 17:00 下单；17:00 前已开球的早场
+（如 13:00 的 J 联赛）从 D−1 快照补进 `all_matches`（真票可能头天晚上就买了），连同 D 快照里
+businessDate>D 的次日场一起只供真票结算与合法性检查，不进策略视野。终盘（titan007 sharp）
+是开球时刻的价，只许作 belief 源，不许作可买价格。
 足彩：期次 14 场 + 去水赔率 + 官方奖金缓存（`gym.prizes`）。
 """
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, replace
+from datetime import date as _date
+from datetime import timedelta
 from pathlib import Path
 
 from nutmeg.gym.prizes import load_prizes
-from nutmeg.ontology.ingest.sporttery import parse_sporttery_markets
 
 FACES = ("home", "draw", "away")
 CODE_OF = {"home": "3", "draw": "1", "away": "0"}
@@ -28,31 +32,39 @@ def devig(odds: dict[str, float]) -> dict[str, float]:
 @dataclass(frozen=True)
 class JczqMatch:
     code: str
+    business_date: str
     name: str
     league: str
     kickoff_bj: str | None
-    had: dict[str, float]                  # {"3","1","0"} 体彩赔率（17:00 快照）
+    selling: bool                          # 快照时刻仍在售
+    had: dict[str, float]                  # {"3","1","0"} 体彩赔率；未开盘则 {}
     hhad: dict | None                      # {"line": float, "3","1","0"}
     ttg: dict[str, float] | None           # {"0".."7"}
     crs: dict[str, float] | None           # {"s01s02": 赔率, …}
-    single_allowed: dict[str, bool]        # {"had": bool, "hhad": bool}
+    single_allowed: dict[str, bool]        # {"had": bool, "hhad": bool, …}
     closing_fair: dict[str, float] | None  # titan007 sharp fair（开球时刻；home/draw/away）
     read_belief: dict[str, float] | None   # 仅 provably_prospective 的研究 belief
 
     @property
     def belief_market(self) -> dict[str, float]:
+        if len(self.had) != 3:
+            raise ValueError(f"{self.code} 无 had 价")
         return {FACE_OF[k]: v for k, v in devig(self.had).items()}
 
 
 @dataclass(frozen=True)
 class JczqBoard:
     day: str
-    matches: dict[str, JczqMatch]
-    results: dict[str, dict] = field(default_factory=dict)   # {code: {outcome_90, goals_h/a}}
-    allup: dict[str, list[str]] = field(default_factory=dict)  # {pool: 允许的过关方式}
+    matches: dict[str, JczqMatch]                       # 策略可见：本日、在售、有 had
+    extra: dict[str, JczqMatch] = field(default_factory=dict)   # 只供结算：早场补录 + 次日场
+    results: dict[str, dict] = field(default_factory=dict)      # {code: {outcome_90, goals, ht}}
+    allup: dict[str, list[str]] = field(default_factory=dict)   # {pool: 允许的过关方式}
+
+    def lookup(self, code: str) -> JczqMatch | None:
+        return self.matches.get(code) or self.extra.get(code)
 
     def visible(self) -> JczqBoard:
-        return replace(self, results={})
+        return replace(self, results={}, extra={})
 
 
 @dataclass(frozen=True)
@@ -90,14 +102,14 @@ def _outcome(gh: int, ga: int) -> str:
     return "home" if gh > ga else ("draw" if gh == ga else "away")
 
 
-def _hda(raw: dict | None) -> dict[str, float] | None:
+def _hda(raw: dict | None) -> dict[str, float]:
     if not raw:
-        return None
+        return {}
     try:
         out = {_HDA[k]: float(raw[k]) for k in ("h", "d", "a")}
     except (KeyError, TypeError, ValueError):
-        return None
-    return out if all(v > 1 for v in out.values()) else None
+        return {}
+    return out if all(v > 1 for v in out.values()) else {}
 
 
 def _numeric_pool(raw: dict | None, prefix_len: int = 1) -> dict[str, float] | None:
@@ -115,55 +127,113 @@ def _numeric_pool(raw: dict | None, prefix_len: int = 1) -> dict[str, float] | N
     return out or None
 
 
+def _snapshot_rows(data_dir: Path, day: str) -> tuple[list[dict], dict]:
+    doc = _read(data_dir / "jczq" / "daily" / day / "sporttery_markets.json", None)
+    if not isinstance(doc, dict):
+        return [], {}
+    rows = []
+    for group in doc.get("matchInfoList") or []:
+        for raw in group.get("subMatchList") or []:
+            business = str(raw.get("businessDate") or group.get("businessDate") or "")
+            if raw.get("matchNumStr") and business:
+                rows.append({**raw, "_business": business})
+    return rows, doc
+
+
+def _match(raw: dict, closing: dict) -> JczqMatch:
+    code = str(raw["matchNumStr"])
+    hhad_raw = raw.get("hhad") or {}
+    hhad = _hda(hhad_raw)
+    line = hhad_raw.get("goalLineValue") or hhad_raw.get("goalLine")
+    try:
+        hhad_full = {"line": float(line), **hhad} if hhad and line not in (None, "") else None
+    except ValueError:
+        hhad_full = None
+    pools = {str(p.get("poolCode", "")).lower(): p for p in raw.get("poolList") or []}
+    sharp = (closing.get(code) or {}).get("sharp") or {}
+    when = f"{raw.get('matchDate')}T{raw.get('matchTime')}+08:00" if raw.get("matchDate") else None
+    return JczqMatch(
+        code=code, business_date=raw["_business"],
+        name=f"{raw.get('homeTeamAbbName') or ''}-{raw.get('awayTeamAbbName') or ''}",
+        league=str(raw.get("leagueAbbName") or ""), kickoff_bj=when,
+        selling=str(raw.get("matchStatus") or "").casefold() == "selling",
+        had=_hda(raw.get("had")), hhad=hhad_full,
+        ttg=_numeric_pool(raw.get("ttg")), crs=_numeric_pool(raw.get("crs"), prefix_len=0),
+        single_allowed={pool: p.get("single") == 1 for pool, p in pools.items()},
+        closing_fair=sharp.get("fair_probability") or None,
+        read_belief=None,
+    )
+
+
+def _result_row(results_doc: dict, business_date: str, code: str) -> dict | None:
+    row = (results_doc.get(business_date) or {}).get(code)
+    if not row or row.get("ft_home") is None or row.get("ft_away") is None:
+        return None
+    out = {"outcome_90": _outcome(int(row["ft_home"]), int(row["ft_away"])),
+           "goals_h": int(row["ft_home"]), "goals_a": int(row["ft_away"])}
+    if row.get("ht_home") is not None and row.get("ht_away") is not None:
+        out["ht_h"], out["ht_a"] = int(row["ht_home"]), int(row["ht_away"])
+    return out
+
+
 def load_jczq_board(data_dir: Path, day: str) -> JczqBoard:
     data_dir = Path(data_dir)
-    day_dir = data_dir / "jczq" / "daily" / day
-    doc = _read(day_dir / "sporttery_markets.json", None)
-    if doc is None:
+    rows, doc = _snapshot_rows(data_dir, day)
+    if not doc:
         raise FileNotFoundError(f"{day} 无板面快照")
-    closing = _read(day_dir / "closing_odds.json", {}) or {}
-    results_raw = (_read(data_dir / "jczq" / "jc-results.json", {}) or {}).get(day) or {}
-    raw_by_code = {
-        str(r.get("matchNumStr")): r
-        for d in doc.get("matchInfoList") or []
-        for r in d.get("subMatchList") or []
-        if str(r.get("businessDate") or d.get("businessDate") or "") == day
-    }
+    closing = _read(data_dir / "jczq" / "daily" / day / "closing_odds.json", {}) or {}
+    results_doc = _read(data_dir / "jczq" / "jc-results.json", {}) or {}
+    prev_day = (_date.fromisoformat(day) - timedelta(days=1)).isoformat()
+    prev_rows, _ = _snapshot_rows(data_dir, prev_day)
+
     matches: dict[str, JczqMatch] = {}
-    for m in parse_sporttery_markets(doc, business_date=day):
-        raw = raw_by_code.get(m.match_no) or {}
-        had = _hda(raw.get("had"))
-        if not had:
-            continue
-        hhad_raw = raw.get("hhad") or {}
-        hhad = _hda(hhad_raw)
-        line = hhad_raw.get("goalLineValue") or hhad_raw.get("goalLine")
-        try:
-            hhad = {"line": float(line), **hhad} if hhad and line not in (None, "") else None
-        except ValueError:
-            hhad = None
-        pools = {str(p.get("poolCode", "")).lower(): p for p in raw.get("poolList") or []}
-        sharp = (closing.get(m.match_no) or {}).get("sharp") or {}
-        matches[m.match_no] = JczqMatch(
-            code=m.match_no, name=f"{m.home_name}-{m.away_name}", league=m.league_name,
-            kickoff_bj=m.scheduled_at, had=had, hhad=hhad,
-            ttg=_numeric_pool(raw.get("ttg")), crs=_numeric_pool(raw.get("crs"), prefix_len=0),
-            single_allowed={"had": pools.get("had", {}).get("single") == 1,
-                            "hhad": pools.get("hhad", {}).get("single") == 1},
-            closing_fair=sharp.get("fair_probability") or None,
-            read_belief=None,
-        )
-    results = {
-        code: {"outcome_90": _outcome(int(r["ft_home"]), int(r["ft_away"])),
-               "goals_h": int(r["ft_home"]), "goals_a": int(r["ft_away"])}
-        for code, r in results_raw.items()
-        if r.get("ft_home") is not None and r.get("ft_away") is not None
-    }
+    extra: dict[str, JczqMatch] = {}
+    for raw in rows:
+        m = _match(raw, closing)
+        if m.business_date == day:
+            if m.selling and len(m.had) == 3:
+                matches[m.code] = m
+            else:
+                extra[m.code] = m
+        elif m.business_date > day:
+            extra[m.code] = m
+    for raw in prev_rows:                          # 早场补录：D 快照里已不在的本日场
+        if raw["_business"] == day and raw["matchNumStr"] not in matches \
+                and raw["matchNumStr"] not in extra:
+            extra[str(raw["matchNumStr"])] = _match(raw, closing)
+
+    # 作废登记（延期 >36h 体彩按取消：腿算中、赔率按 1）：jczq/void-matches.json = {板面日: [编号]}
+    void_doc = _read(data_dir / "jczq" / "void-matches.json", {}) or {}
+    results: dict[str, dict] = {}
+    for code, m in {**matches, **extra}.items():
+        row = _result_row(results_doc, m.business_date, code)
+        if row:
+            results[code] = row
+        elif code in (void_doc.get(m.business_date) or []):
+            results[code] = {"void": True}
     allup = {
-        str(pool).lower(): sorted({row.get("formula") for row in rows if row.get("formula")})
-        for pool, rows in (doc.get("allUpList") or {}).items()
+        str(pool).lower(): sorted({row.get("formula") for row in rows_ if row.get("formula")})
+        for pool, rows_ in (doc.get("allUpList") or {}).items()
     }
-    return JczqBoard(day=day, matches=matches, results=results, allup=allup)
+    return JczqBoard(day=day, matches=matches, extra=extra, results=results, allup=allup)
+
+
+def _zucai_odds(doc) -> dict[str, dict[str, float]]:
+    """两种历史形状：list[{match_no, home, draw, away}] 或 {no: {"odds": [h, d, a]}}。"""
+    out: dict[str, dict[str, float]] = {}
+    matches = (doc or {}).get("matches") if isinstance(doc, dict) else None
+    if isinstance(matches, list):
+        for m in matches:
+            if isinstance(m, dict) and all(k in m for k in ("match_no", "home", "draw", "away")):
+                out[str(m["match_no"])] = {"home": m["home"], "draw": m["draw"], "away": m["away"]}
+    elif isinstance(matches, dict):
+        for no, m in matches.items():
+            if isinstance(m, dict) and isinstance(m.get("odds"), list) and len(m["odds"]) == 3:
+                h, d, a = m["odds"]
+                out[str(no)] = {"home": h, "draw": d, "away": a}
+            elif isinstance(m, dict) and all(k in m for k in ("home", "draw", "away")):
+                out[str(no)] = {"home": m["home"], "draw": m["draw"], "away": m["away"]}
+    return out
 
 
 def load_zucai_issue(data_dir: Path, issue: str) -> ZucaiIssue:
@@ -171,17 +241,17 @@ def load_zucai_issue(data_dir: Path, issue: str) -> ZucaiIssue:
     doc = _read(zdir / f"{issue}-issue.json", None)
     if doc is None:
         raise FileNotFoundError(f"{issue} 无 issue.json")
-    odds = {
-        str(m["match_no"]): m
-        for m in (_read(zdir / f"{issue}-odds.json", {}) or {}).get("matches") or []
-    }
+    odds = _zucai_odds(_read(zdir / f"{issue}-odds.json", {}))
     matches: dict[str, ZucaiMatch] = {}
     for m in doc.get("matches") or []:
         no = str(m["match_no"])
         row = odds.get(no)
         if not row:
             continue
-        fair = devig({"home": row["home"], "draw": row["draw"], "away": row["away"]})
+        try:
+            fair = devig(row)
+        except (TypeError, ValueError, ZeroDivisionError):
+            continue
         matches[no] = ZucaiMatch(no=no, name=f"{m.get('home_team')}-{m.get('away_team')}",
                                  kickoff_bj=m.get("kickoff_bj"), fair=fair)
     prize = load_prizes(zdir).get(issue)

@@ -127,7 +127,7 @@ class SlipLeg:
     """一条已买的腿。`selections` 是**已选面**列表（竞彩 had/hhad 用 home/draw/away）。"""
     key: str                      # 竞彩=周五003；足彩=场次号
     name: str = ""
-    market: str = "had"           # had | hhad | ttg | crs
+    market: str = "had"           # had | hhad | ttg | crs | hafu
     line: float | None = None     # hhad 让球线（体彩 3 路口径，禁亚盘直觉）
     selections: tuple[str, ...] = ()
     odds: tuple[float, ...] = ()  # 与 selections 同序；足彩无赔率留空
@@ -281,6 +281,8 @@ def _leg_result(leg: SlipLeg, result: dict) -> tuple[str | None, bool | None]:
         outcome_90=result.get("outcome_90"),
         goals_h=result.get("goals_h"),
         goals_a=result.get("goals_a"),
+        ht_h=result.get("ht_h"),
+        ht_a=result.get("ht_a"),
     )
     if actual is None:
         return None, None
