@@ -356,7 +356,8 @@ def _resolve_read_snapshot_id(
         )
 
 
-def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
+def run_decision_read_v2(reads_file, output_dir, *, kernel=None,
+                         idempotency_prefix: str = "read") -> str:
     """Commit each judged Read payload as a kernel ForecastRevision (no money, no push).
 
     Read payloads carry kernel match ids + the market string. Old-style factors
@@ -444,7 +445,7 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None) -> str:
                     falsifier=payload.get("falsifier"),
                     actor_id=actor_id,
                     actor_role=actor_role,
-                    idempotency_key=f"read:{read_id}",
+                    idempotency_key=f"{idempotency_prefix}:{read_id}",
                     requested_at=datetime.fromisoformat(payload["made_at"]),
                     # 判断唯一事实 P0：整条 Read 随 revision 入库，文件成为投影
                     kind=payload.get("kind"),

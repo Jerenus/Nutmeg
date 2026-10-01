@@ -207,3 +207,21 @@ def test_read_v2_stores_the_whole_read_as_judgment_payload(tmp_path: Path) -> No
         [row] = list(uow.decision.iter_board_revisions("jczq:2026-07-19"))
     assert row.kind == "research" and row.judgment == read
     assert row.belief_distribution == read["belief"]
+
+
+def test_read_v2_idempotency_prefix_lets_a_replay_resubmit_the_same_read(tmp_path: Path) -> None:
+    """历史重放（判断唯一事实 P0 批量比对）用另一前缀重交同一条 Read，不撞生产的幂等键。"""
+    kernel, match_id, output_dir = _kernel_with_match(tmp_path)
+    read = {"read_id": "R-same", "match_id": match_id, "snapshot_id": None, "market": "had",
+            "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
+            "belief": {"home": 0.5, "draw": 0.3, "away": 0.2}, "factors": [],
+            "made_at": "2026-07-19T15:00:00+08:00", "judge": "ai:jczq-analyst", "status": "draft",
+            "board_key": "jczq:2026-07-19", "kind": "research", "code": "周日001"}
+    reads_file = output_dir / "reads-prefix.json"
+    reads_file.write_text(json.dumps([read]), encoding="utf-8")
+    assert "摄取 1/1" in run_decision_read_v2(reads_file, output_dir, kernel=kernel)
+    assert "摄取 1/1" in run_decision_read_v2(reads_file, output_dir, kernel=kernel,
+                                             idempotency_prefix="replay")
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        rows = list(uow.decision.iter_board_revisions("jczq:2026-07-19"))
+    assert [r.revision_no for r in rows] == [1, 2]

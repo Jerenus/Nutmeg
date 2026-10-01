@@ -102,13 +102,15 @@ def test_refresh_day_attaches_a_projection_line_per_board_when_given_a_projector
         calls.append(board)
         if "issue" in board:
             raise RuntimeError("kernel offline")
-        return {"line": "投影 1 条｜文件 1 条｜一致 1"}
+        return {"line": "投影 1 条｜文件 1 条｜一致 1", "materialized": True}
 
     summary = refresh_day(day="2026-09-26", data_dir=tmp_path,
                           made_at="2026-09-26T14:15:00+08:00",
                           submit=lambda path: (0, "ok"), project=project)
 
-    assert calls == [{"day": "2026-09-26"}, {"issue": "26133"}]
+    assert calls == [{"day": "2026-09-26", "materialize": True},
+                     {"issue": "26133", "materialize": True}]       # P2：刷新后用投影覆盖文件
     assert summary["jczq"]["projection"] == "投影 1 条｜文件 1 条｜一致 1"
+    assert summary["jczq"]["materialized"] is True
     assert summary["zucai"]["26133"]["projection_error"].startswith("RuntimeError")
     assert summary["zucai"]["26133"]["reads"] == 2          # 比对失败没挡住刷新

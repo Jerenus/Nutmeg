@@ -104,9 +104,19 @@ def _kernel(data_dir: Path):
     return kernel
 
 
+def _code_of(read: dict) -> str:
+    return str(read.get("code") or "")
+
+
 def run_projection(data_dir: Path, *, day: str | None = None, issue: str | None = None,
-                   kernel=None, at: str | None = None, write: bool = True) -> dict:
-    """一块板的投影 + 比对（+ 落报告）。`day` 走竞彩板，`issue` 走足彩期，二选一。"""
+                   kernel=None, at: str | None = None, write: bool = True,
+                   materialize: bool = False) -> dict:
+    """一块板的投影 + 比对（+ 落报告）。`day` 走竞彩板，`issue` 走足彩期，二选一。
+
+    `materialize=True`（判断唯一事实 P2）：用投影**覆盖** Read 文件——内核是唯一可写的判断，
+    文件只是它的镜像。投影为空（内核不可达/全部拒收）时不覆盖并标 `degraded`，不让一次
+    内核故障抹掉当天的 Read。足彩已对到竞彩的场次（它们的内核真值在竞彩板）仍从文件
+    原样带过去，P3 并轨时再定。"""
     data_dir = Path(data_dir)
     if bool(day) == bool(issue):
         raise ValueError("--day 与 --issue 二选一")
@@ -132,5 +142,22 @@ def run_projection(data_dir: Path, *, day: str | None = None, issue: str | None 
     stamp = at or datetime.now().astimezone().isoformat(timespec="seconds")
     report = (write_report(directory, projected=projected, result=result, board_key=board_key,
                            at=stamp, prefix=prefix) if write else None)
+    materialized = False
+    degraded = False
+    if materialize:
+        if projected:
+            carried = [r for r in file_reads if r.get("match_id") in set(skip)]
+            final = projected + carried
+            if issue:
+                final.sort(key=lambda r: int(_code_of(r) or 0))
+            reads_path.parent.mkdir(parents=True, exist_ok=True)
+            reads_path.write_text(json.dumps(final, ensure_ascii=False, indent=1),
+                                  encoding="utf-8")
+            materialized = True
+        else:
+            degraded = bool(file_reads)
+    line = summary_line(result) + ("｜已落盘为投影" if materialized else "")
+    if degraded:
+        line += "｜⚠️投影为空，保留文件"
     return {"board_key": board_key, "projected": projected, "result": result,
-            "report": report, "line": summary_line(result)}
+            "report": report, "line": line, "materialized": materialized, "degraded": degraded}

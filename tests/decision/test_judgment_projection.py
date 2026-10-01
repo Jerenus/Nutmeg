@@ -100,3 +100,27 @@ def test_compare_skips_channel_mapped_matches() -> None:
     result = compare(projected, file_reads, skip_match_ids=["z-9"])
     assert result["identical"] == 1 and result["only_in_kernel"] == ["z-2"]
     assert result["only_in_file"] == [] and result["skipped_mapped"] == ["z-9"]
+
+
+def test_materialize_overwrites_the_file_with_the_projection(tmp_path: Path) -> None:
+    kernel, data_dir, day_dir, _ = _board(tmp_path)
+    build_jczq_reads(day=DAY, jczq_dir=data_dir / "jczq", made_at=f"{DAY}T10:00:00+08:00")
+    run_decision_read_v2(day_dir / "reads.json", day_dir, kernel=kernel)
+    reads = json.loads((day_dir / "reads.json").read_text(encoding="utf-8"))
+    reads[0]["belief"] = {"home": 0.9, "draw": 0.05, "away": 0.05}        # 文件被人改坏
+    (day_dir / "reads.json").write_text(json.dumps(reads), encoding="utf-8")
+
+    out = run_projection(data_dir, day=DAY, kernel=kernel, write=False, materialize=True)
+
+    assert out["materialized"] is True and "已落盘为投影" in out["line"]
+    restored = json.loads((day_dir / "reads.json").read_text(encoding="utf-8"))
+    assert restored[0]["belief"]["home"] != 0.9 and restored == out["projected"]
+
+
+def test_materialize_keeps_the_file_when_the_projection_is_empty(tmp_path: Path) -> None:
+    kernel, data_dir, day_dir, _ = _board(tmp_path)
+    reads = build_jczq_reads(day=DAY, jczq_dir=data_dir / "jczq", made_at=f"{DAY}T10:00:00+08:00")
+    # 没交本体 → 投影为空 → 不覆盖、标 degraded
+    out = run_projection(data_dir, day=DAY, kernel=kernel, write=False, materialize=True)
+    assert out["materialized"] is False and out["degraded"] is True
+    assert json.loads((day_dir / "reads.json").read_text(encoding="utf-8")) == reads

@@ -204,6 +204,15 @@ class DecisionRepository:
         ).scalar_one_or_none()
         return int(value) if value is not None else 0
 
+    def find_series(self, match_id: str, market_definition_id: str) -> str | None:
+        """只读查序列，不像 ensure_series 那样顺手新建。"""
+        return self._connection.execute(
+            select(sd.forecast_series.c.forecast_series_id).where(
+                sd.forecast_series.c.match_id == match_id,
+                sd.forecast_series.c.market_definition_id == market_definition_id,
+            )
+        ).scalar_one_or_none()
+
     def latest_revision(self, forecast_series_id: str) -> ForecastRevisionRow | None:
         """序列里 revision_no 最高的一条，不问状态（草稿链的 supersedes 目标）。"""
         row = (

@@ -41,6 +41,10 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 - 勘察修正已写进 spec 头部：内核原无 kind/stance 列；`belief-v2.json` 无人读写（spec 表格删）；`plan frontier` 实读 legs-base `fair`（足彩 `fair`＝belief）。
 - **一周门槛**：2026-10-01 → 10-08 每天的 `judgment-projection.json` 分歧为零，才出 P2 计划；任何分歧先查再改判。
 
+**P0 批量比对（2026-10-01 12:30，假期没有活板，Jun「第二条按实际情况处理」）**：`scripts/judgment_replay.py` 把 23 个竞彩日 + 37 期足彩的历史 reads.json（755 条）重交进生产库的副本（sqlite backup，幂等前缀 `replay:`），按 board_key 投影回来逐场比对：**能进内核的 432 条投影全部与文件一致，分歧 0、同判断新版本 0、仅内核 0**（12 个竞彩日 08-31 起 + 20 期 26111 起）。302 条「仅文件」全是内核拒收：unresolved_match×306（08-31 前的竞彩日、26111 前的足彩期——那些 match_id 来自已退役的 DecisionStore 时代，内核里没有）、unresolved_snapshot×14（26110）、分布和不为 1 ×3（26119/26132 的旧 Read）。结论：投影机制本身零分歧；"活板一周"门改由这 32 块板的批量证据承担，P2 可以开始。输出 `.nutmeg-data/analytics/judgment-replay/2026-10-01/`。
+
+**P2 落地（2026-10-01 13:00）**：`run_projection(materialize=True)` 用投影覆盖 Read 文件（投影为空→不覆盖、标 degraded；足彩映射场从文件带过）；`refresh_day` 每块板交本体后即落盘投影；`jczq-build-reads` 建完 Read 直接走 refresh（launchd 10:00 链不用改）；`DecisionRepository.find_series` 只读查序列。P3（足彩 judgment-v1/legs-base fair 由投影生成）与 P4（退役 overrides.jsonl 写路径）待排：signals/verdict/retro 还读 jsonl，先让 P2 跑几天。
+
 ## 5. 内核瘦身（2026-10-01 03:20，清单已出，执行待 Jun 批）
 
 **盘点**（生产库 `.nutmeg-data/ontology/ontology.db`，schema 28）：185 张表，**143 张空**：operator 77/78、policy 15/16、discovery 5/5、ticket 5/6、official 4/4、zucai 4/5、rsi 2/8、factor 2/3、claim/observation/evidence/exploration 各 2/2，另有 20 余张单表空（venues/persons/role/person/lineup/claims/observations/decision/scenarios/budget/flag/precedent/agent/audited/reliability/release/historical/protected/…）。`nutmeg/ontology/actions/` 78 个公开 action 方法，**35 个在 actions 包之外零调用**（按方法名检索，动态派发可能漏计，删前逐条核）：

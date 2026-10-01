@@ -100,7 +100,9 @@ def _project(project, summary_row: dict, **board) -> None:
     if project is None:
         return
     try:
-        summary_row["projection"] = project(**board)["line"]
+        out = project(materialize=True, **board)
+        summary_row["projection"] = out["line"]
+        summary_row["materialized"] = bool(out.get("materialized"))
     except Exception as exc:  # noqa: BLE001
         summary_row["projection_error"] = repr(exc)[:300]
 
@@ -111,7 +113,8 @@ def refresh_day(*, day: str, data_dir: Path, made_at: str,
     """并集池刷新：竞彩入库+重建 Read、足彩表态转录 Read，再把未开球场次交本体。
 
     足彩里已对到竞彩的场次不交本体——同一场由竞彩那条 Read 进本体，不另建一条序列。
-    `project(day=…)` / `project(issue=…)` 给出时，每块板刷新后附一行内核 vs 文件比对。
+    `project(day=…)` / `project(issue=…)` 给出时，每块板刷新后把内核投影**落盘为 Read 文件**
+    （判断唯一事实 P2：文件是镜像），并附一行内核 vs 文件比对。
     """
     from nutmeg.decision.jczq_reads import build_jczq_reads, intake_board
     from nutmeg.decision.kernel_submit import submit_unstarted

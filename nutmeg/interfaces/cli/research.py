@@ -194,10 +194,10 @@ def jczq_build_reads(
         jczq_dir=jczq_dir,
         made_at=made_at or datetime.now().astimezone().isoformat(timespec="seconds"),
     )
-    typer.echo(
-        f"{day} 草稿 Read {len(reads)} 条 → daily/{day}/reads.json"
-        "（下一步 decision-read --reads-file）"
-    )
+    typer.echo(f"{day} 草稿 Read {len(reads)} 条 → daily/{day}/reads.json")
+    # 判断唯一事实 P2（2026-10-01）：建完就交本体、再从内核投影覆盖文件，
+    # 不再有手工 decision-read 这一步
+    _refresh(day, Path(jczq_dir).parent)
 
 
 @_cli.app.command("jczq-combos")
