@@ -31,7 +31,9 @@ def test_preview_shows_the_diagnosis_without_registering(tmp_path: Path):
     pre = runner.invoke(app, ["betslip", "preview", "--channel", "jczq",
                               "--placed-at", "2026-09-28", "--legs-file", str(second),
                               "--combo", "2", "--multiplier", "50", "--data-dir", str(data)])
-    assert pre.exit_code == 0, pre.output
+    # 2026-10-01 审票：与已购票共享裸单 = V2 否决 → 退出码 1（改票后再审），仍不登记
+    assert pre.exit_code == 1, pre.output
+    assert "⛔V2" in pre.output and "审票结论：**否决**" in pre.output
     assert "预览 jczq 1 注 × 50 倍 = ¥100" in pre.output
     assert "共享裸单 1 条（周一0043）与 1 张票同押；这些票一起死 ≥64%" in pre.output
     rows = (data / "betslips.jsonl").read_text(encoding="utf-8").splitlines()

@@ -129,6 +129,8 @@ def betslip_register(
         _cli.typer.echo(register_slip(data_dir, slip))
         for line in slip.diagnosis.get("lines", []):
             _cli.typer.echo("   " + line)
+        for line in _review_lines(slip, slip.diagnosis, data_dir):
+            _cli.typer.echo("   " + line)
         if slip.diagnosis.get("kernel"):
             from nutmeg.decision.ledger_writeback import summary_line
 
@@ -175,9 +177,21 @@ def betslip_preview(
                         + (f"｜P(全对)={p * 100:.2f}%" if p is not None else ""))
         for line in diag.get("lines", []):
             _cli.typer.echo("   " + line)
+        review_lines = _review_lines(slip, diag, data_dir)
+        for line in review_lines:
+            _cli.typer.echo("   " + line)
         _cli.typer.echo("   " + _brake_line(data_dir, placed_at))
+        if any(line.startswith("⛔") for line in review_lines):
+            raise _cli.typer.Exit(code=1)       # 审票否决：改票后再审（登记不受此限）
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
+
+
+def _review_lines(slip, diagnosis: dict, data_dir: Path) -> list[str]:
+    """审票（2026-10-01 定位）：V1 期望回报率 / V2 共享裸单 否决，V3 倍投警告。"""
+    from nutmeg.decision.review import prize_medians, review
+
+    return review(slip, diagnosis, prize_median=prize_medians(data_dir))["lines"]
 
 
 @betslip_app.command("list")
