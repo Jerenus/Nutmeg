@@ -2,6 +2,7 @@ from nutmeg.decision.betslip import BetSlip, SlipLeg
 from nutmeg.discovery.dream_compare import (
     compare_day,
     decision_rule_best,
+    decision_rule_v3,
     score_tickets,
     summarize,
 )
@@ -112,3 +113,31 @@ def test_summarize_reports_means_and_withholds_ci_below_twenty_days():
     assert summary["actual_minus_rule"]["ci95"] is None
     many = summarize(days * 7)
     assert many["actual_minus_rule"]["ci95"] == [-1.5, -1.5]
+
+
+def test_decision_rule_v3_vetoes_low_expected_return_and_falls_back_to_flat():
+    """v3（2026-10-01）：期望回报率 < 0.5 的组合否决；过线里取最高；最高 < 1 → 规则最优＝空仓。"""
+    out = decision_rule_v3(BOOK)
+    assert out["considered"] > 0 and out["vetoed"] >= 0
+    assert out["best"] is not None and out["best"]["ev_ratio"] >= 0.5
+    assert out["flat"] is (out["best"]["ev_ratio"] < 1.0)
+    strong = {"belief": {"3": 0.9, "1": 0.05, "0": 0.05}, "odds": {"3": 1.8, "1": 6.0, "0": 9.0}}
+    rich = {"A": strong, "B": strong}
+    out = decision_rule_v3(rich)
+    assert out["flat"] is False and out["best"]["legs"] == [{"code": "A", "faces": "3"},
+                                                           {"code": "B", "faces": "3"}]
+    assert out["best"]["ev_ratio"] == round(0.81 * 1.8 * 1.8, 4)
+    assert decision_rule_v3({"A": BOOK["A"]})["flat"] is True
+
+
+def test_compare_day_adds_a_rule_v3_row_flat_or_scored():
+    report = {"day": "2026-10-02", "offer_book": BOOK, "decision_rule_best": None,
+              "decision_rule_v3": {"flat": True, "best": {"ev_ratio": 0.7}}}
+    rows = {row["kind"]: row for row in compare_day(report, RESULTS, [])["rows"]}
+    assert rows["rule_v3"]["flat"] is True and rows["rule_v3"]["pnl_per_yuan"] == 0.0
+    assert rows["rule_v3"]["ev_ratio"] == 0.7
+    report["decision_rule_v3"] = {"flat": False, "best": {
+        "legs": [{"code": "A", "faces": "3"}, {"code": "C", "faces": "3"}], "p_belief": 0.35,
+        "notes": 1, "modal_return_per_yuan": 2.34, "ev_ratio": 1.2}}
+    rows = {row["kind"]: row for row in compare_day(report, RESULTS, [])["rows"]}
+    assert rows["rule_v3"]["flat"] is False and rows["rule_v3"]["hit"] is True

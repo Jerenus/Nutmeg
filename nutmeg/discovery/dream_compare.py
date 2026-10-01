@@ -15,7 +15,8 @@ from nutmeg.decision.jczq_combos import enumerate_combos
 
 FACE_SETS = ("3", "1", "0", "31", "30", "10")
 _SELECTION_FACE = {"home": "3", "draw": "1", "away": "0", "3": "3", "1": "1", "0": "0"}
-KINDS = ("actual", "decision_rule", "band", "empty")
+KINDS = ("actual", "decision_rule", "rule_v3", "band", "empty")
+V3_VETO_RATIO = 0.5
 
 
 def offer_book(snapshot) -> dict:
@@ -63,6 +64,45 @@ def decision_rule_best(book: dict, *, max_legs: int = 4, max_notes: int = 4) -> 
                 "modal_return_per_yuan": round(combo["return_per_yuan"], 4),
             }
     return None
+
+
+def decision_rule_v3(book: dict, *, max_legs: int = 4, max_notes: int = 4) -> dict:
+    """评估器 v3（2026-10-01 定位）：先排除已知坏结构，再按期望回报率选，不再以 max P 为目标。
+
+    期望回报率 = P(全中) × 模态赔率连乘 / 注数（单串）；< 0.5 的组合直接否决（V1）。
+    过线组合里取期望回报率最高者；若最高者仍 < 1.0，规则最优＝**空仓**（flat=True），
+    只记录"最好也只有多少"。"""
+    legs = []
+    for code, row in sorted(book.items()):
+        belief, odds = row["belief"], row["odds"]
+        options = []
+        for faces in FACE_SETS:
+            modal = max(faces, key=lambda face: belief[face])
+            options.append({"market": "had", "faces": faces,
+                            "p": sum(belief[face] for face in faces),
+                            "odds": [odds[face] for face in faces], "modal_odds": odds[modal]})
+        legs.append({"code": code, "name": code, "options": options})
+    if len(legs) < 2:
+        return {"flat": True, "reason": "fewer_than_two_legs", "best": None}
+    best = None
+    vetoed = considered = 0
+    for combo in enumerate_combos(legs, max_legs=max_legs, max_notes=max_notes, top=10**9):
+        considered += 1
+        ratio = combo["p"] * combo["return_per_yuan"]
+        if ratio < V3_VETO_RATIO:
+            vetoed += 1
+            continue
+        if best is None or ratio > best["ev_ratio"]:
+            best = {
+                "legs": [{"code": leg["code"], "faces": leg["faces"]} for leg in combo["legs"]],
+                "p_belief": round(combo["p"], 6), "notes": combo["notes"],
+                "modal_return_per_yuan": round(combo["return_per_yuan"], 4),
+                "ev_ratio": round(ratio, 4),
+            }
+    flat = best is None or best["ev_ratio"] < 1.0
+    return {"flat": flat, "best": best, "considered": considered, "vetoed": vetoed,
+            "reason": ("no_positive_expected_return" if best is not None and flat
+                       else ("all_vetoed" if best is None else None))}
 
 
 def candidate_tickets(candidate) -> list[list[dict]]:
@@ -169,6 +209,17 @@ def compare_day(report: dict, results: dict, slips: list[BetSlip]) -> dict:
                 score_tickets([rule["legs"]], book, results),
             )
         )
+    v3 = report.get("decision_rule_v3")
+    if v3 is not None:
+        if v3.get("flat") or not v3.get("best"):
+            # v3 规则最优＝空仓：记一行 0 盈亏，带"最好也只有多少"的期望回报率
+            rows.append({"kind": "rule_v3", "id": None, "status": "settled", "pnl_per_yuan": 0.0,
+                         "flat": True, "ev_ratio": (v3.get("best") or {}).get("ev_ratio")})
+        else:
+            best = v3["best"]
+            rows.append({**_scored_row("rule_v3", None, best["p_belief"],
+                                       score_tickets([best["legs"]], book, results)),
+                         "flat": False, "ev_ratio": best["ev_ratio"]})
     for band, best in sorted((report.get("band_best") or {}).items()):
         rows.append(
             _scored_row(

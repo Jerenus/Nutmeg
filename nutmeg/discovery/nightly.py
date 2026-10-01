@@ -24,7 +24,12 @@ from nutmeg.discovery.day_inputs import (
     read_structural_input_from_day,
     tickets_digest,
 )
-from nutmeg.discovery.dream_compare import candidate_tickets, decision_rule_best, offer_book
+from nutmeg.discovery.dream_compare import (
+    candidate_tickets,
+    decision_rule_best,
+    decision_rule_v3,
+    offer_book,
+)
 from nutmeg.discovery.online_adapter import best_candidates_by_band
 from nutmeg.discovery.standing_approval import (
     BJ,
@@ -265,6 +270,7 @@ def run_nightly(
         "ticket_snapshot": tickets,
         "offer_book": book,
         "decision_rule_best": decision_rule_best(book),
+        "decision_rule_v3": decision_rule_v3(book),
         "band_best": _band_best(snapshot, pilot),
     }
     path = _write_json(Path(reports_dir) / f"{day}.json", payload)
