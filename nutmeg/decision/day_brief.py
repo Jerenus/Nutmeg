@@ -164,31 +164,103 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
         "price_only": sum(1 for c in cards if c["labels"]["judgment_tier"] == "price_only"),
         "drafts": sum(1 for c in cards if c["read"] and c["read"]["status"] == "draft"),
     }
-    return {"matches": cards, "counts": counts}
+    brief_counts = None
+    if board:
+        try:
+            from nutmeg.decision.judgment_brief import jczq_brief
+
+            b = jczq_brief(data_dir, date)
+            brief_counts = {k: b[k] for k in ("n", "researched", "favs", "singles_open")}
+        except Exception:  # noqa: BLE001
+            brief_counts = None
+    return {"matches": cards, "counts": counts, "brief": brief_counts,
+            "slips": _slips(data_dir, date=date)}
 
 
-def current_issue(zdir: Path, *, now: datetime) -> str | None:
-    """在售期：截止在 now 之后的最大期号；都过了就取最大期号；没有 issue 文件则 None。"""
-    candidates: list[tuple[str, str | None]] = []
+def _issue_candidates(zdir: Path) -> list[tuple[str, str | None]]:
+    out: list[tuple[str, str | None]] = []
     for path in zdir.glob("*-issue.json"):
         doc = _optional(path) or {}
         issue = str(doc.get("issue_id") or path.name.split("-")[0])
-        candidates.append((issue, doc.get("sale_deadline") or doc.get("sale_stop")))
-    if not candidates:
+        out.append((issue, doc.get("sale_deadline") or doc.get("sale_stop")))
+    return out
+
+
+def current_issue(zdir: Path, *, now: datetime) -> str | None:
+    """在售期：截止在 now 之后的最大期号；没有在售期 → None。
+
+    2026-10-01 修正：原先「都过了就取最大期号」让面板在假期里连续三天把已开奖的 26134
+    当在售期展示（连前沿都照旧打印）。结算路径要的是「最近一期」，用 `latest_issue`。
+    """
+    ahead = [issue for issue, deadline in _issue_candidates(zdir)
+             if (parsed := _parse_dt(deadline)) and parsed > now]
+    return max(ahead) if ahead else None
+
+
+def latest_issue(zdir: Path) -> str | None:
+    """最近一期（不管截没截止）：结算/grade-rx 用。"""
+    candidates = _issue_candidates(zdir)
+    return max(issue for issue, _ in candidates) if candidates else None
+
+
+def _draft_doc(data_dir: Path, zdir: Path, issue: str, *, build: bool) -> dict | None:
+    """`<期>-draft.json`；legs-base 比它新（或它不存在）且允许构建时现做一份（机器初稿不省略）。"""
+    legs_base = zdir / f"{issue}-legs-base.json"
+    draft = zdir / f"{issue}-draft.json"
+    if not legs_base.exists():
         return None
-    ahead = []
-    for issue, deadline in candidates:
-        parsed = _parse_dt(deadline)
-        if parsed and parsed > now:
-            ahead.append(issue)
-    return max(ahead) if ahead else max(issue for issue, _ in candidates)
+    stale = not draft.exists() or draft.stat().st_mtime < legs_base.stat().st_mtime
+    if stale and build:
+        try:
+            from nutmeg.decision.zucai_draft import build_draft
+
+            return build_draft(data_dir, issue, write=True)
+        except Exception:  # noqa: BLE001 —— 初稿失败只让这一块缺席
+            return _optional(draft)
+    return _optional(draft)
 
 
-def _zucai(data_dir: Path, now: datetime) -> dict:
+def _draft_summary(doc: dict | None) -> list[dict]:
+    rows = []
+    for c in (doc or {}).get("candidates") or []:
+        if not c.get("faces"):
+            continue
+        rv = c.get("review") or {}
+        detail = rv.get("detail") or {}
+        rows.append({
+            "label": c["label"], "channel": c["channel"], "cap_yuan": c.get("cap_yuan"),
+            "stake_yuan": c["stake_yuan"], "notes": c["notes"], "p_all": c["p_all"],
+            "ratio": rv.get("ratio"), "ratio_market": detail.get("ratio_market"),
+            "premium": detail.get("premium"), "vetoed": bool(rv.get("vetoed")),
+            "lines": rv.get("lines") or [],
+            "faces": " ".join(f"{no}:{fs}" for no, fs in c["faces"].items()),
+            "dropped": c.get("dropped") or [], "downgrades": len(c.get("downgrades") or []),
+        })
+    return rows
+
+
+def _slips(data_dir: Path, *, issue: str | None = None, date: str | None = None) -> list[dict]:
+    """已登记的票（实购优先排前）+ 审票行；登记簿缺失 → []。"""
+    try:
+        from nutmeg.decision.betslip import load_slips
+        from nutmeg.decision.review import prize_model
+        from nutmeg.decision.review_runner import slip_summary
+
+        slips = load_slips(data_dir)
+        picked = [s for s in slips if (issue and s.issue == issue)
+                  or (date and s.channel == "jczq" and str(s.placed_at)[:10] == date)]
+        model = prize_model(data_dir)
+        return [slip_summary(s, data_dir, slips=slips, model=model)
+                for s in sorted(picked, key=lambda s: (not s.purchased, s.placed_at))]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _zucai(data_dir: Path, now: datetime, *, build_draft: bool = True) -> dict:
     zdir = zucai_dir(data_dir)
     issue = current_issue(zdir, now=now) if zdir.exists() else None
     out = {"issue": issue, "sale_deadline": None, "prep": {}, "tiers": None,
-           "frontier": {}, "plan": None}
+           "frontier": {}, "plan": None, "brief": None, "draft": [], "slips": []}
     if not issue:
         return out
     meta = _optional(zdir / f"{issue}-issue.json") or {}
@@ -207,6 +279,18 @@ def _zucai(data_dir: Path, now: datetime) -> dict:
                            | {"narrowings": len(p.get("narrowings") or [])}
                            for p in (doc.get("points") or [])[:8]],
             }
+    if (zdir / f"{issue}-legs-base.json").exists():
+        try:
+            from nutmeg.decision.judgment_brief import zucai_brief
+
+            b = zucai_brief(data_dir, issue)
+            out["brief"] = {"n": b["n"], "favs": b["favs"],
+                            "stanced": sum(1 for r in b["rows"] if r["stance"] != "—"),
+                            "faces": {r["no"]: r["faces"] for r in b["rows"]}}
+        except Exception:  # noqa: BLE001
+            out["brief"] = None
+    out["draft"] = _draft_summary(_draft_doc(data_dir, zdir, issue, build=build_draft))
+    out["slips"] = _slips(data_dir, issue=issue)
     return out
 
 
@@ -230,15 +314,29 @@ def _factors(root: Path, rsi: dict | None) -> list[dict]:
     ]
 
 
-def compile_brief(*, data_dir: Path, date: str, root: Path, now: datetime) -> dict:
+def _account(data_dir: Path, now: datetime) -> dict:
+    """账房一行（宪法 §4 月度止损）：本月净 vs 空仓、止损余量；记分牌缺失 → 缺席。"""
+    try:
+        from nutmeg.decision.bankroll import brake_state, status_line
+
+        state = brake_state(data_dir, now.date())
+        return {"line": status_line(state), "net": state["net"], "tripped": state["tripped"],
+                "month": state["month"]}
+    except Exception as exc:  # noqa: BLE001
+        return {"line": f"账房缺席：{exc!r}"[:120], "net": None, "tripped": None, "month": None}
+
+
+def compile_brief(*, data_dir: Path, date: str, root: Path, now: datetime,
+                  build_draft: bool = True) -> dict:
     errors: list[str] = []
     jczq = _jczq(Path(data_dir), date, errors)
     rsi = _rsi(Path(data_dir), date)
     return {
         "date": date,
         "generated_at": now.isoformat(timespec="seconds"),
+        "account": _account(Path(data_dir), now),
         "jczq": jczq,
-        "zucai": _zucai(Path(data_dir), now),
+        "zucai": _zucai(Path(data_dir), now, build_draft=build_draft),
         "rsi": rsi,
         "factors": _factors(Path(root), rsi),
         "errors": errors,
@@ -261,9 +359,18 @@ def render_brief_md(brief: dict) -> str:
     lines = [f"# 当日报告 · {brief['date']}", "",
              f"生成 {brief['generated_at']} · 事实层与判断层为机器编译；"
              "本报告只解释已产生的判断，不产生新判断。", ""]
+    account = brief.get("account") or {}
+    if account.get("line"):
+        lines += [f"**账房**：{account['line']}", ""]
     c = brief["jczq"]["counts"]
     lines += [f"## 竞彩 {c['matches']} 场（深研 {c['deep_research']} / 跟市场 {c['price_only']}"
-              f" / 草稿 Read {c['drafts']}）", "",
+              f" / 草稿 Read {c['drafts']}）", ""]
+    jb = brief["jczq"].get("brief")
+    if jb:
+        lines += [f"初判包：研究/改判 {jb['researched']} · ≥0.70 大热 {jb['favs']} · 开单关 "
+                  f"{jb['singles_open']}（`nutmeg judgment brief --day`；竞彩不出票，方案由人出）",
+                  ""]
+    lines += [
               "| 场 | 开球 | 对阵 | fair 3/1/0 | 位移pp | 研究 | Read | 表态 | 阶梯 |",
               "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for m in brief["jczq"]["matches"]:
@@ -280,21 +387,27 @@ def render_brief_md(brief: dict) -> str:
                    if isinstance(m.get("logic"), dict) and m["logic"].get("status") == "ok"]
     if logic_lines:
         lines += ["", "### 为什么落在这一格（claude -p 撰稿，只解释不判断）", ""] + logic_lines
+    lines += _slip_lines("已登记竞彩票", brief["jczq"].get("slips") or [])
     z = brief["zucai"]
     lines += ["", f"## 传统足彩 {z['issue'] or '（无在售期）'}", ""]
     if z["issue"]:
         lines.append(f"- 截止 {z['sale_deadline'] or '未知'}；"
                      f"备料槽 {', '.join(z['prep']) or '无'}")
+        zb = z.get("brief")
+        if zb:
+            lines.append(f"- 初判：{zb['n']} 场｜≥0.70 大热 {zb['favs']}｜研究表态 {zb['stanced']}"
+                         "（`nutmeg judgment brief --issue`）")
+        for d in z.get("draft") or []:
+            lines += _draft_lines(d)
+        if not z.get("draft"):
+            lines.append("- 初稿：未出（缺 legs-base，先跑 B4）" if not zb
+                         else "- 初稿：未出（构建失败，手跑 `nutmeg judgment draft --issue`）")
+        lines += _slip_lines("已登记足彩票", z.get("slips") or [], indent="- ")
         if z["tiers"]:
-            lines.append(f"- 风向 {json.dumps(z['tiers'].get('wind'), ensure_ascii=False)}；"
-                         f"定级 hash {z['tiers'].get('tiers_hash')}")
+            lines.append(f"- 风向 {json.dumps(z['tiers'].get('wind'), ensure_ascii=False)}"
+                         "（描述性，不选面）")
         for channel, doc in z["frontier"].items():
-            top = doc["points"][0] if doc["points"] else None
-            lines.append(
-                f"- {channel} 前沿 {len(doc['points'])} 点，strict 地板 P={doc['strict_max_p']}"
-                + (f"；k0 P={top['p_all']} 注数 {top['notes']} ¥{top['stake_yuan']}"
-                   if top else "")
-            )
+            lines.append(f"- {channel} 前沿 {len(doc['points'])} 点（帽内 max-P 只作对照）")
     lines += ["", "## RSI", ""]
     if brief["rsi"]:
         lines += [f"- {a}" for a in brief["rsi"]["human_actions"] or []] or ["- 无待人决定"]
@@ -311,6 +424,39 @@ def render_brief_md(brief: dict) -> str:
     if brief["errors"]:
         lines += ["", "## 缺席的输入", ""] + [f"- {e}" for e in brief["errors"]]
     return "\n".join(lines) + "\n"
+
+
+def _draft_lines(d: dict) -> list[str]:
+    ch = {"renjiu": "任九", "shengfucai": "胜负彩"}.get(d["channel"], d["channel"])
+    head = (f"- **{d['label']}·{ch}** ¥{d['stake_yuan']:,}（{d['notes']} 注，帽 ¥{d['cap_yuan']}）"
+            f"｜P(全对) {d['p_all'] * 100:.1f}%")
+    if d.get("ratio") is not None:
+        head += f"｜期望回报 {d['ratio']:.2f}"
+        if d.get("ratio_market") is not None and d.get("premium") is not None:
+            head += f"（市场 {d['ratio_market']:.2f} × 判断溢价 {d['premium']:.2f}）"
+    head += "｜审票 " + ("⛔否决" if d["vetoed"] else "可出")
+    out = [head, f"  票面 `{d['faces']}`"]
+    if d.get("dropped"):
+        out.append(f"  丢场 {'、'.join(d['dropped'])}" + (f"；降档 {d['downgrades']} 步"
+                                                       if d.get("downgrades") else ""))
+    elif d.get("downgrades"):
+        out.append(f"  降档 {d['downgrades']} 步")
+    out += [f"  {line}" for line in d.get("lines") or [] if line.startswith(("⛔", "⚠️"))]
+    return out
+
+
+def _slip_lines(title: str, slips: list[dict], *, indent: str = "- ") -> list[str]:
+    if not slips:
+        return []
+    out = ["", f"### {title}", ""] if indent == "- " and title.startswith("已登记竞彩") else []
+    for s in slips:
+        tag = "" if s["purchased"] else "（试玩）"
+        p = f"｜P {s['p_all'] * 100:.1f}%" if s.get("p_all") is not None else ""
+        ratio = f"｜期望回报 {s['ratio']:.2f}" if s.get("ratio") is not None else ""
+        out.append(f"{indent}{s['slip_id']}{tag} {s['channel']} ¥{s['stake_yuan']:,}"
+                   f"{p}{ratio}｜审票 {'⛔否决' if s['vetoed'] else '可出'}｜`{s['text']}`")
+        out += [f"  {line}" for line in s.get("lines") or [] if line.startswith(("⛔", "⚠️"))]
+    return out
 
 
 def write_brief(data_dir: Path | str, date: str, brief: dict) -> Path:

@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from itertools import combinations
 from pathlib import Path
 
-from nutmeg.decision.betslip import BetSlip, SlipLeg, load_slips
+from nutmeg.decision.betslip import BetSlip, SlipLeg
 
 FACES = ("home", "draw", "away")
 DIGIT = {"home": "3", "draw": "1", "away": "0"}
@@ -145,20 +145,11 @@ def to_slip(issue: str, legs: dict[str, dict], faces: dict[str, str], *, channel
 
 def review_candidate(slip: BetSlip, data_dir: Path, *, model: dict, market: dict) -> dict:
     """同伴 = 本期已登记实购票（Jun 已买的）→ V2；V1 用奖金模型 + 市场分布。"""
-    from nutmeg.decision.betslip_diagnosis import (
-        cross_translators,
-        diagnose,
-        peers,
-        prescription_for,
-    )
-    from nutmeg.decision.review import review
+    from nutmeg.decision.review_runner import review_slip
 
-    slips = load_slips(data_dir)
-    cross = cross_translators(slip, slips, data_dir)
-    diagnosis = diagnose(slip, peers(slip, slips, cross), prescription_for(slip, data_dir), cross)
-    out = review(slip, diagnosis, prize_model=model, market=market)
+    out = review_slip(slip, data_dir, model=model, market=market)
     return {"ratio": out["ratio"], "detail": out["detail"], "vetoed": out["vetoed"],
-            "lines": out["lines"], "shared_naked": diagnosis.get("shared_naked") or []}
+            "lines": out["lines"], "shared_naked": out["diagnosis"].get("shared_naked") or []}
 
 
 def _prescription_summary(legs: dict[str, dict]) -> dict:

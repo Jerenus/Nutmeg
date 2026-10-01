@@ -7,8 +7,9 @@ from nutmeg.decision.workbench import read_events
 def test_registry_has_the_deterministic_lane_b_steps_in_runbook_order():
     assert [s.step_id for s in STEPS] == [
         "B0_prep_morning", "B1_prep_afternoon", "B2_canonical", "B3a_premise_card",
-        "B4_build_reads", "B4b_candidates", "B5c_plan_tiers", "B5_plan_frontier",
-        "B6_audit", "B6b_adjudicate_issue", "B9_plan_commit",
+        "B4_build_reads", "B4b_candidates", "B5c_plan_tiers", "B5_judgment_brief",
+        "B5_plan_frontier", "B5b_review_draft", "B6_audit", "B6b_adjudicate_issue",
+        "B9_plan_commit",
     ]
 
 
@@ -79,8 +80,37 @@ def test_step_needing_legs_refuses_without_legs_file(tmp_path):
     p = SopParams(issue="26129", date="2026-09-19", zucai_dir=tmp_path / "z",
                   output_dir=tmp_path / "o", legs_file=None)
     inv = _FakeInvoker()
-    result = run_step("B6_audit", p, invoke=inv)
+    result = run_step("B6b_adjudicate_issue", p, invoke=inv)
     assert result["ok"] is False and inv.calls == [] and "legs_file" in result["error"]
+
+
+def test_audit_without_legs_file_defaults_to_the_draft_legs(tmp_path):
+    p = SopParams(issue="26129", date="2026-09-19", zucai_dir=tmp_path / "z",
+                  output_dir=tmp_path / "o", legs_file=None)
+    assert step_by_id("B6_audit").argv(p) == [
+        "decision-audit-legs", "--legs-file", str(tmp_path / "z" / "26129-legs-draft-renjiu.json")]
+
+
+def test_b5_is_brief_plus_draft_and_b5b_reviews_the_draft_faces(tmp_path):
+    import json
+
+    z = tmp_path / "z"
+    z.mkdir()
+    p = SopParams(issue="26135", date="2026-10-03", zucai_dir=z, output_dir=tmp_path / "o")
+    assert step_by_id("B5_judgment_brief").argv(p)[:5] == [
+        "judgment", "brief", "--issue", "26135", "--write"]
+    assert step_by_id("B5_judgment_brief").artifacts(p) == [
+        z / "26135-judgment-brief.md", z / "26135-draft.json"]
+    # 没有初稿：按钮退化成先出初稿
+    assert step_by_id("B5b_review_draft").argv(p)[:4] == ["judgment", "draft", "--issue", "26135"]
+    (z / "26135-draft.json").write_text(json.dumps({"candidates": [
+        {"label": "初稿", "channel": "renjiu", "faces": {"2": "10", "3": "3", "11": "31"}}]}),
+        encoding="utf-8")
+    argv = step_by_id("B5b_review_draft").argv(p)
+    assert argv[:8] == ["betslip", "preview", "--channel", "renjiu", "--placed-at", "2026-10-03",
+                        "--issue", "26135"]
+    assert argv[argv.index("--faces") + 1] == "2:10 3:3 11:31"
+    assert step_by_id("B5b_review_draft").ok_exit_codes == (0, 1)      # ⛔否决＝判决不是崩溃
 
 
 def test_plan_steps_are_registered_in_lane_order():

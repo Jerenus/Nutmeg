@@ -125,3 +125,18 @@ Jun 2026-10-01：「可以，按照你的顺序，逐条进行处理。我觉得
 **落地**：`review.py`（prize_model/zucai_return/market 参数）、`zucai_draft.py`、CLI `judgment draft` + `brief --issue` 附初稿、`betslip preview/register --issue` 无 `--fair-file` 时自动用 legs-base 的 fair/prior、宪法头注/§6、RUNBOOK B5、RULEBOOK §八 V1。测试：`tests/decision/test_zucai_draft.py`（7）+ `test_review.py` 改奖金模型口径。
 
 **待看**：① 奖金模型只有 41 期，b 的 CI 含 1——「形状不改变 EV」是当前最佳估计不是定理；② 判断溢价是否兑现＝F14/F9 的事，初稿的溢价 1.22 若长期不兑现，初稿就该退回市场口径（溢价 1）——把每期初稿的溢价与命中记进复盘账（`retro encode` 待接）。
+
+## 12. 面板同步（2026-10-01 18:00，Jun「可以，开干」）
+
+**勘察**：五个每日面板里三个还在说旧语言——当日报告/会话入口的足彩块是「风向 + 前沿 8 点 + k0 P」，公开站点写「前沿点 N · 未定案＝空仓」，工作台任务栏 B5＝`plan frontier`、B9＝`plan commit`；判决页有判断腿组合与账本但没有否决标记、没有足彩初稿、没有已登记票的审票行。**真 bug**：`current_issue` 在所有期都截止后退回「最大期号」，假期里当日报告连续三天把 09-28 截止的 26134 当在售期展示（连前沿都照旧打印）。
+
+**决定**：不新建面板，当日报告（`daily/<日>/brief.md` + `session.md` + `site/`）收敛为唯一作战面板；判决页与任务栏对齐。
+
+**落地**：
+- `review_runner.py`：一张票 → 同伴诊断 + 审票的唯一路径（`betslip preview/register`、初稿、当日报告、判决页共用）；`slip_summary` 给面板一行。
+- `day_brief.py`：`current_issue` 只认截止在未来的期（结算/grade-rx 改用 `latest_issue`）；足彩块＝初判摘要 + 机器初稿（legs-base 比 `<期>-draft.json` 新时当场 `build_draft`，失败只缺这一块）+ 已登记足彩票审票行 + 风向/前沿降为对照；竞彩块＝初判包摘要 + 已登记竞彩票审票行；顶部账房一行（`bankroll.brake_state`）。`session.md`、`site/day.html`、`verdict.html` 同步；公开页只放票面与审票结论不放备注。
+- `verdict_page.py`：账房行、已登记票审票表、足彩初稿表（含市场×溢价、丢场/降档）、判断腿组合每元回报 <0.5 标 ⛔（V1 否决形状，不是建议）。
+- `sop_tasks.py`：B5＝`judgment brief --issue --write`（初判+初稿），新增 B5b＝初稿票面送 `betslip preview`（无初稿先出初稿；⛔退出码 1 按判决记），B6 不给腿文件默认吃 `legs-draft-renjiu.json`；B5 前沿保留但标「只作对照」。
+- 测试：`test_day_brief`（初稿/审票/账房/幂等重建/在售期判定）、`test_day_publish`（公开页不泄备注）、`test_verdict_page`（在售期才画足彩块）、`test_day_session`、`test_sop_tasks`（十三步、B5b 回退、B6 默认腿）。
+
+**假期验证**：今天无板面、无在售期——当日报告应显示「无在售期」而不是 26134；真实初稿块要等 26135 的 legs-base。

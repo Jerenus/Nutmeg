@@ -36,8 +36,9 @@
 
 > **strength-v2（2026-09-26 起）**：深研产「强弱天平」块（双方本场强度/风格对位/战术剧本/弱势方取胜路径/事件分级）→ 主循环写 belief（事件分级 → pp，**<5pp 不再归零**，可多面 shift）→ `plan frontier`（belief 模式：纯判断概率，任何腿都可裸单，保险给谁由 P 算）出前沿，B5c 矩阵与 strict 地板只作旧规则对照 → 审计门**无判断类拦截**（2026-09-27 规则瘦身；胜负彩大胆单选渠道规则随之退休），只记账。见 RULEBOOK「〇、规则实证表」。多张票同期出：同一个没把握的裸单不得出现在每一张里（C15b 报出全部票同死于该场的概率）。
 
-> **页面按钮＝同一条命令（2026-09-18 起）**：`uv run nutmeg decision-web` → 顶部 SOP 任务栏按期号列出 B0/B1/B2/B3a/B4/B4b/B5c/B5/B6/B6b/B9 十一步，点一下＝进程内跑本表同一条 CLI，`task_started/task_done/task_failed` 进当日 `workbench.jsonl`。
-> ⛔按钮里没有 B3 深研（要 agent）、B5 的人工 choose、B6b 的 ruling（人填）——那是设计，不是缺功能。
+> **页面按钮＝同一条命令（2026-09-18 起；2026-10-01 对齐定位）**：`uv run nutmeg decision-web` → 顶部 SOP 任务栏按期号列出 B0/B1/B2/B3a/B4/B4b/B5c/**B5 初判+初稿**（`judgment brief --issue --write`）/B5 前沿(只作对照)/**B5b 审初稿**（初稿票面送 `betslip preview`，⛔退出码 1 按判决记）/B6（不给腿文件默认吃 `legs-draft-renjiu.json`）/B6b/B9 十三步，点一下＝进程内跑本表同一条 CLI，`task_started/task_done/task_failed` 进当日 `workbench.jsonl`。
+> ⛔按钮里没有 B3 深研（要 agent）、Jun 改票那一步、B6b 的 ruling（人填）——那是设计，不是缺功能。
+> **每日唯一作战面板（2026-10-01）**＝`daily/<日>/brief.md`（12:00/14:20/18:35 `day run --job brief` 生成，`/today` 读 `session.md`，`day publish` 发到 `site/`）：顶部账房一行（本月净 vs 空仓、止损余量）→ 竞彩逐场事实表 + 初判包摘要 + 已登记竞彩票的审票行 → 足彩在售期（截止在未来才算在售；没有就写无在售期）的初判摘要 + **机器初稿**（legs-base 比 draft 新时当场重建）+ 已登记足彩票审票行 + 风向/前沿（只作对照）。判决页 `verdict.html`（12:30/18:45）同步带账房行、已登记票审票表、足彩初稿表，判断腿组合每元回报 <0.5 的行标 ⛔。
 > B6 审计门退出码 1＝「有 ERROR」这个判决，任务栏按成功记（`ok_exit_codes`），ERROR 仍须人裁。
 
 | 步 | 动作 | 命令/门 |

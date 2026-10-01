@@ -13,7 +13,7 @@ from datetime import date as _date
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from nutmeg.decision.day_brief import compile_brief, current_issue, write_brief
+from nutmeg.decision.day_brief import compile_brief, latest_issue, write_brief
 from nutmeg.decision.day_decisions import build_decisions, write_decisions
 from nutmeg.decision.day_paths import BRIEF, DECISIONS, RESULTS_90, RETRO, day_dir, zucai_dir
 from nutmeg.decision.day_session import render_session_md, write_session
@@ -69,7 +69,7 @@ def planned_commands(ctx: DayContext, job: str) -> list[list[str]]:
     if results.exists():
         cmds.append([*uv, "betslip", "settle", "--results-file", str(results), *data])
     zdir = zucai_dir(ctx.data_dir)
-    issue = current_issue(zdir, now=ctx.now()) if zdir.exists() else None
+    issue = latest_issue(zdir) if zdir.exists() else None
     if issue and (zdir / f"{issue}-rx.json").exists():
         cmds.append([*uv, "workflow", "grade-rx", "--rx-file", str(zdir / f"{issue}-rx.json"),
                      "--issue", issue, *data])

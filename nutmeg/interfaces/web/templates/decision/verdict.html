@@ -79,6 +79,36 @@ table.list th{font-weight:600;color:var(--sub);font-size:13px;background:var(--s
     终判偏离市场 ≥2pp 的 <b>{{ counts.moved }}</b> 场；主循环改判了研究的 <b>{{ counts.overrides }}</b> 场，两份研究打架的 <b>{{ counts.disagreements }}</b> 场。
     页面只搬运系统数据与算术，不替你判断。
   </p>
+  <p class="vd-note">账房：{{ brake }}。竞彩不出票，方案由人出；足彩机器出初稿（处方忠实），人改后审票。</p>
+
+  {% if jczq_slips or zucai_panel.slips %}
+  <section>
+    <h2>已登记的票与审票</h2>
+    <table class="list"><thead><tr><th>票</th><th>渠道</th><th>注金</th><th>P(全对)</th><th>期望回报</th><th>审票</th><th>票面</th></tr></thead><tbody>
+    {% for s in jczq_slips + (zucai_panel.slips or []) %}<tr><td>{{ s.slip_id }}{% if not s.purchased %}（试玩）{% endif %}</td><td>{{ s.channel }}</td><td>¥{{ s.stake_yuan }}</td>
+      <td>{% if s.p_all is not none %}{{ "%.1f"|format(s.p_all*100) }}%{% else %}—{% endif %}</td>
+      <td>{% if s.ratio is not none %}{{ "%.2f"|format(s.ratio) }}{% else %}—{% endif %}</td>
+      <td>{{ "⛔否决" if s.vetoed else "可出" }}{% for line in s.lines %}{% if line.startswith("⛔") or line.startswith("⚠️") %}<br><small>{{ line }}</small>{% endif %}{% endfor %}</td>
+      <td>{{ s.text }}</td></tr>{% endfor %}
+    </tbody></table>
+  </section>
+  {% endif %}
+
+  {% if zucai_panel.issue %}
+  <section>
+    <h2>足彩初稿 · {{ zucai_panel.issue }}</h2>
+    <p class="vd-note">处方忠实：处方面集合装进帽，只丢场不降档；市场口径下任何形状的期望回报都≈返奖率，差别只在判断溢价。初稿自己过审票，Jun 改票后再审。</p>
+    {% if zucai_panel.draft %}
+    <table class="list"><thead><tr><th>档</th><th>渠道</th><th>注金</th><th>P(全对)</th><th>期望回报</th><th>审票</th><th>票面</th></tr></thead><tbody>
+    {% for d in zucai_panel.draft %}<tr><td>{{ d.label }}</td><td>{{ {"renjiu":"任九","shengfucai":"胜负彩"}[d.channel] }}</td><td>¥{{ d.stake_yuan }}（{{ d.notes }} 注）</td>
+      <td>{{ "%.1f"|format(d.p_all*100) }}%</td>
+      <td>{% if d.ratio is not none %}{{ "%.2f"|format(d.ratio) }}{% if d.ratio_market is not none %}<br><small>市场 {{ "%.2f"|format(d.ratio_market) }} × 溢价 {{ "%.2f"|format(d.premium) }}</small>{% endif %}{% else %}—{% endif %}</td>
+      <td>{{ "⛔否决" if d.vetoed else "可出" }}{% for line in d.lines %}{% if line.startswith("⛔") or line.startswith("⚠️") %}<br><small>{{ line }}</small>{% endif %}{% endfor %}</td>
+      <td>{{ d.faces }}{% if d.dropped %}<br><small>丢场 {{ d.dropped|join("、") }}</small>{% endif %}{% if d.downgrades %}<br><small>降档 {{ d.downgrades }} 步</small>{% endif %}</td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<div class="empty">初稿未出：缺 legs-base（先跑 B4）或构建失败。</div>{% endif %}
+  </section>
+  {% endif %}
 
   <section>
     <h2>需要你裁决</h2>
@@ -147,11 +177,11 @@ table.list th{font-weight:600;color:var(--sub);font-size:13px;background:var(--s
 
   <section>
     <h2>竞彩判断腿组合</h2>
-    <p class="vd-note">只用深研过、未开赛的场次；不含总进球，不按赔率档凑腿；按判断概率排序。每元回报 &lt; 1 说明扣掉返奖后判断没有优势。</p>
+    <p class="vd-note">只用深研过、未开赛的场次；不含总进球，不按赔率档凑腿；按判断概率排序。每元回报 &lt; 1 说明扣掉返奖后判断没有优势；&lt; 0.5 的行是审票 V1 否决形状（⛔），不是建议。</p>
     {% if no_edge %}<div class="empty">本版所有判断腿都等于市场价：没有超出价格的判断，组合只是按市场概率排序。</div>{% endif %}
     {% if combos %}
     <table class="list"><thead><tr><th>判断概率</th><th>注数</th><th>全中赔率</th><th>每元回报</th><th>腿</th></tr></thead><tbody>
-    {% for c in combos %}<tr><td>{{ "%.1f"|format(c.p*100) }}%</td><td>{{ c.notes }}</td><td>{{ "%.2f"|format(c.odds) }}</td><td>{{ "%.2f"|format(c.return_per_yuan) }}</td>
+    {% for c in combos %}<tr><td>{{ "%.1f"|format(c.p*100) }}%</td><td>{{ c.notes }}</td><td>{{ "%.2f"|format(c.odds) }}</td><td>{% if c.veto %}⛔ {% endif %}{{ "%.2f"|format(c.return_per_yuan) }}</td>
       <td>{% for leg in c.legs %}{{ leg.code }}{% if leg.market == "hhad" %} 让{{ leg.line }}{% endif %} {{ leg.faces }}{% if not loop.last %} + {% endif %}{% endfor %}</td></tr>{% endfor %}
     </tbody></table>
     {% elif not no_edge %}<div class="empty">可用的判断腿不足两条。</div>{% endif %}

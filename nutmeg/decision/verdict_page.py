@@ -48,8 +48,32 @@ def _experiments(invoke) -> list[str]:
     return [line.strip() for line in output.splitlines() if line.startswith(keep)]
 
 
+def _brake_line(data_dir: Path, now: datetime) -> str:
+    try:
+        from nutmeg.decision.bankroll import brake_state, status_line
+
+        return status_line(brake_state(data_dir, now.date()))
+    except Exception as exc:  # noqa: BLE001
+        return f"账房缺席：{exc!r}"[:120]
+
+
+def _zucai_panel(data_dir: Path, now: datetime) -> dict:
+    """在售期的初稿摘要 + 已登记足彩票（都带审票行）；没有在售期 → {}。"""
+    from nutmeg.decision.day_brief import _draft_doc, _draft_summary, _slips, current_issue
+
+    zdir = data_dir / "zucai"
+    issue = current_issue(zdir, now=now) if zdir.exists() else None
+    if not issue:
+        return {}
+    return {"issue": issue,
+            "draft": _draft_summary(_draft_doc(data_dir, zdir, issue, build=True)),
+            "slips": _slips(data_dir, issue=issue)}
+
+
 def build_verdict(*, day: str, data_dir: Path, now: datetime, invoke=None) -> dict:
+    from nutmeg.decision.day_brief import _slips
     from nutmeg.decision.jczq_combos import enumerate_combos, judgment_legs
+    from nutmeg.decision.review import VETO_RATIO
 
     data_dir = Path(data_dir)
     rows = build_signals(day=day, data_dir=data_dir)
@@ -61,9 +85,14 @@ def build_verdict(*, day: str, data_dir: Path, now: datetime, invoke=None) -> di
         combos = enumerate_combos(legs, top=5)
     except (OSError, ValueError, KeyError):
         legs, combos = [], []
+    for c in combos:
+        c["veto"] = c.get("return_per_yuan") is not None and c["return_per_yuan"] < VETO_RATIO
     moved = [r for r in rows if r["final"] and max(
         abs(r["final"][k] - r["prior"][k]) for k in r["prior"]) >= 0.02]
     return {
+        "brake": _brake_line(data_dir, now),
+        "jczq_slips": _slips(data_dir, date=day),
+        "zucai_panel": _zucai_panel(data_dir, now),
         "day": day,
         "edition": _edition(now),
         "generated_at": now.strftime("%Y-%m-%d %H:%M"),

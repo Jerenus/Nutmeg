@@ -21,7 +21,11 @@ def _fmt_stance(stance: dict | None) -> str:
 
 def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) -> str:
     rule = "规则：不重跑已完成作业；先看失败；对话从待人决定开始；每轮末尾报最近截止与剩余分钟。"
-    lines = [f"# 会话入口 · {brief['date']}", "", rule, "", "## 作业", ""]
+    lines = [f"# 会话入口 · {brief['date']}", "", rule, ""]
+    account = (brief.get("account") or {}).get("line")
+    if account:
+        lines += [f"账房：{account}", ""]
+    lines += ["## 作业", ""]
     seen: dict[str, dict] = {}
     for job in timeline:
         seen[job["job"]] = job
@@ -44,6 +48,10 @@ def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) 
                      "要改判在终端说「今天的方案」）")
     c = brief["jczq"]["counts"]
     lines += ["", f"## 竞彩 {c.get('matches', 0)} 场（深研 {c.get('deep_research', 0)}）", ""]
+    jb = brief["jczq"].get("brief")
+    if jb:
+        lines.append(f"- 初判包：研究/改判 {jb['researched']} · 大热 {jb['favs']} · 开单关 "
+                     f"{jb['singles_open']}（竞彩不出票；方案由人出，机器审票）")
     for m in brief["jczq"]["matches"]:
         read = m.get("read") or {}
         lines.append(
@@ -52,6 +60,7 @@ def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) 
             f"{_hm(m.get('kickoff_bj'))} · 研究 {m['research']['status']} · "
             f"Read {read.get('judge') or '—'}/{read.get('status') or '—'}"
         )
+    lines += _slip_lines("竞彩已登记", brief["jczq"].get("slips") or [])
     z = brief["zucai"]
     lines += [
         "",
@@ -59,10 +68,19 @@ def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) 
         + (f" · 截止 {_hm(z.get('sale_deadline'))}" if z.get("issue") else ""),
         "",
     ]
+    zb = z.get("brief")
+    if zb:
+        lines.append(f"- 初判：{zb['n']} 场 · 大热 {zb['favs']} · 表态 {zb['stanced']}")
+    for d in z.get("draft") or []:
+        ch = {"renjiu": "任九", "shengfucai": "胜负彩"}.get(d["channel"], d["channel"])
+        ratio = f" · 期望 {d['ratio']:.2f}" if d.get("ratio") is not None else ""
+        lines.append(f"- {d['label']}·{ch} ¥{d['stake_yuan']:,} · P {d['p_all'] * 100:.1f}%"
+                     f"{ratio} · 审票 {'⛔' if d['vetoed'] else '可出'} · `{d['faces']}`")
+    if z.get("issue") and not z.get("draft"):
+        lines.append("- 初稿未出（缺 legs-base 或构建失败）")
+    lines += _slip_lines("足彩已登记", z.get("slips") or [])
     if z.get("tiers"):
         lines.append(f"- 风向 {json.dumps(z['tiers'].get('wind'), ensure_ascii=False)}")
-    for channel, doc in (z.get("frontier") or {}).items():
-        lines.append(f"- {channel} 前沿 {len(doc.get('points') or [])} 点")
     rsi = brief.get("rsi") or {}
     rsi_lines = [f"- {a}" for a in rsi.get("human_actions") or []] or ["- 无待人决定"]
     lines += ["", "## RSI", ""] + rsi_lines
@@ -70,6 +88,15 @@ def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) 
     if len(text) > MAX_CHARS:
         text = text[: MAX_CHARS - 40].rstrip() + "\n\n…（已截断，全文见 brief.md）\n"
     return text
+
+
+def _slip_lines(title: str, slips: list[dict]) -> list[str]:
+    out = []
+    for s in slips:
+        tag = "" if s.get("purchased", True) else "（试玩）"
+        out.append(f"- {title} {s['slip_id']}{tag} ¥{s['stake_yuan']:,} · 审票 "
+                   f"{'⛔' if s.get('vetoed') else '可出'} · `{s['text']}`")
+    return out
 
 
 def write_session(data_dir: Path | str, date: str, text: str) -> Path:

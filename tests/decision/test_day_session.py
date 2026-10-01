@@ -59,6 +59,19 @@ def test_render_session_md_is_compact_and_starts_from_decisions():
     assert "押3·31" in md
     assert "不重跑已完成作业" in md
     assert len(md) < 4000
+    brief["account"] = {"line": "本月净 -120（1 条入账）／止损线 −3,000"}
+    brief["jczq"]["brief"] = {"n": 1, "researched": 1, "favs": 0, "singles_open": 1}
+    brief["zucai"]["brief"] = {"n": 14, "favs": 2, "stanced": 9}
+    brief["zucai"]["draft"] = [{"label": "初稿", "channel": "renjiu", "stake_yuan": 256,
+                                "p_all": 0.074, "ratio": 1.03, "vetoed": False,
+                                "faces": "2:10 3:10"}]
+    brief["zucai"]["slips"] = [{"slip_id": "J1", "stake_yuan": 64, "vetoed": True,
+                                "purchased": True, "text": "2:10 3:3"}]
+    md = render_session_md(brief, decisions, timeline)
+    assert md.index("账房：本月净 -120") < md.index("## 作业")
+    assert "- 初判包：研究/改判 1 · 大热 0 · 开单关 1" in md
+    assert "- 初稿·任九 ¥256 · P 7.4% · 期望 1.03 · 审票 可出 · `2:10 3:10`" in md
+    assert "- 足彩已登记 J1 ¥64 · 审票 ⛔ · `2:10 3:3`" in md
 
 
 def test_discussion_is_append_only_jsonl(tmp_path: Path):

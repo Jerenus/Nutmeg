@@ -41,6 +41,12 @@ def _match(m: dict) -> dict:
     }
 
 
+def _slips(rows: list[dict]) -> list[dict]:
+    """公开页只放票面与审票结论，不放备注（备注可能含内部路径/行权旗）。"""
+    return [{k: s.get(k) for k in ("slip_id", "channel", "stake_yuan", "p_all", "ratio",
+                                   "vetoed", "purchased", "text")} for s in rows]
+
+
 def public_view(*, data_dir: Path, root: Path, date: str) -> dict:
     out = day_dir(data_dir, date)
     brief = _json(out / BRIEF, {"jczq": {"matches": [], "counts": {}}, "zucai": {}, "rsi": None})
@@ -52,11 +58,18 @@ def public_view(*, data_dir: Path, root: Path, date: str) -> dict:
         "date": date, "generated_at": brief.get("generated_at"),
         "counts": brief.get("jczq", {}).get("counts", {}),
         "matches": [_match(m) for m in brief.get("jczq", {}).get("matches", [])],
+        "account": (brief.get("account") or {}).get("line"),
+        "jczq_brief": brief.get("jczq", {}).get("brief"),
+        "jczq_slips": _slips(brief.get("jczq", {}).get("slips") or []),
         "zucai": {"issue": z.get("issue"), "sale_deadline": z.get("sale_deadline"),
                   "wind": (z.get("tiers") or {}).get("wind"),
-                  "frontier_points": {ch: len(doc.get("points") or [])
-                                      for ch, doc in (z.get("frontier") or {}).items()},
-                  "plan_status": "已定案" if z.get("plan") else "未定案"},
+                  "brief": z.get("brief"),
+                  "draft": [{k: d.get(k) for k in ("label", "channel", "stake_yuan", "notes",
+                                                   "p_all", "ratio", "vetoed", "faces")}
+                            for d in z.get("draft") or []],
+                  "slips": _slips(z.get("slips") or []),
+                  "plan_status": "已登记实票" if any(
+                      s.get("purchased") for s in z.get("slips") or []) else "未登记"},
         "rsi_pending": len((brief.get("rsi") or {}).get("human_actions") or []),
         "decisions": {"open": sum(1 for d in decisions if d.get("status") == "open"),
                       "total": len(decisions)},

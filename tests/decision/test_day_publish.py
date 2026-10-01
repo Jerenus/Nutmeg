@@ -54,10 +54,35 @@ def test_public_view_drops_internal_fields(tmp_path: Path):
     assert m["logic"] == "锚方完整度 pass 定了面。" and m["expressions"] == {"naked": "3 ✓"}
     assert "summary" not in json.dumps(m) and view["decisions"] == {"open": 1, "total": 1}
     assert view["zucai"] == {"issue": "26132", "sale_deadline": "2026-09-23T21:00:00+08:00",
-                             "wind": {"regime": "hot"},
-                             "frontier_points": {"renjiu": 1}, "plan_status": "未定案"}
+                             "wind": {"regime": "hot"}, "brief": None, "draft": [], "slips": [],
+                             "plan_status": "未登记"}
+    assert view["account"] is None and view["jczq_slips"] == []
     assert view["record"]["chains"][0]["name"] == "被排面链"
     assert view["record"]["coverage"]["chains"] == 1
+
+
+def test_public_view_carries_draft_slips_and_account_without_notes(tmp_path: Path):
+    data, root = _data(tmp_path)
+    out = data / "daily" / "2026-09-23" / "brief.json"
+    brief = json.loads(out.read_text("utf-8"))
+    brief["account"] = {"line": "本月净 -120（1 条入账）／止损线 −3,000", "net": -120}
+    brief["zucai"]["draft"] = [{"label": "初稿", "channel": "renjiu", "stake_yuan": 256,
+                                "notes": 128, "p_all": 0.074, "ratio": 1.03, "vetoed": False,
+                                "faces": "2:10 3:10", "lines": ["ℹ️V1 期望回报率 1.03"]}]
+    brief["zucai"]["slips"] = [{"slip_id": "J1", "channel": "renjiu", "stake_yuan": 64,
+                                "p_all": 0.05, "ratio": 0.9, "vetoed": True, "purchased": True,
+                                "text": "2:10 3:3", "note": "私下备注 .nutmeg-data/x",
+                                "lines": ["⛔V2 与已购票共享裸单"]}]
+    out.write_text(json.dumps(brief, ensure_ascii=False), encoding="utf-8")
+    view = public_view(data_dir=data, root=root, date="2026-09-23")
+    assert view["account"].startswith("本月净 -120")
+    assert view["zucai"]["plan_status"] == "已登记实票"
+    assert view["zucai"]["draft"][0]["faces"] == "2:10 3:10"
+    assert "note" not in view["zucai"]["slips"][0] and "lines" not in view["zucai"]["slips"][0]
+    publish_day(data_dir=data, root=root, date="2026-09-23", out_dir=tmp_path / "site")
+    day = (tmp_path / "site" / "2026-09-23" / "index.html").read_text(encoding="utf-8")
+    assert "初稿·任九" in day and "⛔否决" in day and "账房：本月净 -120" in day
+    assert "私下备注" not in day
 
 
 def test_publish_day_writes_four_pages_and_scrubs(tmp_path: Path):

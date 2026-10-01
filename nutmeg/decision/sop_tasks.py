@@ -5,8 +5,10 @@
 本模块只做两件事：①把每一步描述成 (argv 构造器, 产物路径, 允许的退出码)，
 ②用 typer 的 CliRunner 在进程内调用**同一个** CLI，并把过程写进事件流。
 
-⛔判断永不入脚本：这里没有 B3（深研，需要 agent）、没有 B5 的人工 choose、
+⛔判断永不入脚本：这里没有 B3（深研，需要 agent）、没有 Jun 改票那一步、
    没有 B6b 的 ruling（只签发空裁决单，ruling 由人填）。tiers/frontier 只做确定性算术。
+2026-10-01 定位：B5 按钮＝`judgment brief --issue --write`（初判包 + 机器初稿，处方忠实），
+   B5b＝把初稿票面送 `betslip preview` 审票，B6 审计门不给 legs_file 时默认吃初稿腿文件。
 ⛔审计门退出码 1 是「有 ERROR」这个**判决**，不是任务失败——`ok_exit_codes` 里显式列出。
 """
 from __future__ import annotations
@@ -73,13 +75,21 @@ STEPS: tuple[SopStep, ...] = (
             lambda p: ["plan", "tiers", "--issue", p.issue,
                        "--data-dir", str(p.output_dir / "..")],
             lambda p: [_z(p, "tiers.json")]),
-    SopStep("B5_plan_frontier", "B5 前沿(任九)",
+    SopStep("B5_judgment_brief", "B5 初判+初稿",
+            lambda p: ["judgment", "brief", "--issue", p.issue, "--write",
+                       "--data-dir", str(p.output_dir / "..")],
+            lambda p: [_z(p, "judgment-brief.md"), _z(p, "draft.json")]),
+    SopStep("B5_plan_frontier", "B5 前沿(任九·只作对照)",
             lambda p: ["plan", "frontier", "--issue", p.issue, "--channel", "renjiu",
                        "--data-dir", str(p.output_dir / "..")],
             lambda p: [_z(p, "frontier-renjiu.json")]),
+    SopStep("B5b_review_draft", "B5b 审初稿(任九)",
+            lambda p: _review_draft_argv(p),
+            lambda p: [], ok_exit_codes=(0, 1)),
     SopStep("B6_audit", "B6 审计门",
-            lambda p: ["decision-audit-legs", "--legs-file", str(p.legs_file)],
-            lambda p: [], ok_exit_codes=(0, 1), needs_legs=True),
+            lambda p: ["decision-audit-legs", "--legs-file",
+                       str(p.legs_file or _z(p, "legs-draft-renjiu.json"))],
+            lambda p: [], ok_exit_codes=(0, 1)),
     SopStep("B6b_adjudicate_issue", "B6b 签发裁决单",
             lambda p: ["decision-adjudicate", "--legs-file", str(p.legs_file),
                        "--out", str(_z(p, "adjudication.json"))],
@@ -89,6 +99,21 @@ STEPS: tuple[SopStep, ...] = (
                        "--data-dir", str(p.output_dir / "..")],
             lambda p: [_z(p, "capital-plan.txt")]),
 )
+
+
+def _review_draft_argv(p: SopParams) -> list[str]:
+    """初稿票面（`<期>-draft.json` 的「初稿·任九」）→ `betslip preview`；没有初稿就先出初稿。"""
+    import json
+
+    try:
+        doc = json.loads(_z(p, "draft.json").read_text(encoding="utf-8"))
+        cand = next(c for c in doc.get("candidates") or []
+                    if c.get("label") == "初稿" and c.get("channel") == "renjiu" and c.get("faces"))
+    except (OSError, ValueError, StopIteration):
+        return ["judgment", "draft", "--issue", p.issue, "--data-dir", str(p.output_dir / "..")]
+    row = " ".join(f"{no}:{fs}" for no, fs in cand["faces"].items())
+    return ["betslip", "preview", "--channel", "renjiu", "--placed-at", p.date,
+            "--issue", p.issue, "--faces", row, "--data-dir", str(p.output_dir / "..")]
 
 
 def step_by_id(step_id: str) -> SopStep:

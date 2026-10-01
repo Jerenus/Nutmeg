@@ -89,6 +89,16 @@ def test_current_issue_prefers_issue_whose_deadline_is_ahead(tmp_path: Path):
     assert current_issue(data / "zucai", now=NOW) == "26132"
 
 
+def test_current_issue_is_none_when_every_deadline_has_passed(tmp_path: Path):
+    from nutmeg.decision.day_brief import latest_issue
+
+    data, _ = _fixture(tmp_path)
+    later = NOW.replace(day=29)
+    assert current_issue(data / "zucai", now=later) is None       # 不再把已开奖期当在售期
+    assert latest_issue(data / "zucai") == "26132"                   # 结算路径仍要最近一期
+    assert current_issue(tmp_path / "nowhere", now=later) is None
+
+
 def test_compile_brief_joins_every_source_into_cards(tmp_path: Path):
     data, root = _fixture(tmp_path)
     brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
@@ -114,10 +124,73 @@ def test_compile_brief_joins_every_source_into_cards(tmp_path: Path):
     assert brief["errors"] == []
 
 
+def _board(data: Path) -> None:
+    """26132 的 legs-base（4 单 10 双）+ 奖金模型 + 一张已登记任九票，供初稿/审票/账房块用。"""
+    from nutmeg.decision.betslip import BetSlip, SlipLeg, register_slip
+
+    single_b, single_m = {"home": 0.70, "draw": 0.18, "away": 0.12}, {"home": 0.65, "draw": 0.20,
+                                                                        "away": 0.15}
+    double_b, double_m = {"home": 0.45, "draw": 0.30, "away": 0.25}, {"home": 0.42, "draw": 0.30,
+                                                                        "away": 0.28}
+    alive = {f: {"state": "alive"} for f in ("home", "draw", "away")}
+    legs = {}
+    for i in range(1, 15):
+        fs = "3" if i <= 4 else "31"
+        legs[str(i)] = {"name": f"m{i}", "faces": fs, "confidence": 3,
+                        "prior": single_m if fs == "3" else double_m,
+                        "fair": single_b if fs == "3" else double_b, "face_status": alive,
+                        "license_questions": {}, "anchor_integrity": "pass", "crash_markers": [],
+                        "_d3": {}}
+    _w(data / "zucai" / "26132-legs-base.json", {"issue": "26132", "legs": legs,
+                                                 "prescription": {k: v["faces"]
+                                                                  for k, v in legs.items()}})
+    _w(data / "zucai" / "26132-judgment-v1.json", {k: {"action": v["faces"]}
+                                                   for k, v in legs.items()})
+    _w(data / "zucai" / "prize-model.json", {"channels": {
+        "renjiu": {"n": 41, "a": -5.2547, "b": 1.0, "resid_sd": 0.62, "prize_median": 3774},
+        "shengfucai": {"n": 38, "a": -1.6487, "b": 1.13, "resid_sd": 0.83,
+                       "prize_median": 662992}}})
+    _w(data / "scoreboard.json", {"tickets": {"jczq-20260920": {"net": -120, "stake": 200}}})
+    faces = {str(i): "3" for i in range(1, 10)}
+    slip = BetSlip(slip_id="J1", channel="renjiu", placed_at="2026-09-23", issue="26132",
+                   faces=faces, legs=[SlipLeg(key=no, market="had", selections=("home",),
+                                              fair=legs[no]["fair"]) for no in faces])
+    register_slip(data, slip)
+
+
+def test_compile_brief_builds_the_zucai_draft_reviews_slips_and_prints_the_ledger(
+        tmp_path: Path):
+    data, root = _fixture(tmp_path)
+    _board(data)
+    brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
+    z = brief["zucai"]
+    assert z["brief"] == {"n": 14, "favs": 0, "stanced": 0,
+                          "faces": {str(i): ("3" if i <= 4 else "31") for i in range(1, 15)}}
+    labels = [(d["channel"], d["label"]) for d in z["draft"]]
+    assert ("renjiu", "初稿") in labels and ("shengfucai", "刹车档") in labels
+    draft = next(d for d in z["draft"] if d["channel"] == "renjiu" and d["label"] == "初稿")
+    assert draft["stake_yuan"] == 256 and draft["premium"] > 1 and draft["downgrades"] == 0
+    assert draft["vetoed"] is True                     # 与已登记票 J1 共享裸单 1-4 → V2
+    assert (data / "zucai" / "26132-draft.json").exists()
+    [slip] = z["slips"]
+    assert slip["slip_id"] == "J1" and slip["stake_yuan"] == 2 and slip["text"].startswith("1:3")
+    assert brief["account"]["net"] == -120 and "止损线" in brief["account"]["line"]
+    md = render_brief_md(brief)
+    assert "**账房**：本月净 -120" in md and "初判：14 场" in md
+    assert "**初稿·任九** ¥256（128 注，帽 ¥400）" in md and "⛔V2" in md
+    assert "J1 renjiu ¥2" in md and "帽内 max-P 只作对照" in md
+    # 第二次编译不重建初稿（legs-base 没变）
+    before = (data / "zucai" / "26132-draft.json").stat().st_mtime
+    compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
+    assert (data / "zucai" / "26132-draft.json").stat().st_mtime == before
+
+
 def test_compile_brief_degrades_block_by_block(tmp_path: Path):
     brief = compile_brief(data_dir=tmp_path / "none", date="2026-09-23", root=tmp_path, now=NOW)
     assert brief["jczq"]["matches"] == [] and brief["zucai"]["issue"] is None
     assert brief["rsi"] is None and brief["factors"] == []
+    assert brief["zucai"]["draft"] == [] and brief["jczq"]["slips"] == []
+    assert "line" in brief["account"]
     assert any("jczq-legs-base.json" in e for e in brief["errors"])
 
 

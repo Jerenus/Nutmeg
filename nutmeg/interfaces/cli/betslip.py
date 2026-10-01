@@ -48,31 +48,6 @@ def _fail(exc: Exception) -> None:
     raise _cli.typer.Exit(code=1)
 
 
-def _issue_fair(issue: str, data_dir: Path) -> dict:
-    """足彩票没给 --fair-file 时：legs-base 的 fair（=判断概率）当每腿 fair（2026-10-01）。"""
-    if not issue:
-        return {}
-    try:
-        doc = json.loads((Path(data_dir) / "zucai" / f"{issue}-legs-base.json").read_text("utf-8"))
-    except (OSError, ValueError):
-        return {}
-    legs = doc.get("legs") or {}
-    return {no: leg["fair"] for no, leg in legs.items() if leg.get("fair")}
-
-
-def _issue_market(issue: str, data_dir: Path) -> dict:
-    """legs-base 的 prior（=市场分布），给审票的奖金模型算判断溢价；缺 prior 用 fair。"""
-    if not issue:
-        return {}
-    try:
-        doc = json.loads((Path(data_dir) / "zucai" / f"{issue}-legs-base.json").read_text("utf-8"))
-    except (OSError, ValueError):
-        return {}
-    legs = doc.get("legs") or {}
-    return {no: (leg.get("prior") or leg.get("fair")) for no, leg in legs.items()
-            if leg.get("prior") or leg.get("fair")}
-
-
 def _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo, multiplier,
                 issue, scheme_no, trial, note, data_dir=Path(".nutmeg-data")):
     from nutmeg.decision.betslip import BetSlip, BetslipError, SlipLeg, parse_faces_row
@@ -92,8 +67,10 @@ def _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
         if not faces:
             raise BetslipError("足彩票须给 --faces")
         face_map = parse_faces_row(faces)
+        from nutmeg.decision.review_runner import issue_belief
+
         fair = (json.loads(Path(fair_file).read_text("utf-8")) if fair_file
-                else _issue_fair(issue, data_dir))
+                else issue_belief(data_dir, issue))
         legs = [SlipLeg(
             key=no, market="had",
             selections=tuple({"3": "home", "1": "draw", "0": "away"}[c] for c in f),
@@ -216,8 +193,9 @@ def betslip_preview(
 def _review_lines(slip, diagnosis: dict, data_dir: Path) -> list[str]:
     """审票（2026-10-01 定位）：V1 期望回报率 / V2 共享裸单 否决，V3 倍投警告。"""
     from nutmeg.decision.review import prize_model, review
+    from nutmeg.decision.review_runner import issue_market
 
-    market = _issue_market(slip.issue, data_dir) if slip.channel != "jczq" else None
+    market = issue_market(data_dir, slip.issue) if slip.channel != "jczq" else None
     return review(slip, diagnosis, prize_model=prize_model(data_dir), market=market)["lines"]
 
 
