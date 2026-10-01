@@ -1,0 +1,28 @@
+{
+ "exp_id": "G1",
+ "claim": "结构规则 jczq_fav_pairs（终盘最大面 ≥0.70 的热门两两 2 串 1，平注，每日 ≤¥400）在前瞻样本上的平注 ROI > 0。",
+ "mechanism": "2026-10-01 历史回放环境首轮锦标赛（evidence/2026-10-01-replay-gym.md）：jczq_fav_pairs 134 天投入 ¥140 净 +17（+11.9%，CI [−13,+47]，25 个有热门对的日子）；同场 belief 换终盘无差；帽内 max-P 结构 −27.6%（CI 不含 0）。这是唯一方向一致的正结构信号，但投入太小——用 gym 每天结账，100 个有票的日子后裁。",
+ "tier": "observation",
+ "layer": "structural",
+ "population": "jczq",
+ "min_tier": "price_only",
+ "window": {
+  "date_from": "2026-10-02",
+  "n_min": 100
+ },
+ "falsifier": {
+  "metric": "gym_fav_pairs_roi_pp",
+  "stratum": "pooled",
+  "n_min": 100,
+  "bound": "ci_upper",
+  "threshold_pp": -5.0,
+  "direction": "lt_means_falsified"
+ },
+ "stop_rule": "累计 100 个出票日（gym 里 jczq_fav_pairs 有票的板面日）结账；平注 ROI 的 CI 上界 < −5% 即证伪。期间策略参数（0.70 / 2 串 1 / ¥400）冻结；结账由 10:45 loop 的 rsi grade 走 nutmeg.gym 回放，价格＝体彩 17:00 快照。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "source_doc": "docs/superpowers/evidence/2026-10-01-replay-gym.md",
+ "registered_at": "2026-10-01",
+ "approval_note": "Jun 2026-10-01 聊天：「可以，继续」——登记动作由主循环代执行，决定人 Jun"
+}

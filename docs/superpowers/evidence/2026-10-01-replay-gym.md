@@ -39,7 +39,7 @@
 
 ## 3. 交给 #3（下一轮）与 10-31
 
-- 预登记两条前瞻实验（F 系列）：**F15** 终盘 ≥0.70 热门 90' 命中 − 终盘 p ≥ +8pp（n_min 100）；**G1（结构）** `jczq_fav_pairs` 平注 ROI > 0（n_min 100 天，falsifier ROI ≤ −5%）。登记后由 10:45 loop 的 gym 步每天结账。
+- **已登记（2026-10-01 12:10，Jun「可以，继续」）**：**F15** 终盘 ≥0.70 热门 90' 命中 − 终盘 p（falsifier：CI 下界 < +3pp，n_min 100 场，窗口 10-02 起）；**G1（structural）** `jczq_fav_pairs` 平注 ROI（falsifier：CI 上界 < −5%，n_min 100 个出票日，由 `nutmeg.gym` 回放结账）。两者进 `rsi_loop.GRADED_EXPERIMENTS`，10:45 loop 每天 `rsi grade --mode prospective`；首结账 n=0（窗口从 10-02 起）。
 - Dream 评估器 v3 的口径：候选只在 gym 里 ROI 为正、CI 不含 0 的策略族里选"规则最优"；`max P` 不再是默认目标。
 - 新策略进锦标赛必须先登记（名字、版本、参数）再跑测试窗；本轮 8 条是基线。
 - 待补数据：jc-results 缺 11+5 场赛果（pending）；hhad 让球腿策略未做（结算已支持）。

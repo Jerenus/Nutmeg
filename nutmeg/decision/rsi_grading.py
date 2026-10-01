@@ -449,3 +449,87 @@ def grade_f14_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
 
 
 PROSPECTIVE_ADAPTERS.update({"F13": grade_f13_prospective, "F14": grade_f14_prospective})
+
+
+def _closing_fav(row: dict) -> tuple[str, float] | None:
+    sharp = (row.get("closing") or {}).get("sharp_fair") or {}
+    if len(sharp) != 3:
+        return None
+    face = max(sharp, key=sharp.get)
+    return face, float(sharp[face])
+
+
+def grade_f15_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                          boots: int = 4000, threshold: float = 0.70) -> GradeResult:
+    """F15 大热校准（2026-10-01 登记）：终盘最大面 ≥0.70 的竞彩场，命中 − 终盘 p（pp）。
+
+    价格边验证 118 天 +15pp（事后分桶）；这里只数窗内前瞻样本。"""
+    resid: list[float] = []
+    selected: list[dict] = []
+    for r in rows:
+        if r.get("src") != "jczq" or not _in_date_window(r, window):
+            continue
+        if r.get("actual") not in _FACE.values():
+            continue
+        fav = _closing_fav(r)
+        if fav is None or fav[1] < threshold:
+            continue
+        resid.append((1.0 if r["actual"] == _FACE[fav[0]] else 0.0) - fav[1])
+        selected.append(r)
+    kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
+                  inputs_hash=_rows_hash(selected),
+                  computed_by="nutmeg.decision.rsi_grading.grade_f15_prospective")
+    if not resid:
+        return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
+    rng = random.Random(seed)
+    means = sorted(statistics.fmean(rng.choice(resid) for _ in resid) * 100 for _ in range(boots))
+    return GradeResult(n_cum=len(resid), metric_value_pp=statistics.fmean(resid) * 100,
+                       ci_low_pp=means[int(0.025 * boots)],
+                       ci_high_pp=means[int(0.975 * boots) - 1], **kwargs)
+
+
+def grade_g1_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                         boots: int = 4000, data_dir=None, policy: str = "jczq_fav_pairs",
+                         ledger: Sequence[dict] | None = None) -> GradeResult:
+    """G1 结构规则（2026-10-01 登记）：gym 回放 `jczq_fav_pairs` 的窗内平注 ROI（pp）。
+
+    `rows`（语料）在此不用——结构实验的样本是板面日，账由 nutmeg.gym 精确结算；
+    n_cum＝有票的板面日数，CI 按日 bootstrap。测试可直接喂 `ledger`。"""
+    if ledger is None:
+        from nutmeg.gym.board import list_days
+        from nutmeg.gym.run import run_gym
+
+        if data_dir is None:
+            from nutmeg.config.settings import get_settings
+
+            data_dir = get_settings().data_dir
+        days = [d for d in list_days(data_dir) if d >= str(window.get("date_from", ""))]
+        result = run_gym(data_dir=data_dir, policies=[policy], days=days, issues=[],
+                         run_id=f"grade-{policy}")
+        ledger = result.ledger
+    settled = [r for r in ledger if r.get("policy") == policy and r.get("net") is not None]
+    by_day: dict[str, list[float]] = {}
+    for r in settled:
+        by_day.setdefault(r["key"], [0.0, 0.0])
+        by_day[r["key"]][0] += float(r["net"])
+        by_day[r["key"]][1] += float(r["stake"])
+    days_ = sorted(by_day)
+    digest = hashlib.sha256(json.dumps([[d, *by_day[d]] for d in days_]).encode()).hexdigest()
+    kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
+                  inputs_hash=digest,
+                  computed_by="nutmeg.decision.rsi_grading.grade_g1_prospective")
+    if not days_:
+        return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
+
+    def roi(sample: list[str]) -> float:
+        stake = sum(by_day[d][1] for d in sample)
+        return (sum(by_day[d][0] for d in sample) / stake * 100) if stake else 0.0
+
+    rng = random.Random(seed)
+    boot = sorted(roi([rng.choice(days_) for _ in days_]) for _ in range(boots))
+    return GradeResult(n_cum=len(days_), metric_value_pp=roi(days_),
+                       ci_low_pp=boot[int(0.025 * boots)], ci_high_pp=boot[int(0.975 * boots) - 1],
+                       **kwargs)
+
+
+PROSPECTIVE_ADAPTERS.update({"F15": grade_f15_prospective, "G1": grade_g1_prospective})

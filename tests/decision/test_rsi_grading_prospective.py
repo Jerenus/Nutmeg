@@ -65,4 +65,43 @@ def test_f9_brier_delta_is_positive_when_belief_beats_market_and_zero_without_mo
 
 def test_adapter_registry_names_match_experiments():
     # 2026-09-30：F13（崩塌叙事锚方）、F14（表态面集合命中率）登记并接入
-    assert set(PROSPECTIVE_ADAPTERS) == {"F3", "F5", "F9", "F10", "F11", "F13", "F14"}
+    # 2026-10-01：F15（终盘大热校准）、G1（gym 结构规则 fav_pairs ROI）登记并接入
+    assert set(PROSPECTIVE_ADAPTERS) == {"F3", "F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1"}
+
+
+def test_f15_counts_only_closing_favourites_in_window():
+    from nutmeg.decision.rsi_grading import grade_f15_prospective
+
+    rows = [
+        {"src": "jczq", "date": "2026-10-03", "actual": "3",
+         "closing": {"sharp_fair": {"home": 0.75, "draw": 0.15, "away": 0.10}}},
+        {"src": "jczq", "date": "2026-10-03", "actual": "0",
+         "closing": {"sharp_fair": {"home": 0.72, "draw": 0.18, "away": 0.10}}},
+        {"src": "jczq", "date": "2026-10-03", "actual": "3",
+         "closing": {"sharp_fair": {"home": 0.55, "draw": 0.25, "away": 0.20}}},   # <0.70 不算
+        {"src": "jczq", "date": "2026-09-30", "actual": "3",
+         "closing": {"sharp_fair": {"home": 0.80, "draw": 0.12, "away": 0.08}}},   # 窗外
+        {"src": "zucai", "date": "2026-10-03", "actual": "3", "fair": {"home": 0.8, "draw": 0.1,
+                                                                        "away": 0.1}},
+    ]
+    g = grade_f15_prospective(rows, window={"date_from": "2026-10-02"})
+    expected = ((1 - 0.75) + (0 - 0.72)) / 2 * 100
+    assert g.n_cum == 2 and round(g.metric_value_pp, 1) == round(expected, 1)
+    assert grade_f15_prospective([], window={"date_from": "2026-10-02"}).n_cum == 0
+
+
+def test_g1_rois_the_gym_ledger_by_day():
+    from nutmeg.decision.rsi_grading import grade_g1_prospective
+
+    ledger = [
+        {"policy": "jczq_fav_pairs", "key": "2026-10-03", "stake": 4, "net": 2.0},
+        {"policy": "jczq_fav_pairs", "key": "2026-10-03", "stake": 2, "net": -2.0},
+        {"policy": "jczq_fav_pairs", "key": "2026-10-04", "stake": 2, "net": 1.0},
+        {"policy": "jczq_fav_pairs", "key": "2026-10-05", "stake": None, "net": None,
+         "forced_flat": True},
+        {"policy": "jczq_max_p", "key": "2026-10-03", "stake": 8, "net": -8.0},
+    ]
+    g = grade_g1_prospective([], window={"date_from": "2026-10-02"}, ledger=ledger)
+    assert g.n_cum == 2 and round(g.metric_value_pp, 2) == round(1 / 8 * 100, 2)
+    assert g.ci_low_pp <= g.metric_value_pp <= g.ci_high_pp
+    assert grade_g1_prospective([], window={"date_from": "2026-10-02"}, ledger=[]).n_cum == 0

@@ -56,7 +56,7 @@ LOOP_OUTPUT_PATHS = (
     "experiments/scoreboard-tallies.json",
 )
 # 有前瞻适配器的登记实验都进闭环（F10/F11 2026-09-27 登记后一直没被结账，2026-09-30 补入）
-GRADED_EXPERIMENTS = ("F2", "F3", "F4", "F5", "F9", "F10", "F11", "F13", "F14")
+GRADED_EXPERIMENTS = ("F2", "F3", "F4", "F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1")
 # 主指标（2026-10-01 评估换轴）：结构与决策——F14 表态面集合 vs 市场覆盖、Dream 对照账、F10 热门带；
 # F9（程度判断）等降为次指标：每天 8–15 场的 Brier 差在赛季内分不开噪声。
 PRIMARY_EXPERIMENTS = ("F14", "F10")

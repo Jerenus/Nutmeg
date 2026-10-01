@@ -1,0 +1,28 @@
+{
+ "exp_id": "F15",
+ "claim": "终盘（titan007 sharp）最大面 ≥0.70 的竞彩场，90' 实际命中率高于终盘概率至少 +8pp——大热被终盘与体彩同时低估。",
+ "mechanism": "2026-10-01 价格边验证（experiments/price_edge.py，n=900 场/118 天）：终盘 0.7–0.8 带命中 89.2% vs 终盘 73.9%（+15.2pp，CI [+7.9,+21.5]，n=83），≥0.70 合并 +15.3pp（n=87），分时段/主客/联赛方向一致；冷门 0.1–0.2 带少中 5pp。桶是事后划的，只能登记前瞻实验；体彩抽水把钱边压到 +0–6%，所以它的价值在结构（串关/任九里把大热当更确定的腿），不是单腿下注。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "jczq",
+ "min_tier": "price_only",
+ "window": {
+  "date_from": "2026-10-02",
+  "n_min": 100
+ },
+ "falsifier": {
+  "metric": "closing_fav70_resid_pp",
+  "stratum": "pooled",
+  "n_min": 100,
+  "bound": "ci_lower",
+  "threshold_pp": 3.0,
+  "direction": "lt_means_falsified"
+ },
+ "stop_rule": "累计 100 场（终盘最大面 ≥0.70 的竞彩场）结账；命中 − 终盘 p 的 CI 下界 < +3pp 即证伪（校准差不成立或小到无结构价值）。期间不接入票面、不改规则。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "source_doc": "docs/superpowers/evidence/2026-10-01-price-edge-validation.md",
+ "registered_at": "2026-10-01",
+ "approval_note": "Jun 2026-10-01 聊天：「可以，继续」（对「登记 F15/G1 接进 10:45 loop」的回复）——登记动作由主循环代执行，决定人 Jun"
+}
