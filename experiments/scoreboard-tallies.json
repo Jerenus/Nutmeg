@@ -1,5 +1,5 @@
 {
- "source_updated_at": "2026-09-19T14:55:00+08:00",
+ "source_updated_at": "2026-10-01T09:45:04+08:00",
  "chains": {
   "excluded_face_streak": {
    "n": 291,
@@ -643,10 +643,58 @@
    "raw": "⭐新立 2026-09-18（用户裁定）：语料 938 行 = 足彩 406(32 期) + 竞彩 532（去重 67）；带判读标签仍只有 70 行",
    "status": "新立",
    "machine_readable": false
+  },
+  "silent_reversal_of_deep_think": {
+   "n": null,
+   "issues": null,
+   "hits": null,
+   "total": null,
+   "R_pp": null,
+   "ci": null,
+   "ci_contains_zero": null,
+   "mde80_pp": null,
+   "cases": 1,
+   "streak_issues": null,
+   "verdict": null,
+   "raw": "1 例（26133 场13 德国）：深想判对 → 重优化静默反转 → 死于该腿",
+   "status": "立 RUNBOOK B5a（深想结论先落 override；反转明示；保险面对准弱方路径）；同组交叉起草 _draft_F12，暂以 rx 标签「同组交叉」记账",
+   "machine_readable": true
+  },
+  "collapse_narrative_not_collapsing": {
+   "n": null,
+   "issues": null,
+   "hits": null,
+   "total": null,
+   "R_pp": null,
+   "ci": null,
+   "ci_contains_zero": null,
+   "mde80_pp": null,
+   "cases": null,
+   "streak_issues": null,
+   "verdict": null,
+   "raw": "画像③(26122 立) → 2026-09-28 +1：意大利 1-4 客胜土耳其",
+   "status": "观察；提案登记前瞻实验（研究写崩塌叙事且 belief 反向拨动的场次，锚方实开 vs 市场）",
+   "machine_readable": false
+  },
+  "big_name_hole_favorite": {
+   "n": null,
+   "issues": null,
+   "hits": 6,
+   "total": 6,
+   "R_pp": null,
+   "ci": null,
+   "ci_contains_zero": null,
+   "mde80_pp": null,
+   "cases": null,
+   "streak_issues": null,
+   "verdict": null,
+   "raw": "26120 6/6 → 2026-09-28 7/7（法国缺姆巴佩 0-1 客胜比利时）",
+   "status": "标签失效方向一致 7/7；纳入 F10 热门低估前瞻观察",
+   "machine_readable": true
   }
  },
  "coverage": {
-  "chains": 40,
-  "machine_readable": 26
+  "chains": 43,
+  "machine_readable": 28
  }
 }
