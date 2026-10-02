@@ -469,6 +469,21 @@ _FACTORS = {
 }
 
 
+_EXTRA_FACTOR_MODULES = ("experiments.rubric_rows",)
+
+
+def _resolve(factor: str):
+    if factor in _FACTORS:
+        return _FACTORS[factor]
+    import importlib
+
+    for name in _EXTRA_FACTOR_MODULES:
+        table = getattr(importlib.import_module(name), "_FACTORS", {})
+        if factor in table:
+            return table[factor]
+    raise KeyError(f"factor {factor!r} not registered in noise_floor or {_EXTRA_FACTOR_MODULES}")
+
+
 def analyze(
     rows: list[dict],
     *,
@@ -477,8 +492,12 @@ def analyze(
     n_perm: int = 1000,
     seed: int = DEFAULT_SEED,
 ) -> dict:
-    """Run one factor with the prospective proof gate closed by default."""
-    build_rows, rule = _FACTORS[factor]
+    """Run one factor with the prospective proof gate closed by default.
+
+    因子先找本模块的 `_FACTORS`，找不到再找其他行构造器模块（判断 rubric 的逐项因子在
+    `experiments.rubric_rows._FACTORS`，2026-10-02）——闭环 `rsi weights propose --all` 对
+    注册表里每个 probability 因子都会调这里。"""
+    build_rows, rule = _resolve(factor)
     admitted = (
         rows
         if include_unproven

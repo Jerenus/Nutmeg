@@ -14,6 +14,7 @@ _DATA_DIR = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
 _LIMIT = _cli.typer.Option(None, "--limit", help="最多读几份（历史重打分分批用）")
 _FREE = _cli.typer.Option(False, "--free", help="再跑一次不看问题表的整体概率（防游戏对照）")
 _FORCE = _cli.typer.Option(False, "--force", help="已有侧车也重跑")
+_WORKERS = _cli.typer.Option(4, "--workers", help="并发读者数（每份一个 claude -p）")
 
 
 @rubric_app.command("read")
@@ -24,6 +25,7 @@ def rubric_read(
     limit: int | None = _LIMIT,
     free: bool = _FREE,
     force: bool = _FORCE,
+    workers: int = _WORKERS,
 ) -> None:
     """让读者 B（haiku）读当天/当期每份研究的证据层，逐项作答并与分析员算 kappa，写侧车。"""
     from nutmeg.decision.rubric_reader import read_many, research_files
@@ -32,7 +34,7 @@ def rubric_read(
         _cli.typer.echo("rubric error: --day 与 --issue 二选一")
         raise _cli.typer.Exit(code=2)
     paths = research_files(data_dir, day=day, issue=issue)
-    out = read_many(paths, free=free, force=force, limit=limit)
+    out = read_many(paths, free=free, force=force, limit=limit, workers=workers)
     _cli.typer.echo(f"rubric read {day or issue}：读 {len(out['done'])} · "
                     f"跳过 {len(out['skipped'])} · 失败 {len(out['failed'])}"
                     f"（共 {len(paths)} 份研究）")

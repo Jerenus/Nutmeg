@@ -202,7 +202,7 @@
 | `M_facts_priced` | price | noul | p∈[0,1]/null | 只记录 | — | — | — | r1 |
 
 **聚合（协议级，`rubric_to_tilt`）**：pp_i = 上限_i × p_i（p<0.5 不成立）；效应把 pp 从一侧挪到另两面按市场比例分配；**事实层（7 项）无一成立 → 预算 0（无锚归零）**；`S_anchor_side=none` → 全部归零；`M_facts_priced` 成立 → 事实层 pp ×0.5；shift 峰值 ≤15pp；派生 tilt 的 evidence 逐项带 `item/tier/kind/pp/source/captured_at`，走原 `validate_stance/apply_tilt`。
-**强制弃权（反"把没说的当成说了"）**：标"必填"的项答是/有效选项而无 source、或 captured_at 非法/晚于开球 → 改为弃权并记 `coerced`，不拒收整份研究。
+**强制弃权（反"把没说的当成说了"）**：标"必填"的项答是/有效选项而无 source、或 captured_at 非法/晚于开球 → 改为弃权并记 `coerced`，不拒收整份研究。**rubric 永不导致拒收（2026-10-02 晚，保护池子）**：分析员漏写 rubric＝全部弃权跟市场（记 `rubric_missing`），表外选项/越界概率/不合法整体分布改为弃权或丢弃（记 `rubric_notes`）——拒收会烧 40 场/日预算并在 R0/R1 覆盖上留缺口；漏答率在两读报表里数。
 **负分项**：`X_narrative_only`（有拨动而事实层全弃权＝归零）、`X_post_kickoff`（T12）、`X_risk_named_naked`（C19，审票期）由代码派生。
 **两读**：读者 B（`NUTMEG_MODEL_READER`，默认 haiku）只读分析员写下的证据层（不含 stance/rubric），对同一张表作答 → 侧车 `rubric-<code>.json` / `<期>-rubric-m<N>.json`；逐项一致率在 `analytics/rubric/<日>.md`，合并 kappa 进 K1（n_min 100 项次，CI 下界 <40 证伪）。
 **结账与退役**：每个带效应的项是 T13 因子 `rubric_<id>`（`experiments/rubric_rows.py`）；`propose_zero` → 该项上限退役；`propose_change` 只许把上限往下截；kappa<0.4 的项列入重写/删除清单。改判 `research override --tilt-json` 仍直接替换 tilt，研究标 `rubric_overridden`。

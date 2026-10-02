@@ -87,7 +87,7 @@ RaR 的隐式聚合把判断藏进裁判模型，事后查不出哪一项挪了 
 
 ## 8. 出口条件
 
-1. 新研究文件 100% 带合法 `rubric` 块（校验器拒收非法；弃权合法）。
+1. 新研究文件带 `rubric` 块；漏写/写错不拒收（全部或该项弃权并留痕，保护 R0/R1 覆盖，2026-10-02 晚修订），漏答率在两读报表里数。
 2. `jczq-build-reads` / `zucai-build-reads` 的 belief 由 `apply_rubric` 算出，Read 带 `rubric` 与逐项 pp 账。
 3. 读者 B 对当天每份研究各答一次，`analytics/rubric/<日>.json` 有逐项 kappa。
 4. 因子注册表多出 r1 的项目，`factor_registry.py propose --all` 能跑出逐项 n 与提案。

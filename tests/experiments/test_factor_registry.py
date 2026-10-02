@@ -62,3 +62,26 @@ def test_hold_when_n_below_minimum_and_record_only_for_fact():
     assert held["decision"] == "hold" and "n_min" in held["reason"]
     fact = factor_registry.propose(registry, "modal_face_dropped", small, n_perm=50)
     assert fact["decision"] == "record_only"
+
+
+
+def test_propose_runs_rubric_item_factors_through_their_own_row_builder():
+    """闭环 `rsi weights propose --all` 会对每个 probability 因子调 analyze；
+    rubric 逐项因子的行构造器在 experiments.rubric_rows（2026-10-02 曾 KeyError）。"""
+    registry = factor_registry.load_registry()
+    ids = [f["factor_id"] for f in registry["factors"] if f["factor_id"].startswith("rubric_")]
+    assert len(ids) == 11
+    rows = [{"key": f"k{i}", "actual": "0" if i % 2 else "3",
+             "fair": {"home": .5, "draw": .3, "away": .2}, "provably_prospective": True,
+             "labels": {"rubric_version": "r1",
+                        "rubric": {"F_absence_home": {"answer": "yes" if i % 3 else "no",
+                                                      "p": .9 if i % 3 else .1}}}}
+            for i in range(30)]
+    before = factor_registry.REGISTRY.read_bytes()
+    for fid in ids:
+        result = factor_registry.propose(registry, fid, rows, n_perm=20)
+        assert result["writes_weights"] is False and result["decision"] in ("hold", "propose_zero",
+                                                                           "propose_change")
+    assert factor_registry.REGISTRY.read_bytes() == before
+    hit = factor_registry.propose(registry, "rubric_F_absence_home", rows, n_perm=20)
+    assert hit["strict"]["n"] == 30 and hit["decision"] == "hold"        # n < 60 → hold

@@ -176,6 +176,8 @@ def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
         # 判断 rubric r1（2026-10-02）：读者 B 读当天竞彩研究 + 最新一期足彩研究，写侧车，
         # 再进语料（rubric_b 只在 at < kickoff 时入语料）。读者失败不挡后面的步。
         "rubric_read": [
+            # 前一天 10:45 之后才落的研究（午后/晚场深研）在这里补读；已有侧车自动跳过
+            [*uv, "nutmeg", "rubric", "read", "--day", _days_before(ctx.date, 1), *data],
             [*uv, "nutmeg", "rubric", "read", "--day", ctx.date, *data],
             *([[*uv, "nutmeg", "rubric", "read", "--issue", issue, *data]] if issue else []),
             [*uv, "nutmeg", "rubric", "report", "--day", ctx.date, *data],

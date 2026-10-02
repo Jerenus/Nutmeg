@@ -45,11 +45,13 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--free", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--log", default=None, help="追加写 JSON 行日志（断点续跑看这个）")
     args = parser.parse_args()
     data_dir = Path(args.data_dir)
     paths = all_research_files(data_dir, args.lane)
-    out = read_many(paths, free=args.free, force=args.force, limit=args.limit)
+    out = read_many(paths, free=args.free, force=args.force, limit=args.limit,
+                    workers=args.workers)
     summary = {"lane": args.lane, "total": len(paths), "done": len(out["done"]),
                "skipped": len(out["skipped"]), "failed": out["failed"][:20]}
     print(json.dumps(summary, ensure_ascii=False))

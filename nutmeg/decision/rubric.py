@@ -153,6 +153,73 @@ def validate_rubric(rubric, *, kickoff: str | None = None) -> tuple[dict, list[R
     return norm, issues
 
 
+def tolerate(items) -> dict:
+    """一个不合法的选项不该废掉整份作答（读者 B 与分析员同用，2026-10-02）——
+    不在表里的项丢弃；choice 答案不在选项里 → unknown（弃权）；noul 的 p 不在 [0,1] → null。
+    留痕在 `_tolerated`，报表可数。"""
+    out: dict = {}
+    if not isinstance(items, dict):
+        return out
+    for item_id, raw in items.items():
+        item = ITEMS.get(str(item_id))
+        if item is None:
+            continue
+        row = dict(raw) if isinstance(raw, dict) else (
+            {"p": raw} if item.type == "noul" else {"answer": raw})
+        if item.type == "choice":
+            if str(row.get("answer")) not in item.options:
+                fallback = "unknown" if "unknown" in item.options else item.options[-1]
+                row["_tolerated"] = f"answer {row.get('answer')!r} → {fallback}"
+                row["answer"] = fallback
+        else:
+            try:
+                p = float(row["p"]) if row.get("p") is not None else None
+            except (TypeError, ValueError):
+                p = None
+            if p is not None and not 0.0 <= p <= 1.0:
+                row["_tolerated"] = f"p {row['p']!r} → null"
+                p = None
+            row["p"] = p
+        out[str(item_id)] = row
+    return out
+
+
+def tolerate_belief(belief) -> dict | None:
+    """整体概率不是合法的 3/1/0 分布（缺键、负数、和差太远）→ 丢掉，不废整份作答。"""
+    if not isinstance(belief, dict):
+        return None
+    try:
+        vals = {k: float(belief[k]) for k in ("3", "1", "0")}
+    except (KeyError, TypeError, ValueError):
+        return None
+    total = sum(vals.values())
+    if total <= 0 or any(v < 0 for v in vals.values()) or not 0.9 <= total <= 1.1:
+        return None
+    return {k: v / total for k, v in vals.items()}
+
+
+def soften(rubric) -> tuple[dict, list[str]]:
+    """分析员的 rubric 软化：缺失 → 全部弃权（跟市场）；不合法选项/概率/整体分布 → 弃权或丢弃；
+    版本不认识 → 按当前版本读。→ (可校验的 rubric, 留痕)。深研永不因 rubric 被拒收——
+    拒收会烧 40 场/日的预算并在 R0/R1 覆盖上留缺口（Jun 2026-10-02「保持池子 rsi 的工作」）。"""
+    notes: list[str] = []
+    if not isinstance(rubric, dict):
+        notes.append("rubric 缺失 → 全部弃权（跟市场）")
+        return {"version": RUBRIC_VERSION, "items": {}, "belief": None}, notes
+    out = dict(rubric)
+    if str(out.get("version") or RUBRIC_VERSION) not in SUPPORTED_VERSIONS:
+        notes.append(f"version {out.get('version')!r} → {RUBRIC_VERSION}")
+        out["version"] = RUBRIC_VERSION
+    out["items"] = tolerate(out.get("items"))
+    notes += [f"{k}: {v['_tolerated']}" for k, v in out["items"].items() if v.get("_tolerated")]
+    if out.get("belief") is not None:
+        belief = tolerate_belief(out.get("belief"))
+        if belief is None:
+            notes.append("belief 不是合法 3/1/0 分布 → 丢弃")
+        out["belief"] = belief
+    return out, notes
+
+
 def _active(norm_items: dict, item_id: str) -> tuple[bool, float, str]:
     """→ (成立?, p, 答案)。"""
     row = norm_items.get(item_id) or {}

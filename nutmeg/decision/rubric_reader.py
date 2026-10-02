@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from nutmeg.decision.claude_models import model_argv, model_label, reader_model
-from nutmeg.decision.rubric import validate_rubric
+from nutmeg.decision.rubric import tolerate, tolerate_belief, validate_rubric
 from nutmeg.decision.rubric_items import ITEMS, RUBRIC_VERSION, question_table
 
 Claude = Callable[[str, str], tuple[int, str]]
@@ -105,51 +105,6 @@ def read_rubric(research: dict, *, kickoff: str | None, claude: Claude = _claude
     return norm
 
 
-def tolerate(items) -> dict:
-    """读者 B 是便宜的系统一：一个不合法的选项不该废掉整份作答——
-    不在表里的项丢弃；choice 答案不在选项里 → unknown（弃权）；noul 的 p 不在 [0,1] → null。
-    留痕在 `_tolerated`，报表可数。"""
-    out: dict = {}
-    if not isinstance(items, dict):
-        return out
-    for item_id, raw in items.items():
-        item = ITEMS.get(str(item_id))
-        if item is None:
-            continue
-        row = dict(raw) if isinstance(raw, dict) else (
-            {"p": raw} if item.type == "noul" else {"answer": raw})
-        if item.type == "choice":
-            if str(row.get("answer")) not in item.options:
-                fallback = "unknown" if "unknown" in item.options else item.options[-1]
-                row["_tolerated"] = f"answer {row.get('answer')!r} → {fallback}"
-                row["answer"] = fallback
-        else:
-            try:
-                p = float(row["p"]) if row.get("p") is not None else None
-            except (TypeError, ValueError):
-                p = None
-            if p is not None and not 0.0 <= p <= 1.0:
-                row["_tolerated"] = f"p {row['p']!r} → null"
-                p = None
-            row["p"] = p
-        out[str(item_id)] = row
-    return out
-
-
-def tolerate_belief(belief) -> dict | None:
-    """整体概率不是合法的 3/1/0 分布（缺键、负数、和差太远）→ 丢掉，不废整份作答。"""
-    if not isinstance(belief, dict):
-        return None
-    try:
-        vals = {k: float(belief[k]) for k in ("3", "1", "0")}
-    except (KeyError, TypeError, ValueError):
-        return None
-    total = sum(vals.values())
-    if total <= 0 or any(v < 0 for v in vals.values()) or not 0.9 <= total <= 1.1:
-        return None
-    return {k: v / total for k, v in vals.items()}
-
-
 def kappa(a: dict | None, b: dict | None) -> dict:
     """逐项一致性：两读都没弃权的项上 answer 是否相同；合并 Cohen's kappa（按选项边际）。"""
     a_items, b_items = (a or {}).get("items") or {}, (b or {}).get("items") or {}
@@ -223,6 +178,7 @@ def read_file(research_path: Path, *, claude: Claude = _claude_cli, free: bool =
     if b is None:
         b = read_rubric(research, kickoff=kickoff, claude=claude)
     doc = {"code": code_of(research_path, research),
+           "a_missing": bool(research.get("rubric_missing")) or not research.get("rubric"),
            "match_id": research.get("match_id"), "research": research_path.name,
            "a": a_norm or None, "b": b, "kappa": kappa(a_norm, b) if a_norm else None,
            "model": model_label(reader_model()), "at": at,
@@ -253,15 +209,27 @@ def research_files(data_dir: Path, *, day: str | None = None,
 
 
 def read_many(paths: list[Path], *, claude: Claude = _claude_cli, free: bool = False,
-              force: bool = False, limit: int | None = None) -> dict:
-    done, skipped, failed = [], [], []
-    for path in paths[: limit or None]:
+              force: bool = False, limit: int | None = None, workers: int = 1) -> dict:
+    """并发读（每份一个 `claude -p`，互不依赖）；结果按输入顺序汇总。"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    todo = paths[: limit or None]
+
+    def one(path: Path) -> tuple[str, str, str | None]:
         try:
             out = read_file(path, claude=claude, free=free, force=force)
         except (ValueError, OSError) as exc:
-            failed.append({"path": path.name, "error": str(exc)[:200]})
-            continue
-        (done if out else skipped).append(path.name)
+            return path.name, "failed", str(exc)[:200]
+        return path.name, "done" if out else "skipped", None
+
+    if workers > 1 and len(todo) > 1:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(one, todo))
+    else:
+        results = [one(path) for path in todo]
+    done = [name for name, status, _ in results if status == "done"]
+    skipped = [name for name, status, _ in results if status == "skipped"]
+    failed = [{"path": name, "error": err} for name, status, err in results if status == "failed"]
     return {"done": done, "skipped": skipped, "failed": failed}
 
 
@@ -285,6 +253,7 @@ def report(data_dir: Path, *, day: str | None = None, issue: str | None = None) 
     kappas = [doc["kappa"]["kappa"] for doc in rows
               if doc.get("kappa") and doc["kappa"].get("kappa") is not None]
     out = {"key": day or issue, "n_sidecars": len(rows), "n_with_kappa": len(kappas),
+           "n_a_missing": sum(1 for d in rows if d.get("a_missing")),
            "kappa_mean": round(sum(kappas) / len(kappas), 3) if kappas else None,
            "item_agreement": item_agree,
            "rows": [{"code": d.get("code"), "kappa": (d.get("kappa") or {}).get("kappa"),
@@ -302,7 +271,8 @@ def report(data_dir: Path, *, day: str | None = None, issue: str | None = None) 
 def render_report(out: dict) -> str:
     lines = [f"# 判断 rubric 两读 · {out['key']}",
              f"侧车 {out['n_sidecars']} 份｜有 kappa {out['n_with_kappa']}｜平均 κ "
-             f"{out['kappa_mean'] if out['kappa_mean'] is not None else '—'}", "",
+             f"{out['kappa_mean'] if out['kappa_mean'] is not None else '—'}"
+             f"｜分析员漏答 rubric {out.get('n_a_missing', 0)} 份", "",
              "| 项 | 一致率 | n |", "|---|---|---|"]
     for item_id, (rate, n) in sorted(out["item_agreement"].items()):
         lines.append(f"| {item_id} | {rate:.2f} | {n} |")

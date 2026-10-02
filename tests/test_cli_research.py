@@ -191,3 +191,18 @@ def test_override_on_rubric_research_lands_on_items_with_a_reason(tmp_path, monk
     [row] = [json.loads(line) for line in
              (day_dir / "overrides.jsonl").read_text(encoding="utf-8").splitlines()]
     assert row["items"]["F_absence_away"]["p"] == 0.9 and row["tilt"]["shift"]["0"] < 0
+
+
+def test_intake_and_build_reads_skip_an_empty_board_day(tmp_path, monkeypatch):
+    import nutmeg.interfaces.cli.research as mod
+
+    jczq = tmp_path / "jczq"
+    (jczq / "daily" / "2026-10-02").mkdir(parents=True)
+    refreshed = []
+    monkeypatch.setattr(mod, "_refresh", lambda day, data_dir: refreshed.append(day))
+    out = CliRunner().invoke(app, ["research", "intake", "--day", "2026-10-02",
+                                   "--jczq-dir", str(jczq), "--write"])
+    assert out.exit_code == 0 and "空盘" in out.output
+    out = CliRunner().invoke(app, ["jczq-build-reads", "--day", "2026-10-02",
+                                   "--jczq-dir", str(jczq)])
+    assert out.exit_code == 0 and "空盘" in out.output and refreshed == ["2026-10-02"]

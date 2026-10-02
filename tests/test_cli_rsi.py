@@ -1154,3 +1154,30 @@ def test_day_duty_fulfilled_with_kickoff_day_resolves_to_the_scheduled_business_
         assert connection.execute(
             "SELECT day FROM rsi_duty_instances WHERE duty_id='F2:f2-observation' "
             "AND fulfilled_at IS NOT NULL").fetchall() == [("2026-09-18",)]
+
+
+def test_status_counts_pool_coverage_r1_by_prospective_observations(tmp_path):
+    """R1（并集池覆盖率，没有结账适配器）按前瞻观测行数显示 n；09-27 登记后曾一直显示 0。"""
+    data_dir = tmp_path / "data"
+    day = "2026-09-28"
+    day_dir = data_dir / "jczq" / "daily" / day
+    day_dir.mkdir(parents=True)
+    day_dir.joinpath("jczq-legs-base.json").write_text(json.dumps({"legs": {
+        "周一001": {"match_id": "match-r1", "kickoff_bj": "2099-09-28T20:00:00+08:00"}}}),
+        encoding="utf-8")
+    runner = CliRunner()
+    registered = runner.invoke(app, ["rsi", "register", "--by", "Jun",
+                                     "experiments/registry/R1.json", "--data-dir", str(data_dir)])
+    assert registered.exit_code == 0, registered.output
+    assert runner.invoke(app, ["rsi", "schedule", "--day", day, "--data-dir",
+                               str(data_dir)]).exit_code == 0
+    artifact = day_dir / "research-周一001.json"
+    artifact.write_text("{}", encoding="utf-8")
+    fulfilled = runner.invoke(app, [
+        "rsi", "fulfill", "--exp", "R1", "--duty", "match-research", "--day", day,
+        "--match", "match-r1", "--artifact", str(artifact), "--n-rows", "1",
+        "--stratum", "pooled", "--data-dir", str(data_dir)])
+    assert fulfilled.exit_code == 0, fulfilled.output
+    status = runner.invoke(app, ["rsi", "status", "--exp", "R1", "--data-dir", str(data_dir)])
+    assert status.exit_code == 0, status.output
+    assert "n=   1/200" in status.output

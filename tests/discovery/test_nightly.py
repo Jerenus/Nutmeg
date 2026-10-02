@@ -104,6 +104,15 @@ def test_board_too_small_is_skipped(tmp_path):
     assert result.status == "skipped" and result.reason == "board_too_small" and not calls
 
 
+def test_empty_board_day_is_skipped_not_failed(tmp_path):
+    jczq, shadow, standing = _setup(tmp_path)
+    for name in ("jczq-legs-base.json", "reads.json", "sporttery_markets.json"):
+        (jczq / "daily" / DAY / name).unlink()
+    result, calls = _run(tmp_path, jczq, shadow, standing)
+    assert result.status == "skipped" and result.reason == "board_too_small" and not calls
+    assert "empty board" in result.payload["detail"]
+
+
 def test_protected_change_retries_once_then_records(tmp_path):
     jczq, shadow, standing = _setup(tmp_path)
     result, calls = _run(

@@ -695,16 +695,27 @@ def test_evidence_timestamps_are_stamped_by_the_system(tmp_path):
     assert item["captured_at_declared"] == "2026-09-19T00:00:00+08:00"
 
 
-def test_missing_rubric_is_rejected_by_validate(tmp_path):
+def test_missing_or_bad_rubric_never_rejects_a_deep_research(tmp_path):
+    """保护池子（R0/R1 覆盖与 40 场/日预算）：rubric 缺失＝全部弃权，不合法选项改弃权。"""
     from nutmeg.decision.research_runner import _validate
 
+    leg = {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}}
     doc = json.loads(GOOD)
     doc.pop("rubric")
-    with pytest.raises(ValueError, match="rubric"):
-        _validate(json.dumps(doc), {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}})
-    doc["rubric"] = {"version": "r1", "items": {"F_absence_home": {"p": 2}}}
-    with pytest.raises(ValueError, match="rubric"):
-        _validate(json.dumps(doc), {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}})
+    out = _validate(json.dumps(doc), leg)
+    assert out["rubric_missing"] is True and out["stance"]["tilt"] is None
+    assert all(r["abstain"] for r in out["rubric"]["items"].values())
+    assert out["rubric_notes"] == ["rubric 缺失 → 全部弃权（跟市场）"]
+    doc["rubric"] = {"version": "r7", "items": {"F_absence_home": {"p": 2},
+                                                "F_goalkeeper": {"answer": "both"},
+                                                "S_anchor_side": {"answer": "home"}},
+                     "belief": {"3": 3}}
+    out = _validate(json.dumps(doc), leg)
+    assert out["rubric_missing"] is False and out["rubric"]["version"] == "r1"
+    assert out["rubric"]["items"]["F_absence_home"]["abstain"]
+    assert out["rubric"]["items"]["F_goalkeeper"]["answer"] == "unknown"
+    assert out["rubric"]["items"]["S_anchor_side"]["answer"] == "home"
+    assert out["rubric"]["belief"] is None and len(out["rubric_notes"]) >= 3
 
 
 def test_rubric_items_are_stamped_and_tilt_is_derived_from_them(tmp_path):

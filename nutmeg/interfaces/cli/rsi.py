@@ -1206,7 +1206,9 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
                                 latest_deployment=d.decision if d else None)
             gaps = uow.rsi.gaps(e.exp_id, now=now_iso)
             display_n = g.n_cum if g else 0
-            if e.exp_id in {"F5", "F9", "R0"}:
+            # 观测型实验（覆盖率义务、F5/F9）按前瞻观测行数显示；R1 并集池覆盖 09-27 登记后
+            # 漏在名单外，37 条真实观测一直显示 n=0（2026-10-02 修）
+            if e.exp_id in {"F5", "F9", "R0", "R1"} or f.metric == "coverage_pct":
                 display_n = uow.rsi.prospective_n_rows(
                     e.exp_id, window=e.window, stratum=f.stratum
                 )

@@ -126,3 +126,20 @@ def test_reader_tolerates_illegal_options_instead_of_failing_the_file():
     bad = read_rubric(RESEARCH, kickoff=RESEARCH["kickoff_bj"], claude=lambda s, i: (0, json.dumps(
         {"version": "r1", "items": {}, "belief": {"3": 2, "1": 2}})))
     assert bad["belief"] is None
+
+
+def test_read_many_runs_concurrently_and_keeps_order(tmp_path: Path):
+    day = tmp_path / "jczq" / "daily" / "2026-10-02"
+    day.mkdir(parents=True)
+    paths = []
+    for i in range(1, 6):
+        path = day / f"research-周五00{i}.json"
+        path.write_text(json.dumps({**RESEARCH, "code": f"周五00{i}"}, ensure_ascii=False),
+                        encoding="utf-8")
+        paths.append(path)
+    out = read_many(paths, claude=_fake, workers=3)
+    assert out["done"] == [p.name for p in paths] and not out["failed"]
+    again = read_many(paths, claude=_fake, workers=3)
+    assert again["skipped"] == [p.name for p in paths]
+    rep = report(tmp_path, day="2026-10-02")
+    assert rep["n_sidecars"] == 5 and rep["n_a_missing"] == 0

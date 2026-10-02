@@ -143,6 +143,11 @@ def read_structural_input_from_day(
     extra_references: tuple[dict, ...] = (),
 ) -> StructuralInputSnapshot:
     day_dir = Path(jczq_dir) / "daily" / day
+    missing = [name for name in SOURCE_FILES if not (day_dir / name).is_file()]
+    if missing:
+        # 空盘日（假期/体彩未开售）没有板面文件：与「场次不足」同一类跳过，不是失败
+        # （2026-10-01/02 两晚因此 FileNotFoundError 退出 1）
+        raise DayBoardTooSmall(f"day source missing {', '.join(missing)} (empty board)")
     board_path = day_dir / "jczq-legs-base.json"
     board_bytes = board_path.read_bytes()
     reads_bytes = (day_dir / "reads.json").read_bytes()

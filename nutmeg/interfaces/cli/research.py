@@ -174,6 +174,9 @@ def intake(
 ) -> None:
     from nutmeg.decision.jczq_reads import intake_board
 
+    if not (Path(jczq_dir) / "daily" / day / "jczq-legs-base.json").is_file():
+        typer.echo(f"{day} 无竞彩板面（空盘）：入库跳过")
+        return
     report = intake_board(day=day, jczq_dir=jczq_dir, write=write)
     suffix = "" if write else "（预演，未写）"
     typer.echo(f"入库 {len(report['ok'])} 场: {' '.join(report['ok'])}{suffix}")
@@ -189,6 +192,11 @@ def jczq_build_reads(
 ) -> None:
     from nutmeg.decision.jczq_reads import build_jczq_reads
 
+    if not (Path(jczq_dir) / "daily" / day / "jczq-legs-base.json").is_file():
+        # 空盘日：竞彩没有 Read 可建；足彩并集池照常刷新（`research run` 已刷过一次，幂等）
+        typer.echo(f"{day} 无竞彩板面（空盘）：竞彩 Read 跳过，只刷新并集池")
+        _refresh(day, Path(jczq_dir).parent)
+        return
     reads = build_jczq_reads(
         day=day,
         jczq_dir=jczq_dir,

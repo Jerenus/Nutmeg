@@ -177,6 +177,12 @@ def test_kickoff_falls_back_to_sporttery_time_and_unknown_is_excluded(tmp_path: 
     assert excluded == {"周三001": f"kickoff:{DAY}T11:30:00+08:00", "周三004": "kickoff:unknown"}
 
 
+def test_empty_board_day_without_source_files_is_a_named_skip(tmp_path: Path):
+    (tmp_path / "daily" / DAY).mkdir(parents=True)
+    with pytest.raises(DayBoardTooSmall, match="empty board"):
+        read_structural_input_from_day(tmp_path, DAY, cutoff_at=f"{NEXT_DAY}T03:00:00+08:00")
+
+
 def test_fewer_than_two_unstarted_matches_is_a_named_skip(tmp_path: Path):
     jczq = _day(tmp_path, n=3)
     with pytest.raises(DayBoardTooSmall):

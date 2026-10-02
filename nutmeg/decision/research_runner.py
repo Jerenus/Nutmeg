@@ -46,7 +46,6 @@ _REQUIRED = (
     "crash_markers",
     "precedents",
     "stance",
-    "rubric",
 )
 
 
@@ -118,11 +117,16 @@ def _validate(text: str, leg: dict) -> dict:
         if count < 3:
             raise ValueError(f"{face} 宣告 dead 但三证 {count}/3")
     # 判断 rubric r1（2026-10-02）：逐项校验（无来源的"是"强制弃权）→ 从答案派生 stance.tilt
-    from nutmeg.decision.rubric import derive_stance, validate_rubric
+    from nutmeg.decision.rubric import derive_stance, soften, validate_rubric
 
-    norm_rubric, rubric_issues = validate_rubric(doc.get("rubric"), kickoff=leg.get("kickoff_bj"))
-    if rubric_issues:
-        raise ValueError("rubric: " + "; ".join(i.message for i in rubric_issues))
+    softened, notes = soften(doc.get("rubric"))
+    norm_rubric, rubric_issues = validate_rubric(softened, kickoff=leg.get("kickoff_bj"))
+    if rubric_issues:                    # soften 之后仍不合法（理论上不会）：整块按弃权处理
+        notes.append("rubric 校验失败 → 全部弃权：" + "; ".join(i.message for i in rubric_issues))
+        norm_rubric, _ = validate_rubric({"version": softened["version"], "items": {}})
+    if notes:
+        doc["rubric_notes"] = notes
+    doc["rubric_missing"] = not isinstance(doc.get("rubric"), dict)
     doc["rubric"] = norm_rubric
     doc["stance"] = derive_stance(doc.get("stance"), norm_rubric, leg.get("fair"))
     _norm, stance_issues = validate_stance(
