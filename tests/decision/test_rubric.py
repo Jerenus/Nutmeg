@@ -108,3 +108,27 @@ def test_reader_belief_is_normalised_and_bad_belief_is_an_error():
     assert not issues and norm["belief"] == {"3": 0.5, "1": 0.3, "0": 0.2}
     _, issues = validate_rubric({"version": "r1", "items": {}, "belief": {"3": 0.9, "1": 0.9}})
     assert any(i.field == "rubric.belief" for i in issues)
+
+
+def test_governance_versions_source_tier_and_items_table():
+    from nutmeg.decision.rubric_items import (
+        RUBRIC_CHANGELOG,
+        SOURCE_TIERS,
+        SUPPORTED_VERSIONS,
+        active_items,
+        items_markdown,
+    )
+
+    assert RUBRIC_VERSION in SUPPORTED_VERSIONS and RUBRIC_CHANGELOG[0]["version"] == "r1"
+    assert set(active_items("r1")) == set(ITEMS)
+    _, issues = validate_rubric({"version": "r9", "items": {}})
+    assert any(i.field == "rubric.version" for i in issues)
+    norm, issues = validate_rubric(_rubric(
+        F_absence_home={"p": 0.9, "source_tier": "club_official", **SRC},
+        F_absence_away={"p": 0.9, "source_tier": "blog", **SRC}), kickoff=KICK)
+    assert not issues
+    assert norm["items"]["F_absence_home"]["source_tier"] == "club_official"
+    assert norm["items"]["F_absence_away"]["source_tier"] == "unknown"      # 不在枚举 → unknown
+    assert "club_official" in SOURCE_TIERS and "source_tier" in question_table()
+    table = items_markdown()
+    assert "| `F_absence_home` | fact | noul |" in table and "| r1 |" in table

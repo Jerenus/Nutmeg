@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from nutmeg.decision.rubric_items import DIRECTIONAL_ITEMS, ITEMS, UNKNOWN
+from nutmeg.decision.rubric_items import DIRECTIONAL_ITEMS, ITEMS, SUPPORTED_VERSIONS, UNKNOWN
 
 _FACE = {"home": "3", "draw": "1", "away": "0"}
 EFFECT_THRESHOLD = 0.5
@@ -69,6 +69,8 @@ def _rows_for(item_id: str, *, reader: str = "rubric") -> Callable[[list[dict]],
         out: list[dict] = []
         for row in rows:
             labels = row.get("labels") or {}
+            if labels.get("rubric_version") not in SUPPORTED_VERSIONS:
+                continue                       # 治理：只结账在用版本的答案
             src = labels.get(reader)
             if reader == "rubric_b":
                 src = (src or {}).get("items") if isinstance(src, dict) else None

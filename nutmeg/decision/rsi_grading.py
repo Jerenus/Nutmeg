@@ -536,7 +536,11 @@ PROSPECTIVE_ADAPTERS.update({"F15": grade_f15_prospective, "G1": grade_g1_prospe
 
 
 def _rubric_pairs(labels: dict) -> list[tuple[str, str]]:
-    """两读都作答（未弃权）的项 → [(A 答案, B 答案)]。"""
+    """两读都作答（未弃权）的项 → [(A 答案, B 答案)]；只认在用版本（治理）。"""
+    from nutmeg.decision.rubric_items import SUPPORTED_VERSIONS
+
+    if labels.get("rubric_version") not in SUPPORTED_VERSIONS:
+        return []
     a = labels.get("rubric") or {}
     b = ((labels.get("rubric_b") or {}).get("items")) or {}
     pairs = []

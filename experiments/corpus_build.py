@@ -347,7 +347,8 @@ def _rubric_answers(rubric: dict | None) -> dict | None:
     out = {}
     for item_id, row in rubric["items"].items():
         if isinstance(row, dict) and not row.get("abstain") and row.get("answer") is not None:
-            out[item_id] = {"answer": row.get("answer"), "p": row.get("p")}
+            out[item_id] = {"answer": row.get("answer"), "p": row.get("p"),
+                            "source_tier": row.get("source_tier")}
     return out
 
 

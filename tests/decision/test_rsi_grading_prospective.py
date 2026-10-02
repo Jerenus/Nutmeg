@@ -77,7 +77,7 @@ def test_k1_pools_item_pairs_and_scores_full_agreement_as_100():
     def row(key, a, b, date="2026-10-03"):
         return {"key": key, "date": date, "actual": "3",
                 "fair": {"home": .5, "draw": .3, "away": .2},
-                "labels": {"rubric": a, "rubric_b": {"items": b}}}
+                "labels": {"rubric": a, "rubric_b": {"items": b}, "rubric_version": "r1"}}
 
     same = {"S_anchor_side": {"answer": "home", "p": 1},
             "F_absence_home": {"answer": "yes", "p": .9}}

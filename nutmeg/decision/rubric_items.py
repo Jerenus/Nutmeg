@@ -9,9 +9,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 RUBRIC_VERSION = "r1"
+SUPPORTED_VERSIONS = ("r1",)
+"""评分器只认这些版本的答案（语料行带 `rubric_version`）；改表＝新版本，旧版本的 n 不混进来。"""
 PHASES = ("fact", "structure", "price", "conclusion")
 SIDES = ("home", "away")
 UNKNOWN = "unknown"
+SOURCE_TIERS = ("club_official", "league_official", "press", "aggregator", "social", UNKNOWN)
+"""来源层级：2026-10-02 起只采集不加权；r2 候选——按层级看逐项有效性后再决定是否按层级定上限。"""
+RUBRIC_CHANGELOG = (
+    {"version": "r1", "date": "2026-10-02", "change": "首版：事实 7 / 结构 6 / 价格 2 项",
+     "evidence": "docs/superpowers/evidence/2026-10-02-rubric-judgment-contract.md"},
+)
+"""增删项的治理：①证据文档说明为什么（结账数据或两读 kappa）→ ②这里加一条 changelog →
+③`RUBRIC_VERSION` 升号、`SUPPORTED_VERSIONS` 决定评分器混不混旧版 →
+④退役项写 `until`，新项写 `since` → ⑤K1 与逐项因子按版本过滤。没有证据文档不许改表。"""
 
 
 @dataclass(frozen=True)
@@ -28,6 +39,8 @@ class Item:
     kind: str = ""                  # 派生 tilt.evidence 的 kind（TILT_KIND_LEXICON）
     text: str = ""                  # 问题原文（读者 B 的提示词）
     effect_options: tuple[str, ...] = field(default_factory=tuple)   # choice 里带效应的选项
+    since: str = "r1"               # 进表版本
+    until: str | None = None        # 退役版本（None＝在用）
 
 
 ITEMS: dict[str, Item] = {}
@@ -95,12 +108,32 @@ FACT_ITEMS = tuple(i.id for i in ITEMS.values() if i.phase == "fact")
 MAX_ABS_SHIFT_PP = 15
 
 
-def question_table() -> str:
+def active_items(version: str = RUBRIC_VERSION) -> dict[str, Item]:
+    """某版本在用的项（since ≤ version < until，按版本号字符串比较 r1 < r2 …）。"""
+    return {k: v for k, v in ITEMS.items()
+            if v.since <= version and (v.until is None or version < v.until)}
+
+
+def question_table(version: str = RUBRIC_VERSION) -> str:
     """读者 B 提示词用的问题表（id · 类型 · 选项 · 问题）。"""
     lines = []
-    for item in ITEMS.values():
+    for item in active_items(version).values():
         opts = "/".join(item.options) if item.options else ("p∈[0,1] 或 null" if item.type == "noul"
                                                               else "")
-        src = "（答是/有效选项必须带 source 与 captured_at）" if item.source_required else ""
+        src = ("（答是/有效选项必须带 source 与 captured_at；可选 source_tier："
+               + "/".join(SOURCE_TIERS) + "）") if item.source_required else ""
         lines.append(f"- {item.id} [{item.phase}/{item.type}] {opts}：{item.text}{src}")
     return "\n".join(lines)
+
+
+def items_markdown(version: str = RUBRIC_VERSION) -> str:
+    """`nutmeg rubric items` 与 RULEBOOK「九」用的表。"""
+    rows = ["| id | 阶段 | 类型 | 选项 | 效应 | 上限 pp | 来源 | 派生 tier | 版本 |",
+            "|---|---|---|---|---|---|---|---|---|"]
+    for it in active_items(version).values():
+        opts = "/".join(it.options) if it.options else "p∈[0,1]/null"
+        rows.append(f"| `{it.id}` | {it.phase} | {it.type} | {opts} | {it.effect or '只记录'} "
+                    f"| {it.cap_pp or '—'} | {'必填' if it.source_required else '—'} "
+                    f"| {it.tier if it.cap_pp else '—'} "
+                    f"| {it.since}{'→' + it.until if it.until else ''} |")
+    return "\n".join(rows)

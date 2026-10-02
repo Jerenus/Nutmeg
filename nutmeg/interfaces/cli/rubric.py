@@ -33,8 +33,9 @@ def rubric_read(
         raise _cli.typer.Exit(code=2)
     paths = research_files(data_dir, day=day, issue=issue)
     out = read_many(paths, free=free, force=force, limit=limit)
-    _cli.typer.echo(f"rubric read {day or issue}：读 {len(out['done'])} · 跳过 {len(out['skipped'])}"
-                    f" · 失败 {len(out['failed'])}（共 {len(paths)} 份研究）")
+    _cli.typer.echo(f"rubric read {day or issue}：读 {len(out['done'])} · "
+                    f"跳过 {len(out['skipped'])} · 失败 {len(out['failed'])}"
+                    f"（共 {len(paths)} 份研究）")
     for row in out["failed"]:
         _cli.typer.echo(f"   ✗ {row['path']}: {row['error']}")
     if out["failed"] and not out["done"]:
@@ -56,3 +57,20 @@ def rubric_report(
     out = report(data_dir, day=day, issue=issue)
     _cli.typer.echo(render_report(out))
     _cli.typer.echo(f"→ {out['path']}")
+
+
+_VERSION = _cli.typer.Option(None, "--version", help="看某个版本的问题表（默认当前）")
+
+
+@rubric_app.command("items")
+def rubric_items(version: str = _VERSION) -> None:
+    """打印问题表（治理：增删项走证据文档 → changelog → 升版本；评分器按版本过滤）。"""
+    from nutmeg.decision.rubric_items import RUBRIC_CHANGELOG, RUBRIC_VERSION, items_markdown
+
+    v = version or RUBRIC_VERSION
+    _cli.typer.echo(f"# 判断 rubric {v}（当前 {RUBRIC_VERSION}）")
+    _cli.typer.echo(items_markdown(v))
+    _cli.typer.echo("")
+    for entry in RUBRIC_CHANGELOG:
+        _cli.typer.echo(f"- {entry['version']} {entry['date']}：{entry['change']}"
+                        f"（{entry['evidence']}）")

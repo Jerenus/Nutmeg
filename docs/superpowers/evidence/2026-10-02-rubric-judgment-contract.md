@@ -45,3 +45,16 @@ Spec：`docs/superpowers/specs/2026-10-02-rubric-judgment-contract-design.md`；
 - 历史重打分里读者 A 的答案不存在（旧研究没有 rubric 块），kappa 只能在新文件上算；历史侧车给的是读者 B 的逐项答案 → `rubric_b` 因子行（非前瞻档）只做可读性与方向探查。
 - 问题表的项目上限是现行 tier 区间的中点，不是实证；`factor_registry propose` 跑出 `propose_zero` 的项先退役再谈增项。
 - `strength_balance.events` 保留为叙述；两套写法并存一段时间后再决定是否删 `events`。
+
+## 5. 其它环节的 rubric 工程（2026-10-02 晚，Jun「按照 1，2，治理，然后再完成后续」）
+
+勘察结论：只在三个环节值得加，判据是"这项能按赛果或两读结账"。入板/价格/初稿/审票是代码，复盘标签已是封闭词典，实验登记已是 rubric，逻辑层解释文不可结账——都不加。
+
+| 项 | 落点 | 结账 |
+|---|---|---|
+| ① 改判落到项 | `overrides.record_override(items=…, reason=…)`；CLI `--items-json/--reason/--market`；有 rubric 的研究拒收 `--tilt-json`；tilt 从合并 rubric 重新派生（`rubric:r1+override`）；`effective_research` 保留 `research_original_rubric`；语料 `override_reason` | 判决页改判账按理由分层（`_ledger_totals.by_reason`） |
+| ② 人的偏离登记 | `BetSlip.deviation/prediction`；`betslip_diagnosis.vs_draft`（加场/丢场/放宽/收窄/换面）；`register/preview --deviation --prediction`；不带只警告 | 账房 `deviation_ledger`：按理由 n/投入/派奖/净/待结 + 预测句 |
+| ③ 治理 | `SUPPORTED_VERSIONS / RUBRIC_CHANGELOG / Item.since/until / active_items / items_markdown`；`nutmeg rubric items`；逐项因子与 K1 只认在用版本 | — |
+| ④ 来源层级（后续，先采集） | `source_tier` 枚举（club_official/league_official/press/aggregator/social/unknown），校验保留、语料保留、不加权 | K1 过 100 项次后按层级看逐项有效性 |
+
+commit：`cd220fc`（①②）、本节所在提交（③④ + SOP）。

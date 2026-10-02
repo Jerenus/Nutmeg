@@ -1,9 +1,10 @@
 from experiments.rubric_rows import _FACTORS, factor_entries, rows_F_absence_home, rows_S_draw_mode
 
 
-def _row(key, rubric, actual, fair=None, prospective=True):
+def _row(key, rubric, actual, fair=None, prospective=True, version="r1"):
     return {"key": key, "actual": actual, "fair": fair or {"home": .5, "draw": .3, "away": .2},
-            "labels": {"rubric": rubric}, "provably_prospective": prospective}
+            "labels": {"rubric": rubric, "rubric_version": version},
+            "provably_prospective": prospective}
 
 
 def test_fact_item_rows_use_the_effect_face_set_and_explicit_no_as_control():
@@ -33,3 +34,9 @@ def test_factor_entries_cover_every_directional_item_with_zero_weight():
     assert {e["factor_id"] for e in entries} == set(_FACTORS)
     assert all(e["current_weight_pp"] == 0.0 and e["layer"] == "probability" for e in entries)
     assert all(e["row_builder"].startswith("experiments.rubric_rows:rows_") for e in entries)
+
+
+def test_rows_ignore_answers_from_unsupported_rubric_versions():
+    yes = {"F_absence_home": {"answer": "yes", "p": .9}}
+    assert rows_F_absence_home([_row("a", yes, "0", version="r0")]) == []
+    assert len(rows_F_absence_home([_row("a", yes, "0")])) == 1

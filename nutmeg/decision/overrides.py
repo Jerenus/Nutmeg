@@ -37,7 +37,7 @@ def _raw_items(norm_items: dict) -> dict:
         if row.get("abstain"):
             continue
         base = {"source": row.get("source") or "", "captured_at": row.get("captured_at"),
-                "note": row.get("note") or ""}
+                "note": row.get("note") or "", "source_tier": row.get("source_tier")}
         if item.type == "noul":
             raw[item_id] = {"p": row.get("p"), **base}
         else:

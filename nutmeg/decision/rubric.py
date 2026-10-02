@@ -19,6 +19,8 @@ from nutmeg.decision.rubric_items import (
     ITEMS,
     MAX_ABS_SHIFT_PP,
     RUBRIC_VERSION,
+    SOURCE_TIERS,
+    SUPPORTED_VERSIONS,
     UNKNOWN,
 )
 
@@ -63,8 +65,9 @@ def validate_rubric(rubric, *, kickoff: str | None = None) -> tuple[dict, list[R
         issues.append(RubricIssue("ERROR", "rubric", "缺 rubric 块"))
         return {}, issues
     version = str(rubric.get("version") or RUBRIC_VERSION)
-    if version != RUBRIC_VERSION:
-        issues.append(RubricIssue("ERROR", "rubric.version", f"版本 {version} ≠ {RUBRIC_VERSION}"))
+    if version not in SUPPORTED_VERSIONS:
+        issues.append(RubricIssue("ERROR", "rubric.version",
+                                  f"版本 {version} 不在 {SUPPORTED_VERSIONS}"))
     raw_items = rubric.get("items")
     if not isinstance(raw_items, dict):
         issues.append(RubricIssue("ERROR", "rubric.items", "items 必须是 {id: 答案}"))
@@ -84,6 +87,9 @@ def validate_rubric(rubric, *, kickoff: str | None = None) -> tuple[dict, list[R
         source = str(raw.get("source") or "").strip()
         captured_at = raw.get("captured_at")
         note = str(raw.get("note") or "")[:200]
+        source_tier = str(raw.get("source_tier") or UNKNOWN)
+        if source_tier not in SOURCE_TIERS:
+            source_tier = UNKNOWN
         abstain = False
         if item.type == "noul":
             if raw.get("p") is not None and p is None:
@@ -121,7 +127,8 @@ def validate_rubric(rubric, *, kickoff: str | None = None) -> tuple[dict, list[R
             abstain, answer, p = True, None if item.type == "noul" else UNKNOWN, None
         norm_items[item.id] = {
             "answer": answer, "p": round(p, 3) if p is not None else None, "source": source,
-            "captured_at": captured_at, "note": note, "abstain": abstain, "coerced": bool(why),
+            "source_tier": source_tier, "captured_at": captured_at, "note": note,
+            "abstain": abstain, "coerced": bool(why),
         }
     belief = rubric.get("belief")
     norm_belief = None
@@ -141,7 +148,7 @@ def validate_rubric(rubric, *, kickoff: str | None = None) -> tuple[dict, list[R
         norm_items.setdefault(item_id, {"answer": None if item.type == "noul" else UNKNOWN,
                                         "p": None, "source": "", "captured_at": None, "note": "",
                                         "abstain": True, "coerced": False})
-    norm = {"version": RUBRIC_VERSION, "items": norm_items, "belief": norm_belief,
+    norm = {"version": version, "items": norm_items, "belief": norm_belief,
             "coerced": coerced}
     return norm, issues
 

@@ -390,17 +390,20 @@ def test_reads_carry_the_rubric_view_when_research_has_one(tmp_path):
                           "source": "", "captured_at": None, "note": ""},
         "F_absence_home": {"answer": None, "p": None, "abstain": True, "coerced": True,
                            "source": "", "captured_at": None, "note": ""}},
-        "belief": {"3": 0.6, "1": 0.25, "0": 0.15}, "coerced": ["F_absence_home: 答是但无来源 → 弃权"]}}
+        "belief": {"3": 0.6, "1": 0.25, "0": 0.15},
+        "coerced": ["F_absence_home: 答是但无来源 → 弃权"]}}
     (day_dir / "research-周五001.json").write_text(json.dumps(research, ensure_ascii=False),
                                                    encoding="utf-8")
     intake_board(day="2026-09-19", jczq_dir=root, write=True)
     [read] = build_jczq_reads(day="2026-09-19", jczq_dir=root, made_at="2026-09-19T12:00:00+08:00")
     view = read["rubric"]
     assert view["version"] == "r1" and view["items"]["S_anchor_side"]["answer"] == "home"
-    assert view["items"]["F_absence_home"]["coerced"] is True and "note" not in view["items"]["S_anchor_side"]
+    assert view["items"]["F_absence_home"]["coerced"] is True
+    assert "note" not in view["items"]["S_anchor_side"]
     assert view["reader_belief"] == {"3": 0.6, "1": 0.25, "0": 0.15} and view["shift"] is None
     assert view["coerced"] == ["F_absence_home: 答是但无来源 → 弃权"]
     derived = {"derived_from": "rubric:r1", "shift": {"3": 4, "1": -2, "0": -2},
                "evidence": [{"item": "F_absence_away", "pp": 4}]}
-    assert rubric_read_view(research["rubric"], {"tilt": derived})["item_pp"] == {"F_absence_away": 4}
+    view2 = rubric_read_view(research["rubric"], {"tilt": derived})
+    assert view2["item_pp"] == {"F_absence_away": 4}
     assert rubric_read_view(None, None) is None
