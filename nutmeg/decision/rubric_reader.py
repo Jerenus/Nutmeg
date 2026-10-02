@@ -133,6 +133,21 @@ def sidecar_path(research_path: Path) -> Path:
     return research_path.with_name(name.replace("-research-m", "-rubric-m", 1))
 
 
+def code_of(research_path: Path, research: dict | None = None) -> str | None:
+    """场次标识：研究 JSON 的 code/match_no，否则从文件名推（旧文件没有 code 字段）。"""
+    research = research or {}
+    if research.get("code"):
+        return str(research["code"])
+    if research.get("match_no") is not None:
+        return str(research["match_no"])
+    name = research_path.name
+    if name.startswith("research-"):
+        return name[len("research-"):].removesuffix(".json")
+    if "-research-m" in name:
+        return name.split("-research-m", 1)[1].removesuffix(".json")
+    return None
+
+
 def _kickoff_of(research: dict) -> str | None:
     kick = research.get("kickoff_bj")
     return str(kick).replace(" ", "T") if kick else None
@@ -160,7 +175,7 @@ def read_file(research_path: Path, *, claude: Claude = _claude_cli, free: bool =
     b = existing.get("b") if existing and not force else None
     if b is None:
         b = read_rubric(research, kickoff=kickoff, claude=claude)
-    doc = {"code": research.get("code") or research.get("match_no"),
+    doc = {"code": code_of(research_path, research),
            "match_id": research.get("match_id"), "research": research_path.name,
            "a": a_norm or None, "b": b, "kappa": kappa(a_norm, b) if a_norm else None,
            "model": model_label(reader_model()), "at": at,
@@ -205,6 +220,7 @@ def report(data_dir: Path, *, day: str | None = None, issue: str | None = None) 
         if not side.exists():
             continue
         doc = json.loads(side.read_text(encoding="utf-8"))
+        doc["code"] = doc.get("code") or code_of(path)
         rows.append(doc)
     per_item: dict[str, list[bool]] = {i: [] for i in ITEMS}
     for doc in rows:
