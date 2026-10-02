@@ -40,3 +40,17 @@ def test_rows_ignore_answers_from_unsupported_rubric_versions():
     yes = {"F_absence_home": {"answer": "yes", "p": .9}}
     assert rows_F_absence_home([_row("a", yes, "0", version="r0")]) == []
     assert len(rows_F_absence_home([_row("a", yes, "0")])) == 1
+
+
+def test_reader_b_rows_take_version_and_prospectiveness_from_the_sidecar():
+    from experiments.rubric_rows import _rows_for
+
+    side = {"version": "r1", "prospective": False,
+            "items": {"F_absence_home": {"answer": "yes", "p": .9}}}
+    row = {"key": "a", "actual": "0", "fair": {"home": .5, "draw": .3, "away": .2},
+           "labels": {"rubric": None, "rubric_version": None, "rubric_b": side},
+           "provably_prospective": True}
+    [r] = _rows_for("F_absence_home", reader="rubric_b")([row])
+    assert r["factor"] == 1 and r["face_hit"] == 1 and r["provably_prospective"] is False
+    assert _rows_for("F_absence_home", reader="rubric_b")([{**row, "labels": {
+        "rubric_b": {**side, "version": "r0"}}}]) == []

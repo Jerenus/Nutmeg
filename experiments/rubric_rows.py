@@ -69,11 +69,18 @@ def _rows_for(item_id: str, *, reader: str = "rubric") -> Callable[[list[dict]],
         out: list[dict] = []
         for row in rows:
             labels = row.get("labels") or {}
-            if labels.get("rubric_version") not in SUPPORTED_VERSIONS:
-                continue                       # 治理：只结账在用版本的答案
-            src = labels.get(reader)
+            prospective = row.get("provably_prospective")
             if reader == "rubric_b":
-                src = (src or {}).get("items") if isinstance(src, dict) else None
+                side = labels.get("rubric_b") if isinstance(labels.get("rubric_b"), dict) else None
+                version = (side or {}).get("version")
+                src = (side or {}).get("items")
+                # 读者 B 的前瞻性看侧车自己的读取时刻（历史重打分一律非前瞻）
+                prospective = bool(prospective) and bool((side or {}).get("prospective"))
+            else:
+                version = labels.get("rubric_version")
+                src = labels.get(reader)
+            if version not in SUPPORTED_VERSIONS:
+                continue                       # 治理：只结账在用版本的答案
             if not isinstance(src, dict) or not row.get("fair") or row.get("actual") is None:
                 continue
             active, answer = _answered(src, item_id)
@@ -90,7 +97,7 @@ def _rows_for(item_id: str, *, reader: str = "rubric") -> Callable[[list[dict]],
                 "factor": int(bool(active)),
                 "face_hit": int(str(row["actual"]) in faces),
                 "fair": coverage,
-                "provably_prospective": row.get("provably_prospective"),
+                "provably_prospective": prospective,
                 "key": row.get("key"),
             })
         return out

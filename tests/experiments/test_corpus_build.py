@@ -600,7 +600,8 @@ def test_research_labels_carry_rubric_answers_and_sidecar_only_when_prospective(
                                 "at": "2026-10-02T10:45:00+08:00"}), encoding="utf-8")
     early = _rubric_sidecar(str(side), kickoff_bj="2026-10-02T22:00:00+08:00")
     assert early["items"] == {"S_anchor_side": {"answer": "away", "p": 0.7, "source_tier": None}}
-    assert early["model"] == "haiku" and early["kappa"]["n"] == 1
-    assert _rubric_sidecar(str(side), kickoff_bj="2026-10-02 09:00") is None   # 开球后读的不算
+    assert early["model"] == "haiku" and early["kappa"]["n"] == 1 and early["prospective"] is True
+    late = _rubric_sidecar(str(side), kickoff_bj="2026-10-02 09:00")   # 开球后读：留着但标非前瞻
+    assert late["prospective"] is False and late["items"] == early["items"]
     assert _rubric_sidecar(str(tmp_path / "nope.json"), kickoff_bj=None) is None
     assert _with_sidecar(labels, early)["rubric_b"] == early and _with_sidecar(None, early) is None

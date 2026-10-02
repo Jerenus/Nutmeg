@@ -361,21 +361,26 @@ def _aware(value: str) -> datetime:
 
 
 def _rubric_sidecar(path: str, *, kickoff_bj: str | None) -> dict | None:
-    """读者 B 的侧车（`rubric-<code>.json` / `<issue>-rubric-m<n>.json`）：
-    只在 `at < kickoff` 时带入语料（前瞻），否则 None。"""
+    """读者 B 的侧车（`rubric-<code>.json` / `<issue>-rubric-m<n>.json`）→ 语料标签。
+    `prospective` = 读取时刻 < 开球（历史重打分一律 False：只做可读性/方向探查，
+    严格前瞻档由行构造器按它过滤）；版本取侧车自己的。"""
     doc = _load(path, {}) or {}
     b = doc.get("b")
     if not isinstance(b, dict):
         return None
     at, kick = doc.get("at"), kickoff_bj
+    prospective = False
     try:
-        if at and kick and _aware(str(at)) >= _aware(str(kick).replace(" ", "T")):
-            return None
+        if at and kick:
+            prospective = _aware(str(at)) < _aware(str(kick).replace(" ", "T"))
     except ValueError:
-        return None
+        prospective = False
     answers = _rubric_answers(b)
+    if answers is None:
+        return None
     return {"items": answers, "belief": b.get("belief"), "kappa": doc.get("kappa"),
-            "model": doc.get("model")} if answers is not None else None
+            "model": doc.get("model"), "version": b.get("version"), "prospective": prospective,
+            "at": at}
 
 
 def _with_sidecar(labels: dict | None, sidecar: dict | None) -> dict | None:
