@@ -6,11 +6,12 @@ This bot is the single command window for using Nutmeg, not a general software
 development channel.
 
 <!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current design:
-`docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md`
-(M1-M6 merged to main 2026-08-25; per-milestone evidence under
-`docs/superpowers/evidence/`).
+For the current system structure, daily schedule, judgment layer (rubric r1),
+ticket review, RSI process, Dream harness, data objects and the full analysis
+history, read `docs/ARCHITECTURE.md` (authoritative since 2026-10-02).
+Historical product design (M1-M6, merged 2026-08-25):
+`docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md`;
+per-milestone evidence under `docs/superpowers/evidence/`.
 <!-- SPECKIT END -->
 
 <!-- RESEARCH INDEX START -->

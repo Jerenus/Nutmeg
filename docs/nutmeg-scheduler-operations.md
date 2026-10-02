@@ -1,5 +1,7 @@
 # Nutmeg Scheduler Operations
 
+> **状态（2026-10-02）：部分过时。** 仍有效：`scripts/openclaw/nutmeg_scheduler_ops.py run-strict --stage am`（launchd 08:00 与 OpenClaw 17:15 都跑它；体彩列表完全为空记为合法空盘）、`build-context`、失败/恢复事件去重。**已退役**：`nutmeg-handoff.json` 交接、18:20 每日最终决策与 18:40 补跑、`decision-close` 收盘与闸门（2026-10-01 起真票路径是 `betslip preview` → 500 app → `betslip register`，OpenClaw GPT 判断链停用）。现役调度见 `docs/ops/2026-09-20-scheduled-dataflows.md` 与 `docs/ARCHITECTURE.md` §2。
+
 The scheduler keeps deterministic project commands separate from model-driven
 judgment. The `com.nutmeg.decision.am` LaunchAgent owns the official morning
 stage; settlement belongs to `com.nutmeg.day.settle` and closing odds come from

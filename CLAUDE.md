@@ -33,7 +33,8 @@ its authority order and supersession rules; do not rely on chat memory as the
 knowledge source.
 <!-- RESEARCH INDEX END -->
 
-- 工程背景与技术栈：读 `docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md`（M1-M6 已于 2026-08-25 并入 main；各里程碑证据在 `docs/superpowers/evidence/`）。
+- 结构总图与工程流程：读 `docs/ARCHITECTURE.md`（现役系统：定位、每日时序、判断层与 rubric、出票审票、RSI、Dream、数据对象、全量分析过程、文档地图；2026-10-02 起为权威）。
+- 工程背景（历史设计）：`docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md`（M1-M6 已于 2026-08-25 并入 main；各里程碑证据在 `docs/superpowers/evidence/`）。
 - 决策本体设计：`docs/superpowers/specs/2026-07-06-decision-ontology-design.md`。
 
 ## 历史警戒

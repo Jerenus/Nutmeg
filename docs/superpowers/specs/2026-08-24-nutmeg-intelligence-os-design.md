@@ -1,5 +1,7 @@
 # Nutmeg Intelligence OS - Product and Architecture Design
 
+> **状态（2026-10-02）**：历史设计（M1–M6 产品化，2026-08-25 并入 main）。工作区、治理、写回的思路仍有效；现役结构以 `docs/ARCHITECTURE.md` 为准——2026-10-01 定位转向后机器不再是最终决策者，operator_* 对象待 2026-10-09 退役专项，OpenClaw GPT 判断链已停用。
+
 Date: 2026-08-24  
 Status: Approved in brainstorming; implementation is split into M1-M6  
 Scope: Local, private, single-operator football intelligence and decision system
