@@ -58,6 +58,8 @@ def _research_path(zucai_dir: Path, issue: str, no: str, mapped: dict[int, str],
 
 
 def _from_research(research: dict, prior: dict, kickoff: str) -> dict | None:
+    from nutmeg.decision.jczq_reads import rubric_read_view
+
     norm, issues = validate_stance(
         research.get("stance"), confidence=research.get("confidence"),
         death_three_proofs=research.get("death_three_proofs") or {},
@@ -78,6 +80,7 @@ def _from_research(research: dict, prior: dict, kickoff: str) -> dict | None:
         "belief": tilt.belief if moved else dict(prior),
         "adjustment_evidence_tiers": list(tilt.tiers) if moved else [],
         "source": "research",
+        "rubric": rubric_read_view(research.get("rubric"), norm),
     })
     return entry
 

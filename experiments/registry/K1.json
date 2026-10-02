@@ -1,0 +1,30 @@
+{
+ "exp_id": "K1",
+ "claim": "判断 rubric r1 的问题表是可读的：分析员（读者 A）与系统一读者（读者 B，只读分析员写下的证据）逐项答案的合并 Cohen's kappa ≥ 0.40（行业阈值：kappa<0.4 的标准应重写或删除）。",
+ "mechanism": "2026-10-02 判断 rubric 契约：研究层改为对固定类型化问题表逐项作答（概率+来源+可弃权），belief 由代码按协议级规则派生。若两个读者读同一份证据得不到同样的答案，说明问题写得含糊或分析员把推断写成了确认——先修表再谈权重。逐项一致率在 analytics/rubric/<日>.md 里看，K1 只量合并 kappa。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "deep_research",
+ "window": {
+  "date_from": "2026-10-02",
+  "n_min": 100
+ },
+ "falsifier": {
+  "metric": "rubric_kappa_pp",
+  "stratum": "pooled",
+  "n_min": 100,
+  "bound": "ci_lower",
+  "threshold_pp": 40.0,
+  "direction": "lt_means_falsified"
+ },
+ "stop_rule": "累计 100 个两读都作答的项次结账；合并 kappa×100 的 CI 下界 < 40 即证伪（问题表不可读，逐项看 analytics/rubric 的一致率重写或删项）。期间不改权重。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [
+  "rubric"
+ ],
+ "source_doc": "docs/superpowers/specs/2026-10-02-rubric-judgment-contract-design.md",
+ "registered_at": "2026-10-02",
+ "approval_note": "Jun 2026-10-02 聊天：「可以，开始……完成改造spec后进行相关的开发工作」——登记动作由主循环代执行，决定人 Jun"
+}

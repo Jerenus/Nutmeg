@@ -538,6 +538,8 @@ def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeR
         # strength-v2：深研表态（C19 用）与强弱天平（原样转录，判断在主循环）
         "research_stance": _research_stance(research.get("stance")),
         "strength_balance": research.get("strength_balance"),
+        # 判断 rubric r1（2026-10-02）：逐项答案原样转录，Read/语料/面板都从这里取
+        "rubric": research.get("rubric"),
     }
     return IntakeResult(match_no=match_no, leg=merged, issues=issues, stripped=stripped)
 

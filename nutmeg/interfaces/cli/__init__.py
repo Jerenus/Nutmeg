@@ -468,6 +468,7 @@ from nutmeg.interfaces.cli import discovery as discovery  # noqa: E402
 from nutmeg.interfaces.cli import gym as gym  # noqa: E402
 from nutmeg.interfaces.cli import judgment as judgment  # noqa: E402
 from nutmeg.interfaces.cli import migration as migration  # noqa: E402
+from nutmeg.interfaces.cli import rubric as rubric  # noqa: E402
 from nutmeg.interfaces.cli import notifications as notifications  # noqa: E402
 from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402
 from nutmeg.interfaces.cli import ontology_evidence as ontology_evidence  # noqa: E402

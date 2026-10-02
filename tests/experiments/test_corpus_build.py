@@ -576,3 +576,31 @@ def test_jczq_rows_take_belief_conf_and_note_from_latest_day_read(tmp_path, monk
     assert row["belief_moved"] is True and row["conf"] == 4 and row["note"] == "later"
     assert row["read_id"].endswith("had-1206")
     assert row["provably_prospective"] is None  # read time does not feed the strict gate
+
+
+def test_research_labels_carry_rubric_answers_and_sidecar_only_when_prospective(tmp_path):
+    from experiments.corpus_build import _research_labels, _rubric_sidecar, _with_sidecar
+
+    doc = {"anchor_integrity": "pass", "death_three_proofs": {},
+           "rubric": {"version": "r1", "items": {
+               "S_anchor_side": {"answer": "home", "p": 1.0, "abstain": False},
+               "F_absence_home": {"answer": None, "p": None, "abstain": True}},
+               "belief": {"3": 0.6, "1": 0.25, "0": 0.15}},
+           "rubric_overridden": True}
+    labels = _research_labels(doc)
+    assert labels["rubric"] == {"S_anchor_side": {"answer": "home", "p": 1.0}}
+    assert labels["rubric_version"] == "r1" and labels["rubric_belief"]["3"] == 0.6
+    assert labels["rubric_overridden"] is True
+    assert _research_labels({"anchor_integrity": "pass"})["rubric"] is None
+    side = tmp_path / "rubric-周五001.json"
+    side.write_text(json.dumps({"b": {"items": {"S_anchor_side": {"answer": "away", "p": 0.7,
+                                                                  "abstain": False}},
+                                      "belief": {"3": 0.4, "1": 0.3, "0": 0.3}},
+                                "kappa": {"kappa": 0.0, "n": 1}, "model": "haiku",
+                                "at": "2026-10-02T10:45:00+08:00"}), encoding="utf-8")
+    early = _rubric_sidecar(str(side), kickoff_bj="2026-10-02T22:00:00+08:00")
+    assert early["items"] == {"S_anchor_side": {"answer": "away", "p": 0.7}}
+    assert early["model"] == "haiku" and early["kappa"]["n"] == 1
+    assert _rubric_sidecar(str(side), kickoff_bj="2026-10-02 09:00") is None   # 开球后读的不算
+    assert _rubric_sidecar(str(tmp_path / "nope.json"), kickoff_bj=None) is None
+    assert _with_sidecar(labels, early)["rubric_b"] == early and _with_sidecar(None, early) is None

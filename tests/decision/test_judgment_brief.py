@@ -56,7 +56,8 @@ def test_jczq_brief_rows_market_belief_stance_kind_and_favourite(tmp_path: Path)
     assert b["same_as_market"] is True and b["kind"] == "市场"
     assert b["fav"] == "" and b["stance"] == "—"
     text = render_jczq(brief)
-    assert "| 周六002 | 伯恩利-富勒姆 | 22:00 | 40/28/32 | 跟市场 |" in text
+    assert "| 周六002 | 伯恩利-富勒姆 | 22:00 | 40/28/32 | 跟市场 | — | — |" in text
+    assert a["rubric"] == "—"
     assert "本包不含票面" in text
 
 

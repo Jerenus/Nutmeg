@@ -110,6 +110,20 @@ def _rev(made_at: str) -> str:
     return digits[8:12] if len(digits) >= 12 else "0000"
 
 
+def rubric_read_view(rubric: dict | None, stance: dict | None) -> dict | None:
+    """Read 里的 rubric 账：版本、逐项答案（去掉 note）、派生 tilt 的逐项 pp、读者整体概率。"""
+    if not isinstance(rubric, dict) or not rubric.get("items"):
+        return None
+    items = {k: {f: v.get(f) for f in ("answer", "p", "abstain", "coerced")}
+             for k, v in rubric["items"].items() if isinstance(v, dict)}
+    tilt = (stance or {}).get("tilt") or {}
+    item_pp = {e["item"]: e["pp"] for e in (tilt.get("evidence") or []) if e.get("item")} \
+        if tilt.get("derived_from") else {}
+    return {"version": rubric.get("version"), "items": items, "item_pp": item_pp,
+            "shift": tilt.get("shift") if tilt.get("derived_from") else None,
+            "reader_belief": rubric.get("belief"), "coerced": list(rubric.get("coerced") or [])}
+
+
 def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
     from nutmeg.decision.overrides import load_overrides
 
@@ -239,6 +253,7 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
                 "adjustment_evidence_tiers": (
                     list(result.tiers) if tilt_applied else []
                 ),
+                "rubric": rubric_read_view(leg.get("rubric"), stance) if researched else None,
             }
         )
     (day_dir / "reads.json").write_text(

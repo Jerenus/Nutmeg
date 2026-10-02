@@ -36,6 +36,7 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
 
 STEP_ORDER = (
     "closing_backfill",
+    "rubric_read",
     "corpus_build",
     "grade_prospective",
     "verdict_due",
@@ -56,7 +57,8 @@ LOOP_OUTPUT_PATHS = (
     "experiments/scoreboard-tallies.json",
 )
 # 有前瞻适配器的登记实验都进闭环（F10/F11 2026-09-27 登记后一直没被结账，2026-09-30 补入）
-GRADED_EXPERIMENTS = ("F2", "F3", "F4", "F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1")
+GRADED_EXPERIMENTS = ("F2", "F3", "F4", "F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1",
+                      "K1")
 # 主指标（2026-10-01 评估换轴）：结构与决策——F14 表态面集合 vs 市场覆盖、Dream 对照账、F10 热门带；
 # F9（程度判断）等降为次指标：每天 8–15 场的 Brier 差在赛季内分不开噪声。
 PRIMARY_EXPERIMENTS = ("F14", "F10")
@@ -141,6 +143,17 @@ def _latest_issue(corpus_path: Path) -> str | None:
     return issues[-1] if issues else None
 
 
+def _newest_issue_file(data_dir: Path) -> str | None:
+    """最新一期（有 issue.json 的）——读者 B 要读在售期的研究，不是语料里最新结账的那期。"""
+    try:
+        from nutmeg.decision.day_brief import latest_issue
+
+        zdir = Path(data_dir) / "zucai"
+        return latest_issue(zdir) if zdir.exists() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _days_before(day: str, days: int) -> str:
     from datetime import date, timedelta
 
@@ -152,12 +165,20 @@ def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
     uv = ["uv", "run"]
     data = ["--data-dir", str(ctx.data_dir)]
     cut = _latest_issue(ctx.corpus_path) or "26131"
+    issue = _newest_issue_file(ctx.data_dir)
     return {
         "closing_backfill": [
             [*uv, "python", "scripts/titan007_closing_backfill.py", "--sleep", "0.3",
              "--data-dir", str(ctx.data_dir / "jczq")],
             [*uv, "python", "scripts/titan007_closing_backfill.py", "--zucai", "--sleep", "0.3",
              "--zucai-dir", str(ctx.data_dir / "zucai")],
+        ],
+        # 判断 rubric r1（2026-10-02）：读者 B 读当天竞彩研究 + 最新一期足彩研究，写侧车，
+        # 再进语料（rubric_b 只在 at < kickoff 时入语料）。读者失败不挡后面的步。
+        "rubric_read": [
+            [*uv, "nutmeg", "rubric", "read", "--day", ctx.date, *data],
+            *([[*uv, "nutmeg", "rubric", "read", "--issue", issue, *data]] if issue else []),
+            [*uv, "nutmeg", "rubric", "report", "--day", ctx.date, *data],
         ],
         "corpus_build": [
             [*uv, "python", "experiments/corpus_build.py", "--out", str(ctx.corpus_path)],

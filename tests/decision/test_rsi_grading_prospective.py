@@ -66,7 +66,32 @@ def test_f9_brier_delta_is_positive_when_belief_beats_market_and_zero_without_mo
 def test_adapter_registry_names_match_experiments():
     # 2026-09-30：F13（崩塌叙事锚方）、F14（表态面集合命中率）登记并接入
     # 2026-10-01：F15（终盘大热校准）、G1（gym 结构规则 fav_pairs ROI）登记并接入
-    assert set(PROSPECTIVE_ADAPTERS) == {"F3", "F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1"}
+    # 2026-10-02：K1（判断 rubric 两读 kappa）登记并接入
+    assert set(PROSPECTIVE_ADAPTERS) == {"F3", "F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1",
+                                         "K1"}
+
+
+def test_k1_pools_item_pairs_and_scores_full_agreement_as_100():
+    from nutmeg.decision.rsi_grading import grade_k1_prospective
+
+    def row(key, a, b, date="2026-10-03"):
+        return {"key": key, "date": date, "actual": "3",
+                "fair": {"home": .5, "draw": .3, "away": .2},
+                "labels": {"rubric": a, "rubric_b": {"items": b}}}
+
+    same = {"S_anchor_side": {"answer": "home", "p": 1},
+            "F_absence_home": {"answer": "yes", "p": .9}}
+    rows = [row("a", same, same), row("b", same, same)]
+    g = grade_k1_prospective(rows, window={"date_from": "2026-10-02"}, boots=200)
+    assert g.n_cum == 4 and g.metric_value_pp == 100.0 and g.ci_low_pp == 100.0
+    diff = {"S_anchor_side": {"answer": "away", "p": 1},
+            "F_absence_home": {"answer": "no", "p": .2}}
+    g2 = grade_k1_prospective([row("a", same, diff), row("b", same, same)],
+                              window={"date_from": "2026-10-02"}, boots=200)
+    assert g2.n_cum == 4 and g2.metric_value_pp < 100.0
+    assert grade_k1_prospective([row("x", same, same, date="2026-09-01")],
+                                window={"date_from": "2026-10-02"}).n_cum == 0
+    assert grade_k1_prospective([row("y", same, {})], window={"date_from": "2026-10-02"}).n_cum == 0
 
 
 def test_f15_counts_only_closing_favourites_in_window():

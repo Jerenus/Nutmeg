@@ -533,3 +533,63 @@ def grade_g1_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
 
 
 PROSPECTIVE_ADAPTERS.update({"F15": grade_f15_prospective, "G1": grade_g1_prospective})
+
+
+def _rubric_pairs(labels: dict) -> list[tuple[str, str]]:
+    """两读都作答（未弃权）的项 → [(A 答案, B 答案)]。"""
+    a = labels.get("rubric") or {}
+    b = ((labels.get("rubric_b") or {}).get("items")) or {}
+    pairs = []
+    for item_id, ra in a.items():
+        rb = b.get(item_id)
+        if not isinstance(ra, dict) or not isinstance(rb, dict):
+            continue
+        if ra.get("answer") is None or rb.get("answer") is None:
+            continue
+        pairs.append((str(ra["answer"]), str(rb["answer"])))
+    return pairs
+
+
+def _kappa_pp(pairs: Sequence[tuple[str, str]]) -> float:
+    if not pairs:
+        return 0.0
+    agree = sum(1 for x, y in pairs if x == y) / len(pairs)
+    labels = {x for pair in pairs for x in pair}
+    expected = sum((sum(1 for x, _ in pairs if x == lab) / len(pairs))
+                   * (sum(1 for _, y in pairs if y == lab) / len(pairs)) for lab in labels)
+    return (1.0 if expected >= 1 else (agree - expected) / (1 - expected)) * 100
+
+
+def grade_k1_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                         boots: int = 4000) -> GradeResult:
+    """K1 两读一致性（2026-10-02 登记）：读者 A（分析员）与读者 B（系统一读者）在两读都作答的
+    rubric 项上的合并 Cohen's kappa × 100；按场 bootstrap。n = 项次。"""
+    per_row: list[list[tuple[str, str]]] = []
+    selected: list[dict] = []
+    for r in rows:
+        if not _in_date_window(r, window):
+            continue
+        pairs = _rubric_pairs(r.get("labels") or {})
+        if not pairs:
+            continue
+        per_row.append(pairs)
+        selected.append(r)
+    raw = json.dumps([(r.get("key"), (r.get("labels") or {}).get("rubric"),
+                       (r.get("labels") or {}).get("rubric_b")) for r in selected],
+                     ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
+                  inputs_hash=inputs_hash(raw),
+                  computed_by="nutmeg.decision.rsi_grading.grade_k1_prospective")
+    n_items = sum(len(p) for p in per_row)
+    if not per_row:
+        return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
+    value = _kappa_pp([pair for pairs in per_row for pair in pairs])
+    rng = random.Random(seed)
+    boot = sorted(_kappa_pp([pair for pairs in (rng.choice(per_row) for _ in per_row)
+                             for pair in pairs]) for _ in range(boots))
+    return GradeResult(n_cum=n_items, metric_value_pp=value,
+                       ci_low_pp=boot[int(0.025 * boots)], ci_high_pp=boot[int(0.975 * boots) - 1],
+                       **kwargs)
+
+
+PROSPECTIVE_ADAPTERS.update({"K1": grade_k1_prospective})

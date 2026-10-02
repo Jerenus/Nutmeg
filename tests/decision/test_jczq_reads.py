@@ -378,3 +378,29 @@ def test_reads_carry_kind_board_key_code_and_override_marks_kind(tmp_path):
     assert reads[0]["kind"] == "override"
     assert reads[0]["override"] == {"at": "2026-09-19T14:30:00+08:00", "note": "回到市场",
                                     "judge": "claude-main-loop"}
+
+
+def test_reads_carry_the_rubric_view_when_research_has_one(tmp_path):
+    from nutmeg.decision.jczq_reads import build_jczq_reads, intake_board, rubric_read_view
+
+    root = _day(tmp_path)
+    day_dir = root / "daily" / "2026-09-19"
+    research = {**RESEARCH, "rubric": {"version": "r1", "items": {
+        "S_anchor_side": {"answer": "home", "p": 1.0, "abstain": False, "coerced": False,
+                          "source": "", "captured_at": None, "note": ""},
+        "F_absence_home": {"answer": None, "p": None, "abstain": True, "coerced": True,
+                           "source": "", "captured_at": None, "note": ""}},
+        "belief": {"3": 0.6, "1": 0.25, "0": 0.15}, "coerced": ["F_absence_home: 答是但无来源 → 弃权"]}}
+    (day_dir / "research-周五001.json").write_text(json.dumps(research, ensure_ascii=False),
+                                                   encoding="utf-8")
+    intake_board(day="2026-09-19", jczq_dir=root, write=True)
+    [read] = build_jczq_reads(day="2026-09-19", jczq_dir=root, made_at="2026-09-19T12:00:00+08:00")
+    view = read["rubric"]
+    assert view["version"] == "r1" and view["items"]["S_anchor_side"]["answer"] == "home"
+    assert view["items"]["F_absence_home"]["coerced"] is True and "note" not in view["items"]["S_anchor_side"]
+    assert view["reader_belief"] == {"3": 0.6, "1": 0.25, "0": 0.15} and view["shift"] is None
+    assert view["coerced"] == ["F_absence_home: 答是但无来源 → 弃权"]
+    derived = {"derived_from": "rubric:r1", "shift": {"3": 4, "1": -2, "0": -2},
+               "evidence": [{"item": "F_absence_away", "pp": 4}]}
+    assert rubric_read_view(research["rubric"], {"tilt": derived})["item_pp"] == {"F_absence_away": 4}
+    assert rubric_read_view(None, None) is None

@@ -37,6 +37,15 @@ def _first_sentence(text: str | None, limit: int = 40) -> str:
     return s[:limit] + ("…" if len(s) > limit else "")
 
 
+def _rubric_text(leg: dict, sidecar: dict | None) -> str:
+    """判断 rubric r1 一格：事实/结构/弃权/预算 + 两读 κ（有侧车时）。"""
+    from nutmeg.decision.rubric import rubric_summary
+
+    rubric = leg.get("rubric")
+    kappa = ((sidecar or {}).get("kappa") or {}).get("kappa")
+    return rubric_summary(rubric, kappa=kappa) if rubric else "—"
+
+
 def _stance_text(stance: dict | None) -> str:
     if not stance or not stance.get("face"):
         return "—"
@@ -81,7 +90,9 @@ def jczq_brief(data_dir: Path, day: str) -> dict:
                  + list(leg.get("nondirectional_flags") or []))
         override = read.get("override") or {}
         note = override.get("note") if override else leg.get("note")
+        sidecar = _read(day_dir / f"rubric-{code}.json", None)
         rows.append({
+            "rubric": _rubric_text(leg, sidecar),
             "code": code,
             "name": leg.get("name") or f"{leg.get('home_team')}-{leg.get('away_team')}",
             "kickoff": str(leg.get("kickoff_bj") or "")[11:16],
@@ -105,15 +116,15 @@ def render_jczq(brief: dict) -> str:
              f"板面 {brief['n']} 场｜研究/改判 {brief['researched']}｜≥0.70 大热 {brief['favs']}"
              f"｜开单关 {brief['singles_open']}",
              "",
-             "| 编号 | 对阵 | 开球 | 市场 3/1/0 | 判断 3/1/0 | 表态 | 种类 | 大热 | 单关 | 旗 "
-             "| 一句话 |",
-             "|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| 编号 | 对阵 | 开球 | 市场 3/1/0 | 判断 3/1/0 | 表态 | rubric | 种类 | 大热 | 单关 "
+             "| 旗 | 一句话 |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in brief["rows"]:
         belief = "跟市场" if r["same_as_market"] else r["belief"]
         single = "" if r["single"] is None else ("开" if r["single"] else "不开")
         lines.append(f"| {r['code']} | {r['name']} | {r['kickoff']} | {r['market']} | {belief} "
-                     f"| {r['stance']} | {r['kind']} | {r['fav']} | {single} | {r['flags']} "
-                     f"| {r['note']} |")
+                     f"| {r['stance']} | {r.get('rubric', '—')} | {r['kind']} | {r['fav']} "
+                     f"| {single} | {r['flags']} | {r['note']} |")
     lines += ["",
               "> 读法：判断=跟市场 ＝ 研究没给出可用拨动（F9：belief≈市场）；"
               "表态面是研究的结构判断（F14 在量化）；"
@@ -140,7 +151,9 @@ def zucai_brief(data_dir: Path, issue: str) -> dict:
         stance = leg.get("stance") or leg.get("research_stance")
         fav_p = max(fair.values()) if fair else 0.0
         fav_face = max(fair, key=fair.get) if fair else None
+        sidecar = _read(zdir / f"{issue}-rubric-m{int(no)}.json", None)
         rows.append({
+            "rubric": _rubric_text(leg, sidecar),
             "no": no, "name": leg.get("name") or names.get(no, ""),
             "market": _dist(fair), "belief": _dist(belief) if belief else "—",
             "faces": leg.get("faces") or "", "action": j.get("action") or "",
@@ -157,12 +170,13 @@ def zucai_brief(data_dir: Path, issue: str) -> dict:
 def render_zucai(brief: dict) -> str:
     lines = [f"# 初判与解读 · 足彩 {brief['issue']}",
              f"{brief['n']} 场｜≥0.70 大热 {brief['favs']}", "",
-             "| 场 | 对阵 | 市场 3/1/0 | 判断 3/1/0 | 处方面 | judgment-v1 | 表态 | 大热 | 旗 "
-             "| 一句话 |",
-             "|---|---|---|---|---|---|---|---|---|---|"]
+             "| 场 | 对阵 | 市场 3/1/0 | 判断 3/1/0 | 处方面 | judgment-v1 | 表态 | rubric | 大热 "
+             "| 旗 | 一句话 |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in brief["rows"]:
         lines.append(f"| {r['no']} | {r['name']} | {r['market']} | {r['belief']} | {r['faces']} "
-                     f"| {r['action']} | {r['stance']} | {r['fav']} | {r['flags']} | {r['note']} |")
+                     f"| {r['action']} | {r['stance']} | {r.get('rubric', '—')} | {r['fav']} "
+                     f"| {r['flags']} | {r['note']} |")
     lines += ["", "> 处方面 = 机器的判断面集合；**足彩初稿不省略**（Jun 2026-10-01）：机器按"
                   "处方忠实规则出首版票面（见下「足彩初稿」，`nutmeg judgment draft --issue`），"
                   "Jun 改票 → `betslip preview --faces … --issue …` 审票 → 讨论定案 → 登记。"

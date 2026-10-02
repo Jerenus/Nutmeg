@@ -47,6 +47,7 @@ import glob
 import json
 import os
 import re
+from datetime import datetime
 
 from nutmeg.decision.prospective import prospective_fields as _prospective_fields
 from nutmeg.decision.research_intake import (
@@ -313,6 +314,8 @@ def zucai_rows() -> list[dict]:
             research = _load(f"{Z}/{issue}-research-m{n}.json", {}) or {}
             research_labels = _research_labels(research)
             if research_labels:
+                research_labels["rubric_b"] = _rubric_sidecar(
+                    f"{Z}/{issue}-rubric-m{n}.json", kickoff_bj=kickoffs.get(n))
                 # 足彩逐场深研（`<issue>-research-m<n>.json`，2026-09-22 接入，7 期 91 份）：
                 # 与竞彩深研同构。legs-base 的旗/完整度优先，research 补它没有的
                 # 死亡三证 / 洞位 / anchor_side；`researched_at` 只存信息位，不进前瞻证明。
@@ -335,6 +338,49 @@ def zucai_rows() -> list[dict]:
             row["labels"] = _merge_postmortem(row["labels"], postmortem_by_match.get(n))
             rows.append(row)
     return rows
+
+
+def _rubric_answers(rubric: dict | None) -> dict | None:
+    """判断 rubric 的逐项答案 → {id: {answer, p}}（弃权项不进）；没有 rubric → None。"""
+    if not isinstance(rubric, dict) or not isinstance(rubric.get("items"), dict):
+        return None
+    out = {}
+    for item_id, row in rubric["items"].items():
+        if isinstance(row, dict) and not row.get("abstain") and row.get("answer") is not None:
+            out[item_id] = {"answer": row.get("answer"), "p": row.get("p")}
+    return out
+
+
+def _aware(value: str) -> datetime:
+    """无时区一律按北京时间（足彩 kickoff_bj 是 `YYYY-MM-DD HH:MM`）。"""
+    from datetime import timedelta, timezone
+
+    dt = datetime.fromisoformat(value)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone(timedelta(hours=8)))
+
+
+def _rubric_sidecar(path: str, *, kickoff_bj: str | None) -> dict | None:
+    """读者 B 的侧车（`rubric-<code>.json` / `<issue>-rubric-m<n>.json`）：
+    只在 `at < kickoff` 时带入语料（前瞻），否则 None。"""
+    doc = _load(path, {}) or {}
+    b = doc.get("b")
+    if not isinstance(b, dict):
+        return None
+    at, kick = doc.get("at"), kickoff_bj
+    try:
+        if at and kick and _aware(str(at)) >= _aware(str(kick).replace(" ", "T")):
+            return None
+    except ValueError:
+        return None
+    answers = _rubric_answers(b)
+    return {"items": answers, "belief": b.get("belief"), "kappa": doc.get("kappa"),
+            "model": doc.get("model")} if answers is not None else None
+
+
+def _with_sidecar(labels: dict | None, sidecar: dict | None) -> dict | None:
+    if labels is None:
+        return None
+    return {**labels, "rubric_b": sidecar}
 
 
 def _research_labels(doc: dict | None) -> dict | None:
@@ -398,6 +444,13 @@ def _research_labels(doc: dict | None) -> dict | None:
         stance_face=(doc.get("stance") or {}).get("face"),
         stance_structure=(doc.get("stance") or {}).get("structure"),
         stance_cover=(doc.get("stance") or {}).get("cover"),
+        # 判断 rubric r1（2026-10-02）：分析员（读者 A）的逐项答案；读者 B 由调用方按侧车补
+        rubric=_rubric_answers(doc.get("rubric")),
+        rubric_version=(doc.get("rubric") or {}).get("version") if isinstance(
+            doc.get("rubric"), dict) else None,
+        rubric_belief=(doc.get("rubric") or {}).get("belief") if isinstance(
+            doc.get("rubric"), dict) else None,
+        rubric_overridden=bool(doc.get("rubric_overridden")),
         label_source="research",
     )
 
@@ -544,7 +597,10 @@ def jczq_rows() -> list[dict]:
                 note=str(read.get("note") or ""),
                 read_id=read.get("read_id"),
                 read_made_at=read.get("made_at"),
-                labels=_merge_postmortem(_research_labels(research), postmortem),
+                labels=_merge_postmortem(_with_sidecar(
+                    _research_labels(research),
+                    _rubric_sidecar(f"{day_dir}/rubric-{jno}.json",
+                                    kickoff_bj=leg.get("kickoff_bj"))), postmortem),
                 titan007_id=str(got.get("match_id") or "") or None,
                 jczq_no=jno,
                 books=mw.get("bookmaker_count"),

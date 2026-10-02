@@ -94,3 +94,13 @@ def test_auto_reads_name_kind_board_key_and_code(tmp_path):
     by_no = {read["code"]: read for read in reads}
     assert by_no["1"]["kind"] == "research" and by_no["2"]["kind"] == "market"
     assert {read["board_key"] for read in reads} == {"zucai:26133"}
+
+
+def test_zucai_entry_carries_the_rubric_view(tmp_path):
+    zdir = _issue(tmp_path, n=1)
+    _research(zdir, 1, rubric={"version": "r1", "items": {
+        "S_anchor_side": {"answer": "home", "p": 1.0, "abstain": False, "coerced": False}},
+        "belief": {"3": 0.55, "1": 0.25, "0": 0.2}})
+    entry = auto_judgment(issue="26133", data_dir=tmp_path)["1"]
+    assert entry["rubric"]["items"]["S_anchor_side"]["answer"] == "home"
+    assert entry["rubric"]["reader_belief"]["3"] == 0.55 and entry["rubric"]["shift"] is None

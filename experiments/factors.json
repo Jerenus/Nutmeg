@@ -2,7 +2,7 @@
   "schema_version": "1",
   "registered_at": "2026-09-22",
   "source_doc": "docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md#13",
-  "note": "T13 ①因子注册表。每条在跑的审计码逐条归属：layer=fact 只记录不驱动；layer=probability 才做概率检验并可被 propose 提议改权重；layer=expression 不进因子表但要注明理由。⛔本文件不改任何现有权重：所有 current_weight_pp 都是 0.0，因为生产里从没有数值权重，判据都是 WARN/ERROR 级动作。改权重只能由人 `rsi deploy --by <人>`。",
+  "note": "T13 ①因子注册表。每条在跑的审计码逐条归属：layer=fact 只记录不驱动；layer=probability 才做概率检验并可被 propose 提议改权重；layer=expression 不进因子表但要注明理由。⛔本文件不改任何现有权重：所有 current_weight_pp 都是 0.0，因为生产里从没有数值权重，判据都是 WARN/ERROR 级动作。改权重只能由人 `rsi deploy --by <人>`。 ｜ 2026-10-02 判断 rubric r1：逐项因子 rubric_<id>（row_builder experiments.rubric_rows），pp=上限×概率，上限只许往下调或退役。",
   "weight_change_rule": {
     "frozen_at": "2026-09-22",
     "applies_to_layer": "probability",
@@ -254,6 +254,171 @@
       "row_builder": "experiments.noise_floor:_anchor_side_rows",
       "last_measured": null,
       "note": "与 anchor_integrity（模态面口径）并列，锚方口径更贴 RULEBOOK m-单选③ 的原意。"
+    },
+    {
+      "factor_id": "rubric_F_absence_home",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · F_absence_home（down:home，上限 6pp）",
+      "layer": "probability",
+      "claim": "主队关键球员（门将/中卫/组织核心/主力射手）缺阵已被官方或主帅确认——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_F_absence_home",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_F_absence_away",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · F_absence_away（down:away，上限 6pp）",
+      "layer": "probability",
+      "claim": "客队关键球员缺阵已被官方或主帅确认——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_F_absence_away",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_F_suspension",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · F_suspension（down:side，上限 4pp）",
+      "layer": "probability",
+      "claim": "哪一侧有核实的停赛（累积黄牌/红牌）——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_F_suspension",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_F_rotation",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · F_rotation（down:side，上限 3pp）",
+      "layer": "probability",
+      "claim": "哪一侧由主帅/官方确认本场轮换主力——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_F_rotation",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_F_goalkeeper",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · F_goalkeeper（down:side，上限 3pp）",
+      "layer": "probability",
+      "claim": "哪一侧确认更换首发门将——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_F_goalkeeper",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_F_venue",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · F_venue（down:side，上限 2pp）",
+      "layer": "probability",
+      "claim": "场地异常（中立场/无观众/场地条件）不利于哪一侧——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_F_venue",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_O_other_event",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · O_other_event（down:side，上限 2pp）",
+      "layer": "probability",
+      "claim": "其他已核实的本场利空落在哪一侧（一句话写进 note）——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_O_other_event",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_S_spine_intact",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · S_spine_intact（down:anchor:no，上限 3pp）",
+      "layer": "probability",
+      "claim": "锚方中轴（门将/中卫/组织核心）本场完整——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_S_spine_intact",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_S_underdog_path",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · S_underdog_path（up:underdog，上限 2pp）",
+      "layer": "probability",
+      "claim": "弱方有真实存在的取胜/取分路径（不是故事）——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_S_underdog_path",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_S_draw_mode",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · S_draw_mode（up:draw，上限 2pp）",
+      "layer": "probability",
+      "claim": "双方进攻都低效，低比分平局是本场模态之一——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_S_draw_mode",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
+    },
+    {
+      "factor_id": "rubric_S_crash_candidate",
+      "rule_codes": [],
+      "rule_name": "rubric r1 · S_crash_candidate（down:anchor，上限 2pp）",
+      "layer": "probability",
+      "claim": "锚方是翻车候选（近期带洞、密集赛程、动机不足中至少两条）——成立时效应面比市场价更容易开出。",
+      "current_weight_pp": 0.0,
+      "weight_band": [
+        -15.0,
+        15.0
+      ],
+      "row_builder": "experiments.rubric_rows:rows_S_crash_candidate",
+      "last_measured": null,
+      "note": "判断 rubric r1（2026-10-02）：pp = 上限 × 概率；propose_zero → 上限退役；propose_change 只许把上限往下截。"
     }
   ],
   "expression_rules": [
