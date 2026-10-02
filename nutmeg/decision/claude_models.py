@@ -26,3 +26,10 @@ def research_model() -> str:
     from nutmeg.config.settings import get_settings
 
     return get_settings().model_research
+
+
+def reader_model() -> str:
+    """系统一读者（判断 rubric 两读 / 历史重打分）。"""
+    from nutmeg.config.settings import get_settings
+
+    return get_settings().model_reader

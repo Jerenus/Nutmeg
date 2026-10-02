@@ -74,4 +74,7 @@ def effective_research(research_path: Path) -> dict:
     doc["stance"] = stance
     doc["main_loop_rulings"] = {"judge": latest["judge"], "at": latest["at"],
                                 "note": latest["note"]}
+    if doc.get("rubric"):
+        # 判断 rubric r1：改判直接替换派生 tilt；留痕以便逐项结账知道这场 belief 不是 rubric 算的
+        doc["rubric_overridden"] = True
     return doc

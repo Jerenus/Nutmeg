@@ -1,0 +1,106 @@
+"""判断 rubric r1 问题表（设计 2026-10-02-rubric-judgment-contract）。
+
+一项只问一件事；每项有类型（noul 是非 / choice 多选一 / dist 概率分布）、阶段、效应、
+上限 pp、是否必须带来源。**上限只许从结账往下调或退役**（T13：权重从不事前写）。
+Jev 形状：类型化问题 → 概率 + 可弃权，不生成解释。
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+RUBRIC_VERSION = "r1"
+PHASES = ("fact", "structure", "price", "conclusion")
+SIDES = ("home", "away")
+UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class Item:
+    id: str
+    phase: str
+    type: str                       # noul | choice | dist
+    options: tuple[str, ...] = ()   # choice 的选项（含 unknown）
+    effect: str = ""                # down:home | down:away | up:draw | down:side（按答案取侧）
+                                    # | down:anchor | up:underdog | ""（只记录）
+    cap_pp: int = 0                 # 单项最大拨动；0＝只记录
+    source_required: bool = False   # 答"是"/有效选项时必须带 source + captured_at
+    tier: str = "state"             # 派生 tilt.evidence 的 tier
+    kind: str = ""                  # 派生 tilt.evidence 的 kind（TILT_KIND_LEXICON）
+    text: str = ""                  # 问题原文（读者 B 的提示词）
+    effect_options: tuple[str, ...] = field(default_factory=tuple)   # choice 里带效应的选项
+
+
+ITEMS: dict[str, Item] = {}
+
+
+def _add(item: Item) -> None:
+    ITEMS[item.id] = item
+
+
+# ── 事实层（合取门：没有任何事实项成立 → 拨动预算为 0，无锚归零）──────────────
+_add(Item("F_absence_home", "fact", "noul", effect="down:home", cap_pp=6, source_required=True,
+          tier="official", kind="absence_official",
+          text="主队关键球员（门将/中卫/组织核心/主力射手）缺阵已被官方或主帅确认"))
+_add(Item("F_absence_away", "fact", "noul", effect="down:away", cap_pp=6, source_required=True,
+          tier="official", kind="absence_official",
+          text="客队关键球员缺阵已被官方或主帅确认"))
+_add(Item("F_suspension", "fact", "choice", options=("home", "away", "both", "none", UNKNOWN),
+          effect="down:side", cap_pp=4, source_required=True, tier="official", kind="suspension",
+          text="哪一侧有核实的停赛（累积黄牌/红牌）", effect_options=("home", "away", "both")))
+_add(Item("F_rotation", "fact", "choice", options=("home", "away", "both", "none", UNKNOWN),
+          effect="down:side", cap_pp=3, source_required=True, tier="official",
+          kind="rotation_confirmed",
+          text="哪一侧由主帅/官方确认本场轮换主力", effect_options=("home", "away", "both")))
+_add(Item("F_goalkeeper", "fact", "choice", options=("home", "away", "none", UNKNOWN),
+          effect="down:side", cap_pp=3, source_required=True, tier="official",
+          kind="goalkeeper_change",
+          text="哪一侧确认更换首发门将", effect_options=("home", "away")))
+_add(Item("F_venue", "fact", "choice", options=("home", "away", "none", UNKNOWN),
+          effect="down:side", cap_pp=2, source_required=True, tier="official",
+          kind="venue_anomaly",
+          text="场地异常（中立场/无观众/场地条件）不利于哪一侧", effect_options=("home", "away")))
+_add(Item("O_other_event", "fact", "choice", options=("home", "away", "none", UNKNOWN),
+          effect="down:side", cap_pp=2, source_required=True, tier="inferred",
+          kind="squad_depth",
+          text="其他已核实的本场利空落在哪一侧（一句话写进 note）",
+          effect_options=("home", "away")))
+
+# ── 结构层 ──────────────────────────────────────────────────────────────────
+_add(Item("S_anchor_side", "structure", "choice", options=("home", "away", "none"),
+          text="强弱天平的锚方（明显更强的一侧）；均势填 none"))
+_add(Item("S_spine_intact", "structure", "noul", effect="down:anchor:no", cap_pp=3,
+          source_required=True, tier="confirmed_structural", kind="anchor_integrity_fail",
+          text="锚方中轴（门将/中卫/组织核心）本场完整"))
+_add(Item("S_underdog_path", "structure", "noul", effect="up:underdog", cap_pp=2,
+          tier="state", kind="underdog_path",
+          text="弱方有真实存在的取胜/取分路径（不是故事）"))
+_add(Item("S_draw_mode", "structure", "noul", effect="up:draw", cap_pp=2,
+          tier="state", kind="style_matchup",
+          text="双方进攻都低效，低比分平局是本场模态之一"))
+_add(Item("S_crash_candidate", "structure", "noul", effect="down:anchor", cap_pp=2,
+          tier="state", kind="form_state",
+          text="锚方是翻车候选（近期带洞、密集赛程、动机不足中至少两条）"))
+_add(Item("S_dead_face", "structure", "choice", options=("3", "1", "0", "none"),
+          text="三证齐全可判死的面（没有就 none）；只记录，不进 pp"))
+
+# ── 价格层 ──────────────────────────────────────────────────────────────────
+_add(Item("M_market_read", "price", "choice",
+          options=("agree", "overpriced_fav", "underpriced_fav", "underpriced_draw", UNKNOWN),
+          text="市场对这场的定价（只记录）"))
+_add(Item("M_facts_priced", "price", "noul",
+          text="事实层的事件已经被开盘→当前的位移吸收（是 → 事实层 pp 减半）"))
+
+DIRECTIONAL_ITEMS = tuple(i.id for i in ITEMS.values() if i.cap_pp > 0)
+FACT_ITEMS = tuple(i.id for i in ITEMS.values() if i.phase == "fact")
+MAX_ABS_SHIFT_PP = 15
+
+
+def question_table() -> str:
+    """读者 B 提示词用的问题表（id · 类型 · 选项 · 问题）。"""
+    lines = []
+    for item in ITEMS.values():
+        opts = "/".join(item.options) if item.options else ("p∈[0,1] 或 null" if item.type == "noul"
+                                                              else "")
+        src = "（答是/有效选项必须带 source 与 captured_at）" if item.source_required else ""
+        lines.append(f"- {item.id} [{item.phase}/{item.type}] {opts}：{item.text}{src}")
+    return "\n".join(lines)

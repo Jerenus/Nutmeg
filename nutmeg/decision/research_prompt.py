@@ -44,13 +44,11 @@ RESEARCH_JSON_CONTRACT = """
 underdog_path 的强度用 tilt/shift 落到概率上（认为被低估几 pp 就拨几 pp）；
 stance.structure 只是建议，票面结构由下游按判断概率在预算内决定（规则瘦身 2026-09-27）。
 tilt 可用多面 shift {"3":pp,"1":pp,"0":pp}（和为 0）；tier 另有 state（本场状态 0–3pp）。
-表态块必答：每场押一个面 + 一个表达档 + 一句作废条件；
-跟市场也要填（why_not_market=none, tilt=null）。
+表态块必答：每场押一个面 + 一个表达档 + 一句作废条件；跟市场也要填（why_not_market=none）。
 结构优先（2026-10-01）：先把表态面集合（single/double/full）、三证、完整度、弱方路径判清——
-这是下游唯一按票面结账的判断（F14）。tilt **只在**有 official（官宣 4–8pp）或
-confirmed_structural（确证结构 3–6pp）证据时给；只有 state/inferred/will 级证据时 tilt=null
-（下游会整体归零，写了也是噪音）；form_state 每条最多计 1pp；shift 峰值不得超过证据 pp 之和；
-will 0–2pp 且只许朝平；单面封顶无官宣 10pp、有官宣 15pp；开球后采集的证据作废。
+这是下游唯一按票面结账的判断（F14）。
+**stance.tilt 不用写（写 null）**：拨动由下面的 rubric 逐项派生（2026-10-02 判断 rubric r1），
+你给的是"这件事成立的概率 + 来源"，几个 pp 由代码按项目上限算、按结账调。
 stance.confidence 必须等于顶层 confidence。
 宣告 dead 必须三证 3/3；查无先例记 none，不得当 dead。数字只许引用简报给你的或你查到的实盘。
 hole_location 语义绑定：attack = 破门端（中锋/射手）缺；creation = 组织端（前腰/组织核）缺；
@@ -59,9 +57,28 @@ both = 攻防两端同时缺（对称崩塌）；none = 无结构性洞。
 """.strip()
 
 
+def rubric_contract() -> str:
+    """判断 rubric r1（2026-10-02）：问题表从注册表生成，契约与代码不会漂移。"""
+    from nutmeg.decision.rubric_items import RUBRIC_VERSION, question_table
+
+    return f"""
+## ★判断 rubric（必答，version "{RUBRIC_VERSION}"）——Jev 形状：类型化问题、概率、可弃权、不解释
+顶层字段 "rubric": {{"version": "{RUBRIC_VERSION}", "items": {{<id>: 答案}},
+                "belief": {{"3": p, "1": p, "0": p}}}}
+答案格式：noul → {{"p": 0–1 或 null, "source": str, "captured_at": "ISO", "note": str}}；
+choice → {{"answer": 选项, "p": 该选项的概率, "source": str, "captured_at": "ISO", "note": str}}。
+规则：①一项只答一件事，不要把两件事合在一个来源里；②不知道就弃权（p=null / answer=unknown），
+弃权永远合法；③标"必须带来源"的项，答是/有效选项而没有 source+captured_at 会被**强制改为弃权**，
+不要把推断写成已确认；④事实层没有任何一项成立 → 拨动预算为 0（跟市场），结构层再多也不补分；
+S_anchor_side=none（均势）→ 不拨动；⑤belief 是你自己对 3/1/0 的整体概率，只记账不进 belief。
+问题表：
+{question_table()}
+""".strip()
+
+
 def system_prompt() -> str:
     body = _AGENT_MD.read_text(encoding="utf-8").split("---", 2)[-1]
-    return f"{body.strip()}\n\n{RESEARCH_JSON_CONTRACT}"
+    return f"{body.strip()}\n\n{RESEARCH_JSON_CONTRACT}\n\n{rubric_contract()}"
 
 
 def render_brief(*, code: str, leg: dict, profile_notes: dict) -> str:

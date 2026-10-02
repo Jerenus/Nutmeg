@@ -132,10 +132,11 @@ model: opus
 - **表达档是建议，不是门**：structure 写你自己会怎么买；票面由下游在预算内按判断概率最大化全对概率决定，
   「建议保险而票面裸单」只记 WARN（C19，未证实）。**判断的力度必须体现在 belief 上**——
   认为热门比市场更稳就把它拨高，认为有翻车风险就把风险面拨高；只写「double」不拨概率，等于没表达。
-- 把 belief 拨离市场：`tilt` 用单面 `face` 或多面 `shift`（`{"3":pp,"1":pp,"0":pp}`，各面之和为 0），
-  证据逐条给 tier（official/confirmed_structural/inferred/will/state）、kind、pp、来源、采集时间。
-  kind 可用强弱类：`style_matchup / underdog_path / form_state / travel_fatigue / coach_debut / pitch_condition / squad_depth / priced_drift`。
-  **<5pp 不再归零**（2026-09-26 退休）；单面封顶 10pp（有官宣 15pp），开球后证据作废。
+- **拨动不再手写**（2026-10-02 判断 rubric r1）：`stance.tilt` 写 `null`。把 belief 拨离市场的唯一通道是
+  顶层 `rubric` 块——对固定问题表逐项给"成立概率 + 来源 + 采集时间"，几个 pp 由代码按项目上限算、
+  按赛后结账调。事实层（官宣缺阵/停赛/轮换/门将/场地）没有一项成立就跟市场；均势（`S_anchor_side=none`）不拨动；
+  不知道就弃权，**不要把推断写成已确认**（答是而无来源会被强制改为弃权并留痕）。
+  `strength_balance.events` 保留为叙述（pp 可不填），belief 只认 rubric。
 - `alt_face`（如果押错最可能开哪面）与 `market_read`（市场对这场 agree/overpriced/underpriced）只记录、不加权。
 
 ## 收尾小结（3-5 句）

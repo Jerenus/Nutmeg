@@ -76,6 +76,9 @@ class AppSettings(BaseSettings):
     #   实测 2026-09-23：haiku 64–70s/场且往正文里漏字段名，sonnet 31s/场、说人话 → 默认 sonnet。
     model_logic: str = 'sonnet'
     model_research: str = ''
+    # 系统一读者（2026-10-02 判断 rubric）：只读研究文本、只回类型化问题的概率、不解释——
+    # Jev 形状的任务，便宜模型即可；两读 kappa 与历史重打分都走它。
+    model_reader: str = 'haiku'
     agent_synthesis_enabled: bool = False
     openai_base_url: str = 'https://api.openai.com/v1'
     openai_api_key: str | None = Field(

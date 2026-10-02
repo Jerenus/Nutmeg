@@ -37,6 +37,7 @@ GOOD = json.dumps(
             "alt_face": "1",
             "market_read": "agree",
         },
+        "rubric": {"version": "r1", "items": {"S_anchor_side": {"answer": "home"}}},
     },
     ensure_ascii=False,
 )
@@ -672,12 +673,13 @@ def test_missing_channel_map_is_built_from_the_live_board_before_reuse(tmp_path)
 
 
 def test_evidence_timestamps_are_stamped_by_the_system(tmp_path):
+    """派生 tilt 的 evidence 与 rubric 项都由系统盖章；分析员自填的时刻只留 *_declared。"""
     root = _board(tmp_path, n=1)
     doc = json.loads(GOOD)
-    doc["stance"] = {**doc["stance"], "why_not_market": "tilt_evidence", "tilt": {
-        "face": "1", "expires_if": "x", "evidence": [
-            {"tier": "inferred", "kind": "style_matchup", "pp": 1, "source": "s",
-             "captured_at": "2099-01-01T00:00:00+08:00"}]}}
+    doc["rubric"] = {"version": "r1", "items": {
+        "F_goalkeeper": {"answer": "away", "p": 0.9, "source": "s",
+                         "captured_at": "2026-09-19T00:00:00+08:00"},
+        "S_anchor_side": {"answer": "home"}}}
 
     run_day(day="2026-09-19", jczq_dir=root, data_dir=tmp_path,
             claude=lambda system, brief: (0, json.dumps(doc, ensure_ascii=False)),
@@ -687,4 +689,52 @@ def test_evidence_timestamps_are_stamped_by_the_system(tmp_path):
                          .read_text(encoding="utf-8"))
     [evidence] = written["stance"]["tilt"]["evidence"]
     assert evidence["captured_at"] == written["captured_at"]
-    assert evidence["captured_at_declared"] == "2099-01-01T00:00:00+08:00"
+    assert evidence["captured_at_declared"] == "2026-09-19T00:00:00+08:00"
+    item = written["rubric"]["items"]["F_goalkeeper"]
+    assert item["captured_at"] == written["captured_at"]
+    assert item["captured_at_declared"] == "2026-09-19T00:00:00+08:00"
+
+
+def test_missing_rubric_is_rejected_by_validate(tmp_path):
+    from nutmeg.decision.research_runner import _validate
+
+    doc = json.loads(GOOD)
+    doc.pop("rubric")
+    with pytest.raises(ValueError, match="rubric"):
+        _validate(json.dumps(doc), {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}})
+    doc["rubric"] = {"version": "r1", "items": {"F_absence_home": {"p": 2}}}
+    with pytest.raises(ValueError, match="rubric"):
+        _validate(json.dumps(doc), {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}})
+
+
+def test_rubric_items_are_stamped_and_tilt_is_derived_from_them(tmp_path):
+    root = _board(tmp_path, n=1)
+    doc = json.loads(GOOD)
+    doc["stance"] = {**doc["stance"], "tilt": {"face": "3", "expires_if": "x", "evidence": [
+        {"tier": "official", "kind": "absence_official", "pp": 5, "source": "s",
+         "captured_at": "2026-09-19T08:00:00+08:00"}]}}
+    doc["rubric"] = {"version": "r1", "items": {
+        "F_absence_away": {"p": 0.9, "source": "https://club.example/news",
+                           "captured_at": "2026-09-19T08:00:00+08:00"},
+        "F_absence_home": {"p": 0.9},                      # 无来源 → 强制弃权
+        "S_anchor_side": {"answer": "home"},
+        "M_market_read": {"answer": "agree"}},
+        "belief": {"3": 0.55, "1": 0.27, "0": 0.18}}
+
+    run_day(day="2026-09-19", jczq_dir=root, data_dir=tmp_path,
+            claude=lambda system, brief: (0, json.dumps(doc, ensure_ascii=False)),
+            fulfill=lambda argv: (0, ""), profile=lambda match_id: {}, budget=1)
+
+    written = json.loads((root / "daily" / "2026-09-19" / "research-周五001.json")
+                         .read_text(encoding="utf-8"))
+    tilt = written["stance"]["tilt"]
+    assert tilt["derived_from"] == "rubric:r1" and tilt["shift"]["0"] < 0 < tilt["shift"]["3"]
+    assert [e["item"] for e in tilt["evidence"]] == ["F_absence_away"]
+    assert written["stance"]["tilt_declared"]["face"] == "3"          # 分析员手写的 tilt 只留痕
+    assert written["stance"]["why_not_market"] == "tilt_evidence"
+    items = written["rubric"]["items"]
+    assert items["F_absence_home"]["abstain"] and items["F_absence_home"]["coerced"]
+    assert items["F_absence_away"]["captured_at"] == written["captured_at"]
+    assert items["F_absence_away"]["captured_at_declared"] == "2026-09-19T08:00:00+08:00"
+    assert written["rubric"]["belief"] == {"3": 0.55, "1": 0.27, "0": 0.18}
+    assert written["rubric"]["coerced"] == ["F_absence_home: 答是但无来源 → 弃权"]

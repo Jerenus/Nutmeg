@@ -46,6 +46,7 @@ _REQUIRED = (
     "crash_markers",
     "precedents",
     "stance",
+    "rubric",
 )
 
 
@@ -116,6 +117,14 @@ def _validate(text: str, leg: dict) -> dict:
         )
         if count < 3:
             raise ValueError(f"{face} 宣告 dead 但三证 {count}/3")
+    # 判断 rubric r1（2026-10-02）：逐项校验（无来源的"是"强制弃权）→ 从答案派生 stance.tilt
+    from nutmeg.decision.rubric import derive_stance, validate_rubric
+
+    norm_rubric, rubric_issues = validate_rubric(doc.get("rubric"), kickoff=leg.get("kickoff_bj"))
+    if rubric_issues:
+        raise ValueError("rubric: " + "; ".join(i.message for i in rubric_issues))
+    doc["rubric"] = norm_rubric
+    doc["stance"] = derive_stance(doc.get("stance"), norm_rubric, leg.get("fair"))
     _norm, stance_issues = validate_stance(
         doc.get("stance"),
         confidence=doc.get("confidence"),
@@ -445,6 +454,10 @@ def run_day(
                 if isinstance(evidence, dict):
                     evidence["captured_at_declared"] = evidence.get("captured_at")
                     evidence["captured_at"] = research["captured_at"]
+            for item in ((research.get("rubric") or {}).get("items") or {}).values():
+                if isinstance(item, dict) and not item.get("abstain"):
+                    item["captured_at_declared"] = item.get("captured_at")
+                    item["captured_at"] = research["captured_at"]
             research["model"] = model_used
             output.write_text(
                 json.dumps(research, ensure_ascii=False, indent=1), encoding="utf-8"

@@ -56,3 +56,17 @@ def test_override_to_market_sets_why_none(tmp_path):
                     judge="claude-strength-v2", prior={"home": 0.745, "draw": 0.168, "away": 0.087})
     doc = effective_research(path)
     assert doc["stance"]["tilt"] is None and doc["stance"]["why_not_market"] == "none"
+
+
+def test_override_on_a_rubric_research_is_marked(tmp_path):
+    path = tmp_path / "research-周六012.json"
+    path.write_text(json.dumps({"name": "A-B", "confidence": 3, "stance": STANCE,
+                                "rubric": {"version": "r1", "items": {}}}, ensure_ascii=False),
+                    encoding="utf-8")
+    record_override(path, tilt=None, note="已定价", at="2026-10-02T14:15:00+08:00",
+                    judge="claude", prior={"home": 0.5, "draw": 0.3, "away": 0.2})
+    assert effective_research(path)["rubric_overridden"] is True
+    plain = _research(tmp_path)
+    record_override(plain, tilt=None, note="x", at="2026-10-02T14:15:00+08:00",
+                    judge="claude", prior={"home": 0.5, "draw": 0.3, "away": 0.2})
+    assert "rubric_overridden" not in effective_research(plain)

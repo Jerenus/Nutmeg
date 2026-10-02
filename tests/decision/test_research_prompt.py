@@ -49,3 +49,13 @@ def test_brief_contains_fair_line_and_kickoff_only_from_inputs():
     assert "50.0%" in brief
     assert "让球线 -1" in brief
     assert "高位逼抢" in brief
+
+
+def test_system_prompt_carries_the_rubric_question_table_from_the_registry():
+    from nutmeg.decision.research_prompt import rubric_contract, system_prompt
+    from nutmeg.decision.rubric_items import ITEMS
+
+    text = rubric_contract()
+    assert all(item_id in text for item_id in ITEMS) and '"version": "r1"' in text
+    assert "强制改为弃权" in text and text in system_prompt()
+    assert "stance.tilt 不用写" in system_prompt()
