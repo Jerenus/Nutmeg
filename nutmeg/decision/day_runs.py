@@ -246,6 +246,26 @@ def _first_day(pattern: str) -> Callable[[Path], str | None]:
 _TIMELINE_SINCE = _first_day("daily/*/timeline.json")
 
 
+def _account_runs(data_dir: Path, day: str) -> list[Run]:
+    """月初账房的证据：`analytics/account/<上月>.md` 在这一天写入。"""
+    from datetime import date as _d
+    from datetime import datetime as _dt
+
+    from nutmeg.decision.account import previous_month
+
+    report = data_dir / "analytics" / "account" / f"{previous_month(_d.fromisoformat(day))}.md"
+    try:
+        at = _dt.fromtimestamp(report.stat().st_mtime)
+    except OSError:
+        return []
+    if at.date().isoformat() != day:
+        return []
+    head = next((ln for ln in report.read_text(encoding="utf-8").splitlines()
+                 if ln.startswith("**净值")), "")
+    return [Run(at=at.strftime("%H:%M"), status="ok", summary=head[:120] or report.stem,
+                evidence=_rel(report, data_dir))]
+
+
 def _verdict_runs(data_dir: Path, day: str) -> list[Run]:
     log = data_dir / "jczq" / "daily" / day / "verdict-log.jsonl"
     try:
@@ -301,19 +321,44 @@ JOBS: dict[str, JobSpec] = {
     "com.nutmeg.day.dream": JobSpec(
         "Dream 夜间录制", "rsi", "常设批准下冻结当晚未开球场次与实际票面，录一个影子世界",
         _timeline_runs("dream"), since=_TIMELINE_SINCE),
+    "com.nutmeg.account.month": JobSpec(
+        "月初账房", "system", "每月 1 日出上个月的账：净值 vs 空仓、止损、偏离、判断力指标",
+        lambda data_dir, day: _account_runs(data_dir, day),
+        since=lambda _data_dir: "2026-10-02"),
 }
 
 
 # ── 计划时刻 ────────────────────────────────────────────────────────────────
 
-def planned_times(doc: dict) -> tuple[list[str], str]:
-    """plist → (当天计划时刻 "HH:MM" 列表, 人读的频率)。"""
+def _runs_on(item: dict, day: str | None) -> bool:
+    """排程项在这一天是否有计划：`Day`＝每月几号，`Weekday`＝launchd 星期（0/7=周日）。"""
+    if day is None:
+        return True
+    from datetime import date as _d
+
+    d = _d.fromisoformat(day)
+    if "Day" in item and int(item["Day"]) != d.day:
+        return False
+    return not ("Weekday" in item and int(item["Weekday"]) % 7 != (d.weekday() + 1) % 7)
+
+
+def planned_times(doc: dict, day: str | None = None) -> tuple[list[str], str]:
+    """plist → (当天计划时刻 "HH:MM" 列表, 人读的频率)。给 `day` 时，月度/周度排程只在
+    当月那天/当周那天有计划（2026-10-02：月初账房定时器在其余日子不该显示「漏跑」）。"""
     interval = doc.get("StartInterval")
     if isinstance(interval, int) and not isinstance(interval, bool):
         step = max(1, interval // 60)
         return [f"{m // 60:02d}:{m % 60:02d}" for m in range(0, 1440, step)], f"每 {step} 分"
     cal = doc.get("StartCalendarInterval")
     items = cal if isinstance(cal, list) else [cal] if isinstance(cal, dict) else []
+    monthly = [i for i in items if isinstance(i, dict) and ("Day" in i or "Weekday" in i)]
+    if monthly and len(monthly) == len(items):
+        from nutmeg.decision.ops_status import describe_calendar
+
+        label = "、".join(describe_calendar(i) for i in monthly)
+        times = sorted(f"{int(i.get('Hour', 0)):02d}:{int(i.get('Minute', 0)):02d}"
+                       for i in monthly if _runs_on(i, day))
+        return times, label
     times: set[str] = set()
     for item in items:
         minute = int(item.get("Minute", 0))
@@ -488,7 +533,7 @@ def day_runs(*, data_dir: Path, plists_dir: Path, day: str, now: datetime) -> di
         if spec is None:
             errors.append(f"{label} 没有登记证据来源，页面上看不到它")
             continue
-        times, every = planned_times(doc)
+        times, every = planned_times(doc, day)
         live_from = spec.since(data_dir) if spec.since else None
         inactive = live_from is not None and day < live_from
         try:

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nutmeg.account.month</string>
+  <!-- 月初账房（Jun 2026-10-02「加一个定时器」）：每月 1 日 16:10 出上个月的账。
+       16:10 = 15:30 补赛果 / 15:45 二次结算之后，上月最后一晚的票已结。只读、只写报告文件。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; /opt/homebrew/bin/uv run nutmeg account month --previous --write --data-dir /Users/jz71/Projects/Nutmeg/.nutmeg-data &amp;&amp; echo "NUTMEG_OK account month $(date +%F)" || { echo "NUTMEG_FAILED account month $(date +%F)"; exit 1; }</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Day</key><integer>1</integer>
+    <key>Hour</key><integer>16</integer>
+    <key>Minute</key><integer>10</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/account.month.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/account.month.err.log</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/jz71/Projects/Nutmeg</string>
+</dict>
+</plist>

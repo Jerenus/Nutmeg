@@ -25,6 +25,22 @@ OK_MARK = "NUTMEG_OK"
 FAILED_MARK = "NUTMEG_FAILED"
 STALE_AFTER_DAYS = 2
 """日更任务超过这么久没有新日志就标记为「久未更新」。"""
+WEEKDAY_ZH = {0: "日", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日"}
+
+
+def stale_after_days(interval: object) -> int:
+    """按排程算「多久没新日志才算久未更新」：月度 32 天、周度 8 天、其余（日更/分钟级）2 天。
+
+    出生事故 2026-10-02：加月初账房定时器时发现状态页对所有任务一律按 2 天判，
+    月度任务会在每月 3 号之后天天报「久未更新」。"""
+    items = interval if isinstance(interval, list) else [interval]
+    days = STALE_AFTER_DAYS
+    for item in items:
+        if isinstance(item, dict) and "Day" in item:
+            days = max(days, 32)
+        elif isinstance(item, dict) and "Weekday" in item:
+            days = max(days, 8)
+    return days
 
 
 @dataclass(frozen=True)
@@ -37,6 +53,7 @@ class AgentStatus:
     out_at: datetime | None
     err_tail: str
     err_at: datetime | None
+    stale_after: int = STALE_AFTER_DAYS
 
     @property
     def outcome(self) -> str:
@@ -116,6 +133,7 @@ def agent_status(
     out_at: datetime | None = None,
     err_text: str = "",
     err_at: datetime | None = None,
+    stale_after: int = STALE_AFTER_DAYS,
 ) -> AgentStatus:
     return AgentStatus(
         label=label,
@@ -126,6 +144,7 @@ def agent_status(
         out_at=out_at,
         err_tail=_tail_marker(err_text),
         err_at=err_at,
+        stale_after=stale_after,
     )
 
 
@@ -163,7 +182,12 @@ def describe_calendar(interval: object) -> str:
     minute = interval.get("Minute", 0)
     if hour is None:
         return f"每小时 {int(minute):02d} 分"
-    return f"{int(hour):02d}:{int(minute):02d}"
+    clock = f"{int(hour):02d}:{int(minute):02d}"
+    if "Day" in interval:
+        return f"每月 {int(interval['Day'])} 日 {clock}"
+    if "Weekday" in interval:
+        return f"每周{WEEKDAY_ZH.get(int(interval['Weekday']), interval['Weekday'])} {clock}"
+    return clock
 
 
 def format_status(
@@ -188,7 +212,7 @@ def format_status(
             marks.append("未加载")
         if agent.outcome == "失败":
             marks.append("⚠️最近一次失败")
-        if stale is not None and stale > STALE_AFTER_DAYS:
+        if stale is not None and stale > agent.stale_after:
             marks.append(f"⚠️久未更新（{stale} 天）")
         lines.append(
             f"  {agent.label:34}{agent.schedule:14}"

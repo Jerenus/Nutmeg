@@ -153,3 +153,15 @@ def test_pending_items_are_listed():
 def test_empty_page_still_states_each_section():
     text = format_status([], [], [], today=TODAY)
     assert "launchd" in text and "OpenClaw" in text and "待办" in text
+
+
+
+def test_monthly_and_weekly_schedules_are_described_and_get_longer_stale_windows():
+    from nutmeg.decision.ops_status import stale_after_days
+
+    assert describe_calendar({"Day": 1, "Hour": 16, "Minute": 10}) == "每月 1 日 16:10"
+    assert describe_calendar({"Weekday": 1, "Hour": 9, "Minute": 0}) == "每周一 09:00"
+    assert describe_calendar({"Hour": 10, "Minute": 45}) == "10:45"
+    assert stale_after_days({"Day": 1, "Hour": 16}) == 32
+    assert stale_after_days({"Weekday": 1, "Hour": 9}) == 8
+    assert stale_after_days([{"Hour": 9}, {"Hour": 15}]) == 2 and stale_after_days(None) == 2

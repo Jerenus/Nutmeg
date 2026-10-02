@@ -7,7 +7,7 @@ import plistlib
 from datetime import date, datetime
 from pathlib import Path
 
-from nutmeg.decision.ops_status import describe_calendar
+from nutmeg.decision.ops_status import describe_calendar, stale_after_days
 
 
 def parse_launchctl(text: str) -> dict[str, str]:
@@ -62,8 +62,8 @@ def launchd_rows(
         tail, at = _log_evidence(logs_dir, label)
         loaded = label in exits
         last_exit = exits.get(label, "-")
-        stale = at is not None and (today - at.date()).days > 2
         schedule_src = doc.get("StartCalendarInterval") or doc.get("StartInterval")
+        stale = at is not None and (today - at.date()).days > stale_after_days(schedule_src)
         rows.append({
             "label": label,
             "schedule": _describe_schedule(schedule_src),

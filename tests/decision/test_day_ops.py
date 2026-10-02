@@ -45,3 +45,27 @@ def test_launchd_rows_pair_each_label_with_time_evidence(tmp_path: Path):
     close = by["com.nutmeg.decision.close"]
     assert close["loaded"] is False and close["log_at"] is None
     assert [r["label"] for r in rows] == sorted(by)  # stable order by label
+
+
+
+def test_monthly_job_is_not_stale_three_weeks_after_its_run(tmp_path: Path):
+    import os
+    from datetime import datetime
+
+    plists, logs = tmp_path / "plists", tmp_path / "logs"
+    plists.mkdir()
+    logs.mkdir()
+    (plists / "com.nutmeg.account.month.plist").write_bytes(plistlib.dumps({
+        "Label": "com.nutmeg.account.month", "ProgramArguments": ["/bin/zsh", "-lc", "x"],
+        "StartCalendarInterval": {"Day": 1, "Hour": 16, "Minute": 10}}))
+    out = logs / "account.month.out.log"
+    out.write_text("NUTMEG_OK account month 2026-10-01\n", encoding="utf-8")
+    stamp = datetime(2026, 10, 1, 16, 11).timestamp()
+    os.utime(out, (stamp, stamp))
+    launchctl = "-\t0\tcom.nutmeg.account.month\n"
+    [row] = launchd_rows(plists_dir=plists, logs_dir=logs, launchctl_text=launchctl,
+                         today=date(2026, 10, 22))
+    assert row["schedule"] == "每月 1 日 16:10" and row["alarm"] is False
+    [late] = launchd_rows(plists_dir=plists, logs_dir=logs, launchctl_text=launchctl,
+                          today=date(2026, 11, 5))
+    assert late["alarm"] is True                        # 11-01 没跑 → 11-05 报警

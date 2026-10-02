@@ -55,8 +55,11 @@ def deviation_ledger(data_dir: Path, month: str) -> dict:
         pass
     settled: dict[str, dict] = {}
     for ticket in (sb.get("tickets") or {}).values():
+        if not isinstance(ticket, dict):
+            continue
         for row in ticket.get("slips") or []:
-            if row.get("id"):
+            # 记分牌早期条目（26131 等）的 slips 是文字描述，不是结构化行：跳过
+            if isinstance(row, dict) and row.get("id"):
                 settled[str(row["id"])] = row
     by_reason: dict[str, dict] = {}
     for slip in slips:
@@ -188,3 +191,9 @@ def render_month(report: dict) -> str:
 
 def current_month(today: _date | None = None) -> str:
     return (today or _date.today()).strftime("%Y-%m")
+
+
+def previous_month(today: _date | None = None) -> str:
+    first = (today or _date.today()).replace(day=1)
+    return (first.replace(year=first.year - 1, month=12) if first.month == 1
+            else first.replace(month=first.month - 1)).strftime("%Y-%m")

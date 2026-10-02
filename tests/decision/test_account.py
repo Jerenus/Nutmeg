@@ -69,7 +69,9 @@ def test_deviation_ledger_groups_purchased_slips_by_reason_and_joins_payouts(tmp
     (data / "scoreboard.json").write_text(json.dumps({"tickets": {
         "26135": {"net": -64, "stake": 64, "slips": [{"id": "D1", "stake": 64, "payout": 0.0}]},
         "jczq-20261002": {"net": 100, "stake": 50,
-                          "slips": [{"id": "D2", "stake": 50, "payout": 150.0}]}}}),
+                          "slips": [{"id": "D2", "stake": 50, "payout": 150.0}]},
+        "26131": {"net": -10, "stake": 10, "slips": ["R9-1 文字描述的旧条目"]},
+        "note": "非 dict 的旧条目"}}),
         encoding="utf-8")
     (data / "betslips.jsonl").write_text("\n".join(json.dumps(r) for r in [
         {"slip_id": "D1", "channel": "renjiu", "placed_at": "2026-10-03", "purchased": True,
@@ -93,3 +95,26 @@ def test_deviation_ledger_groups_purchased_slips_by_reason_and_joins_payouts(tmp
     monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
     text = render_month(month_report(data, "2026-10"))
     assert "人的偏离" in text and "price_instinct：1 张 投入 ¥64 净 -64" in text
+
+
+
+def test_previous_month_handles_january_and_the_cli_flag(tmp_path: Path, monkeypatch) -> None:
+    from datetime import date
+
+    from typer.testing import CliRunner
+
+    from nutmeg.decision.account import previous_month
+    from nutmeg.interfaces.cli import app
+
+    assert previous_month(date(2026, 10, 1)) == "2026-09"
+    assert previous_month(date(2027, 1, 1)) == "2026-12"
+    data = _data(tmp_path)
+    monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
+    monkeypatch.setattr("nutmeg.decision.account.previous_month", lambda today=None: "2026-10")
+    out = CliRunner().invoke(app, ["account", "month", "--previous", "--write",
+                                   "--data-dir", str(data)])
+    assert out.exit_code == 0, out.output
+    assert (data / "analytics" / "account" / "2026-10.md").exists()
+    both = CliRunner().invoke(app, ["account", "month", "--previous", "--month", "2026-09",
+                                    "--data-dir", str(data)])
+    assert both.exit_code == 2

@@ -985,6 +985,7 @@ def ops_status(
         agent_status,
         describe_calendar,
         format_status,
+        stale_after_days,
     )
 
     def _read(path: Path) -> tuple[str, _datetime | None]:
@@ -1026,6 +1027,7 @@ def ops_status(
             label, schedule,
             loaded=label in loaded, last_exit=loaded.get(label, ""),
             out_text=out_text, out_at=out_at, err_text=err_text, err_at=err_at,
+            stale_after=stale_after_days(spec.get("StartCalendarInterval")),
         ))
 
     jobs = []

@@ -222,3 +222,28 @@ def test_dream_job_reads_its_timeline_rows(tmp_path: Path):
         ("20:31", "ok", "20:30", report)
     ]
     assert spec.lane == "rsi"
+
+
+
+def test_monthly_job_is_planned_only_on_its_day_and_reads_the_report_as_evidence(tmp_path):
+    import os
+    from datetime import datetime as _dt
+
+    from nutmeg.decision.day_runs import _account_runs, planned_times
+
+    doc = {"StartCalendarInterval": {"Day": 1, "Hour": 16, "Minute": 10}}
+    assert planned_times(doc, "2026-11-01") == (["16:10"], "每月 1 日 16:10")
+    assert planned_times(doc, "2026-11-02") == ([], "每月 1 日 16:10")
+    weekly = {"StartCalendarInterval": {"Weekday": 1, "Hour": 9, "Minute": 0}}
+    assert planned_times(weekly, "2026-10-05")[0] == ["09:00"]        # 2026-10-05 是周一
+    assert planned_times(weekly, "2026-10-06")[0] == []
+    assert planned_times({"StartCalendarInterval": {"Hour": 10, "Minute": 45}}, "2026-11-02")[0] \
+        == ["10:45"]
+    report = tmp_path / "analytics" / "account" / "2026-10.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("# 账房 · 2026-10\n\n**净值 vs 空仓**：+180\n", encoding="utf-8")
+    stamp = _dt(2026, 11, 1, 16, 11).timestamp()
+    os.utime(report, (stamp, stamp))
+    [run] = _account_runs(tmp_path, "2026-11-01")
+    assert run.at == "16:11" and run.summary.startswith("**净值 vs 空仓**：+180")
+    assert _account_runs(tmp_path, "2026-11-02") == []
