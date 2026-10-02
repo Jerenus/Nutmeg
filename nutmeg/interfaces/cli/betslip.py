@@ -31,6 +31,11 @@ _ISSUE_OPT = _cli.typer.Option("", "--issue", help="足彩期号")
 _SCHEME_NO = _cli.typer.Option("", "--scheme-no", help="方案号/实票号")
 _TRIAL = _cli.typer.Option(False, "--trial", help="试玩虚拟方案：登记但不计入实购净值")
 _NOTE = _cli.typer.Option("", "--note")
+_DEVIATION = _cli.typer.Option(
+    "", "--deviation",
+    help="相对机器初稿的偏离理由：fact_self_judged | price_instinct | stake_allocation "
+         "| structure_preference | other（有差异时登记）")
+_PREDICTION = _cli.typer.Option("", "--prediction", help="偏离附带的一句赛后可核验预测")
 _ISSUE_FILTER = _cli.typer.Option(None, "--issue")
 _CHANNEL_FILTER = _cli.typer.Option(None, "--channel")
 _SLIP_FILTER = _cli.typer.Option(None, "--slip-id")
@@ -49,7 +54,8 @@ def _fail(exc: Exception) -> None:
 
 
 def _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo, multiplier,
-                issue, scheme_no, trial, note, data_dir=Path(".nutmeg-data")):
+                issue, scheme_no, trial, note, data_dir=Path(".nutmeg-data"), deviation="",
+                prediction=""):
     from nutmeg.decision.betslip import BetSlip, BetslipError, SlipLeg, parse_faces_row
 
     legs: list[SlipLeg] = []
@@ -80,22 +86,27 @@ def _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
         multiplier=multiplier,
         combo_sizes=tuple(int(c) for c in combo.split(",")) if combo else (),
         issue=issue, scheme_no=scheme_no, purchased=not trial, note=note,
-        faces=face_map)
+        deviation=deviation, prediction=prediction, faces=face_map)
 
 
 def _diagnose(slip, data_dir):
     """登记即诊断（2026-09-30）：共享裸单（含跨渠道）与对照处方，只记录不阻断。"""
     from nutmeg.decision.betslip import load_slips
     from nutmeg.decision.betslip_diagnosis import (
+        DEVIATION_REASONS,
         cross_translators,
         diagnose,
+        draft_faces_for,
         peers,
         prescription_for,
     )
 
+    if slip.deviation and slip.deviation not in DEVIATION_REASONS:
+        raise ValueError(f"--deviation `{slip.deviation}` 不在 {DEVIATION_REASONS}")
     slips = load_slips(data_dir)
     cross = cross_translators(slip, slips, data_dir)
-    return diagnose(slip, peers(slip, slips, cross), prescription_for(slip, data_dir), cross)
+    return diagnose(slip, peers(slip, slips, cross), prescription_for(slip, data_dir), cross,
+                    draft=draft_faces_for(slip, data_dir))
 
 
 @betslip_app.command("register")
@@ -112,14 +123,18 @@ def betslip_register(
     scheme_no: str = _SCHEME_NO,
     trial: bool = _TRIAL,
     note: str = _NOTE,
+    deviation: str = _DEVIATION,
+    prediction: str = _PREDICTION,
     data_dir: Path = _DATA_DIR,
 ) -> None:
-    """登记一张已买的票（幂等，同 slip_id 覆盖）。"""
+    """登记一张已买的票（幂等，同 slip_id 覆盖）。偏离初稿时带 --deviation/--prediction
+    （只记录，登记是事实）。"""
     from nutmeg.decision.betslip import BetslipError, register_slip
 
     try:
         slip = _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
-                           multiplier, issue, scheme_no, trial, note, data_dir)
+                           multiplier, issue, scheme_no, trial, note, data_dir, deviation,
+                           prediction)
         slip.diagnosis = _diagnose(slip, data_dir)
         if slip.channel == "jczq" and slip.purchased:
             # 实票入账到本体（2026-10-01）：登记是事实，内核是镜像；镜像失败不挡登记
@@ -166,6 +181,8 @@ def betslip_preview(
     combo: str | None = _COMBO,
     multiplier: int = _MULTIPLIER,
     issue: str = _ISSUE_OPT,
+    deviation: str = _DEVIATION,
+    prediction: str = _PREDICTION,
     data_dir: Path = _DATA_DIR,
 ) -> None:
     """买之前先看：同一张票的注数/P/共享裸单/对照处方，不登记、不写盘（2026-09-30）。"""
@@ -173,7 +190,7 @@ def betslip_preview(
 
     try:
         slip = _build_slip("preview", channel, placed_at, faces, legs_file, fair_file, combo,
-                           multiplier, issue, "", False, "", data_dir)
+                           multiplier, issue, "", False, "", data_dir, deviation, prediction)
         diag = _diagnose(slip, data_dir)
         p = slip.hit_probability
         _cli.typer.echo(f"预览 {channel} {slip.notes} 注 × {multiplier} 倍 = ¥{slip.stake_yuan:,}"

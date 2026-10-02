@@ -191,7 +191,7 @@ table.list th{font-weight:600;color:var(--sub);font-size:13px;background:var(--s
     <h2>判断力账本</h2>
     <p class="vd-note">这些数决定项目有没有判断力，不由彩票命中决定。</p>
     <ul class="facts">
-      <li><b>主循环改判账：</b>已开赛 {{ ledger.scored }} 场，改判得失合计 {{ "%+.2f"|format(ledger.gain) }}（Brier×100，正=改判帮了忙），待赛 {{ ledger.pending }} 场{% if ledger.worst %}；最差一次 {{ ledger.worst[0] }}（{{ "%+.2f"|format(ledger.worst[1]) }}）{% endif %}</li>
+      <li><b>主循环改判账：</b>已开赛 {{ ledger.scored }} 场，改判得失合计 {{ "%+.2f"|format(ledger.gain) }}（Brier×100，正=改判帮了忙），待赛 {{ ledger.pending }} 场{% if ledger.worst %}；最差一次 {{ ledger.worst[0] }}（{{ "%+.2f"|format(ledger.worst[1]) }}）{% endif %}{% if ledger.by_reason %}<br><small>按理由：{% for reason, b in ledger.by_reason.items() %}{{ reason }} {{ b.scored }} 场 {{ "%+.2f"|format(b.gain) }}{% if b.pending %}（待 {{ b.pending }}）{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</small>{% endif %}</li>
       {% for line in experiments %}<li><b>{{ line.split()[0] }}</b> {{ line.split(None, 1)[1] }}</li>{% endfor %}
     </ul>
   </section>

@@ -59,3 +59,37 @@ def test_month_report_marks_tripped_brake(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
     report = month_report(data, "2026-10")
     assert report["tripped"] is True and "⛔已触发" in render_month(report)
+
+
+def test_deviation_ledger_groups_purchased_slips_by_reason_and_joins_payouts(tmp_path: Path,
+                                                                             monkeypatch) -> None:
+    from nutmeg.decision.account import deviation_ledger
+
+    data = _data(tmp_path)
+    (data / "scoreboard.json").write_text(json.dumps({"tickets": {
+        "26135": {"net": -64, "stake": 64, "slips": [{"id": "D1", "stake": 64, "payout": 0.0}]},
+        "jczq-20261002": {"net": 100, "stake": 50,
+                          "slips": [{"id": "D2", "stake": 50, "payout": 150.0}]}}}),
+        encoding="utf-8")
+    (data / "betslips.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        {"slip_id": "D1", "channel": "renjiu", "placed_at": "2026-10-03", "purchased": True,
+         "issue": "26135", "faces": {str(i): "3" for i in range(1, 10)}, "legs": [],
+         "deviation": "price_instinct", "prediction": "场2 客队不会输"},
+        {"slip_id": "D2", "channel": "jczq", "placed_at": "2026-10-02", "purchased": True,
+         "legs": [], "deviation": "fact_self_judged", "prediction": ""},
+        {"slip_id": "D3", "channel": "jczq", "placed_at": "2026-10-02", "purchased": True,
+         "legs": [], "deviation": "fact_self_judged"},
+        {"slip_id": "T1", "channel": "jczq", "placed_at": "2026-10-02", "purchased": False,
+         "legs": [], "deviation": "other"},
+        {"slip_id": "N1", "channel": "jczq", "placed_at": "2026-10-02", "purchased": True,
+         "legs": []},
+    ]) + "\n", encoding="utf-8")
+    led = deviation_ledger(data, "2026-10")
+    assert led["n"] == 3
+    assert led["by_reason"]["price_instinct"]["net"] == -64.0
+    assert led["by_reason"]["price_instinct"]["predictions"] == ["D1: 场2 客队不会输"]
+    fact = led["by_reason"]["fact_self_judged"]
+    assert fact["n"] == 2 and fact["pending"] == 1 and fact["payout"] == 150.0
+    monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
+    text = render_month(month_report(data, "2026-10"))
+    assert "人的偏离" in text and "price_instinct：1 张 投入 ¥64 净 -64" in text

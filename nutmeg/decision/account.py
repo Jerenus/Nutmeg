@@ -38,6 +38,51 @@ def exploration_spend(data_dir: Path, month: str) -> dict:
     return {"slips": rows, "stake": round(sum(r["stake"] for r in rows), 2)}
 
 
+def deviation_ledger(data_dir: Path, month: str) -> dict:
+    """人相对初稿的偏离，按理由结账：登记簿里带 deviation 的实购票 × 记分牌 tickets 的派奖。"""
+    data_dir = Path(data_dir)
+    try:
+        from nutmeg.decision.betslip import load_slips
+
+        slips = [s for s in load_slips(data_dir) if s.purchased and s.deviation
+                 and str(s.placed_at)[:7] == month]
+    except Exception:  # noqa: BLE001
+        return {"by_reason": {}, "n": 0}
+    sb = {}
+    try:
+        sb = json.loads((data_dir / "scoreboard.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    settled: dict[str, dict] = {}
+    for ticket in (sb.get("tickets") or {}).values():
+        for row in ticket.get("slips") or []:
+            if row.get("id"):
+                settled[str(row["id"])] = row
+    by_reason: dict[str, dict] = {}
+    for slip in slips:
+        bucket = by_reason.setdefault(slip.deviation, {"n": 0, "stake": 0.0, "payout": 0.0,
+                                                       "pending": 0, "predictions": []})
+        bucket["n"] += 1
+        row = settled.get(slip.slip_id)
+        if row is not None and row.get("stake") is not None:
+            stake = float(row["stake"])            # 已结算：以记分牌的注金为准（与账房同口径）
+        else:
+            try:
+                stake = float(slip.stake_yuan)
+            except Exception:  # noqa: BLE001 —— 旧票缺过关方式
+                stake = 0.0
+        bucket["stake"] += stake
+        if row is None or row.get("payout") is None:
+            bucket["pending"] += 1
+        else:
+            bucket["payout"] += float(row["payout"])
+        if slip.prediction:
+            bucket["predictions"].append(f"{slip.slip_id}: {slip.prediction[:60]}")
+    for bucket in by_reason.values():
+        bucket["net"] = round(bucket["payout"] - bucket["stake"], 2)
+    return {"by_reason": by_reason, "n": len(slips)}
+
+
 def experiment_board(data_dir: Path) -> dict:
     """内核 rsi 表 → {exp_id: {n, metric_pp, ci, verdict, …}}；内核不可达 → {"_error": …}。"""
     try:
@@ -75,6 +120,7 @@ def month_report(data_dir: Path, month: str) -> dict:
     for key, value in net["entries"]:
         by_channel["jczq" if key.startswith("jczq-") else "zucai"] += value
     spend = exploration_spend(data_dir, month)
+    deviations = deviation_ledger(data_dir, month)
     board = experiment_board(data_dir)
     verdicts: dict[str, int] = {}
     for exp, row in board.items():
@@ -88,7 +134,8 @@ def month_report(data_dir: Path, month: str) -> dict:
         "by_channel": {k: round(v, 2) for k, v in by_channel.items()},
         "stop_loss": MONTHLY_STOP_LOSS_YUAN,
         "tripped": net["net"] <= -MONTHLY_STOP_LOSS_YUAN,
-        "exploration": spend, "experiments": board, "verdicts": verdicts,
+        "exploration": spend, "deviations": deviations, "experiments": board,
+        "verdicts": verdicts,
     }
 
 
@@ -108,6 +155,15 @@ def render_month(report: dict) -> str:
                   f"（上限 ¥{EXP_BUDGET_PER_DAY}/日；只给预登记实验）"]
     for row in ex["slips"][:10]:
         lines.append(f"  - {row['placed_at']} {row['slip_id']} {row['exp']} ¥{row['stake']:,.0f}")
+    dev = report.get("deviations") or {"by_reason": {}, "n": 0}
+    lines += ["", f"**人的偏离（相对机器初稿，按理由）**：本月 {dev['n']} 张带理由的实购票"]
+    for reason, b in sorted(dev["by_reason"].items()):
+        pend = f"（待结 {b['pending']}）" if b.get("pending") else ""
+        lines.append(f"  - {reason}：{b['n']} 张 投入 ¥{b['stake']:,.0f} 净 {b['net']:+,.0f}{pend}")
+        for text in b.get("predictions") or []:
+            lines.append(f"    · {text}")
+    if not dev["by_reason"]:
+        lines.append("  - 无（偏离初稿而不登记理由的票不进这张账）")
     board = report["experiments"]
     lines += ["", "**判断力指标（最新前瞻结账）**", "",
               "| 实验 | 层 | n / n_min | 残差 pp | 95% CI | 判决 |", "|---|---|---|---|---|---|"]

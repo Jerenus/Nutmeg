@@ -241,18 +241,29 @@ def signals(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
 def override(
     day: str = _DAY,
     code: str = typer.Option(..., "--code", help="竞彩编号如 周日003，或足彩 26133-04"),
-    note: str = typer.Option(..., "--note", help="改判理由（必填）"),
+    note: str = typer.Option(..., "--note", help="改判理由（必填，自由文本）"),
+    reason: str | None = typer.Option(
+        None, "--reason", help="封闭理由：new_official_info | evidence_tier_too_low | priced_in "
+                               "| research_contradiction | market_only"),
     market: bool = typer.Option(False, "--market", help="回到市场（不拨动）"),
-    tilt_json: str | None = typer.Option(None, "--tilt-json", help="新的 tilt JSON"),
+    items_json: str | None = typer.Option(
+        None, "--items-json", help="改判落到 rubric 项：{\"F_absence_home\": {\"p\": 0.9, "
+                                   "\"source\": …, \"captured_at\": …}, …}"),
+    tilt_json: str | None = typer.Option(None, "--tilt-json",
+                                         help="旧式 tilt JSON（只给无 rubric 的研究）"),
     data_dir: Path = _DATA_DIR,
 ) -> None:
     """主循环改判：记进 overrides.jsonl，研究原件不动（2026-09-27）；记完立刻刷新，
-    改判随即成为内核里一条 kind=override 的新 revision（判断唯一事实 P1，2026-10-01）。"""
+    改判随即成为内核里一条 kind=override 的新 revision（判断唯一事实 P1，2026-10-01）。
+    2026-10-02 判断 rubric r1：有 rubric 的研究，改判必须落到项（--items-json + --reason）
+    或 --market。"""
     from nutmeg.decision.overrides import record_override
 
-    if market == (tilt_json is not None):
-        raise typer.BadParameter("--market 与 --tilt-json 二选一")
+    given = sum(1 for x in (market, items_json is not None, tilt_json is not None) if x)
+    if given != 1:
+        raise typer.BadParameter("--market / --items-json / --tilt-json 三选一")
     refresh_for = day
+    kickoff = None
     if "-" in code and code[:5].isdigit():
         issue, no = code.split("-", 1)
         zdir = Path(data_dir) / "zucai"
@@ -261,16 +272,26 @@ def override(
             str(int(no))]["fair"]
         issue_doc = json.loads((zdir / f"{issue}-issue.json").read_text("utf-8"))
         refresh_for = str(issue_doc.get("sale_deadline") or "")[:10] or day
+        for m in issue_doc.get("matches") or []:
+            if str(m.get("match_no")) == str(int(no)) and m.get("kickoff_bj"):
+                kickoff = str(m["kickoff_bj"]).replace(" ", "T")
     else:
         day_dir = Path(data_dir) / "jczq" / "daily" / day
         path = day_dir / f"research-{code}.json"
-        prior = json.loads((day_dir / "jczq-legs-base.json").read_text("utf-8"))["legs"][
-            code]["fair"]
-    row = record_override(
-        path, tilt=None if market else json.loads(tilt_json), note=note,
-        at=datetime.now().astimezone().isoformat(timespec="seconds"),
-        judge="claude-main-loop", prior=prior)
-    typer.echo(f"已记改判 {code}：研究原判 {row['research_belief']} → 终判 {row['final_belief']}")
+        leg = json.loads((day_dir / "jczq-legs-base.json").read_text("utf-8"))["legs"][code]
+        prior, kickoff = leg["fair"], leg.get("kickoff_bj")
+    try:
+        row = record_override(
+            path, tilt=json.loads(tilt_json) if tilt_json else None,
+            items=json.loads(items_json) if items_json else None, reason=reason,
+            to_market=market, note=note, kickoff=kickoff,
+            at=datetime.now().astimezone().isoformat(timespec="seconds"),
+            judge="claude-main-loop", prior=prior)
+    except ValueError as exc:
+        typer.echo(f"override error: {exc}")
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"已记改判 {code}［{row['reason']}］：研究原判 {row['research_belief']} → "
+               f"终判 {row['final_belief']}")
     _refresh(refresh_for, data_dir)
 
 

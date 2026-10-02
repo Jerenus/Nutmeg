@@ -24,20 +24,26 @@ def _ledger_totals(data_dir: Path) -> dict:
     """全部日期的改判账：已开赛场次的改判得失（研究原判 Brier − 终判 Brier，×100）。"""
     days = sorted(p.parent.name for p in (Path(data_dir) / "jczq" / "daily").glob(f"*/{LEDGER}"))
     scored, gain, pending, worst = 0, 0.0, 0, None
+    by_reason: dict[str, dict] = {}
     for day in days:
         for row in build_signals(day=day, data_dir=data_dir):
             if not row["override"]:
                 continue
+            reason = str(row["override"].get("reason") or "legacy_tilt")
+            bucket = by_reason.setdefault(reason, {"scored": 0, "gain": 0.0, "pending": 0})
             if "brier_research" not in row:
                 pending += 1
+                bucket["pending"] += 1
                 continue
             delta = (row["brier_research"] - row["brier_final"]) * 100
             scored += 1
             gain += delta
+            bucket["scored"] += 1
+            bucket["gain"] = round(bucket["gain"] + delta, 2)
             if worst is None or delta < worst[1]:
                 worst = (f"{day} {row['key']} {row['name']}", delta)
     return {"days": len(days), "scored": scored, "gain": round(gain, 2), "pending": pending,
-            "worst": worst}
+            "worst": worst, "by_reason": by_reason}
 
 
 def _experiments(invoke) -> list[str]:

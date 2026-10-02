@@ -158,3 +158,35 @@ def test_cross_channel_needs_an_explicit_map(tmp_path: Path):
                     legs=[SlipLeg(key="7", market="had", selections=("home",))])
     assert cross_translators(jczq, [zucai], data) == {}
     assert peers(jczq, [zucai]) == []
+
+
+def test_vs_draft_classifies_every_difference_and_flags_missing_reason(tmp_path: Path):
+    from nutmeg.decision.betslip_diagnosis import draft_faces_for, vs_draft
+
+    data = tmp_path / "data"
+    (data / "zucai").mkdir(parents=True)
+    (data / "zucai" / "26135-draft.json").write_text(json.dumps({"candidates": [
+        {"label": "初稿", "channel": "renjiu",
+         "faces": {"1": "3", "2": "31", "3": "10", "4": "3", "5": "31", "6": "3", "7": "31",
+                   "8": "3", "9": "31"}},
+        {"label": "刹车档", "channel": "renjiu", "faces": {"1": "3"}}]}), encoding="utf-8")
+    slip = BetSlip(slip_id="J9", channel="renjiu", placed_at="2026-10-03", issue="26135",
+                   faces={"1": "3", "2": "3", "3": "310", "4": "3", "5": "0", "6": "3", "7": "31",
+                          "8": "3", "10": "31"}, legs=[])
+    draft = draft_faces_for(slip, data)
+    assert draft["2"] == "31" and draft_faces_for(BetSlip("x", "jczq", "d", []), data) == {}
+    out = vs_draft(slip, draft)
+    assert out["same"] == ["1", "4", "6", "7", "8"] and out["narrowed"] == ["2"]
+    assert out["widened"] == ["3"] and out["replaced"] == ["5"]
+    assert out["dropped"] == ["9"] and out["added"] == ["10"] and out["n_diff"] == 5
+    diag = diagnose(slip, [], {}, draft=draft)
+    assert diag["vs_draft"]["n_diff"] == 5
+    assert any("⚠️偏离初稿未登记理由" in line for line in diag["lines"])
+    slip.deviation = "price_instinct"
+    diag = diagnose(slip, [], {}, draft=draft)
+    assert any("理由 price_instinct" in line for line in diag["lines"])
+    assert any("没有附可证伪预测" in line for line in diag["lines"])
+    same = BetSlip(slip_id="J8", channel="renjiu", placed_at="2026-10-03", issue="26135",
+                   faces=dict(draft), legs=[])
+    assert "对照初稿：与机器初稿一致" in diagnose(same, [], {}, draft=draft)["lines"]
+    assert vs_draft(slip, {})["has_draft"] is False

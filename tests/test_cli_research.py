@@ -160,3 +160,34 @@ def test_override_records_the_ruling_and_refreshes_immediately(tmp_path, monkeyp
              (day_dir / "overrides.jsonl").read_text(encoding="utf-8").splitlines()]
     assert row["tilt"] is None and row["note"] == "锚方证据不足，回到市场"
     assert refreshed == [("2026-09-19", tmp_path)]
+
+
+def test_override_on_rubric_research_lands_on_items_with_a_reason(tmp_path, monkeypatch):
+    import nutmeg.interfaces.cli.research as mod
+
+    day_dir = tmp_path / "jczq" / "daily" / "2026-10-03"
+    day_dir.mkdir(parents=True)
+    (day_dir / "jczq-legs-base.json").write_text(json.dumps({"day": "2026-10-03", "legs": {
+        "周五001": {"match_id": "m-1", "name": "A-B", "kickoff_bj": "2026-10-03T22:00:00+08:00",
+                  "fair": {"home": 0.5, "draw": 0.3, "away": 0.2},
+                  "judgment_tier": "deep_research", "faces": "310"}}}), encoding="utf-8")
+    (day_dir / "research-周五001.json").write_text(json.dumps({
+        "name": "A-B", "stance": {"face": "3", "tilt": None, "why_not_market": "none"},
+        "rubric": {"version": "r1", "items": {"S_anchor_side": {
+            "answer": "home", "p": 1.0, "abstain": False, "coerced": False}}}}),
+        encoding="utf-8")
+    monkeypatch.setattr(mod, "_refresh", lambda day, data_dir: None)
+    bad = CliRunner().invoke(app, [
+        "research", "override", "--day", "2026-10-03", "--code", "周五001", "--tilt-json",
+        '{"face": "3", "evidence": []}', "--note", "x", "--data-dir", str(tmp_path)])
+    assert bad.exit_code == 2 and "rubric" in bad.output
+    good = CliRunner().invoke(app, [
+        "research", "override", "--day", "2026-10-03", "--code", "周五001", "--items-json",
+        '{"F_absence_away": {"p": 0.9, "source": "https://club.example/x", '
+        '"captured_at": "2026-10-03T09:00:00+08:00"}}', "--reason", "new_official_info",
+        "--note", "官宣", "--data-dir", str(tmp_path)])
+    assert good.exit_code == 0, good.output
+    assert "［new_official_info］" in good.output
+    [row] = [json.loads(line) for line in
+             (day_dir / "overrides.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert row["items"]["F_absence_away"]["p"] == 0.9 and row["tilt"]["shift"]["0"] < 0

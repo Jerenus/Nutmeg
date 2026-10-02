@@ -181,11 +181,54 @@ def narrowing(slip: BetSlip, prescription: dict[str, str]) -> dict:
     return out
 
 
+DEVIATION_REASONS = ("fact_self_judged", "price_instinct", "stake_allocation",
+                     "structure_preference", "other")
+"""人相对机器初稿的偏离理由（2026-10-02）：自判事实 / 价格直觉 / 资金分配 / 结构偏好 / 其他。
+账房按理由结账——定位转向后人是下注者，人的判断才是要被测量的东西。"""
+
+
+def draft_faces_for(slip: BetSlip, data_dir: Path) -> dict[str, str]:
+    """足彩：`<期>-draft.json` 里同渠道「初稿」的票面；竞彩不出初稿 → {}。"""
+    if slip.channel not in ZUCAI_CHANNELS or not slip.issue:
+        return {}
+    doc = _read_json(Path(data_dir) / "zucai" / f"{slip.issue}-draft.json", {}) or {}
+    for cand in doc.get("candidates") or []:
+        if (cand.get("label") == "初稿" and cand.get("channel") == slip.channel
+                and cand.get("faces")):
+            return {str(k): str(v) for k, v in cand["faces"].items()}
+    return {}
+
+
+def vs_draft(slip: BetSlip, draft: dict[str, str]) -> dict:
+    """票面 vs 初稿：同 / 加场 / 丢场 / 放宽 / 收窄 / 换面。"""
+    out: dict[str, list[str]] = {"same": [], "added": [], "dropped": [], "widened": [],
+                                 "narrowed": [], "replaced": []}
+    if not draft:
+        return {**out, "n_diff": 0, "has_draft": False}
+    mine = {str(k): "".join(sorted(v, key="310".index)) for k, v in slip.faces.items() if v}
+    for no, faces in draft.items():
+        faces = "".join(sorted(faces, key="310".index))
+        if no not in mine:
+            out["dropped"].append(no)
+        elif mine[no] == faces:
+            out["same"].append(no)
+        elif set(mine[no]) > set(faces):
+            out["widened"].append(no)
+        elif set(mine[no]) < set(faces):
+            out["narrowed"].append(no)
+        else:
+            out["replaced"].append(no)
+    out["added"] = [no for no in mine if no not in draft]
+    n_diff = sum(len(out[k]) for k in ("added", "dropped", "widened", "narrowed", "replaced"))
+    return {**out, "n_diff": n_diff, "has_draft": True}
+
+
 def diagnose(slip: BetSlip, others: list[BetSlip], prescription: dict[str, str],
-             cross: dict[str, dict] | None = None) -> dict:
+             cross: dict[str, dict] | None = None, draft: dict[str, str] | None = None) -> dict:
     shared = shared_naked_legs(slip, others, cross)
     joint = joint_death(shared)
     narrow = narrowing(slip, prescription)
+    against_draft = vs_draft(slip, draft or {})
     lines = []
     if shared:
         keys = "、".join(f"{r['key']}{r['face']}" for r in shared)
@@ -203,6 +246,21 @@ def diagnose(slip: BetSlip, others: list[BetSlip], prescription: dict[str, str],
             + "；处方外/翻面 " + (",".join(narrow["off_prescription"]) or "无")
             + "（8/08 铁律：压预算丢整场，不降档）"
         )
+    if against_draft["has_draft"]:
+        if against_draft["n_diff"]:
+            parts = [f"{k} {','.join(v)}" for k, v in (("加场", against_draft["added"]),
+                                                          ("丢场", against_draft["dropped"]),
+                                                          ("放宽", against_draft["widened"]),
+                                                          ("收窄", against_draft["narrowed"]),
+                                                          ("换面", against_draft["replaced"])) if v]
+            lines.append(f"对照初稿：{against_draft['n_diff']} 处差异（{'；'.join(parts)}）"
+                         + (f"；理由 {slip.deviation}" if slip.deviation else
+                            "；⚠️偏离初稿未登记理由（--deviation + --prediction）"))
+            if slip.deviation and not slip.prediction:
+                lines.append("⚠️偏离理由没有附可证伪预测（--prediction）")
+        else:
+            lines.append("对照初稿：与机器初稿一致")
     if not lines:
         lines.append("诊断：无共享裸单；票面未比处方窄")
-    return {"shared_naked": shared, "joint_death": joint, "narrowing": narrow, "lines": lines}
+    return {"shared_naked": shared, "joint_death": joint, "narrowing": narrow,
+            "vs_draft": against_draft, "lines": lines}

@@ -451,6 +451,7 @@ def _research_labels(doc: dict | None) -> dict | None:
         rubric_belief=(doc.get("rubric") or {}).get("belief") if isinstance(
             doc.get("rubric"), dict) else None,
         rubric_overridden=bool(doc.get("rubric_overridden")),
+        override_reason=doc.get("override_reason"),
         label_source="research",
     )
 

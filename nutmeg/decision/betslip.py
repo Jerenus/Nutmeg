@@ -171,6 +171,8 @@ class BetSlip:
     scheme_no: str = ""                   # 方案号/实票号
     purchased: bool = True                # False = 试玩虚拟方案（不进净值）
     note: str = ""
+    deviation: str = ""                   # 相对机器初稿的偏离理由（封闭枚举，2026-10-02）
+    prediction: str = ""                  # 偏离附带的一句可证伪预测
     faces: dict[str, str] = field(default_factory=dict)   # 足彩票面（渲染与结算用）
     diagnosis: dict = field(default_factory=dict)         # 登记即诊断（共享裸单/对照处方，只记录）
 
@@ -244,6 +246,8 @@ class BetSlip:
             scheme_no=str(payload.get("scheme_no", "")),
             purchased=bool(payload.get("purchased", True)),
             note=str(payload.get("note", "")),
+            deviation=str(payload.get("deviation", "") or ""),
+            prediction=str(payload.get("prediction", "") or ""),
             faces=dict(payload.get("faces", {})),
             diagnosis=dict(payload.get("diagnosis") or {}),
         )
