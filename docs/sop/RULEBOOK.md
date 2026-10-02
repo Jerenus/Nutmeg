@@ -179,6 +179,35 @@
 
 否决＝改票后再审；人坚持原票可登记（登记是事实），审票行随票入账。新增否决项必须先有回放或复盘实证（≥2 次独立样本），与「〇、规则实证表」同纪律。
 
+## 九、判断 rubric r1（2026-10-02，`nutmeg/decision/rubric_items.py` / `rubric.py`）
+
+研究层对固定问题表逐项作答（每项：答案、成立概率、来源、采集时间、可弃权）；`stance.tilt` **由答案派生**，不再手写。参考 Jev（类型化问题→概率，不生成解释）、HealthBench（逐例二值标准 + 负分项 + 评分器被评测）、协议级 rubric（分阶段合取、一票作废）。
+
+| id | 阶段 | 类型 | 选项 | 效应 | 上限 pp | 来源 | 派生 tier |
+|---|---|---|---|---|---|---|---|
+| `F_absence_home` | fact | noul | p∈[0,1]/null | down:home | 6 | 必填 | official |
+| `F_absence_away` | fact | noul | p∈[0,1]/null | down:away | 6 | 必填 | official |
+| `F_suspension` | fact | choice | home/away/both/none/unknown | down:side | 4 | 必填 | official |
+| `F_rotation` | fact | choice | home/away/both/none/unknown | down:side | 3 | 必填 | official |
+| `F_goalkeeper` | fact | choice | home/away/none/unknown | down:side | 3 | 必填 | official |
+| `F_venue` | fact | choice | home/away/none/unknown | down:side | 2 | 必填 | official |
+| `O_other_event` | fact | choice | home/away/none/unknown | down:side | 2 | 必填 | inferred |
+| `S_anchor_side` | structure | choice | home/away/none | 只记录 | — | — | — |
+| `S_spine_intact` | structure | noul | p∈[0,1]/null | down:anchor:no | 3 | 必填 | confirmed_structural |
+| `S_underdog_path` | structure | noul | p∈[0,1]/null | up:underdog | 2 | — | state |
+| `S_draw_mode` | structure | noul | p∈[0,1]/null | up:draw | 2 | — | state |
+| `S_crash_candidate` | structure | noul | p∈[0,1]/null | down:anchor | 2 | — | state |
+| `S_dead_face` | structure | choice | 3/1/0/none | 只记录 | — | — | — |
+| `M_market_read` | price | choice | agree/overpriced_fav/underpriced_fav/underpriced_draw/unknown | 只记录 | — | — | — |
+| `M_facts_priced` | price | noul | p∈[0,1]/null | 只记录 | — | — | — |
+
+**聚合（协议级，`rubric_to_tilt`）**：pp_i = 上限_i × p_i（p<0.5 不成立）；效应把 pp 从一侧挪到另两面按市场比例分配；**事实层（7 项）无一成立 → 预算 0（无锚归零）**；`S_anchor_side=none` → 全部归零；`M_facts_priced` 成立 → 事实层 pp ×0.5；shift 峰值 ≤15pp；派生 tilt 的 evidence 逐项带 `item/tier/kind/pp/source/captured_at`，走原 `validate_stance/apply_tilt`。
+**强制弃权（反"把没说的当成说了"）**：标"必填"的项答是/有效选项而无 source、或 captured_at 非法/晚于开球 → 改为弃权并记 `coerced`，不拒收整份研究。
+**负分项**：`X_narrative_only`（有拨动而事实层全弃权＝归零）、`X_post_kickoff`（T12）、`X_risk_named_naked`（C19，审票期）由代码派生。
+**两读**：读者 B（`NUTMEG_MODEL_READER`，默认 haiku）只读分析员写下的证据层（不含 stance/rubric），对同一张表作答 → 侧车 `rubric-<code>.json` / `<期>-rubric-m<N>.json`；逐项一致率在 `analytics/rubric/<日>.md`，合并 kappa 进 K1（n_min 100 项次，CI 下界 <40 证伪）。
+**结账与退役**：每个带效应的项是 T13 因子 `rubric_<id>`（`experiments/rubric_rows.py`）；`propose_zero` → 该项上限退役；`propose_change` 只许把上限往下截；kappa<0.4 的项列入重写/删除清单。改判 `research override --tilt-json` 仍直接替换 tilt，研究标 `rubric_overridden`。
+**读者 B 的 `belief`**（整体概率）只记账，不进 belief——F9 已证 LLM 整体概率≈市场。
+
 ## 已退休/引擎时代常数（禁区，不再复述理由）
 
 hafu 0/18 下架｜高赔串整票 0/38｜胜平负押冷门 0/23｜"3条冷腿堆100x" 必死｜恰净胜N 窄带禁区｜EV 语言否决判读（e条）
