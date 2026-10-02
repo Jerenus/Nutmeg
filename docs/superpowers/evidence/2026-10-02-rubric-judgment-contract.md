@@ -27,9 +27,17 @@ Spec：`docs/superpowers/specs/2026-10-02-rubric-judgment-contract-design.md`；
 - SOP：RULEBOOK「九」（表由注册表生成）、RUNBOOK A2/A3/B4、CONSTITUTION §2 一句。
 - 测试：`test_rubric`（8）、`test_rubric_reader`（4）、`test_research_runner`（+2，夹具加 rubric）、`test_research_prompt`（+1）、`test_overrides`（+1）、`test_jczq_reads`（+1）、`test_zucai_auto_judgment`（+1）、`test_corpus_build`（+1）、`test_rubric_rows`（3）、`test_rsi_grading_prospective`（+1）、`test_judgment_brief`。
 
-## 3. 首次实跑
+## 3. 首次实跑（2026-10-02 14:44，`scripts/rubric_rescore.py --lane jczq --limit 3`）
 
-（见 §3 的更新行：读者 B 对 3 份真实研究文件的输出、耗时、κ；历史重打分批次。）
+| 项 | 结果 |
+|---|---|
+| 模型 | haiku（`NUTMEG_MODEL_READER`） |
+| 耗时 | ≈55 秒/份（14:44:36 → 14:45:31） |
+| 09-19 周六001 | 作答 8 项、弃权 8 项；事实层 7 项**全部弃权**（证据层没有官宣来源）；`S_anchor_side=away`、`S_underdog_path=yes(0.8)`、`M_market_read=overpriced_fav`；belief 33/28/39 |
+| 09-19 周六003 | 作答 7 项；**1 项被强制弃权**（答是而无来源→`coerced`，反"把没说的当成说了"的守卫在真实输出上触发）；belief 42/35/23 |
+| 失败 1 | `research-run-2026-09-19.json`（运行日志被当研究读）→ 已修：`is_research_file` 排除 `research-run-*` 与 `*.rejected*` |
+
+读法：读者 B 在旧研究上对事实层一律弃权，是对的——旧文件的证据层只有叙述没有来源；它在结构层与价格层给出的答案才是可比的。kappa 要等新研究（带读者 A 的 rubric）落地后才有。历史重打分 260 份按 55 秒/份约 4 小时，分批后台跑，日志 `scratchpad/rescore.log`。
 
 ## 4. 待看（不是待办）
 

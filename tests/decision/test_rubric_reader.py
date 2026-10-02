@@ -81,6 +81,10 @@ def test_read_file_writes_a_sidecar_once_and_report_aggregates(tmp_path: Path):
     path = day / "research-周五001.json"
     path.write_text(json.dumps(RESEARCH, ensure_ascii=False), encoding="utf-8")
     assert sidecar_path(path).name == "rubric-周五001.json"
+    from nutmeg.decision.rubric_reader import research_files
+    (day / "research-run-2026-10-02.json").write_text("{}", encoding="utf-8")
+    (day / "research-周五002.rejected.json").write_text("{}", encoding="utf-8")
+    assert research_files(tmp_path, day="2026-10-02") == [path]      # 运行日志/拒收件不算研究
     assert sidecar_path(Path("/z/26135-research-m3.json")).name == "26135-rubric-m3.json"
     from nutmeg.decision.rubric_reader import code_of
     assert code_of(Path("/z/26135-research-m3.json")) == "3"

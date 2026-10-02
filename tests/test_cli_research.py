@@ -60,6 +60,7 @@ def test_research_board_run_intake_build_reads_pipeline(tmp_path, monkeypatch):
                 "falsifier": "客队首发若有主力门将则本判断作废",
                 "why_not_market": "none", "tilt": None, "alt_face": "1", "market_read": "agree",
             },
+            "rubric": {"version": "r1", "items": {"S_anchor_side": {"answer": "home"}}},
         }
     )
     monkeypatch.setattr(mod, "_claude", lambda system, brief: (0, good))

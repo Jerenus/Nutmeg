@@ -186,12 +186,19 @@ def read_file(research_path: Path, *, claude: Claude = _claude_cli, free: bool =
     return doc
 
 
+def is_research_file(path: Path) -> bool:
+    """`research-<code>.json` 才是研究；`research-run-*` 是运行日志，`*.rejected*` 是拒收件。"""
+    name = path.name
+    return (name.startswith("research-") or "-research-m" in name) and "rejected" not in name \
+        and not name.startswith("research-run-")
+
+
 def research_files(data_dir: Path, *, day: str | None = None,
                    issue: str | None = None) -> list[Path]:
     data_dir = Path(data_dir)
     if day:
         base = data_dir / "jczq" / "daily" / day
-        return sorted(p for p in base.glob("research-*.json") if "rejected" not in p.name)
+        return sorted(p for p in base.glob("research-*.json") if is_research_file(p))
     if issue:
         return sorted(p for p in (data_dir / "zucai").glob(f"{issue}-research-m*.json")
                       if "rejected" not in p.name)

@@ -24,13 +24,15 @@ sys.path.insert(0, str(ROOT))
 
 
 def all_research_files(data_dir: Path, lane: str) -> list[Path]:
+    from nutmeg.decision.rubric_reader import is_research_file
+
     out: list[Path] = []
     if lane in ("jczq", "all"):
         out += sorted(p for p in (data_dir / "jczq" / "daily").glob("*/research-*.json")
-                      if "rejected" not in p.name)
+                      if is_research_file(p))
     if lane in ("zucai", "all"):
         out += sorted(p for p in (data_dir / "zucai").glob("*-research-m*.json")
-                      if "rejected" not in p.name)
+                      if is_research_file(p))
     return out
 
 
