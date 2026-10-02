@@ -104,3 +104,34 @@ def test_zucai_entry_carries_the_rubric_view(tmp_path):
     entry = auto_judgment(issue="26133", data_dir=tmp_path)["1"]
     assert entry["rubric"]["items"]["S_anchor_side"]["answer"] == "home"
     assert entry["rubric"]["reader_belief"]["3"] == 0.55 and entry["rubric"]["shift"] is None
+
+
+def test_auto_legs_base_feeds_the_draft_and_never_overwrites_a_manual_one(tmp_path):
+    from nutmeg.decision.zucai_auto_judgment import ensure_auto_legs_base
+    from nutmeg.decision.zucai_draft import load_board
+
+    zdir = _issue(tmp_path, n=14)
+    _research(zdir, 1, rubric={"version": "r1", "items": {
+        "S_anchor_side": {"answer": "home", "p": 1.0, "abstain": False, "coerced": False}}})
+    out = ensure_auto_legs_base(issue="26133", data_dir=tmp_path,
+                                made_at="2026-09-26T10:30:00+08:00")
+    assert out["status"] == "written" and out["legs"] == 14
+    doc = json.loads((zdir / "26133-legs-base.json").read_text("utf-8"))
+    assert doc["auto"]["source"] == "zucai_auto_judgment"
+    leg1, leg2 = doc["legs"]["1"], doc["legs"]["2"]
+    assert leg1["faces"] == "31" and leg1["anchor_integrity"] == "pass"
+    assert leg1["rubric"]["items"]["S_anchor_side"]["answer"] == "home"
+    assert set(leg1["face_status"]) == {"home", "draw", "away"}
+    assert leg2["faces"] == "310"                                      # 无研究 → 市场锚定全包
+    board = load_board(tmp_path, "26133")                              # 初稿能读
+    assert board["1"]["faces"] == "31" and len(board) == 14
+    again = ensure_auto_legs_base(issue="26133", data_dir=tmp_path,
+                                  made_at="2026-09-26T12:30:00+08:00")
+    assert again["status"] == "written"                                # 自动版随刷新重建
+    manual = {"issue": "26133", "legs": {"1": {"faces": "3", "fair": {"home": .5, "draw": .3,
+                                                                       "away": .2}}}}
+    (zdir / "26133-legs-base.json").write_text(json.dumps(manual), encoding="utf-8")
+    kept = ensure_auto_legs_base(issue="26133", data_dir=tmp_path,
+                                 made_at="2026-09-26T18:45:00+08:00")
+    assert kept["status"] == "kept_manual"
+    assert json.loads((zdir / "26133-legs-base.json").read_text("utf-8")) == manual

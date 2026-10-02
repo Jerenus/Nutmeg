@@ -75,7 +75,8 @@ def test_refresh_day_builds_zucai_reads_and_submits_only_unmapped_unstarted(tmp_
     reads = json.loads((zdir / "26133-reads.json").read_text(encoding="utf-8"))
     assert [r["match_id"] for r in reads] == ["z-1", "z-2"]
     assert sent == ["z-1"]          # 场2 已对到竞彩：由竞彩那条进本体，不重复建序列
-    assert summary["zucai"] == {"26133": {"reads": 2, "submitted": 1}}
+    assert summary["zucai"] == {"26133": {"reads": 2, "submitted": 1, "legs_base": "written"}}
+    assert (zdir / "26133-legs-base.json").exists()                   # 机器初稿的输入自动有了
 
 
 def test_refresh_day_attaches_a_projection_line_per_board_when_given_a_projector(tmp_path):

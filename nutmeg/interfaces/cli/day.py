@@ -48,7 +48,6 @@ def run(job: str = _JOB, date: str | None = _DATE, data_dir: Path = _DATA_DIR,
         force: bool = _FORCE, dry_run: bool = _DRY, now: str | None = _NOW,
         with_logic: bool = _WITH_LOGIC) -> None:
     """跑一个作业并把结果追加到 daily/<日>/timeline.json。"""
-    import json
 
     from nutmeg.decision.day_runner import JOBS, planned_commands, run_job
 
@@ -59,10 +58,9 @@ def run(job: str = _JOB, date: str | None = _DATE, data_dir: Path = _DATA_DIR,
     if dry_run:
         if job == "broadcast":
             from nutmeg.decision.day_broadcast import due_broadcasts, read_sent, render_broadcast
+            from nutmeg.decision.day_decisions import broadcast_decisions
 
-            dec_path = ctx.out_dir / "decisions.json"
-            decisions = (json.loads(dec_path.read_text(encoding="utf-8"))
-                         if dec_path.exists() else [])
+            decisions = broadcast_decisions(ctx.data_dir, ctx.date, now=ctx.now())
             sent = read_sent(ctx.data_dir, ctx.date)
             for b in due_broadcasts(decisions, now=ctx.now(), sent=sent):
                 typer.echo(render_broadcast(b) + "\n---")

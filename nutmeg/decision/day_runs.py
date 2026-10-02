@@ -205,20 +205,6 @@ def _log_tail_today(log_name: str, *, warn_markers: tuple[str, ...] = ()) -> Cal
     return read
 
 
-def _f2_observe(data_dir: Path, day: str) -> list[Run]:
-    log = data_dir / "logs" / "zucai.f2-observe.out.log"
-    try:
-        text = log.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return []
-    out = []
-    for match in re.finditer(rf"^\[{day} (\d{{2}}:\d{{2}})\] (.*)$", text, re.M):
-        body = match.group(2).strip()
-        status = "fail" if ("失败" in body or "Error" in body) else "ok"
-        out.append(Run(at=match.group(1), status=status, summary=body))
-    return out
-
-
 def _sweep(data_dir: Path, day: str) -> list[Run]:
     log = data_dir / "logs" / "rsi.sweep.out.log"
     try:
@@ -307,8 +293,6 @@ JOBS: dict[str, JobSpec] = {
     "com.nutmeg.day.brief": JobSpec(
         "简报发布", "system", "汇总当日简报并发布页面", _timeline_runs("brief"),
         since=_TIMELINE_SINCE),
-    "com.nutmeg.zucai.f2-observe": JobSpec(
-        "让球线观察", "zucai", "开球前记录足彩让球线", _f2_observe),
     "com.nutmeg.rsi.sweep": JobSpec(
         "义务巡检", "rsi", "补跑到期的 RSI 观察义务", _sweep, day_starts="07:00"),
     "com.nutmeg.day.verdict": JobSpec(

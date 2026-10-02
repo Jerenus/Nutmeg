@@ -127,3 +127,35 @@ def test_operation_failure_summary_redacts_secret_like_values() -> None:
     assert "topsecret" not in summary
     assert "anothersecret" not in summary
     assert "123456:ABC" not in summary
+
+
+
+def _fake_am(monkeypatch, message: str, other_failed: bool = False):
+    steps = [{"label": "fetch", "status": "failed", "message": f"失败 — {message}"},
+             {"label": "sense", "status": "succeeded", "message": "空盘(合法)"}]
+    if other_failed:
+        steps.append({"label": "report", "status": "failed", "message": "render failed"})
+    completed = subprocess.CompletedProcess(
+        args=[], returncode=1, stdout=json.dumps({"status": "failed", "steps": steps}), stderr="")
+    monkeypatch.setattr(ops, "_run", lambda command: completed)
+    monkeypatch.setattr(ops, "_publish_operation_event", lambda **event: None)
+    monkeypatch.setattr(ops, "build_context", lambda *a, **k: None)
+
+
+def test_fully_empty_sporttery_list_is_a_legal_empty_board(tmp_path, monkeypatch, capsys):
+    _fake_am(monkeypatch, ops.EMPTY_BOARD_MARK)
+    ops.run_strict("am", "2026-10-02", tmp_path,
+                   operation_state_file=tmp_path / "operation-state.json")
+    assert "NUTMEG_OK stage=am run_date=2026-10-02 empty_board" in capsys.readouterr().out
+
+
+def test_unopened_matches_or_other_failures_still_fail(tmp_path, monkeypatch):
+    _fake_am(monkeypatch, "Sporttery calculator empty (not a WAF block): "
+                          "match list 0 Selling / 3 not yet on sale")
+    with pytest.raises(ops.SchedulerError, match="degraded"):
+        ops.run_strict("am", "2026-10-02", tmp_path,
+                       operation_state_file=tmp_path / "operation-state.json")
+    _fake_am(monkeypatch, ops.EMPTY_BOARD_MARK, other_failed=True)
+    with pytest.raises(ops.SchedulerError, match="render failed"):
+        ops.run_strict("am", "2026-10-02", tmp_path,
+                       operation_state_file=tmp_path / "operation-state.json")

@@ -1181,3 +1181,29 @@ def test_status_counts_pool_coverage_r1_by_prospective_observations(tmp_path):
     status = runner.invoke(app, ["rsi", "status", "--exp", "R1", "--data-dir", str(data_dir)])
     assert status.exit_code == 0, status.output
     assert "n=   1/200" in status.output
+
+
+def test_retire_stops_the_experiments_duties(tmp_path):
+    """退役＝不再观察：义务置 retired，排程/到期/巡检都不再列它（2026-10-02 F2/F1c 退役时补）。"""
+    data_dir = tmp_path / "data"
+    day = "2026-09-28"
+    day_dir = data_dir / "jczq" / "daily" / day
+    day_dir.mkdir(parents=True)
+    day_dir.joinpath("jczq-legs-base.json").write_text(json.dumps({"legs": {
+        "周一001": {"match_id": "match-r1", "kickoff_bj": "2099-09-28T20:00:00+08:00"}}}),
+        encoding="utf-8")
+    runner = CliRunner()
+    assert runner.invoke(app, ["rsi", "register", "--by", "Jun", "experiments/registry/R1.json",
+                               "--data-dir", str(data_dir)]).exit_code == 0
+    retired = runner.invoke(app, ["rsi", "deploy", "--exp", "R1", "--retire", "--reason",
+                                  "窗口内到不了 n_min", "--by", "Jun", "--data-dir", str(data_dir)])
+    assert retired.exit_code == 0, retired.output
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        assert connection.execute(
+            "SELECT DISTINCT status FROM rsi_duties WHERE exp_id='R1'").fetchall() == [("retired",)]
+    assert runner.invoke(app, ["rsi", "schedule", "--day", day, "--data-dir",
+                               str(data_dir)]).exit_code == 0
+    due = runner.invoke(app, ["rsi", "due", "--day", day, "--data-dir", str(data_dir)])
+    assert "R1" not in due.output
+    status = runner.invoke(app, ["rsi", "status", "--exp", "R1", "--data-dir", str(data_dir)])
+    assert "retired" in status.output

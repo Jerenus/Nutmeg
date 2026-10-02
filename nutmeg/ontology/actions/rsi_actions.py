@@ -470,6 +470,10 @@ class RsiActions:
                     raise ValueError("deploy 必须指明目标 rule_id")
             if decision is DeploymentDecision.EXTEND and not request.extend_to_exp_id:
                 raise ValueError("extend 必须给新 exp_id（不许原地延窗）")
+            if decision is DeploymentDecision.RETIRE:
+                # 退役＝不再观察：义务停用，排程/到期/巡检都只认 active（2026-10-02 F2/F1c 退役时
+                # 发现只追加部署记录不停义务，每小时巡检还会照跑观察仪）
+                uow.rsi.set_duty_status(request.exp_id, "retired")
             did = _new_id("rsid")
             uow.rsi.insert_deployment(DeploymentRow(
                 deployment_id=did, exp_id=request.exp_id, decision=decision.value,

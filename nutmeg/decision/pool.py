@@ -152,6 +152,14 @@ def refresh_day(*, day: str, data_dir: Path, made_at: str,
                                 now=made_at, submit=submit)
         summary["zucai"][issue] = {"reads": len(reads), "submitted": len(sent)}
         _project(project, summary["zucai"][issue], issue=issue)
+        try:
+            # 足彩 legs-base 自动版（机器初稿依赖它；不覆盖主循环手工版），2026-10-02
+            from nutmeg.decision.zucai_auto_judgment import ensure_auto_legs_base
+
+            summary["zucai"][issue]["legs_base"] = ensure_auto_legs_base(
+                issue=issue, data_dir=data_dir, made_at=made_at)["status"]
+        except Exception as exc:  # noqa: BLE001 —— 旁支，失败不挡 Read 与本体提交
+            summary["zucai"][issue]["legs_base"] = f"error: {exc!r}"[:160]
     try:
         # 信号面板随每次刷新重写：人工裁决看的永远是最新一版（Jun 2026-09-27）
         from nutmeg.decision.signals import write_signals

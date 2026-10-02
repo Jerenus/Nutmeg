@@ -77,6 +77,21 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return result
 
 
+EMPTY_BOARD_MARK = ("Sporttery calculator empty (not a WAF block): "
+                    "match list 0 Selling / 0 not yet on sale")
+"""体彩列表完全为空（0 在售、0 未开售、不是 WAF）＝当天没有竞彩（假期/停赛）。"""
+
+
+def _only_empty_board(failed_steps: list[dict]) -> bool:
+    """唯一的失败是「体彩列表完全为空」→ 合法空盘，不是故障（2026-10-02：国庆每天早盘报失败）。
+
+    列表里只要有一场「未开售」、或有任何其它失败，仍按失败处理；10:00 深研链会再抓一次板面，
+    所以误把短暂空响应当空盘的代价只是晚两小时，而不是丢一天。"""
+    return bool(failed_steps) and all(
+        EMPTY_BOARD_MARK in str(item.get("message") or "") for item in failed_steps
+    )
+
+
 def _assert_strict_success(
     result: subprocess.CompletedProcess[str], stage: str
 ) -> dict[str, Any]:
@@ -90,6 +105,9 @@ def _assert_strict_success(
         item for item in payload.get("steps", [])
         if isinstance(item, dict) and item.get("status") == "failed"
     ]
+    if failed_steps and _only_empty_board(failed_steps):
+        payload["empty_board"] = True
+        return payload
     if result.returncode != 0 or payload.get("status") != "succeeded" or failed_steps:
         detail = "; ".join(
             f"{item.get('label')}: {item.get('message')}" for item in failed_steps
@@ -109,7 +127,12 @@ def run_strict(
         command = ["uv", "run", "nutmeg", f"decision-{stage}", "--run-date", run_date,
                    "--output-dir", str(output_dir), "--format", "json"]
         result = _run(command)
-        _assert_strict_success(result, stage)
+        payload = _assert_strict_success(result, stage)
+        if payload.get("empty_board"):
+            _record_operation_success(stage, run_date, operation_state_file)
+            print(f"NUTMEG_OK stage={stage} run_date={run_date} "
+                  "empty_board（体彩无场次，合法空盘）")
+            return
         build_context(run_date, output_dir, DEFAULT_LOG_DIR)
     except Exception as exc:
         error = exc if isinstance(exc, SchedulerError) else SchedulerError(str(exc))

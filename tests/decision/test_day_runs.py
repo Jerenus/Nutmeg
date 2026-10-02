@@ -116,13 +116,8 @@ def test_zucai_prep_reads_the_slot_file_or_the_no_issue_line(tmp_path: Path):
 def test_frequent_jobs_count_runs_against_the_slots_already_due(tmp_path: Path):
     plists, data = tmp_path / "plists", tmp_path / "data"
     _plist(plists, "com.nutmeg.rsi.sweep", {"StartCalendarInterval": {"Minute": 0}})
-    _plist(plists, "com.nutmeg.zucai.f2-observe", {"StartCalendarInterval": [
-        {"Hour": h, "Minute": m} for h in range(8, 24) for m in (0, 15, 30, 45)]})
     _write(data / "logs" / "rsi.sweep.out.log",
            f"{DAY} sweep: ran=0 failed=0\n{DAY} sweep: ran=1 failed=2\n")
-    _write(data / "logs" / "zucai.f2-observe.out.log",
-           f"[{DAY} 08:00] 26132 已登记，退出\n[{DAY} 08:15] 26132 已登记，退出\n"
-           "[2026-09-23 08:00] 前一天\n")
 
     view = day_runs(data_dir=data, plists_dir=plists, day=DAY,
                     now=datetime(2026, 9, 24, 8, 20))
@@ -130,9 +125,6 @@ def test_frequent_jobs_count_runs_against_the_slots_already_due(tmp_path: Path):
     sweep = _job(view, "rsi.sweep")
     assert sweep["kind"] == "frequent" and sweep["window"] == ["07:00", "23:00"]
     assert (sweep["run_count"], sweep["due"], sweep["status"]) == (2, 2, "warn")
-    f2 = _job(view, "zucai.f2-observe")
-    assert (f2["run_count"], f2["due"], f2["status"]) == (2, 2, "ok")
-    assert [r["at"] for r in f2["runs"]] == ["08:00", "08:15"]
 
 
 def test_outputs_markers_and_rsi_duties(tmp_path: Path):

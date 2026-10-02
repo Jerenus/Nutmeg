@@ -191,9 +191,9 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
         summary = "results " + "；".join(parts)
     elif job == "broadcast":
         from nutmeg.decision.day_broadcast import send_all, telegram_sender
+        from nutmeg.decision.day_decisions import broadcast_decisions
 
-        dec_path = ctx.out_dir / DECISIONS
-        decisions = json.loads(dec_path.read_text(encoding="utf-8")) if dec_path.exists() else []
+        decisions = broadcast_decisions(ctx.data_dir, ctx.date, now=ctx.now())
         try:
             sender = ctx.sender or telegram_sender()
             report = send_all(decisions, data_dir=ctx.data_dir, date=ctx.date, now=ctx.now(),

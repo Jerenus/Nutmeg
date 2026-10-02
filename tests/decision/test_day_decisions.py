@@ -26,36 +26,80 @@ def _brief() -> dict:
     }
 
 
-def test_build_decisions_lists_reads_plan_rsi_and_failures_with_deadlines(tmp_path: Path):
+def _zucai(data: Path, deadline: str = "2026-09-23T21:00:00+08:00") -> None:
+    zdir = data / "zucai"
+    zdir.mkdir(parents=True, exist_ok=True)
+    (zdir / "26132-issue.json").write_text(json.dumps(
+        {"issue_id": "26132", "sale_deadline": deadline}), encoding="utf-8")
+
+
+def _board(data: Path) -> None:
+    day = data / "jczq" / "daily" / "2026-09-23"
+    day.mkdir(parents=True, exist_ok=True)
+    (day / "jczq-legs-base.json").write_text(json.dumps({"legs": {
+        "周三001": {"kickoff_bj": "2026-09-23T19:30:00+08:00"},
+        "周三003": {"kickoff_bj": "2026-09-23T22:00:00+08:00"}}}), encoding="utf-8")
+
+
+def test_build_decisions_lists_register_rsi_and_failures_but_no_read_approvals(tmp_path: Path):
+    _zucai(tmp_path)
     timeline = [{"job": "settle", "exit": 1, "summary": "boom"}]
     rows = build_decisions(_brief(), timeline, data_dir=tmp_path, now=NOW)
     by_id = {r["id"]: r for r in rows}
-    assert by_id["read:周三001"] == {
-        "id": "read:周三001", "kind": "approve_read",
-        "subject": "周三001 A vs B（ai:jczq-analyst 草稿）",
-        "deadline": "2026-09-23T19:30:00+08:00", "default_action": "草稿不入库＝跟市场",
-        "status": "open", "source": "reads.json", "auto_default": True,
-    }
-    assert by_id["read:周三002"]["status"] == "expired"
-    assert "read:周三003" not in by_id
-    assert by_id["plan:26132"]["kind"] == "plan_choose_commit"
-    assert by_id["plan:26132"]["default_action"] == "空仓"
-    assert by_id["plan:26132"]["deadline"] == "2026-09-23T21:00:00+08:00"
+    assert not any(r["kind"] in ("approve_read", "plan_choose_commit") for r in rows)
+    z = by_id["register:zucai:26132"]
+    assert z["kind"] == "register_zucai" and z["status"] == "open"
+    assert z["deadline"] == "2026-09-23T21:00:00+08:00"
+    assert z["default_action"] == "未登记＝空仓（不买）"
+    assert "register:jczq:2026-09-23" not in by_id                 # 没预审过 → 不提醒
     assert by_id["rsi:0"]["subject"] == "因子 C11：propose_zero"
-    assert by_id["rsi:0"]["deadline"] is None
     assert by_id["job:settle"]["kind"] == "failed_job"
     assert by_id["loop:team_strength"]["kind"] == "failed_step"
 
 
-def test_approved_read_is_marked_done(tmp_path: Path):
-    log = tmp_path / "jczq" / "daily" / "2026-09-23" / "decisions.jsonl"
-    log.parent.mkdir(parents=True)
-    log.write_text(
-        json.dumps({"action": "approve_read", "obj_id": "read-1", "result": "read-1 入库"}) + "\n",
-        encoding="utf-8",
-    )
-    rows = build_decisions(_brief(), [], data_dir=tmp_path, now=NOW)
-    assert {r["id"]: r["status"] for r in rows}["read:周三001"] == "done"
+def test_register_decisions_close_once_a_purchased_slip_is_registered(tmp_path: Path):
+    from nutmeg.decision.betslip import BetSlip, SlipLeg, register_slip
+
+    legs = [SlipLeg(key="周三001", selections=("home",)), SlipLeg(key="周三003",
+                                                                 selections=("home",))]
+    from nutmeg.decision.day_decisions import live_register_decisions, log_preview
+
+    _zucai(tmp_path)
+    _board(tmp_path)
+    log_preview(tmp_path, placed_at="2026-09-23", channel="jczq", issue="", keys=["周三003"],
+                stake=40, vetoed=False, now=NOW)
+    by_id = {r["id"]: r for r in live_register_decisions(tmp_path, "2026-09-23", now=NOW)}
+    j = by_id["register:jczq:2026-09-23"]
+    assert j["status"] == "open" and j["deadline"] == "2026-09-23T22:00:00+08:00"
+    assert "预审过 1 次" in j["subject"]
+    register_slip(tmp_path, BetSlip(slip_id="T", channel="jczq", placed_at="2026-09-23",
+                                    legs=legs, combo_sizes=(2,), purchased=False))   # 试玩不算
+    assert {r["id"]: r for r in live_register_decisions(tmp_path, "2026-09-23", now=NOW)}[
+        "register:jczq:2026-09-23"]["status"] == "open"
+    register_slip(tmp_path, BetSlip(slip_id="R", channel="renjiu", placed_at="2026-09-23",
+                                    legs=[], issue="26132",
+                                    faces={str(i): "3" for i in range(1, 10)}))
+    register_slip(tmp_path, BetSlip(slip_id="J", channel="jczq", placed_at="2026-09-23",
+                                    legs=legs, combo_sizes=(2,)))
+    after = {r["id"]: r["status"] for r in live_register_decisions(tmp_path, "2026-09-23",
+                                                                  now=NOW)}
+    assert after == {"register:zucai:26132": "done", "register:jczq:2026-09-23": "done"}
+
+
+def test_broadcast_decisions_drop_obsolete_kinds_and_add_live_ones(tmp_path: Path):
+    from nutmeg.decision.day_decisions import broadcast_decisions
+
+    _zucai(tmp_path)
+    out = tmp_path / "daily" / "2026-09-23"
+    out.mkdir(parents=True)
+    (out / "decisions.json").write_text(json.dumps([
+        {"id": "read:周三001", "kind": "approve_read", "status": "open",
+         "deadline": "2026-09-23T19:30:00+08:00"},
+        {"id": "plan:26132", "kind": "plan_choose_commit", "status": "open",
+         "deadline": "2026-09-23T21:00:00+08:00"},
+        {"id": "rsi:0", "kind": "rsi", "status": "open", "deadline": None}]), encoding="utf-8")
+    ids = [d["id"] for d in broadcast_decisions(tmp_path, "2026-09-23", now=NOW)]
+    assert ids == ["rsi:0", "register:zucai:26132"]
 
 
 def test_write_decisions(tmp_path: Path):

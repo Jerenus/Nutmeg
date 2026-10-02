@@ -156,3 +156,63 @@ def build_auto_reads(*, issue: str, data_dir: Path, made_at: str) -> list[dict]:
     reads = [by_match[mid] for mid in order if mid in by_match]
     reads_path.write_text(json.dumps(reads, ensure_ascii=False, indent=1), encoding="utf-8")
     return reads
+
+
+AUTO_MARK = "zucai_auto_judgment"
+
+
+def ensure_auto_legs_base(*, issue: str, data_dir: Path, made_at: str) -> dict:
+    """足彩 legs-base 自动版（2026-10-02，Jun「解决剩余的问题」）：机器初稿依赖它，
+    以前只有主循环手跑 B4（zucai-research-intake / zucai-build-reads）才有。
+
+    判断来源与 Read 相同（`auto_judgment`：主循环 judgment-v1 永远优先 → 研究表态转录 →
+    市场锚定），fair 用 store-ids 里同一份；每场再把研究的结构字段（表态、rubric、旗、
+    三证、强弱天平）经 `research_intake.intake` 转录进 leg 并挂 face_status。
+    ⛔绝不覆盖主循环手工建的 legs-base（没有 `auto` 标记的一律不动）。
+    → {"status": "written"|"kept_manual"|"skipped", ...}
+    """
+    from nutmeg.decision.face_status import FaceStatusError, attach_face_status
+    from nutmeg.decision.research_intake import intake
+
+    zucai_dir = Path(data_dir) / "zucai"
+    legs_path = zucai_dir / f"{issue}-legs-base.json"
+    existing = _load(legs_path, None)
+    if existing is not None and not (existing.get("auto") or {}).get("source") == AUTO_MARK:
+        return {"status": "kept_manual", "path": str(legs_path)}
+    store = _load(zucai_dir / f"{issue}-store-ids.json", {})
+    if not store:
+        return {"status": "skipped", "reason": "无 store-ids"}
+    issue_doc = _load(zucai_dir / f"{issue}-issue.json", {})
+    mapped: dict[int, str] = {}
+    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
+        if (zucai_dir / name).exists():
+            mapped = {int(no): mid for mid, no in _load(zucai_dir / name).items()}
+            break
+    deadline_day = str(issue_doc.get("sale_deadline") or "")[:10]
+    jczq_research = _jczq_research_by_match_id(Path(data_dir), deadline_day) if deadline_day else {}
+    judgment = auto_judgment(issue=issue, data_dir=data_dir)
+    result = build(judgment, issue=issue, store_ids=store,
+                   fair={no: store[no]["fair"] for no in judgment}, made_at=made_at,
+                   judge=JUDGE)
+    doc = result.legs
+    notes: list[str] = []
+    for no, leg in doc["legs"].items():
+        path = _research_path(zucai_dir, issue, no, mapped, jczq_research)
+        research = effective_research(path) if path else {}
+        if research:
+            transcribed = intake(research, leg, match_no=int(no))
+            if transcribed.blocked:
+                errors = "; ".join(i.message for i in transcribed.issues if i.level == "ERROR")
+                notes.append(f"场{no} 研究入库被拦：{errors[:120]}")
+            else:
+                leg.update(transcribed.leg)
+            if research.get("rubric"):
+                leg["rubric"] = research["rubric"]
+        try:
+            attach_face_status(leg, research, source=path.name if path else "market")
+        except FaceStatusError as exc:
+            notes.append(f"场{no} face_status：{exc}")
+    doc["auto"] = {"source": AUTO_MARK, "built_at": made_at, "notes": notes}
+    legs_path.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {"status": "written", "path": str(legs_path), "legs": len(doc["legs"]),
+            "notes": notes}

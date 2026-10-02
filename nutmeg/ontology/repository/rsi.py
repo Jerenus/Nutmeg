@@ -211,6 +211,15 @@ class RsiRepository:
             )
         )
 
+    def set_duty_status(self, exp_id: str, status: str) -> int:
+        """把一个实验的全部义务置为某状态（退役 → retired）；返回改动行数。"""
+        result = self._c.execute(
+            sr.rsi_duties.update()
+            .where(sr.rsi_duties.c.exp_id == exp_id, sr.rsi_duties.c.status != status)
+            .values(status=status)
+        )
+        return int(result.rowcount or 0)
+
     def duties(self, exp_id: str) -> list[DutyRow]:
         t = sr.rsi_duties
         rows = (

@@ -201,10 +201,26 @@ def betslip_preview(
         for line in review_lines:
             _cli.typer.echo("   " + line)
         _cli.typer.echo("   " + _brake_line(data_dir, placed_at))
+        _log_preview(data_dir, slip, any(line.startswith("⛔") for line in review_lines))
         if any(line.startswith("⛔") for line in review_lines):
             raise _cli.typer.Exit(code=1)       # 审票否决：改票后再审（登记不受此限）
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
+
+
+def _log_preview(data_dir: Path, slip, vetoed: bool) -> None:
+    """预审留痕（2026-10-02）：截止播报据此提醒「审过但还没登记」。失败不影响预审。"""
+    from datetime import datetime as _datetime
+
+    from nutmeg.decision.day_decisions import log_preview
+
+    try:
+        keys = [leg.key for leg in slip.legs] or list(slip.faces)
+        log_preview(data_dir, placed_at=slip.placed_at, channel=slip.channel, issue=slip.issue,
+                    keys=keys, stake=slip.stake_yuan, vetoed=vetoed,
+                    now=_datetime.now().astimezone())
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _review_lines(slip, diagnosis: dict, data_dir: Path) -> list[str]:

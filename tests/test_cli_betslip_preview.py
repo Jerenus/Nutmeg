@@ -38,3 +38,8 @@ def test_preview_shows_the_diagnosis_without_registering(tmp_path: Path):
     assert "共享裸单 1 条（周一0043）与 1 张票同押；这些票一起死 ≥64%" in pre.output
     rows = (data / "betslips.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(rows) == 1 and json.loads(rows[0])["slip_id"] == "J1"
+    # 预审留痕（2026-10-02）：截止播报据此提醒「审过但没登记」
+    [log] = (data / "daily" / "2026-09-28" / "previews.jsonl").read_text("utf-8").splitlines()
+    row = json.loads(log)
+    assert row["channel"] == "jczq" and row["keys"] == ["周一004", "周一005"]
+    assert row["vetoed"] is True and row["stake"] == 100

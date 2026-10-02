@@ -100,13 +100,13 @@ def test_broadcast_job_uses_injected_sender(tmp_path: Path):
     ctx = _ctx(tmp_path, [])
     ctx.sender = sent.append
     ctx.now = lambda: _dt(2026, 9, 23, 19, 5, tzinfo=BJ)
-    out = day_dir(ctx.data_dir, "2026-09-23")
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "decisions.json").write_text(json.dumps([{
-        "id": "read:周三001", "kind": "approve_read", "subject": "A vs B", "status": "open",
-        "deadline": "2026-09-23T19:30:00+08:00", "default_action": "跟市场"}]), encoding="utf-8")
+    zdir = ctx.data_dir / "zucai"
+    zdir.mkdir(parents=True, exist_ok=True)
+    (zdir / "26132-issue.json").write_text(json.dumps(
+        {"issue_id": "26132", "sale_deadline": "2026-09-23T19:30:00+08:00"}), encoding="utf-8")
     rec = run_job(ctx, "broadcast")
     assert rec.exit == 0 and sent and "剩 25 分" in sent[0] and "sent=1" in rec.summary
+    assert "足彩 26132 停售前仍无已登记实票" in sent[0]
     assert run_job(ctx, "broadcast").summary.endswith("sent=0 failed=0")  # deduplicated
 
 
