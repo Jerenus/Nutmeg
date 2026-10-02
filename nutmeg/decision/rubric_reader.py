@@ -97,6 +97,7 @@ def read_rubric(research: dict, *, kickoff: str | None, claude: Claude = _claude
         doc = {"version": RUBRIC_VERSION, "items": {}, "belief": doc.get("belief")}
     doc.setdefault("version", RUBRIC_VERSION)
     doc["items"] = tolerate(doc.get("items"))
+    doc["belief"] = tolerate_belief(doc.get("belief"))
     norm, issues = validate_rubric(doc, kickoff=kickoff)
     errors = [i.message for i in issues if i.level == "ERROR"]
     if errors:
@@ -133,6 +134,20 @@ def tolerate(items) -> dict:
             row["p"] = p
         out[str(item_id)] = row
     return out
+
+
+def tolerate_belief(belief) -> dict | None:
+    """整体概率不是合法的 3/1/0 分布（缺键、负数、和差太远）→ 丢掉，不废整份作答。"""
+    if not isinstance(belief, dict):
+        return None
+    try:
+        vals = {k: float(belief[k]) for k in ("3", "1", "0")}
+    except (KeyError, TypeError, ValueError):
+        return None
+    total = sum(vals.values())
+    if total <= 0 or any(v < 0 for v in vals.values()) or not 0.9 <= total <= 1.1:
+        return None
+    return {k: v / total for k, v in vals.items()}
 
 
 def kappa(a: dict | None, b: dict | None) -> dict:

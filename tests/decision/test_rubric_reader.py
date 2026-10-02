@@ -120,3 +120,9 @@ def test_reader_tolerates_illegal_options_instead_of_failing_the_file():
     assert "Z_nope" not in out["items"]
     assert tolerate({"F_goalkeeper": {"answer": "both"}})["F_goalkeeper"]["_tolerated"]
     assert tolerate("junk") == {}
+    from nutmeg.decision.rubric_reader import tolerate_belief
+    assert tolerate_belief({"3": 0.7, "1": 0.9}) is None and tolerate_belief("x") is None
+    assert tolerate_belief({"3": 0.5, "1": 0.3, "0": 0.25})["3"] == 0.5 / 1.05
+    bad = read_rubric(RESEARCH, kickoff=RESEARCH["kickoff_bj"], claude=lambda s, i: (0, json.dumps(
+        {"version": "r1", "items": {}, "belief": {"3": 2, "1": 2}})))
+    assert bad["belief"] is None
