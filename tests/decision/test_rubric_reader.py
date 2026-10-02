@@ -105,3 +105,18 @@ def test_read_file_writes_a_sidecar_once_and_report_aggregates(tmp_path: Path):
     after = read_file(path, claude=lambda s, i: (0, '{"belief": {"3": 0.4, "1": 0.3, "0": 0.3}}'),
                       free=True, now=now)
     assert after["b_free"]["belief"]["3"] == 0.4 and after["b"]["items"]  # free 补跑保留 b
+
+
+def test_reader_tolerates_illegal_options_instead_of_failing_the_file():
+    from nutmeg.decision.rubric_reader import tolerate
+
+    out = read_rubric(RESEARCH, kickoff=RESEARCH["kickoff_bj"], claude=lambda s, i: (0, json.dumps({
+        "version": "r1", "items": {"F_goalkeeper": {"answer": "both", "p": 0.9, "source": "s",
+                                                     "captured_at": "2026-10-02T09:00:00+08:00"},
+                                   "S_underdog_path": {"p": 1.7}, "S_anchor_side": "home",
+                                   "Z_nope": {"p": 1}}})))
+    assert out["items"]["F_goalkeeper"]["abstain"] and out["items"]["S_underdog_path"]["abstain"]
+    assert out["items"]["S_anchor_side"]["answer"] == "home"
+    assert "Z_nope" not in out["items"]
+    assert tolerate({"F_goalkeeper": {"answer": "both"}})["F_goalkeeper"]["_tolerated"]
+    assert tolerate("junk") == {}

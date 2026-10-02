@@ -52,6 +52,10 @@ def test_no_fact_or_no_anchor_means_no_tilt():
     assert rubric_to_tilt(norm, PRIOR) is None                       # 均势 → 归零
     assert derive_stance({"face": "3", "structure": "single", "tilt": None}, norm, PRIOR)[
         "why_not_market"] == "none"
+    norm, _ = validate_rubric(_rubric(F_absence_away={"p": 0.9, **SRC},
+                                      S_anchor_side={"answer": "unknown"}))
+    tilt = rubric_to_tilt(norm, PRIOR)                               # 锚方未知 ≠ 均势：事实项照拨
+    assert tilt and tilt["shift"]["0"] < 0
 
 
 def test_tilt_is_a_zero_sum_shift_with_per_item_evidence_that_passes_stance_rules():

@@ -79,8 +79,8 @@ _add(Item("O_other_event", "fact", "choice", options=("home", "away", "none", UN
           effect_options=("home", "away")))
 
 # ── 结构层 ──────────────────────────────────────────────────────────────────
-_add(Item("S_anchor_side", "structure", "choice", options=("home", "away", "none"),
-          text="强弱天平的锚方（明显更强的一侧）；均势填 none"))
+_add(Item("S_anchor_side", "structure", "choice", options=("home", "away", "none", UNKNOWN),
+          text="强弱天平的锚方（明显更强的一侧）；均势填 none，证据不够判就 unknown"))
 _add(Item("S_spine_intact", "structure", "noul", effect="down:anchor:no", cap_pp=3,
           source_required=True, tier="confirmed_structural", kind="anchor_integrity_fail",
           text="锚方中轴（门将/中卫/组织核心）本场完整"))
@@ -93,7 +93,7 @@ _add(Item("S_draw_mode", "structure", "noul", effect="up:draw", cap_pp=2,
 _add(Item("S_crash_candidate", "structure", "noul", effect="down:anchor", cap_pp=2,
           tier="state", kind="form_state",
           text="锚方是翻车候选（近期带洞、密集赛程、动机不足中至少两条）"))
-_add(Item("S_dead_face", "structure", "choice", options=("3", "1", "0", "none"),
+_add(Item("S_dead_face", "structure", "choice", options=("3", "1", "0", "none", UNKNOWN),
           text="三证齐全可判死的面（没有就 none）；只记录，不进 pp"))
 
 # ── 价格层 ──────────────────────────────────────────────────────────────────

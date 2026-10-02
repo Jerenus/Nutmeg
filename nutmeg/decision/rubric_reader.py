@@ -96,11 +96,43 @@ def read_rubric(research: dict, *, kickoff: str | None, claude: Claude = _claude
     if free:
         doc = {"version": RUBRIC_VERSION, "items": {}, "belief": doc.get("belief")}
     doc.setdefault("version", RUBRIC_VERSION)
+    doc["items"] = tolerate(doc.get("items"))
     norm, issues = validate_rubric(doc, kickoff=kickoff)
     errors = [i.message for i in issues if i.level == "ERROR"]
     if errors:
         raise ValueError("rubric: " + "; ".join(errors))
     return norm
+
+
+def tolerate(items) -> dict:
+    """读者 B 是便宜的系统一：一个不合法的选项不该废掉整份作答——
+    不在表里的项丢弃；choice 答案不在选项里 → unknown（弃权）；noul 的 p 不在 [0,1] → null。
+    留痕在 `_tolerated`，报表可数。"""
+    out: dict = {}
+    if not isinstance(items, dict):
+        return out
+    for item_id, raw in items.items():
+        item = ITEMS.get(str(item_id))
+        if item is None:
+            continue
+        row = dict(raw) if isinstance(raw, dict) else (
+            {"p": raw} if item.type == "noul" else {"answer": raw})
+        if item.type == "choice":
+            if str(row.get("answer")) not in item.options:
+                fallback = "unknown" if "unknown" in item.options else item.options[-1]
+                row["_tolerated"] = f"answer {row.get('answer')!r} → {fallback}"
+                row["answer"] = fallback
+        else:
+            try:
+                p = float(row["p"]) if row.get("p") is not None else None
+            except (TypeError, ValueError):
+                p = None
+            if p is not None and not 0.0 <= p <= 1.0:
+                row["_tolerated"] = f"p {row['p']!r} → null"
+                p = None
+            row["p"] = p
+        out[str(item_id)] = row
+    return out
 
 
 def kappa(a: dict | None, b: dict | None) -> dict:

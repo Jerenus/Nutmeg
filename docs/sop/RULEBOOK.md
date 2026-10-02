@@ -192,12 +192,12 @@
 | `F_goalkeeper` | fact | choice | home/away/none/unknown | down:side | 3 | 必填 | official | r1 |
 | `F_venue` | fact | choice | home/away/none/unknown | down:side | 2 | 必填 | official | r1 |
 | `O_other_event` | fact | choice | home/away/none/unknown | down:side | 2 | 必填 | inferred | r1 |
-| `S_anchor_side` | structure | choice | home/away/none | 只记录 | — | — | — | r1 |
+| `S_anchor_side` | structure | choice | home/away/none/unknown | 只记录 | — | — | — | r1 |
 | `S_spine_intact` | structure | noul | p∈[0,1]/null | down:anchor:no | 3 | 必填 | confirmed_structural | r1 |
 | `S_underdog_path` | structure | noul | p∈[0,1]/null | up:underdog | 2 | — | state | r1 |
 | `S_draw_mode` | structure | noul | p∈[0,1]/null | up:draw | 2 | — | state | r1 |
 | `S_crash_candidate` | structure | noul | p∈[0,1]/null | down:anchor | 2 | — | state | r1 |
-| `S_dead_face` | structure | choice | 3/1/0/none | 只记录 | — | — | — | r1 |
+| `S_dead_face` | structure | choice | 3/1/0/none/unknown | 只记录 | — | — | — | r1 |
 | `M_market_read` | price | choice | agree/overpriced_fav/underpriced_fav/underpriced_draw/unknown | 只记录 | — | — | — | r1 |
 | `M_facts_priced` | price | noul | p∈[0,1]/null | 只记录 | — | — | — | r1 |
 
