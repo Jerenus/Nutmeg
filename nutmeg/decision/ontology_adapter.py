@@ -1,8 +1,9 @@
 """Kernel-backed daily verbs — the Ontology Kernel v2 go-live seam.
 
-When ``NUTMEG_ONTOLOGY_V2`` is set, the live ``decision-*`` commands route here instead
-of the old JSONL ``nutmeg.decision.verbs`` path. This module reuses the same fetch and
-result types as the old path, but routes the *store writes* through the kernel's typed
+The live ``decision-read`` / ``decision-am`` / ``decision-settle`` commands always route
+here (the ``NUTMEG_ONTOLOGY_V2`` flag was removed 2026-10-03; the old JSONL
+``nutmeg.decision.verbs`` path is no longer reachable from them). This module reuses the same
+fetch and result types as the old path, but routes the *store writes* through the kernel's typed
 Actions (``market_day_ingest``) rather than the append-only JSONL store.
 
 ``decision-am`` is cut over first: it is the data-base verb (ingest market snapshots),

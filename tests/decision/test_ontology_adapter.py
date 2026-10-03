@@ -4,9 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
-from typer.testing import CliRunner
 
-import nutmeg.config.settings as settings_module
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.ontology_adapter import run_decision_am_v2
 from nutmeg.ontology.repository import schema, schema_market
@@ -89,51 +87,6 @@ def test_am_v2_empty_board_is_legal(tmp_path: Path) -> None:
     result = run_decision_am_v2(DATE, tmp_path / "jczq", kernel=kernel, fetch=False)
     assert result.succeeded and "空盘" in str(result)
     assert kernel.status().match_count == 0
-
-
-def test_flag_routes_am_to_v2(tmp_path: Path, monkeypatch) -> None:
-    import nutmeg.interfaces.cli as cli
-
-    calls = {"v2": 0, "old": 0}
-
-    def fake_v2(run_date, output_dir, **kwargs):
-        calls["v2"] += 1
-        from nutmeg.decision.verbs import DecisionWorkflowResult
-        return DecisionWorkflowResult("decision-am", run_date, (), "v2")
-
-    monkeypatch.setattr("nutmeg.decision.ontology_adapter.run_decision_am_v2", fake_v2)
-    monkeypatch.setenv("NUTMEG_ONTOLOGY_V2", "1")
-    settings_module.get_settings.cache_clear()
-    try:
-        result = CliRunner().invoke(cli.app, [
-            "decision-am", "--run-date", DATE, "--output-dir", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert calls["v2"] == 1               # flag on -> routed to the kernel adapter
-    finally:
-        settings_module.get_settings.cache_clear()
-
-
-def test_unset_flag_keeps_old_path(tmp_path: Path, monkeypatch) -> None:
-    import nutmeg.interfaces.cli as cli
-
-    seen = {"old": 0}
-
-    def fake_old(run_date, output_dir, **kwargs):
-        seen["old"] += 1
-        from nutmeg.decision.verbs import DecisionWorkflowResult
-        return DecisionWorkflowResult("decision-am", run_date, (), "old")
-
-    monkeypatch.setattr("nutmeg.decision.verbs.run_decision_am", fake_old)
-    # 显式 =0(而非 delenv):生产 .env 已携带 NUTMEG_ONTOLOGY_V2=1,env var 优先级盖过 env_file
-    monkeypatch.setenv("NUTMEG_ONTOLOGY_V2", "0")
-    settings_module.get_settings.cache_clear()
-    try:
-        result = CliRunner().invoke(cli.app, [
-            "decision-am", "--run-date", DATE, "--output-dir", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert seen["old"] == 1                # flag off -> old JSONL path unchanged
-    finally:
-        settings_module.get_settings.cache_clear()
 
 
 # ── zucai 泳道穿透(2026-08-24 cutover 缺口修复) ──────────────────────────

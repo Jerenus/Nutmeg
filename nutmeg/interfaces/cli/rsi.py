@@ -1205,14 +1205,14 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
                                 latest_verdict=v.verdict if v else None,
                                 latest_deployment=d.decision if d else None)
             gaps = uow.rsi.gaps(e.exp_id, now=now_iso)
-            display_n = g.n_cum if g else 0
-            # 观测型实验（覆盖率义务、F5/F9）按前瞻观测行数显示；R1 并集池覆盖 09-27 登记后
-            # 漏在名单外，37 条真实观测一直显示 n=0（2026-10-02 修）
-            if e.exp_id in {"F5", "F9", "R0", "R1"} or f.metric == "coverage_pct":
-                display_n = uow.rsi.prospective_n_rows(
-                    e.exp_id, window=e.window, stratum=f.stratum
-                )
+            # n 与判决同源：有 grade 就显示 grade 的 n_cum（判决只认它）。2026-10-03 前
+            # F5/F9 显示的是观测行数——F5 显示 148/120 像已到期，判决却按 n_cum=37 拒绝。
+            # 没有 grade 的覆盖率实验（R0/R1）才按前瞻观测行数显示。
+            obs_n = uow.rsi.prospective_n_rows(e.exp_id, window=e.window, stratum=f.stratum)
+            display_n = g.n_cum if g else obs_n
             line = f"{e.exp_id:6} {st:13} n={display_n:>4}/{f.n_min}"
+            if g and obs_n and obs_n != display_n:
+                line += f"（观测 {obs_n} 行，不计入 n）"
             if g:
                 line += (f"  CI[{g.ci_low_pp:+.1f},{g.ci_high_pp:+.1f}]"
                          f" 距falsifier {g.distance_to_falsifier_pp:+.1f}pp")

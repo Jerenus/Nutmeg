@@ -6,6 +6,7 @@
 """
 from typer.testing import CliRunner
 
+import nutmeg.decision.ontology_adapter as ontology_adapter
 import nutmeg.decision.verbs as verbs
 from nutmeg.decision.report import DecisionReportResult
 from nutmeg.interfaces.cli import app
@@ -86,11 +87,11 @@ def test_decision_settle_with_zucai_order(tmp_path, monkeypatch):
 def test_decision_am_cli(tmp_path, monkeypatch):
     seen: dict = {}
 
-    def _fake(rd, od, *, zucai_dir=None, issue=None):
+    def _fake(rd, od, *, issue=None, zucai_dir=None):
         seen.update(rd=rd, issue=issue)
         return "am-ok"
 
-    monkeypatch.setattr(verbs, "run_decision_am", _fake)
+    monkeypatch.setattr(ontology_adapter, "run_decision_am_v2", _fake)
     r = runner.invoke(app, ["decision-am", "--run-date", _DATE,
                             "--output-dir", str(tmp_path), "--issue", "26091"])
     assert r.exit_code == 0, r.output
@@ -100,11 +101,11 @@ def test_decision_am_cli(tmp_path, monkeypatch):
 def test_decision_settle_cli_defaults_dry_run(tmp_path, monkeypatch):
     seen: dict = {}
 
-    def _fake(rd, od, *, dispatch, dry_run, issue=None, zucai_dir=None):
+    def _fake(rd, od, *, dispatch, dry_run):
         seen.update(dispatch=dispatch, dry_run=dry_run)
         return "settle-ok"
 
-    monkeypatch.setattr(verbs, "run_decision_settle", _fake)
+    monkeypatch.setattr(ontology_adapter, "run_decision_settle_v2", _fake)
     r = runner.invoke(app, ["decision-settle", "--run-date", _DATE,
                             "--output-dir", str(tmp_path)])
     assert r.exit_code == 0, r.output

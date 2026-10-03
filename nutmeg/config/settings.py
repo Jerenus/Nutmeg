@@ -46,10 +46,6 @@ class AppSettings(BaseSettings):
     operator_scheduler_enabled: bool = False
     release_version: str = 'unreleased'
     candidate_commit: str = 'unresolved'
-    # Ontology Kernel v2 cutover flag (env NUTMEG_ONTOLOGY_V2). Default off: the live
-    # decision-* commands run the old JSONL path unchanged. Set to route them onto the
-    # new kernel — the fresh-start go-live seam (see the cutover runbook).
-    ontology_v2: bool = False
     default_sync_days: int = 30
     sync_timezone: str = 'UTC'
     langsmith_enabled: bool = False

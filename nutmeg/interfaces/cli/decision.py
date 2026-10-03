@@ -201,18 +201,10 @@ def decision_read(
     reads_file: Path = _READS_FILE_OPTION,
     output_dir: Path = _OUTPUT_DIR_OPTION,
 ) -> None:
-    """决策本体 · 动词二:摄取 Claude 运行时产出的 Read(校验+落库)。
+    """决策本体 · 动词二:摄取 Claude 运行时产出的 Read(校验+提交内核)。"""
+    from nutmeg.decision.ontology_adapter import run_decision_read_v2
 
-    NUTMEG_ONTOLOGY_V2=1 时提交到 kernel(ontology_adapter);否则旧 JSONL 路径不变。
-    """
-    from nutmeg.config.settings import get_settings
-
-    if get_settings().ontology_v2:
-        from nutmeg.decision.ontology_adapter import run_decision_read_v2
-        _cli.typer.echo(run_decision_read_v2(reads_file, output_dir))
-    else:
-        from nutmeg.decision.verbs import run_read_ingest
-        _cli.typer.echo(run_read_ingest(reads_file, output_dir))
+    _cli.typer.echo(run_decision_read_v2(reads_file, output_dir))
 
 
 @_cli.app.command("decision-backfill")
@@ -422,17 +414,10 @@ def decision_am(
     """决策本体 · 日循环早段:fetch(+可选 zucai)→ sense(+可选 zucai)→ backfill。
 
     编排不含判读——只数据入库+市场基线;主循环 Claude 在 am 与 close 之间人工插 decision-read。
-
-    NUTMEG_ONTOLOGY_V2=1 时改走 kernel-backed am(ontology_adapter);否则旧 JSONL 路径不变。
     """
-    from nutmeg.config.settings import get_settings
+    from nutmeg.decision.ontology_adapter import run_decision_am_v2
 
-    if get_settings().ontology_v2:
-        from nutmeg.decision.ontology_adapter import run_decision_am_v2
-        result = run_decision_am_v2(run_date, output_dir, issue=issue, zucai_dir=zucai_dir)
-    else:
-        from nutmeg.decision.verbs import run_decision_am
-        result = run_decision_am(run_date, output_dir, zucai_dir=zucai_dir, issue=issue)
+    result = run_decision_am_v2(run_date, output_dir, issue=issue, zucai_dir=zucai_dir)
     _emit_result(result, format=format)
     if not getattr(result, "succeeded", True):
         raise _cli.typer.Exit(code=1)
@@ -451,26 +436,11 @@ def decision_settle(
     zucai_dir: Path = _ZUCAI_DIR_OPTION,
     format: str = _cli.typer.Option("text", "--format", help="text or json"),
 ) -> None:
-    """决策本体 · 日循环结算段:reconcile(+可选 zucai)→ calibrate → report(复盘)。
+    """决策本体 · 日循环结算段:内核 reconcile → calibrate → report(复盘)。"""
+    from nutmeg.decision.ontology_adapter import run_decision_settle_v2
 
-    NUTMEG_ONTOLOGY_V2=1 时改走 kernel-backed settle(ontology_adapter);否则旧路径不变。
-    """
-    from nutmeg.config.settings import get_settings
-
-    if get_settings().ontology_v2:
-        from nutmeg.decision.ontology_adapter import run_decision_settle_v2
-        result = run_decision_settle_v2(
-            run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run)
-    else:
-        from nutmeg.decision.verbs import run_decision_settle
-        result = run_decision_settle(
-            run_date,
-            output_dir,
-            dispatch=dispatch_telegram,
-            dry_run=dry_run,
-            issue=issue,
-            zucai_dir=zucai_dir,
-        )
+    result = run_decision_settle_v2(
+        run_date, output_dir, dispatch=dispatch_telegram, dry_run=dry_run)
     _emit_result(result, format=format)
     if not dry_run:
         # RSI 接线（2026-09-18 spec §8.1 第 3 项）：结算落账 → 每条观察中的实验 grade
@@ -525,33 +495,28 @@ def decision_web(
     port: int = _cli.typer.Option(8787, "--port"),
 ) -> None:
     """Workshop 判读工作台:浏览器审草稿/追问共磨/确认出票(spec workshop-ui)。"""
+    from datetime import UTC, datetime
+
     import uvicorn
 
+    from nutmeg.config.settings import get_settings
     from nutmeg.decision.store import DecisionStore
     from nutmeg.interfaces.decision_web import create_decision_app
+    from nutmeg.interfaces.decision_web_kernel import kernel_day_state, slips_for_date
+    from nutmeg.ontology.wiring import build_ontology_kernel
+    from nutmeg.product.repository import ProductReadRepository
 
     _warn_if_exposed(host)
     store = DecisionStore(Path(output_dir) / "decision")
-    kernel_state = None
-    observe_repo = None
-    from nutmeg.config.settings import get_settings
-    if get_settings().ontology_v2:
-        # 读侧与写侧同一个开关：decision-read 写内核，工作台就读内核（不双写）。
-        from datetime import UTC, datetime
-
-        from nutmeg.interfaces.decision_web_kernel import kernel_day_state, slips_for_date
-        from nutmeg.ontology.wiring import build_ontology_kernel
-        from nutmeg.product.repository import ProductReadRepository
-
-        kernel = build_ontology_kernel(get_settings())
-        kernel.initialize()
-        repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
-        observe_repo = repository
-        data_dir = Path(output_dir).parent          # .nutmeg-data/jczq → .nutmeg-data
-        kernel_state = lambda date: kernel_day_state(  # noqa: E731
-            repository, date, as_of=datetime.now(UTC),
-            slips=slips_for_date(data_dir, data_dir / "zucai", date))
-        _cli.typer.echo("decision-web: 读侧=内核(ontology v2)")
+    # decision-read 写内核，工作台就读内核（不双写）。
+    kernel = build_ontology_kernel(get_settings())
+    kernel.initialize()
+    repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
+    observe_repo = repository
+    data_dir = Path(output_dir).parent          # .nutmeg-data/jczq → .nutmeg-data
+    kernel_state = lambda date: kernel_day_state(  # noqa: E731
+        repository, date, as_of=datetime.now(UTC),
+        slips=slips_for_date(data_dir, data_dir / "zucai", date))
     app = create_decision_app(
         store=store,
         output_dir=Path(output_dir),
