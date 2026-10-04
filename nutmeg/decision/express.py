@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-import math
 from functools import reduce
 from importlib import resources
 
@@ -19,11 +18,6 @@ def load_budget() -> dict:
         resources.files("nutmeg.data").joinpath(_BUDGET_RESOURCE)
         .read_text(encoding="utf-8")
     )
-
-
-def renjiu_ticket_count(total: int, pick: int) -> int:
-    """任九复式注数 = C(total, pick)。"""
-    return math.comb(total, pick)
 
 
 def parlay_odds(odds: list[float]) -> float:

@@ -34,36 +34,6 @@ def _seed_pending_production(settings: AppSettings) -> None:
     engine.dispose()
 
 
-def test_plain_init_refuses_pending_production_migration(
-    monkeypatch, tmp_path: Path
-) -> None:
-    settings = _production_settings(tmp_path)
-    _seed_pending_production(settings)
-    monkeypatch.setattr(ontology_cli._cli, "get_settings", lambda: settings)
-
-    result = CliRunner().invoke(app, ["ontology", "init"])
-
-    assert result.exit_code != 0
-    assert "production_migration_requires_guarded_init" in result.output
-
-
-def test_plain_init_remains_legal_for_fresh_isolated_database(
-    monkeypatch, tmp_path: Path
-) -> None:
-    production = (tmp_path / "production").resolve()
-    settings = AppSettings(
-        _env_file=None,
-        data_dir=(tmp_path / "isolated").resolve(),
-        production_data_dir=production,
-    )
-    monkeypatch.setattr(ontology_cli._cli, "get_settings", lambda: settings)
-
-    result = CliRunner().invoke(app, ["ontology", "init"])
-
-    assert result.exit_code == 0
-    assert settings.ontology_db_path.exists()
-
-
 def test_guarded_init_refuses_writer_contention_before_creating_backup(
     monkeypatch, tmp_path: Path
 ) -> None:

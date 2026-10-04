@@ -25,12 +25,3 @@ def brier_delta_vs_prior(belief: dict[str, float], prior: dict[str, float],
     return brier(belief, actual) - brier(prior, actual)
 
 
-def clv_pp(belief: dict[str, float], prior: dict[str, float],
-           closing: dict[str, float]) -> float:
-    """(belief−prior)·(closing−prior) 点积。>0 = 偏移朝收盘方向(信息含量)。"""
-    keys = set(belief) | set(prior) | set(closing)
-    return sum(
-        (belief.get(k, 0.0) - prior.get(k, 0.0))
-        * (closing.get(k, 0.0) - prior.get(k, 0.0))
-        for k in keys
-    )

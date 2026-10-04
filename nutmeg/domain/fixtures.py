@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -46,35 +46,3 @@ class Fixture:
     penalty_away: int | None = None
 
 
-def sample_fixtures(league_code: str, *, season: int | None = None) -> list[Fixture]:
-    # season 缺省按墙钟推(7月翻转);测试必须显式传 season——2026-07-01 翻转曾让
-    # 依赖缺省值的断言全体过期(test_snapshot_service 6 例)。
-    now = datetime.now(UTC).replace(microsecond=0)
-    if season is None:
-        season = now.year if now.month >= 7 else now.year - 1
-    return [
-        Fixture(
-            fixture_id=f'{league_code}-001',
-            league_code=league_code,
-            provider_league_id=0,
-            season=season,
-            kickoff_at=now + timedelta(days=1, hours=3),
-            home_team_id=42,
-            away_team_id=148,
-            home_team='Arsenal',
-            away_team='Tottenham Hotspur',
-            venue='Emirates Stadium',
-        ),
-        Fixture(
-            fixture_id=f'{league_code}-002',
-            league_code=league_code,
-            provider_league_id=0,
-            season=season,
-            kickoff_at=now + timedelta(days=2, hours=1),
-            home_team_id=50,
-            away_team_id=40,
-            home_team='Manchester City',
-            away_team='Liverpool',
-            venue='Etihad Stadium',
-        ),
-    ]

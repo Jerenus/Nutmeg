@@ -1,17 +1,10 @@
-"""Kernel-backed daily verbs — the Ontology Kernel v2 go-live seam.
+"""Kernel-backed daily verbs: ``decision-read`` / ``decision-am`` / ``decision-settle``.
 
-The live ``decision-read`` / ``decision-am`` / ``decision-settle`` commands always route
-here (the ``NUTMEG_ONTOLOGY_V2`` flag was removed 2026-10-03; the old JSONL
-``nutmeg.decision.verbs`` path is no longer reachable from them). This module reuses the same
-fetch and result types as the old path, but routes the *store writes* through the kernel's typed
-Actions (``market_day_ingest``) rather than the append-only JSONL store.
-
-``decision-am`` is cut over first: it is the data-base verb (ingest market snapshots),
-with **no money and no push**. In the kernel the market snapshot *is* the market
-baseline, so the old JSONL "backfill shadow" step is unnecessary. ``decision-settle``
-follows as its own build. ``decision-close`` stays on the legacy path: its kernel-backed
-variant gated on the operator_v2 board workflow, retired 2026-09-23. The result is a
-``DecisionWorkflowResult`` so the CLI renders it identically to the old path.
+Store writes go through the kernel's typed Actions (``market_day_ingest``, forecast
+revisions, reconcile/calibrate flows). The old append-only JSONL verb path and the
+``NUTMEG_ONTOLOGY_V2`` switch between the two were removed 2026-10-03. Results are
+``DecisionWorkflowResult`` (``nutmeg.decision.workflow_result``) so the CLI renders
+every step, failures included.
 """
 
 from __future__ import annotations
@@ -78,7 +71,6 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
     """zucai 感知 on the kernel: 复用老 loader 读已存快照 → typed Actions 入库。
 
     与老路径同一 canonical 身份函数(canonical_match_id);源快照缺失 → 可见降级不抛断。"""
-    from nutmeg.decision.sense_zucai import _default_loader
     from nutmeg.ontology.actions.entity_actions import EntityActions
     from nutmeg.ontology.actions.market_actions import MarketActions
     from nutmeg.ontology.actions.match_actions import MatchActions
@@ -115,7 +107,6 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
         artifact_ingest=kernel.artifact_ingest,
         snapshot_probe=_snapshot_probe,
     )
-    from nutmeg.decision.sense_zucai import _is_intl_odds
 
     odds_path = max(
         (p for p in Path(zucai_dir).glob(f"{issue}-odds*.json") if not _is_intl_odds(p)),
@@ -239,7 +230,8 @@ def run_decision_am_v2(
     """am on the kernel: fetch (best-effort) → market_day_ingest (+可选 zucai 感知)。
 
     No judgment, no push. ``issue`` 给出时追加 zucai issue 入库(足彩泳道,与老路径同参数)。"""
-    from nutmeg.decision.verbs import _compose, _now_iso
+    from nutmeg.decision.workflow_result import compose as _compose
+    from nutmeg.decision.workflow_result import now_iso as _now_iso
 
     stamp = _now_iso()
     requested_at = datetime.fromisoformat(stamp)
@@ -470,100 +462,6 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None,
     return msg
 
 
-def run_decision_express_v2(legs_file, output_dir, *, kernel=None, made_at=None) -> str:
-    """legs.json → kernel Tickets. The ¥400 cap is enforced by ``compose_tickets`` (the
-    single authoritative source, reused); the kernel only stores its deterministic
-    allocation. Each ticket is idempotency-keyed by its deterministic id, so a re-run
-    replays rather than double-books. A leg with no committed Read (or no matching
-    selection) is skipped and counted — never a fabricated bet."""
-    from nutmeg.decision.express import compose_tickets, load_budget
-    from nutmeg.decision.verbs import _now_iso
-    from nutmeg.ontology.actions.models import ActorRole
-    from nutmeg.ontology.actions.ticket_actions import LegInput
-    from nutmeg.ontology.finance.express_flow import ExpressRequest
-    from nutmeg.ontology.repository.finance import CashAccountRow
-    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-
-    legs = json.loads(Path(legs_file).read_text(encoding="utf-8"))
-    if not legs:
-        return "decision-express-v2 jczq: 0 票 / 总注 ¥0(空仓合法)"
-    active_kernel = kernel if kernel is not None else _default_kernel()
-    stamp = made_at or _now_iso()
-    requested_at = datetime.fromisoformat(stamp)
-
-    summary = compose_tickets(legs, load_budget(), channel="jczq", made_at=stamp, store=None)
-
-    with OntologyUnitOfWork(active_kernel.engine) as uow:
-        uow.finance.ensure_account(
-            CashAccountRow(
-                account_id=_ACCOUNT, channel_scope="jczq", currency="CNY", status="active"
-            )
-        )
-
-    approved = 0
-    total_stake = 0
-    skipped: list[str] = []
-    for ticket in summary["tickets"]:
-        share = ticket["stake_yuan"] / ticket["n_legs"]
-        leg_inputs: list = []
-        resolvable = True
-        for leg in ticket["legs"]:
-            market = _MARKET_MAP.get(str(leg.get("market")))
-            match_id = str(leg.get("match_id") or "")
-            if market is None or not match_id:
-                resolvable = False
-                break
-            with OntologyUnitOfWork(active_kernel.engine) as uow:
-                series = uow.decision.ensure_series(match_id, market)
-                revision = uow.decision.current_committed_revision(series)
-                # Resolve the selection by outcome key only — the handicap/line lives on
-                # the bet leg, not on the (line-agnostic) selection definition.
-                selection = uow.market.selection_id_for(market, str(leg.get("selection")))
-            odds = leg.get("odds")
-            has_price = isinstance(odds, int | float) and float(odds) > 1.0
-            if revision is None or selection is None or not has_price:
-                resolvable = False  # no committed Read / no selection / no real price
-                break
-            leg_inputs.append(
-                LegInput(
-                    match_id=match_id,
-                    market_definition_id=market,
-                    selection_id=selection,
-                    forecast_revision_id=revision.forecast_revision_id,
-                    bucket=str(ticket["bucket"]),
-                    stake=share,
-                    entry_odds=float(odds),
-                    entry_quote_id=None,
-                    line=leg.get("line"),
-                )
-            )
-        if not resolvable:
-            skipped.append(str(ticket["ticket_id"]))
-            continue
-        result = active_kernel.express.approve_for_match(
-            ExpressRequest(
-                channel="jczq",
-                account_id=_ACCOUNT,
-                decision_session_id=None,
-                legs=leg_inputs,
-                actor_id="judge:owner",
-                actor_role=ActorRole.JUDGE_OPERATOR,
-                idempotency_key=f"express:{ticket['ticket_id']}",
-                requested_at=requested_at,
-            )
-        )
-        if result.approved:
-            approved += 1
-            total_stake += int(ticket["stake_yuan"])
-
-    msg = f"decision-express-v2 jczq: {approved} 票 / 总注 ¥{total_stake}"
-    if summary["scaled"]:
-        msg += "(超 ¥400 硬顶已缩)"
-    if skipped:
-        msg += f" | 跳过 {len(skipped)}(无判读/无匹配选项/无赔)"
-    return msg
-
-
 def _render_report_markdown(kernel, run_date: str, stage: str) -> str:
     import json as _json
 
@@ -653,41 +551,6 @@ def _report_v2(
         outcome = notification_service.publish(request, dry_run=dry_run)
         note = f" | 推送 {outcome.status.value}"
     return f"decision-report-v2 {run_date} [{stage}]: {report_path.name}{note}"
-
-
-def _capture_closing_v2(kernel, run_date: str, output_dir, requested_at) -> str:
-    """Ingest a closing market snapshot (CLV reference) from a saved closing-odds file.
-
-    Reuses ``market_day_ingest`` with ``snapshot_kind='closing'`` and the closing
-    ``bold_odds_closing.json`` as the international odds; sporttery gives match identity.
-    Absent closing file → skip (CLV stays empty; Brier/settlement unaffected)."""
-    from nutmeg.decision.market_data import load_sporttery_snapshot
-    from nutmeg.ontology.actions.models import ActorRole
-    from nutmeg.ontology.ingest.market_day import MarketDayIngestRequest
-
-    sporttery = load_sporttery_snapshot(run_date, output_dir)
-    if not sporttery:
-        return f"decision-capture-closing-v2 {run_date}: 无 sporttery 快照 — 跳过"
-    closing_path = Path(output_dir) / "daily" / run_date / "bold_odds_closing.json"
-    if not closing_path.exists():
-        return f"decision-capture-closing-v2 {run_date}: 无收盘欧赔文件 — 跳过(CLV 空)"
-    closing = json.loads(closing_path.read_text(encoding="utf-8"))
-    # Same actor as am so the idempotent team/match upserts replay rather than conflict;
-    # sporttery_snapshots=False so the closing fair is the intl closing odds only (not the
-    # read-time sporttery odds re-marked closing) — the true CLV reference.
-    result = kernel.market_day_ingest.ingest(
-        MarketDayIngestRequest(
-            business_date=run_date,
-            sporttery_value=sporttery,
-            intl_value=closing,
-            actor_id="source:sporttery",
-            actor_role=ActorRole.CONNECTOR,
-            snapshot_kind="closing",
-            sporttery_snapshots=False,
-            requested_at=requested_at,
-        )
-    )
-    return f"decision-capture-closing-v2 {run_date}: 收盘快照 {result.snapshots} 条"
 
 
 def _normalize_score(value: object) -> str | None:
@@ -829,7 +692,8 @@ def run_decision_settle_v2(
     results_fetcher=None,
 ):
     """settle on the kernel: reconcile (record outcomes + settle tickets) → calibrate → report."""
-    from nutmeg.decision.verbs import _compose, _now_iso
+    from nutmeg.decision.workflow_result import compose as _compose
+    from nutmeg.decision.workflow_result import now_iso as _now_iso
 
     stamp = _now_iso()
     requested_at = datetime.fromisoformat(stamp)
@@ -856,3 +720,72 @@ def run_decision_settle_v2(
         ),
     ]
     return _compose("decision-settle", run_date, "复盘(结算+校准,ontology v2 kernel)", steps)
+
+
+# ── 足彩快照加载（2026-10-03 自 sense_zucai 迁入；v1 sense 路径已删）──
+
+def _is_intl_odds(path) -> bool:
+    """`-odds-intl.json` 是 titan007 国际盘（2026-09-22 起由 decision-fetch-zucai-intl 落盘），
+    结构是 fair 不是 500.com 三赔率；它常与 `-odds.json` 同一分钟落盘甚至更新，
+    按 mtime 取「最新槽」会把它当成体彩赔率 → 14 场全 no_odds、内核 0 快照、store-ids 全空
+    （2026-09-24 26132 实发；26127 起每期身份未对上疑同因）。"""
+    return "-odds-intl" in path.name
+
+
+def _default_loader(issue: str, output_dir):
+    """从已存 zucai 快照读 (matches, odds, dates)。replay 优先,不打网。
+
+    真源落盘结构(已核对 .nutmeg-data/zucai/):
+    - `{issue}-issue.json`  = ZucaiSourceSyncService.sync 产;顶层含 draw_date,
+      `matches: [{match_no, competition, home_team, away_team, match_date, ...}]`。
+      → 构造 ZucaiMatch 列表 + dates(每场自身 match_date,不用 draw_date 兜底,
+      否则跨多天的期又退回单日 bug)。
+    - `{issue}-odds*.json`  = ZucaiOddsSyncService.sync 产(下午盘 `-odds.json` /
+      早盘 `-odds-revision.json` / 历史 `-odds-jczq-*.json` 等)。
+      赔率槽策略(已定):取**最新**槽(按 mtime,最接近读时的盘),
+      `matches: [{match_no, home, draw, away, ...}]` → {match_no:{home,draw,away}}。
+    缺 issue 或 odds 文件 → FileNotFoundError(清晰指明路径)。
+    """
+    import json
+    from pathlib import Path
+
+    from nutmeg.domain.zucai import ZucaiMatch
+
+    base = Path(output_dir)
+    issue_path = base / f"{issue}-issue.json"
+    if not issue_path.exists():
+        raise FileNotFoundError(f"zucai issue 快照缺失: {issue_path}")
+    issue_data = json.loads(issue_path.read_text(encoding="utf-8"))
+
+    matches: list = []
+    dates: dict = {}
+    for row in issue_data.get("matches") or []:
+        no = row.get("match_no")
+        matches.append(ZucaiMatch(
+            match_no=no,
+            competition=str(row.get("competition") or ""),
+            home_team=str(row.get("home_team") or ""),
+            away_team=str(row.get("away_team") or ""),
+            match_date=row.get("match_date"),
+        ))
+        date = row.get("match_date")
+        if no is not None and date:
+            dates[no] = str(date)
+
+    odds_files = [p for p in base.glob(f"{issue}-odds*.json") if not _is_intl_odds(p)]
+    if not odds_files:
+        raise FileNotFoundError(f"zucai odds 快照缺失: {base}/{issue}-odds*.json")
+    latest = max(odds_files, key=lambda p: p.stat().st_mtime)
+    odds_data = json.loads(latest.read_text(encoding="utf-8"))
+
+    odds: dict = {}
+    for row in odds_data.get("matches") or []:
+        no = row.get("match_no")
+        if no is None:
+            continue
+        try:
+            odds[no] = {"home": float(row["home"]), "draw": float(row["draw"]),
+                        "away": float(row["away"])}
+        except (KeyError, TypeError, ValueError):
+            continue
+    return matches, odds, dates

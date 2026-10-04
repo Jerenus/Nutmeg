@@ -26,6 +26,3 @@ def test_decision_read_routes_to_kernel_adapter(tmp_path, monkeypatch):
     assert seen["reads_file"] == reads_file
 
 
-def test_decision_capture_closing_registered():
-    result = runner.invoke(app, ["decision-capture-closing", "--help"])
-    assert result.exit_code == 0

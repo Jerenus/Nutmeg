@@ -692,33 +692,6 @@ def test_reschedule_rebuilds_unfulfilled_instances_and_preserves_fulfilled(
     assert observation_count == 0
 
 
-def test_dream_ranks_variants_and_prints_variants_tried(tmp_path):
-    corpus = tmp_path / "c.json"
-    corpus.write_text(
-        json.dumps(
-            [{"fair": {"home": 0.7, "draw": 0.2, "away": 0.10}, "actual": "home"}]
-            * 20
-            + [{"fair": {"home": 0.7, "draw": 0.2, "away": 0.10}, "actual": "away"}]
-            * 5
-        ),
-        encoding="utf-8",
-    )
-    family = tmp_path / "fam.json"
-    family.write_text(
-        json.dumps(
-            {
-                "harness": "nutmeg.decision.rsi_grading:c14_line_harness",
-                "corpus": str(corpus),
-                "variants": [{"line": 0.15}, {"line": 0.12}],
-            }
-        ),
-        encoding="utf-8",
-    )
-    result = CliRunner().invoke(app, ["rsi", "dream", "--family", str(family)])
-    assert result.exit_code == 0
-    assert "variants_tried=2" in result.output and "进不了判决" in result.output
-
-
 def test_balance_writes_issue_ledger_and_fulfills_f9(tmp_path):
     data_dir = _data_dir(tmp_path)
     reads = [

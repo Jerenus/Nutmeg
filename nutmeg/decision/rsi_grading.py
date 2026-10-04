@@ -11,7 +11,7 @@ import hashlib
 import json
 import random
 import statistics
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -127,77 +127,6 @@ def grade_f4(plans: Sequence[dict], *, seed: int = 7, boots: int = 4000) -> Grad
         inputs_hash=inputs_hash(raw),
         computed_by="nutmeg.decision.rsi_grading.grade_f4",
     )
-
-
-def c14_line_harness(rows: Sequence[dict], variant: dict) -> ResidualCI:
-    """Score the least-likely face when its fair probability is within the variant line."""
-    line = float(variant["line"])
-    actual_face = {"3": "home", "1": "draw", "0": "away"}
-    residual_rows = []
-    for row in rows:
-        face = min(row["fair"], key=lambda key: row["fair"][key])
-        if float(row["fair"][face]) > line:
-            continue
-        actual = actual_face.get(str(row["actual"]), str(row["actual"]))
-        residual_rows.append(
-            {
-                "fair": {"excluded": row["fair"][face]},
-                "actual": "excluded" if actual == face else "covered",
-            }
-        )
-    if not residual_rows:
-        return ResidualCI(0, 0.0, 0.0, 0.0)
-    return bootstrap_residual_pp(residual_rows, face="excluded")
-
-
-def death_proof_threshold_harness(
-    rows: Sequence[dict], variant: dict
-) -> ResidualCI:
-    """Score every face that a frozen death-proof threshold would exclude."""
-    required = int(variant["proofs"])
-    max_fair = float(variant["max_fair"])
-    actual_face = {"3": "home", "1": "draw", "0": "away"}
-    residual_rows: list[dict] = []
-    for row in rows:
-        actual = actual_face.get(str(row.get("actual")), str(row.get("actual")))
-        d3 = row.get("_d3") or {}
-        face_status = row.get("face_status") or {}
-        for face, fair in (row.get("fair") or {}).items():
-            proof_doc = d3.get(face) or (face_status.get(face) or {}).get("proofs") or {}
-            proof_count = sum(
-                bool(proof_doc.get(key, proof_doc.get(long_key, False)))
-                for key, long_key in (
-                    ("a", "a_no_scoring_mechanism"),
-                    ("b", "b_precedent_carrier_gone"),
-                    ("c", "c_anchor_pass"),
-                )
-            )
-            if proof_count < required or float(fair) > max_fair:
-                continue
-            residual_rows.append(
-                {
-                    "fair": {"excluded": float(fair)},
-                    "actual": "excluded" if actual == face else "covered",
-                }
-            )
-    if not residual_rows:
-        return ResidualCI(0, 0.0, 0.0, 0.0)
-    return bootstrap_residual_pp(residual_rows, face="excluded")
-
-
-Harness = Callable[[Sequence[dict], dict], ResidualCI]
-
-
-def dream(corpus: Sequence[dict], harness: Harness, *, variants: Sequence[dict]) -> dict:
-    """在冻结语料上重放一族变体。只排序、只记数；不产生任何判决。"""
-    ranked = []
-    for v in variants:
-        ci = harness(corpus, v)
-        ranked.append({"variant": v, "n": ci.n, "value_pp": ci.value_pp,
-                       "ci_low_pp": ci.ci_low_pp, "ci_high_pp": ci.ci_high_pp})
-    ranked.sort(key=lambda r: (-r["value_pp"], -r["n"]))
-    return {"variants_tried": len(variants), "ranked": ranked,
-            "note": "重放结果只产候选，进不了判决（verdict 只读 prospective 档）"}
 
 
 # ── 前瞻结账适配器（2026-09-22 接入 F3 / F5 / F9）────────────────────────────

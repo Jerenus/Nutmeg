@@ -32,15 +32,13 @@ It is deliberately separate from `state/state.db` (notification/client state) an
 `analytics/analytics.duckdb`. `ensure_directories` creates only `ontology/` and
 `ontology/artifacts/`; it never creates the database file.
 
-## 3. `ontology init` and idempotency
+## 3. Initialization and migrations
 
-```bash
-uv run nutmeg ontology init --format json
-```
-
-`init` creates the owned directories and applies pending numbered migrations. It
-is idempotent: a second run applies nothing (`applied_versions == []`) and leaves
-the schema at its current version. `init` exits `2` on an invalid `--format`.
+The `ontology init` command was removed 2026-10-03. Every kernel-backed command
+calls `kernel.initialize()` itself, which creates the owned directories and applies
+pending numbered migrations idempotently (a second run applies nothing). For the
+production database, apply a new migration deliberately with
+`uv run nutmeg ontology guarded-init` (backup first) inside a timer gap.
 
 ## 4. `ontology status` — read-only health / exit-code contract
 
@@ -128,17 +126,10 @@ calendar day — never the ingestion time. Unknown times are explicit
 `BuildMarketSnapshot` (deterministic_system) records quotes and de-vigs the fair
 distribution by reusing `nutmeg.decision.market_data.devig`.
 
-**Ingest a saved market day** (idempotent):
-
-```bash
-uv run nutmeg ontology ingest-market-day --business-date <YYYY-MM-DD> \
-  --sporttery <path/to/sporttery_markets.json> [--intl <path/to/bold_odds.json>] --format json
-```
-
-It initializes the kernel if needed, upserts teams, records matches with real
-schedules, and de-vigs had snapshots; international odds align to the same opaque
-match by sporttery match number. `nutmeg ontology status` then reports
-`team_count`/`match_count`/`quote_count`/`snapshot_count`.
+**Market-day ingest** (`market_day_ingest`, idempotent) upserts teams, records matches
+with real schedules, and de-vigs had snapshots; international odds align to the same
+opaque match by sporttery match number. It runs inside `decision-am` every morning (the
+standalone `ontology ingest-market-day` command was removed 2026-10-03).
 
 ## 11. Package 2B — Evidence & Context
 
@@ -156,14 +147,8 @@ content is immutable; verify/dispute/retract (operator only) append a replayable
 `claim_status_events` trail. **Conflicting claims for the same subject coexist —
 nothing is auto-overwritten.**
 
-**Ingest a saved evidence day** (idempotent):
-
-```bash
-uv run nutmeg ontology ingest-evidence-day --business-date <YYYY-MM-DD> \
-  --availability <path> [--weather <path>] [--news <path>] --format json
-```
-
-Availability rows become upserted persons + observation-backed match statuses,
+**Evidence-day ingest** (historical; the `ontology ingest-evidence-day` command was
+removed 2026-10-03 and the production evidence/observation tables are empty). Availability rows become upserted persons + observation-backed match statuses,
 weather becomes observations, news becomes provisional claims. Rows that cannot
 attach to a known match are **counted as skipped** and printed — standalone the
 match map is empty, so Package 3 chains market-day and evidence-day to attach
@@ -347,8 +332,8 @@ no old baseline (e.g. `hhad`/`ttg`, which 4A does not score) is counted, never h
 The latest read-only dry run over the production store: **90 matched, 0 mismatched**, 10
 superseded, 89 no-baseline — the `had` scoring rebuild is exact.
 
-Run it with `nutmeg migrate-decision-store --source <old .nutmeg-data/jczq> --target
-<fresh dir>`: it imports + reconciles into the target and prints a JSON summary. It
+The one-time import ran with `nutmeg migrate-decision-store` (command and package
+removed 2026-10-03 after the cutover; recover from tag `v0.5.0` if ever needed). It
 touches no production data, dispatches nothing, and restores no schedule. **Go-live
 (enable the flag, shut the old writers, restore the three `com.nutmeg.decision.*`
 schedules) is Package 5B and happens only on explicit user approval after reviewing the

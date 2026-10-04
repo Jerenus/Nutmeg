@@ -39,18 +39,6 @@ def log_score(q: dict[str, float], y: dict[str, float], clip: float) -> float:
     return -math.log(probability)
 
 
-def rps(q: dict[str, float], y: dict[str, float]) -> float:
-    keys = _keys(q, y)
-    cumulative_q = 0.0
-    cumulative_y = 0.0
-    total = 0.0
-    for key in keys:
-        cumulative_q += q.get(key, 0.0)
-        cumulative_y += y.get(key, 0.0)
-        total += (cumulative_q - cumulative_y) ** 2
-    return total
-
-
 def closing_skill_delta(
     q: dict[str, float], p: dict[str, float], c: dict[str, float]
 ) -> float:
@@ -66,5 +54,3 @@ def directional_alignment(
     )
 
 
-def ticket_clv_log(entry_decimal_odds: float, closing_decimal_odds: float) -> float:
-    return math.log(entry_decimal_odds / closing_decimal_odds)

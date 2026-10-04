@@ -7,8 +7,6 @@
 from typer.testing import CliRunner
 
 import nutmeg.decision.ontology_adapter as ontology_adapter
-import nutmeg.decision.verbs as verbs
-from nutmeg.decision.report import DecisionReportResult
 from nutmeg.interfaces.cli import app
 
 runner = CliRunner()
@@ -24,62 +22,8 @@ def _recorder(calls, name):
 
 # --- am ---------------------------------------------------------------------
 
-def test_decision_am_order(tmp_path, monkeypatch):
-    calls: list[str] = []
-    for name in ("fetch_day", "run_sense", "run_backfill", "run_day_regime"):
-        monkeypatch.setattr(verbs, name, _recorder(calls, name))
-    verbs.run_decision_am(_DATE, tmp_path)
-    assert calls == ["fetch_day", "run_sense", "run_backfill", "run_day_regime"]
-
-
-def test_decision_am_with_zucai_order(tmp_path, monkeypatch):
-    calls: list[str] = []
-    for name in ("fetch_day", "fetch_zucai", "run_sense", "run_sense_zucai",
-                 "run_backfill", "run_day_regime"):
-        monkeypatch.setattr(verbs, name, _recorder(calls, name))
-    verbs.run_decision_am(_DATE, tmp_path, zucai_dir=tmp_path / "zucai", issue="26091")
-    assert calls == ["fetch_day", "fetch_zucai", "run_sense",
-                     "run_sense_zucai", "run_backfill", "run_day_regime"]
-
-
-def test_decision_am_no_issue_skips_zucai(tmp_path, monkeypatch):
-    calls: list[str] = []
-    for name in ("fetch_day", "fetch_zucai", "run_sense", "run_sense_zucai",
-                 "run_backfill", "run_day_regime"):
-        monkeypatch.setattr(verbs, name, _recorder(calls, name))
-    verbs.run_decision_am(_DATE, tmp_path, zucai_dir=tmp_path / "zucai")   # 无 issue
-    assert "fetch_zucai" not in calls and "run_sense_zucai" not in calls
-    assert calls == ["fetch_day", "run_sense", "run_backfill", "run_day_regime"]
-
 
 # --- close ------------------------------------------------------------------
-
-
-def test_decision_settle_order_and_dispatch(tmp_path, monkeypatch):
-    calls: list[str] = []
-    seen: dict = {}
-    monkeypatch.setattr(verbs, "run_reconcile", _recorder(calls, "reconcile"))
-    monkeypatch.setattr(verbs, "run_calibrate_panel", _recorder(calls, "calibrate"))
-
-    def _report(rd, od, *, dispatch_telegram, dry_run, stage):
-        calls.append("report")
-        seen.update(dispatch=dispatch_telegram, dry_run=dry_run, stage=stage)
-        return DecisionReportResult.success(rd, stage, tmp_path / "report.pdf", 10)
-
-    monkeypatch.setattr(verbs, "run_report", _report)
-    verbs.run_decision_settle(_DATE, tmp_path, dispatch=True, dry_run=False)
-    assert calls == ["reconcile", "calibrate", "report"]
-    assert seen == {"dispatch": True, "dry_run": False, "stage": "settle"}
-
-
-def test_decision_settle_with_zucai_order(tmp_path, monkeypatch):
-    calls: list[str] = []
-    monkeypatch.setattr(verbs, "run_reconcile", _recorder(calls, "reconcile"))
-    monkeypatch.setattr(verbs, "run_reconcile_zucai", _recorder(calls, "reconcile_zucai"))
-    monkeypatch.setattr(verbs, "run_calibrate_panel", _recorder(calls, "calibrate"))
-    monkeypatch.setattr(verbs, "run_report", _recorder(calls, "report"))
-    verbs.run_decision_settle(_DATE, tmp_path, issue="26091", zucai_dir=tmp_path / "z")
-    assert calls == ["reconcile", "reconcile_zucai", "calibrate", "report"]
 
 
 # --- CLI 旗标透传 -----------------------------------------------------------

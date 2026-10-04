@@ -5,7 +5,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole, ObjectRef
 from nutmeg.ontology.actions.scoreboard_actions import (
@@ -14,14 +14,12 @@ from nutmeg.ontology.actions.scoreboard_actions import (
 )
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.errors import OptimisticConcurrencyError
-from nutmeg.ontology.operator.result_actions import SettleTaskRequest
 from nutmeg.ontology.operator.review_actions import (
     MaterializeOperatorReviewItemRequest,
     OperatorReviewActions,
     RecordScoreboardEffectDispositionRequest,
     ReviewNotReadyError,
 )
-from nutmeg.ontology.repository import schema_operator_result as sor
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.operator_review import OperatorReviewRepository
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -35,13 +33,8 @@ from tests.ontology.operator.test_no_ticket_actions import (
 from tests.ontology.operator.test_no_ticket_actions import (
     _request as _no_ticket_request,
 )
-from tests.ontology.operator.test_result_ingest import AT as RESULT_AT
 from tests.ontology.operator.test_review_migration import (
     _seed_immediate_fact_before_v25,
-)
-from tests.ontology.operator.test_task_settlement import (
-    _placed_result_set,
-    _settlement_request,
 )
 
 SIGNING_KEY = "review-signing-key-for-tests-32-bytes-minimum"
@@ -205,81 +198,6 @@ def test_immediate_review_materialization_is_system_only_and_idempotent(
     assert fixture.fact_id in action.idempotency_key
     assert len(jobs) == 1
     assert jobs[0].state == "completed"
-
-
-def test_settlement_review_materializes_with_exact_result_scope(tmp_path: Path) -> None:
-    settlement_actions, engine, result_set = _placed_result_set(tmp_path)
-    requested = settlement_actions.request_settlement(_settlement_request(result_set))
-    with OntologyUnitOfWork(engine) as uow:
-        settlement_job = uow.operator_decision.claim_worker_jobs(
-            job_kind="task_settlement",
-            lease_owner="settlement-worker",
-            as_of=(RESULT_AT + timedelta(minutes=2)).isoformat(),
-            lease_expires_at=(RESULT_AT + timedelta(minutes=7)).isoformat(),
-            limit=1,
-        )[0]
-    settled = settlement_actions.settle_task(
-        SettleTaskRequest(
-            settlement_request_id=requested.result_refs[0].object_id,
-            worker_job_id=settlement_job.worker_job_id,
-            lease_owner="settlement-worker",
-            settlement_method_version="operator-task-settlement-v1",
-            rounding_policy_version="cn_sporttery_jczq_v1",
-            actor_id="system:settlement",
-            actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-            idempotency_key="review-tests:settlement",
-            requested_at=RESULT_AT + timedelta(minutes=2),
-        )
-    )
-    with engine.connect() as connection:
-        fact_id = str(
-            connection.scalar(
-                select(
-                    sor.operator_review_eligibility_facts.c.review_eligibility_fact_id
-                ).where(
-                    sor.operator_review_eligibility_facts.c.action_id
-                    == settled.action_id
-                )
-            )
-        )
-    with OntologyUnitOfWork(engine) as uow:
-        review_job = uow.operator_decision.claim_worker_jobs(
-            job_kind="review_materialization",
-            lease_owner="review-worker",
-            as_of=(RESULT_AT + timedelta(minutes=3)).isoformat(),
-            lease_expires_at=(RESULT_AT + timedelta(minutes=8)).isoformat(),
-            limit=1,
-        )[0]
-
-    review_actions = OperatorReviewActions(
-        ActionService(lambda: OntologyUnitOfWork(engine)),
-        shadow_token_signing_key=SIGNING_KEY,
-    )
-    materialized = review_actions.materialize_operator_review_item(
-        MaterializeOperatorReviewItemRequest(
-            review_eligibility_fact_id=fact_id,
-            worker_job_id=review_job.worker_job_id,
-            lease_owner="review-worker",
-            actor_id="system:operator-review",
-            actor_role=ActorRole.DETERMINISTIC_SYSTEM,
-            requested_at=RESULT_AT + timedelta(minutes=4),
-        )
-    )
-
-    assert materialized.status is ActionStatus.COMMITTED
-    review_id = next(
-        ref.object_id
-        for ref in materialized.result_refs
-        if ref.object_type == "operator_review_item"
-    )
-    with OntologyUnitOfWork(engine) as uow:
-        review = uow.operator_review.review_item(review_id)
-    assert review is not None
-    assert review.lane == "jczq"
-    assert review.business_key == "2026-09-04"
-    assert review.review_kind == "forecast_truth"
-    assert review.market_prior_baseline_revision_id is not None
-    assert len(review.outcome_revision_ids) == 1
 
 
 def _seed_bound_outcome(engine) -> str:

@@ -54,11 +54,6 @@ def test_gate_speaks_in_all_three_states():
     assert "探测失败" in msg and "不可当作" in msg   # 失败 ≠ 无期
 
 
-def test_hours_left():
-    insale = InsaleIssue("26103", datetime(2026, 8, 11, 22, 0))
-    assert insale.hours_left(datetime(2026, 8, 11, 14, 0)) == 8.0
-
-
 def test_selected_issue_takes_priority_over_current_issue_label():
     page = ('<li data-expect="26123">当前第26123期</li>'
             '<li class="chked" data-expect="26124">官方在售第26124期</li>'

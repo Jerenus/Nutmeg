@@ -32,20 +32,10 @@ def test_after_am_builds_research_board_then_schedules_match_duties(tmp_path):
 def test_decision_am_calls_research_wiring_after_success(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    import nutmeg.config.settings as settings_module
     import nutmeg.interfaces.cli as cli
-    from nutmeg.decision.verbs import DecisionWorkflowResult
+    from nutmeg.decision.workflow_result import DecisionWorkflowResult
 
-    monkeypatch.delenv("NUTMEG_ONTOLOGY_V2", raising=False)
-    settings_module.get_settings.cache_clear()
-    monkeypatch.setattr(
-        "nutmeg.decision.verbs.run_decision_am",
-        lambda run_date, output_dir, **kwargs: DecisionWorkflowResult(
-            "decision-am", run_date, (), "stub"
-        ),
-    )
-    # .env 里的 NUTMEG_ONTOLOGY_V2=1 会被 settings 读到，delenv 挡不住 → 两条路径都桩掉；
-    # 否则本测试真去抓体彩，WAF 降级的早上就红（2026-09-28）
+    # 桩掉内核路径，否则本测试真去抓体彩，WAF 降级的早上就红（2026-09-28）
     monkeypatch.setattr(
         "nutmeg.decision.ontology_adapter.run_decision_am_v2",
         lambda run_date, output_dir, **kwargs: DecisionWorkflowResult(
@@ -242,13 +232,10 @@ def _spy_after_settle(monkeypatch):
 
 
 def _stub_settle(monkeypatch):
-    import nutmeg.config.settings as settings_module
-    from nutmeg.decision.verbs import DecisionWorkflowResult
+    from nutmeg.decision.workflow_result import DecisionWorkflowResult
 
-    monkeypatch.delenv("NUTMEG_ONTOLOGY_V2", raising=False)
-    settings_module.get_settings.cache_clear()
     monkeypatch.setattr(
-        "nutmeg.decision.verbs.run_decision_settle",
+        "nutmeg.decision.ontology_adapter.run_decision_settle_v2",
         lambda rd, od, **k: DecisionWorkflowResult("decision-settle", rd, (), "stub"))
 
 

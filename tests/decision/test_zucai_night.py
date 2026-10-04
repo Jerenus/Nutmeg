@@ -12,7 +12,6 @@ from nutmeg.decision.zucai_night import (
     run_night_calibrate,
     ticket_partial_status,
 )
-from nutmeg.interfaces import cli as cli_module
 from nutmeg.interfaces.cli import app
 
 
@@ -177,8 +176,7 @@ def test_night_cli_without_dispatch_preserves_stdout_and_builds_no_notifier(
         lambda issue, date, zucai_dir: report,
     )
     monkeypatch.setattr(
-        cli_module,
-        "build_notification_service",
+        "nutmeg.notifications.wiring.build_notification_service",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("notifier built")),
     )
 
@@ -201,7 +199,7 @@ def test_night_cli_dispatches_exact_report_as_dry_run(tmp_path, monkeypatch):
         lambda issue, date, zucai_dir: report,
     )
     monkeypatch.setattr(
-        cli_module, "build_notification_service", lambda **kwargs: service
+        "nutmeg.notifications.wiring.build_notification_service", lambda **kwargs: service
     )
 
     result = CliRunner().invoke(app, [
@@ -232,7 +230,7 @@ def test_night_cli_failed_required_delivery_exits_one(tmp_path, monkeypatch):
         lambda issue, date, zucai_dir: "report",
     )
     monkeypatch.setattr(
-        cli_module, "build_notification_service", lambda **kwargs: service
+        "nutmeg.notifications.wiring.build_notification_service", lambda **kwargs: service
     )
 
     result = CliRunner().invoke(app, [
@@ -254,7 +252,7 @@ def test_night_cli_no_dry_run_is_forwarded_explicitly(tmp_path, monkeypatch):
         lambda issue, date, zucai_dir: "report",
     )
     monkeypatch.setattr(
-        cli_module, "build_notification_service", lambda **kwargs: service
+        "nutmeg.notifications.wiring.build_notification_service", lambda **kwargs: service
     )
 
     result = CliRunner().invoke(app, [

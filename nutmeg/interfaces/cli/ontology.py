@@ -175,46 +175,6 @@ def guarded_initialize(
         lease.release()
 
 
-@ontology_app.command("init")
-def ontology_init(
-    format: str = _cli.typer.Option("text", "--format", help="text or json"),
-) -> None:
-    _require_format(format)
-    settings = _cli.get_settings()
-    kernel = _cli.build_ontology_kernel(settings)
-    before = kernel.status()
-    if (
-        settings.data_dir.resolve() == settings.production_data_dir.resolve()
-        and before.initialized
-        and before.pending_migrations
-    ):
-        _cli.typer.echo("production_migration_requires_guarded_init", err=True)
-        raise _cli.typer.Exit(code=1)
-    report = kernel.initialize()
-    status = kernel.status()
-    if format == "json":
-        _cli.typer.echo(
-            _cli.json.dumps(
-                {
-                    "applied_versions": list(report.applied_versions),
-                    "schema_version": status.schema_version,
-                    "ontology_db_path": str(settings.ontology_db_path),
-                    "ontology_artifact_dir": str(settings.ontology_artifact_dir),
-                },
-                indent=2,
-                sort_keys=True,
-                default=str,
-            )
-        )
-        return
-    _cli.console.print(
-        f"ontology initialized: applied={list(report.applied_versions)} "
-        f"schema_version={status.schema_version}"
-    )
-    _cli.console.print(f"db={settings.ontology_db_path}")
-    _cli.console.print(f"artifacts={settings.ontology_artifact_dir}")
-
-
 @ontology_app.command("guarded-init")
 def ontology_guarded_init(
     data_dir: Annotated[Path, _cli.typer.Option("--data-dir")],

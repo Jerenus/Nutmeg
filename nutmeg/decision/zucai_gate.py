@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 INSALE_URL = "https://trade.500.com/sfc/"
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -39,9 +39,6 @@ class InsaleIssue:
     def is_sale_day(self, today: date) -> bool:
         """今天是不是这一期的销售截止日 = 今天该不该备料。"""
         return self.deadline.date() == today
-
-    def hours_left(self, now: datetime) -> float:
-        return (self.deadline - now).total_seconds() / 3600.0
 
 
 def _resolve_year(month: int, day: int, today: date) -> int:
@@ -122,7 +119,3 @@ def gate(*, today: date | None = None, fetcher=None) -> tuple[InsaleIssue | None
                     f"({(insale.deadline.date() - today).days} 天后)")
 
 
-def next_sale_dates(insale: InsaleIssue, *, today: date, span_days: int = 7) -> list[date]:
-    """仅供心跳文案参考:未来 span_days 内已知的销售日(当前只知道在售那一期)。"""
-    end = today + timedelta(days=span_days)
-    return [insale.deadline.date()] if today <= insale.deadline.date() <= end else []

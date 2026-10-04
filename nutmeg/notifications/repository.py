@@ -101,10 +101,6 @@ class SqlAlchemyNotificationRepository:
             )
             return None if record is None else _notification_view(record)
 
-    def get_notification(self, notification_id: str) -> NotificationView | None:
-        with self._session() as session:
-            record = session.get(NotificationRecord, notification_id)
-            return None if record is None else _notification_view(record)
 
     def list_deliveries(self, notification_id: str) -> tuple[DeliveryView, ...]:
         with self._session() as session:
@@ -176,14 +172,6 @@ class SqlAlchemyNotificationRepository:
             self._aggregate_in_session(session, notification_id, now)
             session.commit()
 
-    def add_artifacts(
-        self, notification_id: str, artifacts: tuple[StoredArtifact, ...]
-    ) -> None:
-        now = datetime.now(UTC)
-        with self._session() as session:
-            for artifact in artifacts:
-                session.add(_artifact_record(artifact, now))
-            session.commit()
 
     def start_attempt(
         self,
@@ -357,37 +345,6 @@ class SqlAlchemyNotificationRepository:
             session.commit()
             return len(deliveries)
 
-    def list_recent(self, since: datetime) -> tuple[NotificationView, ...]:
-        with self._session() as session:
-            rows = session.scalars(
-                select(NotificationRecord)
-                .where(NotificationRecord.created_at >= since)
-                .order_by(NotificationRecord.created_at.desc())
-            ).all()
-            return tuple(_notification_view(row) for row in rows)
-
-    def list_retryable_required(self) -> tuple[NotificationView, ...]:
-        with self._session() as session:
-            rows = session.scalars(
-                select(NotificationRecord)
-                .join(
-                    NotificationDeliveryRecord,
-                    NotificationDeliveryRecord.notification_id
-                    == NotificationRecord.notification_id,
-                )
-                .where(
-                    NotificationDeliveryRecord.required.is_(True),
-                    NotificationDeliveryRecord.status.in_(
-                        [
-                            DeliveryStatus.RETRYABLE_FAILED.value,
-                            DeliveryStatus.UNCERTAIN.value,
-                        ]
-                    ),
-                )
-                .distinct()
-                .order_by(NotificationRecord.created_at.desc())
-            ).all()
-            return tuple(_notification_view(row) for row in rows)
 
     def get_bundle(self, notification_id: str) -> NotificationBundle:
         with self._session() as session:

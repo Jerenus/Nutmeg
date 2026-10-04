@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 
 from nutmeg.decision.zucai_gate import INSALE_URL, _default_fetcher, _resolve_year
@@ -154,13 +154,3 @@ def fetch_and_write(zucai_dir: Path, *, slot: str = "afternoon",
     return write_snapshots(board, zucai_dir, slot=slot)
 
 
-def business_dates(board: dict) -> list[str]:
-    """这一期覆盖的业务日(欧战期常横跨 3-4 天),供板面加载使用。"""
-    out: set[str] = set()
-    for m in board.get("matches", []):
-        if not m.get("match_date"):
-            continue
-        day = date.fromisoformat(m["match_date"])
-        for offset in (-1, 0):
-            out.add((day + timedelta(days=offset)).isoformat())
-    return sorted(out)

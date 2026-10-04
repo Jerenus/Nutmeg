@@ -2,11 +2,7 @@ import json
 from pathlib import Path
 
 from nutmeg.config.settings import AppSettings
-from nutmeg.decision.ontology_adapter import (
-    _capture_closing_v2,
-    _report_v2,
-    run_decision_am_v2,
-)
+from nutmeg.decision.ontology_adapter import _report_v2, run_decision_am_v2
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 
@@ -46,32 +42,6 @@ def _kernel(tmp_path: Path):
     with OntologyUnitOfWork(kernel.engine) as uow:
         [match_id] = uow.identity.all_match_ids()
     return kernel, match_id, output_dir
-
-
-def test_capture_closing_v2_ingests_closing_snapshot(tmp_path: Path) -> None:
-    kernel, match_id, output_dir = _kernel(tmp_path)
-    with OntologyUnitOfWork(kernel.engine) as uow:
-        assert uow.market.closing_fair(match_id, "md-had") is None   # none before capture
-    (output_dir / "daily" / DATE / "bold_odds_closing.json").write_text(
-        json.dumps(CLOSING), encoding="utf-8")
-    from datetime import UTC, datetime
-    msg = _capture_closing_v2(kernel, DATE, output_dir,
-                              datetime(2026, 7, 19, 22, tzinfo=UTC))
-    assert "收盘快照" in msg
-    with OntologyUnitOfWork(kernel.engine) as uow:
-        closing = uow.market.closing_fair(match_id, "md-had")
-        read_time = uow.market.latest_fair(match_id, "md-had")
-    assert closing is not None and abs(sum(closing.values()) - 1.0) < 1e-9
-    # the closing fair is the intl CLOSING odds (home 1.95 < read-time 2.10), not the
-    # read-time sporttery odds re-marked closing — so home prob is higher at close
-    assert closing["home"] > read_time["home"]
-
-
-def test_capture_closing_v2_skips_without_file(tmp_path: Path) -> None:
-    kernel, _match_id, output_dir = _kernel(tmp_path)
-    from datetime import UTC, datetime
-    msg = _capture_closing_v2(kernel, DATE, output_dir, datetime(2026, 7, 19, 22, tzinfo=UTC))
-    assert "跳过" in msg and "CLV 空" in msg
 
 
 def test_report_v2_writes_markdown_and_pushes_dry(tmp_path: Path) -> None:

@@ -13,13 +13,8 @@ from nutmeg.decision.zucai_night import run_night_calibrate
 # JCZQ_OUTPUT_DIR_OPTION 惯例);行为与内联默认完全一致。
 _OUTPUT_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data/jczq"), "--output-dir")
 _READS_FILE_OPTION = _cli.typer.Option(..., "--reads-file", help="Read JSON 数组文件")
-_LEGS_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="投注腿 JSON 数组文件")
 _ZUCAI_DIR_OPTION = _cli.typer.Option(
     Path(".nutmeg-data/zucai"), "--zucai-dir", help="zucai 源快照目录")
-_ZUCAI_SCHEDULE_SOURCE_FILE_OPTION = _cli.typer.Option(
-    None, "--schedule-source-file", help="赛程源文件(离线;省略则需 --live-fetch)")
-_ZUCAI_ODDS_SOURCE_FILE_OPTION = _cli.typer.Option(
-    None, "--odds-source-file", help="赔率源文件(离线;省略则需 --live-fetch)")
 _LEGS_AUDIT_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="票面结构 JSON")
 _EXPLAIN_MATCH_OPTION = _cli.typer.Option(
     None, "--match", help="只展开这些场号；不给＝全部")
@@ -29,8 +24,6 @@ _WITH_LEGS_FILE_OPTION = _cli.typer.Option(
     [], "--with-legs-file",
     help="同期其它票面文件；用于 C15 多票共享被排面检查（可重复）")
 _AUDIT_DATA_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
-_POSTMORTEM_DAY_OPTION = _cli.typer.Option(..., "--day", help="业务日 YYYY-MM-DD")
-_POSTMORTEM_ISSUE_OPTION = _cli.typer.Option(None, "--issue", help="可选传统足彩期号")
 _AUDIT_ZUCAI_LEGS_OPTION = _cli.typer.Option(
     None, "--zucai-legs-file",
     help="同日足彩票面；与 --channel-map 一起给才触发 C18 跨渠道立场一致性")
@@ -58,144 +51,6 @@ _ZUCAI_OPTIMIZER_INPUT_OPTION = _cli.typer.Option(
 )
 
 
-@_cli.app.command("decision-postmortem")
-def decision_postmortem(
-    day: str = _POSTMORTEM_DAY_OPTION,
-    issue: str | None = _POSTMORTEM_ISSUE_OPTION,
-    data_dir: Path = _AUDIT_DATA_DIR_OPTION,
-) -> None:
-    """从冻结判断产物与赛果机械生成逐场判后记录。"""
-    import json
-
-    from nutmeg.decision.postmortem import postmortem_candidate_count, postmortem_rows
-
-    rows = postmortem_rows(day=day, issue=issue, data_dir=data_dir)
-    if issue:
-        out = data_dir / "zucai" / f"{issue}-postmortem.json"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    else:
-        out_dir = data_dir / "jczq" / "daily" / day
-        out_dir.mkdir(parents=True, exist_ok=True)
-        for row in rows:
-            out = out_dir / f"postmortem-{row['code']}.json"
-            out.write_text(json.dumps(row, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    pending = postmortem_candidate_count(day=day, issue=issue, data_dir=data_dir) - len(rows)
-    _cli.typer.echo(
-        f"decision-postmortem {day} issue={issue or '-'} "
-        f"written={len(rows)} pending={pending}"
-    )
-
-
-@_cli.app.command("decision-fetch")
-def decision_fetch(
-    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-) -> None:
-    """决策本体 · 数据自取:体彩盘口 + API-Football 国际欧赔 → 当日快照。"""
-    from nutmeg.decision.fetch import fetch_day
-    _cli.typer.echo(fetch_day(run_date, output_dir))
-
-
-@_cli.app.command("decision-odds-shadow")
-def decision_odds_shadow(
-    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-) -> None:
-    """决策本体 · 影子期:API-Football vs titan007 国际欧赔对照报告(judgment 不动)。"""
-    from nutmeg.decision.odds_shadow import run_shadow
-    _cli.typer.echo(run_shadow(run_date, output_dir))
-
-
-@_cli.app.command("decision-datasource-health")
-def decision_datasource_health(
-    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    issue: str | None = _cli.typer.Option(None, "--issue", help="给了才查足彩链"),
-    zucai_dir: Path = _ZUCAI_DIR_OPTION,
-) -> None:
-    """决策本体 · 数据底座健康度:端点/覆盖/共识家数/初赔/新鲜度/CLV 填充率(+足彩对齐)。
-
-    结论为 degraded 时退出码 1——供无人值守链路把数据退化变成可见失败。
-    """
-    from nutmeg.decision.datasource_health import run_health
-    path, verdict = run_health(run_date, output_dir, issue=issue, zucai_dir=zucai_dir)
-    _cli.typer.echo(f"{path} → {verdict}")
-    if verdict != "healthy":
-        raise _cli.typer.Exit(code=1)
-
-
-@_cli.app.command("decision-fetch-zucai")
-def decision_fetch_zucai(
-    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26091"),
-    zucai_dir: Path = _ZUCAI_DIR_OPTION,
-    slot: str = _cli.typer.Option("afternoon", "--slot", help="morning | afternoon | revision"),
-    live_fetch: bool = _cli.typer.Option(False, "--live-fetch"),
-    schedule_source_url: str | None = _cli.typer.Option(None, "--schedule-source-url"),
-    schedule_source_file: Path | None = _ZUCAI_SCHEDULE_SOURCE_FILE_OPTION,
-    odds_source_url: str | None = _cli.typer.Option(None, "--odds-source-url"),
-    odds_source_file: Path | None = _ZUCAI_ODDS_SOURCE_FILE_OPTION,
-    run_date: str | None = _cli.typer.Option(None, "--run-date"),
-    captured_at: str | None = _cli.typer.Option(None, "--captured-at"),
-) -> None:
-    """决策本体 · 传统足彩数据自取:赛程 + 赔率 → <issue>-issue.json + <issue>-odds*.json。"""
-    from nutmeg.decision.fetch import fetch_zucai
-    _cli.typer.echo(fetch_zucai(
-        issue, zucai_dir, slot=slot, live_fetch=live_fetch,
-        schedule_source_url=schedule_source_url,
-        schedule_source_file=schedule_source_file,
-        odds_source_url=odds_source_url, odds_source_file=odds_source_file,
-        run_date=run_date, captured_at=captured_at,
-    ))
-
-
-@_cli.app.command("decision-fetch-zucai-intl")
-def decision_fetch_zucai_intl(
-    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26125"),
-    zucai_dir: Path = _ZUCAI_DIR_OPTION,
-) -> None:
-    """决策本体 · 足彩国际欧赔(titan007):→ <issue>-odds-intl.json。
-
-    **只补充不替换**:500.com 基线 <issue>-odds.json 原样保留。对不上 titan007
-    板面的场次直接缺席(足彩含竞彩不卖的场),不猜、不回填。
-    """
-    import json
-
-    from nutmeg.services.zucai_titan007_odds import (
-        collect_zucai_euro_titan007_live,
-    )
-    issue_path = Path(zucai_dir) / f"{issue}-issue.json"
-    if not issue_path.exists():
-        _cli.typer.echo(f"缺 {issue_path}——先跑 decision-fetch-zucai")
-        raise _cli.typer.Exit(code=1)
-    doc = json.loads(issue_path.read_text(encoding="utf-8"))
-    priced = collect_zucai_euro_titan007_live(doc)
-    total = len(doc.get("matches") or [])
-    if not priced:
-        _cli.typer.echo(f"decision-fetch-zucai-intl {issue}: 0/{total} 场——不落盘")
-        raise _cli.typer.Exit(code=1)
-    out = Path(zucai_dir) / f"{issue}-odds-intl.json"
-    out.write_text(json.dumps({
-        "issue_id": issue,
-        "source": "titan007",
-        "sources": [{"label": "titan007 逐家国际欧赔(锐盘共识,含初赔)",
-                     "url": "http://1x2d.titan007.com/{match_id}.js"}],
-        "matches": [priced[k] for k in sorted(priced)],
-    }, ensure_ascii=False, indent=1), encoding="utf-8")
-    _cli.typer.echo(f"decision-fetch-zucai-intl {issue}: {len(priced)}/{total} 场 → {out}")
-
-
-@_cli.app.command("decision-sense")
-def decision_sense(
-    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    taken_at: str = _cli.typer.Option(..., "--taken-at", help="ISO 时刻"),
-) -> None:
-    """决策本体 · 动词一:盘口快照 → Match+Snapshot 入库(replay)。"""
-    from nutmeg.decision.verbs import run_sense
-    _cli.typer.echo(run_sense(run_date, output_dir, taken_at))
-
-
 @_cli.app.command("decision-read")
 def decision_read(
     reads_file: Path = _READS_FILE_OPTION,
@@ -205,46 +60,6 @@ def decision_read(
     from nutmeg.decision.ontology_adapter import run_decision_read_v2
 
     _cli.typer.echo(run_decision_read_v2(reads_file, output_dir))
-
-
-@_cli.app.command("decision-backfill")
-def decision_backfill(
-    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    made_at: str = _cli.typer.Option(..., "--made-at", help="ISO 时刻"),
-) -> None:
-    """决策本体 · 判读收尾:未判场补市场基线 shadow(须在 decision-read 之后)。"""
-    from nutmeg.decision.verbs import run_backfill
-    _cli.typer.echo(run_backfill(run_date, output_dir, made_at))
-
-
-@_cli.app.command("decision-day-regime")
-def decision_day_regime(
-    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-) -> None:
-    """决策本体 · 日级盘面热度诊断:确定性算术攒样本,不进决策(decision-am 已内嵌)。"""
-    from nutmeg.decision.verbs import run_day_regime
-    _cli.typer.echo(run_day_regime(run_date, output_dir))
-
-
-@_cli.app.command("decision-alias-audit")
-def decision_alias_audit(
-    run_date: str | None = _cli.typer.Option(None, "--run-date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    history: bool = _cli.typer.Option(
-        False, "--history", help="改跑全部历史板面的覆盖率(加完别名后的验收口径)"),
-) -> None:
-    """决策本体 · 别名覆盖审计:未命中 = 丢国际欧赔锚(decision-am 已内嵌当日审计)。"""
-    if history:
-        from nutmeg.decision.alias_audit import audit_history, format_history
-        _cli.typer.echo(format_history(audit_history(output_dir)))
-        return
-    if not run_date:
-        _cli.typer.echo("❌ 需要 --run-date 或 --history", err=True)
-        raise _cli.typer.Exit(code=1)
-    from nutmeg.decision.verbs import run_alias_audit
-    _cli.typer.echo(run_alias_audit(run_date, output_dir))
 
 
 @_cli.app.command("decision-entities-sync")
@@ -330,76 +145,6 @@ def decision_profile(
                 f"\n      证据 {row.get('evidence')} · {row.get('at')}")
 
 
-@_cli.app.command("decision-capture-closing")
-def decision_capture_closing(
-    run_date: str = _cli.typer.Option(..., "--run-date"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    taken_at: str = _cli.typer.Option(..., "--taken-at"),
-) -> None:
-    """决策本体 · 收盘捕获:近开赛欧赔 → CLV 参照快照。"""
-    from nutmeg.decision.verbs import run_capture_closing
-    _cli.typer.echo(run_capture_closing(run_date, output_dir, taken_at))
-
-
-@_cli.app.command("decision-report")
-def decision_report(
-    date: str = _cli.typer.Option(..., "--date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    dispatch_telegram: bool = _cli.typer.Option(False, "--dispatch-telegram",
-                                                help="渲染后通过 Telegram 推送 PDF"),
-    dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run",
-                                      help="dry-run 时不真推送"),
-    format: str = _cli.typer.Option("text", "--format", help="text or json"),
-) -> None:
-    """决策本体 · 清洁版 PDF 日报(判读/偏移/CLV + Ticket + 双轴校准)+ Telegram 推送。"""
-    from nutmeg.decision.report import run_report
-    result = run_report(
-        date,
-        output_dir,
-        dispatch_telegram=dispatch_telegram,
-        dry_run=dry_run,
-        stage="manual",
-    )
-    _emit_result(result, format=format)
-    if not result.succeeded:
-        raise _cli.typer.Exit(code=1)
-
-
-@_cli.app.command("decision-reconcile")
-def decision_reconcile(
-    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    settled_at: str = _cli.typer.Option(..., "--settled-at", help="ISO 结算时刻"),
-) -> None:
-    """决策本体 · 动词四:赛果+收盘 → Settlement(Brier+CLV)落库。"""
-    from nutmeg.decision.verbs import run_reconcile
-    _cli.typer.echo(run_reconcile(run_date, output_dir, settled_at))
-
-
-@_cli.app.command("decision-sense-zucai")
-def decision_sense_zucai(
-    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26091"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    zucai_dir: Path = _ZUCAI_DIR_OPTION,
-    taken_at: str = _cli.typer.Option(..., "--taken-at", help="ISO 时刻"),
-) -> None:
-    """决策本体 · 传统足彩感知:zucai 14场+赔率 → 同一信念层 Match+Snapshot。"""
-    from nutmeg.decision.verbs import run_sense_zucai
-    _cli.typer.echo(run_sense_zucai(issue, output_dir, taken_at, zucai_dir))
-
-
-@_cli.app.command("decision-reconcile-zucai")
-def decision_reconcile_zucai(
-    issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26091"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    zucai_dir: Path = _ZUCAI_DIR_OPTION,
-    settled_at: str = _cli.typer.Option(..., "--settled-at", help="ISO 结算时刻"),
-) -> None:
-    """决策本体 · 传统足彩结算:zucai 1X2 赛果 → Settlement(canonical 通用)。"""
-    from nutmeg.decision.verbs import run_reconcile_zucai
-    _cli.typer.echo(run_reconcile_zucai(issue, output_dir, settled_at, zucai_dir))
-
-
 _ISSUE_OPTION = _cli.typer.Option(None, "--issue", help="传统足彩期号(带则纳入 zucai)")
 
 
@@ -454,16 +199,6 @@ def decision_settle(
         )
     if not getattr(result, "succeeded", True):
         raise _cli.typer.Exit(code=1)
-
-
-@_cli.app.command("decision-calibrate")
-def decision_calibrate(
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    as_of: str = _cli.typer.Option(..., "--as-of", help="YYYY-MM-DD"),
-) -> None:
-    """决策本体 · 动词五:聚合 Settlement → FactorVerdict + 校准面板。"""
-    from nutmeg.decision.verbs import run_calibrate_panel
-    _cli.typer.echo(run_calibrate_panel(output_dir, as_of))
 
 
 def _emit_result(result, *, format: str) -> None:
@@ -525,77 +260,6 @@ def decision_web(
         data_dir=Path(output_dir).parent,
     )
     uvicorn.run(app, host=host, port=port)
-
-
-def _responder_fail(exc: Exception) -> None:
-    _cli.typer.echo(f"workbench-respond error: {exc}")
-    raise _cli.typer.Exit(code=1)
-
-
-def _responder_judgments(date: str) -> dict:
-    """内核当日 judgment payload(obj_id → payload),与工作台同一读侧。"""
-    from datetime import UTC, datetime
-
-    from nutmeg.config.settings import get_settings
-    from nutmeg.interfaces.decision_web_kernel import kernel_day_state
-    from nutmeg.ontology.wiring import build_ontology_kernel
-    from nutmeg.product.repository import ProductReadRepository
-
-    kernel = build_ontology_kernel(get_settings())
-    kernel.initialize()
-    repo = ProductReadRepository(kernel.engine, kernel.paths.analytics)
-    state = kernel_day_state(repo, date, as_of=datetime.now(UTC))
-    return {e["obj_id"]: e["payload"] for e in state["events"] if e.get("kind") == "judgment"}
-
-
-def _responder_sleep(seconds: float) -> None:
-    """轮询间隔（测试替身在这里换掉，免得真睡）。"""
-    import time
-
-    time.sleep(seconds)
-
-
-def _responder_provider():
-    from nutmeg.agents.responder_provider import build_responder_provider
-    from nutmeg.config.settings import get_settings
-
-    return build_responder_provider(get_settings())
-
-
-@_cli.app.command("workbench-respond")
-def workbench_respond(
-    date: str = _cli.typer.Option(..., "--date", help="工作台日期(开球日)"),
-    issue: str = _cli.typer.Option(..., "--issue"),
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    zucai_dir: Path = _ZUCAI_DIR_OPTION,
-    watch: bool = _cli.typer.Option(False, "--watch", help="常驻,每 15 秒轮询"),
-    idle_exit: int = _cli.typer.Option(
-        240, "--idle-exit",
-        help="连续空转多少次后自动退出(默认 240≈1 小时);0=不退。忘了关不该空跑一夜"),
-) -> None:
-    """追问线程应答器:回答事件流里未回复的 user_message(只解释已落库研究,不判断)。"""
-    from nutmeg.decision.workbench_responder import respond_pending
-
-    provider = _responder_provider()
-    if provider is None:
-        _responder_fail(RuntimeError("未配置 NUTMEG_PORTKEY_API_KEY,应答器不可用"))
-        return
-    idle = 0
-    while True:
-        # judgments 传 callable：没有待答追问时 respond_pending 根本不会解析它,
-        # 空转的 tick 就不必重建内核(2026-09-18 实测每次 0.02s,纯浪费)。
-        n = respond_pending(Path(output_dir), date, provider=provider,
-                            judgments=lambda: _responder_judgments(date), issue=issue,
-                            zucai_dir=Path(zucai_dir))
-        if n or not watch:
-            _cli.typer.echo(f"workbench-respond {date}: 回复 {n} 条")
-        if not watch:
-            return
-        idle = 0 if n else idle + 1
-        _responder_sleep(15)
-        if idle_exit and idle >= idle_exit:
-            _cli.typer.echo(f"workbench-respond {date}: 空转 {idle} 次,自动退出")
-            return
 
 
 @_cli.app.command("zucai-prep")
@@ -1148,36 +812,6 @@ def zucai_deployment_gate(
         raise _cli.typer.Exit(code=result.exit_code)
 
 
-@_cli.app.command("decision-rules")
-def decision_rules(
-    output_dir: Path = _OUTPUT_DIR_OPTION,
-    verify_issue: str | None = _cli.typer.Option(
-        None, "--verify-issue", help="用官方赛果核验该期全部 pending falsifier(幂等)"),
-) -> None:
-    """规则/证伪登记表(Roadmap A1):预登记的证伪条件由机器核验,不再依赖"记得去核"。
-
-    check 是封闭谓词词典(outcome_eq/outcome_count/margin),只判赛果与比分——判断进不来。
-    """
-    from datetime import date as _date
-
-    from nutmeg.decision.rules_registry import format_rules, load_rules
-    from nutmeg.decision.rules_registry import verify_issue as _verify
-
-    store = Path(output_dir) / "decision"
-    if verify_issue:
-        from nutmeg.decision.zucai_official import fetch_official
-
-        draw = fetch_official(verify_issue)
-        if draw is None:
-            _cli.typer.echo(f"⚠️ {verify_issue} 尚未开奖,falsifier 保持 pending")
-            raise _cli.typer.Exit(code=1)
-        for line in _verify(store, verify_issue, draw.results, draw.scores,
-                            verified_at=_date.today().isoformat()):
-            _cli.typer.echo(line)
-        return
-    _cli.typer.echo(format_rules(load_rules(store)))
-
-
 @_cli.app.command("decision-alias-propose")
 def decision_alias_propose(
     run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
@@ -1260,7 +894,9 @@ def zucai_night_calibrate(
     _cli.typer.echo(report)
     if not dispatch_telegram:
         return
-    service = _cli.build_notification_service(settings=_cli.get_settings())
+    from nutmeg.notifications.wiring import build_notification_service
+
+    service = build_notification_service(settings=_cli.get_settings())
     outcome = service.publish(
         NotificationRequest.text(
             kind="zucai.night-calibration",

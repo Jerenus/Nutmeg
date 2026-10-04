@@ -1,14 +1,5 @@
-import math
 
-from nutmeg.analytics.scoring import (
-    brier,
-    brier_skill,
-    closing_skill_delta,
-    directional_alignment,
-    log_score,
-    rps,
-    ticket_clv_log,
-)
+from nutmeg.analytics.scoring import brier, brier_skill, closing_skill_delta, directional_alignment
 
 
 def test_brier_perfect_and_worst() -> None:
@@ -30,10 +21,3 @@ def test_closing_and_directional() -> None:
     assert directional_alignment(q, p, c) > 0
 
 
-def test_log_score_and_rps_and_clv() -> None:
-    assert log_score({"home": 0.5}, {"home": 1.0}, clip=1e-9) == -math.log(0.5)
-    exact = {"a": 0.0, "b": 1.0, "c": 0.0}
-    assert rps(exact, exact) == 0.0
-    # off-by-one-bucket ordered miss is penalised, unordered Brier would not see order
-    assert rps({"a": 1.0, "b": 0.0, "c": 0.0}, {"a": 0.0, "b": 0.0, "c": 1.0}) == 2.0
-    assert ticket_clv_log(2.10, 2.00) == math.log(2.10 / 2.00)

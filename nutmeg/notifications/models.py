@@ -240,51 +240,6 @@ class NotificationOutcome:
             "possible_duplicate": self.possible_duplicate,
         }
 
-    def to_compat_dispatch(
-        self, *, caption: str, document_path: str | None
-    ) -> dict[str, Any]:
-        chat_ids: list[int] = []
-        for delivery in self.deliveries:
-            try:
-                chat_ids.append(int(delivery.destination))
-            except (TypeError, ValueError):
-                continue
-        errors = [
-            delivery.error_message
-            for delivery in self.deliveries
-            if delivery.error_message
-        ]
-        return {
-            "status": self.status.value,
-            "caption": caption,
-            "document_path": document_path,
-            "chat_ids": chat_ids,
-            "error": "; ".join(errors) if errors else None,
-        }
-
-    @classmethod
-    def sent_for_test(
-        cls, notification_id: str, provider_message_id: str
-    ) -> NotificationOutcome:
-        return cls(
-            notification_id=notification_id,
-            dedupe_key=f"test:{notification_id}",
-            status=NotificationStatus.SENT,
-            revision=1,
-            deliveries=(
-                DeliveryOutcome(
-                    delivery_id=f"D-{notification_id}",
-                    channel="telegram",
-                    recipient_key="owner",
-                    destination="1",
-                    required=True,
-                    status=DeliveryStatus.SENT,
-                    attempt_count=1,
-                    provider_message_id=provider_message_id,
-                ),
-            ),
-        )
-
 
 @dataclass(slots=True, frozen=True)
 class NotificationView:

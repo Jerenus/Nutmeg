@@ -1,5 +1,5 @@
 # tests/decision/test_scoring.py
-from nutmeg.decision.scoring import brier, brier_delta_vs_prior, clv_pp
+from nutmeg.decision.scoring import brier, brier_delta_vs_prior
 
 
 def test_brier_perfect_and_worst():
@@ -22,15 +22,3 @@ def test_brier_delta_negative_when_belief_better():
     assert brier_delta_vs_prior(belief, prior, "home") < 0
 
 
-def test_clv_pp_positive_when_moved_toward_closing():
-    prior = {"home": 0.40, "draw": 0.30, "away": 0.30}
-    belief = {"home": 0.46, "draw": 0.27, "away": 0.27}    # 朝 home 偏
-    closing = {"home": 0.50, "draw": 0.28, "away": 0.22}   # 收盘也朝 home
-    assert clv_pp(belief, prior, closing) > 0               # 偏移方向对
-
-
-def test_clv_pp_negative_when_moved_against_closing():
-    prior = {"home": 0.40, "draw": 0.30, "away": 0.30}
-    belief = {"home": 0.46, "draw": 0.27, "away": 0.27}    # 朝 home 偏
-    closing = {"home": 0.34, "draw": 0.33, "away": 0.33}   # 收盘反朝 away
-    assert clv_pp(belief, prior, closing) < 0

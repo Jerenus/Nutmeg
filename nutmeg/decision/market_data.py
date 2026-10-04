@@ -9,21 +9,15 @@ from __future__ import annotations
 
 import re
 
-from nutmeg.decision.identity import canonical_match_id
-
 __all__ = [
     "OUTCOMES",
     "devig",
-    "euro_snapshot_from_bold_odds",
-    "fair_1x2",
     "fetch_sporttery_value_with_fallback",
-    "load_bold_odds_provenance",
     "load_bold_odds_snapshot",
     "load_sporttery_snapshot",
     "persist_bold_odds_provenance",
     "persist_bold_odds_snapshot",
     "persist_sporttery_snapshot",
-    "snapshots_from_sporttery",
 ]
 
 OUTCOMES: tuple[str, str, str] = ("home", "draw", "away")
@@ -43,22 +37,6 @@ def _devig_map(odds: dict[str, float]) -> dict[str, float]:
     if total <= 0:
         return {}
     return {k: v / total for k, v in inverse.items()}
-
-
-def _fair_from_odds(odds: dict[str, float]) -> dict[str, float]:
-    """De-vig decimal odds to fair probabilities summing to ~1.
-
-    Returns an empty dict when ``odds`` is empty/unusable — callers treat that
-    as "signal unavailable" (graceful degradation)."""
-    inverse = {
-        o: 1.0 / odds[o]
-        for o in OUTCOMES
-        if odds.get(o) and odds[o] > 0
-    }
-    total = sum(inverse.values())
-    if total <= 0:
-        return {}
-    return {o: v / total for o, v in inverse.items()}
 
 
 def _f(value: object) -> float | None:
@@ -90,29 +68,6 @@ def _had_from_pool(pool: dict) -> dict[str, float]:
         value = _f(pool.get(src))
         if value is not None:
             out[dst] = value
-    return out
-
-
-def _ttg_from_pool(pool: dict) -> dict[str, float]:
-    """Sporttery ttg pool ``{s0..s7}`` → ``{total_0..total_7}`` odds."""
-    out: dict[str, float] = {}
-    for k in range(8):
-        value = _f(pool.get(f"s{k}"))
-        if value is not None:
-            out[f"total_{k}"] = value
-    return out
-
-
-def _crs_from_pool(pool: dict) -> dict[str, float]:
-    """Sporttery crs pool → ``{raw_key: odds}`` — the ``...f`` flag keys and any
-    metadata keys (``goalLine`` …) are excluded; only ``sHHsAA`` / ``s1sX``."""
-    out: dict[str, float] = {}
-    for key, raw in pool.items():
-        if not (_RE_CRS_KEY.match(key)):
-            continue
-        value = _f(raw)
-        if value is not None:
-            out[key] = value
     return out
 
 
@@ -271,24 +226,6 @@ def persist_bold_odds_provenance(run_date: str, output_dir, provenance: dict) ->
     path.write_text(json.dumps(provenance, ensure_ascii=False), encoding="utf-8")
 
 
-def load_bold_odds_provenance(run_date: str, output_dir) -> dict:
-    """读 ``bold_odds_source.json``;缺失返回 ``{}``。
-
-    换源前的历史日子没有这个文件,调用方回落到 ``apifootball``——那些日子的欧赔
-    确实全部来自它,所以回落是事实正确的,不是凑合。
-    """
-    import json
-    from pathlib import Path
-
-    path = Path(output_dir) / "daily" / run_date / "bold_odds_source.json"
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8")) or {}
-    except (OSError, ValueError):
-        return {}
-
-
 def load_sporttery_snapshot(run_date: str, output_dir) -> dict | None:
     """Read a persisted Sporttery snapshot; ``None`` when absent."""
     import json
@@ -331,114 +268,3 @@ def devig(odds: dict[str, float]) -> dict[str, float]:
     return _devig_map(odds)
 
 
-def fair_1x2(had_odds: dict[str, float]) -> dict[str, float]:
-    """胜平负三路赔率 → 去水 fair(home/draw/away)。"""
-    return _fair_from_odds(had_odds)
-
-
-def _snapshot_id(match_no: str, taken_at: str, kind: str, source: str) -> str:
-    """确定性 id:同场同时刻同 kind 同 source 只产一条(store 幂等靠它)。
-
-    source 入 id 是必需的:同一场同一时刻的体彩(sporttery)与欧赔(apifootball)
-    读时快照 kind 都是 read_time,不带 source 会撞 id 互相覆盖。
-    """
-    return f"S-{kind}-{source}-{match_no}-{taken_at}"
-
-
-def snapshots_from_sporttery(
-    value: dict, *, run_date: str, taken_at: str, source: str, kind: str,
-) -> list:
-    """sporttery getMatchCalculatorV1 的 value → MarketSnapshot 列表(净化版)。
-
-    附录 A.2:同 bold_matches_from_sporttery 的解析逻辑,但产 MarketSnapshot、
-    fair 逐市场去水、**不产 tags/信号字段**、不调 _strong_favorite_tags。
-    只保留在售且 businessDate==run_date 的场;每市场有可用赔率才写 fair。
-    """
-    from nutmeg.decision.ontology import MarketSnapshot
-
-    snaps: list = []
-    for day in value.get("matchInfoList") or []:
-        for raw in day.get("subMatchList") or []:
-            if str(raw.get("matchStatus") or "").casefold() != "selling":
-                continue
-            business_date = str(
-                raw.get("businessDate") or day.get("businessDate") or ""
-            )
-            if run_date and business_date and business_date != run_date:
-                continue
-            match_no = str(raw.get("matchNumStr") or "")
-            home = str(raw.get("homeTeamAbbName") or "")
-            away = str(raw.get("awayTeamAbbName") or "")
-            hhad_pool = raw.get("hhad") or {}
-            had_odds = _had_from_pool(raw.get("had") or {})
-            hhad_odds = _had_from_pool(hhad_pool)
-            ttg_odds = _ttg_from_pool(raw.get("ttg") or {})
-            crs_odds = _crs_from_pool(raw.get("crs") or {})
-            if not (len(had_odds) >= 3 or len(hhad_odds) >= 3 or ttg_odds or crs_odds):
-                continue
-            raw_odds: dict[str, dict[str, float]] = {}
-            fair: dict[str, dict[str, float]] = {}
-            if len(had_odds) >= 3:
-                raw_odds["had"] = had_odds
-                fair["had"] = fair_1x2(had_odds)
-            if len(hhad_odds) >= 3:
-                raw_odds["hhad"] = hhad_odds
-                fair["hhad"] = fair_1x2(hhad_odds)
-            if ttg_odds:
-                raw_odds["ttg"] = ttg_odds
-                fair["ttg"] = devig(ttg_odds)
-            if crs_odds:
-                raw_odds["crs"] = crs_odds
-                fair["crs"] = devig(crs_odds)
-            hhad_line = (
-                _signed_float(hhad_pool.get("goalLineValue"))
-                or _signed_float(hhad_pool.get("goalLine")) or 0.0
-            )
-            snaps.append(MarketSnapshot(
-                snapshot_id=_snapshot_id(match_no, taken_at, kind, source),
-                match_id=canonical_match_id(home, away, run_date),
-                taken_at=taken_at, kind=kind, source=source,
-                fair=fair, raw_odds=raw_odds,
-                lines={"hhad_line": hhad_line},
-            ))
-    return snaps
-
-
-def euro_snapshot_from_bold_odds(
-    bold_odds: dict, *, run_date: str, taken_at: str, kind: str, source: str,
-    source_by_match: dict | None = None,
-) -> list:
-    """欧赔 bold_odds（{竞彩号: {market: MarketOdds}}）→ MarketSnapshot 列表。
-
-    只取 match_winner 的去水 fair_probability（欧赔已去水，是最 sharp 三路估计），
-    作为 had 市场的 fair。空 fair 的场跳过。不产 tags/信号字段（净化不变）。
-    ``raw_odds["had"]`` 带上共识十进制赔率、``micro`` 带上市场微结构(drift/离散度/
-    返还率位移)——后者是换源才拿得到的判据原料,见 ``decision.microstructure``。
-
-    收盘快照(kind=closing)与读时锚(kind=read_time)共用本构造器。
-
-    ``source_by_match``({竞彩号: 源名})逐场覆盖 ``source``——2026-09-14 换源后
-    bold_odds 是 titan007(主)+apifootball(补缺)的合并产物,整批贴一个源名会给判断层
-    喂错血统(``source`` 既进快照 id,又是 ``anchor``/``day_regime`` 的优先级键)。
-    缺表或缺项时回落到 ``source``,保持旧行为。
-    """
-    from nutmeg.decision.microstructure import market_microstructure
-    from nutmeg.decision.ontology import MarketSnapshot
-
-    snaps: list = []
-    for match_no, markets in bold_odds.items():
-        mw = markets.get("match_winner")
-        fair = dict(getattr(mw, "fair_probability", {}) or {}) if mw else {}
-        if not fair or abs(sum(fair.values())) < 1e-9:
-            continue
-        row_source = (source_by_match or {}).get(match_no) or source
-        snaps.append(MarketSnapshot(
-            snapshot_id=_snapshot_id(match_no, taken_at, kind, row_source),
-            match_id=f"M-{run_date}-{match_no}",
-            taken_at=taken_at, kind=kind, source=row_source,
-            fair={"had": fair},
-            raw_odds={"had": dict(getattr(mw, "odds", {}) or {})},
-            lines={},
-            micro=market_microstructure(mw),
-        ))
-    return snaps

@@ -77,17 +77,4 @@ class DecisionStore:
                 fh.write(json.dumps(o.to_dict(), ensure_ascii=False) + "\n")
         return True
 
-    # --- 血缘查询(spec §2) ---
-    def reads_for_factor(self, factor_id: str) -> list:
-        from nutmeg.decision.ontology import Read
-        return [
-            r for r in self.load(Read)
-            if any(f.get("factor_id") == factor_id for f in r.factors)
-        ]
 
-    def settlement_for(self, ref_type: str, ref_id: str):
-        from nutmeg.decision.ontology import Settlement
-        for s in self.load(Settlement):
-            if s.ref_type == ref_type and s.ref_id == ref_id:
-                return s
-        return None

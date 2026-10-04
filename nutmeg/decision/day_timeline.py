@@ -43,6 +43,3 @@ def append_job(data_dir: Path | str, date: str, record: JobRecord) -> Path:
     return path
 
 
-def latest(rows: list[dict], job: str) -> dict | None:
-    hits = [r for r in rows if r.get("job") == job]
-    return hits[-1] if hits else None

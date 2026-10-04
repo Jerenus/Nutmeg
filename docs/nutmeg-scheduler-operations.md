@@ -54,11 +54,8 @@ uv run python scripts/openclaw/nutmeg_scheduler_ops.py --help
 The notification ledger lives in `.nutmeg-data/state/state.db`; immutable
 attachments live under `.nutmeg-data/notifications/artifacts/`.
 
-```bash
-uv run nutmeg notification-status --since 7d
-uv run nutmeg notification-show --notification-id <id>
-uv run nutmeg notification-retry --notification-id <id>
-```
+The `notification-status/show/retry` commands were removed 2026-10-03 (no use in
+the prior month); the ledger in `state.db` is unchanged and readable with `sqlite3`.
 
 - Upstream stage failures publish one deduplicated `operations.failure` text
   notification. A later successful rerun publishes one `operations.recovered`.

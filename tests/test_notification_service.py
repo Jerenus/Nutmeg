@@ -177,31 +177,6 @@ def test_wiring_sorts_configured_telegram_recipients(tmp_path: Path) -> None:
     assert [item.destination for item in outcome.deliveries] == ["11", "22"]
 
 
-def test_retry_does_not_resend_successful_recipient(repository, tmp_path: Path) -> None:
-    provider = ScriptedProvider(
-        [
-            ProviderResult.sent("message-1"),
-            ProviderResult.permanent_failure("invalid_chat", "chat not found"),
-            ProviderResult.sent("message-2"),
-        ]
-    )
-    service = _service(
-        repository,
-        tmp_path,
-        provider,
-        (
-            DeliveryTarget("telegram", "owner-a", "1", True),
-            DeliveryTarget("telegram", "owner-b", "2", True),
-        ),
-    )
-    first = service.publish(_request("manual-retry"))
-
-    second = service.retry(first.notification_id, include_permanent=True)
-
-    assert second.status.value == "sent"
-    assert provider.calls == ["1", "2", "2"]
-
-
 def test_stale_sending_recovery_is_marked_possible_duplicate(
     repository, tmp_path: Path
 ) -> None:
@@ -266,21 +241,3 @@ def test_attachment_fallback_network_call_is_recorded(repository, tmp_path: Path
     assert attempts[-1].provider_message_id == "fallback-1"
 
 
-def test_explicit_retry_binds_recipient_after_configuration_is_fixed(
-    repository, tmp_path: Path
-) -> None:
-    missing_service = _service(repository, tmp_path, ScriptedProvider([]), ())
-    failed = missing_service.publish(_request("fixed-config"))
-    provider = ScriptedProvider([ProviderResult.sent("message-1")])
-    fixed_service = _service(
-        repository,
-        tmp_path,
-        provider,
-        (DeliveryTarget("telegram", "owner", "99", True),),
-    )
-
-    recovered = fixed_service.retry(failed.notification_id, include_permanent=True)
-
-    assert recovered.status.value == "sent"
-    assert recovered.deliveries[0].destination == "99"
-    assert provider.calls == ["99"]

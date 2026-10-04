@@ -1,1 +1,0 @@
-"""Traditional Zucai sample artifacts."""

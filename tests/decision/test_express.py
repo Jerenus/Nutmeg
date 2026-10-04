@@ -1,10 +1,5 @@
 # tests/decision/test_express.py
-from nutmeg.decision.express import (
-    compose_tickets,
-    load_budget,
-    parlay_odds,
-    renjiu_ticket_count,
-)
+from nutmeg.decision.express import compose_tickets, load_budget, parlay_odds
 from nutmeg.decision.ontology import Ticket
 from nutmeg.decision.store import DecisionStore
 
@@ -14,11 +9,6 @@ def test_budget_buckets_from_config():
     assert b["jczq"]["had_modal"] == 100
     assert b["jczq"]["draw_single"] == 40
     assert b["shengfucai_renjiu"]["fushi"] == 400
-
-
-def test_renjiu_count_is_2002():
-    # 任九 = 从 14 场选 9 场命中(C(14,9)) = 2002
-    assert renjiu_ticket_count(14, 9) == 2002
 
 
 def test_parlay_odds_multiplies():

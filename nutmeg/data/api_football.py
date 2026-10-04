@@ -13,14 +13,6 @@ from nutmeg.domain.odds import (
     OddsProviderSnapshotFeed,
     OutcomeOddsSnapshot,
 )
-from nutmeg.domain.snapshot import (
-    AvailabilityRecord,
-    HeadToHeadSummary,
-    InjuryStatus,
-    LineupPlayer,
-    TeamLineup,
-    TeamSplitSummary,
-)
 
 
 class ApiFootballError(RuntimeError):
@@ -68,10 +60,6 @@ def _parse_quota(headers: httpx.Headers) -> ApiQuota:
         requests_remaining=_to_int(headers.get('x-ratelimit-requests-remaining')),
         minute_remaining=_to_int(headers.get('x-ratelimit-remaining')),
     )
-
-
-def _normalized_player_key(value: Any) -> str:
-    return str(value or 'unknown').strip().casefold()
 
 
 SUPPORTED_HANDICAP_LINES: tuple[str, ...] = (
@@ -163,39 +151,6 @@ class ApiFootballClient:
         if self._owns_client:
             self._client.close()
 
-    def fetch_upcoming_fixtures(
-        self,
-        *,
-        league_code: str,
-        league_id: int,
-        season: int,
-        date_from: date,
-        date_to: date,
-        timezone: str = 'UTC',
-    ) -> FixtureBatch:
-        if not self._api_key:
-            raise ApiFootballError('NUTMEG_API_FOOTBALL_KEY is not configured.')
-
-        payload, quota = self._request_payload(
-            '/fixtures',
-            params={
-                'league': league_id,
-                'season': season,
-                'from': date_from.isoformat(),
-                'to': date_to.isoformat(),
-                'timezone': timezone,
-            },
-        )
-        fixtures = [
-            self._normalize_fixture(item, league_code)
-            for item in payload.get('response', [])
-        ]
-
-        return FixtureBatch(
-            fixtures=fixtures,
-            requests_made=1,
-            quota=quota,
-        )
 
     def fetch_fixtures_by_date(
         self,
@@ -262,78 +217,6 @@ class ApiFootballClient:
             penalty_away=(payload.get('score', {}).get('penalty') or {}).get('away'),
         )
 
-    def fetch_fixture_injuries(self, fixture_id: str) -> dict[int, list[InjuryStatus]]:
-        if not self._api_key:
-            return {}
-
-        payload, _ = self._request_payload('/injuries', params={'fixture': fixture_id})
-
-        injuries: dict[int, list[InjuryStatus]] = {}
-        seen_records: set[tuple[int, int | str, str, str | None, str | None]] = set()
-        for item in payload.get('response', []):
-            team = item.get('team') or {}
-            player = item.get('player') or {}
-            team_id = team.get('id')
-            if team_id is None:
-                continue
-            normalized_team_id = int(team_id)
-            player_id = self._to_int(player.get('id'))
-            record_key = (
-                normalized_team_id,
-                player_id if player_id is not None else _normalized_player_key(player.get('name')),
-                player.get('type', 'Unavailable'),
-                player.get('reason'),
-                player.get('expected_return'),
-            )
-            if record_key in seen_records:
-                continue
-            seen_records.add(record_key)
-            injuries.setdefault(normalized_team_id, []).append(
-                InjuryStatus(
-                    player_name=player.get('name', 'Unknown'),
-                    status=player.get('type', 'Unavailable'),
-                    reason=player.get('reason'),
-                    expected_return=player.get('expected_return'),
-                    source='api-football',
-                )
-            )
-        return injuries
-
-    def fetch_fixture_lineups(self, fixture_id: str) -> dict[int, TeamLineup]:
-        if not self._api_key:
-            return {}
-
-        payload, _ = self._request_payload('/fixtures/lineups', params={'fixture': fixture_id})
-
-        lineups: dict[int, TeamLineup] = {}
-        for item in payload.get('response', []):
-            team = item.get('team') or {}
-            team_id = team.get('id')
-            if team_id is None:
-                continue
-            starters = []
-            for starter in item.get('startXI', []):
-                player = starter.get('player') or {}
-                starters.append(
-                    LineupPlayer(
-                        player_name=player.get('name', 'Unknown'),
-                        position=player.get('pos'),
-                        shirt_number=(
-                            str(player.get('number'))
-                            if player.get('number') is not None
-                            else None
-                        ),
-                        role='starter',
-                        captain=bool(player.get('captain', False)),
-                    )
-                )
-            lineups[int(team_id)] = TeamLineup(
-                status='confirmed',
-                source='api-football',
-                formation=item.get('formation'),
-                players=starters,
-            )
-        return lineups
 
     def fetch_fixture_odds(self, fixture_id: str) -> OddsProviderSnapshotFeed:
         if not self._api_key:
@@ -442,155 +325,6 @@ class ApiFootballClient:
             },
         )
 
-    def fetch_team_sidelined(
-        self,
-        team_id: int,
-        season: int,
-        *,
-        as_of_date: date | None = None,
-    ) -> list[AvailabilityRecord]:
-        del season
-        if not self._api_key:
-            return []
-
-        squad_payload, _ = self._request_payload(
-            '/players/squads',
-            params={'team': team_id},
-        )
-        squad_response = squad_payload.get('response') or []
-        if not squad_response:
-            return []
-
-        as_of = as_of_date or datetime.now(UTC).date()
-        records: list[AvailabilityRecord] = []
-        for player in (squad_response[0].get('players') or []):
-            player_id = self._to_int(player.get('id'))
-            if player_id is None:
-                continue
-            player_name = player.get('name', 'Unknown')
-            sidelined_payload, _ = self._request_payload(
-                '/sidelined',
-                params={'player': player_id},
-            )
-            active_record = self._active_sidelined_record(
-                sidelined_payload.get('response') or [],
-                as_of=as_of,
-            )
-            if active_record is None:
-                continue
-            records.append(
-                AvailabilityRecord(
-                    player_name=player_name,
-                    status=active_record.get('type')
-                    or active_record.get('status')
-                    or 'Unavailable',
-                    reason=active_record.get('reason'),
-                    expected_return=active_record.get('end')
-                    or active_record.get('expected_return'),
-                    source='api-football',
-                )
-            )
-        return records
-
-    def fetch_team_statistics(
-        self,
-        *,
-        team_id: int,
-        league_id: int,
-        season: int,
-    ) -> TeamSplitSummary | None:
-        if not self._api_key:
-            return None
-
-        payload, _ = self._request_payload(
-            '/teams/statistics',
-            params={'team': team_id, 'league': league_id, 'season': season},
-        )
-        response = payload.get('response') or {}
-        if isinstance(response, list):
-            response = response[0] if response else {}
-        fixtures = response.get('fixtures') or {}
-        played = fixtures.get('played') or {}
-        wins = fixtures.get('wins') or {}
-        draws = fixtures.get('draws') or {}
-        goals = ((response.get('goals') or {}).get('for') or {}).get('total') or {}
-
-        home_played = self._to_int(played.get('home'))
-        away_played = self._to_int(played.get('away'))
-        home_points = (
-            (self._to_int(wins.get('home')) or 0) * 3
-            + (self._to_int(draws.get('home')) or 0)
-        )
-        away_points = (
-            (self._to_int(wins.get('away')) or 0) * 3
-            + (self._to_int(draws.get('away')) or 0)
-        )
-        home_goals = self._to_float(goals.get('home'))
-        away_goals = self._to_float(goals.get('away'))
-        if home_played in (None, 0) and away_played in (None, 0):
-            return None
-        return TeamSplitSummary(
-            home_points_per_match=self._per_match(home_points, home_played),
-            away_points_per_match=self._per_match(away_points, away_played),
-            home_goals_for_per_match=self._per_match(home_goals, home_played),
-            away_goals_for_per_match=self._per_match(away_goals, away_played),
-            source='api-football',
-        )
-
-    def fetch_head_to_head(
-        self,
-        *,
-        home_team_id: int,
-        away_team_id: int,
-        last: int = 5,
-    ) -> HeadToHeadSummary | None:
-        if not self._api_key:
-            return None
-
-        payload, _ = self._request_payload(
-            '/fixtures/headtohead',
-            params={'h2h': f'{home_team_id}-{away_team_id}', 'last': last},
-        )
-        home_wins = 0
-        draws = 0
-        away_wins = 0
-        matches = 0
-        for item in payload.get('response', []):
-            teams = item.get('teams') or {}
-            home_team = teams.get('home') or {}
-            away_team = teams.get('away') or {}
-            goals = item.get('goals') or {}
-            raw_home_goals = self._to_int(goals.get('home'))
-            raw_away_goals = self._to_int(goals.get('away'))
-            if raw_home_goals is None or raw_away_goals is None:
-                continue
-            item_home_id = self._to_int(home_team.get('id'))
-            item_away_id = self._to_int(away_team.get('id'))
-            if item_home_id == home_team_id and item_away_id == away_team_id:
-                perspective_home_goals = raw_home_goals
-                perspective_away_goals = raw_away_goals
-            elif item_home_id == away_team_id and item_away_id == home_team_id:
-                perspective_home_goals = raw_away_goals
-                perspective_away_goals = raw_home_goals
-            else:
-                continue
-            matches += 1
-            if perspective_home_goals > perspective_away_goals:
-                home_wins += 1
-            elif perspective_home_goals < perspective_away_goals:
-                away_wins += 1
-            else:
-                draws += 1
-
-        if matches == 0:
-            return None
-        return HeadToHeadSummary(
-            matches=matches,
-            home_wins=home_wins,
-            draws=draws,
-            away_wins=away_wins,
-            source='api-football',
-        )
 
     def _request_payload(
         self,
@@ -629,39 +363,6 @@ class ApiFootballClient:
         except (TypeError, ValueError):
             return None
 
-    def _per_match(self, total: int | float | None, matches: int | None) -> float | None:
-        if total is None or matches in (None, 0):
-            return None
-        return round(float(total) / matches, 2)
-
-    def _active_sidelined_record(
-        self,
-        records: list[dict[str, Any]],
-        *,
-        as_of: date,
-    ) -> dict[str, Any] | None:
-        active_records: list[tuple[date, dict[str, Any]]] = []
-        for item in records:
-            start = self._parse_date(item.get('start'))
-            end = self._parse_date(item.get('end'))
-            if start is not None and start > as_of:
-                continue
-            if end is not None and end < as_of:
-                continue
-            sort_date = start or as_of
-            active_records.append((sort_date, item))
-        if not active_records:
-            return None
-        active_records.sort(key=lambda pair: pair[0], reverse=True)
-        return active_records[0][1]
-
-    def _parse_date(self, value: Any) -> date | None:
-        if value in (None, ''):
-            return None
-        try:
-            return date.fromisoformat(str(value))
-        except ValueError:
-            return None
 
     def _normalize_odds_selection(
         self,

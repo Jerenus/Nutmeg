@@ -10,7 +10,6 @@ from nutmeg.notifications.models import (
     DeliveryOutcome,
     DeliveryStatus,
     DeliveryTarget,
-    NotificationAttachment,
     NotificationOutcome,
     NotificationRequest,
     NotificationStatus,
@@ -114,41 +113,6 @@ class NotificationService:
         self._deliver(existing.notification_id, request)
         return self._outcome(existing.notification_id)
 
-    def retry(
-        self, notification_id: str, *, include_permanent: bool = False
-    ) -> NotificationOutcome:
-        self.repository.reconcile_targets(notification_id, self._targets)
-        bundle = self.repository.get_bundle(notification_id)
-        request = NotificationRequest(
-            kind=bundle.notification.kind,
-            business_key=bundle.notification.business_key,
-            stage=bundle.notification.stage,
-            semantic_fingerprint=bundle.notification.semantic_fingerprint,
-            subject=bundle.notification.subject,
-            caption=bundle.notification.caption,
-            body=bundle.notification.body,
-            attachments=tuple(
-                NotificationAttachment(
-                    artifact.path,
-                    artifact.media_type,
-                    filename=artifact.original_name,
-                )
-                for artifact in bundle.artifacts
-            ),
-            metadata=bundle.notification.metadata,
-        )
-        self._deliver(
-            notification_id,
-            request,
-            include_permanent=include_permanent,
-        )
-        return self._outcome(notification_id)
-
-    def retry_failed_required(self) -> tuple[NotificationOutcome, ...]:
-        return tuple(
-            self.retry(item.notification_id)
-            for item in self.repository.list_retryable_required()
-        )
 
     def _snapshot_attachments(
         self, notification_id: str, request: NotificationRequest

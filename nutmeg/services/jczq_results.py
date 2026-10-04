@@ -9,15 +9,8 @@ from __future__ import annotations
 import re
 from datetime import date
 from html import unescape
-from typing import Protocol
 
 import httpx
-
-
-class JczqResultProvider(Protocol):
-    source_page: str
-
-    def fetch_results(self, run_date: str) -> dict[str, dict[str, str]]: ...
 
 
 class OkoooJczqResultProvider:

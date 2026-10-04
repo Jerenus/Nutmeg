@@ -44,8 +44,6 @@ _RESULTS_FILE = _cli.typer.Option(
     help="{腿key:{outcome_90,goals_h,goals_a}}；90' 口径三源核验后的赛果")
 _PRIZE_PER_NOTE = _cli.typer.Option(
     None, "--prize-per-note", help="足彩官方单注奖金（gameNo=90）；缺则不产派奖数字")
-_FACES_REQ = _cli.typer.Option(..., "--faces")
-_N_MATCHES = _cli.typer.Option(14, "--n-matches")
 
 
 def _fail(exc: Exception) -> None:
@@ -283,19 +281,3 @@ def betslip_settle(
     tag = "（含未结票，合计只统计已结部分）" if pending else ""
     _cli.typer.echo(f"\n合计实购 投入 ¥{total_stake:,.0f} 派奖 ¥{total_payout:,.0f} "
                     f"净 {total_payout - total_stake:+,.0f}{tag}")
-
-
-@betslip_app.command("parse")
-def betslip_parse(
-    faces: str = _FACES_REQ,
-    n_matches: int = _N_MATCHES,
-) -> None:
-    """把一行票面解析成 {场次: 面集合} —— 人眼读 31/30 是系统性错误源。"""
-    from nutmeg.decision.betslip import BetslipError, parse_faces_row
-
-    try:
-        out = parse_faces_row(faces, n_matches=n_matches)
-    except BetslipError as exc:
-        _fail(exc)
-        return
-    _cli.typer.echo(json.dumps(out, ensure_ascii=False, indent=1))

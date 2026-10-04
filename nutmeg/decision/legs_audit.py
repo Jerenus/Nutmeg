@@ -422,10 +422,6 @@ def audit_prescription_deviations(payload: dict) -> list[Finding]:
     return findings
 
 
-def _flag_faces(leg: Leg) -> set:
-    return {f for _, f in leg.directional_flags if f}
-
-
 def audit_legs(legs: list[Leg]) -> list[Finding]:
     """逐条腿 + 全票结构检查。返回按严重度排序的 findings（ERROR 优先）。"""
     out: list[Finding] = []

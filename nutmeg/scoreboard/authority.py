@@ -10,7 +10,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 from nutmeg.analytics.high_watermark import high_watermark
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
@@ -20,7 +20,6 @@ from nutmeg.ontology.actions.scoreboard_actions import (
     RecordScoreboardExportRequest,
     RecordScoreboardShadowReviewRequest,
 )
-from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.storage.duckdb_utils import connect_analytics_db
 
@@ -559,14 +558,3 @@ class ScoreboardAuthorityService:
             )
         return group[metric_key]
 
-    def recorded_export_action(self, export_sha256: str) -> str | None:
-        with self._kernel.engine.connect() as connection:
-            rows = connection.execute(
-                select(schema.actions.c.action_id, schema.actions.c.payload_json).where(
-                    schema.actions.c.action_type == "record_scoreboard_export"
-                )
-            ).all()
-        for action_id, payload_json in rows:
-            if json.loads(payload_json).get("export_sha256") == export_sha256:
-                return str(action_id)
-        return None

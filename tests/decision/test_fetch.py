@@ -11,12 +11,11 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from nutmeg.data.fcom500 import MarketOdds
-from nutmeg.decision.fetch import fetch_day, fetch_zucai
+from nutmeg.decision.fetch import fetch_day
 from nutmeg.decision.market_data import (
     load_bold_odds_snapshot,
     load_sporttery_snapshot,
 )
-from nutmeg.interfaces.cli import app
 
 runner = CliRunner()
 
@@ -78,40 +77,6 @@ def test_fetch_day_empty_euro_writes_no_bold(tmp_path):
     assert "欧赔 0 场" in msg
 
 
-def test_fetched_snapshots_feed_sense_day(tmp_path):
-    """端到端:fetch_day 落盘 → sense_day 直接消费(证明字节兼容)。"""
-    from nutmeg.decision.ontology import MarketSnapshot
-    from nutmeg.decision.sense import sense_day
-    from nutmeg.decision.store import DecisionStore
-
-    fetch_day(
-        "2026-07-08", tmp_path,
-        sporttery_fetcher=lambda: (_BOARD, "sporttery"),
-        euro_fetcher=lambda value, run_date: _bold(),
-    )
-    store = DecisionStore(tmp_path / "decision")
-    n = sense_day("2026-07-08", output_dir=tmp_path,
-                  taken_at="2026-07-08T15:00:00+08:00", store=store)
-    assert n == 1
-    sources = {s.source for s in store.load(MarketSnapshot)}
-    assert sources == {"sporttery", "apifootball"}
-
-
-def test_decision_fetch_cli(tmp_path, monkeypatch):
-    # CLI 无 fetcher 注入槽 → monkeypatch 模块级默认 fetcher 避打网。
-    monkeypatch.setattr("nutmeg.decision.fetch._default_sporttery_fetcher",
-                        lambda: (_BOARD, "sporttery"))
-    monkeypatch.setattr("nutmeg.decision.fetch._default_euro_fetcher",
-                        lambda value, run_date: _bold())
-    result = runner.invoke(app, ["decision-fetch", "--run-date", "2026-07-08",
-                                 "--output-dir", str(tmp_path)])
-    assert result.exit_code == 0, result.output
-    daily = tmp_path / "daily" / "2026-07-08"
-    assert (daily / "sporttery_markets.json").exists()
-    assert (daily / "bold_odds.json").exists()
-    assert "体彩 1 场" in result.output
-
-
 # --- Task 2: decision-fetch-zucai(传统足彩数据自取)---------------------------
 
 _ISSUE = "26091"
@@ -156,66 +121,6 @@ class _StubOddsSync:
             json.dumps({"issue_id": issue_id, "matches": self.rows},
                        ensure_ascii=False), encoding="utf-8")
         return types.SimpleNamespace(parsed_count=len(self.rows))
-
-
-def test_fetch_zucai_writes_issue_and_odds(tmp_path):
-    sched, odds = _StubScheduleSync(), _StubOddsSync()
-    msg = fetch_zucai(_ISSUE, tmp_path, sync=sched, odds_sync=odds)
-    assert (tmp_path / f"{_ISSUE}-issue.json").exists()
-    assert (tmp_path / f"{_ISSUE}-odds.json").exists()        # afternoon 默认
-    # 两个 sync 都触发,落盘目录 = zucai_dir,registry 默认 zucai_dir/issues.json
-    assert sched.calls[0]["output_dir"] == tmp_path
-    assert Path(sched.calls[0]["registry_file"]) == tmp_path / "issues.json"
-    assert odds.calls[0]["issue_id"] == _ISSUE and odds.calls[0]["slot"] == "afternoon"
-    assert _ISSUE in msg
-
-
-def test_fetch_zucai_revision_slot(tmp_path):
-    sched, odds = _StubScheduleSync(), _StubOddsSync()
-    fetch_zucai(_ISSUE, tmp_path, sync=sched, odds_sync=odds, slot="revision")
-    assert (tmp_path / f"{_ISSUE}-odds-revision.json").exists()
-    assert not (tmp_path / f"{_ISSUE}-odds.json").exists()
-    assert odds.calls[0]["slot"] == "revision"
-
-
-def test_fetch_zucai_odds_failure_degrades(tmp_path):
-    class _Boom:
-        def sync(self, **kwargs):
-            raise RuntimeError("odds source unavailable")
-
-    sched = _StubScheduleSync()
-    msg = fetch_zucai(_ISSUE, tmp_path, sync=sched, odds_sync=_Boom())
-    assert (tmp_path / f"{_ISSUE}-issue.json").exists()       # 期表仍落盘
-    assert not (tmp_path / f"{_ISSUE}-odds.json").exists()    # 赔率失败→不写,不崩
-    assert "赔率 0" in msg
-
-
-def test_fetched_zucai_feeds_sense_zucai(tmp_path):
-    """端到端:fetch_zucai 落盘 → sense_zucai 直接消费(证明字节兼容)。"""
-    from nutmeg.decision.ontology import MarketSnapshot
-    from nutmeg.decision.sense_zucai import sense_zucai
-    from nutmeg.decision.store import DecisionStore
-
-    fetch_zucai(_ISSUE, tmp_path, sync=_StubScheduleSync(), odds_sync=_StubOddsSync())
-    store = DecisionStore(tmp_path / "decision")
-    n = sense_zucai(_ISSUE, output_dir=tmp_path,
-                    taken_at="2026-07-08T15:00:00+08:00", store=store)
-    assert n == 1
-    snaps = store.load(MarketSnapshot)
-    assert snaps and snaps[0].source == "zucai"
-
-
-def test_decision_fetch_zucai_cli(tmp_path, monkeypatch):
-    monkeypatch.setattr("nutmeg.decision.fetch._default_zucai_sync",
-                        lambda: _StubScheduleSync())
-    monkeypatch.setattr("nutmeg.decision.fetch._default_zucai_odds_sync",
-                        lambda: _StubOddsSync())
-    result = runner.invoke(app, ["decision-fetch-zucai", "--issue", _ISSUE,
-                                 "--zucai-dir", str(tmp_path)])
-    assert result.exit_code == 0, result.output
-    assert (tmp_path / f"{_ISSUE}-issue.json").exists()
-    assert (tmp_path / f"{_ISSUE}-odds.json").exists()
-    assert _ISSUE in result.output
 
 
 def test_partial_coverage_does_not_overwrite_a_richer_snapshot(tmp_path):
