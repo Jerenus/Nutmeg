@@ -37,7 +37,7 @@ def test_lower_sop_uses_constitutional_candidate_ordering() -> None:
         "不排序、不阻断、不自动建议空仓",
     )
     for phrase in required:
-        assert phrase in runbook
+        # RUNBOOK 的候选穷举步（B4b）随 zucai-candidates 于 2026-10-03 删除；条文留在 RULEBOOK
         assert phrase in rulebook
     assert "按回本线升序取档，不按 P 降序" not in runbook
     assert "帽内回本线最小" not in rulebook

@@ -1,6 +1,5 @@
 """接线只加一行：备料链跑完 → rsi schedule + due；观察仪落盘 → rsi fulfill；
 结算跑完 → rsi grade (+verdict)。用假 invoker 验参数。"""
-from datetime import datetime
 
 from nutmeg.decision.rsi_wiring import (
     after_am,
@@ -70,27 +69,6 @@ def test_after_observation_artifact_fulfills_with_row_count(tmp_path):
                                artifact=art, n_rows=2, data_dir=tmp_path,
                                invoke=lambda argv: calls.append(argv) or (0, ""))
     assert calls[0][:2] == ["rsi", "fulfill"] and "--n-rows" in calls[0] and "2" in calls[0]
-
-
-def test_after_capital_plan_fulfills_f4_with_the_plan_hash(tmp_path):
-    from nutmeg.decision.rsi_wiring import after_capital_plan
-
-    calls = []
-    after_capital_plan(
-        exp="F4",
-        issue="26130",
-        day="2026-09-26",
-        plan_id="zcp-abc",
-        data_dir=tmp_path,
-        captured_at=datetime.fromisoformat("2026-09-25T20:00:00+08:00"),
-        invoke=lambda argv: calls.append(argv) or (0, ""),
-    )
-    assert calls[0][:4] == ["rsi", "fulfill", "--exp", "F4"]
-    assert "--artifact" in calls[0]
-    artifact = tmp_path / "zucai" / "26130-capital-plan.txt"
-    assert int(artifact.stat().st_mtime) == int(
-        datetime.fromisoformat("2026-09-25T20:00:00+08:00").timestamp()
-    )
 
 
 def test_cli_invoke_never_raises_on_failure(tmp_path, capsys):

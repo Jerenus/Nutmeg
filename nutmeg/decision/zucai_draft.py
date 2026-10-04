@@ -212,7 +212,6 @@ def build_draft(data_dir: Path, issue: str, *, cap_yuan: int = DEFAULT_CAP,
 
 
 def _write_outputs(data_dir: Path, issue: str, doc: dict, legs_raw: dict) -> None:
-    from nutmeg.decision.plan_flow import _candidate_versions, _day_of, _legs_file_from_faces
     from nutmeg.decision.workbench import append_candidate
 
     zdir = data_dir / "zucai"
@@ -244,6 +243,40 @@ def _write_outputs(data_dir: Path, issue: str, doc: dict, legs_raw: dict) -> Non
                          faces=cand["faces"], notes=cand["notes"], stake_yuan=cand["stake_yuan"],
                          p_all=cand["p_all"], verdict="rejected" if vetoed else "considered",
                          reason=reason + ("；审票否决" if vetoed else ""))
+
+
+# ── 写出初稿时用的小工具（2026-10-03 自已删的 plan_flow 迁入）──
+
+_DIGIT_FACE = {"3": "home", "1": "draw", "0": "away"}
+
+
+def _day_of(issue: str, data_dir: Path) -> str:
+    """期次业务日 = 最早开球的北京日期。"""
+    doc = json.loads((data_dir / "zucai" / f"{issue}-issue.json").read_text("utf-8"))
+    kickoffs = sorted(str(m["kickoff_bj"]) for m in doc["matches"] if m.get("kickoff_bj"))
+    return kickoffs[0][:10]
+
+
+def _candidate_versions(data_dir: Path, day: str, issue: str) -> set[str]:
+    from nutmeg.decision.workbench import read_events
+
+    return {
+        str(event["payload"]["version"])
+        for event in read_events(data_dir / "jczq", day)
+        if event.get("kind") == "candidate" and event.get("obj_id") == f"ticket:{issue}"
+    }
+
+
+def _legs_file_from_faces(legs: dict, faces: dict, issue: str, channel: str) -> dict:
+    out = {}
+    for match_no, face_string in faces.items():
+        leg = legs[match_no]
+        out[match_no] = {
+            **{key: value for key, value in leg.items() if not key.startswith("_")},
+            "faces": face_string,
+            "selections": [_DIGIT_FACE[digit] for digit in face_string],
+        }
+    return {"issue": issue, "channel": channel, "legs": out}
 
 
 def _dist(d: dict) -> str:

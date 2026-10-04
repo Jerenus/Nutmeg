@@ -33,7 +33,7 @@
 
 竞彩日 ≤¥400；足彩每期 ≤¥400 复式基准、两票合计 ≤¥1,600；日总帽 ≤¥2,000。
 连续两期全灭 → 次期减半或强制空仓复盘日（用户可显式行权覆盖，覆盖入 Adjudication 账）。
-**月度止损（2026-10-01 起）**：自然月内记分牌 `tickets` 净值 ≤ **−¥3,000** → 空仓到月底，任何行权覆盖须另立 Adjudication；数字来源 `nutmeg/decision/bankroll.py`（`MONTHLY_STOP_LOSS_YUAN`，主循环提案值≈09-20 以来十天真实亏损，Jun 改数只改那里与本条）。状态由 `betslip preview/register` 与 `plan frontier` 每次打印，只报不拦。
+**月度止损（2026-10-01 起）**：自然月内记分牌 `tickets` 净值 ≤ **−¥3,000** → 空仓到月底，任何行权覆盖须另立 Adjudication；数字来源 `nutmeg/decision/bankroll.py`（`MONTHLY_STOP_LOSS_YUAN`，主循环提案值≈09-20 以来十天真实亏损，Jun 改数只改那里与本条）。状态由 `betslip preview/register` 每次打印，只报不拦。
 **没入账 = 没打**（ledger writeback 原则）。
 **探索预算（2026-10-01 起）**：真金白银验证策略只用单独的小额探索预算（≤¥30/日，登记时 `--note "EXP:<实验号>"`），只给预登记的实验（如 G1）；策略过线（样本外 ROI>0 且 CI 不含 0）前，机器不得用主账出票。
 

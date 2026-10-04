@@ -67,23 +67,3 @@ def narrowable_faces(leg: dict) -> list[str]:
     ]
 
 
-def board_wind(legs: dict[str, dict]) -> dict:
-    tiers = {"T1": 0, "T2": 0, "T3": 0, "T4": 0}
-    hot = cold = coin = narrowable = 0
-    for leg in legs.values():
-        tiers[tier_of(leg)] += 1
-        fair = leg.get("fair") or {}
-        top1 = max((float(value) for value in fair.values()), default=0.0)
-        hot += top1 >= HOT_TOP1
-        cold += float(fair.get("draw", 0.0)) >= COLD_DRAW
-        coin += top1 < COIN_TOP1
-        narrowable += len(narrowable_faces(leg))
-    regime = "hot" if hot >= 5 else "cold" if cold >= 5 else "coin" if coin >= 6 else "mixed"
-    cap_band = "full" if narrowable >= 6 else "mid" if narrowable >= 3 else "low"
-    return {
-        "regime": regime,
-        "tiers": tiers,
-        "narrowable_faces": narrowable,
-        "cap_band": cap_band,
-        "note": "Wind is descriptive only; it does not choose outcome faces.",
-    }

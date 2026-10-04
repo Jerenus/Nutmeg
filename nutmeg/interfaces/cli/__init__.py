@@ -44,7 +44,6 @@ from nutmeg.interfaces.cli import discovery as discovery  # noqa: E402
 from nutmeg.interfaces.cli import gym as gym  # noqa: E402
 from nutmeg.interfaces.cli import judgment as judgment  # noqa: E402
 from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402
-from nutmeg.interfaces.cli import plan as plan  # noqa: E402
 from nutmeg.interfaces.cli import research as research  # noqa: E402
 from nutmeg.interfaces.cli import retro as retro  # noqa: E402
 from nutmeg.interfaces.cli import rsi as rsi  # noqa: E402

@@ -7,9 +7,8 @@ from nutmeg.decision.workbench import read_events
 def test_registry_has_the_deterministic_lane_b_steps_in_runbook_order():
     assert [s.step_id for s in STEPS] == [
         "B0_prep_morning", "B1_prep_afternoon", "B2_canonical", "B3a_premise_card",
-        "B4_build_reads", "B4b_candidates", "B5c_plan_tiers", "B5_judgment_brief",
-        "B5_plan_frontier", "B5b_review_draft", "B6_audit", "B6b_adjudicate_issue",
-        "B9_plan_commit",
+        "B4_build_reads", "B5_judgment_brief", "B5b_review_draft", "B6_audit",
+        "B6b_adjudicate_issue",
     ]
 
 
@@ -111,34 +110,3 @@ def test_b5_is_brief_plus_draft_and_b5b_reviews_the_draft_faces(tmp_path):
                         "--issue", "26135"]
     assert argv[argv.index("--faces") + 1] == "2:10 3:3 11:31"
     assert step_by_id("B5b_review_draft").ok_exit_codes == (0, 1)      # ⛔否决＝判决不是崩溃
-
-
-def test_plan_steps_are_registered_in_lane_order():
-    ids = [step.step_id for step in STEPS]
-    assert ids.index("B5c_plan_tiers") < ids.index("B5_plan_frontier") < ids.index("B6_audit")
-    assert ids.index("B9_plan_commit") > ids.index("B6b_adjudicate_issue")
-    params = SopParams(
-        issue="26130", date="2026-09-26", zucai_dir=Path("z"), output_dir=Path("o")
-    )
-    assert step_by_id("B5c_plan_tiers").argv(params) == [
-        "plan",
-        "tiers",
-        "--issue",
-        "26130",
-        "--data-dir",
-        "o/..",
-    ]
-    assert step_by_id("B5_plan_frontier").argv(params)[:4] == [
-        "plan",
-        "frontier",
-        "--issue",
-        "26130",
-    ]
-    assert step_by_id("B9_plan_commit").argv(params)[:6] == [
-        "plan",
-        "commit",
-        "--issue",
-        "26130",
-        "--cap-source",
-        "baseline",
-    ]

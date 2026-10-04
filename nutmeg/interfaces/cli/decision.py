@@ -707,32 +707,6 @@ def ops_status(
     ))
 
 
-@_cli.app.command("zucai-optimize")
-def zucai_optimize(
-    input_file: Path = _ZUCAI_OPTIMIZER_INPUT_OPTION,
-    json_output: bool = _cli.typer.Option(False, "--json", help="输出稳定 JSON"),
-) -> None:
-    """比较人工给定的足彩候选版本，只做确定性算术，不生成或裁决票面。"""
-    import json
-
-    from nutmeg.decision.zucai_optimizer import (
-        OptimizerInputError,
-        format_report,
-        optimize,
-    )
-
-    try:
-        payload = json.loads(input_file.read_text("utf-8"))
-        result = optimize(payload)
-    except (OSError, json.JSONDecodeError, OptimizerInputError) as exc:
-        _cli.typer.echo(f"输入错误：{exc}", err=True)
-        raise _cli.typer.Exit(code=2) from exc
-    if json_output:
-        _cli.typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        _cli.typer.echo(format_report(result))
-
-
 @_cli.app.command("zucai-official")
 def zucai_official(
     issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26103"),
@@ -825,32 +799,6 @@ def decision_alias_propose(
     from nutmeg.decision.alias_propose import run_propose
 
     _cli.typer.echo(run_propose(run_date, output_dir, apply=apply))
-
-
-@_cli.app.command("zucai-ticket")
-def zucai_ticket(
-    legs_file: Path = _LEGS_AUDIT_FILE_OPTION,
-    sales: float = _cli.typer.Option(13_000_000, "--sales", help="当期任九销量估计(¥)"),
-    skip_audit: bool = _cli.typer.Option(False, "--skip-audit", help="跳过结构校验(不建议)"),
-) -> None:
-    """票面算术(Roadmap D1,确定性,零判断):注数/P/回本门槛/需中奖注数,并自动过结构校验。
-
-    输入与 decision-audit-legs 同一 JSON。该买哪面不归它管。
-    """
-    import json as _json
-
-    from nutmeg.decision.legs_audit import audit_legs, format_findings, has_blocking, legs_from_dict
-    from nutmeg.decision.zucai_ticket import format_stats, ticket_stats
-
-    payload = _json.loads(Path(legs_file).read_text("utf-8"))
-    stats = ticket_stats(payload.get("legs") or {}, sales=sales)
-    _cli.typer.echo(format_stats(stats, issue=str(payload.get("issue", ""))))
-    if not skip_audit:
-        findings = audit_legs(legs_from_dict(payload))
-        _cli.typer.echo("")
-        _cli.typer.echo(format_findings(findings, issue=str(payload.get("issue", ""))))
-        if has_blocking(findings):
-            raise _cli.typer.Exit(code=1)
 
 
 @_cli.app.command("zucai-ledger")

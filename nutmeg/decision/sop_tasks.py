@@ -6,7 +6,8 @@
 ②用 typer 的 CliRunner 在进程内调用**同一个** CLI，并把过程写进事件流。
 
 ⛔判断永不入脚本：这里没有 B3（深研，需要 agent）、没有 Jun 改票那一步、
-   没有 B6b 的 ruling（只签发空裁决单，ruling 由人填）。tiers/frontier 只做确定性算术。
+   没有 B6b 的 ruling（只签发空裁决单，ruling 由人填）。
+   2026-10-03：机器构票的 B4b 候选穷举 / B5c 定级 / B5 前沿 / B9 定案随命令一起删除。
 2026-10-01 定位：B5 按钮＝`judgment brief --issue --write`（初判包 + 机器初稿，处方忠实），
    B5b＝把初稿票面送 `betslip preview` 审票，B6 审计门不给 legs_file 时默认吃初稿腿文件。
 ⛔审计门退出码 1 是「有 ERROR」这个**判决**，不是任务失败——`ok_exit_codes` 里显式列出。
@@ -66,23 +67,10 @@ STEPS: tuple[SopStep, ...] = (
                        "--issue", p.issue, "--store-ids-file", str(_z(p, "store-ids.json")),
                        "--fair-file", str(_z(p, "fair.json")), "--made-at", p.made_at],
             lambda p: [_z(p, "reads.json"), _z(p, "legs-base.json")]),
-    SopStep("B4b_candidates", "B4b 候选穷举",
-            lambda p: ["zucai-candidates", "--options-file", str(_z(p, "options.json")),
-                       "--fair-file", str(_z(p, "fair.json")),
-                       "--legs-file", str(_z(p, "legs-base.json"))],
-            lambda p: []),   # ⚠️zucai-candidates 只 echo 到 stdout，不落盘（2026-09-18 核实）
-    SopStep("B5c_plan_tiers", "B5c 定级+风向",
-            lambda p: ["plan", "tiers", "--issue", p.issue,
-                       "--data-dir", str(p.output_dir / "..")],
-            lambda p: [_z(p, "tiers.json")]),
     SopStep("B5_judgment_brief", "B5 初判+初稿",
             lambda p: ["judgment", "brief", "--issue", p.issue, "--write",
                        "--data-dir", str(p.output_dir / "..")],
             lambda p: [_z(p, "judgment-brief.md"), _z(p, "draft.json")]),
-    SopStep("B5_plan_frontier", "B5 前沿(任九·只作对照)",
-            lambda p: ["plan", "frontier", "--issue", p.issue, "--channel", "renjiu",
-                       "--data-dir", str(p.output_dir / "..")],
-            lambda p: [_z(p, "frontier-renjiu.json")]),
     SopStep("B5b_review_draft", "B5b 审初稿(任九)",
             lambda p: _review_draft_argv(p),
             lambda p: [], ok_exit_codes=(0, 1)),
@@ -94,10 +82,6 @@ STEPS: tuple[SopStep, ...] = (
             lambda p: ["decision-adjudicate", "--legs-file", str(p.legs_file),
                        "--out", str(_z(p, "adjudication.json"))],
             lambda p: [_z(p, "adjudication.json")], needs_legs=True),
-    SopStep("B9_plan_commit", "B9 定案(基线帽)",
-            lambda p: ["plan", "commit", "--issue", p.issue, "--cap-source", "baseline",
-                       "--data-dir", str(p.output_dir / "..")],
-            lambda p: [_z(p, "capital-plan.txt")]),
 )
 
 

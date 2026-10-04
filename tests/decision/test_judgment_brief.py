@@ -84,6 +84,19 @@ def test_zucai_brief_reads_legs_base_and_judgment_v1(tmp_path: Path) -> None:
     assert "足彩初稿不省略" in render_zucai(brief)
 
 
+def test_zucai_brief_renders_directional_flag_pairs(tmp_path: Path) -> None:
+    """research_intake 把方向性旗归一成 [旗名, 面] 二元组；26134 起 brief 拼接时崩 TypeError。"""
+    data = tmp_path / "data"
+    zdir = data / "zucai"
+    zdir.mkdir(parents=True)
+    (zdir / "26134-legs-base.json").write_text(json.dumps({"issue": "26134", "legs": {"1": {
+        "name": "甲-乙", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2}, "faces": "31",
+        "directional_flags": [["anchor_shield_out", "1"]],
+        "nondirectional_flags": ["two_way_instability"]}}}), encoding="utf-8")
+    [row] = zucai_brief(data, "26134")["rows"]
+    assert row["flags"] == "anchor_shield_out→1、two_way_instability"
+
+
 def test_cli_brief_prints_and_writes(tmp_path: Path) -> None:
     data = _day(tmp_path)
     result = CliRunner().invoke(app, ["judgment", "brief", "--day", DAY, "--data-dir", str(data),

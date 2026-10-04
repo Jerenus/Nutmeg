@@ -4,7 +4,6 @@
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
@@ -77,48 +76,9 @@ def after_observation_artifact(*, exp: str, duty: str, issue: str, day: str, art
             "--artifact", str(artifact), "--n-rows", str(n_rows), "--data-dir", str(data_dir)])
 
 
-def after_capital_plan(
-    *,
-    exp: str,
-    issue: str,
-    day: str,
-    plan_id: str,
-    data_dir: Path,
-    captured_at: datetime | None = None,
-    invoke: Invoker = _cli_invoke,
-) -> None:
-    """Register one F4 observation after a capital plan commits."""
-    artifact = Path(data_dir) / "zucai" / f"{issue}-capital-plan.txt"
-    artifact.parent.mkdir(parents=True, exist_ok=True)
-    artifact.write_text(plan_id + "\n", encoding="utf-8")
-    if captured_at is not None:
-        timestamp = captured_at.timestamp()
-        os.utime(artifact, (timestamp, timestamp))
-    invoke(
-        [
-            "rsi",
-            "fulfill",
-            "--exp",
-            exp,
-            "--duty",
-            "capital-plan",
-            "--day",
-            day,
-            "--issue",
-            issue,
-            "--artifact",
-            str(artifact),
-            "--n-rows",
-            "1",
-            "--data-dir",
-            str(data_dir),
-        ]
-    )
-
-
 def _active_experiments(data_dir: Path) -> list[str]:
     """从本体读 status ∈ {observing, graded} 的实验 id（结算后该结账的那些）。"""
-    from datetime import UTC, datetime
+    from datetime import UTC
 
     from nutmeg.config.settings import AppSettings
     from nutmeg.ontology import build_ontology_kernel

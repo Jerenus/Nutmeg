@@ -1,7 +1,6 @@
 from nutmeg.decision.structure_tiers import (
     C14_CHEAP_LINE,
     C14_VARIANCE_LINE,
-    board_wind,
     license_score,
     narrowable_faces,
     tier_of,
@@ -74,15 +73,3 @@ def test_narrowable_face_needs_two_proofs_and_cheap_price():
     assert narrowable_faces(dead) == []
 
 
-def test_board_wind_counts_tiers_and_names_the_regime():
-    legs = {str(i): _leg(fair=(0.65, 0.2, 0.15)) for i in range(1, 6)}
-    legs.update(
-        {
-            str(i): _leg(lq=LQ3, integrity="fail", fair=(0.4, 0.3, 0.3))
-            for i in range(6, 15)
-        }
-    )
-    wind = board_wind(legs)
-    assert wind["regime"] == "hot" and wind["tiers"]["T1"] == 5
-    assert wind["tiers"]["T4"] == 9
-    assert wind["cap_band"] in ("low", "mid", "full")

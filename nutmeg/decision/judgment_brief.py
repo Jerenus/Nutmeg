@@ -159,8 +159,11 @@ def zucai_brief(data_dir: Path, issue: str) -> dict:
             "faces": leg.get("faces") or "", "action": j.get("action") or "",
             "stance": _stance_text(stance),
             "fav": f"★{CODE_OF[fav_face]} {fav_p * 100:.0f}%" if fav_face and fav_p >= FAV else "",
-            "flags": "、".join(list(leg.get("directional_flags") or [])
-                              + list(leg.get("nondirectional_flags") or [])),
+            # 方向性旗是 [旗名, 面] 二元组（research_intake 归一后），无方向旗是裸名
+            "flags": "、".join(
+                [f"{f[0]}→{f[1]}" if isinstance(f, list | tuple) else str(f)
+                 for f in leg.get("directional_flags") or []]
+                + [str(f) for f in leg.get("nondirectional_flags") or []]),
             "note": _first_sentence(j.get("note") or leg.get("note")),
         })
     return {"issue": issue, "rows": rows, "n": len(rows),

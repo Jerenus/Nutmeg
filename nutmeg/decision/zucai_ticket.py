@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from functools import reduce
 from pathlib import Path
 
 FACE_KEYS = {"3": "home", "1": "draw", "0": "away"}
@@ -19,52 +18,6 @@ PRIZE_MEDIAN = 6446          # 近 12 期任九单注中位(2026-08-09 口径)
 SALES_DEFAULT = 13_000_000   # 任九销量近 12 期区间 ¥1.16-1.47 千万,取 ¥1300 万
 
 LEDGER_FIELDS = ("issue", "kind", "stake_yuan", "tickets", "code")
-
-
-def ticket_stats(legs: dict, *, price: int = 2, sales: float = SALES_DEFAULT,
-                 prize_median: float = PRIZE_MEDIAN) -> dict:
-    """legs = {场次: {faces, fair{home,draw,away}, ...}} → 票面算术包。"""
-    if not legs:
-        raise ValueError("空票面")
-    per = []
-    for no, leg in sorted(legs.items(), key=lambda kv: int(kv[0])):
-        faces = str(leg["faces"])
-        cov = sum(leg["fair"][FACE_KEYS[c]] for c in set(faces))
-        per.append({"match_no": int(no), "name": leg.get("name", ""),
-                    "faces": faces, "n_faces": len(set(faces)),
-                    "coverage": round(cov, 4)})
-    n = reduce(lambda a, b: a * b, (p["n_faces"] for p in per))
-    prob = reduce(lambda a, b: a * b, (p["coverage"] for p in per))
-    cost = n * price
-    threshold = cost / prob if prob > 0 else float("inf")
-    return {
-        "legs": per,
-        "n_legs": len(per),
-        "notes": n,
-        "cost": cost,
-        "p_all": round(prob, 6),
-        "expected_broken": round(sum(1 - p["coverage"] for p in per), 3),
-        "breakeven": round(threshold),
-        "breakeven_vs_median": round(threshold / prize_median, 2),
-        "max_winners_for_breakeven": round(sales * 0.64 / threshold) if threshold else None,
-        "ev_median": round(prob * prize_median - cost),
-    }
-
-
-def format_stats(s: dict, *, issue: str = "") -> str:
-    out = [f"票面算术{'（' + issue + '）' if issue else ''}："
-           f"{s['n_legs']} 腿 → {s['notes']} 注 ¥{s['cost']:,}"]
-    for p in s["legs"]:
-        t = {1: "单选", 2: "双选", 3: "全包"}[p["n_faces"]]
-        out.append(f"  场{p['match_no']:>2} {p['faces']:<4}{t}  盖 {p['coverage']*100:>5.1f}%"
-                   f"  {p['name']}")
-    out.append(f"P(全中)={s['p_all']*100:.2f}%  期望断腿 {s['expected_broken']} 条")
-    out.append(f"回本门槛 ¥{s['breakeven']:,}（中位 ¥{PRIZE_MEDIAN:,} 的 "
-               f"{s['breakeven_vs_median']} 倍）｜"
-               f"需全国中奖注数 ≤{s['max_winners_for_breakeven']:,}")
-    out.append(f"中位口径 EV {s['ev_median']:+,}"
-               "（⚠️奖金与我方命中率负相关，此为参考不是期待）")
-    return "\n".join(out)
 
 
 # ---------------------------------------------------------------------------
