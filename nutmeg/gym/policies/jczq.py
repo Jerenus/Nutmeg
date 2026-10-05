@@ -141,3 +141,30 @@ class JczqFavPairs:
             return []
         combos = enumerate_combos(legs, max_legs=2, max_notes=1, top=30)
         return pick_within_cap(board.day, combos, cap=ctx.cap_jczq_day, tag="fav", max_slips=10)
+
+
+@register
+class JczqRuleV3:
+    """Dream 评估器 v3（2026-10-01 定位；2026-10-04 迁入 gym）：先排除坏结构，再按期望回报选。
+
+    期望回报率 = P(全中) × 模态赔率连乘 / 注数；< 0.5 的组合否决（审票 V1 同口径）。过线组合里
+    取期望回报率最高的一张；最高者仍 < 1.0 → 规则最优＝空仓（不出票）。用 `--belief read`
+    就是 Dream 当年的「研究判断 × 体彩价」口径。"""
+    name = "jczq_rule_v3"
+    version = "v3"
+    channels = ("jczq",)
+    veto_ratio = 0.5
+
+    def decide(self, board: JczqBoard, ctx: Ctx) -> list[BetSlip]:
+        legs = combo_legs(board, ctx)
+        if len(legs) < 2:
+            return []
+        best, best_ratio = None, 0.0
+        for combo in enumerate_combos(legs, max_legs=4, max_notes=4, top=10**9):
+            ratio = combo["p"] * combo["return_per_yuan"]
+            if ratio >= self.veto_ratio and ratio > best_ratio:
+                best, best_ratio = combo, ratio
+        if best is None or best_ratio < 1.0:
+            return []
+        return pick_within_cap(board.day, [best], cap=ctx.cap_jczq_day, tag="v3", max_slips=1)
+

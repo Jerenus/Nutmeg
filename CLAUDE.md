@@ -9,11 +9,11 @@
 **任何判读、构票、出票、结算动作之前，必须先读 SOP 三件套**：
 
 1. `docs/sop/CONSTITUTION.md` — 宪法：五动词唯一路径、判断字典序（strength-v2：强弱天平→帽内按判断概率定结构→奖池破平；赔率=噪声识别器；EV 禁入决策层）、两条元原则、注金帽与刹车、数据纪律（禁嘴算/三源制）、裁决协议。
-2. `docs/sop/RUNBOOK.md` — 执行清单：竞彩泳道 A1-A7 / 足彩泳道 B1-B10，含命令与审计门（B0 早刷新 / B4 判读桥 / B4b 候选穷举 / B9c 实票登记）。
+2. `docs/sop/RUNBOOK.md` — 执行清单：竞彩泳道 A1-A7 / 足彩泳道 B1-B10，含命令与审计门（B0 早刷新 / B4 判读桥 / B5 初判+初稿 / B9c 实票登记）。
 3. `docs/sop/RULEBOOK.md` — 规则注册表：判决表 k/l/m/o/p/q/r/s 各条全文、状态机、战绩指针、audit 代码化映射（C0-C17 + INFO 参考表）。
 
 **记分牌单一事实源** = `.nutmeg-data/scoreboard.json`（复盘只改那里，散文引用不复制）。
-**出票硬门** = `uv run nutmeg decision-audit-legs --legs-file <票面>`，默认/AI/无人值守遇 ERROR 即退出码 1，不听论证；仅 Jun 显式 `--user-override` 且 evidence_rejected Adjudication 入账成功后可继续。**2026-09-27 规则瘦身**：只有正向实证的规则能拦截——截至当日判断类规则无一达标（C1 等降为记录、C19 降为未证实提示，见 RULEBOOK「〇、规则实证表」与 `docs/superpowers/evidence/2026-09-27-rule-diet.md`）；判断力由事前登记实验量化：主指标 F14（结构）+ Dream 对照账（决策）+ F10（热门带），F9 为次指标（2026-10-01）。分析要客观独立、不迎合（含对 Jun 自己的规则）。
+**出票硬门** = `uv run nutmeg decision-audit-legs --legs-file <票面>`，默认/AI/无人值守遇 ERROR 即退出码 1，不听论证；仅 Jun 显式 `--user-override` 且 evidence_rejected Adjudication 入账成功后可继续。**2026-09-27 规则瘦身**：只有正向实证的规则能拦截——截至当日判断类规则无一达标（C1 等降为记录、C19 降为未证实提示，见 RULEBOOK「〇、规则实证表」与 `docs/superpowers/evidence/2026-09-27-rule-diet.md`）；判断力由事前登记实验量化：主指标 F14（结构）+ gym 规则 v3 回放（决策，`gym run --policy jczq_rule_v3 --belief read`，2026-10-04 Dream 退役后承接）+ F10（热门带），F9 为次指标（2026-10-01）。分析要客观独立、不迎合（含对 Jun 自己的规则）。
 
 ## 触发短语
 
@@ -33,7 +33,7 @@ its authority order and supersession rules; do not rely on chat memory as the
 knowledge source.
 <!-- RESEARCH INDEX END -->
 
-- 结构总图与工程流程：读 `docs/ARCHITECTURE.md`（现役系统：定位、每日时序、判断层与 rubric、出票审票、RSI、Dream、数据对象、全量分析过程、文档地图；2026-10-02 起为权威）。
+- 结构总图与工程流程：读 `docs/ARCHITECTURE.md`（现役系统：定位、每日时序、判断层与 rubric、出票审票、RSI、回放 gym、数据对象、全量分析过程、文档地图；2026-10-02 起为权威）。
 - 工程背景（历史设计）：`docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md`（M1-M6 已于 2026-08-25 并入 main；各里程碑证据在 `docs/superpowers/evidence/`）。
 - 决策本体设计：`docs/superpowers/specs/2026-07-06-decision-ontology-design.md`。
 

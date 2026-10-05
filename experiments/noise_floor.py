@@ -13,7 +13,7 @@ DEFAULT_CORPUS = ROOT / "experiments" / "corpus-v2.json"
 DEFAULT_SEED = 20260920
 _FACE_CODE = {"home": "3", "draw": "1", "away": "0"}
 
-# 封闭词典（与 nutmeg/decision/legs_audit.py 及 scripts/zucai_loop.py 同源）。
+# 封闭词典（与 nutmeg/decision/legs_audit.py 同源）。
 DIRECTIONAL_FLAGS = frozenset(
     {
         "weak_home_draw_trap",

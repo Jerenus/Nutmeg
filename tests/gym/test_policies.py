@@ -117,3 +117,14 @@ def test_fav_pairs_runs_on_history_boards_with_closing_belief(tmp_path: Path) ->
     assert {leg.key for leg in slip.legs} == {"周日001", "周日003"}
     assert check_jczq_legal(slip, board) is None
     assert settle_jczq(slip, board).payout_yuan == pytest.approx(1.45 * 1.3 * 2)
+
+
+def test_jczq_rule_v3_goes_flat_unless_expected_return_reaches_one(tmp_path: Path) -> None:
+    """Dream 评估器 v3 迁入 gym：最高期望回报 < 1 → 规则最优＝空仓；否则只出最高那一张。"""
+    _, board = _three_match_board(tmp_path)
+    # 市场口径＝体彩价去水：任何组合的期望回报都 < 1 → 空仓
+    assert get("jczq_rule_v3").decide(board.visible(), Ctx(belief_source="market")) == []
+    # 终盘口径：周六002 终盘主胜 0.72 × 体彩 1.85 > 1 → 只出期望回报最高的一张
+    slips = get("jczq_rule_v3").decide(board.visible(), Ctx(belief_source="closing"))
+    assert len(slips) == 1 and len(slips[0].legs) >= 2
+    assert check_jczq_legal(slips[0], board) is None

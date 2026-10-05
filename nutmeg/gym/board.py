@@ -10,6 +10,7 @@ businessDate>D 的次日场一起只供真票结算与合法性检查，不进�
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field, replace
 from datetime import date as _date
 from datetime import timedelta
@@ -274,7 +275,33 @@ def load_jczq_board(data_dir: Path, day: str, *, allow_history: bool = False) ->
         str(pool).lower(): sorted({row.get("formula") for row in rows_ if row.get("formula")})
         for pool, rows_ in (doc.get("allUpList") or {}).items()
     }
+    beliefs = _prospective_read_beliefs(data_dir, day, matches)
+    matches = {code: replace(m, read_belief=beliefs.get(code)) for code, m in matches.items()}
     return JczqBoard(day=day, matches=matches, extra=extra, results=results, allup=allup)
+
+
+_READ_CODE = re.compile(r"-(周.\d{3})-had-")
+
+
+def _prospective_read_beliefs(data_dir: Path, day: str,
+                              matches: dict[str, JczqMatch]) -> dict[str, dict[str, float]]:
+    """`--belief read` 的来源：当日 reads.json 里 had 市场、made_at 早于开球的最新一条 belief。
+
+    开球后才写的 Read 一律不进（前瞻性只认产物时刻早于开球）。"""
+    reads = _read(data_dir / "jczq" / "daily" / day / "reads.json", []) or []
+    latest: dict[str, tuple[str, dict[str, float]]] = {}
+    for read in reads if isinstance(reads, list) else []:
+        hit = _READ_CODE.search(str(read.get("read_id") or ""))
+        belief, made_at = read.get("belief"), str(read.get("made_at") or "")
+        if read.get("market") != "had" or not hit or not belief or not made_at:
+            continue
+        m = matches.get(hit.group(1))
+        if m is None or not m.kickoff_bj or made_at >= m.kickoff_bj:
+            continue
+        code = hit.group(1)
+        if code not in latest or made_at > latest[code][0]:
+            latest[code] = (made_at, {k: float(belief[k]) for k in ("home", "draw", "away")})
+    return {code: belief for code, (_, belief) in latest.items()}
 
 
 def _zucai_odds(doc) -> dict[str, dict[str, float]]:

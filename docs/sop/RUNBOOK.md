@@ -73,7 +73,7 @@
 > **非决策附录 · RSI 实验对象（2026-09-18）**
 > `uv run nutmeg rsi status` 一屏：每条实验的状态 / n_cum / CI / 距 falsifier / gaps / 下一期义务。
 > 登记 `rsi register experiments/registry/<id>.json`（原件全冻结，改判据＝另立新 exp_id）；
-> `rsi verdict` 由代码按冻结判据判、人不得代判；`rsi deploy` 只许人。重放（`--mode replay` / dream）结果进不了判决。
+> `rsi verdict` 由代码按冻结判据判、人不得代判；`rsi deploy` 只许人。重放（`--mode replay`）结果进不了判决。
 > 出生事故 → `INCIDENTS.md` §F1c
 > **R0 竞彩全板覆盖率义务**：`scope=match`，每场截止各自开球；`research run` 成功即逐场 fulfill，
 > 未研、预算外、开球后启动或拒收的场都保留为 gap，不以 `price_only` 冒充深研。
@@ -84,8 +84,7 @@
 > ＝ 足彩 `*-legs-base.json`（fair + 旗/完整度/牌照四问/先例标签，**跳过 B4 也有**）
 > ＋ 竞彩日板 `daily/<date>/bold_odds.json` × `jc-results.json`（**从没下过注的场次**＝无选择偏差价格样本）。
 > 去重按 titan007 match_id，其次按「同日 + fair 三元组 ≤1.5pp」。
-> 消费：`uv run python scripts/zucai_loop.py <cmd> --corpus v2`（按日期切窗；`v1` 行为不变）、
-> `experiments/exp-price-bands.py`、`experiments/exp-label-residuals.py`。
+> 消费：`nutmeg rsi grade`（前瞻结账）与 `nutmeg rsi weights propose`（T13 因子提案）。`scripts/zucai_loop.py` 的假设批次与策略进化于 2026-10-04 随闭环瘦身删除。
 > ⛔**口径纪律**：价格带类检验吃全部行；**标签类检验只能吃带标签的那 70 行**；
 > **F2/F3/F4 的前瞻窗与口径写死在各自 prereg 里，不得用本语料回补样本**。
 > 出生事故 → `INCIDENTS.md` §语料 v2

@@ -23,7 +23,7 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
 Now = Callable[[], datetime]
 Claude = Callable[[str, str], tuple[int, str]]
 
-JOBS = ("settle", "brief", "session", "results", "broadcast", "dream")
+JOBS = ("settle", "brief", "session", "results", "broadcast")
 RESULTS_LOOKBACK_DAYS = 3  # 赛果桥追补：美洲晚场 09:45 常未封存，回看三天补缺（2026-09-30）
 
 
@@ -57,9 +57,6 @@ def _tail(text: str, lines: int = 3) -> str:
 
 def planned_commands(ctx: DayContext, job: str) -> list[list[str]]:
     uv = ["uv", "run", "nutmeg"]
-    if job == "dream":
-        return [[*uv, "discovery", "nightly", "--day", ctx.date,
-                 "--jczq-dir", str(ctx.data_dir / "jczq")]]
     if job != "settle":
         return []
     data = ["--data-dir", str(ctx.data_dir)]
@@ -202,20 +199,6 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
             exit_code = 1 if report["failed"] else 0
         except RuntimeError as exc:  # telegram 未配置
             summary, exit_code = f"broadcast 未发：{exc}", 1
-    elif job == "dream":
-        # 夜间 Dream 录制（常设批准至 2026-10-31）：跳过/无解是数据，只有基础设施错误退出 1
-        cmd = planned_commands(ctx, "dream")[0]
-        proc = ctx.runner(cmd)
-        commands = [{"cmd": " ".join(cmd[2:]), "exit": proc.returncode,
-                     "tail": _tail((proc.stdout or "") + (proc.stderr or ""))}]
-        try:
-            outcome = json.loads((proc.stdout or "").strip().splitlines()[-1])
-        except (IndexError, json.JSONDecodeError):
-            outcome = {"status": "failed", "reason": "no_json"}
-        detail = outcome.get("reason") or outcome.get("world_id")
-        summary = f"dream {outcome.get('status')} {detail}"
-        exit_code = proc.returncode
-        evidence = outcome.get("report")
     else:
         summary, exit_code = _session_only(ctx)
     record = JobRecord(job=job, planned_at=planned, started_at=started_at,

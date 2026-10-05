@@ -37,7 +37,7 @@ def _ctx(tmp_path: Path, log) -> DayContext:
 
 def test_jobs_and_planned_settle_commands(tmp_path: Path):
     ctx = _ctx(tmp_path, [])
-    assert JOBS == ("settle", "brief", "session", "results", "broadcast", "dream")
+    assert JOBS == ("settle", "brief", "session", "results", "broadcast")
     cmds = planned_commands(ctx, "settle")
     assert cmds[0][:4] == ["uv", "run", "nutmeg", "workbench-export"] and "2026-09-22" in cmds[0]
     assert not any("betslip" in c for c in cmds)  # no results-90.json yet
@@ -152,41 +152,6 @@ def test_results_job_fails_loudly_when_yesterdays_board_is_unsealed(tmp_path: Pa
     (board / "sporttery_markets.json").write_text("{}", encoding="utf-8")
     rec = run_job(ctx, "results")
     assert rec.exit == 1 and "未封存" in rec.summary
-
-
-def test_dream_job_runs_nightly_and_records_its_outcome(tmp_path: Path):
-    log: list[list[str]] = []
-    ctx = _ctx(tmp_path, log)
-
-    def runner(cmd):
-        log.append(list(cmd))
-        out = json.dumps({"status": "skipped", "reason": "outside_window", "day": "2026-09-23"})
-        return subprocess.CompletedProcess(cmd, 0, out + "\n", "")
-
-    ctx.runner = runner
-    rec = run_job(ctx, "dream")
-    assert log[0][:5] == ["uv", "run", "nutmeg", "discovery", "nightly"]
-    assert "--day" in log[0] and "2026-09-23" in log[0]
-    assert "--jczq-dir" in log[0] and str(ctx.data_dir / "jczq") in log[0]
-    assert rec.exit == 0 and rec.summary == "dream skipped outside_window"
-    assert read_timeline(ctx.data_dir, "2026-09-23")[-1]["job"] == "dream"
-
-
-def test_dream_job_failure_keeps_the_exit_code(tmp_path: Path):
-    ctx = _ctx(tmp_path, [])
-    ctx.runner = lambda cmd: subprocess.CompletedProcess(
-        cmd, 1, json.dumps({"status": "failed", "reason": "shadow_store_missing"}) + "\n", ""
-    )
-    rec = run_job(ctx, "dream")
-    assert rec.exit == 1 and rec.summary == "dream failed shadow_store_missing"
-
-
-def test_dream_job_plans_the_nightly_subprocess_it_runs(tmp_path: Path):
-    ctx = _ctx(tmp_path, [])
-    assert planned_commands(ctx, "dream") == [[
-        "uv", "run", "nutmeg", "discovery", "nightly", "--day", "2026-09-23",
-        "--jczq-dir", str(ctx.data_dir / "jczq"),
-    ]]
 
 
 def test_settle_job_encodes_yesterdays_board_into_the_scoreboard(tmp_path: Path):

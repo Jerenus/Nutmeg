@@ -3,8 +3,8 @@
 | 项 | 内容 |
 |---|---|
 | 文档 | 现役系统结构总图（权威） |
-| 版本 | v1.1 · 2026-10-02 |
-| 范围 | 定位 · 系统总图 · 每日时序 · 判断层 · 出票审票与账务 · RSI 实验层 · Discovery Harness · 数据对象 · 全量分析过程 · 工程流程 · 文档地图 · 术语表 |
+| 版本 | v1.2 · 2026-10-05 |
+| 范围 | 定位 · 系统总图 · 每日时序 · 判断层 · 出票审票与账务 · RSI 实验层 · 回放 gym · 数据对象 · 全量分析过程 · 工程流程 · 文档地图 · 术语表 |
 | 读者 | Jun（下注者与决策人）· Claude 主循环 · Codex / OpenClaw 会话 |
 | 权威关系 | 原则与规则以 SOP 三件套为准；数字以 `.nutmeg-data/scoreboard.json` 与内核为准；本文与它们冲突时以它们为准，并回来改本文 |
 
@@ -22,7 +22,7 @@
 | 🟩 青 | 面板 | 当日报告、判决页、初判包、足彩初稿 |
 | 🟨 琥珀 | 人与审票 | Jun、`betslip preview` / `register` |
 | 🟢 绿 | 结算与账务 | 结算、记分牌、账房 |
-| 🟥 玫红 | 实验层 | RSI 闭环、Dream、回放 gym |
+| 🟥 玫红 | 实验层 | RSI 闭环、回放 gym |
 
 ## 目录
 
@@ -32,7 +32,7 @@
 - [3. 判断层](#3-判断层)
 - [4. 出票、审票、登记与账务](#4-出票审票登记与账务)
 - [5. RSI 实验层](#5-rsi-实验层)
-- [6. Discovery Harness 与 Dream](#6-discovery-harness-与-dream)
+- [6. 回放 gym（Dream 已退役）](#6-回放-gymdream-已退役)
 - [7. 数据对象](#7-数据对象)
 - [8. 全量分析过程（证据链）](#8-全量分析过程证据链)
 - [9. 工程流程](#9-工程流程)
@@ -101,7 +101,7 @@ flowchart TB
   end
   subgraph EXP["⑧ 实验层"]
     direction LR
-    E1["RSI 闭环 10:45<br/>结账 · 判决 · 提案"] ~~~ E2["Dream 夜录 20:30<br/>影子世界 · 对照账"] ~~~ E3["回放 gym<br/>403 天锦标赛"]
+    E1["RSI 闭环 10:45<br/>结账 · 判决 · 提案"] ~~~ E3["回放 gym<br/>403 天锦标赛 · 规则 v3"]
   end
   SRC --> ING --> CORE --> JUD --> OUT --> HUM --> ACC --> EXP
   CORE -.->|"内核 · 运行文件 · 语料"| EXP
@@ -121,7 +121,7 @@ flowchart TB
   class P1,P2,P3,P4 out
   class H1,T1,H2,T2 hum
   class T3,T4 acc
-  class E1,E2,E3 exp
+  class E1,E3 exp
 ```
 
 *图 1　系统总图：八层流水线。实线为每日主流向，虚线为实验层对事实层的直接读取。*
@@ -142,7 +142,7 @@ flowchart TB
 
 ### 2.1 定时任务
 
-launchd **14 个**（plist 单一来源 `ops/launchd/`，装载副本在 `~/Library/LaunchAgents/`），OpenClaw **3 个**确定性任务仍在用。
+launchd **13 个**（plist 单一来源 `ops/launchd/`，装载副本在 `~/Library/LaunchAgents/`），OpenClaw **3 个**确定性任务仍在用。
 
 ```mermaid
 %%{init: {"theme": "base", "themeCSS": ".grid .tick line { stroke: #E2E8F0; } .grid path { stroke: none; } .sectionTitle { font-weight: 600; }", "themeVariables": {"fontSize": "14px", "taskBkgColor": "#F3E8FF", "taskBorderColor": "#9333EA", "doneTaskBkgColor": "#E0F2FE", "doneTaskBorderColor": "#0284C7", "activeTaskBkgColor": "#CCFBF1", "activeTaskBorderColor": "#0D9488", "critBkgColor": "#FFE4E6", "critBorderColor": "#E11D48", "taskTextColor": "#0F172A", "taskTextDarkColor": "#0F172A", "taskTextOutsideColor": "#0F172A", "taskTextLightColor": "#0F172A", "sectionBkgColor": "#F8FAFC", "altSectionBkgColor": "#FFFFFF", "sectionBkgColor2": "#F8FAFC", "gridColor": "#E2E8F0", "titleColor": "#0F172A", "todayLineColor": "transparent"}, "gantt": {"barHeight": 18, "barGap": 6, "topPadding": 40, "leftPadding": 96, "fontSize": 13, "sectionFontSize": 14}}}%%
@@ -173,7 +173,6 @@ gantt
   结算 二跑                                  :crit, e2, 15:45, 10m
   RSI 闭环 12 步                             :crit, e3, 10:45, 30m
   OpenClaw D1D2 补结算                       :crit, e4, 12:30, 10m
-  Dream 夜录                                 :crit, e5, 20:30, 20m
 ```
 
 *图 2　每日定时任务时序（不含每 10 分钟的截止播报、每小时的义务巡检与每月 1 日的账房月报）。*
@@ -184,11 +183,10 @@ gantt
 | `jczq.results-backfill` | 09:30 / 15:30 | `scripts/jczq_result_backfill.py` | `jc-results.json` → 结算、语料、夜账 | 结算与语料停在旧日期（lag>2 天退出 2） |
 | `day.settle` | 09:45 / 15:45 | `day run --job results` + `--job settle` | 实票结算、记分牌复盘编码、处方预测记账 | 昨日票未结、账房缺数 |
 | `jczq.research` | 10:00 | `decision-am` → `research run` → `research intake --write` → `jczq-build-reads` | 研究文件、Read、内核 revision、足彩自动 legs-base | 判断层零产出；空盘日两步自动跳过 |
-| `rsi.loop` | 10:45 | `rsi loop`（12 步，见 5.3） | 实验结账、因子提案、Dream 对照账、语料 | 判决与提案停在前一天 |
+| `rsi.loop` | 10:45 | `rsi loop`（9 步，见 5.3） | 实验结账、因子提案、实力指数、语料 | 判决与提案停在前一天 |
 | `zucai.prep-morning` / `prep` / `prep-revision` | 11:00 / 14:00 / 18:30 | `zucai-prep --slot … --dispatch-telegram` | 足彩期次、store-ids、位移复核 | 足彩样本池与初稿没有输入 |
 | `day.brief` | 12:00 / 14:20 / 18:35 | `day run --job brief`（12:00 带模型解释）+ `day publish` | 当日报告、会话入口、站点、足彩初稿自动重建 | `/today` 会话入口与 `/day` 页读到旧报告 |
 | `day.verdict` | 12:30 / 18:45 | `research refresh` + `research verdict` | 判决参考页 | 人工裁决看旧页 |
-| `day.dream` | 20:30 | `day run --job dream` → `discovery nightly` | Dream 影子世界（常设批准至 2026-10-31） | 当晚世界缺录；空盘记为跳过 |
 | `day.broadcast` | 每 10 分 | `day run --job broadcast` | Jun（Telegram） | 截止无人提醒（26130 复发） |
 | `rsi.sweep` | 每小时 :00 | `rsi sweep` | F5 / F9 / R0 / R1 的前瞻观察义务 | 加场日义务过期成缺口，不能回补 |
 | `account.month` | 每月 1 日 16:10 | `account month --previous --write` | 账房月报 | 月报缺席（可手跑） |
@@ -395,7 +393,7 @@ stateDiagram-v2
 - **判决只许系统，部署只许人**。退役（2026-10-02 起）同时把该实验的义务置为 retired，排程、到期、巡检都不再列它。
 - 「前瞻」的唯一证明：产物时刻早于开球（研究文件 `captured_at`、观察仪产物 mtime）。
 
-### 5.2 实验清单（2026-10-02 快照）
+### 5.2 实验清单（2026-10-04 快照）
 
 | 实验 | 层 | 问的是什么 | 状态 / n |
 |---|---|---|---|
@@ -407,8 +405,9 @@ stateDiagram-v2
 | F15 | 判断（主） | 终盘 ≥0.70 大热被低估 | registered 0/100 |
 | G1 | 结构（主） | gym 规则 `jczq_fav_pairs` 平注 ROI>0 | registered 0/100 |
 | K1 | 判断 | rubric 两读合并 κ ≥ 0.40 | registered 0/100 |
-| F3 · F4 · F5 · F8 · F11 · F13 | 结构 / 判断 | 冷热板模态、门成本、价格带、其他、保险点名、崩塌叙事 | 见 `nutmeg rsi status` |
+| F5 · F8 · F11 · F13 | 结构 / 判断 | 价格带、其他、保险点名、崩塌叙事 | 见 `nutmeg rsi status` |
 | F2 · F1c | 价格因子 | 让球线位移 / 书商分歧度 | **retired 2026-10-02**（窗口内到不了 n_min） |
+| F3 · F4 | 判断 / 结构 | 足彩 top1≥60% 模态面（F10 的前身）/ 门成本 | **retired 2026-10-04**（F3 由 F10 承接；F4 的观测仪 `plan commit` 已删） |
 
 > [!NOTE]
 > `nutmeg rsi status` 是实验状态的唯一事实源；本表只是快照。
@@ -424,27 +423,23 @@ flowchart TB
   end
   subgraph JUDGE["结账与判决"]
     direction LR
-    L4["4 grade_prospective<br/>F3 F4 F5 F9 F10 F11<br/>F13 F14 F15 G1 K1"] --> L5["5 verdict_due<br/>到期判决（系统）"] --> L6["6 factor_propose<br/>T13 提案 · 含 rubric 逐项"]
+    L4["4 grade_prospective<br/>F5 F9 F10 F11<br/>F13 F14 F15 G1 K1"] --> L5["5 verdict_due<br/>到期判决（系统）"] --> L6["6 factor_propose<br/>T13 提案 · 含 rubric 逐项"]
   end
-  subgraph EXPLORE["探索"]
+  subgraph CMP["指数、计数与提交"]
     direction LR
-    L7["7 hyp<br/>假设批次"] --> L8["8 factor_search<br/>因子搜索"] --> L9["9 team_strength<br/>实力指数"]
+    L7["7 team_strength<br/>实力指数（当日报告读）"] --> L8["8 scoreboard<br/>记分牌解析"] --> L9[("9 commit_outputs<br/>自动提交实验文件")]
   end
-  subgraph CMP["对照与提交"]
-    direction LR
-    L10["10 scoreboard<br/>记分牌解析"] --> L11["11 dream_compare<br/>昨晚世界对照账"] --> L12[("12 commit_outputs<br/>自动提交实验文件")]
-  end
-  IN --> JUDGE --> EXPLORE --> CMP
+  IN --> JUDGE --> CMP
 
   classDef ing fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
   classDef exp fill:#FFE4E6,stroke:#E11D48,color:#881337
   classDef store fill:#EEF2FF,stroke:#4F46E5,color:#1E1B4B
   class L1,L2,L3 ing
-  class L4,L5,L6,L7,L8,L9,L10,L11 exp
-  class L12 store
+  class L4,L5,L6,L7,L8 exp
+  class L9 store
 ```
 
-*图 8　RSI 每日闭环 12 步。报告在 `.nutmeg-data/analytics/rsi-loop/<日>.json|md` 与 `latest.md`，「待人决定」进当日报告。*
+*图 8　RSI 每日闭环 9 步（2026-10-04 删去 hyp、factor_search、dream_compare）。报告在 `.nutmeg-data/analytics/rsi-loop/<日>.json|md` 与 `latest.md`，「待人决定」进当日报告。*
 
 ### 5.4 因子注册表（T13）与 rubric 逐项结账
 
@@ -459,43 +454,34 @@ flowchart TB
 
 ---
 
-## 6. Discovery Harness 与 Dream
+## 6. 回放 gym（Dream 已退役）
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"fontSize": "16px", "lineColor": "#64748B", "clusterBkg": "#FBFCFE", "clusterBorder": "#CBD5E1", "edgeLabelBackground": "#FFFFFF", "primaryTextColor": "#0F172A"}, "flowchart": {"curve": "basis", "padding": 12, "nodeSpacing": 30, "rankSpacing": 42}}}%%
 flowchart TB
-  subgraph REC["① 夜录 · 20:30"]
+  subgraph IN["输入（全部已落盘）"]
     direction LR
-    S["常设批准<br/>至 10-31 · 可撤销"] --> N["day run --job dream<br/>→ discovery nightly"] --> D{{"day_inputs<br/>板面 · Read<br/>体彩报价 · 实际票面"}}
-    D -->|"有世界"| RC["authorize_nightly<br/>record_shadow_world<br/>开球过滤 · 写影子库"]
-    D -->|"缺板面或未开球 &lt; 2"| SK["记为跳过<br/>board_too_small"]
+    B1["17:00 体彩快照板<br/>上赛季 SP 历史板"] ~~~ B2["Read 判断概率<br/>只收开球前写下的"] ~~~ B3["官方奖金缓存<br/>赛果 · 终盘"]
   end
-  subgraph CMP["② 对照 · 次日 10:45"]
+  subgraph RUN["回放"]
     direction LR
-    C1["dream_compare<br/>实际票 · 规则 v2 / v3<br/>世界各档 · 空仓"] --> LED[("dream-compare/<br/>ledger.jsonl")]
-  end
-  subgraph GYM["③ 回放 gym · 离线 · 与 Dream 互为参照"]
-    direction LR
-    G1["17:00 快照板<br/>上赛季 SP 历史板<br/>官方奖金 · 精确结算"] --> G2["nutmeg gym run<br/>策略族按时间顺序<br/>月度刹车"] --> G3[("analytics/gym/&lt;run&gt;/")]
+    G2["nutmeg gym run<br/>策略族按时间顺序<br/>月度刹车 · 精确结算"] --> G3[("analytics/gym/&lt;run&gt;/")]
     G4["nutmeg gym verify<br/>复现记分牌"] --> G3
   end
-  REC --> CMP
-  CMP ~~~ GYM
+  IN --> RUN
 
-  classDef hum fill:#FEF3C7,stroke:#D97706,color:#78350F
   classDef exp fill:#FFE4E6,stroke:#E11D48,color:#881337
   classDef store fill:#EEF2FF,stroke:#4F46E5,color:#1E1B4B
   classDef src fill:#F1F5F9,stroke:#64748B,color:#0F172A
-  class S hum
-  class N,D,RC,C1,G1,G2,G4 exp
-  class LED,G3 store
-  class SK src
+  class B1,B2,B3 src
+  class G2,G4 exp
+  class G3 store
 ```
 
-*图 9　Dream 夜录与回放 gym：前瞻的每晚影子世界，加上离线的 403 天锦标赛。*
+*图 9　回放 gym：所有输入都是已落盘的日文件，任何规则都能在历史板面上按时间顺序重放。*
 
-- **Dream** 每晚把截止时刻未开球的场次与 Jun 的实际票面冻结成一个影子世界；锦标赛、晋级、部署仍只许人。就绪门 `record_to_baseline` 要 30 个封存世界、20 个独立业务日。
-- **评估器 v3**（`dream_compare.decision_rule_v3`）：期望回报 < 0.5 否决，过线里取最高，最高 < 1 则规则最优＝空仓。10-31 裁决是否成为唯一规则行。
+- **Dream 退役（2026-10-04）**：常设批准下 5 个夜晚只录到 1 个影子世界、对照账只有 1 行，30 个世界的就绪门在 10-31 前不可达；影子世界的输入本来就是已落盘的日文件，gym 能直接回放。代码、`day.dream` 定时器与 `discovery` 命令已删；`policy_*` / `discovery_*` 表留作空表。
+- **规则 v3**（`gym/policies/jczq.py: jczq_rule_v3`，原 `dream_compare.decision_rule_v3`）：期望回报 < 0.5 否决，过线里取最高，最高 < 1 则规则最优＝空仓。`nutmeg gym run --policy jczq_rule_v3 --belief read` 就是当年 Dream 的「研究判断 × 体彩价」口径；`--belief read` 只收 `reads.json` 里开球前写下的 had 判断。
 - **回放 gym**（`nutmeg/gym/`）：17:00 体彩快照板 + 上赛季 SP 历史板 + 官方奖金缓存，精确结算，按时间顺序带月度刹车；`gym verify` 复现记分牌（9 月 −4,721 精确吻合）。
 
 ---
@@ -513,7 +499,7 @@ flowchart TB
 | `betslips.jsonl` | 登记簿（实票 / 试玩、诊断、偏离理由、预测） |
 | `scoreboard.json` | **记分牌单一事实源**（tickets、balance_ledger、adjudications、链） |
 | `ontology/ontology.db` | 本体内核 |
-| `analytics/` | `rsi-loop/` `rubric/` `account/` `gym/` `dream-compare/` `team_strength.json` |
+| `analytics/` | `rsi-loop/` `rubric/` `account/` `gym/` `team_strength.json`（`dream-compare/` 为 Dream 退役前的历史账） |
 | `logs/` | 各定时器的 out / err 日志（状态页按日志时刻判断，不默认它是今天的） |
 
 ### 7.2 内核（schema 47，185 张表）
@@ -524,8 +510,8 @@ flowchart TB
 | forecast revisions | 判断唯一事实（schema 47 起带 `kind / board_key / judgment_json`） | `nutmeg judgment project` 投影 |
 | `ticket` `scoreboard` `claim` `factor` | 实票、记分牌镜像、主张、因子 | 竞彩实票由 `betslip register` 写入 |
 | `rsi_*`（8 张） | 实验、义务、观察、结账、判决、部署、修正 | `nutmeg rsi status` |
-| `policy_*`（16 张）`discovery_*`（5 张） | Dream 影子库同一套迁移 | 不能删 |
-| `operator_*`（78 张） | 旧操作台对象 | 退役专项 2026-10-09（分支 `kernel/operator-retirement`） |
+| `policy_*`（16 张）`discovery_*`（5 张） | Dream 影子世界与策略治理 | 代码已删（2026-10-04）；表留作空表，`policy_versions` 仍是 Action 权限的外键目标 |
+| `operator_*`（78 张） | 旧操作台对象 | 代码已删（2026-10-04）；表留作空表，迁移链不变 |
 
 运维规则见 `docs/ontology-kernel-operations.md`。
 
@@ -634,7 +620,6 @@ flowchart TB
 | 并集样本池 | 足彩在售期场次优先，加竞彩全板，每天深研预算 40 场 |
 | legs-base | 一天或一期的腿基表：面、判断、标签、face_status |
 | store-ids | 足彩场次到内核 match_id 与 fair 的映射 |
-| 影子世界 | Dream 每晚冻结的未开球场次与实际票面，用于事后对照 |
 | 空盘 | 体彩列表完全为空（假期、停赛），记为合法、不报失败 |
 | 月度止损 | 本月净值 ≤ −¥3,000 即空仓到月底 |
 | EXP 探索票 | 只给预登记实验、每日 ≤¥30 的小额票 |
@@ -647,3 +632,4 @@ flowchart TB
 |---|---|---|
 | v1.0 | 2026-10-02 | 首版：现役结构总图，取代 2026-08 Intelligence OS 设计成为结构权威 |
 | v1.1 | 2026-10-02 | 统一配色与图例、元信息、目录、提示框、图题、术语表、版本记录；10 张图重排版（研究流、足彩初稿、审票、状态机、闭环、Dream 改为分行布局）；rubric 项数更正为 15；随附 Word 版与生成脚本 |
+| v1.2 | 2026-10-05 | 过度设计审计瘦身（第 0–4 波）：内核路径写死（删 `ontology_v2` 开关与 v1 JSONL 动词路径）；删旧版服务层、机器构票工具（`zucai-candidates`/`zucai-optimize`/`zucai-ticket`/`plan *`）、operator 与受保护票代码（表留空）；Dream/Discovery 退役，规则 v3 迁入 gym（`--belief read`）；RSI 闭环 12→9 步；launchd 14→13；命令 143→约 80。审计门、裁决单、zucai 账本、记分牌权威命令与研究入库拒收逻辑未动 |

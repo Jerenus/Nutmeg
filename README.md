@@ -1,7 +1,7 @@
 # Nutmeg · 过人
 
 中国体彩竞彩足球（JCZQ）与传统足彩（胜负彩/任九）的判断与账务系统：决策本体内核 +
-研究判断层（rubric r1 类型化问题表）+ RSI 实验层（判据自证伪）+ Discovery Harness（Dream 夜录 · 回放 gym）。
+研究判断层（rubric r1 类型化问题表）+ RSI 实验层（判据自证伪）+ 回放 gym（任何规则在历史板面上按时间顺序重放）。
 
 **定位（2026-10-01）**：机器＝风控官（审票否决已知坏结构）+ 账房 + 实验员 + 研究员，人＝下注者。
 竞彩机器出初判不出票；足彩机器出初稿；Jun 出方案 → `betslip preview` 审票 → 下单 → `betslip register`。
@@ -11,7 +11,7 @@
 
 | 读者 | 先读 |
 | --- | --- |
-| 结构总图（现役） | `docs/ARCHITECTURE.md`：总图、每日时序、判断层、出票审票、RSI、Dream、数据对象、全量分析过程、工程流程、文档地图 |
+| 结构总图（现役） | `docs/ARCHITECTURE.md`：总图、每日时序、判断层、出票审票、RSI、回放 gym、数据对象、全量分析过程、工程流程、文档地图 |
 | Claude Code | `CLAUDE.md` → `docs/sop/{CONSTITUTION,RUNBOOK,RULEBOOK}.md` |
 | Codex / OpenClaw | `AGENTS.md`（同一套 SOP 指针 + OpenClaw 会话契约） |
 | 实体知识 | `docs/research/INDEX.md`；画像在 store 的 `profile_notes` |
@@ -40,7 +40,7 @@ uv run nutmeg account month [--month YYYY-MM]         # 账房：净值 vs 空�
 
 | 路径 | 内容 |
 | --- | --- |
-| `nutmeg/` | 包：`decision/`（研究与 rubric、Read、审票、账房、日运行器、RSI 闭环）、`ontology/`（SQLite 内核 schema 47 + typed Actions）、`discovery/`（Dream / Harness）、`gym/`（回放环境）、`product/`（repository + runtime）、`interfaces/`（CLI / web / bot）、`data/` `services/`（采集） |
+| `nutmeg/` | 包：`decision/`（研究与 rubric、Read、审票、账房、日运行器、RSI 闭环）、`ontology/`（SQLite 内核 schema 47 + typed Actions）、`gym/`（回放环境）、`product/`（repository + runtime）、`interfaces/`（CLI / web / Telegram 发送）、`data/` `services/`（采集） |
 | `experiments/` | 语料 v2、因子注册表 `factors.json`（含 rubric 逐项因子）、实验登记 `registry/`、Harness 契约 `discovery/`、`attempts.log`（10:45 闭环自动提交） |
 | `scripts/` | 定时器与采集器（`openclaw/`、结果回填、终盘采集、奖金模型、rubric 历史重打分、足彩 discovery loop；F2 观察仪 2026-10-02 退役，脚本留档） |
 | `ops/launchd/` | 全部 plist（14 个）；装载是 Jun 的行权门 |

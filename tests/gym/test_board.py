@@ -202,3 +202,22 @@ def test_snapshot_board_fills_result_gaps_from_jc_history(tmp_path: Path) -> Non
     assert board.results["周六001"]["goals_h"] == 2                 # jc-results 优先
     assert board.results["周六002"] == {"outcome_90": "home", "goals_h": 3, "goals_a": 1,
                                        "ht_h": 1, "ht_a": 1}       # 缺口由 jc-history 补
+
+
+def test_read_belief_only_from_reads_made_before_kickoff(tmp_path: Path) -> None:
+    """`--belief read`（Dream 退役后由 gym 承接）：开球后才写的 Read 不进前瞻。"""
+    data = _jczq_day(tmp_path)
+    reads = [
+        {"read_id": f"R-ai-jczq-{DAY}-周六001-had-1230", "market": "had",
+         "made_at": f"{DAY}T12:30:00+08:00", "belief": {"home": 0.6, "draw": 0.25, "away": 0.15}},
+        {"read_id": f"R-ai-jczq-{DAY}-周六001-had-1845", "market": "had",
+         "made_at": f"{DAY}T18:45:00+08:00", "belief": {"home": 0.7, "draw": 0.2, "away": 0.1}},
+        {"read_id": f"R-ai-jczq-{DAY}-周六002-had-2000", "market": "had",          # 开球 19:30 之后
+         "made_at": f"{DAY}T20:00:00+08:00", "belief": {"home": 0.5, "draw": 0.3, "away": 0.2}},
+    ]
+    (data / "jczq" / "daily" / DAY / "reads.json").write_text(
+        json.dumps(reads, ensure_ascii=False), encoding="utf-8")
+    board = load_jczq_board(data, DAY)
+
+    assert board.matches["周六001"].read_belief == {"home": 0.7, "draw": 0.2, "away": 0.1}
+    assert board.matches["周六002"].read_belief is None

@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.capital import CapitalRepository
     from nutmeg.ontology.repository.context import ContextRepository
     from nutmeg.ontology.repository.decision import DecisionRepository
-    from nutmeg.ontology.repository.discovery import DiscoveryRepository
     from nutmeg.ontology.repository.evidence import EvidenceRepository
     from nutmeg.ontology.repository.finance import FinanceRepository
     from nutmeg.ontology.repository.identity import IdentityRepository
@@ -114,12 +113,6 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.decision import DecisionRepository
 
         return DecisionRepository(self.connection)
-
-    @property
-    def discovery(self) -> DiscoveryRepository:
-        from nutmeg.ontology.repository.discovery import DiscoveryRepository
-
-        return DiscoveryRepository(self.connection)
 
     @property
     def finance(self) -> FinanceRepository:

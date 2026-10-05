@@ -44,11 +44,11 @@ def _ctx(tmp_path: Path, log, skip=()):
     )
 
 
-def test_planned_commands_cover_every_step_and_use_latest_issue(tmp_path):
+def test_planned_commands_cover_every_step(tmp_path):
     ctx = _ctx(tmp_path, [])
     plan = planned_commands(ctx)
     assert tuple(plan) == STEP_ORDER
-    assert any("--cut" in c and "26131" in c for c in plan["hyp"])
+    assert not {"hyp", "factor_search", "dream_compare"} & set(plan)   # 2026-10-04 删去
     assert all(c[:2] == ["uv", "run"] for name, step in plan.items() for c in step
                if name != "commit_outputs")        # 末尾的 git 提交步是 bash -c
 
@@ -87,38 +87,6 @@ def test_run_loop_is_idempotent_per_day_unless_forced(tmp_path):
     assert first is not None
     assert run_loop(ctx) is None and len(log) == calls_after_first
     assert run_loop(ctx, force=True) is not None and len(log) > calls_after_first
-
-
-def test_dream_compare_step_reports_yesterday_and_expiry_countdown(tmp_path):
-    log: list[list[str]] = []
-    ctx = _ctx(tmp_path, log)
-    base = ctx.runner
-
-    def runner(cmd):
-        if "compare" in cmd:
-            log.append(list(cmd))
-            payload = {
-                "day": "2026-09-21",
-                "status": "settled",
-                "rows": [{"kind": "decision_rule", "status": "settled", "hit": True,
-                          "pnl_per_yuan": 0.4, "p_belief": 0.52}],
-                "summary": {"n_days": 3, "kinds": {},
-                            "actual_minus_rule": {"n": 3, "mean": -0.2, "ci95": None}},
-                "standing_days_left": 5,
-            }
-            return subprocess.CompletedProcess(cmd, 0, json.dumps(payload) + "\n", "")
-        return base(cmd)
-
-    ctx.runner = runner
-    plan = planned_commands(ctx)
-    assert STEP_ORDER[-2] == "dream_compare"
-    assert plan["dream_compare"][0][2:6] == ["nutmeg", "discovery", "compare", "--day"]
-    assert "2026-09-21" in plan["dream_compare"][0]
-    report = run_loop(ctx)
-    assert report.dream["day"] == "2026-09-21"
-    assert any("常设批准" in a and "5" in a for a in report.human_actions)
-    md = (ctx.out_dir / "2026-09-22.md").read_text(encoding="utf-8")
-    assert "## Dream 对照" in md and "decision_rule" in md and "−0.2000" in md
 
 
 def test_commit_outputs_step_commits_only_the_loop_files_without_hooks(tmp_path):

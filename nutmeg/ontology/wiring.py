@@ -14,9 +14,6 @@ from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
 from nutmeg.ontology.actions.bundle_actions import BundleActions
 from nutmeg.ontology.actions.capital_actions import CapitalActions
 from nutmeg.ontology.actions.claim_actions import ClaimActions
-from nutmeg.ontology.actions.discovery_governance_actions import DiscoveryGovernanceActions
-from nutmeg.ontology.actions.discovery_policy_actions import DiscoveryPolicyActions
-from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.factor_actions import FactorActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
@@ -34,7 +31,6 @@ from nutmeg.ontology.actions.ticket_actions import TicketActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
 from nutmeg.ontology.decision.read_flow import DecisionReadService
-from nutmeg.ontology.discovery.read_service import DiscoveryReadService
 from nutmeg.ontology.finance.express_flow import ExpressService
 from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
@@ -95,10 +91,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     scoreboard_actions = ScoreboardActions(action_service)
     reliability_actions = ReliabilityActions(action_service)
     rsi_actions = RsiActions(action_service)
-    discovery_world_actions = DiscoveryWorldActions(action_service)
-    discovery_policy_actions = DiscoveryPolicyActions(action_service)
-    discovery_governance_actions = DiscoveryGovernanceActions(action_service)
-    discovery_read = DiscoveryReadService(engine)
     capital_actions = CapitalActions(action_service)
     return OntologyKernel(
         paths=paths,
@@ -118,9 +110,5 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         scoreboard_actions=scoreboard_actions,
         reliability_actions=reliability_actions,
         rsi_actions=rsi_actions,
-        discovery_world_actions=discovery_world_actions,
-        discovery_policy_actions=discovery_policy_actions,
-        discovery_governance_actions=discovery_governance_actions,
-        discovery_read=discovery_read,
         capital_actions=capital_actions,
     )

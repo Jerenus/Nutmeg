@@ -9,12 +9,14 @@
     3. grade_prospective  对每个有前瞻适配器的实验 `rsi grade --mode prospective`（系统身份）
     4. verdict_due        对每个实验尝试 `rsi verdict`；「未到期」是预期状态不是失败
     5. factor_propose     `rsi weights propose --all --log`（从不写权重）
-    6. hyp                `zucai_loop hyp --corpus v2 --log`（假设批次证伪）
-    6b. factor_search     `zucai_loop search --corpus v2`（训练窗搜、测试窗验，自报噪音上限）
-    7. team_strength      客观实力指标重建
-    8. scoreboard         记分牌散文 → 结构化计数
-    8b. dream_compare     前一业务日 Dream 世界对照记账（只报告；常设批准到期前 7 天报倒计时）
-    9. report             写 `.nutmeg-data/analytics/rsi-loop/<date>.json|.md` 与 `latest.md`
+    6. team_strength      客观实力指标重建（当日报告读它）
+    7. scoreboard         记分牌散文 → 结构化计数
+    8. commit_outputs     自动提交 experiments/ 下 loop 自己写的文件
+    报告写 `.nutmeg-data/analytics/rsi-loop/<date>.json|.md` 与 `latest.md`
+
+2026-10-04 删去三步：hyp（每天重测同一批 11 条假设、输入不变结果逐字相同）、factor_search
+（输出无人读）、dream_compare（Dream 退役，规则 v3 对照改由 `gym run --policy jczq_rule_v3
+--belief read` 回放）。
 
 ⛔运行器只编排、只追加：不写权重、不改 RULEBOOK / 码表 / 记分牌、不登记实验、不部署。
 人类动作只出现在报告的「待人决定」清单里。每一步都是子进程，失败只影响该步并进报告；
@@ -41,11 +43,8 @@ STEP_ORDER = (
     "grade_prospective",
     "verdict_due",
     "factor_propose",
-    "hyp",
-    "factor_search",
     "team_strength",
     "scoreboard",
-    "dream_compare",
     "commit_outputs",
 )
 # loop 自己写的三个仓内文件（Jun 2026-10-01 定：每轮末尾自动提交，不再让它们长期脏着
@@ -58,8 +57,9 @@ LOOP_OUTPUT_PATHS = (
 )
 # 有前瞻适配器的登记实验都进闭环（F10/F11 2026-09-27 登记后一直没被结账，2026-09-30 补入）
 # F2 2026-10-02 退役（窗口 26126–26137 内主档样本到不了 n_min 140），不再每日结账
-GRADED_EXPERIMENTS = ("F3", "F4", "F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1", "K1")
-# 主指标（2026-10-01 评估换轴）：结构与决策——F14 表态面集合 vs 市场覆盖、Dream 对照账、F10 热门带；
+# F3（F10 的前身）与 F4（观测仪 plan commit 已删）2026-10-04 退役
+GRADED_EXPERIMENTS = ("F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1", "K1")
+# 主指标（2026-10-01 评估换轴）：结构与决策——F14 表态面集合 vs 市场覆盖、F10 热门带；
 # F9（程度判断）等降为次指标：每天 8–15 场的 Brier 差在赛季内分不开噪声。
 PRIMARY_EXPERIMENTS = ("F14", "F10")
 NOT_DUE_MARKERS = ("未到期", "没有 prospective 档", "重放结果进不了判决")
@@ -85,7 +85,6 @@ class LoopReport:
     verdicts: list[dict]
     human_actions: list[str]
     failed_steps: list[str]
-    dream: dict = field(default_factory=dict)
     quiet_factors: list[str] = field(default_factory=list)  # propose_zero 且现值已为 0：不需动作
 
     def to_dict(self) -> dict:
@@ -134,15 +133,6 @@ def _json_lines(text: str) -> list[dict]:
     return out
 
 
-def _latest_issue(corpus_path: Path) -> str | None:
-    try:
-        rows = json.loads(corpus_path.read_text("utf-8"))["rows"]
-    except (OSError, ValueError, KeyError):
-        return None
-    issues = sorted({str(r["issue"]) for r in rows if r.get("src") == "zucai" and r.get("issue")})
-    return issues[-1] if issues else None
-
-
 def _newest_issue_file(data_dir: Path) -> str | None:
     """最新一期（有 issue.json 的）——读者 B 要读在售期的研究，不是语料里最新结账的那期。"""
     try:
@@ -164,7 +154,6 @@ def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
     """每一步要跑的子进程命令；`rsi loop --dry-run` 打印这个。"""
     uv = ["uv", "run"]
     data = ["--data-dir", str(ctx.data_dir)]
-    cut = _latest_issue(ctx.corpus_path) or "26131"
     issue = _newest_issue_file(ctx.data_dir)
     return {
         "closing_backfill": [
@@ -196,15 +185,6 @@ def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
             [*uv, "nutmeg", "rsi", "weights", "propose", "--all", "--log",
              "--corpus", str(ctx.corpus_path)],
         ],
-        "hyp": [
-            [*uv, "python", "scripts/zucai_loop.py", "hyp", "--corpus", "v2",
-             "--cut", cut, "--log"],
-        ],
-        "factor_search": [
-            # 训练窗/测试窗按日期切：测试窗 = 最近 30 天；多重比较由脚本自报期望最大|z|
-            [*uv, "python", "scripts/zucai_loop.py", "search", "--corpus", "v2",
-             "--cut", _days_before(ctx.date, 30)],
-        ],
         "team_strength": [
             [*uv, "python", "experiments/team_strength.py", "build",
              "--out", str(ctx.data_dir / "analytics" / "team_strength.json")],
@@ -213,9 +193,6 @@ def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
             [*uv, "python", "experiments/scoreboard_parse.py",
              "--scoreboard", str(ctx.data_dir / "scoreboard.json"),
              "--out", str(ctx.root / "experiments" / "scoreboard-tallies.json")],
-        ],
-        "dream_compare": [
-            [*uv, "nutmeg", "discovery", "compare", "--day", _days_before(ctx.date, 1), *data],
         ],
         "commit_outputs": [
             ["bash", "-c", _commit_outputs_script(ctx)],
@@ -267,12 +244,11 @@ def _run_step(ctx: LoopContext, name: str, commands: list[list[str]]) -> StepRes
 
 def _collect(
     steps: list[StepResult],
-) -> tuple[list[dict], list[dict], list[dict], list[str], dict]:
+) -> tuple[list[dict], list[dict], list[dict], list[str], list[str]]:
     proposals: list[dict] = []
     grades: list[dict] = []
     verdicts: list[dict] = []
     actions: list[str] = []
-    dream: dict = {}
     for step in steps:
         for item in step.detail.get("commands", []):
             if step.name == "factor_propose":
@@ -296,14 +272,6 @@ def _collect(
                         f"判决已出：{item['tail']} → "
                         "若 survived 且 deploy_eligible，人决定 rsi deploy"
                     )
-            elif step.name == "dream_compare":
-                for row in item.get("json", []):
-                    dream = row
-                left = dream.get("standing_days_left")
-                if left is not None and left <= 7:
-                    actions.append(
-                        f"Dream 常设批准还剩 {left} 天到期（2026-10-31）→ 续期/撤销/改窗口由 Jun 裁"
-                    )
     quiet: list[str] = []
     for p in proposals:
         if p["decision"] == "propose_zero" and not p["current_weight_pp"]:
@@ -314,7 +282,7 @@ def _collect(
                 f"因子 {p['factor_id']}：{p['decision']} → 建议 {p['proposed_weight_pp']}pp"
                 f"（现 {p['current_weight_pp']}pp，严格 n={p['strict_n']}）；改权重只许 rsi deploy"
             )
-    return proposals, grades, verdicts, actions, dream, quiet
+    return proposals, grades, verdicts, actions, quiet
 
 
 def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
@@ -331,7 +299,7 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
             steps.append(StepResult(name, "skipped", 0.0, "skipped by --skip"))
             continue
         steps.append(_run_step(ctx, name, plan[name]))
-    proposals, grades, verdicts, actions, dream, quiet = _collect(steps)
+    proposals, grades, verdicts, actions, quiet = _collect(steps)
     failed = [s.name for s in steps if s.status == "failed"]
     if failed:
         actions.append(f"步骤失败需人看：{', '.join(failed)}")
@@ -339,7 +307,7 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
         date=ctx.date, started_at=started,
         finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
         steps=steps, proposals=proposals, grades=grades, verdicts=verdicts,
-        human_actions=actions, failed_steps=failed, dream=dream, quiet_factors=quiet,
+        human_actions=actions, failed_steps=failed, quiet_factors=quiet,
     )
     write_report(report, ctx.out_dir)
     return report
@@ -369,14 +337,6 @@ def render_markdown(report: LoopReport) -> str:
         secondary = [g for g in report.grades if _grade_exp(g) not in PRIMARY_EXPERIMENTS]
         lines += ["", "## 前瞻结账", "", "### 主指标（结构与决策）", ""]
         lines += [f"- {g['line']}" for g in primary] or ["- （F14/F10 尚无结账）"]
-        summary = (report.dream or {}).get("summary") or {}
-        diff = summary.get("actual_minus_rule") or {}
-        if summary:
-            mean = diff.get("mean")
-            mean_text = "—" if mean is None else f"{mean:+.4f}".replace("-", "−")
-            ci = f" CI{diff['ci95']}" if diff.get("ci95") else "（n<20 不给区间）"
-            lines.append(f"- Dream 对照账 {summary.get('n_days')} 天："
-                         f"实际−规则最优 日均每元 {mean_text}{ci}")
         lines += ["", "### 次指标（程度判断）", ""] + [f"- {g['line']}" for g in secondary]
     if report.verdicts:
         lines += ["", "## 判决", ""] + [f"- [{v['status']}] {v['line']}" for v in report.verdicts]
@@ -388,30 +348,8 @@ def render_markdown(report: LoopReport) -> str:
             f"{p['decision']} | {p['proposed_weight_pp']} |"
             for p in report.proposals
         ]
-    if report.dream:
-        lines += _dream_lines(report.dream)
     lines += ["", "⛔本报告只列事实与提案；改权重、改规则、登记实验、部署全部由人执行。", ""]
     return "\n".join(lines)
-
-
-def _dream_lines(dream: dict) -> list[str]:
-    reason = f"（{dream['reason']}）" if dream.get("reason") else ""
-    lines = ["", "## Dream 对照", "", f"- {dream.get('day')}：{dream.get('status')}{reason}"]
-    for row in dream.get("rows", []):
-        lines.append(
-            f"  - {row['kind']} {row.get('id') or ''} P={row.get('p_belief')} "
-            f"中={row.get('hit')} 每元盈亏={row.get('pnl_per_yuan')}"
-        )
-    summary = dream.get("summary") or {}
-    if summary:
-        diff = summary.get("actual_minus_rule") or {}
-        ci = diff.get("ci95") or f"n={diff.get('n')}<20，不给区间"
-        mean = diff.get("mean")
-        mean_text = "—" if mean is None else f"{mean:+.4f}".replace("-", "−")
-        lines.append(
-            f"- 累计 {summary.get('n_days')} 天；实际−规则最优 日均每元 {mean_text}（{ci}）"
-        )
-    return lines
 
 
 def write_report(report: LoopReport, out_dir: Path) -> Path:
