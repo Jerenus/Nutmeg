@@ -41,3 +41,27 @@ def test_a_failed_submission_is_retried_next_time(tmp_path):
                                now=NOW, submit=lambda path: (0, "ok"))
 
     assert (failed, retried) == ([], ["R-later"])
+
+
+def test_reads_rejected_inside_a_successful_batch_are_not_marked_submitted(tmp_path, capsys):
+    # decision-read 整批退出码 0，但输出里列了被拒的那条：它不能记成已交（26135 场11）
+    state = tmp_path / "kernel-submitted.json"
+    kickoffs = {"a": "2026-09-26T20:00:00+08:00", "b": "2026-09-26T21:00:00+08:00"}
+    out = ("decision-read-v2: 摄取 1/2 条 Read(kernel) | 拒绝: "
+           "R-b:distribution does not sum to 1")
+
+    first = submit_unstarted([_read("a"), _read("b")], kickoffs=kickoffs, state_path=state,
+                             now=NOW, submit=lambda path: (0, out))
+    again = submit_unstarted([_read("a"), _read("b")], kickoffs=kickoffs, state_path=state,
+                             now=NOW, submit=lambda path: (0, "ok"))
+
+    assert (first, again) == (["R-a"], ["R-b"])
+    assert "Read 交本体被拒 1 条" in capsys.readouterr().err
+
+
+def test_rejected_read_ids_parses_the_decision_read_summary():
+    from nutmeg.decision.kernel_submit import rejected_read_ids
+
+    assert rejected_read_ids("decision-read-v2: 摄取 2/2 条 Read(kernel)") == set()
+    assert rejected_read_ids("x | 旧式因子丢弃 1 | 拒绝: R-1:unresolved_match; R-2:boom") == {
+        "R-1", "R-2"}

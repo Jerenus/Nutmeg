@@ -124,3 +124,15 @@ def test_materialize_keeps_the_file_when_the_projection_is_empty(tmp_path: Path)
     out = run_projection(data_dir, day=DAY, kernel=kernel, write=False, materialize=True)
     assert out["materialized"] is False and out["degraded"] is True
     assert json.loads((day_dir / "reads.json").read_text(encoding="utf-8")) == reads
+
+
+def test_mapped_match_ids_translate_the_channel_map_to_zucai_side_ids(tmp_path: Path) -> None:
+    # channel-map 的键是竞彩侧 match_id、值是足彩场号；足彩 Read 用 store-ids 里的足彩侧 id
+    from nutmeg.decision.judgment_projection import _mapped_match_ids
+
+    (tmp_path / "26135-channel-map.auto.json").write_text(
+        json.dumps({"match-jc-7": 7}), encoding="utf-8")
+    (tmp_path / "26135-store-ids.json").write_text(
+        json.dumps({"7": {"match_id": "match-zc-7"}, "11": {"match_id": "match-zc-11"}}),
+        encoding="utf-8")
+    assert _mapped_match_ids(tmp_path, "26135") == ["match-jc-7", "match-zc-7"]

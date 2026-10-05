@@ -349,6 +349,24 @@ def _resolve_read_snapshot_id(
         )
 
 
+_ROUNDING_NOISE = 2e-3
+
+
+def _renormalized(distribution):
+    """四位小数的价格三面之和常是 0.9999 / 1.0001：内核按 1e-6 校验会整条拒收（2026-10-05
+    26135 场11 的 18:30 新价因此没进内核，文件与内核从此分歧）。只吸收舍入噪声；偏差更大的
+    原样交内核去拒收。带逐面因子的 Read 不动——各自缩放会破坏 Δ 的精确重构。"""
+    if not isinstance(distribution, dict) or not distribution:
+        return distribution
+    try:
+        total = sum(float(value) for value in distribution.values())
+    except (TypeError, ValueError):
+        return distribution
+    if total <= 0 or abs(total - 1.0) > _ROUNDING_NOISE or abs(total - 1.0) <= 1e-9:
+        return distribution
+    return {key: float(value) / total for key, value in distribution.items()}
+
+
 def run_decision_read_v2(reads_file, output_dir, *, kernel=None,
                          idempotency_prefix: str = "read") -> str:
     """Commit each judged Read payload as a kernel ForecastRevision (no money, no push).
@@ -404,6 +422,9 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None,
                 continue
         prior = payload.get("prior")
         belief = payload.get("belief")
+        if not any(isinstance(f, dict) and isinstance(f.get("delta"), dict)
+                   for f in payload.get("factors") or []):
+            prior, belief = _renormalized(prior), _renormalized(belief)
         factors: list[FactorInput] = []
         for factor in payload.get("factors") or []:
             if isinstance(factor, dict) and isinstance(factor.get("delta"), dict):

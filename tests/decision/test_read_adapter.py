@@ -225,3 +225,24 @@ def test_read_v2_idempotency_prefix_lets_a_replay_resubmit_the_same_read(tmp_pat
     with OntologyUnitOfWork(kernel.engine) as uow:
         rows = list(uow.decision.iter_board_revisions("jczq:2026-07-19"))
     assert [r.revision_no for r in rows] == [1, 2]
+
+
+def test_read_v2_absorbs_four_decimal_rounding_noise_but_not_real_errors(tmp_path: Path) -> None:
+    # 26135 场11（2026-10-05）：18:30 新价 0.4586/0.2868/0.2545 合计 0.9999，整条被内核拒收
+    kernel, match_id, output_dir = _kernel_with_match(tmp_path)
+    reads = [
+        {"read_id": "r-round", "match_id": match_id, "market": "had",
+         "prior": {"home": 0.4586, "draw": 0.2868, "away": 0.2545},
+         "belief": {"home": 0.4086, "draw": 0.3268, "away": 0.2645},
+         "made_at": "2026-07-19T15:00:00+08:00"},
+        {"read_id": "r-wrong", "match_id": match_id, "market": "had",
+         "prior": {"home": 0.45, "draw": 0.28, "away": 0.25},
+         "belief": {"home": 0.45, "draw": 0.28, "away": 0.25},
+         "made_at": "2026-07-19T16:00:00+08:00"},
+    ]
+    reads_file = output_dir / "reads.json"
+    reads_file.write_text(json.dumps(reads), encoding="utf-8")
+
+    msg = run_decision_read_v2(reads_file, output_dir, kernel=kernel)
+    assert "摄取 1/2" in msg and "r-wrong:distribution does not sum to 1" in msg
+    assert kernel.status().forecast_count == 1
