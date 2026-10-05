@@ -15,7 +15,7 @@ development channel.
 
 <!-- SPECKIT START -->
 For the current system structure, daily schedule, judgment layer (rubric r1),
-ticket review, RSI process, Dream harness, data objects and the full analysis
+ticket review, RSI process, replay gym, data objects and the full analysis
 history, read `docs/ARCHITECTURE.md` (authoritative since 2026-10-02).
 Historical product design (M1-M6, merged 2026-08-25):
 `docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md`;
@@ -65,11 +65,11 @@ project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg
 **任何判读、构票、出票、结算动作之前，必须先读 SOP 三件套**：
 
 1. `docs/sop/CONSTITUTION.md` — 宪法：五动词唯一路径、判断字典序（strength-v2：强弱天平→帽内按判断概率定结构→奖池破平；赔率=噪声识别器；EV 禁入决策层）、两条元原则、注金帽与刹车、数据纪律（禁嘴算/三源制）、裁决协议。
-2. `docs/sop/RUNBOOK.md` — 执行清单：竞彩泳道 A1-A7 / 足彩泳道 B1-B10，含命令与审计门（B0 早刷新 / B4 判读桥 / B4b 候选穷举 / B9c 实票登记）。
+2. `docs/sop/RUNBOOK.md` — 执行清单：竞彩泳道 A1-A7 / 足彩泳道 B1-B10，含命令与审计门（B0 早刷新 / B4 判读桥 / B5 初判+初稿 / B9c 实票登记）。
 3. `docs/sop/RULEBOOK.md` — 规则注册表：判决表 k/l/m/o/p/q/r/s 各条全文、状态机、战绩指针、audit 代码化映射（C0-C17 + INFO 参考表）。
 
 **记分牌单一事实源** = `.nutmeg-data/scoreboard.json`（复盘只改那里，散文引用不复制）。
-**出票硬门** = `uv run nutmeg decision-audit-legs --legs-file <票面>`，默认/AI/无人值守遇 ERROR 即退出码 1，不听论证；仅 Jun 显式 `--user-override` 且 evidence_rejected Adjudication 入账成功后可继续。**2026-09-27 规则瘦身**：只有正向实证的规则能拦截——截至当日判断类规则无一达标（C1 等降为记录、C19 降为未证实提示，见 RULEBOOK「〇、规则实证表」与 `docs/superpowers/evidence/2026-09-27-rule-diet.md`）；判断力由事前登记实验量化：主指标 F14（结构）+ Dream 对照账（决策）+ F10（热门带），F9 为次指标（2026-10-01）。分析要客观独立、不迎合（含对 Jun 自己的规则）。
+**出票硬门** = `uv run nutmeg decision-audit-legs --legs-file <票面>`，默认/AI/无人值守遇 ERROR 即退出码 1，不听论证；仅 Jun 显式 `--user-override` 且 evidence_rejected Adjudication 入账成功后可继续。**2026-09-27 规则瘦身**：只有正向实证的规则能拦截——截至当日判断类规则无一达标（C1 等降为记录、C19 降为未证实提示，见 RULEBOOK「〇、规则实证表」与 `docs/superpowers/evidence/2026-09-27-rule-diet.md`）；判断力由事前登记实验量化：主指标 F14（结构）+ gym 规则 v3 回放（决策，`gym run --policy jczq_rule_v3 --belief read`，2026-10-04 Dream 退役后承接）+ F10（热门带），F9 为次指标（2026-10-01）。分析要客观独立、不迎合（含对 Jun 自己的规则）。
 
 ### 触发短语
 
