@@ -371,12 +371,25 @@ def test_message_surfaces_the_blend_gate_block():
     assert "分歧闸" in body and "场1" in body
 
 
-def test_message_keeps_real_precision_losses():
+def test_message_drops_static_alignment_and_routine_coverage():
+    """2026-10-05：「体彩未对齐 N 场」「混合 prior 覆盖 n/m」是板面的静态统计（假期竞彩板空时
+    13/14 未对齐是预期），对人没有可操作的内容，Jun 点名为无用资讯——不进推送，备料 md 里照写。"""
     from nutmeg.decision.zucai_prep import prep_message
 
-    prep = _prep(alignment={"unmatched": [{"match_no": 3}, {"match_no": 4}],
-                            "ambiguous": []})
-    assert "未对齐 2" in prep_message(prep, moved=None)
+    prep = _prep(alignment={"unmatched": [{"match_no": 3}, {"match_no": 4}], "ambiguous": []},
+                 records={"1": {"fair_blend": {"home": 0.5}}})
+    body = prep_message(prep, moved=None)
+    assert "未对齐" not in body and "覆盖" not in body
+
+
+def test_message_names_the_moved_matches():
+    """位移推送要说是哪几场、往哪动——只说「位移超门槛 2 条」得再去翻文件。"""
+    from nutmeg.decision.zucai_prep import prep_message
+
+    moves = [{"match_no": 4, "name": "冰岛-乌克兰", "delta_pp": {"home": -6.2, "draw": 4.1,
+                                                              "away": 2.1}}]
+    body = prep_message(_prep(slot="revision"), moved=1, moves=moves)
+    assert "场4 冰岛-乌克兰" in body and "主-6.2" in body and "平+4.1" in body
 
 
 def test_message_calls_out_missing_international_collection():
@@ -421,7 +434,7 @@ def test_revision_slot_is_silent_without_real_change():
     from nutmeg.decision.zucai_prep import should_push
 
     quiet = _prep(slot="revision")
-    assert should_push(quiet, slot="revision", moved=0) is False
+    assert should_push(quiet, slot="revision", moved=0, base_prep=_prep()) is False
     assert should_push(quiet, slot="revision", moved=3) is True
     # 分歧闸状态本身就是异动
     blocked = _prep(slot="revision", records={"1": {"blend_blocked": "x"}})
@@ -434,12 +447,16 @@ def test_revision_slot_is_silent_without_real_change():
     assert should_push(static, slot="revision", moved=0) is False
 
 
-def test_afternoon_always_speaks():
-    """14:00 是判读的起点，永远推。"""
+def test_morning_and_afternoon_also_speak_only_on_real_change():
+    """2026-10-05：判读的起点已是 12:00 当日报告与机器初稿（10-01 定位），11:00/14:00 的
+    例行统计不再推。三档同一条规则：位移超门槛或分歧闸状态变化才响。"""
     from nutmeg.decision.zucai_prep import should_push
 
-    assert should_push(_prep(), slot="afternoon", moved=0) is True
-    assert should_push(_prep(slot="morning"), slot="morning", moved=0) is True
+    assert should_push(_prep(slot="morning"), slot="morning", moved=None) is False
+    assert should_push(_prep(), slot="afternoon", moved=0, base_prep=_prep(slot="morning")) is False
+    assert should_push(_prep(), slot="afternoon", moved=2) is True
+    blocked = _prep(slot="morning", records={"1": {"blend_blocked": "x"}})
+    assert should_push(blocked, slot="morning", moved=None) is True
 
 
 def test_run_prep_is_silent_on_a_no_issue_day(tmp_path):

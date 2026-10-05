@@ -80,15 +80,20 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
 EMPTY_BOARD_MARK = ("Sporttery calculator empty (not a WAF block): "
                     "match list 0 Selling / 0 not yet on sale")
 """体彩列表完全为空（0 在售、0 未开售、不是 WAF）＝当天没有竞彩（假期/停赛）。"""
+NOTHING_ON_SALE = re.compile(
+    r"Sporttery calculator empty \(not a WAF block\): match list 0 Selling / \d+ not yet on sale")
+"""体彩赛程接口说一场都没开售（含完全为空）＝合法空盘：此刻没有可买的东西。"""
 
 
 def _only_empty_board(failed_steps: list[dict]) -> bool:
-    """唯一的失败是「体彩列表完全为空」→ 合法空盘，不是故障（2026-10-02：国庆每天早盘报失败）。
+    """唯一的失败是「体彩一场都没开售」→ 合法空盘，不是故障。
 
-    列表里只要有一场「未开售」、或有任何其它失败，仍按失败处理；10:00 深研链会再抓一次板面，
-    所以误把短暂空响应当空盘的代价只是晚两小时，而不是丢一天。"""
+    2026-10-02：列表完全为空（国庆）。2026-10-05 扩到「0 在售 / N 未开售」：周一板 11:00
+    才开售、假期次日板提前挂出，这时体彩赛程接口本身就是权威答案，重试与告警换不来任何东西；
+    开售后 11:00/14:00 备料里的入库与 17:15 刷新会抓到。有场次在售而计算器为空（抖动）、
+    赛程接口也拿不到（WAF）、或有任何其它失败，仍按故障处理。"""
     return bool(failed_steps) and all(
-        EMPTY_BOARD_MARK in str(item.get("message") or "") for item in failed_steps
+        NOTHING_ON_SALE.search(str(item.get("message") or "")) for item in failed_steps
     )
 
 
@@ -131,7 +136,7 @@ def run_strict(
         if payload.get("empty_board"):
             _record_operation_success(stage, run_date, operation_state_file)
             print(f"NUTMEG_OK stage={stage} run_date={run_date} "
-                  "empty_board（体彩无场次，合法空盘）")
+                  "empty_board（体彩无在售场次：假期或尚未开售，合法空盘）")
             return
         build_context(run_date, output_dir, DEFAULT_LOG_DIR)
     except Exception as exc:

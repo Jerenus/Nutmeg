@@ -695,13 +695,14 @@ def _blend_blocked(prep: dict) -> list[str]:
     )
 
 
-def prep_message(prep: dict, *, moved: int | None) -> str:
+def prep_message(prep: dict, *, moved: int | None, moves: list[dict] | None = None) -> str:
     """有期日的推送正文。**只放需要动作或属于异常的东西。**
 
-    删掉的两项及其理由（2026-09-14）：
-    - ``判读待主循环`` —— 常量字符串，29/29 条都有，零信息
+    删掉的项及其理由：
+    - ``判读待主循环`` —— 常量字符串，29/29 条都有，零信息（2026-09-14）
     - ``强锚候选 N`` —— 就是 ``top1≥70`` 的计数，闭环已证「本体 90% 是价格的重述」
-      （``corr(λ差, top1)=+0.982``），推它等于把价格念一遍
+      （``corr(λ差, top1)=+0.982``），推它等于把价格念一遍（2026-09-14）
+    - ``混合 prior 覆盖 n/m`` 与 ``体彩未对齐 N 场`` —— 板面静态统计，备料 md 里照写（2026-10-05）
     """
     lines = [f"📋 足彩 {prep['issue']} 备料({prep['slot']}) ｜ {prep['n_matches']} 场"]
     blocked = _blend_blocked(prep)
@@ -710,8 +711,6 @@ def prep_message(prep: dict, *, moved: int | None) -> str:
             f"⛔分歧闸拦下 {len(blocked)} 场：场{'/'.join(blocked)}"
             f"——两源互相矛盾，该场**勿用混合 prior**")
     records = prep.get("records") or {}
-    n_blend = sum(1 for r in records.values()
-                  if isinstance(r, dict) and r.get("fair_blend"))
     intl_status = prep.get("intl_status")
     if records and intl_status == "not_collected":
         lines.append("⚠️混合 prior 未采集（当前使用 500.com 单源）")
@@ -719,17 +718,16 @@ def prep_message(prep: dict, *, moved: int | None) -> str:
         lines.append("⚠️混合 prior 采集失败（当前使用 500.com 单源）")
     elif records and intl_status == "fetch_empty":
         lines.append("⚠️混合 prior 采集 0 场（当前使用 500.com 单源）")
-    elif records:
-        lines.append(f"混合 prior 覆盖 {n_blend}/{len(records)}")
     sc = prep.get("screens") or {}
     if sc.get("missing_euro_anchor"):
         lines.append(f"⚠️丢欧赔锚 {len(sc['missing_euro_anchor'])} 场")
-    align = prep.get("alignment") or {}
-    n_align = len(align.get("unmatched") or []) + len(align.get("ambiguous") or [])
-    if n_align:
-        lines.append(f"⚠️体彩未对齐 {n_align} 场（进球轴降权，不与有锚场同权）")
     if moved:
-        lines.append(f"位移超门槛 {moved} 条")
+        lines.append(f"位移超门槛 {moved} 条：")
+        for move in (moves or [])[:5]:
+            delta = move.get("delta_pp") or {}
+            shift = "/".join(f"{label}{delta[face]:+.1f}" for face, label in
+                             (("home", "主"), ("draw", "平"), ("away", "客")) if face in delta)
+            lines.append(f"  场{move['match_no']} {move.get('name', '')} {shift}pp")
     return "\n".join(lines)
 
 
@@ -775,15 +773,14 @@ def no_issue_message(*, stale_days: int) -> str | None:
 
 def should_push(prep: dict, *, slot: str, moved: int | None,
                 base_prep: dict | None = None) -> bool:
-    """这一跑要不要推。
+    """这一跑要不要推：三档同一条规则，**只在有实质异动时响**。
 
-    ``revision``（18:30）**无实质异动时静默** —— RUNBOOK B8 已把它降为事实核对，
-    闭环实测晚盘位移在概率层零价值（BSS -0.07%，CI[-0.42,+0.28]）；
-    它每期固定响一声但并不携带判断信息。
-    ``morning``/``afternoon`` 是判读的起点，永远推。
+    ``revision``（18:30）早在 RUNBOOK B8 降为事实核对（闭环实测晚盘位移在概率层零价值，
+    BSS -0.07%，CI[-0.42,+0.28]）。2026-10-05 起 ``morning``/``afternoon`` 同样处理：
+    10-01 定位后判读的起点是 12:00 当日报告与机器初稿，11:00/14:00 的例行统计（prior
+    覆盖、体彩未对齐）对人没有可操作的内容，Jun 点名为无用资讯。探测失败、抓取失败与
+    长期无期告警不走这里，照推。
     """
-    if slot != "revision":
-        return True
     # ⛔只认**跨 slot 的变化**。未对齐 / 丢锚是板面的**静态属性**，14:00 已经报过，
     # 18:30 再报一遍正是要消掉的冗余（实测 15 条 revision 推送几乎条条如此）。
     # 分歧闸同理：**闸的状态变了**才是新消息，一直拦着同一场不是。
@@ -981,6 +978,7 @@ def run_zucai_prep(
 
     diff_path = None
     n_moved: int | None = None
+    moves: list[dict] = []
     base_prep_doc: dict | None = None
     line = heartbeat_line(prep, "", today=today)
     base_slot = _previous_slot(issue, slot, zdir)
@@ -991,6 +989,7 @@ def run_zucai_prep(
         diff_path = zdir / f"{issue}-diff-{base_slot}-{slot}.md"
         diff_path.write_text(render_diff(diff), "utf-8")
         n_moved = int(diff["n_moved"])
+        moves = list(diff.get("moves") or [])
         line += f" ｜ 位移超门槛 {n_moved} 条(vs {base_slot})"
     elif slot != SLOT_ORDER[0]:
         line += " ｜ ⚠️无更早 slot 基线,跳过位移 diff"
@@ -998,7 +997,7 @@ def run_zucai_prep(
     touch_liveness(zdir, run_date=run_date, status="prepared", issue=issue)
     if dispatch and should_push(prep, slot=slot, moved=n_moved,
                                 base_prep=base_prep_doc):
-        _notify(prep_message(prep, moved=n_moved), stage=slot,
+        _notify(prep_message(prep, moved=n_moved, moves=moves), stage=slot,
                 business_key=f"{issue}-{slot}",
                 notification_service=notification_service)
     return PrepResult(status="prepared", summary=line, issue=issue,

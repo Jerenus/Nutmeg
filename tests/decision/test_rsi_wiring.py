@@ -80,7 +80,11 @@ def test_cli_invoke_never_raises_on_failure(tmp_path, capsys):
                            "--data-dir", str(tmp_path / "data")])
     assert rc != 0
     assert isinstance(out, str)
-    assert "rsi 接线未成功" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "rsi 接线未成功" in captured.err
+    # 2026-10-05：警告曾打到 stdout，`decision-am --format json` 的 JSON 后面多出几行，
+    # 调度器解析失败并推「am returned invalid structured JSON」——stdout 只留结构化结果
+    assert "rsi 接线未成功" not in captured.out
 
 
 # ---- 结算后：grade → verdict（spec §8.1 第 3 项）----
@@ -178,7 +182,7 @@ def test_after_settle_never_raises_into_caller(tmp_path, capsys):
                           invoke=boom)
     assert set(report) == {"F2", "F4"}
     assert all(v == "error" for v in report.values())
-    assert "rsi" in capsys.readouterr().out
+    assert "rsi" in capsys.readouterr().err
 
 
 def test_after_settle_historical_replay_never_calls_prospective_actions(tmp_path):

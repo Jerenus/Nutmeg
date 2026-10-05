@@ -149,9 +149,24 @@ def test_fully_empty_sporttery_list_is_a_legal_empty_board(tmp_path, monkeypatch
     assert "NUTMEG_OK stage=am run_date=2026-10-02 empty_board" in capsys.readouterr().out
 
 
-def test_unopened_matches_or_other_failures_still_fail(tmp_path, monkeypatch):
+def test_list_with_nothing_on_sale_yet_is_a_legal_empty_board(tmp_path, monkeypatch, capsys):
+    """2026-10-05：「0 在售 / N 未开售」＝体彩自己说一场都没开售（周一板 11:00 才开售、
+    假期次日板提前挂出）。重试与告警都换不来任何东西，开售后 11:00/14:00 备料入库与 17:15
+    刷新会抓到；按故障推送只制造了 10-01/10-02/10-04 的「am degraded」与 OpenClaw cron 报错。"""
     _fake_am(monkeypatch, "Sporttery calculator empty (not a WAF block): "
-                          "match list 0 Selling / 3 not yet on sale")
+                          "match list 0 Selling / 31 not yet on sale")
+    ops.run_strict("am", "2026-10-04", tmp_path,
+                   operation_state_file=tmp_path / "operation-state.json")
+    assert "NUTMEG_OK stage=am run_date=2026-10-04 empty_board" in capsys.readouterr().out
+
+
+def test_calculator_glitch_while_on_sale_or_other_failures_still_fail(tmp_path, monkeypatch):
+    _fake_am(monkeypatch, "Sporttery calculator empty (not a WAF block): "
+                          "match list 1 Selling / 8 not yet on sale")
+    with pytest.raises(ops.SchedulerError, match="degraded"):
+        ops.run_strict("am", "2026-10-02", tmp_path,
+                       operation_state_file=tmp_path / "operation-state.json")
+    _fake_am(monkeypatch, "Sporttery returned no matchInfoList (degraded/WAF response)")
     with pytest.raises(ops.SchedulerError, match="degraded"):
         ops.run_strict("am", "2026-10-02", tmp_path,
                        operation_state_file=tmp_path / "operation-state.json")

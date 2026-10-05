@@ -179,7 +179,7 @@ gantt
 
 | 定时器 | 时刻 | 命令 | 喂给谁 | 断流后果 |
 |---|---|---|---|---|
-| `decision.am` | 08:00（失败等 30 分重试） | `nutmeg_scheduler_ops.py run-strict --stage am` → `decision-am` | 内核板面、深研、RSI 义务排程 | 当天没有板面；体彩列表**完全为空**记为合法空盘 |
+| `decision.am` | 08:00（失败等 30 分重试） | `nutmeg_scheduler_ops.py run-strict --stage am` → `decision-am` | 内核板面、深研、RSI 义务排程 | 当天没有板面；体彩**一场都没开售**（含完全为空）记为合法空盘 |
 | `jczq.results-backfill` | 09:30 / 15:30 | `scripts/jczq_result_backfill.py` | `jc-results.json` → 结算、语料、夜账 | 结算与语料停在旧日期（lag>2 天退出 2） |
 | `day.settle` | 09:45 / 15:45 | `day run --job results` + `--job settle` | 实票结算、记分牌复盘编码、处方预测记账 | 昨日票未结、账房缺数 |
 | `jczq.research` | 10:00 | `decision-am` → `research run` → `research intake --write` → `jczq-build-reads` | 研究文件、Read、内核 revision、足彩自动 legs-base | 判断层零产出；空盘日两步自动跳过 |
@@ -621,7 +621,7 @@ flowchart TB
 | 并集样本池 | 足彩在售期场次优先，加竞彩全板，每天深研预算 40 场 |
 | legs-base | 一天或一期的腿基表：面、判断、标签、face_status |
 | store-ids | 足彩场次到内核 match_id 与 fair 的映射 |
-| 空盘 | 体彩列表完全为空（假期、停赛），记为合法、不报失败 |
+| 空盘 | 体彩一场都没开售（假期、停赛、尚未开售），记为合法、不报失败 |
 | 月度止损 | 本月净值 ≤ −¥3,000 即空仓到月底 |
 | EXP 探索票 | 只给预登记实验、每日 ≤¥30 的小额票 |
 

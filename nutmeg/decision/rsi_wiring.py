@@ -1,9 +1,11 @@
 """把 RSI 义务接进现有链条的三根线。都是「加一行」，不改被接线方的语义。
 
 失败不抛：备料链 / 观察仪 / 结算链的主任务不能因为登记失败而失败——但要打印，别静默。
+警告一律走 stderr：`decision-am --format json` 的 stdout 只能是那一个 JSON（2026-10-05）。
 """
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +26,8 @@ def _cli_invoke(argv: list[str]) -> tuple[int, str]:
 
         result = CliRunner().invoke(app, argv)
     except Exception as exc:  # noqa: BLE001 —— 接线层是主任务的旁支，绝不向上抛
-        print(f"⚠️rsi 接线未成功（不影响主任务）：{' '.join(argv)}\n{exc!r}"[-600:])
+        print(f"⚠️rsi 接线未成功（不影响主任务）：{' '.join(argv)}\n{exc!r}"[-600:],
+              file=sys.stderr)
         return 1, repr(exc)
     output = result.output or ""
     if result.exit_code != 0:
@@ -32,7 +35,7 @@ def _cli_invoke(argv: list[str]) -> tuple[int, str]:
         if result.exception is not None and not tail:
             tail = repr(result.exception)
             output = output or tail
-        print(f"⚠️rsi 接线未成功（不影响主任务）：{' '.join(argv)}\n{tail}")
+        print(f"⚠️rsi 接线未成功（不影响主任务）：{' '.join(argv)}\n{tail}", file=sys.stderr)
     return result.exit_code, output
 
 
@@ -108,7 +111,8 @@ def after_settle(*, day: str, data_dir: Path, issue: str | None = None,
     try:
         exp_ids = list(experiments) if experiments is not None else _active_experiments(data_dir)
     except Exception as exc:  # noqa: BLE001 —— 读不到本体也不能拖垮结算
-        print(f"⚠️rsi 结算接线未成功（不影响主任务）：读实验列表失败 {exc!r}"[-600:])
+        print(f"⚠️rsi 结算接线未成功（不影响主任务）：读实验列表失败 {exc!r}"[-600:],
+              file=sys.stderr)
         return report
     balance_argv = ["rsi", "balance"]
     balance_argv.extend(["--issue", issue] if issue else ["--day", day])
@@ -116,7 +120,7 @@ def after_settle(*, day: str, data_dir: Path, issue: str | None = None,
     try:
         invoke(balance_argv)
     except Exception as exc:  # noqa: BLE001 - the ledger is still a settle sidecar
-        print(f"⚠️rsi 天平账未成功（不影响主任务）：{exc!r}"[-600:])
+        print(f"⚠️rsi 天平账未成功（不影响主任务）：{exc!r}"[-600:], file=sys.stderr)
     for exp in exp_ids:
         try:
             rc, out = invoke(["rsi", "grade", "--exp", exp, "--mode", "prospective",
@@ -132,8 +136,8 @@ def after_settle(*, day: str, data_dir: Path, issue: str | None = None,
                 else:
                     status = "verdict_failed"
         except Exception as exc:  # noqa: BLE001 —— 接线层是主任务的旁支，绝不向上抛
-            print(f"⚠️rsi 结算接线未成功（不影响主任务）：{exp} {exc!r}"[-600:])
+            print(f"⚠️rsi 结算接线未成功（不影响主任务）：{exp} {exc!r}"[-600:], file=sys.stderr)
             status = "error"
         report[exp] = status
-        print(f"rsi 结账 {day} {exp} → {status}")
+        print(f"rsi 结账 {day} {exp} → {status}", file=sys.stderr)
     return report
