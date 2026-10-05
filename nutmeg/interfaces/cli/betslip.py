@@ -87,8 +87,9 @@ def _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
         deviation=deviation, prediction=prediction, faces=face_map)
 
 
-def _diagnose(slip, data_dir):
-    """登记即诊断（2026-09-30）：共享裸单（含跨渠道）与对照处方，只记录不阻断。"""
+def _diagnose(slip, data_dir, planned=()):
+    """登记即诊断（2026-09-30）：共享裸单（含跨渠道）与对照处方，只记录不阻断。
+    `planned`：同组还没登记的计划票（整组预审时当作已购同伴一起比）。"""
     from nutmeg.decision.betslip import load_slips
     from nutmeg.decision.betslip_diagnosis import (
         DEVIATION_REASONS,
@@ -101,7 +102,7 @@ def _diagnose(slip, data_dir):
 
     if slip.deviation and slip.deviation not in DEVIATION_REASONS:
         raise ValueError(f"--deviation `{slip.deviation}` 不在 {DEVIATION_REASONS}")
-    slips = load_slips(data_dir)
+    slips = [*load_slips(data_dir), *planned]
     cross = cross_translators(slip, slips, data_dir)
     return diagnose(slip, peers(slip, slips, cross), prescription_for(slip, data_dir), cross,
                     draft=draft_faces_for(slip, data_dir))
@@ -202,6 +203,68 @@ def betslip_preview(
         _log_preview(data_dir, slip, any(line.startswith("⛔") for line in review_lines))
         if any(line.startswith("⛔") for line in review_lines):
             raise _cli.typer.Exit(code=1)       # 审票否决：改票后再审（登记不受此限）
+    except (BetslipError, KeyError, ValueError) as exc:
+        _fail(exc)
+
+
+_PLAN = _cli.typer.Option(
+    ..., "--plan",
+    help="计划票 JSON 列表；每张同 preview 的参数：label/channel/placed_at/faces 或 legs_file/"
+         "combo/multiplier/issue/fair_file/deviation/prediction（文件路径相对计划文件）")
+
+
+@betslip_app.command("preview-set")
+def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR) -> None:
+    """一整组计划票一起预审（2026-10-05）：每张既和已登记的实购票比，也和组内其它计划票比
+    共享裸单与联死，最后报整组总额与否决张数。逐张预审看不到组内互相同死——10-05 三张足彩
+    逐张都「可出」，登记第一张后才暴露三票同死 ≥26%、两票同死 ≥48%。
+    不登记、不写盘（只留预审痕）。"""
+    from nutmeg.decision.betslip import BetslipError
+
+    try:
+        rows = json.loads(Path(plan).read_text("utf-8"))
+        base = Path(plan).parent
+        slips = []
+        for i, row in enumerate(rows, 1):
+            label = str(row.get("label") or f"计划{i}")
+            legs_file, fair_file = row.get("legs_file"), row.get("fair_file")
+            slips.append(_build_slip(
+                f"plan:{label}", row["channel"], row["placed_at"], row.get("faces"),
+                base / legs_file if legs_file else None, base / fair_file if fair_file else None,
+                row.get("combo"), int(row.get("multiplier", 1)), str(row.get("issue", "")), "",
+                False, "", data_dir, row.get("deviation", ""), row.get("prediction", "")))
+        for slip in slips:
+            _ = slip.notes                      # 先全组校验（场数/面集合），不合法就一张都不报
+        vetoed: list[str] = []
+        together: dict[str, set[str]] = {}
+        for slip in slips:
+            diag = _diagnose(slip, data_dir, planned=[s for s in slips if s is not slip])
+            p = slip.hit_probability
+            _cli.typer.echo(f"【{slip.slip_id[5:]}】{slip.channel} {slip.notes} 注 × "
+                            f"{slip.multiplier} 倍 = ¥{slip.stake_yuan:,}"
+                            + (f"｜P(全对)={p * 100:.2f}%" if p is not None else ""))
+            for line in diag.get("lines", []):
+                _cli.typer.echo("   " + line)
+            review_lines = _review_lines(slip, diag, data_dir)
+            for line in review_lines:
+                _cli.typer.echo("   " + line)
+            veto = any(line.startswith("⛔") for line in review_lines)
+            if veto:
+                vetoed.append(slip.slip_id[5:])
+            for row in diag.get("shared_naked") or []:
+                together.setdefault(f"{row['key']}{row['face']}", set()).update(row["slip_ids"])
+            _log_preview(data_dir, slip, veto)
+        total = sum(s.stake_yuan for s in slips)
+        _cli.typer.echo(f"整组 {len(slips)} 张 ¥{total:,}｜否决 {len(vetoed)} 张"
+                        + (f"（{'、'.join(vetoed)}）" if vetoed else ""))
+        if together:
+            worst = sorted(together.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+            _cli.typer.echo("   整组共享裸单：" + "；".join(
+                f"{key} 在 {len(ids)} 张票上" for key, ids in worst))
+        if slips:
+            _cli.typer.echo("   " + _brake_line(data_dir, slips[0].placed_at))
+        if vetoed:
+            raise _cli.typer.Exit(code=1)
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
 

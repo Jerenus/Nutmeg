@@ -43,3 +43,47 @@ def test_preview_shows_the_diagnosis_without_registering(tmp_path: Path):
     row = json.loads(log)
     assert row["channel"] == "jczq" and row["keys"] == ["周一004", "周一005"]
     assert row["vetoed"] is True and row["stake"] == 100
+
+
+def test_preview_set_sees_shared_naked_legs_inside_the_plan(tmp_path: Path):
+    # 10-05：三张足彩逐张预审都「可出」，登记第一张后才暴露三票同死；整组预审一次看全
+    data = tmp_path / "data"
+    data.mkdir()
+    fair = {str(n): {"home": 0.5, "draw": 0.28, "away": 0.22} for n in range(1, 15)}
+    (tmp_path / "fair.json").write_text(json.dumps(fair), encoding="utf-8")
+    plan = [
+        {"label": "R9-A", "channel": "renjiu", "placed_at": "2026-10-05", "issue": "26135",
+         "faces": "1:3 2:31 3:3 4:10 5:3 6:3 7:1 8:3 9:30", "fair_file": "fair.json"},
+        {"label": "R9-B", "channel": "renjiu", "placed_at": "2026-10-05", "issue": "26135",
+         "faces": "6:31 7:1 8:3 9:3 10:0 11:3 12:1 13:3 14:31", "fair_file": "fair.json"},
+        {"label": "J1", "channel": "jczq", "placed_at": "2026-10-05", "combo": "2",
+         "legs_file": "j1.json"},
+    ]
+    _legs(tmp_path, "j1.json", [
+        {"key": "周一001", "market": "had", "selections": ["home"], "odds": [1.9]},
+        {"key": "周一002", "market": "had", "selections": ["away"], "odds": [2.4]}])
+    (tmp_path / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+    out = runner.invoke(app, ["betslip", "preview-set", "--plan", str(tmp_path / "plan.json"),
+                              "--data-dir", str(data)])
+
+    assert "【R9-A】renjiu" in out.output and "【J1】jczq" in out.output
+    assert "⛔V2" in out.output                       # A 与 B 在场 7、8、9 共享裸单
+    assert "整组 3 张" in out.output and "否决 2 张（R9-A、R9-B）" in out.output
+    assert "整组共享裸单：" in out.output and "71 在 2 张票上" in out.output
+    assert out.exit_code == 1
+    assert not (data / "betslips.jsonl").exists()      # 预审不登记
+
+
+def test_preview_set_rejects_an_invalid_plan_before_reporting_anything(tmp_path: Path):
+    data = tmp_path / "data"
+    data.mkdir()
+    (tmp_path / "plan.json").write_text(json.dumps([
+        {"channel": "renjiu", "placed_at": "2026-10-05", "issue": "26135",
+         "faces": "1:3 2:3 3:3 4:3 5:3 6:3 7:3 8:3 9:3", "fair_file": "fair.json"},
+        {"channel": "renjiu", "placed_at": "2026-10-05", "issue": "26135",
+         "faces": "1:3 2:3", "fair_file": "fair.json"}]), encoding="utf-8")
+    (tmp_path / "fair.json").write_text("{}", encoding="utf-8")
+    out = runner.invoke(app, ["betslip", "preview-set", "--plan", str(tmp_path / "plan.json"),
+                              "--data-dir", str(data)])
+    assert out.exit_code == 1 and "任九至少选 9 场" in out.output and "【" not in out.output
