@@ -25,7 +25,6 @@ from nutmeg.ontology.actions.match_actions import MatchActions
 from nutmeg.ontology.actions.observation_actions import ObservationActions
 from nutmeg.ontology.actions.outcome_actions import OutcomeActions
 from nutmeg.ontology.actions.person_actions import PersonActions
-from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
 from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
@@ -41,11 +40,6 @@ from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.kernel import OntologyKernel
-from nutmeg.ontology.operator.decision_actions import OperatorDecisionActions
-from nutmeg.ontology.operator.evidence_actions import EvidenceActions
-from nutmeg.ontology.operator.result_actions import OperatorResultActions
-from nutmeg.ontology.operator.review_actions import OperatorReviewActions
-from nutmeg.ontology.operator.sale_actions import SaleActions
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.unit_of_work import (
@@ -106,25 +100,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     discovery_governance_actions = DiscoveryGovernanceActions(action_service)
     discovery_read = DiscoveryReadService(engine)
     capital_actions = CapitalActions(action_service)
-    decision_actions = OperatorDecisionActions(
-        action_service,
-        audit_token_signing_key=settings.operator_token_signing_key,
-    )
-    sale_actions = SaleActions(
-        action_service,
-        operator_decisions=decision_actions,
-    )
-    evidence_actions = EvidenceActions(action_service)
-    protected_tickets = ProtectedTicketActions(
-        action_service,
-        artifact_store,
-        operator_decisions=decision_actions,
-    )
-    result_actions = OperatorResultActions(action_service)
-    review_actions = OperatorReviewActions(
-        action_service,
-        shadow_token_signing_key=settings.operator_token_signing_key,
-    )
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -140,7 +115,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         factor_actions=factor_actions,
         forecast_actions=forecast_actions,
         workflow=workflow,
-        protected_tickets=protected_tickets,
         scoreboard_actions=scoreboard_actions,
         reliability_actions=reliability_actions,
         rsi_actions=rsi_actions,
@@ -149,9 +123,4 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         discovery_governance_actions=discovery_governance_actions,
         discovery_read=discovery_read,
         capital_actions=capital_actions,
-        sale_actions=sale_actions,
-        evidence_actions=evidence_actions,
-        decision_actions=decision_actions,
-        result_actions=result_actions,
-        review_actions=review_actions,
     )

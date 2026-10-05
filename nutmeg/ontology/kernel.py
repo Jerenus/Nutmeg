@@ -23,7 +23,6 @@ from nutmeg.ontology.actions.discovery_world_actions import DiscoveryWorldAction
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.factor_actions import FactorActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
-from nutmeg.ontology.actions.protected_ticket_actions import ProtectedTicketActions
 from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
@@ -34,11 +33,6 @@ from nutmeg.ontology.finance.express_flow import ExpressService
 from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
-from nutmeg.ontology.operator.decision_actions import OperatorDecisionActions
-from nutmeg.ontology.operator.evidence_actions import EvidenceActions
-from nutmeg.ontology.operator.result_actions import OperatorResultActions
-from nutmeg.ontology.operator.review_actions import OperatorReviewActions
-from nutmeg.ontology.operator.sale_actions import SaleActions
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.artifacts import ArtifactRepository
@@ -160,7 +154,6 @@ class OntologyKernel:
         factor_actions: FactorActions,
         forecast_actions: ForecastActions,
         workflow: WorkflowActions,
-        protected_tickets: ProtectedTicketActions,
         scoreboard_actions: ScoreboardActions,
         reliability_actions: ReliabilityActions,
         rsi_actions: RsiActions,
@@ -169,11 +162,6 @@ class OntologyKernel:
         discovery_governance_actions: DiscoveryGovernanceActions,
         discovery_read: DiscoveryReadService,
         capital_actions: CapitalActions,
-        sale_actions: SaleActions,
-        evidence_actions: EvidenceActions,
-        decision_actions: OperatorDecisionActions,
-        result_actions: OperatorResultActions,
-        review_actions: OperatorReviewActions,
     ) -> None:
         self._paths = paths
         self._engine = engine
@@ -189,7 +177,6 @@ class OntologyKernel:
         self.factor_actions = factor_actions
         self.forecast_actions = forecast_actions
         self.workflow = workflow
-        self.protected_tickets = protected_tickets
         self.scoreboard_actions = scoreboard_actions
         self.reliability_actions = reliability_actions
         self.rsi_actions = rsi_actions
@@ -198,11 +185,6 @@ class OntologyKernel:
         self.discovery_governance_actions = discovery_governance_actions
         self.discovery_read = discovery_read
         self.capital_actions = capital_actions
-        self.sale_actions = sale_actions
-        self.evidence_actions = evidence_actions
-        self.decision_actions = decision_actions
-        self.result_actions = result_actions
-        self.review_actions = review_actions
 
     @property
     def engine(self) -> Engine:
