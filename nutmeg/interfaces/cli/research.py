@@ -151,6 +151,23 @@ def _refresh(day: str, data_dir: Path) -> None:
     for issue, row in summary["zucai"].items():
         typer.echo(f"  足彩 {issue}：Read {row['reads']} 条（交本体 {row['submitted']}）")
         _echo_projection(row, indent="    ")
+    _read_pending(data_dir)
+
+
+def _read_pending(data_dir: Path) -> None:
+    """研究刚落盘：让读者 B 趁开球前读完（2026-10-05）。侧车已在的跳过；失败不挡刷新。"""
+    from nutmeg.decision.rubric_reader import pending_research, read_many
+
+    try:
+        paths = pending_research(Path(data_dir))
+        if not paths:
+            return
+        out = read_many(paths, workers=4)
+    except Exception as exc:  # noqa: BLE001 读者 B 是旁路，不能拖垮刷新
+        typer.echo(f"⚠️读者 B 开球前补读失败（不影响刷新）：{exc}", err=True)
+        return
+    typer.echo(f"读者 B 开球前补读：读 {len(out['done'])} · 失败 {len(out['failed'])}"
+               f"（待读 {len(paths)} 份）")
 
 
 def _echo_projection(row: dict, *, indent: str) -> None:

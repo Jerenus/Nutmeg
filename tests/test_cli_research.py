@@ -65,6 +65,8 @@ def test_research_board_run_intake_build_reads_pipeline(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(mod, "_claude", lambda system, brief: (0, good))
     monkeypatch.setattr(mod, "_fulfill", lambda argv: (0, ""))
+    pending_reads: list = []
+    monkeypatch.setattr(mod, "_read_pending", lambda data_dir: pending_reads.append(data_dir))
     runner = CliRunner()
 
     result = runner.invoke(
@@ -95,6 +97,8 @@ def test_research_board_run_intake_build_reads_pipeline(tmp_path, monkeypatch):
         ],
     )
     assert result.exit_code == 0 and "done" in result.output
+    # 研究一落盘就让读者 B 趁开球前补读（2026-10-05）
+    assert pending_reads == [tmp_path]
     result = runner.invoke(
         app,
         [
@@ -206,3 +210,21 @@ def test_intake_and_build_reads_skip_an_empty_board_day(tmp_path, monkeypatch):
     out = CliRunner().invoke(app, ["jczq-build-reads", "--day", "2026-10-02",
                                    "--jczq-dir", str(jczq)])
     assert out.exit_code == 0 and "空盘" in out.output and refreshed == ["2026-10-02"]
+
+
+def test_read_pending_is_a_side_path_that_never_breaks_the_refresh(tmp_path, monkeypatch):
+    import nutmeg.decision.rubric_reader as reader
+    import nutmeg.interfaces.cli.research as mod
+
+    seen: list = []
+    monkeypatch.setattr(reader, "pending_research", lambda data_dir: [tmp_path / "research-x.json"])
+    monkeypatch.setattr(reader, "read_many",
+                        lambda paths, workers: seen.append(paths) or {"done": ["x"], "failed": []})
+    mod._read_pending(tmp_path)
+    assert seen == [[tmp_path / "research-x.json"]]
+
+    def boom(data_dir):
+        raise RuntimeError("claude missing")
+
+    monkeypatch.setattr(reader, "pending_research", boom)
+    mod._read_pending(tmp_path)  # 不抛

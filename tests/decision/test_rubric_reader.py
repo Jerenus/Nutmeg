@@ -143,3 +143,50 @@ def test_read_many_runs_concurrently_and_keeps_order(tmp_path: Path):
     assert again["skipped"] == [p.name for p in paths]
     rep = report(tmp_path, day="2026-10-02")
     assert rep["n_sidecars"] == 5 and rep["n_a_missing"] == 0
+
+
+def test_kickoff_comes_from_schedule_board_legs_or_the_zucai_issue(tmp_path: Path):
+    from nutmeg.decision.rubric_reader import research_kickoff
+
+    day = tmp_path / "jczq" / "daily" / "2026-10-05"
+    day.mkdir(parents=True)
+    (day / "jczq-legs-base.json").write_text(json.dumps(
+        {"legs": {"周一002": {"kickoff_bj": "2026-10-06T02:45:00+08:00"}}}), "utf-8")
+    zdir = tmp_path / "zucai"
+    zdir.mkdir()
+    (zdir / "26135-issue.json").write_text(json.dumps(
+        {"matches": [{"match_no": 1, "kickoff_bj": "2026-10-06 19:35"}]}), "utf-8")
+    scheduled = {"schedule": {"kickoff_bj": "2026-10-06T00:00:00+08:00"}}
+    assert research_kickoff(day / "research-周一001.json", scheduled) == "2026-10-06T00:00:00+08:00"
+    assert research_kickoff(day / "research-周一002.json", {}) == "2026-10-06T02:45:00+08:00"
+    assert research_kickoff(zdir / "26135-research-m1.json", {}) == "2026-10-06T19:35"
+    assert research_kickoff(zdir / "26135-research-m9.json", {}) is None
+
+
+def test_pending_research_is_unstarted_and_unread_and_sidecar_is_prospective(tmp_path: Path):
+    from nutmeg.decision.rubric_reader import pending_research
+
+    now = datetime(2026, 10, 5, 12, 30, tzinfo=BJ)
+    day = tmp_path / "jczq" / "daily" / "2026-10-05"
+    day.mkdir(parents=True)
+    later = {**RESEARCH, "kickoff_bj": None,
+             "schedule": {"kickoff_bj": "2026-10-06T00:00:00+08:00"}}
+    started = {**RESEARCH, "kickoff_bj": "2026-10-05T12:00:00+08:00"}
+    (day / "research-周一001.json").write_text(json.dumps(later), "utf-8")
+    (day / "research-周一002.json").write_text(json.dumps(later), "utf-8")
+    (day / "rubric-周一002.json").write_text("{}", "utf-8")                 # already read
+    (day / "research-周一003.json").write_text(json.dumps(started), "utf-8")
+    (day / "research-周一004.rejected.json").write_text(json.dumps(later), "utf-8")
+    zdir = tmp_path / "zucai"
+    zdir.mkdir()
+    (zdir / "26135-issue.json").write_text(json.dumps({"matches": [
+        {"match_no": 1, "kickoff_bj": "2026-10-06 19:35"},
+        {"match_no": 2, "kickoff_bj": "2026-10-05 03:00"}]}), "utf-8")
+    zucai = {k: v for k, v in RESEARCH.items() if k not in ("kickoff_bj", "code")}
+    (zdir / "26135-research-m1.json").write_text(json.dumps(zucai), "utf-8")
+    (zdir / "26135-research-m2.json").write_text(json.dumps(zucai), "utf-8")
+
+    paths = pending_research(tmp_path, now=now)
+    assert [p.name for p in paths] == ["research-周一001.json", "26135-research-m1.json"]
+    doc = read_file(paths[1], claude=_fake, now=now)
+    assert doc["prospective"] is True

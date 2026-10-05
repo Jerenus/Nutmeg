@@ -151,8 +151,43 @@ def code_of(research_path: Path, research: dict | None = None) -> str | None:
 
 
 def _kickoff_of(research: dict) -> str | None:
-    kick = research.get("kickoff_bj")
+    kick = research.get("kickoff_bj") or (research.get("schedule") or {}).get("kickoff_bj")
     return str(kick).replace(" ", "T") if kick else None
+
+
+def research_kickoff(research_path: Path, research: dict) -> str | None:
+    """开球时刻：研究自己写的 → 竞彩同目录板面 legs → 足彩期次 issue.json（2026-10-05）。
+    旧实现只看研究顶层 `kickoff_bj`，竞彩研究写在 schedule 里、足彩研究根本不写，侧车的
+    `prospective` 因此恒为 False、T12 来源时间检查也从没生效。"""
+    kick = _kickoff_of(research)
+    if kick:
+        return kick
+    path = Path(research_path)
+    code = code_of(path, research)
+    try:
+        if path.name.startswith("research-"):
+            legs = json.loads((path.parent / "jczq-legs-base.json").read_text("utf-8"))
+            kick = ((legs.get("legs") or {}).get(code) or {}).get("kickoff_bj")
+        elif "-research-m" in path.name:
+            issue = path.name.split("-research-m", 1)[0]
+            doc = json.loads((path.parent / f"{issue}-issue.json").read_text("utf-8"))
+            kick = next((m.get("kickoff_bj") for m in doc.get("matches") or []
+                         if str(m.get("match_no")) == str(code)), None)
+    except (OSError, ValueError):
+        return None
+    return str(kick).replace(" ", "T") if kick else None
+
+
+def _aware(text: str) -> datetime:
+    at = datetime.fromisoformat(str(text))
+    return at if at.tzinfo else at.replace(tzinfo=_BJ)
+
+
+def _before(at: str, kickoff: str | None) -> bool:
+    try:
+        return bool(kickoff) and _aware(at) < _aware(str(kickoff))
+    except ValueError:
+        return False
 
 
 def read_file(research_path: Path, *, claude: Claude = _claude_cli, free: bool = False,
@@ -168,7 +203,7 @@ def read_file(research_path: Path, *, claude: Claude = _claude_cli, free: bool =
     research = json.loads(research_path.read_text(encoding="utf-8"))
     if "rejected" in research_path.name:
         return None
-    kickoff = _kickoff_of(research)
+    kickoff = research_kickoff(research_path, research)
     at = (now or datetime.now(_BJ)).isoformat(timespec="seconds")
     existing = json.loads(target.read_text(encoding="utf-8")) if target.exists() else {}
     a_norm: dict = {}
@@ -182,7 +217,7 @@ def read_file(research_path: Path, *, claude: Claude = _claude_cli, free: bool =
            "match_id": research.get("match_id"), "research": research_path.name,
            "a": a_norm or None, "b": b, "kappa": kappa(a_norm, b) if a_norm else None,
            "model": model_label(reader_model()), "at": at,
-           "prospective": bool(kickoff) and at < kickoff}
+           "prospective": _before(at, kickoff)}
     if free:
         doc["b_free"] = read_rubric(research, kickoff=kickoff, claude=claude, free=True)
     target.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -206,6 +241,34 @@ def research_files(data_dir: Path, *, day: str | None = None,
         return sorted(p for p in (data_dir / "zucai").glob(f"{issue}-research-m*.json")
                       if "rejected" not in p.name)
     return []
+
+
+def pending_research(data_dir: Path, *, now: datetime | None = None) -> list[Path]:
+    """还没开球、还没有侧车的研究（2026-10-05）。读者 B 原来只在 10:45 闭环里读：那时当天竞彩
+    研究多半还没落（12 点后才有），足彩只读「最新期次文件」（新一期 11:00 才建），次日再读时比赛
+    已开球——侧车全成了非前瞻，读者 B 的逐项因子没有前瞻档，简报也从来显示不了两读 κ。
+    研究一落盘（`research run` / 12:30·18:45 刷新）就补读这一批：竞彩看昨天到明天的板面目录，
+    足彩看最近三期里还有未开球场次的研究。"""
+    data_dir = Path(data_dir)
+    now = now or datetime.now(_BJ)
+    today = now.astimezone(_BJ).date()
+    candidates: list[Path] = []
+    for delta in (-1, 0, 1):
+        candidates += research_files(data_dir, day=(today + timedelta(days=delta)).isoformat())
+    for issue_file in sorted((data_dir / "zucai").glob("*-issue.json"))[-3:]:
+        candidates += research_files(data_dir, issue=issue_file.name.split("-", 1)[0])
+    out: list[Path] = []
+    for path in candidates:
+        if sidecar_path(path).exists():
+            continue
+        try:
+            research = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        kickoff = research_kickoff(path, research)
+        if kickoff and _before(now.isoformat(timespec="seconds"), kickoff):
+            out.append(path)
+    return out
 
 
 def read_many(paths: list[Path], *, claude: Claude = _claude_cli, free: bool = False,
