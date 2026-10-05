@@ -83,6 +83,12 @@ def _business_day(at: datetime) -> str:
 
 
 _CORPUS_V2 = Path(__file__).resolve().parents[3] / "experiments" / "corpus-v2.json"
+# 样本账（2026-10-05）：前瞻样本首次入选即冻结，语料重建只能加样本、不能换值或丢样本。
+_SAMPLES = Path(__file__).resolve().parents[3] / "experiments" / "rsi-samples.json"
+_SAMPLES_OPT = typer.Option(_SAMPLES, "--samples", help="样本账路径（测试用）")
+_RETRACT = typer.Option(None, "--retract", help="剔除的成员（语料键或身份）；须带 --reason/--by")
+_REASON_OPT = typer.Option(None, "--reason")
+_BY_OPT = typer.Option(None, "--by")
 
 
 def _corpus_rows(path: Path | None = None) -> list[dict]:
@@ -927,7 +933,8 @@ def price_band(
 
 
 @rsi_app.command("grade")
-def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR) -> None:
+def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
+          samples: Path = _SAMPLES_OPT) -> None:
     """Run an experiment's deterministic grading adapter."""
     from nutmeg.decision.rsi_grading import (
         PROSPECTIVE_ADAPTERS,
@@ -958,6 +965,18 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR) -> Non
                 for plan in uow.capital.all_latest()
             ]
         g = grade_f4(plans)
+    elif exp in PROSPECTIVE_ADAPTERS and exp != "G1" and mode == "prospective":
+        from nutmeg.decision import rsi_samples
+
+        ledger = rsi_samples.load(samples)
+        g, events = rsi_samples.grade(ledger, exp, _corpus_rows(), PROSPECTIVE_ADAPTERS[exp],
+                                      window=e.window, at=_now().isoformat(timespec="seconds"))
+        if events:
+            rsi_samples.save(samples, ledger)
+            kinds: dict[str, int] = {}
+            for event in events:
+                kinds[event["kind"]] = kinds.get(event["kind"], 0) + 1
+            typer.echo(f"{exp} 样本账：" + "、".join(f"{k} {v}" for k, v in sorted(kinds.items())))
     elif exp in PROSPECTIVE_ADAPTERS:
         rows = _corpus_rows()
         g = PROSPECTIVE_ADAPTERS[exp](rows, window=e.window)
@@ -979,6 +998,37 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR) -> Non
     f = Falsifier.from_dict(e.falsifier)
     typer.echo(f"{exp} [{mode}] n={g.n_cum}  残差 {g.metric_value_pp:+.2f}pp  "
                f"CI[{g.ci_low_pp:+.2f}, {g.ci_high_pp:+.2f}]  距 n_min {max(0, f.n_min - g.n_cum)}")
+
+
+@rsi_app.command("samples")
+def samples_cmd(exp: str | None = _EXP_OPT, retract: str | None = _RETRACT,
+                reason: str | None = _REASON_OPT, by: str | None = _BY_OPT,
+                samples: Path = _SAMPLES_OPT) -> None:
+    """样本账：各实验冻结成员数与漂移事件；--retract 由人剔除一个成员（留痕）。"""
+    from nutmeg.decision import rsi_samples
+
+    ledger = rsi_samples.load(samples)
+    if retract:
+        if not exp or not reason or not by:
+            _fail("--retract 须同时给 --exp、--reason、--by")
+        try:
+            gone = rsi_samples.retract(ledger, exp, retract, reason=reason, by=by,
+                                       at=_now().isoformat(timespec="seconds"))
+        except KeyError as exc:
+            _fail(str(exc))
+        rsi_samples.save(samples, ledger)
+        typer.echo(f"{exp} 剔除 {gone['key']}（{reason}，{by}）")
+        return
+    for name, info in rsi_samples.summary(ledger).items():
+        if exp and name != exp:
+            continue
+        kinds = "、".join(f"{k} {v}" for k, v in sorted(info["events"].items())) or "无"
+        typer.echo(f"{name}: 成员 {info['members']}  剔除 {info['retracted']}  事件 {kinds}")
+    if exp:
+        for event in [e for e in ledger["events"] if e["exp"] == exp][-20:]:
+            detail = f"  {json.dumps(event['detail'], ensure_ascii=False)}" if event.get(
+                "detail") else ""
+            typer.echo(f"  {event['at'][:16]}  {event['kind']:<16} {event['key']}{detail}")
 
 
 @rsi_app.command("verdict")

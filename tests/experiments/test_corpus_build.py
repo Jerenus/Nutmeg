@@ -605,3 +605,74 @@ def test_research_labels_carry_rubric_answers_and_sidecar_only_when_prospective(
     assert late["prospective"] is False and late["items"] == early["items"]
     assert _rubric_sidecar(str(tmp_path / "nope.json"), kickoff_bj=None) is None
     assert _with_sidecar(labels, early)["rubric_b"] == early and _with_sidecar(None, early) is None
+
+
+def _lane_row(key, src, actual, fair, *, titan=None, date="2026-09-19", jczq_no=None):
+    return {"key": key, "src": src, "date": date, "actual": actual, "fair": fair,
+            "titan007_id": titan, "jczq_no": jczq_no}
+
+
+def test_dedupe_pairs_by_titan_then_only_fuzzy_matches_with_the_same_result():
+    fair = {"home": 0.52, "draw": 0.26, "away": 0.22}
+    near = {"home": 0.515, "draw": 0.265, "away": 0.22}
+    other = {"home": 0.30, "draw": 0.30, "away": 0.40}
+    zc = [
+        _lane_row("26129-7", "zucai", "0", fair),            # no titan id
+        _lane_row("26129-8", "zucai", "3", other),           # no titan id
+        _lane_row("26132-8", "zucai", "3", fair, titan="5"),
+    ]
+    jc = [
+        _lane_row("2026-09-19-周六023", "jczq", "3", near, titan="1"),  # 26129-7 opened 0
+        _lane_row("2026-09-19-周六030", "jczq", "3", other, titan="2"),  # same result → twin
+        _lane_row("2026-09-19-周六031", "jczq", "3", other, titan="3"),  # 26129-8 taken
+        _lane_row("2026-09-19-周五007", "jczq", "3", near, titan="5"),  # titan twin
+        _lane_row("2026-09-19-周六018", "jczq", "3", near, titan="6"),  # 26132-8 claimed
+    ]
+    rows, dropped = corpus_build.dedupe(zc, jc)
+    keys = {r["key"] for r in rows}
+    assert dropped == 2
+    assert {"2026-09-19-周六023", "2026-09-19-周六031", "2026-09-19-周六018"} <= keys
+    twins = {r["key"]: r.get("twin_keys") for r in rows if r["src"] == "zucai"}
+    assert twins == {"26129-7": None, "26129-8": ["2026-09-19-周六030"],
+                     "26132-8": ["2026-09-19-周五007"]}
+
+
+def test_dedupe_never_pairs_rows_whose_titan_ids_disagree():
+    fair = {"home": 0.4, "draw": 0.3, "away": 0.3}
+    zc = [_lane_row("26130-1", "zucai", "1", fair, titan="8")]
+    jc = [_lane_row("2026-09-19-周六001", "jczq", "1", fair, titan="9")]
+    rows, dropped = corpus_build.dedupe(zc, jc)
+    assert dropped == 0 and len(rows) == 2
+
+
+def test_one_row_per_titan_match_keeps_the_business_day_listing():
+    fair = {"home": 0.4, "draw": 0.3, "away": 0.3}
+    rows = [
+        _lane_row("2026-09-19-周日001", "jczq", "1", fair, titan="7", jczq_no="周日001"),
+        _lane_row("2026-09-19-周六002", "jczq", "3", fair, titan="8", jczq_no="周六002"),
+        _lane_row("2026-09-20-周日001", "jczq", "1", fair, titan="7", date="2026-09-20",
+                  jczq_no="周日001"),
+    ]
+    kept = [r["key"] for r in corpus_build._one_row_per_titan_match(rows)]
+    assert kept == ["2026-09-19-周六002", "2026-09-20-周日001"]
+
+
+def test_attach_kernel_fuzzy_needs_same_result_and_a_free_row_else_keeps_the_kernel_row():
+    fair = {"home": 0.57, "draw": 0.24, "away": 0.19}
+    taken = {"src": "jczq", "key": "2026-07-26-周日213", "date": "2026-07-26", "actual": "0",
+             "fair": fair}
+    other = {"src": "jczq", "key": "2026-07-26-周日214", "date": "2026-07-26", "actual": "3",
+             "fair": fair}
+
+    def kernel_row(match_id, name):
+        return {"src": "kernel", "key": f"kernel-{match_id}", "date": "2026-07-26",
+                "actual": "0", "fair": fair, "belief": fair, "kernel": {"match_id": match_id},
+                "quotes": {}, "provably_prospective": True, "name": name}
+
+    kernel = [kernel_row("m1", "哈尔姆斯塔德 vs 赫根"),
+              kernel_row("m2", "贝红星 vs 比尔森"),      # another fixture: kept on its own
+              kernel_row("m3", "哈尔姆斯 vs 赫根")]      # same fixture, second kernel identity
+    rows, attached = corpus_build.attach_kernel([taken, other], kernel)
+    assert attached == 1 and taken["kernel"]["match_id"] == "m1"
+    assert "kernel" not in other  # different result is a different match
+    assert [r["key"] for r in rows if r["src"] == "kernel"] == ["kernel-m2"]

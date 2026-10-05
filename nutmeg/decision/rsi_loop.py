@@ -47,12 +47,13 @@ STEP_ORDER = (
     "scoreboard",
     "commit_outputs",
 )
-# loop 自己写的三个仓内文件（Jun 2026-10-01 定：每轮末尾自动提交，不再让它们长期脏着
+# loop 自己写的仓内文件（Jun 2026-10-01 定：每轮末尾自动提交，不再让它们长期脏着
 # 把 pre-commit 的 stash 变成事故温床）。--no-verify：纯数据提交不跑测试钩子，也就不会
-# 与正在编辑的会话抢 stash。
+# 与正在编辑的会话抢 stash。rsi-samples.json 是结账步写的样本账（2026-10-05）。
 LOOP_OUTPUT_PATHS = (
     "experiments/attempts.log",
     "experiments/corpus-v2.json",
+    "experiments/rsi-samples.json",
     "experiments/scoreboard-tallies.json",
 )
 # 有前瞻适配器的登记实验都进闭环（F10/F11 2026-09-27 登记后一直没被结账，2026-09-30 补入）
@@ -201,7 +202,7 @@ def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
 
 
 def _commit_outputs_script(ctx: LoopContext) -> str:
-    """没变化就静默退出 0；有变化只提交这三个路径（pathspec 提交，不碰别人暂存的东西）。"""
+    """没变化就静默退出 0；有变化只提交这几个路径（pathspec 提交，不碰别人暂存的东西）。"""
     paths = " ".join(LOOP_OUTPUT_PATHS)
     return (
         f"cd {ctx.root} && [ -z \"$(git status --porcelain -- {paths})\" ] || "

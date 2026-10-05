@@ -632,7 +632,32 @@ def jczq_rows() -> list[dict]:
                 )
             )
             rows.append(row)
-    return rows
+    return _one_row_per_titan_match(rows)
+
+
+_WEEKDAY_CODE = "一二三四五六日"
+
+
+def _one_row_per_titan_match(rows: list[dict]) -> list[dict]:
+    """同一 titan 场次只留一行（2026-10-05）：titan 赛果页按开球历日列场，跨夜场会同时出现在
+    两天的 `jc-results` 里（例：周日001 既在 09-19 页又在 09-20 页），旧逻辑按 (日, 竞彩号) 去重
+    拦不住，同一场比赛在 F5 里数了两次。留竞彩号星期与业务日一致的那一行。"""
+    by_id: dict[str, list[dict]] = {}
+    for row in rows:
+        if row.get("titan007_id"):
+            by_id.setdefault(str(row["titan007_id"]), []).append(row)
+    drop: set[int] = set()
+    for group in by_id.values():
+        if len(group) < 2:
+            continue
+
+        def on_business_day(row: dict) -> bool:
+            weekday = __import__("datetime").date.fromisoformat(row["date"]).weekday()
+            return str(row.get("jczq_no") or "").startswith("周" + _WEEKDAY_CODE[weekday])
+
+        keep = next((r for r in group if on_business_day(r)), group[0])
+        drop.update(id(r) for r in group if r is not keep)
+    return [r for r in rows if id(r) not in drop]
 
 
 ONTOLOGY_DB = os.path.join(ROOT, ".nutmeg-data", "ontology", "ontology.db")
@@ -910,9 +935,22 @@ def kernel_rows(database: str | None = None) -> list[dict]:
     return rows
 
 
+def _same_fixture(a: str | None, b: str | None) -> bool:
+    """两条内核行的「主 vs 客」简称是否同一场：主、客各自前两个字相同；无名可比时当同一场。"""
+    pa, pb = str(a or "").split(" vs "), str(b or "").split(" vs ")
+    if len(pa) != 2 or len(pb) != 2:
+        return True
+    return all(x[:2] == y[:2] for x, y in zip(pa, pb, strict=True))
+
+
 def attach_kernel(rows: list[dict], kernel: list[dict]) -> tuple[list[dict], int]:
     """内核行能对上已有行（足彩 issue+场次 / 竞彩 date+竞彩号 / 同日 fair≤1.5pp）时，
-    只把 `kernel`/`quotes` 挂到已有行上；对不上的作为独立 `src=kernel` 行追加。"""
+    只把 `kernel`/`quotes` 挂到已有行上；对不上的作为独立 `src=kernel` 行追加。
+    模糊配对（2026-10-05）只认赛果相同的行；配到的行已挂了别的内核场次时，两条内核行的
+    「主 vs 客」简称主客各前两字相同才算同一场（重复身份，丢弃），否则继续找、找不到就独立追加。
+    旧逻辑不看赛果也不看队名，48 条不同比赛的内核行被静默丢掉（如 07-26 周日207 撞上周日213、
+    贝红星 vs 比尔森撞上马赛 vs 斯特拉斯）；同场双身份的 17 条照旧丢弃。"""
+    kernel_names = {k["kernel"]["match_id"]: k.get("name") for k in kernel if k.get("kernel")}
     by_key = {r["key"]: r for r in rows}
     by_day: dict[str, list[dict]] = {}
     for r in rows:
@@ -937,12 +975,19 @@ def attach_kernel(rows: list[dict], kernel: list[dict]) -> tuple[list[dict], int
                 )
             ]
             for r in candidates:
-                if all(
+                if r.get("actual") != k.get("actual"):
+                    continue
+                if not all(
                     abs(k["fair"].get(x, 0) - r["fair"].get(x, 0)) <= _DUP_TOL
                     for x in ("home", "draw", "away")
                 ):
-                    target = r
-                    break
+                    continue
+                if r.get("kernel") and not _same_fixture(
+                    k.get("name"), kernel_names.get(r["kernel"].get("match_id"))
+                ):
+                    continue
+                target = r
+                break
         if target is not None and not target.get("kernel"):
             target["kernel"] = k["kernel"]
             target["quotes"] = k["quotes"]
@@ -955,26 +1000,37 @@ def attach_kernel(rows: list[dict], kernel: list[dict]) -> tuple[list[dict], int
 
 
 def dedupe(zc: list[dict], jc: list[dict]) -> tuple[list[dict], int]:
-    """同一场比赛两条泳道各有一行时保留足彩行（它带标签），竞彩行丢弃。"""
-    zt = {r.get("titan007_id") for r in zc if r.get("titan007_id")}
+    """同一场比赛两条泳道各有一行时保留足彩行（它带标签），竞彩行丢弃，
+    被吸收的竞彩键记在足彩行的 `twin_keys` 上（样本账据此认出孪生行，不重复入账）。
+
+    先按 titan id 配对；没有 titan id 才退到「同日 fair 差 ≤1.5pp」的模糊配对，且（2026-10-05）
+    模糊配对要求赛果相同、两边 titan id 不冲突、足彩行没被别的竞彩行认领过——旧逻辑把赛果不同的
+    两场比赛（09-19 周六023 主胜 vs 26129-7 客胜）当成一场，静默丢掉了真样本。"""
+    zt = {r["titan007_id"]: r for r in zc if r.get("titan007_id")}
     zbyday: dict[str, list[dict]] = {}
     for r in zc:
         if r.get("date"):
             zbyday.setdefault(r["date"], []).append(r)
+    claimed = {id(zt[r["titan007_id"]]) for r in jc if r.get("titan007_id") in zt}
     kept, dropped = [], 0
     for r in jc:
-        if r.get("titan007_id") and r["titan007_id"] in zt:
-            dropped += 1
-            continue
-        near = False
-        for z in zbyday.get(r["date"], []):
-            if all(
-                abs(r["fair"].get(k, 0) - z["fair"].get(k, 0)) <= _DUP_TOL
-                for k in ("home", "draw", "away")
-            ):
-                near = True
-                break
-        if near:
+        twin = zt.get(r["titan007_id"]) if r.get("titan007_id") else None
+        if twin is None:
+            for z in zbyday.get(r["date"], []):
+                if id(z) in claimed or z.get("actual") != r.get("actual"):
+                    continue
+                if z.get("titan007_id") and r.get("titan007_id") \
+                        and z["titan007_id"] != r["titan007_id"]:
+                    continue
+                if all(
+                    abs(r["fair"].get(k, 0) - z["fair"].get(k, 0)) <= _DUP_TOL
+                    for k in ("home", "draw", "away")
+                ):
+                    twin = z
+                    claimed.add(id(z))
+                    break
+        if twin is not None:
+            twin.setdefault("twin_keys", []).append(r["key"])
             dropped += 1
             continue
         kept.append(r)

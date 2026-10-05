@@ -40,6 +40,8 @@ class GradeResult:
     as_of_policy: str
     inputs_hash: str
     computed_by: str
+    # 入选行的语料键（2026-10-05）：样本账（rsi_samples）据此登记首次入选、冻结样本。
+    selected_keys: tuple[str, ...] = ()
 
 
 def inputs_hash(raw: bytes) -> str:
@@ -150,6 +152,10 @@ def _rows_hash(rows: Sequence[dict]) -> str:
     return inputs_hash(raw)
 
 
+def _keys(rows: Sequence[dict]) -> tuple[str, ...]:
+    return tuple(str(r.get("key")) for r in rows)
+
+
 def _in_issue_window(row: dict, window: dict) -> bool:
     issue = str(row.get("issue") or "")
     return bool(issue) and window.get("issue_from", "") <= issue <= window.get("issue_to", "99999")
@@ -174,7 +180,7 @@ def _residual_grade(rows: Sequence[dict], *, stratum: str, computed_by: str,
     return GradeResult(stratum=stratum, n_cum=ci.n, metric_value_pp=ci.value_pp,
                        ci_low_pp=ci.ci_low_pp, ci_high_pp=ci.ci_high_pp, cost_axis_pp=None,
                        as_of_policy=as_of_policy, inputs_hash=_rows_hash(rows),
-                       computed_by=computed_by)
+                       computed_by=computed_by, selected_keys=_keys(rows))
 
 
 def _priced(rows: Sequence[dict]) -> list[dict]:
@@ -232,7 +238,8 @@ def grade_f9_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
         return GradeResult(stratum="pooled", n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0,
                            ci_high_pp=0.0, cost_axis_pp=None, as_of_policy="registry_window_date",
                            inputs_hash=_rows_hash(selected),
-                           computed_by="nutmeg.decision.rsi_grading.grade_f9_prospective")
+                           computed_by="nutmeg.decision.rsi_grading.grade_f9_prospective",
+                           selected_keys=())
     rng = random.Random(seed)
     point = statistics.fmean(deltas)
     means = sorted(statistics.fmean(rng.choice(deltas) for _ in deltas) for _ in range(boots))
@@ -241,7 +248,8 @@ def grade_f9_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                        ci_low_pp=lo, ci_high_pp=hi,
                        cost_axis_pp=None, as_of_policy="registry_window_date",
                        inputs_hash=_rows_hash(selected),
-                       computed_by="nutmeg.decision.rsi_grading.grade_f9_prospective")
+                       computed_by="nutmeg.decision.rsi_grading.grade_f9_prospective",
+                       selected_keys=_keys(selected))
 
 
 def grade_f10_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
@@ -280,7 +288,7 @@ def grade_f11_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
         selected.append(r)
     n = len(selected)
     kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
-                  inputs_hash=_rows_hash(selected),
+                  inputs_hash=_rows_hash(selected), selected_keys=_keys(selected),
                   computed_by="nutmeg.decision.rsi_grading.grade_f11_prospective")
     if not groups["insure"] or not groups["single"]:
         return GradeResult(n_cum=n, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
@@ -308,7 +316,7 @@ def _anchor_residual_grade(rows: Sequence[dict], *, computed_by: str) -> GradeRe
     return GradeResult(stratum="pooled", n_cum=ci.n, metric_value_pp=ci.value_pp,
                        ci_low_pp=ci.ci_low_pp, ci_high_pp=ci.ci_high_pp, cost_axis_pp=None,
                        as_of_policy="registry_window_date", inputs_hash=_rows_hash(rows),
-                       computed_by=computed_by)
+                       computed_by=computed_by, selected_keys=_keys(rows))
 
 
 def grade_f13_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
@@ -366,7 +374,7 @@ def grade_f14_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
         resid.append((1.0 if r["actual"] in faces else 0.0) - coverage)
         selected.append(r)
     kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
-                  inputs_hash=_rows_hash(selected),
+                  inputs_hash=_rows_hash(selected), selected_keys=_keys(selected),
                   computed_by="nutmeg.decision.rsi_grading.grade_f14_prospective")
     if not resid:
         return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
@@ -406,7 +414,7 @@ def grade_f15_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
         resid.append((1.0 if r["actual"] == _FACE[fav[0]] else 0.0) - fav[1])
         selected.append(r)
     kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
-                  inputs_hash=_rows_hash(selected),
+                  inputs_hash=_rows_hash(selected), selected_keys=_keys(selected),
                   computed_by="nutmeg.decision.rsi_grading.grade_f15_prospective")
     if not resid:
         return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
@@ -511,7 +519,7 @@ def grade_k1_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                        (r.get("labels") or {}).get("rubric_b")) for r in selected],
                      ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
-                  inputs_hash=inputs_hash(raw),
+                  inputs_hash=inputs_hash(raw), selected_keys=_keys(selected),
                   computed_by="nutmeg.decision.rsi_grading.grade_k1_prospective")
     n_items = sum(len(p) for p in per_row)
     if not per_row:
