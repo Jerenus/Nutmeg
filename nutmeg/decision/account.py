@@ -1,8 +1,9 @@
 """账房（2026-10-01 定位：目标函数＝少亏多少 + 证伪了几条）。
 
-月报四块：① 本月净值 vs 空仓（记分牌 tickets，分竞彩/足彩）与止损线；② 探索预算用量
-（betslips 里 note 以 `EXP:` 开头的实购票）；③ 判断力主/次指标最新结账（F14/G1/F15/F10/F9）；
-④ 实验判决计数（survived / falsified / 未到期）。只读，不写判断。
+月报五块：① 本月净值 vs 空仓（记分牌 tickets，分竞彩/足彩）与止损线；② 探索预算用量
+（betslips 里 note 以 `EXP:` 开头的实购票）；③ 主指标「实际 vs 规则 v3 vs 空仓」（gym 按 Read
+belief 回放本月竞彩板面日）；④ 判断力主/次指标最新结账（F14/G1/F15/F10/F9）；⑤ 实验判决计数
+（survived / falsified / 未到期）。只读，不写判断。
 """
 from __future__ import annotations
 
@@ -15,7 +16,9 @@ from nutmeg.decision.bankroll import MONTHLY_STOP_LOSS_YUAN, month_net
 EXP_PREFIX = "EXP:"
 EXP_BUDGET_PER_DAY = 30
 PRIMARY = ("F14", "G1", "F15", "F10")
-SECONDARY = ("F9", "F13", "F11", "F5", "F3")
+SECONDARY = ("F9", "F13", "F11", "F5")
+# 宪法三个主指标之一（Dream 2026-10-04 退役后由 gym 承接）：实际出票 vs 规则 v3 vs 空仓
+RULE_V3_POLICIES = (("real", "实际出票"), ("jczq_rule_v3", "规则 v3"), ("flat", "空仓"))
 
 
 def exploration_spend(data_dir: Path, month: str) -> dict:
@@ -116,6 +119,29 @@ def experiment_board(data_dir: Path) -> dict:
         return {"_error": repr(exc)[:200]}
 
 
+def rule_v3_board(data_dir: Path, month: str) -> dict:
+    """本月竞彩板面日按 Read belief 回放三条策略（2026-10-05 补上：此前没有任何地方记这个主指标）。
+    规则 v3 是竞彩规则，所以只放竞彩；实际出票也只取竞彩票，足彩在净值块里。gym 不可用 → _error。"""
+    try:
+        from nutmeg.gym.board import list_days
+        from nutmeg.gym.policy import Ctx
+        from nutmeg.gym.run import run_gym
+
+        days = [d for d in list_days(Path(data_dir)) if d.startswith(month)]
+        result = run_gym(data_dir=Path(data_dir), policies=[p for p, _ in RULE_V3_POLICIES],
+                         days=days, issues=[], ctx=Ctx(belief_source="read"),
+                         run_id=f"account-{month}")
+    except Exception as exc:  # noqa: BLE001 —— 账房不能因回放故障整页空白
+        return {"_error": repr(exc)[:200]}
+    out: dict = {"days": len(days)}
+    for policy, label in RULE_V3_POLICIES:
+        row = result.per_policy.get(policy) or {}
+        out[policy] = {"label": label, "slips": row.get("slips", 0), "stake": row.get("stake", 0),
+                       "net": row.get("net", 0.0), "roi": row.get("roi", 0.0),
+                       "keys": row.get("keys", 0), "pending": row.get("pending", 0)}
+    return out
+
+
 def month_report(data_dir: Path, month: str) -> dict:
     data_dir = Path(data_dir)
     net = month_net(data_dir, month)
@@ -138,7 +164,7 @@ def month_report(data_dir: Path, month: str) -> dict:
         "stop_loss": MONTHLY_STOP_LOSS_YUAN,
         "tripped": net["net"] <= -MONTHLY_STOP_LOSS_YUAN,
         "exploration": spend, "deviations": deviations, "experiments": board,
-        "verdicts": verdicts,
+        "verdicts": verdicts, "rule_v3": rule_v3_board(data_dir, month),
     }
 
 
@@ -167,6 +193,21 @@ def render_month(report: dict) -> str:
             lines.append(f"    · {text}")
     if not dev["by_reason"]:
         lines.append("  - 无（偏离初稿而不登记理由的票不进这张账）")
+    rv = report.get("rule_v3") or {}
+    lines += ["", f"**主指标：实际出票 vs 规则 v3 vs 空仓**（竞彩，Read belief 回放，"
+                  f"本月 {rv.get('days', 0)} 个板面日）", ""]
+    if "_error" in rv:
+        lines.append(f"回放失败：{rv['_error']}")
+    else:
+        lines += ["| 口径 | 票数 | 出票日 | 投入 | 净 | ROI | 待结 |",
+                  "|---|---|---|---|---|---|---|"]
+        for policy, label in RULE_V3_POLICIES:
+            row = rv.get(policy) or {}
+            lines.append(f"| {label} | {row.get('slips', 0)} | {row.get('keys', 0)} "
+                         f"| {row.get('stake', 0):,.0f} | {row.get('net', 0):+,.0f} "
+                         f"| {row.get('roi', 0) * 100:+.1f}% | {row.get('pending', 0)} |")
+        lines.append("（规则 v3 是平注 ¥2 的决策规则：比的是「该不该出、出什么形状」，"
+                     "看 ROI 与相对空仓的符号，不比绝对金额。）")
     board = report["experiments"]
     lines += ["", "**判断力指标（最新前瞻结账）**", "",
               "| 实验 | 层 | n / n_min | 残差 pp | 95% CI | 判决 |", "|---|---|---|---|---|---|"]

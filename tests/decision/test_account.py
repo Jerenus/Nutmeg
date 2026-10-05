@@ -118,3 +118,44 @@ def test_previous_month_handles_january_and_the_cli_flag(tmp_path: Path, monkeyp
     both = CliRunner().invoke(app, ["account", "month", "--previous", "--month", "2026-09",
                                     "--data-dir", str(data)])
     assert both.exit_code == 2
+
+
+def test_rule_v3_board_replays_the_month_and_renders_three_rows(tmp_path: Path,
+                                                                monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from nutmeg.decision import account
+
+    calls: list = []
+
+    def fake_run_gym(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(per_policy={
+            "real": {"slips": 26, "stake": 1886, "net": -1508.5, "roi": -0.7998, "keys": 7},
+            "jczq_rule_v3": {"slips": 9, "stake": 18, "net": -18.0, "roi": -1.0, "keys": 9},
+            "flat": {"slips": 0, "stake": 0, "net": 0.0, "roi": 0.0, "keys": 0}})
+
+    monkeypatch.setattr("nutmeg.gym.board.list_days",
+                        lambda data_dir: ["2026-08-31", "2026-09-01", "2026-09-02"])
+    monkeypatch.setattr("nutmeg.gym.run.run_gym", fake_run_gym)
+    board = account.rule_v3_board(tmp_path, "2026-09")
+    assert calls[0]["days"] == ["2026-09-01", "2026-09-02"] and calls[0]["issues"] == []
+    assert calls[0]["ctx"].belief_source == "read"
+    assert board["jczq_rule_v3"]["net"] == -18.0 and board["days"] == 2
+
+    monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
+    monkeypatch.setattr("nutmeg.decision.account.rule_v3_board", lambda _d, _m: board)
+    text = account.render_month(account.month_report(tmp_path, "2026-09"))
+    assert "| 规则 v3 | 9 | 9 | 18 | -18 | -100.0% |" in text
+    assert "| 实际出票 | 26 | 7 | 1,886 | -1,508 | -80.0% |" in text
+
+
+def test_rule_v3_board_reports_a_replay_failure_instead_of_crashing(tmp_path: Path,
+                                                                    monkeypatch) -> None:
+    from nutmeg.decision import account
+
+    def boom(data_dir):
+        raise RuntimeError("no boards")
+
+    monkeypatch.setattr("nutmeg.gym.board.list_days", boom)
+    assert "_error" in account.rule_v3_board(tmp_path, "2026-09")
