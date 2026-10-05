@@ -1180,3 +1180,47 @@ def test_retire_stops_the_experiments_duties(tmp_path):
     assert "R1" not in due.output
     status = runner.invoke(app, ["rsi", "status", "--exp", "R1", "--data-dir", str(data_dir)])
     assert "retired" in status.output
+
+
+def test_union_match_keeps_its_zucai_identity_after_the_channel_map_lands(tmp_path):
+    # 10-05 R1：channel-map 18:30 才落地，之前按足彩侧 id 排过并已履约的场，对上竞彩后
+    # 又按竞彩侧 id 排一条、永远空着。同一天已按足彩侧排过的，继续用足彩侧 id。
+    data_dir = tmp_path / "data"
+    day = "2026-09-19"
+    day_dir = data_dir / "jczq" / "daily" / day
+    zucai_dir = data_dir / "zucai"
+    day_dir.mkdir(parents=True)
+    zucai_dir.mkdir(parents=True)
+    day_dir.joinpath("jczq-legs-base.json").write_text(json.dumps({"legs": {
+        "周五001": {"match_id": "jc-shared", "kickoff_bj": "2026-09-19T20:00:00+08:00"}}}),
+        encoding="utf-8")
+    zucai_dir.joinpath("26130-store-ids.json").write_text(json.dumps({
+        "1": {"match_id": "zc-shared", "match_no": 1},
+        "2": {"match_id": "zucai-only", "match_no": 2}}), encoding="utf-8")
+    zucai_dir.joinpath("26130-issue.json").write_text(json.dumps({"matches": [
+        {"match_no": 1, "kickoff_bj": "2026-09-19 20:00"},
+        {"match_no": 2, "kickoff_bj": "2026-09-19 22:00"}]}), encoding="utf-8")
+    r0_doc = json.loads(Path("experiments/registry/R0.json").read_text("utf-8"))
+    both_path = tmp_path / "BOTH.json"
+    both_path.write_text(json.dumps({**r0_doc, "exp_id": "BOTH", "population": "both"}),
+                         encoding="utf-8")
+    runner = CliRunner()
+    assert runner.invoke(app, ["rsi", "register", "--by", "Jun", str(both_path),
+                               "--data-dir", str(data_dir)]).exit_code == 0
+    schedule = ["rsi", "schedule", "--day", day, "--issue", "26130", "--data-dir", str(data_dir)]
+    assert runner.invoke(app, schedule).exit_code == 0          # 还没有 channel-map
+    db = data_dir / "ontology" / "ontology.db"
+    with sqlite3.connect(db) as connection:
+        connection.execute("UPDATE rsi_duty_instances "
+                           "SET fulfilled_at='2026-09-19T12:15:00+08:00' "
+                           "WHERE match_id='zc-shared'")
+    zucai_dir.joinpath("26130-channel-map.auto.json").write_text(
+        json.dumps({"jc-shared": 1}), encoding="utf-8")
+    again = runner.invoke(app, schedule)
+    assert again.exit_code == 0, again.output
+
+    with sqlite3.connect(db) as connection:
+        rows = connection.execute(
+            "SELECT match_id, fulfilled_at IS NOT NULL FROM rsi_duty_instances "
+            "WHERE duty_id='BOTH:match-research' ORDER BY match_id").fetchall()
+    assert rows == [("zc-shared", 1), ("zucai-only", 0)]

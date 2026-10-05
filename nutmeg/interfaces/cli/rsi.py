@@ -162,13 +162,14 @@ def _population_match_kickoffs(
     day: str,
     issue: str | None,
     populations: set[str],
+    kernel=None,
 ) -> dict[str, dict[str, str]]:
     from nutmeg.decision.rsi_population import matches_for_population
 
     jczq = _jczq_match_kickoffs(data_dir, day)
     zucai = _zucai_match_kickoffs(data_dir, issue)
     kickoff_by_match = {**zucai, **jczq}
-    return {
+    out = {
         population: {
             row["match_id"]: kickoff_by_match[row["match_id"]]
             for row in matches_for_population(
@@ -178,6 +179,39 @@ def _population_match_kickoffs(
         }
         for population in populations
     }
+    if kernel is not None and "both" in out and issue:
+        out["both"] = _keep_scheduled_identity(kernel, data_dir, day=day, issue=issue,
+                                               kickoffs=out["both"])
+    return out
+
+
+def _keep_scheduled_identity(kernel, data_dir: Path, *, day: str, issue: str,
+                             kickoffs: dict[str, str]) -> dict[str, str]:
+    """并集池同一场比赛只排一条义务（2026-10-05）。channel-map 18:30 才落地：之前足彩场按
+    足彩侧 id 排过并已履约，对上竞彩后又按竞彩侧 id 排一条——永远空着，10-05 R1 七个假缺口。
+    这一天已按足彩侧 id 排过的场，继续用足彩侧 id。"""
+    zdir = Path(data_dir) / "zucai"
+    mapping: dict = {}
+    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
+        if (zdir / name).exists():
+            mapping = json.loads((zdir / name).read_text(encoding="utf-8"))
+            break
+    if not mapping:
+        return kickoffs
+    store_path = zdir / f"{issue}-store-ids.json"
+    store = json.loads(store_path.read_text(encoding="utf-8")) if store_path.exists() else {}
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        scheduled = {
+            row.match_id
+            for duty in uow.rsi.all_duties()
+            for row in uow.rsi.duty_instances_for_day(duty.duty_id, day)
+        }
+    out = dict(kickoffs)
+    for jczq_id, match_no in mapping.items():
+        zucai_id = (store.get(str(match_no)) or {}).get("match_id")
+        if jczq_id in out and zucai_id and zucai_id in scheduled and zucai_id not in out:
+            out[zucai_id] = out.pop(jczq_id)
+    return out
 
 
 _SCHEDULE_SEMANTICS = "explicit-cross-channel-identity-v2"
@@ -376,6 +410,7 @@ def schedule(day: str = _DAY, issue: str | None = _ISSUE, data_dir: Path = _DATA
         day=day,
         issue=issue,
         populations=populations,
+        kernel=k,
     )
     _run(k.rsi_actions.schedule_duties, ScheduleDutiesRequest(
         day=day, earliest_kickoff=ko, issue=issue, match_kickoffs=match_kickoffs,
@@ -721,6 +756,7 @@ def balance(
         day=resolved_day,
         issue=issue,
         populations={"both"},
+        kernel=k,
     )
     kickoffs = population_kickoffs["both"]
     if not kickoffs:
