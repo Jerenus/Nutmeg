@@ -536,6 +536,7 @@ flowchart TB
 | 10-02 | 判断的「程度」是手写数字，无法逐项检验 | rubric r1 类型化问题表 + 协议级聚合 + 读者 B 两读 + K1 + 逐项因子 | `specs/2026-10-02-rubric-judgment-contract-design.md` |
 | 10-02 | **历史重打分**（260 份研究、190 行有赛果）：公开缺阵 / 门将 / 中轴受损成立时所押方向比市场少中 6–11pp；只有弱方路径 +2.3（n=100）与轮换 +2.4（n=27）为正 | 事实项上限大概率偏高，待前瞻 n≥60 再调；非前瞻，不定权重 | `evidence/2026-10-02-rubric-judgment-contract.md` §6 |
 | 10-02 | 改判与人的判断都没有按理由结账 | 改判落到 rubric 项 + 封闭理由；人的偏离登记 + 账房按理由结账；rubric 版本治理 | 同上 §5 |
+| 10-03 | **过度设计审计**：185 张表 142 张空、operator 78 张表共 2 行；Dream 5 夜录 1 个世界；RSI 判决 0；审计门已无 ERROR 路径；143 条命令 | 瘦身五波：删旧版服务层、机器构票工具、operator 代码、Dream（规则 v3 迁入 gym）；闭环 12→9 步；`nutmeg/` 116,572→59,784 行，命令 143→77；审计门一组与研究入库拒收逻辑未动 | `evidence/2026-10-03-overdesign-audit.md` |
 | 10-02 | 运行层体检：空盘日 Dream / 深研崩溃、因子提案会 KeyError、R1 显示为 0、播报内容过时、F2 不可能结账 | 空盘跳过、提案解析 rubric 因子、R1 按观测数、播报换内容、F2/F1c 退役、足彩 legs-base 自动化、早盘空盘不再报失败 | 同上 §7，`evidence/2026-10-02-ops-review.md` |
 
 > [!NOTE]
@@ -580,7 +581,7 @@ flowchart TB
 | 想知道 | 读 | 状态 |
 |---|---|---|
 | 现役结构与流程 | 本文 | 权威 |
-| 本文的 Word 版 | `docs/ARCHITECTURE.docx`，由 `python3 scripts/build_architecture_docx.py` 生成（需 pandoc、npx、LibreOffice、系统 python3 带 python-docx 与 PyMuPDF） | 快照；本文改动后重新生成，冲突以本文为准 |
+| 本文的 Word 版 | `docs/ARCHITECTURE.docx`，按需由 `python3 scripts/build_architecture_docx.py` 生成（需 pandoc、npx、LibreOffice、带 python-docx 与 PyMuPDF 的 python3，如 conda base）；2026-10-05 起不进 git | 快照；本文改动后重新生成，冲突以本文为准 |
 | 原则、规则、执行 | `docs/sop/CONSTITUTION.md` `RULEBOOK.md` `RUNBOOK.md` | 权威 |
 | 定时任务与断流后果 | `docs/ops/2026-09-20-scheduled-dataflows.md` | 权威（2026-10-02 更新） |
 | 内核运维 | `docs/ontology-kernel-operations.md` | 权威 |
@@ -632,4 +633,4 @@ flowchart TB
 |---|---|---|
 | v1.0 | 2026-10-02 | 首版：现役结构总图，取代 2026-08 Intelligence OS 设计成为结构权威 |
 | v1.1 | 2026-10-02 | 统一配色与图例、元信息、目录、提示框、图题、术语表、版本记录；10 张图重排版（研究流、足彩初稿、审票、状态机、闭环、Dream 改为分行布局）；rubric 项数更正为 15；随附 Word 版与生成脚本 |
-| v1.2 | 2026-10-05 | 过度设计审计瘦身（第 0–4 波）：内核路径写死（删 `ontology_v2` 开关与 v1 JSONL 动词路径）；删旧版服务层、机器构票工具（`zucai-candidates`/`zucai-optimize`/`zucai-ticket`/`plan *`）、operator 与受保护票代码（表留空）；Dream/Discovery 退役，规则 v3 迁入 gym（`--belief read`）；RSI 闭环 12→9 步；launchd 14→13；命令 143→约 80。审计门、裁决单、zucai 账本、记分牌权威命令与研究入库拒收逻辑未动 |
+| v1.2 | 2026-10-05 | 过度设计审计瘦身（第 0–4 波）：内核路径写死（删 `ontology_v2` 开关与 v1 JSONL 动词路径）；删旧版服务层、机器构票工具（`zucai-candidates`/`zucai-optimize`/`zucai-ticket`/`plan *`）、operator 与受保护票代码（表留空）；Dream/Discovery 退役，规则 v3 迁入 gym（`--belief read`）；RSI 闭环 12→9 步；launchd 14→13；命令 143→77，`nutmeg/` 116,572→59,784 行。审计门、裁决单、zucai 账本、记分牌权威命令与研究入库拒收逻辑未动 |

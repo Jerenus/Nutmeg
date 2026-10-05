@@ -25,3 +25,6 @@ build/
 media/
 memory/
 /site/
+
+# Word edition of docs/ARCHITECTURE.md: generated on demand (scripts/build_architecture_docx.py), not versioned
+docs/ARCHITECTURE.docx
