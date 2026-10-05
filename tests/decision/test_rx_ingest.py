@@ -85,3 +85,20 @@ def test_map_rx_gradings_rejects_unknown_outcome_words():
         {"predictions": [{"id": "P1", "claim": "c", "falsifier": "f", "outcome": "✓"}]},
         "26122")
     assert skipped and "P1" in skipped[0]
+
+
+def test_map_rx_gradings_reads_na_with_a_reason_and_skips_partial_or_pending():
+    # 26124 的 rx 写的是「n/a(前件不成立:场3开客胜)」，旧解析只认裸 na，两条一直没结账
+    from nutmeg.decision.rx_ingest import map_rx_gradings
+
+    rx = {"predictions": [
+        {"id": "P1", "claim": "c1", "outcome": "n/a(前件不成立:场3开客胜)", "evidence": "场3 0-2"},
+        {"id": "P2", "claim": "c2", "outcome": "hit", "evidence": "场5 2-0"},
+        {"id": "P3", "claim": "c3", "outcome": "partial(非模态4/6达标)"},
+        {"id": "P4", "claim": "c4", "outcome": "pending(官方奖金未公布)"},
+    ]}
+    gradings, skipped = map_rx_gradings(rx, "26124")
+    assert [(g["rx_id"], g["outcome"]) for g in gradings] == [("P1", "na"), ("P2", "hit")]
+    assert gradings[0]["reason"] == "n/a(前件不成立:场3开客胜)｜场3 0-2"
+    assert gradings[1]["reason"] == "场5 2-0"
+    assert [s.split(":")[0] for s in skipped] == ["P3", "P4"]

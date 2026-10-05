@@ -53,14 +53,22 @@ def map_rx_gradings(rx: dict, issue: str) -> tuple[list[dict], list[str]]:
     """
     out, skipped = [], []
     for p in rx.get("predictions") or []:
-        outcome = (p.get("outcome") or "").strip().lower()
+        raw = (p.get("outcome") or "").strip()
+        outcome = raw.lower()
+        # 「n/a(前件不成立:…)」就是 na，括号里是理由（26124 两条因此一直没结账，2026-10-05）；
+        # partial / pending 之类要人判，照旧跳过
+        if outcome.startswith(("n/a", "na(", "na（")):
+            outcome = "na"
         if outcome not in ("hit", "miss", "na"):
             skipped.append(f"{p['id']}: 未判定({p.get('outcome')!r})")
             continue
+        reason = p.get("outcome_reason") or p.get("evidence") or p.get("claim", "")
+        if outcome == "na" and raw.lower() != "na":
+            reason = f"{raw}｜{reason}"
         out.append({
             "rx_id": p["id"],
             "idempotency_key": f"rx:{issue}:{p['id']}",
             "outcome": outcome,
-            "reason": p.get("outcome_reason") or p.get("claim", ""),
+            "reason": reason,
         })
     return out, skipped
