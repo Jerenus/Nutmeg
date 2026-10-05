@@ -259,7 +259,9 @@ class RsiActions:
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
             refs: list[ObjectRef] = []
             for duty in uow.rsi.all_duties():
-                if duty.status == "pending_instrument":
+                # retired：实验废止时义务随之退役（2026-10-05 前这里只跳 pending_instrument，
+                # 退役的 F4 每天照排、sweep 每小时去跑已删除的 `nutmeg plan`）
+                if duty.status in ("pending_instrument", "retired"):
                     continue
                 experiment = uow.rsi.experiment(duty.exp_id)
                 if experiment.layer == "structural" and not window_contains(

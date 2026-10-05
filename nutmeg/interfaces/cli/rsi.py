@@ -503,6 +503,10 @@ def sweep(
     # F1c 的采集器读 F2 的观察单：F2 先跑（2026-09-29 F1c 两次因文件未生成而崩）
     ordered = sorted(duties.values(), key=lambda d: (not d.duty_id.startswith("F2:"), d.duty_id))
     for duty in ordered:
+        if duty.status == "retired":
+            # 实验已废止：义务不再跑（2026-10-05：F4 退役后 sweep 每小时跑已删除的 `nutmeg plan`，
+            # 退出码 1 把状态页染红）
+            continue
         rows = instances[duty.duty_id]
         fulfilled = [row for row in rows if row.fulfilled_at is not None]
         open_rows = [row for row in rows if row.fulfilled_at is None]

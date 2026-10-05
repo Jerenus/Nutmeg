@@ -278,6 +278,37 @@ def test_sweep_does_not_run_manual_duty(tmp_path: Path):
     assert "failed=0" in result.output
 
 
+def test_retired_duty_is_neither_run_nor_scheduled(tmp_path: Path):
+    # F4 退役后它的义务状态是 retired，sweep 却照跑已删除的 `nutmeg plan`、每小时退出码 1
+    data_dir, day, runner = _prepare_duty(
+        tmp_path, instrument=["uv", "run", "false", "--issue", "{issue}"]
+    )
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        connection.execute(
+            "UPDATE rsi_duties SET status='retired' WHERE duty_id='S1:sample'"
+        )
+
+    result = runner.invoke(
+        app,
+        ["rsi", "sweep", "--day", day, "--issue", "99199",
+         "--now", "2099-09-19T12:00:00+08:00", "--data-dir", str(data_dir)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "ran=0" in result.output and "failed=0" in result.output
+
+    later = "2099-09-20"
+    scheduled = runner.invoke(
+        app, ["rsi", "schedule", "--day", later, "--issue", "99199", "--data-dir", str(data_dir)]
+    )
+    assert scheduled.exit_code == 0, scheduled.output
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        count = connection.execute(
+            "SELECT count(*) FROM rsi_duty_instances WHERE duty_id='S1:sample' AND day=?",
+            (later,),
+        ).fetchone()[0]
+    assert count == 0
+
+
 def test_sweep_defaults_to_business_day(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         rsi_cli,
