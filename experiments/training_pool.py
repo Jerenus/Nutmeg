@@ -89,7 +89,26 @@ def call_proxy_rows(rows: list[dict], before: str) -> list[dict]:
     return out
 
 
-def inventory(rows: list[dict], ledger: dict, today: str) -> dict:
+def prediction_proxy_rows(rows: list[dict], stances: list[dict], *,
+                          forced: bool | None = None) -> list[dict]:
+    """F14 的另一份窗前代理：内核预测账里的单场面集承诺（`experiments/prediction_stances.py`
+    转录）。登记时刻是内核写的，早于开球即 proven；赛果与市场覆盖仍取语料同一行。
+    `forced`：None 全收，False 去掉 26131 那期强制表态，True 只要强制表态。"""
+    by_key = {r.get("key"): r for r in rows}
+    out = []
+    for s in stances:
+        r = by_key.get(s["key"])
+        if r is None or (forced is not None and s["forced"] is not forced):
+            continue
+        faces = s["faces"]
+        labels = {**(r.get("labels") or {}), "stance_structure": s["structure"],
+                  "stance_face": faces[0], "stance_cover": faces[1] if len(faces) == 2 else ""}
+        out.append({**r, "labels": labels, "provably_prospective": True if s["proven"] else None})
+    return out
+
+
+def inventory(rows: list[dict], ledger: dict, today: str,
+              stances: list[dict] | None = None) -> dict:
     out: dict[str, dict] = {}
     for exp in EXPERIMENTS:
         doc = _registry(exp)
@@ -113,6 +132,12 @@ def inventory(rows: list[dict], ledger: dict, today: str) -> dict:
             proxy = call_proxy_rows(rows, before="2026-09-23")
             proxy_result = adapter(proxy, window={"date_from": ""})
             entry["history"]["zucai_call_proxy"] = _reading(proxy_result)
+            if stances:
+                for name, forced in (("prediction_proxy", None),
+                                     ("prediction_proxy_unforced", False)):
+                    proxy = [r for r in prediction_proxy_rows(rows, stances, forced=forced)
+                             if r["provably_prospective"] is True]
+                    entry["history"][name] = _reading(adapter(proxy, window={"date_from": ""}))
         scratch = copy.deepcopy(ledger)
         current, _ = rsi_samples.grade(scratch, exp, rows, adapter, window=window, at=today)
         days = max(1, (date.fromisoformat(today) - date.fromisoformat(start)).days)
@@ -125,6 +150,9 @@ def inventory(rows: list[dict], ledger: dict, today: str) -> dict:
         entry["prospective"] = {**_reading(current), "per_day": round(rate, 2),
                                 "days_to_n_min": to_go}
         entry["power_if_history_true"] = power(entry["history"]["all"], falsifier)
+        if "prediction_proxy" in entry["history"]:
+            entry["power_if_prediction_proxy_true"] = power(
+                entry["history"]["prediction_proxy"], falsifier)
         out[exp] = entry
     return out
 
@@ -133,12 +161,18 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", default=os.path.join(ROOT, "experiments", "corpus-v2.json"))
     ap.add_argument("--samples", default=os.path.join(ROOT, "experiments", "rsi-samples.json"))
+    ap.add_argument("--stances",
+                    default=os.path.join(ROOT, "experiments", "prediction-stances.json"))
     ap.add_argument("--today", default=date.today().isoformat())
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
     with open(args.corpus, encoding="utf-8") as f:
         rows = json.load(f)["rows"]
-    result = inventory(rows, rsi_samples.load(args.samples), args.today)
+    stances = None
+    if os.path.exists(args.stances):
+        with open(args.stances, encoding="utf-8") as f:
+            stances = json.load(f)["rows"]
+    result = inventory(rows, rsi_samples.load(args.samples), args.today, stances)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=1)
@@ -153,10 +187,13 @@ def main() -> None:
         print(f"  历史日程：{e['history_days']}  每比赛日 {e['history_per_match_day']} 条")
         print(f"  前瞻：n={p['n']} {p['value_pp']:+.1f} [{p['ci'][0]:+.1f},{p['ci'][1]:+.1f}]  "
               f"{p['per_day']}/天  到 n_min 约 {p['days_to_n_min']} 天")
-        if e["power_if_history_true"]:
-            w = e["power_if_history_true"]
-            print(f"  历史效应为真时，到 n_min：证伪 {w['p_falsified']} / 成立 {w['p_survived']} / "
-                  f"跨线 {w['p_inconclusive']}；80% 出判决需 n≈{w['n_decisive_80']}")
+        for label, field in (("历史效应", "power_if_history_true"),
+                             ("预测账效应", "power_if_prediction_proxy_true")):
+            w = e.get(field)
+            if w:
+                print(f"  {label}为真时，到 n_min：证伪 {w['p_falsified']} / "
+                      f"成立 {w['p_survived']} / 跨线 {w['p_inconclusive']}；"
+                      f"80% 出判决需 n≈{w['n_decisive_80']}")
 
 
 if __name__ == "__main__":
