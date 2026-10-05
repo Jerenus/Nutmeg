@@ -36,7 +36,8 @@ def project_board(kernel, board_key: str) -> list[dict]:
 def compare(projected: list[dict], file_reads: list[dict], *,
             skip_match_ids: tuple[str, ...] | list[str] = ()) -> dict:
     skip = set(skip_match_ids)
-    by_k = {r["match_id"]: r for r in projected if r.get("match_id")}
+    by_k = {r["match_id"]: r for r in projected
+            if r.get("match_id") and r["match_id"] not in skip}
     by_f = {r["match_id"]: r for r in file_reads
             if r.get("match_id") and r["match_id"] not in skip}
     identical: list[str] = []
@@ -156,8 +157,10 @@ def run_projection(data_dir: Path, *, day: str | None = None, issue: str | None 
     degraded = False
     if materialize:
         if projected:
+            # 已对到竞彩的场次：内核足彩板上可能还留着对上之前交的旧版，不能随投影落盘
+            # （2026-10-05 修好跳过集后，26135 一度把 2–8 场写成新旧两条）
             carried = [r for r in file_reads if r.get("match_id") in set(skip)]
-            final = projected + carried
+            final = [r for r in projected if r.get("match_id") not in set(skip)] + carried
             if issue:
                 final.sort(key=lambda r: int(_code_of(r) or 0))
             reads_path.parent.mkdir(parents=True, exist_ok=True)

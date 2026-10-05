@@ -136,3 +136,25 @@ def test_mapped_match_ids_translate_the_channel_map_to_zucai_side_ids(tmp_path: 
         json.dumps({"7": {"match_id": "match-zc-7"}, "11": {"match_id": "match-zc-11"}}),
         encoding="utf-8")
     assert _mapped_match_ids(tmp_path, "26135") == ["match-jc-7", "match-zc-7"]
+
+
+def test_materialize_never_duplicates_a_channel_mapped_match(tmp_path: Path, monkeypatch) -> None:
+    from nutmeg.decision import judgment_projection as jp
+
+    zdir = tmp_path / "zucai"
+    zdir.mkdir()
+    (zdir / "26135-channel-map.auto.json").write_text(json.dumps({"match-jc-7": 7}), "utf-8")
+    (zdir / "26135-store-ids.json").write_text(
+        json.dumps({"7": {"match_id": "z-7"}, "9": {"match_id": "z-9"}}), "utf-8")
+    fresh = {"match_id": "z-7", "code": "7", "read_id": "new", "belief": {"home": 0.4}}
+    (zdir / "26135-reads.json").write_text(json.dumps([
+        fresh, {"match_id": "z-9", "code": "9", "read_id": "k9", "belief": {}}]), "utf-8")
+    stale = {"match_id": "z-7", "code": "7", "read_id": "old", "belief": {"home": 0.5}}
+    monkeypatch.setattr(jp, "project_board", lambda kernel, key: [
+        stale, {"match_id": "z-9", "code": "9", "read_id": "k9", "belief": {}}])
+
+    out = jp.run_projection(tmp_path, issue="26135", kernel=object(), write=False,
+                            materialize=True)
+    written = json.loads((zdir / "26135-reads.json").read_text("utf-8"))
+    assert [r["read_id"] for r in written] == ["new", "k9"]
+    assert out["result"]["only_in_kernel"] == [] and out["result"]["mismatch"] == []
