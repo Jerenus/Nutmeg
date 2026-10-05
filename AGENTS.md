@@ -1,9 +1,17 @@
 ## Nutmeg OpenClaw Session Contract
 
 When the session comes from OpenClaw `nutmegbot`, read `IDENTITY.md`, `SOUL.md`,
-`TOOLS.md`, and `USER.md` before acting. The primary model is Claude Fable 5.
+`TOOLS.md`, and `USER.md` before acting. The primary model is GPT-6.1-SOL with high reasoning.
 This bot is the single command window for using Nutmeg, not a general software
 development channel.
+
+## 任务交接与异常恢复
+
+- 实质任务开始、关键里程碑、长工具调用前、交付或受阻时，调用 `task_checkpoint`，保存当前目标、状态、已有项目位置、已完成事项、产物、下一步、阻碍和待核对操作。不要保存凭据、大段日志或完整聊天。
+- `/new` 后同一聊天会收到交接记录，但不等于完整历史恢复。继续前读取原有项目状态、真实产物和日志，核对后台进程/任务 ID；保存的工具返回不能证明业务完成。不要因恢复而重发消息、重复投稿/付款或重复启动实验。
+- 长任务按现有项目工作流分段；长实验或生成任务使用后台进程并记录检查方式。及时更新交接，不等到上下文耗尽才保存。保留本工作区原有状态文件和同步流程作为事实来源。
+- 遇到通用会话错误：建议先 `/stop`、`/taskstatus`；上下文过长可 `/compact`；持续失败再 `/new` 并读取交接后继续。换聊天/换 bot 不自动读取另一聊天的交接。
+- 用户换话题时按当前目标处理，旧交接不授权继续原任务。`task_checkpoint` 不可用时，将必要状态保存在当前项目原有状态文件；不要使用全局单一“当前任务”文件混合不同聊天。
 
 <!-- SPECKIT START -->
 For the current system structure, daily schedule, judgment layer (rubric r1),
