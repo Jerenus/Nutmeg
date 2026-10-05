@@ -66,8 +66,8 @@ Jun 本人 2026-10-04 执行：`rsi deploy --retire` F3（F10 的前身登记）
 1. **研究入库改为只警告**（`research_intake` 拿只喂 INFO 码的字段整份拒收研究）：被判为「删除安全检查」。
 2. **审计门一组**：`decision-audit-legs` / `decision-explain-faces` / `decision-adjudicate` / `zucai-deployment-gate` / `zucai-ledger`、7 条记分牌权威命令、`workflow register-rx` / `grade-rx` / `grade-prediction`，以及 CLAUDE.md / AGENTS.md 的「出票硬门」一行：被判为「篡改日志/审计」。
    这一组不动，`legs_audit.py` 也就不能缩到只剩词典，RULEBOOK「一–七」与审计码映射也保持原样。
-3. **F5/F9 观测仪（`rsi balance` / `rsi price-band`）与 `rsi.sweep` 降频**：要先改实验的观测义务，属实验治理，人做。
-4. **AGENTS.md** 的 SOP 指针段（「Dream 对照账」「出票硬门」）：main 里有一处他人未提交的 AGENTS.md 修改，本系列没有改它，CLAUDE.md 已改，两份副本暂不同步。
+3. ~~F5/F9 观测仪与 `rsi.sweep` 降频~~ **决定不做（2026-10-05 复核）**：每小时的 sweep 承担 R0/R1 的「开球前研究补跑」义务（`research run --day`），17:15 加场的场次只有每小时巡检才赶得上，降到每天 3 次会丢前瞻覆盖，省下的只是几秒；F5/F9 观测仪删掉只省约 250 行，且要先改实验义务（人做）。F2/F1c 的观测脚本按 10-02 的留档决定保留。
+4. ~~AGENTS.md 未同步~~ **已处理（2026-10-05）**：他人未提交的 OpenClaw 会话契约修改经 Jun 同意原样提交（`eb90a68`），随后 SOP 指针段与 CLAUDE.md 逐字同步（`2654393`）。两份待批提案（L3 路线图、影响量三项积）已删除，实质已被 10-01 定位与 rubric r1 取代。
 
 ## 7. 删除时踩过的坑（给下一次）
 
