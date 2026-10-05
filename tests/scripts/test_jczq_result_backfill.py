@@ -73,19 +73,38 @@ def _result_payload(codes: list[str]) -> str:
 def test_stale_warning_is_first_line_and_exit_code_is_two(tmp_path, monkeypatch, capsys):
     daily = tmp_path / "daily"
     (daily / "2026-09-18").mkdir(parents=True)
-    (daily / "2026-09-18" / "sporttery_markets.json").write_text("{}")
+    (daily / "2026-09-18" / "sporttery_markets.json").write_text(
+        json.dumps(_board(["周五001"])).replace("2026-09-20", "2026-09-18"))
     out = tmp_path / "jc-results.json"
     out.write_text(json.dumps({"2026-09-17": {}}), encoding="utf-8")
     monkeypatch.setattr(backfill, "DAILY", daily)
     monkeypatch.setattr(backfill, "OUT", out)
     monkeypatch.setattr(backfill.httpx, "Client", _FailingClient)
 
-    exit_code = backfill.collect(0, today=date(2026, 9, 20))
+    exit_code = backfill.collect(0, today=date(2026, 9, 21))
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == "⚠️RESULTS_STALE: latest=2026-09-17 lag=3d"
+    assert lines[0] == "⚠️RESULTS_STALE: latest=2026-09-17 lag=4d unsealed=2026-09-18"
     assert any("RuntimeError offline" in line for line in lines[1:])
     assert exit_code == 2
+
+
+def test_days_without_matches_do_not_count_as_lag(tmp_path, monkeypatch, capsys):
+    """2026-10-05：国庆 10-01..10-04 竞彩空盘，最新封存日停在 09-30，按日历算「落后 5 天」
+    每次退出 2、状态页常红——可那几天根本没有赛果可封。只看真有比赛的过去板面日。"""
+    daily = tmp_path / "daily"
+    for day in ("2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"):
+        (daily / day).mkdir(parents=True)
+        (daily / day / "sporttery_markets.json").write_text("{}")
+    out = tmp_path / "jc-results.json"
+    out.write_text(json.dumps({"2026-09-30": {"周二001": {}}}), encoding="utf-8")
+    monkeypatch.setattr(backfill, "DAILY", daily)
+    monkeypatch.setattr(backfill, "OUT", out)
+    monkeypatch.setattr(backfill.httpx, "Client", _StaticClient)
+    _StaticClient.payload = "$"
+
+    assert backfill.collect(0, today=date(2026, 10, 5)) == 0
+    assert "RESULTS_STALE" not in capsys.readouterr().out
 
 
 def test_two_day_lag_is_not_stale(tmp_path, monkeypatch, capsys):

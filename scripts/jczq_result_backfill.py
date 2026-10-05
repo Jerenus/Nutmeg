@@ -75,6 +75,13 @@ def _board_codes(day_dir: Path, day: str) -> set[str]:
     return codes
 
 
+def _is_past(raw: str, current_day: date, *, min_days: int) -> bool:
+    try:
+        return (current_day - date.fromisoformat(raw)).days >= min_days
+    except ValueError:
+        return False
+
+
 def parse_day(text: str) -> dict[str, dict]:
     """``{竞彩编号: {match_id, ft_home, ft_away, ht_home, ht_away, line}}``。"""
     if "$" not in text:
@@ -148,6 +155,14 @@ def collect(sleep_s: float, *, today: date | None = None) -> int:
         except ValueError:
             continue
     lag = (current_day - max(valid_dates)).days if valid_dates else None
+    # 落后只按「真有比赛的过去板面日」算（2026-10-05）：国庆 10-01..10-04 竞彩空盘，最新封存日
+    # 停在 09-30，按日历算落后 5 天、每次退出 2，可那几天根本没有赛果可封。只有某个 3 天前的
+    # 有赛板面日至今没封存，才说明回填真的停了。
+    unsealed_old = [
+        raw for raw in dates
+        if raw not in done and _is_past(raw, current_day, min_days=3)
+        and _board_codes(DAILY / raw, raw)
+    ]
     incomplete: list[tuple[str, int, int]] = []
     for raw in dates:
         try:
@@ -167,8 +182,9 @@ def collect(sleep_s: float, *, today: date | None = None) -> int:
     # 2026-09-23 之前每天 09:30 都因当日 0/N 报退出码 2，把状态条常年染红。
     stale_days = [row for row in incomplete if row[0] != current_day.isoformat()]
     pending_days = [row for row in incomplete if row[0] == current_day.isoformat()]
-    if lag is not None and lag > 2:
-        print(f"⚠️RESULTS_STALE: latest={max(valid_dates).isoformat()} lag={lag}d")
+    if unsealed_old:
+        latest = max(valid_dates).isoformat() if valid_dates else "none"
+        print(f"⚠️RESULTS_STALE: latest={latest} lag={lag}d unsealed={','.join(unsealed_old)}")
     elif stale_days:
         detail = ",".join(f"{d}({present}/{total})" for d, present, total in stale_days)
         print(f"⚠️RESULTS_STALE: incomplete={detail}")
@@ -178,7 +194,7 @@ def collect(sleep_s: float, *, today: date | None = None) -> int:
     for message in messages:
         print(message)
     print(f"赛果回填：本轮 {fetched} 天，失败 {failed}；累计 {len(done)} 天 / {n} 场 → {OUT}")
-    return 2 if (lag is not None and lag > 2) or stale_days else 0
+    return 2 if unsealed_old or stale_days else 0
 
 
 if __name__ == "__main__":
