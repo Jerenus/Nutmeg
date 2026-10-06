@@ -64,3 +64,19 @@
 - 全量测试退出码 0（每个提交前都跑）；新增测试：`test_day_decisions`（两类现算决定、旧种类剔除）、`test_cli_betslip_preview`（预审留痕）、`test_cli_rsi`（退役停义务）、`test_zucai_auto_judgment`（自动 legs-base、手工版不覆盖、初稿可读）、`test_pool`、`test_nutmeg_scheduler_ops`（空盘与非空盘两种结局）、`test_ops_status` / `test_day_ops` / `test_day_runs`（月度排程）。
 - 实跑：空盘日 Dream dry-run 返回 `board_too_small … (empty board)`；研究入库返回「空盘：入库跳过」；因子提案全量跑通；账房定时器命令出 9 月账；早盘入板空盘 OK。
 - 内核：F2/F1c 状态 retired，义务 retired。
+
+## 2026-10-06 实地验证：推送与定时任务修复（follow-ups 第 3 条结账）
+
+10-05 夜的三处修复（`eb006f1` 推送降噪、`827be6e` 赛果回填只按有比赛的日子判过期、`aabcb05` 退役义务不排不跑）在 10-05 晚到 10-06 上午的实地结果：
+
+| 时刻 | 任务 | 结果 |
+|---|---|---|
+| 10-05 17:15 | 临场刷新 | 成功，无 am degraded |
+| 10-05 18:30 | 足彩备料复核 | 只因 4 条位移超门槛推送一次，符合新规则 |
+| 10-05 23:00 | rsi sweep | F4 `nutmeg plan` 退出 2——发生在 `aabcb05`（23:01:58）提交之前，最后一次 |
+| 10-06 08:00 | 早盘入库 | `NUTMEG_OK stage=am empty_board`（周二板 0 在售 / 24 未开售，合法空盘），退出 0；stderr 里的 `Sporttery calculator empty` 是走到空盘判定前的诊断，不触发推送 |
+| 10-06 09:30 | 赛果回填 | 退出 0，「本轮 1 天，失败 0」，10-05 七场封存（1,314 → 1,321 场） |
+| 10-06 09:45 | 结算 | 退出 0，10-05 两张竞彩 −¥200，七场 Brier 市场 0.4748 / 终判 0.4703 |
+| 10-06 全天至 10:00 | sweep ×4、播报 ×N | sweep `ran=0 failed=0`；播报 `sent=0 failed=0` |
+
+launchd 各任务最近退出码全为 0。`day.broadcast.err.log` 里的时区 TypeError 最后写于 09-24，是旧错误。结论：无误报，第 3 条关闭。
