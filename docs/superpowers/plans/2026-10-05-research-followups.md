@@ -41,6 +41,11 @@
 - D-F（开球早于 10:00）：不加夜间批次，作为已知缺口；某月这类场次超过板面 5% 再议。不需要动作。
 - 做法：Jun 在 Claude Code 里切出 auto mode 后逐项确认执行（上次即使批准也被分类器拦下）。详见 `evidence/2026-10-03-overdesign-audit.md` §6。
 
+### 14. 10-06 补记：定时任务的 claude 登录、过程回放漏票、国家队前提纠正
+- **launchd 下 `claude -p` 登录过期**（10-06 11:13 首见；`launchctl submit` 一次性作业复现：`Failed to authenticate: OAuth session expired and could not be refreshed`）。主循环会话里的 shell 能调通，是因为它借用了会话自己的认证，不代表定时任务能用。受影响：10:00 深研、每小时补研究、10:45 读者 B、brief 的逻辑句。代码侧已修（`dd70ff1`：认证失败停整轮、不占预算、不记永久拒绝、exit 1 变红）；**登录要 Jun 本人在普通终端里 `claude` → `/login` 重登**，然后用一次性 launchd 作业复验。
+- **过程回放漏实票**：`day.settle` 跑的 `workbench-export --date <昨天>` 只读文件事件流，不读内核/登记簿，10-05 登记了 5 张实票，`daily/2026-10-06/retro.md` 六节全空；网页 `/replay` 按足彩期号取票，竞彩票（issue 为空）也带不出来。修法：CLI 走与网页同一条合并流，取票改为「期号命中或 `placed_at`＝当日」。
+- **国家队前提纠正没有落点**：26135/10-05 的研究正文都写了「前提纠正：画像为空」，但没有结构化 `premise_corrections`（store 里国家队没有 profile_notes），`zucai-premise-corrections` 无可回写。国际比赛日每次都从零取证主帅/伤停。是否给国家队建画像，等下一个国际窗口前再定。
+
 ## 四、只需观察
 
 - titan007 板面偶发「疑似 WAF」（10-05 早盘一次，当天由 17:15 刷新补齐）；09-20 以来国际赔率覆盖每天都是全量。连续两天失败再处理。
