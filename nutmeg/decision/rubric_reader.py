@@ -17,7 +17,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from nutmeg.decision.claude_models import model_argv, model_label, reader_model
+from nutmeg.decision.claude_models import claude_env, model_argv, model_label, reader_model
 from nutmeg.decision.rubric import tolerate, tolerate_belief, validate_rubric
 from nutmeg.decision.rubric_items import ITEMS, RUBRIC_VERSION, question_table
 
@@ -72,7 +72,7 @@ def _claude_cli(prompt: str, stdin: str) -> tuple[int, str]:
             "--allowedTools", "", "--max-turns", "1", "--output-format", "text"]
     with tempfile.TemporaryDirectory() as neutral:
         proc = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=300,
-                               cwd=neutral, check=False)
+                               cwd=neutral, env=claude_env(), check=False)
     return proc.returncode, proc.stdout
 
 

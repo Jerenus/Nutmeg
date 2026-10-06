@@ -13,7 +13,13 @@ from threading import Event, Lock
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from nutmeg.decision.claude_models import model_argv, model_label, research_model
+from nutmeg.decision.claude_models import (
+    claude_env,
+    is_auth_failure,
+    model_argv,
+    model_label,
+    research_model,
+)
 from nutmeg.decision.research_ledger import ResearchRunLedger
 from nutmeg.decision.research_prompt import render_brief, system_prompt
 from nutmeg.decision.stance import validate_stance
@@ -34,16 +40,7 @@ Claude = Callable[[str, str], tuple[int, str]]
 # claude CLI 没登录/登录过期：环境问题，不是这场比赛的问题（2026-10-06 launchd 下 OAuth
 # 过期，12 场各试 2 次、各记一份「永久拒绝」，烧掉 24 次预算）。撞到即停整轮，
 # 不重试、不记拒绝、不占预算。
-AUTH_FAILURE_MARKERS = (
-    "Failed to authenticate",
-    "OAuth session expired",
-    "Invalid API key",
-    "Please run /login",
-)
-
-
-def _is_auth_failure(text: str) -> bool:
-    return any(marker in (text or "") for marker in AUTH_FAILURE_MARKERS)
+_is_auth_failure = is_auth_failure
 Fulfill = Callable[[list[str]], tuple[int, str]]
 Profile = Callable[[str], dict]
 Now = Callable[[], datetime]
@@ -84,7 +81,7 @@ def _claude_cli(prompt: str, brief: str) -> tuple[int, str]:
             capture_output=True,
             text=True,
             timeout=900,
-            cwd=neutral,
+            cwd=neutral, env=claude_env(),
             check=False,
         )
     return process.returncode, process.stdout

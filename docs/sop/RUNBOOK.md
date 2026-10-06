@@ -6,6 +6,7 @@
 
 `uv run nutmeg ops-status` —— launchd + OpenClaw + 不会自己消失的待办，一屏看全，**只读**。
 <http://127.0.0.1:8787/observe> —— RSI 实验全景（只读）；`/observe/day/<date>` 看当天候选树与资金方案。
+`uv run nutmeg claude-auth-check` —— 定时任务里 `claude -p`（深研／读者 B／解读句）能不能登录。长期 token 放在 `~/.config/nutmeg/claude-oauth-token`（600，仓外，`claude setup-token` 生成，约一年有效）；**主循环会话里跑出的 ok 不算数**（会话 shell 借用会话认证），要在 launchd 里复验（`launchctl submit` 一次性作业，看完立即 `launchctl remove`）。出生事故 2026-10-06：钥匙串登录过期，12 场深研全挂。
 **出生事故 2026-09-17**（为什么每条结局都要并排时间证据）→ `INCIDENTS.md` §状态页
 
 > **并集样本池（2026-09-27 起，Jun 定）**：每天的分析样本池 = 当天截止的传统足彩期次（优先）∪ 竞彩板面，按对号表去重（人工 `{issue}-channel-map.json` 优先，缺则备料自动落 `.auto`）。`research run` 队列取并集：未试过优先 → 足彩独有场次优先 → 开球先后；足彩独有场次的研究写 `zucai/{issue}-research-m{n}.json`，登记 R1。研究有新产出、17:15 刷新、足彩备料之后都跑 `uv run nutmeg research refresh --day <日>`：竞彩入库重建 Read、足彩由研究表态自动转录 Read（judge=`ai-pool`；主循环 judgment-v1 永远优先）、**未开球且内容有变的 Read 自动交本体**（开球后一律不交）。足彩备料完成会自动带期号跑 `decision-am --issue`（产 store-ids），足彩场次才进得了池。预算仍 40 次/天。

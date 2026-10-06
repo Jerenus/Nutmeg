@@ -7,7 +7,7 @@ import tempfile
 from collections.abc import Callable
 
 from nutmeg.decision.brief_prompt import LOGIC_SYSTEM_PROMPT, render_logic_input
-from nutmeg.decision.claude_models import logic_model, model_argv, model_label
+from nutmeg.decision.claude_models import claude_env, logic_model, model_argv, model_label
 
 Claude = Callable[[str, str], tuple[int, str]]
 LOGIC_DAILY_BUDGET = 40
@@ -21,7 +21,7 @@ def _claude_cli(prompt: str, stdin: str) -> tuple[int, str]:
             "--allowedTools", "", "--max-turns", "1", "--output-format", "text"]
     with tempfile.TemporaryDirectory() as neutral:
         proc = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=300,
-                               cwd=neutral, check=False)
+                               cwd=neutral, env=claude_env(), check=False)
     return proc.returncode, proc.stdout
 
 

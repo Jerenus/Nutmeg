@@ -585,6 +585,32 @@ def decision_adjudicate(
     )
 
 
+@_cli.app.command("claude-auth-check")
+def claude_auth_check() -> None:
+    """定时任务用的 claude 无人值守认证自检：token 文件状态 + 真调一次（不打印 token）。
+
+    2026-10-06 launchd 下钥匙串登录过期，深研/读者 B/解读句全挂；修法是
+    `claude setup-token` 生成长期 token 放进私有文件（见 `claude_models`）。
+    """
+    from nutmeg.decision import claude_models
+
+    r = claude_models.auth_check()
+    source = {"token_file": "token 文件", "env": "环境变量",
+              "inherited_login": "继承登录（钥匙串）"}[r["source"]]
+    where = (f"{r['file']}，权限 {r['file_mode']}，写入 {r['file_age_days']} 天前"
+             if r["file_exists"] else f"{r['file']} 不存在")
+    if r["ok"]:
+        _cli.typer.echo(f"claude 无人值守认证：ok｜来源 {source}｜{where}")
+        if (r["file_age_days"] or 0) >= 330:
+            _cli.typer.echo("⚠️ 长期 token 将满一年，提前用 `claude setup-token` 重新生成")
+        return
+    kind = "认证失败" if r["auth_failure"] else f"claude 退出码 {r['returncode']}"
+    _cli.typer.echo(f"⚠️ claude {kind}｜来源 {source}｜{where}\n  {r['detail']}", err=True)
+    _cli.typer.echo("  修法：普通终端运行 `claude setup-token`，把输出的 token 存进上面的文件"
+                    "（chmod 600），再跑本命令", err=True)
+    raise _cli.typer.Exit(code=1)
+
+
 @_cli.app.command("ops-status")
 def ops_status(
     data_dir: Path = _AUDIT_DATA_DIR_OPTION,
