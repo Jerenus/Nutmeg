@@ -228,3 +228,17 @@ def test_read_pending_is_a_side_path_that_never_breaks_the_refresh(tmp_path, mon
 
     monkeypatch.setattr(reader, "pending_research", boom)
     mod._read_pending(tmp_path)  # 不抛
+
+
+def test_research_run_exits_nonzero_and_says_so_when_claude_is_logged_out(tmp_path, monkeypatch):
+    """认证失败必须让定时任务变红并说清楚要重新登录；exit 0 会被当成「今天没场次」。"""
+    import nutmeg.decision.research_runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "run_day", lambda **kw: {
+        "matches": [{"code": "周二001", "status": "auth_failed", "seconds": 2.5},
+                    {"code": "周二002", "status": "skipped_auth"}],
+        "used_attempts": 0, "written": 0, "auth_failed": True})
+    result = CliRunner().invoke(app, ["research", "run", "--day", "2026-10-06",
+                                      "--jczq-dir", str(tmp_path), "--data-dir", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "认证失败" in result.output and "claude" in result.output

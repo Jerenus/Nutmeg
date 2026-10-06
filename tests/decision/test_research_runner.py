@@ -749,3 +749,111 @@ def test_rubric_items_are_stamped_and_tilt_is_derived_from_them(tmp_path):
     assert items["F_absence_away"]["captured_at_declared"] == "2026-09-19T08:00:00+08:00"
     assert written["rubric"]["belief"] == {"3": 0.55, "1": 0.27, "0": 0.18}
     assert written["rubric"]["coerced"] == ["F_absence_home: 答是但无来源 → 弃权"]
+
+
+AUTH_FAIL = "Failed to authenticate: OAuth session expired and could not be refreshed\n"
+
+
+def test_auth_failure_stops_the_run_without_burning_budget_or_marking_permanent(tmp_path):
+    """10-06 11:13：launchd 下 claude OAuth 过期，12 场每场试 2 次、各记一份「永久拒绝」，
+    烧掉 24 次预算，修好登录后补跑也不会再试。认证失败是环境问题，不是这场比赛的问题：
+    第一次撞到就停整轮，不重试、不记拒绝、不占预算。"""
+    root = _board(tmp_path, n=3)
+    calls = []
+
+    def logged_out(system, brief):
+        calls.append(brief)
+        return 1, AUTH_FAIL
+
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=root,
+        data_dir=tmp_path,
+        claude=logged_out,
+        fulfill=lambda argv: (0, ""),
+        profile=lambda match_id: {},
+        budget=10,
+        concurrency=1,
+    )
+
+    assert len(calls) == 1
+    assert report["used_attempts"] == 0
+    assert report["auth_failed"] is True
+    assert [row["status"] for row in report["matches"]] == [
+        "auth_failed", "skipped_auth", "skipped_auth"]
+    assert not list((root / "daily" / "2026-09-19").glob("*.rejected.json"))
+
+
+def test_legacy_auth_only_rejection_is_retried_as_never_attempted(tmp_path):
+    """修复前写下的「永久拒绝」若全是认证错误，按没试过处理（今天那 12 份）。"""
+    root = _board(tmp_path, n=1)
+    rejected_path = root / "daily" / "2026-09-19" / "research-周五001.rejected.json"
+    rejected_path.write_text(
+        json.dumps(
+            {
+                "code": "周五001",
+                "attempts": 2,
+                "attempts_total": 2,
+                "last_attempt_at": datetime.now(BJ).isoformat(timespec="seconds"),
+                "next_retry_after": None,
+                "permanent": True,
+                "attempt_errors": [f"claude 退出码 1\n{AUTH_FAIL.strip()}"] * 2,
+                "error": "claude 退出码 1",
+                "raw_output": AUTH_FAIL,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=root,
+        data_dir=tmp_path,
+        claude=lambda system, brief: (0, GOOD),
+        fulfill=lambda argv: (0, ""),
+        profile=lambda match_id: {},
+        budget=10,
+    )
+
+    assert report["matches"][0]["status"] == "done"
+
+
+def test_legacy_auth_only_attempts_are_refunded_to_the_daily_budget(tmp_path):
+    """修复前认证失败记下的尝试没调到模型，退回当天预算（10-06 烧掉的 24 次）。"""
+    from nutmeg.decision.research_ledger import ResearchRunLedger
+
+    root = _board(tmp_path, n=1)
+    day_dir = root / "daily" / "2026-09-19"
+    (day_dir / "research-周五001.rejected.json").write_text(
+        json.dumps(
+            {
+                "code": "周五001", "attempts": 2, "attempts_total": 2,
+                "last_attempt_at": datetime.now(BJ).isoformat(timespec="seconds"),
+                "next_retry_after": None, "permanent": True,
+                "attempt_errors": [f"claude 退出码 1\n{AUTH_FAIL.strip()}"] * 2,
+                "error": "claude 退出码 1", "raw_output": AUTH_FAIL,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    ResearchRunLedger(day_dir).append({
+        "run_id": "rr-legacy", "idempotency_key": "research-run:2026-09-19:rr-legacy",
+        "day": "2026-09-19", "budget": 2, "used_attempts": 2, "written": 0,
+        "concurrency": 2, "started_at": "2026-09-19T08:00:00+08:00",
+        "finished_at": "2026-09-19T08:00:05+08:00",
+        "matches": [{"code": "周五001", "status": "rejected", "attempts": 2}],
+    })
+
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=root,
+        data_dir=tmp_path,
+        claude=lambda system, brief: (0, GOOD),
+        fulfill=lambda argv: (0, ""),
+        profile=lambda match_id: {},
+        budget=2,
+    )
+
+    assert report["matches"][0]["status"] == "done"

@@ -130,6 +130,11 @@ def run(
         # 定时 sweep 只跑 `research run`：新研究落盘后若不重建 Read，F9 读不到该场、
         # 义务永远履约不了（2026-09-26 017–025 全漏）
         _refresh(day, data_dir)
+    if report.get("auth_failed"):
+        # 环境问题不是「今天没场次」：exit 1 让状态页变红（2026-10-06 launchd 下 OAuth 过期）
+        typer.echo("⚠️ claude CLI 认证失败（登录过期）：本轮已停，未占预算、未记拒绝；"
+                   "重新登录后再跑 `nutmeg research run`", err=True)
+        raise typer.Exit(code=1)
 
 
 def _refresh(day: str, data_dir: Path) -> None:

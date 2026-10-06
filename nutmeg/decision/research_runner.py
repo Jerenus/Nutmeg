@@ -9,7 +9,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -30,6 +30,20 @@ RETRY_NOTE = (
 )
 
 Claude = Callable[[str, str], tuple[int, str]]
+
+# claude CLI 没登录/登录过期：环境问题，不是这场比赛的问题（2026-10-06 launchd 下 OAuth
+# 过期，12 场各试 2 次、各记一份「永久拒绝」，烧掉 24 次预算）。撞到即停整轮，
+# 不重试、不记拒绝、不占预算。
+AUTH_FAILURE_MARKERS = (
+    "Failed to authenticate",
+    "OAuth session expired",
+    "Invalid API key",
+    "Please run /login",
+)
+
+
+def _is_auth_failure(text: str) -> bool:
+    return any(marker in (text or "") for marker in AUTH_FAILURE_MARKERS)
 Fulfill = Callable[[list[str]], tuple[int, str]]
 Profile = Callable[[str], dict]
 Now = Callable[[], datetime]
@@ -165,6 +179,14 @@ def _research_one(
         try:
             return_code, text = claude(prompt, brief)
             last_text = text
+            if return_code != 0 and _is_auth_failure(text):
+                return {
+                    "status": "auth_failed",
+                    "raw_output": text,
+                    "error": f"claude 退出码 {return_code}",
+                    "seconds": round(time.monotonic() - started, 1),
+                    "attempts": attempts,
+                }
             if return_code != 0:
                 raise ValueError(f"claude 退出码 {return_code}")
             research = _validate(text, leg)
@@ -227,7 +249,11 @@ def _load_rejected(path: Path) -> dict:
         last_attempt = last_attempt.replace(tzinfo=BJ)
     permanent = bool(document.get("permanent", False))
     attempt_errors = list(document.get("attempt_errors") or [])
-    if "Reached max turns" in str(document.get("raw_output", "")):
+    auth_only = bool(attempt_errors) and all(_is_auth_failure(e) for e in attempt_errors)
+    if auth_only:
+        # 修复前把认证失败记成了拒绝：按没试过处理
+        permanent = False
+    elif "Reached max turns" in str(document.get("raw_output", "")):
         # 旧记录里 attempts_total == 1 的 max-turns 拒绝仍允许带标记重试一次
         if attempts_total >= 2:
             permanent = True
@@ -237,9 +263,11 @@ def _load_rejected(path: Path) -> dict:
         and "claude 退出码" in attempt_errors[-1]
     ):
         permanent = True
-    next_retry = None if permanent else _retry_after(last_attempt, attempts_total)
+    next_retry = (None if permanent or auth_only
+                  else _retry_after(last_attempt, attempts_total))
     normalized = {
         **document,
+        **({"auth_only": True} if auth_only else {}),
         "attempts_total": attempts_total,
         "last_attempt_at": last_attempt.isoformat(timespec="seconds"),
         "next_retry_after": (
@@ -252,6 +280,16 @@ def _load_rejected(path: Path) -> dict:
             json.dumps(normalized, ensure_ascii=False, indent=1), encoding="utf-8"
         )
     return normalized
+
+
+def _auth_refund(path: Path) -> int:
+    """修复前认证失败记成拒绝的尝试数（没调到模型，退回当天预算）。"""
+    if not path.exists():
+        return 0
+    document = _load_rejected(path)
+    if "auth_refund" in document:
+        return int(document["auth_refund"])
+    return int(document.get("attempts_total", 0)) if document.get("auth_only") else 0
 
 
 def _used_attempts(run: dict) -> int:
@@ -325,15 +363,25 @@ def run_day(
         raise ValueError("concurrency 必须 >= 1")
     prompt = system_prompt()
     ledger = ResearchRunLedger(day_dir)
-    prior_used_attempts = sum(_used_attempts(run) for run in ledger.runs())
+    prior_used_attempts = max(0, sum(_used_attempts(run) for run in ledger.runs())
+                              - sum(_auth_refund(entry["rejected"]) for entry in entries))
     available_attempts = max(0, budget - prior_used_attempts)
     used_attempts = 0
     extra_attempts_used = 0
     attempt_lock = Lock()
+    auth_down = Event()
+
+    def watched_claude(system: str, brief: str) -> tuple[int, str]:
+        return_code, text = claude(system, brief)
+        if return_code != 0 and _is_auth_failure(text):
+            auth_down.set()
+        return return_code, text
 
     def claim_extra_attempt() -> bool:
         nonlocal extra_attempts_used, used_attempts
         with attempt_lock:
+            if auth_down.is_set():
+                return False
             if extra_attempts_used >= extra_attempts_available:
                 return False
             extra_attempts_used += 1
@@ -362,8 +410,8 @@ def run_day(
             continue
         rejected_path = entry["rejected"]
         attempts_total = 0
-        if rejected_path.exists():
-            rejected = _load_rejected(rejected_path)
+        rejected = _load_rejected(rejected_path) if rejected_path.exists() else None
+        if rejected is not None and not rejected.get("auth_only"):
             attempts_total = int(rejected["attempts_total"])
             if rejected["permanent"]:
                 rows_by_code[board_code] = {
@@ -420,6 +468,8 @@ def run_day(
             if first:
                 first = False
                 with attempt_lock:
+                    if auth_down.is_set():
+                        return False
                     used_attempts += 1
                 return True
             return claim_extra_attempt()
@@ -433,7 +483,7 @@ def run_day(
                 prompt=prompt,
                 brief=brief,
                 leg=leg,
-                claude=claude,
+                claude=watched_claude,
                 claim_attempt=reserved_claim(),
                 max_attempts=min(MAX_ATTEMPTS, 3 - attempts_total),
             )
@@ -447,6 +497,11 @@ def run_day(
         runnable, results, strict=True
     ):
         output = entry["output"]
+        if result["status"] == "auth_failed":
+            used_attempts -= result["attempts"]     # 没调到模型，不占预算
+            result = {**result, "attempts": 0}
+        elif result["status"] == "skipped_budget" and auth_down.is_set():
+            result = {**result, "status": "skipped_auth"}
         if result["status"] == "done":
             written += 1
             research = result.pop("research")
@@ -479,11 +534,15 @@ def run_day(
             attempts_total = previous_attempts + result["attempts"]
             rejected_path = entry["rejected"]
             previous_errors: list[str] = []
+            auth_refund = _auth_refund(rejected_path)
             if rejected_path.exists():
                 previous_document = json.loads(
                     rejected_path.read_text(encoding="utf-8")
                 )
-                previous_errors = list(previous_document.get("attempt_errors") or [])
+                previous_errors = [
+                    error for error in previous_document.get("attempt_errors") or []
+                    if not _is_auth_failure(error)
+                ]
             attempt_errors = previous_errors + result["attempt_errors"]
             permanent = bool(result["permanent"]) or (
                 len(attempt_errors) >= 2
@@ -509,6 +568,7 @@ def run_day(
                 "attempt_errors": attempt_errors,
                 "error": result["error"],
                 "raw_output": result["raw_output"],
+                **({"auth_refund": auth_refund} if auth_refund else {}),
             }
             rejected_path.write_text(
                 json.dumps(rejected, ensure_ascii=False, indent=1), encoding="utf-8"
@@ -532,6 +592,7 @@ def run_day(
         "budget": budget,
         "used_attempts": used_attempts,
         "written": written,
+        "auth_failed": auth_down.is_set(),
         "concurrency": concurrency,
         "started_at": started_at.isoformat(timespec="seconds"),
         "finished_at": current_time().isoformat(timespec="seconds"),
