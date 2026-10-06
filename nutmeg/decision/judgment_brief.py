@@ -86,8 +86,6 @@ def jczq_brief(data_dir: Path, day: str) -> dict:
                                     ("research" if leg.get("judgment_tier") == "deep_research"
                                      else "market"))
         stance = read.get("stance") or leg.get("stance")
-        flags = (list(leg.get("directional_flags") or [])
-                 + list(leg.get("nondirectional_flags") or []))
         override = read.get("override") or {}
         note = override.get("note") if override else leg.get("note")
         sidecar = _read(day_dir / f"rubric-{code}.json", None)
@@ -101,7 +99,7 @@ def jczq_brief(data_dir: Path, day: str) -> dict:
                 abs(float(belief.get(f, 0)) - float(market.get(f, 0))) < 0.005 for f in FACES)),
             "stance": _stance_text(stance), "kind": _KIND.get(kind, kind),
             "fav": f"★{CODE_OF[fav_face]} {fav_p * 100:.0f}%" if fav_face and fav_p >= FAV else "",
-            "single": singles.get(code), "flags": "、".join(flags) or "",
+            "single": singles.get(code), "flags": _flags_text(leg) or "",
             "note": _first_sentence(note),
             "confidence": read.get("confidence") or leg.get("confidence"),
         })
@@ -134,6 +132,17 @@ def render_jczq(brief: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _flags_text(leg: dict) -> str:
+    """方向性旗是 [旗名, 面] 二元组（research_intake 归一后），无方向旗是裸名。
+
+    竞彩与足彩同一形状（足彩 26134、竞彩 10-06 周二004 各崩过一次 TypeError）。
+    """
+    return "、".join(
+        [f"{f[0]}→{f[1]}" if isinstance(f, list | tuple) else str(f)
+         for f in leg.get("directional_flags") or []]
+        + [str(f) for f in leg.get("nondirectional_flags") or []])
+
+
 def zucai_brief(data_dir: Path, issue: str) -> dict:
     zdir = Path(data_dir) / "zucai"
     legs_doc = _read(zdir / f"{issue}-legs-base.json", {}) or {}
@@ -159,11 +168,7 @@ def zucai_brief(data_dir: Path, issue: str) -> dict:
             "faces": leg.get("faces") or "", "action": j.get("action") or "",
             "stance": _stance_text(stance),
             "fav": f"★{CODE_OF[fav_face]} {fav_p * 100:.0f}%" if fav_face and fav_p >= FAV else "",
-            # 方向性旗是 [旗名, 面] 二元组（research_intake 归一后），无方向旗是裸名
-            "flags": "、".join(
-                [f"{f[0]}→{f[1]}" if isinstance(f, list | tuple) else str(f)
-                 for f in leg.get("directional_flags") or []]
-                + [str(f) for f in leg.get("nondirectional_flags") or []]),
+            "flags": _flags_text(leg),
             "note": _first_sentence(j.get("note") or leg.get("note")),
         })
     return {"issue": issue, "rows": rows, "n": len(rows),

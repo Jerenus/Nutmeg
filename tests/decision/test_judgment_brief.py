@@ -97,6 +97,21 @@ def test_zucai_brief_renders_directional_flag_pairs(tmp_path: Path) -> None:
     assert row["flags"] == "anchor_shield_out→1、two_way_instability"
 
 
+def test_jczq_brief_renders_directional_flag_pairs(tmp_path: Path) -> None:
+    """竞彩同样是 [旗名, 面] 二元组；10-06 周二004 带方向旗，初判包崩 TypeError。
+
+    （足彩 26134 已修过同一处。）
+    """
+    data = _day(tmp_path)
+    legs_path = data / "jczq" / "daily" / DAY / "jczq-legs-base.json"
+    doc = json.loads(legs_path.read_text(encoding="utf-8"))
+    doc["legs"]["周六001"]["directional_flags"] = [["suspension_breaker_out", "1"]]
+    doc["legs"]["周六001"]["nondirectional_flags"] = ["venue_anomaly"]
+    legs_path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    a, _b = jczq_brief(data, DAY)["rows"]
+    assert a["flags"] == "suspension_breaker_out→1、venue_anomaly"
+
+
 def test_cli_brief_prints_and_writes(tmp_path: Path) -> None:
     data = _day(tmp_path)
     result = CliRunner().invoke(app, ["judgment", "brief", "--day", DAY, "--data-dir", str(data),
