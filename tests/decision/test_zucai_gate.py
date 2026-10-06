@@ -61,3 +61,34 @@ def test_selected_issue_takes_priority_over_current_issue_label():
     got = parse_insale(page, today=date(2026, 9, 12))
     assert got.issue == "26124"
     assert got.deadline == datetime(2026, 9, 13, 20, 30)
+
+
+# 上一期已截止、下一期未开售时的在售页(2026-10-06 实抓形状):选中的仍是已截止的当前期,
+# 截止时间旁边写「官方售彩已截止」,没有「售彩截止时间：」。
+_CLOSED_PAGE = (
+    '<div class="zcfilter-qih"><ul class="qih-list qih-list2">'
+    '<li class="chked" data-expect="26135" ><i class="ico-chk"></i>当前第26135期</li>'
+    '</ul></div><span class="m-r20 red f-14 b m-l">&nbsp;&nbsp;&nbsp;&nbsp;10-05 22:00'
+    '&nbsp;&nbsp;&nbsp;&nbsp;官方售彩已截止</span>'
+)
+
+
+def test_closed_page_parses_as_the_closed_issue():
+    got = parse_insale(_CLOSED_PAGE, today=date(2026, 10, 6))
+    assert got.issue == "26135"
+    assert got.deadline == datetime(2026, 10, 5, 22, 0)
+    assert got.closed
+
+
+def test_closed_issue_is_never_a_sale_day():
+    """已截止的期没有可备料的销售,截止当天也不是。"""
+    got = parse_insale(_CLOSED_PAGE, today=date(2026, 10, 5))
+    assert not got.is_sale_day(date(2026, 10, 5))
+
+
+def test_gate_reads_a_closed_page_as_no_issue_not_probe_failure():
+    """10-06 误报:26135 已截止、26136 未开售是合法的「今日无期」,不是探测失败。"""
+    insale, msg = gate(today=date(2026, 10, 6), fetcher=lambda _u: _CLOSED_PAGE)
+    assert insale is not None and insale.closed
+    assert "今日无期" in msg and "26135" in msg and "已截止" in msg
+    assert "探测失败" not in msg

@@ -485,6 +485,29 @@ def test_run_prep_is_silent_on_a_no_issue_day(tmp_path):
     assert sent == []                          # Telegram 静默
 
 
+def test_run_prep_treats_a_closed_issue_page_as_no_issue(tmp_path):
+    """10-06 误报：上一期已截止、下一期未开售时，备料应静默记「今日无期」并退出 0，
+    不是「探测失败」（后者 exit 1 并推送）。"""
+    from nutmeg.decision.zucai_prep import run_zucai_prep
+
+    closed = ('<li class="chked" data-expect="26135" ><i class="ico-chk"></i>当前第26135期</li>'
+              '<span>&nbsp;&nbsp;10-05 22:00&nbsp;&nbsp;官方售彩已截止</span>')
+    sent = []
+
+    class _Spy:
+        def publish(self, request):
+            sent.append(request)
+
+    result = run_zucai_prep(
+        run_date="2026-10-06", slot="morning",
+        zucai_dir=tmp_path, output_dir=tmp_path, live_fetch=False,
+        dispatch=True, gate_fetcher=lambda _u: closed, notification_service=_Spy(),
+    )
+    assert result.status == "no_issue" and result.succeeded
+    assert "今日无期" in result.summary and "探测失败" not in result.summary
+    assert sent == []
+
+
 def test_live_prep_collects_international_prior_before_building(tmp_path, monkeypatch):
     import json
 

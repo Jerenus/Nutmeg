@@ -120,3 +120,13 @@ def test_explicit_issue_mismatch_fails_before_writing(tmp_path):
     with pytest.raises(ValueError, match="26104"):
         fetch_and_write(tmp_path, issue="26104", fetcher=lambda _: _page())
     assert list(tmp_path.iterdir()) == []
+
+
+def test_closed_issue_page_is_not_a_board_to_prep():
+    """已截止的期(页面写「官方售彩已截止」)不能当成可备料板面写快照。"""
+    closed_head = (
+        '<li class="chked" data-expect="26103" ><i class="ico-chk"></i>当前第26103期</li>'
+        '<span>&nbsp;&nbsp;08-11 22:00&nbsp;&nbsp;官方售彩已截止</span>'
+    )
+    page = closed_head + _page()[len(_HEAD):]
+    assert parse_board(page, today=date(2026, 8, 12)) is None

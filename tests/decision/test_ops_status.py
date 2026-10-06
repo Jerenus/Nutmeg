@@ -95,6 +95,21 @@ def test_failing_agent_prints_its_tail():
     assert "Sporttery WAF" in text
 
 
+def test_failing_agent_prints_the_newest_log_not_a_stale_stderr():
+    """10-06：今天 out 日志写「探测失败」、err 日志还停在昨天的 traceback，
+    状态页把昨天的 traceback 配给了今天的失败。原因行必须取最新的那份日志。"""
+    text = format_status(
+        [_agent(label="com.nutmeg.zucai.prep-morning", last_exit="1",
+                out_text="🌙 足彩备料 2026-09-17:⚠️ 在售期探测失败",
+                out_at=datetime(2026, 9, 17, 11, 0),
+                err_text="Titan007ParseError: 疑似 WAF/错误页",
+                err_at=datetime(2026, 9, 16, 11, 0))],
+        [], [], today=TODAY,
+    )
+    assert "在售期探测失败" in text
+    assert "Titan007ParseError" not in text
+
+
 # —— 排期渲染 ————————————————————————————————
 
 def test_long_even_schedule_is_compressed():

@@ -12,6 +12,15 @@
     <span class="zcfilter-endtime">官方售彩截止时间：08-11 22:00</span>
 
 截止时间只给 MM-DD,年份按"离 today 最近"推断(跨年时 12-31 / 01-02 都能落对)。
+
+上一期已截止、下一期还没开售时(国际比赛日常见),页面仍选中已截止的那期,
+截止时间旁写「官方售彩已截止」而不是「售彩截止时间：」::
+
+    <li class="chked" data-expect="26135" >...当前第26135期</li>
+    <span ...>&nbsp;&nbsp;10-05 22:00&nbsp;&nbsp;官方售彩已截止</span>
+
+这是合法的「今日无期」(``closed=True``),不是探测失败——2026-10-06 它被当成
+探测失败,早备料 exit 1 并推送,而当天只是 26136 未开售。
 """
 from __future__ import annotations
 
@@ -26,6 +35,8 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 _CURRENT_ISSUE_RE = re.compile(r"当前第\s*(\d{5})\s*期")
 _CHKED_ISSUE_RE = re.compile(r'class="chked"[^>]*data-expect="(\d{5})"')
 _DEADLINE_RE = re.compile(r"售彩截止时间[：:]\s*(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})")
+_CLOSED_RE = re.compile(
+    r"(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})(?:\s|&nbsp;)*官方售彩已截止")
 
 
 @dataclass(frozen=True)
@@ -35,10 +46,11 @@ class InsaleIssue:
     issue: str
     deadline: datetime
     source_url: str = INSALE_URL
+    closed: bool = False        # 已截止、下一期未开售:页面上没有在售期
 
     def is_sale_day(self, today: date) -> bool:
-        """今天是不是这一期的销售截止日 = 今天该不该备料。"""
-        return self.deadline.date() == today
+        """今天是不是这一期的销售截止日 = 今天该不该备料。已截止的期永远不是。"""
+        return not self.closed and self.deadline.date() == today
 
 
 def _resolve_year(month: int, day: int, today: date) -> int:
@@ -62,18 +74,23 @@ def _resolve_year(month: int, day: int, today: date) -> int:
 
 
 def parse_insale(html: str, *, today: date, source_url: str = INSALE_URL) -> InsaleIssue | None:
-    """从在售页 HTML 解析当前期号与截止时间。任一缺失返回 None(视为探测失败)。"""
+    """从在售页 HTML 解析当前期号与截止时间。任一缺失返回 None(视为探测失败)。
+
+    页面写「官方售彩已截止」时返回 ``closed=True`` 的已截止期(合法无期)。
+    """
     # The current-sale label remains on explicitly selected future-issue pages.
     m_issue = _CHKED_ISSUE_RE.search(html) or _CURRENT_ISSUE_RE.search(html)
     m_dead = _DEADLINE_RE.search(html)
-    if not m_issue or not m_dead:
+    m_closed = None if m_dead else _CLOSED_RE.search(html)
+    if not m_issue or not (m_dead or m_closed):
         return None
-    month, day, hour, minute = (int(x) for x in m_dead.groups())
+    month, day, hour, minute = (int(x) for x in (m_dead or m_closed).groups())
     year = _resolve_year(month, day, today)
     return InsaleIssue(
         issue=m_issue.group(1),
         deadline=datetime(year, month, day, hour, minute),
         source_url=source_url,
+        closed=m_closed is not None,
     )
 
 
@@ -102,15 +119,19 @@ def detect_insale(*, today: date | None = None, fetcher=None,
 def gate(*, today: date | None = None, fetcher=None) -> tuple[InsaleIssue | None, str]:
     """门控主入口。返回 (在售期或 None, 人读的一行状态)。
 
-    三种状态各自有明确文案,**没有一种是沉默**:
+    四种状态各自有明确文案,**没有一种是沉默**:
       - 今天是截止日        → 该备料
       - 今天不是截止日      → 心跳:下一期何时截止
+      - 上一期已截止、下一期未开售 → 心跳:今日无期(合法,不是探测失败)
       - 探测失败            → 心跳:探测失败(不可当作"今日无期")
     """
     today = today or date.today()
     insale = detect_insale(today=today, fetcher=fetcher)
     if insale is None:
         return None, "⚠️ 在售期探测失败(网络或页面结构变化)——不可当作『今日无期』,请人工确认"
+    if insale.closed:
+        return insale, (f"今日无期。{insale.issue} 已截止"
+                        f"({insale.deadline:%Y-%m-%d %H:%M}),下一期未开售")
     if insale.is_sale_day(today):
         return insale, (f"今日有期 {insale.issue},截止 "
                         f"{insale.deadline:%Y-%m-%d %H:%M}")

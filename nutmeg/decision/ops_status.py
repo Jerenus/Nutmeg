@@ -81,6 +81,20 @@ class AgentStatus:
         return "未知"
 
     @property
+    def latest_tail(self) -> str:
+        """最新一份带时间证据的日志的尾行；都没有时间证据才退回 err/out。
+
+        2026-10-06：out 写着今天的「探测失败」，err 还停在昨天的 traceback，
+        旧版一律先取 err，把昨天的原因配给了今天的失败。
+        """
+        dated = [(at, text) for at, text in ((self.out_at, self.out_tail),
+                                             (self.err_at, self.err_tail))
+                 if at is not None and text]
+        if dated:
+            return max(dated, key=lambda pair: pair[0])[1]
+        return self.err_tail or self.out_tail
+
+    @property
     def last_at(self) -> datetime | None:
         stamps = [at for at in (self.out_at, self.err_at) if at is not None]
         return max(stamps) if stamps else None
@@ -220,7 +234,7 @@ def format_status(
             + ("  " + "／".join(marks) if marks else "")
         )
         if agent.outcome == "失败":
-            tail = agent.err_tail or agent.out_tail
+            tail = agent.latest_tail
             lines.append(f"      {tail[:150]}")
     lines += ["", "## OpenClaw 定时任务"]
     if not jobs:

@@ -62,7 +62,7 @@ def parse_board(html: str, *, today: date | None = None,
 
     today = today or date.today()
     insale = parse_insale(html, today=today, source_url=source_url)
-    if insale is None:
+    if insale is None or insale.closed:     # 已截止的期没有可备料的板面
         return None
     matches = []
     for row in _ROW_RE.findall(html):
