@@ -74,3 +74,44 @@ def test_candidate_carries_parent_version_and_export_shows_the_edge(tmp_path):
     assert "- SFC-B · 已否决 · 128 注 ¥256" in md
     assert "SFC-B ←" not in md
     assert "- SFC-C ← SFC-B · 已否决 · 160 注 ¥320 · P 0.35%" in md
+
+
+def test_cli_export_uses_the_merged_kernel_stream(tmp_path, monkeypatch):
+    """day.settle 每天跑 `workbench-export --date <昨天>`；只读文件流时 10-05 的 5 张实票
+    与 7 条判读全成了「（无）」。CLI 必须和网页回放走同一份合并流。"""
+    from typer.testing import CliRunner
+
+    import nutmeg.interfaces.cli.decision as mod
+    from nutmeg.interfaces.cli import app
+
+    append_event(tmp_path, "2026-10-05", {"kind": "note", "text": "手记一条"})
+    monkeypatch.setattr(mod, "_kernel_state_factory", lambda output_dir: (
+        lambda day: {"events": [
+            {"kind": "judgment", "obj_id": "r1", "payload": {"match": "黑山 vs 亚美尼亚"}},
+            {"kind": "slip", "obj_id": "20261005-J1",
+             "payload": {"slip_id": "20261005-J1", "notes": 1, "stake_yuan": 100}}]}))
+    out = tmp_path / "retro.md"
+    result = CliRunner().invoke(app, ["workbench-export", "--date", "2026-10-05",
+                                      "--output-dir", str(tmp_path), "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    md = out.read_text(encoding="utf-8")
+    assert "20261005-J1" in md and "黑山 vs 亚美尼亚" in md and "手记一条" in md
+
+
+def test_cli_export_falls_back_to_the_file_stream_when_the_kernel_is_unavailable(
+        tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    import nutmeg.interfaces.cli.decision as mod
+    from nutmeg.interfaces.cli import app
+
+    append_event(tmp_path, "2026-10-05", {"kind": "note", "text": "手记一条"})
+
+    def boom(output_dir):
+        raise RuntimeError("内核不可达")
+
+    monkeypatch.setattr(mod, "_kernel_state_factory", boom)
+    result = CliRunner().invoke(app, ["workbench-export", "--date", "2026-10-05",
+                                      "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "手记一条" in result.output and "内核不可达" in result.output

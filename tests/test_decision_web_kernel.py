@@ -152,6 +152,25 @@ def test_slips_for_date_picks_issues_whose_matches_fall_on_that_day(tmp_path):
     assert slips_for_date(tmp_path, zucai, "2026-09-21") == []
 
 
+def test_slips_for_date_also_picks_slips_placed_that_day(tmp_path):
+    """竞彩票不挂期号（issue 为空），只能按登记日取；10-05 两张竞彩实票在回放里看不见。"""
+    from nutmeg.decision.betslip import register_slip
+    from nutmeg.interfaces.decision_web_kernel import slips_for_date
+    zucai = tmp_path / "zucai"
+    zucai.mkdir()
+    jc = _slip()
+    jc.slip_id, jc.issue, jc.placed_at = "20261005-J1", "", "2026-10-05"
+    register_slip(tmp_path, jc)
+    both = _slip()          # 期号与登记日都命中，只出一次
+    both.placed_at = "2026-09-19"
+    (zucai / "26129-issue.json").write_text(
+        '{"issue_id": "26129", "matches": [{"match_no": 1, "match_date": "2026-09-19"}]}',
+        encoding="utf-8")
+    register_slip(tmp_path, both)
+    assert [x.slip_id for x in slips_for_date(tmp_path, zucai, "2026-10-05")] == ["20261005-J1"]
+    assert [x.slip_id for x in slips_for_date(tmp_path, zucai, "2026-09-19")] == ["26129-JC-T"]
+
+
 def test_static_assets_carry_a_version_so_browsers_do_not_serve_stale_js(tmp_path):
     """2026-09-18：加了 renderSlip 之后浏览器仍跑旧 app.js，右栏空着，硬刷新才出来。"""
     store = DecisionStore(tmp_path / "decision")

@@ -864,16 +864,46 @@ def zucai_night_calibrate(
 _EXPORT_OUT_OPTION = _cli.typer.Option(None, "--out", help="不给则打印到 stdout")
 
 
+def _kernel_state_factory(output_dir: Path):
+    """回放的内核读侧（与 decision-web 同一份）：判读与实票活在内核与登记簿里，不在 jsonl。"""
+    from datetime import UTC, datetime
+
+    from nutmeg.config.settings import get_settings
+    from nutmeg.interfaces.decision_web_kernel import kernel_day_state, slips_for_date
+    from nutmeg.ontology.wiring import build_ontology_kernel
+    from nutmeg.product.repository import ProductReadRepository
+
+    kernel = build_ontology_kernel(get_settings())
+    kernel.initialize()
+    repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
+    data_dir = Path(output_dir).parent          # .nutmeg-data/jczq → .nutmeg-data
+    return lambda date: kernel_day_state(
+        repository, date, as_of=datetime.now(UTC),
+        slips=slips_for_date(data_dir, data_dir / "zucai", date))
+
+
 @_cli.app.command("workbench-export")
 def workbench_export(
     date: str = _cli.typer.Option(..., "--date"),
     output_dir: Path = _OUTPUT_DIR_OPTION,
     out: Path | None = _EXPORT_OUT_OPTION,
 ) -> None:
-    """事件流 → Markdown 复盘底稿(只排版不总结)。"""
+    """事件流 → Markdown 复盘底稿(只排版不总结)。
+
+    走与网页回放同一份合并流（内核判读/实票在先，文件事件在后）；只读文件流会把判读与
+    实票漏成「（无）」——day.settle 每天导出昨天，10-05 的 5 张实票就这样丢了。
+    """
+    from nutmeg.decision.workbench import read_events
     from nutmeg.decision.workbench_export import events_to_markdown
 
-    md = events_to_markdown(Path(output_dir), date)
+    try:
+        kernel_events = _kernel_state_factory(Path(output_dir))(date)["events"]
+        events = ([e for e in kernel_events if e.get("kind") != "attention"]
+                  + read_events(Path(output_dir), date))
+    except Exception as exc:  # noqa: BLE001 — 内核不可达时仍出文件流底稿，但要说出来
+        _cli.typer.echo(f"⚠️ 内核读侧不可用，回放只含文件事件：{exc}", err=True)
+        events = None
+    md = events_to_markdown(Path(output_dir), date, events=events)
     if out:
         Path(out).write_text(md, encoding="utf-8")
         _cli.typer.echo(f"→ {out}")

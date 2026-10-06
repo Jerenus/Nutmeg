@@ -88,7 +88,8 @@ def _read_dict(row: dict, match_id: str) -> dict:
 
 
 def slips_for_date(data_dir, zucai_dir, day: str) -> list:
-    """当日**已登记实票**：凡 `<issue>-issue.json` 里有比赛落在这一天的期次，其票全部算当日方案。
+    """当日**已登记实票**：凡 `<issue>-issue.json` 里有比赛落在这一天的期次，其票全部算当日方案；
+    另加当日登记（`placed_at`）的票。
 
     右栏「我的方案」的数据源就是 betslips 登记簿——没入账＝没打，页面同样不显示。
     竞彩票也带 `issue`（登记时按同期足彩期号挂），故一并带出。
@@ -111,6 +112,10 @@ def slips_for_date(data_dir, zucai_dir, day: str) -> list:
     out = []
     for issue in issues:
         out.extend(load_slips(data_dir, issue=issue))
+    # 竞彩票不挂期号（issue 为空），按登记日取；10-05 两张竞彩实票因此在回放里看不见
+    seen = {slip.slip_id for slip in out}
+    out.extend(slip for slip in load_slips(data_dir)
+               if str(slip.placed_at)[:10] == day and slip.slip_id not in seen)
     return out
 
 
