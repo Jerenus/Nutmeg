@@ -719,9 +719,12 @@ class ProductReadRepository:
         return str(decoded[0]), str(decoded[1])
 
     def board_matches(self, start_at: str, end_at: str, as_of: str) -> list[dict]:
+        # 按时刻比较，不按字符串：竞彩 scheduled_at 存成 +08:00，窗口边界是 UTC，字典序
+        # 会把北京时间 16:00 后开球的场挤到第二天（2026-10-06 周二 19:00/19:35/22:00）
+        scheduled = func.julianday(si.match_revisions.c.scheduled_at)
         statement = self._match_statement(as_of).where(
-            si.match_revisions.c.scheduled_at >= start_at,
-            si.match_revisions.c.scheduled_at < end_at,
+            scheduled >= func.julianday(start_at),
+            scheduled < func.julianday(end_at),
         )
         with self._engine.connect() as connection:
             return [dict(row) for row in connection.execute(statement).mappings().all()]

@@ -153,3 +153,24 @@ def test_ingest_is_idempotent_on_rerun(tmp_path: Path) -> None:
     kernel.market_day_ingest.ingest(req)
     kernel.market_day_ingest.ingest(req)
     assert kernel.status().match_count == 1
+
+
+def test_board_matches_windows_by_instant_not_by_offset_string(tmp_path: Path) -> None:
+    """竞彩 scheduled_at 存成 +08:00 字符串，窗口边界是 UTC 字符串；字典序比较把北京时间
+    16:00 后开球的场挤到第二天（10-06 周二 19:00/19:35/22:00 三场在当天工作台与回放里消失）。"""
+    from nutmeg.interfaces.decision_web_kernel import _day_window_utc
+
+    settings = AppSettings(data_dir=tmp_path / "data")
+    kernel = build_ontology_kernel(settings)
+    kernel.initialize()
+    kernel.market_day_ingest.ingest(MarketDayIngestRequest(
+        business_date="2026-07-19", sporttery_value=SPORTTERY,
+        actor_id="source:sporttery", actor_role=ActorRole.CONNECTOR,
+        requested_at=datetime(2026, 7, 19, 8, tzinfo=UTC),
+    ))
+    repo = ProductReadRepository(kernel.engine)
+    as_of = datetime(2026, 7, 20, tzinfo=UTC).isoformat()
+    on_day = repo.board_matches(*_day_window_utc("2026-07-19"), as_of)
+    next_day = repo.board_matches(*_day_window_utc("2026-07-20"), as_of)
+    assert len(on_day) == 1          # 23:30 北京 = 15:30Z，属于 07-19
+    assert next_day == []
