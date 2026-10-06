@@ -120,3 +120,40 @@ def test_cli_auth_check_exits_nonzero_and_tells_how_to_fix(monkeypatch):
         "file_age_days": 340, "detail": ""})
     good = CliRunner().invoke(app, ["claude-auth-check"])
     assert good.exit_code == 0 and "ok" in good.output and "满一年" in good.output
+
+
+def test_claude_bin_falls_back_to_the_user_install_when_path_lacks_it(tmp_path, monkeypatch):
+    """launchd 的 PATH 不一定含 ~/.local/bin（rsi.loop 的 plist 没设，launchctl submit 也没有）：
+    10-06 12:37 复验时 `claude` 直接 FileNotFoundError。"""
+    from nutmeg.decision.claude_models import claude_bin
+
+    home = tmp_path / "home"
+    exe = home / ".local" / "bin" / "claude"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("#!/bin/sh\n", encoding="utf-8")
+    exe.chmod(0o755)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    assert claude_bin() == str(exe)
+
+
+def test_every_scheduled_claude_call_uses_the_resolved_binary(token_file, tmp_path, monkeypatch):
+    import subprocess
+
+    import nutmeg.decision.claude_models as cm
+    from nutmeg.decision import brief_writer, research_runner, rubric_reader
+
+    exe = tmp_path / "home" / ".local" / "bin" / "claude"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("#!/bin/sh\n", encoding="utf-8")
+    exe.chmod(0o755)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    seen = []
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: (
+        seen.append(argv[0]) or subprocess.CompletedProcess(argv, 0, stdout="{}", stderr="")))
+    research_runner._claude_cli("sys", "brief")
+    rubric_reader._claude_cli("sys", "in")
+    brief_writer._claude_cli("sys", "in")
+    cm.auth_check()
+    assert seen == [str(exe)] * 4

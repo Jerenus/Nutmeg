@@ -14,6 +14,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from nutmeg.decision.claude_models import (
+    claude_bin,
     claude_env,
     is_auth_failure,
     model_argv,
@@ -62,7 +63,7 @@ _REQUIRED = (
 
 def _claude_cli(prompt: str, brief: str) -> tuple[int, str]:
     argv = [
-        "claude",
+        claude_bin(),
         "-p",
         *model_argv(research_model()),
         "--system-prompt",

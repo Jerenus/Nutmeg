@@ -30,6 +30,18 @@ def is_auth_failure(text: str) -> bool:
     return any(marker in (text or "") for marker in AUTH_FAILURE_MARKERS)
 
 
+def claude_bin() -> str:
+    """`claude` 的绝对路径。launchd 的 PATH 不一定含 ~/.local/bin（rsi.loop 的 plist 没设，
+    `launchctl submit` 也没有），按名字调会 FileNotFoundError（2026-10-06 12:37）。"""
+    import shutil
+
+    found = shutil.which("claude")
+    if found:
+        return found
+    fallback = Path("~/.local/bin/claude").expanduser()
+    return str(fallback) if fallback.is_file() else "claude"
+
+
 def token_file() -> Path:
     return Path(os.environ.get(TOKEN_FILE_ENV) or DEFAULT_TOKEN_FILE).expanduser()
 
@@ -96,7 +108,7 @@ def auth_check(*, run=None) -> dict:
     env = claude_env()          # 顺带把过宽的文件权限收紧
     stat = path.stat() if exists else None
     with tempfile.TemporaryDirectory() as neutral:
-        proc = run(["claude", "-p", "--max-turns", "1", "--output-format", "text"],
+        proc = run([claude_bin(), "-p", "--max-turns", "1", "--output-format", "text"],
                    input="reply with the single word ok", capture_output=True, text=True,
                    timeout=120, cwd=neutral, env=env, check=False)
     output = f"{proc.stdout or ''}\n{proc.stderr or ''}"

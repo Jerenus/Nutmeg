@@ -17,7 +17,13 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from nutmeg.decision.claude_models import claude_env, model_argv, model_label, reader_model
+from nutmeg.decision.claude_models import (
+    claude_bin,
+    claude_env,
+    model_argv,
+    model_label,
+    reader_model,
+)
 from nutmeg.decision.rubric import tolerate, tolerate_belief, validate_rubric
 from nutmeg.decision.rubric_items import ITEMS, RUBRIC_VERSION, question_table
 
@@ -68,7 +74,7 @@ def state_text(research: dict) -> str:
 
 
 def _claude_cli(prompt: str, stdin: str) -> tuple[int, str]:
-    argv = ["claude", "-p", *model_argv(reader_model()), "--system-prompt", prompt,
+    argv = [claude_bin(), "-p", *model_argv(reader_model()), "--system-prompt", prompt,
             "--allowedTools", "", "--max-turns", "1", "--output-format", "text"]
     with tempfile.TemporaryDirectory() as neutral:
         proc = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=300,
