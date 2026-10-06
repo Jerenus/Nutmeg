@@ -445,6 +445,25 @@
    ]
   },
   {
+   "league_id": "intl-friendlies",
+   "name_zh": "国际赛",
+   "name_en": "International Friendlies",
+   "country": "",
+   "season": "",
+   "aliases": [
+    "友谊赛",
+    "国际友谊赛"
+   ],
+   "profile_notes": [
+    {
+     "key": "entity_scope",
+     "note": "覆盖竞彩「国际赛」与足彩「友谊赛」的国家队友谊赛（2026-09/10 实测全部为国家队）；若出现俱乐部友谊赛挂在「友谊赛」下，本实体与国家队画像不适用",
+     "evidence": "sporttery_markets.json leagueAbbName 2026-09/10 实测（国际赛 36 队次均为国家队）；zucai issue.json competition=友谊赛 4 次",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
    "league_id": "ita-seriea",
    "name_zh": "意甲",
    "name_en": "Serie A",
@@ -958,6 +977,24 @@
      "note": "复赛第2轮结构恢复正常(7/12哈马比2:0/马尔默4:0/韦斯特罗2:0全兑现,盖斯1:0)——首轮方差窗口只持续1轮;哈马比打穿全牌照让胜验证成功(净胜恰2)",
      "evidence": "settlements 2026-07-12",
      "at": "2026-07-13"
+    }
+   ]
+  },
+  {
+   "league_id": "uefa-nations-league",
+   "name_zh": "欧国联",
+   "name_en": "UEFA Nations League",
+   "country": "",
+   "season": "2026-27",
+   "aliases": [
+    "欧洲国家联赛"
+   ],
+   "profile_notes": [
+    {
+     "key": "entity_scope",
+     "note": "覆盖体彩板面「欧国联」（leagueAbbName 实测）与足彩期次「欧国联」；2026-27 届分 A/B/C/D 级小组赛，9 月下旬至 10 月上旬为第 1–4 轮窗口。国家队画像见各 Team 的 *_2026_10 笔记，均为窗口内研究核实事实，过窗即时效",
+     "evidence": "sporttery_markets.json leagueAbbName 2026-09/10 实测；26134/26135 issue.json competition 字段；研究 .nutmeg-data/jczq/daily/2026-10-0[56]/research-*.json",
+     "at": "2026-10-06"
     }
    ]
   },
@@ -13226,6 +13263,2698 @@
      "note": "Ladefoged(14场9球=全队36%产出)8月中被卖且官宣转会前不再出场——离队后首战客场0:3零射正级溃败,'36%产出依赖'兑现;后续判它先问替代射手是谁",
      "evidence": "26104场13深研+赛果",
      "at": "2026-08-16"
+    }
+   ]
+  },
+  {
+   "team_id": "armenia",
+   "name_zh": "亚美尼亚",
+   "name_en": "Armenia",
+   "aliases": [
+    "Armenia",
+    "亚美尼"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅梅利基扬（Yeghishe Melikyan）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json（引 Sports Mole 等）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联C级C2组（同组黑山、塞浦路斯、拉脱维亚），截至10/5第4轮前：3战1胜2负3分，排第三；第4轮客场对黑山（波德戈里察）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json（引 Sports Mole、VAVEL、thestatszone、armenpress）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "首轮主场2-0拉脱维亚，次轮主场2-3负黑山，10/2客场0-2负塞浦路斯（对手52分钟少一人；亚美尼亚控球67%、射门17次仅5次射正）；近10场只赢1场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一003.json（引 VAVEL、scores24、thestatszone）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "9/28研究称核心为Spertsyan（主罚定位球、负责推进组织），Harutyunyan、Gharibyan在对拉脱维亚时进球（sportaran、ffa.am、vavel）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一003.json（引 sportaran、ffa.am、vavel）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10/5研究：Sevikyan停赛，Bandikyan、Junior伤缺（Sports Mole）；9/28研究称中卫Julio Bueno重伤，主帅确认缺三场（sportaran），此条未在10/5研究复述。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一003.json（引 Sports Mole、sportaran）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：倾向控球，但阵地战效率低、靠远射；低位防守不硬（客场先失两球）；威胁来自Spertsyan的定位球和转换进攻。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json、.nutmeg-data/zucai/26134-research-m1.json（研究员未注明外部来源）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "australia",
+   "name_zh": "澳大利亚",
+   "name_en": "Australia",
+   "aliases": [
+    "Australia",
+    "澳大利"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Popovic；本期换了10个人，Mat Ryan落选，新招7名未出场新人（含门将Chapman、边后卫Adamson、K. Bos、Leonard）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-25/research-周五003.json（引 football360、socceroos.com.au）",
+     "at": "2026-09-25"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛：9/25对巴西，Townsville（Queensland Country Bank Stadium），北京时间18:00；昆士兰连赛两场，9/29布里斯班还有一场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-25/research-周五003.json（引 beIN、Yahoo）",
+     "at": "2026-09-25"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "主力中锋Mohamed Touré肩伤退出；Robertson、Volpato、Burgess、Jordan Bos伤缺；McGree回归（football360、socceroos.com.au）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-25/research-周五003.json（引 football360、socceroos.com.au）",
+     "at": "2026-09-25"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：Popovic的组织型低位防线，破门手段偏弱，机会来自定位球和转换进攻。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-25/research-周五003.json（研究员未注明外部来源）",
+     "at": "2026-09-25"
+    }
+   ]
+  },
+  {
+   "team_id": "austria",
+   "name_zh": "奥地利",
+   "name_en": "Austria",
+   "aliases": [
+    "Austria"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 B级第3组，对手含以色列、科索沃。首轮9/24 林茨3-1以色列（90'、90+3'绝杀；以色列一人两黄离场），第2轮主场对科索沃。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m12.json（研究员未注明外部来源；材料无captured_at，at取研究文件 researched_at 2026-09-26）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/24 主场3-1以色列：Schmid 点球1-0，55'被扳平，Mwene 90'、Kalajdzic 90+3'进球；以色列 Farchi 因两黄离场，奥地利多打一人34分钟。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m12.json（研究员未注明外部来源；at取研究文件 researched_at）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究称主轴仍齐：门将 A.Schlager、中卫 Lienhart/Danso、双后腰 Seiwald/X.Schlager、10号 Schmid；中锋位由 Kalajdzic/Lang/Adamu 顶；名单内6-7名新人。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m12.json（研究员未注明外部来源；at取研究文件 researched_at）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Laimer 内收肌伤缺本场，Ljubicic 膝伤数周，队长 Gregoritsch 首轮踝伤、本场存疑；Arnautovic 退出国家队，Sabitzer 休战至年底，Alaba 未入选。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m12.json（研究员未注明外部来源，称消息9/14-9/25陆续公开；at取研究文件 researched_at）",
+     "at": "2026-09-26"
+    }
+   ]
+  },
+  {
+   "team_id": "belgium",
+   "name_zh": "比利时",
+   "name_en": "Belgium",
+   "aliases": [
+    "Belgium"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅范博梅尔；9/28 对法国为其执教第2场，MD1 客场2-0胜意大利。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一005.json（引 Sports Mole、HardTackle）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 A级第1组（法国、意大利、土耳其）。截至10/5赛前2胜1负6分排第2；10/5 客场（法兰西大球场）对法国为第4轮。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json（引 Rotowire、onefootball）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "客场2-0意大利；9/28 主场0-1法国（Olise 89' 破门，射门12:18、射正2:7）；3-0土耳其（德布劳内梅开二度）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一005.json（引 Rotowire、onefootball）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究点名德布劳内、卢克巴基奥、戈茨、门将 Lammens（对意大利评分8.8）；10/5 中场预计由拉斯金/拉维亚/瓦纳肯顶替。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一005.json（引 Rotowire、onefootball、Sofascore）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10/5 德布劳内、队长蒂勒曼斯累积黄牌停赛；库尔图瓦按约定缺席，多库伤，特罗萨德足跟问题（Rotowire、onefootball）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json（引 Rotowire、onefootball）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：偏反击，首回合靠德布劳内倒三角制造机会；缺组织核后主要靠卢克巴基奥/戈茨速度冲击对手中卫。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json（研究员未注明该描述的外部来源）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "bosnia-herzegovina",
+   "name_zh": "波黑",
+   "name_en": "Bosnia & Herzegovina",
+   "aliases": [
+    "Bosnia & Herzegovina",
+    "Bosnia and Herzegovina"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Barbarez（研究10/5列为波黑主帅）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json（引 Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 B级第4组（瑞典、波兰、罗马尼亚）。截至10/5赛前5分排第2；10/5 主场（泽尼察）对波兰为第4轮，二三名对话。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json（引 Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "客场0-0波兰；9/28 客场4-2罗马尼亚（xG 2.41:0.96）；主场1-1瑞典（研究称 Alajbegović 80' 扳平，瑞典侧研究称补时扳平，说法不一）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json、.nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（引 Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究点名 Tabaković、Demirović、19岁 Alajbegović、Kolašinac、Katić；Dzeko 对瑞典后退出国家队，早已不是主力输出点。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一006.json（引 Sports Mole、klix、zenit）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "9/28 研究：Dedić 腰伤缺3-4周，Busuladžić、门将 Vasilj 缺阵；10/5 研究未列新增缺阵。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一006.json、.nutmeg-data/zucai/26134-research-m5.json、.nutmeg-data/jczq/daily/2026-10-05/research-周一007.json（引 klix、zenit、prosport、golazo）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：10/5 称主场三中卫（Kolašinac 左侧）加两翼前插，靠 Tabaković 高点和定位球；9/28 研究称4-4-2低位加反击。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一006.json（引 Sports Mole）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "brazil",
+   "name_zh": "巴西",
+   "name_en": "Brazil",
+   "aliases": [
+    "Brazil"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅安切洛蒂（原文仅中文名）；09-24 发布会称本次巡回意在为 2028 美洲杯、2030 世界杯观察新人。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-25/research-周五003.json（引 beIN、Yahoo）",
+     "at": "2026-09-25"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "世界杯后首场友谊赛：09-25 客场对澳大利亚（汤斯维尔），为昆士兰两连赛首场，第二场 09-29 在布里斯班。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-25/research-周五003.json（引 beIN、Yahoo）；.nutmeg-data/zucai/26132-research-m2.json",
+     "at": "2026-09-25"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "官宣首发（09-25 稿）：锋线 Raphinha、Estêvão、Endrick、Vinicius；Marquinhos、Douglas Santos；后腰 Bruno Guimarães、Danilo Santos；门将 Hugo Souza。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-25/research-周五003.json（引 beIN、Yahoo）",
+     "at": "2026-09-25"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Alisson、Ederson 双缺，三门将合计仅 1 场国家队出场（26132 稿）；Vitor Reis（中卫）、Matheuzinho（右后卫）首发，均为国家队首秀。",
+     "evidence": "research .nutmeg-data/zucai/26132-research-m2.json（未注明外部来源）；.nutmeg-data/jczq/daily/2026-09-25/research-周五003.json（引 beIN、Yahoo）",
+     "at": "2026-09-25"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：锋线满配、后防为新组合；下半场大面积换人的概率高。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-25/research-周五003.json（引 beIN、Yahoo）",
+     "at": "2026-09-25"
+    }
+   ]
+  },
+  {
+   "team_id": "bulgaria",
+   "name_zh": "保加利亚",
+   "name_en": "Bulgaria",
+   "aliases": [
+    "Bulgaria",
+    "保加利"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "原主帅 Aleksandar Dimitrov 于 09-30 主场 0-0 平爱沙尼亚后辞职，称球员已对教练组失去信心（BNR）；U19 主帅 Atanas Ribarski 临时带队。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m11.json（引 BNR、ESPN、Sports Mole）；.nutmeg-data/jczq/daily/2026-10-06/research-周二005.json",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 C 级第 4 组（同组冰岛、爱沙尼亚、卢森堡）。截至 10-06 第 4 轮前 1 分垫底（冰岛 7、爱沙尼亚 5、卢森堡 3）；10-06 客场对卢森堡。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二005.json；.nutmeg-data/zucai/26135-research-m11.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "三轮 1 平 2 负、进 1 失 5：主场 1-2 负卢森堡；09-30 主场 0-0 爱沙尼亚（09-28 稿写 09-29）；约 10-03 客场 0-3 冰岛，射门 10:10、射正 3:6。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m11.json（引 ESPN、BNR）；.nutmeg-data/zucai/26134-research-m8.json（引 Sports Mole、Footballwhispers）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "09-28 稿：持球突破核心 Despodov 缺阵，进攻依靠 Rusev、Petkov、Z.Dimitrov；队长兼后腰 Gruev 伤愈、上场踢满 90 分钟。",
+     "evidence": "research .nutmeg-data/zucai/26134-research-m8.json（引 Sports Mole、Footballwhispers）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10-06 稿：Lukas Petkov、Velkovski 累计黄牌停赛（引 Sports Mole）。09-28 稿另称 Chochev 膝伤缺余下 4 场、Despodov（足伤）、Krastev（膝伤）缺阵。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二005.json；.nutmeg-data/zucai/26135-research-m11.json、.nutmeg-data/zucai/26134-research-m8.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：踢法“混乱”、破门手段少、进攻低效；缺持球突破点后破低位能力有限，可靠反击和定位球取分。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m11.json；.nutmeg-data/zucai/26134-research-m8.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "canada",
+   "name_zh": "加拿大",
+   "name_en": "Canada",
+   "aliases": [
+    "Canada"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅马尔什（Marsch）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json（引 si.com、starsandstripesfc.com）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛：客场对美国，Allianz Field（明尼苏达州圣保罗），北京时间2026-10-07 08:00；这是本窗第三场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json（引 si.com、starsandstripesfc.com）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/26主场（多伦多BMO Field）1-0胜智利；10/3对秘鲁的比分研究未查到。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json、.nutmeg-data/jczq/daily/2026-09-26/research-周六018.json（引 si.com、starsandstripesfc.com）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "阵容基本为主力：前锋Jonathan David（马竞）、Larin、Oluwaseyi，中场Eustáquio、Buchanan、Saliba，另有Laryea；门将由St. Clair顶上。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json（引 si.com、starsandstripesfc.com）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "缺阿方索·戴维斯（婚假）和门将Crépeau（家事/父亲去世）；9/26场另列Cornelius、Bombito、Badwal伤缺（Canada Soccer、Sports Mole）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json、.nutmeg-data/jczq/daily/2026-09-26/research-周六018.json（引 si.com、starsandstripesfc.com、Canada Soccer、Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：马尔什体系，高位压迫加快速转换。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json、.nutmeg-data/jczq/daily/2026-09-26/research-周六018.json（研究员未注明外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "chile",
+   "name_zh": "智利",
+   "name_en": "Chile",
+   "aliases": [
+    "Chile"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "临时主帅 Nicolás Córdova；09-26 稿称球队处于换代期，未征召 Alexis Sánchez，另有 5 名潜在首秀球员。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-29/research-周二015.json（引 SI）；.nutmeg-data/jczq/daily/2026-09-26/research-周六018.json（引 Sports Mole）",
+     "at": "2026-09-29"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛窗口：先客场对加拿大（多伦多 BMO Field），后对美国（圣路易斯，北京时间 09-30 08:00）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-29/research-周二015.json；.nutmeg-data/jczq/daily/2026-09-26/research-周六018.json",
+     "at": "2026-09-29"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "对加拿大 0-1 负（约 3 天前）：Cepeda 36' 直红、队长 Suazo 50' 两黄，约 55 分钟 9 人；门将 Vigouroux 多次扑救。对美国赛果不在证据内。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-29/research-周二015.json（引 CBC、TSN、Globe and Mail）",
+     "at": "2026-09-29"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "前锋 Brereton Díaz（队史进球 10 个）、Tapia；队长兼左后卫 Suazo；门将 Vigouroux。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-26/research-周六018.json（引 Sports Mole）；.nutmeg-data/jczq/daily/2026-09-29/research-周二015.json",
+     "at": "2026-09-29"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Suazo（两黄）与 Cepeda（直红）对美国一战停赛。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-29/research-周二015.json（引 SI、CBC、TSN）",
+     "at": "2026-09-29"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：预计 4-3-3 低位退守，靠反击与远射；09-26 稿称换代阵出球不稳，Brereton 靠对抗和前插。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-29/research-周二015.json；.nutmeg-data/jczq/daily/2026-09-26/research-周六018.json",
+     "at": "2026-09-29"
+    }
+   ]
+  },
+  {
+   "team_id": "china",
+   "name_zh": "中国",
+   "name_en": "China",
+   "aliases": [
+    "China"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅邵佳一；0:5负巴勒斯坦后称这是自己“近30年职业生涯最大失利”，并说球队“状态不在线”。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二002.json（引 新浪新闻、thestatszone）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛：重庆国际足球邀请赛末轮，主场对塔吉克斯坦，北京时间10/6 19:35，重庆龙兴足球场；FIFA排名第91（10/5研究写第92，取较新者）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二002.json、.nutmeg-data/zucai/26135-research-m1.json（引 新浪、livesoccertv、thestatszone、fotmob）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "本窗9/27 0:3负新西兰（射正2脚），10/2 0:5负巴勒斯坦（60年来首负该队），两场零进球、丢8球；此前2026年7场只输1场（thestatszone）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二002.json、.nutmeg-data/zucai/26135-research-m1.json（引 新浪新闻、thestatszone、搜狐）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "26135研究称张玉宁、王钰栋被U23抽调亚运会，林良铭、塞尔吉尼奥伤退，锋线仅剩韦世豪（新浪，10/5）；10/6研究称官宣伤停与10月名单未证实，二者冲突。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m1.json、.nutmeg-data/jczq/daily/2026-10-06/research-周二002.json（引 新浪）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：主场大概率控球，但连续两场打不进球，阵地战创造力存疑；缺乏破对手中低位的手段。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二002.json、.nutmeg-data/zucai/26135-research-m1.json（研究员未注明外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "croatia",
+   "name_zh": "克罗地亚",
+   "name_en": "Croatia",
+   "aliases": [
+    "Croatia",
+    "克罗地"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅斯拉文·比利奇（Slaven Bilić），二度执教；研究文件纠正此前画像中的达利奇。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json、.nutmeg-data/zucai/26135-research-m9.json（引 tportal、Sports Mole、Heavy）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联A级第3组（同组西班牙、捷克、英格兰）。截至2026-10-06研究：3战1胜2负积3分，进3失12；第4轮10/6主场战西班牙。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json、.nutmeg-data/zucai/26135-research-m9.json（引 ESPN、Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "2-1客胜捷克（Modrić、Pašalić进球）；1-4西班牙；10/3主场里耶卡0-7英格兰（半场0-4，队史最大比分惨败）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二013.json（引 tportal、ESPN、Flashscore）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "中场Modrić（41岁）、Kovačić，后防Gvardiol，左后卫Perišić（37岁），门将Livaković（预计首发）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-29/research-周二013.json、.nutmeg-data/zucai/26134-research-m12.json（引 Al Jazeera、SI）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "右后卫Smolčić病毒感染缺阵，Baturina、Stanišić受病毒影响；Modrić、Budimir能否首发各信源冲突，未证实。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json（引 tportal、World Soccer Talk、Sports Mole、gol.dnevnik）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：预计收紧为中低位加长传，破局靠Perišić边路传中、Budimir头球与定位球；此前描述为中低位4-2-3-1。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二013.json（研究员未注明外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "cyprus",
+   "name_zh": "塞浦路斯",
+   "name_en": "Cyprus",
+   "aliases": [
+    "Cyprus",
+    "塞浦路"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Akis Mantzios。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json（引 Sports Mole、in.gr）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联C级第2组（同组黑山、亚美尼亚、拉脱维亚）。截至2026-10-05前：积4分列第二，黑山9分领跑，亚美尼亚3分，拉脱维亚1分。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json（引 Sports Mole、sportsgambler）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "客场1-2黑山（Marcus Edwards进球）；客场0-0拉脱维亚；主场2-0亚美尼亚（Konomis、Kakoullis进球，52分钟起少一人仍零封）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json、.nutmeg-data/zucai/26134-research-m2.json（引 in.gr、sigmalive、Sofascore）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "Marcus Edwards（新入籍边锋）、Loizou、Kakoullis、Pittas、Konomis。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json、.nutmeg-data/zucai/26134-research-m2.json（引 Sportsmole、sportsgambler）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "左后卫Pileas红牌停赛，中轴完整；此前9/28报中卫Laifis伤缺（Sportsmole）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json、.nutmeg-data/zucai/26134-research-m2.json（引 Sports Mole、Sportsmole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-2-3-1，控球约50%，进攻靠边路Loizou、Kakoullis与定位球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json（引 sportsgambler）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "czech-republic",
+   "name_zh": "捷克",
+   "name_en": "Czech Republic",
+   "aliases": [
+    "Czech Republic",
+    "Czechia"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "新帅 Santi Denia（桑蒂·德尼亚）；9/29 对英格兰为其第二场执教。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二009.json（引 Vavel、RotoWire）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 A级A3组（英格兰、西班牙、克罗地亚）。截至10/6赛前3战0分垫底，进2失7；10/6 客场（温布利）对英格兰为第4轮。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "1-2克罗地亚（主场，一球被VAR越位取消）；9/29 主场0-2英格兰（Sulc 红牌）；1-3西班牙，Krejci 两黄红牌，少一人仍进1球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/zucai/26135-research-m10.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二009.json（引 Sports Mole、Vavel）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究点名 Hlozek、Sulc（回归10号位）、Hranac、Vitik、Coufal；Schick 已退出国家队，Darida 亦退出（9/29 研究）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二009.json（引 Sports Mole、Vavel）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10/6 Krejci 红牌停赛（Vitik 顶替），Coufal 膝伤存疑，Chaloupek 离队，Sulc 停赛期满回归（Sports Mole 10/5）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/zucai/26135-research-m10.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-2-3-1 中低位防守，身体型，靠定位球（高点 Hlozek）和转换；少了 Krejci 后中卫组合出球和防高空打折。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二009.json（研究员未注明该描述的外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "denmark",
+   "name_zh": "丹麦",
+   "name_en": "Denmark",
+   "aliases": [
+    "Denmark"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Brian Riemer；09-24 对挪威为其首秀（新帅），研究称丹麦未打进 2026 世界杯。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m10.json；.nutmeg-data/jczq/daily/2026-09-24/research-周四008.json（引 sportsgambler）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 A 级第 4 组（对手含挪威、威尔士）。首轮客场 2-3 负挪威，0 分；第 2 轮 09-27 主场对威尔士（Parken），截至 09-27 赛前无赛果。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json（引 Sports Mole、goal.com、sportsgambler）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "09-24 客场 2-3 负挪威：一度 0-2 落后，Damsgaard 任意球、Højlund 角球头球追平，74' 被 Haaland 绝杀；来源称射正 8 次、控球 48%。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json（引 Sports Mole、goal.com）；.nutmeg-data/zucai/26133-research-m10.json（未注明外部来源）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "预计首发骨架（09-27 稿）：Jørgensen；Kristensen、Andersen、Provstgaard、Mæhle；Hjulmand、Højbjerg；Dorgu、Froholdt、Damsgaard；Højlund。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json（引 Sports Mole、goal.com）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "09-27 稿：缺 Eriksen、Nørgaard、M.Jensen、Osula、Dolberg；26133 稿另称 Christensen（DBU 官宣退出）、Bah 伤退，Grønbæk 首轮后小伤离队。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json（引 Sports Mole、goal.com）；.nutmeg-data/zucai/26133-research-m10.json（引 DBU 官宣）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：Hjulmand/Højbjerg 组织控球，边路 Dorgu、Mæhle 推进，靠宽度和 Højlund 抢点破低位，定位球有高点。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json（引 Sports Mole、goal.com）",
+     "at": "2026-09-27"
+    }
+   ]
+  },
+  {
+   "team_id": "ecuador",
+   "name_zh": "厄瓜多尔",
+   "name_en": "Ecuador",
+   "aliases": [
+    "Ecuador"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Marcelo Gallardo，合同到 2030 年；09-24 对韩国友谊赛为其首秀（新帅）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四002.json（引 Sportskeeda、FOX、ABC Color）",
+     "at": "2026-09-24"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛窗口：09-24 客场对韩国（水原）；之后还将赴日本踢两场（10-01、10-05）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四002.json（引 Sportskeeda、FOX、ABC Color）",
+     "at": "2026-09-24"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "研究只载世界杯战绩：小组第三晋级，32 强 0-2 负墨西哥；09-24 对韩国的赛果不在证据内。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四002.json（引 Sportskeeda、FOX、ABC Color）",
+     "at": "2026-09-24"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "沿用世界杯班底；预计 4-4-2 首发（Khelnow，未证实）：Galíndez；F.Caicedo、Pacho、Torres、Estupiñán；Yeboah、Alcívar、Vite、Angulo；Mercado、Arroyo。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四002.json（引 Khelnow、El Universo、Primicias）",
+     "at": "2026-09-24"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "厄媒 El Universo/Primicias（09-20）：缺 Hincapié、Joel Ordóñez、Moisés Caicedo、Plata、Kevin Rodríguez；Enner Valencia 已退役。Khelnow 称双方无伤停，与之矛盾。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四002.json（引 El Universo、Primicias、Khelnow）",
+     "at": "2026-09-24"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：世界杯以低失球防守立身；无正印中锋，进攻主要靠 Angulo、Yeboah 边路推进。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四002.json",
+     "at": "2026-09-24"
+    }
+   ]
+  },
+  {
+   "team_id": "england",
+   "name_zh": "英格兰",
+   "name_en": "England",
+   "aliases": [
+    "England"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅图赫尔（Tuchel）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/zucai/26135-research-m10.json（引 englandfootball.com、ESPN、Al Jazeera）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联A级第3组（同组西班牙、克罗地亚、捷克）。截至2026-10-06第4轮前：3战2胜1负积6分列第2；第4轮主场战捷克。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "主场2-3负西班牙（Kane罚丢点球）；9/29客场2-0捷克（对手Sulc红牌）；客场7-0克罗地亚；3战进11失3。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二009.json（引 Sports Mole、ESPN、Al Jazeera）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "Kane（出场即追平125场国家队纪录）、Bellingham、Saka、Gordon、Eze、Alexander-Arnold、Anderson、Lewis-Skelly。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/zucai/26135-research-m10.json（引 englandfootball.com、Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Rice、Palmer、Mainoo、Livramento、Rashford窗口初退出，Konsa、Scott伤退，O'Reilly退出；Bellingham、Guehi、Lewis-Skelly差一张黄牌停赛；大幅轮换仅为媒体预测。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/zucai/26135-research-m10.json（引 Sports Mole、thefalse9）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-2-3-1控球破低位，Saka/Gordon/Eze边路拉开，Alexander-Arnold长传调度，Kane回撤做球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二009.json（研究员未注明外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "estonia",
+   "name_zh": "爱沙尼亚",
+   "name_en": "Estonia",
+   "aliases": [
+    "Estonia",
+    "爱沙尼"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Jürgen Henn。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联C级第4组（同组冰岛、保加利亚、卢森堡）。截至2026-10-06第4轮前：1胜2平积5分列第2，冰岛7分居首；第4轮主场战冰岛。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "客场1-1冰岛（Paskotsi下半场扳平）；0-0保加利亚；1-0卢森堡（Peetson第5分钟进球）；3场进2失1。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json、.nutmeg-data/zucai/26134-research-m8.json（引 Sports Mole、Footballwhispers）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "队长中卫Karol Mets、门将Karl Hein（不来梅）、Peetson、Paskotsi、Kuusk、Poom、前锋Mustmaa。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json、.nutmeg-data/jczq/daily/2026-09-26/research-周六011.json（引 Sports Mole、fotbolti.net）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "队长Mets累计黄牌停赛，一号门将Hein肌肉伤缺（预计Igonen首发），Saarma伤缺（Sports Mole预览，媒体级单源）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：五后卫低位（5-1-3-1），Poom单后腰、Mustmaa单锋，靠反击和定位球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "faroe-islands",
+   "name_zh": "法罗群岛",
+   "name_en": "Faroe Islands",
+   "aliases": [
+    "Faroe Islands",
+    "法罗"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Eyðun Klakstein；10-06 稿称其战术组织成型（local.fo）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json（引 local.fo）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 C 级第 3 组（斯洛伐克、摩尔多瓦、哈萨克斯坦）。截至 10-06 赛前三轮 3 分排第 3、未败；第 4 轮客场对哈萨克斯坦（阿斯塔纳）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json（引 sportsmole、dailysports）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "09-26 主场 1-1 哈萨克斯坦；10-02 主场 1-1 斯洛伐克，替补 Justinussen 远射扳平，被当地媒体称本届最佳表现。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json（引 local.fo、VAVEL）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "替补 Justinussen 有远射能力；09-26 稿：Árni Frederiksberg 已退出国家队，Klettskarð 赛前伤退，由 Viking 的 Jørgen Nielsen 补位。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json（引 local.fo）；.nutmeg-data/zucai/26133-research-m5.json",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "仅有 09-26 首战稿：缺 Hallur Hansson、Brandur Hendriksson Olsen、Jákup Andreasen、Mneney、Klettskarð 等；10-06 稿未列法罗新缺阵。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-26/research-周六010.json（引 newsdirectory3、footballwhispers）；.nutmeg-data/zucai/26133-research-m5.json",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：紧凑低位/中位防守，靠定位球与长传打第二点；首回合与对斯洛伐克均用此套路拿 1 分。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json（引 local.fo）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "france",
+   "name_zh": "法国",
+   "name_en": "France",
+   "aliases": [
+    "France"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅齐达内，已接替德尚；9/28为其执教第2场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一005.json（研究员未注明外部来源）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联A级第1组（同组比利时、意大利、土耳其），截至10/5第4轮前：7分（1:0土耳其、1:0比利时、1:1意大利）；第4轮主场（法兰西大球场）对比利时。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json（研究员未注明外部来源）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/28客场1:0胜比利时（奥利塞89分钟，射门18:12、射正7:2）；首轮主场1:0土耳其（控球64%，xG 1.17:1.21）；10/2与意大利1:1。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一005.json、.nutmeg-data/jczq/daily/2026-10-05/research-周一004.json（引 ESPN、beIN、Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "前场奥利塞（连续两场破门）、登贝莱、杜埃；9/28研究另列Cherki、Koné、Rabiot、Maignan、Koundé；中卫预计雅凯（本窗新招）与拉克鲁瓦临时搭档。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json、.nutmeg-data/zucai/26134-research-m3.json（引 ESPN、beIN、Sports Mole、Goal、Yahoo）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "缺姆巴佩（伤）、乌帕梅卡诺（对意大利两黄停赛）、萨利巴（伤，未入选）；研究称均为官宣消息（Sports Mole、Goal）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json（引 Sports Mole、Goal）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：控球压制，奥利塞、杜埃、登贝莱打边路一对一；首回合对低位共18射，但破门效率不高，89分钟才进球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json（引 ESPN、beIN）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "georgia",
+   "name_zh": "格鲁吉亚",
+   "name_en": "Georgia",
+   "aliases": [
+    "Georgia",
+    "格鲁吉"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "Sagnol欧国联开局不顺后离任，现由临时主帅Ramaz Svanadze执教。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json（引 Sports Mole、dailysports、1TV）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联B级第2组（同组北爱尔兰、匈牙利、乌克兰）。截至2026-10-05第4轮前：3战1平2负积1分垫底，0进球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json（引 Sports Mole、dailysports）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "0-1北爱尔兰（点球被扑）；0-0乌克兰；0-1匈牙利（射门8比26，射正3比8）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json（引 ESPN、minutolive）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "Kvaratskhelia（巴黎，队长）、Mikautadze（比利亚雷亚尔）、门将Mamardashvili。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json、.nutmeg-data/jczq/daily/2026-09-25/research-周五006.json（引 Racing Post）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "缺Kiteishvili（Sports Mole，单源）；临时主帅Svanadze赛后承认伤病和阵容深度不足。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json（引 Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：9/25预计3-4-2-1，依赖Kvaratskhelia个人突破，阵地战破门乏力。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-25/research-周五006.json、.nutmeg-data/jczq/daily/2026-10-05/research-周一005.json（研究员未注明外部来源）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "germany",
+   "name_zh": "德国",
+   "name_en": "Germany",
+   "aliases": [
+    "Germany"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅克洛普（Klopp），接替 Nagelsmann；9/24 对荷兰为首秀，9/27 对希腊为第2场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四006.json（引 Sky Sports、ESPN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 A级A2组（荷兰、希腊、塞尔维亚）。MD1 客场1-1荷兰；9/27 MD2 主场（奥格斯堡）对希腊，希腊首轮后3分领跑。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json、.nutmeg-data/zucai/26133-research-m13.json（引 Sky、ESPN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/24 客场1-1荷兰：Nmecha 上半场破门，大半场被压制，92' 被 Gakpo 扳平（Sky、ESPN）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json（引 Sky、ESPN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "9/27 研究点名在队：Kimmich、Tah、Schlotterbeck、ter Stegen、Nmecha；Burkardt 补招；Wirtz 来源说法不一（一说为补招）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json、.nutmeg-data/zucai/26133-research-m13.json（引 Sky、ESPN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Musiala（肌肉撕裂）、Havertz（腿筋伤）缺席对希腊一战；DFB 官宣两人离队（据 26133 研究）。9/24 研究另列 Goretzka、Undav 伤缺。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json、.nutmeg-data/zucai/26133-research-m13.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四006.json（引 Sky、ESPN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：克洛普式高位压迫加快速转换，定位球高点 Tah/Schlotterbeck；缺 Musiala 后阵地战创造力下降。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json（引 Sky、ESPN）",
+     "at": "2026-09-27"
+    }
+   ]
+  },
+  {
+   "team_id": "greece",
+   "name_zh": "希腊",
+   "name_en": "Greece",
+   "aliases": [
+    "Greece"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅伊万·约万诺维奇（Ivan Jovanović），本窗未召前队长Bakasetas，研究称属教练选人。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四007.json（引 Danas）、.nutmeg-data/jczq/daily/2026-09-27/research-周日007.json",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联A级A2组（同组德国、荷兰、塞尔维亚），首次升入A级；截至2026-09-27第2轮前，首轮胜后积3分领跑。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json、.nutmeg-data/zucai/26132-research-m6.json（引 Sky、ESPN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "首轮2-1胜塞尔维亚（Tzolis、Douvikas进球；9/27研究称主场，9/24赛程与26133研究为贝尔格莱德客场）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json、.nutmeg-data/zucai/26133-research-m13.json（引 Greek City Times、Goal.com）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "前场Pavlidis、Douvikas、Tzolis，左路Tsimikas，后防Mavropanos；Kostoulas为攻击手。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四007.json（引 Greek City Times、Goal.com）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "据 Greek City Times/Goal.com 无新伤；9/24称创造型球员Konstantelias伤缺；Kostoulas缝针预计可出场（26133）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json、.nutmeg-data/zucai/26132-research-m6.json、.nutmeg-data/zucai/26133-research-m13.json（引 Greek City Times、Goal.com）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-4-2紧凑低位加反击，Tsimikas左路传中（对塞尔维亚10次传中）是进球通道。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日007.json、.nutmeg-data/zucai/26133-research-m13.json（引 Greek City Times、Goal.com）",
+     "at": "2026-09-27"
+    }
+   ]
+  },
+  {
+   "team_id": "hungary",
+   "name_zh": "匈牙利",
+   "name_en": "Hungary",
+   "aliases": [
+    "Hungary"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 B 级第 2 组（对手含乌克兰、北爱尔兰）。首轮主场 0-1 负乌克兰；第 2 轮 09-28 客场对北爱尔兰（温莎公园），截至赛前无赛果。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一008.json；.nutmeg-data/zucai/26134-research-m4.json（引 Sofascore、Flashscore、MLSZ）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "首轮主场 0-1 负乌克兰：控球 57%、射门 17 对 10、xG 2.03、一次中柱；对手末段 10 人仍守住。赛末卷入冲突，未查到停赛。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一008.json（引 Sofascore、Flashscore）；.nutmeg-data/zucai/26134-research-m4.json（引 MLSZ）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "Szoboszlai 为组织轴心（首轮 94 次触球、评分 8 分，主罚定位球），Kerkez 左路插上，Orban 有高点。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一008.json（引 Sofascore、Flashscore）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "锋线 Barnabás Varga 大腿伤缺阵（两稿一致）；Kerkez、Szoboszlai、Orban 可出场；Rossi 可能轮换（未证实）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一008.json（引 NewsLetter、Sports Mole）；.nutmeg-data/zucai/26134-research-m4.json（引 MLSZ）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：Szoboszlai 为轴控球推进，依赖定位球；缺中锋后破低位效率有限，首轮 17 射 0 进。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一008.json；.nutmeg-data/zucai/26134-research-m4.json（引 MLSZ）",
+     "at": "2026-09-28"
+    }
+   ]
+  },
+  {
+   "team_id": "iceland",
+   "name_zh": "冰岛",
+   "name_en": "Iceland",
+   "aliases": [
+    "Iceland"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Arnar Gunnlaugsson（研究10/6、9/28均列为主帅）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json、.nutmeg-data/zucai/26134-research-m14.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 C级C4组（保加利亚、卢森堡、爱沙尼亚）。截至10/6赛前2胜1平7分居首；10/6 客场对爱沙尼亚（塔林）为第4轮，爱沙尼亚5分第2。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/26 主场1-1爱沙尼亚（门将 Valdimarsson 扑出点球）；9/29 客场3-0卢森堡；另3-0保加利亚，主客场两个来源说法不一，未证实。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二012.json（引 Sports Mole、ESPN）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "10/6 研究点名在队：Orri Óskarsson、Andri Guðjohnsen、Haraldsson、Jóhannesson，门将与中卫在；9/26 预计首发门将为 Valdimarsson。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json、.nutmeg-data/jczq/daily/2026-09-26/research-周六011.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10/6 缺 Albert Gudmundsson、Stefán Teitur Thórdarson（伤），Mikael Egill Ellertsson 累积黄牌停赛（Sports Mole 预览）；Albert 9/26 肩膀脱臼，据报本期报销。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二012.json（引 Sports Mole、Vísir、mbl.is）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-3-3 主动控球，边路传中找 Guðjohnsen 头球；缺 Albert 后阵地战拆低位能力下降，身高占优、定位球机会较多。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二004.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二012.json（研究员未注明该描述的外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "italy",
+   "name_zh": "意大利",
+   "name_en": "Italy",
+   "aliases": [
+    "Italy"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅曼奇尼（Mancini），二进宫；9/28为回归第2场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一004.json（引 football-italia、Eurosport.it、Daily Sabah）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联A级第1组（同组法国、比利时、土耳其），截至10/5第4轮前：4分排第3（法国7、比利时6、土耳其0）；第4轮主场（博洛尼亚）对土耳其。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json（引 sportmediaset、fanpage、ESPN）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "本届战绩：0-2负比利时（罗马主场，xG 1.5:2.7）、客场4-1胜土耳其、10/2巴黎1-1平法国（巴斯托尼进球）；第4轮前只休3天。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一004.json（引 Sofascore、football-italia、sportmediaset、ESPN）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "门将多纳鲁马、中卫巴斯托尼在；10/5预计换6-7人：巴雷拉、罗马诺、杜姆比亚组中场，斯卡马卡、贝尔加拉进前场；9/28称巴雷拉等10人未随队（土耳其媒体），与此冲突。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json、.nutmeg-data/zucai/26134-research-m7.json（引 sportmediaset、fanpage、ESPN、Daily Sabah）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "9/28研究：缺迪马尔科、克里斯坦特、洛卡特利（均伤），巴斯托尼停赛期满回归，Retegui未入选；10/5研究未再列意大利伤停（football-italia、Eurosport.it）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一004.json、.nutmeg-data/zucai/26134-research-m7.json（引 football-italia、Eurosport.it）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-3-3主导控球、两翼推进；中场首轮曾被打穿，主场破低位一般，但客场对土耳其进4球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一004.json（研究员未注明外部来源）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "japan",
+   "name_zh": "日本",
+   "name_en": "Japan",
+   "aliases": [
+    "Japan"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅森保一，赛前发布会称首发以周一前到队的16人为主。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四001.json（研究员未注明外部来源）",
+     "at": "2026-09-24"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛（麒麟挑战杯）：2026-09-24主场（宫城Q&A Stadium）对乌拉圭，双方世界杯后首战；研究称日本主场三年多不败。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四001.json（研究员未注明外部来源）",
+     "at": "2026-09-24"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "森保一点名的早到球员：早川友基、板仓滉、伊藤洋辉、濑古步梦、堂安律、中村敬斗、佐野海舟、松木玖生、后藤启介、盐贝健人；久保建英、镰田大地晚到，大概率替补。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四001.json（研究员未注明外部来源）",
+     "at": "2026-09-24"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "富安健洋伤缺（已公布）；门将铃木彩艳侧腹受伤，媒体称基本确定缺阵、未见官方确认，早川友基可能顶上；安藤智哉腰痛，未随队去宫城。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四001.json（研究员未注明外部来源）",
+     "at": "2026-09-24"
+    }
+   ]
+  },
+  {
+   "team_id": "kazakhstan",
+   "name_zh": "哈萨克",
+   "name_en": "Kazakhstan",
+   "aliases": [
+    "Kazakhstan"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅范特希普（John van 't Schip），夏天接手，前任Baissufinov 6月辞职；2026-10-06一份研究称主帅「未证实」。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-29/research-周二011.json、.nutmeg-data/jczq/daily/2026-10-06/research-周二003.json（引 SportsMole、VAVEL）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联C级第3组（同组斯洛伐克、摩尔多瓦、法罗群岛）。截至2026-10-06研究：3轮1分垫底，连续5场不胜（dailysports）；上届B级降级。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json、.nutmeg-data/zucai/26134-research-m13.json（引 dailysports、Sports Mole、UEFA）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/26客场1-1法罗群岛（先失球，Yerlanov扳平）；10/2主场1-2负摩尔多瓦。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二011.json（引 VAVEL、SportsMole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "Yerlanov（头球进球点）、Islamkhan（角球），18岁前锋Satpaev。",
+     "evidence": "research .nutmeg-data/zucai/26134-research-m13.json、.nutmeg-data/jczq/daily/2026-10-06/research-周二003.json（引 Sports Mole、tips.gg）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Satpaev腿筋伤缺、Chesnokov伤缺、Samorodov待定（tips.gg/sportsmole）；另有聚合源称无新伤，存在矛盾；9/26称Chesnokov停赛。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json、.nutmeg-data/jczq/daily/2026-09-26/research-周六010.json（引 tips.gg、sportsmole、footballwhispers）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：低位整体防守加定位球，缺Satpaev后破密集防守手段有限。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json、.nutmeg-data/zucai/26134-research-m13.json（研究员未注明外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "kosovo",
+   "name_zh": "科索沃",
+   "name_en": "Kosovo",
+   "aliases": [
+    "Kosovo"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Foda，曾执教奥地利（带队 2020 欧洲杯），熟悉本场对手奥地利。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m12.json（未注明外部来源）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 B 级第 3 组（同组含爱尔兰、奥地利）。首轮 09-24 主场 1-0 爱尔兰；第 2 轮客场对奥地利（维也纳）。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m12.json；.nutmeg-data/zucai/26132-research-m7.json（均未注明外部来源）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "09-24 主场 1-0 爱尔兰：射门 22 比 3，Muriqi 83' 补射头球破门。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m12.json（未注明外部来源）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "Muriqi 状态好，Zhegrova 为爆点（26133 稿）。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m12.json（未注明外部来源）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "队长中卫 Rrahmani 于 09-11 与足协决裂退出国家队，Hadergjonaj 离队；中卫组合在 B 级赛首秀（26132 稿）。",
+     "evidence": "research .nutmeg-data/zucai/26132-research-m7.json（未注明外部来源）",
+     "at": "2026-09-24"
+    }
+   ]
+  },
+  {
+   "team_id": "latvia",
+   "name_zh": "拉脱维亚",
+   "name_en": "Latvia",
+   "aliases": [
+    "Latvia",
+    "拉脱维"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Paolo Nicolato（09-28 稿拼作 Nikolato）；称 MD3 对黑山是“近年最好表现之一”（tv3.lv）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json；.nutmeg-data/zucai/26135-research-m2.json（引 tv3.lv）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 C 级第 2 组（黑山、塞浦路斯、亚美尼亚）。截至 10-05 赛前 1 分垫底（黑山 9、塞浦路斯 4、亚美尼亚 3）；第 4 轮客场对塞浦路斯。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json；.nutmeg-data/zucai/26135-research-m2.json",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "三轮：客场 0-2 亚美尼亚；主场 0-0 塞浦路斯（0 射正）；主场 1-2 黑山（Strods 82' 进本届首球）。近 10 场场均 0.6 球、射正 2.1。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json（引 sportacentrs.com、tv3.lv）；.nutmeg-data/zucai/26135-research-m2.json",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "前场支点 Uldrikis 或 Gutkovskis；Strods 在黑山战进球；09-28 稿称名单有 5 名新人（含 Cirkins、Strods 等）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json；.nutmeg-data/zucai/26134-research-m2.json（引 Diena）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Savaļnieks（MD3 第 28 分钟伤退）、Patijcuks 伤缺，中卫 Čerņomordijs 停赛；仅 Sports Mole 单源，未经拉脱维亚官方确认。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json（引 Sports Mole）；.nutmeg-data/zucai/26135-research-m2.json",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：预计 5-4-1 低位站位，以 Uldrikis 或 Gutkovskis 为支点，长传反击；破门主要靠定位球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json；.nutmeg-data/zucai/26134-research-m2.json",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "luxembourg",
+   "name_zh": "卢森堡",
+   "name_en": "Luxembourg",
+   "aliases": [
+    "Luxembourg"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Jeff Strasser（10/5研究更正此前称Luc Holtz的说法）。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m11.json、.nutmeg-data/jczq/daily/2026-10-06/research-周二005.json（研究员未注明外部来源）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联C级第4组（同组冰岛、爱沙尼亚、保加利亚），截至10/6第4轮前：1胜2负3分排第3（冰岛7、爱沙尼亚5、保加利亚1）；第4轮主场对保加利亚。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二005.json、.nutmeg-data/zucai/26135-research-m11.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "首轮客场2-1胜保加利亚（队史首胜），随后主场0-3冰岛、0-1爱沙尼亚（射中门框两次），三战进2失4。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二005.json、.nutmeg-data/zucai/26135-research-m11.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "核心提及Barreiro（本菲卡，攻守枢纽）、Thill（远射、定位球）、门将Moris；Sports Mole预计首发含Selimovic、Moreira、Dardari、Kadamani。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二005.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二012.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "缺中卫Mahmutovic（累计黄牌停赛）、Sinani和队长Jans（伤）；Barreiro背伤轮休后可回归（L'essentiel 10/4）；9/29研究另称Korac十字韧带报销。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二005.json、.nutmeg-data/zucai/26135-research-m11.json（引 Sports Mole、L'essentiel）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：靠定位球（Thill）和Barreiro后插上；缺Sinani后阵地战组织下降；预计4-1-4-1或4-2-3-1。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二005.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二012.json（研究员未注明外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "maldives",
+   "name_zh": "马尔代夫",
+   "name_en": "Maldives",
+   "aliases": [
+    "Maldives",
+    "马尔代"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "competition_2026_27",
+     "note": "友谊赛：2026 CFA中国之队-重庆国际足球邀请赛揭幕战（9/24 客场对中国）；土库曼斯坦退出后9/14-15紧急递补，作11月孟加拉SAFF锦标赛热身。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四003.json（引 腾讯新闻、北青、edition.mv）",
+     "at": "2026-09-24"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：临时凑队，FIFA 173，多数球员非真正职业；友谊赛中预计可能全线收缩低位防守（研究员推测，非赛后事实）。",
+     "evidence": "research .nutmeg-data/zucai/26132-research-m1.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四003.json（引 新浪、edition.mv；at取 jczq 研究 captured_at）",
+     "at": "2026-09-24"
+    }
+   ]
+  },
+  {
+   "team_id": "moldova",
+   "name_zh": "摩尔多瓦",
+   "name_en": "Moldova",
+   "aliases": [
+    "Moldova",
+    "摩尔多"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Lilian Popescu（10/5研究称上任几个月）。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m12.json、.nutmeg-data/jczq/daily/2026-10-06/research-周二010.json（引 Sports Mole、denniksport.sk）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联C级第3组（同组斯洛伐克、哈萨克斯坦、法罗群岛），截至10/6第4轮前：4分排第2；第4轮主场（基希讷乌Zimbru球场）对斯洛伐克。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二010.json、.nutmeg-data/zucai/26135-research-m12.json（研究员未注明外部来源）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/26 0-2负斯洛伐克（首回合）；10/2客场2-1胜哈萨克斯坦（Cleșcenco、Popescu进球）；近6场5场不败（含3平），但连续18场没有零封（Sports Mole 10/4）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二010.json、.nutmeg-data/zucai/26135-research-m12.json（引 Sports Mole、VAVEL）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "进球点提及Cleșcenco、P. Popescu；中场Vadim Rață受伤时由Ovidiu David顶替（媒体报道）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二010.json、.nutmeg-data/zucai/26135-research-m12.json（引 Sports Mole、VAVEL）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "中场Vadim Rață受伤可能缺阵（媒体报道，未官宣）；前锋Postolachi因伤退出名单（sportnet.sme.sk，10/5）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二010.json、.nutmeg-data/zucai/26135-research-m12.json（引 Sports Mole、sportnet.sme.sk）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：3-5-2/5-3-2低位防守，靠双前锋反击和定位球；主帅体系已成型（Weiss称其表现超出预期）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二010.json、.nutmeg-data/zucai/26135-research-m12.json（引 denniksport.sk）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "montenegro",
+   "name_zh": "黑山",
+   "name_en": "Montenegro",
+   "aliases": [
+    "Montenegro"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅武西尼奇（Mirko Vučinić）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json（引 Sports Mole 等）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联C级C2组（同组亚美尼亚、塞浦路斯、拉脱维亚），截至10/5第4轮前：3战全胜9分领跑；第4轮主场（波德戈里察）对亚美尼亚。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json（引 Sports Mole、thestatszone、ESPN）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "三战全胜：主场2-1塞浦路斯，客场3-2亚美尼亚，客场2-1拉脱维亚；三场每场都丢球（1/2/1），场均进球约2.3。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json（引 Sports Mole、thestatszone）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "10/5研究点名Krstović、Osmajić（高点与反击）、Jovetić（串联）；9/28研究另提Adžić、后防Savić。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json、.nutmeg-data/zucai/26134-research-m1.json（研究员未注明外部来源）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10/5：Latković停赛（媒体称累计黄牌；9/28研究称因健康原因）；Hakšabanović、Marušić伤缺仅有报道、本窗未核实（Sports Mole）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一003.json（引 Sports Mole、sportaran）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：Krstović/Osmajić提供高点与反击，Jovetić串联；对低位防守破局效率不高（对塞浦路斯要靠点球解锁）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json、.nutmeg-data/zucai/26134-research-m1.json（研究员未注明外部来源）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "netherlands",
+   "name_zh": "荷兰",
+   "name_en": "Netherlands",
+   "aliases": [
+    "Netherlands"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Xavi（哈维），8/12 上任，接替 Koeman；9/24 对德国为首秀。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四006.json、.nutmeg-data/jczq/daily/2026-09-27/research-周日005.json（引 goal.com、Sofascore、beIN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 A级A2组（德国、希腊、塞尔维亚）。MD1 主场1-1德国；9/27 MD2 客场（贝尔格莱德）对塞尔维亚，希腊首轮后3分居首。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json、.nutmeg-data/zucai/26133-research-m11.json（引 goal.com、Sofascore、beIN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/24 主场1-1德国：射门22脚（10脚射正）、xG约3.18、只让对手射正2脚，92' Gakpo 扳平。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json（引 goal.com、Sofascore、beIN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究点名后防 Van Dijk/Van Hecke/Van de Ven、门将 Verbruggen、中场 Gravenberch/Reijnders/Veerman；中锋由新人 Meerdink 首发，Zirkzee 补招。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json、.nutmeg-data/zucai/26133-research-m11.json（引 goal.com、Sofascore、beIN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "缺 F. de Jong、Xavi Simons、Wieffer、Malen；Brobbey 腿筋伤退出（Xavi 赛后确认）；Timber 成疑（goal.com、Sofascore、beIN）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json、.nutmeg-data/zucai/26133-research-m11.json（引 goal.com、Sofascore、beIN）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：Xavi 体系高控球加边路传中（首轮28次传中、12个角球）；中卫线空中能力强。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json（引 goal.com、Sofascore、beIN）",
+     "at": "2026-09-27"
+    }
+   ]
+  },
+  {
+   "team_id": "new-zealand",
+   "name_zh": "新西兰",
+   "name_en": "New Zealand",
+   "aliases": [
+    "New Zealand"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Darren Bazeley；世界杯后首期换血。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m1.json（研究员未注明外部来源；材料无captured_at，at取研究文件 researched_at 2026-09-26）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际A级友谊赛：对中国（重庆），双方均为本窗第2场；新西兰此前9/24 在重庆 2-2 巴勒斯坦，10月另踢麒麟杯。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m1.json（研究员未注明外部来源；at取研究文件 researched_at）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/24 在重庆 2-2 巴勒斯坦：两度领先被扳平，10人次换人、3人首秀。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m1.json（研究员未注明外部来源；at取研究文件 researched_at）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "队长 Chris Wood 与中卫 Finn Surman 按新西兰足协名单安排只踢10月麒麟杯、不参加对中国一战；另有11名世界杯成员因俱乐部/伤病/负荷管理未入选。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m1.json（研究员未注明外部来源；at取研究文件 researched_at）",
+     "at": "2026-09-26"
+    }
+   ]
+  },
+  {
+   "team_id": "north-macedonia",
+   "name_zh": "北马其顿",
+   "name_en": "North Macedonia",
+   "aliases": [
+    "North Macedonia"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Goce Sedloski；研究称其上任以来球队一球未进（ESPN、sportmanija）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json（引 ESPN、sportmanija）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 B级第1组（瑞士、苏格兰、斯洛文尼亚）。截至10/6赛前3战0分、0进7失，为全组唯一3场皆负；10/6 客场对瑞士为第4轮。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json（引 Sports Mole、ESPN）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/26 主场0-3瑞士（射门2:23、射正0）；9/28 客场0-2斯洛文尼亚；10/3 主场0-2苏格兰，第30分钟被迫两人换人。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json、.nutmeg-data/zucai/26134-research-m11.json（引 Flashscore、Sofascore、ESPN）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究点名 Elmas、Bardhi、Miovski 为仅有的进攻点，门将 Dimitrevski；预计5后卫、Miovski 单前锋。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json（引 Sports Mole、mk 媒体）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10/6 中场 Atanasov 累计黄牌停赛（Sports Mole、mk 媒体）；Elmas、Bardhi 可用，未见其他官宣缺阵。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json（引 Sports Mole、mk 媒体）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：5后卫低位防守，靠 Elmas/Bardhi 持球反击和定位球；出球偏脆，对瑞士高位反抢缺乏有效解法。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json（研究员未注明该描述的外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "northern-ireland",
+   "name_zh": "北爱尔兰",
+   "name_en": "Northern Ireland",
+   "aliases": [
+    "Northern Ireland",
+    "北爱"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Michael O'Neill（迈克尔·奥尼尔）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json（引 newsletter.co.uk、Sofascore）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联B级第2组（同组格鲁吉亚、匈牙利、乌克兰）。截至2026-10-05：3战2胜1平积7分领跑，进4球，3场零封。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json（引 Sofascore、Flashscore、Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "客场1-0格鲁吉亚（Shea Charles第99分钟绝杀，xG 1.10比1.71）；主场0-0匈牙利；客场3-0乌克兰（两个定位球加一次长传反击）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一008.json（引 Sofascore）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "门将Pierce Charles（扑出点球）、Shea Charles、Galbraith（对匈牙利全场最佳）、Brown（定位球高点）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json（引 newsletter.co.uk、Sofascore）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "中卫Ballard伤缺（9/28报补时拉伤腿筋，NewsLetter/Sports Mole）；Galbraith回归，Atcheson、Spencer预防性休训，预计可出战。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一008.json（引 newsletter.co.uk、Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：三中卫3-4-3/5-4-1低中位防守，靠定位球、长传反击和边路传中。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一005.json（研究员未注明外部来源）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "norway",
+   "name_zh": "挪威",
+   "name_en": "Norway",
+   "aliases": [
+    "Norway"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Solbakken（研究文件仅写姓）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json（引 SI、Al Jazeera、Sports Mole）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联A级第4组（同组丹麦、葡萄牙、威尔士），首次打A级。截至2026-09-27第2轮前：首轮胜后积3分，与葡萄牙并列前二。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json、.nutmeg-data/zucai/26132-research-m4.json（引 SI、Sports Mole）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "首轮主场3-2胜丹麦，Haaland梅开二度，一度2-0领先被追平；左后卫Møller Wolfe补时两黄红牌；主场14场不败。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json（引 beIN Sports、SI）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "Haaland（国家队56场64球）、队长Ødegaard、门将Nyland、Ajer、Berge、Berg、Nusa、Bobb。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json（引 SI、Al Jazeera）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "左后卫Møller Wolfe停赛（首轮红牌），预计Aursnes改打左后卫；Haaland、Ødegaard无伤报。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json、.nutmeg-data/zucai/26133-research-m14.json（引 SI、Sports Mole、rotowire）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：主场高位压迫，由Ødegaard串联，打向Haaland的直塞和传中。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json（研究员未注明外部来源）",
+     "at": "2026-09-27"
+    }
+   ]
+  },
+  {
+   "team_id": "peru",
+   "name_zh": "秘鲁",
+   "name_en": "Peru",
+   "aliases": [
+    "Peru"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Mano Menezes，球队处于重建期。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-26/research-周六017.json（引 SI、Infobae）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛：北京时间2026-09-27 04:30在奥兰多客战美国；秘鲁为美国、墨西哥、加拿大等四连客场热身，未进2026世界杯。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-26/research-周六017.json（引 SI、U.S. Soccer、ESPN）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "自2024年以来16场只赢2场，最近赢过海地；赛前热身1-3负西班牙（SI）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-26/research-周六017.json（引 SI）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "前锋Lapadula（36岁）、Maxloren Castro（18岁），门将Gallese。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-26/research-周六017.json（引 Infobae）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Carrillo伤缺，右后卫Sonne训练中不适，中卫Gruber因伤退出名单（Infobae 9/17、9/23）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-26/research-周六017.json（引 Infobae）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-3-3或五后卫低位防守，边路出球和锋线终结偏弱。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-26/research-周六017.json（研究员未注明外部来源）",
+     "at": "2026-09-26"
+    }
+   ]
+  },
+  {
+   "team_id": "poland",
+   "name_zh": "波兰",
+   "name_en": "Poland",
+   "aliases": [
+    "Poland"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Jan Urban；9/28研究称其执教近4场不胜，帅位承压。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一007.json（引 Interia、Flashscore.pl）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联B级第4组（同组瑞典、波黑、罗马尼亚），从A级降下。截至2026-10-05第4轮前：3战1胜1平1负积4分，波黑5分。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json（引 interia、rp.pl、sportowefakty）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "主场0-0波黑；客场1-3瑞典（射门18:12，大机会1:4）；主场6-0罗马尼亚（对手22分钟红牌，Lewandowski帽子戏法含一个点球）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一007.json（引 Interia、Rzeczpospolita）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "Lewandowski（对罗马尼亚进3球）、Zieliński、Szymański、Cash、Zalewski、Kiwior、Bednarek。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一007.json（引 interia、Interia）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "队长Lewandowski累计黄牌停赛，10/3已离队（interia、rp.pl、sportowefakty）；Cash、Kiwior、Zieliński、Bednarek在停赛边缘；Kamiński曾内收肌伤退。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一007.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一007.json（引 interia、rp.pl、sportowefakty）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：客场倾向5人中场收缩，靠Zieliński/Szymański转换和Lewandowski支点反击；缺中锋支点后前场终结变弱。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一007.json、.nutmeg-data/jczq/daily/2026-10-05/research-周一007.json（研究员未注明外部来源）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "portugal",
+   "name_zh": "葡萄牙",
+   "name_en": "Portugal",
+   "aliases": [
+    "Portugal"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Jorge Jesus；9/24对威尔士为其接任后首战，沿用世界杯名单中的21人。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四005.json、.nutmeg-data/jczq/daily/2026-09-27/research-周日008.json（引 beIN、The Portugal News）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联A级第4组（同组威尔士、丹麦、挪威），截至9/27第2轮前：首轮1:0威尔士，3分，与挪威并列前二；第2轮客场对挪威（奥斯陆）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json（引 Al Jazeera、Sports Mole、beIN、SI）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "首轮主场1:0威尔士（Félix制胜，23射、xG 2.36，仅5射正）；近13场只赢7场（Ronaldo越位进球被吹）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json、.nutmeg-data/zucai/26133-research-m14.json（引 beIN、The Portugal News、SI）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究点名Dias、Vitinha、J.Neves、Nuno Mendes、Félix、C罗（41岁，首轮首发）；预计4-2-3-1。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四005.json（引 beIN、FotMob、The Portugal News、SI）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "B·费尔南德斯本场不出场（官方确认，Jesus称“不冒险”）；Nuno Mendes肌肉疲劳，预计能出战（beIN、FotMob、The Portugal News）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json（引 beIN、FotMob、The Portugal News）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：控球为主，Vitinha/Neves控场，从Mendes一侧推进；失去B费后中场控制下降；双方都不是铁桶，偏开放对攻。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json（引 SI、Sports Mole）",
+     "at": "2026-09-27"
+    }
+   ]
+  },
+  {
+   "team_id": "republic-of-ireland",
+   "name_zh": "爱尔兰",
+   "name_en": "Republic of Ireland",
+   "aliases": [
+    "Republic of Ireland"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 B 级第 3 组，首轮 09-24 客场 0-1 负科索沃（普里什蒂纳），两国首次交锋；截至 09-26 稿 0 分。",
+     "evidence": "research .nutmeg-data/zucai/26132-research-m7.json；.nutmeg-data/zucai/26133-research-m12.json（均未注明外部来源）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "09-24 客场 0-1 负科索沃：射门 3 比 22，Muriqi 83' 补射头球破门。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m12.json（未注明外部来源）",
+     "at": "2026-09-26"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "缺队长中卫 Collins、后腰 Cullen、中锋 Ferguson（26132 稿）；两队均约 109 天无正式比赛。",
+     "evidence": "research .nutmeg-data/zucai/26132-research-m7.json（未注明外部来源）",
+     "at": "2026-09-24"
+    }
+   ]
+  },
+  {
+   "team_id": "romania",
+   "name_zh": "罗马尼亚",
+   "name_en": "Romania",
+   "aliases": [
+    "Romania",
+    "罗马尼"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Gică Hagi（哈吉），2026年5月上任；10/5 研究称其公开说'赢不了就走'，本场可能是告别战。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一006.json（引 AGERPRES、ziare.com、sport.ro）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 B级第4组（瑞典、波兰、波黑）。截至10/5赛前3战0分，丢12球；10/5 主场对瑞典为第4轮。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（引 AGERPRES、ziare.com、sport.ro）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "1-2瑞典（客场）；9/28 主场闭门作赛2-4波黑；0-6波兰（客场，Drăgușin 第22分钟红牌并送点）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一006.json（引 AGERPRES、ziare.com、sport.ro、Sofascore）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "10/5 研究称进攻依靠 Man、Stanciu、Bîrligea、Olaru。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（引 AGERPRES、ziare.com、sport.ro）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10/5 缺：Drăgușin（红牌停赛）、Ghiță（累积黄牌停赛）、Munteanu（踝扭伤）、Drăguș（伤）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（引 AGERPRES、ziare.com、sport.ro）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：9/28 研究称三中卫加翼卫、由 Hagi 和 Man 创造；另一份称阵型可能改四后卫；10/5 称主场多用反击和定位球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一006.json、.nutmeg-data/zucai/26134-research-m5.json、.nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（引 digisport、adevarul）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "scotland",
+   "name_zh": "苏格兰",
+   "name_en": "Scotland",
+   "aliases": [
+    "Scotland"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Sébastien Pocognoli（波科尼奥利，39 岁比利时人），接替世界杯后辞职的 Steve Clarke；10-06 对斯洛文尼亚是其第 4 场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json；.nutmeg-data/zucai/26134-research-m10.json（引 ESPN、VAVEL、LastWordOnSports）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 B 级第 1 组（瑞士、斯洛文尼亚、北马其顿）。截至 10-06 赛前 3 轮 4 分（1 胜 1 平 1 负），与斯洛文尼亚同分，瑞士 9 分领跑；第 4 轮主场对斯洛文尼亚。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json；.nutmeg-data/zucai/26135-research-m13.json",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "客场 0-0 斯洛文尼亚；主场 0-3 瑞士（Hendry 11' 红牌，近 80 分钟 10 人）；客场 2-0 北马其顿（Bowie、McGinn 点球，McKenna 83' 红牌）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json（引 Sky Sports）；.nutmeg-data/zucai/26135-research-m13.json（引 TNT、Sportingpedia）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "10-06 预计 3-4-2-1（Sports Mole）：Gunn；Welsh、Hendry、Binks；Gannon-Doak、Ferguson、Gilmour、Robertson；McGinn、McBurnie；Bowie。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "McKenna 因红牌停赛；McTominay 心脏手术后恢复中、不在预测首发（原因未证实）；Adams 伤缺；Hendry 复出，Gilmour 回队。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m13.json（引 SFA、Sports Mole）；.nutmeg-data/jczq/daily/2026-10-06/research-周二006.json",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：三中卫加翼卫，靠传中、定位球（McBurnie、Bowie 高点）和 McGinn 后插上破门；面对 5-4-1 低位防守破局效率偏低。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json；.nutmeg-data/zucai/26135-research-m13.json",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "serbia",
+   "name_zh": "塞尔维亚",
+   "name_en": "Serbia",
+   "aliases": [
+    "Serbia",
+    "塞尔维"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Paunović（保诺维奇），自 2025 年 10 月上任，非新帅；09-27 稿称其打“血性/回归”情绪牌，预计变阵 4 处。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m11.json；.nutmeg-data/jczq/daily/2026-09-27/research-周日005.json（引 Sofascore、nova.rs、sportklub.rs）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 A 级 A2 组（同组希腊、德国、荷兰）。首轮 09-24 主场 1-2 负希腊；第 2 轮 09-27/28 主场对荷兰，截至 09-27 赛前无赛果。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json（引 Sofascore）；.nutmeg-data/jczq/daily/2026-09-24/research-周四007.json（引 FOX、ESPN、Flashscore）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "首轮主场 1-2 负希腊：4' 领先后 74'、90+4' 连丢；控球 39%，被射 26 脚（26133 稿写射门 14:10），门将扑救 7 次；上座仅 5,701 人。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json（引 Sofascore、Yahoo）；.nutmeg-data/zucai/26133-research-m11.json",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "门将 V.Milinković-Savić；老将 Tadić 参与锋线，Kostić、Živković 走边路；09-24 稿预计 4-2-3-1，约维奇单箭头（与 09-27 稿锋线描述略有出入）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json；.nutmeg-data/jczq/daily/2026-09-24/research-周四007.json（引 Sportinjo、Informer）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Vlahović 缺阵（09-27 稿称小腿，26133 稿称腿筋、全窗报销）、Ivanović 腿筋伤缺阵、Mitrović 伤缺；中卫 Milenković 伤缺（09-24 稿）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json（引 Sofascore、Yahoo）；.nutmeg-data/zucai/26133-research-m11.json；.nutmeg-data/jczq/daily/2026-09-24/research-周四007.json（引 Sportinjo、footballwhispers）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：预计 4-4-2 低位加反击，靠 Kostić/Živković 边路反击；首轮对希腊已显出低位难扛持续射门。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日005.json（引 Sofascore、nova.rs、sportklub.rs）",
+     "at": "2026-09-27"
+    }
+   ]
+  },
+  {
+   "team_id": "slovakia",
+   "name_zh": "斯洛伐克",
+   "name_en": "Slovakia",
+   "aliases": [
+    "Slovakia",
+    "斯洛伐"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅 Vladimír Weiss（魏斯），为重新上任，上任时间未逐条核实；10-05 稿称其非 Calzona。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二010.json；.nutmeg-data/zucai/26135-research-m12.json",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 C 级第 3 组（摩尔多瓦、法罗群岛、哈萨克斯坦）。三轮 7 分领跑；第 4 轮 10-06 客场对摩尔多瓦（基希讷乌）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二010.json；.nutmeg-data/zucai/26135-research-m12.json",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "09-26 主场 2-0 摩尔多瓦（Schranz、Duda 点球，对手射正 1 次）；10-02 客场 1-1 法罗群岛，靠乌龙领先后被 Justinussen 远射扳平。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m12.json（引 teraz.sk）；.nutmeg-data/zucai/26134-research-m13.json（引 Sports Mole、VAVEL、MightyTips）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "中轴 Lobotka、Škriniar、Hancko、Duda，门将 Dúbravka/Greif，边路 Haraslín、Suslov；锋线 Strelec、Boženík、Bobček 俱乐部出场少。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m12.json（引 teraz.sk）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Bero（足部疲劳性骨折）、第三门将 Rodák 缺阵；Sports Mole（10-04）称无重大伤停，另有摘要提 Bénes、Sauer 伤，与之冲突，未证实。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m12.json；.nutmeg-data/jczq/daily/2026-10-06/research-周二010.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-3-3，Lobotka 控节奏，边路突破加定位球（Škriniar、Hancko 高点）；中锋终结是短板；近 8 场客场 6 负。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m12.json；.nutmeg-data/jczq/daily/2026-10-06/research-周二010.json",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "slovenia",
+   "name_zh": "斯洛文尼",
+   "name_en": "Slovenia",
+   "aliases": [
+    "Slovenia",
+    "斯洛文"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Boštjan Česar（研究文件亦作Cesar）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json（引 Goal.com、Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联B级第1组（同组苏格兰、瑞士、北马其顿）。截至2026-10-06第4轮前：1胜1平1负积4分，与苏格兰同分，净胜球排第二；瑞士9分领跑。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json、.nutmeg-data/zucai/26135-research-m13.json",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "主场2-0北马其顿；主场0-0苏格兰；客场1-2瑞士（Vipotnik先进球，控球34%，射门10比13）。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m13.json、.nutmeg-data/jczq/daily/2026-10-06/research-周二006.json（引 ESPN、RTV SLO）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "门将Oblak（队长）、中卫Bijol、前锋Vipotnik（斯旺西）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json、.nutmeg-data/jczq/daily/2026-09-26/research-周六008.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "头号前锋Šeško因反复胫骨伤退出本期全部比赛（Goal.com）；10/5称Šporar、Verbič也不在（Sportklub/RTV SLO）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json、.nutmeg-data/zucai/26135-research-m13.json（引 Goal.com、Sportklub、RTV SLO）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：预计5-4-1低位防守（Sports Mole），Oblak与Bijol坐镇，Vipotnik冲身后打反击。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二006.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "south-korea",
+   "name_zh": "韩国",
+   "name_en": "South Korea",
+   "aliases": [
+    "South Korea"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "西班牙籍临时主帅Roberto Moreno（另一份研究拼作Robert Moreno），洪明甫离任后接手，首秀为9/24对厄瓜多尔。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四002.json（引 Sportskeeda、FOX、ABC Color）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛：9-10月四连赛（厄瓜多尔、乌拉圭、委内瑞拉、乌兹别克斯坦），10/6在龙仁米尔体育场迎战乌兹别克斯坦为最后一场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "3-0厄瓜多尔（三球全在下半场）；1-4乌拉圭；0-0委内瑞拉；此前世界杯小组出局。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一002.json（引 Ohmynews、Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "孙兴慜（LAFC，差1球追平国家队射手王）、金玟哉（拜仁）、李康仁、黄仁范、吴贤揆（贝西克塔斯）、李在成。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一002.json（引 Sports Mole、Daum）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "据 Sports Mole，名单人员完整、无新增伤病；9/24称Castrop伤缺。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四002.json（引 Sports Mole、Korea Times、JoongAng Daily）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-4-2主控球，靠孙兴慜纵深和李康仁定位球；金玟哉、黄仁范公开称「没有整体防守」「什么都没变」（韩媒）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json（引 Sports Khan、Seoul Economic Daily）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "spain",
+   "name_zh": "西班牙",
+   "name_en": "Spain",
+   "aliases": [
+    "Spain"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅德拉富恩特（原文仅中文名）；西班牙为现任世界杯与欧洲杯冠军，各项赛事称 41 场不败。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json（引 ESPN、beIN、Goal、Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联 A 级第 3 组（英格兰、克罗地亚、捷克）。截至 10-06 赛前 3 战全胜 9 分；第 4 轮客场对克罗地亚（斯普利特），再拿 1 分即锁定八强。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json（引 ESPN、beIN、Goal、Sports Mole）；.nutmeg-data/zucai/26135-research-m9.json",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "3-2 英格兰（客，温布利逆转）；4-1 克罗地亚（主，09-29）；约 10-03 3-1 捷克，换 9 人，Yamal 6'、Rodri、Merino 进球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json；.nutmeg-data/jczq/daily/2026-09-29/research-周二013.json（引 FotMob、beIN）；.nutmeg-data/zucai/26135-research-m9.json",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "10-06 预测首发（Sports Mole）：Simón；Fresneda、Cubarsí、Huijsen、Cucurella；Fermín López、Zubimendi、Pedri；Yamal、Oyarzabal、Muñoz。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "缺 F.Torres（踝）、N.Williams、Grimaldo（大腿）、Gavi（膝）、Joan García（膝）、Fabián（妻子分娩）；10-05 稿称 Yamal 伤情说法矛盾，未证实。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json（引 ESPN、beIN、Goal、Sports Mole）；.nutmeg-data/zucai/26135-research-m9.json（引 ESPN）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：高控球、短传与肋部渗透，Yamal 边路一对一；对克罗地亚被判断为可利用其重组后的松散防线。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json；.nutmeg-data/zucai/26135-research-m9.json",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "sweden",
+   "name_zh": "瑞典",
+   "name_en": "Sweden",
+   "aliases": [
+    "Sweden"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅格雷厄姆·波特（Graham Potter）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（研究员称已核实，引 svenskfotboll.se、hurbra.se、fotbollskanalen）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 B级第4组（波兰、罗马尼亚、波黑）。截至10/5赛前2胜1平7分居首；10/5 客场（布加勒斯特）对罗马尼亚为第4轮。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（引 svenskfotboll.se、hurbra.se、fotbollskanalen）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "MD1 客场2-1罗马尼亚（xG 0.83:0.51）；9/28 主场3-1波兰；1-1波黑（Gyökeres 破门，该研究称补时被扳平，与波黑侧研究的80'不一致）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一007.json（引 FotMob、Sofascore）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究点名 Gyökeres 状态火热，中场 Bergvall、Larsson、Karlström 基本完整，中卫只剩 Lindelöf、E.Smith（中场改打）和临时召入的 V.Eriksson。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（引 svenskfotboll.se、hurbra.se、fotbollskanalen）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10/5 研究称约11人离队：Isak（大腿）、斯塔费尔特（腘绳肌）、埃克达尔伤缺；拉格比尔克、梅尔贝里、阿亚里、尼格伦因病缺阵。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（引 svenskfotboll.se、hurbra.se、fotbollskanalen）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：控球推进，靠 Ayari/Bergvall 直塞找 Gyökeres 等前锋身后；临时中卫组合对高空球和身后球有风险。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json、.nutmeg-data/zucai/26134-research-m6.json（引 beIN、Sports Mole）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "switzerland",
+   "name_zh": "瑞士",
+   "name_en": "Switzerland",
+   "aliases": [
+    "Switzerland"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Murat Yakin（留任）；10/6研究称本场换3-4人（watson、SRF），10/5研究称换“两三个人”（Blick），后者较早。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json（引 watson、SRF、Blick）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联B级第1组（同组北马其顿、苏格兰、斯洛文尼亚），截至10/6第4轮前：3战全胜9分、进8失1；第4轮主场（琉森）对北马其顿。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "客场3:0北马其顿（9/26）、客场3:0苏格兰（对手一人被罚下）、10/3主场2:1斯洛文尼亚（第2分钟先失球后逆转）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json（引 Sports Mole、kicker、SRF、LiveScore）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "预计首发中轴Kobel、Akanji、Elvedi、Freuler、Jashari；Amdouni（3场4球）；Ndoye在边路。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json（引 Sports Mole、kicker、SRF）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Xhaka、Embolo因伪造新冠证书案停赛/被排除出名单（9/29研究称Embolo为世界杯红牌停赛，有出入），Zakaria伤缺（bluewin、blick、20min）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二008.json（引 20min、bluewin、blick）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：控球加边路推进（Ndoye、Athekame套边），配合定位球（Rodriguez任意球、Elvedi头球）；9/28研究称踢4-2-3-1。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二009.json、.nutmeg-data/zucai/26135-research-m14.json、.nutmeg-data/zucai/26134-research-m10.json（引 Sofascore）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "tajikistan",
+   "name_zh": "塔吉克",
+   "name_en": "Tajikistan",
+   "aliases": [
+    "Tajikistan"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Igor Angelovski（footballpalestine）；FIFA排名第101，2023年亚洲杯八强。",
+     "evidence": "research .nutmeg-data/zucai/26135-research-m1.json（引 footballpalestine、新浪）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛：重庆国际足球邀请赛末轮，客场对中国，北京时间10/6 19:35，重庆龙兴足球场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二002.json（引 thestatszone、新浪、livesoccertv、fotmob）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "0:1负阿塞拜疆（终结8场不败）；9/28在重庆2:4负巴勒斯坦（上半场2:2，第53分钟Dzhuraboev两黄被罚下后被反超）；此前中亚杯2:2平伊朗。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二002.json、.nutmeg-data/zucai/26135-research-m1.json（引 thestatszone、新浪）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "阵容和伤停未证实（10/6研究）；Dzhuraboev 9/28被罚下，是否停赛研究未说明。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二002.json、.nutmeg-data/zucai/26135-research-m1.json（引 thestatszone）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：中亚式身体对抗加快速反击，中路推进和定位球有威胁；人员齐整时进攻有韧性（新浪前瞻）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二002.json、.nutmeg-data/zucai/26135-research-m1.json（引 新浪）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "türkiye",
+   "name_zh": "土耳其",
+   "name_en": "Türkiye",
+   "aliases": [
+    "Türkiye"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅蒙特拉（Montella）；9/28 研究称其为第38场执教。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json、.nutmeg-data/zucai/26134-research-m7.json（引 Daily Sabah、aspor、Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联2026-27 A级第1组（法国、比利时、意大利）。截至10/5赛前3战0分，进1失8；法国7分、比利时6分、意大利4分。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json（引 fotomac、haberler、Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "首轮客场0-1法国（门将 Çakır 被罚下，两份研究对红牌时间说法不一）；9/28 主场（布尔萨）1-4意大利；另0-3负比利时。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一004.json、.nutmeg-data/zucai/26134-research-m7.json（引 Goal.com、Sofascore）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究点名 Güler、Aktürkoğlu、Demiral（10/5 代理队长）、Bardakçı；9/28 门将由 Bayındır 顶替停赛的 Çakır。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一004.json（引 fotomac、haberler、Sports Mole、Goal.com）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "10/5 研究称缺6人：Arda Güler、Barış Alper 累计黄牌停赛；Çalhanoğlu、Kenan Yıldız、Kökçü 伤缺，Müldür 缺席；Topçu 膝伤停训。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json（引 fotomac、haberler、Sports Mole）",
+     "at": "2026-10-05"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：9/28 研究称3-4-2-1翼卫推进、Güler 内切；另一份称据报改4-2-3-1；10/5 称缺核心后靠 Aktürkoğlu 等速度反击。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一004.json、.nutmeg-data/zucai/26134-research-m7.json、.nutmeg-data/jczq/daily/2026-10-05/research-周一004.json（引 Goal.com、Daily Sabah、fotomac）",
+     "at": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "team_id": "uruguay",
+   "name_zh": "乌拉圭",
+   "name_en": "Uruguay",
+   "aliases": [
+    "Uruguay"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "Forlán 执教，9/28 对韩国为其第二场；9/24 对日本为首秀，当时研究称弗兰以临时主帅身份首秀，前任比耶尔萨下课。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一002.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四001.json（引 Starnews、VAVEL、El Observador）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛窗口：9/24 客场（宫城）对日本，9/28 客场（首尔）对韩国，间隔4天；研究称其连续8场不胜。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一002.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四001.json（引 Starnews、VAVEL）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/24 客场 1-3 负日本：1-1 僵持到第90分钟，补时连丢两球；Forlán 称比分差距大过场面差距。9/28 对韩国赛果不在材料内。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一002.json（引 Starnews、VAVEL）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "研究称 Giménez、Bentancur、Núñez 可出场，门将为 Mele（Muslera 已不在队中）；9/24 另有 Araújo、De Arrascaeta 在大名单。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一002.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四001.json（引 El Observador）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "Valverde 脚踝伤缺：9/24 研究称其周日在皇马踝伤退出，9/28 研究称赛前已公开；Emiliano Martínez（帕尔梅拉斯）补招入选。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一002.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四001.json（研究员未注明该伤情的具体外部来源）",
+     "at": "2026-09-28"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：Bentancur/Torreira 双后腰；Núñez 冲身后反击，Giménez 为定位球高点；换帅后防线不稳（对日本补时连丢两球）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一002.json（引 Starnews、VAVEL）",
+     "at": "2026-09-28"
+    }
+   ]
+  },
+  {
+   "team_id": "usa",
+   "name_zh": "美国",
+   "name_en": "USA",
+   "aliases": [
+    "USA",
+    "United States"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅波切蒂诺（Pochettino）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json（引 mnufc.com、si.com）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛：主场对加拿大，Allianz Field（明尼苏达州圣保罗），北京时间2026-10-07 08:00；11天内连踢秘鲁、智利、墨西哥、加拿大四场。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json、.nutmeg-data/jczq/daily/2026-09-26/research-周六017.json（引 mnufc.com、SI）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "9/26-27 4-1胜秘鲁（16射、xG 2.39、6射正）；10/6研究称据SI近期3-0大胜墨西哥，对秘鲁比分表述不一；对智利的结果不在材料内。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-29/research-周二015.json、.nutmeg-data/jczq/daily/2026-10-06/research-周二011.json（引 NBC、CBS、FotMob、SI）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "28人名单中12名世界杯球员、13人首次入选，平均约22.75岁；核心为新任队长Adams，加Richards、Tillman、Musah、A. Robinson。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json（引 mnufc.com、si.com）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "世界杯中锋无人到队，Pepi伤缺由Damion Downs替补；Pulisic未入选，McKennie被俱乐部留下（mnufc.com、NBC、CBS）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二011.json、.nutmeg-data/jczq/daily/2026-09-26/research-周六017.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二015.json（引 mnufc.com、NBC、CBS）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-2-3-1控球加边路推进，Reyna任意球质量高；年轻磨合少，后场出球和边后卫较年轻。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-29/research-周二015.json、.nutmeg-data/jczq/daily/2026-10-06/research-周二011.json（引 NBC、CBS、FotMob）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "uzbekistan",
+   "name_zh": "乌兹别克",
+   "name_en": "Uzbekistan",
+   "aliases": [
+    "Uzbekistan"
+   ],
+   "competition_ids": [
+    "intl-friendlies"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅为卡纳瓦罗（Cannavaro），研究文件称其执教乌兹别克斯坦。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json（引 Sports Mole、Best Eleven）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "国际友谊赛：2026-10-06 北京时间19:00（当地20:00）在龙仁米尔体育场客战韩国。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "近两场3-1伊朗、4-1叙利亚，两场进7球；世界杯小组赛3战全负，进2失11。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json（引 Sports Mole、Best Eleven）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "主力Khusanov（曼城）、Shomurodov、Fayzullaev全部入选；Amanov亦在两肋位置。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json（引 Best Eleven 9/21官宣名单、Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "据 Sports Mole，本场前乌兹别克无新增伤病，主力全部入选。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json（引 Sports Mole）",
+     "at": "2026-10-06"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-2-3-1，Khusanov领衔后防，Fayzullaev和Amanov在两肋打反击，擅长转换进攻。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二001.json（研究员未注明外部来源）",
+     "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "wales",
+   "name_zh": "威尔士",
+   "name_en": "Wales",
+   "aliases": [
+    "Wales"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_10",
+     "note": "主帅Craig Bellamy（贝拉米）。",
+     "evidence": "research .nutmeg-data/zucai/26133-research-m10.json、.nutmeg-data/jczq/daily/2026-09-27/research-周日004.json（引 Yahoo/Wales Online）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "欧国联A级第4组（同组葡萄牙、丹麦、挪威），截至9/27赛前：首轮0-1负葡萄牙，0分；第2轮客场对丹麦（哥本哈根Parken）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四005.json（引 Yahoo/Wales Online、beIN SPORTS、Sports Mole）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "form_2026_10_window",
+     "note": "首轮客场0-1负葡萄牙（费利克斯折射入球），被射23脚（2024-11以来最多），控球39%、射正0；近5场不胜（2平3负）；世界杯附加赛半决赛点球负波黑。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四005.json（引 Yahoo/Wales Online、beIN SPORTS）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "squad_core_2026_10",
+     "note": "9/24研究预计首发：门将Ward，中场Ampadu、J.James，前场Brooks、Thomas、Johnson、D.James；9/27研究称Moore在定位球上争头球。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-24/research-周四005.json、.nutmeg-data/jczq/daily/2026-09-27/research-周日004.json（研究员未注明外部来源）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "availability_2026_10_window",
+     "note": "缺H.Wilson、Rodon、Colwill、Broadhead、I.Davies、Lawlor、门将Darlow；Cabango在里斯本受伤、赛前体测，缺阵则Mepham顶上（Yahoo/Wales Online、beIN SPORTS）。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json（引 Yahoo/Wales Online、beIN SPORTS）",
+     "at": "2026-09-27"
+    },
+    {
+     "key": "style_2026_10",
+     "note": "研究员描述：4-4-2/4-5-1低位压缩，D.James和Johnson打速度反击，Moore争定位球头球；9/24研究另推断Bellamy偏主动压迫（未证实），二者不一致。",
+     "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四005.json（研究员未注明外部来源）",
+     "at": "2026-09-27"
     }
    ]
   }

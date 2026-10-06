@@ -1,6 +1,6 @@
 # Nutmeg Research Knowledge Index
 
-更新时间：2026-08-21（Asia/Shanghai）
+更新时间：2026-10-06（Asia/Shanghai）
 
 ## Usage Contract
 
@@ -34,6 +34,8 @@
 |---|---|---|---|---|---|
 | 2026-08-20 | 西甲、法乙、荷乙 League + Team 本体 | `active` | [西甲 / 法乙 / 荷乙本体备料](2026-08-20-la-liga-ligue-2-eerste-divisie-ontology-intelligence.md) | 统一维度比较、实体 ID、名单连续率、近期比赛入口 | 转会窗关闭、正式首发、新的实名伤停或已核实纠错 |
 | 2026-08-20 | 意甲、德甲、德乙 League + 56 支 Team 本体 | `active` | [意甲 / 德甲 / 德乙本体备料](2026-08-20-serie-a-bundesliga-bundesliga2-ontology-intelligence.md) | 联赛基线、11 维球队画像、磨合和近期准备队列 | 转会窗关闭、意甲/德甲首轮首发、德乙滚动首发、新的实名伤停或已核实纠错 |
+
+| 2026-10-06 | 欧国联、国际赛/友谊赛 League + 57 支国家队 | `active`（`*_window` 笔记为 time-bounded） | [国家队本体备料](2026-10-06-national-teams-ontology.md) | 主帅、欧国联级别与积分、本窗战绩、核心与伤停；前提卡与深研取证底座 | 2026-11 国际窗口开窗前重抓；欧国联每轮后更新积分；换帅即时 |
 
 这些档案负责解释结构和证据边界；结构化画像真身仍在 live decision store 与 `nutmeg/data/decision_entities_seed.json`。
 
