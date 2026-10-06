@@ -48,7 +48,7 @@
 - **✅ 10-06 14:23 已解决（会话 `session_01MUniGmXbTxbefrgNtQqVRP`）**：定时任务改用长期 token（`a73114a` 读 `~/.config/nutmeg/claude-oauth-token` 注入 `CLAUDE_CODE_OAUTH_TOKEN`；`f1b6577` 按绝对路径找 claude，因为 `rsi.loop` 的 plist 没有设 PATH）。token 由 Jun 远程授权、`claude setup-token` 换出后直接写入文件（600，仓外，约一年有效）。一次性 launchd 作业跑 `nutmeg claude-auth-check` 结果为 ok，来源 token 文件。今天的 brief 已补出 12 句解读。上面交接里的 ①② 不再需要；③④ 照旧。
 - **launchd 下 `claude -p` 登录过期**（10-06 11:13 首见；`launchctl submit` 一次性作业复现：`Failed to authenticate: OAuth session expired and could not be refreshed`）。主循环会话里的 shell 能调通，是因为它借用了会话自己的认证，不代表定时任务能用。受影响：10:00 深研、每小时补研究、10:45 读者 B、brief 的逻辑句。代码侧已修（`dd70ff1`：认证失败停整轮、不占预算、不记永久拒绝、exit 1 变红）；**登录要 Jun 本人在普通终端里 `claude` → `/login` 重登**，然后用一次性 launchd 作业复验。
 - ~~**过程回放漏实票**~~ **已修**（`119c4e6`，10-06）：`workbench-export` 改走与网页同一条内核合并流，取票加上「`placed_at`＝当日」；10-05 回放已重写，5 张实票都在。顺带查出并修了内核读侧窗口按字符串比较开球时刻的问题（`8c2627c`）：`+08:00` 存储的竞彩场次，北京时间 16:00 以后开球的被挤到了第二天，工作台和回放里 10-06 19:00/19:35/22:00 三场都看不到。注意：回放和工作台按**开球日**归场（周一板凌晨开球的场次归在周二），这是设计，不是缺口。
-- **国家队前提纠正没有落点**：26135/10-05 的研究正文都写了「前提纠正：画像为空」，但没有结构化 `premise_corrections`（store 里国家队没有 profile_notes），`zucai-premise-corrections` 无可回写。国际比赛日每次都从零取证主帅/伤停。是否给国家队建画像，等下一个国际窗口前再定。
+- ~~**国家队前提纠正没有落点**~~ **已建**（`f2e5d19`、`2065425`，10-06，Jun 要求）：新增两个赛事实体「欧国联」「国际赛/友谊赛」和 57 支国家队，共 322 条带证据的画像笔记，全部只取自本窗口的深研原文。近三周板面 176/176 都能解析到这些队，前提卡已能带出这些笔记。塔吉克、马尔代夫经 API-Football 核对后补进了国家队别名表。档案：`docs/research/2026-10-06-national-teams-ontology.md`。**剩余动作：2026-11 国际窗口开窗前刷新**，`*_window` 笔记过窗失效。
 
 ## 四、只需观察
 
