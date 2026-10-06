@@ -55,3 +55,30 @@ def test_brake_trips_at_the_stop_loss_and_prints_room_otherwise(tmp_path: Path):
     tripped = brake_state(data, date(2026, 10, 5))
     assert tripped["net"] == -3100.0 and tripped["tripped"] is True
     assert status_line(tripped).startswith("⛔") and "空仓到月底" in status_line(tripped)
+
+
+def test_issue_brake_after_two_wiped_issues_or_an_explicit_precommit(tmp_path: Path):
+    """期级刹车（2026-10-06 起预审否决）：本期之前有下注的最近两期都全灭 → 帽减半；
+    记分牌事前承诺（caps.issue）优先；缺数不猜。"""
+    from nutmeg.decision.bankroll import brake_check, issue_brake
+
+    def board(tickets, adjudications=None):
+        (tmp_path / "scoreboard.json").write_text(json.dumps(
+            {"tickets": tickets, "adjudications": adjudications or {}}), encoding="utf-8")
+
+    board({"26131": {"stake": 310, "payout": 0, "net": -310},
+           "26130": {"stake": 0, "payout": 0, "net": 0},           # 空仓期不算
+           "26132": {"stake": 1362, "payout": 0, "net": -1362},
+           "26134": {"stake": 756, "payout": 217.0, "net": -539.0}})
+    assert issue_brake(tmp_path, "26133")["reason"] == "连续两期全灭（26131、26132）"
+    assert issue_brake(tmp_path, "26135") is None              # 26134 有派奖
+    assert brake_check(tmp_path, "26133", 200) is None          # 帽内
+    line = brake_check(tmp_path, "26133", 192, already_yuan=700)
+    assert line.startswith("⛔刹车") and "合计 ≤¥800" in line   # 同期合计超帽
+    assert brake_check(tmp_path, "26133", 384).startswith("⛔")  # 单张超 ¥200
+    board({"26133": {"net": -816}},                            # 缺 stake/payout → 不猜
+          {"brake_26135_precommit": {"caps": {"issue": "26135", "issue_yuan": 800}}})
+    assert issue_brake(tmp_path, "26134") is None
+    pre = issue_brake(tmp_path, "26135")
+    assert pre == {"reason": "事前承诺 brake_26135_precommit", "slip_yuan": 200,
+                   "issue_yuan": 800}

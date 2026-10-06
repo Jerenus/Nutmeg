@@ -85,3 +85,13 @@ def test_registration_is_idempotent_by_slip_id(client):
     page = client.get("/betslips")
     assert page.text.count("26122-T2") == 1
     assert "改过备注" in page.text
+
+
+def test_web_registration_records_the_review_with_the_ticket(client, tmp_path):
+    """审票记录随票入账（宪法 §6）：网页登记与 CLI 同口径，审票结论写进 diagnosis.review。"""
+    assert _register(client).json()["ok"] is True
+    [row] = [json.loads(line) for line in
+             (tmp_path / "betslips.jsonl").read_text(encoding="utf-8").splitlines() if line]
+    review = row["diagnosis"]["review"]
+    assert "error" not in review and set(review) == {"vetoed", "ratio", "codes"}
+    assert row["registered_at"]

@@ -276,3 +276,51 @@ def test_void_leg_settles_at_odds_one():
                            "b": {"outcome_90": "home", "goals_h": 1, "goals_a": 0}})
     assert s.pending_legs == 0
     assert s.payout_yuan == pytest.approx(1.0 * 2.0 * 2 * 5)
+
+
+def test_register_keeps_first_stamps_and_flags_reasons_written_after_kickoff(tmp_path):
+    """理由必须先于结果（2026-10-06）：首次登记时刻保留；同一理由沿用当初的时刻，
+    换理由才记新时刻；理由时刻 ≥ 票内最早开球 → deviation_after_kickoff。"""
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    from nutmeg.decision.betslip import first_kickoff
+
+    bj = timezone(timedelta(hours=8))
+    (tmp_path / "zucai").mkdir()
+    (tmp_path / "zucai" / "26135-issue.json").write_text(json.dumps({"matches": [
+        {"match_no": i, "kickoff_bj": f"2026-10-06 {i:02d}:00"} for i in range(1, 15)]}),
+        encoding="utf-8")
+    faces = {str(i): "3" for i in range(2, 11)}
+    slip = BetSlip(slip_id="R9", channel="renjiu", placed_at="2026-10-05", legs=[],
+                   issue="26135", faces=dict(faces))
+    assert first_kickoff(slip, tmp_path) == "2026-10-06T02:00:00+08:00"   # 场2 最早
+    slip.first_kickoff = first_kickoff(slip, tmp_path)
+    t0 = datetime(2026, 10, 5, 20, 0, tzinfo=bj)
+    register_slip(tmp_path, slip, now=t0)
+    [row] = load_slips(tmp_path)
+    assert row.registered_at == t0.isoformat() and row.deviation_at == ""
+
+    later = BetSlip(slip_id="R9", channel="renjiu", placed_at="2026-10-05", legs=[],
+                    issue="26135", faces=dict(faces), deviation="price_instinct",
+                    first_kickoff=slip.first_kickoff)
+    register_slip(tmp_path, later, now=datetime(2026, 10, 6, 9, 0, tzinfo=bj))
+    [row] = load_slips(tmp_path)
+    assert row.registered_at == t0.isoformat()                 # 重登记不改首次登记时刻
+    assert row.deviation_at.startswith("2026-10-06T09:00") and row.deviation_after_kickoff
+
+    same = BetSlip(slip_id="R9", channel="renjiu", placed_at="2026-10-05", legs=[],
+                   issue="26135", faces=dict(faces), deviation="price_instinct",
+                   first_kickoff=slip.first_kickoff, scheme_no="X1")
+    register_slip(tmp_path, same, now=datetime(2026, 10, 7, 9, 0, tzinfo=bj))
+    [row] = load_slips(tmp_path)
+    assert row.deviation_at.startswith("2026-10-06T09:00") and row.scheme_no == "X1"
+
+    early = BetSlip(slip_id="R9b", channel="renjiu", placed_at="2026-10-05", legs=[],
+                    issue="26135", faces=dict(faces), deviation="other",
+                    first_kickoff=slip.first_kickoff)
+    register_slip(tmp_path, early, now=t0)
+    assert {s.slip_id: s.deviation_after_kickoff for s in load_slips(tmp_path)} == {
+        "R9": True, "R9b": False}
+    assert BetSlip(slip_id="x", channel="jczq", placed_at="", legs=[]).deviation_after_kickoff \
+        is None

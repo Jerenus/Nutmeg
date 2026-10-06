@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
 from functools import reduce
 from itertools import combinations
 from pathlib import Path
@@ -175,6 +176,11 @@ class BetSlip:
     prediction: str = ""                  # 偏离附带的一句可证伪预测
     faces: dict[str, str] = field(default_factory=dict)   # 足彩票面（渲染与结算用）
     diagnosis: dict = field(default_factory=dict)         # 登记即诊断（共享裸单/对照处方，只记录）
+    # 2026-10-06：理由必须先于结果。首次登记时刻、偏离理由写下的时刻、票内最早开球——
+    # 开球之后才补的理由照记，但不进「人的偏离」按理由的净值（事后的理由是回看，不是判断）。
+    registered_at: str = ""
+    deviation_at: str = ""
+    first_kickoff: str = ""
 
     # -- 算术 ------------------------------------------------------------
     @property
@@ -250,7 +256,17 @@ class BetSlip:
             prediction=str(payload.get("prediction", "") or ""),
             faces=dict(payload.get("faces", {})),
             diagnosis=dict(payload.get("diagnosis") or {}),
+            registered_at=str(payload.get("registered_at", "") or ""),
+            deviation_at=str(payload.get("deviation_at", "") or ""),
+            first_kickoff=str(payload.get("first_kickoff", "") or ""),
         )
+
+    @property
+    def deviation_after_kickoff(self) -> bool | None:
+        """偏离理由是不是开球之后才写的；没理由或缺时刻 → None。"""
+        if not self.deviation or not self.deviation_at or not self.first_kickoff:
+            return None
+        return _aware(self.deviation_at) >= _aware(self.first_kickoff)
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +390,42 @@ def registry_path(data_dir) -> Path:
     return Path(data_dir) / "betslips.jsonl"
 
 
+_BJ = timezone(timedelta(hours=8))
+
+
+def _aware(value: str) -> datetime:
+    dt = datetime.fromisoformat(str(value).replace(" ", "T"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=_BJ)
+
+
+def first_kickoff(slip: BetSlip, data_dir) -> str:
+    """票内最早开球（北京时间 ISO）：足彩按期次文件的场号，竞彩按当日 legs-base 的编号；
+    查不到 → ""（不猜）。"""
+    data_dir = Path(data_dir)
+    kicks: list[str] = []
+    try:
+        if slip.channel == "jczq":
+            board = json.loads((data_dir / "jczq" / "daily" / str(slip.placed_at)[:10]
+                                / "jczq-legs-base.json").read_text("utf-8"))
+            legs = board.get("legs") or {}
+            kicks = [str((legs.get(lg.key) or {}).get("kickoff_bj") or "") for lg in slip.legs]
+        elif slip.issue:
+            doc = json.loads((data_dir / "zucai" / f"{slip.issue}-issue.json")
+                             .read_text("utf-8"))
+            by_no = {str(m.get("match_no")): str(m.get("kickoff_bj") or "")
+                     for m in doc.get("matches") or []}
+            kicks = [by_no.get(str(no), "") for no in slip.faces]
+    except (OSError, ValueError):
+        return ""
+    parsed = []
+    for k in kicks:
+        try:
+            parsed.append(_aware(k))
+        except ValueError:
+            continue
+    return min(parsed).isoformat(timespec="seconds") if parsed else ""
+
+
 def load_slips(data_dir, *, issue: str | None = None,
                channel: str | None = None) -> list[BetSlip]:
     path = registry_path(data_dir)
@@ -388,14 +440,26 @@ def load_slips(data_dir, *, issue: str | None = None,
     return slips
 
 
-def register_slip(data_dir, slip: BetSlip) -> str:
-    """幂等写入（同 slip_id 覆盖）。返回人读摘要行。"""
+def register_slip(data_dir, slip: BetSlip, *, now: datetime | None = None) -> str:
+    """幂等写入（同 slip_id 覆盖）。返回人读摘要行。
+
+    覆盖时保留首次登记时刻；偏离理由不变就保留它当初写下的时刻，换了理由才记新时刻
+    （同 slip_id 重登记补理由是常规操作，补写的时刻必须看得见）。"""
     if slip.channel not in CHANNELS:
         raise BetslipError(f"未知渠道 {slip.channel}；只接受 {CHANNELS}")
     path = registry_path(data_dir)
     rows = []
     if path.exists():
         rows = [json.loads(ln) for ln in path.read_text("utf-8").splitlines() if ln.strip()]
+    stamp = (now or datetime.now(_BJ)).isoformat(timespec="seconds")
+    old = next((r for r in rows if r.get("slip_id") == slip.slip_id), None) or {}
+    slip.registered_at = old.get("registered_at") or ("" if old else stamp)
+    if slip.deviation:
+        # 同一理由：沿用当初的时刻（旧行没有时刻就保持未知，不拿现在冒充）
+        same = old.get("deviation") == slip.deviation
+        slip.deviation_at = str(old.get("deviation_at") or "") if same else stamp
+    else:
+        slip.deviation_at = ""
     rows = [r for r in rows if r.get("slip_id") != slip.slip_id]
     rows.append(slip.to_dict())
     path.parent.mkdir(parents=True, exist_ok=True)

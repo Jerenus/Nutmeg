@@ -128,3 +128,28 @@ def test_jczq_rule_v3_goes_flat_unless_expected_return_reaches_one(tmp_path: Pat
     slips = get("jczq_rule_v3").decide(board.visible(), Ctx(belief_source="closing"))
     assert len(slips) == 1 and len(slips[0].legs) >= 2
     assert check_jczq_legal(slips[0], board) is None
+
+
+def test_zucai_draft_replays_the_prescription_faithful_rule_from_legs_base(tmp_path: Path) -> None:
+    data = _zucai_issue(tmp_path)
+    fair = {"home": 0.6, "draw": 0.25, "away": 0.15}
+    prescription = {str(i): ("3" if i <= 9 else "310") for i in range(1, 15)}
+    prescription["1"] = "31"
+    (data / "zucai" / "26127-legs-base.json").write_text(json.dumps({
+        "issue": "26127", "prescription": prescription,
+        "legs": {str(i): {"name": f"H{i}-A{i}", "fair": fair} for i in range(1, 15)}}),
+        encoding="utf-8")
+    issue = load_zucai_issue(data, "26127")
+
+    [slip] = get("zucai_draft").decide(issue.visible(), Ctx(cap_zucai_slip=400,
+                                                             extra={"data_dir": data}))
+    # 只丢场不降档，帽内取 P 最高：四个全包（第五个就超帽、要降档）+ 场1 双选 + 四个裸单，
+    # 2×3⁴=162 注 ¥324；同 P 按场号取先
+    assert slip.channel == "renjiu" and slip.placed_at == "2026-09-16"
+    assert slip.faces == {"1": "31", "2": "3", "3": "3", "4": "3", "5": "3",
+                          "10": "310", "11": "310", "12": "310", "13": "310"}
+    assert slip.stake_yuan == 324
+    assert all(slip.faces[no] == prescription[no] for no in slip.faces)   # 没有降档
+    assert get("zucai_draft").decide(issue.visible(), Ctx()) == []        # 没有 data_dir
+    (data / "zucai" / "26127-legs-base.json").unlink()
+    assert get("zucai_draft").decide(issue.visible(), Ctx(extra={"data_dir": data})) == []

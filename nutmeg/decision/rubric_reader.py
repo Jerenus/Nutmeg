@@ -151,7 +151,10 @@ def code_of(research_path: Path, research: dict | None = None) -> str | None:
 
 
 def _kickoff_of(research: dict) -> str | None:
-    kick = research.get("kickoff_bj") or (research.get("schedule") or {}).get("kickoff_bj")
+    schedule = research.get("schedule")
+    # 旧研究的 schedule 是一句话（字符串）——当没写，交给板面/期次文件兜底
+    schedule = schedule if isinstance(schedule, dict) else {}
+    kick = research.get("kickoff_bj") or schedule.get("kickoff_bj")
     return str(kick).replace(" ", "T") if kick else None
 
 

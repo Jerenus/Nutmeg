@@ -205,3 +205,10 @@ def review(slip: BetSlip, diagnosis: dict, *, prize_model: dict[str, dict],
     lines.append("审票结论：" + verdict)
     return {"ratio": ratio, "detail": detail, "verdicts": verdicts, "vetoed": vetoed,
             "lines": lines}
+
+
+def review_record(verdict: dict) -> dict:
+    """随票入账的审票结论（2026-10-06）：否决与否、期望回报率、触发的否决/警告码。"""
+    return {"vetoed": bool(verdict.get("vetoed")), "ratio": verdict.get("ratio"),
+            "codes": [v["code"] for v in verdict.get("verdicts") or []
+                      if v.get("level") in ("veto", "warn")]}

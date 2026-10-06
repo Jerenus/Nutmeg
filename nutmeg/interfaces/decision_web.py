@@ -608,9 +608,12 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
             BetSlip,
             BetslipError,
             SlipLeg,
+            first_kickoff,
             parse_faces_row,
             register_slip,
         )
+        from nutmeg.decision.review import review_record
+        from nutmeg.decision.review_runner import review_slip
 
         try:
             channel = str(payload.get("channel") or "renjiu")
@@ -642,6 +645,12 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
                 scheme_no=str(payload.get("scheme_no") or "").strip(),
                 purchased=not payload.get("trial"),
                 note=str(payload.get("note") or "").strip(), faces=faces)
+            slip.first_kickoff = first_kickoff(slip, _data_dir())
+            try:   # 审票记录随票入账（与 CLI 同口径）；审票出错不挡登记
+                rv = review_slip(slip, _data_dir())
+                slip.diagnosis = {**rv["diagnosis"], "review": review_record(rv)}
+            except Exception as exc:  # noqa: BLE001
+                slip.diagnosis = {"review": {"error": repr(exc)[:200]}}
             return {"ok": True, "summary": register_slip(_data_dir(), slip)}
         except (BetslipError, KeyError, ValueError) as error:
             # 登记被拒要说清是哪一条纪律拒的——静默失败会让人以为票已入账。

@@ -19,6 +19,8 @@ PRIMARY = ("F14", "G1", "F15", "F10")
 SECONDARY = ("F9", "F13", "F11", "F5")
 # 宪法三个主指标之一（Dream 2026-10-04 退役后由 gym 承接）：实际出票 vs 规则 v3 vs 空仓
 RULE_V3_POLICIES = (("real", "实际出票"), ("jczq_rule_v3", "规则 v3"), ("flat", "空仓"))
+# 足彩的同一面镜子（2026-10-06）：人在初稿上改出来的票 vs 机器初稿（处方忠实）vs 空仓
+DRAFT_POLICIES = (("real", "实际出票"), ("zucai_draft", "机器初稿"), ("flat", "空仓"))
 
 
 def exploration_spend(data_dir: Path, month: str) -> dict:
@@ -41,19 +43,11 @@ def exploration_spend(data_dir: Path, month: str) -> dict:
     return {"slips": rows, "stake": round(sum(r["stake"] for r in rows), 2)}
 
 
-def deviation_ledger(data_dir: Path, month: str) -> dict:
-    """人相对初稿的偏离，按理由结账：登记簿里带 deviation 的实购票 × 记分牌 tickets 的派奖。"""
-    data_dir = Path(data_dir)
-    try:
-        from nutmeg.decision.betslip import load_slips
-
-        slips = [s for s in load_slips(data_dir) if s.purchased and s.deviation
-                 and str(s.placed_at)[:7] == month]
-    except Exception:  # noqa: BLE001
-        return {"by_reason": {}, "n": 0}
+def _settled_rows(data_dir: Path) -> dict[str, dict]:
+    """记分牌 tickets 里结构化的逐票行（slip_id → {stake, payout}）。"""
     sb = {}
     try:
-        sb = json.loads((data_dir / "scoreboard.json").read_text(encoding="utf-8"))
+        sb = json.loads((Path(data_dir) / "scoreboard.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         pass
     settled: dict[str, dict] = {}
@@ -64,29 +58,86 @@ def deviation_ledger(data_dir: Path, month: str) -> dict:
             # 记分牌早期条目（26131 等）的 slips 是文字描述，不是结构化行：跳过
             if isinstance(row, dict) and row.get("id"):
                 settled[str(row["id"])] = row
+    return settled
+
+
+def _month_slips(data_dir: Path, month: str) -> list:
+    try:
+        from nutmeg.decision.betslip import load_slips
+
+        return [s for s in load_slips(data_dir) if s.purchased and str(s.placed_at)[:7] == month]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _add(bucket: dict, slip, settled: dict[str, dict]) -> None:
+    bucket["n"] += 1
+    row = settled.get(slip.slip_id)
+    if row is not None and row.get("stake") is not None:
+        stake = float(row["stake"])            # 已结算：以记分牌的注金为准（与账房同口径）
+    else:
+        try:
+            stake = float(slip.stake_yuan)
+        except Exception:  # noqa: BLE001 —— 旧票缺过关方式
+            stake = 0.0
+    bucket["stake"] += stake
+    if row is None or row.get("payout") is None:
+        bucket["pending"] += 1
+    else:
+        bucket["payout"] += float(row["payout"])
+
+
+def _close(bucket: dict) -> dict:
+    bucket["net"] = round(bucket["payout"] - bucket["stake"], 2)
+    return bucket
+
+
+def deviation_ledger(data_dir: Path, month: str) -> dict:
+    """人相对初稿的偏离，按理由结账：登记簿里带 deviation 的实购票 × 记分牌 tickets 的派奖。
+
+    理由写于票内最早开球之后的（2026-10-06）单列 `after_kickoff`，不进按理由的净值——
+    看过结果再写的理由是回看，拿它给理由类记功过会把运气记成判断。"""
+    data_dir = Path(data_dir)
+    slips = [s for s in _month_slips(data_dir, month) if s.deviation]
+    settled = _settled_rows(data_dir)
     by_reason: dict[str, dict] = {}
+    late = {"n": 0, "stake": 0.0, "payout": 0.0, "pending": 0, "slips": []}
     for slip in slips:
+        if slip.deviation_after_kickoff:
+            _add(late, slip, settled)
+            late["slips"].append(f"{slip.slip_id}（{slip.deviation}）")
+            continue
         bucket = by_reason.setdefault(slip.deviation, {"n": 0, "stake": 0.0, "payout": 0.0,
                                                        "pending": 0, "predictions": []})
-        bucket["n"] += 1
-        row = settled.get(slip.slip_id)
-        if row is not None and row.get("stake") is not None:
-            stake = float(row["stake"])            # 已结算：以记分牌的注金为准（与账房同口径）
-        else:
-            try:
-                stake = float(slip.stake_yuan)
-            except Exception:  # noqa: BLE001 —— 旧票缺过关方式
-                stake = 0.0
-        bucket["stake"] += stake
-        if row is None or row.get("payout") is None:
-            bucket["pending"] += 1
-        else:
-            bucket["payout"] += float(row["payout"])
+        _add(bucket, slip, settled)
         if slip.prediction:
             bucket["predictions"].append(f"{slip.slip_id}: {slip.prediction[:60]}")
     for bucket in by_reason.values():
-        bucket["net"] = round(bucket["payout"] - bucket["stake"], 2)
-    return {"by_reason": by_reason, "n": len(slips)}
+        _close(bucket)
+    return {"by_reason": by_reason, "n": len(slips), "after_kickoff": _close(late)}
+
+
+def vetoed_ledger(data_dir: Path, month: str) -> dict:
+    """审票否决（V1/V2）之后仍买的票（2026-10-06）：登记时随票入账的审票结论 × 派奖。
+
+    否决不拦登记（登记是事实）；这一行是镜子——每月看一次「不听否决」花了多少、回来多少。"""
+    data_dir = Path(data_dir)
+    settled = _settled_rows(data_dir)
+    vetoed = {"n": 0, "stake": 0.0, "payout": 0.0, "pending": 0, "codes": {}}
+    unknown = 0
+    for slip in _month_slips(data_dir, month):
+        review = (slip.diagnosis or {}).get("review")
+        if review is None:
+            unknown += 1                       # 2026-10-06 之前登记的票没存审票结论
+            continue
+        if not review.get("vetoed"):
+            continue
+        _add(vetoed, slip, settled)
+        for code in review.get("codes") or []:
+            vetoed["codes"][code] = vetoed["codes"].get(code, 0) + 1
+    out = _close(vetoed)
+    out["unrecorded"] = unknown
+    return out
 
 
 def experiment_board(data_dir: Path) -> dict:
@@ -142,6 +193,39 @@ def rule_v3_board(data_dir: Path, month: str) -> dict:
     return out
 
 
+def _issue_month(data_dir: Path, issue: str) -> str:
+    try:
+        doc = json.loads((Path(data_dir) / "zucai" / f"{issue}-issue.json")
+                         .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return str(doc.get("sale_deadline") or "")[:7]
+
+
+def draft_board(data_dir: Path, month: str) -> dict:
+    """本月足彩期次回放：实际出票 vs 机器初稿（`zucai_draft`，帽 ¥400 任九）vs 空仓。
+
+    人性账（2026-10-06）：9 月有处方的 6 期配对里，真票 −4,043、初稿 −423（evidence
+    2026-10-05-training-pool §7）。两边都不套月度止损（比的是票面，不是止损）。"""
+    try:
+        from nutmeg.gym.board import list_issues
+        from nutmeg.gym.run import run_gym
+
+        issues = [i for i in list_issues(Path(data_dir)) if _issue_month(data_dir, i) == month]
+        result = run_gym(data_dir=Path(data_dir), policies=[p for p, _ in DRAFT_POLICIES],
+                         days=[], issues=issues, run_id=f"account-draft-{month}",
+                         stop_loss=10**9)
+    except Exception as exc:  # noqa: BLE001 —— 账房不能因回放故障整页空白
+        return {"_error": repr(exc)[:200]}
+    out: dict = {"issues": len(issues)}
+    for policy, label in DRAFT_POLICIES:
+        row = result.per_policy.get(policy) or {}
+        out[policy] = {"label": label, "slips": row.get("slips", 0), "stake": row.get("stake", 0),
+                       "net": row.get("net", 0.0), "roi": row.get("roi", 0.0),
+                       "keys": row.get("keys", 0), "pending": row.get("pending", 0)}
+    return out
+
+
 def month_report(data_dir: Path, month: str) -> dict:
     data_dir = Path(data_dir)
     net = month_net(data_dir, month)
@@ -150,6 +234,7 @@ def month_report(data_dir: Path, month: str) -> dict:
         by_channel["jczq" if key.startswith("jczq-") else "zucai"] += value
     spend = exploration_spend(data_dir, month)
     deviations = deviation_ledger(data_dir, month)
+    vetoed = vetoed_ledger(data_dir, month)
     board = experiment_board(data_dir)
     verdicts: dict[str, int] = {}
     for exp, row in board.items():
@@ -163,8 +248,9 @@ def month_report(data_dir: Path, month: str) -> dict:
         "by_channel": {k: round(v, 2) for k, v in by_channel.items()},
         "stop_loss": MONTHLY_STOP_LOSS_YUAN,
         "tripped": net["net"] <= -MONTHLY_STOP_LOSS_YUAN,
-        "exploration": spend, "deviations": deviations, "experiments": board,
+        "exploration": spend, "deviations": deviations, "vetoed": vetoed, "experiments": board,
         "verdicts": verdicts, "rule_v3": rule_v3_board(data_dir, month),
+        "draft": draft_board(data_dir, month),
     }
 
 
@@ -193,6 +279,17 @@ def render_month(report: dict) -> str:
             lines.append(f"    · {text}")
     if not dev["by_reason"]:
         lines.append("  - 无（偏离初稿而不登记理由的票不进这张账）")
+    late = dev.get("after_kickoff") or {}
+    if late.get("n"):
+        lines.append(f"  - 开球后才写理由（不计入上面）：{late['n']} 张 投入 ¥{late['stake']:,.0f} "
+                     f"净 {late['net']:+,.0f}：{'、'.join(late['slips'][:6])}")
+    vt = report.get("vetoed") or {}
+    codes = "、".join(f"{c}×{n}" for c, n in sorted((vt.get("codes") or {}).items()))
+    lines += ["", f"**审票否决仍买**：本月 {vt.get('n', 0)} 张 投入 ¥{vt.get('stake', 0):,.0f} "
+                  f"净 {vt.get('net', 0):+,.0f}" + (f"（{codes}）" if codes else "")
+              + (f"｜待结 {vt['pending']}" if vt.get("pending") else "")
+              + (f"｜{vt['unrecorded']} 张登记时没存审票结论（10-06 前）"
+                 if vt.get("unrecorded") else "")]
     rv = report.get("rule_v3") or {}
     lines += ["", f"**主指标：实际出票 vs 规则 v3 vs 空仓**（竞彩，Read belief 回放，"
                   f"本月 {rv.get('days', 0)} 个板面日）", ""]
@@ -208,6 +305,21 @@ def render_month(report: dict) -> str:
                          f"| {row.get('roi', 0) * 100:+.1f}% | {row.get('pending', 0)} |")
         lines.append("（规则 v3 是平注 ¥2 的决策规则：比的是「该不该出、出什么形状」，"
                      "看 ROI 与相对空仓的符号，不比绝对金额。）")
+    dv = report.get("draft") or {}
+    lines += ["", f"**足彩：实际出票 vs 机器初稿 vs 空仓**（本月 {dv.get('issues', 0)} 期，"
+                  "初稿＝处方忠实任九、帽 ¥400；不套止损）", ""]
+    if "_error" in dv:
+        lines.append(f"回放失败：{dv['_error']}")
+    else:
+        lines += ["| 口径 | 票数 | 期数 | 投入 | 净 | ROI | 待结 |",
+                  "|---|---|---|---|---|---|---|"]
+        for policy, label in DRAFT_POLICIES:
+            row = dv.get(policy) or {}
+            lines.append(f"| {label} | {row.get('slips', 0)} | {row.get('keys', 0)} "
+                         f"| {row.get('stake', 0):,.0f} | {row.get('net', 0):+,.0f} "
+                         f"| {row.get('roi', 0) * 100:+.1f}% | {row.get('pending', 0)} |")
+        lines.append("（读法：实际减初稿＝这个月「在初稿上改票」的钱；一期一次命中就能翻转，"
+                     "看多个月的符号。）")
     board = report["experiments"]
     lines += ["", "**判断力指标（最新前瞻结账）**", "",
               "| 实验 | 层 | n / n_min | 残差 pp | 95% CI | 判决 |", "|---|---|---|---|---|---|"]

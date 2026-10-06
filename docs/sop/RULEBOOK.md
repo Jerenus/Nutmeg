@@ -176,6 +176,7 @@
 | **V1** | 否决 | 期望回报率 E[派奖]/投入 < 0.5（竞彩：每串 P(全中)×模态赔率连乘；足彩：**奖金模型** `zucai/prize-model.json`，E[奖金·1{中}] = e^{a+sd²/2}·Π_i Σ_{A_i} q_i·p_i^{−b}，报「市场口径 × 判断溢价」；无模型文件退回 P(全对)×中位数并标明）；0.5–0.65 警告 | 403 天回放：帽内 max-P 竞彩 −20%、任九 −58%，CI 不含 0；"中了也亏"的双选×双选（jczq-combos 盲区）。奖金模型（`scripts/zucai_prize_model.py`，2026-10-01）：任九 n=41 log(prize)=−5.25+1.007·S，corr 0.95，b 的 CI95 [0.91,1.11]；胜负彩 n=38 b=1.13。中位数口径把热板票高估十倍（max-P 42 期中 11 次，中时奖金中位 ¥215 vs 全局 ¥4,098）；b≈1 ⇒ 市场口径下任何票面形状的期望回报≈返奖率（回测 max-P 模型 0.84 vs 实际 0.43，差在 11 次命中全落热板） |
 | **V2** | 否决 | 与同日/同期/跨渠道**已购**票共享裸单 | 26122 四票联死 73.8%、26133 两票联死 ≈60%、09-28 五票同死 004；gym 里真票 vs 机器同日/同期差额全来自此类结构 |
 | V3 | 警告 | 倍数 >10，或单票 > 日帽一半 | 26121 ×50 中过一次（+600）、26129 四票 ¥1,164 全灭——方向不一致，只记录 |
+| 止损 | 否决（预审） | 月度止损已触发（宪法 §4）：`betslip preview`/`preview-set` 退出码 1，登记不受限（2026-10-06） | 纪律不是预测主张；刹车行权两次均为负样本（记分牌，累计多亏 677）——事后都证明那一刻最不该靠意志力 |
 
 否决＝改票后再审；人坚持原票可登记（登记是事实），审票行随票入账。新增否决项必须先有回放或复盘实证（≥2 次独立样本），与「〇、规则实证表」同纪律。
 
@@ -208,7 +209,7 @@
 **结账与退役**：每个带效应的项是 T13 因子 `rubric_<id>`（`experiments/rubric_rows.py`）；`propose_zero` → 该项上限退役；`propose_change` 只许把上限往下截；kappa<0.4 的项列入重写/删除清单。改判 `research override --tilt-json` 仍直接替换 tilt，研究标 `rubric_overridden`。
 **读者 B 的 `belief`**（整体概率）只记账，不进 belief——F9 已证 LLM 整体概率≈市场。
 **改判（2026-10-02 起）**：有 rubric 的研究，`research override` 必须落到项（`--items-json` + `--reason`）或 `--market`，不得直接写 tilt；tilt 从合并后的 rubric 重新派生（`derived_from: rubric:r1+override`）。理由封闭枚举：`new_official_info / evidence_tier_too_low / priced_in / research_contradiction / market_only`（无 rubric 的旧研究自动记 `legacy_tilt`）。改判账在判决页按理由分层（Brier 得失），净负的理由类停用。
-**人的偏离（2026-10-02 起）**：`betslip register/preview` 对照机器初稿（`<期>-draft.json` 的「初稿」）报加场/丢场/放宽/收窄/换面；有差异时带 `--deviation`（`fact_self_judged / price_instinct / stake_allocation / structure_preference / other`）+ `--prediction`（一句赛后可核验）。不带只警告不阻断（登记是事实），但不进「人的偏离」账；账房 `account month` 按理由列净值与预测。
+**人的偏离（2026-10-02 起）**：`betslip register/preview` 对照机器初稿（`<期>-draft.json` 的「初稿」）报加场/丢场/放宽/收窄/换面；有差异时带 `--deviation`（`fact_self_judged / price_instinct / stake_allocation / structure_preference / other`）+ `--prediction`（一句赛后可核验）。不带只警告不阻断（登记是事实），但不进「人的偏离」账；账房 `account month` 按理由列净值与预测。**理由先于结果（2026-10-06）**：登记簿记 `deviation_at`（理由写下的时刻；同 slip_id 补登记沿用，换理由才记新时刻）与 `first_kickoff`（票内最早开球）；`deviation_at ≥ first_kickoff` 的理由单列「开球后才写理由」，不进按理由的净值——看过结果再写的理由是回看，拿它给理由类记功过会把运气记成判断。
 **来源层级（只采集）**：事实项可带 `source_tier`（`club_official / league_official / press / aggregator / social / unknown`），r1 不按层级加权；K1 过 100 项次后按层级看逐项有效性，再决定 r2 是否按层级定上限。
 **治理**：增删项 ①先写证据文档（结账数据或两读 kappa）→ ②`RUBRIC_CHANGELOG` 加一条 → ③`RUBRIC_VERSION` 升号，`SUPPORTED_VERSIONS` 决定评分器混不混旧版 → ④退役项写 `until`、新项写 `since` → ⑤K1 与逐项因子按 `rubric_version` 过滤。`nutmeg rubric items [--version]` 打印当前表与变更记录。没有证据文档不许改表。
 

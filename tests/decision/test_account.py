@@ -159,3 +159,68 @@ def test_rule_v3_board_reports_a_replay_failure_instead_of_crashing(tmp_path: Pa
 
     monkeypatch.setattr("nutmeg.gym.board.list_days", boom)
     assert "_error" in account.rule_v3_board(tmp_path, "2026-09")
+
+
+def test_late_reasons_and_vetoed_purchases_get_their_own_lines(tmp_path: Path,
+                                                               monkeypatch) -> None:
+    """2026-10-06：开球后才写的理由不进按理由的净值；审票否决仍买单独记账。"""
+    from nutmeg.decision.account import deviation_ledger, vetoed_ledger
+
+    data = _data(tmp_path)
+    (data / "scoreboard.json").write_text(json.dumps({"tickets": {"26135": {
+        "net": -300, "stake": 300, "slips": [{"id": "A", "stake": 100, "payout": 0.0},
+                                             {"id": "B", "stake": 200, "payout": 0.0}]}}}),
+        encoding="utf-8")
+    common = {"channel": "renjiu", "placed_at": "2026-10-05", "purchased": True,
+              "issue": "26135", "faces": {str(i): "3" for i in range(1, 10)}, "legs": [],
+              "first_kickoff": "2026-10-06T00:00:00+08:00"}
+    (data / "betslips.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        {**common, "slip_id": "A", "deviation": "price_instinct",
+         "deviation_at": "2026-10-05T20:00:00+08:00",
+         "diagnosis": {"review": {"vetoed": True, "codes": ["V2"], "ratio": 0.7}}},
+        {**common, "slip_id": "B", "deviation": "price_instinct",
+         "deviation_at": "2026-10-06T09:00:00+08:00",
+         "diagnosis": {"review": {"vetoed": False, "codes": [], "ratio": 0.9}}},
+        {**common, "slip_id": "C", "diagnosis": {}},
+    ]) + "\n", encoding="utf-8")
+    led = deviation_ledger(data, "2026-10")
+    assert led["n"] == 2 and led["by_reason"]["price_instinct"]["n"] == 1
+    assert led["after_kickoff"]["n"] == 1 and led["after_kickoff"]["net"] == -200.0
+    vt = vetoed_ledger(data, "2026-10")
+    assert (vt["n"], vt["net"], vt["codes"], vt["unrecorded"]) == (1, -100.0, {"V2": 1}, 1)
+    monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
+    monkeypatch.setattr("nutmeg.decision.account.rule_v3_board", lambda _d, _m: {})
+    text = render_month(month_report(data, "2026-10"))
+    assert "开球后才写理由（不计入上面）：1 张" in text
+    assert "审票否决仍买**：本月 1 张 投入 ¥100 净 -100（V2×1）" in text
+
+
+def test_draft_board_replays_the_month_issues_without_the_stop_loss(tmp_path: Path,
+                                                                    monkeypatch) -> None:
+    """足彩的镜子（2026-10-06）：本月期次（按停售日归月）回放实际 / 初稿 / 空仓，不套止损。"""
+    from types import SimpleNamespace
+
+    from nutmeg.decision import account
+
+    data = _data(tmp_path)
+    (data / "zucai" / "26134-issue.json").write_text(
+        json.dumps({"sale_deadline": "2026-09-28 22:00"}), encoding="utf-8")
+    calls: list = []
+
+    def fake_run_gym(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(per_policy={
+            "real": {"slips": 3, "stake": 1288, "net": -1288.0, "roi": -1.0, "keys": 1},
+            "zucai_draft": {"slips": 1, "stake": 324, "net": -324.0, "roi": -1.0, "keys": 1},
+            "flat": {"slips": 0, "stake": 0, "net": 0.0, "roi": 0.0, "keys": 0}})
+
+    monkeypatch.setattr("nutmeg.gym.board.list_issues", lambda _d: ["26134", "26135"])
+    monkeypatch.setattr("nutmeg.gym.run.run_gym", fake_run_gym)
+    board = account.draft_board(data, "2026-10")
+    assert calls[0]["issues"] == ["26135"] and calls[0]["days"] == []
+    assert calls[0]["stop_loss"] >= 10**9 and board["issues"] == 1
+    monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
+    monkeypatch.setattr("nutmeg.decision.account.rule_v3_board", lambda _d, _m: {})
+    text = account.render_month(account.month_report(data, "2026-10"))
+    assert "| 机器初稿 | 1 | 1 | 324 | -324 | -100.0% |" in text
+    assert "足彩：实际出票 vs 机器初稿 vs 空仓" in text

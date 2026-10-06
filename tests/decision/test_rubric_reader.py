@@ -161,6 +161,9 @@ def test_kickoff_comes_from_schedule_board_legs_or_the_zucai_issue(tmp_path: Pat
     assert research_kickoff(day / "research-周一002.json", {}) == "2026-10-06T02:45:00+08:00"
     assert research_kickoff(zdir / "26135-research-m1.json", {}) == "2026-10-06T19:35"
     assert research_kickoff(zdir / "26135-research-m9.json", {}) is None
+    # 旧研究的 schedule 是一句话：当没写，落到板面兜底，不崩（2026-10-06 重测时撞到）
+    prose = {"schedule": "周一 02:45 开球，主队三天两赛"}
+    assert research_kickoff(day / "research-周一002.json", prose) == "2026-10-06T02:45:00+08:00"
 
 
 def test_pending_research_is_unstarted_and_unread_and_sidecar_is_prospective(tmp_path: Path):

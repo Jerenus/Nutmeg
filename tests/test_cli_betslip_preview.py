@@ -87,3 +87,47 @@ def test_preview_set_rejects_an_invalid_plan_before_reporting_anything(tmp_path:
     out = runner.invoke(app, ["betslip", "preview-set", "--plan", str(tmp_path / "plan.json"),
                               "--data-dir", str(data)])
     assert out.exit_code == 1 and "任九至少选 9 场" in out.output and "【" not in out.output
+
+
+def test_tripped_stop_loss_vetoes_the_preview_but_never_the_registration(tmp_path: Path):
+    """月度止损触发＝预审否决（2026-10-06，宪法 §4「空仓到月底」）；登记是事实，照收。"""
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "scoreboard.json").write_text(json.dumps({"tickets": {
+        "jczq-20261003": {"net": -3200, "stake": 3200}}}), encoding="utf-8")
+    legs = _legs(tmp_path, "j.json", [
+        {"key": "周六001", "market": "had", "selections": ["home"], "odds": [1.5],
+         "fair": {"home": 0.62, "draw": 0.22, "away": 0.16}},
+        {"key": "周六002", "market": "had", "selections": ["home"], "odds": [1.6],
+         "fair": {"home": 0.6, "draw": 0.24, "away": 0.16}}])
+    args = ["--channel", "jczq", "--placed-at", "2026-10-06", "--legs-file", str(legs),
+            "--combo", "2", "--data-dir", str(data)]
+    pre = runner.invoke(app, ["betslip", "preview", *args])
+    assert pre.exit_code == 1 and "已触发" in pre.output, pre.output
+    reg = runner.invoke(app, ["betslip", "register", "--slip-id", "J9", *args])
+    assert reg.exit_code == 0 and "已触发" in reg.output, reg.output
+    [row] = [json.loads(x) for x in (data / "betslips.jsonl").read_text("utf-8").splitlines()]
+    assert row["slip_id"] == "J9" and row["registered_at"] and "review" in row["diagnosis"]
+
+
+def test_issue_brake_vetoes_a_zucai_preview_over_the_halved_cap(tmp_path: Path):
+    """连续两期全灭后的这一期：已买 + 这张超 ¥800 合计帽 → 预审否决；登记照收并记 BRAKE。"""
+    data = tmp_path / "data"
+    (data / "zucai").mkdir(parents=True)
+    (data / "scoreboard.json").write_text(json.dumps({"tickets": {
+        "26131": {"stake": 310, "payout": 0, "net": -310},
+        "26132": {"stake": 1362, "payout": 0, "net": -1362}}}), encoding="utf-8")
+    (data / "zucai" / "26133-issue.json").write_text(json.dumps({
+        "sale_deadline": "2026-09-26 20:30", "matches": [
+            {"match_no": i, "kickoff_bj": "2026-09-27 02:45"} for i in range(1, 15)]}),
+        encoding="utf-8")
+    faces = "3 3 3 31 31 31 310 310 310 * * * * *"            # 2³×3³ = 216 注 ¥432
+    args = ["--channel", "renjiu", "--placed-at", "2026-09-26", "--issue", "26133",
+            "--faces", faces, "--data-dir", str(data)]
+    pre = runner.invoke(app, ["betslip", "preview", *args])
+    assert pre.exit_code == 1 and "⛔刹车：连续两期全灭（26131、26132）" in pre.output, pre.output
+    reg = runner.invoke(app, ["betslip", "register", "--slip-id", "26133-R9", *args])
+    assert reg.exit_code == 0 and "⛔刹车" in reg.output, reg.output
+    [row] = [json.loads(x) for x in (data / "betslips.jsonl").read_text("utf-8").splitlines()]
+    assert row["diagnosis"]["review"]["vetoed"] is True
+    assert "BRAKE" in row["diagnosis"]["review"]["codes"]

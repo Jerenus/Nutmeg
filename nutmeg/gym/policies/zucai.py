@@ -119,3 +119,33 @@ class ZucaiPrescription:
                 multiplier=int(t.get("multiplier") or 1), issue=issue.issue,
                 faces={str(k): str(v) for k, v in faces.items()}))
         return out
+
+
+@register
+class ZucaiDraft:
+    """现行机器初稿（处方忠实，`zucai_draft.prescription_point`）回放到历史期次（2026-10-06）。
+
+    面集合＝当期 legs-base 的处方；任九 14 选 9 只丢场不降档，帽＝`cap_zucai_slip`（刹车档
+    用 `--cap-zucai 200` 另跑）。与 `real` 并排跑＝「人改初稿」的历史账。legs-base 是可改文件，
+    回放前要核对它的修改时刻早于开球（读法见 evidence/2026-10-05-training-pool.md §7）。
+    """
+    name = "zucai_draft"
+    version = "v1"
+    channels = ("renjiu",)
+
+    def decide(self, issue: ZucaiIssue, ctx: Ctx) -> list[BetSlip]:
+        from nutmeg.decision.zucai_draft import load_board, prescription_point
+
+        data_dir = ctx.extra.get("data_dir")
+        if data_dir is None:
+            return []
+        try:
+            legs = load_board(Path(data_dir), issue.issue)
+        except (FileNotFoundError, ValueError, KeyError):
+            return []
+        point = prescription_point(legs, channel="renjiu", cap_yuan=ctx.cap_zucai_slip)
+        if not point:
+            return []
+        return [BetSlip(slip_id=f"gym-draft-{issue.issue}-renjiu", channel="renjiu",
+                        placed_at=(issue.sale_deadline or "")[:10], legs=[], issue=issue.issue,
+                        faces=dict(point["faces"]))]

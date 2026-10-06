@@ -128,13 +128,33 @@ def betslip_register(
 ) -> None:
     """登记一张已买的票（幂等，同 slip_id 覆盖）。偏离初稿时带 --deviation/--prediction
     （只记录，登记是事实）。"""
-    from nutmeg.decision.betslip import BetslipError, register_slip
+    from nutmeg.decision.betslip import BetslipError, first_kickoff, register_slip
+    from nutmeg.decision.review import review_record
 
     try:
         slip = _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
                            multiplier, issue, scheme_no, trial, note, data_dir, deviation,
                            prediction)
         slip.diagnosis = _diagnose(slip, data_dir)
+        slip.first_kickoff = first_kickoff(slip, data_dir)
+        # 审票记录随票入账（宪法 §6）：否决了仍买是事实，账房按它出「否决仍买」一行；
+        # 审票自己出错也不挡登记（登记是事实），留痕
+        try:
+            verdict = _review(slip, slip.diagnosis, data_dir)
+            slip.diagnosis["review"] = review_record(verdict)
+        except Exception as exc:  # noqa: BLE001
+            verdict = {"lines": [f"审票失败：{exc!r}"[:160]]}
+            slip.diagnosis["review"] = {"error": repr(exc)[:200]}
+        discipline = [line for line in (_issue_brake_line(slip, data_dir),
+                                        _brake_line(data_dir, placed_at)) if line]
+        discipline = [line for line in discipline if line.startswith("⛔")]
+        if discipline and "error" not in slip.diagnosis["review"]:
+            record = slip.diagnosis["review"]
+            record["vetoed"] = True
+            record["codes"] = [*record["codes"],
+                               *(["BRAKE"] if any("刹车" in x for x in discipline) else []),
+                               *(["STOP"] if any("止损" in x or "已触发" in x
+                                                 for x in discipline) else [])]
         if slip.channel == "jczq" and slip.purchased:
             # 实票入账到本体（2026-10-01）：登记是事实，内核是镜像；镜像失败不挡登记
             from nutmeg.decision.ledger_writeback import writeback_jczq_slip
@@ -146,8 +166,14 @@ def betslip_register(
         _cli.typer.echo(register_slip(data_dir, slip))
         for line in slip.diagnosis.get("lines", []):
             _cli.typer.echo("   " + line)
-        for line in _review_lines(slip, slip.diagnosis, data_dir):
+        for line in verdict["lines"]:
             _cli.typer.echo("   " + line)
+        for line in discipline:
+            if "刹车" in line:
+                _cli.typer.echo("   " + line)
+        if slip.deviation_after_kickoff:
+            _cli.typer.echo("   ⚠️偏离理由写于票内最早开球之后：照记，"
+                            "但不进「人的偏离」按理由的净值")
         if slip.diagnosis.get("kernel"):
             from nutmeg.decision.ledger_writeback import summary_line
 
@@ -155,6 +181,18 @@ def betslip_register(
         _cli.typer.echo("   " + _brake_line(data_dir, placed_at))
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
+
+
+def _issue_brake_line(slip, data_dir: Path, *, extra_yuan: int = 0) -> str | None:
+    """期级刹车（宪法 §4，2026-10-06 起预审否决）：本期已登记实购 + extra + 这张 是否超帽。"""
+    if slip.channel == "jczq" or not slip.issue:
+        return None
+    from nutmeg.decision.bankroll import brake_check
+    from nutmeg.decision.betslip import load_slips
+
+    bought = sum(s.stake_yuan for s in load_slips(data_dir, issue=slip.issue)
+                 if s.purchased and s.slip_id != slip.slip_id)
+    return brake_check(data_dir, slip.issue, slip.stake_yuan, already_yuan=bought + extra_yuan)
 
 
 def _brake_line(data_dir: Path, placed_at: str) -> str:
@@ -199,9 +237,17 @@ def betslip_preview(
         review_lines = _review_lines(slip, diag, data_dir)
         for line in review_lines:
             _cli.typer.echo("   " + line)
-        _cli.typer.echo("   " + _brake_line(data_dir, placed_at))
-        _log_preview(data_dir, slip, any(line.startswith("⛔") for line in review_lines))
-        if any(line.startswith("⛔") for line in review_lines):
+        brake = _brake_line(data_dir, placed_at)
+        _cli.typer.echo("   " + brake)
+        issue_brake = _issue_brake_line(slip, data_dir)
+        if issue_brake:
+            _cli.typer.echo("   " + issue_brake)
+        # 月度止损触发、期级刹车超帽（宪法 §4）与 V1/V2 同级否决（2026-10-06）：预审退出码 1，
+        # 登记不受此限——连亏之后最需要这条线的时候，不该只靠意志力读一行字
+        vetoed = (any(line.startswith("⛔") for line in review_lines) or brake.startswith("⛔")
+                  or bool(issue_brake))
+        _log_preview(data_dir, slip, vetoed)
+        if vetoed:
             raise _cli.typer.Exit(code=1)       # 审票否决：改票后再审（登记不受此限）
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
@@ -246,6 +292,11 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR) -> None:
             for line in diag.get("lines", []):
                 _cli.typer.echo("   " + line)
             review_lines = _review_lines(slip, diag, data_dir)
+            earlier = sum(s.stake_yuan for s in slips[:slips.index(slip)]
+                          if s.issue == slip.issue and s.channel != "jczq")
+            issue_brake = _issue_brake_line(slip, data_dir, extra_yuan=earlier)
+            if issue_brake:
+                review_lines = [*review_lines, issue_brake]
             for line in review_lines:
                 _cli.typer.echo("   " + line)
             veto = any(line.startswith("⛔") for line in review_lines)
@@ -261,9 +312,10 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR) -> None:
             worst = sorted(together.items(), key=lambda kv: (-len(kv[1]), kv[0]))
             _cli.typer.echo("   整组共享裸单：" + "；".join(
                 f"{key} 在 {len(ids)} 张票上" for key, ids in worst))
-        if slips:
-            _cli.typer.echo("   " + _brake_line(data_dir, slips[0].placed_at))
-        if vetoed:
+        brake = _brake_line(data_dir, slips[0].placed_at) if slips else ""
+        if brake:
+            _cli.typer.echo("   " + brake)
+        if vetoed or brake.startswith("⛔"):
             raise _cli.typer.Exit(code=1)
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
@@ -284,13 +336,17 @@ def _log_preview(data_dir: Path, slip, vetoed: bool) -> None:
         pass
 
 
-def _review_lines(slip, diagnosis: dict, data_dir: Path) -> list[str]:
+def _review(slip, diagnosis: dict, data_dir: Path) -> dict:
     """审票（2026-10-01 定位）：V1 期望回报率 / V2 共享裸单 否决，V3 倍投警告。"""
     from nutmeg.decision.review import prize_model, review
     from nutmeg.decision.review_runner import issue_market
 
     market = issue_market(data_dir, slip.issue) if slip.channel != "jczq" else None
-    return review(slip, diagnosis, prize_model=prize_model(data_dir), market=market)["lines"]
+    return review(slip, diagnosis, prize_model=prize_model(data_dir), market=market)
+
+
+def _review_lines(slip, diagnosis: dict, data_dir: Path) -> list[str]:
+    return _review(slip, diagnosis, data_dir)["lines"]
 
 
 @betslip_app.command("list")
