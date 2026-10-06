@@ -35,7 +35,7 @@
 
 - 这是赛前知识底座，不是判断。笔记只陈述事实，不含投注用语；判断仍走 rubric 与 Read，没有命名事件就跟市场。
 - 具体比赛的伤停、首发和市场 Snapshot 仍须在当场窗口重新采集。`*_window` 笔记过了 2026-10 窗口只能当历史证据用。
-- 塔吉克、马尔代夫不在 `jczq_national_team_aliases.json`（API-Football 英文名未核对），只靠种子别名解析；国际赔率对齐仍缺这两队。
+- 塔吉克、马尔代夫原本不在 `jczq_national_team_aliases.json`。2026-10-06 已用 API-Football `/teams?search=` 核对官方拼写（`Tajikistan`、`Maldives`，均 national=true），补进别名表，国际赔率对齐从此也能对上这两队。
 
 ## 5. 刷新触发器
 
