@@ -70,6 +70,8 @@ def planned_commands(ctx: DayContext, job: str) -> list[list[str]]:
     if issue and (zdir / f"{issue}-rx.json").exists():
         cmds.append([*uv, "workflow", "grade-rx", "--rx-file", str(zdir / f"{issue}-rx.json"),
                      "--issue", issue, *data])
+    # 人群线索赛后结算（2026-10-07）：扫所有有线索、赛果已出、尚未结算的期。
+    cmds.append([*uv, "crowd", "settle", "--pending", *data])
     return cmds
 
 

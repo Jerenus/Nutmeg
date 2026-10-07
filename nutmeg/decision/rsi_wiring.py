@@ -40,7 +40,8 @@ def _cli_invoke(argv: list[str]) -> tuple[int, str]:
 
 
 def after_prep(*, issue: str, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None:
-    """备料链跑完：带期号入本体（产 store-ids，足彩场次才能进并集池）→ 排义务 → 列待办。
+    """备料链跑完：带期号入本体（产 store-ids，足彩场次才能进并集池）→ 排义务 → 列待办
+    → 人群层快照与线索。
 
     decision-am 成功后会自己走 after_am（研究板面 + 排义务 + 并集池刷新）。
     """
@@ -60,6 +61,9 @@ def after_prep(*, issue: str, day: str, data_dir: Path, invoke: Invoker = _cli_i
             issue,
         ]
     )
+    # 人群层（2026-10-07）：市场底座快照 + 已登记 CR 假说出线索。失败只告警（接线层不向上抛）。
+    invoke(["crowd", "fetch", "--issue", issue, "--data-dir", str(data_dir)])
+    invoke(["crowd", "scan", "--issue", issue, "--data-dir", str(data_dir)])
 
 
 def after_am(*, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None:

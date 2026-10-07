@@ -103,3 +103,14 @@ def test_commit_outputs_step_commits_only_the_loop_files_without_hooks(tmp_path)
     assert all(path in script for path in LOOP_OUTPUT_PATHS)
     assert "experiments/corpus-v2.json" in LOOP_OUTPUT_PATHS
     assert "-- experiments/attempts.log" in script          # pathspec 提交，不碰别人暂存的
+
+
+def test_loop_grades_registered_crowd_experiments(tmp_path):
+    from nutmeg.decision.rsi_loop import graded_experiments
+
+    reg = tmp_path / "experiments" / "registry"
+    reg.mkdir(parents=True)
+    (reg / "CR1.json").write_text("{}", encoding="utf-8")
+    (reg / "_draft_H1.json").write_text("{}", encoding="utf-8")
+    exps = graded_experiments(tmp_path)
+    assert exps[-1] == "CR1" and "F14" in exps and "_draft_H1" not in exps

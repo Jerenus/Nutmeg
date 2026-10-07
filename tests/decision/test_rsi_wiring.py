@@ -246,3 +246,11 @@ def test_decision_settle_calls_after_settle_when_not_dry_run(tmp_path, monkeypat
     assert len(hits) == 1
     assert hits[0]["day"] == "2026-09-19"
     assert hits[0]["data_dir"] == tmp_path.parent
+
+
+def test_after_prep_ends_with_crowd_fetch_then_scan(tmp_path):
+    calls = []
+    after_prep(issue="26136", day="2026-10-08", data_dir=tmp_path,
+               invoke=lambda argv: calls.append(argv) or (0, ""))
+    assert [c[:2] for c in calls[-2:]] == [["crowd", "fetch"], ["crowd", "scan"]]
+    assert all("26136" in c for c in calls[-2:])

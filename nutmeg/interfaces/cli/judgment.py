@@ -85,9 +85,25 @@ def _draft_text(data_dir: Path, issue: str, cap: int, write: bool) -> str:
     from nutmeg.decision.zucai_draft import build_draft, render_draft
 
     try:
-        return render_draft(build_draft(data_dir, issue, cap_yuan=cap, write=write))
+        text = render_draft(build_draft(data_dir, issue, cap_yuan=cap, write=write))
     except FileNotFoundError as exc:
         return f"# 足彩初稿 · {issue}：未出——{exc}\n"
+    section = _crowd_section(data_dir, issue)
+    if write:
+        md = Path(data_dir) / "zucai" / f"{issue}-draft.md"
+        if md.exists():
+            md.write_text(md.read_text("utf-8").rstrip("\n") + "\n\n" + section, encoding="utf-8")
+    return text.rstrip("\n") + "\n\n" + section
+
+
+def _crowd_section(data_dir: Path, issue: str) -> str:
+    """人群地图（2026-10-07）；人群层是初稿的旁支，出错只写一行不挡初稿。"""
+    try:
+        from nutmeg.interfaces.cli.crowd import crowd_map_text
+
+        return crowd_map_text(data_dir, issue, Path("experiments/registry"))
+    except Exception as exc:  # noqa: BLE001
+        return f"## 人群地图\n\n（未出：{exc!r}）\n"
 
 
 @judgment_app.command("draft")

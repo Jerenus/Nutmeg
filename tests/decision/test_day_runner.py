@@ -186,3 +186,9 @@ def test_results_job_catches_up_unbridged_days_and_skips_done_ones(tmp_path: Pat
     assert "复盘编码 jczq-2026-09-21" in rec.summary
     again = run_job(ctx, "results")
     assert "源 2026-09-22" in again.summary and "源 2026-09-21" not in again.summary
+
+
+def test_settle_plans_crowd_settle_pending(tmp_path):
+    ctx = _ctx(tmp_path, [])
+    cmds = planned_commands(ctx, "settle")
+    assert any(c[3:6] == ["crowd", "settle", "--pending"] for c in cmds)

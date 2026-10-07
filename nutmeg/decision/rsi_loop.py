@@ -60,6 +60,14 @@ LOOP_OUTPUT_PATHS = (
 # F2 2026-10-02 退役（窗口 26126–26137 内主档样本到不了 n_min 140），不再每日结账
 # F3（F10 的前身）与 F4（观测仪 plan commit 已删）2026-10-04 退役
 GRADED_EXPERIMENTS = ("F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1", "K1")
+
+
+def graded_experiments(root: Path) -> tuple[str, ...]:
+    """固定清单 + 已签字的人群假说（experiments/registry/CR*.json，2026-10-07）。"""
+    crowd = sorted(p.stem for p in (Path(root) / "experiments" / "registry").glob("CR*.json"))
+    return GRADED_EXPERIMENTS + tuple(crowd)
+
+
 # 主指标（2026-10-01 评估换轴）：结构与决策——F14 表态面集合 vs 市场覆盖、F10 热门带；
 # F9（程度判断）等降为次指标：每天 8–15 场的 Brier 差在赛季内分不开噪声。
 PRIMARY_EXPERIMENTS = ("F14", "F10")
@@ -176,11 +184,14 @@ def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
             [*uv, "python", "experiments/corpus_build.py", "--out", str(ctx.corpus_path)],
         ],
         "grade_prospective": [
-            [*uv, "nutmeg", "rsi", "grade", "--exp", exp, "--mode", "prospective", *data]
-            for exp in GRADED_EXPERIMENTS
+            [*uv, "nutmeg", "rsi", "grade", "--exp", exp, "--mode", "prospective", *data,
+             *(["--registry-dir", str(ctx.root / "experiments" / "registry")]
+               if exp.startswith("CR") else [])]
+            for exp in graded_experiments(ctx.root)
         ],
         "verdict_due": [
-            [*uv, "nutmeg", "rsi", "verdict", "--exp", exp, *data] for exp in GRADED_EXPERIMENTS
+            [*uv, "nutmeg", "rsi", "verdict", "--exp", exp, *data]
+            for exp in graded_experiments(ctx.root)
         ],
         "factor_propose": [
             [*uv, "nutmeg", "rsi", "weights", "propose", "--all", "--log",

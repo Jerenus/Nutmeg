@@ -100,3 +100,9 @@ def test_nominate_writes_candidates_and_sign_registers(tmp_path):
     signed = json.loads((reg / "CR1.json").read_text("utf-8"))
     assert signed["exp_id"] == "CR1" and signed["window"]["issue_from"] == "26061"
     assert "已登记 CR1" in r.output
+
+def test_draft_crowd_section_degrades_without_market_base(tmp_path):
+    from nutmeg.interfaces.cli.judgment import _crowd_section
+
+    text = _crowd_section(tmp_path, "26999")
+    assert text.startswith("## 人群地图") and "本期无市场底座" in text
