@@ -213,6 +213,19 @@
 **来源层级（只采集）**：事实项可带 `source_tier`（`club_official / league_official / press / aggregator / social / unknown`），r1 不按层级加权；K1 过 100 项次后按层级看逐项有效性，再决定 r2 是否按层级定上限。
 **治理**：增删项 ①先写证据文档（结账数据或两读 kappa）→ ②`RUBRIC_CHANGELOG` 加一条 → ③`RUBRIC_VERSION` 升号，`SUPPORTED_VERSIONS` 决定评分器混不混旧版 → ④退役项写 `until`、新项写 `since` → ⑤K1 与逐项因子按 `rubric_version` 过滤。`nutmeg rubric items [--version]` 打印当前表与变更记录。没有证据文档不许改表。
 
+## 十、人群偏离假说（CR，2026-10-07，`nutmeg/decision/crowd_*.py`）
+
+足彩是奖池均分：edge 只能来自「和全国人群分开、且人群错」的地方。逐场人群比例拿不到，人群偏离从**官方任九奖金反推**。设计：`docs/superpowers/specs/2026-10-07-zucai-crowd-notebook-design.md`（r2）。
+
+- **模型**：`log 任九奖金 = a + b·S + γ·X`。S = −Σ ln p(实际赛果)（非作废场）；X = 触发面「实开数 − 市场期望数」；p 统一取 zgzcw `europeSp` 去水（全部期次同一源，混源会把源差当成人群偏离）。γ 用 Frisch–Waugh 两步 OLS + 按期 bootstrap 2,000 次。观测单位是**期**（每期一个奖金）。
+- **方向**：γ>0 = 全国人群**少买**触发面（`crowd_bias=under`，role `cover`）；γ<0 = **多买**（`over`，role `fade`）。
+- **结账**：`rsi grade --exp CR<k> --mode replay|prospective`；metric = 方向符号 × γ × 100（每多开一个触发面奖金变化 %，正数＝假说方向成立）；CI 下界 ≥0 survived，上界 <0 falsified，否则 inconclusive；**判决只认 prospective**，n_min 30 期，60 期仍跨线提 retire。grade 先核登记原件与内核冻结指纹，不符拒绝（改 trigger 走 `rsi amend`）。
+- **trigger DSL（封闭）**：粒度 (场, 面)；字段 `face` `p_face` `p_home` `p_draw` `p_away`（%）`fav_face` `is_fav` `league` `league_group`(national/top5/other) `board_hot_count`（最大面 ≥65% 的场数）；运算 `>= <= == in not_in`；`all/any/not` 至多 2 层；表外字段登记即拒。
+- **advisory → 约束**：只有 `rsi deploy` 过的 CR 的线索成为枚举约束（●）；之前一律 ⚑，只看不用。线索在字典序第三序以内：事实层否决 → 帽内结构 → 人群分开。
+- **提名**：48 桶（3 纯面 + 面 × 5 市场档 × 3 联赛组）；门＝CI 不含 0 且窗口内实开 ≥8 次；**按 z = |γ|/标准误排序**（不按 |γ|：首轮 |γ| 前三全是稀有桶，未看过的块上翻号）；与已登记或已选候选触发集合重叠 ≥50% 不提。48 桶在 5% 水平期望约 2.4 个假阳性——候选只是提名。
+- **签字**：候选写了 `mechanism`（为什么全国人群会这么偏）才能 `crowd sign`；首轮提名块 26090–26135，回放验证块 26035–26089；之后的提名扫全部已结期，验证只靠前瞻。
+- **首轮读数（2026-10-07，zgzcw 口径）**：平局 z=4.42，26090–26135 γ=−24.1% CI[−34.0,−12.6]（n=46，提名块，预检时已看过）；**26035–26089 γ=−21.2% CI[−32.6,−9.5]（n=55，未看过的块）**——全国人群多买平局。另两条候选（五大联赛大热客胜 65%+、其他联赛主胜 35–50%）在未看过的块上翻号，未签。
+
 ## 已退休/引擎时代常数（禁区，不再复述理由）
 
 hafu 0/18 下架｜高赔串整票 0/38｜胜平负押冷门 0/23｜"3条冷腿堆100x" 必死｜恰净胜N 窄带禁区｜EV 语言否决判读（e条）

@@ -3,8 +3,8 @@
 | 项 | 内容 |
 |---|---|
 | 文档 | 现役系统结构总图（权威） |
-| 版本 | v1.2 · 2026-10-05 |
-| 范围 | 定位 · 系统总图 · 每日时序 · 判断层 · 出票审票与账务 · RSI 实验层 · 回放 gym · 数据对象 · 全量分析过程 · 工程流程 · 文档地图 · 术语表 |
+| 版本 | v1.3 · 2026-10-07 |
+| 范围 | 定位 · 系统总图 · 每日时序 · 判断层（含足彩人群层） · 出票审票与账务 · RSI 实验层 · 回放 gym · 数据对象 · 全量分析过程 · 工程流程 · 文档地图 · 术语表 |
 | 读者 | Jun（下注者与决策人）· Claude 主循环 · Codex / OpenClaw 会话 |
 | 权威关系 | 原则与规则以 SOP 三件套为准；数字以 `.nutmeg-data/scoreboard.json` 与内核为准；本文与它们冲突时以它们为准，并回来改本文 |
 
@@ -71,7 +71,7 @@ Nutmeg 是中国体彩**竞彩足球（JCZQ）**与**传统足彩（胜负彩 / 
 flowchart TB
   subgraph SRC["① 外部数据源"]
     direction LR
-    S1["体彩竞彩计算器<br/>500.com 备源"] ~~~ S2["titan007<br/>终盘 · 历史 SP"] ~~~ S3["API-Football<br/>国际欧赔"] ~~~ S4["足彩期次 · 官方开奖<br/>赛果 · 奖金 gameNo=90"]
+    S1["体彩竞彩计算器<br/>500.com 备源"] ~~~ S2["titan007<br/>终盘 · 历史 SP"] ~~~ S3["API-Football<br/>国际欧赔"] ~~~ S4["足彩期次 · 官方开奖<br/>赛果 · 奖金 gameNo=90"] ~~~ S5["zgzcw<br/>足彩历史欧赔"]
   end
   subgraph ING["② 采集与入库 · 确定性脚本"]
     direction LR
@@ -86,6 +86,7 @@ flowchart TB
     R1["深研分析员 A<br/>研究 JSON + rubric r1"] --> R2["协议级聚合<br/>rubric 派生 tilt"] --> R3["Read<br/>写回内核 revision"]
     OV["改判<br/>落到 rubric 项"] --> R3
     R1 --> RB["读者 B<br/>两读 κ"]
+    CW["人群层（足彩）<br/>官方奖金反推 · CR 线索"]
   end
   subgraph OUT["⑤ 面板"]
     direction LR
@@ -114,10 +115,10 @@ flowchart TB
   classDef hum fill:#FEF3C7,stroke:#D97706,color:#78350F
   classDef acc fill:#DCFCE7,stroke:#16A34A,color:#14532D
   classDef exp fill:#FFE4E6,stroke:#E11D48,color:#881337
-  class S1,S2,S3,S4 src
+  class S1,S2,S3,S4,S5 src
   class I1,I2,I3 ing
   class K,F,SB store
-  class R1,R2,R3,OV,RB jud
+  class R1,R2,R3,OV,RB,CW jud
   class P1,P2,P3,P4 out
   class H1,T1,H2,T2 hum
   class T3,T4 acc
@@ -130,10 +131,10 @@ flowchart TB
 |---|---|---|
 | 采集 | `nutmeg/decision/fetch.py` `market_data.py` `zucai_prep.py`、`scripts/titan007_closing_backfill.py` `scripts/jczq_result_backfill.py` | `jczq/daily/<日>/sporttery_markets.json` `jczq/jc-results.json` `zucai/<期>-issue.json` `zucai/official-*.json` |
 | 内核 | `nutmeg/ontology/`（repository / actions / migrations，schema 47） | `.nutmeg-data/ontology/ontology.db` |
-| 判断 | `research_runner.py` `research_prompt.py` `rubric_items.py` `rubric.py` `stance.py` `jczq_reads.py` `zucai_auto_judgment.py` `pool.py` `overrides.py` `rubric_reader.py` `judgment_projection.py` | `research-<code>.json` / `<期>-research-m<N>.json`、`reads.json`、`legs-base`、内核 forecast revision |
+| 判断 | `research_runner.py` `research_prompt.py` `rubric_items.py` `rubric.py` `stance.py` `jczq_reads.py` `zucai_auto_judgment.py` `pool.py` `overrides.py` `rubric_reader.py` `judgment_projection.py`；人群层 `crowd_source.py` `crowd_trigger.py` `crowd_model.py` `crowd_clues.py` | `research-<code>.json` / `<期>-research-m<N>.json`、`reads.json`、`legs-base`、内核 forecast revision；`<期>-zgzcw.json` `<期>-clues.jsonl` |
 | 面板 | `day_brief.py` `day_session.py` `day_publish.py` `verdict_page.py` `judgment_brief.py` `zucai_draft.py` `signals.py` | `daily/<日>/brief.md` `session.md`、`site/`、`verdict.html`、`<期>-draft.md` |
 | 审票与账务 | `review.py` `review_runner.py` `betslip.py` `betslip_diagnosis.py` `bankroll.py` `account.py` `retro_encoder.py` | `betslips.jsonl` `scoreboard.json` `analytics/account/<月>.md` |
-| 实验 | `rsi_loop.py` `rsi_grading.py` `rsi_samples.py` `experiments/*.py` `nutmeg/discovery/` `nutmeg/gym/` | 内核 rsi_* 表、`experiments/corpus-v2.json` `rsi-samples.json` `factors.json` `registry/`、`analytics/rsi-loop/` |
+| 实验 | `rsi_loop.py` `rsi_grading.py` `rsi_samples.py` `crowd_model.py` `experiments/*.py` `nutmeg/discovery/` `nutmeg/gym/` | 内核 rsi_* 表、`experiments/corpus-v2.json` `rsi-samples.json` `factors.json` `registry/`（含 `CR*.json`）`candidates/`、`analytics/rsi-loop/` |
 | 运行 | `day_runner.py` `day_decisions.py` `day_broadcast.py` `day_ops.py` `day_runs.py` `ops_status.py` | `daily/<日>/timeline.json` `decisions.json` `broadcasts.jsonl` `previews.jsonl` |
 
 ---
@@ -181,10 +182,10 @@ gantt
 |---|---|---|---|---|
 | `decision.am` | 08:00（失败等 30 分重试） | `nutmeg_scheduler_ops.py run-strict --stage am` → `decision-am` | 内核板面、深研、RSI 义务排程 | 当天没有板面；体彩**一场都没开售**（含完全为空）记为合法空盘 |
 | `jczq.results-backfill` | 09:30 / 15:30 | `scripts/jczq_result_backfill.py` | `jc-results.json` → 结算、语料、夜账 | 结算与语料停在旧日期（lag>2 天退出 2） |
-| `day.settle` | 09:45 / 15:45 | `day run --job results` + `--job settle` | 实票结算、记分牌复盘编码、处方预测记账 | 昨日票未结、账房缺数 |
+| `day.settle` | 09:45 / 15:45 | `day run --job results` + `--job settle` | 实票结算、记分牌复盘编码、处方预测记账、人群线索结算（`crowd settle --pending`） | 昨日票未结、账房缺数 |
 | `jczq.research` | 10:00 | `decision-am` → `research run` → `research intake --write` → `jczq-build-reads` | 研究文件、Read、内核 revision、足彩自动 legs-base | 判断层零产出；空盘日两步自动跳过 |
-| `rsi.loop` | 10:45 | `rsi loop`（9 步，见 5.3） | 实验结账、因子提案、实力指数、语料 | 判决与提案停在前一天 |
-| `zucai.prep-morning` / `prep` / `prep-revision` | 11:00 / 14:00 / 18:30 | `zucai-prep --slot … --dispatch-telegram` | 足彩期次、store-ids、位移复核 | 足彩样本池与初稿没有输入 |
+| `rsi.loop` | 10:45 | `rsi loop`（9 步，见 5.3；结账/判决含已签字的 CR 人群假说） | 实验结账、因子提案、实力指数、语料 | 判决与提案停在前一天 |
+| `zucai.prep-morning` / `prep` / `prep-revision` | 11:00 / 14:00 / 18:30 | `zucai-prep --slot … --dispatch-telegram` | 足彩期次、store-ids、位移复核；`after_prep` 末尾 `crowd fetch` + `crowd scan`（人群层快照与线索） | 足彩样本池与初稿没有输入 |
 | `day.brief` | 12:00 / 14:20 / 18:35 | `day run --job brief`（12:00 带模型解释）+ `day publish` | 当日报告、会话入口、站点、足彩初稿自动重建 | `/today` 会话入口与 `/day` 页读到旧报告 |
 | `day.verdict` | 12:30 / 18:45 | `research refresh` + `research verdict` | 判决参考页 | 人工裁决看旧页 |
 | `day.broadcast` | 每 10 分 | `day run --job broadcast` | Jun（Telegram） | 截止无人提醒（26130 复发） |
@@ -318,7 +319,73 @@ flowchart TB
 
 - **自动 legs-base（2026-10-02）**：并集池刷新时为截止当天的期次自动建 legs-base（判断来源与 Read 相同，研究的结构字段与 rubric 经 `research_intake` 转录）；没有 `auto` 标记的手工版一律不动。
 - **初稿规则**：处方面集合装进帽，任九 14 选 9 只丢场不降档；装不下才降档，每步砍票内判断概率最低的面并写出。
-- **奖金模型**（`scripts/zucai_prize_model.py`）：log(奖金) = a + b·S（S＝按市场概率的全板意外度）；任九 n=41、b=1.007、相关 0.95。b≈1 意味着**市场口径下任何形状的期望回报都≈返奖率**，差别只在判断溢价。
+- **奖金模型**（`scripts/zucai_prize_model.py`）：log(奖金) = a + b·S（S＝按市场概率的全板意外度）；任九 n=41、b=1.007、相关 0.95（zgzcw 统一口径 101 期复算：b=1.01、相关 0.956）。b≈1 意味着**市场口径下任何形状的期望回报都≈返奖率**，差别只在判断溢价——以及 3.4 的人群偏离。
+
+### 3.4 人群层：官方奖金反推（足彩，2026-10-07）
+
+足彩是奖池均分：edge 不来自「比真相准」，只能来自「和全国人群分开、且人群在那里错」。逐场人群比例拿不到（500「本站用户投注比例」列已隐藏、接口全 404；zgzcw 人气字段历史全空），于是**从官方任九奖金反推**：在奖金模型上加假说特征 X，系数 γ 就是全国人群在这类面上相对市场多买（γ<0）或少买（γ>0）的程度。每条假说是一个 `CR` 前缀的 RSI 实验——机器提名、人写 mechanism 并签字、按 prospective 判决、人 deploy 之后它的线索才成为初稿的约束。
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "16px", "lineColor": "#64748B", "clusterBkg": "#FBFCFE", "clusterBorder": "#CBD5E1", "edgeLabelBackground": "#FFFFFF", "primaryTextColor": "#0F172A"}, "flowchart": {"curve": "basis", "padding": 12, "nodeSpacing": 30, "rankSpacing": 42}}}%%
+flowchart TB
+  subgraph IN["输入"]
+    direction LR
+    ZG["zgzcw europeSp<br/>&lt;期&gt;-zgzcw.json<br/>快照追加"] ~~~ OP["官方奖金缓存<br/>official-prizes.json<br/>任九单注 · 赛果"]
+  end
+  subgraph MODEL["反推（每期一个观测）"]
+    direction LR
+    OBS["期观测<br/>S＝−Σ ln p(实际)<br/>log 奖金"] --> FIT["γ 拟合<br/>log 奖金 = a + b·S + γ·X<br/>Frisch–Waugh + bootstrap"]
+  end
+  subgraph BOOK["笔记本"]
+    direction LR
+    NOM["crowd nominate<br/>48 桶 · 按 z 排<br/>实开 ≥8"] --> CAND["experiments/candidates/<br/>CR-cand-*.json"] --> SIGN["人写 mechanism<br/>crowd sign"] --> REG["experiments/registry/<br/>CR*.json<br/>trigger · crowd_bias"]
+  end
+  subgraph RSI["RSI 判决"]
+    direction LR
+    GR["rsi grade<br/>replay：只给读数<br/>prospective：进判决"] --> VD{"verdict<br/>n_min 30 期"} -->|"survived + 人 deploy"| CON["线索升为约束 ●"]
+  end
+  subgraph LANE["每期"]
+    direction LR
+    SCAN["crowd scan<br/>备料后自动"] --> CL[("&lt;期&gt;-clues.jsonl")] --> MAP["初稿「人群地图」<br/>⚑ advisory · ● 约束"]
+    CL --> ST["crowd settle<br/>outcome · acted"]
+  end
+  IN --> OBS
+  FIT --> NOM
+  REG --> FIT
+  FIT --> GR
+  REG --> SCAN
+  ZG --> SCAN
+  CON -.-> MAP
+
+  classDef src fill:#F1F5F9,stroke:#64748B,color:#0F172A
+  classDef jud fill:#F3E8FF,stroke:#9333EA,color:#3B0764
+  classDef store fill:#EEF2FF,stroke:#4F46E5,color:#1E1B4B
+  classDef out fill:#CCFBF1,stroke:#0D9488,color:#134E4A
+  classDef hum fill:#FEF3C7,stroke:#D97706,color:#78350F
+  classDef acc fill:#DCFCE7,stroke:#16A34A,color:#14532D
+  classDef exp fill:#FFE4E6,stroke:#E11D48,color:#881337
+  class ZG,OP src
+  class OBS,FIT,NOM,SCAN jud
+  class CAND,REG,CL store
+  class SIGN hum
+  class GR,VD,CON exp
+  class MAP out
+  class ST acc
+```
+
+*图 6　人群层：官方奖金反推人群偏离；假说由机器提名、人签字，判决只认前瞻，deploy 后线索才进初稿约束。*
+
+| 时点 | 动作 | 代码 |
+|---|---|---|
+| 备料 11:00 / 14:00 / 18:30 | `after_prep` → `crowd fetch` + `crowd scan` | `rsi_wiring.py` |
+| B5 初稿 | `judgment draft` 末尾「人群地图」 | `interfaces/cli/judgment.py` → `crowd.crowd_map_text` |
+| 赛后 09:45 / 15:45 | `day run --job settle` → `crowd settle --pending` | `day_runner.py` |
+| 10:45 闭环 | `rsi grade --mode prospective` + `rsi verdict` 覆盖全部 `CR*` | `rsi_loop.graded_experiments` |
+| 按需（人） | `crowd nominate` → 写 mechanism → `crowd sign` | `interfaces/cli/crowd.py` |
+
+- **为什么用一个源**：zgzcw `europeSp` 能回取 26035 起全部期次；与 500 14:00 快照逐场差最多 8pp，混源会把源差当成人群偏离。联赛名去全角空格后归组（national / top5 / other）。
+- **边界**：线索在字典序第三序以内——事实层否决 → 帽内结构 → 人群分开；不能判死 alive 面，不能越过刹车、止损与日帽。⚑ 线索只看不用。
+- **首轮读数**：「全国人群多买平局」z=4.42；提名块 26090–26135 γ=−24.1% CI[−34.0,−12.6]（n=46），**未看过的 26035–26089 γ=−21.2% CI[−32.6,−9.5]（n=55）**——每多开一个平局，任九奖金约少两成。候选 `CR-cand-1` 待 Jun 签字。
 
 ---
 
@@ -351,7 +418,7 @@ flowchart TB
   class E,G store
 ```
 
-*图 6　出票路径：买之前审票，买之后登记、结算、记账。*
+*图 7　出票路径：买之前审票，买之后登记、结算、记账。*
 
 | 规则 | 内容 | 出处 |
 |---|---|---|
@@ -387,7 +454,7 @@ stateDiagram-v2
   end note
 ```
 
-*图 7　RSI 实验状态机：边上是 `rsi` 子命令（deploy / extend / hold / retire 都是 `rsi deploy` 的选项）；判决只许系统，部署只许人。*
+*图 8　RSI 实验状态机：边上是 `rsi` 子命令（deploy / extend / hold / retire 都是 `rsi deploy` 的选项）；判决只许系统，部署只许人。*
 
 - 登记原件 `experiments/registry/<ID>.json`（claim / mechanism / window / falsifier / stop_rule / duties），登记后冻结；改冻结字段只能另立新实验。
 - **判决只许系统，部署只许人**。退役（2026-10-02 起）同时把该实验的义务置为 retired，排程、到期、巡检都不再列它。
@@ -408,6 +475,7 @@ stateDiagram-v2
 | F5 · F8 · F11 · F13 | 结构 / 判断 | 价格带、其他、保险点名、崩塌叙事 | 见 `nutmeg rsi status` |
 | F2 · F1c | 价格因子 | 让球线位移 / 书商分歧度 | **retired 2026-10-02**（窗口内到不了 n_min） |
 | F3 · F4 | 判断 / 结构 | 足彩 top1≥60% 模态面（F10 的前身）/ 门成本 | **retired 2026-10-04**（F3 由 F10 承接；F4 的观测仪 `plan commit` 已删） |
+| CR* | 结构（人群） | 某类面开出时任九奖金偏离市场意外度（全国人群多买/少买），见 3.4 | 2026-10-07 起；首条候选「多买平局」待签字 |
 
 > [!NOTE]
 > `nutmeg rsi status` 是实验状态的唯一事实源；本表只是快照。
@@ -439,7 +507,7 @@ flowchart TB
   class L9 store
 ```
 
-*图 8　RSI 每日闭环 9 步（2026-10-04 删去 hyp、factor_search、dream_compare）。报告在 `.nutmeg-data/analytics/rsi-loop/<日>.json|md` 与 `latest.md`，「待人决定」进当日报告。*
+*图 9　RSI 每日闭环 9 步（2026-10-04 删去 hyp、factor_search、dream_compare）。报告在 `.nutmeg-data/analytics/rsi-loop/<日>.json|md` 与 `latest.md`，「待人决定」进当日报告。*
 
 ### 5.4 因子注册表（T13）与 rubric 逐项结账
 
@@ -480,7 +548,7 @@ flowchart TB
   class G3 store
 ```
 
-*图 9　回放 gym：所有输入都是已落盘的日文件，任何规则都能在历史板面上按时间顺序重放。*
+*图 10　回放 gym：所有输入都是已落盘的日文件，任何规则都能在历史板面上按时间顺序重放。*
 
 - **Dream 退役（2026-10-04）**：常设批准下 5 个夜晚只录到 1 个影子世界、对照账只有 1 行，30 个世界的就绪门在 10-31 前不可达；影子世界的输入本来就是已落盘的日文件，gym 能直接回放。代码、`day.dream` 定时器与 `discovery` 命令已删；`policy_*` / `discovery_*` 表留作空表。
 - **规则 v3**（`gym/policies/jczq.py: jczq_rule_v3`，原 `dream_compare.decision_rule_v3`）：期望回报 < 0.5 否决，过线里取最高，最高 < 1 则规则最优＝空仓。`nutmeg gym run --policy jczq_rule_v3 --belief read` 就是当年 Dream 的「研究判断 × 体彩价」口径；`--belief read` 只收 `reads.json` 里开球前写下的 had 判断。
@@ -496,7 +564,7 @@ flowchart TB
 |---|---|
 | `jczq/daily/<日>/` | `sporttery_markets.json` `jczq-legs-base.json` `reads.json` `research-<code>.json` `rubric-<code>.json` `overrides.jsonl` `closing_odds.json` `signals.md` `verdict.html` `judgment-brief.md` |
 | `jczq/jc-results.json` `jc-history.json` `void-matches.json` | 竞彩赛果、上赛季 SP 历史、作废场 |
-| `zucai/` | `<期>-issue.json` `-store-ids.json` `-legs-base.json` `-reads.json` `-judgment-v1.json` `-research-m<N>.json` `-rubric-m<N>.json` `-draft.json/.md` `-legs-draft-<渠道>.json`；`official-results.json` `official-prizes.json` `prize-model.json` |
+| `zucai/` | `<期>-issue.json` `-store-ids.json` `-legs-base.json` `-reads.json` `-judgment-v1.json` `-research-m<N>.json` `-rubric-m<N>.json` `-draft.json/.md` `-legs-draft-<渠道>.json` `-zgzcw.json`（人群层市场底座，快照追加）`-clues.jsonl`（人群线索，只追加）；`official-results.json` `official-prizes.json` `prize-model.json` |
 | `daily/<日>/` | `brief.json/md` `session.md` `decisions.json` `timeline.json` `broadcasts.jsonl` `previews.jsonl` `retro.md` `results-90.json` |
 | `betslips.jsonl` | 登记簿（实票 / 试玩、诊断、偏离理由、预测） |
 | `scoreboard.json` | **记分牌单一事实源**（tickets、balance_ledger、adjudications、链） |
@@ -568,7 +636,7 @@ flowchart TB
   class EV,SOPS,DOC,MEM acc
 ```
 
-*图 10　工程流程：从问题到证据，再同步到规则、文档与记忆。*
+*图 11　工程流程：从问题到证据，再同步到规则、文档与记忆。*
 
 - **验证**：`make verify`（ruff + compileall + pytest）；全量约 3 分钟；提交前看真实退出码，不用 `| tail` 吞掉它。
 - **提交**：只用显式路径 `git add <path>`，绝不 `-A/-u`；实验输出文件由 10:45 闭环自动提交（`--no-verify`，只提交 `experiments/` 三个文件）。
@@ -591,6 +659,7 @@ flowchart TB
 | 实体知识 | `docs/research/INDEX.md`；画像在 store 的 `profile_notes` | 权威 |
 | 某个组件为什么这样设计 | `docs/superpowers/specs/<日>-<主题>-design.md` | 设计原件；被后续 spec 或本文取代的部分以后者为准 |
 | 某个变更是否落地、数字是多少 | `docs/superpowers/evidence/` | 证据 |
+| 人群层为什么从奖金反推、CR 假说怎么结账 | `docs/superpowers/specs/2026-10-07-zucai-crowd-notebook-design.md`（r2）、`docs/superpowers/plans/2026-10-07-zucai-crowd-notebook.md`、RULEBOOK「十」 | 设计原件 / 计划 / 规则 |
 | 工程背景（M1–M6 产品化） | `docs/superpowers/specs/2026-08-24-nutmeg-intelligence-os-design.md` | 历史设计；工作区与治理思路仍有效 |
 | OpenClaw 时代的调度契约 | `docs/nutmeg-scheduler-operations.md` | 部分过时（见其头注） |
 | 2026-07-07 之前的引擎 | tag `v0.4.0` | 已废止，勿据此决策 |
@@ -627,6 +696,10 @@ flowchart TB
 | 空盘 | 体彩一场都没开售（假期、停赛、尚未开售），记为合法、不报失败 |
 | 月度止损 | 本月净值 ≤ −¥3,000 即空仓到月底 |
 | EXP 探索票 | 只给预登记实验、每日 ≤¥30 的小额票 |
+| 人群层 | 从官方任九奖金反推全国人群相对市场多买/少买哪类面（3.4） |
+| CR 假说 / γ | 人群偏离假说（RSI 实验，`CR` 前缀）/ 每多开一个触发面任九奖金的变化（负＝人群多买） |
+| 线索 Clue | 已签字的 CR 假说在本期板面的触发面；⚑ advisory（未 deploy，只看不用）/ ● 约束（已 deploy） |
+| cover / fade | 人群少买的面值得盖 / 人群多买的面中了也分得少，别把全包名额花在它上面 |
 
 ---
 
@@ -637,3 +710,4 @@ flowchart TB
 | v1.0 | 2026-10-02 | 首版：现役结构总图，取代 2026-08 Intelligence OS 设计成为结构权威 |
 | v1.1 | 2026-10-02 | 统一配色与图例、元信息、目录、提示框、图题、术语表、版本记录；10 张图重排版（研究流、足彩初稿、审票、状态机、闭环、Dream 改为分行布局）；rubric 项数更正为 15；随附 Word 版与生成脚本 |
 | v1.2 | 2026-10-05 | 过度设计审计瘦身（第 0–4 波）：内核路径写死（删 `ontology_v2` 开关与 v1 JSONL 动词路径）；删旧版服务层、机器构票工具（`zucai-candidates`/`zucai-optimize`/`zucai-ticket`/`plan *`）、operator 与受保护票代码（表留空）；Dream/Discovery 退役，规则 v3 迁入 gym（`--belief read`）；RSI 闭环 12→9 步；launchd 14→13；命令 143→77，`nutmeg/` 116,572→59,784 行。审计门、裁决单、zucai 账本、记分牌权威命令与研究入库拒收逻辑未动 |
+| v1.3 | 2026-10-07 | 新增 3.4 人群层（官方奖金反推人群偏离、CR 假说、线索与人群地图，图 6；原图 6–10 顺延为 7–11）；总图加 zgzcw 源与人群层节点；定时任务表、实验清单、运行文件、文档地图、术语表同步 |
