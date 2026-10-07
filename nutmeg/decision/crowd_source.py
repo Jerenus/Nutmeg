@@ -21,8 +21,10 @@ ZGZCW_URL = "https://cp.zgzcw.com/lottery/zcplayvs.action?lotteryId=13&issue={is
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/128.0 Safari/537.36")
 FACES = ("3", "1", "0")
-NATIONAL = frozenset({"友谊赛", "国际赛", "欧国联", "世预赛", "欧预赛", "亚预赛", "世界杯",
-                      "欧洲杯", "亚洲杯", "美洲杯", "非洲杯", "金杯赛"})
+# zgzcw 的写法（2026-10-07 回填 26035–26135 全量核对）：国际友谊 / 世欧预 / 世界杯附 等。
+NATIONAL = frozenset({"友谊赛", "国际友谊", "国际赛", "欧国联", "世预赛", "世欧预", "欧预赛",
+                      "亚预赛", "世界杯", "世界杯附", "欧洲杯", "亚洲杯", "美洲杯", "非洲杯",
+                      "金杯赛", "亚运男足", "亚运女足"})
 TOP5 = frozenset({"英超", "西甲", "德甲", "意甲", "法甲"})
 
 Fetcher = Callable[[str], dict]
@@ -57,7 +59,8 @@ def parse_zgzcw(doc: dict) -> list[CrowdMatch]:
             fair = devig({"3": h, "1": d, "0": a})
         except (ValueError, ZeroDivisionError):
             continue
-        out.append(CrowdMatch(no=no, league=str(m.get("leageName") or ""),
+        # zgzcw 两字联赛名常带全角空格（「德　甲」），去掉一切空白后再归组。
+        out.append(CrowdMatch(no=no, league="".join(str(m.get("leageName") or "").split()),
                               home=str(m.get("hostName") or ""), away=str(m.get("guestName") or ""),
                               p=fair, asian=str(m.get("yapan") or "")))
     return out

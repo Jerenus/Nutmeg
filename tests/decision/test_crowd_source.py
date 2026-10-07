@@ -60,3 +60,11 @@ def test_backfill_skips_existing_and_reports_failures(tmp_path):
 
     out = backfill(tmp_path, ["26035", "26036", "26037"], fetcher=fetcher, sleep=lambda s: None)
     assert out["26035"] == "skip" and out["26036"] == "ok" and out["26037"].startswith("fail")
+
+
+def test_league_names_are_normalised_against_zgzcw_spellings():
+    rows = [("德　甲", "a", "b", (2.0, 3.4, 3.6)), ("国际友谊", "c", "d", (2.0, 3.4, 3.6)),
+            ("世欧预", "e", "f", (2.0, 3.4, 3.6)), ("世界杯附", "g", "h", (2.0, 3.4, 3.6))]
+    board = parse_zgzcw(zg_doc(rows))
+    assert board[0].league == "德甲" and board[0].league_group == "top5"
+    assert {m.league_group for m in board[1:]} == {"national"}
