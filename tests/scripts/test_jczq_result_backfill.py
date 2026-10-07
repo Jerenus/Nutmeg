@@ -176,3 +176,45 @@ def test_historical_day_is_sealed_when_all_board_results_exist(tmp_path, monkeyp
 
     stored = json.loads(out.read_text(encoding="utf-8"))
     assert set(stored["2026-09-14"]) == set(codes)
+
+
+def _late_board() -> dict:
+    """10-06 周二板：10 场当晚开球，2 场美洲赛在次日（10-07）08:00/08:30 北京时间开球。"""
+    subs = [{"businessDate": "2026-10-06", "matchNumStr": f"周二{i:03d}",
+             "matchDate": "2026-10-06", "matchTime": "22:00:00"} for i in range(1, 11)]
+    subs += [{"businessDate": "2026-10-06", "matchNumStr": "周二011",
+              "matchDate": "2026-10-07", "matchTime": "08:00:00"},
+             {"businessDate": "2026-10-06", "matchNumStr": "周二012",
+              "matchDate": "2026-10-07", "matchTime": "08:30:00"}]
+    return {"matchInfoList": [{"businessDate": "2026-10-06", "subMatchList": subs}]}
+
+
+def test_yesterdays_board_with_late_kickoffs_still_playing_is_pending_not_stale(
+    tmp_path, monkeypatch, capsys
+):
+    """10-07 09:30：周二板缺的两场今早 08:00/08:30 才开球、还在踢，报 STALE 退出 2 是误报。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    bj = ZoneInfo("Asia/Shanghai")
+    codes = [f"周二{i:03d}" for i in range(1, 13)]
+    daily = tmp_path / "daily"
+    day_dir = daily / "2026-10-06"
+    day_dir.mkdir(parents=True)
+    (day_dir / "sporttery_markets.json").write_text(json.dumps(_late_board()), encoding="utf-8")
+    out = tmp_path / "jc-results.json"
+    out.write_text("{}", encoding="utf-8")
+    _StaticClient.payload = _result_payload(codes[:10])
+    monkeypatch.setattr(backfill, "DAILY", daily)
+    monkeypatch.setattr(backfill, "OUT", out)
+    monkeypatch.setattr(backfill.httpx, "Client", _StaticClient)
+
+    assert backfill.collect(0, now=datetime(2026, 10, 7, 9, 30, tzinfo=bj)) == 0
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "ℹ️RESULTS_PENDING: late_kickoff=2026-10-06(10/12)"
+    )
+    # 开球 7 小时后仍缺赛果才是真故障
+    assert backfill.collect(0, now=datetime(2026, 10, 7, 15, 30, tzinfo=bj)) == 2
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "⚠️RESULTS_STALE: incomplete=2026-10-06(10/12)"
+    )

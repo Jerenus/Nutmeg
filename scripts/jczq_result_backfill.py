@@ -75,6 +75,51 @@ def _board_codes(day_dir: Path, day: str) -> set[str]:
     return codes
 
 
+# 美洲场常在次日北京时间早上开球：09:30 回填时还在踢不算故障（2026-10-07 周二011/012）
+LATE_KICKOFF_GRACE_HOURS = 4
+BJ = ZoneInfo("Asia/Shanghai")
+
+
+def _kickoffs(day_dir: Path, day: str) -> dict[str, datetime]:
+    """matchNumStr → 北京时间开球时刻。
+
+    取体彩快照 matchDate+matchTime；缺则用 legs-base 的 kickoff_bj。
+    """
+    out: dict[str, datetime] = {}
+    try:
+        markets = json.loads((day_dir / "sporttery_markets.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        markets = {}
+    for group in markets.get("matchInfoList") or []:
+        for match in group.get("subMatchList") or []:
+            code, md, mt = match.get("matchNumStr"), match.get("matchDate"), match.get("matchTime")
+            if code and md and mt:
+                try:
+                    out[str(code)] = datetime.fromisoformat(f"{md}T{mt}").replace(tzinfo=BJ)
+                except ValueError:
+                    pass
+    try:
+        legs_doc = json.loads((day_dir / "jczq-legs-base.json").read_text(encoding="utf-8"))
+        legs = legs_doc.get("legs")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        legs = None
+    for code, leg in (legs or {}).items() if isinstance(legs, dict) else ():
+        if code not in out and isinstance(leg, dict) and leg.get("kickoff_bj"):
+            try:
+                out[str(code)] = datetime.fromisoformat(leg["kickoff_bj"])
+            except ValueError:
+                pass
+    return out
+
+
+def _still_playing(missing: set[str], kickoffs: dict[str, datetime], now: datetime | None) -> bool:
+    """缺的场次开球时刻都已知、且都晚于 now − 宽限：比赛还没完，不是回填停了。"""
+    if now is None or not missing or not missing <= set(kickoffs):
+        return False
+    cutoff = now.timestamp() - LATE_KICKOFF_GRACE_HOURS * 3600
+    return all(kickoffs[code].timestamp() > cutoff for code in missing)
+
+
 def _is_past(raw: str, current_day: date, *, min_days: int) -> bool:
     try:
         return (current_day - date.fromisoformat(raw)).days >= min_days
@@ -106,15 +151,18 @@ def parse_day(text: str) -> dict[str, dict]:
     return out
 
 
-def collect(sleep_s: float, *, today: date | None = None) -> int:
+def collect(sleep_s: float, *, today: date | None = None, now: datetime | None = None) -> int:
     dates = sorted(d for d in os.listdir(DAILY)
                    if (DAILY / d / "sporttery_markets.json").exists())
     done = json.load(open(OUT)) if OUT.exists() else {}
-    current_day = today or datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    if now is None and today is None:
+        now = datetime.now(BJ)
+    current_day = today or now.astimezone(BJ).date()
     client = httpx.Client(headers=HEADERS, timeout=20.0)
     fetched = failed = 0
     messages: list[str] = []
     observed_counts: dict[str, int] = {}
+    _observed: dict[str, set[str]] = {}
     try:
         for d in dates:
             try:
@@ -136,6 +184,7 @@ def collect(sleep_s: float, *, today: date | None = None) -> int:
                 messages.append(f"  ✗ {d}: {type(exc).__name__} {exc}")
                 continue
             observed_counts[d] = len(board_codes & set(day))
+            _observed[d] = board_codes & set(day)
             if old_enough or (board_codes and board_codes <= set(day)):
                 done[d] = day
                 fetched += 1
@@ -164,6 +213,7 @@ def collect(sleep_s: float, *, today: date | None = None) -> int:
         and _board_codes(DAILY / raw, raw)
     ]
     incomplete: list[tuple[str, int, int]] = []
+    late: list[tuple[str, int, int]] = []
     for raw in dates:
         try:
             board_day = date.fromisoformat(raw)
@@ -177,7 +227,12 @@ def collect(sleep_s: float, *, today: date | None = None) -> int:
         stored = done.get(raw) or {}
         if not board_codes <= set(stored):
             present = observed_counts.get(raw, len(board_codes & set(stored)))
-            incomplete.append((raw, present, len(board_codes)))
+            missing = board_codes - set(stored) - set(_observed.get(raw) or ())
+            if raw != current_day.isoformat() and _still_playing(
+                    missing, _kickoffs(DAILY / raw, raw), now):
+                late.append((raw, present, len(board_codes)))
+            else:
+                incomplete.append((raw, present, len(board_codes)))
     # 今天的板面还没踢完不是故障：只作 PENDING 提示（退出 0）；昨天及更早未齐才是 STALE（退出 2）。
     # 2026-09-23 之前每天 09:30 都因当日 0/N 报退出码 2，把状态条常年染红。
     stale_days = [row for row in incomplete if row[0] != current_day.isoformat()]
@@ -191,6 +246,9 @@ def collect(sleep_s: float, *, today: date | None = None) -> int:
     elif pending_days:
         detail = ",".join(f"{d}({present}/{total})" for d, present, total in pending_days)
         print(f"ℹ️RESULTS_PENDING: today={detail}")
+    elif late:
+        detail = ",".join(f"{d}({present}/{total})" for d, present, total in late)
+        print(f"ℹ️RESULTS_PENDING: late_kickoff={detail}")
     for message in messages:
         print(message)
     print(f"赛果回填：本轮 {fetched} 天，失败 {failed}；累计 {len(done)} 天 / {n} 场 → {OUT}")
