@@ -39,7 +39,6 @@ def seed_history(zdir: Path, *, first: int = 26001, n: int = 40, gamma: float = 
     """合成 n 期：赛果按市场概率抽样，奖金 = exp(-5 + S + gamma·X_draw + 噪声)。"""
     # crowd_model 在 Task 3 才有；放函数内，Task 1 的测试只用到 zg_doc。
     from nutmeg.decision.crowd_model import IssueObs, excess, surprise
-
     from nutmeg.decision.crowd_source import load_board
 
     rng = random.Random(seed)
