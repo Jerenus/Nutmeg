@@ -6,6 +6,8 @@
 
 **Architecture:** zgzcw 历史欧赔做统一市场底座（`crowd_source`）→ 封闭 DSL 触发谓词（`crowd_trigger`）→ 奖金残差回归 `log奖金 = a + b·S + γ·X`，γ 的 bootstrap CI 即假说结账（`crowd_model`）→ 线索事件流与人群地图（`crowd_clues`）→ `nutmeg crowd` 命令面 + RSI grade 分支 + 备料/结算/闭环/初稿四处接线。判决仍只认 RSI prospective 档。
 
+**状态（2026-10-07）：** 已执行完毕，只剩 Task 11 Step 3（Jun 签 CR1）。执行记录见文末。
+
 **Tech Stack:** Python 3.12、typer、标准库（无 numpy）、pytest、现有 RSI 内核（SQLite）。
 
 Spec：`docs/superpowers/specs/2026-10-07-zucai-crowd-notebook-design.md`（r2）。
@@ -38,7 +40,7 @@ Spec：`docs/superpowers/specs/2026-10-07-zucai-crowd-notebook-design.md`（r2�
 
 ### Task 0: 提交 spec r2
 
-- [ ] **Step 1: Commit**
+- [x] **Step 1: Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-10-07-zucai-crowd-notebook-design.md docs/superpowers/plans/2026-10-07-zucai-crowd-notebook.md
@@ -54,7 +56,7 @@ git commit -m "docs(specs): crowd notebook r2 — per-match crowd ratios unavail
 - Create: `tests/decision/crowd_fixtures.py`
 - Test: `tests/decision/test_crowd_source.py`
 
-- [ ] **Step 1: 写测试共用夹具**
+- [x] **Step 1: 写测试共用夹具**
 
 ```python
 # tests/decision/crowd_fixtures.py
@@ -127,7 +129,7 @@ def seed_history(zdir: Path, *, first: int = 26001, n: int = 40, gamma: float = 
     return issues
 ```
 
-- [ ] **Step 2: 写失败测试**
+- [x] **Step 2: 写失败测试**
 
 ```python
 # tests/decision/test_crowd_source.py
@@ -191,12 +193,12 @@ def test_backfill_skips_existing_and_reports_failures(tmp_path):
     assert out["26035"] == "skip" and out["26036"] == "ok" and out["26037"].startswith("fail")
 ```
 
-- [ ] **Step 3: Run to verify fail**
+- [x] **Step 3: Run to verify fail**
 
 Run: `uv run pytest tests/decision/test_crowd_source.py -q`
 Expected: FAIL — `ModuleNotFoundError: nutmeg.decision.crowd_source`
 
-- [ ] **Step 4: 实现**
+- [x] **Step 4: 实现**
 
 ```python
 # nutmeg/decision/crowd_source.py
@@ -321,12 +323,12 @@ def backfill(zdir: Path, issues: Iterable[str], *, fetcher: Fetcher | None = Non
     return out
 ```
 
-- [ ] **Step 5: Run to verify pass**
+- [x] **Step 5: Run to verify pass**
 
 Run: `uv run pytest tests/decision/test_crowd_source.py -q`
 Expected: 6 passed
 
-- [ ] **Step 6: 核对 zgzcw 场序 = 体彩场号（生产数据，只读）**
+- [x] **Step 6: 核对 zgzcw 场序 = 体彩场号（生产数据，只读）**
 
 ```bash
 uv run python - <<'EOF'
@@ -341,7 +343,7 @@ EOF
 ```
 Expected: 每行两侧主客队为同一对阵（简称差异可接受）。若顺序错位，停下来改 `parse_zgzcw` 按名字对齐，再继续。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nutmeg/decision/crowd_source.py tests/decision/crowd_fixtures.py tests/decision/test_crowd_source.py
@@ -356,7 +358,7 @@ git commit -m "feat(crowd): zgzcw market base — parse/devig, append-only snaps
 - Create: `nutmeg/decision/crowd_trigger.py`
 - Test: `tests/decision/test_crowd_trigger.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/decision/test_crowd_trigger.py
@@ -397,12 +399,12 @@ def test_evaluate_and_fires():
     assert evaluate({"not": draw}, facts(BOARD[0], "0", BOARD)) is True
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail**
 
 Run: `uv run pytest tests/decision/test_crowd_trigger.py -q`
 Expected: FAIL — `ModuleNotFoundError`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```python
 # nutmeg/decision/crowd_trigger.py
@@ -486,12 +488,12 @@ def fires(trigger: dict, board: list[CrowdMatch]) -> list[tuple[int, str]]:
             if evaluate(trigger, facts(m, face, board))]
 ```
 
-- [ ] **Step 4: Run to verify pass**
+- [x] **Step 4: Run to verify pass**
 
 Run: `uv run pytest tests/decision/test_crowd_trigger.py -q`
 Expected: 3 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/decision/crowd_trigger.py tests/decision/test_crowd_trigger.py
@@ -506,7 +508,7 @@ git commit -m "feat(crowd): closed trigger DSL over (match, face) facts"
 - Create: `nutmeg/decision/crowd_model.py`
 - Test: `tests/decision/test_crowd_model.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/decision/test_crowd_model.py
@@ -587,12 +589,12 @@ def test_nominate_finds_planted_draw_effect_and_skips_registered(tmp_path):
     assert all(c["trigger"] != DRAW for c in again)
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail**
 
 Run: `uv run pytest tests/decision/test_crowd_model.py -q`
 Expected: FAIL — `ModuleNotFoundError`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```python
 # nutmeg/decision/crowd_model.py
@@ -785,12 +787,12 @@ def nominate(observations: list[IssueObs], *, existing: dict[str, dict], top: in
     return out
 ```
 
-- [ ] **Step 4: Run to verify pass**
+- [x] **Step 4: Run to verify pass**
 
 Run: `uv run pytest tests/decision/test_crowd_model.py -q`
 Expected: 8 passed（若 `test_fit_recovers_known_gamma` 的容差在固定 seed 下不过，检查 `seed_history` 的抽样，不得放宽到 >0.08）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/decision/crowd_model.py tests/decision/test_crowd_model.py
@@ -806,7 +808,7 @@ git commit -m "feat(crowd): prize-residual crowd model — S/X, Frisch–Waugh g
 - Modify: `nutmeg/decision/rsi_prereg.py`（`load_registry_doc` 末尾）
 - Test: `tests/ontology/test_rsi_models.py`、`tests/decision/test_crowd_prereg.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 追加到 `tests/ontology/test_rsi_models.py`：
 
@@ -887,12 +889,12 @@ def test_missing_cr_field_is_refused(tmp_path):
         _load(tmp_path, doc)
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail**
 
 Run: `uv run pytest tests/ontology/test_rsi_models.py tests/decision/test_crowd_prereg.py -q`
 Expected: FAIL — `test_frozen_hash_covers_crowd_fields_when_present` 与 CR 拒绝类用例失败
 
-- [ ] **Step 3: 实现 `frozen_hash`**
+- [x] **Step 3: 实现 `frozen_hash`**
 
 `nutmeg/ontology/rsi/models.py`，在 `FROZEN_FIELDS` 元组之后加常量，并替换 `frozen_hash`：
 
@@ -908,7 +910,7 @@ def frozen_hash(doc: dict) -> str:
     return hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest()
 ```
 
-- [ ] **Step 4: 实现 CR 校验**
+- [x] **Step 4: 实现 CR 校验**
 
 `nutmeg/decision/rsi_prereg.py`：顶部常量区加
 
@@ -943,12 +945,12 @@ def _validate_crowd(doc: dict) -> None:
     validate(doc["trigger"])
 ```
 
-- [ ] **Step 5: Run to verify pass**
+- [x] **Step 5: Run to verify pass**
 
 Run: `uv run pytest tests/ontology/test_rsi_models.py tests/decision/test_crowd_prereg.py tests/ontology/test_rsi_actions.py -q`
 Expected: all passed
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nutmeg/ontology/rsi/models.py nutmeg/decision/rsi_prereg.py tests/ontology/test_rsi_models.py tests/decision/test_crowd_prereg.py
@@ -963,7 +965,7 @@ git commit -m "feat(rsi): CR registry docs — crowd fields validated and frozen
 - Modify: `nutmeg/interfaces/cli/rsi.py`（`_MODE` 附近加选项；`grade` 函数）
 - Test: `tests/test_cli_crowd.py`（新建，本任务只放 grade 用例）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/test_cli_crowd.py
@@ -1010,12 +1012,12 @@ def test_rsi_grade_cr_refuses_edited_registry_doc(tmp_path):
     assert r.exit_code != 0 and "冻结指纹" in r.output
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail**
 
 Run: `uv run pytest tests/test_cli_crowd.py -q`
 Expected: FAIL — `No such option: --registry-dir`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `nutmeg/interfaces/cli/rsi.py`：在 `_MODE = typer.Option(...)` 下一行加
 
@@ -1050,12 +1052,12 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
     elif exp == "F2":
 ```
 
-- [ ] **Step 4: Run to verify pass**
+- [x] **Step 4: Run to verify pass**
 
 Run: `uv run pytest tests/test_cli_crowd.py tests/test_cli_rsi.py -q`
 Expected: all passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/interfaces/cli/rsi.py tests/test_cli_crowd.py
@@ -1070,7 +1072,7 @@ git commit -m "feat(rsi): grade CR crowd hypotheses from official prizes (replay
 - Create: `nutmeg/decision/crowd_clues.py`
 - Test: `tests/decision/test_crowd_clues.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/decision/test_crowd_clues.py
@@ -1157,12 +1159,12 @@ def test_load_registry_only_reads_cr_docs(tmp_path):
     assert list(load_registry(tmp_path)) == ["CR1"]
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail**
 
 Run: `uv run pytest tests/decision/test_crowd_clues.py -q`
 Expected: FAIL — `ModuleNotFoundError`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```python
 # nutmeg/decision/crowd_clues.py
@@ -1319,12 +1321,12 @@ def render_map(issue: str, rows: list[dict], readings: dict[str, str], *, has_bo
     return "\n".join([*lines, ""])
 ```
 
-- [ ] **Step 4: Run to verify pass**
+- [x] **Step 4: Run to verify pass**
 
 Run: `uv run pytest tests/decision/test_crowd_clues.py -q`
 Expected: 6 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/decision/crowd_clues.py tests/decision/test_crowd_clues.py
@@ -1340,7 +1342,7 @@ git commit -m "feat(crowd): clue stream — scan/settle/acted from purchased tic
 - Modify: `nutmeg/interfaces/cli/__init__.py`（注册块按字母序插入 `crowd`）
 - Test: `tests/test_cli_crowd.py`（追加）
 
-- [ ] **Step 1: 写失败测试**（追加到 `tests/test_cli_crowd.py`）
+- [x] **Step 1: 写失败测试**（追加到 `tests/test_cli_crowd.py`）
 
 ```python
 from nutmeg.interfaces.cli import crowd as crowd_cli
@@ -1408,12 +1410,12 @@ def test_nominate_writes_candidates_and_sign_registers(tmp_path):
     assert "已登记 CR1" in r.output
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail**
 
 Run: `uv run pytest tests/test_cli_crowd.py -q`
 Expected: FAIL — `No such command 'crowd'`
 
-- [ ] **Step 3: 实现 CLI**
+- [x] **Step 3: 实现 CLI**
 
 ```python
 # nutmeg/interfaces/cli/crowd.py
@@ -1661,12 +1663,12 @@ def sign(candidate: Path, as_: str = typer.Option(..., "--as", help="CR<k>"),
 from nutmeg.interfaces.cli import crowd as crowd  # noqa: E402
 ```
 
-- [ ] **Step 4: Run to verify pass**
+- [x] **Step 4: Run to verify pass**
 
 Run: `uv run pytest tests/test_cli_crowd.py -q`
 Expected: 5 passed。若 `register` 直接调用时 typer `Option` 默认值未解析导致报错，确认调用处已显式传入全部参数（上面已传）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nutmeg/interfaces/cli/crowd.py nutmeg/interfaces/cli/__init__.py tests/test_cli_crowd.py
@@ -1684,7 +1686,7 @@ git commit -m "feat(crowd): nutmeg crowd fetch/backfill/scan/map/settle/nominate
 - Modify: `nutmeg/interfaces/cli/judgment.py:84-90`（`_draft_text`）
 - Test: `tests/decision/test_rsi_wiring.py`、`tests/decision/test_day_runner.py`、`tests/decision/test_rsi_loop.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/decision/test_rsi_wiring.py` 追加：
 
@@ -1720,12 +1722,12 @@ def test_loop_grades_registered_crowd_experiments(tmp_path):
     assert exps[-1] == "CR1" and "F14" in exps and "_draft_H1" not in exps
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail**
 
 Run: `uv run pytest tests/decision/test_rsi_wiring.py tests/decision/test_day_runner.py tests/decision/test_rsi_loop.py -q`
 Expected: 3 new tests FAIL
 
-- [ ] **Step 3: 实现 `after_prep`**
+- [x] **Step 3: 实现 `after_prep`**
 
 `nutmeg/decision/rsi_wiring.py` 的 `after_prep` 末尾（`rsi due` 调用之后）加：
 
@@ -1737,7 +1739,7 @@ Expected: 3 new tests FAIL
 
 并把 docstring 第一行改为：`"""备料链跑完：带期号入本体 → 排义务 → 列待办 → 人群层快照与线索。`
 
-- [ ] **Step 4: 实现 settle**
+- [x] **Step 4: 实现 settle**
 
 `nutmeg/decision/day_runner.py` 的 `planned_commands` 在 `return cmds` 之前加：
 
@@ -1746,7 +1748,7 @@ Expected: 3 new tests FAIL
     cmds.append([*uv, "crowd", "settle", "--pending", *data])
 ```
 
-- [ ] **Step 5: 实现闭环**
+- [x] **Step 5: 实现闭环**
 
 `nutmeg/decision/rsi_loop.py`：`GRADED_EXPERIMENTS` 定义之后加
 
@@ -1772,7 +1774,7 @@ def graded_experiments(root: Path) -> tuple[str, ...]:
         ],
 ```
 
-- [ ] **Step 6: 实现初稿人群地图**
+- [x] **Step 6: 实现初稿人群地图**
 
 `nutmeg/interfaces/cli/judgment.py` 的 `_draft_text` 替换为：
 
@@ -1802,12 +1804,12 @@ def _crowd_section(data_dir: Path, issue: str) -> str:
         return f"## 人群地图\n\n（未出：{exc!r}）\n"
 ```
 
-- [ ] **Step 7: Run to verify pass**
+- [x] **Step 7: Run to verify pass**
 
 Run: `uv run pytest tests/decision/test_rsi_wiring.py tests/decision/test_day_runner.py tests/decision/test_rsi_loop.py tests/test_zucai_draft.py tests/test_cli_day.py -q`
 Expected: all passed
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add nutmeg/decision/rsi_wiring.py nutmeg/decision/day_runner.py nutmeg/decision/rsi_loop.py nutmeg/interfaces/cli/judgment.py tests/decision/test_rsi_wiring.py tests/decision/test_day_runner.py tests/decision/test_rsi_loop.py
@@ -1818,12 +1820,12 @@ git commit -m "feat(crowd): wire crowd layer into prep, nightly settle, RSI loop
 
 ### Task 9: 生产回填与首轮提名（数据任务，不改代码）
 
-- [ ] **Step 1: 回填 26035–26135 市场底座**
+- [x] **Step 1: 回填 26035–26135 市场底座**
 
 Run: `uv run nutmeg crowd backfill --from 26035 --to 26135`
 Expected: `回填 101 期：新取 ~101 / 已有 0 / 失败 ≤3`。失败期重跑一次同命令。
 
-- [ ] **Step 2: zgzcw 口径重做平局预检（只报告）**
+- [x] **Step 2: zgzcw 口径重做平局预检（只报告）**
 
 ```bash
 uv run python - <<'EOF'
@@ -1837,16 +1839,16 @@ EOF
 ```
 记录两行结果。第二行（26035–26089）是 CR1 的未看过验证块——**此处只打印，不据此改 CR1 方向**（方向已由 26090–26134 预检定为 over）。
 
-- [ ] **Step 3: 首轮提名（只扫 26090–26135）**
+- [x] **Step 3: 首轮提名（只扫 26090–26135）**
 
 Run: `uv run nutmeg crowd nominate --from 26090 --to 26135 --write`
 Expected: 0–3 条候选写入 `experiments/candidates/`。0 条也是合法结果（写进报告）。
 
-- [ ] **Step 4: 写 CR1 候选（平局，人工）**
+- [x] **Step 4: 写 CR1 候选（平局，人工）**
 
 手写 `experiments/candidates/CR-cand-draw.json`：取 Task 7 `nominate` 生成的候选结构，`label_cn="全国人群多买平局"`，`trigger={"field":"face","op":"==","v":"1"}`，`crowd_bias="over"`，`mechanism` 写：「复式投注把平局当保险面（3/1、1/0 双选最常见），全国人群在平局上的份额高于市场概率；平局开出时中奖注数偏多、奖金偏低。」`evidence` 填 Step 2 第一行（并注明「500 口径预检 −11.9% [−21.9, −0.5]，n=42」）。
 
-- [ ] **Step 5: Commit 数据产物**
+- [x] **Step 5: Commit 数据产物**
 
 ```bash
 git add experiments/candidates/
@@ -1864,7 +1866,7 @@ git commit -m "data(crowd): first nomination over 26090–26135 + CR1 draw candi
 - Modify: `docs/ARCHITECTURE.md`（新增「人群层」节 + Mermaid 图；文档地图加 spec/plan 链接）
 - Regenerate: `docs/ARCHITECTURE.docx`
 
-- [ ] **Step 1: RUNBOOK 三行**（找到泳道 B 对应步骤，在其后各加一行）
+- [x] **Step 1: RUNBOOK 三行**（找到泳道 B 对应步骤，在其后各加一行）
 
 ```markdown
 - 人群层（2026-10-07）：`zucai-prep` 后自动 `crowd fetch` + `crowd scan`；失败只告警。手动：`uv run nutmeg crowd fetch --issue <期> && uv run nutmeg crowd scan --issue <期>`。
@@ -1872,7 +1874,7 @@ git commit -m "data(crowd): first nomination over 26090–26135 + CR1 draw candi
 - 赛后 `day run --job settle` 自动 `crowd settle --pending`；`rsi loop` 夜间结账/判决所有 `experiments/registry/CR*.json`。
 ```
 
-- [ ] **Step 2: RULEBOOK 第十节**（追加到文末或「九」之后）
+- [x] **Step 2: RULEBOOK 第十节**（追加到文末或「九」之后）
 
 ```markdown
 ## 十、人群偏离假说（CR，2026-10-07）
@@ -1885,7 +1887,7 @@ git commit -m "data(crowd): first nomination over 26090–26135 + CR1 draw candi
 - **签字**：`crowd sign <候选> --as CR<k> --by <人> --from-issue <下一期> --replay-from … --replay-to …`；改 trigger 走 `rsi amend`，grade 会拒绝与内核冻结指纹不符的原件。
 ```
 
-- [ ] **Step 3: ARCHITECTURE.md 人群层一节**（放在「判断层与 rubric」之后）
+- [x] **Step 3: ARCHITECTURE.md 人群层一节**（放在「判断层与 rubric」之后）
 
 ````markdown
 ## 人群层（足彩，2026-10-07）
@@ -1924,7 +1926,7 @@ flowchart LR
 
 文档地图（ARCHITECTURE.md 末尾的文档清单）加两行：spec 与 plan 路径。
 
-- [ ] **Step 4: 校验 Mermaid 并重建 docx**
+- [x] **Step 4: 校验 Mermaid 并重建 docx**
 
 ```bash
 grep -n "mmdc" scripts/build_architecture_docx.py | head -3
@@ -1933,7 +1935,7 @@ uv run python scripts/build_architecture_docx.py
 Expected: 脚本对全部 Mermaid 图（现 10 张 + 新 1 张）渲染成功、写出 `docs/ARCHITECTURE.docx`。若脚本不自带校验，单独跑：
 `npx -y @mermaid-js/mermaid-cli -i /tmp/crowd.mmd -o /tmp/crowd.svg`（把新图抽到 scratchpad 文件）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/sop/RUNBOOK.md docs/sop/RULEBOOK.md docs/ARCHITECTURE.md docs/ARCHITECTURE.docx
@@ -1944,12 +1946,12 @@ git commit -m "docs: crowd layer in RUNBOOK lane B, RULEBOOK §10, ARCHITECTURE 
 
 ### Task 11: 端到端验证与签字交接
 
-- [ ] **Step 1: 全量相关测试**
+- [x] **Step 1: 全量相关测试**
 
 Run: `uv run pytest tests/decision/test_crowd_*.py tests/test_cli_crowd.py tests/test_cli_rsi.py tests/ontology/test_rsi_models.py tests/decision/test_rsi_wiring.py tests/decision/test_day_runner.py tests/decision/test_rsi_loop.py tests/test_zucai_draft.py -q`
 Expected: all passed
 
-- [ ] **Step 2: `/verify`（沙盒副本上驱动现役链路）**
+- [x] **Step 2: `/verify`（沙盒副本上驱动现役链路）**
 
 调用 `verify` skill：在生产数据沙盒副本上跑 `crowd scan --issue 26136`、`crowd map --issue 26136`、`judgment draft --issue 26136`（不 `--write`）、`crowd settle --pending`、`rsi loop --skip …`（只看 grade/verdict 计划含 CR），确认只追加、幂等、初稿含「人群地图」。
 
@@ -1963,3 +1965,18 @@ uv run nutmeg crowd sign experiments/candidates/CR-cand-draw.json --as CR1 --by 
 uv run nutmeg rsi grade --exp CR1 --mode replay
 ```
 ````
+
+---
+
+## 执行记录（2026-10-07）
+
+提交 `58a6c1a..220b918`（14 个）。与计划的偏差：
+
+1. **Task 9 回填**：首轮 14 期 zgzcw 空响应（瞬时），重跑补齐，101/101 期有市场底座。
+2. **联赛名归一（计划外修复，`8f632ef`）**：zgzcw 两字联赛名带全角空格（「德　甲」），且国家队写作「国际友谊 / 世欧预 / 世界杯附 / 亚运男足 / 亚运女足」；去空白 + 补全国家队集合。
+3. **提名排序（计划外修复，`4e23951`）**：按 |γ| 排的前三全是稀有桶（1 次实开、CI 宽至 +200%），在未看过的 26035–26089 上翻号；改为按 z = |γ|/标准误排序、实开 ≥8、候选间去重。平局桶 z=4.42 排第一。
+4. **CR1 候选**：由 `crowd nominate --write` 产出为 `CR-cand-1.json`（不是计划里手写的 `CR-cand-draw.json`），mechanism 为草稿待 Jun 改定。
+5. **`settle --pending` 无事可做时明说（`220b918`）**：/verify 中发现静默。
+6. **首轮读数**：平局 26090–26135 γ=−24.1% CI[−34.0,−12.6]（n=46）；26035–26089 γ=−21.2% CI[−32.6,−9.5]（n=55，未看过）。另两条候选在未看过的块上翻号，建议不签。
+7. **/verify**：ruff 全过、全量 pytest 0 failed；沙盒中 sign→grade(replay/prospective)→verdict(未到期拒)→fetch→scan→map→settle（26135 对照三张实票 acted 11 ignored / 3 followed）→`day run --job settle`→loop 计划含 CR→初稿含人群地图；`gym verify` 覆盖期差 +0；生产 ontology.db md5 不变；生产无 CR 原件、无线索文件。
+8. **文档**：RUNBOOK B1c/B5d/B10c、RULEBOOK「十」、ARCHITECTURE v1.3（§3.4 + 图 6，原图 6–10 顺延）；docx 按惯例不进 git，本地已重建。
