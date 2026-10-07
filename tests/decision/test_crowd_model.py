@@ -79,3 +79,15 @@ def test_nominate_finds_planted_draw_effect_and_skips_registered(tmp_path):
     assert draw[0]["evidence"]["buckets_scanned"] == 48
     again = nominate(obs, existing={"CR1": DRAW}, top=48, boots=300)
     assert all(c["trigger"] != DRAW for c in again)
+
+
+def test_nominate_ranks_by_evidence_and_dedupes_subset_buckets(tmp_path):
+    seed_history(tmp_path, n=60, gamma=-0.4)
+    cands = nominate(load_observations(tmp_path), existing={}, top=48, boots=300)
+    assert cands[0]["trigger"] == DRAW                       # 最强证据排第一
+    assert all(c["evidence"]["hits"] >= 8 for c in cands)
+    zs = [c["evidence"]["z"] for c in cands]
+    assert zs == sorted(zs, reverse=True)
+    # 合成板面全是英超：「五大联赛·平局·…」与「平局」触发集合高度重叠，不得重复提名
+    assert not any(c["trigger"] != DRAW and "平局" in c["label_cn"] and "五大联赛" in c["label_cn"]
+                   for c in cands)

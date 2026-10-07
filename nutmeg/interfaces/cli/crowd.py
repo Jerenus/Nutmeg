@@ -180,7 +180,8 @@ def nominate_cmd(issue_from: str = typer.Option(..., "--from"),
     k = 1
     for c in cands:
         ev = c["evidence"]
-        typer.echo(f"- {c['label_cn']}  γ={ev['gamma_pct']:+.1f}%  CI{ev['ci_pct']}  n={ev['n']}")
+        typer.echo(f"- {c['label_cn']}  z={ev['z']:.2f}  γ={ev['gamma_pct']:+.1f}%  "
+                   f"CI{ev['ci_pct']}  n={ev['n']} 期  实开 {ev['hits']} 次")
         if not write:
             continue
         while f"CR-cand-{k}" in taken:

@@ -23,6 +23,7 @@ N_MATCHES = 14
 BOOTS = 2000
 BANDS = ((0, 20), (20, 35), (35, 50), (50, 65), (65, 101))
 GROUPS = ("national", "top5", "other")
+MIN_HITS = 8                       # 提名门：窗口内触发面至少实开 8 次
 _FACE_CN = {"3": "主胜", "1": "平局", "0": "客胜"}
 _GROUP_CN = {"national": "国家队", "top5": "五大联赛", "other": "其他联赛"}
 
@@ -158,9 +159,20 @@ def _fire_set(trigger: dict, observations: list[IssueObs]) -> set[tuple[str, int
     return {(o.issue, no, face) for o in observations for no, face in fires(trigger, list(o.board))}
 
 
+def _hits(trigger: dict, observations: list[IssueObs]) -> int:
+    """窗口内触发面实际开出的次数。"""
+    return sum(1 for o in observations for no, face in fires(trigger, list(o.board))
+               if o.results[no - 1] == face)
+
+
 def nominate(observations: list[IssueObs], *, existing: dict[str, dict], top: int = 3,
              seed: int = 7, boots: int = BOOTS) -> list[dict]:
-    """扫 48 桶：CI 不含 0 的按 |γ| 取前 top；与已登记触发集合重叠 ≥50% 的不提。"""
+    """扫 48 桶 → 按证据强度 z = |γ|/标准误 取前 top。
+
+    门：CI 不含 0、实开 ≥ MIN_HITS；与已登记假说或已选候选触发集合重叠 ≥50% 的不提。
+    不按 |γ| 排——2026-10-07 首轮实测：|γ| 前三全是稀有桶（1 次实开、CI 宽到 200%），
+    在未看过的块上翻号；按 z 排第一的平局桶在未看过的块上复现。
+    """
     taken = [s for s in (_fire_set(t, observations) for t in existing.values()) if s]
     buckets = bucket_triggers()
     found = []
@@ -168,19 +180,28 @@ def nominate(observations: list[IssueObs], *, existing: dict[str, dict], top: in
         fset = _fire_set(trigger, observations)
         if not fset or any(len(fset & s) >= 0.5 * len(fset) for s in taken):
             continue
+        hits = _hits(trigger, observations)
+        if hits < MIN_HITS:
+            continue
         fit = fit_gamma(observations, trigger, seed=seed, boots=boots)
         if fit.n < 3 or fit.ci_low <= 0 <= fit.ci_high:
             continue
-        found.append((abs(fit.gamma), label, trigger, fit))
+        z = abs(fit.gamma) / max(1e-9, (fit.ci_high - fit.ci_low) / 3.92)
+        found.append((z, label, trigger, fit, fset, hits))
     found.sort(key=lambda r: -r[0])
-    out = []
-    for _, label, trigger, fit in found[:top]:
+    out, chosen = [], []
+    for z, label, trigger, fit, fset, hits in found:
+        if len(out) >= top:
+            break
+        if any(len(fset & s) >= 0.5 * min(len(fset), len(s)) for s in chosen):
+            continue
+        chosen.append(fset)
         bias = "under" if fit.gamma > 0 else "over"
         out.append({
             "label_cn": f"全国人群{'少买' if bias == 'under' else '多买'}{label}",
             "trigger": trigger, "crowd_bias": bias,
-            "evidence": {"window": [fit.issues[0], fit.issues[-1]], "n": fit.n,
-                         "gamma_pct": round(fit.gamma * 100, 2),
+            "evidence": {"window": [fit.issues[0], fit.issues[-1]], "n": fit.n, "hits": hits,
+                         "z": round(z, 2), "gamma_pct": round(fit.gamma * 100, 2),
                          "ci_pct": [round(fit.ci_low * 100, 2), round(fit.ci_high * 100, 2)],
                          "buckets_scanned": len(buckets)},
         })
