@@ -18,6 +18,7 @@ _DEADLINE_RULES = ("earliest_kickoff", "match_kickoff")
 _SCOPES = ("day", "match")
 _DUTY_STATUSES = ("active", "pending_instrument", "manual")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_CR_REQUIRED = ("label_cn", "trigger", "crowd_bias", "replay_window")
 
 
 def load_registry_doc(path: Path) -> dict:
@@ -52,7 +53,26 @@ def load_registry_doc(path: Path) -> dict:
             continue
         if not d["instrument"] or not any("{issue}" in a or "{day}" in a for a in d["instrument"]):
             raise ValueError("instrument 必须含 {issue} 或 {day} 占位，否则每天跑的是同一条命令")
+    if str(doc["exp_id"]).startswith("CR"):
+        _validate_crowd(doc)
     return doc
+
+
+def _validate_crowd(doc: dict) -> None:
+    """人群假说（CR，2026-10-07）：结构层、带触发谓词与方向、带回放窗。"""
+    from nutmeg.decision.crowd_trigger import validate
+
+    missing = [k for k in _CR_REQUIRED if k not in doc]
+    if missing:
+        raise ValueError(f"CR 原件缺字段: {missing}")
+    if doc["crowd_bias"] not in ("under", "over"):
+        raise ValueError("crowd_bias 必须是 under/over")
+    if doc["layer"] != Layer.STRUCTURAL.value:
+        raise ValueError("CR 实验必须是 structural 层（结账靠官方奖金回放，可上线）")
+    rw = doc["replay_window"]
+    if not isinstance(rw, dict) or not {"issue_from", "issue_to"} <= set(rw):
+        raise ValueError("replay_window 必须是 {issue_from, issue_to}")
+    validate(doc["trigger"])
 
 
 def render_instrument(argv: list[str], *, issue: str | None, day: str) -> list[str]:

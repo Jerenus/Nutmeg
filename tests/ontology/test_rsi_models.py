@@ -98,3 +98,29 @@ def test_status_projection_is_derived_not_stored():
         )
         == "deployed"
     )
+
+
+def test_frozen_hash_unchanged_for_docs_without_crowd_fields():
+    import hashlib
+    import json
+    from pathlib import Path
+
+    from nutmeg.ontology.actions.models import canonical_json
+    from nutmeg.ontology.rsi.models import FROZEN_FIELDS, frozen_hash
+
+    for path in sorted(Path("experiments/registry").glob("[!_C]*.json")):
+        doc = json.loads(path.read_text("utf-8"))
+        old = hashlib.sha256(canonical_json({k: doc.get(k) for k in FROZEN_FIELDS})
+                             .encode("utf-8")).hexdigest()
+        assert frozen_hash(doc) == old, path.name
+
+
+def test_frozen_hash_covers_crowd_fields_when_present():
+    from nutmeg.ontology.rsi.models import frozen_hash
+
+    base = {"exp_id": "CR1", "claim": "c", "trigger": {"field": "face", "op": "==", "v": "1"},
+            "crowd_bias": "over", "label_cn": "x",
+            "replay_window": {"issue_from": "1", "issue_to": "2"}}
+    flipped = dict(base, trigger={"field": "face", "op": "==", "v": "3"})
+    assert frozen_hash(base) != frozen_hash(flipped)
+    assert frozen_hash(base) == frozen_hash(dict(base, psychology="随便改"))

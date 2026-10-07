@@ -71,9 +71,15 @@ FROZEN_FIELDS: tuple[str, ...] = (
 )
 
 
+# 人群假说（CR，2026-10-07）的判据字段：只在原件里出现时才进哈希，旧实验的指纹因此不变。
+OPTIONAL_FROZEN_FIELDS: tuple[str, ...] = ("label_cn", "trigger", "crowd_bias", "replay_window")
+
+
 def frozen_hash(doc: dict) -> str:
-    """登记原件的冻结指纹。只看 FROZEN_FIELDS，与字段顺序无关。"""
+    """登记原件的冻结指纹。只看 FROZEN_FIELDS（+ 出现了的 OPTIONAL_FROZEN_FIELDS），
+    与字段顺序无关。"""
     material = {k: doc.get(k) for k in FROZEN_FIELDS}
+    material.update({k: doc[k] for k in OPTIONAL_FROZEN_FIELDS if k in doc})
     return hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest()
 
 
