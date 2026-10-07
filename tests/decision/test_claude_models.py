@@ -157,3 +157,19 @@ def test_every_scheduled_claude_call_uses_the_resolved_binary(token_file, tmp_pa
     brief_writer._claude_cli("sys", "in")
     cm.auth_check()
     assert seen == [str(exe)] * 4
+
+
+def test_research_first_attempt_gets_the_turn_budget_that_actually_finishes(monkeypatch):
+    """10-06 起 18/18 场第一次都撞 12 轮上限、24 轮重试才成：白烧一次尝试，40 次/日预算
+    实际只够 20 场。首轮给 24 轮，带标记的重试再放宽到 36。"""
+    import subprocess
+
+    from nutmeg.decision import research_runner
+
+    seen = []
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: (
+        seen.append(argv[argv.index("--max-turns") + 1])
+        or subprocess.CompletedProcess(argv, 0, stdout="{}", stderr="")))
+    research_runner._claude_cli("sys", "brief")
+    research_runner._claude_cli("sys", "brief " + research_runner.RETRY_MARKER)
+    assert seen == ["24", "36"]

@@ -29,9 +29,12 @@ BJ = ZoneInfo("Asia/Shanghai")
 RESEARCH_DAILY_BUDGET = 40
 MAX_ATTEMPTS = 2
 RETRY_MARKER = "⚠️RETRY-AFTER-MAX-TURNS"
-RETRY_MAX_TURNS = "24"
+# 首轮轮数（2026-10-07）：10-06 起 18/18 场首轮都撞 12 轮上限、24 轮重试才成，
+# 白烧一次尝试、40 次/日预算实际只够 20 场。首轮给 24，带标记重试放宽到 36。
+FIRST_MAX_TURNS = "24"
+RETRY_MAX_TURNS = "36"
 RETRY_NOTE = (
-    f"\n\n{RETRY_MARKER}：上一次在 12 轮内没有产出 JSON。"
+    f"\n\n{RETRY_MARKER}：上一次在 {FIRST_MAX_TURNS} 轮内没有产出 JSON。"
     "这次：最多 4 次检索，然后必须输出契约 JSON；"
     "查不到的字段写「未证实」，不要继续搜。"
 )
@@ -71,7 +74,7 @@ def _claude_cli(prompt: str, brief: str) -> tuple[int, str]:
         "--allowedTools",
         "WebSearch,WebFetch",
         "--max-turns",
-        RETRY_MAX_TURNS if RETRY_MARKER in brief else "12",
+        RETRY_MAX_TURNS if RETRY_MARKER in brief else FIRST_MAX_TURNS,
         "--output-format",
         "text",
     ]
