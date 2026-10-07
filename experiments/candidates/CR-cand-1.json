@@ -1,0 +1,59 @@
+{
+ "exp_id": null,
+ "tier": "deploy_eligible",
+ "layer": "structural",
+ "population": "zucai",
+ "min_tier": "price_only",
+ "label_cn": "全国人群多买平局",
+ "claim": "全国人群多买平局：平局开出时任九奖金低于市场意外度所预期（γ<0）",
+ "mechanism": "复式投注把平局当保险面（3/1、1/0 双选最常见），中奖注里覆盖平局的组合占比高于市场概率；平局开出时中奖注数偏多、奖金偏低。草稿，签字前由 Jun 改定。",
+ "psychology": "怕「差一场平局」全票作废——平局是人最愿意花钱买的保险，于是它在奖池里最不值钱。",
+ "trigger": {
+  "field": "face",
+  "op": "==",
+  "v": "1"
+ },
+ "crowd_bias": "over",
+ "falsifier": {
+  "metric": "crowd_prize_pct_per_face",
+  "stratum": "zucai",
+  "n_min": 30,
+  "bound": "ci_lower",
+  "threshold_pp": 0.0,
+  "direction": "lt_means_falsified"
+ },
+ "window": {
+  "issue_from": null,
+  "issue_to": "26999"
+ },
+ "replay_window": null,
+ "stop_rule": "前瞻满 30 期判；60 期仍跨线则提 retire",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "examples": {
+  "pos": [],
+  "neg": []
+ },
+ "source_doc": "docs/superpowers/specs/2026-10-07-zucai-crowd-notebook-design.md",
+ "registered_at": null,
+ "evidence": {
+  "window": [
+   "26090",
+   "26135"
+  ],
+  "n": 46,
+  "hits": 146,
+  "z": 4.42,
+  "gamma_pct": -24.11,
+  "ci_pct": [
+   -34.01,
+   -12.65
+  ],
+  "buckets_scanned": 48,
+  "preview": {
+   "pre_check_500_odds": "γ=-11.9% CI[-21.9,-0.5] n=42（26090–26134，500 快照口径）",
+   "unseen_block_zgzcw": "γ=-21.2% CI[-32.6,-9.5] n=55（26035–26089，签字后作 replay_window）"
+  }
+ }
+}

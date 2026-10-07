@@ -1,0 +1,74 @@
+{
+ "exp_id": null,
+ "tier": "deploy_eligible",
+ "layer": "structural",
+ "population": "zucai",
+ "min_tier": "price_only",
+ "label_cn": "全国人群多买五大联赛·客胜·市场 65–100%",
+ "claim": "全国人群多买五大联赛·客胜·市场 65–100%：触发面开出时任九奖金低于市场意外度预期（γ<0）",
+ "mechanism": "",
+ "psychology": "",
+ "trigger": {
+  "all": [
+   {
+    "field": "face",
+    "op": "==",
+    "v": "0"
+   },
+   {
+    "field": "p_face",
+    "op": ">=",
+    "v": 65
+   },
+   {
+    "field": "p_face",
+    "op": "<=",
+    "v": 100.99
+   },
+   {
+    "field": "league_group",
+    "op": "==",
+    "v": "top5"
+   }
+  ]
+ },
+ "crowd_bias": "over",
+ "falsifier": {
+  "metric": "crowd_prize_pct_per_face",
+  "stratum": "zucai",
+  "n_min": 30,
+  "bound": "ci_lower",
+  "threshold_pp": 0.0,
+  "direction": "lt_means_falsified"
+ },
+ "window": {
+  "issue_from": null,
+  "issue_to": "26999"
+ },
+ "replay_window": null,
+ "stop_rule": "前瞻满 30 期判；60 期仍跨线则提 retire",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "examples": {
+  "pos": [],
+  "neg": []
+ },
+ "source_doc": "docs/superpowers/specs/2026-10-07-zucai-crowd-notebook-design.md",
+ "registered_at": null,
+ "evidence": {
+  "window": [
+   "26090",
+   "26135"
+  ],
+  "n": 46,
+  "hits": 11,
+  "z": 2.58,
+  "gamma_pct": -81.97,
+  "ci_pct": [
+   -138.42,
+   -14.09
+  ],
+  "buckets_scanned": 48
+ }
+}
