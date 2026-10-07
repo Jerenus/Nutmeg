@@ -152,6 +152,8 @@ def settle_cmd(issue: str | None = typer.Option(None, "--issue"),
     targets = [issue] if issue else sorted(
         p.name.split("-")[0] for p in zdir.glob("*-clues.jsonl")
         if not any(r.get("kind") == "settle" for r in read_rows(zdir, p.name.split("-")[0])))
+    if not targets:
+        typer.echo("无待结算的期")
     for target in targets:
         results = str((prizes.get(target) or {}).get("results") or "").split()
         rows = settle(zdir, target, results=results if len(results) == 14 else None,

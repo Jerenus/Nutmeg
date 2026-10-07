@@ -58,6 +58,8 @@ def test_fetch_scan_map_settle_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(crowd_cli, "_refresh_prizes", lambda zdir: None)
     r = run("settle", "--pending")
     assert r.exit_code == 0 and "26136 结算 14 条" in r.output
+    r = run("settle", "--pending")
+    assert r.exit_code == 0 and "无待结算的期" in r.output
 
 
 def test_fetch_failure_exits_nonzero(tmp_path, monkeypatch):
