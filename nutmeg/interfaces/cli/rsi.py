@@ -45,6 +45,8 @@ _N_ROWS = typer.Option(..., "--n-rows")
 _STRATUM = typer.Option(None, "--stratum")
 _MATCH = typer.Option("", "--match")
 _MODE = typer.Option("prospective", "--mode")
+_REGISTRY_DIR = typer.Option(Path("experiments/registry"), "--registry-dir",
+                             help="CR 人群假说登记原件目录（结账前核冻结指纹）")
 _REASON = typer.Option(..., "--reason")
 _RULE = typer.Option(None, "--rule")
 _HOLD = typer.Option(False, "--hold")
@@ -976,7 +978,7 @@ def price_band(
 
 @rsi_app.command("grade")
 def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
-          samples: Path = _SAMPLES_OPT) -> None:
+          samples: Path = _SAMPLES_OPT, registry_dir: Path = _REGISTRY_DIR) -> None:
     """Run an experiment's deterministic grading adapter."""
     from nutmeg.decision.rsi_grading import (
         PROSPECTIVE_ADAPTERS,
@@ -989,7 +991,21 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
         e = uow.rsi.experiment(exp)
     if e is None:
         _fail(f"{exp} 未登记")
-    if exp == "F2":
+    if exp.startswith("CR"):
+        # 人群假说（2026-10-07）：判据在登记原件里（trigger/crowd_bias/窗口），内核只存冻结指纹。
+        from nutmeg.decision.crowd_model import grade_crowd
+        from nutmeg.ontology.rsi.models import frozen_hash
+
+        doc_path = Path(registry_dir) / f"{exp}.json"
+        if not doc_path.exists():
+            _fail(f"{exp} 登记原件不在 {doc_path}")
+        doc = json.loads(doc_path.read_text(encoding="utf-8"))
+        if frozen_hash(doc) != e.frozen_hash:
+            _fail(f"{exp} 原件与内核冻结指纹不符——改判据请走 rsi amend")
+        if mode not in ("replay", "prospective"):
+            _fail(f"{exp} 只支持 --mode replay|prospective")
+        g = grade_crowd(doc, Path(data_dir) / "zucai", mode=mode)
+    elif exp == "F2":
         try:
             g = grade_f2_prospective(
                 ledger_path=Path("experiments/prereg-26126-F2-ledger.json"),
