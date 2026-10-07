@@ -485,6 +485,8 @@ def _research_deferred_count(argv: list[str], stdout: str) -> int:
         "skipped_permanent",
         "skipped_retry_limit",
         "skipped_budget",
+        # 同日另一轮研究正在跑（2026-10-07 加锁）：下一次 sweep 再看
+        "skipped_busy",
         # 已研过 / 入库拒收：义务留作 gap，不该每小时报成命令失败（2026-09-30）
         "skipped_done",
         "rejected",

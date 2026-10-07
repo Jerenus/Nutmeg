@@ -311,6 +311,21 @@ def _fulfill_research(fulfill: Fulfill, *, exp: str, stratum: str, day: str,
     ])
 
 
+def _acquire_day_lock(day_dir: Path):
+    """同日只许一轮研究在跑（2026-10-07：15:53 手动一轮未完，16:00 sweep 又起一轮，
+    6 场研究两遍、多烧 12 次预算，第二轮还覆盖了读者 B 已读过的原件）。拿不到锁返回 None。"""
+    import fcntl
+
+    day_dir.mkdir(parents=True, exist_ok=True)
+    handle = open(day_dir / ".research-run.lock", "w")  # noqa: SIM115 — 持有到本轮结束
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
 def run_day(
     *,
     day: str,
@@ -362,6 +377,16 @@ def run_day(
 
     if concurrency < 1:
         raise ValueError("concurrency 必须 >= 1")
+    day_lock = _acquire_day_lock(day_dir)
+    if day_lock is None:
+        return {
+            "run_id": resolved_run_id, "day": day, "budget": budget,
+            "used_attempts": 0, "written": 0, "auth_failed": False, "busy": True,
+            "concurrency": concurrency,
+            "started_at": started_at.isoformat(timespec="seconds"),
+            "finished_at": current_time().isoformat(timespec="seconds"),
+            "matches": [{"code": entry["key"], "status": "skipped_busy"} for entry in entries],
+        }
     prompt = system_prompt()
     ledger = ResearchRunLedger(day_dir)
     prior_used_attempts = max(0, sum(_used_attempts(run) for run in ledger.runs())
@@ -601,4 +626,5 @@ def run_day(
     }
     ledger.append(report)
     ledger.write_daily_projection(day_dir / f"research-run-{day}.json")
+    day_lock.close()
     return report

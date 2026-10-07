@@ -857,3 +857,27 @@ def test_legacy_auth_only_attempts_are_refunded_to_the_daily_budget(tmp_path):
     )
 
     assert report["matches"][0]["status"] == "done"
+
+
+def test_a_second_run_on_the_same_day_skips_while_one_is_in_progress(tmp_path):
+    """10-07 15:53 手动触发的一轮还在跑，16:00 sweep 又起一轮：同样 6 场研究两遍、
+    多烧 12 次预算，第二轮还覆盖了已被读者 B 读过的研究原件。同日只许一轮在跑。"""
+    import fcntl
+
+    root = _board(tmp_path, n=2)
+    day_dir = root / "daily" / "2026-09-19"
+    calls = []
+    with open(day_dir / ".research-run.lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        report = run_day(
+            day="2026-09-19",
+            jczq_dir=root,
+            data_dir=tmp_path,
+            claude=lambda system, brief: (calls.append(brief), (0, GOOD))[1],
+            fulfill=lambda argv: (0, ""),
+            profile=lambda match_id: {},
+            budget=10,
+        )
+    assert calls == []
+    assert report["used_attempts"] == 0 and report["written"] == 0
+    assert {row["status"] for row in report["matches"]} == {"skipped_busy"}
