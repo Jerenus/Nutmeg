@@ -51,11 +51,14 @@ uv run python scripts/openclaw/nutmeg_scheduler_ops.py --help
 
 ## Delivery Failures
 
-The notification ledger lives in `.nutmeg-data/state/state.db`; immutable
-attachments live under `.nutmeg-data/notifications/artifacts/`.
+Since 2026-10-08 the notification ledger is `.nutmeg-data/notifications/ledger.jsonl`
+(`nutmeg/notifications/notify.py`: one line per send attempt, dedupe on kind + key +
+fingerprint, a failed send is retried by the next call with the same identity). On first
+use it imported every delivered row from the old `.nutmeg-data/state/state.db`, which is
+kept read-only together with `.nutmeg-data/notifications/artifacts/`.
 
 The `notification-status/show/retry` commands were removed 2026-10-03 (no use in
-the prior month); the ledger in `state.db` is unchanged and readable with `sqlite3`.
+the prior month); the four-table SQL outbox itself was removed 2026-10-08.
 
 - Upstream stage failures publish one deduplicated `operations.failure` text
   notification. A later successful rerun publishes one `operations.recovered`.
