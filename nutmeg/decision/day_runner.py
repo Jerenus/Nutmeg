@@ -145,7 +145,11 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
     exit_code = 0
     if job == "settle":
         retro = ctx.out_dir / RETRO
-        if retro.exists() and not force:
+        results = ctx.out_dir / RESULTS_90
+        # 09:45 赛果常未封存：那次写出的底稿没有赛果，15:45 赛果到了必须重跑（2026-10-08）
+        stale = (retro.exists() and results.exists()
+                 and results.stat().st_mtime > retro.stat().st_mtime)
+        if retro.exists() and not force and not stale:
             summary, exit_code = f"skipped: {RETRO} 已存在（--force 重跑）", 0
         else:
             commands, exit_code = _run_commands(ctx, planned_commands(ctx, "settle"))

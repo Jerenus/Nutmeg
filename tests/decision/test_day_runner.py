@@ -195,3 +195,25 @@ def test_settle_plans_crowd_settle_pending(tmp_path):
     ctx = _ctx(tmp_path, [])
     cmds = planned_commands(ctx, "settle")
     assert any(c[3:6] == ["crowd", "settle", "--pending"] for c in cmds)
+
+
+def test_settle_reruns_when_results_arrive_after_the_morning_retro(tmp_path: Path):
+    """09:45 赛果未封存 → 复盘底稿写成「无赛果」；15:45 赛果到了，结算必须重跑而不是跳过
+    （2026-10-07/08 两天的 retro.md 停在早上那份，定时任务复查发现）。"""
+    import os
+
+    log: list[list[str]] = []
+    ctx = _ctx(tmp_path, log)
+    run_job(ctx, "settle")                                    # 早上：没有 results-90
+    retro = day_dir(ctx.data_dir, "2026-09-23") / "retro.md"
+    assert retro.exists() and not any("betslip" in c for c in log)
+    results = day_dir(ctx.data_dir, "2026-09-23") / RESULTS_90
+    results.write_text("{}", encoding="utf-8")
+    later = retro.stat().st_mtime + 60
+    os.utime(results, (later, later))                         # 下午：赛果比底稿新
+    rec = run_job(ctx, "settle")
+    assert not rec.summary.startswith("skipped")
+    assert any("betslip" in c and "settle" in c for c in log)
+    os.utime(retro, (later + 1, later + 1))                   # 重写的底稿晚于赛果
+    calls = len(log)
+    assert run_job(ctx, "settle").summary.startswith("skipped") and len(log) == calls
