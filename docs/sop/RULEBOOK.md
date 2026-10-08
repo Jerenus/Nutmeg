@@ -39,7 +39,7 @@
 | 规则 | 现行动作 | 代码 |
 |---|---|---|
 | C3 弃模态面（含 top1−top2 <1pp 噪音带）、模态组合错配、全包名额被同价支配、排面与对位机制相反 | WARN，记账 | `legs_audit`：`modal_face_dropped(_flat)` / `modal_stack_mismatch` / `full_cover_allocation_dominated` / `excluded_face_contradicts_read`（不在 `EVIDENCE_POLICY` 里＝不降级） |
-| C15 / C15b 多票共享被排面、共享裸单（含联合同死概率） | WARN；审票侧同一形状是 **V2 否决**（「八」） | `shared_exclusion` / `shared_naked_single` / `shared_naked_joint`；`review.py` |
+| C15 / C15b 多票共享被排面、共享裸单（含联合同死概率） | WARN；与已购票共享裸单在审票侧是 **V2 否决**（「八」） | `shared_exclusion` / `shared_naked_single` / `shared_naked_joint`；`review.py` |
 | C18 / C18b 跨渠道立场矛盾、买回足彩已排的面 | WARN；未显式映射身份只报 INFO | `cross_channel_stance_conflict` / `cross_channel_excluded_face` |
 | C19 研究点名保险却裸单 | ERROR→**WARN**（未证实，照样记账） | `EVIDENCE_POLICY["research_cover_naked"]` |
 | **l-权重表 + 锚归零**：拨动须含官宣或确证结构级证据，否则归零；`form_state` 每条 ≤1pp；shift 峰值 ≤ 证据预算；无官宣 ≤10pp、有官宣 ≤15pp | rubric 派生的 tilt 同样过这道算术 | `stance.TIER_PP` / `ANCHOR_TIERS` / `KIND_PP_CAP` / `apply_tilt` |
