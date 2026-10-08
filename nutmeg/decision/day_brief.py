@@ -149,10 +149,10 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
 
             b = jczq_brief(data_dir, date, rows=rows)
             brief_counts = {k: b[k] for k in ("n", "researched", "favs", "singles_open")}
-        except Exception:  # noqa: BLE001
-            brief_counts = None
+        except Exception as exc:  # noqa: BLE001 —— 初判包计数缺席，报告照出
+            errors.append(f"竞彩初判包计数失败：{exc!r}"[:160])
     return {"matches": cards, "counts": counts, "brief": brief_counts,
-            "slips": _slips(data_dir, date=date)}
+            "slips": _slips(data_dir, errors, date=date)}
 
 
 def _issue_candidates(zdir: Path) -> list[tuple[str, str | None]]:
@@ -181,7 +181,8 @@ def latest_issue(zdir: Path) -> str | None:
     return max(issue for issue, _ in candidates) if candidates else None
 
 
-def _draft_doc(data_dir: Path, zdir: Path, issue: str, *, build: bool) -> dict | None:
+def _draft_doc(data_dir: Path, zdir: Path, issue: str, errors: list[str], *,
+               build: bool) -> dict | None:
     """`<期>-draft.json`；legs-base 比它新（或它不存在）且允许构建时现做一份（机器初稿不省略）。"""
     legs_base = zdir / f"{issue}-legs-base.json"
     draft = zdir / f"{issue}-draft.json"
@@ -193,8 +194,9 @@ def _draft_doc(data_dir: Path, zdir: Path, issue: str, *, build: bool) -> dict |
             from nutmeg.decision.zucai_draft import build_draft
 
             return build_draft(data_dir, issue, write=True)
-        except Exception:  # noqa: BLE001 —— 初稿失败只让这一块缺席
-            return read_json(draft)
+        except Exception as exc:  # noqa: BLE001 —— 初稿失败只让这一块缺席（不拿旧初稿顶替）
+            errors.append(f"{issue} 机器初稿重建失败：{exc!r}"[:160])
+            return None
     return read_json(draft)
 
 
@@ -217,8 +219,9 @@ def _draft_summary(doc: dict | None) -> list[dict]:
     return rows
 
 
-def _slips(data_dir: Path, *, issue: str | None = None, date: str | None = None) -> list[dict]:
-    """已登记的票（实购优先排前）+ 审票行；登记簿缺失 → []。"""
+def _slips(data_dir: Path, errors: list[str], *, issue: str | None = None,
+           date: str | None = None) -> list[dict]:
+    """已登记的票（实购优先排前）+ 审票行；登记簿缺失 → []；读不出 → [] 并记进缺席。"""
     try:
         from nutmeg.decision.betslip import load_slips
         from nutmeg.decision.review import prize_model
@@ -230,11 +233,13 @@ def _slips(data_dir: Path, *, issue: str | None = None, date: str | None = None)
         model = prize_model(data_dir)
         return [slip_summary(s, data_dir, slips=slips, model=model)
                 for s in sorted(picked, key=lambda s: (not s.purchased, s.placed_at))]
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 —— 不让「读不出」看起来像「没登记」
+        errors.append(f"已登记的票读不出：{exc!r}"[:160])
         return []
 
 
-def _zucai(data_dir: Path, now: datetime, *, build_draft: bool = True) -> dict:
+def _zucai(data_dir: Path, now: datetime, errors: list[str], *,
+           build_draft: bool = True) -> dict:
     zdir = zucai_dir(data_dir)
     issue = current_issue(zdir, now=now) if zdir.exists() else None
     out = {"issue": issue, "sale_deadline": None, "prep": {}, "brief": None, "draft": [],
@@ -255,10 +260,10 @@ def _zucai(data_dir: Path, now: datetime, *, build_draft: bool = True) -> dict:
             out["brief"] = {"n": b["n"], "favs": b["favs"],
                             "stanced": sum(1 for r in b["rows"] if r["stance"] != "—"),
                             "faces": {r["no"]: r["faces"] for r in b["rows"]}}
-        except Exception:  # noqa: BLE001
-            out["brief"] = None
-    out["draft"] = _draft_summary(_draft_doc(data_dir, zdir, issue, build=build_draft))
-    out["slips"] = _slips(data_dir, issue=issue)
+        except Exception as exc:  # noqa: BLE001 —— 初判包缺席，报告照出
+            errors.append(f"{issue} 足彩初判包失败：{exc!r}"[:160])
+    out["draft"] = _draft_summary(_draft_doc(data_dir, zdir, issue, errors, build=build_draft))
+    out["slips"] = _slips(data_dir, errors, issue=issue)
     return out
 
 
@@ -304,7 +309,7 @@ def compile_brief(*, data_dir: Path, date: str, root: Path, now: datetime,
         "generated_at": now.isoformat(timespec="seconds"),
         "account": _account(Path(data_dir), now),
         "jczq": jczq,
-        "zucai": _zucai(Path(data_dir), now, build_draft=build_draft),
+        "zucai": _zucai(Path(data_dir), now, errors, build_draft=build_draft),
         "rsi": rsi,
         "factors": _factors(Path(root), rsi),
         "errors": errors,

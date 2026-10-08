@@ -224,3 +224,24 @@ def test_cards_no_longer_carry_machine_ticket_shapes(tmp_path: Path):
     data, root = _fixture(tmp_path)
     brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
     assert "audit" not in brief["jczq"]["matches"][0]
+
+
+def test_failures_land_in_missing_inputs_instead_of_looking_empty(tmp_path: Path, monkeypatch):
+    """登记簿读不出 ≠ 没登记；初稿重建失败 ≠ 拿旧初稿顶替（2026-10-08 检查）。"""
+    import nutmeg.decision.betslip as betslip
+    import nutmeg.decision.zucai_draft as zucai_draft
+
+    data, root = _fixture(tmp_path)
+    _board(data)
+
+    def broken(*_args, **_kwargs):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(betslip, "load_slips", broken)
+    monkeypatch.setattr(zucai_draft, "build_draft", broken)
+    brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
+    assert brief["zucai"]["draft"] == [] and brief["zucai"]["slips"] == []
+    assert any(e.startswith("已登记的票读不出") for e in brief["errors"])
+    assert any("机器初稿重建失败" in e for e in brief["errors"])
+    md = render_brief_md(brief)
+    assert "## 缺席的输入" in md and "初稿：未出（构建失败" in md

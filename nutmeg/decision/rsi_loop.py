@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
@@ -149,7 +150,8 @@ def _newest_issue_file(data_dir: Path) -> str | None:
 
         zdir = Path(data_dir) / "zucai"
         return latest_issue(zdir) if zdir.exists() else None
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 —— 只少一条足彩补读，但要看得见
+        print(f"⚠️rubric_read：最新期次解析失败，跳过足彩补读：{exc!r}", file=sys.stderr)
         return None
 
 

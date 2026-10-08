@@ -320,8 +320,8 @@ def _log_preview(data_dir: Path, slip, vetoed: bool) -> None:
         log_preview(data_dir, placed_at=slip.placed_at, channel=slip.channel, issue=slip.issue,
                     keys=keys, stake=slip.stake_yuan, vetoed=vetoed,
                     now=_datetime.now().astimezone())
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 —— 不挡预审，但截止提醒会因此漏掉，必须看得见
+        _cli.typer.echo(f"⚠️预审留痕写入失败（截止播报不会提醒这张票）：{exc!r}", err=True)
 
 
 def _review(slip, diagnosis: dict, data_dir: Path) -> dict:

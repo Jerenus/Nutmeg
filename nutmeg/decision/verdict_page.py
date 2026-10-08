@@ -63,7 +63,7 @@ def _brake_line(data_dir: Path, now: datetime) -> str:
         return f"账房缺席：{exc!r}"[:120]
 
 
-def _zucai_panel(data_dir: Path, now: datetime) -> dict:
+def _zucai_panel(data_dir: Path, now: datetime, errors: list[str]) -> dict:
     """在售期的初稿摘要 + 已登记足彩票（都带审票行）；没有在售期 → {}。"""
     from nutmeg.decision.day_brief import _draft_doc, _draft_summary, _slips, current_issue
 
@@ -72,8 +72,8 @@ def _zucai_panel(data_dir: Path, now: datetime) -> dict:
     if not issue:
         return {}
     return {"issue": issue,
-            "draft": _draft_summary(_draft_doc(data_dir, zdir, issue, build=True)),
-            "slips": _slips(data_dir, issue=issue)}
+            "draft": _draft_summary(_draft_doc(data_dir, zdir, issue, errors, build=True)),
+            "slips": _slips(data_dir, errors, issue=issue)}
 
 
 def build_verdict(*, day: str, data_dir: Path, now: datetime, invoke=None) -> dict:
@@ -95,10 +95,12 @@ def build_verdict(*, day: str, data_dir: Path, now: datetime, invoke=None) -> di
         c["veto"] = c.get("return_per_yuan") is not None and c["return_per_yuan"] < VETO_RATIO
     moved = [r for r in rows if r["final"] and max(
         abs(r["final"][k] - r["prior"][k]) for k in r["prior"]) >= 0.02]
+    errors: list[str] = []
     return {
         "brake": _brake_line(data_dir, now),
-        "jczq_slips": _slips(data_dir, date=day),
-        "zucai_panel": _zucai_panel(data_dir, now),
+        "jczq_slips": _slips(data_dir, errors, date=day),
+        "zucai_panel": _zucai_panel(data_dir, now, errors),
+        "errors": errors,
         "day": day,
         "edition": _edition(now),
         "generated_at": now.strftime("%Y-%m-%d %H:%M"),

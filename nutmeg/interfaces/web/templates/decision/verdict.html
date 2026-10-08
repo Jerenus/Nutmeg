@@ -79,6 +79,7 @@ table.list th{font-weight:600;color:var(--sub);font-size:13px;background:var(--s
     终判偏离市场 ≥2pp 的 <b>{{ counts.moved }}</b> 场；主循环改判了研究的 <b>{{ counts.overrides }}</b> 场，两份研究打架的 <b>{{ counts.disagreements }}</b> 场。
     页面只搬运系统数据与算术，不替你判断。
   </p>
+  {% if errors %}<p class="vd-note">⚠️缺席的输入：{{ errors | join("；") }}</p>{% endif %}
   <p class="vd-note">账房：{{ brake }}。竞彩不出票，方案由人出；足彩机器出初稿（处方忠实），人改后审票。</p>
 
   {% if jczq_slips or zucai_panel.slips %}

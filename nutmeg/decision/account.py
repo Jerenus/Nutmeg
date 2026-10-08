@@ -48,8 +48,8 @@ def _settled_rows(data_dir: Path) -> dict[str, dict]:
     sb = {}
     try:
         sb = json.loads((Path(data_dir) / "scoreboard.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        pass
+    except OSError:
+        pass  # 没有记分牌＝还没结算过；坏了的记分牌照样抛，不把全部票读成「待结」
     settled: dict[str, dict] = {}
     for ticket in (sb.get("tickets") or {}).values():
         if not isinstance(ticket, dict):
@@ -62,12 +62,9 @@ def _settled_rows(data_dir: Path) -> dict[str, dict]:
 
 
 def _month_slips(data_dir: Path, month: str) -> list:
-    try:
-        from nutmeg.decision.betslip import load_slips
+    from nutmeg.decision.betslip import load_slips
 
-        return [s for s in load_slips(data_dir) if s.purchased and str(s.placed_at)[:7] == month]
-    except Exception:  # noqa: BLE001
-        return []
+    return [s for s in load_slips(data_dir) if s.purchased and str(s.placed_at)[:7] == month]
 
 
 def _add(bucket: dict, slip, settled: dict[str, dict]) -> None:
@@ -233,8 +230,11 @@ def month_report(data_dir: Path, month: str) -> dict:
     for key, value in net["entries"]:
         by_channel["jczq" if key.startswith("jczq-") else "zucai"] += value
     spend = exploration_spend(data_dir, month)
-    deviations = deviation_ledger(data_dir, month)
-    vetoed = vetoed_ledger(data_dir, month)
+    try:
+        deviations = deviation_ledger(data_dir, month)
+        vetoed = vetoed_ledger(data_dir, month)
+    except Exception as exc:  # noqa: BLE001 —— 两张账缺席要写明，不能读成「0 张」
+        deviations = vetoed = {"_error": repr(exc)[:200]}
     board = experiment_board(data_dir)
     verdicts: dict[str, int] = {}
     for exp, row in board.items():
@@ -270,26 +270,32 @@ def render_month(report: dict) -> str:
                   f"（上限 ¥{EXP_BUDGET_PER_DAY}/日；只给预登记实验）"]
     for row in ex["slips"][:10]:
         lines.append(f"  - {row['placed_at']} {row['slip_id']} {row['exp']} ¥{row['stake']:,.0f}")
-    dev = report.get("deviations") or {"by_reason": {}, "n": 0}
-    lines += ["", f"**人的偏离（相对机器初稿，按理由）**：本月 {dev['n']} 张带理由的实购票"]
-    for reason, b in sorted(dev["by_reason"].items()):
-        pend = f"（待结 {b['pending']}）" if b.get("pending") else ""
-        lines.append(f"  - {reason}：{b['n']} 张 投入 ¥{b['stake']:,.0f} 净 {b['net']:+,.0f}{pend}")
-        for text in b.get("predictions") or []:
-            lines.append(f"    · {text}")
-    if not dev["by_reason"]:
-        lines.append("  - 无（偏离初稿而不登记理由的票不进这张账）")
-    late = dev.get("after_kickoff") or {}
-    if late.get("n"):
-        lines.append(f"  - 开球后才写理由（不计入上面）：{late['n']} 张 投入 ¥{late['stake']:,.0f} "
-                     f"净 {late['net']:+,.0f}：{'、'.join(late['slips'][:6])}")
-    vt = report.get("vetoed") or {}
-    codes = "、".join(f"{c}×{n}" for c, n in sorted((vt.get("codes") or {}).items()))
-    lines += ["", f"**审票否决仍买**：本月 {vt.get('n', 0)} 张 投入 ¥{vt.get('stake', 0):,.0f} "
-                  f"净 {vt.get('net', 0):+,.0f}" + (f"（{codes}）" if codes else "")
-              + (f"｜待结 {vt['pending']}" if vt.get("pending") else "")
-              + (f"｜{vt['unrecorded']} 张登记时没存审票结论（10-06 前）"
-                 if vt.get("unrecorded") else "")]
+    if "_error" in (report.get("deviations") or {}):
+        lines += ["", "**人的偏离 / 审票否决仍买**：登记簿或记分牌读不出，两张账缺席——"
+                      f"{report['deviations']['_error']}"]
+    else:
+        dev = report.get("deviations") or {"by_reason": {}, "n": 0}
+        lines += ["", f"**人的偏离（相对机器初稿，按理由）**：本月 {dev['n']} 张带理由的实购票"]
+        for reason, b in sorted(dev["by_reason"].items()):
+            pend = f"（待结 {b['pending']}）" if b.get("pending") else ""
+            lines.append(f"  - {reason}：{b['n']} 张 投入 ¥{b['stake']:,.0f} "
+                         f"净 {b['net']:+,.0f}{pend}")
+            for text in b.get("predictions") or []:
+                lines.append(f"    · {text}")
+        if not dev["by_reason"]:
+            lines.append("  - 无（偏离初稿而不登记理由的票不进这张账）")
+        late = dev.get("after_kickoff") or {}
+        if late.get("n"):
+            lines.append(f"  - 开球后才写理由（不计入上面）：{late['n']} 张 "
+                         f"投入 ¥{late['stake']:,.0f} 净 {late['net']:+,.0f}："
+                         f"{'、'.join(late['slips'][:6])}")
+        vt = report.get("vetoed") or {}
+        codes = "、".join(f"{c}×{n}" for c, n in sorted((vt.get("codes") or {}).items()))
+        lines += ["", f"**审票否决仍买**：本月 {vt.get('n', 0)} 张 投入 ¥{vt.get('stake', 0):,.0f} "
+                      f"净 {vt.get('net', 0):+,.0f}" + (f"（{codes}）" if codes else "")
+                  + (f"｜待结 {vt['pending']}" if vt.get("pending") else "")
+                  + (f"｜{vt['unrecorded']} 张登记时没存审票结论（10-06 前）"
+                     if vt.get("unrecorded") else "")]
     rv = report.get("rule_v3") or {}
     lines += ["", f"**主指标：实际出票 vs 规则 v3 vs 空仓**（竞彩，Read belief 回放，"
                   f"本月 {rv.get('days', 0)} 个板面日）", ""]

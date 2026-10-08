@@ -224,3 +224,17 @@ def test_draft_board_replays_the_month_issues_without_the_stop_loss(tmp_path: Pa
     text = account.render_month(account.month_report(data, "2026-10"))
     assert "| 机器初稿 | 1 | 1 | 324 | -324 | -100.0% |" in text
     assert "足彩：实际出票 vs 机器初稿 vs 空仓" in text
+
+
+def test_unreadable_ledger_is_reported_absent_not_zero(tmp_path: Path, monkeypatch) -> None:
+    """登记簿坏了：偏离账与否决账写明缺席，而不是印「本月 0 张」（2026-10-08 检查）。"""
+    data = _data(tmp_path)
+    monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
+
+    def boom(_data_dir):
+        raise ValueError("bad line 7")
+
+    monkeypatch.setattr("nutmeg.decision.betslip.load_slips", boom)
+    text = render_month(month_report(data, "2026-10"))
+    assert "两张账缺席" in text and "bad line 7" in text
+    assert "本月 0 张带理由" not in text and "**审票否决仍买**：本月" not in text
