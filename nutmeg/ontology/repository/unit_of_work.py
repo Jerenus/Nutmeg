@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.identity import IdentityRepository
     from nutmeg.ontology.repository.market import MarketRepository
     from nutmeg.ontology.repository.outbox import OutboxRepository
-    from nutmeg.ontology.repository.replay import HistoricalReplayRepository
     from nutmeg.ontology.repository.rsi import RsiRepository
     from nutmeg.ontology.repository.scoreboard import ScoreboardRepository
     from nutmeg.ontology.repository.workflow import WorkflowRepository
@@ -134,12 +133,6 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.capital import CapitalRepository
 
         return CapitalRepository(self.connection)
-
-    @property
-    def replay(self) -> HistoricalReplayRepository:
-        from nutmeg.ontology.repository.replay import HistoricalReplayRepository
-
-        return HistoricalReplayRepository(self.connection)
 
     def __enter__(self) -> OntologyUnitOfWork:
         lease = self._writer_lease_factory() if self._writer_lease_factory else None
