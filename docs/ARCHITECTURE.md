@@ -197,7 +197,7 @@ gantt
 **OpenClaw 在用**（2026-10-01 起只保留确定性任务，GPT 平行判断链全部停用）：08:10 `decision-settle` 昨日内核结算；12:30 D1/D2 补结算（预演）+ `build-context`（只写当日板面上下文）；17:15 `run-strict --stage am` 临场刷板。
 
 > [!NOTE]
-> **已退役**：`zucai.f2-observe`（2026-10-02，随 F2 退役，见 5.2）；OpenClaw 收盘、每日最终决策、早间复盘对齐、最终决策补跑、收盘前闸门（2026-10-01 停用；真票路径改为 preview → 500 app → register）。
+> **已退役**：`zucai.f2-observe`（2026-10-02，随 F2 退役，见 5.2）；OpenClaw 收盘、每日最终决策、早间复盘对齐、最终决策补跑、收盘前闸门（2026-10-01 停用、2026-10-09 删除，定义备份在 `.nutmeg-data/backups/openclaw-cron-disabled-nutmeg-2026-10-09.json`；真票路径改为 preview → 500 app → register）。
 
 ### 2.2 高频任务的设计
 

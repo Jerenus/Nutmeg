@@ -31,7 +31,7 @@
 | Nutmeg-D1D2补结算 | 12:30 | D1、D2 `decision-settle --dry-run` + `build-context` | 预演补漏 |
 | Nutmeg-临场数据刷新 | 17:15 | `run-strict --stage am` | 17:15 加场；空盘日 2026-10-02 起不再报失败与告警 |
 
-停用：收盘 19:00、每日最终决策 18:20、早间复盘对齐 08:20、最终决策受限补跑 18:40、收盘前闸门 18:50（真票路径改为 `betslip preview` → 500 app → `betslip register`）。
+已删除（2026-10-01 停用，2026-10-09 删除；定义备份 `.nutmeg-data/backups/openclaw-cron-disabled-nutmeg-2026-10-09.json`）：收盘 19:00、每日最终决策 18:20、早间复盘对齐 08:20、最终决策受限补跑 18:40、收盘前闸门 18:50（真票路径改为 `betslip preview` → 500 app → `betslip register`）。
 
 ## 已退役
 
