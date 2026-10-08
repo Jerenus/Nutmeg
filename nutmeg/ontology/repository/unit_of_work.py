@@ -19,9 +19,7 @@ if TYPE_CHECKING:
     from nutmeg.ontology.repository.actions import ActionRepository
     from nutmeg.ontology.repository.artifacts import ArtifactRepository
     from nutmeg.ontology.repository.capital import CapitalRepository
-    from nutmeg.ontology.repository.context import ContextRepository
     from nutmeg.ontology.repository.decision import DecisionRepository
-    from nutmeg.ontology.repository.evidence import EvidenceRepository
     from nutmeg.ontology.repository.finance import FinanceRepository
     from nutmeg.ontology.repository.identity import IdentityRepository
     from nutmeg.ontology.repository.market import MarketRepository
@@ -94,18 +92,6 @@ class OntologyUnitOfWork:
         from nutmeg.ontology.repository.market import MarketRepository
 
         return MarketRepository(self.connection)
-
-    @property
-    def context(self) -> ContextRepository:
-        from nutmeg.ontology.repository.context import ContextRepository
-
-        return ContextRepository(self.connection)
-
-    @property
-    def evidence(self) -> EvidenceRepository:
-        from nutmeg.ontology.repository.evidence import EvidenceRepository
-
-        return EvidenceRepository(self.connection)
 
     @property
     def decision(self) -> DecisionRepository:

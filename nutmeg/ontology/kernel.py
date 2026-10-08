@@ -16,7 +16,6 @@ from sqlalchemy import Engine, func, select
 
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
 from nutmeg.ontology.actions.capital_actions import CapitalActions
-from nutmeg.ontology.actions.claim_actions import ClaimActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.factor_actions import FactorActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
@@ -25,13 +24,11 @@ from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.finance.express_flow import ExpressService
 from nutmeg.ontology.finance.reconcile_flow import ReconcileService
-from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.artifacts import ArtifactRepository
 from nutmeg.ontology.repository.decision import DecisionRepository
-from nutmeg.ontology.repository.evidence import EvidenceRepository
 from nutmeg.ontology.repository.finance import FinanceRepository
 from nutmeg.ontology.repository.identity import IdentityRepository
 from nutmeg.ontology.repository.market import MarketRepository
@@ -63,9 +60,6 @@ class OntologyKernelStatus:
     match_count: int
     quote_count: int
     snapshot_count: int
-    person_count: int
-    observation_count: int
-    claim_count: int
     forecast_count: int
     ticket_count: int
     settlement_count: int
@@ -93,9 +87,6 @@ class OntologyKernelStatus:
             "match_count": self.match_count,
             "quote_count": self.quote_count,
             "snapshot_count": self.snapshot_count,
-            "person_count": self.person_count,
-            "observation_count": self.observation_count,
-            "claim_count": self.claim_count,
             "forecast_count": self.forecast_count,
             "ticket_count": self.ticket_count,
             "settlement_count": self.settlement_count,
@@ -118,12 +109,10 @@ class OntologyKernel:
         engine: Engine,
         artifact_ingest: ArtifactIngestService,
         market_day_ingest: MarketDayIngestService,
-        evidence_day_ingest: EvidenceDayIngestService,
         express: ExpressService,
         reconcile: ReconcileService,
         calibrate: CalibrateService,
         entity_actions: EntityActions,
-        claim_actions: ClaimActions,
         factor_actions: FactorActions,
         forecast_actions: ForecastActions,
         workflow: WorkflowActions,
@@ -135,12 +124,10 @@ class OntologyKernel:
         self._engine = engine
         self.artifact_ingest = artifact_ingest
         self.market_day_ingest = market_day_ingest
-        self.evidence_day_ingest = evidence_day_ingest
         self.express = express
         self.reconcile = reconcile
         self.calibrate = calibrate
         self.entity_actions = entity_actions
-        self.claim_actions = claim_actions
         self.factor_actions = factor_actions
         self.forecast_actions = forecast_actions
         self.workflow = workflow
@@ -176,9 +163,6 @@ class OntologyKernel:
                 match_count=0,
                 quote_count=0,
                 snapshot_count=0,
-                person_count=0,
-                observation_count=0,
-                claim_count=0,
                 forecast_count=0,
                 ticket_count=0,
                 settlement_count=0,
@@ -209,13 +193,9 @@ class OntologyKernel:
             identity = IdentityRepository(connection)
             team_count = identity.count_teams()
             match_count = identity.count_matches()
-            person_count = identity.count_persons()
             market = MarketRepository(connection)
             quote_count = market.count_quotes()
             snapshot_count = market.count_snapshots()
-            evidence = EvidenceRepository(connection)
-            observation_count = evidence.count_observations()
-            claim_count = evidence.count_claims()
             decision = DecisionRepository(connection)
             forecast_count = decision.count_committed_revisions()
             finance = FinanceRepository(connection)
@@ -255,9 +235,6 @@ class OntologyKernel:
             match_count=match_count,
             quote_count=quote_count,
             snapshot_count=snapshot_count,
-            person_count=person_count,
-            observation_count=observation_count,
-            claim_count=claim_count,
             forecast_count=forecast_count,
             ticket_count=ticket_count,
             settlement_count=settlement_count,
