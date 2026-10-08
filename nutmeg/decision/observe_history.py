@@ -7,11 +7,10 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Callable
-from datetime import date as _date
-from datetime import timedelta
 from pathlib import Path
 
-from nutmeg.decision.day_paths import BRIEF, RESULTS_90, day_dir
+from nutmeg.decision.day_paths import BRIEF, day_dir
+from nutmeg.decision.match_results import board_outcomes
 
 Git = Callable[[list[str]], str]
 TRACKED = ("docs/sop/RULEBOOK.md", "experiments/factors.json", "docs/sop/CONSTITUTION.md")
@@ -86,11 +85,7 @@ def trace_day(data_dir: Path, date: str) -> dict:
         brief = json.loads((day_dir(data_dir, date) / BRIEF).read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         brief = {"jczq": {"matches": []}}
-    nxt = (_date.fromisoformat(date) + timedelta(days=1)).isoformat()
-    try:
-        results = json.loads((day_dir(data_dir, nxt) / RESULTS_90).read_text(encoding="utf-8"))
-    except (FileNotFoundError, ValueError):
-        results = {}
+    results = board_outcomes(data_dir, date)
     matches: list[dict] = []
     summary = {"graded": 0, "read_right": 0, "market_right": 0, "moved": 0, "moved_helped": 0}
     for m in brief.get("jczq", {}).get("matches", []):

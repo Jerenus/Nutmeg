@@ -1,7 +1,8 @@
-"""okooo 赛果抓取 —— 决策本体 settle/复盘链共用的结果 provider。
+"""okooo 赛果抓取 —— 内核结算（``ontology_adapter._results_v2``）的**后备**赛果源。
 
-引擎无关的共享件：只含抓取/解析（比分 + 各池实际结果），不含任何选腿/评分逻辑。
-消费者：``nutmeg.decision.verbs`` 与 ``nutmeg.decision.ontology_adapter``。
+2026-10-08 起赛果单一来源是 ``jczq/jc-results.json``（``nutmeg.decision.match_results``）；
+本 provider 只补 jc-results 尚未封存 / 缺的场（08:10 结算早于 09:30 回填、作废场）。
+只含抓取/解析（比分 + 各池实际结果），不含任何选腿/评分逻辑。
 """
 
 from __future__ import annotations

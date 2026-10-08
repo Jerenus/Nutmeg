@@ -63,11 +63,10 @@ def test_trace_day_joins_reads_with_next_day_results(tmp_path: Path):
         {"code": "周二003", "name": "E vs F", "ladder": "未判", "read": None},
     ], "counts": {}}, "zucai": {"issue": None}, "rsi": None, "factors": [], "errors": []}),
         encoding="utf-8")
-    nxt = tmp_path / "daily" / "2026-09-23"
-    nxt.mkdir()
-    (nxt / "results-90.json").write_text(json.dumps(
-        {"周二001": {"outcome_90": "0", "goals_h": 0, "goals_a": 1},
-         "周二002": {"outcome_90": "1", "goals_h": 1, "goals_a": 1}}), encoding="utf-8")
+    (tmp_path / "jczq").mkdir()
+    (tmp_path / "jczq" / "jc-results.json").write_text(json.dumps({"2026-09-22": {
+        "周二001": {"ft_home": 0, "ft_away": 1}, "周二002": {"ft_home": 1, "ft_away": 1}}}),
+        encoding="utf-8")
     (tmp_path / "analytics" / "rsi-loop").mkdir(parents=True)
     (tmp_path / "analytics" / "rsi-loop" / "2026-09-22.json").write_text(json.dumps(
         {"verdicts": [{"cmd": "rsi verdict --exp F3", "status": "not_due",

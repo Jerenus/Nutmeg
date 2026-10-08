@@ -603,19 +603,51 @@ def _kickoff_passed(scheduled_at: str | None, now: datetime) -> bool:
     return (now - kickoff).total_seconds() >= _MIN_MATCH_MINUTES * 60
 
 
+def _board_identity(run_date: str, output_dir) -> tuple[dict[str, str], dict[str, str]]:
+    """竞彩号 → 身份：(legs-base 的内核 match_id, 已存体彩快照的 sporttery matchId)。
+
+    legs-base 是设计系列 ⑥ 的身份链（竞彩编号 ↔ 内核 match_id），完整保留当天全板；体彩快照
+    会被后来的抓取覆盖、丢掉已完场的场次（2026-09-20 / 09-26 等整板在内核里没有赛果就是这么来的），
+    只作 legs-base 缺失时的后备。两者同时存在时在生产数据上逐场一致（2026-10-08 核对）。"""
+    from nutmeg.decision.market_data import load_sporttery_snapshot
+
+    legs_path = Path(output_dir) / "daily" / run_date / "jczq-legs-base.json"
+    try:
+        legs = json.loads(legs_path.read_text(encoding="utf-8")).get("legs") or {}
+    except (OSError, ValueError, AttributeError):
+        legs = {}
+    by_legs = {str(code): str(leg["match_id"]) for code, leg in legs.items()
+               if isinstance(leg, dict) and leg.get("match_id")}
+    sporttery = load_sporttery_snapshot(run_date, output_dir) or {}
+    by_snapshot: dict[str, str] = {}
+    for day in sporttery.get("matchInfoList") or []:
+        for sub in day.get("subMatchList") or []:
+            if sub.get("matchNumStr") and sub.get("matchId") is not None:
+                by_snapshot[str(sub["matchNumStr"])] = str(sub["matchId"])
+    return by_legs, by_snapshot
+
+
 def _results_v2(
     kernel, run_date: str, output_dir, live_fetcher=None, now: datetime | None = None
-) -> dict[str, str]:
-    """Final scores keyed by kernel match id: ``{match_id: "2-1"}``.
+) -> dict[str, tuple[str, str]]:
+    """Final scores keyed by kernel match id: ``{match_id: ("2-1", source)}``.
 
-    ``daily/<date>/results.json`` (manual override, score or home/draw/away values) wins
-    and is trusted as an explicit human action; otherwise fetch okooo live results and
-    map 竞彩号 → sporttery matchId (saved snapshot) → kernel match. The auto path accepts
-    a score **only for a match whose kickoff + 110min has passed** — a source claiming a
-    result for an unplayed match is poison, not truth. Unfinished/unmappable matches are
-    skipped — a missing result is never a pending settlement.
+    1. ``daily/<date>/results.json`` (manual override, score or home/draw/away values) wins
+       outright and is trusted as an explicit human action (source ``manual``).
+    2. Otherwise the single results source ``jczq/jc-results.json[run_date]`` via
+       ``nutmeg.decision.match_results`` (source ``jc-results``; 2026-10-08 B1 — before that
+       the kernel took okooo while every file consumer took jc-results).
+    3. okooo live is a **fallback only for board codes jc-results lacks**: the 08:10 settle
+       runs before the 09:30 backfill seals yesterday, and void matches never get sealed.
+       When jc-results covers the whole board okooo is not called at all (source ``okooo``).
+
+    竞彩号 → kernel match via ``_board_identity``. Both auto paths accept a score **only for
+    a match whose kickoff + 110min has passed** — a source claiming a result for an unplayed
+    match is poison, not truth. Unfinished/unmappable matches are skipped — a missing result
+    is never a pending settlement.
     """
-    from nutmeg.decision.market_data import load_sporttery_snapshot
+    from nutmeg.decision.match_results import board_outcomes
+    from nutmeg.ontology.errors import OntologyError
     from nutmeg.ontology.identity.models import EntityType
     from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
@@ -623,57 +655,79 @@ def _results_v2(
     if results_path.exists():
         manual = json.loads(results_path.read_text(encoding="utf-8"))
         return {
-            str(match_id): score
+            str(match_id): (score, "manual")
             for match_id, value in manual.items()
             if (score := _normalize_score(value)) is not None
         }
 
-    if live_fetcher is None:
-        from nutmeg.services.jczq_results import OkoooJczqResultProvider
+    by_legs, by_snapshot = _board_identity(run_date, output_dir)
+    scores: dict[str, tuple[str, str]] = {
+        code: (f"{row['goals_h']}-{row['goals_a']}", "jc-results")
+        for code, row in board_outcomes(Path(output_dir).parent, run_date).items()
+    }
+    if (set(by_legs) | set(by_snapshot)) - set(scores):
+        if live_fetcher is None:
+            from nutmeg.services.jczq_results import OkoooJczqResultProvider
 
-        live_fetcher = OkoooJczqResultProvider().fetch_results
-    try:
-        okooo = live_fetcher(run_date) or {}
-    except Exception:  # noqa: BLE001 — 抓不到赛果 → 全部跳过(不产 pending)
-        return {}
-
-    sporttery = load_sporttery_snapshot(run_date, output_dir) or {}
-    no_to_external: dict[str, str] = {}
-    for day in sporttery.get("matchInfoList") or []:
-        for sub in day.get("subMatchList") or []:
-            if sub.get("matchNumStr") and sub.get("matchId") is not None:
-                no_to_external[str(sub["matchNumStr"])] = str(sub["matchId"])
-
-    current_time = now if now is not None else datetime.now(UTC)
-    results: dict[str, str] = {}
-    with OntologyUnitOfWork(kernel.engine) as uow:
+            live_fetcher = OkoooJczqResultProvider().fetch_results
+        try:
+            okooo = live_fetcher(run_date) or {}
+        except Exception:  # noqa: BLE001 — 后备抓不到 → 只用 jc-results(不产 pending)
+            okooo = {}
         for match_no, row in okooo.items():
             score = _normalize_score((row or {}).get("score"))
-            external = no_to_external.get(str(match_no))
-            if score is None or external is None:
-                continue  # 未终局/未对上 → 跳过
-            kernel_match = uow.identity.entity_by_external_id(
-                EntityType.MATCH, provider="sporttery", external_id=external
-            )
+            if score is not None and str(match_no) not in scores:
+                scores[str(match_no)] = (score, "okooo")
+
+    current_time = now if now is not None else datetime.now(UTC)
+    results: dict[str, tuple[str, str]] = {}
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        for code, scored in scores.items():
+            kernel_match = by_legs.get(code)
+            if kernel_match is None and code in by_snapshot:
+                kernel_match = uow.identity.entity_by_external_id(
+                    EntityType.MATCH, provider="sporttery", external_id=by_snapshot[code]
+                )
             if kernel_match is None:
-                continue
-            revision = uow.identity.current_match_revision(kernel_match)
+                continue  # 未对上 → 跳过
+            try:
+                revision = uow.identity.current_match_revision(kernel_match)
+            except OntologyError:
+                continue  # legs-base 的 id 不在内核里 → 跳过
             if not _kickoff_passed(revision.scheduled_at, current_time):
                 continue  # 开球+110min 未到 → 物理上不可能终局,拒收(毒数据防线)
-            results[kernel_match] = score
+            results[kernel_match] = scored
     return results
 
 
 def _reconcile_v2(kernel, run_date: str, output_dir, requested_at, live_fetcher=None) -> str:
     """Record outcomes + settle each match's tickets. Results come from ``_results_v2``
-    (manual override or okooo live); a match with no final result is skipped — never a
-    pending settlement."""
+    (manual override, else jc-results with okooo filling only what jc-results lacks); a match
+    with no final result is skipped — never a pending settlement.
+
+    A match whose kernel outcome already carries the same score is skipped (a match listed
+    under two board days must not grow a second outcome version); an auto-sourced score that
+    disagrees with the recorded one is reported, never written over."""
     from nutmeg.ontology.actions.models import ActorRole
     from nutmeg.ontology.finance.reconcile_flow import ReconcileRequest
+    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
     results = _results_v2(kernel, run_date, output_dir, live_fetcher=live_fetcher)
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        recorded = {mid: getattr(uow.finance.current_outcome(mid), "score_90", None)
+                    for mid in results}
+    sources: dict[str, int] = {}
+    known = 0
+    conflicts: list[str] = []
     settled = 0
-    for match_id, score in results.items():
+    for match_id, (score, source) in results.items():
+        if recorded[match_id] == score:
+            known += 1
+            continue
+        if recorded[match_id] is not None and source != "manual":
+            conflicts.append(f"{match_id} 内核 {recorded[match_id]} vs {source} {score}")
+            continue
+        sources[source] = sources.get(source, 0) + 1
         outcome = kernel.reconcile.settle_match(
             ReconcileRequest(
                 match_id=str(match_id),
@@ -688,7 +742,15 @@ def _reconcile_v2(kernel, run_date: str, output_dir, requested_at, live_fetcher=
             )
         )
         settled += len(outcome.settled_ticket_ids)
-    return f"decision-reconcile-v2 {run_date}: 结算 {len(results)} 场结果 / {settled} 票"
+    written = sum(sources.values())
+    msg = f"decision-reconcile-v2 {run_date}: 结算 {written} 场结果 / {settled} 票"
+    if sources:
+        msg += " | 来源 " + " · ".join(f"{k} {v}" for k, v in sorted(sources.items()))
+    if known:
+        msg += f" | 内核已有同比分 {known} 场"
+    if conflicts:
+        msg += f" | ⚠️比分与内核已记不一致 {len(conflicts)} 场(未覆盖): " + "; ".join(conflicts)
+    return msg
 
 
 def _calibrate_v2(kernel, stamp: str) -> str:

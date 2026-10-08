@@ -1,11 +1,7 @@
 import json
 from pathlib import Path
 
-from nutmeg.decision.day_results import bridge_results, outcome_90
-
-
-def test_outcome_90_uses_sporttery_face_codes():
-    assert outcome_90(2, 1) == "3" and outcome_90(1, 1) == "1" and outcome_90(0, 3) == "0"
+from nutmeg.decision.day_results import bridge_results
 
 
 def test_bridge_results_writes_results_90_for_yesterday(tmp_path: Path):

@@ -159,6 +159,9 @@ def test_settle_job_encodes_yesterdays_board_into_the_scoreboard(tmp_path: Path)
     (ctx.out_dir / RESULTS_90).parent.mkdir(parents=True, exist_ok=True)
     (ctx.out_dir / RESULTS_90).write_text(
         json.dumps({"周一004": {"outcome_90": "0", "goals_h": 1, "goals_a": 4}}), encoding="utf-8")
+    (ctx.data_dir / "jczq").mkdir(parents=True, exist_ok=True)
+    (ctx.data_dir / "jczq" / "jc-results.json").write_text(
+        json.dumps({"2026-09-22": {"周一004": {"ft_home": 1, "ft_away": 4}}}), encoding="utf-8")
     reads = ctx.data_dir / "jczq" / "daily" / "2026-09-22" / "reads.json"
     reads.parent.mkdir(parents=True, exist_ok=True)
     reads.write_text(json.dumps([{

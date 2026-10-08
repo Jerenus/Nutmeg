@@ -8,24 +8,10 @@ from nutmeg.decision.zucai_night import (
     load_channel_map,
     night_results,
     render_report,
-    result_code,
     run_night_calibrate,
     ticket_partial_status,
 )
 from nutmeg.interfaces.cli import app
-
-
-def test_result_code_home_win():
-    assert result_code(2, 1) == "3"
-
-
-def test_result_code_draw():
-    assert result_code(0, 0) == "1"
-
-
-def test_result_code_away_win():
-    assert result_code(0, 3) == "0"
-
 
 _MID = {"3": "match-aaa", "5": "match-bbb", "7": "match-ccc"}
 

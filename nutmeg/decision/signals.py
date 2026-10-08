@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from nutmeg.decision.match_results import board_outcomes
 from nutmeg.decision.overrides import load_overrides
 from nutmeg.decision.stance import apply_tilt
 
@@ -118,10 +119,7 @@ def build_signals(*, day: str, data_dir: Path) -> list[dict]:
     legs = (_load(day_dir / "jczq-legs-base.json", {}) or {}).get("legs") or {}
     reads = {r.get("match_id"): r for r in _load(day_dir / "reads.json", []) or []}
     ledger = {r["research"]: r for r in load_overrides(day_dir)}
-    results = (_load(data_dir / "jczq" / "jc-results.json", {}) or {}).get(day) or {
-        code: {"ft_home": r.get("goals_h"), "ft_away": r.get("goals_a")}
-        for code, r in (_load(day_dir / "results-90.json", {}) or {}).items()
-    }
+    results = board_outcomes(data_dir, day)
     rows: list[dict] = []
     by_match_id: dict[str, dict] = {}
     for code, leg in sorted(legs.items()):
@@ -132,11 +130,7 @@ def build_signals(*, day: str, data_dir: Path) -> list[dict]:
         ledger_row = ledger.get(research_path.name)
         band = _load(day_dir / f"price-band-{code}.json", {}) or {}
         prior = dict(read.get("prior") or prior)
-        result = results.get(code)
-        outcome = None
-        if result and result.get("ft_home") is not None:
-            h, a = int(result["ft_home"]), int(result["ft_away"])
-            outcome = "3" if h > a else ("1" if h == a else "0")
+        outcome = (results.get(code) or {}).get("outcome_90")
         row = {
             "key": code, "name": leg.get("name"), "kickoff": leg.get("kickoff_bj"),
             "prior": prior, "drift": band.get("drift_pp"),

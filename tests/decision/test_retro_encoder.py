@@ -20,10 +20,10 @@ def _write(path: Path, doc) -> None:
 
 def _fixture(tmp_path: Path) -> Path:
     data = tmp_path / "data"
-    _write(data / "daily" / "2026-09-29" / "results-90.json", {
-        "周一004": {"outcome_90": "0", "goals_h": 1, "goals_a": 4},
-        "周一007": {"outcome_90": "3", "goals_h": 3, "goals_a": 1},
-    })
+    _write(data / "jczq" / "jc-results.json", {DAY: {
+        "周一004": {"ft_home": 1, "ft_away": 4},
+        "周一007": {"ft_home": 3, "ft_away": 1},
+    }})
     _write(data / "jczq" / "daily" / DAY / "reads.json", [
         {"note": "[周一004|土耳其-意大利|deep_research] …", "judgment_tier": "deep_research",
          "prior": {"home": 0.357, "draw": 0.270, "away": 0.373},
@@ -77,13 +77,14 @@ def test_encode_jczq_day_writes_facts_and_keeps_human_fields(tmp_path: Path):
         KEY]["key"] == "人写的判断，不许被覆盖"
 
 
-def test_encode_returns_none_without_results_and_falls_back_to_jc_results(tmp_path: Path):
+def test_encode_returns_none_until_the_board_day_is_sealed_in_jc_results(tmp_path: Path):
     data = _fixture(tmp_path)
-    (data / "daily" / "2026-09-29" / "results-90.json").unlink()
+    _write(data / "jczq" / "jc-results.json", {"2026-09-27": {}})
     assert results_for_board(data, DAY) is None and encode_jczq_day(data, DAY) is None
     _write(data / "jczq" / "jc-results.json",
            {DAY: {"周一004": {"ft_home": 1, "ft_away": 4},
-                  "周一007": {"ft_home": 3, "ft_away": 1}}})
+                  "周一007": {"ft_home": 3, "ft_away": 1},
+                  "周一009": {"ft_home": None, "ft_away": None}}})
     assert results_for_board(data, DAY) == {
         "周一004": {"outcome_90": "0", "goals_h": 1, "goals_a": 4},
         "周一007": {"outcome_90": "3", "goals_h": 3, "goals_a": 1},

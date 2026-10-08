@@ -14,14 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
-def result_code(ft_home: int, ft_away: int) -> str:
-    """90 分钟比分 → 彩果 3/1/0。"""
-    if ft_home > ft_away:
-        return "3"
-    if ft_home == ft_away:
-        return "1"
-    return "0"
+from nutmeg.decision.match_results import board_outcomes
 
 
 def _read_json(path: Path, default):
@@ -47,21 +40,20 @@ def load_channel_map(zucai_dir, issue: str) -> dict[str, str]:
 def board_results(data_dir, day: str) -> dict[str, dict]:
     """板面日 day 的竞彩终场 → {match_id: {code, ft, home, away, jc_code}}。
 
-    legs-base 给身份（编号 ↔ match_id），jc-results 给比分；缺终场的场不进表。
+    legs-base 给身份（编号 ↔ match_id），`match_results` 给比分；缺终场的场不进表。
     """
     data_dir = Path(data_dir)
     legs = (_read_json(data_dir / "jczq" / "daily" / day / "jczq-legs-base.json", {})
             or {}).get("legs") or {}
-    table = (_read_json(data_dir / "jczq" / "jc-results.json", {}) or {}).get(day) or {}
+    results = board_outcomes(data_dir, day)
     out: dict[str, dict] = {}
     for code, leg in legs.items():
-        mid = leg.get("match_id")
-        row = table.get(code) or {}
-        if not mid or row.get("ft_home") is None or row.get("ft_away") is None:
+        mid, res = leg.get("match_id"), results.get(code)
+        if not mid or res is None:
             continue
-        gh, ga = int(row["ft_home"]), int(row["ft_away"])
         out[str(mid)] = {
-            "code": result_code(gh, ga), "ft": f"{gh}-{ga}", "jc_code": code,
+            "code": res["outcome_90"], "ft": f"{res['goals_h']}-{res['goals_a']}",
+            "jc_code": code,
             "home": leg.get("home_team") or "", "away": leg.get("away_team") or "",
         }
     return out

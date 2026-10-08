@@ -12,12 +12,10 @@ from __future__ import annotations
 
 import json
 import statistics
-from datetime import date as _date
-from datetime import timedelta
 from pathlib import Path
 
 from nutmeg.decision.betslip import BetSlip, load_slips, settle_slip
-from nutmeg.decision.day_paths import RESULTS_90, day_dir
+from nutmeg.decision.match_results import board_outcomes
 
 FACE_OF = {"3": "home", "1": "draw", "0": "away"}
 CODE_OF = {"home": "3", "draw": "1", "away": "0"}
@@ -37,22 +35,8 @@ def _read_json(path: Path, default=None):
 
 
 def results_for_board(data_dir: Path, date: str) -> dict | None:
-    """板面日 D 的 90' 赛果住在 daily/<D+1>/results-90.json；退回 jc-results.json[D]。"""
-    next_day = (_date.fromisoformat(date) + timedelta(days=1)).isoformat()
-    doc = _read_json(day_dir(data_dir, next_day) / RESULTS_90)
-    if doc:
-        return doc
-    jc = (_read_json(Path(data_dir) / "jczq" / "jc-results.json", {}) or {}).get(date)
-    if not jc:
-        return None
-    out = {}
-    for code, row in jc.items():
-        h, a = row.get("ft_home"), row.get("ft_away")
-        if h is None or a is None:
-            continue
-        out[code] = {"outcome_90": "3" if h > a else "1" if h == a else "0",
-                     "goals_h": h, "goals_a": a}
-    return out or None
+    """板面日 D 的 90' 赛果（`match_results` 单一来源）；未封存 → None。"""
+    return board_outcomes(data_dir, date) or None
 
 
 def _brier(p: dict, outcome: str) -> float:
