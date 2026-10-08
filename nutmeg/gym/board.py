@@ -9,25 +9,21 @@ businessDate>D 的次日场一起只供真票结算与合法性检查，不进�
 """
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field, replace
 from datetime import date as _date
 from datetime import timedelta
 from pathlib import Path
 
+from nutmeg.data.prices import devig
+from nutmeg.decision.files import read_json
+from nutmeg.decision.match_results import outcome_90
 from nutmeg.gym.prizes import load_prizes
 
 FACES = ("home", "draw", "away")
 CODE_OF = {"home": "3", "draw": "1", "away": "0"}
 FACE_OF = {"3": "home", "1": "draw", "0": "away"}
 _HDA = {"h": "3", "d": "1", "a": "0"}
-
-
-def devig(odds: dict[str, float]) -> dict[str, float]:
-    inv = {k: 1 / float(v) for k, v in odds.items()}
-    total = sum(inv.values())
-    return {k: v / total for k, v in inv.items()}
 
 
 @dataclass(frozen=True)
@@ -101,15 +97,8 @@ class ZucaiIssue:
         return replace(self, results=None, prizes=None)
 
 
-def _read(path: Path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
-
-
 def _outcome(gh: int, ga: int) -> str:
-    return "home" if gh > ga else ("draw" if gh == ga else "away")
+    return FACE_OF[outcome_90(gh, ga)]
 
 
 def _hda(raw: dict | None) -> dict[str, float]:
@@ -138,7 +127,7 @@ def _numeric_pool(raw: dict | None, prefix_len: int = 1) -> dict[str, float] | N
 
 
 def _snapshot_rows(data_dir: Path, day: str) -> tuple[list[dict], dict]:
-    doc = _read(data_dir / "jczq" / "daily" / day / "sporttery_markets.json", None)
+    doc = read_json(data_dir / "jczq" / "daily" / day / "sporttery_markets.json", None)
     if not isinstance(doc, dict):
         return [], {}
     rows = []
@@ -194,10 +183,10 @@ def load_history_board(data_dir: Path, day: str) -> JczqBoard:
 
     没有三面全价：策略只能用终盘当 belief，派奖按开奖 SP；单关一律视为不开。"""
     data_dir = Path(data_dir)
-    history = (_read(data_dir / "jczq" / "jc-history.json", {}) or {}).get(day)
+    history = (read_json(data_dir / "jczq" / "jc-history.json", {}) or {}).get(day)
     if not history:
         raise FileNotFoundError(f"{day} 无历史板")
-    closing = _read(data_dir / "jczq" / "daily" / day / "closing_odds.json", {}) or {}
+    closing = read_json(data_dir / "jczq" / "daily" / day / "closing_odds.json", {}) or {}
     matches: dict[str, JczqMatch] = {}
     extra: dict[str, JczqMatch] = {}
     results: dict[str, dict] = {}
@@ -229,10 +218,10 @@ def load_jczq_board(data_dir: Path, day: str, *, allow_history: bool = False) ->
         if allow_history:
             return load_history_board(data_dir, day)
         raise FileNotFoundError(f"{day} 无板面快照")
-    closing = _read(data_dir / "jczq" / "daily" / day / "closing_odds.json", {}) or {}
-    results_doc = _read(data_dir / "jczq" / "jc-results.json", {}) or {}
+    closing = read_json(data_dir / "jczq" / "daily" / day / "closing_odds.json", {}) or {}
+    results_doc = read_json(data_dir / "jczq" / "jc-results.json", {}) or {}
     # 赛果缺口用 jc-history（同一 titan007 源）补：每日回填只封存板面码，偶有漏场
-    history_doc = _read(data_dir / "jczq" / "jc-history.json", {}) or {}
+    history_doc = read_json(data_dir / "jczq" / "jc-history.json", {}) or {}
     if history_doc:
         merged: dict[str, dict] = {}
         for key in set(results_doc) | set(history_doc):
@@ -263,7 +252,7 @@ def load_jczq_board(data_dir: Path, day: str, *, allow_history: bool = False) ->
             extra[str(raw["matchNumStr"])] = _match(raw, closing)
 
     # 作废登记（延期 >36h 体彩按取消：腿算中、赔率按 1）：jczq/void-matches.json = {板面日: [编号]}
-    void_doc = _read(data_dir / "jczq" / "void-matches.json", {}) or {}
+    void_doc = read_json(data_dir / "jczq" / "void-matches.json", {}) or {}
     results: dict[str, dict] = {}
     for code, m in {**matches, **extra}.items():
         row = _result_row(results_doc, m.business_date, code)
@@ -288,7 +277,7 @@ def _prospective_read_beliefs(data_dir: Path, day: str,
     """`--belief read` 的来源：当日 reads.json 里 had 市场、made_at 早于开球的最新一条 belief。
 
     开球后才写的 Read 一律不进（前瞻性只认产物时刻早于开球）。"""
-    reads = _read(data_dir / "jczq" / "daily" / day / "reads.json", []) or []
+    reads = read_json(data_dir / "jczq" / "daily" / day / "reads.json", []) or []
     latest: dict[str, tuple[str, dict[str, float]]] = {}
     for read in reads if isinstance(reads, list) else []:
         hit = _READ_CODE.search(str(read.get("read_id") or ""))
@@ -324,10 +313,10 @@ def _zucai_odds(doc) -> dict[str, dict[str, float]]:
 
 def load_zucai_issue(data_dir: Path, issue: str) -> ZucaiIssue:
     zdir = Path(data_dir) / "zucai"
-    doc = _read(zdir / f"{issue}-issue.json", None)
+    doc = read_json(zdir / f"{issue}-issue.json", None)
     if doc is None:
         raise FileNotFoundError(f"{issue} 无 issue.json")
-    odds = _zucai_odds(_read(zdir / f"{issue}-odds.json", {}))
+    odds = _zucai_odds(read_json(zdir / f"{issue}-odds.json", {}))
     matches: dict[str, ZucaiMatch] = {}
     for m in doc.get("matches") or []:
         no = str(m["match_no"])
@@ -348,14 +337,14 @@ def load_zucai_issue(data_dir: Path, issue: str) -> ZucaiIssue:
 def list_days(data_dir: Path, *, include_history: bool = False) -> list[str]:
     """有体彩快照且有赛果的板面日；`include_history` 再并入只有 jc-history 的日子（SP 板）。"""
     data_dir = Path(data_dir)
-    results = _read(data_dir / "jczq" / "jc-results.json", {}) or {}
+    results = read_json(data_dir / "jczq" / "jc-results.json", {}) or {}
     root = data_dir / "jczq" / "daily"
     days = set()
     if root.exists():
         days = {d.name for d in root.iterdir()
                 if (d / "sporttery_markets.json").exists() and d.name in results}
     if include_history:
-        history = _read(data_dir / "jczq" / "jc-history.json", {}) or {}
+        history = read_json(data_dir / "jczq" / "jc-history.json", {}) or {}
         days |= {d for d, rows in history.items() if rows and d not in days}
     return sorted(days)
 

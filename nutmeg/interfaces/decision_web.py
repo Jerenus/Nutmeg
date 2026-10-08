@@ -37,16 +37,6 @@ def _day_state(output_dir, date: str, kernel_state=None) -> dict[str, Any]:
     }
 
 
-def _launchctl_list() -> str:
-    import subprocess
-
-    try:
-        return subprocess.run(["launchctl", "list"], capture_output=True, text=True,
-                              check=False).stdout
-    except OSError:
-        return ""
-
-
 def create_decision_app(*, output_dir, kernel_state=None,
                         zucai_dir=None, observe_repo=None,
                         data_dir=None, launchctl=None, git=None) -> FastAPI:
@@ -67,7 +57,9 @@ def create_decision_app(*, output_dir, kernel_state=None,
     app.state.zucai_dir = Path(zucai_dir) if zucai_dir else Path(output_dir).parent / "zucai"
     # 当日页（设计 2026-09-22-daily-operator-surface §7）：数据根默认 output_dir 的上一级。
     app.state.data_dir = Path(data_dir) if data_dir else Path(output_dir).parent
-    app.state.launchctl = launchctl or _launchctl_list
+    if launchctl is None:
+        from nutmeg.decision.ops_status import launchctl_list as launchctl
+    app.state.launchctl = launchctl
     # 历史三页（设计 §10）：git log 可注入，测试不碰真仓。
     app.state.git = git or run_git
 
@@ -145,7 +137,6 @@ def create_decision_app(*, output_dir, kernel_state=None,
         balance_for_issue,
         day_view,
         experiment_card,
-        wind_for_day,
     )
 
     def _safe(fn, default, errors: list[str]):
@@ -187,9 +178,6 @@ def create_decision_app(*, output_dir, kernel_state=None,
             (duty.get("issue") for duty in duties_today if duty.get("issue")),
             None,
         )
-        wind = _safe(
-            lambda: wind_for_day(app.state.zucai_dir, issue), None, errors
-        )
         balance = _safe(
             lambda: balance_for_issue(app.state.zucai_dir, issue), None, errors
         )
@@ -198,7 +186,6 @@ def create_decision_app(*, output_dir, kernel_state=None,
             "experiments": cards,
             "duties_today": duties_today,
             "duties_tomorrow": duties_tomorrow,
-            "wind": wind,
             "balance": balance,
             "errors": errors,
         }

@@ -126,9 +126,6 @@ window.Observe = (function () {
           var wrong = data.balance.direction_wrong_n == null ? "--" : data.balance.direction_wrong_n;
           balance.textContent = prefix + " · 平均偏移 " + mean + "pp · 方向 " + right + "/" + wrong;
         }
-        if (data.wind) {
-          document.querySelector(selectors.wind).textContent = "今日风向 " + (data.wind.regime || "--") + " · 各级 " + JSON.stringify(data.wind.tiers || {}) + " · 建议帽档 " + (data.wind.cap_band || "--");
-        }
         var duties = document.querySelector(selectors.duties);
         duties.replaceChildren(element("div", "obs-section-title", "今日到期 " + data.duties_today.length + " · 明日 " + data.duties_tomorrow.length));
         data.duties_today.forEach(function (duty) {

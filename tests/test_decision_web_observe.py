@@ -88,7 +88,7 @@ def test_api_observe_returns_cards_duties_and_null_wind_when_absent(tmp_path):
     body = response.json()
     assert body["experiments"][0]["exp_id"] == "F2"
     assert body["experiments"][0]["gap_count"] == 1
-    assert body["wind"] is None
+    assert "wind" not in body
     assert body["balance"]["n_moved"] == 0
     assert body["balance"]["n_matches"] == 14
     assert body["duties_today"][0]["duty_id"].startswith("F2")
@@ -178,7 +178,7 @@ def test_pages_render_read_only_with_pinned_echarts_and_nav_link(tmp_path):
     assert "图表引擎暂不可用" in script
 
     assert 'href="/observe"' in client.get("/?date=2026-09-19").text
-    assert "今日未定级" in client.get("/observe").text
+    assert "今日未定级" not in client.get("/observe").text  # 风向块随 -tiers.json 写入方退役
     assert "本期天平" in client.get("/observe").text
 
     script = client.get("/static/decision/observe.js").text
