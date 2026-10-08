@@ -51,6 +51,21 @@ def test_brief_contains_fair_line_and_kickoff_only_from_inputs():
     assert "高位逼抢" in brief
 
 
+def test_contract_names_every_field_the_runner_requires():
+    from nutmeg.decision.research_runner import _REQUIRED
+
+    for key in _REQUIRED:
+        assert f'"{key}"' in RESEARCH_JSON_CONTRACT, key
+
+
+def test_prompt_moves_belief_only_through_the_rubric():
+    """2026-10-08：分析员定义曾一边让「用 tilt/shift 拨多少」一边说 tilt 写 null。"""
+    prompt = system_prompt()
+    assert '"tilt": null' in RESEARCH_JSON_CONTRACT
+    for stale in ("tilt/shift", "五玩法", "双轴表达", "收尾小结", '"expires_if"'):
+        assert stale not in prompt, stale
+
+
 def test_system_prompt_carries_the_rubric_question_table_from_the_registry():
     from nutmeg.decision.research_prompt import rubric_contract, system_prompt
     from nutmeg.decision.rubric_items import ITEMS
