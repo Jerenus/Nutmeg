@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import json
-import plistlib
 import re
 import sqlite3
 from collections.abc import Callable
@@ -21,6 +20,7 @@ from pathlib import Path
 
 from nutmeg.decision.day_paths import BROADCASTS, RETRO, TIMELINE, day_dir, jczq_day_dir
 from nutmeg.decision.files import read_json
+from nutmeg.decision.ops_status import describe_calendar, iter_plists
 
 LANES = {"jczq": "竞彩", "zucai": "足彩", "rsi": "RSI", "system": "系统"}
 STATUS_TEXT = {
@@ -328,8 +328,6 @@ def planned_times(doc: dict, day: str | None = None) -> tuple[list[str], str]:
     items = cal if isinstance(cal, list) else [cal] if isinstance(cal, dict) else []
     monthly = [i for i in items if isinstance(i, dict) and ("Day" in i or "Weekday" in i)]
     if monthly and len(monthly) == len(items):
-        from nutmeg.decision.ops_status import describe_calendar
-
         label = "、".join(describe_calendar(i) for i in monthly)
         times = sorted(f"{int(i.get('Hour', 0)):02d}:{int(i.get('Minute', 0)):02d}"
                        for i in monthly if _runs_on(i, day))
@@ -497,10 +495,8 @@ def day_runs(*, data_dir: Path, plists_dir: Path, day: str, now: datetime) -> di
     errors: list[str] = []
     brief = read_json(day_dir(data_dir, day) / "brief.json", {}) or {}
     jobs = []
-    for plist in sorted(Path(plists_dir).glob("com.nutmeg.*.plist")):
-        try:
-            doc = plistlib.loads(plist.read_bytes())
-        except Exception as exc:  # noqa: BLE001 — 坏 plist 也要露面
+    for plist, doc, exc in iter_plists(plists_dir):
+        if doc is None:  # 坏 plist 也要露面
             errors.append(f"{plist.name} 解析失败：{exc}")
             continue
         label = str(doc.get("Label") or plist.stem)

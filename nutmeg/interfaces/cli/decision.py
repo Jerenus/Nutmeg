@@ -629,17 +629,18 @@ def ops_status(
     就显示「无时间证据」，而不是默认它是今天的。
     """
     import json as _json
-    import plistlib
     import sqlite3
-    import subprocess
     from datetime import datetime as _datetime
 
     from nutmeg.decision.ops_status import (
         CronStatus,
         PendingItem,
         agent_status,
-        describe_calendar,
+        describe_schedule,
         format_status,
+        iter_plists,
+        launchctl_list,
+        parse_launchctl,
         stale_after_days,
     )
 
@@ -651,33 +652,16 @@ def ops_status(
         except OSError:
             return "", None
 
-    loaded: dict[str, str] = {}
-    try:
-        listing = subprocess.run(
-            ["launchctl", "list"], capture_output=True, text=True, timeout=10
-        ).stdout
-        for line in listing.splitlines():
-            parts = line.split("\t")
-            if len(parts) >= 3 and parts[2].startswith("com.nutmeg."):
-                loaded[parts[2]] = parts[1]
-    except (OSError, subprocess.SubprocessError):
-        pass
+    loaded = parse_launchctl(launchctl_list())
 
     agents = []
-    plist_dir = Path.home() / "Library" / "LaunchAgents"
-    for plist in sorted(plist_dir.glob("com.nutmeg.*.plist")):
-        try:
-            spec = plistlib.loads(plist.read_bytes())
-        except (OSError, ValueError):
+    for plist, spec, _error in iter_plists(Path.home() / "Library" / "LaunchAgents"):
+        if spec is None:
             continue
         label = str(spec.get("Label") or plist.stem)
         out_text, out_at = _read(Path(str(spec.get("StandardOutPath") or "")))
         err_text, err_at = _read(Path(str(spec.get("StandardErrorPath") or "")))
-        schedule = describe_calendar(
-            spec.get("StartCalendarInterval")
-            or (f"每 {int(spec['StartInterval']) // 60} 分钟"
-                if spec.get("StartInterval") else None)
-        )
+        schedule = describe_schedule(spec, minute_word="分钟")
         agents.append(agent_status(
             label, schedule,
             loaded=label in loaded, last_exit=loaded.get(label, ""),

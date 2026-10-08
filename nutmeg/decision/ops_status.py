@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 
 OK_MARK = "NUTMEG_OK"
 FAILED_MARK = "NUTMEG_FAILED"
@@ -160,6 +161,53 @@ def agent_status(
         err_at=err_at,
         stale_after=stale_after,
     )
+
+
+def parse_launchctl(text: str) -> dict[str, str]:
+    """`launchctl list` 文本 → {label: last_exit}（只留 com.nutmeg.*）。
+
+    ops-status、当日页（`day_ops`）共用的唯一解析（2026-10-08 B8，此前两份）。"""
+    out: dict[str, str] = {}
+    for line in (text or "").splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 3 and parts[2].startswith("com.nutmeg."):
+            out[parts[2].strip()] = parts[1].strip()
+    return out
+
+
+def launchctl_list() -> str:
+    """跑一次 `launchctl list`；拿不到（非 macOS / 超时）→ 空串，各页面照常显示「未加载」。"""
+    import subprocess
+
+    try:
+        return subprocess.run(["launchctl", "list"], capture_output=True, text=True,
+                              timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def iter_plists(plists_dir: Path):
+    """`com.nutmeg.*.plist` 按文件名排序 → (路径, 内容 dict 或 None, 解析错误或 None)。
+
+    ops-status（已安装的 ~/Library/LaunchAgents）、当日页与 `/runs`（仓里的 ops/launchd）共用。"""
+    import plistlib
+
+    for path in sorted(Path(plists_dir).glob("com.nutmeg.*.plist")):
+        try:
+            yield path, plistlib.loads(path.read_bytes()), None
+        except Exception as exc:  # noqa: BLE001 —— 坏 plist 由调用方决定怎么露面
+            yield path, None, exc
+
+
+def describe_schedule(doc: dict, *, minute_word: str = "分") -> str:
+    """plist 的排程一格：日历排程走 `describe_calendar`，`StartInterval`（秒）写成「每 N 分」。
+
+    ops-status 历来写「每 N 分钟」，当日页写「每 N 分」——各自传 `minute_word`，显示不变。"""
+    calendar = doc.get("StartCalendarInterval")
+    interval = doc.get("StartInterval")
+    if not calendar and isinstance(interval, int) and not isinstance(interval, bool) and interval:
+        return f"每 {interval // 60} {minute_word}"
+    return describe_calendar(calendar)
 
 
 def _minutes(entry: dict) -> int | None:

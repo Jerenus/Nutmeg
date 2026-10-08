@@ -180,3 +180,26 @@ def test_monthly_and_weekly_schedules_are_described_and_get_longer_stale_windows
     assert stale_after_days({"Day": 1, "Hour": 16}) == 32
     assert stale_after_days({"Weekday": 1, "Hour": 9}) == 8
     assert stale_after_days([{"Hour": 9}, {"Hour": 15}]) == 2 and stale_after_days(None) == 2
+
+
+def test_launchctl_plists_and_schedules_are_parsed_once_for_every_status_surface(tmp_path):
+    """2026-10-08 B8：ops-status、当日页、/runs 共用的解析；两种「每 N 分」写法照旧。"""
+    import plistlib
+
+    from nutmeg.decision.ops_status import describe_schedule, iter_plists, parse_launchctl
+
+    listing = ("PID\tStatus\tLabel\n-\t0\tcom.nutmeg.day.brief\n123\t78\tcom.nutmeg.rsi.sweep\n"
+               "-\t0\tcom.apple.other\n")
+    assert parse_launchctl(listing) == {"com.nutmeg.day.brief": "0", "com.nutmeg.rsi.sweep": "78"}
+    (tmp_path / "com.nutmeg.b.plist").write_bytes(plistlib.dumps(
+        {"Label": "com.nutmeg.b", "StartInterval": 600}))
+    (tmp_path / "com.nutmeg.a.plist").write_bytes(plistlib.dumps(
+        {"Label": "com.nutmeg.a", "StartCalendarInterval": {"Hour": 9, "Minute": 30}}))
+    (tmp_path / "com.nutmeg.c.plist").write_text("not a plist", encoding="utf-8")
+    rows = list(iter_plists(tmp_path))
+    assert [p.stem for p, _doc, _exc in rows] == ["com.nutmeg.a", "com.nutmeg.b", "com.nutmeg.c"]
+    assert rows[2][1] is None and rows[2][2] is not None
+    assert describe_schedule(rows[0][1]) == "09:30"
+    assert describe_schedule(rows[1][1]) == "每 10 分"
+    assert describe_schedule(rows[1][1], minute_word="分钟") == "每 10 分钟"
+    assert describe_schedule({}) == "未声明"
