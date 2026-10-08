@@ -16,7 +16,7 @@ from pathlib import Path
 
 from nutmeg.decision.match_results import board_outcomes
 from nutmeg.decision.overrides import load_overrides
-from nutmeg.decision.stance import apply_tilt
+from nutmeg.decision.stance import research_belief
 
 FACE_KEY = {"3": "home", "1": "draw", "0": "away"}
 KEY_FACE = {v: k for k, v in FACE_KEY.items()}
@@ -44,13 +44,6 @@ def _research_doc(path: Path) -> dict | None:
     return doc if isinstance(doc, dict) else None
 
 
-def _belief(prior: dict, tilt: dict | None) -> dict:
-    if not tilt:
-        return dict(prior)
-    result = apply_tilt(prior, tilt)
-    return dict(prior) if result.zeroed else dict(result.belief)
-
-
 def _shift_pp(belief: dict, prior: dict) -> dict:
     return {k: round((belief[k] - prior[k]) * 100, 1) for k in ("home", "draw", "away")}
 
@@ -62,7 +55,7 @@ def _brier(dist: dict, face: str) -> float:
 def _research_view(doc: dict, prior: dict, ledger_row: dict | None) -> dict:
     stance = doc.get("stance") or {}
     original_tilt = ledger_row["original_tilt"] if ledger_row else stance.get("tilt")
-    belief = _belief(prior, original_tilt)
+    belief, _ = research_belief(prior, original_tilt)
     sb = doc.get("strength_balance") or {}
     tiers = [
         f"{e.get('tier')}:{e.get('kind')}{e.get('pp')}"

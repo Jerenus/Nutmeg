@@ -293,3 +293,24 @@ def _apply_shift(prior: dict, shift: dict, *, kept: list, dropped: int,
         f"{d}{scale * values.get(FACE_KEY[d], 0):+.1f}" for d in FACES
     ) + note
     return TiltResult(belief, applied, False, reason, tiers)
+
+
+def research_belief(prior: dict, tilt: dict | None, *, kickoff: str | None = None,
+                    alive=None) -> tuple[dict, TiltResult]:
+    """研究表态 → belief：竞彩 / 足彩 Read、信号面板、改判账共用的唯一实现（2026-10-08 B2）。
+
+    tilt 走 l 条拨动算术（`apply_tilt`）；归零即跟市场，belief 原样是 prior。
+    `alive`（home/draw/away 的活面集合）给出时，三证判死的面优先于拨动：拨动结果（或 prior）
+    上把非活面清零、在活面上归一。`alive=None` 不按面状态处理——足彩只在研究真判了死面时
+    才传（全活时归一只会改浮点尾数，让内容没变的 Read 被当成「变了」重交本体）。
+    """
+    result = apply_tilt(prior, tilt, kickoff=kickoff)
+    belief = dict(prior) if result.zeroed else dict(result.belief)
+    if alive is None:
+        return belief, result
+    kept = {face: (float(belief[face]) if face in alive else 0.0)
+            for face in ("home", "draw", "away")}
+    mass = sum(kept.values())
+    if mass <= 0:
+        raise ValueError("没有可归一的活面")
+    return {face: value / mass for face, value in kept.items()}, result

@@ -15,7 +15,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from nutmeg.decision.stance import apply_tilt
+from nutmeg.decision.stance import research_belief
 
 LEDGER = "overrides.jsonl"
 OVERRIDE_REASONS = ("new_official_info", "evidence_tier_too_low", "priced_in",
@@ -69,13 +69,6 @@ def derive_override_tilt(rubric: dict, items: dict, *, prior: dict, kickoff: str
     return tilt, norm
 
 
-def _belief(prior: dict, tilt: dict | None) -> dict:
-    if not tilt:
-        return dict(prior)
-    result = apply_tilt(prior, tilt)
-    return dict(prior) if result.zeroed else dict(result.belief)
-
-
 def record_override(research_path: Path, *, tilt: dict | None = None, note: str, at: str,
                     judge: str, prior: dict, source: str = "main_loop",
                     items: dict | None = None, reason: str | None = None,
@@ -115,8 +108,8 @@ def record_override(research_path: Path, *, tilt: dict | None = None, note: str,
         "original_tilt": original,
         "tilt": tilt,
         "prior": prior,
-        "research_belief": _belief(prior, original),
-        "final_belief": _belief(prior, tilt),
+        "research_belief": research_belief(prior, original)[0],
+        "final_belief": research_belief(prior, tilt)[0],
         "note": note,
     }
     with (research_path.parent / LEDGER).open("a", encoding="utf-8") as fh:

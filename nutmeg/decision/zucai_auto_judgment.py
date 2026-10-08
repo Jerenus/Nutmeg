@@ -16,9 +16,10 @@ import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from nutmeg.decision.face_status import FACES, proven_dead
 from nutmeg.decision.overrides import effective_research
 from nutmeg.decision.read_builder import build
-from nutmeg.decision.stance import apply_tilt, validate_stance
+from nutmeg.decision.stance import research_belief, validate_stance
 
 JUDGE = "ai-pool"
 _TRANSCRIBED = ("directional_flags", "nondirectional_flags", "anchor_integrity",
@@ -66,8 +67,13 @@ def _from_research(research: dict, prior: dict, kickoff: str) -> dict | None:
     )
     if any(issue.level == "ERROR" for issue in issues):
         return None
-    tilt = apply_tilt(prior, norm.get("tilt"), kickoff=kickoff)
-    moved = not tilt.zeroed and norm.get("tilt")
+    # 与竞彩同一口径：三证判死的面在 belief 里清零（2026-10-08 B2 补上——此前足彩转录漏了这步，
+    # 研究判死的面仍按市场价进 Read；生产数据里迄今没有一份研究判过死面，故无存量 Read 受影响）
+    dead = proven_dead(research)
+    belief, tilt = research_belief(
+        prior, norm.get("tilt"), kickoff=kickoff,
+        alive=[face for face in FACES if face not in dead] if dead else None)
+    moved = not tilt.zeroed
     entry = {key: research[key] for key in _TRANSCRIBED if key in research}
     entry.update({
         "action": norm["faces"],
@@ -77,7 +83,7 @@ def _from_research(research: dict, prior: dict, kickoff: str) -> dict | None:
         "falsifier": norm["falsifier"],
         "stance": norm,
         "note": f"【并集池·研究转录】{str(research.get('summary') or '')[:300]}",
-        "belief": tilt.belief if moved else dict(prior),
+        "belief": belief,
         "adjustment_evidence_tiers": list(tilt.tiers) if moved else [],
         "source": "research",
         "rubric": rubric_read_view(research.get("rubric"), norm),

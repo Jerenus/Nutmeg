@@ -1,4 +1,4 @@
-from nutmeg.decision.stance import apply_tilt, stance_faces, validate_stance
+from nutmeg.decision.stance import apply_tilt, research_belief, stance_faces, validate_stance
 
 PRIOR = {"home": 0.52, "draw": 0.26, "away": 0.22}
 DEAD_AWAY = {"away": {"verdict": "dead", "a_no_scoring_mechanism": True,
@@ -165,3 +165,32 @@ def test_validate_shift_must_sum_to_zero_and_use_the_strength_lexicon():
     _, issues = validate_stance(_stance(why_not_market="tilt_evidence", tilt=bad), confidence=3,
                                 death_three_proofs={})
     assert any("shift" in i.message and "0" in i.message for i in issues)
+
+
+def test_research_belief_follows_market_when_the_tilt_is_zeroed_and_keeps_prior_as_given():
+    prior = {"home": 0.5, "draw": 0.3, "away": 0.2}
+    belief, result = research_belief(prior, None)
+    assert belief == prior and belief is not prior and result.zeroed
+    state_only = {"shift": {"3": 2, "1": 0, "0": -2}, "evidence": [_ev(tier="state",
+                                                                       kind="form_state")]}
+    assert research_belief(prior, state_only)[0] == prior        # 无锚证据：归零
+
+
+def test_research_belief_zeroes_dead_faces_after_the_tilt():
+    tilt = {"shift": {"3": 3, "1": 0, "0": -3}, "expires_if": "",
+            "evidence": [_ev(tier="confirmed_structural", kind="lineup_confirmed", pp=3)]}
+    moved, result = research_belief(PRIOR, tilt)
+    assert not result.zeroed and moved["home"] > PRIOR["home"]
+    alive_only, _ = research_belief(PRIOR, tilt, alive=["home", "draw"])
+    assert alive_only["away"] == 0.0
+    assert abs(alive_only["home"] / alive_only["draw"] - moved["home"] / moved["draw"]) < 1e-12
+    assert abs(sum(alive_only.values()) - 1.0) < 1e-12
+    untilted, _ = research_belief(PRIOR, None, alive=["home", "draw"])
+    mass = 0.52 + 0.26 + 0.0
+    assert untilted == {"home": 0.52 / mass, "draw": 0.26 / mass, "away": 0.0}
+    try:
+        research_belief(PRIOR, None, alive=[])
+    except ValueError as exc:
+        assert "活面" in str(exc)
+    else:
+        raise AssertionError("no alive face must raise")

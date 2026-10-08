@@ -8,7 +8,7 @@ from pathlib import Path
 from nutmeg.decision.face_status import FaceStatusError, attach_face_status
 from nutmeg.decision.overrides import effective_research
 from nutmeg.decision.research_intake import intake
-from nutmeg.decision.stance import apply_tilt, validate_stance
+from nutmeg.decision.stance import research_belief, validate_stance
 
 FACES = ("home", "draw", "away")
 
@@ -161,38 +161,22 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
             )
         )
         prior = dict(leg["fair"])
-        if researched:
-            alive = [
-                face
-                for face in FACES
-                if leg["face_status"][face]["state"] == "alive"
-            ]
-            mass = sum(float(leg["fair"][face]) for face in alive)
-            if mass <= 0:
-                raise ValueError(f"{code} 没有可归一的活面")
-            belief = {
-                face: float(leg["fair"][face]) / mass if face in alive else 0.0
-                for face in FACES
-            }
-        else:
-            # 「跟市场」是宪法 §2 的明文判断：无命名理由即市场锚定。
-            # 它是可被 Brier 评分的陈述，不是判断缺席；强度只决定结构。
-            belief = dict(prior)
-        # 表态块：有 tilt 则走 l 条拨动算术；三证判死的面优先于拨动——
-        # 拨动作用在 prior 上，再把死面清零并在活面上归一。
+        # 表态块：有 tilt 则走 l 条拨动算术；三证判死的面优先于拨动（`research_belief`）。
+        # 「跟市场」是宪法 §2 的明文判断：无命名理由即市场锚定。
+        # 它是可被 Brier 评分的陈述，不是判断缺席；强度只决定结构。
         stance = leg.get("stance") if researched else None
+        belief = dict(prior)
+        result = None
+        if researched:
+            alive = [face for face in FACES if leg["face_status"][face]["state"] == "alive"]
+            try:
+                belief, result = research_belief(
+                    prior, (stance or {}).get("tilt"), kickoff=leg.get("kickoff_bj"),
+                    alive=alive)
+            except ValueError as exc:
+                raise ValueError(f"{code} {exc}") from exc
         tilt_info: dict = {}
         if stance:
-            result = apply_tilt(
-                prior, stance.get("tilt"), kickoff=leg.get("kickoff_bj")
-            )
-            if not result.zeroed:
-                tilted = {
-                    face: (result.belief[face] if face in alive else 0.0)
-                    for face in FACES
-                }
-                tilted_mass = sum(tilted.values()) or 1.0
-                belief = {face: value / tilted_mass for face, value in tilted.items()}
             tilt_info = {
                 "tilt_applied_pp": result.applied_pp,
                 "tilt_zeroed": result.zeroed,
