@@ -67,14 +67,8 @@ class ArtifactIngestService:
         command, handler = self.prepare(request)
         return self._action_service.execute(command, handler)
 
-    def prepare(
-        self,
-        request: ArtifactIngestRequest,
-        *,
-        action_id: str | None = None,
-        payload_extension: dict[str, object] | None = None,
-    ) -> ActionBatchItem:
-        """Build an artifact operation for a caller-owned atomic batch."""
+    def prepare(self, request: ArtifactIngestRequest) -> ActionBatchItem:
+        """Build the artifact command and its handler without opening a transaction."""
         digest = hashlib.sha256(request.content).hexdigest()
         artifact_id = f'sha256:{digest}'
         byte_size = len(request.content)
@@ -97,17 +91,9 @@ class ArtifactIngestService:
             'canonical_url': request.canonical_url,
             'published_at': request.published_at,
         }
-        if payload_extension:
-            overlap = payload.keys() & payload_extension.keys()
-            if overlap:
-                raise ValueError(
-                    'artifact payload extension conflicts with reserved fields: '
-                    f'{sorted(overlap)}'
-                )
-            payload.update(payload_extension)
         command = ActionCommand.for_request(
             'ingest_artifact', request, payload,
-            requested_at=request.retrieved_at, action_id=action_id,
+            requested_at=request.retrieved_at,
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
@@ -138,9 +124,3 @@ class ArtifactIngestService:
             )
 
         return command, handler
-
-    def execute_batch(
-        self, items: tuple[ActionBatchItem, ...]
-    ) -> tuple[ActionOutcome, ...]:
-        """Commit a prepared artifact and its related Actions atomically."""
-        return self._action_service.execute_batch(items)

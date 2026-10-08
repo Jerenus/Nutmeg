@@ -1,7 +1,6 @@
 """Idempotent Action execution with atomic business + audit commit.
 
-``execute`` is the single funnel every formal write goes through. ``execute_batch``
-extends the same contract to related Actions that must commit together:
+``execute`` is the single funnel every formal write goes through:
 
 1. look up the idempotency key in a read transaction;
 2. if found, replay its stored outcome — or reject a reused key that now carries
@@ -13,14 +12,15 @@ extends the same contract to related Actions that must commit together:
 5. any other handler failure rolls the business rows back, audits a ``failed``
    Action, and re-raises the original error.
 
-Concurrent unique-key race recovery is intentionally deferred to Task 12; this
-service adds no untested retry logic.
+A concurrent writer that wins the same idempotency key (unique clash or SQLite
+lock) has its committed outcome replayed; a FAILED attempt never blocks a
+corrected retry under the same key.
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -139,82 +139,6 @@ class ActionService:
             result_refs=result_refs,
             committed_at=committed_at,
         )
-
-    def execute_batch(self, items: Iterable[ActionBatchItem]) -> tuple[ActionOutcome, ...]:
-        """Preflight and atomically commit a related batch of Actions."""
-        batch = tuple(items)
-        for command, _handler in batch:
-            _reject_replay_adjudicator(command)
-        if not batch:
-            return ()
-        self._assert_distinct_batch_keys(batch)
-
-        with self._unit_of_work_factory() as uow:
-            existing_by_key = {}
-            for command, _handler in batch:
-                existing = uow.actions.get_by_idempotency_key(command.idempotency_key)
-                if (
-                    existing is not None
-                    and existing.status is not ActionStatus.FAILED
-                    and existing.request_hash != command.request_hash
-                ):
-                    # FAILED rows are audit, not a claim — a corrected retry must pass.
-                    raise IdempotencyConflictError(
-                        f"idempotency key {command.idempotency_key} was reused with "
-                        "a different request"
-                    )
-                existing_by_key[command.idempotency_key] = existing
-
-            guard = PermissionGuard(uow.connection)
-            for command, _handler in batch:
-                guard.assert_allowed(
-                    command.policy_version,
-                    command.action_type,
-                    command.actor_role,
-                )
-
-            outcomes: list[ActionOutcome] = []
-            for command, handler in batch:
-                existing = existing_by_key[command.idempotency_key]
-                if existing is not None and existing.status is not ActionStatus.FAILED:
-                    outcomes.append(ActionRepository.to_outcome(existing))
-                    continue
-                if existing is not None:
-                    uow.actions.release_failed_idempotency_key(
-                        command.idempotency_key,
-                        existing.action_id,
-                    )
-
-                uow.actions.insert_accepted(command)
-                result_refs = tuple(handler(uow, command))
-                committed_at = datetime.now(UTC).isoformat()
-                uow.actions.mark_committed(command.action_id, result_refs, committed_at)
-                uow.outbox.append_for_action(
-                    command,
-                    ActionStatus.COMMITTED,
-                    result_refs,
-                    committed_at,
-                )
-                outcomes.append(
-                    ActionOutcome(
-                        action_id=command.action_id,
-                        action_type=command.action_type,
-                        status=ActionStatus.COMMITTED,
-                        result_refs=result_refs,
-                        committed_at=committed_at,
-                    )
-                )
-        return tuple(outcomes)
-
-    @staticmethod
-    def _assert_distinct_batch_keys(batch: tuple[ActionBatchItem, ...]) -> None:
-        seen: set[str] = set()
-        for command, _handler in batch:
-            if command.idempotency_key in seen:
-                raise IdempotencyConflictError(
-                    f"duplicate idempotency key {command.idempotency_key} in Action batch"
-                )
-            seen.add(command.idempotency_key)
 
     def _lookup(self, idempotency_key: str):
         with self._unit_of_work_factory() as uow:
