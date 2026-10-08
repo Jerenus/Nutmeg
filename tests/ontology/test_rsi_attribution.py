@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from typer.testing import CliRunner
 
 from nutmeg.interfaces.cli import app
@@ -14,6 +15,7 @@ from nutmeg.ontology.actions.rsi_actions import (
     RsiActions,
 )
 from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.repository import schema_rsi as sr
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.migrations import MIGRATIONS, run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -90,7 +92,9 @@ def test_three_human_actions_persist_acted_by(tmp_path: Path):
 
     with OntologyUnitOfWork(engine) as uow:
         assert uow.rsi.experiment("F2").acted_by == "Jun Zheng"
-        assert uow.rsi.amendments("F2")[0].acted_by == "Jun Zheng"
+        assert uow.connection.execute(
+            select(sr.rsi_amendments.c.acted_by).where(sr.rsi_amendments.c.exp_id == "F2")
+        ).scalar_one() == "Jun Zheng"
         assert uow.rsi.latest_deployment("F2").acted_by == "Jun Zheng"
 
 

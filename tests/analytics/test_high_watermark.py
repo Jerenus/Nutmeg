@@ -2,8 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from nutmeg.analytics.high_watermark import high_watermark
-from nutmeg.ontology.actions.budget_actions import BudgetActions, ChangeBudgetPolicyRequest
-from nutmeg.ontology.actions.models import ActorRole
+from nutmeg.ontology.actions.models import ActionCommand, ActorRole
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.paths import OntologyPaths
 from nutmeg.ontology.repository.connection import build_ontology_engine
@@ -15,11 +14,12 @@ def test_watermark_monotonic(tmp_path: Path) -> None:
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine)
     before = high_watermark(engine)
-    BudgetActions(ActionService(lambda: OntologyUnitOfWork(engine))).change_budget_policy(
-        ChangeBudgetPolicyRequest(
-            channel="jczq", total_cap=400.0, bucket_caps={}, policy_version="budget-v1",
-            actor_id="op", actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key="bp:1",
-            requested_at=datetime(2026, 7, 19, tzinfo=UTC)))
+    ActionService(lambda: OntologyUnitOfWork(engine)).execute(
+        ActionCommand.create(
+            action_type="ingest_artifact", actor_id="source:test",
+            actor_role=ActorRole.CONNECTOR, idempotency_key="hw:1", payload={},
+            requested_at=datetime(2026, 7, 19, tzinfo=UTC)),
+        lambda _uow, _command: ())
     assert high_watermark(engine) > before
 
 

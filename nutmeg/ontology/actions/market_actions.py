@@ -45,14 +45,7 @@ class MarketActions:
                 for quote in request.quotes
             ],
         }
-        command = ActionCommand.create(
-            action_type='build_market_snapshot',
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload=payload,
-            requested_at=request.requested_at,
-        )
+        command = ActionCommand.for_request('build_market_snapshot', request, payload)
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
             quote_ids: list[str] = []

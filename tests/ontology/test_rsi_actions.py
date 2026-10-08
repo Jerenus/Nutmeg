@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import func, select
 
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.rsi_actions import (
@@ -16,6 +17,7 @@ from nutmeg.ontology.actions.rsi_actions import (
     ScheduleDutiesRequest,
 )
 from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.repository import schema_rsi as sr
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -95,7 +97,9 @@ def test_amend_appends_but_refuses_to_touch_frozen_fields(tmp_path):
             requested_at=T0, **HUMAN))
     with OntologyUnitOfWork(engine) as uow:
         assert uow.rsi.experiment("F2").falsifier["threshold_pp"] == 2.0   # 原件不变
-        assert len(uow.rsi.amendments("F2")) == 1
+        assert uow.connection.execute(
+            select(func.count()).select_from(sr.rsi_amendments)
+            .where(sr.rsi_amendments.c.exp_id == "F2")).scalar_one() == 1
 
 
 # ── Task 5: schedule / fulfill ────────────────────────────────────
@@ -115,9 +119,9 @@ def test_schedule_creates_one_instance_per_day_duty_and_is_idempotent(tmp_path):
     assert actions.schedule_duties(req).status is ActionStatus.COMMITTED
     assert actions.schedule_duties(req).status is ActionStatus.COMMITTED   # 幂等重放
     with OntologyUnitOfWork(engine) as uow:
-        pend = uow.rsi.pending_duty_instances(day="2026-09-19", now="2026-09-18T20:00:00+08:00")
-        assert [(p.duty_id, p.issue, p.due_at) for p in pend] == [
-            ("F2:f2-observation", "26129", "2026-09-19T00:30:00+08:00")]
+        pend = uow.rsi.duty_instances_for_day("F2:f2-observation", "2026-09-19")
+        assert [(p.duty_id, p.issue, p.due_at, p.fulfilled_at) for p in pend] == [
+            ("F2:f2-observation", "26129", "2026-09-19T00:30:00+08:00", None)]
 
 
 def test_issue_schedule_binds_the_day_row_left_issueless_by_the_jczq_schedule(tmp_path):

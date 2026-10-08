@@ -1,10 +1,13 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import select
+
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.identity.models import EntityType
 from nutmeg.ontology.ingest.market_day import MarketDayIngestRequest
+from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 
@@ -37,7 +40,10 @@ def test_full_day_has_no_null_identity_and_real_schedule(tmp_path: Path) -> None
             assert rev.schedule_status in {"scheduled", "unknown"}
             if rev.schedule_status == "scheduled":
                 assert rev.scheduled_at is not None       # never ingestion time
-            sides = uow.identity.appearance_sides(match_id)
+            sides = dict(uow.connection.execute(
+                select(si.team_appearances.c.side, si.team_appearances.c.team_id)
+                .where(si.team_appearances.c.match_id == match_id)
+            ).all())
             assert set(sides) == {"home", "away"}
             for team_id in sides.values():
                 assert team_id is not None                 # no silent null identity

@@ -3,15 +3,10 @@ from pathlib import Path
 
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.decision import ForecastRevisionRow
-from nutmeg.ontology.repository.finance import (
-    BetLegRow,
-    CashAccountRow,
-    CashTransactionRow,
-    FinanceRepository,
-    TicketRow,
-)
+from nutmeg.ontology.repository.finance import CashTransactionRow, FinanceRepository
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
+from tests.ontology.ticket_seed import Leg, ledger_balance, seed_account, seed_ticket
 
 
 def _prepare(tmp_path: Path):
@@ -32,24 +27,20 @@ def _prepare(tmp_path: Path):
     return engine, now
 
 
-def test_ledger_and_legs(tmp_path: Path) -> None:
+def test_ticket_reads_and_cash_ledger(tmp_path: Path) -> None:
     engine, now = _prepare(tmp_path)
+    seed_account(engine)
+    ticket_id = seed_ticket(engine, [Leg("match-1", "fr-1", stake=100.0, entry_odds=None)],
+                            at=now)
     with OntologyUnitOfWork(engine) as uow:
         repo: FinanceRepository = uow.finance
-        repo.ensure_account(CashAccountRow(
-            account_id="acct-jczq", channel_scope="jczq", currency="CNY", status="active"))
-        repo.insert_ticket(TicketRow(
-            ticket_id="tk-1", channel="jczq", proposal_id=None, approved_at=now, status="approved",
-            structure="single", total_stake=100.0, currency="CNY", account_id="acct-jczq"))
-        repo.insert_bet_leg(BetLegRow(
-            bet_leg_id="bl-1", ticket_id="tk-1", forecast_revision_id="fr-1", match_id="match-1",
-            market_definition_id="md-had", selection_id="sel-had-home", entry_quote_id=None,
-            line=None, stake_share=100.0))
         repo.insert_cash_transaction(CashTransactionRow(
-            transaction_id="cx-1", account_id="acct-jczq", ticket_id="tk-1",
-            ticket_settlement_id=None, kind="stake", amount=-100.0, occurred_at=now,
-            idempotency_key="stake:tk-1"))
+            transaction_id="cx-adj", account_id="acct-jczq", ticket_id=None,
+            ticket_settlement_id=None, kind="adjustment", amount=5.0, occurred_at=now,
+            idempotency_key="adj:1"))
     with OntologyUnitOfWork(engine) as uow:
         assert uow.finance.count_tickets() == 1
-        assert uow.finance.bet_leg_ids("tk-1") == ("bl-1",)
-        assert uow.finance.ledger_balance("acct-jczq") == -100.0
+        assert uow.finance.tickets_for_match("match-1") == (ticket_id,)
+        [leg] = uow.finance.bet_legs_for(ticket_id)
+        assert leg.forecast_revision_id == "fr-1" and leg.stake_share == 100.0
+    assert ledger_balance(engine) == -95.0

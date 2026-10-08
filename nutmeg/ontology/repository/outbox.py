@@ -1,11 +1,10 @@
 """Durable Action event outbox with monotonically increasing cursors."""
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from uuid import uuid4
 
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, func, insert, select
 
 from nutmeg.ontology.actions.models import (
     ActionCommand,
@@ -14,6 +13,7 @@ from nutmeg.ontology.actions.models import (
     canonical_json,
 )
 from nutmeg.ontology.repository import schema_workflow as sw
+from nutmeg.ontology.repository.rows import from_row
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,59 +84,6 @@ class OutboxRepository:
         ).scalar_one()
         return int(value or 0)
 
-    def consumer_cursor(self, consumer_name: str) -> int:
-        name = consumer_name.strip()
-        if not name:
-            raise ValueError("consumer_name is required")
-        value = self._connection.execute(
-            select(sw.operator_projection_cursors.c.last_sequence).where(
-                sw.operator_projection_cursors.c.consumer_name == name
-            )
-        ).scalar_one_or_none()
-        return int(value or 0)
-
-    def advance_consumer_cursor(
-        self,
-        consumer_name: str,
-        *,
-        expected_sequence: int,
-        next_sequence: int,
-        updated_at: str,
-    ) -> None:
-        name = consumer_name.strip()
-        if not name:
-            raise ValueError("consumer_name is required")
-        if expected_sequence < 0 or next_sequence < expected_sequence:
-            raise ValueError("consumer cursor must advance monotonically")
-        result = self._connection.execute(
-            update(sw.operator_projection_cursors)
-            .where(
-                sw.operator_projection_cursors.c.consumer_name == name,
-                sw.operator_projection_cursors.c.last_sequence == expected_sequence,
-            )
-            .values(last_sequence=next_sequence, updated_at=updated_at)
-        )
-        if result.rowcount == 1:
-            return
-        if expected_sequence != 0 or self.consumer_cursor(name) != 0:
-            raise ValueError("consumer cursor changed concurrently")
-        self._connection.execute(
-            insert(sw.operator_projection_cursors).values(
-                consumer_name=name,
-                last_sequence=next_sequence,
-                updated_at=updated_at,
-            )
-        )
-
     @staticmethod
     def _to_row(row) -> OutboxEventRow:
-        return OutboxEventRow(
-            sequence=row['sequence'],
-            event_id=row['event_id'],
-            action_id=row['action_id'],
-            topic=row['topic'],
-            object_type=row['object_type'],
-            object_id=row['object_id'],
-            payload=json.loads(row['payload_json']),
-            occurred_at=row['occurred_at'],
-        )
+        return from_row(OutboxEventRow, row, ('payload',))

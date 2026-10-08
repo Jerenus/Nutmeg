@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from sqlalchemy import select
+
+from nutmeg.ontology.repository import schema_market as sm
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.market import MarketRepository, QuoteRow, SnapshotRow
 from nutmeg.ontology.repository.migrations import run_migrations
@@ -34,7 +37,10 @@ def test_insert_quote_and_snapshot_links(tmp_path: Path) -> None:
     with OntologyUnitOfWork(engine) as uow:
         assert uow.market.count_quotes() == 1
         assert uow.market.count_snapshots() == 1
-        assert uow.market.snapshot_quote_ids("s1") == ("q1",)
+        assert uow.connection.execute(
+            select(sm.market_snapshot_quotes.c.quote_id).where(
+                sm.market_snapshot_quotes.c.market_snapshot_id == "s1")
+        ).scalars().all() == ["q1"]
         assert uow.market.snapshot_exists_for("s1", "match-1", "md-had") is True
         assert uow.market.snapshot_id_for_source(
             "match-1", "md-had", "read_time", "sporttery"

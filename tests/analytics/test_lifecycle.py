@@ -1,17 +1,18 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import insert
+
 from nutmeg.analytics.lifecycle import compute_lifecycle_proposal_rows
-from nutmeg.ontology.actions.factor_actions import ApplyFactorStatusRequest, FactorActions
 from nutmeg.ontology.actions.forecast_actions import (
     CommitForecastRequest,
     FactorInput,
     ForecastActions,
 )
-from nutmeg.ontology.actions.models import ActionStatus, ActorRole
+from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.actions.service import ActionService
+from nutmeg.ontology.repository import schema_decision as sd
 from nutmeg.ontology.repository.connection import build_ontology_engine
-from nutmeg.ontology.repository.decision import FactorDefinitionRow, FactorFamilyRow
 from nutmeg.ontology.repository.finance import OutcomeRow
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -21,12 +22,15 @@ PRIOR = {"home": 0.5, "draw": 0.3, "away": 0.2}
 
 
 def _seed_probation_factor(engine) -> None:
-    with OntologyUnitOfWork(engine) as uow:
-        uow.decision.insert_factor_family(FactorFamilyRow("ff-rest", "rest", None))
-        uow.decision.insert_factor_definition(FactorDefinitionRow(
-            factor_definition_id="fd-good", factor_family_id="ff-rest", version=1, name="rest edge",
-            definition=None, scope=None, status="probation", born_from_refs=[],
-            valid_from=T.isoformat(), valid_to=None, policy_version="governance-v1"))
+    # factor families/definitions have no kernel writer any more; seed rows directly
+    with engine.begin() as connection:
+        connection.execute(insert(sd.factor_families).values(
+            factor_family_id="ff-rest", name="rest", definition=None))
+        connection.execute(insert(sd.factor_definitions).values(
+            factor_definition_id="fd-good", factor_family_id="ff-rest", version=1,
+            name="rest edge", definition=None, scope=None, status="probation",
+            born_from_refs_json="[]", valid_from=T.isoformat(), valid_to=None,
+            policy_version="governance-v1"))
 
 
 def _commit_win(svc, engine, match, key, oid):
@@ -46,7 +50,7 @@ def _commit_win(svc, engine, match, key, oid):
             recorded_at=T.isoformat(), supersedes_outcome_id=None))
 
 
-def test_lifecycle_proposes_but_action_applies(tmp_path: Path) -> None:
+def test_lifecycle_proposes_without_applying(tmp_path: Path) -> None:
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine)
     _seed_probation_factor(engine)
@@ -61,16 +65,3 @@ def test_lifecycle_proposes_but_action_applies(tmp_path: Path) -> None:
 
     with OntologyUnitOfWork(engine) as uow:
         assert uow.decision.factor_status("fd-good") == "probation"   # projector changed nothing
-
-    factor_actions = FactorActions(svc)
-    denied = factor_actions.apply_factor_status(ApplyFactorStatusRequest(
-        factor_definition_id="fd-good", target_status="active", actor_id="ai",
-        actor_role=ActorRole.AI_ANALYST, idempotency_key="a:d", requested_at=T))
-    assert denied.status is ActionStatus.REJECTED
-
-    applied = factor_actions.apply_factor_status(ApplyFactorStatusRequest(
-        factor_definition_id="fd-good", target_status="active", actor_id="op",
-        actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key="a:1", requested_at=T))
-    assert applied.status is ActionStatus.COMMITTED
-    with OntologyUnitOfWork(engine) as uow:
-        assert uow.decision.factor_status("fd-good") == "active"

@@ -1,13 +1,13 @@
 """RSI 实验对象仓库；状态由 projection 函数从事实记录计算。"""
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
 
 from sqlalchemy import Connection, delete, func, insert, select, update
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository import schema_rsi as sr
+from nutmeg.ontology.repository.rows import from_row
 from nutmeg.ontology.rsi.models import window_contains
 
 
@@ -165,29 +165,11 @@ class RsiRepository:
 
     @staticmethod
     def _experiment_row(r) -> ExperimentRow:
-        rs = r["replay_spec_json"]
-        return ExperimentRow(
-            exp_id=r["exp_id"],
-            claim=r["claim"],
-            mechanism=r["mechanism"],
-            tier=r["tier"],
-            layer=r["layer"],
-            population=r["population"],
-            min_tier=r["min_tier"],
-            window=json.loads(r["window_json"]),
-            falsifier=json.loads(r["falsifier_json"]),
-            stop_rule=r["stop_rule"],
-            quota_slot=bool(r["quota_slot"]),
-            buckets=json.loads(r["buckets_json"]),
-            rule_ids=json.loads(r["rule_ids_json"]),
-            replay_spec=None if rs is None else json.loads(rs),
-            dream_ref=r["dream_ref"],
-            variants_tried=r["variants_tried"],
-            source_doc=r["source_doc"],
-            registered_at=r["registered_at"],
-            frozen_hash=r["frozen_hash"],
-            created_at=r["created_at"],
-            acted_by=r["acted_by"],
+        return from_row(
+            ExperimentRow,
+            r,
+            ("window", "falsifier", "buckets", "rule_ids", "replay_spec"),
+            quota_slot=bool,
         )
 
     # ── duties ───────────────────────────────────────────────────
@@ -227,20 +209,7 @@ class RsiRepository:
             .mappings()
             .all()
         )
-        return [
-            DutyRow(
-                duty_id=r["duty_id"],
-                exp_id=r["exp_id"],
-                recurrence=r["recurrence"],
-                scope=r["scope"],
-                deadline_rule=r["deadline_rule"],
-                instrument=json.loads(r["instrument_json"]),
-                artifact_glob=r["artifact_glob"],
-                description=r["description"],
-                status=r["status"],
-            )
-            for r in rows
-        ]
+        return [from_row(DutyRow, r, ("instrument",)) for r in rows]
 
     def all_duties(self) -> list[DutyRow]:
         rows = self._c.execute(select(sr.rsi_duties.c.exp_id)).scalars().all()
@@ -321,26 +290,6 @@ class RsiRepository:
             )
         )
 
-    def pending_duty_instances(self, *, day: str, now: str) -> list[DutyInstanceRow]:
-        """当天还没落、且还没过期的义务。"""
-        t, d = sr.rsi_duty_instances, sr.rsi_duties
-        rows = (
-            self._c.execute(
-                select(t)
-                .select_from(t.join(d, t.c.duty_id == d.c.duty_id))
-                .where(
-                    t.c.day == day,
-                    t.c.fulfilled_at.is_(None),
-                    t.c.due_at > now,
-                    d.c.status == "active",
-                )
-                .order_by(t.c.due_at, t.c.duty_id)
-            )
-            .mappings()
-            .all()
-        )
-        return [DutyInstanceRow(**dict(r)) for r in rows]
-
     def day_scoped_days_for_issue(self, duty_id: str, issue: str) -> list[str]:
         """某期号绑定的日级义务排在哪些业务日（match_id 为空的行）。"""
         t = sr.rsi_duty_instances
@@ -416,10 +365,7 @@ class RsiRepository:
         )
         if r is None:
             return None
-        d = dict(r)
-        d["judgment_tier_hist"] = json.loads(d.pop("judgment_tier_hist_json"))
-        d["prospective"] = bool(d["prospective"])
-        return ObservationRow(**d)
+        return from_row(ObservationRow, r, ("judgment_tier_hist",), prospective=bool)
 
     def observations(self, exp_id: str) -> list[ObservationRow]:
         t = sr.rsi_observations
@@ -539,9 +485,7 @@ class RsiRepository:
         )
         if r is None:
             return None
-        d = dict(r)
-        d["criterion_snapshot"] = json.loads(d.pop("criterion_snapshot_json"))
-        return VerdictRow(**d)
+        return from_row(VerdictRow, r, ("criterion_snapshot",))
 
     def insert_deployment(self, row: DeploymentRow) -> None:
         self._c.execute(insert(sr.rsi_deployments).values(**asdict(row)))
@@ -562,11 +506,3 @@ class RsiRepository:
     def insert_amendment(self, row: AmendmentRow) -> None:
         self._c.execute(insert(sr.rsi_amendments).values(**asdict(row)))
 
-    def amendments(self, exp_id: str) -> list[AmendmentRow]:
-        t = sr.rsi_amendments
-        rows = (
-            self._c.execute(select(t).where(t.c.exp_id == exp_id).order_by(t.c.amended_at))
-            .mappings()
-            .all()
-        )
-        return [AmendmentRow(**dict(r)) for r in rows]

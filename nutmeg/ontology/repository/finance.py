@@ -1,65 +1,19 @@
-"""Finance & outcome persistence: budget, tickets, legs, ledger, outcomes, settlements.
+"""Finance & outcome persistence: ticket reads, cash ledger, outcomes, settlements.
 
-Cash transactions store a **signed** amount (stake negative, payout positive), so
-``ledger_balance`` is a plain SUM. Match outcomes are versioned; a correction adds
-a version. Settlements are written only when an outcome exists.
+Cash transactions store a **signed** amount (stake negative, payout positive).
+Match outcomes are versioned; a correction adds a version. Settlements are written
+only when an outcome exists. Tickets are no longer booked by the kernel (the
+propose/approve Actions were retired 2026-10-08); existing tickets still settle.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 from sqlalchemy import Connection, func, insert, select
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository import schema_finance as sf
-
-
-@dataclass(frozen=True, slots=True)
-class CashAccountRow:
-    account_id: str
-    channel_scope: str
-    currency: str
-    status: str
-
-
-@dataclass(frozen=True, slots=True)
-class BudgetPolicyRow:
-    budget_policy_id: str
-    policy_version: str
-    channel: str
-    total_cap: float
-    bucket_caps: dict[str, float]
-    status: str
-    effective_at: str
-    created_at: str
-
-
-@dataclass(frozen=True, slots=True)
-class ProposalRow:
-    proposal_id: str
-    decision_session_id: str | None
-    policy_version: str
-    proposed_legs: list[dict[str, object]]
-    proposed_stake: float
-    status: str
-    created_at: str
-
-
-@dataclass(frozen=True, slots=True)
-class TicketRow:
-    ticket_id: str
-    channel: str
-    proposal_id: str | None
-    approved_at: str
-    status: str
-    structure: str
-    total_stake: float
-    currency: str
-    account_id: str
-    ticket_kind: str | None = None
-    stake_minor: int | None = None
-    fixed_prize_policy_revision_id: str | None = None
+from nutmeg.ontology.repository.rows import from_row
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,112 +85,6 @@ class FinanceRepository:
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
 
-    def ensure_account(self, row: CashAccountRow) -> None:
-        existing = self._connection.execute(
-            select(sf.cash_accounts.c.account_id).where(
-                sf.cash_accounts.c.account_id == row.account_id
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            return
-        self._connection.execute(
-            insert(sf.cash_accounts).values(
-                account_id=row.account_id, channel_scope=row.channel_scope,
-                currency=row.currency, status=row.status,
-            )
-        )
-
-    def account(self, account_id: str) -> CashAccountRow | None:
-        row = (
-            self._connection.execute(
-                select(sf.cash_accounts).where(
-                    sf.cash_accounts.c.account_id == account_id
-                )
-            )
-            .mappings()
-            .first()
-        )
-        return None if row is None else CashAccountRow(**dict(row))
-
-    def insert_budget_policy(self, row: BudgetPolicyRow) -> None:
-        self._connection.execute(
-            insert(sf.budget_policies).values(
-                budget_policy_id=row.budget_policy_id, policy_version=row.policy_version,
-                channel=row.channel, total_cap=row.total_cap,
-                bucket_caps_json=canonical_json(row.bucket_caps), status=row.status,
-                effective_at=row.effective_at, created_at=row.created_at,
-            )
-        )
-
-    def active_budget_policy(self, channel: str) -> BudgetPolicyRow | None:
-        row = (
-            self._connection.execute(
-                select(sf.budget_policies)
-                .where(sf.budget_policies.c.channel == channel,
-                       sf.budget_policies.c.status == 'active')
-                .order_by(sf.budget_policies.c.effective_at.desc())
-                .limit(1)
-            )
-            .mappings()
-            .first()
-        )
-        if row is None:
-            return None
-        return BudgetPolicyRow(
-            budget_policy_id=row['budget_policy_id'], policy_version=row['policy_version'],
-            channel=row['channel'], total_cap=row['total_cap'],
-            bucket_caps=json.loads(row['bucket_caps_json']), status=row['status'],
-            effective_at=row['effective_at'], created_at=row['created_at'],
-        )
-
-    def insert_proposal(self, row: ProposalRow) -> None:
-        self._connection.execute(
-            insert(sf.ticket_proposals).values(
-                proposal_id=row.proposal_id, decision_session_id=row.decision_session_id,
-                policy_version=row.policy_version,
-                proposed_legs_json=canonical_json(row.proposed_legs),
-                proposed_stake=row.proposed_stake, status=row.status, created_at=row.created_at,
-            )
-        )
-
-    def insert_ticket(self, row: TicketRow) -> None:
-        self._connection.execute(
-            insert(sf.tickets).values(
-                ticket_id=row.ticket_id, channel=row.channel, proposal_id=row.proposal_id,
-                approved_at=row.approved_at, status=row.status, structure=row.structure,
-                total_stake=row.total_stake, currency=row.currency, account_id=row.account_id,
-                ticket_kind=row.ticket_kind, stake_minor=row.stake_minor,
-                fixed_prize_policy_revision_id=row.fixed_prize_policy_revision_id,
-            )
-        )
-
-    def ticket(self, ticket_id: str) -> TicketRow | None:
-        row = (
-            self._connection.execute(
-                select(sf.tickets).where(sf.tickets.c.ticket_id == ticket_id)
-            )
-            .mappings()
-            .first()
-        )
-        return None if row is None else TicketRow(**dict(row))
-
-    def insert_bet_leg(self, row: BetLegRow) -> None:
-        self._connection.execute(
-            insert(sf.bet_legs).values(
-                bet_leg_id=row.bet_leg_id, ticket_id=row.ticket_id,
-                forecast_revision_id=row.forecast_revision_id, match_id=row.match_id,
-                market_definition_id=row.market_definition_id, selection_id=row.selection_id,
-                entry_quote_id=row.entry_quote_id, line=row.line, stake_share=row.stake_share,
-                entry_odds=row.entry_odds,
-            )
-        )
-
-    def bet_leg_ids(self, ticket_id: str) -> tuple[str, ...]:
-        rows = self._connection.execute(
-            select(sf.bet_legs.c.bet_leg_id).where(sf.bet_legs.c.ticket_id == ticket_id)
-        ).scalars().all()
-        return tuple(rows)
-
     def bet_legs_for(self, ticket_id: str) -> list[BetLegRow]:
         rows = (
             self._connection.execute(
@@ -245,16 +93,7 @@ class FinanceRepository:
             .mappings()
             .all()
         )
-        return [
-            BetLegRow(
-                bet_leg_id=r['bet_leg_id'], ticket_id=r['ticket_id'],
-                forecast_revision_id=r['forecast_revision_id'], match_id=r['match_id'],
-                market_definition_id=r['market_definition_id'], selection_id=r['selection_id'],
-                entry_quote_id=r['entry_quote_id'], line=r['line'], stake_share=r['stake_share'],
-                entry_odds=r['entry_odds'],
-            )
-            for r in rows
-        ]
+        return [from_row(BetLegRow, r) for r in rows]
 
     def tickets_for_match(self, match_id: str) -> tuple[str, ...]:
         rows = self._connection.execute(
@@ -272,26 +111,6 @@ class FinanceRepository:
                 currency=row.currency,
             )
         )
-
-    def cash_transaction(self, transaction_id: str) -> CashTransactionRow | None:
-        row = (
-            self._connection.execute(
-                select(sf.cash_transactions).where(
-                    sf.cash_transactions.c.transaction_id == transaction_id
-                )
-            )
-            .mappings()
-            .first()
-        )
-        return None if row is None else CashTransactionRow(**dict(row))
-
-    def ledger_balance(self, account_id: str) -> float:
-        value = self._connection.execute(
-            select(func.sum(sf.cash_transactions.c.amount)).where(
-                sf.cash_transactions.c.account_id == account_id
-            )
-        ).scalar_one_or_none()
-        return float(value) if value is not None else 0.0
 
     def insert_outcome(self, row: OutcomeRow) -> None:
         self._connection.execute(
@@ -325,13 +144,7 @@ class FinanceRepository:
         )
         if row is None:
             return None
-        return OutcomeRow(
-            outcome_id=row['outcome_id'], match_id=row['match_id'], version=row['version'],
-            score_90=row['score_90'], score_aet=row['score_aet'], penalties=row['penalties'],
-            status=row['status'],
-            source_artifact_retrieval_ids=json.loads(row['source_artifact_retrieval_ids_json']),
-            recorded_at=row['recorded_at'], supersedes_outcome_id=row['supersedes_outcome_id'],
-        )
+        return from_row(OutcomeRow, row, ('source_artifact_retrieval_ids',))
 
     def insert_bet_leg_settlement(self, row: BetLegSettlementRow) -> None:
         self._connection.execute(
