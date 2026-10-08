@@ -709,6 +709,15 @@ def ops_status(
                     f"票 {slip.get('slip_id')} 已登记，official-results 无该期 —— "
                     "重跑 `nutmeg zucai-official --issue " + issue + "`",
                 ))
+    deadcode = Path(data_dir) / "analytics" / "deadcode" / "latest.json"
+    if deadcode.exists():
+        summary = _json.loads(deadcode.read_text("utf-8"))
+        if summary.get("candidates"):
+            pending.append(PendingItem(
+                "死代码周报", str(summary.get("day")),
+                f"{summary['candidates']} 个候选 / {summary['lines']} 行 → "
+                f"analytics/deadcode/{summary.get('report')}（删前照 10-03 审计 §7 核对）",
+            ))
     _cli.typer.echo(format_status(
         agents, jobs, pending, today=_datetime.now().date()
     ))

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nutmeg.ops.deadcode</string>
+  <!-- 死代码周报（Jun 2026-10-08「做成每周一份报告，只报告不拦截」）：每周一 09:20，
+       静态分析代码树，只写 .nutmeg-data/analytics/deadcode/<日>.md 与 latest.json，不推送。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; /opt/homebrew/bin/uv run python scripts/deadcode_report.py --out /Users/jz71/Projects/Nutmeg/.nutmeg-data/analytics/deadcode &amp;&amp; echo "NUTMEG_OK deadcode $(date +%F)" || { echo "NUTMEG_FAILED deadcode $(date +%F)"; exit 1; }</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>9</integer>
+    <key>Minute</key><integer>20</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/ops.deadcode.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/ops.deadcode.err.log</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/jz71/Projects/Nutmeg</string>
+</dict>
+</plist>

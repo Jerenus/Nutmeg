@@ -144,7 +144,7 @@ flowchart TB
 
 ### 2.1 定时任务
 
-launchd **13 个**（plist 单一来源 `ops/launchd/`，装载副本在 `~/Library/LaunchAgents/`），OpenClaw **3 个**确定性任务仍在用。
+launchd **14 个**（plist 单一来源 `ops/launchd/`，装载副本在 `~/Library/LaunchAgents/`），OpenClaw **3 个**确定性任务仍在用。
 
 ```mermaid
 %%{init: {"theme": "base", "themeCSS": ".grid .tick line { stroke: #E2E8F0; } .grid path { stroke: none; } .sectionTitle { font-weight: 600; }", "themeVariables": {"fontSize": "14px", "taskBkgColor": "#F3E8FF", "taskBorderColor": "#9333EA", "doneTaskBkgColor": "#E0F2FE", "doneTaskBorderColor": "#0284C7", "activeTaskBkgColor": "#CCFBF1", "activeTaskBorderColor": "#0D9488", "critBkgColor": "#FFE4E6", "critBorderColor": "#E11D48", "taskTextColor": "#0F172A", "taskTextDarkColor": "#0F172A", "taskTextOutsideColor": "#0F172A", "taskTextLightColor": "#0F172A", "sectionBkgColor": "#F8FAFC", "altSectionBkgColor": "#FFFFFF", "sectionBkgColor2": "#F8FAFC", "gridColor": "#E2E8F0", "titleColor": "#0F172A", "todayLineColor": "transparent"}, "gantt": {"barHeight": 18, "barGap": 6, "topPadding": 40, "leftPadding": 96, "fontSize": 13, "sectionFontSize": 14}}}%%
@@ -177,7 +177,7 @@ gantt
   OpenClaw D1D2 补结算                       :crit, e4, 12:30, 10m
 ```
 
-*图 2　每日定时任务时序（不含每 10 分钟的截止播报、每小时的义务巡检与每月 1 日的账房月报）。*
+*图 2　每日定时任务时序（不含每 10 分钟的截止播报、每小时的义务巡检、每月 1 日的账房月报与每周一的死代码周报）。*
 
 | 定时器 | 时刻 | 命令 | 喂给谁 | 断流后果 |
 |---|---|---|---|---|
@@ -192,6 +192,7 @@ gantt
 | `day.broadcast` | 每 10 分 | `day run --job broadcast` | Jun（Telegram） | 截止无人提醒（26130 复发） |
 | `rsi.sweep` | 每小时 :00 | `rsi sweep` | F5 / F9 / R0 / R1 的前瞻观察义务 | 加场日义务过期成缺口，不能回补 |
 | `account.month` | 每月 1 日 16:10 | `account month --previous --write` | 账房月报 | 月报缺席（可手跑） |
+| `ops.deadcode` | 每周一 09:20 | `python scripts/deadcode_report.py` → `analytics/deadcode/<日>.md` | 工程（`ops-status` 待办行） | 死代码又会攒到上千行才被看见（可手跑） |
 
 **OpenClaw 在用**（2026-10-01 起只保留确定性任务，GPT 平行判断链全部停用）：08:10 `decision-settle` 昨日内核结算；12:30 D1/D2 补结算（预演）+ `build-context`（只写当日板面上下文）；17:15 `run-strict --stage am` 临场刷板。
 
@@ -642,6 +643,12 @@ flowchart TB
 
 *图 11　工程流程：从问题到证据，再同步到规则、文档与记忆。*
 
+- **写代码的四条纪律**（2026-10-08，取自 Karpathy 编码准则，按本项目改写）：
+  1. **先想清楚**：动手前写下假设和验收标准；有歧义时按人性博弈自行定案并写明理由（Jun 10-06），只有真正属于 Jun 的决定才停下来问。
+  2. **最少代码**：只做被要求的；只用一次的东西不抽象；不加没人用的开关和参数；不为不可能的情况写防御，但旁路失败必须可见（`⚠️` 行或日志），不许静默吞掉。**同一推导只许一处实现**（§1 模块表的「共享」行），`tests/test_single_source.py` 守卫：第二份副本在提交时就失败。
+  3. **精准修改**：每一行改动都能追溯到任务；自己改动造成的孤儿当场删；顺手看到的无关死代码不顺手删，留给死代码周报和瘦身任务。
+  4. **以验证收尾**：任务先改写成可检验的标准（测试先行）；行为改变在沙盒副本上做前后对比，数字写进提交信息；跑 `/verify` 再提交。
+- **死代码周报**：每周一 09:20 `scripts/deadcode_report.py` 从现役入口走 import 图，列出走不到的模块、无引用和只有测试在用的定义，只报告不拦截；有候选时 `ops-status` 待办里出现一行。
 - **验证**：`make verify`（ruff + compileall + pytest）；全量约 3 分钟；提交前看真实退出码，不用 `| tail` 吞掉它。
 - **提交**：只用显式路径 `git add <path>`，绝不 `-A/-u`；实验输出文件由 10:45 闭环自动提交（`--no-verify`，只提交 `experiments/` 三个文件）。
 - **定时器**：plist 单一来源 `ops/launchd/`；新增或退役必须同一提交更新 `day_runs.JOBS`（运行记录页的证据来源）、本文 2.1 与 `docs/ops/2026-09-20-scheduled-dataflows.md`。
@@ -718,3 +725,4 @@ flowchart TB
 | v1.2 | 2026-10-05 | 过度设计审计瘦身（第 0–4 波）：内核路径写死（删 `ontology_v2` 开关与 v1 JSONL 动词路径）；删旧版服务层、机器构票工具（`zucai-candidates`/`zucai-optimize`/`zucai-ticket`/`plan *`）、operator 与受保护票代码（表留空）；Dream/Discovery 退役，规则 v3 迁入 gym（`--belief read`）；RSI 闭环 12→9 步；launchd 14→13；命令 143→77，`nutmeg/` 116,572→59,784 行。审计门、裁决单、zucai 账本、记分牌权威命令与研究入库拒收逻辑未动 |
 | v1.3 | 2026-10-07 | 新增 3.4 人群层（官方奖金反推人群偏离、CR 假说、线索与人群地图，图 6；原图 6–10 顺延为 7–11）；总图加 zgzcw 源与人群层节点；定时任务表、实验清单、运行文件、文档地图、术语表同步 |
 | v1.4 | 2026-10-08 | 第二轮瘦身：共享模块行（赛果 / 每场行 / 面 / 去水 / 抓取只许一处实现）；`jczq.research` 末步改 `research refresh`；内核结算赛果改 `jc-results`；图 7 登记簿不再写内核；通知账本；内核表族注明已删代码的空表；证据链 10-08 行；文档地图加 RULEBOOK 归档与深研流程；`nutmeg/` 61,871→50,629 行、256 模块 |
+| v1.5 | 2026-10-08 | §9 加写代码四条纪律（Karpathy 编码准则按本项目改写）与单一来源守卫测试；新增定时器 `ops.deadcode`（每周一死代码周报，launchd 13→14） |

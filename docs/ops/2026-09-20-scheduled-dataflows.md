@@ -1,7 +1,7 @@
 # Nutmeg 定时数据流与断流后果（2026-09-20 立，2026-10-02 更新）
 
 > 运行权威是 `~/Library/LaunchAgents/com.nutmeg.*.plist` 与 `launchctl list`；plist 单一来源 `ops/launchd/`。
-> 2026-10-05：launchd **13 个**（2026-10-04 退役 `day.dream`，Dream 规则 v3 改由 `gym run --policy jczq_rule_v3 --belief read` 回放；2026-10-02 新增 `account.month`、退役 `zucai.f2-observe`），OpenClaw 仍在用 **3 个**确定性任务。
+> 2026-10-08：launchd **14 个**（新增每周一的 `ops.deadcode` 死代码周报；2026-10-04 退役 `day.dream`，Dream 规则 v3 改由 `gym run --policy jczq_rule_v3 --belief read` 回放；2026-10-02 新增 `account.month`、退役 `zucai.f2-observe`），OpenClaw 仍在用 **3 个**确定性任务。
 > 结构总图与每日时序图见 `docs/ARCHITECTURE.md` §2。新增或退役定时器必须同一提交更新本页、`docs/ARCHITECTURE.md` §2 与运行记录页登记表 `nutmeg/decision/day_runs.py:JOBS`。
 
 ## launchd
@@ -21,6 +21,7 @@
 | `com.nutmeg.day.broadcast` | 每 10 分 | `day run --job broadcast`：截止前 30 / 10 分钟 Telegram。**2026-10-02 起只提醒两类**：足彩在售期停售前仍无登记实票；竞彩预审过方案却未登记（截止＝预审腿最早开球）。每次现算 | Jun | 截止无人提醒（26130 复发） |
 | `com.nutmeg.rsi.sweep` | 每小时 :00 | `rsi sweep`：兑现到期的观察义务（只认 active 义务） | F5 / F9 / R0 / R1 | 加场日义务过期成缺口，不能回补 |
 | `com.nutmeg.account.month` | 每月 1 日 16:10 | `account month --previous --write` → `analytics/account/<上月>.md` | Jun（月报） | 月报缺席（可手跑） |
+| `com.nutmeg.ops.deadcode` | 每周一 09:20 | `python scripts/deadcode_report.py` → `analytics/deadcode/<日>.md` + `latest.json` | 工程（`ops-status` 待办行；不推送） | 死代码重新堆积到上千行才被发现（可手跑） |
 
 ## OpenClaw（确定性任务，GPT 判断链 2026-10-01 已停用）
 

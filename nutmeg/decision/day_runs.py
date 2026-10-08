@@ -246,6 +246,18 @@ def _account_runs(data_dir: Path, day: str) -> list[Run]:
                 evidence=_rel(report, data_dir))]
 
 
+def _deadcode_runs(data_dir: Path, day: str) -> list[Run]:
+    """死代码周报的证据：`analytics/deadcode/<day>.md` 在这一天写出。"""
+    report = data_dir / "analytics" / "deadcode" / f"{day}.md"
+    try:
+        head = report.read_text(encoding="utf-8").splitlines()[2]
+    except (OSError, IndexError):
+        return []
+    at = datetime.fromtimestamp(report.stat().st_mtime).strftime("%H:%M")
+    return [Run(at=at, status="ok", summary=head.strip("*")[:120],
+                evidence=_rel(report, data_dir))]
+
+
 def _verdict_runs(data_dir: Path, day: str) -> list[Run]:
     log = data_dir / "jczq" / "daily" / day / "verdict-log.jsonl"
     try:
@@ -300,6 +312,9 @@ JOBS: dict[str, JobSpec] = {
         "月初账房", "system", "每月 1 日出上个月的账：净值 vs 空仓、止损、偏离、判断力指标",
         lambda data_dir, day: _account_runs(data_dir, day),
         since=lambda _data_dir: "2026-10-02"),
+    "com.nutmeg.ops.deadcode": JobSpec(
+        "死代码周报", "system", "每周一列出走不到的模块、无引用和只有测试在用的定义（只报告）",
+        _deadcode_runs, since=lambda _data_dir: "2026-10-12"),
 }
 
 
