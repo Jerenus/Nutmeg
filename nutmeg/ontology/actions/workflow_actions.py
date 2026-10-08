@@ -135,7 +135,7 @@ class WorkflowActions:
         action_id: str | None = None,
     ) -> ActionBatchItem:
         """Build an adjudication operation without opening a transaction."""
-        command = self._command(
+        command = ActionCommand.for_request(
             'record_adjudication',
             request,
             {
@@ -169,7 +169,7 @@ class WorkflowActions:
         action_id: str | None = None,
     ) -> ActionBatchItem:
         """Build a prediction operation without opening a transaction."""
-        command = self._command(
+        command = ActionCommand.for_request(
             'register_prediction',
             request,
             {
@@ -203,7 +203,7 @@ class WorkflowActions:
         return command, handler
 
     def grade_prediction(self, request: GradePredictionRequest) -> ActionOutcome:
-        command = self._command(
+        command = ActionCommand.for_request(
             'grade_prediction',
             request,
             {
@@ -235,21 +235,3 @@ class WorkflowActions:
     @staticmethod
     def _at(request) -> str:
         return request.requested_at.astimezone(UTC).isoformat()
-
-    @staticmethod
-    def _command(
-        action_type: str,
-        request,
-        payload: dict[str, object],
-        *,
-        action_id: str | None = None,
-    ) -> ActionCommand:
-        return ActionCommand.create(
-            action_type=action_type,
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload=payload,
-            requested_at=request.requested_at,
-            action_id=action_id,
-        )

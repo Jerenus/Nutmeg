@@ -90,24 +90,15 @@ class OutcomeActions:
         self._action_service = action_service
 
     def record_outcome(self, request: RecordOutcomeRequest) -> ActionOutcome:
-        return self._write_outcome(request, 'record_outcome', correcting=False)
-
-    def _write_outcome(
-        self, request: RecordOutcomeRequest, action_type: str, correcting: bool
-    ) -> ActionOutcome:
-        command = ActionCommand.create(
-            action_type=action_type,
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload={'match_id': request.match_id, 'score_90': request.score_90},
-            requested_at=request.requested_at,
+        command = ActionCommand.for_request(
+            'record_outcome',
+            request,
+            {'match_id': request.match_id, 'score_90': request.score_90},
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
             at = request.requested_at.astimezone(UTC).isoformat()
             version = uow.finance.max_outcome_version(request.match_id) + 1
-            supersedes = None
             outcome_id = mint_finance_id('mo')
             uow.finance.insert_outcome(
                 OutcomeRow(
@@ -120,7 +111,7 @@ class OutcomeActions:
                     status=request.status,
                     source_artifact_retrieval_ids=request.source_artifact_retrieval_ids,
                     recorded_at=at,
-                    supersedes_outcome_id=supersedes,
+                    supersedes_outcome_id=None,
                 )
             )
             return (ObjectRef('match_outcome', outcome_id),)
@@ -128,13 +119,10 @@ class OutcomeActions:
         return self._action_service.execute(command, handler)
 
     def settle_ticket(self, request: SettleTicketRequest) -> SettleTicketResult:
-        command = ActionCommand.create(
-            action_type='settle_ticket',
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload={'ticket_id': request.ticket_id, 'match_id': request.match_id},
-            requested_at=request.requested_at,
+        command = ActionCommand.for_request(
+            'settle_ticket',
+            request,
+            {'ticket_id': request.ticket_id, 'match_id': request.match_id},
         )
         settled_flag = {'value': False}
 

@@ -105,14 +105,9 @@ class ArtifactIngestService:
                     f'{sorted(overlap)}'
                 )
             payload.update(payload_extension)
-        command = ActionCommand.create(
-            action_type='ingest_artifact',
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload=payload,
-            requested_at=request.retrieved_at,
-            action_id=action_id,
+        command = ActionCommand.for_request(
+            'ingest_artifact', request, payload,
+            requested_at=request.retrieved_at, action_id=action_id,
         )
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:

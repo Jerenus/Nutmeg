@@ -96,28 +96,7 @@ class ForecastActions:
         _validate_forecast(
             request.prior_distribution, request.belief_distribution, request.factors
         )
-        command = ActionCommand.create(
-            action_type='draft_forecast',
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload={
-                'match_id': request.match_id,
-                'market_definition_id': request.market_definition_id,
-                'commitment_tier': request.commitment_tier,
-                'prior_distribution': request.prior_distribution,
-                'belief_distribution': request.belief_distribution,
-                'factors': [_factor_payload(factor) for factor in request.factors],
-                'evidence_bundle_id': request.evidence_bundle_id,
-                'prior_snapshot_id': request.prior_snapshot_id,
-                'information_cutoff_at': request.information_cutoff_at,
-                'falsifier': request.falsifier,
-                'kind': request.kind,
-                'board_key': request.board_key,
-            },
-            requested_at=request.requested_at,
-            expected_versions=_forecast_expected_versions(request),
-        )
+        command = _forecast_command('draft_forecast', request)
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
             series_id = uow.decision.ensure_series(
@@ -144,28 +123,7 @@ class ForecastActions:
         _validate_forecast(
             request.prior_distribution, request.belief_distribution, request.factors
         )
-        command = ActionCommand.create(
-            action_type='commit_forecast',
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload={
-                'match_id': request.match_id,
-                'market_definition_id': request.market_definition_id,
-                'commitment_tier': request.commitment_tier,
-                'prior_distribution': request.prior_distribution,
-                'belief_distribution': request.belief_distribution,
-                'factors': [_factor_payload(factor) for factor in request.factors],
-                'evidence_bundle_id': request.evidence_bundle_id,
-                'prior_snapshot_id': request.prior_snapshot_id,
-                'information_cutoff_at': request.information_cutoff_at,
-                'falsifier': request.falsifier,
-                'kind': request.kind,
-                'board_key': request.board_key,
-            },
-            requested_at=request.requested_at,
-            expected_versions=_forecast_expected_versions(request),
-        )
+        command = _forecast_command('commit_forecast', request)
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
             return (
@@ -281,6 +239,28 @@ def _insert_factor_applications(uow, revision_id: str, factors: list[FactorInput
                 note=factor.note,
             )
         )
+
+
+def _forecast_command(action_type: str, request) -> ActionCommand:
+    """Draft and commit share one payload (the request hash covers it)."""
+    payload = {
+        'match_id': request.match_id,
+        'market_definition_id': request.market_definition_id,
+        'commitment_tier': request.commitment_tier,
+        'prior_distribution': request.prior_distribution,
+        'belief_distribution': request.belief_distribution,
+        'factors': [_factor_payload(factor) for factor in request.factors],
+        'evidence_bundle_id': request.evidence_bundle_id,
+        'prior_snapshot_id': request.prior_snapshot_id,
+        'information_cutoff_at': request.information_cutoff_at,
+        'falsifier': request.falsifier,
+        'kind': request.kind,
+        'board_key': request.board_key,
+    }
+    return ActionCommand.for_request(
+        action_type, request, payload,
+        expected_versions=_forecast_expected_versions(request),
+    )
 
 
 def _factor_payload(factor: FactorInput) -> dict[str, object]:

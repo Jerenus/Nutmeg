@@ -55,14 +55,7 @@ class EntityActions:
             'provider': request.provider,
             'external_id': request.external_id,
         }
-        command = ActionCommand.create(
-            action_type='upsert_provisional_entity',
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload=payload,
-            requested_at=request.requested_at,
-        )
+        command = ActionCommand.for_request('upsert_provisional_entity', request, payload)
 
         def handler(uow, _command) -> tuple[ObjectRef, ...]:
             resolution = resolve_entity(
