@@ -15,7 +15,6 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = ROOT / ".nutmeg-data" / "jczq"
-DEFAULT_LOG_DIR = ROOT / ".nutmeg-data" / "logs"
 DEFAULT_OPERATION_STATE_FILE = ROOT / ".nutmeg-data" / "state" / "scheduler-operation-events.json"
 
 
@@ -34,31 +33,6 @@ def _read_json(path: Path) -> Any:
         raise SchedulerError(f"missing file: {path}") from exc
     except json.JSONDecodeError as exc:
         raise SchedulerError(f"invalid JSON: {path}: {exc}") from exc
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            value = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise SchedulerError(f"invalid JSONL: {path}:{number}: {exc}") from exc
-        if isinstance(value, dict):
-            rows.append(value)
-    return rows
-
-
-def _date_from_value(value: Any) -> str:
-    text = str(value or "")
-    return text[:10] if len(text) >= 10 else ""
-
-
-def _mean(values: list[float]) -> float | None:
-    return round(sum(values) / len(values), 4) if values else None
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -138,7 +112,7 @@ def run_strict(
             print(f"NUTMEG_OK stage={stage} run_date={run_date} "
                   "empty_board（体彩无在售场次：假期或尚未开售，合法空盘）")
             return
-        build_context(run_date, output_dir, DEFAULT_LOG_DIR)
+        build_context(run_date, output_dir)
     except Exception as exc:
         error = exc if isinstance(exc, SchedulerError) else SchedulerError(str(exc))
         _record_operation_failure(stage, run_date, _safe_summary(str(error)), operation_state_file)
@@ -149,38 +123,18 @@ def run_strict(
     print(f"NUTMEG_OK stage={stage} run_date={run_date}")
 
 
-def build_context(run_date: str, output_dir: Path, log_dir: Path) -> Path:
+def build_context(run_date: str, output_dir: Path) -> Path:
+    """当日板面上下文 ``daily/<日>/scheduler-context.json``（17:15 run-strict 与 OpenClaw
+    08:10 / 12:30 命令作业都会重写；``day_runs`` 只读它的 ``generated_at``）。
+
+    2026-10-08：删掉「昨日」整块——它聚合的 reads/tickets/settlements.jsonl 最后一行停在
+    08-24（结算早已在内核，昨日结算看 ``decision-report-v2-<昨日>.md``），settle 日志与
+    calibration-panel 也都没有写入者了，十月里每天都是 0 / 空串 / 七月的旧日志尾巴。
+    """
     previous_date = (date.fromisoformat(run_date) - timedelta(days=1)).isoformat()
     decision_dir = output_dir / "decision"
     day_dir = output_dir / "daily" / run_date
     day_dir.mkdir(parents=True, exist_ok=True)
-
-    reads = _read_jsonl(decision_dir / "reads.jsonl")
-    tickets = _read_jsonl(decision_dir / "tickets.jsonl")
-    settlements = _read_jsonl(decision_dir / "settlements.jsonl")
-    ref_dates: dict[str, str] = {}
-    for row in reads:
-        match_date = str(row.get("match_id", ""))[2:12]
-        ref_dates[str(row.get("read_id", ""))] = match_date
-    for row in tickets:
-        ref_dates[str(row.get("ticket_id", ""))] = _date_from_value(row.get("made_at"))
-
-    previous_settlements = [
-        row for row in settlements
-        if ref_dates.get(str(row.get("ref_id", ""))) == previous_date
-    ]
-    brier_values = [
-        float(row["brier"]) for row in previous_settlements
-        if isinstance(row.get("brier"), (int, float))
-    ]
-    clv_values = [
-        float(row["clv_pp"]) for row in previous_settlements
-        if isinstance(row.get("clv_pp"), (int, float))
-    ]
-    pnl_values = [
-        float(row["pnl_yuan"]) for row in previous_settlements
-        if isinstance(row.get("pnl_yuan"), (int, float))
-    ]
 
     markets_path = day_dir / "sporttery_markets.json"
     markets = _read_json(markets_path) if markets_path.exists() else {}
@@ -222,37 +176,12 @@ def build_context(run_date: str, output_dir: Path, log_dir: Path) -> Path:
     except Exception as exc:  # noqa: BLE001 — 上下文构建永不因附加信息失败
         print(f"NUTMEG_CONTEXT_WARN entity_profiles_unavailable={exc}", file=sys.stderr)
 
-    settle_out = log_dir / "decision.settle.out.log"
-    settle_err = log_dir / "decision.settle.err.log"
-    settle_lines = settle_out.read_text(encoding="utf-8", errors="replace").splitlines()[-40:] \
-        if settle_out.exists() else []
-    error_text = settle_err.read_text(encoding="utf-8", errors="replace")[-4000:] \
-        if settle_err.exists() else ""
-    calibration_path = decision_dir / f"calibration-panel-{previous_date}.md"
-    calibration = calibration_path.read_text(encoding="utf-8", errors="replace")[-16000:] \
-        if calibration_path.exists() else ""
     regime_path = day_dir / "day-regime.json"
 
     context = {
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "run_date": run_date,
         "previous_date": previous_date,
-        "previous_day": {
-            "settlement_count": len(previous_settlements),
-            "read_settlement_count": sum(
-                row.get("ref_type") == "read" for row in previous_settlements
-            ),
-            "ticket_settlement_count": sum(
-                row.get("ref_type") == "ticket" for row in previous_settlements
-            ),
-            "average_brier": _mean(brier_values),
-            "average_clv_pp": _mean(clv_values),
-            "clv_observation_count": len(clv_values),
-            "ticket_pnl_yuan": round(sum(pnl_values), 2),
-            "settle_log_tail": settle_lines,
-            "settle_error_tail": error_text,
-            "calibration_panel": calibration,
-        },
         "current_day": {
             "day_regime": _read_json(regime_path) if regime_path.exists() else None,
             "market_last_update": (
@@ -377,7 +306,6 @@ def _parser() -> argparse.ArgumentParser:
 
     context = subparsers.add_parser("build-context")
     context.add_argument("--run-date")
-    context.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIR)
     return parser
 
 
@@ -388,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.action == "run-strict":
             run_strict(args.stage, _run_date(args.run_date), output_dir)
         elif args.action == "build-context":
-            build_context(_run_date(args.run_date), output_dir, args.log_dir.resolve())
+            build_context(_run_date(args.run_date), output_dir)
     except SchedulerError as exc:
         print(f"NUTMEG_FAILED {exc}", file=sys.stderr)
         return 1

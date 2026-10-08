@@ -16,15 +16,17 @@ def _data(tmp_path: Path) -> Path:
     return data
 
 
-def test_day_run_brief_then_status_and_note(tmp_path: Path):
+def test_day_run_brief_records_timeline_then_note(tmp_path: Path):
+    from nutmeg.decision.day_timeline import read_timeline
+
     data = _data(tmp_path)
     result = runner.invoke(
         app, ["day", "run", "--job", "brief", "--date", "2026-09-23", "--data-dir", str(data)]
     )
     assert result.exit_code == 0, result.output
     assert "brief 0 场" in result.output
-    status = runner.invoke(app, ["day", "status", "--date", "2026-09-23", "--data-dir", str(data)])
-    assert status.exit_code == 0 and "brief" in status.output and "exit=0" in status.output
+    [row] = read_timeline(data, "2026-09-23")
+    assert row["job"] == "brief" and row["exit"] == 0
     note = runner.invoke(app, ["day", "note", "--date", "2026-09-23", "--data-dir", str(data),
                                "--text", "场1 想双选", "--obj", "周三001"])
     assert note.exit_code == 0

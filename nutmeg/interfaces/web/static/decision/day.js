@@ -100,7 +100,7 @@ window.Day = (function () {
 
   function renderSession(view) {
     var box = body("day-session"); box.innerHTML = "";
-    var cmd = "uv run nutmeg day status --date " + view.date + " && sed -n 1,60p .nutmeg-data/daily/" + view.date + "/session.md";
+    var cmd = "sed -n 1,60p .nutmeg-data/daily/" + view.date + "/session.md";
     var pre = el("pre", "day-pre", cmd); box.appendChild(pre);
     var btn = el("button", null, "复制"); btn.onclick = function () { navigator.clipboard && navigator.clipboard.writeText(cmd); };
     box.appendChild(btn);

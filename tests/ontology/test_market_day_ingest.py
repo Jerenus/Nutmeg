@@ -99,13 +99,13 @@ def test_sporttery_snapshot_as_of_is_retrieval_time_not_kickoff(tmp_path: Path) 
     assert snapshot_as_of == retrieved_at.isoformat()
     with OntologyUnitOfWork(kernel.engine) as uow:
         [match_id] = uow.identity.all_match_ids()
-    [timeline] = ProductReadRepository(kernel.engine).market_timeline(
-        match_id,
-        "md-had",
-        retrieved_at.isoformat(),
-    )
-    assert timeline["as_of"] == retrieved_at.isoformat()
-    assert {lineage["source_name"] for lineage in timeline["quote_lineage"]} == {"sporttery"}
+    repository = ProductReadRepository(kernel.engine)
+    latest = repository.latest_snapshot(match_id, "md-had", retrieved_at.isoformat())
+    assert latest is not None and latest["as_of"] == retrieved_at.isoformat()
+    # 截止时刻按瞬间比较，不按字符串：同一瞬间写成 +08:00 也要取到这条快照
+    same_instant_bj = "2026-07-19T16:00:00+08:00"
+    assert repository.latest_snapshot(match_id, "md-had", same_instant_bj) == latest
+    assert repository.latest_snapshot(match_id, "md-had", "2026-07-19T15:59:59+08:00") is None
 
 
 def test_unchanged_market_payload_records_a_new_retrieval_time(tmp_path: Path) -> None:
