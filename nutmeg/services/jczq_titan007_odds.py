@@ -28,7 +28,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
-from nutmeg.data.fcom500 import MarketOdds, _devig
+from nutmeg.data.fcom500 import MarketOdds
+from nutmeg.data.prices import devig_rounded
 from nutmeg.data.titan007 import Titan007BoardRow, Titan007BookQuote
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,7 @@ def _consensus_market(
     opening = {key: _avg(values) for key, values in opening_book.items()}
     return MarketOdds(
         odds=odds,
-        fair_probability=_devig(odds),
+        fair_probability=devig_rounded(odds),
         independent=True,
         bookmaker_count=len(chosen),
         opening_odds=opening,

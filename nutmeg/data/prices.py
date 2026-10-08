@@ -22,3 +22,18 @@ def devig(odds: dict) -> dict[str, float]:
     if total <= 0:
         return {}
     return {key: value / total for key, value in inverse.items()}
+
+
+def devig_rounded(odds: dict[str, float]) -> dict[str, float]:
+    """`devig` rounded to 6 dp for stored snapshots (`MarketOdds.fair_probability`).
+
+    The rounding delta is absorbed into the largest bucket so the result
+    sums to exactly 1.0 (mirrors ``dixon_coles._normalize_bucket_map``)."""
+    fair = {k: round(v, 6) for k, v in devig(odds).items()}
+    if not fair:
+        return {}
+    delta = round(1.0 - sum(fair.values()), 6)
+    if delta:
+        strongest = max(fair, key=fair.get)
+        fair[strongest] = round(fair[strongest] + delta, 6)
+    return fair

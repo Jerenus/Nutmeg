@@ -26,7 +26,7 @@ def _run_date(value: str | None) -> str:
     return value or date.today().isoformat()
 
 
-def _read_json(path: Path) -> Any:
+def _require_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -137,7 +137,7 @@ def build_context(run_date: str, output_dir: Path) -> Path:
     day_dir.mkdir(parents=True, exist_ok=True)
 
     markets_path = day_dir / "sporttery_markets.json"
-    markets = _read_json(markets_path) if markets_path.exists() else {}
+    markets = _require_json(markets_path) if markets_path.exists() else {}
     fixtures: list[dict[str, Any]] = []
     if isinstance(markets, dict):
         for group in markets.get("matchInfoList", []):
@@ -183,7 +183,7 @@ def build_context(run_date: str, output_dir: Path) -> Path:
         "run_date": run_date,
         "previous_date": previous_date,
         "current_day": {
-            "day_regime": _read_json(regime_path) if regime_path.exists() else None,
+            "day_regime": _require_json(regime_path) if regime_path.exists() else None,
             "market_last_update": (
                 markets.get("lastUpdateTime") if isinstance(markets, dict) else None
             ),
@@ -260,7 +260,7 @@ def _publish_operation_event(
 def _load_operation_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    value = _read_json(path)
+    value = _require_json(path)
     return value if isinstance(value, dict) else {}
 
 

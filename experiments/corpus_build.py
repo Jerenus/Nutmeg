@@ -354,10 +354,10 @@ def _rubric_answers(rubric: dict | None) -> dict | None:
 
 def _aware(value: str) -> datetime:
     """无时区一律按北京时间（足彩 kickoff_bj 是 `YYYY-MM-DD HH:MM`）。"""
-    from datetime import timedelta, timezone
+    from nutmeg.decision.bj_time import BJ
 
     dt = datetime.fromisoformat(value)
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone(timedelta(hours=8)))
+    return dt if dt.tzinfo else dt.replace(tzinfo=BJ)
 
 
 def _rubric_sidecar(path: str, *, kickoff_bj: str | None) -> dict | None:
@@ -799,7 +799,9 @@ def _quote_summary(series: dict[str, list[tuple[str, dict]]], kickoff: str | Non
         parsed = datetime.fromisoformat(value)
         if parsed.tzinfo:
             return parsed
-        return parsed.replace(tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Shanghai"))
+        from nutmeg.decision.bj_time import BJ
+
+        return parsed.replace(tzinfo=BJ)
 
     kick = _ts(kickoff) if kickoff else None
     summary: dict = {}

@@ -18,6 +18,7 @@ from nutmeg.decision.day_decisions import build_decisions, write_decisions
 from nutmeg.decision.day_paths import BRIEF, DECISIONS, RESULTS_90, RETRO, day_dir, zucai_dir
 from nutmeg.decision.day_session import render_session_md, write_session
 from nutmeg.decision.day_timeline import JobRecord, append_job, read_timeline
+from nutmeg.decision.files import read_json
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
 Now = Callable[[], datetime]
@@ -109,7 +110,8 @@ def _brief_pipeline(ctx: DayContext, with_logic: bool = False) -> str:
     else:
         from nutmeg.decision.brief_writer import carry_logic
 
-        brief = carry_logic(brief, _read_json(ctx.out_dir / BRIEF))
+        previous = read_json(ctx.out_dir / BRIEF)
+        brief = carry_logic(brief, previous if isinstance(previous, dict) else None)
     write_brief(ctx.data_dir, ctx.date, brief)
     timeline = read_timeline(ctx.data_dir, ctx.date)
     decisions = build_decisions(brief, timeline, data_dir=ctx.data_dir, now=ctx.now())
@@ -118,14 +120,6 @@ def _brief_pipeline(ctx: DayContext, with_logic: bool = False) -> str:
     n_open = sum(1 for d in decisions if d["status"] == "open" and not d.get("auto_default"))
     return (f"brief {brief['jczq']['counts']['matches']} 场 · 待人 {n_open} · "
             f"缺席输入 {len(brief['errors'])}")
-
-
-def _read_json(path: Path) -> dict | None:
-    try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return doc if isinstance(doc, dict) else None
 
 
 def _session_only(ctx: DayContext) -> tuple[str, int]:

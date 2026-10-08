@@ -27,7 +27,6 @@ from dataclasses import dataclass, field
 import httpx
 
 from nutmeg.data.http import BROWSER_UA, decode
-from nutmeg.data.prices import devig
 
 logger = logging.getLogger(__name__)
 
@@ -276,22 +275,6 @@ class MarketOdds:
     bookmaker_count: int = 0
     opening_odds: dict[str, float] = field(default_factory=dict)
     per_book_odds: dict[str, list[float]] = field(default_factory=dict)
-
-
-def _devig(odds: dict[str, float]) -> dict[str, float]:
-    """Normalize 1/odds to sum 1 — the same fair-probability convention as
-    ``OutcomeOddsSnapshot.fair_probability`` elsewhere in the codebase.
-
-    The 6-dp rounding delta is absorbed into the largest bucket so the result
-    sums to exactly 1.0 (mirrors ``dixon_coles._normalize_bucket_map``)."""
-    fair = {k: round(v, 6) for k, v in devig(odds).items()}
-    if not fair:
-        return {}
-    delta = round(1.0 - sum(fair.values()), 6)
-    if delta:
-        strongest = max(fair, key=fair.get)
-        fair[strongest] = round(fair[strongest] + delta, 6)
-    return fair
 
 
 # ---------------------------------------------------------------------------

@@ -24,16 +24,16 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from nutmeg.data.prices import devig
+
 Z = Path(".nutmeg-data/zucai")
 OUT = Z / "t7-dispersion.json"
 FACES = ("home", "draw", "away")
 
 
-def _devig(odds: dict[str, float]) -> dict[str, float]:
-    """单家报价去水（比例法）。与仓内全局口径一致：先取倒数再归一。"""
-    raw = {k: 1.0 / odds[k] for k in FACES}
-    s = sum(raw.values())
-    return {k: v / s for k, v in raw.items()}
+def _fair_3way(odds: dict[str, float]) -> dict[str, float]:
+    """单家报价去水：主 / 平 / 客三面交给仓内唯一实现。"""
+    return devig({k: odds[k] for k in FACES})
 
 
 def _kickoffs(issue: str) -> dict[str, datetime]:
@@ -54,7 +54,7 @@ def _consensus(quotes) -> dict[str, float] | None:
     if not quotes:
         return None
     odds = {k: statistics.fmean(q[k] for q in quotes) for k in FACES}
-    return _devig(odds)
+    return _fair_3way(odds)
 
 
 def _stats(probs: list[dict[str, float]]) -> dict:
@@ -153,8 +153,8 @@ def collect(sleep_s: float, limit: int | None, overwrite: bool = False,
                     "match_id": mid,
                     "kickoff": cutoff.isoformat() if cutoff else None,
                     "stale_dropped": stale,
-                    "current": _stats([_devig(q.current) for q in usable]),
-                    "opening": _stats([_devig(q.opening) for q in usable]),
+                    "current": _stats([_fair_3way(q.current) for q in usable]),
+                    "opening": _stats([_fair_3way(q.opening) for q in usable]),
                     "lag_hours_median": (statistics.median(lags) if lags else None),
                     "lag_hours_p90": (sorted(lags)[int(0.9 * len(lags))] if lags else None),
                     "consensus": {k: _consensus(v) for k, v in by_recency.items()},

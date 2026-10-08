@@ -15,11 +15,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from nutmeg.data.http import BROWSER_UA
 from nutmeg.data.prices import devig
 
 ZGZCW_URL = "https://cp.zgzcw.com/lottery/zcplayvs.action?lotteryId=13&issue={issue}"
-_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-       "(KHTML, like Gecko) Chrome/128.0 Safari/537.36")
 FACES = ("3", "1", "0")
 # zgzcw 的写法（2026-10-07 回填 26035–26135 全量核对）：国际友谊 / 世欧预 / 世界杯附 等。
 NATIONAL = frozenset({"友谊赛", "国际友谊", "国际赛", "欧国联", "世预赛", "世欧预", "欧预赛",
@@ -71,7 +70,7 @@ def board_path(zdir: Path, issue: str) -> Path:
 
 
 def _default_fetcher(url: str) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": _UA,
+    req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA,
                                                "Accept-Language": "zh-CN,zh;q=0.9"})
     with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 —— 固定 https 源
         return json.loads(resp.read().decode("utf-8"))

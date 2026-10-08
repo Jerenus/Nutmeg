@@ -22,6 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from nutmeg.data.prices import devig  # noqa: E402
 from nutmeg.ontology.ingest.sporttery import parse_sporttery_markets  # noqa: E402
 
 FACES = ("home", "draw", "away")
@@ -48,12 +49,6 @@ def board(day: str, data_dir: Path) -> dict:
                     table[m.match_no] = {"had": had, "league": m.league_name}
         _boards[day] = table
     return _boards[day]
-
-
-def devig(odds: dict) -> dict:
-    inv = {k: 1 / v for k, v in odds.items()}
-    s = sum(inv.values())
-    return {k: v / s for k, v in inv.items()}
 
 
 def boot_ci(values, n=2000):

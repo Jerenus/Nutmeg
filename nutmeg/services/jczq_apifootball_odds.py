@@ -32,7 +32,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from importlib import resources
 
-from nutmeg.data.fcom500 import MarketOdds, _devig
+from nutmeg.data.fcom500 import MarketOdds
+from nutmeg.data.prices import devig_rounded
 from nutmeg.domain.fixtures import Fixture
 from nutmeg.domain.odds import OddsProviderSnapshotFeed
 
@@ -220,7 +221,7 @@ def _match_winner_market(
     odds = {key: _avg(quotes) for key, quotes in per_book.items()}
     return MarketOdds(
         odds=odds,
-        fair_probability=_devig(odds),
+        fair_probability=devig_rounded(odds),
         independent=True,
         bookmaker_count=max(len(quotes) for quotes in per_book.values()),
         opening_odds={},  # 基础 /odds 无开赛前 opening；drift 对这些场降级为 0
@@ -248,7 +249,7 @@ def _over_under_market(feed: OddsProviderSnapshotFeed) -> MarketOdds | None:
         odds = {key: _avg(quotes) for key, quotes in per_book.items()}
         return MarketOdds(
             odds=odds,
-            fair_probability=_devig(odds),
+            fair_probability=devig_rounded(odds),
             independent=True,
             line=line,
             bookmaker_count=max(len(quotes) for quotes in per_book.values()),

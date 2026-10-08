@@ -17,9 +17,9 @@ import json
 from datetime import UTC, datetime, time, timedelta
 from datetime import date as _date
 from typing import Any, Protocol
-from zoneinfo import ZoneInfo
 
-_SHANGHAI = ZoneInfo("Asia/Shanghai")
+from nutmeg.decision.bj_time import BJ as _SHANGHAI
+
 _DEFAULT_MARKET = "md-had"
 _MARKET_LEGACY = {"md-had": "had", "md-hhad": "hhad", "md-ttg": "ttg", "md-crs": "crs"}
 

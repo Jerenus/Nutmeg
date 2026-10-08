@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
+from nutmeg.decision.faces import FACE_OF
+from nutmeg.decision.match_results import outcome_90
 from nutmeg.ontology.finance.models import SettlementGrade
 
 
 def _had_result_code(home_score: int, away_score: int) -> str:
-    if home_score > away_score:
-        return "home"
-    if home_score < away_score:
-        return "away"
-    return "draw"
+    return FACE_OF[outcome_90(home_score, away_score)]
 
 
 def grade_had(

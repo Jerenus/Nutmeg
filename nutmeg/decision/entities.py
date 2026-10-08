@@ -25,14 +25,14 @@ def slugify(name: str) -> str:
     return re.sub(r"[\W_]+", "-", (name or "").casefold(), flags=re.UNICODE).strip("-")
 
 
-def _load_json(resource: str) -> dict:
+def _load_resource(resource: str) -> dict:
     return json.loads(
         resources.files("nutmeg.data").joinpath(resource).read_text(encoding="utf-8")
     )
 
 
 def load_seed_entities() -> tuple[list[Team], list[League]]:
-    data = _load_json(_ENTITIES_RESOURCE)
+    data = _load_resource(_ENTITIES_RESOURCE)
     teams = [Team.from_dict(t) for t in data.get("teams") or []]
     leagues = [League.from_dict(lg) for lg in data.get("leagues") or []]
     return teams, leagues
@@ -46,7 +46,7 @@ def load_team_alias_table() -> dict[str, str]:
         for alias in [t.name_zh, t.name_en, *t.aliases]:
             if alias:
                 table.setdefault(norm_team(alias), t.team_id)
-    for zh, en in _load_json(_NATIONAL_RESOURCE).items():
+    for zh, en in _load_resource(_NATIONAL_RESOURCE).items():
         if zh.startswith("_"):
             continue                                 # "_comment" 注释键
         table.setdefault(norm_team(zh), slugify(en))

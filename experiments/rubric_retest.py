@@ -17,7 +17,7 @@ import json
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "experiments"))
 
 from corpus_build import _rubric_answers  # noqa: E402
 
+from nutmeg.decision.bj_time import BJ  # noqa: E402
 from nutmeg.decision.rsi_grading import grade_k1_prospective  # noqa: E402
 from nutmeg.decision.rubric_items import ITEMS  # noqa: E402
 from nutmeg.decision.rubric_reader import (  # noqa: E402
@@ -34,8 +35,6 @@ from nutmeg.decision.rubric_reader import (  # noqa: E402
     research_kickoff,
     sidecar_path,
 )
-
-_BJ = timezone(timedelta(hours=8))
 
 
 def _targets(data_dir: Path) -> list[Path]:
@@ -59,7 +58,7 @@ def _read_one(path: Path, data_dir: Path) -> dict:
     research = json.loads(path.read_text(encoding="utf-8"))
     b2 = read_rubric(research, kickoff=research_kickoff(path, research))
     return {"research": str(path.relative_to(data_dir)), "b2": b2,
-            "at": datetime.now(_BJ).isoformat(timespec="seconds")}
+            "at": datetime.now(BJ).isoformat(timespec="seconds")}
 
 
 def run(data_dir: Path, log: Path, *, limit: int | None, workers: int) -> None:

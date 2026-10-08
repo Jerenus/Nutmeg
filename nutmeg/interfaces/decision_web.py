@@ -149,9 +149,10 @@ def create_decision_app(*, output_dir, kernel_state=None,
     @app.get("/api/observe")
     def api_observe(as_of: str | None = None, day: str | None = None) -> dict:
         from datetime import datetime, timedelta
-        from zoneinfo import ZoneInfo
 
-        now_dt = datetime.now(ZoneInfo("Asia/Shanghai"))
+        from nutmeg.decision.bj_time import BJ
+
+        now_dt = datetime.now(BJ)
         now = as_of or now_dt.isoformat(timespec="seconds")
         today = day or now_dt.date().isoformat()
         tomorrow = (
@@ -193,9 +194,10 @@ def create_decision_app(*, output_dir, kernel_state=None,
     @app.get("/api/observe/exp/{exp_id}")
     def api_observe_exp(exp_id: str, as_of: str | None = None) -> list:
         from datetime import datetime
-        from zoneinfo import ZoneInfo
 
-        now = as_of or datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(
+        from nutmeg.decision.bj_time import BJ
+
+        now = as_of or datetime.now(BJ).isoformat(
             timespec="seconds"
         )
         errors: list[str] = []
