@@ -1,29 +1,17 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
 
-from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
-
-
-class OperatorSurfaceMode(StrEnum):
-    LEGACY_READ_ONLY = 'legacy_read_only'
-    SHADOW = 'shadow'
-    ACTIVE = 'active'
-
-
-class OperatorRuntimeScope(StrEnum):
-    PRODUCTION = 'production'
-    ISOLATED_CANDIDATE = 'isolated_candidate'
-
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 
 class AppSettings(BaseSettings):
+    # extra='ignore'：.env 里已退役的键（operator_* / langsmith / openai / psychology_* …，
+    # 2026-10-08 删除）照旧无害。
     model_config = SettingsConfigDict(
         env_file='.env',
         env_file_encoding='utf-8',
@@ -31,39 +19,12 @@ class AppSettings(BaseSettings):
         extra='ignore',
     )
 
-    app_name: str = 'nutmeg'
-    app_env: str = 'dev'
-    default_user_id: str = 'owner'
     data_dir: Path = Path('.nutmeg-data')
     production_data_dir: Path = Field(
         default_factory=lambda: (_SOURCE_ROOT / '.nutmeg-data').resolve()
     )
-    operator_surface_mode: OperatorSurfaceMode = OperatorSurfaceMode.LEGACY_READ_ONLY
-    operator_runtime_scope: OperatorRuntimeScope = OperatorRuntimeScope.PRODUCTION
-    operator_accepted_commit: str = ''
-    operator_token_signing_key: str | None = Field(default=None, repr=False)
-    telegram_update_owner: str = 'openclaw'
-    operator_scheduler_enabled: bool = False
     release_version: str = 'unreleased'
     candidate_commit: str = 'unresolved'
-    default_sync_days: int = 30
-    sync_timezone: str = 'UTC'
-    langsmith_enabled: bool = False
-    langsmith_project: str = 'nutmeg-local'
-    langsmith_api_key: str | None = Field(
-        default=None,
-        repr=False,
-        validation_alias=AliasChoices(
-            'LANGSMITH_API_KEY',
-            'NUTMEG_LANGSMITH_API_KEY',
-        ),
-    )
-    portkey_base_url: str = 'https://api.portkey.ai/v1'
-    portkey_api_key: str | None = Field(default=None, repr=False)
-    anthropic_model: str = 'claude-sonnet-4-5'
-    # 追问应答器的模型：None＝不传 --model，继承用户 Claude Code 当前默认模型。
-    # ⚠️别学 anthropic_model 写死 id——那个已经烂在一个过期型号上。
-    responder_model: str | None = None
     # 定时 claude -p 的模型分档（2026-09-23 Jun 裁定）：
     #   逻辑层只把卡片字段说成人话、cites 逐条校验兜底 → 便宜模型；
     #   深研产出 stance/tilt/falsifier，是判断层 → 空串＝不传 --model，
@@ -75,45 +36,11 @@ class AppSettings(BaseSettings):
     # 系统一读者（2026-10-02 判断 rubric）：只读研究文本、只回类型化问题的概率、不解释——
     # Jev 形状的任务，便宜模型即可；两读 kappa 与历史重打分都走它。
     model_reader: str = 'haiku'
-    agent_synthesis_enabled: bool = False
-    openai_base_url: str = 'https://api.openai.com/v1'
-    openai_api_key: str | None = Field(
-        default=None,
-        repr=False,
-        validation_alias=AliasChoices(
-            'OPENAI_API_KEY',
-            'NUTMEG_OPENAI_API_KEY',
-        ),
-    )
-    bot_llm_fallback_enabled: bool = False
-    bot_llm_fallback_model: str = 'gpt-5.5'
     api_football_base_url: str = 'https://v3.football.api-sports.io/'
     api_football_key: str | None = Field(default=None, repr=False)
-    odds_provider: str = 'api-football'
-    the_odds_api_base_url: str = 'https://api.the-odds-api.com/v4/'
-    the_odds_api_key: str | None = Field(default=None, repr=False)
-    open_meteo_geocoding_base_url: str = 'https://geocoding-api.open-meteo.com/v1/'
-    open_meteo_weather_base_url: str = 'https://api.open-meteo.com/v1/'
     telegram_api_base_url: str = 'https://api.telegram.org'
     telegram_bot_token: str | None = Field(default=None, repr=False)
     telegram_allowed_chat_ids: str | None = None
-    psychology_layer_enabled: bool = False
-    psychology_conviction_threshold: float = 0.7
-    psychology_provider_enabled: Annotated[list[str], NoDecode] = Field(default_factory=lambda: [
-        'tournament_stage',
-        'contrarian_narrative',
-        'reflexive_tactic',
-        'personal_narrative',
-    ])
-    psychology_news_cache_dir: str = '.nutmeg-data/cache/news'
-    psychology_rss_feeds: Annotated[list[str], NoDecode] = Field(default_factory=list)
-
-    @field_validator('psychology_provider_enabled', 'psychology_rss_feeds', mode='before')
-    @classmethod
-    def _csv_to_list(cls, value):
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(',') if item.strip()]
-        return value
 
     @field_validator('production_data_dir')
     @classmethod
@@ -121,10 +48,6 @@ class AppSettings(BaseSettings):
         if not value.is_absolute():
             raise ValueError('production_data_dir must be absolute')
         return value
-
-    @property
-    def project_root(self) -> Path:
-        return Path.cwd()
 
     @property
     def state_dir(self) -> Path:
@@ -145,10 +68,6 @@ class AppSettings(BaseSettings):
     @property
     def analytics_db_path(self) -> Path:
         return self.analytics_dir / 'analytics.duckdb'
-
-    @property
-    def analytics_db_url(self) -> str:
-        return f'duckdb:///{self.analytics_db_path.resolve()}'
 
     @property
     def ontology_dir(self) -> Path:
