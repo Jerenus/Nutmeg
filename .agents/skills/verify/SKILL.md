@@ -18,7 +18,7 @@ uv run pytest -q               # 期望 0 failed；全量约 3.5 分钟
 快验决策层用 pre-commit 同款子集：`uv run pytest tests/decision/ -q`。
 
 有 4 个用例读相对路径 `.nutmeg-data/`（`test_balance_ledger`、`test_rsi_population` 两个、
-`test_rsi_migrate_preregs`）。在 git worktree 里开发时，先建好第 2 节的沙盒，再
+`tests/decision/test_rsi_prereg.py` 的注册表用例——F13/F14 的 `source_doc` 指向 `.nutmeg-data/scoreboard.json`）。在 git worktree 里开发时，先建好第 2 节的沙盒，再
 `ln -s "$SB" .nutmeg-data`（目录已存在就先删掉它——那是命令自动建的空库）：测试和本地命令
 都只碰沙盒，绝不链到生产目录。
 

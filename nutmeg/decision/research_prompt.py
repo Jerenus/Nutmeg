@@ -24,14 +24,7 @@ RESEARCH_JSON_CONTRACT = """
  "schedule": {...}, "market_snapshot": {...},
  "stance": {"face": "3|1|0", "structure": "single|double|full", "cover": "3|1|0|null",
      "confidence": 1-5, "falsifier": "一句赛后可核验的作废条件",
-     "why_not_market": "none|tilt_evidence|structure",
-     "tilt": null | {"face": "3|1|0", "expires_if": str,
-         "evidence": [{"tier": "official|confirmed_structural|inferred|will",
-                       "kind": "absence_official|suspension|goalkeeper_change|"
-                               "anchor_integrity_fail|lineup_confirmed|venue_anomaly|"
-                               "precedent_carrier|rotation_confirmed|"
-                               "schedule_congestion|motivation_dead_rubber",
-                       "pp": 0-8, "source": str, "captured_at": "ISO"}]},
+     "why_not_market": "none|tilt_evidence|structure", "tilt": null,
      "alt_face": "3|1|0|null", "market_read": "agree|overpriced|underpriced|null"}}
 "strength_balance": {"verdict": "home_clear|home_edge|even|away_edge|away_clear",
   "home_state": str, "away_state": str, "style_matchup": str, "tactical_scenarios": [str],
@@ -39,18 +32,10 @@ RESEARCH_JSON_CONTRACT = """
                     "strength": "none|weak|real|strong"},
   "events": [{"event": str, "side": "home|away", "direction": "up|down",
               "grade": "minor|moderate|major", "pp": int, "priced_in": bool, "source": str}]}
-强弱天平必答（strength-v2）：判断目标是两队本场最终强度对比；赔率只作噪声识别与情绪参考，
-已被位移吸收的事件不重复计。
-underdog_path 的强度用 tilt/shift 落到概率上（认为被低估几 pp 就拨几 pp）；
-stance.structure 只是建议，票面结构由下游按判断概率在预算内决定（规则瘦身 2026-09-27）。
-tilt 可用多面 shift {"3":pp,"1":pp,"0":pp}（和为 0）；tier 另有 state（本场状态 0–3pp）。
-表态块必答：每场押一个面 + 一个表达档 + 一句作废条件；跟市场也要填（why_not_market=none）。
-结构优先（2026-10-01）：先把表态面集合（single/double/full）、三证、完整度、弱方路径判清——
-这是下游唯一按票面结账的判断（F14）。
-**stance.tilt 不用写（写 null）**：拨动由下面的 rubric 逐项派生（2026-10-02 判断 rubric r1），
-你给的是"这件事成立的概率 + 来源"，几个 pp 由代码按项目上限算、按结账调。
+**stance.tilt 不用写（写 null）**：拨动由下面的 rubric 逐项派生，why_not_market 由代码改标。
 stance.confidence 必须等于顶层 confidence。
-宣告 dead 必须三证 3/3；查无先例记 none，不得当 dead。数字只许引用简报给你的或你查到的实盘。
+宣告 dead 必须三证 3/3；查无先例记 none，不得当 dead。
+旗、crash_markers、先例状态只写封闭词典里的短名；叙述写进 summary，不写进标签位。
 hole_location 语义绑定：attack = 破门端（中锋/射手）缺；creation = 组织端（前腰/组织核）缺；
 spine = 后腰屏障格缺；defense = 中卫对缺；goalkeeper = 门将缺；
 both = 攻防两端同时缺（对称崩塌）；none = 无结构性洞。

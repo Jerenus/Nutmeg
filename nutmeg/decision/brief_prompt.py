@@ -6,13 +6,15 @@ from __future__ import annotations
 import json
 
 LOGIC_SYSTEM_PROMPT = """你是 Nutmeg 当日报告的撰稿人。你收到一场比赛的两层事实：
-事实层（market / strength / research / labels / audit）
-与判断层（read：judge、belief、prior、moved_pp、confidence；ladder：跟市场|偏移|翻面|未判）。
+事实层（market / strength / research / labels）
+与判断层（read：judge、belief、prior、moved_pp、confidence；stance：研究表态；
+ladder：跟市场|偏移|翻面|未判）。
 
 任务：用 3–6 句中文解释「这一场为什么落在这一格」，严格按宪法字典序复述：
 1. 事实层哪一条定了面（机制三态：face_status / anchor_integrity / death proofs / 先例 alive|dead）；
 2. P 层哪一条约束了结构（fair、位移、书商分歧、实力残差）；
-3. 表达阶梯落点（ladder）与三种默认表达的审计码（audit.naked/double/full 的 blocking）；
+3. 表达阶梯落点（ladder）与研究表态（stance：押哪一面、表达档）；审计码自 2026-09-27 起只记账、
+   不拦截任何票，不要写成「被拦」；
 4. 与市场分歧的是哪个因子，该因子在注册表里现在的状态（factors[].decision）。
 
 硬约束：
@@ -22,7 +24,7 @@ LOGIC_SYSTEM_PROMPT = """你是 Nutmeg 当日报告的撰稿人。你收到一�
 - 每一句必须能指回输入里的字段；cites 至少 3 条。输出 JSON：
   {"code": "<场次代码>", "logic": "<3–6 句>", "cites": ["<点路径>", ...]}
   点路径以输入 JSON 的键为准，例如 "market.drift_pp"、"read.moved_pp"、
-  "labels.anchor_integrity"、"audit.naked.blocking"、"factors.0.decision"。
+  "labels.anchor_integrity"、"ladder"、"factors.0.decision"。
 - 只输出 JSON，不要 Markdown 围栏，不要解释。"""
 
 
