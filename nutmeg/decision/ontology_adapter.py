@@ -10,6 +10,7 @@ every step, failures included.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -270,85 +271,6 @@ def _write_zucai_store_ids(kernel, issue: str, zucai_dir: Path) -> str:
     return write_store_ids(issue, zucai_dir, kernel)
 
 
-def _resolve_read_match_id(kernel, source_match_id: str, reads_file: Path) -> str | None:
-    """Resolve legacy decision IDs at the v1-to-kernel adapter boundary."""
-    from nutmeg.decision.identity import canonical_match_id
-    from nutmeg.ontology.identity.models import EntityType
-    from nutmeg.ontology.ingest.sporttery import parse_sporttery_markets
-    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-
-    with OntologyUnitOfWork(kernel.engine) as uow:
-        if source_match_id in uow.identity.all_match_ids():
-            return source_match_id
-        resolved = uow.identity.entity_by_external_id(
-            EntityType.MATCH,
-            provider="zucai-canonical",
-            external_id=source_match_id,
-        )
-    if resolved is not None:
-        return resolved
-
-    snapshot_path = reads_file.parent / "sporttery_markets.json"
-    if not snapshot_path.is_file():
-        return None
-    try:
-        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(snapshot, dict):
-        return None
-
-    for parsed in parse_sporttery_markets(snapshot, business_date=""):
-        business_date = parsed.business_date or reads_file.parent.name
-        if canonical_match_id(parsed.home_name, parsed.away_name, business_date) != source_match_id:
-            continue
-        with OntologyUnitOfWork(kernel.engine) as uow:
-            return uow.identity.entity_by_external_id(
-                EntityType.MATCH,
-                provider="sporttery",
-                external_id=parsed.external_id,
-            )
-    return None
-
-
-def _resolve_read_snapshot_id(
-    kernel,
-    source_snapshot_id: str,
-    match_id: str,
-    market_definition_id: str,
-) -> str | None:
-    from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
-
-    with OntologyUnitOfWork(kernel.engine) as uow:
-        if uow.market.snapshot_exists_for(
-            source_snapshot_id,
-            match_id,
-            market_definition_id,
-        ):
-            return source_snapshot_id
-
-    parts = source_snapshot_id.split("-", 4)
-    if len(parts) != 5 or parts[0] != "S":
-        return None
-    _prefix, snapshot_kind, legacy_provider, _match_no, _captured_at = parts
-    provider = {
-        "api-football": "intl",
-        "titan007": "intl",
-        "apifootball": "intl",
-        "intl": "intl",
-        "sporttery": "sporttery",
-    }.get(legacy_provider)
-    if provider is None:
-        return None
-    with OntologyUnitOfWork(kernel.engine) as uow:
-        return uow.market.snapshot_id_for_source(
-            match_id,
-            market_definition_id,
-            snapshot_kind,
-            provider,
-        )
-
-
 _ROUNDING_NOISE = 2e-3
 
 
@@ -367,14 +289,42 @@ def _renormalized(distribution):
     return {key: float(value) / total for key, value in distribution.items()}
 
 
-def run_decision_read_v2(reads_file, output_dir, *, kernel=None,
-                         idempotency_prefix: str = "read") -> str:
+@dataclass(frozen=True)
+class ReadSubmission:
+    """一批 Read 交内核的结构化回执：收下的 read_id、被拒的 (read_id, 原因)。
+
+    2026-10-08 B7：此前写临时文件 → 进程内跑 `decision-read` CLI → 从输出里解析「拒绝:」文本；
+    原因里带换行 / 分号就会漏判被拒的 Read（10-05 26135 场11 被拒却记成已交就是这条链）。"""
+
+    total: int
+    committed: tuple[str, ...]
+    rejected: tuple[tuple[str, str], ...]
+    dropped_factors: int = 0
+
+    def summary(self) -> str:
+        msg = f"decision-read-v2: 摄取 {len(self.committed)}/{self.total} 条 Read(kernel)"
+        if self.dropped_factors:
+            msg += f" | 旧式因子丢弃 {self.dropped_factors}"
+        if self.rejected:
+            msg += " | 拒绝: " + "; ".join(f"{rid}:{why}" for rid, why in self.rejected)
+        return msg
+
+
+def submit_reads(payloads: list[dict], *, kernel=None,
+                 idempotency_prefix: str = "read") -> ReadSubmission:
     """Commit each judged Read payload as a kernel ForecastRevision (no money, no push).
 
-    Read payloads carry kernel match ids + the market string. Old-style factors
-    (direction/weight_pp) cannot be replayed as per-outcome deltas, so the belief is
-    committed follow-market and the drop is counted, never faked; new-style factors that
-    carry a per-outcome ``delta`` reconstructing belief−prior are kept.
+    Read payloads carry kernel match ids (and, when present, a kernel market snapshot id) +
+    the market string; anything else is rejected (`unresolved_match` / `unresolved_snapshot`)
+    — the legacy canonical-id / `S-…` snapshot resolvers were removed 2026-10-08 (every Read
+    since 09-20 carries kernel ids). Old-style factors (direction/weight_pp) cannot be replayed
+    as per-outcome deltas, so the belief is committed follow-market and the drop is counted,
+    never faked; new-style factors that carry a per-outcome ``delta`` reconstructing
+    belief−prior are kept.
+
+    Kernel semantics unchanged: a Read with ``status == "draft"`` is an AI draft under its own
+    judge; anything else is committed as ``judge:owner`` (zucai machine Reads included — see the
+    2026-10-08 B2 note; changing it needs a separate sign-off).
     """
     from nutmeg.ontology.actions.forecast_actions import (
         CommitForecastRequest,
@@ -386,40 +336,30 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None,
     from nutmeg.ontology.actions.service import ActionService
     from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
-    reads_path = Path(reads_file)
-    payloads = json.loads(reads_path.read_text(encoding="utf-8"))
     active_kernel = kernel if kernel is not None else _default_kernel()
     forecasts = ForecastActions(ActionService(lambda: OntologyUnitOfWork(active_kernel.engine)))
+    with OntologyUnitOfWork(active_kernel.engine) as uow:
+        known_matches = set(uow.identity.all_match_ids())
 
-    committed = 0
+    committed: list[str] = []
     dropped_factors = 0
-    rejected: list[str] = []
+    rejected: list[tuple[str, str]] = []
     for payload in payloads:
         read_id = str(payload.get("read_id", ""))
         market = _MARKET_MAP.get(str(payload.get("market")))
         if market is None:
-            rejected.append(f"{read_id}:unmapped_market")
+            rejected.append((read_id, "unmapped_market"))
             continue
-        match_id = _resolve_read_match_id(
-            active_kernel,
-            str(payload.get("match_id") or ""),
-            reads_path,
-        )
-        if match_id is None:
-            rejected.append(f"{read_id}:unresolved_match")
+        match_id = str(payload.get("match_id") or "")
+        if match_id not in known_matches:
+            rejected.append((read_id, "unresolved_match"))
             continue
-        source_snapshot_id = str(payload.get("snapshot_id") or "")
-        prior_snapshot_id = None
-        if source_snapshot_id:
-            prior_snapshot_id = _resolve_read_snapshot_id(
-                active_kernel,
-                source_snapshot_id,
-                match_id,
-                market,
-            )
-            if prior_snapshot_id is None:
-                rejected.append(f"{read_id}:unresolved_snapshot")
-                continue
+        prior_snapshot_id = str(payload.get("snapshot_id") or "") or None
+        if prior_snapshot_id is not None:
+            with OntologyUnitOfWork(active_kernel.engine) as uow:
+                if not uow.market.snapshot_exists_for(prior_snapshot_id, match_id, market):
+                    rejected.append((read_id, "unresolved_snapshot"))
+                    continue
         prior = payload.get("prior")
         belief = payload.get("belief")
         if not any(isinstance(f, dict) and isinstance(f.get("delta"), dict)
@@ -468,19 +408,21 @@ def run_decision_read_v2(reads_file, output_dir, *, kernel=None,
                 )
             )
         except (ValueError, KeyError) as error:
-            rejected.append(f"{read_id}:{error}")
+            rejected.append((read_id, str(error)))
             continue
         if outcome.status.is_success:
-            committed += 1
+            committed.append(read_id)
         else:
-            rejected.append(f"{read_id}:{outcome.status.value}")
+            rejected.append((read_id, outcome.status.value))
+    return ReadSubmission(total=len(payloads), committed=tuple(committed),
+                          rejected=tuple(rejected), dropped_factors=dropped_factors)
 
-    msg = f"decision-read-v2: 摄取 {committed}/{len(payloads)} 条 Read(kernel)"
-    if dropped_factors:
-        msg += f" | 旧式因子丢弃 {dropped_factors}"
-    if rejected:
-        msg += " | 拒绝: " + "; ".join(rejected)
-    return msg
+
+def run_decision_read_v2(reads_file, output_dir, *, kernel=None,
+                         idempotency_prefix: str = "read") -> str:
+    """`decision-read --reads-file`（足彩手工 B4 路径仍用）：读文件 → `submit_reads` → 一行回执。"""
+    payloads = json.loads(Path(reads_file).read_text(encoding="utf-8"))
+    return submit_reads(payloads, kernel=kernel, idempotency_prefix=idempotency_prefix).summary()
 
 
 def _render_report_markdown(kernel, run_date: str, stage: str) -> str:

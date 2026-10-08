@@ -3,7 +3,11 @@ from pathlib import Path
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.identity import canonical_match_id
-from nutmeg.decision.ontology_adapter import run_decision_am_v2, run_decision_read_v2
+from nutmeg.decision.ontology_adapter import (
+    run_decision_am_v2,
+    run_decision_read_v2,
+    submit_reads,
+)
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 
@@ -91,47 +95,41 @@ def test_market_anchor_draft_uses_ai_draft_forecast(tmp_path: Path) -> None:
         assert uow.decision.max_revision_no(series_id) == 1
 
 
-def test_read_v2_resolves_legacy_canonical_match_id(tmp_path: Path) -> None:
+def test_read_v2_rejects_legacy_canonical_ids_and_snapshot_ids(tmp_path: Path) -> None:
+    """2026-10-08 B7：遗留 id 解析器删除——Read 只认内核 id（09-20 起 217/217 条都是）。"""
     kernel, match_id, output_dir = _kernel_with_match(tmp_path)
-    legacy_match_id = canonical_match_id("哈马比", "AIK", DATE)
-    reads = [{
-        "read_id": "r-legacy", "match_id": legacy_match_id, "snapshot_id": None,
-        "market": "had", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
-        "belief": {"home": 0.6, "draw": 0.25, "away": 0.15}, "factors": [],
-        "made_at": "2026-07-19T15:00:00+08:00",
-    }]
-    reads_file = output_dir / "daily" / DATE / "reads-canonical.json"
-    reads_file.write_text(json.dumps(reads), encoding="utf-8")
+    base = {"market": "had", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
+            "belief": {"home": 0.5, "draw": 0.3, "away": 0.2}, "factors": [],
+            "made_at": "2026-07-19T15:00:00+08:00"}
+    reads = [
+        {**base, "read_id": "r-canonical", "snapshot_id": None,
+         "match_id": canonical_match_id("哈马比", "AIK", DATE)},
+        {**base, "read_id": "r-legacy-snapshot", "match_id": match_id,
+         "snapshot_id": "S-read_time-sporttery-周日001-2026-07-19T15:00:00+08:00"},
+    ]
+    receipt = submit_reads(reads, kernel=kernel)
+    assert receipt.committed == ()
+    assert receipt.rejected == (("r-canonical", "unresolved_match"),
+                                ("r-legacy-snapshot", "unresolved_snapshot"))
+    assert kernel.status().forecast_count == 0
 
-    msg = run_decision_read_v2(reads_file, output_dir, kernel=kernel)
 
-    assert "摄取 1/1" in msg
+def test_submit_reads_accepts_a_kernel_snapshot_id(tmp_path: Path) -> None:
+    kernel, match_id, output_dir = _kernel_with_match(tmp_path)
     with OntologyUnitOfWork(kernel.engine) as uow:
-        [revision] = uow.decision.iter_committed_revisions()
-    assert revision.match_id == match_id
-
-
-def test_read_v2_resolves_legacy_prior_snapshot_id(tmp_path: Path) -> None:
-    kernel, match_id, output_dir = _kernel_with_match(tmp_path)
-    reads = [{
-        "read_id": "r-snapshot", "match_id": match_id,
-        "snapshot_id": "S-read_time-sporttery-周日001-2026-07-19T15:00:00+08:00",
+        snapshot_id = uow.connection.exec_driver_sql(
+            "SELECT market_snapshot_id FROM market_snapshots WHERE match_id = ? "
+            "AND market_definition_id = 'md-had' LIMIT 1", (match_id,)).fetchone()[0]
+    receipt = submit_reads([{
+        "read_id": "r-snapshot", "match_id": match_id, "snapshot_id": snapshot_id,
         "market": "had", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2},
         "belief": {"home": 0.5, "draw": 0.3, "away": 0.2}, "factors": [],
-        "made_at": "2026-07-19T15:00:00+08:00",
-    }]
-    reads_file = output_dir / "daily" / DATE / "reads-snapshot.json"
-    reads_file.write_text(json.dumps(reads), encoding="utf-8")
-
-    msg = run_decision_read_v2(reads_file, output_dir, kernel=kernel)
-
-    assert "摄取 1/1" in msg
+        "made_at": "2026-07-19T15:00:00+08:00"}], kernel=kernel)
+    assert receipt.committed == ("r-snapshot",) and receipt.rejected == ()
     with OntologyUnitOfWork(kernel.engine) as uow:
         series_id = uow.decision.ensure_series(match_id, "md-had")
         revision = uow.decision.current_committed_revision(series_id)
-    assert revision is not None
-    assert revision.prior_snapshot_id is not None
-    assert revision.prior_snapshot_id.startswith("snapshot-")
+    assert revision is not None and revision.prior_snapshot_id == snapshot_id
 
 
 def test_read_v2_rejects_unresolved_prior_snapshot_before_write(tmp_path: Path) -> None:

@@ -139,14 +139,14 @@ def run(
 
 def _refresh(day: str, data_dir: Path) -> None:
     from nutmeg.decision.judgment_projection import run_projection
+    from nutmeg.decision.ontology_adapter import submit_reads
     from nutmeg.decision.pool import refresh_day
-    from nutmeg.decision.rsi_wiring import _cli_invoke
 
     summary = refresh_day(
         day=day,
         data_dir=Path(data_dir),
         made_at=datetime.now().astimezone().isoformat(timespec="seconds"),
-        submit=lambda path: _cli_invoke(["decision-read", "--reads-file", str(path)]),
+        submit=submit_reads,
         # 判断唯一事实 P0：每次刷新后落内核 vs 文件比对（judgment-projection.json）
         project=lambda **board: run_projection(Path(data_dir), **board),
     )

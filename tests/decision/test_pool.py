@@ -1,7 +1,12 @@
 import json
 
+from nutmeg.decision.ontology_adapter import ReadSubmission
 from nutmeg.decision.pool import zucai_pool_entries
 
+
+def _accept_all(reads):
+    return ReadSubmission(total=len(reads), committed=tuple(r["read_id"] for r in reads),
+                          rejected=())
 
 def _issue(zdir, issue="26133", deadline="2026-09-26 20:30"):
     zdir.mkdir(parents=True, exist_ok=True)
@@ -65,9 +70,10 @@ def test_refresh_day_builds_zucai_reads_and_submits_only_unmapped_unstarted(tmp_
                                                       encoding="utf-8")
     sent = []
 
-    def submit(path):
-        sent.extend(r["match_id"] for r in json.loads(path.read_text(encoding="utf-8")))
-        return 0, "ok"
+    def submit(reads):
+        sent.extend(r["match_id"] for r in reads)
+        return ReadSubmission(total=len(reads), committed=tuple(r["read_id"] for r in reads),
+                              rejected=())
 
     summary = refresh_day(day="2026-09-26", data_dir=tmp_path,
                           made_at="2026-09-26T14:15:00+08:00", submit=submit)
@@ -107,7 +113,7 @@ def test_refresh_day_attaches_a_projection_line_per_board_when_given_a_projector
 
     summary = refresh_day(day="2026-09-26", data_dir=tmp_path,
                           made_at="2026-09-26T14:15:00+08:00",
-                          submit=lambda path: (0, "ok"), project=project)
+                          submit=_accept_all, project=project)
 
     assert calls == [{"day": "2026-09-26", "materialize": True},
                      {"issue": "26133", "materialize": True}]       # P2：刷新后用投影覆盖文件

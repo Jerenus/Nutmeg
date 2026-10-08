@@ -10,6 +10,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
+from nutmeg.decision.kernel_submit import Submit
 from nutmeg.decision.zucai_identity import closing_issues, load_channel_map
 
 
@@ -86,7 +87,7 @@ def _project(project, summary_row: dict, **board) -> None:
 
 
 def refresh_day(*, day: str, data_dir: Path, made_at: str,
-                submit: Callable[[Path], tuple[int, str]],
+                submit: Submit,
                 project: Callable[..., dict] | None = None) -> dict:
     """并集池刷新：竞彩入库+重建 Read、足彩表态转录 Read，再把未开球场次交本体。
 
