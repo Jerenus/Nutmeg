@@ -19,15 +19,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from functools import reduce
 from itertools import combinations
 from pathlib import Path
 
+from nutmeg.decision.bj_time import BJ, aware
+from nutmeg.decision.faces import FACE_OF
 from nutmeg.decision.reconcile import normalize_selection, settle_ticket_leg
 
-FACE_KEYS = {"3": "home", "1": "draw", "0": "away"}
-FACE_ZH = {"3": "主胜", "1": "平", "0": "客胜"}
 CHANNELS = ("jczq", "renjiu", "shengfucai")
 PRICE_PER_NOTE = 2
 RENJIU_PICK = 9
@@ -52,7 +52,7 @@ def parse_faces(token: str) -> str:
     if t in ("", "*", "-", "—", "–"):
         return ""
     t = t.replace("，", "").replace(",", "").replace(" ", "")
-    if not set(t) <= set(FACE_KEYS) or len(set(t)) != len(t):
+    if not set(t) <= set(FACE_OF) or len(set(t)) != len(t):
         raise BetslipError(f"非法面集合 `{token}`：只接受 3/1/0 的不重复组合")
     return "".join(sorted(t, key="310".index))
 
@@ -266,7 +266,7 @@ class BetSlip:
         """偏离理由是不是开球之后才写的；没理由或缺时刻 → None。"""
         if not self.deviation or not self.deviation_at or not self.first_kickoff:
             return None
-        return _aware(self.deviation_at) >= _aware(self.first_kickoff)
+        return aware(self.deviation_at) >= aware(self.first_kickoff)
 
 
 # ---------------------------------------------------------------------------
@@ -390,14 +390,6 @@ def registry_path(data_dir) -> Path:
     return Path(data_dir) / "betslips.jsonl"
 
 
-_BJ = timezone(timedelta(hours=8))
-
-
-def _aware(value: str) -> datetime:
-    dt = datetime.fromisoformat(str(value).replace(" ", "T"))
-    return dt if dt.tzinfo else dt.replace(tzinfo=_BJ)
-
-
 def first_kickoff(slip: BetSlip, data_dir) -> str:
     """票内最早开球（北京时间 ISO）：足彩按期次文件的场号，竞彩按当日 legs-base 的编号；
     查不到 → ""（不猜）。"""
@@ -420,7 +412,7 @@ def first_kickoff(slip: BetSlip, data_dir) -> str:
     parsed = []
     for k in kicks:
         try:
-            parsed.append(_aware(k))
+            parsed.append(aware(k))
         except ValueError:
             continue
     return min(parsed).isoformat(timespec="seconds") if parsed else ""
@@ -451,7 +443,7 @@ def register_slip(data_dir, slip: BetSlip, *, now: datetime | None = None) -> st
     rows = []
     if path.exists():
         rows = [json.loads(ln) for ln in path.read_text("utf-8").splitlines() if ln.strip()]
-    stamp = (now or datetime.now(_BJ)).isoformat(timespec="seconds")
+    stamp = (now or datetime.now(BJ)).isoformat(timespec="seconds")
     old = next((r for r in rows if r.get("slip_id") == slip.slip_id), None) or {}
     slip.registered_at = old.get("registered_at") or ("" if old else stamp)
     if slip.deviation:

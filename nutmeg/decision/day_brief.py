@@ -5,18 +5,19 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 
+from nutmeg.decision.bj_time import parse_bj
 from nutmeg.decision.board_rows import fmt_stance, jczq_rows
 from nutmeg.decision.day_audit import audit_defaults
 from nutmeg.decision.day_paths import BRIEF, BRIEF_MD, day_dir, jczq_day_dir, zucai_dir
+from nutmeg.decision.faces import FACES
+from nutmeg.decision.files import read_json
 
 MOVE_EPS_PP = 0.05
 """与 F9 同一冻结常量：max|belief−prior| 超过它才算「拨动」。"""
 
-BJ = timezone(timedelta(hours=8))
-FACES = ("home", "draw", "away")
 
 
 def _load(path: Path, errors: list[str]):
@@ -27,24 +28,6 @@ def _load(path: Path, errors: list[str]):
     except ValueError as exc:
         errors.append(f"{path.name} 不是合法 JSON: {exc}")
     return None
-
-
-def _optional(path: Path):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, ValueError):
-        return None
-
-
-def _parse_dt(value) -> datetime | None:
-    """ISO 8601 或旧格式 `YYYY-MM-DD HH:MM`；无时区一律按北京时间。"""
-    if not value:
-        return None
-    try:
-        dt = datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
-    return dt.replace(tzinfo=BJ) if dt.tzinfo is None else dt
 
 
 def _pp(a: dict | None, b: dict | None) -> float:
@@ -98,7 +81,7 @@ def _research(day: Path, code: str, doc: dict | None, run_status: dict[str, str]
     if doc:
         out.update({k: doc.get(k) for k in
                     ("captured_at", "summary", "anchor_side", "hole_location", "schedule")})
-        captured, kick = _parse_dt(doc.get("captured_at")), _parse_dt(kickoff)
+        captured, kick = parse_bj(doc.get("captured_at")), parse_bj(kickoff)
         if captured and kick:
             out["prospective"] = captured < kick
     return out
@@ -114,10 +97,10 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
     board = _load(day / "jczq-legs-base.json", errors)
     rows = jczq_rows(data_dir, date, legs=(board or {}).get("legs") or {})
     balance = {r.get("code"): r
-               for r in ((_optional(day / "balance.json") or {}).get("rows") or [])}
-    run = _optional(day / f"research-run-{date}.json") or {}
+               for r in ((read_json(day / "balance.json") or {}).get("rows") or [])}
+    run = read_json(day / f"research-run-{date}.json") or {}
     run_status = {m.get("code"): m.get("status") for m in run.get("matches") or []}
-    teams = (_optional(data_dir / "analytics" / "team_strength.json") or {}).get("teams")
+    teams = (read_json(data_dir / "analytics" / "team_strength.json") or {}).get("teams")
     cards = []
     for row in sorted(rows, key=lambda r: str(r["leg"].get("kickoff_bj") or "")):
         code, leg, band, close = row["code"], row["leg"], row["band"], row["closing"]
@@ -177,7 +160,7 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
 def _issue_candidates(zdir: Path) -> list[tuple[str, str | None]]:
     out: list[tuple[str, str | None]] = []
     for path in zdir.glob("*-issue.json"):
-        doc = _optional(path) or {}
+        doc = read_json(path) or {}
         issue = str(doc.get("issue_id") or path.name.split("-")[0])
         out.append((issue, doc.get("sale_deadline") or doc.get("sale_stop")))
     return out
@@ -190,7 +173,7 @@ def current_issue(zdir: Path, *, now: datetime) -> str | None:
     当在售期展示（连前沿都照旧打印）。结算路径要的是「最近一期」，用 `latest_issue`。
     """
     ahead = [issue for issue, deadline in _issue_candidates(zdir)
-             if (parsed := _parse_dt(deadline)) and parsed > now]
+             if (parsed := parse_bj(deadline)) and parsed > now]
     return max(ahead) if ahead else None
 
 
@@ -213,8 +196,8 @@ def _draft_doc(data_dir: Path, zdir: Path, issue: str, *, build: bool) -> dict |
 
             return build_draft(data_dir, issue, write=True)
         except Exception:  # noqa: BLE001 —— 初稿失败只让这一块缺席
-            return _optional(draft)
-    return _optional(draft)
+            return read_json(draft)
+    return read_json(draft)
 
 
 def _draft_summary(doc: dict | None) -> list[dict]:
@@ -260,15 +243,15 @@ def _zucai(data_dir: Path, now: datetime, *, build_draft: bool = True) -> dict:
            "frontier": {}, "plan": None, "brief": None, "draft": [], "slips": []}
     if not issue:
         return out
-    meta = _optional(zdir / f"{issue}-issue.json") or {}
+    meta = read_json(zdir / f"{issue}-issue.json") or {}
     out["sale_deadline"] = meta.get("sale_deadline") or meta.get("sale_stop")
     for slot in ("morning", "afternoon", "revision"):
-        doc = _optional(zdir / f"{issue}-prep-{slot}.json")
+        doc = read_json(zdir / f"{issue}-prep-{slot}.json")
         if doc:
             out["prep"][slot] = {k: doc.get(k) for k in ("captured_at", "n_matches")}
-    out["tiers"] = _optional(zdir / f"{issue}-tiers.json")
+    out["tiers"] = read_json(zdir / f"{issue}-tiers.json")
     for channel in ("renjiu", "shengfucai"):
-        doc = _optional(zdir / f"{issue}-frontier-{channel}.json")
+        doc = read_json(zdir / f"{issue}-frontier-{channel}.json")
         if doc:
             out["frontier"][channel] = {
                 "strict_max_p": doc.get("strict_max_p"),
@@ -292,7 +275,7 @@ def _zucai(data_dir: Path, now: datetime, *, build_draft: bool = True) -> dict:
 
 
 def _rsi(data_dir: Path, date: str) -> dict | None:
-    doc = _optional(data_dir / "analytics" / "rsi-loop" / f"{date}.json")
+    doc = read_json(data_dir / "analytics" / "rsi-loop" / f"{date}.json")
     if not doc:
         return None
     return {k: doc.get(k)
@@ -300,7 +283,7 @@ def _rsi(data_dir: Path, date: str) -> dict | None:
 
 
 def _factors(root: Path, rsi: dict | None) -> list[dict]:
-    doc = _optional(root / "experiments" / "factors.json") or {}
+    doc = read_json(root / "experiments" / "factors.json") or {}
     decisions = {p.get("factor_id"): p.get("decision")
                  for p in ((rsi or {}).get("proposals") or [])}
     return [

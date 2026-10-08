@@ -7,15 +7,9 @@
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-
-def _read(path: Path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
+from nutmeg.decision.files import read_json
 
 
 def jczq_rows(data_dir, day: str, *, legs: dict | None = None) -> list[dict]:
@@ -28,17 +22,17 @@ def jczq_rows(data_dir, day: str, *, legs: dict | None = None) -> list[dict]:
     """
     day_dir = Path(data_dir) / "jczq" / "daily" / day
     if legs is None:
-        legs = (_read(day_dir / "jczq-legs-base.json", {}) or {}).get("legs") or {}
-    reads = {r.get("match_id"): r for r in (_read(day_dir / "reads.json", []) or [])
+        legs = (read_json(day_dir / "jczq-legs-base.json", {}) or {}).get("legs") or {}
+    reads = {r.get("match_id"): r for r in (read_json(day_dir / "reads.json", []) or [])
              if isinstance(r, dict)}
-    closing = _read(day_dir / "closing_odds.json", {}) or {}
+    closing = read_json(day_dir / "closing_odds.json", {}) or {}
     rows = []
     for code, leg in legs.items():
-        research = _read(day_dir / f"research-{code}.json", None)
+        research = read_json(day_dir / f"research-{code}.json", None)
         rows.append({
             "code": code, "leg": leg,
             "read": reads.get(leg.get("match_id")) or {},
-            "band": _read(day_dir / f"price-band-{code}.json", {}) or {},
+            "band": read_json(day_dir / f"price-band-{code}.json", {}) or {},
             "closing": closing.get(code) or {},
             "research": research if isinstance(research, dict) else None,
         })

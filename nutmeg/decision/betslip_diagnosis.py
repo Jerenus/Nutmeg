@@ -16,9 +16,11 @@ import json
 from pathlib import Path
 
 from nutmeg.decision.betslip import BetSlip, SlipLeg
+from nutmeg.decision.faces import CODE_OF, FACE_OF
+from nutmeg.decision.files import read_json
 from nutmeg.decision.zucai_identity import load_channel_map
 
-FACE_OF_SELECTION = {"home": "3", "draw": "1", "away": "0", "3": "3", "1": "1", "0": "0"}
+FACE_OF_SELECTION = {**CODE_OF, **{code: code for code in FACE_OF}}
 FACE_ORDER = "310"
 ZUCAI_CHANNELS = ("renjiu", "shengfucai")
 
@@ -28,20 +30,13 @@ def _faces(leg: SlipLeg) -> str:
     return "".join(f for f in FACE_ORDER if f in chosen)
 
 
-def _read_json(path: Path, default=None):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
-
-
 def _channel_map(data_dir: Path, issue: str) -> dict[str, str]:
     """{竞彩 match_id: 足彩场号（腿 key 写法）}。"""
     return {mid: str(no) for mid, no in load_channel_map(Path(data_dir) / "zucai", issue).items()}
 
 
 def _code_of_match(data_dir: Path, day: str) -> dict[str, str]:
-    doc = _read_json(Path(data_dir) / "jczq" / "daily" / day / "jczq-legs-base.json") or {}
+    doc = read_json(Path(data_dir) / "jczq" / "daily" / day / "jczq-legs-base.json") or {}
     return {str(leg.get("match_id")): code for code, leg in (doc.get("legs") or {}).items()}
 
 
@@ -117,7 +112,7 @@ def shared_naked_legs(slip: BetSlip, others: list[BetSlip],
         face = key[3]
         p_face = None
         if leg.fair and leg.market == "had":
-            p_face = leg.fair.get({"3": "home", "1": "draw", "0": "away"}.get(face, face))
+            p_face = leg.fair.get(FACE_OF.get(face, face))
         shared.append({
             "key": leg.key, "market": leg.market, "line": leg.line, "face": face,
             "p_face": None if p_face is None else round(float(p_face), 4),
@@ -188,7 +183,7 @@ def draft_faces_for(slip: BetSlip, data_dir: Path) -> dict[str, str]:
     """足彩：`<期>-draft.json` 里同渠道「初稿」的票面；竞彩不出初稿 → {}。"""
     if slip.channel not in ZUCAI_CHANNELS or not slip.issue:
         return {}
-    doc = _read_json(Path(data_dir) / "zucai" / f"{slip.issue}-draft.json", {}) or {}
+    doc = read_json(Path(data_dir) / "zucai" / f"{slip.issue}-draft.json", {}) or {}
     for cand in doc.get("candidates") or []:
         if (cand.get("label") == "初稿" and cand.get("channel") == slip.channel
                 and cand.get("faces")):

@@ -23,33 +23,25 @@ from itertools import combinations
 from pathlib import Path
 
 from nutmeg.decision.betslip import BetSlip, SlipLeg
+from nutmeg.decision.faces import FACE_OF, FACES
+from nutmeg.decision.files import read_json
 
-FACES = ("home", "draw", "away")
-DIGIT = {"home": "3", "draw": "1", "away": "0"}
-FACE_OF = {"3": "home", "1": "draw", "0": "away"}
 RENJIU_PICK = 9
 PRICE_PER_NOTE = 2
 DEFAULT_CAP = 400
 CHANNEL_CN = {"renjiu": "任九", "shengfucai": "胜负彩"}
 
 
-def _read(path: Path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
-
-
 def load_board(data_dir: Path, issue: str) -> dict:
     """legs-base（+judgment-v1 兜底）→ {no: {name, faces, belief, market, confidence, raw}}。"""
     zdir = Path(data_dir) / "zucai"
-    doc = _read(zdir / f"{issue}-legs-base.json", None)
+    doc = read_json(zdir / f"{issue}-legs-base.json", None)
     if not doc:
         raise FileNotFoundError(f"{issue}-legs-base.json 缺失：先跑 B4 zucai-build-reads")
     legs_raw = doc.get("legs") or {k: v for k, v in doc.items() if str(k).isdigit()}
     prescription = doc.get("prescription") or {}
-    judgment = _read(zdir / f"{issue}-judgment-v1.json", {}) or {}
-    issue_doc = _read(zdir / f"{issue}-issue.json", {}) or {}
+    judgment = read_json(zdir / f"{issue}-judgment-v1.json", {}) or {}
+    issue_doc = read_json(zdir / f"{issue}-issue.json", {}) or {}
     names = {str(m.get("match_no")): f"{m.get('home_team')}-{m.get('away_team')}"
              for m in issue_doc.get("matches") or []}
     legs: dict[str, dict] = {}
@@ -247,7 +239,6 @@ def _write_outputs(data_dir: Path, issue: str, doc: dict, legs_raw: dict) -> Non
 
 # ── 写出初稿时用的小工具（2026-10-03 自已删的 plan_flow 迁入）──
 
-_DIGIT_FACE = {"3": "home", "1": "draw", "0": "away"}
 
 
 def _day_of(issue: str, data_dir: Path) -> str:
@@ -274,7 +265,7 @@ def _legs_file_from_faces(legs: dict, faces: dict, issue: str, channel: str) -> 
         out[match_no] = {
             **{key: value for key, value in leg.items() if not key.startswith("_")},
             "faces": face_string,
-            "selections": [_DIGIT_FACE[digit] for digit in face_string],
+            "selections": [FACE_OF[digit] for digit in face_string],
         }
     return {"issue": issue, "channel": channel, "legs": out}
 

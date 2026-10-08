@@ -1,12 +1,12 @@
 """对外只读导出（设计 §10）：只呈现 P1–P4 的产物，不重做分析；守则以代码强制。"""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from nutmeg.decision.day_paths import BRIEF, DECISIONS, day_dir
+from nutmeg.decision.files import read_json
 
 SCRUB_FORBIDDEN = (".nutmeg-data", "discussion", "timeline", "user-override")
 """裸词 override 会误伤记分牌链名 strict_ruling_vs_override；要拦的是内部行权旗。"""
@@ -15,13 +15,6 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "interfaces" / "web" / "templa
 
 class PublishError(RuntimeError):
     pass
-
-
-def _json(path: Path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, ValueError):
-        return default
 
 
 def _match(m: dict) -> dict:
@@ -49,9 +42,10 @@ def _slips(rows: list[dict]) -> list[dict]:
 
 def public_view(*, data_dir: Path, root: Path, date: str) -> dict:
     out = day_dir(data_dir, date)
-    brief = _json(out / BRIEF, {"jczq": {"matches": [], "counts": {}}, "zucai": {}, "rsi": None})
-    decisions = _json(out / DECISIONS, [])
-    tallies = _json(root / "experiments" / "scoreboard-tallies.json",
+    brief = read_json(out / BRIEF,
+                      {"jczq": {"matches": [], "counts": {}}, "zucai": {}, "rsi": None})
+    decisions = read_json(out / DECISIONS, [])
+    tallies = read_json(root / "experiments" / "scoreboard-tallies.json",
                     {"chains": {}, "coverage": {}})
     z = brief.get("zucai") or {}
     return {

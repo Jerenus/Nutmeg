@@ -8,20 +8,14 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date as _date
 from pathlib import Path
+
+from nutmeg.decision.files import read_json
 
 MONTHLY_STOP_LOSS_YUAN = 3000
 """月净值 ≤ −3,000 → 空仓到月底。数字是主循环 2026-10-01 的提案（约等于 09-20 以来十天的
 真实亏损），Jun 未改数前按此执行；改数只改这里与宪法 §4。"""
-
-
-def _read_json(path: Path, default=None):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
 
 
 def ticket_month(key: str, data_dir: Path) -> str | None:
@@ -29,14 +23,14 @@ def ticket_month(key: str, data_dir: Path) -> str | None:
     的 sale_deadline；找不到 → None（不猜）。"""
     if key.startswith("jczq-") and len(key) == 13 and key[5:].isdigit():
         return f"{key[5:9]}-{key[9:11]}"
-    issue_doc = _read_json(Path(data_dir) / "zucai" / f"{key}-issue.json")
+    issue_doc = read_json(Path(data_dir) / "zucai" / f"{key}-issue.json")
     deadline = str((issue_doc or {}).get("sale_deadline") or "")
     return deadline[:7] if len(deadline) >= 7 and deadline[4] == "-" else None
 
 
 def month_net(data_dir: Path, month: str, *, scoreboard_path: Path | None = None) -> dict:
     """{month, net, stake, entries:[(key, net)], unknown:[key]}，只算 net 是数字的条目。"""
-    sb = _read_json(scoreboard_path or Path(data_dir) / "scoreboard.json", {}) or {}
+    sb = read_json(scoreboard_path or Path(data_dir) / "scoreboard.json", {}) or {}
     entries, unknown = [], []
     net = stake = 0.0
     for key, doc in (sb.get("tickets") or {}).items():
@@ -96,7 +90,7 @@ def issue_brake(data_dir: Path, issue: str, *, scoreboard_path: Path | None = No
     两个来源：① 记分牌里本期之前**有下注**的最近两期都全灭；② 记分牌 `adjudications` 里
     针对本期的事前承诺（`caps.issue == 本期`，可带 slip_yuan / issue_yuan 覆盖默认减半）。
     → {"reason", "slip_yuan", "issue_yuan"} 或 None。"""
-    sb = _read_json(scoreboard_path or Path(data_dir) / "scoreboard.json", {}) or {}
+    sb = read_json(scoreboard_path or Path(data_dir) / "scoreboard.json", {}) or {}
     for key, adj in (sb.get("adjudications") or {}).items():
         caps = adj.get("caps") if isinstance(adj, dict) else None
         if isinstance(caps, dict) and str(caps.get("issue")) == str(issue):

@@ -9,8 +9,7 @@ import json
 from pathlib import Path
 
 from nutmeg.decision.betslip import BetSlip, load_slips
-
-DIGIT = {"home": "3", "draw": "1", "away": "0"}
+from nutmeg.decision.faces import CODE_OF
 
 
 def _legs_base(data_dir: Path, issue: str) -> dict:
@@ -63,7 +62,7 @@ def _legs_text(slip: BetSlip) -> str:
                         sorted(slip.faces.items(), key=lambda kv: int(kv[0])))
     parts = []
     for leg in slip.legs:
-        faces = "".join(DIGIT.get(s, s) for s in leg.selections)
+        faces = "".join(CODE_OF.get(s, s) for s in leg.selections)
         line = f" 让{leg.line}" if leg.market == "hhad" and leg.line is not None else ""
         parts.append(f"{leg.key}{line} {faces}")
     combo = "/".join(str(c) for c in slip.combo_sizes) if slip.combo_sizes else ""

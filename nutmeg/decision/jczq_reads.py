@@ -6,11 +6,10 @@ from datetime import datetime
 from pathlib import Path
 
 from nutmeg.decision.face_status import FaceStatusError, attach_face_status
+from nutmeg.decision.faces import FACES
 from nutmeg.decision.overrides import effective_research
 from nutmeg.decision.research_intake import intake
 from nutmeg.decision.stance import research_belief, validate_stance
-
-FACES = ("home", "draw", "away")
 
 
 def _quarantine(

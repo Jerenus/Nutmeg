@@ -20,13 +20,13 @@ from itertools import combinations
 from pathlib import Path
 
 from nutmeg.decision.betslip import BetSlip, SlipLeg
+from nutmeg.decision.faces import FACES
 from nutmeg.decision.reconcile import normalize_selection
 
 VETO_RATIO = 0.5
 WARN_RATIO = 0.65
 WARN_MULTIPLIER = 10
 WARN_STAKE_SHARE = 0.5          # 单票 > 日帽一半
-FACES = ("home", "draw", "away")
 BOARD_MATCHES = 14
 ZUCAI = ("renjiu", "shengfucai")
 

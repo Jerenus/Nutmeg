@@ -15,10 +15,11 @@ import statistics
 from pathlib import Path
 
 from nutmeg.decision.betslip import BetSlip, load_slips, settle_slip
+from nutmeg.decision.faces import CODE_OF, FACE_OF
+from nutmeg.decision.files import read_json
 from nutmeg.decision.match_results import board_outcomes
+from nutmeg.decision.scoring import brier
 
-FACE_OF = {"3": "home", "1": "draw", "0": "away"}
-CODE_OF = {"home": "3", "draw": "1", "away": "0"}
 HUMAN_FIELDS = ("key", "board", "note", "judgment", "rx")
 
 
@@ -27,27 +28,15 @@ def jczq_key(date: str) -> str:
     return f"jczq-{date.replace('-', '')}"
 
 
-def _read_json(path: Path, default=None):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
-
-
 def results_for_board(data_dir: Path, date: str) -> dict | None:
     """板面日 D 的 90' 赛果（`match_results` 单一来源）；未封存 → None。"""
     return board_outcomes(data_dir, date) or None
 
 
-def _brier(p: dict, outcome: str) -> float:
-    return sum((float(p.get(f, 0.0)) - (1.0 if f == outcome else 0.0)) ** 2
-               for f in ("home", "draw", "away"))
-
-
 def board_brier(data_dir: Path, date: str, results: dict) -> dict:
     """reads.json（prior/终判）+ overrides.jsonl（研究原判）× 赛果 → 三行 Brier。"""
     jczq_day = Path(data_dir) / "jczq" / "daily" / date
-    reads = _read_json(jczq_day / "reads.json", []) or []
+    reads = read_json(jczq_day / "reads.json", []) or []
     research: dict[str, dict] = {}
     for line in (jczq_day / "overrides.jsonl").read_text(encoding="utf-8").splitlines() \
             if (jczq_day / "overrides.jsonl").exists() else []:
@@ -68,9 +57,9 @@ def board_brier(data_dir: Path, date: str, results: dict) -> dict:
         orig = research.get(code) or final
         per_match.append({
             "code": code, "outcome": CODE_OF[outcome], "tier": read.get("judgment_tier"),
-            "market": round(_brier(prior, outcome), 4),
-            "research": round(_brier(orig, outcome), 4),
-            "final": round(_brier(final, outcome), 4),
+            "market": round(brier(prior, outcome), 4),
+            "research": round(brier(orig, outcome), 4),
+            "final": round(brier(final, outcome), 4),
             "moved": any(abs(float(prior[f]) - float(final[f])) > 1e-9
                          for f in ("home", "draw", "away")),
         })
@@ -124,7 +113,7 @@ def encode_jczq_day(data_dir: Path, date: str, *, scoreboard_path: Path | None =
     if not results:
         return None
     path = scoreboard_path or data_dir / "scoreboard.json"
-    sb = _read_json(path, {}) or {}
+    sb = read_json(path, {}) or {}
     slips = [s for s in load_slips(data_dir, channel="jczq")
              if s.purchased and str(s.placed_at)[:10] == date]
     rows = settle_day_slips(slips, results)
@@ -137,27 +126,27 @@ def encode_jczq_day(data_dir: Path, date: str, *, scoreboard_path: Path | None =
         "encoded_at": now or "",
     }
     _merge(sb.setdefault("tickets", {}), jczq_key(date), facts)
-    brier = board_brier(data_dir, date, results)
+    scores = board_brier(data_dir, date, results)
     _merge(sb.setdefault("balance_ledger", {}), jczq_key(date),
-           {k: v for k, v in brier.items() if k != "per_match"} | {"encoded_at": now or ""})
+           {k: v for k, v in scores.items() if k != "per_match"} | {"encoded_at": now or ""})
     sb["updated_at"] = now or sb.get("updated_at")
     path.write_text(json.dumps(sb, ensure_ascii=False, indent=1), encoding="utf-8")
     return {"date": date, "slips": len(rows), "stake": facts["stake"], "net": facts["net"],
-            "n_matches": brier["n_matches"], "market_brier": brier["market_brier"],
-            "final_brier": brier["final_brier"]}
+            "n_matches": scores["n_matches"], "market_brier": scores["market_brier"],
+            "final_brier": scores["final_brier"]}
 
 
 def encode_zucai_issue(data_dir: Path, issue: str, *, prize_per_note: float | None = None,
                        scoreboard_path: Path | None = None, now: str | None = None) -> dict | None:
     """期 issue 的开奖串、处方命中、实票结果 → scoreboard；无官方开奖串 → None。"""
     data_dir = Path(data_dir)
-    draw = (_read_json(data_dir / "zucai" / "official-results.json", {}) or {}).get(str(issue))
+    draw = (read_json(data_dir / "zucai" / "official-results.json", {}) or {}).get(str(issue))
     if not draw:
         return None
     outcomes = str(draw).split()
     results = {str(i + 1): {"outcome_90": o, "goals_h": None, "goals_a": None}
                for i, o in enumerate(outcomes)}
-    judgment = _read_json(data_dir / "zucai" / f"{issue}-judgment-v1.json", {}) or {}
+    judgment = read_json(data_dir / "zucai" / f"{issue}-judgment-v1.json", {}) or {}
     hits = [str(judgment[no]["action"]) for no in sorted(judgment, key=int)
             if isinstance(judgment.get(no), dict) and judgment[no].get("action")
             and outcomes[int(no) - 1] in str(judgment[no]["action"])]
@@ -167,7 +156,7 @@ def encode_zucai_issue(data_dir: Path, issue: str, *, prize_per_note: float | No
     rows = settle_day_slips(slips, results, prize_per_note=prize_per_note)
     settled = [r for r in rows if r["payout"] is not None]
     path = scoreboard_path or data_dir / "scoreboard.json"
-    sb = _read_json(path, {}) or {}
+    sb = read_json(path, {}) or {}
     facts = {
         "draw": str(draw),
         "prescription": f"{len(hits)}/{len(prescribed)}" if prescribed else None,

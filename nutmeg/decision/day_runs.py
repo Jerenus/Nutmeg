@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from nutmeg.decision.day_paths import BROADCASTS, RETRO, TIMELINE, day_dir, jczq_day_dir
+from nutmeg.decision.files import read_json
 
 LANES = {"jczq": "竞彩", "zucai": "足彩", "rsi": "RSI", "system": "系统"}
 STATUS_TEXT = {
@@ -50,13 +51,6 @@ class JobSpec:
     since: Callable[[Path], str | None] | None = None  # 最早留下证据的那天 = 上线日
 
 
-def _json(path: Path, default=None):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
-
-
 def _hm(iso: str | None) -> str | None:
     if not iso:
         return None
@@ -82,7 +76,7 @@ def _rel(path: Path, data_dir: Path) -> str:
 
 def _timeline_runs(job: str) -> Callable[[Path, str], list[Run]]:
     def read(data_dir: Path, day: str) -> list[Run]:
-        rows = _json(day_dir(data_dir, day) / TIMELINE, []) or []
+        rows = read_json(day_dir(data_dir, day) / TIMELINE, []) or []
         out = []
         for row in rows:
             if row.get("job") != job:
@@ -110,11 +104,12 @@ def _am(data_dir: Path, day: str) -> list[Run]:
     except OSError:
         text = ""
     ctx = jczq_day_dir(data_dir, day) / "scheduler-context.json"
-    doc = _json(ctx) or {}
+    doc = read_json(ctx) or {}
     succeeded = f"NUTMEG_OK stage=am run_date={day}" in text
     if not succeeded and not doc:
         return []
-    legs = (_json(jczq_day_dir(data_dir, day) / "jczq-legs-base.json", {}) or {}).get("legs") or {}
+    legs = (read_json(jczq_day_dir(data_dir, day) / "jczq-legs-base.json", {}) or {}
+            ).get("legs") or {}
     summary = f"竞彩板面 {len(legs)} 场，赔率快照已存"
     updated = _hm(str(doc.get("generated_at") or ""))
     if updated:
@@ -131,7 +126,7 @@ def _research(data_dir: Path, day: str) -> list[Run]:
     at = _mtime(reads)
     if at is None:
         return []
-    n_reads = len(_json(reads, []) or [])
+    n_reads = len(read_json(reads, []) or [])
     done = len(list(folder.glob("research-周*.json"))) - len(
         list(folder.glob("research-周*.rejected.json")))
     rejected = len(list(folder.glob("research-周*.rejected.json")))
@@ -146,7 +141,7 @@ def _research(data_dir: Path, day: str) -> list[Run]:
 
 def _rsi_loop(data_dir: Path, day: str) -> list[Run]:
     path = data_dir / "analytics" / "rsi-loop" / f"{day}.json"
-    doc = _json(path)
+    doc = read_json(path)
     if not doc:
         return []
     failed = len(doc.get("failed_steps") or [])
@@ -164,7 +159,7 @@ def _prep(slot: str, log_name: str) -> Callable[[Path, str], list[Run]]:
         zdir = data_dir / "zucai"
         for path in sorted(zdir.glob(f"*-prep-{slot}.json"), reverse=True):
             # 只认文件里的 run_date；按 mtime 预筛会让回看历史日（或测试）随今天日期漂移
-            doc = _json(path, {}) or {}
+            doc = read_json(path, {}) or {}
             if doc.get("run_date") != day:
                 continue
             unmatched = len((doc.get("alignment") or {}).get("unmatched") or [])
@@ -443,7 +438,7 @@ def _outputs(data_dir: Path, day: str, brief: dict, now_iso: str) -> dict:
     zucai = brief.get("zucai") or {}
     issue = zucai.get("issue")
     zdir = data_dir / "zucai"
-    tickets = _json(zdir / f"{issue}-final-tickets.json") if issue else None
+    tickets = read_json(zdir / f"{issue}-final-tickets.json") if issue else None
     rsi = brief.get("rsi") or {}
     broadcasts = []
     try:
@@ -500,7 +495,7 @@ def day_runs(*, data_dir: Path, plists_dir: Path, day: str, now: datetime) -> di
     today = now.date().isoformat()
     now_hm = now.strftime("%H:%M")
     errors: list[str] = []
-    brief = _json(day_dir(data_dir, day) / "brief.json", {}) or {}
+    brief = read_json(day_dir(data_dir, day) / "brief.json", {}) or {}
     jobs = []
     for plist in sorted(Path(plists_dir).glob("com.nutmeg.*.plist")):
         try:

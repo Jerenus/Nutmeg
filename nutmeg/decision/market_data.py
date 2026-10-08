@@ -4,10 +4,13 @@
 _fair_from_odds/_f/_signed_float/_had_from_pool/_ttg_from_pool/_crs_from_pool)与
 盘口快照 I/O(fetch_sporttery_value_with_fallback/persist_*/load_*)从已删的
 jczq_market_kernel 原样搬入本文件(函数体一字不动)。**结构性禁止**引入 A.3 信号打分符号。
+去水 2026-10-08 起只有 `nutmeg.data.prices.devig` 一份，本模块再导出。
 """
 from __future__ import annotations
 
 import re
+
+from nutmeg.data.prices import devig  # 唯一去水实现；本模块再导出，旧引用不断链
 
 __all__ = [
     "OUTCOMES",
@@ -24,19 +27,6 @@ OUTCOMES: tuple[str, str, str] = ("home", "draw", "away")
 
 
 _RE_CRS_KEY = re.compile(r"^s\d{2}s\d{2}$|^s1s[hda]$")
-
-
-def _devig_map(odds: dict[str, float]) -> dict[str, float]:
-    """De-vig an arbitrary-keyed odds map to fair probabilities summing to ~1.
-
-    Generalizes ``_fair_from_odds`` (which is hard-coded to ``OUTCOMES``) to the
-    总进球 / 让球 keyspaces. Empty / unusable input → empty dict.
-    """
-    inverse = {k: 1.0 / v for k, v in odds.items() if v and v > 0}
-    total = sum(inverse.values())
-    if total <= 0:
-        return {}
-    return {k: v / total for k, v in inverse.items()}
 
 
 def _f(value: object) -> float | None:
@@ -261,10 +251,3 @@ def load_bold_odds_snapshot(run_date: str, output_dir) -> dict:
         }
         for match_no, markets in raw.items()
     }
-
-
-def devig(odds: dict[str, float]) -> dict[str, float]:
-    """任意键赔率 → 去水 fair 概率(和≈1)。空/不可用 → 空 dict。"""
-    return _devig_map(odds)
-
-

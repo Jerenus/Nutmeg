@@ -11,22 +11,16 @@
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from nutmeg.decision.board_rows import jczq_rows
+from nutmeg.decision.faces import FACE_OF, SHORT_ZH
+from nutmeg.decision.files import read_json
 from nutmeg.decision.match_results import board_outcomes
 from nutmeg.decision.overrides import load_overrides
+from nutmeg.decision.scoring import brier
 from nutmeg.decision.stance import research_belief
 from nutmeg.decision.zucai_identity import closing_issues, load_channel_map
-
-FACE_KEY = {"3": "home", "1": "draw", "0": "away"}
-KEY_FACE = {v: k for k, v in FACE_KEY.items()}
-FACE_ZH = {"home": "主", "draw": "平", "away": "客"}
-
-
-def _load(path: Path, default=None):
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
 
 
 def _ruling_note(doc: dict | None) -> str | None:
@@ -42,16 +36,12 @@ def _ruling_note(doc: dict | None) -> str | None:
 
 def _research_doc(path: Path) -> dict | None:
     """研究文件；旧格式（非对象）当作没有研究，不让面板整张崩掉。"""
-    doc = _load(path)
+    doc = read_json(path)
     return doc if isinstance(doc, dict) else None
 
 
 def _shift_pp(belief: dict, prior: dict) -> dict:
     return {k: round((belief[k] - prior[k]) * 100, 1) for k in ("home", "draw", "away")}
-
-
-def _brier(dist: dict, face: str) -> float:
-    return sum((dist[k] - (1.0 if FACE_KEY[face] == k else 0.0)) ** 2 for k in dist)
 
 
 def _research_view(doc: dict, prior: dict, ledger_row: dict | None) -> dict:
@@ -93,7 +83,7 @@ def _disagreement(a: dict, b: dict) -> list[str]:
     for key in ("home", "draw", "away"):
         x, y = a["shift"][key], b["shift"][key]
         if abs(x - y) >= 3:
-            out.append(f"{FACE_ZH[key]}拨动 {x:+.1f} vs {y:+.1f}pp")
+            out.append(f"{SHORT_ZH[key]}拨动 {x:+.1f} vs {y:+.1f}pp")
     return out
 
 
@@ -134,10 +124,12 @@ def build_signals(*, day: str, data_dir: Path) -> list[dict]:
         by_match_id[leg["match_id"]] = row
     zucai_dir = data_dir / "zucai"
     for issue, _issue_doc in closing_issues(zucai_dir, day):
-        store = _load(zucai_dir / f"{issue}-store-ids.json", {}) or {}
+        store = read_json(zucai_dir / f"{issue}-store-ids.json", {}) or {}
         by_no = {no: mid for mid, no in load_channel_map(zucai_dir, issue).items()}
-        official = ((_load(zucai_dir / "official-results.json", {}) or {}).get(issue) or "").split()
-        zreads = {r.get("match_id"): r for r in _load(zucai_dir / f"{issue}-reads.json", []) or []}
+        official = str((read_json(zucai_dir / "official-results.json", {}) or {}).get(issue)
+                       or "").split()
+        zreads = {r.get("match_id"): r
+                  for r in read_json(zucai_dir / f"{issue}-reads.json", []) or []}
         # 足彩独有场次的主循环改判记在 zucai/overrides.jsonl（2026-09-28 起进面板与改判账）
         zledger = {r["research"]: r for r in load_overrides(zucai_dir)}
         for no, ids in sorted(store.items(), key=lambda kv: int(kv[0])):
@@ -164,10 +156,10 @@ def build_signals(*, day: str, data_dir: Path) -> list[dict]:
             })
     for row in rows:
         row["score"] = _score(row)
-        if row["outcome"] in FACE_KEY and row["research"] and row["final"]:
-            row["brier_research"] = round(_brier(row["research"]["belief"], row["outcome"]), 4)
-            row["brier_final"] = round(_brier(row["final"], row["outcome"]), 4)
-            row["brier_market"] = round(_brier(row["prior"], row["outcome"]), 4)
+        if row["outcome"] in FACE_OF and row["research"] and row["final"]:
+            row["brier_research"] = round(brier(row["research"]["belief"], row["outcome"]), 4)
+            row["brier_final"] = round(brier(row["final"], row["outcome"]), 4)
+            row["brier_market"] = round(brier(row["prior"], row["outcome"]), 4)
     rows.sort(key=lambda r: -r["score"])
     return rows
 
@@ -179,7 +171,7 @@ def _pct(dist: dict | None) -> str:
 
 
 def _shift_text(shift: dict) -> str:
-    moved = [f"{FACE_ZH[k]}{v:+.1f}" for k, v in shift.items() if abs(v) >= 0.05]
+    moved = [f"{SHORT_ZH[k]}{v:+.1f}" for k, v in shift.items() if abs(v) >= 0.05]
     return " ".join(moved) or "不拨"
 
 
@@ -212,7 +204,7 @@ def render_signals(rows: list[dict], *, day: str) -> str:
     for r in rows:
         research = r["research"] or {}
         drift = r["drift"] or {}
-        drift_text = " ".join(f"{FACE_ZH[k]}{v:+.1f}" for k, v in drift.items()
+        drift_text = " ".join(f"{SHORT_ZH[k]}{v:+.1f}" for k, v in drift.items()
                               if abs(v) >= 0.5) or "—"
         lines.append(
             f"| {r['key']} {r['name'] or ''} | {r['score']} | {_pct(r['prior'])} | {drift_text} | "

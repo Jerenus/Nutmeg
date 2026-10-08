@@ -14,15 +14,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from nutmeg.decision.files import read_json
 from nutmeg.decision.match_results import board_outcomes
 from nutmeg.decision.zucai_identity import load_channel_map
-
-
-def _read_json(path: Path, default):
-    try:
-        return json.loads(path.read_text("utf-8"))
-    except (OSError, ValueError):
-        return default
 
 
 def board_results(data_dir, day: str) -> dict[str, dict]:
@@ -31,7 +25,7 @@ def board_results(data_dir, day: str) -> dict[str, dict]:
     legs-base 给身份（编号 ↔ match_id），`match_results` 给比分；缺终场的场不进表。
     """
     data_dir = Path(data_dir)
-    legs = (_read_json(data_dir / "jczq" / "daily" / day / "jczq-legs-base.json", {})
+    legs = (read_json(data_dir / "jczq" / "daily" / day / "jczq-legs-base.json", {})
             or {}).get("legs") or {}
     results = board_outcomes(data_dir, day)
     out: dict[str, dict] = {}

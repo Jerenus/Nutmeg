@@ -10,11 +10,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from nutmeg.decision.day_paths import BRIEF, day_dir
+from nutmeg.decision.faces import FACE_OF
 from nutmeg.decision.match_results import board_outcomes
 
 Git = Callable[[list[str]], str]
 TRACKED = ("docs/sop/RULEBOOK.md", "experiments/factors.json", "docs/sop/CONSTITUTION.md")
-OUTCOME_FACE = {"3": "home", "1": "draw", "0": "away"}
 
 
 def run_git(args: list[str]) -> str:
@@ -90,7 +90,7 @@ def trace_day(data_dir: Path, date: str) -> dict:
     summary = {"graded": 0, "read_right": 0, "market_right": 0, "moved": 0, "moved_helped": 0}
     for m in brief.get("jczq", {}).get("matches", []):
         read = m.get("read") or {}
-        outcome = OUTCOME_FACE.get(str((results.get(m["code"]) or {}).get("outcome_90")))
+        outcome = FACE_OF.get(str((results.get(m["code"]) or {}).get("outcome_90")))
         prior_top, belief_top = _top(read.get("prior")), _top(read.get("belief"))
         moved = bool(read) and prior_top != belief_top
         row = {"code": m["code"], "name": m.get("name"), "ladder": m.get("ladder"),

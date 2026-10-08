@@ -12,13 +12,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 
+from nutmeg.decision.bj_time import BJ, parse_bj
 from nutmeg.decision.day_paths import DECISIONS, day_dir, jczq_day_dir
 
 DEFAULT_EMPTY = "空仓"
-_BJ = timezone(timedelta(hours=8))
 
 
 REGISTER_KINDS = ("register_zucai", "register_jczq")
@@ -53,16 +53,6 @@ def _previews(data_dir: Path, date: str) -> list[dict]:
         except ValueError:
             continue
     return out
-
-
-def _aware(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(str(value).replace(" ", "T"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=_BJ)
 
 
 def live_register_decisions(data_dir: Path | str, date: str, *, now: datetime) -> list[dict]:
@@ -111,11 +101,11 @@ def live_register_decisions(data_dir: Path | str, date: str, *, now: datetime) -
             legs = board.get("legs") or {}
         except (OSError, ValueError):
             legs = {}
-        kicks = sorted(k for k in (_aware((legs.get(key) or {}).get("kickoff_bj"))
+        kicks = sorted(k for k in (parse_bj((legs.get(key) or {}).get("kickoff_bj"))
                                    for p in previews for key in p.get("keys") or [])
                        if k is not None and k > now)
         if not kicks:
-            kicks = sorted(k for k in (_aware(leg.get("kickoff_bj")) for leg in legs.values())
+            kicks = sorted(k for k in (parse_bj(leg.get("kickoff_bj")) for leg in legs.values())
                            if k is not None and k > now)
         if kicks:
             deadline = kicks[0].isoformat(timespec="seconds")
@@ -149,7 +139,7 @@ def _status(deadline: str | None, done: bool, now: datetime) -> str:
             parsed = None
         if parsed is not None:
             if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=_BJ)
+                parsed = parsed.replace(tzinfo=BJ)
             if parsed <= now:
                 return "expired"
     return "open"

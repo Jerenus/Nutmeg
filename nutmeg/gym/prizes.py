@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from nutmeg.decision.zucai_official import _UA, API_URL, _num
+from nutmeg.decision.zucai_official import _num, fetch_history
 
 CACHE = "official-prizes.json"
 VALID = {"3", "1", "0", "*"}
@@ -44,15 +44,6 @@ def parse_item(item: dict) -> tuple[str, dict] | None:
     }
 
 
-def _default_fetcher(url: str) -> dict:
-    import httpx
-
-    resp = httpx.get(url, headers={"User-Agent": _UA, "Referer": "https://www.sporttery.cn/"},
-                     timeout=30.0)
-    resp.raise_for_status()
-    return resp.json()
-
-
 def load_prizes(zucai_dir: Path) -> dict[str, dict]:
     path = Path(zucai_dir) / CACHE
     if not path.exists():
@@ -65,8 +56,7 @@ def load_prizes(zucai_dir: Path) -> dict[str, dict]:
 
 def build_prize_cache(zucai_dir: Path, *, fetcher=None, page_size: int = 130) -> Path:
     """抓官方历史并与已有缓存合并（同期号以新抓为准），落 `<zucai_dir>/official-prizes.json`。"""
-    fetch = fetcher or _default_fetcher
-    payload = fetch(API_URL.format(page_size=page_size))
+    payload = fetch_history(page_size=page_size, fetcher=fetcher, timeout=30.0)
     issues = load_prizes(zucai_dir)
     for item in (payload.get("value") or {}).get("list") or []:
         parsed = parse_item(item)

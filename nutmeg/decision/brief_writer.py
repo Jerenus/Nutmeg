@@ -2,17 +2,13 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import tempfile
 from collections.abc import Callable
 
 from nutmeg.decision.brief_prompt import LOGIC_SYSTEM_PROMPT, render_logic_input
 from nutmeg.decision.claude_models import (
-    claude_bin,
-    claude_env,
     logic_model,
-    model_argv,
     model_label,
+    run_claude,
 )
 
 Claude = Callable[[str, str], tuple[int, str]]
@@ -23,12 +19,7 @@ MAX_SENTENCES = 8
 
 
 def _claude_cli(prompt: str, stdin: str) -> tuple[int, str]:
-    argv = [claude_bin(), "-p", *model_argv(logic_model()), "--system-prompt", prompt,
-            "--allowedTools", "", "--max-turns", "1", "--output-format", "text"]
-    with tempfile.TemporaryDirectory() as neutral:
-        proc = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=300,
-                               cwd=neutral, env=claude_env(), check=False)
-    return proc.returncode, proc.stdout
+    return run_claude(prompt, stdin, model=logic_model())
 
 
 def _strip_fence(text: str) -> str:

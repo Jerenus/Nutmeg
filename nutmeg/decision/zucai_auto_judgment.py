@@ -16,6 +16,7 @@ import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from nutmeg.decision.bj_time import aware
 from nutmeg.decision.face_status import FACES, proven_dead
 from nutmeg.decision.overrides import effective_research
 from nutmeg.decision.read_builder import build
@@ -29,11 +30,6 @@ _TRANSCRIBED = ("directional_flags", "nondirectional_flags", "anchor_integrity",
 
 def _load(path: Path, default=None):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
-
-
-def _kickoff(value: str) -> datetime:
-    text = value.replace(" ", "T")
-    return datetime.fromisoformat(text if len(text) > 16 else f"{text}:00+08:00")
 
 
 def _jczq_research_by_match_id(data_dir: Path, deadline_day: str) -> dict[str, Path]:
@@ -108,7 +104,7 @@ def auto_judgment(*, issue: str, data_dir: Path) -> dict:
             judgment[no] = {**manual[no], "source": "main_loop"}
             continue
         prior = dict(ids["fair"])
-        kickoff = _kickoff(kickoffs[no]).isoformat() if kickoffs.get(no) else None
+        kickoff = aware(kickoffs[no]).isoformat() if kickoffs.get(no) else None
         path = _research_path(zucai_dir, issue, no, mapped, jczq_research)
         entry = _from_research(effective_research(path), prior, kickoff) if path else None
         judgment[no] = entry or {
@@ -124,7 +120,7 @@ def build_auto_reads(*, issue: str, data_dir: Path, made_at: str) -> list[dict]:
     zucai_dir = Path(data_dir) / "zucai"
     store = _load(zucai_dir / f"{issue}-store-ids.json", {})
     issue_doc = _load(zucai_dir / f"{issue}-issue.json", {})
-    kickoffs = {str(m["match_no"]): _kickoff(str(m["kickoff_bj"]))
+    kickoffs = {str(m["match_no"]): aware(str(m["kickoff_bj"]))
                 for m in issue_doc.get("matches") or [] if m.get("kickoff_bj")}
     reads_path = zucai_dir / f"{issue}-reads.json"
     existing = {read["match_id"]: read for read in _load(reads_path, []) or []}

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from nutmeg.decision.faces import FACE_OF
 from nutmeg.decision.legs_audit import (
     CRASH_MARKER_LEXICON,
     DIRECTIONAL_LEXICON,
@@ -26,7 +27,6 @@ from nutmeg.decision.legs_audit import (
     NONDIRECTIONAL_LEXICON as _NONDIRECTIONAL_LEXICON,
 )
 
-FACE_KEYS = {"3": "home", "1": "draw", "0": "away"}
 # 词典的家在 legs_audit（审计门才是它的执行方）；此处再导出，旧引用不断链。
 NONDIRECTIONAL_LEXICON = _NONDIRECTIONAL_LEXICON
 
@@ -71,7 +71,7 @@ def build(judgment: dict, *, issue: str, store_ids: dict, fair: dict,
         action = str(j.get("action") or "").strip()
         _require(bool(action), f"场{no} 缺 action（面集合或 drop）")
         faces = "" if action in ("drop", "丢", "-") else action
-        _require(set(faces) <= set(FACE_KEYS),
+        _require(set(faces) <= set(FACE_OF),
                  f"场{no} action `{action}` 不是合法面集合")
 
         prior = fair[no]

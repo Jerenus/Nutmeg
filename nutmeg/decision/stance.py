@@ -6,10 +6,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+
+from nutmeg.decision.bj_time import parse_bj
+from nutmeg.decision.faces import FACE_OF
 
 FACES = ("3", "1", "0")
-FACE_KEY = {"3": "home", "1": "draw", "0": "away"}
 STRUCTURES = ("single", "double", "full")
 WHY = ("none", "tilt_evidence", "structure")
 TIER_PP = {"official": (4, 8), "confirmed_structural": (3, 6), "inferred": (0, 2), "will": (0, 2),
@@ -47,7 +48,6 @@ def _evidence_budget(evidence: list[dict]) -> int:
         for e in evidence
     )
 MIN_FALSIFIER_CHARS = 8
-_BJ = timezone(timedelta(hours=8))
 
 
 @dataclass(frozen=True)
@@ -80,17 +80,9 @@ def _dead_faces(death_three_proofs: dict | None) -> set[str]:
     dead = set()
     for key, proofs in (death_three_proofs or {}).items():
         if isinstance(proofs, dict) and str(proofs.get("verdict", "alive")).lower() == "dead":
-            face = {v: k for k, v in FACE_KEY.items()}.get(key, key)
+            face = {v: k for k, v in FACE_OF.items()}.get(key, key)
             dead.add(str(face))
     return dead
-
-
-def _parse(value) -> datetime | None:
-    try:
-        dt = datetime.fromisoformat(str(value))
-    except (TypeError, ValueError):
-        return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=_BJ)
 
 
 def _add_error(issues: list[StanceIssue], field: str, msg: str) -> None:
@@ -209,7 +201,7 @@ def validate_stance(stance, *, confidence, death_three_proofs) -> tuple[dict, li
                 _add_error(issues, f"tilt.evidence.{i}", "will（战意）只许朝平，tilt.face 必须是 1")
             if kind not in TILT_KIND_LEXICON:
                 _add_error(issues, f"tilt.evidence.{i}", f"kind `{kind}` 不在词典")
-            if _parse(e.get("captured_at")) is None:
+            if parse_bj(e.get("captured_at")) is None:
                 _add_error(issues, f"tilt.evidence.{i}", "captured_at 不是合法时间")
             tiers.append(str(tier))
     alt = stance.get("alt_face")
@@ -231,10 +223,10 @@ def apply_tilt(prior: dict, tilt: dict | None, *, kickoff: str | None = None) ->
     prior = {k: float(prior[k]) for k in ("home", "draw", "away")}
     if not tilt:
         return TiltResult(dict(prior), 0, True, "无 tilt：跟市场", [])
-    kick = _parse(kickoff) if kickoff else None
+    kick = parse_bj(kickoff) if kickoff else None
     kept, dropped, tiers = [], 0, []
     for e in tilt.get("evidence") or []:
-        at = _parse(e.get("captured_at"))
+        at = parse_bj(e.get("captured_at"))
         if kick and at and at >= kick:
             dropped += 1
             continue
@@ -255,7 +247,7 @@ def apply_tilt(prior: dict, tilt: dict | None, *, kickoff: str | None = None) ->
         return TiltResult(dict(prior), 0, True, why, tiers)
     cap = CAP_WITH_OFFICIAL_PP if "official" in tiers else CAP_WITHOUT_OFFICIAL_PP
     applied = min(net, cap)
-    key = FACE_KEY[str(tilt["face"])]
+    key = FACE_OF[str(tilt["face"])]
     target = min(0.98, max(0.01, prior[key] + applied / 100))
     rest = [k for k in prior if k != key]
     rest_mass = sum(prior[k] for k in rest) or 1.0
@@ -273,7 +265,7 @@ def _apply_shift(prior: dict, shift: dict, *, kept: list, dropped: int,
     if not kept:
         why = "无有效证据，归零跟市场" + (f"（{dropped} 条证据在开球后，作废）" if dropped else "")
         return TiltResult(dict(prior), 0, True, why, tiers)
-    values = {FACE_KEY[str(k)]: int(v) for k, v in shift.items()}
+    values = {FACE_OF[str(k)]: int(v) for k, v in shift.items()}
     peak = max(abs(v) for v in values.values())
     cap = CAP_WITH_OFFICIAL_PP if "official" in tiers else CAP_WITHOUT_OFFICIAL_PP
     budget = _evidence_budget(kept)
@@ -290,7 +282,7 @@ def _apply_shift(prior: dict, shift: dict, *, kept: list, dropped: int,
     else:
         note = ""
     reason = "多面位移 " + " ".join(
-        f"{d}{scale * values.get(FACE_KEY[d], 0):+.1f}" for d in FACES
+        f"{d}{scale * values.get(FACE_OF[d], 0):+.1f}" for d in FACES
     ) + note
     return TiltResult(belief, applied, False, reason, tiers)
 

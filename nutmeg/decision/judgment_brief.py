@@ -5,23 +5,15 @@
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from nutmeg.decision.board_rows import jczq_rows
+from nutmeg.decision.faces import CODE_OF, FACES
+from nutmeg.decision.files import read_json
 
-FACES = ("home", "draw", "away")
-CODE_OF = {"home": "3", "draw": "1", "away": "0"}
 FAV = 0.70
 _KIND = {"research": "研究", "override": "改判", "market": "市场", "manual": "人工"}
 _STRUCT = {"single": "单", "double": "双", "full": "全包"}
-
-
-def _read(path: Path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
 
 
 def _dist(d: dict | None) -> str:
@@ -89,7 +81,7 @@ def jczq_brief(data_dir: Path, day: str, *, rows: list[dict] | None = None) -> d
         stance = read.get("stance") or leg.get("stance")
         override = read.get("override") or {}
         note = override.get("note") if override else leg.get("note")
-        sidecar = _read(day_dir / f"rubric-{code}.json", None)
+        sidecar = read_json(day_dir / f"rubric-{code}.json", None)
         rows.append({
             "rubric": _rubric_text(leg, sidecar),
             "code": code,
@@ -146,10 +138,10 @@ def _flags_text(leg: dict) -> str:
 
 def zucai_brief(data_dir: Path, issue: str) -> dict:
     zdir = Path(data_dir) / "zucai"
-    legs_doc = _read(zdir / f"{issue}-legs-base.json", {}) or {}
+    legs_doc = read_json(zdir / f"{issue}-legs-base.json", {}) or {}
     legs = legs_doc.get("legs") or {k: v for k, v in legs_doc.items() if str(k).isdigit()}
-    judgment = _read(zdir / f"{issue}-judgment-v1.json", {}) or {}
-    issue_doc = _read(zdir / f"{issue}-issue.json", {}) or {}
+    judgment = read_json(zdir / f"{issue}-judgment-v1.json", {}) or {}
+    issue_doc = read_json(zdir / f"{issue}-issue.json", {}) or {}
     names = {str(m["match_no"]): f"{m.get('home_team')}-{m.get('away_team')}"
              for m in issue_doc.get("matches") or []}
     rows = []
@@ -161,7 +153,7 @@ def zucai_brief(data_dir: Path, issue: str) -> dict:
         stance = leg.get("stance") or leg.get("research_stance")
         fav_p = max(fair.values()) if fair else 0.0
         fav_face = max(fair, key=fair.get) if fair else None
-        sidecar = _read(zdir / f"{issue}-rubric-m{int(no)}.json", None)
+        sidecar = read_json(zdir / f"{issue}-rubric-m{int(no)}.json", None)
         rows.append({
             "rubric": _rubric_text(leg, sidecar),
             "no": no, "name": leg.get("name") or names.get(no, ""),

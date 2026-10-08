@@ -16,18 +16,17 @@ from __future__ import annotations
 
 import statistics
 
+from nutmeg.data.prices import devig
+
 __all__ = ["market_microstructure"]
 
 _OUTCOME_KEYS = ("home", "draw", "away")
 
 
 def _fair(odds: dict[str, float]) -> dict[str, float]:
-    """去水:1/赔率 归一。任一路缺失/非正 → 空(不猜)。"""
-    inverse = {k: 1.0 / v for k, v in (odds or {}).items() if v and v > 0}
-    if len(inverse) < len(_OUTCOME_KEYS) or not inverse:
-        return {}
-    total = sum(inverse.values())
-    return {k: v / total for k, v in inverse.items()} if total > 0 else {}
+    """去水（`nutmeg.data.prices.devig`）。任一路缺失/非正 → 空(不猜)。"""
+    fair = devig(odds)
+    return fair if len(fair) >= len(_OUTCOME_KEYS) else {}
 
 
 def _payout(odds: dict[str, float]) -> float | None:

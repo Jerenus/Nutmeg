@@ -34,6 +34,8 @@ from datetime import datetime
 
 import httpx
 
+from nutmeg.data.http import BROWSER_UA, decode
+
 __all__ = [
     "Titan007BoardRow",
     "Titan007BookQuote",
@@ -51,10 +53,6 @@ _EURO_URL_TEMPLATE = "http://1x2d.titan007.com/{match_id}.js"
 _SCHEDULE_URL_TEMPLATE = "http://bf.titan007.com/football/Next_{yyyymmdd}.htm"
 _BOARD_REFERER = "http://jc.titan007.com/"
 _EURO_REFERER = "http://odds.titan007.com/"
-_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
 
 # 板面行实测恒 24 字段；欧赔行实测恒 27 字段。字段数不符 = 站点改版，宁可炸不可猜。
 _BOARD_FIELD_COUNT = 24
@@ -354,7 +352,7 @@ class Titan007Client:
         self._client = httpx.Client(
             timeout=timeout,
             transport=transport,
-            headers={"User-Agent": _USER_AGENT},
+            headers={"User-Agent": BROWSER_UA},
             follow_redirects=True,
         )
 
@@ -387,15 +385,12 @@ class Titan007Client:
             raise Titan007Error(
                 f"titan007 抓取失败 {url}: HTTP {response.status_code}"
             )
-        body = response.content
-        for encoding in ("utf-8-sig", "gb18030"):
-            try:
-                return body.decode(encoding)
-            except UnicodeDecodeError:
-                continue
-        raise Titan007ParseError(
-            f"titan007 响应既非 UTF-8 也非 gb18030 {url}——疑似降级/二进制响应"
-        )
+        try:
+            return decode(response.content, ("utf-8-sig", "gb18030"))
+        except UnicodeDecodeError:
+            raise Titan007ParseError(
+                f"titan007 响应既非 UTF-8 也非 gb18030 {url}——疑似降级/二进制响应"
+            ) from None
 
     def fetch_board(self, run_date: str | None = None) -> list[Titan007BoardRow]:
         """竞彩板面（竞彩号 ↔ 007 id）。

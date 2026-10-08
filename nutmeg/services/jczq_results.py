@@ -13,6 +13,8 @@ from html import unescape
 
 import httpx
 
+from nutmeg.data.http import MOBILE_UA, decode
+
 
 class OkoooJczqResultProvider:
     source_page = "https://m.okooo.com/kaijiang/sport.php"
@@ -31,17 +33,12 @@ class OkoooJczqResultProvider:
     def fetch_results(self, run_date: str) -> dict[str, dict[str, str]]:
         prefix = _weekday_prefix(run_date)
         results: dict[str, dict[str, str]] = {}
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                "AppleWebKit/605.1.15 Mobile/15E148"
-            )
-        }
+        headers = {"User-Agent": MOBILE_UA}
         for pool, lottery_type in self._POOL_TYPES.items():
             url = f"{self.source_page}?LotteryNo={run_date}&LotteryType={lottery_type}"
             response = self._client.get(url, headers=headers)
             response.raise_for_status()
-            text = response.content.decode("gb18030", errors="replace")
+            text = decode(response.content, ("gb18030",), errors="replace")
             for cells in _parse_result_rows(text):
                 match_no = f"{prefix}{cells[0]}"
                 row = results.setdefault(match_no, {})

@@ -11,8 +11,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
+from nutmeg.decision.bj_time import BJ, parse_bj
+from nutmeg.decision.faces import FACE_OF
 from nutmeg.decision.rubric_items import (
     DIRECTIONAL_ITEMS,
     FACT_ITEMS,
@@ -24,7 +26,6 @@ from nutmeg.decision.rubric_items import (
     UNKNOWN,
 )
 
-_BJ = timezone(timedelta(hours=8))
 FACE_OF_SIDE = {"home": "3", "away": "0"}
 OTHER_SIDE = {"home": "away", "away": "home"}
 EFFECT_THRESHOLD = 0.5
@@ -36,14 +37,6 @@ class RubricIssue:
     level: str
     field: str
     message: str
-
-
-def _parse(value) -> datetime | None:
-    try:
-        dt = datetime.fromisoformat(str(value))
-    except (TypeError, ValueError):
-        return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=_BJ)
 
 
 def _p(value) -> float | None:
@@ -72,7 +65,7 @@ def validate_rubric(rubric, *, kickoff: str | None = None) -> tuple[dict, list[R
     if not isinstance(raw_items, dict):
         issues.append(RubricIssue("ERROR", "rubric.items", "items 必须是 {id: 答案}"))
         return {}, issues
-    kick = _parse(kickoff) if kickoff else None
+    kick = parse_bj(kickoff) if kickoff else None
     norm_items: dict[str, dict] = {}
     coerced: list[str] = []
     for item_id, raw in raw_items.items():
@@ -115,7 +108,7 @@ def validate_rubric(rubric, *, kickoff: str | None = None) -> tuple[dict, list[R
         )
         why = ""
         if active and item.source_required:
-            at = _parse(captured_at)
+            at = parse_bj(captured_at)
             if not source:
                 why = "答是但无来源"
             elif at is None:
@@ -297,7 +290,7 @@ def rubric_to_tilt(norm: dict, prior: dict | None = None, *,
             raw_shift[face] += sign * pp
     # 补偿面：减掉的质量按另两面的 prior 比例加回（或加上的从另两面按比例扣），和为 0
     prior = prior or {"home": 1 / 3, "draw": 1 / 3, "away": 1 / 3}
-    key = {"3": "home", "1": "draw", "0": "away"}
+    key = FACE_OF
     shift = dict(raw_shift)
     for face, delta in raw_shift.items():
         if not delta:
@@ -316,7 +309,7 @@ def rubric_to_tilt(norm: dict, prior: dict | None = None, *,
     if not any(rounded.values()):
         return None
     evidence = []
-    fallback_at = captured_at or norm.get("captured_at") or datetime.now(_BJ).isoformat(
+    fallback_at = captured_at or norm.get("captured_at") or datetime.now(BJ).isoformat(
         timespec="seconds")
     for item_id, pp, _faces in contributions:
         row = items[item_id]

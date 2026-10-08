@@ -7,16 +7,20 @@
 """
 from __future__ import annotations
 
+from nutmeg.decision.faces import FACE_OF, FACES
+
 
 def brier(probs: dict[str, float], actual: str) -> float:
-    """Σ over outcomes of (prob − 1{outcome==actual})²。actual 不在键中按 0 处理。"""
-    total = 0.0
-    keys = set(probs) | {actual}
-    for k in keys:
-        p = probs.get(k, 0.0)
-        target = 1.0 if k == actual else 0.0
-        total += (p - target) ** 2
-    return total
+    """Σ over outcomes of (prob − 1{outcome==actual})²。actual 不在键中按 0 处理。
+
+    `actual` 可以是 home/draw/away，也可以是竞彩码 3/1/0。唯一实现（2026-10-08 B5：signals、
+    retro_encoder、rsi_grading 各有一份）。按 主/平/客 → 其余键（升序）的固定顺序累加：旧实现按
+    set 遍历，浮点末位随进程的哈希种子变。"""
+    actual = FACE_OF.get(str(actual), actual)
+    keys = [*FACES, *sorted(k for k in probs if k not in FACES)]
+    if actual not in keys:
+        keys.append(actual)
+    return sum((float(probs.get(k, 0.0)) - (1.0 if k == actual else 0.0)) ** 2 for k in keys)
 
 
 def brier_delta_vs_prior(belief: dict[str, float], prior: dict[str, float],

@@ -67,6 +67,24 @@ def claude_env() -> dict[str, str]:
     return env
 
 
+def run_claude(system_prompt: str, stdin: str, *, model: str | None, allowed_tools: str = "",
+               max_turns: str = "1", timeout: int = 300) -> tuple[int, str]:
+    """一次 `claude -p`（文本输出、在空的临时目录里跑、带无人值守认证）→ (退出码, stdout)。
+
+    研究（`research_runner`）、读者 B（`rubric_reader`）、逻辑层（`brief_writer`）共用的唯一实现
+    （2026-10-08 B5，此前三份）。"""
+    import subprocess
+    import tempfile
+
+    argv = [claude_bin(), "-p", *model_argv(model), "--system-prompt", system_prompt,
+            "--allowedTools", allowed_tools, "--max-turns", str(max_turns),
+            "--output-format", "text"]
+    with tempfile.TemporaryDirectory() as neutral:
+        proc = subprocess.run(argv, input=stdin, capture_output=True, text=True,
+                              timeout=timeout, cwd=neutral, env=claude_env(), check=False)
+    return proc.returncode, proc.stdout
+
+
 def model_argv(name: str | None) -> list[str]:
     name = (name or "").strip()
     return ["--model", name] if name else []

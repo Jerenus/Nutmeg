@@ -18,8 +18,6 @@ from pathlib import Path
 
 API_URL = ("https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry"
            "?gameNo=90&provinceId=0&pageSize={page_size}&isVerify=1&pageNo=1")
-_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 VALID_CODES = {"3", "1", "0"}
 RENJIU_RETURN_RATE = 0.64
 
@@ -163,34 +161,27 @@ def parse_renjiu_history_payload(payload: dict) -> list[OfficialRenjiuHistory]:
     return [parse_renjiu_history_item(item) for item in items]
 
 
+def fetch_history(*, page_size: int, fetcher=None, timeout: float = 20.0) -> dict:
+    """官方 gameNo=90 历史页的原始响应（胜负彩 + 任九奖金 + 赛果串）。
+
+    唯一的抓取处（2026-10-08 B5）：任九奖金历史、单期开奖、gym 奖金缓存此前各写一个 fetcher。
+    `fetcher(url) -> dict` 供测试 / 离线文件注入。"""
+    url = API_URL.format(page_size=page_size)
+    if fetcher is not None:
+        return fetcher(url)
+    from nutmeg.data.http import SPORTTERY_REFERER, get_json
+
+    return get_json(url, referer=SPORTTERY_REFERER, timeout=timeout)
+
+
 def fetch_renjiu_history(*, fetcher=None, page_size: int = 60) -> list[OfficialRenjiuHistory]:
     """Fetch bonus-only gameNo=90 history in provider order."""
-    if fetcher is None:
-        def fetcher(url):
-            import httpx
-
-            response = httpx.get(
-                url,
-                headers={"User-Agent": _UA, "Referer": "https://www.sporttery.cn/"},
-                timeout=20.0,
-            )
-            response.raise_for_status()
-            return response.json()
-    payload = fetcher(API_URL.format(page_size=page_size))
-    return parse_renjiu_history_payload(payload)
+    return parse_renjiu_history_payload(fetch_history(page_size=page_size, fetcher=fetcher))
 
 
 def fetch_official(issue: str, *, fetcher=None, page_size: int = 15) -> OfficialDraw | None:
     """抓官方历史页找指定期号。未开奖/未出现在列表 → None（不是错误）。"""
-    if fetcher is None:
-        def fetcher(url):
-            import httpx
-            resp = httpx.get(url, headers={"User-Agent": _UA,
-                                           "Referer": "https://www.sporttery.cn/"},
-                             timeout=20.0)
-            resp.raise_for_status()
-            return resp.json()
-    payload = fetcher(API_URL.format(page_size=page_size))
+    payload = fetch_history(page_size=page_size, fetcher=fetcher)
     for item in ((payload.get("value") or {}).get("list") or []):
         if str(item.get("lotteryDrawNum")) == str(issue):
             return parse_draw(item)

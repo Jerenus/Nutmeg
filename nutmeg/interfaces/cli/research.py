@@ -9,7 +9,7 @@ import typer
 
 import nutmeg.interfaces.cli as _cli
 from nutmeg.decision.research_runner import _claude_cli as _claude
-from nutmeg.decision.research_runner import _cli_fulfill as _fulfill
+from nutmeg.decision.rsi_wiring import _cli_invoke as _fulfill
 
 research_app = typer.Typer(help="竞彩全板深研桥（headless）")
 _cli.app.add_typer(research_app, name="research")

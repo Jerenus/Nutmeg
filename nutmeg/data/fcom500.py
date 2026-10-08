@@ -26,12 +26,11 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from nutmeg.data.http import BROWSER_UA, decode
+from nutmeg.data.prices import devig
+
 logger = logging.getLogger(__name__)
 
-_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-)
 _DEFAULT_TIMEOUT = 20.0
 
 __all__ = [
@@ -66,7 +65,7 @@ class Fcom500Client:
         self._client = client or httpx.Client(
             transport=transport,
             timeout=timeout,
-            headers={"User-Agent": _USER_AGENT},
+            headers={"User-Agent": BROWSER_UA},
             follow_redirects=True,
         )
         self._cache: dict[str, str] = {}
@@ -78,7 +77,7 @@ class Fcom500Client:
             return cached
         response = self._client.get(url)
         response.raise_for_status()
-        text = response.content.decode("gb2312", errors="ignore")
+        text = decode(response.content, ("gb2312",), errors="ignore")
         self._cache[url] = text
         return text
 
@@ -285,11 +284,9 @@ def _devig(odds: dict[str, float]) -> dict[str, float]:
 
     The 6-dp rounding delta is absorbed into the largest bucket so the result
     sums to exactly 1.0 (mirrors ``dixon_coles._normalize_bucket_map``)."""
-    inverse = {k: 1.0 / v for k, v in odds.items() if v and v > 0}
-    total = sum(inverse.values())
-    if total <= 0:
+    fair = {k: round(v, 6) for k, v in devig(odds).items()}
+    if not fair:
         return {}
-    fair = {k: round(v / total, 6) for k, v in inverse.items()}
     delta = round(1.0 - sum(fair.values()), 6)
     if delta:
         strongest = max(fair, key=fair.get)

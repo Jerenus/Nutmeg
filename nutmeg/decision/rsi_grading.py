@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from nutmeg.decision.faces import CODE_OF
+from nutmeg.decision.scoring import brier
+
 
 class LeakError(ValueError):
     """样本来自开球之后——拒收。"""
@@ -137,7 +140,6 @@ def grade_f4(plans: Sequence[dict], *, seed: int = 7, boots: int = 4000) -> Grad
 # F5：date_from 起两泳道，gap12∈[10,20)pp 的模态面残差（stratum=pooled；另按泳道各出一档）。
 # F9：date_from 起 belief≠prior 的行，市场 Brier − 判读 Brier（pp，正=判读更好）。
 
-_FACE = {"home": "3", "draw": "1", "away": "0"}
 
 
 def _modal(fair: dict) -> str:
@@ -173,7 +175,7 @@ def _residual_grade(rows: Sequence[dict], *, stratum: str, computed_by: str,
         for r in rows
     ]
     resid_rows = [
-        {"actual": "m" if r["actual"] == _FACE[r["m"]] else "x", "fair": {"m": r["fair"]["m"]}}
+        {"actual": "m" if r["actual"] == CODE_OF[r["m"]] else "x", "fair": {"m": r["fair"]["m"]}}
         for r in modal_rows
     ]
     ci = bootstrap_residual_pp(resid_rows, face="m")
@@ -184,7 +186,8 @@ def _residual_grade(rows: Sequence[dict], *, stratum: str, computed_by: str,
 
 
 def _priced(rows: Sequence[dict]) -> list[dict]:
-    return [r for r in rows if len(r.get("fair") or {}) == 3 and r.get("actual") in _FACE.values()]
+    return [r for r in rows
+            if len(r.get("fair") or {}) == 3 and r.get("actual") in CODE_OF.values()]
 
 
 def grade_f3_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
@@ -217,11 +220,6 @@ def grade_f5_prospective(rows: Sequence[dict], *, window: dict,
                            as_of_policy="registry_window_date")
 
 
-def _brier(dist: dict, actual: str) -> float:
-    return sum((float(dist.get(face, 0.0)) - (1.0 if code == actual else 0.0)) ** 2
-               for face, code in _FACE.items())
-
-
 def grade_f9_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                          boots: int = 4000) -> GradeResult:
     """F9 判读增量：窗内 belief≠prior 的行，(市场 Brier − 判读 Brier)×100，正=判读更好。"""
@@ -231,7 +229,7 @@ def grade_f9_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
         and r.get("belief_moved")
         and len(r.get("belief") or {}) == 3
     ]
-    deltas = [(_brier(r["fair"], r["actual"]) - _brier(r["belief"], r["actual"])) * 100
+    deltas = [(brier(r["fair"], r["actual"]) - brier(r["belief"], r["actual"])) * 100
               for r in selected]
     n = len(deltas)
     if n == 0:
@@ -282,7 +280,7 @@ def grade_f11_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
         structure = str((r.get("labels") or {}).get("stance_structure") or "")
         if structure not in ("single", "double", "full"):
             continue
-        crashed = 1.0 if r["actual"] != _FACE[modal] else 0.0
+        crashed = 1.0 if r["actual"] != CODE_OF[modal] else 0.0
         groups["single" if structure == "single" else "insure"].append(
             crashed - (1.0 - r["fair"][modal]))
         selected.append(r)
@@ -308,7 +306,7 @@ COLLAPSE_FLAGS = frozenset({"dressing_room_turmoil", "coach_debut"})
 
 def _anchor_residual_grade(rows: Sequence[dict], *, computed_by: str) -> GradeResult:
     resid_rows = [
-        {"actual": "m" if r["actual"] == _FACE[r["_anchor"]] else "x",
+        {"actual": "m" if r["actual"] == CODE_OF[r["_anchor"]] else "x",
          "fair": {"m": r["fair"][r["_anchor"]]}}
         for r in rows
     ]
@@ -331,7 +329,7 @@ def grade_f13_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
             continue
         labels = r.get("labels") or {}
         anchor = labels.get("anchor_side")
-        if anchor not in _FACE or labels.get("anchor_integrity") != "fail":
+        if anchor not in CODE_OF or labels.get("anchor_integrity") != "fail":
             continue
         flags = set(labels.get("nondirectional_flags") or [])
         if not (flags & COLLAPSE_FLAGS) and not labels.get("crash_markers"):
@@ -350,9 +348,9 @@ PROSPECTIVE_ADAPTERS = {"F3": grade_f3_prospective, "F5": grade_f5_prospective,
 def _stance_faces(labels: dict) -> set[str]:
     structure = str(labels.get("stance_structure") or "")
     face, cover = str(labels.get("stance_face") or ""), str(labels.get("stance_cover") or "")
-    if structure == "single" and face in _FACE.values():
+    if structure == "single" and face in CODE_OF.values():
         return {face}
-    if structure == "double" and face in _FACE.values() and cover in _FACE.values():
+    if structure == "double" and face in CODE_OF.values() and cover in CODE_OF.values():
         return {face, cover}
     return set()
 
@@ -370,7 +368,7 @@ def grade_f14_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
         faces = _stance_faces(r.get("labels") or {})
         if not faces:
             continue
-        coverage = sum(float(r["fair"][k]) for k, code in _FACE.items() if code in faces)
+        coverage = sum(float(r["fair"][k]) for k, code in CODE_OF.items() if code in faces)
         resid.append((1.0 if r["actual"] in faces else 0.0) - coverage)
         selected.append(r)
     kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
@@ -406,12 +404,12 @@ def grade_f15_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
     for r in rows:
         if r.get("src") != "jczq" or not _in_date_window(r, window):
             continue
-        if r.get("actual") not in _FACE.values():
+        if r.get("actual") not in CODE_OF.values():
             continue
         fav = _closing_fav(r)
         if fav is None or fav[1] < threshold:
             continue
-        resid.append((1.0 if r["actual"] == _FACE[fav[0]] else 0.0) - fav[1])
+        resid.append((1.0 if r["actual"] == CODE_OF[fav[0]] else 0.0) - fav[1])
         selected.append(r)
     kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
                   inputs_hash=_rows_hash(selected), selected_keys=_keys(selected),

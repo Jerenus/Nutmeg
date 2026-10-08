@@ -1,8 +1,8 @@
 """Derive first-order alive/dead/never status for each outcome face."""
 from __future__ import annotations
 
-FACES = ("home", "draw", "away")
-FACE_DIGIT = {"home": "3", "draw": "1", "away": "0"}
+from nutmeg.decision.faces import CODE_OF, FACES
+
 _PROOF_KEYS = (
     ("a_no_scoring_mechanism", "a"),
     ("b_precedent_carrier_gone", "b"),
@@ -20,7 +20,7 @@ def _proofs(doc: dict | None) -> dict[str, bool]:
 
 
 def _precedent_status(leg: dict, face: str) -> str:
-    digit = FACE_DIGIT[face]
+    digit = CODE_OF[face]
     statuses = {
         str(precedent[2])
         for precedent in leg.get("precedents") or []
@@ -46,7 +46,7 @@ def proven_dead(research: dict | None) -> set[str]:
 
 
 def derive_faces(face_status: dict) -> str:
-    return "".join(FACE_DIGIT[face] for face in FACES if face_status[face]["state"] == "alive")
+    return "".join(CODE_OF[face] for face in FACES if face_status[face]["state"] == "alive")
 
 
 def attach_face_status(

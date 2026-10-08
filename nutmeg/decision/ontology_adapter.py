@@ -164,7 +164,7 @@ def _ingest_zucai_issue(kernel, issue: str, zucai_dir, requested_at: datetime) -
 
 
 def _zucai_source_time(value: dict, path: Path) -> datetime:
-    from zoneinfo import ZoneInfo
+    from nutmeg.decision.bj_time import BJ
 
     raw = value.get("captured_at")
     if isinstance(raw, str) and raw.strip():
@@ -175,7 +175,7 @@ def _zucai_source_time(value: dict, path: Path) -> datetime:
             pass
         else:
             if parsed.tzinfo is None or parsed.utcoffset() is None:
-                parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+                parsed = parsed.replace(tzinfo=BJ)
             return parsed
     return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
 

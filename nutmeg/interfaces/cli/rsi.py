@@ -9,13 +9,15 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import typer
 
 import nutmeg.interfaces.cli as _cli
 from nutmeg.config.settings import AppSettings
+from nutmeg.decision.bj_time import BJ, bj_iso
+from nutmeg.decision.faces import FACE_OF
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.rsi_actions import (
     AmendExperimentRequest,
@@ -78,7 +80,7 @@ def _now() -> datetime:
 
 
 def _business_day(at: datetime) -> str:
-    local = at.astimezone(_BJ)
+    local = at.astimezone(BJ)
     if local.hour < 7:
         local -= timedelta(days=1)
     return local.date().isoformat()
@@ -120,7 +122,7 @@ def _earliest_kickoff(data_dir: Path, issue: str | None) -> str | None:
     if not p.exists():
         return None
     matches = json.loads(p.read_text("utf-8"))["matches"]
-    kos = [_normalise_bj(str(m["kickoff_bj"])) for m in matches if m.get("kickoff_bj")]
+    kos = [bj_iso(str(m["kickoff_bj"])) for m in matches if m.get("kickoff_bj")]
     return min(kos) if kos else None
 
 
@@ -130,7 +132,7 @@ def _jczq_match_kickoffs(data_dir: Path, day: str) -> dict[str, str]:
         return {}
     legs = json.loads(path.read_text(encoding="utf-8")).get("legs") or {}
     return {
-        str(leg["match_id"]): _normalise_bj(str(leg["kickoff_bj"]))
+        str(leg["match_id"]): bj_iso(str(leg["kickoff_bj"]))
         for leg in legs.values()
         if leg.get("match_id") and leg.get("kickoff_bj")
     }
@@ -145,7 +147,7 @@ def _zucai_match_kickoffs(data_dir: Path, issue: str | None) -> dict[str, str]:
         return {}
     matches = json.loads(issue_path.read_text(encoding="utf-8")).get("matches") or []
     kickoff_by_no = {
-        int(match["match_no"]): _normalise_bj(str(match["kickoff_bj"]))
+        int(match["match_no"]): bj_iso(str(match["kickoff_bj"]))
         for match in matches
         if match.get("match_no") is not None and match.get("kickoff_bj")
     }
@@ -267,20 +269,6 @@ def _duty_schedule_context(kernel) -> tuple[set[str], str]:
         ).encode("utf-8")
     ).hexdigest()[:12]
     return populations, fingerprint
-
-
-_BJ = timezone(timedelta(hours=8))
-
-
-def _normalise_bj(raw: str) -> str:
-    """北京时间字串 → `YYYY-MM-DDTHH:MM:SS+08:00`。
-
-    真 `<issue>-issue.json` 写的是「2026-09-19 00:30」（空格、无秒）；due_at 与 now 在
-    repository 里按字串字典序比较，空格形式会排错位。与 scripts/rsi_migrate_preregs.py::_bj 同口径。
-    """
-    dt = datetime.fromisoformat(raw.strip().replace(" ", "T"))
-    dt = dt.replace(tzinfo=_BJ) if dt.tzinfo is None else dt.astimezone(_BJ)
-    return dt.isoformat(timespec="seconds")
 
 
 def _fork_registry_doc(
@@ -691,7 +679,7 @@ def _official_zucai_outcomes(data_dir: Path, issue: str, reads: list[dict]) -> d
     result = json.loads(path.read_text(encoding="utf-8")).get(issue)
     if not isinstance(result, str):
         return None
-    face = {"3": "home", "1": "draw", "0": "away"}
+    face = FACE_OF
     codes = result.split()
     outcomes: dict[str, str] = {}
     for index, read in enumerate(reads):

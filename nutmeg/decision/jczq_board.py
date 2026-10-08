@@ -4,15 +4,9 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
-BJ = ZoneInfo("Asia/Shanghai")
-
-
-def devig(odds: dict[str, float]) -> dict[str, float]:
-    raw = {key: 1.0 / float(value) for key, value in odds.items()}
-    total = sum(raw.values())
-    return {key: value / total for key, value in raw.items()}
+from nutmeg.data.prices import devig
+from nutmeg.decision.bj_time import BJ
 
 
 def _to_beijing(iso_value: str) -> str:
@@ -43,8 +37,9 @@ def build_board_legs(*, day: str, matches: list[dict], jczq_dir: Path,
             continue
         winner = odds_doc[code].get("match_winner") or {}
         odds = winner.get("odds") or {}
-        if not {"home", "draw", "away"} <= set(odds):
-            continue
+        fair = devig(odds)
+        if not {"home", "draw", "away"} <= set(fair):
+            continue  # 缺面或赔率为 0 / 不可解析：不进板（此前遇 0 赔率直接除零）
         market = {
             "match_id": match["match_id"],
             "name": f"{match['home_team']}-{match['away_team']}",
@@ -52,7 +47,7 @@ def build_board_legs(*, day: str, matches: list[dict], jczq_dir: Path,
             "away_team": match["away_team"],
             "competition": match.get("competition"),
             "kickoff_bj": _to_beijing(match["scheduled_at"]),
-            "fair": devig(odds),
+            "fair": fair,
             "hhad_line": winner.get("line"),
         }
         previous = existing.get(code)

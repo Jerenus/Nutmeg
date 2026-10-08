@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import tempfile
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -11,21 +9,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Event, Lock
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
+from nutmeg.decision.bj_time import BJ
 from nutmeg.decision.claude_models import (
-    claude_bin,
-    claude_env,
     is_auth_failure,
-    model_argv,
     model_label,
     research_model,
+    run_claude,
 )
 from nutmeg.decision.research_ledger import ResearchRunLedger
 from nutmeg.decision.research_prompt import render_brief, system_prompt
+from nutmeg.decision.rsi_wiring import _cli_invoke
 from nutmeg.decision.stance import validate_stance
 
-BJ = ZoneInfo("Asia/Shanghai")
 RESEARCH_DAILY_BUDGET = 40
 MAX_ATTEMPTS = 2
 RETRY_MARKER = "⚠️RETRY-AFTER-MAX-TURNS"
@@ -65,36 +61,9 @@ _REQUIRED = (
 
 
 def _claude_cli(prompt: str, brief: str) -> tuple[int, str]:
-    argv = [
-        claude_bin(),
-        "-p",
-        *model_argv(research_model()),
-        "--system-prompt",
-        prompt,
-        "--allowedTools",
-        "WebSearch,WebFetch",
-        "--max-turns",
-        RETRY_MAX_TURNS if RETRY_MARKER in brief else FIRST_MAX_TURNS,
-        "--output-format",
-        "text",
-    ]
-    with tempfile.TemporaryDirectory() as neutral:
-        process = subprocess.run(
-            argv,
-            input=brief,
-            capture_output=True,
-            text=True,
-            timeout=900,
-            cwd=neutral, env=claude_env(),
-            check=False,
-        )
-    return process.returncode, process.stdout
-
-
-def _cli_fulfill(argv: list[str]) -> tuple[int, str]:
-    from nutmeg.decision.rsi_wiring import _cli_invoke
-
-    return _cli_invoke(argv)
+    return run_claude(prompt, brief, model=research_model(), allowed_tools="WebSearch,WebFetch",
+                      max_turns=RETRY_MAX_TURNS if RETRY_MARKER in brief else FIRST_MAX_TURNS,
+                      timeout=900)
 
 
 def _empty_profile(_match_id: str) -> dict:
@@ -332,7 +301,7 @@ def run_day(
     jczq_dir: Path,
     data_dir: Path,
     claude: Claude = _claude_cli,
-    fulfill: Fulfill = _cli_fulfill,
+    fulfill: Fulfill = _cli_invoke,
     profile: Profile = _empty_profile,
     budget: int = RESEARCH_DAILY_BUDGET,
     code: str | None = None,

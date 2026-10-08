@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
-BJ = ZoneInfo("Asia/Shanghai")
+from nutmeg.decision.bj_time import BJ
 
 
 def _parse_timestamp(value: object) -> datetime | None:

@@ -11,24 +11,20 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import tempfile
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
+from nutmeg.decision.bj_time import BJ, aware
 from nutmeg.decision.claude_models import (
-    claude_bin,
-    claude_env,
-    model_argv,
     model_label,
     reader_model,
+    run_claude,
 )
 from nutmeg.decision.rubric import tolerate, tolerate_belief, validate_rubric
 from nutmeg.decision.rubric_items import ITEMS, RUBRIC_VERSION, question_table
 
 Claude = Callable[[str, str], tuple[int, str]]
-_BJ = timezone(timedelta(hours=8))
 STATE_FIELDS = ("name", "summary", "anchor_side", "anchor_integrity", "anchor_integrity_detail",
                 "hole_location", "license_questions", "crash_markers", "directional_flags",
                 "nondirectional_flags", "precedents", "schedule", "anchor_absences",
@@ -74,12 +70,7 @@ def state_text(research: dict) -> str:
 
 
 def _claude_cli(prompt: str, stdin: str) -> tuple[int, str]:
-    argv = [claude_bin(), "-p", *model_argv(reader_model()), "--system-prompt", prompt,
-            "--allowedTools", "", "--max-turns", "1", "--output-format", "text"]
-    with tempfile.TemporaryDirectory() as neutral:
-        proc = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=300,
-                               cwd=neutral, env=claude_env(), check=False)
-    return proc.returncode, proc.stdout
+    return run_claude(prompt, stdin, model=reader_model())
 
 
 def _first_json(text: str) -> dict:
@@ -187,14 +178,9 @@ def research_kickoff(research_path: Path, research: dict) -> str | None:
     return str(kick).replace(" ", "T") if kick else None
 
 
-def _aware(text: str) -> datetime:
-    at = datetime.fromisoformat(str(text))
-    return at if at.tzinfo else at.replace(tzinfo=_BJ)
-
-
 def _before(at: str, kickoff: str | None) -> bool:
     try:
-        return bool(kickoff) and _aware(at) < _aware(str(kickoff))
+        return bool(kickoff) and aware(at) < aware(str(kickoff))
     except ValueError:
         return False
 
@@ -213,7 +199,7 @@ def read_file(research_path: Path, *, claude: Claude = _claude_cli, free: bool =
     if "rejected" in research_path.name:
         return None
     kickoff = research_kickoff(research_path, research)
-    at = (now or datetime.now(_BJ)).isoformat(timespec="seconds")
+    at = (now or datetime.now(BJ)).isoformat(timespec="seconds")
     existing = json.loads(target.read_text(encoding="utf-8")) if target.exists() else {}
     a_norm: dict = {}
     if research.get("rubric"):
@@ -259,8 +245,8 @@ def pending_research(data_dir: Path, *, now: datetime | None = None) -> list[Pat
     研究一落盘（`research run` / 12:30·18:45 刷新）就补读这一批：竞彩看昨天到明天的板面目录，
     足彩看最近三期里还有未开球场次的研究。"""
     data_dir = Path(data_dir)
-    now = now or datetime.now(_BJ)
-    today = now.astimezone(_BJ).date()
+    now = now or datetime.now(BJ)
+    today = now.astimezone(BJ).date()
     candidates: list[Path] = []
     for delta in (-1, 0, 1):
         candidates += research_files(data_dir, day=(today + timedelta(days=delta)).isoformat())

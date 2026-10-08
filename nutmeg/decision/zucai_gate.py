@@ -29,8 +29,6 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 INSALE_URL = "https://trade.500.com/sfc/"
-_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
 _CURRENT_ISSUE_RE = re.compile(r"当前第\s*(\d{5})\s*期")
 _CHKED_ISSUE_RE = re.compile(r'class="chked"[^>]*data-expect="(\d{5})"')
@@ -95,13 +93,10 @@ def parse_insale(html: str, *, today: date, source_url: str = INSALE_URL) -> Ins
 
 
 def _default_fetcher(url: str) -> str:
-    import httpx
+    from nutmeg.data.http import get_text
 
-    resp = httpx.get(url, headers={"User-Agent": _UA}, timeout=20.0,
-                     follow_redirects=True)
-    resp.raise_for_status()
     # 500.com 是 GB 系编码,charset 声明不总可靠 —— 显式解码,坏字节不致命。
-    return resp.content.decode("gb18030", errors="ignore")
+    return get_text(url, encodings=("gb18030",), errors="ignore")
 
 
 def detect_insale(*, today: date | None = None, fetcher=None,
