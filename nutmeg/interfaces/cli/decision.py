@@ -862,27 +862,17 @@ def zucai_night_calibrate(
     """夜间结果校准:板面日 jc-results→身份链→90'彩果→票面存活(不写 rx/scoreboard)。"""
     import hashlib
 
-    from nutmeg.notifications.models import NotificationRequest
-
     report = run_night_calibrate(issue, date, zucai_dir)
     _cli.typer.echo(report)
     if not dispatch_telegram:
         return
-    from nutmeg.notifications.wiring import build_notification_service
+    from nutmeg.notifications.notify import notify
 
-    service = build_notification_service(settings=_cli.get_settings())
-    outcome = service.publish(
-        NotificationRequest.text(
-            kind="zucai.night-calibration",
-            business_key=issue,
-            stage=date,
-            semantic_fingerprint=hashlib.sha256(report.encode("utf-8")).hexdigest(),
-            subject=f"{issue} 夜间校准 {date}",
-            text=report,
-        ),
-        dry_run=dry_run,
+    outcome = notify(
+        "zucai.night-calibration", f"{issue}:{date}",
+        hashlib.sha256(report.encode("utf-8")).hexdigest(), report, dry_run=dry_run,
     )
-    _cli.typer.echo(f"notification: {outcome.status.value}")
+    _cli.typer.echo(f"notification: {outcome.status}")
     if not outcome.is_success:
         raise _cli.typer.Exit(code=1)
 

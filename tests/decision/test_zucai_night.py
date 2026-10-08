@@ -13,6 +13,7 @@ from nutmeg.decision.zucai_night import (
     ticket_partial_status,
 )
 from nutmeg.interfaces.cli import app
+from nutmeg.notifications.notify import NotifyResult
 
 
 def test_result_code_home_win():
@@ -151,20 +152,16 @@ def test_run_night_calibrate_no_tickets_file(tmp_path):
     assert "场3" in report and "→ 3" in report      # 无票文件仍出彩果，不报错
 
 
-class _NotificationOutcome:
-    def __init__(self, status: str, *, success: bool) -> None:
-        self.status = type("Status", (), {"value": status})()
-        self.is_success = success
+class _Notify:
+    """Fake ``nutmeg.notifications.notify.notify``: records calls, returns a fixed result."""
 
-
-class _NotificationService:
-    def __init__(self, outcome) -> None:
-        self.outcome = outcome
+    def __init__(self, status: str) -> None:
+        self.result = NotifyResult(status)
         self.calls = []
 
-    def publish(self, request, *, dry_run):
-        self.calls.append((request, dry_run))
-        return self.outcome
+    def __call__(self, kind, key, fingerprint, text, **kwargs):
+        self.calls.append(((kind, key, fingerprint, text), kwargs))
+        return self.result
 
 
 def test_night_cli_without_dispatch_preserves_stdout_and_builds_no_notifier(
@@ -176,8 +173,8 @@ def test_night_cli_without_dispatch_preserves_stdout_and_builds_no_notifier(
         lambda issue, date, zucai_dir: report,
     )
     monkeypatch.setattr(
-        "nutmeg.notifications.wiring.build_notification_service",
-        lambda **kwargs: (_ for _ in ()).throw(AssertionError("notifier built")),
+        "nutmeg.notifications.notify.notify",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("notify called")),
     )
 
     result = CliRunner().invoke(app, [
@@ -193,14 +190,12 @@ def test_night_cli_without_dispatch_preserves_stdout_and_builds_no_notifier(
 
 def test_night_cli_dispatches_exact_report_as_dry_run(tmp_path, monkeypatch):
     report = "fixed night report"
-    service = _NotificationService(_NotificationOutcome("dry_run", success=True))
+    service = _Notify("dry_run")
     monkeypatch.setattr(
         "nutmeg.interfaces.cli.decision.run_night_calibrate",
         lambda issue, date, zucai_dir: report,
     )
-    monkeypatch.setattr(
-        "nutmeg.notifications.wiring.build_notification_service", lambda **kwargs: service
-    )
+    monkeypatch.setattr("nutmeg.notifications.notify.notify", service)
 
     result = CliRunner().invoke(app, [
         "zucai-night-calibrate",
@@ -212,26 +207,22 @@ def test_night_cli_dispatches_exact_report_as_dry_run(tmp_path, monkeypatch):
     ])
 
     assert result.exit_code == 0
-    request, dry_run = service.calls[0]
-    assert dry_run is True
-    assert request.kind == "zucai.night-calibration"
-    assert request.business_key == "26111"
-    assert request.stage == "2026-08-26"
-    assert request.semantic_fingerprint == sha256(report.encode()).hexdigest()
-    assert request.subject == "26111 夜间校准 2026-08-26"
-    assert request.body == report
+    (kind, key, fingerprint, text), kwargs = service.calls[0]
+    assert kwargs["dry_run"] is True
+    assert kind == "zucai.night-calibration"
+    assert key == "26111:2026-08-26"
+    assert fingerprint == sha256(report.encode()).hexdigest()
+    assert text == report
     assert "notification: dry_run" in result.stdout
 
 
 def test_night_cli_failed_required_delivery_exits_one(tmp_path, monkeypatch):
-    service = _NotificationService(_NotificationOutcome("failed", success=False))
+    service = _Notify("failed")
     monkeypatch.setattr(
         "nutmeg.interfaces.cli.decision.run_night_calibrate",
         lambda issue, date, zucai_dir: "report",
     )
-    monkeypatch.setattr(
-        "nutmeg.notifications.wiring.build_notification_service", lambda **kwargs: service
-    )
+    monkeypatch.setattr("nutmeg.notifications.notify.notify", service)
 
     result = CliRunner().invoke(app, [
         "zucai-night-calibrate",
@@ -246,14 +237,12 @@ def test_night_cli_failed_required_delivery_exits_one(tmp_path, monkeypatch):
 
 
 def test_night_cli_no_dry_run_is_forwarded_explicitly(tmp_path, monkeypatch):
-    service = _NotificationService(_NotificationOutcome("sent", success=True))
+    service = _Notify("sent")
     monkeypatch.setattr(
         "nutmeg.interfaces.cli.decision.run_night_calibrate",
         lambda issue, date, zucai_dir: "report",
     )
-    monkeypatch.setattr(
-        "nutmeg.notifications.wiring.build_notification_service", lambda **kwargs: service
-    )
+    monkeypatch.setattr("nutmeg.notifications.notify.notify", service)
 
     result = CliRunner().invoke(app, [
         "zucai-night-calibrate",
@@ -265,4 +254,4 @@ def test_night_cli_no_dry_run_is_forwarded_explicitly(tmp_path, monkeypatch):
     ])
 
     assert result.exit_code == 0
-    assert service.calls[0][1] is False
+    assert service.calls[0][1]["dry_run"] is False

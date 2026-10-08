@@ -3,6 +3,7 @@ from pathlib import Path
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.ontology_adapter import _report_v2, run_decision_am_v2
+from nutmeg.notifications.notify import NotifyResult
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 
@@ -15,20 +16,15 @@ SPORTTERY = {"matchInfoList": [{"businessDate": DATE, "subMatchList": [
 CLOSING = {"周日001": {"match_winner": {"odds": {"home": 1.95, "draw": 3.50, "away": 3.40}}}}
 
 
-class _FakeOutcome:
-    class _Status:
-        value = "dry_run"
-
-    status = _Status()
-
-
 class _FakeNotifier:
+    """Fake ``notify``: records the dry_run flag of each call."""
+
     def __init__(self) -> None:
         self.calls: list[bool] = []
 
-    def publish(self, request, *, dry_run=False):
+    def __call__(self, kind, key, fingerprint, text, *, dry_run=False, **_kwargs):
         self.calls.append(dry_run)
-        return _FakeOutcome()
+        return NotifyResult("dry_run" if dry_run else "sent")
 
 
 def _kernel(tmp_path: Path):
