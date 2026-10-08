@@ -10,7 +10,7 @@
 |---|---:|---|---|---|
 | `com.nutmeg.decision.am` | 08:00（失败 30 分后重试一次） | `scripts/openclaw/nutmeg_scheduler_ops.py run-strict --stage am` → `decision-am`：板面、赔率快照入内核；成功后自动 `research board` + `rsi schedule` + 并集池刷新 | 判断层、RSI 义务排程 | 当日没有板面；体彩**一场都没开售**（含完全为空）记为合法空盘（`NUTMEG_OK … empty_board`，2026-10-02 / 10-05） |
 | `com.nutmeg.jczq.results-backfill` | 09:30 / 15:30 | `scripts/jczq_result_backfill.py` → `jczq/jc-results.json` | 结算、语料、夜账 | 结算与语料停在旧日期；stdout 首行 `⚠️RESULTS_STALE` 时退出 2，不得把旧结果当完整结算源 |
-| `com.nutmeg.day.settle` | 09:45 / 15:45 | `day run --job results` + `--job settle`：昨日 90' 赛果桥 → 实票结算 → 记分牌复盘编码 → 处方预测记账 | 记分牌、账房、gym 回放的实际票面 | 昨日票未结；账房缺数 |
+| `com.nutmeg.day.settle` | 09:45 / 15:45 | `day run --job results` + `--job settle`：昨日 90' 赛果桥 → 实票结算 → 记分牌复盘编码 → 处方预测记账（赛果 15:45 才到时结算段在 15:45 重跑） | 记分牌、账房、gym 回放的实际票面 | 昨日票未结；账房缺数 |
 | `com.nutmeg.jczq.research` | 10:00 | `decision-am` → `research run`（并集池 ≤40 场，带 rubric r1）→ `research refresh`（入库 + 建 Read + 交本体 + 投影，一次；2026-10-08 前是 intake / build-reads 两步、入库一轮跑 3 次）；并集池刷新同时自动建足彩 legs-base | 研究文件、Read、内核 revision、机器初稿输入、R0/R1 | 判断层零产出；空盘日入库与建 Read 自动跳过 |
 | `com.nutmeg.rsi.loop` | 10:45 | `rsi loop` 9 步：终盘补采 → 两读 → 语料 → 前瞻结账 → 到期判决 → 因子提案 → 实力指数 → 记分牌解析 → 自动提交实验文件 → `analytics/rsi-loop/latest.md` | 实验层、当日报告的「待人决定」 | 判决与提案停在前一天；`--force` 可当天重跑 |
 | `com.nutmeg.zucai.prep-morning` | 11:00 | `zucai-prep --slot morning --dispatch-telegram`；备料后带期号入本体（产 store-ids）。三档推送同一规则（2026-10-05）：只在位移超门槛（列出场次与 pp）或分歧闸状态变化时发，探测/抓取失败照发 | 足彩样本池、legs-base | 当期赛程与早盘快照缺 |

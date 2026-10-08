@@ -183,7 +183,7 @@ gantt
 |---|---|---|---|---|
 | `decision.am` | 08:00（失败等 30 分重试） | `nutmeg_scheduler_ops.py run-strict --stage am` → `decision-am` | 内核板面、深研、RSI 义务排程 | 当天没有板面；体彩**一场都没开售**（含完全为空）记为合法空盘 |
 | `jczq.results-backfill` | 09:30 / 15:30 | `scripts/jczq_result_backfill.py` | `jc-results.json` → 结算、语料、夜账 | 结算与语料停在旧日期（lag>2 天退出 2） |
-| `day.settle` | 09:45 / 15:45 | `day run --job results` + `--job settle` | 实票结算、记分牌复盘编码、处方预测记账、人群线索结算（`crowd settle --pending`） | 昨日票未结、账房缺数 |
+| `day.settle` | 09:45 / 15:45 | `day run --job results` + `--job settle` | 实票结算、记分牌复盘编码、处方预测记账、人群线索结算（`crowd settle --pending`）；09:45 时 jc-results 常未封存，15:45 赛果到了结算段重跑（2026-10-08 起） | 昨日票未结、账房缺数 |
 | `jczq.research` | 10:00 | `decision-am` → `research run` → `research refresh` | 研究文件、Read、内核 revision、足彩自动 legs-base | 判断层零产出；空盘日两步自动跳过 |
 | `rsi.loop` | 10:45 | `rsi loop`（9 步，见 5.3；结账/判决含已签字的 CR 人群假说） | 实验结账、因子提案、实力指数、语料 | 判决与提案停在前一天 |
 | `zucai.prep-morning` / `prep` / `prep-revision` | 11:00 / 14:00 / 18:30 | `zucai-prep --slot … --dispatch-telegram` | 足彩期次、store-ids、位移复核；`after_prep` 末尾 `crowd fetch` + `crowd scan`（人群层快照与线索） | 足彩样本池与初稿没有输入 |
