@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
-from nutmeg.ontology.actions.bundle_actions import BundleActions
 from nutmeg.ontology.actions.capital_actions import CapitalActions
 from nutmeg.ontology.actions.claim_actions import ClaimActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
@@ -25,11 +24,9 @@ from nutmeg.ontology.actions.person_actions import PersonActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.service import ActionService
-from nutmeg.ontology.actions.session_actions import SessionActions
 from nutmeg.ontology.actions.ticket_actions import TicketActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
-from nutmeg.ontology.decision.read_flow import DecisionReadService
 from nutmeg.ontology.finance.express_flow import ExpressService
 from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
@@ -75,11 +72,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         observation_actions=ObservationActions(action_service),
         claim_actions=claim_actions,
     )
-    decision_read = DecisionReadService(
-        session_actions=SessionActions(action_service),
-        bundle_actions=BundleActions(action_service),
-        forecast_actions=forecast_actions,
-    )
     express = ExpressService(ticket_actions=TicketActions(action_service))
     reconcile = ReconcileService(
         outcome_actions=OutcomeActions(action_service),
@@ -96,7 +88,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         artifact_ingest=artifact_ingest,
         market_day_ingest=market_day_ingest,
         evidence_day_ingest=evidence_day_ingest,
-        decision_read=decision_read,
         express=express,
         reconcile=reconcile,
         calibrate=calibrate,

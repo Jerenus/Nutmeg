@@ -23,7 +23,6 @@ from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
-from nutmeg.ontology.decision.read_flow import DecisionReadService
 from nutmeg.ontology.finance.express_flow import ExpressService
 from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.evidence_day import EvidenceDayIngestService
@@ -68,7 +67,6 @@ class OntologyKernelStatus:
     observation_count: int
     claim_count: int
     forecast_count: int
-    bundle_count: int
     ticket_count: int
     settlement_count: int
     projection_run_count: int
@@ -99,7 +97,6 @@ class OntologyKernelStatus:
             "observation_count": self.observation_count,
             "claim_count": self.claim_count,
             "forecast_count": self.forecast_count,
-            "bundle_count": self.bundle_count,
             "ticket_count": self.ticket_count,
             "settlement_count": self.settlement_count,
             "projection_run_count": self.projection_run_count,
@@ -122,7 +119,6 @@ class OntologyKernel:
         artifact_ingest: ArtifactIngestService,
         market_day_ingest: MarketDayIngestService,
         evidence_day_ingest: EvidenceDayIngestService,
-        decision_read: DecisionReadService,
         express: ExpressService,
         reconcile: ReconcileService,
         calibrate: CalibrateService,
@@ -140,7 +136,6 @@ class OntologyKernel:
         self.artifact_ingest = artifact_ingest
         self.market_day_ingest = market_day_ingest
         self.evidence_day_ingest = evidence_day_ingest
-        self.decision_read = decision_read
         self.express = express
         self.reconcile = reconcile
         self.calibrate = calibrate
@@ -185,7 +180,6 @@ class OntologyKernel:
                 observation_count=0,
                 claim_count=0,
                 forecast_count=0,
-                bundle_count=0,
                 ticket_count=0,
                 settlement_count=0,
                 projection_run_count=0,
@@ -224,7 +218,6 @@ class OntologyKernel:
             claim_count = evidence.count_claims()
             decision = DecisionRepository(connection)
             forecast_count = decision.count_committed_revisions()
-            bundle_count = decision.count_bundles()
             finance = FinanceRepository(connection)
             ticket_count = finance.count_tickets()
             settlement_count = finance.count_settlements()
@@ -266,7 +259,6 @@ class OntologyKernel:
             observation_count=observation_count,
             claim_count=claim_count,
             forecast_count=forecast_count,
-            bundle_count=bundle_count,
             ticket_count=ticket_count,
             settlement_count=settlement_count,
             projection_run_count=counts["projection_run_count"],
