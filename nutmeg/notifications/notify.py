@@ -17,13 +17,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
-import sqlite3
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -164,61 +162,11 @@ def _sent(path: Path) -> set[tuple[str, str, str]]:
 
 
 def _ensure_ledger(path: Path) -> None:
-    """Create the ledger on first use, seeded from the retired SQL outbox.
-
-    Cutover (2026-10-08): every notification ``state/state.db`` marks ``sent`` is imported
-    as a ``sent`` row, so nothing already delivered goes out again. state.db is read-only
-    here and stays on disk. Idempotent: the import runs only while the ledger is absent, and
-    the seeded ledger appears atomically (hard link), so a crash or a racing process never
-    leaves a half-imported ledger.
-    """
-    if path.exists():
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    rows = _legacy_sent(path.parent.parent / "state" / "state.db")
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(
-        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8"
-    )
-    try:
-        os.link(tmp, path)
-    except FileExistsError:
-        pass
-    finally:
-        tmp.unlink(missing_ok=True)
+    """Create an empty ledger on first use. (The 2026-10-08 cutover seeded the production
+    ledger with the 162 rows the retired SQL outbox had delivered; that one-time import and
+    state.db are gone.)"""
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
 
 
-def _legacy_sent(state_db: Path) -> list[dict[str, Any]]:
-    if not state_db.is_file():
-        return []
-    con = sqlite3.connect(f"{state_db.resolve().as_uri()}?mode=ro", uri=True)
-    try:
-        records = con.execute(
-            "SELECT kind, business_key, stage, semantic_fingerprint, updated_at "
-            "FROM notifications WHERE status = 'sent' ORDER BY created_at"
-        ).fetchall()
-    except sqlite3.OperationalError:  # no outbox table in this state.db
-        return []
-    finally:
-        con.close()
-    return [
-        {
-            "ts": _utc_to_local(updated_at),
-            "kind": kind,
-            "key": f"{business_key}:{stage}",
-            "fingerprint": fingerprint,
-            "status": "sent",
-            "error": None,
-            "via": "state.db",
-        }
-        for kind, business_key, stage, fingerprint, updated_at in records
-    ]
-
-
-def _utc_to_local(value: object) -> str:
-    """The outbox stored naive UTC timestamps; the ledger writes local time with offset."""
-    try:
-        stamp = datetime.fromisoformat(str(value)).replace(tzinfo=UTC)
-    except ValueError:
-        return str(value)
-    return stamp.astimezone().isoformat(timespec="seconds")

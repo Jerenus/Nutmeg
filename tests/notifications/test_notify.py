@@ -1,7 +1,6 @@
 import hashlib
 import importlib.util
 import json
-import sqlite3
 from pathlib import Path
 
 import httpx
@@ -140,58 +139,6 @@ def test_default_ledger_lives_under_the_data_dir(tmp_path: Path) -> None:
     notify("k", "b:s", "f", "hi", client=client, chat_ids=[1])
     ledger = get_settings().data_dir / "notifications" / "ledger.jsonl"
     assert [row["key"] for row in _rows(ledger)] == ["b:s"]
-
-
-def _legacy_state_db(path: Path) -> None:
-    path.parent.mkdir(parents=True)
-    with sqlite3.connect(path) as con:
-        con.execute(
-            "CREATE TABLE notifications (notification_id TEXT PRIMARY KEY, kind TEXT, "
-            "business_key TEXT, stage TEXT, semantic_fingerprint TEXT, status TEXT, "
-            "created_at DATETIME, updated_at DATETIME)"
-        )
-        con.executemany(
-            "INSERT INTO notifications VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                ("N-1", "operations.failure", "am:2026-10-07", "am", "fp-sent", "sent",
-                 "2026-10-07 08:00:00", "2026-10-07 08:00:01"),
-                ("N-2", "zucai.prep.morning", "26136-morning", "morning", "fp-failed",
-                 "failed", "2026-10-07 11:00:00", "2026-10-07 11:00:01"),
-            ],
-        )
-
-
-def test_first_use_imports_delivered_outbox_rows(tmp_path: Path) -> None:
-    state_db = tmp_path / "state" / "state.db"
-    _legacy_state_db(state_db)
-    before = hashlib.sha256(state_db.read_bytes()).hexdigest()
-    ledger = tmp_path / "notifications" / "ledger.jsonl"
-    client = FakeClient()
-
-    # delivered by the old outbox → not re-sent
-    assert _send(ledger, client, kind="operations.failure", key="am:2026-10-07:am",
-                 fp="fp-sent").status == "deduplicated"
-    # failed in the old outbox → still owed, goes out now
-    assert _send(ledger, client, kind="zucai.prep.morning", key="26136-morning:morning",
-                 fp="fp-failed").status == "sent"
-    assert len(client.messages) == 1
-
-    imported = [row for row in _rows(ledger) if row.get("via") == "state.db"]
-    assert [(r["kind"], r["key"], r["fingerprint"]) for r in imported] == [
-        ("operations.failure", "am:2026-10-07:am", "fp-sent")
-    ]
-    # idempotent: once the ledger exists the import never runs again
-    _send(ledger, client, fp="another")
-    assert len([row for row in _rows(ledger) if row.get("via") == "state.db"]) == 1
-    assert hashlib.sha256(state_db.read_bytes()).hexdigest() == before   # read-only
-    assert not list(ledger.parent.glob(".*.tmp"))
-
-
-def test_import_tolerates_a_state_db_without_the_outbox(tmp_path: Path) -> None:
-    (tmp_path / "state").mkdir()
-    sqlite3.connect(tmp_path / "state" / "state.db").close()
-    ledger = tmp_path / "notifications" / "ledger.jsonl"
-    assert _send(ledger, FakeClient()).status == "sent"
 
 
 def test_semantic_fingerprint_matches_the_outbox_digest() -> None:
