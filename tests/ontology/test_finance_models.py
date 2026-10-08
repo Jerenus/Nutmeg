@@ -1,6 +1,5 @@
 from nutmeg.ontology.finance.models import (
     OutcomeStatus,
-    ProposalStatus,
     SettlementGrade,
     TicketStatus,
     TransactionKind,
@@ -16,7 +15,6 @@ def test_enum_values() -> None:
     assert SettlementGrade.WIN.value == "win"
     assert SettlementGrade.LOSS.value == "loss"
     assert SettlementGrade.VOID.value == "void"
-    assert ProposalStatus.PROPOSED.value == "proposed"
 
 
 def test_mint_finance_id() -> None:

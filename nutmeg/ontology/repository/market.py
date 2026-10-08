@@ -119,27 +119,6 @@ class MarketRepository:
             )
         ).scalar_one_or_none()
 
-    def selection_id_for(
-        self, market_definition_id: str, outcome_key: str, line: str | None = None
-    ) -> str | None:
-        conditions = [
-            sm.selection_definitions.c.market_definition_id == market_definition_id,
-            sm.selection_definitions.c.outcome_key == outcome_key,
-        ]
-        if line is not None:
-            conditions.append(sm.selection_definitions.c.line == line)
-        return self._connection.execute(
-            select(sm.selection_definitions.c.selection_id).where(*conditions).limit(1)
-        ).scalar_one_or_none()
-
-    def snapshot_quote_ids(self, market_snapshot_id: str) -> tuple[str, ...]:
-        rows = self._connection.execute(
-            select(sm.market_snapshot_quotes.c.quote_id).where(
-                sm.market_snapshot_quotes.c.market_snapshot_id == market_snapshot_id
-            )
-        ).scalars().all()
-        return tuple(rows)
-
     def snapshot_exists_for(
         self,
         market_snapshot_id: str,
@@ -235,13 +214,6 @@ class MarketRepository:
     def market_kind(self, market_definition_id: str) -> str | None:
         return self._connection.execute(
             select(sm.market_definitions.c.market_kind).where(
-                sm.market_definitions.c.market_definition_id == market_definition_id
-            )
-        ).scalar_one_or_none()
-
-    def market_line_schema(self, market_definition_id: str) -> str | None:
-        return self._connection.execute(
-            select(sm.market_definitions.c.line_schema).where(
                 sm.market_definitions.c.market_definition_id == market_definition_id
             )
         ).scalar_one_or_none()

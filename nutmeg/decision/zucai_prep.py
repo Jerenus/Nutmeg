@@ -854,20 +854,13 @@ def _previous_slot(issue: str, slot: str, zdir: Path) -> str | None:
 
 def _notify(body: str, *, stage: str, business_key: str, attachments=(),
             notification_service=None) -> None:
-    from nutmeg.notifications.models import NotificationRequest, semantic_fingerprint
-    from nutmeg.notifications.wiring import build_notification_service
+    """``notification_service``: a ``notify``-compatible callable (tests inject a fake)."""
+    from nutmeg.notifications.notify import notify, semantic_fingerprint
 
-    service = notification_service or build_notification_service()
-    service.publish(NotificationRequest(
-        kind=f"zucai.prep.{stage}",
-        business_key=business_key,
-        stage=stage,
-        semantic_fingerprint=semantic_fingerprint({"stage": stage, "body": body}),
-        subject=f"足彩备料 {business_key}",
-        caption=body,
-        body=body,
-        attachments=tuple(attachments),
-    ))
+    send = notification_service or notify
+    send(f"zucai.prep.{stage}", f"{business_key}:{stage}",
+         semantic_fingerprint({"stage": stage, "body": body}), body,
+         attachments=tuple(attachments))
 
 
 def run_zucai_prep(

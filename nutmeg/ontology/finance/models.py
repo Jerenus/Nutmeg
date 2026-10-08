@@ -10,12 +10,6 @@ from enum import StrEnum
 from uuid import uuid4
 
 
-class ProposalStatus(StrEnum):
-    PROPOSED = 'proposed'
-    APPROVED = 'approved'
-    REJECTED = 'rejected'
-
-
 class TicketStatus(StrEnum):
     PROPOSED = 'proposed'
     APPROVED = 'approved'

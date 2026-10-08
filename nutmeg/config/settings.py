@@ -50,20 +50,8 @@ class AppSettings(BaseSettings):
         return value
 
     @property
-    def state_dir(self) -> Path:
-        return self.data_dir / 'state'
-
-    @property
     def analytics_dir(self) -> Path:
         return self.data_dir / 'analytics'
-
-    @property
-    def state_db_path(self) -> Path:
-        return self.state_dir / 'state.db'
-
-    @property
-    def state_db_url(self) -> str:
-        return f'sqlite:///{self.state_db_path.resolve()}'
 
     @property
     def analytics_db_path(self) -> Path:

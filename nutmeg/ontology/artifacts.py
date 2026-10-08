@@ -54,36 +54,6 @@ class ContentAddressedArtifactStore:
         self._publish(temp_path, destination, byte_size)
         return self._blob(digest, byte_size)
 
-    def put_file(self, source: Path | str) -> ArtifactBlob:
-        source_path = Path(source).resolve()
-        if not source_path.is_file():
-            raise FileNotFoundError(source_path)
-
-        self._root.mkdir(parents=True, exist_ok=True)
-        hasher = hashlib.sha256()
-        byte_size = 0
-        with NamedTemporaryFile(delete=False, dir=self._root, suffix='.tmp') as temp:
-            temp_path = Path(temp.name)
-            try:
-                with source_path.open('rb') as reader:
-                    while chunk := reader.read(_CHUNK_SIZE):
-                        hasher.update(chunk)
-                        byte_size += len(chunk)
-                        temp.write(chunk)
-                temp.flush()
-                os.fsync(temp.fileno())
-            except BaseException:
-                temp_path.unlink(missing_ok=True)
-                raise
-
-        digest = hasher.hexdigest()
-        destination = self._destination(digest)
-        if destination.exists() and destination.stat().st_size == byte_size:
-            temp_path.unlink(missing_ok=True)
-            return self._blob(digest, byte_size)
-        self._publish(temp_path, destination, byte_size)
-        return self._blob(digest, byte_size)
-
     def _publish(self, temp_path: Path, destination: Path, byte_size: int) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         try:

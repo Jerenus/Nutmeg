@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import insert
+
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.models import ActionCommand, ActionStatus, ActorRole
+from nutmeg.ontology.repository import schema
 from nutmeg.ontology.repository.actions import ActionRepository
-from nutmeg.ontology.repository.replay import HistoricalReplayRunRecord
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 
@@ -109,8 +111,9 @@ def test_count_snapshot_matches_uses_distinct_action_payload_truth(tmp_path: Pat
 def test_action_repository_round_trips_replay_provenance(tmp_path: Path) -> None:
     kernel = _kernel(tmp_path)
     with OntologyUnitOfWork(kernel.engine) as uow:
-        uow.replay.insert_running(
-            HistoricalReplayRunRecord(
+        # replay binding is retired; seed the historical run row directly
+        uow.connection.execute(
+            insert(schema.historical_replay_runs).values(
                 replay_run_id="replay-20260919-a",
                 business_date="2026-09-19",
                 source_root_fingerprint="source",
@@ -119,11 +122,7 @@ def test_action_repository_round_trips_replay_provenance(tmp_path: Path) -> None
                 schema_version=35,
                 status="running",
                 started_at=AT.isoformat(),
-                finished_at=None,
-                production_before={},
-                production_after=None,
-                report_sha256=None,
-                failure_codes=(),
+                production_before_json="{}",
             )
         )
         command = ActionCommand.create(

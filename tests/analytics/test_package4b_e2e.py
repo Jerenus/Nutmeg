@@ -1,17 +1,18 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import insert
+
 from nutmeg.analytics.calibrate_flow import CalibrateRequest
 from nutmeg.config.settings import AppSettings
-from nutmeg.ontology.actions.factor_actions import ApplyFactorStatusRequest, FactorActions
 from nutmeg.ontology.actions.forecast_actions import (
     CommitForecastRequest,
     FactorInput,
     ForecastActions,
 )
-from nutmeg.ontology.actions.models import ActionStatus, ActorRole
+from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.actions.service import ActionService
-from nutmeg.ontology.repository.decision import FactorDefinitionRow, FactorFamilyRow
+from nutmeg.ontology.repository import schema_decision as sd
 from nutmeg.ontology.repository.finance import OutcomeRow
 from nutmeg.ontology.repository.market import SnapshotRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -25,11 +26,13 @@ SHARP = {"home": 0.65, "draw": 0.2, "away": 0.15}
 
 def _seed(kernel):
     svc = ActionService(lambda: OntologyUnitOfWork(kernel.engine))
-    with OntologyUnitOfWork(kernel.engine) as uow:
-        uow.decision.insert_factor_family(FactorFamilyRow("ff-rest", "rest", None))
-        uow.decision.insert_factor_definition(FactorDefinitionRow(
+    # factor families/definitions have no kernel writer any more; seed rows directly
+    with kernel.engine.begin() as connection:
+        connection.execute(insert(sd.factor_families).values(
+            factor_family_id="ff-rest", name="rest", definition=None))
+        connection.execute(insert(sd.factor_definitions).values(
             factor_definition_id="fd-good", factor_family_id="ff-rest", version=1, name="rest",
-            definition=None, scope=None, status="probation", born_from_refs=[],
+            definition=None, scope=None, status="probation", born_from_refs_json="[]",
             valid_from=T.isoformat(), valid_to=None, policy_version="governance-v1"))
     for i in range(3):
         match = f"m-{i}"
@@ -54,13 +57,12 @@ def _seed(kernel):
                 fair_distribution={"home": 0.66, "draw": 0.19, "away": 0.15},
                 devig_method="proportional", method_version="v1", source_coverage={}, freshness={},
                 disagreement={}))
-    return svc
 
 
 def test_package4b_learning_end_to_end(tmp_path: Path) -> None:
     kernel = build_ontology_kernel(AppSettings(data_dir=tmp_path / "data"))
     kernel.initialize()
-    svc = _seed(kernel)
+    _seed(kernel)
     request = CalibrateRequest(as_of=T.isoformat(), built_at="2026-07-20T00:00:00+00:00")
     first = kernel.calibrate.build(request)
     second = kernel.calibrate.build(request)   # deterministic at the same high-watermark
@@ -78,13 +80,6 @@ def test_package4b_learning_end_to_end(tmp_path: Path) -> None:
 
     with OntologyUnitOfWork(kernel.engine) as uow:
         assert uow.decision.factor_status("fd-good") == "probation"   # calibrate changed nothing
-
-    applied = FactorActions(svc).apply_factor_status(ApplyFactorStatusRequest(
-        factor_definition_id="fd-good", target_status="active", actor_id="op",
-        actor_role=ActorRole.JUDGE_OPERATOR, idempotency_key="ap:1", requested_at=T))
-    assert applied.status is ActionStatus.COMMITTED
-    with OntologyUnitOfWork(kernel.engine) as uow:
-        assert uow.decision.factor_status("fd-good") == "active"
 
     status = kernel.status()
     assert status.factor_estimate_count >= 1

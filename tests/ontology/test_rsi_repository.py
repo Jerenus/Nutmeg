@@ -84,10 +84,9 @@ def test_experiment_round_trip_and_duty_projection(tmp_path: Path):
         assert got.falsifier["n_min"] == 140
         assert got.buckets == ["a", "b"]
         assert [d.duty_id for d in uow.rsi.duties("F2")] == ["F2:f2-observation"]
-        pend = uow.rsi.pending_duty_instances(
-            day="2026-09-19", now="2026-09-18T23:00:00+08:00"
-        )
-        assert [(p.duty_id, p.issue) for p in pend] == [("F2:f2-observation", "26129")]
+        pend = uow.rsi.duty_instances_for_day("F2:f2-observation", "2026-09-19")
+        assert [(p.duty_id, p.issue, p.fulfilled_at) for p in pend] == [
+            ("F2:f2-observation", "26129", None)]
         # 过了 due_at 仍未落 → gap（事实记录，不是罚分）
         gaps = uow.rsi.gaps("F2", now="2026-09-19T01:00:00+08:00")
         assert gaps == ["2026-09-19"]

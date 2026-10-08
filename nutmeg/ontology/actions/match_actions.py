@@ -93,14 +93,7 @@ class MatchActions:
             'away_team_id': request.away.team_id,
             'competition_edition_id': request.resolved_competition_edition_id,
         }
-        command = ActionCommand.create(
-            action_type='record_match',
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload=payload,
-            requested_at=request.requested_at,
-        )
+        command = ActionCommand.for_request('record_match', request, payload)
 
         def result_refs(match_id: str, match_revision_id: str) -> tuple[ObjectRef, ...]:
             refs = [

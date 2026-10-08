@@ -466,9 +466,8 @@ def test_run_prep_is_silent_on_a_no_issue_day(tmp_path):
 
     sent = []
 
-    class _Spy:
-        def publish(self, request):
-            sent.append(request)
+    def _spy(kind, key, fingerprint, text, **_kwargs):
+        sent.append(text)
 
     def _gate(**_kw):
         return (InsaleIssue(issue="26130", deadline=datetime(2026, 9, 20, 22, 0)),
@@ -477,7 +476,7 @@ def test_run_prep_is_silent_on_a_no_issue_day(tmp_path):
     result = run_zucai_prep(
         run_date="2026-09-14", slot="afternoon",
         zucai_dir=tmp_path, output_dir=tmp_path, live_fetch=False,
-        dispatch=True, gate_fetcher=None, notification_service=_Spy(),
+        dispatch=True, gate_fetcher=None, notification_service=_spy,
         gate_fn=_gate,
     )
     assert result.status == "no_issue"
@@ -494,14 +493,13 @@ def test_run_prep_treats_a_closed_issue_page_as_no_issue(tmp_path):
               '<span>&nbsp;&nbsp;10-05 22:00&nbsp;&nbsp;官方售彩已截止</span>')
     sent = []
 
-    class _Spy:
-        def publish(self, request):
-            sent.append(request)
+    def _spy(kind, key, fingerprint, text, **_kwargs):
+        sent.append(text)
 
     result = run_zucai_prep(
         run_date="2026-10-06", slot="morning",
         zucai_dir=tmp_path, output_dir=tmp_path, live_fetch=False,
-        dispatch=True, gate_fetcher=lambda _u: closed, notification_service=_Spy(),
+        dispatch=True, gate_fetcher=lambda _u: closed, notification_service=_spy,
     )
     assert result.status == "no_issue" and result.succeeded
     assert "今日无期" in result.summary and "探测失败" not in result.summary
@@ -548,9 +546,8 @@ def test_run_prep_still_alerts_after_long_silence(tmp_path):
 
     sent = []
 
-    class _Spy:
-        def publish(self, request):
-            sent.append(request)
+    def _spy(kind, key, fingerprint, text, **_kwargs):
+        sent.append(text)
 
     touch_liveness(tmp_path, run_date="2026-09-01", status="prepared")  # 13 天前
 
@@ -559,9 +556,9 @@ def test_run_prep_still_alerts_after_long_silence(tmp_path):
 
     run_zucai_prep(run_date="2026-09-14", slot="afternoon", zucai_dir=tmp_path,
                    output_dir=tmp_path, live_fetch=False, dispatch=True,
-                   notification_service=_Spy(), gate_fn=_gate)
+                   notification_service=_spy, gate_fn=_gate)
     assert len(sent) == 1
-    assert str(NO_ISSUE_ALERT_DAYS) in sent[0].body
+    assert str(NO_ISSUE_ALERT_DAYS) in sent[0]
 
 def test_revision_does_not_repeat_an_unchanged_blend_gate():
     """闸的**状态变化**才是新消息；一直拦着同一场不是（14:00 已报过）。"""

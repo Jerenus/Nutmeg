@@ -180,11 +180,9 @@ class RsiActions:
         Population(doc["population"])
         Falsifier.from_dict(doc["falsifier"])          # 结构化校验
         fh = frozen_hash(doc)
-        command = ActionCommand.create(
-            action_type="rsi_register_experiment", actor_id=request.actor_id,
-            actor_role=request.actor_role, idempotency_key=request.idempotency_key,
-            payload={"exp_id": doc["exp_id"], "frozen_hash": fh, "acted_by": request.acted_by},
-            requested_at=request.requested_at)
+        command = ActionCommand.for_request(
+            "rsi_register_experiment", request,
+            {"exp_id": doc["exp_id"], "frozen_hash": fh, "acted_by": request.acted_by})
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
             acted_by = _human_identifier(request.acted_by)
@@ -219,12 +217,10 @@ class RsiActions:
         frozen_hit = sorted(k for k in request.touches if k in FROZEN_FIELDS)
         if frozen_hit:
             raise ValueError(f"修正案碰到冻结字段 {frozen_hit}：判据不可修，只能另立新实验")
-        command = ActionCommand.create(
-            action_type="rsi_amend_experiment", actor_id=request.actor_id,
-            actor_role=request.actor_role, idempotency_key=request.idempotency_key,
-            payload={"exp_id": request.exp_id, "what": request.what,
-                     "acted_by": request.acted_by},
-            requested_at=request.requested_at)
+        command = ActionCommand.for_request(
+            "rsi_amend_experiment", request,
+            {"exp_id": request.exp_id, "what": request.what,
+             "acted_by": request.acted_by})
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
             acted_by = _human_identifier(request.acted_by)
@@ -242,18 +238,17 @@ class RsiActions:
     # ── schedule ──────────────────────────────────────────────────
     def schedule_duties(self, request: ScheduleDutiesRequest) -> ActionOutcome:
         requested_at = request.requested_at or datetime.now().astimezone()
-        command = ActionCommand.create(
-            action_type="rsi_schedule_duties", actor_id=request.actor_id,
-            actor_role=request.actor_role,
+        command = ActionCommand.for_request(
+            "rsi_schedule_duties", request,
+            {"day": request.day, "earliest_kickoff": request.earliest_kickoff,
+             "issue": request.issue,
+             "match_kickoffs": dict(request.match_kickoffs),
+             "population_match_kickoffs": {
+                 population: dict(kickoffs)
+                 for population, kickoffs
+                 in request.population_match_kickoffs.items()
+             }},
             idempotency_key=request.idempotency_key or f"rsi-sched:{request.day}",
-            payload={"day": request.day, "earliest_kickoff": request.earliest_kickoff,
-                     "issue": request.issue,
-                     "match_kickoffs": dict(request.match_kickoffs),
-                     "population_match_kickoffs": {
-                         population: dict(kickoffs)
-                         for population, kickoffs
-                         in request.population_match_kickoffs.items()
-                     }},
             requested_at=requested_at)
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
@@ -313,12 +308,11 @@ class RsiActions:
         default_key = (
             f"rsi-ful:{duty_id}:{request.day}:{request.match_id}:{artifact_hash[:16]}"
         )
-        command = ActionCommand.create(
-            action_type="rsi_fulfill_duty", actor_id=request.actor_id,
-            actor_role=request.actor_role,
+        command = ActionCommand.for_request(
+            "rsi_fulfill_duty", request,
+            {"duty_id": duty_id, "day": request.day, "artifact_hash": artifact_hash,
+             "prospective": prospective},
             idempotency_key=request.idempotency_key or default_key,
-            payload={"duty_id": duty_id, "day": request.day, "artifact_hash": artifact_hash,
-                     "prospective": prospective},
             requested_at=requested_at)
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
@@ -381,12 +375,10 @@ class RsiActions:
     # ── grade ─────────────────────────────────────────────────────
     def grade_experiment(self, request: GradeExperimentRequest) -> ActionOutcome:
         GradeMode(request.mode)
-        command = ActionCommand.create(
-            action_type="rsi_grade_experiment", actor_id=request.actor_id,
-            actor_role=request.actor_role, idempotency_key=request.idempotency_key,
-            payload={"exp_id": request.exp_id, "mode": request.mode, "stratum": request.stratum,
-                     "n_cum": request.n_cum, "inputs_hash": request.inputs_hash},
-            requested_at=request.requested_at)
+        command = ActionCommand.for_request(
+            "rsi_grade_experiment", request,
+            {"exp_id": request.exp_id, "mode": request.mode, "stratum": request.stratum,
+             "n_cum": request.n_cum, "inputs_hash": request.inputs_hash})
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
             exp = uow.rsi.experiment(request.exp_id)
@@ -409,10 +401,9 @@ class RsiActions:
 
     # ── verdict（只许系统；只读 prospective；只读 CI 边界）────────
     def record_verdict(self, request: RecordVerdictRequest) -> ActionOutcome:
-        command = ActionCommand.create(
-            action_type="rsi_record_verdict", actor_id=request.actor_id,
-            actor_role=request.actor_role, idempotency_key=request.idempotency_key,
-            payload={"exp_id": request.exp_id}, requested_at=request.requested_at)
+        command = ActionCommand.for_request(
+            "rsi_record_verdict", request,
+            {"exp_id": request.exp_id})
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
             exp = uow.rsi.experiment(request.exp_id)
@@ -448,12 +439,10 @@ class RsiActions:
     # ── deployment（只许人）──────────────────────────────────────
     def approve_deployment(self, request: ApproveDeploymentRequest) -> ActionOutcome:
         decision = DeploymentDecision(request.decision)
-        command = ActionCommand.create(
-            action_type="rsi_approve_deployment", actor_id=request.actor_id,
-            actor_role=request.actor_role, idempotency_key=request.idempotency_key,
-            payload={"exp_id": request.exp_id, "decision": decision.value,
-                     "rule_id": request.rule_id, "acted_by": request.acted_by},
-            requested_at=request.requested_at)
+        command = ActionCommand.for_request(
+            "rsi_approve_deployment", request,
+            {"exp_id": request.exp_id, "decision": decision.value,
+             "rule_id": request.rule_id, "acted_by": request.acted_by})
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
             acted_by = _human_identifier(request.acted_by)

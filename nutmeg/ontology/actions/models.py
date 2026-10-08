@@ -130,6 +130,28 @@ class ActionCommand:
         )
 
 
+    @classmethod
+    def for_request(
+        cls,
+        action_type: str,
+        request,
+        payload: dict[str, object],
+        **overrides,
+    ) -> ActionCommand:
+        """``create`` with actor id/role, idempotency key and request time read from a
+        typed request; keyword ``overrides`` (a defaulted key or time, expected_versions,
+        action_id) win."""
+        params = {
+            'actor_id': request.actor_id,
+            'actor_role': request.actor_role,
+            'idempotency_key': request.idempotency_key,
+            **overrides,
+        }
+        if 'requested_at' not in params:
+            params['requested_at'] = request.requested_at
+        return cls.create(action_type=action_type, payload=payload, **params)
+
+
 @dataclass(frozen=True, slots=True)
 class ActionOutcome:
     action_id: str
