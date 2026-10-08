@@ -22,7 +22,6 @@ from nutmeg.ontology.actions.match_actions import MatchActions
 from nutmeg.ontology.actions.observation_actions import ObservationActions
 from nutmeg.ontology.actions.outcome_actions import OutcomeActions
 from nutmeg.ontology.actions.person_actions import PersonActions
-from nutmeg.ontology.actions.reliability_actions import ReliabilityActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.service import ActionService
@@ -89,7 +88,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     calibrate = CalibrateService(engine=engine, analytics_path=paths.analytics)
     workflow = WorkflowActions(action_service)
     scoreboard_actions = ScoreboardActions(action_service)
-    reliability_actions = ReliabilityActions(action_service)
     rsi_actions = RsiActions(action_service)
     capital_actions = CapitalActions(action_service)
     return OntologyKernel(
@@ -108,7 +106,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         forecast_actions=forecast_actions,
         workflow=workflow,
         scoreboard_actions=scoreboard_actions,
-        reliability_actions=reliability_actions,
         rsi_actions=rsi_actions,
         capital_actions=capital_actions,
     )
