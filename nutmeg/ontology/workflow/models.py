@@ -6,13 +6,6 @@ from enum import StrEnum
 from uuid import uuid4
 
 
-class ProposalStatus(StrEnum):
-    PENDING = 'pending'
-    APPROVED = 'approved'
-    REJECTED = 'rejected'
-    WITHDRAWN = 'withdrawn'
-
-
 class PredictionStatus(StrEnum):
     PENDING = 'pending'
     CONFIRMED = 'confirmed'
@@ -63,33 +56,3 @@ class PredictionRow:
     outcome: str | None
     registered_at: str
     settled_at: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class PrecedentLinkRow:
-    precedent_link_id: str
-    subject_type: str
-    subject_id: str
-    precedent_match_id: str
-    scope: str
-    evidence_refs: list[dict[str, str]]
-    created_at: str
-
-
-@dataclass(frozen=True, slots=True)
-class AgentProposalRow:
-    agent_proposal_id: str
-    subject_type: str
-    subject_id: str
-    proposal_type: str
-    information_cutoff_at: str | None
-    operator_prompt: str | None
-    payload: dict[str, object]
-    citation_refs: list[dict[str, str]]
-    model_name: str
-    model_version: str
-    status: ProposalStatus
-    version: int
-    created_at: str
-    resolved_at: str | None
-    resolved_by_action_id: str | None

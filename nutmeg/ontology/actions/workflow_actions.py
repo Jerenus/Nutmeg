@@ -1,4 +1,4 @@
-"""Governed Actions for human adjudication and AI proposal workflows."""
+"""Governed Actions for human adjudication and prediction workflows."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,10 +14,8 @@ from nutmeg.ontology.actions.models import (
 from nutmeg.ontology.actions.service import ActionBatchItem, ActionService
 from nutmeg.ontology.workflow.models import (
     AdjudicationRow,
-    AgentProposalRow,
     PredictionRow,
     PredictionStatus,
-    ProposalStatus,
     mint_workflow_id,
 )
 
@@ -118,42 +116,6 @@ class GradePredictionRequest:
             raise ValueError('outcome must be hit, miss, or na')
         if not self.reason.strip():
             raise ValueError('grade reason is required')
-
-
-@dataclass(frozen=True, slots=True)
-class CreateAgentProposalRequest:
-    subject_type: str
-    subject_id: str
-    proposal_type: str
-    information_cutoff_at: str
-    operator_prompt: str
-    payload: dict[str, object]
-    citation_refs: list[dict[str, str]]
-    model_name: str
-    model_version: str
-    actor_id: str
-    actor_role: ActorRole
-    idempotency_key: str
-    requested_at: datetime
-
-    def __post_init__(self) -> None:
-        _require_aware(self.requested_at)
-
-
-@dataclass(frozen=True, slots=True)
-class ResolveAgentProposalRequest:
-    agent_proposal_id: str
-    resolution: ProposalStatus
-    expected_version: int
-    actor_id: str
-    actor_role: ActorRole
-    idempotency_key: str
-    requested_at: datetime
-
-    def __post_init__(self) -> None:
-        _require_aware(self.requested_at)
-        if self.resolution is ProposalStatus.PENDING:
-            raise ValueError('proposal resolution cannot be pending')
 
 
 class WorkflowActions:
@@ -270,92 +232,6 @@ class WorkflowActions:
 
         return self._action_service.execute(command, handler)
 
-    def create_agent_proposal(
-        self, request: CreateAgentProposalRequest
-    ) -> ActionOutcome:
-        command = self._command(
-            'create_agent_proposal',
-            request,
-            {
-                'subject_type': request.subject_type,
-                'subject_id': request.subject_id,
-                'proposal_type': request.proposal_type,
-                'information_cutoff_at': request.information_cutoff_at,
-                'operator_prompt': request.operator_prompt,
-                'payload': request.payload,
-                'citation_refs': request.citation_refs,
-                'model_name': request.model_name,
-                'model_version': request.model_version,
-            },
-        )
-
-        def handler(uow, _command) -> tuple[ObjectRef, ...]:
-            if not request.operator_prompt.strip():
-                raise ValueError('operator_prompt is required')
-            uow.workflow.validate_citation_refs(
-                request.subject_type,
-                request.subject_id,
-                request.citation_refs,
-                request.information_cutoff_at,
-            )
-            proposal_id = mint_workflow_id('proposal')
-            uow.workflow.insert_agent_proposal(
-                AgentProposalRow(
-                    agent_proposal_id=proposal_id,
-                    subject_type=request.subject_type,
-                    subject_id=request.subject_id,
-                    proposal_type=request.proposal_type,
-                    information_cutoff_at=request.information_cutoff_at,
-                    operator_prompt=request.operator_prompt,
-                    payload=dict(request.payload),
-                    citation_refs=list(request.citation_refs),
-                    model_name=request.model_name,
-                    model_version=request.model_version,
-                    status=ProposalStatus.PENDING,
-                    version=1,
-                    created_at=self._at(request),
-                    resolved_at=None,
-                    resolved_by_action_id=None,
-                )
-            )
-            return (ObjectRef('agent_proposal', proposal_id),)
-
-        return self._action_service.execute(command, handler)
-
-    def resolve_agent_proposal(
-        self, request: ResolveAgentProposalRequest
-    ) -> ActionOutcome:
-        command = self._command(
-            'resolve_agent_proposal',
-            request,
-            {
-                'agent_proposal_id': request.agent_proposal_id,
-                'resolution': request.resolution.value,
-            },
-            expected_versions={
-                f'agent_proposal:{request.agent_proposal_id}': request.expected_version
-            },
-        )
-
-        def handler(uow, _command) -> tuple[ObjectRef, ...]:
-            proposal = uow.workflow.get_agent_proposal(request.agent_proposal_id)
-            uow.workflow.validate_citation_refs(
-                proposal.subject_type,
-                proposal.subject_id,
-                proposal.citation_refs,
-                proposal.information_cutoff_at,
-            )
-            uow.workflow.resolve_agent_proposal(
-                request.agent_proposal_id,
-                request.resolution,
-                request.expected_version,
-                self._at(request),
-                _command.action_id,
-            )
-            return (ObjectRef('agent_proposal', request.agent_proposal_id),)
-
-        return self._action_service.execute(command, handler)
-
     @staticmethod
     def _at(request) -> str:
         return request.requested_at.astimezone(UTC).isoformat()
@@ -366,7 +242,6 @@ class WorkflowActions:
         request,
         payload: dict[str, object],
         *,
-        expected_versions: dict[str, int] | None = None,
         action_id: str | None = None,
     ) -> ActionCommand:
         return ActionCommand.create(
@@ -376,6 +251,5 @@ class WorkflowActions:
             idempotency_key=request.idempotency_key,
             payload=payload,
             requested_at=request.requested_at,
-            expected_versions=expected_versions,
             action_id=action_id,
         )

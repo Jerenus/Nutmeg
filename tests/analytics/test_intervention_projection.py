@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import insert
+
 from nutmeg.analytics.calibrate_flow import CalibrateRequest
 from nutmeg.analytics.intervention_projection import (
     compute_counterfactual_rows,
@@ -10,14 +12,11 @@ from nutmeg.analytics.scoring import brier
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.actions.workflow_actions import RecordAdjudicationRequest
+from nutmeg.ontology.repository import schema_workflow as sw
 from nutmeg.ontology.repository.finance import OutcomeRow
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
-from nutmeg.ontology.workflow.models import (
-    FlagInstanceRow,
-    PredictionRow,
-    PredictionStatus,
-)
+from nutmeg.ontology.workflow.models import PredictionRow, PredictionStatus
 from nutmeg.storage.duckdb_utils import connect_analytics_db
 
 EARLY = datetime(2026, 8, 24, 10, tzinfo=UTC)
@@ -74,31 +73,33 @@ def _seed(tmp_path: Path):
                 settled_at=None,
             )
         )
-        uow.workflow.insert_flag_instance(
-            FlagInstanceRow(
-                flag_instance_id="flag-linked",
-                flag_type="anchor_shield_out",
-                match_id="match-settled",
-                direction="draw",
-                strength=0.8,
-                evidence_refs=[],
-                predicted_face="draw",
-                status="active",
-                created_at=EARLY.isoformat(),
-            )
-        )
-        uow.workflow.insert_flag_instance(
-            FlagInstanceRow(
-                flag_instance_id="flag-open",
-                flag_type="venue_abnormal",
-                match_id="match-open",
-                direction=None,
-                strength=0.5,
-                evidence_refs=[],
-                predicted_face=None,
-                status="active",
-                created_at=EARLY.isoformat(),
-            )
+        # flag instances have no kernel writer any more; seed the rows directly
+        uow.connection.execute(
+            insert(sw.flag_instances),
+            [
+                {
+                    "flag_instance_id": "flag-linked",
+                    "flag_type": "anchor_shield_out",
+                    "match_id": "match-settled",
+                    "direction": "draw",
+                    "strength": 0.8,
+                    "evidence_refs_json": "[]",
+                    "predicted_face": "draw",
+                    "status": "active",
+                    "created_at": EARLY.isoformat(),
+                },
+                {
+                    "flag_instance_id": "flag-open",
+                    "flag_type": "venue_abnormal",
+                    "match_id": "match-open",
+                    "direction": None,
+                    "strength": 0.5,
+                    "evidence_refs_json": "[]",
+                    "predicted_face": None,
+                    "status": "active",
+                    "created_at": EARLY.isoformat(),
+                },
+            ],
         )
 
     def adjudicate(key: str, at: datetime, match_id: str, alternative: dict):
