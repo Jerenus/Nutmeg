@@ -9,7 +9,6 @@ def test_settings_exposes_separate_ontology_paths(tmp_path: Path) -> None:
     assert settings.ontology_dir == tmp_path / "data" / "ontology"
     assert settings.ontology_db_path == tmp_path / "data" / "ontology" / "ontology.db"
     assert settings.ontology_artifact_dir == tmp_path / "data" / "ontology" / "artifacts"
-    assert settings.ontology_db_url.startswith("sqlite+pysqlite:///")
 
 
 def test_ontology_paths_create_only_owned_directories(tmp_path: Path) -> None:

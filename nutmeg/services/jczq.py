@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 # 体彩 WAF 拦非浏览器 UA（2026-07-04 起 "Nutmeg/0.2" 稳定 403）；整套头须像浏览器
-from nutmeg.data.http import SPORTTERY_HEADERS
+from nutmeg.data.http import SPORTTERY_HEADERS, get_json
 
 SPORTTERY_JCZQ_PAGE = "https://www.sporttery.cn/jc/jsq/zqspf/"
 SPORTTERY_JCZQ_API = (
@@ -19,33 +19,28 @@ class JczqProviderError(ValueError):
     """体彩接口失败：403/网络/errorCode≠0/响应缺 value。"""
 
 
+def _sporttery_value(url: str, what: str) -> dict[str, Any]:
+    """GET 体彩 webapi → `value` 对象；任何失败都是 JczqProviderError（主源→备源回退靠它）。"""
+    try:
+        payload = get_json(url, headers=SPORTTERY_HEADERS, referer=SPORTTERY_JCZQ_PAGE)
+    except (httpx.HTTPError, ValueError) as exc:
+        raise JczqProviderError(f"Sporttery {what} fetch failed: {exc}") from exc
+    if str(payload.get("errorCode")) != "0":
+        raise JczqProviderError(
+            f"Sporttery {what} API error: {payload.get('errorCode')} {payload.get('errorMessage')}"
+        )
+    value = payload.get("value")
+    if not isinstance(value, dict):
+        raise JczqProviderError(f"Sporttery {what} API response missing value object.")
+    return value
+
+
 class SportteryJczqCalculatorProvider:
     source_api = SPORTTERY_JCZQ_API
     source_page = SPORTTERY_JCZQ_PAGE
 
-    def __init__(self, *, timeout_seconds: float = 20.0) -> None:
-        self._timeout_seconds = timeout_seconds
-
     def fetch(self) -> dict[str, Any]:
-        try:
-            response = httpx.get(
-                self.source_api,
-                headers={"Referer": self.source_page, **SPORTTERY_HEADERS},
-                timeout=self._timeout_seconds,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise JczqProviderError(f"Sporttery JCZQ fetch failed: {exc}") from exc
-        if str(payload.get("errorCode")) != "0":
-            raise JczqProviderError(
-                f"Sporttery JCZQ API error: {payload.get('errorCode')} "
-                f"{payload.get('errorMessage')}"
-            )
-        value = payload.get("value")
-        if not isinstance(value, dict):
-            raise JczqProviderError("Sporttery JCZQ API response missing value object.")
-        return value
+        return _sporttery_value(self.source_api, "JCZQ")
 
 
 SPORTTERY_JCZQ_MATCH_LIST_API = (
@@ -60,21 +55,5 @@ class SportteryMatchListProvider:
     正常成功响应，被报成「WAF 降级」，诊断方向整个走错。
     """
 
-    def __init__(self, *, timeout_seconds: float = 20.0) -> None:
-        self._timeout_seconds = timeout_seconds
-
     def fetch(self) -> dict[str, Any]:
-        try:
-            response = httpx.get(
-                SPORTTERY_JCZQ_MATCH_LIST_API,
-                headers={"Referer": SPORTTERY_JCZQ_PAGE, **SPORTTERY_HEADERS},
-                timeout=self._timeout_seconds,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise JczqProviderError(f"Sporttery match list fetch failed: {exc}") from exc
-        value = payload.get("value")
-        if str(payload.get("errorCode")) != "0" or not isinstance(value, dict):
-            raise JczqProviderError("Sporttery match list API error")
-        return value
+        return _sporttery_value(SPORTTERY_JCZQ_MATCH_LIST_API, "match list")

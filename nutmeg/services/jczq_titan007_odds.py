@@ -30,6 +30,7 @@ from datetime import datetime
 
 from nutmeg.data.fcom500 import MarketOdds
 from nutmeg.data.prices import devig_rounded
+from nutmeg.data.sporttery_board import selling_rows
 from nutmeg.data.titan007 import Titan007BoardRow, Titan007BookQuote
 
 logger = logging.getLogger(__name__)
@@ -119,23 +120,17 @@ def _avg(values: list[float]) -> float:
 def _board_matches(value: dict, run_date: str) -> list[tuple[str, datetime]]:
     """从 Sporttery 响应抽 (竞彩号, 北京开球时间)。无法解时间的场直接丢（不猜）。"""
     out: list[tuple[str, datetime]] = []
-    for day in value.get("matchInfoList") or []:
-        for raw in day.get("subMatchList") or []:
-            if str(raw.get("matchStatus") or "").casefold() != "selling":
-                continue
-            business_date = str(raw.get("businessDate") or day.get("businessDate") or "")
-            if run_date and business_date and business_date != run_date:
-                continue
-            match_no = str(raw.get("matchNumStr") or "")
-            kickoff_date = str(raw.get("matchDate") or business_date or "")
-            kickoff_time = str(raw.get("matchTime") or "").strip()
-            if not (match_no and kickoff_date and kickoff_time):
-                continue
-            try:
-                kickoff = datetime.fromisoformat(f"{kickoff_date}T{kickoff_time}")
-            except ValueError:
-                continue
-            out.append((match_no, kickoff))
+    for raw, business_date in selling_rows(value, run_date):
+        match_no = str(raw.get("matchNumStr") or "")
+        kickoff_date = str(raw.get("matchDate") or business_date or "")
+        kickoff_time = str(raw.get("matchTime") or "").strip()
+        if not (match_no and kickoff_date and kickoff_time):
+            continue
+        try:
+            kickoff = datetime.fromisoformat(f"{kickoff_date}T{kickoff_time}")
+        except ValueError:
+            continue
+        out.append((match_no, kickoff))
     return out
 
 

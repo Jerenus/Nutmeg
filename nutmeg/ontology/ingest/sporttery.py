@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from nutmeg.data.sporttery_board import selling_rows
 from nutmeg.decision.market_data import _had_from_pool
 
 _BEIJING_OFFSET = '+08:00'
@@ -50,36 +51,30 @@ def _scheduled_at(match_date: str, match_time: str) -> str | None:
 
 def parse_sporttery_markets(value: dict, *, business_date: str) -> list[ParsedMatch]:
     matches: list[ParsedMatch] = []
-    for day in value.get('matchInfoList') or []:
-        for raw in day.get('subMatchList') or []:
-            if str(raw.get('matchStatus') or '').casefold() != 'selling':
-                continue
-            row_business_date = str(raw.get('businessDate') or day.get('businessDate') or '')
-            if business_date and row_business_date and row_business_date != business_date:
-                continue
-            match_id = str(raw.get('matchId') or '')
-            match_no = str(raw.get('matchNumStr') or '')
-            if not match_id or not match_no:
-                continue
-            scheduled_at = _scheduled_at(
-                str(raw.get('matchDate') or ''), str(raw.get('matchTime') or '')
+    for raw, row_business_date in selling_rows(value, business_date):
+        match_id = str(raw.get('matchId') or '')
+        match_no = str(raw.get('matchNumStr') or '')
+        if not match_id or not match_no:
+            continue
+        scheduled_at = _scheduled_at(
+            str(raw.get('matchDate') or ''), str(raw.get('matchTime') or '')
+        )
+        quotes = tuple(
+            ParsedQuote(market_kind='had', outcome_key=outcome_key, decimal_odds=decimal_odds)
+            for outcome_key, decimal_odds in _had_from_pool(raw.get('had') or {}).items()
+        )
+        matches.append(
+            ParsedMatch(
+                provider='sporttery',
+                external_id=match_id,
+                match_no=match_no,
+                business_date=row_business_date or business_date,
+                home_name=str(raw.get('homeTeamAbbName') or ''),
+                away_name=str(raw.get('awayTeamAbbName') or ''),
+                league_name=str(raw.get('leagueAbbName') or ''),
+                scheduled_at=scheduled_at,
+                schedule_status='scheduled' if scheduled_at else 'unknown',
+                quotes=quotes,
             )
-            quotes = tuple(
-                ParsedQuote(market_kind='had', outcome_key=outcome_key, decimal_odds=decimal_odds)
-                for outcome_key, decimal_odds in _had_from_pool(raw.get('had') or {}).items()
-            )
-            matches.append(
-                ParsedMatch(
-                    provider='sporttery',
-                    external_id=match_id,
-                    match_no=match_no,
-                    business_date=row_business_date or business_date,
-                    home_name=str(raw.get('homeTeamAbbName') or ''),
-                    away_name=str(raw.get('awayTeamAbbName') or ''),
-                    league_name=str(raw.get('leagueAbbName') or ''),
-                    scheduled_at=scheduled_at,
-                    schedule_status='scheduled' if scheduled_at else 'unknown',
-                    quotes=quotes,
-                )
-            )
+        )
     return matches

@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from nutmeg.data.sporttery_board import flatten
+
 STRONG_ANCHOR_TOP1 = 0.70
 """翻车场候选门槛(SOP p 条)。⚠️这里只筛 fair,『是否带方向性旗』必须人判。"""
 
@@ -53,16 +55,6 @@ def _name_match(a: str, b: str) -> bool:
         return True
     short, long = (a, b) if len(a) <= len(b) else (b, a)
     return len(short) >= 2 and long.startswith(short)
-
-
-def board_rows(sporttery_value: dict) -> list[dict]:
-    """摊平体彩板面(一个文件可能含多个业务日)。"""
-    rows = []
-    for day in sporttery_value.get("matchInfoList") or []:
-        for row in day.get("subMatchList") or []:
-            if isinstance(row, dict):
-                rows.append(row)
-    return rows
 
 
 def alias_resolver():
@@ -103,7 +95,7 @@ def align_to_sporttery(zucai_matches: list[dict], sporttery_value: dict,
     """
     if resolve is None:
         resolve = alias_resolver()
-    rows = board_rows(sporttery_value)
+    rows = flatten(sporttery_value)
     mapping: dict[int, str] = {}
     unmatched: list[dict] = []
     ambiguous: list[dict] = []
@@ -329,7 +321,7 @@ def load_boards(output_dir: Path, run_date: str, matches: list[dict]) -> dict:
         path = Path(output_dir) / "daily" / d / "sporttery_markets.json"
         if not path.exists():
             continue
-        for row in board_rows(_load(path)):
+        for row in flatten(_load(path)):
             num = str(row.get("matchNum"))
             if num not in seen:
                 seen.add(num)
@@ -353,7 +345,7 @@ def load_explicit_channel_mapping(
         return {}
     match_num_by_code = {
         str(row.get("matchNumStr")): str(row.get("matchNum"))
-        for row in board_rows(board_value)
+        for row in flatten(board_value)
         if row.get("matchNumStr") and row.get("matchNum") is not None
     }
     out: dict[int, str] = {}
@@ -382,7 +374,7 @@ def write_auto_channel_map(prep: dict, *, zucai_dir: Path, output_dir: Path) -> 
         if not board_path.exists() or not legs_path.exists():
             continue
         legs = _load(legs_path).get("legs") or {}
-        for row in board_rows(_load(board_path)):
+        for row in flatten(_load(board_path)):
             leg = legs.get(str(row.get("matchNumStr")))
             if isinstance(leg, dict) and leg.get("match_id") and row.get("matchNum") is not None:
                 match_id_by_num[str(row["matchNum"])] = str(leg["match_id"])
@@ -415,7 +407,7 @@ def ensure_auto_channel_map(*, issue: str, run_date: str, zucai_dir: Path,
         return None
     matches = _load(issue_path).get("matches") or []
     board_value = load_boards(Path(output_dir), run_date, matches)
-    if not board_rows(board_value):
+    if not flatten(board_value):
         return None
     mapping = align_to_sporttery(matches, board_value)["mapping"]
     prep = {
@@ -461,7 +453,7 @@ def build_prep(inputs: PrepInputs, *, captured_at: str | None = None) -> dict:
 
     matches = issue_doc.get("matches") or []
     board_value = load_boards(Path(inputs.output_dir), inputs.run_date, matches)
-    rows_by_num = {str(r.get("matchNum")): r for r in board_rows(board_value)}
+    rows_by_num = {str(r.get("matchNum")): r for r in flatten(board_value)}
     explicit_mapping = load_explicit_channel_mapping(
         issue=issue,
         run_date=inputs.run_date,

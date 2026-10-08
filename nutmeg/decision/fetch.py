@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import logging
 
+from nutmeg.data.sporttery_board import selling_rows
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,16 +37,10 @@ def _board_match_numbers(value: dict, run_date: str) -> list[tuple[str, str]]:
     **多个业务日**,不按 ``businessDate`` 过滤会把次日的场当成今天漏的,白白唤醒备源。
     """
     out: list[tuple[str, str]] = []
-    for day in value.get("matchInfoList") or []:
-        for raw in day.get("subMatchList") or []:
-            if str(raw.get("matchStatus") or "").casefold() != "selling":
-                continue
-            business_date = str(raw.get("businessDate") or day.get("businessDate") or "")
-            if run_date and business_date and business_date != run_date:
-                continue
-            match_no = str(raw.get("matchNumStr") or "")
-            if match_no:
-                out.append((match_no, business_date))
+    for raw, business_date in selling_rows(value, run_date):
+        match_no = str(raw.get("matchNumStr") or "")
+        if match_no:
+            out.append((match_no, business_date))
     return out
 
 

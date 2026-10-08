@@ -701,11 +701,8 @@ def run_decision_settle_v2(
     run_date: str,
     output_dir,
     *,
-    kernel=None,
     dispatch: bool = False,
     dry_run: bool = True,
-    notification_service=None,
-    results_fetcher=None,
 ):
     """settle on the kernel: reconcile (record outcomes + settle tickets) → calibrate → report."""
     from nutmeg.decision.workflow_result import compose as _compose
@@ -713,14 +710,9 @@ def run_decision_settle_v2(
 
     stamp = _now_iso()
     requested_at = datetime.fromisoformat(stamp)
-    active_kernel = kernel if kernel is not None else _default_kernel()
+    active_kernel = _default_kernel()
     steps = [
-        (
-            "reconcile",
-            lambda: _reconcile_v2(
-                active_kernel, run_date, output_dir, requested_at, live_fetcher=results_fetcher
-            ),
-        ),
+        ("reconcile", lambda: _reconcile_v2(active_kernel, run_date, output_dir, requested_at)),
         ("calibrate", lambda: _calibrate_v2(active_kernel, stamp)),
         (
             "report",
@@ -731,7 +723,7 @@ def run_decision_settle_v2(
                 "settle",
                 dispatch,
                 dry_run,
-                notification_service,
+                None,
             ),
         ),
     ]

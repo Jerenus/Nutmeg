@@ -13,19 +13,13 @@
 """
 from __future__ import annotations
 
+from nutmeg.data.sporttery_board import flatten
 from nutmeg.decision.identity import norm_team
 
 
 def board_matches(value: dict) -> list[dict]:
-    """体彩快照 → 扁平场次列表(与 sense 同口径:matchInfoList/subMatchList)。"""
-    out: list[dict] = []
-    for day in value.get("matchInfoList") or []:
-        if not isinstance(day, dict):
-            continue
-        for raw in day.get("subMatchList") or []:
-            if isinstance(raw, dict) and raw.get("homeTeamAbbName"):
-                out.append(raw)
-    return out
+    """体彩快照 → 扁平场次列表（有主队名的行）。"""
+    return [raw for raw in flatten(value) if raw.get("homeTeamAbbName")]
 
 
 def audit_board(value: dict) -> dict:

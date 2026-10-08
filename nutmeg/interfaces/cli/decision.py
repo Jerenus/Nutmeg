@@ -178,7 +178,6 @@ def decision_settle(
     dispatch_telegram: bool = _cli.typer.Option(False, "--dispatch-telegram"),
     dry_run: bool = _cli.typer.Option(True, "--dry-run/--no-dry-run"),
     issue: str | None = _ISSUE_OPTION,
-    zucai_dir: Path = _ZUCAI_DIR_OPTION,
     format: str = _cli.typer.Option("text", "--format", help="text or json"),
 ) -> None:
     """决策本体 · 日循环结算段:内核 reconcile → calibrate → report(复盘)。"""

@@ -24,7 +24,6 @@ class AppSettings(BaseSettings):
         default_factory=lambda: (_SOURCE_ROOT / '.nutmeg-data').resolve()
     )
     release_version: str = 'unreleased'
-    candidate_commit: str = 'unresolved'
     # 定时 claude -p 的模型分档（2026-09-23 Jun 裁定）：
     #   逻辑层只把卡片字段说成人话、cites 逐条校验兜底 → 便宜模型；
     #   深研产出 stance/tilt/falsifier，是判断层 → 空串＝不传 --model，
@@ -50,14 +49,6 @@ class AppSettings(BaseSettings):
         return value
 
     @property
-    def analytics_dir(self) -> Path:
-        return self.data_dir / 'analytics'
-
-    @property
-    def analytics_db_path(self) -> Path:
-        return self.analytics_dir / 'analytics.duckdb'
-
-    @property
     def ontology_dir(self) -> Path:
         return self.data_dir / 'ontology'
 
@@ -68,10 +59,6 @@ class AppSettings(BaseSettings):
     @property
     def ontology_artifact_dir(self) -> Path:
         return self.ontology_dir / 'artifacts'
-
-    @property
-    def ontology_db_url(self) -> str:
-        return f'sqlite+pysqlite:///{self.ontology_db_path.resolve()}'
 
 
 @lru_cache(maxsize=1)

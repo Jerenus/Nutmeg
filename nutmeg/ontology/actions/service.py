@@ -74,8 +74,6 @@ class ActionService:
         self,
         command: ActionCommand,
         handler: ActionHandler,
-        *,
-        acquire_write_lock: bool = False,
     ) -> ActionOutcome:
         _reject_replay_adjudicator(command)
         existing = self._lookup(command.idempotency_key)
@@ -101,8 +99,6 @@ class ActionService:
 
         try:
             with self._unit_of_work_factory() as uow:
-                if acquire_write_lock:
-                    uow.acquire_write_lock()
                 PermissionGuard(uow.connection).assert_allowed(
                     command.policy_version, command.action_type, command.actor_role
                 )

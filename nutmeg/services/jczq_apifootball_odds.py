@@ -34,6 +34,7 @@ from importlib import resources
 
 from nutmeg.data.fcom500 import MarketOdds
 from nutmeg.data.prices import devig_rounded
+from nutmeg.data.sporttery_board import selling_rows
 from nutmeg.domain.fixtures import Fixture
 from nutmeg.domain.odds import OddsProviderSnapshotFeed
 
@@ -129,32 +130,24 @@ class _BoardMatch:
 def _board_matches(value: dict, run_date: str) -> list[_BoardMatch]:
     """从 Sporttery ``getMatchCalculatorV1`` 响应抽出当日在售场次（同 bold 引擎口径）。"""
     out: list[_BoardMatch] = []
-    for day in value.get("matchInfoList") or []:
-        for raw in day.get("subMatchList") or []:
-            if str(raw.get("matchStatus") or "").casefold() != "selling":
-                continue
-            business_date = str(
-                raw.get("businessDate") or day.get("businessDate") or ""
+    for raw, business_date in selling_rows(value, run_date):
+        home_zh = str(raw.get("homeTeamAbbName") or "")
+        away_zh = str(raw.get("awayTeamAbbName") or "")
+        if not (home_zh and away_zh):
+            continue
+        kickoff_date = str(
+            raw.get("matchDate") or business_date or run_date or ""
+        )
+        if not kickoff_date:
+            continue
+        out.append(
+            _BoardMatch(
+                match_no=str(raw.get("matchNumStr") or ""),
+                home_zh=home_zh,
+                away_zh=away_zh,
+                utc_date=_utc_date(kickoff_date, str(raw.get("matchTime") or "")),
             )
-            if run_date and business_date and business_date != run_date:
-                continue
-            home_zh = str(raw.get("homeTeamAbbName") or "")
-            away_zh = str(raw.get("awayTeamAbbName") or "")
-            if not (home_zh and away_zh):
-                continue
-            kickoff_date = str(
-                raw.get("matchDate") or business_date or run_date or ""
-            )
-            if not kickoff_date:
-                continue
-            out.append(
-                _BoardMatch(
-                    match_no=str(raw.get("matchNumStr") or ""),
-                    home_zh=home_zh,
-                    away_zh=away_zh,
-                    utc_date=_utc_date(kickoff_date, str(raw.get("matchTime") or "")),
-                )
-            )
+        )
     return out
 
 
