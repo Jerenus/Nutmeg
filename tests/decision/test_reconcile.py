@@ -1,18 +1,5 @@
 # tests/decision/test_reconcile.py
-from nutmeg.decision.ontology import MarketSnapshot, Read
 from nutmeg.decision.reconcile import settle_ticket_leg
-
-
-def _read(belief):
-    return Read(read_id="R-1", match_id="M-1", snapshot_id="S-1", made_at="t",
-                judge="claude", market="had",
-                prior={"home": 0.46, "draw": 0.27, "away": 0.27},
-                belief=belief, confidence=3, shadow=False)
-
-
-def _closing(fair):
-    return MarketSnapshot(snapshot_id="S-close", match_id="M-1", taken_at="t2",
-                          kind="closing", source="okooo_sp", fair={"had": fair})
 
 
 def test_settle_had_leg_win_and_loss():

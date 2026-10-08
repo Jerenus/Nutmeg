@@ -1,6 +1,6 @@
 // Workshop UI — 判读工作台 前端
-// poll /events 增量拉取 · 点议程设线程锚 · #send POST /thread ·
-// 卡片按钮 POST /action/* (成功移卡 / 400 翻"被拒"态显示逐字 errors)。
+// poll /events 增量拉取 · 点议程设线程锚 · #send POST /thread · 手记 POST /action/note。
+// 右栏只读：已登记实票（slip）与被考虑过的票面（candidate）。
 (function () {
   "use strict";
 
@@ -74,91 +74,6 @@
     return t;
   }
 
-  // ---- verdict: Read draft card -------------------------------------
-  function renderReadDraft(e) {
-    if (verdictEl.querySelector('[data-card="' + e.id + '"]')) return;
-    var r = e.payload || {};
-    var card = el("article", "acard");
-    card.setAttribute("data-card", e.id || "");
-    var inner = el("div", "inner");
-    var type = el("div", "actype", "Read 草稿");
-    type.appendChild(el("span", "kind", "typed action"));
-    inner.appendChild(type);
-    inner.appendChild(el("div", "acmatch", r.match_id || e.match || ""));
-    inner.appendChild(el("div", "acmarket",
-      "market = " + (r.market || "had") + " · judge = " + (r.judge || "claude")));
-    if (r.prior && r.belief) {
-      var md = el("div", "mini-dev");
-      var pt = miniTrack(r.prior, false); pt.style.marginBottom = "4px";
-      md.appendChild(pt);
-      md.appendChild(miniTrack(r.belief, true));
-      inner.appendChild(md);
-    }
-    var f = (r.factors || [])[0];
-    if (f) {
-      var meta = el("div", "acmeta");
-      var row = el("div", "row");
-      row.appendChild(el("span", "l", "因子"));
-      var v = el("span", "v");
-      v.appendChild(el("span", "fchip", f.factor_id || "?"));
-      v.appendChild(document.createTextNode(
-        " " + (f.direction || "") + " +" + (f.weight_pp || 0) + "pp"));
-      row.appendChild(v);
-      meta.appendChild(row);
-      inner.appendChild(meta);
-    }
-    inner.appendChild(el("div", "gate", "批准 → ingest_reads() 同一校验入库"));
-    var btns = el("div", "acbtns");
-    var reject = el("button", "btn", "拒绝");
-    var approve = el("button", "btn primary", "批准入库");
-    reject.addEventListener("click", function () {
-      post("/action/reject-read", { obj_id: e.id, date: DATE, reason: "人工拒绝" })
-        .then(function () { removeCard(card); });
-    });
-    approve.addEventListener("click", function () {
-      post("/action/approve-read", { obj_id: e.id, read: r }).then(function (res) {
-        if (res && res.ok) { removeCard(card); }
-        else { rejectCard(card, (res && res.errors) || ["校验失败"]); }
-      });
-    });
-    btns.appendChild(reject); btns.appendChild(approve);
-    inner.appendChild(btns);
-    card.appendChild(inner);
-    verdictEl.appendChild(card);
-    refreshVcount();
-  }
-
-  // ---- verdict: leg proposal card -----------------------------------
-  function renderLegsProposal(e) {
-    if (verdictEl.querySelector('[data-card="' + e.id + '"]')) return;
-    var leg = e.payload || {};
-    var card = el("article", "acard pine");
-    card.setAttribute("data-card", e.id || "");
-    var inner = el("div", "inner");
-    var type = el("div", "actype", "legs 提案");
-    type.appendChild(el("span", "kind", "typed action"));
-    inner.appendChild(type);
-    inner.appendChild(el("div", "acmatch",
-      (leg.match_id || "") + " " + (leg.selection || "")));
-    inner.appendChild(el("div", "acmarket",
-      "bucket = " + (leg.bucket || "main") + " · @" + (leg.odds || "?")));
-    inner.appendChild(el("div", "gate", "确认 → 预算闸 + schema → legs.json"));
-    var btns = el("div", "acbtns");
-    var remove = el("button", "btn", "移除");
-    var confirm = el("button", "btn pine", "确认出票");
-    remove.addEventListener("click", function () { removeCard(card); });
-    confirm.addEventListener("click", function () {
-      post("/action/confirm-legs", { date: DATE, legs: [leg] }).then(function (res) {
-        if (res && res.ok) { removeCard(card); }
-      });
-    });
-    btns.appendChild(remove); btns.appendChild(confirm);
-    inner.appendChild(btns);
-    card.appendChild(inner);
-    verdictEl.appendChild(card);
-    refreshVcount();
-  }
-
   // ---- verdict: 我的方案（已登记实票，只读；没入账=没打，登记簿里没有就不显示）----
   var FACE_ZH = { "3": "胜", "1": "平", "0": "负" };
   function renderSlip(e) {
@@ -195,14 +110,6 @@
     refreshVcount();
   }
 
-  function removeCard(card) { card.remove(); refreshVcount(); }
-  function rejectCard(card, errors) {
-    card.classList.add("rejected");
-    var old = card.querySelector(".reason");
-    if (old) old.remove();
-    card.querySelector(".inner").appendChild(
-      el("div", "reason", "被拒：" + errors.join("；")));
-  }
   function refreshVcount() {
     var n = verdictEl.querySelectorAll(".acard:not(.slip)").length;  // 我的方案不算「待裁决」
     if (vcountEl) vcountEl.textContent = n;
@@ -404,63 +311,6 @@
     });
   });
 
-  // ---- SOP 任务栏(阶段一):同一条命令,从页面按 -----------------------------
-  var sopSteps = document.getElementById("sop-steps");
-  var sopIssue = document.getElementById("sop-issue");
-  function loadSopSteps() {
-    var issue = ((sopIssue && sopIssue.value) || "").trim();
-    if (!sopSteps || !issue) return;
-    fetch("/api/sop-steps?issue=" + encodeURIComponent(issue) +
-          "&date=" + encodeURIComponent(DATE))
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        sopSteps.innerHTML = "";
-        (d.steps || []).forEach(function (s) {
-          var b = el("button", "btn sopstep" + (s.done === true ? " done" : s.done === null ? " nostate" : ""), s.label);
-          b.setAttribute("data-step", s.step_id);
-          b.addEventListener("click", function () {
-            b.disabled = true; b.classList.add("running");
-            post("/action/run-task", {
-              step_id: s.step_id, issue: issue, date: DATE,
-              legs_file: s.needs_legs ? window.prompt("legs 文件路径") : null,
-            }).then(function () {
-              b.disabled = false; b.classList.remove("running"); loadSopSteps();
-            });
-          });
-          sopSteps.appendChild(b);
-        });
-      })
-      .catch(function () { /* 任务栏拉不到不影响判读三栏 */ });
-  }
-  if (sopIssue) { sopIssue.addEventListener("change", loadSopSteps); loadSopSteps(); }
-
-  function renderTaskEvent(e, state) {
-    var id = "task-" + (e.step_id || "");
-    var old = stageEl.querySelector('[data-task="' + id + '"]');
-    if (old) old.remove();
-    var crumb = stageEl.querySelector(".crumb");
-    if (crumb && crumb.textContent.indexOf("选择议程项") >= 0) crumb.remove();
-    var blk = el("div", "vblock task " + state);
-    blk.setAttribute("data-task", id);
-    blk.appendChild(el("div", "vbhead",
-      (e.label || e.step_id || "任务") + " · " +
-      (state === "running" ? "运行中"
-        : state === "done" ? "完成 exit=" + e.exit_code
-          : "失败 exit=" + e.exit_code)));
-    if (e.argv) blk.appendChild(el("div", "mono small", "$ nutmeg " + e.argv.join(" ")));
-    if (e.text) { var pre = el("pre", "tasklog"); pre.textContent = e.text; blk.appendChild(pre); }
-    stageEl.appendChild(blk);
-  }
-
-  // 舞台被 renderDayRegime 清空后重放任务卡(任务不属于某个 obj,不随选中切换)
-  function replayTaskEvents() {
-    allEvents.forEach(function (e) {
-      if (e.kind === "task_started") renderTaskEvent(e, "running");
-      else if (e.kind === "task_done") renderTaskEvent(e, "done");
-      else if (e.kind === "task_failed") renderTaskEvent(e, "failed");
-    });
-  }
-
   // ---- event dispatch + polling -------------------------------------
   function ingest(e) {
     allEvents.push(e);
@@ -469,13 +319,8 @@
       case "attention": renderAttention(e); break;
       case "judgment": judgments[e.obj_id] = e.payload || {}; break;
       case "day_regime": dayRegime = e.payload || null; break;
-      case "read_draft": renderReadDraft(e); break;
-      case "legs_proposal": renderLegsProposal(e); break;
       case "slip": renderSlip(e); break;
       case "view_block": renderViewBlock(e); break;
-      case "task_started": renderTaskEvent(e, "running"); break;
-      case "task_done": renderTaskEvent(e, "done"); break;
-      case "task_failed": renderTaskEvent(e, "failed"); break;
       case "note":
         if (e.obj_id === selectedObj || e.obj_id === "day")
           appendTurn({ kind: "note", text: "📝 " + e.text });
@@ -523,7 +368,7 @@
         if (!flowEl.querySelector(".fitem")) {
           flowEl.appendChild(el("p", "empty", "今日 agent 尚未开工——在终端说「今天的方案」。"));
         }
-        if (!selectedObj) { renderDayRegime(); replayTaskEvents(); } // 未选中→舞台显今日盘面
+        if (!selectedObj) renderDayRegime(); // 未选中→舞台显今日盘面
       })
       .catch(function () { /* 保留服务端渲染的降级视图 */ })
       .finally(function () { setInterval(poll, 2000); });

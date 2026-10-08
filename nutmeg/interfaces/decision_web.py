@@ -1,8 +1,9 @@
-"""Workshop UI — 决策本体判读工作台(spec 2026-07-07-workshop-ui-design.md)。
+"""Workshop UI — 判读工作台(spec 2026-07-07-workshop-ui-design.md)。
 
-独立 FastAPI 应用,直接读 DecisionStore 九对象。判断永不在此:界面只渲染
-agent 判断(workbench 事件)+ 记录人裁决。两个 typed action(Task 4)复用
-ingest_reads/compose_tickets 的既有校验,零旁门。仿 client_web.py 模式。
+独立 FastAPI 应用。判断永不在此:当日场次/快照/已提交 Read 只从内核读侧来
+(``decision_web_kernel``),界面只渲染 agent 判断(workbench 事件)+ 人的手记、候选与实票登记。
+2026-10-08 第二轮瘦身:旧 DecisionStore 九对象读侧(批准/拒绝 Read、确认 legs、SOP 任务栏、
+对象浏览器/校准台/账本)随停写的 v1 JSONL 一起退役。
 """
 from __future__ import annotations
 
@@ -16,45 +17,24 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from nutmeg.decision.observe_history import factor_history, rule_changes, run_git, trace_day
-from nutmeg.decision.ontology import MarketSnapshot, Match
-from nutmeg.decision.store import DecisionStore
 from nutmeg.decision.workbench import read_events
 
 
-def _day_state(store: DecisionStore, output_dir, date: str,
-               kernel_state=None) -> dict[str, Any]:
-    """当日状态。给了 ``kernel_state``（内核读侧，见 decision_web_kernel）时以内核为唯一权威：
-    matches / snapshots / reads 全部来自内核，文件事件（追问线程等）与内核合成的议程项合并。
-    没给则走旧 DecisionStore 路径，一字不变。**不双写、不混读**——M5 禁无声双权威。"""
-    if kernel_state is not None:
-        kernel = kernel_state(date)
-        return {
-            "date": date,
-            "matches": kernel["matches"],
-            "snapshots": kernel["snapshots"],
-            "reads": kernel["reads"],
-            "events": read_events(output_dir, date) + kernel["events"],
-        }
-    prefix = f"M-{date}-"
-    matches = [m.to_dict() for m in store.load(Match)
-               if m.match_id.startswith(prefix)]
-    snaps = [s.to_dict() for s in store.load(MarketSnapshot)
-             if s.match_id.startswith(prefix) and s.kind == "read_time"]
+def _day_state(output_dir, date: str, kernel_state=None) -> dict[str, Any]:
+    """当日状态。内核读侧(见 decision_web_kernel)是唯一权威:matches / snapshots / reads
+    全部来自内核,文件事件(追问线程、手记、候选)与内核合成的议程项合并。
+    没注入内核读侧(测试、离线)时只有文件事件——**不双写、不混读**,M5 禁无声双权威。"""
+    if kernel_state is None:
+        return {"date": date, "matches": [], "snapshots": [], "reads": [],
+                "events": read_events(output_dir, date)}
+    kernel = kernel_state(date)
     return {
         "date": date,
-        "matches": matches,
-        "snapshots": snaps,
-        "events": read_events(output_dir, date),
+        "matches": kernel["matches"],
+        "snapshots": kernel["snapshots"],
+        "reads": kernel["reads"],
+        "events": read_events(output_dir, date) + kernel["events"],
     }
-
-
-def _factor_cls():
-    from nutmeg.decision.ontology import Factor
-    return Factor
-
-
-def self_daily(output_dir, date: str) -> Path:
-    return Path(output_dir) / "daily" / date
 
 
 def _launchctl_list() -> str:
@@ -67,9 +47,10 @@ def _launchctl_list() -> str:
         return ""
 
 
-def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
-                        zucai_dir=None, sop_invoke=None, observe_repo=None,
+def create_decision_app(*, output_dir, store=None, kernel_state=None,
+                        zucai_dir=None, observe_repo=None,
                         data_dir=None, launchctl=None, git=None) -> FastAPI:
+    """``store`` 已无读者(旧 DecisionStore 读侧退役),只为调用方不改而保留形参。"""
     app = FastAPI(title="Nutmeg 判读工作台")
     web_root = Path(__file__).parent / "web"
     templates = Jinja2Templates(directory=web_root / "templates")
@@ -82,7 +63,6 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
     ]
     _mtimes = [asset.stat().st_mtime for asset in _assets if asset.exists()]
     templates.env.globals["asset_v"] = str(int(max(_mtimes))) if _mtimes else "0"
-    app.state.store = store
     app.state.output_dir = Path(output_dir)
     # 足彩物料目录：默认与 betslips.jsonl 同级的 .nutmeg-data/zucai（见 decision-web CLI）。
     app.state.zucai_dir = Path(zucai_dir) if zucai_dir else Path(output_dir).parent / "zucai"
@@ -94,84 +74,31 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
 
     @app.get("/api/workbench")
     def workbench_api(date: str) -> dict:
-        return _day_state(store, output_dir, date, kernel_state)
+        return _day_state(output_dir, date, kernel_state)
 
     @app.get("/")
-    def workbench_page(request: Request, date: str = "", issue: str = ""):
+    def workbench_page(request: Request, date: str = ""):
         from datetime import date as _d
         date = date or _d.today().isoformat()
         return templates.TemplateResponse(
             request, "decision/workbench.html",
             {"title": "判读工作台",
-             "state": _day_state(store, output_dir, date, kernel_state),
-             "issue": issue})
+             "state": _day_state(output_dir, date, kernel_state)})
 
     from datetime import date as _date
 
     from fastapi import Body
     from fastapi.responses import JSONResponse
 
-    from nutmeg.decision.factors import load_seed_factors
-    from nutmeg.decision.read_ingest import ingest_reads
-    from nutmeg.decision.workbench import distill_note, record_decision
-
     def _today() -> str:
         return _date.today().isoformat()
 
-    def _date_of(match_id: str) -> str:
-        # M-<date>-... → date(供 record_decision 归日)
-        parts = match_id.split("-")
-        return "-".join(parts[1:4]) if len(parts) >= 4 else _today()
-
-    @app.post("/action/approve-read")
-    def approve_read(payload: dict = Body(...)) -> Any:  # noqa: B008
-        read = dict(payload["read"])
-        obj_id = payload.get("obj_id", read.get("read_id", ""))
-        date = _date_of(read.get("match_id", ""))
-        # §3.5:把该 obj 的追问往来蒸馏进 note(不进 store);判断不在此
-        note = distill_note(output_dir, date, obj_id=obj_id)
-        if note:
-            read["note"] = (read.get("note", "") + " ⟨" + note + "⟩").strip()
-        factors = store.load(_factor_cls()) or load_seed_factors()
-        errors = ingest_reads([read], store=store, factors=factors)  # 同一校验闸
-        if errors:
-            record_decision(output_dir, date, action="approve_read",
-                            obj_id=obj_id, result="拒绝: " + "; ".join(errors))
-            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
-        record_decision(output_dir, date, action="approve_read",
-                        obj_id=obj_id, result=f"{read['read_id']} 入库")
-        return {"ok": True, "read_id": read["read_id"]}
-
-    @app.post("/action/reject-read")
-    def reject_read(payload: dict = Body(...)) -> Any:  # noqa: B008
-        obj_id = payload.get("obj_id", "")
-        date = payload.get("date", _today())
-        record_decision(output_dir, date, action="reject_read", obj_id=obj_id,
-                        result=payload.get("reason", ""))
-        return {"ok": True}
-
-    @app.post("/action/confirm-legs")
-    def confirm_legs(payload: dict = Body(...)) -> Any:  # noqa: B008
-        import json
-        date = payload.get("date", _today())
-        legs = payload["legs"]
-        legs_file = self_daily(output_dir, date) / "legs.json"
-        legs_file.parent.mkdir(parents=True, exist_ok=True)
-        if legs_file.exists():        # 写前留 .bak(spec §5 幂等)
-            legs_file.with_suffix(".json.bak").write_text(
-                legs_file.read_text(encoding="utf-8"), encoding="utf-8")
-        legs_file.write_text(json.dumps(legs, ensure_ascii=False, indent=2),
-                             encoding="utf-8")
-        record_decision(output_dir, date, action="confirm_legs",
-                        obj_id="legs", result=f"{len(legs)} 腿 → legs.json")
-        return {"ok": True, "legs": len(legs)}
-
-    from nutmeg.decision.workbench import append_user_message, read_events
+    from nutmeg.decision.workbench import append_user_message
 
     @app.post("/thread")
     def thread_post(payload: dict = Body(...)) -> Any:  # noqa: B008
         """§3.5:浏览器追问 → user_message 事件(obj_id 锚定)。终端 agent 监视
-        文件后回应(写 agent_reply/read_draft),浏览器经 /events 拉回。"""
+        文件后回应(写 agent_reply),浏览器经 /events 拉回。"""
         date = payload.get("date", _today())
         append_user_message(output_dir, date, obj_id=payload["obj_id"],
                             text=payload["text"], at=payload.get("at", ""))
@@ -205,34 +132,6 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
                                parent_version=(str(payload["parent_version"])
                                                if payload.get("parent_version") else None))
         return {"ok": True, "seq": seq}
-
-    # ── SOP 任务栏（阶段一）：同一条命令，从页面按 ──────────────────────
-    @app.get("/api/sop-steps")
-    def sop_steps(issue: str, date: str) -> dict:
-        from nutmeg.decision.sop_tasks import STEPS, SopParams
-
-        p = SopParams(issue=issue, date=date, zucai_dir=app.state.zucai_dir,
-                      output_dir=Path(output_dir), legs_file=None)
-        return {"issue": issue, "date": date, "steps": [
-            {"step_id": s.step_id, "label": s.label, "needs_legs": s.needs_legs,
-             # 没声明产物的步骤（B4b 只打 stdout）不判定完成，不是「未完成」
-             "done": (all(a.exists() for a in s.artifacts(p))
-                      if s.artifacts(p) else None)}
-            for s in STEPS]}
-
-    @app.post("/action/run-task")
-    def run_task(payload: dict = Body(...)) -> Any:  # noqa: B008
-        from nutmeg.decision.sop_tasks import SopParams, cli_invoke, run_step
-
-        legs = payload.get("legs_file")
-        p = SopParams(issue=str(payload["issue"]), date=str(payload["date"]),
-                      zucai_dir=app.state.zucai_dir, output_dir=Path(output_dir),
-                      legs_file=Path(legs) if legs else None)
-        try:
-            return run_step(str(payload.get("step_id")), p,
-                            invoke=sop_invoke or cli_invoke)
-        except KeyError as exc:
-            return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
 
     @app.get("/events")
     def events(date: str, since: int = 0) -> dict:
@@ -330,7 +229,7 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
 
         errors: list[str] = []
         state = _safe(
-            lambda: _day_state(store, output_dir, date, kernel_state),
+            lambda: _day_state(output_dir, date, kernel_state),
             {"events": []},
             errors,
         )
@@ -520,7 +419,7 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
         ⚠️只读文件流是不够的——判读与实票活在内核态里，2026-09-18 在真 26129 上
         表现为回放里「实票（无）」。
         """
-        events = _day_state(store, output_dir, date, kernel_state)["events"]
+        events = _day_state(output_dir, date, kernel_state)["events"]
         # 内核事件（判读/实票，无 seq）在先，文件事件按 seq 在后＝当天的真实先后；
         # attention 是议程项不是过程，回放里只会变成一行裸 kind。
         events = [e for e in events if e.get("kind") != "attention"]
@@ -538,41 +437,10 @@ def create_decision_app(*, store: DecisionStore, output_dir, kernel_state=None,
 
         from nutmeg.decision.workbench_export import events_to_markdown
 
-        events = _day_state(store, output_dir, date, kernel_state)["events"]
+        events = _day_state(output_dir, date, kernel_state)["events"]
         return PlainTextResponse(
             events_to_markdown(output_dir, date, events=events),
             media_type="text/markdown")
-
-    @app.get("/objects")
-    def objects_page(request: Request):
-        from nutmeg.decision.ontology import (
-            Factor,
-            FactorVerdict,
-            League,
-            Read,
-            Settlement,
-            Team,
-            Ticket,
-        )
-        counts = {c.__name__: len(store.load(c)) for c in
-                  (Match, MarketSnapshot, Read, Factor, Ticket,
-                   Settlement, FactorVerdict, Team, League)}
-        return templates.TemplateResponse(
-            request, "decision/objects.html", {"title": "对象浏览器", "counts": counts})
-
-    @app.get("/calibration")
-    def calibration_page(request: Request):
-        from nutmeg.decision.ontology import FactorVerdict
-        return templates.TemplateResponse(
-            request, "decision/calibration.html",
-            {"title": "校准台", "verdicts": [v.to_dict() for v in store.load(FactorVerdict)]})
-
-    @app.get("/ledger")
-    def ledger_page(request: Request):
-        from nutmeg.decision.ontology import Settlement
-        return templates.TemplateResponse(
-            request, "decision/ledger.html",
-            {"title": "账本", "settlements": [s.to_dict() for s in store.load(Settlement)]})
 
     # ── 实票登记（「没入账 = 没打」的界面入口） ──────────────────────────
     # 数据根在 output_dir 的上一级:betslips.jsonl 与 scoreboard.json 同级,

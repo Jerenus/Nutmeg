@@ -9,20 +9,6 @@
 from __future__ import annotations
 
 from nutmeg.decision.fetch import unpack_euro_result
-from nutmeg.decision.ontology import MarketSnapshot
-
-
-def _snap(source: str, kind: str = "read_time", home: float = 0.5) -> MarketSnapshot:
-    return MarketSnapshot(
-        snapshot_id=f"S-{source}-{kind}",
-        match_id="M-1",
-        taken_at="2026-09-14T12:00:00+08:00",
-        kind=kind,
-        source=source,
-        fair={"had": {"home": home, "draw": 0.3, "away": 0.7 - home}},
-        raw_odds={},
-        lines={},
-    )
 
 
 def test_unpack_euro_result_accepts_both_shapes():
