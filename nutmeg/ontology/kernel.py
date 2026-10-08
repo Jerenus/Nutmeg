@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Engine, func, select
 
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
-from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
@@ -108,7 +107,6 @@ class OntologyKernel:
         market_day_ingest: MarketDayIngestService,
         reconcile: ReconcileService,
         calibrate: CalibrateService,
-        entity_actions: EntityActions,
         forecast_actions: ForecastActions,
         workflow: WorkflowActions,
         scoreboard_actions: ScoreboardActions,
@@ -120,7 +118,6 @@ class OntologyKernel:
         self.market_day_ingest = market_day_ingest
         self.reconcile = reconcile
         self.calibrate = calibrate
-        self.entity_actions = entity_actions
         self.forecast_actions = forecast_actions
         self.workflow = workflow
         self.scoreboard_actions = scoreboard_actions

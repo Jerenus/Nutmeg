@@ -72,7 +72,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         market_day_ingest=market_day_ingest,
         reconcile=reconcile,
         calibrate=calibrate,
-        entity_actions=entity_actions,
         forecast_actions=forecast_actions,
         workflow=workflow,
         scoreboard_actions=scoreboard_actions,
