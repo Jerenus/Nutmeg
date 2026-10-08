@@ -1,8 +1,6 @@
 import pytest
 
 from nutmeg.ontology.decision.distributions import (
-    delta_from,
-    is_normalized,
     reconstructs_belief,
     validate_simplex,
 )
@@ -11,11 +9,10 @@ from nutmeg.ontology.decision.distributions import (
 def test_normalization_and_reconstruction() -> None:
     prior = {"home": 0.5, "draw": 0.3, "away": 0.2}
     belief = {"home": 0.6, "draw": 0.25, "away": 0.15}
-    d = delta_from(prior, belief)
+    d = {key: belief[key] - prior[key] for key in prior}
     assert abs(sum(d.values())) < 1e-9          # deltas sum to zero
     assert reconstructs_belief(prior, [d], belief)
-    assert is_normalized(belief)
-    assert not is_normalized({"home": 0.6, "draw": 0.6, "away": 0.6})
+    validate_simplex(belief)
 
 
 def test_reconstruct_rejects_wrong_delta_sum() -> None:

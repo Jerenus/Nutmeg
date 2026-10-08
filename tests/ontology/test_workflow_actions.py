@@ -66,7 +66,8 @@ def test_operator_records_adjudication_with_rejected_evidence(tmp_path: Path) ->
 
     assert outcome.status is ActionStatus.COMMITTED
     with OntologyUnitOfWork(engine) as uow:
-        row = uow.workflow.get_adjudication(outcome.result_refs[0].object_id)
+        [row] = uow.workflow.iter_adjudications()
+        assert row.adjudication_id == outcome.result_refs[0].object_id
         assert row.reason == "source is superseded"
         assert row.evidence_rejected == [
             {"object_id": "claim-2", "object_type": "claim"}

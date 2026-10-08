@@ -2,12 +2,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from nutmeg.ontology.actions.market_actions import MarketActions
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.errors import IdempotencyConflictError
 from nutmeg.ontology.market.models import QuoteInput, SnapshotBuildRequest
+from nutmeg.ontology.repository import schema_market as sm
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
@@ -87,9 +89,12 @@ def test_hhad_snapshot_persists_one_signed_line_on_every_quote(tmp_path: Path) -
     with OntologyUnitOfWork(engine) as uow:
         lines = {
             uow.market.quote(quote_id).settlement_parameter_decimal
-            for quote_id in uow.market.snapshot_quote_ids(
-                outcome.result_refs[0].object_id
-            )
+            for quote_id in uow.connection.execute(
+                select(sm.market_snapshot_quotes.c.quote_id).where(
+                    sm.market_snapshot_quotes.c.market_snapshot_id
+                    == outcome.result_refs[0].object_id
+                )
+            ).scalars()
         }
     assert lines == {"-1.000000000000"}
 

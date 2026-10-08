@@ -38,25 +38,6 @@ class WorkflowRepository:
             )
         )
 
-    def get_adjudication(self, adjudication_id: str) -> AdjudicationRow:
-        row = self._connection.execute(
-            select(sw.adjudications).where(
-                sw.adjudications.c.adjudication_id == adjudication_id
-            )
-        ).mappings().one()
-        return AdjudicationRow(
-            adjudication_id=row['adjudication_id'],
-            subject_type=row['subject_type'],
-            subject_id=row['subject_id'],
-            decision=row['decision'],
-            actor_id=row['actor_id'],
-            reason=row['reason'],
-            evidence_rejected=json.loads(row['evidence_rejected_json']),
-            alternative=json.loads(row['alternative_json']),
-            created_at=row['created_at'],
-            supersedes_adjudication_id=row['supersedes_adjudication_id'],
-        )
-
     def count_adjudications(self) -> int:
         return self._connection.execute(
             select(func.count()).select_from(sw.adjudications)

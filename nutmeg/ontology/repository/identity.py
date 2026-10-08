@@ -288,14 +288,6 @@ class IdentityRepository:
             supersedes_revision_id=row['supersedes_revision_id'],
         )
 
-    def appearance_sides(self, match_id: str) -> dict[str, str]:
-        rows = self._connection.execute(
-            select(si.team_appearances.c.side, si.team_appearances.c.team_id).where(
-                si.team_appearances.c.match_id == match_id
-            )
-        ).all()
-        return {side: team_id for side, team_id in rows}
-
     def count_teams(self) -> int:
         return self._connection.execute(select(func.count()).select_from(si.teams)).scalar_one()
 

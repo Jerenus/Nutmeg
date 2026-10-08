@@ -2,6 +2,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import select
+
 from nutmeg.ontology.actions.match_actions import MatchActions, MatchSideRef, RecordMatchRequest
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole
 from nutmeg.ontology.actions.service import ActionService
@@ -12,6 +14,7 @@ from nutmeg.ontology.identity.models import (
     ResolutionStatus,
     TeamKind,
 )
+from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository.connection import build_ontology_engine
 from nutmeg.ontology.repository.identity import TeamRow
 from nutmeg.ontology.repository.migrations import run_migrations
@@ -53,7 +56,10 @@ def test_record_match_stores_real_schedule_and_two_appearances(tmp_path: Path) -
         rev = uow.identity.current_match_revision(match_id)
         assert rev.scheduled_at == "2026-07-19T19:00:00+02:00"
         assert rev.schedule_status == "scheduled"
-        sides = uow.identity.appearance_sides(match_id)
+        sides = dict(uow.connection.execute(
+            select(si.team_appearances.c.side, si.team_appearances.c.team_id)
+            .where(si.team_appearances.c.match_id == match_id)
+        ).all())
         assert sides == {"home": "team-home", "away": "team-away"}
     again = actions.record_match(_req("m:2", "2026-07-19T19:00:00+02:00"))
     assert again.result_refs[0].object_id == match_id

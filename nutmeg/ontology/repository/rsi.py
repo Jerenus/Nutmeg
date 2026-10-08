@@ -321,26 +321,6 @@ class RsiRepository:
             )
         )
 
-    def pending_duty_instances(self, *, day: str, now: str) -> list[DutyInstanceRow]:
-        """当天还没落、且还没过期的义务。"""
-        t, d = sr.rsi_duty_instances, sr.rsi_duties
-        rows = (
-            self._c.execute(
-                select(t)
-                .select_from(t.join(d, t.c.duty_id == d.c.duty_id))
-                .where(
-                    t.c.day == day,
-                    t.c.fulfilled_at.is_(None),
-                    t.c.due_at > now,
-                    d.c.status == "active",
-                )
-                .order_by(t.c.due_at, t.c.duty_id)
-            )
-            .mappings()
-            .all()
-        )
-        return [DutyInstanceRow(**dict(r)) for r in rows]
-
     def day_scoped_days_for_issue(self, duty_id: str, issue: str) -> list[str]:
         """某期号绑定的日级义务排在哪些业务日（match_id 为空的行）。"""
         t = sr.rsi_duty_instances
@@ -562,11 +542,3 @@ class RsiRepository:
     def insert_amendment(self, row: AmendmentRow) -> None:
         self._c.execute(insert(sr.rsi_amendments).values(**asdict(row)))
 
-    def amendments(self, exp_id: str) -> list[AmendmentRow]:
-        t = sr.rsi_amendments
-        rows = (
-            self._c.execute(select(t).where(t.c.exp_id == exp_id).order_by(t.c.amended_at))
-            .mappings()
-            .all()
-        )
-        return [AmendmentRow(**dict(r)) for r in rows]
