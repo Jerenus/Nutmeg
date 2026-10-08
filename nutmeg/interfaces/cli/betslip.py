@@ -155,14 +155,6 @@ def betslip_register(
                                *(["BRAKE"] if any("刹车" in x for x in discipline) else []),
                                *(["STOP"] if any("止损" in x or "已触发" in x
                                                  for x in discipline) else [])]
-        if slip.channel == "jczq" and slip.purchased:
-            # 实票入账到本体（2026-10-01）：登记是事实，内核是镜像；镜像失败不挡登记
-            from nutmeg.decision.ledger_writeback import writeback_jczq_slip
-
-            try:
-                slip.diagnosis["kernel"] = writeback_jczq_slip(slip, data_dir=data_dir)
-            except Exception as exc:  # noqa: BLE001 — 内核不可用时留痕不抛
-                slip.diagnosis["kernel"] = {"status": "error", "error": repr(exc)[:200]}
         _cli.typer.echo(register_slip(data_dir, slip))
         for line in slip.diagnosis.get("lines", []):
             _cli.typer.echo("   " + line)
@@ -174,10 +166,6 @@ def betslip_register(
         if slip.deviation_after_kickoff:
             _cli.typer.echo("   ⚠️偏离理由写于票内最早开球之后：照记，"
                             "但不进「人的偏离」按理由的净值")
-        if slip.diagnosis.get("kernel"):
-            from nutmeg.decision.ledger_writeback import summary_line
-
-            _cli.typer.echo("   " + summary_line(slip.diagnosis["kernel"]))
         _cli.typer.echo("   " + _brake_line(data_dir, placed_at))
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)

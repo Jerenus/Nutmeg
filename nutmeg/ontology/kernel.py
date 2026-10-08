@@ -21,7 +21,6 @@ from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
-from nutmeg.ontology.finance.express_flow import ExpressService
 from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.paths import OntologyPaths
@@ -108,7 +107,6 @@ class OntologyKernel:
         engine: Engine,
         artifact_ingest: ArtifactIngestService,
         market_day_ingest: MarketDayIngestService,
-        express: ExpressService,
         reconcile: ReconcileService,
         calibrate: CalibrateService,
         entity_actions: EntityActions,
@@ -122,7 +120,6 @@ class OntologyKernel:
         self._engine = engine
         self.artifact_ingest = artifact_ingest
         self.market_day_ingest = market_day_ingest
-        self.express = express
         self.reconcile = reconcile
         self.calibrate = calibrate
         self.entity_actions = entity_actions

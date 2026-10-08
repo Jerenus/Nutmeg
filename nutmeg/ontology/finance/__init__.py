@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from nutmeg.ontology.finance.models import (
     OutcomeStatus,
-    ProposalStatus,
     SettlementGrade,
     TicketStatus,
     TransactionKind,
@@ -12,7 +11,6 @@ from nutmeg.ontology.finance.models import (
 
 __all__ = [
     'OutcomeStatus',
-    'ProposalStatus',
     'SettlementGrade',
     'TicketStatus',
     'TransactionKind',

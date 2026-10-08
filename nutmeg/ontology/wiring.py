@@ -20,10 +20,8 @@ from nutmeg.ontology.actions.outcome_actions import OutcomeActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
 from nutmeg.ontology.actions.service import ActionService
-from nutmeg.ontology.actions.ticket_actions import TicketActions
 from nutmeg.ontology.actions.workflow_actions import WorkflowActions
 from nutmeg.ontology.artifacts import ContentAddressedArtifactStore
-from nutmeg.ontology.finance.express_flow import ExpressService
 from nutmeg.ontology.finance.reconcile_flow import ReconcileService
 from nutmeg.ontology.ingest.market_day import MarketDayIngestService
 from nutmeg.ontology.kernel import OntologyKernel
@@ -60,7 +58,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         match_actions=MatchActions(action_service),
         market_actions=MarketActions(action_service),
     )
-    express = ExpressService(ticket_actions=TicketActions(action_service))
     reconcile = ReconcileService(
         outcome_actions=OutcomeActions(action_service),
         unit_of_work_factory=unit_of_work_factory,
@@ -75,7 +72,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         engine=engine,
         artifact_ingest=artifact_ingest,
         market_day_ingest=market_day_ingest,
-        express=express,
         reconcile=reconcile,
         calibrate=calibrate,
         entity_actions=entity_actions,
