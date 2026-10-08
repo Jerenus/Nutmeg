@@ -74,8 +74,6 @@ def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) 
     if z.get("issue") and not z.get("draft"):
         lines.append("- 初稿未出（缺 legs-base 或构建失败）")
     lines += _slip_lines("足彩已登记", z.get("slips") or [])
-    if z.get("tiers"):
-        lines.append(f"- 风向 {json.dumps(z['tiers'].get('wind'), ensure_ascii=False)}")
     rsi = brief.get("rsi") or {}
     rsi_lines = [f"- {a}" for a in rsi.get("human_actions") or []] or ["- 无待人决定"]
     lines += ["", "## RSI", ""] + rsi_lines

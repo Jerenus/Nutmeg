@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from nutmeg.decision.store import DecisionStore
 from nutmeg.interfaces.decision_web import create_decision_app
 from nutmeg.interfaces.decision_web_kernel import kernel_day_state
 
@@ -84,9 +83,8 @@ def test_kernel_day_state_exposes_committed_reads_only_and_synthesizes_agenda():
 
 
 def test_app_uses_kernel_state_when_injected(tmp_path):
-    store = DecisionStore(tmp_path / "decision")          # 旧 store 是空的
     app = create_decision_app(
-        store=store, output_dir=tmp_path,
+        output_dir=tmp_path,
         kernel_state=lambda date: kernel_day_state(_FakeRepository(), date, as_of=_AS_OF),
     )
     client = TestClient(app)
@@ -181,15 +179,13 @@ def test_slips_for_date_also_picks_slips_placed_that_day(tmp_path):
 
 def test_static_assets_carry_a_version_so_browsers_do_not_serve_stale_js(tmp_path):
     """2026-09-18：加了 renderSlip 之后浏览器仍跑旧 app.js，右栏空着，硬刷新才出来。"""
-    store = DecisionStore(tmp_path / "decision")
-    client = TestClient(create_decision_app(store=store, output_dir=tmp_path))
+    client = TestClient(create_decision_app(output_dir=tmp_path))
     html = client.get("/?date=2026-09-19").text
     assert "/static/decision/app.js?v=" in html and "/static/decision/app.css?v=" in html
 
 
 def test_note_and_candidate_endpoints_append_events(tmp_path):
-    store = DecisionStore(tmp_path / "decision")
-    client = TestClient(create_decision_app(store=store, output_dir=tmp_path))
+    client = TestClient(create_decision_app(output_dir=tmp_path))
     d = "2026-09-19"
     r = client.post("/action/note",
                     json={"date": d, "obj_id": "ticket:26129", "text": "SFC-B 否决"})
@@ -223,8 +219,7 @@ def test_replay_page_orders_all_event_kinds_by_seq(tmp_path):
         {"kind": "note", "obj_id": "day", "text": "刹车：¥1000 帽用户裁定"},
     ]:
         append_event(tmp_path, d, ev)
-    store = DecisionStore(tmp_path / "decision")
-    html = TestClient(create_decision_app(store=store, output_dir=tmp_path)).get(
+    html = TestClient(create_decision_app(output_dir=tmp_path)).get(
         f"/replay?date={d}").text
     assert html.index("朗斯不败？") < html.index("平局最被支持。") < html.index("SFC-B") \
         < html.index("刹车")
@@ -239,8 +234,7 @@ def test_replay_page_tolerates_missing_optional_keys(tmp_path):
                                "payload": {"version": "A", "verdict": "considered",
                                            "notes": 1, "stake_yuan": 2, "p_all": None}})
     append_event(tmp_path, d, {"kind": "weird_kind", "obj_id": "q"})
-    store = DecisionStore(tmp_path / "decision")
-    client = TestClient(create_decision_app(store=store, output_dir=tmp_path))
+    client = TestClient(create_decision_app(output_dir=tmp_path))
     r = client.get(f"/replay?date={d}")
     assert r.status_code == 200 and "考虑过" in r.text
     r2 = client.get("/replay?date=2026-09-21")
@@ -261,9 +255,8 @@ def test_replay_merges_kernel_events_not_just_the_file_stream(tmp_path):
             {"kind": "slip", "obj_id": "slip:26129-RJ9",
              "payload": {"slip_id": "26129-RJ9", "notes": 384, "stake_yuan": 768}}]}
 
-    store = DecisionStore(tmp_path / "decision")
     client = TestClient(create_decision_app(
-        store=store, output_dir=tmp_path, kernel_state=kernel_state))
+        output_dir=tmp_path, kernel_state=kernel_state))
 
     html = client.get(f"/replay?date={date}").text
     assert "摩纳哥 vs 朗斯" in html and "26129-RJ9" in html and "朗斯不败？" in html
@@ -286,9 +279,8 @@ def test_replay_drops_attention_noise_and_puts_committed_reads_first(tmp_path):
             {"kind": "judgment", "obj_id": "fr-8",
              "payload": {"match": "摩纳哥 vs 朗斯", "market": "had"}}]}
 
-    store = DecisionStore(tmp_path / "decision")
     client = TestClient(create_decision_app(
-        store=store, output_dir=tmp_path, kernel_state=kernel_state))
+        output_dir=tmp_path, kernel_state=kernel_state))
     html = client.get(f"/replay?date={date}").text
 
     assert "<b>attention" not in html

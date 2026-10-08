@@ -96,47 +96,8 @@ def grade_f2_prospective(*, ledger_path: Path, zucai_dir: Path, primary_bucket: 
                        computed_by=computed_by)
 
 
-def grade_f4(plans: Sequence[dict], *, seed: int = 7, boots: int = 4000) -> GradeResult:
-    """Bootstrap the median gate cost across plans with a defined strict floor."""
-    values = [
-        float(plan["gate_cost_pp"])
-        for plan in plans
-        if plan.get("gate_cost_pp") is not None
-    ]
-    if not values:
-        return GradeResult(
-            stratum="zucai",
-            n_cum=0,
-            metric_value_pp=0.0,
-            ci_low_pp=0.0,
-            ci_high_pp=0.0,
-            cost_axis_pp=None,
-            as_of_policy="per_issue_plan",
-            inputs_hash=inputs_hash(b""),
-            computed_by="nutmeg.decision.rsi_grading.grade_f4",
-        )
-    rng = random.Random(seed)
-    median = statistics.median(values)
-    medians = sorted(
-        statistics.median(rng.choice(values) for _ in values) for _ in range(boots)
-    )
-    raw = json.dumps(sorted(values), separators=(",", ":")).encode()
-    return GradeResult(
-        stratum="zucai",
-        n_cum=len(values),
-        metric_value_pp=median,
-        ci_low_pp=medians[int(0.025 * boots)],
-        ci_high_pp=medians[int(0.975 * boots) - 1],
-        cost_axis_pp=None,
-        as_of_policy="per_issue_plan",
-        inputs_hash=inputs_hash(raw),
-        computed_by="nutmeg.decision.rsi_grading.grade_f4",
-    )
-
-
-# ── 前瞻结账适配器（2026-09-22 接入 F3 / F5 / F9）────────────────────────────
-# 三者都只读语料 v2 的行，按登记原件的 window 过滤，永不回补窗前样本（T12）。
-# F3：足彩 issue_from..issue_to，top1≥60% 的模态面残差（stratum=zucai）。
+# ── 前瞻结账适配器（2026-09-22 接入 F5 / F9；F3 与 F4 2026-10-04 退役，适配器随之删除）─────
+# 都只读语料 v2 的行，按登记原件的 window 过滤，永不回补窗前样本（T12）。
 # F5：date_from 起两泳道，gap12∈[10,20)pp 的模态面残差（stratum=pooled；另按泳道各出一档）。
 # F9：date_from 起 belief≠prior 的行，市场 Brier − 判读 Brier（pp，正=判读更好）。
 
@@ -156,11 +117,6 @@ def _rows_hash(rows: Sequence[dict]) -> str:
 
 def _keys(rows: Sequence[dict]) -> tuple[str, ...]:
     return tuple(str(r.get("key")) for r in rows)
-
-
-def _in_issue_window(row: dict, window: dict) -> bool:
-    issue = str(row.get("issue") or "")
-    return bool(issue) and window.get("issue_from", "") <= issue <= window.get("issue_to", "99999")
 
 
 def _in_date_window(row: dict, window: dict) -> bool:
@@ -188,18 +144,6 @@ def _residual_grade(rows: Sequence[dict], *, stratum: str, computed_by: str,
 def _priced(rows: Sequence[dict]) -> list[dict]:
     return [r for r in rows
             if len(r.get("fair") or {}) == 3 and r.get("actual") in CODE_OF.values()]
-
-
-def grade_f3_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
-    """F3 policy-top60：窗内足彩行、top1≥60% → 模态面残差。"""
-    selected = [
-        r for r in _priced(rows)
-        if r.get("src") == "zucai" and _in_issue_window(r, window)
-        and r["fair"][_modal(r["fair"])] >= 0.60
-    ]
-    return _residual_grade(selected, stratum="zucai",
-                           computed_by="nutmeg.decision.rsi_grading.grade_f3_prospective",
-                           as_of_policy="registry_window_issue")
 
 
 def grade_f5_prospective(rows: Sequence[dict], *, window: dict,
@@ -342,7 +286,7 @@ def grade_f13_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
         selected, computed_by="nutmeg.decision.rsi_grading.grade_f13_prospective")
 
 
-PROSPECTIVE_ADAPTERS = {"F3": grade_f3_prospective, "F5": grade_f5_prospective,
+PROSPECTIVE_ADAPTERS = {"F5": grade_f5_prospective,
                         "F9": grade_f9_prospective, "F10": grade_f10_prospective,
                         "F11": grade_f11_prospective}
 def _stance_faces(labels: dict) -> set[str]:

@@ -1,6 +1,5 @@
 from fastapi.testclient import TestClient
 
-from nutmeg.decision.store import DecisionStore
 from nutmeg.decision.workbench import append_candidate
 from nutmeg.interfaces.decision_web import create_decision_app
 
@@ -8,7 +7,6 @@ from nutmeg.interfaces.decision_web import create_decision_app
 def _app(tmp_path, *, kernel_state=None, repo=None):
     return TestClient(
         create_decision_app(
-            store=DecisionStore(tmp_path / "decision"),
             output_dir=tmp_path,
             kernel_state=kernel_state,
             observe_repo=repo,

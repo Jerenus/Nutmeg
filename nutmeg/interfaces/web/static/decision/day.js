@@ -57,10 +57,6 @@ window.Day = (function () {
     if (m.stance && m.stance.tilt_reason) c.appendChild(el("p", "obs-muted", "拨动：" + m.stance.tilt_reason));
     if (m.logic && m.logic.status === "ok") c.appendChild(el("p", "day-logic", m.logic.text));
     else if (m.logic) c.appendChild(el("p", "obs-muted", "逻辑层 " + m.logic.status + (m.logic.reason ? "：" + m.logic.reason : "")));
-    if (m.audit && !m.audit.error) ["naked", "double", "full"].forEach(function (k) {
-      var a = m.audit[k]; if (!a) return;
-      badges.appendChild(el("span", "day-badge" + (a.blocking ? " alarm" : ""), k + " " + a.faces + (a.blocking ? " ✗" : " ✓")));
-    });
     var d = el("details"); d.appendChild(el("summary", null, "标签 / 实力 / 研究摘要"));
     var pre = el("pre"); pre.textContent = JSON.stringify({ labels: m.labels, strength: m.strength, research: m.research }, null, 1);
     d.appendChild(pre); c.appendChild(d);
@@ -80,13 +76,6 @@ window.Day = (function () {
     var z = view.brief && view.brief.zucai;
     if (!z || !z.issue) { box.appendChild(el("p", "obs-muted", "无在售期")); return; }
     box.appendChild(el("p", null, "期 " + z.issue + " · 截止 " + (z.sale_deadline || "未知") + " · 备料槽 " + Object.keys(z.prep || {}).join(",")));
-    if (z.tiers) box.appendChild(el("p", null, "风向 " + JSON.stringify(z.tiers.wind) + " · tiers " + z.tiers.tiers_hash));
-    Object.keys(z.frontier || {}).forEach(function (ch) {
-      var f = z.frontier[ch];
-      box.appendChild(el("p", null, ch + " 前沿 " + f.points.length + " 点 · strict 地板 P=" + f.strict_max_p));
-      f.points.forEach(function (p) { box.appendChild(el("div", "day-row ok", "k" + p.k + " P=" + p.p_all + " 注数 " + p.notes + " ¥" + p.stake_yuan + " 收窄 " + p.narrowings)); });
-    });
-    box.appendChild(el("p", "obs-muted", z.plan ? "已定案" : "未定案（plan choose → commit 是人的门）"));
   }
 
   function renderRsi(view) {

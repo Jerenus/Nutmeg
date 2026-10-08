@@ -19,7 +19,6 @@ def events_to_markdown(output_dir, date: str, *, events=None) -> str:
     漏成「（无）」（2026-09-18 在真 26129 上验出来的）。
     """
     evs = read_events(output_dir, date) if events is None else list(events)
-    tasks: list[str] = []
     judgments: list[str] = []
     thread: list[str] = []
     cands: list[str] = []
@@ -27,10 +26,7 @@ def events_to_markdown(output_dir, date: str, *, events=None) -> str:
     slips: list[str] = []
     for e in evs:
         k = e.get("kind")
-        if k in ("task_done", "task_failed"):
-            mark = "✓" if k == "task_done" else "✗"
-            tasks.append(f"- {mark} {e.get('label')} · exit={e.get('exit_code')}")
-        elif k == "judgment":
+        if k == "judgment":
             p = e.get("payload") or {}
             market = p.get("market")
             judgments.append(f"- {p.get('match')}" + (f"（{market}）" if market else ""))
@@ -58,7 +54,8 @@ def events_to_markdown(output_dir, date: str, *, events=None) -> str:
             p = e.get("payload") or {}
             slips.append(f"- {p.get('slip_id')} · {p.get('notes')} 注 ¥{p.get('stake_yuan')}")
     out = [f"# {date} 过程回放", ""]
-    for title, rows in (("任务", tasks), ("判读", judgments), ("追问", thread),
+    # 「任务」一节随 SOP 任务栏（sop_tasks）2026-10-08 退役：再没有 task_done/task_failed 事件
+    for title, rows in (("判读", judgments), ("追问", thread),
                         ("候选票面", cands), ("实票", slips), ("手记", notes)):
         out += [f"## {title}", *(rows or ["（无）"]), ""]
     return "\n".join(out)

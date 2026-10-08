@@ -50,7 +50,7 @@ def _experiments(invoke) -> list[str]:
     code, output = invoke(["rsi", "status"])
     if code != 0:
         return []
-    keep = ("F9 ", "F10", "F11", "F3 ", "R1 ")
+    keep = ("F9 ", "F10", "F11", "R1 ")
     return [line.strip() for line in output.splitlines() if line.startswith(keep)]
 
 

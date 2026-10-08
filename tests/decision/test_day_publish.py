@@ -21,15 +21,12 @@ def _data(tmp_path: Path) -> tuple[Path, Path]:
                         "summary": "秘密内部备注 .nutmeg-data/x"},
             "read": {"judge": "ai:jczq-analyst", "status": "draft", "moved_pp": 6.0,
                     "confidence": 4},
-            "ladder": "偏移", "audit": {"naked": {"faces": "3", "blocking": False, "findings": []}},
+            "ladder": "偏移",
             "logic": {"status": "ok", "text": "锚方完整度 pass 定了面。",
                      "cites": ["labels.anchor_integrity"]}}],
                  "counts": {"matches": 1, "deep_research": 1, "price_only": 0, "drafts": 1}},
         "zucai": {"issue": "26132", "sale_deadline": "2026-09-23T21:00:00+08:00",
-                  "tiers": {"wind": {"regime": "hot"}},
-                  "frontier": {"renjiu": {"points": [{"k": 0, "p_all": .05, "notes": 8,
-                                                       "stake_yuan": 16}],
-                                          "strict_max_p": .02}}, "plan": None, "prep": {}},
+                  "prep": {}},
         "rsi": {"human_actions": ["因子 C11：propose_zero"], "failed_steps": []},
         "factors": [], "errors": []}), encoding="utf-8")
     (out / "decisions.json").write_text(json.dumps(
@@ -50,11 +47,11 @@ def test_public_view_drops_internal_fields(tmp_path: Path):
     m = view["matches"][0]
     assert set(m) == {"code", "name", "competition", "kickoff", "fair", "drift_pp", "tier",
                       "ladder", "judge", "confidence", "research_status", "prospective",
-                      "logic", "expressions"}
-    assert m["logic"] == "锚方完整度 pass 定了面。" and m["expressions"] == {"naked": "3 ✓"}
+                      "logic"}
+    assert m["logic"] == "锚方完整度 pass 定了面。"
     assert "summary" not in json.dumps(m) and view["decisions"] == {"open": 1, "total": 1}
     assert view["zucai"] == {"issue": "26132", "sale_deadline": "2026-09-23T21:00:00+08:00",
-                             "wind": {"regime": "hot"}, "brief": None, "draft": [], "slips": [],
+                             "brief": None, "draft": [], "slips": [],
                              "plan_status": "未登记"}
     assert view["account"] is None and view["jczq_slips"] == []
     assert view["record"]["chains"][0]["name"] == "被排面链"

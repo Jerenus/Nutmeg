@@ -282,10 +282,7 @@ const Runs = (() => {
       ${board ? `<ul class="rn-board">${board}</ul>` : ""}</div>`;
     const z = o.zucai;
     const zucai = `<div class="rn-col"><h3>足彩</h3>${z.issue ? `
-      <p class="lead"><b>${esc(z.issue)}</b> 期，截止 <b>${esc((z.deadline || "").slice(5))}</b>。</p>
-      <dl class="rn-kv"><dt>资金方案</dt><dd>${z.planned ? "已定案" : "未定案"}</dd>
-      <dt>票面</dt><dd>${z.tickets ? `${z.tickets} 张` : "还没出票"}</dd>
-      <dt>购买</dt><dd>${z.purchased ? "已登记实票" : "未登记"}</dd></dl>` : '<p class="lead">这天没有在售的足彩期。</p>'}
+      <p class="lead"><b>${esc(z.issue)}</b> 期，截止 <b>${esc((z.deadline || "").slice(5))}</b>。</p>` : '<p class="lead">这天没有在售的足彩期。</p>'}
       ${o.broadcasts.length ? `<h3 style="margin-top:18px">截止播报</h3><ul class="rn-pending">${o.broadcasts.map((b) => `<li>${esc(b.at)} 提醒${esc(broadcastText(b.key))}，当时还剩 ${esc(b.minutes_left)} 分</li>`).join("")}</ul>` : ""}</div>`;
     const duties = o.rsi.duties.map((d) => {
       const done = (d.done / d.total) * 100;

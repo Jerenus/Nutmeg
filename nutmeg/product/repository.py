@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from pathlib import Path
 
 from sqlalchemy import Engine, and_, func, select
 
@@ -22,10 +21,8 @@ from nutmeg.ontology.repository import schema_rsi as sr
 
 
 class ProductReadRepository:
-    def __init__(self, engine: Engine, analytics_path: Path | None = None) -> None:
-        # analytics_path 已无读者（DuckDB 投影随记分牌投影读侧一起退役），保留形参只为调用方不改。
+    def __init__(self, engine: Engine) -> None:
         self._engine = engine
-        self._analytics_path = Path(analytics_path) if analytics_path is not None else None
 
     # ── RSI 实验（阶段②观察界面的读路径；与工作台同一 as_of 口径）──────────
     def experiments(self, *, as_of: str) -> list[dict]:

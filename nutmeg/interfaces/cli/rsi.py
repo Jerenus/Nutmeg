@@ -1000,15 +1000,6 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
             )
         except LeakError as exc:
             _fail(f"泄漏拒收：{exc}")
-    elif exp == "F4":
-        from nutmeg.decision.rsi_grading import grade_f4
-
-        with OntologyUnitOfWork(k.engine) as uow:
-            plans = [
-                {"issue": plan.issue, "gate_cost_pp": plan.gate_cost_pp}
-                for plan in uow.capital.all_latest()
-            ]
-        g = grade_f4(plans)
     elif exp in PROSPECTIVE_ADAPTERS and exp != "G1" and mode == "prospective":
         from nutmeg.decision import rsi_samples
 

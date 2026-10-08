@@ -47,10 +47,9 @@ def _launchctl_list() -> str:
         return ""
 
 
-def create_decision_app(*, output_dir, store=None, kernel_state=None,
+def create_decision_app(*, output_dir, kernel_state=None,
                         zucai_dir=None, observe_repo=None,
                         data_dir=None, launchctl=None, git=None) -> FastAPI:
-    """``store`` 已无读者(旧 DecisionStore 读侧退役),只为调用方不改而保留形参。"""
     app = FastAPI(title="Nutmeg 判读工作台")
     web_root = Path(__file__).parent / "web"
     templates = Jinja2Templates(directory=web_root / "templates")

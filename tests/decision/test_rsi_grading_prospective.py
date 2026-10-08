@@ -1,6 +1,5 @@
 from nutmeg.decision.rsi_grading import (
     PROSPECTIVE_ADAPTERS,
-    grade_f3_prospective,
     grade_f5_prospective,
     grade_f9_prospective,
 )
@@ -16,24 +15,6 @@ def _row(key, actual, fair, *, src="zucai", issue=None, date="2026-09-20", belie
 STRONG = {"home": 0.65, "draw": 0.2, "away": 0.15}
 COIN = {"home": 0.4, "draw": 0.3, "away": 0.3}
 BAND = {"home": 0.45, "draw": 0.3, "away": 0.25}  # gap12 = 15pp → F5a band
-
-
-def test_f3_counts_only_window_issues_and_top1_at_least_60():
-    rows = [
-        _row("26125-1", "3", STRONG, issue="26125"),
-        _row("26130-2", "0", STRONG, issue="26130"),
-        _row("26124-3", "3", STRONG, issue="26124"),  # before window
-        _row("26137-4", "3", STRONG, issue="26137"),  # after window
-        _row("26126-5", "3", COIN, issue="26126"),  # top1 < 60
-        _row("j1", "3", STRONG, src="jczq"),  # wrong lane
-    ]
-    g = grade_f3_prospective(rows, window={"issue_from": "26125", "issue_to": "26136"})
-    assert g.stratum == "zucai" and g.n_cum == 2
-    assert round(g.metric_value_pp, 1) == round((0.5 - 0.65) * 100, 1)
-    assert g.computed_by.endswith("grade_f3_prospective")
-    assert g.inputs_hash == grade_f3_prospective(
-        rows, window={"issue_from": "26125", "issue_to": "26136"}
-    ).inputs_hash
 
 
 def test_f5_uses_gap_band_across_lanes_and_respects_date_from():
@@ -67,7 +48,7 @@ def test_adapter_registry_names_match_experiments():
     # 2026-09-30：F13（崩塌叙事锚方）、F14（表态面集合命中率）登记并接入
     # 2026-10-01：F15（终盘大热校准）、G1（gym 结构规则 fav_pairs ROI）登记并接入
     # 2026-10-02：K1（判断 rubric 两读 kappa）登记并接入
-    assert set(PROSPECTIVE_ADAPTERS) == {"F3", "F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1",
+    assert set(PROSPECTIVE_ADAPTERS) == {"F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1",
                                          "K1"}
 
 

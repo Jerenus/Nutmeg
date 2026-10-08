@@ -10,7 +10,6 @@ from pathlib import Path
 
 from nutmeg.decision.bj_time import parse_bj
 from nutmeg.decision.board_rows import fmt_stance, jczq_rows
-from nutmeg.decision.day_audit import audit_defaults
 from nutmeg.decision.day_paths import BRIEF, BRIEF_MD, day_dir, jczq_day_dir, zucai_dir
 from nutmeg.decision.faces import FACES
 from nutmeg.decision.files import read_json
@@ -136,7 +135,6 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
             "stance": raw_read.get("stance") if raw_read else None,
             "ladder": _ladder(read),
         })
-        cards[-1]["audit"] = audit_defaults(cards[-1])
     counts = {
         "matches": len(cards),
         "deep_research": sum(1 for c in cards
@@ -239,8 +237,8 @@ def _slips(data_dir: Path, *, issue: str | None = None, date: str | None = None)
 def _zucai(data_dir: Path, now: datetime, *, build_draft: bool = True) -> dict:
     zdir = zucai_dir(data_dir)
     issue = current_issue(zdir, now=now) if zdir.exists() else None
-    out = {"issue": issue, "sale_deadline": None, "prep": {}, "tiers": None,
-           "frontier": {}, "plan": None, "brief": None, "draft": [], "slips": []}
+    out = {"issue": issue, "sale_deadline": None, "prep": {}, "brief": None, "draft": [],
+           "slips": []}
     if not issue:
         return out
     meta = read_json(zdir / f"{issue}-issue.json") or {}
@@ -249,16 +247,6 @@ def _zucai(data_dir: Path, now: datetime, *, build_draft: bool = True) -> dict:
         doc = read_json(zdir / f"{issue}-prep-{slot}.json")
         if doc:
             out["prep"][slot] = {k: doc.get(k) for k in ("captured_at", "n_matches")}
-    out["tiers"] = read_json(zdir / f"{issue}-tiers.json")
-    for channel in ("renjiu", "shengfucai"):
-        doc = read_json(zdir / f"{issue}-frontier-{channel}.json")
-        if doc:
-            out["frontier"][channel] = {
-                "strict_max_p": doc.get("strict_max_p"),
-                "points": [{k: p.get(k) for k in ("k", "p_all", "notes", "stake_yuan", "shape")}
-                           | {"narrowings": len(p.get("narrowings") or [])}
-                           for p in (doc.get("points") or [])[:8]],
-            }
     if (zdir / f"{issue}-legs-base.json").exists():
         try:
             from nutmeg.decision.judgment_brief import zucai_brief
@@ -377,11 +365,6 @@ def render_brief_md(brief: dict) -> str:
             lines.append("- 初稿：未出（缺 legs-base，先跑 B4）" if not zb
                          else "- 初稿：未出（构建失败，手跑 `nutmeg judgment draft --issue`）")
         lines += _slip_lines("已登记足彩票", z.get("slips") or [], indent="- ")
-        if z["tiers"]:
-            lines.append(f"- 风向 {json.dumps(z['tiers'].get('wind'), ensure_ascii=False)}"
-                         "（描述性，不选面）")
-        for channel, doc in z["frontier"].items():
-            lines.append(f"- {channel} 前沿 {len(doc['points'])} 点（帽内 max-P 只作对照）")
     lines += ["", "## RSI", ""]
     if brief["rsi"]:
         lines += [f"- {a}" for a in brief["rsi"]["human_actions"] or []] or ["- 无待人决定"]

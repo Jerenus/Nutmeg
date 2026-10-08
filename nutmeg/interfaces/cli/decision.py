@@ -235,25 +235,22 @@ def decision_web(
     import uvicorn
 
     from nutmeg.config.settings import get_settings
-    from nutmeg.decision.store import DecisionStore
     from nutmeg.interfaces.decision_web import create_decision_app
     from nutmeg.interfaces.decision_web_kernel import kernel_day_state, slips_for_date
     from nutmeg.ontology.wiring import build_ontology_kernel
     from nutmeg.product.repository import ProductReadRepository
 
     _warn_if_exposed(host)
-    store = DecisionStore(Path(output_dir) / "decision")
     # decision-read 写内核，工作台就读内核（不双写）。
     kernel = build_ontology_kernel(get_settings())
     kernel.initialize()
-    repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
+    repository = ProductReadRepository(kernel.engine)
     observe_repo = repository
     data_dir = Path(output_dir).parent          # .nutmeg-data/jczq → .nutmeg-data
     kernel_state = lambda date: kernel_day_state(  # noqa: E731
         repository, date, as_of=datetime.now(UTC),
         slips=slips_for_date(data_dir, data_dir / "zucai", date))
     app = create_decision_app(
-        store=store,
         output_dir=Path(output_dir),
         kernel_state=kernel_state,
         observe_repo=observe_repo,
@@ -721,8 +718,6 @@ def ops_status(
 def zucai_official(
     issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26103"),
     zucai_dir: Path = _ZUCAI_DIR_OPTION,
-    write_outcomes: bool = _cli.typer.Option(
-        False, "--write-outcomes", help="落 {issue}-outcomes.json(喂 decision-reconcile-zucai)"),
     settle_ledger: bool = _cli.typer.Option(
         False, "--settle-ledger", help="按 rx.final_ticket 计命中并回填 ledger(幂等,已结不重结)"),
 ) -> None:
@@ -741,9 +736,6 @@ def zucai_official(
     from nutmeg.decision.zucai_official import (
         settle_ledger as _settle,
     )
-    from nutmeg.decision.zucai_official import (
-        write_outcomes as _write,
-    )
 
     draw = fetch_official(issue)
     if draw is None:
@@ -751,8 +743,6 @@ def zucai_official(
         raise _cli.typer.Exit(code=1)
     _cli.typer.echo(format_draw(draw))
     _cli.typer.echo(f"  赛果串 → {record_official_result(draw, zucai_dir)}")
-    if write_outcomes:
-        _cli.typer.echo(f"  outcomes → {_write(draw, zucai_dir)}")
     if settle_ledger:
         for line in _settle(issue, zucai_dir, draw, settled_at=_date.today().isoformat()):
             _cli.typer.echo(f"  ledger: {line}")
@@ -875,7 +865,7 @@ def _kernel_state_factory(output_dir: Path):
 
     kernel = build_ontology_kernel(get_settings())
     kernel.initialize()
-    repository = ProductReadRepository(kernel.engine, kernel.paths.analytics)
+    repository = ProductReadRepository(kernel.engine)
     data_dir = Path(output_dir).parent          # .nutmeg-data/jczq → .nutmeg-data
     return lambda date: kernel_day_state(
         repository, date, as_of=datetime.now(UTC),

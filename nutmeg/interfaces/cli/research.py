@@ -43,7 +43,7 @@ def _board_matches(day: str, data_dir: Path) -> list[dict]:
                 code_by_match[match_id] = parsed.match_no
 
     start = datetime.fromisoformat(f"{day}T00:00:00+08:00").astimezone(UTC)
-    rows = ProductReadRepository(kernel.engine, kernel.paths.analytics).board_matches(
+    rows = ProductReadRepository(kernel.engine).board_matches(
         start.isoformat(),
         (start + timedelta(days=2)).isoformat(),
         as_of=datetime.now(UTC).isoformat(),

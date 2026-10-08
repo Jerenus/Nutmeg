@@ -435,8 +435,6 @@ def _outputs(data_dir: Path, day: str, brief: dict, now_iso: str) -> dict:
     reads = [m.get("read") or {} for m in matches]
     zucai = brief.get("zucai") or {}
     issue = zucai.get("issue")
-    zdir = data_dir / "zucai"
-    tickets = read_json(zdir / f"{issue}-final-tickets.json") if issue else None
     rsi = brief.get("rsi") or {}
     broadcasts = []
     try:
@@ -465,9 +463,6 @@ def _outputs(data_dir: Path, day: str, brief: dict, now_iso: str) -> dict:
         },
         "zucai": {
             "issue": issue, "deadline": zucai.get("sale_deadline"),
-            "planned": bool(zucai.get("plan")),
-            "tickets": len(tickets) if isinstance(tickets, (list, dict)) else 0,
-            "purchased": bool(issue and (zdir / f"{issue}-audit-purchased.txt").exists()),
         },
         "rsi": {
             "pending": [a.get("text") if isinstance(a, dict) else str(a)

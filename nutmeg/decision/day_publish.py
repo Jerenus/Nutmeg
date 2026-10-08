@@ -18,7 +18,7 @@ class PublishError(RuntimeError):
 
 
 def _match(m: dict) -> dict:
-    read, audit, logic = m.get("read") or {}, m.get("audit") or {}, m.get("logic") or {}
+    read, logic = m.get("read") or {}, m.get("logic") or {}
     return {
         "code": m.get("code"), "name": m.get("name"), "competition": m.get("competition"),
         "kickoff": (m.get("kickoff_bj") or "")[11:16],
@@ -29,8 +29,6 @@ def _match(m: dict) -> dict:
         "research_status": (m.get("research") or {}).get("status"),
         "prospective": (m.get("research") or {}).get("prospective"),
         "logic": logic.get("text") if logic.get("status") == "ok" else None,
-        "expressions": {k: f"{v['faces']} {'✗' if v.get('blocking') else '✓'}"
-                        for k, v in audit.items() if isinstance(v, dict) and "faces" in v},
     }
 
 
@@ -56,7 +54,6 @@ def public_view(*, data_dir: Path, root: Path, date: str) -> dict:
         "jczq_brief": brief.get("jczq", {}).get("brief"),
         "jczq_slips": _slips(brief.get("jczq", {}).get("slips") or []),
         "zucai": {"issue": z.get("issue"), "sale_deadline": z.get("sale_deadline"),
-                  "wind": (z.get("tiers") or {}).get("wind"),
                   "brief": z.get("brief"),
                   "draft": [{k: d.get(k) for k in ("label", "channel", "stake_yuan", "notes",
                                                    "p_all", "ratio", "vetoed", "faces")}

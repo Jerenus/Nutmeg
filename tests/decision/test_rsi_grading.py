@@ -7,7 +7,6 @@ from nutmeg.decision.rsi_grading import (
     LeakError,
     bootstrap_residual_pp,
     grade_f2_prospective,
-    grade_f4,
     inputs_hash,
 )
 
@@ -51,24 +50,6 @@ def test_rows_captured_after_earliest_kickoff_are_refused_not_dropped(tmp_path):
     led = _ledger(tmp_path, captured="2026-09-16T02:30:00")   # 首场 02:00 已开
     with pytest.raises(LeakError, match="26126"):
         grade_f2_prospective(ledger_path=led, zucai_dir=tmp_path, primary_bucket="向主 ≥+0.5")
-
-
-def test_grade_f4_bootstraps_the_median_gate_cost_over_plans():
-    plans = [
-        {"issue": issue, "gate_cost_pp": gate}
-        for issue, gate in (
-            ("26129", 24.5),
-            ("26130", 8.0),
-            ("26131", 12.0),
-            ("26132", None),
-            ("26133", 6.0),
-        )
-    ]
-    grade = grade_f4(plans)
-    assert grade.n_cum == 4 and grade.stratum == "zucai"
-    assert grade.as_of_policy == "per_issue_plan"
-    assert grade.ci_low_pp <= grade.metric_value_pp <= grade.ci_high_pp
-    assert 6.0 <= grade.metric_value_pp <= 24.5
 
 
 def _row(date, fair, actual, structure=None):

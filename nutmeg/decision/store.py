@@ -12,13 +12,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _FILENAMES = {
-    "Match": "matches.jsonl",
-    "MarketSnapshot": "snapshots.jsonl",
-    "Read": "reads.jsonl",
-    "Factor": "factors.jsonl",
-    "Ticket": "tickets.jsonl",
-    "Settlement": "settlements.jsonl",
-    "FactorVerdict": "verdicts.jsonl",
+    # v1 的 Match/Snapshot/Read/Factor/Ticket/Settlement/FactorVerdict 2026-10-08 退役；
+    # 只剩实体画像（decision-profile / 实体同步 / 别名审计 / 前提卡在用）
     "Team": "teams.jsonl",
     "League": "leagues.jsonl",
 }
@@ -60,21 +55,3 @@ class DecisionStore:
         with path.open("w", encoding="utf-8") as fh:
             for o in kept:
                 fh.write(json.dumps(o.to_dict(), ensure_ascii=False) + "\n")
-
-    def upsert_many(self, objs) -> None:
-        for obj in objs:
-            self.upsert(obj)
-
-    def remove(self, cls, obj_id: str) -> bool:
-        """按 id 删一条。删了返回 True,不存在返回 False。"""
-        objs = self.load(cls)
-        kept = [o for o in objs if o.id != obj_id]
-        if len(kept) == len(objs):
-            return False
-        path = self._path(cls)
-        with path.open("w", encoding="utf-8") as fh:
-            for o in kept:
-                fh.write(json.dumps(o.to_dict(), ensure_ascii=False) + "\n")
-        return True
-
-

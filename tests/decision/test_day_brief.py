@@ -71,10 +71,6 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path]:
     _w(data / "zucai" / "26132-prep-morning.json", {"issue": "26132", "slot": "morning",
                                                    "captured_at": "2026-09-23T11:00:00+08:00",
                                                    "n_matches": 14})
-    _w(data / "zucai" / "26132-tiers.json", {"issue": "26132", "tiers": {"1": "T1"},
-                                             "wind": {"regime": "hot"}, "tiers_hash": "abc"})
-    _w(data / "zucai" / "26132-frontier-renjiu.json", {"strict_max_p": 0.02, "points": [
-        {"k": 0, "p_all": 0.05, "notes": 8, "stake_yuan": 16, "shape": "9x1", "narrowings": []}]})
     _w(root / "experiments" / "factors.json", {"factors": [
         {"factor_id": "C11", "layer": "probability", "current_weight_pp": 0,
          "rule_name": "价格带"}]})
@@ -115,8 +111,7 @@ def test_compile_brief_joins_every_source_into_cards(tmp_path: Path):
                                        "drafts": 2}
     assert brief["zucai"]["issue"] == "26132"
     assert brief["zucai"]["sale_deadline"].startswith("2026-09-23T21:00")
-    assert brief["zucai"]["tiers"]["wind"]["regime"] == "hot"
-    assert brief["zucai"]["frontier"]["renjiu"]["points"][0]["p_all"] == 0.05
+    assert "tiers" not in brief["zucai"] and "frontier" not in brief["zucai"]   # 写手已删
     assert brief["rsi"]["human_actions"] == ["因子 C11：propose_zero"]
     assert brief["factors"][0] == {"factor_id": "C11", "layer": "probability",
                                    "current_weight_pp": 0, "rule_name": "价格带",
@@ -178,7 +173,7 @@ def test_compile_brief_builds_the_zucai_draft_reviews_slips_and_prints_the_ledge
     md = render_brief_md(brief)
     assert "**账房**：本月净 -120" in md and "初判：14 场" in md
     assert "**初稿·任九** ¥256（128 注，帽 ¥400）" in md and "⛔V2" in md
-    assert "J1 renjiu ¥2" in md and "帽内 max-P 只作对照" in md
+    assert "J1 renjiu ¥2" in md and "前沿" not in md
     # 第二次编译不重建初稿（legs-base 没变）
     before = (data / "zucai" / "26132-draft.json").stat().st_mtime
     compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
@@ -224,8 +219,8 @@ def test_card_carries_stance_and_md_shows_it(tmp_path: Path):
     assert "押3·31" in md
 
 
-def test_cards_carry_audit_of_three_default_expressions(tmp_path: Path):
+def test_cards_no_longer_carry_machine_ticket_shapes(tmp_path: Path):
+    """2026-10-08：「三种默认票型 × 审计码」列是机器出票时代的残留，随 day_audit 删除。"""
     data, root = _fixture(tmp_path)
     brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
-    audit = brief["jczq"]["matches"][0]["audit"]
-    assert set(audit) == {"naked", "double", "full"} and audit["full"]["faces"] == "310"
+    assert "audit" not in brief["jczq"]["matches"][0]

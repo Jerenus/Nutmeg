@@ -3,8 +3,8 @@
 设计: docs/superpowers/specs/2026-07-06-decision-ontology-design.md §2。
 2026-10-08 第二轮瘦身:Match/MarketSnapshot/Read/Factor/Settlement/FactorVerdict 随停写的
 v1 JSONL 读侧(工作台批准/校准台/账本)退役;判读与结算的事实源在内核。
-留下 Team/League(实体画像 `decision-profile`、别名审计、竞赛入库在用)与 Ticket
-(只剩 `express.py` 引用,随它一起删)。每对象有 .id(主键,供 DecisionStore 幂等 upsert)。
+只留 Team/League(实体画像 `decision-profile`、别名审计、竞赛入库在用;Ticket 随 `express.py`
+2026-10-08 删除)。每对象有 .id(主键,供 DecisionStore 幂等 upsert)。
 """
 from __future__ import annotations
 
@@ -15,30 +15,6 @@ def _from_dict(cls, payload: dict):
     """只取 cls 声明的字段(容忍多余键),缺省字段用默认值。"""
     known = {f.name for f in fields(cls)}
     return cls(**{k: v for k, v in payload.items() if k in known})
-
-
-@dataclass(frozen=True, slots=True)
-class Ticket:
-    ticket_id: str
-    channel: str                        # jczq | shengfucai | renjiu
-    made_at: str
-    legs: list[dict]
-    structure: str                      # single | parlay | fushi
-    stake_yuan: int
-    computed_hit_prob: float | None = None
-    tag: str = ""
-    budget_bucket: str = ""
-
-    @property
-    def id(self) -> str:
-        return self.ticket_id
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, payload: dict) -> "Ticket":
-        return _from_dict(cls, payload)
 
 
 @dataclass(frozen=True, slots=True)

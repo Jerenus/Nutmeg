@@ -1,23 +1,6 @@
 """票面 selection 中文可读名规约(7/07 修复:7/06 起 legs 用"让胜·xxx"式 selection,
 旧 settle_ticket_leg 只认 home/draw/away → 整票被静默跳过永不入账,违反"没入账=没打")。"""
-from nutmeg.decision.ontology import Ticket
 from nutmeg.decision.reconcile import normalize_pick
-
-_M1 = "M-2026-07-07-阿根廷-埃及"
-_M2 = "M-2026-07-07-瑞士-哥伦比亚"
-
-
-def _ticket(tid, legs, structure="single", stake=60):
-    return Ticket(ticket_id=tid, channel="jczq", made_at="t", legs=legs,
-                  structure=structure, stake_yuan=stake)
-
-
-def _leg(mid, selection, odds, market="had", line=None):
-    leg = {"match_id": mid, "market": market, "selection": selection,
-           "odds": odds, "bucket": "parlay"}
-    if line is not None:
-        leg["line"] = line
-    return leg
 
 
 def test_normalize_pick_chinese_prefixes():

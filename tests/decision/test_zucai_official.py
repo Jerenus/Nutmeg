@@ -11,7 +11,6 @@ from nutmeg.decision.zucai_official import (
     record_official_result,
     settle_ledger,
     ticket_hits,
-    write_outcomes,
 )
 
 # 26102 官方真实数据(2026-08-10 开奖,已用 API 实测核对)作 fixture
@@ -137,14 +136,6 @@ def test_ticket_hits_multi_face():
               "9": "01", "10": "30", "13": "31", "14": "310"}
     hit, total = ticket_hits(faces9, results)
     assert (hit, total) == (8, 9)          # 唯一断腿 = 场5(裸单3,实开1)
-
-
-def test_write_outcomes_matches_reconcile_schema(tmp_path):
-    d = parse_draw(_ITEM)
-    p = write_outcomes(d, tmp_path)
-    doc = json.loads(p.read_text("utf-8"))
-    assert doc["results"]["5"] == "1"       # verbs._zucai_outcomes 读 results:{no:code}
-    assert "90分钟" in doc["source"]
 
 
 def test_record_official_result_upserts_the_draw_string(tmp_path):

@@ -3,7 +3,6 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from nutmeg.decision.store import DecisionStore
 from nutmeg.interfaces.decision_web import create_decision_app
 
 
@@ -16,8 +15,7 @@ def _client(tmp_path: Path) -> TestClient:
                                "read": None}],
                   "counts": {}},
          "zucai": {"issue": None}, "rsi": None, "factors": [], "errors": []}), encoding="utf-8")
-    app = create_decision_app(store=DecisionStore(data / "jczq" / "decision"),
-                              output_dir=data / "jczq", data_dir=data, launchctl=lambda: "",
+    app = create_decision_app(output_dir=data / "jczq", data_dir=data, launchctl=lambda: "",
                               git=lambda args: "abc1234|2026-09-19T10:00:00+08:00|feat(rules): x\n")
     return TestClient(app)
 

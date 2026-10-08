@@ -5,7 +5,6 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from nutmeg.decision.store import DecisionStore
 from nutmeg.interfaces.decision_web import create_decision_app
 
 _ROW = "310 10 0 3 310 31 30 * 1 * * * 3 *"
@@ -21,8 +20,7 @@ def client(tmp_path):
         str(i): {"name": f"甲{i}-乙{i}", "match_date": "2026-09-12",
                  "fair_had": {"home": 0.5, "draw": 0.3, "away": 0.2}}
         for i in range(1, 15)}}, ensure_ascii=False), encoding="utf-8")
-    app = create_decision_app(store=DecisionStore(output_dir / "decision"),
-                              output_dir=output_dir)
+    app = create_decision_app(output_dir=output_dir)
     return TestClient(app)
 
 

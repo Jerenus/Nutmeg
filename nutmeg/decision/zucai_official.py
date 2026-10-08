@@ -6,9 +6,10 @@
 
 **A3（自动回填）**：同一接口（gameNo=90，2026-08-09 落库验证 12/12 精确）一次拿全：
 赛果串、任九奖金（prizeLevelListRj）、胜负彩奖金（prizeLevelList）、销量。
-产出两件事：①`{issue}-outcomes.json`（喂现有 `decision-reconcile-zucai`，字节兼容
-`_zucai_outcomes` 读的格式）；②ledger 的 hits/prize_yuan 自动结账（26102 曾把奖金
-估成中位区、实际 ¥21,018——此类估计错误从此由机器一行输出）。
+产出两件事：①`official-results.json` 的本期赛果串（rsi balance / 复盘编码 / ops-status 读）；
+②ledger 的 hits/prize_yuan 自动结账（26102 曾把奖金估成中位区、实际 ¥21,018——此类估计
+错误从此由机器一行输出）。（`{issue}-outcomes.json` 喂的 `decision-reconcile-zucai` 已删，
+`--write-outcomes` 2026-10-08 随之移除。）
 """
 from __future__ import annotations
 
@@ -186,18 +187,6 @@ def fetch_official(issue: str, *, fetcher=None, page_size: int = 15) -> Official
         if str(item.get("lotteryDrawNum")) == str(issue):
             return parse_draw(item)
     return None
-
-
-def write_outcomes(draw: OfficialDraw, zucai_dir) -> Path:
-    """落 {issue}-outcomes.json —— 与 verbs._zucai_outcomes 读的格式字节兼容。"""
-    path = Path(zucai_dir) / f"{draw.issue}-outcomes.json"
-    path.write_text(json.dumps({
-        "issue": draw.issue,
-        "source": "sporttery-official gameNo=90 (90分钟口径,lotteryDrawResult)",
-        "draw_date": draw.draw_date,
-        "results": draw.results,
-    }, ensure_ascii=False, indent=1), "utf-8")
-    return path
 
 
 def record_official_result(draw: OfficialDraw, zucai_dir) -> Path:

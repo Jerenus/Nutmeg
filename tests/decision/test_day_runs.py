@@ -143,8 +143,6 @@ def test_outputs_markers_and_rsi_duties(tmp_path: Path):
     _write(data / "daily" / DAY / "broadcasts.jsonl",
            json.dumps({"key": "read:周四001@T30", "at": f"{DAY}T17:40:41+08:00",
                        "minutes_left": 24}) + "\n")
-    _write(data / "zucai" / "26132-final-tickets.json", [{"id": 1}, {"id": 2}])
-    _write(data / "zucai" / "26132-audit-purchased.txt", "ok")
     db = data / "ontology" / "ontology.db"
     db.parent.mkdir(parents=True)
     with sqlite3.connect(db) as conn:
@@ -164,8 +162,7 @@ def test_outputs_markers_and_rsi_duties(tmp_path: Path):
         {"at": "19:05", "kind": "deadline", "label": "足彩 26132 截止"}]
     out = view["outputs"]
     assert (out["jczq"]["matches"], out["jczq"]["deep"], out["jczq"]["moved"]) == (2, 1, 1)
-    assert out["zucai"] == {"issue": "26132", "deadline": f"{DAY} 19:05", "planned": False,
-                            "tickets": 2, "purchased": True}
+    assert out["zucai"] == {"issue": "26132", "deadline": f"{DAY} 19:05"}
     assert out["rsi"]["pending"] == ["因子 x 建议 0pp"]
     assert out["rsi"]["duties"] == [
         {"duty": "F4:capital-plan", "total": 1, "done": 0, "expired": 1},
