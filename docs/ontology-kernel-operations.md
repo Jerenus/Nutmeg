@@ -1,5 +1,13 @@
 # Ontology Kernel v2 — Package 1 Operations Contract
 
+> **2026-10-08 现状（第二轮瘦身后）**：下文按 Package 1–5 的施工顺序写成，其中以下部件的代码已删除，
+> 表与迁移保留（空表或历史行）：`kernel.decision_read`（会话 / 证据包 / 情景）、`kernel.express` 与
+> 票据 propose / approve / 预算策略 / 现金交易（`betslip register` 不再写内核票，钱的事实源是
+> `betslips.jsonl` + `scoreboard.json`）、`FactorActions` 写入（读方法保留）、`CapitalActions`、
+> 证据 / 阵容 / 人员链、可靠性与发布审批（M6）、回放绑定、实体合并、迁移 23 与 v19→v26 的一次性数据修复
+> （version / name / fingerprint 不变）。现役结构以 `docs/ARCHITECTURE.md` 为准；
+> 删除依据见 `docs/superpowers/evidence/2026-10-08-slim-round-2.md`。
+
 > Status: **Package 1 foundation only — not the v2 cutover.** The kernel here is
 > the transactional write boundary (SQLite operational database, content-
 > addressed artifact store, typed Actions, permissions, migrations). It creates
