@@ -7,13 +7,13 @@ propose/approve Actions were retired 2026-10-08); existing tickets still settle.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 from sqlalchemy import Connection, func, insert, select
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository import schema_finance as sf
+from nutmeg.ontology.repository.rows import from_row
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,16 +93,7 @@ class FinanceRepository:
             .mappings()
             .all()
         )
-        return [
-            BetLegRow(
-                bet_leg_id=r['bet_leg_id'], ticket_id=r['ticket_id'],
-                forecast_revision_id=r['forecast_revision_id'], match_id=r['match_id'],
-                market_definition_id=r['market_definition_id'], selection_id=r['selection_id'],
-                entry_quote_id=r['entry_quote_id'], line=r['line'], stake_share=r['stake_share'],
-                entry_odds=r['entry_odds'],
-            )
-            for r in rows
-        ]
+        return [from_row(BetLegRow, r) for r in rows]
 
     def tickets_for_match(self, match_id: str) -> tuple[str, ...]:
         rows = self._connection.execute(
@@ -153,13 +144,7 @@ class FinanceRepository:
         )
         if row is None:
             return None
-        return OutcomeRow(
-            outcome_id=row['outcome_id'], match_id=row['match_id'], version=row['version'],
-            score_90=row['score_90'], score_aet=row['score_aet'], penalties=row['penalties'],
-            status=row['status'],
-            source_artifact_retrieval_ids=json.loads(row['source_artifact_retrieval_ids_json']),
-            recorded_at=row['recorded_at'], supersedes_outcome_id=row['supersedes_outcome_id'],
-        )
+        return from_row(OutcomeRow, row, ('source_artifact_retrieval_ids',))
 
     def insert_bet_leg_settlement(self, row: BetLegSettlementRow) -> None:
         self._connection.execute(

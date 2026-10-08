@@ -1,8 +1,6 @@
 """Typed persistence for governed workflow objects."""
 from __future__ import annotations
 
-import json
-
 from sqlalchemy import Connection, func, insert, select, update
 
 from nutmeg.ontology.actions.models import canonical_json
@@ -10,6 +8,7 @@ from nutmeg.ontology.repository import schema_decision as sd
 from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository import schema_identity as si
 from nutmeg.ontology.repository import schema_workflow as sw
+from nutmeg.ontology.repository.rows import from_row
 from nutmeg.ontology.workflow.models import (
     AdjudicationRow,
     FlagInstanceRow,
@@ -54,7 +53,10 @@ class WorkflowRepository:
             .mappings()
             .all()
         )
-        return [self._adjudication_row(row) for row in rows]
+        return [
+            from_row(AdjudicationRow, row, ('evidence_rejected', 'alternative'))
+            for row in rows
+        ]
 
     def iter_flag_instances(self) -> list[FlagInstanceRow]:
         rows = (
@@ -67,20 +69,7 @@ class WorkflowRepository:
             .mappings()
             .all()
         )
-        return [
-            FlagInstanceRow(
-                flag_instance_id=row['flag_instance_id'],
-                flag_type=row['flag_type'],
-                match_id=row['match_id'],
-                direction=row['direction'],
-                strength=row['strength'],
-                evidence_refs=json.loads(row['evidence_refs_json']),
-                predicted_face=row['predicted_face'],
-                status=row['status'],
-                created_at=row['created_at'],
-            )
-            for row in rows
-        ]
+        return [from_row(FlagInstanceRow, row, ('evidence_refs',)) for row in rows]
 
     def insert_prediction(self, row: PredictionRow) -> None:
         self._connection.execute(
@@ -102,18 +91,7 @@ class WorkflowRepository:
         row = self._connection.execute(
             select(sw.predictions).where(sw.predictions.c.prediction_id == prediction_id)
         ).mappings().one()
-        return PredictionRow(
-            prediction_id=row['prediction_id'],
-            match_id=row['match_id'],
-            subject_type=row['subject_type'],
-            subject_id=row['subject_id'],
-            claim=row['claim'],
-            falsifier=row['falsifier'],
-            status=PredictionStatus(row['status']),
-            outcome=row['outcome'],
-            registered_at=row['registered_at'],
-            settled_at=row['settled_at'],
-        )
+        return from_row(PredictionRow, row, status=PredictionStatus)
 
     def update_prediction_outcome(
         self, prediction_id: str, outcome: str, status: str, settled_at: str
@@ -135,21 +113,7 @@ class WorkflowRepository:
             .mappings()
             .all()
         )
-        return [
-            PredictionRow(
-                prediction_id=row['prediction_id'],
-                match_id=row['match_id'],
-                subject_type=row['subject_type'],
-                subject_id=row['subject_id'],
-                claim=row['claim'],
-                falsifier=row['falsifier'],
-                status=PredictionStatus(row['status']),
-                outcome=row['outcome'],
-                registered_at=row['registered_at'],
-                settled_at=row['settled_at'],
-            )
-            for row in rows
-        ]
+        return [from_row(PredictionRow, row, status=PredictionStatus) for row in rows]
 
     def match_for_subject(self, subject_type: str, subject_id: str) -> str | None:
         if subject_type == 'match':
@@ -188,18 +152,3 @@ class WorkflowRepository:
             ).scalars().all()
             return match_ids[0] if len(match_ids) == 1 else None
         return None
-
-    @staticmethod
-    def _adjudication_row(row) -> AdjudicationRow:
-        return AdjudicationRow(
-            adjudication_id=row['adjudication_id'],
-            subject_type=row['subject_type'],
-            subject_id=row['subject_id'],
-            decision=row['decision'],
-            actor_id=row['actor_id'],
-            reason=row['reason'],
-            evidence_rejected=json.loads(row['evidence_rejected_json']),
-            alternative=json.loads(row['alternative_json']),
-            created_at=row['created_at'],
-            supersedes_adjudication_id=row['supersedes_adjudication_id'],
-        )

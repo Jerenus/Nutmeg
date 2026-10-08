@@ -14,6 +14,9 @@ from sqlalchemy import Connection, func, insert, select, update
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.decision.models import mint_decision_id
 from nutmeg.ontology.repository import schema_decision as sd
+from nutmeg.ontology.repository.rows import from_row
+
+_DISTRIBUTIONS = ('prior_distribution', 'belief_distribution')
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,21 +236,7 @@ class DecisionRepository:
             .mappings()
             .all()
         )
-        return [
-            CommittedRevisionRow(
-                forecast_revision_id=row['forecast_revision_id'],
-                match_id=row['match_id'],
-                market_definition_id=row['market_definition_id'],
-                made_at=row['made_at'],
-                prior_distribution=json.loads(row['prior_distribution_json']),
-                belief_distribution=json.loads(row['belief_distribution_json']),
-                commitment_tier=row['commitment_tier'],
-                actor_id=row['actor_id'],
-                model_name=row['model_name'],
-                model_version=row['model_version'],
-            )
-            for row in rows
-        ]
+        return [from_row(CommittedRevisionRow, row, _DISTRIBUTIONS) for row in rows]
 
     # -- factors ----------------------------------------------------------
     def factor_status(self, factor_definition_id: str) -> str | None:
@@ -280,21 +269,7 @@ class DecisionRepository:
             .mappings()
             .first()
         )
-        if row is None:
-            return None
-        return FactorDefinitionRow(
-            factor_definition_id=row['factor_definition_id'],
-            factor_family_id=row['factor_family_id'],
-            version=row['version'],
-            name=row['name'],
-            definition=row['definition'],
-            scope=row['scope'],
-            status=row['status'],
-            born_from_refs=json.loads(row['born_from_refs_json']),
-            valid_from=row['valid_from'],
-            valid_to=row['valid_to'],
-            policy_version=row['policy_version'],
-        )
+        return None if row is None else from_row(FactorDefinitionRow, row, ('born_from_refs',))
 
     def insert_factor_application(self, row: FactorApplicationRow) -> None:
         self._connection.execute(
@@ -311,29 +286,4 @@ class DecisionRepository:
 
     @staticmethod
     def _to_revision(row) -> ForecastRevisionRow:
-        return ForecastRevisionRow(
-            forecast_revision_id=row['forecast_revision_id'],
-            forecast_series_id=row['forecast_series_id'],
-            decision_session_id=row['decision_session_id'],
-            revision_no=row['revision_no'],
-            status=row['status'],
-            made_at=row['made_at'],
-            information_cutoff_at=row['information_cutoff_at'],
-            prior_snapshot_id=row['prior_snapshot_id'],
-            prior_distribution=json.loads(row['prior_distribution_json']),
-            belief_distribution=json.loads(row['belief_distribution_json']),
-            evidence_bundle_id=row['evidence_bundle_id'],
-            falsifier=row['falsifier'],
-            actor_id=row['actor_id'],
-            model_name=row['model_name'],
-            model_version=row['model_version'],
-            policy_version=row['policy_version'],
-            commitment_tier=row['commitment_tier'],
-            evidence_coverage=row['evidence_coverage'],
-            evidence_quality=row['evidence_quality'],
-            forecast_stability=row['forecast_stability'],
-            supersedes_revision_id=row['supersedes_revision_id'],
-            kind=row['kind'],
-            board_key=row['board_key'],
-            judgment=json.loads(row['judgment_json']) if row['judgment_json'] else None,
-        )
+        return from_row(ForecastRevisionRow, row, (*_DISTRIBUTIONS, 'judgment'))

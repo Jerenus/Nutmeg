@@ -1,7 +1,6 @@
 """Durable Action event outbox with monotonically increasing cursors."""
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -14,6 +13,7 @@ from nutmeg.ontology.actions.models import (
     canonical_json,
 )
 from nutmeg.ontology.repository import schema_workflow as sw
+from nutmeg.ontology.repository.rows import from_row
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,13 +86,4 @@ class OutboxRepository:
 
     @staticmethod
     def _to_row(row) -> OutboxEventRow:
-        return OutboxEventRow(
-            sequence=row['sequence'],
-            event_id=row['event_id'],
-            action_id=row['action_id'],
-            topic=row['topic'],
-            object_type=row['object_type'],
-            object_id=row['object_id'],
-            payload=json.loads(row['payload_json']),
-            occurred_at=row['occurred_at'],
-        )
+        return from_row(OutboxEventRow, row, ('payload',))

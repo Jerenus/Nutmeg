@@ -15,6 +15,7 @@ from sqlalchemy import Connection, func, insert, select, update
 from nutmeg.ontology.errors import OntologyError
 from nutmeg.ontology.identity.models import EntityType, ResolutionStatus, TeamKind
 from nutmeg.ontology.repository import schema_identity as si
+from nutmeg.ontology.repository.rows import from_row
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,19 +275,7 @@ class IdentityRepository:
         )
         if row is None:
             raise OntologyError(f'match revision {current_id} not found')
-        return MatchRevisionRow(
-            match_revision_id=row['match_revision_id'],
-            match_id=row['match_id'],
-            version=row['version'],
-            competition_edition_id=row['competition_edition_id'],
-            scheduled_at=row['scheduled_at'],
-            schedule_status=row['schedule_status'],
-            venue_id=row['venue_id'],
-            status=row['status'],
-            round_label=row['round_label'],
-            recorded_at=row['recorded_at'],
-            supersedes_revision_id=row['supersedes_revision_id'],
-        )
+        return from_row(MatchRevisionRow, row)
 
     def count_teams(self) -> int:
         return self._connection.execute(select(func.count()).select_from(si.teams)).scalar_one()
