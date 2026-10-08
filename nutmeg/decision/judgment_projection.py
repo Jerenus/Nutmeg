@@ -11,6 +11,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from nutmeg.decision.zucai_identity import load_channel_map
+
 REPORT = "judgment-projection.json"
 PROJECTED = "reads.projected.json"
 _KEYS = ("prior", "belief", "stance", "judge", "commitment_tier")
@@ -90,20 +92,16 @@ def _mapped_match_ids(zucai_dir: Path, issue: str) -> list[str]:
     channel-map 的键是**竞彩侧**的 match_id、值是足彩场号；足彩 Read 用的是 store-ids 里
     **足彩侧**的 match_id。2026-10-05 前这里只取键，跳过集与足彩 Read 永远对不上：已对到
     竞彩的场次被拿来和内核里早先的足彩版本比成「分歧」，P2 落盘时还用旧版本覆盖了文件。"""
-    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
-        path = zucai_dir / name
-        if path.exists():
-            try:
-                mapping = json.loads(path.read_text(encoding="utf-8"))
-                store_path = zucai_dir / f"{issue}-store-ids.json"
-                store = (json.loads(store_path.read_text(encoding="utf-8"))
-                         if store_path.exists() else {})
-            except (OSError, ValueError):
-                return []
-            zucai_side = {(store.get(str(no)) or {}).get("match_id")
-                          for no in mapping.values()}
-            return sorted({*mapping.keys(), *(mid for mid in zucai_side if mid)})
-    return []
+    mapping = load_channel_map(zucai_dir, issue)
+    if not mapping:
+        return []
+    store_path = zucai_dir / f"{issue}-store-ids.json"
+    try:
+        store = json.loads(store_path.read_text(encoding="utf-8")) if store_path.exists() else {}
+    except (OSError, ValueError):
+        return []
+    zucai_side = {(store.get(str(no)) or {}).get("match_id") for no in mapping.values()}
+    return sorted({*mapping, *(mid for mid in zucai_side if mid)})
 
 
 def _kernel(data_dir: Path):

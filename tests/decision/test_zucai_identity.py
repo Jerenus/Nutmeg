@@ -4,7 +4,12 @@ import json
 
 import pytest
 
-from nutmeg.decision.zucai_identity import build_store_ids, write_store_ids
+from nutmeg.decision.zucai_identity import (
+    build_store_ids,
+    closing_issues,
+    load_channel_map,
+    write_store_ids,
+)
 
 
 class _FakeIdentity:
@@ -111,3 +116,31 @@ def test_morning_only_prep_still_yields_store_ids(tmp_path, monkeypatch):
     _patch(monkeypatch, {}, {})
     ids = build_store_ids("26123", tmp_path, _FakeKernel())
     assert set(ids) == {"1"} and ids["1"]["name"] == "维拉-诺丁汉"
+
+
+def test_load_channel_map_prefers_the_manual_table_and_normalises_match_numbers(tmp_path):
+    (tmp_path / "26111-channel-map.auto.json").write_text(json.dumps(
+        {"match-aaa": "3", "match-zzz": "9"}), "utf-8")
+    (tmp_path / "26111-channel-map.json").write_text(json.dumps(
+        {"match-aaa": 3, "match-bbb": "5"}), "utf-8")
+    assert load_channel_map(tmp_path, "26111") == {"match-aaa": 3, "match-bbb": 5}
+
+
+def test_load_channel_map_skips_missing_empty_or_corrupt_tables(tmp_path):
+    assert load_channel_map(tmp_path, "26111") == {}
+    (tmp_path / "26111-channel-map.auto.json").write_text(json.dumps({"match-aaa": "3"}), "utf-8")
+    assert load_channel_map(tmp_path, "26111") == {"match-aaa": 3}
+    (tmp_path / "26111-channel-map.json").write_text("{}", "utf-8")
+    assert load_channel_map(tmp_path, "26111") == {"match-aaa": 3}
+    (tmp_path / "26111-channel-map.json").write_text("{broken", "utf-8")
+    assert load_channel_map(tmp_path, "26111") == {"match-aaa": 3}
+
+
+def test_closing_issues_needs_the_deadline_day_and_store_ids(tmp_path):
+    for issue, deadline in (("26134", "2026-09-28 20:30"), ("26135", "2026-10-05 19:00"),
+                            ("26136", "2026-10-05 21:00")):
+        (tmp_path / f"{issue}-issue.json").write_text(json.dumps(
+            {"issue_id": issue, "sale_deadline": deadline, "matches": []}), "utf-8")
+    (tmp_path / "26135-store-ids.json").write_text("{}", "utf-8")
+    (tmp_path / "26134-store-ids.json").write_text("{}", "utf-8")
+    assert [issue for issue, _doc in closing_issues(tmp_path, "2026-10-05")] == ["26135"]

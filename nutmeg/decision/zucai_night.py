@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 from nutmeg.decision.match_results import board_outcomes
+from nutmeg.decision.zucai_identity import load_channel_map
 
 
 def _read_json(path: Path, default):
@@ -22,19 +23,6 @@ def _read_json(path: Path, default):
         return json.loads(path.read_text("utf-8"))
     except (OSError, ValueError):
         return default
-
-
-def load_channel_map(zucai_dir, issue: str) -> dict[str, str]:
-    """{issue}-channel-map(.auto).json（match_id → 场号）→ {match_no(str): match_id}。
-
-    人工表优先；缺两份=空映射（全场显式跳过）。
-    """
-    base = Path(zucai_dir)
-    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
-        data = _read_json(base / name, None)
-        if isinstance(data, dict) and data:
-            return {str(no): str(mid) for mid, no in data.items()}
-    return {}
 
 
 def board_results(data_dir, day: str) -> dict[str, dict]:
@@ -125,7 +113,8 @@ def run_night_calibrate(issue: str, date: str, zucai_dir, *, data_dir=None) -> s
     zucai_dir = Path(zucai_dir)
     data_dir = Path(data_dir) if data_dir is not None else zucai_dir.parent
     issue_doc = json.loads((zucai_dir / f"{issue}-issue.json").read_text("utf-8"))
-    channel_map = load_channel_map(zucai_dir, issue)
+    # 对号表缺两份 = 空映射（全场显式跳过）
+    channel_map = {str(no): mid for mid, no in load_channel_map(zucai_dir, issue).items()}
     board = board_results(data_dir, date)
     results, skipped = night_results(issue_doc["matches"], channel_map, board)
 

@@ -10,13 +10,11 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
+from nutmeg.decision.zucai_identity import closing_issues, load_channel_map
+
 
 def _channel_mapped_match_nos(zucai_dir: Path, issue: str) -> set[int]:
-    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
-        path = zucai_dir / name
-        if path.exists():
-            return {int(no) for no in json.loads(path.read_text(encoding="utf-8")).values()}
-    return set()
+    return set(load_channel_map(zucai_dir, issue).values())
 
 
 def _iso_bj(value: str) -> str:
@@ -27,15 +25,8 @@ def zucai_pool_entries(*, day: str, data_dir: Path) -> list[dict]:
     """当天截止期次中不在竞彩板上的场次，每条带研究落点与深研 brief 所需的 leg。"""
     zucai_dir = Path(data_dir) / "zucai"
     entries: list[dict] = []
-    for issue_path in sorted(zucai_dir.glob("*-issue.json")):
-        doc = json.loads(issue_path.read_text(encoding="utf-8"))
-        issue = str(doc.get("issue_id") or issue_path.name.split("-")[0])
-        if str(doc.get("sale_deadline") or "")[:10] != day:
-            continue
-        store_path = zucai_dir / f"{issue}-store-ids.json"
-        if not store_path.exists():
-            continue
-        store = json.loads(store_path.read_text(encoding="utf-8"))
+    for issue, doc in closing_issues(zucai_dir, day):
+        store = json.loads((zucai_dir / f"{issue}-store-ids.json").read_text(encoding="utf-8"))
         mapped = _channel_mapped_match_nos(zucai_dir, issue)
         for match in doc.get("matches") or []:
             no = int(match["match_no"])
@@ -71,27 +62,14 @@ def reusable_zucai_research(*, day: str, data_dir: Path, jczq_dir: Path) -> dict
 
     zucai_dir = Path(data_dir) / "zucai"
     out: dict[str, Path] = {}
-    for issue in _day_issues(zucai_dir, day):
-        map_path = ensure_auto_channel_map(
-            issue=issue, run_date=day, zucai_dir=zucai_dir, output_dir=Path(jczq_dir))
-        if map_path is None:
+    for issue, _doc in closing_issues(zucai_dir, day):
+        if ensure_auto_channel_map(issue=issue, run_date=day, zucai_dir=zucai_dir,
+                                   output_dir=Path(jczq_dir)) is None:
             continue
-        for match_id, no in json.loads(map_path.read_text(encoding="utf-8")).items():
-            research = zucai_dir / f"{issue}-research-m{int(no)}.json"
+        for match_id, no in load_channel_map(zucai_dir, issue).items():
+            research = zucai_dir / f"{issue}-research-m{no}.json"
             if research.exists():
                 out[str(match_id)] = research
-    return out
-
-
-def _day_issues(zucai_dir: Path, day: str) -> list[str]:
-    out = []
-    for issue_path in sorted(zucai_dir.glob("*-issue.json")):
-        doc = json.loads(issue_path.read_text(encoding="utf-8"))
-        issue = str(doc.get("issue_id") or issue_path.name.split("-")[0])
-        if str(doc.get("sale_deadline") or "")[:10] == day and (
-            zucai_dir / f"{issue}-store-ids.json"
-        ).exists():
-            out.append(issue)
     return out
 
 
@@ -136,10 +114,9 @@ def refresh_day(*, day: str, data_dir: Path, made_at: str,
         summary["jczq"] = {"reads": len(reads), "submitted": len(sent)}
         _project(project, summary["jczq"], day=day)
     zucai_dir = data_dir / "zucai"
-    for issue in _day_issues(zucai_dir, day):
+    for issue, issue_doc in closing_issues(zucai_dir, day):
         reads = build_auto_reads(issue=issue, data_dir=data_dir, made_at=made_at)
         store = json.loads((zucai_dir / f"{issue}-store-ids.json").read_text(encoding="utf-8"))
-        issue_doc = json.loads((zucai_dir / f"{issue}-issue.json").read_text(encoding="utf-8"))
         mapped = _channel_mapped_match_nos(zucai_dir, issue)
         kickoffs = {
             store[str(m["match_no"])]["match_id"]: _iso_bj(str(m["kickoff_bj"]))

@@ -192,12 +192,10 @@ def _keep_scheduled_identity(kernel, data_dir: Path, *, day: str, issue: str,
     """并集池同一场比赛只排一条义务（2026-10-05）。channel-map 18:30 才落地：之前足彩场按
     足彩侧 id 排过并已履约，对上竞彩后又按竞彩侧 id 排一条——永远空着，10-05 R1 七个假缺口。
     这一天已按足彩侧 id 排过的场，继续用足彩侧 id。"""
+    from nutmeg.decision.zucai_identity import load_channel_map
+
     zdir = Path(data_dir) / "zucai"
-    mapping: dict = {}
-    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
-        if (zdir / name).exists():
-            mapping = json.loads((zdir / name).read_text(encoding="utf-8"))
-            break
+    mapping = load_channel_map(zdir, issue)
     if not mapping:
         return kickoffs
     store_path = zdir / f"{issue}-store-ids.json"

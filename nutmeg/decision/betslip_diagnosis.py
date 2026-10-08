@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 
 from nutmeg.decision.betslip import BetSlip, SlipLeg
+from nutmeg.decision.zucai_identity import load_channel_map
 
 FACE_OF_SELECTION = {"home": "3", "draw": "1", "away": "0", "3": "3", "1": "1", "0": "0"}
 FACE_ORDER = "310"
@@ -35,12 +36,8 @@ def _read_json(path: Path, default=None):
 
 
 def _channel_map(data_dir: Path, issue: str) -> dict[str, str]:
-    """{竞彩 match_id: 足彩场号}；人工 `<issue>-channel-map.json` 优先，缺则 `.auto`。"""
-    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
-        doc = _read_json(Path(data_dir) / "zucai" / name)
-        if doc:
-            return {str(k): str(v) for k, v in doc.items()}
-    return {}
+    """{竞彩 match_id: 足彩场号（腿 key 写法）}。"""
+    return {mid: str(no) for mid, no in load_channel_map(Path(data_dir) / "zucai", issue).items()}
 
 
 def _code_of_match(data_dir: Path, day: str) -> dict[str, str]:

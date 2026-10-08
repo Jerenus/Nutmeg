@@ -6,6 +6,8 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
+from nutmeg.decision.zucai_identity import load_channel_map
+
 
 def _jczq_matches(*, day: str, data_dir: Path) -> list[dict]:
     path = data_dir / "jczq" / "daily" / day / "jczq-legs-base.json"
@@ -70,15 +72,9 @@ def matches_for_population(
     zucai = _zucai_matches(issue=issue, data_dir=data_dir)
     by_match_id = {row["match_id"]: row for row in jczq}
     # 人工对号表优先；没有就用备料自动对齐落的 .auto（2026-09-27 起）
-    channel_map: dict = {}
-    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
-        channel_map_path = data_dir / "zucai" / name
-        if channel_map_path.exists():
-            channel_map = json.loads(channel_map_path.read_text(encoding="utf-8"))
-            break
     jczq_by_match_no = {
-        int(match_no): by_match_id[match_id]
-        for match_id, match_no in channel_map.items()
+        match_no: by_match_id[match_id]
+        for match_id, match_no in load_channel_map(data_dir / "zucai", issue).items()
         if match_id in by_match_id
     }
     for row in zucai:

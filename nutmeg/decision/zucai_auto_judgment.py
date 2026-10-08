@@ -20,6 +20,7 @@ from nutmeg.decision.face_status import FACES, proven_dead
 from nutmeg.decision.overrides import effective_research
 from nutmeg.decision.read_builder import build
 from nutmeg.decision.stance import research_belief, validate_stance
+from nutmeg.decision.zucai_identity import load_channel_map
 
 JUDGE = "ai-pool"
 _TRANSCRIBED = ("directional_flags", "nondirectional_flags", "anchor_integrity",
@@ -96,11 +97,7 @@ def auto_judgment(*, issue: str, data_dir: Path) -> dict:
     issue_doc = _load(zucai_dir / f"{issue}-issue.json", {})
     store = _load(zucai_dir / f"{issue}-store-ids.json", {})
     manual = _load(zucai_dir / f"{issue}-judgment-v1.json", {}) or {}
-    mapped: dict[int, str] = {}
-    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
-        if (zucai_dir / name).exists():
-            mapped = {int(no): mid for mid, no in _load(zucai_dir / name).items()}
-            break
+    mapped = {no: mid for mid, no in load_channel_map(zucai_dir, issue).items()}
     deadline_day = str(issue_doc.get("sale_deadline") or "")[:10]
     jczq_research = _jczq_research_by_match_id(Path(data_dir), deadline_day) if deadline_day else {}
     kickoffs = {str(m["match_no"]): str(m.get("kickoff_bj") or "")
@@ -189,11 +186,7 @@ def ensure_auto_legs_base(*, issue: str, data_dir: Path, made_at: str) -> dict:
     if not store:
         return {"status": "skipped", "reason": "无 store-ids"}
     issue_doc = _load(zucai_dir / f"{issue}-issue.json", {})
-    mapped: dict[int, str] = {}
-    for name in (f"{issue}-channel-map.json", f"{issue}-channel-map.auto.json"):
-        if (zucai_dir / name).exists():
-            mapped = {int(no): mid for mid, no in _load(zucai_dir / name).items()}
-            break
+    mapped = {no: mid for mid, no in load_channel_map(zucai_dir, issue).items()}
     deadline_day = str(issue_doc.get("sale_deadline") or "")[:10]
     jczq_research = _jczq_research_by_match_id(Path(data_dir), deadline_day) if deadline_day else {}
     judgment = auto_judgment(issue=issue, data_dir=data_dir)

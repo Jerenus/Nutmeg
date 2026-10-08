@@ -17,6 +17,7 @@ from pathlib import Path
 from nutmeg.decision.match_results import board_outcomes
 from nutmeg.decision.overrides import load_overrides
 from nutmeg.decision.stance import research_belief
+from nutmeg.decision.zucai_identity import closing_issues, load_channel_map
 
 FACE_KEY = {"3": "home", "1": "draw", "0": "away"}
 KEY_FACE = {v: k for k, v in FACE_KEY.items()}
@@ -136,15 +137,9 @@ def build_signals(*, day: str, data_dir: Path) -> list[dict]:
         rows.append(row)
         by_match_id[leg["match_id"]] = row
     zucai_dir = data_dir / "zucai"
-    for issue_path in sorted(zucai_dir.glob("*-issue.json")):
-        issue_doc = _load(issue_path, {})
-        issue = str(issue_doc.get("issue_id") or issue_path.name.split("-")[0])
-        if str(issue_doc.get("sale_deadline") or "")[:10] != day:
-            continue
+    for issue, _issue_doc in closing_issues(zucai_dir, day):
         store = _load(zucai_dir / f"{issue}-store-ids.json", {}) or {}
-        channel = (_load(zucai_dir / f"{issue}-channel-map.json")
-                   or _load(zucai_dir / f"{issue}-channel-map.auto.json", {}) or {})
-        by_no = {int(no): mid for mid, no in channel.items()}
+        by_no = {no: mid for mid, no in load_channel_map(zucai_dir, issue).items()}
         official = ((_load(zucai_dir / "official-results.json", {}) or {}).get(issue) or "").split()
         zreads = {r.get("match_id"): r for r in _load(zucai_dir / f"{issue}-reads.json", []) or []}
         # 足彩独有场次的主循环改判记在 zucai/overrides.jsonl（2026-09-28 起进面板与改判账）

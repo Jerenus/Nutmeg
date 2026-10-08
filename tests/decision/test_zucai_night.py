@@ -5,7 +5,6 @@ from typer.testing import CliRunner
 
 from nutmeg.decision.zucai_night import (
     board_results,
-    load_channel_map,
     night_results,
     render_report,
     run_night_calibrate,
@@ -14,20 +13,6 @@ from nutmeg.decision.zucai_night import (
 from nutmeg.interfaces.cli import app
 
 _MID = {"3": "match-aaa", "5": "match-bbb", "7": "match-ccc"}
-
-
-def test_load_channel_map_prefers_manual_table_and_inverts(tmp_path):
-    (tmp_path / "26111-channel-map.auto.json").write_text(json.dumps(
-        {"match-aaa": "3", "match-zzz": "9"}), "utf-8")
-    (tmp_path / "26111-channel-map.json").write_text(json.dumps(
-        {"match-aaa": 3, "match-bbb": "5"}), "utf-8")
-    assert load_channel_map(tmp_path, "26111") == {"3": "match-aaa", "5": "match-bbb"}
-
-
-def test_load_channel_map_falls_back_to_auto_then_empty(tmp_path):
-    assert load_channel_map(tmp_path, "26111") == {}
-    (tmp_path / "26111-channel-map.auto.json").write_text(json.dumps({"match-aaa": "3"}), "utf-8")
-    assert load_channel_map(tmp_path, "26111") == {"3": "match-aaa"}
 
 
 def _data_dir(tmp_path):
