@@ -136,7 +136,7 @@ flowchart TB
 | 审票与账务 | `review.py` `review_runner.py` `betslip.py` `betslip_diagnosis.py` `bankroll.py` `account.py` `retro_encoder.py` | `betslips.jsonl` `scoreboard.json` `analytics/account/<月>.md` |
 | 实验 | `rsi_loop.py` `rsi_grading.py` `rsi_samples.py` `crowd_model.py` `experiments/*.py` `nutmeg/gym/` | 内核 rsi_* 表、`experiments/corpus-v2.json` `rsi-samples.json` `factors.json` `registry/`（含 `CR*.json`）`candidates/`、`analytics/rsi-loop/` |
 | 运行 | `day_runner.py` `day_decisions.py` `day_broadcast.py` `day_ops.py` `day_runs.py` `ops_status.py`（launchd / plist / 日程只在这里解析一次）、`nutmeg/notifications/notify.py` | `daily/<日>/timeline.json` `decisions.json` `broadcasts.jsonl` `previews.jsonl`、`notifications/ledger.jsonl` |
-| 共享（各算一份已出过分歧的，只许在这里实现） | `match_results.py`（90' 赛果，唯一来源 `jc-results.json`）`board_rows.py`（每场一行）`faces.py`（面与标签）`bj_time.py` `files.py`、`nutmeg/data/prices.py`（去水）`http.py`（浏览器头与抓取）、`zucai_night.load_channel_map` | — |
+| 共享（各算一份已出过分歧的，只许在这里实现） | `match_results.py`（90' 赛果，唯一来源 `jc-results.json`）`board_rows.py`（每场一行）`faces.py`（面与标签）`bj_time.py` `files.py`、`nutmeg/data/prices.py`（去水）`http.py`（浏览器头与抓取）`sporttery_board.py`（体彩快照的在售 + 业务日遍历与摊平）、`zucai_night.load_channel_map` | — |
 
 ---
 
