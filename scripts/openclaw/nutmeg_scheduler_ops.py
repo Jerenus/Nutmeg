@@ -315,22 +315,17 @@ def _publish_operation_event(
     run_date: str,
     summary: str,
 ):
-    from nutmeg.notifications.models import NotificationRequest, semantic_fingerprint
-    from nutmeg.notifications.wiring import build_notification_service
+    from nutmeg.notifications.notify import notify, semantic_fingerprint
 
     summary = _safe_summary(summary)
-    request = NotificationRequest.text(
-        kind=kind,
-        business_key=f"{stage}:{run_date}",
-        stage=stage,
-        semantic_fingerprint=semantic_fingerprint(
+    return notify(
+        kind,
+        f"{stage}:{run_date}:{stage}",  # old outbox business_key:stage (keeps dedupe identity)
+        semantic_fingerprint(
             {"kind": kind, "stage": stage, "run_date": run_date, "summary": summary}
         ),
-        subject=f"Nutmeg scheduler {stage}: {kind.rsplit('.', 1)[-1]}",
-        text=summary,
-        metadata={"stage": stage, "run_date": run_date},
+        summary,
     )
-    return build_notification_service().publish(request)
 
 
 def _load_operation_state(path: Path) -> dict[str, Any]:

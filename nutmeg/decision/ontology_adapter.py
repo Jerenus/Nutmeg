@@ -546,8 +546,6 @@ def _report_v2(
     dry_run: bool,
     notification_service=None,
 ) -> str:
-    from nutmeg.notifications.models import NotificationRequest, semantic_fingerprint
-
     markdown = _render_report_markdown(kernel, run_date, stage)
     report_path = Path(output_dir) / "daily" / run_date / f"decision-report-v2-{run_date}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -555,22 +553,15 @@ def _report_v2(
 
     note = ""
     if dispatch:
-        if notification_service is None:
-            from nutmeg.notifications.wiring import build_notification_service
+        from nutmeg.notifications.notify import notify, semantic_fingerprint
 
-            notification_service = build_notification_service()
-        request = NotificationRequest(
-            kind=f"decision.{stage}.report.v2",
-            business_key=run_date,
-            stage=stage,
-            semantic_fingerprint=semantic_fingerprint({"stage": stage, "markdown": markdown}),
-            subject=f"决策日报 v2 {run_date}",
-            caption=f"决策日报 v2 {run_date}",
-            body=markdown,
-            metadata={"run_date": run_date, "stage": stage},
+        send = notification_service or notify  # a notify-compatible callable (tests: fake)
+        outcome = send(
+            f"decision.{stage}.report.v2", f"{run_date}:{stage}",
+            semantic_fingerprint({"stage": stage, "markdown": markdown}), markdown,
+            dry_run=dry_run,
         )
-        outcome = notification_service.publish(request, dry_run=dry_run)
-        note = f" | 推送 {outcome.status.value}"
+        note = f" | 推送 {outcome.status}"
     return f"decision-report-v2 {run_date} [{stage}]: {report_path.name}{note}"
 
 

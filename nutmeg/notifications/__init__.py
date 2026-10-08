@@ -1,31 +1,4 @@
-"""Durable outbound notification delivery."""
+"""Outbound Telegram notifications: ``nutmeg.notifications.notify.notify`` + a JSONL ledger.
 
-from nutmeg.notifications.artifacts import ArtifactStore
-from nutmeg.notifications.models import (
-    AttemptOutcome,
-    DeliveryOutcome,
-    DeliveryStatus,
-    DeliveryTarget,
-    NotificationAttachment,
-    NotificationOutcome,
-    NotificationRequest,
-    NotificationStatus,
-    ProviderResult,
-    StoredArtifact,
-    semantic_fingerprint,
-)
-
-__all__ = [
-    "ArtifactStore",
-    "AttemptOutcome",
-    "DeliveryOutcome",
-    "DeliveryStatus",
-    "DeliveryTarget",
-    "NotificationAttachment",
-    "NotificationOutcome",
-    "NotificationRequest",
-    "NotificationStatus",
-    "ProviderResult",
-    "StoredArtifact",
-    "semantic_fingerprint",
-]
+(No re-exports here: a package attribute ``notify`` would shadow the ``notify`` submodule.)
+"""
