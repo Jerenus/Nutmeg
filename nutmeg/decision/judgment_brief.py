@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from nutmeg.decision.board_rows import jczq_rows
+
 FACES = ("home", "draw", "away")
 CODE_OF = {"home": "3", "draw": "1", "away": "0"}
 FAV = 0.70
@@ -59,12 +61,11 @@ def _stance_text(stance: dict | None) -> str:
     return text + (f"（信心{conf}）" if conf else "")
 
 
-def jczq_brief(data_dir: Path, day: str) -> dict:
+def jczq_brief(data_dir: Path, day: str, *, rows: list[dict] | None = None) -> dict:
+    """`rows` = `board_rows.jczq_rows` 的结果（当日报告已读过就传进来，不再读第二遍）。"""
     data_dir = Path(data_dir)
     day_dir = data_dir / "jczq" / "daily" / day
-    legs = (_read(day_dir / "jczq-legs-base.json", {}) or {}).get("legs") or {}
-    reads = {r.get("match_id"): r for r in (_read(day_dir / "reads.json", []) or [])}
-    closing = _read(day_dir / "closing_odds.json", {}) or {}
+    matches = rows if rows is not None else jczq_rows(data_dir, day)
     singles: dict[str, bool] = {}
     try:
         from nutmeg.gym.board import load_jczq_board
@@ -74,11 +75,11 @@ def jczq_brief(data_dir: Path, day: str) -> dict:
     except Exception:  # noqa: BLE001 —— 快照缺失只影响"单关"一列
         singles = {}
     rows = []
-    for code, leg in sorted(legs.items()):
-        read = reads.get(leg.get("match_id")) or {}
+    for row in sorted(matches, key=lambda r: r["code"]):
+        code, leg, read = row["code"], row["leg"], row["read"]
         market = leg.get("fair") or read.get("prior")
         belief = read.get("belief")
-        sharp = ((closing.get(code) or {}).get("sharp") or {}).get("fair_probability")
+        sharp = (row["closing"].get("sharp") or {}).get("fair_probability")
         fav_src = sharp or market or {}
         fav_p = max(fav_src.values()) if fav_src else 0.0
         fav_face = max(fav_src, key=fav_src.get) if fav_src else None

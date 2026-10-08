@@ -8,6 +8,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from nutmeg.decision.board_rows import fmt_stance, jczq_rows
 from nutmeg.decision.day_audit import audit_defaults
 from nutmeg.decision.day_paths import BRIEF, BRIEF_MD, day_dir, jczq_day_dir, zucai_dir
 
@@ -88,8 +89,8 @@ def _strength(teams: dict | None, name: str | None) -> dict | None:
     return {k: t.get(k) for k in ("n", "record", "resid_shrunk", "market_strength", "last5_resid")}
 
 
-def _research(day: Path, code: str, run_status: dict[str, str], kickoff: str | None) -> dict:
-    doc = _optional(day / f"research-{code}.json")
+def _research(day: Path, code: str, doc: dict | None, run_status: dict[str, str],
+              kickoff: str | None) -> dict:
     rejected = (day / f"research-{code}.rejected.json").exists()
     status = run_status.get(code) or ("rejected" if rejected else ("done" if doc else "none"))
     out = {"status": status, "captured_at": None, "summary": None, "anchor_side": None,
@@ -111,20 +112,16 @@ LABEL_KEYS = ("judgment_tier", "face_status", "anchor_integrity", "license_quest
 def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
     day = jczq_day_dir(data_dir, date)
     board = _load(day / "jczq-legs-base.json", errors)
-    legs: dict = (board or {}).get("legs") or {}
-    reads = {r.get("match_id"): r for r in (_optional(day / "reads.json") or [])
-             if isinstance(r, dict)}
+    rows = jczq_rows(data_dir, date, legs=(board or {}).get("legs") or {})
     balance = {r.get("code"): r
                for r in ((_optional(day / "balance.json") or {}).get("rows") or [])}
     run = _optional(day / f"research-run-{date}.json") or {}
     run_status = {m.get("code"): m.get("status") for m in run.get("matches") or []}
-    closing = _optional(day / "closing_odds.json") or {}
     teams = (_optional(data_dir / "analytics" / "team_strength.json") or {}).get("teams")
     cards = []
-    for code, leg in sorted(legs.items(), key=lambda kv: str(kv[1].get("kickoff_bj") or "")):
-        band = _optional(day / f"price-band-{code}.json") or {}
-        close = closing.get(code) or {}
-        raw_read = reads.get(leg.get("match_id"))
+    for row in sorted(rows, key=lambda r: str(r["leg"].get("kickoff_bj") or "")):
+        code, leg, band, close = row["code"], row["leg"], row["band"], row["closing"]
+        raw_read = row["read"]
         read = None
         if raw_read:
             prior = raw_read.get("prior") or (balance.get(code) or {}).get("prior")
@@ -150,7 +147,7 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
             },
             "strength": {"home": _strength(teams, leg.get("home_team")),
                          "away": _strength(teams, leg.get("away_team"))},
-            "research": _research(day, code, run_status, leg.get("kickoff_bj")),
+            "research": _research(day, code, row["research"], run_status, leg.get("kickoff_bj")),
             "labels": {k: leg.get(k) for k in LABEL_KEYS},
             "read": read,
             "stance": raw_read.get("stance") if raw_read else None,
@@ -169,7 +166,7 @@ def _jczq(data_dir: Path, date: str, errors: list[str]) -> dict:
         try:
             from nutmeg.decision.judgment_brief import jczq_brief
 
-            b = jczq_brief(data_dir, date)
+            b = jczq_brief(data_dir, date, rows=rows)
             brief_counts = {k: b[k] for k in ("n", "researched", "favs", "singles_open")}
         except Exception:  # noqa: BLE001
             brief_counts = None
@@ -349,12 +346,6 @@ def _fmt_fair(fair: dict | None) -> str:
     return "/".join(f"{float(fair.get(k, 0)) * 100:.0f}" for k in FACES)
 
 
-def _fmt_stance(stance: dict | None) -> str:
-    if not stance or not stance.get("face"):
-        return "—"
-    return f"押{stance['face']}·{stance.get('faces') or stance['face']}"
-
-
 def render_brief_md(brief: dict) -> str:
     lines = [f"# 当日报告 · {brief['date']}", "",
              f"生成 {brief['generated_at']} · 事实层与判断层为机器编译；"
@@ -381,7 +372,7 @@ def render_brief_md(brief: dict) -> str:
             f"{_fmt_fair(m['market']['fair'])} | {drift if drift is not None else '—'} | "
             f"{m['research']['status']} | "
             f"{read.get('judge') or '—'}/{read.get('status') or '—'} | "
-            f"{_fmt_stance(m.get('stance'))} | {m['ladder']} |"
+            f"{fmt_stance(m.get('stance'))} | {m['ladder']} |"
         )
     logic_lines = [f"- **{m['code']}** {m['logic']['text']}" for m in brief["jczq"]["matches"]
                    if isinstance(m.get("logic"), dict) and m["logic"].get("status") == "ok"]

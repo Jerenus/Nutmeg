@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from nutmeg.decision.board_rows import jczq_rows
 from nutmeg.decision.match_results import board_outcomes
 from nutmeg.decision.overrides import load_overrides
 from nutmeg.decision.stance import research_belief
@@ -110,20 +111,15 @@ def _score(row: dict) -> float:
 def build_signals(*, day: str, data_dir: Path) -> list[dict]:
     data_dir = Path(data_dir)
     day_dir = data_dir / "jczq" / "daily" / day
-    legs = (_load(day_dir / "jczq-legs-base.json", {}) or {}).get("legs") or {}
-    reads = {r.get("match_id"): r for r in _load(day_dir / "reads.json", []) or []}
     ledger = {r["research"]: r for r in load_overrides(day_dir)}
     results = board_outcomes(data_dir, day)
     rows: list[dict] = []
     by_match_id: dict[str, dict] = {}
-    for code, leg in sorted(legs.items()):
-        prior = dict(leg["fair"])
-        read = reads.get(leg["match_id"]) or {}
-        research_path = day_dir / f"research-{code}.json"
-        doc = _research_doc(research_path)
-        ledger_row = ledger.get(research_path.name)
-        band = _load(day_dir / f"price-band-{code}.json", {}) or {}
-        prior = dict(read.get("prior") or prior)
+    for match in sorted(jczq_rows(data_dir, day), key=lambda r: r["code"]):
+        code, leg, read, doc, band = (match["code"], match["leg"], match["read"],
+                                      match["research"], match["band"])
+        ledger_row = ledger.get(f"research-{code}.json")
+        prior = dict(read.get("prior") or leg["fair"])
         outcome = (results.get(code) or {}).get("outcome_90")
         row = {
             "key": code, "name": leg.get("name"), "kickoff": leg.get("kickoff_bj"),

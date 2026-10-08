@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from nutmeg.decision.board_rows import fmt_stance
 from nutmeg.decision.day_paths import DISCUSSION, SESSION, day_dir
 
 MAX_CHARS = 4000
@@ -11,12 +12,6 @@ MAX_CHARS = 4000
 
 def _hm(iso: str | None) -> str:
     return (iso or "")[11:16] or "—"
-
-
-def _fmt_stance(stance: dict | None) -> str:
-    if not stance or not stance.get("face"):
-        return "未表态"
-    return f"押{stance['face']}·{stance.get('faces') or stance['face']}"
 
 
 def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) -> str:
@@ -55,7 +50,7 @@ def render_session_md(brief: dict, decisions: list[dict], timeline: list[dict]) 
     for m in brief["jczq"]["matches"]:
         read = m.get("read") or {}
         lines.append(
-            f"- {m['code']} {m.get('name')} · {_fmt_stance(m.get('stance'))} · "
+            f"- {m['code']} {m.get('name')} · {fmt_stance(m.get('stance'), empty='未表态')} · "
             f"{m.get('ladder')} · {read.get('moved_pp', 0)}pp · "
             f"{_hm(m.get('kickoff_bj'))} · 研究 {m['research']['status']} · "
             f"Read {read.get('judge') or '—'}/{read.get('status') or '—'}"
