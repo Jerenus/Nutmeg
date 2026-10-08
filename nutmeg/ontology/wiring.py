@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
-from nutmeg.ontology.actions.capital_actions import CapitalActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.market_actions import MarketActions
@@ -66,7 +65,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
     workflow = WorkflowActions(action_service)
     scoreboard_actions = ScoreboardActions(action_service)
     rsi_actions = RsiActions(action_service)
-    capital_actions = CapitalActions(action_service)
     return OntologyKernel(
         paths=paths,
         engine=engine,
@@ -79,5 +77,4 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         workflow=workflow,
         scoreboard_actions=scoreboard_actions,
         rsi_actions=rsi_actions,
-        capital_actions=capital_actions,
     )

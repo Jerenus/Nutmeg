@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
-from sqlalchemy import Connection, insert, select
+from sqlalchemy import Connection, select
 
-from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository import schema_capital as sc
 
 
@@ -37,14 +36,6 @@ _JSON_FIELDS = ("caps", "frontier_refs", "chosen", "verdict_refs")
 class CapitalRepository:
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
-
-    def insert_plan(self, row: CapitalPlanRow) -> None:
-        values = asdict(row)
-        for key in _JSON_FIELDS:
-            values[f"{key}_json"] = canonical_json(values.pop(key))
-        for key in _FLOATS:
-            values[key] = None if values[key] is None else repr(float(values[key]))
-        self._connection.execute(insert(sc.zucai_capital_plans).values(**values))
 
     def plans(self, issue: str) -> list[CapitalPlanRow]:
         table = sc.zucai_capital_plans

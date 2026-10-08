@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Engine, func, select
 
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
-from nutmeg.ontology.actions.capital_actions import CapitalActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
@@ -114,7 +113,6 @@ class OntologyKernel:
         workflow: WorkflowActions,
         scoreboard_actions: ScoreboardActions,
         rsi_actions: RsiActions,
-        capital_actions: CapitalActions,
     ) -> None:
         self._paths = paths
         self._engine = engine
@@ -127,7 +125,6 @@ class OntologyKernel:
         self.workflow = workflow
         self.scoreboard_actions = scoreboard_actions
         self.rsi_actions = rsi_actions
-        self.capital_actions = capital_actions
 
     @property
     def engine(self) -> Engine:
