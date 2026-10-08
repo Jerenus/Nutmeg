@@ -5,9 +5,8 @@ PLISTS = Path("ops/launchd")
 EXPECTED = {
     # 15:45 第二趟：美洲晚场 09:45 常未封存（2026-09-30 执行链追补）
     "com.nutmeg.day.settle": ("09:45,15:45", "day run --job results", "day run --job settle"),
-    "com.nutmeg.jczq.research": (
-        "10:00", "research run --day", "research intake --day", "jczq-build-reads --day",
-    ),
+    # 2026-10-08：末两步（intake + jczq-build-reads）合成 research refresh，intake 不再一轮跑 3 次
+    "com.nutmeg.jczq.research": ("10:00", "research run --day", "research refresh --day"),
     "com.nutmeg.day.brief": (
         "12:00,14:20,18:35", "day run --job brief", "--with-logic", "day publish",
     ),

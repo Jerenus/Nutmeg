@@ -13,7 +13,7 @@
 	<array>
 		<string>/bin/zsh</string>
 		<string>-lc</string>
-		<string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; D=$(date +%F) &amp;&amp; /opt/homebrew/bin/uv run nutmeg decision-am --run-date $D --output-dir /Users/jz71/Projects/Nutmeg/.nutmeg-data/jczq; /opt/homebrew/bin/uv run nutmeg research run --day $D --data-dir /Users/jz71/Projects/Nutmeg/.nutmeg-data; /opt/homebrew/bin/uv run nutmeg research intake --day $D --write; /opt/homebrew/bin/uv run nutmeg jczq-build-reads --day $D</string>
+		<string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; D=$(date +%F) &amp;&amp; /opt/homebrew/bin/uv run nutmeg decision-am --run-date $D --output-dir /Users/jz71/Projects/Nutmeg/.nutmeg-data/jczq; /opt/homebrew/bin/uv run nutmeg research run --day $D --data-dir /Users/jz71/Projects/Nutmeg/.nutmeg-data; /opt/homebrew/bin/uv run nutmeg research refresh --day $D --data-dir /Users/jz71/Projects/Nutmeg/.nutmeg-data</string>
 	</array>
 	<key>StandardErrorPath</key>
 	<string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/jczq.research.err.log</string>
