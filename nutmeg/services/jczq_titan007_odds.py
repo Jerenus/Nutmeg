@@ -1,6 +1,6 @@
 """titan007 国际欧赔采集 → jczq-today 的 ``bold_odds`` 形状。
 
-与 ``jczq_apifootball_odds.collect_bold_odds_apifootball`` **同签名同返回形状**::
+返回 jczq-today 的 ``bold_odds`` 形状（与 2026-10-08 删除的 API-Football 路径同签名同形状）::
 
     {match_no: {"match_winner": MarketOdds}}
 
@@ -17,8 +17,7 @@
    「国际 vs 体彩」的冲突信号会变成体彩跟自己比。书目与容差住在
    ``config/odds_books.yaml``，不在本文件——它们是判断层输入口径。
 
-本模块只出 ``match_winner``。大小球/亚盘住在另外两个 AES 加密的端点，属后续阶段；
-在此之前由 ``merge_bold_odds`` 用 API-Football/500.com 兜底补 ``over_under``。
+本模块只出 ``match_winner``（下游也只读它）；大小球/亚盘住在另外两个 AES 加密的端点，未接。
 """
 
 from __future__ import annotations
@@ -112,8 +111,7 @@ ALL_BOOKS = _LazySelection(all_books)
 
 
 def _avg(values: list[float]) -> float:
-    """跨家均赔。沿用 ``jczq_apifootball_odds._avg`` 的 4 位小数口径——切源时聚合
-    规则保持不变，使影子期看到的差异只来自书目集合本身。"""
+    """跨家均赔，4 位小数（沿用切源前的口径，影子期的差异只来自书目集合本身）。"""
     return round(sum(values) / len(values), 4)
 
 

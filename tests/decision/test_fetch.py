@@ -180,51 +180,21 @@ def test_partial_coverage_does_not_overwrite_a_richer_snapshot(tmp_path):
 # 备源既补不上又每天刷屏，按用户裁定关掉；保留代码路径，付费档可一键开回。
 
 
-def _euro_sources(monkeypatch, *, primary_hits, fallback_called):
-    import nutmeg.services.jczq_apifootball_odds as af
+def test_euro_odds_come_from_titan007_only_and_a_miss_is_reported(monkeypatch, caplog):
+    """API-Football 备源 2026-10-08 删除：漏场不再有备源，但必须在日志里说出来。"""
+    import logging
+
     import nutmeg.services.jczq_titan007_odds as t7
-
-    monkeypatch.setattr(
-        t7, "collect_bold_odds_titan007_live",
-        lambda value, *, run_date, books=None: primary_hits, raising=False)
-
-    def _fallback(value, *, run_date):
-        fallback_called.append(run_date)
-        return {}
-
-    monkeypatch.setattr(af, "collect_bold_odds_apifootball_live", _fallback,
-                        raising=False)
-
-
-def test_apifootball_fallback_is_off_by_default(monkeypatch):
-    """titan007 漏场也不再唤醒备源——它只会 429 刷屏。"""
     from nutmeg.decision.fetch import collect_euro_odds_live
 
-    called: list[str] = []
-    _euro_sources(monkeypatch, primary_hits={}, fallback_called=called)
-    monkeypatch.delenv("NUTMEG_JCZQ_APIFOOTBALL_FALLBACK", raising=False)
-    merged, provenance = collect_euro_odds_live(_BOARD, run_date="2026-07-08")
-    assert called == []          # 一次都没调
-    assert merged == {} and provenance == {}
+    monkeypatch.setattr(t7, "collect_bold_odds_titan007_live",
+                        lambda value, *, run_date, books=None: {}, raising=False)
+    with caplog.at_level(logging.WARNING, logger="nutmeg.decision.fetch"):
+        odds, provenance = collect_euro_odds_live(_BOARD, run_date="2026-07-08")
+    assert odds == {} and provenance == {}
+    assert "titan007 漏" in caplog.text
 
-
-def test_apifootball_fallback_opts_in_by_env(monkeypatch):
-    """付费档时一键开回，代码路径保留。"""
-    from nutmeg.decision.fetch import collect_euro_odds_live
-
-    called: list[str] = []
-    _euro_sources(monkeypatch, primary_hits={}, fallback_called=called)
-    monkeypatch.setenv("NUTMEG_JCZQ_APIFOOTBALL_FALLBACK", "1")
-    collect_euro_odds_live(_BOARD, run_date="2026-07-08")
-    assert called == ["2026-07-08"]
-
-
-def test_primary_full_coverage_never_touches_fallback(monkeypatch):
-    from nutmeg.decision.fetch import collect_euro_odds_live
-
-    called: list[str] = []
-    _euro_sources(monkeypatch, primary_hits=_bold(), fallback_called=called)
-    monkeypatch.setenv("NUTMEG_JCZQ_APIFOOTBALL_FALLBACK", "1")
-    merged, provenance = collect_euro_odds_live(_BOARD, run_date="2026-07-08")
-    assert called == []
+    monkeypatch.setattr(t7, "collect_bold_odds_titan007_live",
+                        lambda value, *, run_date, books=None: _bold(), raising=False)
+    odds, provenance = collect_euro_odds_live(_BOARD, run_date="2026-07-08")
     assert provenance == {"周日092": "titan007"}

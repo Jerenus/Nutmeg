@@ -5,7 +5,7 @@
 
   - 体彩盘口 ``fetch_sporttery_value_with_fallback``(decision.market_data)
     → ``<output_dir>/daily/<run_date>/sporttery_markets.json``
-  - 国际欧赔 ``collect_bold_odds_apifootball``(经生产入口 ``*_live`` 装配真 client)
+  - 国际欧赔 titan007(``collect_euro_odds_live``)
     → ``<output_dir>/daily/<run_date>/bold_odds.json``
 
 落盘一律走保留模块的 ``persist_*_snapshot`` helper,确保与 ``sense_day``
@@ -44,83 +44,31 @@ def _board_match_numbers(value: dict, run_date: str) -> list[tuple[str, str]]:
     return out
 
 
-def _apifootball_fallback_enabled() -> bool:
-    """API-Football 备源开关，**默认关**（用户 2026-09-14 裁定「切」）。
-
-    实测证据：`decision.am` 08:00 跑时 titan007 板面尚未铺开 → 备源被唤醒 →
-    免费档配额早已耗尽 → 每次 HTTP 429（`decision.am.err.log` 自 2026-09-01 起
-    **164 次，一场都没补上**），而当日 17:15 的 OpenClaw 行情刷新拿到 titan007 12/12。
-    既补不上又天天刷屏，故默认关闭；**代码路径保留**，升付费档置
-    ``NUTMEG_JCZQ_APIFOOTBALL_FALLBACK=1`` 即开回。
-    """
-    import os
-
-    return os.environ.get("NUTMEG_JCZQ_APIFOOTBALL_FALLBACK", "").strip() in {
-        "1", "true", "yes", "on",
-    }
-
-
 def _default_euro_fetcher(value: dict, run_date: str) -> tuple[dict, dict]:
-    """生产默认:titan007 国际欧赔主源,API-Football 补缺。
+    """生产默认：titan007 国际欧赔（唯一源）。返回 ``(bold_odds, {竞彩号: 源名})``。
 
-    2026-09-14 换源。API-Football Free 档 100 次/天,8 天回放实测覆盖
-    63/127(50%),且不管板面多大都卡在 ~9 场;titan007 免费无配额、同期
-    127/127(100%),并带初赔(API-Football 基础 ``/odds`` 结构性没有,故 drift
-    信号在旧源上恒为 0)。证据见 ``.nutmeg-data/jczq/decision/odds_backfill.md``。
+    2026-09-14 换源：API-Football Free 档 8 天回放只覆盖 63/127、且卡在 ~9 场；titan007 同期
+    127/127 并带初赔（证据 ``.nutmeg-data/jczq/decision/odds_backfill.md``）。API-Football 随后
+    退为默认关的备源，开着时免费额度耗尽、9 月里 429 共 262 次、一场没补上；2026-10-08 删除
+    （Jun：「不能正常工作就不要了」）。titan007 早上偶缺的场由 10:00 与 17:15 两次刷新补上。
 
-    API-Football 退为**懒备源**:只在 titan007 漏场时才调。此前它每轮必调,而
-    ``bold_odds`` 的下游(``euro_snapshot_from_bold_odds`` / ``intl_odds.parse_bold_odds``
-    / ``odds_shadow``)**一律只读 ``match_winner``**——它补的 ``over_under`` 从来没有
-    消费者。为一份没人读的盘口每天烧掉本就只有 100 次的配额,不值。
-
-    ``merge_bold_odds`` 的语义正是 primary 优先、fallback 只补缺,绝不覆盖。两源都空
-    → 只落体彩快照(优雅降级,与换源前行为一致)。
-
-    返回 ``(bold_odds, {竞彩号: 源名})``。血统必须单独带出来:合并后单看 bold_odds
-    无从知道某场的 ``match_winner`` 是哪个源给的,而 ``MarketSnapshot.source`` 既进
-    快照 id、又是 ``anchor``/``day_regime`` 的优先级键——整批贴一个源名等于给判断层
-    喂错血统。``merge_bold_odds`` 是 primary 优先,所以 primary 里有的场就是 titan007 的。
+    血统仍逐场带出：``MarketSnapshot.source`` 进快照 id；历史快照里的 ``apifootball`` 源保持原样。
     """
-    from nutmeg.services.jczq_apifootball_odds import (
-        collect_bold_odds_apifootball_live,
-        merge_bold_odds,
-    )
-    from nutmeg.services.jczq_titan007_odds import (
-        collect_bold_odds_titan007_live,
-    )
+    from nutmeg.services.jczq_titan007_odds import collect_bold_odds_titan007_live
 
-    primary = collect_bold_odds_titan007_live(value, run_date=run_date)
-    missing = [no for no, _ in _board_match_numbers(value, run_date) if no not in primary]
-    fallback: dict = {}
-    if missing and _apifootball_fallback_enabled():
-        logger.info(
-            "decision-fetch: titan007 漏 %d 场 %s,调 API-Football 备源",
-            len(missing), missing[:5],
-        )
-        try:
-            fallback = collect_bold_odds_apifootball_live(value, run_date=run_date)
-        except Exception:  # noqa: BLE001 — 备源失败不拖累主源
-            logger.warning(
-                "decision-fetch: API-Football 备源失败,仅用 titan007", exc_info=True
-            )
-    elif missing:
-        # 用户 2026-09-14 裁定「切」：备源默认关闭。**漏场要说话**——静默退化成
-        # 「丢国际锚」正是 2026-08-05 别名事故的形状，不能再来一次。
+    odds = collect_bold_odds_titan007_live(value, run_date=run_date)
+    missing = [no for no, _ in _board_match_numbers(value, run_date) if no not in odds]
+    if missing:
+        # 漏场要说话——静默退化成「丢国际锚」正是 2026-08-05 别名事故的形状。
         logger.warning(
-            "decision-fetch: titan007 漏 %d 场 %s；API-Football 备源已关闭"
-            "（NUTMEG_JCZQ_APIFOOTBALL_FALLBACK=1 可开回）——这些场**无国际锚**",
+            "decision-fetch: titan007 漏 %d 场 %s——这些场暂无国际锚（10:00 / 17:15 刷新再补）",
             len(missing), missing[:5],
         )
-    merged = merge_bold_odds(primary, fallback)
-    provenance = {
-        match_no: ("titan007" if match_no in primary else "apifootball")
-        for match_no in merged
-    }
-    return merged, provenance
+    return odds, {match_no: "titan007" for match_no in odds}
 
 
 collect_euro_odds_live = _default_euro_fetcher
-"""公开别名：生产的国际欧赔采集入口（titan007 主源，API-Football 备源默认关）。"""
+"""公开别名：生产的国际欧赔采集入口（titan007）。"""
 
 
 def unpack_euro_result(result) -> tuple[dict, dict]:

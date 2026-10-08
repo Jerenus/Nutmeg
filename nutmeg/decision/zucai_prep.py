@@ -64,8 +64,8 @@ def alias_resolver():
     萨堡 / 萨尔普斯堡),而这两种写法在别名表里都指向同一个英文名 ——
     **别名表本来就是这个问题的现成答案**,自造前缀规则只会漏。
     """
+    from nutmeg.data.team_aliases import load_team_aliases
     from nutmeg.decision.identity import norm_team
-    from nutmeg.services.jczq_apifootball_odds import load_team_aliases
 
     table = {norm_team(k): v for k, v in load_team_aliases().items()
              if not str(k).startswith("_")}

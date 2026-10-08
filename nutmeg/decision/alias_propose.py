@@ -118,9 +118,9 @@ def _fetch_day_fixtures(run_date: str) -> list[dict]:
 def run_propose(run_date: str, output_dir, *, apply: bool = False,
                 fixtures: list[dict] | None = None) -> str:
     """CLI 胶水：读当日板面 audit 缺口 → 拉当日 fixtures → 提案（可选写入）。"""
+    from nutmeg.data.team_aliases import load_team_aliases
     from nutmeg.decision.alias_audit import audit_day
     from nutmeg.decision.identity import norm_team
-    from nutmeg.services.jczq_apifootball_odds import load_team_aliases
 
     report = audit_day(run_date, output_dir)
     missing = {r["name"] for r in (report.get("odds_alias") or {}).get("missing_teams") or []}

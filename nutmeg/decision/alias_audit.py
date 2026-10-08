@@ -5,7 +5,7 @@
 静默降级是最贵的那种坏——这里把它变成一行可见清单。
 
 两套别名各管一段,都要审:
-- 采集侧(``jczq_apifootball_odds.load_team_aliases``):中文 → API-Football 英文名,
+- 采集侧(``data.team_aliases.load_team_aliases``):中文 → API-Football 英文名,
   决定这场**能不能拿到国际欧赔**。双边都命中才有 fair 锚。
 - 实体侧(``entities.load_*_alias_table``):中文 → ``team_id`` / ``league_id``,
   决定 Read 的 ``scope_key`` 挂不挂得上。球队未解析是策展设计(不报警),
@@ -24,8 +24,8 @@ def board_matches(value: dict) -> list[dict]:
 
 def audit_board(value: dict) -> dict:
     """审计一份体彩板面快照的别名覆盖。纯函数,不打网、不读盘。"""
+    from nutmeg.data.team_aliases import load_team_aliases
     from nutmeg.decision.entities import load_league_alias_table, load_team_alias_table
-    from nutmeg.services.jczq_apifootball_odds import load_team_aliases
 
     odds_aliases = {norm_team(k): v for k, v in load_team_aliases().items()}
     team_table = load_team_alias_table()
