@@ -247,12 +247,22 @@ _PLAN = _cli.typer.Option(
          "combo/multiplier/issue/fair_file/deviation/prediction（文件路径相对计划文件）")
 
 
+_ALTERNATIVES = _cli.typer.Option(
+    False, "--alternatives",
+    help="计划里是互斥的备选方案（只会买其中一张）：每张只和已登记实购票比，不做组内互审、"
+         "不报整组总额")
+
+
 @betslip_app.command("preview-set")
-def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR) -> None:
+def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR,
+                        alternatives: bool = _ALTERNATIVES) -> None:
     """一整组计划票一起预审（2026-10-05）：每张既和已登记的实购票比，也和组内其它计划票比
     共享裸单与联死，最后报整组总额与否决张数。逐张预审看不到组内互相同死——10-05 三张足彩
     逐张都「可出」，登记第一张后才暴露三票同死 ≥26%、两票同死 ≥48%。
-    不登记、不写盘（只留预审痕）。"""
+    不登记、不写盘（只留预审痕）。
+
+    `--alternatives`（2026-10-08）：比较互斥备选时组内互审没有意义——四张备选共享同一条裸单
+    是同一个判断的四种写法，不是假分散；那时每张都被组内其它张 V2 否决，读不出任何差别。"""
     from nutmeg.decision.betslip import BetslipError
 
     try:
@@ -271,8 +281,11 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR) -> None:
             _ = slip.notes                      # 先全组校验（场数/面集合），不合法就一张都不报
         vetoed: list[str] = []
         together: dict[str, set[str]] = {}
+        if alternatives:
+            _cli.typer.echo(f"互斥备选 {len(slips)} 张：每张只和已登记实购票比（不做组内互审）")
         for slip in slips:
-            diag = _diagnose(slip, data_dir, planned=[s for s in slips if s is not slip])
+            diag = _diagnose(slip, data_dir, planned=(
+                [] if alternatives else [s for s in slips if s is not slip]))
             p = slip.hit_probability
             _cli.typer.echo(f"【{slip.slip_id[5:]}】{slip.channel} {slip.notes} 注 × "
                             f"{slip.multiplier} 倍 = ¥{slip.stake_yuan:,}"
@@ -280,8 +293,9 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR) -> None:
             for line in diag.get("lines", []):
                 _cli.typer.echo("   " + line)
             review_lines = _review_lines(slip, diag, data_dir)
-            earlier = sum(s.stake_yuan for s in slips[:slips.index(slip)]
-                          if s.issue == slip.issue and s.channel != "jczq")
+            earlier = 0 if alternatives else sum(
+                s.stake_yuan for s in slips[:slips.index(slip)]
+                if s.issue == slip.issue and s.channel != "jczq")
             issue_brake = _issue_brake_line(slip, data_dir, extra_yuan=earlier)
             if issue_brake:
                 review_lines = [*review_lines, issue_brake]
@@ -294,9 +308,13 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR) -> None:
                 together.setdefault(f"{row['key']}{row['face']}", set()).update(row["slip_ids"])
             _log_preview(data_dir, slip, veto)
         total = sum(s.stake_yuan for s in slips)
-        _cli.typer.echo(f"整组 {len(slips)} 张 ¥{total:,}｜否决 {len(vetoed)} 张"
-                        + (f"（{'、'.join(vetoed)}）" if vetoed else ""))
-        if together:
+        if alternatives:
+            _cli.typer.echo(f"备选 {len(slips)} 张｜否决 {len(vetoed)} 张"
+                            + (f"（{'、'.join(vetoed)}）" if vetoed else ""))
+        else:
+            _cli.typer.echo(f"整组 {len(slips)} 张 ¥{total:,}｜否决 {len(vetoed)} 张"
+                            + (f"（{'、'.join(vetoed)}）" if vetoed else ""))
+        if together and not alternatives:
             worst = sorted(together.items(), key=lambda kv: (-len(kv[1]), kv[0]))
             _cli.typer.echo("   整组共享裸单：" + "；".join(
                 f"{key} 在 {len(ids)} 张票上" for key, ids in worst))

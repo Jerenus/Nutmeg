@@ -41,6 +41,9 @@ def zucai_pool_entries(*, day: str, data_dir: Path) -> list[dict]:
                 "leg": {
                     "match_id": ids["match_id"],
                     "name": f"{match.get('home_team')}-{match.get('away_team')}",
+                    # 画像查找与前提纠正落点按队名解析（2026-10-08）
+                    "home_team": match.get("home_team"),
+                    "away_team": match.get("away_team"),
                     "competition": match.get("competition"),
                     "kickoff_bj": _iso_bj(str(match.get("kickoff_bj"))),
                     "fair": ids["fair"],

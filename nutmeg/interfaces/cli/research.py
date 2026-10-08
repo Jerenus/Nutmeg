@@ -55,8 +55,9 @@ def _board_matches(day: str, data_dir: Path) -> list[dict]:
     ]
 
 
-def _profile_lookup(jczq_dir: Path, day: str):
-    from nutmeg.decision.entities import profiles_for_board
+def _profile_lookup(jczq_dir: Path, day: str, data_dir: Path | None = None):
+    from nutmeg.decision.entities import load_team_alias_table, profiles_for_board, resolve_team
+    from nutmeg.decision.pool import zucai_pool_entries
     from nutmeg.decision.store import DecisionStore
 
     board_path = Path(jczq_dir) / "daily" / day / "jczq-legs-base.json"
@@ -64,6 +65,10 @@ def _profile_lookup(jczq_dir: Path, day: str):
     board = (json.loads(board_path.read_text(encoding="utf-8"))
              if board_path.exists() else {"legs": {}})
     legs = list(board["legs"].values())
+    # 足彩独有场次同样查画像（2026-10-08）：此前只查竞彩板，并集池的足彩场次 brief 永远是
+    # 「画像（无）」——26136 十四份研究全写「画像为空」，而 store 里有其中 12 支队的画像
+    if data_dir is not None:
+        legs += [entry["leg"] for entry in zucai_pool_entries(day=day, data_dir=Path(data_dir))]
     teams = [team for leg in legs for team in (leg.get("home_team"), leg.get("away_team")) if team]
     profiles = profiles_for_board(
         DecisionStore(Path(jczq_dir) / "decision"),
@@ -76,10 +81,14 @@ def _profile_lookup(jczq_dir: Path, day: str):
         )
         for item in profiles["teams"]
     }
+    table = load_team_alias_table()
     by_match = {
         leg["match_id"]: {
             "home": notes_by_name.get(leg.get("home_team"), ""),
             "away": notes_by_name.get(leg.get("away_team"), ""),
+            # 前提纠正的落点（premise_corrections.subject）
+            "home_id": resolve_team(str(leg.get("home_team") or ""), table),
+            "away_id": resolve_team(str(leg.get("away_team") or ""), table),
         }
         for leg in legs
     }
@@ -94,6 +103,11 @@ def board(
 ) -> None:
     from nutmeg.decision.jczq_board import build_board_legs
 
+    # 空盘 / 未开售（RUNBOOK A1，2026-10-05）：decision-am 入库 0 场时没有 bold_odds.json，
+    # 这里打印跳过而不是 FileNotFoundError（2026-10-08 提前拉周五板）。
+    if not (Path(jczq_dir) / "daily" / day / "bold_odds.json").exists():
+        typer.echo(f"{day} 空盘：跳过（无 bold_odds.json，板面未开售或 WAF 降级）")
+        return
     doc = build_board_legs(day=day, matches=_board_matches(day, data_dir), jczq_dir=jczq_dir)
     typer.echo(f"{day} 板面 {len(doc['legs'])} 场 → jczq-legs-base.json（price_only）")
 
@@ -115,7 +129,7 @@ def run(
         data_dir=data_dir,
         claude=_claude,
         fulfill=_fulfill,
-        profile=_profile_lookup(jczq_dir, day),
+        profile=_profile_lookup(jczq_dir, day, data_dir),
         budget=budget if budget is not None else RESEARCH_DAILY_BUDGET,
         code=code,
         concurrency=concurrency,
@@ -156,6 +170,14 @@ def _refresh(day: str, data_dir: Path) -> None:
     for issue, row in summary["zucai"].items():
         typer.echo(f"  足彩 {issue}：Read {row['reads']} 条（交本体 {row['submitted']}）")
         _echo_projection(row, indent="    ")
+        # 自动 legs-base 是机器初稿的输入；失败只进 summary 不打印，
+        # launchd 日志里就看不见（2026-10-08）
+        legs_base = str(row.get("legs_base") or "")
+        if legs_base:
+            mark = "⚠️" if legs_base.startswith("error") else ""
+            typer.echo(f"    {mark}自动 legs-base：{legs_base}", err=bool(mark))
+    if summary.get("signals_error"):
+        typer.echo(f"⚠️信号面板未重写：{summary['signals_error']}", err=True)
     _read_pending(data_dir)
 
 

@@ -39,12 +39,31 @@ def _cli_invoke(argv: list[str]) -> tuple[int, str]:
     return result.exit_code, output
 
 
+def _pool_day(issue: str, data_dir: Path) -> str | None:
+    """期次在并集池里的业务日 = `sale_deadline` 的日期（`closing_issues` 按它取期）。"""
+    import json
+
+    path = Path(data_dir) / "zucai" / f"{issue}-issue.json"
+    if not path.exists():
+        return None
+    deadline = str(json.loads(path.read_text(encoding="utf-8")).get("sale_deadline") or "")
+    return deadline[:10] if len(deadline) >= 10 else None
+
+
 def after_prep(*, issue: str, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None:
     """备料链跑完：带期号入本体（产 store-ids，足彩场次才能进并集池）→ 排义务 → 列待办
     → 人群层快照与线索。
 
     decision-am 成功后会自己走 after_am（研究板面 + 排义务 + 并集池刷新）。
+
+    义务排在期次的**截止日**而不是备料日：并集池（`closing_issues`）与 `research run --day`
+    都按截止日取期，提前一天手动备料（`--issue` 强制，2026-10-08 26136）时若按备料日排，
+    深研会在截止日键下履约而对不上——R1 两天各留 14 个假缺口。
     """
+    pool_day = _pool_day(issue, data_dir)
+    if pool_day and pool_day != day:
+        print(f"ℹ️rsi 义务按期次截止日 {pool_day} 排（备料日 {day}）", file=sys.stderr)
+        day = pool_day
     invoke(["decision-am", "--run-date", day, "--issue", issue,
             "--output-dir", str(Path(data_dir) / "jczq"),
             "--zucai-dir", str(Path(data_dir) / "zucai")])

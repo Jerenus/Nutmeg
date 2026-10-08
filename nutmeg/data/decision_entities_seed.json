@@ -3267,7 +3267,8 @@
    "aliases": [
     "西班牙人",
     "Espanyol",
-    "RCD Espanyol"
+    "RCD Espanyol",
+    "西班人"
    ],
    "competition_ids": [
     "esp-laliga"
@@ -4740,7 +4741,8 @@
    "aliases": [
     "格勒诺布尔",
     "Grenoble",
-    "Grenoble Foot 38"
+    "Grenoble Foot 38",
+    "格勒诺"
    ],
    "competition_ids": [
     "fra-ligue2"
@@ -5065,7 +5067,8 @@
    "aliases": [
     "蒙彼利埃",
     "Montpellier",
-    "Montpellier HSC"
+    "Montpellier HSC",
+    "蒙彼利"
    ],
    "competition_ids": [
     "fra-ligue2"
@@ -5800,7 +5803,8 @@
     "海登海姆",
     "1. FC Heidenheim 1846",
     "1. FC Heidenheim",
-    "Heidenheim"
+    "Heidenheim",
+    "海登"
    ],
    "competition_ids": [
     "ger-bundesliga2"
@@ -8255,7 +8259,9 @@
     "布伦瑞克",
     "TSV Eintracht Braunschweig",
     "Eintracht Braunschweig",
-    "Braunschweig"
+    "Braunschweig",
+    "不伦瑞",
+    "不伦瑞克"
    ],
    "competition_ids": [
     "ger-bundesliga2"
@@ -12212,7 +12218,8 @@
    "name_en": "PSV Eindhoven",
    "aliases": [
     "PSV埃因霍温",
-    "PSV"
+    "PSV",
+    "埃因霍"
    ],
    "competition_ids": [
     "ned-eredivisie"
@@ -13021,7 +13028,8 @@
    "name_en": "GIL Vicente",
    "aliases": [
     "基尔维森特",
-    "吉维森特"
+    "吉维森特",
+    "吉维森"
    ],
    "competition_ids": [
     "por-primeira"
@@ -13117,7 +13125,8 @@
    "aliases": [
     "葡萄牙体育",
     "里竞技",
-    "士砵亭"
+    "士砵亭",
+    "里斯本"
    ],
    "competition_ids": [
     "por-primeira"

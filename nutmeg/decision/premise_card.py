@@ -196,8 +196,9 @@ def format_cards(
         tail.append(
             f"## 别名未命中（{len(unresolved_teams)} 支队，画像在 store 里也读不到）\n  "
             + "、".join(dict.fromkeys(unresolved_teams))
-            + "\n  补法：`nutmeg decision-alias-propose --run-date <日> [--apply]`"
-            "（确定性对手推断，零 LLM，多候选只报告不写入）。"
+            + f"\n  补法：`nutmeg decision-alias-propose --issue {issue} [--apply]`"
+            "（足彩截短名经 zgzcw 全名/同联赛前缀对上种子实体，零 LLM，多候选只报告不写入；"
+            "写入后 `decision-entities-sync`）。仍未命中＝种子里没有这支队，需先建实体。"
             "\n  ⛔在补上之前，这些队**就是没有画像**——不许我凭印象代填。"
         )
     if blank:

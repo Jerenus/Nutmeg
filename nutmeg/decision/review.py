@@ -188,8 +188,13 @@ def review(slip: BetSlip, diagnosis: dict, *, prize_model: dict[str, dict],
     if shared:
         keys = "、".join(f"{r['key']}{r['face']}" for r in shared)
         joint = (diagnosis.get("joint_death") or {}).get("p_all_die_at_least")
+        # 同伴是谁要说对：整组预审的计划票 id 以 `plan:` 开头（2026-10-08 一律写成「已购票」）
+        others = {sid for r in shared for sid in r.get("slip_ids") or []} - {slip.slip_id}
+        planned = {sid for sid in others if str(sid).startswith("plan:")}
+        peer = ("同组计划票" if others and planned == others
+                else "已购票/同组计划票" if planned else "已购票")
         verdicts.append({"code": "V2", "level": "veto",
-                         "text": f"与已购票共享裸单 {len(shared)} 条（{keys}）"
+                         "text": f"与{peer}共享裸单 {len(shared)} 条（{keys}）"
                                  + (f"，联死 ≥{joint * 100:.0f}%" if joint is not None else "")
                                  + "：假分散（26122/26133/09-28 三次全灭同一死法）——改双选或换场"})
     if slip.multiplier > WARN_MULTIPLIER:

@@ -248,6 +248,22 @@ def test_decision_settle_calls_after_settle_when_not_dry_run(tmp_path, monkeypat
     assert hits[0]["data_dir"] == tmp_path.parent
 
 
+def test_after_prep_schedules_on_issue_closing_day_not_prep_day(tmp_path):
+    # 提前一天 `--issue` 强制备料（2026-10-08 26136）：并集池与 research run 按截止日取期，
+    # 义务若排在备料日，深研在截止日键下履约对不上 → 两天各 14 个假缺口
+    zdir = tmp_path / "zucai"
+    zdir.mkdir()
+    (zdir / "26136-issue.json").write_text(
+        '{"issue_id": "26136", "sale_deadline": "2026-10-09 22:00", "matches": []}',
+        encoding="utf-8")
+    calls = []
+    after_prep(issue="26136", day="2026-10-08", data_dir=tmp_path,
+               invoke=lambda argv: calls.append(argv) or (0, ""))
+    assert calls[0][:3] == ["decision-am", "--run-date", "2026-10-09"]
+    assert calls[1][:4] == ["rsi", "schedule", "--day", "2026-10-09"]
+    assert calls[2][:4] == ["rsi", "due", "--day", "2026-10-09"]
+
+
 def test_after_prep_ends_with_crowd_fetch_then_scan(tmp_path):
     calls = []
     after_prep(issue="26136", day="2026-10-08", data_dir=tmp_path,

@@ -71,8 +71,17 @@ def test_preview_set_sees_shared_naked_legs_inside_the_plan(tmp_path: Path):
     assert "⛔V2" in out.output                       # A 与 B 在场 7、8、9 共享裸单
     assert "整组 3 张" in out.output and "否决 2 张（R9-A、R9-B）" in out.output
     assert "整组共享裸单：" in out.output and "71 在 2 张票上" in out.output
+    # 同伴是组内计划票，不是已购票（2026-10-08 前一律写「已购票」）
+    assert "⛔V2 与同组计划票共享裸单" in out.output and "与已购票共享" not in out.output
     assert out.exit_code == 1
     assert not (data / "betslips.jsonl").exists()      # 预审不登记
+
+    # 互斥备选（2026-10-08）：同一条裸单是同一判断的两种写法，不互审、不报整组总额
+    alt = runner.invoke(app, ["betslip", "preview-set", "--plan", str(tmp_path / "plan.json"),
+                              "--alternatives", "--data-dir", str(data)])
+    assert alt.exit_code == 0, alt.output
+    assert "互斥备选 3 张" in alt.output and "⛔V2" not in alt.output
+    assert "备选 3 张｜否决 0 张" in alt.output and "整组" not in alt.output
 
 
 def test_preview_set_rejects_an_invalid_plan_before_reporting_anything(tmp_path: Path):

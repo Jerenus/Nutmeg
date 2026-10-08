@@ -80,6 +80,12 @@ def zucai_premise_card(
     fair_path = _cli.Path(zucai_dir) / f"{issue}-fair.json"
     if fair_path.exists():
         fair_doc = _json.loads(fair_path.read_text("utf-8"))
+    else:
+        # `-fair.json` 是手工 B4 的产物，26135 起不再生成；备料自动跑 decision-am --issue
+        # 落的 `-store-ids.json` 同样带去水 fair——否则整张卡静默印 0.0（2026-10-08 26136）。
+        store_ids_path = _cli.Path(zucai_dir) / f"{issue}-store-ids.json"
+        if store_ids_path.exists():
+            fair_doc = _json.loads(store_ids_path.read_text("utf-8"))
     matches = issue_doc.get("matches") or []
     names = [
         str(m.get(key) or "")
@@ -141,7 +147,10 @@ def zucai_premise_corrections(
 
     found = []
     for path in sorted(_cli.Path(research_dir).glob(f"{issue}-research-m*.json")):
-        found.extend(collect_corrections(_json.loads(path.read_text("utf-8"))))
+        research = _json.loads(path.read_text("utf-8"))
+        # 无头深研不写 match_no，场号在文件名里（否则每条纠正都报成「场0」）
+        research.setdefault("match_no", int(path.stem.rsplit("-m", 1)[-1]))
+        found.extend(collect_corrections(research))
     if not found:
         _cli.typer.echo(
             f"{issue}: 研究文件里没有 premise_corrections。\n"

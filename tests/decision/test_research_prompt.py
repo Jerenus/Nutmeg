@@ -51,6 +51,18 @@ def test_brief_contains_fair_line_and_kickoff_only_from_inputs():
     assert "高位逼抢" in brief
 
 
+def test_brief_gives_store_ids_so_premise_corrections_can_land():
+    """2026-10-08：26136 十四场查出的主帅更替全留在散文里，回写一条都收不到。"""
+    leg = {"name": "A-B", "competition": "法甲", "kickoff_bj": "2026-10-10T02:45:00+08:00",
+           "fair": {"home": 0.39, "draw": 0.26, "away": 0.35}}
+    brief = render_brief(code="足彩26136-06", leg=leg,
+                         profile_notes={"home": "", "away": "", "home_id": "fra-lens"})
+    assert "主队 store id：fra-lens" in brief and "客队 store id：（store 无此队）" in brief
+    assert "premise_corrections" in brief
+    for field in ('"premise_corrections"', '"subject"', '"field"', '"correct"', '"evidence"'):
+        assert field in RESEARCH_JSON_CONTRACT, field
+
+
 def test_contract_names_every_field_the_runner_requires():
     from nutmeg.decision.research_runner import _REQUIRED
 

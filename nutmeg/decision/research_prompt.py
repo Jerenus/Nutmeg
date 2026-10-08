@@ -39,6 +39,12 @@ stance.confidence 必须等于顶层 confidence。
 hole_location 语义绑定：attack = 破门端（中锋/射手）缺；creation = 组织端（前腰/组织核）缺；
 spine = 后腰屏障格缺；defense = 中卫对缺；goalkeeper = 门将缺；
 both = 攻防两端同时缺（对称崩塌）；none = 无结构性洞。
+"premise_corrections"（选填）：[{"subject": "<brief 给的 store id>", "subject_type": "team",
+  "field": "<画像笔记 key>", "given": "画像原文（画像为空写空串）", "correct": "你查到的事实",
+  "evidence": "来源（站点+标题/URL）", "as_of": "YYYY-MM-DD"}]
+只收**持久的实体事实**（现任主帅、联赛级别与位次、欧战/杯赛路径、长期伤缺/报销）；
+本场伤停、状态、战意不写这里。subject 只能用 brief 里给出的 store id（"store 无此队"的不写）；
+field 纠正已有笔记就沿用它的 key，否则新建带日期的 key（如 coach_2026_10_08）；缺 evidence 的不收。
 """.strip()
 
 
@@ -81,11 +87,16 @@ def render_brief(*, code: str, leg: dict, profile_notes: dict) -> str:
         f"让球线 {line}" if line is not None else "让球线 无",
         f"主队画像：{profile_notes.get('home') or '（无）'}",
         f"客队画像：{profile_notes.get('away') or '（无）'}",
+        # 纠正要能落库（2026-10-08）：26136 十四场查出的主帅更替全留在 summary 散文里，
+        # `zucai-premise-corrections` 一条都收不到——subject 必须是 store 的 team_id
+        f"主队 store id：{profile_notes.get('home_id') or '（store 无此队）'}｜"
+        f"客队 store id：{profile_notes.get('away_id') or '（store 无此队）'}",
         # 前提核实（2026-09-30）：09-28 研究把巴雷拉写成「可用」、伊萨克写成「齐整」，
         # 两条都能一次检索证伪——画像和名气都不是事实，主帅/名单/级别位次/欧战路径必须独立核实
         "必须独立核实（画像未提供或与你查到的事实相悖时以你查到的为准）："
         "现任主帅、本窗实际名单与官宣缺阵、联赛级别与位次、欧战/杯赛路径；"
-        "不要按球队名气默认主力齐整。画像里被你证伪的前提，在 summary 首句写「前提纠正：…」。",
+        "不要按球队名气默认主力齐整。画像里被你证伪的前提，在 summary 首句写「前提纠正：…」，"
+        "持久事实同时写进 premise_corrections（subject 用上面的 store id）。",
         "只研究这一场；按输出契约只回 JSON。",
     ]
     return "\n".join(lines)

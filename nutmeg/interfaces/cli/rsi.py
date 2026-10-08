@@ -391,6 +391,11 @@ def schedule(day: str = _DAY, issue: str | None = _ISSUE, data_dir: Path = _DATA
     if ko is None and match_kickoffs:
         ko = min(match_kickoffs.values())
     if ko is None:
+        board = data_dir / "jczq" / "daily" / day / "jczq-legs-base.json"
+        if issue is None and not board.exists():
+            # 空盘 / 未开售（RUNBOOK A1）：没有板就没有义务可排，不是错误
+            typer.echo(f"{day} 空盘：跳过排义务（无竞彩 legs-base 且未指定足彩期）")
+            return
         _fail(f"{day} 找不到最早开球（需要足彩 issue 或竞彩 legs-base）")
     populations, duty_fingerprint = _duty_schedule_context(k)
     population_match_kickoffs = _population_match_kickoffs(

@@ -796,16 +796,26 @@ def zucai_deployment_gate(
 
 @_cli.app.command("decision-alias-propose")
 def decision_alias_propose(
-    run_date: str = _cli.typer.Option(..., "--run-date", help="YYYY-MM-DD"),
+    run_date: str | None = _cli.typer.Option(None, "--run-date", help="YYYY-MM-DD（竞彩板）"),
+    issue: str | None = _cli.typer.Option(
+        None, "--issue", help="足彩期号：截短队名 → 种子实体（经 zgzcw 全名/同联赛前缀）"),
     output_dir: Path = _OUTPUT_DIR_OPTION,
+    zucai_dir: Path = _ZUCAI_DIR_OPTION,
     apply: bool = _cli.typer.Option(False, "--apply", help="把'恰一个候选'的提案写入别名表"),
 ) -> None:
     """别名自愈提案器(Roadmap C1):audit 缺口 → 对手推断(确定性,零LLM) → 人一键确认。
 
     双边都未解析的场推断不了,如实报出;多候选/零候选只报告不写入。
+    `--issue`(2026-10-08):足彩截短名(「埃因霍」「西班人」)写进种子实体 aliases——
+    前提卡与深研 brief 靠它找到画像与 store id。
     """
-    from nutmeg.decision.alias_propose import run_propose
+    from nutmeg.decision.alias_propose import run_propose, run_propose_zucai
 
+    if issue:
+        _cli.typer.echo(run_propose_zucai(issue, zucai_dir, apply=apply))
+        return
+    if not run_date:
+        raise _cli.typer.BadParameter("需要 --run-date 或 --issue")
     _cli.typer.echo(run_propose(run_date, output_dir, apply=apply))
 
 
