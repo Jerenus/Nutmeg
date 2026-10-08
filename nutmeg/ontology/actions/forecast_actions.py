@@ -1,11 +1,11 @@
-"""Forecast Actions: draft / commit / revise / withdraw a belief.
+"""Forecast Actions: draft / commit a belief.
 
 A forecast anchors ``prior`` to the market and records ``belief`` with a per-factor
 delta decomposition validated to reconstruct ``belief − prior`` exactly (the only
 place an edge may come from). ``belief = prior`` is a legal "follow the market"
-commit. Drafts are ai_analyst-writable; commit/revise/withdraw are judge_operator
-only and keep a single current committed revision per series via optimistic
-concurrency (the Action envelope's expected_versions).
+commit. Drafts are ai_analyst-writable; commit is judge_operator only and keeps a single
+current committed revision per series via optimistic concurrency (the Action
+envelope's expected_versions).
 """
 from __future__ import annotations
 
@@ -79,16 +79,6 @@ class CommitForecastRequest:
     judgment: dict | None = None     # 整条 Read；不进 payload（备注抖动不该撞幂等）
 
 
-@dataclass(frozen=True, slots=True)
-class WithdrawForecastRequest:
-    match_id: str
-    market_definition_id: str
-    actor_id: str
-    actor_role: ActorRole
-    idempotency_key: str
-    requested_at: datetime
-
-
 def _validate_forecast(
     prior: dict[str, float], belief: dict[str, float], factors: list[FactorInput]
 ) -> None:
@@ -151,46 +141,11 @@ class ForecastActions:
         return self._action_service.execute(command, handler)
 
     def commit_forecast(self, request: CommitForecastRequest) -> ActionOutcome:
-        return self._commit(request, 'commit_forecast', require_current=False)
-
-    def revise_forecast(self, request: CommitForecastRequest) -> ActionOutcome:
-        return self._commit(request, 'revise_forecast', require_current=True)
-
-    def withdraw_forecast(self, request: WithdrawForecastRequest) -> ActionOutcome:
-        command = ActionCommand.create(
-            action_type='withdraw_forecast',
-            actor_id=request.actor_id,
-            actor_role=request.actor_role,
-            idempotency_key=request.idempotency_key,
-            payload={
-                'match_id': request.match_id,
-                'market_definition_id': request.market_definition_id,
-            },
-            requested_at=request.requested_at,
-        )
-
-        def handler(uow, _command) -> tuple[ObjectRef, ...]:
-            series_id = uow.decision.ensure_series(
-                request.match_id, request.market_definition_id
-            )
-            current = uow.decision.current_committed_revision(series_id)
-            if current is None:
-                raise ValueError('no committed forecast to withdraw')
-            uow.decision.set_revision_status(
-                current.forecast_revision_id, ForecastStatus.WITHDRAWN.value
-            )
-            return (ObjectRef('forecast_revision', current.forecast_revision_id),)
-
-        return self._action_service.execute(command, handler)
-
-    def _commit(
-        self, request: CommitForecastRequest, action_type: str, require_current: bool
-    ) -> ActionOutcome:
         _validate_forecast(
             request.prior_distribution, request.belief_distribution, request.factors
         )
         command = ActionCommand.create(
-            action_type=action_type,
+            action_type='commit_forecast',
             actor_id=request.actor_id,
             actor_role=request.actor_role,
             idempotency_key=request.idempotency_key,
@@ -218,7 +173,6 @@ class ForecastActions:
                     uow,
                     request,
                     policy_version=command.policy_version,
-                    require_current=require_current,
                 ),
             )
 
@@ -230,7 +184,6 @@ def commit_forecast_in_uow(
     request: CommitForecastRequest,
     *,
     policy_version: str,
-    require_current: bool = False,
 ) -> ObjectRef:
     """Persist a committed Forecast inside an existing governed transaction."""
     _validate_forecast(
@@ -255,8 +208,6 @@ def commit_forecast_in_uow(
             f'version {current_revision_no}, expected '
             f'{request.expected_current_revision_no}'
         )
-    if require_current and current is None:
-        raise ValueError('no committed forecast to revise')
     revision_no = uow.decision.max_revision_no(series_id) + 1
     revision_id = mint_decision_id('fr')
     supersedes = current.forecast_revision_id if current is not None else None
