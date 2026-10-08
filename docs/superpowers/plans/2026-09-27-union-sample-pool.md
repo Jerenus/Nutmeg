@@ -1,5 +1,8 @@
 # 并集样本池：每天「传统足彩（优先）∪ 竞彩」全部进研究→判断→F9→本体 · 实施方案
 
+> **状态（2026-10-08）：已执行（`707e20c`、`9b1a542`）。** 仍留在 `plans/` 只因为它是 R1 的冻结 `source_doc`
+> （`experiments/registry/R1.json`），`tests/decision/test_rsi_prereg.py` 要求该路径存在——不要删或改名。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 每个业务日，把当天在售的传统足彩期次（优先）与竞彩板面的**并集**作为分析样本池：每场都有深研、有 Read、进 F9、并自动提交本体（只交未开球场次）。
