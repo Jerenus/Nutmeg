@@ -17,7 +17,6 @@ from sqlalchemy import Engine, func, select
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
 from nutmeg.ontology.actions.capital_actions import CapitalActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
-from nutmeg.ontology.actions.factor_actions import FactorActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.rsi_actions import RsiActions
 from nutmeg.ontology.actions.scoreboard_actions import ScoreboardActions
@@ -113,7 +112,6 @@ class OntologyKernel:
         reconcile: ReconcileService,
         calibrate: CalibrateService,
         entity_actions: EntityActions,
-        factor_actions: FactorActions,
         forecast_actions: ForecastActions,
         workflow: WorkflowActions,
         scoreboard_actions: ScoreboardActions,
@@ -128,7 +126,6 @@ class OntologyKernel:
         self.reconcile = reconcile
         self.calibrate = calibrate
         self.entity_actions = entity_actions
-        self.factor_actions = factor_actions
         self.forecast_actions = forecast_actions
         self.workflow = workflow
         self.scoreboard_actions = scoreboard_actions

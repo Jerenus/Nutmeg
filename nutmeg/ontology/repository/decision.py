@@ -59,13 +59,6 @@ class CommittedRevisionRow:
 
 
 @dataclass(frozen=True, slots=True)
-class FactorFamilyRow:
-    factor_family_id: str
-    name: str
-    definition: str | None
-
-
-@dataclass(frozen=True, slots=True)
 class FactorDefinitionRow:
     factor_definition_id: str
     factor_family_id: str
@@ -266,37 +259,6 @@ class DecisionRepository:
         ]
 
     # -- factors ----------------------------------------------------------
-    def insert_factor_family(self, row: FactorFamilyRow) -> None:
-        self._connection.execute(
-            insert(sd.factor_families).values(
-                factor_family_id=row.factor_family_id, name=row.name, definition=row.definition
-            )
-        )
-
-    def insert_factor_definition(self, row: FactorDefinitionRow) -> None:
-        self._connection.execute(
-            insert(sd.factor_definitions).values(
-                factor_definition_id=row.factor_definition_id,
-                factor_family_id=row.factor_family_id,
-                version=row.version,
-                name=row.name,
-                definition=row.definition,
-                scope=row.scope,
-                status=row.status,
-                born_from_refs_json=canonical_json(row.born_from_refs),
-                valid_from=row.valid_from,
-                valid_to=row.valid_to,
-                policy_version=row.policy_version,
-            )
-        )
-
-    def set_factor_status(self, factor_definition_id: str, status: str) -> None:
-        self._connection.execute(
-            update(sd.factor_definitions)
-            .where(sd.factor_definitions.c.factor_definition_id == factor_definition_id)
-            .values(status=status)
-        )
-
     def factor_status(self, factor_definition_id: str) -> str | None:
         return self._connection.execute(
             select(sd.factor_definitions.c.status).where(

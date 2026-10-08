@@ -13,7 +13,6 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestService
 from nutmeg.ontology.actions.capital_actions import CapitalActions
 from nutmeg.ontology.actions.entity_actions import EntityActions
-from nutmeg.ontology.actions.factor_actions import FactorActions
 from nutmeg.ontology.actions.forecast_actions import ForecastActions
 from nutmeg.ontology.actions.market_actions import MarketActions
 from nutmeg.ontology.actions.match_actions import MatchActions
@@ -54,7 +53,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         artifact_store=artifact_store,
     )
     entity_actions = EntityActions(action_service)
-    factor_actions = FactorActions(action_service)
     forecast_actions = ForecastActions(action_service)
     market_day_ingest = MarketDayIngestService(
         artifact_ingest=artifact_ingest,
@@ -81,7 +79,6 @@ def build_ontology_kernel(settings: AppSettings) -> OntologyKernel:
         reconcile=reconcile,
         calibrate=calibrate,
         entity_actions=entity_actions,
-        factor_actions=factor_actions,
         forecast_actions=forecast_actions,
         workflow=workflow,
         scoreboard_actions=scoreboard_actions,
