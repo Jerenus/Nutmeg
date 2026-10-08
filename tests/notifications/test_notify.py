@@ -183,3 +183,37 @@ def test_scheduler_failure_then_recovery_sends_one_alert_each(
     assert [row["kind"] for row in _rows(ledger)] == [
         "operations.failure", "operations.recovered"
     ]
+
+
+class FailAt(FakeClient):
+    """Raise the given errors on specific send calls (0-based, counting every send)."""
+
+    def __init__(self, failures_at: dict[int, Exception]) -> None:
+        super().__init__()
+        self.failures_at = dict(failures_at)
+        self.calls = 0
+
+    def _maybe_fail(self) -> None:
+        index, self.calls = self.calls, self.calls + 1
+        if index in self.failures_at:
+            raise self.failures_at.pop(index)
+
+
+def test_retry_never_resends_a_part_already_delivered(tmp_path: Path) -> None:
+    """10-08 复查：重试曾把已送达的聊天 / 分段再发一遍（chat 1 收两次）。"""
+    client = FailAt({1: httpx.ConnectError("down")})       # chat 2 transient → in-call retry
+    result = notify("k", "b:s", "f", "hi", client=client, chat_ids=[1, 2],
+                    ledger=tmp_path / "ledger.jsonl", sleep=lambda _s: None)
+    assert result.status == "sent"
+    assert client.messages == [(1, "hi"), (2, "hi")]
+
+
+def test_next_call_resumes_after_the_delivered_chunks(tmp_path: Path) -> None:
+    ledger = tmp_path / "ledger.jsonl"
+    rejected = TelegramApiError("Bad Request", status_code=400, error_code=400)
+    client = FailAt({1: rejected})                          # chunk 2 fails permanently
+    text = "x" * 5000
+    assert _send(ledger, client, text=text).status == "failed"
+    assert _rows(ledger)[-1]["delivered"] == ["42:t0"]
+    assert _send(ledger, client, text=text).status == "sent"
+    assert [len(body) for _chat, body in client.messages] == [4096, 904]   # chunk 1 once

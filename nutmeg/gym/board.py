@@ -323,9 +323,8 @@ def load_zucai_issue(data_dir: Path, issue: str) -> ZucaiIssue:
         row = odds.get(no)
         if not row:
             continue
-        try:
-            fair = devig(row)
-        except (TypeError, ValueError, ZeroDivisionError):
+        fair = devig(row)
+        if len(fair) != len(row):  # 有面赔率缺失或 ≤0：devig 会丢掉那一面，这场不可用
             continue
         matches[no] = ZucaiMatch(no=no, name=f"{m.get('home_team')}-{m.get('away_team')}",
                                  kickoff_bj=m.get("kickoff_bj"), fair=fair)

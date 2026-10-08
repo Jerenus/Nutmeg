@@ -82,9 +82,11 @@ def notify(
         return NotifyResult("dry_run")
     path = Path(ledger) if ledger is not None else default_ledger()
     _ensure_ledger(path)
-    if (kind, key, fingerprint) in _sent(path):
+    sent, done = _progress(path, (kind, key, fingerprint))
+    if sent:
         return NotifyResult("deduplicated")
-    error = _deliver(text, [Path(item) for item in attachments], client, chat_ids, sleep)
+    error, done = _deliver(text, [Path(item) for item in attachments], client, chat_ids,
+                           sleep, done)
     row = {
         "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
         "kind": kind,
@@ -93,6 +95,8 @@ def notify(
         "status": "failed" if error else "sent",
         "error": error,
     }
+    if error:
+        row["delivered"] = sorted(done)  # the next call sends only what is still owed
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     return NotifyResult("failed", error) if error else NotifyResult("sent")
@@ -104,7 +108,12 @@ def _deliver(
     client: Any,
     chat_ids: Sequence[int] | None,
     sleep: Callable[[float], None],
-) -> str | None:
+    done: set[str],
+) -> tuple[str | None, set[str]]:
+    """Send every (chat, chunk / attachment) part not in ``done``; returns (error, done).
+
+    A part is never sent twice: an in-call retry resumes at the part that failed, and a
+    failed call records what it delivered so the next call resumes there too."""
     if client is None or chat_ids is None:
         from nutmeg.config.settings import get_settings
 
@@ -117,24 +126,34 @@ def _deliver(
                 token=settings.telegram_bot_token, base_url=settings.telegram_api_base_url
             )
     if client is None or not chat_ids:
-        return "telegram not configured (NUTMEG_TELEGRAM_BOT_TOKEN / _ALLOWED_CHAT_IDS)"
+        return "telegram not configured (NUTMEG_TELEGRAM_BOT_TOKEN / _ALLOWED_CHAT_IDS)", done
     chunks = [text[i : i + TEXT_LIMIT] for i in range(0, len(text), TEXT_LIMIT)]
+    parts = []
+    for chat_id in chat_ids:
+        parts += [(f"{chat_id}:t{i}", client.send_message, {"chat_id": chat_id, "text": chunk})
+                  for i, chunk in enumerate(chunks)]
+        parts += [(f"{chat_id}:d{i}", client.send_document,
+                   {"chat_id": chat_id, "document_path": attachment})
+                  for i, attachment in enumerate(attachments)]
+    done = set(done)
     retried = False
-    while True:
-        try:
-            for chat_id in chat_ids:
-                for chunk in chunks:
-                    client.send_message(chat_id=chat_id, text=chunk)
-                for attachment in attachments:
-                    client.send_document(chat_id=chat_id, document_path=attachment)
-            return None
-        except Exception as exc:  # noqa: BLE001 - recorded in the ledger, retried next call
-            delay = _transient_delay(exc)
-            if retried or delay is None:
-                redacted = re.sub(r"/bot[^/\s]+", "/bot***", str(exc))
-                return f"{type(exc).__name__}: {redacted}"[:500]
-            retried = True
-            sleep(delay)
+    for part_id, send, kwargs in parts:
+        if part_id in done:
+            continue
+        while True:
+            try:
+                send(**kwargs)
+            except Exception as exc:  # noqa: BLE001 - recorded in the ledger, retried next call
+                delay = _transient_delay(exc)
+                if retried or delay is None:
+                    redacted = re.sub(r"/bot[^/\s]+", "/bot***", str(exc))
+                    return f"{type(exc).__name__}: {redacted}"[:500], done
+                retried = True
+                sleep(delay)
+            else:
+                done.add(part_id)
+                break
+    return None, done
 
 
 def _transient_delay(exc: Exception) -> float | None:
@@ -149,16 +168,19 @@ def _transient_delay(exc: Exception) -> float | None:
     return None
 
 
-def _sent(path: Path) -> set[tuple[str, str, str]]:
-    sent = set()
+def _progress(path: Path, identity: tuple[str, str, str]) -> tuple[bool, set[str]]:
+    """(already sent?, parts delivered by earlier failed attempts) for one identity."""
+    sent, done = False, set()
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             row = json.loads(line)
         except ValueError:
             continue  # a torn last line never blocks sending
-        if row.get("status") == "sent":
-            sent.add((row.get("kind"), row.get("key"), row.get("fingerprint")))
-    return sent
+        if (row.get("kind"), row.get("key"), row.get("fingerprint")) != identity:
+            continue
+        sent = sent or row.get("status") == "sent"
+        done.update(row.get("delivered") or [])
+    return sent, done
 
 
 def _ensure_ledger(path: Path) -> None:

@@ -221,3 +221,14 @@ def test_read_belief_only_from_reads_made_before_kickoff(tmp_path: Path) -> None
 
     assert board.matches["周六001"].read_belief == {"home": 0.7, "draw": 0.2, "away": 0.1}
     assert board.matches["周六002"].read_belief is None
+
+
+def test_zucai_issue_skips_a_match_with_a_zero_price(tmp_path: Path) -> None:
+    """统一去水后不再抛除零：有面赔率为 0 的场必须显式跳过（10-08 复查）。"""
+    data = _zucai_issue(tmp_path)
+    path = data / "zucai" / "26127-odds.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["matches"][0]["home"] = 0
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    issue = load_zucai_issue(data, "26127")
+    assert "1" not in issue.matches and len(issue.matches) == 13

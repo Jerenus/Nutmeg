@@ -68,3 +68,11 @@ def test_league_names_are_normalised_against_zgzcw_spellings():
     board = parse_zgzcw(zg_doc(rows))
     assert board[0].league == "德甲" and board[0].league_group == "top5"
     assert {m.league_group for m in board[1:]} == {"national"}
+
+
+def test_parse_skips_a_match_with_a_zero_price():
+    """统一去水后不再抛除零：缺面的场必须显式跳过，否则 fav_face 会 KeyError（10-08 复查）。"""
+    from nutmeg.decision.crowd_source import parse_zgzcw
+
+    doc = {"matchInfo": [{"europeSp": "0 3.2 2.5"}, {"europeSp": "2.0 3.2 3.5"}]}
+    assert [m.no for m in parse_zgzcw(doc)] == [2]

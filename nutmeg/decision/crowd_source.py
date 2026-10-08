@@ -55,8 +55,10 @@ def parse_zgzcw(doc: dict) -> list[CrowdMatch]:
     for no, m in enumerate(doc.get("matchInfo") or [], start=1):
         try:
             h, d, a = (float(x) for x in str(m.get("europeSp") or "").split())
-            fair = devig({"3": h, "1": d, "0": a})
-        except (ValueError, ZeroDivisionError):
+        except ValueError:
+            continue
+        fair = devig({"3": h, "1": d, "0": a})
+        if len(fair) != 3:  # 有面赔率 ≤0：devig 会丢掉那一面，这场不可用
             continue
         # zgzcw 两字联赛名常带全角空格（「德　甲」），去掉一切空白后再归组。
         out.append(CrowdMatch(no=no, league="".join(str(m.get("leageName") or "").split()),
