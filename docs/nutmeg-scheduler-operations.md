@@ -53,9 +53,9 @@ uv run python scripts/openclaw/nutmeg_scheduler_ops.py --help
 
 Since 2026-10-08 the notification ledger is `.nutmeg-data/notifications/ledger.jsonl`
 (`nutmeg/notifications/notify.py`: one line per send attempt, dedupe on kind + key +
-fingerprint, a failed send is retried by the next call with the same identity). On first
-use it imported every delivered row from the old `.nutmeg-data/state/state.db`, which is
-kept read-only together with `.nutmeg-data/notifications/artifacts/`.
+fingerprint, a failed send is retried by the next call with the same identity). The cutover
+imported the 162 delivered rows of the old `.nutmeg-data/state/state.db`; that file and
+`.nutmeg-data/notifications/artifacts/` were then deleted.
 
 The `notification-status/show/retry` commands were removed 2026-10-03 (no use in
 the prior month); the four-table SQL outbox itself was removed 2026-10-08.

@@ -568,7 +568,7 @@ flowchart TB
 | `zucai/` | `<期>-issue.json` `-store-ids.json` `-legs-base.json` `-reads.json` `-judgment-v1.json` `-research-m<N>.json` `-rubric-m<N>.json` `-draft.json/.md` `-legs-draft-<渠道>.json` `-zgzcw.json`（人群层市场底座，快照追加）`-clues.jsonl`（人群线索，只追加）；`official-results.json` `official-prizes.json` `prize-model.json` |
 | `daily/<日>/` | `brief.json/md` `session.md` `decisions.json` `timeline.json` `broadcasts.jsonl` `previews.jsonl` `retro.md` `results-90.json` |
 | `betslips.jsonl` | 登记簿（实票 / 试玩、诊断、偏离理由、预测）；2026-10-08 起不再镜像进内核票据表 |
-| `notifications/ledger.jsonl` | Telegram 发送账：一次尝试一行，按 kind + key + fingerprint 去重，失败下次同身份重试；首次使用时从旧 `state/state.db` 导入已投递记录（旧库只读保留） |
+| `notifications/ledger.jsonl` | Telegram 发送账：一次尝试一行，按 kind + key + fingerprint 去重，失败下次同身份重试；2026-10-08 切换时从旧 `state/state.db` 导入 162 条已投递记录，旧库与 `notifications/artifacts/` 随后删除 |
 | `scoreboard.json` | **记分牌单一事实源**（tickets、balance_ledger、adjudications、链） |
 | `ontology/ontology.db` | 本体内核 |
 | `analytics/` | `rsi-loop/` `rubric/` `account/` `gym/` `team_strength.json`（`dream-compare/` 为 Dream 退役前的历史账） |
