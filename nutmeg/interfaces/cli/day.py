@@ -12,7 +12,7 @@ import typer
 import nutmeg.interfaces.cli as _cli
 
 day_app = typer.Typer(
-    help="每日对象 daily/<日>：settle / brief / session / results / broadcast 作业、状态、讨论"
+    help="每日对象 daily/<日>：settle / brief / session / results / broadcast 作业、讨论、导出"
 )
 _cli.app.add_typer(day_app, name="day")
 
@@ -77,20 +77,6 @@ def run(job: str = _JOB, date: str | None = _DATE, data_dir: Path = _DATA_DIR,
         typer.echo(f"    [{row['exit']}] {row['cmd'][:80]} · {row['tail'][:120]}")
     if record.exit != 0:
         raise typer.Exit(code=1)
-
-
-@day_app.command("status")
-def status(date: str | None = _DATE, data_dir: Path = _DATA_DIR) -> None:
-    """打印当日时间线（每行带时间证据）。"""
-    from nutmeg.decision.day_timeline import read_timeline
-
-    ctx = _ctx(date, data_dir)
-    rows = read_timeline(ctx.data_dir, ctx.date)
-    if not rows:
-        typer.echo(f"{ctx.date}: 尚无作业记录（{ctx.out_dir}）")
-        return
-    for r in rows:
-        typer.echo(f"{r['finished_at']}  {r['job']:8} exit={r['exit']}  {r['summary'][:100]}")
 
 
 @day_app.command("note")

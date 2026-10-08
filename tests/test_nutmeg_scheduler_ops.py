@@ -12,34 +12,26 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(ops)
 
 
-def test_build_context_aggregates_previous_day(tmp_path):
+def test_build_context_writes_current_day_board(tmp_path):
     output_dir = tmp_path / "out"
-    decision_dir = output_dir / "decision"
-    decision_dir.mkdir(parents=True)
-    (decision_dir / "reads.jsonl").write_text(
-        json.dumps({"read_id": "R-1", "match_id": "M-2026-07-12-A-B"}) + "\n"
-    )
-    (decision_dir / "settlements.jsonl").write_text(json.dumps({
-        "settlement_id": "S-1",
-        "ref_id": "R-1",
-        "ref_type": "read",
-        "brier": 0.25,
-        "clv_pp": 1.5,
-    }) + "\n")
     day_dir = output_dir / "daily" / "2026-07-13"
     day_dir.mkdir(parents=True)
     (day_dir / "sporttery_markets.json").write_text(json.dumps({
         "lastUpdateTime": "2026-07-13 17:00:00",
         "totalCount": 1,
-        "matchInfoList": [],
+        "matchInfoList": [{"subMatchList": [{
+            "businessDate": "2026-07-13", "matchNumStr": "周一001", "leagueAbbName": "瑞超",
+            "homeTeamAbbName": "哈马比", "awayTeamAbbName": "卡尔马",
+            "matchTime": "19:00:00", "matchStatus": "Selling"}]}],
     }))
 
-    path = ops.build_context("2026-07-13", output_dir, tmp_path / "logs")
+    path = ops.build_context("2026-07-13", output_dir)
     context = json.loads(path.read_text())
 
-    assert context["previous_day"]["settlement_count"] == 1
-    assert context["previous_day"]["average_brier"] == 0.25
+    assert context["run_date"] == "2026-07-13" and context["previous_date"] == "2026-07-12"
+    assert "previous_day" not in context      # 停写的 v1 JSONL 聚合已删（2026-10-08）
     assert context["current_day"]["market_total_count"] == 1
+    assert [f["match_num"] for f in context["current_day"]["fixtures"]] == ["周一001"]
 
 
 def test_run_strict_uses_structured_failure_and_publishes_event(tmp_path, monkeypatch):

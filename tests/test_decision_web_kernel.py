@@ -97,11 +97,19 @@ def test_app_uses_kernel_state_when_injected(tmp_path):
     assert "布伦特福德 vs 切尔西" in html                 # 议程行渲染进左栏
 
 
-def test_app_without_kernel_state_keeps_legacy_path(tmp_path):
-    store = DecisionStore(tmp_path / "decision")
-    client = TestClient(create_decision_app(store=store, output_dir=tmp_path))
+def test_app_without_kernel_state_serves_file_events_only(tmp_path):
+    """没注入内核读侧时不再回退旧 DecisionStore（v1 JSONL 已停写）：只有文件事件。"""
+    from nutmeg.decision.workbench import append_event
+
+    (tmp_path / "decision").mkdir()
+    (tmp_path / "decision" / "matches.jsonl").write_text(
+        '{"match_id": "M-2026-09-19-a-b", "kickoff_at": "t", "home": "A", "away": "B"}\n',
+        encoding="utf-8")
+    append_event(tmp_path, "2026-09-19", {"kind": "note", "obj_id": "day", "text": "手记"})
+    client = TestClient(create_decision_app(output_dir=tmp_path))
     body = client.get("/api/workbench?date=2026-09-19").json()
-    assert body["matches"] == [] and body["events"] == [] and "reads" not in body
+    assert body["matches"] == [] and body["snapshots"] == [] and body["reads"] == []
+    assert [e["kind"] for e in body["events"]] == ["note"]
 
 
 def _slip():
@@ -179,58 +187,6 @@ def test_static_assets_carry_a_version_so_browsers_do_not_serve_stale_js(tmp_pat
     assert "/static/decision/app.js?v=" in html and "/static/decision/app.css?v=" in html
 
 
-# ── SOP 任务栏端点（阶段一）──────────────────────────────────────────────
-def test_sop_steps_endpoint_lists_steps_with_done_state(tmp_path):
-    zucai = tmp_path / "zucai"
-    zucai.mkdir()
-    (zucai / "26129-prep-morning.json").write_text("{}", encoding="utf-8")
-    store = DecisionStore(tmp_path / "decision")
-    client = TestClient(create_decision_app(store=store, output_dir=tmp_path / "jczq",
-                                            zucai_dir=zucai))
-    body = client.get("/api/sop-steps?issue=26129&date=2026-09-19").json()
-    ids = [s["step_id"] for s in body["steps"]]
-    assert ids[0] == "B0_prep_morning" and body["steps"][0]["done"] is True
-    assert body["steps"][1]["step_id"] == "B1_prep_afternoon"
-    assert body["steps"][1]["done"] is False
-
-
-def test_run_task_endpoint_uses_injected_invoker_and_returns_result(tmp_path):
-    calls = []
-
-    def fake_invoke(argv):
-        calls.append(argv)
-        return 0, "备料完成"
-
-    store = DecisionStore(tmp_path / "decision")
-    app = create_decision_app(store=store, output_dir=tmp_path / "jczq",
-                              zucai_dir=tmp_path / "zucai", sop_invoke=fake_invoke)
-    client = TestClient(app)
-    r = client.post("/action/run-task",
-                    json={"step_id": "B0_prep_morning", "issue": "26129",
-                          "date": "2026-09-19"})
-    assert r.status_code == 200 and r.json()["ok"] is True
-    assert calls == [["zucai-prep", "--slot", "morning", "--issue", "26129"]]
-    evs = client.get("/events?date=2026-09-19&since=0").json()["events"]
-    assert [e["kind"] for e in evs] == ["task_started", "task_done"]
-
-
-def test_run_task_rejects_unknown_step(tmp_path):
-    store = DecisionStore(tmp_path / "decision")
-    client = TestClient(create_decision_app(store=store, output_dir=tmp_path / "jczq",
-                                            zucai_dir=tmp_path / "zucai"))
-    r = client.post("/action/run-task",
-                    json={"step_id": "B99", "issue": "26129", "date": "2026-09-19"})
-    assert r.status_code == 400 and "未登记" in r.json()["error"]
-
-
-def test_workbench_page_has_sop_bar_bound_to_issue(tmp_path):
-    store = DecisionStore(tmp_path / "decision")
-    client = TestClient(create_decision_app(store=store, output_dir=tmp_path / "jczq",
-                                            zucai_dir=tmp_path / "zucai"))
-    html = client.get("/?date=2026-09-19&issue=26129").text
-    assert 'id="sopbar"' in html and 'data-issue="26129"' in html
-
-
 def test_note_and_candidate_endpoints_append_events(tmp_path):
     store = DecisionStore(tmp_path / "decision")
     client = TestClient(create_decision_app(store=store, output_dir=tmp_path))
@@ -259,10 +215,6 @@ def test_replay_page_orders_all_event_kinds_by_seq(tmp_path):
     from nutmeg.decision.workbench import append_event
     d = "2026-09-19"
     for ev in [
-        {"kind": "task_started", "obj_id": "task:B0_prep_morning",
-         "label": "B0 早刷新", "argv": ["zucai-prep"]},
-        {"kind": "task_done", "obj_id": "task:B0_prep_morning",
-         "label": "B0 早刷新", "exit_code": 0, "text": "备料完成"},
         {"kind": "user_message", "obj_id": "fr-8", "text": "朗斯不败？"},
         {"kind": "agent_reply", "obj_id": "fr-8", "text": "平局最被支持。"},
         {"kind": "candidate", "obj_id": "ticket:26129",
@@ -274,9 +226,9 @@ def test_replay_page_orders_all_event_kinds_by_seq(tmp_path):
     store = DecisionStore(tmp_path / "decision")
     html = TestClient(create_decision_app(store=store, output_dir=tmp_path)).get(
         f"/replay?date={d}").text
-    assert html.index("B0 早刷新") < html.index("朗斯不败？") < html.index("SFC-B") \
+    assert html.index("朗斯不败？") < html.index("平局最被支持。") < html.index("SFC-B") \
         < html.index("刹车")
-    assert "已否决" in html and "exit=0" in html
+    assert "已否决" in html
 
 
 def test_replay_page_tolerates_missing_optional_keys(tmp_path):
@@ -286,7 +238,6 @@ def test_replay_page_tolerates_missing_optional_keys(tmp_path):
     append_event(tmp_path, d, {"kind": "candidate", "obj_id": "ticket:x",
                                "payload": {"version": "A", "verdict": "considered",
                                            "notes": 1, "stake_yuan": 2, "p_all": None}})
-    append_event(tmp_path, d, {"kind": "task_started", "obj_id": "task:z"})
     append_event(tmp_path, d, {"kind": "weird_kind", "obj_id": "q"})
     store = DecisionStore(tmp_path / "decision")
     client = TestClient(create_decision_app(store=store, output_dir=tmp_path))
