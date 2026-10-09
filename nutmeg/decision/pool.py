@@ -142,6 +142,13 @@ def refresh_day(*, day: str, data_dir: Path, made_at: str,
         except Exception as exc:  # noqa: BLE001 —— 旁支，失败不挡 Read 与本体提交
             summary["zucai"][issue]["legs_base"] = f"error: {exc!r}"[:160]
     try:
+        # 损耗台账（2026-10-09）：只展示、只记账；开球前冻结的行才进 F16 前瞻样本
+        from nutmeg.decision.team_load import write_day_ledgers
+
+        summary["team_load"] = write_day_ledgers(data_dir, day, now=made_at)
+    except Exception as exc:  # noqa: BLE001 —— 旁支，失败不挡 Read 与本体提交
+        summary["team_load_error"] = repr(exc)[:300]
+    try:
         # 信号面板随每次刷新重写：人工裁决看的永远是最新一版（Jun 2026-09-27）
         from nutmeg.decision.signals import write_signals
 

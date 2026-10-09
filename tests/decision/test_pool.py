@@ -121,3 +121,20 @@ def test_refresh_day_attaches_a_projection_line_per_board_when_given_a_projector
     assert summary["jczq"]["materialized"] is True
     assert summary["zucai"]["26133"]["projection_error"].startswith("RuntimeError")
     assert summary["zucai"]["26133"]["reads"] == 2          # 比对失败没挡住刷新
+
+
+def test_refresh_day_writes_the_team_load_ledgers_as_a_side_path(tmp_path):
+    """损耗台账随每次刷新重写（2026-10-09）：开球前冻结的行才进 F16 前瞻样本。"""
+    from nutmeg.decision.pool import refresh_day
+
+    zdir = tmp_path / "zucai"
+    _issue(zdir)
+    ids = json.loads((zdir / "26133-store-ids.json").read_text(encoding="utf-8"))
+    for no in ("1", "2"):
+        ids[no].update(snapshot_id=f"s-{no}", name="x-y")
+    (zdir / "26133-store-ids.json").write_text(json.dumps(ids), encoding="utf-8")
+    summary = refresh_day(day="2026-09-26", data_dir=tmp_path,
+                          made_at="2026-09-26T14:15:00+08:00", submit=_accept_all)
+    assert summary["team_load"]["zucai"] == {"26133": str(zdir / "26133-team-load.json")}
+    rows = json.loads((zdir / "26133-team-load.json").read_text(encoding="utf-8"))["rows"]
+    assert set(rows) == {"1", "2"} and rows["1"]["key"] == "26133-1"

@@ -1,0 +1,46 @@
+{
+ "exp_id": "F16",
+ "claim": "两队 14 天内比赛数相差 ≥2 时（开球前冻结的损耗台账），比赛更密的一方取胜的实开率低于市场概率——赛程负荷被市场低估。",
+ "mechanism": "密集赛程带来体能与轮换折损，赔率可能只部分吸收。事前依据（2026-10-09 会话粗测，jc-history × titan007 终盘）：休息天数差三档残差均≈0（n≈550/档，已被定价，故不立假说）；单边密集（一方 14 天 ≥4 场、另一方 ≤2）主队侧 −6.4pp（n=58，CI[−18.1,+5.1]）、客队侧 +0.3pp（n=55）——方向像样、样本太小、且已被看过。为降低被看过子格的选择偏差，主判据取更宽的对称触发（负荷差 ≥2），判据冻结在设计稿 §4，回放只作登记依据。 登记前回放（2026-10-09，判据冻结之后跑，experiments/team_load_replay.py，2025-26 jc-history × titan007 终盘）：主判据 n=598 −0.8pp CI[−4.6,+2.9]，基本是零效应；单边密集子格 n=136 −6.0pp CI[−14.0,+1.7]（已被看过，不换判据）。预期：前瞻大概率在约两个月后证伪——证伪本身就是目的。见 docs/superpowers/evidence/2026-10-09-team-load-replay.md。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "price_only",
+ "window": {
+  "date_from": "2026-10-10",
+  "n_min": 150
+ },
+ "falsifier": {
+  "metric": "loaded_side_resid_pp",
+  "stratum": "pooled",
+  "n_min": 150,
+  "bound": "ci_upper",
+  "threshold_pp": 0.0,
+  "direction": "gt_means_falsified"
+ },
+ "stop_rule": "累计 150 场结账；CI 上界 > 0 即证伪（负荷低估在前瞻样本上不成立）。只计开球前冻结的台账行（captured_at < kickoff）；期间不改触发阈值（|Δ14天场数| ≥ 2）、不改窗口定义（[D−14, D−2]）、不接入 rubric 与票面。 窗口从登记次日 2026-10-10 起算（登记日的台账写于登记之前，不计）。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "source_doc": "docs/superpowers/specs/2026-10-09-team-load-ledger-design.md",
+ "registered_at": "2026-10-09",
+ "duties": [
+  {
+   "name": "team-load-ledger",
+   "scope": "match",
+   "deadline_rule": "match_kickoff",
+   "instrument": [
+    "uv",
+    "run",
+    "nutmeg",
+    "rsi",
+    "team-load",
+    "--day",
+    "{day}"
+   ],
+   "artifact_glob": ".nutmeg-data/jczq/daily/{day}/team-load.json",
+   "status": "active",
+   "description": "F16：开球前冻结两队损耗台账（休息天数/14 天场数/下一场/长歇 + rubric 伤停），逐场履约（开球后写的不算前瞻）"
+  }
+ ]
+}

@@ -967,6 +967,41 @@ def price_band(
         typer.echo(line)
 
 
+@rsi_app.command("team-load")
+def team_load(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
+    """F16（2026-10-09）：写当天两渠道损耗台账，并为已排的逐场义务履约。
+
+    与 price-band 同一模式；已开球的场不调用履约（开球后写的不是前瞻，每小时巡检重跑也不该
+    往观测链里塞非前瞻版本）。F16 没登记 / 当天没排义务时只写台账。"""
+    from nutmeg.decision.team_load import write_day_ledgers
+
+    k = _kernel(data_dir)
+    captured = _now()
+    out = write_day_ledgers(data_dir, day, now=captured.isoformat(timespec="seconds"))
+    paths = [p for p in [out["jczq"], *out["zucai"].values()] if p]
+    fulfilled = 0
+    for path in paths:
+        raw = Path(path).read_bytes()
+        for row in (json.loads(raw).get("rows") or {}).values():
+            match_id, kickoff = row.get("match_id"), row.get("kickoff")
+            if not match_id or not kickoff or datetime.fromisoformat(kickoff) <= captured:
+                continue
+            with OntologyUnitOfWork(k.engine) as uow:
+                instance = uow.rsi.duty_instance("F16:team-load-ledger", day, match_id)
+            if instance is None or instance.fulfilled_at is not None:
+                continue
+            _run(k.rsi_actions.fulfill_duty, FulfillDutyRequest(
+                exp_id="F16", duty_name="team-load-ledger", day=day,
+                artifact_path=str(path), artifact_bytes=raw, n_rows=1,
+                population_stratum=None, judgment_tier_hist={"price_only": 1},
+                captured_at=captured, earliest_kickoff=kickoff, match_id=match_id,
+                idempotency_key=(f"rsi-ful:F16:team-load-ledger:{day}:{match_id}:"
+                                 f"{hashlib.sha256(raw).hexdigest()[:16]}"),
+                requested_at=captured, **_SYSTEM))
+            fulfilled += 1
+    typer.echo(f"team-load {day}: 台账 {len(paths)} 份，履约 {fulfilled} 场")
+
+
 @rsi_app.command("grade")
 def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
           samples: Path = _SAMPLES_OPT, registry_dir: Path = _REGISTRY_DIR) -> None:

@@ -118,3 +118,29 @@ def test_f14_scores_stance_face_sets_against_their_market_coverage():
             row("3", "double", date="2026-09-30")]  # 窗外
     g = grade_f14_prospective(rows, window={"date_from": "2026-10-01"})
     assert g.n_cum == 3 and round(g.metric_value_pp, 6) == round((0.20 - 0.80 + 0.50) / 3 * 100, 6)
+
+
+def _load_row(key, diff, actual, *, captured="2026-10-10T12:30:00+08:00",
+              kickoff="2026-10-10T20:00:00+08:00", day="2026-10-10"):
+    return {"key": key, "date": day, "actual": actual,
+            "fair": {"home": 0.50, "draw": 0.25, "away": 0.25},
+            "team_load": {"captured_at": captured, "kickoff": kickoff, "load_diff_14": diff}}
+
+
+def test_f16_grades_the_more_loaded_side_when_the_14_day_gap_is_at_least_two():
+    """F16（2026-10-09 登记稿）：负荷差 ≥2 → 更密一方取胜的残差；只认开球前冻结的台账。"""
+    from nutmeg.decision.rsi_grading import PROSPECTIVE_ADAPTERS, grade_f16_prospective
+
+    rows = [
+        _load_row("a", 3, "1"),      # 主更密、没赢 → 1{胜}=0 − 0.50
+        _load_row("b", -2, "0"),     # 客更密、客胜 → 1 − 0.25
+        _load_row("c", 1, "3"),      # 差 1：不触发
+        _load_row("d", 4, "3", captured="2026-10-10T21:00:00+08:00"),   # 开球后才冻结：不算
+        _load_row("e", 2, "3", day="2026-10-01"),                       # 窗口外
+        {"key": "f", "date": "2026-10-10", "actual": "3",
+         "fair": {"home": 0.5, "draw": 0.25, "away": 0.25}},            # 没挂台账
+    ]
+    g = grade_f16_prospective(rows, window={"date_from": "2026-10-09"})
+    assert g.n_cum == 2 and g.selected_keys == ("a", "b")
+    assert abs(g.metric_value_pp - ((0 - 0.50) + (1 - 0.25)) / 2 * 100) < 1e-9
+    assert PROSPECTIVE_ADAPTERS["F16"] is grade_f16_prospective      # 2026-10-09 登记

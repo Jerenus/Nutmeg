@@ -1047,6 +1047,10 @@ def main() -> None:
     rows, dropped = dedupe(zc, jc)
     kc = kernel_rows()
     rows, attached = attach_kernel(rows, kc)
+    # 损耗台账（2026-10-09）：开球前冻结的台账行挂到行顶层 team_load，供 F16 结账
+    from nutmeg.decision.team_load import attach_ledgers
+
+    n_load = attach_ledgers(rows, os.path.join(ROOT, ".nutmeg-data"))
     labeled = [r for r in rows if r.get("labels")]
     moved = [r for r in rows if r.get("belief_moved")]
     closing_priced = [r for r in rows if r.get("fair_kind") == "closing"]
@@ -1078,6 +1082,7 @@ def main() -> None:
         f"  以终盘作价的竞彩行：{len(closing_priced)}；"
         f"provably_prospective=true：{len(provable)}"
     )
+    print(f"  挂上开球前冻结的损耗台账：{n_load} 行")
     print(f"  写入 {args.out}")
 
 

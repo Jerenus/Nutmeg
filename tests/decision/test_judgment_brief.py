@@ -121,3 +121,37 @@ def test_cli_brief_prints_and_writes(tmp_path: Path) -> None:
     assert (data / "jczq" / "daily" / DAY / "judgment-brief.md").exists()
     bad = CliRunner().invoke(app, ["judgment", "brief", "--data-dir", str(data)])
     assert bad.exit_code == 2
+
+
+_LOAD_ROW = {"home_load": {"rest_days": 3, "matches_14d": 4, "next_days": None,
+                           "long_break": False},
+             "away_load": {"rest_days": 19, "matches_14d": 0, "next_days": 3,
+                           "long_break": True},
+             "flags": ["单边密集:home", "负荷差≥2:home", "下场≤3天:away", "长歇:away"],
+             "absences": {"home": ["缺阵"], "away": []}}
+
+
+def test_jczq_brief_shows_the_team_load_cell_from_the_ledger(tmp_path: Path) -> None:
+    """损耗台账（2026-10-09）只展示：初判包多一列，不改 belief。"""
+    data = _day(tmp_path)
+    (data / "jczq" / "daily" / DAY / "team-load.json").write_text(
+        json.dumps({"rows": {"周六001": _LOAD_ROW}}, ensure_ascii=False), encoding="utf-8")
+    brief = jczq_brief(data, DAY)
+    a, b = brief["rows"]
+    assert a["load"] == "休3/19 14天4/0 ⚑密主 ⇢客 ⏸客 主缺" and b["load"] == "—"
+    text = render_jczq(brief)
+    assert "| 损耗 |" in text and "休息差历史上已被定价" in text
+
+
+def test_zucai_brief_shows_the_team_load_cell_from_the_ledger(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    zdir = data / "zucai"
+    zdir.mkdir(parents=True)
+    (zdir / "26136-legs-base.json").write_text(json.dumps({"issue": "26136", "legs": {"1": {
+        "name": "甲-乙", "prior": {"home": 0.5, "draw": 0.3, "away": 0.2}, "faces": "31"}}}),
+        encoding="utf-8")
+    (zdir / "26136-team-load.json").write_text(
+        json.dumps({"rows": {"1": _LOAD_ROW}}, ensure_ascii=False), encoding="utf-8")
+    brief = zucai_brief(data, "26136")
+    assert brief["rows"][0]["load"].startswith("休3/19 14天4/0")
+    assert "| 损耗 |" in render_zucai(brief)

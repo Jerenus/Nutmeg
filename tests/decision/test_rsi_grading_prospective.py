@@ -48,8 +48,9 @@ def test_adapter_registry_names_match_experiments():
     # 2026-09-30：F13（崩塌叙事锚方）、F14（表态面集合命中率）登记并接入
     # 2026-10-01：F15（终盘大热校准）、G1（gym 结构规则 fav_pairs ROI）登记并接入
     # 2026-10-02：K1（判断 rubric 两读 kappa）登记并接入
-    assert set(PROSPECTIVE_ADAPTERS) == {"F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1",
-                                         "K1"}
+    # 2026-10-09：F16（赛程负荷，损耗台账）登记并接入
+    assert set(PROSPECTIVE_ADAPTERS) == {"F5", "F9", "F10", "F11", "F13", "F14", "F15", "F16",
+                                         "G1", "K1"}
 
 
 def test_k1_pools_item_pairs_and_scores_full_agreement_as_100():

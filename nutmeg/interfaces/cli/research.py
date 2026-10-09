@@ -178,6 +178,12 @@ def _refresh(day: str, data_dir: Path) -> None:
             typer.echo(f"    {mark}自动 legs-base：{legs_base}", err=bool(mark))
     if summary.get("signals_error"):
         typer.echo(f"⚠️信号面板未重写：{summary['signals_error']}", err=True)
+    load = summary.get("team_load") or {}
+    written = [p for p in [load.get("jczq"), *(load.get("zucai") or {}).values()] if p]
+    if written:
+        typer.echo(f"  损耗台账：{len(written)} 份")
+    if summary.get("team_load_error"):
+        typer.echo(f"⚠️损耗台账未重写：{summary['team_load_error']}", err=True)
     _read_pending(data_dir)
 
 

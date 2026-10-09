@@ -329,6 +329,31 @@ def grade_f14_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
 
 PROSPECTIVE_ADAPTERS.update({"F13": grade_f13_prospective, "F14": grade_f14_prospective})
 
+def grade_f16_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
+    """F16 赛程负荷（2026-10-09 登记稿 experiments/registry/_draft_F16.json）。
+
+    窗内、挂着开球前冻结的损耗台账（`team_load.captured_at < kickoff`）、两队 14 天场数差 ≥2
+    → 更密一方取胜的残差 1{更密一方胜} − fair[更密一方]。主张为负（负荷被低估）。"""
+    from nutmeg.decision.bj_time import parse_bj
+
+    selected: list[dict] = []
+    for r in _priced(rows):
+        if not _in_date_window(r, window):
+            continue
+        load = r.get("team_load") or {}
+        captured, kickoff = parse_bj(load.get("captured_at")), parse_bj(load.get("kickoff"))
+        diff = load.get("load_diff_14")
+        if captured is None or kickoff is None or captured >= kickoff or diff is None:
+            continue
+        if abs(int(diff)) < 2:
+            continue
+        selected.append({**r, "_anchor": "home" if diff > 0 else "away"})
+    return _anchor_residual_grade(
+        selected, computed_by="nutmeg.decision.rsi_grading.grade_f16_prospective")
+
+
+PROSPECTIVE_ADAPTERS["F16"] = grade_f16_prospective      # 2026-10-09 登记
+
 
 def _closing_fav(row: dict) -> tuple[str, float] | None:
     sharp = (row.get("closing") or {}).get("sharp_fair") or {}

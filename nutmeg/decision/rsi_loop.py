@@ -60,7 +60,7 @@ LOOP_OUTPUT_PATHS = (
 # 有前瞻适配器的登记实验都进闭环（F10/F11 2026-09-27 登记后一直没被结账，2026-09-30 补入）
 # F2 2026-10-02 退役（窗口 26126–26137 内主档样本到不了 n_min 140），不再每日结账
 # F3（F10 的前身）与 F4（观测仪 plan commit 已删）2026-10-04 退役
-GRADED_EXPERIMENTS = ("F5", "F9", "F10", "F11", "F13", "F14", "F15", "G1", "K1")
+GRADED_EXPERIMENTS = ("F5", "F9", "F10", "F11", "F13", "F14", "F15", "F16", "G1", "K1")
 
 
 def graded_experiments(root: Path) -> tuple[str, ...]:
