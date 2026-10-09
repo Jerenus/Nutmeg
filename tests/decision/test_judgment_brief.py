@@ -155,3 +155,36 @@ def test_zucai_brief_shows_the_team_load_cell_from_the_ledger(tmp_path: Path) ->
     brief = zucai_brief(data, "26136")
     assert brief["rows"][0]["load"].startswith("休3/19 14天4/0")
     assert "| 损耗 |" in render_zucai(brief)
+
+
+def _pm_doc(rows):
+    return {"snapshots": [{"fetched_at": "t0", "rows": {}}, {"fetched_at": "t1", "rows": rows}]}
+
+
+_PM_ROW = {"volume": 80268.0, "rank": 1,
+           "probs": {"home": 0.7313, "draw": 0.1626, "away": 0.1061},
+           "vs_market_pp": {"home": 3.1, "draw": -1.1, "away": -1.9}}
+
+
+def test_jczq_brief_shows_polymarket_attention_only_for_liquid_matches(tmp_path: Path) -> None:
+    """关注度（2026-10-09）：只对 Polymarket 成交 ≥$20k 的场显示，只看不拨动。"""
+    data = _day(tmp_path)
+    (data / "jczq" / "daily" / DAY / "polymarket.json").write_text(json.dumps(_pm_doc({
+        "周六001": _PM_ROW, "周六002": {**_PM_ROW, "volume": 3800.0}})), encoding="utf-8")
+    a, b = jczq_brief(data, DAY)["rows"]
+    assert a["attention"] == "PM$80k 73/16/11 主+3.1" and b["attention"] == ""
+    assert "| 关注度 |" in render_jczq(jczq_brief(data, DAY))
+
+
+def test_zucai_brief_shows_polymarket_attention(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    zdir = data / "zucai"
+    zdir.mkdir(parents=True)
+    (zdir / "26136-legs-base.json").write_text(json.dumps({"issue": "26136", "legs": {"2": {
+        "name": "多特-不来梅", "prior": {"home": 0.70, "draw": 0.17, "away": 0.13},
+        "faces": "31"}}}, ensure_ascii=False), encoding="utf-8")
+    (zdir / "26136-polymarket.json").write_text(json.dumps(_pm_doc({"2": _PM_ROW})),
+                                                encoding="utf-8")
+    brief = zucai_brief(data, "26136")
+    assert brief["rows"][0]["attention"] == "PM$80k 73/16/11 主+3.1"
+    assert "| 关注度 |" in render_zucai(brief) and "名气热门" in render_zucai(brief)

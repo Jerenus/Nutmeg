@@ -1,0 +1,91 @@
+{
+ "exp_id": null,
+ "tier": "deploy_eligible",
+ "layer": "structural",
+ "population": "zucai",
+ "min_tier": "price_only",
+ "label_cn": "高关注大热被全国人群多买",
+ "claim": "高关注大热被全国人群多买：期内 Polymarket 成交量前三、且为本场市场热门（≥50%）的面开出时，任九奖金低于市场意外度所预期（γ<0）",
+ "mechanism": "名气球队被大量单选与串关追买（关注度＝全球成交量名次，代理名气）；这些面开出时中奖注偏多、奖池被摊薄。理论先行（Jun 2026-10-09 提出「名气/热卖」），不是 48 桶扫描所得。草稿，签字前由 Jun 改定。",
+ "psychology": "「这么大的牌子不会输」——名气是最便宜的信心来源，于是名门热门在奖池里最不值钱。",
+ "trigger": {
+  "all": [
+   {
+    "field": "is_fav",
+    "op": "==",
+    "v": true
+   },
+   {
+    "field": "p_face",
+    "op": ">=",
+    "v": 50
+   },
+   {
+    "field": "pm_rank",
+    "op": "<=",
+    "v": 3
+   }
+  ]
+ },
+ "crowd_bias": "over",
+ "falsifier": {
+  "metric": "crowd_prize_pct_per_face",
+  "stratum": "zucai",
+  "n_min": 30,
+  "bound": "ci_lower",
+  "threshold_pp": 0.0,
+  "direction": "lt_means_falsified"
+ },
+ "window": {
+  "issue_from": null,
+  "issue_to": "26999"
+ },
+ "replay_window": null,
+ "stop_rule": "前瞻满 30 期判；60 期仍跨线则提 retire。用途是奖池第三序（fade：别把覆盖花在它上面），不是丢场理由。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "examples": {
+  "pos": [],
+  "neg": []
+ },
+ "source_doc": "docs/superpowers/specs/2026-10-09-polymarket-attention-design.md",
+ "registered_at": null,
+ "evidence": {
+  "source": "crowd polymarket-backfill 2026-10-09（终场总成交 → 期内名次）；crowd_model.fit_gamma",
+  "pm_coverage": "101 期平均每期 8.4/14 场挂上关注度",
+  "replay": {
+   "提名块 26090–26135": {
+    "n": 46,
+    "fired": 78,
+    "hits": 59,
+    "gamma_pct": -53.26,
+    "ci_pct": [
+     -86.95,
+     -11.97
+    ]
+   },
+   "验证块 26035–26089": {
+    "n": 55,
+    "fired": 63,
+    "hits": 42,
+    "gamma_pct": -3.76,
+    "ci_pct": [
+     -39.52,
+     24.43
+    ]
+   },
+   "全部 26035–26135": {
+    "n": 101,
+    "fired": 141,
+    "hits": 101,
+    "gamma_pct": -21.8,
+    "ci_pct": [
+     -48.42,
+     1.55
+    ]
+   }
+  },
+  "reading": "方向在两块都为负，但只有 26090–26135 显著（−53.3% CI[−86.9,−12.0]）；26035–26089 为零（−3.8% CI[−39.5,+24.4]）；合并 −21.8% CI[−48.4,+1.5]。候选是理论先行而非 48 桶扫描所得；两块不一致——前瞻才算数。"
+ }
+}

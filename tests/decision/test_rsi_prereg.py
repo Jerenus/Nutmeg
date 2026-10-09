@@ -89,9 +89,12 @@ def test_all_registry_docs_load_and_keep_their_original_registration_dates():
         for p in sorted(_REGISTRY.glob("*.json"))
         if not p.name.startswith("_draft_")
     }
-    # 2026-10-02：K1（判断 rubric 两读 kappa）登记；2026-10-09：F16（赛程负荷，损耗台账）登记
-    assert set(docs) == {"F1c", "F10", "F11", "F13", "F14", "F15", "F16", "F2", "F3", "F4", "F5",
-                         "F8", "F9", "G1", "K1", "R0", "R1"}
+    # 2026-10-02：K1（判断 rubric 两读 kappa）登记；2026-10-09：F16（赛程负荷）、F17（名气热卖）
+    # 登记，CR2（高关注大热被人群多买，Jun 签字）入册
+    assert set(docs) == {"CR2", "F1c", "F10", "F11", "F13", "F14", "F15", "F16", "F17", "F2", "F3",
+                         "F4", "F5", "F8", "F9", "G1", "K1", "R0", "R1"}
+    assert (docs["F17"]["registered_at"], docs["F17"]["window"]) == (
+        "2026-10-09", {"date_from": "2026-10-10", "n_min": 120})
     assert (docs["F16"]["registered_at"], docs["F16"]["window"]) == (
         "2026-10-09", {"date_from": "2026-10-10", "n_min": 150})
     # F13/F14：2026-09-30 登记（崩塌叙事锚方 / 表态面集合命中率）

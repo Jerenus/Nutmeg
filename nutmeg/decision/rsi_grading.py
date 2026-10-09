@@ -355,6 +355,37 @@ def grade_f16_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
 PROSPECTIVE_ADAPTERS["F16"] = grade_f16_prospective      # 2026-10-09 登记
 
 
+HYPE_VOLUME_USD = 50_000.0
+
+
+def grade_f17_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
+    """F17 名气热卖（2026-10-09 登记 experiments/registry/F17.json）。
+
+    窗内、挂着开球前的 Polymarket 快照（`polymarket.fetched_at < kickoff`）、赛前成交 ≥$50k、
+    市场模态面 ≥60% → 模态面残差。主张为负（名气热门被高估）；事前粗测偏向否定（+3.5pp）。"""
+    from nutmeg.decision.bj_time import parse_bj
+
+    selected: list[dict] = []
+    for r in _priced(rows):
+        if not _in_date_window(r, window):
+            continue
+        pm = r.get("polymarket") or {}
+        fetched, kickoff = parse_bj(pm.get("fetched_at")), parse_bj(pm.get("kickoff"))
+        if fetched is None or kickoff is None or fetched >= kickoff:
+            continue
+        if float(pm.get("volume") or 0.0) < HYPE_VOLUME_USD:
+            continue
+        modal = _modal(r["fair"])
+        if modal == "draw" or float(r["fair"][modal]) < 0.60:
+            continue
+        selected.append({**r, "_anchor": modal})
+    return _anchor_residual_grade(
+        selected, computed_by="nutmeg.decision.rsi_grading.grade_f17_prospective")
+
+
+PROSPECTIVE_ADAPTERS["F17"] = grade_f17_prospective      # 2026-10-09 登记
+
+
 def _closing_fav(row: dict) -> tuple[str, float] | None:
     sharp = (row.get("closing") or {}).get("sharp_fair") or {}
     if len(sharp) != 3:

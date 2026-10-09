@@ -1051,6 +1051,10 @@ def main() -> None:
     from nutmeg.decision.team_load import attach_ledgers
 
     n_load = attach_ledgers(rows, os.path.join(ROOT, ".nutmeg-data"))
+    # Polymarket 关注度（2026-10-09）：开球前最后一张快照挂到行顶层 polymarket，供 F17 结账
+    from nutmeg.decision.crowd_polymarket import attach_polymarket
+
+    n_pm = attach_polymarket(rows, os.path.join(ROOT, ".nutmeg-data"))
     labeled = [r for r in rows if r.get("labels")]
     moved = [r for r in rows if r.get("belief_moved")]
     closing_priced = [r for r in rows if r.get("fair_kind") == "closing"]
@@ -1082,7 +1086,7 @@ def main() -> None:
         f"  以终盘作价的竞彩行：{len(closing_priced)}；"
         f"provably_prospective=true：{len(provable)}"
     )
-    print(f"  挂上开球前冻结的损耗台账：{n_load} 行")
+    print(f"  挂上开球前冻结的损耗台账：{n_load} 行；开球前的 Polymarket 快照：{n_pm} 行")
     print(f"  写入 {args.out}")
 
 

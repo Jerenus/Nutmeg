@@ -108,3 +108,55 @@ def test_draft_crowd_section_degrades_without_market_base(tmp_path):
 
     text = _crowd_section(tmp_path, "26999")
     assert text.startswith("## 人群地图") and "本期无市场底座" in text
+
+
+def _pm_fake(url, params):
+    if url.endswith("/sports"):
+        return [{"sport": "bun", "series": "1"}]
+    if url.endswith("/events"):
+        if params.get("offset"):
+            return []
+        closed = params["closed"] == "true"
+        return [{"id": "e1", "title": "BV Borussia 09 Dortmund vs. SV Werder Bremen",
+                 "endDate": "2026-10-09T18:30:00Z", "volume": 123456.0 if closed else 80268.0,
+                 "markets": [
+                     {"question": "Will BV Borussia 09 Dortmund win on 2026-10-09?",
+                      "bestBid": 0.74, "bestAsk": 0.75, "clobTokenIds": "[\"h\"]"},
+                     {"question": ("Will BV Borussia 09 Dortmund vs. SV Werder Bremen "
+                                   "end in a draw?"),
+                      "bestBid": 0.16, "bestAsk": 0.17, "clobTokenIds": "[\"d\"]"},
+                     {"question": "Will SV Werder Bremen win on 2026-10-09?",
+                      "bestBid": 0.10, "bestAsk": 0.11, "clobTokenIds": "[\"a\"]"}]}]
+    return {"history": [{"p": 0.70}, {"p": 0.745}]}
+
+
+def _pm_issue(data: Path) -> None:
+    zdir = data / "zucai"
+    zdir.mkdir(parents=True, exist_ok=True)
+    (zdir / "26136-issue.json").write_text(json.dumps({
+        "issue_id": "26136", "sale_deadline": "2026-10-09 22:00", "matches": [
+            {"match_no": 2, "home_team": "多特", "away_team": "不来梅",
+             "kickoff_bj": "2026-10-10 02:30"}]}, ensure_ascii=False), encoding="utf-8")
+    (zdir / "26136-store-ids.json").write_text(json.dumps({"2": {
+        "match_id": "m2", "fair": {"home": 0.70, "draw": 0.17, "away": 0.13}}}), encoding="utf-8")
+
+
+def test_crowd_polymarket_snapshots_an_issue_and_backfill_marks_the_source(tmp_path, monkeypatch):
+    """Polymarket 关注度（2026-10-09）：取数换成假接口，队名走真实别名表（多特/不来梅都在表里）。"""
+    import nutmeg.data.polymarket as pm
+
+    monkeypatch.setattr(pm, "default_fetch", _pm_fake)
+    _pm_issue(tmp_path)
+    runner = CliRunner()
+    out = runner.invoke(app, ["crowd", "polymarket", "--issue", "26136",
+                              "--data-dir", str(tmp_path)])
+    assert out.exit_code == 0, out.output
+    assert "对上 1 场" in out.output
+    doc = json.loads((tmp_path / "zucai" / "26136-polymarket.json").read_text("utf-8"))
+    assert doc["snapshots"][-1]["rows"]["2"]["rank"] == 1
+
+    back = runner.invoke(app, ["crowd", "polymarket-backfill", "--from", "26136", "--to", "26136",
+                               "--data-dir", str(tmp_path)])
+    assert back.exit_code == 0, back.output
+    doc = json.loads((tmp_path / "zucai" / "26136-polymarket.json").read_text("utf-8"))
+    assert doc["snapshots"][-1]["source"] == "closed_backfill"

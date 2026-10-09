@@ -82,6 +82,8 @@ def after_prep(*, issue: str, day: str, data_dir: Path, invoke: Invoker = _cli_i
     )
     # 人群层（2026-10-07）：市场底座快照 + 已登记 CR 假说出线索。失败只告警（接线层不向上抛）。
     invoke(["crowd", "fetch", "--issue", issue, "--data-dir", str(data_dir)])
+    # Polymarket 关注度（2026-10-09）：扫描要用 pm_volume_k / pm_rank，所以在 scan 之前
+    invoke(["crowd", "polymarket", "--issue", issue, "--data-dir", str(data_dir)])
     invoke(["crowd", "scan", "--issue", issue, "--data-dir", str(data_dir)])
 
 
@@ -92,6 +94,8 @@ def after_am(*, day: str, data_dir: Path, invoke: Invoker = _cli_invoke) -> None
     # 并集池刷新（2026-09-27）：竞彩入库+重建 Read、足彩表态转录 Read、未开球的交本体。
     # 当天重跑（17:15 刷新）会有新上板场次，F9 要在开球前履约
     invoke(["research", "refresh", "--day", day, "--data-dir", str(data_dir)])
+    # Polymarket 关注度快照（2026-10-09，只展示）；失败只告警
+    invoke(["crowd", "polymarket", "--day", day, "--data-dir", str(data_dir)])
 
 
 def after_observation_artifact(*, exp: str, duty: str, issue: str, day: str, artifact: Path,

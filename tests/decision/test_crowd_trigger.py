@@ -34,3 +34,23 @@ def test_evaluate_and_fires():
                         {"field": "p_face", "op": ">=", "v": 65}]}
     assert {no for no, _ in fires(hot_home, BOARD)} == {m.no for m in BOARD if m.p["3"] >= 0.65}
     assert evaluate({"not": draw}, facts(BOARD[0], "0", BOARD)) is True
+
+
+def test_attention_fields_are_facts_and_a_missing_value_never_fires():
+    """Polymarket 关注度（2026-10-09）：pm_volume_k / pm_rank；没上 Polymarket＝空，叶子为假。"""
+    from nutmeg.decision.crowd_source import CrowdMatch
+    from nutmeg.decision.crowd_trigger import evaluate, facts, validate
+
+    listed = CrowdMatch(no=2, league="德甲", home="多特", away="不来梅",
+                        p={"3": 0.70, "1": 0.17, "0": 0.13}, pm_volume_k=80.3, pm_rank=1)
+    unlisted = CrowdMatch(no=5, league="西甲", home="马拉加", away="西班人",
+                          p={"3": 0.35, "1": 0.30, "0": 0.35})
+    trig = {"all": [{"field": "is_fav", "op": "==", "v": True},
+                    {"field": "pm_rank", "op": "<=", "v": 3}]}
+    validate(trig)
+    board = [listed, unlisted]
+    assert facts(listed, "3", board)["pm_volume_k"] == 80.3
+    assert evaluate(trig, facts(listed, "3", board)) is True
+    assert evaluate(trig, facts(unlisted, "0", board)) is False
+    assert evaluate({"field": "pm_rank", "op": "not_in", "v": [1]}, facts(unlisted, "0", board)) \
+        is False

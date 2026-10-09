@@ -8,6 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from nutmeg.decision.board_rows import jczq_rows
+from nutmeg.decision.crowd_polymarket import brief_cell as attention_cell
+from nutmeg.decision.crowd_polymarket import last_rows
 from nutmeg.decision.faces import CODE_OF, FACES
 from nutmeg.decision.files import read_json
 from nutmeg.decision.team_load import brief_cell
@@ -16,6 +18,10 @@ FAV = 0.70
 LOAD_READING = ("损耗＝休 主/客天 · 14 天场数 主/客（⚑密＝单边密集，⇢＝下场≤3天，⏸＝长歇；"
                 "缺/停/轮/中＝rubric 伤停），**只看不拨动**：休息差历史上已被定价，"
                 "单边密集在 F16 前瞻检验中。")
+ATTENTION_READING = ("关注度＝Polymarket 成交 ≥$2 万的场：成交量 · 三向归一价 · "
+                     "与市场基线差最大的一面，"
+                     "**只看不拨动**：名气热门历史上不比市场更易翻车（高关注 n=181 +3.5pp）；"
+                     "奖池角度（人群多买名气热门）在 CR-cand-4、结果角度在 F17。")
 _KIND = {"research": "研究", "override": "改判", "market": "市场", "manual": "人工"}
 _STRUCT = {"single": "单", "double": "双", "full": "全包"}
 
@@ -71,6 +77,7 @@ def jczq_brief(data_dir: Path, day: str, *, rows: list[dict] | None = None) -> d
     except Exception:  # noqa: BLE001 —— 快照缺失只影响"单关"一列
         singles = {}
     load_rows = (read_json(day_dir / "team-load.json", {}) or {}).get("rows") or {}
+    pm_rows = last_rows(day_dir / "polymarket.json")
     rows = []
     for row in sorted(matches, key=lambda r: r["code"]):
         code, leg, read = row["code"], row["leg"], row["read"]
@@ -101,6 +108,7 @@ def jczq_brief(data_dir: Path, day: str, *, rows: list[dict] | None = None) -> d
             "note": _first_sentence(note),
             "confidence": read.get("confidence") or leg.get("confidence"),
             "load": brief_cell(load_rows.get(code)),
+            "attention": attention_cell(pm_rows.get(code)),
         })
     researched = sum(1 for r in rows if r["kind"] in ("研究", "改判"))
     favs = sum(1 for r in rows if r["fav"])
@@ -114,19 +122,20 @@ def render_jczq(brief: dict) -> str:
              f"｜开单关 {brief['singles_open']}",
              "",
              "| 编号 | 对阵 | 开球 | 市场 3/1/0 | 判断 3/1/0 | 表态 | rubric | 种类 | 大热 | 单关 "
-             "| 旗 | 损耗 | 一句话 |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| 旗 | 损耗 | 关注度 | 一句话 |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in brief["rows"]:
         belief = "跟市场" if r["same_as_market"] else r["belief"]
         single = "" if r["single"] is None else ("开" if r["single"] else "不开")
         lines.append(f"| {r['code']} | {r['name']} | {r['kickoff']} | {r['market']} | {belief} "
                      f"| {r['stance']} | {r.get('rubric', '—')} | {r['kind']} | {r['fav']} "
-                     f"| {single} | {r['flags']} | {r.get('load', '—')} | {r['note']} |")
+                     f"| {single} | {r['flags']} | {r.get('load', '—')} "
+                     f"| {r.get('attention', '')} | {r['note']} |")
     lines += ["",
               "> 读法：判断=跟市场 ＝ 研究没给出可用拨动（F9：belief≈市场）；"
               "表态面是研究的结构判断（F14 在量化）；"
               "大热 ≥0.70 比终盘多中约 +5pp（样本外）但体彩价上无钱边；"
-              "帽内 max-P 形状 403 天回放 −20%。" + LOAD_READING +
+              "帽内 max-P 形状 403 天回放 −20%。" + LOAD_READING + ATTENTION_READING +
               "**本包不含票面**——方案由人出，机器审票（`betslip preview`）。"]
     return "\n".join(lines) + "\n"
 
@@ -151,6 +160,7 @@ def zucai_brief(data_dir: Path, issue: str) -> dict:
     names = {str(m["match_no"]): f"{m.get('home_team')}-{m.get('away_team')}"
              for m in issue_doc.get("matches") or []}
     load_rows = (read_json(zdir / f"{issue}-team-load.json", {}) or {}).get("rows") or {}
+    pm_rows = last_rows(zdir / f"{issue}-polymarket.json")
     rows = []
     for no in sorted(legs, key=lambda k: int(k)):
         leg = legs[no]
@@ -171,6 +181,7 @@ def zucai_brief(data_dir: Path, issue: str) -> dict:
             "flags": _flags_text(leg),
             "note": _first_sentence(j.get("note") or leg.get("note")),
             "load": brief_cell(load_rows.get(str(no))),
+            "attention": attention_cell(pm_rows.get(str(no))),
         })
     return {"issue": issue, "rows": rows, "n": len(rows),
             "favs": sum(1 for r in rows if r["fav"])}
@@ -180,14 +191,16 @@ def render_zucai(brief: dict) -> str:
     lines = [f"# 初判与解读 · 足彩 {brief['issue']}",
              f"{brief['n']} 场｜≥0.70 大热 {brief['favs']}", "",
              "| 场 | 对阵 | 市场 3/1/0 | 判断 3/1/0 | 处方面 | judgment-v1 | 表态 | rubric | 大热 "
-             "| 旗 | 损耗 | 一句话 |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| 旗 | 损耗 | 关注度 | 一句话 |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in brief["rows"]:
         lines.append(f"| {r['no']} | {r['name']} | {r['market']} | {r['belief']} | {r['faces']} "
                      f"| {r['action']} | {r['stance']} | {r.get('rubric', '—')} | {r['fav']} "
-                     f"| {r['flags']} | {r.get('load', '—')} | {r['note']} |")
+                     f"| {r['flags']} | {r.get('load', '—')} | {r.get('attention', '')} "
+                     f"| {r['note']} |")
     lines += ["", "> 处方面 = 机器的判断面集合；**足彩初稿不省略**（Jun 2026-10-01）：机器按"
                   "处方忠实规则出首版票面（见下「足彩初稿」，`nutmeg judgment draft --issue`），"
                   "Jun 改票 → `betslip preview --faces … --issue …` 审票 → 讨论定案 → 登记。"
-                  "帽内 max-P 形状 403 天回放 −58%，只作对照。" + LOAD_READING]
+                  "帽内 max-P 形状 403 天回放 −58%，只作对照。" + LOAD_READING
+                  + ATTENTION_READING]
     return "\n".join(lines) + "\n"

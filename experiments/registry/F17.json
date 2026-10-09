@@ -1,0 +1,27 @@
+{
+ "exp_id": "F17",
+ "claim": "开球前 Polymarket 成交 ≥ $50k 的场里，市场模态面 ≥60% 的热门实开率低于市场概率——名气热卖的热门被高估（Jun 2026-10-09 的直觉，作证伪检验）。",
+ "mechanism": "高关注度带来追捧，价格可能被名气抬高。事前证据偏向否定（2026-10-09 会话粗测，jc-history 终盘热门 ≥60% × Polymarket 已结束对阵）：终场成交 ≥$100k 的热门 n=181 实开 72.9% vs 终盘 69.4%（+3.5pp，CI[−2.9,+9.5]），与不在 Polymarket 的热门（+3.6pp）无差；全部热门 +5.2pp CI[+3.0,+7.3]（同 F10、「大牌带洞 7/7」）。阈值取赛前 $50k（赛前成交约为终场的一半上下），登记后不改。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "price_only",
+ "window": {
+  "date_from": "2026-10-10",
+  "n_min": 120
+ },
+ "falsifier": {
+  "metric": "hyped_fav_resid_pp",
+  "stratum": "pooled",
+  "n_min": 120,
+  "bound": "ci_upper",
+  "threshold_pp": 0.0,
+  "direction": "gt_means_falsified"
+ },
+ "stop_rule": "累计 120 场结账；CI 上界 > 0 即证伪（名气热门不被高估）。只计开球前的 Polymarket 快照（fetched_at < kickoff）；期间不改成交阈值（$50k）与热门线（模态面 ≥60%），不接入 rubric 与票面。 窗口从登记次日 2026-10-10 起算。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "source_doc": "docs/superpowers/specs/2026-10-09-polymarket-attention-design.md",
+ "registered_at": "2026-10-09"
+}

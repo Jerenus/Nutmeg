@@ -112,6 +112,74 @@ def backfill_cmd(issue_from: str = typer.Option(..., "--from"),
             typer.echo(f"  {issue} {status}")
 
 
+def _pm_summary(label: str, path) -> str:
+    from nutmeg.decision.crowd_polymarket import SHOW_MIN_VOLUME
+    from nutmeg.decision.files import read_json
+
+    if path is None:
+        return f"{label}: 无场次（未写）"
+    snaps = (read_json(path, {}) or {}).get("snapshots") or []
+    rows = (snaps[-1].get("rows") if snaps else None) or {}
+    liquid = sum(1 for r in rows.values() if (r.get("volume") or 0) >= SHOW_MIN_VOLUME)
+    return f"{label}: 对上 {len(rows)} 场（有量 ≥$20k {liquid} 场）→ {path}"
+
+
+@crowd_app.command("polymarket")
+def polymarket_cmd(issue: str | None = typer.Option(None, "--issue"),
+                   day: str | None = typer.Option(None, "--day",
+                                                  help="竞彩当日板 + 当天截止的足彩期次"),
+                   data_dir: Path = _DATA_DIR) -> None:
+    """Polymarket 关注度快照（2026-10-09，只读公开接口）：成交量 / 三向归一价 / 与市场基线差 /
+    本板名次，追加到 `<期>-polymarket.json` / `daily/<日>/polymarket.json`。只展示不拨动。"""
+    from datetime import datetime
+
+    from nutmeg.data import polymarket as pm
+    from nutmeg.decision.bj_time import BJ
+    from nutmeg.decision.crowd_polymarket import snapshot_day, snapshot_issue
+
+    if not issue and not day:
+        raise typer.BadParameter("需要 --issue 或 --day")
+    now = datetime.now(BJ).isoformat(timespec="seconds")
+    try:
+        if issue:
+            labelled = [(f"足彩 {issue}", snapshot_issue(Path(data_dir), issue,
+                                                       fetch=pm.default_fetch, now=now))]
+        else:
+            out = snapshot_day(Path(data_dir), day, fetch=pm.default_fetch, now=now)
+            labelled = [(f"竞彩 {day}", out["jczq"]),
+                        *((f"足彩 {k}", v) for k, v in out["zucai"].items())]
+    except Exception as exc:  # noqa: BLE001 —— 网络/接口变化：失败要看得见，不当成空结果
+        typer.echo(f"crowd polymarket 失败：{exc!r}"[:300])
+        raise typer.Exit(code=1) from exc
+    for label, path in labelled:
+        typer.echo(_pm_summary(label, path))
+
+
+@crowd_app.command("polymarket-backfill")
+def polymarket_backfill_cmd(issue_from: str = typer.Option(..., "--from"),
+                            issue_to: str = typer.Option(..., "--to"),
+                            data_dir: Path = _DATA_DIR) -> None:
+    """历史期次的 Polymarket 关注度（已结束对阵的终场总成交，写 `source=closed_backfill` 快照）。
+
+    供人群假说回放用：终场成交与赛前成交口径不同，所以触发条件用期内名次 `pm_rank`。"""
+    from datetime import datetime
+
+    from nutmeg.data import polymarket as pm
+    from nutmeg.decision.bj_time import BJ
+    from nutmeg.decision.crowd_polymarket import backfill
+
+    zdir = _zdir(data_dir)
+    # 期次文件 26070 起才有；更早的期用 zgzcw 快照对号（人群回放块 26035–26089）
+    stems = {p.name.split("-")[0] for pattern in ("*-issue.json", "*-zgzcw.json")
+             for p in zdir.glob(pattern)}
+    issues = sorted(i for i in stems if i.isdigit() and issue_from <= i <= issue_to)
+    now = datetime.now(BJ).isoformat(timespec="seconds")
+    out = backfill(Path(data_dir), issues, fetch=pm.default_fetch, now=now)
+    matched = sum(out.values())
+    typer.echo(f"回补 {len(out)} 期，对上 {matched} 场（平均每期 "
+               f"{matched / max(len(out), 1):.1f} / 14）")
+
+
 @crowd_app.command("scan")
 def scan_cmd(issue: str = _ISSUE, registry_dir: Path = _REGISTRY,
              data_dir: Path = _DATA_DIR) -> None:

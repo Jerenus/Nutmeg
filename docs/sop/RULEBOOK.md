@@ -99,7 +99,7 @@
 - **模型**：`log 任九奖金 = a + b·S + γ·X`。S = −Σ ln p(实际赛果)（非作废场）；X = 触发面「实开数 − 市场期望数」；p 统一取 zgzcw `europeSp` 去水（全部期次同一源，混源会把源差当成人群偏离）。γ 用 Frisch–Waugh 两步 OLS + 按期 bootstrap 2,000 次。观测单位是**期**（每期一个奖金）。
 - **方向**：γ>0 = 全国人群**少买**触发面（`crowd_bias=under`，role `cover`）；γ<0 = **多买**（`over`，role `fade`）。
 - **结账**：`rsi grade --exp CR<k> --mode replay|prospective`；metric = 方向符号 × γ × 100（每多开一个触发面奖金变化 %，正数＝假说方向成立）；CI 下界 ≥0 survived，上界 <0 falsified，否则 inconclusive；**判决只认 prospective**，n_min 30 期，60 期仍跨线提 retire。grade 先核登记原件与内核冻结指纹，不符拒绝（改 trigger 走 `rsi amend`）。
-- **trigger DSL（封闭）**：粒度 (场, 面)；字段 `face` `p_face` `p_home` `p_draw` `p_away`（%）`fav_face` `is_fav` `league` `league_group`(national/top5/other) `board_hot_count`（最大面 ≥65% 的场数）；运算 `>= <= == in not_in`；`all/any/not` 至多 2 层；表外字段登记即拒。
+- **trigger DSL（封闭）**：粒度 (场, 面)；字段 `face` `p_face` `p_home` `p_draw` `p_away`（%）`fav_face` `is_fav` `league` `league_group`(national/top5/other) `board_hot_count`（最大面 ≥65% 的场数）；**`pm_volume_k`（Polymarket 成交量，千美元）`pm_rank`（本期 14 场按成交量的名次，1＝最受关注）——2026-10-09 加，没上 Polymarket＝空，空值的叶子一律为假**；运算 `>= <= == in not_in`；`all/any/not` 至多 2 层；表外字段登记即拒。回放用 `crowd polymarket-backfill`（终场总成交，与赛前口径不同，所以触发用名次）。**CR2**「高关注大热被全国人群多买」（2026-10-09 Jun 签字，前瞻 26137 起；回放两块不一致：26090–26135 γ −53.3% 显著、26035–26089 −3.8% 为零）见 `docs/superpowers/evidence/2026-10-09-polymarket-attention.md`。
 - **advisory → 约束**：只有 `rsi deploy` 过的 CR 的线索成为枚举约束（●）；之前一律 ⚑，只看不用。线索在字典序第三序以内：事实层否决 → 帽内结构 → 人群分开。
 - **提名**：48 桶（3 纯面 + 面 × 5 市场档 × 3 联赛组）；门＝CI 不含 0 且窗口内实开 ≥8 次；**按 z = |γ|/标准误排序**（不按 |γ|：首轮 |γ| 前三全是稀有桶，未看过的块上翻号）；与已登记或已选候选触发集合重叠 ≥50% 不提。48 桶在 5% 水平期望约 2.4 个假阳性——候选只是提名。
 - **签字**：候选写了 `mechanism`（为什么全国人群会这么偏）才能 `crowd sign`；首轮提名块 26090–26135，回放验证块 26035–26089；之后的提名扫全部已结期，验证只靠前瞻。

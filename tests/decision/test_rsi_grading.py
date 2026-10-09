@@ -144,3 +144,31 @@ def test_f16_grades_the_more_loaded_side_when_the_14_day_gap_is_at_least_two():
     assert g.n_cum == 2 and g.selected_keys == ("a", "b")
     assert abs(g.metric_value_pp - ((0 - 0.50) + (1 - 0.25)) / 2 * 100) < 1e-9
     assert PROSPECTIVE_ADAPTERS["F16"] is grade_f16_prospective      # 2026-10-09 登记
+
+
+def _pm_row(key, volume, actual, fav=0.70, *, fetched="2026-10-10T12:00:00+08:00",
+            day="2026-10-10"):
+    rest = (1 - fav) / 2
+    return {"key": key, "date": day, "actual": actual,
+            "fair": {"home": fav, "draw": rest, "away": rest},
+            "polymarket": {"volume": volume, "fetched_at": fetched,
+                           "kickoff": "2026-10-10T20:00:00+08:00"}}
+
+
+def test_f17_grades_hyped_favourites_by_pre_kickoff_polymarket_volume():
+    """F17（2026-10-09 登记）：赛前成交 ≥$50k × 模态面 ≥60% → 模态面残差。"""
+    from nutmeg.decision.rsi_grading import PROSPECTIVE_ADAPTERS, grade_f17_prospective
+
+    rows = [
+        _pm_row("a", 80_000, "3"),                 # 热门开出 → 1 − 0.70
+        _pm_row("b", 60_000, "1"),                 # 热门没开 → 0 − 0.70
+        _pm_row("c", 30_000, "3"),                 # 成交不够
+        _pm_row("d", 90_000, "3", fav=0.55),       # 不够热
+        _pm_row("e", 90_000, "3", fetched="2026-10-10T21:00:00+08:00"),   # 开球后快照
+        {"key": "f", "date": "2026-10-10", "actual": "3",
+         "fair": {"home": 0.7, "draw": 0.15, "away": 0.15}},              # 没挂快照
+    ]
+    g = grade_f17_prospective(rows, window={"date_from": "2026-10-10"})
+    assert g.n_cum == 2 and g.selected_keys == ("a", "b")
+    assert abs(g.metric_value_pp - ((1 - 0.70) + (0 - 0.70)) / 2 * 100) < 1e-9
+    assert PROSPECTIVE_ADAPTERS["F17"] is grade_f17_prospective      # 2026-10-09 登记

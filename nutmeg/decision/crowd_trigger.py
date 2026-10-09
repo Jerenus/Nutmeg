@@ -4,7 +4,9 @@ from __future__ import annotations
 from nutmeg.decision.crowd_source import FACES, CrowdMatch
 
 FIELDS = frozenset({"face", "p_face", "p_home", "p_draw", "p_away", "fav_face", "is_fav",
-                    "league", "league_group", "board_hot_count"})
+                    "league", "league_group", "board_hot_count",
+                    # Polymarket 关注度（2026-10-09）：成交量千美元 / 本期名次（1＝最受关注）
+                    "pm_volume_k", "pm_rank"})
 OPS = frozenset({">=", "<=", "==", "in", "not_in"})
 MAX_DEPTH = 2
 HOT = 0.65
@@ -51,6 +53,8 @@ def facts(match: CrowdMatch, face: str, board: list[CrowdMatch]) -> dict:
         "league": match.league,
         "league_group": match.league_group,
         "board_hot_count": sum(1 for m in board if max(m.p.values()) >= HOT),
+        "pm_volume_k": match.pm_volume_k,
+        "pm_rank": match.pm_rank,
     }
 
 
@@ -62,6 +66,8 @@ def evaluate(node: dict, f: dict) -> bool:
     if "not" in node:
         return not evaluate(node["not"], f)
     left, op, v = f[node["field"]], node["op"], node["v"]
+    if left is None:                 # 缺值（如没上 Polymarket）：任何叶子都不触发，不猜
+        return False
     if op == ">=":
         return left >= v
     if op == "<=":

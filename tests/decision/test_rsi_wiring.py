@@ -24,8 +24,11 @@ def test_after_am_builds_research_board_then_schedules_match_duties(tmp_path):
     after_am(day="2026-09-19", data_dir=tmp_path,
              invoke=lambda argv: calls.append(argv) or (0, ""))
     # 刷新后立即重建两渠道 Read：新上板的场次当场有 Read，F9 才能在开球前履约（2026-09-26）
+    # Polymarket 关注度快照（2026-10-09）随入板一起抓，失败只告警
     assert [call[:2] for call in calls] == [
-        ["research", "board"], ["rsi", "schedule"], ["research", "refresh"]]
+        ["research", "board"], ["rsi", "schedule"], ["research", "refresh"],
+        ["crowd", "polymarket"]]
+    assert calls[-1][2:4] == ["--day", "2026-09-19"]
 
 
 def test_decision_am_calls_research_wiring_after_success(tmp_path, monkeypatch):
@@ -268,5 +271,7 @@ def test_after_prep_ends_with_crowd_fetch_then_scan(tmp_path):
     calls = []
     after_prep(issue="26136", day="2026-10-08", data_dir=tmp_path,
                invoke=lambda argv: calls.append(argv) or (0, ""))
-    assert [c[:2] for c in calls[-2:]] == [["crowd", "fetch"], ["crowd", "scan"]]
-    assert all("26136" in c for c in calls[-2:])
+    # 扫描要用关注度字段：zgzcw 底座 → Polymarket 快照 → 线索扫描（2026-10-09）
+    assert [c[:2] for c in calls[-3:]] == [["crowd", "fetch"], ["crowd", "polymarket"],
+                                           ["crowd", "scan"]]
+    assert all("26136" in c for c in calls[-3:])

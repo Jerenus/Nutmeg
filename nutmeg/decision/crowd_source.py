@@ -37,6 +37,9 @@ class CrowdMatch:
     away: str
     p: dict[str, float]          # {"3","1","0"} 去水市场概率，和为 1
     asian: str = ""
+    # Polymarket 关注度（2026-10-09）：成交量（千美元）与本期名次；没上 Polymarket＝None
+    pm_volume_k: float | None = None
+    pm_rank: int | None = None
 
     @property
     def league_group(self) -> str:
@@ -103,7 +106,14 @@ def load_board(zdir: Path, issue: str) -> tuple[str, list[CrowdMatch]] | None:
     snaps = json.loads(path.read_text("utf-8")).get("snapshots") or []
     if not snaps:
         return None
-    return snaps[-1]["fetched_at"], parse_zgzcw(snaps[-1]["raw"])
+    from dataclasses import replace
+
+    from nutmeg.decision.crowd_polymarket import attention_for_issue
+
+    attention = attention_for_issue(zdir, issue)
+    board = [replace(m, pm_volume_k=attention[m.no][0], pm_rank=attention[m.no][1])
+             if m.no in attention else m for m in parse_zgzcw(snaps[-1]["raw"])]
+    return snaps[-1]["fetched_at"], board
 
 
 def backfill(zdir: Path, issues: Iterable[str], *, fetcher: Fetcher | None = None,

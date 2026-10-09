@@ -76,3 +76,24 @@ def test_parse_skips_a_match_with_a_zero_price():
 
     doc = {"matchInfo": [{"europeSp": "0 3.2 2.5"}, {"europeSp": "2.0 3.2 3.5"}]}
     assert [m.no for m in parse_zgzcw(doc)] == [2]
+
+
+def test_load_board_merges_polymarket_attention_from_the_issue_snapshot(tmp_path):
+    """2026-10-09：人群层的关注度字段来自 `<期>-polymarket.json` 最后一张快照。"""
+    import json as _json
+
+    from nutmeg.decision.crowd_polymarket import write_snapshot
+    from nutmeg.decision.crowd_source import load_board
+
+    zdir = tmp_path
+    (zdir / "26136-zgzcw.json").write_text(_json.dumps({"issue": "26136", "snapshots": [
+        {"fetched_at": "t", "raw": {"matchInfo": [
+            {"hostName": "多特", "guestName": "不来梅", "leageName": "德甲",
+             "europeSp": "1.40 5.20 7.50"},
+            {"hostName": "马拉加", "guestName": "西班人", "leageName": "西甲",
+             "europeSp": "2.70 3.20 2.60"}]}}]}, ensure_ascii=False), encoding="utf-8")
+    write_snapshot(zdir / "26136-polymarket.json", {"issue": "26136"},
+                   {"1": {"volume": 80268.0, "rank": 1}}, fetched_at="t")
+    _, board = load_board(zdir, "26136")
+    assert (board[0].pm_volume_k, board[0].pm_rank) == (80.268, 1)
+    assert (board[1].pm_volume_k, board[1].pm_rank) == (None, None)
