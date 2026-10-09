@@ -140,3 +140,72 @@ def test_issue_brake_vetoes_a_zucai_preview_over_the_halved_cap(tmp_path: Path):
     [row] = [json.loads(x) for x in (data / "betslips.jsonl").read_text("utf-8").splitlines()]
     assert row["diagnosis"]["review"]["vetoed"] is True
     assert "BRAKE" in row["diagnosis"]["review"]["codes"]
+
+
+def _zucai_plan(tmp_path: Path, rows: list[dict]) -> Path:
+    fair = {str(n): {"home": 0.5, "draw": 0.28, "away": 0.22} for n in range(1, 15)}
+    (tmp_path / "fair.json").write_text(json.dumps(fair), encoding="utf-8")
+    plan = [{"channel": "renjiu", "placed_at": "2026-10-09", "issue": "26136",
+             "fair_file": "fair.json", **row} for row in rows]
+    (tmp_path / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    return tmp_path / "plan.json"
+
+
+MAIN = "1:3 2:31 3:30 4:31 5:310 6:3 7:3 8:3 9:3"
+SUB = "1:31 2:3 3:3 4:30 5:10 6:31 10:3 11:3 12:3"
+
+
+def test_preview_set_reports_group_coverage_co_death_and_pinned_results(tmp_path: Path):
+    """26136（2026-10-09）：至少中一张、两两同死、钉住一场赛果后各票还剩多少——此前全靠手写脚本。"""
+    from nutmeg.decision.slip_group import given, p_all, p_any
+
+    data = tmp_path / "data"
+    data.mkdir()
+    plan = _zucai_plan(tmp_path, [{"label": "主", "faces": MAIN}, {"label": "副", "faces": SUB}])
+    out = runner.invoke(app, ["betslip", "preview-set", "--plan", str(plan), "--given", "1:1",
+                              "--data-dir", str(data)])
+    fair = json.loads((tmp_path / "fair.json").read_text("utf-8"))
+    main = dict(x.split(":") for x in MAIN.split())
+    sub = dict(x.split(":") for x in SUB.split())
+    union = p_any([main, sub], fair)
+    assert f"整组算术（26136，计划 2 张）：至少中一张 {union * 100:.2f}%" in out.output, out.output
+    assert "同死 主×副" in out.output and "（1开0、2开0、3开1、6开0）" in out.output
+    pinned = given(fair, {"1": "1"})
+    assert f"若 1开1：主 0.00%｜副 {p_all([sub], pinned) * 100:.2f}%" in out.output
+
+
+def test_preview_set_alternatives_report_coverage_together_with_registered_tickets(
+        tmp_path: Path):
+    """比副单备选时真正要看的是它和已买主单合起来盖住多少，不是它自己的 P。"""
+    data = tmp_path / "data"
+    data.mkdir()
+    plan = _zucai_plan(tmp_path, [{"label": "副A", "faces": SUB},
+                                  {"label": "副B", "faces": "1:31 2:31 3:30 6:3 8:31 9:31 "
+                                                            "10:3 13:3 14:310"}])
+    reg = runner.invoke(app, ["betslip", "register", "--slip-id", "26136-R9-主", "--channel",
+                              "renjiu", "--placed-at", "2026-10-09", "--issue", "26136",
+                              "--faces", MAIN.replace(":", "·"),
+                              "--fair-file", str(tmp_path / "fair.json"), "--data-dir", str(data)])
+    assert reg.exit_code == 0, reg.output
+    out = runner.invoke(app, ["betslip", "preview-set", "--plan", str(plan), "--alternatives",
+                              "--data-dir", str(data)])
+    assert "互斥备选与已登记实购合起来（26136，已登记 1 张" in out.output, out.output
+    assert "【副A】至少中一张" in out.output and "与 26136-R9-主 同死" in out.output
+    assert "【副B】至少中一张" in out.output
+
+
+def test_complement_searches_a_ticket_that_maximises_coverage_with_the_base(tmp_path: Path):
+    data = tmp_path / "data"
+    data.mkdir()
+    plan = _zucai_plan(tmp_path, [{"label": "主", "faces": MAIN}])
+    out = runner.invoke(app, ["betslip", "complement", "--plan", str(plan), "--max-notes", "8",
+                              "--fix", "1:31", "--data-dir", str(data)])
+    assert out.exit_code == 0, out.output
+    assert "互补搜索（26136，基准 1 张" in out.output
+    [best] = [line for line in out.output.splitlines() if line.startswith("最好的一张：")]
+    faces = dict(x.split(":") for x in best.split("：", 1)[1].split("｜")[0].split())
+    assert faces["1"] == "31" and len(faces) == 9
+    assert not any(faces.get(no) == f for no, f in
+                   (x.split(":") for x in MAIN.split()) if len(f) == 1)   # 不与主单共享裸单
+    assert "合起来至少中一张" in out.output and "与 主 同死" in out.output
+    assert not (data / "betslips.jsonl").exists()
