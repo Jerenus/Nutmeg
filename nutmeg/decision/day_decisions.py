@@ -27,14 +27,18 @@ REGISTER_DEFAULT = "未登记＝空仓（不买）"
 
 
 def log_preview(data_dir: Path | str, *, placed_at: str, channel: str, issue: str,
-                keys: list[str], stake: int, vetoed: bool, now: datetime) -> Path:
-    """`betslip preview` 每审一张就记一行：播报据此知道「有在审方案」。"""
+                keys: list[str], stake: int, vetoed: bool, now: datetime,
+                faces: dict[str, str] | None = None, p: float | None = None) -> Path:
+    """`betslip preview` 每审一张就记一行：播报据此知道「有在审方案」。
+    足彩另记票面与当时的 P(全对)：复盘的选择账靠它还原开赛前审过哪几版（2026-10-10）。"""
     from nutmeg.decision.day_paths import PREVIEWS
 
     path = day_dir(data_dir, str(placed_at)[:10]) / PREVIEWS
     path.parent.mkdir(parents=True, exist_ok=True)
     row = {"at": now.isoformat(timespec="seconds"), "channel": channel, "issue": issue,
            "keys": list(keys), "stake": stake, "vetoed": vetoed}
+    if faces:
+        row |= {"faces": dict(faces), "p": p}
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
     return path

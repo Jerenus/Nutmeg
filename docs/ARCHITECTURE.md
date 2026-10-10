@@ -401,7 +401,7 @@ flowchart TB
   A["方案<br/>竞彩腿文件 / 足彩票面"] --> B["betslip preview（买之前）"]
   subgraph PRE["审票输出"]
     direction LR
-    B1["诊断<br/>共享裸单 · 联死概率<br/>对照处方 / 初稿"] ~~~ B2["审票<br/>V1 回报 &lt; 0.5 否决<br/>V2 与已购票共享裸单 否决<br/>V3 倍投 / 重注 警告"] ~~~ B3["刹车行<br/>本月净 vs −3,000"] ~~~ B4["预审留痕<br/>previews.jsonl<br/>→ 截止播报"]
+    B1["诊断<br/>共享裸单 · 联死概率<br/>对照处方 / 初稿"] ~~~ B2["审票<br/>V1 回报 &lt; 0.5 否决<br/>V2 与已购票共享裸单 否决<br/>V3 倍投 / 重注 警告"] ~~~ B3["刹车行<br/>本月净 vs −3,000"] ~~~ B4["预审留痕<br/>previews.jsonl（含票面与 P）<br/>→ 截止播报 · 复盘选择账"]
   end
   B --> PRE
   PRE -->|"有否决"| RE["改票后重新 preview<br/>坚持原票也可登记"]

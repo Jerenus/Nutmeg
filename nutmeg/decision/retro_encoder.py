@@ -15,6 +15,8 @@ import statistics
 from pathlib import Path
 
 from nutmeg.decision.betslip import BetSlip, load_slips, settle_slip
+from nutmeg.decision.bj_time import aware, parse_bj
+from nutmeg.decision.day_paths import PREVIEWS
 from nutmeg.decision.faces import CODE_OF, FACE_OF
 from nutmeg.decision.files import read_json
 from nutmeg.decision.match_results import board_outcomes
@@ -166,8 +168,58 @@ def encode_zucai_issue(data_dir: Path, issue: str, *, prize_per_note: float | No
                 if settled else None),
         "prize_per_note": prize_per_note, "encoded_at": now or "",
     }
+    facts["choices"] = choice_ledger(data_dir, str(issue), outcomes, slips)
     _merge(sb.setdefault("tickets", {}), str(issue), facts)
     sb["updated_at"] = now or sb.get("updated_at")
     path.write_text(json.dumps(sb, ensure_ascii=False, indent=1), encoding="utf-8")
     return {"issue": str(issue), "slips": len(rows), "prescription": facts["prescription"],
-            "net": facts["net"]}
+            "net": facts["net"], "choices": facts["choices"]}
+
+
+def choice_ledger(data_dir: Path, issue: str, outcomes: list[str],
+                  bought: list[BetSlip]) -> dict:
+    """选择账（2026-10-10）：开赛前审过的票面 vs 实买的票，按渠道。
+
+    26136 开赛前审过约 80 版任九，事后两版能中、实买的 8/9——单期不是信息（各版 P 加总约
+    5.5，事后总找得到一版中的）；攒期数才答得了「最后几轮改票平均是加分还是减分」。
+    p_rank＝实买那张的事前 P 在审过的版本里排第几（1＝最高）。只算事实，不判断。"""
+    cutoff = _issue_first_kickoff(data_dir, issue)
+    seen: dict[str, dict[tuple, float | None]] = {}
+    for path in sorted((Path(data_dir) / "daily").glob(f"*/{PREVIEWS}")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if str(row.get("issue")) != issue or not row.get("faces"):
+                continue
+            if cutoff and aware(row["at"]) >= cutoff:
+                continue
+            key = tuple(sorted(row["faces"].items(), key=lambda kv: int(kv[0])))
+            seen.setdefault(row["channel"], {})[key] = row.get("p")
+
+    def hit(faces) -> bool:
+        return all(outcomes[int(no) - 1] in str(f) for no, f in faces)
+
+    out = {}
+    for channel, versions in seen.items():
+        ps = [p for p in versions.values() if p is not None]
+        mine = []
+        for slip in (s for s in bought if s.channel == channel):
+            key = tuple(sorted(slip.faces.items(), key=lambda kv: int(kv[0])))
+            p = versions.get(key, slip.hit_probability)
+            mine.append({"id": slip.slip_id, "p": p,
+                         "p_rank": None if p is None else 1 + sum(x > p for x in ps),
+                         "hit": hit(key)})
+        out[channel] = {"considered": len(versions),
+                        "would_hit": sum(hit(key) for key in versions),
+                        "best_p": max(ps, default=None), "bought": mine}
+    return out
+
+
+def _issue_first_kickoff(data_dir: Path, issue: str):
+    """本期最早开球；查不到 → None（不截，开球后的预审会混进来，但不伪造时间）。"""
+    doc = read_json(Path(data_dir) / "zucai" / f"{issue}-issue.json", {}) or {}
+    kicks = [parse_bj(m.get("kickoff_bj")) for m in doc.get("matches") or []]
+    kicks = [k for k in kicks if k]
+    return min(kicks) if kicks else None

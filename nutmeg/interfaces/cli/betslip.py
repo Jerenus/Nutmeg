@@ -472,7 +472,8 @@ def _log_preview(data_dir: Path, slip, vetoed: bool) -> None:
         keys = [leg.key for leg in slip.legs] or list(slip.faces)
         log_preview(data_dir, placed_at=slip.placed_at, channel=slip.channel, issue=slip.issue,
                     keys=keys, stake=slip.stake_yuan, vetoed=vetoed,
-                    now=_datetime.now().astimezone())
+                    now=_datetime.now().astimezone(), faces=slip.faces or None,
+                    p=slip.hit_probability)
     except Exception as exc:  # noqa: BLE001 —— 不挡预审，但截止提醒会因此漏掉，必须看得见
         _cli.typer.echo(f"⚠️预审留痕写入失败（截止播报不会提醒这张票）：{exc!r}", err=True)
 

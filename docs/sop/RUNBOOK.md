@@ -87,7 +87,7 @@
 
 ## 收尾检查表（每期）
 
-- [ ] scoreboard.json 更新（连锁/牌照/保险兑现/裁决记分）——**事实部分由复盘编码器写**：竞彩随 09:45 `day.settle` 自动（`tickets/jczq-<日>` 断腿/注金/派奖、`balance_ledger/jczq-<日>` 市场/研究/终判 Brier）；足彩开奖后 `uv run nutmeg retro encode --issue <期> --prize-per-note <官方单注>`（`key`/`board`/`note` 人写字段不会被覆盖）
+- [ ] scoreboard.json 更新（连锁/牌照/保险兑现/裁决记分）——**事实部分由复盘编码器写**：竞彩随 09:45 `day.settle` 自动（`tickets/jczq-<日>` 断腿/注金/派奖、`balance_ledger/jczq-<日>` 市场/研究/终判 Brier）；足彩开奖后 `uv run nutmeg retro encode --issue <期> --prize-per-note <官方单注>`（`key`/`board`/`note` 人写字段不会被覆盖）；同时写 `choices` **选择账**（2026-10-10）：按渠道列开赛前预审过几版票面、几版事后能中、实买票的事前 P 在其中排第几（`p_rank` 1＝最高）。单期不读结论（26136 审过约 80 版，事后必有能中的）；攒够期数再看「最后几轮改票平均加分还是减分」。依赖 `previews.jsonl` 自 2026-10-10 起记的 `faces`/`p`，之前的期为空
 - [ ] rx 每条预测标 outcome（✓/✗/NA+falsifier 执行）
 - [ ] 被取代的记忆条目标记/归档
 - [ ] 新联赛上线三步：别名表→实体种子（name_zh 精确=leagueAbbName）→sync+audit

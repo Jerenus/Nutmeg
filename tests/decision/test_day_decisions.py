@@ -114,3 +114,14 @@ def test_failed_job_is_dropped_once_a_later_run_succeeds(tmp_path: Path):
                 {"job": "brief", "exit": 0, "summary": "ok"}]
     ids = {r["id"] for r in build_decisions(_brief(), timeline, data_dir=tmp_path, now=NOW)}
     assert "job:brief" not in ids
+
+
+def test_log_preview_keeps_the_faces_and_the_ex_ante_p(tmp_path: Path):
+    """选择账要的是票面与当时的 P——只有场次号的留痕事后还原不出审过哪几版（26136）。"""
+    from nutmeg.decision.day_decisions import log_preview
+
+    path = log_preview(tmp_path, placed_at="2026-10-09", channel="renjiu", issue="26136",
+                       keys=["1", "2"], stake=4, vetoed=False, now=NOW,
+                       faces={"1": "31", "2": "3"}, p=0.1034)
+    row = json.loads(path.read_text("utf-8").splitlines()[-1])
+    assert row["faces"] == {"1": "31", "2": "3"} and row["p"] == 0.1034

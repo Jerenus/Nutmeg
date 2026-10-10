@@ -122,3 +122,59 @@ def test_encode_zucai_issue_reads_the_official_draw_and_prescription(tmp_path: P
     assert ticket["key"] == "人写" and ticket["draw"].startswith("0 1 0 1")
     assert ticket["slips"][0]["payout"] == 217.0 and ticket["net"] == 217.0 - 324
     assert encode_zucai_issue(data, "26135") is None
+
+
+def test_encode_zucai_issue_writes_a_choice_ledger_from_pre_kickoff_previews(tmp_path: Path):
+    """选择账：开赛前审过的票面里实买那张事前 P 排第几、几版事后能中；开球后的预审不算。"""
+    data = tmp_path / "data"
+    _write(data / "zucai" / "official-results.json", {"26136": "1 1 3 1 1 3 3 0 3 3 0 0 3 0"})
+    _write(data / "zucai" / "26136-issue.json", {"matches": [
+        {"match_no": 1, "kickoff_bj": "2026-10-10 03:00"},
+        {"match_no": 2, "kickoff_bj": "2026-10-10 02:30"}]})
+    bought = {"1": "3", "2": "31", "3": "30", "4": "31", "6": "310", "9": "31", "10": "3",
+              "13": "31", "14": "30"}
+    winner = {"1": "31", "2": "31", "4": "31", "5": "310", "7": "30", "9": "3", "10": "3",
+              "13": "30", "14": "30"}
+    loser = {**winner, "1": "3"}
+    sfc = {str(i): "3" for i in range(1, 15)}
+
+    def row(at, channel, faces, p):
+        return json.dumps({"at": at, "channel": channel, "issue": "26136", "keys": list(faces),
+                           "stake": 384, "vetoed": False, "faces": faces, "p": p})
+
+    _write(data / "daily" / "2026-10-08" / "previews.jsonl", "\n".join([
+        row("2026-10-08T12:00:00+08:00", "renjiu", loser, 0.08),
+        json.dumps({"at": "2026-10-08T12:01:00+08:00", "channel": "renjiu", "issue": "26136",
+                    "keys": ["1"], "stake": 2, "vetoed": True}),          # 旧格式：无票面，跳过
+    ]) + "\n")
+    _write(data / "daily" / "2026-10-09" / "previews.jsonl", "\n".join([
+        row("2026-10-09T11:53:00+08:00", "renjiu", winner, 0.103),
+        row("2026-10-09T12:00:00+08:00", "renjiu", bought, 0.114),
+        row("2026-10-09T12:05:00+08:00", "renjiu", bought, 0.114),       # 同票面重复预审算一版
+        row("2026-10-09T13:00:00+08:00", "shengfucai", sfc, 0.0001),
+        row("2026-10-10T05:58:00+08:00", "renjiu", {**winner, "13": "31"}, 0.105),  # 开球后
+    ]) + "\n")
+    sel = {"3": ["home"], "1": ["draw"], "0": ["away"], "31": ["home", "draw"],
+           "30": ["home", "away"], "310": ["home", "draw", "away"]}
+    _write(data / "betslips.jsonl", json.dumps({
+        "slip_id": "26136-R9-384", "channel": "renjiu", "placed_at": "2026-10-09",
+        "issue": "26136", "purchased": True, "faces": bought,
+        "legs": [{"key": k, "market": "had", "selections": sel[f]} for k, f in bought.items()],
+    }) + "\n")
+    summary = encode_zucai_issue(data, "26136", now="t")
+    choices = json.loads((data / "scoreboard.json").read_text("utf-8"))["tickets"]["26136"][
+        "choices"]
+    assert choices["renjiu"] == {
+        "considered": 3, "would_hit": 1, "best_p": 0.114,
+        "bought": [{"id": "26136-R9-384", "p": 0.114, "p_rank": 1, "hit": False}]}
+    assert choices["shengfucai"] == {"considered": 1, "would_hit": 0, "best_p": 0.0001,
+                                     "bought": []}
+    assert summary["choices"]["renjiu"]["would_hit"] == 1
+
+
+def test_choice_ledger_is_empty_without_logged_faces(tmp_path: Path):
+    data = tmp_path / "data"
+    _write(data / "zucai" / "official-results.json", {"26134": "0 1 0 1 0 3 0 1 0 0 3 3 3 0"})
+    encode_zucai_issue(data, "26134", now="t")
+    ticket = json.loads((data / "scoreboard.json").read_text("utf-8"))["tickets"]["26134"]
+    assert ticket["choices"] == {}
