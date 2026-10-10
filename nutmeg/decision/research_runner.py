@@ -328,12 +328,19 @@ def run_day(
         for value in order
     ]
     # 并集样本池（Jun 2026-09-27）：当天截止足彩期次里不在竞彩板上的场次也研究，且优先
-    from nutmeg.decision.pool import reusable_zucai_research, zucai_pool_entries
+    from nutmeg.decision.pool import (
+        reusable_zucai_research,
+        zucai_overlap_match_ids,
+        zucai_pool_entries,
+    )
 
     # 竞彩板晚开售时对号表要在这里补生成，足彩池才能去掉重叠场次（2026-09-28）
     reusable = (reusable_zucai_research(day=day, data_dir=Path(data_dir),
                                         jczq_dir=Path(jczq_dir))
                 if board is not None else {})
+    overlap = zucai_overlap_match_ids(day=day, data_dir=Path(data_dir)) if board else set()
+    for entry in entries:
+        entry["zucai_overlap"] = str(entry["leg"].get("match_id")) in overlap
     # `--code` 同样点得到足彩独有场次（2026-09-28 前它会把整个足彩池跳过）
     entries += [
         {**entry, "zucai": True}
@@ -447,7 +454,8 @@ def run_day(
     # 预算先给今天还没试过的场次，再给重试（稳定排序：同类内仍按开球先后）；
     # 否则白天的格式重试会把晚上新上板的场次饿死（2026-09-26 024/025）
     # 足彩优先（Jun 2026-09-27）：同为未试过时足彩独有场次排在竞彩前
-    pending.sort(key=lambda item: (item[3] > 0, not item[4]["zucai"]))
+    pending.sort(key=lambda item: (item[3] > 0, not (item[4]["zucai"]
+                                                       or item[4].get("zucai_overlap"))))
     runnable = pending[:available_attempts]
     for board_code, _leg, _brief, _attempts_total, _entry in pending[available_attempts:]:
         rows_by_code[board_code] = {"code": board_code, "status": "skipped_budget"}

@@ -77,6 +77,15 @@ def reusable_zucai_research(*, day: str, data_dir: Path, jczq_dir: Path) -> dict
     return out
 
 
+def zucai_overlap_match_ids(*, day: str, data_dir: Path) -> set[str]:
+    """当天截止足彩期次里已对上竞彩板的场（竞彩 match_id）。研究排队时与足彩独有场次同级优先——
+    2026-10-10：26137 有 11 场对上竞彩板，被当普通竞彩场按开球排在后面，预算 14 只研究了 3 场足彩。
+    只读对号表（`reusable_zucai_research` 已就地补 `.auto`）。"""
+    zucai_dir = Path(data_dir) / "zucai"
+    return {str(match_id) for issue, _doc in closing_issues(zucai_dir, day)
+            for match_id in load_channel_map(zucai_dir, issue)}
+
+
 def _project(project, summary_row: dict, **board) -> None:
     """判断唯一事实 P0：刷新后把内核投影与文件比对一行写进摘要；比对是旁支，失败不挡刷新。"""
     if project is None:

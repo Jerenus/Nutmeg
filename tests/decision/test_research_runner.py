@@ -881,3 +881,19 @@ def test_a_second_run_on_the_same_day_skips_while_one_is_in_progress(tmp_path):
     assert calls == []
     assert report["used_attempts"] == 0 and report["written"] == 0
     assert {row["status"] for row in report["matches"]} == {"skipped_busy"}
+
+
+def test_board_match_that_is_also_a_zucai_match_jumps_the_queue(tmp_path):
+    """2026-10-10 出生事故：26137 十四场里 11 场对上了竞彩板，排队时被当普通竞彩场按开球
+    排在周六001–011 后面；预算 14 只研究了 3 场足彩。对上当天截止足彩期次的板面场同样优先。"""
+    root = _board(tmp_path, n=2)
+    zdir = _overlap_issue(tmp_path, with_research=False)
+    (zdir / "26133-channel-map.json").write_text(json.dumps({"m-2": 1}), encoding="utf-8")
+
+    report = run_day(
+        day="2026-09-19", jczq_dir=root, data_dir=tmp_path,
+        claude=lambda system, brief: (0, GOOD), fulfill=lambda argv: (0, ""),
+        profile=lambda match_id: {}, budget=1, concurrency=1)
+
+    status = {row["code"]: row["status"] for row in report["matches"]}
+    assert status == {"周五001": "skipped_budget", "周五002": "done"}
