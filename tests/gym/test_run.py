@@ -71,7 +71,9 @@ def test_brake_forces_flat_after_a_3000_month(tmp_path: Path) -> None:
         results[day]["周六002"] = {"match_id": "2", "ft_home": 1, "ft_away": 0}   # 让 2 串 1 可结
     (data / "jczq" / "jc-results.json").write_text(json.dumps(results), encoding="utf-8")
 
-    result = run_gym(data_dir=data, policies=["_test_lose_big"], issues=[], run_id="t")
+    # 测的是机制不是常数：止损线 2026-10-11 由 3000 改 6000，这里显式给 3000
+    result = run_gym(data_dir=data, policies=["_test_lose_big"], issues=[], run_id="t",
+                     stop_loss=3000)
 
     rows = [r for r in result.ledger if r["policy"] == "_test_lose_big"]
     assert rows[0]["key"] == DAY and rows[0]["net"] == -3000 and rows[0]["forced_flat"] is False

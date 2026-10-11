@@ -13,9 +13,10 @@ from pathlib import Path
 
 from nutmeg.decision.files import read_json
 
-MONTHLY_STOP_LOSS_YUAN = 3000
-"""月净值 ≤ −3,000 → 空仓到月底。数字是主循环 2026-10-01 的提案（约等于 09-20 以来十天的
-真实亏损），Jun 未改数前按此执行；改数只改这里与宪法 §4。"""
+MONTHLY_STOP_LOSS_YUAN = 6000
+"""月净值 ≤ −6,000 → 空仓到月底。2026-10-01 主循环提案 3,000（约等于 09-20 以来十天的真实
+亏损）；2026-10-11 Jun 改为 6,000——当时 10 月净值 −2,940、距旧线 ¥60、26137 三张刚全灭。
+改数只改这里与宪法 §4。"""
 
 
 def ticket_month(key: str, data_dir: Path) -> str | None:

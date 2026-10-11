@@ -24,7 +24,7 @@ def _data(tmp_path: Path) -> Path:
         "26134": {"net": -539.0, "stake": 756},
         "26133": {"net": -816, "stake": 816},            # 无 issue.json → 无法归月
         "26135": {"net": -200, "stake": 200},
-        "jczq-20261002": {"net": -2900, "stake": 3000},
+        "jczq-20261002": {"net": -5900, "stake": 6000},
         "26129": {"net": -1164, "stake": None},
     }}), encoding="utf-8")
     return data
@@ -48,12 +48,12 @@ def test_month_net_sums_only_the_month_and_reports_unresolved_keys(tmp_path: Pat
 
 def test_brake_trips_at_the_stop_loss_and_prints_room_otherwise(tmp_path: Path):
     data = _data(tmp_path)
-    assert MONTHLY_STOP_LOSS_YUAN == 3000
+    assert MONTHLY_STOP_LOSS_YUAN == 6000   # 2026-10-11 Jun 由 3000 改
     calm = brake_state(data, date(2026, 9, 30))
-    assert calm["tripped"] is False and calm["room"] == 1931.0
-    assert "还有 ¥1,931 空间" in status_line(calm) and "2 条无法归月" in status_line(calm)
+    assert calm["tripped"] is False and calm["room"] == 4931.0
+    assert "还有 ¥4,931 空间" in status_line(calm) and "2 条无法归月" in status_line(calm)
     tripped = brake_state(data, date(2026, 10, 5))
-    assert tripped["net"] == -3100.0 and tripped["tripped"] is True
+    assert tripped["net"] == -6100.0 and tripped["tripped"] is True
     assert status_line(tripped).startswith("⛔") and "空仓到月底" in status_line(tripped)
 
 
