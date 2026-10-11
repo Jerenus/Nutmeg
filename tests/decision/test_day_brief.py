@@ -164,7 +164,8 @@ def test_compile_brief_builds_the_zucai_draft_reviews_slips_and_prints_the_ledge
     labels = [(d["channel"], d["label"]) for d in z["draft"]]
     assert ("renjiu", "初稿") in labels and ("shengfucai", "刹车档") in labels
     draft = next(d for d in z["draft"] if d["channel"] == "renjiu" and d["label"] == "初稿")
-    assert draft["stake_yuan"] == 256 and draft["premium"] > 1 and draft["downgrades"] == 0
+    # 4 单 10 双的板、帽 ¥800（2026-10-12 单票基准 400→800）：只丢场不降档 → 1单8双 ¥512
+    assert draft["stake_yuan"] == 512 and draft["premium"] > 1 and draft["downgrades"] == 0
     assert draft["vetoed"] is True                     # 与已登记票 J1 共享裸单 1-4 → V2
     assert (data / "zucai" / "26132-draft.json").exists()
     [slip] = z["slips"]
@@ -172,7 +173,7 @@ def test_compile_brief_builds_the_zucai_draft_reviews_slips_and_prints_the_ledge
     assert brief["account"]["net"] == -120 and "止损线" in brief["account"]["line"]
     md = render_brief_md(brief)
     assert "**账房**：本月净 -120" in md and "初判：14 场" in md
-    assert "**初稿·任九** ¥256（128 注，帽 ¥400）" in md and "⛔V2" in md
+    assert "**初稿·任九** ¥512（256 注，帽 ¥800）" in md and "⛔V2" in md
     assert "J1 renjiu ¥2" in md and "前沿" not in md
     # 第二次编译不重建初稿（legs-base 没变）
     before = (data / "zucai" / "26132-draft.json").stat().st_mtime

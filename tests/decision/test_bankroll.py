@@ -74,21 +74,28 @@ def test_issue_brake_after_two_wiped_issues_or_an_explicit_precommit(tmp_path: P
     assert issue_brake(tmp_path, "26135") is None              # 26134 有派奖
     assert brake_check(tmp_path, "26133", 200) is None          # 帽内
     line = brake_check(tmp_path, "26133", 192, already_yuan=700)
-    assert line.startswith("⛔刹车") and "合计 ≤¥400" in line   # 同期合计超帽（帽 800 的一半）
-    assert brake_check(tmp_path, "26133", 384).startswith("⛔")  # 单张超 ¥200
+    assert line.startswith("⛔刹车") and "合计 ≤¥800" in line   # 同期合计超帽
+    assert brake_check(tmp_path, "26133", 384) is None          # 单张 ≤¥400（单票基准 800 的一半）
+    assert brake_check(tmp_path, "26133", 448).startswith("⛔")  # 单张超 ¥400
     board({"26133": {"net": -816}},                            # 缺 stake/payout → 不猜
           {"brake_26135_precommit": {"caps": {"issue": "26135", "issue_yuan": 800}}})
     assert issue_brake(tmp_path, "26134") is None
     pre = issue_brake(tmp_path, "26135")
-    assert pre == {"reason": "事前承诺 brake_26135_precommit", "slip_yuan": 200,
+    assert pre == {"reason": "事前承诺 brake_26135_precommit", "slip_yuan": 400,
                    "issue_yuan": 800}
 
 
 def test_day_cap_check_counts_all_channels_on_the_same_day():
-    """日总帽 ¥800（2026-10-12 Jun「账本更新到 800 每日」）：已买 + 这张 超帽 → ⛔；帽内 None。"""
-    from nutmeg.decision.bankroll import DAILY_CAP_YUAN, day_cap_check
+    """日总帽 ¥2,000（宪法 §4，2026-10-12 入预审）：已买 + 这张 超帽 → ⛔；帽内 None。
+    足彩单票基准 800（2026-10-12 Jun 400→800），刹车档取一半。"""
+    from nutmeg.decision.bankroll import (
+        BRAKE_SLIP_YUAN,
+        DAILY_CAP_YUAN,
+        ZUCAI_SLIP_CAP_YUAN,
+        day_cap_check,
+    )
 
-    assert DAILY_CAP_YUAN == 800
-    assert day_cap_check("2026-10-12", 256, already_yuan=544) is None            # 正好 800
-    line = day_cap_check("2026-10-12T15:00:00", 288, already_yuan=544)
-    assert line.startswith("⛔日帽") and "2026-10-12" in line and "¥800" in line
+    assert (DAILY_CAP_YUAN, ZUCAI_SLIP_CAP_YUAN, BRAKE_SLIP_YUAN) == (2000, 800, 400)
+    assert day_cap_check("2026-10-12", 800, already_yuan=1200) is None           # 正好 2,000
+    line = day_cap_check("2026-10-12T15:00:00", 288, already_yuan=1800)
+    assert line.startswith("⛔日帽") and "2026-10-12" in line and "¥2,000" in line

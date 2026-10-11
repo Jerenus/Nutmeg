@@ -70,14 +70,19 @@ def status_line(state: dict) -> str:
     return line
 
 
-DAILY_CAP_YUAN = 800
-"""日总帽（所有渠道，按下单日 `placed_at` 合计）与足彩同期合计，同一个数。2026-10-12 Jun 定
-「账本更新到 800 每日」，取代宪法原 日总帽 2,000 / 两票合计 1,600；那一刻 10 月净 −2,940、
-26137/26138 六张全灭。改数只改这里与宪法 §4。预审超帽记 ⛔（退出码 1），登记不受限。"""
+ZUCAI_SLIP_CAP_YUAN = 800
+"""足彩每期单票复式基准。2026-10-12 Jun 定 400→800（那一刻 10 月净 −2,940、26137/26138 六张全灭）；
+两票合计 1,600 与日总帽 2,000 不变。机器初稿帽 `zucai_draft.DEFAULT_CAP` 同数；gym 回放仍用 400。
+改数只改这里与宪法 §4。"""
 
-BRAKE_SLIP_YUAN = 200
-BRAKE_ISSUE_YUAN = DAILY_CAP_YUAN // 2
-"""期级刹车（宪法 §4「连续两期全灭 → 次期减半」）：复式 ≤¥200、同期合计 ≤ 帽的一半。"""
+DAILY_CAP_YUAN = 2000
+"""日总帽（所有渠道，按下单日 `placed_at` 合计；宪法 §4 原数）。2026-10-12 起入预审：超帽记 ⛔
+（退出码 1），登记不受限。"""
+
+BRAKE_SLIP_YUAN = ZUCAI_SLIP_CAP_YUAN // 2
+BRAKE_ISSUE_YUAN = 800
+"""期级刹车（宪法 §4「连续两期全灭 → 次期减半」）：复式 ≤ 单票基准的一半、
+同期合计 ≤ 两票合计 1,600 的一半。"""
 
 
 def day_cap_check(placed_at: str, stake_yuan: int, *, already_yuan: int = 0,
@@ -87,7 +92,7 @@ def day_cap_check(placed_at: str, stake_yuan: int, *, already_yuan: int = 0,
     if already_yuan + stake_yuan <= cap:
         return None
     return (f"⛔日帽：{str(placed_at)[:10]} 已买 ¥{already_yuan:,} + 这张 ¥{stake_yuan:,} "
-            f"> 日总帽 ¥{cap:,}（宪法 §4，2026-10-12）→ 超帽（改票后再审；人坚持就登记并另立裁决）")
+            f"> 日总帽 ¥{cap:,}（宪法 §4）→ 超帽（改票后再审；人坚持就登记并另立裁决）")
 
 
 def _wiped(doc: dict) -> bool | None:

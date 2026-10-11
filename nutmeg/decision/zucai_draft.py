@@ -28,7 +28,7 @@ from nutmeg.decision.files import read_json
 
 RENJIU_PICK = 9
 PRICE_PER_NOTE = 2
-DEFAULT_CAP = 400
+DEFAULT_CAP = 800        # 足彩单票复式基准（2026-10-12 Jun 400→800；bankroll.ZUCAI_SLIP_CAP_YUAN）
 CHANNEL_CN = {"renjiu": "任九", "shengfucai": "胜负彩"}
 
 

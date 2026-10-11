@@ -191,7 +191,7 @@ def _issue_brake_line(slip, data_dir: Path, *, extra_yuan: int = 0) -> str | Non
 
 
 def _day_cap_line(slip, data_dir: Path, *, extra_yuan: int = 0) -> str | None:
-    """日总帽（宪法 §4，2026-10-12 Jun「账本更新到 800 每日」）：同一下单日已登记实购（所有渠道）
+    """日总帽 ¥2,000（宪法 §4，2026-10-12 入预审）：同一下单日已登记实购（所有渠道）
     + extra + 这张 是否超帽；预审否决，登记不受限。"""
     from nutmeg.decision.bankroll import day_cap_check
     from nutmeg.decision.betslip import load_slips

@@ -55,7 +55,7 @@ def judgment_brief(
     issue: str | None = _ISSUE,
     data_dir: Path = _DATA_DIR,
     write: bool = _BRIEF_WRITE,
-    cap: int = _cli.typer.Option(400, "--cap", help="足彩初稿注金帽（元）"),
+    cap: int = _cli.typer.Option(800, "--cap", help="足彩初稿注金帽（元）"),
 ) -> None:
     """初判与解读（2026-10-01 定位）：每场一行，市场/判断/表态/种类/大热/旗。竞彩不出票；
     足彩附机器初稿（Jun：传统足彩的初稿不能省略），`--write` 同时落 draft 文件。"""
@@ -78,7 +78,7 @@ def judgment_brief(
         _cli.typer.echo(f"→ {target}")
 
 
-_CAP = _cli.typer.Option(400, "--cap", help="初稿注金帽（元）；刹车档自动取一半")
+_CAP = _cli.typer.Option(800, "--cap", help="初稿注金帽（元）；刹车档自动取一半")
 
 
 def _draft_text(data_dir: Path, issue: str, cap: int, write: bool) -> str:
