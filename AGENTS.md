@@ -76,7 +76,7 @@ project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg
 - "今天的 jczq 方案 / 今天竞彩怎么打 / 出今天的票 / today's bets" → RUNBOOK 泳道 A
 - "胜负彩 / 任九 / 26xxx 期方案" → RUNBOOK 泳道 B
 - "深度分析 / 混合投注 / X 串 Y / 审核我的方案" → 深研与审票（`docs/jczq-mixed-bet-judge-process.md`：逐场研究 → Jun 出方案 → `betslip preview` 审票 → 登记）
-- "/zucai-packet <期> / 按我的问题梳理 / 分析包" → RUNBOOK B5e 阅读层（`.claude/commands/zucai-packet.md`：四类分层→28 队优劣势与翻车面→完整度损耗→主客状态→双选→胆→组合参考→定案前整组算术；次日 `retro`）
+- "/zucai-packet <期> / 按我的问题梳理 / 分析包" → RUNBOOK B5e 阅读层（`.claude/commands/zucai-packet.md`，三段一页：A 分析 §0–§7 一次出齐（分层→样板比对→翻车面→完整度→状态×实力矩阵→双选→胆→组合梯度）→ B 定案桥 §8 只走一次（规范自检、死法清单、一次对照）→ C 审票登记 §9 → D 次日 `retro` §10；发布为报告页）
 
 ## /today 会话入口（Codex 同规）
 
