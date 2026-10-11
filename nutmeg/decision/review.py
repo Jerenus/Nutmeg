@@ -5,6 +5,8 @@
 - V1 期望回报率 < 0.5——"中了也亏"的帽内 max-P 形状（任九 −58%、竞彩 max-P −20%，CI 不含 0）；
 - V2 与已购票共享裸单——假分散（26122 联死 73.8%、26133 ≈60%、09-28 五票同死 004）。
 V3 倍投/重注只警告（证据不够硬：26121 ×50 中过一次）。
+V4 渠道不可购（2026-10-12 Jun：任九 >9 场的「容错」复式目前渠道不支持）——注数算法支持 >9 场，
+但买不到的票不该过预审。
 
 足彩的期望回报用**奖金模型**（`scripts/zucai_prize_model.py`，2026-10-01）：任九奖金与板面意外度
 corr 0.95、log(prize)=a+b·S 且 b≈1——市场口径下任何票面形状的期望回报都≈返奖率，差别只在
@@ -19,7 +21,7 @@ import statistics
 from itertools import combinations
 from pathlib import Path
 
-from nutmeg.decision.betslip import BetSlip, SlipLeg
+from nutmeg.decision.betslip import RENJIU_PICK, BetSlip, SlipLeg
 from nutmeg.decision.faces import FACES
 from nutmeg.decision.reconcile import normalize_selection
 
@@ -203,6 +205,11 @@ def review(slip: BetSlip, diagnosis: dict, *, prize_model: dict[str, dict],
     if slip.channel == "jczq" and slip.stake_yuan > cap_day * WARN_STAKE_SHARE:
         verdicts.append({"code": "V3", "level": "warn",
                          "text": f"单票 ¥{slip.stake_yuan:,} > 日帽 ¥{cap_day} 的一半"})
+    n_matches = len(slip.faces or slip.legs)          # 足彩票面在 faces，腿只是渲染/结算用
+    if slip.channel == "renjiu" and n_matches > RENJIU_PICK:
+        verdicts.append({"code": "V4", "level": "veto",
+                         "text": f"任九选了 {n_matches} 场：>9 场的容错复式渠道不可购"
+                                 "（2026-10-12）——改成 9 场"})
     vetoed = any(v["level"] == "veto" for v in verdicts)
     mark = {"veto": "⛔", "warn": "⚠️", "info": "ℹ️"}
     lines = [f"{mark[v['level']]}{v['code']} {v['text']}" for v in verdicts]

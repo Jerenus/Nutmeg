@@ -151,6 +151,7 @@ def betslip_register(
             verdict = {"lines": [f"审票失败：{exc!r}"[:160]]}
             slip.diagnosis["review"] = {"error": repr(exc)[:200]}
         discipline = [line for line in (_issue_brake_line(slip, data_dir),
+                                        _day_cap_line(slip, data_dir),
                                         _brake_line(data_dir, placed_at)) if line]
         discipline = [line for line in discipline if line.startswith("⛔")]
         if discipline and "error" not in slip.diagnosis["review"]:
@@ -158,6 +159,7 @@ def betslip_register(
             record["vetoed"] = True
             record["codes"] = [*record["codes"],
                                *(["BRAKE"] if any("刹车" in x for x in discipline) else []),
+                               *(["DAYCAP"] if any("日帽" in x for x in discipline) else []),
                                *(["STOP"] if any("止损" in x or "已触发" in x
                                                  for x in discipline) else [])]
         _cli.typer.echo(register_slip(data_dir, slip))
@@ -166,7 +168,7 @@ def betslip_register(
         for line in verdict["lines"]:
             _cli.typer.echo("   " + line)
         for line in discipline:
-            if "刹车" in line:
+            if "刹车" in line or "日帽" in line:
                 _cli.typer.echo("   " + line)
         if slip.deviation_after_kickoff:
             _cli.typer.echo("   ⚠️偏离理由写于票内最早开球之后：照记，"
@@ -186,6 +188,18 @@ def _issue_brake_line(slip, data_dir: Path, *, extra_yuan: int = 0) -> str | Non
     bought = sum(s.stake_yuan for s in load_slips(data_dir, issue=slip.issue)
                  if s.purchased and s.slip_id != slip.slip_id)
     return brake_check(data_dir, slip.issue, slip.stake_yuan, already_yuan=bought + extra_yuan)
+
+
+def _day_cap_line(slip, data_dir: Path, *, extra_yuan: int = 0) -> str | None:
+    """日总帽（宪法 §4，2026-10-12 Jun「账本更新到 800 每日」）：同一下单日已登记实购（所有渠道）
+    + extra + 这张 是否超帽；预审否决，登记不受限。"""
+    from nutmeg.decision.bankroll import day_cap_check
+    from nutmeg.decision.betslip import load_slips
+
+    day = str(slip.placed_at)[:10]
+    bought = sum(s.stake_yuan for s in load_slips(data_dir)
+                 if s.purchased and s.slip_id != slip.slip_id and str(s.placed_at)[:10] == day)
+    return day_cap_check(day, slip.stake_yuan, already_yuan=bought + extra_yuan)
 
 
 def _brake_line(data_dir: Path, placed_at: str) -> str:
@@ -235,10 +249,13 @@ def betslip_preview(
         issue_brake = _issue_brake_line(slip, data_dir)
         if issue_brake:
             _cli.typer.echo("   " + issue_brake)
-        # 月度止损触发、期级刹车超帽（宪法 §4）与 V1/V2 同级否决（2026-10-06）：预审退出码 1，
-        # 登记不受此限——连亏之后最需要这条线的时候，不该只靠意志力读一行字
+        day_cap = _day_cap_line(slip, data_dir)
+        if day_cap:
+            _cli.typer.echo("   " + day_cap)
+        # 月度止损触发、期级刹车超帽、日帽超帽（宪法 §4）与 V1/V2 同级否决（2026-10-06）：
+        # 预审退出码 1，登记不受此限——连亏之后最需要这条线的时候，不该只靠意志力读一行字
         vetoed = (any(line.startswith("⛔") for line in review_lines) or brake.startswith("⛔")
-                  or bool(issue_brake))
+                  or bool(issue_brake) or bool(day_cap))
         _log_preview(data_dir, slip, vetoed)
         if vetoed:
             raise _cli.typer.Exit(code=1)       # 审票否决：改票后再审（登记不受此限）
@@ -366,6 +383,12 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR,
             issue_brake = _issue_brake_line(slip, data_dir, extra_yuan=earlier)
             if issue_brake:
                 review_lines = [*review_lines, issue_brake]
+            same_day = 0 if alternatives else sum(
+                s.stake_yuan for s in slips[:slips.index(slip)]
+                if str(s.placed_at)[:10] == str(slip.placed_at)[:10])
+            day_cap = _day_cap_line(slip, data_dir, extra_yuan=same_day)
+            if day_cap:
+                review_lines = [*review_lines, day_cap]
             for line in review_lines:
                 _cli.typer.echo("   " + line)
             veto = any(line.startswith("⛔") for line in review_lines)

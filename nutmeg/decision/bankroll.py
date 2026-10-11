@@ -70,9 +70,24 @@ def status_line(state: dict) -> str:
     return line
 
 
+DAILY_CAP_YUAN = 800
+"""日总帽（所有渠道，按下单日 `placed_at` 合计）与足彩同期合计，同一个数。2026-10-12 Jun 定
+「账本更新到 800 每日」，取代宪法原 日总帽 2,000 / 两票合计 1,600；那一刻 10 月净 −2,940、
+26137/26138 六张全灭。改数只改这里与宪法 §4。预审超帽记 ⛔（退出码 1），登记不受限。"""
+
 BRAKE_SLIP_YUAN = 200
-BRAKE_ISSUE_YUAN = 800
-"""期级刹车（宪法 §4「连续两期全灭 → 次期减半」）：复式 ≤¥200、同期合计 ≤¥800（帽减半）。"""
+BRAKE_ISSUE_YUAN = DAILY_CAP_YUAN // 2
+"""期级刹车（宪法 §4「连续两期全灭 → 次期减半」）：复式 ≤¥200、同期合计 ≤ 帽的一半。"""
+
+
+def day_cap_check(placed_at: str, stake_yuan: int, *, already_yuan: int = 0,
+                  cap: int = DAILY_CAP_YUAN) -> str | None:
+    """这张票连同同一下单日已登记实购的（所有渠道）超过日总帽 → 一行 ⛔；否则 None。
+    已买多少由调用方从登记簿算（本模块不读登记簿）。"""
+    if already_yuan + stake_yuan <= cap:
+        return None
+    return (f"⛔日帽：{str(placed_at)[:10]} 已买 ¥{already_yuan:,} + 这张 ¥{stake_yuan:,} "
+            f"> 日总帽 ¥{cap:,}（宪法 §4，2026-10-12）→ 超帽（改票后再审；人坚持就登记并另立裁决）")
 
 
 def _wiped(doc: dict) -> bool | None:

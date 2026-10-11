@@ -103,7 +103,7 @@ def test_tripped_stop_loss_vetoes_the_preview_but_never_the_registration(tmp_pat
     data = tmp_path / "data"
     data.mkdir()
     (data / "scoreboard.json").write_text(json.dumps({"tickets": {
-        "jczq-20261003": {"net": -3200, "stake": 3200}}}), encoding="utf-8")
+        "jczq-20261003": {"net": -6200, "stake": 6200}}}), encoding="utf-8")   # 止损线 6,000
     legs = _legs(tmp_path, "j.json", [
         {"key": "周六001", "market": "had", "selections": ["home"], "odds": [1.5],
          "fair": {"home": 0.62, "draw": 0.22, "away": 0.16}},

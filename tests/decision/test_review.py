@@ -112,3 +112,18 @@ def test_zucai_return_model_is_flat_under_market_and_pays_a_premium_for_belief()
     assert "判断溢价 0.13" in out["verdicts"][0]["text"]
     # 缺市场分布：未选的 5 场按均匀 1/3 → 3^b 同一常数（b=1 时结果不变）
     assert zucai_return(_zucai_slip(market["1"], "3"), model=model)["ratio"] == flat
+
+
+def test_v4_vetoes_renjiu_with_more_than_nine_matches() -> None:
+    """2026-10-12：任九 >9 场的容错复式渠道不可购，预审否决（注数算法本身支持 >9 场）。"""
+    ten = {str(i): "3" for i in range(1, 11)}
+    slip = BetSlip(slip_id="r10", channel="renjiu", placed_at="2026-10-12", legs=[],
+                   issue="26139", faces=ten)
+    assert slip.notes == 10
+    out = review(slip, {"shared_naked": []}, prize_model={})
+    codes = {v["code"]: v["level"] for v in out["verdicts"]}
+    assert codes.get("V4") == "veto" and out["vetoed"] is True
+    nine = BetSlip(slip_id="r9", channel="renjiu", placed_at="2026-10-12", legs=[],
+                   issue="26139", faces={k: ten[k] for k in list(ten)[:9]})
+    out9 = review(nine, {"shared_naked": []}, prize_model={})
+    assert "V4" not in {v["code"] for v in out9["verdicts"]}
