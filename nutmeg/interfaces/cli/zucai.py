@@ -147,6 +147,8 @@ def zucai_premise_corrections(
 
     found = []
     for path in sorted(_cli.Path(research_dir).glob(f"{issue}-research-m*.json")):
+        if ".rejected" in path.name:      # 拒收件：无 premise_corrections，场号也解析不出
+            continue
         research = _json.loads(path.read_text("utf-8"))
         # 无头深研不写 match_no，场号在文件名里（否则每条纠正都报成「场0」）
         research.setdefault("match_no", int(path.stem.rsplit("-m", 1)[-1]))
