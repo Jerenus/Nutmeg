@@ -20,8 +20,8 @@ def _runner(log: list[list[str]]):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text("# 复盘底稿\n", encoding="utf-8")
             return subprocess.CompletedProcess(cmd, 0, "ok", "")
-        if "grade-rx" in cmd:
-            return subprocess.CompletedProcess(cmd, 1, "", "rx error: 没有 outcome")
+        if "crowd" in cmd and "settle" in cmd:
+            return subprocess.CompletedProcess(cmd, 1, "", "crowd error: 赛果未出")
         return subprocess.CompletedProcess(cmd, 0, "ok", "")
     return run
 
@@ -50,14 +50,10 @@ def test_jobs_and_planned_settle_commands(tmp_path: Path):
 def test_settle_runs_subprocesses_records_timeline_and_is_idempotent(tmp_path: Path):
     log: list[list[str]] = []
     ctx = _ctx(tmp_path, log)
-    (ctx.data_dir / "zucai").mkdir()
-    (ctx.data_dir / "zucai" / "26132-issue.json").write_text(
-        json.dumps({"issue_id": "26132", "sale_deadline": "2026-09-23T21:00:00+08:00"}),
-        encoding="utf-8")
-    (ctx.data_dir / "zucai" / "26132-rx.json").write_text("{}", encoding="utf-8")
     rec = run_job(ctx, "settle")
+    assert not any("grade-rx" in " ".join(c) for c in log)   # rx 处方链 2026-10-13 删除
     # one sub-command failed → job exit 1, but retro exists
-    assert rec.exit == 1 and "grade-rx" in rec.summary
+    assert rec.exit == 1 and "crowd" in rec.summary
     assert (day_dir(ctx.data_dir, "2026-09-23") / "retro.md").exists()
     assert rec.evidence_path.endswith("retro.md")
     rows = read_timeline(ctx.data_dir, "2026-09-23")
@@ -217,3 +213,23 @@ def test_settle_reruns_when_results_arrive_after_the_morning_retro(tmp_path: Pat
     os.utime(retro, (later + 1, later + 1))                   # 重写的底稿晚于赛果
     calls = len(log)
     assert run_job(ctx, "settle").summary.startswith("skipped") and len(log) == calls
+
+
+def test_consecutive_idle_broadcasts_collapse_into_one_timeline_row(tmp_path: Path):
+    """2026-10-13 降噪：一天 140 行时间线里 133 行是 `sent=0`；连续空播报只留最新一行。"""
+    from nutmeg.decision.day_timeline import JobRecord, append_job, read_timeline
+
+    def rec(summary: str, exit_code: int = 0, job: str = "broadcast") -> JobRecord:
+        return JobRecord(job=job, planned_at="x", started_at="x", finished_at="x",
+                         exit=exit_code, summary=summary)
+
+    append_job(tmp_path, "2026-10-12", rec("broadcast sent=0 failed=0"))
+    append_job(tmp_path, "2026-10-12", rec("broadcast sent=0 failed=0"))
+    append_job(tmp_path, "2026-10-12", rec("broadcast sent=1 failed=0"))
+    append_job(tmp_path, "2026-10-12", rec("broadcast sent=0 failed=0"))
+    append_job(tmp_path, "2026-10-12", rec("settle 完成", job="settle"))
+    append_job(tmp_path, "2026-10-12", rec("broadcast sent=0 failed=0"))
+    assert [r["summary"] for r in read_timeline(tmp_path, "2026-10-12")] == [
+        "broadcast sent=0 failed=0", "broadcast sent=1 failed=0",
+        "broadcast sent=0 failed=0", "settle 完成", "broadcast sent=0 failed=0",
+    ]

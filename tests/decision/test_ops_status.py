@@ -203,3 +203,20 @@ def test_launchctl_plists_and_schedules_are_parsed_once_for_every_status_surface
     assert describe_schedule(rows[1][1]) == "每 10 分"
     assert describe_schedule(rows[1][1], minute_word="分钟") == "每 10 分钟"
     assert describe_schedule({}) == "未声明"
+
+
+def test_keepalive_service_with_pid_is_running_not_failed():
+    """2026-10-13：decision.web 重启一次后 launchctl 记 exit=143（上个实例），有 PID 就是运行中。"""
+    from datetime import datetime
+
+    from nutmeg.decision.ops_status import agent_status, launchctl_running
+
+    text = "73993\t0\tcom.nutmeg.decision.web\n-\t143\tcom.nutmeg.rsi.sweep\n-\t0\tcom.other\n"
+    assert launchctl_running(text) == {"com.nutmeg.decision.web"}
+    web = agent_status("com.nutmeg.decision.web", "常驻", loaded=True, last_exit="143",
+                       out_text="INFO: GET / 200", out_at=datetime(2026, 10, 13, 0, 57),
+                       running=True)
+    assert web.outcome == "运行中"
+    dead = agent_status("com.nutmeg.decision.web", "常驻", loaded=True, last_exit="143",
+                        out_text="INFO: GET / 200", out_at=datetime(2026, 10, 13, 0, 57))
+    assert dead.outcome == "失败"

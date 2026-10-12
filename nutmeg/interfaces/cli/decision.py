@@ -15,40 +15,9 @@ _OUTPUT_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data/jczq"), "--output-dir"
 _READS_FILE_OPTION = _cli.typer.Option(..., "--reads-file", help="Read JSON 数组文件")
 _ZUCAI_DIR_OPTION = _cli.typer.Option(
     Path(".nutmeg-data/zucai"), "--zucai-dir", help="zucai 源快照目录")
-_LEGS_AUDIT_FILE_OPTION = _cli.typer.Option(..., "--legs-file", help="票面结构 JSON")
-_EXPLAIN_MATCH_OPTION = _cli.typer.Option(
-    None, "--match", help="只展开这些场号；不给＝全部")
-_EXPLAIN_OUT_OPTION = _cli.typer.Option(
-    None, "--out", help="落盘路径；不给＝打到 stdout")
-_WITH_LEGS_FILE_OPTION = _cli.typer.Option(
-    [], "--with-legs-file",
-    help="同期其它票面文件；用于 C15 多票共享被排面检查（可重复）")
 _AUDIT_DATA_DIR_OPTION = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
-_AUDIT_ZUCAI_LEGS_OPTION = _cli.typer.Option(
-    None, "--zucai-legs-file",
-    help="同日足彩票面；与 --channel-map 一起给才触发 C18 跨渠道立场一致性")
-_AUDIT_CHANNEL_MAP_OPTION = _cli.typer.Option(
-    None, "--channel-map",
-    help="{竞彩 match_id: 足彩场号} 显式映射；身份不许猜（26122）")
 _OPS_OPENCLAW_DB_OPTION = _cli.typer.Option(
     None, "--openclaw-db", help="OpenClaw sqlite；默认 ~/.openclaw/state/openclaw.sqlite")
-_ADJUDICATE_APPLY_OPTION = _cli.typer.Option(
-    None, "--apply", help="填好的裁决单；不给＝签发一张留空的新单")
-_ADJUDICATE_OUT_OPTION = _cli.typer.Option(
-    None, "--out", help="裁决单落盘路径；不给＝打到 stdout")
-_ADJUDICATE_RX_OPTION = _cli.typer.Option(
-    None, "--rx-file", help="驳回预测并入的 rx 文件；默认 .nutmeg-data/zucai/<期>-rx.json")
-_DEPLOYMENT_GATE_FILE_OPTION = _cli.typer.Option(
-    ..., "--gate-file", help="部署门候选、注金帽与历史窗口 JSON"
-)
-_OFFICIAL_HISTORY_FILE_OPTION = _cli.typer.Option(
-    None,
-    "--official-history-file",
-    help="离线 sporttery gameNo=90 历史响应 JSON；省略则抓官方接口",
-)
-_ZUCAI_OPTIMIZER_INPUT_OPTION = _cli.typer.Option(
-    ..., "--input-file", help="候选版本与 fair JSON"
-)
 
 
 @_cli.app.command("decision-read")
@@ -300,287 +269,6 @@ def zucai_prep(
         raise _cli.typer.Exit(code=1)
 
 
-@_cli.app.command("decision-audit-legs")
-def decision_audit_legs(
-    legs_file: Path = _LEGS_AUDIT_FILE_OPTION,
-    user_override: bool = _cli.typer.Option(
-        False,
-        "--user-override",
-        help="Jun 显式知情行权：保留 ERROR 并写 evidence_rejected Adjudication",
-    ),
-    ticket_batch_token: str | None = _cli.typer.Option(
-        None,
-        "--ticket-batch-token",
-        help="Web 工位签发的当前票批次 token；ERROR override 必填",
-    ),
-    with_legs_file: list[Path] = _WITH_LEGS_FILE_OPTION,
-    zucai_legs_file: Path | None = _AUDIT_ZUCAI_LEGS_OPTION,
-    channel_map_file: Path | None = _AUDIT_CHANNEL_MAP_OPTION,
-    data_dir: Path = _AUDIT_DATA_DIR_OPTION,
-) -> None:
-    """出票前结构校验:把「用新理由撤掉结构保险」变成非零退出码。
-
-    只看「这条腿有没有方向性旗」和「面集合有几个面」,**不听任何论证**——
-    同一个动作已杀死四张票(26098/26101/26102/26103),每次的理由都不同且一次比一次讲究,
-    这说明散文规则挡不住它。有 ERROR 即退出码 1。
-    """
-    import json as _json
-    from datetime import UTC as _UTC
-    from datetime import datetime as _datetime
-
-    from nutmeg.config.settings import AppSettings
-    from nutmeg.decision.audit_override import (
-        AuditOverrideError,
-        record_user_override_adjudications,
-    )
-    from nutmeg.decision.legs_audit import format_findings, has_blocking
-
-    payload = _json.loads(Path(legs_file).read_text("utf-8"))
-    # JCZQ close consumes a flat legs array; an empty array is the canonical
-    # abstain shape and has no structure to audit.
-    if isinstance(payload, list):
-        if payload:
-            # C18 —— 竞彩腿本身没有 fair/旗/完整度可查，但**同日足彩票面的立场**可查。
-            cross = []
-            if zucai_legs_file and channel_map_file:
-                from nutmeg.decision.legs_audit import audit_cross_channel
-
-                cross = audit_cross_channel(
-                    _json.loads(Path(zucai_legs_file).read_text("utf-8")),
-                    payload,
-                    channel_map=_json.loads(
-                        Path(channel_map_file).read_text("utf-8")
-                    ),
-                )
-            _cli.typer.echo(
-                "出票前结构校验：1 个 ERROR\n\n"
-                "❌ [missing_audit_metadata] JCZQ 投注腿数组不含 fair/旗/锚方完整度，"
-                "无法执行结构纪律校验。"
-                + ("\n\n" + format_findings(cross) if cross else "")
-            )
-            raise _cli.typer.Exit(code=1)
-        _cli.typer.echo(format_findings([]))
-        return
-    # 腿级 + 处方偏离 + 全包分配（按被排面 fair 降序，2026-09-13 入码）
-    # + C17 票面级读判一致性 + C15 多票共享死点 —— 与 `decision-adjudicate` 同源，
-    # 两个命令看到的 ERROR 集必须逐字一致，否则裁决单的指纹永远对不上。
-    findings = _ticket_findings(payload, Path(legs_file), with_legs_file)
-    if zucai_legs_file and channel_map_file:
-        # C18 —— 竞彩字典票面（腿带 match_id）也要查同日足彩立场（2026-09-28 前无通路）
-        from nutmeg.decision.legs_audit import audit_cross_channel, jczq_legs_from_board_dict
-
-        findings = [*findings, *audit_cross_channel(
-            _json.loads(Path(zucai_legs_file).read_text("utf-8")),
-            jczq_legs_from_board_dict(payload),
-            channel_map=_json.loads(Path(channel_map_file).read_text("utf-8")),
-        )]
-    _cli.typer.echo(format_findings(findings, issue=str(payload.get("issue", ""))))
-    if has_blocking(findings):
-        if user_override:
-            try:
-                if ticket_batch_token:
-                    _cli.typer.echo("ℹ️ --ticket-batch-token 已不再需要"
-                                    "（2026-10-01 行权只写 Adjudication），忽略")
-                kernel = _cli.build_ontology_kernel(
-                    AppSettings(data_dir=Path(data_dir).expanduser().resolve())
-                )
-                status = kernel.status()
-                if (
-                    not status.initialized
-                    or status.integrity_check != "ok"
-                    or status.pending_migrations
-                ):
-                    raise AuditOverrideError(
-                        "ontology must be initialized, healthy, and current"
-                    )
-                result = record_user_override_adjudications(
-                    payload,
-                    findings,
-                    workflow=kernel.workflow,
-                    requested_at=_datetime.now(_UTC),
-                )
-                _cli.typer.echo(
-                    f"user override 已入账：{result.error_count} 个 ERROR -> "
-                    f"{result.adjudication_count} 条 Adjudication"
-                )
-                return
-            except (AuditOverrideError, ValueError) as error:
-                _cli.typer.echo(f"❌ user override blocked: {error}")
-        raise _cli.typer.Exit(code=1)
-
-
-@_cli.app.command("decision-explain-faces")
-def decision_explain_faces(
-    legs_file: Path = _LEGS_AUDIT_FILE_OPTION,
-    match_no: list[int] = _EXPLAIN_MATCH_OPTION,
-    output: Path | None = _EXPLAIN_OUT_OPTION,
-) -> None:
-    """面集展开：每场七个面集 × 各自触发哪些码。**不是出票门**，退出码恒 0。
-
-    出生事故：2026-09-15 构 26125 票时把 C14 的「**被排面** fair>20%」口算成
-    「任一面 fair>20%」，两场灰带排除被误锁全包，帽内零 ERROR 解 1,890→0，
-    并支撑了当时的空仓建议。宪法「判据必须入代码」此前只用在判据上，没用在
-    **判据的应用**上——本命令补这一刀。
-
-    ⛔它只摊算术。死亡三证够不够、洞能不能被对手吃掉、旗的证据等级到没到，
-    一律留空给判断（表末「判断栏」）。它**不排序、不推荐、不裁合法性**。
-    出票门仍然只有 `decision-audit-legs`。
-    """
-    import json as _json
-
-    from nutmeg.decision.legs_audit import format_face_options, legs_from_dict
-
-    payload = _json.loads(Path(legs_file).read_text("utf-8"))
-    if isinstance(payload, list):
-        _cli.typer.echo("❌ 扁平 legs 数组不含 fair/旗/完整度，无法展开面集。", err=True)
-        raise _cli.typer.Exit(code=2)
-    legs = legs_from_dict(payload)
-    if match_no:
-        wanted = set(match_no)
-        legs = [lg for lg in legs if lg.match_no in wanted]
-    if not legs:
-        _cli.typer.echo("没有可展开的场次。", err=True)
-        raise _cli.typer.Exit(code=2)
-    text = format_face_options(legs, issue=str(payload.get("issue", "")))
-    if output:
-        Path(output).write_text(text + "\n", "utf-8")
-        _cli.typer.echo(f"面集展开 → {output}")
-    else:
-        _cli.typer.echo(text)
-
-
-def _ticket_findings(payload: dict, legs_file: Path, with_legs_file: list[Path]) -> list:
-    """读文件 → `legs_audit.audit_ticket`（门/裁决单/候选穷举共用的单一事实源）。"""
-    import json as _json
-
-    from nutmeg.decision.legs_audit import audit_ticket, legs_from_dict, unique_ticket_label
-
-    others: dict = {}
-    for extra in with_legs_file:
-        other = _json.loads(Path(extra).read_text("utf-8"))
-        name = str(other.get("version") or Path(extra).stem)
-        others[unique_ticket_label(name, others)] = legs_from_dict(other)
-    payload = {**payload, "version": payload.get("version") or legs_file.stem}
-    return audit_ticket(payload, others=others or None)
-
-
-@_cli.app.command("decision-adjudicate")
-def decision_adjudicate(
-    legs_file: Path = _LEGS_AUDIT_FILE_OPTION,
-    apply_sheet_file: Path | None = _ADJUDICATE_APPLY_OPTION,
-    output: Path | None = _ADJUDICATE_OUT_OPTION,
-    rx_file: Path | None = _ADJUDICATE_RX_OPTION,
-    with_legs_file: list[Path] = _WITH_LEGS_FILE_OPTION,
-) -> None:
-    """裁决单：把「行权」从一行 reason 升格成可结账的判断。**它不是门，也不放宽门。**
-
-    两段式（同 B4c 面集展开：机器出单、判断留空）：
-
-      1. `--legs-file 票面.json --out 裁决单.json` —— 摊开当前每条 ERROR，
-         `ruling` 一律留空。**机器绝不预填裁决。**
-      2. 人填完后 `--legs-file 票面.json --apply 裁决单.json` —— 校验完整性，
-         把驳回写回 `deviation_registry`，把预测并入 rx 文件。
-
-    出生事故：热板四连（26125-26128）严格裁决全部空仓，而同期行权形状
-    8/9、8/9、9/9。门的判断是对的，但「洞已定价≠翻车」没有出口：每个 ERROR
-    手写登记、rx 另立文件、记分牌复盘时手补 —— 守门与行权**两条路都没有账**。
-
-    ⛔驳回必须附可证伪预测。26098-26103 四次撤保险，理由一次比一次讲究且全亏：
-    理由的质量不可自证，能自证的只有事后可判真假的断言。
-    ⛔真正的门仍然只有 `decision-audit-legs --user-override`（Jun 本人 + Web token）。
-    本命令只落文书，落完还得去按那道门。
-    """
-    import json as _json
-    from datetime import UTC as _UTC
-    from datetime import datetime as _datetime
-
-    from nutmeg.decision.adjudication_sheet import (
-        AdjudicationSheetError,
-        accepted_slots,
-        format_sheet_summary,
-        issue_sheet,
-        merge_deviation_registry,
-        merge_rx_predictions,
-        prediction_records,
-        rejected_slots,
-        validate_sheet,
-    )
-
-    payload = _json.loads(Path(legs_file).read_text("utf-8"))
-    if isinstance(payload, list):
-        _cli.typer.echo("❌ 扁平 legs 数组不含 fair/旗/完整度，无法裁决。", err=True)
-        raise _cli.typer.Exit(code=2)
-    findings = _ticket_findings(payload, Path(legs_file), with_legs_file)
-    now = _datetime.now(_UTC).astimezone()
-
-    if apply_sheet_file is None:
-        try:
-            sheet = issue_sheet(
-                payload, findings, legs_file=Path(legs_file), issued_at=now
-            )
-        except AdjudicationSheetError as error:
-            _cli.typer.echo(f"✅ {error}")
-            return
-        text = _json.dumps(sheet, ensure_ascii=False, indent=1)
-        if output:
-            Path(output).write_text(text + "\n", "utf-8")
-            _cli.typer.echo(
-                f"裁决单（{len(sheet['rulings'])} 条 ERROR，ruling 全部留空）→ {output}\n"
-                "填 ruling=accept|reject；驳回须附 rule_ids + reason + predictions，"
-                "然后 --apply 本文件。"
-            )
-        else:
-            _cli.typer.echo(text)
-        return
-
-    sheet = _json.loads(Path(apply_sheet_file).read_text("utf-8"))
-    try:
-        slots = validate_sheet(sheet, findings)
-    except AdjudicationSheetError as error:
-        _cli.typer.echo(f"❌ 裁决单不完整：{error}", err=True)
-        raise _cli.typer.Exit(code=2) from error
-    _cli.typer.echo(format_sheet_summary(slots))
-    accepted = accepted_slots(slots)
-    if accepted:
-        marks = "、".join(slot.signature for slot in accepted)
-        _cli.typer.echo(
-            f"\n⛔ 接受门的 ERROR 未落文书：{marks}\n"
-            "   接受门 = 这张票不出。8/08 铁律：预算压缩唯一合法动作是**丢整场**，"
-            "不是降双选。改票后重新签发裁决单。"
-        )
-        raise _cli.typer.Exit(code=1)
-    rejected = rejected_slots(slots)
-    updated = merge_deviation_registry(payload, slots)
-    Path(legs_file).write_text(
-        _json.dumps(updated, ensure_ascii=False, indent=1) + "\n", "utf-8"
-    )
-    _cli.typer.echo(f"\n偏离登记 → {legs_file}（{len(rejected)} 条 user_override）")
-    records = prediction_records(slots)
-    if records:
-        issue = str(payload.get("issue", "") or "")
-        target = rx_file or (
-            Path(".nutmeg-data/zucai") / f"{issue}-rx.json" if issue else None
-        )
-        if target is None:
-            _cli.typer.echo("⚠️ 无 issue 也未给 --rx-file，预测未落盘：")
-            for record in records:
-                _cli.typer.echo(f"   {record['id']} {record['claim']}")
-        else:
-            document = merge_rx_predictions(
-                Path(target), records, issue=issue, registered_at=now
-            )
-            Path(target).parent.mkdir(parents=True, exist_ok=True)
-            Path(target).write_text(
-                _json.dumps(document, ensure_ascii=False, indent=1) + "\n", "utf-8"
-            )
-            _cli.typer.echo(f"驳回预测 → {target}（{len(records)} 条）")
-    _cli.typer.echo(
-        "\n文书已落。门还没按 —— 出票仍需："
-        f"\n  uv run nutmeg decision-audit-legs --legs-file {legs_file} "
-        "--user-override --ticket-batch-token <Web 工位签发>"
-    )
-
-
 @_cli.app.command("claude-auth-check")
 def claude_auth_check() -> None:
     """定时任务用的 claude 无人值守认证自检：token 文件状态 + 真调一次（不打印 token）。
@@ -607,6 +295,27 @@ def claude_auth_check() -> None:
     raise _cli.typer.Exit(code=1)
 
 
+_OPS_RUN_LABEL_ARG = _cli.typer.Argument(..., help="作业名（com.nutmeg.<label>）")
+_OPS_RUN_COMMANDS_ARG = _cli.typer.Argument(..., help="逐段执行的 shell 命令，每段一个参数")
+
+
+@_cli.app.command("ops-run")
+def ops_run(
+    label: str = _OPS_RUN_LABEL_ARG,
+    commands: list[str] = _OPS_RUN_COMMANDS_ARG,
+    data_dir: Path = _AUDIT_DATA_DIR_OPTION,
+) -> None:
+    """launchd 作业包装：逐段跑、逐段记 `logs/runs.jsonl`、末行 NUTMEG_OK/FAILED 带时间戳。
+
+    2026-10-12：plist 里 `;` 串联只让最后一段的退出码进 launchctl，`results` 段失败
+    被 `settle` 段的 0 盖住。任一段失败仍跑完余段，最后退出 1。
+    """
+    from nutmeg.decision.ops_run import run_job
+
+    code = run_job(label, list(commands), data_dir=Path(data_dir), cwd=Path.cwd())
+    raise _cli.typer.Exit(code=code)
+
+
 @_cli.app.command("ops-status")
 def ops_status(
     data_dir: Path = _AUDIT_DATA_DIR_OPTION,
@@ -629,6 +338,7 @@ def ops_status(
     from datetime import datetime as _datetime
 
     from nutmeg.decision.ops_status import (
+        FAILED_MARK,
         CronStatus,
         PendingItem,
         agent_status,
@@ -636,6 +346,7 @@ def ops_status(
         format_status,
         iter_plists,
         launchctl_list,
+        launchctl_running,
         parse_launchctl,
         stale_after_days,
     )
@@ -648,11 +359,20 @@ def ops_status(
         except OSError:
             return "", None
 
-    loaded = parse_launchctl(launchctl_list())
+    listed = launchctl_list()
+    loaded = parse_launchctl(listed)
+    running = launchctl_running(listed)
 
     agents = []
-    for plist, spec, _error in iter_plists(Path.home() / "Library" / "LaunchAgents"):
+    for plist, spec, error in iter_plists(Path.home() / "Library" / "LaunchAgents"):
         if spec is None:
+            # 坏 plist 也要露面（2026-10-13：decision.web 的 `&&` 没转义，状态页静默少一行）
+            agents.append(agent_status(
+                plist.stem, f"plist 解析失败：{error!r}"[:40],
+                loaded=plist.stem in loaded, last_exit=loaded.get(plist.stem, ""),
+                err_text=f"{FAILED_MARK} plist 解析失败 {error!r}",
+                err_at=_datetime.fromtimestamp(plist.stat().st_mtime),
+            ))
             continue
         label = str(spec.get("Label") or plist.stem)
         out_text, out_at = _read(Path(str(spec.get("StandardOutPath") or "")))
@@ -661,8 +381,11 @@ def ops_status(
         agents.append(agent_status(
             label, schedule,
             loaded=label in loaded, last_exit=loaded.get(label, ""),
+            running=label in running,
             out_text=out_text, out_at=out_at, err_text=err_text, err_at=err_at,
-            stale_after=stale_after_days(spec.get("StartCalendarInterval")),
+            # 常驻服务的日志只在有访问/重启时更新，不按「久未更新」报警
+            stale_after=(10**6 if spec.get("KeepAlive")
+                         else stale_after_days(spec.get("StartCalendarInterval"))),
         ))
 
     jobs = []
@@ -717,8 +440,12 @@ def ops_status(
                 f"{summary['candidates']} 个候选 / {summary['lines']} 行 → "
                 f"analytics/deadcode/{summary.get('report')}（删前照 10-03 审计 §7 核对）",
             ))
+    from nutmeg.decision.ops_run import failed_segments
+
+    today = _datetime.now().date()
     _cli.typer.echo(format_status(
-        agents, jobs, pending, today=_datetime.now().date()
+        agents, jobs, pending, today=today,
+        segments=failed_segments(Path(data_dir), day=today.isoformat()),
     ))
 
 
@@ -726,23 +453,16 @@ def ops_status(
 def zucai_official(
     issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26103"),
     zucai_dir: Path = _ZUCAI_DIR_OPTION,
-    settle_ledger: bool = _cli.typer.Option(
-        False, "--settle-ledger", help="按 rx.final_ticket 计命中并回填 ledger(幂等,已结不重结)"),
 ) -> None:
     """官方赛果/奖金(gameNo=90,90分钟口径)——结算与回填的唯一权威源。
 
     ⚠️AET 守卫:赛果只取官方 lotteryDrawResult 串,永不接触 API-Football 的 goals
     (含加时;2026-08-11 博德实测 90' 2-2 / goals 3-2)。未开奖 → 明确报"尚未开奖",退出码 1。
     """
-    from datetime import date as _date
-
     from nutmeg.decision.zucai_official import (
         fetch_official,
         format_draw,
         record_official_result,
-    )
-    from nutmeg.decision.zucai_official import (
-        settle_ledger as _settle,
     )
 
     draw = fetch_official(issue)
@@ -751,47 +471,6 @@ def zucai_official(
         raise _cli.typer.Exit(code=1)
     _cli.typer.echo(format_draw(draw))
     _cli.typer.echo(f"  赛果串 → {record_official_result(draw, zucai_dir)}")
-    if settle_ledger:
-        for line in _settle(issue, zucai_dir, draw, settled_at=_date.today().isoformat()):
-            _cli.typer.echo(f"  ledger: {line}")
-
-
-@_cli.app.command("zucai-deployment-gate")
-def zucai_deployment_gate(
-    gate_file: Path = _DEPLOYMENT_GATE_FILE_OPTION,
-    official_history_file: Path | None = _OFFICIAL_HISTORY_FILE_OPTION,
-    json_output: bool = _cli.typer.Option(False, "--json", help="输出机器可读 JSON"),
-) -> None:
-    """足彩出票前部署门：确定性资金/回本算术，只报告不改票。"""
-    import json as _json
-
-    from nutmeg.decision.zucai_deployment import (
-        evaluate_deployment_gate,
-        format_deployment_gate,
-    )
-    from nutmeg.decision.zucai_official import (
-        fetch_renjiu_history,
-        parse_renjiu_history_payload,
-    )
-
-    try:
-        payload = _json.loads(Path(gate_file).read_text("utf-8"))
-        if official_history_file is None:
-            history = fetch_renjiu_history()
-        else:
-            raw_history = _json.loads(Path(official_history_file).read_text("utf-8"))
-            history = parse_renjiu_history_payload(raw_history)
-        result = evaluate_deployment_gate(payload, history)
-    except Exception as error:
-        _cli.typer.echo(f"deployment gate error: {error}")
-        raise _cli.typer.Exit(code=1) from error
-
-    if json_output:
-        _cli.typer.echo(_json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
-    else:
-        _cli.typer.echo(format_deployment_gate(result))
-    if result.exit_code:
-        raise _cli.typer.Exit(code=result.exit_code)
 
 
 @_cli.app.command("decision-alias-propose")
@@ -817,28 +496,6 @@ def decision_alias_propose(
     if not run_date:
         raise _cli.typer.BadParameter("需要 --run-date 或 --issue")
     _cli.typer.echo(run_propose(run_date, output_dir, apply=apply))
-
-
-@_cli.app.command("zucai-ledger")
-def zucai_ledger(
-    zucai_dir: Path = _ZUCAI_DIR_OPTION,
-    issue: str | None = _cli.typer.Option(None, "--issue", help="按期号过滤(list)"),
-    add: bool = _cli.typer.Option(False, "--add", help="追加一行入账(配 --kind/--stake/...)"),
-    kind: str | None = _cli.typer.Option(None, "--kind", help="任九|胜负彩"),
-    stake: int | None = _cli.typer.Option(None, "--stake", help="stake_yuan"),
-    tickets: int | None = _cli.typer.Option(None, "--tickets", help="注数"),
-    code: str | None = _cli.typer.Option(None, "--code", help="票面串"),
-    note: str | None = _cli.typer.Option(None, "--note", help="备注"),
-) -> None:
-    """账本操作(Roadmap D2):没入账 = 没打。结算/派奖由 zucai-official --settle-ledger 填。"""
-    from nutmeg.decision.zucai_ticket import ledger_add, ledger_summary
-
-    if add:
-        _cli.typer.echo(ledger_add(zucai_dir, {
-            "issue": issue, "kind": kind, "stake_yuan": stake,
-            "tickets": tickets, "code": code, "note": note}))
-        return
-    _cli.typer.echo(ledger_summary(zucai_dir, issue=issue))
 
 
 @_cli.app.command("zucai-night-calibrate")

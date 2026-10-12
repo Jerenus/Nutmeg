@@ -176,7 +176,7 @@ def current_issue(zdir: Path, *, now: datetime) -> str | None:
 
 
 def latest_issue(zdir: Path) -> str | None:
-    """最近一期（不管截没截止）：结算/grade-rx 用。"""
+    """最近一期（不管截没截止）。"""
     candidates = _issue_candidates(zdir)
     return max(issue for issue, _ in candidates) if candidates else None
 

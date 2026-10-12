@@ -28,6 +28,9 @@ HOMES = {
     "beijing_tz": ("nutmeg/decision/bj_time.py", "BJ / aware / parse_bj"),
     "browser_ua": ("nutmeg/data/http.py", "BROWSER_UA / *_HEADERS"),
     "claude_cli": ("nutmeg/decision/claude_models.py", "claude 可执行文件解析"),
+    # 2026-10-13 补三条：ARCHITECTURE §1 列为共享、此前没守
+    "board_rows": ("nutmeg/decision/board_rows.py", "jczq_rows"),
+    "sporttery_board": ("nutmeg/data/sporttery_board.py", "flatten / selling_rows"),
 }
 
 # 函数名规则：在唯一实现之外定义这些名字＝又写了一份
@@ -38,6 +41,9 @@ FUNCTION_NAMES = {
     "read_json": {"read_json", "_read_json", "_load_json"},
     "channel_map": {"load_channel_map", "_load_channel_map", "_read_channel_map"},
     "closing_issues": {"closing_issues", "_closing_issues", "issues_closing_today"},
+    "board_rows": {"jczq_rows", "_jczq_rows"},
+    "sporttery_board": {"selling_rows", "_selling_rows", "flatten_board", "_flatten_board",
+                        "_flatten_sporttery", "flatten_sporttery"},
 }
 
 # 确有不同契约的例外：(规则, 文件) → 理由
@@ -46,6 +52,8 @@ ALLOWED = {
         "内核 calibrate 的分布对分布 Brier（y 是分布），与对一个开出面打分的契约不同",
     ("channel_map", "nutmeg/decision/zucai_prep.py"):
         "备料是写 .auto 表的一方，对齐时只认人工表，不能读自己写出的 .auto",
+    ("board_rows", "experiments/corpus_build.py"):
+        "语料行以 jc-results 已结算场为主键、跨日找盘并带结果，与当日板面行不同契约（同名而已）",
 }
 
 _CHANNEL_MAP_FILE = re.compile(r"channel-map.*\.json")

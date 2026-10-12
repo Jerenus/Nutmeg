@@ -138,7 +138,7 @@ flowchart TB
 | 审票与账务 | `review.py` `review_runner.py` `betslip.py` `betslip_diagnosis.py` `slip_group.py` `bankroll.py` `account.py` `retro_encoder.py` | `betslips.jsonl` `scoreboard.json` `analytics/account/<月>.md` |
 | 实验 | `rsi_loop.py` `rsi_grading.py` `rsi_samples.py` `crowd_model.py` `experiments/*.py` `nutmeg/gym/` | 内核 rsi_* 表、`experiments/corpus-v2.json` `rsi-samples.json` `factors.json` `registry/`（含 `CR*.json`）`candidates/`、`analytics/rsi-loop/` |
 | 运行 | `day_runner.py` `day_decisions.py` `day_broadcast.py` `day_ops.py` `day_runs.py` `ops_status.py`（launchd / plist / 日程只在这里解析一次）、`nutmeg/notifications/notify.py` | `daily/<日>/timeline.json` `decisions.json` `broadcasts.jsonl` `previews.jsonl`、`notifications/ledger.jsonl` |
-| 共享（各算一份已出过分歧的，只许在这里实现） | `match_results.py`（90' 赛果，唯一来源 `jc-results.json`）`board_rows.py`（每场一行）`faces.py`（面与标签）`bj_time.py` `files.py`、`nutmeg/data/prices.py`（去水）`http.py`（浏览器头与抓取）`sporttery_board.py`（体彩快照的在售 + 业务日遍历与摊平）、`zucai_night.load_channel_map` | — |
+| 共享（各算一份已出过分歧的，只许在这里实现） | `match_results.py`（90' 赛果，唯一来源 `jc-results.json`）`board_rows.py`（每场一行）`faces.py`（面与标签）`bj_time.py` `files.py`、`nutmeg/data/prices.py`（去水）`http.py`（浏览器头与抓取）`sporttery_board.py`（体彩快照的在售 + 业务日遍历与摊平）、`zucai_identity.load_channel_map`（跨渠道对号表唯一读取处） | — |
 
 ---
 
@@ -175,7 +175,7 @@ gantt
   section 结算与实验
   结算 day.settle                            :crit, e1, 09:45, 10m
   结算 二跑                                  :crit, e2, 15:45, 10m
-  RSI 闭环 12 步                             :crit, e3, 10:45, 30m
+  RSI 闭环 9 步                              :crit, e3, 10:45, 30m
   OpenClaw D1D2 补结算                       :crit, e4, 12:30, 10m
 ```
 
@@ -195,6 +195,9 @@ gantt
 | `rsi.sweep` | 每小时 :00 | `rsi sweep` | F5 / F9 / R0 / R1 的前瞻观察义务 | 加场日义务过期成缺口，不能回补 |
 | `account.month` | 每月 1 日 16:10 | `account month --previous --write` | 账房月报 | 月报缺席（可手跑） |
 | `ops.deadcode` | 每周一 09:20 | `python scripts/deadcode_report.py` → `analytics/deadcode/<日>.md` | 工程（`ops-status` 待办行） | 死代码又会攒到上千行才被看见（可手跑） |
+| `decision.web` | 常驻（KeepAlive，2026-10-13 起） | `decision-web --port 8787` | `/observe` `/betslips` `/day` `/verdict` `/runs` 页面 | 页面不可达；此前手工进程 10-08 起跑了 5 天旧代码 |
+
+> **作业包装（2026-10-13）**：多段作业（settle / research / verdict / brief / loop / sweep / backfill / prep ×3）经 `nutmeg ops-run <label> <段>…` 逐段执行并记 `logs/runs.jsonl`（每段 ts / exit / secs / tail），任一段失败整条作业退出 1 且末行 `NUTMEG_FAILED … step=i/n` 带时间戳；`ops-status` 在该行下列出失败段。此前 plist 用 `;` 串联，只有末段退出码进 launchctl（10-12 `results` 段两次 exit 1 被 `settle` 的 0 盖住）。
 
 **OpenClaw 在用**（2026-10-01 起只保留确定性任务，GPT 平行判断链全部停用）：08:10 `decision-settle` 昨日内核结算；12:30 D1/D2 补结算（预演）+ `build-context`（只写当日板面上下文）；17:15 `run-strict --stage am` 临场刷板。
 
@@ -286,7 +289,7 @@ flowchart TB
 3. **rubric r1 问题表**：事实层 7 项（主 / 客缺阵官宣、停赛、轮换、门将、场地、其他）；结构层 6 项（锚方、中轴完整、弱方路径、平局模态、翻车候选、死面）；价格层 2 项（市场读法、事实已定价）。全文与上限见 RULEBOOK「九」或 `nutmeg rubric items`。
 4. **永不因 rubric 拒收**：漏写＝全部弃权（`rubric_missing`），不合法选项改弃权（`rubric_notes`）。
 5. **改判**：有 rubric 的研究，改判必须落到项并给封闭理由（新官宣信息 / 证据层级不够 / 已被价格吸收 / 研究自相矛盾 / 回市场），tilt 从合并后的 rubric 重新派生；改判账在判决页按理由分层。
-6. **判断唯一事实**：Read 自报 `kind / board_key / code`，内核每个序列取最高 revision 投影回 `reads.json`；手工 `decision-read` 已退役。
+6. **判断唯一事实**：Read 自报 `kind / board_key / code`，内核每个序列取最高 revision 投影回 `reads.json`；自动通路不再经过手工 `decision-read`（命令仍注册，只作手工落 Read 的备用口，退役待 10-08 §7 手工足彩通路一并裁）。
 7. **两读**：读者 B 只读分析员写下的证据层，逐项作答；κ<0.4 的项要重写或删；B 的整体概率只记账（F9 已证 LLM 整体概率≈市场）。研究一落盘（`research run` 写出新研究、12:30/18:45 `research refresh`）就对还没开球、还没有侧车的研究补读（`rubric read --pending`，2026-10-05），侧车才是前瞻的、简报才有两读 κ；10:45 闭环的补读只兜底。
 
 ### 3.3 足彩泳道的 legs-base 与机器初稿
@@ -495,7 +498,7 @@ flowchart TB
   end
   subgraph JUDGE["结账与判决"]
     direction LR
-    L4["4 grade_prospective<br/>F5 F9 F10 F11<br/>F13 F14 F15 G1 K1"] --> L5["5 verdict_due<br/>到期判决（系统）"] --> L6["6 factor_propose<br/>T13 提案 · 含 rubric 逐项"]
+    L4["4 grade_prospective<br/>F5 F9 F10 F11 F13<br/>F14 F15 F16 F17 G1 K1"] --> L5["5 verdict_due<br/>到期判决（系统）"] --> L6["6 factor_propose<br/>T13 提案 · 含 rubric 逐项"]
   end
   subgraph CMP["指数、计数与提交"]
     direction LR
@@ -615,6 +618,8 @@ flowchart TB
 | 10-03 | **过度设计审计**：185 张表 142 张空、operator 78 张表共 2 行；Dream 5 夜录 1 个世界；RSI 判决 0；审计门已无 ERROR 路径；143 条命令 | 瘦身五波：删旧版服务层、机器构票工具、operator 代码、Dream（规则 v3 迁入 gym）；闭环 12→9 步；`nutmeg/` 116,572→59,784 行，命令 143→77；审计门一组与研究入库拒收逻辑未动 | `evidence/2026-10-03-overdesign-audit.md` |
 | 10-05 | **语料重建让前瞻样本倒退**：足彩期结算后竞彩行被足彩孪生行替换（F9 丢 6、F5 丢 3）；模糊去重把 83 场不同比赛当成孪生丢掉；同一场比赛跨日重复让 F5 多数 1 场 | 去重修正 + 样本账（首次入选即冻结，只增不减，剔除留痕）；用内核里记录的 `inputs_hash` 逐位复原 7 个历史快照作创世 | `evidence/2026-10-05-sample-ledger.md` |
 | 10-08 | **第二轮瘦身审计**：同一推导多处各算且已出分歧（内核比 jc-results 少 27 场赛果、channel-map 10 份、Read 两套构建器）；`ledger_writeback` 10 月 0 注入账；规则层自相矛盾（RULEBOOK §0 vs §1–7、分析员 tilt 前后矛盾） | 死链删除（产品读侧 2,405→300 行、内核证据 / 会话 / 可靠性 / 票据写入链、decision-web v1 路由）；赛果 / Read / 每场行 / 去水等收成单一来源；通知改 `notify()` + JSONL；`ledger_writeback` 退役；RULEBOOK §1–7 归档；`nutmeg/` 61,871→50,629 行 | `evidence/2026-10-08-slim-round-2.md` |
+| 10-12/13 | **运维体检**：rsi 闭环 21/21 天零失败但「跑了看不出坏」——F9 天平义务对竞彩/足彩重叠场（内核双 match_id）永不履行、sweep 每小时报红无人看；10-10 腰斩场未进 void-matches 卡住封存；plist `;` 串联吞前段退出码；decision-web 手工进程跑旧代码 | `rsi balance` 认两侧身份；void 补录；`ops-run` 包装 + `runs.jsonl` + ops-status 列失败段；`decision.web` 进 launchd；loop 沿用判决合并一行；grade-rx 改取最近已截止期；closing_odds 停写 per_book；文档五处漂移修正 | `evidence/2026-10-12-ops-audit.md` |
+| 10-13 | **审计门一组删除**（10-03 §6.2 / 10-08 §7.2 两轮被自动模式拦下、Jun 授权）：ERROR 通道自 09-27 起为空、`*-rx.json` 自 26133 无新文件、记分牌权威/影子期无人调用 | 删 `decision-audit-legs` / `decision-explain-faces` / `decision-adjudicate` / `zucai-deployment-gate` / `zucai-ledger` / `workflow *` / `scoreboard *`（9 条）与 `legs_audit`（1,490→104 行只剩词典）、`adjudication_sheet` / `audit_override` / `zucai_deployment` / `zucai_ticket` / `rx_ingest` / `nutmeg/scoreboard/`、`zucai_official.settle_ledger`、settle 的 grade-rx 步、内核 `record_shadow_review` / `approve_cutover` / `count_adjudications`；`nutmeg/` 51,728→47,484 行；CLAUDE/AGENTS「出票硬门」改为 `betslip preview` V1/V2 | `evidence/2026-10-13-audit-gate-removal.md` |
 | 10-02 | 运行层体检：空盘日 Dream / 深研崩溃、因子提案会 KeyError、R1 显示为 0、播报内容过时、F2 不可能结账 | 空盘跳过、提案解析 rubric 因子、R1 按观测数、播报换内容、F2/F1c 退役、足彩 legs-base 自动化、早盘空盘不再报失败 | 同上 §7，`evidence/2026-10-02-ops-review.md` |
 
 > [!NOTE]

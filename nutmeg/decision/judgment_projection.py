@@ -14,7 +14,8 @@ from pathlib import Path
 from nutmeg.decision.zucai_identity import load_channel_map
 
 REPORT = "judgment-projection.json"
-PROJECTED = "reads.projected.json"
+# `reads.projected.json`（投影全文）2026-10-13 退役：P2 起 reads.json 本身就是内核投影落盘，
+# 它与 reads.json 逐字相同、全仓无读者；比对结果只留 REPORT。
 _KEYS = ("prior", "belief", "stance", "judge", "commitment_tier")
 
 
@@ -78,8 +79,6 @@ def write_report(directory: Path, *, projected: list[dict], result: dict, board_
                  at: str, prefix: str = "") -> Path:
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / f"{prefix}{PROJECTED}").write_text(
-        json.dumps(projected, ensure_ascii=False, indent=1), encoding="utf-8")
     path = directory / f"{prefix}{REPORT}"
     path.write_text(json.dumps({"board_key": board_key, "at": at, **result},
                                ensure_ascii=False, indent=1), encoding="utf-8")

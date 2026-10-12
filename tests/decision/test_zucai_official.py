@@ -9,8 +9,6 @@ from nutmeg.decision.zucai_official import (
     parse_draw,
     parse_renjiu_history_item,
     record_official_result,
-    settle_ledger,
-    ticket_hits,
 )
 
 # 26102 官方真实数据(2026-08-10 开奖,已用 API 实测核对)作 fixture
@@ -129,15 +127,6 @@ def test_fetch_returns_none_when_not_drawn():
     assert got and got.issue == "26102"
 
 
-def test_ticket_hits_multi_face():
-    results = parse_draw(_ITEM).results
-    # 26102 的两版处方对照(复盘已算过:判决表版 11/13)
-    faces9 = {"2": "01", "4": "31", "5": "3", "7": "01", "8": "310",
-              "9": "01", "10": "30", "13": "31", "14": "310"}
-    hit, total = ticket_hits(faces9, results)
-    assert (hit, total) == (8, 9)          # 唯一断腿 = 场5(裸单3,实开1)
-
-
 def test_record_official_result_upserts_the_draw_string(tmp_path):
     (tmp_path / "official-results.json").write_text(
         json.dumps({"26101": "3 3 3 3 3 3 3 3 3 3 3 3 3 3"}), "utf-8")
@@ -155,35 +144,3 @@ def test_record_official_result_creates_the_file(tmp_path):
     record_official_result(parse_draw(_ITEM), tmp_path)
     doc = json.loads((tmp_path / "official-results.json").read_text("utf-8"))
     assert doc["26102"].split()[4] == "1"
-
-
-def test_settle_ledger_is_idempotent(tmp_path):
-    d = parse_draw(_ITEM)
-    (tmp_path / "26102-rx.json").write_text(json.dumps({
-        "final_ticket": {"2": "01", "4": "31", "5": "3", "7": "01", "8": "310",
-                         "9": "01", "10": "30", "13": "31", "14": "310"}}), "utf-8")
-    ledger = tmp_path / "zucai-ledger.jsonl"
-    ledger.write_text(json.dumps({"issue": "26102", "kind": "任九", "stake_yuan": 1152,
-                                  "note": "x", "settled_at": None}, ensure_ascii=False) + "\n",
-                      "utf-8")
-    out1 = settle_ledger("26102", tmp_path, d, settled_at="2026-08-12")
-    assert any("8/9" in ln for ln in out1)
-    row = json.loads(ledger.read_text("utf-8").strip())
-    assert row["hits"] == 8 and row["prize_yuan"] == 0 and row["settled_at"] == "2026-08-12"
-    # 第二次:已结不重结
-    out2 = settle_ledger("26102", tmp_path, d, settled_at="2026-08-13")
-    assert any("无待结行" in ln for ln in out2)
-    assert json.loads(ledger.read_text("utf-8").strip())["settled_at"] == "2026-08-12"
-
-
-def test_settle_ledger_pays_on_full_hit(tmp_path):
-    d = parse_draw(_ITEM)
-    # 构造一张 9/9 票(全对面)
-    win = {str(i): d.results[str(i)] for i in range(1, 10)}
-    (tmp_path / "26102-rx.json").write_text(json.dumps({"final_ticket": win}), "utf-8")
-    ledger = tmp_path / "zucai-ledger.jsonl"
-    ledger.write_text(json.dumps({"issue": "26102", "kind": "任九", "stake_yuan": 18,
-                                  "note": "", "settled_at": None}) + "\n", "utf-8")
-    settle_ledger("26102", tmp_path, d, settled_at="2026-08-12")
-    row = json.loads(ledger.read_text("utf-8").strip())
-    assert row["hits"] == 9 and row["prize_yuan"] == 21018.0

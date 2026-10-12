@@ -55,6 +55,7 @@ class AgentStatus:
     err_tail: str
     err_at: datetime | None
     stale_after: int = STALE_AFTER_DAYS
+    running: bool = False      # launchctl 列出了 PID：常驻服务正在跑
 
     @property
     def outcome(self) -> str:
@@ -62,7 +63,11 @@ class AgentStatus:
 
         备料链（`zucai-prep`）不发 `NUTMEG_OK` 标记，只打摘要行——此时退回
         launchd 记录的退出码，并如实标成「无标记」而不是假装成功。
+        常驻服务（KeepAlive）有 PID 就是「运行中」：launchd 记的 last_exit 是上一个
+        实例的退出码（重启一次就是 143），不代表现在。
         """
+        if self.running:
+            return "运行中"
         candidates = [
             (self.out_at, self.out_tail),
             (self.err_at, self.err_tail),
@@ -149,6 +154,7 @@ def agent_status(
     err_text: str = "",
     err_at: datetime | None = None,
     stale_after: int = STALE_AFTER_DAYS,
+    running: bool = False,
 ) -> AgentStatus:
     return AgentStatus(
         label=label,
@@ -160,7 +166,18 @@ def agent_status(
         err_tail=_tail_marker(err_text),
         err_at=err_at,
         stale_after=stale_after,
+        running=running,
     )
+
+
+def launchctl_running(text: str) -> set[str]:
+    """`launchctl list` 文本 → 此刻有 PID 的 com.nutmeg.* 标签（常驻服务用）。"""
+    out: set[str] = set()
+    for line in (text or "").splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 3 and parts[2].startswith("com.nutmeg.") and parts[0].strip().isdigit():
+            out.add(parts[2].strip())
+    return out
 
 
 def parse_launchctl(text: str) -> dict[str, str]:
@@ -207,6 +224,8 @@ def describe_schedule(doc: dict, *, minute_word: str = "分") -> str:
     interval = doc.get("StartInterval")
     if not calendar and isinstance(interval, int) and not isinstance(interval, bool) and interval:
         return f"每 {interval // 60} {minute_word}"
+    if not calendar and doc.get("KeepAlive"):
+        return "常驻"          # decision.web（2026-10-13）：没有排程，launchd 保活
     return describe_calendar(calendar)
 
 
@@ -258,7 +277,11 @@ def format_status(
     pending: list[PendingItem],
     *,
     today: date,
+    segments: dict[str, list[str]] | None = None,
 ) -> str:
+    """`segments`：{作业名: [当天失败的段…]}，来自 `ops_run.failed_segments`——
+    经 `ops-run` 包装的作业，哪一段、几点、什么退出码、尾行，都印在该行下面。"""
+    segments = segments or {}
     lines = [f"# Nutmeg 今日状态（{today.isoformat()}）", "", "## launchd 定时任务"]
     if not agents:
         lines.append("  （没有已安装的 com.nutmeg.* agent）")
@@ -284,6 +307,8 @@ def format_status(
         if agent.outcome == "失败":
             tail = agent.latest_tail
             lines.append(f"      {tail[:150]}")
+        for text in segments.get(agent.label.removeprefix("com.nutmeg."), []):
+            lines.append(f"      ✗ {text}")
     lines += ["", "## OpenClaw 定时任务"]
     if not jobs:
         lines.append("  （没有 Nutmeg 相关 cron job）")
@@ -303,7 +328,8 @@ def format_status(
         lines.append(f"  [{item.kind}] {item.subject} — {item.detail}")
     lines += [
         "",
-        "> 每条结局都与它的**时间证据**并排打印。NUTMEG_OK/NUTMEG_FAILED 行本身不带",
-        "> 时间戳，只看日志尾行会把几天前的失败读成今天的（2026-09-17 我就这么读错过）。",
+        "> 每条结局都与它的**时间证据**并排打印。经 `ops-run` 包装的作业，NUTMEG_OK/FAILED 行",
+        "> 自带时间戳且每段单独记账（logs/runs.jsonl）；未包装的作业只看日志尾行，会把几天前的",
+        "> 失败读成今天的（2026-09-17 我就这么读错过）。",
     ]
     return "\n".join(lines)

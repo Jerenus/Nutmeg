@@ -202,65 +202,6 @@ def record_official_result(draw: OfficialDraw, zucai_dir) -> Path:
     return path
 
 
-def ticket_hits(faces: dict, results: dict) -> tuple[int, int]:
-    """复式票命中数。faces={场次: "31"...}；返回 (命中腿数, 总腿数)。
-
-    复式票中奖注数恒为 0 或 1：每腿至多一个面与赛果相符，全中即恰好组合出 1 注。
-    """
-    total = len(faces)
-    hit = sum(1 for no, f in faces.items() if results.get(str(no)) in set(str(f)))
-    return hit, total
-
-
-def settle_ledger(issue: str, zucai_dir, draw: OfficialDraw, *,
-                  settled_at: str) -> list[str]:
-    """按 rx 的 final_ticket 计算命中并回填 ledger。返回人读摘要行。
-
-    只结 `settled_at is None` 的行（幂等：已结不重结）。任九奖金 = 9/9 时官方单注奖金 ×1。
-    """
-    zdir = Path(zucai_dir)
-    lines: list[str] = []
-    rx_path = zdir / f"{issue}-rx.json"
-    faces = None
-    if rx_path.exists():
-        faces = (json.loads(rx_path.read_text("utf-8")) or {}).get("final_ticket")
-
-    ledger = zdir / "zucai-ledger.jsonl"
-    if not ledger.exists():
-        return [f"{issue}: 无 ledger 文件"]
-    rows = [json.loads(ln) for ln in ledger.read_text("utf-8").splitlines() if ln.strip()]
-    changed = False
-    for r in rows:
-        if str(r.get("issue")) != str(issue) or r.get("settled_at"):
-            continue
-        if r.get("kind") == "任九" and faces:
-            hit, total = ticket_hits(faces, draw.results)
-            r["hits"] = hit
-            prize = 0.0
-            if hit == total and draw.renjiu:
-                prize = draw.renjiu["stake_amount"]
-            r["prize_yuan"] = prize
-            r["settled_at"] = settled_at
-            note_add = f" | 官方结算({settled_at}): {hit}/{total}"
-            if draw.renjiu:
-                note_add += (f", 任九单注 ¥{draw.renjiu['stake_amount']:,.0f}"
-                             f"×{draw.renjiu['stake_count']}注")
-            r["note"] = (r.get("note") or "") + note_add
-            lines.append(f"任九 {hit}/{total} → 派奖 ¥{prize:,.0f} (stake ¥{r.get('stake_yuan')})")
-            changed = True
-        elif r.get("stake_yuan") == 0:      # 空仓行:补 settled_at 即可
-            r["hits"] = None
-            r["settled_at"] = settled_at
-            lines.append("空仓行已闭账")
-            changed = True
-        else:
-            lines.append(f"{r.get('kind')}: 无结构化票面(rx.final_ticket 缺失),需人工结算")
-    if changed:
-        ledger.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n",
-                          "utf-8")
-    return lines or [f"{issue}: ledger 无待结行"]
-
-
 def format_draw(draw: OfficialDraw) -> str:
     codes = " ".join(draw.results[str(i)] for i in range(1, 15))
     out = [f"{draw.issue} 开奖({draw.draw_date}): {codes}"]

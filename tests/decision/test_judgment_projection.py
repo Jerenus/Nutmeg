@@ -5,7 +5,6 @@ from pathlib import Path
 from nutmeg.config.settings import AppSettings
 from nutmeg.decision.jczq_reads import build_jczq_reads
 from nutmeg.decision.judgment_projection import (
-    PROJECTED,
     REPORT,
     compare,
     project_board,
@@ -55,7 +54,7 @@ def test_projection_equals_the_file_right_after_submission(tmp_path: Path) -> No
     out = run_projection(data_dir, day=DAY, kernel=kernel, at="2026-07-19T10:01:00+08:00")
     assert out["result"]["identical"] == 1 and out["result"]["mismatch"] == []
     assert out["line"].startswith("投影 1 条｜文件 1 条｜一致 1")
-    assert json.loads((day_dir / PROJECTED).read_text(encoding="utf-8")) == reads
+    assert not (day_dir / "reads.projected.json").exists()      # 2026-10-13 退役，只留比对报告
     report = json.loads((day_dir / REPORT).read_text(encoding="utf-8"))
     assert report["board_key"] == f"jczq:{DAY}" and report["identical"] == 1
 

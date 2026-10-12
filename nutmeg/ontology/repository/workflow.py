@@ -1,7 +1,7 @@
 """Typed persistence for governed workflow objects."""
 from __future__ import annotations
 
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, insert, select, update
 
 from nutmeg.ontology.actions.models import canonical_json
 from nutmeg.ontology.repository import schema_decision as sd
@@ -36,11 +36,6 @@ class WorkflowRepository:
                 supersedes_adjudication_id=row.supersedes_adjudication_id,
             )
         )
-
-    def count_adjudications(self) -> int:
-        return self._connection.execute(
-            select(func.count()).select_from(sw.adjudications)
-        ).scalar_one()
 
     def iter_adjudications(self) -> list[AdjudicationRow]:
         rows = (

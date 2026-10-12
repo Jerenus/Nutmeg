@@ -9,7 +9,7 @@
 
 **原则**：一条判断类规则只有在前瞻样本上证明「它标记的面比市场给的概率更常/更少开出」，才能影响票面。
 没有实证的规则只记账（INFO），不提示、不拦截；判断统一由 belief 承载，票面结构由帽内按判断概率最大化 P 决定。
-复核命令：`uv run nutmeg rsi weights propose --all`（T13，严格=可证前瞻样本）。代码：`legs_audit.EVIDENCE_POLICY`。
+复核命令：`uv run nutmeg rsi weights propose --all`（T13，严格=可证前瞻样本）。（代码侧 `legs_audit.EVIDENCE_POLICY` 与整组审计门 2026-10-13 已删，实证表只在本文。）
 
 | 规则 / 码 | 实测（2026-09-27） | 处理 |
 |---|---|---|
@@ -28,7 +28,7 @@
 | C3 弃模态面、全包分配、C15/C15b 多票共享死点、C18 跨渠道矛盾 | 结构算术 / 自洽，不是预测主张 | **保留原级别** |
 | 注金帽/刹车、没入账=没打、数据纪律 | 宪法 §4-§5 | 不变 |
 
-**截至 2026-09-27 没有任何判断类规则拦截出票**；`decision-audit-legs` 的 ERROR 通道保留，供将来有实证的规则接回（需 T13 严格 n≥60 且显著）。
+**截至 2026-09-27 没有任何判断类规则拦截出票**；`decision-audit-legs` 的 ERROR 通道空置两周后于 2026-10-13 随审计门一组删除。将来有实证的规则（T13 严格 n≥60 且显著）接回 `betslip preview` 的否决层（V 系列），不再另设门。
 
 **事前登记待检验（不影响票面）**：F10 热门低估（历史 60–80% 模态面 n=378 实开 74.9% vs 市场 68.1%，单次扫描，需前瞻复现）；F11 研究的保险点名能否识别热门翻车；**F16 赛程负荷**（2026-10-09：两队 14 天场数差 ≥2 时更密一方被高估？登记前回放 n=598 −0.8pp CI[−4.6,+2.9]＝零效应，预期证伪；台账只展示，见 `team_load.py`）。
 
@@ -38,15 +38,15 @@
 
 | 规则 | 现行动作 | 代码 |
 |---|---|---|
-| C3 弃模态面（含 top1−top2 <1pp 噪音带）、模态组合错配、全包名额被同价支配、排面与对位机制相反 | WARN，记账 | `legs_audit`：`modal_face_dropped(_flat)` / `modal_stack_mismatch` / `full_cover_allocation_dominated` / `excluded_face_contradicts_read`（不在 `EVIDENCE_POLICY` 里＝不降级） |
+| C3 弃模态面（含 top1−top2 <1pp 噪音带）、模态组合错配、全包名额被同价支配、排面与对位机制相反 | WARN，记账 | （代码 2026-10-13 已删：原 `legs_audit` 的 `modal_face_dropped(_flat)` / `modal_stack_mismatch` / `full_cover_allocation_dominated` / `excluded_face_contradicts_read`）；审票时由 `betslip preview` 的摘要与 `/zucai-packet` §6 看 |
 | C15 / C15b 多票共享被排面、共享裸单（含联合同死概率） | WARN；与已购票共享裸单在审票侧是 **V2 否决**（「八」） | `shared_exclusion` / `shared_naked_single` / `shared_naked_joint`；`review.py` |
 | C18 / C18b 跨渠道立场矛盾、买回足彩已排的面 | WARN；未显式映射身份只报 INFO | `cross_channel_stance_conflict` / `cross_channel_excluded_face` |
 | C19 研究点名保险却裸单 | ERROR→**WARN**（未证实，照样记账） | `EVIDENCE_POLICY["research_cover_naked"]` |
 | **l-权重表 + 锚归零**：拨动须含官宣或确证结构级证据，否则归零；`form_state` 每条 ≤1pp；shift 峰值 ≤ 证据预算；无官宣 ≤10pp、有官宣 ≤15pp | rubric 派生的 tilt 同样过这道算术 | `stance.TIER_PP` / `ANCHOR_TIERS` / `KIND_PP_CAP` / `apply_tilt` |
 | **g-scope 身份脊柱**：一场一个内核 `match_id`；竞彩编号、足彩场号、titan007/500 id 都是别名，只走别名表（`<期>-channel-map(.auto).json`），缺一环显式跳过，不按队名或 fair 值反查 | 校验强制 | `zucai_identity`、C18、`zucai-night-calibrate` |
-| 封闭词典（方向 / 无方向旗、`crash_markers`、先例 `alive/dead/none`、标签）：词典外的剥离进 note 并留痕，不阻断 | 入库桥 | `research_intake` + `legs_audit` 词典 |
+| 封闭词典（方向 / 无方向旗、`crash_markers`、先例 `alive/dead/none`、标签）：词典外的剥离进 note 并留痕，不阻断 | 入库桥 | `research_intake` + `legs_audit` 词典（2026-10-13 起 `legs_audit` 只剩词典） |
 
-`decision-audit-legs` 的 ERROR 通道今天是空的（判断类码全被 `EVIDENCE_POLICY` 降级）；出票前真正的否决在 `betslip preview`（「八」）。
+`decision-audit-legs` 及审计门一组已于 2026-10-13 删除（ERROR 通道自 09-27 起为空）；出票前真正的否决只在 `betslip preview`（「八」）。
 
 ## 八、审票否决表（2026-10-01 定位：机器＝风控官，`nutmeg/decision/review.py`）
 

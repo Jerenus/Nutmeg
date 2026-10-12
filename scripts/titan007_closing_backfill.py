@@ -15,9 +15,10 @@ What it writes: ``.nutmeg-data/jczq/daily/<date>/closing_odds.json`` keyed by �
                  "book_count": 31, "updated_at_min": ..., "updated_at_max": ...,
                  "sharp": {"odds": {...}, "fair_probability": {...}, "opening_odds": {...},
                            "bookmaker_count": 5},
-                 "all":   {... same shape over every admitted book ...},
-                 "per_book": [{"company_id", "company_name", "opening", "current",
-                               "updated_at"}, ...]}}
+                 "all":   {... same shape over every admitted book ...}}}
+
+``per_book`` (one row per bookmaker) was dropped on 2026-10-12: nothing read it and it
+was 91% of every file (297 MB of the 361 MB under ``jczq/daily``).
 
 It is idempotent: codes already present (including ones recorded as ``unavailable``)
 are skipped, and each day's file is written atomically after that day completes.
@@ -97,16 +98,8 @@ def _fetch_entry(client: Titan007Client, match_id: str, sleep_s: float) -> tuple
         "updated_at_max": _iso(max(stamps)) if stamps else None,
         "sharp": _market_dict(_consensus_market(quotes, sharp_books())),
         "all": _market_dict(_consensus_market(quotes, all_books())),
-        "per_book": [
-            {
-                "company_id": q.company_id,
-                "company_name": q.company_name,
-                "opening": q.opening,
-                "current": q.current,
-                "updated_at": _iso(q.updated_at),
-            }
-            for q in quotes
-        ],
+        # per_book 不再落盘（2026-10-12 运维体检）：它占每份文件 91%、`jczq/daily` 361 MB
+        # 里的 297 MB，而仓内唯一读者 corpus_build._closing_block 只用 sharp / all。
     }
     time.sleep(sleep_s)
     return entry, True

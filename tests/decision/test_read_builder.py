@@ -2,7 +2,6 @@
 """判读 → Read/legs 桥：只做转录与词典校验，不推断任何一场该买什么。"""
 import pytest
 
-from nutmeg.decision.legs_audit import audit_legs, legs_from_dict
 from nutmeg.decision.read_builder import JudgmentError, build, format_warnings
 
 FAIR = {"1": {"home": 0.605, "draw": 0.220, "away": 0.174},
@@ -25,16 +24,16 @@ def _judgment(**over):
     return base
 
 
-def test_build_emits_reads_and_legs_that_audit_cleanly():
+def test_build_emits_reads_and_structured_legs():
     r = build(_judgment(), issue="26122", store_ids=IDS, fair=FAIR,
               made_at="2026-09-11T11:10:00+08:00")
     assert [x["read_id"] for x in r.reads] == [
         "R-claude-zucai-26122-01-had", "R-claude-zucai-26122-02-had"]
     assert r.reads[0]["belief"] == r.reads[0]["prior"]      # 零偏移=跟市场
-    legs = legs_from_dict(r.legs)
-    assert legs[0].directional_flags == (("anchor_shield_out", "1"),)
-    assert ("home", "pivot_absent") in legs[0].team_tags
-    audit_legs(legs)           # 生成的结构必须能直接过审计器，不抛异常
+    leg = next(iter(r.legs["legs"].values()))
+    assert leg["directional_flags"] == [["anchor_shield_out", "1"]]
+    assert "pivot_absent" in leg["team_tags"]["home"]
+    assert {"faces", "fair", "prior", "license_questions", "precedents"} <= set(leg)
 
 
 def test_dropped_match_keeps_read_but_leaves_legs():

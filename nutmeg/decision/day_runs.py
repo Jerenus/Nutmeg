@@ -258,6 +258,19 @@ def _deadcode_runs(data_dir: Path, day: str) -> list[Run]:
                 evidence=_rel(report, data_dir))]
 
 
+def _web_runs(data_dir: Path, day: str) -> list[Run]:
+    """常驻页面服务的证据：当天 `logs/decision.web.out.log` 有写入（uvicorn 访问/启动行）。"""
+    log = data_dir / "logs" / "decision.web.out.log"
+    try:
+        at = datetime.fromtimestamp(log.stat().st_mtime)
+    except OSError:
+        return []
+    if at.date().isoformat() != day:
+        return []
+    return [Run(at=at.strftime("%H:%M"), status="ok", summary="在线（:8787，launchd KeepAlive）",
+                evidence=_rel(log, data_dir))]
+
+
 def _verdict_runs(data_dir: Path, day: str) -> list[Run]:
     log = data_dir / "jczq" / "daily" / day / "verdict-log.jsonl"
     try:
@@ -315,6 +328,9 @@ JOBS: dict[str, JobSpec] = {
     "com.nutmeg.ops.deadcode": JobSpec(
         "死代码周报", "system", "每周一列出走不到的模块、无引用和只有测试在用的定义（只报告）",
         _deadcode_runs, since=lambda _data_dir: "2026-10-12"),
+    "com.nutmeg.decision.web": JobSpec(
+        "页面服务", "system", "常驻 decision-web（/observe /betslips /day /verdict /runs）",
+        _web_runs, rolling_log=True, since=lambda _data_dir: "2026-10-13"),
 }
 
 
@@ -340,6 +356,8 @@ def planned_times(doc: dict, day: str | None = None) -> tuple[list[str], str]:
         step = max(1, interval // 60)
         return [f"{m // 60:02d}:{m % 60:02d}" for m in range(0, 1440, step)], f"每 {step} 分"
     cal = doc.get("StartCalendarInterval")
+    if not cal and doc.get("KeepAlive"):
+        return [], "常驻"      # 没有计划时刻，也就没有「漏跑」
     items = cal if isinstance(cal, list) else [cal] if isinstance(cal, dict) else []
     monthly = [i for i in items if isinstance(i, dict) and ("Day" in i or "Weekday" in i)]
     if monthly and len(monthly) == len(items):

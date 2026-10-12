@@ -29,7 +29,7 @@
 - 单张：`uv run nutmeg betslip preview --channel <jczq|renjiu|shengfucai> --placed-at <日> (--legs-file … --combo … | --faces … --issue <期>)`。
 - 一组票一起审：`uv run nutmeg betslip preview-set --plan <计划.json>`——组内互相同死只有一起审才看得见。
 - 输出：诊断（共享裸单、联合同死概率、对照处方/初稿）＋审票（⛔V1 期望回报率 <0.5、⛔V2 与已购票共享裸单、⚠️V3 倍投/重注）＋刹车/月度止损行。有 ⛔ 退出码 1：改票后再审；坚持原票也可登记（登记是事实，审票行随票入账）。
-- 审计门 `uv run nutmeg decision-audit-legs --legs-file <票面>` 只记账：判断类码一律不拦截（RULEBOOK「〇」）。
+- 审计门 `decision-audit-legs` 2026-10-13 已删（判断类码自 09-27 起本就不拦截，RULEBOOK「〇」）；审票只看 `betslip preview` 的 V1/V2。
 
 ## 5. 定案与登记
 - `uv run nutmeg betslip register --slip-id <号> --channel … --placed-at <日> …`；与初稿有偏离时带 `--deviation <理由类> --prediction "<一句赛后可核验>"`，理由在票内最早开球前写。

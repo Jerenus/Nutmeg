@@ -114,3 +114,32 @@ def test_loop_grades_registered_crowd_experiments(tmp_path):
     (reg / "_draft_H1.json").write_text("{}", encoding="utf-8")
     exps = graded_experiments(tmp_path)
     assert exps[-1] == "CR1" and "F14" in exps and "_draft_H1" not in exps
+
+
+def test_unchanged_verdicts_are_carried_not_relisted(tmp_path: Path):
+    """2026-10-12 降噪：同一判决日日重现「待人决定」；沿用的合并成一行并注明起始日。"""
+    from nutmeg.decision.rsi_loop import StepResult, _collect, _verdict_streaks
+
+    out = tmp_path / "rsi-loop"
+    out.mkdir()
+    line = "F9 → inconclusive（判据快照 {'bound': 'ci_upper'}）"
+    for day in ("2026-09-19", "2026-09-20", "2026-09-21"):
+        (out / f"{day}.json").write_text(
+            json.dumps({"verdicts": [{"cmd": "x", "status": "ok", "line": line}]}),
+            encoding="utf-8")
+    (out / "2026-09-18.json").write_text(json.dumps({"verdicts": []}), encoding="utf-8")
+
+    streaks = _verdict_streaks(out, "2026-09-22")
+    assert streaks == {line: "2026-09-19"}
+
+    step = StepResult("verdict_due", "ok", 1.0, "", {"commands": [
+        {"cmd": "rsi verdict --exp F9", "status": "ok", "tail": line},
+        {"cmd": "rsi verdict --exp K1", "status": "ok", "tail": "K1 → survived（判据快照 {}）"},
+        {"cmd": "rsi verdict --exp F5", "status": "not_due", "tail": "未到期"},
+    ]})
+    _, _, verdicts, actions, _ = _collect([step], streaks=streaks)
+    assert len(verdicts) == 3
+    assert [a for a in actions if a.startswith("判决已出")] == [
+        "判决已出：K1 → survived（判据快照 {}） → 若 survived 且 deploy_eligible，人决定 rsi deploy"
+    ]
+    assert any("判决沿用" in a and "F9 → inconclusive（自 2026-09-19）" in a for a in actions)

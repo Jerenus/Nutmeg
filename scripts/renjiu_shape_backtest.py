@@ -56,7 +56,8 @@ def evaluate(o, legs, pm: dict) -> tuple[float, float, float, bool, float]:
     cost = 2 * notes(counts)
     won = sum(1 for sub in combinations(range(len(legs)), 9) if all(hit[i] for i in sub))
     inside = {m.no for m, _ in legs}
-    outside = math.prod(sum(q ** (1 - b) for q in m.p.values()) for m in o.board if m.no not in inside)
+    outside = math.prod(sum(q ** (1 - b) for q in m.p.values())
+                        for m in o.board if m.no not in inside)
     e = 0.0
     for sub in combinations(range(len(legs)), 9):
         rest = [i for i in range(len(legs)) if i not in sub]
@@ -127,7 +128,8 @@ def summarize(name, recs) -> dict:
     return dict(name=name, n=len(recs), cost_mean=cost / len(recs), hits=len(prizes),
                 roi=(pay - cost) / cost, ci=(boots[int(BOOTS * .025)], boots[int(BOOTS * .975)]),
                 model_roi=(e - cost) / cost, roi_ex_top=(pay - top - cost) / cost,
-                pw=statistics.mean(r[4] for r in recs), med_prize=statistics.median(prizes) if prizes else 0,
+                pw=statistics.mean(r[4] for r in recs),
+                med_prize=statistics.median(prizes) if prizes else 0,
                 top=top)
 
 
@@ -136,8 +138,9 @@ HDR = (f"{'策略':<28}{'均价':>7}{'中/期':>9}{'命中':>5}{'P(中)':>7}{'RO
 
 
 def fmt(r: dict) -> str:
-    return (f"{r['name']:<28}{r['cost_mean']:>7.0f}{r['hits']:>4}/{r['n']:<4}{r['hits'] / r['n']:>5.0%}"
-            f"{r['pw']:>7.1%}{r['roi']:>8.0%} [{r['ci'][0]:>5.0%},{r['ci'][1]:>5.0%}]{r['model_roi']:>8.0%}"
+    return (f"{r['name']:<28}{r['cost_mean']:>7.0f}{r['hits']:>4}/{r['n']:<4}"
+            f"{r['hits'] / r['n']:>5.0%}{r['pw']:>7.1%}{r['roi']:>8.0%}"
+            f" [{r['ci'][0]:>5.0%},{r['ci'][1]:>5.0%}]{r['model_roi']:>8.0%}"
             f"{r['roi_ex_top']:>9.0%}{r['med_prize']:>9.0f}{r['top']:>9.0f}")
 
 
@@ -150,35 +153,45 @@ def main() -> None:
     zdir = Path(args.data_dir) / "zucai"
     pm = json.load(open(zdir / "prize-model.json"))["channels"]["renjiu"]
     obs = load_observations(zdir)
-    print(f"issues={len(obs)} {obs[0].issue}-{obs[-1].issue}; prize-model a={pm['a']} b={pm['b']} sd={pm['resid_sd']}")
+    print(f"issues={len(obs)} {obs[0].issue}-{obs[-1].issue}; "
+          f"prize-model a={pm['a']} b={pm['b']} sd={pm['resid_sd']}")
 
     def cnt(o, lo, hi=1.01):
         return sum(1 for m in o.board if lo <= mp(m) < hi)
-    for label, lo, hi in (("≥80", .80, 1.01), ("≥65", .65, 1.01), ("≥57", .57, 1.01), ("<45(硬币)", 0, .45)):
+    for label, lo, hi in (("≥80", .80, 1.01), ("≥65", .65, 1.01), ("≥57", .57, 1.01),
+                          ("<45(硬币)", 0, .45)):
         print(f"每期场数分布 {label}:", sorted(Counter(cnt(o, lo, hi) for o in obs).items()))
     print("第 9 高场的最大面概率中位:",
-          round(statistics.median(sorted((mp(m) for m in o.board), reverse=True)[8] for o in obs), 3))
+          round(statistics.median(sorted((mp(m) for m in o.board), reverse=True)[8]
+                                  for o in obs), 3))
 
     print("\n== 固定形（9 场；双=市场前两面 / 双=模态+平）==\n" + HDR)
     for shape in FIXED:
         for dbl in ("top2", "draw"):
             if shape[1] == 0 and dbl == "draw":
                 continue
-            print(fmt(summarize(f"{shape} 双={dbl}", [evaluate(o, fixed(o.board, shape, dbl), pm) for o in obs])))
+            print(fmt(summarize(f"{shape} 双={dbl}",
+                                [evaluate(o, fixed(o.board, shape, dbl), pm) for o in obs])))
 
     print("\n== 自适应（单≥X / 双∈[45%,X) / 硬币→双|真三面包|包 / 帽 200 注）==\n" + HDR)
     for x in (.70, .75, .80):
         for coin in ("double", "true3", "full"):
-            print(fmt(summarize(f"单≥{x:.0%} 硬币→{coin}", [evaluate(o, adaptive(o.board, x, .45, coin), pm) for o in obs])))
+            print(fmt(summarize(f"单≥{x:.0%} 硬币→{coin}",
+                                [evaluate(o, adaptive(o.board, x, .45, coin), pm)
+                                 for o in obs])))
     print("\n== 自适应 单≥X / 双≥57（中间档也包）==\n" + HDR)
     for x in (.70, .80):
-        print(fmt(summarize(f"单≥{x:.0%} 双≥57 硬币→包", [evaluate(o, adaptive(o.board, x, .57, "full"), pm) for o in obs])))
+        print(fmt(summarize(f"单≥{x:.0%} 双≥57 硬币→包",
+                            [evaluate(o, adaptive(o.board, x, .57, "full"), pm)
+                             for o in obs])))
 
     print("\n== 策略落成的格式频率（单,双,包）==")
     for x, coin in ((.75, "double"), (.75, "true3"), (.80, "double"), (.70, "double")):
-        c = Counter(tuple(Counter(len(fs) for _, fs in adaptive(o.board, x, .45, coin))[k] for k in (1, 2, 3)) for o in obs)
+        c = Counter(tuple(Counter(len(fs) for _, fs in adaptive(o.board, x, .45, coin))[k]
+                          for k in (1, 2, 3)) for o in obs)
         print(f"单≥{x:.0%} 硬币→{coin}:", ", ".join(
-            f"{s}¥{2 * notes([1] * s[0] + [2] * s[1] + [3] * s[2])}×{n}" for s, n in c.most_common()))
+            f"{s}¥{2 * notes([1] * s[0] + [2] * s[1] + [3] * s[2])}×{n}"
+            for s, n in c.most_common()))
 
 
 if __name__ == "__main__":

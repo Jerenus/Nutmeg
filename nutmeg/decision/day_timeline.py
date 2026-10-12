@@ -34,11 +34,26 @@ def read_timeline(data_dir: Path | str, date: str) -> list[dict]:
     return rows if isinstance(rows, list) else []
 
 
+IDLE_BROADCAST = "broadcast sent=0 failed=0"
+"""每 10 分钟一次、什么都没发的播报行。"""
+
+
+def _idle_broadcast(row: dict) -> bool:
+    return row.get("job") == "broadcast" and row.get("exit") == 0 \
+        and str(row.get("summary", "")).startswith(IDLE_BROADCAST)
+
+
 def append_job(data_dir: Path | str, date: str, record: JobRecord) -> Path:
+    """只追加；唯一例外：连续的「空播报」只保留最新一行（2026-10-13 降噪，
+    此前一天 140 行时间线里 133 行是 `sent=0`）。发过、失败过的播报行照旧保留。"""
     path = day_dir(data_dir, date) / TIMELINE
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = read_timeline(data_dir, date)
-    rows.append(record.to_dict())
+    new = record.to_dict()
+    if rows and _idle_broadcast(new) and _idle_broadcast(rows[-1]):
+        rows[-1] = new
+    else:
+        rows.append(new)
     path.write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
     return path
 

@@ -13,9 +13,9 @@ from datetime import date as _date
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from nutmeg.decision.day_brief import compile_brief, latest_issue, write_brief
+from nutmeg.decision.day_brief import compile_brief, write_brief
 from nutmeg.decision.day_decisions import build_decisions, write_decisions
-from nutmeg.decision.day_paths import BRIEF, DECISIONS, RESULTS_90, RETRO, day_dir, zucai_dir
+from nutmeg.decision.day_paths import BRIEF, DECISIONS, RESULTS_90, RETRO, day_dir
 from nutmeg.decision.day_session import render_session_md, write_session
 from nutmeg.decision.day_timeline import JobRecord, append_job, read_timeline
 from nutmeg.decision.files import read_json
@@ -66,11 +66,6 @@ def planned_commands(ctx: DayContext, job: str) -> list[list[str]]:
     results = ctx.out_dir / RESULTS_90
     if results.exists():
         cmds.append([*uv, "betslip", "settle", "--results-file", str(results), *data])
-    zdir = zucai_dir(ctx.data_dir)
-    issue = latest_issue(zdir) if zdir.exists() else None
-    if issue and (zdir / f"{issue}-rx.json").exists():
-        cmds.append([*uv, "workflow", "grade-rx", "--rx-file", str(zdir / f"{issue}-rx.json"),
-                     "--issue", issue, *data])
     # 人群线索赛后结算（2026-10-07）：扫所有有线索、赛果已出、尚未结算的期。
     cmds.append([*uv, "crowd", "settle", "--pending", *data])
     return cmds

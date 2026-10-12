@@ -5,13 +5,14 @@
 每天一次（建议 10:45，在 09:30 赛果回填之后）：
 
     1. closing_backfill   补采 titan007 终盘（竞彩板 + 足彩期），幂等
-    2. corpus_build       重建语料 v2
-    3. grade_prospective  对每个有前瞻适配器的实验 `rsi grade --mode prospective`（系统身份）
-    4. verdict_due        对每个实验尝试 `rsi verdict`；「未到期」是预期状态不是失败
-    5. factor_propose     `rsi weights propose --all --log`（从不写权重）
-    6. team_strength      客观实力指标重建（当日报告读它）
-    7. scoreboard         记分牌散文 → 结构化计数
-    8. commit_outputs     自动提交 experiments/ 下 loop 自己写的文件
+    2. rubric_read        读者 B 两读（昨天、今天、最新足彩期）+ rubric report
+    3. corpus_build       重建语料 v2
+    4. grade_prospective  对每个有前瞻适配器的实验 `rsi grade --mode prospective`（系统身份）
+    5. verdict_due        对每个实验尝试 `rsi verdict`；「未到期」是预期状态不是失败
+    6. factor_propose     `rsi weights propose --all --log`（从不写权重）
+    7. team_strength      客观实力指标重建（当日报告读它）
+    8. scoreboard         记分牌散文 → 结构化计数
+    9. commit_outputs     自动提交 experiments/ 下 loop 自己写的文件
     报告写 `.nutmeg-data/analytics/rsi-loop/<date>.json|.md` 与 `latest.md`
 
 2026-10-04 删去三步：hyp（每天重测同一批 11 条假设、输入不变结果逐字相同）、factor_search
@@ -257,13 +258,43 @@ def _run_step(ctx: LoopContext, name: str, commands: list[list[str]]) -> StepRes
     )
 
 
+def _verdict_streaks(out_dir: Path, date: str) -> dict[str, str]:
+    """{判决行: 它首次出现的日期}，只数到 `date` 前一天为止连续出现的判决。
+
+    2026-10-12 降噪：verdict 到期后每天重判、结果不变，`_collect` 每天都把它塞进
+    「待人决定」——F9 inconclusive 自 10-10、K1 survived 自 10-08 日日重现，
+    当天六条待决有三条是旧的。沿用的判决合并成一行、注明起始日，新判决照旧单列。"""
+    prior = sorted((p for p in out_dir.glob("*.json") if p.stem < date), reverse=True)
+    streak: dict[str, str] = {}
+    alive: set[str] | None = None
+    for path in prior:
+        try:
+            lines = {
+                str(v.get("line") or "")
+                for v in (json.loads(path.read_text(encoding="utf-8")).get("verdicts") or [])
+                if v.get("status") == "ok"
+            }
+        except (OSError, ValueError):
+            break
+        alive = lines if alive is None else alive & lines
+        if not alive:
+            break
+        for line in alive:
+            streak[line] = path.stem
+    return streak
+
+
 def _collect(
     steps: list[StepResult],
+    *,
+    streaks: dict[str, str] | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], list[str], list[str]]:
     proposals: list[dict] = []
     grades: list[dict] = []
     verdicts: list[dict] = []
     actions: list[str] = []
+    carried: list[str] = []
+    streaks = streaks or {}
     for step in steps:
         for item in step.detail.get("commands", []):
             if step.name == "factor_propose":
@@ -282,11 +313,19 @@ def _collect(
                 verdicts.append(
                     {"cmd": item["cmd"], "status": item["status"], "line": item["tail"]}
                 )
-                if item["status"] == "ok":
+                if item["status"] == "ok" and item["tail"] in streaks:
+                    head = item["tail"].split("（判据", 1)[0].strip()
+                    carried.append(f"{head}（自 {streaks[item['tail']]}）")
+                elif item["status"] == "ok":
                     actions.append(
                         f"判决已出：{item['tail']} → "
                         "若 survived 且 deploy_eligible，人决定 rsi deploy"
                     )
+    if carried:
+        actions.append(
+            "判决沿用、结果未变：" + "、".join(carried)
+            + " → 仍待人决定 rsi deploy（判据快照见「判决」节）"
+        )
     quiet: list[str] = []
     for p in proposals:
         if p["decision"] == "propose_zero" and not p["current_weight_pp"]:
@@ -314,7 +353,9 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
             steps.append(StepResult(name, "skipped", 0.0, "skipped by --skip"))
             continue
         steps.append(_run_step(ctx, name, plan[name]))
-    proposals, grades, verdicts, actions, quiet = _collect(steps)
+    proposals, grades, verdicts, actions, quiet = _collect(
+        steps, streaks=_verdict_streaks(ctx.out_dir, ctx.date)
+    )
     failed = [s.name for s in steps if s.status == "failed"]
     if failed:
         actions.append(f"步骤失败需人看：{', '.join(failed)}")

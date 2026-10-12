@@ -49,8 +49,6 @@ from nutmeg.interfaces.cli import research as research  # noqa: E402
 from nutmeg.interfaces.cli import retro as retro  # noqa: E402
 from nutmeg.interfaces.cli import rsi as rsi  # noqa: E402
 from nutmeg.interfaces.cli import rubric as rubric  # noqa: E402
-from nutmeg.interfaces.cli import scoreboard as scoreboard  # noqa: E402
-from nutmeg.interfaces.cli import workflow as workflow  # noqa: E402
 from nutmeg.interfaces.cli import zucai as zucai  # noqa: E402
 
 if __name__ == "__main__":

@@ -3,11 +3,12 @@
 **Why.** 26122 的 14 条 Read 与 14 条 legs（含 team_tags / flags / precedents / crash_markers）
 是我在 python heredoc 里逐字段手敲的，踩了三个坑：`directional_flags` 的二元组格式、
 偏离登记只认固定 rule_ids、store 的 match_id/snapshot_id 靠 fair 值反查。这些都不是判断，
-是**转录**——转录出错会让审计门检查一份与判读不一致的票面，比不检查更糟。
+是**转录**——转录出错会让审票看一份与判读不一致的票面，比不看更糟。
 
 本模块吃一份 `judgment-v1`（主循环判读的结构化产物，每场一条），吐出：
 - `<issue>-reads.json`：`decision-read` 的入参（belief=prior，偏移由 judgment 显式声明）
-- `<issue>-legs-base.json`：`decision-audit-legs` 的入参（处方票面 + 全部结构字段）
+- `<issue>-legs-base.json`：处方票面 + 全部结构字段（初稿 / 分析包 / 审票读它；
+  审计门 2026-10-13 已删）
 
 **判断不在这里**：每一场的动作、旗、标签、三证都必须在 judgment 里写好；
 本模块只做格式转换与一致性校验，绝不推断任何一场该买什么。
@@ -27,7 +28,7 @@ from nutmeg.decision.legs_audit import (
     NONDIRECTIONAL_LEXICON as _NONDIRECTIONAL_LEXICON,
 )
 
-# 词典的家在 legs_audit（审计门才是它的执行方）；此处再导出，旧引用不断链。
+# 词典的家在 legs_audit（2026-10-13 起只剩词典）；此处再导出，旧引用不断链。
 NONDIRECTIONAL_LEXICON = _NONDIRECTIONAL_LEXICON
 
 

@@ -28,7 +28,9 @@ def test_every_plist_is_wellformed_and_self_consistent():
         doc = plistlib.loads(path.read_bytes())
         assert doc["Label"] == path.stem, path
         assert doc["ProgramArguments"], path
-        assert "StartCalendarInterval" in doc or "StartInterval" in doc, path
+        # 常驻服务（decision.web，2026-10-13）没有排程，靠 KeepAlive 保活
+        assert "StartCalendarInterval" in doc or "StartInterval" in doc \
+            or doc.get("KeepAlive") is True, path
 
 
 def test_daily_surface_plists_call_expected_commands():

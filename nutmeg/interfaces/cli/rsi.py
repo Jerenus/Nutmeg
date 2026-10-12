@@ -189,17 +189,17 @@ def _population_match_kickoffs(
     return out
 
 
-def _keep_scheduled_identity(kernel, data_dir: Path, *, day: str, issue: str,
-                             kickoffs: dict[str, str]) -> dict[str, str]:
-    """并集池同一场比赛只排一条义务（2026-10-05）。channel-map 18:30 才落地：之前足彩场按
-    足彩侧 id 排过并已履约，对上竞彩后又按竞彩侧 id 排一条——永远空着，10-05 R1 七个假缺口。
-    这一天已按足彩侧 id 排过的场，继续用足彩侧 id。"""
+def _scheduled_zucai_alias(kernel, data_dir: Path, *, day: str, issue: str) -> dict[str, str]:
+    """{竞彩侧 match_id: 这一天已按足彩侧 id 排过义务的 match_id}。
+
+    并集池里竞彩/足彩重叠的场在内核有两个 Match id（足彩 `<期>-store-ids` 一套、竞彩
+    legs-base 一套），对号靠 channel-map。只返回两侧 id 不同且足彩侧已排义务的场。"""
     from nutmeg.decision.zucai_identity import load_channel_map
 
     zdir = Path(data_dir) / "zucai"
     mapping = load_channel_map(zdir, issue)
     if not mapping:
-        return kickoffs
+        return {}
     store_path = zdir / f"{issue}-store-ids.json"
     store = json.loads(store_path.read_text(encoding="utf-8")) if store_path.exists() else {}
     with OntologyUnitOfWork(kernel.engine) as uow:
@@ -208,10 +208,24 @@ def _keep_scheduled_identity(kernel, data_dir: Path, *, day: str, issue: str,
             for duty in uow.rsi.all_duties()
             for row in uow.rsi.duty_instances_for_day(duty.duty_id, day)
         }
-    out = dict(kickoffs)
+    out: dict[str, str] = {}
     for jczq_id, match_no in mapping.items():
         zucai_id = (store.get(str(match_no)) or {}).get("match_id")
-        if jczq_id in out and zucai_id and zucai_id in scheduled and zucai_id not in out:
+        if zucai_id and zucai_id != jczq_id and zucai_id in scheduled:
+            out[jczq_id] = zucai_id
+    return out
+
+
+def _keep_scheduled_identity(kernel, data_dir: Path, *, day: str, issue: str,
+                             kickoffs: dict[str, str]) -> dict[str, str]:
+    """并集池同一场比赛只排一条义务（2026-10-05）。channel-map 18:30 才落地：之前足彩场按
+    足彩侧 id 排过并已履约，对上竞彩后又按竞彩侧 id 排一条——永远空着，10-05 R1 七个假缺口。
+    这一天已按足彩侧 id 排过的场，继续用足彩侧 id。"""
+    out = dict(kickoffs)
+    for jczq_id, zucai_id in _scheduled_zucai_alias(
+        kernel, data_dir, day=day, issue=issue
+    ).items():
+        if jczq_id in out and zucai_id not in out:
             out[zucai_id] = out.pop(jczq_id)
     return out
 
@@ -770,19 +784,29 @@ def balance(
             if read.get("match_id")
         }
     )
+    # 重叠场的义务按足彩侧 id 排（_keep_scheduled_identity），而 Read 落在竞彩侧 id 上：
+    # 两个 id 都认，行按义务那一侧的 id 记。2026-10-12 之前这里只认竞彩侧 id，重叠场
+    # 从不进 rows → F9 义务永不履行（10-10 丢 11、10-11 丢 2、10-12 丢 8），sweep 每小时报红。
+    alias = (
+        _scheduled_zucai_alias(k, data_dir, day=resolved_day, issue=issue) if issue else {}
+    )
     rows: list[dict] = []
     selected_reads: list[dict] = []
     for target in matches_for_population(
         "both", day=resolved_day, issue=issue, data_dir=data_dir
     ):
         match_id = target["match_id"]
-        read = read_by_match.get(match_id)
-        if read is None or match_id not in kickoffs:
+        duty_match_id = match_id if match_id in kickoffs else alias.get(match_id)
+        read = read_by_match.get(match_id) or (
+            read_by_match.get(duty_match_id) if duty_match_id else None
+        )
+        if read is None or duty_match_id is None:
             continue
         selected_reads.append({**read, "match_no": target.get("match_no")})
         rows.append(
             {
                 **target,
+                "match_id": duty_match_id,
                 "prior": read.get("prior"),
                 "belief": read.get("belief"),
                 "judgment_tier": read.get("judgment_tier") or "price_only",

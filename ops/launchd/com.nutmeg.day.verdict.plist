@@ -13,7 +13,7 @@
 	<array>
 		<string>/bin/zsh</string>
 		<string>-lc</string>
-		<string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; D=$(date +%F) &amp;&amp; /opt/homebrew/bin/uv run nutmeg research refresh --day $D; /opt/homebrew/bin/uv run nutmeg research verdict --day $D</string>
+		<string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; /opt/homebrew/bin/uv run nutmeg ops-run day.verdict '/opt/homebrew/bin/uv run nutmeg research refresh --day $(date +%F)' '/opt/homebrew/bin/uv run nutmeg research verdict --day $(date +%F)'</string>
 	</array>
 	<key>StandardErrorPath</key>
 	<string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/day.verdict.err.log</string>

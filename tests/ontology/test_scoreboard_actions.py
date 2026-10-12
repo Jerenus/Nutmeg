@@ -8,12 +8,9 @@ from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
 from nutmeg.ontology.actions.models import ActionStatus, ActorRole, ObjectRef
 from nutmeg.ontology.actions.scoreboard_actions import (
-    ApproveScoreboardCutoverRequest,
     RecordScoreboardExportRequest,
     RecordScoreboardObservationRequest,
-    RecordScoreboardShadowReviewRequest,
 )
-from nutmeg.ontology.errors import OptimisticConcurrencyError
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.wiring import build_ontology_kernel
 
@@ -63,41 +60,6 @@ def _observation(
         effective_at=NOW,
         supersedes_observation_id=None,
         actor_id="operator:jun",
-        actor_role=role,
-        idempotency_key=key,
-        requested_at=NOW,
-    )
-
-
-def _review(
-    artifact_id: str,
-    *,
-    unexplained: int = 0,
-    role: ActorRole = ActorRole.DETERMINISTIC_SYSTEM,
-    key: str = "m5:review",
-) -> RecordScoreboardShadowReviewRequest:
-    classification = [
-        {
-            "group_key": "chains",
-            "metric_key": "main",
-            "classification": (
-                "unexplained" if unexplained else "formal_manual"
-            ),
-            "target_ref": "scoreboard_observation:sbo-1",
-        }
-    ]
-    return RecordScoreboardShadowReviewRequest(
-        legacy_source_artifact_id=artifact_id,
-        legacy_sha256="a" * 64,
-        projection_version="sb-v1",
-        source_high_watermark=42,
-        classification=classification,
-        matched_count=0,
-        manual_count=0 if unexplained else 1,
-        corrected_count=0,
-        unexplained_count=unexplained,
-        status="succeeded",
-        actor_id="system:scoreboard",
         actor_role=role,
         idempotency_key=key,
         requested_at=NOW,
@@ -184,80 +146,10 @@ def test_observation_revision_must_extend_current_chain_and_respects_recorded_as
         )
 
 
-def test_shadow_review_enforces_role_and_classification_counts(tmp_path: Path) -> None:
+def test_export_is_system_only(tmp_path: Path) -> None:
+    """record_export 只接系统身份（影子评审 / cutover 动作 2026-10-13 随记分牌权威 CLI 删除）。"""
     kernel = _kernel(tmp_path)
-    artifact_id = _legacy_artifact(kernel)
-    with pytest.raises(ValueError, match="classification counts"):
-        replace(_review(artifact_id), manual_count=0)
-
-    denied = kernel.scoreboard_actions.record_shadow_review(
-        _review(
-            artifact_id,
-            role=ActorRole.JUDGE_OPERATOR,
-            key="m5:review:denied",
-        )
-    )
-    committed = kernel.scoreboard_actions.record_shadow_review(_review(artifact_id))
-
-    assert denied.status is ActionStatus.REJECTED
-    assert committed.status is ActionStatus.COMMITTED
-    with OntologyUnitOfWork(kernel.engine) as uow:
-        assert uow.scoreboard.count_shadow_reviews() == 1
-
-
-def test_cutover_rechecks_clean_current_review_hash_and_watermark(
-    tmp_path: Path,
-) -> None:
-    kernel = _kernel(tmp_path)
-    artifact_id = _legacy_artifact(kernel)
-    review_outcome = kernel.scoreboard_actions.record_shadow_review(_review(artifact_id))
-    review_id = review_outcome.result_refs[0].object_id
-    request = ApproveScoreboardCutoverRequest(
-        shadow_review_id=review_id,
-        legacy_sha256="a" * 64,
-        projection_version="sb-v1",
-        source_high_watermark=42,
-        expected_authority_version=1,
-        actor_id="operator:jun",
-        actor_role=ActorRole.JUDGE_OPERATOR,
-        idempotency_key="m5:cutover",
-        requested_at=NOW,
-    )
-
-    approved = kernel.scoreboard_actions.approve_cutover(request)
-    assert approved.status is ActionStatus.COMMITTED
-    with OntologyUnitOfWork(kernel.engine) as uow:
-        assert uow.scoreboard.authority().state == "ontology"
-
-    with pytest.raises(OptimisticConcurrencyError, match="expected 1"):
-        kernel.scoreboard_actions.approve_cutover(
-            replace(request, idempotency_key="m5:cutover:stale")
-        )
-
-
-def test_unexplained_review_blocks_cutover_and_export_is_system_only(
-    tmp_path: Path,
-) -> None:
-    kernel = _kernel(tmp_path)
-    artifact_id = _legacy_artifact(kernel)
-    review = kernel.scoreboard_actions.record_shadow_review(
-        _review(artifact_id, unexplained=1)
-    )
-    with pytest.raises(ValueError, match="unexplained"):
-        kernel.scoreboard_actions.approve_cutover(
-            ApproveScoreboardCutoverRequest(
-                shadow_review_id=review.result_refs[0].object_id,
-                legacy_sha256="a" * 64,
-                projection_version="sb-v1",
-                source_high_watermark=42,
-                expected_authority_version=1,
-                actor_id="operator:jun",
-                actor_role=ActorRole.JUDGE_OPERATOR,
-                idempotency_key="m5:cutover:blocked",
-                requested_at=NOW,
-            )
-        )
-
+    _legacy_artifact(kernel)
     export = RecordScoreboardExportRequest(
         export_sha256="b" * 64,
         projection_version="sb-v1",

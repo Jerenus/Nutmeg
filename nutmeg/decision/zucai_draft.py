@@ -12,7 +12,7 @@ B 泳道：机器出**首版票面初稿** → Jun 改 → 机器审票（V1/V2/
 5. 初稿自己过审票；附刹车档（帽减半）与帽内 max-P 参考点（只作对照）。
 
 产物：`<期>-draft.json` / `<期>-draft.md` / `<期>-legs-draft-<channel>.json`（可直接给
-`decision-audit-legs --legs-file`），并作为 `draft@<hash>` 候选进工作台时间线（幂等）。
+`betslip preview --legs-file`），并作为 `draft@<hash>` 候选进工作台时间线（幂等）。
 """
 from __future__ import annotations
 

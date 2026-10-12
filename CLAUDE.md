@@ -12,7 +12,7 @@
 3. `docs/sop/RULEBOOK.md` — 规则注册表：规则实证表、仍为满级的规则、审票否决 V1/V2、判断 rubric r1、人群假说；旧判决表 k–s 条文与 audit 代码映射（C0–C19 + INFO 参考表）归档在 `docs/sop/RULEBOOK-archive.md`。
 
 **记分牌单一事实源** = `.nutmeg-data/scoreboard.json`（复盘只改那里，散文引用不复制）。
-**出票硬门** = `uv run nutmeg decision-audit-legs --legs-file <票面>`，默认/AI/无人值守遇 ERROR 即退出码 1，不听论证；仅 Jun 显式 `--user-override` 且 evidence_rejected Adjudication 入账成功后可继续。**2026-09-27 规则瘦身**：只有正向实证的规则能拦截——截至当日判断类规则无一达标（C1 等降为记录、C19 降为未证实提示，见 RULEBOOK「〇、规则实证表」与 `docs/superpowers/evidence/2026-09-27-rule-diet.md`）；判断力由事前登记实验量化：主指标 F14（结构）+ gym 规则 v3 回放（决策，`gym run --policy jczq_rule_v3 --belief read`，2026-10-04 Dream 退役后承接）+ F10（热门带），F9 为次指标（2026-10-01）。分析要客观独立、不迎合（含对 Jun 自己的规则）。
+**出票硬门**：审计门一组（`decision-audit-legs` / `decision-explain-faces` / `decision-adjudicate` / `zucai-deployment-gate` / `zucai-ledger` / `workflow register-rx|grade-rx|grade-prediction` / `scoreboard *` 权威命令，含 `legs_audit.py` 的 C 码检查）于 **2026-10-13 删除**（10-03 / 10-08 两轮审计建议、Jun 授权；证据 `docs/superpowers/evidence/2026-10-13-audit-gate-removal.md`）。出票前唯一的机器否决是 `betslip preview` 的 V1（期望回报率 <0.5）/ V2（共享裸单＝假分散），见 RUNBOOK B9c；`legs_audit.py` 只剩封闭词典。**2026-09-27 规则瘦身**：只有正向实证的规则能拦截——截至当日判断类规则无一达标（C1 等降为记录、C19 降为未证实提示，见 RULEBOOK「〇、规则实证表」与 `docs/superpowers/evidence/2026-09-27-rule-diet.md`）；判断力由事前登记实验量化：主指标 F14（结构）+ gym 规则 v3 回放（决策，`gym run --policy jczq_rule_v3 --belief read`，2026-10-04 Dream 退役后承接）+ F10（热门带），F9 为次指标（2026-10-01）。分析要客观独立、不迎合（含对 Jun 自己的规则）。
 
 ## 触发短语
 

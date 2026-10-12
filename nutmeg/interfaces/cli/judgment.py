@@ -12,7 +12,7 @@ _DAY = _cli.typer.Option(None, "--day", help="竞彩板面日 YYYY-MM-DD")
 _ISSUE = _cli.typer.Option(None, "--issue", help="足彩期号 如 26135")
 _DATA_DIR = _cli.typer.Option(Path(".nutmeg-data"), "--data-dir")
 _WRITE = _cli.typer.Option(True, "--write/--no-write",
-                           help="落 reads.projected.json 与 judgment-projection.json")
+                           help="落 judgment-projection.json（内核投影 vs 文件比对）")
 
 
 @judgment_app.command("project")

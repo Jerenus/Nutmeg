@@ -1224,3 +1224,73 @@ def test_union_match_keeps_its_zucai_identity_after_the_channel_map_lands(tmp_pa
             "SELECT match_id, fulfilled_at IS NOT NULL FROM rsi_duty_instances "
             "WHERE duty_id='BOTH:match-research' ORDER BY match_id").fetchall()
     assert rows == [("zc-shared", 1), ("zucai-only", 0)]
+
+
+# ── 并集重叠场双身份：义务按足彩侧 id 排、Read 在竞彩侧 id，也必须履行 ───────────
+
+
+def test_balance_fulfills_f9_when_duty_was_scheduled_under_zucai_identity(tmp_path):
+    """2026-10-12 死法：26139 先于周一板备料，F9 义务按足彩 store-ids 的 match_id 排；
+    竞彩 08:00 入板后同一场在 legs-base 里是另一个 match_id，Read 落在竞彩侧 →
+    `rsi balance` 找不到 Read，重叠 8 场永不履行，sweep 每小时 DUTY_NOT_FULFILLED。"""
+    data_dir = tmp_path / "data"
+    day = "2026-09-20"
+    day_dir = data_dir / "jczq" / "daily" / day
+    zucai_dir = data_dir / "zucai"
+    day_dir.mkdir(parents=True)
+    zucai_dir.mkdir()
+    zucai_dir.joinpath("26131-store-ids.json").write_text(
+        json.dumps({"1": {"match_id": "shared-zucai", "match_no": 1}}), encoding="utf-8"
+    )
+    zucai_dir.joinpath("26131-issue.json").write_text(
+        json.dumps({"matches": [{"match_no": 1, "kickoff_bj": "2099-09-20 20:00"}]}),
+        encoding="utf-8",
+    )
+    zucai_dir.joinpath("26131-reads.json").write_text(
+        json.dumps([{"match_id": "shared-zucai",
+                     "prior": {"home": 0.1, "draw": 0.2, "away": 0.7},
+                     "belief": {"home": 0.1, "draw": 0.2, "away": 0.7}}]),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    registered = runner.invoke(
+        app, ["rsi", "register", "--by", "Jun", "experiments/registry/F9.json",
+              "--data-dir", str(data_dir)],
+    )
+    assert registered.exit_code == 0, registered.output
+    # 足彩先排义务（竞彩 legs-base 还没有）→ 义务行按足彩侧 id
+    scheduled = runner.invoke(
+        app, ["rsi", "schedule", "--day", day, "--issue", "26131", "--data-dir", str(data_dir)],
+    )
+    assert scheduled.exit_code == 0, scheduled.output
+
+    # 竞彩入板：同一场另一个 match_id；Read 只落在竞彩侧；channel-map 对号
+    day_dir.joinpath("jczq-legs-base.json").write_text(
+        json.dumps({"legs": {"周日001": {"match_id": "shared-jczq",
+                                         "kickoff_bj": "2099-09-20T20:00:00+08:00"}}}),
+        encoding="utf-8",
+    )
+    day_dir.joinpath("reads.json").write_text(
+        json.dumps([{"match_id": "shared-jczq",
+                     "prior": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                     "belief": {"home": 0.45, "draw": 0.28, "away": 0.27}}]),
+        encoding="utf-8",
+    )
+    zucai_dir.joinpath("26131-channel-map.auto.json").write_text(
+        json.dumps({"shared-jczq": 1}), encoding="utf-8"
+    )
+
+    result = runner.invoke(
+        app, ["rsi", "balance", "--day", day, "--data-dir", str(data_dir)]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(day_dir.joinpath("balance.json").read_text("utf-8"))
+    assert [row["match_id"] for row in payload["rows"]] == ["shared-zucai"]
+    assert payload["rows"][0]["prior"]["home"] == 0.4          # Read 用的是竞彩侧那份
+    with sqlite3.connect(data_dir / "ontology" / "ontology.db") as connection:
+        assert connection.execute(
+            "SELECT match_id FROM rsi_duty_instances "
+            "WHERE duty_id = 'F9:balance-ledger' AND fulfilled_at IS NOT NULL"
+        ).fetchall() == [("shared-zucai",)]
