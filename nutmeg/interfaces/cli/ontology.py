@@ -90,7 +90,8 @@ def _assert_migration_preserved_source(
     for table, count in before_counts.items():
         if table in mutable_migration_tables:
             continue
-        if after_counts.get(table) != count:
+        # 基线重排（2026-10-13）会删掉空表：表消失只在它本来就是 0 行时放行
+        if after_counts.get(table, 0) != count:
             raise ValueError(f"migration changed row count for {table}")
 
 

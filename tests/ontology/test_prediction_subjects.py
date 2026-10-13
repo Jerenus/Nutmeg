@@ -47,14 +47,6 @@ def test_issue_scoped_prediction_row_roundtrip(tmp_path: Path) -> None:
     assert row.match_id is None
 
 
-def test_migration_15_is_idempotent(tmp_path: Path) -> None:
-    engine = _engine(tmp_path)
-    run_migrations(engine)  # 二跑无 drift、无异常
-    with engine.connect() as conn:
-        cols = {r[1] for r in conn.exec_driver_sql("PRAGMA table_info(predictions)")}
-    assert {"subject_type", "subject_id", "match_id"} <= cols
-
-
 def test_grade_permission_granted_to_judge_and_replay_adjudicator(tmp_path: Path) -> None:
     engine = _engine(tmp_path)
     with engine.connect() as conn:

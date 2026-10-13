@@ -78,6 +78,7 @@ actions = Table(
     Column(
         'replay_run_id',
         Text,
+        ForeignKey('historical_replay_runs.replay_run_id', ondelete='RESTRICT'),
         nullable=True,
     ),
     CheckConstraint(

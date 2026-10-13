@@ -21,18 +21,6 @@ from sqlalchemy import (
 
 from nutmeg.ontology.repository.schema import metadata
 
-decision_sessions = Table(
-    'decision_sessions',
-    metadata,
-    Column('decision_session_id', Text, primary_key=True),
-    Column('opened_at', Text, nullable=False),
-    Column('operator_id', Text, nullable=False),
-    Column('cutoff_at', Text, nullable=False),
-    Column('scope_json', Text, nullable=False),
-    Column('status', Text, nullable=False),
-    Column('closed_at', Text, nullable=True),
-)
-
 evidence_bundles = Table(
     'evidence_bundles',
     metadata,
@@ -48,18 +36,6 @@ evidence_bundles = Table(
     Column('source_coverage_json', Text, nullable=False),
     Column('freshness_json', Text, nullable=False),
     Column('content_hash', Text, nullable=False),
-)
-
-evidence_bundle_items = Table(
-    'evidence_bundle_items',
-    metadata,
-    Column('item_id', Text, primary_key=True),
-    Column('evidence_bundle_id', Text,
-           ForeignKey('evidence_bundles.evidence_bundle_id', ondelete='RESTRICT'),
-           nullable=False, index=True),
-    Column('item_type', Text, nullable=False),
-    Column('observation_id', Text, nullable=True),
-    Column('claim_id', Text, nullable=True),
 )
 
 forecast_series = Table(
@@ -150,14 +126,3 @@ factor_applications = Table(
     Column('note', Text, nullable=True),
 )
 
-scenarios = Table(
-    'scenarios',
-    metadata,
-    Column('scenario_id', Text, primary_key=True),
-    Column('forecast_revision_id', Text,
-           ForeignKey('forecast_revisions.forecast_revision_id', ondelete='RESTRICT'),
-           nullable=False),
-    Column('label', Text, nullable=False),
-    Column('probability', Float, nullable=True),
-    Column('note', Text, nullable=True),
-)

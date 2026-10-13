@@ -30,7 +30,8 @@ def _production_settings(tmp_path: Path) -> AppSettings:
 def _seed_pending_production(settings: AppSettings) -> None:
     settings.ontology_dir.mkdir(parents=True, exist_ok=True)
     engine = build_ontology_engine(settings.ontology_db_path)
-    run_migrations(engine, MIGRATIONS[:-1])
+    # 基线链只有一步：空账本（只建 schema_migrations）= 待迁移的生产库
+    run_migrations(engine, ())
     engine.dispose()
 
 
@@ -159,7 +160,7 @@ def test_guarded_init_holds_one_exclusive_lease_across_every_stage(
     }
     assert report["applied_versions"] == [MIGRATIONS[-1].version]
     assert report["source_before"] == report["backup"]
-    assert report["source_before"]["schema_version"] == MIGRATIONS[-2].version
+    assert report["source_before"]["schema_version"] == 0
     assert report["source_after"]["schema_version"] == MIGRATIONS[-1].version
     assert report["source_after"]["action_high_water"] == report["action_high_water"]
     assert len(report["backup_sha256"]) == 64
@@ -167,7 +168,7 @@ def test_guarded_init_holds_one_exclusive_lease_across_every_stage(
     assert backup.exists()
     with sqlite3.connect(backup) as connection:
         version = connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
-    assert version == MIGRATIONS[-2].version
+    assert version is None
 
 
 def test_guarded_init_rejects_unsafe_targets_before_opening_source(tmp_path: Path) -> None:

@@ -70,43 +70,6 @@ predictions = Table(
     Column("settled_at", Text, nullable=True),
 )
 
-precedent_links = Table(
-    "precedent_links",
-    metadata,
-    Column("precedent_link_id", Text, primary_key=True),
-    Column("subject_type", Text, nullable=False),
-    Column("subject_id", Text, nullable=False),
-    Column(
-        "precedent_match_id",
-        Text,
-        ForeignKey("matches.match_id", ondelete="RESTRICT"),
-        nullable=False,
-    ),
-    Column("scope", Text, nullable=False),
-    Column("evidence_refs_json", Text, nullable=False),
-    Column("created_at", Text, nullable=False),
-)
-
-agent_proposals = Table(
-    "agent_proposals",
-    metadata,
-    Column("agent_proposal_id", Text, primary_key=True),
-    Column("subject_type", Text, nullable=False, index=True),
-    Column("subject_id", Text, nullable=False, index=True),
-    Column("proposal_type", Text, nullable=False),
-    Column("information_cutoff_at", Text, nullable=True),
-    Column("operator_prompt", Text, nullable=True),
-    Column("payload_json", Text, nullable=False),
-    Column("citation_refs_json", Text, nullable=False),
-    Column("model_name", Text, nullable=False),
-    Column("model_version", Text, nullable=False),
-    Column("status", Text, nullable=False),
-    Column("version", Integer, nullable=False),
-    Column("created_at", Text, nullable=False),
-    Column("resolved_at", Text, nullable=True),
-    Column("resolved_by_action_id", Text, nullable=True),
-)
-
 outbox_events = Table(
     "outbox_events",
     metadata,

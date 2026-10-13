@@ -130,7 +130,7 @@ flowchart TB
 | 层 | 主要代码 | 权威产物 |
 |---|---|---|
 | 采集 | `nutmeg/decision/fetch.py` `market_data.py` `zucai_prep.py`、`scripts/titan007_closing_backfill.py` `scripts/jczq_result_backfill.py` | `jczq/daily/<日>/sporttery_markets.json` `jczq/jc-results.json` `zucai/<期>-issue.json` `zucai/official-*.json` |
-| 内核 | `nutmeg/ontology/`（repository / actions / migrations，schema 47） | `.nutmeg-data/ontology/ontology.db` |
+| 内核 | `nutmeg/ontology/`（repository / actions / migrations，基线 schema 1，2026-10-13 起） | `.nutmeg-data/ontology/ontology.db` |
 | 判断 | `research_runner.py` `research_prompt.py` `rubric_items.py` `rubric.py` `stance.py` `jczq_reads.py` `zucai_auto_judgment.py` `pool.py` `overrides.py` `rubric_reader.py` `judgment_projection.py`；人群层 `crowd_source.py` `crowd_trigger.py` `crowd_model.py` `crowd_clues.py` | `research-<code>.json` / `<期>-research-m<N>.json`、`reads.json`、`legs-base`、内核 forecast revision；`<期>-zgzcw.json` `<期>-clues.jsonl` |
 | 面板 | `day_brief.py` `day_session.py` `day_publish.py` `verdict_page.py` `judgment_brief.py` `zucai_draft.py` `signals.py` | `daily/<日>/brief.md` `session.md`、`site/`、`verdict.html`、`<期>-draft.md` |
 | Polymarket 关注度（2026-10-09，只展示） | `data/polymarket.py`（只读公开接口）、`crowd_polymarket.py`（`nutmeg crowd polymarket` / `polymarket-backfill`；备料链与入板旁支） | `zucai/<期>-polymarket.json`、`jczq/daily/<日>/polymarket.json` → 初判包「关注度」列、人群 DSL `pm_volume_k`/`pm_rank`、语料行 `polymarket` → F17 结账；CR2 用 `pm_rank` |
@@ -580,17 +580,24 @@ flowchart TB
 | `analytics/` | `rsi-loop/` `rubric/` `account/` `gym/` `team_strength.json`（`dream-compare/` 为 Dream 退役前的历史账） |
 | `logs/` | 各定时器的 out / err 日志（状态页按日志时刻判断，不默认它是今天的） |
 
-### 7.2 内核（schema 47，185 张表）
+### 7.2 内核（基线 schema 1，55 张表；2026-10-13 重排）
 
-| 表族 | 用途 | 备注 |
-|---|---|---|
-| `match` `market` `official` `source` `entity` | 身份、报价、官方赛果、来源 | 身份只认显式映射（RULEBOOK g-scope） |
-| forecast revisions | 判断唯一事实（schema 47 起带 `kind / board_key / judgment_json`） | `nutmeg judgment project` 投影 |
-| `ticket` `scoreboard` `factor` | 票据（07-22 的 6 行历史）、记分牌镜像、因子 | 2026-10-08 起 `betslip register` 不写内核票；钱的事实源 = `betslips.jsonl` + `scoreboard.json` |
-| `claim` `observation` `person` `decision_session` `evidence_bundle` `reliability_*` `release_approvals` `budget_policies` | 证据 / 人员 / 会话 / 可靠性 / 预算 | 代码已删（2026-10-08），表留空，迁移链不变 |
-| `rsi_*`（8 张） | 实验、义务、观察、结账、判决、部署、修正 | `nutmeg rsi status` |
-| `policy_*`（16 张）`discovery_*`（5 张） | Dream 影子世界与策略治理 | 代码已删（2026-10-04）；表留作空表，`policy_versions` 仍是 Action 权限的外键目标 |
-| `operator_*`（78 张） | 旧操作台对象 | 代码已删（2026-10-04）；表留作空表，迁移链不变 |
+2026-10-13 Jun 裁定「清理删除」（推翻 10-03 §5「迁移链不压基线」）：47 步迁移链压成一条 `baseline_2026_10_13`，130 张从未有过一行数据的表连同 9 份 schema 模块删除（`migrations.py` 4,842→811 行）；老库由 `run_migrations` 原地重排（断言退役表全空 → 删表与引用它们的 `actions` 触发器 → 补齐新建路径种下的 22 条权限 → 账本换成 1 行），数据行不动。旧链 47 条账本与 DDL 冻结为 `tests/ontology/golden/legacy_schema_47.sql`（重排测试的夹具）；新建库 DDL 冻结为 `golden/fresh_schema.sql`。证据：`evidence/2026-10-13-kernel-schema-baseline.md`。
+
+| 表族 | 张数 | 用途 | 备注 |
+|---|---|---|---|
+| `actions` `action_permissions` `policy_versions` `outbox_events` `historical_replay_runs` | 5 | Action 账本、权限（145 条）、事件出站 | 所有写入经 Action |
+| `source_runs` `source_artifacts` `artifact_retrievals` | 3 | 来源与原件 | `source_runs` 空但被 `artifact_retrievals` 外键指向 |
+| `competitions` `competition_editions` `teams` `venues` `matches` `match_revisions` `team_appearances` `external_identifiers` `entity_aliases` | 9 | 身份（只认显式映射，RULEBOOK g-scope） | `venues` 空 |
+| `market_definitions` `selection_definitions` `market_quotes` `market_snapshots` `market_snapshot_quotes` | 5 | 报价与去水快照 | |
+| `forecast_series` `forecast_revisions` `evidence_bundles` `factor_families` `factor_definitions` `factor_applications` `observations` | 7 | 判断唯一事实（revision 带 `kind / board_key / judgment_json`）、因子 | `nutmeg judgment project` 投影；`evidence_bundles` / `factor_*` / `observations` 空 |
+| `tickets` `ticket_proposals` `bet_legs` `match_outcomes` `cash_accounts` `cash_transactions` `bet_leg_settlements` `ticket_settlements` `zucai_fixed_prize_policy_revisions` `zucai_capital_plans` | 10 | 票据（07-22 的 6 行历史）、赛果、资金 | 2026-10-08 起 `betslip register` 不写内核票；钱的事实源 = `betslips.jsonl` + `scoreboard.json`；结算两表空 |
+| `rsi_*` | 8 | 实验、义务、观察、结账、判决、部署、修正 | `nutmeg rsi status` |
+| `scoreboard_observations` `scoreboard_shadow_reviews` `scoreboard_authority` | 3 | 记分牌镜像 | |
+| `adjudications` `predictions` `flag_instances` `operator_projection_cursors` | 4 | 裁决、预测账、旗、出站游标 | `flag_instances` 空 |
+| `schema_migrations` | 1 | 账本 | 1 行 |
+
+删除的 130 张：`operator_*` 77（09-04〜09-10 的双泳道操作台）、`policy_*` / `discovery_*` / `exploration_*` 20（Dream 影子库）、`official_*` 4、`claims` / `persons` / `decision_sessions` / `scenarios` / `reliability_*` / `release_approvals` / `budget_policies` / `entity_merges` / `agent_proposals` / `precedent_links` / 票据工作台（`ticket_batch_revisions` 等 5）/ `zucai_prize_table_*` 等 29。留下的 11 张空表：7 张有现役写入路径（结算两表、`factor_definitions`、`flag_instances`、`observations`、`source_runs`、`historical_replay_runs`），4 张被有数据表的外键指向（`venues`、`evidence_bundles`、`zucai_fixed_prize_policy_revisions`、`factor_families`）。
 
 运维规则见 `docs/ontology-kernel-operations.md`。
 
@@ -620,6 +627,7 @@ flowchart TB
 | 10-08 | **第二轮瘦身审计**：同一推导多处各算且已出分歧（内核比 jc-results 少 27 场赛果、channel-map 10 份、Read 两套构建器）；`ledger_writeback` 10 月 0 注入账；规则层自相矛盾（RULEBOOK §0 vs §1–7、分析员 tilt 前后矛盾） | 死链删除（产品读侧 2,405→300 行、内核证据 / 会话 / 可靠性 / 票据写入链、decision-web v1 路由）；赛果 / Read / 每场行 / 去水等收成单一来源；通知改 `notify()` + JSONL；`ledger_writeback` 退役；RULEBOOK §1–7 归档；`nutmeg/` 61,871→50,629 行 | `evidence/2026-10-08-slim-round-2.md` |
 | 10-12/13 | **运维体检**：rsi 闭环 21/21 天零失败但「跑了看不出坏」——F9 天平义务对竞彩/足彩重叠场（内核双 match_id）永不履行、sweep 每小时报红无人看；10-10 腰斩场未进 void-matches 卡住封存；plist `;` 串联吞前段退出码；decision-web 手工进程跑旧代码 | `rsi balance` 认两侧身份；void 补录；`ops-run` 包装 + `runs.jsonl` + ops-status 列失败段；`decision.web` 进 launchd；loop 沿用判决合并一行；grade-rx 改取最近已截止期；closing_odds 停写 per_book；文档五处漂移修正 | `evidence/2026-10-12-ops-audit.md` |
 | 10-13 | **审计门一组删除**（10-03 §6.2 / 10-08 §7.2 两轮被自动模式拦下、Jun 授权）：ERROR 通道自 09-27 起为空、`*-rx.json` 自 26133 无新文件、记分牌权威/影子期无人调用 | 删 `decision-audit-legs` / `decision-explain-faces` / `decision-adjudicate` / `zucai-deployment-gate` / `zucai-ledger` / `workflow *` / `scoreboard *`（9 条）与 `legs_audit`（1,490→104 行只剩词典）、`adjudication_sheet` / `audit_override` / `zucai_deployment` / `zucai_ticket` / `rx_ingest` / `nutmeg/scoreboard/`、`zucai_official.settle_ledger`、settle 的 grade-rx 步、内核 `record_shadow_review` / `approve_cutover` / `count_adjudications`；`nutmeg/` 51,728→47,484 行；CLAUDE/AGENTS「出票硬门」改为 `betslip preview` V1/V2 | `evidence/2026-10-13-audit-gate-removal.md` |
+| 10-13 | **内核基线重排**（Jun 裁「清理删除」，推翻 10-03 §5）：185 张表里 141 张空、97 张是已删操作台 / Dream 的残骸，迁移链锁着删不掉 | 47 步链压成 `baseline_2026_10_13`；删 130 表 / 9 schema 模块 / 11 份按步号写的测试；老库原地重排（退役表断言为空、补 22 条权限、账本 47→1 行，数据行不动）；旧链冻结为 `golden/legacy_schema_47.sql` 做重排测试夹具；`nutmeg/` 47,523→37,904 行 | `evidence/2026-10-13-kernel-schema-baseline.md` |
 | 10-02 | 运行层体检：空盘日 Dream / 深研崩溃、因子提案会 KeyError、R1 显示为 0、播报内容过时、F2 不可能结账 | 空盘跳过、提案解析 rubric 因子、R1 按观测数、播报换内容、F2/F1c 退役、足彩 legs-base 自动化、早盘空盘不再报失败 | 同上 §7，`evidence/2026-10-02-ops-review.md` |
 
 > [!NOTE]

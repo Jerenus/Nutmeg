@@ -29,19 +29,6 @@ cash_accounts = Table(
     Column('status', Text, nullable=False),
 )
 
-budget_policies = Table(
-    'budget_policies',
-    metadata,
-    Column('budget_policy_id', Text, primary_key=True),
-    Column('policy_version', Text, nullable=False),
-    Column('channel', Text, nullable=False),
-    Column('total_cap', Float, nullable=False),
-    Column('bucket_caps_json', Text, nullable=False),
-    Column('status', Text, nullable=False),
-    Column('effective_at', Text, nullable=False),
-    Column('created_at', Text, nullable=False),
-)
-
 ticket_proposals = Table(
     'ticket_proposals',
     metadata,
@@ -180,4 +167,56 @@ ticket_settlements = Table(
     Column('pnl_amount', Float, nullable=False),
     Column('bet_leg_settlement_ids_json', Text, nullable=False),
     Column('settlement_method_version', Text, nullable=False),
+)
+
+
+# 足彩固定奖金政策修订（tickets.fixed_prize_policy_revision_id 的外键目标；2026-10-13 基线重排时
+# 从已删的 schema_operator_result 移来，表本身仍为空）
+zucai_fixed_prize_policy_revisions = Table(
+    "zucai_fixed_prize_policy_revisions",
+    metadata,
+    Column("fixed_prize_policy_revision_id", Text, primary_key=True),
+    Column("fixed_prize_policy_family_id", Text, nullable=False, index=True),
+    Column("revision_no", Integer, nullable=False),
+    Column(
+        "supersedes_revision_id",
+        Text,
+        ForeignKey(
+            "zucai_fixed_prize_policy_revisions.fixed_prize_policy_revision_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        unique=True,
+    ),
+    Column("policy_version", Text, nullable=False),
+    Column("ticket_kind", Text, nullable=False),
+    Column("currency", Text, nullable=False),
+    Column("standard_unit_stake_minor", Integer, nullable=False),
+    Column("official_void_rule", Text, nullable=False),
+    Column("effective_at", Text, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column(
+        "action_id",
+        Text,
+        ForeignKey("actions.action_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("created_at", Text, nullable=False),
+    CheckConstraint("revision_no >= 1", name="ck_zucai_fixed_policy_revision"),
+    CheckConstraint("ticket_kind IN ('sfc', 'renjiu')", name="ck_zucai_fixed_policy_kind"),
+    CheckConstraint("length(currency) = 3", name="ck_zucai_fixed_policy_currency"),
+    CheckConstraint(
+        "standard_unit_stake_minor > 0",
+        name="ck_zucai_fixed_policy_unit_stake",
+    ),
+    CheckConstraint(
+        "official_void_rule = 'all_faces_match'",
+        name="ck_zucai_fixed_policy_void_rule",
+    ),
+    UniqueConstraint(
+        "fixed_prize_policy_family_id",
+        "revision_no",
+        name="uq_zucai_fixed_policy_revision",
+    ),
 )

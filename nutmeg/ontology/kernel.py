@@ -142,21 +142,15 @@ class OntologyKernel:
                 ticket_count=finance.count_tickets(),
                 settlement_count=finance.count_settlements(),
             )
-            if 10 in applied:
-                outbox = OutboxRepository(connection)
-                counts.update(
-                    outbox_event_count=outbox.count(),
-                    outbox_latest_sequence=outbox.latest_sequence(),
-                )
-            if 13 in applied:
-                scoreboard = ScoreboardRepository(connection)
-                counts.update(
-                    scoreboard_observation_count=scoreboard.count_observations(),
-                    scoreboard_shadow_review_count=scoreboard.count_shadow_reviews(),
-                    scoreboard_authority_state=scoreboard.authority().state,
-                )
-            else:
-                counts["scoreboard_authority_state"] = "unavailable"
+            outbox = OutboxRepository(connection)
+            scoreboard = ScoreboardRepository(connection)
+            counts.update(
+                outbox_event_count=outbox.count(),
+                outbox_latest_sequence=outbox.latest_sequence(),
+                scoreboard_observation_count=scoreboard.count_observations(),
+                scoreboard_shadow_review_count=scoreboard.count_shadow_reviews(),
+                scoreboard_authority_state=scoreboard.authority().state,
+            )
         from nutmeg.analytics.substrate import projection_counts
 
         projections = projection_counts(self._paths.analytics)

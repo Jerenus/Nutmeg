@@ -2,13 +2,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import inspect, select
 
 from nutmeg.config.settings import AppSettings
 from nutmeg.ontology.actions.artifact_ingest import ArtifactIngestRequest
 from nutmeg.ontology.actions.models import ActorRole
 from nutmeg.ontology.errors import OptimisticConcurrencyError
-from nutmeg.ontology.repository import schema, schema_scoreboard
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from nutmeg.ontology.scoreboard.models import (
     ScoreboardObservationRow,
@@ -75,35 +73,6 @@ def _observation(
         supersedes_observation_id=supersedes,
         action_id=action_id,
     )
-
-
-def test_migration_13_seeds_legacy_authority_and_exact_permissions(
-    tmp_path: Path,
-) -> None:
-    kernel, report = _kernel(tmp_path)
-
-    assert 13 in report.applied_versions
-    assert {
-        "scoreboard_observations",
-        "scoreboard_shadow_reviews",
-        "scoreboard_authority",
-    } <= set(inspect(kernel.engine).get_table_names())
-    with kernel.engine.connect() as connection:
-        rows = connection.execute(select(schema.action_permissions)).mappings().all()
-        authority = connection.execute(
-            select(schema_scoreboard.scoreboard_authority)
-        ).mappings().one()
-
-    seeded = {(row["action_type"], row["actor_role"]) for row in rows}
-    assert SCOREBOARD_PERMISSIONS <= seeded
-    assert not {
-        (action_type, role)
-        for action_type, _role in SCOREBOARD_PERMISSIONS
-        for role in ("ai_analyst", "ai_extractor")
-    } & seeded
-    assert authority["authority_id"] == "primary"
-    assert authority["state"] == "legacy"
-    assert authority["version"] == 1
 
 
 def test_repository_round_trips_observation_revisions_and_latest_as_of(

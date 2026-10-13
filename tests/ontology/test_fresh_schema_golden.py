@@ -1,11 +1,10 @@
 """Fresh-store schema golden.
 
-Replaces the per-migration DDL/trigger unit tests of the operator_* and discovery
-tables (2026-10-08): nothing live writes those tables, so what matters is that the
-migration chain keeps producing exactly the same store. A fresh store built by
-``run_migrations`` must equal ``golden/fresh_schema.sql`` — every table, index,
-trigger and view in ``sqlite_master``, the migration ledger (version, name,
-checksum) and the seeded action permissions.
+A fresh store built by ``run_migrations`` must equal ``golden/fresh_schema.sql`` — every
+table, index, trigger and view in ``sqlite_master``, the migration ledger (version,
+name, checksum) and the seeded action permissions. ``golden/legacy_schema_47.sql`` is
+the same dump of the pre-baseline chain (schema 47), kept as the fixture for the
+rebase test in ``test_migrations.py``.
 
 After an intended schema change, regenerate and review the diff:
 
@@ -75,18 +74,6 @@ def test_fresh_store_matches_golden(tmp_path: Path) -> None:
         "fresh store schema drifted from tests/ontology/golden/fresh_schema.sql "
         "(regenerate with NUTMEG_UPDATE_GOLDEN=1 if the change is intended)"
     )
-
-
-@pytest.mark.parametrize("start_version", [19, 30])
-def test_upgrading_an_older_store_reaches_the_same_schema(
-    tmp_path: Path, start_version: int
-) -> None:
-    database = _build(tmp_path / "old.db", MIGRATIONS[:start_version])
-    engine = create_engine(f"sqlite:///{database}")
-    report = run_migrations(engine)
-    assert report.applied_versions == tuple(range(start_version + 1, len(MIGRATIONS) + 1))
-    assert run_migrations(engine).applied_versions == ()
-    assert _dump(database) == _dump(_build(tmp_path / "fresh.db"))
 
 
 @pytest.mark.skipif(not PRODUCTION_COPY.exists(), reason="no local .nutmeg-data store")

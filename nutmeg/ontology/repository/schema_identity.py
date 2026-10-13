@@ -17,7 +17,6 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
-    text,
 )
 
 from nutmeg.ontology.repository.schema import metadata
@@ -141,16 +140,3 @@ entity_aliases = Table(
     ),
 )
 
-entity_merges = Table(
-    'entity_merges',
-    metadata,
-    Column('merge_id', Text, primary_key=True),
-    Column('from_id', Text, nullable=False, index=True),
-    Column('into_id', Text, nullable=False),
-    Column('entity_type', Text, nullable=False),
-    Column('reason', Text, nullable=False),
-    Column('evidence_retrieval_ids_json', Text, nullable=False, server_default=text("'[]'")),
-    Column('actor_id', Text, nullable=False),
-    Column('at', Text, nullable=False),
-    Column('reversible', Integer, nullable=False, server_default=text('1')),
-)

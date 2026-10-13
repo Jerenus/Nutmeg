@@ -14,7 +14,7 @@ from nutmeg.ontology.actions.outcome_actions import (
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.repository import schema_finance as sf
 from nutmeg.ontology.repository.connection import build_ontology_engine
-from nutmeg.ontology.repository.migrations import MIGRATIONS, run_migrations
+from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from tests.ontology.ticket_seed import Leg, ledger_balance, seed_account, seed_ticket
 
@@ -109,19 +109,3 @@ def test_legacy_null_odds_leg_settles_under_placeholder_method(tmp_path: Path) -
         assert method == "had-3way-v1"                                 # auditable legacy path
         assert ledger_balance(engine) == 100.0        # flat ×2 placeholder
 
-
-def test_migration9_upgrades_schema8_store(tmp_path: Path) -> None:
-    # build a schema-8 store: run migrations, then drop the column to simulate pre-9
-    engine = build_ontology_engine(tmp_path / "ontology.db")
-    run_migrations(engine)
-    with engine.begin() as connection:
-        connection.exec_driver_sql("ALTER TABLE bet_legs DROP COLUMN entry_odds")
-        connection.exec_driver_sql("DELETE FROM schema_migrations WHERE version = 9")
-    report = run_migrations(engine)          # re-applies 9 → guarded ALTER adds it back
-    assert 9 in report.applied_versions or report.current_version >= 9
-    with engine.connect() as connection:
-        columns = {row[1] for row in
-                   connection.exec_driver_sql("PRAGMA table_info(bet_legs)").fetchall()}
-    assert "entry_odds" in columns
-    migration9 = next(migration for migration in MIGRATIONS if migration.version == 9)
-    assert migration9.name == "finance_entry_odds"

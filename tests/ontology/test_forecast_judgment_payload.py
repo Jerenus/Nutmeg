@@ -13,10 +13,10 @@ from nutmeg.ontology.repository.migrations import migration_status, run_migratio
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 
 
-def test_v47_adds_judgment_payload_columns(tmp_path: Path) -> None:
+def test_baseline_has_judgment_payload_columns(tmp_path: Path) -> None:
     engine = build_ontology_engine(tmp_path / "ontology.db")
     run_migrations(engine)
-    assert migration_status(engine).current_version == 47
+    assert migration_status(engine).current_version == 1
     columns = {c["name"] for c in inspect(engine).get_columns("forecast_revisions")}
     assert {"kind", "board_key", "judgment_json"} <= columns
 

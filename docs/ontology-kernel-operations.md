@@ -1,5 +1,9 @@
 # Ontology Kernel v2 — Package 1 Operations Contract
 
+> **2026-10-13 基线重排**：47 步迁移链压成一条 `baseline_2026_10_13`，下文「表与迁移保留」的空表已删（130 张）；
+> 老库经 `guarded-init` 原地重排，备份 `.nutmeg-data/archive/ontology-before-baseline-20261013*.db`。
+> 现役表清单见 `docs/ARCHITECTURE.md` §7.2，证据见 `docs/superpowers/evidence/2026-10-13-kernel-schema-baseline.md`。
+
 > **2026-10-08 现状（第二轮瘦身后）**：下文按 Package 1–5 的施工顺序写成，其中以下部件的代码已删除，
 > 表与迁移保留（空表或历史行）：`kernel.decision_read`（会话 / 证据包 / 情景）、`kernel.express` 与
 > 票据 propose / approve / 预算策略 / 现金交易（`betslip register` 不再写内核票，钱的事实源是
@@ -44,9 +48,12 @@ It is deliberately separate from `state/state.db` (notification/client state) an
 
 The `ontology init` command was removed 2026-10-03. Every kernel-backed command
 calls `kernel.initialize()` itself, which creates the owned directories and applies
-pending numbered migrations idempotently (a second run applies nothing). For the
-production database, apply a new migration deliberately with
-`uv run nutmeg ontology guarded-init` (backup first) inside a timer gap.
+pending numbered migrations idempotently (a second run applies nothing). Since
+2026-10-13 the chain is one baseline migration; a store still carrying the sealed
+47-step legacy ledger is rebased in place on first contact (retired tables asserted
+empty, then dropped; ledger replaced). For the production database, apply a new
+migration deliberately with `uv run nutmeg ontology guarded-init` (backup first)
+inside a timer gap.
 
 ## 4. `ontology status` — read-only health / exit-code contract
 

@@ -17,7 +17,7 @@ from nutmeg.ontology.actions.rsi_actions import (
 from nutmeg.ontology.actions.service import ActionService
 from nutmeg.ontology.repository import schema_rsi as sr
 from nutmeg.ontology.repository.connection import build_ontology_engine
-from nutmeg.ontology.repository.migrations import MIGRATIONS, run_migrations
+from nutmeg.ontology.repository.migrations import run_migrations
 from nutmeg.ontology.repository.unit_of_work import OntologyUnitOfWork
 from tests.ontology.test_rsi_actions import F2_DOC
 
@@ -159,43 +159,3 @@ def test_register_cli_requires_by_and_rejects_forbidden_value(tmp_path: Path):
     assert "--by" in missing.output
     assert forbidden.exit_code == 1
     assert ERROR in forbidden.output
-
-
-def test_attribution_migration_marks_historical_rows_unattributed(tmp_path: Path):
-    engine = build_ontology_engine(tmp_path / "ontology.db")
-    run_migrations(engine, MIGRATIONS[:37])
-    with engine.begin() as connection:
-        for table_name in ("rsi_experiments", "rsi_amendments", "rsi_deployments"):
-            connection.exec_driver_sql(f"ALTER TABLE {table_name} DROP COLUMN acted_by")
-        connection.exec_driver_sql(
-            "INSERT INTO rsi_experiments "
-            "(exp_id,claim,mechanism,tier,layer,population,min_tier,window_json,"
-            "falsifier_json,stop_rule,quota_slot,buckets_json,rule_ids_json,source_doc,"
-            "registered_at,frozen_hash,created_at) VALUES "
-            "('F2','c','m','observation','judgment','zucai','price_only','{}','{}','s',"
-            "0,'[]','[]','x','2026-09-18','h','2026-09-18')"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO rsi_amendments "
-            "(amendment_id,exp_id,what,why,rule_check,mechanism_note,amended_at) VALUES "
-            "('a1','F2','w','y','r',NULL,'2026-09-18')"
-        )
-        connection.exec_driver_sql(
-            "INSERT INTO rsi_deployments "
-            "(deployment_id,exp_id,decision,rule_id,reason,adjudication_ref,"
-            "extend_to_exp_id,actor_id,decided_at) VALUES "
-            "('d1','F2','hold',NULL,'r',NULL,NULL,'operator:rsi','2026-09-18')"
-        )
-
-    run_migrations(engine)
-
-    with engine.connect() as connection:
-        assert connection.exec_driver_sql(
-            "SELECT acted_by FROM rsi_experiments WHERE exp_id='F2'"
-        ).scalar_one() == "unattributed"
-        assert connection.exec_driver_sql(
-            "SELECT acted_by FROM rsi_amendments WHERE amendment_id='a1'"
-        ).scalar_one() == "unattributed"
-        assert connection.exec_driver_sql(
-            "SELECT acted_by FROM rsi_deployments WHERE deployment_id='d1'"
-        ).scalar_one() == "unattributed"

@@ -46,7 +46,7 @@ selection_definitions = Table(
     ),
     Column('outcome_key', Text, nullable=False),
     Column('line', Text, nullable=True),
-    Column('deployable', Integer, nullable=False, server_default='1'),
+    Column('deployable', Integer, nullable=False, server_default=text('1')),
 )
 
 market_quotes = Table(
