@@ -127,3 +127,24 @@ def test_v4_vetoes_renjiu_with_more_than_nine_matches() -> None:
                    issue="26139", faces={k: ten[k] for k in list(ten)[:9]})
     out9 = review(nine, {"shared_naked": []}, prize_model={})
     assert "V4" not in {v["code"] for v in out9["verdicts"]}
+
+
+def test_shared_excluded_faces_are_a_v2_veto_too() -> None:
+    """2026-10-14：所有票同时排掉的 ≥30% 面＝共享裸单同类项（26138–26140 四期同死因）。"""
+    from nutmeg.decision.betslip import BetSlip, SlipLeg
+    from nutmeg.decision.review import review
+
+    faces = {"1": "30", **{str(n): "3" for n in range(2, 10)}}
+    slip = BetSlip(slip_id="26140-T1", channel="renjiu", placed_at="2026-10-13", multiplier=1,
+                   issue="26140", faces=faces,
+                   legs=[SlipLeg(key=no, market="had", line=None, selections=tuple(f),
+                                 odds=tuple(1.0 for _ in f),
+                                 fair={"home": 0.45, "draw": 0.35, "away": 0.2})
+                         for no, f in faces.items()])
+    diagnosis = {"shared_naked": [],
+                 "shared_excluded": [{"key": "1", "face": "1", "p_face": 0.35,
+                                      "slip_ids": ["26140-T1", "plan:26140-T2"]}]}
+    out = review(slip, diagnosis, prize_model={})
+    v2 = [v for v in out["verdicts"] if v["code"] == "V2"]
+    assert len(v2) == 1 and v2[0]["level"] == "veto" and out["vetoed"]
+    assert "与同组计划票共享排除面 1 处（1开1 35%）" in v2[0]["text"]

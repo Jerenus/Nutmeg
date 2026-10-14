@@ -172,3 +172,49 @@ def test_f17_grades_hyped_favourites_by_pre_kickoff_polymarket_volume():
     assert g.n_cum == 2 and g.selected_keys == ("a", "b")
     assert abs(g.metric_value_pp - ((1 - 0.70) + (0 - 0.70)) / 2 * 100) < 1e-9
     assert PROSPECTIVE_ADAPTERS["F17"] is grade_f17_prospective      # 2026-10-09 登记
+
+
+def _lic_row(key, actual, *, spine=True, side="away", unit="defense", anchor="home",
+             fav=0.65, day="2026-10-15", labels=True):
+    rest = (1 - fav) / 2
+    row = {"key": key, "date": day, "actual": actual,
+           "fair": {"home": fav, "draw": rest, "away": rest}}
+    if labels:
+        row["labels"] = {"license_questions": {"q1_spine": spine},
+                         "hole_location_side": side, "hole_location_unit": unit,
+                         "anchor_side": anchor}
+    return row
+
+
+def test_f18_splits_favourites_by_the_single_licence_and_reports_the_difference():
+    """F18（2026-10-14 登记）：≥57% 热门按「中轴齐 ∧ 洞在弱方 ∧ 单位明确」分两组，
+    指标＝两组残差之差。"""
+    from nutmeg.decision.rsi_grading import (
+        PROSPECTIVE_ADAPTERS,
+        grade_f18_prospective,
+        licence_of,
+    )
+
+    rows = [
+        _lic_row("a", "3"),                                  # 有证，开出 → +0.35
+        _lic_row("b", "1"),                                  # 有证，没开 → −0.65
+        _lic_row("c", "3", side="home"),                     # 洞在锚方 → 无证
+        _lic_row("d", "1", spine=False),                     # 中轴不齐 → 无证
+        _lic_row("e", "3", unit="both"),                     # 单位不明 → 无证
+        _lic_row("f", "3", fav=0.55),                        # 不够热，不计
+        _lic_row("g", "3", labels=False),                    # 没标签，不计
+        _lic_row("h", "3", anchor="away"),                   # 研究锚方不是市场热门，不计
+        _lic_row("i", "3", day="2026-10-14"),                # 窗外
+    ]
+    g = grade_f18_prospective(rows, window={"date_from": "2026-10-15"}, boots=200)
+    assert g.n_cum == 2 and set(g.selected_keys) == {"a", "b", "c", "d", "e"}
+    licensed = ((1 - 0.65) + (0 - 0.65)) / 2
+    unlicensed = ((1 - 0.65) + (0 - 0.65) + (1 - 0.65)) / 3
+    assert abs(g.metric_value_pp - (licensed - unlicensed) * 100) < 1e-9
+    assert abs(g.cost_axis_pp - unlicensed * 100) < 1e-9
+    assert g.ci_low_pp <= g.metric_value_pp <= g.ci_high_pp
+    assert licence_of({}, "home") is None                    # 字段缺 → 不计入两组
+    assert PROSPECTIVE_ADAPTERS["F18"] is grade_f18_prospective      # 2026-10-14 登记
+    # 只有一组时不算差值，只记 n
+    only = grade_f18_prospective(rows[:2], window={"date_from": "2026-10-15"}, boots=50)
+    assert only.n_cum == 2 and only.metric_value_pp == 0.0

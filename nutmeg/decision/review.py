@@ -3,7 +3,9 @@
 人出方案，机器给三类意见：**否决**（有实证的坏结构）、**警告**、**数字**。否决只有两条，
 都来自 403 天回放与复盘账：
 - V1 期望回报率 < 0.5——"中了也亏"的帽内 max-P 形状（任九 −58%、竞彩 max-P −20%，CI 不含 0）；
-- V2 与已购票共享裸单——假分散（26122 联死 73.8%、26133 ≈60%、09-28 五票同死 004）。
+- V2 与已购票共享裸单——假分散（26122 联死 73.8%、26133 ≈60%、09-28 五票同死 004）；
+  2026-10-14 起**所有票同时排掉的 ≥30% 面**计为同类项（26138 2·0、26139 3·10/8·31、26140 6·3/8·0
+  四期全灭都死在这里，§8a 第 4 条连续四期 ✗）。
 V3 倍投/重注只警告（证据不够硬：26121 ×50 中过一次）。
 V4 渠道不可购（2026-10-12 Jun：任九 >9 场的「容错」复式目前渠道不支持）——注数算法支持 >9 场，
 但买不到的票不该过预审。
@@ -199,6 +201,19 @@ def review(slip: BetSlip, diagnosis: dict, *, prize_model: dict[str, dict],
                          "text": f"与{peer}共享裸单 {len(shared)} 条（{keys}）"
                                  + (f"，联死 ≥{joint * 100:.0f}%" if joint is not None else "")
                                  + "：假分散（26122/26133/09-28 三次全灭同一死法）——改双选或换场"})
+    excluded = diagnosis.get("shared_excluded") or []
+    if excluded:
+        # 2026-10-14：所有票同时排掉的 ≥30% 面＝共享裸单同类项
+        # （§8a 第 4 条；26138–26140 四期同死因）
+        others = {sid for r in excluded for sid in r.get("slip_ids") or []} - {slip.slip_id}
+        peer = ("同组计划票" if others and all(str(s).startswith("plan:") for s in others)
+                else "已购票")
+        verdicts.append({"code": "V2", "level": "veto",
+                         "text": f"与{peer}共享排除面 {len(excluded)} 处（"
+                                 + "、".join(f"{r['key']}开{r['face']} {r['p_face'] * 100:.0f}%"
+                                             for r in excluded)
+                                 + "）：所有票同时排掉 ≥30% 的面＝假分散——"
+                                   "任九里直接丢这场，或一张票盖上它"})
     if slip.multiplier > WARN_MULTIPLIER:
         verdicts.append({"code": "V3", "level": "warn",
                          "text": f"倍数 {slip.multiplier}×：倍投只警告（26121 ×50 中过一次）"})

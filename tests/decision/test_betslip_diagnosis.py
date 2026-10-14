@@ -190,3 +190,29 @@ def test_vs_draft_classifies_every_difference_and_flags_missing_reason(tmp_path:
                    faces=dict(draft), legs=[])
     assert "对照初稿：与机器初稿一致" in diagnose(same, [], {}, draft=draft)["lines"]
     assert vs_draft(slip, {})["has_draft"] is False
+
+
+def test_zucai_peers_sharing_an_excluded_face_over_30pct_are_reported():
+    """§8a 第 4 条（2026-10-14）：两张同期足彩票都排掉的 ≥30% 面＝共享裸单同类项。"""
+    from nutmeg.decision.betslip_diagnosis import shared_excluded_faces
+
+    fair_a = {"home": 0.45, "draw": 0.35, "away": 0.20}
+    fair_b = {"home": 0.5, "draw": 0.28, "away": 0.22}
+
+    def zucai(slip_id, faces, channel="renjiu", purchased=True):
+        legs = [SlipLeg(key=no, market="had", line=None, selections=tuple(faces[no]),
+                        odds=tuple(1.0 for _ in faces[no]), fair=fair_a if no == "1" else fair_b)
+                for no in faces]
+        return BetSlip(slip_id=slip_id, channel=channel, placed_at="2026-10-13", legs=legs,
+                       multiplier=1, issue="26140", purchased=purchased, faces=faces)
+
+    mine = zucai("26140-T1", {"1": "30", "2": "31", "3": "3"})
+    peer = zucai("26140-T2", {"1": "3", "2": "3", "3": "31"}, channel="shengfucai")
+    rows = shared_excluded_faces(mine, [peer])
+    assert rows == [{"key": "1", "face": "1", "p_face": 0.35,
+                     "slip_ids": ["26140-T1", "26140-T2"]}]     # 场 2 的 0 只有 22%，不报
+    diag = diagnose(mine, [peer], {})
+    assert diag["shared_excluded"] == rows
+    assert any("跨票共享排除面 1开1 35%" in line for line in diag["lines"])
+    # 竞彩票没有 faces，不参与
+    assert shared_excluded_faces(_jczq("J", [_leg("周一004", ("home",), FAIR_004)]), [peer]) == []

@@ -121,6 +121,31 @@ def shared_naked_legs(slip: BetSlip, others: list[BetSlip],
     return shared
 
 
+def shared_excluded_faces(slip: BetSlip, others: list[BetSlip]) -> list[dict]:
+    """跨票共享排除面（§8a 第 4 条，2026-10-14）：本票与另一张足彩票都选了的场里，两张都没盖、
+    且按本票 fair ≥30% 的面——它开出两张一起死，和共享裸单是同一种假分散
+    （26138 2·0 45%、26139 3·10/8·31、26140 6·3/8·0 四期同死因）。只看足彩同期票；缺 fair 不算。"""
+    from nutmeg.decision.slip_group import shared_excluded
+
+    if slip.channel not in ZUCAI_CHANNELS or not slip.faces:
+        return []
+    fair = {leg.key: leg.fair for leg in slip.legs if leg.fair}
+    found: dict[tuple[str, str], dict] = {}
+    for other in others:
+        if other.channel not in ZUCAI_CHANNELS or not other.faces:
+            continue
+        pair_fair = {no: fair[no] for no in slip.faces if no in other.faces and no in fair}
+        mine = {no: slip.faces[no] for no in pair_fair}
+        theirs = {no: other.faces[no] for no in pair_fair}
+        for no, face, p in shared_excluded([mine, theirs], pair_fair):
+            row = found.setdefault((no, face), {"key": no, "face": face,
+                                                "p_face": round(float(p), 4),
+                                                "slip_ids": {slip.slip_id}})
+            row["slip_ids"].add(other.slip_id)
+    return [{**row, "slip_ids": sorted(row["slip_ids"])}
+            for _, row in sorted(found.items(), key=lambda kv: (-kv[1]["p_face"], int(kv[0][0])))]
+
+
 def joint_death(shared: list[dict]) -> dict:
     """至少一条共享裸单不中 ⇒ 所有含它的票同死；缺 P 的腿不算、明写。"""
     known = [row["p_face"] for row in shared if row["p_face"] is not None]
@@ -219,6 +244,7 @@ def diagnose(slip: BetSlip, others: list[BetSlip], prescription: dict[str, str],
              cross: dict[str, dict] | None = None, draft: dict[str, str] | None = None) -> dict:
     shared = shared_naked_legs(slip, others, cross)
     joint = joint_death(shared)
+    excluded = shared_excluded_faces(slip, others)
     narrow = narrowing(slip, prescription)
     against_draft = vs_draft(slip, draft or {})
     lines = []
@@ -232,6 +258,10 @@ def diagnose(slip: BetSlip, others: list[BetSlip], prescription: dict[str, str],
             + (f"（{joint['n_shared'] - joint['n_priced']} 腿缺 fair 未计）"
                if joint["n_shared"] > joint["n_priced"] else "")
         )
+    if excluded:
+        lines.append("⚠️跨票共享排除面 " + "、".join(
+            f"{r['key']}开{r['face']} {r['p_face'] * 100:.0f}%" for r in excluded)
+            + "：所有票同时排掉的 ≥30% 面，开出一起死（§8a 第 4 条）")
     if narrow["narrower"] or narrow["off_prescription"]:
         lines.append(
             "⚠️对照处方：收窄 " + (",".join(narrow["narrower"]) or "无")
@@ -254,5 +284,5 @@ def diagnose(slip: BetSlip, others: list[BetSlip], prescription: dict[str, str],
             lines.append("对照初稿：与机器初稿一致")
     if not lines:
         lines.append("诊断：无共享裸单；票面未比处方窄")
-    return {"shared_naked": shared, "joint_death": joint, "narrowing": narrow,
-            "vs_draft": against_draft, "lines": lines}
+    return {"shared_naked": shared, "joint_death": joint, "shared_excluded": excluded,
+            "narrowing": narrow, "vs_draft": against_draft, "lines": lines}

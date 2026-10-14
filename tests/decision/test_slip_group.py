@@ -72,3 +72,40 @@ def test_best_complement_keeps_fixed_faces():
     score, ticket = best_complement([{"1": "3", "2": "3", "3": "3"}], fair, n_matches=3,
                                     max_notes=8, fixed={"1": "31"})
     assert ticket["1"] == "31" and score > 0
+
+
+def test_death_list_orders_shared_dead_faces_by_probability_and_flags_30pct_ones():
+    """§8b 全组死法清单（2026-10-14）：同死面按概率排、前 N 条联合通过率、
+    ≥30% 的点名为共享排除面。"""
+    from nutmeg.decision.slip_group import death_list, death_list_lines, shared_excluded
+
+    fair = {"1": {"home": 0.5, "draw": 0.3, "away": 0.2},
+            "2": {"home": 0.45, "draw": 0.35, "away": 0.20},
+            "3": {"home": 0.6, "draw": 0.25, "away": 0.15}}
+    a = {"1": "3", "2": "30", "3": "31"}
+    b = {"1": "31", "2": "3", "3": "3"}
+    ordered, pass_through = death_list([a, b], fair)
+    assert ordered == [("2", "1", 0.35), ("1", "0", 0.2), ("3", "0", 0.15)]
+    assert abs(pass_through - 0.65 * 0.8 * 0.85) < 1e-12
+    assert shared_excluded([a, b], fair) == [("2", "1", 0.35)]
+    line = death_list_lines([a, b], fair)[0]
+    assert "2开1 35%、1开0 20%、3开0 15%" in line and "联合通过 44.2%" in line
+    assert "⚠️共享排除面 ≥30%：2开1" in line
+    # 单张票＝它自己的被排面，不标共享
+    single = death_list_lines([a], fair)[0]
+    assert "本票被排面" in single and "共享排除面" not in single
+
+
+def test_best_complement_never_shares_a_30pct_excluded_face_with_the_base():
+    """2026-10-14：与基准同时排掉 ≥30% 的面＝V2 同类项，搜出来也没法买。"""
+    from nutmeg.decision.slip_group import shared_excluded
+
+    fair = {"1": {"home": 0.55, "draw": 0.35, "away": 0.10},
+            "2": {"home": 0.5, "draw": 0.28, "away": 0.22},
+            "3": {"home": 0.5, "draw": 0.28, "away": 0.22}}
+    base = [{"1": "30", "2": "31", "3": "3"}]
+    found = best_complement(base, fair, n_matches=3, max_notes=4)
+    assert found is not None
+    _, ticket = found
+    assert not shared_excluded([base[0], ticket], fair)
+    assert "1" in ticket and ticket["1"] != "30"   # 场 1 的平 35% 必须有一张盖住

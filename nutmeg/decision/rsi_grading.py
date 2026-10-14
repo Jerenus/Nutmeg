@@ -386,6 +386,76 @@ def grade_f17_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
 PROSPECTIVE_ADAPTERS["F17"] = grade_f17_prospective      # 2026-10-09 登记
 
 
+LICENCE_FAV_MIN = 0.57
+_OPPOSITE = {"home": "away", "away": "home"}
+
+
+def licence_of(labels: dict, anchor: str) -> bool | None:
+    """F18 单关许可证（2026-10-14，26140 §10b）：数据可得的三条——锚方中轴齐（`q1_spine`）∧
+    洞在弱方（`hole_location_side` 是锚方对面）∧ 洞的单位明确（不是 both/none）。
+    三个字段缺任一 → None（既不算有证也不算无证，不计入两组）。"""
+    lq = labels.get("license_questions") or {}
+    side, unit = labels.get("hole_location_side"), labels.get("hole_location_unit")
+    if "q1_spine" not in lq or side is None or unit is None:
+        return None
+    return bool(lq["q1_spine"]) and side == _OPPOSITE[anchor] and unit not in ("both", "none")
+
+
+def grade_f18_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                          boots: int = 4000) -> GradeResult:
+    """F18 单关许可证（2026-10-14 登记 experiments/registry/F18.json）。
+
+    窗内、模态面 ≥57% 的非平热门、研究标签齐（anchor_side 与模态同侧或缺省）→ 按许可证分两组，
+    指标＝有证组模态残差 − 无证组模态残差（pp）。主张为正（许可证能把热门分开）；
+    26133–26140 n=42 粗看 洞在弱方 9/11 vs 锚方 15/21，CI 互含，只写「不矛盾」。
+    n_cum 记有证组；selected_keys 两组都记（样本账两组都冻结）。"""
+    licensed: list[dict] = []
+    unlicensed: list[dict] = []
+    for r in _priced(rows):
+        if not _in_date_window(r, window):
+            continue
+        labels = r.get("labels") or {}
+        if not labels:
+            continue
+        modal = _modal(r["fair"])
+        if modal == "draw" or float(r["fair"][modal]) < LICENCE_FAV_MIN:
+            continue
+        anchor = labels.get("anchor_side")
+        if anchor in _OPPOSITE and anchor != modal:
+            continue                                  # 研究锚方与市场热门不是一边，不是本题
+        lic = licence_of(labels, modal)
+        if lic is None:
+            continue
+        (licensed if lic else unlicensed).append({**r, "_anchor": modal})
+
+    def resid(group: Sequence[dict]) -> list[float]:
+        return [(1.0 if r["actual"] == CODE_OF[r["_anchor"]] else 0.0)
+                - float(r["fair"][r["_anchor"]]) for r in group]
+
+    a, b = resid(licensed), resid(unlicensed)
+    both = [*licensed, *unlicensed]
+    if not a or not b:
+        return GradeResult(stratum="pooled", n_cum=len(a), metric_value_pp=0.0, ci_low_pp=0.0,
+                           ci_high_pp=0.0, cost_axis_pp=None, as_of_policy="registry_window_date",
+                           inputs_hash=_rows_hash(both),
+                           computed_by="nutmeg.decision.rsi_grading.grade_f18_prospective",
+                           selected_keys=_keys(both))
+    point = (statistics.fmean(a) - statistics.fmean(b)) * 100
+    rng = random.Random(seed)
+    diffs = sorted((statistics.fmean(rng.choice(a) for _ in a)
+                    - statistics.fmean(rng.choice(b) for _ in b)) * 100 for _ in range(boots))
+    return GradeResult(stratum="pooled", n_cum=len(a), metric_value_pp=point,
+                       ci_low_pp=diffs[int(0.025 * boots)],
+                       ci_high_pp=diffs[int(0.975 * boots) - 1],
+                       cost_axis_pp=statistics.fmean(b) * 100,     # 无证组残差，读数时作对照
+                       as_of_policy="registry_window_date", inputs_hash=_rows_hash(both),
+                       computed_by="nutmeg.decision.rsi_grading.grade_f18_prospective",
+                       selected_keys=_keys(both))
+
+
+PROSPECTIVE_ADAPTERS["F18"] = grade_f18_prospective      # 2026-10-14 登记
+
+
 def _closing_fav(row: dict) -> tuple[str, float] | None:
     sharp = (row.get("closing") or {}).get("sharp_fair") or {}
     if len(sharp) != 3:

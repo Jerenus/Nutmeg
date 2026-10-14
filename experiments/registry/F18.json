@@ -1,0 +1,27 @@
+{
+ "exp_id": "F18",
+ "claim": "并集池里市场模态面 ≥57% 的非平热门，持「单关许可证」的一组（锚方中轴齐 ∧ 研究洞在弱方 ∧ 洞的单位明确）模态面残差高于无证的一组——许可证能把热门分开。许可证只作单选资格，不拨概率、不接入 rubric。",
+ "mechanism": "26140 §10b 单关路径对账：分析对的 7 场里洞在弱方 4、锚方洞已价内 2、全员+风格错位 1；错的 4 场洞在锚方 2（拜仁 穆西亚拉、狼队 Jiménez）、无洞 2（国米、布里斯托），没有一场洞在弱方。历史 26133–26140 ≥57% 热门 n=42：洞在弱方/两边 9/11、无洞 6/9、锚方 15/21，总 71% ≈ 市场——差 10pp 但 CI 互含，只能写「不矛盾」。六条件 k/n 只在分析包里，不在语料，故许可证取语料可得的三条；凑不齐三个字段的场不计入两组。主张被证伪＝许可证不比无证更准，那就把它从 §6b-2 的胆条件里删掉。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "deep_research",
+ "window": {
+  "date_from": "2026-10-15",
+  "n_min": 60
+ },
+ "falsifier": {
+  "metric": "licence_diff_pp",
+  "stratum": "pooled",
+  "n_min": 60,
+  "bound": "ci_lower",
+  "threshold_pp": 0.0,
+  "direction": "lt_means_falsified"
+ },
+ "stop_rule": "有证组累计 60 场结账；两组残差之差的 CI 下界 < 0 即证伪（许可证分不开热门）。只计带研究标签（license_questions / hole_location_side / hole_location_unit / anchor_side）的行；期间不改热门线（模态面 ≥57%）与三条许可证定义，不接入 rubric 与票面。窗口从登记次日 2026-10-15 起算。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [],
+ "source_doc": ".nutmeg-data/zucai/26140-packet.md",
+ "registered_at": "2026-10-14"
+}

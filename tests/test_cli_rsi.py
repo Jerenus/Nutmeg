@@ -1294,3 +1294,63 @@ def test_balance_fulfills_f9_when_duty_was_scheduled_under_zucai_identity(tmp_pa
             "SELECT match_id FROM rsi_duty_instances "
             "WHERE duty_id = 'F9:balance-ledger' AND fulfilled_at IS NOT NULL"
         ).fetchall() == [("shared-zucai",)]
+
+
+def test_fulfill_accepts_the_jczq_identity_when_the_duty_was_scheduled_under_zucai_id(tmp_path):
+    """2026-10-14：重叠场义务按足彩侧 id 排、研究按竞彩侧 id 履约 → 「没有排过」→ 足彩侧实例
+    到开球即过期（R1 10-10 起每天假缺口）。履约时对上另一侧已排的 id 就用它。"""
+    data_dir = tmp_path / "data"
+    day = "2026-09-19"
+    day_dir = data_dir / "jczq" / "daily" / day
+    zucai_dir = data_dir / "zucai"
+    day_dir.mkdir(parents=True)
+    zucai_dir.mkdir(parents=True)
+    day_dir.joinpath("jczq-legs-base.json").write_text(json.dumps({"legs": {
+        "周五001": {"match_id": "jc-shared", "kickoff_bj": "2099-01-01T20:00:00+08:00"}}}),
+        encoding="utf-8")
+    zucai_dir.joinpath("26130-store-ids.json").write_text(json.dumps({
+        "1": {"match_id": "zc-shared", "match_no": 1}}), encoding="utf-8")
+    zucai_dir.joinpath("26130-issue.json").write_text(json.dumps({"matches": [
+        {"match_no": 1, "kickoff_bj": "2099-01-01 20:00"}]}), encoding="utf-8")
+    r0_doc = json.loads(Path("experiments/registry/R0.json").read_text("utf-8"))
+    both_path = tmp_path / "BOTH.json"
+    both_path.write_text(json.dumps({**r0_doc, "exp_id": "BOTH", "population": "both",
+                                     "window": {"date_from": "2026-09-01", "n_min": 10}}),
+                         encoding="utf-8")
+    runner = CliRunner()
+    assert runner.invoke(app, ["rsi", "register", "--by", "Jun", str(both_path),
+                               "--data-dir", str(data_dir)]).exit_code == 0
+    schedule = ["rsi", "schedule", "--day", day, "--issue", "26130", "--data-dir", str(data_dir)]
+    assert runner.invoke(app, schedule).exit_code == 0          # 还没有 channel-map：两侧都排
+    db = data_dir / "ontology" / "ontology.db"
+    with sqlite3.connect(db) as connection:
+        connection.execute("UPDATE rsi_duty_instances "
+                           "SET fulfilled_at='2026-09-19T12:15:00+08:00' "
+                           "WHERE match_id='zc-shared'")
+    zucai_dir.joinpath("26130-channel-map.auto.json").write_text(
+        json.dumps({"jc-shared": 1}), encoding="utf-8")
+    assert runner.invoke(app, schedule).exit_code == 0          # 对号后只剩足彩侧 id
+    with sqlite3.connect(db) as connection:
+        connection.execute("UPDATE rsi_duty_instances SET fulfilled_at=NULL")
+    artifact = day_dir / "research-周五001.json"
+    artifact.write_text("{}", encoding="utf-8")
+    cmd = ["rsi", "fulfill", "--exp", "BOTH", "--duty", "match-research", "--day", day,
+           "--match", "jc-shared", "--artifact", str(artifact), "--n-rows", "1",
+           "--stratum", "jczq", "--data-dir", str(data_dir)]
+    fulfilled = runner.invoke(app, cmd)
+    assert fulfilled.exit_code == 0, fulfilled.output
+    query = ("SELECT match_id, fulfilled_at IS NOT NULL FROM rsi_duty_instances "
+             "WHERE duty_id='BOTH:match-research' ORDER BY match_id")
+    with sqlite3.connect(db) as connection:
+        assert connection.execute(query).fetchall() == [("zc-shared", 1)]
+    # 两侧各排一条（R1 26141 的实况）：竞彩侧履约时足彩侧那条也要落
+    with sqlite3.connect(db) as connection:
+        connection.execute("UPDATE rsi_duty_instances SET fulfilled_at=NULL")
+        connection.execute(
+            "INSERT INTO rsi_duty_instances (duty_id, day, match_id, due_at, issue) "
+            "VALUES ('BOTH:match-research', ?, 'jc-shared', '2099-01-01T20:00:00+08:00', "
+            "'26130')", (day,))
+    artifact.write_text('{"v": 2}', encoding="utf-8")
+    assert runner.invoke(app, cmd).exit_code == 0
+    with sqlite3.connect(db) as connection:
+        assert connection.execute(query).fetchall() == [("jc-shared", 1), ("zc-shared", 1)]

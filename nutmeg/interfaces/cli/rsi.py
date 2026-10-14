@@ -216,6 +216,39 @@ def _scheduled_zucai_alias(kernel, data_dir: Path, *, day: str, issue: str) -> d
     return out
 
 
+def _channel_twins(data_dir: Path, issue: str) -> dict[str, str]:
+    """{竞彩侧 id: 足彩侧 id} ∪ {足彩侧 id: 竞彩侧 id}：同一场在内核的两个身份
+    （channel-map × store-ids）。"""
+    from nutmeg.decision.zucai_identity import load_channel_map
+
+    zdir = Path(data_dir) / "zucai"
+    store_path = zdir / f"{issue}-store-ids.json"
+    store = json.loads(store_path.read_text(encoding="utf-8")) if store_path.exists() else {}
+    out: dict[str, str] = {}
+    for jczq_id, match_no in load_channel_map(zdir, issue).items():
+        zucai_id = (store.get(str(match_no)) or {}).get("match_id")
+        if zucai_id and zucai_id != jczq_id:
+            out[jczq_id] = zucai_id
+            out[zucai_id] = jczq_id
+    return out
+
+
+def _scheduled_duty_identities(kernel, data_dir: Path, *, duty_id: str, day: str, match: str,
+                               issue: str | None) -> list[str]:
+    """履约认两侧身份（2026-10-14）。重叠场的义务可能按足彩侧 id 排（_keep_scheduled_identity）、
+    也可能两侧各一条；研究只按竞彩板的 id 履约 → 足彩侧那条到开球即过期：R1 自 10-10 起每天
+    5–7 个假缺口（26140 六场、26141 六场），同 F9 10-12 的死法。
+    返回这一天排过的身份（本 id、对上的另一侧 id），都没排过就原样返回让动作照旧报错。"""
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        rows = uow.rsi.duty_instances_for_day(duty_id, day)
+    scheduled = {row.match_id for row in rows}
+    issues = {row.issue for row in rows if row.issue}
+    resolved = issue or (next(iter(issues)) if len(issues) == 1 else None)
+    twin = _channel_twins(data_dir, resolved).get(match) if resolved else None
+    found = [m for m in (match, twin) if m and m in scheduled]
+    return found or [match]
+
+
 def _keep_scheduled_identity(kernel, data_dir: Path, *, day: str, issue: str,
                              kickoffs: dict[str, str]) -> dict[str, str]:
     """并集池同一场比赛只排一条义务（2026-10-05）。channel-map 18:30 才落地：之前足彩场按
@@ -671,24 +704,29 @@ def fulfill(exp: str = _EXP, duty: str = _DUTY, day: str = _DAY, artifact: Path 
               or _zucai_match_kickoffs(data_dir, issue).get(match))
     if ko is None:
         _fail("需要 --issue 或 --match 以解析开球（前瞻性判定依赖它）")
+    identities = _scheduled_duty_identities(
+        k, data_dir, duty_id=f"{exp}:{duty}", day=day, match=match, issue=issue
+    ) if match else [match]
     if not match and issue:
         day = _day_scoped_duty_day(k, f"{exp}:{duty}", day, issue)
     raw = artifact.read_bytes()
     captured = datetime.fromtimestamp(artifact.stat().st_mtime).astimezone()
-    _run(k.rsi_actions.fulfill_duty, FulfillDutyRequest(
-        exp_id=exp, duty_name=duty, day=day, artifact_path=str(artifact), artifact_bytes=raw,
-        n_rows=n_rows, population_stratum=stratum,
-        judgment_tier_hist={"deep_research" if match else "price_only": n_rows},
-        captured_at=captured, earliest_kickoff=ko, match_id=match,
-        # 键带产物 hash：研究被驳回后重做是新请求（旧观测被取代），字节相同才是 no-op
-        idempotency_key=(
-            f"rsi-ful:{exp}:{duty}:{day}:{match}:"
-            f"{hashlib.sha256(raw).hexdigest()[:16]}"
-        ),
-        requested_at=_now(), **_SYSTEM))
+    for identity in identities:
+        _run(k.rsi_actions.fulfill_duty, FulfillDutyRequest(
+            exp_id=exp, duty_name=duty, day=day, artifact_path=str(artifact),
+            artifact_bytes=raw, n_rows=n_rows, population_stratum=stratum,
+            judgment_tier_hist={"deep_research" if match else "price_only": n_rows},
+            captured_at=captured, earliest_kickoff=ko, match_id=identity,
+            # 键带产物 hash：研究被驳回后重做是新请求（旧观测被取代），字节相同才是 no-op
+            idempotency_key=(
+                f"rsi-ful:{exp}:{duty}:{day}:{identity}:"
+                f"{hashlib.sha256(raw).hexdigest()[:16]}"
+            ),
+            requested_at=_now(), **_SYSTEM))
     prospective = captured < datetime.fromisoformat(ko)
+    twin_note = f"（含另一侧身份 {len(identities) - 1} 条）" if len(identities) > 1 else ""
     typer.echo(f"已登记 {exp}/{duty}@{day}  n_rows={n_rows}  "
-               f"{'前瞻' if prospective else '⚠️非前瞻（该日仍是 gap）'}")
+               f"{'前瞻' if prospective else '⚠️非前瞻（该日仍是 gap）'}{twin_note}")
 
 
 def _official_zucai_outcomes(data_dir: Path, issue: str, reads: list[dict]) -> dict | None:

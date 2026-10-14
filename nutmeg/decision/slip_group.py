@@ -48,6 +48,27 @@ def co_death(tickets: list[dict], fair: dict) -> tuple[float, list[tuple[str, st
     return 1 - prod(1 - p for _, _, p in points), points
 
 
+SHARED_EXCLUDED_MIN = 0.30
+"""跨票共享排除面的门槛（§8a 第 4 条，2026-10-14）：所有票同时排掉的 ≥30% 面＝共享裸单同类项。
+26138 2·0(45%)、26139 3·10/8·31(25%/19%)、26140 两胆 6·3/8·0 的被排面——四期死因都在这里。"""
+
+
+def death_list(tickets: list[dict], fair: dict,
+               *, top: int = 5) -> tuple[list[tuple[str, str, float]], float]:
+    """全组死法清单（§8b）：同死面按概率从大到小，前 `top` 条就是这组票先要过的门。
+    → ([(场号, 面, P)] 降序, 前 top 条的联合通过率 ∏(1−P))。单张票＝它自己的被排面。"""
+    _, points = co_death(tickets, fair)
+    ordered = sorted(points, key=lambda x: (-x[2], int(x[0])))
+    return ordered, prod(1 - p for _, _, p in ordered[:top])
+
+
+def shared_excluded(tickets: list[dict], fair: dict,
+                    threshold: float = SHARED_EXCLUDED_MIN) -> list[tuple[str, str, float]]:
+    """所有票同时排掉、且概率 ≥ threshold 的面（26122/26133 共享裸单的另一种写法）。"""
+    _, points = co_death(tickets, fair)
+    return [pt for pt in points if pt[2] >= threshold - 1e-12]
+
+
 def given(fair: dict, results: dict[str, str]) -> dict:
     """把若干场钉成某个结果后的 fair（「若西汉姆打平，各票还剩多少」）。"""
     out = dict(fair)
@@ -71,7 +92,9 @@ def best_complement(base: list[dict], fair: dict, *, n_matches: int, max_notes: 
     def legal(t: dict) -> bool:
         return (prod(len(f) for f in t.values()) <= max_notes
                 and all(t.get(no) == f for no, f in fixed.items())
-                and not any((no, f) in naked for no, f in t.items()))
+                and not any((no, f) in naked for no, f in t.items())
+                # 与基准同时排掉 ≥30% 的面也是 V2 同类项（2026-10-14），搜出来也没法买
+                and not any(shared_excluded([b, t], fair) for b in base))
 
     def score(t: dict) -> float:
         return p_any([*base, t], fair) if legal(t) else -1.0
@@ -109,6 +132,26 @@ def death_text(tickets: list[dict], fair: dict) -> str:
     return f"{p * 100:.1f}%（{'、'.join(f'{no}开{f}' for no, f, _ in points) or '无同死点'}）"
 
 
+def death_list_lines(tickets: list[dict], fair: dict, *, top: int = 5) -> list[str]:
+    """§8b 一行：「死法清单（按概率）：8开0 31%、6开0 24%｜前五联合通过 42%｜
+    ⚠️共享排除面 ≥30%：8开0」。
+    单张票就是它自己的被排面；多张票＝全组同死面。"""
+    ordered, pass_through = death_list(tickets, fair, top=top)
+    if not ordered:
+        return ["   死法清单：无同死面（没有一场是所有票都没盖同一面）"]
+    shown = "、".join(f"{no}开{f} {p * 100:.0f}%" for no, f, p in ordered[:top])
+    more = (f"（另 {len(ordered) - top} 条 <{ordered[top][2] * 100:.0f}%）"
+            if len(ordered) > top else "")
+    scope = "全组同死面" if len(tickets) > 1 else "本票被排面"
+    line = (f"   死法清单（按概率，{scope}）：{shown}{more}"
+            f"｜前{min(top, len(ordered))}条联合通过 {pass_through * 100:.1f}%")
+    hot = shared_excluded(tickets, fair)
+    if len(tickets) > 1 and hot:
+        line += ("｜⚠️共享排除面 ≥30%："
+                 + "、".join(f"{no}开{f}" for no, f, _ in hot) + "（§8a 第 4 条，V2 同类项）")
+    return [line]
+
+
 def report_lines(plan: list[tuple[str, dict]], registered: list[tuple[str, dict]], fair: dict,
                  *, issue: str, alternatives: bool, results: dict[str, str]) -> list[str]:
     """预审的整组算术。`plan`/`registered`＝[(标签, 票面)]；`alternatives`＝计划是互斥备选，
@@ -130,6 +173,8 @@ def report_lines(plan: list[tuple[str, dict]], registered: list[tuple[str, dict]
                      f"（单张最高 {pct(max(p_all([t], fair) for _, t in group))}）")
         lines += [f"   同死 {la}×{lb} {death_text([ta, tb], fair)}"
                   for (la, ta), (lb, tb) in combinations(group, 2)]
+    if not alternatives and group:
+        lines += death_list_lines([t for _, t in group], fair)
     if results:
         pinned = given(fair, results)
         cells = [f"{label} {pct(p_all([t], pinned))}" for label, t in group]
