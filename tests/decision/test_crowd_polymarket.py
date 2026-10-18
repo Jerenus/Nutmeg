@@ -77,6 +77,37 @@ def test_board_rows_normalise_compare_with_market_and_rank_by_volume():
     assert dort["vs_market_pp"]["home"] > 0 and dort["kickoff"].startswith("2026-10-10T02:30")
 
 
+def test_board_rows_read_money_direction_from_trade_flow_and_flag_lopsided_books():
+    """资金去向（2026-10-18 Jun）：钱去了哪支队 = 逐笔 买Yes−卖Yes−买No 最大的那一面；
+    「富勒姆型」= 有量、单一市场占事件 ≥80%、三面价不动。"""
+    ev = _event("1", "AFC Bournemouth", "Sunderland AFC", end="2026-10-18", volume=31000.0)
+    for m, (vol, cid) in zip(ev["markets"], ((3000.0, "c-h"), (1000.0, "c-d"), (27000.0, "c-a")),
+                             strict=True):
+        m["volume"], m["condition_id"] = vol, cid
+    flows = {"c-h": {"buy_yes": 1000.0, "buy_no": 600.0, "sell_yes": 100.0, "sell_no": 0.0,
+                     "n": 90, "biggest": None},
+             "c-d": {"buy_yes": 300.0, "buy_no": 0.0, "sell_yes": 0.0, "sell_no": 0.0,
+                     "n": 43, "biggest": None},
+             "c-a": {"buy_yes": 1900.0, "buy_no": 5600.0, "sell_yes": 3200.0, "sell_no": 0.0,
+                     "n": 109, "biggest": {"side": "SELL", "outcome": "Yes", "usd": 3200.0,
+                                           "price": 0.26, "who": "x"}}}
+    matches = [{"key": "1", "home": ["伯恩茅斯"], "away": ["桑德兰"],
+                "kickoff": "2026-10-18T21:00:00+08:00",
+                "fair": {"home": 0.45, "draw": 0.27, "away": 0.28}}]
+    namer = Namer(cn2en={"伯恩茅斯": "Bournemouth", "桑德兰": "Sunderland"},
+                  resolve=lambda n: None, seed_en={})
+    rows = board_rows(namer, matches, [ev], trend=lambda token: (0.46, 0.46),
+                      flow=lambda cid: flows[cid])
+    row = rows["1"]
+    assert row["faces"]["away"]["volume"] == 27000.0 and row["flow"]["away"]["buy_no"] == 5600.0
+    # 客市场的钱是反桑德兰的：客面净 −6900 → 反桑德兰；主面净 +300 不到 $1k 不读方向
+    assert row["money_to"] == {"face": None, "usd": None, "against": "away",
+                               "against_usd": -6900.0}
+    assert row["lopsided"] is True                       # 客市场占 87%，三面价 0.0
+    quiet = board_rows(namer, matches, [ev], trend=lambda token: (0.40, 0.46))
+    assert "flow" not in quiet["1"] and quiet["1"]["lopsided"] is False
+
+
 def test_write_snapshot_appends(tmp_path: Path):
     path = tmp_path / "zucai" / "26136-polymarket.json"
     write_snapshot(path, {"issue": "26136"}, {"2": {"volume": 1.0}}, fetched_at="t1")

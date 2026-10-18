@@ -92,8 +92,9 @@ def test_all_registry_docs_load_and_keep_their_original_registration_dates():
     # 2026-10-02：K1（判断 rubric 两读 kappa）登记；2026-10-09：F16（赛程负荷）、F17（名气热卖）
     # 登记，CR2（高关注大热被人群多买，Jun 签字）入册
     # 2026-10-14：F18（单关许可证）登记
-    assert set(docs) == {"CR2", "F1c", "F10", "F11", "F13", "F14", "F15", "F16", "F17", "F18", "F2",
-                         "F3", "F4", "F5", "F8", "F9", "G1", "K1", "R0", "R1"}
+    # 2026-10-16：F19（「真实＝已定价」）登记（f2fdab8c 漏改本断言）
+    assert set(docs) == {"CR2", "F1c", "F10", "F11", "F13", "F14", "F15", "F16", "F17", "F18",
+                         "F19", "F2", "F3", "F4", "F5", "F8", "F9", "G1", "K1", "R0", "R1"}
     assert (docs["F18"]["registered_at"], docs["F18"]["window"]) == (
         "2026-10-14", {"date_from": "2026-10-15", "n_min": 60})
     assert (docs["F17"]["registered_at"], docs["F17"]["window"]) == (

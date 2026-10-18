@@ -121,16 +121,34 @@ def _pm_summary(label: str, path) -> str:
     snaps = (read_json(path, {}) or {}).get("snapshots") or []
     rows = (snaps[-1].get("rows") if snaps else None) or {}
     liquid = sum(1 for r in rows.values() if (r.get("volume") or 0) >= SHOW_MIN_VOLUME)
-    return f"{label}: 对上 {len(rows)} 场（有量 ≥$20k {liquid} 场）→ {path}"
+    text = f"{label}: 对上 {len(rows)} 场（有量 ≥$20k {liquid} 场）→ {path}"
+    cn = dict(home="主", draw="平", away="客")
+    for key in sorted(rows, key=lambda k: rows[k].get("rank") or 99):
+        money = rows[key].get("money_to") or {}
+        if not money and not rows[key].get("lopsided"):
+            continue
+        bits = []
+        if money.get("face"):
+            bits.append(f"钱→{cn[money['face']]} ${money['usd'] / 1000:.1f}k")
+        if money.get("against"):
+            bits.append(f"反{cn[money['against']]} ${-money['against_usd'] / 1000:.1f}k")
+        if rows[key].get("lopsided"):
+            bits.append("⚑单向价不动（富勒姆型形状）")
+        text += f"\n   场{key}: " + "，".join(bits)
+    return text
 
 
 @crowd_app.command("polymarket")
 def polymarket_cmd(issue: str | None = typer.Option(None, "--issue"),
                    day: str | None = typer.Option(None, "--day",
                                                   help="竞彩当日板 + 当天截止的足彩期次"),
+                   flow: bool = typer.Option(False, "--flow",
+                                             help="有量的场另取三个市场的逐笔成交：钱去了哪一面"
+                                                  "（每场 3 次 data-api 请求，出包时用）"),
                    data_dir: Path = _DATA_DIR) -> None:
     """Polymarket 关注度快照（2026-10-09，只读公开接口）：成交量 / 三向归一价 / 与市场基线差 /
-    本板名次，追加到 `<期>-polymarket.json` / `daily/<日>/polymarket.json`。只展示不拨动。"""
+    本板名次，追加到 `<期>-polymarket.json` / `daily/<日>/polymarket.json`。只展示不拨动。
+    `--flow`（2026-10-18）：分市场量 + 逐笔方向 → 行上 `flow` / `money_to` / `lopsided`。"""
     from datetime import datetime
 
     from nutmeg.data import polymarket as pm
@@ -143,9 +161,11 @@ def polymarket_cmd(issue: str | None = typer.Option(None, "--issue"),
     try:
         if issue:
             labelled = [(f"足彩 {issue}", snapshot_issue(Path(data_dir), issue,
-                                                       fetch=pm.default_fetch, now=now))]
+                                                       fetch=pm.default_fetch, now=now,
+                                                       with_flow=flow))]
         else:
-            out = snapshot_day(Path(data_dir), day, fetch=pm.default_fetch, now=now)
+            out = snapshot_day(Path(data_dir), day, fetch=pm.default_fetch, now=now,
+                               with_flow=flow)
             labelled = [(f"竞彩 {day}", out["jczq"]),
                         *((f"足彩 {k}", v) for k, v in out["zucai"].items())]
     except Exception as exc:  # noqa: BLE001 —— 网络/接口变化：失败要看得见，不当成空结果

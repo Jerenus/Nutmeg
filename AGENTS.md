@@ -76,7 +76,7 @@ project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg
 - "今天的 jczq 方案 / 今天竞彩怎么打 / 出今天的票 / today's bets" → RUNBOOK 泳道 A
 - "胜负彩 / 任九 / 26xxx 期方案" → RUNBOOK 泳道 B
 - "深度分析 / 混合投注 / X 串 Y / 审核我的方案" → 深研与审票（`docs/jczq-mixed-bet-judge-process.md`：逐场研究 → Jun 出方案 → `betslip preview` 审票 → 登记）
-- "/zucai-packet <期> / 按我的问题梳理 / 分析包" → RUNBOOK B5e 阅读层（`.claude/commands/zucai-packet.md`，2026-10-14 起**三屏一桥**：A 三屏 §0 头部 · §1 决策表 14 行（档·锚方中轴·洞在谁·翻车面·标签(弱/真实·价内/未价，10-16 F19)·六条件 k/n·默认动作·死门 P·赛前看谁）· §2 胆与票（胆表 ≤5 行 + 主形一张 + 替代一张 + 死法清单）一次出齐 → B 桥 §3 只走一次（五条自检、差异格、死法清单）→ C 审票登记 §4 → D 次日 `retro` §5（决策表加「开」「许可证 ✓/✗」）；发布为报告页）
+- "/zucai-packet <期> / 按我的问题梳理 / 分析包" → RUNBOOK B5e 阅读层（`.claude/commands/zucai-packet.md`，2026-10-14 起**三屏一桥**：A 三屏 §0 头部 · §1 决策表 14 行（档·锚方中轴·洞在谁·翻车面·标签(弱/真实·价内/未价，10-16 F19)·六条件 k/n·人群(钱→哪面)·默认动作·死门 P·赛前看谁）· §1b 人群地图（PM 分市场量·资金去向·富勒姆型三判据，10-18；`crowd polymarket --flow`）· §2 胆与票（胆表 ≤5 行 + 主形一张 + 替代一张 + 死法清单）一次出齐 → B 桥 §3 只走一次（五条自检、差异格、死法清单）→ C 审票登记 §4 → D 次日 `retro` §5（决策表加「开」「许可证 ✓/✗」）；发布为报告页）
 
 ## /today 会话入口（Codex 同规）
 

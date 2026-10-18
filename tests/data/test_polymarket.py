@@ -47,8 +47,42 @@ def test_normalize_event_takes_volume_and_best_quotes_per_market():
     assert n["id"] == "1083681" and n["end"] == "2026-10-09" and n["volume"] == 80268.2
     assert n["home"] == "BV Borussia 09 Dortmund" and n["away"] == "SV Werder Bremen"
     assert n["markets"][0] == {"question": ev["markets"][0]["question"], "bid": 0.74,
-                               "ask": 0.75, "token": "tok-yes"}
+                               "ask": 0.75, "token": "tok-yes", "volume": None,
+                               "volume24hr": None, "condition_id": None, "last_trade": 0.75}
     assert n["markets"][1]["bid"] == 0.16
+
+
+def test_normalize_event_keeps_per_market_volume_and_condition_id():
+    """资金去向（2026-10-18）：三个二元市场各自的量与 conditionId 要留下，逐笔方向靠它查。"""
+    ev = {"id": "1", "title": "A vs. B", "endDate": "2026-10-18", "markets": [
+        {"question": "Will A win on 2026-10-18?", "bestBid": 0.45, "bestAsk": 0.46,
+         "volumeNum": 2714.2, "volume24hr": "1900.5", "conditionId": "0xabc",
+         "clobTokenIds": "[\"t\"]"}]}
+    m = normalize_event(ev)["markets"][0]
+    assert m["volume"] == 2714.2 and m["volume24hr"] == 1900.5 and m["condition_id"] == "0xabc"
+
+
+def test_trade_flow_aggregates_usd_by_side_and_outcome_and_keeps_the_biggest_trade():
+    from nutmeg.data.polymarket import trade_flow
+
+    trades = [{"side": "BUY", "outcome": "No", "size": 100, "price": 0.73},
+              {"side": "SELL", "outcome": "Yes", "size": 12000, "price": 0.26,
+               "pseudonym": "Spiteful-Outlook"},
+              {"side": "BUY", "outcome": "Yes", "size": 50, "price": 0.27}]
+    seen = {}
+
+    def fetch(url, params):
+        seen.update(params)
+        assert url.endswith("/trades")
+        return trades
+
+    flow = trade_flow(fetch, "0xabc")
+    assert seen["market"] == "0xabc"
+    assert flow["n"] == 3 and flow["buy_no"] == 73.0 and flow["buy_yes"] == 13.5
+    assert flow["sell_yes"] == 3120.0 and flow["sell_no"] == 0.0
+    assert flow["biggest"] == {"side": "SELL", "outcome": "Yes", "usd": 3120.0, "price": 0.26,
+                               "who": "Spiteful-Outlook"}
+    assert trade_flow(lambda u, p: {"error": "x"}, "0xdef")["n"] == 0
 
 
 def test_normalize_event_strips_a_league_prefix_and_rejects_non_fixtures():

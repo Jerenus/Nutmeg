@@ -136,15 +136,53 @@ def faces_from_markets(event: dict, home: list[str], away: list[str]) -> dict:
             face = "home" if sh > sa else "away"
         bid, ask = market.get("bid"), market.get("ask")
         mid = (bid + ask) / 2 if bid is not None and ask is not None else None
-        out[face] = {"bid": bid, "ask": ask, "mid": mid, "token": market.get("token")}
+        out[face] = {"bid": bid, "ask": ask, "mid": mid, "token": market.get("token"),
+                     "volume": market.get("volume"), "volume24hr": market.get("volume24hr"),
+                     "condition_id": market.get("condition_id"),
+                     "last_trade": market.get("last_trade")}
     return out
 
 
+LOPSIDED_SHARE = 0.8          # 单一市场占事件成交 ≥80%
+FLAT_PP = 1.0                 # 三面走势都在 ±1pp 内＝「价不动」
+MONEY_MIN_USD = 1000.0        # 逐笔净额 <$1k 不读方向
+
+
+def money_direction(flow: dict) -> dict | None:
+    """逐笔 → 钱去了哪一面（2026-10-18 Jun「标明资金去的队伍」）。
+
+    每面净额 = 买Yes − 卖Yes − 买No + 卖No
+    （买 No 桑德兰＝押伯恩茅斯或平，所以记在桑德兰面的负号上）。
+    `face`＝净额最大且 ≥$1k 的面；`against`＝净额最小且 ≤−$1k 的面；都没有 → None。"""
+    net = {f: round(v.get("buy_yes", 0.0) - v.get("sell_yes", 0.0) - v.get("buy_no", 0.0)
+                    + v.get("sell_no", 0.0), 2) for f, v in flow.items() if v}
+    if not net:
+        return None
+    top, low = max(net, key=net.get), min(net, key=net.get)
+    out = {"face": top if net[top] >= MONEY_MIN_USD else None,
+           "usd": net[top] if net[top] >= MONEY_MIN_USD else None,
+           "against": low if net[low] <= -MONEY_MIN_USD else None,
+           "against_usd": net[low] if net[low] <= -MONEY_MIN_USD else None}
+    return out if out["face"] or out["against"] else None
+
+
+def is_lopsided(faces: dict, trend_pp: dict | None, volume: float) -> bool:
+    """「富勒姆型」形状判据（26144 场 2：$213k 整板最高、钱压一面、价不动）：
+    事件有量 ∧ 单一市场占三市场 ≥80% ∧ 三面走势全在 ±1pp。只标形状，不推概率。"""
+    vols = [float((faces.get(f) or {}).get("volume") or 0.0) for f in FACES]
+    total = sum(vols)
+    if volume < SHOW_MIN_VOLUME or total <= 0 or not trend_pp or len(trend_pp) < 3:
+        return False
+    return max(vols) / total >= LOPSIDED_SHARE and all(abs(v) <= FLAT_PP for v in trend_pp.values())
+
+
 def board_rows(namer: Namer, matches: list[dict], events: list[dict], *,
-               trend: Callable[[str], tuple[float | None, float | None]] | None = None) -> dict:
+               trend: Callable[[str], tuple[float | None, float | None]] | None = None,
+               flow: Callable[[str], dict] | None = None) -> dict:
     """我方一块板（`[{key, home[], away[], kickoff, fair}]`）→ {key: Polymarket 行}。
 
-    对不上的场不出行。"""
+    对不上的场不出行。`flow`（2026-10-18）：有量的场按三个市场的 conditionId 取逐笔合计，
+    落 `flow[face]`、`money_to`；`lopsided` 标「富勒姆型」形状。"""
     rows: dict[str, dict] = {}
     for m in matches:
         kickoff = parse_bj(m.get("kickoff"))
@@ -170,6 +208,11 @@ def board_rows(namer: Namer, matches: list[dict], events: list[dict], *,
                 first, last = trend(token) if token else (None, None)
                 if first is not None and last is not None:
                     row["trend_pp"][f] = round((last - first) * 100, 1)
+        if flow is not None and row["volume"] >= SHOW_MIN_VOLUME:
+            row["flow"] = {f: flow(cid) for f in FACES
+                           if (cid := (faces.get(f) or {}).get("condition_id"))}
+            row["money_to"] = money_direction(row["flow"])
+        row["lopsided"] = is_lopsided(faces, row.get("trend_pp"), row["volume"])
         rows[str(m["key"])] = row
     for rank, key in enumerate(sorted(rows, key=lambda k: -rows[k]["volume"]), start=1):
         rows[key]["rank"] = rank
@@ -194,6 +237,14 @@ def brief_cell(row: dict | None) -> str:
     if diff:
         face = max(FACES, key=lambda f: abs(diff.get(f) or 0.0))
         text += f" {dict(home='主', draw='平', away='客')[face]}{diff[face]:+.1f}"
+    money = row.get("money_to") or {}
+    cn = dict(home='主', draw='平', away='客')
+    if money.get("face"):
+        text += f" 钱→{cn[money['face']]}${money['usd'] / 1000:.1f}k"
+    elif money.get("against"):
+        text += f" 钱反{cn[money['against']]}"
+    if row.get("lopsided"):
+        text += " ⚑单向价不动"
     return text
 
 
@@ -334,20 +385,27 @@ def _trend(fetch):
     return lambda token: price_trend(fetch, token)
 
 
+def _flow(fetch):
+    from nutmeg.data.polymarket import trade_flow
+
+    return lambda condition_id: trade_flow(fetch, condition_id)
+
+
 def snapshot_issue(data_dir: Path, issue: str, *, fetch, now: str,
-                   namer: Namer | None = None) -> Path | None:
+                   namer: Namer | None = None, with_flow: bool = False) -> Path | None:
     matches = zucai_board_matches(data_dir, issue)
     window = _window([m["kickoff"] for m in matches])
     if window is None:
         return None
     events = fetch_events(fetch, *window)
-    rows = board_rows(namer or Namer.default(), matches, events, trend=_trend(fetch))
+    rows = board_rows(namer or Namer.default(), matches, events, trend=_trend(fetch),
+                      flow=_flow(fetch) if with_flow else None)
     return write_snapshot(Path(data_dir) / "zucai" / f"{issue}-polymarket.json",
                           {"issue": issue}, rows, fetched_at=now)
 
 
 def snapshot_day(data_dir: Path, day: str, *, fetch, now: str,
-                 namer: Namer | None = None) -> dict:
+                 namer: Namer | None = None, with_flow: bool = False) -> dict:
     """并集池的一天：竞彩当日板 + 当天截止的足彩期次（与 `research refresh` 同一口径）。"""
     from nutmeg.decision.zucai_identity import closing_issues
 
@@ -357,11 +415,13 @@ def snapshot_day(data_dir: Path, day: str, *, fetch, now: str,
     matches = jczq_board_matches(data_dir, day)
     window = _window([m["kickoff"] for m in matches])
     if window is not None:
-        rows = board_rows(namer, matches, fetch_events(fetch, *window), trend=_trend(fetch))
+        rows = board_rows(namer, matches, fetch_events(fetch, *window), trend=_trend(fetch),
+                          flow=_flow(fetch) if with_flow else None)
         out["jczq"] = str(write_snapshot(data_dir / "jczq" / "daily" / day / "polymarket.json",
                                          {"day": day}, rows, fetched_at=now))
     for issue, _doc in closing_issues(data_dir / "zucai", day):
-        path = snapshot_issue(data_dir, issue, fetch=fetch, now=now, namer=namer)
+        path = snapshot_issue(data_dir, issue, fetch=fetch, now=now, namer=namer,
+                              with_flow=with_flow)
         if path is not None:
             out["zucai"][issue] = str(path)
     return out

@@ -14,6 +14,8 @@ from urllib.parse import urlencode
 
 GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
+DATA_API = "https://data-api.polymarket.com"
+TRADES_LIMIT = 1000           # data-api 一次最多给最近 1,000 笔；逐笔合计 < 市场总量是常态
 SOCCER_CODES = frozenset({
     # 英格兰 / 德国 / 西班牙 / 法国 / 意大利（含次级）
     "epl", "elc", "el1", "bun", "bl2", "lal", "es2", "fl1", "fr2", "sea", "itsb",
@@ -79,7 +81,8 @@ def _num(value) -> float | None:
 
 
 def normalize_event(ev: dict) -> dict | None:
-    """事件 → {id,title,end,home,away,volume,liquidity,volume24hr,markets[question,bid,ask,token]}；
+    """事件 → {id,title,end,home,away,volume,liquidity,volume24hr,
+    markets[question,bid,ask,token,volume,volume24hr,condition_id,last_trade]}；
     标题不是「A vs B」→ None。"""
     title = str(ev.get("title") or "")
     m = _TITLE.match(title)
@@ -95,7 +98,12 @@ def normalize_event(ev: dict) -> dict | None:
             tokens = []
         markets.append({"question": str(market.get("question") or ""),
                         "bid": _num(market.get("bestBid")), "ask": _num(market.get("bestAsk")),
-                        "token": tokens[0] if tokens else None})
+                        "token": tokens[0] if tokens else None,
+                        # 资金去向（2026-10-18）：三个二元市场各自的量 + conditionId（逐笔查询键）
+                        "volume": _num(market.get("volumeNum", market.get("volume"))),
+                        "volume24hr": _num(market.get("volume24hr")),
+                        "condition_id": market.get("conditionId") or None,
+                        "last_trade": _num(market.get("lastTradePrice"))})
     return {"id": str(ev.get("id")), "title": ev.get("title"),
             "end": str(ev.get("endDate") or "")[:10],
             "home": m.group(1).strip(), "away": m.group(2).strip(),
@@ -112,3 +120,29 @@ def price_trend(fetch: Fetch, token: str, *, interval: str = "1w",
     if not history:
         return None, None
     return _num(history[0].get("p")), _num(history[-1].get("p"))
+
+
+def trade_flow(fetch: Fetch, condition_id: str, *, limit: int = TRADES_LIMIT) -> dict:
+    """一个二元市场最近 `limit` 笔成交按 (side, outcome) 合计美元（2026-10-18，资金去向）。
+
+    → {buy_yes, buy_no, sell_yes, sell_no, n, biggest{side,outcome,usd,price,who}}。
+    只合计、不判断；接口非列表 → 全零。"""
+    rows = fetch(f"{DATA_API}/trades", {"market": condition_id, "limit": limit})
+    out = {"buy_yes": 0.0, "buy_no": 0.0, "sell_yes": 0.0, "sell_no": 0.0, "n": 0,
+           "biggest": None}
+    if not isinstance(rows, list):
+        return out
+    for t in rows:
+        if not isinstance(t, dict):
+            continue
+        side, outcome = str(t.get("side") or "").lower(), str(t.get("outcome") or "").lower()
+        key = f"{side}_{outcome}"
+        if key not in out:
+            continue
+        usd = round((_num(t.get("size")) or 0.0) * (_num(t.get("price")) or 0.0), 2)
+        out[key] = round(out[key] + usd, 2)
+        out["n"] += 1
+        if out["biggest"] is None or usd > out["biggest"]["usd"]:
+            out["biggest"] = {"side": side.upper(), "outcome": outcome.capitalize(), "usd": usd,
+                              "price": _num(t.get("price")), "who": t.get("pseudonym") or ""}
+    return out
